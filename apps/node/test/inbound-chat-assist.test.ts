@@ -127,8 +127,18 @@ describe("runInboundChatAssist approval queue", () => {
   });
 });
 
-describe("runInboundChatAssist auto-send with global policy", () => {
-  it("auto-sends for bonded contact when global autoSend is on and no per-contact pref", async () => {
+describe("runInboundChatAssist auto-send policy", () => {
+  const greetRule = {
+    id: "greet",
+    enabled: true,
+    name: "Greet",
+    category: "availability" as const,
+    priority: 1,
+    trigger: { isGreeting: true },
+    action: { type: "draft" as const, template: "Hi {ownerName}!" },
+  };
+
+  it("does not auto-send when global autoSend is on but contact is not on Auto", async () => {
     const sendChat = vi.fn().mockResolvedValue({ messageId: "out-1", deliveryReceipt: "sent" });
     const emitDraft = vi.fn();
 
@@ -148,17 +158,52 @@ describe("runInboundChatAssist auto-send with global policy", () => {
           status: { onlineAssistantEnabled: false, offlineAgentEnabled: true, statusMode: "automatic" },
           identity: { mode: "transparent" },
           defaultModeForNewContacts: "manual",
-          rules: [
-            {
-              id: "greet",
-              enabled: true,
-              name: "Greet",
-              category: "availability",
-              priority: 1,
-              trigger: { isGreeting: true },
-              action: { type: "draft", template: "Hi {ownerName}!" },
-            },
-          ],
+          rules: [greetRule],
+        },
+        modelProviders: { mode: "mock" },
+      },
+      modelProviders: { mode: "mock" },
+      profile: makeTestProfile(),
+      taskStore,
+      trustStore,
+      peerDirectoryStore,
+      draftStore,
+      chatLogStore: null,
+      humanProfileStore: { loadHumanProfile: async () => null } as never,
+      vaultDir: profileDir,
+      styleAdapter: null,
+      sendChat,
+      emitDraft,
+      isOwnerOnline: () => true,
+    });
+
+    expect(emitDraft).not.toHaveBeenCalled();
+    expect(sendChat).not.toHaveBeenCalled();
+  });
+
+  it("auto-sends when global autoSend is on and contact is on Auto", async () => {
+    const sendChat = vi.fn().mockResolvedValue({ messageId: "out-1", deliveryReceipt: "sent" });
+    const emitDraft = vi.fn();
+
+    await runInboundChatAssist({
+      envelope: chatEnvelope("peer-a", "envoy:owner:bob", "Hello there"),
+      senderOwnerId: "envoy:owner:bob",
+      chatText: "Hello there",
+      remotePeerId: "remote-libp2p",
+      receivedAt: Date.now(),
+      correlationId: "corr-auto",
+      config: {
+        chatAssistEnabled: false,
+        autonomousKillSwitch: false,
+        autonomousPolicies: [{ domain: "social", maxSensitivity: "friends", autoAnswer: false, autoSendChat: true }],
+        contactAiPreferences: [
+          { peerOwnerId: "envoy:owner:bob", aiAccessLevel: "full", knowledgeAccess: "public", priority: "high" },
+        ],
+        aiSettings: {
+          status: { onlineAssistantEnabled: false, offlineAgentEnabled: true, statusMode: "automatic" },
+          identity: { mode: "transparent" },
+          defaultModeForNewContacts: "manual",
+          rules: [greetRule],
         },
         modelProviders: { mode: "mock" },
       },
@@ -179,5 +224,50 @@ describe("runInboundChatAssist auto-send with global policy", () => {
 
     expect(emitDraft).toHaveBeenCalled();
     expect(sendChat).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not auto-send when contact is on Auto but global autoSend is off", async () => {
+    const sendChat = vi.fn().mockResolvedValue({ messageId: "out-1", deliveryReceipt: "sent" });
+    const emitDraft = vi.fn();
+
+    await runInboundChatAssist({
+      envelope: chatEnvelope("peer-a", "envoy:owner:bob", "Hello there"),
+      senderOwnerId: "envoy:owner:bob",
+      chatText: "Hello there",
+      remotePeerId: "remote-libp2p",
+      receivedAt: Date.now(),
+      correlationId: "corr-auto",
+      config: {
+        chatAssistEnabled: true,
+        autonomousKillSwitch: false,
+        autonomousPolicies: [{ domain: "social", maxSensitivity: "friends", autoAnswer: false, autoSendChat: false }],
+        contactAiPreferences: [
+          { peerOwnerId: "envoy:owner:bob", aiAccessLevel: "full", knowledgeAccess: "public", priority: "high" },
+        ],
+        aiSettings: {
+          status: { onlineAssistantEnabled: false, offlineAgentEnabled: true, statusMode: "automatic" },
+          identity: { mode: "transparent" },
+          defaultModeForNewContacts: "manual",
+          rules: [greetRule],
+        },
+        modelProviders: { mode: "mock" },
+      },
+      modelProviders: { mode: "mock" },
+      profile: makeTestProfile(),
+      taskStore,
+      trustStore,
+      peerDirectoryStore,
+      draftStore,
+      chatLogStore: null,
+      humanProfileStore: { loadHumanProfile: async () => null } as never,
+      vaultDir: profileDir,
+      styleAdapter: null,
+      sendChat,
+      emitDraft,
+      isOwnerOnline: () => true,
+    });
+
+    expect(emitDraft).toHaveBeenCalled();
+    expect(sendChat).not.toHaveBeenCalled();
   });
 });

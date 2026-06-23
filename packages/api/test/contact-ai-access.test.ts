@@ -1,9 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
+  applyGlobalAutoSendGate,
   contactAiAccessLevelForAssistantMode,
   capGroupChatAiAccessLevel,
   resolveContactAiAccessLevel,
-  resolveEffectiveContactAiAccessLevel,
+  resolveInboundContactAiAccess,
 } from "../src/contact-ai-access.js";
 
 describe("resolveContactAiAccessLevel", () => {
@@ -46,30 +47,56 @@ describe("capGroupChatAiAccessLevel", () => {
   });
 });
 
-describe("resolveEffectiveContactAiAccessLevel", () => {
-  it("grants full access for bonded contacts when global auto-send is enabled", () => {
+describe("applyGlobalAutoSendGate", () => {
+  it("downgrades full to assistant_only when global auto-send is off", () => {
+    expect(applyGlobalAutoSendGate("full", false)).toBe("assistant_only");
+  });
+
+  it("preserves full when global auto-send is on", () => {
+    expect(applyGlobalAutoSendGate("full", true)).toBe("full");
+  });
+
+  it("leaves assistant_only and none unchanged", () => {
+    expect(applyGlobalAutoSendGate("assistant_only", false)).toBe("assistant_only");
+    expect(applyGlobalAutoSendGate("none", false)).toBe("none");
+  });
+});
+
+describe("resolveInboundContactAiAccess", () => {
+  it("does not grant full access from global auto-send alone", () => {
     expect(
-      resolveEffectiveContactAiAccessLevel({
+      resolveInboundContactAiAccess({
         contactOwnerId: "envoy:owner:bob",
         contactAiPreferences: [],
         defaultModeForNewContacts: "manual",
-        autoSendEnabled: true,
-        bondLevel: "direct",
+        globalAutoSendEnabled: true,
+      }),
+    ).toBe("none");
+  });
+
+  it("grants full only when contact is explicitly on Auto and global is on", () => {
+    expect(
+      resolveInboundContactAiAccess({
+        contactOwnerId: "envoy:owner:bob",
+        contactAiPreferences: [
+          { peerOwnerId: "envoy:owner:bob", aiAccessLevel: "full", knowledgeAccess: "public", priority: "high" },
+        ],
+        defaultModeForNewContacts: "manual",
+        globalAutoSendEnabled: true,
       }),
     ).toBe("full");
   });
 
-  it("respects explicit none preference even when global auto-send is enabled", () => {
+  it("caps contact Auto to assistant_only when global auto-send is off", () => {
     expect(
-      resolveEffectiveContactAiAccessLevel({
+      resolveInboundContactAiAccess({
         contactOwnerId: "envoy:owner:bob",
         contactAiPreferences: [
-          { peerOwnerId: "envoy:owner:bob", aiAccessLevel: "none", knowledgeAccess: "public", priority: "high" },
+          { peerOwnerId: "envoy:owner:bob", aiAccessLevel: "full", knowledgeAccess: "public", priority: "high" },
         ],
         defaultModeForNewContacts: "manual",
-        autoSendEnabled: true,
-        bondLevel: "direct",
+        globalAutoSendEnabled: false,
       }),
-    ).toBe("none");
+    ).toBe("assistant_only");
   });
 });

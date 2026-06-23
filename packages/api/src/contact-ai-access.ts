@@ -40,33 +40,30 @@ export function capGroupChatAiAccessLevel(level: ContactAiAccessLevel): ContactA
 }
 
 /**
- * Global auto-send implies full AI access for bonded contacts unless the contact
- * explicitly has aiAccessLevel "none" in preferences.
+ * Per-contact Auto (`full`) only applies when global auto-send is enabled.
+ * When global is off, downgrade full → assistant_only (drafts OK, no auto-send).
  */
-export function resolveEffectiveContactAiAccessLevel(input: {
+export function applyGlobalAutoSendGate(
+  level: ContactAiAccessLevel,
+  globalAutoSendEnabled: boolean,
+): ContactAiAccessLevel {
+  if (!globalAutoSendEnabled && level === "full") {
+    return "assistant_only";
+  }
+  return level;
+}
+
+/** Resolve contact AI access for inbound chat assist (contact pref + global gate). */
+export function resolveInboundContactAiAccess(input: {
   contactOwnerId: string;
   contactAiPreferences: readonly ContactAiPreferences[] | undefined;
   defaultModeForNewContacts: AiSettings["defaultModeForNewContacts"] | undefined;
-  autoSendEnabled: boolean;
-  bondLevel: "blocked" | "public" | "referred" | "direct";
+  globalAutoSendEnabled: boolean;
 }): ContactAiAccessLevel {
-  const explicit = input.contactAiPreferences?.find((p) => p.peerOwnerId === input.contactOwnerId);
-  if (explicit?.aiAccessLevel === "none") {
-    return "none";
-  }
   const base = resolveContactAiAccessLevel(
     input.contactOwnerId,
     input.contactAiPreferences,
     input.defaultModeForNewContacts,
   );
-  if (base !== "none") {
-    return base;
-  }
-  if (
-    input.autoSendEnabled &&
-    (input.bondLevel === "direct" || input.bondLevel === "referred")
-  ) {
-    return "full";
-  }
-  return "none";
+  return applyGlobalAutoSendGate(base, input.globalAutoSendEnabled);
 }

@@ -1,5 +1,5 @@
 import type { ModelProviderConfig, SendChatResult } from "@envoymesh/api";
-import { resolveEffectiveContactAiAccessLevel, applyAiIdentityForIdentity, stripModelThinking, capGroupChatAiAccessLevel } from "@envoymesh/api";
+import { resolveInboundContactAiAccess, applyAiIdentityForIdentity, stripModelThinking, capGroupChatAiAccessLevel } from "@envoymesh/api";
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
 import {
   createAuditEvent,
@@ -101,12 +101,11 @@ export async function runInboundChatAssist(input: {
   );
   const senderTrust = await trustStore.getTrustRecord(senderOwnerId);
   const bondLevel = senderTrust?.level ?? "public";
-  let aiAccessLevel = resolveEffectiveContactAiAccessLevel({
+  let aiAccessLevel = resolveInboundContactAiAccess({
     contactOwnerId: accessThreadKey,
     contactAiPreferences: contactPrefs,
     defaultModeForNewContacts: config.aiSettings?.defaultModeForNewContacts,
-    autoSendEnabled,
-    bondLevel,
+    globalAutoSendEnabled: autoSendEnabled,
   });
   if (disableAutoSend) {
     aiAccessLevel = capGroupChatAiAccessLevel(aiAccessLevel);
