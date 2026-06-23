@@ -18,6 +18,7 @@ import { createDiscoverySeedStore } from "./discovery-seed-store.js";
 import { expandCircuitDialCandidates } from "./discovery-inbound.js";
 import { createInboundMessageGuard } from "./inbound-guard.js";
 import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key-loader.js";
+import { deliverOutboundEnvelope, deliverOutboundExpectReply } from "./mesh-outbound-helper.js";
 import { logRelayReachableAddrsForCheckin, logClientRelayLookupResponse, describeMultiaddrReachability } from "./relay-checkin-log.js";
 
 const CLEAR = "\x1b[2J\x1b[H";
@@ -374,7 +375,7 @@ async function sendRelayCheckin(input: {
         }),
         profile.device.privateKeyPem,
       );
-      await mesh.send(bootstrapPeer, signedEnvelope);
+      await deliverOutboundEnvelope(mesh, bootstrapPeer, signedEnvelope);
       ok++;
       console.log(`[auto-relay-query] sent relay.checkin to ${bootstrapPeer}`);
     } catch (err) {
@@ -423,7 +424,7 @@ async function queryRelayLookup(input: {
         }),
         profile.device.privateKeyPem,
       );
-      const reply = await mesh.sendExpectReply(bootstrapPeer, signedEnvelope, {
+      const reply = await deliverOutboundExpectReply(mesh, bootstrapPeer, signedEnvelope, {
         timeoutMs: RELAY_LOOKUP_REPLY_TIMEOUT_MS,
       });
       const guardDecision = inboundGuard.inspect(reply);
@@ -453,7 +454,7 @@ async function queryRelayLookup(input: {
         console.log(
           `[auto-relay-query] relay.lookup legacy send (after expectReply failed) target=${bootstrapPeer} error=${detail}`,
         );
-        await mesh.send(bootstrapPeer, signedEnvelope);
+        await deliverOutboundEnvelope(mesh, bootstrapPeer, signedEnvelope);
         ok++;
       } catch (legacyErr) {
         failed++;

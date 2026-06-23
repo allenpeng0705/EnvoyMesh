@@ -12,6 +12,7 @@ import {
 } from "@envoymesh/protocol";
 import { derivePeerId, signUnsignedEnvelope } from "@envoymesh/identity";
 import type { EnvoyMesh } from "@envoymesh/network";
+import { sendEnvelopeWithRetry, sendExpectReplyWithRetry } from "./chat-outbound-deliver.js";
 import { filterRelayControlTargets } from "@envoymesh/network";
 import type { NodeProfile } from "@envoymesh/api";
 import type { InboundMessageGuard } from "./inbound-guard.js";
@@ -85,7 +86,12 @@ async function sendRelayCheckin(deps: RelayClientCycleDeps, targets: string[]): 
         }),
         profile.device.privateKeyPem,
       );
-      await mesh.send(target, signedEnvelope);
+      await sendEnvelopeWithRetry({
+        mesh,
+        transportPeerId: target,
+        envelope: signedEnvelope,
+        dialHints: [target.startsWith("/") ? target : `/p2p/${target}`],
+      });
       console.log(`[relay-client] relay.checkin ok target=${target}`);
       results.push({ target, ok: true });
     } catch (err) {
@@ -144,7 +150,11 @@ async function queryRelayLookup(deps: RelayClientCycleDeps, targets: string[]): 
         }),
         profile.device.privateKeyPem,
       );
-      const reply = await mesh.sendExpectReply(target, signedEnvelope, {
+      const reply = await sendExpectReplyWithRetry({
+        mesh,
+        transportPeerId: target,
+        envelope: signedEnvelope,
+        dialHints: [target.startsWith("/") ? target : `/p2p/${target}`],
         timeoutMs: RELAY_LOOKUP_REPLY_TIMEOUT_MS,
       });
       const guardDecision = inboundGuard.inspect(reply);

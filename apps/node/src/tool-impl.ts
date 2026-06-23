@@ -16,6 +16,7 @@ import { matchAgentCapabilityRoutes } from "@envoymesh/api";
 import { derivePeerId, signUnsignedEnvelope } from "@envoymesh/identity";
 import { createAuditEvent } from "@envoymesh/local-store";
 import type { EnvoyMesh } from "@envoymesh/network";
+import { deliverOutboundEnvelope, deliverOutboundExpectReply } from "./mesh-outbound-helper.js";
 import { createUnsignedEnvelope, type EnvoyIntent } from "@envoymesh/protocol";
 // Inline egress scanning (Phase 8H) — avoids cross-package import resolution in test environment
 // These patterns are a subset of the full @envoymesh/models semantic firewall patterns
@@ -511,7 +512,7 @@ export function buildMeshRequestKnowledgeTool(
     let answer = "Request could not be completed.";
     let matchScore = 0;
     try {
-      const response = await deps.mesh.sendExpectReply(targetPeer.peerId, envelope, {
+      const response = await deliverOutboundExpectReply(deps.mesh, targetPeer.peerId, envelope, {
         timeoutMs: 30000,
       });
       // Parse the knowledge.response payload — redacted before returning to agent
@@ -645,7 +646,7 @@ export function buildMeshSendChatTool(
     );
 
     try {
-      await deps.mesh.send(targetPeer.peerId, envelope, {});
+      await deliverOutboundEnvelope(deps.mesh, targetPeer.peerId, envelope);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
       return { error: `failed to send message: ${msg}`, denied: false };

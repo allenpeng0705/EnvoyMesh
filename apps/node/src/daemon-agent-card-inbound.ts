@@ -9,6 +9,7 @@ import {
 import { signUnsignedEnvelope } from "@envoymesh/identity";
 import { createUnsignedEnvelope, type EnvoyEnvelope } from "@envoymesh/protocol";
 import { ENVOY_MESSAGE_PROTOCOL, type EnvoyMesh } from "@envoymesh/network";
+import { sendEnvelopeWithRetry } from "./chat-outbound-deliver.js";
 import { handleInboundAgentCardIntent } from "./agent-card-inbound.js";
 import type { BridgeIdentity } from "./bridge/pipe.js";
 import type { NodeServiceImpl } from "./node-service-impl.js";
@@ -73,7 +74,12 @@ export async function handleDaemonAgentCardInbound(input: {
       agentCredential: input.bridgeIdentity.agentCredential,
     });
     const signedResponse = signUnsignedEnvelope(unsignedResponse, input.bridgeIdentity.agentPrivateKeyPem);
-    const latencyMs = await input.mesh.send(input.remotePeerId, signedResponse);
+    await sendEnvelopeWithRetry({
+      mesh: input.mesh,
+      transportPeerId: input.remotePeerId,
+      envelope: signedResponse,
+      dialHints: [`/p2p/${input.remotePeerId}`],
+    });
     await input.taskStore.appendAuditEvent(
       createAuditEvent({
         type: "message.sent",
@@ -82,7 +88,6 @@ export async function handleDaemonAgentCardInbound(input: {
         correlationId: signedResponse.correlationId,
         remotePeerId: input.remotePeerId,
         direction: "outbound",
-        latencyMs,
         protocol: ENVOY_MESSAGE_PROTOCOL,
         outcome: "record",
         summary: `Sent agent.card.response for ${envelope.messageId}.`,

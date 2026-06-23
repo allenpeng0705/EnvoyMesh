@@ -7,7 +7,6 @@ import {
 } from "@envoymesh/identity";
 import type { LocalPeerDirectoryStore } from "@envoymesh/local-store";
 import type { NodeProfile } from "@envoymesh/local-store";
-import type { EnvoyMesh } from "@envoymesh/network";
 import {
   createTaskMandatePayload,
   createTaskProposePayload,
@@ -15,9 +14,10 @@ import {
   createUnsignedMandate,
   type AgentCredential,
 } from "@envoymesh/protocol";
+import { sendEnvelopeWithRetry, type OutboundDeliverMesh } from "./chat-outbound-deliver.js";
 
 export async function sendAgentTaskPropose(input: {
-  mesh: EnvoyMesh;
+  mesh: OutboundDeliverMesh;
   profile: NodeProfile;
   agentPeerId: string;
   agentPublicKeyPem: string;
@@ -27,6 +27,7 @@ export async function sendAgentTaskPropose(input: {
   targetOwnerId: string;
   objective: string;
   correlationId?: string;
+  dialHintsFor?: (transportPeerId: string, listenAddrs?: string[]) => Promise<string[]>;
 }): Promise<{ ok: boolean; summary: string; taskId?: string }> {
   const peerRecords = await input.peerDirectoryStore.listPeerRecords();
   const targetPeer = peerRecords.find((row) => row.ownerId === input.targetOwnerId);
@@ -38,6 +39,10 @@ export async function sendAgentTaskPropose(input: {
   const recipientPeerId = targetPeer?.devicePublicKeyPem
     ? derivePeerId(targetPeer.devicePublicKeyPem)
     : transportPeerId;
+
+  const dialHints = input.dialHintsFor
+    ? await input.dialHintsFor(transportPeerId, targetPeer.listenAddrs)
+    : [`/p2p/${transportPeerId}`];
 
   const taskId = `task-${randomUUID()}`;
   const mandateId = `mandate-${randomUUID()}`;
@@ -72,7 +77,16 @@ export async function sendAgentTaskPropose(input: {
     }),
     input.agentPrivateKeyPem,
   );
-  await input.mesh.send(transportPeerId, mandateEnvelope);
+  await sendEnvelopeWithRetry({
+    mesh: input.mesh,
+    transportPeerId,
+    envelope: mandateEnvelope,
+    dialHints,
+    peerListenAddrs: targetPeer.listenAddrs,
+    rebuildDialHints: input.dialHintsFor
+      ? () => input.dialHintsFor!(transportPeerId, targetPeer.listenAddrs)
+      : undefined,
+  });
 
   const proofOfIntent = createProofOfIntent({
     mandate,
@@ -80,6 +94,7 @@ export async function sendAgentTaskPropose(input: {
     requestIntent: "task.propose",
     device: input.profile.device,
   });
+
   const proposeEnvelope = signUnsignedEnvelope(
     createUnsignedEnvelope({
       senderPeerId: input.agentPeerId,
@@ -100,7 +115,16 @@ export async function sendAgentTaskPropose(input: {
     }),
     input.agentPrivateKeyPem,
   );
-  await input.mesh.send(transportPeerId, proposeEnvelope);
+  await sendEnvelopeWithRetry({
+    mesh: input.mesh,
+    transportPeerId,
+    envelope: proposeEnvelope,
+    dialHints,
+    peerListenAddrs: targetPeer.listenAddrs,
+    rebuildDialHints: input.dialHintsFor
+      ? () => input.dialHintsFor!(transportPeerId, targetPeer.listenAddrs)
+      : undefined,
+  });
 
   return {
     ok: true,

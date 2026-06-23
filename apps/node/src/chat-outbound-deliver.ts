@@ -10,9 +10,18 @@ import {
 import { parseChatDeliveredAck } from "@envoymesh/api/chat-delivered";
 
 import { shouldPreferCircuitDialHints } from "./outbound-dial-hints.js";
+import { withOutboundSendLock } from "./outbound-send-lock.js";
 
 const CHAT_SEND_MAX_ATTEMPTS = 3;
 const CHAT_SEND_RETRY_BASE_MS = 800;
+
+export type OutboundDeliverMesh = Pick<
+  EnvoyMesh,
+  "send" | "closeConnectionsToPeer" | "ensurePeerReachable" | "getPeerConnectionInfo"
+>;
+
+export type OutboundExpectReplyMesh = OutboundDeliverMesh &
+  Pick<EnvoyMesh, "sendExpectReply">;
 
 export type ChatDeliverResult = {
   delivered: boolean;
@@ -312,20 +321,22 @@ async function trySendChatWithoutAck(input: {
  * Fire-and-forget — no delivery ack wait.
  */
 export async function deliverCallEnvelopeWithRetry(input: {
-  mesh: Pick<
-    EnvoyMesh,
-    "send" | "closeConnectionsToPeer" | "ensurePeerReachable" | "getPeerConnectionInfo"
-  >;
+  mesh: OutboundDeliverMesh;
   transportPeerId: string;
   envelope: EnvoyEnvelope;
   dialHints: string[];
+  peerListenAddrs?: string[];
   rebuildDialHints?: () => Promise<string[]>;
   maxAttempts?: number;
 }): Promise<ChatDeliverResult> {
   const maxAttempts = input.maxAttempts ?? CHAT_SEND_MAX_ATTEMPTS;
   let lastErr: unknown;
   let hints = input.dialHints;
-  const preferCircuits = shouldPreferCircuitDialHints(undefined, hints, input.transportPeerId);
+  const preferCircuits = shouldPreferCircuitDialHints(
+    input.peerListenAddrs,
+    hints,
+    input.transportPeerId,
+  );
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (attempt > 0) {
@@ -462,4 +473,127 @@ export async function deliverDataTransferWithRetry(input: {
   }
 
   throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+}
+
+/** Request/response on {@link ENVOY_MESSAGE_PROTOCOL} with verify + retries. */
+export async function deliverExpectReplyWithRetry(input: {
+  mesh: OutboundExpectReplyMesh;
+  transportPeerId: string;
+  envelope: EnvoyEnvelope;
+  dialHints: string[];
+  peerListenAddrs?: string[];
+  timeoutMs?: number;
+  rebuildDialHints?: () => Promise<string[]>;
+  maxAttempts?: number;
+}): Promise<EnvoyEnvelope> {
+  const maxAttempts = input.maxAttempts ?? CHAT_SEND_MAX_ATTEMPTS;
+  const timeoutMs = input.timeoutMs ?? 30_000;
+  let lastErr: unknown;
+  let hints = input.dialHints;
+  const preferCircuits = shouldPreferCircuitDialHints(
+    input.peerListenAddrs,
+    hints,
+    input.transportPeerId,
+  );
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (attempt > 0) {
+      hints = rotateDialHintsForRetry(hints, attempt);
+      if (input.rebuildDialHints) {
+        try {
+          hints = await input.rebuildDialHints();
+        } catch {
+          /* keep rotated hints */
+        }
+      }
+      await sleep(CHAT_SEND_RETRY_BASE_MS * attempt);
+      try {
+        await input.mesh.closeConnectionsToPeer(input.transportPeerId);
+      } catch {
+        /* ignore */
+      }
+    }
+
+    const ready = await prepareOutboundPeerConnection({
+      mesh: input.mesh,
+      transportPeerId: input.transportPeerId,
+      protocol: ENVOY_MESSAGE_PROTOCOL,
+      dialHints: hints,
+      preferCircuitHints: preferCircuits || attempt > 0,
+      forceFreshDial: attempt > 0,
+    });
+    if (!ready) {
+      lastErr = new Error(`No reachable path to ${input.transportPeerId.slice(0, 12)}… before expect-reply send`);
+      continue;
+    }
+
+    try {
+      const reply = await input.mesh.sendExpectReply(input.transportPeerId, input.envelope, {
+        timeoutMs,
+        dialHints: hints,
+        preferCircuitHints: preferCircuits || attempt > 0,
+        forceFreshDial: attempt > 0,
+      });
+      if (attempt > 0) {
+        console.log(`[expect-reply] delivered on attempt ${attempt + 1}/${maxAttempts}`);
+      }
+      return reply;
+    } catch (err) {
+      lastErr = err;
+      console.warn(
+        `[expect-reply] attempt ${attempt + 1}/${maxAttempts} failed for ${input.transportPeerId.slice(0, 12)}…:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+}
+
+/** Canonical fire-and-forget outbound send: per-peer lock + verify + retry. */
+export async function sendEnvelopeWithRetry(input: {
+  mesh: OutboundDeliverMesh;
+  transportPeerId: string;
+  envelope: EnvoyEnvelope;
+  dialHints?: string[];
+  peerListenAddrs?: string[];
+  rebuildDialHints?: () => Promise<string[]>;
+  maxAttempts?: number;
+}): Promise<ChatDeliverResult> {
+  return withOutboundSendLock(input.transportPeerId, () =>
+    deliverCallEnvelopeWithRetry({
+      mesh: input.mesh,
+      transportPeerId: input.transportPeerId,
+      envelope: input.envelope,
+      dialHints: input.dialHints ?? [],
+      peerListenAddrs: input.peerListenAddrs,
+      rebuildDialHints: input.rebuildDialHints,
+      maxAttempts: input.maxAttempts,
+    }),
+  );
+}
+
+/** Canonical request/response outbound send: per-peer lock + verify + retry. */
+export async function sendExpectReplyWithRetry(input: {
+  mesh: OutboundExpectReplyMesh;
+  transportPeerId: string;
+  envelope: EnvoyEnvelope;
+  dialHints?: string[];
+  peerListenAddrs?: string[];
+  timeoutMs?: number;
+  rebuildDialHints?: () => Promise<string[]>;
+  maxAttempts?: number;
+}): Promise<EnvoyEnvelope> {
+  return withOutboundSendLock(input.transportPeerId, () =>
+    deliverExpectReplyWithRetry({
+      mesh: input.mesh,
+      transportPeerId: input.transportPeerId,
+      envelope: input.envelope,
+      dialHints: input.dialHints ?? [],
+      peerListenAddrs: input.peerListenAddrs,
+      timeoutMs: input.timeoutMs,
+      rebuildDialHints: input.rebuildDialHints,
+      maxAttempts: input.maxAttempts,
+    }),
+  );
 }

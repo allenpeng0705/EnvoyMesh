@@ -1,11 +1,11 @@
 import type { NodeProfile, PeerSearchResult } from "@envoymesh/api";
 import type { ContactOwnerKeyStore, PeerProfileCacheStore } from "@envoymesh/local-store";
-import type { EnvoyMesh } from "@envoymesh/network";
+import type { OutboundExpectReplyMesh } from "./chat-outbound-deliver.js";
 import { handleInboundProfileSync } from "./profile-sync-inbound.js";
 import { sendProfileRequest } from "./profile-sync-outbound.js";
 
 export async function probeNearbyPeerProfile(input: {
-  mesh: Pick<EnvoyMesh, "send" | "sendExpectReply">;
+  mesh: OutboundExpectReplyMesh;
   profile: NodeProfile;
   contactOwnerKeyStore: ContactOwnerKeyStore;
   peerProfileCache: PeerProfileCacheStore;

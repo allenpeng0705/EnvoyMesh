@@ -15,6 +15,10 @@ import { evaluatePolicy } from "@envoymesh/bonds";
 import type { LocalTrustStore, LocalPeerDirectoryStore, LocalTaskStore } from "@envoymesh/local-store";
 import type { EnvoyMesh } from "@envoymesh/network";
 import {
+  sendEnvelopeWithRetry,
+  sendExpectReplyWithRetry,
+} from "./chat-outbound-deliver.js";
+import {
   createUnsignedEnvelope,
   createChatMessagePayload,
   createKnowledgeQueryPayload,
@@ -1132,8 +1136,9 @@ export class ToolRegistry {
               description: "Sensitivity floor",
             },
             queryId: { type: "string", description: "Optional stable query id (default random UUID)" },
+            relayPeerId: { type: "string", description: "libp2p relay peer id for broadcast fan-out" },
           },
-          required: [],
+          required: ["relayPeerId"],
         },
         sensitivityCeiling: "public",
         requiresApproval: false,
@@ -2367,7 +2372,12 @@ async function executeMeshTool(
         context.agentIdentity.privateKeyPem,
       );
 
-      await context.mesh.send(targetPeerId, envelope, {});
+      await sendEnvelopeWithRetry({
+        mesh: context.mesh,
+        transportPeerId: targetPeerId,
+        envelope,
+        dialHints: [`/p2p/${targetPeerId}`],
+      });
       return {
         ok: true,
         result: { sent: true, messageId: envelope.messageId },
@@ -2407,7 +2417,13 @@ async function executeMeshTool(
       );
 
       // Send and wait for response
-      const response = await context.mesh.sendExpectReply(targetPeerId, envelope, { timeoutMs: 30000 });
+      const response = await sendExpectReplyWithRetry({
+        mesh: context.mesh,
+        transportPeerId: targetPeerId,
+        envelope,
+        dialHints: [`/p2p/${targetPeerId}`],
+        timeoutMs: 30000,
+      });
       return {
         ok: true,
         result: response,
@@ -2480,7 +2496,11 @@ async function executeMeshTool(
         context.agentIdentity.privateKeyPem,
       );
 
-      const reply = await context.mesh.sendExpectReply(transportPeerId, envelope, {
+      const reply = await sendExpectReplyWithRetry({
+        mesh: context.mesh,
+        transportPeerId,
+        envelope,
+        dialHints: [`/p2p/${transportPeerId}`],
         timeoutMs: (params.timeoutMs as number | undefined) ?? 25_000,
       });
       const result =
@@ -2526,7 +2546,12 @@ async function executeMeshTool(
         context.agentIdentity.privateKeyPem,
       );
 
-      await context.mesh.send(targetPeerId, envelope, {});
+      await sendEnvelopeWithRetry({
+        mesh: context.mesh,
+        transportPeerId: targetPeerId,
+        envelope,
+        dialHints: [`/p2p/${targetPeerId}`],
+      });
       return {
         ok: true,
         result: { sent: true, messageId: envelope.messageId },
@@ -2559,7 +2584,12 @@ async function executeMeshTool(
         context.agentIdentity.privateKeyPem,
       );
 
-      await context.mesh.send(targetPeerId!, envelope, {});
+      await sendEnvelopeWithRetry({
+        mesh: context.mesh,
+        transportPeerId: targetPeerId!,
+        envelope,
+        dialHints: [`/p2p/${targetPeerId}`],
+      });
       return {
         ok: true,
         result: { sent: true, messageId: envelope.messageId },
@@ -2610,7 +2640,12 @@ async function executeMeshTool(
         context.agentIdentity.privateKeyPem,
       );
 
-      await context.mesh.send(recipientAgentPeerId, envelope, {});
+      await sendEnvelopeWithRetry({
+        mesh: context.mesh,
+        transportPeerId: recipientAgentPeerId,
+        envelope,
+        dialHints: [`/p2p/${recipientAgentPeerId}`],
+      });
       return {
         ok: true,
         result: { sent: true, messageId: envelope.messageId },
@@ -2621,6 +2656,16 @@ async function executeMeshTool(
     }
 
     case "broadcast.request": {
+      const relayPeerId = (params.relayPeerId as string | undefined)?.trim();
+      if (!relayPeerId) {
+        return {
+          ok: false,
+          error: "broadcast.request requires params.relayPeerId (libp2p relay peer id)",
+          toolName: tool.name,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
       const envelope = signUnsignedEnvelope(
         createUnsignedEnvelope({
           senderPeerId,
@@ -2643,7 +2688,12 @@ async function executeMeshTool(
         context.agentIdentity.privateKeyPem,
       );
 
-      await context.mesh.send("", envelope, {});
+      await sendEnvelopeWithRetry({
+        mesh: context.mesh,
+        transportPeerId: relayPeerId,
+        envelope,
+        dialHints: [`/p2p/${relayPeerId}`],
+      });
       return {
         ok: true,
         result: { broadcastSent: true, messageId: envelope.messageId },

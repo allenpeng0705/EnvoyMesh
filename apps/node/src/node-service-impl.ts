@@ -399,7 +399,9 @@ import {
   isLibp2pPeerId,
 } from "./profile-sync-outbound.js";
 import { probeNearbyPeerProfile } from "./nearby-profile-probe.js";
-import { deliverCallEnvelopeWithRetry, deliverChatEnvelopeWithRetry, type ChatDeliverResult } from "./chat-outbound-deliver.js";
+import { deliverCallEnvelopeWithRetry, deliverChatEnvelopeWithRetry, sendExpectReplyWithRetry, type ChatDeliverResult } from "./chat-outbound-deliver.js";
+import { deliverOutboundEnvelope, dialHintsForTransportTarget } from "./mesh-outbound-helper.js";
+import { withOutboundSendLock } from "./outbound-send-lock.js";
 import { pickBestLibp2pPeerDirectoryRecord, resolveRecipientEnvelopePeerId } from "./peer-transport-resolve.js";
 import {
   normalizeTransportPeerId,
@@ -821,7 +823,6 @@ class NodeServiceImpl implements NodeService {
   >();
 
   /** Serialize outbound chat streams per libp2p peer to avoid concurrent newStream races. */
-  private readonly _chatSendChains = new Map<string, Promise<void>>();
   private static readonly _PROFILE_REQUEST_COOLDOWN_MS = 15_000;
   private static readonly _NEARBY_PROFILE_PROBE_COOLDOWN_MS = 30_000;
   private readonly _profileRequestInflight = new Map<
@@ -1033,7 +1034,7 @@ class NodeServiceImpl implements NodeService {
       });
       const signed = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem);
       const dialHints = await this._dialHintsForChat(transportPeerId, undefined);
-      await mesh.send(transportPeerId, signed, { dialHints });
+      await this._deliverCallEnvelope(transportPeerId, signed, dialHints);
 
       if (this._taskStore) {
         await this._taskStore.appendAuditEvent(
@@ -2174,7 +2175,8 @@ class NodeServiceImpl implements NodeService {
         }),
         profile.device.privateKeyPem,
       );
-      await mesh.send(toPeerId, envelope);
+      const dialHints = await this._dialHintsForChat(toPeerId, undefined);
+      await this._deliverCallEnvelope(toPeerId, envelope, dialHints);
       return { ok: true };
     } catch (err) {
       return { ok: false, error: err instanceof Error ? err.message : String(err) };
@@ -2677,8 +2679,12 @@ class NodeServiceImpl implements NodeService {
           );
 
           // Send to relay and wait for response with retry
-          const response = await mesh.sendExpectReply(relayAddr, envelope, {
-            timeoutMs: BASE_TIMEOUT_MS * Math.pow(2, attempt)
+          const response = await sendExpectReplyWithRetry({
+            mesh,
+            transportPeerId: relayAddr,
+            envelope,
+            dialHints: dialHintsForTransportTarget(relayAddr),
+            timeoutMs: BASE_TIMEOUT_MS * Math.pow(2, attempt),
           });
           console.log(`[node-service] Successfully registered with relay ${relayAddr}`);
           success = true;
@@ -2781,7 +2787,7 @@ class NodeServiceImpl implements NodeService {
     try {
       const dialHints = await this._dialHintsForChat(targetPeerId, matchedRecord?.listenAddrs);
       console.log(`[node-service] sendHello dialHints count=${dialHints.length}`);
-      await mesh.send(targetPeerId, envelope, { dialHints });
+      await this._deliverCallEnvelope(targetPeerId, envelope, dialHints, matchedRecord?.listenAddrs);
       console.log(`[node-service] Hello sent successfully to ${targetPeerId}`);
 
       if (options?.introProposalMessageId) {
@@ -2879,9 +2885,7 @@ class NodeServiceImpl implements NodeService {
       const requesterDir = await this._peerDirectoryStore.getPeerByOwnerId(pending.requesterOwnerId);
       const acceptDialHints = await this._dialHintsForChat(pending.remotePeerId, requesterDir?.listenAddrs);
       console.log(`[node-service] bond.accept dialHints count=${acceptDialHints.length}`);
-      await mesh.send(pending.remotePeerId, acceptEnvelope, {
-        dialHints: acceptDialHints,
-      });
+      await this._deliverCallEnvelope(pending.remotePeerId, acceptEnvelope, acceptDialHints, requesterDir?.listenAddrs);
       console.log(`[node-service] bond.accept sent successfully to ${pending.remotePeerId}`);
     } catch (sendError) {
       console.error(`[node-service] Failed to send bond.accept to ${pending.remotePeerId}: ${sendError instanceof Error ? sendError.message : String(sendError)}`);
@@ -3770,22 +3774,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   private async _withChatSendLock<T>(transportPeerId: string, fn: () => Promise<T>): Promise<T> {
-    const prev = this._chatSendChains.get(transportPeerId) ?? Promise.resolve();
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    const chain = prev.then(() => gate);
-    this._chatSendChains.set(transportPeerId, chain);
-    await prev;
-    try {
-      return await fn();
-    } finally {
-      release();
-      if (this._chatSendChains.get(transportPeerId) === chain) {
-        this._chatSendChains.delete(transportPeerId);
-      }
-    }
+    return withOutboundSendLock(transportPeerId, fn);
   }
 
   async sendChat(targetOwnerId: string, text: string, attachments?: SendChatParams["attachments"]): Promise<SendChatResult> {
@@ -4193,7 +4182,7 @@ class NodeServiceImpl implements NodeService {
       }),
       agentIdentity.agentPrivateKeyPem,
     );
-    await mesh.send(transportPeerId, envelope, { dialHints });
+    await this._deliverCallEnvelope(transportPeerId, envelope, dialHints, listenAddrs);
     return { ok: true };
   }
 
@@ -4406,7 +4395,7 @@ class NodeServiceImpl implements NodeService {
     });
     const signed = signUnsignedEnvelope(unsigned, agentIdentity.agentPrivateKeyPem);
     const dialHints = await this._dialHintsForChat(transportPeerId, undefined);
-    await mesh.send(transportPeerId, signed, { dialHints });
+    await this._deliverCallEnvelope(transportPeerId, signed, dialHints);
     return true;
   }
 
@@ -4451,7 +4440,7 @@ class NodeServiceImpl implements NodeService {
     });
     const signed = signUnsignedEnvelope(unsigned, agentIdentity.agentPrivateKeyPem);
     const dialHints = await this._dialHintsForChat(transportPeerId, undefined);
-    await mesh.send(transportPeerId, signed, { dialHints });
+    await this._deliverCallEnvelope(transportPeerId, signed, dialHints);
 
     const receivedAt = new Date().toISOString();
     this._pendingSocialIntroProposals.set(signed.messageId, {
@@ -7659,7 +7648,13 @@ class NodeServiceImpl implements NodeService {
           correlationId: randomUUID(),
         });
         const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem);
-        const reply = await mesh.sendExpectReply(transportPeerId, envelope, { timeoutMs, dialHints });
+        const reply = await sendExpectReplyWithRetry({
+          mesh,
+          transportPeerId,
+          envelope,
+          dialHints,
+          timeoutMs,
+        });
         const latencyMs = Date.now() - started;
         if (reply.intent !== "discovery.response") {
           results.push({
@@ -7989,7 +7984,7 @@ class NodeServiceImpl implements NodeService {
       payload: createShareAcceptPayload({ inReplyTo: shareId, accept: true }),
     });
     const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as EnvoyEnvelope;
-    await mesh.send(offer.senderNodeId, envelope as any, { dialHints });
+    await this._deliverCallEnvelope(offer.senderNodeId, envelope, dialHints, rec?.listenAddrs);
     void this._tagBondedContactReachability(offer.senderNodeId);
     this._correlationByPreviewMsgId.set(shareId, shareId);
     this._inboundTransferByShareId.set(shareId, {
@@ -8048,7 +8043,7 @@ class NodeServiceImpl implements NodeService {
       payload: createShareAcceptPayload({ inReplyTo: shareId, accept: false }),
     });
     const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as EnvoyEnvelope;
-    await mesh.send(offer.senderNodeId, envelope as any, { dialHints });
+    await this._deliverCallEnvelope(offer.senderNodeId, envelope, dialHints, rec?.listenAddrs);
     this._pendingInboundShareOffers.delete(shareId);
     this.emit("share:declined", { shareId });
   }
@@ -9051,7 +9046,7 @@ class NodeServiceImpl implements NodeService {
               discoverySeedStore: this._discoverySeedStore,
               config: await this._configStore.load(),
             });
-            const latencyMs = await mesh.send(requesterPeerId, signedAccept, { dialHints: autoHints });
+            await this._deliverCallEnvelope(requesterPeerId, signedAccept, autoHints, requesterDir?.listenAddrs);
             await taskStore.appendAuditEvent(
               createAuditEvent({
                 type: "message.sent",
@@ -9060,7 +9055,6 @@ class NodeServiceImpl implements NodeService {
                 correlationId: signedAccept.correlationId,
                 remotePeerId: requesterPeerId,
                 direction: "outbound",
-                latencyMs,
                 protocol: ENVOY_MESSAGE_PROTOCOL,
                 outcome: "record",
                 summary: "Sent bond.accept to requester after auto-accept.",
@@ -11338,13 +11332,14 @@ class NodeServiceImpl implements NodeService {
                     summary: typeof result === "string" ? result : JSON.stringify(result ?? ""),
                     status: "completed",
                   }),
-                  correlationId: corrId,
-                  agentCredential: (agentIdentitySection as any)?.credential,
-                });
-                const { signUnsignedEnvelope } = await import("@envoymesh/identity");
-                const signed = signUnsignedEnvelope(unsigned, this._profile!.device.privateKeyPem);
-                await this._mesh.send(peerId, signed, {});
-                return true;
+                correlationId: corrId,
+                agentCredential: (agentIdentitySection as any)?.credential,
+              });
+              const { signUnsignedEnvelope } = await import("@envoymesh/identity");
+              const signed = signUnsignedEnvelope(unsigned, this._profile!.device.privateKeyPem);
+              const dialHints = await this._dialHintsForChat(peerId, undefined);
+              await this._deliverCallEnvelope(peerId, signed, dialHints);
+              return true;
               } catch { return false; }
             },
             sendTaskFeedback: async (peerId, ownerId, taskId, score, comment, corrId) => {
@@ -11364,13 +11359,14 @@ class NodeServiceImpl implements NodeService {
                     latencyMs: 0,
                     notes: comment,
                   }),
-                  correlationId: corrId,
-                  agentCredential: (agentIdentitySection as any)?.credential,
-                });
-                const { signUnsignedEnvelope } = await import("@envoymesh/identity");
-                const signed = signUnsignedEnvelope(unsigned, this._profile!.device.privateKeyPem);
-                await this._mesh.send(peerId, signed, {});
-                return true;
+                correlationId: corrId,
+                agentCredential: (agentIdentitySection as any)?.credential,
+              });
+              const { signUnsignedEnvelope } = await import("@envoymesh/identity");
+              const signed = signUnsignedEnvelope(unsigned, this._profile!.device.privateKeyPem);
+              const dialHints = await this._dialHintsForChat(peerId, undefined);
+              await this._deliverCallEnvelope(peerId, signed, dialHints);
+              return true;
               } catch { return false; }
             },
           },

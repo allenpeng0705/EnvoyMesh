@@ -1,26 +1,3 @@
-/**
- * Phase 33 — Agent Card auto-fetch on bond establishment.
- *
- * When `bond:established` fires (for both `bond.request` and `bond.accept` paths), the home
- * node should eagerly fetch the peer's Agent Card so the OpenClaw agent knows what the peer
- * can do. The auto-fetch is **eager** (matches the literal "auto-fetch on bond establishment"
- * wording from the design doc) with these properties:
- *
- *  - Idempotent: skip when a card was cached within `maxAgeMs` (default 24h).
- *  - Skip for public-tier bonds: strangers don't get a card fetch.
- *  - No retry on failure: a failed fetch (timeout, peer offline) is silent in the audit log.
- *    The `mesh.agent_card.request` tool remains available for explicit re-fetches.
- *  - Sender role is `agent` (A2A wire, not human channel).
- *
- * The fetch path is **fire-and-forget at the caller level** — `onBondEstablished` returns a
- * Promise that the caller can ignore. Internally we await the response with a 5s timeout so
- * the bond handler doesn't block on slow peers.
- *
- * The actual `agent.card.response` envelope is handled by the existing
- * `agent-card-inbound.ts` path, which calls `AgentCardStore.upsert`. This module only needs
- * to **send the request** and audit the outcome.
- */
-
 import { randomUUID } from "node:crypto";
 import {
   createAgentCardRequestPayload,
@@ -31,15 +8,13 @@ import {
 import { signUnsignedEnvelope } from "@envoymesh/identity";
 import { createAuditEvent, type AgentCardStore, type LocalTaskStore, type LocalTrustStore } from "@envoymesh/local-store";
 import type { EnvoyMesh } from "@envoymesh/network";
+import {
+  sendEnvelopeWithRetry,
+  type OutboundDeliverMesh,
+} from "./chat-outbound-deliver.js";
 
 /** Mesh / libp2p transport surface needed to send a signed envelope. */
-export interface AgentCardAutoFetcherMesh {
-  send(
-    transportPeerId: string,
-    envelope: ReturnType<typeof signUnsignedEnvelope>,
-    options?: { dialHints?: string[] },
-  ): Promise<unknown>;
-}
+export type AgentCardAutoFetcherMesh = OutboundDeliverMesh & Pick<EnvoyMesh, "peerId">;
 
 /** Bridge identity = the OpenClaw / agent side of the home node. */
 export interface AgentCardAutoFetcherBridgeIdentity {
@@ -54,6 +29,8 @@ export interface AgentCardAutoFetcherBridgeIdentity {
 export type AgentCardAutoFetcherResolver = (targetOwnerId: string) => Promise<{
   transportPeerId: string | undefined;
   recipientEnvelopePeerId: string | undefined;
+  listenAddrs?: string[];
+  dialHints?: string[];
 }>;
 
 export interface AgentCardAutoFetcherDeps {
@@ -127,10 +104,14 @@ export function createAgentCardAutoFetcher(
       // 3. Resolve transport.
       let transportPeerId: string | undefined;
       let recipientEnvelopePeerId: string | undefined;
+      let listenAddrs: string[] | undefined;
+      let dialHints: string[] | undefined;
       try {
         const resolved = await deps.resolvePeerTransport(peerOwnerId);
         transportPeerId = resolved.transportPeerId;
         recipientEnvelopePeerId = resolved.recipientEnvelopePeerId ?? resolved.transportPeerId;
+        listenAddrs = resolved.listenAddrs;
+        dialHints = resolved.dialHints;
       } catch {
         // fall through
       }
@@ -157,7 +138,13 @@ export function createAgentCardAutoFetcher(
         deps.bridgeIdentity.agentPrivateKeyPem,
       );
 
-      const sendWork = deps.mesh.send(transportPeerId, envelope);
+      const sendWork = sendEnvelopeWithRetry({
+        mesh: deps.mesh,
+        transportPeerId,
+        envelope,
+        dialHints: dialHints ?? [`/p2p/${transportPeerId}`],
+        peerListenAddrs: listenAddrs,
+      });
       void sendWork.catch(() => {
         /* late failure after Promise.race timeout — must not crash the process */
       });
@@ -181,13 +168,13 @@ export function createAgentCardAutoFetcher(
           }),
         );
         return { outcome: "sent" };
-      } catch (error) {
-        const reason =
-          error instanceof Error && error.message.includes("timeout")
-            ? "timeout"
-            : "send-failed";
-        await auditFailure(deps.taskStore, remotePeerId, reason);
-        return { outcome: "failed", reason };
+      } catch (err) {
+        await auditFailure(
+          deps.taskStore,
+          remotePeerId,
+          err instanceof Error ? err.message : String(err),
+        );
+        return { outcome: "failed", reason: err instanceof Error ? err.message : String(err) };
       }
     },
   };
@@ -198,23 +185,18 @@ async function auditFailure(
   remotePeerId: string,
   reason: string,
 ): Promise<void> {
-  try {
-    await taskStore.appendAuditEvent(
-      createAuditEvent({
-        type: "agent.card.auto_fetch_failed",
-        intent: "agent.card.request",
-        correlationId: randomUUID(),
-        remotePeerId,
-        direction: "outbound",
-        outcome: "deny",
-        summary: `Auto-fetch failed: ${reason}.`,
-        createdAt: new Date().toISOString(),
-      }),
-    );
-  } catch {
-    // Audit failure is non-fatal.
-  }
+  await taskStore.appendAuditEvent(
+    createAuditEvent({
+      type: "agent.card.auto_fetch_failed",
+      intent: "agent.card.request",
+      correlationId: randomUUID(),
+      remotePeerId,
+      direction: "outbound",
+      outcome: "deny",
+      summary: `Auto-fetch failed: ${reason}.`,
+      createdAt: new Date().toISOString(),
+    }),
+  );
 }
 
-/** Re-export the cached card type for tests. */
 export type { AgentCard };

@@ -1,11 +1,18 @@
 import { describe, expect, it, vi } from "vitest";
-import { generateDeviceIdentity, generateOwnerIdentity, signHumanProfile, signUnsignedEnvelope } from "@envoymesh/identity";
-import {
-  createProfileRequestPayload,
-  createUnsignedEnvelope,
-  type EnvoyEnvelope,
-} from "@envoymesh/protocol";
+import { generateDeviceIdentity, generateOwnerIdentity, signHumanProfile } from "@envoymesh/identity";
+import { type EnvoyEnvelope } from "@envoymesh/protocol";
 import { isLibp2pPeerId, sendProfileRequest, sendProfileSyncToBonds } from "../src/profile-sync-outbound.js";
+
+function outboundMeshMock(overrides: Record<string, unknown> = {}) {
+  return {
+    send: vi.fn().mockResolvedValue(undefined),
+    closeConnectionsToPeer: vi.fn().mockResolvedValue(0),
+    ensurePeerReachable: vi.fn().mockResolvedValue({ connected: true, direct: true }),
+    getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: false, direct: false }),
+    mergePeerStoreDialHints: vi.fn().mockResolvedValue(undefined),
+    ...overrides,
+  };
+}
 
 describe("isLibp2pPeerId", () => {
   it("accepts libp2p peer ids and rejects Envoy envelope ids", () => {
@@ -24,8 +31,7 @@ describe("sendProfileRequest", () => {
       payload: { profile: { ownerId: owner.ownerId } },
     } as EnvoyEnvelope;
     const sendExpectReply = vi.fn().mockResolvedValue(responseEnvelope);
-    const send = vi.fn();
-    const mesh = { sendExpectReply, send };
+    const mesh = outboundMeshMock({ sendExpectReply });
 
     const reply = await sendProfileRequest({
       mesh,
@@ -36,7 +42,7 @@ describe("sendProfileRequest", () => {
     });
 
     expect(sendExpectReply).toHaveBeenCalledTimes(1);
-    expect(send).not.toHaveBeenCalled();
+    expect(mesh.send).not.toHaveBeenCalled();
     expect(reply).toBe(responseEnvelope);
   });
 });
@@ -70,12 +76,10 @@ describe("sendProfileSyncToBonds", () => {
       .fn()
       .mockRejectedValueOnce(new Error("failed to connect via relay with status NO_RESERVATION"))
       .mockResolvedValueOnce(undefined);
-    const ensurePeerReachable = vi.fn(async () => ({ connected: true, direct: true }));
-    const closeConnectionsToPeer = vi.fn(async () => 1);
-    const mergePeerStoreDialHints = vi.fn(async () => {});
+    const mesh = outboundMeshMock({ send });
 
     await sendProfileSyncToBonds({
-      mesh: { send, ensurePeerReachable, closeConnectionsToPeer, mergePeerStoreDialHints },
+      mesh,
       profile,
       humanProfile,
       vaultDir: "/tmp/vault",
@@ -92,10 +96,10 @@ describe("sendProfileSyncToBonds", () => {
       dialHintsFor: async () => ["/ip4/192.168.1.50/tcp/4011/p2p/12D3KooWProfileSyncReachability"],
     });
 
-    expect(ensurePeerReachable).toHaveBeenCalled();
+    expect(mesh.ensurePeerReachable).toHaveBeenCalled();
     expect(send).toHaveBeenCalledTimes(2);
-    expect(closeConnectionsToPeer).toHaveBeenCalled();
-    expect(mergePeerStoreDialHints).toHaveBeenCalled();
+    expect(mesh.closeConnectionsToPeer).toHaveBeenCalled();
+    expect(mesh.mergePeerStoreDialHints).toHaveBeenCalled();
   });
 
   it("isolates dial hint failures per bond", async () => {
@@ -104,10 +108,10 @@ describe("sendProfileSyncToBonds", () => {
     const profile = { owner, device, deviceCertificate: undefined as never };
     const humanProfile = signedHumanProfile(owner);
     const send = vi.fn(async () => undefined);
-    const ensurePeerReachable = vi.fn(async () => ({ connected: true, direct: true }));
+    const mesh = outboundMeshMock({ send });
 
     await sendProfileSyncToBonds({
-      mesh: { send, ensurePeerReachable, closeConnectionsToPeer: vi.fn(), mergePeerStoreDialHints: vi.fn() },
+      mesh,
       profile,
       humanProfile,
       vaultDir: "/tmp/vault",

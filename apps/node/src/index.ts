@@ -121,6 +121,7 @@ import { readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { parseNodeArgs, applyPersistedDiscoveryConfig, type NodeArgs } from "./args.js";
 import { buildOutboundCliEnvelopes } from "./cli-actions.js";
+import { deliverOutboundEnvelope, deliverOutboundExpectReply } from "./mesh-outbound-helper.js";
 import { createInboundMessageGuard } from "./inbound-guard.js";
 import { chatSenderActorFromEnvelope, shouldSkipAgentChatAssist, resolveEmpSupportedCapabilities } from "@envoymesh/api";
 import { buildSignedChatDeliveredEnvelope } from "@envoymesh/api/chat-delivered";
@@ -1116,7 +1117,7 @@ async function handleInboundMeshMessage({
       correlationId,
     });
     const signedResponse = signUnsignedEnvelope(unsignedResponse, profile.device.privateKeyPem);
-    const latencyMs = await mesh.send(remotePeerId, signedResponse);
+    await deliverOutboundEnvelope(mesh, remotePeerId, signedResponse);
     void taskStore.appendAuditEvent(
       createAuditEvent({
         type: "message.sent",
@@ -1125,7 +1126,6 @@ async function handleInboundMeshMessage({
         correlationId: signedResponse.correlationId,
         remotePeerId,
         direction: "outbound",
-        latencyMs,
         protocol: ENVOY_MESSAGE_PROTOCOL,
         outcome: "record",
         summary: `Sent knowledge.response for ${envelope.messageId}.`,
@@ -1236,7 +1236,7 @@ async function handleInboundMeshMessage({
         err instanceof Error ? err.message : err,
       );
     }
-    const latencyMs = await mesh.send(remotePeerId, signedResponse, { dialHints: previewDialHints });
+    await deliverOutboundEnvelope(mesh, remotePeerId, signedResponse, { dialHints: previewDialHints });
     void taskStore.appendAuditEvent(
       createAuditEvent({
         type: "message.sent",
@@ -1245,7 +1245,6 @@ async function handleInboundMeshMessage({
         correlationId: signedResponse.correlationId,
         remotePeerId,
         direction: "outbound",
-        latencyMs,
         protocol: ENVOY_MESSAGE_PROTOCOL,
         outcome: "record",
         summary: `Sent share.preview for ${envelope.messageId}.`,
@@ -1459,7 +1458,7 @@ async function handleInboundMeshMessage({
       if (replyWithEnvelope) {
         await replyWithEnvelope(signedResponse);
       } else {
-        latencyMs = await mesh.send(remotePeerId, signedResponse);
+        await deliverOutboundEnvelope(mesh, remotePeerId, signedResponse);
       }
       void taskStore.appendAuditEvent(
         createAuditEvent({
@@ -1571,7 +1570,7 @@ async function handleInboundMeshMessage({
           correlationId,
         });
         const signedResponse = signEnv(unsignedResponse, profile.device.privateKeyPem);
-        const latencyMs = await mesh.send(envelope.senderPeerId, signedResponse);
+        await deliverOutboundEnvelope(mesh, envelope.senderPeerId, signedResponse);
         void taskStore.appendAuditEvent(
           createAuditEvent({
             type: "message.sent",
@@ -1580,7 +1579,6 @@ async function handleInboundMeshMessage({
             correlationId: signedResponse.correlationId,
             remotePeerId: envelope.senderPeerId,
             direction: "outbound",
-            latencyMs,
             protocol: ENVOY_MESSAGE_PROTOCOL,
             outcome: "record",
             summary: `Sent broadcast.response for queryId=${result.responsePayload.queryId}.`,
@@ -1705,7 +1703,7 @@ async function handleInboundMeshMessage({
         correlationId,
       });
       const signedResponse = signUnsignedEnvelope(unsignedResponse, profile.device.privateKeyPem);
-      const latencyMs = await mesh.send(remotePeerId, signedResponse);
+      await deliverOutboundEnvelope(mesh, remotePeerId, signedResponse);
       void taskStore.appendAuditEvent(
         createAuditEvent({
           type: "message.sent",
@@ -1714,7 +1712,6 @@ async function handleInboundMeshMessage({
           correlationId: signedResponse.correlationId,
           remotePeerId,
           direction: "outbound",
-          latencyMs,
           protocol: ENVOY_MESSAGE_PROTOCOL,
           outcome: "record",
           summary: `Sent relay.peers.response with ${relayPeers.responsePayload.peers.length} peer(s).`,
@@ -1764,7 +1761,7 @@ async function handleInboundMeshMessage({
       peerDirectoryStore,
       remotePeerId,
       sendResponseEnvelope: async (responseEnvelope) => {
-        await mesh.send(remotePeerId, responseEnvelope as EnvoyEnvelope);
+        await deliverOutboundEnvelope(mesh, remotePeerId, responseEnvelope as EnvoyEnvelope);
       },
       sendBusyReject:
         nodeService instanceof NodeServiceImpl
@@ -2438,7 +2435,7 @@ async function handleInboundMeshMessage({
         }),
         profile.device.privateKeyPem,
       );
-      const latencyMs = await mesh.send(remotePeerId, deferredEnvelope);
+      await deliverOutboundEnvelope(mesh, remotePeerId, deferredEnvelope);
       void taskStore.appendAuditEvent(
         createAuditEvent({
           type: "message.sent",
@@ -2447,7 +2444,6 @@ async function handleInboundMeshMessage({
           correlationId: deferredEnvelope.correlationId,
           remotePeerId,
           direction: "outbound",
-          latencyMs,
           protocol: ENVOY_MESSAGE_PROTOCOL,
           outcome: "record",
           summary: `Sent pairing defer notice for ${payload.requestId}.`,
@@ -2694,7 +2690,7 @@ async function handleInboundMeshMessage({
           discoverySeedStore,
           config: undefined,
         });
-        const latencyMs = await mesh.send(requesterPeerId, signedAccept, { dialHints });
+        await deliverOutboundEnvelope(mesh, requesterPeerId, signedAccept, { dialHints });
         void taskStore.appendAuditEvent(
           createAuditEvent({
             type: "message.sent",
@@ -2703,7 +2699,6 @@ async function handleInboundMeshMessage({
             correlationId: signedAccept.correlationId,
             remotePeerId: requesterPeerId,
             direction: "outbound",
-            latencyMs,
             protocol: ENVOY_MESSAGE_PROTOCOL,
             outcome: "record",
             summary: "Sent bond.accept to requester after auto-accept.",
@@ -3859,7 +3854,8 @@ const DISCOVERY_QUEUE_INTERVAL_MS = 5_000; // Process queue every 5 seconds
 async function runDiscoveryQueueCycle(): Promise<void> {
   const meshInterface = {
     send: async (peerId: string, envelope: ReturnType<typeof createUnsignedEnvelope>) => {
-      return await mesh.send(peerId, envelope as Parameters<typeof mesh.send>[1]);
+      await deliverOutboundEnvelope(mesh, peerId, envelope as Parameters<typeof mesh.send>[1]);
+      return 0;
     },
   };
   const processed = await processDiscoveryQueue(meshInterface);
@@ -3904,7 +3900,7 @@ if (resolvedArgs.pingTarget) {
   });
   const signedEnvelope = signUnsignedEnvelope(unsignedEnvelope, profile.device.privateKeyPem);
 
-  const latencyMs = await mesh.send(resolvedArgs.pingTarget, signedEnvelope);
+  await deliverOutboundEnvelope(mesh, resolvedArgs.pingTarget, signedEnvelope);
   void taskStore.appendAuditEvent(
     createAuditEvent({
       type: "message.sent",
@@ -3913,7 +3909,6 @@ if (resolvedArgs.pingTarget) {
       correlationId: signedEnvelope.correlationId,
       remotePeerId: resolvedArgs.pingTarget,
       direction: "outbound",
-      latencyMs,
       protocol: ENVOY_MESSAGE_PROTOCOL,
       outcome: "record",
       summary: "Sent system.ping.",
@@ -3945,7 +3940,7 @@ if (resolvedArgs.signalTarget) {
   });
   const signedEnvelope = signUnsignedEnvelope(unsignedEnvelope, profile.device.privateKeyPem);
 
-  const latencyMs = await mesh.send(resolvedArgs.signalTarget, signedEnvelope);
+  await deliverOutboundEnvelope(mesh, resolvedArgs.signalTarget, signedEnvelope);
   void taskStore.appendAuditEvent(
     createAuditEvent({
       type: "message.sent",
@@ -3954,7 +3949,6 @@ if (resolvedArgs.signalTarget) {
       correlationId: signedEnvelope.correlationId,
       remotePeerId: resolvedArgs.signalTarget,
       direction: "outbound",
-      latencyMs,
       protocol: ENVOY_MESSAGE_PROTOCOL,
       outcome: "record",
       summary: "Sent system.signal.",
@@ -3976,7 +3970,7 @@ if (resolvedArgs.relayPeersQueryTarget) {
   });
   const signedEnvelope = signUnsignedEnvelope(unsignedEnvelope, profile.device.privateKeyPem);
 
-  const latencyMs = await mesh.send(resolvedArgs.relayPeersQueryTarget, signedEnvelope);
+  await deliverOutboundEnvelope(mesh, resolvedArgs.relayPeersQueryTarget, signedEnvelope);
   void taskStore.appendAuditEvent(
     createAuditEvent({
       type: "message.sent",
@@ -3985,7 +3979,6 @@ if (resolvedArgs.relayPeersQueryTarget) {
       correlationId: signedEnvelope.correlationId,
       remotePeerId: resolvedArgs.relayPeersQueryTarget,
       direction: "outbound",
-      latencyMs,
       protocol: ENVOY_MESSAGE_PROTOCOL,
       outcome: "record",
       summary: "Sent relay.peers.request.",
@@ -3999,7 +3992,7 @@ for (const outbound of buildOutboundCliEnvelopes(resolvedArgs, profile)) {
   const isChat = outbound.envelope.intent === "chat.message";
   const latencyMs = isChat
     ? await mesh.sendChat(outbound.target, outbound.envelope)
-    : await mesh.send(outbound.target, outbound.envelope);
+    : (await deliverOutboundEnvelope(mesh, outbound.target, outbound.envelope), 0);
   if (isChat) {
     void mesh.tagContactForPersistentReachability(outbound.target).catch((err) =>
       console.warn(`[reachability] CLI outbound chat tag failed:`, err),
@@ -4259,14 +4252,13 @@ async function runRelayPeersQueryCycle(source: "startup" | "periodic"): Promise<
     );
 
     try {
-      const latencyMs = await mesh.send(target, signedEnvelope);
+      await deliverOutboundEnvelope(mesh, target, signedEnvelope);
       void taskStore.appendAuditEvent(
         createAuditEvent({
           type: "p2p.trace",
           direction: "outbound",
           protocol: "relay.peers.query.ok",
           remotePeerId: target,
-          latencyMs,
           outcome: "record",
           summary: `relay peers query ok source=${source} target=${target}`,
         }),
@@ -4340,9 +4332,9 @@ async function runRelayCheckinCycle(source: "startup" | "periodic"): Promise<voi
       profile.device.privateKeyPem,
     );
     try {
-      const latencyMs = await mesh.send(target, signedEnvelope);
+      await deliverOutboundEnvelope(mesh, target, signedEnvelope);
       noteRelaySuccess(relayClientState, relayHintFromAddr(target));
-      await appendRelayTrace("relay.checkin.ok", target, `relay checkin ok source=${source} target=${target}`, latencyMs);
+      await appendRelayTrace("relay.checkin.ok", target, `relay checkin ok source=${source} target=${target}`);
       checkinResults.push({ target, ok: true });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -4748,8 +4740,8 @@ async function runRelaySummaryCycle(source: "startup" | "periodic"): Promise<voi
       profile.device.privateKeyPem,
     );
     try {
-      const latencyMs = await mesh.send(target, signedEnvelope);
-      await appendRelayTrace("relay.summary.ok", target, `relay summary ok source=${source} target=${target}`, latencyMs);
+      await deliverOutboundEnvelope(mesh, target, signedEnvelope);
+      await appendRelayTrace("relay.summary.ok", target, `relay summary ok source=${source} target=${target}`);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       await appendRelayTrace("relay.summary.fail", target, `relay summary failed source=${source} target=${target} error=${message}`);
@@ -4787,7 +4779,9 @@ async function runRelayLookupCycle(source: "startup" | "periodic"): Promise<void
     );
     try {
       const startedAt = Date.now();
-      const reply = await mesh.sendExpectReply(target, signedEnvelope, { timeoutMs: RELAY_LOOKUP_REPLY_TIMEOUT_MS });
+      const reply = await deliverOutboundExpectReply(mesh, target, signedEnvelope, {
+        timeoutMs: RELAY_LOOKUP_REPLY_TIMEOUT_MS,
+      });
       const latencyMs = Date.now() - startedAt;
       const guardDecision = inboundGuard.inspect(reply);
       if (guardDecision.action === "reject") {
@@ -4824,13 +4818,12 @@ async function runRelayLookupCycle(source: "startup" | "periodic"): Promise<void
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       try {
-        const latencyMs = await mesh.send(target, signedEnvelope);
+        await deliverOutboundEnvelope(mesh, target, signedEnvelope);
         noteRelaySuccess(relayClientState, relayHintFromAddr(target));
         await appendRelayTrace(
           "relay.lookup.ok",
           target,
           `relay lookup ok (legacy send after expectReply: ${message}) source=${source} target=${target}`,
-          latencyMs,
         );
         bestLookup = { ok: true, peerCount: 0, circuitAddrsStored: 0 };
       } catch (fallbackError) {
@@ -5156,7 +5149,7 @@ async function forwardRelayLookup(input: {
     try {
       relayLookupRouter.recordForwardedLookup();
       const startedAt = Date.now();
-      const reply = await mesh.sendExpectReply(targetAddress, signedEnvelope, {
+      const reply = await deliverOutboundExpectReply(mesh, targetAddress, signedEnvelope, {
         timeoutMs: RELAY_FORWARD_LOOKUP_REPLY_MS,
       });
       const latencyMs = Date.now() - startedAt;
@@ -5310,7 +5303,7 @@ async function sendRelayControlResponse(
       );
     }
   }
-  await mesh.send(libp2pRecipientPeerId, signedEnvelope);
+  await deliverOutboundEnvelope(mesh, libp2pRecipientPeerId, signedEnvelope);
 }
 
 async function appendRelayInboundAudit(
@@ -5418,7 +5411,7 @@ async function relayTaskCancelIfNeeded(input: {
         }),
         profile.device.privateKeyPem,
       );
-      const latencyMs = await mesh.send(targetPeer, signed);
+      await deliverOutboundEnvelope(mesh, targetPeer, signed);
       void taskStore.appendAuditEvent(
         createAuditEvent({
           type: "message.sent",
@@ -5427,7 +5420,6 @@ async function relayTaskCancelIfNeeded(input: {
           correlationId: signed.correlationId,
           remotePeerId: targetPeer,
           direction: "outbound",
-          latencyMs,
           protocol: ENVOY_MESSAGE_PROTOCOL,
           outcome: "record",
           summary: `Relayed task.cancel (hops remaining after send: ${nextHops}).`,

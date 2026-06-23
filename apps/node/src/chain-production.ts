@@ -10,9 +10,10 @@ import { derivePeerId } from "@envoymesh/identity";
 import type { LocalPeerDirectoryStore } from "@envoymesh/local-store";
 import type { EnvoyMesh } from "@envoymesh/network";
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
+import { sendEnvelopeWithRetry, type OutboundDeliverMesh } from "./chat-outbound-deliver.js";
 
 export interface ChainTransportResolver {
-  mesh: EnvoyMesh;
+  mesh: OutboundDeliverMesh & Pick<EnvoyMesh, "peerId">;
   peerDirectoryStore: LocalPeerDirectoryStore;
   /** Local device public key PEM — used for self-send. */
   localDevicePublicKeyPem?: string;
@@ -132,7 +133,12 @@ export async function sendChainEnvelopeOverMesh(
   const transportPeerId = await resolveChainTransportPeerId(resolver, recipientPeerId);
   if (!transportPeerId) return false;
   try {
-    await resolver.mesh.send(transportPeerId, envelope);
+    await sendEnvelopeWithRetry({
+      mesh: resolver.mesh,
+      transportPeerId,
+      envelope,
+      dialHints: [`/p2p/${transportPeerId}`],
+    });
     return true;
   } catch {
     return false;

@@ -9,6 +9,10 @@ import {
   type EnvoyEnvelope,
 } from "@envoymesh/protocol";
 import { randomUUID } from "node:crypto";
+import {
+  sendEnvelopeWithRetry,
+  type OutboundDeliverMesh,
+} from "./chat-outbound-deliver.js";
 
 export interface SendBroadcastRequestInput {
   targetRelayPeerId: string;
@@ -23,10 +27,7 @@ export interface SendBroadcastRequestInput {
     owner: { ownerId: string };
     device: { publicKeyPem: string; privateKeyPem: string };
   };
-  mesh: {
-    send(target: string, envelope: EnvoyEnvelope): Promise<number>;
-    peerId: string;
-  };
+  mesh: OutboundDeliverMesh & { peerId: string };
 }
 
 /**
@@ -71,7 +72,12 @@ export async function sendBroadcastRequest(input: SendBroadcastRequestInput): Pr
     profile.device.privateKeyPem,
   );
 
-  await mesh.send(targetRelayPeerId, envelope);
+  await sendEnvelopeWithRetry({
+    mesh,
+    transportPeerId: targetRelayPeerId,
+    envelope,
+    dialHints: [`/p2p/${targetRelayPeerId}`],
+  });
 }
 
 export interface SendBroadcastResponseInput {
@@ -81,17 +87,15 @@ export interface SendBroadcastResponseInput {
   profile: {
     device: { publicKeyPem: string; privateKeyPem: string };
   };
-  mesh: {
-    send(target: string, envelope: EnvoyEnvelope): Promise<number>;
-    peerId: string;
-  };
+  mesh: OutboundDeliverMesh & { peerId: string };
+  dialHints?: string[];
 }
 
 /**
  * Send a broadcast.response directly to the broadcaster (peer-to-peer, not via relay).
  */
 export async function sendBroadcastResponse(input: SendBroadcastResponseInput): Promise<void> {
-  const { targetPeerId, targetPublicKey, responsePayload, profile, mesh } = input;
+  const { targetPeerId, targetPublicKey, responsePayload, profile, mesh, dialHints } = input;
 
   const envelope = signUnsignedEnvelope(
     {
@@ -108,7 +112,12 @@ export async function sendBroadcastResponse(input: SendBroadcastResponseInput): 
     profile.device.privateKeyPem,
   );
 
-  await mesh.send(targetPeerId, envelope);
+  await sendEnvelopeWithRetry({
+    mesh,
+    transportPeerId: targetPeerId,
+    envelope,
+    dialHints: dialHints ?? [`/p2p/${targetPeerId}`],
+  });
 }
 
 export interface SendBroadcastCancelInput {
@@ -118,10 +127,7 @@ export interface SendBroadcastCancelInput {
   profile: {
     device: { publicKeyPem: string; privateKeyPem: string };
   };
-  mesh: {
-    send(target: string, envelope: EnvoyEnvelope): Promise<number>;
-    peerId: string;
-  };
+  mesh: OutboundDeliverMesh & { peerId: string };
 }
 
 /**
@@ -146,5 +152,10 @@ export async function sendBroadcastCancel(input: SendBroadcastCancelInput): Prom
     profile.device.privateKeyPem,
   );
 
-  await mesh.send(targetRelayPeerId, envelope);
+  await sendEnvelopeWithRetry({
+    mesh,
+    transportPeerId: targetRelayPeerId,
+    envelope,
+    dialHints: [`/p2p/${targetRelayPeerId}`],
+  });
 }

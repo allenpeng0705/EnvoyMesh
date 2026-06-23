@@ -4,10 +4,11 @@ import { createSyncStatePayload, createUnsignedEnvelope } from "@envoymesh/proto
 import { derivePeerId, signUnsignedEnvelope } from "@envoymesh/identity";
 import type { EnvoyMesh } from "@envoymesh/network";
 import type { LocalPeerDirectoryStore } from "@envoymesh/local-store";
+import { sendEnvelopeWithRetry, type OutboundDeliverMesh } from "./chat-outbound-deliver.js";
 
 export interface NodeSyncRuntimeDeps {
   requireProfile(): NodeProfile;
-  requireMesh(): EnvoyMesh;
+  requireMesh(): OutboundDeliverMesh & Pick<EnvoyMesh, "peerId">;
   peerDirectoryStore: LocalPeerDirectoryStore;
 }
 
@@ -59,7 +60,12 @@ export async function sendSyncStateUpdateViaMesh(
         payload,
       });
       const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem);
-      await mesh.send(peerId, envelope);
+      await sendEnvelopeWithRetry({
+        mesh,
+        transportPeerId: peerId,
+        envelope,
+        dialHints: [`/p2p/${peerId}`],
+      });
       sent += 1;
     } catch (error) {
       console.warn(

@@ -39,6 +39,11 @@ import { derivePeerId, signUnsignedEnvelope } from "@envoymesh/identity";
 import type { NodeProfile } from "@envoymesh/api";
 import type { PeerProfileCacheStore } from "@envoymesh/local-store";
 import type { EnvoyMesh } from "@envoymesh/network";
+import {
+  sendEnvelopeWithRetry,
+  sendExpectReplyWithRetry,
+} from "./chat-outbound-deliver.js";
+import { deliverOutboundExpectReply } from "./mesh-outbound-helper.js";
 import type { createNodeConfigStore } from "./node-config-store.js";
 import type { DiscoverySeedStore } from "./discovery-seed-store.js";
 import {
@@ -381,9 +386,12 @@ export class NodeDiscoveryRuntime {
                 correlationId: randomUUID(),
               });
               const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem);
-              const reply = await mesh.sendExpectReply(transportPeerId, envelope, {
-                timeoutMs: 15_000,
+              const reply = await sendExpectReplyWithRetry({
+                mesh,
+                transportPeerId,
+                envelope,
                 dialHints,
+                timeoutMs: 15_000,
               });
               if (reply.intent === "discovery.response") {
                 const resp = parseDiscoveryResponsePayload(reply.payload);
@@ -639,7 +647,14 @@ export class NodeDiscoveryRuntime {
           correlationId: input.correlationId,
         });
         const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem);
-        await mesh.send(transportPeerId, envelope, { dialHints });
+        await sendEnvelopeWithRetry({
+          mesh,
+          transportPeerId,
+          envelope,
+          dialHints,
+          peerListenAddrs: peerRecord.listenAddrs,
+          rebuildDialHints: () => this.deps.dialHintsForChat(transportPeerId, peerRecord.listenAddrs ?? []),
+        });
       } catch (error) {
         console.warn(
           `[discovery_forward] forward-pending ack to ${input.requesterOwnerId} failed:`,
@@ -687,7 +702,14 @@ export class NodeDiscoveryRuntime {
           correlationId: input.correlationId,
         });
         const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem);
-        await mesh.send(transportPeerId, envelope, { dialHints });
+        await sendEnvelopeWithRetry({
+          mesh,
+          transportPeerId,
+          envelope,
+          dialHints,
+          peerListenAddrs: peerRecord.listenAddrs,
+          rebuildDialHints: () => this.deps.dialHintsForChat(transportPeerId, peerRecord.listenAddrs ?? []),
+        });
         if (this.deps.taskStore) {
           await this.deps.taskStore.appendAuditEvent(
             createAuditEvent({
@@ -762,9 +784,12 @@ export class NodeDiscoveryRuntime {
             correlationId,
           });
           const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem);
-          const reply = await mesh.sendExpectReply(transportPeerId, envelope, {
-            timeoutMs: 18_000,
+          const reply = await sendExpectReplyWithRetry({
+            mesh,
+            transportPeerId,
+            envelope,
             dialHints,
+            timeoutMs: 18_000,
           });
           if (reply.intent !== "discovery.response") continue;
           const resp = parseDiscoveryResponsePayload(reply.payload);
@@ -914,7 +939,13 @@ export class NodeDiscoveryRuntime {
             correlationId: payload.correlationId,
           });
           const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem);
-          const reply = await mesh.sendExpectReply(transportPeerId, envelope, { timeoutMs: 18_000, dialHints });
+          const reply = await sendExpectReplyWithRetry({
+            mesh,
+            transportPeerId,
+            envelope,
+            dialHints,
+            timeoutMs: 18_000,
+          });
           forwarded += 1;
           if (this.deps.taskStore) {
             const replyIntent = reply.intent;
@@ -1154,7 +1185,13 @@ export class NodeDiscoveryRuntime {
             selfProfile.device.privateKeyPem,
           );
 
-          const response = await mesh.sendExpectReply(relay.addr, envelope, { timeoutMs: 15000 });
+          const response = await sendExpectReplyWithRetry({
+            mesh,
+            transportPeerId: relay.addr,
+            envelope,
+            dialHints: [relay.addr.startsWith("/") ? relay.addr : `/p2p/${relay.addr}`],
+            timeoutMs: 15_000,
+          });
           const responsePayload = RendezvousResponsePayloadSchema.parse(response.payload);
 
           console.log(`[node-service] Rendezvous query returned ${responsePayload.matches.length} matches from ${relay.addr}`);
