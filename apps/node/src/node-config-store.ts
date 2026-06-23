@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import {
   defaultBootstrapPresetsForDiscoveryProfile,
   normalizeBootstrapPresetsForContactsOnly,
+  ensureDefaultAutonomousPoliciesForModel,
 } from "@envoymesh/api";
 import type {
   AiSettings,
@@ -228,7 +229,11 @@ export function createNodeConfigStore(profileDir: string): NodeConfigStore {
         const raw = await readFile(path, "utf8");
         const parsed = JSON.parse(stripJsonComments(raw)) as unknown;
         if (isValidNodeConfig(parsed)) {
-          return parsed;
+          const normalized = withDefaultAutonomousPolicies(parsed);
+          if (autonomousPoliciesChanged(parsed, normalized)) {
+            await writeNodeConfigFile(path, normalized);
+          }
+          return normalized;
         }
         const reason = describeNodeConfigValidationFailure(parsed);
         const migrated = tryMigrateNodeConfig(parsed, profileDir);
@@ -323,10 +328,32 @@ function tryMigrateNodeConfig(value: unknown, profileDir: string): PersistedNode
   if (merged.discoveryProfile === "contacts-only" || merged.discoveryProfile === "relay-only") {
     merged.bootstrapPresets = normalizeBootstrapPresetsForContactsOnly(merged.bootstrapPresets);
   }
+  merged.autonomousPolicies = ensureDefaultAutonomousPoliciesForModel(
+    merged.autonomousPolicies,
+    merged.modelProviders.mode,
+  );
   if (!isValidNodeConfig(merged)) {
     return undefined;
   }
   return merged;
+}
+
+function withDefaultAutonomousPolicies(config: PersistedNodeConfig): PersistedNodeConfig {
+  const autonomousPolicies = ensureDefaultAutonomousPoliciesForModel(
+    config.autonomousPolicies,
+    config.modelProviders.mode,
+  );
+  if (!autonomousPoliciesChanged(config, { ...config, autonomousPolicies })) {
+    return config;
+  }
+  return { ...config, autonomousPolicies };
+}
+
+function autonomousPoliciesChanged(
+  before: PersistedNodeConfig,
+  after: PersistedNodeConfig,
+): boolean {
+  return JSON.stringify(before.autonomousPolicies ?? []) !== JSON.stringify(after.autonomousPolicies ?? []);
 }
 
 export function describeNodeConfigValidationFailure(value: unknown): string {

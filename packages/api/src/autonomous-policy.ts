@@ -1,10 +1,45 @@
-import type { AutonomousDomain, AutonomousPolicy } from "./ws-protocol.js";
+import type { AutonomousDomain, AutonomousPolicy, ModelProviderConfig } from "./ws-protocol.js";
 
 export type AutonomousAction = "auto_answer" | "auto_send_chat";
 
 export type EvaluateAutonomousPolicyResult =
   | { allowed: true; domain: AutonomousDomain; action: AutonomousAction }
   | { allowed: false; reason: string };
+
+/** True when chat/knowledge model routing is enabled (any mode except disabled). */
+export function isModelProviderConfigured(
+  mode: ModelProviderConfig["mode"] | undefined,
+): boolean {
+  return mode !== undefined && mode !== "disabled";
+}
+
+/** Default social policy when global auto-send is first enabled alongside a configured model. */
+export function defaultSocialAutonomousPolicy(): AutonomousPolicy {
+  return {
+    domain: "social",
+    maxSensitivity: "friends",
+    autoAnswer: false,
+    autoSendChat: true,
+  };
+}
+
+/**
+ * When a model is configured, ensure a social autonomous policy exists with
+ * auto-send enabled. Does not override an existing social policy (user opt-out).
+ */
+export function ensureDefaultAutonomousPoliciesForModel(
+  policies: readonly AutonomousPolicy[] | undefined,
+  modelMode: ModelProviderConfig["mode"] | undefined,
+): AutonomousPolicy[] {
+  const list = policies ? [...policies] : [];
+  if (!isModelProviderConfigured(modelMode)) {
+    return list;
+  }
+  if (list.some((p) => p.domain === "social")) {
+    return list;
+  }
+  return [...list, defaultSocialAutonomousPolicy()];
+}
 
 const SENSITIVITY_RANK: Record<"public" | "friends" | "private", number> = {
   public: 0,

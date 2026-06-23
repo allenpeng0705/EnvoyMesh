@@ -17,6 +17,16 @@ import {
 } from "./outbound-peer-freshness.js";
 import { withOutboundSendLock } from "./outbound-send-lock.js";
 
+/** Shorter ack wait when LAN/direct dial hints exist (fail fast vs 45s WAN timeout). */
+const DIRECT_CHAT_DELIVERY_ACK_TIMEOUT_MS = 12_000;
+
+/** Resolve delivery-ack timeout from outbound dial hints (exported for tests). */
+export function resolveChatDeliveryAckTimeoutMs(dialHints: readonly string[]): number {
+  return hasDirectTcpDialHints(dialHints)
+    ? DIRECT_CHAT_DELIVERY_ACK_TIMEOUT_MS
+    : CHAT_DELIVERY_ACK_TIMEOUT_MS;
+}
+
 const CHAT_SEND_MAX_ATTEMPTS = 3;
 const CHAT_SEND_RETRY_BASE_MS = 800;
 
@@ -67,7 +77,6 @@ export async function prepareOutboundPeerConnection(input: {
     !input.forceFreshDial &&
     !upgradeRelayToDirect &&
     conn.connected &&
-    conn.direct &&
     isOutboundPeerRecentlyVerified(input.transportPeerId)
   ) {
     return true;
@@ -215,6 +224,7 @@ export async function deliverChatEnvelopeWithRetry(input: {
   );
   const canExpectAck =
     input.expectDeliveryAck !== false && typeof input.mesh.sendChatExpectReply === "function";
+  const ackTimeoutMs = resolveChatDeliveryAckTimeoutMs(hints);
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (attempt > 0) {
@@ -234,17 +244,28 @@ export async function deliverChatEnvelopeWithRetry(input: {
         );
       }
     } else {
-      const ready = await prepareOutboundChatConnection({
-        mesh: input.mesh,
-        transportPeerId: input.transportPeerId,
-        chatProtocol: input.chatProtocol,
-        dialHints: hints,
-        preferCircuitHints: preferCircuits || attempt >= 2,
-        forceFreshDial: attempt > 0,
-      });
-      if (!ready && attempt === 0) {
-        lastErr = new Error(`No reachable path to ${input.transportPeerId.slice(0, 12)}… before send`);
-        continue;
+      const conn = input.mesh.getPeerConnectionInfo(input.transportPeerId);
+      const preferCircuitsOnPrepare = preferCircuits || attempt >= 2;
+      const needsRelayUpgrade =
+        conn.connected && !conn.direct && !preferCircuitsOnPrepare && hasDirectTcpDialHints(hints);
+      const skipPrepare =
+        canExpectAck &&
+        !needsRelayUpgrade &&
+        (isOutboundPeerRecentlyVerified(input.transportPeerId) ||
+          (conn.connected && conn.direct));
+      if (!skipPrepare) {
+        const ready = await prepareOutboundChatConnection({
+          mesh: input.mesh,
+          transportPeerId: input.transportPeerId,
+          chatProtocol: input.chatProtocol,
+          dialHints: hints,
+          preferCircuitHints: preferCircuitsOnPrepare,
+          forceFreshDial: attempt > 0,
+        });
+        if (!ready && attempt === 0) {
+          lastErr = new Error(`No reachable path to ${input.transportPeerId.slice(0, 12)}… before send`);
+          continue;
+        }
       }
     }
 
@@ -256,7 +277,7 @@ export async function deliverChatEnvelopeWithRetry(input: {
       if (canExpectAck) {
         usedAck = true;
         const reply = await input.mesh.sendChatExpectReply(input.transportPeerId, input.envelope, {
-          timeoutMs: CHAT_DELIVERY_ACK_TIMEOUT_MS,
+          timeoutMs: ackTimeoutMs,
           dialHints: hints,
           preferCircuitHints: preferCircuitsOnAttempt,
           forceFreshDial,

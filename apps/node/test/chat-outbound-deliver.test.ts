@@ -5,9 +5,12 @@ import {
   deliverDataTransferWithRetry,
   deliverExpectReplyWithRetry,
   isChatAckFailureLikelyAfterWrite,
+  prepareOutboundPeerConnection,
+  resolveChatDeliveryAckTimeoutMs,
   rotateDialHintsForRetry,
 } from "../src/chat-outbound-deliver.js";
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
+import { CHAT_DELIVERY_ACK_TIMEOUT_MS } from "@envoymesh/protocol";
 import { ENVOY_MESSAGE_PROTOCOL } from "@envoymesh/network";
 import {
   markOutboundPeerVerified,
@@ -165,11 +168,7 @@ describe("deliverChatEnvelopeWithRetry", () => {
       maxAttempts: 1,
     });
 
-    expect(ensurePeerReachable).toHaveBeenCalledWith(
-      "12D3KooWAckPeer",
-      "/envoy/chat/0.1",
-      expect.objectContaining({ verifyConnection: true }),
-    );
+    expect(ensurePeerReachable).not.toHaveBeenCalled();
     expect(sendChatExpectReply).toHaveBeenCalledTimes(1);
     expect(mesh.sendChat).not.toHaveBeenCalled();
     expect(result).toEqual({ delivered: true, deliveredAt });
@@ -205,19 +204,20 @@ describe("deliverChatEnvelopeWithRetry", () => {
     expect(sendChatExpectReply).toHaveBeenCalledTimes(1);
   });
 
-  it("verifies connected direct paths and redials when the probe fails", async () => {
-    const sendChatExpectReply = vi.fn().mockResolvedValue({
-      intent: "chat.delivered",
-      payload: {
-        messageId: "msg-2",
-        recipientOwnerId: "envoy:owner:abc",
-        deliveredAt: "2026-05-28T12:00:00.000Z",
-      },
-    });
-    const ensurePeerReachable = vi
+  it("retries after send failure on a connected direct path (no pre-send verify when ack enabled)", async () => {
+    resetOutboundPeerFreshnessForTests();
+    const sendChatExpectReply = vi
       .fn()
-      .mockResolvedValueOnce({ connected: false, direct: false })
-      .mockResolvedValueOnce({ connected: true, direct: true });
+      .mockRejectedValueOnce(new Error("Cannot send on stream 3"))
+      .mockResolvedValueOnce({
+        intent: "chat.delivered",
+        payload: {
+          messageId: "msg-2",
+          recipientOwnerId: "envoy:owner:abc",
+          deliveredAt: "2026-05-28T12:00:00.000Z",
+        },
+      });
+    const ensurePeerReachable = vi.fn().mockResolvedValue({ connected: true, direct: true });
     const closeConnectionsToPeer = vi.fn().mockResolvedValue(1);
     const mesh = {
       sendChat: vi.fn(),
@@ -234,23 +234,12 @@ describe("deliverChatEnvelopeWithRetry", () => {
       dialHints: ["/ip4/192.168.1.50/tcp/4011/p2p/12D3KooWStalePeer"],
       peerListenAddrs: ["/ip4/192.168.1.50/tcp/4011/p2p/12D3KooWStalePeer"],
       chatProtocol: "/envoy/chat/0.1",
-      maxAttempts: 1,
+      maxAttempts: 2,
     });
 
-    expect(ensurePeerReachable).toHaveBeenNthCalledWith(
-      1,
-      "12D3KooWStalePeer",
-      "/envoy/chat/0.1",
-      expect.objectContaining({ verifyConnection: true }),
-    );
+    expect(ensurePeerReachable).not.toHaveBeenCalled();
     expect(closeConnectionsToPeer).toHaveBeenCalledWith("12D3KooWStalePeer");
-    expect(ensurePeerReachable).toHaveBeenNthCalledWith(
-      2,
-      "12D3KooWStalePeer",
-      "/envoy/chat/0.1",
-      expect.objectContaining({ forceFreshDial: true }),
-    );
-    expect(sendChatExpectReply).toHaveBeenCalledTimes(1);
+    expect(sendChatExpectReply).toHaveBeenCalledTimes(2);
   });
 
   it("falls back to send without ack after ack attempts fail", async () => {
@@ -514,5 +503,109 @@ describe("deliverExpectReplyWithRetry", () => {
     expect(result).toBe(reply);
     expect(sendExpectReply).toHaveBeenCalledTimes(2);
     expect(mesh.closeConnectionsToPeer).toHaveBeenCalledWith("12D3KooWExpectReplyRetry");
+  });
+});
+
+describe("resolveChatDeliveryAckTimeoutMs", () => {
+  it("uses shorter timeout for direct TCP dial hints", () => {
+    expect(
+      resolveChatDeliveryAckTimeoutMs(["/ip4/192.168.1.50/tcp/4011/p2p/12D3KooWPeer"]),
+    ).toBe(12_000);
+  });
+
+  it("uses default protocol timeout for relay-only hints", () => {
+    expect(
+      resolveChatDeliveryAckTimeoutMs([
+        "/ip4/relay.example/tcp/4001/p2p/12Relay/p2p-circuit/p2p/12D3KooWPeer",
+      ]),
+    ).toBe(CHAT_DELIVERY_ACK_TIMEOUT_MS);
+  });
+});
+
+describe("prepareOutboundPeerConnection freshness", () => {
+  it("skips verify for recently verified relay connections", async () => {
+    resetOutboundPeerFreshnessForTests();
+    const transportPeerId = "12D3KooWRelayFresh";
+    markOutboundPeerVerified(transportPeerId);
+    const ensurePeerReachable = vi.fn();
+    const mesh = {
+      closeConnectionsToPeer: vi.fn(),
+      ensurePeerReachable,
+      getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: true, direct: false }),
+    };
+
+    const ready = await prepareOutboundPeerConnection({
+      mesh,
+      transportPeerId,
+      protocol: "/envoy/chat/0.1",
+      dialHints: ["/ip4/relay.example/tcp/4001/p2p/12Relay/p2p-circuit/p2p/12D3KooWRelayFresh"],
+      preferCircuitHints: true,
+      forceFreshDial: false,
+    });
+
+    expect(ready).toBe(true);
+    expect(ensurePeerReachable).not.toHaveBeenCalled();
+  });
+});
+
+describe("deliverChatEnvelopeWithRetry ack timeout", () => {
+  it("passes LAN timeout to sendChatExpectReply for direct TCP hints", async () => {
+    resetOutboundPeerFreshnessForTests();
+    const sendChatExpectReply = vi.fn().mockResolvedValue({
+      intent: "chat.delivered",
+      payload: { messageId: "msg-lan", deliveredAt: new Date().toISOString() },
+    });
+    const mesh = {
+      sendChat: vi.fn(),
+      sendChatExpectReply,
+      closeConnectionsToPeer: vi.fn().mockResolvedValue(0),
+      ensurePeerReachable: vi.fn(),
+      getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: true, direct: true }),
+    };
+
+    await deliverChatEnvelopeWithRetry({
+      mesh,
+      transportPeerId: "12D3KooWLanTimeout",
+      envelope: { ...envelope, messageId: "msg-lan" },
+      dialHints: ["/ip4/10.0.0.5/tcp/4011/p2p/12D3KooWLanTimeout"],
+      chatProtocol: "/envoy/chat/0.1",
+      maxAttempts: 1,
+    });
+
+    expect(sendChatExpectReply).toHaveBeenCalledWith(
+      "12D3KooWLanTimeout",
+      expect.anything(),
+      expect.objectContaining({ timeoutMs: 12_000 }),
+    );
+  });
+
+  it("passes WAN timeout to sendChatExpectReply for relay-only hints", async () => {
+    resetOutboundPeerFreshnessForTests();
+    const sendChatExpectReply = vi.fn().mockResolvedValue({
+      intent: "chat.delivered",
+      payload: { messageId: "msg-wan", deliveredAt: new Date().toISOString() },
+    });
+    const mesh = {
+      sendChat: vi.fn(),
+      sendChatExpectReply,
+      closeConnectionsToPeer: vi.fn().mockResolvedValue(0),
+      ensurePeerReachable: vi.fn().mockResolvedValue({ connected: true, direct: false }),
+      getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: false, direct: false }),
+    };
+
+    await deliverChatEnvelopeWithRetry({
+      mesh,
+      transportPeerId: "12D3KooWWanTimeout",
+      envelope: { ...envelope, messageId: "msg-wan" },
+      dialHints: ["/ip4/relay.example/tcp/4001/p2p/12Relay/p2p-circuit/p2p/12D3KooWWanTimeout"],
+      chatProtocol: "/envoy/chat/0.1",
+      maxAttempts: 1,
+    });
+
+    expect(sendChatExpectReply).toHaveBeenCalledWith(
+      "12D3KooWWanTimeout",
+      expect.anything(),
+      expect.objectContaining({ timeoutMs: CHAT_DELIVERY_ACK_TIMEOUT_MS }),
+    );
   });
 });

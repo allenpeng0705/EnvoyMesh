@@ -118,7 +118,59 @@ describe("node config store with autonomous fields", () => {
   });
 
   describe("autonomousPolicies", () => {
-    it("defaults to undefined when not set", async () => {
+    it("defaults to undefined when not set and model is disabled", async () => {
+      const store = createNodeConfigStore(profileDir);
+      await store.save({
+        version: "0.1",
+        profileDir,
+        discoveryProfile: "wan-default",
+        relayEnabled: false,
+        relayServerEnabled: false,
+        advertiseAddrs: [],
+        bootstrapPeers: [],
+        bootstrapPresets: [],
+        configuredRelays: [],
+        modelProviders: { mode: "disabled" },
+        chatAssistEnabled: true,
+        updatedAt: new Date().toISOString(),
+      });
+
+      const loaded = await store.load();
+      expect(loaded?.autonomousPolicies).toBeUndefined();
+    });
+
+    it("persists default social auto-send policy on load when model is configured", async () => {
+      const store = createNodeConfigStore(profileDir);
+      await store.save({
+        version: "0.1",
+        profileDir,
+        discoveryProfile: "wan-default",
+        relayEnabled: false,
+        relayServerEnabled: false,
+        advertiseAddrs: [],
+        bootstrapPeers: [],
+        bootstrapPresets: [],
+        configuredRelays: [],
+        modelProviders: { mode: "ollama" },
+        chatAssistEnabled: true,
+        updatedAt: new Date().toISOString(),
+      });
+
+      const loaded = await store.load();
+      expect(loaded?.autonomousPolicies).toEqual([
+        {
+          domain: "social",
+          maxSensitivity: "friends",
+          autoAnswer: false,
+          autoSendChat: true,
+        },
+      ]);
+
+      const reloaded = await store.load();
+      expect(reloaded?.autonomousPolicies).toEqual(loaded?.autonomousPolicies);
+    });
+
+    it("adds default social policy on first load when model is mock", async () => {
       const store = createNodeConfigStore(profileDir);
       await store.save({
         version: "0.1",
@@ -136,7 +188,10 @@ describe("node config store with autonomous fields", () => {
       });
 
       const loaded = await store.load();
-      expect(loaded?.autonomousPolicies).toBeUndefined();
+      expect(loaded?.autonomousPolicies?.[0]).toMatchObject({
+        domain: "social",
+        autoSendChat: true,
+      });
     });
 
     it("saves and loads empty autonomousPolicies array", async () => {
@@ -151,7 +206,7 @@ describe("node config store with autonomous fields", () => {
         bootstrapPeers: [],
         bootstrapPresets: [],
         configuredRelays: [],
-        modelProviders: { mode: "mock" },
+        modelProviders: { mode: "disabled" },
         chatAssistEnabled: true,
         updatedAt: new Date().toISOString(),
         autonomousPolicies: [],

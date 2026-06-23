@@ -1810,6 +1810,9 @@ async function handleInboundMeshMessage({
   }
 
   if (envelope.intent === "chat.message") {
+    if (nodeService instanceof NodeServiceImpl && nodeService.usesInternalMeshInboundHandlers()) {
+      return;
+    }
     let payload: ReturnType<typeof parseChatMessagePayload>;
     try {
       payload = parseChatMessagePayload(envelope.payload);

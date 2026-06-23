@@ -1,5 +1,11 @@
 import type { ModelProviderConfig, SendChatResult } from "@envoymesh/api";
-import { resolveInboundContactAiAccess, applyAiIdentityForIdentity, stripModelThinking, capGroupChatAiAccessLevel } from "@envoymesh/api";
+import {
+  resolveInboundContactAiAccess,
+  applyAiIdentityForIdentity,
+  stripModelThinking,
+  capGroupChatAiAccessLevel,
+  ensureDefaultAutonomousPoliciesForModel,
+} from "@envoymesh/api";
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
 import {
   createAuditEvent,
@@ -13,7 +19,7 @@ import {
   type NodeProfile,
 } from "@envoymesh/local-store";
 import { createApprovalItem, shouldSkipAgentChatAssist, type ApprovalQueue } from "@envoymesh/api";
-import { buildVaultIndex } from "@envoymesh/vault";
+import { getCachedVaultIndex } from "./vault-index-cache.js";
 import { auditAutonomousDecision, evaluateAutonomousPolicy } from "./autonomous-inbound.js";
 import {
   applyAutoReplyLimitDenied,
@@ -67,7 +73,7 @@ export async function runInboundChatAssist(input: {
     remotePeerId,
     receivedAt,
     correlationId,
-    config,
+    config: rawConfig,
     modelProviders,
     profile,
     taskStore,
@@ -90,6 +96,14 @@ export async function runInboundChatAssist(input: {
     draftThreadKey,
     disableAutoSend = false,
   } = input;
+
+  const config: PersistedNodeConfig = {
+    ...rawConfig,
+    autonomousPolicies: ensureDefaultAutonomousPoliciesForModel(
+      rawConfig.autonomousPolicies,
+      rawConfig.modelProviders?.mode,
+    ),
+  };
 
   const accessThreadKey = draftThreadKey ?? senderOwnerId;
   const draftThread = draftThreadKey ?? senderOwnerId;
@@ -140,12 +154,7 @@ export async function runInboundChatAssist(input: {
   const selfHuman = await humanProfileStore.loadHumanProfile().catch(() => null);
   const contactPref = contactPrefs.find((p) => p.peerOwnerId === accessThreadKey);
 
-  let vaultIndex = null;
-  try {
-    vaultIndex = await buildVaultIndex({ rootDir: vaultDir });
-  } catch {
-    vaultIndex = null;
-  }
+  const vaultIndex = await getCachedVaultIndex(vaultDir);
 
   const result = await generateChatDraft({
     envelope,

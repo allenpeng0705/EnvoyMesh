@@ -131,6 +131,7 @@ import {
   profileCapabilityTags,
   profileCapabilityDiscoveryTopics,
   syncProfileTagsToManifestCapabilities,
+  ensureDefaultAutonomousPoliciesForModel,
 } from "@envoymesh/api";
 import { buildSignedChatDeliveredEnvelope } from "@envoymesh/api/chat-delivered";
 import { resolveDidImportInput } from "@envoymesh/api/did-import";
@@ -1541,6 +1542,11 @@ class NodeServiceImpl implements NodeService {
       console.warn("[profile] refreshBondPeerProfiles after bindExternalMesh failed:", err);
     });
     this._startBondWarmInterval();
+  }
+
+  /** True when {@link startNode} created an internal mesh with {@link _wireMeshEvents} inbound handlers. */
+  usesInternalMeshInboundHandlers(): boolean {
+    return this._mesh != null;
   }
 
   /** Re-apply contact reachability tags from the trust store (after cold start or mesh restart). */
@@ -8099,7 +8105,10 @@ class NodeServiceImpl implements NodeService {
         anonymousSensitivityCeiling: config.anonymousSensitivityCeiling ?? "public",
         trustAnchorPublicKeys: config.trustAnchorPublicKeys ?? {},
         autonomousKillSwitch: config.autonomousKillSwitch ?? false,
-        autonomousPolicies: config.autonomousPolicies ?? [],
+        autonomousPolicies: ensureDefaultAutonomousPoliciesForModel(
+          config.autonomousPolicies,
+          modelProviders.mode,
+        ),
         aiSettings: config.aiSettings,
         contactAiPreferences: config.contactAiPreferences ?? [],
          bridgeStatus: this._bridgeStatus ?? undefined,
@@ -8455,6 +8464,11 @@ class NodeServiceImpl implements NodeService {
       idleTimerStretch: config.idleTimerStretch,
     });
     Object.assign(updated, tuningPatch);
+
+    updated.autonomousPolicies = ensureDefaultAutonomousPoliciesForModel(
+      updated.autonomousPolicies,
+      updated.modelProviders.mode,
+    );
 
     await this._configStore.save(updated);
     this.emit("node:status", {
@@ -9174,6 +9188,21 @@ class NodeServiceImpl implements NodeService {
         }
 
         const senderTrust = await this._trustStore.getTrustRecord(payload.senderOwnerId);
+        if (replyWithEnvelope && envelope.senderPeerId?.trim()) {
+          try {
+            await replyWithEnvelope(
+              buildSignedChatDeliveredEnvelope({
+                profile,
+                messageId: envelope.messageId,
+                recipientOwnerId: profile.owner.ownerId,
+                envelopeRecipientPeerId: envelope.senderPeerId,
+                correlationId: envelope.correlationId,
+              }),
+            );
+          } catch (err) {
+            console.warn(`[chat.message] delivery ack failed:`, err);
+          }
+        }
         const selfHuman = await this._humanProfileStore.loadHumanProfile();
         void this._peerDirectoryStore
           .ensurePeerFromInboundChat({
@@ -9208,21 +9237,6 @@ class NodeServiceImpl implements NodeService {
         };
         this._persistChatMessage(payload.senderOwnerId, incomingMsg);
         this.emit("chat:message", incomingMsg);
-        if (replyWithEnvelope && envelope.senderPeerId?.trim()) {
-          try {
-            await replyWithEnvelope(
-              buildSignedChatDeliveredEnvelope({
-                profile,
-                messageId: envelope.messageId,
-                recipientOwnerId: profile.owner.ownerId,
-                envelopeRecipientPeerId: envelope.senderPeerId,
-                correlationId: envelope.correlationId,
-              }),
-            );
-          } catch (err) {
-            console.warn(`[chat.message] delivery ack failed:`, err);
-          }
-        }
         if (senderTrust && senderTrust.level !== "blocked") {
           void this._tagBondedContactReachability(remotePeerId);
         }
