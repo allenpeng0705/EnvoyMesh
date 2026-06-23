@@ -40,13 +40,22 @@ async function prepareOutboundChatConnection(input: {
   preferCircuitHints: boolean;
   forceFreshDial: boolean;
 }): Promise<void> {
+  const warmOpts = {
+    dialHints: input.dialHints,
+    preferCircuitHints: input.preferCircuitHints,
+  };
   const conn = input.mesh.getPeerConnectionInfo(input.transportPeerId);
   const upgradeRelayToDirect = conn.connected && !conn.direct && !input.preferCircuitHints;
-  if (!conn.connected && !input.forceFreshDial && !upgradeRelayToDirect) {
+
+  if (input.forceFreshDial || upgradeRelayToDirect) {
     try {
+      if (upgradeRelayToDirect || input.forceFreshDial) {
+        await input.mesh.closeConnectionsToPeer(input.transportPeerId);
+      }
       await input.mesh.ensurePeerReachable(input.transportPeerId, input.chatProtocol, {
-        dialHints: input.dialHints,
-        preferCircuitHints: input.preferCircuitHints,
+        ...warmOpts,
+        forceFreshDial: true,
+        upgradeRelayToDirect,
       });
     } catch (warmErr) {
       console.warn(
@@ -56,22 +65,39 @@ async function prepareOutboundChatConnection(input: {
     }
     return;
   }
-  if (conn.connected && !input.forceFreshDial && !upgradeRelayToDirect) {
+
+  if (!conn.connected) {
+    try {
+      await input.mesh.ensurePeerReachable(input.transportPeerId, input.chatProtocol, warmOpts);
+    } catch (warmErr) {
+      console.warn(
+        `[sendChat] pre-send warm failed for ${input.transportPeerId.slice(0, 12)}…:`,
+        warmErr instanceof Error ? warmErr.message : warmErr,
+      );
+    }
     return;
   }
+
+  // libp2p may report "open" while NAT/TCP is half-dead (common on Windows LAN paths).
   try {
-    if (upgradeRelayToDirect || input.forceFreshDial) {
-      await input.mesh.closeConnectionsToPeer(input.transportPeerId);
+    const verified = await input.mesh.ensurePeerReachable(input.transportPeerId, input.chatProtocol, {
+      ...warmOpts,
+      verifyConnection: true,
+    });
+    if (verified.connected) {
+      return;
     }
+    console.warn(
+      `[sendChat] stale connection to ${input.transportPeerId.slice(0, 12)}…; redialing before send`,
+    );
+    await input.mesh.closeConnectionsToPeer(input.transportPeerId);
     await input.mesh.ensurePeerReachable(input.transportPeerId, input.chatProtocol, {
-      dialHints: input.dialHints,
-      preferCircuitHints: input.preferCircuitHints,
-      forceFreshDial: input.forceFreshDial || upgradeRelayToDirect,
-      upgradeRelayToDirect: upgradeRelayToDirect,
+      ...warmOpts,
+      forceFreshDial: true,
     });
   } catch (warmErr) {
     console.warn(
-      `[sendChat] pre-send warm failed for ${input.transportPeerId.slice(0, 12)}…:`,
+      `[sendChat] pre-send verify failed for ${input.transportPeerId.slice(0, 12)}…:`,
       warmErr instanceof Error ? warmErr.message : warmErr,
     );
   }
