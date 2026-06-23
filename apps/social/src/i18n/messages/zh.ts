@@ -227,6 +227,8 @@ export const zh = mergeMessages(en, {
     emptyDesc: "打个招呼开始对话",
     privateNotesSummary: "私人笔记（跨设备同步）",
     privateNotesPlaceholder: "仅您可见的笔记 — 不会发送到网格",
+    contactProfileSummary: "联系人资料",
+    contactProfileEmpty: "尚未同步资料详情。",
     agentCardSummary: "代理能力",
     removeTagTitle: "移除标签",
     addTagPlaceholder: "添加标签",

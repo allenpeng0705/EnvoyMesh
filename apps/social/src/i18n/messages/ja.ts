@@ -228,6 +228,8 @@ export const ja = mergeMessages(en, {
     emptyDesc: "挨拶を送って会話を始めましょう",
     privateNotesSummary: "プライベートメモ（デバイス間で同期）",
     privateNotesPlaceholder: "自分だけが見るメモ — メッシュには送信されません",
+    contactProfileSummary: "連絡先プロフィール",
+    contactProfileEmpty: "プロフィール詳細はまだ同期されていません。",
     agentCardSummary: "エージェント機能",
     removeTagTitle: "タグを削除",
     addTagPlaceholder: "タグを追加",

@@ -230,6 +230,8 @@ export const it = mergeMessages(en, {
     emptyDesc: "Saluta per iniziare la conversazione",
     privateNotesSummary: "Note private (sincronizzate tra i tuoi dispositivi)",
     privateNotesPlaceholder: "Note visibili solo a te — non inviate sulla mesh",
+    contactProfileSummary: "Profilo contatto",
+    contactProfileEmpty: "Nessun dettaglio profilo sincronizzato.",
     agentCardSummary: "Capacità dell'agente",
     removeTagTitle: "Rimuovi tag",
     addTagPlaceholder: "Aggiungi tag",

@@ -107,6 +107,8 @@ export const contactChatMessages = {
   emptyDesc: "Say hello to start the conversation",
   privateNotesSummary: "Private notes (synced across your devices)",
   privateNotesPlaceholder: "Notes only you see — not sent on the mesh",
+  contactProfileSummary: "Contact profile",
+  contactProfileEmpty: "No profile details synced yet.",
   agentCardSummary: "Agent capabilities",
   removeTagTitle: "Remove tag",
   addTagPlaceholder: "Add tag",

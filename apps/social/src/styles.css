@@ -6520,22 +6520,46 @@ button.activity-row:hover,
   font-size: var(--text-xs, 11px);
 }
 
-/* Mount point for the AgentCardPanel in ContactChatPanel. */
-.contact-agent-card-panel {
+/* Mount point for PeerProfilePanel in ContactChatPanel. */
+.peer-profile-panel {
   border-top: 1px solid var(--color-border, #e5e7eb);
   padding: var(--space-2, 8px) var(--space-3, 12px);
   background: var(--color-surface, #ffffff);
 }
 
-.contact-agent-card-panel > summary {
+.peer-profile-panel > summary {
   cursor: pointer;
   font-size: var(--text-sm, 13px);
   color: var(--color-text, #18181b);
   padding: var(--space-1, 4px) 0;
 }
 
-.contact-agent-card-panel > .agent-card-panel {
+.peer-profile-panel__body {
   margin-top: var(--space-2, 8px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 12px);
+}
+
+.peer-profile-panel__name {
+  margin: 0;
+  font-size: var(--text-base, 15px);
+}
+
+.peer-profile-panel__username,
+.peer-profile-panel__bio,
+.peer-profile-panel__meta {
+  margin: var(--space-1, 4px) 0 0;
+}
+
+.peer-profile-panel__section-title {
+  margin: 0 0 var(--space-2, 8px);
+  font-size: var(--text-sm, 13px);
+  font-weight: 600;
+}
+
+.peer-profile-panel__agent .agent-card-panel {
+  margin-top: 0;
 }
 
 .answer-block-status {

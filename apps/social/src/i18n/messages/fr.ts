@@ -230,6 +230,8 @@ export const fr = mergeMessages(en, {
     emptyDesc: "Dites bonjour pour commencer la conversation",
     privateNotesSummary: "Notes privées (synchronisées entre vos appareils)",
     privateNotesPlaceholder: "Notes visibles uniquement par vous — non envoyées sur le maillage",
+    contactProfileSummary: "Profil du contact",
+    contactProfileEmpty: "Aucun détail de profil synchronisé.",
     agentCardSummary: "Capacités de l'agent",
     removeTagTitle: "Retirer l'étiquette",
     addTagPlaceholder: "Ajouter une étiquette",

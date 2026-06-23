@@ -10987,6 +10987,10 @@ class NodeServiceImpl implements NodeService {
       return existing;
     }
 
+    if (existing.connected && !options?.redial && !options?.upgradeRelayToDirect) {
+      return existing;
+    }
+
     let dialHints: string[];
     try {
       dialHints = await raceWithTimeout(
@@ -11002,15 +11006,6 @@ class NodeServiceImpl implements NodeService {
     await mesh.scrubPeerStoreDialHints(transportPeerId, dialableListen);
 
     const preferCircuitHints = shouldPreferCircuitDialHints(listenAddrs, dialHints, transportPeerId);
-
-    if (existing.connected && !options?.redial && !options?.upgradeRelayToDirect) {
-      const probed = await mesh.ensurePeerReachable(transportPeerId, ENVOY_CHAT_PROTOCOL, {
-        verifyConnection: true,
-        dialHints,
-        preferCircuitHints,
-      });
-      return probed.connected ? probed : existing;
-    }
 
     void mesh.mergePeerStoreDialHints(transportPeerId, dialHints);
 

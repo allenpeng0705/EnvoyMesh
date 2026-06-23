@@ -41,8 +41,8 @@ import { useVoiceNoteRecorder } from "../../hooks/useVoiceNoteRecorder.js";
 import { useToast } from "../../hooks/useToast.js";
 import { PeerProfileAvatar } from "../PeerProfileAvatar.js";
 import { PeerProfileGalleryStrip } from "../PeerProfileGalleryStrip.js";
+import { PeerProfilePanel } from "../PeerProfilePanel.js";
 import { RemoveContactConfirmModal } from "../RemoveContactConfirmModal.js";
-import { AgentCardPanel } from "../AgentCardPanel.js";
 import { ConfirmDialog } from "../ConfirmDialog.js";
 import type { TFunction } from "../../context/I18nContext.js";
 
@@ -799,7 +799,10 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
         </div>
       </header>
       {threadKind !== "agent" && (
-        <PeerProfileGalleryStrip ownerId={selectedContact} bondLevel={contactBondLevel} />
+        <>
+          <PeerProfileGalleryStrip ownerId={selectedContact} bondLevel={contactBondLevel} />
+          <PeerProfilePanel ownerId={selectedContact} fallbackDisplayName={displayName} />
+        </>
       )}
       {/* Phase 38D — Calling state banner */}
       {callingState ? (
@@ -899,12 +902,6 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
         )}
         <div ref={messagesEndRef} className="messages-scroll-anchor" aria-hidden />
       </div>
-      {!selectedContact.startsWith("room:") && (
-        <details className="contact-agent-card-panel" open={false}>
-          <summary>{t("contactChat.agentCardSummary", "Agent capabilities")}</summary>
-          <AgentCardPanel ownerId={selectedContact} />
-        </details>
-      )}
       <details
         className="contact-notes-panel"
         open={notesOpen}
