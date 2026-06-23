@@ -3804,7 +3804,7 @@ class NodeServiceImpl implements NodeService {
       "_dialHintsForChat",
     );
 
-    await mesh.scrubPeerStoreDialHints(
+    void mesh.scrubPeerStoreDialHints(
       transportPeerId,
       mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, dialHints),
     );

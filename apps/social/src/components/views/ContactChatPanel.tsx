@@ -135,26 +135,22 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
     };
   }, []);
   const ownerId = humanProfile?.ownerId ?? nodeConfig?.profileDir ?? "anonymous";
+  const nodeServiceRef = useRef(nodeService);
+  nodeServiceRef.current = nodeService;
 
-  const pushDraftSync = useCallback(
-    (updateBase64: string, scope: string) => {
-      if (draftSyncTimerRef.current) clearTimeout(draftSyncTimerRef.current);
-      draftSyncTimerRef.current = setTimeout(() => {
-        void nodeService.sendSyncStateUpdate({ scope, updateBase64 }).catch(() => {});
-      }, 400);
-    },
-    [nodeService],
-  );
+  const pushDraftSync = useCallback((updateBase64: string, scope: string) => {
+    if (draftSyncTimerRef.current) clearTimeout(draftSyncTimerRef.current);
+    draftSyncTimerRef.current = setTimeout(() => {
+      void nodeServiceRef.current.sendSyncStateUpdate({ scope, updateBase64 }).catch(() => {});
+    }, 400);
+  }, []);
 
-  const pushNotesSync = useCallback(
-    (updateBase64: string, scope: string) => {
-      if (notesSyncTimerRef.current) clearTimeout(notesSyncTimerRef.current);
-      notesSyncTimerRef.current = setTimeout(() => {
-        void nodeService.sendSyncStateUpdate({ scope, updateBase64 }).catch(() => {});
-      }, 400);
-    },
-    [nodeService],
-  );
+  const pushNotesSync = useCallback((updateBase64: string, scope: string) => {
+    if (notesSyncTimerRef.current) clearTimeout(notesSyncTimerRef.current);
+    notesSyncTimerRef.current = setTimeout(() => {
+      void nodeServiceRef.current.sendSyncStateUpdate({ scope, updateBase64 }).catch(() => {});
+    }, 400);
+  }, []);
 
   useEffect(() => {
     const notes = createContactNotesCrdt(ownerId, selectedContact, {
@@ -171,7 +167,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
       notes.destroy();
       notesRef.current = null;
     };
-  }, [ownerId, selectedContact, pushNotesSync]);
+  }, [ownerId, selectedContact]);
 
   useEffect(() => {
     const draft = createContactComposeDraftCrdt(ownerId, selectedContact, {
@@ -187,7 +183,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
       draft.destroy();
       draftRef.current = null;
     };
-  }, [ownerId, selectedContact, pushDraftSync]);
+  }, [ownerId, selectedContact]);
 
   useEffect(() => {
     return nodeService.on("crdt:sync", (data) => {
@@ -312,10 +308,14 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
         }
       })();
       setChatInput("");
-      draftRef.current?.setPlainText("");
+      draftRef.current?.setPlainText("", { skipWireSync: true });
       return;
     }
 
+    if (draftSyncTimerRef.current) {
+      clearTimeout(draftSyncTimerRef.current);
+      draftSyncTimerRef.current = null;
+    }
     const now = Date.now();
     const last = lastChatSendRef.current;
     if (last && last.contact === selectedContact && last.text === text && now - last.at < 1500) {
@@ -335,7 +335,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
 
     setPendingOutbound((prev) => [...prev, pendingMsg]);
     setChatInput("");
-    draftRef.current?.setPlainText("");
+    draftRef.current?.setPlainText("", { skipWireSync: true });
     setSendError(null);
 
     void (async () => {
@@ -548,7 +548,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
       });
       if (caption) {
         setChatInput("");
-        draftRef.current?.setPlainText("");
+        draftRef.current?.setPlainText("", { skipWireSync: true });
       }
       showToast(t("contactChat.sendingFile", { filename: file.name }), "success");
     } catch (error) {

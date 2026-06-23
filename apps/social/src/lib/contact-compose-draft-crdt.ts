@@ -3,6 +3,8 @@ import { contactComposeDraftSyncScope } from "@envoymesh/api";
 
 const STORAGE_PREFIX = "envoymesh:contact-compose-draft:v1";
 const REMOTE_ORIGIN = "remote";
+/** Local edit that should persist locally but not fan out on the mesh (e.g. after send). */
+const LOCAL_SILENT = "local-silent";
 
 function storageKey(ownerId: string, contactOwnerId: string): string {
   return `${STORAGE_PREFIX}:${ownerId.trim() || "anonymous"}:${contactOwnerId.trim()}`;
@@ -33,7 +35,7 @@ export function createContactComposeDraftCrdt(
   },
 ): {
   text: Y.Text;
-  setPlainText: (value: string) => void;
+  setPlainText: (value: string, options?: { skipWireSync?: boolean }) => void;
   getPlainText: () => string;
   applyRemoteUpdate: (updateBase64: string) => void;
   syncScope: string;
@@ -49,7 +51,7 @@ export function createContactComposeDraftCrdt(
 
   const onUpdate = (update: Uint8Array, origin: unknown) => {
     persistUpdate(ownerId, contactOwnerId, doc);
-    if (origin !== REMOTE_ORIGIN) {
+    if (origin !== REMOTE_ORIGIN && origin !== LOCAL_SILENT) {
       options?.onLocalUpdate?.(btoa(String.fromCharCode(...update)), syncScope);
     }
   };
@@ -58,11 +60,11 @@ export function createContactComposeDraftCrdt(
   return {
     text,
     syncScope,
-    setPlainText(value: string) {
+    setPlainText(value: string, opts?: { skipWireSync?: boolean }) {
       doc.transact(() => {
         text.delete(0, text.length);
         if (value) text.insert(0, value);
-      });
+      }, opts?.skipWireSync ? LOCAL_SILENT : undefined);
     },
     getPlainText() {
       return text.toString();

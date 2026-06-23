@@ -29,4 +29,19 @@ describe("contact-compose-draft-crdt", () => {
     expect(b.getPlainText()).toBe("");
     b.destroy();
   });
+
+  it("skipWireSync clears locally without onLocalUpdate", () => {
+    const updates: string[] = [];
+    const draft = createContactComposeDraftCrdt("envoy:owner:self", "envoy:owner:peer", {
+      onLocalUpdate: () => {
+        updates.push("sync");
+      },
+    });
+    draft.setPlainText("typed");
+    expect(updates.length).toBe(1);
+    draft.setPlainText("", { skipWireSync: true });
+    expect(draft.getPlainText()).toBe("");
+    expect(updates.length).toBe(1);
+    draft.destroy();
+  });
 });
