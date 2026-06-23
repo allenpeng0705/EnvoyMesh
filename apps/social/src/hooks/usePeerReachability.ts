@@ -93,7 +93,7 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
     }
     hysteresisRef.current = createReachabilityHysteresisState();
     lastReadingRef.current = null;
-    void refresh({ verifyOnly: true });
+    void refresh({ warm: true });
     const id = setInterval(() => {
       const now = Date.now();
       if (libp2pConnectedRef.current) {
