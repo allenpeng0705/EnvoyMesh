@@ -393,6 +393,7 @@ export async function routeRpcMethod(
           ...(params.redial === true ? { redial: true } : {}),
           ...(params.verifyOnly === true ? { verifyOnly: true } : {}),
           ...(params.upgradeRelayToDirect === true ? { upgradeRelayToDirect: true } : {}),
+          ...(params.keepAlive === true ? { keepAlive: true } : {}),
         },
       );
     case "getChatDiagnostics":

@@ -99,6 +99,7 @@ import type {
 } from "@envoymesh/api";
 import { isChatRoomThreadKey, ENVOY_AI_THREAD_KEY, TERMINAL_ASSIST_RPC_TIMEOUT_MS } from "@envoymesh/api";
 import { mergeGroupDeliveryAck } from "@envoymesh/api/group-chat-delivery";
+import { replaceChatThreadsCache, snapshotChatThreadsCache } from "../lib/chat-threads-cache.js";
 
 type InitNodeOptions = {
   discoveryProfile?: DiscoveryProfile;
@@ -216,7 +217,7 @@ export interface NodeServiceClient {
   getPeerConnectionInfo(peerOwnerId: string): Promise<{ connected: boolean; direct: boolean; relayPeerId?: string }>;
   warmContactConnection(
     peerOwnerId: string,
-    options?: { redial?: boolean; verifyOnly?: boolean; upgradeRelayToDirect?: boolean },
+    options?: { redial?: boolean; verifyOnly?: boolean; upgradeRelayToDirect?: boolean; keepAlive?: boolean },
   ): Promise<{ connected: boolean; direct: boolean; relayPeerId?: string }>;
   getChatDiagnostics(peerOwnerId?: string): Promise<ChatDiagnostics>;
   getConnectivityDiagnostics(): Promise<ConnectivityDiagnostics>;
@@ -769,7 +770,7 @@ function createWsNodeServiceClient(
     async getNodeConfig() { return wsClient.rpc("getNodeConfig"); },
     async getConnectionStatus() { return wsClient.rpc("getConnectionStatus"); },
     async getPeerConnectionInfo(peerOwnerId: string) { return wsClient.rpc("getPeerConnectionInfo", { peerOwnerId }); },
-    async warmContactConnection(peerOwnerId: string, options?: { redial?: boolean; verifyOnly?: boolean; upgradeRelayToDirect?: boolean }) {
+    async warmContactConnection(peerOwnerId: string, options?: { redial?: boolean; verifyOnly?: boolean; upgradeRelayToDirect?: boolean; keepAlive?: boolean }) {
       return wsClient.rpc(
         "warmContactConnection",
         {
@@ -777,6 +778,7 @@ function createWsNodeServiceClient(
           ...(options?.redial ? { redial: true } : {}),
           ...(options?.verifyOnly ? { verifyOnly: true } : {}),
           ...(options?.upgradeRelayToDirect ? { upgradeRelayToDirect: true } : {}),
+          ...(options?.keepAlive ? { keepAlive: true } : {}),
         },
         { timeoutMs: 90_000 },
       );
@@ -1922,7 +1924,19 @@ function appendChatToThreads(
 
 export function useChatMessages(selectedContactOwnerId: string | null) {
   const client = useNodeService();
-  const [threads, setThreads] = useState<Record<string, ChatMessage[]>>({});
+  const [threads, setThreadsState] = useState<Record<string, ChatMessage[]>>(() => ({
+    ...snapshotChatThreadsCache(),
+  }));
+  const setThreads = useCallback(
+    (action: Record<string, ChatMessage[]> | ((prev: Record<string, ChatMessage[]>) => Record<string, ChatMessage[]>)) => {
+      setThreadsState((prev) => {
+        const next = typeof action === "function" ? action(prev) : action;
+        replaceChatThreadsCache(next);
+        return next;
+      });
+    },
+    [],
+  );
   const [selfIds, setSelfIds] = useState<{ ownerId: string; peerId: string } | null>(null);
   const pendingUntilSelfReady = useRef<ChatMessage[]>([]);
   const selfIdsRef = useRef(selfIds);
@@ -2013,7 +2027,7 @@ export function useChatMessages(selectedContactOwnerId: string | null) {
     void client
       .listChatHistory(selectedContactOwnerId)
       .then((history) => {
-        if (cancelled || !Array.isArray(history) || history.length === 0) return;
+        if (cancelled || !Array.isArray(history)) return;
         const self = selfIdsRef.current;
         if (!self?.ownerId) return;
         setThreads((prev) => {
@@ -2029,7 +2043,7 @@ export function useChatMessages(selectedContactOwnerId: string | null) {
     return () => {
       cancelled = true;
     };
-  }, [client, client.isConnected, selectedContactOwnerId, selfIds?.ownerId]);
+  }, [client, client.isConnected, selectedContactOwnerId, selfIds?.ownerId, setThreads]);
 
   useEffect(() => {
     if (!selfIds?.ownerId) return;

@@ -1267,6 +1267,9 @@ export interface WarmContactConnectionParams {
   peerOwnerId: string;
   /** When true, close stale paths and force a fresh dial. Default false (probe / gentle reconnect). */
   redial?: boolean;
+  verifyOnly?: boolean;
+  upgradeRelayToDirect?: boolean;
+  keepAlive?: boolean;
 }
 
 export interface GetChatDiagnosticsParams {

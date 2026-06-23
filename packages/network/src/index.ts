@@ -668,6 +668,57 @@ export class EnvoyMesh {
   }
 
   /**
+   * Verify an existing libp2p path is still usable (NAT idle / half-open TCP).
+   * Does not redial when the probe succeeds; closes stale connections when it fails.
+   */
+  async probeBondedPeerConnection(peerIdStr: string): Promise<{ connected: boolean; direct: boolean; relayPeerId?: string }> {
+    const before = this.getPeerConnectionInfo(peerIdStr);
+    if (!before.connected || !this.node) {
+      return before;
+    }
+
+    const node = this.node as Libp2p & {
+      getConnections?: (peerId?: ReturnType<typeof peerIdFromString>) => Array<{
+        status?: string;
+        remoteAddr?: { toString?: () => string };
+        newStream: (protocols: string | string[], opts?: { runOnLimitedConnection?: boolean }) => Promise<unknown>;
+        remotePeer: { toString(): string };
+        close?: () => Promise<void>;
+      }>;
+      services?: { ping?: { ping: (peer: ReturnType<typeof peerIdFromString>) => Promise<number> } };
+    };
+    const pid = peerIdFromString(peerIdStr);
+
+    if (before.direct && node.services?.ping) {
+      try {
+        await node.services.ping.ping(pid);
+        return before;
+      } catch {
+        await this.closeConnectionsToPeer(peerIdStr);
+        return { connected: false, direct: false };
+      }
+    }
+
+    const conns = (node.getConnections?.(pid) ?? []).filter(
+      (c) => c?.status === "open" || c?.status === undefined,
+    );
+    for (const conn of conns) {
+      const isLimited = (conn.remoteAddr?.toString?.() ?? "").includes("/p2p-circuit");
+      const opened = await this.openStreamOnConnection(conn, ENVOY_CHAT_PROTOCOL, isLimited);
+      if (opened) {
+        try {
+          await (opened.stream as { close?: () => Promise<void> }).close?.();
+        } catch {
+          /* ignore */
+        }
+        return this.getPeerConnectionInfo(peerIdStr);
+      }
+    }
+
+    return { connected: false, direct: false };
+  }
+
+  /**
    * Derives the libp2p provider CID for a capability topic (same mapping as {@link provideCapabilityTopic}).
    */
   async capabilityTopicCid(topic: string): Promise<CID> {

@@ -6943,7 +6943,9 @@ You are the owner's personal AI assistant on EnvoyMesh.
     const name = err instanceof Error ? (err as Error & { name?: string }).name : "";
     const msg = err instanceof Error ? err.message : String(err);
     if (name === "StreamResetError") return true;
-    if (/timed out/i.test(msg)) return false;
+    if (/sendChatExpectReply timed out/i.test(msg) || /chat ack timed out/i.test(msg)) {
+      return true;
+    }
     if (/Cannot send on stream/i.test(msg) || /stream is not writable/i.test(msg)) return false;
     return (
       /stream has been reset/i.test(msg) ||

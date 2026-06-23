@@ -61,6 +61,7 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
   let ensurePeerReachable: ReturnType<typeof vi.fn>;
   let closeConnectionsToPeer: ReturnType<typeof vi.fn>;
   let getPeerConnectionInfo: ReturnType<typeof vi.fn>;
+  let probeBondedPeerConnection: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     profileDir = await mkdtemp(join(tmpdir(), "post-merge-regression-"));
@@ -69,6 +70,7 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
     ensurePeerReachable = vi.fn(async () => ({ connected: true, direct: true }));
     closeConnectionsToPeer = vi.fn(async () => 0);
     getPeerConnectionInfo = vi.fn(() => ({ connected: true, direct: true }));
+    probeBondedPeerConnection = vi.fn(async () => ({ connected: true, direct: true }));
 
     (node as any)._nodeStatus = "running";
     (node as any)._mesh = {
@@ -76,6 +78,7 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
       ensurePeerReachable,
       closeConnectionsToPeer,
       getPeerConnectionInfo,
+      probeBondedPeerConnection,
       mergePeerStoreDialHints: vi.fn(async () => {}),
       scrubPeerStoreDialHints: vi.fn(async () => []),
       send: vi.fn(),
@@ -147,6 +150,15 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
 
       expect(closeConnectionsToPeer).toHaveBeenCalledWith(TRANSPORT_PEER_ID);
       expect(ensurePeerReachable).toHaveBeenCalledTimes(1);
+    });
+
+    it("keepAlive probes the open path without redialing", async () => {
+      const info = await node.warmContactConnection(PEER_OWNER_ID, { keepAlive: true });
+
+      expect(info).toEqual({ connected: true, direct: true });
+      expect(probeBondedPeerConnection).toHaveBeenCalledWith(TRANSPORT_PEER_ID);
+      expect(ensurePeerReachable).not.toHaveBeenCalled();
+      expect(closeConnectionsToPeer).not.toHaveBeenCalled();
     });
 
     it("dials when not connected and no redial flag", async () => {

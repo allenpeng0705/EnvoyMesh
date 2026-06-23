@@ -34,10 +34,11 @@ describe("isChatAckFailureLikelyAfterWrite", () => {
     expect(isChatAckFailureLikelyAfterWrite(new Error("Cannot send on stream 3"))).toBe(false);
   });
 
-  it("does not treat ack timeout as post-write failure (allows retry)", () => {
+  it("treats ack timeout as post-write failure (message likely delivered, no retry)", () => {
     expect(isChatAckFailureLikelyAfterWrite(new Error("sendChatExpectReply timed out after 45000ms"))).toBe(
-      false,
+      true,
     );
+    expect(isChatAckFailureLikelyAfterWrite(new Error("chat ack timed out after 45000ms"))).toBe(true);
   });
 });
 
@@ -183,6 +184,31 @@ describe("deliverChatEnvelopeWithRetry", () => {
     expect(sendChatExpectReply).toHaveBeenCalledTimes(2);
     expect(sendChat).toHaveBeenCalledTimes(1);
     expect(sendChat.mock.calls[0]?.[2]).toMatchObject({ forceFreshDial: true });
+    expect(result).toEqual({ delivered: false });
+  });
+
+  it("does not retry when ack times out after send", async () => {
+    const sendChatExpectReply = vi.fn().mockRejectedValue(new Error("sendChatExpectReply timed out after 45000ms"));
+    const sendChat = vi.fn();
+    const mesh = {
+      sendChat,
+      sendChatExpectReply,
+      closeConnectionsToPeer: vi.fn().mockResolvedValue(0),
+      ensurePeerReachable: vi.fn().mockResolvedValue({ connected: true, direct: false }),
+      getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: true, direct: false }),
+    };
+
+    const result = await deliverChatEnvelopeWithRetry({
+      mesh,
+      transportPeerId: "12D3KooWTimeoutPeer",
+      envelope,
+      dialHints: ["/p2p/12D3KooWTimeoutPeer"],
+      chatProtocol: "/envoy/chat/0.1",
+      maxAttempts: 3,
+    });
+
+    expect(sendChatExpectReply).toHaveBeenCalledTimes(1);
+    expect(sendChat).not.toHaveBeenCalled();
     expect(result).toEqual({ delivered: false });
   });
 

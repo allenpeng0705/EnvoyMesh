@@ -84,8 +84,8 @@ export function isChatAckFailureLikelyAfterWrite(err: unknown): boolean {
   if (name === "StreamResetError") {
     return true;
   }
-  if (/sendChatExpectReply timed out/i.test(msg)) {
-    return false;
+  if (/sendChatExpectReply timed out/i.test(msg) || /chat ack timed out/i.test(msg)) {
+    return true;
   }
   if (/Cannot send on stream/i.test(msg) || /stream is not writable/i.test(msg)) {
     return false;

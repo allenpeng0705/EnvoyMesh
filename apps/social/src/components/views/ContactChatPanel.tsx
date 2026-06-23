@@ -14,10 +14,9 @@ import {
   chatMessageTextForDisplay,
   MAX_CHAT_ATTACHMENT_BYTES,
   isContactComposeDraftSyncScope,
-  isContactNotesSyncScope,
 } from "@envoymesh/api";
 import { createContactComposeDraftCrdt } from "../../lib/contact-compose-draft-crdt.js";
-import { createContactNotesCrdt } from "../../lib/contact-notes-crdt.js";
+import { ContactPrivateNotesPanel } from "../ContactPrivateNotesPanel.js";
 import type { AssistantMode } from "../../lib/storage.js";
 import { contactLabel, peerDisplayLabel } from "../../lib/display.js";
 import { buildMessageStacks, stackPosition } from "../../lib/chat-message-stack.js";
@@ -45,6 +44,10 @@ import { PeerProfilePanel } from "../PeerProfilePanel.js";
 import { RemoveContactConfirmModal } from "../RemoveContactConfirmModal.js";
 import { ConfirmDialog } from "../ConfirmDialog.js";
 import type { TFunction } from "../../context/I18nContext.js";
+import {
+  readPendingOutboundCache,
+  writePendingOutboundCache,
+} from "../../lib/chat-pending-outbound-cache.js";
 
 interface ContactChatPanelProps {
   selectedContact: string;
@@ -95,23 +98,29 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
   } = useNodeState();
 
   const { messages, isOutgoing, removeMessage, clearThread } = useChatMessages(selectedContact);
-  const { info: peerReachability, checking: reachabilityChecking, refresh: refreshReachability } = usePeerReachability(
-    selectedContact,
-    true,
+  const [pendingOutbound, setPendingOutboundState] = useState<ChatMessage[]>(() =>
+    readPendingOutboundCache(selectedContact),
   );
-  const [pendingOutbound, setPendingOutbound] = useState<ChatMessage[]>([]);
+  const setPendingOutbound = useCallback(
+    (action: ChatMessage[] | ((prev: ChatMessage[]) => ChatMessage[])) => {
+      setPendingOutboundState((prev) => {
+        const next = typeof action === "function" ? action(prev) : action;
+        writePendingOutboundCache(selectedContact, next);
+        return next;
+      });
+    },
+    [selectedContact],
+  );
+  useEffect(() => {
+    setPendingOutboundState(readPendingOutboundCache(selectedContact));
+  }, [selectedContact]);
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   const [chatInput, setChatInput] = useState("");
-  const [contactNote, setContactNote] = useState("");
-  const [contactTags, setContactTags] = useState<string[]>([]);
-  const [tagInput, setTagInput] = useState("");
   const [notesOpen, setNotesOpen] = useState(false);
   const [confirm, setConfirm] = useState<{ title: string; message?: ReactNode; variant?: "default" | "destructive"; confirmLabel?: string; cancelLabel?: string; onConfirm: () => void } | null>(null);
   const draftRef = useRef<ReturnType<typeof createContactComposeDraftCrdt> | null>(null);
-  const notesRef = useRef<ReturnType<typeof createContactNotesCrdt> | null>(null);
   const draftSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const notesSyncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   // Tracks any pending "auto-clear sendError" timer so we can cancel it on
   // unmount and on subsequent errors. Fire-and-forget setTimeouts are a
   // common source of "setState on unmounted component" warnings — keep this
@@ -134,7 +143,8 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
       }
     };
   }, []);
-  const ownerId = humanProfile?.ownerId ?? nodeConfig?.profileDir ?? "anonymous";
+  const selfOwnerId = humanProfile?.ownerId?.trim() ?? "";
+  const ownerId = selfOwnerId || nodeConfig?.profileDir || "anonymous";
   const nodeServiceRef = useRef(nodeService);
   nodeServiceRef.current = nodeService;
 
@@ -144,30 +154,6 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
       void nodeServiceRef.current.sendSyncStateUpdate({ scope, updateBase64 }).catch(() => {});
     }, 400);
   }, []);
-
-  const pushNotesSync = useCallback((updateBase64: string, scope: string) => {
-    if (notesSyncTimerRef.current) clearTimeout(notesSyncTimerRef.current);
-    notesSyncTimerRef.current = setTimeout(() => {
-      void nodeServiceRef.current.sendSyncStateUpdate({ scope, updateBase64 }).catch(() => {});
-    }, 400);
-  }, []);
-
-  useEffect(() => {
-    const notes = createContactNotesCrdt(ownerId, selectedContact, {
-      onLocalUpdate: pushNotesSync,
-      onChange: () => {
-        setContactNote(notes.getNote());
-        setContactTags(notes.getTags());
-      },
-    });
-    notesRef.current = notes;
-    setContactNote(notes.getNote());
-    setContactTags(notes.getTags());
-    return () => {
-      notes.destroy();
-      notesRef.current = null;
-    };
-  }, [ownerId, selectedContact]);
 
   useEffect(() => {
     const draft = createContactComposeDraftCrdt(ownerId, selectedContact, {
@@ -187,14 +173,9 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
 
   useEffect(() => {
     return nodeService.on("crdt:sync", (data) => {
-      if (isContactComposeDraftSyncScope(data.scope)) {
-        if (data.scope === draftRef.current?.syncScope) {
-          draftRef.current.applyRemoteUpdate(data.updateBase64);
-        }
-        return;
-      }
-      if (isContactNotesSyncScope(data.scope) && data.scope === notesRef.current?.syncScope) {
-        notesRef.current.applyRemoteUpdate(data.updateBase64);
+      if (!isContactComposeDraftSyncScope(data.scope)) return;
+      if (data.scope === draftRef.current?.syncScope) {
+        draftRef.current.applyRemoteUpdate(data.updateBase64);
       }
     });
   }, [nodeService]);
@@ -219,7 +200,6 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
   }, [selectedContact]);
 
   const nodeMeshOnline = connectionStatus?.online === true;
-  const contactReachable = peerReachability?.connected === true;
 
   const displayMessages = useMemo(() => {
     const merged = [...messages, ...pendingOutbound];
@@ -238,6 +218,12 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
     return out;
   }, [messages, pendingOutbound]);
 
+  const { info: peerReachability, checking: reachabilityChecking, refresh: refreshReachability } = usePeerReachability(
+    selectedContact,
+    true,
+  );
+  const contactReachable = peerReachability?.connected === true;
+
   const isOutgoingMsg = useCallback(
     (msg: ChatMessage) => isPendingOutgoing(msg) || isOutgoing(msg),
     [isOutgoing],
@@ -248,15 +234,31 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
   }, [displayMessages]);
 
   useEffect(() => {
-    setPendingOutbound((prev) =>
-      prev.filter((p) => {
+    setPendingOutbound((prev) => {
+      if (prev.length === 0) return prev;
+      return prev.filter((p) => {
+        if (messages.some((m) => m.messageId === p.messageId)) return false;
+        const needsReconcile =
+          (p.metadata.deliveryReceipt === "failed" || p.metadata.deliveryReceipt === "pending") &&
+          p.messageId.startsWith("pending-");
+        if (needsReconcile) {
+          const echoed = messages.some((m) => {
+            if (!isOutgoing(m)) return false;
+            if (m.content.text !== p.content.text) return false;
+            const delta = Math.abs(
+              new Date(m.metadata.timestamp).getTime() - new Date(p.metadata.timestamp).getTime(),
+            );
+            return delta < 180_000;
+          });
+          if (echoed) return false;
+        }
         if (p.metadata.deliveryReceipt === "pending" || p.metadata.deliveryReceipt === "failed") {
           return true;
         }
         return !messages.some((m) => m.messageId === p.messageId);
-      }),
-    );
-  }, [messages]);
+      });
+    });
+  }, [messages, isOutgoing]);
 
   const updateContactAiMode = useCallback(
     async (ownerId: string, mode: AssistantMode) => {
@@ -902,71 +904,16 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
         )}
         <div ref={messagesEndRef} className="messages-scroll-anchor" aria-hidden />
       </div>
-      <details
-        className="contact-notes-panel"
+      <ContactPrivateNotesPanel
+        ownerId={ownerId}
+        contactOwnerId={selectedContact}
         open={notesOpen}
-        onToggle={(event) => setNotesOpen((event.target as HTMLDetailsElement).open)}
-      >
-        <summary>{t("contactChat.privateNotesSummary")}</summary>
-        <textarea
-          className="contact-notes-input"
-          rows={3}
-          placeholder={t("contactChat.privateNotesPlaceholder")}
-          value={contactNote}
-          onChange={(e) => notesRef.current?.setNote(e.target.value)}
-        />
-        <div className="contact-notes-tags">
-          {contactTags.map((tag) => (
-            <button
-              key={tag}
-              type="button"
-              className="contact-notes-tag"
-              onClick={() => notesRef.current?.removeTag(tag)}
-              title={t("contactChat.removeTagTitle")}
-            >
-              {tag} ×
-            </button>
-          ))}
-        </div>
-        <div className="contact-notes-tag-add">
-          <input
-            type="text"
-            className="contact-notes-tag-input"
-            placeholder={t("contactChat.addTagPlaceholder")}
-            value={tagInput}
-            onChange={(e) => setTagInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key !== "Enter") return;
-              e.preventDefault();
-              const value = tagInput.trim();
-              if (!value) return;
-              notesRef.current?.addTag(value);
-              setTagInput("");
-            }}
-          />
-          <button
-            type="button"
-            className="secondary"
-            onClick={() => {
-              const value = tagInput.trim();
-              if (!value) return;
-              notesRef.current?.addTag(value);
-              setTagInput("");
-            }}
-          >
-            {t("contactChat.addTagBtn")}
-          </button>
-        </div>
-      </details>
+        onOpenChange={setNotesOpen}
+      />
       <div className="chat-composer">
         {/* Floating overlays — render above the input row without pushing it down */}
         <div className="chat-composer-overlays">
           {sendError && <div className="chat-send-error">{sendError}</div>}
-          {pendingOutbound.some((m) => m.metadata.deliveryReceipt === "pending") && (
-            <div className="typing-indicator">
-              <span /><span /><span />
-            </div>
-          )}
         </div>
 
         {latestDraft && (

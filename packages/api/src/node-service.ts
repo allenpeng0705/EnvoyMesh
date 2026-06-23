@@ -854,6 +854,8 @@ export interface WarmContactConnectionOptions {
   verifyOnly?: boolean;
   /** When true, close relay and try direct LAN if hints exist (chat send). Default false. */
   upgradeRelayToDirect?: boolean;
+  /** When already connected, probe the open libp2p path (ping / stream) without redialing. */
+  keepAlive?: boolean;
 }
 
 export interface ChatDiagnosticsContact {

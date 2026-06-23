@@ -25,6 +25,7 @@ import type {
   NodeService,
   NodeServiceEvents,
   PeerConnectionInfo,
+  WarmContactConnectionOptions,
   PeerSearchResult,
   RelayConfig,
   SearchQuery,
@@ -10962,7 +10963,7 @@ class NodeServiceImpl implements NodeService {
 
   async warmContactConnection(
     peerOwnerId: string,
-    options?: { redial?: boolean; verifyOnly?: boolean; upgradeRelayToDirect?: boolean },
+    options?: WarmContactConnectionOptions,
   ): Promise<PeerConnectionInfo> {
     this._assertOnline();
     const mesh = this._requireMesh();
@@ -10988,6 +10989,9 @@ class NodeServiceImpl implements NodeService {
     }
 
     if (existing.connected && !options?.redial && !options?.upgradeRelayToDirect) {
+      if (options?.keepAlive) {
+        return mesh.probeBondedPeerConnection(transportPeerId);
+      }
       return existing;
     }
 
@@ -11048,6 +11052,10 @@ class NodeServiceImpl implements NodeService {
         continue;
       }
       try {
+        const info = await this.getPeerConnectionInfo(bond.peerOwnerId);
+        if (info.connected) {
+          continue;
+        }
         await this.warmContactConnection(bond.peerOwnerId);
       } catch {
         /* best-effort keepalive */
