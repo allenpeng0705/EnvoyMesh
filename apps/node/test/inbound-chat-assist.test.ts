@@ -126,3 +126,58 @@ describe("runInboundChatAssist approval queue", () => {
     expect(pending[0]?.context.contactOwnerId).toBe("envoy:owner:bob");
   });
 });
+
+describe("runInboundChatAssist auto-send with global policy", () => {
+  it("auto-sends for bonded contact when global autoSend is on and no per-contact pref", async () => {
+    const sendChat = vi.fn().mockResolvedValue({ messageId: "out-1", deliveryReceipt: "sent" });
+    const emitDraft = vi.fn();
+
+    await runInboundChatAssist({
+      envelope: chatEnvelope("peer-a", "envoy:owner:bob", "Hello there"),
+      senderOwnerId: "envoy:owner:bob",
+      chatText: "Hello there",
+      remotePeerId: "remote-libp2p",
+      receivedAt: Date.now(),
+      correlationId: "corr-auto",
+      config: {
+        chatAssistEnabled: false,
+        autonomousKillSwitch: false,
+        autonomousPolicies: [{ domain: "social", maxSensitivity: "friends", autoAnswer: false, autoSendChat: true }],
+        contactAiPreferences: [],
+        aiSettings: {
+          status: { onlineAssistantEnabled: false, offlineAgentEnabled: true, statusMode: "automatic" },
+          identity: { mode: "transparent" },
+          defaultModeForNewContacts: "manual",
+          rules: [
+            {
+              id: "greet",
+              enabled: true,
+              name: "Greet",
+              category: "availability",
+              priority: 1,
+              trigger: { isGreeting: true },
+              action: { type: "draft", template: "Hi {ownerName}!" },
+            },
+          ],
+        },
+        modelProviders: { mode: "mock" },
+      },
+      modelProviders: { mode: "mock" },
+      profile: makeTestProfile(),
+      taskStore,
+      trustStore,
+      peerDirectoryStore,
+      draftStore,
+      chatLogStore: null,
+      humanProfileStore: { loadHumanProfile: async () => null } as never,
+      vaultDir: profileDir,
+      styleAdapter: null,
+      sendChat,
+      emitDraft,
+      isOwnerOnline: () => true,
+    });
+
+    expect(emitDraft).toHaveBeenCalled();
+    expect(sendChat).toHaveBeenCalledTimes(1);
+  });
+});

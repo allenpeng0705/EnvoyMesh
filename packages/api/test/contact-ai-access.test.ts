@@ -3,6 +3,7 @@ import {
   contactAiAccessLevelForAssistantMode,
   capGroupChatAiAccessLevel,
   resolveContactAiAccessLevel,
+  resolveEffectiveContactAiAccessLevel,
 } from "../src/contact-ai-access.js";
 
 describe("resolveContactAiAccessLevel", () => {
@@ -42,5 +43,33 @@ describe("capGroupChatAiAccessLevel", () => {
     expect(capGroupChatAiAccessLevel("full")).toBe("assistant_only");
     expect(capGroupChatAiAccessLevel("assistant_only")).toBe("assistant_only");
     expect(capGroupChatAiAccessLevel("none")).toBe("none");
+  });
+});
+
+describe("resolveEffectiveContactAiAccessLevel", () => {
+  it("grants full access for bonded contacts when global auto-send is enabled", () => {
+    expect(
+      resolveEffectiveContactAiAccessLevel({
+        contactOwnerId: "envoy:owner:bob",
+        contactAiPreferences: [],
+        defaultModeForNewContacts: "manual",
+        autoSendEnabled: true,
+        bondLevel: "direct",
+      }),
+    ).toBe("full");
+  });
+
+  it("respects explicit none preference even when global auto-send is enabled", () => {
+    expect(
+      resolveEffectiveContactAiAccessLevel({
+        contactOwnerId: "envoy:owner:bob",
+        contactAiPreferences: [
+          { peerOwnerId: "envoy:owner:bob", aiAccessLevel: "none", knowledgeAccess: "public", priority: "high" },
+        ],
+        defaultModeForNewContacts: "manual",
+        autoSendEnabled: true,
+        bondLevel: "direct",
+      }),
+    ).toBe("none");
   });
 });

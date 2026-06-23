@@ -1,5 +1,5 @@
 import type { ModelProviderConfig, SendChatResult } from "@envoymesh/api";
-import { resolveContactAiAccessLevel, applyAiIdentityForIdentity, stripModelThinking, capGroupChatAiAccessLevel } from "@envoymesh/api";
+import { resolveEffectiveContactAiAccessLevel, applyAiIdentityForIdentity, stripModelThinking, capGroupChatAiAccessLevel } from "@envoymesh/api";
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
 import {
   createAuditEvent,
@@ -27,6 +27,7 @@ import type { StyleAdapter } from "./style-adapter.js";
 import type { RagService } from "./rag-service.js";
 import type { AutoReplyLimitStore } from "@envoymesh/local-store";
 import type { AutoReplyPausedNotification } from "@envoymesh/api";
+import type { ModeController } from "./mode-controller.js";
 
 export async function runInboundChatAssist(input: {
   envelope: EnvoyEnvelope;
@@ -49,11 +50,12 @@ export async function runInboundChatAssist(input: {
   styleAdapter: StyleAdapter | null;
   sendChat: (targetOwnerId: string, text: string) => Promise<SendChatResult>;
   emitDraft: (threadPeerOwnerId: string, draft: { draftId: string; text: string; inReplyToMessageId: string; createdAt: string }) => void;
-  isOwnerOnline?: () => boolean;
+  isOwnerOnline?: () => boolean | Promise<boolean>;
   ragService?: RagService | null;
   approvalQueue?: Pick<ApprovalQueue, "add"> | null;
   autoReplyLimitStore?: AutoReplyLimitStore | null;
   onAutoReplyPaused?: (notification: AutoReplyPausedNotification) => void;
+  modeController?: ModeController | null;
   /** Group chat: prefs + drafts keyed by room thread; never auto-send when true. */
   draftThreadKey?: string;
   disableAutoSend?: boolean;
@@ -84,6 +86,7 @@ export async function runInboundChatAssist(input: {
     approvalQueue = null,
     autoReplyLimitStore = null,
     onAutoReplyPaused,
+    modeController = null,
     draftThreadKey,
     disableAutoSend = false,
   } = input;
@@ -92,18 +95,22 @@ export async function runInboundChatAssist(input: {
   const draftThread = draftThreadKey ?? senderOwnerId;
 
   const contactPrefs = config.contactAiPreferences ?? [];
-  let aiAccessLevel = resolveContactAiAccessLevel(
-    accessThreadKey,
-    contactPrefs,
-    config.aiSettings?.defaultModeForNewContacts,
-  );
-  if (disableAutoSend) {
-    aiAccessLevel = capGroupChatAiAccessLevel(aiAccessLevel);
-  }
   const autoSendEnabled =
     !disableAutoSend && (config.autonomousPolicies ?? []).some(
     (p) => p.domain === "social" && p.autoSendChat,
   );
+  const senderTrust = await trustStore.getTrustRecord(senderOwnerId);
+  const bondLevel = senderTrust?.level ?? "public";
+  let aiAccessLevel = resolveEffectiveContactAiAccessLevel({
+    contactOwnerId: accessThreadKey,
+    contactAiPreferences: contactPrefs,
+    defaultModeForNewContacts: config.aiSettings?.defaultModeForNewContacts,
+    autoSendEnabled,
+    bondLevel,
+  });
+  if (disableAutoSend) {
+    aiAccessLevel = capGroupChatAiAccessLevel(aiAccessLevel);
+  }
   const allowWhileOwnerOnline =
     config.aiSettings?.status?.onlineAssistantEnabled === true ||
     (autoSendEnabled && aiAccessLevel === "full" && !(config.autonomousKillSwitch ?? false));
@@ -113,6 +120,9 @@ export async function runInboundChatAssist(input: {
     (autoSendEnabled && aiAccessLevel === "full");
 
   if (!effectiveChatAssist || (aiAccessLevel !== "assistant_only" && aiAccessLevel !== "full")) {
+    console.log(
+      `[chat-assist] skipped for ${senderOwnerId}: effectiveChatAssist=${effectiveChatAssist} aiAccessLevel=${aiAccessLevel} autoSend=${autoSendEnabled}`,
+    );
     return;
   }
 
@@ -127,7 +137,6 @@ export async function runInboundChatAssist(input: {
     return;
   }
 
-  const senderTrust = await trustStore.getTrustRecord(senderOwnerId);
   const senderDisplayName = senderTrust?.displayName ?? senderOwnerId;
   const selfHuman = await humanProfileStore.loadHumanProfile().catch(() => null);
   const contactPref = contactPrefs.find((p) => p.peerOwnerId === accessThreadKey);
@@ -159,11 +168,12 @@ export async function runInboundChatAssist(input: {
     knowledgeAccess: contactPref?.knowledgeAccess ?? "public",
     rules: config.aiSettings?.rules ?? [],
     vaultIndex,
-    isOnline: isOwnerOnline(),
+    isOnline: await Promise.resolve(isOwnerOnline()),
     ownerDisplayName: selfHuman?.displayName,
     chatLogStore,
     humanProfileStore,
     agentIdentityStore,
+    modeController: modeController ?? undefined,
     allowWhileOwnerOnline,
     knowledgeBase: config.aiSettings?.knowledgeBase,
     ragService,
@@ -189,7 +199,6 @@ export async function runInboundChatAssist(input: {
     return;
   }
 
-  const bondLevel = senderTrust?.level ?? "public";
   const requestedSensitivity = bondLevel === "direct" || bondLevel === "referred" ? "friends" : "public";
   const autoSendPolicy = evaluateAutonomousPolicy({
     autonomousKillSwitch: config.autonomousKillSwitch ?? false,

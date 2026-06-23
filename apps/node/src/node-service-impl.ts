@@ -400,6 +400,7 @@ import {
 } from "./profile-sync-outbound.js";
 import { probeNearbyPeerProfile } from "./nearby-profile-probe.js";
 import { deliverCallEnvelopeWithRetry, deliverChatEnvelopeWithRetry, sendExpectReplyWithRetry, type ChatDeliverResult } from "./chat-outbound-deliver.js";
+import { markOutboundPeerVerified } from "./outbound-peer-freshness.js";
 import { deliverOutboundEnvelope, dialHintsForTransportTarget } from "./mesh-outbound-helper.js";
 import { withOutboundSendLock } from "./outbound-send-lock.js";
 import { pickBestLibp2pPeerDirectoryRecord, resolveRecipientEnvelopePeerId } from "./peer-transport-resolve.js";
@@ -3701,6 +3702,7 @@ class NodeServiceImpl implements NodeService {
     envelope: EnvoyEnvelope,
     dialHints: string[],
     listenAddrs?: string[],
+    options?: { expectDeliveryAck?: boolean },
   ): Promise<ChatDeliverResult> {
     return this._withChatSendLock(transportPeerId, async () => {
       const mesh = this._requireMesh();
@@ -3712,6 +3714,7 @@ class NodeServiceImpl implements NodeService {
         peerListenAddrs: listenAddrs,
         chatProtocol: ENVOY_CHAT_PROTOCOL,
         rebuildDialHints: () => this._dialHintsForChat(transportPeerId, listenAddrs),
+        expectDeliveryAck: options?.expectDeliveryAck,
       });
     });
   }
@@ -3967,7 +3970,9 @@ class NodeServiceImpl implements NodeService {
       await this._bridgeChatHandler(envelope, mesh.peerId);
       deliverResult = { delivered: true, deliveredAt: new Date().toISOString() };
     } else {
-      deliverResult = await this._deliverChatEnvelope(transportPeerId, envelope, dialHints, listenAddrs);
+      deliverResult = await this._deliverChatEnvelope(transportPeerId, envelope, dialHints, listenAddrs, {
+        expectDeliveryAck: false,
+      });
     }
 
     if (deliverResult.delivered || transportPeerId !== mesh.peerId) {
@@ -9260,6 +9265,7 @@ class NodeServiceImpl implements NodeService {
                   draft: { ...draft, threadPeerOwnerId },
                 });
               },
+              isOwnerOnline: () => this.isOwnerOnline(),
               approvalQueue: this._approvalQueue,
               autoReplyLimitStore: this._autoReplyLimitStore,
               onAutoReplyPaused: (notification) => {
@@ -10951,9 +10957,7 @@ class NodeServiceImpl implements NodeService {
       return { connected: false, direct: false };
     }
 
-    return this._withChatSendLock(transportPeerId, () =>
-      this._warmContactConnectionTransport(transportPeerId, listenAddrs, options),
-    );
+    return this._warmContactConnectionTransport(transportPeerId, listenAddrs, options);
   }
 
   private async _warmContactConnectionTransport(
@@ -10990,12 +10994,16 @@ class NodeServiceImpl implements NodeService {
             verifyConnection: true,
           });
           if (verified.connected) {
+            markOutboundPeerVerified(transportPeerId);
             return verified;
           }
           // stale — fall through to redial
         } else {
           const probed = await mesh.probeBondedPeerConnection(transportPeerId);
-          if (probed.connected) {
+          if (probed.connected || options?.keepAlive === true) {
+            if (probed.connected) {
+              markOutboundPeerVerified(transportPeerId);
+            }
             return probed;
           }
           // stale — fall through to redial
@@ -11043,6 +11051,9 @@ class NodeServiceImpl implements NodeService {
     });
     void this._flushPendingRoomSyncs();
     void this._flushPendingRoomMessages();
+    if (result.connected) {
+      markOutboundPeerVerified(transportPeerId);
+    }
     return result;
   }
 

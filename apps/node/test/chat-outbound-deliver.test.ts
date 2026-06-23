@@ -9,6 +9,10 @@ import {
 } from "../src/chat-outbound-deliver.js";
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
 import { ENVOY_MESSAGE_PROTOCOL } from "@envoymesh/network";
+import {
+  markOutboundPeerVerified,
+  resetOutboundPeerFreshnessForTests,
+} from "../src/outbound-peer-freshness.js";
 
 const envelope = { intent: "chat.message" } as EnvoyEnvelope;
 
@@ -133,6 +137,7 @@ describe("deliverChatEnvelopeWithRetry", () => {
   });
 
   it("uses sendChatExpectReply when available and returns delivered ack", async () => {
+    resetOutboundPeerFreshnessForTests();
     const deliveredAt = "2026-05-28T12:00:00.000Z";
     const sendChatExpectReply = vi.fn().mockResolvedValue({
       intent: "chat.delivered",
@@ -168,6 +173,36 @@ describe("deliverChatEnvelopeWithRetry", () => {
     expect(sendChatExpectReply).toHaveBeenCalledTimes(1);
     expect(mesh.sendChat).not.toHaveBeenCalled();
     expect(result).toEqual({ delivered: true, deliveredAt });
+  });
+
+  it("skips pre-send verify when peer was recently verified", async () => {
+    resetOutboundPeerFreshnessForTests();
+    const transportPeerId = "12D3KooWFreshPeer";
+    markOutboundPeerVerified(transportPeerId);
+    const sendChatExpectReply = vi.fn().mockResolvedValue({
+      intent: "chat.delivered",
+      payload: { messageId: "msg-fresh", deliveredAt: new Date().toISOString() },
+    });
+    const ensurePeerReachable = vi.fn();
+    const mesh = {
+      sendChat: vi.fn(),
+      sendChatExpectReply,
+      closeConnectionsToPeer: vi.fn().mockResolvedValue(0),
+      ensurePeerReachable,
+      getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: true, direct: true }),
+    };
+
+    await deliverChatEnvelopeWithRetry({
+      mesh,
+      transportPeerId,
+      envelope: { ...envelope, messageId: "msg-fresh" },
+      dialHints: [`/p2p/${transportPeerId}`],
+      chatProtocol: "/envoy/chat/0.1",
+      maxAttempts: 1,
+    });
+
+    expect(ensurePeerReachable).not.toHaveBeenCalled();
+    expect(sendChatExpectReply).toHaveBeenCalledTimes(1);
   });
 
   it("verifies connected direct paths and redials when the probe fails", async () => {

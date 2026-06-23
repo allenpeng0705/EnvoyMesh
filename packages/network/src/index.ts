@@ -668,12 +668,38 @@ export class EnvoyMesh {
   }
 
   /**
+   * Lightweight libp2p ping on an existing direct connection (no protocol stream open).
+   */
+  async pingDirectPeer(peerIdStr: string): Promise<boolean> {
+    const before = this.getPeerConnectionInfo(peerIdStr);
+    if (!before.connected || !before.direct || !this.node) {
+      return false;
+    }
+    const node = this.node as Libp2p & {
+      services?: { ping?: { ping: (peer: ReturnType<typeof peerIdFromString>) => Promise<number> } };
+    };
+    if (!node.services?.ping) {
+      return false;
+    }
+    try {
+      await node.services.ping.ping(peerIdFromString(peerIdStr));
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Verify an existing libp2p path is still usable (NAT idle / half-open TCP).
    * Does not redial when the probe succeeds; closes stale connections when it fails.
    */
   async probeBondedPeerConnection(peerIdStr: string): Promise<{ connected: boolean; direct: boolean; relayPeerId?: string }> {
     const before = this.getPeerConnectionInfo(peerIdStr);
     if (!before.connected || !this.node) {
+      return before;
+    }
+
+    if (before.direct && (await this.pingDirectPeer(peerIdStr))) {
       return before;
     }
 
@@ -685,20 +711,8 @@ export class EnvoyMesh {
         remotePeer: { toString(): string };
         close?: () => Promise<void>;
       }>;
-      services?: { ping?: { ping: (peer: ReturnType<typeof peerIdFromString>) => Promise<number> } };
     };
     const pid = peerIdFromString(peerIdStr);
-
-    if (before.direct && node.services?.ping) {
-      try {
-        await node.services.ping.ping(pid);
-        return before;
-      } catch {
-        await this.closeConnectionsToPeer(peerIdStr);
-        return { connected: false, direct: false };
-      }
-    }
-
     const conns = (node.getConnections?.(pid) ?? []).filter(
       (c) => c?.status === "open" || c?.status === undefined,
     );
@@ -1336,6 +1350,12 @@ export class EnvoyMesh {
           return before;
         }
         await this.closeConnectionsToPeer(peerIdStr);
+      }
+    }
+    if (peerIdStr && sendOptions?.verifyConnection && !sendOptions?.forceFreshDial) {
+      const before = this.getPeerConnectionInfo(peerIdStr);
+      if (before.connected && before.direct && (await this.pingDirectPeer(peerIdStr))) {
+        return before;
       }
     }
     try {

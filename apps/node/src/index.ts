@@ -123,7 +123,7 @@ import { parseNodeArgs, applyPersistedDiscoveryConfig, type NodeArgs } from "./a
 import { buildOutboundCliEnvelopes } from "./cli-actions.js";
 import { deliverOutboundEnvelope, deliverOutboundExpectReply } from "./mesh-outbound-helper.js";
 import { createInboundMessageGuard } from "./inbound-guard.js";
-import { chatSenderActorFromEnvelope, shouldSkipAgentChatAssist, resolveEmpSupportedCapabilities } from "@envoymesh/api";
+import { chatSenderActorFromEnvelope, resolveEmpSupportedCapabilities } from "@envoymesh/api";
 import { buildSignedChatDeliveredEnvelope } from "@envoymesh/api/chat-delivered";
 import { verifyInboundChatDevice, formatChatSenderDisplayName, bindDeviceAuthorizationStore } from "./chat-device-auth.js";
 import { buildOutboundDialHints } from "./outbound-dial-hints.js";
@@ -145,23 +145,17 @@ import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
 import { handleDaemonAgentCardInbound } from "./daemon-agent-card-inbound.js";
 import { handleDaemonTaskInbound } from "./daemon-task-inbound.js";
 import { handleInboundShareRequest, handleInboundShareAccept, resolveSenderOwnerId } from "./share-inbound.js";
-import { generateChatDraft } from "./chat-draft-inbound.js";
+import { runInboundChatAssist } from "./inbound-chat-assist.js";
 import { chatLogRowsToViews } from "./ai-context.js";
 import { createRagService, type RagService } from "./rag-service.js";
 import { ModeController, createDefaultModeConfig } from "./mode-controller.js";
 import { FileSessionStore, SessionManager } from "./session-manager.js";
 import { StyleAdapter } from "./style-adapter.js";
 import { TriggerStore } from "./trigger-store.js";
-import { ApprovalQueue, createApprovalItem } from "@envoymesh/api";
+import { ApprovalQueue } from "@envoymesh/api";
 import { DigestGenerator, createDefaultDigestConfig, getDigestPeriodDates } from "./digest-generator.js";
-import { evaluateAutonomousPolicy, auditAutonomousDecision } from "./autonomous-inbound.js";
-import {
-  applyAutoReplyLimitDenied,
-  checkAutoReplyAllowed,
-  recordAutoReplyAfterSend,
-} from "./auto-reply-gate.js";
 import type { AutonomousDomain, AutonomousPolicy, AiSettings, ContactAiPreferences } from "@envoymesh/api";
-import { resolveContactAiAccessLevel, buildVaultIndexOptionsFromKnowledgeBase } from "@envoymesh/api";
+import { buildVaultIndexOptionsFromKnowledgeBase } from "@envoymesh/api";
 import { stripModelThinking, applyAiIdentityForIdentity, ENVOY_AI_THREAD_KEY } from "@envoymesh/api";
 import { resolveNodeArgsTargetsByOwnerId } from "./owner-targeting.js";
 import { createTaskDispatcher, isA2ATaskIntent, type DispatcherDecision } from "./task-dispatcher.js";
@@ -2037,213 +2031,67 @@ async function handleInboundMeshMessage({
         senderOwnerId: payload.senderOwnerId,
       }).catch(() => {});
 
-      // Generate a chat draft if chat assist is enabled (async, fire-and-forget)
-      const contactPrefs = currentContactAiPrefs.get(payload.senderOwnerId);
-      const aiAccessLevel = resolveContactAiAccessLevel(
-        payload.senderOwnerId,
-        contactPrefs
-          ? [{ peerOwnerId: payload.senderOwnerId, ...contactPrefs }]
-          : [],
-        currentAiSettings?.defaultModeForNewContacts,
-      );
-      const autoSendEnabled = currentAutonomousPolicies.some(
-        (p) => p.domain === "social" && p.autoSendChat,
-      );
-      const effectiveChatAssist =
-        currentChatAssistEnabled ||
-        aiAccessLevel === "assistant_only" ||
-        (autoSendEnabled && aiAccessLevel === "full");
-      const allowWhileOwnerOnline =
-        currentAiSettings?.status?.onlineAssistantEnabled === true ||
-        (autoSendEnabled && aiAccessLevel === "full" && !currentAutonomousKillSwitch);
-      console.log(
-        `[chat] effectiveChatAssist=${effectiveChatAssist}, bondLevel=${senderTrust?.level}, aiAccessLevel=${aiAccessLevel}, allowWhileOwnerOnline=${allowWhileOwnerOnline}`,
-      );
-
-      // Only generate drafts if AI access level allows it (assistant_only or full)
-      const skipAgentChatAssist = shouldSkipAgentChatAssist({
-        senderRole: envelope.senderRole,
-        agentInteractionMode: persistedNodeConfig?.agentInteractionMode,
-        agentVerified: envelope.senderRole === "agent" ? Boolean(envelope.agentCredential) : undefined,
-      });
-      if (
-        effectiveChatAssist &&
-        (aiAccessLevel === "assistant_only" || aiAccessLevel === "full") &&
-        !skipAgentChatAssist
-      ) {
-        const senderDisplayName = senderTrust?.displayName ?? payload.senderOwnerId;
-        // Phase 37 — if message has audio attachments but no text, set fallback for AI
+      void (async () => {
+        const storedConfig = await nodeConfigStore.load();
+        if (!storedConfig) {
+          return;
+        }
         let chatText = payload.text;
         const hasAudioAttachment = payload.attachments?.some((a) => a.mimeType?.startsWith("audio/"));
         if (!chatText.trim() && hasAudioAttachment) {
           chatText = "[Audio message — no transcription available]";
         }
-        console.log(`[chat] generating draft for message from ${senderDisplayName}: ${chatText}`);
-        void generateChatDraft({
+        const mergedConfig = {
+          ...storedConfig,
+          chatAssistEnabled: currentChatAssistEnabled,
+          autonomousKillSwitch: currentAutonomousKillSwitch,
+          autonomousPolicies: [...currentAutonomousPolicies],
+          aiSettings: currentAiSettings ?? storedConfig.aiSettings,
+          contactAiPreferences: Array.from(currentContactAiPrefs.entries()).map(
+            ([peerOwnerId, prefs]) => ({ peerOwnerId, ...prefs }),
+          ),
+        };
+        await runInboundChatAssist({
           envelope,
           senderOwnerId: payload.senderOwnerId,
-          senderDisplayName,
           chatText,
           remotePeerId,
           receivedAt,
           correlationId,
+          config: mergedConfig,
+          modelProviders: currentModelProviders,
+          profile,
           taskStore,
           trustStore,
           peerDirectoryStore,
-          profile,
           draftStore: chatDraftStore,
-          modelProviders: currentModelProviders,
-          chatAssistEnabled: effectiveChatAssist,
-          aiIdentity: currentAiSettings?.identity,
-          contactAiAccessLevel: aiAccessLevel,
-          knowledgeAccess: contactPrefs?.knowledgeAccess ?? "public",
-          rules: currentAiSettings?.rules ?? [],
-          vaultIndex,
-          isOnline: isOwnerOnline(), // Use actual online status
-          ownerDisplayName: selfHuman?.displayName,
           chatLogStore,
           humanProfileStore,
-          modeController,
-          allowWhileOwnerOnline,
-          knowledgeBase: currentAiSettings?.knowledgeBase,
-          ragService,
-        }).then(async (result) => {
-          if (!result.ok) {
-            console.log(`[chat] draft skipped for ${payload.senderOwnerId}: ${result.reason}`);
-            return;
-          }
-          if (wsServerForEvents) {
-            // Apply style adaptation (Phase 9F): match owner's writing voice
-            const adapted = styleAdapter.adapt(
-              stripModelThinking(result.draft.text),
-              payload.senderOwnerId,
-              false,
-              "statement",
-            );
-            const draftText = applyAiIdentityForIdentity(
-              stripModelThinking(adapted.adaptedText),
-              currentAiSettings?.identity,
-            );
-
-            // Always emit draft event for UI to display
-            wsServerForEvents.emitEvent("chat:draft", {
-              threadPeerOwnerId: payload.senderOwnerId,
-              draft: { ...result.draft, text: draftText },
-            });
-
-            // Check autonomous policy for auto-send (only if AI access level is full)
-            const bondLevel = senderTrust?.level ?? "public";
-            const requestedSensitivity = bondLevel === "direct" || bondLevel === "referred" ? "friends" : "public";
-
-            const autoSendPolicy = evaluateAutonomousPolicy({
-              autonomousKillSwitch: currentAutonomousKillSwitch,
-              autonomousPolicies: currentAutonomousPolicies,
-              domain: "social",
-              action: "auto_send_chat",
-              requestedSensitivity,
-            });
-
-            // Audit the autonomous decision
-            await auditAutonomousDecision({
-              taskStore,
-              intent: "chat.message",
-              messageId: envelope.messageId,
-              correlationId,
-              remotePeerId,
-              receivedAt,
-              domain: "social",
-              action: "auto_send_chat",
-              allowed: autoSendPolicy.allowed,
-              reason: autoSendPolicy.allowed ? undefined : autoSendPolicy.reason,
-              createdAt: new Date().toISOString(),
-            });
-
-            // Auto-send the chat response if policy allows AND contact AI access level is "full"
-            if (autoSendPolicy.allowed && aiAccessLevel === "full" && nodeService instanceof NodeServiceImpl) {
-              const limits = currentAiSettings?.autoReplyLimits;
-              const limitDecision = await checkAutoReplyAllowed({
-                store: autoReplyLimitStore,
-                contactOwnerId: payload.senderOwnerId,
-                limits,
-                inboundSenderRole: envelope.senderRole ?? "human",
-                nowMs: receivedAt,
-              });
-              if (!limitDecision.allowed) {
-                const notification = await applyAutoReplyLimitDenied({
-                  store: autoReplyLimitStore,
-                  contactOwnerId: payload.senderOwnerId,
-                  contactDisplayName: senderDisplayName,
-                  limits,
-                  decision: limitDecision,
-                  nowMs: receivedAt,
-                });
-                if (notification && wsServerForEvents) {
-                  wsServerForEvents.emitEvent("chat:auto-reply-paused", notification);
-                }
-                await auditAutonomousDecision({
-                  taskStore,
-                  intent: "chat.message",
-                  messageId: envelope.messageId,
-                  correlationId,
-                  remotePeerId,
-                  receivedAt,
-                  domain: "social",
-                  action: "auto_send_chat",
-                  allowed: false,
-                  reason: `auto_reply_${limitDecision.reason}`,
-                  createdAt: new Date().toISOString(),
-                });
-              } else {
-                console.log(`[chat] auto-sending AI response to ${payload.senderOwnerId}: ${draftText}`);
-                try {
-                  await nodeService.sendAgentChat(payload.senderOwnerId, draftText);
-                  await recordAutoReplyAfterSend({
-                    store: autoReplyLimitStore,
-                    contactOwnerId: payload.senderOwnerId,
-                    limits,
-                    inboundSenderRole: envelope.senderRole ?? "human",
-                    nowMs: receivedAt,
-                  });
-                  console.log(`[chat] auto-send success`);
-                } catch (err) {
-                  console.warn(`[chat] auto-send failed:`, err);
-                }
-              }
-            } else if (draftText) {
-              // Phase 9H: Queue draft for owner approval when auto-send is not allowed
-              const item = createApprovalItem(
-                "send_chat",
-                `Reply to ${senderDisplayName}`,
-                `AI-drafted reply: "${draftText.slice(0, 80)}${draftText.length > 80 ? "..." : ""}"`,
-                draftText,
-                {
-                  contactOwnerId: payload.senderOwnerId,
-                  contactDisplayName: senderDisplayName,
-                },
-                bondLevel === "direct" ? "normal" : "low",
-              );
-              approvalQueue.add(item);
-              const denyReason = autoSendPolicy.allowed ? "policy" : autoSendPolicy.reason;
-              console.log(`[approval] queued draft ${item.id} for owner review (auto-send denied: ${denyReason})`);
-              void taskStore.appendAuditEvent(
-                createAuditEvent({
-                  type: "model.routed",
-                  intent: "chat.message",
-                  messageId: envelope.messageId,
-                  correlationId,
-                  remotePeerId,
-                  direction: "inbound",
-                  verificationStatus: "verified",
-                  latencyMs: Date.now() - receivedAt,
-                  outcome: "record",
-                  summary: `approval queued: ${item.id} action=send_chat contact=${payload.senderOwnerId}`,
-                  createdAt: new Date().toISOString(),
-                }),
-              );
+          agentIdentityStore,
+          vaultDir: vaultDirForNode,
+          styleAdapter,
+          sendChat: async (targetOwnerId, text) => {
+            if (!(nodeService instanceof NodeServiceImpl)) {
+              throw new Error("NodeServiceImpl required for auto-send");
             }
-          }
-        }).catch((err) => console.warn(`[chat-draft] generation failed:`, err));
-      }
+            return nodeService.sendAgentChat(targetOwnerId, text);
+          },
+          emitDraft: (threadPeerOwnerId, draft) => {
+            wsServerForEvents?.emitEvent("chat:draft", {
+              threadPeerOwnerId,
+              draft: { ...draft, threadPeerOwnerId },
+            });
+          },
+          isOwnerOnline,
+          modeController,
+          ragService,
+          approvalQueue,
+          autoReplyLimitStore,
+          onAutoReplyPaused: (notification) => {
+            wsServerForEvents?.emitEvent("chat:auto-reply-paused", notification);
+          },
+        });
+      })().catch((err) => console.warn(`[chat-assist] failed:`, err));
     }
     return;
   }

@@ -10,6 +10,11 @@ import {
 import { parseChatDeliveredAck } from "@envoymesh/api/chat-delivered";
 
 import { shouldPreferCircuitDialHints } from "./outbound-dial-hints.js";
+import {
+  clearOutboundPeerFreshness,
+  isOutboundPeerRecentlyVerified,
+  markOutboundPeerVerified,
+} from "./outbound-peer-freshness.js";
 import { withOutboundSendLock } from "./outbound-send-lock.js";
 
 const CHAT_SEND_MAX_ATTEMPTS = 3;
@@ -58,6 +63,16 @@ export async function prepareOutboundPeerConnection(input: {
   const conn = input.mesh.getPeerConnectionInfo(input.transportPeerId);
   const upgradeRelayToDirect = conn.connected && !conn.direct && !input.preferCircuitHints;
 
+  if (
+    !input.forceFreshDial &&
+    !upgradeRelayToDirect &&
+    conn.connected &&
+    conn.direct &&
+    isOutboundPeerRecentlyVerified(input.transportPeerId)
+  ) {
+    return true;
+  }
+
   const redialFresh = async (): Promise<boolean> => {
     try {
       await input.mesh.closeConnectionsToPeer(input.transportPeerId);
@@ -66,6 +81,11 @@ export async function prepareOutboundPeerConnection(input: {
         forceFreshDial: true,
         upgradeRelayToDirect,
       });
+      if (result.connected) {
+        markOutboundPeerVerified(input.transportPeerId);
+      } else {
+        clearOutboundPeerFreshness(input.transportPeerId);
+      }
       return result.connected;
     } catch (warmErr) {
       console.warn(
@@ -83,6 +103,9 @@ export async function prepareOutboundPeerConnection(input: {
   if (!conn.connected) {
     try {
       const result = await input.mesh.ensurePeerReachable(input.transportPeerId, input.protocol, warmOpts);
+      if (result.connected) {
+        markOutboundPeerVerified(input.transportPeerId);
+      }
       return result.connected;
     } catch (warmErr) {
       console.warn(
@@ -100,8 +123,10 @@ export async function prepareOutboundPeerConnection(input: {
       verifyConnection: true,
     });
     if (verified.connected) {
+      markOutboundPeerVerified(input.transportPeerId);
       return true;
     }
+    clearOutboundPeerFreshness(input.transportPeerId);
     console.warn(
       `[send] stale connection to ${input.transportPeerId.slice(0, 12)}…; redialing before send`,
     );
@@ -240,6 +265,7 @@ export async function deliverChatEnvelopeWithRetry(input: {
         if (attempt > 0) {
           console.log(`[sendChat] delivered with ack on attempt ${attempt + 1}/${maxAttempts}`);
         }
+        markOutboundPeerVerified(input.transportPeerId);
         return { delivered: true, deliveredAt: ack.deliveredAt };
       }
       await input.mesh.sendChat(input.transportPeerId, input.envelope, {
@@ -250,14 +276,19 @@ export async function deliverChatEnvelopeWithRetry(input: {
       if (attempt > 0) {
         console.log(`[sendChat] delivered on attempt ${attempt + 1}/${maxAttempts}`);
       }
+      markOutboundPeerVerified(input.transportPeerId);
       return { delivered: false };
     } catch (err) {
       lastErr = err;
+      if (attempt + 1 >= maxAttempts) {
+        clearOutboundPeerFreshness(input.transportPeerId);
+      }
       if (usedAck && isChatAckFailureLikelyAfterWrite(err)) {
         console.warn(
           `[sendChat] ack failed after send for ${input.transportPeerId.slice(0, 12)}… (message likely delivered):`,
           err instanceof Error ? err.message : err,
         );
+        markOutboundPeerVerified(input.transportPeerId);
         return { delivered: false };
       }
       console.warn(

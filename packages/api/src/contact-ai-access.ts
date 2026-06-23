@@ -38,3 +38,35 @@ export function contactAiAccessLevelForAssistantMode(
 export function capGroupChatAiAccessLevel(level: ContactAiAccessLevel): ContactAiAccessLevel {
   return level === "full" ? "assistant_only" : level;
 }
+
+/**
+ * Global auto-send implies full AI access for bonded contacts unless the contact
+ * explicitly has aiAccessLevel "none" in preferences.
+ */
+export function resolveEffectiveContactAiAccessLevel(input: {
+  contactOwnerId: string;
+  contactAiPreferences: readonly ContactAiPreferences[] | undefined;
+  defaultModeForNewContacts: AiSettings["defaultModeForNewContacts"] | undefined;
+  autoSendEnabled: boolean;
+  bondLevel: "blocked" | "public" | "referred" | "direct";
+}): ContactAiAccessLevel {
+  const explicit = input.contactAiPreferences?.find((p) => p.peerOwnerId === input.contactOwnerId);
+  if (explicit?.aiAccessLevel === "none") {
+    return "none";
+  }
+  const base = resolveContactAiAccessLevel(
+    input.contactOwnerId,
+    input.contactAiPreferences,
+    input.defaultModeForNewContacts,
+  );
+  if (base !== "none") {
+    return base;
+  }
+  if (
+    input.autoSendEnabled &&
+    (input.bondLevel === "direct" || input.bondLevel === "referred")
+  ) {
+    return "full";
+  }
+  return "none";
+}
