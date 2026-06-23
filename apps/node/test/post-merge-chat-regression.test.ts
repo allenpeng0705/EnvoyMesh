@@ -77,6 +77,7 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
       closeConnectionsToPeer,
       getPeerConnectionInfo,
       mergePeerStoreDialHints: vi.fn(async () => {}),
+      scrubPeerStoreDialHints: vi.fn(async () => []),
       send: vi.fn(),
       sendChat: vi.fn(),
       sendChatExpectReply: vi.fn(),
@@ -108,7 +109,11 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
       const info = await node.warmContactConnection(PEER_OWNER_ID);
 
       expect(info).toEqual({ connected: true, direct: true });
-      expect(ensurePeerReachable).not.toHaveBeenCalled();
+      expect(ensurePeerReachable).toHaveBeenCalledWith(
+        TRANSPORT_PEER_ID,
+        expect.any(String),
+        expect.objectContaining({ verifyConnection: true }),
+      );
       expect(closeConnectionsToPeer).not.toHaveBeenCalled();
     });
 
@@ -124,11 +129,16 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
 
     it("keeps relay connection on background warm (no upgrade unless explicit)", async () => {
       getPeerConnectionInfo.mockReturnValue({ connected: true, direct: false });
+      ensurePeerReachable.mockResolvedValue({ connected: true, direct: false });
 
       const info = await node.warmContactConnection(PEER_OWNER_ID);
 
       expect(info).toEqual({ connected: true, direct: false });
-      expect(ensurePeerReachable).not.toHaveBeenCalled();
+      expect(ensurePeerReachable).toHaveBeenCalledWith(
+        TRANSPORT_PEER_ID,
+        expect.any(String),
+        expect.objectContaining({ verifyConnection: true }),
+      );
       expect(closeConnectionsToPeer).not.toHaveBeenCalled();
     });
 

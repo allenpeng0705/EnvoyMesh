@@ -47,7 +47,6 @@ async function prepareOutboundChatConnection(input: {
       await input.mesh.ensurePeerReachable(input.transportPeerId, input.chatProtocol, {
         dialHints: input.dialHints,
         preferCircuitHints: input.preferCircuitHints,
-        upgradeRelayToDirect: upgradeRelayToDirect,
       });
     } catch (warmErr) {
       console.warn(
@@ -57,7 +56,19 @@ async function prepareOutboundChatConnection(input: {
     }
     return;
   }
-  if (!upgradeRelayToDirect && conn.connected && !input.forceFreshDial) {
+  if (conn.connected && !input.forceFreshDial && !upgradeRelayToDirect) {
+    try {
+      await input.mesh.ensurePeerReachable(input.transportPeerId, input.chatProtocol, {
+        verifyConnection: true,
+        dialHints: input.dialHints,
+        preferCircuitHints: input.preferCircuitHints,
+      });
+    } catch (warmErr) {
+      console.warn(
+        `[sendChat] pre-send probe failed for ${input.transportPeerId.slice(0, 12)}…:`,
+        warmErr instanceof Error ? warmErr.message : warmErr,
+      );
+    }
     return;
   }
   try {

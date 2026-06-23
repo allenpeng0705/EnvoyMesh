@@ -128,8 +128,7 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
     const id = setInterval(() => {
       void refresh({
         silent: true,
-        verifyOnly: libp2pConnectedRef.current,
-        warm: !libp2pConnectedRef.current,
+        warm: true,
       });
     }, POLL_MS);
     return () => clearInterval(id);

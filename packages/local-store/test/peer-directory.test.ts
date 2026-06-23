@@ -339,4 +339,30 @@ describe("peer directory store", () => {
     expect(row?.listenAddrs.some((a) => a.includes("64595"))).toBe(false);
     expect(row?.listenAddrs.some((a) => a.includes("4011"))).toBe(true);
   });
+
+  it("sanitizeListenAddrs strips ephemeral snapshots from all rows", async () => {
+    const store = createLocalPeerDirectoryStore(profileDir);
+    const peerId = "12D3KooWSanitizeListenAddrsPeer";
+    await writeFile(
+      join(profileDir, "peer-directory.json"),
+      JSON.stringify({
+        version: "0.1",
+        records: [
+          {
+            version: "0.1",
+            ownerId: "envoy:owner:sanitize",
+            peerId,
+            deviceId: "legacy",
+            lastSeenAt: new Date().toISOString(),
+            listenAddrs: [`/ip4/192.168.3.78/tcp/64595/p2p/${peerId}`],
+          },
+        ],
+      }),
+      { mode: 0o600 },
+    );
+    const result = await store.sanitizeListenAddrs();
+    expect(result.recordsTouched).toBe(1);
+    const row = await store.getPeerByPeerId(peerId);
+    expect(row?.listenAddrs).toEqual([]);
+  });
 });

@@ -499,8 +499,26 @@ export class EnvoyMesh {
 
   /** Drop libp2p auto-learned ephemeral observed addrs; keep only filtered direct dial paths. */
   async scrubPeerStoreDialHints(peerIdStr: string, extraAddrs: readonly string[] = []): Promise<string[]> {
-    await this.mergePeerStoreDialHints(peerIdStr, extraAddrs);
-    return this.getPeerStoreDialHints(peerIdStr);
+    const idStr = peerIdStr.trim();
+    if (!idStr || idStr.startsWith("envoy_") || !this.node) {
+      return [];
+    }
+    const existingGood = await this.getPeerStoreDialHints(idStr);
+    const replacement = filterUsableOutboundPeerDialHints(
+      [
+        ...existingGood,
+        ...extraAddrs.filter((a) => !a.includes("/p2p-circuit/")),
+      ],
+      idStr,
+    );
+    try {
+      await this.requireNode().peerStore.patch(peerIdFromString(idStr), {
+        multiaddrs: replacement.map((a) => ma(a)),
+      });
+    } catch {
+      /* best-effort */
+    }
+    return replacement;
   }
 
   /**

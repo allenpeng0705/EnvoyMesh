@@ -1561,6 +1561,7 @@ class NodeServiceImpl implements NodeService {
     }
     try {
       await this._peerDirectoryStore.compactListenAddrs();
+      await this._peerDirectoryStore.sanitizeListenAddrs();
       const bonds = await this.getBonds();
       for (const bond of bonds) {
         if (bond.level !== "direct" && bond.level !== "referred") {
@@ -3801,6 +3802,11 @@ class NodeServiceImpl implements NodeService {
       this._dialHintsForChat(transportPeerId, listenAddrs),
       30_000,
       "_dialHintsForChat",
+    );
+
+    await mesh.scrubPeerStoreDialHints(
+      transportPeerId,
+      mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, dialHints),
     );
 
     console.log(
@@ -10981,10 +10987,6 @@ class NodeServiceImpl implements NodeService {
       return existing;
     }
 
-    if (existing.connected && !options?.redial && !options?.upgradeRelayToDirect) {
-      return existing;
-    }
-
     let dialHints: string[];
     try {
       dialHints = await raceWithTimeout(
@@ -10996,9 +10998,21 @@ class NodeServiceImpl implements NodeService {
       return existing.connected ? existing : { connected: false, direct: false };
     }
 
-    void mesh.mergePeerStoreDialHints(transportPeerId, dialHints);
+    const dialableListen = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, dialHints);
+    await mesh.scrubPeerStoreDialHints(transportPeerId, dialableListen);
 
     const preferCircuitHints = shouldPreferCircuitDialHints(listenAddrs, dialHints, transportPeerId);
+
+    if (existing.connected && !options?.redial && !options?.upgradeRelayToDirect) {
+      const probed = await mesh.ensurePeerReachable(transportPeerId, ENVOY_CHAT_PROTOCOL, {
+        verifyConnection: true,
+        dialHints,
+        preferCircuitHints,
+      });
+      return probed.connected ? probed : existing;
+    }
+
+    void mesh.mergePeerStoreDialHints(transportPeerId, dialHints);
 
     if (options?.redial || options?.upgradeRelayToDirect) {
       try {

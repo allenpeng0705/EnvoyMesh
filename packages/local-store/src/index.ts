@@ -1406,6 +1406,8 @@ export interface LocalPeerDirectoryStore {
   mergeListenAddrsForPeerId(peerId: string, addrs: string[]): Promise<void>;
   /** Cap stored listen addrs per peer (repairs bloated directories from pre-cap merges). */
   compactListenAddrs(maxPerRecord?: number): Promise<{ recordsTouched: number; addrsRemoved: number }>;
+  /** Strip ephemeral inbound TCP snapshots from every peer row. */
+  sanitizeListenAddrs(): Promise<{ recordsTouched: number; addrsRemoved: number }>;
   /** Drop oldest peer rows when the directory grows too large (repairs WAN discovery bloat). */
   capPeerRecordCount(maxRecords?: number): Promise<{ recordsRemoved: number }>;
   /**
@@ -1834,6 +1836,29 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
             continue;
           }
           record.listenAddrs = capped;
+          recordsTouched += 1;
+          addrsRemoved += removed;
+          dirty = true;
+        }
+        if (dirty) {
+          await writePeerDirectoryFileAtomic(directoryPath, file);
+        }
+      });
+      return { recordsTouched, addrsRemoved };
+    },
+
+    async sanitizeListenAddrs() {
+      let recordsTouched = 0;
+      let addrsRemoved = 0;
+      await withDirectory(async (file) => {
+        let dirty = false;
+        for (const record of file.records) {
+          const sanitized = filterDialableListenAddrs(record.listenAddrs);
+          const removed = record.listenAddrs.length - sanitized.length;
+          if (removed <= 0) {
+            continue;
+          }
+          record.listenAddrs = sanitized;
           recordsTouched += 1;
           addrsRemoved += removed;
           dirty = true;

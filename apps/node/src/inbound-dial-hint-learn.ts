@@ -40,6 +40,7 @@ export type InboundPeerDirectoryLearner = {
 
 export type InboundPeerStoreLearner = {
   mergePeerStoreDialHints(peerId: string, addrs: string[]): Promise<void>;
+  getPeerStoreDialHints?(peerId: string): Promise<string[]>;
 };
 
 /** Persist dialable direct addrs learned from an inbound libp2p connection. */
@@ -50,7 +51,19 @@ export async function mergeInboundPeerDialHintsIfDue(input: {
   peerDirectory: InboundPeerDirectoryLearner;
   mesh?: InboundPeerStoreLearner;
 }): Promise<string[]> {
-  const dialableRemote = dialableInboundRemoteAddrs(input.remoteAddr, input.remotePeerId);
+  let dialableRemote = dialableInboundRemoteAddrs(input.remoteAddr, input.remotePeerId);
+  if (input.mesh && typeof input.mesh.getPeerStoreDialHints === "function") {
+    try {
+      const fromStore = await input.mesh.getPeerStoreDialHints(input.remotePeerId);
+      const stableFromStore = fromStore.filter(
+        (addr) =>
+          !addr.includes("/p2p-circuit/") && !isLikelyInboundConnSnapshotDialHint(addr),
+      );
+      dialableRemote = [...new Set([...dialableRemote, ...stableFromStore])];
+    } catch {
+      /* best-effort */
+    }
+  }
   if (!shouldMergeInboundListenAddrs(input.remotePeerId, dialableRemote, input.lastMergeByPeer)) {
     return dialableRemote;
   }

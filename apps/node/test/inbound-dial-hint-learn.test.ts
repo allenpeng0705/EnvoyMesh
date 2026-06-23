@@ -36,6 +36,29 @@ describe("inbound-dial-hint-learn", () => {
     expect(mergePeerStoreDialHints).toHaveBeenCalledTimes(1);
   });
 
+  it("merges stable listen addrs from libp2p peer store identify", async () => {
+    const lastMergeByPeer = new Map<string, number>();
+    const mergeListenAddrsForPeerId = vi.fn(async () => {});
+    const mergePeerStoreDialHints = vi.fn(async () => {});
+    const getPeerStoreDialHints = vi.fn(async () => [
+      `/ip4/192.168.3.78/tcp/4011/p2p/${PEER}`,
+      `/ip4/192.168.3.78/tcp/64595/p2p/${PEER}`,
+    ]);
+
+    const addrs = await mergeInboundPeerDialHintsIfDue({
+      remotePeerId: PEER,
+      remoteAddr: `/ip4/192.168.3.78/tcp/64595/p2p/${PEER}`,
+      lastMergeByPeer,
+      peerDirectory: { mergeListenAddrsForPeerId },
+      mesh: { mergePeerStoreDialHints, getPeerStoreDialHints },
+    });
+
+    expect(addrs).toEqual([`/ip4/192.168.3.78/tcp/4011/p2p/${PEER}`]);
+    expect(mergeListenAddrsForPeerId).toHaveBeenCalledWith(PEER, [
+      `/ip4/192.168.3.78/tcp/4011/p2p/${PEER}`,
+    ]);
+  });
+
   it("respects merge throttle for non-LAN addrs", () => {
     const lastMergeByPeer = new Map<string, number>();
     lastMergeByPeer.set(PEER, Date.now());
