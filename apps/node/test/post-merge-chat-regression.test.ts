@@ -152,13 +152,16 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
       expect(ensurePeerReachable).toHaveBeenCalledTimes(1);
     });
 
-    it("keepAlive probes the open path without redialing", async () => {
+    it("keepAlive probes the open path and redials when stale", async () => {
+      probeBondedPeerConnection.mockResolvedValueOnce({ connected: false, direct: false });
+      ensurePeerReachable.mockResolvedValueOnce({ connected: true, direct: true });
+
       const info = await node.warmContactConnection(PEER_OWNER_ID, { keepAlive: true });
 
-      expect(info).toEqual({ connected: true, direct: true });
       expect(probeBondedPeerConnection).toHaveBeenCalledWith(TRANSPORT_PEER_ID);
-      expect(ensurePeerReachable).not.toHaveBeenCalled();
-      expect(closeConnectionsToPeer).not.toHaveBeenCalled();
+      expect(closeConnectionsToPeer).toHaveBeenCalledWith(TRANSPORT_PEER_ID);
+      expect(ensurePeerReachable).toHaveBeenCalledTimes(1);
+      expect(info).toEqual({ connected: true, direct: true });
     });
 
     it("dials when not connected and no redial flag", async () => {

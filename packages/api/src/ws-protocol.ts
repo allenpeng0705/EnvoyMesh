@@ -1270,6 +1270,7 @@ export interface WarmContactConnectionParams {
   verifyOnly?: boolean;
   upgradeRelayToDirect?: boolean;
   keepAlive?: boolean;
+  verifyConnection?: boolean;
 }
 
 export interface GetChatDiagnosticsParams {

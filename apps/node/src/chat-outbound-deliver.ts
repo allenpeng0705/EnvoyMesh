@@ -29,6 +29,82 @@ export function rotateDialHintsForRetry(hints: string[], attempt: number): strin
   return prioritizeCircuitDialHints(hints);
 }
 
+async function prepareOutboundPeerConnection(input: {
+  mesh: Pick<
+    EnvoyMesh,
+    "closeConnectionsToPeer" | "ensurePeerReachable" | "getPeerConnectionInfo"
+  >;
+  transportPeerId: string;
+  protocol: string;
+  dialHints: string[];
+  preferCircuitHints: boolean;
+  forceFreshDial: boolean;
+}): Promise<boolean> {
+  const warmOpts = {
+    dialHints: input.dialHints,
+    preferCircuitHints: input.preferCircuitHints,
+  };
+  const conn = input.mesh.getPeerConnectionInfo(input.transportPeerId);
+  const upgradeRelayToDirect = conn.connected && !conn.direct && !input.preferCircuitHints;
+
+  const redialFresh = async (): Promise<boolean> => {
+    try {
+      await input.mesh.closeConnectionsToPeer(input.transportPeerId);
+      const result = await input.mesh.ensurePeerReachable(input.transportPeerId, input.protocol, {
+        ...warmOpts,
+        forceFreshDial: true,
+        upgradeRelayToDirect,
+      });
+      return result.connected;
+    } catch (warmErr) {
+      console.warn(
+        `[send] pre-send redial failed for ${input.transportPeerId.slice(0, 12)}…:`,
+        warmErr instanceof Error ? warmErr.message : warmErr,
+      );
+      return false;
+    }
+  };
+
+  if (input.forceFreshDial || upgradeRelayToDirect) {
+    return redialFresh();
+  }
+
+  if (!conn.connected) {
+    try {
+      const result = await input.mesh.ensurePeerReachable(input.transportPeerId, input.protocol, warmOpts);
+      return result.connected;
+    } catch (warmErr) {
+      console.warn(
+        `[send] pre-send warm failed for ${input.transportPeerId.slice(0, 12)}…:`,
+        warmErr instanceof Error ? warmErr.message : warmErr,
+      );
+      return false;
+    }
+  }
+
+  // libp2p may report "open" while NAT/TCP is half-dead (common on Windows LAN paths).
+  try {
+    const verified = await input.mesh.ensurePeerReachable(input.transportPeerId, input.protocol, {
+      ...warmOpts,
+      verifyConnection: true,
+    });
+    if (verified.connected) {
+      return true;
+    }
+    console.warn(
+      `[send] stale connection to ${input.transportPeerId.slice(0, 12)}…; redialing before send`,
+    );
+    return redialFresh();
+  } catch (warmErr) {
+    console.warn(
+      `[send] pre-send verify failed for ${input.transportPeerId.slice(0, 12)}…:`,
+      warmErr instanceof Error ? warmErr.message : warmErr,
+    );
+    return false;
+  }
+}
+
+/** @deprecated use prepareOutboundPeerConnection */
 async function prepareOutboundChatConnection(input: {
   mesh: Pick<
     EnvoyMesh,
@@ -39,68 +115,15 @@ async function prepareOutboundChatConnection(input: {
   dialHints: string[];
   preferCircuitHints: boolean;
   forceFreshDial: boolean;
-}): Promise<void> {
-  const warmOpts = {
+}): Promise<boolean> {
+  return prepareOutboundPeerConnection({
+    mesh: input.mesh,
+    transportPeerId: input.transportPeerId,
+    protocol: input.chatProtocol,
     dialHints: input.dialHints,
     preferCircuitHints: input.preferCircuitHints,
-  };
-  const conn = input.mesh.getPeerConnectionInfo(input.transportPeerId);
-  const upgradeRelayToDirect = conn.connected && !conn.direct && !input.preferCircuitHints;
-
-  if (input.forceFreshDial || upgradeRelayToDirect) {
-    try {
-      if (upgradeRelayToDirect || input.forceFreshDial) {
-        await input.mesh.closeConnectionsToPeer(input.transportPeerId);
-      }
-      await input.mesh.ensurePeerReachable(input.transportPeerId, input.chatProtocol, {
-        ...warmOpts,
-        forceFreshDial: true,
-        upgradeRelayToDirect,
-      });
-    } catch (warmErr) {
-      console.warn(
-        `[sendChat] pre-send warm failed for ${input.transportPeerId.slice(0, 12)}…:`,
-        warmErr instanceof Error ? warmErr.message : warmErr,
-      );
-    }
-    return;
-  }
-
-  if (!conn.connected) {
-    try {
-      await input.mesh.ensurePeerReachable(input.transportPeerId, input.chatProtocol, warmOpts);
-    } catch (warmErr) {
-      console.warn(
-        `[sendChat] pre-send warm failed for ${input.transportPeerId.slice(0, 12)}…:`,
-        warmErr instanceof Error ? warmErr.message : warmErr,
-      );
-    }
-    return;
-  }
-
-  // libp2p may report "open" while NAT/TCP is half-dead (common on Windows LAN paths).
-  try {
-    const verified = await input.mesh.ensurePeerReachable(input.transportPeerId, input.chatProtocol, {
-      ...warmOpts,
-      verifyConnection: true,
-    });
-    if (verified.connected) {
-      return;
-    }
-    console.warn(
-      `[sendChat] stale connection to ${input.transportPeerId.slice(0, 12)}…; redialing before send`,
-    );
-    await input.mesh.closeConnectionsToPeer(input.transportPeerId);
-    await input.mesh.ensurePeerReachable(input.transportPeerId, input.chatProtocol, {
-      ...warmOpts,
-      forceFreshDial: true,
-    });
-  } catch (warmErr) {
-    console.warn(
-      `[sendChat] pre-send verify failed for ${input.transportPeerId.slice(0, 12)}…:`,
-      warmErr instanceof Error ? warmErr.message : warmErr,
-    );
-  }
+    forceFreshDial: input.forceFreshDial,
+  });
 }
 
 /** ACK read failed after chat.message was written — do not retry (avoids duplicate sends). */
@@ -175,7 +198,7 @@ export async function deliverChatEnvelopeWithRetry(input: {
         );
       }
     } else {
-      await prepareOutboundChatConnection({
+      const ready = await prepareOutboundChatConnection({
         mesh: input.mesh,
         transportPeerId: input.transportPeerId,
         chatProtocol: input.chatProtocol,
@@ -183,6 +206,10 @@ export async function deliverChatEnvelopeWithRetry(input: {
         preferCircuitHints: preferCircuits || attempt >= 2,
         forceFreshDial: attempt > 0,
       });
+      if (!ready && attempt === 0) {
+        lastErr = new Error(`No reachable path to ${input.transportPeerId.slice(0, 12)}… before send`);
+        continue;
+      }
     }
 
     const preferCircuitsOnAttempt = preferCircuits || attempt >= 2;
@@ -317,20 +344,17 @@ export async function deliverCallEnvelopeWithRetry(input: {
     }
 
     try {
-      const conn = input.mesh.getPeerConnectionInfo(input.transportPeerId);
-      if (!conn.connected) {
-        try {
-          await input.mesh.ensurePeerReachable(input.transportPeerId, ENVOY_MESSAGE_PROTOCOL, {
-            dialHints: hints,
-            preferCircuitHints: preferCircuits || attempt > 0,
-            upgradeRelayToDirect: attempt === 0 && !preferCircuits && hasDirectTcpDialHints(hints),
-          });
-        } catch (warmErr) {
-          console.warn(
-            `[call] pre-send warm failed for ${input.transportPeerId.slice(0, 12)}…:`,
-            warmErr instanceof Error ? warmErr.message : warmErr,
-          );
-        }
+      const ready = await prepareOutboundPeerConnection({
+        mesh: input.mesh,
+        transportPeerId: input.transportPeerId,
+        protocol: ENVOY_MESSAGE_PROTOCOL,
+        dialHints: hints,
+        preferCircuitHints: preferCircuits || attempt > 0,
+        forceFreshDial: attempt > 0,
+      });
+      if (!ready) {
+        lastErr = new Error(`No reachable path to ${input.transportPeerId.slice(0, 12)}… before call send`);
+        continue;
       }
 
       await input.mesh.send(input.transportPeerId, input.envelope, {

@@ -6,6 +6,7 @@ import {
   rotateDialHintsForRetry,
 } from "../src/chat-outbound-deliver.js";
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
+import { ENVOY_MESSAGE_PROTOCOL } from "@envoymesh/network";
 
 const envelope = { intent: "chat.message" } as EnvoyEnvelope;
 
@@ -359,7 +360,11 @@ describe("deliverCallEnvelopeWithRetry (Phase 42A — call.* on message protocol
       maxAttempts: 1,
     });
 
-    expect(ensurePeerReachable).not.toHaveBeenCalled();
+    expect(ensurePeerReachable).toHaveBeenCalledWith(
+      "12D3KooWConnectedCallPeer",
+      ENVOY_MESSAGE_PROTOCOL,
+      expect.objectContaining({ verifyConnection: true }),
+    );
     expect(send).toHaveBeenCalledTimes(1);
   });
 });

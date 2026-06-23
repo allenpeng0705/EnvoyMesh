@@ -3110,11 +3110,34 @@ class NodeServiceImpl implements NodeService {
         25_000,
         "listPeerRecords",
       );
+      let transportPeerId = cachedTransport.peerId;
+      let transportListenAddrs = cachedTransport.listenAddrs;
+      const bestConnected = pickBestLibp2pPeerDirectoryRecord(records, targetOwnerId, { isConnected });
+      if (
+        bestConnected &&
+        isLibp2pPeerId(bestConnected.peerId) &&
+        bestConnected.peerId !== transportPeerId &&
+        isConnected?.(bestConnected.peerId)
+      ) {
+        transportPeerId = bestConnected.peerId;
+        transportListenAddrs = bestConnected.listenAddrs ?? [];
+        this._lastLibp2pTransportByOwner.set(targetOwnerId, {
+          peerId: transportPeerId,
+          listenAddrs: transportListenAddrs,
+        });
+      } else if (isConnected && !isConnected(transportPeerId) && bestConnected && isLibp2pPeerId(bestConnected.peerId)) {
+        transportPeerId = bestConnected.peerId;
+        transportListenAddrs = bestConnected.listenAddrs ?? [];
+        this._lastLibp2pTransportByOwner.set(targetOwnerId, {
+          peerId: transportPeerId,
+          listenAddrs: transportListenAddrs,
+        });
+      }
       let dirRow = records.find(
-        (r) => r.ownerId === targetOwnerId && r.peerId === cachedTransport.peerId,
+        (r) => r.ownerId === targetOwnerId && r.peerId === transportPeerId,
       );
       if (!dirRow) {
-        dirRow = records.find((r) => r.peerId === cachedTransport.peerId);
+        dirRow = records.find((r) => r.peerId === transportPeerId);
       }
       if (!dirRow) {
         dirRow = pickBestLibp2pPeerDirectoryRecord(records, targetOwnerId, { isConnected });
@@ -3123,17 +3146,17 @@ class NodeServiceImpl implements NodeService {
         .filter((r) => r.ownerId === targetOwnerId)
         .flatMap((r) => r.listenAddrs ?? []);
       const listenAddrs = mergeDialablePeerListenAddrs(
-        cachedTransport.peerId,
-        cachedTransport.listenAddrs,
+        transportPeerId,
+        transportListenAddrs,
         dirRow?.listenAddrs,
         ownerListenAddrs,
       );
       return {
-        transportPeerId: cachedTransport.peerId,
+        transportPeerId,
         recipientEnvelopePeerId: resolveRecipientEnvelopePeerId(
           records,
           targetOwnerId,
-          cachedTransport.peerId,
+          transportPeerId,
         ),
         listenAddrs: listenAddrs.length ? listenAddrs : undefined,
       };
@@ -10966,7 +10989,6 @@ class NodeServiceImpl implements NodeService {
     options?: WarmContactConnectionOptions,
   ): Promise<PeerConnectionInfo> {
     this._assertOnline();
-    const mesh = this._requireMesh();
     let transportPeerId: string;
     let listenAddrs: string[] | undefined;
     try {
@@ -10981,6 +11003,17 @@ class NodeServiceImpl implements NodeService {
       return { connected: false, direct: false };
     }
 
+    return this._withChatSendLock(transportPeerId, () =>
+      this._warmContactConnectionTransport(transportPeerId, listenAddrs, options),
+    );
+  }
+
+  private async _warmContactConnectionTransport(
+    transportPeerId: string,
+    listenAddrs: string[] | undefined,
+    options?: WarmContactConnectionOptions,
+  ): Promise<PeerConnectionInfo> {
+    const mesh = this._requireMesh();
     void this._tagBondedContactReachability(transportPeerId);
     const existing = mesh.getPeerConnectionInfo(transportPeerId);
 
@@ -10988,11 +11021,40 @@ class NodeServiceImpl implements NodeService {
       return existing;
     }
 
+    const needsProbe = options?.keepAlive === true || options?.verifyConnection === true;
     if (existing.connected && !options?.redial && !options?.upgradeRelayToDirect) {
-      if (options?.keepAlive) {
-        return mesh.probeBondedPeerConnection(transportPeerId);
+      if (needsProbe) {
+        if (options?.verifyConnection) {
+          let dialHints: string[];
+          try {
+            dialHints = await raceWithTimeout(
+              this._dialHintsForChat(transportPeerId, listenAddrs),
+              30_000,
+              "_dialHintsForChat",
+            );
+          } catch {
+            return existing;
+          }
+          const preferCircuitHints = shouldPreferCircuitDialHints(listenAddrs, dialHints, transportPeerId);
+          const verified = await mesh.ensurePeerReachable(transportPeerId, ENVOY_CHAT_PROTOCOL, {
+            dialHints,
+            preferCircuitHints,
+            verifyConnection: true,
+          });
+          if (verified.connected) {
+            return verified;
+          }
+          // stale — fall through to redial
+        } else {
+          const probed = await mesh.probeBondedPeerConnection(transportPeerId);
+          if (probed.connected) {
+            return probed;
+          }
+          // stale — fall through to redial
+        }
+      } else {
+        return existing;
       }
-      return existing;
     }
 
     let dialHints: string[];
@@ -11003,17 +11065,17 @@ class NodeServiceImpl implements NodeService {
         "_dialHintsForChat",
       );
     } catch {
-      return existing.connected ? existing : { connected: false, direct: false };
+      return mesh.getPeerConnectionInfo(transportPeerId);
     }
 
     const dialableListen = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, dialHints);
-    await mesh.scrubPeerStoreDialHints(transportPeerId, dialableListen);
+    void mesh.scrubPeerStoreDialHints(transportPeerId, dialableListen);
 
     const preferCircuitHints = shouldPreferCircuitDialHints(listenAddrs, dialHints, transportPeerId);
 
     void mesh.mergePeerStoreDialHints(transportPeerId, dialHints);
 
-    if (options?.redial || options?.upgradeRelayToDirect) {
+    if (options?.redial || options?.upgradeRelayToDirect || needsProbe) {
       try {
         await mesh.closeConnectionsToPeer(transportPeerId);
       } catch {
@@ -11024,7 +11086,11 @@ class NodeServiceImpl implements NodeService {
     const result = await mesh.ensurePeerReachable(transportPeerId, ENVOY_CHAT_PROTOCOL, {
       dialHints,
       preferCircuitHints,
-      forceFreshDial: options?.redial === true || !existing.connected || options?.upgradeRelayToDirect === true,
+      forceFreshDial:
+        options?.redial === true ||
+        !existing.connected ||
+        options?.upgradeRelayToDirect === true ||
+        needsProbe,
       upgradeRelayToDirect: options?.upgradeRelayToDirect === true || options?.redial === true,
     });
     void this._flushPendingRoomSyncs();
@@ -11054,6 +11120,7 @@ class NodeServiceImpl implements NodeService {
       try {
         const info = await this.getPeerConnectionInfo(bond.peerOwnerId);
         if (info.connected) {
+          await this.warmContactConnection(bond.peerOwnerId, { keepAlive: true });
           continue;
         }
         await this.warmContactConnection(bond.peerOwnerId);

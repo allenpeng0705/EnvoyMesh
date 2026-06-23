@@ -856,6 +856,8 @@ export interface WarmContactConnectionOptions {
   upgradeRelayToDirect?: boolean;
   /** When already connected, probe the open libp2p path (ping / stream) without redialing. */
   keepAlive?: boolean;
+  /** When connected, verify with a chat stream; redial if stale. Use on chat open. */
+  verifyConnection?: boolean;
 }
 
 export interface ChatDiagnosticsContact {

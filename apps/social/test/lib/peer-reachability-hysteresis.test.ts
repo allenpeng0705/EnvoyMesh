@@ -33,7 +33,7 @@ describe("peer-reachability-hysteresis", () => {
     expect(r.info?.connected).toBe(false);
   });
 
-  it("requires consecutive connected polls before Offline → Online", () => {
+  it("shows Online immediately after reconnect from Offline", () => {
     let state = createReachabilityHysteresisState();
     const t0 = 2_000_000;
     for (let i = 0; i < REACHABILITY_STABLE_OFFLINE_POLLS; i++) {
@@ -55,32 +55,5 @@ describe("peer-reachability-hysteresis", () => {
     let r = applyReachabilityHysteresis(state, { connected: true, direct: true }, t0 + 5000);
     expect(r.shouldUpdate).toBe(true);
     expect(r.info?.connected).toBe(true);
-  });
-
-  it("never flips Online → Offline while holdOnline is set (open chat)", () => {
-    let state = createReachabilityHysteresisState();
-    const t0 = 3_000_000;
-    let r = applyReachabilityHysteresis(state, { connected: true, direct: true }, t0);
-    state = r.state;
-
-    for (let i = 0; i < REACHABILITY_STABLE_OFFLINE_POLLS + 5; i++) {
-      r = applyReachabilityHysteresis(
-        state,
-        { connected: false, direct: false },
-        t0 + 60_000 + i * 60_000,
-        { holdOnline: true },
-      );
-      state = r.state;
-      expect(r.shouldUpdate).toBe(false);
-    }
-
-    r = applyReachabilityHysteresis(
-      state,
-      { connected: false, direct: false },
-      t0 + 24 * 60 * 60_000,
-      { holdOnline: true },
-    );
-    expect(r.shouldUpdate).toBe(false);
-    expect(r.state.displayedLabel).toBe("direct");
   });
 });

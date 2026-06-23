@@ -694,6 +694,7 @@ export class EnvoyMesh {
         await node.services.ping.ping(pid);
         return before;
       } catch {
+        await this.closeConnectionsToPeer(peerIdStr);
         return { connected: false, direct: false };
       }
     }
@@ -714,6 +715,7 @@ export class EnvoyMesh {
       }
     }
 
+    await this.closeConnectionsToPeer(peerIdStr);
     return { connected: false, direct: false };
   }
 
