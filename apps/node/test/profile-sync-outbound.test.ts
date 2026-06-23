@@ -2,16 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { generateDeviceIdentity, generateOwnerIdentity, signHumanProfile } from "@envoymesh/identity";
 import { type EnvoyEnvelope } from "@envoymesh/protocol";
 import { isLibp2pPeerId, sendProfileRequest, sendProfileSyncToBonds } from "../src/profile-sync-outbound.js";
+import { createOutboundMeshMock } from "./helpers/outbound-mesh-mock.js";
 
 function outboundMeshMock(overrides: Record<string, unknown> = {}) {
-  return {
-    send: vi.fn().mockResolvedValue(undefined),
-    closeConnectionsToPeer: vi.fn().mockResolvedValue(0),
-    ensurePeerReachable: vi.fn().mockResolvedValue({ connected: true, direct: true }),
-    getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: false, direct: false }),
-    mergePeerStoreDialHints: vi.fn().mockResolvedValue(undefined),
-    ...overrides,
-  };
+  return createOutboundMeshMock(overrides as Parameters<typeof createOutboundMeshMock>[0]);
 }
 
 describe("isLibp2pPeerId", () => {
@@ -76,7 +70,10 @@ describe("sendProfileSyncToBonds", () => {
       .fn()
       .mockRejectedValueOnce(new Error("failed to connect via relay with status NO_RESERVATION"))
       .mockResolvedValueOnce(undefined);
-    const mesh = outboundMeshMock({ send });
+    const mesh = outboundMeshMock({
+      send,
+      mergePeerStoreDialHints: vi.fn().mockResolvedValue(undefined),
+    });
 
     await sendProfileSyncToBonds({
       mesh,

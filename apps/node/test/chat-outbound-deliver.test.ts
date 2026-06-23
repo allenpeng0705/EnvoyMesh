@@ -3,6 +3,7 @@ import {
   deliverCallEnvelopeWithRetry,
   deliverChatEnvelopeWithRetry,
   deliverDataTransferWithRetry,
+  deliverExpectReplyWithRetry,
   isChatAckFailureLikelyAfterWrite,
   rotateDialHintsForRetry,
 } from "../src/chat-outbound-deliver.js";
@@ -418,5 +419,65 @@ describe("deliverDataTransferWithRetry", () => {
 
     expect(ensurePeerReachable).toHaveBeenCalledTimes(1);
     expect(sendDataTransfer).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("deliverExpectReplyWithRetry", () => {
+  const requestEnvelope = { intent: "profile.request", messageId: "prof-req-1" } as EnvoyEnvelope;
+
+  it("verifies connected peer before expect-reply send", async () => {
+    const reply = { intent: "profile.response", payload: {}, messageId: "prof-res-1" } as EnvoyEnvelope;
+    const sendExpectReply = vi.fn().mockResolvedValue(reply);
+    const ensurePeerReachable = vi.fn().mockResolvedValue({ connected: true, direct: true });
+    const mesh = {
+      send: vi.fn(),
+      sendExpectReply,
+      closeConnectionsToPeer: vi.fn().mockResolvedValue(0),
+      ensurePeerReachable,
+      getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: true, direct: true }),
+    };
+
+    const result = await deliverExpectReplyWithRetry({
+      mesh,
+      transportPeerId: "12D3KooWExpectReplyPeer",
+      envelope: requestEnvelope,
+      dialHints: ["/p2p/12D3KooWExpectReplyPeer"],
+      maxAttempts: 1,
+    });
+
+    expect(result).toBe(reply);
+    expect(ensurePeerReachable).toHaveBeenCalledWith(
+      "12D3KooWExpectReplyPeer",
+      ENVOY_MESSAGE_PROTOCOL,
+      expect.objectContaining({ verifyConnection: true }),
+    );
+    expect(sendExpectReply).toHaveBeenCalledTimes(1);
+  });
+
+  it("retries after sendExpectReply failure and succeeds on second attempt", async () => {
+    const reply = { intent: "discovery.response", payload: {}, messageId: "disc-res-1" } as EnvoyEnvelope;
+    const sendExpectReply = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("stale expect-reply stream"))
+      .mockResolvedValueOnce(reply);
+    const mesh = {
+      send: vi.fn(),
+      sendExpectReply,
+      closeConnectionsToPeer: vi.fn().mockResolvedValue(1),
+      ensurePeerReachable: vi.fn().mockResolvedValue({ connected: true, direct: false }),
+      getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: false, direct: false }),
+    };
+
+    const result = await deliverExpectReplyWithRetry({
+      mesh,
+      transportPeerId: "12D3KooWExpectReplyRetry",
+      envelope: requestEnvelope,
+      dialHints: ["/p2p/12D3KooWExpectReplyRetry"],
+      maxAttempts: 3,
+    });
+
+    expect(result).toBe(reply);
+    expect(sendExpectReply).toHaveBeenCalledTimes(2);
+    expect(mesh.closeConnectionsToPeer).toHaveBeenCalledWith("12D3KooWExpectReplyRetry");
   });
 });

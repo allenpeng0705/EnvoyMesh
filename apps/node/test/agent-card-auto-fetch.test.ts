@@ -35,6 +35,7 @@ import {
 } from "@envoymesh/protocol";
 import { handleInboundAgentCardIntent } from "../src/agent-card-inbound.js";
 import { createAgentCardAutoFetcher } from "../src/agent-card-auto-fetcher.js";
+import { createOutboundMeshMock } from "./helpers/outbound-mesh-mock.js";
 
 async function tempDir() {
   const dir = await mkdtemp(join(tmpdir(), "agent-card-auto-fetch-"));
@@ -107,12 +108,15 @@ describe("AgentCardAutoFetcher — integration with inbound handler", () => {
       await trustStore.setTrustRecord({ peerOwnerId: peerOwner.ownerId, level: "direct" });
 
       let capturedEnvelope: unknown = null;
-      const sendFn = async (_peerId: string, envelope: unknown) => {
-        capturedEnvelope = envelope;
-      };
+      const mesh = createOutboundMeshMock({
+        send: async (_peerId: string, envelope: unknown) => {
+          capturedEnvelope = envelope;
+          return 0;
+        },
+      });
 
       const fetcher = createAgentCardAutoFetcher({
-        mesh: { send: sendFn },
+        mesh,
         bridgeIdentity: bridge,
         agentCardStore,
         trustStore,

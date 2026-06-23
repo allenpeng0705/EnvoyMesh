@@ -29,6 +29,7 @@ import {
 } from "@envoymesh/protocol";
 import { ToolRegistry, executeTool, type ToolDefinition } from "../src/tool-registry.js";
 import { createAgentCardAutoFetcher } from "../src/agent-card-auto-fetcher.js";
+import { createOutboundMeshMock } from "./helpers/outbound-mesh-mock.js";
 
 async function tempStore() {
   const dir = await mkdtemp(join(tmpdir(), "a2a-tool-exposure-"));
@@ -316,7 +317,7 @@ describe("AgentCardAutoFetcher — fresh-cache skip + public skip", () => {
     try {
       const send = vi.fn();
       const fetcher = createAgentCardAutoFetcher({
-        mesh: { send },
+        mesh: createOutboundMeshMock({ send }),
         bridgeIdentity: makeBridgeIdentity(),
         agentCardStore: store.agentCardStore,
         trustStore: store.trustStore,
@@ -341,7 +342,7 @@ describe("AgentCardAutoFetcher — fresh-cache skip + public skip", () => {
       await store.trustStore.setTrustRecord({ peerOwnerId: "bad", level: "blocked" });
       const send = vi.fn();
       const fetcher = createAgentCardAutoFetcher({
-        mesh: { send },
+        mesh: createOutboundMeshMock({ send }),
         bridgeIdentity: makeBridgeIdentity(),
         agentCardStore: store.agentCardStore,
         trustStore: store.trustStore,
@@ -376,7 +377,7 @@ describe("AgentCardAutoFetcher — fresh-cache skip + public skip", () => {
       });
       const send = vi.fn();
       const fetcher = createAgentCardAutoFetcher({
-        mesh: { send },
+        mesh: createOutboundMeshMock({ send }),
         bridgeIdentity: makeBridgeIdentity(),
         agentCardStore: store.agentCardStore,
         trustStore: store.trustStore,
@@ -400,7 +401,7 @@ describe("AgentCardAutoFetcher — fresh-cache skip + public skip", () => {
       await store.trustStore.setTrustRecord({ peerOwnerId: "friend", level: "direct" });
       const send = vi.fn().mockResolvedValue(undefined);
       const fetcher = createAgentCardAutoFetcher({
-        mesh: { send },
+        mesh: createOutboundMeshMock({ send }),
         bridgeIdentity: makeBridgeIdentity(),
         agentCardStore: store.agentCardStore,
         trustStore: store.trustStore,
@@ -429,7 +430,7 @@ describe("AgentCardAutoFetcher — fresh-cache skip + public skip", () => {
       await store.trustStore.setTrustRecord({ peerOwnerId: "friend", level: "direct" });
       const send = vi.fn().mockRejectedValue(new Error("agent-card-auto-fetch-timeout"));
       const fetcher = createAgentCardAutoFetcher({
-        mesh: { send },
+        mesh: createOutboundMeshMock({ send }),
         bridgeIdentity: makeBridgeIdentity(),
         agentCardStore: store.agentCardStore,
         trustStore: store.trustStore,
@@ -456,7 +457,7 @@ describe("AgentCardAutoFetcher — fresh-cache skip + public skip", () => {
       await store.trustStore.setTrustRecord({ peerOwnerId: "friend", level: "direct" });
       const send = vi.fn();
       const fetcher = createAgentCardAutoFetcher({
-        mesh: { send },
+        mesh: createOutboundMeshMock({ send }),
         bridgeIdentity: makeBridgeIdentity(),
         agentCardStore: store.agentCardStore,
         trustStore: store.trustStore,
