@@ -104,7 +104,6 @@ export async function createPhase13TestNode(): Promise<Phase13TestNode> {
     vaultDir,
   );
   service.bindCliTaskStore(taskStore);
-  service.bindExternalMesh(mesh);
   return { profileDir, vaultDir, profile, mesh, taskStore, taskRuntimeStore, trustStore, peerDirectory, human, service };
 }
 
@@ -426,6 +425,12 @@ export async function wirePhase13AcquisitionCluster(
 }
 
 export async function cleanupPhase13Node(node: Phase13TestNode): Promise<void> {
+  // Stop bond-warm / profile-refresh timers before libp2p teardown. bindExternalMesh
+  // and constructor both attach the mesh; stopNode clears _mesh but not _externalMesh.
+  await node.service.stopNode().catch(() => {});
+  const svc = node.service as NodeServiceImpl & { _externalMesh?: EnvoyMesh; _mesh?: EnvoyMesh };
+  svc._externalMesh = undefined;
+  svc._mesh = undefined;
   await node.mesh.stop().catch(() => {});
   await rm(node.profileDir, { recursive: true, force: true }).catch(() => {});
   const meshIdx = phase13Meshes.indexOf(node.mesh);

@@ -56,8 +56,9 @@
     "smoke:openclaw-bridge:live": "npm run smoke:openclaw-bridge:live -w @envoymesh/node",
     "smoke:webrtc-call": "npx vitest run apps/node/test/webrtc-call-e2e.test.ts",
     "test:e2e:call-two-home": "npx vitest run apps/node/test/call-two-home-e2e.test.ts",
+    "test:e2e:call-signaling": "npx vitest run apps/node/test/call-signaling-*-e2e.test.ts",
     "test:e2e:chain-three-home": "npx vitest run apps/node/test/chain-three-home-smoke.test.ts",
-    "test:e2e:webrtc": "npx vitest run apps/node/test/call-two-home-e2e.test.ts apps/node/test/webrtc-call-e2e.test.ts apps/social/test/hooks/useCallSession.test.ts"
+    "test:e2e:webrtc": "npx vitest run apps/node/test/call-signaling-*-e2e.test.ts apps/node/test/call-two-home-e2e.test.ts apps/node/test/webrtc-call-e2e.test.ts apps/social/test/hooks/useCallSession.test.ts apps/social/test/lib/webrtc-call-transport.test.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.61.0",

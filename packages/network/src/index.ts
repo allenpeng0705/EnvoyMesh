@@ -1441,10 +1441,19 @@ export class EnvoyMesh {
         try {
           return await attemptOpen(true);
         } catch {
-          /* fall through to close */
+          /* fall through */
         }
       }
       const detail = firstErr instanceof Error ? firstErr.message : String(firstErr);
+      const protocolOnlyFailure =
+        detail.includes("Protocol selection failed") || detail.includes("could not negotiate");
+      if (protocolOnlyFailure) {
+        // Peer may accept chat streams on this connection but not message — do not tear down chat.
+        console.warn(
+          `[network] stream open failed on existing connection (${detail}); trying another path`,
+        );
+        return undefined;
+      }
       console.warn(
         `[network] stream open failed on existing connection (${detail}); closing and redialing`,
       );

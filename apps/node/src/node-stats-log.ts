@@ -1,6 +1,8 @@
 import type { EnvoyMesh } from "@envoymesh/network";
 
 export const NODE_STATS_INTERVAL_MS = 60_000;
+/** Log a hint when libp2p connection count suggests dial churn / GC pressure. */
+export const HIGH_CONNECTION_COUNT_WARN = 60;
 
 export interface NodeStatsLogContext {
   processStartedAtMs: number;
@@ -32,6 +34,13 @@ export function logNodeRuntimeStats(mesh: EnvoyMesh, context: NodeStatsLogContex
     const dialPart = conn.dialQueueLength != null ? ` dialQueue=${conn.dialQueueLength}` : "";
     console.warn(
       `[node-stats] WARNING: memory usage ${rssMB}MB exceeds 2GB (heapUsed=${heapMB}MB external=${extMB}MB arrayBuffers=${abMB}MB totalConns=${conn.totalConnections}${dialPart}) — may be libp2p/GC pressure, not necessarily a leak`,
+    );
+  }
+
+  if (conn.totalConnections >= HIGH_CONNECTION_COUNT_WARN) {
+    const dialPart = conn.dialQueueLength != null ? ` dialQueue=${conn.dialQueueLength}` : "";
+    console.warn(
+      `[node-stats] WARNING: ${conn.totalConnections} open libp2p connections (peers=${conn.totalPeerIds}${dialPart}) — check relay dial churn; bond warm runs every 60s per contact`,
     );
   }
 }

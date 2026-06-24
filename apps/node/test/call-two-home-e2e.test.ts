@@ -25,7 +25,6 @@ import {
   registerBondedPeer,
   waitForPhase13,
   wireCallInboundHandler,
-  wireNodeServiceInboundHandlers,
   type Phase13TestNode,
 } from "./phase13-e2e-harness.js";
 
@@ -51,8 +50,6 @@ async function setupCallHomes(): Promise<{ caller: Phase13TestNode; callee: Phas
   await registerBondedPeer(caller, callee, "Callee");
   await registerBondedPeer(callee, caller, "Caller");
 
-  wireNodeServiceInboundHandlers(caller);
-  wireNodeServiceInboundHandlers(callee);
   wireCallInboundHandler(caller);
   wireCallInboundHandler(callee);
 
@@ -110,8 +107,14 @@ describe.sequential("E2E two-home call signaling (libp2p)", () => {
     expect(incoming.peerOwnerId).toBe(caller.profile.owner.ownerId);
     expect(incoming.iceServers ?? []).toEqual([]);
 
-    // Re-open callee → caller path (invite delivery retries may have torn down dial hints).
+    await caller.mesh.dial(callee.mesh.multiaddrs[0]!);
     await callee.mesh.dial(caller.mesh.multiaddrs[0]!);
+    await waitForPhase13(
+      () =>
+        caller.mesh.getPeerConnectionInfo(callee.mesh.peerId).connected &&
+        callee.mesh.getPeerConnectionInfo(caller.mesh.peerId).connected,
+      5_000,
+    );
 
     // --- call.accept → call:answered ---
     const answeredPromise = waitForCallEvent(

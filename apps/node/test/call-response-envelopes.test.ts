@@ -59,6 +59,8 @@ function buildHarness(sendsRef: CapturedSend[]) {
     sendChatExpectReply: vi.fn(async () => undefined as unknown as EnvoyEnvelope),
     ensurePeerReachable: vi.fn(async () => ({ connected: true, direct: true })),
     getPeerConnectionInfo: vi.fn(() => ({ connected: true, direct: true })),
+    getConnectedPeerIds: vi.fn(() => [PEER_TRANSPORT_PEER_ID]),
+    dial: vi.fn(async () => undefined),
     closeConnectionsToPeer: vi.fn(async () => 0),
   };
   return { mockMesh };
@@ -154,6 +156,8 @@ describe("NodeServiceImpl call response envelopes (Phase 42B)", () => {
       const ok = await node.acceptCallInvite(callId, sdpAnswer, iceServers);
       expect(ok).toBe(true);
       expect(sends).toHaveLength(1);
+      expect((node as any)._mesh.sendChat).toHaveBeenCalled();
+      expect((node as any)._mesh.send).not.toHaveBeenCalled();
 
       const captured = sends[0]!;
       expect(captured.transportPeerId).toBe(PEER_TRANSPORT_PEER_ID);

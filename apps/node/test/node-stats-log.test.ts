@@ -36,4 +36,28 @@ describe("logNodeRuntimeStats", () => {
     logSpy.mockRestore();
     warnSpy.mockRestore();
   });
+
+  it("warns when libp2p connection count is high", () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    logNodeRuntimeStats(
+      {
+        getConnectionStats: () => ({
+          totalPeerIds: 70,
+          totalConnections: 89,
+          circuitPeerIds: ["12D3KooWRelay"],
+          circuitConnections: 12,
+        }),
+      } as never,
+      { processStartedAtMs: Date.now() - 30_000 },
+    );
+
+    expect(warnSpy).toHaveBeenCalled();
+    const line = String(warnSpy.mock.calls.find((c) => String(c[0]).includes("89 open"))?.[0] ?? "");
+    expect(line).toContain("89 open libp2p connections");
+
+    logSpy.mockRestore();
+    warnSpy.mockRestore();
+  });
 });

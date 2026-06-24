@@ -404,7 +404,7 @@ import {
 } from "./profile-sync-outbound.js";
 import { probeNearbyPeerProfile } from "./nearby-profile-probe.js";
 import { deliverCallEnvelopeWithRetry, deliverChatEnvelopeWithRetry, sendExpectReplyWithRetry, type ChatDeliverResult } from "./chat-outbound-deliver.js";
-import { markOutboundPeerVerified } from "./outbound-peer-freshness.js";
+import { isOutboundPeerRecentlyVerified, markOutboundPeerVerified } from "./outbound-peer-freshness.js";
 import { deliverOutboundEnvelope, dialHintsForTransportTarget } from "./mesh-outbound-helper.js";
 import { withOutboundSendLock } from "./outbound-send-lock.js";
 import { pickBestLibp2pPeerDirectoryRecord, pickLibp2pFromConnectedPeers, resolveRecipientEnvelopePeerId } from "./peer-transport-resolve.js";
@@ -3193,13 +3193,38 @@ class NodeServiceImpl implements NodeService {
       };
     }
 
-    let targetPeer: Awaited<ReturnType<LocalPeerDirectoryStore["getPeerByOwnerId"]>>;
     const records = await raceWithTimeout(
       this._peerDirectoryStore.listPeerRecords(),
       25_000,
       "listPeerRecords",
     );
     const connectedPeerIds = mesh?.getConnectedPeerIds() ?? [];
+
+    const liveConnectedRow = pickLibp2pFromConnectedPeers(
+      records,
+      targetOwnerId,
+      connectedPeerIds,
+    );
+    if (liveConnectedRow) {
+      const listenAddrs = mergeDialablePeerListenAddrs(
+        liveConnectedRow.peerId,
+        liveConnectedRow.listenAddrs,
+        records.filter((r) => r.ownerId === targetOwnerId).flatMap((r) => r.listenAddrs ?? []),
+      );
+      this._lastLibp2pTransportByOwner.set(targetOwnerId, {
+        peerId: liveConnectedRow.peerId,
+        listenAddrs,
+      });
+      return this._finalizePeerTransportResolve(
+        targetOwnerId,
+        liveConnectedRow.peerId,
+        records,
+        listenAddrs,
+        isConnected,
+      );
+    }
+
+    let targetPeer: Awaited<ReturnType<LocalPeerDirectoryStore["getPeerByOwnerId"]>>;
     let libp2pRow =
       pickBestLibp2pPeerDirectoryRecord(records, targetOwnerId, { isConnected }) ??
       pickLibp2pFromConnectedPeers(records, targetOwnerId, connectedPeerIds);
@@ -9560,6 +9585,7 @@ class NodeServiceImpl implements NodeService {
 
     this._nodeStatus = "stopping";
     this.emit("node:status", { status: this._nodeStatus });
+    this._profileRequestInflight.clear();
 
     try {
       await this.stopPairingKiosk();
@@ -9575,6 +9601,10 @@ class NodeServiceImpl implements NodeService {
         clearInterval(this._bondWarmTimer);
         this._bondWarmTimer = undefined;
       }
+      if (this._chatRoomSyncFlushTimer) {
+        clearInterval(this._chatRoomSyncFlushTimer);
+        this._chatRoomSyncFlushTimer = null;
+      }
       // Don't clear _relayBootstrapPeers — keep the last known relay list so
       // getPairingPayload() can still return useful fallback addresses if called
       // during a brief stop/start window (e.g. QR modal open during node restart).
@@ -9582,6 +9612,7 @@ class NodeServiceImpl implements NodeService {
         await this._mesh.stop();
         this._mesh = undefined;
       }
+      this._externalMesh = undefined;
       // Clear periodic re-advertisement timer
       if (this._advertiseInterestsTimer) {
         clearInterval(this._advertiseInterestsTimer);
@@ -11148,6 +11179,10 @@ class NodeServiceImpl implements NodeService {
     options?: WarmContactConnectionOptions,
   ): Promise<PeerConnectionInfo> {
     this._assertOnline();
+    const selfOwnerId = this._profile?.owner.ownerId?.trim();
+    if (selfOwnerId && peerOwnerId.trim() === selfOwnerId) {
+      return { connected: true, direct: true };
+    }
     let transportPeerId: string;
     let listenAddrs: string[] | undefined;
     try {
@@ -11297,13 +11332,25 @@ class NodeServiceImpl implements NodeService {
       return;
     }
     const bonds = await this.getBonds();
+    const selfOwnerId = this._profile?.owner.ownerId?.trim();
     for (const bond of bonds) {
+      if (selfOwnerId && bond.peerOwnerId.trim() === selfOwnerId) {
+        continue;
+      }
       if (bond.level !== "direct" && bond.level !== "referred") {
         continue;
       }
       try {
         const info = await this.getPeerConnectionInfo(bond.peerOwnerId);
         if (info.connected) {
+          try {
+            const { transportPeerId } = await this._resolvePeerTransportForOwner(bond.peerOwnerId);
+            if (isOutboundPeerRecentlyVerified(transportPeerId)) {
+              continue;
+            }
+          } catch {
+            /* fall through to keepAlive warm */
+          }
           await this.warmContactConnection(bond.peerOwnerId, { keepAlive: true });
           continue;
         }
@@ -13330,15 +13377,29 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     });
     const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as any;
 
+    const records = await this._peerDirectoryStore.listPeerRecords();
+    const liveConnected = pickLibp2pFromConnectedPeers(
+      records,
+      targetOwnerId,
+      mesh.getConnectedPeerIds(),
+    );
+    const targetPeerId = liveConnected?.peerId ?? transportPeerId;
+    const liveConn = mesh.getPeerConnectionInfo(targetPeerId);
+
     let deliverResult: ChatDeliverResult;
     try {
-      deliverResult = await this._deliverCallEnvelope(
-        transportPeerId,
-        envelope,
-        dialHints,
-        connBeforeWarm.connected ? [] : listenAddrs,
-        preferCircuitHints,
-      );
+      if (liveConn.connected || mesh.getConnectedPeerIds().includes(targetPeerId)) {
+        await mesh.sendChat(targetPeerId, envelope, { dialHints: [] });
+        deliverResult = { delivered: true, deliveredAt: new Date().toISOString() };
+      } else {
+        deliverResult = await this._deliverCallEnvelope(
+          targetPeerId,
+          envelope,
+          dialHints,
+          connBeforeWarm.connected ? [] : listenAddrs,
+          preferCircuitHints,
+        );
+      }
     } catch (deliverErr) {
       const detail = deliverErr instanceof Error ? deliverErr.message : String(deliverErr);
       webrtcCallWarn("sendCallInvite:delivery-failed", {
@@ -13492,14 +13553,23 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     });
     const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as any;
 
+    const records = await this._peerDirectoryStore.listPeerRecords();
+    const liveConnected = pickLibp2pFromConnectedPeers(
+      records,
+      peerOwnerId,
+      mesh.getConnectedPeerIds(),
+    );
+    const targetPeerId = liveConnected?.peerId ?? transportPeerId;
+    conn = mesh.getPeerConnectionInfo(targetPeerId);
+
     let deliverResult: ChatDeliverResult;
     try {
-      if (conn.connected) {
-        await mesh.send(transportPeerId, envelope, { dialHints, preferCircuitHints });
+      if (conn.connected || mesh.getConnectedPeerIds().includes(targetPeerId)) {
+        await mesh.sendChat(targetPeerId, envelope, { dialHints: [] });
         deliverResult = { delivered: true, deliveredAt: new Date().toISOString() };
       } else {
         deliverResult = await this._deliverCallEnvelope(
-          transportPeerId,
+          targetPeerId,
           envelope,
           dialHints,
           listenAddrs,
@@ -13787,7 +13857,26 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     try {
       const transport = await this._resolvePeerTransportForOwner(peerOwnerId);
       const mesh = this._requireMesh();
-      let conn = mesh.getPeerConnectionInfo(transport.transportPeerId);
+      const records = await this._peerDirectoryStore.listPeerRecords();
+      const liveConnected = pickLibp2pFromConnectedPeers(
+        records,
+        peerOwnerId,
+        mesh.getConnectedPeerIds(),
+      );
+      let targetPeerId = liveConnected?.peerId ?? transport.transportPeerId;
+      let conn = mesh.getPeerConnectionInfo(targetPeerId);
+      if (!conn.connected) {
+        targetPeerId = transport.transportPeerId;
+        conn = mesh.getPeerConnectionInfo(targetPeerId);
+      }
+      if (!conn.connected) {
+        try {
+          await mesh.dial(targetPeerId);
+          conn = mesh.getPeerConnectionInfo(targetPeerId);
+        } catch {
+          /* try listen addrs */
+        }
+      }
       if (!conn.connected) {
         for (const addr of transport.listenAddrs ?? []) {
           const trimmed = addr.trim();
@@ -13823,19 +13912,17 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
       // covers canonical JSON of the unsigned envelope.
       unsigned.recipientPeerId = transport.recipientEnvelopePeerId;
       const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem);
-      conn = mesh.getPeerConnectionInfo(transport.transportPeerId);
-      if (conn.connected) {
-        await mesh.send(transport.transportPeerId, envelope, {
-          dialHints: conn.direct ? [] : dialHints,
-          preferCircuitHints,
-        });
+      conn = mesh.getPeerConnectionInfo(targetPeerId);
+      const liveOnMesh = mesh.getConnectedPeerIds().includes(targetPeerId);
+      if (conn.connected || liveOnMesh) {
+        await mesh.sendChat(targetPeerId, envelope, { dialHints: [] });
         return;
       }
       await this._deliverCallEnvelope(
-        transport.transportPeerId,
+        targetPeerId,
         envelope,
-        dialHints,
-        transport.listenAddrs,
+        conn.connected ? [] : dialHints,
+        conn.connected ? [] : transport.listenAddrs,
         preferCircuitHints,
       );
     } catch (err) {
