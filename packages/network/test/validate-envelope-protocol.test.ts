@@ -77,6 +77,35 @@ describe("validateEnvelopeProtocol", () => {
     }
   });
 
+  it("allows call.* intents on chat protocol", async () => {
+    const mesh = new EnvoyMesh({ enableMdns: false });
+    await mesh.start();
+    try {
+      const envelope = {
+        ...createUnsignedEnvelope({
+          senderPeerId: "peer-a",
+          senderPublicKey: "pk-a",
+          senderRole: "human",
+          recipientPeerId: "peer-b",
+          recipientRole: "human",
+          intent: "call.invite",
+          payload: {
+            callId: "11111111-1111-4111-8111-111111111111",
+            callerOwnerId: "envoy:owner:a",
+            callerPeerId: "peer-a",
+            sdpOffer: "v=0",
+          },
+        }),
+        signature: "sig",
+      };
+      await expect(mesh.sendChat("/ip4/127.0.0.1/tcp/1", envelope as any)).rejects.not.toThrow(
+        /invalid intent call\.invite on chat protocol/,
+      );
+    } finally {
+      await mesh.stop();
+    }
+  });
+
   it("exports distinct chat and message protocol ids", () => {
     expect(ENVOY_CHAT_PROTOCOL).not.toBe(ENVOY_MESSAGE_PROTOCOL);
   });

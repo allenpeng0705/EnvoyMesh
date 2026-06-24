@@ -2,6 +2,7 @@ import type { EnvoyEnvelope } from "@envoymesh/protocol";
 import { CHAT_DELIVERY_ACK_TIMEOUT_MS } from "@envoymesh/protocol";
 import type { EnvoyMesh } from "@envoymesh/network";
 import {
+  ENVOY_CHAT_PROTOCOL,
   ENVOY_DATA_PROTOCOL,
   ENVOY_MESSAGE_PROTOCOL,
   hasDirectTcpDialHints,
@@ -16,6 +17,7 @@ import {
   markOutboundPeerVerified,
 } from "./outbound-peer-freshness.js";
 import { withOutboundSendLock } from "./outbound-send-lock.js";
+import { webrtcCallTrace, webrtcCallWarn, shortCallId } from "./webrtc-call-trace.js";
 
 /** Shorter ack wait when LAN/direct dial hints exist (fail fast vs 45s WAN timeout). */
 const DIRECT_CHAT_DELIVERY_ACK_TIMEOUT_MS = 12_000;
@@ -368,12 +370,18 @@ async function trySendChatWithoutAck(input: {
   }
 }
 
+export type OutboundCallDeliverMesh = Pick<
+  EnvoyMesh,
+  "sendChat" | "closeConnectionsToPeer" | "ensurePeerReachable" | "getPeerConnectionInfo"
+>;
+
 /**
- * Deliver `call.*` envelopes on `/envoymesh/message/0.1.0` (not chat protocol).
- * Fire-and-forget — no delivery ack wait.
+ * Deliver `call.*` envelopes on `/envoymesh/chat/0.1.0`.
+ * Chat is the stable bonded-contact path; message protocol often fails to negotiate
+ * on existing relay/LAN connections ("Protocol selection failed").
  */
 export async function deliverCallEnvelopeWithRetry(input: {
-  mesh: OutboundDeliverMesh;
+  mesh: OutboundCallDeliverMesh;
   transportPeerId: string;
   envelope: EnvoyEnvelope;
   dialHints: string[];
@@ -381,6 +389,144 @@ export async function deliverCallEnvelopeWithRetry(input: {
   rebuildDialHints?: () => Promise<string[]>;
   maxAttempts?: number;
   /** When true, try relay circuit paths before stale direct WAN hints. */
+  preferCircuitHints?: boolean;
+}): Promise<ChatDeliverResult> {
+  const maxAttempts = input.maxAttempts ?? CHAT_SEND_MAX_ATTEMPTS;
+  const intent = input.envelope.intent;
+  const callId =
+    typeof input.envelope.payload === "object" &&
+    input.envelope.payload !== null &&
+    "callId" in input.envelope.payload
+      ? String((input.envelope.payload as { callId?: string }).callId)
+      : undefined;
+  webrtcCallTrace("deliver-call:start", {
+    intent,
+    callId: shortCallId(callId),
+    peer: shortCallId(input.transportPeerId),
+    maxAttempts,
+    hintCount: input.dialHints.length,
+  });
+  let lastErr: unknown;
+  let hints = input.dialHints;
+  const preferCircuits =
+    input.preferCircuitHints === true ||
+    shouldPreferCircuitDialHints(input.peerListenAddrs, hints, input.transportPeerId);
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    if (attempt > 0) {
+      hints = rotateDialHintsForRetry(hints, attempt);
+      if (input.rebuildDialHints) {
+        try {
+          hints = await input.rebuildDialHints();
+        } catch {
+          /* keep rotated hints */
+        }
+      }
+      await sleep(CHAT_SEND_RETRY_BASE_MS * attempt);
+      try {
+        await input.mesh.closeConnectionsToPeer(input.transportPeerId);
+      } catch {
+        /* ignore */
+      }
+    } else {
+      const conn = input.mesh.getPeerConnectionInfo(input.transportPeerId);
+      // Fire-and-forget call signaling: never tear down an open path to chase stale dial hints.
+      const skipPrepare =
+        conn.connected || isOutboundPeerRecentlyVerified(input.transportPeerId);
+      webrtcCallTrace("deliver-call:attempt", {
+        attempt: attempt + 1,
+        callId: shortCallId(callId),
+        peer: shortCallId(input.transportPeerId),
+        connected: conn.connected,
+        direct: conn.direct,
+        skipPrepare,
+      });
+      if (!skipPrepare) {
+        const ready = await prepareOutboundPeerConnection({
+          mesh: input.mesh,
+          transportPeerId: input.transportPeerId,
+          protocol: ENVOY_CHAT_PROTOCOL,
+          dialHints: hints,
+          preferCircuitHints: preferCircuits,
+          forceFreshDial: false,
+        });
+        if (!ready && !input.mesh.getPeerConnectionInfo(input.transportPeerId).connected) {
+          lastErr = new Error(`No reachable path to ${input.transportPeerId.slice(0, 12)}… before call send`);
+          webrtcCallWarn("deliver-call:prepare-failed", {
+            attempt: attempt + 1,
+            callId: shortCallId(callId),
+            peer: shortCallId(input.transportPeerId),
+          });
+          continue;
+        }
+      }
+    }
+
+    try {
+      if (attempt > 0) {
+        const ready = await prepareOutboundPeerConnection({
+          mesh: input.mesh,
+          transportPeerId: input.transportPeerId,
+          protocol: ENVOY_CHAT_PROTOCOL,
+          dialHints: hints,
+          preferCircuitHints: preferCircuits || attempt > 0,
+          forceFreshDial: true,
+        });
+        if (!ready) {
+          lastErr = new Error(`No reachable path to ${input.transportPeerId.slice(0, 12)}… before call send`);
+          continue;
+        }
+      }
+
+      const sendConn = input.mesh.getPeerConnectionInfo(input.transportPeerId);
+      await input.mesh.sendChat(input.transportPeerId, input.envelope, {
+        dialHints: sendConn.connected ? [] : hints,
+        preferCircuitHints: sendConn.connected ? false : preferCircuits || attempt > 0,
+        forceFreshDial: attempt > 0,
+      });
+      if (attempt > 0) {
+        console.log(`[call] delivered on attempt ${attempt + 1}/${maxAttempts}`);
+      }
+      webrtcCallTrace("deliver-call:ok", {
+        attempt: attempt + 1,
+        callId: shortCallId(callId),
+        peer: shortCallId(input.transportPeerId),
+        connected: sendConn.connected,
+        direct: sendConn.direct,
+      });
+      return { delivered: true, deliveredAt: new Date().toISOString() };
+    } catch (err) {
+      lastErr = err;
+      webrtcCallWarn("deliver-call:attempt-failed", {
+        attempt: attempt + 1,
+        callId: shortCallId(callId),
+        peer: shortCallId(input.transportPeerId),
+        error: err instanceof Error ? err.message.slice(0, 120) : String(err),
+      });
+      console.warn(
+        `[call] attempt ${attempt + 1}/${maxAttempts} failed for ${input.transportPeerId.slice(0, 12)}…:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
+  webrtcCallWarn("deliver-call:exhausted", {
+    callId: shortCallId(callId),
+    peer: shortCallId(input.transportPeerId),
+    error: lastErr instanceof Error ? lastErr.message.slice(0, 120) : String(lastErr),
+  });
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+}
+
+/** Deliver non-chat envelopes on `/envoymesh/message/0.1.0` (share, profile, broadcast, tasks). */
+export async function deliverMessageEnvelopeWithRetry(input: {
+  mesh: OutboundDeliverMesh;
+  transportPeerId: string;
+  envelope: EnvoyEnvelope;
+  dialHints: string[];
+  peerListenAddrs?: string[];
+  rebuildDialHints?: () => Promise<string[]>;
+  maxAttempts?: number;
   preferCircuitHints?: boolean;
 }): Promise<ChatDeliverResult> {
   const maxAttempts = input.maxAttempts ?? CHAT_SEND_MAX_ATTEMPTS;
@@ -408,9 +554,8 @@ export async function deliverCallEnvelopeWithRetry(input: {
       }
     } else {
       const conn = input.mesh.getPeerConnectionInfo(input.transportPeerId);
-      const preferCircuitsOnPrepare = preferCircuits;
       const needsRelayUpgrade =
-        conn.connected && !conn.direct && !preferCircuitsOnPrepare && hasDirectTcpDialHints(hints);
+        conn.connected && !conn.direct && !preferCircuits && hasDirectTcpDialHints(hints);
       const skipPrepare =
         !needsRelayUpgrade &&
         (isOutboundPeerRecentlyVerified(input.transportPeerId) ||
@@ -421,11 +566,11 @@ export async function deliverCallEnvelopeWithRetry(input: {
           transportPeerId: input.transportPeerId,
           protocol: ENVOY_MESSAGE_PROTOCOL,
           dialHints: hints,
-          preferCircuitHints: preferCircuitsOnPrepare,
+          preferCircuitHints: preferCircuits,
           forceFreshDial: false,
         });
         if (!ready && !input.mesh.getPeerConnectionInfo(input.transportPeerId).connected) {
-          lastErr = new Error(`No reachable path to ${input.transportPeerId.slice(0, 12)}… before call send`);
+          lastErr = new Error(`No reachable path to ${input.transportPeerId.slice(0, 12)}… before send`);
           continue;
         }
       }
@@ -442,7 +587,7 @@ export async function deliverCallEnvelopeWithRetry(input: {
           forceFreshDial: true,
         });
         if (!ready) {
-          lastErr = new Error(`No reachable path to ${input.transportPeerId.slice(0, 12)}… before call send`);
+          lastErr = new Error(`No reachable path to ${input.transportPeerId.slice(0, 12)}… before send`);
           continue;
         }
       }
@@ -453,14 +598,11 @@ export async function deliverCallEnvelopeWithRetry(input: {
         preferCircuitHints: preferCircuits || attempt > 0,
         forceFreshDial: attempt > 0,
       });
-      if (attempt > 0) {
-        console.log(`[call] delivered on attempt ${attempt + 1}/${maxAttempts}`);
-      }
       return { delivered: true, deliveredAt: new Date().toISOString() };
     } catch (err) {
       lastErr = err;
       console.warn(
-        `[call] attempt ${attempt + 1}/${maxAttempts} failed for ${input.transportPeerId.slice(0, 12)}…:`,
+        `[send] attempt ${attempt + 1}/${maxAttempts} failed for ${input.transportPeerId.slice(0, 12)}…:`,
         err instanceof Error ? err.message : err,
       );
     }
@@ -639,7 +781,7 @@ export async function sendEnvelopeWithRetry(input: {
   maxAttempts?: number;
 }): Promise<ChatDeliverResult> {
   return withOutboundSendLock(input.transportPeerId, () =>
-    deliverCallEnvelopeWithRetry({
+    deliverMessageEnvelopeWithRetry({
       mesh: input.mesh,
       transportPeerId: input.transportPeerId,
       envelope: input.envelope,

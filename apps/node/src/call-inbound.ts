@@ -25,6 +25,7 @@ import {
 } from "@envoymesh/protocol";
 import type { CallManager } from "./call-manager.js";
 import type { LocalTrustStore, LocalPeerDirectoryStore } from "@envoymesh/local-store";
+import { webrtcCallTrace, webrtcCallWarn, shortCallId } from "./webrtc-call-trace.js";
 
 export interface CallInboundDeps {
   callManager: CallManager;
@@ -130,6 +131,17 @@ export async function handleCallIntent(
   deps: CallInboundDeps,
 ): Promise<boolean> {
   const { intent } = envelope;
+  webrtcCallTrace("call-inbound:intent", {
+    intent,
+    callId: shortCallId(
+      typeof envelope.payload === "object" &&
+        envelope.payload !== null &&
+        "callId" in envelope.payload
+        ? String((envelope.payload as { callId?: string }).callId)
+        : undefined,
+    ),
+    remotePeer: shortCallId(deps.remotePeerId),
+  });
 
   switch (intent) {
     case "call.invite":
@@ -163,16 +175,25 @@ async function handleCallInvite(
   try {
     payload = parseCallInvitePayload(envelope.payload);
   } catch {
+    webrtcCallWarn("call-inbound:invite-invalid-payload");
     console.warn(`${LOG} invalid call.invite payload`);
     return true;
   }
+
+  const sdpOfferLength = typeof payload.sdpOffer === "string" ? payload.sdpOffer.length : 0;
+  webrtcCallTrace("call-inbound:invite-received", {
+    callId: shortCallId(payload.callId),
+    caller: shortCallId(payload.callerOwnerId),
+    sdpLen: sdpOfferLength,
+    path2: Boolean(payload.iceServers?.length),
+  });
 
   // Phase 42A — defensive SDP validation. A malicious bonded peer could
   // send a 10 MB SDP that OOMs the callee's setRemoteDescription. The
   // schema's z.string().min(1) is the first line of defense; the size
   // cap is the second.
-  const sdpOfferLength = typeof payload.sdpOffer === "string" ? payload.sdpOffer.length : 0;
   if (!validateSdpString(payload.sdpOffer)) {
+    webrtcCallWarn("call-inbound:invite-sdp-invalid", { callId: shortCallId(payload.callId), sdpLen: sdpOfferLength });
     console.warn(`${LOG} call.invite sdpOffer failed validation (length=${sdpOfferLength})`);
     return true;
   }
@@ -181,6 +202,11 @@ async function handleCallInvite(
 
   // Identity binding: envelope signer must match callerOwnerId in payload
   if (senderOwner !== payload.callerOwnerId) {
+    webrtcCallWarn("call-inbound:invite-identity-mismatch", {
+      callId: shortCallId(payload.callId),
+      sender: shortCallId(senderOwner),
+      caller: shortCallId(payload.callerOwnerId),
+    });
     console.warn(`${LOG} call.invite identity binding failed: sender=${senderOwner} callerOwnerId=${payload.callerOwnerId}`);
     return true;
   }
@@ -188,6 +214,7 @@ async function handleCallInvite(
   // Trust check: must be bonded (referred or direct)
   const trust = await deps.trustStore.getTrustRecord(payload.callerOwnerId);
   if (!trust || trust.level === "blocked" || trust.level === "public") {
+    webrtcCallWarn("call-inbound:invite-untrusted", { caller: shortCallId(payload.callerOwnerId) });
     console.warn(`${LOG} call.invite from untrusted peer: ${payload.callerOwnerId}`);
     return true;
   }
@@ -205,6 +232,10 @@ async function handleCallInvite(
   );
 
   if (!result.ok) {
+    webrtcCallWarn("call-inbound:invite-rejected", {
+      callId: shortCallId(payload.callId),
+      reason: result.reason,
+    });
     if (result.reason === "busy" && deps.sendBusyReject) {
       await deps.sendBusyReject({
         callId: payload.callId,
@@ -214,6 +245,11 @@ async function handleCallInvite(
     }
     return true;
   }
+
+  webrtcCallTrace("call-inbound:invite-accepted", {
+    callId: shortCallId(payload.callId),
+    caller: shortCallId(payload.callerOwnerId),
+  });
 
   // Phase 42I — fire a VoIP push so the callee's iOS EnvoyGo app can wake
   // from background/terminated and surface a CallKit screen. The push

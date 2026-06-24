@@ -13,6 +13,7 @@ import {
   type CallRejectPayload,
   type CallHangupPayload,
 } from "@envoymesh/protocol";
+import { webrtcCallTrace, webrtcCallWarn, shortCallId } from "./webrtc-call-trace.js";
 
 // --------------------------------------------------------------------------
 // Internal session bookkeeping
@@ -100,6 +101,18 @@ export class CallManager {
   }
 
   private _emit(event: CallEvent): void {
+    webrtcCallTrace("call-manager:event", {
+      type: event.type,
+      callId: shortCallId("callId" in event ? event.callId : undefined),
+      ...(event.type === "call:incoming"
+        ? { peer: shortCallId(event.peerOwnerId), sdpLen: event.sdpOffer?.length ?? 0 }
+        : {}),
+      ...(event.type === "call:answered" ? { sdpAnswerLen: event.sdpAnswer?.length ?? 0 } : {}),
+      ...(event.type === "call:error" ? { error: event.error?.slice(0, 120) } : {}),
+      ...(event.type === "call:ended" || event.type === "call:rejected"
+        ? { reason: "reason" in event ? event.reason : undefined }
+        : {}),
+    });
     for (const h of this._handlers) {
       try {
         h(event);
@@ -119,7 +132,10 @@ export class CallManager {
     peerOwnerId: string,
     peerDisplayName: string,
   ): string | null {
-    if (this._hasActiveCall()) return null;
+    if (this._hasActiveCall()) {
+      webrtcCallWarn("call-manager:outbound-blocked-busy", { callId: shortCallId(callId) });
+      return null;
+    }
 
     const session: InternalSession = {
       callId,
@@ -132,6 +148,10 @@ export class CallManager {
     };
 
     this._sessions.set(callId, session);
+    webrtcCallTrace("call-manager:outbound-initiated", {
+      callId: shortCallId(callId),
+      peer: shortCallId(peerOwnerId),
+    });
     return callId;
   }
 
@@ -139,6 +159,10 @@ export class CallManager {
   reportOutboundDeliveryFailed(callId: string, error: string): void {
     const session = this._sessions.get(callId);
     if (!session || session.direction !== "outbound") return;
+    webrtcCallWarn("call-manager:delivery-failed", {
+      callId: shortCallId(callId),
+      error: error.slice(0, 120),
+    });
     if (session.ringTimer) clearTimeout(session.ringTimer);
     session.ringTimer = undefined;
     session.status = "ended";
@@ -160,10 +184,12 @@ export class CallManager {
   ): InboundCallResult {
     const existing = this._sessions.get(callId);
     if (existing?.peerOwnerId === callerOwnerId) {
+      webrtcCallWarn("call-manager:inbound-duplicate", { callId: shortCallId(callId) });
       return { ok: false, reason: "duplicate" };
     }
 
     if (this._hasActiveCall()) {
+      webrtcCallWarn("call-manager:inbound-busy", { callId: shortCallId(callId) });
       return { ok: false, reason: "busy" };
     }
 
@@ -182,6 +208,13 @@ export class CallManager {
     }, CALL_RING_TIMEOUT_MS);
 
     this._sessions.set(callId, session);
+
+    webrtcCallTrace("call-manager:inbound-ringing", {
+      callId: shortCallId(callId),
+      caller: shortCallId(callerOwnerId),
+      sdpLen: sdpOffer.length,
+      path2: Boolean(iceServers?.length),
+    });
 
     this._emit({
       type: "call:incoming",

@@ -19,6 +19,7 @@ import {
   type CallTransportPath,
 } from "../lib/webrtc-call-transport.js";
 import type { CallSession, CallEvent } from "@envoymesh/api";
+import { webrtcCallTrace, webrtcCallWarn, shortCallId } from "../lib/webrtc-call-trace.js";
 
 type IceServerConfig = { urls: string; username?: string; credential?: string };
 
@@ -177,6 +178,10 @@ export function useCallSession(): UseCallSessionResult {
     if (!nodeService) return;
 
     const unsub = nodeService.onCallEvent((event: CallEvent) => {
+      webrtcCallTrace("ui:call-event", {
+        type: event.type,
+        callId: shortCallId("callId" in event ? event.callId : undefined),
+      });
       switch (event.type) {
         case "call:incoming":
           setIncomingCall({
@@ -250,6 +255,10 @@ export function useCallSession(): UseCallSessionResult {
           setActiveCall((prev) => (prev ? { ...prev, muted: event.muted } : prev));
           break;
         case "call:error":
+          webrtcCallWarn("ui:call-error", {
+            callId: shortCallId(event.callId),
+            error: event.error?.slice(0, 120),
+          });
           showToast(event.error || t("call:failed"), "error");
           closeTransport();
           setActiveCall(null);
@@ -288,6 +297,11 @@ export function useCallSession(): UseCallSessionResult {
     }
 
     const callId = incomingCall.callId;
+    webrtcCallTrace("ui:accept-call", {
+      callId: shortCallId(callId),
+      peer: shortCallId(incomingCall.peerOwnerId),
+      path2: isPath2Invite(pendingInviteIceServersRef.current ?? incomingCall.iceServers),
+    });
     activePeerRef.current = {
       ownerId: incomingCall.peerOwnerId,
       displayName: incomingCall.peerDisplayName,
@@ -379,10 +393,9 @@ export function useCallSession(): UseCallSessionResult {
     async (targetOwnerId: string, displayName?: string) => {
       if (!nodeService) return;
       const peerLabel = displayName?.trim() || targetOwnerId;
+      webrtcCallTrace("ui:start-call", { target: shortCallId(targetOwnerId) });
 
       path2FallbackSentRef.current = false;
-
-      void nodeService.warmContactConnection(targetOwnerId).catch(() => undefined);
 
       let sdpOffer: string;
       try {
@@ -395,7 +408,11 @@ export function useCallSession(): UseCallSessionResult {
         });
         sdpOffer = await tempTransport.startOffer();
         transportRef.current = tempTransport;
+        webrtcCallTrace("ui:offer-ready", { sdpLen: sdpOffer.length });
       } catch (err) {
+        webrtcCallWarn("ui:offer-failed", {
+          error: err instanceof Error ? err.message.slice(0, 120) : String(err),
+        });
         console.warn("[useCallSession] failed to build WebRTC offer:", err);
         const msg = err instanceof Error ? err.message : String(err);
         showToast(
@@ -411,6 +428,10 @@ export function useCallSession(): UseCallSessionResult {
         // Explicit `[]` signals Path 1 — home must not inject default STUN.
         callId = await nodeService.sendCallInvite(targetOwnerId, sdpOffer, []);
       } catch (err) {
+        webrtcCallWarn("ui:send-invite-failed", {
+          target: shortCallId(targetOwnerId),
+          error: err instanceof Error ? err.message.slice(0, 120) : String(err),
+        });
         console.warn("[useCallSession] sendCallInvite failed:", err);
         showToast(t("call:deliveryFailed"), "error");
         closeTransport();
@@ -418,6 +439,7 @@ export function useCallSession(): UseCallSessionResult {
         return;
       }
       if (!callId) {
+        webrtcCallWarn("ui:send-invite-no-call-id", { target: shortCallId(targetOwnerId) });
         showToast(t("call:deliveryFailed"), "error");
         closeTransport();
         iceCallIdRef.current = "";
@@ -430,6 +452,7 @@ export function useCallSession(): UseCallSessionResult {
       setActivePeerDisplayName(peerLabel);
       setCallingState(callId);
       setConnectionState("connecting");
+      webrtcCallTrace("ui:invite-sent", { callId: shortCallId(callId), target: shortCallId(targetOwnerId) });
     },
     [nodeService, buildTransport, closeTransport, onPath1TimeoutHandler, showToast, t],
   );

@@ -408,6 +408,7 @@ import { markOutboundPeerVerified } from "./outbound-peer-freshness.js";
 import { deliverOutboundEnvelope, dialHintsForTransportTarget } from "./mesh-outbound-helper.js";
 import { withOutboundSendLock } from "./outbound-send-lock.js";
 import { pickBestLibp2pPeerDirectoryRecord, pickLibp2pFromConnectedPeers, resolveRecipientEnvelopePeerId } from "./peer-transport-resolve.js";
+import { webrtcCallTrace, webrtcCallWarn, shortCallId } from "./webrtc-call-trace.js";
 import {
   normalizeTransportPeerId,
   ownerIdFromProfileIntent,
@@ -3053,6 +3054,7 @@ class NodeServiceImpl implements NodeService {
       ? dialableInboundRemoteAddrs(context.remoteAddr, transportPeerId)
       : [];
     this._lastLibp2pTransportByOwner.set(ownerId, { peerId: transportPeerId, listenAddrs });
+    markOutboundPeerVerified(transportPeerId);
 
     void this._learnInboundDialHints(transportPeerId, context?.remoteAddr).catch((err) =>
       console.warn(`[peer-directory] inbound dial hint learn failed:`, err),
@@ -3827,12 +3829,8 @@ class NodeServiceImpl implements NodeService {
   }
 
   /**
-   * Phase 42A — `call.*` envelope delivery. Same retry/connection logic
-   * as `_deliverChatEnvelope`, but skips the `sendChatExpectReply` ack
-   * wait. Call envelopes are fire-and-forget: the callee emits
-   * `call:incoming` via the inbound handler, not a `chat.delivered`
-   * ack back. Forcing an ack wait would add 30s of latency to every
-   * `call.invite` on top of an envelope that has no ack path.
+   * Phase 42A — `call.*` envelope delivery on the chat libp2p protocol (same
+   * stable path as chat.message). Skips the delivery ack wait.
    */
   private async _deliverCallEnvelope(
     transportPeerId: string,
@@ -3844,6 +3842,20 @@ class NodeServiceImpl implements NodeService {
     return this._withChatSendLock(transportPeerId, async () => {
       const mesh = this._requireMesh();
       let conn = mesh.getPeerConnectionInfo(transportPeerId);
+      webrtcCallTrace("node:deliver-call-envelope", {
+        intent: envelope.intent,
+        callId: shortCallId(
+          typeof envelope.payload === "object" &&
+            envelope.payload !== null &&
+            "callId" in envelope.payload
+            ? String((envelope.payload as { callId?: string }).callId)
+            : undefined,
+        ),
+        peer: shortCallId(transportPeerId),
+        connected: conn.connected,
+        direct: conn.direct,
+        hintCount: dialHints.length,
+      });
       if (!conn.connected) {
         const dialTargets = [...new Set([...(listenAddrs ?? []), ...dialHints])];
         for (const addr of dialTargets) {
@@ -3859,15 +3871,23 @@ class NodeServiceImpl implements NodeService {
         }
       }
       const preferCircuits = preferCircuitHints ?? !conn.direct;
+      const wasConnected = conn.connected;
       if (conn.connected) {
         try {
-          await mesh.send(transportPeerId, envelope, {
-            // Reuse the open libp2p path — stale WAN hints break Online-Direct invites.
-            dialHints: conn.direct ? [] : dialHints,
-            preferCircuitHints: preferCircuits,
+          await mesh.sendChat(transportPeerId, envelope, {
+            dialHints: [],
+            preferCircuitHints: preferCircuits && !conn.direct,
+          });
+          webrtcCallTrace("node:deliver-call-fast-path-ok", {
+            peer: shortCallId(transportPeerId),
+            direct: conn.direct,
           });
           return { delivered: true, deliveredAt: new Date().toISOString() };
         } catch (fastErr) {
+          webrtcCallWarn("node:deliver-call-fast-path-failed", {
+            peer: shortCallId(transportPeerId),
+            error: fastErr instanceof Error ? fastErr.message.slice(0, 120) : String(fastErr),
+          });
           console.warn(
             `[call] connected send failed for ${transportPeerId.slice(0, 12)}…, retrying:`,
             fastErr instanceof Error ? fastErr.message : fastErr,
@@ -3878,10 +3898,12 @@ class NodeServiceImpl implements NodeService {
         mesh,
         transportPeerId,
         envelope,
-        dialHints,
-        peerListenAddrs: listenAddrs,
+        dialHints: wasConnected ? [] : dialHints,
+        peerListenAddrs: wasConnected ? [] : listenAddrs,
         preferCircuitHints: preferCircuits,
-        rebuildDialHints: () => this._dialHintsForChat(transportPeerId, listenAddrs),
+        rebuildDialHints: wasConnected
+          ? undefined
+          : () => this._dialHintsForChat(transportPeerId, listenAddrs),
       });
     });
   }
@@ -13192,6 +13214,12 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     // that would fail `parseCallInvitePayload` on the receiving side.
     const callId = randomUUID();
     const senderPeerId = derivePeerId(profile.device.publicKeyPem);
+    webrtcCallTrace("sendCallInvite:start", {
+      callId: shortCallId(callId),
+      target: shortCallId(targetOwnerId),
+      sdpLen: sdpOffer.length,
+      path2: Boolean(iceServers?.length),
+    });
     const trust = await this._trustStore.getTrustRecord(targetOwnerId);
     const peerDisplayName = trust?.displayName?.trim() || targetOwnerId;
 
@@ -13207,6 +13235,11 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     try {
       transport = await this._resolvePeerTransportForOwner(targetOwnerId);
     } catch (err) {
+      webrtcCallWarn("sendCallInvite:transport-resolve-failed", {
+        callId: shortCallId(callId),
+        target: shortCallId(targetOwnerId),
+        error: err instanceof Error ? err.message.slice(0, 120) : String(err),
+      });
       console.warn(`[sendCallInvite] peer transport resolve failed for ${targetOwnerId}:`, err);
       this._recordCallRejected(callId, "peer_unreachable");
       return null;
@@ -13215,6 +13248,16 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
 
     const mesh = this._requireMesh();
     const connBeforeWarm = mesh.getPeerConnectionInfo(transportPeerId);
+    webrtcCallTrace("sendCallInvite:transport-ready", {
+      callId: shortCallId(callId),
+      target: shortCallId(targetOwnerId),
+      transport: shortCallId(transportPeerId),
+      connected: connBeforeWarm.connected,
+      direct: connBeforeWarm.direct,
+    });
+    console.log(
+      `[sendCallInvite] target=${targetOwnerId.slice(0, 24)} transport=${transportPeerId.slice(0, 12)} connected=${connBeforeWarm.connected} direct=${connBeforeWarm.direct}`,
+    );
     if (!connBeforeWarm.connected) {
       let canUpgradeToDirect = false;
       if (!connBeforeWarm.direct) {
@@ -13244,22 +13287,26 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     const effectiveIceServers = await this._effectiveCallIceServers(iceServers);
 
     let dialHints: string[];
-    try {
-      dialHints = await raceWithTimeout(
-        this._dialHintsForChat(transportPeerId, listenAddrs),
-        30_000,
-        "_dialHintsForChat",
-      );
-    } catch (hintErr) {
-      console.warn(
-        `[sendCallInvite] dial hints failed for ${targetOwnerId}, using listen addrs:`,
-        hintErr instanceof Error ? hintErr.message : hintErr,
-      );
-      dialHints = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs ?? []);
+    if (connBeforeWarm.connected) {
+      dialHints = [];
+    } else {
+      try {
+        dialHints = await raceWithTimeout(
+          this._dialHintsForChat(transportPeerId, listenAddrs),
+          30_000,
+          "_dialHintsForChat",
+        );
+      } catch (hintErr) {
+        console.warn(
+          `[sendCallInvite] dial hints failed for ${targetOwnerId}, using listen addrs:`,
+          hintErr instanceof Error ? hintErr.message : hintErr,
+        );
+        dialHints = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs ?? []);
+      }
     }
 
     const conn = mesh.getPeerConnectionInfo(transportPeerId);
-    const preferCircuitHints = !conn.direct;
+    const preferCircuitHints = conn.connected ? !conn.direct : !conn.direct;
 
     const { createCallInvitePayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
     const { signUnsignedEnvelope } = await import("@envoymesh/identity");
@@ -13289,11 +13336,16 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
         transportPeerId,
         envelope,
         dialHints,
-        listenAddrs,
+        connBeforeWarm.connected ? [] : listenAddrs,
         preferCircuitHints,
       );
     } catch (deliverErr) {
       const detail = deliverErr instanceof Error ? deliverErr.message : String(deliverErr);
+      webrtcCallWarn("sendCallInvite:delivery-failed", {
+        callId: shortCallId(callId),
+        target: shortCallId(targetOwnerId),
+        error: detail.slice(0, 120),
+      });
       console.warn(`[sendCallInvite] call.invite delivery failed callId=${callId}:`, detail);
       this.callManager.reportOutboundDeliveryFailed(
         callId,
@@ -13315,6 +13367,10 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
 
     if (!deliverResult.delivered) {
       const detail = "No reachable path to contact before call.invite send";
+      webrtcCallWarn("sendCallInvite:delivery-not-delivered", {
+        callId: shortCallId(callId),
+        target: shortCallId(targetOwnerId),
+      });
       console.warn(`[sendCallInvite] call.invite delivery failed callId=${callId}:`, detail);
       this.callManager.reportOutboundDeliveryFailed(
         callId,
@@ -13347,6 +13403,10 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     }
 
     console.log(`[sendCallInvite] call.invite delivered to ${targetOwnerId} callId=${callId}`);
+    webrtcCallTrace("sendCallInvite:delivered", {
+      callId: shortCallId(callId),
+      target: shortCallId(targetOwnerId),
+    });
 
     // NOTE (Phase 42I): the VoIP push is NOT dispatched from the caller's
     // home here. The callee's phone registers its VoIP token with ITS OWN

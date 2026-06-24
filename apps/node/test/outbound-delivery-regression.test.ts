@@ -9,7 +9,7 @@ import {
 } from "@envoymesh/identity";
 import { createLocalPeerDirectoryStore, createLocalTrustStore } from "@envoymesh/local-store";
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
-import { ENVOY_MESSAGE_PROTOCOL } from "@envoymesh/network";
+import { ENVOY_CHAT_PROTOCOL } from "@envoymesh/network";
 import {
   deliverCallEnvelopeWithRetry,
   sendEnvelopeWithRetry,
@@ -21,14 +21,14 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-describe("share.request outbound delivery", () => {
-  const shareEnvelope = { intent: "share.request", messageId: "share-req-1" } as EnvoyEnvelope;
+describe("call.invite outbound delivery", () => {
+  const callEnvelope = { intent: "call.invite", messageId: "call-invite-1" } as EnvoyEnvelope;
 
   it("skips prepare when already connected direct (stable path reuse)", async () => {
-    const send = vi.fn().mockResolvedValue(0);
+    const sendChat = vi.fn().mockResolvedValue(0);
     const ensurePeerReachable = vi.fn().mockResolvedValue({ connected: true, direct: true });
     const mesh = createOutboundMeshMock({
-      send,
+      sendChat,
       ensurePeerReachable,
       getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: true, direct: true }),
     });
@@ -36,20 +36,20 @@ describe("share.request outbound delivery", () => {
     await deliverCallEnvelopeWithRetry({
       mesh,
       transportPeerId: "12D3KooWSharePeer",
-      envelope: shareEnvelope,
+      envelope: callEnvelope,
       dialHints: ["/ip4/192.168.1.50/tcp/4011/p2p/12D3KooWSharePeer"],
       maxAttempts: 1,
     });
 
     expect(ensurePeerReachable).not.toHaveBeenCalled();
-    expect(send).toHaveBeenCalledTimes(1);
+    expect(sendChat).toHaveBeenCalledTimes(1);
   });
 
-  it("prepares connection when peer is not connected before share.request send", async () => {
-    const send = vi.fn().mockResolvedValue(0);
+  it("prepares connection when peer is not connected before call.invite send", async () => {
+    const sendChat = vi.fn().mockResolvedValue(0);
     const ensurePeerReachable = vi.fn().mockResolvedValue({ connected: true, direct: true });
     const mesh = createOutboundMeshMock({
-      send,
+      sendChat,
       ensurePeerReachable,
       getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: false, direct: false }),
     });
@@ -57,41 +57,41 @@ describe("share.request outbound delivery", () => {
     await deliverCallEnvelopeWithRetry({
       mesh,
       transportPeerId: "12D3KooWSharePeerCold",
-      envelope: shareEnvelope,
+      envelope: callEnvelope,
       dialHints: ["/ip4/192.168.1.50/tcp/4011/p2p/12D3KooWSharePeerCold"],
       maxAttempts: 1,
     });
 
     expect(ensurePeerReachable).toHaveBeenCalledWith(
       "12D3KooWSharePeerCold",
-      ENVOY_MESSAGE_PROTOCOL,
+      ENVOY_CHAT_PROTOCOL,
       expect.objectContaining({
         dialHints: ["/ip4/192.168.1.50/tcp/4011/p2p/12D3KooWSharePeerCold"],
         preferCircuitHints: false,
       }),
     );
-    expect(send).toHaveBeenCalledTimes(1);
+    expect(sendChat).toHaveBeenCalledTimes(1);
   });
 
-  it("retries share.request after first send failure", async () => {
-    const send = vi
+  it("retries call.invite after first send failure", async () => {
+    const sendChat = vi
       .fn()
       .mockRejectedValueOnce(new Error("stale connection"))
       .mockResolvedValueOnce(0);
     const mesh = createOutboundMeshMock({
-      send,
+      sendChat,
       getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: false, direct: false }),
     });
 
     await deliverCallEnvelopeWithRetry({
       mesh,
       transportPeerId: "12D3KooWShareRetryPeer",
-      envelope: shareEnvelope,
+      envelope: callEnvelope,
       dialHints: ["/p2p/12D3KooWShareRetryPeer"],
       maxAttempts: 3,
     });
 
-    expect(send).toHaveBeenCalledTimes(2);
+    expect(sendChat).toHaveBeenCalledTimes(2);
     expect(mesh.closeConnectionsToPeer).toHaveBeenCalledWith("12D3KooWShareRetryPeer");
   });
 });

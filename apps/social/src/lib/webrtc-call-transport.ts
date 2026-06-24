@@ -11,6 +11,7 @@
  */
 
 import { createCallMutePayload, type CallIceCandidatePayload } from "@envoymesh/protocol";
+import { webrtcCallTrace, webrtcCallWarn, shortCallId } from "./webrtc-call-trace.js";
 
 // ------------------------------------------------------------------
 // Types
@@ -116,12 +117,14 @@ export function createWebRtcCallTransport(
   async function startOffer(): Promise<string> {
     if (isClosed) throw new Error("Transport closed");
 
+    webrtcCallTrace("transport:start-offer", { path: opts.path });
     const config = await getIceConfig();
     pc = new RTCPeerConnection(config);
 
     // Path 1 timeout: if no connection within path1TimeoutMs, notify caller
     if (opts.path === "path1") {
       path1Timer = setTimeout(() => {
+        webrtcCallWarn("transport:path1-timeout", { timeoutMs: path1Timeout });
         console.log("[webrtc-call-transport] Path 1 timed out — notifying caller to retry with Path 2");
         opts.onPath1Timeout?.();
       }, path1Timeout);
@@ -129,7 +132,10 @@ export function createWebRtcCallTransport(
 
     // Connection state monitoring
     pc.onconnectionstatechange = () => {
-      if (pc) opts.onConnectionStateChange(pc.connectionState);
+      if (pc) {
+        webrtcCallTrace("transport:connection-state", { path: opts.path, state: pc.connectionState });
+        opts.onConnectionStateChange(pc.connectionState);
+      }
       if (pc?.connectionState === "connected" && path1Timer) {
         clearTimeout(path1Timer);
         path1Timer = null;
@@ -162,6 +168,7 @@ export function createWebRtcCallTransport(
         pc!.addTrack(track, localStream!);
       });
     } catch (err) {
+      webrtcCallWarn("transport:mic-denied", { path: opts.path });
       closeInternal();
       throw new Error(`Microphone access denied: ${err instanceof Error ? err.message : err}`);
     }
@@ -170,6 +177,7 @@ export function createWebRtcCallTransport(
     const offer = await pc.createOffer({ offerToReceiveAudio: true });
     await pc.setLocalDescription(offer);
     opts.onSdpGenerated(offer.sdp!, "offer");
+    webrtcCallTrace("transport:offer-created", { path: opts.path, sdpLen: offer.sdp?.length ?? 0 });
 
     return offer.sdp!;
   }
@@ -177,12 +185,16 @@ export function createWebRtcCallTransport(
   async function startAnswer(remoteSdp: string): Promise<string> {
     if (isClosed) throw new Error("Transport closed");
 
+    webrtcCallTrace("transport:start-answer", { path: opts.path, remoteSdpLen: remoteSdp.length });
     const config = await getIceConfig();
     pc = new RTCPeerConnection(config);
 
     // Connection state monitoring
     pc.onconnectionstatechange = () => {
-      if (pc) opts.onConnectionStateChange(pc.connectionState);
+      if (pc) {
+        webrtcCallTrace("transport:connection-state", { path: opts.path, state: pc.connectionState });
+        opts.onConnectionStateChange(pc.connectionState);
+      }
     };
 
     // ICE candidate handler (Path 2 trickle)
@@ -211,6 +223,7 @@ export function createWebRtcCallTransport(
         pc!.addTrack(track, localStream!);
       });
     } catch (err) {
+      webrtcCallWarn("transport:mic-denied", { path: opts.path });
       closeInternal();
       throw new Error(`Microphone access denied: ${err instanceof Error ? err.message : err}`);
     }
@@ -222,12 +235,14 @@ export function createWebRtcCallTransport(
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
     opts.onSdpGenerated(answer.sdp!, "answer");
+    webrtcCallTrace("transport:answer-created", { path: opts.path, sdpLen: answer.sdp?.length ?? 0 });
 
     return answer.sdp!;
   }
 
   async function applyRemoteAnswer(remoteSdp: string): Promise<void> {
     if (!pc || isClosed) throw new Error("Transport not ready for remote answer");
+    webrtcCallTrace("transport:apply-remote-answer", { sdpLen: remoteSdp.length });
     await pc.setRemoteDescription(new RTCSessionDescription({ type: "answer", sdp: remoteSdp }));
   }
 
@@ -239,7 +254,13 @@ export function createWebRtcCallTransport(
         sdpMid: candidate.sdpMid ?? undefined,
         sdpMLineIndex: candidate.sdpMLineIndex ?? undefined,
       }));
+      webrtcCallTrace("transport:ice-candidate-added", {
+        typ: candidate.candidate.split(" typ ")[1]?.split(" ")[0] ?? "?",
+      });
     } catch (err) {
+      webrtcCallWarn("transport:ice-candidate-failed", {
+        error: err instanceof Error ? err.message.slice(0, 80) : String(err),
+      });
       console.warn("[webrtc-call-transport] addIceCandidate failed:", err);
     }
   }

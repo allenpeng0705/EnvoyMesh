@@ -1408,13 +1408,13 @@ export class EnvoyMesh {
     protocol: string,
     limited: boolean,
   ): Promise<{ stream: unknown; remotePeerId: string } | undefined> {
-    try {
+    const attemptOpen = async (useLimited: boolean): Promise<{ stream: unknown; remotePeerId: string }> => {
       const stream = await promiseWithTimeout(
-        limited
+        useLimited
           ? connection.newStream([protocol], { runOnLimitedConnection: true })
           : connection.newStream(protocol),
         NEW_STREAM_ON_OPEN_CONNECTION_TIMEOUT_MS,
-        limited ? `newStream(limited relay) ${protocol}` : `newStream ${protocol}`,
+        useLimited ? `newStream(limited relay) ${protocol}` : `newStream ${protocol}`,
       );
       if (!this.isOutboundStreamWritable(stream as { writeStatus?: string; status?: string })) {
         const bad = stream as { close?: () => Promise<void>; abort?: () => Promise<void> };
@@ -1427,12 +1427,24 @@ export class EnvoyMesh {
         } catch {
           /* ignore */
         }
-        await this.closeConnection(connection);
-        return undefined;
+        throw new Error(
+          `stream not writable status=${(stream as { status?: string }).status}`,
+        );
       }
       return { stream, remotePeerId: connection.remotePeer.toString() };
-    } catch (e) {
-      const detail = e instanceof Error ? e.message : String(e);
+    };
+
+    try {
+      return await attemptOpen(limited);
+    } catch (firstErr) {
+      if (!limited) {
+        try {
+          return await attemptOpen(true);
+        } catch {
+          /* fall through to close */
+        }
+      }
+      const detail = firstErr instanceof Error ? firstErr.message : String(firstErr);
       console.warn(
         `[network] stream open failed on existing connection (${detail}); closing and redialing`,
       );
@@ -2560,7 +2572,8 @@ function validateEnvelopeProtocol(protocol: string, envelope: EnvoyEnvelope): vo
       envelope.intent !== "chat.message" &&
       envelope.intent !== "chat.delivered" &&
       envelope.intent !== "chat.room.sync" &&
-      envelope.intent !== "chat.room.message"
+      envelope.intent !== "chat.room.message" &&
+      !envelope.intent.startsWith("call.")
     ) {
       throw new Error(`invalid intent ${envelope.intent} on chat protocol`);
     }
