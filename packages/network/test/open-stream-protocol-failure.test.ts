@@ -8,7 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 describe("openStreamOnConnection protocol negotiation", () => {
   it("does not close connection when only protocol selection fails", async () => {
     const close = vi.fn(async () => {});
-    const newStream = vi.fn(async () => {
+    const newStream = vi.fn(async (_protocol: string) => {
       throw new Error("Protocol selection failed - could not negotiate /envoymesh/message/0.1.0");
     });
     const connection = {
