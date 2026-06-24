@@ -19,6 +19,14 @@ import { readFile, stat, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join, extname } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import {
+  generateAudioSdpOffer,
+  injectCallPush,
+  mockGetUserMediaFailure,
+  setupMockWebSocket,
+  startOutboundCallViaHook,
+  waitForCallSessionHook,
+} from "./webrtc-call-e2e-helpers.js";
 
 // --------------------------------------------------------------------------
 // Configuration
@@ -60,11 +68,13 @@ async function serveStatic(req: any, res: any): Promise<void> {
 // Helpers — inject call events into the page's mock WebSocket
 // --------------------------------------------------------------------------
 
-async function injectCallEvent(page: any, event: Record<string, unknown>): Promise<void> {
-  await page.evaluate((ev: Record<string, unknown>) => {
-    const handler = (window as any).__callEventHandler as ((e: any) => void) | undefined;
-    if (handler) handler(ev);
-  }, event);
+async function prepareCallPage(page: any): Promise<void> {
+  await setupMockWebSocket(page);
+}
+
+async function openSocialPage(page: any): Promise<void> {
+  await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "domcontentloaded" });
+  await sleep(2000);
 }
 
 // --------------------------------------------------------------------------
@@ -129,44 +139,10 @@ describe("WebRTC voice call E2E", () => {
     if (!browser) { ctx.skip(true, "Chromium not installed"); return; }
     const page = await browser.newPage();
     try {
-      await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "domcontentloaded" });
-      await sleep(2000);
+      await prepareCallPage(page);
+      await openSocialPage(page);
 
-      // Inject a mock WebSocket handler so call events reach the app
-      await page.evaluate(() => {
-        const OrigWS = (window as any).WebSocket;
-        class MockWS extends (OrigWS ?? EventTarget) {
-          url: string;
-          _onmsg: ((e: any) => void) | null = null;
-          readyState = 1; // OPEN
-          constructor(url: string) {
-            super();
-            this.url = url;
-            setTimeout(() => this.dispatchEvent(new Event("open")), 10);
-          }
-          set onmessage(fn: ((e: any) => void) | null) { this._onmsg = fn; }
-          get onmessage() { return this._onmsg; }
-          send(_: string) {}
-          close() { this.readyState = 3; this.dispatchEvent(new Event("close")); }
-        }
-        (window as any).WebSocket = MockWS as any;
-        // After the app connects, store the handler so we can call it
-        const origSet = Object.getOwnPropertyDescriptor(MockWS.prototype, "onmessage")?.set;
-        if (origSet) {
-          const orig = origSet;
-          Object.defineProperty(MockWS.prototype, "onmessage", {
-            set(fn) { orig.call(this, fn); (window as any).__callEventHandler = fn; },
-            get() { return this._onmsg; },
-          });
-        }
-      });
-
-      // Wait for the app to initialize and connect
-      await sleep(2000);
-
-      // Inject incoming call event
-      await injectCallEvent(page, {
-        type: "call:incoming",
+      await injectCallPush(page, "call:incoming", {
         callId: "call_test_001",
         peerOwnerId: "envoy:owner:alice",
         peerDisplayName: "Alice",
@@ -175,8 +151,7 @@ describe("WebRTC voice call E2E", () => {
 
       await sleep(500);
 
-      // Verify the IncomingCallModal appeared
-      const modal = await page.locator(".incoming-call-modal");
+      const modal = await page.locator(".incoming-call-overlay");
       await modal.waitFor({ state: "visible", timeout: 5_000 });
       const text = await modal.textContent();
       expect(text).toContain("Alice");
@@ -189,27 +164,10 @@ describe("WebRTC voice call E2E", () => {
     if (!browser) { ctx.skip(true, "Chromium not installed"); return; }
     const page = await browser.newPage();
     try {
-      await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "domcontentloaded" });
-      await sleep(2000);
+      await prepareCallPage(page);
+      await openSocialPage(page);
 
-      // Inject mock WebSocket (same as test 2)
-      await page.evaluate(() => {
-        const OrigWS = (window as any).WebSocket;
-        class MockWS extends (OrigWS ?? EventTarget) {
-          url: string; _onmsg: ((e: any) => void) | null = null; readyState = 1;
-          constructor(url: string) { super(); this.url = url; setTimeout(() => this.dispatchEvent(new Event("open")), 10); }
-          set onmessage(fn: ((e: any) => void) | null) { this._onmsg = fn; (window as any).__callEventHandler = fn; }
-          get onmessage() { return this._onmsg; }
-          send(_: string) {} close() { this.readyState = 3; this.dispatchEvent(new Event("close")); }
-        }
-        (window as any).WebSocket = MockWS as any;
-      });
-
-      await sleep(2000);
-
-      // Inject incoming call
-      await injectCallEvent(page, {
-        type: "call:incoming",
+      await injectCallPush(page, "call:incoming", {
         callId: "call_test_002",
         peerOwnerId: "envoy:owner:bob",
         peerDisplayName: "Bob",
@@ -217,18 +175,13 @@ describe("WebRTC voice call E2E", () => {
       });
       await sleep(300);
 
-      // Verify incoming modal
-      await page.locator(".incoming-call-modal").waitFor({ state: "visible", timeout: 5_000 });
-
-      // Click accept
-      await page.click(".incoming-call-accept");
+      await page.locator(".incoming-call-overlay").waitFor({ state: "visible", timeout: 5_000 });
+      await page.click(".incoming-call-action--accept");
       await sleep(200);
 
-      // Inject call:answered event (simulating peer accepted)
-      await injectCallEvent(page, { type: "call:answered", callId: "call_test_002" });
+      await injectCallPush(page, "call:answered", { callId: "call_test_002" });
       await sleep(300);
 
-      // Verify ActiveCallPanel is visible and shows peer name
       const panel = page.locator(".active-call-panel");
       await panel.waitFor({ state: "visible", timeout: 5_000 });
       const panelText = await panel.textContent();
@@ -242,39 +195,27 @@ describe("WebRTC voice call E2E", () => {
     if (!browser) { ctx.skip(true, "Chromium not installed"); return; }
     const page = await browser.newPage();
     try {
-      await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "domcontentloaded" });
-      await sleep(2000);
+      await prepareCallPage(page);
+      await openSocialPage(page);
 
-      await page.evaluate(() => {
-        const OrigWS = (window as any).WebSocket;
-        class MockWS extends (OrigWS ?? EventTarget) {
-          url: string; _onmsg: ((e: any) => void) | null = null; readyState = 1;
-          constructor(url: string) { super(); this.url = url; setTimeout(() => this.dispatchEvent(new Event("open")), 10); }
-          set onmessage(fn: ((e: any) => void) | null) { this._onmsg = fn; (window as any).__callEventHandler = fn; }
-          get onmessage() { return this._onmsg; }
-          send(_: string) {} close() { this.readyState = 3; this.dispatchEvent(new Event("close")); }
-        }
-        (window as any).WebSocket = MockWS as any;
+      await injectCallPush(page, "call:incoming", {
+        callId: "call_test_003",
+        peerOwnerId: "envoy:owner:carol",
+        peerDisplayName: "Carol",
+        callType: "audio",
       });
-
-      await sleep(2000);
-
-      // Setup call
-      await injectCallEvent(page, { type: "call:incoming", callId: "call_test_003", peerOwnerId: "envoy:owner:carol", peerDisplayName: "Carol", callType: "audio" });
       await sleep(300);
-      await page.click(".incoming-call-accept");
-      await injectCallEvent(page, { type: "call:answered", callId: "call_test_003" });
+      await page.click(".incoming-call-action--accept");
+      await injectCallPush(page, "call:answered", { callId: "call_test_003" });
       await sleep(300);
       await page.locator(".active-call-panel").waitFor({ state: "visible", timeout: 5_000 });
 
-      // End call
       await page.click("button[title='End call']");
-      await injectCallEvent(page, { type: "call:ended", callId: "call_test_003", reason: "normal" });
+      await injectCallPush(page, "call:ended", { callId: "call_test_003", reason: "normal" });
       await sleep(500);
 
-      // Verify panel is gone
       await page.waitForFunction(
-        () => !document.querySelector(".active-call-panel") && !document.querySelector(".incoming-call-modal"),
+        () => !document.querySelector(".active-call-panel") && !document.querySelector(".incoming-call-overlay"),
         { timeout: 5_000 },
       );
     } finally {
@@ -286,33 +227,22 @@ describe("WebRTC voice call E2E", () => {
     if (!browser) { ctx.skip(true, "Chromium not installed"); return; }
     const page = await browser.newPage();
     try {
-      await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "domcontentloaded" });
-      await sleep(2000);
+      await prepareCallPage(page);
+      await openSocialPage(page);
 
-      await page.evaluate(() => {
-        const OrigWS = (window as any).WebSocket;
-        class MockWS extends (OrigWS ?? EventTarget) {
-          url: string; _onmsg: ((e: any) => void) | null = null; readyState = 1;
-          constructor(url: string) { super(); this.url = url; setTimeout(() => this.dispatchEvent(new Event("open")), 10); }
-          set onmessage(fn: ((e: any) => void) | null) { this._onmsg = fn; (window as any).__callEventHandler = fn; }
-          get onmessage() { return this._onmsg; }
-          send(_: string) {} close() { this.readyState = 3; this.dispatchEvent(new Event("close")); }
-        }
-        (window as any).WebSocket = MockWS as any;
+      await injectCallPush(page, "call:incoming", {
+        callId: "call_test_004",
+        peerOwnerId: "envoy:owner:dave",
+        peerDisplayName: "Dave",
+        callType: "audio",
       });
-
-      await sleep(2000);
-
-      await injectCallEvent(page, { type: "call:incoming", callId: "call_test_004", peerOwnerId: "envoy:owner:dave", peerDisplayName: "Dave", callType: "audio" });
       await sleep(300);
-      await page.locator(".incoming-call-modal").waitFor({ state: "visible", timeout: 5_000 });
+      await page.locator(".incoming-call-overlay").waitFor({ state: "visible", timeout: 5_000 });
 
-      // Click decline
-      await page.click(".incoming-call-decline");
+      await page.click(".incoming-call-action--decline");
       await sleep(500);
 
-      // Verify modal is gone
-      await page.waitForFunction(() => !document.querySelector(".incoming-call-modal"), { timeout: 5_000 });
+      await page.waitForFunction(() => !document.querySelector(".incoming-call-overlay"), { timeout: 5_000 });
     } finally {
       await page.close();
     }
@@ -322,37 +252,25 @@ describe("WebRTC voice call E2E", () => {
     if (!browser) { ctx.skip(true, "Chromium not installed"); return; }
     const page = await browser.newPage();
     try {
-      await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "domcontentloaded" });
-      await sleep(2000);
+      await prepareCallPage(page);
+      await openSocialPage(page);
 
-      await page.evaluate(() => {
-        const OrigWS = (window as any).WebSocket;
-        class MockWS extends (OrigWS ?? EventTarget) {
-          url: string; _onmsg: ((e: any) => void) | null = null; readyState = 1;
-          constructor(url: string) { super(); this.url = url; setTimeout(() => this.dispatchEvent(new Event("open")), 10); }
-          set onmessage(fn: ((e: any) => void) | null) { this._onmsg = fn; (window as any).__callEventHandler = fn; }
-          get onmessage() { return this._onmsg; }
-          send(_: string) {} close() { this.readyState = 3; this.dispatchEvent(new Event("close")); }
-        }
-        (window as any).WebSocket = MockWS as any;
+      await injectCallPush(page, "call:incoming", {
+        callId: "call_test_005",
+        peerOwnerId: "envoy:owner:eve",
+        peerDisplayName: "Eve",
+        callType: "audio",
       });
-
-      await sleep(2000);
-
-      // Setup call
-      await injectCallEvent(page, { type: "call:incoming", callId: "call_test_005", peerOwnerId: "envoy:owner:eve", peerDisplayName: "Eve", callType: "audio" });
       await sleep(300);
-      await page.click(".incoming-call-accept");
-      await injectCallEvent(page, { type: "call:answered", callId: "call_test_005" });
+      await page.click(".incoming-call-action--accept");
+      await injectCallPush(page, "call:answered", { callId: "call_test_005" });
       await sleep(300);
       await page.locator(".active-call-panel").waitFor({ state: "visible", timeout: 5_000 });
 
-      // Click mute button (first button with title attribute in the panel)
       const muteBtn = page.locator(".active-call-panel button[title]").first();
       await muteBtn.click();
       await sleep(500);
 
-      // After clicking mute, the button title should change to "Unmute"
       const title = await muteBtn.getAttribute("title");
       expect(title?.toLowerCase()).toContain("unmute");
     } finally {
@@ -364,25 +282,10 @@ describe("WebRTC voice call E2E", () => {
     if (!browser) { ctx.skip(true, "Chromium not installed"); return; }
     const page = await browser.newPage();
     try {
-      await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "domcontentloaded" });
-      await sleep(2000);
+      await prepareCallPage(page);
+      await openSocialPage(page);
 
-      await page.evaluate(() => {
-        const OrigWS = (window as any).WebSocket;
-        class MockWS extends (OrigWS ?? EventTarget) {
-          url: string; _onmsg: ((e: any) => void) | null = null; readyState = 1;
-          constructor(url: string) { super(); this.url = url; setTimeout(() => this.dispatchEvent(new Event("open")), 10); }
-          set onmessage(fn: ((e: any) => void) | null) { this._onmsg = fn; (window as any).__callEventHandler = fn; }
-          get onmessage() { return this._onmsg; }
-          send(_: string) {} close() { this.readyState = 3; this.dispatchEvent(new Event("close")); }
-        }
-        (window as any).WebSocket = MockWS as any;
-      });
-
-      await sleep(2000);
-
-      await injectCallEvent(page, {
-        type: "call:incoming",
+      await injectCallPush(page, "call:incoming", {
         callId: "call_test_006",
         peerOwnerId: "envoy:owner:frank",
         peerDisplayName: "Frank",
@@ -390,10 +293,9 @@ describe("WebRTC voice call E2E", () => {
         sdpOffer: "path1-offer",
         iceServers: [],
       });
-      await page.locator(".incoming-call-modal").waitFor({ state: "visible", timeout: 5_000 });
+      await page.locator(".incoming-call-overlay").waitFor({ state: "visible", timeout: 5_000 });
 
-      await injectCallEvent(page, {
-        type: "call:reinvite",
+      await injectCallPush(page, "call:reinvite", {
         callId: "call_test_006",
         peerOwnerId: "envoy:owner:frank",
         sdpOffer: "path2-offer",
@@ -403,10 +305,73 @@ describe("WebRTC voice call E2E", () => {
       });
       await sleep(300);
 
-      // Modal stays visible; Path 2 fallback should not dismiss ringing UI.
-      await page.locator(".incoming-call-modal").waitFor({ state: "visible", timeout: 5_000 });
+      await page.locator(".incoming-call-overlay").waitFor({ state: "visible", timeout: 5_000 });
     } finally {
       await page.close();
     }
   }, 25_000);
+
+  it("8. outbound Calling banner → active dock when getUserMedia fails (listen-only)", async (ctx) => {
+    if (!browser) { ctx.skip(true, "Chromium not installed"); return; }
+    const page = await browser.newPage();
+    try {
+      await mockGetUserMediaFailure(page);
+      await prepareCallPage(page);
+      await openSocialPage(page);
+      await waitForCallSessionHook(page);
+
+      await startOutboundCallViaHook(page, "envoy:owner:windows", "Windows PC");
+      await sleep(500);
+
+      const banner = page.locator(".global-calling-banner");
+      await banner.waitFor({ state: "visible", timeout: 8_000 });
+      const bannerText = await banner.textContent();
+      expect(bannerText?.toLowerCase()).toContain("calling");
+      expect(bannerText).toContain("Windows PC");
+
+      await injectCallPush(page, "call:answered", { callId: "call_e2e_outbound" });
+      await sleep(500);
+
+      const panel = page.locator(".active-call-panel");
+      await panel.waitFor({ state: "visible", timeout: 8_000 });
+      const panelText = await panel.textContent();
+      expect(panelText).toContain("Windows PC");
+      expect(panelText?.toLowerCase()).toMatch(/listen only|no microphone/);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  it("9. accept incoming call shows listen-only active dock when getUserMedia fails", async (ctx) => {
+    if (!browser) { ctx.skip(true, "Chromium not installed"); return; }
+    const page = await browser.newPage();
+    try {
+      await mockGetUserMediaFailure(page);
+      await prepareCallPage(page);
+      await openSocialPage(page);
+
+      const sdpOffer = await generateAudioSdpOffer(page);
+
+      await injectCallPush(page, "call:incoming", {
+        callId: "call_test_listen_only",
+        peerOwnerId: "envoy:owner:mac",
+        peerDisplayName: "MacBook",
+        callType: "audio",
+        sdpOffer,
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+      });
+      await page.locator(".incoming-call-overlay").waitFor({ state: "visible", timeout: 5_000 });
+
+      await page.click(".incoming-call-action--accept");
+      await sleep(800);
+
+      const panel = page.locator(".active-call-panel");
+      await panel.waitFor({ state: "visible", timeout: 8_000 });
+      const panelText = await panel.textContent();
+      expect(panelText).toContain("MacBook");
+      expect(panelText?.toLowerCase()).toMatch(/listen only|no microphone/);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
 });

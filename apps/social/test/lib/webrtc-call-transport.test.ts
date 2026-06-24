@@ -261,6 +261,23 @@ describe("WebRtcCallTransport", () => {
   });
 
   describe("addIceCandidate", () => {
+    it("queues remote candidates until remote description is set", async () => {
+      const { transport } = createTestTransport({ path: "path2" });
+      await transport.startOffer();
+
+      await transport.addIceCandidate({
+        candidate: "candidate:1 1 UDP 2113937159 192.0.2.1 54321 typ host",
+        sdpMid: "0",
+        sdpMLineIndex: 0,
+      });
+
+      expect(lastCreatedPC.addIceCandidate).not.toHaveBeenCalled();
+
+      await transport.applyRemoteAnswer("remote-answer-sdp");
+
+      expect(lastCreatedPC.addIceCandidate).toHaveBeenCalled();
+    });
+
     it("accepts remote ICE candidates without throwing", async () => {
       const { transport } = createTestTransport({ path: "path2" });
       await transport.startOffer();

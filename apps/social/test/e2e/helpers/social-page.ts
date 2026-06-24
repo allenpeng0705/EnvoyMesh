@@ -3,11 +3,11 @@
  *
  * Uses real CSS class selectors from the actual Social UI components:
  *   .chat-header-call-btn   — phone icon in chat header (ContactChatPanel)
- *   .calling-banner         — outbound calling state banner
+ *   .global-calling-banner  — outbound calling state banner
  *   .calling-banner-cancel  — cancel button in calling banner
- *   .incoming-call-modal    — IncomingCallModal container
- *   .incoming-call-accept   — Accept button
- *   .incoming-call-decline  — Decline button
+ *   .incoming-call-overlay  — IncomingCallModal container
+ *   .incoming-call-action--accept   — Accept button
+ *   .incoming-call-action--decline  — Decline button
  *   .active-call-panel      — ActiveCallPanel container
  *   button[title="Mute"] / button[title="Unmute"] — mute toggle
  *   button[title="End call"] — end call button
@@ -63,7 +63,7 @@ export class SocialPage {
 
   /** Verify the calling-state banner is visible. */
   async expectCallingBanner(peerDisplayName: string): Promise<void> {
-    const banner = this.page.locator(".calling-banner");
+    const banner = this.page.locator(".global-calling-banner");
     await banner.waitFor({ state: "visible", timeout: 8_000 });
     // Verify the banner contains the peer's name
     const text = await banner.textContent();
@@ -81,7 +81,7 @@ export class SocialPage {
 
   /** Verify the IncomingCallModal is visible. */
   async expectIncomingModal(callerName: string): Promise<void> {
-    const modal = this.page.locator(".incoming-call-modal");
+    const modal = this.page.locator(".incoming-call-overlay");
     await modal.waitFor({ state: "visible", timeout: 8_000 });
     const text = await modal.textContent();
     if (!text?.includes(callerName)) {
@@ -92,13 +92,13 @@ export class SocialPage {
 
   /** Click Accept on the incoming call modal. */
   async acceptCall(): Promise<void> {
-    await this.page.click(".incoming-call-accept");
+    await this.page.click(".incoming-call-action--accept");
     console.log(`[social-page] ${this.label} accepted call`);
   }
 
   /** Click Decline on the incoming call modal. */
   async declineCall(): Promise<void> {
-    await this.page.click(".incoming-call-decline");
+    await this.page.click(".incoming-call-action--decline");
     console.log(`[social-page] ${this.label} declined call`);
   }
 
@@ -126,8 +126,8 @@ export class SocialPage {
   async expectCallEnded(): Promise<void> {
     await this.page.waitForFunction(() => {
       const active = document.querySelector(".active-call-panel");
-      const incoming = document.querySelector(".incoming-call-modal");
-      const banner = document.querySelector(".calling-banner");
+      const incoming = document.querySelector(".incoming-call-overlay");
+      const banner = document.querySelector(".global-calling-banner");
       return !active && !incoming && !banner;
     }, { timeout: 5_000 });
     console.log(`[social-page] ${this.label} call ended`);

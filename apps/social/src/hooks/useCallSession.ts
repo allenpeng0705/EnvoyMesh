@@ -4,9 +4,9 @@
  * Keeps a live WebRtcCallTransport through the call, applies remote answer
  * SDP, forwards trickle ICE, and wires end/decline/mute to the home node.
  *
- * Outbound calls start on Path 1 (no STUN/TURN). If the direct connection
- * does not establish within the Path 1 timeout, the hook sends call.reinvite
- * with a Path 2 offer (STUN/TURN) for the same callId.
+ * Outbound calls use STUN/TURN (Path 2) from the first offer so cross-NAT
+ * peers (e.g. Mac ↔ Windows) can establish media. Path 1 libp2p-webrtc is
+ * not wired yet; a timed reinvite still retries with fresh ICE if needed.
  */
 
 import { useState, useEffect, useCallback, useRef } from "react";
@@ -18,10 +18,15 @@ import {
   type WebRtcCallTransport,
   type CallTransportPath,
 } from "../lib/webrtc-call-transport.js";
+import {
+  resolveCallIceServers,
+  isPath2Call,
+  type CallIceServerConfig,
+} from "../lib/call-ice-servers.js";
 import type { CallSession, CallEvent } from "@envoymesh/api";
 import { webrtcCallTrace, webrtcCallWarn, shortCallId } from "../lib/webrtc-call-trace.js";
 
-type IceServerConfig = { urls: string; username?: string; credential?: string };
+type IceServerConfig = CallIceServerConfig;
 
 const CALLER_RINGBACK_TIMEOUT_MS = 30_000;
 
@@ -51,7 +56,7 @@ export interface UseCallSessionResult {
 }
 
 function isPath2Invite(iceServers?: IceServerConfig[]): boolean {
-  return Boolean(iceServers && iceServers.length > 0);
+  return isPath2Call(iceServers);
 }
 
 export function useCallSession(): UseCallSessionResult {
@@ -75,12 +80,23 @@ export function useCallSession(): UseCallSessionResult {
   const activePeerRef = useRef<{ ownerId: string; displayName: string } | null>(null);
   const pendingInviteIceServersRef = useRef<IceServerConfig[] | undefined>(undefined);
   const path2FallbackSentRef = useRef(false);
+  const pendingIceCandidatesRef = useRef<Parameters<typeof nodeService.sendIceCandidate>[1][]>([]);
+
+  const flushPendingIceCandidates = useCallback(() => {
+    const transport = transportRef.current;
+    if (!transport || pendingIceCandidatesRef.current.length === 0) return;
+    const queued = pendingIceCandidatesRef.current.splice(0);
+    for (const candidate of queued) {
+      void transport.addIceCandidate(candidate);
+    }
+  }, []);
 
   const closeTransport = useCallback(() => {
     transportRef.current?.close();
     transportRef.current = null;
     setRemoteStream(null);
     setMicAvailable(true);
+    pendingIceCandidatesRef.current = [];
   }, []);
 
   const syncMicAvailable = useCallback(() => {
@@ -136,7 +152,7 @@ export function useCallSession(): UseCallSessionResult {
       setConnectionState("connecting");
 
       const nodeConfig = await nodeService.getNodeConfig();
-      const configIce = (nodeConfig?.iceServers ?? []) as RTCIceServer[];
+      const configIce = resolveCallIceServers(undefined, nodeConfig?.iceServers);
 
       try {
         iceCallIdRef.current = callId;
@@ -147,10 +163,11 @@ export function useCallSession(): UseCallSessionResult {
         if (!transport.isMicAvailable()) {
           notifyMicUnavailable();
         }
+        flushPendingIceCandidates();
         const sent = await nodeService.sendCallReinvite(
           callId,
           sdpOffer,
-          nodeConfig?.iceServers ?? undefined,
+          configIce as IceServerConfig[],
           reason,
         );
         if (!sent) {
@@ -161,7 +178,7 @@ export function useCallSession(): UseCallSessionResult {
         closeTransport();
       }
     },
-    [nodeService, buildTransport, closeTransport, syncMicAvailable, notifyMicUnavailable],
+    [nodeService, buildTransport, closeTransport, syncMicAvailable, notifyMicUnavailable, flushPendingIceCandidates],
   );
 
   const onPath1TimeoutHandler = useCallback(() => {
@@ -180,9 +197,10 @@ export function useCallSession(): UseCallSessionResult {
       setConnectionState("connecting");
 
       try {
+        const rtcIce = resolveCallIceServers(iceServers);
         const transport = buildTransport({
           path: "path2",
-          iceServers: iceServers as RTCIceServer[],
+          iceServers: rtcIce,
         });
         transportRef.current = transport;
         const sdpAnswer = await transport.startAnswer(remoteSdp);
@@ -190,14 +208,15 @@ export function useCallSession(): UseCallSessionResult {
         if (!transport.isMicAvailable()) {
           notifyMicUnavailable();
         }
-        await nodeService.acceptCallInvite(callId, sdpAnswer, iceServers);
+        flushPendingIceCandidates();
+        await nodeService.acceptCallInvite(callId, sdpAnswer, rtcIce as IceServerConfig[]);
       } catch (err) {
         console.warn("[useCallSession] callee Path 2 renegotiation failed:", err);
         closeTransport();
         setConnectionState("disconnected");
       }
     },
-    [nodeService, buildTransport, closeTransport, syncMicAvailable, notifyMicUnavailable],
+    [nodeService, buildTransport, closeTransport, syncMicAvailable, notifyMicUnavailable, flushPendingIceCandidates],
   );
 
   useEffect(() => {
@@ -239,6 +258,7 @@ export function useCallSession(): UseCallSessionResult {
           if (event.sdpAnswer && transportRef.current) {
             void transportRef.current
               .applyRemoteAnswer(event.sdpAnswer)
+              .then(() => flushPendingIceCandidates())
               .catch((err) =>
                 console.warn("[useCallSession] applyRemoteAnswer failed:", err),
               );
@@ -253,8 +273,15 @@ export function useCallSession(): UseCallSessionResult {
           activeCallIdRef.current = event.callId;
           break;
         case "call:ice-candidate":
-          if (transportRef.current && event.callId === activeCallIdRef.current) {
-            void transportRef.current.addIceCandidate(event.candidate);
+          if (
+            event.callId === activeCallIdRef.current ||
+            event.callId === iceCallIdRef.current
+          ) {
+            if (transportRef.current) {
+              void transportRef.current.addIceCandidate(event.candidate);
+            } else {
+              pendingIceCandidatesRef.current.push(event.candidate);
+            }
           }
           break;
         case "call:ended":
@@ -301,7 +328,7 @@ export function useCallSession(): UseCallSessionResult {
     });
 
     return () => unsub();
-  }, [nodeService, closeTransport, renegotiateCalleePath2, showToast, t]);
+  }, [nodeService, closeTransport, renegotiateCalleePath2, showToast, t, flushPendingIceCandidates]);
 
   const cancelCallRef = useRef<() => void>(() => {});
 
@@ -349,17 +376,14 @@ export function useCallSession(): UseCallSessionResult {
 
     const inviteIce =
       pendingInviteIceServersRef.current ?? incomingCall.iceServers;
-    const usePath2 = isPath2Invite(inviteIce);
     const nodeConfig = await nodeService.getNodeConfig();
-    const pathIceServers = usePath2
-      ? ((nodeConfig?.iceServers ?? []) as RTCIceServer[])
-      : [];
+    const pathIceServers = resolveCallIceServers(inviteIce, nodeConfig?.iceServers);
 
     try {
       closeTransport();
       iceCallIdRef.current = callId;
       const transport = buildTransport({
-        path: usePath2 ? "path2" : "path1",
+        path: "path2",
         iceServers: pathIceServers,
       });
       transportRef.current = transport;
@@ -368,10 +392,11 @@ export function useCallSession(): UseCallSessionResult {
       if (!transport.isMicAvailable()) {
         notifyMicUnavailable();
       }
+      flushPendingIceCandidates();
       await nodeService.acceptCallInvite(
         callId,
         sdpAnswer,
-        usePath2 ? nodeConfig?.iceServers ?? [] : [],
+        pathIceServers as IceServerConfig[],
       );
     } catch (err) {
       console.warn("[useCallSession] failed to accept call:", err);
@@ -390,6 +415,7 @@ export function useCallSession(): UseCallSessionResult {
     closeTransport,
     syncMicAvailable,
     notifyMicUnavailable,
+    flushPendingIceCandidates,
     showToast,
     t,
   ]);
@@ -442,13 +468,16 @@ export function useCallSession(): UseCallSessionResult {
 
       path2FallbackSentRef.current = false;
 
+      const nodeConfig = await nodeService.getNodeConfig();
+      const pathIceServers = resolveCallIceServers(undefined, nodeConfig?.iceServers);
+
       let sdpOffer: string;
       try {
         closeTransport();
         iceCallIdRef.current = "";
         const tempTransport = buildTransport({
-          path: "path1",
-          iceServers: [],
+          path: "path2",
+          iceServers: pathIceServers,
           onPath1Timeout: onPath1TimeoutHandler,
         });
         sdpOffer = await tempTransport.startOffer();
@@ -457,7 +486,11 @@ export function useCallSession(): UseCallSessionResult {
         if (!tempTransport.isMicAvailable()) {
           notifyMicUnavailable();
         }
-        webrtcCallTrace("ui:offer-ready", { sdpLen: sdpOffer.length });
+        flushPendingIceCandidates();
+        webrtcCallTrace("ui:offer-ready", {
+          sdpLen: sdpOffer.length,
+          iceServers: pathIceServers.length,
+        });
       } catch (err) {
         webrtcCallWarn("ui:offer-failed", {
           error: err instanceof Error ? err.message.slice(0, 120) : String(err),
@@ -470,8 +503,8 @@ export function useCallSession(): UseCallSessionResult {
 
       let callId: string | null;
       try {
-        // Explicit `[]` signals Path 1 — home must not inject default STUN.
-        callId = await nodeService.sendCallInvite(targetOwnerId, sdpOffer, []);
+        // Omit iceServers so the home ships STUN defaults in the invite payload.
+        callId = await nodeService.sendCallInvite(targetOwnerId, sdpOffer);
       } catch (err) {
         webrtcCallWarn("ui:send-invite-failed", {
           target: shortCallId(targetOwnerId),
@@ -499,7 +532,7 @@ export function useCallSession(): UseCallSessionResult {
       setConnectionState("connecting");
       webrtcCallTrace("ui:invite-sent", { callId: shortCallId(callId), target: shortCallId(targetOwnerId) });
     },
-    [nodeService, buildTransport, closeTransport, onPath1TimeoutHandler, showToast, t, syncMicAvailable, notifyMicUnavailable],
+    [nodeService, buildTransport, closeTransport, onPath1TimeoutHandler, showToast, t, syncMicAvailable, notifyMicUnavailable, flushPendingIceCandidates],
   );
 
   const cancelCall = useCallback(() => {

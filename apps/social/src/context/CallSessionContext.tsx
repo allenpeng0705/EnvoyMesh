@@ -3,7 +3,7 @@
  * so peers receive calls on any view (not only when a chat thread is open).
  */
 
-import { createContext, useContext, type ReactNode } from "react";
+import { createContext, useContext, useEffect, type ReactNode } from "react";
 import { useCallSession, type UseCallSessionResult } from "../hooks/useCallSession.js";
 import { IncomingCallModal } from "../components/IncomingCallModal.js";
 import { ActiveCallPanel } from "../components/ActiveCallPanel.js";
@@ -76,6 +76,15 @@ function GlobalCallOverlay({ session }: { session: UseCallSessionResult }) {
 
 export function CallSessionProvider({ children }: { children: ReactNode }) {
   const session = useCallSession();
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    (window as unknown as { __envoyCallSession?: UseCallSessionResult }).__envoyCallSession = session;
+    return () => {
+      delete (window as unknown as { __envoyCallSession?: UseCallSessionResult }).__envoyCallSession;
+    };
+  }, [session]);
+
   return (
     <CallSessionContext.Provider value={session}>
       {children}

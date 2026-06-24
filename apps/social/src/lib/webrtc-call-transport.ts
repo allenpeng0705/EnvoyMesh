@@ -77,6 +77,7 @@ export function createWebRtcCallTransport(
   let isMuted = false;
   let path1Timer: ReturnType<typeof setTimeout> | null = null;
   let isClosed = false;
+  let pendingRemoteCandidates: CallIceCandidatePayload["candidate"][] = [];
 
   const path1Timeout = opts.path1TimeoutMs ?? 5000;
 
@@ -215,6 +216,7 @@ export function createWebRtcCallTransport(
 
     micAvailable = true;
     remoteMediaStream = null;
+    pendingRemoteCandidates = [];
 
     // Close peer connection
     if (pc) {
@@ -274,6 +276,7 @@ export function createWebRtcCallTransport(
     await pc.setLocalDescription(offer);
     opts.onSdpGenerated(offer.sdp!, "offer");
     webrtcCallTrace("transport:offer-created", { path: opts.path, sdpLen: offer.sdp?.length ?? 0 });
+    await flushPendingRemoteCandidates();
 
     return offer.sdp!;
   }
@@ -315,6 +318,7 @@ export function createWebRtcCallTransport(
     await pc.setLocalDescription(answer);
     opts.onSdpGenerated(answer.sdp!, "answer");
     webrtcCallTrace("transport:answer-created", { path: opts.path, sdpLen: answer.sdp?.length ?? 0 });
+    await flushPendingRemoteCandidates();
 
     return answer.sdp!;
   }
@@ -323,9 +327,12 @@ export function createWebRtcCallTransport(
     if (!pc || isClosed) throw new Error("Transport not ready for remote answer");
     webrtcCallTrace("transport:apply-remote-answer", { sdpLen: remoteSdp.length });
     await pc.setRemoteDescription(new RTCSessionDescription({ type: "answer", sdp: remoteSdp }));
+    await flushPendingRemoteCandidates();
   }
 
-  async function addIceCandidate(candidate: CallIceCandidatePayload["candidate"]): Promise<void> {
+  async function addIceCandidateNow(
+    candidate: CallIceCandidatePayload["candidate"],
+  ): Promise<void> {
     if (!pc || isClosed) return;
     try {
       await pc.addIceCandidate(new RTCIceCandidate({
@@ -342,6 +349,28 @@ export function createWebRtcCallTransport(
       });
       console.warn("[webrtc-call-transport] addIceCandidate failed:", err);
     }
+  }
+
+  async function flushPendingRemoteCandidates(): Promise<void> {
+    if (!pc || isClosed || pendingRemoteCandidates.length === 0) return;
+    const queued = pendingRemoteCandidates.splice(0);
+    webrtcCallTrace("transport:ice-candidate-flush", { count: queued.length });
+    for (const candidate of queued) {
+      await addIceCandidateNow(candidate);
+    }
+  }
+
+  async function addIceCandidate(candidate: CallIceCandidatePayload["candidate"]): Promise<void> {
+    if (!pc || isClosed) return;
+    if (!pc.remoteDescription?.type) {
+      pendingRemoteCandidates.push(candidate);
+      webrtcCallTrace("transport:ice-candidate-queued", {
+        typ: candidate.candidate.split(" typ ")[1]?.split(" ")[0] ?? "?",
+        pending: pendingRemoteCandidates.length,
+      });
+      return;
+    }
+    await addIceCandidateNow(candidate);
   }
 
   function setMute(muted: boolean, callId?: string): void {

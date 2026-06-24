@@ -94,8 +94,57 @@ Use Trust mode intro, QR pairing, or fleet invite — any flow that establishes 
 | 4 | A toggles **mute** | Local mute; remote may see mute state |
 | 5 | Either party **End call** | Both return to idle |
 | 6 | B in another call; A calls again | Busy / rejected |
-| 7 | Same LAN, wait ≥5s without Path 1 media | Caller falls back via `call.reinvite`; call still completes on Path 2 |
-| 8 | A on Wi‑Fi, B on mobile hotspot + TURN configured | Audio via ICE/TURN (Path 2) |
+| 7 | Outbound call while ringing | Caller sees **Calling…** banner; cancel works |
+| 8 | Callee with no microphone (Windows listen-only) | Accept succeeds; dock shows **No microphone — listen only** |
+| 9 | Same LAN, wait ≥5s without Path 1 media | Caller falls back via `call.reinvite`; call still completes on Path 2 |
+| 10 | A on Wi‑Fi, B on mobile hotspot + TURN configured | Audio via ICE/TURN (Path 2) |
+
+### Mac ↔ Windows cross-platform audio (release smoke)
+
+Use this when validating desktop Social on **macOS (caller)** and **Windows (callee)** over the internet or LAN. Rebuild Social on **both** sides after any call-related change (`npm run social:build` or restart dev server).
+
+**Setup**
+
+| Machine | Role | Notes |
+|---------|------|-------|
+| Mac | Caller (has mic) | Home node + Social UI |
+| Windows | Callee (may have no mic) | Separate profile; bonded to Mac |
+
+1. Bond Mac ↔ Windows (Trust intro or QR).
+2. Confirm chat works both directions before calling.
+3. On both homes: Settings → Network → add **STUN** (default) and **TURN** if either side is behind symmetric NAT.
+
+**Checklist**
+
+| Step | Action | Pass criteria |
+|------|--------|---------------|
+| 1 | Mac opens chat, taps **phone** | Mac shows **Calling {name}…** banner; Windows shows incoming overlay |
+| 2 | Windows **Accept** | Both show active-call dock (not just signaling) |
+| 3 | Wait for **Connected** on both docks | May take 5–20s cross-NAT; do not hang up early |
+| 4 | Mac speaks | Windows hears audio on speakers |
+| 5 | Windows speaks (if mic present) | Mac hears audio |
+| 6 | Windows without mic | Accept still works; dock shows listen-only hint; Mac audio still audible on Windows |
+| 7 | Mac **End call** | Both return to idle |
+| 8 | Windows calls Mac (reverse direction) | Same pass criteria |
+
+**Browser console traces (DevTools → Console, filter `webrtc-call`)**
+
+| Trace | Meaning |
+|-------|---------|
+| `ui:invite-sent` | Outbound signaling left Mac |
+| `transport:remote-track` | Remote audio track received |
+| `ui:remote-audio-play` | `<audio>` playback started |
+| `ui:remote-audio-play-failed` | Autoplay blocked — click page once and retry |
+| `transport:ice-candidate-added` | ICE trickle working |
+
+**If signaling works but no audio**
+
+1. Confirm both UIs show **Connected** (not stuck on Connecting).
+2. Add **TURN** on both nodes and retry.
+3. Check Windows mic permission only if Windows should speak; listen-only is OK for one-way verify.
+4. Capture `[webrtc-call]` logs from both browsers + `[sendCallInvite]` from both home nodes.
+
+Automated coverage (no real audio): `npm run test:e2e:webrtc` — includes Playwright tests for **Calling…** banner and listen-only active dock when `getUserMedia` fails (`webrtc-call-e2e.test.ts` tests 8–9).
 
 ### EnvoyGo (mobile)
 
@@ -193,7 +242,7 @@ Notes: ...
 | Area | Automated today | Manual still required |
 |------|-----------------|----------------------|
 | Call signaling (libp2p) | `call-two-home-e2e.test.ts` | — |
-| Call UI (Playwright) | `webrtc-call-e2e.test.ts` (mock WS) | Real browser + two homes |
+| Call UI (Playwright) | `webrtc-call-e2e.test.ts` (mock WS + listen-only banner/dock) | Real browser + two homes |
 | WebRTC media / audio | Hook unit tests only | Two devices, mic + speakers |
 | Path 2 cross-NAT + TURN | ICE injection tests | Hotspot + TURN server |
 | Chains (2 homes) | `chain-two-home-smoke.test.ts` | — |
