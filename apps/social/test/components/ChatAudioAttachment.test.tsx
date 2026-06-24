@@ -115,7 +115,7 @@ describe("ChatAudioAttachment — Phase 37", () => {
     });
   });
 
-  it("does not attempt load when vaultRelativePath is missing", () => {
+  it("shows waiting state when vaultRelativePath is missing (transfer in progress)", () => {
     mockNodeService();
     renderWithI18n(
       <ChatAudioAttachment
@@ -128,7 +128,7 @@ describe("ChatAudioAttachment — Phase 37", () => {
         }}
       />,
     );
-    // No vault path → shouldn't call readLibraryItemContent
     expect(mockReadLibraryItemContent).not.toHaveBeenCalled();
+    expect(screen.getByText(/loading/i)).toBeDefined();
   });
 });

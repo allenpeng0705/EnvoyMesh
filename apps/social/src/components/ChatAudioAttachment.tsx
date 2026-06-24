@@ -48,7 +48,9 @@ export function ChatAudioAttachment({ attachment, transcription }: ChatAudioAtta
 
   return (
     <div className="chat-audio-attachment">
-      {loading ? (
+      {!vaultPath ? (
+        <span className="chat-audio-loading">{t("audioMessage.loading", "Loading audio…")}</span>
+      ) : loading ? (
         <span className="chat-audio-loading">{t("audioMessage.loading", "Loading audio…")}</span>
       ) : error || !audioUrl ? (
         <span className="chat-audio-error">{t("audioMessage.error", "Audio unavailable")}</span>
@@ -61,7 +63,9 @@ export function ChatAudioAttachment({ attachment, transcription }: ChatAudioAtta
           src={audioUrl}
           onLoadedMetadata={() => {
             const el = audioRef.current;
-            if (el && isFinite(el.duration)) setDurationSec(Math.round(el.duration));
+            if (el && isFinite(el.duration) && el.duration > 0) {
+              setDurationSec(Math.round(el.duration));
+            }
           }}
         >
           {t("audioMessage.unsupported", "Your browser does not support audio playback.")}
@@ -70,9 +74,9 @@ export function ChatAudioAttachment({ attachment, transcription }: ChatAudioAtta
       {transcription ? (
         <p className="chat-audio-transcription">{transcription}</p>
       ) : null}
-      {(durationSec != null || attachment.sizeBytes != null) ? (
+      {(durationSec != null && durationSec > 0) ? (
         <span className="chat-audio-duration">
-          {t("audioMessage.duration", { seconds: durationSec ?? Math.round(attachment.sizeBytes! / 4000) })}
+          {t("audioMessage.duration", { seconds: durationSec })}
         </span>
       ) : null}
     </div>

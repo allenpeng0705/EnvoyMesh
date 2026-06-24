@@ -212,6 +212,8 @@ import {
   formatA2aChatSystemLine,
   resolveReportContactOwnerId,
   chatRoomThreadKey,
+  chatWireAttachmentsToContent,
+  deferredDirectChatAttachmentKey,
   ENVOY_AI_THREAD_KEY,
 } from "@envoymesh/api";
 
@@ -848,6 +850,8 @@ class NodeServiceImpl implements NodeService {
    * (matches {@link DataTransferVoucher} `relativePath` from sender).
    */
   private readonly _pendingDataTransferSavePath = new Map<string, string>();
+  /** Vault paths for 1:1 chat attachments when transfer completes before chat.message is persisted. */
+  private readonly _deferredDirectChatAttachmentVaultPath = new Map<string, string>();
   /** Share / data-transfer correlation ids for progress tracking (ADB-D). */
   private readonly _transferTracker = new TransferTracker();
   private readonly _correlationByRequestMsgId = new Map<string, string>();
@@ -1091,6 +1095,19 @@ class NodeServiceImpl implements NodeService {
     return this._transferTracker.get(correlationId);
   }
 
+  /** After inbound 1:1 chat.message is persisted, apply deferred vault paths from early transfers. */
+  async reconcileInboundDirectChatMessage(
+    peerOwnerId: string,
+    message: ChatMessage,
+  ): Promise<ChatMessage> {
+    if (!this._chatLogStore) return message;
+    await this._reconcileDeferredDirectChatAttachmentVaultPaths(peerOwnerId, message);
+    const rows = await this._chatLogStore.listThread(peerOwnerId.trim(), 5000);
+    const updated = rows.find((row) => row.messageId === message.messageId);
+    if (!updated) return message;
+    return { ...updated, signature: updated.signature };
+  }
+
   /** Called from data-transfer-inbound after verified inbound write. */
   notifyInboundTransferVerified(input: {
     remotePeerId: string;
@@ -1117,6 +1134,13 @@ class NodeServiceImpl implements NodeService {
       if (pending.chatRoomId && pending.chatMessageId && pending.chatAttachmentId) {
         void this._applyRoomAttachmentVaultPath({
           roomId: pending.chatRoomId,
+          messageId: pending.chatMessageId,
+          attachmentId: pending.chatAttachmentId,
+          vaultRelativePath: input.relativePath,
+        });
+      } else if (pending.chatMessageId && pending.chatAttachmentId && pending.senderOwnerId) {
+        void this._applyDirectChatAttachmentVaultPath({
+          peerOwnerId: pending.senderOwnerId,
           messageId: pending.chatMessageId,
           attachmentId: pending.chatAttachmentId,
           vaultRelativePath: input.relativePath,
@@ -3701,6 +3725,77 @@ class NodeServiceImpl implements NodeService {
     if (!msg) return;
     const full: ChatMessage = { ...msg, signature: msg.signature };
     this.emit("chat:room-message", { roomId: input.roomId.trim(), message: full });
+  }
+
+  /** After inbound file transfer, attach the local vault path to an existing 1:1 chat message. */
+  private async _applyDirectChatAttachmentVaultPath(input: {
+    peerOwnerId: string;
+    messageId: string;
+    attachmentId: string;
+    vaultRelativePath: string;
+  }): Promise<void> {
+    if (!this._chatLogStore) return;
+    const threadPeerOwnerId = input.peerOwnerId.trim();
+    const vaultPath = input.vaultRelativePath.replace(/^[\\/]+/, "");
+    const updated = await this._chatLogStore.updateAttachmentVaultPath(
+      threadPeerOwnerId,
+      input.messageId,
+      input.attachmentId,
+      vaultPath,
+    );
+    if (!updated) {
+      this._deferredDirectChatAttachmentVaultPath.set(
+        deferredDirectChatAttachmentKey(threadPeerOwnerId, input.messageId, input.attachmentId),
+        vaultPath,
+      );
+      return;
+    }
+    this._deferredDirectChatAttachmentVaultPath.delete(
+      deferredDirectChatAttachmentKey(threadPeerOwnerId, input.messageId, input.attachmentId),
+    );
+    await this._emitDirectChatMessageAfterAttachmentUpdate(threadPeerOwnerId, input.messageId);
+  }
+
+  private async _reconcileDeferredDirectChatAttachmentVaultPaths(
+    peerOwnerId: string,
+    message: ChatMessage,
+  ): Promise<void> {
+    if (!this._chatLogStore) return;
+    const attachments = message.content.attachments;
+    if (!attachments?.length) return;
+    const threadPeerOwnerId = peerOwnerId.trim();
+    let changed = false;
+    for (const attachment of attachments) {
+      const key = deferredDirectChatAttachmentKey(
+        threadPeerOwnerId,
+        message.messageId,
+        attachment.id,
+      );
+      const vaultPath = this._deferredDirectChatAttachmentVaultPath.get(key);
+      if (!vaultPath) continue;
+      const updated = await this._chatLogStore.updateAttachmentVaultPath(
+        threadPeerOwnerId,
+        message.messageId,
+        attachment.id,
+        vaultPath,
+      );
+      if (!updated) continue;
+      this._deferredDirectChatAttachmentVaultPath.delete(key);
+      changed = true;
+    }
+    if (!changed) return;
+  }
+
+  private async _emitDirectChatMessageAfterAttachmentUpdate(
+    threadPeerOwnerId: string,
+    messageId: string,
+  ): Promise<void> {
+    if (!this._chatLogStore) return;
+    const rows = await this._chatLogStore.listThread(threadPeerOwnerId, 5000);
+    const msg = rows.find((row) => row.messageId === messageId);
+    if (!msg) return;
+    const full: ChatMessage = { ...msg, signature: msg.signature };
+    this.emit("chat:message", full);
   }
 
   private async _deliverChatEnvelope(
@@ -6943,23 +7038,40 @@ class NodeServiceImpl implements NodeService {
       mimeType,
     });
 
+    const wireAttachment = {
+      id: attachmentId,
+      filename,
+      mimeType,
+      sizeBytes: bytes.byteLength,
+      sensitivity,
+      vaultRelativePath,
+    };
+
+    let chatMessageId: string | undefined;
+    if (params.chatText !== undefined) {
+      const sendResult = await this.sendChat(params.targetOwnerId, params.chatText, [wireAttachment]);
+      chatMessageId = sendResult.messageId;
+    } else if (params.recordInChat !== false) {
+      void this._recordFileShareInChat({
+        peerOwnerId: params.targetOwnerId,
+        outgoing: true,
+        vaultRelativePath,
+        byteLength: bytes.byteLength,
+        sensitivity,
+        mimeType,
+        textOverride: params.caption?.trim() || `Sent ${filename}`,
+      });
+    }
+
     const { shareRequestMessageId } = await this._shareFileInternal(params.targetOwnerId, {
       path: vaultRelativePath,
       sensitivity,
       deliveryChannel: "chat",
+      chatMessageId,
+      chatAttachmentId: attachmentId,
     });
 
-    void this._recordFileShareInChat({
-      peerOwnerId: params.targetOwnerId,
-      outgoing: true,
-      vaultRelativePath,
-      byteLength: bytes.byteLength,
-      sensitivity,
-      mimeType,
-      textOverride: params.caption?.trim() || `Sent ${filename}`,
-    });
-
-    return { attachmentId, vaultRelativePath, shareRequestMessageId };
+    return { attachmentId, vaultRelativePath, shareRequestMessageId, messageId: chatMessageId };
   }
 
   async sendChatRoomAttachment(
@@ -9231,12 +9343,27 @@ class NodeServiceImpl implements NodeService {
             ownerId: profile.owner.ownerId,
             displayName: selfHuman?.displayName ?? profile.owner.ownerId,
           },
-          content: { text: stripModelThinking(payload.text) },
+          content: {
+            text: stripModelThinking(payload.text),
+            ...(payload.attachments?.length
+              ? { attachments: chatWireAttachmentsToContent(payload.attachments) }
+              : {}),
+          },
           metadata: { timestamp: envelope.createdAt, deliveryReceipt: "delivered" },
           signature: envelope.signature,
         };
-        this._persistChatMessage(payload.senderOwnerId, incomingMsg);
-        this.emit("chat:message", incomingMsg);
+        void (async () => {
+          if (this._chatLogStore) {
+            await this._chatLogStore.append(payload.senderOwnerId, incomingMsg);
+          } else {
+            this._persistChatMessage(payload.senderOwnerId, incomingMsg);
+          }
+          const emitMsg = await this.reconcileInboundDirectChatMessage(
+            payload.senderOwnerId,
+            incomingMsg,
+          );
+          this.emit("chat:message", emitMsg);
+        })();
         if (senderTrust && senderTrust.level !== "blocked") {
           void this._tagBondedContactReachability(remotePeerId);
         }
@@ -13517,6 +13644,19 @@ function mimeTypeForFilename(filename: string): string {
       return "image/webp";
     case "svg":
       return "image/svg+xml";
+    case "webm":
+      return "audio/webm";
+    case "m4a":
+      return "audio/mp4";
+    case "mp4":
+      return "video/mp4";
+    case "mp3":
+      return "audio/mpeg";
+    case "ogg":
+    case "oga":
+      return "audio/ogg";
+    case "wav":
+      return "audio/wav";
     case "txt":
       return "text/plain";
     case "md":

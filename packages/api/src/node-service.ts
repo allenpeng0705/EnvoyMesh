@@ -722,12 +722,22 @@ export interface SendChatAttachmentParams {
   mimeType?: string;
   caption?: string;
   sensitivity?: ChatAttachment["sensitivity"];
+  /**
+   * When set, sends a `chat.message` with this text and the attachment metadata,
+   * links the file share to that message, and skips the separate local file-share chat row.
+   * Use for voice notes — pass `""` when there is no transcription.
+   */
+  chatText?: string;
+  /** When false and `chatText` is omitted, skips `_recordFileShareInChat` (default true). */
+  recordInChat?: boolean;
 }
 
 export interface SendChatAttachmentResult {
   attachmentId: string;
   vaultRelativePath: string;
   shareRequestMessageId: string;
+  /** Present when `chatText` was provided — the outbound chat.message id. */
+  messageId?: string;
 }
 
 export interface SendChatRoomAttachmentParams {

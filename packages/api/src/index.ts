@@ -13,6 +13,7 @@ export * from "./envoy-pair-uri.js";
 export * from "./pairing-token.js";
 export * from "./envoy-contact-link.js";
 export * from "./chat-device-auth.js";
+export * from "./chat-attachments.js";
 export * from "./chat-actor.js";
 export * from "./agent-visibility.js";
 export * from "./agent-activity-map.js";

@@ -466,11 +466,14 @@ export interface SendChatAttachmentParams {
     mimeType?: string;
     caption?: string;
     sensitivity?: ChatAttachment["sensitivity"];
+    chatText?: string;
+    recordInChat?: boolean;
 }
 export interface SendChatAttachmentResult {
     attachmentId: string;
     vaultRelativePath: string;
     shareRequestMessageId: string;
+    messageId?: string;
 }
 export interface ReadLibraryItemContentParams {
     relativePath: string;

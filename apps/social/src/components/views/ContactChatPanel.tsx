@@ -244,6 +244,22 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
         if (needsReconcile) {
           const echoed = messages.some((m) => {
             if (!isOutgoing(m)) return false;
+            if (p.messageId.startsWith("pending-voice-")) {
+              const pendingFilename = p.content.attachments?.[0]?.filename;
+              if (
+                pendingFilename &&
+                m.content.attachments?.some((att) => att.filename === pendingFilename)
+              ) {
+                return true;
+              }
+            }
+            const pendingAttId = p.content.attachments?.[0]?.id;
+            if (
+              pendingAttId &&
+              m.content.attachments?.some((att) => att.id === pendingAttId)
+            ) {
+              return true;
+            }
             if (m.content.text !== p.content.text) return false;
             const delta = Math.abs(
               new Date(m.metadata.timestamp).getTime() - new Date(p.metadata.timestamp).getTime(),
@@ -427,81 +443,13 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
 
     try {
       const contentBase64 = await fileToBase64(new File([blob], `voice-${Date.now()}.${ext}`, { type: mimeType }));
-      const result = await nodeService.sendChatAttachment({
+      await nodeService.sendChatAttachment({
         targetOwnerId: selectedContact,
         filename,
         contentBase64,
         mimeType,
-        caption: transcription || undefined,
+        chatText: transcription || "",
       });
-      const tempId = `pending-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-      setPendingOutbound((prev) => [
-        ...prev,
-        {
-          messageId: tempId,
-          sender: {
-            nodeId: peerId,
-            ownerId: humanProfile?.ownerId ?? "",
-            displayName: humanProfile?.displayName ?? "",
-            actorRole: "human",
-            agentId: "",
-            agentVerified: false,
-          },
-          recipient: { nodeId: selectedContact, ownerId: selectedContact, displayName: "" },
-          content: {
-            text: transcription || "",
-            attachments: [
-              {
-                id: result.attachmentId,
-                filename,
-                mimeType,
-                sizeBytes: blob.size,
-                sensitivity: "friends",
-                vaultRelativePath: result.vaultRelativePath,
-              },
-            ],
-          },
-          metadata: { timestamp: new Date().toISOString(), deliveryReceipt: "pending" as const },
-          signature: "",
-        } as ChatMessage,
-      ]);
-      try {
-        const envelopeResult = await nodeService.sendChat(selectedContact, transcription || "", [
-          {
-            id: result.attachmentId,
-            filename,
-            mimeType,
-            sizeBytes: blob.size,
-            sensitivity: "friends" as const,
-            vaultRelativePath: result.vaultRelativePath,
-          },
-        ]);
-        setPendingOutbound((prev) =>
-          prev.map((m) =>
-            m.messageId === tempId
-              ? {
-                  ...m,
-                  messageId: envelopeResult.messageId,
-                  metadata: {
-                    ...m.metadata,
-                    deliveryReceipt:
-                      envelopeResult.deliveryReceipt === "delivered"
-                        ? ("delivered" as const)
-                        : ("sent" as const),
-                  },
-                }
-              : m,
-          ),
-        );
-      } catch {
-        setPendingOutbound((prev) =>
-          prev.map((m) =>
-            m.messageId === tempId
-              ? { ...m, metadata: { ...m.metadata, deliveryReceipt: "failed" as const } }
-              : m,
-          ),
-        );
-      }
     } catch (err) {
       const msg = err instanceof Error ? err.message : t("contactChat.sendFailed");
       setSendError(msg);
@@ -510,10 +458,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
       voiceRecorder.setIdle();
     }
   }, [
-    humanProfile,
     nodeService,
-    peerId,
-    refreshReachability,
     scheduleClearSendError,
     selectedContact,
     t,
@@ -886,7 +831,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
                         >
                           <ChatMessageText text={msg.content.text} identity={aiIdentity} />
                           {msg.content.attachments?.map((attachment) => {
-                            const isAudio = attachment.mimeType?.startsWith("audio/");
+                            const isAudio = attachment.mimeType?.split(";")[0]?.startsWith("audio/") === true;
                             return isAudio ? (
                               <ChatAudioAttachment key={attachment.id} attachment={attachment} transcription={msg.content.text?.trim() || undefined} />
                             ) : (

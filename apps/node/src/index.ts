@@ -126,6 +126,7 @@ import { createInboundMessageGuard } from "./inbound-guard.js";
 import { chatSenderActorFromEnvelope, resolveEmpSupportedCapabilities } from "@envoymesh/api";
 import { buildSignedChatDeliveredEnvelope } from "@envoymesh/api/chat-delivered";
 import { verifyInboundChatDevice, formatChatSenderDisplayName, bindDeviceAuthorizationStore } from "./chat-device-auth.js";
+import { chatWireAttachmentsToContent } from "@envoymesh/api";
 import { buildOutboundDialHints } from "./outbound-dial-hints.js";
 import {
   dialableInboundRemoteAddrs,
@@ -154,7 +155,7 @@ import { StyleAdapter } from "./style-adapter.js";
 import { TriggerStore } from "./trigger-store.js";
 import { ApprovalQueue } from "@envoymesh/api";
 import { DigestGenerator, createDefaultDigestConfig, getDigestPeriodDates } from "./digest-generator.js";
-import type { AutonomousDomain, AutonomousPolicy, AiSettings, ContactAiPreferences } from "@envoymesh/api";
+import type { AutonomousDomain, AutonomousPolicy, AiSettings, ChatMessage, ContactAiPreferences } from "@envoymesh/api";
 import { buildVaultIndexOptionsFromKnowledgeBase } from "@envoymesh/api";
 import { stripModelThinking, applyAiIdentityForIdentity, ENVOY_AI_THREAD_KEY } from "@envoymesh/api";
 import { resolveNodeArgsTargetsByOwnerId } from "./owner-targeting.js";
@@ -1974,6 +1975,9 @@ async function handleInboundMeshMessage({
         },
         content: {
           text: stripModelThinking(payload.text),
+          ...(payload.attachments?.length
+            ? { attachments: chatWireAttachmentsToContent(payload.attachments) }
+            : {}),
         },
         metadata: {
           timestamp: envelope.createdAt,
@@ -1981,58 +1985,62 @@ async function handleInboundMeshMessage({
         },
         signature: envelope.signature,
       };
-      void chatLogStore.append(payload.senderOwnerId, chatMsg).catch((err) =>
-        console.warn(`[chat.message] chat log append failed:`, err),
-      );
-      scheduleChatRagIndex(payload.senderOwnerId, chatMsg);
-      // Record message in session manager (Phase 9E): track conversation state, sentiment, escalations
-      void sessionManager.recordMessage(
-        payload.senderOwnerId,
-        chatMsg.sender.displayName,
-        payload.text,
-        false,
-      ).catch((err) => console.warn(`[chat.message] session record failed:`, err));
-      // Check topic-based triggers (Phase 9G): match message content against trigger keywords
-      const matchedTopicTriggers = triggerStore.checkTopicTriggers(payload.text);
-      for (const trigger of matchedTopicTriggers) {
-        console.log(`[trigger] topic trigger fired: ${trigger.name} (${trigger.id}) action=${trigger.action.type}`);
-        triggerStore.recordFire(trigger.id);
-        void taskStore.appendAuditEvent(
-          createAuditEvent({
-            type: "trigger.fired",
-            intent: "chat.message",
-            messageId: envelope.messageId,
-            correlationId,
-            remotePeerId,
-            direction: "inbound",
-            verificationStatus: "verified",
-            latencyMs: Date.now() - receivedAt,
-            outcome: "record",
-            summary: `topic trigger: ${trigger.name} action=${trigger.action.type} proactive=true`,
-            createdAt: new Date().toISOString(),
-          }),
+      void (async () => {
+        await chatLogStore.append(payload.senderOwnerId, chatMsg).catch((err) =>
+          console.warn(`[chat.message] chat log append failed:`, err),
         );
-        // Emit trigger event for UI notification
-        wsServerForEvents.emitEvent("trigger:fired", {
-          triggerId: trigger.id,
-          triggerName: trigger.name,
-          triggerType: trigger.triggerType,
-          action: trigger.action,
-          contactOwnerId: payload.senderOwnerId,
-          contactDisplayName: chatMsg.sender.displayName,
-          messagePreview: payload.text.slice(0, 80),
-        });
-      }
-      wsServerForEvents.emitEvent("chat:message", chatMsg);
-
-      // Phase 31I — push notification for offline thin-client devices
-      void pushNotificationService.dispatchChatPush({
-        senderName: chatMsg.sender.displayName ?? payload.senderOwnerId,
-        messagePreview: payload.text.slice(0, 120),
-        targetOwnerId: chatMsg.recipient.ownerId,
-        messageId: envelope.messageId,
-        senderOwnerId: payload.senderOwnerId,
-      }).catch(() => {});
+        let emitMsg: typeof chatMsg = chatMsg;
+        if (nodeService instanceof NodeServiceImpl) {
+          emitMsg = await nodeService.reconcileInboundDirectChatMessage(
+            payload.senderOwnerId,
+            chatMsg as ChatMessage,
+          ) as typeof chatMsg;
+        }
+        scheduleChatRagIndex(payload.senderOwnerId, emitMsg);
+        void sessionManager.recordMessage(
+          payload.senderOwnerId,
+          emitMsg.sender.displayName,
+          payload.text,
+          false,
+        ).catch((err) => console.warn(`[chat.message] session record failed:`, err));
+        const matchedTopicTriggers = triggerStore.checkTopicTriggers(payload.text);
+        for (const trigger of matchedTopicTriggers) {
+          console.log(`[trigger] topic trigger fired: ${trigger.name} (${trigger.id}) action=${trigger.action.type}`);
+          triggerStore.recordFire(trigger.id);
+          void taskStore.appendAuditEvent(
+            createAuditEvent({
+              type: "trigger.fired",
+              intent: "chat.message",
+              messageId: envelope.messageId,
+              correlationId,
+              remotePeerId,
+              direction: "inbound",
+              verificationStatus: "verified",
+              latencyMs: Date.now() - receivedAt,
+              outcome: "record",
+              summary: `topic trigger: ${trigger.name} action=${trigger.action.type} proactive=true`,
+              createdAt: new Date().toISOString(),
+            }),
+          );
+          wsServerForEvents.emitEvent("trigger:fired", {
+            triggerId: trigger.id,
+            triggerName: trigger.name,
+            triggerType: trigger.triggerType,
+            action: trigger.action,
+            contactOwnerId: payload.senderOwnerId,
+            contactDisplayName: emitMsg.sender.displayName,
+            messagePreview: payload.text.slice(0, 80),
+          });
+        }
+        wsServerForEvents.emitEvent("chat:message", emitMsg);
+        void pushNotificationService.dispatchChatPush({
+          senderName: emitMsg.sender.displayName ?? payload.senderOwnerId,
+          messagePreview: payload.text.slice(0, 120),
+          targetOwnerId: emitMsg.recipient.ownerId,
+          messageId: envelope.messageId,
+          senderOwnerId: payload.senderOwnerId,
+        }).catch(() => {});
+      })();
 
       void (async () => {
         const storedConfig = await nodeConfigStore.load();

@@ -960,26 +960,7 @@ export async function sendChatRoomMessageImpl(
   };
 }
 
-function chatAttachmentSensitivity(
-  sensitivity: ChatRoomAttachment["sensitivity"],
-): ChatAttachment["sensitivity"] {
-  return sensitivity === "trusted" ? "friends" : sensitivity;
-}
-
-function roomAttachmentsToChatContent(
-  wire: ChatRoomAttachment[] | undefined,
-  localVaultById?: Map<string, string>,
-): ChatMessage["content"]["attachments"] {
-  if (!wire?.length) return undefined;
-  return wire.map((att) => ({
-    id: att.id,
-    filename: att.filename,
-    mimeType: att.mimeType,
-    sizeBytes: att.sizeBytes,
-    sensitivity: chatAttachmentSensitivity(att.sensitivity),
-    ...(localVaultById?.get(att.id) ? { vaultRelativePath: localVaultById.get(att.id) } : {}),
-  }));
-}
+import { chatWireAttachmentsToContent } from "./chat-attachments.js";
 
 export interface SendChatRoomAttachmentInput {
   roomId: string;
@@ -1112,7 +1093,7 @@ export async function sendChatRoomAttachmentImpl(
     },
     content: {
       text: wireText,
-      attachments: roomAttachmentsToChatContent(wireAttachments, localVault),
+      attachments: chatWireAttachmentsToContent(wireAttachments, localVault),
     },
     metadata: {
       timestamp: envelope.createdAt,
@@ -1326,7 +1307,7 @@ export async function handleInboundChatRoomMessageImpl(
     },
     content: {
       text: stripModelThinking(payload.text),
-      attachments: roomAttachmentsToChatContent(payload.attachments),
+      attachments: chatWireAttachmentsToContent(payload.attachments),
     },
     metadata: { timestamp: envelope.createdAt, deliveryReceipt: "delivered" },
     signature: envelope.signature,
