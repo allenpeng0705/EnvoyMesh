@@ -13915,15 +13915,19 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
       const transport = await this._resolvePeerTransportForOwner(peerOwnerId);
       const mesh = this._requireMesh();
       const records = await this._peerDirectoryStore.listPeerRecords();
-      const liveConnected = pickLibp2pFromConnectedPeers(
+      const connectedPeerIds = mesh.getConnectedPeerIds();
+      const liveConnected = pickConnectedTransportForOwner(
         records,
         peerOwnerId,
-        mesh.getConnectedPeerIds(),
+        connectedPeerIds,
+        this._lastLibp2pTransportByOwner,
       );
       let targetPeerId = liveConnected?.peerId ?? transport.transportPeerId;
+      let listenAddrs = liveConnected?.listenAddrs ?? transport.listenAddrs;
       let conn = mesh.getPeerConnectionInfo(targetPeerId);
       if (!conn.connected) {
         targetPeerId = transport.transportPeerId;
+        listenAddrs = transport.listenAddrs;
         conn = mesh.getPeerConnectionInfo(targetPeerId);
       }
       if (!conn.connected) {
@@ -13935,12 +13939,13 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
         }
       }
       if (!conn.connected) {
-        for (const addr of transport.listenAddrs ?? []) {
+        for (const addr of listenAddrs ?? []) {
           const trimmed = addr.trim();
           if (!trimmed) continue;
           try {
             await mesh.dial(trimmed);
             conn = mesh.getPeerConnectionInfo(transport.transportPeerId);
+            targetPeerId = transport.transportPeerId;
             if (conn.connected) break;
           } catch {
             /* try next addr */
@@ -13951,7 +13956,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
       let dialHints: string[];
       try {
         dialHints = await raceWithTimeout(
-          this._dialHintsForChat(transport.transportPeerId, transport.listenAddrs),
+          this._dialHintsForChat(targetPeerId, listenAddrs),
           30_000,
           "_dialHintsForChat",
         );
@@ -13960,28 +13965,40 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
           `[call-response] dial hints failed for ${peerOwnerId}, using listen addrs:`,
           hintErr instanceof Error ? hintErr.message : hintErr,
         );
-        dialHints = mergeDialablePeerListenAddrs(
-          transport.transportPeerId,
-          transport.listenAddrs ?? [],
-        );
+        dialHints = mergeDialablePeerListenAddrs(targetPeerId, listenAddrs ?? []);
       }
       // Stamp the recipient device peer id BEFORE signing — the signature
       // covers canonical JSON of the unsigned envelope.
       unsigned.recipientPeerId = transport.recipientEnvelopePeerId;
       const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem);
-      conn = mesh.getPeerConnectionInfo(targetPeerId);
-      const liveOnMesh = mesh.getConnectedPeerIds().includes(targetPeerId);
-      if (conn.connected || liveOnMesh) {
-        await mesh.sendChat(targetPeerId, envelope, { dialHints: [] });
-        return;
-      }
-      await this._deliverCallEnvelope(
+      const deliverResult = await this._deliverCallEnvelope(
         targetPeerId,
         envelope,
         conn.connected ? [] : dialHints,
-        conn.connected ? [] : transport.listenAddrs,
+        conn.connected ? [] : listenAddrs,
         preferCircuitHints,
       );
+      if (!deliverResult.delivered) {
+        webrtcCallWarn("call-response:not-delivered", {
+          intent: _intent,
+          peer: shortCallId(targetPeerId),
+          callId: shortCallId(
+            typeof unsigned.payload === "object" &&
+              unsigned.payload !== null &&
+              "callId" in unsigned.payload
+              ? String((unsigned.payload as { callId?: string }).callId)
+              : undefined,
+          ),
+        });
+        console.warn(
+          `[call-response] could not deliver ${_intent} to ${peerOwnerId.slice(0, 24)}…`,
+        );
+        return;
+      }
+      webrtcCallTrace("call-response:delivered", {
+        intent: _intent,
+        peer: shortCallId(targetPeerId),
+      });
     } catch (err) {
       console.warn(
         `[call-response] could not deliver ${_intent} to ${peerOwnerId}:`,

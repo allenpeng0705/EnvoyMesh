@@ -81,6 +81,21 @@ export function useCallSession(): UseCallSessionResult {
   const pendingInviteIceServersRef = useRef<IceServerConfig[] | undefined>(undefined);
   const path2FallbackSentRef = useRef(false);
   const pendingIceCandidatesRef = useRef<Parameters<typeof nodeService.sendIceCandidate>[1][]>([]);
+  const pendingOutboundIceRef = useRef<Parameters<typeof nodeService.sendIceCandidate>[1][]>([]);
+
+  const flushPendingOutboundIce = useCallback(
+    (callId: string) => {
+      if (pendingOutboundIceRef.current.length === 0) return;
+      const queued = pendingOutboundIceRef.current.splice(0);
+      webrtcCallTrace("ui:ice-candidate-flush-outbound", { count: queued.length, callId: shortCallId(callId) });
+      for (const candidate of queued) {
+        void nodeService.sendIceCandidate(callId, candidate).catch((err) => {
+          console.warn("[useCallSession] sendIceCandidate failed:", err);
+        });
+      }
+    },
+    [nodeService],
+  );
 
   const flushPendingIceCandidates = useCallback(() => {
     const transport = transportRef.current;
@@ -97,6 +112,7 @@ export function useCallSession(): UseCallSessionResult {
     setRemoteStream(null);
     setMicAvailable(true);
     pendingIceCandidatesRef.current = [];
+    pendingOutboundIceRef.current = [];
   }, []);
 
   const syncMicAvailable = useCallback(() => {
@@ -110,7 +126,13 @@ export function useCallSession(): UseCallSessionResult {
   const sendIceCandidate = useCallback(
     (candidate: Parameters<typeof nodeService.sendIceCandidate>[1]) => {
       const callId = iceCallIdRef.current;
-      if (!callId) return;
+      if (!callId) {
+        pendingOutboundIceRef.current.push(candidate);
+        webrtcCallTrace("ui:ice-candidate-queued-outbound", {
+          pending: pendingOutboundIceRef.current.length,
+        });
+        return;
+      }
       void nodeService.sendIceCandidate(callId, candidate).catch((err) => {
         console.warn("[useCallSession] sendIceCandidate failed:", err);
       });
@@ -530,9 +552,10 @@ export function useCallSession(): UseCallSessionResult {
       setActivePeerDisplayName(peerLabel);
       setCallingState(callId);
       setConnectionState("connecting");
+      flushPendingOutboundIce(callId);
       webrtcCallTrace("ui:invite-sent", { callId: shortCallId(callId), target: shortCallId(targetOwnerId) });
     },
-    [nodeService, buildTransport, closeTransport, onPath1TimeoutHandler, showToast, t, syncMicAvailable, notifyMicUnavailable, flushPendingIceCandidates],
+    [nodeService, buildTransport, closeTransport, onPath1TimeoutHandler, showToast, t, syncMicAvailable, notifyMicUnavailable, flushPendingIceCandidates, flushPendingOutboundIce],
   );
 
   const cancelCall = useCallback(() => {

@@ -243,17 +243,38 @@ export function createWebRtcCallTransport(
       }, path1Timeout);
     }
 
-    // Connection state monitoring
-    pc.onconnectionstatechange = () => {
-      if (pc) {
-        webrtcCallTrace("transport:connection-state", { path: opts.path, state: pc.connectionState });
-        opts.onConnectionStateChange(pc.connectionState);
+    // Connection state monitoring (connectionState can lag behind ICE on some browsers)
+    const reportConnectionState = () => {
+      if (!pc) return;
+      const ice = pc.iceConnectionState;
+      if (ice === "connected" || ice === "completed") {
+        webrtcCallTrace("transport:connection-state", { path: opts.path, state: "connected", via: "ice" });
+        opts.onConnectionStateChange("connected");
+        return;
       }
+      if (ice === "failed") {
+        webrtcCallTrace("transport:connection-state", { path: opts.path, state: "failed", via: "ice" });
+        opts.onConnectionStateChange("failed");
+        return;
+      }
+      if (ice === "disconnected") {
+        webrtcCallTrace("transport:connection-state", { path: opts.path, state: "disconnected", via: "ice" });
+        opts.onConnectionStateChange("disconnected");
+        return;
+      }
+      webrtcCallTrace("transport:connection-state", { path: opts.path, state: pc.connectionState, via: "pc" });
+      opts.onConnectionStateChange(pc.connectionState);
+    };
+
+    pc.onconnectionstatechange = () => {
       if (pc?.connectionState === "connected" && path1Timer) {
         clearTimeout(path1Timer);
         path1Timer = null;
       }
+      reportConnectionState();
     };
+
+    pc.oniceconnectionstatechange = reportConnectionState;
 
     // ICE candidate handler (Path 2 trickle)
     pc.onicecandidate = (event) => {
@@ -288,13 +309,31 @@ export function createWebRtcCallTransport(
     const config = await getIceConfig();
     pc = new RTCPeerConnection(config);
 
-    // Connection state monitoring
-    pc.onconnectionstatechange = () => {
-      if (pc) {
-        webrtcCallTrace("transport:connection-state", { path: opts.path, state: pc.connectionState });
-        opts.onConnectionStateChange(pc.connectionState);
+    // Connection state monitoring (connectionState can lag behind ICE on some browsers)
+    const reportConnectionState = () => {
+      if (!pc) return;
+      const ice = pc.iceConnectionState;
+      if (ice === "connected" || ice === "completed") {
+        webrtcCallTrace("transport:connection-state", { path: opts.path, state: "connected", via: "ice" });
+        opts.onConnectionStateChange("connected");
+        return;
       }
+      if (ice === "failed") {
+        webrtcCallTrace("transport:connection-state", { path: opts.path, state: "failed", via: "ice" });
+        opts.onConnectionStateChange("failed");
+        return;
+      }
+      if (ice === "disconnected") {
+        webrtcCallTrace("transport:connection-state", { path: opts.path, state: "disconnected", via: "ice" });
+        opts.onConnectionStateChange("disconnected");
+        return;
+      }
+      webrtcCallTrace("transport:connection-state", { path: opts.path, state: pc.connectionState, via: "pc" });
+      opts.onConnectionStateChange(pc.connectionState);
     };
+
+    pc.onconnectionstatechange = reportConnectionState;
+    pc.oniceconnectionstatechange = reportConnectionState;
 
     // ICE candidate handler (Path 2 trickle)
     pc.onicecandidate = (event) => {

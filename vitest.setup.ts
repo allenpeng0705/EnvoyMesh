@@ -89,9 +89,11 @@ class MockRTCPeerConnection {
   addIceCandidate: ReturnType<typeof vi.fn>;
   close: ReturnType<typeof vi.fn>;
   onconnectionstatechange: ((() => void) | null) | null;
+  oniceconnectionstatechange: ((() => void) | null) | null;
   onicecandidate: ((event: { candidate: RTCIceCandidate | null }) => void) | null;
   ontrack: ((event: { streams: [MediaStream] }) => void) | null;
   connectionState: RTCPeerConnectionState;
+  iceConnectionState: RTCIceConnectionState;
 
   constructor(_config?: RTCConfiguration) {
     this.createOffer = vi.fn().mockResolvedValue({ sdp: "mock-offer", type: "offer" });
@@ -111,9 +113,11 @@ class MockRTCPeerConnection {
     this.addIceCandidate = vi.fn().mockResolvedValue(undefined);
     this.close = vi.fn();
     this.onconnectionstatechange = null;
+    this.oniceconnectionstatechange = null;
     this.onicecandidate = null;
     this.ontrack = null;
     this.connectionState = "new";
+    this.iceConnectionState = "new";
   }
 
   static generateCertificate(_keygenAlgorithm: AlgorithmIdentifier): Promise<RTCCertificate> {

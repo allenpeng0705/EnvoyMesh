@@ -55,14 +55,27 @@ vi.mock("../../src/context/I18nContext.js", () => ({
 let mockNodeService = createMockNodeService();
 
 let latestOnPath1Timeout: (() => void) | undefined;
+let latestOnIceCandidate: ((candidate: {
+  candidate: string;
+  sdpMid: string | null;
+  sdpMLineIndex: number | null;
+  usernameFragment?: string | null;
+}) => void) | undefined;
 
 vi.mock("../../src/lib/webrtc-call-transport.js", () => ({
-  createWebRtcCallTransport: (opts: { onPath1Timeout?: () => void }) => {
+  createWebRtcCallTransport: (opts: { onPath1Timeout?: () => void; onIceCandidate?: typeof latestOnIceCandidate }) => {
     latestOnPath1Timeout = opts.onPath1Timeout;
+    latestOnIceCandidate = opts.onIceCandidate;
     let micAvailable = true;
     return {
       startOffer: vi.fn(async () => {
         micAvailable = mockMicAvailableOnOffer;
+        opts.onIceCandidate?.({
+          candidate: "candidate:1 1 udp 2130706431 192.168.1.1 54321 typ host",
+          sdpMid: "0",
+          sdpMLineIndex: 0,
+          usernameFragment: null,
+        });
         return "local-offer";
       }),
       startAnswer: vi.fn(async () => "local-answer"),
@@ -81,6 +94,7 @@ describe("useCallSession media plane", () => {
   beforeEach(() => {
     mockNodeService = createMockNodeService();
     latestOnPath1Timeout = undefined;
+    latestOnIceCandidate = undefined;
     mockMicAvailableOnOffer = true;
     vi.clearAllMocks();
   });
@@ -113,6 +127,12 @@ describe("useCallSession media plane", () => {
     expect(mockNodeService.sendCallInvite).toHaveBeenCalledWith(
       "envoy:owner:bob",
       "local-offer",
+    );
+    expect(mockNodeService.sendIceCandidate).toHaveBeenCalledWith(
+      "call-123",
+      expect.objectContaining({
+        candidate: expect.stringContaining("typ host"),
+      }),
     );
   });
 
