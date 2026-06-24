@@ -24,6 +24,7 @@ describe("scanLibp2pConnectionsFlat", () => {
       totalConnections: 2,
       circuitPeerIds: ["12D3KooWRelay"],
       circuitConnections: 1,
+      connectedPeerIds: ["12D3KooWRelay", "12D3KooWDht"],
     });
   });
 });
@@ -41,6 +42,7 @@ describe("scanLibp2pConnectionsMap", () => {
       totalConnections: 1,
       circuitPeerIds: [],
       circuitConnections: 0,
+      connectedPeerIds: ["12D3KooWPeer"],
     });
   });
 });

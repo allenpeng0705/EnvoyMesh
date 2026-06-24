@@ -9,6 +9,8 @@ export interface MeshConnectionStats {
   totalConnections: number;
   circuitPeerIds: string[];
   circuitConnections: number;
+  /** Open libp2p remote peer ids (direct + relay). */
+  connectedPeerIds: string[];
   /** Pending outbound dials in libp2p queue (if available). */
   dialQueueLength?: number;
 }
@@ -31,6 +33,7 @@ function aggregatePeerConnectionStats(
   peerConns: Iterable<[string, Libp2pConnectionLike[]]>,
 ): MeshConnectionStats {
   const circuitPeerIds: string[] = [];
+  const connectedPeerIds: string[] = [];
   let totalConnections = 0;
   let circuitConnections = 0;
   let totalPeerIds = 0;
@@ -47,6 +50,7 @@ function aggregatePeerConnectionStats(
 
     totalPeerIds += 1;
     totalConnections += openConns.length;
+    connectedPeerIds.push(String(peerIdStr));
 
     const hasCircuit = openConns.some((conn) => remoteAddrIncludesCircuit(conn));
     if (hasCircuit) {
@@ -60,6 +64,7 @@ function aggregatePeerConnectionStats(
     totalConnections,
     circuitPeerIds,
     circuitConnections,
+    connectedPeerIds,
   };
 }
 
@@ -75,6 +80,7 @@ export function scanLibp2pConnectionsFlat(
       totalConnections: 0,
       circuitPeerIds: [],
       circuitConnections: 0,
+      connectedPeerIds: [],
     };
   }
 
@@ -104,6 +110,7 @@ export function scanLibp2pConnectionsMap(
       totalConnections: 0,
       circuitPeerIds: [],
       circuitConnections: 0,
+      connectedPeerIds: [],
     };
   }
   return aggregatePeerConnectionStats(connections.entries());

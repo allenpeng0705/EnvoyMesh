@@ -407,7 +407,7 @@ import { deliverCallEnvelopeWithRetry, deliverChatEnvelopeWithRetry, sendExpectR
 import { markOutboundPeerVerified } from "./outbound-peer-freshness.js";
 import { deliverOutboundEnvelope, dialHintsForTransportTarget } from "./mesh-outbound-helper.js";
 import { withOutboundSendLock } from "./outbound-send-lock.js";
-import { pickBestLibp2pPeerDirectoryRecord, resolveRecipientEnvelopePeerId } from "./peer-transport-resolve.js";
+import { pickBestLibp2pPeerDirectoryRecord, pickLibp2pFromConnectedPeers, resolveRecipientEnvelopePeerId } from "./peer-transport-resolve.js";
 import {
   normalizeTransportPeerId,
   ownerIdFromProfileIntent,
@@ -3192,6 +3192,34 @@ class NodeServiceImpl implements NodeService {
     }
 
     let targetPeer: Awaited<ReturnType<LocalPeerDirectoryStore["getPeerByOwnerId"]>>;
+    const records = await raceWithTimeout(
+      this._peerDirectoryStore.listPeerRecords(),
+      25_000,
+      "listPeerRecords",
+    );
+    const connectedPeerIds = mesh?.getConnectedPeerIds() ?? [];
+    let libp2pRow =
+      pickBestLibp2pPeerDirectoryRecord(records, targetOwnerId, { isConnected }) ??
+      pickLibp2pFromConnectedPeers(records, targetOwnerId, connectedPeerIds);
+    if (libp2pRow) {
+      const listenAddrs = mergeDialablePeerListenAddrs(
+        libp2pRow.peerId,
+        libp2pRow.listenAddrs,
+        records.filter((r) => r.ownerId === targetOwnerId).flatMap((r) => r.listenAddrs ?? []),
+      );
+      this._lastLibp2pTransportByOwner.set(targetOwnerId, {
+        peerId: libp2pRow.peerId,
+        listenAddrs,
+      });
+      return this._finalizePeerTransportResolve(
+        targetOwnerId,
+        libp2pRow.peerId,
+        records,
+        listenAddrs,
+        isConnected,
+      );
+    }
+
     try {
       targetPeer = await raceWithTimeout(
         this._peerDirectoryStore.getPeerByOwnerId(targetOwnerId),
@@ -3202,55 +3230,31 @@ class NodeServiceImpl implements NodeService {
       throw err;
     }
     if (!targetPeer) {
-      const records = await raceWithTimeout(this._peerDirectoryStore.listPeerRecords(), 25_000, "listPeerRecords");
       targetPeer =
-        pickBestLibp2pPeerDirectoryRecord(records, targetOwnerId, { isConnected }) ??
         records.find((r) => r.ownerId === targetOwnerId) ??
         records.find((r) => r.peerId === targetOwnerId) ??
         undefined;
-    } else if (!isLibp2pPeerId(targetPeer.peerId)) {
-      const records = await raceWithTimeout(this._peerDirectoryStore.listPeerRecords(), 25_000, "listPeerRecords");
-      targetPeer =
-        pickBestLibp2pPeerDirectoryRecord(records, targetOwnerId, { isConnected }) ?? targetPeer;
     }
     if (!targetPeer?.peerId) {
       throw new Error(`Peer not found for owner: ${targetOwnerId}`);
     }
     const transportPeerId = targetPeer.peerId;
     if (!isLibp2pPeerId(transportPeerId)) {
-      const meshConn = this._reachableMesh();
-      const records = await this._peerDirectoryStore.listPeerRecords();
-      const libp2p =
-        pickBestLibp2pPeerDirectoryRecord(records, targetOwnerId, { isConnected: meshConn ? (peerId) => meshConn.getPeerConnectionInfo(peerId).connected : undefined }) ??
-        pickBestLibp2pPeerDirectoryRecord(records, targetOwnerId);
-      if (libp2p) {
-        const listenAddrs = mergeDialablePeerListenAddrs(
-          libp2p.peerId,
-          libp2p.listenAddrs,
-          records.filter((r) => r.ownerId === targetOwnerId).flatMap((r) => r.listenAddrs ?? []),
-        );
-        return {
-          transportPeerId: libp2p.peerId,
-          recipientEnvelopePeerId: resolveRecipientEnvelopePeerId(records, targetOwnerId, libp2p.peerId),
-          listenAddrs: listenAddrs.length ? listenAddrs : undefined,
-        };
-      }
       throw new Error(`Peer directory has Envoy envelope id for this owner (not libp2p).`);
     }
-    const allRecords = await raceWithTimeout(
-      this._peerDirectoryStore.listPeerRecords(),
-      25_000,
-      "listPeerRecords",
-    );
-    let listenAddrs = mergeDialablePeerListenAddrs(
+    const listenAddrs = mergeDialablePeerListenAddrs(
       transportPeerId,
       targetPeer.listenAddrs,
-      allRecords.filter((r) => r.ownerId === targetOwnerId).flatMap((r) => r.listenAddrs ?? []),
+      records.filter((r) => r.ownerId === targetOwnerId).flatMap((r) => r.listenAddrs ?? []),
     );
+    this._lastLibp2pTransportByOwner.set(targetOwnerId, {
+      peerId: transportPeerId,
+      listenAddrs,
+    });
     return this._finalizePeerTransportResolve(
       targetOwnerId,
       transportPeerId,
-      allRecords,
+      records,
       listenAddrs,
       isConnected,
     );
@@ -10521,8 +10525,8 @@ class NodeServiceImpl implements NodeService {
       requesterDeviceId,
     );
 
-    // Derive the requester's libp2p peer ID from their device public key
-    const peerId = derivePeerId(requesterDevicePublicKeyPem);
+    // Derive the requester's envelope peer id (for device binding) — not a libp2p dial target.
+    const envelopePeerId = derivePeerId(requesterDevicePublicKeyPem);
 
     // Create trust record at "direct" level
     await this._trustStore.setTrustRecord({
@@ -10533,12 +10537,12 @@ class NodeServiceImpl implements NodeService {
       now: new Date().toISOString(),
     });
 
-    // Register in peer directory so dial hints work
-    await this._peerDirectoryStore.ensurePeerFromInboundChat({
+    // Bind device key for envelope addressing; libp2p transport id arrives via relay checkin / inbound traffic.
+    await this._peerDirectoryStore.mergeInboundDeviceBinding({
       ownerId: requesterOwnerId,
-      peerId,
-      listenAddrs: [],
-    });
+      peerId: envelopePeerId,
+      devicePublicKeyPem: requesterDevicePublicKeyPem,
+    }).catch(() => undefined);
 
     // Generate persistent session token
     const sessionToken = randomUUID();
@@ -10628,9 +10632,6 @@ class NodeServiceImpl implements NodeService {
       keyExchangePubKeyBytes,
     );
 
-    // Derive the mobile device's peer ID
-    const peerId = derivePeerId(requesterDevicePublicKeyPem);
-
     // Create trust record at "direct" level (same as pairDevice)
     await this._trustStore.setTrustRecord({
       peerOwnerId: requesterOwnerId,
@@ -10640,12 +10641,12 @@ class NodeServiceImpl implements NodeService {
       now: new Date().toISOString(),
     });
 
-    // Register in peer directory
-    await this._peerDirectoryStore.ensurePeerFromInboundChat({
+    // Bind device key only — libp2p transport id is learned from mobile relay checkin / inbound streams.
+    await this._peerDirectoryStore.mergeInboundDeviceBinding({
       ownerId: requesterOwnerId,
-      peerId,
-      listenAddrs: [],
-    });
+      peerId: derivePeerId(requesterDevicePublicKeyPem),
+      devicePublicKeyPem: requesterDevicePublicKeyPem,
+    }).catch(() => undefined);
 
     // Generate persistent session token
     const sessionToken = randomUUID();
@@ -11097,6 +11098,11 @@ class NodeServiceImpl implements NodeService {
 
     // Bridge agent is always local — short-circuit before peer directory lookup.
     if (this._bridgeStatus?.agentPeerId && peerOwnerId === this._bridgeStatus.agentPeerId) {
+      return { connected: true, direct: true };
+    }
+
+    const selfOwnerId = this._profile?.owner.ownerId?.trim();
+    if (selfOwnerId && peerOwnerId === selfOwnerId) {
       return { connected: true, direct: true };
     }
 
@@ -13307,15 +13313,34 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
       return null;
     }
 
+    if (!deliverResult.delivered) {
+      const detail = "No reachable path to contact before call.invite send";
+      console.warn(`[sendCallInvite] call.invite delivery failed callId=${callId}:`, detail);
+      this.callManager.reportOutboundDeliveryFailed(
+        callId,
+        "Could not reach contact — check relay connection and try again.",
+      );
+      if (this._taskStore) {
+        await this._taskStore.appendAuditEvent(
+          createAuditEvent({
+            type: "message.rejected",
+            intent: "call.invite",
+            outcome: "deny",
+            summary: `call.invite delivery failed callId=${callId}: ${detail}`,
+            remotePeerId: targetOwnerId,
+          }),
+        ).catch(() => undefined);
+      }
+      return null;
+    }
+
     if (this._taskStore) {
       await this._taskStore.appendAuditEvent(
         createAuditEvent({
-          type: deliverResult.delivered ? "message.sent" : "message.rejected",
+          type: "message.sent",
           intent: "call.invite",
-          outcome: deliverResult.delivered ? "allow" : "deny",
-          summary: deliverResult.delivered
-            ? `call.invite sent to ${targetOwnerId} callId=${callId}`
-            : `call.invite delivery failed callId=${callId}`,
+          outcome: "allow",
+          summary: `call.invite sent to ${targetOwnerId} callId=${callId}`,
           remotePeerId: targetOwnerId,
         }),
       ).catch(() => undefined);

@@ -1699,6 +1699,15 @@ export function createLocalPeerReputationStore(profileDir: string): PeerReputati
   };
 }
 
+/** True when peerId is a libp2p transport id (not an Envoy envelope `envoy_*` id). */
+function isDialableLibp2pPeerId(peerId: string): boolean {
+  const id = peerId.trim();
+  if (!id || id.startsWith("envoy_") || id.startsWith("envoy:")) {
+    return false;
+  }
+  return id.startsWith("12D3KooW") || id.startsWith("Qm") || id.startsWith("16Uiu2");
+}
+
 export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDirectoryStore {
   const directoryPath = join(profileDir, PEER_DIRECTORY_FILE);
 
@@ -1790,10 +1799,12 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
       if (matches.length === 0) {
         return undefined;
       }
-      if (matches.length === 1) {
-        return matches[0];
+      const libp2pMatches = matches.filter((record) => isDialableLibp2pPeerId(record.peerId));
+      const pool = libp2pMatches.length > 0 ? libp2pMatches : matches;
+      if (pool.length === 1) {
+        return pool[0];
       }
-      return matches.reduce((a, b) => (a.lastSeenAt >= b.lastSeenAt ? a : b));
+      return pool.reduce((a, b) => (a.lastSeenAt >= b.lastSeenAt ? a : b));
     },
 
     async getPeerByPeerId(peerId) {

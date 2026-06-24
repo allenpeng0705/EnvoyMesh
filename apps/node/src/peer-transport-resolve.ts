@@ -26,6 +26,26 @@ export function resolveRecipientEnvelopePeerId(
   return undefined;
 }
 
+/** Prefer a connected libp2p row when directory rows exist but owner lookup returned `envoy_*`. */
+export function pickLibp2pFromConnectedPeers(
+  records: PeerDirectoryRecord[],
+  ownerId: string,
+  connectedPeerIds: readonly string[],
+): PeerDirectoryRecord | undefined {
+  const connected = connectedPeerIds.filter((id) => isLibp2pPeerId(id));
+  if (connected.length === 0) {
+    return undefined;
+  }
+  const connectedSet = new Set(connected);
+  const matches = records.filter(
+    (r) => r.ownerId === ownerId && isLibp2pPeerId(r.peerId) && connectedSet.has(r.peerId),
+  );
+  if (matches.length === 0) {
+    return undefined;
+  }
+  return matches.reduce((a, b) => (a.lastSeenAt >= b.lastSeenAt ? a : b));
+}
+
 /** Prefer a dialable libp2p row over a newer `envoy_*` envelope id for the same owner. */
 export function pickBestLibp2pPeerDirectoryRecord(
   records: PeerDirectoryRecord[],

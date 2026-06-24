@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { pickBestLibp2pPeerDirectoryRecord, resolveRecipientEnvelopePeerId } from "../src/peer-transport-resolve.js";
+import {
+  pickBestLibp2pPeerDirectoryRecord,
+  pickLibp2pFromConnectedPeers,
+  resolveRecipientEnvelopePeerId,
+} from "../src/peer-transport-resolve.js";
 
 describe("pickBestLibp2pPeerDirectoryRecord", () => {
   it("prefers libp2p peer id over a newer envoy_* row for the same owner", () => {
@@ -65,5 +69,25 @@ describe("pickBestLibp2pPeerDirectoryRecord", () => {
     const ownerId = "envoy_1KoMqLW3ZC7LAhZGVvWvu7vsSYe7wHnkiVQmby3v_Y0";
     const records = [{ ownerId, peerId: "12D3KooWWin", lastSeenAt: "2026-05-29T12:00:00.000Z" }];
     expect(resolveRecipientEnvelopePeerId(records, ownerId, "12D3KooWWin")).toBeUndefined();
+  });
+});
+
+describe("pickLibp2pFromConnectedPeers", () => {
+  it("returns libp2p row for owner when that peer is currently connected", () => {
+    const ownerId = "envoy:owner:contact";
+    const records = [
+      {
+        ownerId,
+        peerId: "envoy_onlyEnvelopeId",
+        lastSeenAt: "2026-05-30T12:00:00.000Z",
+      },
+      {
+        ownerId,
+        peerId: "12D3KooWLiveContact",
+        lastSeenAt: "2026-05-30T10:00:00.000Z",
+      },
+    ];
+    const picked = pickLibp2pFromConnectedPeers(records, ownerId, ["12D3KooWLiveContact", "12D3KooWOther"]);
+    expect(picked?.peerId).toBe("12D3KooWLiveContact");
   });
 });

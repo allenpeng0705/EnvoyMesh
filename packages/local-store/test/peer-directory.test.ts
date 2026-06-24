@@ -264,6 +264,39 @@ describe("peer directory store", () => {
     expect(latest?.deviceId).toBe("envoy:device:second");
   });
 
+  it("getPeerByOwnerId prefers libp2p row over a newer envoy_* row", async () => {
+    const store = createLocalPeerDirectoryStore(profileDir);
+    const ownerId = "envoy:owner:same-owner";
+    await writeFile(
+      join(profileDir, "peer-directory.json"),
+      JSON.stringify({
+        version: "0.1",
+        records: [
+          {
+            version: "0.1",
+            ownerId,
+            peerId: "12D3KooWLibp2p",
+            deviceId: "chat-inbound",
+            lastSeenAt: "2026-05-30T10:00:00.000Z",
+            listenAddrs: [],
+          },
+          {
+            version: "0.1",
+            ownerId,
+            peerId: "envoy_1KoMqLW3ZC7LAhZGVvWvu7vsSYe7wHnkiVQmby3v_Y0",
+            deviceId: "pairDevice",
+            lastSeenAt: "2026-05-30T12:00:00.000Z",
+            listenAddrs: [],
+          },
+        ],
+      }),
+      { mode: 0o600 },
+    );
+
+    const found = await store.getPeerByOwnerId(ownerId);
+    expect(found?.peerId).toBe("12D3KooWLibp2p");
+  });
+
   it("ensurePeerFromInboundChat repairs corrupted record with same peerId", async () => {
     const store = createLocalPeerDirectoryStore(profileDir);
 

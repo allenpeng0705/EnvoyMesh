@@ -575,6 +575,7 @@ export class EnvoyMesh {
         totalConnections: 0,
         circuitPeerIds: [],
         circuitConnections: 0,
+        connectedPeerIds: [],
       };
     }
 
@@ -602,6 +603,7 @@ export class EnvoyMesh {
         totalConnections: 0,
         circuitPeerIds: [],
         circuitConnections: 0,
+        connectedPeerIds: [],
       };
     }
   }
@@ -615,6 +617,11 @@ export class EnvoyMesh {
       console.log(`[relay-tracked] getConnectedRelayPeerIds returning: ${JSON.stringify(result)}`);
     }
     return result;
+  }
+
+  /** Open libp2p remote peer ids from the connection manager (direct + relay). */
+  getConnectedPeerIds(): string[] {
+    return this.getConnectionStats().connectedPeerIds;
   }
 
   /**
