@@ -58,6 +58,8 @@ export interface WebRtcCallTransport {
   addIceCandidate(candidate: CallIceCandidatePayload["candidate"]): Promise<void>;
   /** Mute/unmute local audio track. */
   setMute(muted: boolean, callId?: string): void;
+  /** Whether local microphone capture is available for this session. */
+  isMicAvailable(): boolean;
   /** End the call and clean up. */
   close(): void;
 }
@@ -71,6 +73,7 @@ export function createWebRtcCallTransport(
 ): WebRtcCallTransport {
   let pc: RTCPeerConnection | null = null;
   let localStream: MediaStream | null = null;
+  let micAvailable = true;
   let isMuted = false;
   let path1Timer: ReturnType<typeof setTimeout> | null = null;
   let isClosed = false;
@@ -90,6 +93,34 @@ export function createWebRtcCallTransport(
     };
   }
 
+  async function attachLocalAudio(connection: RTCPeerConnection): Promise<void> {
+    const getUserMedia = navigator.mediaDevices?.getUserMedia?.bind(navigator.mediaDevices);
+    if (!getUserMedia) {
+      webrtcCallWarn("transport:mic-unavailable", {
+        path: opts.path,
+        error: "mediaDevices unavailable",
+      });
+      connection.addTransceiver("audio", { direction: "recvonly" });
+      micAvailable = false;
+      return;
+    }
+
+    try {
+      localStream = await getUserMedia({ audio: true });
+      localStream.getTracks().forEach((track) => {
+        connection.addTrack(track, localStream!);
+      });
+      micAvailable = true;
+    } catch (err) {
+      webrtcCallWarn("transport:mic-unavailable", {
+        path: opts.path,
+        error: err instanceof Error ? err.message.slice(0, 80) : String(err),
+      });
+      connection.addTransceiver("audio", { direction: "recvonly" });
+      micAvailable = false;
+    }
+  }
+
   function closeInternal(): void {
     if (isClosed) return;
     isClosed = true;
@@ -104,6 +135,8 @@ export function createWebRtcCallTransport(
       localStream.getTracks().forEach((t) => t.stop());
       localStream = null;
     }
+
+    micAvailable = true;
 
     // Close peer connection
     if (pc) {
@@ -161,20 +194,12 @@ export function createWebRtcCallTransport(
       }
     };
 
-    // Get local audio
-    try {
-      localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      localStream.getTracks().forEach((track) => {
-        pc!.addTrack(track, localStream!);
-      });
-    } catch (err) {
-      webrtcCallWarn("transport:mic-denied", { path: opts.path });
-      closeInternal();
-      throw new Error(`Microphone access denied: ${err instanceof Error ? err.message : err}`);
-    }
+    await attachLocalAudio(pc);
 
-    // Create offer
-    const offer = await pc.createOffer({ offerToReceiveAudio: true });
+    // Listen-only already has a recvonly transceiver — offerToReceiveAudio would conflict.
+    const offer = micAvailable
+      ? await pc.createOffer({ offerToReceiveAudio: true })
+      : await pc.createOffer();
     await pc.setLocalDescription(offer);
     opts.onSdpGenerated(offer.sdp!, "offer");
     webrtcCallTrace("transport:offer-created", { path: opts.path, sdpLen: offer.sdp?.length ?? 0 });
@@ -216,17 +241,7 @@ export function createWebRtcCallTransport(
       }
     };
 
-    // Get local audio
-    try {
-      localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      localStream.getTracks().forEach((track) => {
-        pc!.addTrack(track, localStream!);
-      });
-    } catch (err) {
-      webrtcCallWarn("transport:mic-denied", { path: opts.path });
-      closeInternal();
-      throw new Error(`Microphone access denied: ${err instanceof Error ? err.message : err}`);
-    }
+    await attachLocalAudio(pc);
 
     // Set remote offer
     await pc.setRemoteDescription(new RTCSessionDescription({ type: "offer", sdp: remoteSdp }));
@@ -266,6 +281,7 @@ export function createWebRtcCallTransport(
   }
 
   function setMute(muted: boolean, callId?: string): void {
+    if (!micAvailable) return;
     isMuted = muted;
     if (localStream) {
       localStream.getAudioTracks().forEach((track) => {
@@ -278,12 +294,17 @@ export function createWebRtcCallTransport(
     }));
   }
 
+  function isMicAvailable(): boolean {
+    return micAvailable;
+  }
+
   return {
     startOffer,
     startAnswer,
     applyRemoteAnswer,
     addIceCandidate,
     setMute,
+    isMicAvailable,
     close: closeInternal,
   };
 }

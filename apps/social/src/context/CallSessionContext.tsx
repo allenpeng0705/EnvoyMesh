@@ -22,6 +22,8 @@ function GlobalCallOverlay({ session }: { session: UseCallSessionResult }) {
     endCall,
     toggleMute,
     isMuted,
+    isRemoteMuted,
+    micAvailable,
     connectionState,
     remoteStream,
     callingState,
@@ -57,7 +59,10 @@ function GlobalCallOverlay({ session }: { session: UseCallSessionResult }) {
         <div className="global-active-call-dock">
           <ActiveCallPanel
             peerDisplayName={activePeerName}
+            peerOwnerId={activeCall.peerOwnerId}
             isMuted={isMuted}
+            isRemoteMuted={isRemoteMuted}
+            micAvailable={micAvailable}
             connectionState={connectionState}
             remoteStream={remoteStream}
             onToggleMute={toggleMute}

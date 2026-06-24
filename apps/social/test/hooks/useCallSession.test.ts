@@ -58,21 +58,29 @@ let latestOnPath1Timeout: (() => void) | undefined;
 vi.mock("../../src/lib/webrtc-call-transport.js", () => ({
   createWebRtcCallTransport: (opts: { onPath1Timeout?: () => void }) => {
     latestOnPath1Timeout = opts.onPath1Timeout;
+    let micAvailable = true;
     return {
-      startOffer: vi.fn(async () => "local-offer"),
+      startOffer: vi.fn(async () => {
+        micAvailable = mockMicAvailableOnOffer;
+        return "local-offer";
+      }),
       startAnswer: vi.fn(async () => "local-answer"),
       applyRemoteAnswer: vi.fn(async () => undefined),
       addIceCandidate: vi.fn(async () => undefined),
       setMute: vi.fn(),
+      isMicAvailable: vi.fn(() => micAvailable),
       close: vi.fn(),
     };
   },
 }));
 
+let mockMicAvailableOnOffer = true;
+
 describe("useCallSession media plane", () => {
   beforeEach(() => {
     mockNodeService = createMockNodeService();
     latestOnPath1Timeout = undefined;
+    mockMicAvailableOnOffer = true;
     vi.clearAllMocks();
   });
 
@@ -106,6 +114,23 @@ describe("useCallSession media plane", () => {
       "local-offer",
       [],
     );
+  });
+
+  it("still places outbound call when microphone is unavailable (listen-only)", async () => {
+    mockMicAvailableOnOffer = false;
+    const { result } = renderHook(() => useCallSession());
+
+    await act(async () => {
+      await result.current.startCall("envoy:owner:bob");
+    });
+
+    expect(mockNodeService.sendCallInvite).toHaveBeenCalledWith(
+      "envoy:owner:bob",
+      "local-offer",
+      [],
+    );
+    expect(result.current.callingState).toBe("call-123");
+    expect(result.current.micAvailable).toBe(false);
   });
 
   it("sends call.reinvite on Path 1 timeout during outbound call", async () => {

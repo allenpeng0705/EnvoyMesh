@@ -7,58 +7,57 @@ import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
 import { ActiveCallPanel } from "../../src/components/ActiveCallPanel.js";
 
+const baseProps = {
+  peerDisplayName: "Alice",
+  peerOwnerId: "envoy:owner:alice",
+  isMuted: false,
+  isRemoteMuted: false,
+  micAvailable: true,
+  connectionState: "connected",
+  onToggleMute: () => {},
+  onEndCall: () => {},
+};
+
 afterEach(() => cleanup());
 
 describe("ActiveCallPanel — Phase 38", () => {
   it("renders the peer display name", () => {
-    renderWithI18n(
-      <ActiveCallPanel
-        peerDisplayName="Alice"
-        isMuted={false}
-        connectionState="connected"
-        onToggleMute={() => {}}
-        onEndCall={() => {}}
-      />,
-    );
+    renderWithI18n(<ActiveCallPanel {...baseProps} />);
     expect(screen.getByText("Alice")).toBeDefined();
   });
 
   it("shows mute button labeled 'Mute' when not muted", () => {
-    renderWithI18n(
-      <ActiveCallPanel
-        peerDisplayName="Carol"
-        isMuted={false}
-        connectionState="connected"
-        onToggleMute={() => {}}
-        onEndCall={() => {}}
-      />,
-    );
+    renderWithI18n(<ActiveCallPanel {...baseProps} peerDisplayName="Carol" />);
     expect(screen.getByLabelText(/mute/i)).toBeDefined();
   });
 
   it("shows mute button labeled 'Unmute' when muted", () => {
     renderWithI18n(
-      <ActiveCallPanel
-        peerDisplayName="Bob"
-        isMuted={true}
-        connectionState="connected"
-        onToggleMute={() => {}}
-        onEndCall={() => {}}
-      />,
+      <ActiveCallPanel {...baseProps} peerDisplayName="Bob" isMuted={true} />,
     );
     expect(screen.getByLabelText(/unmute/i)).toBeDefined();
+  });
+
+  it("disables mute when microphone is unavailable", () => {
+    renderWithI18n(
+      <ActiveCallPanel {...baseProps} micAvailable={false} />,
+    );
+    const muteBtn = screen.getByLabelText(/listen only/i) as HTMLButtonElement;
+    expect(muteBtn.disabled).toBe(true);
+    expect(screen.getByText(/listen only/i)).toBeDefined();
+  });
+
+  it("shows remote muted hint", () => {
+    renderWithI18n(
+      <ActiveCallPanel {...baseProps} isRemoteMuted={true} />,
+    );
+    expect(screen.getByText(/they are muted/i)).toBeDefined();
   });
 
   it("calls onToggleMute when mute button is clicked", () => {
     const onToggleMute = vi.fn();
     renderWithI18n(
-      <ActiveCallPanel
-        peerDisplayName="Dave"
-        isMuted={false}
-        connectionState="connected"
-        onToggleMute={onToggleMute}
-        onEndCall={() => {}}
-      />,
+      <ActiveCallPanel {...baseProps} peerDisplayName="Dave" onToggleMute={onToggleMute} />,
     );
     fireEvent.click(screen.getByLabelText(/mute/i));
     expect(onToggleMute).toHaveBeenCalledOnce();
@@ -67,28 +66,16 @@ describe("ActiveCallPanel — Phase 38", () => {
   it("calls onEndCall when end button is clicked", () => {
     const onEndCall = vi.fn();
     renderWithI18n(
-      <ActiveCallPanel
-        peerDisplayName="Eve"
-        isMuted={false}
-        connectionState="connected"
-        onToggleMute={() => {}}
-        onEndCall={onEndCall}
-      />,
+      <ActiveCallPanel {...baseProps} peerDisplayName="Eve" onEndCall={onEndCall} />,
     );
     fireEvent.click(screen.getByLabelText(/end call/i));
     expect(onEndCall).toHaveBeenCalledOnce();
   });
 
-  it("renders end call button", () => {
+  it("shows connecting status before connected", () => {
     renderWithI18n(
-      <ActiveCallPanel
-        peerDisplayName="Frank"
-        isMuted={false}
-        connectionState="connected"
-        onToggleMute={() => {}}
-        onEndCall={() => {}}
-      />,
+      <ActiveCallPanel {...baseProps} connectionState="connecting" />,
     );
-    expect(screen.getByLabelText(/end call/i)).toBeDefined();
+    expect(screen.getByText(/connecting/i)).toBeDefined();
   });
 });

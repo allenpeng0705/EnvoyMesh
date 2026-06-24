@@ -39,6 +39,8 @@ export interface UseCallSessionResult {
   endCall: () => void;
   toggleMute: () => void;
   isMuted: boolean;
+  isRemoteMuted: boolean;
+  micAvailable: boolean;
   connectionState: string;
   dismissIncoming: () => void;
   callingState: string | null;
@@ -59,6 +61,8 @@ export function useCallSession(): UseCallSessionResult {
   const [activeCall, setActiveCall] = useState<CallSession | null>(null);
   const [incomingCall, setIncomingCall] = useState<UseCallSessionResult["incomingCall"]>(null);
   const [isMuted, setIsMuted] = useState(false);
+  const [isRemoteMuted, setIsRemoteMuted] = useState(false);
+  const [micAvailable, setMicAvailable] = useState(true);
   const [connectionState, setConnectionState] = useState("disconnected");
   const [pendingSdpOffer, setPendingSdpOffer] = useState<string | undefined>(undefined);
   const [callingState, setCallingState] = useState<string | null>(null);
@@ -76,7 +80,16 @@ export function useCallSession(): UseCallSessionResult {
     transportRef.current?.close();
     transportRef.current = null;
     setRemoteStream(null);
+    setMicAvailable(true);
   }, []);
+
+  const syncMicAvailable = useCallback(() => {
+    setMicAvailable(transportRef.current?.isMicAvailable() ?? true);
+  }, []);
+
+  const notifyMicUnavailable = useCallback(() => {
+    showToast(t("call:micListenOnly"), "info");
+  }, [showToast, t]);
 
   const sendIceCandidate = useCallback(
     (candidate: Parameters<typeof nodeService.sendIceCandidate>[1]) => {
@@ -124,6 +137,10 @@ export function useCallSession(): UseCallSessionResult {
         const transport = buildTransport({ path: "path2", iceServers: configIce });
         transportRef.current = transport;
         const sdpOffer = await transport.startOffer();
+        syncMicAvailable();
+        if (!transport.isMicAvailable()) {
+          notifyMicUnavailable();
+        }
         const sent = await nodeService.sendCallReinvite(
           callId,
           sdpOffer,
@@ -138,7 +155,7 @@ export function useCallSession(): UseCallSessionResult {
         closeTransport();
       }
     },
-    [nodeService, buildTransport, closeTransport],
+    [nodeService, buildTransport, closeTransport, syncMicAvailable, notifyMicUnavailable],
   );
 
   const onPath1TimeoutHandler = useCallback(() => {
@@ -163,6 +180,10 @@ export function useCallSession(): UseCallSessionResult {
         });
         transportRef.current = transport;
         const sdpAnswer = await transport.startAnswer(remoteSdp);
+        syncMicAvailable();
+        if (!transport.isMicAvailable()) {
+          notifyMicUnavailable();
+        }
         await nodeService.acceptCallInvite(callId, sdpAnswer, iceServers);
         setConnectionState("connected");
       } catch (err) {
@@ -171,7 +192,7 @@ export function useCallSession(): UseCallSessionResult {
         setConnectionState("disconnected");
       }
     },
-    [nodeService, buildTransport, closeTransport],
+    [nodeService, buildTransport, closeTransport, syncMicAvailable, notifyMicUnavailable],
   );
 
   useEffect(() => {
@@ -249,9 +270,10 @@ export function useCallSession(): UseCallSessionResult {
           path2FallbackSentRef.current = false;
           setConnectionState("disconnected");
           setIsMuted(false);
+          setIsRemoteMuted(false);
           break;
         case "call:remote-mute":
-          setIsMuted(event.muted);
+          setIsRemoteMuted(event.muted);
           setActiveCall((prev) => (prev ? { ...prev, muted: event.muted } : prev));
           break;
         case "call:error":
@@ -270,6 +292,8 @@ export function useCallSession(): UseCallSessionResult {
           iceCallIdRef.current = "";
           path2FallbackSentRef.current = false;
           setConnectionState("disconnected");
+          setIsMuted(false);
+          setIsRemoteMuted(false);
           break;
       }
     });
@@ -310,7 +334,16 @@ export function useCallSession(): UseCallSessionResult {
     const peerOwnerId = incomingCall.peerOwnerId;
     setIncomingCall(null);
     setConnectionState("connecting");
+    setIsMuted(false);
+    setIsRemoteMuted(false);
     activeCallIdRef.current = callId;
+    setActiveCall({
+      callId,
+      peerOwnerId,
+      callType: "audio",
+      status: "active",
+      muted: false,
+    });
 
     const inviteIce =
       pendingInviteIceServersRef.current ?? incomingCall.iceServers;
@@ -329,26 +362,36 @@ export function useCallSession(): UseCallSessionResult {
       });
       transportRef.current = transport;
       const sdpAnswer = await transport.startAnswer(remoteSdp);
+      syncMicAvailable();
+      if (!transport.isMicAvailable()) {
+        notifyMicUnavailable();
+      }
       await nodeService.acceptCallInvite(
         callId,
         sdpAnswer,
         usePath2 ? nodeConfig?.iceServers ?? [] : [],
       );
-      setActiveCall({
-        callId,
-        peerOwnerId,
-        callType: "audio",
-        status: "active",
-        muted: false,
-      });
       setConnectionState("connected");
     } catch (err) {
       console.warn("[useCallSession] failed to accept call:", err);
       closeTransport();
       activeCallIdRef.current = null;
+      setActiveCall(null);
+      setActivePeerDisplayName(null);
       setConnectionState("disconnected");
+      showToast(t("call:failed"), "error");
     }
-  }, [incomingCall, pendingSdpOffer, nodeService, buildTransport, closeTransport]);
+  }, [
+    incomingCall,
+    pendingSdpOffer,
+    nodeService,
+    buildTransport,
+    closeTransport,
+    syncMicAvailable,
+    notifyMicUnavailable,
+    showToast,
+    t,
+  ]);
 
   const declineCall = useCallback(() => {
     if (!incomingCall || !nodeService) return;
@@ -372,16 +415,17 @@ export function useCallSession(): UseCallSessionResult {
     path2FallbackSentRef.current = false;
     setConnectionState("disconnected");
     setIsMuted(false);
+    setIsRemoteMuted(false);
   }, [activeCall, callingState, nodeService, closeTransport]);
 
   const toggleMute = useCallback(() => {
     const callId = activeCallIdRef.current ?? activeCall?.callId;
-    if (!callId || !nodeService) return;
+    if (!callId || !nodeService || !micAvailable) return;
     const next = !isMuted;
     transportRef.current?.setMute(next, callId);
     setIsMuted(next);
     void nodeService.setCallMuted(callId, next);
-  }, [activeCall, isMuted, nodeService]);
+  }, [activeCall, isMuted, micAvailable, nodeService]);
 
   const dismissIncoming = useCallback(() => {
     setIncomingCall(null);
@@ -408,17 +452,17 @@ export function useCallSession(): UseCallSessionResult {
         });
         sdpOffer = await tempTransport.startOffer();
         transportRef.current = tempTransport;
+        syncMicAvailable();
+        if (!tempTransport.isMicAvailable()) {
+          notifyMicUnavailable();
+        }
         webrtcCallTrace("ui:offer-ready", { sdpLen: sdpOffer.length });
       } catch (err) {
         webrtcCallWarn("ui:offer-failed", {
           error: err instanceof Error ? err.message.slice(0, 120) : String(err),
         });
         console.warn("[useCallSession] failed to build WebRTC offer:", err);
-        const msg = err instanceof Error ? err.message : String(err);
-        showToast(
-          msg.includes("Microphone") ? t("call:micDenied") : t("call:failed"),
-          "error",
-        );
+        showToast(t("call:failed"), "error");
         closeTransport();
         return;
       }
@@ -454,7 +498,7 @@ export function useCallSession(): UseCallSessionResult {
       setConnectionState("connecting");
       webrtcCallTrace("ui:invite-sent", { callId: shortCallId(callId), target: shortCallId(targetOwnerId) });
     },
-    [nodeService, buildTransport, closeTransport, onPath1TimeoutHandler, showToast, t],
+    [nodeService, buildTransport, closeTransport, onPath1TimeoutHandler, showToast, t, syncMicAvailable, notifyMicUnavailable],
   );
 
   const cancelCall = useCallback(() => {
@@ -478,6 +522,8 @@ export function useCallSession(): UseCallSessionResult {
     endCall,
     toggleMute,
     isMuted,
+    isRemoteMuted,
+    micAvailable,
     connectionState,
     dismissIncoming,
     callingState,

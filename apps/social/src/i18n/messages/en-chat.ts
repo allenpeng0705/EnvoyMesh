@@ -406,6 +406,13 @@ export const inboxMessages = {
   "call:deliveryFailed": "Could not reach contact — check P2P/relay connection",
   "call:noAnswer": "No answer",
   "call:micDenied": "Microphone access denied",
+  "call:micListenOnly": "No microphone detected — you can listen but not speak",
+  "call:micUnavailable": "No microphone — listen only",
+  "call:micOff": "Mic off",
+  "call:connecting": "Connecting…",
+  "call:connected": "Connected",
+  "call:connectionLost": "Connection lost",
+  "call:remoteMuted": "They are muted",
   "call:offlineHint": "Contact may be offline — call will still attempt to connect",
   "call:unknownPeer": "Contact",
 } as const;

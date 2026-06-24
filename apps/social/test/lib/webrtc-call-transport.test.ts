@@ -101,6 +101,31 @@ describe("WebRtcCallTransport", () => {
 
       expect(mockGetUserMedia()).toHaveBeenCalledWith({ audio: true });
       expect(lastCreatedPC.addTrack).toHaveBeenCalled();
+      expect(transport.isMicAvailable()).toBe(true);
+    });
+
+    it("continues listen-only when microphone is unavailable", async () => {
+      mockGetUserMedia()?.mockRejectedValueOnce(new Error("Requested device not found"));
+      const { transport } = createTestTransport();
+      await transport.startOffer();
+
+      expect(lastCreatedPC.addTransceiver).toHaveBeenCalledWith("audio", { direction: "recvonly" });
+      expect(lastCreatedPC.createOffer).toHaveBeenCalledWith();
+      expect(transport.isMicAvailable()).toBe(false);
+    });
+
+    it("continues listen-only when mediaDevices is unavailable", async () => {
+      const originalMediaDevices = (globalThis as any).navigator.mediaDevices;
+      (globalThis as any).navigator.mediaDevices = undefined;
+      try {
+        const { transport } = createTestTransport();
+        await transport.startOffer();
+
+        expect(lastCreatedPC.addTransceiver).toHaveBeenCalledWith("audio", { direction: "recvonly" });
+        expect(transport.isMicAvailable()).toBe(false);
+      } finally {
+        (globalThis as any).navigator.mediaDevices = originalMediaDevices;
+      }
     });
 
     it("starts Path 1 timeout timer", async () => {
