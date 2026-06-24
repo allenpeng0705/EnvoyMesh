@@ -38,7 +38,13 @@ export type OutboundDeliverMesh = Pick<
 >;
 
 export type OutboundExpectReplyMesh = OutboundDeliverMesh &
-  Pick<EnvoyMesh, "sendExpectReply">;
+  Pick<EnvoyMesh, "sendExpectReply" | "sendChatExpectEnvelopeReply">;
+
+export type OutboundProfileDeliverMesh = OutboundCallDeliverMesh;
+
+function isProfileIntent(intent: string | undefined): boolean {
+  return typeof intent === "string" && intent.startsWith("profile.");
+}
 
 export type ChatDeliverResult = {
   delivered: boolean;
@@ -695,7 +701,7 @@ export async function deliverDataTransferWithRetry(input: {
   throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
 }
 
-/** Request/response on {@link ENVOY_MESSAGE_PROTOCOL} with verify + retries. */
+/** Request/response on chat or message protocol with verify + retries. */
 export async function deliverExpectReplyWithRetry(input: {
   mesh: OutboundExpectReplyMesh;
   transportPeerId: string;
@@ -708,6 +714,18 @@ export async function deliverExpectReplyWithRetry(input: {
 }): Promise<EnvoyEnvelope> {
   const maxAttempts = input.maxAttempts ?? CHAT_SEND_MAX_ATTEMPTS;
   const timeoutMs = input.timeoutMs ?? 30_000;
+  const useChatProtocol = isProfileIntent(input.envelope.intent);
+  const protocol = useChatProtocol ? ENVOY_CHAT_PROTOCOL : ENVOY_MESSAGE_PROTOCOL;
+  const sendExpectReply = useChatProtocol
+    ? input.mesh.sendChatExpectEnvelopeReply?.bind(input.mesh)
+    : input.mesh.sendExpectReply?.bind(input.mesh);
+  if (!sendExpectReply) {
+    throw new Error(
+      useChatProtocol
+        ? "sendChatExpectEnvelopeReply is required for profile expect-reply"
+        : "sendExpectReply is required for message expect-reply",
+    );
+  }
   let lastErr: unknown;
   let hints = input.dialHints;
   const preferCircuits = shouldPreferCircuitDialHints(
@@ -732,30 +750,57 @@ export async function deliverExpectReplyWithRetry(input: {
       } catch {
         /* ignore */
       }
+    } else if (useChatProtocol) {
+      const conn = input.mesh.getPeerConnectionInfo(input.transportPeerId);
+      const skipPrepare = conn.connected || isOutboundPeerRecentlyVerified(input.transportPeerId);
+      if (!skipPrepare) {
+        const ready = await prepareOutboundPeerConnection({
+          mesh: input.mesh,
+          transportPeerId: input.transportPeerId,
+          protocol,
+          dialHints: hints,
+          preferCircuitHints: preferCircuits,
+          forceFreshDial: false,
+        });
+        if (!ready && !input.mesh.getPeerConnectionInfo(input.transportPeerId).connected) {
+          lastErr = new Error(
+            `No reachable path to ${input.transportPeerId.slice(0, 12)}… before expect-reply send`,
+          );
+          continue;
+        }
+      }
     }
 
-    const ready = await prepareOutboundPeerConnection({
-      mesh: input.mesh,
-      transportPeerId: input.transportPeerId,
-      protocol: ENVOY_MESSAGE_PROTOCOL,
-      dialHints: hints,
-      preferCircuitHints: preferCircuits || attempt > 0,
-      forceFreshDial: attempt > 0,
-    });
-    if (!ready) {
-      lastErr = new Error(`No reachable path to ${input.transportPeerId.slice(0, 12)}… before expect-reply send`);
-      continue;
-    }
-
-    try {
-      const reply = await input.mesh.sendExpectReply(input.transportPeerId, input.envelope, {
-        timeoutMs,
+    if (attempt > 0 || !useChatProtocol) {
+      const ready = await prepareOutboundPeerConnection({
+        mesh: input.mesh,
+        transportPeerId: input.transportPeerId,
+        protocol,
         dialHints: hints,
         preferCircuitHints: preferCircuits || attempt > 0,
         forceFreshDial: attempt > 0,
       });
+      if (!ready) {
+        lastErr = new Error(
+          `No reachable path to ${input.transportPeerId.slice(0, 12)}… before expect-reply send`,
+        );
+        continue;
+      }
+    }
+
+    try {
+      const sendConn = input.mesh.getPeerConnectionInfo(input.transportPeerId);
+      const reply = await sendExpectReply(input.transportPeerId, input.envelope, {
+        timeoutMs,
+        dialHints: useChatProtocol && sendConn.connected ? [] : hints,
+        preferCircuitHints: useChatProtocol && sendConn.connected ? false : preferCircuits || attempt > 0,
+        forceFreshDial: attempt > 0,
+      });
       if (attempt > 0) {
         console.log(`[expect-reply] delivered on attempt ${attempt + 1}/${maxAttempts}`);
+      }
+      if (useChatProtocol) {
+        markOutboundPeerVerified(input.transportPeerId);
       }
       return reply;
     } catch (err) {
@@ -772,7 +817,7 @@ export async function deliverExpectReplyWithRetry(input: {
 
 /** Canonical fire-and-forget outbound send: per-peer lock + verify + retry. */
 export async function sendEnvelopeWithRetry(input: {
-  mesh: OutboundDeliverMesh;
+  mesh: OutboundDeliverMesh | OutboundProfileDeliverMesh;
   transportPeerId: string;
   envelope: EnvoyEnvelope;
   dialHints?: string[];
@@ -780,9 +825,22 @@ export async function sendEnvelopeWithRetry(input: {
   rebuildDialHints?: () => Promise<string[]>;
   maxAttempts?: number;
 }): Promise<ChatDeliverResult> {
+  if (isProfileIntent(input.envelope.intent)) {
+    return withOutboundSendLock(input.transportPeerId, () =>
+      deliverCallEnvelopeWithRetry({
+        mesh: input.mesh as OutboundProfileDeliverMesh,
+        transportPeerId: input.transportPeerId,
+        envelope: input.envelope,
+        dialHints: input.dialHints ?? [],
+        peerListenAddrs: input.peerListenAddrs,
+        rebuildDialHints: input.rebuildDialHints,
+        maxAttempts: input.maxAttempts,
+      }),
+    );
+  }
   return withOutboundSendLock(input.transportPeerId, () =>
     deliverMessageEnvelopeWithRetry({
-      mesh: input.mesh,
+      mesh: input.mesh as OutboundDeliverMesh,
       transportPeerId: input.transportPeerId,
       envelope: input.envelope,
       dialHints: input.dialHints ?? [],

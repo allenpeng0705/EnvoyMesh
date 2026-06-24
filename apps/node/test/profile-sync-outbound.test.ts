@@ -17,15 +17,15 @@ describe("isLibp2pPeerId", () => {
 });
 
 describe("sendProfileRequest", () => {
-  it("uses sendExpectReply and returns profile.response", async () => {
+  it("uses sendChatExpectEnvelopeReply and returns profile.response", async () => {
     const owner = generateOwnerIdentity();
     const device = generateDeviceIdentity();
     const responseEnvelope = {
       intent: "profile.response",
       payload: { profile: { ownerId: owner.ownerId } },
     } as EnvoyEnvelope;
-    const sendExpectReply = vi.fn().mockResolvedValue(responseEnvelope);
-    const mesh = outboundMeshMock({ sendExpectReply });
+    const sendChatExpectEnvelopeReply = vi.fn().mockResolvedValue(responseEnvelope);
+    const mesh = outboundMeshMock({ sendChatExpectEnvelopeReply });
 
     const reply = await sendProfileRequest({
       mesh,
@@ -35,8 +35,9 @@ describe("sendProfileRequest", () => {
       dialHintsFor: async () => ["/p2p/12D3KooWTestPeerIdForProfileSync"],
     });
 
-    expect(sendExpectReply).toHaveBeenCalledTimes(1);
+    expect(sendChatExpectEnvelopeReply).toHaveBeenCalledTimes(1);
     expect(mesh.send).not.toHaveBeenCalled();
+    expect(mesh.sendExpectReply).toBeUndefined();
     expect(reply).toBe(responseEnvelope);
   });
 });
@@ -66,12 +67,12 @@ describe("sendProfileSyncToBonds", () => {
     const device = generateDeviceIdentity();
     const profile = { owner, device, deviceCertificate: undefined as never };
     const humanProfile = signedHumanProfile(owner);
-    const send = vi
+    const sendChat = vi
       .fn()
       .mockRejectedValueOnce(new Error("failed to connect via relay with status NO_RESERVATION"))
       .mockResolvedValueOnce(undefined);
     const mesh = outboundMeshMock({
-      send,
+      sendChat,
       mergePeerStoreDialHints: vi.fn().mockResolvedValue(undefined),
     });
 
@@ -94,7 +95,8 @@ describe("sendProfileSyncToBonds", () => {
     });
 
     expect(mesh.ensurePeerReachable).toHaveBeenCalled();
-    expect(send).toHaveBeenCalledTimes(2);
+    expect(sendChat).toHaveBeenCalledTimes(2);
+    expect(mesh.send).not.toHaveBeenCalled();
     expect(mesh.closeConnectionsToPeer).toHaveBeenCalled();
     expect(mesh.mergePeerStoreDialHints).toHaveBeenCalled();
   });
@@ -104,8 +106,8 @@ describe("sendProfileSyncToBonds", () => {
     const device = generateDeviceIdentity();
     const profile = { owner, device, deviceCertificate: undefined as never };
     const humanProfile = signedHumanProfile(owner);
-    const send = vi.fn(async () => undefined);
-    const mesh = outboundMeshMock({ send });
+    const sendChat = vi.fn(async () => undefined);
+    const mesh = outboundMeshMock({ sendChat });
 
     await sendProfileSyncToBonds({
       mesh,
@@ -124,6 +126,6 @@ describe("sendProfileSyncToBonds", () => {
       },
     });
 
-    expect(send).toHaveBeenCalledTimes(1);
+    expect(sendChat).toHaveBeenCalledTimes(1);
   });
 });

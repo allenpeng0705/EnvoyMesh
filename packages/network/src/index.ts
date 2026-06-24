@@ -1121,7 +1121,38 @@ export class EnvoyMesh {
       forceFreshDial?: boolean;
     },
   ): Promise<EnvoyEnvelope> {
-    validateEnvelopeProtocol(ENVOY_MESSAGE_PROTOCOL, envelope);
+    return this.sendExpectReplyOnProtocol(target, envelope, ENVOY_MESSAGE_PROTOCOL, options);
+  }
+
+  /**
+   * Send profile (or other chat-protocol) request on `/envoymesh/chat/0.1.0` and read one reply on the same stream.
+   * Avoids opening `/envoymesh/message/0.1.0` on peers that only negotiate chat (which used to tear down the chat path).
+   */
+  async sendChatExpectEnvelopeReply(
+    target: string,
+    envelope: EnvoyEnvelope,
+    options?: {
+      timeoutMs?: number;
+      dialHints?: string[];
+      preferCircuitHints?: boolean;
+      forceFreshDial?: boolean;
+    },
+  ): Promise<EnvoyEnvelope> {
+    return this.sendExpectReplyOnProtocol(target, envelope, ENVOY_CHAT_PROTOCOL, options);
+  }
+
+  private async sendExpectReplyOnProtocol(
+    target: string,
+    envelope: EnvoyEnvelope,
+    protocol: string,
+    options?: {
+      timeoutMs?: number;
+      dialHints?: string[];
+      preferCircuitHints?: boolean;
+      forceFreshDial?: boolean;
+    },
+  ): Promise<EnvoyEnvelope> {
+    validateEnvelopeProtocol(protocol, envelope);
     const timeoutMs = options?.timeoutMs ?? 30_000;
     const sendOptions: MeshOutboundOptions | undefined =
       options?.dialHints?.length || options?.preferCircuitHints || options?.forceFreshDial
@@ -1131,13 +1162,13 @@ export class EnvoyMesh {
             forceFreshDial: options.forceFreshDial,
           }
         : undefined;
-    const { stream } = await this.openOutboundStream(target, ENVOY_MESSAGE_PROTOCOL, sendOptions);
+    const { stream } = await this.openOutboundStream(target, protocol, sendOptions);
     const remotePeerId = stream.connection?.remotePeer?.toString();
     if (remotePeerId) {
       this.emitP2pDebug({
         kind: "stream:open",
         remotePeerId,
-        protocol: ENVOY_MESSAGE_PROTOCOL,
+        protocol,
         direction: "outbound",
       });
     }
@@ -1193,7 +1224,7 @@ export class EnvoyMesh {
       this.emitP2pDebug({
         kind: "stream:close",
         remotePeerId,
-        protocol: ENVOY_MESSAGE_PROTOCOL,
+        protocol,
         direction: "outbound",
       });
     }
@@ -1201,7 +1232,7 @@ export class EnvoyMesh {
       throw new Error("sendExpectReply: peer closed stream without a reply");
     }
     const reply = decodeEnvelope(replyBytes.subarray());
-    validateEnvelopeProtocol(ENVOY_MESSAGE_PROTOCOL, reply);
+    validateEnvelopeProtocol(protocol, reply);
     return reply;
   }
 
@@ -2582,7 +2613,8 @@ function validateEnvelopeProtocol(protocol: string, envelope: EnvoyEnvelope): vo
       envelope.intent !== "chat.delivered" &&
       envelope.intent !== "chat.room.sync" &&
       envelope.intent !== "chat.room.message" &&
-      !envelope.intent.startsWith("call.")
+      !envelope.intent.startsWith("call.") &&
+      !envelope.intent.startsWith("profile.")
     ) {
       throw new Error(`invalid intent ${envelope.intent} on chat protocol`);
     }

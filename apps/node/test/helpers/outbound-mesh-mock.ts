@@ -9,12 +9,16 @@ import type {
 export function createOutboundMeshMock(
   overrides: Partial<
     OutboundDeliverMesh &
-      OutboundCallDeliverMesh & { sendExpectReply?: OutboundExpectReplyMesh["sendExpectReply"] }
+      OutboundCallDeliverMesh & {
+        sendExpectReply?: OutboundExpectReplyMesh["sendExpectReply"];
+        sendChatExpectEnvelopeReply?: OutboundExpectReplyMesh["sendChatExpectEnvelopeReply"];
+      }
   > = {},
 ) {
   return {
     send: vi.fn().mockResolvedValue(0),
     sendChat: vi.fn().mockResolvedValue(0),
+    sendChatExpectEnvelopeReply: vi.fn(),
     closeConnectionsToPeer: vi.fn().mockResolvedValue(0),
     ensurePeerReachable: vi.fn().mockResolvedValue({ connected: true, direct: true }),
     getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: false, direct: false }),

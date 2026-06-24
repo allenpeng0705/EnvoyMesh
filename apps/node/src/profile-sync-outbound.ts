@@ -145,7 +145,10 @@ export async function sendProfileRequest(input: {
   const envelope = signUnsignedEnvelope(unsigned, input.profile.device.privateKeyPem);
   const dialHints = await input.dialHintsFor(input.transportPeerId, input.listenAddrs);
   const timeoutMs = input.timeoutMs ?? 30_000;
-  if (typeof input.mesh.sendExpectReply !== "function") {
+  if (
+    typeof input.mesh.sendChatExpectEnvelopeReply !== "function" &&
+    typeof input.mesh.sendExpectReply !== "function"
+  ) {
     await sendEnvelopeWithRetry({
       mesh: input.mesh,
       transportPeerId: input.transportPeerId,
@@ -153,7 +156,7 @@ export async function sendProfileRequest(input: {
       dialHints,
       peerListenAddrs: input.listenAddrs,
     });
-    throw new Error("profile.request requires sendExpectReply on mesh");
+    throw new Error("profile.request requires sendChatExpectEnvelopeReply on mesh");
   }
   const reply = await sendExpectReplyWithRetry({
     mesh: input.mesh,

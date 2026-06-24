@@ -841,6 +841,8 @@ class NodeServiceImpl implements NodeService {
   private readonly _nearbyProfileProbeInflight = new Set<string>();
   /** Keeps bonded contacts warm across NAT idle periods. */
   private _bondWarmTimer?: ReturnType<typeof setInterval>;
+  /** Skip periodic bond warm when libp2p already has this many open connections. */
+  private static readonly BOND_WARM_MAX_CONNECTIONS = 64;
   /** In-memory owner → libp2p from recent inbound streams (until persisted in peer directory). */
   private readonly _lastLibp2pTransportByOwner = new Map<
     string,
@@ -2226,17 +2228,6 @@ class NodeServiceImpl implements NodeService {
     const bonds = await this.getBonds();
     const bondOwnerIds = bonds.map((b) => b.peerOwnerId);
     if (bondOwnerIds.length === 0) return;
-
-    for (const bond of bonds) {
-      if (bond.level !== "direct" && bond.level !== "referred") {
-        continue;
-      }
-      try {
-        await this.warmContactConnection(bond.peerOwnerId);
-      } catch {
-        /* best-effort — profile.sync still tries ensurePeerReachable per contact */
-      }
-    }
 
     try {
       await sendProfileSyncToBonds({
@@ -9290,6 +9281,19 @@ class NodeServiceImpl implements NodeService {
         return;
       }
 
+      if (
+        intent === "profile.sync" ||
+        intent === "profile.request" ||
+        intent === "profile.response"
+      ) {
+        await this.handleInboundProfileIntent(envelope, {
+          transportPeerId: remotePeerId,
+          remoteAddr,
+          replyWithEnvelope,
+        });
+        return;
+      }
+
       if (intent === "chat.room.sync") {
         try {
           const payload = parseChatRoomSyncPayload(envelope.payload);
@@ -11329,6 +11333,13 @@ class NodeServiceImpl implements NodeService {
 
   private async _warmAllBondedContacts(): Promise<void> {
     if (this._nodeStatus !== "running") {
+      return;
+    }
+    const mesh = this._mesh;
+    if (mesh && mesh.getConnectionStats().totalConnections >= NodeServiceImpl.BOND_WARM_MAX_CONNECTIONS) {
+      console.warn(
+        `[bond-warm] skipped: ${mesh.getConnectionStats().totalConnections} open libp2p connections (cap ${NodeServiceImpl.BOND_WARM_MAX_CONNECTIONS})`,
+      );
       return;
     }
     const bonds = await this.getBonds();
