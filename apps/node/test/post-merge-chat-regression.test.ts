@@ -163,6 +163,49 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
       expect(info).toEqual({ connected: false, direct: false });
     });
 
+    it("verifyConnection probes in place without tearing down when still connected", async () => {
+      const info = await node.warmContactConnection(PEER_OWNER_ID, { verifyConnection: true });
+
+      expect(probeBondedPeerConnection).toHaveBeenCalledWith(TRANSPORT_PEER_ID);
+      expect(closeConnectionsToPeer).not.toHaveBeenCalled();
+      expect(ensurePeerReachable).not.toHaveBeenCalled();
+      expect(info).toEqual({ connected: true, direct: true });
+    });
+
+    it("verifyConnection redials when probe reports stale connection", async () => {
+      probeBondedPeerConnection.mockResolvedValueOnce({ connected: false, direct: false });
+
+      await node.warmContactConnection(PEER_OWNER_ID, { verifyConnection: true });
+
+      expect(probeBondedPeerConnection).toHaveBeenCalledWith(TRANSPORT_PEER_ID);
+      expect(closeConnectionsToPeer).toHaveBeenCalledWith(TRANSPORT_PEER_ID);
+      expect(ensurePeerReachable).toHaveBeenCalledTimes(1);
+    });
+
+    it("merges peer-directory listen addrs before warm dial", async () => {
+      getPeerConnectionInfo.mockReturnValue({ connected: false, direct: false });
+      const dialHintsForChat = vi.fn(async (_peerId: string, addrs?: string[]) => addrs ?? []);
+      (node as any)._dialHintsForChat = dialHintsForChat;
+      const peerDirectoryStore = (node as any)._peerDirectoryStore;
+      peerDirectoryStore.listPeerRecords = vi.fn(async () => [
+        {
+          ownerId: PEER_OWNER_ID,
+          peerId: TRANSPORT_PEER_ID,
+          listenAddrs: ["/ip4/10.0.0.5/tcp/4011/p2p/" + TRANSPORT_PEER_ID],
+        },
+      ]);
+
+      await node.warmContactConnection(PEER_OWNER_ID);
+
+      expect(dialHintsForChat).toHaveBeenCalledWith(
+        TRANSPORT_PEER_ID,
+        expect.arrayContaining([
+          "/ip4/192.168.1.50/tcp/4011/p2p/" + TRANSPORT_PEER_ID,
+          "/ip4/10.0.0.5/tcp/4011/p2p/" + TRANSPORT_PEER_ID,
+        ]),
+      );
+    });
+
     it("dials when not connected and no redial flag", async () => {
       getPeerConnectionInfo.mockReturnValue({ connected: false, direct: false });
 

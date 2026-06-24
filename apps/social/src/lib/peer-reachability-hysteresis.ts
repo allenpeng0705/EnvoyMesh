@@ -3,7 +3,7 @@ import type { PeerConnectionInfo } from "@envoymesh/api";
 export type ReachabilityLabel = "offline" | "direct" | "relay";
 
 /** Background read interval while a chat thread is open. */
-export const REACHABILITY_OPEN_CHAT_POLL_MS = 30_000;
+export const REACHABILITY_OPEN_CHAT_POLL_MS = 10_000;
 /** Background read interval when chat is not focused (unused by open-chat hook today). */
 export const REACHABILITY_POLL_MS = 60_000;
 /** Keep showing Online through brief libp2p idle drops (quiet chats, tab switches). */
@@ -16,8 +16,10 @@ export const REACHABILITY_OPEN_CHAT_MIN_REDIAL_MS = 20_000;
 export const REACHABILITY_STABLE_OFFLINE_POLLS = 4;
 /** Consecutive connected polls before flipping Offline → Online. */
 export const REACHABILITY_STABLE_ONLINE_POLLS = 1;
-/** Consecutive polls before switching Direct ↔ Relay label. */
+/** Consecutive polls before switching Direct ↔ Relay label (background). */
 export const REACHABILITY_STABLE_PATH_POLLS = 5;
+/** Faster Direct ↔ Relay label updates while a chat thread is open. */
+export const REACHABILITY_OPEN_CHAT_STABLE_PATH_POLLS = 1;
 
 export function reachabilityLabel(info: Pick<PeerConnectionInfo, "connected" | "direct">): ReachabilityLabel {
   if (!info.connected) return "offline";
@@ -45,12 +47,35 @@ export function applyReachabilityHysteresis(
   state: ReachabilityHysteresisState,
   next: PeerConnectionInfo,
   now: number,
-  options?: { offlineGraceMs?: number; holdOnline?: boolean },
+  options?: {
+    offlineGraceMs?: number;
+    holdOnline?: boolean;
+    /** Show this reading immediately (cache seed on chat open). */
+    immediate?: boolean;
+    stablePathPolls?: number;
+    stableOnlinePolls?: number;
+  },
 ): { state: ReachabilityHysteresisState; info: PeerConnectionInfo | null; shouldUpdate: boolean } {
   const offlineGraceMs = options?.offlineGraceMs ?? REACHABILITY_OFFLINE_GRACE_MS;
   const holdOnline = options?.holdOnline === true;
+  const stablePathPolls = options?.stablePathPolls ?? REACHABILITY_STABLE_PATH_POLLS;
+  const stableOnlinePolls = options?.stableOnlinePolls ?? REACHABILITY_STABLE_ONLINE_POLLS;
   const label = reachabilityLabel(next);
   let { displayedLabel, lastConnectedAt, streakLabel, streakCount } = state;
+
+  if (options?.immediate) {
+    displayedLabel = label;
+    if (next.connected) {
+      lastConnectedAt = now;
+    }
+    streakLabel = label;
+    streakCount = 1;
+    return {
+      state: { displayedLabel, lastConnectedAt, streakLabel, streakCount },
+      info: next,
+      shouldUpdate: true,
+    };
+  }
 
   if (next.connected) {
     lastConnectedAt = now;
@@ -61,7 +86,7 @@ export function applyReachabilityHysteresis(
     }
 
     const comingFromOffline = displayedLabel === "offline";
-    if (comingFromOffline && streakCount < REACHABILITY_STABLE_ONLINE_POLLS) {
+    if (comingFromOffline && streakCount < stableOnlinePolls) {
       return {
         state: { displayedLabel, lastConnectedAt, streakLabel, streakCount },
         info: null,
@@ -71,7 +96,7 @@ export function applyReachabilityHysteresis(
 
     const isPathChange =
       displayedLabel !== null && displayedLabel !== "offline" && displayedLabel !== label;
-    if (isPathChange && streakCount < REACHABILITY_STABLE_PATH_POLLS) {
+    if (isPathChange && streakCount < stablePathPolls) {
       return {
         state: { displayedLabel, lastConnectedAt, streakLabel, streakCount },
         info: null,

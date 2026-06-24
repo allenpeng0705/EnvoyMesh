@@ -674,6 +674,7 @@ function raceWithTimeout<T>(promise: Promise<T>, ms: number, label: string): Pro
 
 /** Per-topic DHT provide/cancel cap so profile save does not block on sparse WAN bootstrap. */
 const DISCOVERY_TOPIC_OP_TIMEOUT_MS = 10_000;
+const WARM_CONTACT_DIAL_HINTS_TIMEOUT_MS = 10_000;
 
 /**
  * NodeServiceImpl implements the NodeService interface.
@@ -11098,7 +11099,38 @@ class NodeServiceImpl implements NodeService {
       return { connected: false, direct: false };
     }
 
+    listenAddrs = await this._mergeFreshListenAddrs(
+      peerOwnerId,
+      transportPeerId,
+      listenAddrs,
+    );
+
     return this._warmContactConnectionTransport(transportPeerId, listenAddrs, options);
+  }
+
+  /** Merge cached inbound + peer-directory listen addrs before outbound dial. */
+  private async _mergeFreshListenAddrs(
+    ownerId: string,
+    transportPeerId: string,
+    listenAddrs: string[] | undefined,
+  ): Promise<string[] | undefined> {
+    const cached = this._lastLibp2pTransportByOwner.get(ownerId.trim())?.listenAddrs;
+    let fromDir: string[] = [];
+    try {
+      const records = await this._peerDirectoryStore.listPeerRecords();
+      fromDir = records
+        .filter((r) => r.ownerId === ownerId.trim() || r.peerId === transportPeerId)
+        .flatMap((r) => r.listenAddrs ?? []);
+    } catch {
+      /* best-effort */
+    }
+    const merged = mergeDialablePeerListenAddrs(
+      transportPeerId,
+      listenAddrs,
+      cached,
+      fromDir,
+    );
+    return merged.length ? merged : listenAddrs;
   }
 
   private async _warmContactConnectionTransport(
@@ -11118,25 +11150,10 @@ class NodeServiceImpl implements NodeService {
     if (existing.connected && !options?.redial && !options?.upgradeRelayToDirect) {
       if (needsProbe) {
         if (options?.verifyConnection) {
-          let dialHints: string[];
-          try {
-            dialHints = await raceWithTimeout(
-              this._dialHintsForChat(transportPeerId, listenAddrs),
-              30_000,
-              "_dialHintsForChat",
-            );
-          } catch {
-            return existing;
-          }
-          const preferCircuitHints = shouldPreferCircuitDialHints(listenAddrs, dialHints, transportPeerId);
-          const verified = await mesh.ensurePeerReachable(transportPeerId, ENVOY_CHAT_PROTOCOL, {
-            dialHints,
-            preferCircuitHints,
-            verifyConnection: true,
-          });
-          if (verified.connected) {
+          const probed = await mesh.probeBondedPeerConnection(transportPeerId);
+          if (probed.connected) {
             markOutboundPeerVerified(transportPeerId);
-            return verified;
+            return probed;
           }
           // stale — fall through to redial
         } else {
@@ -11158,7 +11175,7 @@ class NodeServiceImpl implements NodeService {
     try {
       dialHints = await raceWithTimeout(
         this._dialHintsForChat(transportPeerId, listenAddrs),
-        30_000,
+        WARM_CONTACT_DIAL_HINTS_TIMEOUT_MS,
         "_dialHintsForChat",
       );
     } catch {
@@ -11172,7 +11189,11 @@ class NodeServiceImpl implements NodeService {
 
     void mesh.mergePeerStoreDialHints(transportPeerId, dialHints);
 
-    if (options?.redial || options?.upgradeRelayToDirect || needsProbe) {
+    const tearingDown =
+      options?.redial === true ||
+      options?.upgradeRelayToDirect === true ||
+      (needsProbe && !options?.keepAlive);
+    if (tearingDown) {
       try {
         await mesh.closeConnectionsToPeer(transportPeerId);
       } catch {
@@ -11187,7 +11208,7 @@ class NodeServiceImpl implements NodeService {
         options?.redial === true ||
         !existing.connected ||
         options?.upgradeRelayToDirect === true ||
-        needsProbe,
+        tearingDown,
       upgradeRelayToDirect: options?.upgradeRelayToDirect === true || options?.redial === true,
     });
     void this._flushPendingRoomSyncs();
