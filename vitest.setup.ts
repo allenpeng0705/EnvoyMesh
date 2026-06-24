@@ -80,6 +80,12 @@ class MockRTCPeerConnection {
   createAnswer: ReturnType<typeof vi.fn>;
   addTrack: ReturnType<typeof vi.fn>;
   addTransceiver: ReturnType<typeof vi.fn>;
+  getTransceivers: () => Array<{
+    mid: string | null;
+    direction: RTCRtpTransceiverDirection;
+    sender: { replaceTrack: ReturnType<typeof vi.fn>; track: MediaStreamTrack | null };
+    receiver: { track: { kind: string } | null };
+  }>;
   addIceCandidate: ReturnType<typeof vi.fn>;
   close: ReturnType<typeof vi.fn>;
   onconnectionstatechange: ((() => void) | null) | null;
@@ -94,6 +100,14 @@ class MockRTCPeerConnection {
     this.createAnswer = vi.fn().mockResolvedValue({ sdp: "mock-answer", type: "answer" });
     this.addTrack = vi.fn();
     this.addTransceiver = vi.fn();
+    this.getTransceivers = () => [
+      {
+        mid: "0",
+        direction: "sendrecv",
+        sender: { replaceTrack: vi.fn().mockResolvedValue(undefined), track: null },
+        receiver: { track: { kind: "audio" } },
+      },
+    ];
     this.addIceCandidate = vi.fn().mockResolvedValue(undefined);
     this.close = vi.fn();
     this.onconnectionstatechange = null;
@@ -109,15 +123,26 @@ class MockRTCPeerConnection {
 
 // Mock MediaStream
 class MockMediaStream {
-  private tracks: any[] = [];
+  private tracks: Array<{ id?: string; kind: string; enabled: boolean; stop: ReturnType<typeof vi.fn> }>;
 
-  constructor() {
-    const mockTrack = {
-      kind: "audio",
-      enabled: true,
-      stop: vi.fn(),
-    };
-    this.tracks = [mockTrack];
+  constructor(
+    initialTracks?: Array<{ id?: string; kind: string; enabled?: boolean; stop?: ReturnType<typeof vi.fn> }>,
+  ) {
+    this.tracks = [];
+    if (initialTracks) {
+      for (const track of initialTracks) {
+        this.addTrack(track);
+      }
+    }
+  }
+
+  addTrack(track: { id?: string; kind: string; enabled?: boolean; stop?: ReturnType<typeof vi.fn> }) {
+    this.tracks.push({
+      kind: track.kind,
+      id: track.id,
+      enabled: track.enabled ?? true,
+      stop: track.stop ?? vi.fn(),
+    });
   }
 
   getTracks() {
@@ -125,12 +150,16 @@ class MockMediaStream {
   }
 
   getAudioTracks() {
-    return this.tracks;
+    return this.tracks.filter((track) => track.kind === "audio");
   }
 }
 
 // Mock getUserMedia
-const mockGetUserMedia = vi.fn().mockResolvedValue(new MockMediaStream());
+const mockGetUserMedia = vi.fn().mockImplementation(async () => {
+  const stream = new MockMediaStream();
+  stream.addTrack({ kind: "audio", id: "mic", enabled: true, stop: vi.fn() });
+  return stream;
+});
 
 // Set up globals globally (before any module imports them)
 (globalThis as any).RTCSessionDescription = MockRTCSessionDescription;

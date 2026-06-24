@@ -93,7 +93,29 @@ export function createWebRtcCallTransport(
     };
   }
 
-  async function attachLocalAudio(connection: RTCPeerConnection): Promise<void> {
+  let remoteMediaStream: MediaStream | null = null;
+
+  function handleRemoteTrack(event: RTCTrackEvent): void {
+    const track = event.track;
+    if (!track || track.kind !== "audio") return;
+
+    if (event.streams?.[0]) {
+      webrtcCallTrace("transport:remote-track", { via: "stream", trackId: track.id });
+      opts.onRemoteStream(event.streams[0]);
+      return;
+    }
+
+    if (!remoteMediaStream) {
+      remoteMediaStream = new MediaStream();
+    }
+    if (!remoteMediaStream.getTracks().some((existing) => existing.id === track.id)) {
+      remoteMediaStream.addTrack(track);
+    }
+    webrtcCallTrace("transport:remote-track", { via: "track", trackId: track.id });
+    opts.onRemoteStream(remoteMediaStream);
+  }
+
+  async function attachLocalAudioForOffer(connection: RTCPeerConnection): Promise<void> {
     const getUserMedia = navigator.mediaDevices?.getUserMedia?.bind(navigator.mediaDevices);
     if (!getUserMedia) {
       webrtcCallWarn("transport:mic-unavailable", {
@@ -121,6 +143,61 @@ export function createWebRtcCallTransport(
     }
   }
 
+  async function attachLocalAudioForAnswer(connection: RTCPeerConnection): Promise<void> {
+    const getUserMedia = navigator.mediaDevices?.getUserMedia?.bind(navigator.mediaDevices);
+    const audioTransceivers = connection
+      .getTransceivers()
+      .filter(
+        (transceiver) =>
+          transceiver.receiver.track?.kind === "audio" ||
+          transceiver.sender.track?.kind === "audio" ||
+          transceiver.mid !== null,
+      );
+    const primaryAudioTransceiver =
+      audioTransceivers.find((transceiver) => transceiver.receiver.track?.kind === "audio") ??
+      audioTransceivers[0] ??
+      null;
+
+    if (!getUserMedia) {
+      webrtcCallWarn("transport:mic-unavailable", {
+        path: opts.path,
+        error: "mediaDevices unavailable",
+      });
+      setRecvOnlyTransceivers(connection);
+      micAvailable = false;
+      return;
+    }
+
+    try {
+      localStream = await getUserMedia({ audio: true });
+      const track = localStream.getAudioTracks()[0];
+      if (!track) throw new Error("no audio track from getUserMedia");
+
+      if (primaryAudioTransceiver) {
+        await primaryAudioTransceiver.sender.replaceTrack(track);
+        primaryAudioTransceiver.direction = "sendrecv";
+      } else {
+        connection.addTrack(track, localStream);
+      }
+      micAvailable = true;
+    } catch (err) {
+      webrtcCallWarn("transport:mic-unavailable", {
+        path: opts.path,
+        error: err instanceof Error ? err.message.slice(0, 80) : String(err),
+      });
+      setRecvOnlyTransceivers(connection);
+      micAvailable = false;
+    }
+  }
+
+  function setRecvOnlyTransceivers(connection: RTCPeerConnection): void {
+    for (const transceiver of connection.getTransceivers()) {
+      if (transceiver.mid === null) continue;
+      void transceiver.sender.replaceTrack(null);
+      transceiver.direction = "recvonly";
+    }
+  }
+
   function closeInternal(): void {
     if (isClosed) return;
     isClosed = true;
@@ -137,6 +214,7 @@ export function createWebRtcCallTransport(
     }
 
     micAvailable = true;
+    remoteMediaStream = null;
 
     // Close peer connection
     if (pc) {
@@ -188,18 +266,11 @@ export function createWebRtcCallTransport(
     };
 
     // Remote track handler
-    pc.ontrack = (event) => {
-      if (event.streams?.[0]) {
-        opts.onRemoteStream(event.streams[0]);
-      }
-    };
+    pc.ontrack = handleRemoteTrack;
 
-    await attachLocalAudio(pc);
+    await attachLocalAudioForOffer(pc);
 
-    // Listen-only already has a recvonly transceiver — offerToReceiveAudio would conflict.
-    const offer = micAvailable
-      ? await pc.createOffer({ offerToReceiveAudio: true })
-      : await pc.createOffer();
+    const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
     opts.onSdpGenerated(offer.sdp!, "offer");
     webrtcCallTrace("transport:offer-created", { path: opts.path, sdpLen: offer.sdp?.length ?? 0 });
@@ -235,18 +306,11 @@ export function createWebRtcCallTransport(
     };
 
     // Remote track handler
-    pc.ontrack = (event) => {
-      if (event.streams?.[0]) {
-        opts.onRemoteStream(event.streams[0]);
-      }
-    };
+    pc.ontrack = handleRemoteTrack;
 
-    await attachLocalAudio(pc);
-
-    // Set remote offer
     await pc.setRemoteDescription(new RTCSessionDescription({ type: "offer", sdp: remoteSdp }));
+    await attachLocalAudioForAnswer(pc);
 
-    // Create answer
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
     opts.onSdpGenerated(answer.sdp!, "answer");

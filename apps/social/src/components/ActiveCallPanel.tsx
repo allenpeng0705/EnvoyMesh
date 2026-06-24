@@ -4,8 +4,9 @@
  * @vitest-environment jsdom
  */
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useT } from "../context/I18nContext.js";
+import { webrtcCallTrace, webrtcCallWarn } from "../lib/webrtc-call-trace.js";
 
 export interface ActiveCallPanelProps {
   peerDisplayName: string;
@@ -86,16 +87,29 @@ export function ActiveCallPanel({
     return t("call:connecting", "Connecting…");
   })();
 
-  useEffect(() => {
+  const playRemoteAudio = useCallback(async () => {
     const audio = remoteAudioRef.current;
-    if (!audio) return;
-    audio.srcObject = remoteStream ?? null;
-    if (remoteStream) {
-      void audio.play().catch(() => {
-        /* autoplay may be blocked until user gesture */
+    if (!audio || !remoteStream) return;
+
+    audio.srcObject = remoteStream;
+    audio.volume = 1;
+    audio.muted = false;
+
+    try {
+      await audio.play();
+      webrtcCallTrace("ui:remote-audio-play", {
+        trackCount: remoteStream.getAudioTracks().length,
+      });
+    } catch (err) {
+      webrtcCallWarn("ui:remote-audio-play-failed", {
+        error: err instanceof Error ? err.message.slice(0, 80) : String(err),
       });
     }
   }, [remoteStream]);
+
+  useEffect(() => {
+    void playRemoteAudio();
+  }, [remoteStream, connectionState, playRemoteAudio]);
 
   useEffect(() => {
     if (!isConnected) {
@@ -118,7 +132,13 @@ export function ActiveCallPanel({
 
   return (
     <div className="active-call-panel" role="region" aria-label={t("call:activeCall", "Active call")}>
-      <audio ref={remoteAudioRef} autoPlay playsInline aria-hidden className="sr-only" />
+      <audio
+        ref={remoteAudioRef}
+        autoPlay
+        playsInline
+        aria-hidden
+        className="active-call-remote-audio"
+      />
 
       <div className="active-call-main">
         <div className="active-call-avatar" aria-hidden>

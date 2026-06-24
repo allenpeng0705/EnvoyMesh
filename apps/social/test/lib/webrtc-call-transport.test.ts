@@ -192,6 +192,25 @@ describe("WebRtcCallTransport", () => {
     });
   });
 
+  describe("ontrack remote audio", () => {
+    it("uses event.track when streams array is empty", async () => {
+      const onRemoteStream = vi.fn();
+      const { transport } = createTestTransport({ onRemoteStream });
+      await transport.startOffer();
+
+      const remoteTrack = { id: "remote-audio-1", kind: "audio" } as MediaStreamTrack;
+      lastCreatedPC.ontrack?.({
+        track: remoteTrack,
+        streams: [],
+      } as RTCTrackEvent);
+
+      expect(onRemoteStream).toHaveBeenCalledTimes(1);
+      const stream = onRemoteStream.mock.calls[0]?.[0] as MediaStream;
+      expect(stream.getAudioTracks()).toHaveLength(1);
+      expect(stream.getAudioTracks()[0]?.id).toBe("remote-audio-1");
+    });
+  });
+
   describe("startAnswer", () => {
     it("creates RTCPeerConnection and returns SDP answer", async () => {
       const { transport, onSdpGenerated } = createTestTransport();

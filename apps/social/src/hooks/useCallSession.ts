@@ -111,7 +111,13 @@ export function useCallSession(): UseCallSessionResult {
       createWebRtcCallTransport({
         path: options.path,
         iceServers: options.iceServers,
-        onRemoteStream: (stream) => setRemoteStream(stream),
+        onRemoteStream: (stream) => {
+          webrtcCallTrace("ui:remote-stream", {
+            trackCount: stream.getAudioTracks().length,
+            live: stream.getAudioTracks().some((track) => track.readyState === "live"),
+          });
+          setRemoteStream(stream);
+        },
         onConnectionStateChange: (state) => setConnectionState(state),
         onSdpGenerated: () => undefined,
         onIceCandidate: (candidate) => sendIceCandidate(candidate),
@@ -185,7 +191,6 @@ export function useCallSession(): UseCallSessionResult {
           notifyMicUnavailable();
         }
         await nodeService.acceptCallInvite(callId, sdpAnswer, iceServers);
-        setConnectionState("connected");
       } catch (err) {
         console.warn("[useCallSession] callee Path 2 renegotiation failed:", err);
         closeTransport();
@@ -234,12 +239,9 @@ export function useCallSession(): UseCallSessionResult {
           if (event.sdpAnswer && transportRef.current) {
             void transportRef.current
               .applyRemoteAnswer(event.sdpAnswer)
-              .then(() => setConnectionState("connected"))
               .catch((err) =>
                 console.warn("[useCallSession] applyRemoteAnswer failed:", err),
               );
-          } else {
-            setConnectionState("connected");
           }
           setActiveCall({
             callId: event.callId,
@@ -371,7 +373,6 @@ export function useCallSession(): UseCallSessionResult {
         sdpAnswer,
         usePath2 ? nodeConfig?.iceServers ?? [] : [],
       );
-      setConnectionState("connected");
     } catch (err) {
       console.warn("[useCallSession] failed to accept call:", err);
       closeTransport();
