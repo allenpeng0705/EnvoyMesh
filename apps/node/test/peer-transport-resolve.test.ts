@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   pickBestLibp2pPeerDirectoryRecord,
+  pickConnectedTransportForOwner,
   pickLibp2pFromConnectedPeers,
   resolveRecipientEnvelopePeerId,
 } from "../src/peer-transport-resolve.js";
@@ -89,5 +90,28 @@ describe("pickLibp2pFromConnectedPeers", () => {
     ];
     const picked = pickLibp2pFromConnectedPeers(records, ownerId, ["12D3KooWLiveContact", "12D3KooWOther"]);
     expect(picked?.peerId).toBe("12D3KooWLiveContact");
+  });
+});
+
+describe("pickConnectedTransportForOwner", () => {
+  it("prefers inbound-learned cache when that peer is connected", () => {
+    const ownerId = "envoy:owner:win";
+    const records = [
+      {
+        ownerId,
+        peerId: "12D3KooWWinStaleOffline",
+        lastSeenAt: "2026-05-29T12:00:00.000Z",
+      },
+    ];
+    const cache = new Map([
+      [ownerId, { peerId: "12D3KooWWinLiveInbound", listenAddrs: ["/ip4/10.0.0.2/tcp/4001"] }],
+    ]);
+    const picked = pickConnectedTransportForOwner(
+      records,
+      ownerId,
+      ["12D3KooWWinLiveInbound"],
+      cache,
+    );
+    expect(picked?.peerId).toBe("12D3KooWWinLiveInbound");
   });
 });

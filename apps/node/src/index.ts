@@ -1756,6 +1756,13 @@ async function handleInboundMeshMessage({
       peerDirectoryStore,
       remotePeerId,
       sendResponseEnvelope: async (responseEnvelope) => {
+        if (nodeService instanceof NodeServiceImpl) {
+          await nodeService.deliverCallEnvelopeToTransportPeer(
+            remotePeerId,
+            responseEnvelope as EnvoyEnvelope,
+          );
+          return;
+        }
         await deliverOutboundEnvelope(mesh, remotePeerId, responseEnvelope as EnvoyEnvelope);
       },
       sendBusyReject:

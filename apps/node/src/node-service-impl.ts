@@ -407,7 +407,7 @@ import { deliverCallEnvelopeWithRetry, deliverChatEnvelopeWithRetry, sendExpectR
 import { isOutboundPeerRecentlyVerified, markOutboundPeerVerified } from "./outbound-peer-freshness.js";
 import { deliverOutboundEnvelope, dialHintsForTransportTarget } from "./mesh-outbound-helper.js";
 import { withOutboundSendLock } from "./outbound-send-lock.js";
-import { pickBestLibp2pPeerDirectoryRecord, pickLibp2pFromConnectedPeers, resolveRecipientEnvelopePeerId } from "./peer-transport-resolve.js";
+import { pickBestLibp2pPeerDirectoryRecord, pickConnectedTransportForOwner, pickLibp2pFromConnectedPeers, resolveRecipientEnvelopePeerId } from "./peer-transport-resolve.js";
 import { webrtcCallTrace, webrtcCallWarn, shortCallId } from "./webrtc-call-trace.js";
 import {
   normalizeTransportPeerId,
@@ -3154,13 +3154,40 @@ class NodeServiceImpl implements NodeService {
       ? (peerId: string) => mesh.getPeerConnectionInfo(peerId).connected
       : undefined;
 
+    const records = await raceWithTimeout(
+      this._peerDirectoryStore.listPeerRecords(),
+      25_000,
+      "listPeerRecords",
+    );
+    const connectedPeerIds = mesh?.getConnectedPeerIds() ?? [];
+
+    const liveConnected = pickConnectedTransportForOwner(
+      records,
+      targetOwnerId,
+      connectedPeerIds,
+      this._lastLibp2pTransportByOwner,
+    );
+    if (liveConnected) {
+      const listenAddrs = mergeDialablePeerListenAddrs(
+        liveConnected.peerId,
+        liveConnected.listenAddrs,
+        records.filter((r) => r.ownerId === targetOwnerId).flatMap((r) => r.listenAddrs ?? []),
+      );
+      this._lastLibp2pTransportByOwner.set(targetOwnerId, {
+        peerId: liveConnected.peerId,
+        listenAddrs,
+      });
+      return this._finalizePeerTransportResolve(
+        targetOwnerId,
+        liveConnected.peerId,
+        records,
+        listenAddrs,
+        isConnected,
+      );
+    }
+
     const cachedTransport = this._lastLibp2pTransportByOwner.get(targetOwnerId);
     if (cachedTransport && isLibp2pPeerId(cachedTransport.peerId)) {
-      const records = await raceWithTimeout(
-        this._peerDirectoryStore.listPeerRecords(),
-        25_000,
-        "listPeerRecords",
-      );
       let transportPeerId = cachedTransport.peerId;
       let transportListenAddrs = cachedTransport.listenAddrs;
       const bestConnected = pickBestLibp2pPeerDirectoryRecord(records, targetOwnerId, { isConnected });
@@ -3202,42 +3229,9 @@ class NodeServiceImpl implements NodeService {
         dirRow?.listenAddrs,
         ownerListenAddrs,
       );
-      return {
-        transportPeerId,
-        recipientEnvelopePeerId: resolveRecipientEnvelopePeerId(
-          records,
-          targetOwnerId,
-          transportPeerId,
-        ),
-        listenAddrs: listenAddrs.length ? listenAddrs : undefined,
-      };
-    }
-
-    const records = await raceWithTimeout(
-      this._peerDirectoryStore.listPeerRecords(),
-      25_000,
-      "listPeerRecords",
-    );
-    const connectedPeerIds = mesh?.getConnectedPeerIds() ?? [];
-
-    const liveConnectedRow = pickLibp2pFromConnectedPeers(
-      records,
-      targetOwnerId,
-      connectedPeerIds,
-    );
-    if (liveConnectedRow) {
-      const listenAddrs = mergeDialablePeerListenAddrs(
-        liveConnectedRow.peerId,
-        liveConnectedRow.listenAddrs,
-        records.filter((r) => r.ownerId === targetOwnerId).flatMap((r) => r.listenAddrs ?? []),
-      );
-      this._lastLibp2pTransportByOwner.set(targetOwnerId, {
-        peerId: liveConnectedRow.peerId,
-        listenAddrs,
-      });
       return this._finalizePeerTransportResolve(
         targetOwnerId,
-        liveConnectedRow.peerId,
+        transportPeerId,
         records,
         listenAddrs,
         isConnected,
@@ -3877,6 +3871,23 @@ class NodeServiceImpl implements NodeService {
    * Phase 42A — `call.*` envelope delivery on the chat libp2p protocol (same
    * stable path as chat.message). Skips the delivery ack wait.
    */
+  /**
+   * Deliver a signed `call.*` envelope on the chat protocol to an already-known libp2p peer
+   * (e.g. call.reject busy path from index.ts inbound handler).
+   */
+  async deliverCallEnvelopeToTransportPeer(
+    transportPeerId: string,
+    envelope: EnvoyEnvelope,
+  ): Promise<void> {
+    const mesh = this._requireMesh();
+    const conn = mesh.getPeerConnectionInfo(transportPeerId);
+    if (conn.connected || mesh.getConnectedPeerIds().includes(transportPeerId)) {
+      await mesh.sendChat(transportPeerId, envelope, { dialHints: [] });
+      return;
+    }
+    await this._deliverCallEnvelope(transportPeerId, envelope, [], undefined, false);
+  }
+
   private async _deliverCallEnvelope(
     transportPeerId: string,
     envelope: EnvoyEnvelope,
@@ -13296,9 +13307,10 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     sdpOffer: string,
     iceServers?: { urls: string; username?: string; credential?: string }[],
   ): Promise<string | null> {
+    console.log(`[sendCallInvite] invoked target=${targetOwnerId.slice(0, 24)} sdpLen=${sdpOffer.length}`);
     const profile = this._profile;
     if (!profile) return null;
-    if (!this._mesh) return null;
+    if (!this._mesh && !this._externalMesh) return null;
 
     // The schema requires a real UUID — the stub used a non-UUID string
     // that would fail `parseCallInvitePayload` on the receiving side.
@@ -13338,10 +13350,12 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
 
     const mesh = this._requireMesh();
     const records = await this._peerDirectoryStore.listPeerRecords();
-    const liveConnected = pickLibp2pFromConnectedPeers(
+    const connectedPeerIds = mesh.getConnectedPeerIds();
+    const liveConnected = pickConnectedTransportForOwner(
       records,
       targetOwnerId,
-      mesh.getConnectedPeerIds(),
+      connectedPeerIds,
+      this._lastLibp2pTransportByOwner,
     );
     const targetPeerId = liveConnected?.peerId ?? transportPeerId;
     const connBeforeWarm = mesh.getPeerConnectionInfo(targetPeerId);

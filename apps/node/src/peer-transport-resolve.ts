@@ -46,6 +46,37 @@ export function pickLibp2pFromConnectedPeers(
   return matches.reduce((a, b) => (a.lastSeenAt >= b.lastSeenAt ? a : b));
 }
 
+/**
+ * Resolve the libp2p peer id to use when the contact already has an open connection.
+ * Prefer directory rows tied to ownerId; fall back to inbound-learned transport cache.
+ */
+export function pickConnectedTransportForOwner(
+  records: PeerDirectoryRecord[],
+  ownerId: string,
+  connectedPeerIds: readonly string[],
+  transportCache?: ReadonlyMap<string, { peerId: string; listenAddrs?: string[] }>,
+): { peerId: string; listenAddrs?: string[] } | undefined {
+  const liveRow = pickLibp2pFromConnectedPeers(records, ownerId, connectedPeerIds);
+  if (liveRow) {
+    return { peerId: liveRow.peerId, listenAddrs: liveRow.listenAddrs };
+  }
+  const cached = transportCache?.get(ownerId);
+  if (cached && isLibp2pPeerId(cached.peerId) && connectedPeerIds.includes(cached.peerId)) {
+    return { peerId: cached.peerId, listenAddrs: cached.listenAddrs };
+  }
+  const connectedSet = new Set(connectedPeerIds.filter((id) => isLibp2pPeerId(id)));
+  if (connectedSet.size === 0) {
+    return undefined;
+  }
+  for (const peerId of connectedSet) {
+    const row = records.find((r) => r.ownerId === ownerId && r.peerId === peerId);
+    if (row) {
+      return { peerId: row.peerId, listenAddrs: row.listenAddrs };
+    }
+  }
+  return undefined;
+}
+
 /** Prefer a dialable libp2p row over a newer `envoy_*` envelope id for the same owner. */
 export function pickBestLibp2pPeerDirectoryRecord(
   records: PeerDirectoryRecord[],
