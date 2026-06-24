@@ -24,7 +24,7 @@ function sleep(ms: number): Promise<void> {
 describe("share.request outbound delivery", () => {
   const shareEnvelope = { intent: "share.request", messageId: "share-req-1" } as EnvoyEnvelope;
 
-  it("verifies a connected peer before share.request send", async () => {
+  it("skips prepare when already connected direct (stable path reuse)", async () => {
     const send = vi.fn().mockResolvedValue(0);
     const ensurePeerReachable = vi.fn().mockResolvedValue({ connected: true, direct: true });
     const mesh = createOutboundMeshMock({
@@ -41,10 +41,34 @@ describe("share.request outbound delivery", () => {
       maxAttempts: 1,
     });
 
+    expect(ensurePeerReachable).not.toHaveBeenCalled();
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("prepares connection when peer is not connected before share.request send", async () => {
+    const send = vi.fn().mockResolvedValue(0);
+    const ensurePeerReachable = vi.fn().mockResolvedValue({ connected: true, direct: true });
+    const mesh = createOutboundMeshMock({
+      send,
+      ensurePeerReachable,
+      getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: false, direct: false }),
+    });
+
+    await deliverCallEnvelopeWithRetry({
+      mesh,
+      transportPeerId: "12D3KooWSharePeerCold",
+      envelope: shareEnvelope,
+      dialHints: ["/ip4/192.168.1.50/tcp/4011/p2p/12D3KooWSharePeerCold"],
+      maxAttempts: 1,
+    });
+
     expect(ensurePeerReachable).toHaveBeenCalledWith(
-      "12D3KooWSharePeer",
+      "12D3KooWSharePeerCold",
       ENVOY_MESSAGE_PROTOCOL,
-      expect.objectContaining({ verifyConnection: true }),
+      expect.objectContaining({
+        dialHints: ["/ip4/192.168.1.50/tcp/4011/p2p/12D3KooWSharePeerCold"],
+        preferCircuitHints: false,
+      }),
     );
     expect(send).toHaveBeenCalledTimes(1);
   });

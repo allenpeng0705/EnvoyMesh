@@ -197,6 +197,32 @@ describe("CallManager", () => {
   // ------------------------------------------------------------------
   // Reject / hangup
   // ------------------------------------------------------------------
+  describe("reportOutboundDeliveryFailed", () => {
+    it("emits call:error and call:ended for outbound ringing session", () => {
+      const events: any[] = [];
+      cm.onCallEvent((e) => events.push(e));
+
+      cm.outboundCallInitiated("call-1", LOCAL_OWNER, "envoy:owner:bob", "Bob");
+      cm.reportOutboundDeliveryFailed("call-1", "Could not reach contact");
+
+      expect(events).toEqual([
+        { type: "call:error", callId: "call-1", error: "Could not reach contact" },
+        { type: "call:ended", callId: "call-1", reason: "error" },
+      ]);
+      expect(cm.getActiveCall()).toBeNull();
+    });
+
+    it("ignores unknown or inbound sessions", () => {
+      const events: any[] = [];
+      cm.onCallEvent((e) => events.push(e));
+
+      cm.inboundCallReceived("call-1", "envoy:owner:alice", "peer-alice", "Alice", "v=0\r\n...");
+      cm.reportOutboundDeliveryFailed("call-1", "ignored");
+      expect(events).toHaveLength(1);
+      expect(events[0].type).toBe("call:incoming");
+    });
+  });
+
   describe("reject", () => {
     it("rejects ringing call", () => {
       const events: any[] = [];

@@ -17,6 +17,7 @@ import { LibraryView } from "./components/views/LibraryView.js";
 import { H2AChannelView } from "./components/views/H2AChannelView.js";
 import { ChainsView } from "./components/views/ChainsView.js";
 import { AutoReplyPausedNotifier } from "./components/AutoReplyPausedNotifier.js";
+import { CallSessionProvider } from "./context/CallSessionContext.js";
 import { isTauriShell, restartTauriNodeProcess } from "./lib/tauri-shell.js";
 import { WS_LOOPBACK_URL } from "@envoymesh/api";
 
@@ -231,6 +232,7 @@ export function App() {
 
   return (
     <ToastProvider>
+      <CallSessionProvider>
       <div className="app">
         <AutoReplyPausedNotifier />
         <ErrorBoundary>
@@ -309,6 +311,7 @@ export function App() {
         </ErrorBoundary>
         {pairingOpen && <PairingQRModal onClose={() => setPairingOpen(false)} />}
       </div>
+      </CallSessionProvider>
     </ToastProvider>
   );
 }

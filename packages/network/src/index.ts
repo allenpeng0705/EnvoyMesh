@@ -1759,11 +1759,7 @@ export class EnvoyMesh {
   }
 
   async dial(target: string): Promise<any> {
-    // Convert peer ID to proper multiaddr format if needed
-    let dialTarget = target;
-    if (!target.startsWith("/")) {
-      dialTarget = `/p2p/${target}`;
-    }
+    const dialTarget = this._normalizeDialTarget(target);
     return this.requireNode().dial(dialTarget as any);
   }
 

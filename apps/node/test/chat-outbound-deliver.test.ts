@@ -368,7 +368,7 @@ describe("deliverCallEnvelopeWithRetry (Phase 42A — call.* on message protocol
     expect(send).toHaveBeenCalledTimes(1);
   });
 
-  it("skips warm when already connected (pre-merge stable-LAN behavior)", async () => {
+  it("skips warm when already connected direct (stable LAN / e2e harness)", async () => {
     const send = vi.fn().mockResolvedValue({ connected: true, direct: true });
     const ensurePeerReachable = vi.fn().mockResolvedValue({ connected: true, direct: true });
     const mesh = {
@@ -386,10 +386,35 @@ describe("deliverCallEnvelopeWithRetry (Phase 42A — call.* on message protocol
       maxAttempts: 1,
     });
 
+    expect(ensurePeerReachable).not.toHaveBeenCalled();
+    expect(send).toHaveBeenCalledTimes(1);
+  });
+
+  it("honors preferCircuitHints override on first attempt", async () => {
+    const send = vi.fn().mockResolvedValue({ connected: true, direct: true });
+    const ensurePeerReachable = vi.fn().mockResolvedValue({ connected: true, direct: false });
+    const mesh = {
+      send,
+      closeConnectionsToPeer: vi.fn().mockResolvedValue(0),
+      ensurePeerReachable,
+      getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: false, direct: false }),
+    };
+
+    await deliverCallEnvelopeWithRetry({
+      mesh,
+      transportPeerId: "12D3KooWPreferCircuitCallPeer",
+      envelope: callEnvelope,
+      dialHints: [
+        "/ip4/relay.example/tcp/4001/p2p/12Relay/p2p-circuit/p2p/12D3KooWPreferCircuitCallPeer",
+      ],
+      preferCircuitHints: true,
+      maxAttempts: 1,
+    });
+
     expect(ensurePeerReachable).toHaveBeenCalledWith(
-      "12D3KooWConnectedCallPeer",
+      "12D3KooWPreferCircuitCallPeer",
       ENVOY_MESSAGE_PROTOCOL,
-      expect.objectContaining({ verifyConnection: true }),
+      expect.objectContaining({ preferCircuitHints: true }),
     );
     expect(send).toHaveBeenCalledTimes(1);
   });

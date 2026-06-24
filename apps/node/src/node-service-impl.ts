@@ -374,6 +374,7 @@ import {
   filterUsableOutboundPeerDialHints,
   ENVOY_CHAT_PROTOCOL,
   ENVOY_DATA_PROTOCOL,
+  hasDirectTcpDialHints,
   isPrivateLanTcpDialHint,
   type EnvoyMeshOptions,
 } from "@envoymesh/network";
@@ -3834,6 +3835,7 @@ class NodeServiceImpl implements NodeService {
     envelope: EnvoyEnvelope,
     dialHints: string[],
     listenAddrs?: string[],
+    preferCircuitHints?: boolean,
   ): Promise<ChatDeliverResult> {
     return this._withChatSendLock(transportPeerId, async () => {
       const mesh = this._requireMesh();
@@ -3842,6 +3844,8 @@ class NodeServiceImpl implements NodeService {
         transportPeerId,
         envelope,
         dialHints,
+        peerListenAddrs: listenAddrs,
+        preferCircuitHints,
         rebuildDialHints: () => this._dialHintsForChat(transportPeerId, listenAddrs),
       });
     });
@@ -13172,6 +13176,34 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     }
     const { transportPeerId, recipientEnvelopePeerId, listenAddrs } = transport;
 
+    const mesh = this._requireMesh();
+    const connBeforeWarm = mesh.getPeerConnectionInfo(transportPeerId);
+    if (!connBeforeWarm.connected) {
+      let canUpgradeToDirect = false;
+      if (!connBeforeWarm.direct) {
+        try {
+          const warmHints = await raceWithTimeout(
+            this._dialHintsForChat(transportPeerId, listenAddrs),
+            10_000,
+            "_dialHintsForChat",
+          );
+          canUpgradeToDirect = hasDirectTcpDialHints(warmHints);
+        } catch {
+          canUpgradeToDirect = false;
+        }
+      }
+      try {
+        await this.warmContactConnection(targetOwnerId, {
+          ...(canUpgradeToDirect ? { upgradeRelayToDirect: true } : undefined),
+        });
+      } catch (warmErr) {
+        console.warn(
+          `[sendCallInvite] warm before invite failed for ${targetOwnerId}:`,
+          warmErr instanceof Error ? warmErr.message : warmErr,
+        );
+      }
+    }
+
     const effectiveIceServers = await this._effectiveCallIceServers(iceServers);
 
     const dialHints = await raceWithTimeout(
@@ -13179,6 +13211,9 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
       30_000,
       "_dialHintsForChat",
     );
+
+    const conn = mesh.getPeerConnectionInfo(transportPeerId);
+    const preferCircuitHints = !conn.direct;
 
     const { createCallInvitePayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
     const { signUnsignedEnvelope } = await import("@envoymesh/identity");
@@ -13202,12 +13237,35 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     });
     const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as any;
 
-    const deliverResult = await this._deliverCallEnvelope(
-      transportPeerId,
-      envelope,
-      dialHints,
-      listenAddrs,
-    );
+    let deliverResult: ChatDeliverResult;
+    try {
+      deliverResult = await this._deliverCallEnvelope(
+        transportPeerId,
+        envelope,
+        dialHints,
+        listenAddrs,
+        preferCircuitHints,
+      );
+    } catch (deliverErr) {
+      const detail = deliverErr instanceof Error ? deliverErr.message : String(deliverErr);
+      console.warn(`[sendCallInvite] call.invite delivery failed callId=${callId}:`, detail);
+      this.callManager.reportOutboundDeliveryFailed(
+        callId,
+        "Could not reach contact — check relay connection and try again.",
+      );
+      if (this._taskStore) {
+        await this._taskStore.appendAuditEvent(
+          createAuditEvent({
+            type: "message.rejected",
+            intent: "call.invite",
+            outcome: "deny",
+            summary: `call.invite delivery failed callId=${callId}: ${detail}`,
+            remotePeerId: targetOwnerId,
+          }),
+        ).catch(() => undefined);
+      }
+      return null;
+    }
 
     if (this._taskStore) {
       await this._taskStore.appendAuditEvent(
@@ -13222,6 +13280,8 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
         }),
       ).catch(() => undefined);
     }
+
+    console.log(`[sendCallInvite] call.invite delivered to ${targetOwnerId} callId=${callId}`);
 
     // NOTE (Phase 42I): the VoIP push is NOT dispatched from the caller's
     // home here. The callee's phone registers its VoIP token with ITS OWN
@@ -13259,6 +13319,23 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     }
     const { transportPeerId, recipientEnvelopePeerId, listenAddrs } = transport;
 
+    const mesh = this._requireMesh();
+    let conn = mesh.getPeerConnectionInfo(transportPeerId);
+    if (!conn.connected) {
+      for (const addr of listenAddrs ?? []) {
+        const trimmed = addr.trim();
+        if (!trimmed) continue;
+        try {
+          await mesh.dial(trimmed);
+          conn = mesh.getPeerConnectionInfo(transportPeerId);
+          if (conn.connected) break;
+        } catch {
+          /* try next addr */
+        }
+      }
+    }
+    const preferCircuitHints = !conn.direct;
+
     const dialHints = await raceWithTimeout(
       this._dialHintsForChat(transportPeerId, listenAddrs),
       30_000,
@@ -13290,12 +13367,27 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     });
     const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as any;
 
-    const deliverResult = await this._deliverCallEnvelope(
-      transportPeerId,
-      envelope,
-      dialHints,
-      listenAddrs,
-    );
+    let deliverResult: ChatDeliverResult;
+    try {
+      if (conn.connected) {
+        await mesh.send(transportPeerId, envelope, { dialHints, preferCircuitHints });
+        deliverResult = { delivered: true, deliveredAt: new Date().toISOString() };
+      } else {
+        deliverResult = await this._deliverCallEnvelope(
+          transportPeerId,
+          envelope,
+          dialHints,
+          listenAddrs,
+          preferCircuitHints,
+        );
+      }
+    } catch (deliverErr) {
+      console.warn(
+        `[sendCallReinvite] call.reinvite delivery failed callId=${callId}:`,
+        deliverErr instanceof Error ? deliverErr.message : deliverErr,
+      );
+      return false;
+    }
 
     if (this._taskStore) {
       await this._taskStore.appendAuditEvent(
@@ -13569,6 +13661,22 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     if (!profile) return;
     try {
       const transport = await this._resolvePeerTransportForOwner(peerOwnerId);
+      const mesh = this._requireMesh();
+      let conn = mesh.getPeerConnectionInfo(transport.transportPeerId);
+      if (!conn.connected) {
+        for (const addr of transport.listenAddrs ?? []) {
+          const trimmed = addr.trim();
+          if (!trimmed) continue;
+          try {
+            await mesh.dial(trimmed);
+            conn = mesh.getPeerConnectionInfo(transport.transportPeerId);
+            if (conn.connected) break;
+          } catch {
+            /* try next addr */
+          }
+        }
+      }
+      const preferCircuitHints = !conn.direct;
       const dialHints = await raceWithTimeout(
         this._dialHintsForChat(transport.transportPeerId, transport.listenAddrs),
         30_000,
@@ -13578,11 +13686,19 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
       // covers canonical JSON of the unsigned envelope.
       unsigned.recipientPeerId = transport.recipientEnvelopePeerId;
       const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem);
+      if (conn.connected) {
+        await mesh.send(transport.transportPeerId, envelope, {
+          dialHints,
+          preferCircuitHints,
+        });
+        return;
+      }
       await this._deliverCallEnvelope(
         transport.transportPeerId,
         envelope,
         dialHints,
         transport.listenAddrs,
+        preferCircuitHints,
       );
     } catch (err) {
       console.warn(

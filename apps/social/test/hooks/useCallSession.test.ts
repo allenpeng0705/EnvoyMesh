@@ -33,6 +33,7 @@ function createMockNodeService(): NodeService & {
     setCallMuted: vi.fn(async () => true),
     sendIceCandidate: vi.fn(async () => true),
     getNodeConfig: vi.fn(async () => ({ iceServers: [] })),
+    warmContactConnection: vi.fn(async () => ({ connected: true, direct: true })),
   } as unknown as NodeService & { emitCallEvent: (event: CallEvent) => void };
 
   return service;
@@ -40,6 +41,14 @@ function createMockNodeService(): NodeService & {
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: () => mockNodeService,
+}));
+
+vi.mock("../../src/hooks/useToast.js", () => ({
+  useToast: () => ({ showToast: vi.fn() }),
+}));
+
+vi.mock("../../src/context/I18nContext.js", () => ({
+  useT: () => (key: string) => key,
 }));
 
 let mockNodeService = createMockNodeService();

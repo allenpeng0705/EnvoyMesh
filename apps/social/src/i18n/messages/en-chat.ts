@@ -401,4 +401,11 @@ export const inboxMessages = {
   "call:unmute": "Unmute",
   "call:end": "End call",
   "call:calling": "Calling…",
+  "call:callingWithName": "Calling {name}…",
+  "call:failed": "Call failed",
+  "call:deliveryFailed": "Could not reach contact — check P2P/relay connection",
+  "call:noAnswer": "No answer",
+  "call:micDenied": "Microphone access denied",
+  "call:offlineHint": "Contact may be offline — call will still attempt to connect",
+  "call:unknownPeer": "Contact",
 } as const;

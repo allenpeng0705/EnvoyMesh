@@ -115,6 +115,7 @@ describe("NodeServiceImpl.sendCallInvite (Phase 42A)", () => {
     };
     // Stub _dialHintsForChat
     (node as any)._dialHintsForChat = async () => ["/ip4/192.168.1.50/tcp/4001"];
+    (node as any).warmContactConnection = vi.fn(async () => ({ connected: true, direct: true }));
   });
 
   afterEach(async () => {
@@ -271,5 +272,20 @@ describe("NodeServiceImpl.sendCallInvite (Phase 42A)", () => {
     // Also confirm we dialed the transport peer ID, not the owner ID.
     expect(captured.transportPeerId).toBe(FAKE_TRANSPORT_PEER_ID);
     expect(captured.transportPeerId).not.toBe(FAKE_OWNER_ID);
+  });
+
+  it("13. returns null and emits call:error when delivery fails", async () => {
+    const events: import("@envoymesh/api").CallEvent[] = [];
+    node.callManager.onCallEvent((e) => events.push(e));
+    (node as any)._mesh.send = vi.fn(async () => {
+      throw new Error("No reachable path");
+    });
+    (node as any)._mesh.getPeerConnectionInfo = vi.fn(() => ({ connected: false, direct: false }));
+    (node as any)._mesh.ensurePeerReachable = vi.fn(async () => ({ connected: false, direct: false }));
+
+    const callId = await node.sendCallInvite(FAKE_OWNER_ID, "v=0\r\n...");
+    expect(callId).toBeNull();
+    expect(events.some((e) => e.type === "call:error")).toBe(true);
+    expect(events.some((e) => e.type === "call:ended")).toBe(true);
   });
 });

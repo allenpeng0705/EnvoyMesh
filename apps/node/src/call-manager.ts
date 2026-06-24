@@ -135,6 +135,17 @@ export class CallManager {
     return callId;
   }
 
+  /** Outbound invite could not be delivered — tear down ringing session and notify UI. */
+  reportOutboundDeliveryFailed(callId: string, error: string): void {
+    const session = this._sessions.get(callId);
+    if (!session || session.direction !== "outbound") return;
+    if (session.ringTimer) clearTimeout(session.ringTimer);
+    session.ringTimer = undefined;
+    session.status = "ended";
+    this._emit({ type: "call:error", callId, error });
+    this._emit({ type: "call:ended", callId, reason: "error" });
+  }
+
   // ------------------------------------------------------------------
   // Inbound — callee receives a call.invite
   // ------------------------------------------------------------------

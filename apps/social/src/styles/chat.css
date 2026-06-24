@@ -2989,3 +2989,38 @@
   background: var(--color-error, #ef4444);
   color: #fff;
 }
+
+/* Global call overlays (app root — visible on any view) */
+.global-calling-banner {
+  position: fixed;
+  top: calc(var(--header-height, 56px) + env(safe-area-inset-top, 0px));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9000;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+  padding: 10px var(--space-4, 16px);
+  background: var(--color-surface-container, #f0f4ff);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: var(--radius-lg, 12px);
+  box-shadow: 0 4px 24px rgb(15 23 42 / 12%);
+  font-size: var(--text-sm, 13px);
+  max-width: min(420px, calc(100vw - 24px));
+}
+
+.global-active-call-dock {
+  position: fixed;
+  bottom: calc(env(safe-area-inset-bottom, 0px) + 16px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9000;
+  width: min(420px, calc(100vw - 24px));
+  box-shadow: 0 8px 32px rgb(15 23 42 / 18%);
+  border-radius: var(--radius-lg, 12px);
+  overflow: hidden;
+}
+
+.incoming-call-overlay {
+  z-index: 9100;
+}

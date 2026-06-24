@@ -56,8 +56,9 @@ async function setupCallHomes(): Promise<{ caller: Phase13TestNode; callee: Phas
   wireCallInboundHandler(caller);
   wireCallInboundHandler(callee);
 
-  await caller.mesh.probePeer(callee.mesh.multiaddrs[0]!);
-  await callee.mesh.probePeer(caller.mesh.multiaddrs[0]!);
+  // probePeer closes after dial — keep an open libp2p path for call.invite delivery.
+  await caller.mesh.dial(callee.mesh.multiaddrs[0]!);
+  await callee.mesh.dial(caller.mesh.multiaddrs[0]!);
 
   return { caller, callee };
 }
@@ -108,6 +109,9 @@ describe.sequential("E2E two-home call signaling (libp2p)", () => {
     expect(incoming.callId).toBe(callId);
     expect(incoming.peerOwnerId).toBe(caller.profile.owner.ownerId);
     expect(incoming.iceServers ?? []).toEqual([]);
+
+    // Re-open callee → caller path (invite delivery retries may have torn down dial hints).
+    await callee.mesh.dial(caller.mesh.multiaddrs[0]!);
 
     // --- call.accept → call:answered ---
     const answeredPromise = waitForCallEvent(

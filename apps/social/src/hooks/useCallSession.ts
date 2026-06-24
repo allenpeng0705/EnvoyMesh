@@ -11,6 +11,8 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNodeService } from "./useNodeService.js";
+import { useToast } from "./useToast.js";
+import { useT } from "../context/I18nContext.js";
 import {
   createWebRtcCallTransport,
   type WebRtcCallTransport,
@@ -19,6 +21,8 @@ import {
 import type { CallSession, CallEvent } from "@envoymesh/api";
 
 type IceServerConfig = { urls: string; username?: string; credential?: string };
+
+const CALLER_RINGBACK_TIMEOUT_MS = 30_000;
 
 export interface UseCallSessionResult {
   activeCall: CallSession | null;
@@ -37,7 +41,8 @@ export interface UseCallSessionResult {
   connectionState: string;
   dismissIncoming: () => void;
   callingState: string | null;
-  startCall: (targetOwnerId: string) => Promise<void>;
+  activePeerDisplayName: string | null;
+  startCall: (targetOwnerId: string, displayName?: string) => Promise<void>;
   cancelCall: () => void;
   remoteStream: MediaStream | null;
 }
@@ -48,6 +53,8 @@ function isPath2Invite(iceServers?: IceServerConfig[]): boolean {
 
 export function useCallSession(): UseCallSessionResult {
   const nodeService = useNodeService();
+  const { showToast } = useToast();
+  const t = useT();
   const [activeCall, setActiveCall] = useState<CallSession | null>(null);
   const [incomingCall, setIncomingCall] = useState<UseCallSessionResult["incomingCall"]>(null);
   const [isMuted, setIsMuted] = useState(false);
@@ -55,6 +62,7 @@ export function useCallSession(): UseCallSessionResult {
   const [pendingSdpOffer, setPendingSdpOffer] = useState<string | undefined>(undefined);
   const [callingState, setCallingState] = useState<string | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [activePeerDisplayName, setActivePeerDisplayName] = useState<string | null>(null);
 
   const transportRef = useRef<WebRtcCallTransport | null>(null);
   const activeCallIdRef = useRef<string | null>(null);
@@ -228,6 +236,7 @@ export function useCallSession(): UseCallSessionResult {
           setIncomingCall(null);
           setPendingSdpOffer(undefined);
           setCallingState(null);
+          setActivePeerDisplayName(null);
           activeCallIdRef.current = null;
           activePeerRef.current = null;
           iceCallIdRef.current = "";
@@ -241,9 +250,12 @@ export function useCallSession(): UseCallSessionResult {
           setActiveCall((prev) => (prev ? { ...prev, muted: event.muted } : prev));
           break;
         case "call:error":
+          showToast(event.error || t("call:failed"), "error");
           closeTransport();
           setActiveCall(null);
           setIncomingCall(null);
+          setCallingState(null);
+          setActivePeerDisplayName(null);
           activeCallIdRef.current = null;
           activePeerRef.current = null;
           iceCallIdRef.current = "";
@@ -254,7 +266,18 @@ export function useCallSession(): UseCallSessionResult {
     });
 
     return () => unsub();
-  }, [nodeService, closeTransport, renegotiateCalleePath2]);
+  }, [nodeService, closeTransport, renegotiateCalleePath2, showToast, t]);
+
+  const cancelCallRef = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    if (!callingState || activeCall) return;
+    const timer = setTimeout(() => {
+      showToast(t("call:noAnswer"), "info");
+      cancelCallRef.current();
+    }, CALLER_RINGBACK_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [callingState, activeCall, showToast, t]);
 
   const acceptCall = useCallback(async () => {
     if (!incomingCall || !nodeService) return;
@@ -269,6 +292,7 @@ export function useCallSession(): UseCallSessionResult {
       ownerId: incomingCall.peerOwnerId,
       displayName: incomingCall.peerDisplayName,
     };
+    setActivePeerDisplayName(incomingCall.peerDisplayName);
     const peerOwnerId = incomingCall.peerOwnerId;
     setIncomingCall(null);
     setConnectionState("connecting");
@@ -352,10 +376,13 @@ export function useCallSession(): UseCallSessionResult {
   }, []);
 
   const startCall = useCallback(
-    async (targetOwnerId: string) => {
+    async (targetOwnerId: string, displayName?: string) => {
       if (!nodeService) return;
+      const peerLabel = displayName?.trim() || targetOwnerId;
 
       path2FallbackSentRef.current = false;
+
+      void nodeService.warmContactConnection(targetOwnerId).catch(() => undefined);
 
       let sdpOffer: string;
       try {
@@ -370,13 +397,28 @@ export function useCallSession(): UseCallSessionResult {
         transportRef.current = tempTransport;
       } catch (err) {
         console.warn("[useCallSession] failed to build WebRTC offer:", err);
+        const msg = err instanceof Error ? err.message : String(err);
+        showToast(
+          msg.includes("Microphone") ? t("call:micDenied") : t("call:failed"),
+          "error",
+        );
         closeTransport();
         return;
       }
 
-      // Explicit `[]` signals Path 1 — home must not inject default STUN.
-      const callId = await nodeService.sendCallInvite(targetOwnerId, sdpOffer, []);
+      let callId: string | null;
+      try {
+        // Explicit `[]` signals Path 1 — home must not inject default STUN.
+        callId = await nodeService.sendCallInvite(targetOwnerId, sdpOffer, []);
+      } catch (err) {
+        console.warn("[useCallSession] sendCallInvite failed:", err);
+        showToast(t("call:deliveryFailed"), "error");
+        closeTransport();
+        iceCallIdRef.current = "";
+        return;
+      }
       if (!callId) {
+        showToast(t("call:deliveryFailed"), "error");
         closeTransport();
         iceCallIdRef.current = "";
         return;
@@ -384,11 +426,12 @@ export function useCallSession(): UseCallSessionResult {
 
       iceCallIdRef.current = callId;
       activeCallIdRef.current = callId;
-      activePeerRef.current = { ownerId: targetOwnerId, displayName: targetOwnerId };
+      activePeerRef.current = { ownerId: targetOwnerId, displayName: peerLabel };
+      setActivePeerDisplayName(peerLabel);
       setCallingState(callId);
       setConnectionState("connecting");
     },
-    [nodeService, buildTransport, closeTransport, onPath1TimeoutHandler],
+    [nodeService, buildTransport, closeTransport, onPath1TimeoutHandler, showToast, t],
   );
 
   const cancelCall = useCallback(() => {
@@ -396,10 +439,13 @@ export function useCallSession(): UseCallSessionResult {
     void nodeService.endCall(callingState);
     closeTransport();
     setCallingState(null);
+    setActivePeerDisplayName(null);
     activeCallIdRef.current = null;
     path2FallbackSentRef.current = false;
     setConnectionState("disconnected");
   }, [nodeService, callingState, closeTransport]);
+
+  cancelCallRef.current = cancelCall;
 
   return {
     activeCall,
@@ -412,6 +458,7 @@ export function useCallSession(): UseCallSessionResult {
     connectionState,
     dismissIncoming,
     callingState,
+    activePeerDisplayName,
     startCall,
     cancelCall,
     remoteStream,

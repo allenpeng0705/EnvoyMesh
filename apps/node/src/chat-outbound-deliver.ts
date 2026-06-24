@@ -380,15 +380,15 @@ export async function deliverCallEnvelopeWithRetry(input: {
   peerListenAddrs?: string[];
   rebuildDialHints?: () => Promise<string[]>;
   maxAttempts?: number;
+  /** When true, try relay circuit paths before stale direct WAN hints. */
+  preferCircuitHints?: boolean;
 }): Promise<ChatDeliverResult> {
   const maxAttempts = input.maxAttempts ?? CHAT_SEND_MAX_ATTEMPTS;
   let lastErr: unknown;
   let hints = input.dialHints;
-  const preferCircuits = shouldPreferCircuitDialHints(
-    input.peerListenAddrs,
-    hints,
-    input.transportPeerId,
-  );
+  const preferCircuits =
+    input.preferCircuitHints === true ||
+    shouldPreferCircuitDialHints(input.peerListenAddrs, hints, input.transportPeerId);
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (attempt > 0) {
@@ -406,20 +406,44 @@ export async function deliverCallEnvelopeWithRetry(input: {
       } catch {
         /* ignore */
       }
+    } else {
+      const conn = input.mesh.getPeerConnectionInfo(input.transportPeerId);
+      const preferCircuitsOnPrepare = preferCircuits;
+      const needsRelayUpgrade =
+        conn.connected && !conn.direct && !preferCircuitsOnPrepare && hasDirectTcpDialHints(hints);
+      const skipPrepare =
+        !needsRelayUpgrade &&
+        (isOutboundPeerRecentlyVerified(input.transportPeerId) || conn.connected);
+      if (!skipPrepare) {
+        const ready = await prepareOutboundPeerConnection({
+          mesh: input.mesh,
+          transportPeerId: input.transportPeerId,
+          protocol: ENVOY_MESSAGE_PROTOCOL,
+          dialHints: hints,
+          preferCircuitHints: preferCircuitsOnPrepare,
+          forceFreshDial: false,
+        });
+        if (!ready && !input.mesh.getPeerConnectionInfo(input.transportPeerId).connected) {
+          lastErr = new Error(`No reachable path to ${input.transportPeerId.slice(0, 12)}… before call send`);
+          continue;
+        }
+      }
     }
 
     try {
-      const ready = await prepareOutboundPeerConnection({
-        mesh: input.mesh,
-        transportPeerId: input.transportPeerId,
-        protocol: ENVOY_MESSAGE_PROTOCOL,
-        dialHints: hints,
-        preferCircuitHints: preferCircuits || attempt > 0,
-        forceFreshDial: attempt > 0,
-      });
-      if (!ready) {
-        lastErr = new Error(`No reachable path to ${input.transportPeerId.slice(0, 12)}… before call send`);
-        continue;
+      if (attempt > 0) {
+        const ready = await prepareOutboundPeerConnection({
+          mesh: input.mesh,
+          transportPeerId: input.transportPeerId,
+          protocol: ENVOY_MESSAGE_PROTOCOL,
+          dialHints: hints,
+          preferCircuitHints: preferCircuits || attempt > 0,
+          forceFreshDial: true,
+        });
+        if (!ready) {
+          lastErr = new Error(`No reachable path to ${input.transportPeerId.slice(0, 12)}… before call send`);
+          continue;
+        }
       }
 
       await input.mesh.send(input.transportPeerId, input.envelope, {
