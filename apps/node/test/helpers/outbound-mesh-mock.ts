@@ -22,6 +22,7 @@ export function createOutboundMeshMock(
     closeConnectionsToPeer: vi.fn().mockResolvedValue(0),
     ensurePeerReachable: vi.fn().mockResolvedValue({ connected: true, direct: true }),
     getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: false, direct: false }),
+    getConnectedPeerIds: vi.fn().mockReturnValue([]),
     ...overrides,
   };
 }

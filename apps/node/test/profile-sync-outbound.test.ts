@@ -25,7 +25,11 @@ describe("sendProfileRequest", () => {
       payload: { profile: { ownerId: owner.ownerId } },
     } as EnvoyEnvelope;
     const sendChatExpectEnvelopeReply = vi.fn().mockResolvedValue(responseEnvelope);
-    const mesh = outboundMeshMock({ sendChatExpectEnvelopeReply });
+    const mesh = outboundMeshMock({
+      sendChatExpectEnvelopeReply,
+      getConnectedPeerIds: vi.fn().mockReturnValue(["12D3KooWTestPeerIdForProfileSync"]),
+      getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: true, direct: true }),
+    });
 
     const reply = await sendProfileRequest({
       mesh,
@@ -62,17 +66,17 @@ describe("sendProfileSyncToBonds", () => {
     );
   }
 
-  it("warms reachability, retries on NO_RESERVATION, and continues after failure", async () => {
+  it("sends profile.sync only when peer is connected", async () => {
     const owner = generateOwnerIdentity();
     const device = generateDeviceIdentity();
     const profile = { owner, device, deviceCertificate: undefined as never };
     const humanProfile = signedHumanProfile(owner);
-    const sendChat = vi
-      .fn()
-      .mockRejectedValueOnce(new Error("failed to connect via relay with status NO_RESERVATION"))
-      .mockResolvedValueOnce(undefined);
+    const peerId = "12D3KooWProfileSyncReachability";
+    const sendChat = vi.fn().mockResolvedValue(undefined);
     const mesh = outboundMeshMock({
       sendChat,
+      getConnectedPeerIds: vi.fn().mockReturnValue([peerId]),
+      getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: true, direct: true }),
       mergePeerStoreDialHints: vi.fn().mockResolvedValue(undefined),
     });
 
@@ -85,7 +89,7 @@ describe("sendProfileSyncToBonds", () => {
       resolveLibp2pPeer: async (ownerId) => {
         if (ownerId === owner.ownerId) {
           return {
-            peerId: "12D3KooWProfileSyncReachability",
+            peerId,
             listenAddrs: ["/ip4/192.168.1.50/tcp/4011/p2p/12D3KooWProfileSyncReachability"],
           };
         }
@@ -94,11 +98,35 @@ describe("sendProfileSyncToBonds", () => {
       dialHintsFor: async () => ["/ip4/192.168.1.50/tcp/4011/p2p/12D3KooWProfileSyncReachability"],
     });
 
-    expect(mesh.ensurePeerReachable).toHaveBeenCalled();
-    expect(sendChat).toHaveBeenCalledTimes(2);
+    expect(mesh.ensurePeerReachable).not.toHaveBeenCalled();
+    expect(sendChat).toHaveBeenCalledTimes(1);
     expect(mesh.send).not.toHaveBeenCalled();
-    expect(mesh.closeConnectionsToPeer).toHaveBeenCalled();
     expect(mesh.mergePeerStoreDialHints).toHaveBeenCalled();
+  });
+
+  it("skips profile.sync when peer is not connected", async () => {
+    const owner = generateOwnerIdentity();
+    const device = generateDeviceIdentity();
+    const profile = { owner, device, deviceCertificate: undefined as never };
+    const humanProfile = signedHumanProfile(owner);
+    const sendChat = vi.fn().mockResolvedValue(undefined);
+    const mesh = outboundMeshMock({ sendChat });
+
+    await sendProfileSyncToBonds({
+      mesh,
+      profile,
+      humanProfile,
+      vaultDir: "/tmp/vault",
+      bondOwnerIds: [owner.ownerId],
+      resolveLibp2pPeer: async () => ({
+        peerId: "12D3KooWProfileSyncReachability",
+        listenAddrs: ["/ip4/192.168.1.50/tcp/4011/p2p/12D3KooWProfileSyncReachability"],
+      }),
+      dialHintsFor: async () => ["/ip4/192.168.1.50/tcp/4011/p2p/12D3KooWProfileSyncReachability"],
+    });
+
+    expect(sendChat).not.toHaveBeenCalled();
+    expect(mesh.ensurePeerReachable).not.toHaveBeenCalled();
   });
 
   it("isolates dial hint failures per bond", async () => {
@@ -107,7 +135,11 @@ describe("sendProfileSyncToBonds", () => {
     const profile = { owner, device, deviceCertificate: undefined as never };
     const humanProfile = signedHumanProfile(owner);
     const sendChat = vi.fn(async () => undefined);
-    const mesh = outboundMeshMock({ sendChat });
+    const mesh = outboundMeshMock({
+      sendChat,
+      getConnectedPeerIds: vi.fn().mockReturnValue(["12D3KooWProfileSyncGoodBond"]),
+      getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: true, direct: true }),
+    });
 
     await sendProfileSyncToBonds({
       mesh,

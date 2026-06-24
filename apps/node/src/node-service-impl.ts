@@ -843,6 +843,9 @@ class NodeServiceImpl implements NodeService {
   private _bondWarmTimer?: ReturnType<typeof setInterval>;
   /** Skip periodic bond warm when libp2p already has this many open connections. */
   private static readonly BOND_WARM_MAX_CONNECTIONS = 64;
+  /** Defer startup profile refresh until mesh paths settle (avoids stale LAN dial storms). */
+  private static readonly PROFILE_REFRESH_STARTUP_DELAY_MS = 90_000;
+  private _profileRefreshStartupTimer?: ReturnType<typeof setTimeout>;
   /** In-memory owner → libp2p from recent inbound streams (until persisted in peer directory). */
   private readonly _lastLibp2pTransportByOwner = new Map<
     string,
@@ -1567,10 +1570,20 @@ class NodeServiceImpl implements NodeService {
     this.emit("node:ready", { timestamp: Date.now() });
     void this.resyncBondedContactReachabilityTags();
     void this._scrubBondedContactDialState();
-    void this.refreshBondPeerProfiles().catch((err) => {
-      console.warn("[profile] refreshBondPeerProfiles after bindExternalMesh failed:", err);
-    });
+    this._scheduleDeferredProfileRefresh("bindExternalMesh");
     this._startBondWarmInterval();
+  }
+
+  private _scheduleDeferredProfileRefresh(source: string): void {
+    if (this._profileRefreshStartupTimer) {
+      clearTimeout(this._profileRefreshStartupTimer);
+    }
+    this._profileRefreshStartupTimer = setTimeout(() => {
+      this._profileRefreshStartupTimer = undefined;
+      void this.refreshBondPeerProfiles().catch((err) => {
+        console.warn(`[profile] refreshBondPeerProfiles after ${source} failed:`, err);
+      });
+    }, NodeServiceImpl.PROFILE_REFRESH_STARTUP_DELAY_MS);
   }
 
   /** True when {@link startNode} created an internal mesh with {@link _wireMeshEvents} inbound handlers. */
@@ -1998,20 +2011,28 @@ class NodeServiceImpl implements NodeService {
   }
 
   async refreshBondPeerProfiles(): Promise<{ requested: number; failed: number }> {
-    const hp = await this._humanProfileStore.loadHumanProfile();
-    if (hp) {
-      await this._broadcastProfileSyncToBonds(hp);
+    const mesh = this._reachableMesh();
+    if (mesh && mesh.getConnectionStats().totalConnections >= NodeServiceImpl.BOND_WARM_MAX_CONNECTIONS) {
+      console.warn(
+        `[profile] refreshBondPeerProfiles skipped: ${mesh.getConnectionStats().totalConnections} open libp2p connections`,
+      );
+      return { requested: 0, failed: 0 };
     }
     const bonds = await this.getBonds();
     let failed = 0;
+    let requested = 0;
     for (const bond of bonds) {
+      if (bond.level !== "direct" && bond.level !== "referred") {
+        continue;
+      }
+      requested += 1;
       const result = await this.requestPeerProfile(bond.peerOwnerId);
       if (!result.ok) failed += 1;
     }
     void this.refreshCapabilityIndex().catch((err) => {
       console.warn("[chain] refreshCapabilityIndex after bond refresh failed:", err);
     });
-    return { requested: bonds.length, failed };
+    return { requested, failed };
   }
 
   async requestPeerProfile(ownerId: string): Promise<{ ok: boolean; reason?: string }> {
@@ -2050,11 +2071,19 @@ class NodeServiceImpl implements NodeService {
       return { ok: false, reason: "profile cache not initialized" };
     }
     try {
-      const resolved = await this._resolveLibp2pPeerForBondOwner(ownerId);
+      const records = await this._peerDirectoryStore.listPeerRecords();
+      const connectedPeerIds = mesh.getConnectedPeerIds();
+      const liveConnected = pickLibp2pFromConnectedPeers(records, ownerId, connectedPeerIds);
+      const resolved = liveConnected
+        ? { transportPeerId: liveConnected.peerId, listenAddrs: liveConnected.listenAddrs }
+        : await this._resolveLibp2pPeerForBondOwner(ownerId);
       if (!resolved) {
         return { ok: false, reason: "peer not in directory (no libp2p route)" };
       }
       const { transportPeerId, listenAddrs } = resolved;
+      if (!liveConnected && !mesh.getPeerConnectionInfo(transportPeerId).connected) {
+        return { ok: false, reason: "peer not connected" };
+      }
       let envelopeRecipientPeerId: string | undefined;
       try {
         envelopeRecipientPeerId = (await this._resolvePeerTransportForOwner(ownerId)).recipientEnvelopePeerId;
@@ -9056,9 +9085,7 @@ class NodeServiceImpl implements NodeService {
       this._nodeStatus = "running";
       this.emit("node:status", { status: this._nodeStatus, peerId: this._mesh.peerId });
       this.emit("node:online", { peerId: this._mesh.peerId, multiaddrs: this._mesh.multiaddrs.map(a => a.toString()) });
-      void this.refreshBondPeerProfiles().catch((err) => {
-        console.warn("[profile] refreshBondPeerProfiles after node:online failed:", err);
-      });
+      this._scheduleDeferredProfileRefresh("node:online");
       void this.refreshCapabilityIndex().catch((err) => {
         console.warn("[chain] refreshCapabilityIndex after node:online failed:", err);
       });
@@ -9604,6 +9631,10 @@ class NodeServiceImpl implements NodeService {
       if (this._bondWarmTimer) {
         clearInterval(this._bondWarmTimer);
         this._bondWarmTimer = undefined;
+      }
+      if (this._profileRefreshStartupTimer) {
+        clearTimeout(this._profileRefreshStartupTimer);
+        this._profileRefreshStartupTimer = undefined;
       }
       if (this._chatRoomSyncFlushTimer) {
         clearInterval(this._chatRoomSyncFlushTimer);
@@ -11325,10 +11356,11 @@ class NodeServiceImpl implements NodeService {
     if (this._bondWarmTimer) {
       clearInterval(this._bondWarmTimer);
     }
-    void this._warmAllBondedContacts();
-    this._bondWarmTimer = setInterval(() => {
+    const runWarm = (): void => {
       void this._warmAllBondedContacts();
-    }, 60_000);
+    };
+    setTimeout(runWarm, 120_000);
+    this._bondWarmTimer = setInterval(runWarm, 60_000);
   }
 
   private async _warmAllBondedContacts(): Promise<void> {
@@ -13305,23 +13337,30 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     const { transportPeerId, recipientEnvelopePeerId, listenAddrs } = transport;
 
     const mesh = this._requireMesh();
-    const connBeforeWarm = mesh.getPeerConnectionInfo(transportPeerId);
+    const records = await this._peerDirectoryStore.listPeerRecords();
+    const liveConnected = pickLibp2pFromConnectedPeers(
+      records,
+      targetOwnerId,
+      mesh.getConnectedPeerIds(),
+    );
+    const targetPeerId = liveConnected?.peerId ?? transportPeerId;
+    const connBeforeWarm = mesh.getPeerConnectionInfo(targetPeerId);
     webrtcCallTrace("sendCallInvite:transport-ready", {
       callId: shortCallId(callId),
       target: shortCallId(targetOwnerId),
-      transport: shortCallId(transportPeerId),
+      transport: shortCallId(targetPeerId),
       connected: connBeforeWarm.connected,
       direct: connBeforeWarm.direct,
     });
     console.log(
-      `[sendCallInvite] target=${targetOwnerId.slice(0, 24)} transport=${transportPeerId.slice(0, 12)} connected=${connBeforeWarm.connected} direct=${connBeforeWarm.direct}`,
+      `[sendCallInvite] target=${targetOwnerId.slice(0, 24)} transport=${targetPeerId.slice(0, 12)} connected=${connBeforeWarm.connected} direct=${connBeforeWarm.direct}`,
     );
-    if (!connBeforeWarm.connected) {
+    if (!connBeforeWarm.connected && !liveConnected) {
       let canUpgradeToDirect = false;
       if (!connBeforeWarm.direct) {
         try {
           const warmHints = await raceWithTimeout(
-            this._dialHintsForChat(transportPeerId, listenAddrs),
+            this._dialHintsForChat(targetPeerId, listenAddrs),
             10_000,
             "_dialHintsForChat",
           );
@@ -13345,12 +13384,12 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     const effectiveIceServers = await this._effectiveCallIceServers(iceServers);
 
     let dialHints: string[];
-    if (connBeforeWarm.connected) {
+    if (connBeforeWarm.connected || liveConnected) {
       dialHints = [];
     } else {
       try {
         dialHints = await raceWithTimeout(
-          this._dialHintsForChat(transportPeerId, listenAddrs),
+          this._dialHintsForChat(targetPeerId, listenAddrs),
           30_000,
           "_dialHintsForChat",
         );
@@ -13363,7 +13402,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
       }
     }
 
-    const conn = mesh.getPeerConnectionInfo(transportPeerId);
+    const conn = mesh.getPeerConnectionInfo(targetPeerId);
     const preferCircuitHints = conn.connected ? !conn.direct : !conn.direct;
 
     const { createCallInvitePayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
@@ -13388,13 +13427,6 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     });
     const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as any;
 
-    const records = await this._peerDirectoryStore.listPeerRecords();
-    const liveConnected = pickLibp2pFromConnectedPeers(
-      records,
-      targetOwnerId,
-      mesh.getConnectedPeerIds(),
-    );
-    const targetPeerId = liveConnected?.peerId ?? transportPeerId;
     const liveConn = mesh.getPeerConnectionInfo(targetPeerId);
 
     let deliverResult: ChatDeliverResult;
