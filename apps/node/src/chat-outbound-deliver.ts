@@ -413,7 +413,8 @@ export async function deliverCallEnvelopeWithRetry(input: {
         conn.connected && !conn.direct && !preferCircuitsOnPrepare && hasDirectTcpDialHints(hints);
       const skipPrepare =
         !needsRelayUpgrade &&
-        (isOutboundPeerRecentlyVerified(input.transportPeerId) || conn.connected);
+        (isOutboundPeerRecentlyVerified(input.transportPeerId) ||
+          (conn.connected && conn.direct));
       if (!skipPrepare) {
         const ready = await prepareOutboundPeerConnection({
           mesh: input.mesh,
@@ -446,8 +447,9 @@ export async function deliverCallEnvelopeWithRetry(input: {
         }
       }
 
+      const sendConn = input.mesh.getPeerConnectionInfo(input.transportPeerId);
       await input.mesh.send(input.transportPeerId, input.envelope, {
-        dialHints: hints,
+        dialHints: sendConn.connected && sendConn.direct && attempt === 0 ? [] : hints,
         preferCircuitHints: preferCircuits || attempt > 0,
         forceFreshDial: attempt > 0,
       });

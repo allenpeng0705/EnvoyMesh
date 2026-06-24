@@ -3839,13 +3839,44 @@ class NodeServiceImpl implements NodeService {
   ): Promise<ChatDeliverResult> {
     return this._withChatSendLock(transportPeerId, async () => {
       const mesh = this._requireMesh();
+      let conn = mesh.getPeerConnectionInfo(transportPeerId);
+      if (!conn.connected) {
+        const dialTargets = [...new Set([...(listenAddrs ?? []), ...dialHints])];
+        for (const addr of dialTargets) {
+          const trimmed = addr.trim();
+          if (!trimmed) continue;
+          try {
+            await mesh.dial(trimmed);
+            conn = mesh.getPeerConnectionInfo(transportPeerId);
+            if (conn.connected) break;
+          } catch {
+            /* try next addr */
+          }
+        }
+      }
+      const preferCircuits = preferCircuitHints ?? !conn.direct;
+      if (conn.connected) {
+        try {
+          await mesh.send(transportPeerId, envelope, {
+            // Reuse the open libp2p path — stale WAN hints break Online-Direct invites.
+            dialHints: conn.direct ? [] : dialHints,
+            preferCircuitHints: preferCircuits,
+          });
+          return { delivered: true, deliveredAt: new Date().toISOString() };
+        } catch (fastErr) {
+          console.warn(
+            `[call] connected send failed for ${transportPeerId.slice(0, 12)}…, retrying:`,
+            fastErr instanceof Error ? fastErr.message : fastErr,
+          );
+        }
+      }
       return deliverCallEnvelopeWithRetry({
         mesh,
         transportPeerId,
         envelope,
         dialHints,
         peerListenAddrs: listenAddrs,
-        preferCircuitHints,
+        preferCircuitHints: preferCircuits,
         rebuildDialHints: () => this._dialHintsForChat(transportPeerId, listenAddrs),
       });
     });
@@ -13206,11 +13237,20 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
 
     const effectiveIceServers = await this._effectiveCallIceServers(iceServers);
 
-    const dialHints = await raceWithTimeout(
-      this._dialHintsForChat(transportPeerId, listenAddrs),
-      30_000,
-      "_dialHintsForChat",
-    );
+    let dialHints: string[];
+    try {
+      dialHints = await raceWithTimeout(
+        this._dialHintsForChat(transportPeerId, listenAddrs),
+        30_000,
+        "_dialHintsForChat",
+      );
+    } catch (hintErr) {
+      console.warn(
+        `[sendCallInvite] dial hints failed for ${targetOwnerId}, using listen addrs:`,
+        hintErr instanceof Error ? hintErr.message : hintErr,
+      );
+      dialHints = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs ?? []);
+    }
 
     const conn = mesh.getPeerConnectionInfo(transportPeerId);
     const preferCircuitHints = !conn.direct;
@@ -13677,18 +13717,31 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
         }
       }
       const preferCircuitHints = !conn.direct;
-      const dialHints = await raceWithTimeout(
-        this._dialHintsForChat(transport.transportPeerId, transport.listenAddrs),
-        30_000,
-        "_dialHintsForChat",
-      );
+      let dialHints: string[];
+      try {
+        dialHints = await raceWithTimeout(
+          this._dialHintsForChat(transport.transportPeerId, transport.listenAddrs),
+          30_000,
+          "_dialHintsForChat",
+        );
+      } catch (hintErr) {
+        console.warn(
+          `[call-response] dial hints failed for ${peerOwnerId}, using listen addrs:`,
+          hintErr instanceof Error ? hintErr.message : hintErr,
+        );
+        dialHints = mergeDialablePeerListenAddrs(
+          transport.transportPeerId,
+          transport.listenAddrs ?? [],
+        );
+      }
       // Stamp the recipient device peer id BEFORE signing — the signature
       // covers canonical JSON of the unsigned envelope.
       unsigned.recipientPeerId = transport.recipientEnvelopePeerId;
       const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem);
+      conn = mesh.getPeerConnectionInfo(transport.transportPeerId);
       if (conn.connected) {
         await mesh.send(transport.transportPeerId, envelope, {
-          dialHints,
+          dialHints: conn.direct ? [] : dialHints,
           preferCircuitHints,
         });
         return;

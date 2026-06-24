@@ -288,4 +288,18 @@ describe("NodeServiceImpl.sendCallInvite (Phase 42A)", () => {
     expect(events.some((e) => e.type === "call:error")).toBe(true);
     expect(events.some((e) => e.type === "call:ended")).toBe(true);
   });
+
+  it("14. reuses an open direct libp2p path without redialing stale WAN hints", async () => {
+    const ensurePeerReachable = vi.fn(async () => ({ connected: true, direct: true }));
+    (node as any)._mesh.ensurePeerReachable = ensurePeerReachable;
+    (node as any)._mesh.getPeerConnectionInfo = vi.fn(() => ({ connected: true, direct: true }));
+
+    const callId = await node.sendCallInvite(FAKE_OWNER_ID, "v=0\r\n...");
+    expect(callId).not.toBeNull();
+    expect(sends).toHaveLength(1);
+    expect(sends[0]!.options).toEqual(
+      expect.objectContaining({ dialHints: [], preferCircuitHints: false }),
+    );
+    expect(ensurePeerReachable).not.toHaveBeenCalled();
+  });
 });
