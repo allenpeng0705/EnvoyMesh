@@ -62,5 +62,22 @@ void main() {
       });
       expect(msg.isOutbound, isFalse);
     });
+
+    test('fromRpcMap detects outbound messages from self ownerId', () {
+      final msg = ChatMessage.fromRpcMap(
+        'node1:room:room-a',
+        {
+          'messageId': 'm1',
+          'sender': {'ownerId': 'envoy:owner:self', 'displayName': 'Me'},
+          'content': {'text': 'Hi group'},
+          'metadata': {'timestamp': '2026-06-24T12:00:00.000Z'},
+        },
+        selfOwnerId: 'envoy:owner:self',
+      );
+
+      expect(msg.isOutbound, isTrue);
+      expect(msg.senderDisplayName, 'You');
+      expect(msg.text, 'Hi group');
+    });
   });
 }

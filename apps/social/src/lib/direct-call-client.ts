@@ -515,6 +515,18 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.getBridgeStatus();
   }
 
+  async getBridgeConfig() {
+    return this._ns.getBridgeConfig();
+  }
+
+  async updateBridgeConfig(params: import("@envoymesh/api").UpdateBridgeConfigParams) {
+    return this._ns.updateBridgeConfig(params);
+  }
+
+  async probeExtAgents() {
+    return this._ns.probeExtAgents();
+  }
+
   // Phase 38 — Voice/Video Calls
   getActiveCall() {
     return this._ns.getActiveCall();

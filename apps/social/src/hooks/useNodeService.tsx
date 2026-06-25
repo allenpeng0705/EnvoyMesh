@@ -263,6 +263,11 @@ export interface NodeServiceClient {
 
   // Agent Bridge
   getBridgeStatus(): Promise<BridgeStatus>;
+  getBridgeConfig(): Promise<import("@envoymesh/api").BridgeConfigView>;
+  updateBridgeConfig(
+    params: import("@envoymesh/api").UpdateBridgeConfigParams,
+  ): Promise<import("@envoymesh/api").UpdateBridgeConfigResult>;
+  probeExtAgents(): Promise<import("@envoymesh/api").ProbeExtAgentsResult>;
   getOpenClawStatus(): Promise<import("@envoymesh/api").OpenClawStatus>;
   getPairingPayload(): Promise<PairingPayload>;
   createWanJoinInvite(
@@ -963,6 +968,11 @@ function createWsNodeServiceClient(
     },
 
     async getBridgeStatus() { return wsClient.rpc("getBridgeStatus"); },
+    async getBridgeConfig() { return wsClient.rpc("getBridgeConfig"); },
+    async updateBridgeConfig(params: import("@envoymesh/api").UpdateBridgeConfigParams) {
+      return wsClient.rpc("updateBridgeConfig", params as Record<string, unknown>);
+    },
+    async probeExtAgents() { return wsClient.rpc("probeExtAgents"); },
     async getOpenClawStatus() {
       return wsClient.rpc("getOpenClawStatus") as Promise<import("@envoymesh/api").OpenClawStatus>;
     },

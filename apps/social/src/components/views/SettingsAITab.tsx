@@ -1302,13 +1302,44 @@ export function SettingsAITab() {
     agentName: string;
     agentPublicKeyPem?: string;
     agentType?: "envoyai" | "external";
+    activeExtAgentId?: string;
+    adapter?: string;
+    healthy?: boolean;
   } | null>(null);
+  const [bridgeConfigView, setBridgeConfigView] = useState<import("@envoymesh/api").BridgeConfigView | null>(null);
+  const [refreshingExtHealth, setRefreshingExtHealth] = useState(false);
 
-  const refreshAgentStatus = useCallback(async () => {
+  const mergeExtAgentHealth = useCallback((
+    config: import("@envoymesh/api").BridgeConfigView | null,
+    probe: import("@envoymesh/api").ProbeExtAgentsResult | null,
+  ): import("@envoymesh/api").BridgeConfigView | null => {
+    if (!config) return null;
+    if (!probe?.entries?.length) return config;
+    const byId = new Map(probe.entries.map((e) => [e.id, e]));
+    return {
+      ...config,
+      extAgents: config.extAgents.map((entry) => {
+        const h = byId.get(entry.id);
+        if (!h) return entry;
+        return {
+          ...entry,
+          healthy: h.healthy,
+          reachability: h.reachability,
+        };
+      }),
+    };
+  }, []);
+
+  const refreshAgentStatus = useCallback(async (opts?: { probe?: boolean }) => {
     try {
-      const [oc, br] = await Promise.all([
+      if (opts?.probe) setRefreshingExtHealth(true);
+      const [oc, br, bc, probe] = await Promise.all([
         nodeService.getOpenClawStatus(),
         nodeService.getBridgeStatus(),
+        nodeService.getBridgeConfig().catch(() => null),
+        (opts?.probe !== false && nodeService.probeExtAgents)
+          ? nodeService.probeExtAgents().catch(() => null)
+          : Promise.resolve(null),
       ]);
       setOpenClawStatus({
         enabled: oc.enabled,
@@ -1317,12 +1348,22 @@ export function SettingsAITab() {
         childPid: oc.childPid,
       });
       setBridgeStatus(br);
+      setBridgeConfigView(mergeExtAgentHealth(bc, probe));
     } catch (e) {
       console.warn("[SettingsAITab] failed to fetch agent status", e);
+    } finally {
+      setRefreshingExtHealth(false);
     }
-  }, [nodeService]);
+  }, [nodeService, mergeExtAgentHealth]);
 
-  useEffect(() => { void refreshAgentStatus(); }, [refreshAgentStatus]);
+  useEffect(() => { void refreshAgentStatus({ probe: true }); }, [refreshAgentStatus]);
+
+  useEffect(() => {
+    const timer = setInterval(() => {
+      void refreshAgentStatus({ probe: true });
+    }, 30_000);
+    return () => clearInterval(timer);
+  }, [refreshAgentStatus]);
 
   // Refetch after any nodeConfig change so the live status reflects persisted state.
   const lastConfigRef = useRef(nodeConfig);
@@ -1339,10 +1380,30 @@ export function SettingsAITab() {
     name?: string;
     url?: string;
     listenPort?: number;
+    activeExtAgent?: string;
+    extAgents?: import("@envoymesh/api").ExtAgentRegistryEntry[];
   }) => {
     await updateNodeConfigPartial({ bridgeEnabled: next.enabled });
-    setTimeout(() => { void refreshAgentStatus(); }, 800);
-  }, [updateNodeConfigPartial, refreshAgentStatus]);
+    const result = await nodeService.updateBridgeConfig({
+      activeExtAgent: next.activeExtAgent,
+      extAgents: next.extAgents,
+      agentUrl: next.url,
+      agentName: next.name,
+      listenPort: next.listenPort,
+    });
+    if (!result.ok) {
+      throw new Error(result.reason ?? "Failed to save bridge config");
+    }
+    void refreshAgentStatus({ probe: true });
+  }, [updateNodeConfigPartial, nodeService, refreshAgentStatus]);
+
+  const handleQuickSwitch = useCallback(async (activeExtAgentId: string) => {
+    const result = await nodeService.updateBridgeConfig({ activeExtAgent: activeExtAgentId });
+    if (!result.ok) {
+      throw new Error(result.reason ?? "Failed to switch backend");
+    }
+    await refreshAgentStatus({ probe: true });
+  }, [nodeService, refreshAgentStatus]);
 
   // Phase 35C — LAN auto-bond lives in SettingsAgentNetworkTab. The settings
   // tab here is dedicated to AI behaviour (provider, rules, terminal assist,
@@ -1400,8 +1461,17 @@ export function SettingsAITab() {
               name: bridgeStatus.agentName,
               url: bridgeStatus.agentUrl,
               listenPort: bridgeStatus.listenPort,
+              activeExtAgent: bridgeConfigView?.activeExtAgent,
+              extAgents: bridgeConfigView?.extAgents ?? [],
+              adapter: bridgeStatus.adapter ?? bridgeConfigView?.adapter,
+              activeExtAgentId: bridgeStatus.activeExtAgentId ?? bridgeConfigView?.activeExtAgentId,
+              healthy: bridgeStatus.healthy,
             }}
             onExtAgentSave={handleExtAgentSave}
+            onQuickSwitch={handleQuickSwitch}
+            onRefreshHealth={() => refreshAgentStatus({ probe: true })}
+            refreshingHealth={refreshingExtHealth}
+            profileDir={nodeConfig?.profileDir}
           />
         ) : (
           <p className="settings-hint">{t("settings.ai.aiEngine.loading")}</p>

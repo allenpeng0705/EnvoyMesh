@@ -3451,24 +3451,312 @@ textarea::placeholder {
   border-radius: 999px;
 }
 .settings-agent-mode .status-badge.status-on {
-  background: var(--color-accent-subtle, rgba(99, 102, 241, 0.12));
-  color: var(--color-accent, #6366f1);
+  background: var(--color-primary-subtle);
+  color: var(--color-on-primary-subtle);
 }
 .settings-agent-mode .status-badge.status-off {
-  background: var(--color-danger-subtle, rgba(239, 68, 68, 0.12));
-  color: var(--color-danger, #ef4444);
+  background: var(--color-danger-subtle);
+  color: var(--color-danger);
 }
 .status-badge.status-warn {
-  background: var(--color-warning-subtle, rgba(245, 158, 11, 0.12));
-  color: var(--color-warning, #f59e0b);
+  background: var(--color-warning-subtle);
+  color: var(--color-on-accent-subtle);
 }
 .settings-agent-mode .settings-hint {
   margin: 0;
-  color: var(--color-text-muted, #6b7280);
+  color: var(--color-text-muted);
   font-size: var(--text-xs, 0.75rem);
 }
+
+/* Shared layout + typography inside AI Engine */
+.settings-agent .settings-section-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.settings-agent .settings-section-title {
+  font-size: var(--text-base);
+  font-weight: var(--font-semibold);
+  color: var(--color-text);
+}
+
+.settings-agent .settings-section-subtitle {
+  font-weight: var(--font-normal);
+  color: var(--color-text-muted);
+}
+
+.settings-agent .settings-section-desc,
+.settings-agent .settings-hint {
+  margin: 0 0 var(--space-3);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm);
+  line-height: var(--leading-relaxed);
+}
+
+.settings-agent .settings-field {
+  margin-bottom: var(--space-3);
+}
+
+.settings-agent .settings-field label {
+  display: block;
+  margin-bottom: var(--space-1);
+  font-size: var(--text-sm);
+  font-weight: var(--font-medium);
+  color: var(--color-text);
+}
+
+.settings-agent .settings-field input,
+.settings-agent .settings-field select {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+}
+
+.settings-agent .settings-field input:disabled,
+.settings-agent .settings-field select:disabled {
+  opacity: 0.85;
+  cursor: not-allowed;
+}
+
+.settings-agent .settings-field.readonly input {
+  background: var(--color-surface-subtle);
+}
+
+.settings-agent .status-badge {
+  display: inline-flex;
+  align-items: center;
+  font-size: var(--text-xs);
+  font-weight: var(--font-semibold);
+  padding: 0.2rem 0.6rem;
+  border-radius: var(--radius-full);
+  white-space: nowrap;
+}
+
+.settings-agent .status-badge.status-on {
+  background: var(--color-primary-subtle);
+  color: var(--color-on-primary-subtle);
+}
+
+.settings-agent .status-badge.status-off {
+  background: var(--color-danger-subtle);
+  color: var(--color-danger);
+}
+
+.settings-agent .status-badge.status-warn {
+  background: var(--color-warning-subtle);
+  color: var(--color-on-accent-subtle);
+}
+
+.settings-agent .settings-bridge-registry {
+  margin: var(--space-4) 0;
+}
+
+.settings-agent .settings-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-sm);
+  color: var(--color-text);
+}
+
+.settings-agent .settings-table th,
+.settings-agent .settings-table td {
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.settings-agent .settings-table th {
+  font-weight: var(--font-semibold);
+  color: var(--color-text-muted);
+  background: var(--color-surface-subtle);
+}
+
+.settings-agent .settings-table tr[data-active="true"] {
+  background: color-mix(in srgb, var(--color-primary) 8%, transparent);
+}
+
+.settings-agent .settings-table code {
+  font-size: 0.85em;
+  color: var(--color-text);
+  background: var(--message-code-bg);
+  padding: 0.1rem 0.35rem;
+  border-radius: var(--radius-xs);
+}
+
+.ext-agent-setup-guides {
+  margin-top: var(--space-5, 1.25rem);
+  padding-top: var(--space-4, 1rem);
+  border-top: 1px solid var(--color-border-subtle);
+  color: var(--color-text);
+}
+
+.ext-agent-quick-start {
+  margin: var(--space-3, 0.75rem) 0 var(--space-4, 1rem);
+  padding: var(--space-3, 0.75rem) var(--space-4, 1rem);
+  border-radius: var(--radius-md, 6px);
+  border: 1px solid var(--color-border-subtle);
+  background: var(--color-surface-subtle);
+  color: var(--color-text);
+}
+
+.ext-agent-quick-start-title {
+  margin: 0 0 var(--space-2, 0.5rem);
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.ext-agent-quick-start-steps {
+  margin: 0;
+  padding-left: 1.25rem;
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--color-text-muted);
+}
+
+.ext-agent-quick-start-steps li {
+  margin-bottom: var(--space-1, 0.25rem);
+}
+
+.ext-agent-active-card {
+  margin: var(--space-3, 0.75rem) 0 var(--space-4, 1rem);
+  padding: var(--space-3, 0.75rem) var(--space-4, 1rem);
+  border-radius: var(--radius-md, 6px);
+  border: 1px solid var(--color-border-subtle);
+  background: var(--color-surface-subtle);
+  color: var(--color-text);
+}
+
+.ext-agent-active-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3, 0.75rem);
+  margin-bottom: var(--space-2, 0.5rem);
+}
+
+.ext-agent-active-card-header strong {
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--color-text);
+}
+
+.ext-agent-setup-flow {
+  margin-bottom: var(--space-4, 1rem);
+  padding: var(--space-3, 0.75rem);
+  border-radius: var(--radius-md, 6px);
+  background: var(--color-surface-subtle);
+  border: 1px dashed var(--color-border-subtle);
+  color: var(--color-text);
+}
+
+.ext-agent-setup-flow h5 {
+  margin-top: 0;
+  color: var(--color-text);
+}
+
+.ext-agent-setup-flow-steps {
+  margin: 0;
+  padding-left: 1.25rem;
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--color-text-muted);
+}
+
+.ext-agent-setup-heading {
+  font-size: var(--text-base, 1rem);
+  font-weight: 600;
+  margin: 0 0 var(--space-2, 0.5rem);
+  color: var(--color-text);
+}
+
+.ext-agent-setup-register {
+  margin-bottom: var(--space-4, 1rem);
+}
+
+.ext-agent-setup-register h5,
+.ext-agent-setup-body h5 {
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: 600;
+  margin: var(--space-3, 0.75rem) 0 var(--space-1, 0.25rem);
+  color: var(--color-text);
+}
+
+.ext-agent-setup-guide {
+  margin-bottom: var(--space-2, 0.5rem);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-md, 6px);
+  padding: var(--space-2, 0.5rem) var(--space-3, 0.75rem);
+  background: var(--color-surface-subtle);
+  color: var(--color-text);
+}
+
+.ext-agent-setup-guide summary {
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2, 0.5rem);
+  color: var(--color-text);
+}
+
+.ext-agent-setup-guide summary strong {
+  color: var(--color-text);
+}
+
+.ext-agent-setup-guide summary::-webkit-details-marker {
+  display: none;
+}
+
+.ext-agent-setup-port {
+  color: var(--color-text-muted);
+  font-size: var(--text-sm, 0.875rem);
+}
+
+.ext-agent-setup-summary {
+  flex: 1 1 100%;
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--color-text-muted);
+  font-weight: normal;
+}
+
+.ext-agent-setup-body {
+  margin-top: var(--space-3, 0.75rem);
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--color-text);
+}
+
+.ext-agent-setup-body ol,
+.ext-agent-setup-body ul {
+  margin: 0 0 var(--space-2, 0.5rem);
+  padding-left: 1.25rem;
+  color: var(--color-text-muted);
+}
+
+.ext-agent-setup-body li {
+  margin-bottom: var(--space-1, 0.25rem);
+}
+
+.ext-agent-setup-body code {
+  display: inline-block;
+  margin-top: 0.15rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  background: var(--message-code-bg);
+  border: 1px solid var(--color-border-subtle);
+  color: var(--color-text);
+  font-size: 0.85em;
+  word-break: break-all;
+}
+
 .settings-section-subtitle.dim {
-  color: var(--color-text-muted, #6b7280);
+  color: var(--color-text-muted);
   font-weight: var(--font-normal, 400);
 }
 

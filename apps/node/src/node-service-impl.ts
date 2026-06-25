@@ -2,6 +2,9 @@ import type {
   AiSettings,
   BondRecord,
   BridgeStatus,
+  BridgeConfigView,
+  UpdateBridgeConfigParams,
+  UpdateBridgeConfigResult,
   OpenClawStatus,
   PairingPayload,
   ChatMessage,
@@ -563,7 +566,18 @@ import {
   isOpenClawEnvoymeshWebhookReady,
   resolveActiveWebSearchProvider,
 } from "./openclaw-gateway-config.js";
-import { resolveAssistantAgentUrl } from "./bridge/config.js";
+import {
+  applyBridgeConfigResolution,
+  bridgeConfigToView,
+  BridgeConfigSchema,
+  probeAllExtAgents,
+  probeExtAgentHealth,
+  resolveAssistantAgentUrl,
+  resolveBridgeStatusAgentType,
+  type BridgeConfig,
+  type ResolvedBridgeConfig,
+} from "./bridge/config.js";
+import { mergeBundledExtAgentRegistry } from "./bridge/bundled-ext-agents.js";
 import { reclaimAssistantGatewayPort } from "./openclaw-gateway-port.js";
 import { runInboundChatAssist } from "./inbound-chat-assist.js";
 import { recordTaskJournalActivity, emitOwnerReport } from "./agent-activity-hooks.js";
@@ -727,6 +741,10 @@ class NodeServiceImpl implements NodeService {
 
   private _nodeStatus: NodeStatus = "offline";
   private _bridgeStatus: BridgeStatus | null = null;
+  private _bridgeRuntimeConfig: ResolvedBridgeConfig | null = null;
+  private _extAgentHealthCache: Record<string, boolean> = {};
+  private _extAgentHealthPollTimer: ReturnType<typeof setInterval> | null = null;
+  private _bridgeConfigApplier: ((cfg: BridgeConfig) => void) | null = null;
   private _bridgeChatHandler: ((envelope: EnvoyEnvelope, remotePeerId: string) => Promise<void>) | null = null;
   private _styleAdapter: import("./style-adapter.js").StyleAdapter | null = null;
   private _wsPort: number = 3030;
@@ -5956,17 +5974,15 @@ class NodeServiceImpl implements NodeService {
 
     // Forward to the external agent via HTTP. forwardToAgent calls receiveFromAgent
     // internally which delivers the reply back to the mobile via libp2p.
-    const bridgeConfig = this._bridgeStatus;
-    if (!bridgeConfig) return;
+    const runtime = this._bridgeRuntimeConfig;
+    if (!runtime) {
+      console.warn("[bridge] sendToBridge: bridge runtime config not loaded");
+      return;
+    }
 
     try {
       await forwardToAgent(
-        {
-          enabled: true,
-          agentUrl: bridgeConfig.agentUrl,
-          listenPort: 0,
-          agentName: bridgeConfig.agentName,
-        } as any,
+        runtime,
         {
           senderPeerId: meshPeerId,
           senderOwnerId: ownerId,
@@ -9743,6 +9759,201 @@ class NodeServiceImpl implements NodeService {
     this.emit("bridge:status", status);
   }
 
+  /** Phase 44 — wire hot-reload from index.ts createBridge.updateConfig. */
+  setBridgeConfigApplier(applier: (cfg: BridgeConfig) => void): void {
+    this._bridgeConfigApplier = applier;
+  }
+
+  setBridgeRuntimeConfig(cfg: ResolvedBridgeConfig): void {
+    this._bridgeRuntimeConfig = cfg;
+    this._syncExtAgentHealthPoller(cfg.enabled);
+  }
+
+  private _bridgeConfigPath(): string {
+    const nodeCwd = process.cwd();
+    const profileDirAbs =
+      this._profileDir && this._profileDir !== "/tmp/unknown"
+        ? resolve(nodeCwd, this._profileDir)
+        : null;
+    return profileDirAbs
+      ? join(profileDirAbs, "bridge-config.json")
+      : join(nodeCwd, "data", "default", "bridge-config.json");
+  }
+
+  private async _loadBridgeConfigFromDisk(): Promise<BridgeConfig> {
+    const { readFileSync, existsSync } = await import("node:fs");
+    const path = this._bridgeConfigPath();
+    if (!existsSync(path)) {
+      return BridgeConfigSchema.parse({});
+    }
+    try {
+      return BridgeConfigSchema.parse(JSON.parse(readFileSync(path, "utf-8")));
+    } catch {
+      return BridgeConfigSchema.parse({});
+    }
+  }
+
+  private async _saveBridgeConfigToDisk(cfg: BridgeConfig): Promise<void> {
+    const { writeFileSync, mkdirSync } = await import("node:fs");
+    const { dirname } = await import("node:path");
+    const path = this._bridgeConfigPath();
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, JSON.stringify(cfg, null, 2) + "\n", "utf-8");
+  }
+
+  /** Phase 44 — apply resolved config after hot reload (index.ts bridge applier). */
+  applyBridgeRuntimeConfig(resolved: ResolvedBridgeConfig): void {
+    this._bridgeRuntimeConfig = resolved;
+    this._syncExtAgentHealthPoller(resolved.enabled);
+    void this._refreshExtAgentHealth(resolved);
+  }
+
+  private _syncExtAgentHealthPoller(bridgeEnabled: boolean): void {
+    if (!bridgeEnabled) {
+      if (this._extAgentHealthPollTimer) {
+        clearInterval(this._extAgentHealthPollTimer);
+        this._extAgentHealthPollTimer = null;
+      }
+      return;
+    }
+    if (this._extAgentHealthPollTimer) return;
+    this._extAgentHealthPollTimer = setInterval(() => {
+      const cfg = this._bridgeRuntimeConfig;
+      if (cfg?.enabled) void this._refreshExtAgentHealth(cfg);
+    }, 30_000);
+  }
+
+  /** Probe all registry entries and update BridgeStatus.healthy for the active backend. */
+  private async _refreshExtAgentHealth(resolved: ResolvedBridgeConfig): Promise<void> {
+    const registry = resolved.extAgents ?? [];
+    if (registry.length === 0) {
+      const healthy = await probeExtAgentHealth(resolved.agentUrl, resolved.resolvedAdapter);
+      this._extAgentHealthCache = { __legacy__: healthy };
+      await this._applyBridgeHealthyToStatus(resolved, healthy);
+      return;
+    }
+
+    const probes = await probeAllExtAgents(registry);
+    this._extAgentHealthCache = Object.fromEntries(probes.map((p) => [p.id, p.healthy]));
+    const activeId = resolved.resolvedActiveExtAgentId;
+    const activeHealthy = activeId ? this._extAgentHealthCache[activeId] : undefined;
+    await this._applyBridgeHealthyToStatus(resolved, activeHealthy ?? false);
+  }
+
+  private async _applyBridgeHealthyToStatus(
+    resolved: ResolvedBridgeConfig,
+    healthy: boolean,
+  ): Promise<void> {
+    const prev = this._bridgeStatus;
+    if (!prev?.agentPeerId) return;
+    const agentType = resolveBridgeStatusAgentType();
+    this.setBridgeStatus({
+      ...prev,
+      enabled: resolved.enabled,
+      agentUrl: resolved.agentUrl,
+      agentName: resolved.agentName,
+      listenPort: resolved.listenPort,
+      activeExtAgentId: resolved.resolvedActiveExtAgentId ?? undefined,
+      adapter: resolved.resolvedAdapter,
+      healthy,
+      agentType,
+    });
+  }
+
+  private async _refreshBridgeStatusFromResolved(resolved: ResolvedBridgeConfig): Promise<void> {
+    await this._refreshExtAgentHealth(resolved);
+  }
+
+  async probeExtAgents(): Promise<import("@envoymesh/api").ProbeExtAgentsResult> {
+    const raw = await this._loadBridgeConfigFromDisk();
+    const resolved = applyBridgeConfigResolution(BridgeConfigSchema.parse(raw));
+    await this._refreshExtAgentHealth(resolved);
+    const registry = resolved.extAgents ?? [];
+    if (registry.length === 0) {
+      const healthy = this._extAgentHealthCache.__legacy__ ?? false;
+      return {
+        activeExtAgentId: resolved.resolvedActiveExtAgentId,
+        activeHealthy: healthy,
+        entries: [{
+          id: resolved.resolvedActiveExtAgentId ?? "__legacy__",
+          name: resolved.agentName,
+          adapter: resolved.resolvedAdapter,
+          url: resolved.agentUrl,
+          enabled: true,
+          healthy,
+          reachability: healthy ? "running" : "stopped",
+        }],
+      };
+    }
+    const activeId = resolved.resolvedActiveExtAgentId;
+    const entries = registry.map((e) => {
+      const healthy = e.enabled ? (this._extAgentHealthCache[e.id] ?? false) : false;
+      return {
+        id: e.id,
+        name: e.name,
+        adapter: e.adapter,
+        url: e.url,
+        enabled: e.enabled,
+        healthy,
+        reachability: !e.enabled
+          ? ("disabled" as const)
+          : healthy
+            ? ("running" as const)
+            : ("stopped" as const),
+      };
+    });
+    return {
+      activeExtAgentId: activeId,
+      activeHealthy: activeId ? this._extAgentHealthCache[activeId] : undefined,
+      entries,
+    };
+  }
+
+  async getBridgeConfig(): Promise<BridgeConfigView> {
+    const raw = await this._loadBridgeConfigFromDisk();
+    const resolved = applyBridgeConfigResolution(BridgeConfigSchema.parse(raw));
+    if (Object.keys(this._extAgentHealthCache).length === 0 && resolved.enabled) {
+      void this._refreshExtAgentHealth(resolved);
+    }
+    return bridgeConfigToView(resolved, this._extAgentHealthCache);
+  }
+
+  async updateBridgeConfig(params: UpdateBridgeConfigParams): Promise<UpdateBridgeConfigResult> {
+    try {
+      const raw = await this._loadBridgeConfigFromDisk();
+      const mergedExtAgents = mergeBundledExtAgentRegistry(
+        params.extAgents !== undefined ? params.extAgents : raw.extAgents,
+      );
+      const merged: BridgeConfig = {
+        ...raw,
+        ...(params.enabled !== undefined && { enabled: params.enabled }),
+        ...(params.listenPort !== undefined && { listenPort: params.listenPort }),
+        ...(params.secret !== undefined && { secret: params.secret || undefined }),
+        ...(params.activeExtAgent !== undefined && { activeExtAgent: params.activeExtAgent }),
+        extAgents: mergedExtAgents,
+      };
+      const hasRegistry = (merged.extAgents?.length ?? 0) > 0;
+      if (!hasRegistry) {
+        if (params.agentUrl !== undefined) merged.agentUrl = params.agentUrl;
+        if (params.agentName !== undefined) merged.agentName = params.agentName;
+      }
+      const resolved = applyBridgeConfigResolution(BridgeConfigSchema.parse(merged));
+      const toPersist: BridgeConfig = {
+        ...merged,
+        agentUrl: resolved.agentUrl,
+        agentName: resolved.agentName,
+      };
+      await this._saveBridgeConfigToDisk(toPersist);
+      this._bridgeRuntimeConfig = resolved;
+      this._bridgeConfigApplier?.(toPersist);
+      await this._refreshExtAgentHealth(resolved);
+      return { ok: true, config: bridgeConfigToView(resolved, this._extAgentHealthCache) };
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      return { ok: false, reason };
+    }
+  }
+
   setBridgeChatHandler(handler: (envelope: EnvoyEnvelope, remotePeerId: string) => Promise<void>): void {
     this._bridgeChatHandler = handler;
   }
@@ -12216,7 +12427,17 @@ class NodeServiceImpl implements NodeService {
       return { chainId: params.chainId, cancelled: [params.subtaskId] };
     }
     runtime.state.chainCancelled = true;
-    return { chainId: params.chainId, cancelled: [...runtime.state.subtasks.keys()] };
+    const cancelled = [...runtime.state.subtasks.keys()];
+    const hadTracker = this._chainTrackAbort.has(params.chainId);
+    this._emitChainState(params.chainId);
+    this._stopChainTracking(params.chainId);
+    // When no background tracker is running, purge now. Otherwise the tracker
+    // loop observes chainCancelled and purges on its next tick (≤30s), keeping
+    // chainGetState accurate briefly after cancel.
+    if (!hadTracker) {
+      this._purgeChainRuntime(params.chainId);
+    }
+    return { chainId: params.chainId, cancelled };
   }
 
   async chainListReports(params?: ChainListReportsParams): Promise<ChainListReportsResult> {
@@ -12591,6 +12812,11 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
                 this._emitChainState(state.chainId);
                 const row = await this._taskStore?.getChainReport(state.chainId);
                 if (row?.report) this._emitChainReport(row.report);
+                // Purge is handled by the tracking loop finally block, or
+                // immediately here when no tracker is running.
+                if (!this._chainTrackAbort.has(state.chainId)) {
+                  this._purgeChainRuntime(state.chainId);
+                }
               }
             });
           }
@@ -12682,23 +12908,29 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     this._chainTrackAbort.set(chainId, abort);
 
     void (async () => {
-      while (!abort.signal.aborted) {
+      try {
+        while (!abort.signal.aborted) {
+          const rt = this.chainRuntime.get(chainId);
+          if (!rt || rt.state.published || rt.state.chainCancelled) {
+            return;
+          }
+          if (rt.state.awards.size === 0) {
+            await new Promise((r) => setTimeout(r, 5_000));
+            continue;
+          }
+          try {
+            const deps = await this.buildChainOrchestratorDeps();
+            await trackChain(deps, rt.state, { tickMs: 30_000, maxTicks: 1 });
+          } catch (err) {
+            console.warn(`[chain.track] ${chainId} tick failed:`, err);
+          }
+          await new Promise((r) => setTimeout(r, 30_000));
+        }
+      } finally {
         const rt = this.chainRuntime.get(chainId);
-        if (!rt || rt.state.published || rt.state.chainCancelled) {
-          this._stopChainTracking(chainId);
-          return;
+        if (rt && (rt.state.published || rt.state.chainCancelled)) {
+          this._purgeChainRuntime(chainId);
         }
-        if (rt.state.awards.size === 0) {
-          await new Promise((r) => setTimeout(r, 5_000));
-          continue;
-        }
-        try {
-          const deps = await this.buildChainOrchestratorDeps();
-          await trackChain(deps, rt.state, { tickMs: 30_000, maxTicks: 1 });
-        } catch (err) {
-          console.warn(`[chain.track] ${chainId} tick failed:`, err);
-        }
-        await new Promise((r) => setTimeout(r, 30_000));
       }
     })();
   }
@@ -12708,6 +12940,28 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     if (abort) {
       abort.abort();
       this._chainTrackAbort.delete(chainId);
+    }
+  }
+
+  /** Drop in-memory chain orchestrator state after terminal lifecycle. */
+  private _purgeChainRuntime(chainId: string): void {
+    this._stopChainTracking(chainId);
+    const runtime = this.chainRuntime.get(chainId);
+    if (runtime) {
+      for (const subtaskId of runtime.state.subtasks.keys()) {
+        this._chainPendingBidExpirations.delete(subtaskId);
+      }
+    }
+    this.chainRuntime.delete(chainId);
+    this.chainBidStrategies.delete(chainId);
+    this._chainGoals.delete(chainId);
+    this._chainCostEstimates.delete(chainId);
+    const prefix = `${chainId}::`;
+    for (const [key, timer] of this._chainAutoEvaluateTimers) {
+      if (key.startsWith(prefix)) {
+        clearTimeout(timer);
+        this._chainAutoEvaluateTimers.delete(key);
+      }
     }
   }
 

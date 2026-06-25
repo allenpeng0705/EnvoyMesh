@@ -252,7 +252,7 @@ class _FakeChatNotifier extends ChatNotifier {
   Future<void> markRead(String threadId,
       {String? contactOwnerId}) async {}
   @override
-  Future<void> createRoom(String name) async {}
+  Future<String?> createRoom(String name, {List<String> memberOwnerIds = const []}) async => null;
   @override
   Future<void> inviteToRoom(String roomId, String ownerId) async {}
   @override

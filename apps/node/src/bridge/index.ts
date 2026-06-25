@@ -10,7 +10,7 @@ import type { AiIdentity } from "@envoymesh/api";
 import type { ExternalAgentGateway } from "../external-agent-gateway.js";
 import type { ToolDefinition, ToolResult } from "../tool-registry.js";
 import type { BridgeConfig } from "./config.js";
-import { BridgeConfigSchema } from "./config.js";
+import { applyBridgeConfigResolution, BridgeConfigSchema } from "./config.js";
 import { forwardAsyncMeshReply } from "./async-mesh-reply.js";
 import {
   forwardToAgent,
@@ -19,9 +19,20 @@ import {
   type BridgeIdentity,
 } from "./pipe.js";
 
-export type { BridgeConfig } from "./config.js";
+export type { BridgeConfig, ExtAgentEntry } from "./config.js";
+export {
+  BridgeConfigSchema,
+  ExtAgentEntrySchema,
+  applyBridgeConfigResolution,
+  bridgeForwardAuthSecret,
+  resolveActiveExtAgent,
+  resolveAssistantAgentUrl,
+  resolveBridgeStatusAgentType,
+  probeExtAgentHealth,
+  extAgentHealthUrl,
+  probeAllExtAgents,
+} from "./config.js";
 export type { BridgeIdentity } from "./pipe.js";
-export { BridgeConfigSchema } from "./config.js";
 export { forwardToAgent, receiveFromAgent } from "./pipe.js";
 export { forwardAsyncMeshReply, resetBridgeAsyncReplyRateLimitForTests } from "./async-mesh-reply.js";
 
@@ -64,18 +75,26 @@ export interface CreateBridgeOptions {
 export function createBridge(options: CreateBridgeOptions): {
   agentPeerId: string;
   stop: () => Promise<void>;
+  updateConfig: (config: BridgeConfig) => void;
+  getConfig: () => ReturnType<typeof applyBridgeConfigResolution>;
   _handleMessage: (envelope: any, remotePeerId: string) => Promise<void>;
 } {
-  const config = BridgeConfigSchema.parse(options.config);
-  if (!config.enabled) {
-    return { agentPeerId: options.identity.agentPeerId, stop: async () => {}, _handleMessage: async () => {} };
+  let runtimeConfig = applyBridgeConfigResolution(BridgeConfigSchema.parse(options.config));
+  if (!runtimeConfig.enabled) {
+    return {
+      agentPeerId: options.identity.agentPeerId,
+      stop: async () => {},
+      updateConfig: () => {},
+      getConfig: () => runtimeConfig,
+      _handleMessage: async () => {},
+    };
   }
-  const secretTrimmed = config.secret?.trim() ?? "";
+  const secretTrimmed = runtimeConfig.secret?.trim() ?? "";
 
   const agentId = options.identity.agentCredential.agentId;
 
   const deps: BridgeDeps = {
-    config,
+    config: runtimeConfig,
     identity: options.identity,
     sendChat: async (peerId, envelope, options2) => {
       if (peerId === options.mesh.peerId && options.onSelfSendEnvelope) {
@@ -277,9 +296,9 @@ export function createBridge(options: CreateBridgeOptions): {
     }
   });
 
-  server.listen(config.listenPort, "127.0.0.1", () => {
+  server.listen(runtimeConfig.listenPort, "127.0.0.1", () => {
     console.log(
-      `[bridge] HTTP on http://127.0.0.1:${config.listenPort}/bridge/send, ` +
+      `[bridge] HTTP on http://127.0.0.1:${runtimeConfig.listenPort}/bridge/send, ` +
         `/bridge/agent-share-proposal, /bridge/execute-tool, GET /bridge/list-tools`,
     );
   });
@@ -300,7 +319,7 @@ export function createBridge(options: CreateBridgeOptions): {
             envelope.intent === "discovery.response"
               ? parseDiscoveryResponsePayload(envelope.payload)
               : parseKnowledgeResponsePayload(envelope.payload);
-          await forwardAsyncMeshReply(config, {
+          await forwardAsyncMeshReply(runtimeConfig, {
             intent: envelope.intent,
             correlationId: envelope.correlationId,
             senderPeerId: envelope.senderPeerId,
@@ -353,7 +372,7 @@ export function createBridge(options: CreateBridgeOptions): {
     const fwdPromise = (async () => {
       try {
         const fwdStartTime = Date.now();
-        await forwardToAgent(config, {
+        await forwardToAgent(runtimeConfig, {
           senderPeerId: remotePeerId,
           senderOwnerId: payload.senderOwnerId,
           text: payload.text,
@@ -389,6 +408,15 @@ export function createBridge(options: CreateBridgeOptions): {
     stop: async () => {
       await new Promise<void>((resolve) => server.close(() => resolve()));
     },
+    updateConfig: (next: BridgeConfig) => {
+      runtimeConfig = applyBridgeConfigResolution(BridgeConfigSchema.parse(next));
+      deps.config = runtimeConfig;
+      console.log(
+        `[bridge] config updated: active=${runtimeConfig.resolvedActiveExtAgentId ?? "legacy"} ` +
+          `url=${runtimeConfig.agentUrl}`,
+      );
+    },
+    getConfig: () => runtimeConfig,
     // Exposed for the onMessage callback in index.ts
     _handleMessage: bridgeHandler,
   };

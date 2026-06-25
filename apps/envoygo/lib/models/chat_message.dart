@@ -48,7 +48,40 @@ class ChatMessage {
       text: json['text'] as String?,
       createdAt: json['created_at'] as String?,
       isOutbound: (json['is_outbound'] as int?) == 1,
-      attachments: attList?.map((a) => ChatAttachment.fromJson(a as Map<String, dynamic>)).toList(),
+      attachments: attList
+          ?.map((a) => ChatAttachment.fromJson(a as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+
+  /// Parse a home-node [ChatMessage] RPC payload into a local message.
+  factory ChatMessage.fromRpcMap(
+    String threadId,
+    Map<String, dynamic> data, {
+    String? selfOwnerId,
+  }) {
+    final sender = data['sender'] as Map<String, dynamic>?;
+    final content = data['content'] as Map<String, dynamic>?;
+    final metadata = data['metadata'] as Map<String, dynamic>?;
+    final senderOwnerId =
+        ((data['senderOwnerId'] ?? sender?['ownerId']) as String?)?.trim();
+    final text = (data['text'] ?? content?['text']) as String?;
+    final messageId = (data['messageId'] ?? data['id']) as String?;
+    final createdAt =
+        (data['createdAt'] ?? metadata?['timestamp']) as String?;
+    final senderDisplayName =
+        (data['senderDisplayName'] ?? sender?['displayName']) as String?;
+    final isOutbound =
+        selfOwnerId != null && senderOwnerId != null && senderOwnerId == selfOwnerId;
+
+    return ChatMessage(
+      id: messageId ?? 'msg_${DateTime.now().microsecondsSinceEpoch}',
+      threadId: threadId,
+      senderOwnerId: senderOwnerId,
+      senderDisplayName: isOutbound ? 'You' : senderDisplayName,
+      text: text,
+      createdAt: createdAt,
+      isOutbound: isOutbound,
     );
   }
 

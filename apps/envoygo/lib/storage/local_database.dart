@@ -31,7 +31,7 @@ class LocalDatabase {
     final dbPath = p.join(await getDatabasesPath(), 'envoygo.db');
     _db = await openDatabase(
       dbPath,
-      version: 3,
+      version: 4,
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await db.execute('ALTER TABLE nodes ADD COLUMN public_host TEXT');
@@ -39,6 +39,14 @@ class LocalDatabase {
         }
         if (oldVersion < 3) {
           await db.execute('ALTER TABLE nodes ADD COLUMN bootstrap_peers TEXT');
+        }
+        if (oldVersion < 4) {
+          await db.execute('''
+            CREATE TABLE app_preferences (
+              key TEXT PRIMARY KEY,
+              value TEXT NOT NULL
+            )
+          ''');
         }
       },
       onCreate: (db, version) async {
@@ -102,6 +110,12 @@ class LocalDatabase {
             member_count INTEGER DEFAULT 0,
             last_message_text TEXT,
             last_message_at TEXT
+          )
+        ''');
+        await db.execute('''
+          CREATE TABLE app_preferences (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL
           )
         ''');
       },
@@ -297,6 +311,25 @@ class LocalDatabase {
       where: 'node_id = ?',
       whereArgs: [nodeId],
       orderBy: 'last_message_at DESC',
+    );
+  }
+
+  Future<String?> getPreference(String key) async {
+    final rows = await _ensureDb.query(
+      'app_preferences',
+      where: 'key = ?',
+      whereArgs: [key],
+      limit: 1,
+    );
+    if (rows.isEmpty) return null;
+    return rows.first['value'] as String?;
+  }
+
+  Future<void> setPreference(String key, String value) async {
+    await _ensureDb.insert(
+      'app_preferences',
+      {'key': key, 'value': value},
+      conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
 

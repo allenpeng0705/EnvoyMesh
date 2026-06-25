@@ -10,6 +10,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
   # Transport
   web_socket_channel: ^3.0.2
   # State
@@ -52,7 +54,7 @@ dependencies:
   # UI
   google_fonts: ^6.2.1
   cached_network_image: ^3.4.1
-  intl: ^0.19.0
+  intl: ^0.20.2
   # Platform detection
   flutter_web_plugins:
     sdk: flutter
@@ -72,5 +74,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  generate: true
   assets:
     - assets/terminal.html

@@ -173,8 +173,9 @@ import { TERMINAL_WS_PORT } from "./service-ports.js";
 import { createBridge } from "./bridge/index.js";
 import { executeTool as runRegistryTool, listAgentTools } from "./tool-registry.js";
 import { loadBridgeIdentity, saveBridgeIdentity } from "./bridge/identity-store.js";
-import type { BridgeConfig } from "./bridge/config.js";
-import { BridgeConfigSchema, resolveAssistantAgentUrl } from "./bridge/config.js";
+import { BridgeConfigSchema, resolveAssistantAgentUrl, resolveBridgeStatusAgentType, applyBridgeConfigResolution, type ResolvedBridgeConfig } from "./bridge/config.js";
+import { mergeBundledExtAgentRegistry } from "./bridge/bundled-ext-agents.js";
+import { ExtAgentSidecarManager } from "./bridge/ext-agent-sidecar-spawn.js";
 import {
   ExternalAgentGateway,
   createExternalAgentSession,
@@ -321,13 +322,33 @@ if (!bridgeIdentity) {
 // Bridge config — loaded from profile dir, defaults to disabled.
 // The UI toggle in persisted config (bridgeEnabled) overrides bridge-config.json's enabled field,
 // so users can turn the bridge on/off without editing the JSON file.
-let bridgeConfig: BridgeConfig = BridgeConfigSchema.parse({});
+let bridgeConfig: ResolvedBridgeConfig = applyBridgeConfigResolution(BridgeConfigSchema.parse({}));
 try {
   const raw = await readFile(join(args.profileDir, "bridge-config.json"), "utf-8");
-  bridgeConfig = BridgeConfigSchema.parse(JSON.parse(raw));
-  console.log(`[bridge] loaded config: enabled=${bridgeConfig.enabled}`);
+  bridgeConfig = applyBridgeConfigResolution(BridgeConfigSchema.parse(JSON.parse(raw)));
+  console.log(`[bridge] loaded config: enabled=${bridgeConfig.enabled} active=${bridgeConfig.resolvedActiveExtAgentId ?? "legacy"}`);
 } catch {
   // use defaults; disabled by default
+}
+function withBundledExtAgents(cfg: ResolvedBridgeConfig): ResolvedBridgeConfig {
+  return applyBridgeConfigResolution({
+    ...cfg,
+    extAgents: mergeBundledExtAgentRegistry(cfg.extAgents),
+  });
+}
+bridgeConfig = withBundledExtAgents(bridgeConfig);
+const extSidecarManager = new ExtAgentSidecarManager();
+
+async function syncExtAgentSidecars(cfg: ResolvedBridgeConfig): Promise<void> {
+  try {
+    await extSidecarManager.sync(cfg, {
+      nodeCwd: process.cwd(),
+      listenPort: cfg.listenPort,
+      secret: cfg.secret,
+    });
+  } catch (err) {
+    console.warn("[ext-sidecar] sync failed:", err instanceof Error ? err.message : String(err));
+  }
 }
 // Merge UI toggle from persisted config — bridgeEnabled: true overrides bridge-config.json.
 // Default to false when no persisted config exists (D1C: built-in OpenClaw is the default agent;
@@ -337,7 +358,7 @@ try {
     const persistedCfg = await nodeConfigStore.load();
     const uiEnabled = persistedCfg?.bridgeEnabled ?? false;
     if (uiEnabled && !bridgeConfig.enabled) {
-      bridgeConfig = { ...bridgeConfig, enabled: true };
+      bridgeConfig = applyBridgeConfigResolution({ ...bridgeConfig, enabled: true });
       console.log(`[bridge] UI toggle overrides: enabled=true (persisted=${persistedCfg?.bridgeEnabled ?? "none"})`);
     }
   } catch { /* ignore — persisted config may not exist yet */ }
@@ -617,9 +638,7 @@ const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute window
 const RATE_LIMIT_MAX_REGISTRATIONS = 30; // max inbound messages per peer per window
 const MAX_RATE_LIMIT_ENTRIES = 10_000; // Prevent memory exhaustion
 
-// Message deduplication to prevent replay attacks
-const seenMessageIds = new Set<string>();
-const MAX_SEEN_MESSAGE_IDS = 100_000;
+// Message deduplication is handled by inboundGuard (FIFO eviction) in handleInboundMeshMessage.
 
 // Maximum payload size to prevent memory exhaustion (1MB)
 function checkInboundRateLimit(peerId: string): boolean {
@@ -632,13 +651,16 @@ function checkInboundRateLimit(peerId: string): boolean {
     let oldest: string | null = null;
     let oldestExpiry = Infinity;
     for (const [id, entry] of peerRegistrationCount) {
-      if (entry.resetAt < now && entry.resetAt < oldestExpiry) {
+      if (entry.resetAt < oldestExpiry) {
         oldest = id;
         oldestExpiry = entry.resetAt;
       }
     }
     if (oldest) {
       peerRegistrationCount.delete(oldest);
+    } else {
+      const first = peerRegistrationCount.keys().next().value;
+      if (first) peerRegistrationCount.delete(first);
     }
   }
 
@@ -656,30 +678,6 @@ function checkInboundRateLimit(peerId: string): boolean {
 
   entry.count++;
   return true;
-}
-
-function isMessageSeen(messageId: string): boolean {
-  if (!messageId || typeof messageId !== "string") {
-    return true; // Treat invalid IDs as "seen" to reject them
-  }
-  return seenMessageIds.has(messageId);
-}
-
-function markMessageSeen(messageId: string): void {
-  if (!messageId || typeof messageId !== "string") {
-    return;
-  }
-
-  if (seenMessageIds.size >= MAX_SEEN_MESSAGE_IDS) {
-    const targetSize = Math.floor(MAX_SEEN_MESSAGE_IDS * 0.1);
-    let removed = 0;
-    for (const id of seenMessageIds) {
-      if (removed >= targetSize) break;
-      seenMessageIds.delete(id);
-      removed++;
-    }
-  }
-  seenMessageIds.add(messageId);
 }
 
 /** Throttle peer-directory listen-addr merges — each merge rewrites the whole JSON file. */
@@ -716,6 +714,16 @@ if (args.discoveryProfile === "wan-default" && effectiveBootstrapPeers.length ==
 
 const autoCapabilityTopics = buildAutoCapabilityTopics(profile.deviceCertificate.capabilities);
 const observedRelayPeerIds = new Set<string>();
+const MAX_OBSERVED_RELAY_PEERS = 256;
+
+function trackObservedRelayPeer(peerId: string): void {
+  if (!peerId || observedRelayPeerIds.has(peerId)) return;
+  if (observedRelayPeerIds.size >= MAX_OBSERVED_RELAY_PEERS) {
+    const oldest = observedRelayPeerIds.values().next().value;
+    if (oldest) observedRelayPeerIds.delete(oldest);
+  }
+  observedRelayPeerIds.add(peerId);
+}
 const relayStateStore = createRelayStateStore(args.profileDir);
 const [persistedRelayBook, persistedSummaries] = await Promise.all([
   relayStateStore.loadRelayBook(),
@@ -1617,7 +1625,7 @@ async function handleInboundMeshMessage({
 
   if (envelope.intent === "relay.peers.request" || envelope.intent === "relay.peers.response") {
     if (envelope.intent === "relay.peers.request") {
-      observedRelayPeerIds.add(remotePeerId);
+      trackObservedRelayPeer(remotePeerId);
     }
     const relayPeerIds = dedupeAddrs([...mesh.getConnectedRelayPeerIds(), ...observedRelayPeerIds]);
     console.log(
@@ -2672,7 +2680,7 @@ function scheduleMeshInboundDrain(): void {
 
 mesh.onMessage(async (params) => {
   const { envelope: inboundEnvelope, remotePeerId, replyWithEnvelope } = params;
-  if (isMessageSeen(inboundEnvelope.messageId)) {
+  if (inboundGuard.isReplay(inboundEnvelope.messageId)) {
     return;
   }
   const isRateLimitExemptIntent =
@@ -2686,7 +2694,7 @@ mesh.onMessage(async (params) => {
   if (!isRateLimitExemptIntent && !checkInboundRateLimit(remotePeerId)) {
     return;
   }
-  markMessageSeen(inboundEnvelope.messageId);
+  // Replay dedup runs in handleInboundMeshMessage via inboundGuard.
   // Same-stream replies must run before the inbound handler closes the libp2p stream.
   if (replyWithEnvelope) {
     await handleInboundMeshMessage(params);
@@ -3342,6 +3350,7 @@ nodeService.on("bond:established", (data) => {
 });
 nodeService.on("config:updated", (data) => {
   console.log(`[index.ts] config:updated event fired`);
+  wsServer.emitEvent("config:updated", data);
   currentAutonomousKillSwitch = data.autonomousKillSwitch;
   currentAutonomousPolicies = data.autonomousPolicies;
   currentChatAssistEnabled = data.chatAssistEnabled;
@@ -3514,12 +3523,8 @@ if (nodeService instanceof NodeServiceImpl) {
 // Emit bridge status for Social UI and register bridge agent in peer directory.
 // Requires enabled + non-empty secret so UI matches an actually listening HTTP bridge.
 if (nodeService instanceof NodeServiceImpl && bridgeHttpReady) {
-  // Determine agent type: built-in EnvoyAI vs external HTTP agent.
-  // resolveAssistantAgentUrl uses assistantAgentUrl if set, or agentUrl if it
-  // routes to /webhook/envoymesh, else defaults to the built-in webhook.
-  const assistantUrl = resolveAssistantAgentUrl(bridgeConfig);
-  const agentType: "envoyai" | "external" =
-    assistantUrl.includes("/webhook/envoymesh") ? "envoyai" : "external";
+  // Ext Agent bridge status — always external (built-in OpenClaw uses getOpenClawStatus).
+  const agentType = resolveBridgeStatusAgentType();
   nodeService.setBridgeStatus({
     enabled: true,
     agentPeerId: bridge.agentPeerId,
@@ -3528,7 +3533,24 @@ if (nodeService instanceof NodeServiceImpl && bridgeHttpReady) {
     agentName: bridgeConfig.agentName ?? "",
     agentPublicKeyPem: bridgeIdentity.agentPublicKeyPem,
     agentType,
+    activeExtAgentId: bridgeConfig.resolvedActiveExtAgentId ?? undefined,
+    adapter: bridgeConfig.resolvedAdapter,
   });
+  nodeService.setBridgeRuntimeConfig(bridgeConfig);
+  nodeService.setBridgeConfigApplier((next) => {
+    const withRegistry = {
+      ...next,
+      extAgents: mergeBundledExtAgentRegistry(next.extAgents),
+    };
+    const resolved = applyBridgeConfigResolution(BridgeConfigSchema.parse(withRegistry));
+    bridgeConfig = resolved;
+    bridge.updateConfig(resolved);
+    if (nodeService instanceof NodeServiceImpl) {
+      nodeService.applyBridgeRuntimeConfig(resolved);
+    }
+    void syncExtAgentSidecars(resolved);
+  });
+  void syncExtAgentSidecars(bridgeConfig);
   // Register bridge agent as a virtual peer so sendChat can resolve it.
   // ownerId = bridge agent peer ID (lookup key for sendChat)
   // peerId = home node's libp2p ID (transport)
@@ -3963,6 +3985,7 @@ if (resolvedArgs.humanProfileUpdate) {
 console.log("Press Ctrl+C to stop.");
 
 async function shutdown(): Promise<void> {
+  await extSidecarManager.stopAll();
   await bridge.stop();
   if (nodeService instanceof NodeServiceImpl) {
     try { await nodeService.stopOpenClaw?.(); } catch { /* ok */ }

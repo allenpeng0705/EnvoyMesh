@@ -1,6 +1,9 @@
+import { aiEngineMessagesIt } from "./ai-engine-locale.js";
+
 export const itAiSettingsMessages = {
   title: "Impostazioni assistente IA",
   sectionDesc: "Configura come l'IA risponde per tuo conto.",
+  aiEngine: aiEngineMessagesIt,
   model: {
     heading: "Provider del modello",
     sectionDescCloud: "Configura un'API cloud per assistenza chat e risposte di conoscenza su questo dispositivo.",

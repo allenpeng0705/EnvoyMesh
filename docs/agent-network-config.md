@@ -189,9 +189,9 @@ The EnvoyGo Flutter thin client (Phase 31, shipped) mirrors the home-node state 
 
 1. Reads `getOpenClawStatus()` and `getBridgeStatus()` from `NodeServiceClient` (which calls through `MobileNode` to the home node via `HomeRemoteClient`).
 2. Renders a derived "Agent Network" chip ("Built-in + Ext" / "Built-in only" / "Ext only" / "None") and two rows: Built-in OpenClaw + External Agent Bridge. Each row shows the configured `enabled` flag plus the live `running` state via a 3-state badge (Disabled / Running / Stopped).
-3. **No mutations.** Both rows are `readOnly: true` — there are no checkboxes, no Save handler, no call to `updateNodeConfigPartial`. The home-node Settings → AI → Agent Network screen is the source of truth for any config change. To disable the built-in OpenClaw, the home-node owner edits `node-config.json` and restarts.
+3. **AI Engine** is read-only (Built-in OpenClaw + Ext Agent Bridge status). **Model provider** is editable: EnvoyGo calls `updateNodeConfig` on the home node; Social and other clients receive `config:updated` with the new `modelProviders`. Cloud API modes only (OpenAI-compatible, Anthropic-compatible, mock, disabled).
 
-No new Dart types are required beyond the two existing RPCs (`getOpenClawStatus`, `getBridgeStatus`). The home node is the source of truth; mobile just mirrors.
+No new Dart types are required beyond the two existing RPCs (`getOpenClawStatus`, `getBridgeStatus`). The home node is the source of truth; mobile mirrors engine status and syncs model settings to home.
 
 **Dependency note:** The EnvoyGo thin client is now shipped (Phase 31 — see [flutter-thin-client-design.md](./flutter-thin-client-design.md)). The mobile smoke test in §8 (test case 6 — "Pair EnvoyGo on a phone") runs against the live `apps/envoygo/` binary; smoke-test results are deferred to live hardware verification.
 

@@ -398,6 +398,13 @@ describe("CallManager", () => {
       expect(cm.isCallerMatch("call-1", "envoy:owner:bob")).toBe(false);
     });
 
+    it("removes ended sessions from memory", () => {
+      cm.outboundCallInitiated("call-1", LOCAL_OWNER, "envoy:owner:bob", "Bob");
+      cm.outboundCallAccepted("call-1");
+      cm.hangupCall("call-1", "normal");
+      expect(cm.getSessionStatus("call-1")).toBeNull();
+    });
+
     it("getSessionStatus returns null for unknown callId", () => {
       expect(cm.getSessionStatus("nonexistent")).toBeNull();
     });

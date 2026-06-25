@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/chat_thread.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/contact_provider.dart';
+import '../../providers/node_provider.dart';
 import '../../widgets/thread_tile.dart';
 import '../terminals/terminal_detail_screen.dart';
 import 'chat_detail_screen.dart';
@@ -219,7 +220,7 @@ class ChatListScreen extends ConsumerWidget {
   }
 
   void _createTerminal(BuildContext context, WidgetRef ref) {
-    final nameController = TextEditingController(text: 'zsh');
+    final titleController = TextEditingController(text: 'Terminal');
     final cwdController = TextEditingController();
     showDialog(
       context: context,
@@ -229,10 +230,10 @@ class ChatListScreen extends ConsumerWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
-              controller: nameController,
+              controller: titleController,
               autofocus: true,
               decoration: const InputDecoration(
-                hintText: 'Shell (e.g. zsh, bash)',
+                hintText: 'Title (e.g. dev, deploy)',
                 border: OutlineInputBorder(),
               ),
             ),
@@ -252,16 +253,36 @@ class ChatListScreen extends ConsumerWidget {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () {
-              final name = nameController.text.trim();
-              if (name.isNotEmpty) {
-                ref.read(chatProvider.notifier).createTerminal(
-                      name: name,
+            onPressed: () async {
+              final title = titleController.text.trim();
+              if (title.isEmpty) return;
+              Navigator.of(ctx).pop();
+              try {
+                final sessionId = await ref
+                    .read(chatProvider.notifier)
+                    .createTerminal(
+                      title: title,
                       cwd: cwdController.text.trim().isEmpty
                           ? null
                           : cwdController.text.trim(),
                     );
-                Navigator.of(ctx).pop();
+                if (!context.mounted || sessionId == null) return;
+                final nodeId = ref.read(nodeProvider).activeNode?.id;
+                if (nodeId == null) return;
+                final threadId = '$nodeId:term:$sessionId';
+                final thread = ref
+                    .read(chatProvider)
+                    .threads
+                    .where((t) => t.id == threadId)
+                    .firstOrNull;
+                if (thread != null) {
+                  _openThread(context, thread);
+                }
+              } catch (e) {
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Failed to create terminal: $e')),
+                );
               }
             },
             child: const Text('Create'),
@@ -284,11 +305,10 @@ class ChatListScreen extends ConsumerWidget {
             hintText: 'Group name',
             border: OutlineInputBorder(),
           ),
-          onSubmitted: (name) {
-            if (name.trim().isNotEmpty) {
-              ref.read(chatProvider.notifier).createRoom(name.trim());
-              Navigator.of(ctx).pop();
-            }
+          onSubmitted: (name) async {
+            if (name.trim().isEmpty) return;
+            Navigator.of(ctx).pop();
+            await _createRoomAndOpen(context, ref, name.trim());
           },
         ),
         actions: [
@@ -297,18 +317,45 @@ class ChatListScreen extends ConsumerWidget {
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () {
+            onPressed: () async {
               final name = controller.text.trim();
-              if (name.isNotEmpty) {
-                ref.read(chatProvider.notifier).createRoom(name);
-                Navigator.of(ctx).pop();
-              }
+              if (name.isEmpty) return;
+              Navigator.of(ctx).pop();
+              await _createRoomAndOpen(context, ref, name);
             },
             child: const Text('Create'),
           ),
         ],
       ),
     );
+  }
+
+  Future<void> _createRoomAndOpen(
+    BuildContext context,
+    WidgetRef ref,
+    String name,
+  ) async {
+    try {
+      final roomId =
+          await ref.read(chatProvider.notifier).createRoom(name);
+      if (!context.mounted || roomId == null) return;
+      final nodeId = ref.read(nodeProvider).activeNode?.id;
+      if (nodeId == null) return;
+      final threadId = '$nodeId:room:$roomId';
+      final thread = ref
+          .read(chatProvider)
+          .threads
+          .where((t) => t.id == threadId)
+          .firstOrNull;
+      if (thread != null) {
+        _openThread(context, thread);
+      }
+    } catch (e) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to create group: $e')),
+      );
+    }
   }
 }
 

@@ -200,6 +200,9 @@ export type RpcMethods =
   | "getTransferStatus"
    // Agent Bridge
    | "getBridgeStatus"
+   | "getBridgeConfig"
+   | "updateBridgeConfig"
+   | "probeExtAgents"
    | "getOpenClawStatus"
    // ClawHub skills
    | "getOpenClawPlugins"
@@ -599,6 +602,45 @@ export interface BridgeStatus {
   agentPublicKeyPem?: string;
   /** "envoyai" for the built-in OpenClaw assistant, "external" for a third-party HTTP agent. */
   agentType?: "envoyai" | "external";
+  /** Phase 44 — active registry entry id, when using multi-agent config. */
+  activeExtAgentId?: string;
+  /** Phase 44 — adapter profile for the active backend. */
+  adapter?: string;
+  /** Phase 44 — optional health from last probe. */
+  healthy?: boolean;
+}
+
+/** Reachability of a registered ext agent (from HTTP health probe). */
+export type ExtAgentReachability = "running" | "stopped" | "disabled" | "unknown";
+
+/** Phase 44 — one registered external agent backend. */
+export interface ExtAgentRegistryEntry {
+  id: string;
+  name: string;
+  adapter: string;
+  url: string;
+  enabled: boolean;
+  inboundSecret?: string;
+  vendor?: string;
+  notes?: string;
+  /** Last probe: HTTP /status reachable (enabled entries only). */
+  healthy?: boolean;
+  reachability?: ExtAgentReachability;
+}
+
+/** Phase 44 — bridge-config.json view for Settings UI. */
+export interface BridgeConfigView {
+  enabled: boolean;
+  listenPort: number;
+  secret?: string;
+  activeExtAgent?: string;
+  extAgents: ExtAgentRegistryEntry[];
+  /** Resolved URL the bridge forwards to. */
+  agentUrl: string;
+  /** Resolved display name for the active backend. */
+  agentName: string;
+  activeExtAgentId?: string | null;
+  adapter?: string;
 }
 
 /**
@@ -1127,6 +1169,43 @@ export interface GetBootstrapPeersResult {
 }
 
 export interface GetBridgeStatusParams {}
+
+export interface GetBridgeConfigParams {}
+
+export interface UpdateBridgeConfigParams {
+  enabled?: boolean;
+  listenPort?: number;
+  secret?: string;
+  activeExtAgent?: string;
+  extAgents?: ExtAgentRegistryEntry[];
+  /** Legacy single-agent fields (used when no registry). */
+  agentUrl?: string;
+  agentName?: string;
+}
+
+export interface UpdateBridgeConfigResult {
+  ok: boolean;
+  config?: BridgeConfigView;
+  reason?: string;
+}
+
+export interface ProbeExtAgentsParams {}
+
+export interface ExtAgentHealthEntry {
+  id: string;
+  name: string;
+  adapter: string;
+  url: string;
+  enabled: boolean;
+  healthy: boolean;
+  reachability: ExtAgentReachability;
+}
+
+export interface ProbeExtAgentsResult {
+  activeExtAgentId?: string | null;
+  activeHealthy?: boolean;
+  entries: ExtAgentHealthEntry[];
+}
 
 export interface GetOpenClawStatusParams {}
 

@@ -127,6 +127,7 @@
   --color-surface: #ffffff;
   --color-surface-elevated: #ffffff;
   --color-surface-overlay: #ffffff;
+  --color-surface-subtle: var(--color-slate-50);
   --color-border: var(--color-slate-200);
   --color-border-subtle: var(--color-slate-200);
 
@@ -216,6 +217,7 @@
     --color-surface: #334155;
     --color-surface-elevated: #475569;
     --color-surface-overlay: #64748b;
+    --color-surface-subtle: #293548;
     --color-border: #64748b;
     --color-border-subtle: #475569;
 
@@ -299,6 +301,7 @@
   --color-surface: #334155;
   --color-surface-elevated: #475569;
   --color-surface-overlay: #64748b;
+  --color-surface-subtle: #293548;
   --color-border: #64748b;
   --color-border-subtle: #475569;
 
@@ -382,6 +385,7 @@
   --color-surface: #ffffff;
   --color-surface-elevated: #ffffff;
   --color-surface-overlay: #ffffff;
+  --color-surface-subtle: var(--color-slate-50);
   --color-border: var(--color-slate-200);
   --color-border-subtle: var(--color-slate-200);
 

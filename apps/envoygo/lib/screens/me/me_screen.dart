@@ -2,9 +2,13 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../l10n/l10n_helpers.dart';
 import '../../models/stored_node.dart';
 import '../../providers/node_provider.dart';
 import '../../widgets/ai_engine_section.dart';
+import '../../widgets/ext_agent_section.dart';
+import '../../widgets/language_settings_tile.dart';
+import '../../widgets/model_provider_section.dart';
 import '../../widgets/connection_indicator.dart';
 import '../chains/recent_chains_screen.dart';
 import '../chains/active_chains_screen.dart';
@@ -17,6 +21,7 @@ class MeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = context.l10n;
     final nodeState = ref.watch(nodeProvider);
     final notifier = ref.read(nodeProvider.notifier);
 
@@ -31,7 +36,7 @@ class MeScreen extends ConsumerWidget {
         ),
         const SizedBox(height: 12),
         Text(
-          'EnvoyGo',
+          l10n.appTitle,
           style: Theme.of(context).textTheme.headlineSmall,
           textAlign: TextAlign.center,
         ),
@@ -223,8 +228,12 @@ class MeScreen extends ConsumerWidget {
         // other nodes — pairing, fleet manifest, company invites — not the
         // AI engine. This is the AI engine.)
         if (nodeState.activeNode != null) ...[
-          const _SectionHeader(title: 'AI Engine'),
+          _SectionHeader(title: l10n.sectionAiEngine),
           const AiEngineSection(),
+          const SizedBox(height: 8),
+          const ExtAgentSection(),
+          const SizedBox(height: 8),
+          const ModelProviderSection(),
           const SizedBox(height: 16),
         ],
 
@@ -233,7 +242,7 @@ class MeScreen extends ConsumerWidget {
         // sections, and per-worker cost. Authoring happens on the home
         // node's Social UI; mobile shows what was published.
         if (nodeState.activeNode != null) ...[
-          const _SectionHeader(title: 'Chains'),
+          _SectionHeader(title: l10n.sectionChains),
           Card(
             child: ListTile(
               leading: const Icon(Icons.analytics_outlined),
@@ -302,8 +311,10 @@ class MeScreen extends ConsumerWidget {
           const SizedBox(height: 16),
         ],
 
-        // Theme
+        // Theme + language
         const _SectionHeader(title: 'Preferences'),
+        const LanguageSettingsTile(),
+        const SizedBox(height: 8),
         Card(
           child: SwitchListTile(
             title: const Text('Dark mode'),

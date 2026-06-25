@@ -4,11 +4,13 @@ EnvoyMesh **Phase 9K** lets a home node pipe P2P `chat.message` traffic to an ex
 
 **Related docs:**
 
+- [envoymesh-bridge-protocol.md](./envoymesh-bridge-protocol.md) — **canonical Bridge Protocol v1** (adapter profiles, wire format)
+- [ext_agent_design.md](./ext_agent_design.md) — multi-agent Ext Agent super channel (Phase 44)
 - [profile-photos.md](./profile-photos.md) — thumbnails, gallery, `profile.sync`, sharing
-- [openclaw-agent-bridge-adr.md](./openclaw-agent-bridge-adr.md) — wire contract, security, CI smokes
+- [openclaw-agent-bridge-adr.md](./openclaw-agent-bridge-adr.md) — ADR, security, CI smokes
 - [openclaw-extension.md](./openclaw-extension.md) — OpenClaw install and config (detailed)
 - [openclaw-bridge-e2e-checklist.md](./openclaw-bridge-e2e-checklist.md) — manual OpenClaw E2E checklist
-- [implementation-plan.md](./implementation-plan.md) — Phase 9K / 9I
+- [implementation-plan.md](./implementation-plan.md) — Phase 9K / 9I / 44
 
 ---
 
@@ -36,11 +38,13 @@ sequenceDiagram
 
 **Rules:**
 
-- **One bridge = one `agentUrl`.** Do not point the same bridge at HomeClaw and OpenClaw at once. Use separate EnvoyMesh profiles to A/B test.
+- **One bridge = one active backend at a time.** Do not point the same bridge at HomeClaw and OpenClaw simultaneously. Phase 44 adds a registry + switch so you can install several agents and pick one active backend ([ext_agent_design.md](./ext_agent_design.md)).
 - **OpenClaw / HomeClaw never hold libp2p keys** — only the EnvoyMesh node speaks P2P.
 - **Reply routing:** `to` on `/bridge/send` must be the mesh **peer id** from inbound `from` (`envoy_…`), not `envoy:owner:…`.
 
 ### Wire contract (summary)
+
+Full spec: [envoymesh-bridge-protocol.md](./envoymesh-bridge-protocol.md).
 
 **Bridge → agent** (`POST agentUrl`):
 
@@ -268,7 +272,86 @@ Start **HomeClaw** (with envoymesh channel) and the **EnvoyMesh node** with the 
 | **Mesh tools from agent** | HomeClaw integration | `envoymesh_*` OpenClaw tools → bridge |
 | **Both at once?** | **No** — one `agentUrl` per bridge |
 
-**Switching agents:** change only `bridge-config.json` `agentUrl` (and `secret` if used). Leave the other product installed but unused.
+**Switching agents (legacy):** change only `bridge-config.json` `agentUrl` (and `secret` if used). Leave the other product installed but unused.
+
+---
+
+## Multi-agent registry (Phase 44)
+
+Install several local backends and **switch one active** Ext Agent without changing the mesh peer id.
+
+**Operator guide (non-developers):** [ext-agent-getting-started.md](./ext-agent-getting-started.md) — install, run, and troubleshoot HomeClaw, Hermes, and OpenHuman. The same content appears in **Settings → AI → AI Engine** in the Social app. Pi (coding harness) is documented separately for developers who register it in `bridge-config.json`.
+
+### 1. Config
+
+Copy `apps/node/data/default/bridge-config.multi-agent.example.json` into your profile, or add:
+
+```json
+{
+  "enabled": true,
+  "listenPort": 3031,
+  "secret": "your-bridge-secret",
+  "activeExtAgent": "homeclaw",
+  "extAgents": [
+    {
+      "id": "homeclaw",
+      "name": "HomeClaw",
+      "adapter": "envoymesh-message",
+      "url": "http://127.0.0.1:8010/message",
+      "enabled": true
+    },
+    {
+      "id": "hermes",
+      "name": "Hermes",
+      "adapter": "envoymesh-message",
+      "url": "http://127.0.0.1:8020/message",
+      "enabled": true
+    }
+  ]
+}
+```
+
+Resolution rules:
+
+- `agentUrl` / `agentName` on disk are **derived** from the active registry entry.
+- Legacy configs with only `agentUrl` (no `extAgents`) still work.
+- Per-agent `inboundSecret` overrides the global `secret` for bridge → agent POST auth.
+
+### 2. Reference sidecars
+
+| Backend | Sidecar | Default port |
+|---------|---------|--------------|
+| Hermes | [tools/ext-agent-adapters/hermes/](../tools/ext-agent-adapters/hermes/) | 8020 |
+| OpenHuman | [tools/ext-agent-adapters/openhuman/](../tools/ext-agent-adapters/openhuman/) | 8021 |
+| Pi (coding) | [tools/ext-agent-adapters/pi/](../tools/ext-agent-adapters/pi/) | 8022 |
+
+```bash
+# Hermes echo mode (no Hermes CLI required)
+node tools/ext-agent-adapters/hermes/server.mjs
+```
+
+### 3. Switch from Social UI
+
+**Settings → AI → AI Engine**
+
+- Pick **Active backend** from the dropdown (instant switch when `extAgents` is configured).
+- See **Status** column (Running / Stopped) and **Refresh status**.
+- Expand **How to install & run external agents** for step-by-step setup.
+
+### 4. RPC (advanced)
+
+| Method | Purpose |
+|--------|---------|
+| `getBridgeConfig` | Registry + resolved active URL |
+| `updateBridgeConfig` | Persist + hot-reload (`activeExtAgent`, `extAgents`, legacy fields) |
+
+Health: after switch, home probes `GET {base}/status` for `envoymesh-message` adapters.
+
+### 5. EnvoyGo / remote peers
+
+No wire change — chat still goes to the **bridge agent peer id**. Switching backend changes reply personality only. See [ext_agent_design.md §7.4](./ext_agent_design.md#74-envoygo-mobile--access-model).
+
+---
 
 ### Configuration mapping (OpenClaw)
 

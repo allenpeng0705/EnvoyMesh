@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/chat_message.dart';
+import '../models/chat_room.dart';
 import '../models/chat_thread.dart';
 import '../storage/local_database.dart';
 import 'contact_provider.dart';
@@ -182,8 +183,11 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     // lastOrNull on a newest-first list = the chronologically oldest message.
     final earliestCached = state.messages[threadId]?.lastOrNull;
-    final messages = await nodeService.listChatHistory(
+    final selfOwnerId = _ref.read(nodeProvider).ownerId;
+    final messages = await nodeService.listChatHistoryForThread(
+      threadId,
       contactOwnerId,
+      selfOwnerId: selfOwnerId,
       before: earliestCached?.createdAt,
     );
 
@@ -232,8 +236,11 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final agentType = parts.length >= 3 ? parts[2] : 'envoyai';
 
     final oldestCached = state.messages[threadId]?.lastOrNull;
-    final messages = await nodeService.listChatHistory(
+    final selfOwnerId = _ref.read(nodeProvider).ownerId;
+    final messages = await nodeService.listChatHistoryForThread(
+      threadId,
       agentType,
+      selfOwnerId: selfOwnerId,
       before: oldestCached?.createdAt,
     );
 
@@ -265,6 +272,41 @@ class ChatNotifier extends StateNotifier<ChatState> {
     );
 
     // Sort by createdAt ascending so display is always chronological.
+    _sortThreadMessages(threadId);
+  }
+
+  /// Load group chat history from the home node (`room:<roomId>` thread key).
+  Future<void> loadRoomHistory(String threadId, String roomId) async {
+    final nodeService = _ref.read(nodeServiceProvider);
+    if (nodeService == null) return;
+
+    final earliestCached = state.messages[threadId]?.lastOrNull;
+    final selfOwnerId = _ref.read(nodeProvider).ownerId;
+    final messages = await nodeService.listChatHistoryForThread(
+      threadId,
+      'room:$roomId',
+      selfOwnerId: selfOwnerId,
+      before: earliestCached?.createdAt,
+    );
+
+    if (messages.isEmpty) return;
+
+    final existingIds =
+        state.messages[threadId]?.map((m) => m.messageId).toSet() ?? {};
+    final newMessages =
+        messages.where((m) => !existingIds.contains(m.messageId)).toList();
+
+    for (final msg in newMessages) {
+      await _localDb.insertMessage(msg.toJson());
+    }
+    if (newMessages.isEmpty) return;
+
+    state = state.copyWith(
+      messages: {
+        ...state.messages,
+        threadId: [...?state.messages[threadId], ...newMessages],
+      },
+    );
     _sortThreadMessages(threadId);
   }
 
@@ -606,17 +648,26 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     try {
       final rooms = await nodeService.listChatRooms();
+      final nodeId = nodeState.activeNode!.id;
+      final remoteRoomIds = rooms.map((room) => room.id).toSet();
+
       await _localDb.upsertRooms(
-        nodeState.activeNode!.id,
-        rooms.map((r) => r.toJson()).toList(),
+        nodeId,
+        rooms
+            .map((room) => {
+                  ...room.toJson(),
+                  'id': room.id,
+                  'node_id': nodeId,
+                  'name': room.name,
+                })
+            .toList(),
       );
 
-      // Create threads for rooms.
       for (final room in rooms) {
-        final threadId = '${nodeState.activeNode!.id}:room:${room.id}';
+        final threadId = '$nodeId:room:${room.id}';
         _upsertThread(
           threadId: threadId,
-          nodeId: nodeState.activeNode!.id,
+          nodeId: nodeId,
           type: ChatThreadType.group,
           displayName: room.name,
           chatRoomId: room.id,
@@ -624,10 +675,42 @@ class ChatNotifier extends StateNotifier<ChatState> {
           lastMessageAt: room.lastMessageAt,
         );
       }
+
+      final staleRoomThreads = state.threads.where((thread) {
+        if (thread.type != ChatThreadType.group || thread.nodeId != nodeId) {
+          return false;
+        }
+        final roomId = thread.chatRoomId ?? _roomIdFromThreadId(thread.id);
+        return roomId == null || !remoteRoomIds.contains(roomId);
+      }).toList();
+
+      for (final thread in staleRoomThreads) {
+        await deleteThread(thread.id);
+      }
     } catch (e) {
-      // Log the error so we can diagnose sync issues.
       debugPrint('syncRooms failed: $e');
     }
+  }
+
+  String? _roomIdFromThreadId(String threadId) {
+    final parts = threadId.split(':room:');
+    if (parts.length < 2 || parts[1].isEmpty) return null;
+    return parts[1];
+  }
+
+  /// Handle chat:room-updated push — refresh room list from home.
+  Future<void> onRoomUpdated(Map<String, dynamic> data) async {
+    await syncRooms();
+  }
+
+  /// Handle chat:room-removed push — drop the local thread.
+  Future<void> onRoomRemoved(Map<String, dynamic> data) async {
+    final nodeState = _ref.read(nodeProvider);
+    if (nodeState.activeNode == null) return;
+    final roomId = data['roomId'] as String?;
+    if (roomId == null || roomId.isEmpty) return;
+    final threadId = '${nodeState.activeNode!.id}:room:$roomId';
+    await deleteThread(threadId);
   }
 
   /// Send a message to a group chat room.
@@ -641,10 +724,13 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final tempMsg = ChatMessage(
       id: 'temp_${DateTime.now().microsecondsSinceEpoch}',
       threadId: threadId,
+      senderDisplayName: 'You',
       text: text,
       createdAt: now,
       isOutbound: true,
     );
+
+    _localDb.insertMessage(tempMsg.toJson());
 
     state = state.copyWith(
       messages: {
@@ -656,17 +742,25 @@ class ChatNotifier extends StateNotifier<ChatState> {
       },
     );
 
+    final existingThread = state.threads
+        .where((t) => t.id == threadId)
+        .firstOrNull;
     _upsertThread(
       threadId: threadId,
       nodeId: nodeState.activeNode!.id,
       type: ChatThreadType.group,
-      displayName: 'Room', // Fallback; existing thread data overrides.
+      displayName: existingThread?.displayName ?? 'Group',
       chatRoomId: roomId,
       lastMessageText: text,
       lastMessageAt: DateTime.now(),
     );
 
-    await nodeService.sendChatRoomMessage(roomId, text);
+    try {
+      await nodeService.sendChatRoomMessage(roomId, text);
+    } catch (e) {
+      debugPrint('sendRoomMessage failed: $e');
+      rethrow;
+    }
   }
 
   /// Handle a chat:room-message push event.
@@ -674,40 +768,40 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final nodeState = _ref.read(nodeProvider);
     if (nodeState.activeNode == null) return;
 
-    // Two formats for chat:room-message:
-    //   Wrapped: { roomId, message: { sender, content, ... } }
-    //   Direct:  ChatMessage { sender, content, recipient, ... }
     final message = data['message'] as Map<String, dynamic>?;
-    final inner = message ?? data; // Unwrap if wrapped.
+    final inner = message ?? data;
 
-    final sender = inner['sender'] as Map<String, dynamic>?;
-    final content = inner['content'] as Map<String, dynamic>?;
-    final metadata = inner['metadata'] as Map<String, dynamic>?;
-    final recipient = inner['recipient'] as Map<String, dynamic>?;
+    var roomId = data['roomId'] as String?;
+    if (roomId == null || roomId.isEmpty) {
+      final recipient = inner['recipient'] as Map<String, dynamic>?;
+      final ownerId = recipient?['ownerId'] as String?;
+      if (ownerId != null && ownerId.startsWith('room:')) {
+        roomId = ownerId.substring('room:'.length);
+      }
+    }
+    if (roomId == null || roomId.isEmpty) return;
+    if (roomId.startsWith('room:')) {
+      roomId = roomId.substring('room:'.length);
+    }
 
-    final roomId = (data['roomId'] ?? recipient?['ownerId']) as String?;
-    final senderOwnerId = ((inner['senderOwnerId'] ?? sender?['ownerId']) as String?)?.trim();
-    final text = (inner['text'] ?? content?['text']) as String?;
-    final messageId = inner['messageId'] as String?;
-    final createdAt = (inner['createdAt'] ?? metadata?['timestamp']) as String?;
-    final roomName = (data['roomName'] ?? data['roomName'] ?? recipient?['displayName']) as String?;
-    final senderDisplayName = (inner['senderDisplayName'] ?? sender?['displayName']) as String?;
+    _ingestRoomMessage(nodeState, roomId, inner, data['roomName'] as String?);
+  }
 
-    if (roomId == null) return;
-
-    // Skip messages with no text — they would render as empty bubbles.
-    if (text == null || text.isEmpty) return;
-
+  void _ingestRoomMessage(
+    NodeState nodeState,
+    String roomId,
+    Map<String, dynamic> inner,
+    String? roomName,
+  ) {
+    final selfOwnerId = nodeState.ownerId;
     final threadId = '${nodeState.activeNode!.id}:room:$roomId';
-    final msg = ChatMessage(
-      id: messageId ?? 'msg_${DateTime.now().microsecondsSinceEpoch}',
-      threadId: threadId,
-      senderOwnerId: senderOwnerId,
-      senderDisplayName: senderDisplayName,
-      text: text,
-      createdAt: createdAt,
-      isOutbound: false,
+    final msg = ChatMessage.fromRpcMap(
+      threadId,
+      inner,
+      selfOwnerId: selfOwnerId,
     );
+
+    if (msg.text == null || msg.text!.isEmpty) return;
 
     _localDb.insertMessage(msg.toJson());
 
@@ -717,19 +811,27 @@ class ChatNotifier extends StateNotifier<ChatState> {
       type: ChatThreadType.group,
       displayName: roomName ?? 'Group',
       chatRoomId: roomId,
-      lastMessageText: text ?? '',
-      lastMessageAt: createdAt != null
-          ? DateTime.tryParse(createdAt)
+      lastMessageText: msg.text ?? '',
+      lastMessageAt: msg.createdAt != null
+          ? DateTime.tryParse(msg.createdAt!)
           : DateTime.now(),
-      unreadIncrement: true,
+      unreadIncrement: !msg.isOutbound,
     );
 
-    // Dedup room messages by messageId OR by temp optimistic match.
     final existing = state.messages[threadId] ?? [];
-    if (messageId != null && existing.any((m) => m.id == messageId)) return;
-    if (existing.any((m) => m.text == text && m.id.startsWith('temp_'))) return;
+    if (existing.any((m) => m.id == msg.id)) return;
+    if (msg.isOutbound &&
+        existing.any((m) => m.text == msg.text && m.id.startsWith('temp_'))) {
+      final updated = existing.map((m) {
+        if (m.text == msg.text && m.id.startsWith('temp_')) return msg;
+        return m;
+      }).toList();
+      state = state.copyWith(
+        messages: {...state.messages, threadId: updated},
+      );
+      return;
+    }
 
-    // Prepend so newest is at index 0 (bottom with reverse:true).
     state = state.copyWith(
       messages: {
         ...state.messages,
@@ -738,12 +840,61 @@ class ChatNotifier extends StateNotifier<ChatState> {
     );
   }
 
-  /// Create a new chat room.
-  Future<void> createRoom(String name) async {
+  /// Create a new chat room on the home node.
+  /// Returns the new room id, or null when create could not complete.
+  Future<String?> createRoom(
+    String name, {
+    List<String> memberOwnerIds = const [],
+  }) async {
     final nodeService = _ref.read(nodeServiceProvider);
-    if (nodeService == null) return;
-    await nodeService.createChatRoom(name);
-    await syncRooms();
+    final nodeState = _ref.read(nodeProvider);
+    if (nodeService == null || nodeState.activeNode == null) return null;
+
+    try {
+      final result = await nodeService.createChatRoom(
+        name,
+        memberOwnerIds: memberOwnerIds,
+      );
+      final roomId = result['roomId'] as String?;
+      if (roomId == null || roomId.isEmpty) {
+        throw StateError('createChatRoom returned no roomId');
+      }
+
+      final nodeId = nodeState.activeNode!.id;
+      final title = (result['title'] as String?)?.trim();
+      final displayName =
+          title != null && title.isNotEmpty ? title : name.trim();
+      final threadId = '$nodeId:room:$roomId';
+
+      final room = ChatRoom.fromJson({
+        ...result,
+        'nodeId': nodeId,
+      });
+      await _localDb.upsertRooms(nodeId, [
+        {
+          ...room.toJson(),
+          'id': room.id,
+          'node_id': nodeId,
+          'name': room.name,
+        },
+      ]);
+
+      await syncRooms();
+
+      _upsertThread(
+        threadId: threadId,
+        nodeId: nodeId,
+        type: ChatThreadType.group,
+        displayName: displayName,
+        chatRoomId: roomId,
+        lastMessageAt: DateTime.now(),
+        forceDisplayNameUpdate: true,
+      );
+      return roomId;
+    } catch (e) {
+      debugPrint('createRoom failed: $e');
+      rethrow;
+    }
   }
 
   /// Invite a contact to a room.
@@ -840,6 +991,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
           : ChatThreadType.envoyai,
       displayName: displayName,
       agentType: agentType,
+      forceDisplayNameUpdate: true,
     );
   }
 
@@ -852,41 +1004,76 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final nodeState = _ref.read(nodeProvider);
     if (nodeState.activeNode == null) return;
 
+    final nodeId = nodeState.activeNode!.id;
+    final remoteSessionIds =
+        termState.sessions.map((session) => session.id).toSet();
+
     for (final session in termState.sessions) {
-      final threadId =
-          '${nodeState.activeNode!.id}:term:${session.id}';
+      final threadId = '$nodeId:term:${session.id}';
       _upsertThread(
         threadId: threadId,
-        nodeId: nodeState.activeNode!.id,
+        nodeId: nodeId,
         type: ChatThreadType.terminal,
         displayName: 'Terminal: ${session.name}',
         lastMessageText:
             '${session.runningProcess ?? 'shell'} — ${session.cwd ?? '~'}',
       );
     }
+
+    final staleTerminalThreads = state.threads.where((thread) {
+      if (thread.type != ChatThreadType.terminal || thread.nodeId != nodeId) {
+        return false;
+      }
+      final sessionId = _terminalSessionIdFromThreadId(thread.id);
+      return sessionId == null || !remoteSessionIds.contains(sessionId);
+    }).toList();
+
+    for (final thread in staleTerminalThreads) {
+      await deleteThread(thread.id);
+    }
+  }
+
+  String? _terminalSessionIdFromThreadId(String threadId) {
+    final parts = threadId.split(':term:');
+    if (parts.length < 2 || parts[1].isEmpty) return null;
+    return parts[1];
   }
 
   /// Create a new terminal session on the home node.
-  Future<void> createTerminal(
-      {required String name, String? cwd}) async {
+  /// Returns the new session id, or null when create could not complete.
+  Future<String?> createTerminal({
+    required String title,
+    String? cwd,
+  }) async {
     final nodeService = _ref.read(nodeServiceProvider);
     final nodeState = _ref.read(nodeProvider);
-    if (nodeService == null || nodeState.activeNode == null) return;
+    if (nodeService == null || nodeState.activeNode == null) return null;
 
-    final result =
-        await nodeService.createTerminalSession(command: name, cwd: cwd);
-    final sessionId = result['sessionId'] as String?;
-    if (sessionId == null) return;
+    try {
+      final result = await nodeService.createTerminalSession(
+        title: title,
+        cwd: cwd,
+      );
+      final sessionId = result['sessionId'] as String?;
+      if (sessionId == null || sessionId.isEmpty) return null;
 
-    // Create a terminal thread.
-    final threadId = '${nodeState.activeNode!.id}:term:$sessionId';
-    _upsertThread(
-      threadId: threadId,
-      nodeId: nodeState.activeNode!.id,
-      type: ChatThreadType.terminal,
-      displayName: 'Terminal: $name',
-      lastMessageAt: DateTime.now(),
-    );
+      await _ref.read(terminalProvider.notifier).loadSessions();
+      await syncTerminals();
+
+      final threadId = '${nodeState.activeNode!.id}:term:$sessionId';
+      final displayTitle = (result['title'] as String?)?.trim();
+      _upsertThread(
+        threadId: threadId,
+        nodeId: nodeState.activeNode!.id,
+        type: ChatThreadType.terminal,
+        displayName: 'Terminal: ${displayTitle?.isNotEmpty == true ? displayTitle : title}',
+        lastMessageAt: DateTime.now(),
+      );
+      return sessionId;
+    } catch (e) {
+      debugPrint('createTerminal failed: $e');
+      rethrow;
+    }
   }
 
   /// Delete a single message from a thread.
@@ -1043,6 +1230,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     String? lastMessageText,
     DateTime? lastMessageAt,
     bool unreadIncrement = false,
+    bool forceDisplayNameUpdate = false,
   }) {
     // Choke-point filter: never create or update a thread for
     // the user themselves (the owner's own ownerId, or a
@@ -1066,8 +1254,10 @@ class ChatNotifier extends StateNotifier<ChatState> {
               existing.type == ChatThreadType.externalAgent)
           ? existing.type
           : type,
-      displayName: _resolveThreadName(
-          type, displayName, existing?.displayName),
+      displayName: forceDisplayNameUpdate
+          ? displayName
+          : _resolveThreadName(
+              type, displayName, existing?.displayName),
       contactOwnerId: contactOwnerId ?? existing?.contactOwnerId,
       chatRoomId: chatRoomId ?? existing?.chatRoomId,
       agentType: agentType ?? existing?.agentType,

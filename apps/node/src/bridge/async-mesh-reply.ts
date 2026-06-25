@@ -1,4 +1,5 @@
 import type { BridgeConfig } from "./config.js";
+import { bridgeForwardAuthSecret } from "./config.js";
 
 const ASYNC_REPLY_MAX_BYTES = 128 * 1024;
 const ASYNC_REPLY_MAX_PER_MINUTE = 60;
@@ -60,8 +61,9 @@ export async function forwardAsyncMeshReply(
   }
 
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (config.secret) {
-    headers.Authorization = `Bearer ${config.secret}`;
+  const secret = bridgeForwardAuthSecret(config);
+  if (secret) {
+    headers.Authorization = `Bearer ${secret}`;
   }
 
   const res = await fetch(config.agentUrl, {

@@ -600,10 +600,10 @@ class NodeNotifier extends StateNotifier<NodeState> {
       _ref.read(chatProvider.notifier).refreshThreadDisplayNames();
     });
 
-    // Rooms and terminals sync directly using _nodeService.
-    _syncRoomsDirect(nodeService, chatNotifier);
-    _syncTerminalsDirect(nodeService, chatNotifier, terminalNotifier);
-    // Sync all terminal sessions (running and stopped) as chat threads.
+    // Terminals sync via the shared chatProvider path (loads sessions,
+    // upserts threads, prunes stale ones).
+    // Rooms sync via chatProvider (upserts threads, prunes stale ones).
+    chatNotifier.syncRooms();
     chatNotifier.syncTerminals();
     _syncInboxDirect(nodeService, chatNotifier);
 
@@ -649,53 +649,6 @@ class NodeNotifier extends StateNotifier<NodeState> {
     } catch (e) {
       _log('_syncBondsDirect failed: $e');
     }
-  }
-
-  void _syncRoomsDirect(
-      NodeServiceClient nodeService, ChatNotifier chatNotifier) {
-    nodeService.listChatRooms().then((rooms) {
-      final nodeState = state;
-      if (nodeState.activeNode == null) return;
-      final localDb = LocalDatabase();
-      localDb.upsertRooms(
-        nodeState.activeNode!.id,
-        rooms.map((r) => r.toJson()).toList(),
-      );
-      for (final room in rooms) {
-        chatNotifier.onRoomMessage({
-          'roomId': room.id,
-          'roomName': room.name,
-          'senderOwnerId': '',
-          'text': room.lastMessageText ?? '',
-          'createdAt': room.lastMessageAt?.toIso8601String(),
-        });
-      }
-    }).catchError((e) {
-      _log('_syncRoomsDirect failed: $e');
-    });
-  }
-
-  void _syncTerminalsDirect(NodeServiceClient nodeService,
-      ChatNotifier chatNotifier, TerminalNotifier terminalNotifier) {
-    nodeService.listTerminalSessions().then((sessions) {
-      // Update terminal state with all sessions (running and stopped).
-      terminalNotifier.setSessions(sessions);
-      // Only sync running terminals to chat as messages.
-      final running = sessions
-          .where((s) => s.runningProcess != null && s.runningProcess!.isNotEmpty);
-      for (final session in running) {
-        chatNotifier.onChatMessage({
-          'senderOwnerId': 'terminal',
-          'text': '${session.runningProcess ?? 'shell'} — ${session.cwd ?? '~'}',
-          'messageId': 'term_${session.id}',
-          'createdAt': session.createdAt?.toIso8601String(),
-          'terminalId': session.id,
-          'terminalName': session.name,
-        });
-      }
-    }).catchError((e) {
-      _log('_syncTerminalsDirect failed: $e');
-    });
   }
 
   void _syncInboxDirect(
@@ -900,6 +853,16 @@ class NodeNotifier extends StateNotifier<NodeState> {
     client.on('chat:room-message', (data) {
       if (data is Map<String, dynamic>) {
         chatNotifier.onRoomMessage(data);
+      }
+    });
+    client.on('chat:room-updated', (data) {
+      if (data is Map<String, dynamic>) {
+        chatNotifier.onRoomUpdated(data);
+      }
+    });
+    client.on('chat:room-removed', (data) {
+      if (data is Map<String, dynamic>) {
+        chatNotifier.onRoomRemoved(data);
       }
     });
     client.on('bond:established', (_) {

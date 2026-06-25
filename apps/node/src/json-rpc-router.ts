@@ -235,7 +235,10 @@ export async function routeRpcMethod(
     case "listChatRooms":
       return ns.listChatRooms();
     case "createChatRoom":
-      return ns.createChatRoom(params.title as string, params.memberOwnerIds as string[]);
+      return ns.createChatRoom(
+        params.title as string,
+        (params.memberOwnerIds as string[] | undefined) ?? [],
+      );
     case "inviteToChatRoom":
       return ns.inviteToChatRoom(params.roomId as string, params.memberOwnerIds as string[]);
     case "leaveChatRoom":
@@ -501,6 +504,12 @@ export async function routeRpcMethod(
       return ns.getTransferStatus(params.correlationId as string);
     case "getBridgeStatus":
       return ns.getBridgeStatus();
+    case "getBridgeConfig":
+      return ns.getBridgeConfig();
+    case "updateBridgeConfig":
+      return ns.updateBridgeConfig(params as import("@envoymesh/api").UpdateBridgeConfigParams);
+    case "probeExtAgents":
+      return ns.probeExtAgents();
     case "getOpenClawStatus":
       return ns.getOpenClawStatus();
     case "getPairingPayload":

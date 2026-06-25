@@ -1,0 +1,9 @@
+{
+  "name": "@envoymesh/ext-agent-adapter-hermes",
+  "private": true,
+  "type": "module",
+  "description": "Reference Hermes sidecar for EnvoyMesh Ext Agent (envoymesh-message profile)",
+  "scripts": {
+    "start": "node server.mjs"
+  }
+}

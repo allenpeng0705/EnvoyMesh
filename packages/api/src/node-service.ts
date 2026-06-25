@@ -78,6 +78,10 @@ import type {
 } from "./company-invite.js";
 import type {
   BridgeStatus,
+  BridgeConfigView,
+  UpdateBridgeConfigParams,
+  UpdateBridgeConfigResult,
+  ProbeExtAgentsResult,
   OpenClawStatus,
   NodeConfig,
   RelayConfig,
@@ -1731,6 +1735,15 @@ export interface NodeService {
    * Returns default disabled status when bridge is not configured.
    */
   getBridgeStatus(): Promise<BridgeStatus>;
+
+  /** Phase 44 — load bridge-config.json (registry + resolved active backend). */
+  getBridgeConfig(): Promise<BridgeConfigView>;
+
+  /** Phase 44 — persist bridge config and hot-update runtime forward target. */
+  updateBridgeConfig(params: UpdateBridgeConfigParams): Promise<UpdateBridgeConfigResult>;
+
+  /** Phase 44 — probe GET /status for every registry entry; refreshes BridgeStatus.healthy. */
+  probeExtAgents(): Promise<ProbeExtAgentsResult>;
 
   /**
    * Get the live status of the built-in OpenClaw agent (EnvoyAI).

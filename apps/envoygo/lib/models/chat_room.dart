@@ -28,15 +28,23 @@ class ChatRoom {
   });
 
   factory ChatRoom.fromJson(Map<String, dynamic> json) {
-    // Home node uses roomId/title. Local DB uses id/name. Accept both.
+    // Home node uses roomId/title/memberOwnerIds. Local DB uses id/name/node_id.
+    final memberIds = json['memberOwnerIds'] as List<dynamic>?;
+    final memberCountRaw = json['memberCount'] ?? json['member_count'];
+    final memberCount = memberCountRaw is int
+        ? memberCountRaw
+        : memberIds?.length ?? 0;
+
     return ChatRoom(
       id: (json['roomId'] ?? json['id'] ?? '') as String,
       nodeId: (json['nodeId'] ?? json['node_id'] ?? '') as String,
       name: (json['title'] ?? json['name'] ?? '') as String,
-      memberCount: (json['memberCount'] ?? json['member_count'] as int?) ?? 0,
-      lastMessageText: (json['lastMessageText'] ?? json['last_message_text']) as String?,
+      memberCount: memberCount,
+      lastMessageText:
+          (json['lastMessageText'] ?? json['last_message_text']) as String?,
       lastMessageAt: (json['lastMessageAt'] ?? json['last_message_at']) != null
-          ? DateTime.parse((json['lastMessageAt'] ?? json['last_message_at']) as String)
+          ? DateTime.parse(
+              (json['lastMessageAt'] ?? json['last_message_at']) as String)
           : null,
     );
   }

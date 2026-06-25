@@ -16,11 +16,11 @@ import { mkdirSync } from "fs";
 import { join } from "path";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
-import { byteStream } from "@libp2p/utils";
-import { CapabilityRegistry, CLIENT_PROXY_PROTOCOL, EnvoyMesh } from "@envoymesh/network";
+import { CapabilityRegistry, EnvoyMesh } from "@envoymesh/network";
+import { createLibp2pClientProxyHandler } from "./libp2p-client-proxy.js";
 import { parseRelayArgs } from "./args.js";
 import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key-loader.js";
-import { createHomeTunnelProxy } from "./home-tunnel-proxy.js";
+import { createHomeTunnelProxy, type HomeTunnelProxy } from "./home-tunnel-proxy.js";
 import {
   createInitialStandaloneRelayHealthState,
   evaluateStandaloneRelayHealth,
@@ -66,6 +66,8 @@ const MAX_FORWARD_TARGETS = 100;
 // Maximum concurrent client-proxy connections (mobile → relay → home node)
 const MAX_PROXY_CONNECTIONS = 50;
 const MAX_PROXY_CONNS_PER_TARGET = 10;
+/** Cap early RPC frames buffered while libp2p client-proxy dials the home node. */
+const MAX_LIBP2P_PROXY_EARLY_BUFFER = 100;
 
 // Maximum bytes of a single `data` payload inside a home-tunnel frame.
 // The home now chunks PTY output into ~64KB pieces; base64 inflates
@@ -152,6 +154,8 @@ let relayHealthState: StandaloneRelayHealthState = createInitialStandaloneRelayH
 let relayHealthSnapshot: StandaloneRelayHealthSnapshot | undefined;
 let lastEventLoopLagMs = 0;
 let relayRepairInProgress = false;
+/** Set when HTTP WS endpoints are active; used for graceful shutdown. */
+let homeTunnelProxyRef: HomeTunnelProxy | null = null;
 
 // ============================================================================
 // RATE LIMITING: Track registrations per peer to prevent abuse
@@ -169,17 +173,19 @@ function checkRegistrationRateLimit(peerId: string): boolean {
 
   // Prevent memory exhaustion - evict oldest if at capacity
   if (peerRegistrationCount.size >= MAX_RATE_LIMIT_ENTRIES) {
-    const now = Date.now();
     let oldest: string | null = null;
     let oldestExpiry = Infinity;
     for (const [id, entry] of peerRegistrationCount) {
-      if (entry.resetAt < now && entry.resetAt < oldestExpiry) {
+      if (entry.resetAt < oldestExpiry) {
         oldest = id;
         oldestExpiry = entry.resetAt;
       }
     }
     if (oldest) {
       peerRegistrationCount.delete(oldest);
+    } else {
+      const first = peerRegistrationCount.keys().next().value;
+      if (first) peerRegistrationCount.delete(first);
     }
   }
 
@@ -304,6 +310,10 @@ async function shutdown(): Promise<void> {
   if (eventLoopLagTimer) {
     clearInterval(eventLoopLagTimer);
     eventLoopLagTimer = undefined;
+  }
+  if (homeTunnelProxyRef) {
+    await homeTunnelProxyRef.shutdown();
+    homeTunnelProxyRef = null;
   }
   if (httpServer) {
     httpServer.close();
@@ -478,12 +488,15 @@ try {
     // re-claim on new tunnel) lives in `./home-tunnel-proxy.ts` so it
     // can be unit-tested in isolation.
     const MAX_HOME_TUNNELS = 200;
+    const sharedProxyBudget = { total: 0, max: MAX_PROXY_CONNECTIONS };
     const homeTunnelProxy = createHomeTunnelProxy({
       maxHomeTunnels: MAX_HOME_TUNNELS,
       maxProxyConnections: MAX_PROXY_CONNECTIONS,
       maxHomeTunnelDataBytes: MAX_HOME_TUNNEL_DATA_BYTES,
+      sharedProxyBudget,
       logPrefix: "[relay]",
     });
+    homeTunnelProxyRef = homeTunnelProxy;
 
     httpServer.on("upgrade", (req, socket, head) => {
       const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
@@ -555,146 +568,17 @@ try {
       });
     });
 
-    async function handleProxyConnection(ws: WebSocket, targetPeerId: string, token: string): Promise<void> {
-      // Rate limit
-      if (proxyConnTotal >= MAX_PROXY_CONNECTIONS) {
-        console.warn(`[relay] client-proxy: rejected — max total connections ${MAX_PROXY_CONNECTIONS}`);
-        ws.close(1013, "relay proxy connections full");
-        return;
-      }
-      const targetSet = proxyConnByTarget.get(targetPeerId);
-      if (targetSet && targetSet.size >= MAX_PROXY_CONNS_PER_TARGET) {
-        console.warn(`[relay] client-proxy: rejected — max connections per target ${MAX_PROXY_CONNS_PER_TARGET}`);
-        ws.close(1013, "too many connections to target");
-        return;
-      }
-
-      proxyConnTotal++;
-      const conns = proxyConnByTarget.get(targetPeerId) ?? new Set();
-      conns.add(ws);
-      proxyConnByTarget.set(targetPeerId, conns);
-      console.log(`[relay] client-proxy: connecting to ${targetPeerId.slice(0, 12)}… (total=${proxyConnTotal})`);
-
-      let libp2pStream: any = null;
-
-      // Buffer early messages — the mobile sends JSON-RPC probes immediately after
-      // WebSocket connect, but dialProtocol + handshake can take seconds. Without
-      // buffering, those messages arrive before ws.on("message") is registered and
-      // are silently dropped by the ws EventEmitter.
-      const earlyBuffer: Uint8Array[] = [];
-      let streamReady = false;
-      let streamIo: ReturnType<typeof byteStream> | null = null;
-
-      const rawToBytes = (raw: string | Buffer | ArrayBuffer | Buffer[]): Uint8Array => {
-        if (typeof raw === "string") return new TextEncoder().encode(raw);
-        if (raw instanceof Uint8Array) return raw;
-        if (Array.isArray(raw)) return new Uint8Array(Buffer.concat(raw));
-        return new Uint8Array(raw as ArrayBuffer);
-      };
-
-      // Register message handler IMMEDIATELY so no early RPC probes are dropped.
-      ws.on("message", (raw: string | Buffer | ArrayBuffer | Buffer[]) => {
-        try {
-          const bytes = rawToBytes(raw);
-          if (streamReady && streamIo) {
-            void streamIo.write(bytes).catch(() => ws.close());
-          } else {
-            earlyBuffer.push(bytes);
-          }
-        } catch {
-          ws.close();
-        }
-      });
-
-      try {
-        console.log(`[relay] client-proxy: dialing ${targetPeerId.slice(0, 12)}… protocol=${CLIENT_PROXY_PROTOCOL}`);
-
-        libp2pStream = await mesh.dialProtocol(targetPeerId, CLIENT_PROXY_PROTOCOL);
-        streamIo = byteStream(libp2pStream);
-        console.log(`[relay] client-proxy: dialed ${targetPeerId.slice(0, 12)}…, sending handshake`);
-
-        // Send handshake with pairing token
-        const handshake = JSON.stringify({ type: "proxy-connect", token });
-        await streamIo.write(new TextEncoder().encode(handshake));
-
-        // Read handshake response
-        const responseBytes = await streamIo.read();
-        if (!responseBytes) {
-          console.warn(`[relay] client-proxy: home node closed stream before handshake response`);
-          ws.close(1011, "home node closed stream");
-          return;
-        }
-        const response = JSON.parse(new TextDecoder().decode(responseBytes.subarray()));
-        if (response.type !== "proxy-accept") {
-          console.warn(`[relay] client-proxy: home node rejected proxy: ${response.reason ?? "unknown"}`);
-          ws.close(1011, response.reason ?? "home node rejected proxy");
-          return;
-        }
-        console.log(`[relay] client-proxy: proxy-accept received from ${targetPeerId.slice(0, 12)}…`);
-
-        // Mark stream as ready and flush buffered early messages.
-        streamReady = true;
-        if (earlyBuffer.length > 0) {
-          console.log(`[relay] client-proxy: flushing ${earlyBuffer.length} buffered early message(s)`);
-          for (const bytes of earlyBuffer) {
-            await streamIo.write(bytes);
-          }
-          earlyBuffer.length = 0;
-        }
-
-        // Send "connected" event immediately so the mobile knows the RPC channel is ready.
-        ws.send(JSON.stringify({
-          event: "connected",
-          data: { relayProxied: true },
-        }));
-        console.log(`[relay] client-proxy: sent connected event to mobile client`);
-
-        // Bridge: libp2p stream → WebSocket (send as text frames — mobile client expects text)
-        void (async () => {
-          const decoder = new TextDecoder();
-          try {
-            while (ws.readyState === WebSocket.OPEN) {
-              const bytes = await streamIo!.read();
-              if (!bytes) {
-                console.log(`[relay] client-proxy: home node stream ended`);
-                ws.close();
-                break;
-              }
-              const text = decoder.decode(bytes.subarray());
-              console.log(`[relay] client-proxy: forwarding from home node (${text.length} chars): ${text.slice(0, 100)}`);
-              ws.send(text);
-            }
-          } catch (err) {
-            const msg = err instanceof Error ? err.message : String(err);
-            console.error(`[relay] client-proxy: bridge read error: ${msg}`);
-            try { ws.close(); } catch { /* ignore */ }
-          }
-        })();
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.error(`[relay] client-proxy: failed to connect to ${targetPeerId.slice(0, 12)}…: ${msg}`);
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.close(1011, "unable to reach home node");
-        }
-      }
-
-      ws.on("close", () => {
-        proxyConnTotal--;
-        const s = proxyConnByTarget.get(targetPeerId);
-        if (s) {
-          s.delete(ws);
-          if (s.size === 0) proxyConnByTarget.delete(targetPeerId);
-        }
-        if (libp2pStream) {
-          try { libp2pStream.close(); } catch { /* ignore */ }
-        }
-        console.log(`[relay] client-proxy: disconnected from ${targetPeerId.slice(0, 12)}… (total=${proxyConnTotal})`);
-      });
-
-      ws.on("error", () => {
-        ws.close();
-      });
-    }
+    const handleProxyConnection = createLibp2pClientProxyHandler({
+      sharedProxyBudget,
+      proxyConnByTarget,
+      maxConnsPerTarget: MAX_PROXY_CONNS_PER_TARGET,
+      maxEarlyBuffer: MAX_LIBP2P_PROXY_EARLY_BUFFER,
+      dialProtocol: (targetPeerId, protocol) => mesh.dialProtocol(targetPeerId, protocol),
+      onConnTotalChange: (total) => {
+        proxyConnTotal = total;
+      },
+      logPrefix: "[relay]",
+    });
 
     /**
      * Handle a direct client WebSocket connection (mobile standalone mode).

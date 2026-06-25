@@ -41,8 +41,15 @@ export class WsServer {
   private readonly clientSubscriptions = new Map<WebSocket, Set<string>>();
   /** Track authenticated thin-client sessions (token → ws). */
   private readonly authenticatedClients = new Map<WebSocket, string>();
+  /** True after nodeService push listeners are registered (start() is idempotent). */
+  private _pushEventsWired = false;
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
-  private readonly heartbeatIntervalMs = 30000; // 30 seconds
+  /** Heartbeat interval — 60s with two-strike terminate avoids false kills under event-loop lag. */
+  private readonly heartbeatIntervalMs = 60_000;
+  /** Max concurrent Social / thin-client WebSocket connections. */
+  private readonly maxClients = 32;
+  /** Drop sends when client send buffer exceeds this (256 KiB). */
+  private readonly maxSendBufferBytes = 256 * 1024;
   private onConnectionChange?: (connectedCount: number) => void;
 
   constructor(
@@ -72,6 +79,14 @@ export class WsServer {
         socket.destroy();
         return;
       }
+      if (this.wss.clients.size >= this.maxClients) {
+        console.warn(
+          `[ws-server] Rejecting connection: max clients (${this.maxClients}) reached`,
+        );
+        socket.write("HTTP/1.1 503 Service Unavailable\r\nConnection: close\r\n\r\n");
+        socket.destroy();
+        return;
+      }
       this.wss.handleUpgrade(req, socket, head, (ws) => {
         this.wss.emit("connection", ws, req);
       });
@@ -85,27 +100,17 @@ export class WsServer {
       console.error(`[ws-server] WebSocket server error: ${err.message}`);
     });
 
-    // Wire up nodeService events to WebSocket broadcasts
+    // Wire up nodeService events to WebSocket broadcasts.
+    // Events also wired in index.ts (hello/chat/bond/agent) — do not duplicate here.
     const nodeServiceImpl = nodeService as NodeServiceImpl;
-    console.log(`[ws-server] start: nodeServiceImpl has 'on' method?`, typeof nodeServiceImpl.on);
-    if (nodeServiceImpl.on) {
-      console.log(`[ws-server] wiring up event handlers`);
-      nodeServiceImpl.on("hello:request", (data: unknown) => this.emitEvent("hello:request", data));
-      nodeServiceImpl.on("hello:response", (data: unknown) => this.emitEvent("hello:response", data));
+    if (nodeServiceImpl.on && !this._pushEventsWired) {
+      this._pushEventsWired = true;
       nodeServiceImpl.on("share:agent-proposed", (data: unknown) =>
         this.emitEvent("share:agent-proposed", data),
       );
-      nodeServiceImpl.on("chat:message", (data: unknown) => this.emitEvent("chat:message", data));
-      nodeServiceImpl.on("chat:delivered", (data: unknown) => this.emitEvent("chat:delivered", data));
-      nodeServiceImpl.on("chat:room-updated", (data: unknown) => this.emitEvent("chat:room-updated", data));
-      nodeServiceImpl.on("chat:room-removed", (data: unknown) => this.emitEvent("chat:room-removed", data));
-      nodeServiceImpl.on("chat:room-message", (data: unknown) => this.emitEvent("chat:room-message", data));
-      nodeServiceImpl.on("chat:draft", (data: unknown) => this.emitEvent("chat:draft", data));
       nodeServiceImpl.on("chat:auto-reply-paused", (data: unknown) =>
         this.emitEvent("chat:auto-reply-paused", data),
       );
-      nodeServiceImpl.on("agent:activity", (data: unknown) => this.emitEvent("agent:activity", data));
-      nodeServiceImpl.on("bond:established", (data: unknown) => this.emitEvent("bond:established", data));
       nodeServiceImpl.on("bond:revoked", (data: unknown) => this.emitEvent("bond:revoked", data));
       nodeServiceImpl.on("profile:updated", (data: unknown) => this.emitEvent("profile:updated", data));
       nodeServiceImpl.on("node:status", (data: unknown) => this.emitEvent("node:status", data));
@@ -118,7 +123,6 @@ export class WsServer {
       nodeServiceImpl.on("discovery:multihop-update", (data: unknown) =>
         this.emitEvent("discovery:multihop-update", data),
       );
-      // Phase 25A — Mesh awareness insights
       nodeServiceImpl.on("agent:awareness", (data: unknown) => this.emitEvent("agent:awareness", data));
       nodeServiceImpl.on("terminal:session-updated", (data: unknown) =>
         this.emitEvent("terminal:session-updated", data),
@@ -129,9 +133,6 @@ export class WsServer {
       nodeServiceImpl.on("terminal:assistant-proposal", (data: unknown) =>
         this.emitEvent("terminal:assistant-proposal", data),
       );
-      // Phase 25C — Digest ready notification
-      // digest:ready not in NodeServiceEvents type — emit directly
-      // Phase 38 — Voice/Video Call events
       nodeServiceImpl.callManager.onCallEvent((event) => {
         this.emitEvent(event.type, event);
       });
@@ -157,10 +158,17 @@ export class WsServer {
   private startHeartbeat(): void {
     this.heartbeatInterval = setInterval(() => {
       this.wss.clients.forEach((ws) => {
+        const missed = ((ws as any).missedHeartbeats as number | undefined) ?? 0;
         if ((ws as any).isAlive === false) {
-          console.log("[ws-server] Terminating inactive client");
-          ws.terminate();
-          return;
+          const nextMissed = missed + 1;
+          if (nextMissed >= 2) {
+            console.log("[ws-server] Terminating inactive client after missed heartbeats");
+            ws.terminate();
+            return;
+          }
+          (ws as any).missedHeartbeats = nextMissed;
+        } else {
+          (ws as any).missedHeartbeats = 0;
         }
         (ws as any).isAlive = false;
         ws.ping();
@@ -176,9 +184,20 @@ export class WsServer {
       clearInterval(this.heartbeatInterval);
       this.heartbeatInterval = null;
     }
+    for (const ws of this.wss?.clients ?? []) {
+      try {
+        ws.terminate();
+      } catch {
+        // ignore
+      }
+    }
     this.wss?.close();
     this.httpServer?.close();
     this.httpServer = null;
+    this.subscriptions.clear();
+    this.clientSubscriptions.clear();
+    this.authenticatedClients.clear();
+    this._pushEventsWired = false;
   }
 
   /**
@@ -200,6 +219,13 @@ export class WsServer {
 
   private async handleConnection(ws: WebSocket, req?: any): Promise<void> {
     const clientId = randomUUID();
+
+    // Backup cap — upgrade handler checks size, but concurrent handshakes can race.
+    if (this.wss.clients.size > this.maxClients) {
+      console.warn(`[ws-server] Client ${clientId} rejected: connection limit exceeded`);
+      ws.close(1013, "Too many connections");
+      return;
+    }
 
     // Notify connection change
     this.onConnectionChange?.(this.wss.clients.size);
@@ -261,6 +287,9 @@ export class WsServer {
           const listeners = this.subscriptions.get(event);
           if (listeners) {
             listeners.delete(ws);
+            if (listeners.size === 0) {
+              this.subscriptions.delete(event);
+            }
           }
         }
         this.clientSubscriptions.delete(ws);
@@ -277,8 +306,10 @@ export class WsServer {
 
     // Track client for heartbeat
     (ws as any).isAlive = true;
+    (ws as any).missedHeartbeats = 0;
     ws.on("pong", () => {
       (ws as any).isAlive = true;
+      (ws as any).missedHeartbeats = 0;
     });
 
     // Auto-subscribe to all events for this client (push all events without explicit "on" subscription)
@@ -325,6 +356,7 @@ export class WsServer {
       "call:remote-mute",
       "call:ice-candidate",
       "call:error",
+      "config:updated",
     ];
     for (const event of allEvents) {
       this.subscribe(ws, event);
@@ -348,7 +380,7 @@ export class WsServer {
         };
         if (cs.peerId) payload.peerId = cs.peerId;
         if (ws.readyState === WebSocket.OPEN) {
-          this.emitEvent("node:status", payload);
+          this.sendEvent(ws, "node:status", payload);
           if (payload.status === "running") {
             this.sendEvent(ws, "node:ready", { timestamp: Date.now() });
           }
@@ -444,7 +476,7 @@ export class WsServer {
     }
 
     if (method === "homeTerminalWsClose") {
-      rpcHomeTerminalWsClose(ws);
+      rpcHomeTerminalWsClose(ws, (params ?? {}) as { sessionId?: string });
       this.sendResponse(ws, String(id), { ok: true });
       return;
     }
@@ -483,6 +515,9 @@ export class WsServer {
     const listeners = this.subscriptions.get(event);
     if (listeners) {
       listeners.delete(ws);
+      if (listeners.size === 0) {
+        this.subscriptions.delete(event);
+      }
     }
 
     const clientSubs = this.clientSubscriptions.get(ws);
@@ -516,7 +551,7 @@ export class WsServer {
     } else {
       response.result = result;
     }
-    ws.send(JSON.stringify(response));
+    this.safeSend(ws, JSON.stringify(response));
   }
 
   private sendError(ws: WebSocket, id: string, message: string, code: string = "ERROR"): void {
@@ -525,7 +560,22 @@ export class WsServer {
 
   private sendEvent(ws: WebSocket, event: string, data: unknown): void {
     const message: JsonRpcEvent = { event, data };
-    ws.send(JSON.stringify(message));
+    this.safeSend(ws, JSON.stringify(message));
+  }
+
+  /** Send only when socket is open and send buffer is not backed up. */
+  private safeSend(ws: WebSocket, payload: string): void {
+    if (ws.readyState !== WebSocket.OPEN) return;
+    if (ws.bufferedAmount > this.maxSendBufferBytes) {
+      console.warn("[ws-server] Dropping send — client buffer full; terminating slow client");
+      ws.terminate();
+      return;
+    }
+    try {
+      ws.send(payload);
+    } catch (err) {
+      console.warn("[ws-server] send failed:", err instanceof Error ? err.message : err);
+    }
   }
 }
 
