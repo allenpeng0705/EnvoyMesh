@@ -512,7 +512,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
 
     final node = StoredNode(
       id: nodeId,
-      name: existingNode?.name ?? data.agentName ?? 'Home Node',
+      name: defaultHomeNodeDisplayName,
       ownerId: result.ownerId,
       homePeerId: data.homeNodePeerId ?? '',
       lanIp: data.lanWsUrl,
