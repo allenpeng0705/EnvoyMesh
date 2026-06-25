@@ -7,6 +7,10 @@ import { cleanup, fireEvent, screen } from "@testing-library/react";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
 import { IncomingCallModal } from "../../src/components/IncomingCallModal.js";
 
+vi.mock("../../src/hooks/useIncomingCallRingtone.js", () => ({
+  useIncomingCallRingtone: vi.fn(),
+}));
+
 afterEach(() => cleanup());
 
 describe("IncomingCallModal — Phase 38", () => {

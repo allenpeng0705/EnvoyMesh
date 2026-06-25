@@ -6,6 +6,7 @@
 
 import React from "react";
 import { useT } from "../context/I18nContext.js";
+import { useIncomingCallRingtone } from "../hooks/useIncomingCallRingtone.js";
 
 export interface IncomingCallModalProps {
   callerName: string;
@@ -41,6 +42,8 @@ export function IncomingCallModal({
   const t = useT();
   const label = displayCallerName(callerName, callerOwnerId);
   const initial = callerInitial(callerName, callerOwnerId);
+
+  useIncomingCallRingtone(true);
 
   return (
     <div
