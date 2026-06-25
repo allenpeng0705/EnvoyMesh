@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import '../../models/stored_node.dart';
 import '../../services/pairing_service.dart';
 import 'pairing_confirm_screen.dart';
 
@@ -57,7 +58,7 @@ class _PairingScanScreenState extends State<PairingScanScreen> {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute(
         builder: (_) => PairingConfirmScreen(
-          nodeName: data.agentName ?? 'Home Node',
+          nodeName: defaultHomeNodeDisplayName,
           data: data,
         ),
       ),

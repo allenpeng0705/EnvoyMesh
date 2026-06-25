@@ -1,5 +1,8 @@
 import 'dart:convert';
 
+/// Label shown in EnvoyGo for a paired home node (not the bridge agent name).
+const String defaultHomeNodeDisplayName = 'Home Node';
+
 /// A paired home node stored locally.
 class StoredNode {
   /// UUID v4, generated locally.
