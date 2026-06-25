@@ -25,7 +25,7 @@ dependencies:
   mobile_scanner: ^6.0.7
   image_picker: ^1.1.2
   # Audio recording (voice messages)
-  record: ^5.1.2
+  record: ^6.1.0
   # WebRTC (voice/video calls, Phase 38/42). Phase 42D bumps to ^0.14.0
   # for the API surface used by WebRtcCallTransport.
   flutter_webrtc: ^0.14.0

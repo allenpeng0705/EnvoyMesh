@@ -1586,10 +1586,12 @@ class NodeServiceImpl implements NodeService {
       multiaddrs: (mesh.multiaddrs ?? []).map((a) => a.toString()),
     });
     this.emit("node:ready", { timestamp: Date.now() });
-    void this.resyncBondedContactReachabilityTags();
-    void this._scrubBondedContactDialState();
-    this._scheduleDeferredProfileRefresh("bindExternalMesh");
-    this._startBondWarmInterval();
+    void (async () => {
+      await this.resyncBondedContactReachabilityTags();
+      await this._scrubBondedContactDialState();
+      this._scheduleDeferredProfileRefresh("bindExternalMesh");
+      this._startBondWarmInterval();
+    })();
   }
 
   private _scheduleDeferredProfileRefresh(source: string): void {
@@ -11601,11 +11603,12 @@ class NodeServiceImpl implements NodeService {
           }
           // stale — fall through to redial
         } else {
+          if (isOutboundPeerRecentlyVerified(transportPeerId)) {
+            return existing;
+          }
           const probed = await mesh.probeBondedPeerConnection(transportPeerId);
-          if (probed.connected || options?.keepAlive === true) {
-            if (probed.connected) {
-              markOutboundPeerVerified(transportPeerId);
-            }
+          if (probed.connected) {
+            markOutboundPeerVerified(transportPeerId);
             return probed;
           }
           // stale — fall through to redial

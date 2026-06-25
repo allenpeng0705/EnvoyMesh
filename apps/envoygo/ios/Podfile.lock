@@ -1,6 +1,7 @@
 PODS:
   - connectivity_plus (0.0.1):
     - Flutter
+  - CryptoSwift (1.10.0)
   - Firebase/CoreOnly (11.15.0):
     - FirebaseCore (~> 11.15.0)
   - Firebase/Messaging (11.15.0):
@@ -34,6 +35,9 @@ PODS:
     - GoogleUtilities/UserDefaults (~> 8.1)
     - nanopb (~> 3.30910.0)
   - Flutter (1.0.0)
+  - flutter_callkit_incoming (0.0.1):
+    - CryptoSwift
+    - Flutter
   - flutter_inappwebview_ios (0.0.1):
     - Flutter
     - flutter_inappwebview_ios/Core (= 0.0.1)
@@ -43,6 +47,9 @@ PODS:
     - OrderedSet (~> 6.0.3)
   - flutter_secure_storage (6.0.0):
     - Flutter
+  - flutter_webrtc (0.14.0):
+    - Flutter
+    - WebRTC-SDK (= 125.6422.07)
   - GoogleDataTransport (10.1.0):
     - nanopb (~> 3.30910.0)
     - PromisesObjC (~> 2.4)
@@ -110,23 +117,30 @@ PODS:
   - nanopb/encode (3.30910.0)
   - OrderedSet (6.0.3)
   - PromisesObjC (2.4.0)
+  - record_ios (1.2.1):
+    - Flutter
   - sqflite_darwin (0.0.4):
     - Flutter
     - FlutterMacOS
+  - WebRTC-SDK (125.6422.07)
 
 DEPENDENCIES:
   - connectivity_plus (from `.symlinks/plugins/connectivity_plus/ios`)
   - firebase_core (from `.symlinks/plugins/firebase_core/ios`)
   - firebase_messaging (from `.symlinks/plugins/firebase_messaging/ios`)
   - Flutter (from `Flutter`)
+  - flutter_callkit_incoming (from `.symlinks/plugins/flutter_callkit_incoming/ios`)
   - flutter_inappwebview_ios (from `.symlinks/plugins/flutter_inappwebview_ios/ios`)
   - flutter_secure_storage (from `.symlinks/plugins/flutter_secure_storage/ios`)
+  - flutter_webrtc (from `.symlinks/plugins/flutter_webrtc/ios`)
   - image_picker_ios (from `.symlinks/plugins/image_picker_ios/ios`)
   - mobile_scanner (from `.symlinks/plugins/mobile_scanner/ios`)
+  - record_ios (from `.symlinks/plugins/record_ios/ios`)
   - sqflite_darwin (from `.symlinks/plugins/sqflite_darwin/darwin`)
 
 SPEC REPOS:
   trunk:
+    - CryptoSwift
     - Firebase
     - FirebaseCore
     - FirebaseCoreInternal
@@ -144,6 +158,7 @@ SPEC REPOS:
     - nanopb
     - OrderedSet
     - PromisesObjC
+    - WebRTC-SDK
 
 EXTERNAL SOURCES:
   connectivity_plus:
@@ -154,19 +169,26 @@ EXTERNAL SOURCES:
     :path: ".symlinks/plugins/firebase_messaging/ios"
   Flutter:
     :path: Flutter
+  flutter_callkit_incoming:
+    :path: ".symlinks/plugins/flutter_callkit_incoming/ios"
   flutter_inappwebview_ios:
     :path: ".symlinks/plugins/flutter_inappwebview_ios/ios"
   flutter_secure_storage:
     :path: ".symlinks/plugins/flutter_secure_storage/ios"
+  flutter_webrtc:
+    :path: ".symlinks/plugins/flutter_webrtc/ios"
   image_picker_ios:
     :path: ".symlinks/plugins/image_picker_ios/ios"
   mobile_scanner:
     :path: ".symlinks/plugins/mobile_scanner/ios"
+  record_ios:
+    :path: ".symlinks/plugins/record_ios/ios"
   sqflite_darwin:
     :path: ".symlinks/plugins/sqflite_darwin/darwin"
 
 SPEC CHECKSUMS:
   connectivity_plus: 2a701ffec2c0ae28a48cf7540e279787e77c447d
+  CryptoSwift: e2e7776512f250e66205955da748e7a4e4abffe0
   Firebase: d99ac19b909cd2c548339c2241ecd0d1599ab02e
   firebase_core: 99a37263b3c27536063a7b601d9e2a49400a433c
   firebase_messaging: bf6697c61f31c7cc0f654131212ff04c0115c2c7
@@ -175,8 +197,10 @@ SPEC CHECKSUMS:
   FirebaseInstallations: 317270fec08a5d418fdbc8429282238cab3ac843
   FirebaseMessaging: 3b26e2cee503815e01c3701236b020aa9b576f09
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
+  flutter_callkit_incoming: 417dd1b46541cdd5d855ad795ccbe97d1c18155e
   flutter_inappwebview_ios: 6f63631e2c62a7c350263b13fa5427aedefe81d4
   flutter_secure_storage: d33dac7ae2ea08509be337e775f6b59f1ff45f12
+  flutter_webrtc: 90969010741a30ed57cb82ea3178e03306d87111
   GoogleDataTransport: aae35b7ea0c09004c3797d53c8c41f66f219d6a7
   GoogleMLKit: eff9e23ec1d90ea4157a1ee2e32a4f610c5b3318
   GoogleToolboxForMac: d1a2cbf009c453f4d6ded37c105e2f67a32206d8
@@ -191,7 +215,9 @@ SPEC CHECKSUMS:
   nanopb: fad817b59e0457d11a5dfbde799381cd727c1275
   OrderedSet: e539b66b644ff081c73a262d24ad552a69be3a94
   PromisesObjC: f5707f49cb48b9636751c5b2e7d227e43fba9f47
+  record_ios: 3b171007ae5de51221a3a76d2b379a7105ca98b5
   sqflite_darwin: 5a7236e3b501866c1c9befc6771dfd73ffb8702d
+  WebRTC-SDK: dff00a3892bc570b6014e046297782084071657e
 
 PODFILE CHECKSUM: 3c63482e143d1b91d2d2560aee9fb04ecc74ac7e
 

@@ -114,4 +114,26 @@ describe("WsServer lifecycle", () => {
     server.start(createMockNodeService());
     expect(() => server.stop()).not.toThrow();
   });
+
+  it("drops events when client send buffer is full instead of terminating", async () => {
+    const { ws } = await openClientAndWaitForConnected(port);
+    const internal = server as unknown as {
+      safeSend: (socket: WsClient, payload: string) => void;
+    };
+
+    Object.defineProperty(ws, "bufferedAmount", {
+      configurable: true,
+      get: () => 512 * 1024,
+    });
+
+    let closed = false;
+    ws.on("close", () => {
+      closed = true;
+    });
+
+    internal.safeSend(ws, JSON.stringify({ event: "test", data: {} }));
+    await new Promise((r) => setTimeout(r, 100));
+    expect(closed).toBe(false);
+    ws.close();
+  });
 });

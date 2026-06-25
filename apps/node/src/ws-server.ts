@@ -50,6 +50,8 @@ export class WsServer {
   private readonly maxClients = 32;
   /** Drop sends when client send buffer exceeds this (256 KiB). */
   private readonly maxSendBufferBytes = 256 * 1024;
+  /** Rate-limit buffer-full warnings per client socket. */
+  private readonly bufferFullWarnAt = new WeakMap<WebSocket, number>();
   private onConnectionChange?: (connectedCount: number) => void;
 
   constructor(
@@ -567,8 +569,14 @@ export class WsServer {
   private safeSend(ws: WebSocket, payload: string): void {
     if (ws.readyState !== WebSocket.OPEN) return;
     if (ws.bufferedAmount > this.maxSendBufferBytes) {
-      console.warn("[ws-server] Dropping send — client buffer full; terminating slow client");
-      ws.terminate();
+      const now = Date.now();
+      const lastWarn = this.bufferFullWarnAt.get(ws) ?? 0;
+      if (now - lastWarn >= 30_000) {
+        this.bufferFullWarnAt.set(ws, now);
+        console.warn(
+          `[ws-server] Dropping send — client buffer full (${ws.bufferedAmount} bytes); slow consumer`,
+        );
+      }
       return;
     }
     try {

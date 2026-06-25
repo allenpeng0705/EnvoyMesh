@@ -157,6 +157,7 @@ class CallProvider extends ChangeNotifier {
     _nodeService.sendIceCandidate(callId, candidate.toJson()).catchError((_) {
       // ignore: avoid_print
       print('[CallProvider] sendIceCandidate failed');
+      return false;
     });
   }
 
