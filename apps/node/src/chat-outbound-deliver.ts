@@ -214,11 +214,11 @@ export async function deliverChatEnvelopeWithRetry(input: {
   mesh: Pick<
     EnvoyMesh,
     | "sendChat"
-    | "sendChatExpectReply"
     | "closeConnectionsToPeer"
     | "ensurePeerReachable"
     | "getPeerConnectionInfo"
-  >;
+  > &
+    Partial<Pick<EnvoyMesh, "sendChatExpectReply">>;
   transportPeerId: string;
   envelope: EnvoyEnvelope;
   dialHints: string[];
@@ -238,6 +238,7 @@ export async function deliverChatEnvelopeWithRetry(input: {
   );
   const canExpectAck =
     input.expectDeliveryAck !== false && typeof input.mesh.sendChatExpectReply === "function";
+  const sendChatExpectReply = canExpectAck ? input.mesh.sendChatExpectReply : undefined;
   const ackTimeoutMs = resolveChatDeliveryAckTimeoutMs(hints);
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -288,9 +289,9 @@ export async function deliverChatEnvelopeWithRetry(input: {
     let usedAck = false;
 
     try {
-      if (canExpectAck) {
+      if (canExpectAck && sendChatExpectReply) {
         usedAck = true;
-        const reply = await input.mesh.sendChatExpectReply(input.transportPeerId, input.envelope, {
+        const reply = await sendChatExpectReply(input.transportPeerId, input.envelope, {
           timeoutMs: ackTimeoutMs,
           dialHints: hints,
           preferCircuitHints: preferCircuitsOnAttempt,
