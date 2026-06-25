@@ -106,4 +106,26 @@ describe("deliverCallEnvelopeWithRetry (call.* on chat protocol)", () => {
     );
     expect(sendChat).toHaveBeenCalledTimes(1);
   });
+
+  it("delegates non-call intents to chat fire-and-forget delivery", async () => {
+    const sendChat = vi.fn().mockResolvedValue(0);
+    const ensurePeerReachable = vi.fn().mockResolvedValue({ connected: true, direct: true });
+    const mesh = {
+      sendChat,
+      closeConnectionsToPeer: vi.fn().mockResolvedValue(0),
+      ensurePeerReachable,
+      getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: false, direct: false }),
+    };
+
+    await deliverCallEnvelopeWithRetry({
+      mesh,
+      transportPeerId: "12D3KooWHelloPeer",
+      envelope: { intent: "hello.request" } as EnvoyEnvelope,
+      dialHints: ["/p2p/12D3KooWHelloPeer"],
+      maxAttempts: 1,
+    });
+
+    expect(sendChat).toHaveBeenCalledTimes(1);
+    expect(ensurePeerReachable).toHaveBeenCalled();
+  });
 });

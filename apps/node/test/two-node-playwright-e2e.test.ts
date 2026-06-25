@@ -23,12 +23,13 @@ import { tmpdir } from "node:os";
 import { join, extname } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { generateOwnerIdentity, generateDeviceIdentity } from "@envoymesh/identity";
+import { pickFreePort } from "./playwright-e2e-port.js";
 
-const WEB_PORT = 5500;
-const NODE1_PORT = 3061;
-const NODE2_PORT = 3063;
+let webPort = 0;
+let node1Port = 0;
+let node2Port = 0;
 const WORKSPACE_ROOT = join(import.meta.dirname, "..", "..", "..");
-const SOCIAL_DIST = join(WORKSPACE_ROOT, "apps", "social", "dist");
+const SOCIAL_DIST = join(WORKSPACE_ROOT, "apps", "social", "src", "dist");
 const CLI = join(WORKSPACE_ROOT, "apps", "cli", "src", "index.ts");
 
 const MIME: Record<string, string> = {
@@ -85,9 +86,12 @@ describe("Two-node P2P E2E", () => {
     console.log("[2n-e2e] Build:", build.status === 0 ? "ok" : build.stderr.toString().slice(0, 200));
 
     // ---- Start HTTP server ----
+    webPort = await pickFreePort();
+    node1Port = await pickFreePort();
+    node2Port = await pickFreePort();
     webServer = createServer(serveStatic);
-    await new Promise<void>((r) => webServer.listen(WEB_PORT, r));
-    console.log(`[2n-e2e] Web on :${WEB_PORT}`);
+    await new Promise<void>((r) => webServer.listen(webPort, "127.0.0.1", r));
+    console.log(`[2n-e2e] Web on :${webPort}`);
 
     // ---- Pre-generate identities and trust records ----
     const id1 = await generateOwnerIdentity();
@@ -158,11 +162,11 @@ describe("Two-node P2P E2E", () => {
     const tsx = join(WORKSPACE_ROOT, "node_modules", ".bin", "tsx");
     const entry = join(WORKSPACE_ROOT, "apps", "node", "src", "index.ts");
 
-    node1 = spawn(tsx, [entry, "--profile-dir", node1Dir, "--port", String(NODE1_PORT)], {
+    node1 = spawn(tsx, [entry, "--profile-dir", node1Dir, "--port", String(node1Port)], {
       cwd: WORKSPACE_ROOT, stdio: ["ignore", "pipe", "pipe"],
       env: { ...process.env, ENVOYMESH_CONFIG_DIR: node1Dir },
     });
-    node2 = spawn(tsx, [entry, "--profile-dir", node2Dir, "--port", String(NODE2_PORT)], {
+    node2 = spawn(tsx, [entry, "--profile-dir", node2Dir, "--port", String(node2Port)], {
       cwd: WORKSPACE_ROOT, stdio: ["ignore", "pipe", "pipe"],
       env: { ...process.env, ENVOYMESH_CONFIG_DIR: node2Dir },
     });
@@ -204,7 +208,7 @@ describe("Two-node P2P E2E", () => {
     if (!browser) { ctx.skip(true, "Chromium not installed"); return; }
     const page = await browser.newPage();
     try {
-      await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "domcontentloaded" });
+      await page.goto(`http://127.0.0.1:${webPort}/`, { waitUntil: "domcontentloaded" });
       await sleep(2000);
       expect(await page.textContent("body")).toBeTruthy();
     } finally { await page.close(); }
@@ -218,11 +222,11 @@ describe("Two-node P2P E2E", () => {
     const page2 = await browser.newPage();
 
     try {
-      await page1.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "domcontentloaded" });
-      await page2.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "domcontentloaded" });
+      await page1.goto(`http://127.0.0.1:${webPort}/`, { waitUntil: "domcontentloaded" });
+      await page2.goto(`http://127.0.0.1:${webPort}/`, { waitUntil: "domcontentloaded" });
 
-      await page1.evaluate((url: string) => localStorage.setItem("wsUrl", url), `ws://localhost:${NODE1_PORT}/ws`);
-      await page2.evaluate((url: string) => localStorage.setItem("wsUrl", url), `ws://localhost:${NODE2_PORT}/ws`);
+      await page1.evaluate((url: string) => localStorage.setItem("wsUrl", url), `ws://127.0.0.1:${node1Port}/ws`);
+      await page2.evaluate((url: string) => localStorage.setItem("wsUrl", url), `ws://127.0.0.1:${node2Port}/ws`);
 
       await page1.reload({ waitUntil: "domcontentloaded" });
       await page2.reload({ waitUntil: "domcontentloaded" });

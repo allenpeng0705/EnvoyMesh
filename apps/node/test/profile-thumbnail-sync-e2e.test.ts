@@ -70,15 +70,24 @@ function makeProfile() {
 }
 
 function mockMesh(peerId: string, onSend?: (envelope: EnvoyEnvelope) => Promise<void>): EnvoyMesh {
+  const conn = { connected: true, direct: true };
+  const deliver = async (_target: string, envelope: EnvoyEnvelope) => {
+    await onSend?.(envelope);
+  };
   return {
     peerId,
     multiaddrs: [],
-    send: async (_target, envelope) => {
-      await onSend?.(envelope as EnvoyEnvelope);
-    },
+    send: deliver,
+    sendChat: deliver,
     onMessage: () => {},
-    probePeer: async () => undefined,
-    getPeerConnectionInfo: () => ({ connected: false, direct: false }),
+    getPeerConnectionInfo: () => conn,
+    getConnectedPeerIds: () => [],
+    ensurePeerReachable: async () => conn,
+    closeConnectionsToPeer: async () => 0,
+    getPeerStoreDialHints: async () => [],
+    mergePeerStoreDialHints: async () => {},
+    scrubPeerStoreDialHints: async () => [],
+    tagContactForPersistentReachability: async () => {},
     start: async () => undefined,
     stop: async () => undefined,
   } as unknown as EnvoyMesh;

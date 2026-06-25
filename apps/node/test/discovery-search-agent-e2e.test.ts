@@ -179,7 +179,7 @@ describe("E2E discovery.search (agent over libp2p)", () => {
     const doc = (await bob.service.listLibraryItems()).find((i) => i.relativePath.includes("agent-search"));
     await bob.service.setLibraryItemPublished(doc!.documentId, true);
 
-    await alice.mesh.probePeer(bob.mesh.multiaddrs[0]!);
+    await alice.mesh.dial(bob.mesh.multiaddrs[0]!);
 
     const ctx = await alice.service.getToolExecutionContext();
     expect(ctx).not.toBeNull();

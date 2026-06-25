@@ -87,6 +87,26 @@ export function defaultExtAgentRegistryForUi(): Array<{
 
 export const CUSTOM_EXT_AGENT_NEW_ID = "__new_custom__";
 
+/** Shared draft shape for Agent settings (matches AgentSettings ExtAgentConfig). */
+export interface ExtAgentDraftBase {
+  enabled: boolean;
+  configured: boolean;
+  name?: string;
+  url?: string;
+  listenPort?: number;
+  activeExtAgent?: string;
+  activeExtAgentId?: string | null;
+  adapter?: string;
+  extAgents?: Array<{
+    id: string;
+    name: string;
+    adapter: string;
+    url: string;
+    enabled: boolean;
+  }>;
+  healthy?: boolean;
+}
+
 export interface ExtAgentEditOption {
   id: string;
   name: string;
@@ -147,20 +167,7 @@ export function mergeEditAgentOptions(
   return [...bundled, ...custom];
 }
 
-export function applyCustomAgentSelectToDraft<T extends {
-  name?: string;
-  url?: string;
-  adapter?: string;
-  activeExtAgent?: string;
-  activeExtAgentId?: string;
-  extAgents?: Array<{
-    id: string;
-    name: string;
-    adapter: string;
-    url: string;
-    enabled: boolean;
-  }>;
-}>(
+export function applyCustomAgentSelectToDraft<T extends ExtAgentDraftBase>(
   draft: T,
   agentId: string,
   registry: NonNullable<T["extAgents"]>,
@@ -195,20 +202,10 @@ export function applyCustomAgentSelectToDraft<T extends {
   };
 }
 
-export function finalizeExtAgentDraft<T extends {
-  name?: string;
-  url?: string;
-  adapter?: string;
-  activeExtAgent?: string;
-  activeExtAgentId?: string | null;
-  extAgents?: Array<{
-    id: string;
-    name: string;
-    adapter: string;
-    url: string;
-    enabled: boolean;
-  }>;
-}>(draft: T, customAgentIdInput: string): T {
+export function finalizeExtAgentDraft<T extends ExtAgentDraftBase>(
+  draft: T,
+  customAgentIdInput: string,
+): T {
   const activeSaveId = draft.activeExtAgentId ?? draft.activeExtAgent ?? "";
   const isNewCustom = activeSaveId === CUSTOM_EXT_AGENT_NEW_ID;
   const isExistingCustom = isCustomExtAgentSelection(activeSaveId) && !isNewCustom;
@@ -281,20 +278,10 @@ export function finalizeExtAgentDraft<T extends {
   return draft;
 }
 
-export function applyExtAgentPresetToDraft<T extends {
-  name?: string;
-  url?: string;
-  adapter?: string;
-  activeExtAgent?: string;
-  activeExtAgentId?: string;
-  extAgents?: Array<{
-    id: string;
-    name: string;
-    adapter: string;
-    url: string;
-    enabled: boolean;
-  }>;
-}>(draft: T, agentId: string): T {
+export function applyExtAgentPresetToDraft<T extends ExtAgentDraftBase>(
+  draft: T,
+  agentId: string,
+): T {
   const preset = getExtAgentPreset(agentId);
   if (!preset) {
     return {

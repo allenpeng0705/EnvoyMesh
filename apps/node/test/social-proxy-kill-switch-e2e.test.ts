@@ -33,7 +33,7 @@ describe.sequential("E2E social proxy kill switch", () => {
       modelProviders: { mode: "mock" },
     });
 
-    await alice.mesh.probePeer(bob.mesh.multiaddrs[0]!);
+    await alice.mesh.dial(bob.mesh.multiaddrs[0]!);
 
     const pass = await alice.service.runSocialProxyPass({
       targetOwnerId: bob.profile.owner.ownerId,
@@ -65,7 +65,7 @@ describe.sequential("E2E social proxy kill switch", () => {
       modelProviders: { mode: "mock" },
     });
 
-    await alice.mesh.probePeer(bob.mesh.multiaddrs[0]!);
+    await alice.mesh.dial(bob.mesh.multiaddrs[0]!);
 
     const pass = await alice.service.runSocialProxyPass({
       targetOwnerId: bob.profile.owner.ownerId,

@@ -3,6 +3,11 @@
  */
 
 import type { Page } from "playwright";
+import {
+  injectSocialE2eEvent,
+  setupSocialE2eMockWebSocket,
+  waitForSocialAppReady,
+} from "./social-e2e-mock-ws.js";
 
 /** Reject microphone access so the UI enters listen-only mode. */
 export async function mockGetUserMediaFailure(page: Page): Promise<void> {
@@ -31,68 +36,7 @@ export async function mockGetUserMediaVideoFailure(page: Page): Promise<void> {
 
 /** Install a mock WebSocket that answers RPC and supports push event injection. */
 export async function setupMockWebSocket(page: Page): Promise<void> {
-  await page.addInitScript(() => {
-    class MockWebSocket extends EventTarget {
-      url: string;
-      readyState = 1;
-      onmessage: ((ev: MessageEvent) => void) | null = null;
-      onopen: ((ev: Event) => void) | null = null;
-      onclose: ((ev: Event) => void) | null = null;
-      onerror: ((ev: Event) => void) | null = null;
-
-      constructor(url: string) {
-        super();
-        this.url = url;
-        (window as any).__mockWsInstance = this;
-        setTimeout(() => {
-          this.onopen?.call(this, new Event("open"));
-          this.dispatchEvent(new Event("open"));
-        }, 10);
-      }
-
-      send(data: string): void {
-        let req: { id?: string; method?: string; params?: Record<string, unknown> };
-        try {
-          req = JSON.parse(data);
-        } catch {
-          return;
-        }
-        if (!req.id || !req.method) return;
-
-        const respond = (result: unknown) => {
-          const payload = JSON.stringify({ id: req.id, result });
-          this.onmessage?.call(this, new MessageEvent("message", { data: payload }));
-        };
-
-        switch (req.method) {
-          case "sendCallInvite":
-            (window as any).__lastSendCallInviteParams = req.params ?? null;
-            respond("call_e2e_outbound");
-            break;
-          case "acceptCallInvite":
-          case "declineCallInvite":
-          case "endCall":
-          case "setCallMuted":
-          case "sendIceCandidate":
-            respond(true);
-            break;
-          case "getNodeConfig":
-            respond({ iceServers: [] });
-            break;
-          default:
-            respond(null);
-        }
-      }
-
-      close(): void {
-        this.readyState = 3;
-        this.onclose?.call(this, new Event("close"));
-        this.dispatchEvent(new Event("close"));
-      }
-    }
-
-    (window as any).WebSocket = MockWebSocket;
-  });
+  await setupSocialE2eMockWebSocket(page);
 }
 
 /** Push a node call event through the mock WebSocket (JsonRpcEvent shape). */
@@ -101,17 +45,12 @@ export async function injectCallPush(
   event: string,
   data: Record<string, unknown>,
 ): Promise<void> {
-  await page.evaluate(
-    ({ eventName, eventData }) => {
-      const mock = (window as any).__mockWsInstance as {
-        onmessage: ((ev: MessageEvent) => void) | null;
-      } | undefined;
-      if (!mock?.onmessage) return;
-      const payload = JSON.stringify({ event: eventName, data: eventData });
-      mock.onmessage(new MessageEvent("message", { data: payload }));
-    },
-    { eventName: event, eventData: data },
-  );
+  await injectSocialE2eEvent(page, event, data);
+}
+
+/** Wait for main Social shell after mock WS bootstrap. */
+export async function waitForSocialMainApp(page: Page, timeoutMs = 15_000): Promise<void> {
+  await waitForSocialAppReady(page, timeoutMs);
 }
 
 /** Build a minimal audio SDP offer usable by RTCPeerConnection.setRemoteDescription. */

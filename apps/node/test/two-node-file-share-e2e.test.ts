@@ -4,7 +4,6 @@
  */
 import {
   createDeviceCertificate,
-  deriveDeviceId,
   derivePeerId,
   generateDeviceIdentity,
   generateOwnerIdentity,
@@ -113,22 +112,15 @@ async function registerBondedPeer(local: TestNode, remote: TestNode): Promise<vo
     level: "direct",
     displayName: "Bonded peer",
   });
-  const file = {
-    version: "0.1" as const,
-    records: [
-      {
-        version: "0.1" as const,
-        ownerId: remote.profile.owner.ownerId,
-        peerId: remote.mesh.peerId,
-        deviceId: deriveDeviceId(remote.profile.device.publicKeyPem),
-        devicePublicKeyPem: remote.profile.device.publicKeyPem,
-        lastSeenAt: new Date().toISOString(),
-        listenAddrs: remote.mesh.multiaddrs.map(String),
-      },
-    ],
-  };
-  await writeFile(join(local.profileDir, "peer-directory.json"), JSON.stringify(file, null, 2), {
-    mode: 0o600,
+  await local.peerDirectory.ensurePeerFromInboundChat({
+    ownerId: remote.profile.owner.ownerId,
+    peerId: remote.mesh.peerId,
+    listenAddrs: remote.mesh.multiaddrs.map(String),
+  });
+  await local.peerDirectory.mergeInboundDeviceBinding({
+    peerId: remote.mesh.peerId,
+    ownerId: remote.profile.owner.ownerId,
+    devicePublicKeyPem: remote.profile.device.publicKeyPem,
   });
 }
 
@@ -251,7 +243,7 @@ describe("E2E two-node file share (real libp2p)", () => {
     await mkdir(join(alice.vaultDir, "share"), { recursive: true });
     await writeFile(join(alice.vaultDir, "share/payload.txt"), content, { mode: 0o600 });
 
-    await alice.mesh.probePeer(bob.mesh.multiaddrs[0]!);
+    await alice.mesh.dial(bob.mesh.multiaddrs[0]!);
 
     await sendVaultFileViaDataTransfer({
       mesh: alice.mesh,
@@ -287,7 +279,7 @@ describe("E2E two-node file share (real libp2p)", () => {
     await mkdir(join(alice.vaultDir, "out"), { recursive: true });
     await writeFile(join(alice.vaultDir, "out/report.txt"), content, { mode: 0o600 });
 
-    await alice.mesh.probePeer(bob.mesh.multiaddrs[0]!);
+    await alice.mesh.dial(bob.mesh.multiaddrs[0]!);
 
     await alice.service.shareFile(bob.profile.owner.ownerId, {
       path: "out/report.txt",

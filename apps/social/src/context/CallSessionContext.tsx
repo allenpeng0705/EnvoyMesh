@@ -84,7 +84,8 @@ export function CallSessionProvider({ children }: { children: ReactNode }) {
   const session = useCallSession();
 
   useEffect(() => {
-    if (!import.meta.env.DEV) return;
+    const exposeDevHook = import.meta.env.DEV || import.meta.env.MODE === "development";
+    if (!exposeDevHook) return;
     (window as unknown as { __envoyCallSession?: UseCallSessionResult }).__envoyCallSession = session;
     return () => {
       delete (window as unknown as { __envoyCallSession?: UseCallSessionResult }).__envoyCallSession;

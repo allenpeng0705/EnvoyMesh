@@ -314,7 +314,7 @@ describe("E2E document agent (two-node libp2p)", () => {
     expect(doc).toBeDefined();
     await bob.service.setLibraryItemPublished(doc!.documentId, true);
 
-    await alice.mesh.probePeer(bob.mesh.multiaddrs[0]!);
+    await alice.mesh.dial(bob.mesh.multiaddrs[0]!);
 
     const results = await alice.service.discoverPublishedLibrary({ fileTitleQuery: "kubo-parity" });
     expect(results.some((r) => r.files.some((f) => f.title.includes("kubo-parity")))).toBe(true);
@@ -335,7 +335,7 @@ describe("E2E document agent (two-node libp2p)", () => {
     const bobDoc = (await bob.service.listLibraryItems()).find((i) => i.relativePath.includes("notes.md"));
     await bob.service.setLibraryItemPublished(bobDoc!.documentId, true);
 
-    await alice.mesh.probePeer(bob.mesh.multiaddrs[0]!);
+    await alice.mesh.dial(bob.mesh.multiaddrs[0]!);
 
     const turn = await alice.service.runDocumentAgentTurn("request share from Bob for notes");
     expect(turn.intent).toBe("request_share_from");
@@ -357,7 +357,7 @@ describe("E2E document agent (two-node libp2p)", () => {
     const doc = (await bob.service.listLibraryItems()).find((i) => i.relativePath.includes("golden"));
     await bob.service.setLibraryItemPublished(doc!.documentId, true);
 
-    await alice.mesh.probePeer(bob.mesh.multiaddrs[0]!);
+    await alice.mesh.dial(bob.mesh.multiaddrs[0]!);
 
     const discoverTurn = await alice.service.runDocumentAgentTurn("who has golden");
     expect(discoverTurn.intent).toBe("discover");

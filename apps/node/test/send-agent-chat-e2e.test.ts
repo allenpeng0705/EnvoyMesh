@@ -137,7 +137,7 @@ describe("E2E sendAgentChat (Phase 13A)", () => {
       receivedEnvelope = envelope;
     });
 
-    await alice.mesh.probePeer(bob.mesh.multiaddrs[0]!);
+    await alice.mesh.dial(bob.mesh.multiaddrs[0]!);
 
     const result = await alice.service.sendAgentChat(
       bob.profile.owner.ownerId,

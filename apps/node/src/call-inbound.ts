@@ -84,7 +84,9 @@ async function resolveSenderOwnerId(
       return byTransport.ownerId;
     }
   }
-  const records = await deps.peerDirectoryStore.listPeerRecords();
+  const records = typeof deps.peerDirectoryStore.listPeerRecords === "function"
+    ? await deps.peerDirectoryStore.listPeerRecords()
+    : [];
   for (const record of records) {
     if (record.devicePublicKeyPem === envelope.senderPublicKey) {
       return record.ownerId;

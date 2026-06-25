@@ -47,6 +47,11 @@ function isProfileIntent(intent: string | undefined): boolean {
   return typeof intent === "string" && intent.startsWith("profile.");
 }
 
+/** True for VoIP/WebRTC signaling intents only. */
+export function isCallIntent(intent: string | undefined): boolean {
+  return typeof intent === "string" && intent.startsWith("call.");
+}
+
 export type ChatDeliverResult = {
   delivered: boolean;
   deliveredAt?: string;
@@ -271,7 +276,7 @@ export async function deliverChatEnvelopeWithRetry(input: {
           preferCircuitHints: preferCircuitsOnPrepare,
           forceFreshDial: attempt > 0,
         });
-        if (!ready && attempt === 0) {
+        if (!ready && attempt === 0 && canExpectAck) {
           lastErr = new Error(`No reachable path to ${input.transportPeerId.slice(0, 12)}… before send`);
           continue;
         }
@@ -443,6 +448,20 @@ export async function deliverCallEnvelopeWithRetry(input: {
   /** When true, try relay circuit paths before stale direct WAN hints. */
   preferCircuitHints?: boolean;
 }): Promise<ChatDeliverResult> {
+  if (!isCallIntent(input.envelope.intent)) {
+    return deliverChatEnvelopeWithRetry({
+      mesh: input.mesh,
+      transportPeerId: input.transportPeerId,
+      envelope: input.envelope,
+      dialHints: input.dialHints,
+      peerListenAddrs: input.peerListenAddrs,
+      chatProtocol: ENVOY_CHAT_PROTOCOL,
+      rebuildDialHints: input.rebuildDialHints,
+      maxAttempts: input.maxAttempts,
+      expectDeliveryAck: false,
+    });
+  }
+
   const maxAttempts = input.maxAttempts ?? CHAT_SEND_MAX_ATTEMPTS;
   const intent = input.envelope.intent;
   const callId =
@@ -613,7 +632,7 @@ export async function deliverMessageEnvelopeWithRetry(input: {
         (isOutboundPeerRecentlyVerified(input.transportPeerId) ||
           (conn.connected && conn.direct));
       if (!skipPrepare) {
-        const ready = await prepareOutboundPeerConnection({
+        await prepareOutboundPeerConnection({
           mesh: input.mesh,
           transportPeerId: input.transportPeerId,
           protocol: ENVOY_MESSAGE_PROTOCOL,
@@ -621,10 +640,6 @@ export async function deliverMessageEnvelopeWithRetry(input: {
           preferCircuitHints: preferCircuits,
           forceFreshDial: false,
         });
-        if (!ready && !input.mesh.getPeerConnectionInfo(input.transportPeerId).connected) {
-          lastErr = new Error(`No reachable path to ${input.transportPeerId.slice(0, 12)}… before send`);
-          continue;
-        }
       }
     }
 
@@ -638,7 +653,7 @@ export async function deliverMessageEnvelopeWithRetry(input: {
           preferCircuitHints: preferCircuits || attempt > 0,
           forceFreshDial: true,
         });
-        if (!ready) {
+        if (!ready && !input.mesh.getPeerConnectionInfo(input.transportPeerId).connected) {
           lastErr = new Error(`No reachable path to ${input.transportPeerId.slice(0, 12)}… before send`);
           continue;
         }

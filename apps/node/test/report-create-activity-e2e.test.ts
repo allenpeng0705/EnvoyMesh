@@ -74,8 +74,8 @@ describe("E2E report.create → Activity (Phase 13D)", () => {
     const signed = signUnsignedEnvelope(unsigned, bobAgent.privateKeyPem);
     expect(verifyInboundEnvelope(signed)).toBe(true);
 
-    await alice.mesh.probePeer(bob.mesh.multiaddrs[0]!);
-    await bob.mesh.probePeer(alice.mesh.multiaddrs[0]!);
+    await alice.mesh.dial(bob.mesh.multiaddrs[0]!);
+    await bob.mesh.dial(alice.mesh.multiaddrs[0]!);
     await bob.mesh.send(alice.mesh.multiaddrs[0]!, signed);
 
     await waitForPhase13(async () => {

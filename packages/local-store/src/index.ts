@@ -956,9 +956,6 @@ export function createLocalTaskStore(profileDir: string): LocalTaskStore {
     },
 
     async appendAuditEvent(event) {
-      if (event.type === "p2p.trace" || event.type === "message.rejected") {
-        return;
-      }
       await appendAuditQueued(event);
       await appendAuditIndexQueued(auditEventToIndexEntry(event));
     },

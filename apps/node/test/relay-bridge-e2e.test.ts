@@ -460,6 +460,6 @@ describe("Relay bridge E2E (real libp2p)", () => {
     const barePeerId = home.peerId;
     await expect(
       relay.dialProtocol(barePeerId, CLIENT_PROXY_PROTOCOL),
-    ).rejects.toThrow(/No valid addresses|no addresses|no transport|connection failed/i);
+    ).rejects.toThrow(/No valid addresses|no addresses|no transport|connection failed|no outbound dial attempted/i);
   });
 });

@@ -180,7 +180,7 @@ function wireDiscoveryHandler(node: TestNode): void {
 }
 
 async function connectPeers(local: TestNode, remote: TestNode): Promise<void> {
-  await local.mesh.probePeer(remote.mesh.multiaddrs[0]!);
+  await local.mesh.dial(remote.mesh.multiaddrs[0]!);
 }
 
 async function writeVaultFile(node: TestNode, relativePath: string, body: string): Promise<void> {

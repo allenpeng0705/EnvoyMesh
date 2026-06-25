@@ -33,7 +33,7 @@ describe.sequential("E2E document acquisition failures", () => {
       modelProviders: { mode: "mock" },
     });
 
-    await alice.mesh.probePeer(bob.mesh.multiaddrs[0]!);
+    await alice.mesh.dial(bob.mesh.multiaddrs[0]!);
 
     const started = await alice.service.startDocumentAcquisitionJob({
       query: "quarterly report that does not exist",
@@ -74,7 +74,7 @@ describe.sequential("E2E document acquisition failures", () => {
       modelProviders: { mode: "mock" },
     });
 
-    await alice.mesh.probePeer(bob.mesh.multiaddrs[0]!);
+    await alice.mesh.dial(bob.mesh.multiaddrs[0]!);
 
     const started = await alice.service.startDocumentAcquisitionJob({
       query: "Ed25519 mesh security specification",

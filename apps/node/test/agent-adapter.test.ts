@@ -48,6 +48,7 @@ afterEach(async () => {
 
 /** Minimal mock EnvoyMesh for testing tool implementations. */
 function createMockMesh() {
+  const conn = { connected: true, direct: true };
   return {
     send: vi.fn().mockResolvedValue(undefined),
     sendExpectReply: vi.fn().mockResolvedValue({
@@ -57,6 +58,10 @@ function createMockMesh() {
       },
     }),
     peerId: "QmMockPeer",
+    getPeerConnectionInfo: vi.fn().mockReturnValue(conn),
+    ensurePeerReachable: vi.fn().mockResolvedValue(conn),
+    closeConnectionsToPeer: vi.fn().mockResolvedValue(undefined),
+    getPeerStoreDialHints: vi.fn().mockResolvedValue([]),
   };
 }
 

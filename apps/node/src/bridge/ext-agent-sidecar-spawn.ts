@@ -124,15 +124,16 @@ export class ExtAgentSidecarManager {
 
   private async _ensureRunning(entry: ExtAgentEntry, ctx: SidecarSpawnContext): Promise<void> {
     if (!isBundledSidecarAgent(entry.id)) return;
+    const agentId = entry.id;
 
-    const port = parseSidecarPort(entry.id, entry.url);
-    const existing = this._children.get(entry.id);
+    const port = parseSidecarPort(agentId, entry.url);
+    const existing = this._children.get(agentId);
     if (existing && existing.port === port && existing.process.exitCode == null) {
       const healthy = await probeExtAgentHealth(entry.url, entry.adapter);
       if (healthy) return;
-      await this._stop(entry.id);
+      await this._stop(agentId);
     } else if (existing) {
-      await this._stop(entry.id);
+      await this._stop(agentId);
     }
 
     const externalHealthy = await probeExtAgentHealth(entry.url, entry.adapter);
@@ -141,15 +142,15 @@ export class ExtAgentSidecarManager {
       return;
     }
 
-    const script = resolveSidecarScript(ctx.nodeCwd, entry.id);
+    const script = resolveSidecarScript(ctx.nodeCwd, agentId);
     if (!script) {
-      console.warn(`[ext-sidecar] script not found for ${entry.id}`);
+      console.warn(`[ext-sidecar] script not found for ${agentId}`);
       return;
     }
 
     const env = {
       ...process.env,
-      ...sidecarEnvForAgent(entry.id, ctx, port),
+      ...sidecarEnvForAgent(agentId, ctx, port),
     };
 
     const proc = spawn(process.execPath, [script], {
@@ -167,13 +168,13 @@ export class ExtAgentSidecarManager {
       if (line) console.warn(`[ext-sidecar:${entry.id}] ${line}`);
     });
     proc.on("exit", (code, signal) => {
-      if (this._children.get(entry.id)?.process === proc) {
-        this._children.delete(entry.id);
+      if (this._children.get(agentId)?.process === proc) {
+        this._children.delete(agentId);
       }
-      console.log(`[ext-sidecar] ${entry.id} exited code=${code ?? "null"} signal=${signal ?? "null"}`);
+      console.log(`[ext-sidecar] ${agentId} exited code=${code ?? "null"} signal=${signal ?? "null"}`);
     });
 
-    this._children.set(entry.id, { agentId: entry.id, port, process: proc });
+    this._children.set(agentId, { agentId, port, process: proc });
 
     const ready = await waitForSidecarHealth(entry.url);
     if (ready) {

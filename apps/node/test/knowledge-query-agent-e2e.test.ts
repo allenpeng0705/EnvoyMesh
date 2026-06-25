@@ -184,7 +184,7 @@ describe("E2E knowledge.query (agent over libp2p)", () => {
     const vaultIndex = await buildVaultIndex({ rootDir: bob.vaultDir });
     wireKnowledgeHandler(bob, vaultIndex);
 
-    await alice.mesh.probePeer(bob.mesh.multiaddrs[0]!);
+    await alice.mesh.dial(bob.mesh.multiaddrs[0]!);
 
     const ctx = await alice.service.getToolExecutionContext();
     expect(ctx).not.toBeNull();
@@ -242,7 +242,7 @@ describe("E2E knowledge.query (agent over libp2p)", () => {
       await replyWithEnvelope(signUnsignedEnvelope(unsignedResponse, bob.profile.device.privateKeyPem));
     });
 
-    await alice.mesh.probePeer(bob.mesh.multiaddrs[0]!);
+    await alice.mesh.dial(bob.mesh.multiaddrs[0]!);
 
     const ctx = await alice.service.getToolExecutionContext();
     const result = await executeTool(

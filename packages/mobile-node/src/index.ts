@@ -5755,7 +5755,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
     return {
       messageId: updated.messageId,
       sender: {
-        nodeId: updated.sender.ownerId ?? "",
+        nodeId: message.sender.nodeId || updated.sender.ownerId || "",
         ownerId: updated.sender.ownerId,
         displayName: updated.sender.displayName,
         actorRole: updated.sender.actorRole,
@@ -5763,7 +5763,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
         agentVerified: updated.sender.agentVerified,
       },
       recipient: {
-        nodeId: updated.recipient.ownerId ?? "",
+        nodeId: message.recipient.nodeId || updated.recipient.ownerId || "",
         ownerId: updated.recipient.ownerId,
         displayName: updated.recipient.displayName,
       },

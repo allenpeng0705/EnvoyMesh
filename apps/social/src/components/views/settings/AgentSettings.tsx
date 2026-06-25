@@ -22,6 +22,7 @@ import {
   isCustomExtAgentSelection,
   slugifyExtAgentId,
   CUSTOM_EXT_AGENT_NEW_ID,
+  type ExtAgentDraftBase,
 } from "../../../lib/ext-agent-defaults.js";
 
 interface EnvoyAIInfo {
@@ -31,18 +32,8 @@ interface EnvoyAIInfo {
   childPid?: number;
 }
 
-export interface ExtAgentConfig {
-  enabled: boolean;
-  configured: boolean;
-  name?: string;
-  url?: string;
-  listenPort?: number;
-  activeExtAgent?: string;
+export interface ExtAgentConfig extends ExtAgentDraftBase {
   extAgents?: ExtAgentRegistryEntry[];
-  adapter?: string;
-  activeExtAgentId?: string | null;
-  /** Health of the active backend (HTTP /status probe). */
-  healthy?: boolean;
 }
 
 interface Props {

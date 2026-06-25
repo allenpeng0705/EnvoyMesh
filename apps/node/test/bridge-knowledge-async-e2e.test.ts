@@ -284,7 +284,7 @@ describe("E2E bridge knowledge async reply (ADB-E)", () => {
       void bridge._handleMessage(envelope, remotePeerId);
     });
 
-    await alice.mesh.probePeer(bob.mesh.multiaddrs[0]!);
+    await alice.mesh.dial(bob.mesh.multiaddrs[0]!);
 
     try {
       const kqRes = await fetch(`http://127.0.0.1:${bridgePort}/bridge/execute-tool`, {
