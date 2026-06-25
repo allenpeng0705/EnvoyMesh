@@ -163,7 +163,7 @@ class _PairingConfirmScreenState
 
       final tempNode = StoredNode(
         id: '',
-        name: widget.data.agentName ?? 'Home Node',
+        name: defaultHomeNodeDisplayName,
         ownerId: widget.data.ownerId ?? '',
         homePeerId: widget.data.homeNodePeerId ?? '',
         lanIp: widget.data.lanWsUrl,
