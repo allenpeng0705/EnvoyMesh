@@ -114,7 +114,7 @@ describe("useCallSession media plane", () => {
       callId: "call-123",
       status: "active",
     });
-    expect(result.current.connectionState).toBe("disconnected");
+    expect(result.current.connectionState).toBe("connecting");
   });
 
   it("forwards trickle ICE via sendIceCandidate during outbound call", async () => {

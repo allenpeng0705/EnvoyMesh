@@ -68,6 +68,43 @@ export interface WebRtcCallTransport {
 // Implementation
 // ------------------------------------------------------------------
 
+/** Max wait for local ICE gathering before shipping SDP (ms). */
+const ICE_GATHERING_TIMEOUT_MS = 8_000;
+
+function countSdpCandidates(sdp: string): number {
+  return sdp.split("\n").filter((line) => line.startsWith("a=candidate:")).length;
+}
+
+async function waitForIceGatheringComplete(
+  connection: RTCPeerConnection,
+  timeoutMs = ICE_GATHERING_TIMEOUT_MS,
+): Promise<void> {
+  if (connection.iceGatheringState === "complete") return;
+
+  await new Promise<void>((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      connection.removeEventListener("icegatheringstatechange", onChange);
+      clearTimeout(timer);
+      resolve();
+    };
+    const onChange = () => {
+      if (connection.iceGatheringState === "complete") finish();
+    };
+    connection.addEventListener("icegatheringstatechange", onChange);
+    const timer = setTimeout(finish, timeoutMs);
+  });
+}
+
+async function readLocalSdp(connection: RTCPeerConnection): Promise<string> {
+  await waitForIceGatheringComplete(connection);
+  const sdp = connection.localDescription?.sdp;
+  if (!sdp) throw new Error("missing local SDP after ICE gathering");
+  return sdp;
+}
+
 export function createWebRtcCallTransport(
   opts: WebRtcCallTransportOptions,
 ): WebRtcCallTransport {
@@ -295,11 +332,16 @@ export function createWebRtcCallTransport(
 
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-    opts.onSdpGenerated(offer.sdp!, "offer");
-    webrtcCallTrace("transport:offer-created", { path: opts.path, sdpLen: offer.sdp?.length ?? 0 });
+    const sdpWithCandidates = await readLocalSdp(pc);
+    opts.onSdpGenerated(sdpWithCandidates, "offer");
+    webrtcCallTrace("transport:offer-created", {
+      path: opts.path,
+      sdpLen: sdpWithCandidates.length,
+      candidates: countSdpCandidates(sdpWithCandidates),
+    });
     await flushPendingRemoteCandidates();
 
-    return offer.sdp!;
+    return sdpWithCandidates;
   }
 
   async function startAnswer(remoteSdp: string): Promise<string> {
@@ -355,11 +397,16 @@ export function createWebRtcCallTransport(
 
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
-    opts.onSdpGenerated(answer.sdp!, "answer");
-    webrtcCallTrace("transport:answer-created", { path: opts.path, sdpLen: answer.sdp?.length ?? 0 });
+    const sdpWithCandidates = await readLocalSdp(pc);
+    opts.onSdpGenerated(sdpWithCandidates, "answer");
+    webrtcCallTrace("transport:answer-created", {
+      path: opts.path,
+      sdpLen: sdpWithCandidates.length,
+      candidates: countSdpCandidates(sdpWithCandidates),
+    });
     await flushPendingRemoteCandidates();
 
-    return answer.sdp!;
+    return sdpWithCandidates;
   }
 
   async function applyRemoteAnswer(remoteSdp: string): Promise<void> {

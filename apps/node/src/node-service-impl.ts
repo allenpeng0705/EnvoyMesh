@@ -13700,13 +13700,12 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
 
     const calleeOwnerId = profile.owner.ownerId;
     const calleePeerId = derivePeerId(profile.device.publicKeyPem);
-    const accepted = this.callManager.acceptInboundCall(callId, calleeOwnerId);
-    if (!accepted) return false;
 
-    // Resolve the caller's device peer ID — `getSessionPeerOwnerId(callId)`
-    // returns the owner ID of the OTHER side of the session.
     const peerOwnerId = this.callManager.getSessionPeerOwnerId(callId);
     if (!peerOwnerId) return false;
+
+    const sessionStatus = this.callManager.getSessionStatus(callId);
+    if (sessionStatus !== "ringing" && sessionStatus !== "active") return false;
 
     const { createCallAcceptPayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
 
@@ -13725,7 +13724,13 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
       recipientRole: "human",
       payload,
     });
-    await this._sendCallResponseEnvelope(peerOwnerId, unsigned, "call.accept");
+    const delivered = await this._sendCallResponseEnvelope(peerOwnerId, unsigned, "call.accept");
+    if (!delivered) return false;
+
+    if (sessionStatus === "ringing") {
+      const accepted = this.callManager.acceptInboundCall(callId, calleeOwnerId);
+      if (!accepted) return false;
+    }
     return true;
   }
 
@@ -13908,9 +13913,9 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     peerOwnerId: string,
     unsigned: UnsignedEnvoyEnvelope,
     _intent: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const profile = this._profile;
-    if (!profile) return;
+    if (!profile) return false;
     try {
       const transport = await this._resolvePeerTransportForOwner(peerOwnerId);
       const mesh = this._requireMesh();
@@ -13993,17 +13998,19 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
         console.warn(
           `[call-response] could not deliver ${_intent} to ${peerOwnerId.slice(0, 24)}…`,
         );
-        return;
+        return false;
       }
       webrtcCallTrace("call-response:delivered", {
         intent: _intent,
         peer: shortCallId(targetPeerId),
       });
+      return true;
     } catch (err) {
       console.warn(
         `[call-response] could not deliver ${_intent} to ${peerOwnerId}:`,
         err instanceof Error ? err.message : err,
       );
+      return false;
     }
   }
 

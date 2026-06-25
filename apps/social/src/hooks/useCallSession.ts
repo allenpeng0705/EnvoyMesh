@@ -274,16 +274,34 @@ export function useCallSession(): UseCallSessionResult {
           }
           break;
         case "call:answered":
+          if (!event.sdpAnswer) {
+            // Callee-side local ack from acceptInboundCall — transport already running via acceptCall().
+            if (activeCallIdRef.current === event.callId && transportRef.current) {
+              webrtcCallTrace("ui:call-answered-local-ack", { callId: shortCallId(event.callId) });
+              break;
+            }
+          }
           setIncomingCall(null);
           setPendingSdpOffer(undefined);
           setCallingState(null);
+          setConnectionState("connecting");
           if (event.sdpAnswer && transportRef.current) {
             void transportRef.current
               .applyRemoteAnswer(event.sdpAnswer)
               .then(() => flushPendingIceCandidates())
-              .catch((err) =>
-                console.warn("[useCallSession] applyRemoteAnswer failed:", err),
-              );
+              .catch((err) => {
+                webrtcCallWarn("ui:apply-remote-answer-failed", {
+                  callId: shortCallId(event.callId),
+                  error: err instanceof Error ? err.message.slice(0, 120) : String(err),
+                });
+                console.warn("[useCallSession] applyRemoteAnswer failed:", err);
+                setConnectionState("failed");
+                showToast(t("call:failed"), "error");
+              });
+          } else if (!event.sdpAnswer) {
+            webrtcCallWarn("ui:call-answered-no-sdp", { callId: shortCallId(event.callId) });
+            setConnectionState("failed");
+            showToast(t("call:failed"), "error");
           }
           setActiveCall({
             callId: event.callId,
@@ -363,6 +381,19 @@ export function useCallSession(): UseCallSessionResult {
     return () => clearTimeout(timer);
   }, [callingState, activeCall, showToast, t]);
 
+  useEffect(() => {
+    if (!activeCall) return;
+    const timer = setTimeout(() => {
+      setConnectionState((state) => {
+        if (state !== "connecting") return state;
+        webrtcCallWarn("ui:connection-timeout", { callId: shortCallId(activeCall.callId) });
+        showToast(t("call:connectionLost"), "error");
+        return "failed";
+      });
+    }, 45_000);
+    return () => clearTimeout(timer);
+  }, [activeCall?.callId, showToast, t]);
+
   const acceptCall = useCallback(async () => {
     if (!incomingCall || !nodeService) return;
     const remoteSdp = pendingSdpOffer ?? incomingCall.sdpOffer;
@@ -415,11 +446,14 @@ export function useCallSession(): UseCallSessionResult {
         notifyMicUnavailable();
       }
       flushPendingIceCandidates();
-      await nodeService.acceptCallInvite(
+      const accepted = await nodeService.acceptCallInvite(
         callId,
         sdpAnswer,
         pathIceServers as IceServerConfig[],
       );
+      if (!accepted) {
+        throw new Error("call.accept delivery failed");
+      }
     } catch (err) {
       console.warn("[useCallSession] failed to accept call:", err);
       closeTransport();

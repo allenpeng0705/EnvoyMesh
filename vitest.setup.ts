@@ -94,11 +94,21 @@ class MockRTCPeerConnection {
   ontrack: ((event: { streams: [MediaStream] }) => void) | null;
   connectionState: RTCPeerConnectionState;
   iceConnectionState: RTCIceConnectionState;
+  iceGatheringState: RTCIceGatheringState;
+  localDescription: RTCSessionDescription | null;
+  remoteDescription: RTCSessionDescription | null;
+  addEventListener: (type: string, listener: () => void) => void;
+  removeEventListener: (type: string, listener: () => void) => void;
 
   constructor(_config?: RTCConfiguration) {
     this.createOffer = vi.fn().mockResolvedValue({ sdp: "mock-offer", type: "offer" });
-    this.setLocalDescription = vi.fn().mockResolvedValue(undefined);
-    this.setRemoteDescription = vi.fn().mockResolvedValue(undefined);
+    this.setLocalDescription = vi.fn().mockImplementation(async (desc: RTCSessionDescriptionInit) => {
+      this.localDescription = new MockRTCSessionDescription(desc);
+      this.iceGatheringState = "complete";
+    });
+    this.setRemoteDescription = vi.fn().mockImplementation(async (desc: RTCSessionDescriptionInit) => {
+      this.remoteDescription = new MockRTCSessionDescription(desc);
+    });
     this.createAnswer = vi.fn().mockResolvedValue({ sdp: "mock-answer", type: "answer" });
     this.addTrack = vi.fn();
     this.addTransceiver = vi.fn();
@@ -118,6 +128,11 @@ class MockRTCPeerConnection {
     this.ontrack = null;
     this.connectionState = "new";
     this.iceConnectionState = "new";
+    this.iceGatheringState = "new";
+    this.localDescription = null;
+    this.remoteDescription = null;
+    this.addEventListener = vi.fn();
+    this.removeEventListener = vi.fn();
   }
 
   static generateCertificate(_keygenAlgorithm: AlgorithmIdentifier): Promise<RTCCertificate> {

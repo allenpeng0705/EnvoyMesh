@@ -400,9 +400,9 @@ describe("NodeServiceImpl call response envelopes (Phase 42B)", () => {
       (node as any)._resolvePeerTransportForOwner = async () => {
         throw new Error("Peer not found for owner: envoy:owner:gone");
       };
-      // acceptCallInvite should still return true (CallManager state changed)
+      // acceptCallInvite returns false when call.accept cannot be delivered
       const ok = await node.acceptCallInvite(callId, "v=0\r\n...");
-      expect(ok).toBe(true);
+      expect(ok).toBe(false);
       expect(sends).toHaveLength(0);
     });
 
