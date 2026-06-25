@@ -478,6 +478,7 @@ export interface NodeServiceClient {
     targetOwnerId: string,
     sdpOffer: string,
     iceServers?: { urls: string; username?: string; credential?: string }[],
+    callType?: import("@envoymesh/api").CallMediaType,
   ): Promise<string | null>;
   sendCallReinvite(
     callId: string,
@@ -907,11 +908,13 @@ function createWsNodeServiceClient(
       targetOwnerId: string,
       sdpOffer: string,
       iceServers?: { urls: string; username?: string; credential?: string }[],
+      callType?: import("@envoymesh/api").CallMediaType,
     ) {
       return wsClient.rpc("sendCallInvite", {
         targetOwnerId,
         sdpOffer,
         iceServers,
+        callType,
       }) as Promise<string | null>;
     },
     async sendCallReinvite(

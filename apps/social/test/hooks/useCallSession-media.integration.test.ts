@@ -70,6 +70,8 @@ describe("useCallSession media integration", () => {
     expect(mockNodeService.sendCallInvite).toHaveBeenCalledWith(
       "envoy:owner:win",
       expect.any(String),
+      undefined,
+      "audio",
     );
     expect(mockNodeService.sendCallInvite).not.toHaveBeenCalledWith(
       expect.anything(),
@@ -88,6 +90,7 @@ describe("useCallSession media integration", () => {
         callId: "call-456",
         peerOwnerId: "envoy:owner:mac",
         peerDisplayName: "Mac",
+        callType: "audio",
         sdpOffer: "v=0\r\no=- mac-offer 0 IN IP4 127.0.0.1\r\n",
         iceServers: DEFAULT_CALL_ICE_SERVERS,
       });
@@ -120,6 +123,7 @@ describe("useCallSession media integration", () => {
         callId: "call-456",
         peerOwnerId: "envoy:owner:mac",
         peerDisplayName: "Mac",
+        callType: "audio",
         sdpOffer: "v=0\r\no=- mac-offer 0 IN IP4 127.0.0.1\r\n",
         iceServers: DEFAULT_CALL_ICE_SERVERS,
       });
@@ -143,6 +147,7 @@ describe("useCallSession media integration", () => {
         callId: "call-456",
         peerOwnerId: "envoy:owner:mac",
         peerDisplayName: "Mac",
+        callType: "audio",
         sdpOffer: "v=0\r\no=- mac-offer 0 IN IP4 127.0.0.1\r\n",
         iceServers: DEFAULT_CALL_ICE_SERVERS,
       });
@@ -181,5 +186,34 @@ describe("useCallSession media integration", () => {
     });
 
     expect(result.current.activeCall?.callId).toBe("call-456");
+  });
+
+  it("accepts incoming video call with video mediaType", async () => {
+    const { result } = renderHook(() => useCallSession());
+
+    act(() => {
+      mockNodeService.emitCallEvent({
+        type: "call:incoming",
+        callId: "call-vid-456",
+        peerOwnerId: "envoy:owner:mac",
+        peerDisplayName: "Mac",
+        callType: "video",
+        sdpOffer: "v=0\r\no=- mac-video-offer 0 IN IP4 127.0.0.1\r\nm=video 9 UDP/TLS/RTP/SAVPF 96\r\n",
+        iceServers: DEFAULT_CALL_ICE_SERVERS,
+      });
+    });
+
+    expect(result.current.incomingCall?.callType).toBe("video");
+
+    await act(async () => {
+      await result.current.acceptCall();
+    });
+
+    expect(mockNodeService.acceptCallInvite).toHaveBeenCalled();
+    expect(result.current.activeCall).toMatchObject({
+      callId: "call-vid-456",
+      callType: "video",
+    });
+    expect(result.current.cameraAvailable).toBe(true);
   });
 });

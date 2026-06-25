@@ -42,6 +42,7 @@ interface CapturedSend {
 function buildSignedHarness(sendsRef: CapturedSend[]) {
   const mockMesh = {
     peerId: "12D3KooWSelfPeerIdForCallSendInviteTest",
+    getConnectedPeerIds: vi.fn(() => [FAKE_TRANSPORT_PEER_ID]),
     send: vi.fn(async (transportPeerId: string, envelope: EnvoyEnvelope, options?: unknown) => {
       sendsRef.push({ transportPeerId, envelope, options });
       return { connected: true, direct: true };
@@ -277,29 +278,54 @@ describe("NodeServiceImpl.sendCallInvite (Phase 42A)", () => {
   it("13. returns null and emits call:error when delivery fails", async () => {
     const events: import("@envoymesh/api").CallEvent[] = [];
     node.callManager.onCallEvent((e) => events.push(e));
-    (node as any)._mesh.send = vi.fn(async () => {
-      throw new Error("No reachable path");
-    });
+    (node as any)._mesh.getConnectedPeerIds = vi.fn(() => []);
     (node as any)._mesh.getPeerConnectionInfo = vi.fn(() => ({ connected: false, direct: false }));
-    (node as any)._mesh.ensurePeerReachable = vi.fn(async () => ({ connected: false, direct: false }));
+    (node as any)._deliverCallEnvelope = vi.fn(async () => ({ delivered: false }));
 
     const callId = await node.sendCallInvite(FAKE_OWNER_ID, "v=0\r\n...");
     expect(callId).toBeNull();
     expect(events.some((e) => e.type === "call:error")).toBe(true);
     expect(events.some((e) => e.type === "call:ended")).toBe(true);
+    expect((node as any)._deliverCallEnvelope).toHaveBeenCalled();
+  });
+
+  it("13b. returns null when sendChat fails on an already-connected peer", async () => {
+    const events: import("@envoymesh/api").CallEvent[] = [];
+    node.callManager.onCallEvent((e) => events.push(e));
+    (node as any)._mesh.getPeerConnectionInfo = vi.fn(() => ({ connected: true, direct: true }));
+    (node as any)._mesh.getConnectedPeerIds = vi.fn(() => [FAKE_TRANSPORT_PEER_ID]);
+    (node as any)._mesh.sendChat = vi.fn(async () => {
+      throw new Error("No reachable path");
+    });
+
+    const callId = await node.sendCallInvite(FAKE_OWNER_ID, "v=0\r\n...");
+    expect(callId).toBeNull();
+    expect(events.some((e) => e.type === "call:error")).toBe(true);
+    expect(events.some((e) => e.type === "call:ended")).toBe(true);
+    expect((node as any)._mesh.sendChat).toHaveBeenCalled();
   });
 
   it("14. reuses an open direct libp2p path without redialing stale WAN hints", async () => {
     const ensurePeerReachable = vi.fn(async () => ({ connected: true, direct: true }));
     (node as any)._mesh.ensurePeerReachable = ensurePeerReachable;
     (node as any)._mesh.getPeerConnectionInfo = vi.fn(() => ({ connected: true, direct: true }));
+    (node as any)._mesh.getConnectedPeerIds = vi.fn(() => [FAKE_TRANSPORT_PEER_ID]);
 
     const callId = await node.sendCallInvite(FAKE_OWNER_ID, "v=0\r\n...");
     expect(callId).not.toBeNull();
     expect(sends).toHaveLength(1);
-    expect(sends[0]!.options).toEqual(
-      expect.objectContaining({ dialHints: [], preferCircuitHints: false }),
-    );
+    // Connected peers take the fast sendChat path (not _deliverCallEnvelope / mesh.send).
+    expect(sends[0]!.options).toEqual({ dialHints: [] });
+    expect((node as any)._mesh.sendChat).toHaveBeenCalledTimes(1);
+    expect((node as any)._mesh.send).not.toHaveBeenCalled();
     expect(ensurePeerReachable).not.toHaveBeenCalled();
+    expect((node as any).warmContactConnection).not.toHaveBeenCalled();
+  });
+
+  it("15. embeds callType video in call.invite payload", async () => {
+    await node.sendCallInvite(FAKE_OWNER_ID, "v=0\r\n...", undefined, "video");
+    const parsed = parseCallInvitePayload(sends[0]!.envelope.payload);
+    expect(parsed.callType).toBe("video");
+    expect(node.getActiveCall()?.callType).toBe("video");
   });
 });

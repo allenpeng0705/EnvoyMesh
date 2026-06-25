@@ -5,12 +5,14 @@
  */
 
 import React from "react";
+import type { CallMediaType } from "@envoymesh/api";
 import { useT } from "../context/I18nContext.js";
 import { useIncomingCallRingtone } from "../hooks/useIncomingCallRingtone.js";
 
 export interface IncomingCallModalProps {
   callerName: string;
   callerOwnerId: string;
+  callType: CallMediaType;
   onAccept: () => void;
   onDecline: () => void;
 }
@@ -36,12 +38,14 @@ function displayCallerName(name: string, ownerId: string): string {
 export function IncomingCallModal({
   callerName,
   callerOwnerId,
+  callType,
   onAccept,
   onDecline,
 }: IncomingCallModalProps) {
   const t = useT();
   const label = displayCallerName(callerName, callerOwnerId);
   const initial = callerInitial(callerName, callerOwnerId);
+  const isVideoCall = callType === "video";
 
   useIncomingCallRingtone(true);
 
@@ -50,7 +54,11 @@ export function IncomingCallModal({
       className="incoming-call-overlay"
       role="dialog"
       aria-modal="true"
-      aria-label={t("call:incoming", "Incoming call")}
+      aria-label={
+        isVideoCall
+          ? t("call:incomingVideo", "Incoming video call")
+          : t("call:incoming", "Incoming call")
+      }
     >
       <div className="incoming-call-backdrop" aria-hidden />
       <div className="incoming-call-sheet">
@@ -61,10 +69,16 @@ export function IncomingCallModal({
           </div>
         </div>
 
-        <p className="incoming-call-eyebrow">{t("call:incoming", "Incoming call")}</p>
+        <p className="incoming-call-eyebrow">
+          {isVideoCall
+            ? t("call:incomingVideo", "Incoming video call")
+            : t("call:incoming", "Incoming call")}
+        </p>
         <h2 className="incoming-call-name">{label}</h2>
         <p className="incoming-call-subtitle">
-          {t("call:incomingSubtitle", "is calling you…")}
+          {isVideoCall
+            ? t("call:incomingVideoSubtitle", "is video calling you…")
+            : t("call:incomingSubtitle", "is calling you…")}
         </p>
 
         <div className="incoming-call-actions">
@@ -90,9 +104,16 @@ export function IncomingCallModal({
             aria-label={t("call:accept", "Accept")}
           >
             <span className="incoming-call-action-icon" aria-hidden>
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
-              </svg>
+              {isVideoCall ? (
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <polygon points="23 7 16 12 23 17 23 7" />
+                  <rect x="1" y="5" width="15" height="14" rx="2" ry="2" />
+                </svg>
+              ) : (
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z" />
+                </svg>
+              )}
             </span>
             <span className="incoming-call-action-label">{t("call:accept", "Accept")}</span>
           </button>

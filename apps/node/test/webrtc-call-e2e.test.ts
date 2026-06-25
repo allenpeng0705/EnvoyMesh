@@ -21,8 +21,11 @@ import { join, extname } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import {
   generateAudioSdpOffer,
+  generateVideoSdpOffer,
+  getLastSendCallInviteParams,
   injectCallPush,
   mockGetUserMediaFailure,
+  mockGetUserMediaVideoFailure,
   setupMockWebSocket,
   startOutboundCallViaHook,
   waitForCallSessionHook,
@@ -370,6 +373,114 @@ describe("WebRTC voice call E2E", () => {
       const panelText = await panel.textContent();
       expect(panelText).toContain("MacBook");
       expect(panelText?.toLowerCase()).toMatch(/listen only|no microphone/);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  it("10. incoming video call modal shows video copy", async (ctx) => {
+    if (!browser) { ctx.skip(true, "Chromium not installed"); return; }
+    const page = await browser.newPage();
+    try {
+      await prepareCallPage(page);
+      await openSocialPage(page);
+
+      await injectCallPush(page, "call:incoming", {
+        callId: "call_test_video_001",
+        peerOwnerId: "envoy:owner:alice",
+        peerDisplayName: "Alice",
+        callType: "video",
+      });
+      await sleep(500);
+
+      const modal = page.locator(".incoming-call-overlay");
+      await modal.waitFor({ state: "visible", timeout: 5_000 });
+      const text = await modal.textContent();
+      expect(text?.toLowerCase()).toContain("video");
+      expect(text).toContain("Alice");
+    } finally {
+      await page.close();
+    }
+  }, 25_000);
+
+  it("11. accept video incoming → video active dock", async (ctx) => {
+    if (!browser) { ctx.skip(true, "Chromium not installed"); return; }
+    const page = await browser.newPage();
+    try {
+      await prepareCallPage(page);
+      await openSocialPage(page);
+
+      const sdpOffer = await generateVideoSdpOffer(page);
+
+      await injectCallPush(page, "call:incoming", {
+        callId: "call_test_video_002",
+        peerOwnerId: "envoy:owner:bob",
+        peerDisplayName: "Bob",
+        callType: "video",
+        sdpOffer,
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+      });
+      await page.locator(".incoming-call-overlay").waitFor({ state: "visible", timeout: 5_000 });
+      await page.click(".incoming-call-action--accept");
+      await sleep(800);
+
+      const panel = page.locator(".active-call-panel--video");
+      await panel.waitFor({ state: "visible", timeout: 8_000 });
+      await page.locator(".active-call-video-stage").waitFor({ state: "visible", timeout: 5_000 });
+      expect(await page.locator(".active-call-remote-video").count()).toBe(1);
+      const panelText = await panel.textContent();
+      expect(panelText).toContain("Bob");
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  it("12. outbound video call sends callType video via sendCallInvite RPC", async (ctx) => {
+    if (!browser) { ctx.skip(true, "Chromium not installed"); return; }
+    const page = await browser.newPage();
+    try {
+      await prepareCallPage(page);
+      await openSocialPage(page);
+      await waitForCallSessionHook(page);
+
+      await startOutboundCallViaHook(page, "envoy:owner:windows", "Windows PC", "video");
+      await sleep(500);
+
+      const params = await getLastSendCallInviteParams(page);
+      expect(params).toBeTruthy();
+      expect(params?.callType).toBe("video");
+      expect(params?.targetOwnerId).toBe("envoy:owner:windows");
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
+  it("13. video call with camera denied shows audio-only hint", async (ctx) => {
+    if (!browser) { ctx.skip(true, "Chromium not installed"); return; }
+    const page = await browser.newPage();
+    try {
+      await mockGetUserMediaVideoFailure(page);
+      await prepareCallPage(page);
+      await openSocialPage(page);
+
+      const sdpOffer = await generateVideoSdpOffer(page);
+
+      await injectCallPush(page, "call:incoming", {
+        callId: "call_test_video_no_cam",
+        peerOwnerId: "envoy:owner:mac",
+        peerDisplayName: "MacBook",
+        callType: "video",
+        sdpOffer,
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+      });
+      await page.locator(".incoming-call-overlay").waitFor({ state: "visible", timeout: 5_000 });
+      await page.click(".incoming-call-action--accept");
+      await sleep(800);
+
+      const panel = page.locator(".active-call-panel--video");
+      await panel.waitFor({ state: "visible", timeout: 8_000 });
+      const panelText = await panel.textContent();
+      expect(panelText?.toLowerCase()).toMatch(/no camera|audio only/);
     } finally {
       await page.close();
     }

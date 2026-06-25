@@ -144,7 +144,23 @@ Use this when validating desktop Social on **macOS (caller)** and **Windows (cal
 3. Check Windows mic permission only if Windows should speak; listen-only is OK for one-way verify.
 4. Capture `[webrtc-call]` logs from both browsers + `[sendCallInvite]` from both home nodes.
 
-Automated coverage (no real audio): `npm run test:e2e:webrtc` — includes Playwright tests for **Calling…** banner and listen-only active dock when `getUserMedia` fails (`webrtc-call-e2e.test.ts` tests 8–9).
+Automated coverage (no real audio): `npm run test:e2e:webrtc` — includes Playwright tests for **Calling…** banner and listen-only active dock when `getUserMedia` fails (`webrtc-call-e2e.test.ts` tests 8–9), plus **video call UI** (tests 10–13: incoming video modal, video dock, outbound `callType`, camera-denied hint).
+
+### Mac ↔ Windows cross-platform video (release smoke)
+
+Same setup as audio smoke above. Use the **camera icon** (not the phone icon) in the chat header.
+
+| Step | Action | Pass criteria |
+|------|--------|---------------|
+| 1 | Mac opens chat, taps **video camera** | Mac shows **Calling {name}…**; Windows shows **Incoming video call** |
+| 2 | Windows **Accept** | Both show video active dock (`.active-call-panel--video`) |
+| 3 | Wait for **Connected** | Remote video visible; local PiP preview on side with camera |
+| 4 | Mac speaks | Windows hears audio |
+| 5 | Windows without camera | Accept works; dock shows **No camera — audio only**; Mac video still visible on Windows if Windows receives remote track |
+| 6 | Either party **End call** | Both return to idle |
+| 7 | Windows starts video call to Mac | Same pass criteria (reverse direction) |
+
+**Traces:** filter `webrtc-call` for `ui:start-call` with `callType:"video"`, `transport:remote-track` with `kind:"video"`.
 
 ### EnvoyGo (mobile)
 
@@ -242,8 +258,9 @@ Notes: ...
 | Area | Automated today | Manual still required |
 |------|-----------------|----------------------|
 | Call signaling (libp2p) | `call-two-home-e2e.test.ts` | — |
-| Call UI (Playwright) | `webrtc-call-e2e.test.ts` (mock WS + listen-only banner/dock) | Real browser + two homes |
-| WebRTC media / audio | Hook unit tests only | Two devices, mic + speakers |
+| Call UI (Playwright) | `webrtc-call-e2e.test.ts` (audio + video: tests 10–13) | Real browser + two homes |
+| WebRTC media / audio | Hook + transport unit tests | Two devices, mic + speakers |
+| WebRTC video | Playwright video UI + signaling E2E (`call-signaling-video-e2e`) | Two devices, camera + display |
 | Path 2 cross-NAT + TURN | ICE injection tests | Hotspot + TURN server |
 | Chains (2 homes) | `chain-two-home-smoke.test.ts` | — |
 | Chains (3 homes) | `chain-three-home-smoke.test.ts` | Optional live 3-machine run |

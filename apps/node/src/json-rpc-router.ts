@@ -128,6 +128,7 @@ export async function routeRpcMethod(
         params.iceServers as
           | { urls: string; username?: string; credential?: string }[]
           | undefined,
+        params.callType as import("@envoymesh/api").CallMediaType | undefined,
       );
     case "sendCallReinvite":
       return ns.sendCallReinvite(

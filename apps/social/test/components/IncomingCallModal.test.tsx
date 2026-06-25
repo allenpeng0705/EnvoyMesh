@@ -19,6 +19,7 @@ describe("IncomingCallModal — Phase 38", () => {
       <IncomingCallModal
         callerName="Alice"
         callerOwnerId="envoy:owner:abc123"
+        callType="audio"
         onAccept={() => {}}
         onDecline={() => {}}
       />,
@@ -33,6 +34,7 @@ describe("IncomingCallModal — Phase 38", () => {
       <IncomingCallModal
         callerName="Bob"
         callerOwnerId="envoy:owner:xyz"
+        callType="audio"
         onAccept={onAccept}
         onDecline={() => {}}
       />,
@@ -47,6 +49,7 @@ describe("IncomingCallModal — Phase 38", () => {
       <IncomingCallModal
         callerName="Carol"
         callerOwnerId="envoy:owner:def"
+        callType="audio"
         onAccept={() => {}}
         onDecline={onDecline}
       />,
@@ -60,11 +63,26 @@ describe("IncomingCallModal — Phase 38", () => {
       <IncomingCallModal
         callerName="Dave"
         callerOwnerId="envoy:owner:ghi"
+        callType="audio"
         onAccept={() => {}}
         onDecline={() => {}}
       />,
     );
     expect(screen.getByText(/accept/i)).toBeDefined();
     expect(screen.getByText(/decline/i)).toBeDefined();
+  });
+
+  it("shows video call copy for incoming video calls", () => {
+    renderWithI18n(
+      <IncomingCallModal
+        callerName="Alice"
+        callerOwnerId="envoy:owner:abc"
+        callType="video"
+        onAccept={() => {}}
+        onDecline={() => {}}
+      />,
+    );
+    expect(screen.getByText(/incoming video call/i)).toBeDefined();
+    expect(screen.getByText(/video calling you/i)).toBeDefined();
   });
 });

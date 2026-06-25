@@ -28,7 +28,18 @@ describe("CallManager", () => {
         "Bob",
       );
       expect(callId).toBe("call-1");
-      expect(cm.getActiveCall()).toMatchObject({ callId: "call-1", status: "ringing" });
+      expect(cm.getActiveCall()).toMatchObject({ callId: "call-1", status: "ringing", callType: "audio" });
+    });
+
+    it("stores video callType on outbound call", () => {
+      cm.outboundCallInitiated(
+        "call-v1",
+        LOCAL_OWNER,
+        "envoy:owner:bob",
+        "Bob",
+        "video",
+      );
+      expect(cm.getActiveCall()).toMatchObject({ callId: "call-v1", callType: "video" });
     });
 
     it("rejects second outbound when already in a call", () => {
@@ -78,8 +89,30 @@ describe("CallManager", () => {
         callId: "call-1",
         peerOwnerId: "envoy:owner:alice",
         peerDisplayName: "Alice",
+        callType: "audio",
         sdpOffer: "v=0\r\n...",
       });
+    });
+
+    it("emits call:incoming with callType video", () => {
+      const events: any[] = [];
+      cm.onCallEvent((e) => events.push(e));
+
+      const result = cm.inboundCallReceived(
+        "call-v2",
+        "envoy:owner:alice",
+        "peer-alice",
+        "Alice",
+        "v=0\r\nvideo...",
+        undefined,
+        "video",
+      );
+      expect(result).toEqual({ ok: true, callId: "call-v2" });
+      expect(events[0]).toMatchObject({
+        type: "call:incoming",
+        callType: "video",
+      });
+      expect(cm.getActiveCall()?.callType).toBe("video");
     });
 
     it("deduplicates by (callId, callerOwnerId)", () => {

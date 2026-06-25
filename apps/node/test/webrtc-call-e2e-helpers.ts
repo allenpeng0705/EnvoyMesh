@@ -1,5 +1,5 @@
 /**
- * Shared helpers for WebRTC voice-call Playwright E2E (Vitest + Chromium).
+ * Shared helpers for WebRTC voice/video call Playwright E2E (Vitest + Chromium).
  */
 
 import type { Page } from "playwright";
@@ -11,6 +11,21 @@ export async function mockGetUserMediaFailure(page: Page): Promise<void> {
     if (!mediaDevices) return;
     mediaDevices.getUserMedia = () =>
       Promise.reject(new DOMException("Requested device not found", "NotFoundError"));
+  });
+}
+
+/** Reject video capture only — audio succeeds (video call with camera unavailable). */
+export async function mockGetUserMediaVideoFailure(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const mediaDevices = navigator.mediaDevices;
+    if (!mediaDevices) return;
+    const original = mediaDevices.getUserMedia.bind(mediaDevices);
+    mediaDevices.getUserMedia = (constraints) => {
+      if (constraints && typeof constraints === "object" && constraints.video) {
+        return Promise.reject(new DOMException("Requested device not found", "NotFoundError"));
+      }
+      return original(constraints);
+    };
   });
 }
 
@@ -51,6 +66,7 @@ export async function setupMockWebSocket(page: Page): Promise<void> {
 
         switch (req.method) {
           case "sendCallInvite":
+            (window as any).__lastSendCallInviteParams = req.params ?? null;
             respond("call_e2e_outbound");
             break;
           case "acceptCallInvite":
@@ -111,6 +127,20 @@ export async function generateAudioSdpOffer(page: Page): Promise<string> {
   });
 }
 
+/** Build a minimal audio+video SDP offer for callee accept flows. */
+export async function generateVideoSdpOffer(page: Page): Promise<string> {
+  return page.evaluate(async () => {
+    const pc = new RTCPeerConnection();
+    pc.addTransceiver("audio", { direction: "recvonly" });
+    pc.addTransceiver("video", { direction: "recvonly" });
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    const sdp = offer.sdp ?? "";
+    pc.close();
+    return sdp;
+  });
+}
+
 /** Wait for the dev-only call session hook exposed by CallSessionProvider. */
 export async function waitForCallSessionHook(page: Page, timeoutMs = 15_000): Promise<void> {
   await page.waitForFunction(
@@ -124,14 +154,22 @@ export async function startOutboundCallViaHook(
   page: Page,
   targetOwnerId: string,
   displayName: string,
+  callType: "audio" | "video" = "audio",
 ): Promise<void> {
   await page.evaluate(
-    async ({ ownerId, name }) => {
+    async ({ ownerId, name, mediaType }) => {
       const session = (window as any).__envoyCallSession as {
-        startCall: (id: string, label?: string) => Promise<void>;
+        startCall: (id: string, label?: string, type?: "audio" | "video") => Promise<void>;
       };
-      await session.startCall(ownerId, name);
+      await session.startCall(ownerId, name, mediaType);
     },
-    { ownerId: targetOwnerId, name: displayName },
+    { ownerId: targetOwnerId, name: displayName, mediaType: callType },
   );
+}
+
+/** Read params from the last sendCallInvite RPC captured by the mock WebSocket. */
+export async function getLastSendCallInviteParams(
+  page: Page,
+): Promise<Record<string, unknown> | null> {
+  return page.evaluate(() => (window as any).__lastSendCallInviteParams ?? null);
 }

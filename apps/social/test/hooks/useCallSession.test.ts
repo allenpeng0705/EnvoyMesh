@@ -83,6 +83,8 @@ vi.mock("../../src/lib/webrtc-call-transport.js", () => ({
       addIceCandidate: vi.fn(async () => undefined),
       setMute: vi.fn(),
       isMicAvailable: vi.fn(() => micAvailable),
+      isCameraAvailable: vi.fn(() => true),
+      getLocalStream: vi.fn(() => null),
       close: vi.fn(),
     };
   },
@@ -127,6 +129,8 @@ describe("useCallSession media plane", () => {
     expect(mockNodeService.sendCallInvite).toHaveBeenCalledWith(
       "envoy:owner:bob",
       "local-offer",
+      undefined,
+      "audio",
     );
     expect(mockNodeService.sendIceCandidate).toHaveBeenCalledWith(
       "call-123",
@@ -147,6 +151,8 @@ describe("useCallSession media plane", () => {
     expect(mockNodeService.sendCallInvite).toHaveBeenCalledWith(
       "envoy:owner:bob",
       "local-offer",
+      undefined,
+      "audio",
     );
   });
 
@@ -161,9 +167,46 @@ describe("useCallSession media plane", () => {
     expect(mockNodeService.sendCallInvite).toHaveBeenCalledWith(
       "envoy:owner:bob",
       "local-offer",
+      undefined,
+      "audio",
     );
     expect(result.current.callingState).toBe("call-123");
     expect(result.current.micAvailable).toBe(false);
+  });
+
+  it("passes video callType when starting a video call", async () => {
+    const { result } = renderHook(() => useCallSession());
+
+    await act(async () => {
+      await result.current.startCall("envoy:owner:bob", "Bob", "video");
+    });
+
+    expect(mockNodeService.sendCallInvite).toHaveBeenCalledWith(
+      "envoy:owner:bob",
+      "local-offer",
+      undefined,
+      "video",
+    );
+  });
+
+  it("stores callType on incoming call event", () => {
+    const { result } = renderHook(() => useCallSession());
+
+    act(() => {
+      mockNodeService.emitCallEvent({
+        type: "call:incoming",
+        callId: "call-vid",
+        peerOwnerId: "envoy:owner:alice",
+        peerDisplayName: "Alice",
+        callType: "video",
+        sdpOffer: "video-offer",
+      });
+    });
+
+    expect(result.current.incomingCall).toMatchObject({
+      callId: "call-vid",
+      callType: "video",
+    });
   });
 
   it("sends call.reinvite on Path 1 timeout during outbound call", async () => {
@@ -194,6 +237,7 @@ describe("useCallSession media plane", () => {
         callId: "call-123",
         peerOwnerId: "envoy:owner:alice",
         peerDisplayName: "Alice",
+        callType: "audio",
         sdpOffer: "path1-offer",
         iceServers: [],
       });

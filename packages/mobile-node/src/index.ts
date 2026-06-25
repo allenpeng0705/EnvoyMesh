@@ -8424,7 +8424,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
   // ---- Phase 38 — Voice/Video Calls ----
   getActiveCall(): import("@envoymesh/api").CallSession | null { return null; }
   onCallEvent(_handler: (event: import("@envoymesh/api").CallEvent) => void): () => void { return () => {}; }
-  async sendCallInvite(_targetOwnerId: string, _sdpOffer: string, _iceServers?: { urls: string; username?: string; credential?: string }[]): Promise<string | null> { return null; }
+  async sendCallInvite(_targetOwnerId: string, _sdpOffer: string, _iceServers?: { urls: string; username?: string; credential?: string }[], _callType?: import("@envoymesh/api").CallMediaType): Promise<string | null> { return null; }
   async sendCallReinvite(_callId: string, _sdpOffer: string, _iceServers?: { urls: string; username?: string; credential?: string }[], _reason?: "path1_timeout" | "path1_failed"): Promise<boolean> { return false; }
   async acceptCallInvite(_callId: string, _sdpAnswer: string, _iceServers?: { urls: string; username?: string; credential?: string }[]): Promise<boolean> { return false; }
   async declineCallInvite(_callId: string, _reason: string): Promise<boolean> { return false; }

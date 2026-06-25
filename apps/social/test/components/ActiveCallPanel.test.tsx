@@ -10,9 +10,11 @@ import { ActiveCallPanel } from "../../src/components/ActiveCallPanel.js";
 const baseProps = {
   peerDisplayName: "Alice",
   peerOwnerId: "envoy:owner:alice",
+  callType: "audio" as const,
   isMuted: false,
   isRemoteMuted: false,
   micAvailable: true,
+  cameraAvailable: true,
   connectionState: "connected",
   onToggleMute: () => {},
   onEndCall: () => {},
@@ -77,5 +79,26 @@ describe("ActiveCallPanel — Phase 38", () => {
       <ActiveCallPanel {...baseProps} connectionState="connecting" />,
     );
     expect(screen.getByText(/connecting/i)).toBeDefined();
+  });
+
+  it("renders video stage and elements for video calls", () => {
+    const { container } = renderWithI18n(
+      <ActiveCallPanel {...baseProps} callType="video" connectionState="connected" />,
+    );
+    expect(container.querySelector(".active-call-panel--video")).toBeTruthy();
+    expect(container.querySelector(".active-call-video-stage")).toBeTruthy();
+    expect(container.querySelector(".active-call-remote-video")).toBeTruthy();
+  });
+
+  it("shows camera unavailable hint for video calls without camera", () => {
+    renderWithI18n(
+      <ActiveCallPanel
+        {...baseProps}
+        callType="video"
+        cameraAvailable={false}
+        connectionState="connected"
+      />,
+    );
+    expect(screen.getByText(/no camera|audio only/i)).toBeDefined();
   });
 });

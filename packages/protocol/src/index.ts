@@ -2049,12 +2049,15 @@ export interface CreateEnvelopeInput<TPayload> {
 /** Maximum inbound ring duration before auto-reject (60 s). */
 export const CALL_RING_TIMEOUT_MS = 60_000;
 
+export const CallMediaTypeSchema = z.enum(["audio", "video"]);
+export type CallMediaType = z.infer<typeof CallMediaTypeSchema>;
+
 // --- call.invite ---
 export const CallInvitePayloadSchema = z.object({
   callId: z.string().uuid(),
   callerOwnerId: z.string().min(1),
   callerPeerId: z.string().min(1),
-  callType: z.enum(["audio"]).default("audio"),
+  callType: CallMediaTypeSchema.default("audio"),
   timestamp: z.string().datetime(),
   sdpOffer: z.string().min(1),
   iceServers: z.array(z.object({
@@ -2071,7 +2074,7 @@ export interface CreateCallInvitePayloadInput {
   callId: string;
   callerOwnerId: string;
   callerPeerId: string;
-  callType?: "audio";
+  callType?: CallMediaType;
   timestamp?: string;
   sdpOffer: string;
   iceServers?: Array<{ urls: string; username?: string; credential?: string }>;

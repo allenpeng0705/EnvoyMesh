@@ -2942,6 +2942,68 @@
   color: var(--color-text);
 }
 
+.active-call-panel--video {
+  gap: var(--space-3);
+  padding-top: var(--space-3);
+}
+
+.active-call-video-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  background: #0f172a;
+}
+
+.active-call-remote-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: #0f172a;
+}
+
+.active-call-video-placeholder {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(160deg, #1e293b, #0f172a);
+}
+
+.active-call-video-placeholder-initial {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 4.5rem;
+  height: 4.5rem;
+  border-radius: var(--radius-full);
+  background: linear-gradient(145deg, var(--avatar-peer-from), var(--avatar-peer-to));
+  color: var(--color-text-inverse);
+  font-size: var(--text-2xl);
+  font-weight: var(--font-bold);
+}
+
+.active-call-local-video {
+  position: absolute;
+  right: var(--space-3);
+  bottom: var(--space-3);
+  width: 28%;
+  min-width: 4.5rem;
+  max-width: 7rem;
+  aspect-ratio: 3 / 4;
+  object-fit: cover;
+  border-radius: var(--radius-lg);
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  box-shadow: var(--shadow-lg);
+  background: #111827;
+}
+
+.active-call-panel--video .active-call-main {
+  padding-top: 0;
+}
+
 .active-call-remote-audio {
   position: absolute;
   width: 1px;
@@ -3329,6 +3391,10 @@
   z-index: 9000;
   max-width: min(420px, calc(100vw - var(--space-6)));
   border-radius: var(--radius-xl);
+}
+
+.global-active-call-dock--video {
+  width: min(28rem, calc(100vw - var(--space-6)));
 }
 
 .global-active-call-dock {

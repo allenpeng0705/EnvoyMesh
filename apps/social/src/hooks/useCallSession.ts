@@ -23,7 +23,7 @@ import {
   isPath2Call,
   type CallIceServerConfig,
 } from "../lib/call-ice-servers.js";
-import type { CallSession, CallEvent } from "@envoymesh/api";
+import type { CallSession, CallEvent, CallMediaType } from "@envoymesh/api";
 import { webrtcCallTrace, webrtcCallWarn, shortCallId } from "../lib/webrtc-call-trace.js";
 
 type IceServerConfig = CallIceServerConfig;
@@ -36,6 +36,7 @@ export interface UseCallSessionResult {
     callId: string;
     peerOwnerId: string;
     peerDisplayName: string;
+    callType: CallMediaType;
     sdpOffer?: string;
     iceServers?: IceServerConfig[];
   } | null;
@@ -46,13 +47,15 @@ export interface UseCallSessionResult {
   isMuted: boolean;
   isRemoteMuted: boolean;
   micAvailable: boolean;
+  cameraAvailable: boolean;
   connectionState: string;
   dismissIncoming: () => void;
   callingState: string | null;
   activePeerDisplayName: string | null;
-  startCall: (targetOwnerId: string, displayName?: string) => Promise<void>;
+  startCall: (targetOwnerId: string, displayName?: string, callType?: CallMediaType) => Promise<void>;
   cancelCall: () => void;
   remoteStream: MediaStream | null;
+  localStream: MediaStream | null;
 }
 
 function isPath2Invite(iceServers?: IceServerConfig[]): boolean {
@@ -68,16 +71,19 @@ export function useCallSession(): UseCallSessionResult {
   const [isMuted, setIsMuted] = useState(false);
   const [isRemoteMuted, setIsRemoteMuted] = useState(false);
   const [micAvailable, setMicAvailable] = useState(true);
+  const [cameraAvailable, setCameraAvailable] = useState(true);
   const [connectionState, setConnectionState] = useState("disconnected");
   const [pendingSdpOffer, setPendingSdpOffer] = useState<string | undefined>(undefined);
   const [callingState, setCallingState] = useState<string | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [activePeerDisplayName, setActivePeerDisplayName] = useState<string | null>(null);
 
   const transportRef = useRef<WebRtcCallTransport | null>(null);
   const activeCallIdRef = useRef<string | null>(null);
   const iceCallIdRef = useRef<string>("");
-  const activePeerRef = useRef<{ ownerId: string; displayName: string } | null>(null);
+  const activePeerRef = useRef<{ ownerId: string; displayName: string; callType: CallMediaType } | null>(null);
+  const mediaTypeRef = useRef<CallMediaType>("audio");
   const pendingInviteIceServersRef = useRef<IceServerConfig[] | undefined>(undefined);
   const path2FallbackSentRef = useRef(false);
   const pendingIceCandidatesRef = useRef<Parameters<typeof nodeService.sendIceCandidate>[1][]>([]);
@@ -110,13 +116,16 @@ export function useCallSession(): UseCallSessionResult {
     transportRef.current?.close();
     transportRef.current = null;
     setRemoteStream(null);
+    setLocalStream(null);
     setMicAvailable(true);
+    setCameraAvailable(true);
     pendingIceCandidatesRef.current = [];
     pendingOutboundIceRef.current = [];
   }, []);
 
-  const syncMicAvailable = useCallback(() => {
+  const syncMediaAvailability = useCallback(() => {
     setMicAvailable(transportRef.current?.isMicAvailable() ?? true);
+    setCameraAvailable(transportRef.current?.isCameraAvailable() ?? true);
   }, []);
 
   const notifyMicUnavailable = useCallback(() => {
@@ -144,17 +153,23 @@ export function useCallSession(): UseCallSessionResult {
     (options: {
       path: CallTransportPath;
       iceServers: RTCIceServer[];
+      mediaType?: CallMediaType;
       onPath1Timeout?: () => void;
     }) =>
       createWebRtcCallTransport({
         path: options.path,
+        mediaType: options.mediaType ?? mediaTypeRef.current,
         iceServers: options.iceServers,
         onRemoteStream: (stream) => {
           webrtcCallTrace("ui:remote-stream", {
-            trackCount: stream.getAudioTracks().length,
-            live: stream.getAudioTracks().some((track) => track.readyState === "live"),
+            audioTracks: stream.getAudioTracks().length,
+            videoTracks: stream.getVideoTracks().length,
+            live: stream.getTracks().some((track) => track.readyState === "live"),
           });
           setRemoteStream(stream);
+        },
+        onLocalStream: (stream) => {
+          setLocalStream(stream);
         },
         onConnectionStateChange: (state) => setConnectionState(state),
         onSdpGenerated: () => undefined,
@@ -178,10 +193,14 @@ export function useCallSession(): UseCallSessionResult {
 
       try {
         iceCallIdRef.current = callId;
-        const transport = buildTransport({ path: "path2", iceServers: configIce });
+        const transport = buildTransport({
+          path: "path2",
+          iceServers: configIce,
+          mediaType: mediaTypeRef.current,
+        });
         transportRef.current = transport;
         const sdpOffer = await transport.startOffer();
-        syncMicAvailable();
+        syncMediaAvailability();
         if (!transport.isMicAvailable()) {
           notifyMicUnavailable();
         }
@@ -200,7 +219,7 @@ export function useCallSession(): UseCallSessionResult {
         closeTransport();
       }
     },
-    [nodeService, buildTransport, closeTransport, syncMicAvailable, notifyMicUnavailable, flushPendingIceCandidates],
+    [nodeService, buildTransport, closeTransport, syncMediaAvailability, notifyMicUnavailable, flushPendingIceCandidates],
   );
 
   const onPath1TimeoutHandler = useCallback(() => {
@@ -223,10 +242,11 @@ export function useCallSession(): UseCallSessionResult {
         const transport = buildTransport({
           path: "path2",
           iceServers: rtcIce,
+          mediaType: mediaTypeRef.current,
         });
         transportRef.current = transport;
         const sdpAnswer = await transport.startAnswer(remoteSdp);
-        syncMicAvailable();
+        syncMediaAvailability();
         if (!transport.isMicAvailable()) {
           notifyMicUnavailable();
         }
@@ -238,7 +258,7 @@ export function useCallSession(): UseCallSessionResult {
         setConnectionState("disconnected");
       }
     },
-    [nodeService, buildTransport, closeTransport, syncMicAvailable, notifyMicUnavailable, flushPendingIceCandidates],
+    [nodeService, buildTransport, closeTransport, syncMediaAvailability, notifyMicUnavailable, flushPendingIceCandidates],
   );
 
   useEffect(() => {
@@ -251,10 +271,12 @@ export function useCallSession(): UseCallSessionResult {
       });
       switch (event.type) {
         case "call:incoming":
+          mediaTypeRef.current = event.callType;
           setIncomingCall({
             callId: event.callId,
             peerOwnerId: event.peerOwnerId,
             peerDisplayName: event.peerDisplayName,
+            callType: event.callType,
             sdpOffer: event.sdpOffer,
             iceServers: event.iceServers,
           });
@@ -306,7 +328,7 @@ export function useCallSession(): UseCallSessionResult {
           setActiveCall({
             callId: event.callId,
             peerOwnerId: activePeerRef.current?.ownerId ?? "",
-            callType: "audio",
+            callType: activePeerRef.current?.callType ?? "audio",
             status: "active",
             muted: false,
           });
@@ -411,7 +433,9 @@ export function useCallSession(): UseCallSessionResult {
     activePeerRef.current = {
       ownerId: incomingCall.peerOwnerId,
       displayName: incomingCall.peerDisplayName,
+      callType: incomingCall.callType,
     };
+    mediaTypeRef.current = incomingCall.callType;
     setActivePeerDisplayName(incomingCall.peerDisplayName);
     const peerOwnerId = incomingCall.peerOwnerId;
     setIncomingCall(null);
@@ -422,7 +446,7 @@ export function useCallSession(): UseCallSessionResult {
     setActiveCall({
       callId,
       peerOwnerId,
-      callType: "audio",
+      callType: incomingCall.callType,
       status: "active",
       muted: false,
     });
@@ -438,10 +462,11 @@ export function useCallSession(): UseCallSessionResult {
       const transport = buildTransport({
         path: "path2",
         iceServers: pathIceServers,
+        mediaType: incomingCall.callType,
       });
       transportRef.current = transport;
       const sdpAnswer = await transport.startAnswer(remoteSdp);
-      syncMicAvailable();
+      syncMediaAvailability();
       if (!transport.isMicAvailable()) {
         notifyMicUnavailable();
       }
@@ -469,7 +494,7 @@ export function useCallSession(): UseCallSessionResult {
     nodeService,
     buildTransport,
     closeTransport,
-    syncMicAvailable,
+    syncMediaAvailability,
     notifyMicUnavailable,
     flushPendingIceCandidates,
     showToast,
@@ -517,10 +542,11 @@ export function useCallSession(): UseCallSessionResult {
   }, []);
 
   const startCall = useCallback(
-    async (targetOwnerId: string, displayName?: string) => {
+    async (targetOwnerId: string, displayName?: string, callType: CallMediaType = "audio") => {
       if (!nodeService) return;
       const peerLabel = displayName?.trim() || targetOwnerId;
-      webrtcCallTrace("ui:start-call", { target: shortCallId(targetOwnerId) });
+      mediaTypeRef.current = callType;
+      webrtcCallTrace("ui:start-call", { target: shortCallId(targetOwnerId), callType });
 
       path2FallbackSentRef.current = false;
 
@@ -534,11 +560,12 @@ export function useCallSession(): UseCallSessionResult {
         const tempTransport = buildTransport({
           path: "path2",
           iceServers: pathIceServers,
+          mediaType: callType,
           onPath1Timeout: onPath1TimeoutHandler,
         });
         sdpOffer = await tempTransport.startOffer();
         transportRef.current = tempTransport;
-        syncMicAvailable();
+        syncMediaAvailability();
         if (!tempTransport.isMicAvailable()) {
           notifyMicUnavailable();
         }
@@ -560,7 +587,7 @@ export function useCallSession(): UseCallSessionResult {
       let callId: string | null;
       try {
         // Omit iceServers so the home ships STUN defaults in the invite payload.
-        callId = await nodeService.sendCallInvite(targetOwnerId, sdpOffer);
+        callId = await nodeService.sendCallInvite(targetOwnerId, sdpOffer, undefined, callType);
       } catch (err) {
         webrtcCallWarn("ui:send-invite-failed", {
           target: shortCallId(targetOwnerId),
@@ -582,14 +609,14 @@ export function useCallSession(): UseCallSessionResult {
 
       iceCallIdRef.current = callId;
       activeCallIdRef.current = callId;
-      activePeerRef.current = { ownerId: targetOwnerId, displayName: peerLabel };
+      activePeerRef.current = { ownerId: targetOwnerId, displayName: peerLabel, callType };
       setActivePeerDisplayName(peerLabel);
       setCallingState(callId);
       setConnectionState("connecting");
       flushPendingOutboundIce(callId);
       webrtcCallTrace("ui:invite-sent", { callId: shortCallId(callId), target: shortCallId(targetOwnerId) });
     },
-    [nodeService, buildTransport, closeTransport, onPath1TimeoutHandler, showToast, t, syncMicAvailable, notifyMicUnavailable, flushPendingIceCandidates, flushPendingOutboundIce],
+    [nodeService, buildTransport, closeTransport, onPath1TimeoutHandler, showToast, t, syncMediaAvailability, notifyMicUnavailable, flushPendingIceCandidates, flushPendingOutboundIce],
   );
 
   const cancelCall = useCallback(() => {
@@ -615,6 +642,7 @@ export function useCallSession(): UseCallSessionResult {
     isMuted,
     isRemoteMuted,
     micAvailable,
+    cameraAvailable,
     connectionState,
     dismissIncoming,
     callingState,
@@ -622,5 +650,6 @@ export function useCallSession(): UseCallSessionResult {
     startCall,
     cancelCall,
     remoteStream,
+    localStream,
   };
 }

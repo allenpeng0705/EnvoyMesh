@@ -13306,6 +13306,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     targetOwnerId: string,
     sdpOffer: string,
     iceServers?: { urls: string; username?: string; credential?: string }[],
+    callType: import("@envoymesh/api").CallMediaType = "audio",
   ): Promise<string | null> {
     console.log(`[sendCallInvite] invoked target=${targetOwnerId.slice(0, 24)} sdpLen=${sdpOffer.length}`);
     const profile = this._profile;
@@ -13330,6 +13331,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
       profile.owner.ownerId,
       targetOwnerId,
       peerDisplayName,
+      callType,
     );
     if (!initiated) return null;
 
@@ -13426,6 +13428,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
       callId,
       callerOwnerId: profile.owner.ownerId,
       callerPeerId: senderPeerId,
+      callType,
       sdpOffer,
       iceServers: effectiveIceServers,
     });

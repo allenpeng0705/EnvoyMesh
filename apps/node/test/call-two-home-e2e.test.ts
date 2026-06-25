@@ -161,4 +161,36 @@ describe.sequential("E2E two-home call signaling (libp2p)", () => {
     await waitForPhase13(() => caller.service.getActiveCall() === null, 5_000);
     await waitForPhase13(() => callee.service.getActiveCall() === null, 5_000);
   }, 60_000);
+
+  it("video callType propagates on invite → accept", async () => {
+    const { caller, callee } = await setupCallHomes();
+
+    const incomingPromise = waitForCallEvent(
+      callee,
+      (e) => e.type === "call:incoming" && e.callType === "video",
+    );
+
+    const callId = await caller.service.sendCallInvite(
+      callee.profile.owner.ownerId,
+      SDP_OFFER_PATH1,
+      [],
+      "video",
+    );
+    expect(callId).toBeTruthy();
+
+    const incoming = await incomingPromise;
+    if (incoming.type !== "call:incoming") return;
+    expect(incoming.callType).toBe("video");
+
+    await caller.mesh.dial(callee.mesh.multiaddrs[0]!);
+    await callee.mesh.dial(caller.mesh.multiaddrs[0]!);
+
+    expect(await callee.service.acceptCallInvite(callId!, SDP_ANSWER, [])).toBe(true);
+    expect(caller.service.getActiveCall()?.callType).toBe("video");
+    expect(callee.service.getActiveCall()?.callType).toBe("video");
+
+    await caller.service.endCall(callId!);
+    await waitForPhase13(() => caller.service.getActiveCall() === null, 5_000);
+    await waitForPhase13(() => callee.service.getActiveCall() === null, 5_000);
+  }, 60_000);
 });

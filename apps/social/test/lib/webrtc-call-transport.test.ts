@@ -334,6 +334,76 @@ describe("WebRtcCallTransport", () => {
     });
   });
 
+  describe("video calls", () => {
+    it("startOffer requests audio and video getUserMedia", async () => {
+      const { transport } = createTestTransport({ mediaType: "video" });
+      await transport.startOffer();
+
+      expect(mockGetUserMedia()).toHaveBeenCalledWith(
+        expect.objectContaining({
+          audio: true,
+          video: expect.objectContaining({ facingMode: "user" }),
+        }),
+      );
+      expect(transport.isCameraAvailable()).toBe(true);
+      expect(transport.isMicAvailable()).toBe(true);
+    });
+
+    it("falls back to recvonly video when camera capture fails", async () => {
+      mockGetUserMedia()?.mockRejectedValueOnce(new Error("video+audio failed"));
+      mockGetUserMedia()?.mockImplementationOnce(async (constraints: MediaStreamConstraints) => {
+        const stream = new (globalThis as any).MediaStream();
+        stream.addTrack({ kind: "audio", id: "mic", enabled: true, stop: vi.fn() });
+        expect(constraints.video).toBeUndefined();
+        return stream;
+      });
+
+      const { transport } = createTestTransport({ mediaType: "video" });
+      await transport.startOffer();
+
+      expect(lastCreatedPC.addTransceiver).toHaveBeenCalledWith("video", { direction: "recvonly" });
+      expect(transport.isCameraAvailable()).toBe(false);
+      expect(transport.isMicAvailable()).toBe(true);
+    });
+
+    it("calls onLocalStream when local capture succeeds", async () => {
+      const onLocalStream = vi.fn();
+      const { transport } = createTestTransport({ mediaType: "video", onLocalStream });
+      await transport.startOffer();
+
+      expect(onLocalStream).toHaveBeenCalledTimes(1);
+      expect(transport.getLocalStream()).toBeTruthy();
+    });
+
+    it("forwards remote video tracks via ontrack", async () => {
+      const onRemoteStream = vi.fn();
+      const { transport } = createTestTransport({ onRemoteStream });
+      await transport.startOffer();
+
+      const remoteTrack = { id: "remote-video-1", kind: "video" } as MediaStreamTrack;
+      lastCreatedPC.ontrack?.({
+        track: remoteTrack,
+        streams: [],
+      } as RTCTrackEvent);
+
+      expect(onRemoteStream).toHaveBeenCalledTimes(1);
+      const stream = onRemoteStream.mock.calls[0]?.[0] as MediaStream;
+      expect(stream.getVideoTracks()).toHaveLength(1);
+    });
+
+    it("startAnswer with video attaches video track when transceiver present", async () => {
+      const onLocalStream = vi.fn();
+      const { transport } = createTestTransport({ mediaType: "video", onLocalStream });
+      await transport.startAnswer("remote-video-offer");
+
+      expect(mockGetUserMedia()).toHaveBeenCalledWith(
+        expect.objectContaining({ audio: true, video: expect.anything() }),
+      );
+      expect(transport.isCameraAvailable()).toBe(true);
+      expect(onLocalStream).toHaveBeenCalled();
+    });
+  });
+
   describe("onPath1Timeout callback", () => {
     it("is called when Path 1 times out", async () => {
       vi.useFakeTimers();

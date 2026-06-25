@@ -6,7 +6,7 @@
  * emits `CallEvent`s to subscribers.
  */
 
-import type { CallEvent, CallSession, CallSessionStatus } from "@envoymesh/api";
+import type { CallEvent, CallSession, CallSessionStatus, CallMediaType } from "@envoymesh/api";
 import {
   CALL_RING_TIMEOUT_MS,
   type CallIceCandidatePayload,
@@ -25,6 +25,7 @@ interface InternalSession {
   callId: string;
   peerOwnerId: string;
   peerDisplayName: string;
+  callType: CallMediaType;
   direction: CallDirection;
   status: CallSessionStatus;
   muted: boolean;
@@ -67,7 +68,7 @@ export class CallManager {
         return {
           callId: s.callId,
           peerOwnerId: s.peerOwnerId,
-          callType: "audio",
+          callType: s.callType,
           status: s.status,
           startedAt: s.startedAt,
           muted: s.muted,
@@ -131,6 +132,7 @@ export class CallManager {
     localOwnerId: string,
     peerOwnerId: string,
     peerDisplayName: string,
+    callType: CallMediaType = "audio",
   ): string | null {
     if (this._hasActiveCall()) {
       webrtcCallWarn("call-manager:outbound-blocked-busy", { callId: shortCallId(callId) });
@@ -141,6 +143,7 @@ export class CallManager {
       callId,
       peerOwnerId,
       peerDisplayName,
+      callType,
       direction: "outbound",
       status: "ringing",
       muted: false,
@@ -181,6 +184,7 @@ export class CallManager {
     callerDisplayName: string,
     sdpOffer: string,
     iceServers?: { urls: string; username?: string; credential?: string }[],
+    callType: CallMediaType = "audio",
   ): InboundCallResult {
     const existing = this._sessions.get(callId);
     if (existing?.peerOwnerId === callerOwnerId) {
@@ -197,6 +201,7 @@ export class CallManager {
       callId,
       peerOwnerId: callerOwnerId,
       peerDisplayName: callerDisplayName,
+      callType,
       direction: "inbound",
       status: "ringing",
       muted: false,
@@ -221,7 +226,7 @@ export class CallManager {
       callId,
       peerOwnerId: callerOwnerId,
       peerDisplayName: callerDisplayName,
-      callType: "audio",
+      callType,
       sdpOffer,
       iceServers,
     });

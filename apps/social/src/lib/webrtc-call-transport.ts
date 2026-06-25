@@ -10,7 +10,7 @@
  * APIs which are only available in the browser.
  */
 
-import { createCallMutePayload, type CallIceCandidatePayload } from "@envoymesh/protocol";
+import { createCallMutePayload, type CallIceCandidatePayload, type CallMediaType } from "@envoymesh/protocol";
 import { webrtcCallTrace, webrtcCallWarn, shortCallId } from "./webrtc-call-trace.js";
 
 // ------------------------------------------------------------------
@@ -22,10 +22,14 @@ export type CallTransportPath = "path1" | "path2";
 export interface WebRtcCallTransportOptions {
   /** How to select the transport path (auto or explicit). */
   path: CallTransportPath;
+  /** Audio-only or audio+video capture. */
+  mediaType?: CallMediaType;
   /** STUN/TURN servers for Path 2 (from relay config). */
   iceServers?: RTCIceServer[];
-  /** Called when a remote audio track arrives — pipe to <audio>. */
+  /** Called when a remote media track arrives — pipe to <audio> / <video>. */
   onRemoteStream: (stream: MediaStream) => void;
+  /** Called when local capture stream is ready (for self-view preview). */
+  onLocalStream?: (stream: MediaStream) => void;
   /** Called when connection state changes. */
   onConnectionStateChange: (state: RTCPeerConnectionState) => void;
   /** Called with SDP to send via call.invite or call.accept. */
@@ -60,6 +64,10 @@ export interface WebRtcCallTransport {
   setMute(muted: boolean, callId?: string): void;
   /** Whether local microphone capture is available for this session. */
   isMicAvailable(): boolean;
+  /** Whether local camera capture is available (video calls only). */
+  isCameraAvailable(): boolean;
+  /** Local capture stream, if any. */
+  getLocalStream(): MediaStream | null;
   /** End the call and clean up. */
   close(): void;
 }
@@ -73,6 +81,22 @@ const ICE_GATHERING_TIMEOUT_MS = 8_000;
 
 function countSdpCandidates(sdp: string): number {
   return sdp.split("\n").filter((line) => line.startsWith("a=candidate:")).length;
+}
+
+function findMediaTransceiver(
+  connection: RTCPeerConnection,
+  kind: "audio" | "video",
+): RTCRtpTransceiver | null {
+  const transceivers = connection.getTransceivers();
+  return (
+    transceivers.find((transceiver) => transceiver.receiver.track?.kind === kind) ??
+    transceivers.find((transceiver) => transceiver.sender.track?.kind === kind) ??
+    null
+  );
+}
+
+function videoCaptureConstraints(): MediaTrackConstraints {
+  return { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } };
 }
 
 async function waitForIceGatheringComplete(
@@ -111,14 +135,23 @@ export function createWebRtcCallTransport(
   let pc: RTCPeerConnection | null = null;
   let localStream: MediaStream | null = null;
   let micAvailable = true;
+  let cameraAvailable = true;
   let isMuted = false;
   let path1Timer: ReturnType<typeof setTimeout> | null = null;
   let isClosed = false;
   let pendingRemoteCandidates: CallIceCandidatePayload["candidate"][] = [];
 
   const path1Timeout = opts.path1TimeoutMs ?? 5000;
+  const mediaType = opts.mediaType ?? "audio";
+  const wantsVideo = mediaType === "video";
 
   // --- helpers ---
+
+  function notifyLocalStream(): void {
+    if (localStream && opts.onLocalStream) {
+      opts.onLocalStream(localStream);
+    }
+  }
 
   async function getIceConfig(): Promise<RTCConfiguration> {
     if (opts.path === "path1") {
@@ -135,10 +168,10 @@ export function createWebRtcCallTransport(
 
   function handleRemoteTrack(event: RTCTrackEvent): void {
     const track = event.track;
-    if (!track || track.kind !== "audio") return;
+    if (!track || (track.kind !== "audio" && track.kind !== "video")) return;
 
     if (event.streams?.[0]) {
-      webrtcCallTrace("transport:remote-track", { via: "stream", trackId: track.id });
+      webrtcCallTrace("transport:remote-track", { via: "stream", kind: track.kind, trackId: track.id });
       opts.onRemoteStream(event.streams[0]);
       return;
     }
@@ -149,11 +182,11 @@ export function createWebRtcCallTransport(
     if (!remoteMediaStream.getTracks().some((existing) => existing.id === track.id)) {
       remoteMediaStream.addTrack(track);
     }
-    webrtcCallTrace("transport:remote-track", { via: "track", trackId: track.id });
+    webrtcCallTrace("transport:remote-track", { via: "track", kind: track.kind, trackId: track.id });
     opts.onRemoteStream(remoteMediaStream);
   }
 
-  async function attachLocalAudioForOffer(connection: RTCPeerConnection): Promise<void> {
+  async function attachLocalMediaForOffer(connection: RTCPeerConnection): Promise<void> {
     const getUserMedia = navigator.mediaDevices?.getUserMedia?.bind(navigator.mediaDevices);
     if (!getUserMedia) {
       webrtcCallWarn("transport:mic-unavailable", {
@@ -161,76 +194,141 @@ export function createWebRtcCallTransport(
         error: "mediaDevices unavailable",
       });
       connection.addTransceiver("audio", { direction: "recvonly" });
+      if (wantsVideo) {
+        connection.addTransceiver("video", { direction: "recvonly" });
+        cameraAvailable = false;
+      }
       micAvailable = false;
       return;
     }
 
+    const constraints: MediaStreamConstraints = { audio: true };
+    if (wantsVideo) {
+      constraints.video = videoCaptureConstraints();
+    }
+
     try {
-      localStream = await getUserMedia({ audio: true });
+      localStream = await getUserMedia(constraints);
       localStream.getTracks().forEach((track) => {
         connection.addTrack(track, localStream!);
       });
-      micAvailable = true;
+      micAvailable = localStream.getAudioTracks().length > 0;
+      cameraAvailable = !wantsVideo || localStream.getVideoTracks().length > 0;
+      notifyLocalStream();
     } catch (err) {
+      if (wantsVideo) {
+        try {
+          localStream = await getUserMedia({ audio: true });
+          localStream.getTracks().forEach((track) => {
+            connection.addTrack(track, localStream!);
+          });
+          connection.addTransceiver("video", { direction: "recvonly" });
+          micAvailable = true;
+          cameraAvailable = false;
+          notifyLocalStream();
+          return;
+        } catch {
+          /* fall through to listen-only */
+        }
+      }
       webrtcCallWarn("transport:mic-unavailable", {
         path: opts.path,
         error: err instanceof Error ? err.message.slice(0, 80) : String(err),
       });
       connection.addTransceiver("audio", { direction: "recvonly" });
+      if (wantsVideo) {
+        connection.addTransceiver("video", { direction: "recvonly" });
+        cameraAvailable = false;
+      }
       micAvailable = false;
     }
   }
 
-  async function attachLocalAudioForAnswer(connection: RTCPeerConnection): Promise<void> {
+  async function attachLocalMediaForAnswer(connection: RTCPeerConnection): Promise<void> {
     const getUserMedia = navigator.mediaDevices?.getUserMedia?.bind(navigator.mediaDevices);
-    const audioTransceivers = connection
-      .getTransceivers()
-      .filter(
-        (transceiver) =>
-          transceiver.receiver.track?.kind === "audio" ||
-          transceiver.sender.track?.kind === "audio" ||
-          transceiver.mid !== null,
-      );
-    const primaryAudioTransceiver =
-      audioTransceivers.find((transceiver) => transceiver.receiver.track?.kind === "audio") ??
-      audioTransceivers[0] ??
-      null;
+    const audioTransceiver = findMediaTransceiver(connection, "audio");
+    const videoTransceiver = wantsVideo ? findMediaTransceiver(connection, "video") : null;
 
     if (!getUserMedia) {
       webrtcCallWarn("transport:mic-unavailable", {
         path: opts.path,
         error: "mediaDevices unavailable",
       });
-      setRecvOnlyTransceivers(connection);
+      setRecvOnlyTransceivers(connection, "audio");
+      if (videoTransceiver) {
+        setRecvOnlyTransceivers(connection, "video");
+        cameraAvailable = false;
+      }
       micAvailable = false;
       return;
     }
 
-    try {
-      localStream = await getUserMedia({ audio: true });
-      const track = localStream.getAudioTracks()[0];
-      if (!track) throw new Error("no audio track from getUserMedia");
+    const constraints: MediaStreamConstraints = { audio: true };
+    if (wantsVideo && videoTransceiver) {
+      constraints.video = videoCaptureConstraints();
+    }
 
-      if (primaryAudioTransceiver) {
-        await primaryAudioTransceiver.sender.replaceTrack(track);
-        primaryAudioTransceiver.direction = "sendrecv";
-      } else {
-        connection.addTrack(track, localStream);
+    try {
+      localStream = await getUserMedia(constraints);
+      const audioTrack = localStream.getAudioTracks()[0];
+      if (audioTrack && audioTransceiver) {
+        await audioTransceiver.sender.replaceTrack(audioTrack);
+        audioTransceiver.direction = "sendrecv";
+        micAvailable = true;
+      } else if (audioTransceiver) {
+        setRecvOnlyTransceivers(connection, "audio");
+        micAvailable = false;
       }
-      micAvailable = true;
+
+      if (wantsVideo && videoTransceiver) {
+        const videoTrack = localStream.getVideoTracks()[0];
+        if (videoTrack) {
+          await videoTransceiver.sender.replaceTrack(videoTrack);
+          videoTransceiver.direction = "sendrecv";
+          cameraAvailable = true;
+        } else {
+          setRecvOnlyTransceivers(connection, "video");
+          cameraAvailable = false;
+        }
+      }
+
+      notifyLocalStream();
     } catch (err) {
+      if (wantsVideo && videoTransceiver) {
+        try {
+          localStream = await getUserMedia({ audio: true });
+          const audioTrack = localStream.getAudioTracks()[0];
+          if (audioTrack && audioTransceiver) {
+            await audioTransceiver.sender.replaceTrack(audioTrack);
+            audioTransceiver.direction = "sendrecv";
+            micAvailable = true;
+          }
+          setRecvOnlyTransceivers(connection, "video");
+          cameraAvailable = false;
+          notifyLocalStream();
+          return;
+        } catch {
+          /* fall through */
+        }
+      }
       webrtcCallWarn("transport:mic-unavailable", {
         path: opts.path,
         error: err instanceof Error ? err.message.slice(0, 80) : String(err),
       });
-      setRecvOnlyTransceivers(connection);
+      setRecvOnlyTransceivers(connection, "audio");
+      if (videoTransceiver) {
+        setRecvOnlyTransceivers(connection, "video");
+        cameraAvailable = false;
+      }
       micAvailable = false;
     }
   }
 
-  function setRecvOnlyTransceivers(connection: RTCPeerConnection): void {
+  function setRecvOnlyTransceivers(connection: RTCPeerConnection, kind?: "audio" | "video"): void {
     for (const transceiver of connection.getTransceivers()) {
       if (transceiver.mid === null) continue;
+      const trackKind = transceiver.receiver.track?.kind ?? transceiver.sender.track?.kind;
+      if (kind && trackKind !== kind) continue;
       void transceiver.sender.replaceTrack(null);
       transceiver.direction = "recvonly";
     }
@@ -252,6 +350,7 @@ export function createWebRtcCallTransport(
     }
 
     micAvailable = true;
+    cameraAvailable = true;
     remoteMediaStream = null;
     pendingRemoteCandidates = [];
 
@@ -328,7 +427,7 @@ export function createWebRtcCallTransport(
     // Remote track handler
     pc.ontrack = handleRemoteTrack;
 
-    await attachLocalAudioForOffer(pc);
+    await attachLocalMediaForOffer(pc);
 
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
@@ -393,7 +492,7 @@ export function createWebRtcCallTransport(
     pc.ontrack = handleRemoteTrack;
 
     await pc.setRemoteDescription(new RTCSessionDescription({ type: "offer", sdp: remoteSdp }));
-    await attachLocalAudioForAnswer(pc);
+    await attachLocalMediaForAnswer(pc);
 
     const answer = await pc.createAnswer();
     await pc.setLocalDescription(answer);
@@ -477,6 +576,14 @@ export function createWebRtcCallTransport(
     return micAvailable;
   }
 
+  function isCameraAvailable(): boolean {
+    return !wantsVideo || cameraAvailable;
+  }
+
+  function getLocalStream(): MediaStream | null {
+    return localStream;
+  }
+
   return {
     startOffer,
     startAnswer,
@@ -484,6 +591,8 @@ export function createWebRtcCallTransport(
     addIceCandidate,
     setMute,
     isMicAvailable,
+    isCameraAvailable,
+    getLocalStream,
     close: closeInternal,
   };
 }

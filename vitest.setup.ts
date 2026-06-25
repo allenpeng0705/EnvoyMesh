@@ -119,6 +119,12 @@ class MockRTCPeerConnection {
         sender: { replaceTrack: vi.fn().mockResolvedValue(undefined), track: null },
         receiver: { track: { kind: "audio" } },
       },
+      {
+        mid: "1",
+        direction: "sendrecv",
+        sender: { replaceTrack: vi.fn().mockResolvedValue(undefined), track: null },
+        receiver: { track: { kind: "video" } },
+      },
     ];
     this.addIceCandidate = vi.fn().mockResolvedValue(undefined);
     this.close = vi.fn();
@@ -171,12 +177,21 @@ class MockMediaStream {
   getAudioTracks() {
     return this.tracks.filter((track) => track.kind === "audio");
   }
+
+  getVideoTracks() {
+    return this.tracks.filter((track) => track.kind === "video");
+  }
 }
 
 // Mock getUserMedia
-const mockGetUserMedia = vi.fn().mockImplementation(async () => {
+const mockGetUserMedia = vi.fn().mockImplementation(async (constraints: MediaStreamConstraints = {}) => {
   const stream = new MockMediaStream();
-  stream.addTrack({ kind: "audio", id: "mic", enabled: true, stop: vi.fn() });
+  if (constraints.audio !== false) {
+    stream.addTrack({ kind: "audio", id: "mic", enabled: true, stop: vi.fn() });
+  }
+  if (constraints.video) {
+    stream.addTrack({ kind: "video", id: "cam", enabled: true, stop: vi.fn() });
+  }
   return stream;
 });
 

@@ -57,6 +57,18 @@ describe("CallInvitePayloadSchema", () => {
     expect(parsed.iceServers?.[0]?.urls).toBe("turn:relay.example.com:3478");
   });
 
+  it("roundtrips video callType", () => {
+    const payload = createCallInvitePayload({
+      callId: "00000000-0000-4000-a000-000000000003",
+      callerOwnerId: "envoy:owner:alice",
+      callerPeerId: "peer-alice",
+      callType: "video",
+      sdpOffer: "v=0\r\n...",
+    });
+    const parsed = parseCallInvitePayload(payload);
+    expect(parsed.callType).toBe("video");
+  });
+
   it("rejects missing sdpOffer", () => {
     expect(() =>
       CallInvitePayloadSchema.parse({

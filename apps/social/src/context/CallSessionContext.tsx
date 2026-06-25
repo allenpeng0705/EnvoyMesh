@@ -24,8 +24,10 @@ function GlobalCallOverlay({ session }: { session: UseCallSessionResult }) {
     isMuted,
     isRemoteMuted,
     micAvailable,
+    cameraAvailable,
     connectionState,
     remoteStream,
+    localStream,
     callingState,
     cancelCall,
   } = session;
@@ -38,6 +40,7 @@ function GlobalCallOverlay({ session }: { session: UseCallSessionResult }) {
         <IncomingCallModal
           callerName={incomingCall.peerDisplayName}
           callerOwnerId={incomingCall.peerOwnerId}
+          callType={incomingCall.callType}
           onAccept={() => void acceptCall()}
           onDecline={declineCall}
         />
@@ -56,15 +59,18 @@ function GlobalCallOverlay({ session }: { session: UseCallSessionResult }) {
         </div>
       ) : null}
       {activeCall ? (
-        <div className="global-active-call-dock">
+        <div className={`global-active-call-dock${activeCall.callType === "video" ? " global-active-call-dock--video" : ""}`}>
           <ActiveCallPanel
             peerDisplayName={activePeerName}
             peerOwnerId={activeCall.peerOwnerId}
+            callType={activeCall.callType}
             isMuted={isMuted}
             isRemoteMuted={isRemoteMuted}
             micAvailable={micAvailable}
+            cameraAvailable={cameraAvailable}
             connectionState={connectionState}
             remoteStream={remoteStream}
+            localStream={localStream}
             onToggleMute={toggleMute}
             onEndCall={endCall}
           />

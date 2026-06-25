@@ -229,6 +229,7 @@ async function handleCallInvite(
     displayName,
     payload.sdpOffer,
     payload.iceServers,
+    payload.callType,
   );
 
   if (!result.ok) {

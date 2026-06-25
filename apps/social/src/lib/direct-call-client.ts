@@ -189,8 +189,9 @@ export class DirectCallClient implements NodeServiceClient {
     targetOwnerId: string,
     sdpOffer: string,
     iceServers?: { urls: string; username?: string; credential?: string }[],
+    callType?: import("@envoymesh/api").CallMediaType,
   ): Promise<string | null> {
-    return this._ns.sendCallInvite(targetOwnerId, sdpOffer, iceServers);
+    return this._ns.sendCallInvite(targetOwnerId, sdpOffer, iceServers, callType);
   }
 
   async sendCallReinvite(

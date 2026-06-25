@@ -1,21 +1,25 @@
 /**
- * ActiveCallPanel — in-call voice UI (bottom dock).
+ * ActiveCallPanel — in-call voice/video UI (bottom dock).
  *
  * @vitest-environment jsdom
  */
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import type { CallMediaType } from "@envoymesh/api";
 import { useT } from "../context/I18nContext.js";
 import { webrtcCallTrace, webrtcCallWarn } from "../lib/webrtc-call-trace.js";
 
 export interface ActiveCallPanelProps {
   peerDisplayName: string;
   peerOwnerId: string;
+  callType: CallMediaType;
   isMuted: boolean;
   isRemoteMuted: boolean;
   micAvailable: boolean;
+  cameraAvailable: boolean;
   connectionState: string;
   remoteStream?: MediaStream | null;
+  localStream?: MediaStream | null;
   onToggleMute: () => void;
   onEndCall: () => void;
 }
@@ -61,11 +65,14 @@ function connectionDotClass(state: string): string {
 export function ActiveCallPanel({
   peerDisplayName,
   peerOwnerId,
+  callType,
   isMuted,
   isRemoteMuted,
   micAvailable,
+  cameraAvailable,
   connectionState,
   remoteStream,
+  localStream,
   onToggleMute,
   onEndCall,
 }: ActiveCallPanelProps) {
@@ -73,10 +80,14 @@ export function ActiveCallPanel({
   const [elapsed, setElapsed] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const remoteAudioRef = useRef<HTMLAudioElement | null>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement | null>(null);
+  const localVideoRef = useRef<HTMLVideoElement | null>(null);
 
   const label = displayPeerName(peerDisplayName, peerOwnerId);
   const initial = peerInitial(peerDisplayName, peerOwnerId);
   const isConnected = connectionState === "connected";
+  const isVideoCall = callType === "video";
+  const hasRemoteVideo = Boolean(remoteStream?.getVideoTracks().some((track) => track.readyState === "live"));
 
   const statusLabel = (() => {
     if (connectionState === "connecting") return t("call:connecting", "Connecting…");
@@ -112,6 +123,28 @@ export function ActiveCallPanel({
   }, [remoteStream, connectionState, playRemoteAudio]);
 
   useEffect(() => {
+    const video = remoteVideoRef.current;
+    if (!video || !isVideoCall) return;
+    if (remoteStream && hasRemoteVideo) {
+      video.srcObject = remoteStream;
+      void video.play().catch(() => undefined);
+    } else {
+      video.srcObject = null;
+    }
+  }, [remoteStream, isVideoCall, hasRemoteVideo, connectionState]);
+
+  useEffect(() => {
+    const video = localVideoRef.current;
+    if (!video || !isVideoCall) return;
+    if (localStream && cameraAvailable && localStream.getVideoTracks().length > 0) {
+      video.srcObject = localStream;
+      void video.play().catch(() => undefined);
+    } else {
+      video.srcObject = null;
+    }
+  }, [localStream, cameraAvailable, isVideoCall]);
+
+  useEffect(() => {
     if (!isConnected) {
       setElapsed(0);
       if (timerRef.current) {
@@ -131,7 +164,15 @@ export function ActiveCallPanel({
   }, [isConnected]);
 
   return (
-    <div className="active-call-panel" role="region" aria-label={t("call:activeCall", "Active call")}>
+    <div
+      className={`active-call-panel${isVideoCall ? " active-call-panel--video" : ""}`}
+      role="region"
+      aria-label={
+        isVideoCall
+          ? t("call:activeVideoCall", "Active video call")
+          : t("call:activeCall", "Active call")
+      }
+    >
       <audio
         ref={remoteAudioRef}
         autoPlay
@@ -140,10 +181,37 @@ export function ActiveCallPanel({
         className="active-call-remote-audio"
       />
 
-      <div className="active-call-main">
-        <div className="active-call-avatar" aria-hidden>
-          {initial}
+      {isVideoCall ? (
+        <div className="active-call-video-stage" aria-hidden={!hasRemoteVideo}>
+          <video
+            ref={remoteVideoRef}
+            autoPlay
+            playsInline
+            className="active-call-remote-video"
+          />
+          {!hasRemoteVideo ? (
+            <div className="active-call-video-placeholder">
+              <span className="active-call-video-placeholder-initial">{initial}</span>
+            </div>
+          ) : null}
+          {localStream && cameraAvailable ? (
+            <video
+              ref={localVideoRef}
+              autoPlay
+              playsInline
+              muted
+              className="active-call-local-video"
+            />
+          ) : null}
         </div>
+      ) : null}
+
+      <div className="active-call-main">
+        {!isVideoCall ? (
+          <div className="active-call-avatar" aria-hidden>
+            {initial}
+          </div>
+        ) : null}
 
         <div className="active-call-info">
           <h3 className="active-call-name">{label}</h3>
@@ -161,6 +229,8 @@ export function ActiveCallPanel({
             <p className="active-call-hint">{t("call:micUnavailable", "No microphone — listen only")}</p>
           ) : isRemoteMuted ? (
             <p className="active-call-hint">{t("call:remoteMuted", "They are muted")}</p>
+          ) : isVideoCall && !cameraAvailable ? (
+            <p className="active-call-hint">{t("call:cameraUnavailable", "No camera — audio only")}</p>
           ) : null}
         </div>
       </div>

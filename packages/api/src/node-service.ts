@@ -2142,6 +2142,7 @@ export interface NodeService {
     targetOwnerId: string,
     sdpOffer: string,
     iceServers?: { urls: string; username?: string; credential?: string }[],
+    callType?: CallMediaType,
   ): Promise<string | null>;
 
   /**
@@ -2292,10 +2293,12 @@ export interface NodeService {
 
 export type CallSessionStatus = "ringing" | "active" | "ended";
 
+export type CallMediaType = "audio" | "video";
+
 export interface CallSession {
   callId: string;
   peerOwnerId: string;
-  callType: "audio";
+  callType: CallMediaType;
   status: CallSessionStatus;
   startedAt?: string;
   muted: boolean;
@@ -2307,7 +2310,7 @@ export type CallEvent =
       callId: string;
       peerOwnerId: string;
       peerDisplayName: string;
-      callType: "audio";
+      callType: CallMediaType;
       sdpOffer?: string;
       /** Phase 42 — ICE servers the callee should use for the RTCPeerConnection. */
       iceServers?: { urls: string; username?: string; credential?: string }[];
