@@ -121,7 +121,7 @@ export const contactChatMessages = {
   dismiss: "Dismiss",
   use: "Use",
   homeOfflineHint: "Home computer offline — start your home node and bridge agent (HomeClaw/OpenClaw) to reach My Agent.",
-  contactOfflineHint: "Contact is offline — use Reconnect or wait while the mesh tries to connect.",
+  contactOfflineHint: "Contact is offline — reconnecting automatically in the background.",
   reconnect: "Reconnect",
   reconnectAria: "Try to reconnect P2P path to this contact",
   attachFileTitle: "Send image or file",

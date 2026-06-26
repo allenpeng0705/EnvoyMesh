@@ -218,7 +218,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
     return out;
   }, [messages, pendingOutbound]);
 
-  const { info: peerReachability, checking: reachabilityChecking, refresh: refreshReachability } = usePeerReachability(
+  const { info: peerReachability, checking: reachabilityChecking } = usePeerReachability(
     selectedContact,
     true,
   );
@@ -567,19 +567,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
   const messageGroups = useMemo(() => groupMessagesByDate(displayMessages), [displayMessages]);
   const isHomeBridgeThread =
     Boolean(bridgeStatus?.enabled) && selectedContact === bridgeStatus?.agentPeerId;
-  const contactMeshPending = reachabilityChecking || peerReachability === null;
-  const composerDisabled =
-    !nodeMeshOnline || (!isHomeBridgeThread && !contactReachable && !contactMeshPending);
-  const showReconnect =
-    isBondedHumanContact &&
-    nodeMeshOnline &&
-    !contactReachable &&
-    !reachabilityChecking &&
-    !isHomeBridgeThread;
-
-  const handleReconnect = useCallback(() => {
-    void refreshReachability({ redial: true });
-  }, [refreshReachability]);
+  const composerDisabled = !nodeMeshOnline;
 
   const displayName =
     selectedContact === bridgeStatus?.agentPeerId
@@ -665,17 +653,6 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
               {isHomeBridgeThread && !contactReachable && !reachabilityChecking
                 ? t("contactChat.homeOffline")
                 : peerReachabilityLabel(peerReachability)}
-              {showReconnect ? (
-                <button
-                  type="button"
-                  className="contact-reconnect-btn"
-                  title={t("contactChat.reconnectAria")}
-                  aria-label={t("contactChat.reconnectAria")}
-                  onClick={handleReconnect}
-                >
-                  {t("contactChat.reconnect")}
-                </button>
-              ) : null}
             </span>
           </div>
         </div>

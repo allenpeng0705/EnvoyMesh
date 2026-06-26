@@ -3,16 +3,23 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderHook, waitFor } from "@testing-library/react";
+import { renderHook, waitFor, act } from "@testing-library/react";
 import { usePeerReachability } from "../../src/hooks/usePeerReachability.js";
 
 const getPeerConnectionInfo = vi.fn(async () => ({ connected: false, direct: false }));
 const warmContactConnection = vi.fn(async () => ({ connected: true, direct: true }));
 
+let nodeConnected = true;
+let nodeReady = true;
+
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: () => ({
-    isConnected: true,
-    isReady: true,
+    get isConnected() {
+      return nodeConnected;
+    },
+    get isReady() {
+      return nodeReady;
+    },
     getPeerConnectionInfo,
     warmContactConnection,
   }),
@@ -20,6 +27,8 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
 
 describe("usePeerReachability", () => {
   beforeEach(() => {
+    nodeConnected = true;
+    nodeReady = true;
     getPeerConnectionInfo.mockClear();
     warmContactConnection.mockClear();
     getPeerConnectionInfo.mockResolvedValue({ connected: false, direct: false });
@@ -67,7 +76,7 @@ describe("usePeerReachability", () => {
     expect(warmContactConnection).not.toHaveBeenCalled();
   });
 
-  it("reports offline when warm cannot connect", async () => {
+  it("reports offline when warm cannot connect and auto-redials on bootstrap", async () => {
     getPeerConnectionInfo.mockResolvedValue({ connected: false, direct: false });
     warmContactConnection.mockResolvedValue({ connected: false, direct: false });
 
@@ -77,5 +86,35 @@ describe("usePeerReachability", () => {
       expect(result.current.info).toEqual({ connected: false, direct: false });
     });
     expect(result.current.checking).toBe(false);
+    expect(warmContactConnection.mock.calls.some((call) => call[1]?.redial === true)).toBe(true);
+  });
+
+  it("re-bootstraps when the node becomes ready again after disconnect", async () => {
+    getPeerConnectionInfo.mockResolvedValue({ connected: false, direct: false });
+    warmContactConnection.mockResolvedValue({ connected: true, direct: true });
+
+    const { result, rerender } = renderHook(() => usePeerReachability("envoy:owner:reboot", true));
+
+    await waitFor(() => {
+      expect(result.current.info?.connected).toBe(true);
+    });
+
+    warmContactConnection.mockClear();
+    getPeerConnectionInfo.mockClear();
+
+    await act(async () => {
+      nodeReady = false;
+      rerender();
+    });
+
+    await act(async () => {
+      nodeReady = true;
+      rerender();
+    });
+
+    await waitFor(() => {
+      expect(warmContactConnection).toHaveBeenCalled();
+      expect(result.current.info?.connected).toBe(true);
+    });
   });
 });
