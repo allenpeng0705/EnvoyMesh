@@ -22,6 +22,8 @@ export const REACHABILITY_STABLE_OFFLINE_POLLS = 4;
 export const REACHABILITY_STABLE_ONLINE_POLLS = 1;
 /** Consecutive polls before switching Direct ↔ Relay label (background). */
 export const REACHABILITY_STABLE_PATH_POLLS = 5;
+/** Faster Direct ↔ Relay label updates while a chat thread is open (still debounced). */
+export const REACHABILITY_OPEN_CHAT_STABLE_PATH_POLLS = 4;
 /** Force redial when a chat-open contact stays offline despite periodic warm. */
 export const REACHABILITY_OPEN_CHAT_FORCE_REDIAL_MS = 45_000;
 
