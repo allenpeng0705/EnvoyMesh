@@ -132,7 +132,7 @@ describe("buildOutboundDialHints", () => {
     }
   });
 
-  it("drops ephemeral inbound TCP snapshot ports and still allows relay circuit fallback", async () => {
+  it("keeps tcp/0 listen ports and prefers LAN over synthetic relay circuits", async () => {
     const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-dial-hints-ephemeral-"));
     try {
       const seedStore = createDiscoverySeedStore(profileDir);
@@ -161,9 +161,9 @@ describe("buildOutboundDialHints", () => {
         },
       });
 
-      expect(hints.some((h) => h.includes("55093"))).toBe(false);
-      expect(hints.some((h) => h.includes("60417"))).toBe(false);
-      expect(hints.some((h) => h.includes("/p2p-circuit/p2p/12D3KooWN67"))).toBe(true);
+      expect(hints.some((h) => h.includes("55093"))).toBe(true);
+      expect(hints.some((h) => h.includes("60417"))).toBe(true);
+      expect(hints.some((h) => h.includes("/p2p-circuit/p2p/12D3KooWN67"))).toBe(false);
     } finally {
       await rm(profileDir, { recursive: true, force: true });
     }
@@ -186,7 +186,7 @@ describe("shouldPreferCircuitDialHints", () => {
     expect(shouldPreferCircuitDialHints([], hints, "12D3KooWContact")).toBe(true);
   });
 
-  it("mergeDialablePeerListenAddrs drops ephemeral inbound TCP snapshots", async () => {
+  it("mergeDialablePeerListenAddrs keeps tcp/0 listen multiaddrs with peer suffix", async () => {
     const { mergeDialablePeerListenAddrs } = await import("../src/outbound-dial-hints.js");
     const peerId = "12D3KooWContact";
     const merged = mergeDialablePeerListenAddrs(
@@ -194,7 +194,10 @@ describe("shouldPreferCircuitDialHints", () => {
       [`/ip4/192.168.1.50/tcp/55093/p2p/${peerId}`],
       [`/ip4/192.168.1.50/tcp/4011/p2p/${peerId}`],
     );
-    expect(merged).toEqual([`/ip4/192.168.1.50/tcp/4011/p2p/${peerId}`]);
+    expect(merged).toEqual([
+      `/ip4/192.168.1.50/tcp/55093/p2p/${peerId}`,
+      `/ip4/192.168.1.50/tcp/4011/p2p/${peerId}`,
+    ]);
   });
 
   it("prioritizeDirectLanDialHints puts RFC1918 addresses first", async () => {

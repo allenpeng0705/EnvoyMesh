@@ -1587,6 +1587,18 @@ class NodeServiceImpl implements NodeService {
     return mesh;
   }
 
+  /** Drop failed dial hints from peer directory when libp2p reports ECONNREFUSED / timeout. */
+  private _wireDialHintFailurePrune(mesh: EnvoyMesh): void {
+    mesh.setDialHintFailureHandler((peerId, addr) => {
+      void this._peerDirectoryStore.removeListenAddrsForPeerId(peerId, [addr]).catch((e) => {
+        console.warn(
+          `[peer-directory] removeListenAddrsForPeerId failed for ${peerId.slice(0, 12)}…:`,
+          e instanceof Error ? e.message : e,
+        );
+      });
+    });
+  }
+
   /**
    * CLI path: the running `EnvoyMesh` from `index.ts` so bond/chat/block paths can set libp2p KEEP_ALIVE-style tags
    * (reconnect queue redials automatically after disconnect).
@@ -1597,6 +1609,7 @@ class NodeServiceImpl implements NodeService {
    */
   bindExternalMesh(mesh: EnvoyMesh): void {
     this._externalMesh = mesh;
+    this._wireDialHintFailurePrune(mesh);
     this._nodeStatus = "running";
     this.emit("node:status", { status: this._nodeStatus, peerId: mesh.peerId });
     this.emit("node:online", {
@@ -9400,6 +9413,7 @@ class NodeServiceImpl implements NodeService {
       };
 
       this._mesh = new EnvoyMesh(meshOptions);
+      this._wireDialHintFailurePrune(this._mesh);
 
       // Wire mesh events
       this._wireMeshEvents();

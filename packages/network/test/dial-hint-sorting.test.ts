@@ -183,16 +183,23 @@ describe("dial hint sorting", () => {
       expect(preferNonLoopbackDialHints([])).toEqual([]);
     });
 
-    it("filters ephemeral inbound TCP snapshot ports for desktop outbound dials", () => {
+    it("filters ephemeral inbound TCP snapshot ports from inbound remoteAddr only", () => {
       const target = "12D3KooWN67PannbfXrLPhgJkkRGWGN9UBV3Xfu5UpzdK1dY8qGD";
       const ephemeral = `/ip4/192.168.3.78/tcp/64595/p2p/${target}`;
+      const listen54809 = `/ip4/192.168.3.78/tcp/54809/p2p/${target}`;
       const stable = `/ip4/192.168.3.78/tcp/4001/p2p/${target}`;
       expect(isLikelyInboundConnSnapshotDialHint(ephemeral)).toBe(true);
-      expect(isUsableOutboundPeerDialHint(ephemeral, target)).toBe(false);
+      expect(isLikelyInboundConnSnapshotDialHint(listen54809)).toBe(true);
+      expect(isUsableOutboundPeerDialHint(ephemeral, target)).toBe(true);
+      expect(isUsableOutboundPeerDialHint(listen54809, target)).toBe(true);
       expect(isUsableOutboundPeerDialHint(stable, target)).toBe(true);
-      expect(hasDirectTcpDialHints([ephemeral])).toBe(false);
+      expect(hasDirectTcpDialHints([ephemeral, listen54809])).toBe(true);
       expect(hasDirectTcpDialHints([stable])).toBe(true);
-      expect(filterUsableOutboundPeerDialHints([ephemeral, stable], target)).toEqual([stable]);
+      expect(filterUsableOutboundPeerDialHints([ephemeral, listen54809, stable], target)).toEqual([
+        ephemeral,
+        listen54809,
+        stable,
+      ]);
     });
 
     it("filters QUIC bootstrap circuit paths for desktop outbound dials", () => {

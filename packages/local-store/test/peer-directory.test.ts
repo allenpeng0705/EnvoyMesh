@@ -344,7 +344,7 @@ describe("peer directory store", () => {
     expect(repaired?.deviceId).toBe("envoy:device:bad");
   });
 
-  it("mergeListenAddrsForPeerId strips legacy ephemeral TCP snapshots even with no new addrs", async () => {
+  it("mergeListenAddrsForPeerId strips raw inbound snapshots without /p2p/ suffix", async () => {
     const store = createLocalPeerDirectoryStore(profileDir);
     const peerId = "12D3KooWEphemeralScrubPeer";
     await writeFile(
@@ -359,7 +359,7 @@ describe("peer directory store", () => {
             deviceId: "legacy",
             lastSeenAt: new Date().toISOString(),
             listenAddrs: [
-              `/ip4/192.168.3.78/tcp/64595/p2p/${peerId}`,
+              `/ip4/192.168.3.78/tcp/64595`,
               `/ip4/192.168.3.78/tcp/4011/p2p/${peerId}`,
             ],
           },
@@ -373,7 +373,36 @@ describe("peer directory store", () => {
     expect(row?.listenAddrs.some((a) => a.includes("4011"))).toBe(true);
   });
 
-  it("sanitizeListenAddrs strips ephemeral snapshots from all rows", async () => {
+  it("mergeListenAddrsForPeerId keeps tcp/0 listen multiaddrs with /p2p/ suffix", async () => {
+    const store = createLocalPeerDirectoryStore(profileDir);
+    const peerId = "12D3KooWListenPortPeer";
+    await writeFile(
+      join(profileDir, "peer-directory.json"),
+      JSON.stringify({
+        version: "0.1",
+        records: [
+          {
+            version: "0.1",
+            ownerId: "envoy:owner:listen",
+            peerId,
+            deviceId: "legacy",
+            lastSeenAt: new Date().toISOString(),
+            listenAddrs: [
+              `/ip4/192.168.3.78/tcp/64595/p2p/${peerId}`,
+              `/ip4/192.168.3.78/tcp/4011/p2p/${peerId}`,
+            ],
+          },
+        ],
+      }),
+      { mode: 0o600 },
+    );
+    await store.mergeListenAddrsForPeerId(peerId, []);
+    const row = await store.getPeerByPeerId(peerId);
+    expect(row?.listenAddrs.some((a) => a.includes("64595"))).toBe(true);
+    expect(row?.listenAddrs.some((a) => a.includes("4011"))).toBe(true);
+  });
+
+  it("sanitizeListenAddrs strips raw inbound snapshots without /p2p/ suffix", async () => {
     const store = createLocalPeerDirectoryStore(profileDir);
     const peerId = "12D3KooWSanitizeListenAddrsPeer";
     await writeFile(
@@ -387,7 +416,7 @@ describe("peer directory store", () => {
             peerId,
             deviceId: "legacy",
             lastSeenAt: new Date().toISOString(),
-            listenAddrs: [`/ip4/192.168.3.78/tcp/64595/p2p/${peerId}`],
+            listenAddrs: [`/ip4/192.168.3.78/tcp/64595`],
           },
         ],
       }),

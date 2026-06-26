@@ -298,6 +298,7 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
         peerId: "12D3KooWSelfBindExternal",
         multiaddrs: ["/ip4/127.0.0.1/tcp/4011/p2p/12D3KooWSelfBindExternal"],
         tagContactForPersistentReachability: vi.fn(async () => {}),
+        setDialHintFailureHandler: vi.fn(),
       };
       (node as any).bindExternalMesh(mockMesh);
 
