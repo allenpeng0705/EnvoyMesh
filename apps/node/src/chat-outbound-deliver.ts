@@ -236,11 +236,10 @@ export async function deliverChatEnvelopeWithRetry(input: {
     hints,
     input.transportPeerId,
   );
-  const sendChatExpectReplyFn = input.mesh.sendChatExpectReply;
   const canExpectAck =
-    input.expectDeliveryAck !== false && typeof sendChatExpectReplyFn === "function";
+    input.expectDeliveryAck !== false && typeof input.mesh.sendChatExpectReply === "function";
   const sendChatExpectReply = canExpectAck
-    ? sendChatExpectReplyFn.bind(input.mesh)
+    ? input.mesh.sendChatExpectReply?.bind(input.mesh)
     : undefined;
   const ackTimeoutMs = resolveChatDeliveryAckTimeoutMs(hints);
 
@@ -636,7 +635,7 @@ export async function deliverMessageEnvelopeWithRetry(input: {
         (isOutboundPeerRecentlyVerified(input.transportPeerId) ||
           (conn.connected && conn.direct));
       if (!skipPrepare) {
-        const ready = await prepareOutboundPeerConnection({
+        await prepareOutboundPeerConnection({
           mesh: input.mesh,
           transportPeerId: input.transportPeerId,
           protocol: ENVOY_MESSAGE_PROTOCOL,
@@ -644,10 +643,6 @@ export async function deliverMessageEnvelopeWithRetry(input: {
           preferCircuitHints: preferCircuits,
           forceFreshDial: false,
         });
-        if (!ready && !input.mesh.getPeerConnectionInfo(input.transportPeerId).connected) {
-          lastErr = new Error(`No reachable path to ${input.transportPeerId.slice(0, 12)}… before send`);
-          continue;
-        }
       }
     }
 

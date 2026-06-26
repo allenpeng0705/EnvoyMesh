@@ -1578,20 +1578,7 @@ class NodeServiceImpl implements NodeService {
     return mesh;
   }
 
-  /** Drop failed dial hints from peer directory when libp2p reports ECONNREFUSED / timeout. */
-  private _wireDialHintFailurePrune(mesh: EnvoyMesh): void {
-    mesh.setDialHintFailureHandler((peerId, addr) => {
-      void this._peerDirectoryStore.removeListenAddrsForPeerId(peerId, [addr]).catch((e) => {
-        console.warn(
-          `[peer-directory] removeListenAddrsForPeerId failed for ${peerId.slice(0, 12)}…:`,
-          e instanceof Error ? e.message : e,
-        );
-      });
-    });
-  }
-
-  /**
-   * CLI path: the running `EnvoyMesh` from `index.ts` so bond/chat/block paths can set libp2p KEEP_ALIVE-style tags
+  /** CLI path: the running `EnvoyMesh` from `index.ts` so bond/chat/block paths can set libp2p KEEP_ALIVE-style tags
    * (reconnect queue redials automatically after disconnect).
    *
    * Parity with `startNode()` post-online hooks: bond warm, profile refresh, reachability tags.
@@ -1603,7 +1590,6 @@ class NodeServiceImpl implements NodeService {
     options?: { relayBootstrapPeers?: readonly string[] },
   ): void {
     this._externalMesh = mesh;
-    this._wireDialHintFailurePrune(mesh);
     if (options?.relayBootstrapPeers?.length) {
       this._relayBootstrapPeers = [...options.relayBootstrapPeers];
     }
@@ -1645,6 +1631,7 @@ class NodeServiceImpl implements NodeService {
           inboundGuard: this._inboundGuard,
           discoverySeedStore: this._discoverySeedStore,
           peerDirectoryStore: this._peerDirectoryStore,
+          relayWsUrl: this._relayPublicWsUrl ?? (await this.resolveRelayWsUrl()),
         },
         { targetPeerId: transportPeerId, targetOwnerId: ownerId },
       );
@@ -1714,11 +1701,7 @@ class NodeServiceImpl implements NodeService {
     this._lastLibp2pTransportByOwner.set(trimmedOwner, { peerId: trimmedPeer });
     markOutboundPeerVerified(trimmedPeer);
     try {
-      await this.warmContactConnection(trimmedOwner, {
-        source: "presence_signal",
-        force: true,
-        upgradeRelayToDirect: true,
-      });
+      await this.warmContactConnection(trimmedOwner, { upgradeRelayToDirect: true });
     } catch {
       /* best-effort reciprocal warm */
     }
@@ -1851,7 +1834,7 @@ class NodeServiceImpl implements NodeService {
       console.log(
         `[mdns] bonded LAN contact owner=${ownerId.slice(0, 20)}… peer=${peerId.slice(0, 12)}… addrs=${multiaddrs.filter((a) => isPrivateLanTcpDialHint(a)).join(", ")}`,
       );
-      await this.warmContactConnection(ownerId, { source: "lan_discovery", force: true });
+      await this.warmContactConnection(ownerId);
     } catch {
       /* best-effort */
     }
@@ -9512,7 +9495,6 @@ class NodeServiceImpl implements NodeService {
       };
 
       this._mesh = new EnvoyMesh(meshOptions);
-      this._wireDialHintFailurePrune(this._mesh);
 
       // Wire mesh events
       this._wireMeshEvents();
@@ -11950,7 +11932,12 @@ class NodeServiceImpl implements NodeService {
       listenAddrs,
     );
 
-    return this._warmContactConnectionTransport(transportPeerId, listenAddrs, options);
+    return this._warmContactConnectionTransport(
+      transportPeerId,
+      listenAddrs,
+      options,
+      peerOwnerId,
+    );
   }
 
   /** Merge cached inbound + peer-directory listen addrs before outbound dial. */
@@ -11982,6 +11969,7 @@ class NodeServiceImpl implements NodeService {
     transportPeerId: string,
     listenAddrs: string[] | undefined,
     options?: WarmContactConnectionOptions,
+    peerOwnerId?: string,
   ): Promise<PeerConnectionInfo> {
     const mesh = this._requireMesh();
     void this._tagBondedContactReachability(transportPeerId);
@@ -12002,11 +11990,12 @@ class NodeServiceImpl implements NodeService {
           }
           // stale — fall through to redial
         } else {
+          if (isOutboundPeerRecentlyVerified(transportPeerId)) {
+            return existing;
+          }
           const probed = await mesh.probeBondedPeerConnection(transportPeerId);
-          if (probed.connected || options?.keepAlive === true) {
-            if (probed.connected) {
-              markOutboundPeerVerified(transportPeerId);
-            }
+          if (probed.connected) {
+            markOutboundPeerVerified(transportPeerId);
             return probed;
           }
           // stale — fall through to redial
@@ -12014,6 +12003,11 @@ class NodeServiceImpl implements NodeService {
       } else {
         return existing;
       }
+    }
+
+    if (!existing.connected && peerOwnerId?.trim()) {
+      await this._refreshRelayDialHintsForPeer(transportPeerId, peerOwnerId);
+      listenAddrs = await this._mergeFreshListenAddrs(peerOwnerId, transportPeerId, listenAddrs);
     }
 
     let dialHints: string[];

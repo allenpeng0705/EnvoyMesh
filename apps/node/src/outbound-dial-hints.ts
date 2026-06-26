@@ -11,7 +11,7 @@ import {
   isUsableOutboundPeerDialHint,
   buildSyntheticRelayCircuitHints,
   dedupeDialHintStrings,
-  hasDirectPrivateLanDialHints,
+  hasDirectTcpDialHints,
   hasTrustedDirectDialHints,
   filterDialHintsForOutboundSend,
 } from "@envoymesh/network";
@@ -76,7 +76,8 @@ export async function buildOutboundDialHints(input: {
   const raw = (input.peerListenAddrs ?? []).map((a) => a.trim()).filter(Boolean);
   /** Never dial the remote peer's loopback or local docker-bridge IP from our machine. */
   const nonLoopListen = raw
-    .filter((a) => isUsableChatDialHint(a, recipientPeerId));
+    .filter((a) => isUsableChatDialHint(a, recipientPeerId))
+    .filter((a) => !isLikelyInboundConnSnapshotDialHint(a));
 
   const store = input.discoverySeedStore;
   if (!store) {
@@ -143,6 +144,7 @@ export function mergeDialablePeerListenAddrs(
       const a = raw.trim();
       if (!a || seen.has(a)) continue;
       if (!isUsableChatDialHint(a, recipientPeerId)) continue;
+      if (isLikelyInboundConnSnapshotDialHint(a)) continue;
       seen.add(a);
       out.push(a);
     }
@@ -163,6 +165,7 @@ export function shouldPreferCircuitDialHints(
         (h) =>
           h.includes("/tcp/") &&
           !h.includes("/p2p-circuit/") &&
+          !isLikelyInboundConnSnapshotDialHint(h) &&
           !isLoopbackOrUnspecifiedDialHint(h),
       );
   const directCandidates = [

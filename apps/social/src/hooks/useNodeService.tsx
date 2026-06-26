@@ -794,7 +794,7 @@ function createWsNodeServiceClient(
           ...(options?.source ? { source: options.source } : {}),
           ...(options?.force ? { force: true } : {}),
         },
-        { timeoutMs: 90_000 },
+        { timeoutMs: 45_000 },
       );
     },
     async getChatDiagnostics(peerOwnerId?: string) {

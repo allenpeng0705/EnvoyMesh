@@ -155,35 +155,24 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
       expect(ensurePeerReachable).toHaveBeenCalledTimes(1);
     });
 
-    it("keepAlive returns probe result even when probe blips (33aa02e model)", async () => {
+    it("keepAlive redials when probe reports stale connection (e50c181 model)", async () => {
       probeBondedPeerConnection.mockResolvedValueOnce({ connected: false, direct: false });
       getPeerConnectionInfo.mockReturnValue({ connected: true, direct: true });
 
-      const info = await node.warmContactConnection(PEER_OWNER_ID, { keepAlive: true });
+      await node.warmContactConnection(PEER_OWNER_ID, { keepAlive: true });
 
       expect(probeBondedPeerConnection).toHaveBeenCalledWith(TRANSPORT_PEER_ID);
-      expect(ensurePeerReachable).not.toHaveBeenCalled();
-      expect(info).toEqual({ connected: false, direct: false });
+      expect(ensurePeerReachable).toHaveBeenCalledTimes(1);
     });
 
-    it("keepAlive returns failed probe without redial (33aa02e model)", async () => {
-      probeBondedPeerConnection.mockResolvedValueOnce({ connected: false, direct: false });
-      getPeerConnectionInfo.mockReturnValue({ connected: true, direct: true });
-
-      const info = await node.warmContactConnection(PEER_OWNER_ID, { keepAlive: true });
-
-      expect(probeBondedPeerConnection).toHaveBeenCalledWith(TRANSPORT_PEER_ID);
-      expect(ensurePeerReachable).not.toHaveBeenCalled();
-      expect(info).toEqual({ connected: false, direct: false });
-    });
-
-    it("keepAlive still probes when the path was recently verified (33aa02e model)", async () => {
+    it("keepAlive skips probe when path was recently verified (e50c181 model)", async () => {
       const { markOutboundPeerVerified } = await import("../src/outbound-peer-freshness.js");
       markOutboundPeerVerified(TRANSPORT_PEER_ID);
+      getPeerConnectionInfo.mockReturnValue({ connected: true, direct: true });
 
       const info = await node.warmContactConnection(PEER_OWNER_ID, { keepAlive: true });
 
-      expect(probeBondedPeerConnection).toHaveBeenCalledWith(TRANSPORT_PEER_ID);
+      expect(probeBondedPeerConnection).not.toHaveBeenCalled();
       expect(ensurePeerReachable).not.toHaveBeenCalled();
       expect(info).toEqual({ connected: true, direct: true });
     });
