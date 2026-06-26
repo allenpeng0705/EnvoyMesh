@@ -20,6 +20,7 @@ import type { InboundMessageGuard } from "./inbound-guard.js";
 import type { DiscoverySeedStore } from "./discovery-seed-store.js";
 import { logClientRelayLookupResponse, logRelayReachableAddrsForCheckin } from "./relay-checkin-log.js";
 import { recordRelayCheckinCycle, recordRelayLookupResult, type RelayCheckinAttempt } from "./relay-diagnostics-state.js";
+import { queryRelayWsLookupForPeer, runRelayWsControlCycle } from "./relay-ws-control-client.js";
 
 const RELAY_CLIENT_CYCLE_INTERVAL_MS = 30_000;
 const RELAY_LOOKUP_REPLY_TIMEOUT_MS = 30_000;
@@ -49,6 +50,8 @@ export interface RelayClientCycleDeps {
   inboundGuard: InboundMessageGuard;
   discoverySeedStore: DiscoverySeedStore;
   peerDirectoryStore?: Pick<LocalPeerDirectoryStore, "mergeListenAddrsForPeerId">;
+  /** When set, relay.checkin/lookup also run over WebSocket (port 15432) — works when libp2p :4001 is blocked. */
+  relayWsUrl?: string;
 }
 
 async function sendRelayCheckin(deps: RelayClientCycleDeps, targets: string[]): Promise<RelayCheckinAttempt[]> {
@@ -235,6 +238,30 @@ export async function queryRelayLookupForPeer(
   if (!targetPeerId) {
     return false;
   }
+
+  if (deps.relayWsUrl?.trim()) {
+    try {
+      const wsOk = await queryRelayWsLookupForPeer({
+        relayWsUrl: deps.relayWsUrl.trim(),
+        mesh: deps.mesh,
+        profile: deps.profile,
+        inboundGuard: deps.inboundGuard,
+        discoverySeedStore: deps.discoverySeedStore,
+        peerDirectoryStore: deps.peerDirectoryStore,
+        targetPeerId,
+        targetOwnerId: input.targetOwnerId,
+      });
+      if (wsOk) {
+        return true;
+      }
+    } catch (err) {
+      console.warn(
+        `[relay-ws] bonded peer lookup failed for ${targetPeerId.slice(0, 12)}…:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
   const targets = filterRelayControlTargets(deps.bootstrapPeers);
   if (targets.length === 0) {
     return false;
@@ -250,6 +277,17 @@ export async function queryRelayLookupForPeer(
 }
 
 export async function runRelayClientCycle(deps: RelayClientCycleDeps): Promise<void> {
+  if (deps.relayWsUrl?.trim()) {
+    await runRelayWsControlCycle({
+      relayWsUrl: deps.relayWsUrl.trim(),
+      mesh: deps.mesh,
+      profile: deps.profile,
+      inboundGuard: deps.inboundGuard,
+      discoverySeedStore: deps.discoverySeedStore,
+      peerDirectoryStore: deps.peerDirectoryStore,
+    });
+  }
+
   const targets = filterRelayControlTargets(deps.bootstrapPeers);
   if (targets.length === 0) {
     console.warn("[relay-client] no relay control targets configured (need cn-relay or a --relay-server bootstrap addr)");

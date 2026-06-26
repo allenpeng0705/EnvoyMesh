@@ -21,6 +21,8 @@ import { createLibp2pClientProxyHandler } from "./libp2p-client-proxy.js";
 import { parseRelayArgs } from "./args.js";
 import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key-loader.js";
 import { createHomeTunnelProxy, type HomeTunnelProxy } from "./home-tunnel-proxy.js";
+import { createWsRelayRoster } from "./ws-relay-roster.js";
+import { handleWsRelayControlEnvelope } from "./ws-relay-control.js";
 import {
   createInitialStandaloneRelayHealthState,
   evaluateStandaloneRelayHealth,
@@ -156,6 +158,7 @@ let lastEventLoopLagMs = 0;
 let relayRepairInProgress = false;
 /** Set when HTTP WS endpoints are active; used for graceful shutdown. */
 let homeTunnelProxyRef: HomeTunnelProxy | null = null;
+const wsRelayRoster = createWsRelayRoster();
 
 // ============================================================================
 // RATE LIMITING: Track registrations per peer to prevent abuse
@@ -605,23 +608,33 @@ try {
             return;
           }
 
-          // Track peer ID from checkin or envelope
-          const senderPeerId = (envelope.senderPeerId as string) ?? "";
-          if (senderPeerId && peerId !== senderPeerId) {
-            peerId = senderPeerId;
-            directClients.set(ws, peerId);
-          }
-
           const intent = envelope.intent as string;
           const payload = (envelope.payload as Record<string, unknown>) ?? {};
 
-          // ---- relay.checkin — track connected peer ----
-          if (intent === "relay.checkin") {
+          if (
+            handleWsRelayControlEnvelope({
+              ws,
+              envelope,
+              roster: wsRelayRoster,
+              relayPeerId: mesh.peerId,
+              meshMultiaddrs: mesh.multiaddrs,
+              advertiseAddrs: args.advertiseAddrs,
+              log: (msg) => console.log(msg),
+            })
+          ) {
+            const senderPeerId = (envelope.senderPeerId as string) ?? "";
             if (senderPeerId) {
               peerId = senderPeerId;
               directClients.set(ws, peerId);
             }
             return;
+          }
+
+          // Track peer ID from envelope
+          const senderPeerId = (envelope.senderPeerId as string) ?? "";
+          if (senderPeerId && peerId !== senderPeerId) {
+            peerId = senderPeerId;
+            directClients.set(ws, peerId);
           }
 
           // ---- rendezvous.register — register capabilities ----

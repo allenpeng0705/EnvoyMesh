@@ -9546,6 +9546,7 @@ class NodeServiceImpl implements NodeService {
       console.log(`[node-service] _relayBootstrapPeers assigned: ${bootstrapPeers.length} addresses: ${bootstrapPeers.join(", ")}`);
       if (config.relayEnabled && this._inboundGuard && this._discoverySeedStore) {
         this._stopRelayClientScheduler?.();
+        const relayWsUrl = await this.resolveRelayWsUrl();
         const relayDeps = {
           mesh: this._mesh,
           profile: this._profile!,
@@ -9553,6 +9554,7 @@ class NodeServiceImpl implements NodeService {
           inboundGuard: this._inboundGuard,
           discoverySeedStore: this._discoverySeedStore,
           peerDirectoryStore: this._peerDirectoryStore,
+          relayWsUrl,
         };
         await runRelayClientCycle(relayDeps);
         this._stopRelayClientScheduler = startRelayClientScheduler({

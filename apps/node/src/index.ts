@@ -4190,6 +4190,26 @@ function scheduleRelayCheckin(): void {
 }
 
 async function runRelayCheckinCycle(source: "startup" | "periodic"): Promise<void> {
+  if (nodeService instanceof NodeServiceImpl) {
+    try {
+      const relayWsUrl = await nodeService.resolveRelayWsUrl();
+      if (relayWsUrl) {
+        const { runRelayWsControlCycle } = await import("./relay-ws-control-client.js");
+        await runRelayWsControlCycle({
+          relayWsUrl,
+          mesh,
+          profile,
+          inboundGuard,
+          discoverySeedStore,
+          peerDirectoryStore,
+        });
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(`[relay-ws] ${source} cycle error: ${message}`);
+    }
+  }
+
   const targets = relayControlTargets();
   const expiresAt = expiresAtFromNow(RELAY_CONTROL_TTL_MS);
   const capabilities = relayCheckinCapabilities(profile.deviceCertificate.capabilities);
@@ -4235,11 +4255,13 @@ async function runRelayCheckinCycle(source: "startup" | "periodic"): Promise<voi
     try {
       await deliverOutboundEnvelope(mesh, target, signedEnvelope);
       noteRelaySuccess(relayClientState, relayHintFromAddr(target));
+      console.log(`[relay-checkin] ok target=${target.split("/").pop()?.slice(0, 12)}… source=${source}`);
       await appendRelayTrace("relay.checkin.ok", target, `relay checkin ok source=${source} target=${target}`);
       checkinResults.push({ target, ok: true });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       noteRelayFailure(relayClientState, relayHintFromAddr(target));
+      console.warn(`[relay-checkin] failed target=${target.split("/").pop()?.slice(0, 12)}… source=${source} error=${message}`);
       await appendRelayTrace("relay.checkin.fail", target, `relay checkin failed source=${source} target=${target} error=${message}`);
       checkinResults.push({ target, ok: false, error: message });
     }
