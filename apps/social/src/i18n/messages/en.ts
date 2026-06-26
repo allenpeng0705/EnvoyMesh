@@ -49,6 +49,8 @@ export const en = {
   header: {
     starting: "Starting…",
     stopping: "Stopping…",
+    nodeRunning: "Node online",
+    nodeRunningTitle: "This node is running · Peer {peerId}",
     relayDown: "Relay down",
     relayUnreachable: "Relay unreachable — tap to retry",
     nodeOffline: "Node offline",

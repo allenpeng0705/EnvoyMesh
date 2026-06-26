@@ -141,8 +141,20 @@ export function Header({
         </button>
       </nav>
       <div className="header-right app-header__meta">
-        {/* Failure-only status chips: the top bar is silent when everything is healthy.
-            Showing a green "running" / "12 bonded" / "Public Network" trio is noise. */}
+        {/* Self node status — always visible when running so you know which machine you are on. */}
+        {nodeStatus === "running" && !isNetworkError && (
+          <span
+            className="mesh-status-chip mesh-status-chip--ok"
+            title={
+              peerId && !peerId.startsWith("envoy_")
+                ? t("header.nodeRunningTitle", { peerId: peerId.slice(0, 16) + "…" })
+                : t("header.nodeRunning")
+            }
+          >
+            <span className="mesh-status-chip__dot status-indicator status-indicator--running" aria-hidden />
+            <span className="mesh-status-chip__label">{t("header.nodeRunning")}</span>
+          </span>
+        )}
         {(isNodeOffline || isNodeTransitional || isNetworkError || (relayUnreachable && isPublicNetwork)) && (
           <div className="header-status-strip" role="group" aria-label={t("header.nodeConnectivity")}>
             {isNodeOffline && (

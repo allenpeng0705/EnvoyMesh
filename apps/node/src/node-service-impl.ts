@@ -427,6 +427,7 @@ import {
   resolveIpfsExportEngineSelection,
 } from "./ipfs-export-router.js";
 import { verifyVaultDocumentIpfsGateway } from "./vault-ipfs-gateway-verify.js";
+import { getCachedVaultIndex } from "./vault-index-cache.js";
 import { normalizeGatewayBaseUrl } from "./ipfs-gateway.js";
 import { createAgentShareProposalStore } from "./agent-share-proposal-store.js";
 import { PUBLISHED_LIB_CAPABILITY } from "./discovery-inbound.js";
@@ -863,6 +864,10 @@ class NodeServiceImpl implements NodeService {
   private _bondWarmTimer?: ReturnType<typeof setInterval>;
   /** Skip periodic bond warm when libp2p already has this many open connections. */
   private static readonly BOND_WARM_MAX_CONNECTIONS = 64;
+  /** First follow-up warm shortly after mesh online (profile/dial hints may still be settling). */
+  private static readonly BOND_WARM_STARTUP_DELAY_MS = 8_000;
+  /** Periodic keepalive dial for bonded contacts. */
+  private static readonly BOND_WARM_INTERVAL_MS = 45_000;
   /** Defer startup profile refresh until mesh paths settle (avoids stale LAN dial storms). */
   private static readonly PROFILE_REFRESH_STARTUP_DELAY_MS = 90_000;
   private _profileRefreshStartupTimer?: ReturnType<typeof setTimeout>;
@@ -3376,6 +3381,276 @@ class NodeServiceImpl implements NodeService {
     }).catch((err) => console.warn(`[rag] chat index failed:`, err));
   }
 
+  private async _persistChatMessageAwait(
+    threadPeerOwnerId: string,
+    msg: ChatMessage,
+  ): Promise<void> {
+    if (!this._chatLogStore) return;
+    await this._chatLogStore.append(threadPeerOwnerId, msg);
+    void this._getRagService().then((rag) => {
+      if (!rag) return;
+      const view = chatLogRowsToViews([msg])[0];
+      if (!view) return;
+      return rag.indexChatMessage(threadPeerOwnerId, view);
+    }).catch((err) => console.warn(`[rag] chat index failed:`, err));
+  }
+
+  private _mapOutboundChatAttachments(
+    attachments: NonNullable<SendChatParams["attachments"]>,
+  ): NonNullable<SendChatParams["attachments"]> {
+    return attachments.map((a) => ({
+      id: a.id,
+      filename: a.filename,
+      mimeType: a.mimeType,
+      sizeBytes: a.sizeBytes,
+      sensitivity: a.sensitivity,
+      ...(a.vaultRelativePath ? { vaultRelativePath: a.vaultRelativePath } : {}),
+    }));
+  }
+
+  /** Build a signed outbound 1:1 chat envelope + UI message (no P2P send). */
+  private async _composeOutboundDirectChat(
+    targetOwnerId: string,
+    text: string,
+    attachments?: SendChatParams["attachments"],
+    opts?: { skipDialHints?: boolean; localOnly?: boolean },
+  ): Promise<{
+    envelope: EnvoyEnvelope;
+    emittedMsg: ChatMessage;
+    transportPeerId: string;
+    dialHints: string[];
+    listenAddrs?: string[];
+  }> {
+    const mesh = this._requireMesh();
+    const selfProfile = this._requireProfile();
+
+    let transportPeerId = "";
+    let recipientEnvelopePeerId: string | undefined;
+    let listenAddrs: string[] | undefined;
+
+    if (opts?.localOnly) {
+      // Persist locally first; background delivery will resolve transport.
+    } else {
+      ({ transportPeerId, recipientEnvelopePeerId, listenAddrs } =
+        await this._resolvePeerTransportForOwner(targetOwnerId));
+    }
+
+    const [selfHuman, recipientTrust] = await Promise.all([
+      this._humanProfileStore.loadHumanProfile(),
+      this._trustStore.getTrustRecord(targetOwnerId),
+    ]);
+
+    let dialHints: string[] = [];
+    if (!opts?.localOnly && !opts?.skipDialHints) {
+      dialHints = await raceWithTimeout(
+        this._dialHintsForChat(transportPeerId, listenAddrs),
+        30_000,
+        "_dialHintsForChat",
+      );
+    } else if (!opts?.localOnly && transportPeerId) {
+      dialHints = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs ?? [], []);
+    }
+
+    if (transportPeerId) {
+      void mesh.scrubPeerStoreDialHints(
+        transportPeerId,
+        mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, dialHints),
+      );
+      void this._tagBondedContactReachability(transportPeerId);
+    }
+
+    const wireText = stripModelThinking(text);
+    const mappedAttachments = attachments?.length
+      ? this._mapOutboundChatAttachments(attachments)
+      : undefined;
+
+    const envelope = signUnsignedEnvelope(
+      createUnsignedEnvelope({
+        senderPeerId: derivePeerId(selfProfile.device.publicKeyPem),
+        senderPublicKey: selfProfile.device.publicKeyPem,
+        senderRole: "human",
+        recipientPeerId: recipientEnvelopePeerId,
+        recipientRole: "human",
+        intent: "chat.message",
+        payload: createChatMessagePayload({
+          senderOwnerId: selfProfile.owner.ownerId,
+          text: wireText,
+          attachments: mappedAttachments?.map((a) => ({
+            id: a.id,
+            filename: a.filename,
+            mimeType: a.mimeType,
+            sizeBytes: a.sizeBytes,
+            sensitivity: a.sensitivity,
+          })),
+          ...chatMessagePayloadDeviceFields({
+            deviceCertificate: selfProfile.deviceCertificate,
+            ownerPublicKeyPem: selfProfile.owner.publicKeyPem,
+          }),
+        }),
+      }),
+      selfProfile.device.privateKeyPem,
+    );
+
+    const emittedMsg: ChatMessage = {
+      messageId: envelope.messageId,
+      sender: {
+        nodeId: mesh.peerId,
+        ownerId: selfProfile.owner.ownerId,
+        displayName: selfHuman?.displayName ?? selfProfile.owner.ownerId,
+        actorRole: "human",
+      },
+      recipient: {
+        nodeId: transportPeerId || targetOwnerId,
+        ownerId: targetOwnerId,
+        displayName: recipientTrust?.displayName ?? targetOwnerId,
+      },
+      content: {
+        text: wireText,
+        ...(mappedAttachments?.length
+          ? { attachments: mappedAttachments.map((a) => ({ ...a })) }
+          : {}),
+      },
+      metadata: {
+        timestamp: envelope.createdAt,
+        deliveryReceipt: "pending",
+      },
+      signature: envelope.signature,
+    };
+
+    return { envelope, emittedMsg, transportPeerId, dialHints, listenAddrs };
+  }
+
+  private async _writeVaultBytes(relativePath: string, bytes: Buffer): Promise<void> {
+    const norm = relativePath.trim().replace(/^[\\/]+/, "");
+    if (!norm || norm.includes("..") || norm.includes("~")) {
+      throw new Error("Invalid vault path");
+    }
+    const abs = resolve(this._vaultDir, norm);
+    assertPathInsideVault(this._vaultDir, abs);
+    await mkdir(dirname(abs), { recursive: true });
+    await writeFile(abs, bytes, { mode: 0o600 });
+  }
+
+  private async _deliverStagedChatAttachment(input: {
+    targetOwnerId: string;
+    envelope: EnvoyEnvelope;
+    messageId: string;
+    transportPeerId: string;
+    dialHints: string[];
+    listenAddrs?: string[];
+    vaultRelativePath: string;
+    attachmentId: string;
+    sensitivity: "public" | "friends" | "private";
+    wireText: string;
+    wireAttachments: NonNullable<SendChatParams["attachments"]>;
+  }): Promise<void> {
+    const mesh = this._requireMesh();
+    let envelope = input.envelope;
+    let transportPeerId = input.transportPeerId;
+    let listenAddrs = input.listenAddrs;
+    let dialHints = input.dialHints;
+
+    if (!transportPeerId) {
+      try {
+        const composed = await this._composeOutboundDirectChat(
+          input.targetOwnerId,
+          input.wireText,
+          input.wireAttachments,
+        );
+        envelope = composed.envelope;
+        transportPeerId = composed.transportPeerId;
+        listenAddrs = composed.listenAddrs;
+        dialHints = composed.dialHints;
+      } catch (err) {
+        console.warn(
+          `[chat-attachment] background compose/delivery aborted for ${input.targetOwnerId.slice(0, 24)}…:`,
+          err instanceof Error ? err.message : err,
+        );
+        return;
+      }
+    } else if (dialHints.length === 0) {
+      try {
+        dialHints = await raceWithTimeout(
+          this._dialHintsForChat(transportPeerId, listenAddrs),
+          30_000,
+          "_dialHintsForChat",
+        );
+      } catch (hintErr) {
+        console.warn(
+          `[chat-attachment] dial hints failed for ${input.targetOwnerId.slice(0, 24)}…:`,
+          hintErr instanceof Error ? hintErr.message : hintErr,
+        );
+        dialHints = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs ?? [], []);
+      }
+    }
+
+    void getCachedVaultIndex(this._vaultDir).catch(() => undefined);
+
+    let deliverResult: ChatDeliverResult = { delivered: false };
+    try {
+      if (transportPeerId === mesh.peerId && this._bridgeChatHandler) {
+        await this._bridgeChatHandler(envelope, mesh.peerId);
+        deliverResult = { delivered: true, deliveredAt: new Date().toISOString() };
+      } else {
+        deliverResult = await this._deliverChatEnvelope(
+          transportPeerId,
+          envelope,
+          dialHints,
+          listenAddrs,
+        );
+      }
+    } catch (err) {
+      this._lastLibp2pTransportByOwner.delete(input.targetOwnerId);
+      console.warn(
+        `[chat-attachment] chat.message delivery failed for ${input.targetOwnerId.slice(0, 24)}…:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
+
+    if (deliverResult.delivered) {
+      this._lastLibp2pTransportByOwner.set(input.targetOwnerId, {
+        peerId: transportPeerId,
+        listenAddrs: listenAddrs ?? [],
+      });
+      await this._markOutboundChatDelivered(
+        input.targetOwnerId,
+        input.messageId,
+        deliverResult.deliveredAt ?? envelope.createdAt,
+      );
+      await new Promise((resolve) => setTimeout(resolve, 400));
+    }
+
+    let shareErr: unknown;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        if (attempt > 0) {
+          await new Promise((resolve) => setTimeout(resolve, 800 * attempt));
+        }
+        await this._shareFileInternal(input.targetOwnerId, {
+          path: input.vaultRelativePath,
+          sensitivity: input.sensitivity,
+          deliveryChannel: "chat",
+          chatMessageId: input.messageId,
+          chatAttachmentId: input.attachmentId,
+        });
+        shareErr = undefined;
+        break;
+      } catch (err) {
+        shareErr = err;
+        console.warn(
+          `[chat-attachment] share.request attempt ${attempt + 1}/3 failed:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+    if (shareErr) {
+      console.warn(
+        `[chat-attachment] file transfer failed for ${input.targetOwnerId.slice(0, 24)}…:`,
+        shareErr instanceof Error ? shareErr.message : shareErr,
+      );
+    }
+  }
+
   /** Append one EnvoyAI row to the shared chat log and push to connected Social clients. */
   recordEnvoyAiChatMessage(msg: ChatMessage): void {
     this._persistChatMessage(ENVOY_AI_THREAD_KEY, msg);
@@ -4079,72 +4354,18 @@ class NodeServiceImpl implements NodeService {
     this.recordOwnerActivity();
     recordMeshActivity();
     const mesh = this._requireMesh();
-    const selfProfile = this._requireProfile();
 
     console.log(`[sendChat] targetOwnerId=${targetOwnerId}, text=${text}`);
 
-    let transportPeerId: string;
-    let recipientEnvelopePeerId: string | undefined;
-    let listenAddrs: string[] | undefined;
+    let composed: Awaited<ReturnType<typeof this._composeOutboundDirectChat>>;
     try {
-      ({ transportPeerId, recipientEnvelopePeerId, listenAddrs } =
-        await this._resolvePeerTransportForOwner(targetOwnerId));
+      composed = await this._composeOutboundDirectChat(targetOwnerId, text, attachments);
     } catch (err) {
       this._lastLibp2pTransportByOwner.delete(targetOwnerId);
       throw err;
     }
 
-    const [selfHuman, recipientTrust] = await Promise.all([
-      this._humanProfileStore.loadHumanProfile(),
-      this._trustStore.getTrustRecord(targetOwnerId),
-    ]);
-
-    const dialHints = await raceWithTimeout(
-      this._dialHintsForChat(transportPeerId, listenAddrs),
-      30_000,
-      "_dialHintsForChat",
-    );
-
-    void mesh.scrubPeerStoreDialHints(
-      transportPeerId,
-      mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, dialHints),
-    );
-
-    console.log(
-      `[sendChat] transportPeerId=${transportPeerId} envelopeRecipientPeerId=${recipientEnvelopePeerId ?? "(omitted)"} dialHints=${dialHints.length}`,
-    );
-
-    void this._tagBondedContactReachability(transportPeerId);
-
-    const wireText = stripModelThinking(text);
-
-    const envelope = signUnsignedEnvelope(
-      createUnsignedEnvelope({
-        senderPeerId: derivePeerId(selfProfile.device.publicKeyPem),
-        senderPublicKey: selfProfile.device.publicKeyPem,
-        senderRole: "human",
-        recipientPeerId: recipientEnvelopePeerId,
-        recipientRole: "human",
-        intent: "chat.message",
-        payload: createChatMessagePayload({
-          senderOwnerId: selfProfile.owner.ownerId,
-          text: wireText,
-          attachments: attachments?.map((a: NonNullable<SendChatParams["attachments"]>[number]) => ({
-            id: a.id,
-            filename: a.filename,
-            mimeType: a.mimeType,
-            sizeBytes: a.sizeBytes,
-            sensitivity: a.sensitivity,
-            ...(a.vaultRelativePath ? { vaultRelativePath: a.vaultRelativePath } : {}),
-          })),
-          ...chatMessagePayloadDeviceFields({
-            deviceCertificate: selfProfile.deviceCertificate,
-            ownerPublicKeyPem: selfProfile.owner.publicKeyPem,
-          }),
-        }),
-      }),
-      selfProfile.device.privateKeyPem,
-    );
+    const { envelope, emittedMsg, transportPeerId, dialHints, listenAddrs } = composed;
 
     let deliverResult: ChatDeliverResult = { delivered: false };
     try {
@@ -4157,7 +4378,10 @@ class NodeServiceImpl implements NodeService {
       }
     } catch (err) {
       this._lastLibp2pTransportByOwner.delete(targetOwnerId);
-      throw err;
+      console.warn(
+        `[sendChat] delivery failed for ${targetOwnerId.slice(0, 24)}… (persisting locally):`,
+        err instanceof Error ? err.message : err,
+      );
     }
 
     if (deliverResult.delivered) {
@@ -4168,32 +4392,16 @@ class NodeServiceImpl implements NodeService {
     }
 
     const deliveryReceipt = deliverResult.delivered ? ("delivered" as const) : ("sent" as const);
-    const emittedMsg: ChatMessage = {
-      messageId: envelope.messageId,
-      sender: {
-        nodeId: mesh.peerId,
-        ownerId: selfProfile.owner.ownerId,
-        displayName: selfHuman?.displayName ?? selfProfile.owner.ownerId,
-        actorRole: "human",
-      },
-      recipient: {
-        nodeId: transportPeerId,
-        ownerId: targetOwnerId,
-        displayName: recipientTrust?.displayName ?? targetOwnerId,
-      },
-      content: {
-        text: wireText,
-        ...(attachments?.length ? { attachments: attachments.map((a: NonNullable<SendChatParams["attachments"]>[number]) => ({ id: a.id, filename: a.filename, mimeType: a.mimeType, sizeBytes: a.sizeBytes, sensitivity: a.sensitivity, ...(a.vaultRelativePath ? { vaultRelativePath: a.vaultRelativePath } : {}) })) } : {}),
-      },
+    const outboundMsg: ChatMessage = {
+      ...emittedMsg,
       metadata: {
-        timestamp: envelope.createdAt,
+        ...emittedMsg.metadata,
         deliveryReceipt,
       },
-      signature: envelope.signature,
     };
-    console.log(`[sendChat] Emitting chat:message locally:`, emittedMsg);
-    this._persistChatMessage(targetOwnerId, emittedMsg);
-    this.emit("chat:message", emittedMsg);
+    console.log(`[sendChat] Emitting chat:message locally:`, outboundMsg);
+    this._persistChatMessage(targetOwnerId, outboundMsg);
+    this.emit("chat:message", outboundMsg);
     if (deliverResult.delivered) {
       await this._markOutboundChatDelivered(
         targetOwnerId,
@@ -4201,7 +4409,7 @@ class NodeServiceImpl implements NodeService {
         deliverResult.deliveredAt ?? envelope.createdAt,
       );
     }
-    this._styleAdapter?.learnFromMessage(true, wireText);
+    this._styleAdapter?.learnFromMessage(true, stripModelThinking(text));
     return {
       messageId: envelope.messageId,
       deliveryReceipt,
@@ -7254,11 +7462,7 @@ class NodeServiceImpl implements NodeService {
     const mimeType = params.mimeType?.trim() || mimeTypeForFilename(filename);
     const sensitivity = params.sensitivity ?? "friends";
 
-    await this.importToLibrary({
-      relativePath: vaultRelativePath,
-      contentBase64: params.contentBase64,
-      mimeType,
-    });
+    await this._writeVaultBytes(vaultRelativePath, bytes);
 
     const wireAttachment = {
       id: attachmentId,
@@ -7272,10 +7476,42 @@ class NodeServiceImpl implements NodeService {
     let chatMessageId: string | undefined;
     if (params.chatText !== undefined || isAudioMimeType(mimeType)) {
       const text = resolveInboundChatDisplayText(params.chatText ?? "", [wireAttachment]);
-      const sendResult = await this.sendChat(params.targetOwnerId, text, [wireAttachment]);
-      chatMessageId = sendResult.messageId;
-      // Receiver should persist chat.message before share.request (metadata + bytes).
-      await new Promise((resolve) => setTimeout(resolve, 400));
+      let composed: Awaited<ReturnType<typeof this._composeOutboundDirectChat>>;
+      try {
+        composed = await this._composeOutboundDirectChat(
+          params.targetOwnerId,
+          text,
+          [wireAttachment],
+          { skipDialHints: true },
+        );
+      } catch (composeErr) {
+        console.warn(
+          `[chat-attachment] peer resolve failed for ${params.targetOwnerId.slice(0, 24)}… (persisting locally):`,
+          composeErr instanceof Error ? composeErr.message : composeErr,
+        );
+        composed = await this._composeOutboundDirectChat(
+          params.targetOwnerId,
+          text,
+          [wireAttachment],
+          { localOnly: true },
+        );
+      }
+      chatMessageId = composed.emittedMsg.messageId;
+      await this._persistChatMessageAwait(params.targetOwnerId, composed.emittedMsg);
+      this.emit("chat:message", composed.emittedMsg);
+      void this._deliverStagedChatAttachment({
+        targetOwnerId: params.targetOwnerId,
+        envelope: composed.envelope,
+        messageId: chatMessageId,
+        transportPeerId: composed.transportPeerId,
+        dialHints: composed.dialHints,
+        listenAddrs: composed.listenAddrs,
+        vaultRelativePath,
+        attachmentId,
+        sensitivity,
+        wireText: text,
+        wireAttachments: [wireAttachment],
+      });
     } else if (params.recordInChat !== false) {
       void this._recordFileShareInChat({
         peerOwnerId: params.targetOwnerId,
@@ -7286,40 +7522,23 @@ class NodeServiceImpl implements NodeService {
         mimeType,
         textOverride: params.caption?.trim() || `Sent ${filename}`,
       });
-    }
-
-    let shareRequestMessageId: string | undefined;
-    let shareErr: unknown;
-    for (let attempt = 0; attempt < 3; attempt++) {
+      let shareRequestMessageId: string | undefined;
       try {
-        if (attempt > 0) {
-          await new Promise((resolve) => setTimeout(resolve, 800 * attempt));
-        }
         ({ shareRequestMessageId } = await this._shareFileInternal(params.targetOwnerId, {
           path: vaultRelativePath,
           sensitivity,
-          deliveryChannel: "chat",
-          chatMessageId,
-          chatAttachmentId: attachmentId,
+          deliveryChannel: "inbox",
         }));
-        shareErr = undefined;
-        break;
       } catch (err) {
-        shareErr = err;
         console.warn(
-          `[chat-attachment] share.request attempt ${attempt + 1}/3 failed:`,
+          `[chat-attachment] share.request failed for ${params.targetOwnerId.slice(0, 24)}…:`,
           err instanceof Error ? err.message : err,
         );
       }
-    }
-    if (shareErr) {
-      console.warn(
-        `[chat-attachment] chat metadata sent but file transfer failed for ${params.targetOwnerId.slice(0, 24)}…:`,
-        shareErr instanceof Error ? shareErr.message : shareErr,
-      );
+      return { attachmentId, vaultRelativePath, shareRequestMessageId, messageId: chatMessageId };
     }
 
-    return { attachmentId, vaultRelativePath, shareRequestMessageId, messageId: chatMessageId };
+    return { attachmentId, vaultRelativePath, messageId: chatMessageId };
   }
 
   async sendChatRoomAttachment(
@@ -11704,8 +11923,9 @@ class NodeServiceImpl implements NodeService {
     const runWarm = (): void => {
       void this._warmAllBondedContacts();
     };
-    setTimeout(runWarm, 120_000);
-    this._bondWarmTimer = setInterval(runWarm, 60_000);
+    void this._warmAllBondedContacts();
+    setTimeout(runWarm, NodeServiceImpl.BOND_WARM_STARTUP_DELAY_MS);
+    this._bondWarmTimer = setInterval(runWarm, NodeServiceImpl.BOND_WARM_INTERVAL_MS);
   }
 
   private async _warmAllBondedContacts(): Promise<void> {
@@ -11713,9 +11933,13 @@ class NodeServiceImpl implements NodeService {
       return;
     }
     const mesh = this._mesh;
-    if (mesh && mesh.getConnectionStats().totalConnections >= NodeServiceImpl.BOND_WARM_MAX_CONNECTIONS) {
+    const openConnections =
+      mesh && typeof mesh.getConnectionStats === "function"
+        ? mesh.getConnectionStats().totalConnections
+        : 0;
+    if (openConnections >= NodeServiceImpl.BOND_WARM_MAX_CONNECTIONS) {
       console.warn(
-        `[bond-warm] skipped: ${mesh.getConnectionStats().totalConnections} open libp2p connections (cap ${NodeServiceImpl.BOND_WARM_MAX_CONNECTIONS})`,
+        `[bond-warm] skipped: ${openConnections} open libp2p connections (cap ${NodeServiceImpl.BOND_WARM_MAX_CONNECTIONS})`,
       );
       return;
     }

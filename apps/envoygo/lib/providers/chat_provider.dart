@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/chat_message.dart';
@@ -170,6 +172,93 @@ class ChatNotifier extends StateNotifier<ChatState> {
       // TODO(31D): Reconcile temp message with server response.
     } catch (e) {
       // Mark message as failed?
+    }
+  }
+
+  /// Send a voice note attachment (Phase 37). Inserts an optimistic bubble,
+  /// then uploads via the home node (local-first persist + background P2P).
+  Future<bool> sendVoiceNote({
+    required String threadId,
+    required String contactOwnerId,
+    required String contentBase64,
+    required String filename,
+    required String mimeType,
+    int? durationSec,
+  }) async {
+    final nodeService = _ref.read(nodeServiceProvider);
+    if (nodeService == null) return false;
+
+    final nodeState = _ref.read(nodeProvider);
+    if (nodeState.activeNode == null) return false;
+
+    final now = DateTime.now().toIso8601String();
+    final tempId = 'pending-voice-${DateTime.now().microsecondsSinceEpoch}';
+    const placeholderText = '[Audio message — no transcription available]';
+    final tempAtt = ChatAttachment(
+      id: tempId,
+      filename: filename,
+      mimeType: mimeType,
+      sizeBytes: base64Decode(contentBase64).length,
+      sensitivity: 'friends',
+      durationSec: durationSec,
+    );
+    final tempMsg = ChatMessage(
+      id: tempId,
+      threadId: threadId,
+      text: placeholderText,
+      createdAt: now,
+      isOutbound: true,
+      attachments: [tempAtt],
+    );
+
+    state = state.copyWith(
+      messages: {
+        ...state.messages,
+        threadId: [tempMsg, ...?state.messages[threadId]],
+      },
+    );
+
+    var contactName = _ref
+        .read(contactProvider.notifier)
+        .getContact(contactOwnerId)
+        ?.displayName;
+    contactName ??= _ref
+        .read(contactProvider)
+        .bonds
+        .where((c) => c.ownerId == contactOwnerId)
+        .firstOrNull
+        ?.displayName;
+    _upsertThread(
+      threadId: threadId,
+      nodeId: nodeState.activeNode!.id,
+      type: ChatThreadType.direct,
+      displayName: (contactName != null && contactName.isNotEmpty)
+          ? contactName
+          : contactOwnerId,
+      contactOwnerId: contactOwnerId,
+      lastMessageText: placeholderText,
+      lastMessageAt: DateTime.now(),
+    );
+
+    try {
+      await nodeService.sendChatAttachment(
+        targetOwnerId: contactOwnerId,
+        filename: filename,
+        contentBase64: contentBase64,
+        mimeType: mimeType,
+      );
+      await loadHistory(threadId, contactOwnerId: contactOwnerId);
+      return true;
+    } catch (_) {
+      state = state.copyWith(
+        messages: {
+          ...state.messages,
+          threadId: (state.messages[threadId] ?? [])
+              .where((m) => m.id != tempId)
+              .toList(),
+        },
+      );
+      return false;
     }
   }
 

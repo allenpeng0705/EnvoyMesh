@@ -211,18 +211,20 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
       final bytes = await File(path).readAsBytes();
       final base64 = base64Encode(bytes);
       const mimeType = 'audio/mp4';
+      const filename = 'voice-note.m4a';
 
-      await nodeService.sendChatAttachment(
-        targetOwnerId: contactOwnerId,
-        filename: 'voice-note.m4a',
-        contentBase64: base64,
-        mimeType: mimeType,
-      );
-
-      await ref.read(chatProvider.notifier).loadHistory(
-            widget.threadId,
+      final ok = await ref.read(chatProvider.notifier).sendVoiceNote(
+            threadId: widget.threadId,
             contactOwnerId: contactOwnerId,
+            contentBase64: base64,
+            filename: filename,
+            mimeType: mimeType,
+            durationSec: _recordingSeconds,
           );
+
+      if (!ok) {
+        throw StateError('sendVoiceNote failed');
+      }
 
       try {
         await File(path).delete();
@@ -236,11 +238,12 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
           _recordingSeconds = 0;
         });
       }
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
         setState(() => _voicePhase = _VoiceNotePhase.ready);
+        final detail = e.toString().replaceFirst('Exception: ', '');
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Failed to send voice note')),
+          SnackBar(content: Text('Failed to send voice note: $detail')),
         );
       }
     }

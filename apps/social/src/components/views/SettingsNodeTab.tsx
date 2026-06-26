@@ -115,7 +115,12 @@ export function SettingsNodeTab() {
       const entries = await Promise.all(
         bonds.map(async (bond) => {
           try {
-            const info = await nodeService.getPeerConnectionInfo(bond.peerOwnerId);
+            let info = await nodeService.getPeerConnectionInfo(bond.peerOwnerId);
+            if (!info.connected) {
+              info = await nodeService.warmContactConnection(bond.peerOwnerId);
+            } else {
+              info = await nodeService.warmContactConnection(bond.peerOwnerId, { keepAlive: true });
+            }
             return [bond.peerOwnerId, info] as const;
           } catch {
             return [bond.peerOwnerId, { connected: false, direct: false }] as const;
@@ -181,6 +186,15 @@ export function SettingsNodeTab() {
   useEffect(() => {
     void refreshBondConnectionInfo();
   }, [refreshBondConnectionInfo]);
+
+  // Keep bonded-peer status fresh while Settings is open.
+  useEffect(() => {
+    if (nodeStatus !== "running") return;
+    const id = setInterval(() => {
+      void refreshBondConnectionInfo();
+    }, 25_000);
+    return () => clearInterval(id);
+  }, [nodeStatus, refreshBondConnectionInfo]);
 
   useEffect(() => {
     if (chatDiagContact || bonds.length === 0) return;

@@ -237,7 +237,7 @@ class NodeServiceClient {
       if (chatText != null) 'chatText': chatText,
       if (recordInChat != null) 'recordInChat': recordInChat,
     };
-    return await _client.call('sendChatAttachment', params)
+    return await _client.call('sendChatAttachment', params, 120000)
         as Map<String, dynamic>;
   }
 
