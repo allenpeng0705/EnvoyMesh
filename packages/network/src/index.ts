@@ -1480,7 +1480,7 @@ export class EnvoyMesh {
         /* ignore */
       }
     } catch (e) {
-      const detail = e instanceof Error ? e.message : String(e);
+      const detail = meshErrorMessage(e);
       console.warn(`[network] ensurePeerReachable failed for ${target.slice(0, 24)}…: ${detail}`);
       return { connected: false, direct: false };
     }
@@ -2341,6 +2341,19 @@ export { CapabilityRegistry, type CapabilityRegistryOptions, type CapabilityRegi
  * (e.g. WebTransport CERT hashes from DHT-discovered peers). Callers should fall
  * through to a fresh dial in that case since existing-connection reuse requires a peer ID.
  */
+function meshErrorMessage(e: unknown): string {
+  if (e instanceof Error) {
+    return e.message;
+  }
+  if (typeof e === "object" && e !== null && "type" in e) {
+    const eventType = (e as Event).type;
+    if (typeof eventType === "string" && eventType.length > 0) {
+      return `Event(${eventType})`;
+    }
+  }
+  return String(e);
+}
+
 function parsePeerIdFromDialTarget(target: string): string | undefined {
   const trimmed = target.trim();
   if (!trimmed.includes("/")) {

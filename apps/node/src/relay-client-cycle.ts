@@ -3,7 +3,7 @@
  * CLI `index.ts` runs equivalent cycles; without this, cross-NAT chat lacks /p2p-circuit/ dial hints.
  */
 import { randomUUID } from "node:crypto";
-import type { EnvoyEnvelope } from "@envoymesh/protocol";
+import type { EnvoyEnvelope, RelayLookupResponsePayload } from "@envoymesh/protocol";
 import {
   createRelayCheckinPayload,
   createRelayLookupPayload,
@@ -14,6 +14,7 @@ import { derivePeerId, signUnsignedEnvelope } from "@envoymesh/identity";
 import type { EnvoyMesh } from "@envoymesh/network";
 import { sendEnvelopeWithRetry, sendExpectReplyWithRetry } from "./chat-outbound-deliver.js";
 import { filterRelayControlTargets } from "@envoymesh/network";
+import type { LocalPeerDirectoryStore } from "@envoymesh/local-store";
 import type { NodeProfile } from "@envoymesh/api";
 import type { InboundMessageGuard } from "./inbound-guard.js";
 import type { DiscoverySeedStore } from "./discovery-seed-store.js";
@@ -47,6 +48,7 @@ export interface RelayClientCycleDeps {
   bootstrapPeers: string[];
   inboundGuard: InboundMessageGuard;
   discoverySeedStore: DiscoverySeedStore;
+  peerDirectoryStore?: Pick<LocalPeerDirectoryStore, "mergeListenAddrsForPeerId">;
 }
 
 async function sendRelayCheckin(deps: RelayClientCycleDeps, targets: string[]): Promise<RelayCheckinAttempt[]> {
@@ -108,6 +110,14 @@ async function applyRelayLookupResponse(
   deps: RelayClientCycleDeps,
 ): Promise<number> {
   const payload = parseRelayLookupResponsePayload(envelope.payload);
+  return persistRelayLookupResponse(payload, deps);
+}
+
+/** Store relay.lookup peers in discovery seeds + peer directory (direct LAN addrs from checkin). */
+export async function persistRelayLookupResponse(
+  payload: RelayLookupResponsePayload,
+  deps: RelayClientCycleDeps,
+): Promise<number> {
   const flat = dedupeAddrs(payload.peers.flatMap((peer) => peer.multiaddrs));
   logClientRelayLookupResponse({
     queryId: payload.queryId,
@@ -116,12 +126,30 @@ async function applyRelayLookupResponse(
   });
   if (flat.length > 0) {
     await deps.discoverySeedStore.upsertMany(flat, "relay-peers");
-    console.log(`[relay-client] relay.lookup stored ${flat.length} circuit multiaddr(s)`);
+    console.log(`[relay-client] relay.lookup stored ${flat.length} multiaddr(s)`);
+  }
+  for (const peer of payload.peers) {
+    const directAddrs = peer.multiaddrs.filter(
+      (addr) => !addr.includes("/p2p-circuit/") && addr.includes(`/p2p/${peer.peerId}`),
+    );
+    if (directAddrs.length === 0) {
+      continue;
+    }
+    if (deps.peerDirectoryStore) {
+      await deps.peerDirectoryStore.mergeListenAddrsForPeerId(peer.peerId, directAddrs);
+    }
+    if (typeof deps.mesh.mergePeerStoreDialHints === "function") {
+      void deps.mesh.mergePeerStoreDialHints(peer.peerId, directAddrs);
+    }
   }
   return flat.length;
 }
 
-async function queryRelayLookup(deps: RelayClientCycleDeps, targets: string[]): Promise<void> {
+async function queryRelayLookup(
+  deps: RelayClientCycleDeps,
+  targets: string[],
+  payloadOverrides?: Partial<Parameters<typeof createRelayLookupPayload>[0]>,
+): Promise<void> {
   const { mesh, profile, inboundGuard } = deps;
   let bestLookup:
     | { ok: true; peerCount: number; circuitAddrsStored: number }
@@ -138,6 +166,7 @@ async function queryRelayLookup(deps: RelayClientCycleDeps, targets: string[]): 
         maxFanout: 2,
         visibilityScope: "public",
         expiresAt: expiresAtFromNow(RELAY_CONTROL_TTL_MS),
+        ...payloadOverrides,
       });
       const signedEnvelope = signUnsignedEnvelope(
         createUnsignedEnvelope({
@@ -195,6 +224,29 @@ async function queryRelayLookup(deps: RelayClientCycleDeps, targets: string[]): 
       error: bestLookup.ok ? undefined : bestLookup.error,
     });
   }
+}
+
+/** Targeted relay.lookup for a bonded contact — fetches fresh LAN listen addrs from relay roster. */
+export async function queryRelayLookupForPeer(
+  deps: RelayClientCycleDeps,
+  input: { targetPeerId: string; targetOwnerId?: string },
+): Promise<boolean> {
+  const targetPeerId = input.targetPeerId.trim();
+  if (!targetPeerId) {
+    return false;
+  }
+  const targets = filterRelayControlTargets(deps.bootstrapPeers);
+  if (targets.length === 0) {
+    return false;
+  }
+  await queryRelayLookup(deps, targets, {
+    queryId: `node_service_relay_lookup_peer_${randomUUID()}`,
+    targetPeerId,
+    targetOwnerId: input.targetOwnerId?.trim() || undefined,
+    visibilityScope: "bonded",
+    maxResults: 4,
+  });
+  return true;
 }
 
 export async function runRelayClientCycle(deps: RelayClientCycleDeps): Promise<void> {

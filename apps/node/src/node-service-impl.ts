@@ -499,7 +499,7 @@ import {
   listFleetManifestsViaRuntime,
   revokeFleetManifestViaRuntime,
 } from "./node-service-fleet-manifest.js";
-import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
+import { startRelayClientScheduler, runRelayClientCycle, queryRelayLookupForPeer } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
 import { startNodeStatsInterval } from "./node-stats-log.js";
@@ -1611,9 +1611,15 @@ class NodeServiceImpl implements NodeService {
    * Without these, `node:dev` never re-dialed LAN peers after restart and Social warmed contacts
    * while `_nodeStatus` was still offline (WS connected before mesh.start()).
    */
-  bindExternalMesh(mesh: EnvoyMesh): void {
+  bindExternalMesh(
+    mesh: EnvoyMesh,
+    options?: { relayBootstrapPeers?: readonly string[] },
+  ): void {
     this._externalMesh = mesh;
     this._wireDialHintFailurePrune(mesh);
+    if (options?.relayBootstrapPeers?.length) {
+      this._relayBootstrapPeers = [...options.relayBootstrapPeers];
+    }
     this._nodeStatus = "running";
     this.emit("node:status", { status: this._nodeStatus, peerId: mesh.peerId });
     this.emit("node:online", {
@@ -1628,6 +1634,39 @@ class NodeServiceImpl implements NodeService {
       this._scheduleBondWarmup("bindExternalMesh");
       this._schedulePresenceSignalBroadcast("bindExternalMesh");
     })();
+  }
+
+  /** Refresh relay roster dial hints for a bonded libp2p peer before warm (tcp/0 LAN ports). */
+  private async _refreshRelayDialHintsForPeer(
+    transportPeerId: string,
+    ownerId?: string,
+  ): Promise<void> {
+    const mesh = this._reachableMesh();
+    const profile = this._profile;
+    if (!mesh || !profile || !this._inboundGuard || !this._discoverySeedStore) {
+      return;
+    }
+    if (this._relayBootstrapPeers.length === 0) {
+      return;
+    }
+    try {
+      await queryRelayLookupForPeer(
+        {
+          mesh,
+          profile,
+          bootstrapPeers: this._relayBootstrapPeers,
+          inboundGuard: this._inboundGuard,
+          discoverySeedStore: this._discoverySeedStore,
+          peerDirectoryStore: this._peerDirectoryStore,
+        },
+        { targetPeerId: transportPeerId, targetOwnerId: ownerId },
+      );
+    } catch (err) {
+      console.warn(
+        `[relay-client] bonded peer lookup failed for ${transportPeerId.slice(0, 12)}…:`,
+        err instanceof Error ? err.message : err,
+      );
+    }
   }
 
   /** Push current listen multiaddrs to bonded contacts (system.signal) after tcp/0 restarts. */
@@ -9511,6 +9550,7 @@ class NodeServiceImpl implements NodeService {
           bootstrapPeers,
           inboundGuard: this._inboundGuard,
           discoverySeedStore: this._discoverySeedStore,
+          peerDirectoryStore: this._peerDirectoryStore,
         };
         await runRelayClientCycle(relayDeps);
         this._stopRelayClientScheduler = startRelayClientScheduler({
@@ -11927,7 +11967,12 @@ class NodeServiceImpl implements NodeService {
     return withOutboundPeerLock(transportPeerId, async () => {
       markWarmInFlight(transportPeerId, true);
       try {
-        return await this._warmContactConnectionTransport(transportPeerId, listenAddrs, options);
+        return await this._warmContactConnectionTransport(
+          transportPeerId,
+          listenAddrs,
+          options,
+          peerOwnerId,
+        );
       } finally {
         markWarmInFlight(transportPeerId, false);
       }
@@ -11963,6 +12008,7 @@ class NodeServiceImpl implements NodeService {
     transportPeerId: string,
     listenAddrs: string[] | undefined,
     options?: WarmContactConnectionOptions,
+    peerOwnerId?: string,
   ): Promise<PeerConnectionInfo> {
     const mesh = this._requireMesh();
     void this._tagBondedContactReachability(transportPeerId);
@@ -12042,6 +12088,13 @@ class NodeServiceImpl implements NodeService {
       return mesh.getPeerConnectionInfo(transportPeerId);
     }
 
+    if (!existing.connected) {
+      await this._refreshRelayDialHintsForPeer(transportPeerId, peerOwnerId);
+      if (peerOwnerId?.trim()) {
+        listenAddrs = await this._mergeFreshListenAddrs(peerOwnerId, transportPeerId, listenAddrs);
+      }
+    }
+
     let dialHints: string[];
     try {
       dialHints = await raceWithTimeout(
@@ -12059,6 +12112,13 @@ class NodeServiceImpl implements NodeService {
 
     if (dialHints.length === 0) {
       dialHints = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, dialHints);
+    }
+    if (options?.source === "bond_warm" || options?.force === true) {
+      const lanHints = dialHints.filter((h) => isPrivateLanTcpDialHint(h));
+      const circuitHints = dialHints.filter((h) => h.includes("/p2p-circuit/"));
+      console.log(
+        `[bond-warm] ${transportPeerId.slice(0, 12)}… hints=${dialHints.length} lan=${lanHints.length} circuit=${circuitHints.length}`,
+      );
     }
     if (dialHints.length === 0) {
       dialHints = [`/p2p/${transportPeerId}`];

@@ -2926,7 +2926,7 @@ if (args.enableDht) {
 }
 
 if (nodeService instanceof NodeServiceImpl) {
-  nodeService.bindExternalMesh(mesh);
+  nodeService.bindExternalMesh(mesh, { relayBootstrapPeers: effectiveBootstrapPeers });
 }
 
 if (args.enableRelayServer) {
@@ -4194,15 +4194,19 @@ async function runRelayCheckinCycle(source: "startup" | "periodic"): Promise<voi
   const expiresAt = expiresAtFromNow(RELAY_CONTROL_TTL_MS);
   const capabilities = relayCheckinCapabilities(profile.deviceCertificate.capabilities);
   const checkinResults: Array<{ target: string; ok: boolean; error?: string }> = [];
-  if (targets.length > 0) {
-    logRelayReachableAddrsForCheckin({
+  if (targets.length === 0) {
+    console.warn(
+      "[relay-checkin] skipped: no relay control targets (need cn-relay or Envoy relay bootstrap addr)",
+    );
+    return;
+  }
+  logRelayReachableAddrsForCheckin({
       prefix: "[relay-checkin]",
       source,
       peerId: mesh.peerId,
       ownerId: profile.owner.ownerId,
       addrs: mesh.multiaddrs,
-    });
-  }
+  });
   for (const target of targets) {
     const payload = createRelayCheckinPayload({
       peerId: mesh.peerId,
@@ -5146,6 +5150,19 @@ async function processRelayLookupResponse(payload: RelayLookupResponsePayload): 
   const relayedAddrs = flat;
   if (relayedAddrs.length > 0) {
     await discoverySeedStore.upsertMany(relayedAddrs, "relay-peers");
+  }
+  for (const peer of payload.peers) {
+    const directAddrs = peer.multiaddrs.filter(
+      (addr) => !addr.includes("/p2p-circuit/") && addr.includes(`/p2p/${peer.peerId}`),
+    );
+    if (directAddrs.length === 0) {
+      continue;
+    }
+    await peerDirectoryStore.mergeListenAddrsForPeerId(peer.peerId, directAddrs);
+    void mesh.mergePeerStoreDialHints(peer.peerId, directAddrs);
+    if (nodeService instanceof NodeServiceImpl) {
+      void nodeService.handleMeshPeerDiscovered(peer.peerId, directAddrs);
+    }
   }
   for (const addr of relayedAddrs) {
     const candidates = expandCircuitDialCandidates(addr, effectiveBootstrapPeers);

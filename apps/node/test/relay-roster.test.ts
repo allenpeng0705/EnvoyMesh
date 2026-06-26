@@ -23,7 +23,10 @@ describe("relay roster", () => {
     roster.checkin({
       peerId: "peer-b",
       ownerId: "envoy:owner:b",
-      relayReachableAddrs: [],
+      relayReachableAddrs: [
+        "/ip4/192.168.3.78/tcp/53830/p2p/peer-b",
+        "/ip4/127.0.0.1/tcp/53830/p2p/peer-b",
+      ],
       capabilities: ["mesh.discovery"],
       advertisements: [{ capability: "mesh.discovery", visibility: "public" }],
       relayHints: [],
@@ -48,6 +51,7 @@ describe("relay roster", () => {
     expect(response.peers).toHaveLength(1);
     expect(response.peers[0]?.peerId).toBe("peer-b");
     expect(response.peers[0]?.multiaddrs).toEqual([
+      "/ip4/192.168.3.78/tcp/53830/p2p/peer-b",
       "/ip4/127.0.0.1/tcp/4001/p2p/relay-1/p2p-circuit/p2p/peer-b",
     ]);
 
