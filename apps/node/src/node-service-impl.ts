@@ -864,10 +864,6 @@ class NodeServiceImpl implements NodeService {
   private _bondWarmTimer?: ReturnType<typeof setInterval>;
   /** Skip periodic bond warm when libp2p already has this many open connections. */
   private static readonly BOND_WARM_MAX_CONNECTIONS = 64;
-  /** First bond warm after mesh settles (relay check-in, profile sync). */
-  private static readonly BOND_WARM_STARTUP_DELAY_MS = 45_000;
-  /** Periodic keepalive dial for bonded contacts. */
-  private static readonly BOND_WARM_INTERVAL_MS = 90_000;
   /** Defer startup profile refresh until mesh paths settle (avoids stale LAN dial storms). */
   private static readonly PROFILE_REFRESH_STARTUP_DELAY_MS = 90_000;
   private _profileRefreshStartupTimer?: ReturnType<typeof setTimeout>;
@@ -1597,8 +1593,20 @@ class NodeServiceImpl implements NodeService {
       await this.resyncBondedContactReachabilityTags();
       await this._scrubBondedContactDialState();
       this._scheduleDeferredProfileRefresh("bindExternalMesh");
-      this._startBondWarmInterval();
+      this._scheduleBondWarmup("bindExternalMesh");
     })();
+  }
+
+  /** One warm pass after dial-state scrub, then periodic keepalive. */
+  private _scheduleBondWarmup(source: string): void {
+    void (async () => {
+      try {
+        await this._warmAllBondedContacts();
+      } catch (err) {
+        console.warn(`[bond-warm] initial warm after ${source} failed:`, err);
+      }
+    })();
+    this._startBondWarmInterval();
   }
 
   private _scheduleDeferredProfileRefresh(source: string): void {
@@ -3451,11 +3459,13 @@ class NodeServiceImpl implements NodeService {
       dialHints = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs ?? [], []);
     }
 
-    if (transportPeerId) {
+    if (transportPeerId && !opts?.skipDialHints) {
       void mesh.scrubPeerStoreDialHints(
         transportPeerId,
         mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, dialHints),
       );
+      void this._tagBondedContactReachability(transportPeerId);
+    } else if (transportPeerId) {
       void this._tagBondedContactReachability(transportPeerId);
     }
 
@@ -3581,6 +3591,12 @@ class NodeServiceImpl implements NodeService {
           hintErr instanceof Error ? hintErr.message : hintErr,
         );
         dialHints = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs ?? [], []);
+      }
+      if (transportPeerId && dialHints.length > 0) {
+        void mesh.scrubPeerStoreDialHints(
+          transportPeerId,
+          mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, dialHints),
+        );
       }
     }
 
@@ -9447,7 +9463,11 @@ class NodeServiceImpl implements NodeService {
       void this.refreshCapabilityIndex().catch((err) => {
         console.warn("[chain] refreshCapabilityIndex after node:online failed:", err);
       });
-      this._startBondWarmInterval();
+      void (async () => {
+        await this.resyncBondedContactReachabilityTags();
+        await this._scrubBondedContactDialState();
+        this._scheduleBondWarmup("node:online");
+      })();
 
       // Wait longer for DHT to connect to bootstrap peers and stabilize routing table
       // DHT provide operations require the routing table to be populated
@@ -11921,8 +11941,7 @@ class NodeServiceImpl implements NodeService {
     const runWarm = (): void => {
       void this._warmAllBondedContacts();
     };
-    setTimeout(runWarm, NodeServiceImpl.BOND_WARM_STARTUP_DELAY_MS);
-    this._bondWarmTimer = setInterval(runWarm, NodeServiceImpl.BOND_WARM_INTERVAL_MS);
+    this._bondWarmTimer = setInterval(runWarm, 60_000);
   }
 
   private async _warmAllBondedContacts(): Promise<void> {
@@ -11958,7 +11977,7 @@ class NodeServiceImpl implements NodeService {
               continue;
             }
           } catch {
-            continue;
+            /* fall through to keepAlive warm */
           }
           await this.warmContactConnection(bond.peerOwnerId, { keepAlive: true });
           continue;

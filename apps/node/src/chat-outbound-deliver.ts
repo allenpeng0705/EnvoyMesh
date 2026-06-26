@@ -633,7 +633,7 @@ export async function deliverMessageEnvelopeWithRetry(input: {
         (isOutboundPeerRecentlyVerified(input.transportPeerId) ||
           (conn.connected && conn.direct));
       if (!skipPrepare) {
-        await prepareOutboundPeerConnection({
+        const ready = await prepareOutboundPeerConnection({
           mesh: input.mesh,
           transportPeerId: input.transportPeerId,
           protocol: ENVOY_MESSAGE_PROTOCOL,
@@ -641,6 +641,10 @@ export async function deliverMessageEnvelopeWithRetry(input: {
           preferCircuitHints: preferCircuits,
           forceFreshDial: false,
         });
+        if (!ready && !input.mesh.getPeerConnectionInfo(input.transportPeerId).connected) {
+          lastErr = new Error(`No reachable path to ${input.transportPeerId.slice(0, 12)}… before send`);
+          continue;
+        }
       }
     }
 

@@ -1409,9 +1409,6 @@ export class EnvoyMesh {
     } catch (e) {
       const detail = e instanceof Error ? e.message : String(e);
       console.warn(`[network] ensurePeerReachable failed for ${target.slice(0, 24)}…: ${detail}`);
-      if (peerIdStr) {
-        void this.scrubPeerStoreDialHints(peerIdStr);
-      }
       return { connected: false, direct: false };
     }
     return peerIdStr ? this.getPeerConnectionInfo(peerIdStr) : { connected: false, direct: false };
