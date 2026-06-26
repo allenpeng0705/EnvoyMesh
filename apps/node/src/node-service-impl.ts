@@ -874,6 +874,8 @@ class NodeServiceImpl implements NodeService {
   private _bondWarmTimer?: ReturnType<typeof setInterval>;
   private _bondWarmStartupTimer?: ReturnType<typeof setTimeout>;
   private _presenceSignalStartupTimer?: ReturnType<typeof setTimeout>;
+  /** Direct+referred targets in the current bond-warm cycle (coordinator relaxes when ≤4). */
+  private _bondWarmTargetCount = 0;
   /** Skip periodic bond warm when libp2p already has this many open connections. */
   private static readonly BOND_WARM_MAX_CONNECTIONS = 64;
   private static readonly BOND_WARM_CONCURRENCY = 4;
@@ -881,8 +883,8 @@ class NodeServiceImpl implements NodeService {
   private static readonly BOND_WARM_STARTUP_DELAY_MS = 45_000;
   /** Announce tcp/0 listen ports to bonded contacts before bond warm (same-LAN cold start). */
   private static readonly PRESENCE_SIGNAL_STARTUP_DELAY_MS = 20_000;
-  /** Periodic keepalive dial for bonded contacts. */
-  private static readonly BOND_WARM_INTERVAL_MS = 90_000;
+  /** Periodic keepalive dial for bonded contacts (aligned with 33aa02e 60s cadence). */
+  private static readonly BOND_WARM_INTERVAL_MS = 60_000;
   /** Defer startup profile refresh until mesh paths settle (avoids stale LAN dial storms). */
   private static readonly PROFILE_REFRESH_STARTUP_DELAY_MS = 90_000;
   private _profileRefreshStartupTimer?: ReturnType<typeof setTimeout>;
@@ -12025,8 +12027,15 @@ class NodeServiceImpl implements NodeService {
           source: options?.source,
           force: options?.force === true || options?.redial === true,
         },
+        bondedContactCount:
+          options?.source === "bond_warm" ? this._bondWarmTargetCount : undefined,
       });
       if (!decision.allow) {
+        if (options?.source === "bond_warm") {
+          console.warn(
+            `[bond-warm] coordinator blocked ${kind} for ${transportPeerId.slice(0, 12)}…: ${decision.reason ?? "cooldown"}`,
+          );
+        }
         return false;
       }
       recordWarmDialStarted({ transportPeerId, kind });
@@ -12227,43 +12236,48 @@ class NodeServiceImpl implements NodeService {
       return bond.level === "direct" || bond.level === "referred";
     });
 
-    let index = 0;
-    const worker = async (): Promise<void> => {
-      while (index < targets.length) {
-        const bond = targets[index];
-        index += 1;
-        if (!bond) {
-          return;
-        }
-        try {
-          const info = await this.getPeerConnectionInfo(bond.peerOwnerId);
-          if (info.connected) {
-            try {
-              const { transportPeerId } = await this._resolvePeerTransportForOwner(bond.peerOwnerId);
-              if (isOutboundPeerRecentlyVerified(transportPeerId)) {
-                continue;
-              }
-            } catch {
-              /* fall through to warm */
-            }
-            await this.warmContactConnection(
-              bond.peerOwnerId,
-              info.direct
-                ? { verifyOnly: true, source: "bond_warm" }
-                : { keepAlive: true, source: "bond_warm" },
-            );
-            continue;
+    this._bondWarmTargetCount = targets.length;
+    try {
+      let index = 0;
+      const worker = async (): Promise<void> => {
+        while (index < targets.length) {
+          const bond = targets[index];
+          index += 1;
+          if (!bond) {
+            return;
           }
-          await this.warmContactConnection(bond.peerOwnerId, { source: "bond_warm" });
-        } catch {
-          /* best-effort keepalive */
+          try {
+            const info = await this.getPeerConnectionInfo(bond.peerOwnerId);
+            if (info.connected) {
+              try {
+                const { transportPeerId } = await this._resolvePeerTransportForOwner(bond.peerOwnerId);
+                if (isOutboundPeerRecentlyVerified(transportPeerId)) {
+                  continue;
+                }
+              } catch {
+                /* fall through to warm */
+              }
+              await this.warmContactConnection(
+                bond.peerOwnerId,
+                info.direct
+                  ? { verifyOnly: true, source: "bond_warm" }
+                  : { upgradeRelayToDirect: true, source: "bond_warm" },
+              );
+              continue;
+            }
+            await this.warmContactConnection(bond.peerOwnerId, { source: "bond_warm" });
+          } catch {
+            /* best-effort keepalive */
+          }
         }
-      }
-    };
+      };
 
-    await Promise.all(
-      Array.from({ length: NodeServiceImpl.BOND_WARM_CONCURRENCY }, () => worker()),
-    );
+      await Promise.all(
+        Array.from({ length: NodeServiceImpl.BOND_WARM_CONCURRENCY }, () => worker()),
+      );
+    } finally {
+      this._bondWarmTargetCount = 0;
+    }
   }
 
   async getChatDiagnostics(peerOwnerId?: string): Promise<ChatDiagnostics> {

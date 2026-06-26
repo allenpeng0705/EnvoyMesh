@@ -1,5 +1,8 @@
 import type { PeerConnectionInfo, WarmContactConnectionOptions, WarmContactSource } from "@envoymesh/api";
 
+/** Bond warm throttling is skipped when direct+referred targets are at or below this count. */
+export const COORDINATOR_SMALL_BOND_SET_MAX = 4;
+
 /** Minimum gap between disconnected full-warm dials for the same peer. */
 export const COORDINATOR_DISCONNECTED_WARM_MS = 15_000;
 /** Minimum gap between relay→direct upgrade attempts. */
@@ -110,6 +113,8 @@ export function evaluateWarmCoordinator(input: {
   transportPeerId: string;
   kind: WarmDialKind;
   options?: Pick<WarmContactConnectionOptions, "force" | "source">;
+  /** Direct+referred bond warm targets this cycle — throttling relaxed when ≤ {@link COORDINATOR_SMALL_BOND_SET_MAX}. */
+  bondedContactCount?: number;
   now?: number;
 }): WarmCoordinatorDecision {
   const { kind } = input;
@@ -122,6 +127,14 @@ export function evaluateWarmCoordinator(input: {
 
   // Only throttle background bond warm — chat open, send, call, and legacy UI warm must dial.
   if (input.options?.source !== "bond_warm") {
+    return { allow: true, kind };
+  }
+
+  if (
+    input.bondedContactCount !== undefined &&
+    input.bondedContactCount > 0 &&
+    input.bondedContactCount <= COORDINATOR_SMALL_BOND_SET_MAX
+  ) {
     return { allow: true, kind };
   }
 

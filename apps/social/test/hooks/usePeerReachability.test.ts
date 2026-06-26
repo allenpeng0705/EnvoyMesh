@@ -53,18 +53,27 @@ describe("usePeerReachability", () => {
     await waitFor(() => {
       expect(result.current.info).toEqual({ connected: true, direct: true });
     });
-    expect(warmContactConnection).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(
+        warmContactConnection.mock.calls.some((call) => call[1]?.keepAlive === true),
+      ).toBe(true);
+    });
   });
 
-  it("shows relay online without tearing down the path on chat open", async () => {
+  it("attempts LAN upgrade when connected via relay (33aa02e behavior)", async () => {
     getPeerConnectionInfo.mockResolvedValue({ connected: true, direct: false });
+    warmContactConnection.mockResolvedValue({ connected: true, direct: true });
 
     const { result } = renderHook(() => usePeerReachability("envoy:owner:relay", true));
 
     await waitFor(() => {
-      expect(result.current.info).toEqual({ connected: true, direct: false });
+      expect(result.current.info?.connected).toBe(true);
     });
-    expect(warmContactConnection).not.toHaveBeenCalled();
+    await waitFor(() => {
+      expect(
+        warmContactConnection.mock.calls.some((call) => call[1]?.upgradeRelayToDirect === true),
+      ).toBe(true);
+    });
   });
 
   it("reports offline when warm cannot connect and keeps retrying in the background", async () => {

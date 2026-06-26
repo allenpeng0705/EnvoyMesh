@@ -89,20 +89,33 @@ describe("dial hint sorting", () => {
   });
 
   describe("hasTrustedDirectDialHints", () => {
-    it("trusts stable ports but not stale tcp/0 LAN bind ports", () => {
+    it("trusts same-LAN stable ports but not WAN guesses or tcp/0 bind ports", () => {
       const peerId = "12D3KooWTrustedDirectPeer";
       const lanHigh = `/ip4/192.168.1.50/tcp/51924/p2p/${peerId}`;
-      const stable = `/ip4/8.8.8.8/tcp/4001/p2p/${peerId}`;
+      const wanStable = `/ip4/8.8.8.8/tcp/4001/p2p/${peerId}`;
+      const cgnatGuess = `/ip4/106.37.112.84/tcp/4001/p2p/${peerId}`;
       const lanStable = `/ip4/192.168.3.78/tcp/4011/p2p/${peerId}`;
       const circuit = `/ip4/47.93.11.212/tcp/4001/p2p/relay/p2p-circuit/p2p/${peerId}`;
       expect(hasTrustedDirectDialHints([lanHigh])).toBe(false);
-      expect(hasTrustedDirectDialHints([stable])).toBe(true);
+      expect(hasTrustedDirectDialHints([wanStable])).toBe(false);
+      expect(hasTrustedDirectDialHints([cgnatGuess])).toBe(false);
       expect(hasTrustedDirectDialHints([lanStable])).toBe(true);
       expect(hasTrustedDirectDialHints([circuit])).toBe(false);
     });
   });
 
   describe("filterDialHintsForOutboundSend", () => {
+    it("keeps circuits when only relay NAT public :4001 guess exists", () => {
+      const peerId = "12D3KooWFilterDialHintsPeer";
+      const natGuess = `/ip4/106.37.112.84/tcp/4001/p2p/${peerId}`;
+      const circuit = `/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${peerId}`;
+      const out = filterDialHintsForOutboundSend([natGuess, circuit], peerId, {
+        preferCircuitHints: false,
+      });
+      expect(out).toContain(circuit);
+      expect(out).toContain(natGuess);
+    });
+
     it("keeps circuits when only stale tcp/0 listen ports exist", () => {
       const peerId = "12D3KooWFilterDialHintsPeer";
       const staleListen = `/ip4/192.168.3.78/tcp/51924/p2p/${peerId}`;

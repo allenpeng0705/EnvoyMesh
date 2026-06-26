@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeEach } from "vitest";
 import {
+  COORDINATOR_SMALL_BOND_SET_MAX,
   COORDINATOR_DISCONNECTED_WARM_MS,
   COORDINATOR_RELAY_UPGRADE_MS,
   COORDINATOR_KEEPALIVE_PROBE_MS,
@@ -123,5 +124,31 @@ describe("outbound-warm-coordinator", () => {
       now: 1500,
     });
     expect(decision.allow).toBe(true);
+  });
+
+  it("bypasses bond_warm throttling for small bond sets", () => {
+    const peer = "12D3KooWSmallSet";
+    recordWarmDialStarted({ transportPeerId: peer, kind: "disconnected_warm", now: 1000 });
+    const decision = evaluateWarmCoordinator({
+      transportPeerId: peer,
+      kind: "disconnected_warm",
+      options: { source: "bond_warm" },
+      bondedContactCount: COORDINATOR_SMALL_BOND_SET_MAX,
+      now: 1500,
+    });
+    expect(decision.allow).toBe(true);
+  });
+
+  it("still throttles bond_warm when bond set exceeds small-set limit", () => {
+    const peer = "12D3KooWLargeSet";
+    recordWarmDialStarted({ transportPeerId: peer, kind: "relay_upgrade", now: 5000 });
+    const decision = evaluateWarmCoordinator({
+      transportPeerId: peer,
+      kind: "relay_upgrade",
+      options: { source: "bond_warm" },
+      bondedContactCount: COORDINATOR_SMALL_BOND_SET_MAX + 1,
+      now: 5000 + COORDINATOR_RELAY_UPGRADE_MS - 1,
+    });
+    expect(decision.allow).toBe(false);
   });
 });

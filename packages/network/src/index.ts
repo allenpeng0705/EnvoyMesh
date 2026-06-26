@@ -2419,15 +2419,12 @@ export function hasDirectPrivateLanDialHints(hints: readonly string[]): boolean 
 }
 
 /**
- * Direct TCP hints we trust enough to skip relay circuits — fixed listen ports only.
- * Same-LAN tcp/0 bind ports (≥32768) may be stale after restart; keep circuit fallback.
+ * Direct TCP hints we trust enough to skip relay circuits — same-LAN fixed listen ports only.
+ * Public WAN :4001 (relay NAT / UPnP guesses) and tcp/0 high ports must not suppress circuits.
  */
 export function hasTrustedDirectDialHints(hints: readonly string[]): boolean {
   return hints.some((h) => {
-    if (!h.includes("/tcp/") || h.includes("/p2p-circuit/")) {
-      return false;
-    }
-    if (isLoopbackOrUnspecifiedDialHint(h) || isDockerBridgeGatewayDialHint(h)) {
+    if (!isPrivateLanTcpDialHint(h)) {
       return false;
     }
     const match = h.match(/\/tcp\/(\d+)(?:\/|$)/);

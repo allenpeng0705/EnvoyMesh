@@ -125,7 +125,11 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
           pendingRefreshRef.current = false;
           void runRefresh(generation, {
             silent: true,
-            ...(libp2pConnectedRef.current ? { keepAlive: true } : { warm: true }),
+            ...(libp2pConnectedRef.current
+              ? libp2pDirectRef.current
+                ? { keepAlive: true }
+                : { upgradeRelayToDirect: true }
+              : { warm: true }),
           });
         }
       }
@@ -153,6 +157,11 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
         return;
       }
       if (libp2pConnectedRef.current) {
+        if (libp2pDirectRef.current) {
+          void runRefresh(generation, { silent: true, keepAlive: true });
+        } else {
+          void runRefresh(generation, { silent: true, upgradeRelayToDirect: true });
+        }
         return;
       }
       void runRefresh(generation, { warm: true, silent: false, immediate: true });
@@ -161,8 +170,11 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
     const id = setInterval(() => {
       const now = Date.now();
       if (libp2pConnectedRef.current) {
-        // Probe open paths only — do not tear down relay connections on every poll.
-        void runRefresh(generation, { silent: true, keepAlive: true });
+        if (libp2pDirectRef.current) {
+          void runRefresh(generation, { silent: true, keepAlive: true });
+        } else {
+          void runRefresh(generation, { silent: true, upgradeRelayToDirect: true });
+        }
         return;
       }
       const dueForRedial = now - lastRedialAtRef.current >= forceRedialMs;
