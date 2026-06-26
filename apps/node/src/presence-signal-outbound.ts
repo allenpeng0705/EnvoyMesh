@@ -35,6 +35,7 @@ export function ownListenAddrsForPresenceSignal(
 
 export async function broadcastPresenceSignalToBonds(input: {
   mesh: OutboundDeliverMesh;
+  meshPeerId: string;
   profile: NodeProfile;
   listenAddrs: readonly string[];
   bondOwnerIds: string[];
@@ -44,7 +45,7 @@ export async function broadcastPresenceSignalToBonds(input: {
   ) => Promise<{ peerId: string; listenAddrs?: string[] } | undefined>;
   dialHintsFor: (peerId: string, listenAddrs?: string[]) => Promise<string[]>;
 }): Promise<{ sent: number; skipped: number }> {
-  const meshPeerId = input.mesh.peerId?.trim() ?? "";
+  const meshPeerId = input.meshPeerId.trim();
   const listenAddrs = ownListenAddrsForPresenceSignal(meshPeerId, input.listenAddrs);
   if (listenAddrs.length === 0 || input.bondOwnerIds.length === 0) {
     return { sent: 0, skipped: input.bondOwnerIds.length };

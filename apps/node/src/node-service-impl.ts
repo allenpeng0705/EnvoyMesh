@@ -1660,6 +1660,7 @@ class NodeServiceImpl implements NodeService {
     try {
       await broadcastPresenceSignalToBonds({
         mesh,
+        meshPeerId: mesh.peerId,
         profile,
         listenAddrs: mesh.multiaddrs ?? [],
         bondOwnerIds,
