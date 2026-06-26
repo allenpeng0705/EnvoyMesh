@@ -139,12 +139,12 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
       expect(closeConnectionsToPeer).not.toHaveBeenCalled();
     });
 
-    it("upgradeRelayToDirect attempts direct dial without tearing down relay first", async () => {
+    it("upgradeRelayToDirect closes relay and attempts direct dial (33aa02e model)", async () => {
       getPeerConnectionInfo.mockReturnValue({ connected: true, direct: false });
 
       await node.warmContactConnection(PEER_OWNER_ID, { upgradeRelayToDirect: true });
 
-      expect(closeConnectionsToPeer).not.toHaveBeenCalled();
+      expect(closeConnectionsToPeer).toHaveBeenCalledWith(TRANSPORT_PEER_ID);
       expect(ensurePeerReachable).toHaveBeenCalledTimes(1);
     });
 
@@ -155,39 +155,35 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
       expect(ensurePeerReachable).toHaveBeenCalledTimes(1);
     });
 
-    it("keepAlive avoids redial when probe blips but libp2p still connected", async () => {
+    it("keepAlive returns probe result even when probe blips (33aa02e model)", async () => {
       probeBondedPeerConnection.mockResolvedValueOnce({ connected: false, direct: false });
-      getPeerConnectionInfo
-        .mockReturnValueOnce({ connected: true, direct: true })
-        .mockReturnValueOnce({ connected: true, direct: true });
+      getPeerConnectionInfo.mockReturnValue({ connected: true, direct: true });
 
       const info = await node.warmContactConnection(PEER_OWNER_ID, { keepAlive: true });
 
       expect(probeBondedPeerConnection).toHaveBeenCalledWith(TRANSPORT_PEER_ID);
       expect(ensurePeerReachable).not.toHaveBeenCalled();
-      expect(info).toEqual({ connected: true, direct: true });
+      expect(info).toEqual({ connected: false, direct: false });
     });
 
-    it("keepAlive redials when probe and libp2p both report disconnected", async () => {
+    it("keepAlive returns failed probe without redial (33aa02e model)", async () => {
       probeBondedPeerConnection.mockResolvedValueOnce({ connected: false, direct: false });
-      getPeerConnectionInfo
-        .mockReturnValueOnce({ connected: true, direct: true })
-        .mockReturnValueOnce({ connected: false, direct: false });
+      getPeerConnectionInfo.mockReturnValue({ connected: true, direct: true });
 
       const info = await node.warmContactConnection(PEER_OWNER_ID, { keepAlive: true });
 
       expect(probeBondedPeerConnection).toHaveBeenCalledWith(TRANSPORT_PEER_ID);
-      expect(ensurePeerReachable).toHaveBeenCalledTimes(1);
-      expect(info).toEqual({ connected: true, direct: true });
+      expect(ensurePeerReachable).not.toHaveBeenCalled();
+      expect(info).toEqual({ connected: false, direct: false });
     });
 
-    it("keepAlive skips probe when the path was recently verified", async () => {
+    it("keepAlive still probes when the path was recently verified (33aa02e model)", async () => {
       const { markOutboundPeerVerified } = await import("../src/outbound-peer-freshness.js");
       markOutboundPeerVerified(TRANSPORT_PEER_ID);
 
       const info = await node.warmContactConnection(PEER_OWNER_ID, { keepAlive: true });
 
-      expect(probeBondedPeerConnection).not.toHaveBeenCalled();
+      expect(probeBondedPeerConnection).toHaveBeenCalledWith(TRANSPORT_PEER_ID);
       expect(ensurePeerReachable).not.toHaveBeenCalled();
       expect(info).toEqual({ connected: true, direct: true });
     });

@@ -1460,7 +1460,7 @@ export class EnvoyMesh {
         if (before.direct || !canUpgradeRelayToDirect) {
           return before;
         }
-        // Upgrade-on-success: keep relay path open while attempting direct dial below.
+        await this.closeConnectionsToPeer(peerIdStr);
       }
     }
     if (peerIdStr && sendOptions?.verifyConnection && !sendOptions?.forceFreshDial) {
@@ -1483,13 +1483,6 @@ export class EnvoyMesh {
       const detail = meshErrorMessage(e);
       console.warn(`[network] ensurePeerReachable failed for ${target.slice(0, 24)}…: ${detail}`);
       return { connected: false, direct: false };
-    }
-    if (peerIdStr && canUpgradeRelayToDirect) {
-      const after = this.getPeerConnectionInfo(peerIdStr);
-      if (after.connected && after.direct) {
-        await this.closeRelayConnectionsToPeer(peerIdStr);
-        return this.getPeerConnectionInfo(peerIdStr);
-      }
     }
     return peerIdStr ? this.getPeerConnectionInfo(peerIdStr) : { connected: false, direct: false };
   }

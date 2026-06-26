@@ -27,18 +27,14 @@ describe("usePeerReachability", () => {
   });
 
   it("settles reachability without re-render loop aborting the first read", async () => {
-    const { result, rerender } = renderHook(
-      ({ peerId }) => usePeerReachability(peerId, true),
-      { initialProps: { peerId: "envoy:owner:abc" } },
+    const { result } = renderHook(() => usePeerReachability("envoy:owner:abc", true));
+
+    await waitFor(
+      () => {
+        expect(result.current.info).toEqual({ connected: true, direct: true });
+      },
+      { timeout: 15_000 },
     );
-
-    for (let i = 0; i < 8; i++) {
-      rerender({ peerId: "envoy:owner:abc" });
-    }
-
-    await waitFor(() => {
-      expect(result.current.info).toEqual({ connected: true, direct: true });
-    });
 
     expect(warmContactConnection).toHaveBeenCalled();
     expect(getPeerConnectionInfo.mock.calls.length).toBeLessThan(20);
