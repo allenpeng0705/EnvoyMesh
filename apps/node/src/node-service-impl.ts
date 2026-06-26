@@ -3092,6 +3092,22 @@ class NodeServiceImpl implements NodeService {
   private async _dialHintsForChat(recipientPeerId: string, peerListenAddrs: string[] | undefined): Promise<string[]> {
     const config = await this._configStore.load();
     const mesh = this._reachableMesh();
+    const mergedListenEarly = mergeDialablePeerListenAddrs(recipientPeerId, peerListenAddrs);
+    if (mergedListenEarly.length > 0) {
+      const fromListen = prioritizeHintsWithPathMemory(
+        recipientPeerId,
+        await buildOutboundDialHints({
+          recipientPeerId,
+          peerListenAddrs: mergedListenEarly,
+          discoverySeedStore: this._discoverySeedStore,
+          config,
+          profileDir: this._profileDir,
+        }),
+      );
+      if (fromListen.length > 0) {
+        return fromListen;
+      }
+    }
     const peerStoreAddrs =
       mesh && typeof mesh.getPeerStoreDialHints === "function"
         ? await mesh.getPeerStoreDialHints(recipientPeerId)
@@ -11873,7 +11889,7 @@ class NodeServiceImpl implements NodeService {
     }
 
     const needsProbe = options?.keepAlive === true || options?.verifyConnection === true;
-    if (existing.connected && !options?.redial && !options?.upgradeRelayToDirect) {
+    if (existing.connected && !options?.redial && !options?.upgradeRelayToDirect && !options?.force) {
       if (needsProbe) {
         const probeKind = options?.verifyConnection ? "verify_probe" : "keepalive_probe";
         if (!guardDial(probeKind)) {
@@ -11913,8 +11929,11 @@ class NodeServiceImpl implements NodeService {
       options: {
         redial: options?.redial,
         upgradeRelayToDirect: options?.upgradeRelayToDirect,
+        keepAlive: options?.keepAlive,
+        verifyConnection: options?.verifyConnection,
       },
       existing: currentConn,
+      forceFreshDial: options?.force === true,
     });
     if (!guardDial(dialKind)) {
       return mesh.getPeerConnectionInfo(transportPeerId);
@@ -11927,15 +11946,27 @@ class NodeServiceImpl implements NodeService {
         WARM_CONTACT_DIAL_HINTS_TIMEOUT_MS,
         "_dialHintsForChat",
       );
-    } catch {
-      return mesh.getPeerConnectionInfo(transportPeerId);
+    } catch (err) {
+      console.warn(
+        `[warmContact] dial hints timed out for ${transportPeerId.slice(0, 12)}…:`,
+        err instanceof Error ? err.message : err,
+      );
+      dialHints = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, []);
+    }
+
+    if (dialHints.length === 0) {
+      dialHints = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, dialHints);
+    }
+    if (dialHints.length === 0) {
+      dialHints = [`/p2p/${transportPeerId}`];
     }
 
     const dialableListen = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, dialHints);
     const shouldScrubPeerStore =
-      options?.redial === true ||
-      options?.upgradeRelayToDirect === true ||
-      !existing.connected;
+      dialableListen.length > 0 &&
+      (options?.redial === true ||
+        options?.upgradeRelayToDirect === true ||
+        !existing.connected);
     if (shouldScrubPeerStore) {
       void mesh.scrubPeerStoreDialHints(transportPeerId, dialableListen);
     }
@@ -11946,6 +11977,7 @@ class NodeServiceImpl implements NodeService {
 
     const tearingDown =
       options?.redial === true ||
+      options?.force === true ||
       (needsProbe && !options?.keepAlive);
     if (tearingDown) {
       try {
@@ -11959,6 +11991,7 @@ class NodeServiceImpl implements NodeService {
       dialHints,
       preferCircuitHints,
       forceFreshDial:
+        options?.force === true ||
         options?.redial === true ||
         !existing.connected ||
         options?.upgradeRelayToDirect === true ||

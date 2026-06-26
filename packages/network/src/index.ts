@@ -511,6 +511,9 @@ export class EnvoyMesh {
       ],
       idStr,
     );
+    if (replacement.length === 0) {
+      return existingGood;
+    }
     try {
       await this.requireNode().peerStore.patch(peerIdFromString(idStr), {
         multiaddrs: replacement.map((a) => ma(a)),

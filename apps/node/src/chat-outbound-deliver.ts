@@ -163,7 +163,10 @@ export async function prepareOutboundPeerConnection(input: {
       return false;
     }
     try {
-      const result = await input.mesh.ensurePeerReachable(input.transportPeerId, input.protocol, warmOpts);
+      const result = await input.mesh.ensurePeerReachable(input.transportPeerId, input.protocol, {
+        ...warmOpts,
+        forceFreshDial: true,
+      });
       if (result.connected) {
         markOutboundPeerVerified(input.transportPeerId);
         recordSuccessfulOutboundPath(

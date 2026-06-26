@@ -67,7 +67,7 @@ describe("usePeerReachability", () => {
     expect(warmContactConnection).not.toHaveBeenCalled();
   });
 
-  it("reports offline when warm cannot connect", async () => {
+  it("reports offline when warm cannot connect and keeps retrying in the background", async () => {
     getPeerConnectionInfo.mockResolvedValue({ connected: false, direct: false });
     warmContactConnection.mockResolvedValue({ connected: false, direct: false });
 
@@ -77,6 +77,7 @@ describe("usePeerReachability", () => {
       expect(result.current.info).toEqual({ connected: false, direct: false });
     });
     expect(result.current.checking).toBe(false);
+    expect(warmContactConnection).toHaveBeenCalled();
   });
 
   it("uses keepAlive on poll when already connected", async () => {

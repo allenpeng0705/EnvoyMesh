@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { PeerConnectionInfo } from "@envoymesh/api";
 import { useNodeService } from "./useNodeService.js";
 import {
@@ -27,13 +27,14 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
   const refreshInFlightRef = useRef(false);
   const pendingRefreshRef = useRef(false);
   const peerGenerationRef = useRef(0);
-  const sessionStartedRef = useRef(false);
 
   const pollMs = enabled ? REACHABILITY_OPEN_CHAT_POLL_MS : REACHABILITY_POLL_MS;
   const minRedialMs = enabled ? REACHABILITY_OPEN_CHAT_MIN_REDIAL_MS : REACHABILITY_MIN_REDIAL_MS;
-  const hysteresisOpts = enabled
-    ? { stablePathPolls: REACHABILITY_OPEN_CHAT_STABLE_PATH_POLLS }
-    : undefined;
+  const hysteresisOpts = useMemo(
+    () =>
+      enabled ? { stablePathPolls: REACHABILITY_OPEN_CHAT_STABLE_PATH_POLLS } : undefined,
+    [enabled],
+  );
 
   const applyReading = useCallback(
     (next: PeerConnectionInfo, generation: number, opts?: { immediate?: boolean }) => {
@@ -111,7 +112,7 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
       } catch {
         libp2pConnectedRef.current = false;
         libp2pDirectRef.current = false;
-        applyReading({ connected: false, direct: false }, generation, { immediate: true });
+        applyReading({ connected: false, direct: false }, generation);
       } finally {
         refreshInFlightRef.current = false;
         if (showChecking) setChecking(false);
@@ -127,40 +128,29 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
     [applyReading, enabled, peerOwnerId],
   );
 
-  // Reset only when the selected contact changes.
-  useEffect(() => {
-    peerGenerationRef.current += 1;
-    hysteresisRef.current = createReachabilityHysteresisState();
-    lastRedialAtRef.current = 0;
-    libp2pConnectedRef.current = false;
-    libp2pDirectRef.current = false;
-    sessionStartedRef.current = false;
-    setInfo(null);
-    setChecking(false);
-  }, [peerOwnerId]);
-
   useEffect(() => {
     if (!enabled || !peerOwnerId || !nodeService.isConnected || !nodeService.isReady) {
-      sessionStartedRef.current = false;
       setChecking(false);
       return;
     }
 
+    peerGenerationRef.current += 1;
     const generation = peerGenerationRef.current;
+    hysteresisRef.current = createReachabilityHysteresisState();
+    lastRedialAtRef.current = 0;
+    libp2pConnectedRef.current = false;
+    libp2pDirectRef.current = false;
 
-    if (!sessionStartedRef.current) {
-      sessionStartedRef.current = true;
-      void (async () => {
-        await runRefresh(generation, { verifyOnly: true, silent: true, immediate: true });
-        if (generation !== peerGenerationRef.current) {
-          return;
-        }
-        if (libp2pConnectedRef.current) {
-          return;
-        }
-        void runRefresh(generation, { warm: true, silent: false });
-      })();
-    }
+    void (async () => {
+      await runRefresh(generation, { verifyOnly: true, silent: true, immediate: true });
+      if (generation !== peerGenerationRef.current) {
+        return;
+      }
+      if (libp2pConnectedRef.current) {
+        return;
+      }
+      void runRefresh(generation, { warm: true, silent: false, immediate: true });
+    })();
 
     const id = setInterval(() => {
       const now = Date.now();
@@ -172,7 +162,8 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
       const dueForRedial = now - lastRedialAtRef.current >= minRedialMs;
       void runRefresh(generation, {
         silent: true,
-        ...(dueForRedial ? { warm: true } : { verifyOnly: true }),
+        verifyOnly: !dueForRedial,
+        warm: dueForRedial,
       });
     }, pollMs);
 
