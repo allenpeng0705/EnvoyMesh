@@ -19,6 +19,7 @@ import { MobileApp } from "./MobileApp.js";
 import "@envoymesh/social/reset.css";
 import "@envoymesh/social/design-tokens.css";
 import "@envoymesh/social/styles.css";
+import "@envoymesh/social/styles/chat.css";
 import "./views/views.css";
 
 // ---------------------------------------------------------------------------

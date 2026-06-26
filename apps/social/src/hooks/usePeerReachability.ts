@@ -10,6 +10,7 @@ import {
   REACHABILITY_OPEN_CHAT_POLL_MS,
   REACHABILITY_OPEN_CHAT_STABLE_PATH_POLLS,
   REACHABILITY_POLL_MS,
+  REACHABILITY_STABLE_PATH_POLLS,
 } from "../lib/peer-reachability-hysteresis.js";
 
 /** Live libp2p reachability for a bonded contact (direct P2P or relay circuit). */
@@ -30,9 +31,9 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
 
   const pollMs = enabled ? REACHABILITY_OPEN_CHAT_POLL_MS : REACHABILITY_POLL_MS;
   const minRedialMs = enabled ? REACHABILITY_OPEN_CHAT_MIN_REDIAL_MS : REACHABILITY_MIN_REDIAL_MS;
-  const hysteresisOpts = enabled
-    ? { stablePathPolls: REACHABILITY_OPEN_CHAT_STABLE_PATH_POLLS }
-    : undefined;
+  const stablePathPolls = enabled
+    ? REACHABILITY_OPEN_CHAT_STABLE_PATH_POLLS
+    : REACHABILITY_STABLE_PATH_POLLS;
 
   const applyReading = useCallback(
     (next: PeerConnectionInfo, generation: number, opts?: { immediate?: boolean }) => {
@@ -45,14 +46,14 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
       const result = applyReachabilityHysteresis(hysteresisRef.current, next, now, {
         offlineGraceMs: REACHABILITY_OFFLINE_GRACE_MS,
         immediate: opts?.immediate,
-        ...hysteresisOpts,
+        stablePathPolls,
       });
       hysteresisRef.current = result.state;
       if (result.shouldUpdate && result.info) {
         setInfo(result.info);
       }
     },
-    [hysteresisOpts],
+    [stablePathPolls],
   );
 
   const runRefresh = useCallback(
@@ -142,6 +143,7 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
     lastRedialAtRef.current = 0;
     libp2pConnectedRef.current = false;
     libp2pDirectRef.current = false;
+    setInfo(null);
 
     void (async () => {
       await runRefresh(generation, { verifyOnly: true, silent: true, immediate: true });
@@ -156,7 +158,7 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
         }
         return;
       }
-      void runRefresh(generation, { warm: true, silent: false });
+      void runRefresh(generation, { warm: true, silent: true });
     })();
 
     const id = setInterval(() => {
