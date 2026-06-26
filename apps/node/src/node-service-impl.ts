@@ -864,10 +864,10 @@ class NodeServiceImpl implements NodeService {
   private _bondWarmTimer?: ReturnType<typeof setInterval>;
   /** Skip periodic bond warm when libp2p already has this many open connections. */
   private static readonly BOND_WARM_MAX_CONNECTIONS = 64;
-  /** First follow-up warm shortly after mesh online (profile/dial hints may still be settling). */
-  private static readonly BOND_WARM_STARTUP_DELAY_MS = 8_000;
+  /** First bond warm after mesh settles (relay check-in, profile sync). */
+  private static readonly BOND_WARM_STARTUP_DELAY_MS = 45_000;
   /** Periodic keepalive dial for bonded contacts. */
-  private static readonly BOND_WARM_INTERVAL_MS = 45_000;
+  private static readonly BOND_WARM_INTERVAL_MS = 90_000;
   /** Defer startup profile refresh until mesh paths settle (avoids stale LAN dial storms). */
   private static readonly PROFILE_REFRESH_STARTUP_DELAY_MS = 90_000;
   private _profileRefreshStartupTimer?: ReturnType<typeof setTimeout>;
@@ -3600,7 +3600,6 @@ class NodeServiceImpl implements NodeService {
         );
       }
     } catch (err) {
-      this._lastLibp2pTransportByOwner.delete(input.targetOwnerId);
       console.warn(
         `[chat-attachment] chat.message delivery failed for ${input.targetOwnerId.slice(0, 24)}…:`,
         err instanceof Error ? err.message : err,
@@ -4377,7 +4376,6 @@ class NodeServiceImpl implements NodeService {
         deliverResult = await this._deliverChatEnvelope(transportPeerId, envelope, dialHints, listenAddrs);
       }
     } catch (err) {
-      this._lastLibp2pTransportByOwner.delete(targetOwnerId);
       console.warn(
         `[sendChat] delivery failed for ${targetOwnerId.slice(0, 24)}… (persisting locally):`,
         err instanceof Error ? err.message : err,
@@ -11923,7 +11921,6 @@ class NodeServiceImpl implements NodeService {
     const runWarm = (): void => {
       void this._warmAllBondedContacts();
     };
-    void this._warmAllBondedContacts();
     setTimeout(runWarm, NodeServiceImpl.BOND_WARM_STARTUP_DELAY_MS);
     this._bondWarmTimer = setInterval(runWarm, NodeServiceImpl.BOND_WARM_INTERVAL_MS);
   }
@@ -11961,7 +11958,7 @@ class NodeServiceImpl implements NodeService {
               continue;
             }
           } catch {
-            /* fall through to keepAlive warm */
+            continue;
           }
           await this.warmContactConnection(bond.peerOwnerId, { keepAlive: true });
           continue;

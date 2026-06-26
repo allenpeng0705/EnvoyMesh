@@ -2,8 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { PeerConnectionInfo } from "@envoymesh/api";
 import { useNodeService } from "./useNodeService.js";
 
-/** Poll bonded contacts for libp2p reachability; warms paths when disconnected. */
-export const BONDS_REACHABILITY_POLL_MS = 25_000;
+/** Read libp2p reachability for sidebar dots — passive polls, rate-limited warm. */
+export const BONDS_REACHABILITY_POLL_MS = 30_000;
+/** Minimum gap between outbound dials for the same contact (avoid dial storms). */
+export const BONDS_REACHABILITY_WARM_COOLDOWN_MS = 90_000;
 
 export function useBondsReachability(peerOwnerIds: readonly string[], enabled = true) {
   const nodeService = useNodeService();
@@ -11,6 +13,7 @@ export function useBondsReachability(peerOwnerIds: readonly string[], enabled = 
   nodeServiceRef.current = nodeService;
 
   const [map, setMap] = useState<Map<string, PeerConnectionInfo>>(() => new Map());
+  const lastWarmAtRef = useRef<Map<string, number>>(new Map());
   const idsKey = peerOwnerIds.join("\n");
 
   const refresh = useCallback(async () => {
@@ -18,14 +21,17 @@ export function useBondsReachability(peerOwnerIds: readonly string[], enabled = 
     if (!enabled || peerOwnerIds.length === 0 || !ns.isConnected || !ns.isReady) {
       return;
     }
+    const now = Date.now();
     const entries = await Promise.all(
       peerOwnerIds.map(async (ownerId) => {
         try {
           let info = await ns.getPeerConnectionInfo(ownerId);
           if (!info.connected) {
-            info = await ns.warmContactConnection(ownerId);
-          } else {
-            info = await ns.warmContactConnection(ownerId, { keepAlive: true });
+            const lastWarm = lastWarmAtRef.current.get(ownerId) ?? 0;
+            if (now - lastWarm >= BONDS_REACHABILITY_WARM_COOLDOWN_MS) {
+              lastWarmAtRef.current.set(ownerId, now);
+              info = await ns.warmContactConnection(ownerId);
+            }
           }
           return [ownerId, info] as const;
         } catch {

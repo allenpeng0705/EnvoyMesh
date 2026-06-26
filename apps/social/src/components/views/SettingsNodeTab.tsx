@@ -105,33 +105,34 @@ export function SettingsNodeTab() {
   const [bondConnectionInfo, setBondConnectionInfo] = useState<Map<string, PeerConnectionInfo>>(new Map());
   const [bondConnectionLoading, setBondConnectionLoading] = useState(false);
 
-  const refreshBondConnectionInfo = useCallback(async () => {
-    if (bonds.length === 0) {
-      setBondConnectionInfo(new Map());
-      return;
-    }
-    setBondConnectionLoading(true);
-    try {
-      const entries = await Promise.all(
-        bonds.map(async (bond) => {
-          try {
-            let info = await nodeService.getPeerConnectionInfo(bond.peerOwnerId);
-            if (!info.connected) {
-              info = await nodeService.warmContactConnection(bond.peerOwnerId);
-            } else {
-              info = await nodeService.warmContactConnection(bond.peerOwnerId, { keepAlive: true });
+  const refreshBondConnectionInfo = useCallback(
+    async (opts?: { warmDisconnected?: boolean }) => {
+      if (bonds.length === 0) {
+        setBondConnectionInfo(new Map());
+        return;
+      }
+      setBondConnectionLoading(true);
+      try {
+        const entries = await Promise.all(
+          bonds.map(async (bond) => {
+            try {
+              let info = await nodeService.getPeerConnectionInfo(bond.peerOwnerId);
+              if (opts?.warmDisconnected && !info.connected) {
+                info = await nodeService.warmContactConnection(bond.peerOwnerId);
+              }
+              return [bond.peerOwnerId, info] as const;
+            } catch {
+              return [bond.peerOwnerId, { connected: false, direct: false }] as const;
             }
-            return [bond.peerOwnerId, info] as const;
-          } catch {
-            return [bond.peerOwnerId, { connected: false, direct: false }] as const;
-          }
-        }),
-      );
-      setBondConnectionInfo(new Map(entries));
-    } finally {
-      setBondConnectionLoading(false);
-    }
-  }, [bonds, nodeService]);
+          }),
+        );
+        setBondConnectionInfo(new Map(entries));
+      } finally {
+        setBondConnectionLoading(false);
+      }
+    },
+    [bonds, nodeService],
+  );
 
   const toggleTwoNatStep = useCallback((stepId: string, checked: boolean) => {
     setTwoNatChecklistDone((prev) => {
@@ -187,12 +188,12 @@ export function SettingsNodeTab() {
     void refreshBondConnectionInfo();
   }, [refreshBondConnectionInfo]);
 
-  // Keep bonded-peer status fresh while Settings is open.
+  // Passive status refresh while Settings is open (no outbound dials).
   useEffect(() => {
     if (nodeStatus !== "running") return;
     const id = setInterval(() => {
       void refreshBondConnectionInfo();
-    }, 25_000);
+    }, 45_000);
     return () => clearInterval(id);
   }, [nodeStatus, refreshBondConnectionInfo]);
 
@@ -606,7 +607,7 @@ export function SettingsNodeTab() {
           className="settings-button"
           style={{ marginTop: 8 }}
           disabled={bondConnectionLoading}
-          onClick={() => { void refreshBondConnectionInfo(); }}
+          onClick={() => { void refreshBondConnectionInfo({ warmDisconnected: true }); }}
         >
           {t("settings.network.networkStatus.refresh")}
         </button>
