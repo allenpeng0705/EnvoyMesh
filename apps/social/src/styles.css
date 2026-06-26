@@ -1189,13 +1189,24 @@ textarea::placeholder {
 }
 
 .message.outgoing {
-  background: linear-gradient(135deg, var(--color-primary) 0%, color-mix(in srgb, var(--color-primary) 90%, var(--color-secondary)) 100%);
-  color: var(--color-primary-on);
-  box-shadow: var(--shadow-sm), 0 2px 8px color-mix(in srgb, var(--color-primary) 25%, transparent);
+  background: linear-gradient(
+    165deg,
+    var(--message-outgoing-bg) 0%,
+    color-mix(in srgb, var(--message-outgoing-bg-alt) 88%, var(--message-outgoing-bg)) 100%
+  );
+  color: var(--message-outgoing-text);
+  border: 1px solid var(--message-outgoing-code-border);
+  box-shadow:
+    var(--shadow-xs),
+    0 1px 3px var(--message-outgoing-shadow),
+    inset 0 1px 0 var(--message-outgoing-highlight);
 }
 
 .message.outgoing:hover {
-  box-shadow: var(--shadow-md), 0 4px 12px color-mix(in srgb, var(--color-primary) 30%, transparent);
+  box-shadow:
+    var(--shadow-sm),
+    0 2px 6px var(--message-outgoing-shadow),
+    inset 0 1px 0 var(--message-outgoing-highlight);
   transform: translateY(-1px);
 }
 
@@ -1271,7 +1282,7 @@ textarea::placeholder {
 
 .message.outgoing .message-text,
 .mv-message.outgoing .message-text {
-  color: var(--color-primary-on);
+  color: var(--message-outgoing-text);
 }
 
 /* ── Markdown styles inside chat messages ──────────────────────────────── */
@@ -1310,7 +1321,7 @@ textarea::placeholder {
 .message.outgoing .message-text pre,
 .mv-message.outgoing .message-text pre {
   background: var(--message-outgoing-overlay);
-  border-color: rgba(255, 255, 255, 0.2);
+  border-color: var(--message-outgoing-code-border);
 }
 
 .message-text pre code,
@@ -1345,8 +1356,9 @@ textarea::placeholder {
 }
 .message.outgoing .message-text blockquote,
 .mv-message.outgoing .message-text blockquote {
-  border-left-color: rgba(255, 255, 255, 0.6);
+  border-left-color: var(--message-outgoing-quote-border);
   background: var(--message-outgoing-overlay);
+  color: var(--message-outgoing-text);
 }
 
 .message-text a,
@@ -1356,7 +1368,7 @@ textarea::placeholder {
 }
 .message.outgoing .message-text a,
 .mv-message.outgoing .message-text a {
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--message-outgoing-link);
 }
 
 .message-text h1, .message-text h2, .message-text h3,
@@ -1422,7 +1434,7 @@ textarea::placeholder {
 }
 
 .message.outgoing .message-time {
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--message-outgoing-time);
 }
 
 .chat-input {

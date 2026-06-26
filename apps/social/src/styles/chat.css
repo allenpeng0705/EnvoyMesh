@@ -1379,6 +1379,45 @@
   -webkit-user-select: text;
 }
 
+.message-bubble.outgoing .message-bubble-body .message-text,
+.message-bubble.outgoing .message-bubble-body .ai-message-text,
+.message-bubble.outgoing-agent .message-bubble-body .message-text,
+.message-bubble.ai-outgoing .message-bubble-body .ai-message-text {
+  color: var(--message-outgoing-text);
+}
+
+.message-bubble.outgoing .message-bubble-body .message-text a,
+.message-bubble.outgoing .message-bubble-body .ai-message-text a,
+.message-bubble.outgoing-agent .message-bubble-body .message-text a,
+.message-bubble.ai-outgoing .message-bubble-body .ai-message-text a {
+  color: var(--message-outgoing-link);
+}
+
+.message-bubble.outgoing .message-bubble-body .message-text code,
+.message-bubble.outgoing .message-bubble-body .ai-message-text code,
+.message-bubble.outgoing-agent .message-bubble-body .message-text code,
+.message-bubble.ai-outgoing .message-bubble-body .ai-message-text code {
+  background: var(--message-outgoing-code-bg);
+  color: var(--message-outgoing-text);
+}
+
+.message-bubble.outgoing .message-bubble-body .message-text pre,
+.message-bubble.outgoing .message-bubble-body .ai-message-text pre,
+.message-bubble.outgoing-agent .message-bubble-body .message-text pre,
+.message-bubble.ai-outgoing .message-bubble-body .ai-message-text pre {
+  background: var(--message-outgoing-overlay);
+  border-color: var(--message-outgoing-code-border);
+}
+
+.message-bubble.outgoing .message-bubble-body .message-text blockquote,
+.message-bubble.outgoing .message-bubble-body .ai-message-text blockquote,
+.message-bubble.outgoing-agent .message-bubble-body .message-text blockquote,
+.message-bubble.ai-outgoing .message-bubble-body .ai-message-text blockquote {
+  border-left-color: var(--message-outgoing-quote-border);
+  background: var(--message-outgoing-overlay);
+  color: var(--message-outgoing-text);
+}
+
 .message-bubble-meta,
 .message-bubble-footer,
 .message-bubble-badge,
@@ -1438,8 +1477,8 @@
 
 .message-bubble.outgoing .message-bubble-body ::selection,
 .message-bubble.ai-outgoing .message-bubble-body ::selection {
-  background: rgb(255 255 255 / 0.35);
-  color: var(--color-primary-on);
+  background: var(--message-outgoing-selection-bg);
+  color: var(--message-outgoing-text);
 }
 
 .message-bubble.incoming-peer .message-bubble-body ::selection,
@@ -1549,27 +1588,31 @@
 }
 
 .message-bubble.outgoing,
-.message-bubble.ai-outgoing,
 .message-bubble.outgoing-agent {
-  background: linear-gradient(145deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
-  color: var(--color-primary-on);
+  background: linear-gradient(
+    165deg,
+    var(--message-outgoing-bg) 0%,
+    color-mix(in srgb, var(--message-outgoing-bg-alt) 88%, var(--message-outgoing-bg)) 100%
+  );
+  color: var(--message-outgoing-text);
   border: 1px solid var(--message-outgoing-code-border);
+  box-shadow:
+    0 1px 2px var(--message-outgoing-shadow),
+    inset 0 1px 0 var(--message-outgoing-highlight);
 }
 
 .message-bubble.outgoing .message-bubble-badge,
-.message-bubble.ai-outgoing .message-bubble-badge,
 .message-bubble.outgoing-agent .message-bubble-badge {
   color: var(--message-outgoing-time);
 }
 
 .message-bubble.outgoing .message-bubble-time,
-.message-bubble.ai-outgoing .message-bubble-time,
 .message-bubble.outgoing-agent .message-bubble-time {
   color: var(--message-outgoing-time);
 }
 
 .message-bubble.outgoing-agent .message-bubble-badge {
-  color: color-mix(in srgb, var(--color-primary-on) 85%, var(--color-role-agent));
+  color: color-mix(in srgb, var(--message-outgoing-text) 72%, var(--color-role-agent));
 }
 
 .message-bubble.incoming-peer {
@@ -1618,8 +1661,16 @@
 }
 
 .message-bubble.ai-outgoing {
-  background: linear-gradient(145deg, var(--color-secondary) 0%, var(--color-secondary-hover) 100%);
-  color: var(--color-secondary-on);
+  background: linear-gradient(
+    165deg,
+    var(--message-ai-outgoing-bg) 0%,
+    color-mix(in srgb, var(--message-ai-outgoing-bg-alt) 88%, var(--message-ai-outgoing-bg)) 100%
+  );
+  color: var(--message-outgoing-text);
+  border: 1px solid var(--message-outgoing-code-border);
+  box-shadow:
+    0 1px 2px var(--message-outgoing-shadow),
+    inset 0 1px 0 var(--message-outgoing-highlight);
 }
 
 .message-bubble.ai-outgoing .message-bubble-badge,

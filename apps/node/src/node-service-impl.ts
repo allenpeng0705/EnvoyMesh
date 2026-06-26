@@ -11884,6 +11884,11 @@ class NodeServiceImpl implements NodeService {
             markOutboundPeerVerified(transportPeerId);
             return probed;
           }
+          // Transient ping failure on an open path — do not scrub/redial on keepAlive.
+          const stillOpen = mesh.getPeerConnectionInfo(transportPeerId);
+          if (stillOpen.connected) {
+            return stillOpen;
+          }
           // stale — fall through to redial
         }
       } else {
@@ -11903,7 +11908,13 @@ class NodeServiceImpl implements NodeService {
     }
 
     const dialableListen = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, dialHints);
-    void mesh.scrubPeerStoreDialHints(transportPeerId, dialableListen);
+    const shouldScrubPeerStore =
+      options?.redial === true ||
+      options?.upgradeRelayToDirect === true ||
+      !existing.connected;
+    if (shouldScrubPeerStore) {
+      void mesh.scrubPeerStoreDialHints(transportPeerId, dialableListen);
+    }
 
     const preferCircuitHints = shouldPreferCircuitDialHints(listenAddrs, dialHints, transportPeerId);
 
@@ -11982,9 +11993,12 @@ class NodeServiceImpl implements NodeService {
               continue;
             }
           } catch {
-            /* fall through to keepAlive warm */
+            /* fall through to warm */
           }
-          await this.warmContactConnection(bond.peerOwnerId, { keepAlive: true });
+          await this.warmContactConnection(
+            bond.peerOwnerId,
+            info.direct ? { verifyOnly: true } : { keepAlive: true },
+          );
           continue;
         }
         await this.warmContactConnection(bond.peerOwnerId);

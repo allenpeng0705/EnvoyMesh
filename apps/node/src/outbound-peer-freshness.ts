@@ -1,5 +1,5 @@
 /** Skip redundant pre-send verify when this peer was reachable recently. */
-export const OUTBOUND_PEER_FRESHNESS_MS = 45_000;
+export const OUTBOUND_PEER_FRESHNESS_MS = 90_000;
 
 const lastVerifiedAt = new Map<string, number>();
 
