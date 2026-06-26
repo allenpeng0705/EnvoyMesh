@@ -6,6 +6,7 @@ import {
   createReachabilityHysteresisState,
   REACHABILITY_MIN_REDIAL_MS,
   REACHABILITY_OFFLINE_GRACE_MS,
+  REACHABILITY_OPEN_CHAT_FORCE_REDIAL_MS,
   REACHABILITY_OPEN_CHAT_MIN_REDIAL_MS,
   REACHABILITY_OPEN_CHAT_POLL_MS,
   REACHABILITY_OPEN_CHAT_STABLE_PATH_POLLS,
@@ -23,13 +24,15 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
   const hysteresisRef = useRef(createReachabilityHysteresisState());
   const libp2pConnectedRef = useRef(false);
   const libp2pDirectRef = useRef(false);
+  const lastWarmAtRef = useRef(0);
   const lastRedialAtRef = useRef(0);
   const refreshInFlightRef = useRef(false);
   const pendingRefreshRef = useRef(false);
   const peerGenerationRef = useRef(0);
 
   const pollMs = enabled ? REACHABILITY_OPEN_CHAT_POLL_MS : REACHABILITY_POLL_MS;
-  const minRedialMs = enabled ? REACHABILITY_OPEN_CHAT_MIN_REDIAL_MS : REACHABILITY_MIN_REDIAL_MS;
+  const minWarmMs = enabled ? REACHABILITY_OPEN_CHAT_MIN_REDIAL_MS : REACHABILITY_MIN_REDIAL_MS;
+  const forceRedialMs = enabled ? REACHABILITY_OPEN_CHAT_FORCE_REDIAL_MS : REACHABILITY_MIN_REDIAL_MS;
   const hysteresisOpts = useMemo(
     () =>
       enabled ? { stablePathPolls: REACHABILITY_OPEN_CHAT_STABLE_PATH_POLLS } : undefined,
@@ -89,12 +92,14 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
         let next: PeerConnectionInfo;
         if (opts?.redial) {
           lastRedialAtRef.current = Date.now();
+          lastWarmAtRef.current = Date.now();
           next = await ns.warmContactConnection(peerOwnerId, {
             redial: true,
             upgradeRelayToDirect: true,
           });
         } else if (opts?.upgradeRelayToDirect) {
           lastRedialAtRef.current = Date.now();
+          lastWarmAtRef.current = Date.now();
           next = await ns.warmContactConnection(peerOwnerId, { upgradeRelayToDirect: true });
         } else if (opts?.verifyConnection) {
           next = await ns.warmContactConnection(peerOwnerId, { verifyConnection: true });
@@ -103,7 +108,7 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
         } else if (opts?.verifyOnly) {
           next = await ns.getPeerConnectionInfo(peerOwnerId);
         } else if (opts?.warm) {
-          lastRedialAtRef.current = Date.now();
+          lastWarmAtRef.current = Date.now();
           next = await ns.warmContactConnection(peerOwnerId);
         } else {
           next = await ns.getPeerConnectionInfo(peerOwnerId);
@@ -137,6 +142,7 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
     peerGenerationRef.current += 1;
     const generation = peerGenerationRef.current;
     hysteresisRef.current = createReachabilityHysteresisState();
+    lastWarmAtRef.current = 0;
     lastRedialAtRef.current = 0;
     libp2pConnectedRef.current = false;
     libp2pDirectRef.current = false;
@@ -159,18 +165,22 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
         void runRefresh(generation, { silent: true, keepAlive: true });
         return;
       }
-      const dueForRedial = now - lastRedialAtRef.current >= minRedialMs;
-      void runRefresh(generation, {
-        silent: true,
-        verifyOnly: !dueForRedial,
-        warm: dueForRedial,
-      });
+      const dueForRedial = now - lastRedialAtRef.current >= forceRedialMs;
+      const dueForWarm = now - lastWarmAtRef.current >= minWarmMs;
+      if (dueForRedial) {
+        void runRefresh(generation, { silent: true, redial: true });
+      } else if (dueForWarm) {
+        void runRefresh(generation, { silent: true, warm: true });
+      } else {
+        void runRefresh(generation, { silent: true, verifyOnly: true, immediate: true });
+      }
     }, pollMs);
 
     return () => clearInterval(id);
   }, [
     enabled,
-    minRedialMs,
+    forceRedialMs,
+    minWarmMs,
     peerOwnerId,
     nodeService.isConnected,
     nodeService.isReady,

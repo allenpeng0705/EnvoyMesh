@@ -871,9 +871,14 @@ class NodeServiceImpl implements NodeService {
   private readonly _nearbyProfileProbeInflight = new Set<string>();
   /** Keeps bonded contacts warm across NAT idle periods. */
   private _bondWarmTimer?: ReturnType<typeof setInterval>;
+  private _bondWarmStartupTimer?: ReturnType<typeof setTimeout>;
   /** Skip periodic bond warm when libp2p already has this many open connections. */
   private static readonly BOND_WARM_MAX_CONNECTIONS = 64;
   private static readonly BOND_WARM_CONCURRENCY = 4;
+  /** First bond warm after mesh settles (relay check-in, profile sync). */
+  private static readonly BOND_WARM_STARTUP_DELAY_MS = 45_000;
+  /** Periodic keepalive dial for bonded contacts. */
+  private static readonly BOND_WARM_INTERVAL_MS = 90_000;
   /** Defer startup profile refresh until mesh paths settle (avoids stale LAN dial storms). */
   private static readonly PROFILE_REFRESH_STARTUP_DELAY_MS = 90_000;
   private _profileRefreshStartupTimer?: ReturnType<typeof setTimeout>;
@@ -1607,15 +1612,8 @@ class NodeServiceImpl implements NodeService {
     })();
   }
 
-  /** One warm pass after dial-state scrub, then periodic keepalive. */
-  private _scheduleBondWarmup(source: string): void {
-    void (async () => {
-      try {
-        await this._warmAllBondedContacts();
-      } catch (err) {
-        console.warn(`[bond-warm] initial warm after ${source} failed:`, err);
-      }
-    })();
+  /** Schedule deferred bond warm — avoids fighting chat-open / relay check-in at startup. */
+  private _scheduleBondWarmup(_source: string): void {
     this._startBondWarmInterval();
   }
 
@@ -3092,22 +3090,6 @@ class NodeServiceImpl implements NodeService {
   private async _dialHintsForChat(recipientPeerId: string, peerListenAddrs: string[] | undefined): Promise<string[]> {
     const config = await this._configStore.load();
     const mesh = this._reachableMesh();
-    const mergedListenEarly = mergeDialablePeerListenAddrs(recipientPeerId, peerListenAddrs);
-    if (mergedListenEarly.length > 0) {
-      const fromListen = prioritizeHintsWithPathMemory(
-        recipientPeerId,
-        await buildOutboundDialHints({
-          recipientPeerId,
-          peerListenAddrs: mergedListenEarly,
-          discoverySeedStore: this._discoverySeedStore,
-          config,
-          profileDir: this._profileDir,
-        }),
-      );
-      if (fromListen.length > 0) {
-        return fromListen;
-      }
-    }
     const peerStoreAddrs =
       mesh && typeof mesh.getPeerStoreDialHints === "function"
         ? await mesh.getPeerStoreDialHints(recipientPeerId)
@@ -9461,6 +9443,7 @@ class NodeServiceImpl implements NodeService {
       this._nodeStatus = "running";
       this.emit("node:status", { status: this._nodeStatus, peerId: this._mesh.peerId });
       this.emit("node:online", { peerId: this._mesh.peerId, multiaddrs: this._mesh.multiaddrs.map(a => a.toString()) });
+      this.emit("node:ready", { timestamp: Date.now() });
       this._scheduleDeferredProfileRefresh("node:online");
       void this.refreshCapabilityIndex().catch((err) => {
         console.warn("[chain] refreshCapabilityIndex after node:online failed:", err);
@@ -12030,10 +12013,14 @@ class NodeServiceImpl implements NodeService {
     if (this._bondWarmTimer) {
       clearInterval(this._bondWarmTimer);
     }
+    if (this._bondWarmStartupTimer) {
+      clearTimeout(this._bondWarmStartupTimer);
+    }
     const runWarm = (): void => {
       void this._warmAllBondedContacts();
     };
-    this._bondWarmTimer = setInterval(runWarm, 60_000);
+    this._bondWarmStartupTimer = setTimeout(runWarm, NodeServiceImpl.BOND_WARM_STARTUP_DELAY_MS);
+    this._bondWarmTimer = setInterval(runWarm, NodeServiceImpl.BOND_WARM_INTERVAL_MS);
   }
 
   private async _warmAllBondedContacts(): Promise<void> {

@@ -1488,10 +1488,18 @@ export function NodeServiceProvider({
     if (connectionPrefs.autoConnect) {
       void nodeService
         .connect()
-        .then(() => {
+        .then(async () => {
           if (!active) return;
           setConnected(wsClient.isConnected());
           setLastError(wsClient.getLastError());
+          try {
+            const row = await nodeService.getNodeStatus();
+            if (active && row.status === "running") {
+              setReady(true);
+            }
+          } catch {
+            /* node may still be starting */
+          }
         })
         .catch((err) => {
           if (!active) return;
@@ -1542,6 +1550,32 @@ export function NodeServiceProvider({
       setReady(false);
     };
   }, [clientFactory, connectionPrefs.wsUrl]);
+
+  // Tauri/desktop: Social often connects before the node child process finishes startNode().
+  useEffect(() => {
+    if (clientFactory || !client || !connected || ready) {
+      return;
+    }
+    let active = true;
+    const probe = async (): Promise<void> => {
+      try {
+        const row = await client.getNodeStatus();
+        if (active && row.status === "running") {
+          setReady(true);
+        }
+      } catch {
+        /* retry until node:ready / node:online arrives */
+      }
+    };
+    void probe();
+    const id = window.setInterval(() => {
+      void probe();
+    }, 500);
+    return () => {
+      active = false;
+      window.clearInterval(id);
+    };
+  }, [clientFactory, client, connected, ready]);
 
   const prevAutoConnectRef = useRef(connectionPrefs.autoConnect);
   useEffect(() => {

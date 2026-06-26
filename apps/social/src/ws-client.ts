@@ -27,6 +27,7 @@ export class WsClient {
   private reconnectAttempts = 0;
   private autoReconnectEnabled = true;
   private readonly maxReconnectDelay = 60000; // 1 minute max
+  private readonly loopbackMaxReconnectDelay = 8000;
   private lastPong = 0;
   private _statusCallbacks = new Set<ConnectionChangeHandler>();
   private _lastError: string | null = null;
@@ -354,11 +355,10 @@ export class WsClient {
   private scheduleReconnect(): void {
     if (this._disposed || this.reconnectTimer || !this.autoReconnectEnabled) return;
 
-    // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 32s, 60s (cap)
-    const delay = Math.min(
-      1000 * Math.pow(2, this.reconnectAttempts),
-      this.maxReconnectDelay
-    );
+    const loopback = /^ws:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//i.test(this.url);
+    const baseDelay = loopback ? 250 : 1000;
+    const cap = loopback ? this.loopbackMaxReconnectDelay : this.maxReconnectDelay;
+    const delay = Math.min(baseDelay * Math.pow(2, this.reconnectAttempts), cap);
     this.reconnectAttempts++;
 
     console.log(`[ws-client] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})...`);

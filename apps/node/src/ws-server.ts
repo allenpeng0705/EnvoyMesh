@@ -332,6 +332,7 @@ export class WsServer {
       "bond:revoked",
       "profile:updated",
       "node:status",
+      "node:ready",
       "node:online",
       "node:offline",
       "peer:discovered",
