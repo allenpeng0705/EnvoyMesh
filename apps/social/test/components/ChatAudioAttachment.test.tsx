@@ -23,6 +23,7 @@ function mockNodeService(overrides: Partial<ReturnType<typeof useNodeService>> =
   (useNodeService as any).mockReturnValue({
     readLibraryItemContent: mockReadLibraryItemContent,
     isConnected: true,
+    on: vi.fn(() => () => undefined),
     ...overrides,
   });
 }

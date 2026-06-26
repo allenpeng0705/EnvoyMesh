@@ -174,6 +174,43 @@ describe("deliverChatEnvelopeWithRetry", () => {
     expect(result).toEqual({ delivered: true, deliveredAt });
   });
 
+  it("binds sendChatExpectReply to mesh so class methods keep this", async () => {
+    const ack = {
+      intent: "chat.delivered",
+      payload: {
+        messageId: "msg-bind",
+        recipientOwnerId: "envoy:owner:abc",
+        deliveredAt: "2026-06-01T00:00:00.000Z",
+      },
+    };
+    const meshLike = {
+      sendChat: vi.fn(),
+      closeConnectionsToPeer: vi.fn().mockResolvedValue(0),
+      ensurePeerReachable: vi.fn().mockResolvedValue({ connected: true, direct: true }),
+      getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: true, direct: true }),
+      sendChatExpectReply(target: string) {
+        if (!this.openOutboundStream) {
+          throw new Error("Cannot read properties of undefined (reading 'openOutboundStream')");
+        }
+        void target;
+        return Promise.resolve(ack);
+      },
+      openOutboundStream: vi.fn(),
+    };
+
+    const result = await deliverChatEnvelopeWithRetry({
+      mesh: meshLike,
+      transportPeerId: "12D3KooWBindPeer",
+      envelope: { ...envelope, messageId: "msg-bind" },
+      dialHints: ["/p2p/12D3KooWBindPeer"],
+      chatProtocol: "/envoy/chat/0.1",
+      maxAttempts: 1,
+    });
+
+    expect(result.delivered).toBe(true);
+    expect(meshLike.openOutboundStream).not.toHaveBeenCalled();
+  });
+
   it("skips pre-send verify when peer was recently verified", async () => {
     resetOutboundPeerFreshnessForTests();
     const transportPeerId = "12D3KooWFreshPeer";

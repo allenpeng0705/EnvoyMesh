@@ -1,5 +1,6 @@
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
 import { CHAT_DELIVERY_ACK_TIMEOUT_MS } from "@envoymesh/protocol";
+import type { WarmContactConnectionOptions } from "@envoymesh/api";
 import type { EnvoyMesh } from "@envoymesh/network";
 import {
   ENVOY_CHAT_PROTOCOL,
@@ -16,6 +17,12 @@ import {
   isOutboundPeerRecentlyVerified,
   markOutboundPeerVerified,
 } from "./outbound-peer-freshness.js";
+import { recordSuccessfulOutboundPath } from "./outbound-path-memory.js";
+import {
+  classifyWarmDialKind,
+  evaluateWarmCoordinator,
+  recordWarmDialStarted,
+} from "./outbound-warm-coordinator.js";
 import { withOutboundSendLock } from "./outbound-send-lock.js";
 import { webrtcCallTrace, webrtcCallWarn, shortCallId } from "./webrtc-call-trace.js";
 
@@ -79,6 +86,7 @@ export async function prepareOutboundPeerConnection(input: {
   dialHints: string[];
   preferCircuitHints: boolean;
   forceFreshDial: boolean;
+  warmSource?: WarmContactConnectionOptions["source"];
 }): Promise<boolean> {
   const warmOpts = {
     dialHints: input.dialHints,
@@ -86,6 +94,25 @@ export async function prepareOutboundPeerConnection(input: {
   };
   const conn = input.mesh.getPeerConnectionInfo(input.transportPeerId);
   const upgradeRelayToDirect = conn.connected && !conn.direct && !input.preferCircuitHints;
+
+  const guardDial = (kind: ReturnType<typeof classifyWarmDialKind>): boolean => {
+    if (kind === "read_only") {
+      return true;
+    }
+    const decision = evaluateWarmCoordinator({
+      transportPeerId: input.transportPeerId,
+      kind,
+      options: {
+        source: input.warmSource ?? "send",
+        force: input.forceFreshDial || upgradeRelayToDirect || kind === "redial",
+      },
+    });
+    if (!decision.allow) {
+      return false;
+    }
+    recordWarmDialStarted({ transportPeerId: input.transportPeerId, kind });
+    return true;
+  };
 
   if (
     !input.forceFreshDial &&
@@ -106,6 +133,11 @@ export async function prepareOutboundPeerConnection(input: {
       });
       if (result.connected) {
         markOutboundPeerVerified(input.transportPeerId);
+        recordSuccessfulOutboundPath(
+          input.transportPeerId,
+          result.direct ? "direct" : "relay",
+          input.dialHints[0],
+        );
       } else {
         clearOutboundPeerFreshness(input.transportPeerId);
       }
@@ -120,14 +152,25 @@ export async function prepareOutboundPeerConnection(input: {
   };
 
   if (input.forceFreshDial || upgradeRelayToDirect) {
+    if (!guardDial(upgradeRelayToDirect ? "relay_upgrade" : "send_prepare")) {
+      return conn.connected;
+    }
     return redialFresh();
   }
 
   if (!conn.connected) {
+    if (!guardDial("send_prepare")) {
+      return false;
+    }
     try {
       const result = await input.mesh.ensurePeerReachable(input.transportPeerId, input.protocol, warmOpts);
       if (result.connected) {
         markOutboundPeerVerified(input.transportPeerId);
+        recordSuccessfulOutboundPath(
+          input.transportPeerId,
+          result.direct ? "direct" : "relay",
+          input.dialHints[0],
+        );
       }
       return result.connected;
     } catch (warmErr) {
@@ -140,6 +183,9 @@ export async function prepareOutboundPeerConnection(input: {
   }
 
   // libp2p may report "open" while NAT/TCP is half-dead (common on Windows LAN paths).
+  if (!guardDial("verify_probe")) {
+    return conn.connected;
+  }
   try {
     const verified = await input.mesh.ensurePeerReachable(input.transportPeerId, input.protocol, {
       ...warmOpts,
@@ -153,6 +199,9 @@ export async function prepareOutboundPeerConnection(input: {
     console.warn(
       `[send] stale connection to ${input.transportPeerId.slice(0, 12)}…; redialing before send`,
     );
+    if (!guardDial("send_prepare")) {
+      return false;
+    }
     return redialFresh();
   } catch (warmErr) {
     console.warn(
@@ -236,9 +285,12 @@ export async function deliverChatEnvelopeWithRetry(input: {
     hints,
     input.transportPeerId,
   );
+  const sendChatExpectReplyFn = input.mesh.sendChatExpectReply;
   const canExpectAck =
-    input.expectDeliveryAck !== false && typeof input.mesh.sendChatExpectReply === "function";
-  const sendChatExpectReply = canExpectAck ? input.mesh.sendChatExpectReply : undefined;
+    input.expectDeliveryAck !== false && typeof sendChatExpectReplyFn === "function";
+  const sendChatExpectReply = canExpectAck
+    ? sendChatExpectReplyFn.bind(input.mesh)
+    : undefined;
   const ackTimeoutMs = resolveChatDeliveryAckTimeoutMs(hints);
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {

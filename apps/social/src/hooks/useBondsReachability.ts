@@ -30,7 +30,7 @@ export function useBondsReachability(peerOwnerIds: readonly string[], enabled = 
             const lastWarm = lastWarmAtRef.current.get(ownerId) ?? 0;
             if (now - lastWarm >= BONDS_REACHABILITY_WARM_COOLDOWN_MS) {
               lastWarmAtRef.current.set(ownerId, now);
-              info = await ns.warmContactConnection(ownerId);
+              info = await ns.warmContactConnection(ownerId, { source: "sidebar" });
             }
           }
           return [ownerId, info] as const;

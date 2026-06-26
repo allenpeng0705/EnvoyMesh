@@ -26,6 +26,7 @@ import type {
   ChainListRecipesParams,
   ChainSaveRecipeParams,
   ChainDeleteRecipeParams,
+  WarmContactConnectionOptions,
 } from "@envoymesh/api";
 
 /**
@@ -392,6 +393,8 @@ export async function routeRpcMethod(
       return ns.getConnectionStatus();
     case "getPeerConnectionInfo":
       return ns.getPeerConnectionInfo(params.peerOwnerId as string);
+    case "getPeerConnectionHealth":
+      return ns.getPeerConnectionHealth(params.peerOwnerId as string);
     case "warmContactConnection":
       return ns.warmContactConnection(
         String(params.peerOwnerId ?? ""),
@@ -401,6 +404,8 @@ export async function routeRpcMethod(
           ...(params.upgradeRelayToDirect === true ? { upgradeRelayToDirect: true } : {}),
           ...(params.keepAlive === true ? { keepAlive: true } : {}),
           ...(params.verifyConnection === true ? { verifyConnection: true } : {}),
+          ...(typeof params.source === "string" ? { source: params.source as WarmContactConnectionOptions["source"] } : {}),
+          ...(params.force === true ? { force: true } : {}),
         },
       );
     case "getChatDiagnostics":

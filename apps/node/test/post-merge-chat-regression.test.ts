@@ -105,7 +105,8 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
   });
 
   afterEach(async () => {
-    resetOutboundPeerFreshnessForTests();
+    const { resetOutboundNetworkState } = await import("./helpers/outbound-network-harness.js");
+    resetOutboundNetworkState();
     await rm(profileDir, { recursive: true, force: true });
   });
 
@@ -138,12 +139,12 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
       expect(closeConnectionsToPeer).not.toHaveBeenCalled();
     });
 
-    it("upgradeRelayToDirect closes relay and redials when requested", async () => {
+    it("upgradeRelayToDirect attempts direct dial without tearing down relay first", async () => {
       getPeerConnectionInfo.mockReturnValue({ connected: true, direct: false });
 
       await node.warmContactConnection(PEER_OWNER_ID, { upgradeRelayToDirect: true });
 
-      expect(closeConnectionsToPeer).toHaveBeenCalledWith(TRANSPORT_PEER_ID);
+      expect(closeConnectionsToPeer).not.toHaveBeenCalled();
       expect(ensurePeerReachable).toHaveBeenCalledTimes(1);
     });
 

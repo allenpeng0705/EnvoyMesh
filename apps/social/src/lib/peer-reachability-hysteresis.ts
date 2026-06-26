@@ -10,8 +10,12 @@ export const REACHABILITY_POLL_MS = 60_000;
 export const REACHABILITY_OFFLINE_GRACE_MS = 5 * 60_000;
 /** Minimum gap between redial attempts when libp2p reports disconnected (background). */
 export const REACHABILITY_MIN_REDIAL_MS = 90_000;
-/** Faster redial while an active chat panel is open. */
-export const REACHABILITY_OPEN_CHAT_MIN_REDIAL_MS = 20_000;
+/** Faster redial while an active chat panel is open (matches node warm coordinator). */
+export const REACHABILITY_OPEN_CHAT_MIN_REDIAL_MS = 15_000;
+/** Relay→direct upgrade interval while chat is open (matches node warm coordinator). */
+export const REACHABILITY_OPEN_CHAT_RELAY_UPGRADE_MS = 60_000;
+/** Shorter offline grace while a chat thread is focused (sidebar keeps long grace). */
+export const REACHABILITY_OPEN_CHAT_OFFLINE_GRACE_MS = 30_000;
 /** Consecutive disconnected polls before flipping Online → Offline. */
 export const REACHABILITY_STABLE_OFFLINE_POLLS = 4;
 /** Consecutive connected polls before flipping Offline → Online. */

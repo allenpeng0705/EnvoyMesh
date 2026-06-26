@@ -96,6 +96,7 @@ import type {
   ChainSaveRecipeResult,
   ChainDeleteRecipeParams,
   ChainDeleteRecipeResult,
+  WarmContactConnectionOptions,
 } from "@envoymesh/api";
 import { isChatRoomThreadKey, ENVOY_AI_THREAD_KEY, TERMINAL_ASSIST_RPC_TIMEOUT_MS } from "@envoymesh/api";
 import { mergeGroupDeliveryAck } from "@envoymesh/api/group-chat-delivery";
@@ -215,9 +216,10 @@ export interface NodeServiceClient {
   // Connection Status
   getConnectionStatus(): Promise<ConnectionStatus>;
   getPeerConnectionInfo(peerOwnerId: string): Promise<{ connected: boolean; direct: boolean; relayPeerId?: string }>;
+  getPeerConnectionHealth(peerOwnerId: string): Promise<import("@envoymesh/api").PeerConnectionHealth>;
   warmContactConnection(
     peerOwnerId: string,
-    options?: { redial?: boolean; verifyOnly?: boolean; upgradeRelayToDirect?: boolean; keepAlive?: boolean; verifyConnection?: boolean },
+    options?: WarmContactConnectionOptions,
   ): Promise<{ connected: boolean; direct: boolean; relayPeerId?: string }>;
   getChatDiagnostics(peerOwnerId?: string): Promise<ChatDiagnostics>;
   getConnectivityDiagnostics(): Promise<ConnectivityDiagnostics>;
@@ -776,7 +778,10 @@ function createWsNodeServiceClient(
     async getNodeConfig() { return wsClient.rpc("getNodeConfig"); },
     async getConnectionStatus() { return wsClient.rpc("getConnectionStatus"); },
     async getPeerConnectionInfo(peerOwnerId: string) { return wsClient.rpc("getPeerConnectionInfo", { peerOwnerId }); },
-    async warmContactConnection(peerOwnerId: string, options?: { redial?: boolean; verifyOnly?: boolean; upgradeRelayToDirect?: boolean; keepAlive?: boolean; verifyConnection?: boolean }) {
+    async getPeerConnectionHealth(peerOwnerId: string) {
+      return wsClient.rpc("getPeerConnectionHealth", { peerOwnerId });
+    },
+    async warmContactConnection(peerOwnerId: string, options?: WarmContactConnectionOptions) {
       return wsClient.rpc(
         "warmContactConnection",
         {
@@ -786,6 +791,8 @@ function createWsNodeServiceClient(
           ...(options?.upgradeRelayToDirect ? { upgradeRelayToDirect: true } : {}),
           ...(options?.keepAlive ? { keepAlive: true } : {}),
           ...(options?.verifyConnection ? { verifyConnection: true } : {}),
+          ...(options?.source ? { source: options.source } : {}),
+          ...(options?.force ? { force: true } : {}),
         },
         { timeoutMs: 90_000 },
       );

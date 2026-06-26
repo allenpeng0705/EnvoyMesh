@@ -411,7 +411,16 @@ import { probeNearbyPeerProfile } from "./nearby-profile-probe.js";
 import { deliverCallEnvelopeWithRetry, deliverChatEnvelopeWithRetry, deliverMessageEnvelopeWithRetry, sendExpectReplyWithRetry, type ChatDeliverResult } from "./chat-outbound-deliver.js";
 import { isOutboundPeerRecentlyVerified, markOutboundPeerVerified } from "./outbound-peer-freshness.js";
 import { deliverOutboundEnvelope, dialHintsForTransportTarget } from "./mesh-outbound-helper.js";
-import { withOutboundSendLock } from "./outbound-send-lock.js";
+import { withOutboundPeerLock } from "./outbound-peer-lock.js";
+import {
+  classifyWarmDialKind,
+  evaluateWarmCoordinator,
+  markWarmInFlight,
+  recordWarmDialStarted,
+} from "./outbound-warm-coordinator.js";
+import { deliverStagedChatAttachmentPipeline } from "./chat-attachment-deliver.js";
+import { buildPeerConnectionHealth } from "./peer-connection-health.js";
+import { prioritizeHintsWithPathMemory, recordSuccessfulOutboundPath } from "./outbound-path-memory.js";
 import { pickBestLibp2pPeerDirectoryRecord, pickConnectedTransportForOwner, pickLibp2pFromConnectedPeers, resolveRecipientEnvelopePeerId } from "./peer-transport-resolve.js";
 import { webrtcCallTrace, webrtcCallWarn, shortCallId } from "./webrtc-call-trace.js";
 import {
@@ -864,6 +873,7 @@ class NodeServiceImpl implements NodeService {
   private _bondWarmTimer?: ReturnType<typeof setInterval>;
   /** Skip periodic bond warm when libp2p already has this many open connections. */
   private static readonly BOND_WARM_MAX_CONNECTIONS = 64;
+  private static readonly BOND_WARM_CONCURRENCY = 4;
   /** Defer startup profile refresh until mesh paths settle (avoids stale LAN dial storms). */
   private static readonly PROFILE_REFRESH_STARTUP_DELAY_MS = 90_000;
   private _profileRefreshStartupTimer?: ReturnType<typeof setTimeout>;
@@ -1728,7 +1738,7 @@ class NodeServiceImpl implements NodeService {
       if (!trust || trust.level === "blocked" || trust.level === "public") {
         return;
       }
-      await this.warmContactConnection(ownerId);
+      await this.warmContactConnection(ownerId, { source: "lan_discovery", force: true });
     } catch {
       /* best-effort */
     }
@@ -3091,13 +3101,16 @@ class NodeServiceImpl implements NodeService {
       peerListenAddrs,
       peerStoreAddrs,
     );
-    return buildOutboundDialHints({
+    return prioritizeHintsWithPathMemory(
       recipientPeerId,
-      peerListenAddrs: mergedListen.length ? mergedListen : peerListenAddrs,
-      discoverySeedStore: this._discoverySeedStore,
-      config,
-      profileDir: this._profileDir,
-    });
+      await buildOutboundDialHints({
+        recipientPeerId,
+        peerListenAddrs: mergedListen.length ? mergedListen : peerListenAddrs,
+        discoverySeedStore: this._discoverySeedStore,
+        config,
+        profileDir: this._profileDir,
+      }),
+    );
   }
 
   private async _rememberBondedPeerTransportFromInbound(
@@ -3562,13 +3575,13 @@ class NodeServiceImpl implements NodeService {
 
     void getCachedVaultIndex(this._vaultDir).catch(() => undefined);
 
-    let deliverResult: ChatDeliverResult = { delivered: false };
-    for (let attempt = 0; attempt < 3; attempt++) {
-      if (attempt > 0) {
-        await new Promise((resolve) => setTimeout(resolve, 800 * attempt));
-      }
-      if (!transportPeerId) {
-        try {
+    const result = await deliverStagedChatAttachmentPipeline({
+      targetOwnerId: input.targetOwnerId,
+      messageId: input.messageId,
+      attachmentId: input.attachmentId,
+      onEvent: (event) => this.emit("chat:attachment-transfer", event),
+      deliverChat: async () => {
+        if (!transportPeerId) {
           const composed = await this._composeOutboundDirectChat(
             input.targetOwnerId,
             input.wireText,
@@ -3578,74 +3591,28 @@ class NodeServiceImpl implements NodeService {
           transportPeerId = composed.transportPeerId;
           listenAddrs = composed.listenAddrs;
           dialHints = composed.dialHints;
-        } catch (err) {
-          console.warn(
-            `[chat-attachment] compose retry ${attempt + 1}/3 failed for ${input.targetOwnerId.slice(0, 24)}…:`,
-            err instanceof Error ? err.message : err,
-          );
-          continue;
+        } else if (dialHints.length === 0) {
+          try {
+            dialHints = await raceWithTimeout(
+              this._dialHintsForChat(transportPeerId, listenAddrs),
+              30_000,
+              "_dialHintsForChat",
+            );
+          } catch {
+            dialHints = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs ?? [], []);
+          }
         }
-      } else if (dialHints.length === 0) {
-        try {
-          dialHints = await raceWithTimeout(
-            this._dialHintsForChat(transportPeerId, listenAddrs),
-            30_000,
-            "_dialHintsForChat",
-          );
-        } catch (hintErr) {
-          console.warn(
-            `[chat-attachment] dial hints failed for ${input.targetOwnerId.slice(0, 24)}…:`,
-            hintErr instanceof Error ? hintErr.message : hintErr,
-          );
-          dialHints = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs ?? [], []);
-        }
-      }
 
-      try {
         if (transportPeerId === mesh.peerId && this._bridgeChatHandler) {
           await this._bridgeChatHandler(envelope, mesh.peerId);
-          deliverResult = { delivered: true, deliveredAt: new Date().toISOString() };
-        } else if (transportPeerId) {
-          deliverResult = await this._deliverChatEnvelope(
-            transportPeerId,
-            envelope,
-            dialHints,
-            listenAddrs,
-          );
+          return { delivered: true, deliveredAt: new Date().toISOString() };
         }
-      } catch (err) {
-        console.warn(
-          `[chat-attachment] chat.message delivery attempt ${attempt + 1}/3 failed for ${input.targetOwnerId.slice(0, 24)}…:`,
-          err instanceof Error ? err.message : err,
-        );
-        deliverResult = { delivered: false };
-      }
-
-      if (deliverResult.delivered) {
-        break;
-      }
-      dialHints = [];
-    }
-
-    if (deliverResult.delivered) {
-      this._lastLibp2pTransportByOwner.set(input.targetOwnerId, {
-        peerId: transportPeerId,
-        listenAddrs: listenAddrs ?? [],
-      });
-      await this._markOutboundChatDelivered(
-        input.targetOwnerId,
-        input.messageId,
-        deliverResult.deliveredAt ?? envelope.createdAt,
-      );
-      await new Promise((resolve) => setTimeout(resolve, 400));
-    }
-
-    let shareErr: unknown;
-    for (let attempt = 0; attempt < 3; attempt++) {
-      try {
-        if (attempt > 0) {
-          await new Promise((resolve) => setTimeout(resolve, 800 * attempt));
+        if (!transportPeerId) {
+          return { delivered: false };
         }
+        return this._deliverChatEnvelope(transportPeerId, envelope, dialHints, listenAddrs);
+      },
+      deliverShare: async () => {
         await this._shareFileInternal(input.targetOwnerId, {
           path: input.vaultRelativePath,
           sensitivity: input.sensitivity,
@@ -3653,20 +3620,34 @@ class NodeServiceImpl implements NodeService {
           chatMessageId: input.messageId,
           chatAttachmentId: input.attachmentId,
         });
-        shareErr = undefined;
-        break;
-      } catch (err) {
-        shareErr = err;
-        console.warn(
-          `[chat-attachment] share.request attempt ${attempt + 1}/3 failed:`,
-          err instanceof Error ? err.message : err,
-        );
-      }
+      },
+    });
+
+    if (result.chatDelivered) {
+      this._lastLibp2pTransportByOwner.set(input.targetOwnerId, {
+        peerId: transportPeerId,
+        listenAddrs: listenAddrs ?? [],
+      });
+      await this._markOutboundChatDelivered(
+        input.targetOwnerId,
+        input.messageId,
+        envelope.createdAt,
+      );
+    } else {
+      void this._markOutboundChatFailed(
+        input.targetOwnerId,
+        input.messageId,
+        input.targetOwnerId,
+        "attachment chat.message delivery failed",
+      );
     }
-    if (shareErr) {
-      console.warn(
-        `[chat-attachment] file transfer failed for ${input.targetOwnerId.slice(0, 24)}…:`,
-        shareErr instanceof Error ? shareErr.message : shareErr,
+
+    if (result.chatDelivered && !result.shareDelivered) {
+      void this._markOutboundChatFailed(
+        input.targetOwnerId,
+        input.messageId,
+        input.targetOwnerId,
+        "attachment file transfer failed",
       );
     }
   }
@@ -4365,7 +4346,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   private async _withChatSendLock<T>(transportPeerId: string, fn: () => Promise<T>): Promise<T> {
-    return withOutboundSendLock(transportPeerId, fn);
+    return withOutboundPeerLock(transportPeerId, fn);
   }
 
   async sendChat(targetOwnerId: string, text: string, attachments?: SendChatParams["attachments"]): Promise<SendChatResult> {
@@ -11824,7 +11805,14 @@ class NodeServiceImpl implements NodeService {
       listenAddrs,
     );
 
-    return this._warmContactConnectionTransport(transportPeerId, listenAddrs, options);
+    return withOutboundPeerLock(transportPeerId, async () => {
+      markWarmInFlight(transportPeerId, true);
+      try {
+        return await this._warmContactConnectionTransport(transportPeerId, listenAddrs, options);
+      } finally {
+        markWarmInFlight(transportPeerId, false);
+      }
+    });
   }
 
   /** Merge cached inbound + peer-directory listen addrs before outbound dial. */
@@ -11861,6 +11849,25 @@ class NodeServiceImpl implements NodeService {
     void this._tagBondedContactReachability(transportPeerId);
     const existing = mesh.getPeerConnectionInfo(transportPeerId);
 
+    const guardDial = (kind: ReturnType<typeof classifyWarmDialKind>): boolean => {
+      if (kind === "read_only") {
+        return true;
+      }
+      const decision = evaluateWarmCoordinator({
+        transportPeerId,
+        kind,
+        options: {
+          source: options?.source,
+          force: options?.force === true || options?.redial === true,
+        },
+      });
+      if (!decision.allow) {
+        return false;
+      }
+      recordWarmDialStarted({ transportPeerId, kind });
+      return true;
+    };
+
     if (options?.verifyOnly) {
       return existing;
     }
@@ -11868,6 +11875,10 @@ class NodeServiceImpl implements NodeService {
     const needsProbe = options?.keepAlive === true || options?.verifyConnection === true;
     if (existing.connected && !options?.redial && !options?.upgradeRelayToDirect) {
       if (needsProbe) {
+        const probeKind = options?.verifyConnection ? "verify_probe" : "keepalive_probe";
+        if (!guardDial(probeKind)) {
+          return existing;
+        }
         if (options?.verifyConnection) {
           const probed = await mesh.probeBondedPeerConnection(transportPeerId);
           if (probed.connected) {
@@ -11896,6 +11907,18 @@ class NodeServiceImpl implements NodeService {
       }
     }
 
+    const currentConn = mesh.getPeerConnectionInfo(transportPeerId);
+    const dialKind = classifyWarmDialKind({
+      options: {
+        redial: options?.redial,
+        upgradeRelayToDirect: options?.upgradeRelayToDirect,
+      },
+      existing: currentConn,
+    });
+    if (!guardDial(dialKind)) {
+      return mesh.getPeerConnectionInfo(transportPeerId);
+    }
+
     let dialHints: string[];
     try {
       dialHints = await raceWithTimeout(
@@ -11922,7 +11945,6 @@ class NodeServiceImpl implements NodeService {
 
     const tearingDown =
       options?.redial === true ||
-      options?.upgradeRelayToDirect === true ||
       (needsProbe && !options?.keepAlive);
     if (tearingDown) {
       try {
@@ -11946,8 +11968,28 @@ class NodeServiceImpl implements NodeService {
     void this._flushPendingRoomMessages();
     if (result.connected) {
       markOutboundPeerVerified(transportPeerId);
+      recordSuccessfulOutboundPath(
+        transportPeerId,
+        result.direct ? "direct" : "relay",
+        dialHints[0],
+      );
     }
     return result;
+  }
+
+  async getPeerConnectionHealth(peerOwnerId: string): Promise<import("@envoymesh/api").PeerConnectionHealth> {
+    const connection = await this.getPeerConnectionInfo(peerOwnerId);
+    let transportPeerId: string | undefined;
+    try {
+      transportPeerId = (await this._resolvePeerTransportForOwner(peerOwnerId)).transportPeerId;
+    } catch {
+      transportPeerId = undefined;
+    }
+    return buildPeerConnectionHealth({
+      peerOwnerId,
+      transportPeerId,
+      connection,
+    });
   }
 
   private _startBondWarmInterval(): void {
@@ -11977,35 +12019,50 @@ class NodeServiceImpl implements NodeService {
     }
     const bonds = await this.getBonds();
     const selfOwnerId = this._profile?.owner.ownerId?.trim();
-    for (const bond of bonds) {
+    const targets = bonds.filter((bond) => {
       if (selfOwnerId && bond.peerOwnerId.trim() === selfOwnerId) {
-        continue;
+        return false;
       }
-      if (bond.level !== "direct" && bond.level !== "referred") {
-        continue;
-      }
-      try {
-        const info = await this.getPeerConnectionInfo(bond.peerOwnerId);
-        if (info.connected) {
-          try {
-            const { transportPeerId } = await this._resolvePeerTransportForOwner(bond.peerOwnerId);
-            if (isOutboundPeerRecentlyVerified(transportPeerId)) {
-              continue;
-            }
-          } catch {
-            /* fall through to warm */
-          }
-          await this.warmContactConnection(
-            bond.peerOwnerId,
-            info.direct ? { verifyOnly: true } : { keepAlive: true },
-          );
-          continue;
+      return bond.level === "direct" || bond.level === "referred";
+    });
+
+    let index = 0;
+    const worker = async (): Promise<void> => {
+      while (index < targets.length) {
+        const bond = targets[index];
+        index += 1;
+        if (!bond) {
+          return;
         }
-        await this.warmContactConnection(bond.peerOwnerId);
-      } catch {
-        /* best-effort keepalive */
+        try {
+          const info = await this.getPeerConnectionInfo(bond.peerOwnerId);
+          if (info.connected) {
+            try {
+              const { transportPeerId } = await this._resolvePeerTransportForOwner(bond.peerOwnerId);
+              if (isOutboundPeerRecentlyVerified(transportPeerId)) {
+                continue;
+              }
+            } catch {
+              /* fall through to warm */
+            }
+            await this.warmContactConnection(
+              bond.peerOwnerId,
+              info.direct
+                ? { verifyOnly: true, source: "bond_warm" }
+                : { keepAlive: true, source: "bond_warm" },
+            );
+            continue;
+          }
+          await this.warmContactConnection(bond.peerOwnerId, { source: "bond_warm" });
+        } catch {
+          /* best-effort keepalive */
+        }
       }
-    }
+    };
+
+    await Promise.all(
+      Array.from({ length: NodeServiceImpl.BOND_WARM_CONCURRENCY }, () => worker()),
+    );
   }
 
   async getChatDiagnostics(peerOwnerId?: string): Promise<ChatDiagnostics> {
@@ -14023,6 +14080,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
       }
       try {
         await this.warmContactConnection(targetOwnerId, {
+          source: "call",
           ...(canUpgradeToDirect ? { upgradeRelayToDirect: true } : undefined),
         });
       } catch (warmErr) {
@@ -14490,8 +14548,16 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
       recipientRole: "human",
       payload,
     });
-    await this._sendCallResponseEnvelope(peerOwnerId, unsigned, "call.ice-candidate");
-    return true;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) {
+        await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+      }
+      const delivered = await this._sendCallResponseEnvelope(peerOwnerId, unsigned, "call.ice-candidate");
+      if (delivered) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /** Send call.reject to a remote owner without a local ringing session (busy path). */

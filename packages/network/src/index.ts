@@ -1343,12 +1343,29 @@ export class EnvoyMesh {
 
   /** Close all libp2p connections to a peer (used before redial after a stale path). */
   async closeConnectionsToPeer(peerIdStr: string): Promise<number> {
+    return this.closeConnectionsToPeerMatching(peerIdStr, () => true);
+  }
+
+  /** Close relay (p2p-circuit) connections only — keeps direct paths open. */
+  async closeRelayConnectionsToPeer(peerIdStr: string): Promise<number> {
+    return this.closeConnectionsToPeerMatching(peerIdStr, (addr) =>
+      (addr?.toString?.() ?? "").includes("/p2p-circuit"),
+    );
+  }
+
+  private async closeConnectionsToPeerMatching(
+    peerIdStr: string,
+    match: (remoteAddr: { toString?: () => string } | undefined) => boolean,
+  ): Promise<number> {
     const node = this.requireNode();
     let closed = 0;
     try {
       const pid = peerIdFromString(peerIdStr);
       const conns = node.getConnections(pid);
       for (const conn of conns) {
+        if (!match(conn.remoteAddr)) {
+          continue;
+        }
         try {
           await conn.close();
           closed += 1;
@@ -1387,7 +1404,7 @@ export class EnvoyMesh {
         if (before.direct || !canUpgradeRelayToDirect) {
           return before;
         }
-        await this.closeConnectionsToPeer(peerIdStr);
+        // Upgrade-on-success: keep relay path open while attempting direct dial below.
       }
     }
     if (peerIdStr && sendOptions?.verifyConnection && !sendOptions?.forceFreshDial) {
@@ -1410,6 +1427,13 @@ export class EnvoyMesh {
       const detail = e instanceof Error ? e.message : String(e);
       console.warn(`[network] ensurePeerReachable failed for ${target.slice(0, 24)}…: ${detail}`);
       return { connected: false, direct: false };
+    }
+    if (peerIdStr && canUpgradeRelayToDirect) {
+      const after = this.getPeerConnectionInfo(peerIdStr);
+      if (after.connected && after.direct) {
+        await this.closeRelayConnectionsToPeer(peerIdStr);
+        return this.getPeerConnectionInfo(peerIdStr);
+      }
     }
     return peerIdStr ? this.getPeerConnectionInfo(peerIdStr) : { connected: false, direct: false };
   }

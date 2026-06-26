@@ -472,10 +472,11 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.getPeerConnectionInfo(peerOwnerId);
   }
 
-  async warmContactConnection(
-    peerOwnerId: string,
-    options?: { redial?: boolean; verifyOnly?: boolean; upgradeRelayToDirect?: boolean; keepAlive?: boolean; verifyConnection?: boolean },
-  ) {
+  async getPeerConnectionHealth(peerOwnerId: string) {
+    return this._ns.getPeerConnectionHealth(peerOwnerId);
+  }
+
+  async warmContactConnection(peerOwnerId: string, options?: import("@envoymesh/api").WarmContactConnectionOptions) {
     return this._ns.warmContactConnection(peerOwnerId, options);
   }
 

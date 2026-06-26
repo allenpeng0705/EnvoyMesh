@@ -567,6 +567,20 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
   const messageGroups = useMemo(() => groupMessagesByDate(displayMessages), [displayMessages]);
   const isHomeBridgeThread =
     Boolean(bridgeStatus?.enabled) && selectedContact === bridgeStatus?.agentPeerId;
+  const contactMeshPending = reachabilityChecking || peerReachability === null;
+  const composerDisabled =
+    !nodeMeshOnline || (!isHomeBridgeThread && !contactReachable && !contactMeshPending);
+  const showReconnect =
+    isBondedHumanContact &&
+    nodeMeshOnline &&
+    !contactReachable &&
+    !reachabilityChecking &&
+    !isHomeBridgeThread;
+
+  const handleReconnect = useCallback(() => {
+    void refreshReachability({ redial: true });
+  }, [refreshReachability]);
+
   const displayName =
     selectedContact === bridgeStatus?.agentPeerId
       ? (bridgeStatus.agentName || t("chat.myAgent"))
@@ -577,13 +591,15 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
 
   const handleStartCall = useCallback(async () => {
     if (!selectedContact || !isBondedHumanContact) return;
+    void nodeService.warmContactConnection(selectedContact, { source: "call" });
     await startCall(selectedContact, displayName, "audio");
-  }, [selectedContact, isBondedHumanContact, startCall, displayName]);
+  }, [selectedContact, isBondedHumanContact, startCall, displayName, nodeService]);
 
   const handleStartVideoCall = useCallback(async () => {
     if (!selectedContact || !isBondedHumanContact) return;
+    void nodeService.warmContactConnection(selectedContact, { source: "call" });
     await startCall(selectedContact, displayName, "video");
-  }, [selectedContact, isBondedHumanContact, startCall, displayName]);
+  }, [selectedContact, isBondedHumanContact, startCall, displayName, nodeService]);
 
   const contactBond = bonds.find((c) => c.peerOwnerId === selectedContact);
 
@@ -649,6 +665,17 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
               {isHomeBridgeThread && !contactReachable && !reachabilityChecking
                 ? t("contactChat.homeOffline")
                 : peerReachabilityLabel(peerReachability)}
+              {showReconnect ? (
+                <button
+                  type="button"
+                  className="contact-reconnect-btn"
+                  title={t("contactChat.reconnectAria")}
+                  aria-label={t("contactChat.reconnectAria")}
+                  onClick={handleReconnect}
+                >
+                  {t("contactChat.reconnect")}
+                </button>
+              ) : null}
             </span>
           </div>
         </div>
@@ -830,6 +857,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
                                       key={attachment.id}
                                       attachment={attachment}
                                       transcription={transcription}
+                                      messageId={msg.messageId}
                                     />
                                   ) : (
                                     <ChatFileAttachment key={attachment.id} attachment={attachment} />
@@ -906,7 +934,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
             onSend={handleSendMessage}
             placeholder={chatInputPlaceholder}
             sendLabel={t("contactChat.send")}
-            disabled={!nodeMeshOnline}
+            disabled={composerDisabled}
             leading={
               <>
                 <button
@@ -914,7 +942,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
                   className="secondary chat-mic-btn"
                   title={t("audioMessage.record")}
                   aria-label={t("audioMessage.record")}
-                  disabled={!nodeMeshOnline}
+                  disabled={composerDisabled}
                   onClick={() => void voiceRecorder.start()}
                 >
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>

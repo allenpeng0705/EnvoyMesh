@@ -167,6 +167,7 @@ export type RpcMethods =
   // Connection Status
   | "getConnectionStatus"
   | "getPeerConnectionInfo"
+  | "getPeerConnectionHealth"
   | "warmContactConnection"
   | "getChatDiagnostics"
   | "getConnectivityDiagnostics"

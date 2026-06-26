@@ -262,6 +262,8 @@ import type {
   BridgeStatus,
   OpenClawStatus,
   PeerConnectionInfo,
+  PeerConnectionHealth,
+  WarmContactConnectionOptions,
   ListAgentActivityParams,
   AgentActivityRecord,
 } from "@envoymesh/api";
@@ -4048,9 +4050,24 @@ You are the owner's personal AI assistant on EnvoyMesh.
     return this._relayOnlyReachabilityHint(peerOwnerId);
   }
 
-  async warmContactConnection(peerOwnerId: string): Promise<PeerConnectionInfo> {
+  async getPeerConnectionHealth(peerOwnerId: string): Promise<PeerConnectionHealth> {
+    const connection = await this.getPeerConnectionInfo(peerOwnerId);
+    return {
+      peerOwnerId,
+      ...connection,
+      warmInFlight: false,
+    };
+  }
+
+  async warmContactConnection(
+    peerOwnerId: string,
+    options?: WarmContactConnectionOptions,
+  ): Promise<PeerConnectionInfo> {
+    if (options?.verifyOnly) {
+      return this.getPeerConnectionInfo(peerOwnerId);
+    }
     const existing = await this.getPeerConnectionInfo(peerOwnerId);
-    if (existing.connected) {
+    if (existing.connected && !options?.redial && !options?.force) {
       return existing;
     }
     const transportPeerId = await this._resolveChatTransportPeerId(peerOwnerId);

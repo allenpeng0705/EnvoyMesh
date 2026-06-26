@@ -118,7 +118,10 @@ export function SettingsNodeTab() {
             try {
               let info = await nodeService.getPeerConnectionInfo(bond.peerOwnerId);
               if (opts?.warmDisconnected && !info.connected) {
-                info = await nodeService.warmContactConnection(bond.peerOwnerId);
+                info = await nodeService.warmContactConnection(bond.peerOwnerId, {
+                  source: "settings",
+                  force: true,
+                });
               }
               return [bond.peerOwnerId, info] as const;
             } catch {

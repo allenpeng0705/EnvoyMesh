@@ -28,7 +28,7 @@ import { webrtcCallTrace, webrtcCallWarn, shortCallId } from "../lib/webrtc-call
 
 type IceServerConfig = CallIceServerConfig;
 
-const CALLER_RINGBACK_TIMEOUT_MS = 30_000;
+const CALLER_RINGBACK_TIMEOUT_MS = 60_000;
 
 export interface UseCallSessionResult {
   activeCall: CallSession | null;
