@@ -11895,10 +11895,11 @@ class NodeServiceImpl implements NodeService {
             markOutboundPeerVerified(transportPeerId);
             return probed;
           }
-          // Transient ping failure on an open path — do not scrub/redial on keepAlive.
-          const stillOpen = mesh.getPeerConnectionInfo(transportPeerId);
-          if (stillOpen.connected) {
-            return stillOpen;
+          if (options?.keepAlive === true) {
+            const stillOpen = mesh.getPeerConnectionInfo(transportPeerId);
+            if (stillOpen.connected) {
+              return stillOpen;
+            }
           }
           // stale — fall through to redial
         }

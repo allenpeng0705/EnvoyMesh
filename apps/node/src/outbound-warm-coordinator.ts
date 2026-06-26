@@ -105,7 +105,7 @@ export function classifyWarmDialKind(input: {
   return "read_only";
 }
 
-/** Gate outbound dials/probes so UI, bond warm, and send paths do not fight. */
+/** Gate outbound dials/probes so background bond warm does not fight user chat/send paths. */
 export function evaluateWarmCoordinator(input: {
   transportPeerId: string;
   kind: WarmDialKind;
@@ -117,6 +117,11 @@ export function evaluateWarmCoordinator(input: {
     return { allow: true, kind };
   }
   if (input.options?.force === true || kind === "redial") {
+    return { allow: true, kind };
+  }
+
+  // Only throttle background bond warm — chat open, send, call, and legacy UI warm must dial.
+  if (input.options?.source !== "bond_warm") {
     return { allow: true, kind };
   }
 
@@ -166,21 +171,6 @@ export function evaluateWarmCoordinator(input: {
         allow: false,
         kind,
         reason: `verify probe cooldown (${Math.ceil((COORDINATOR_KEEPALIVE_PROBE_MS - elapsed) / 1000)}s left)`,
-      };
-    }
-    return { allow: true, kind };
-  }
-
-  if (kind === "send_prepare") {
-    if (input.options?.source === "send" || input.options?.force) {
-      return { allow: true, kind };
-    }
-    const elapsed = now - ts.sendPrepareAt;
-    if (elapsed < COORDINATOR_SEND_PREPARE_MS) {
-      return {
-        allow: false,
-        kind,
-        reason: `send prepare cooldown (${Math.ceil((COORDINATOR_SEND_PREPARE_MS - elapsed) / 1000)}s left)`,
       };
     }
     return { allow: true, kind };

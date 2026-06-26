@@ -31,15 +31,39 @@ describe("outbound-warm-coordinator", () => {
     ).toBe("disconnected_warm");
   });
 
-  it("blocks repeated disconnected warm within cooldown", () => {
+  it("blocks repeated bond_warm disconnected warm within cooldown", () => {
     const peer = "12D3KooWCooldown";
     recordWarmDialStarted({ transportPeerId: peer, kind: "disconnected_warm", now: 1000 });
     const decision = evaluateWarmCoordinator({
       transportPeerId: peer,
       kind: "disconnected_warm",
+      options: { source: "bond_warm" },
       now: 1000 + COORDINATOR_DISCONNECTED_WARM_MS - 1,
     });
     expect(decision.allow).toBe(false);
+  });
+
+  it("allows chat-open warm during bond_warm cooldown", () => {
+    const peer = "12D3KooWOpenChat";
+    recordWarmDialStarted({ transportPeerId: peer, kind: "disconnected_warm", now: 1000 });
+    const decision = evaluateWarmCoordinator({
+      transportPeerId: peer,
+      kind: "disconnected_warm",
+      options: { source: "open_chat" },
+      now: 1500,
+    });
+    expect(decision.allow).toBe(true);
+  });
+
+  it("allows legacy UI warm without source during bond_warm cooldown", () => {
+    const peer = "12D3KooWLegacyWarm";
+    recordWarmDialStarted({ transportPeerId: peer, kind: "disconnected_warm", now: 1000 });
+    const decision = evaluateWarmCoordinator({
+      transportPeerId: peer,
+      kind: "disconnected_warm",
+      now: 1500,
+    });
+    expect(decision.allow).toBe(true);
   });
 
   it("allows forced redial regardless of cooldown", () => {
@@ -53,34 +77,37 @@ describe("outbound-warm-coordinator", () => {
     expect(decision.allow).toBe(true);
   });
 
-  it("blocks relay upgrade within 60s", () => {
+  it("blocks bond_warm relay upgrade within 60s", () => {
     const peer = "12D3KooWRelay";
     recordWarmDialStarted({ transportPeerId: peer, kind: "relay_upgrade", now: 5000 });
     const decision = evaluateWarmCoordinator({
       transportPeerId: peer,
       kind: "relay_upgrade",
+      options: { source: "bond_warm" },
       now: 5000 + COORDINATOR_RELAY_UPGRADE_MS - 1,
     });
     expect(decision.allow).toBe(false);
   });
 
-  it("allows relay upgrade after cooldown", () => {
+  it("allows bond_warm relay upgrade after cooldown", () => {
     const peer = "12D3KooWRelayOk";
     recordWarmDialStarted({ transportPeerId: peer, kind: "relay_upgrade", now: 5000 });
     const decision = evaluateWarmCoordinator({
       transportPeerId: peer,
       kind: "relay_upgrade",
+      options: { source: "bond_warm" },
       now: 5000 + COORDINATOR_RELAY_UPGRADE_MS,
     });
     expect(decision.allow).toBe(true);
   });
 
-  it("blocks keepAlive probe within cooldown", () => {
+  it("blocks bond_warm keepAlive probe within cooldown", () => {
     const peer = "12D3KooWKeep";
     recordWarmDialStarted({ transportPeerId: peer, kind: "keepalive_probe", now: 9000 });
     const decision = evaluateWarmCoordinator({
       transportPeerId: peer,
       kind: "keepalive_probe",
+      options: { source: "bond_warm" },
       now: 9000 + COORDINATOR_KEEPALIVE_PROBE_MS - 1,
     });
     expect(decision.allow).toBe(false);
