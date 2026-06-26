@@ -2405,6 +2405,26 @@ export function hasDirectPrivateLanDialHints(hints: readonly string[]): boolean 
   return hints.some((h) => isPrivateLanTcpDialHint(h));
 }
 
+/**
+ * Direct TCP hints we trust enough to skip relay circuits — fixed listen ports only.
+ * Same-LAN tcp/0 bind ports (≥32768) may be stale after restart; keep circuit fallback.
+ */
+export function hasTrustedDirectDialHints(hints: readonly string[]): boolean {
+  return hints.some((h) => {
+    if (!h.includes("/tcp/") || h.includes("/p2p-circuit/")) {
+      return false;
+    }
+    if (isLoopbackOrUnspecifiedDialHint(h) || isDockerBridgeGatewayDialHint(h)) {
+      return false;
+    }
+    const match = h.match(/\/tcp\/(\d+)(?:\/|$)/);
+    if (!match) {
+      return false;
+    }
+    return STABLE_LIBP2P_TCP_PORTS.has(Number(match[1]));
+  });
+}
+
 /** True for direct (non-circuit) TCP hints that are not loopback. */
 export function hasDirectTcpDialHints(hints: readonly string[]): boolean {
   return hints.some(
@@ -2435,10 +2455,15 @@ export function isPrivateOrUnroutableDialHint(addr: string): boolean {
  * source port on outbound-initiated TCP connections — not a dialable listen address.
  */
 export function isLikelyInboundConnSnapshotDialHint(addr: string): boolean {
-  if (!addr.includes("/tcp/")) {
+  const a = addr.trim();
+  /** Explicit listen multiaddrs (`tcp/0` bind ports) are dialable — not inbound snapshots. */
+  if (/\/p2p\/[^/]+$/.test(a)) {
     return false;
   }
-  const match = addr.match(/\/tcp\/(\d+)\//);
+  if (!a.includes("/tcp/")) {
+    return false;
+  }
+  const match = a.match(/\/tcp\/(\d+)(?:\/|$)/);
   if (!match) {
     return false;
   }
@@ -2569,8 +2594,9 @@ export function filterUsableOutboundPeerDialHints(addrs: string[], targetPeerId:
 }
 
 /**
- * When direct TCP/LAN hints exist and circuits are not explicitly preferred, drop `/p2p-circuit/`
+ * When trusted direct TCP/LAN hints exist and circuits are not explicitly preferred, drop `/p2p-circuit/`
  * paths so libp2p cannot fall through to stale relay reservations (NO_RESERVATION).
+ * Stale tcp/0 listen ports alone must not suppress circuits — only same-LAN or stable ports.
  */
 export function filterDialHintsForOutboundSend(
   hints: readonly string[],
@@ -2581,7 +2607,7 @@ export function filterDialHintsForOutboundSend(
   if (opts?.preferCircuitHints === true) {
     return filtered;
   }
-  if (hasDirectTcpDialHints(filtered)) {
+  if (hasTrustedDirectDialHints(filtered)) {
     return filtered.filter((h) => !h.includes("/p2p-circuit/"));
   }
   return filtered;

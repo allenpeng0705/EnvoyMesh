@@ -42,6 +42,28 @@ describe("buildOutboundDialHints", () => {
     }
   });
 
+  it("keeps relay circuits when only stale tcp/0 LAN ports are known", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-dial-hints-stale-lan-"));
+    try {
+      const seedStore = createDiscoverySeedStore(profileDir);
+      const target = "12D3KooWStaleLanCircuit";
+      const circuitSeed =
+        "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWStaleLanCircuit";
+      await seedStore.upsertSuccess(circuitSeed, "relay.lookup");
+
+      const hints = await buildOutboundDialHints({
+        recipientPeerId: target,
+        peerListenAddrs: [`/ip4/192.168.3.78/tcp/51924/p2p/${target}`],
+        discoverySeedStore: seedStore,
+        config: undefined,
+      });
+
+      expect(hints.some((h) => h.includes("/p2p-circuit/"))).toBe(true);
+    } finally {
+      await rm(profileDir, { recursive: true, force: true });
+    }
+  });
+
   it("drops relay circuits when LAN listen addrs exist for the same peer", async () => {
     const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-dial-hints-lan-circuit-"));
     try {
@@ -132,7 +154,7 @@ describe("buildOutboundDialHints", () => {
     }
   });
 
-  it("keeps tcp/0 listen ports and prefers LAN over synthetic relay circuits", async () => {
+  it("keeps tcp/0 listen ports and adds relay circuit fallback when no stable direct port", async () => {
     const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-dial-hints-ephemeral-"));
     try {
       const seedStore = createDiscoverySeedStore(profileDir);
@@ -163,7 +185,7 @@ describe("buildOutboundDialHints", () => {
 
       expect(hints.some((h) => h.includes("55093"))).toBe(true);
       expect(hints.some((h) => h.includes("60417"))).toBe(true);
-      expect(hints.some((h) => h.includes("/p2p-circuit/p2p/12D3KooWN67"))).toBe(false);
+      expect(hints.some((h) => h.includes("/p2p-circuit/p2p/12D3KooWN67"))).toBe(true);
     } finally {
       await rm(profileDir, { recursive: true, force: true });
     }

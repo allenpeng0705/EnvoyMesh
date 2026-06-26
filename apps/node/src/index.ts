@@ -55,6 +55,7 @@ import {
   filterBootstrapMultiaddrs,
   filterRelayControlTargets,
   filterUsableOutboundPeerDialHints,
+  isPrivateLanTcpDialHint,
   voucherJsonBytesFromObject,
   type P2pDebugEvent,
 } from "@envoymesh/network";
@@ -763,7 +764,12 @@ let lastRelayHealthReprobeAtMs = 0;
 
 mesh.onPeerDiscovered(async (peer) => {
   const source = peerDiscoverySourceFromMultiaddrs(peer.multiaddrs);
-  if (args.peerDiscoveryLog) {
+  const lanAddrs = peer.multiaddrs.filter((a) => isPrivateLanTcpDialHint(a));
+  if (lanAddrs.length > 0) {
+    console.log(
+      `[peer-discovery] LAN peer=${peer.peerId.slice(0, 12)}… source=${source} addrs=${lanAddrs.join(", ")}`,
+    );
+  } else if (args.peerDiscoveryLog) {
     console.log(`[peer-discovery] peer=${peer.peerId} source=${source} addrs=${peer.multiaddrs.length}`);
   }
   if (
@@ -976,6 +982,9 @@ async function handleInboundMeshMessage({
       payload,
       seenAt: envelope.createdAt,
     });
+    if (nodeService instanceof NodeServiceImpl) {
+      void nodeService.handleInboundPresenceSignal(payload.ownerId, remotePeerId);
+    }
     return;
   }
 

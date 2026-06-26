@@ -879,6 +879,7 @@ export type WarmContactSource =
   | "send"
   | "settings"
   | "lan_discovery"
+  | "presence_signal"
   | "inbound"
   | "call"
   | "manual";

@@ -1746,7 +1746,10 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
         existing.deviceId = input.payload.deviceId;
         existing.devicePublicKeyPem = input.payload.deviceCertificate.devicePublicKeyPem;
         existing.lastSeenAt = seenAt;
-        existing.listenAddrs = input.payload.listenAddrs;
+        existing.listenAddrs = capPeerListenAddrs([
+          ...existing.listenAddrs,
+          ...filterDialableListenAddrs(input.payload.listenAddrs ?? []),
+        ]);
         await writePeerDirectoryFileAtomic(directoryPath, file);
         return existing;
       }
@@ -1764,7 +1767,10 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
         existing.deviceId = input.payload.deviceId;
         existing.devicePublicKeyPem = input.payload.deviceCertificate.devicePublicKeyPem;
         existing.lastSeenAt = seenAt;
-        existing.listenAddrs = input.payload.listenAddrs;
+        existing.listenAddrs = capPeerListenAddrs([
+          ...existing.listenAddrs,
+          ...filterDialableListenAddrs(input.payload.listenAddrs ?? []),
+        ]);
         await writePeerDirectoryFileAtomic(directoryPath, file);
         return existing;
       }
@@ -1776,7 +1782,7 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
         deviceId: input.payload.deviceId,
         devicePublicKeyPem: input.payload.deviceCertificate.devicePublicKeyPem,
         lastSeenAt: seenAt,
-        listenAddrs: input.payload.listenAddrs,
+        listenAddrs: capPeerListenAddrs(filterDialableListenAddrs(input.payload.listenAddrs ?? [])),
       };
       file.records.push(created);
       await writePeerDirectoryFileAtomic(directoryPath, file);

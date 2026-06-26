@@ -408,6 +408,7 @@ import {
   isLibp2pPeerId,
 } from "./profile-sync-outbound.js";
 import { probeNearbyPeerProfile } from "./nearby-profile-probe.js";
+import { broadcastPresenceSignalToBonds } from "./presence-signal-outbound.js";
 import { deliverCallEnvelopeWithRetry, deliverChatEnvelopeWithRetry, deliverMessageEnvelopeWithRetry, sendExpectReplyWithRetry, type ChatDeliverResult } from "./chat-outbound-deliver.js";
 import { isOutboundPeerRecentlyVerified, markOutboundPeerVerified } from "./outbound-peer-freshness.js";
 import { deliverOutboundEnvelope, dialHintsForTransportTarget } from "./mesh-outbound-helper.js";
@@ -872,11 +873,14 @@ class NodeServiceImpl implements NodeService {
   /** Keeps bonded contacts warm across NAT idle periods. */
   private _bondWarmTimer?: ReturnType<typeof setInterval>;
   private _bondWarmStartupTimer?: ReturnType<typeof setTimeout>;
+  private _presenceSignalStartupTimer?: ReturnType<typeof setTimeout>;
   /** Skip periodic bond warm when libp2p already has this many open connections. */
   private static readonly BOND_WARM_MAX_CONNECTIONS = 64;
   private static readonly BOND_WARM_CONCURRENCY = 4;
   /** First bond warm after mesh settles (relay check-in, profile sync). */
   private static readonly BOND_WARM_STARTUP_DELAY_MS = 45_000;
+  /** Announce tcp/0 listen ports to bonded contacts before bond warm (same-LAN cold start). */
+  private static readonly PRESENCE_SIGNAL_STARTUP_DELAY_MS = 20_000;
   /** Periodic keepalive dial for bonded contacts. */
   private static readonly BOND_WARM_INTERVAL_MS = 90_000;
   /** Defer startup profile refresh until mesh paths settle (avoids stale LAN dial storms). */
@@ -1622,7 +1626,75 @@ class NodeServiceImpl implements NodeService {
       await this._scrubBondedContactDialState();
       this._scheduleDeferredProfileRefresh("bindExternalMesh");
       this._scheduleBondWarmup("bindExternalMesh");
+      this._schedulePresenceSignalBroadcast("bindExternalMesh");
     })();
+  }
+
+  /** Push current listen multiaddrs to bonded contacts (system.signal) after tcp/0 restarts. */
+  private _schedulePresenceSignalBroadcast(_source: string): void {
+    if (this._presenceSignalStartupTimer) {
+      clearTimeout(this._presenceSignalStartupTimer);
+    }
+    this._presenceSignalStartupTimer = setTimeout(() => {
+      this._presenceSignalStartupTimer = undefined;
+      void this._broadcastPresenceSignalToBonds();
+    }, NodeServiceImpl.PRESENCE_SIGNAL_STARTUP_DELAY_MS);
+  }
+
+  private async _broadcastPresenceSignalToBonds(): Promise<void> {
+    const mesh = this._reachableMesh();
+    const profile = this._profile;
+    if (!mesh || !profile || this._nodeStatus !== "running") {
+      return;
+    }
+    const bonds = await this.getBonds();
+    const selfOwnerId = profile.owner.ownerId?.trim();
+    const bondOwnerIds = bonds
+      .filter((b) => b.level === "direct" || b.level === "referred")
+      .map((b) => b.peerOwnerId)
+      .filter((ownerId) => !selfOwnerId || ownerId.trim() !== selfOwnerId);
+    if (bondOwnerIds.length === 0) {
+      return;
+    }
+    const config = await this._configStore.load();
+    try {
+      await broadcastPresenceSignalToBonds({
+        mesh,
+        profile,
+        listenAddrs: mesh.multiaddrs ?? [],
+        bondOwnerIds,
+        config: config ?? undefined,
+        resolveLibp2pPeer: async (ownerId) => {
+          const resolved = await this._resolveLibp2pPeerForBondOwner(ownerId);
+          if (!resolved) {
+            return undefined;
+          }
+          return { peerId: resolved.transportPeerId, listenAddrs: resolved.listenAddrs };
+        },
+        dialHintsFor: (peerId, listenAddrs) => this._dialHintsForChat(peerId, listenAddrs),
+      });
+    } catch (err) {
+      console.warn("[presence] broadcast failed:", err);
+    }
+  }
+
+  async handleInboundPresenceSignal(ownerId: string, transportPeerId: string): Promise<void> {
+    const trimmedOwner = ownerId.trim();
+    const trimmedPeer = transportPeerId.trim();
+    if (!trimmedOwner || !trimmedPeer || !isLibp2pPeerId(trimmedPeer)) {
+      return;
+    }
+    this._lastLibp2pTransportByOwner.set(trimmedOwner, { peerId: trimmedPeer });
+    markOutboundPeerVerified(trimmedPeer);
+    try {
+      await this.warmContactConnection(trimmedOwner, {
+        source: "presence_signal",
+        force: true,
+        upgradeRelayToDirect: true,
+      });
+    } catch {
+      /* best-effort reciprocal warm */
+    }
   }
 
   /** Schedule deferred bond warm — avoids fighting chat-open / relay check-in at startup. */
@@ -1749,6 +1821,9 @@ class NodeServiceImpl implements NodeService {
       if (!trust || trust.level === "blocked" || trust.level === "public") {
         return;
       }
+      console.log(
+        `[mdns] bonded LAN contact owner=${ownerId.slice(0, 20)}… peer=${peerId.slice(0, 12)}… addrs=${multiaddrs.filter((a) => isPrivateLanTcpDialHint(a)).join(", ")}`,
+      );
       await this.warmContactConnection(ownerId, { source: "lan_discovery", force: true });
     } catch {
       /* best-effort */
@@ -9466,6 +9541,7 @@ class NodeServiceImpl implements NodeService {
         await this.resyncBondedContactReachabilityTags();
         await this._scrubBondedContactDialState();
         this._scheduleBondWarmup("node:online");
+        this._schedulePresenceSignalBroadcast("node:online");
       })();
 
       // Wait longer for DHT to connect to bootstrap peers and stabilize routing table
@@ -11622,21 +11698,50 @@ class NodeServiceImpl implements NodeService {
   }
 
   private async _autoDiscoverRelayWsUrl(): Promise<string | undefined> {
-    // 1. Check configured relays in persisted config — only when directly connected
+    try {
+      const config = await this._configStore.load();
+      if (config?.configuredRelays?.length) {
+        for (const r of config.configuredRelays) {
+          if (!r.enabled || !r.addr?.includes("/ip4/")) {
+            continue;
+          }
+          const derived = NodeServiceImpl._deriveRelayWsUrl(r.addr);
+          if (derived) {
+            return derived;
+          }
+        }
+      }
+      const presets = config?.bootstrapPresets ?? [...DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS];
+      const relayEnabled = config?.relayEnabled !== false;
+      if (relayEnabled && presets.includes("cn-relay")) {
+        const derived = NodeServiceImpl._deriveRelayWsUrl(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
+        if (derived) {
+          return derived;
+        }
+      }
+    } catch {
+      /* no persisted config */
+    }
+
+    // Last resort: libp2p-connected relay (may be available after bootstrap settles).
     try {
       const config = await this._configStore.load();
       if (config?.configuredRelays?.length) {
         const r = config.configuredRelays.find(
-          (r) => r.addr.includes("/ip4/") && this._hasDirectConnectionTo(NodeServiceImpl._deriveRelayPeerId(r.addr) ?? ""),
+          (r) =>
+            r.addr.includes("/ip4/") &&
+            this._hasDirectConnectionTo(NodeServiceImpl._deriveRelayPeerId(r.addr) ?? ""),
         );
         if (r) {
           const derived = NodeServiceImpl._deriveRelayWsUrl(r.addr);
-          if (derived) return derived;
+          if (derived) {
+            return derived;
+          }
         }
       }
-    } catch { /* no persisted config */ }
-
-    // 2. Fall back to known community relay — only if directly connected
+    } catch {
+      /* ignore */
+    }
     const cnRelayPeerId = NodeServiceImpl._deriveRelayPeerId(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
     if (cnRelayPeerId && this._hasDirectConnectionTo(cnRelayPeerId)) {
       return NodeServiceImpl._deriveRelayWsUrl(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
