@@ -217,6 +217,8 @@ import {
   chatRoomThreadKey,
   chatWireAttachmentsToContent,
   deferredDirectChatAttachmentKey,
+  isAudioMimeType,
+  resolveInboundChatDisplayText,
   ENVOY_AI_THREAD_KEY,
 } from "@envoymesh/api";
 
@@ -7268,9 +7270,12 @@ class NodeServiceImpl implements NodeService {
     };
 
     let chatMessageId: string | undefined;
-    if (params.chatText !== undefined) {
-      const sendResult = await this.sendChat(params.targetOwnerId, params.chatText, [wireAttachment]);
+    if (params.chatText !== undefined || isAudioMimeType(mimeType)) {
+      const text = resolveInboundChatDisplayText(params.chatText ?? "", [wireAttachment]);
+      const sendResult = await this.sendChat(params.targetOwnerId, text, [wireAttachment]);
       chatMessageId = sendResult.messageId;
+      // Receiver should persist chat.message before share.request (metadata + bytes).
+      await new Promise((resolve) => setTimeout(resolve, 400));
     } else if (params.recordInChat !== false) {
       void this._recordFileShareInChat({
         peerOwnerId: params.targetOwnerId,
@@ -7283,13 +7288,36 @@ class NodeServiceImpl implements NodeService {
       });
     }
 
-    const { shareRequestMessageId } = await this._shareFileInternal(params.targetOwnerId, {
-      path: vaultRelativePath,
-      sensitivity,
-      deliveryChannel: "chat",
-      chatMessageId,
-      chatAttachmentId: attachmentId,
-    });
+    let shareRequestMessageId: string | undefined;
+    let shareErr: unknown;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        if (attempt > 0) {
+          await new Promise((resolve) => setTimeout(resolve, 800 * attempt));
+        }
+        ({ shareRequestMessageId } = await this._shareFileInternal(params.targetOwnerId, {
+          path: vaultRelativePath,
+          sensitivity,
+          deliveryChannel: "chat",
+          chatMessageId,
+          chatAttachmentId: attachmentId,
+        }));
+        shareErr = undefined;
+        break;
+      } catch (err) {
+        shareErr = err;
+        console.warn(
+          `[chat-attachment] share.request attempt ${attempt + 1}/3 failed:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+    if (shareErr) {
+      console.warn(
+        `[chat-attachment] chat metadata sent but file transfer failed for ${params.targetOwnerId.slice(0, 24)}…:`,
+        shareErr instanceof Error ? shareErr.message : shareErr,
+      );
+    }
 
     return { attachmentId, vaultRelativePath, shareRequestMessageId, messageId: chatMessageId };
   }
@@ -9575,7 +9603,10 @@ class NodeServiceImpl implements NodeService {
             displayName: selfHuman?.displayName ?? profile.owner.ownerId,
           },
           content: {
-            text: stripModelThinking(payload.text),
+            text: resolveInboundChatDisplayText(
+              stripModelThinking(payload.text),
+              payload.attachments,
+            ),
             ...(payload.attachments?.length
               ? { attachments: chatWireAttachmentsToContent(payload.attachments) }
               : {}),
@@ -9614,7 +9645,7 @@ class NodeServiceImpl implements NodeService {
             await runInboundChatAssist({
               envelope: guardDecision.envelope,
               senderOwnerId: payload.senderOwnerId,
-              chatText: payload.text,
+              chatText: resolveInboundChatDisplayText(payload.text, payload.attachments),
               remotePeerId,
               receivedAt,
               correlationId,

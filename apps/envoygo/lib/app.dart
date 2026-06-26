@@ -3,6 +3,7 @@ import 'package:envoygo/l10n/app_localizations.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'providers/locale_provider.dart';
+import 'navigation/app_navigator.dart';
 import 'screens/home_screen.dart';
 
 /// Root [MaterialApp] with localization delegates and saved locale.
@@ -14,6 +15,7 @@ class EnvoyGoApp extends ConsumerWidget {
     final locale = ref.watch(localeProvider);
 
     return MaterialApp(
+      navigatorKey: appNavigatorKey,
       title: 'EnvoyGo',
       debugShowCheckedModeBanner: false,
       locale: locale,

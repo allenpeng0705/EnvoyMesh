@@ -739,8 +739,9 @@ export interface SendChatAttachmentParams {
 export interface SendChatAttachmentResult {
   attachmentId: string;
   vaultRelativePath: string;
-  shareRequestMessageId: string;
-  /** Present when `chatText` was provided — the outbound chat.message id. */
+  /** Omitted when share.request could not be delivered after retries. */
+  shareRequestMessageId?: string;
+  /** Present when a chat.message was sent (text and/or audio attachment). */
   messageId?: string;
 }
 

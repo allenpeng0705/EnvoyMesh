@@ -223,6 +223,8 @@ export async function routeRpcMethod(
         contentBase64: params.contentBase64 as string,
         mimeType: params.mimeType as string | undefined,
         caption: params.caption as string | undefined,
+        chatText: params.chatText as string | undefined,
+        recordInChat: params.recordInChat as boolean | undefined,
         sensitivity: params.sensitivity as "public" | "friends" | "private" | undefined,
       });
     case "readLibraryItemContent":

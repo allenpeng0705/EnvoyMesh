@@ -802,4 +802,55 @@ void main() {
       expect(messages.single.isOutbound, isTrue);
     });
   });
+
+  group('NodeServiceClient reachability RPCs', () {
+    test('getPeerConnectionInfo sends peerOwnerId and parses result',
+        () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture =
+          client.getPeerConnectionInfo('envoy:owner:alice');
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'getPeerConnectionInfo');
+      expect(sent['params'], {'peerOwnerId': 'envoy:owner:alice'});
+
+      mock.simulateMessage({
+        'id': sent['id'],
+        'result': {'connected': true, 'direct': false, 'relayPeerId': 'relay1'},
+      });
+      final info = await callFuture;
+      expect(info.connected, isTrue);
+      expect(info.direct, isFalse);
+      expect(info.relayPeerId, 'relay1');
+    });
+
+    test('warmContactConnection forwards keepAlive flag', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture = client.warmContactConnection(
+        'envoy:owner:bob',
+        keepAlive: true,
+      );
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'warmContactConnection');
+      expect(sent['params'], {
+        'peerOwnerId': 'envoy:owner:bob',
+        'keepAlive': true,
+      });
+
+      mock.simulateMessage({
+        'id': sent['id'],
+        'result': {'connected': true, 'direct': true},
+      });
+      final info = await callFuture;
+      expect(info.connected, isTrue);
+      expect(info.direct, isTrue);
+    });
+  });
 }

@@ -126,7 +126,7 @@ import { createInboundMessageGuard } from "./inbound-guard.js";
 import { chatSenderActorFromEnvelope, resolveEmpSupportedCapabilities } from "@envoymesh/api";
 import { buildSignedChatDeliveredEnvelope } from "@envoymesh/api/chat-delivered";
 import { verifyInboundChatDevice, formatChatSenderDisplayName, bindDeviceAuthorizationStore } from "./chat-device-auth.js";
-import { chatWireAttachmentsToContent } from "@envoymesh/api";
+import { chatWireAttachmentsToContent, resolveInboundChatDisplayText } from "@envoymesh/api";
 import { buildOutboundDialHints } from "./outbound-dial-hints.js";
 import {
   dialableInboundRemoteAddrs,
@@ -1989,7 +1989,10 @@ async function handleInboundMeshMessage({
           displayName: selfHuman?.displayName ?? profile.owner.ownerId,
         },
         content: {
-          text: stripModelThinking(payload.text),
+          text: resolveInboundChatDisplayText(
+            stripModelThinking(payload.text),
+            payload.attachments,
+          ),
           ...(payload.attachments?.length
             ? { attachments: chatWireAttachmentsToContent(payload.attachments) }
             : {}),
@@ -2062,11 +2065,7 @@ async function handleInboundMeshMessage({
         if (!storedConfig) {
           return;
         }
-        let chatText = payload.text;
-        const hasAudioAttachment = payload.attachments?.some((a) => a.mimeType?.startsWith("audio/"));
-        if (!chatText.trim() && hasAudioAttachment) {
-          chatText = "[Audio message — no transcription available]";
-        }
+        let chatText = resolveInboundChatDisplayText(payload.text, payload.attachments);
         const mergedConfig = {
           ...storedConfig,
           chatAssistEnabled: currentChatAssistEnabled,

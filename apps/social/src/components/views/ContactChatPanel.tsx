@@ -805,7 +805,9 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
                           )}
                           onDelete={() => void handleDeleteMessage(msg.messageId)}
                         >
-                          <ChatMessageText text={msg.content.text} identity={aiIdentity} />
+                          {msg.content.text?.trim() ? (
+                            <ChatMessageText text={msg.content.text} identity={aiIdentity} />
+                          ) : null}
                           {msg.content.attachments?.map((attachment) => {
                             const isAudio = attachment.mimeType?.split(";")[0]?.startsWith("audio/") === true;
                             return isAudio ? (

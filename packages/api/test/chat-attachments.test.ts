@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   chatWireAttachmentsToContent,
   deferredDirectChatAttachmentKey,
+  AUDIO_MESSAGE_FALLBACK_TEXT,
+  resolveInboundChatDisplayText,
 } from "../src/chat-attachments.js";
 
 describe("chatWireAttachmentsToContent", () => {
@@ -32,5 +34,19 @@ describe("deferredDirectChatAttachmentKey", () => {
     expect(
       deferredDirectChatAttachmentKey(" envoy:owner:abc ", " msg-id ", " att-id "),
     ).toBe("envoy:owner:abc\nmsg-id\natt-id");
+  });
+});
+
+describe("resolveInboundChatDisplayText", () => {
+  it("returns fallback for audio-only messages", () => {
+    expect(
+      resolveInboundChatDisplayText("", [
+        { mimeType: "audio/mp4" },
+      ]),
+    ).toBe(AUDIO_MESSAGE_FALLBACK_TEXT);
+  });
+
+  it("preserves non-empty text", () => {
+    expect(resolveInboundChatDisplayText("hello", [{ mimeType: "audio/webm" }])).toBe("hello");
   });
 });

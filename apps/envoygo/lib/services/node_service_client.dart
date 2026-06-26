@@ -5,6 +5,7 @@ import '../models/chain_active.dart';
 import '../models/chat_message.dart';
 import '../models/chat_room.dart';
 import '../models/contact.dart';
+import '../models/peer_connection_info.dart';
 import '../models/terminal_session.dart';
 import 'home_remote_client.dart';
 
@@ -51,12 +52,7 @@ class NodeServiceClient {
     for (final event in _callEvents) {
       _unsubs.add(
         _client.on(event, (data) {
-          // Normalize: the home emits `{event, data}`; the provider expects
-          // a flat map with a `type` field. Re-stamp `type` defensively.
-          final payload = data is Map<String, dynamic>
-              ? Map<String, dynamic>.from(data)
-              : <String, dynamic>{};
-          payload['type'] ??= event;
+          final payload = _normalizePushEvent(event, data);
           _eventController.add(payload);
         }),
       );
@@ -84,6 +80,22 @@ class NodeServiceClient {
   /// Stream of unsolicited push events from the home node (`call:*` today;
   /// easily extended). Consumed by [CallProvider].
   Stream<Map<String, dynamic>> get eventStream => _eventController.stream;
+
+  /// Flatten `{event, data}` envelopes and nested `data` maps from the home.
+  static Map<String, dynamic> _normalizePushEvent(String event, dynamic data) {
+    if (data is! Map) {
+      return {'type': event};
+    }
+    final raw = Map<String, dynamic>.from(data);
+    final nested = raw['data'];
+    if (nested is Map) {
+      final flat = Map<String, dynamic>.from(nested);
+      flat['type'] ??= raw['type'] ?? event;
+      return flat;
+    }
+    raw['type'] ??= event;
+    return raw;
+  }
 
   /// Home node config patches (`config:updated`). Includes `modelProviders`.
   Stream<dynamic> get configUpdateStream => _configController.stream;
@@ -152,6 +164,36 @@ class NodeServiceClient {
         as Map<String, dynamic>;
   }
 
+  /// Live libp2p reachability for a bonded contact (direct vs relay).
+  Future<PeerConnectionInfo> getPeerConnectionInfo(String peerOwnerId) async {
+    final result = await _client.call('getPeerConnectionInfo', {
+      'peerOwnerId': peerOwnerId,
+    }) as Map<String, dynamic>;
+    return PeerConnectionInfo.fromJson(result);
+  }
+
+  /// Warm or probe an existing path without forcing a full redial.
+  Future<PeerConnectionInfo> warmContactConnection(
+    String peerOwnerId, {
+    bool warm = false,
+    bool verifyOnly = false,
+    bool keepAlive = false,
+    bool redial = false,
+    bool upgradeRelayToDirect = false,
+    bool verifyConnection = false,
+  }) async {
+    final params = <String, dynamic>{'peerOwnerId': peerOwnerId};
+    if (warm) params['warm'] = true;
+    if (verifyOnly) params['verifyOnly'] = true;
+    if (keepAlive) params['keepAlive'] = true;
+    if (redial) params['redial'] = true;
+    if (upgradeRelayToDirect) params['upgradeRelayToDirect'] = true;
+    if (verifyConnection) params['verifyConnection'] = true;
+    final result = await _client.call('warmContactConnection', params)
+        as Map<String, dynamic>;
+    return PeerConnectionInfo.fromJson(result);
+  }
+
   // -- Chat — direct messages --
 
   Future<Map<String, dynamic>> sendChat(
@@ -183,6 +225,8 @@ class NodeServiceClient {
     required String contentBase64,
     required String mimeType,
     String? caption,
+    String? chatText,
+    bool? recordInChat,
   }) async {
     final params = <String, dynamic>{
       'targetOwnerId': targetOwnerId,
@@ -190,6 +234,8 @@ class NodeServiceClient {
       'contentBase64': contentBase64,
       'mimeType': mimeType,
       if (caption != null) 'caption': caption,
+      if (chatText != null) 'chatText': chatText,
+      if (recordInChat != null) 'recordInChat': recordInChat,
     };
     return await _client.call('sendChatAttachment', params)
         as Map<String, dynamic>;

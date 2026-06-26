@@ -4,10 +4,12 @@ import 'package:dart_libp2p/dart_libp2p.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/stored_node.dart';
+import '../navigation/app_navigator.dart';
 import '../services/web_socket_like.dart';
 import 'call_provider.dart';
 import 'chat_provider.dart';
 import 'contact_provider.dart';
+import 'contact_reachability_provider.dart';
 import 'terminal_provider.dart';
 import '../services/candidate_resolver.dart';
 import '../services/home_remote_client.dart';
@@ -627,6 +629,10 @@ class NodeNotifier extends StateNotifier<NodeState> {
     }).catchError((e) {
       _log('getBridgeStatus failed: $e');
     });
+
+    // Eagerly start contact reachability polling (lazy provider otherwise
+    // waits until Contacts/Chats UI mounts).
+    _ref.read(contactReachabilityProvider);
   }
 
   Future<void> _syncBondsDirect(
@@ -1207,9 +1213,10 @@ final callProvider = ChangeNotifierProvider<CallProvider>((ref) {
       callerName: payload['callerName'] as String?,
     );
   });
-  final acceptedSub = voip.onCallAccepted.listen((callId) {
+  final acceptedSub = voip.onCallAccepted.listen((callId) async {
     if (provider.state.callId == callId) {
-      provider.acceptCall();
+      final ok = await provider.acceptCall();
+      if (ok) openVoiceCallScreen();
     }
   });
   final declinedSub = voip.onCallDeclined.listen((callId) {
