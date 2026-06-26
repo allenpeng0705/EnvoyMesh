@@ -852,8 +852,12 @@ class NodeNotifier extends StateNotifier<NodeState> {
     // -- WebSocket push events --
     client.on('chat:message', (data) {
       _log('[push] chat:message received: $data');
-      if (data is Map<String, dynamic>) {
-        chatNotifier.onChatMessage(data);
+      try {
+        if (data is Map) {
+          chatNotifier.onChatMessage(Map<String, dynamic>.from(data));
+        }
+      } catch (e, st) {
+        _log('[push] chat:message handler error: $e\n$st');
       }
     });
     client.on('chat:room-message', (data) {
@@ -887,8 +891,12 @@ class NodeNotifier extends StateNotifier<NodeState> {
     });
     client.on('agent:activity', (data) {
       _log('[push] agent:activity received: $data');
-      if (data is Map<String, dynamic>) {
-        chatNotifier.onChatMessage(data);
+      try {
+        if (data is Map) {
+          chatNotifier.onChatMessage(Map<String, dynamic>.from(data));
+        }
+      } catch (e, st) {
+        _log('[push] agent:activity handler error: $e\n$st');
       }
     });
     client.on('terminal:session-updated', (_) async {

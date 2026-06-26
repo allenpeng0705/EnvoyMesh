@@ -3560,66 +3560,71 @@ class NodeServiceImpl implements NodeService {
     let listenAddrs = input.listenAddrs;
     let dialHints = input.dialHints;
 
-    if (!transportPeerId) {
-      try {
-        const composed = await this._composeOutboundDirectChat(
-          input.targetOwnerId,
-          input.wireText,
-          input.wireAttachments,
-        );
-        envelope = composed.envelope;
-        transportPeerId = composed.transportPeerId;
-        listenAddrs = composed.listenAddrs;
-        dialHints = composed.dialHints;
-      } catch (err) {
-        console.warn(
-          `[chat-attachment] background compose/delivery aborted for ${input.targetOwnerId.slice(0, 24)}…:`,
-          err instanceof Error ? err.message : err,
-        );
-        return;
-      }
-    } else if (dialHints.length === 0) {
-      try {
-        dialHints = await raceWithTimeout(
-          this._dialHintsForChat(transportPeerId, listenAddrs),
-          30_000,
-          "_dialHintsForChat",
-        );
-      } catch (hintErr) {
-        console.warn(
-          `[chat-attachment] dial hints failed for ${input.targetOwnerId.slice(0, 24)}…:`,
-          hintErr instanceof Error ? hintErr.message : hintErr,
-        );
-        dialHints = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs ?? [], []);
-      }
-      if (transportPeerId && dialHints.length > 0) {
-        void mesh.scrubPeerStoreDialHints(
-          transportPeerId,
-          mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, dialHints),
-        );
-      }
-    }
-
     void getCachedVaultIndex(this._vaultDir).catch(() => undefined);
 
     let deliverResult: ChatDeliverResult = { delivered: false };
-    try {
-      if (transportPeerId === mesh.peerId && this._bridgeChatHandler) {
-        await this._bridgeChatHandler(envelope, mesh.peerId);
-        deliverResult = { delivered: true, deliveredAt: new Date().toISOString() };
-      } else {
-        deliverResult = await this._deliverChatEnvelope(
-          transportPeerId,
-          envelope,
-          dialHints,
-          listenAddrs,
-        );
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) {
+        await new Promise((resolve) => setTimeout(resolve, 800 * attempt));
       }
-    } catch (err) {
-      console.warn(
-        `[chat-attachment] chat.message delivery failed for ${input.targetOwnerId.slice(0, 24)}…:`,
-        err instanceof Error ? err.message : err,
-      );
+      if (!transportPeerId) {
+        try {
+          const composed = await this._composeOutboundDirectChat(
+            input.targetOwnerId,
+            input.wireText,
+            input.wireAttachments,
+          );
+          envelope = composed.envelope;
+          transportPeerId = composed.transportPeerId;
+          listenAddrs = composed.listenAddrs;
+          dialHints = composed.dialHints;
+        } catch (err) {
+          console.warn(
+            `[chat-attachment] compose retry ${attempt + 1}/3 failed for ${input.targetOwnerId.slice(0, 24)}…:`,
+            err instanceof Error ? err.message : err,
+          );
+          continue;
+        }
+      } else if (dialHints.length === 0) {
+        try {
+          dialHints = await raceWithTimeout(
+            this._dialHintsForChat(transportPeerId, listenAddrs),
+            30_000,
+            "_dialHintsForChat",
+          );
+        } catch (hintErr) {
+          console.warn(
+            `[chat-attachment] dial hints failed for ${input.targetOwnerId.slice(0, 24)}…:`,
+            hintErr instanceof Error ? hintErr.message : hintErr,
+          );
+          dialHints = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs ?? [], []);
+        }
+      }
+
+      try {
+        if (transportPeerId === mesh.peerId && this._bridgeChatHandler) {
+          await this._bridgeChatHandler(envelope, mesh.peerId);
+          deliverResult = { delivered: true, deliveredAt: new Date().toISOString() };
+        } else if (transportPeerId) {
+          deliverResult = await this._deliverChatEnvelope(
+            transportPeerId,
+            envelope,
+            dialHints,
+            listenAddrs,
+          );
+        }
+      } catch (err) {
+        console.warn(
+          `[chat-attachment] chat.message delivery attempt ${attempt + 1}/3 failed for ${input.targetOwnerId.slice(0, 24)}…:`,
+          err instanceof Error ? err.message : err,
+        );
+        deliverResult = { delivered: false };
+      }
+
+      if (deliverResult.delivered) {
+        break;
+      }
+      dialHints = [];
     }
 
     if (deliverResult.delivered) {

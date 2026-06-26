@@ -10,7 +10,7 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { useT } from "../context/I18nContext.js";
 import { useNodeService } from "../hooks/useNodeService.js";
-import type { ChatAttachment } from "@envoymesh/api";
+import { isAudioPlaceholderChatText, type ChatAttachment } from "@envoymesh/api";
 
 export interface ChatAudioAttachmentProps {
   attachment: ChatAttachment;
@@ -21,6 +21,8 @@ export interface ChatAudioAttachmentProps {
 export function ChatAudioAttachment({ attachment, transcription }: ChatAudioAttachmentProps) {
   const t = useT();
   const nodeService = useNodeService();
+  const caption =
+    transcription && !isAudioPlaceholderChatText(transcription) ? transcription : undefined;
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
@@ -71,8 +73,8 @@ export function ChatAudioAttachment({ attachment, transcription }: ChatAudioAtta
           {t("audioMessage.unsupported", "Your browser does not support audio playback.")}
         </audio>
       )}
-      {transcription ? (
-        <p className="chat-audio-transcription">{transcription}</p>
+      {caption ? (
+        <p className="chat-audio-transcription">{caption}</p>
       ) : null}
       {(durationSec != null && durationSec > 0) ? (
         <span className="chat-audio-duration">

@@ -79,5 +79,34 @@ void main() {
       expect(msg.senderDisplayName, 'You');
       expect(msg.text, 'Hi group');
     });
+
+    test('fromRpcMap parses attachments from content', () {
+      final msg = ChatMessage.fromRpcMap(
+        'node1:owner123',
+        {
+          'messageId': 'm2',
+          'sender': {'ownerId': 'envoy:owner:peer', 'displayName': 'Alice'},
+          'content': {
+            'text': ChatMessage.audioPlaceholderText,
+            'attachments': [
+              {
+                'id': 'att-1',
+                'filename': 'voice.m4a',
+                'mimeType': 'audio/mp4',
+                'sizeBytes': 1234,
+                'sensitivity': 'friends',
+                'vaultRelativePath': 'chat/out/att-1/voice.m4a',
+              },
+            ],
+          },
+          'metadata': {'timestamp': '2026-06-24T12:00:00.000Z'},
+        },
+        selfOwnerId: 'envoy:owner:self',
+      );
+
+      expect(msg.attachments?.length, 1);
+      expect(msg.attachments!.first.vaultRelativePath, 'chat/out/att-1/voice.m4a');
+      expect(msg.isOutbound, isFalse);
+    });
   });
 }

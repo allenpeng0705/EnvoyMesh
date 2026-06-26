@@ -31,7 +31,7 @@ class LocalDatabase {
     final dbPath = p.join(await getDatabasesPath(), 'envoygo.db');
     _db = await openDatabase(
       dbPath,
-      version: 4,
+      version: 5,
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await db.execute('ALTER TABLE nodes ADD COLUMN public_host TEXT');
@@ -47,6 +47,9 @@ class LocalDatabase {
               value TEXT NOT NULL
             )
           ''');
+        }
+        if (oldVersion < 5) {
+          await db.execute('ALTER TABLE messages ADD COLUMN attachments TEXT');
         }
       },
       onCreate: (db, version) async {
@@ -99,7 +102,8 @@ class LocalDatabase {
             sender_display_name TEXT,
             text TEXT,
             created_at TEXT,
-            is_outbound INTEGER DEFAULT 0
+            is_outbound INTEGER DEFAULT 0,
+            attachments TEXT
           )
         ''');
         await db.execute('''
@@ -256,16 +260,49 @@ class LocalDatabase {
 
   // -- Message operations --
 
+  /// Serialize a [ChatMessage.toJson()] map for SQLite (attachments → JSON text).
+  Map<String, dynamic> serializeMessageRow(Map<String, dynamic> message) {
+    final row = <String, dynamic>{
+      'id': message['id'],
+      'thread_id': message['thread_id'],
+      'sender_owner_id': message['sender_owner_id'],
+      'sender_display_name': message['sender_display_name'],
+      'text': message['text'],
+      'created_at': message['created_at'],
+      'is_outbound': message['is_outbound'],
+    };
+    final attachments = message['attachments'];
+    if (attachments != null) {
+      row['attachments'] = jsonEncode(attachments);
+    }
+    return row;
+  }
+
+  /// Restore attachments list after reading a message row from SQLite.
+  Map<String, dynamic> deserializeMessageRow(Map<String, dynamic> row) {
+    final out = Map<String, dynamic>.from(row);
+    final attachments = out['attachments'];
+    if (attachments is String && attachments.isNotEmpty) {
+      out['attachments'] = jsonDecode(attachments);
+    }
+    return out;
+  }
+
   /// Replace a temp (optimistic) message with the server version.
   Future<void> replaceMessage(String tempId, Map<String, dynamic> msg) async {
     final db = await _ensureDb;
-    await db.update('messages', msg, where: 'id = ?', whereArgs: [tempId]);
+    await db.update(
+      'messages',
+      serializeMessageRow(msg),
+      where: 'id = ?',
+      whereArgs: [tempId],
+    );
   }
 
   Future<void> insertMessage(Map<String, dynamic> message) async {
     await _ensureDb.insert(
       'messages',
-      message,
+      serializeMessageRow(message),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
@@ -281,13 +318,14 @@ class LocalDatabase {
       whereClause = 'thread_id = ?';
       whereArgs = [threadId];
     }
-    return _ensureDb.query(
+    final rows = await _ensureDb.query(
       'messages',
       where: whereClause,
       whereArgs: whereArgs,
       orderBy: 'created_at DESC',
       limit: limit,
     );
+    return rows.map(deserializeMessageRow).toList();
   }
 
   // -- Room operations --

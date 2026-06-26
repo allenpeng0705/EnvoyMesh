@@ -219,6 +219,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
             contentBase64: base64,
             filename: filename,
             mimeType: mimeType,
+            sizeBytes: bytes.length,
             durationSec: _recordingSeconds,
           );
 

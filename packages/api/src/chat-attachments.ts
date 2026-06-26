@@ -16,6 +16,11 @@ export function hasAudioChatAttachments(
   return attachments?.some((att) => isAudioMimeType(att.mimeType)) ?? false;
 }
 
+/** True when [text] is the standard voice-note placeholder (not a real transcription). */
+export function isAudioPlaceholderChatText(text: string | undefined): boolean {
+  return text?.trim() === AUDIO_MESSAGE_FALLBACK_TEXT;
+}
+
 /** Persist/display text for inbound or outbound audio-only chat messages. */
 export function resolveInboundChatDisplayText(
   text: string,

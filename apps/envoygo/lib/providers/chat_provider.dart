@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/chat_message.dart';
@@ -183,6 +181,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     required String contentBase64,
     required String filename,
     required String mimeType,
+    required int sizeBytes,
     int? durationSec,
   }) async {
     final nodeService = _ref.read(nodeServiceProvider);
@@ -191,20 +190,22 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final nodeState = _ref.read(nodeProvider);
     if (nodeState.activeNode == null) return false;
 
+    final selfOwnerId = nodeState.ownerId;
     final now = DateTime.now().toIso8601String();
     final tempId = 'pending-voice-${DateTime.now().microsecondsSinceEpoch}';
-    const placeholderText = '[Audio message — no transcription available]';
+    const placeholderText = ChatMessage.audioPlaceholderText;
     final tempAtt = ChatAttachment(
       id: tempId,
       filename: filename,
       mimeType: mimeType,
-      sizeBytes: base64Decode(contentBase64).length,
+      sizeBytes: sizeBytes,
       sensitivity: 'friends',
       durationSec: durationSec,
     );
     final tempMsg = ChatMessage(
       id: tempId,
       threadId: threadId,
+      senderOwnerId: selfOwnerId,
       text: placeholderText,
       createdAt: now,
       isOutbound: true,
@@ -241,13 +242,44 @@ class ChatNotifier extends StateNotifier<ChatState> {
     );
 
     try {
-      await nodeService.sendChatAttachment(
+      final result = await nodeService.sendChatAttachment(
         targetOwnerId: contactOwnerId,
         filename: filename,
         contentBase64: contentBase64,
         mimeType: mimeType,
       );
-      await loadHistory(threadId, contactOwnerId: contactOwnerId);
+      final messageId = result['messageId'] as String?;
+      final attachmentId = result['attachmentId'] as String?;
+      final vaultRelativePath = result['vaultRelativePath'] as String?;
+      if (messageId == null || attachmentId == null) {
+        throw StateError('sendChatAttachment missing messageId');
+      }
+
+      final serverMsg = ChatMessage(
+        id: messageId,
+        threadId: threadId,
+        senderOwnerId: selfOwnerId,
+        senderDisplayName: 'You',
+        text: placeholderText,
+        createdAt: now,
+        isOutbound: true,
+        attachments: [
+          ChatAttachment(
+            id: attachmentId,
+            filename: filename,
+            mimeType: mimeType,
+            sizeBytes: sizeBytes,
+            sensitivity: 'friends',
+            vaultRelativePath: vaultRelativePath,
+            durationSec: durationSec,
+          ),
+        ],
+      );
+
+      _replaceOptimisticMessage(threadId, tempId, serverMsg);
+      if (messageId.isNotEmpty) {
+        _seenMessageIds.add('$threadId:$messageId');
+      }
       return true;
     } catch (_) {
       state = state.copyWith(
@@ -261,6 +293,38 @@ class ChatNotifier extends StateNotifier<ChatState> {
       return false;
     }
   }
+
+  void _replaceOptimisticMessage(
+    String threadId,
+    String tempId,
+    ChatMessage serverMsg,
+  ) {
+    final existing = state.messages[threadId] ?? [];
+    final idx = existing.indexWhere((m) => m.id == tempId);
+    if (idx < 0) {
+      state = state.copyWith(
+        messages: {
+          ...state.messages,
+          threadId: [serverMsg, ...existing],
+        },
+      );
+      _localDb.insertMessage(serverMsg.toJson());
+      _sortThreadMessages(threadId);
+      return;
+    }
+    final updated = List<ChatMessage>.from(existing);
+    updated[idx] = serverMsg;
+    state = state.copyWith(
+      messages: {...state.messages, threadId: updated},
+    );
+    _localDb.replaceMessage(tempId, serverMsg.toJson());
+    _sortThreadMessages(threadId);
+  }
+
+  bool _isOptimisticMessageId(String id) =>
+      id.startsWith('temp_') ||
+      id.startsWith('pending-voice-') ||
+      id.startsWith('pending-');
 
   /// Load chat history for a thread from the home node (remote).
   Future<void> loadHistory(String threadId,
@@ -527,17 +591,6 @@ class ChatNotifier extends StateNotifier<ChatState> {
       return;
     }
 
-    // Dedup: skip if we've already seen this messageId (dual delivery).
-    final msgId = messageId ?? '';
-    if (msgId.isNotEmpty && _seenMessageIds.contains(msgId)) return;
-    if (msgId.isNotEmpty) {
-      _seenMessageIds.add(msgId);
-      if (_seenMessageIds.length > 200) {
-        _seenMessageIds
-            .removeAll(_seenMessageIds.take(_seenMessageIds.length - 200));
-      }
-    }
-
     // --- Determine which thread to put the message in ---
     final terminalId = data['terminalId'] as String?;
     final terminalName = data['terminalName'] as String?;
@@ -607,7 +660,15 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final msgSenderDisplay = showAsMine ? 'You' : (senderDisplayName ?? senderOwnerId);
 
     final attachments = attachmentsRaw
-        ?.map((a) => ChatAttachment.fromJson(a as Map<String, dynamic>))
+        ?.map((a) {
+          if (a is! Map) return null;
+          try {
+            return ChatAttachment.fromJson(Map<String, dynamic>.from(a));
+          } catch (_) {
+            return null;
+          }
+        })
+        .whereType<ChatAttachment>()
         .toList();
     final msg = ChatMessage(
       id: messageId ?? 'msg_${DateTime.now().microsecondsSinceEpoch}',
@@ -620,8 +681,10 @@ class ChatNotifier extends StateNotifier<ChatState> {
       attachments: attachments,
     );
 
-    // Cache in local DB.
-    _localDb.insertMessage(msg.toJson());
+    // Cache in local DB (best-effort — must not crash push handler).
+    _localDb.insertMessage(msg.toJson()).catchError((Object e) {
+      debugPrint('[chat] local cache insert failed: $e');
+    });
 
     // Update thread.
     _upsertThread(
@@ -654,27 +717,28 @@ class ChatNotifier extends StateNotifier<ChatState> {
     // Covers both double-push (chat:message + agent:activity) and
     // optimistic temp messages. A Set makes duplicate checks O(1).
     final existingMessages = state.messages[threadId] ?? [];
+    final optimisticIdx = showAsMine
+        ? existingMessages.indexWhere((m) =>
+            _isOptimisticMessageId(m.id) &&
+            (text == null || text.isEmpty || m.text == text))
+        : -1;
+
     if (messageId != null) {
-      if (_seenMessageIds.add('$threadId:$messageId')) {
-        // New messageId — proceed.
-      } else {
-        return; // Duplicate messageId — skip.
+      final dedupeKey = '$threadId:$messageId';
+      if (!_seenMessageIds.add(dedupeKey)) {
+        if (optimisticIdx < 0) return;
       }
-    } else if (existingMessages.any((m) => m.text == text)) {
+    } else if (optimisticIdx < 0 &&
+        existingMessages.any((m) => m.text == text)) {
       return; // Duplicate content — skip.
     }
-    final optimisticIdx =
-        existingMessages.indexWhere((m) => m.text == text && m.id.startsWith('temp_'));
+
     if (optimisticIdx >= 0) {
       // Replace the optimistic message with the server version.
       final updated = List<ChatMessage>.from(existingMessages);
       final oldMsg = updated[optimisticIdx];
       updated[optimisticIdx] = msg;
-      // Also update the DB so re-loads use the correct (server) timestamp.
-      if (oldMsg.id.startsWith('temp_')) {
-        // Replace with server version (canonical server timestamp).
-        // Fire-and-forget: the method isn't async but the DB write
-        // is serialised on sqflite's queue so the row is safe.
+      if (_isOptimisticMessageId(oldMsg.id)) {
         _localDb.replaceMessage(oldMsg.id, msg.toJson());
       }
       state = state.copyWith(

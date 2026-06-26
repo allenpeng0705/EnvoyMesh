@@ -3,6 +3,7 @@ import {
   chatWireAttachmentsToContent,
   deferredDirectChatAttachmentKey,
   AUDIO_MESSAGE_FALLBACK_TEXT,
+  isAudioPlaceholderChatText,
   resolveInboundChatDisplayText,
 } from "../src/chat-attachments.js";
 
@@ -48,5 +49,14 @@ describe("resolveInboundChatDisplayText", () => {
 
   it("preserves non-empty text", () => {
     expect(resolveInboundChatDisplayText("hello", [{ mimeType: "audio/webm" }])).toBe("hello");
+  });
+});
+
+describe("isAudioPlaceholderChatText", () => {
+  it("matches the standard voice-note placeholder", () => {
+    expect(isAudioPlaceholderChatText(AUDIO_MESSAGE_FALLBACK_TEXT)).toBe(true);
+    expect(isAudioPlaceholderChatText(`  ${AUDIO_MESSAGE_FALLBACK_TEXT}  `)).toBe(true);
+    expect(isAudioPlaceholderChatText("Hello")).toBe(false);
+    expect(isAudioPlaceholderChatText(undefined)).toBe(false);
   });
 });

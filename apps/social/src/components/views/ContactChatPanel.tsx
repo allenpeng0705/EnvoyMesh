@@ -12,6 +12,8 @@ import {
   chatMessageTextForDisplay,
   MAX_CHAT_ATTACHMENT_BYTES,
   isContactComposeDraftSyncScope,
+  hasAudioChatAttachments,
+  isAudioPlaceholderChatText,
 } from "@envoymesh/api";
 import { createContactComposeDraftCrdt } from "../../lib/contact-compose-draft-crdt.js";
 import { ContactPrivateNotesPanel } from "../ContactPrivateNotesPanel.js";
@@ -805,17 +807,37 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
                           )}
                           onDelete={() => void handleDeleteMessage(msg.messageId)}
                         >
-                          {msg.content.text?.trim() ? (
-                            <ChatMessageText text={msg.content.text} identity={aiIdentity} />
-                          ) : null}
-                          {msg.content.attachments?.map((attachment) => {
-                            const isAudio = attachment.mimeType?.split(";")[0]?.startsWith("audio/") === true;
-                            return isAudio ? (
-                              <ChatAudioAttachment key={attachment.id} attachment={attachment} transcription={msg.content.text?.trim() || undefined} />
-                            ) : (
-                              <ChatFileAttachment key={attachment.id} attachment={attachment} />
+                          {(() => {
+                            const hasAudio = hasAudioChatAttachments(msg.content.attachments);
+                            const displayText = msg.content.text?.trim() ?? "";
+                            const showText =
+                              displayText.length > 0 &&
+                              !(hasAudio && isAudioPlaceholderChatText(displayText));
+                            const transcription =
+                              displayText && !isAudioPlaceholderChatText(displayText)
+                                ? displayText
+                                : undefined;
+                            return (
+                              <>
+                                {showText ? (
+                                  <ChatMessageText text={displayText} identity={aiIdentity} />
+                                ) : null}
+                                {msg.content.attachments?.map((attachment) => {
+                                  const isAudio =
+                                    attachment.mimeType?.split(";")[0]?.startsWith("audio/") === true;
+                                  return isAudio ? (
+                                    <ChatAudioAttachment
+                                      key={attachment.id}
+                                      attachment={attachment}
+                                      transcription={transcription}
+                                    />
+                                  ) : (
+                                    <ChatFileAttachment key={attachment.id} attachment={attachment} />
+                                  );
+                                })}
+                              </>
                             );
-                          })}
+                          })()}
                         </ChatMessageBubble>
                       ))}
                     </div>

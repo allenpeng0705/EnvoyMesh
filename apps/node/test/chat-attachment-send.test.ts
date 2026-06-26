@@ -106,6 +106,33 @@ describe("sendChatAttachment local-first", () => {
     expect(rows[0]?.content.attachments?.[0]?.filename).toBe("voice-note.m4a");
   });
 
+  it("retries background chat.message delivery before share.request", async () => {
+    const node = await bootstrapNode();
+    const audioBytes = Buffer.from("fake-audio-bytes");
+    let deliverAttempts = 0;
+
+    (node as any)._deliverChatEnvelope = vi.fn(async () => {
+      deliverAttempts += 1;
+      if (deliverAttempts < 2) {
+        return { delivered: false };
+      }
+      return { delivered: true, deliveredAt: new Date().toISOString() };
+    });
+    (node as any)._shareFileInternal = vi.fn(async () => undefined);
+
+    await node.sendChatAttachment({
+      targetOwnerId: PEER_OWNER_ID,
+      filename: "voice-note.m4a",
+      contentBase64: audioBytes.toString("base64"),
+      mimeType: "audio/mp4",
+    });
+
+    await vi.waitFor(() => {
+      expect(deliverAttempts).toBeGreaterThanOrEqual(2);
+      expect((node as any)._shareFileInternal).toHaveBeenCalled();
+    }, { timeout: 8000 });
+  });
+
   it("sendChat persists locally when delivery throws", async () => {
     const node = await bootstrapNode();
     (node as any)._deliverChatEnvelope = vi.fn(async () => {
