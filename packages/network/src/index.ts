@@ -1409,7 +1409,9 @@ export class EnvoyMesh {
     } catch (e) {
       const detail = e instanceof Error ? e.message : String(e);
       console.warn(`[network] ensurePeerReachable failed for ${target.slice(0, 24)}…: ${detail}`);
-      return { connected: false, direct: false };
+      // Existing connections may still be usable (e.g. relay not torn down by caller).
+      if (!peerIdStr) return { connected: false, direct: false };
+      return this.getPeerConnectionInfo(peerIdStr);
     }
     return peerIdStr ? this.getPeerConnectionInfo(peerIdStr) : { connected: false, direct: false };
   }
@@ -1676,8 +1678,12 @@ export class EnvoyMesh {
         lastError = e;
       }
     }
+    // When upgrading from relay→direct, don't skip the limited-connection fallback:
+    // if the direct dial fails, reuse the existing relay connection.
     const skipLimitedFallback =
-      hasDirectTcpDialHints(hintsRaw) && !sendOptions?.preferCircuitHints;
+      hasDirectTcpDialHints(hintsRaw) &&
+      !sendOptions?.preferCircuitHints &&
+      !sendOptions?.upgradeRelayToDirect;
     if (!skipLimitedFallback) {
       const viaLimited = await openStreamOnLimitedConn();
       if (viaLimited) {

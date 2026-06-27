@@ -12134,9 +12134,10 @@ class NodeServiceImpl implements NodeService {
 
     void mesh.mergePeerStoreDialHints(transportPeerId, dialHints);
 
+    // upgradeRelayToDirect must NOT tear down the relay connection —
+    // the direct dial is best-effort; if it fails, the relay path stays open.
     const tearingDown =
       options?.redial === true ||
-      options?.upgradeRelayToDirect === true ||
       (needsProbe && !options?.keepAlive);
     if (tearingDown) {
       try {
