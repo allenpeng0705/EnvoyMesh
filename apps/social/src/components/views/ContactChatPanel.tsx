@@ -652,7 +652,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
               <span className="contact-reachability-dot" aria-hidden />
               {isHomeBridgeThread && !contactReachable && !reachabilityChecking
                 ? t("contactChat.homeOffline")
-                : peerReachabilityLabel(peerReachability)}
+                : peerReachabilityLabel(peerReachability, reachabilityChecking)}
             </span>
           </div>
         </div>

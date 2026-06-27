@@ -11867,6 +11867,11 @@ class NodeServiceImpl implements NodeService {
           if (isOutboundPeerRecentlyVerified(transportPeerId)) {
             return existing;
           }
+          // Circuit-relay probes often false-negative; trust open relay until direct LAN exists.
+          if (!existing.direct) {
+            markOutboundPeerVerified(transportPeerId);
+            return existing;
+          }
           const probed = await mesh.probeBondedPeerConnection(transportPeerId);
           if (probed.connected) {
             markOutboundPeerVerified(transportPeerId);

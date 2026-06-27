@@ -63,7 +63,8 @@ export function applyReachabilityHysteresis(
   const label = reachabilityLabel(next);
   let { displayedLabel, lastConnectedAt, streakLabel, streakCount } = state;
 
-  if (options?.immediate) {
+  // First reading (or explicit immediate) — never leave UI stuck on "Checking…".
+  if (options?.immediate || displayedLabel === null) {
     displayedLabel = label;
     if (next.connected) {
       lastConnectedAt = now;

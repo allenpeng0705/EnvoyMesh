@@ -56,9 +56,9 @@ describe("usePeerReachability", () => {
     });
   });
 
-  it("attempts LAN upgrade when connected via relay (33aa02e behavior)", async () => {
+  it("uses keepAlive (not relay tear-down) when already connected via relay", async () => {
     getPeerConnectionInfo.mockResolvedValue({ connected: true, direct: false });
-    warmContactConnection.mockResolvedValue({ connected: true, direct: true });
+    warmContactConnection.mockResolvedValue({ connected: true, direct: false });
 
     const { result } = renderHook(() => usePeerReachability("envoy:owner:relay", true));
 
@@ -67,9 +67,31 @@ describe("usePeerReachability", () => {
     });
     await waitFor(() => {
       expect(
-        warmContactConnection.mock.calls.some((call) => call[1]?.upgradeRelayToDirect === true),
+        warmContactConnection.mock.calls.some((call) => call[1]?.keepAlive === true),
       ).toBe(true);
     });
+    expect(
+      warmContactConnection.mock.calls.some((call) => call[1]?.upgradeRelayToDirect === true),
+    ).toBe(false);
+  });
+
+  it("does not restart reachability polling on parent re-render", async () => {
+    getPeerConnectionInfo.mockResolvedValue({ connected: true, direct: true });
+
+    const { result, rerender } = renderHook(() => usePeerReachability("envoy:owner:stable", true));
+
+    await waitFor(() => {
+      expect(result.current.info?.connected).toBe(true);
+    });
+    const callsAfterSettle = getPeerConnectionInfo.mock.calls.length;
+
+    rerender();
+    rerender();
+    rerender();
+    await new Promise((resolve) => setTimeout(resolve, 150));
+
+    expect(getPeerConnectionInfo.mock.calls.length).toBe(callsAfterSettle);
+    expect(result.current.checking).toBe(false);
   });
 
   it("reports offline when warm cannot connect and keeps retrying in the background", async () => {

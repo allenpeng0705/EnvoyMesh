@@ -182,6 +182,16 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
       expect(info).toEqual({ connected: true, direct: true });
     });
 
+    it("keepAlive skips probe on relay paths and trusts open circuit", async () => {
+      getPeerConnectionInfo.mockReturnValue({ connected: true, direct: false });
+
+      const info = await node.warmContactConnection(PEER_OWNER_ID, { keepAlive: true });
+
+      expect(probeBondedPeerConnection).not.toHaveBeenCalled();
+      expect(ensurePeerReachable).not.toHaveBeenCalled();
+      expect(info).toEqual({ connected: true, direct: false });
+    });
+
     it("verifyConnection probes in place without tearing down when still connected", async () => {
       const info = await node.warmContactConnection(PEER_OWNER_ID, { verifyConnection: true });
 
