@@ -1715,6 +1715,8 @@ class NodeServiceImpl implements NodeService {
     }
     try {
       await this._peerDirectoryStore.compactListenAddrs();
+      await this._peerDirectoryStore.sanitizeListenAddrs();
+      await this._peerDirectoryStore.capPeerRecordCount();
       const bonds = await this.getBonds();
       for (const bond of bonds) {
         if (bond.level !== "direct" && bond.level !== "referred") {
