@@ -99,7 +99,7 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
     connectivityTuning: {},
     bootstrapPresets: [...DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS],
     bootstrapPresetsFiles: [],
-    listen: ["/ip4/0.0.0.0/tcp/4001"],
+    listen: ["/ip4/0.0.0.0/tcp/0"],
     advertiseAddrs: [],
     enableMdns: true,
     enableDht: false,
