@@ -493,6 +493,7 @@ import {
   revokeFleetManifestViaRuntime,
 } from "./node-service-fleet-manifest.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
+import { lookupBondedOwnerOverRelayWs } from "./relay-ws-control-client.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
 import { startNodeStatsInterval } from "./node-stats-log.js";
@@ -780,6 +781,12 @@ class NodeServiceImpl implements NodeService {
   private readonly _chainAutoEvaluateTimers = new Map<string, ReturnType<typeof setTimeout>>();
   /** mDNS/identify LAN listen ports we trust for dial (not libp2p inbound observed snapshots). */
   private readonly _trustedLanListenAddrsByPeer = new Map<string, string[]>();
+  /** Cached relay.lookup LAN addrs per owner — avoids hammering /ws/client on every warm. */
+  private readonly _relayLookupCacheByOwner = new Map<
+    string,
+    { at: number; peerId: string; addrs: string[] }
+  >();
+  private static readonly _relayLookupCacheTtlMs = 30_000;
   private _presenceBroadcastTimer: ReturnType<typeof setInterval> | null = null;
   /** Phase 43E — estimated cost range captured at plan time. */
   private readonly _chainCostEstimates = new Map<string, { minUsd: number; maxUsd: number }>();
@@ -9480,6 +9487,8 @@ class NodeServiceImpl implements NodeService {
           discoverySeedStore: this._discoverySeedStore,
           peerDirectoryStore: this._peerDirectoryStore,
           relayWsUrl,
+          onPeerDiscovered: (peerId: string, multiaddrs: string[]) =>
+            this.handleMeshPeerDiscovered(peerId, multiaddrs),
         };
         await runRelayClientCycle(relayDeps);
         this._stopRelayClientScheduler = startRelayClientScheduler({
@@ -11915,8 +11924,27 @@ class NodeServiceImpl implements NodeService {
     } catch {
       /* best-effort */
     }
-    const trustedLan = this._trustedLanListenAddrsByPeer.get(transportPeerId) ?? [];
+    let trustedLan = this._trustedLanListenAddrsByPeer.get(transportPeerId) ?? [];
     const fromDirLan = fromDir.filter((a) => isDialableLanListenHint(a, transportPeerId));
+    if (trustedLan.length === 0 && fromDirLan.length === 0) {
+      const relayFetched = await this._relayLookupListenAddrsForOwner(ownerId.trim());
+      if (relayFetched && relayFetched.addrs.length > 0) {
+        this.rememberTrustedPeerListenAddrs(relayFetched.peerId, relayFetched.addrs);
+        trustedLan = relayFetched.addrs;
+        const mesh = this._reachableMesh();
+        if (mesh) {
+          void mesh.mergePeerStoreDialHints(relayFetched.peerId, relayFetched.addrs);
+        }
+        try {
+          await this._peerDirectoryStore.mergeListenAddrsForPeerId(
+            relayFetched.peerId,
+            relayFetched.addrs,
+          );
+        } catch {
+          /* best-effort */
+        }
+      }
+    }
     const merged = mergeDialablePeerListenAddrs(
       transportPeerId,
       listenAddrs,
@@ -11925,6 +11953,48 @@ class NodeServiceImpl implements NodeService {
     );
     const withTrusted = [...new Set([...merged, ...trustedLan, ...fromDirLan])];
     return withTrusted.length ? withTrusted : listenAddrs;
+  }
+
+  /** Bonded contact warm: fetch LAN tcp/0 ports from relay roster via /ws/client. */
+  private async _relayLookupListenAddrsForOwner(
+    ownerId: string,
+  ): Promise<{ peerId: string; addrs: string[] } | undefined> {
+    const cached = this._relayLookupCacheByOwner.get(ownerId);
+    if (cached && Date.now() - cached.at < NodeServiceImpl._relayLookupCacheTtlMs) {
+      return { peerId: cached.peerId, addrs: cached.addrs };
+    }
+    const profile = this._profile;
+    if (!profile) {
+      return undefined;
+    }
+    const relayWsUrl = await this.resolveRelayWsUrl();
+    if (!relayWsUrl) {
+      return undefined;
+    }
+    try {
+      const result = await lookupBondedOwnerOverRelayWs({
+        relayWsUrl,
+        profile,
+        targetOwnerId: ownerId,
+      });
+      if (result) {
+        this._relayLookupCacheByOwner.set(ownerId, {
+          at: Date.now(),
+          peerId: result.peerId,
+          addrs: result.addrs,
+        });
+        console.log(
+          `[warmContact] relay lookup for ${ownerId.slice(0, 24)}… lan=${result.addrs.length}`,
+        );
+      }
+      return result;
+    } catch (err) {
+      console.warn(
+        `[warmContact] relay lookup failed for ${ownerId.slice(0, 24)}…:`,
+        err instanceof Error ? err.message : err,
+      );
+      return undefined;
+    }
   }
 
   private async _warmContactConnectionTransport(

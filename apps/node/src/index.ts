@@ -221,6 +221,7 @@ import {
 } from "./node-health.js";
 import { createClientProxyHandler } from "./client-proxy-handler.js";
 import { RelayTunnelClient } from "./relay-tunnel-client.js";
+import { sendRelayCheckinOverWs, sendRelayLookupOverWs } from "./relay-ws-control-client.js";
 import { startNodeStatsInterval } from "./node-stats-log.js";
 import { recordRelayCheckinCycle, recordRelayLookupResult } from "./relay-diagnostics-state.js";
 import { runCapabilityDiscoveryCycle, buildAutoCapabilityTopics } from "./capability-discovery.js";
@@ -4189,7 +4190,59 @@ function scheduleRelayCheckin(): void {
   }, connectivityRuntime.relayCycleIntervalMs());
 }
 
+async function tryRelayWsCheckin(source: "startup" | "periodic"): Promise<void> {
+  if (!(nodeService instanceof NodeServiceImpl)) {
+    return;
+  }
+  const relayWsUrl = await nodeService.resolveRelayWsUrl();
+  if (!relayWsUrl) {
+    return;
+  }
+  try {
+    await sendRelayCheckinOverWs({ relayWsUrl, mesh, profile });
+    console.log(`[relay-checkin-ws] ok source=${source}`);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[relay-checkin-ws] failed source=${source} error=${message}`);
+  }
+}
+
+async function tryRelayWsLookup(source: "startup" | "periodic"): Promise<boolean> {
+  if (!(nodeService instanceof NodeServiceImpl)) {
+    return false;
+  }
+  const relayWsUrl = await nodeService.resolveRelayWsUrl();
+  if (!relayWsUrl) {
+    return false;
+  }
+  try {
+    const payload = createRelayLookupPayload({
+      queryId: `relay_ws_lookup_${randomUUID()}`,
+      capability: "mesh.discovery",
+      maxResults: 32,
+      maxHops: 0,
+      maxFanout: 2,
+      visibilityScope: "public",
+      expiresAt: expiresAtFromNow(RELAY_CONTROL_TTL_MS),
+    });
+    const response = await sendRelayLookupOverWs({ relayWsUrl, profile, lookup: payload });
+    await processRelayLookupResponse(response);
+    if (response.peers.length === 0) {
+      return false;
+    }
+    console.log(
+      `[relay-lookup-ws] ok source=${source} peers=${response.peers.length}`,
+    );
+    return true;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn(`[relay-lookup-ws] failed source=${source} error=${message}`);
+    return false;
+  }
+}
+
 async function runRelayCheckinCycle(source: "startup" | "periodic"): Promise<void> {
+  await tryRelayWsCheckin(source);
   const targets = relayControlTargets();
   const expiresAt = expiresAtFromNow(RELAY_CONTROL_TTL_MS);
   const capabilities = relayCheckinCapabilities(profile.deviceCertificate.capabilities);
@@ -4653,6 +4706,9 @@ async function runRelaySummaryCycle(source: "startup" | "periodic"): Promise<voi
 }
 
 async function runRelayLookupCycle(source: "startup" | "periodic"): Promise<void> {
+  if (await tryRelayWsLookup(source)) {
+    return;
+  }
   const targets = relayControlTargets();
   let bestLookup:
     | { ok: true; peerCount: number; circuitAddrsStored: number }

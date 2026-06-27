@@ -9,7 +9,7 @@ import type {
   RelayPeerCandidate,
   RelayVisibility,
 } from "@envoymesh/protocol";
-import { filterUsableOutboundPeerDialHints } from "@envoymesh/network";
+import { filterDialHintsForOutboundSend } from "@envoymesh/network";
 
 export interface WsRelayRosterEntry {
   peerId: string;
@@ -41,12 +41,10 @@ function buildRelayCircuitMultiaddrs(relayMultiaddrs: string[], targetPeerId: st
 }
 
 function directDialAddrs(entry: WsRelayRosterEntry): string[] {
-  return filterUsableOutboundPeerDialHints(
-    entry.relayReachableAddrs.filter(
-      (addr) => addr.includes(`/p2p/${entry.peerId}`) && !addr.includes("/p2p-circuit/"),
-    ),
-    entry.peerId,
+  const direct = entry.relayReachableAddrs.filter(
+    (addr) => addr.includes(`/p2p/${entry.peerId}`) && !addr.includes("/p2p-circuit/"),
   );
+  return filterDialHintsForOutboundSend(direct, entry.peerId);
 }
 
 function matchesLookup(entry: WsRelayRosterEntry, payload: RelayLookupPayload): boolean {

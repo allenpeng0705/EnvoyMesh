@@ -9,7 +9,7 @@ import type {
   RelaySummaryPayload,
   RelayVisibility,
 } from "@envoymesh/protocol";
-import { filterUsableOutboundPeerDialHints } from "@envoymesh/network";
+import { filterDialHintsForOutboundSend } from "@envoymesh/network";
 import { buildRelayCircuitMultiaddrs } from "./discovery-inbound.js";
 import type { RelaySummaryEntry } from "./relay-lookup-router.js";
 
@@ -353,12 +353,10 @@ function isVisible(candidate: RelayVisibility, requested: RelayVisibility): bool
 
 /** Direct listen addrs from relay.checkin (LAN tcp/0 ports) — not relay circuit paths. */
 function directDialAddrsFromCheckin(entry: RelayRosterEntry): string[] {
-  return filterUsableOutboundPeerDialHints(
-    entry.relayReachableAddrs.filter(
-      (addr) => addr.includes(`/p2p/${entry.peerId}`) && !addr.includes("/p2p-circuit/"),
-    ),
-    entry.peerId,
+  const direct = entry.relayReachableAddrs.filter(
+    (addr) => addr.includes(`/p2p/${entry.peerId}`) && !addr.includes("/p2p-circuit/"),
   );
+  return filterDialHintsForOutboundSend(direct, entry.peerId);
 }
 
 function dedupeAddrs(input: string[]): string[] {
