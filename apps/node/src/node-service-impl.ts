@@ -9500,7 +9500,7 @@ class NodeServiceImpl implements NodeService {
       }));
 
       const meshOptions: EnvoyMeshOptions = {
-        listen: ["/ip4/0.0.0.0/tcp/0"],
+        listen: ["/ip4/0.0.0.0/tcp/4001"],
         advertiseAddrs: config.advertiseAddrs,
         enableMdns: connectivityRuntime.enableMdns,
         mdnsIntervalMs: connectivityRuntime.mdnsIntervalMs,

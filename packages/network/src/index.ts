@@ -286,7 +286,7 @@ export class EnvoyMesh {
     const browserMode = this.options.browserMode === true;
     const enableWebSocket = this.options.enableWebSocketTransport === true || browserMode;
 
-    const baseListen = this.options.listen ?? (browserMode ? [] : ["/ip4/0.0.0.0/tcp/0"]);
+    const baseListen = this.options.listen ?? (browserMode ? [] : ["/ip4/0.0.0.0/tcp/4001"]);
     let listenAddrs =
       this.options.enableQuic === true && !browserMode ? expandListenAddressesWithQuic(baseListen) : [...baseListen];
 

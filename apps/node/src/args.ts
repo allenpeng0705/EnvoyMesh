@@ -99,7 +99,7 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
     connectivityTuning: {},
     bootstrapPresets: [...DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS],
     bootstrapPresetsFiles: [],
-    listen: ["/ip4/0.0.0.0/tcp/0"],
+    listen: ["/ip4/0.0.0.0/tcp/4001"],
     advertiseAddrs: [],
     enableMdns: true,
     enableDht: false,
@@ -320,7 +320,7 @@ Options:
   --profile <dir>       Profile directory for Envoy identity. Default: ./data/default (env: ENVOYMESH_PROFILE; useful on Windows if npm eats --flags)
   --discovery-profile <p>  Discovery defaults: lan-fast|wan-default|contacts-only. Env: ENVOYMESH_DISCOVERY_PROFILE
   --connectivity-strict    Fail startup when wan-default bootstrap connectivity cannot be established. Env: ENVOYMESH_CONNECTIVITY_STRICT=1
-  --listen <multiaddr>  Listen multiaddr. Default: /ip4/0.0.0.0/tcp/0
+  --listen <multiaddr>  Listen multiaddr. Default: /ip4/0.0.0.0/tcp/4001
   --advertise-addr <multiaddr>  Reachable relay base address for relay.lookup /p2p-circuit/ paths (public IP or DNS, same TCP port as clients use). Repeatable. Env: ENVOYMESH_ADVERTISE_ADDRS (comma-separated). YAML: discovery.advertiseAddrs. Strongly recommended for --relay-server on WAN/cloud.
   --no-mdns             Disable local mDNS discovery.
   --dht                 Enable DHT discovery.
