@@ -107,13 +107,13 @@ export async function buildOutboundDialHints(input: {
   const peerSpecificCircuits = out.filter(
     (h) => h.includes(recipientPeerId) && h.includes("/p2p-circuit/"),
   );
-  // Synthetic circuits guess the peer reserved on a relay — skip when LAN/direct exists or we already have relay.lookup paths.
-  if (!hasDirect) {
-    const maxSynthetic = peerSpecificCircuits.length > 0 ? 1 : 3;
-    out.push(
-      ...buildSyntheticRelayCircuitHints(recipientPeerId, relayPool, maxSynthetic),
-    );
-  }
+  // Always include synthetic relay circuit hints as fallback — direct hints
+  // are tried first (prioritizeDirectLanDialHints sorts LAN ahead of relay),
+  // but when firewalls block direct LAN TCP, the relay path must be available.
+  const maxSynthetic = peerSpecificCircuits.length > 0 ? 1 : 3;
+  out.push(
+    ...buildSyntheticRelayCircuitHints(recipientPeerId, relayPool, maxSynthetic),
+  );
 
   const usable = dedupeDialHints(
     out.filter(

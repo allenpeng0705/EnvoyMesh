@@ -9,7 +9,7 @@ import { DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR } from "@envoymesh/api";
 const publicAm7 = "/dnsaddr/am7.bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA7W8R4Hk6x4pJ8Yf";
 
 describe("buildOutboundDialHints", () => {
-  it("does not synthesize circuit paths via public libp2p bootstrap nodes", async () => {
+  it("includes synthetic relay circuit hints alongside direct LAN hints as fallback", async () => {
     const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-dial-hints-empty-"));
     try {
       const seedStore = createDiscoverySeedStore(profileDir);
@@ -35,14 +35,14 @@ describe("buildOutboundDialHints", () => {
       });
 
       expect(hints.some((h) => h.includes("bootstrap.libp2p.io"))).toBe(false);
-      expect(hints.some((h) => h.includes("/p2p-circuit/p2p/12D3KooW"))).toBe(false);
+      expect(hints.some((h) => h.includes("/p2p-circuit/p2p/12D3KooW"))).toBe(true);
       expect(hints.some((h) => h.includes("192.168.1.50"))).toBe(true);
     } finally {
       await rm(profileDir, { recursive: true, force: true });
     }
   });
 
-  it("drops relay circuits when LAN listen addrs exist for the same peer", async () => {
+  it("keeps both LAN direct and relay circuit hints as fallback", async () => {
     const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-dial-hints-lan-circuit-"));
     try {
       const seedStore = createDiscoverySeedStore(profileDir);
@@ -59,7 +59,7 @@ describe("buildOutboundDialHints", () => {
       });
 
       expect(hints.some((h) => h.includes("192.168.3.78"))).toBe(true);
-      expect(hints.some((h) => h.includes("/p2p-circuit/"))).toBe(false);
+      expect(hints.some((h) => h.includes("/p2p-circuit/"))).toBe(true);
     } finally {
       await rm(profileDir, { recursive: true, force: true });
     }
@@ -163,7 +163,7 @@ describe("buildOutboundDialHints", () => {
 
       expect(hints.some((h) => h.includes("55093"))).toBe(false);
       expect(hints.some((h) => h.includes("61361"))).toBe(true);
-      expect(hints.some((h) => h.includes("/p2p-circuit/p2p/12D3KooWN67"))).toBe(false);
+      expect(hints.some((h) => h.includes("/p2p-circuit/p2p/12D3KooWN67"))).toBe(true);
     } finally {
       await rm(profileDir, { recursive: true, force: true });
     }
