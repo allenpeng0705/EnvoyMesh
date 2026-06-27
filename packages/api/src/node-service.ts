@@ -899,6 +899,8 @@ export interface WarmContactConnectionOptions {
   source?: WarmContactSource;
   /** Bypass warm coordinator cooldown (explicit user redial or send retry). */
   force?: boolean;
+  /** Chat open: shorter dial-hint build timeout and parallel hint racing on the mesh. */
+  fastDial?: boolean;
 }
 
 export interface ChatDiagnosticsContact {

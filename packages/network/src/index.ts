@@ -94,6 +94,9 @@ export function getEnvoyContactKeepAlivePeerTagName(): string {
 const NEW_STREAM_ON_OPEN_CONNECTION_TIMEOUT_MS = 15_000;
 /** Per-hint dial cap when iterating multiaddrs (fail fast; libp2p default dialTimeout is 15s). */
 const HINT_DIAL_TIMEOUT_MS = 3_500;
+/** Chat-open fast path: shorter cap + parallel hint wave in {@link dialOpenStreamViaHints}. */
+const FAST_HINT_DIAL_TIMEOUT_MS = 2_500;
+const FAST_DIAL_PARALLEL_HINTS = 3;
 
 function promiseWithTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -172,6 +175,8 @@ export interface MeshOutboundOptions {
   verifyConnection?: boolean;
   /** When true, close an existing relay connection and redial direct if LAN hints exist. Default false. */
   upgradeRelayToDirect?: boolean;
+  /** Chat open: shorter per-hint timeout and parallel first hint wave. */
+  fastDial?: boolean;
 }
 
 export interface EnvoyMeshOptions {
@@ -1568,10 +1573,12 @@ export class EnvoyMesh {
       return this.openStreamOnConnection(limitedExisting, protocol, true);
     };
 
+    const perHintMs = sendOptions?.fastDial ? FAST_HINT_DIAL_TIMEOUT_MS : HINT_DIAL_TIMEOUT_MS;
+
     const dialOnce = async (addr: Multiaddr | string): Promise<{ stream: any; remotePeerId?: string }> => {
       const stream = await promiseWithTimeout(
         node.dialProtocol(addr as any, protocol),
-        HINT_DIAL_TIMEOUT_MS,
+        perHintMs,
         `dial ${String(addr).slice(0, 64)}`,
       );
       const s = stream as { connection?: { remotePeer?: { toString(): string } } };
@@ -1607,12 +1614,33 @@ export class EnvoyMesh {
 
     let lastError: unknown = new Error("no outbound dial attempted");
 
-    const dialTarget = this._normalizeDialTarget(target);
-    const tryRoutableHints = async (): Promise<{ stream: any; remotePeerId?: string } | undefined> => {
-      if (!hasRoutableHint) {
+    const dialSortedHintStrings = async (
+      hints: string[],
+    ): Promise<{ stream: any; remotePeerId?: string } | undefined> => {
+      const mas = dialHintsToMultiaddrs(sortDialHints(hints), peerIdStr);
+      if (mas.length === 0) {
         return undefined;
       }
-      for (const ma of dialHintsToMultiaddrs(sortDialHints(routableHints), peerIdStr)) {
+      if (sendOptions?.fastDial && mas.length > 1) {
+        const wave = mas.slice(0, FAST_DIAL_PARALLEL_HINTS);
+        const rest = mas.slice(FAST_DIAL_PARALLEL_HINTS);
+        const waveResults = await Promise.allSettled(wave.map((ma) => dialOnce(ma)));
+        for (const result of waveResults) {
+          if (result.status === "fulfilled") {
+            return result.value;
+          }
+          lastError = result.reason;
+        }
+        for (const ma of rest) {
+          try {
+            return await dialOnce(ma);
+          } catch (e) {
+            lastError = e;
+          }
+        }
+        return undefined;
+      }
+      for (const ma of mas) {
         try {
           return await dialOnce(ma);
         } catch (e) {
@@ -1620,6 +1648,14 @@ export class EnvoyMesh {
         }
       }
       return undefined;
+    };
+
+    const dialTarget = this._normalizeDialTarget(target);
+    const tryRoutableHints = async (): Promise<{ stream: any; remotePeerId?: string } | undefined> => {
+      if (!hasRoutableHint) {
+        return undefined;
+      }
+      return dialSortedHintStrings(routableHints);
     };
 
     // Always prefer explicit filtered hints over bare `/p2p/id` (libp2p peerstore keeps ephemeral inbound observed addrs).
@@ -1634,12 +1670,9 @@ export class EnvoyMesh {
         peerIdStr,
         sendOptions,
       );
-      for (const ma of dialHintsToMultiaddrs(sortDialHints(storeHints), peerIdStr)) {
-        try {
-          return await dialOnce(ma);
-        } catch (e) {
-          lastError = e;
-        }
+      const viaStore = await dialSortedHintStrings(storeHints);
+      if (viaStore) {
+        return viaStore;
       }
     } else if (barePeerDial) {
       try {
@@ -1659,22 +1692,16 @@ export class EnvoyMesh {
 
     const hints = preferNonLoopbackDialHints(hintsRaw);
     if (!(barePeerDial && hasRoutableHint)) {
-      for (const ma of dialHintsToMultiaddrs(sortDialHints(hints), peerIdStr)) {
-        try {
-          return await dialOnce(ma);
-        } catch (e) {
-          lastError = e;
-        }
+      const viaHints = await dialSortedHintStrings(hints);
+      if (viaHints) {
+        return viaHints;
       }
     }
     /** Last resort: retry any loopback hints only if bare + routable passes failed */
     const loopOnly = hintsRaw.filter((h) => isLoopbackOrUnspecifiedDialHint(h));
-    for (const ma of dialHintsToMultiaddrs(sortDialHints(loopOnly), peerIdStr)) {
-      try {
-        return await dialOnce(ma);
-      } catch (e) {
-        lastError = e;
-      }
+    const viaLoop = await dialSortedHintStrings(loopOnly);
+    if (viaLoop) {
+      return viaLoop;
     }
     const skipLimitedFallback =
       hasDirectTcpDialHints(hintsRaw) && !sendOptions?.preferCircuitHints;

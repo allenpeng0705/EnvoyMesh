@@ -696,6 +696,7 @@ function raceWithTimeout<T>(promise: Promise<T>, ms: number, label: string): Pro
 /** Per-topic DHT provide/cancel cap so profile save does not block on sparse WAN bootstrap. */
 const DISCOVERY_TOPIC_OP_TIMEOUT_MS = 10_000;
 const WARM_CONTACT_DIAL_HINTS_TIMEOUT_MS = 10_000;
+const WARM_CONTACT_CHAT_OPEN_DIAL_HINTS_TIMEOUT_MS = 4_000;
 
 /**
  * NodeServiceImpl implements the NodeService interface.
@@ -11885,10 +11886,14 @@ class NodeServiceImpl implements NodeService {
     }
 
     let dialHints: string[];
+    const fastDial = options?.fastDial === true || options?.source === "chat";
+    const dialHintsTimeoutMs = fastDial
+      ? WARM_CONTACT_CHAT_OPEN_DIAL_HINTS_TIMEOUT_MS
+      : WARM_CONTACT_DIAL_HINTS_TIMEOUT_MS;
     try {
       dialHints = await raceWithTimeout(
         this._dialHintsForChat(transportPeerId, listenAddrs),
-        WARM_CONTACT_DIAL_HINTS_TIMEOUT_MS,
+        dialHintsTimeoutMs,
         "_dialHintsForChat",
       );
     } catch {
@@ -11917,6 +11922,7 @@ class NodeServiceImpl implements NodeService {
     const result = await mesh.ensurePeerReachable(transportPeerId, ENVOY_CHAT_PROTOCOL, {
       dialHints,
       preferCircuitHints,
+      fastDial,
       forceFreshDial:
         options?.redial === true ||
         !existing.connected ||

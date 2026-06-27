@@ -41,23 +41,46 @@ describe("usePeerReachability", () => {
     expect(result.current.checking).toBe(false);
   });
 
+  it("shows online from cache before warm completes", async () => {
+    getPeerConnectionInfo.mockResolvedValue({ connected: true, direct: true });
+    warmContactConnection.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(() => resolve({ connected: true, direct: true }), 200);
+        }),
+    );
+
+    const { result } = renderHook(() => usePeerReachability("envoy:owner:cached", true));
+
+    await waitFor(() => {
+      expect(result.current.info).toEqual({ connected: true, direct: true });
+    });
+    expect(result.current.checking).toBe(false);
+    expect(warmContactConnection).toHaveBeenCalledWith("envoy:owner:cached", {
+      source: "chat",
+      fastDial: true,
+      keepAlive: true,
+    });
+  });
+
   it("shows online immediately when libp2p is already connected", async () => {
     getPeerConnectionInfo.mockResolvedValue({ connected: true, direct: true });
+    warmContactConnection.mockResolvedValue({ connected: true, direct: true });
 
     const { result } = renderHook(() => usePeerReachability("envoy:owner:live", true));
 
     await waitFor(() => {
       expect(result.current.info).toEqual({ connected: true, direct: true });
     });
-    await waitFor(() => {
-      expect(
-        warmContactConnection.mock.calls.some((call) => call[1]?.keepAlive === true),
-      ).toBe(true);
+    expect(warmContactConnection).toHaveBeenCalledWith("envoy:owner:live", {
+      source: "chat",
+      fastDial: true,
+      keepAlive: true,
     });
   });
 
-  it("uses keepAlive (not relay tear-down) when already connected via relay", async () => {
-    getPeerConnectionInfo.mockResolvedValue({ connected: true, direct: false });
+  it("does not tear down relay on chat open", async () => {
+    getPeerConnectionInfo.mockResolvedValue({ connected: false, direct: false });
     warmContactConnection.mockResolvedValue({ connected: true, direct: false });
 
     const { result } = renderHook(() => usePeerReachability("envoy:owner:relay", true));
@@ -65,10 +88,9 @@ describe("usePeerReachability", () => {
     await waitFor(() => {
       expect(result.current.info?.connected).toBe(true);
     });
-    await waitFor(() => {
-      expect(
-        warmContactConnection.mock.calls.some((call) => call[1]?.keepAlive === true),
-      ).toBe(true);
+    expect(warmContactConnection).toHaveBeenCalledWith("envoy:owner:relay", {
+      source: "chat",
+      fastDial: true,
     });
     expect(
       warmContactConnection.mock.calls.some((call) => call[1]?.upgradeRelayToDirect === true),
@@ -126,25 +148,5 @@ describe("usePeerReachability", () => {
     });
     expect(result.current.checking).toBe(false);
     expect(warmContactConnection).toHaveBeenCalled();
-  });
-
-  it("uses keepAlive on poll when already connected", async () => {
-    getPeerConnectionInfo.mockResolvedValue({ connected: true, direct: true });
-    warmContactConnection.mockResolvedValue({ connected: true, direct: true });
-
-    const { result } = renderHook(() => usePeerReachability("envoy:owner:keepalive", true));
-
-    await waitFor(() => {
-      expect(result.current.info?.connected).toBe(true);
-    });
-
-    await waitFor(
-      () => {
-        expect(
-          warmContactConnection.mock.calls.some((call) => call[1]?.keepAlive === true),
-        ).toBe(true);
-      },
-      { timeout: 15_000 },
-    );
   });
 });
