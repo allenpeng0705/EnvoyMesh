@@ -186,10 +186,8 @@ describe("shouldPreferCircuitDialHints", () => {
     expect(shouldPreferCircuitDialHints([], hints, "12D3KooWContact")).toBe(true);
   });
 
-  it("mergeDialablePeerListenAddrs drops ephemeral inbound TCP snapshots from stable sources", async () => {
-    const { mergeDialablePeerListenAddrs, mergeListenAddrsForOutboundDial } = await import(
-      "../src/outbound-dial-hints.js"
-    );
+  it("mergeDialablePeerListenAddrs drops ephemeral inbound TCP snapshots", async () => {
+    const { mergeDialablePeerListenAddrs } = await import("../src/outbound-dial-hints.js");
     const peerId = "12D3KooWContact";
     const merged = mergeDialablePeerListenAddrs(
       peerId,
@@ -197,25 +195,6 @@ describe("shouldPreferCircuitDialHints", () => {
       [`/ip4/192.168.1.50/tcp/4011/p2p/${peerId}`],
     );
     expect(merged).toEqual([`/ip4/192.168.1.50/tcp/4011/p2p/${peerId}`]);
-  });
-
-  it("mergeListenAddrsForOutboundDial keeps LAN ephemeral from mDNS/identify only", async () => {
-    const { mergeListenAddrsForOutboundDial } = await import("../src/outbound-dial-hints.js");
-    const peerId = "12D3KooWContact";
-    const merged = mergeListenAddrsForOutboundDial(
-      peerId,
-      [[`/ip4/192.168.3.78/tcp/60974/p2p/${peerId}`]],
-      [[`/ip4/192.168.3.78/tcp/55353/p2p/${peerId}`]],
-    );
-    expect(merged).toEqual([`/ip4/192.168.3.78/tcp/55353/p2p/${peerId}`]);
-  });
-
-  it("hasDirectTcpDialHints treats LAN tcp/0 listen ports as direct", async () => {
-    const { hasDirectTcpDialHints } = await import("@envoymesh/network");
-    const peerId = "12D3KooWContact";
-    expect(
-      hasDirectTcpDialHints([`/ip4/192.168.3.78/tcp/55353/p2p/${peerId}`]),
-    ).toBe(true);
   });
 
   it("prioritizeDirectLanDialHints puts RFC1918 addresses first", async () => {

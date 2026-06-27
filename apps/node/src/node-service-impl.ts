@@ -464,7 +464,8 @@ import {
   transitionCapabilityProviderJob,
   transitionSocialProxySession,
 } from "@envoymesh/api";
-import { buildOutboundDialHints, mergeAdvertisedPeerListenAddrs, mergeDialablePeerListenAddrs, mergeListenAddrsForOutboundDial, shouldPreferCircuitDialHints } from "./outbound-dial-hints.js";
+import { buildOutboundDialHints, mergeDialablePeerListenAddrs, shouldPreferCircuitDialHints } from "./outbound-dial-hints.js";
+import { broadcastPresenceSignalToBonds } from "./presence-signal-outbound.js";
 import {
   dialableInboundRemoteAddrs,
   mergeInboundPeerDialHintsIfDue,
@@ -775,8 +776,9 @@ class NodeServiceImpl implements NodeService {
   >();
   /** Phase 43C — debounced auto-evaluate timers per (chainId, subtaskId). */
   private readonly _chainAutoEvaluateTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  /** Phase 43B — goal text per chain for UI display. */
-  private readonly _chainGoals = new Map<string, string>();
+  /** mDNS/identify LAN listen ports we trust for dial (not libp2p inbound observed snapshots). */
+  private readonly _trustedLanListenAddrsByPeer = new Map<string, string[]>();
+  private _presenceBroadcastTimer: ReturnType<typeof setInterval> | null = null;
   /** Phase 43E — estimated cost range captured at plan time. */
   private readonly _chainCostEstimates = new Map<string, { minUsd: number; maxUsd: number }>();
 
@@ -1594,6 +1596,88 @@ class NodeServiceImpl implements NodeService {
     void this._scrubBondedContactDialState();
     this._scheduleDeferredProfileRefresh("bindExternalMesh");
     this._startBondWarmInterval();
+    this._startPresenceBroadcastInterval();
+    setTimeout(() => {
+      void this._broadcastPresenceToBonds();
+    }, 4_000);
+  }
+
+  /** Remember LAN listen ports learned from mDNS or verified system.signal (not inbound snapshots). */
+  rememberTrustedPeerListenAddrs(peerId: string, addrs: readonly string[]): void {
+    const id = peerId.trim();
+    if (!id || addrs.length === 0) {
+      return;
+    }
+    const lan = addrs.filter(
+      (a) => isPrivateLanTcpDialHint(a.trim()) && a.includes(`/p2p/${id}`),
+    );
+    if (lan.length === 0) {
+      return;
+    }
+    this._trustedLanListenAddrsByPeer.set(id, lan);
+  }
+
+  /** Inbound verified system.signal — cache dialable listen addrs and patch libp2p peerstore. */
+  handleInboundSystemSignal(peerId: string, listenAddrs: readonly string[]): void {
+    this.rememberTrustedPeerListenAddrs(peerId, listenAddrs);
+    const mesh = this._reachableMesh();
+    if (mesh && listenAddrs.length > 0) {
+      void mesh.mergePeerStoreDialHints(peerId, [...listenAddrs]).catch((err) =>
+        console.warn("[peer-store] merge from system.signal failed:", err),
+      );
+    }
+    void this._warmBondedContactAfterLanDiscovery(peerId, [...listenAddrs]);
+  }
+
+  private _startPresenceBroadcastInterval(): void {
+    if (this._presenceBroadcastTimer) {
+      clearInterval(this._presenceBroadcastTimer);
+    }
+    this._presenceBroadcastTimer = setInterval(() => {
+      void this._broadcastPresenceToBonds();
+    }, 60_000);
+  }
+
+  /** Announce our current listen addrs to bonded contacts via system.signal (LAN tcp/0 safe). */
+  private async _broadcastPresenceToBonds(): Promise<void> {
+    const mesh = this._reachableMesh();
+    const profile = this._profile;
+    if (!mesh || !profile || this._nodeStatus !== "running") {
+      return;
+    }
+    const bonds = await this.getBonds();
+    const selfOwnerId = profile.owner.ownerId?.trim();
+    const bondOwnerIds = bonds
+      .filter((b) => b.level === "direct" || b.level === "referred")
+      .map((b) => b.peerOwnerId.trim())
+      .filter((id) => id && id !== selfOwnerId);
+    if (bondOwnerIds.length === 0) {
+      return;
+    }
+    const multiaddrs = (mesh.multiaddrs ?? []).map((a) => a.toString());
+    try {
+      await broadcastPresenceSignalToBonds({
+        mesh,
+        meshPeerId: mesh.peerId,
+        profile,
+        listenAddrs: multiaddrs,
+        bondOwnerIds,
+        config: await this._configStore.load(),
+        resolveLibp2pPeer: async (ownerId) => {
+          const resolved = await this._resolveLibp2pPeerForBondOwner(ownerId);
+          if (!resolved) {
+            return undefined;
+          }
+          return { peerId: resolved.transportPeerId, listenAddrs: resolved.listenAddrs };
+        },
+        dialHintsFor: (peerId, listenAddrs) => this._dialHintsForChat(peerId, listenAddrs),
+      });
+    } catch (err) {
+      console.warn(
+        "[presence] broadcast to bonds failed:",
+        err instanceof Error ? err.message : err,
+      );
+    }
   }
 
   private _scheduleDeferredProfileRefresh(source: string): void {
@@ -1666,9 +1750,10 @@ class NodeServiceImpl implements NodeService {
       if (multiaddrs.length > 0) {
         await this._peerDirectoryStore.mergeListenAddrsForPeerId(peerId, multiaddrs);
       }
+      this.rememberTrustedPeerListenAddrs(peerId, multiaddrs);
       const mesh = this._reachableMesh();
       if (mesh && multiaddrs.length > 0) {
-        const dialable = mergeAdvertisedPeerListenAddrs(peerId, multiaddrs);
+        const dialable = mergeDialablePeerListenAddrs(peerId, multiaddrs);
         void mesh.mergePeerStoreDialHints(peerId, dialable);
       }
       const profile = this._profile;
@@ -3068,23 +3153,9 @@ class NodeServiceImpl implements NodeService {
    */
   private async _dialHintsForChat(recipientPeerId: string, peerListenAddrs: string[] | undefined): Promise<string[]> {
     const config = await this._configStore.load();
-    const mesh = this._reachableMesh();
-    let fromDiscovery: string[] = [];
-    if (mesh && typeof mesh.getAdvertisedPeerListenAddrs === "function") {
-      try {
-        fromDiscovery = await mesh.getAdvertisedPeerListenAddrs(recipientPeerId);
-      } catch {
-        /* best-effort */
-      }
-    }
-    const mergedListen = mergeListenAddrsForOutboundDial(
-      recipientPeerId,
-      [peerListenAddrs],
-      [fromDiscovery],
-    );
     return buildOutboundDialHints({
       recipientPeerId,
-      peerListenAddrs: mergedListen.length ? mergedListen : peerListenAddrs,
+      peerListenAddrs,
       discoverySeedStore: this._discoverySeedStore,
       config,
       profileDir: this._profileDir,
@@ -3155,18 +3226,10 @@ class NodeServiceImpl implements NodeService {
         let listenAddrs = libp2p.listenAddrs;
         if (mesh) {
           try {
-            const storeAddrs =
-              typeof mesh.getAdvertisedPeerListenAddrs === "function"
-                ? await mesh.getAdvertisedPeerListenAddrs(libp2p.peerId)
-                : await mesh.getPeerStoreDialHints(libp2p.peerId);
-            const merged = mergeListenAddrsForOutboundDial(
-              libp2p.peerId,
-              [listenAddrs],
-              [storeAddrs],
-            );
-            if (merged.length > 0) {
-              listenAddrs = merged;
-            }
+            const storeAddrs = await mesh.getPeerStoreDialHints(libp2p.peerId);
+            const trustedLan = this._trustedLanListenAddrsByPeer.get(libp2p.peerId) ?? [];
+            const merged = mergeDialablePeerListenAddrs(libp2p.peerId, listenAddrs, storeAddrs);
+            listenAddrs = [...new Set([...merged, ...trustedLan])];
           } catch {
             /* best-effort */
           }
@@ -9988,6 +10051,10 @@ class NodeServiceImpl implements NodeService {
         clearInterval(this._bondWarmTimer);
         this._bondWarmTimer = undefined;
       }
+      if (this._presenceBroadcastTimer) {
+        clearInterval(this._presenceBroadcastTimer);
+        this._presenceBroadcastTimer = null;
+      }
       if (this._profileRefreshStartupTimer) {
         clearTimeout(this._profileRefreshStartupTimer);
         this._profileRefreshStartupTimer = undefined;
@@ -11817,12 +11884,6 @@ class NodeServiceImpl implements NodeService {
       return { connected: false, direct: false };
     }
 
-    try {
-      await this._peerDirectoryStore.sanitizeListenAddrs();
-    } catch {
-      /* best-effort */
-    }
-
     listenAddrs = await this._mergeFreshListenAddrs(
       peerOwnerId,
       transportPeerId,
@@ -11848,21 +11909,15 @@ class NodeServiceImpl implements NodeService {
     } catch {
       /* best-effort */
     }
-    let fromDiscovery: string[] = [];
-    const mesh = this._reachableMesh();
-    if (mesh && typeof mesh.getAdvertisedPeerListenAddrs === "function") {
-      try {
-        fromDiscovery = await mesh.getAdvertisedPeerListenAddrs(transportPeerId);
-      } catch {
-        /* best-effort */
-      }
-    }
-    const merged = mergeListenAddrsForOutboundDial(
+    const trustedLan = this._trustedLanListenAddrsByPeer.get(transportPeerId) ?? [];
+    const merged = mergeDialablePeerListenAddrs(
       transportPeerId,
-      [listenAddrs, cached, fromDir],
-      [fromDiscovery],
+      listenAddrs,
+      cached,
+      fromDir,
     );
-    return merged.length ? merged : listenAddrs;
+    const withTrusted = [...new Set([...merged, ...trustedLan])];
+    return withTrusted.length ? withTrusted : listenAddrs;
   }
 
   private async _warmContactConnectionTransport(
@@ -11914,16 +11969,12 @@ class NodeServiceImpl implements NodeService {
       return mesh.getPeerConnectionInfo(transportPeerId);
     }
 
-    const dialableListen = mergeListenAddrsForOutboundDial(
-      transportPeerId,
-      [listenAddrs],
-      [dialHints.filter((h) => !h.includes("/p2p-circuit/"))],
-    );
+    const dialableListen = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, dialHints);
     await mesh.scrubPeerStoreDialHints(transportPeerId, dialableListen);
 
     const preferCircuitHints = shouldPreferCircuitDialHints(listenAddrs, dialHints, transportPeerId);
 
-    void mesh.mergePeerStoreDialHints(transportPeerId, dialableListen);
+    void mesh.mergePeerStoreDialHints(transportPeerId, dialHints);
 
     const tearingDown =
       options?.redial === true ||

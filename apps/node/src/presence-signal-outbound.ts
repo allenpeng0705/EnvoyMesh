@@ -6,8 +6,9 @@ import {
 import type { NodeProfile } from "@envoymesh/api";
 import { resolveEmpSupportedCapabilities } from "@envoymesh/api";
 import {
-  filterUsableOutboundPeerDialHints,
+  isLikelyInboundConnSnapshotDialHint,
   isLoopbackOrUnspecifiedDialHint,
+  isPrivateLanTcpDialHint,
 } from "@envoymesh/network";
 import { sendEnvelopeWithRetry, type OutboundDeliverMesh } from "./chat-outbound-deliver.js";
 import { isLibp2pPeerId } from "./profile-sync-outbound.js";
@@ -19,18 +20,27 @@ export function ownListenAddrsForPresenceSignal(
   multiaddrs: readonly string[],
 ): string[] {
   const peerId = meshPeerId.trim();
-  return filterUsableOutboundPeerDialHints(
-    multiaddrs
-      .map((a) => a.trim())
-      .filter(
-        (a) =>
-          a &&
-          !a.includes("/p2p-circuit/") &&
-          !isLoopbackOrUnspecifiedDialHint(a) &&
-          a.includes(`/p2p/${peerId}`),
-      ),
-    peerId,
-  );
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of multiaddrs) {
+    const a = raw.trim();
+    if (
+      !a ||
+      seen.has(a) ||
+      a.includes("/p2p-circuit/") ||
+      isLoopbackOrUnspecifiedDialHint(a) ||
+      !a.includes(`/p2p/${peerId}`)
+    ) {
+      continue;
+    }
+    // `--listen tcp/0`: announce LAN ephemeral listen ports; drop WAN ephemeral snapshots.
+    if (isLikelyInboundConnSnapshotDialHint(a) && !isPrivateLanTcpDialHint(a)) {
+      continue;
+    }
+    seen.add(a);
+    out.push(a);
+  }
+  return out;
 }
 
 export async function broadcastPresenceSignalToBonds(input: {

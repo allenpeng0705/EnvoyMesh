@@ -982,6 +982,9 @@ async function handleInboundMeshMessage({
       payload,
       seenAt: envelope.createdAt,
     });
+    if (nodeService instanceof NodeServiceImpl) {
+      nodeService.handleInboundSystemSignal(remotePeerId, payload.listenAddrs ?? []);
+    }
     return;
   }
 

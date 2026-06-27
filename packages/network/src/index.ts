@@ -94,8 +94,6 @@ export function getEnvoyContactKeepAlivePeerTagName(): string {
 const NEW_STREAM_ON_OPEN_CONNECTION_TIMEOUT_MS = 15_000;
 /** Per-hint dial cap when iterating multiaddrs (fail fast; libp2p default dialTimeout is 15s). */
 const HINT_DIAL_TIMEOUT_MS = 3_500;
-/** Same-LAN private RFC1918 dials — allow slow Windows/macOS firewalls to accept. */
-const LAN_HINT_DIAL_TIMEOUT_MS = 8_000;
 
 function promiseWithTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -499,39 +497,20 @@ export class EnvoyMesh {
     }
   }
 
-  /** Read mDNS/identify listen addrs from libp2p peerstore (includes LAN ephemeral ports). */
-  async getAdvertisedPeerListenAddrs(peerIdStr: string): Promise<string[]> {
-    const idStr = peerIdStr.trim();
-    if (!idStr || idStr.startsWith("envoy_") || !this.node) {
-      return [];
-    }
-    try {
-      const peerData = await this.requireNode().peerStore.get(peerIdFromString(idStr));
-      const out: string[] = [];
-      for (const entry of peerData.addresses ?? []) {
-        const raw = entry.multiaddr?.toString?.()?.trim();
-        if (raw && !raw.includes("/p2p-circuit/")) {
-          out.push(raw);
-        }
-      }
-      return filterAdvertisedListenDialHints(out, idStr);
-    } catch {
-      return [];
-    }
-  }
-
   /** Drop libp2p auto-learned ephemeral observed addrs; keep only filtered direct dial paths. */
   async scrubPeerStoreDialHints(peerIdStr: string, extraAddrs: readonly string[] = []): Promise<string[]> {
     const idStr = peerIdStr.trim();
     if (!idStr || idStr.startsWith("envoy_") || !this.node) {
       return [];
     }
-    const fromExtra = filterAdvertisedListenDialHints(
-      extraAddrs.filter((a) => !a.includes("/p2p-circuit/")),
+    const existingGood = await this.getPeerStoreDialHints(idStr);
+    const replacement = filterUsableOutboundPeerDialHints(
+      [
+        ...existingGood,
+        ...extraAddrs.filter((a) => !a.includes("/p2p-circuit/")),
+      ],
       idStr,
     );
-    const replacement =
-      fromExtra.length > 0 ? fromExtra : await this.getAdvertisedPeerListenAddrs(idStr);
     try {
       await this.requireNode().peerStore.patch(peerIdFromString(idStr), {
         multiaddrs: replacement.map((a) => ma(a)),
@@ -550,8 +529,8 @@ export class EnvoyMesh {
     if (!idStr || idStr.startsWith("envoy_") || !this.node) {
       return;
     }
-    const existingGood = await this.getAdvertisedPeerListenAddrs(idStr);
-    const merged = filterAdvertisedListenDialHints(
+    const existingGood = await this.getPeerStoreDialHints(idStr);
+    const merged = filterUsableOutboundPeerDialHints(
       [...existingGood, ...addrs.filter((a) => !a.includes("/p2p-circuit/"))],
       idStr,
     );
@@ -1418,57 +1397,21 @@ export class EnvoyMesh {
       }
     }
     try {
-      await this.openOutboundStreamWithHintFallback(target, protocol, sendOptions, peerIdStr);
+      const { stream } = await this.openOutboundStream(target, protocol, {
+        ...sendOptions,
+        dialHints: hintList,
+      });
+      try {
+        await stream.close();
+      } catch {
+        /* ignore */
+      }
     } catch (e) {
       const detail = e instanceof Error ? e.message : String(e);
       console.warn(`[network] ensurePeerReachable failed for ${target.slice(0, 24)}…: ${detail}`);
       return { connected: false, direct: false };
     }
     return peerIdStr ? this.getPeerConnectionInfo(peerIdStr) : { connected: false, direct: false };
-  }
-
-  /** Try direct/LAN hints first; if circuits were stripped and direct failed, retry via relay. */
-  private async openOutboundStreamWithHintFallback(
-    target: string,
-    protocol: string,
-    sendOptions: MeshOutboundOptions | undefined,
-    peerIdStr: string | undefined,
-  ): Promise<{ stream: unknown; remotePeerId?: string }> {
-    const rawHints = sendOptions?.dialHints ?? [];
-    const directHints = filterDialHintsForOutboundSend(rawHints, peerIdStr ?? "", sendOptions);
-    try {
-      const opened = await this.openOutboundStream(target, protocol, {
-        ...sendOptions,
-        dialHints: directHints,
-      });
-      try {
-        await (opened.stream as { close?: () => Promise<void> }).close?.();
-      } catch {
-        /* ignore */
-      }
-      return opened;
-    } catch (directErr) {
-      const hasCircuits = rawHints.some((h) => h.includes("/p2p-circuit/"));
-      if (!hasCircuits) {
-        throw directErr;
-      }
-      const circuitHints = filterDialHintsForOutboundSend(rawHints, peerIdStr ?? "", {
-        ...sendOptions,
-        preferCircuitHints: true,
-      });
-      const opened = await this.openOutboundStream(target, protocol, {
-        ...sendOptions,
-        dialHints: circuitHints,
-        preferCircuitHints: true,
-        forceFreshDial: true,
-      });
-      try {
-        await (opened.stream as { close?: () => Promise<void> }).close?.();
-      } catch {
-        /* ignore */
-      }
-      return opened;
-    }
   }
 
   private isOutboundStreamWritable(stream: {
@@ -1626,12 +1569,10 @@ export class EnvoyMesh {
     };
 
     const dialOnce = async (addr: Multiaddr | string): Promise<{ stream: any; remotePeerId?: string }> => {
-      const addrStr = String(addr);
-      const perHintMs = isPrivateLanTcpDialHint(addrStr) ? LAN_HINT_DIAL_TIMEOUT_MS : HINT_DIAL_TIMEOUT_MS;
       const stream = await promiseWithTimeout(
         node.dialProtocol(addr as any, protocol),
-        perHintMs,
-        `dial ${addrStr.slice(0, 64)}`,
+        HINT_DIAL_TIMEOUT_MS,
+        `dial ${String(addr).slice(0, 64)}`,
       );
       const s = stream as { connection?: { remotePeer?: { toString(): string } } };
       const remotePeerId = s.connection?.remotePeer?.toString();
@@ -2376,7 +2317,7 @@ export function hasDirectPrivateLanDialHints(hints: readonly string[]): boolean 
   return hints.some((h) => isPrivateLanTcpDialHint(h));
 }
 
-/** True for direct (non-circuit) TCP hints that are dialable listen paths (incl. LAN tcp/0). */
+/** True for direct (non-circuit) TCP hints that are not loopback. */
 export function hasDirectTcpDialHints(hints: readonly string[]): boolean {
   return hints.some(
     (h) =>
@@ -2384,7 +2325,7 @@ export function hasDirectTcpDialHints(hints: readonly string[]): boolean {
       !h.includes("/p2p-circuit/") &&
       !isLoopbackOrUnspecifiedDialHint(h) &&
       !isDockerBridgeGatewayDialHint(h) &&
-      isDialableAdvertisedListenHint(h),
+      !isLikelyInboundConnSnapshotDialHint(h),
   );
 }
 
@@ -2403,9 +2344,10 @@ export function isPrivateOrUnroutableDialHint(addr: string): boolean {
 }
 
 /**
- * Ephemeral TCP port (typical inbound connection source port or `--listen tcp/0` listen port).
+ * Inbound chat stores `connection.remoteAddr`, which is the remote side's ephemeral
+ * source port on outbound-initiated TCP connections — not a dialable listen address.
  */
-export function isEphemeralTcpPort(addr: string): boolean {
+export function isLikelyInboundConnSnapshotDialHint(addr: string): boolean {
   if (!addr.includes("/tcp/")) {
     return false;
   }
@@ -2418,25 +2360,6 @@ export function isEphemeralTcpPort(addr: string): boolean {
     return false;
   }
   return port >= 32768;
-}
-
-/**
- * Inbound chat stores `connection.remoteAddr`, which is the remote side's ephemeral
- * source port on outbound-initiated TCP connections — not a dialable listen address.
- */
-export function isLikelyInboundConnSnapshotDialHint(addr: string): boolean {
-  return isEphemeralTcpPort(addr);
-}
-
-/**
- * mDNS / identify / peer-directory listen addrs: allow RFC1918 ephemeral ports
- * (`--listen tcp/0`) but still drop WAN ephemeral snapshots.
- */
-export function isDialableAdvertisedListenHint(addr: string): boolean {
-  if (!isEphemeralTcpPort(addr)) {
-    return true;
-  }
-  return isPrivateLanTcpDialHint(addr);
 }
 
 /** True when a multiaddr must not be used as bootstrap / relay.checkin target. */
@@ -2544,37 +2467,6 @@ export function isUsableOutboundPeerDialHint(addr: string, targetPeerId?: string
   return true;
 }
 
-/** Like {@link isUsableOutboundPeerDialHint} but keeps LAN ephemeral advertised listen ports. */
-export function isUsableAdvertisedListenDialHint(addr: string, targetPeerId?: string): boolean {
-  const a = addr.trim();
-  if (!a.startsWith("/")) {
-    return false;
-  }
-  if (isLoopbackOrUnspecifiedDialHint(a) || isDockerBridgeGatewayDialHint(a)) {
-    return false;
-  }
-  if (isPublicLibp2pBootstrapMultiaddr(a) || a.includes("bootstrap.libp2p.io")) {
-    return false;
-  }
-  if (
-    isBrowserOnlyTransportDialHint(a) ||
-    isIncompleteCircuitDialHint(a) ||
-    isUnusableDesktopCircuitDialHint(a)
-  ) {
-    return false;
-  }
-  if (!isDialableAdvertisedListenHint(a)) {
-    return false;
-  }
-  if (targetPeerId?.trim()) {
-    const last = lastPeerIdFromMultiaddr(a);
-    if (last && last !== targetPeerId.trim()) {
-      return false;
-    }
-  }
-  return true;
-}
-
 export function filterUsableOutboundPeerDialHints(addrs: string[], targetPeerId: string): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
@@ -2592,23 +2484,6 @@ export function filterUsableOutboundPeerDialHints(addrs: string[], targetPeerId:
   return out;
 }
 
-export function filterAdvertisedListenDialHints(addrs: string[], targetPeerId: string): string[] {
-  const seen = new Set<string>();
-  const out: string[] = [];
-  for (const raw of addrs) {
-    const a = raw.trim();
-    if (!a || seen.has(a)) {
-      continue;
-    }
-    if (!isUsableAdvertisedListenDialHint(a, targetPeerId)) {
-      continue;
-    }
-    seen.add(a);
-    out.push(a);
-  }
-  return out;
-}
-
 /**
  * When direct TCP/LAN hints exist and circuits are not explicitly preferred, drop `/p2p-circuit/`
  * paths so libp2p cannot fall through to stale relay reservations (NO_RESERVATION).
@@ -2618,7 +2493,7 @@ export function filterDialHintsForOutboundSend(
   targetPeerId: string,
   opts?: { preferCircuitHints?: boolean },
 ): string[] {
-  const filtered = filterAdvertisedListenDialHints([...hints], targetPeerId);
+  const filtered = filterUsableOutboundPeerDialHints([...hints], targetPeerId);
   if (opts?.preferCircuitHints === true) {
     return filtered;
   }
