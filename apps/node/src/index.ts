@@ -55,7 +55,6 @@ import {
   filterBootstrapMultiaddrs,
   filterRelayControlTargets,
   filterUsableOutboundPeerDialHints,
-  isPrivateLanTcpDialHint,
   voucherJsonBytesFromObject,
   type P2pDebugEvent,
 } from "@envoymesh/network";
@@ -127,7 +126,7 @@ import { createInboundMessageGuard } from "./inbound-guard.js";
 import { chatSenderActorFromEnvelope, resolveEmpSupportedCapabilities } from "@envoymesh/api";
 import { buildSignedChatDeliveredEnvelope } from "@envoymesh/api/chat-delivered";
 import { verifyInboundChatDevice, formatChatSenderDisplayName, bindDeviceAuthorizationStore } from "./chat-device-auth.js";
-import { chatWireAttachmentsToContent, resolveInboundChatDisplayText } from "@envoymesh/api";
+import { chatWireAttachmentsToContent } from "@envoymesh/api";
 import { buildOutboundDialHints } from "./outbound-dial-hints.js";
 import {
   dialableInboundRemoteAddrs,
@@ -174,9 +173,8 @@ import { TERMINAL_WS_PORT } from "./service-ports.js";
 import { createBridge } from "./bridge/index.js";
 import { executeTool as runRegistryTool, listAgentTools } from "./tool-registry.js";
 import { loadBridgeIdentity, saveBridgeIdentity } from "./bridge/identity-store.js";
-import { BridgeConfigSchema, resolveAssistantAgentUrl, resolveBridgeStatusAgentType, applyBridgeConfigResolution, type ResolvedBridgeConfig } from "./bridge/config.js";
-import { mergeBundledExtAgentRegistry } from "./bridge/bundled-ext-agents.js";
-import { ExtAgentSidecarManager } from "./bridge/ext-agent-sidecar-spawn.js";
+import type { BridgeConfig } from "./bridge/config.js";
+import { BridgeConfigSchema, resolveAssistantAgentUrl } from "./bridge/config.js";
 import {
   ExternalAgentGateway,
   createExternalAgentSession,
@@ -221,7 +219,6 @@ import {
 } from "./node-health.js";
 import { createClientProxyHandler } from "./client-proxy-handler.js";
 import { RelayTunnelClient } from "./relay-tunnel-client.js";
-import { sendRelayCheckinOverWs, sendRelayLookupOverWs } from "./relay-ws-control-client.js";
 import { startNodeStatsInterval } from "./node-stats-log.js";
 import { recordRelayCheckinCycle, recordRelayLookupResult } from "./relay-diagnostics-state.js";
 import { runCapabilityDiscoveryCycle, buildAutoCapabilityTopics } from "./capability-discovery.js";
@@ -324,33 +321,13 @@ if (!bridgeIdentity) {
 // Bridge config — loaded from profile dir, defaults to disabled.
 // The UI toggle in persisted config (bridgeEnabled) overrides bridge-config.json's enabled field,
 // so users can turn the bridge on/off without editing the JSON file.
-let bridgeConfig: ResolvedBridgeConfig = applyBridgeConfigResolution(BridgeConfigSchema.parse({}));
+let bridgeConfig: BridgeConfig = BridgeConfigSchema.parse({});
 try {
   const raw = await readFile(join(args.profileDir, "bridge-config.json"), "utf-8");
-  bridgeConfig = applyBridgeConfigResolution(BridgeConfigSchema.parse(JSON.parse(raw)));
-  console.log(`[bridge] loaded config: enabled=${bridgeConfig.enabled} active=${bridgeConfig.resolvedActiveExtAgentId ?? "legacy"}`);
+  bridgeConfig = BridgeConfigSchema.parse(JSON.parse(raw));
+  console.log(`[bridge] loaded config: enabled=${bridgeConfig.enabled}`);
 } catch {
   // use defaults; disabled by default
-}
-function withBundledExtAgents(cfg: ResolvedBridgeConfig): ResolvedBridgeConfig {
-  return applyBridgeConfigResolution({
-    ...cfg,
-    extAgents: mergeBundledExtAgentRegistry(cfg.extAgents),
-  });
-}
-bridgeConfig = withBundledExtAgents(bridgeConfig);
-const extSidecarManager = new ExtAgentSidecarManager();
-
-async function syncExtAgentSidecars(cfg: ResolvedBridgeConfig): Promise<void> {
-  try {
-    await extSidecarManager.sync(cfg, {
-      nodeCwd: process.cwd(),
-      listenPort: cfg.listenPort,
-      secret: cfg.secret,
-    });
-  } catch (err) {
-    console.warn("[ext-sidecar] sync failed:", err instanceof Error ? err.message : String(err));
-  }
 }
 // Merge UI toggle from persisted config — bridgeEnabled: true overrides bridge-config.json.
 // Default to false when no persisted config exists (D1C: built-in OpenClaw is the default agent;
@@ -360,7 +337,7 @@ async function syncExtAgentSidecars(cfg: ResolvedBridgeConfig): Promise<void> {
     const persistedCfg = await nodeConfigStore.load();
     const uiEnabled = persistedCfg?.bridgeEnabled ?? false;
     if (uiEnabled && !bridgeConfig.enabled) {
-      bridgeConfig = applyBridgeConfigResolution({ ...bridgeConfig, enabled: true });
+      bridgeConfig = { ...bridgeConfig, enabled: true };
       console.log(`[bridge] UI toggle overrides: enabled=true (persisted=${persistedCfg?.bridgeEnabled ?? "none"})`);
     }
   } catch { /* ignore — persisted config may not exist yet */ }
@@ -557,16 +534,14 @@ const connectivityRuntime: ResolvedConnectivityRuntime = resolveConnectivityRunt
   enableMdns: args.enableMdnsExplicit ? args.enableMdns : undefined,
   tuning: args.connectivityTuning,
 });
-// Keep args.enableMdns / args.enableDht as resolved by config — do not
-// overwrite with connectivityRuntime defaults (matches 00b5b5d behavior).
-// args.enableMdns = connectivityRuntime.enableMdns;
-// args.enableDht = connectivityRuntime.enableDht;
+args.enableMdns = connectivityRuntime.enableMdns;
+args.enableDht = connectivityRuntime.enableDht;
 const mesh = new EnvoyMesh({
   listen: args.listen,
   advertiseAddrs: args.advertiseAddrs,
-  enableMdns: args.enableMdns,
+  enableMdns: connectivityRuntime.enableMdns,
   mdnsIntervalMs: connectivityRuntime.mdnsIntervalMs,
-  enableDht: args.enableDht,
+  enableDht: connectivityRuntime.enableDht,
   dhtClientMode: args.dhtClientMode ?? true,
   bootstrapPeers: effectiveBootstrapPeers,
   enableRelay: args.enableRelay,
@@ -642,7 +617,9 @@ const RATE_LIMIT_WINDOW_MS = 60_000; // 1 minute window
 const RATE_LIMIT_MAX_REGISTRATIONS = 30; // max inbound messages per peer per window
 const MAX_RATE_LIMIT_ENTRIES = 10_000; // Prevent memory exhaustion
 
-// Message deduplication is handled by inboundGuard (FIFO eviction) in handleInboundMeshMessage.
+// Message deduplication to prevent replay attacks
+const seenMessageIds = new Set<string>();
+const MAX_SEEN_MESSAGE_IDS = 100_000;
 
 // Maximum payload size to prevent memory exhaustion (1MB)
 function checkInboundRateLimit(peerId: string): boolean {
@@ -655,16 +632,13 @@ function checkInboundRateLimit(peerId: string): boolean {
     let oldest: string | null = null;
     let oldestExpiry = Infinity;
     for (const [id, entry] of peerRegistrationCount) {
-      if (entry.resetAt < oldestExpiry) {
+      if (entry.resetAt < now && entry.resetAt < oldestExpiry) {
         oldest = id;
         oldestExpiry = entry.resetAt;
       }
     }
     if (oldest) {
       peerRegistrationCount.delete(oldest);
-    } else {
-      const first = peerRegistrationCount.keys().next().value;
-      if (first) peerRegistrationCount.delete(first);
     }
   }
 
@@ -682,6 +656,30 @@ function checkInboundRateLimit(peerId: string): boolean {
 
   entry.count++;
   return true;
+}
+
+function isMessageSeen(messageId: string): boolean {
+  if (!messageId || typeof messageId !== "string") {
+    return true; // Treat invalid IDs as "seen" to reject them
+  }
+  return seenMessageIds.has(messageId);
+}
+
+function markMessageSeen(messageId: string): void {
+  if (!messageId || typeof messageId !== "string") {
+    return;
+  }
+
+  if (seenMessageIds.size >= MAX_SEEN_MESSAGE_IDS) {
+    const targetSize = Math.floor(MAX_SEEN_MESSAGE_IDS * 0.1);
+    let removed = 0;
+    for (const id of seenMessageIds) {
+      if (removed >= targetSize) break;
+      seenMessageIds.delete(id);
+      removed++;
+    }
+  }
+  seenMessageIds.add(messageId);
 }
 
 /** Throttle peer-directory listen-addr merges — each merge rewrites the whole JSON file. */
@@ -718,16 +716,6 @@ if (args.discoveryProfile === "wan-default" && effectiveBootstrapPeers.length ==
 
 const autoCapabilityTopics = buildAutoCapabilityTopics(profile.deviceCertificate.capabilities);
 const observedRelayPeerIds = new Set<string>();
-const MAX_OBSERVED_RELAY_PEERS = 256;
-
-function trackObservedRelayPeer(peerId: string): void {
-  if (!peerId || observedRelayPeerIds.has(peerId)) return;
-  if (observedRelayPeerIds.size >= MAX_OBSERVED_RELAY_PEERS) {
-    const oldest = observedRelayPeerIds.values().next().value;
-    if (oldest) observedRelayPeerIds.delete(oldest);
-  }
-  observedRelayPeerIds.add(peerId);
-}
 const relayStateStore = createRelayStateStore(args.profileDir);
 const [persistedRelayBook, persistedSummaries] = await Promise.all([
   relayStateStore.loadRelayBook(),
@@ -767,12 +755,7 @@ let lastRelayHealthReprobeAtMs = 0;
 
 mesh.onPeerDiscovered(async (peer) => {
   const source = peerDiscoverySourceFromMultiaddrs(peer.multiaddrs);
-  const lanAddrs = peer.multiaddrs.filter((a) => isPrivateLanTcpDialHint(a));
-  if (lanAddrs.length > 0) {
-    console.log(
-      `[peer-discovery] LAN peer=${peer.peerId.slice(0, 12)}… source=${source} addrs=${lanAddrs.join(", ")}`,
-    );
-  } else if (args.peerDiscoveryLog) {
+  if (args.peerDiscoveryLog) {
     console.log(`[peer-discovery] peer=${peer.peerId} source=${source} addrs=${peer.multiaddrs.length}`);
   }
   if (
@@ -985,9 +968,6 @@ async function handleInboundMeshMessage({
       payload,
       seenAt: envelope.createdAt,
     });
-    if (nodeService instanceof NodeServiceImpl) {
-      nodeService.handleInboundSystemSignal(remotePeerId, payload.listenAddrs ?? []);
-    }
     return;
   }
 
@@ -1637,7 +1617,7 @@ async function handleInboundMeshMessage({
 
   if (envelope.intent === "relay.peers.request" || envelope.intent === "relay.peers.response") {
     if (envelope.intent === "relay.peers.request") {
-      trackObservedRelayPeer(remotePeerId);
+      observedRelayPeerIds.add(remotePeerId);
     }
     const relayPeerIds = dedupeAddrs([...mesh.getConnectedRelayPeerIds(), ...observedRelayPeerIds]);
     console.log(
@@ -2001,10 +1981,7 @@ async function handleInboundMeshMessage({
           displayName: selfHuman?.displayName ?? profile.owner.ownerId,
         },
         content: {
-          text: resolveInboundChatDisplayText(
-            stripModelThinking(payload.text),
-            payload.attachments,
-          ),
+          text: stripModelThinking(payload.text),
           ...(payload.attachments?.length
             ? { attachments: chatWireAttachmentsToContent(payload.attachments) }
             : {}),
@@ -2077,7 +2054,11 @@ async function handleInboundMeshMessage({
         if (!storedConfig) {
           return;
         }
-        let chatText = resolveInboundChatDisplayText(payload.text, payload.attachments);
+        let chatText = payload.text;
+        const hasAudioAttachment = payload.attachments?.some((a) => a.mimeType?.startsWith("audio/"));
+        if (!chatText.trim() && hasAudioAttachment) {
+          chatText = "[Audio message — no transcription available]";
+        }
         const mergedConfig = {
           ...storedConfig,
           chatAssistEnabled: currentChatAssistEnabled,
@@ -2691,7 +2672,7 @@ function scheduleMeshInboundDrain(): void {
 
 mesh.onMessage(async (params) => {
   const { envelope: inboundEnvelope, remotePeerId, replyWithEnvelope } = params;
-  if (inboundGuard.isReplay(inboundEnvelope.messageId)) {
+  if (isMessageSeen(inboundEnvelope.messageId)) {
     return;
   }
   const isRateLimitExemptIntent =
@@ -2705,7 +2686,7 @@ mesh.onMessage(async (params) => {
   if (!isRateLimitExemptIntent && !checkInboundRateLimit(remotePeerId)) {
     return;
   }
-  // Replay dedup runs in handleInboundMeshMessage via inboundGuard.
+  markMessageSeen(inboundEnvelope.messageId);
   // Same-stream replies must run before the inbound handler closes the libp2p stream.
   if (replyWithEnvelope) {
     await handleInboundMeshMessage(params);
@@ -3123,48 +3104,6 @@ if (nodeService instanceof NodeServiceImpl) {
             console.log(`[node] public addr discovered via relay observed addr: ${addr}`);
           }
         },
-        onTunnelReady: (send) => {
-          const expiresAt = expiresAtFromNow(RELAY_CONTROL_TTL_MS);
-          const capabilities = relayCheckinCapabilities(profile.deviceCertificate.capabilities);
-          const payload = createRelayCheckinPayload({
-            peerId: mesh.peerId,
-            ownerId: profile.owner.ownerId,
-            relayReachableAddrs: mesh.multiaddrs,
-            capabilities,
-            advertisements: capabilities.map((capability) => ({
-              capability,
-              visibility: capability === "mesh.discovery" ? "public" : "bonded",
-              expiresAt,
-            })),
-            relayHints: relayClientState.activeRelays,
-            expiresAt,
-          });
-          const signedEnvelope = signUnsignedEnvelope(
-            createUnsignedEnvelope({
-              senderPeerId: derivePeerId(profile.device.publicKeyPem),
-              senderPublicKey: profile.device.publicKeyPem,
-              senderRole: "system",
-              intent: "relay.checkin",
-              payload,
-            }),
-            profile.device.privateKeyPem,
-          );
-          send(signedEnvelope);
-          console.log("[relay-checkin-home-tunnel] sent over /ws/home");
-        },
-        onRelayControlEnvelope: (envelope) => {
-          if (envelope.intent !== "relay.lookup.response") {
-            return;
-          }
-          void processRelayLookupResponse(parseRelayLookupResponsePayload(envelope.payload)).catch(
-            (err) => {
-              console.warn(
-                "[relay-lookup-home-tunnel] apply failed:",
-                err instanceof Error ? err.message : err,
-              );
-            },
-          );
-        },
       });
       relayTunnelClient.start();
       console.log(`[node] relay-tunnel: connecting to ${relayWsUrl} (peerId=${mesh.peerId.slice(0, 12)}…)`);
@@ -3403,7 +3342,6 @@ nodeService.on("bond:established", (data) => {
 });
 nodeService.on("config:updated", (data) => {
   console.log(`[index.ts] config:updated event fired`);
-  wsServer.emitEvent("config:updated", data);
   currentAutonomousKillSwitch = data.autonomousKillSwitch;
   currentAutonomousPolicies = data.autonomousPolicies;
   currentChatAssistEnabled = data.chatAssistEnabled;
@@ -3576,8 +3514,12 @@ if (nodeService instanceof NodeServiceImpl) {
 // Emit bridge status for Social UI and register bridge agent in peer directory.
 // Requires enabled + non-empty secret so UI matches an actually listening HTTP bridge.
 if (nodeService instanceof NodeServiceImpl && bridgeHttpReady) {
-  // Ext Agent bridge status — always external (built-in OpenClaw uses getOpenClawStatus).
-  const agentType = resolveBridgeStatusAgentType();
+  // Determine agent type: built-in EnvoyAI vs external HTTP agent.
+  // resolveAssistantAgentUrl uses assistantAgentUrl if set, or agentUrl if it
+  // routes to /webhook/envoymesh, else defaults to the built-in webhook.
+  const assistantUrl = resolveAssistantAgentUrl(bridgeConfig);
+  const agentType: "envoyai" | "external" =
+    assistantUrl.includes("/webhook/envoymesh") ? "envoyai" : "external";
   nodeService.setBridgeStatus({
     enabled: true,
     agentPeerId: bridge.agentPeerId,
@@ -3586,24 +3528,7 @@ if (nodeService instanceof NodeServiceImpl && bridgeHttpReady) {
     agentName: bridgeConfig.agentName ?? "",
     agentPublicKeyPem: bridgeIdentity.agentPublicKeyPem,
     agentType,
-    activeExtAgentId: bridgeConfig.resolvedActiveExtAgentId ?? undefined,
-    adapter: bridgeConfig.resolvedAdapter,
   });
-  nodeService.setBridgeRuntimeConfig(bridgeConfig);
-  nodeService.setBridgeConfigApplier((next) => {
-    const withRegistry = {
-      ...next,
-      extAgents: mergeBundledExtAgentRegistry(next.extAgents),
-    };
-    const resolved = applyBridgeConfigResolution(BridgeConfigSchema.parse(withRegistry));
-    bridgeConfig = resolved;
-    bridge.updateConfig(resolved);
-    if (nodeService instanceof NodeServiceImpl) {
-      nodeService.applyBridgeRuntimeConfig(resolved);
-    }
-    void syncExtAgentSidecars(resolved);
-  });
-  void syncExtAgentSidecars(bridgeConfig);
   // Register bridge agent as a virtual peer so sendChat can resolve it.
   // ownerId = bridge agent peer ID (lookup key for sendChat)
   // peerId = home node's libp2p ID (transport)
@@ -4038,7 +3963,6 @@ if (resolvedArgs.humanProfileUpdate) {
 console.log("Press Ctrl+C to stop.");
 
 async function shutdown(): Promise<void> {
-  await extSidecarManager.stopAll();
   await bridge.stop();
   if (nodeService instanceof NodeServiceImpl) {
     try { await nodeService.stopOpenClaw?.(); } catch { /* ok */ }
@@ -4234,76 +4158,20 @@ function scheduleRelayCheckin(): void {
   }, connectivityRuntime.relayCycleIntervalMs());
 }
 
-async function tryRelayWsCheckin(source: "startup" | "periodic"): Promise<void> {
-  if (!(nodeService instanceof NodeServiceImpl)) {
-    return;
-  }
-  const relayWsUrl = await nodeService.resolveRelayWsUrl();
-  if (!relayWsUrl) {
-    return;
-  }
-  try {
-    await sendRelayCheckinOverWs({ relayWsUrl, mesh, profile });
-    console.log(`[relay-checkin-ws] ok source=${source}`);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn(`[relay-checkin-ws] failed source=${source} error=${message}`);
-  }
-}
-
-async function tryRelayWsLookup(source: "startup" | "periodic"): Promise<boolean> {
-  if (!(nodeService instanceof NodeServiceImpl)) {
-    return false;
-  }
-  const relayWsUrl = await nodeService.resolveRelayWsUrl();
-  if (!relayWsUrl) {
-    return false;
-  }
-  try {
-    const payload = createRelayLookupPayload({
-      queryId: `relay_ws_lookup_${randomUUID()}`,
-      capability: "mesh.discovery",
-      maxResults: 32,
-      maxHops: 0,
-      maxFanout: 2,
-      visibilityScope: "public",
-      expiresAt: expiresAtFromNow(RELAY_CONTROL_TTL_MS),
-    });
-    const response = await sendRelayLookupOverWs({ relayWsUrl, profile, lookup: payload });
-    await processRelayLookupResponse(response);
-    if (response.peers.length === 0) {
-      return false;
-    }
-    console.log(
-      `[relay-lookup-ws] ok source=${source} peers=${response.peers.length}`,
-    );
-    return true;
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn(`[relay-lookup-ws] failed source=${source} error=${message}`);
-    return false;
-  }
-}
-
 async function runRelayCheckinCycle(source: "startup" | "periodic"): Promise<void> {
-  await tryRelayWsCheckin(source);
   const targets = relayControlTargets();
   const expiresAt = expiresAtFromNow(RELAY_CONTROL_TTL_MS);
   const capabilities = relayCheckinCapabilities(profile.deviceCertificate.capabilities);
   const checkinResults: Array<{ target: string; ok: boolean; error?: string }> = [];
-  if (targets.length === 0) {
-    console.warn(
-      "[relay-checkin] skipped: no relay control targets (need cn-relay or Envoy relay bootstrap addr)",
-    );
-    return;
-  }
-  logRelayReachableAddrsForCheckin({
+  if (targets.length > 0) {
+    logRelayReachableAddrsForCheckin({
       prefix: "[relay-checkin]",
       source,
       peerId: mesh.peerId,
       ownerId: profile.owner.ownerId,
       addrs: mesh.multiaddrs,
-  });
+    });
+  }
   for (const target of targets) {
     const payload = createRelayCheckinPayload({
       peerId: mesh.peerId,
@@ -4332,13 +4200,11 @@ async function runRelayCheckinCycle(source: "startup" | "periodic"): Promise<voi
     try {
       await deliverOutboundEnvelope(mesh, target, signedEnvelope);
       noteRelaySuccess(relayClientState, relayHintFromAddr(target));
-      console.log(`[relay-checkin] ok target=${target.split("/").pop()?.slice(0, 12)}… source=${source}`);
       await appendRelayTrace("relay.checkin.ok", target, `relay checkin ok source=${source} target=${target}`);
       checkinResults.push({ target, ok: true });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       noteRelayFailure(relayClientState, relayHintFromAddr(target));
-      console.warn(`[relay-checkin] failed target=${target.split("/").pop()?.slice(0, 12)}… source=${source} error=${message}`);
       await appendRelayTrace("relay.checkin.fail", target, `relay checkin failed source=${source} target=${target} error=${message}`);
       checkinResults.push({ target, ok: false, error: message });
     }
@@ -4750,9 +4616,6 @@ async function runRelaySummaryCycle(source: "startup" | "periodic"): Promise<voi
 }
 
 async function runRelayLookupCycle(source: "startup" | "periodic"): Promise<void> {
-  if (await tryRelayWsLookup(source)) {
-    return;
-  }
   const targets = relayControlTargets();
   let bestLookup:
     | { ok: true; peerCount: number; circuitAddrsStored: number }
@@ -5252,19 +5115,6 @@ async function processRelayLookupResponse(payload: RelayLookupResponsePayload): 
   const relayedAddrs = flat;
   if (relayedAddrs.length > 0) {
     await discoverySeedStore.upsertMany(relayedAddrs, "relay-peers");
-  }
-  for (const peer of payload.peers) {
-    const directAddrs = peer.multiaddrs.filter(
-      (addr) => !addr.includes("/p2p-circuit/") && addr.includes(`/p2p/${peer.peerId}`),
-    );
-    if (directAddrs.length === 0) {
-      continue;
-    }
-    await peerDirectoryStore.mergeListenAddrsForPeerId(peer.peerId, directAddrs);
-    void mesh.mergePeerStoreDialHints(peer.peerId, directAddrs);
-    if (nodeService instanceof NodeServiceImpl) {
-      void nodeService.handleMeshPeerDiscovered(peer.peerId, directAddrs);
-    }
   }
   for (const addr of relayedAddrs) {
     const candidates = expandCircuitDialCandidates(addr, effectiveBootstrapPeers);
