@@ -85,6 +85,13 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
       send: vi.fn(),
       sendChat: vi.fn(),
       sendChatExpectReply: vi.fn(),
+      getConnectionStats: vi.fn(() => ({
+        totalConnections: 0,
+        totalPeerIds: 0,
+        circuitConnections: 0,
+        circuitPeers: 0,
+        dialQueue: 0,
+      })),
     };
     (node as any)._resolvePeerTransportForOwner = async (ownerId: string) => {
       if (ownerId !== PEER_OWNER_ID) {
@@ -154,14 +161,15 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
       expect(ensurePeerReachable).toHaveBeenCalledTimes(1);
     });
 
-    it("keepAlive probes the open path and redials when probe reports stale", async () => {
+    it("keepAlive returns probe result without redial when probe reports stale", async () => {
       probeBondedPeerConnection.mockResolvedValueOnce({ connected: false, direct: false });
 
       const info = await node.warmContactConnection(PEER_OWNER_ID, { keepAlive: true });
 
       expect(probeBondedPeerConnection).toHaveBeenCalledWith(TRANSPORT_PEER_ID);
-      expect(ensurePeerReachable).toHaveBeenCalledTimes(1);
-      expect(info).toEqual({ connected: true, direct: true });
+      expect(closeConnectionsToPeer).not.toHaveBeenCalled();
+      expect(ensurePeerReachable).not.toHaveBeenCalled();
+      expect(info).toEqual({ connected: false, direct: false });
     });
 
     it("keepAlive skips probe when the path was recently verified", async () => {
@@ -281,6 +289,13 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
         peerId: "12D3KooWSelfBindExternal",
         multiaddrs: ["/ip4/127.0.0.1/tcp/4011/p2p/12D3KooWSelfBindExternal"],
         tagContactForPersistentReachability: vi.fn(async () => {}),
+        getConnectionStats: vi.fn(() => ({
+          totalConnections: 0,
+          totalPeerIds: 0,
+          circuitConnections: 0,
+          circuitPeers: 0,
+          dialQueue: 0,
+        })),
       };
       (node as any).bindExternalMesh(mockMesh);
 

@@ -866,8 +866,6 @@ class NodeServiceImpl implements NodeService {
   private _bondWarmTimer?: ReturnType<typeof setInterval>;
   /** Skip periodic bond warm when libp2p already has this many open connections. */
   private static readonly BOND_WARM_MAX_CONNECTIONS = 64;
-  /** First bond warm after mesh + relay check-in settle (00b5b5d baseline: 120s). */
-  private static readonly BOND_WARM_STARTUP_DELAY_MS = 120_000;
   /** Defer startup profile refresh until mesh paths settle (avoids stale LAN dial storms). */
   private static readonly PROFILE_REFRESH_STARTUP_DELAY_MS = 90_000;
   private _profileRefreshStartupTimer?: ReturnType<typeof setTimeout>;
@@ -11870,8 +11868,10 @@ class NodeServiceImpl implements NodeService {
             return existing;
           }
           const probed = await mesh.probeBondedPeerConnection(transportPeerId);
-          if (probed.connected) {
-            markOutboundPeerVerified(transportPeerId);
+          if (probed.connected || options?.keepAlive === true) {
+            if (probed.connected) {
+              markOutboundPeerVerified(transportPeerId);
+            }
             return probed;
           }
           // stale — fall through to redial
@@ -11948,18 +11948,17 @@ class NodeServiceImpl implements NodeService {
     if (this._bondWarmTimer) {
       clearInterval(this._bondWarmTimer);
     }
-    const runWarm = (): void => {
+    void this._warmAllBondedContacts();
+    this._bondWarmTimer = setInterval(() => {
       void this._warmAllBondedContacts();
-    };
-    setTimeout(runWarm, NodeServiceImpl.BOND_WARM_STARTUP_DELAY_MS);
-    this._bondWarmTimer = setInterval(runWarm, 60_000);
+    }, 60_000);
   }
 
   private async _warmAllBondedContacts(): Promise<void> {
     if (this._nodeStatus !== "running") {
       return;
     }
-    const mesh = this._mesh;
+    const mesh = this._reachableMesh();
     if (mesh && mesh.getConnectionStats().totalConnections >= NodeServiceImpl.BOND_WARM_MAX_CONNECTIONS) {
       console.warn(
         `[bond-warm] skipped: ${mesh.getConnectionStats().totalConnections} open libp2p connections (cap ${NodeServiceImpl.BOND_WARM_MAX_CONNECTIONS})`,
