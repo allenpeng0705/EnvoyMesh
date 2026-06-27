@@ -557,14 +557,16 @@ const connectivityRuntime: ResolvedConnectivityRuntime = resolveConnectivityRunt
   enableMdns: args.enableMdnsExplicit ? args.enableMdns : undefined,
   tuning: args.connectivityTuning,
 });
-args.enableMdns = connectivityRuntime.enableMdns;
-args.enableDht = connectivityRuntime.enableDht;
+// Keep args.enableMdns / args.enableDht as resolved by config — do not
+// overwrite with connectivityRuntime defaults (matches 00b5b5d behavior).
+// args.enableMdns = connectivityRuntime.enableMdns;
+// args.enableDht = connectivityRuntime.enableDht;
 const mesh = new EnvoyMesh({
   listen: args.listen,
   advertiseAddrs: args.advertiseAddrs,
-  enableMdns: connectivityRuntime.enableMdns,
+  enableMdns: args.enableMdns,
   mdnsIntervalMs: connectivityRuntime.mdnsIntervalMs,
-  enableDht: connectivityRuntime.enableDht,
+  enableDht: args.enableDht,
   dhtClientMode: args.dhtClientMode ?? true,
   bootstrapPeers: effectiveBootstrapPeers,
   enableRelay: args.enableRelay,
