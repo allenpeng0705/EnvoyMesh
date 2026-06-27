@@ -2385,18 +2385,21 @@ export function isPrivateOrUnroutableDialHint(addr: string): boolean {
  * source port on outbound-initiated TCP connections — not a dialable listen address.
  */
 export function isLikelyInboundConnSnapshotDialHint(addr: string): boolean {
-  if (!addr.includes("/tcp/")) {
+  const a = addr.trim();
+  // Keep addresses with a proper libp2p peer ID — these are dialable listen
+  // multiaddrs, not ephemeral inbound-connection snapshots (restores 00b5b5d behavior).
+  if (/\/p2p\/[^/]+$/.test(a)) {
     return false;
   }
-  const match = addr.match(/\/tcp\/(\d+)\//);
+  if (!a.includes("/tcp/")) {
+    return false;
+  }
+  const match = a.match(/\/tcp\/(\d+)(?:\/|$)/);
   if (!match) {
     return false;
   }
   const port = Number(match[1]);
-  if (STABLE_LIBP2P_TCP_PORTS.has(port)) {
-    return false;
-  }
-  return port >= 32768;
+  return port > 32768 || port === 0;
 }
 
 /**
