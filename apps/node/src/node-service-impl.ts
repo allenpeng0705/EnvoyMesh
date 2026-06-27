@@ -696,7 +696,8 @@ function raceWithTimeout<T>(promise: Promise<T>, ms: number, label: string): Pro
 /** Per-topic DHT provide/cancel cap so profile save does not block on sparse WAN bootstrap. */
 const DISCOVERY_TOPIC_OP_TIMEOUT_MS = 10_000;
 const WARM_CONTACT_DIAL_HINTS_TIMEOUT_MS = 10_000;
-const WARM_CONTACT_CHAT_OPEN_DIAL_HINTS_TIMEOUT_MS = 4_000;
+/** Chat open: slightly tighter than full warm, but still allow hint build on slow disks. */
+const WARM_CONTACT_CHAT_OPEN_DIAL_HINTS_TIMEOUT_MS = 8_000;
 
 /**
  * NodeServiceImpl implements the NodeService interface.
@@ -11865,20 +11866,9 @@ class NodeServiceImpl implements NodeService {
           }
           // stale — fall through to redial
         } else {
-          if (isOutboundPeerRecentlyVerified(transportPeerId)) {
-            return existing;
-          }
-          // Circuit-relay probes often false-negative; trust open relay until direct LAN exists.
-          if (!existing.direct) {
-            markOutboundPeerVerified(transportPeerId);
-            return existing;
-          }
-          const probed = await mesh.probeBondedPeerConnection(transportPeerId);
-          if (probed.connected) {
-            markOutboundPeerVerified(transportPeerId);
-            return probed;
-          }
-          // Probe failed (and may have closed stale conns) — fall through to redial.
+          // keepAlive — trust libp2p connection state; stream probes caused false offline flaps.
+          markOutboundPeerVerified(transportPeerId);
+          return existing;
         }
       } else {
         return existing;
@@ -11886,7 +11876,10 @@ class NodeServiceImpl implements NodeService {
     }
 
     let dialHints: string[];
-    const fastDial = options?.fastDial === true || options?.source === "open_chat";
+    const fastDial =
+      options?.fastDial === true ||
+      options?.source === "open_chat" ||
+      options?.source === "call";
     const dialHintsTimeoutMs = fastDial
       ? WARM_CONTACT_CHAT_OPEN_DIAL_HINTS_TIMEOUT_MS
       : WARM_CONTACT_DIAL_HINTS_TIMEOUT_MS;
@@ -11896,8 +11889,15 @@ class NodeServiceImpl implements NodeService {
         dialHintsTimeoutMs,
         "_dialHintsForChat",
       );
-    } catch {
-      return mesh.getPeerConnectionInfo(transportPeerId);
+    } catch (hintErr) {
+      dialHints = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs ?? []);
+      console.warn(
+        `[warmContact] dial hints timed out for ${transportPeerId.slice(0, 12)}…, using ${dialHints.length} listen addrs:`,
+        hintErr instanceof Error ? hintErr.message : hintErr,
+      );
+      if (dialHints.length === 0) {
+        return mesh.getPeerConnectionInfo(transportPeerId);
+      }
     }
 
     const dialableListen = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, dialHints);
@@ -11986,18 +11986,9 @@ class NodeServiceImpl implements NodeService {
       try {
         const info = await this.getPeerConnectionInfo(bond.peerOwnerId);
         if (info.connected) {
-          try {
-            const { transportPeerId } = await this._resolvePeerTransportForOwner(bond.peerOwnerId);
-            if (isOutboundPeerRecentlyVerified(transportPeerId)) {
-              continue;
-            }
-          } catch {
-            /* fall through to keepAlive warm */
-          }
-          await this.warmContactConnection(bond.peerOwnerId, { keepAlive: true });
           continue;
         }
-        await this.warmContactConnection(bond.peerOwnerId);
+        await this.warmContactConnection(bond.peerOwnerId, { source: "bond_warm" });
       } catch {
         /* best-effort keepalive */
       }

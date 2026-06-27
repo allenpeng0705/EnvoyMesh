@@ -218,10 +218,8 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
     return out;
   }, [messages, pendingOutbound]);
 
-  const { info: peerReachability, checking: reachabilityChecking } = usePeerReachability(
-    selectedContact,
-    true,
-  );
+  const { info: peerReachability, checking: reachabilityChecking, refresh: refreshReachability } =
+    usePeerReachability(selectedContact, true);
   const contactReachable = peerReachability?.connected === true;
 
   const isOutgoingMsg = useCallback(
@@ -579,13 +577,13 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
 
   const handleStartCall = useCallback(async () => {
     if (!selectedContact || !isBondedHumanContact) return;
-    void nodeService.warmContactConnection(selectedContact, { source: "call" });
+    await nodeService.warmContactConnection(selectedContact, { source: "call" });
     await startCall(selectedContact, displayName, "audio");
   }, [selectedContact, isBondedHumanContact, startCall, displayName, nodeService]);
 
   const handleStartVideoCall = useCallback(async () => {
     if (!selectedContact || !isBondedHumanContact) return;
-    void nodeService.warmContactConnection(selectedContact, { source: "call" });
+    await nodeService.warmContactConnection(selectedContact, { source: "call" });
     await startCall(selectedContact, displayName, "video");
   }, [selectedContact, isBondedHumanContact, startCall, displayName, nodeService]);
 
@@ -653,6 +651,17 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
               {isHomeBridgeThread && !contactReachable && !reachabilityChecking
                 ? t("contactChat.homeOffline")
                 : formatPeerReachabilityLabel(peerReachability, reachabilityChecking, t)}
+              {!contactReachable && !reachabilityChecking && isBondedHumanContact ? (
+                <button
+                  type="button"
+                  className="contact-reconnect-btn"
+                  title={t("contactChat.reconnect")}
+                  aria-label={t("contactChat.reconnectAria")}
+                  onClick={() => void refreshReachability({ redial: true })}
+                >
+                  {t("contactChat.reconnect")}
+                </button>
+              ) : null}
             </span>
           </div>
         </div>
