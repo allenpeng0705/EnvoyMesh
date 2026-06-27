@@ -458,12 +458,22 @@ export class EnvoyMesh {
       void (async () => {
         for (const addr of relayAddrs) {
           try {
-            await promiseWithTimeout(
-              this.node!.dial(ma(addr)),
-              15_000,
-              `relay-reservation dial ${addr.slice(0, 64)}`,
-            );
-            console.log(`[relay] reserved on relay ${addr.slice(0, 64)}`);
+             const conn = await promiseWithTimeout(
+               this.node!.dial(ma(addr)),
+               15_000,
+               `relay-reservation dial ${addr.slice(0, 64)}`,
+             );
+             // Tag the relay peer so libp2p keeps the connection alive —
+             // without this the idle connection is closed and reservations lost.
+             try {
+               const relayPeerId = (conn as any)?.remotePeer?.toString?.();
+               if (relayPeerId) {
+                 await this.node!.peerStore.merge(peerIdFromString(relayPeerId), {
+                   tags: { [KEEP_ALIVE]: {} },
+                 });
+               }
+             } catch { /* best-effort */ }
+             console.log(`[relay] reserved on relay ${addr.slice(0, 64)}`);
           } catch (e) {
             const detail = e instanceof Error ? e.message : String(e);
             console.warn(`[relay] reservation dial failed for ${addr.slice(0, 64)}: ${detail}`);
