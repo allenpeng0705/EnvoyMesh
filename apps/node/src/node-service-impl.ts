@@ -12073,6 +12073,12 @@ class NodeServiceImpl implements NodeService {
     const needsProbe = options?.keepAlive === true || options?.verifyConnection === true;
     if (existing.connected && !options?.redial && !options?.upgradeRelayToDirect) {
       if (needsProbe) {
+        // Circuit-relay probes often false-negative and tear down working connections.
+        // Trust the libp2p connection state for relay paths instead of probing.
+        if (!existing.direct) {
+          markOutboundPeerVerified(transportPeerId);
+          return existing;
+        }
         if (options?.verifyConnection) {
           const probed = await mesh.probeBondedPeerConnection(transportPeerId);
           if (probed.connected) {
@@ -12102,8 +12108,16 @@ class NodeServiceImpl implements NodeService {
         WARM_CONTACT_DIAL_HINTS_TIMEOUT_MS,
         "_dialHintsForChat",
       );
-    } catch {
-      return mesh.getPeerConnectionInfo(transportPeerId);
+    } catch (hintErr) {
+      dialHints = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs ?? []);
+      console.warn(
+        `[warmContact] dial hints timed out for ${transportPeerId.slice(0, 12)}…, using ${dialHints.length} listen addrs:`,
+        hintErr instanceof Error ? hintErr.message : hintErr,
+      );
+      if (dialHints.length === 0) {
+        return mesh.getPeerConnectionInfo(transportPeerId);
+      }
+      // fall through — still try to connect with merged addresses
     }
 
     const dialableListen = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, dialHints);
