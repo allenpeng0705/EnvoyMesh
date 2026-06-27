@@ -463,17 +463,13 @@ export class EnvoyMesh {
                15_000,
                `relay-reservation dial ${addr.slice(0, 64)}`,
              );
-             // Tag the relay peer so libp2p keeps the connection alive —
-             // without this the idle connection is closed and reservations lost.
-             try {
-               const relayPeerId = (conn as any)?.remotePeer?.toString?.();
-               if (relayPeerId) {
-                 await this.node!.peerStore.merge(peerIdFromString(relayPeerId), {
-                   tags: { [KEEP_ALIVE]: {} },
-                 });
-               }
-             } catch { /* best-effort */ }
-             console.log(`[relay] reserved on relay ${addr.slice(0, 64)}`);
+             // Tag the relay peer so libp2p keeps the connection alive.
+             // Use the actual connection's remote peer — not addr parsing.
+             const relayPid = conn.remotePeer;
+             await this.node!.peerStore.merge(relayPid, {
+               tags: { [CONTACT_KEEP_ALIVE_PEER_TAG]: { value: 1 } },
+             });
+             console.log(`[relay] reserved on relay ${addr.slice(0, 64)} (tagged ${relayPid.toString().slice(0, 12)}…)`);
           } catch (e) {
             const detail = e instanceof Error ? e.message : String(e);
             console.warn(`[relay] reservation dial failed for ${addr.slice(0, 64)}: ${detail}`);
