@@ -72,12 +72,19 @@ describe("peer-reachability-hysteresis", () => {
     expect(r.state.displayedLabel).toBe("relay");
   });
 
-  it("first reading with null displayedLabel updates UI immediately", () => {
+  it("first disconnected reading waits for hysteresis when label not yet shown", () => {
     const state = createReachabilityHysteresisState();
     const r = applyReachabilityHysteresis(state, { connected: false, direct: false }, 3_500_000);
+    expect(r.shouldUpdate).toBe(false);
+    expect(r.info).toBeNull();
+  });
+
+  it("first connected reading with null displayedLabel updates UI immediately", () => {
+    const state = createReachabilityHysteresisState();
+    const r = applyReachabilityHysteresis(state, { connected: true, direct: false }, 3_500_000);
     expect(r.shouldUpdate).toBe(true);
-    expect(r.info).toEqual({ connected: false, direct: false });
-    expect(r.state.displayedLabel).toBe("offline");
+    expect(r.info).toEqual({ connected: true, direct: false });
+    expect(r.state.displayedLabel).toBe("relay");
   });
 
     it("open-chat stablePathPolls holds Direct through brief Relay blips", () => {

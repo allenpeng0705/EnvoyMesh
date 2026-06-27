@@ -4,7 +4,7 @@
 
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, waitFor } from "@testing-library/react";
-import { usePeerReachability } from "../../src/hooks/usePeerReachability.js";
+import { usePeerReachability, peerReachabilityLabel } from "../../src/hooks/usePeerReachability.js";
 
 const getPeerConnectionInfo = vi.fn(async () => ({ connected: false, direct: false }));
 const warmContactConnection = vi.fn(async () => ({ connected: true, direct: true }));
@@ -92,6 +92,27 @@ describe("usePeerReachability", () => {
 
     expect(getPeerConnectionInfo.mock.calls.length).toBe(callsAfterSettle);
     expect(result.current.checking).toBe(false);
+  });
+
+  it("shows Connecting while warm is in progress then Offline when dial fails", async () => {
+    getPeerConnectionInfo.mockResolvedValue({ connected: false, direct: false });
+    warmContactConnection.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          setTimeout(() => resolve({ connected: false, direct: false }), 50);
+        }),
+    );
+
+    const { result } = renderHook(() => usePeerReachability("envoy:owner:dialing", true));
+
+    expect(result.current.checking).toBe(true);
+    expect(peerReachabilityLabel(null, true)).toBe("Connecting…");
+
+    await waitFor(() => {
+      expect(result.current.info).toEqual({ connected: false, direct: false });
+    });
+    expect(result.current.checking).toBe(false);
+    expect(peerReachabilityLabel(result.current.info, false)).toBe("Offline");
   });
 
   it("reports offline when warm cannot connect and keeps retrying in the background", async () => {

@@ -97,6 +97,7 @@ export const contactChatMessages = {
   reachabilityDirect: "Online · direct P2P",
   reachabilityRelay: "Online · via relay",
   reachabilityOffline: "Offline · not reachable on the mesh",
+  connecting: "Connecting…",
   homeOffline: "Offline",
   aiModeLabel: "AI mode: {mode}",
   manualTitle: "Manual: type yourself",

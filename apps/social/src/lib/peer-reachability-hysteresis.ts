@@ -63,8 +63,8 @@ export function applyReachabilityHysteresis(
   const label = reachabilityLabel(next);
   let { displayedLabel, lastConnectedAt, streakLabel, streakCount } = state;
 
-  // First reading (or explicit immediate) — never leave UI stuck on "Checking…".
-  if (options?.immediate || displayedLabel === null) {
+  // Seed online from cache immediately; defer offline until a warm/dial attempt finishes.
+  if (options?.immediate || (displayedLabel === null && next.connected)) {
     displayedLabel = label;
     if (next.connected) {
       lastConnectedAt = now;

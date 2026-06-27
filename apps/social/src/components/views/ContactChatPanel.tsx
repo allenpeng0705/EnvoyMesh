@@ -3,7 +3,7 @@ import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService, useChatMessages } from "../../hooks/useNodeService.js";
 import { useChatDrafts } from "../../hooks/useChatDrafts.js";
-import { usePeerReachability, peerReachabilityLabel } from "../../hooks/usePeerReachability.js";
+import { usePeerReachability, formatPeerReachabilityLabel } from "../../hooks/usePeerReachability.js";
 import { useCallSessionContext } from "../../context/CallSessionContext.js";
 import type { ChatMessage, ContactAiPreferences } from "@envoymesh/api";
 import {
@@ -652,7 +652,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
               <span className="contact-reachability-dot" aria-hidden />
               {isHomeBridgeThread && !contactReachable && !reachabilityChecking
                 ? t("contactChat.homeOffline")
-                : peerReachabilityLabel(peerReachability, reachabilityChecking)}
+                : formatPeerReachabilityLabel(peerReachability, reachabilityChecking, t)}
             </span>
           </div>
         </div>

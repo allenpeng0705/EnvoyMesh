@@ -83,8 +83,8 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
         return;
       }
       refreshInFlightRef.current = true;
-      const showChecking = !opts?.silent;
-      if (showChecking) setChecking(true);
+      const showConnecting = !opts?.silent;
+      if (showConnecting) setChecking(true);
       try {
         let next: PeerConnectionInfo;
         if (opts?.redial) {
@@ -115,7 +115,7 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
         applyReading({ connected: false, direct: false }, generation, { immediate: true });
       } finally {
         refreshInFlightRef.current = false;
-        if (showChecking) setChecking(false);
+        if (showConnecting) setChecking(false);
         if (pendingRefreshRef.current) {
           pendingRefreshRef.current = false;
           void runRefreshRef.current(generation, {
@@ -147,20 +147,47 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
       libp2pConnectedRef.current = false;
       libp2pDirectRef.current = false;
       setInfo(null);
+      setChecking(true);
     }
 
     const generation = peerGenerationRef.current;
+    const ns = nodeServiceRef.current;
 
     void (async () => {
-      await runRefreshRef.current(generation, { verifyOnly: true, silent: true, immediate: true });
-      if (generation !== peerGenerationRef.current) {
-        return;
+      try {
+        const cached = await ns.getPeerConnectionInfo(peerOwnerId);
+        if (generation !== peerGenerationRef.current) {
+          return;
+        }
+        libp2pConnectedRef.current = cached.connected;
+        libp2pDirectRef.current = cached.direct;
+
+        if (cached.connected) {
+          applyReading(cached, generation, { immediate: true });
+          setChecking(false);
+          void runRefreshRef.current(generation, { silent: true, keepAlive: true });
+          return;
+        }
+
+        setChecking(true);
+        lastRedialAtRef.current = Date.now();
+        const warmed = await ns.warmContactConnection(peerOwnerId);
+        if (generation !== peerGenerationRef.current) {
+          return;
+        }
+        applyReading(warmed, generation, { immediate: true });
+      } catch {
+        if (generation !== peerGenerationRef.current) {
+          return;
+        }
+        libp2pConnectedRef.current = false;
+        libp2pDirectRef.current = false;
+        applyReading({ connected: false, direct: false }, generation, { immediate: true });
+      } finally {
+        if (generation === peerGenerationRef.current) {
+          setChecking(false);
+        }
       }
-      if (libp2pConnectedRef.current) {
-        void runRefreshRef.current(generation, { silent: true, keepAlive: true });
-        return;
-      }
-      void runRefreshRef.current(generation, { warm: true, silent: false });
     })();
 
     const id = setInterval(() => {
@@ -185,6 +212,7 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
     nodeService.isConnected,
     nodeService.isReady,
     pollMs,
+    applyReading,
   ]);
 
   const refresh = useCallback(
@@ -202,4 +230,4 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
   return { info, checking, refresh };
 }
 
-export { peerReachabilityLabel } from "../lib/peer-reachability-label.js";
+export { peerReachabilityLabel, formatPeerReachabilityLabel } from "../lib/peer-reachability-label.js";
