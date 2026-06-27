@@ -12,7 +12,6 @@ import {
   buildSyntheticRelayCircuitHints,
   dedupeDialHintStrings,
   hasDirectTcpDialHints,
-  hasTrustedDirectDialHints,
   filterDialHintsForOutboundSend,
 } from "@envoymesh/network";
 import { expandCircuitDialCandidates } from "./discovery-inbound.js";
@@ -99,12 +98,12 @@ export async function buildOutboundDialHints(input: {
     }
   }
 
-  const hasTrustedDirect = hasTrustedDirectDialHints([...nonLoopListen, ...peerSeeds]);
+  const hasDirect = hasDirectTcpDialHints([...nonLoopListen, ...peerSeeds]);
   const peerSpecificCircuits = out.filter(
     (h) => h.includes(recipientPeerId) && h.includes("/p2p-circuit/"),
   );
-  // Synthetic circuits guess the peer reserved on a relay — skip when trusted LAN/stable direct exists.
-  if (!hasTrustedDirect) {
+  // Synthetic circuits guess the peer reserved on a relay — skip when LAN/direct exists or we already have relay.lookup paths.
+  if (!hasDirect) {
     const maxSynthetic = peerSpecificCircuits.length > 0 ? 1 : 3;
     out.push(
       ...buildSyntheticRelayCircuitHints(recipientPeerId, relayPool, maxSynthetic),
@@ -114,7 +113,7 @@ export async function buildOutboundDialHints(input: {
   const usable = dedupeDialHints(out.filter((a) => isUsableChatDialHint(a, recipientPeerId)));
   const ordered = prioritizeDirectLanDialHints(usable);
   return filterDialHintsForOutboundSend(ordered, recipientPeerId, {
-    preferCircuitHints: !hasTrustedDirect,
+    preferCircuitHints: !hasDirect,
   });
 }
 
@@ -172,7 +171,7 @@ export function shouldPreferCircuitDialHints(
     ...dialableListen,
     ...dialHints.filter((h) => h.includes("/tcp/") && !h.includes("/p2p-circuit/")),
   ];
-  if (hasTrustedDirectDialHints(directCandidates)) {
+  if (hasDirectTcpDialHints(directCandidates)) {
     return false;
   }
   return dialHints.some((h) => h.includes("/p2p-circuit/"));

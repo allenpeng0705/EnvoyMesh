@@ -376,6 +376,7 @@ import {
   ENVOY_MESSAGE_PROTOCOL,
   EnvoyMesh,
   filterBootstrapMultiaddrs,
+  filterRelayControlTargets,
   filterUsableOutboundPeerDialHints,
   ENVOY_CHAT_PROTOCOL,
   ENVOY_DATA_PROTOCOL,
@@ -869,7 +870,9 @@ class NodeServiceImpl implements NodeService {
   /** Skip periodic bond warm when libp2p already has this many open connections. */
   private static readonly BOND_WARM_MAX_CONNECTIONS = 64;
   /** Announce tcp/0 listen ports to bonded contacts before bond warm (same-LAN cold start). */
-  private static readonly PRESENCE_SIGNAL_STARTUP_DELAY_MS = 20_000;
+  private static readonly PRESENCE_SIGNAL_STARTUP_DELAY_MS = 10_000;
+  /** First bond warm after mesh settles (relay check-in, profile sync). */
+  private static readonly BOND_WARM_STARTUP_DELAY_MS = 30_000;
   /** Defer startup profile refresh until mesh paths settle (avoids stale LAN dial storms). */
   private static readonly PROFILE_REFRESH_STARTUP_DELAY_MS = 90_000;
   private _profileRefreshStartupTimer?: ReturnType<typeof setTimeout>;
@@ -1619,7 +1622,12 @@ class NodeServiceImpl implements NodeService {
     if (!mesh || !profile || !this._inboundGuard || !this._discoverySeedStore) {
       return;
     }
-    if (this._relayBootstrapPeers.length === 0) {
+    const config = await this._configStore.load();
+    const bootstrapPeers = filterRelayControlTargets([
+      ...this._relayBootstrapPeers,
+      ...(config?.bootstrapPeers ?? []),
+    ]);
+    if (bootstrapPeers.length === 0) {
       return;
     }
     try {
@@ -1627,7 +1635,7 @@ class NodeServiceImpl implements NodeService {
         {
           mesh,
           profile,
-          bootstrapPeers: this._relayBootstrapPeers,
+          bootstrapPeers,
           inboundGuard: this._inboundGuard,
           discoverySeedStore: this._discoverySeedStore,
           peerDirectoryStore: this._peerDirectoryStore,
@@ -1823,7 +1831,20 @@ class NodeServiceImpl implements NodeService {
     }
     try {
       const record = await this._peerDirectoryStore.getPeerByPeerId(peerId);
-      const ownerId = record?.ownerId?.trim();
+      let ownerId = record?.ownerId?.trim();
+      if (!ownerId || ownerId === peerId) {
+        const bonds = await this.getBonds();
+        for (const bond of bonds) {
+          if (bond.level !== "direct" && bond.level !== "referred") {
+            continue;
+          }
+          const dir = await this._peerDirectoryStore.getPeerByOwnerId(bond.peerOwnerId);
+          if (dir?.peerId === peerId) {
+            ownerId = bond.peerOwnerId;
+            break;
+          }
+        }
+      }
       if (!ownerId || ownerId === peerId) {
         return;
       }
@@ -12008,6 +12029,13 @@ class NodeServiceImpl implements NodeService {
     if (!existing.connected && peerOwnerId?.trim()) {
       await this._refreshRelayDialHintsForPeer(transportPeerId, peerOwnerId);
       listenAddrs = await this._mergeFreshListenAddrs(peerOwnerId, transportPeerId, listenAddrs);
+    } else if (peerOwnerId?.trim()) {
+      listenAddrs = await this._mergeFreshListenAddrs(peerOwnerId, transportPeerId, listenAddrs);
+      const hasLan = (listenAddrs ?? []).some((a) => isPrivateLanTcpDialHint(a));
+      if (!hasLan) {
+        await this._refreshRelayDialHintsForPeer(transportPeerId, peerOwnerId);
+        listenAddrs = await this._mergeFreshListenAddrs(peerOwnerId, transportPeerId, listenAddrs);
+      }
     }
 
     let dialHints: string[];
@@ -12017,9 +12045,26 @@ class NodeServiceImpl implements NodeService {
         WARM_CONTACT_DIAL_HINTS_TIMEOUT_MS,
         "_dialHintsForChat",
       );
-    } catch {
-      return mesh.getPeerConnectionInfo(transportPeerId);
+    } catch (err) {
+      console.warn(
+        `[warmContact] dial hints timed out for ${transportPeerId.slice(0, 12)}…:`,
+        err instanceof Error ? err.message : err,
+      );
+      dialHints = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, []);
     }
+
+    if (dialHints.length === 0) {
+      dialHints = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, dialHints);
+    }
+    if (dialHints.length === 0) {
+      dialHints = [`/p2p/${transportPeerId}`];
+    }
+
+    const lanHints = dialHints.filter((h) => isPrivateLanTcpDialHint(h));
+    const circuitHints = dialHints.filter((h) => h.includes("/p2p-circuit/"));
+    console.log(
+      `[warmContact] ${transportPeerId.slice(0, 12)}… hints=${dialHints.length} lan=${lanHints.length} circuit=${circuitHints.length}`,
+    );
 
     const dialableListen = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, dialHints);
     void mesh.scrubPeerStoreDialHints(transportPeerId, dialableListen);
@@ -12080,7 +12125,7 @@ class NodeServiceImpl implements NodeService {
     const runWarm = (): void => {
       void this._warmAllBondedContacts();
     };
-    setTimeout(runWarm, 120_000);
+    setTimeout(runWarm, NodeServiceImpl.BOND_WARM_STARTUP_DELAY_MS);
     this._bondWarmTimer = setInterval(runWarm, 60_000);
   }
 

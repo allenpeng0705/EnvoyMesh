@@ -154,11 +154,14 @@ describe("buildOutboundDialHints", () => {
     }
   });
 
-  it("keeps tcp/0 listen ports and adds relay circuit fallback when no stable direct port", async () => {
+  it("keeps tcp/0 listen ports and keeps relay fallback when only high-port LAN is known", async () => {
     const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-dial-hints-ephemeral-"));
     try {
       const seedStore = createDiscoverySeedStore(profileDir);
       const target = "12D3KooWN67PannbfXrLPhgJkkRGWGN9UBV3Xfu5UpzdK1dY8qGD";
+      const circuitSeed =
+        `/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${target}`;
+      await seedStore.upsertSuccess(circuitSeed, "relay.lookup");
       const hints = await buildOutboundDialHints({
         recipientPeerId: target,
         peerListenAddrs: [
@@ -185,7 +188,8 @@ describe("buildOutboundDialHints", () => {
 
       expect(hints.some((h) => h.includes("55093"))).toBe(true);
       expect(hints.some((h) => h.includes("60417"))).toBe(true);
-      expect(hints.some((h) => h.includes("/p2p-circuit/p2p/12D3KooWN67"))).toBe(true);
+      // tcp/0 LAN bind ports are dialable but do not drop relay circuits (stable-port policy).
+      expect(hints.some((h) => h.includes("/p2p-circuit/"))).toBe(true);
     } finally {
       await rm(profileDir, { recursive: true, force: true });
     }
@@ -200,6 +204,16 @@ describe("shouldPreferCircuitDialHints", () => {
       "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWContact",
     ];
     expect(shouldPreferCircuitDialHints(listen, hints, "12D3KooWContact")).toBe(false);
+  });
+
+  it("prefers direct LAN TCP over relay when tcp/0 listen addrs exist", async () => {
+    const { shouldPreferCircuitDialHints } = await import("../src/outbound-dial-hints.js");
+    const peerId = "12D3KooWContact";
+    const listen = [`/ip4/192.168.1.50/tcp/55093/p2p/${peerId}`];
+    const hints = [
+      `/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${peerId}`,
+    ];
+    expect(shouldPreferCircuitDialHints(listen, hints, peerId)).toBe(false);
   });
 
   it("allows relay when no direct TCP hints exist", async () => {
