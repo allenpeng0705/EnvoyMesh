@@ -866,8 +866,8 @@ class NodeServiceImpl implements NodeService {
   private _bondWarmTimer?: ReturnType<typeof setInterval>;
   /** Skip periodic bond warm when libp2p already has this many open connections. */
   private static readonly BOND_WARM_MAX_CONNECTIONS = 64;
-  /** First bond warm after mesh + relay check-in settle (e50 used 120s; 30s for faster reconnect). */
-  private static readonly BOND_WARM_STARTUP_DELAY_MS = 30_000;
+  /** First bond warm after mesh + relay check-in settle (00b5b5d baseline: 120s). */
+  private static readonly BOND_WARM_STARTUP_DELAY_MS = 120_000;
   /** Defer startup profile refresh until mesh paths settle (avoids stale LAN dial storms). */
   private static readonly PROFILE_REFRESH_STARTUP_DELAY_MS = 90_000;
   private _profileRefreshStartupTimer?: ReturnType<typeof setTimeout>;
@@ -1592,12 +1592,10 @@ class NodeServiceImpl implements NodeService {
       multiaddrs: (mesh.multiaddrs ?? []).map((a) => a.toString()),
     });
     this.emit("node:ready", { timestamp: Date.now() });
-    void (async () => {
-      await this.resyncBondedContactReachabilityTags();
-      await this._scrubBondedContactDialState();
-      this._scheduleDeferredProfileRefresh("bindExternalMesh");
-      this._startBondWarmInterval();
-    })();
+    void this.resyncBondedContactReachabilityTags();
+    void this._scrubBondedContactDialState();
+    this._scheduleDeferredProfileRefresh("bindExternalMesh");
+    this._startBondWarmInterval();
   }
 
   private _scheduleDeferredProfileRefresh(source: string): void {
