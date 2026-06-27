@@ -11886,7 +11886,7 @@ class NodeServiceImpl implements NodeService {
     }
 
     let dialHints: string[];
-    const fastDial = options?.fastDial === true || options?.source === "chat";
+    const fastDial = options?.fastDial === true || options?.source === "open_chat";
     const dialHintsTimeoutMs = fastDial
       ? WARM_CONTACT_CHAT_OPEN_DIAL_HINTS_TIMEOUT_MS
       : WARM_CONTACT_DIAL_HINTS_TIMEOUT_MS;

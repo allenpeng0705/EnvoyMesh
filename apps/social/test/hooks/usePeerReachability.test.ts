@@ -57,7 +57,7 @@ describe("usePeerReachability", () => {
     });
     expect(result.current.checking).toBe(false);
     expect(warmContactConnection).toHaveBeenCalledWith("envoy:owner:cached", {
-      source: "chat",
+      source: "open_chat",
       fastDial: true,
       keepAlive: true,
     });
@@ -73,7 +73,7 @@ describe("usePeerReachability", () => {
       expect(result.current.info).toEqual({ connected: true, direct: true });
     });
     expect(warmContactConnection).toHaveBeenCalledWith("envoy:owner:live", {
-      source: "chat",
+      source: "open_chat",
       fastDial: true,
       keepAlive: true,
     });
@@ -89,7 +89,7 @@ describe("usePeerReachability", () => {
       expect(result.current.info?.connected).toBe(true);
     });
     expect(warmContactConnection).toHaveBeenCalledWith("envoy:owner:relay", {
-      source: "chat",
+      source: "open_chat",
       fastDial: true,
     });
     expect(

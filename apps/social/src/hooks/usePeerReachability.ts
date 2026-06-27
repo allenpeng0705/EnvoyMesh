@@ -120,7 +120,7 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
           next = await ns.getPeerConnectionInfo(peerOwnerId);
         } else if (opts?.warm) {
           lastRedialAtRef.current = Date.now();
-          next = await ns.warmContactConnection(peerOwnerId, { source: "chat", fastDial: true });
+          next = await ns.warmContactConnection(peerOwnerId, { source: "open_chat", fastDial: true });
         } else {
           next = await ns.getPeerConnectionInfo(peerOwnerId);
         }
@@ -191,7 +191,7 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
           applyReading(cached, generation, { immediate: true });
           setChecking(false);
           void ns
-            .warmContactConnection(peerOwnerId, { source: "chat", fastDial: true, keepAlive: true })
+            .warmContactConnection(peerOwnerId, { source: "open_chat", fastDial: true, keepAlive: true })
             .then((confirmed) => {
               if (generation !== peerGenerationRef.current) {
                 return;
@@ -206,7 +206,7 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
         }
 
         lastRedialAtRef.current = Date.now();
-        const warmed = await ns.warmContactConnection(peerOwnerId, { source: "chat", fastDial: true });
+        const warmed = await ns.warmContactConnection(peerOwnerId, { source: "open_chat", fastDial: true });
         if (generation !== peerGenerationRef.current) {
           return;
         }
