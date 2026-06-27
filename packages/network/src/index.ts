@@ -93,7 +93,7 @@ export function getEnvoyContactKeepAlivePeerTagName(): string {
  */
 const NEW_STREAM_ON_OPEN_CONNECTION_TIMEOUT_MS = 15_000;
 /** Per-hint dial cap when iterating multiaddrs (fail fast; libp2p default dialTimeout is 15s). */
-const HINT_DIAL_TIMEOUT_MS = 3_500;
+const HINT_DIAL_TIMEOUT_MS = 10_000;
 
 function promiseWithTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -286,7 +286,7 @@ export class EnvoyMesh {
     const browserMode = this.options.browserMode === true;
     const enableWebSocket = this.options.enableWebSocketTransport === true || browserMode;
 
-    const baseListen = this.options.listen ?? (browserMode ? [] : ["/ip4/0.0.0.0/tcp/0"]);
+    const baseListen = this.options.listen ?? (browserMode ? [] : ["/ip4/0.0.0.0/tcp/4001"]);
     let listenAddrs =
       this.options.enableQuic === true && !browserMode ? expandListenAddressesWithQuic(baseListen) : [...baseListen];
 
@@ -446,6 +446,37 @@ export class EnvoyMesh {
 
     this.attachP2pDebug(this.node);
     this.attachReachabilityObservability(this.node);
+
+    // Establish circuit relay v2 reservations on configured relays so other
+    // peers can reach this node via relay (fixes NO_RESERVATION errors).
+    // Dialing the relay triggers identify → topology handler discovers
+    // RELAY_V2_HOP_CODEC → circuitRelayTransport requests a reservation.
+    // Run asynchronously — do not block node startup.
+    if (this.options.enableRelay && !this.options.enableRelayServer && this.node) {
+      const relayAddrs = (this.options.bootstrapPeers ?? [])
+        .filter((a) => !isPublicLibp2pBootstrapMultiaddr(a));
+      void (async () => {
+        for (const addr of relayAddrs) {
+          try {
+             const conn = await promiseWithTimeout(
+               this.node!.dial(ma(addr)),
+               15_000,
+               `relay-reservation dial ${addr.slice(0, 64)}`,
+             );
+             // Tag the relay peer so libp2p keeps the connection alive.
+             // Use the actual connection's remote peer — not addr parsing.
+             const relayPid = conn.remotePeer;
+             await this.node!.peerStore.merge(relayPid, {
+               tags: { [CONTACT_KEEP_ALIVE_PEER_TAG]: { value: 1 } },
+             });
+             console.log(`[relay] reserved on relay ${addr.slice(0, 64)} (tagged ${relayPid.toString().slice(0, 12)}…)`);
+          } catch (e) {
+            const detail = e instanceof Error ? e.message : String(e);
+            console.warn(`[relay] reservation dial failed for ${addr.slice(0, 64)}: ${detail}`);
+          }
+        }
+      })();
+    }
   }
 
   async stop(): Promise<void> {
@@ -1409,7 +1440,9 @@ export class EnvoyMesh {
     } catch (e) {
       const detail = e instanceof Error ? e.message : String(e);
       console.warn(`[network] ensurePeerReachable failed for ${target.slice(0, 24)}…: ${detail}`);
-      return { connected: false, direct: false };
+      // Existing connections may still be usable (e.g. relay not torn down by caller).
+      if (!peerIdStr) return { connected: false, direct: false };
+      return this.getPeerConnectionInfo(peerIdStr);
     }
     return peerIdStr ? this.getPeerConnectionInfo(peerIdStr) : { connected: false, direct: false };
   }
@@ -1676,8 +1709,12 @@ export class EnvoyMesh {
         lastError = e;
       }
     }
+    // When upgrading from relay→direct, don't skip the limited-connection fallback:
+    // if the direct dial fails, reuse the existing relay connection.
     const skipLimitedFallback =
-      hasDirectTcpDialHints(hintsRaw) && !sendOptions?.preferCircuitHints;
+      hasDirectTcpDialHints(hintsRaw) &&
+      !sendOptions?.preferCircuitHints &&
+      !sendOptions?.upgradeRelayToDirect;
     if (!skipLimitedFallback) {
       const viaLimited = await openStreamOnLimitedConn();
       if (viaLimited) {
@@ -2325,7 +2362,7 @@ export function hasDirectTcpDialHints(hints: readonly string[]): boolean {
       !h.includes("/p2p-circuit/") &&
       !isLoopbackOrUnspecifiedDialHint(h) &&
       !isDockerBridgeGatewayDialHint(h) &&
-      !isLikelyInboundConnSnapshotDialHint(h),
+      (!isLikelyInboundConnSnapshotDialHint(h) || isPrivateLanTcpDialHint(h)),
   );
 }
 
@@ -2348,18 +2385,37 @@ export function isPrivateOrUnroutableDialHint(addr: string): boolean {
  * source port on outbound-initiated TCP connections — not a dialable listen address.
  */
 export function isLikelyInboundConnSnapshotDialHint(addr: string): boolean {
-  if (!addr.includes("/tcp/")) {
+  const a = addr.trim();
+  // Keep addresses with a proper libp2p peer ID — these are dialable listen
+  // multiaddrs, not ephemeral inbound-connection snapshots (restores 00b5b5d behavior).
+  if (/\/p2p\/[^/]+$/.test(a)) {
     return false;
   }
-  const match = addr.match(/\/tcp\/(\d+)\//);
+  if (!a.includes("/tcp/")) {
+    return false;
+  }
+  const match = a.match(/\/tcp\/(\d+)(?:\/|$)/);
   if (!match) {
     return false;
   }
   const port = Number(match[1]);
-  if (STABLE_LIBP2P_TCP_PORTS.has(port)) {
+  return port > 32768 || port === 0;
+}
+
+/**
+ * RFC1918 `--listen tcp/0` ports from mDNS / system.signal (trusted upstream).
+ * Same numeric range as inbound snapshots — never infer from libp2p peerstore alone.
+ */
+export function isDialableLanListenHint(addr: string, targetPeerId: string): boolean {
+  const a = addr.trim();
+  const peerId = targetPeerId.trim();
+  if (!a.startsWith("/") || !peerId || !a.includes(`/p2p/${peerId}`)) {
     return false;
   }
-  return port >= 32768;
+  if (a.includes("/p2p-circuit/") || isLoopbackOrUnspecifiedDialHint(a)) {
+    return false;
+  }
+  return isPrivateLanTcpDialHint(a) && a.includes("/tcp/");
 }
 
 /** True when a multiaddr must not be used as bootstrap / relay.checkin target. */
@@ -2493,13 +2549,23 @@ export function filterDialHintsForOutboundSend(
   targetPeerId: string,
   opts?: { preferCircuitHints?: boolean },
 ): string[] {
-  const filtered = filterUsableOutboundPeerDialHints([...hints], targetPeerId);
+  const seen = new Set<string>();
+  const filtered: string[] = [];
+  for (const raw of hints) {
+    const h = raw.trim();
+    if (!h || seen.has(h)) {
+      continue;
+    }
+    if (isUsableOutboundPeerDialHint(h, targetPeerId) || isDialableLanListenHint(h, targetPeerId)) {
+      seen.add(h);
+      filtered.push(h);
+    }
+  }
   if (opts?.preferCircuitHints === true) {
     return filtered;
   }
-  if (hasDirectTcpDialHints(filtered)) {
-    return filtered.filter((h) => !h.includes("/p2p-circuit/"));
-  }
+  // Keep circuit/relay hints as fallback — stripping them entirely
+  // prevents relay fallback when direct LAN dials fail (e.g. firewalls).
   return filtered;
 }
 
