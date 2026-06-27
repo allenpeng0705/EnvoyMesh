@@ -2325,7 +2325,7 @@ export function hasDirectTcpDialHints(hints: readonly string[]): boolean {
       !h.includes("/p2p-circuit/") &&
       !isLoopbackOrUnspecifiedDialHint(h) &&
       !isDockerBridgeGatewayDialHint(h) &&
-      !isLikelyInboundConnSnapshotDialHint(h),
+      (!isLikelyInboundConnSnapshotDialHint(h) || isPrivateLanTcpDialHint(h)),
   );
 }
 
@@ -2360,6 +2360,22 @@ export function isLikelyInboundConnSnapshotDialHint(addr: string): boolean {
     return false;
   }
   return port >= 32768;
+}
+
+/**
+ * RFC1918 `--listen tcp/0` ports from mDNS / system.signal (trusted upstream).
+ * Same numeric range as inbound snapshots — never infer from libp2p peerstore alone.
+ */
+export function isDialableLanListenHint(addr: string, targetPeerId: string): boolean {
+  const a = addr.trim();
+  const peerId = targetPeerId.trim();
+  if (!a.startsWith("/") || !peerId || !a.includes(`/p2p/${peerId}`)) {
+    return false;
+  }
+  if (a.includes("/p2p-circuit/") || isLoopbackOrUnspecifiedDialHint(a)) {
+    return false;
+  }
+  return isPrivateLanTcpDialHint(a) && a.includes("/tcp/");
 }
 
 /** True when a multiaddr must not be used as bootstrap / relay.checkin target. */
@@ -2493,7 +2509,18 @@ export function filterDialHintsForOutboundSend(
   targetPeerId: string,
   opts?: { preferCircuitHints?: boolean },
 ): string[] {
-  const filtered = filterUsableOutboundPeerDialHints([...hints], targetPeerId);
+  const seen = new Set<string>();
+  const filtered: string[] = [];
+  for (const raw of hints) {
+    const h = raw.trim();
+    if (!h || seen.has(h)) {
+      continue;
+    }
+    if (isUsableOutboundPeerDialHint(h, targetPeerId) || isDialableLanListenHint(h, targetPeerId)) {
+      seen.add(h);
+      filtered.push(h);
+    }
+  }
   if (opts?.preferCircuitHints === true) {
     return filtered;
   }

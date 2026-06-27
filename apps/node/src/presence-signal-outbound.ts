@@ -110,7 +110,7 @@ export async function broadcastPresenceSignalToBonds(input: {
   }
   if (sent > 0) {
     console.log(
-      `[presence] announced ${listenAddrs.length} listen addr(s) to ${sent} bonded contact(s)`,
+      `[presence] announced ${listenAddrs.length} listen addr(s) to ${sent} bonded contact(s): ${listenAddrs.map((a) => a.match(/\/tcp\/(\d+)\//)?.[1] ?? "?").join(",")}`,
     );
   }
   return { sent, skipped };

@@ -464,7 +464,7 @@ import {
   transitionCapabilityProviderJob,
   transitionSocialProxySession,
 } from "@envoymesh/api";
-import { buildOutboundDialHints, mergeDialablePeerListenAddrs, shouldPreferCircuitDialHints } from "./outbound-dial-hints.js";
+import { buildOutboundDialHints, isDialableLanListenHint, mergeDialablePeerListenAddrs, shouldPreferCircuitDialHints } from "./outbound-dial-hints.js";
 import { broadcastPresenceSignalToBonds } from "./presence-signal-outbound.js";
 import {
   dialableInboundRemoteAddrs,
@@ -1602,6 +1602,9 @@ class NodeServiceImpl implements NodeService {
     setTimeout(() => {
       void this._broadcastPresenceToBonds();
     }, 4_000);
+    setTimeout(() => {
+      void this._warmAllBondedContacts();
+    }, 6_000);
   }
 
   /** Remember LAN listen ports learned from mDNS or verified system.signal (not inbound snapshots). */
@@ -1712,7 +1715,6 @@ class NodeServiceImpl implements NodeService {
     }
     try {
       await this._peerDirectoryStore.compactListenAddrs();
-      await this._peerDirectoryStore.sanitizeListenAddrs();
       const bonds = await this.getBonds();
       for (const bond of bonds) {
         if (bond.level !== "direct" && bond.level !== "referred") {
@@ -11912,13 +11914,14 @@ class NodeServiceImpl implements NodeService {
       /* best-effort */
     }
     const trustedLan = this._trustedLanListenAddrsByPeer.get(transportPeerId) ?? [];
+    const fromDirLan = fromDir.filter((a) => isDialableLanListenHint(a, transportPeerId));
     const merged = mergeDialablePeerListenAddrs(
       transportPeerId,
       listenAddrs,
       cached,
       fromDir,
     );
-    const withTrusted = [...new Set([...merged, ...trustedLan])];
+    const withTrusted = [...new Set([...merged, ...trustedLan, ...fromDirLan])];
     return withTrusted.length ? withTrusted : listenAddrs;
   }
 
@@ -11976,6 +11979,13 @@ class NodeServiceImpl implements NodeService {
 
     const preferCircuitHints = shouldPreferCircuitDialHints(listenAddrs, dialHints, transportPeerId);
 
+    const lanHints = dialHints.filter((h) => isPrivateLanTcpDialHint(h));
+    if (lanHints.length > 0 || !existing.connected) {
+      console.log(
+        `[warmContact] ${transportPeerId.slice(0, 12)}… hints=${dialHints.length} lan=${lanHints.length} preferCircuit=${preferCircuitHints}`,
+      );
+    }
+
     void mesh.mergePeerStoreDialHints(transportPeerId, dialHints);
 
     const tearingDown =
@@ -12030,7 +12040,7 @@ class NodeServiceImpl implements NodeService {
     const runWarm = (): void => {
       void this._warmAllBondedContacts();
     };
-    setTimeout(runWarm, 120_000);
+    setTimeout(runWarm, 15_000);
     this._bondWarmTimer = setInterval(runWarm, 60_000);
   }
 

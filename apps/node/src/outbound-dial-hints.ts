@@ -9,6 +9,7 @@ import {
   isPrivateLanTcpDialHint,
   isPublicLibp2pBootstrapMultiaddr,
   isUsableOutboundPeerDialHint,
+  isDialableLanListenHint,
   buildSyntheticRelayCircuitHints,
   dedupeDialHintStrings,
   hasDirectTcpDialHints,
@@ -27,6 +28,8 @@ function dedupeDialHints(addrs: string[]): string[] {
 function isUsableChatDialHint(addr: string, targetPeerId: string): boolean {
   return isUsableOutboundPeerDialHint(addr, targetPeerId);
 }
+
+export { isDialableLanListenHint };
 
 /** Envoy/community relay bases for synthetic `/p2p-circuit/` dial hints — not libp2p public DHT bootstrap nodes. */
 function relayBasesForCircuitDial(input: {
@@ -74,16 +77,18 @@ export async function buildOutboundDialHints(input: {
   const recipientPeerId = input.recipientPeerId.trim();
   const raw = (input.peerListenAddrs ?? []).map((a) => a.trim()).filter(Boolean);
   /** Never dial the remote peer's loopback or local docker-bridge IP from our machine. */
-  const nonLoopListen = raw
-    .filter((a) => isUsableChatDialHint(a, recipientPeerId))
-    .filter((a) => !isLikelyInboundConnSnapshotDialHint(a));
+  const nonLoopListen = raw.filter(
+    (a) => isUsableChatDialHint(a, recipientPeerId) || isDialableLanListenHint(a, recipientPeerId),
+  );
 
   const store = input.discoverySeedStore;
   if (!store) {
     return dedupeDialHints(nonLoopListen);
   }
 
-  const seeds = (await store.listSeedAddrs()).filter((a) => isUsableChatDialHint(a, recipientPeerId));
+  const seeds = (await store.listSeedAddrs()).filter(
+    (a) => isUsableChatDialHint(a, recipientPeerId) || isDialableLanListenHint(a, recipientPeerId),
+  );
   const relayPool = dedupeDialHints([
     ...seeds.filter((s) => s.includes("/p2p-circuit/")),
     ...relayBasesForCircuitDial({ config: input.config, profileDir: input.profileDir }),
@@ -110,7 +115,11 @@ export async function buildOutboundDialHints(input: {
     );
   }
 
-  const usable = dedupeDialHints(out.filter((a) => isUsableChatDialHint(a, recipientPeerId)));
+  const usable = dedupeDialHints(
+    out.filter(
+      (a) => isUsableChatDialHint(a, recipientPeerId) || isDialableLanListenHint(a, recipientPeerId),
+    ),
+  );
   const ordered = prioritizeDirectLanDialHints(usable);
   return filterDialHintsForOutboundSend(ordered, recipientPeerId, {
     preferCircuitHints: !hasDirect,
@@ -159,7 +168,10 @@ export function shouldPreferCircuitDialHints(
 ): boolean {
   const peerId = recipientPeerId?.trim() ?? "";
   const dialableListen = peerId
-    ? mergeDialablePeerListenAddrs(peerId, listenAddrs)
+    ? [
+        ...mergeDialablePeerListenAddrs(peerId, listenAddrs),
+        ...(listenAddrs ?? []).filter((a) => isDialableLanListenHint(a, peerId)),
+      ]
     : (listenAddrs ?? []).filter(
         (h) =>
           h.includes("/tcp/") &&
@@ -168,7 +180,7 @@ export function shouldPreferCircuitDialHints(
           !isLoopbackOrUnspecifiedDialHint(h),
       );
   const directCandidates = [
-    ...dialableListen,
+    ...new Set(dialableListen),
     ...dialHints.filter((h) => h.includes("/tcp/") && !h.includes("/p2p-circuit/")),
   ];
   if (hasDirectTcpDialHints(directCandidates)) {
