@@ -2,6 +2,9 @@ import type {
   AiSettings,
   BondRecord,
   BridgeStatus,
+  BridgeConfigView,
+  UpdateBridgeConfigParams,
+  UpdateBridgeConfigResult,
   OpenClawStatus,
   PairingPayload,
   ChatMessage,
@@ -214,6 +217,8 @@ import {
   chatRoomThreadKey,
   chatWireAttachmentsToContent,
   deferredDirectChatAttachmentKey,
+  isAudioMimeType,
+  resolveInboundChatDisplayText,
   ENVOY_AI_THREAD_KEY,
 } from "@envoymesh/api";
 
@@ -403,10 +408,12 @@ import {
   isLibp2pPeerId,
 } from "./profile-sync-outbound.js";
 import { probeNearbyPeerProfile } from "./nearby-profile-probe.js";
-import { deliverCallEnvelopeWithRetry, deliverChatEnvelopeWithRetry, sendExpectReplyWithRetry, type ChatDeliverResult } from "./chat-outbound-deliver.js";
+import { deliverCallEnvelopeWithRetry, deliverChatEnvelopeWithRetry, deliverMessageEnvelopeWithRetry, sendExpectReplyWithRetry, type ChatDeliverResult } from "./chat-outbound-deliver.js";
 import { isOutboundPeerRecentlyVerified, markOutboundPeerVerified } from "./outbound-peer-freshness.js";
 import { deliverOutboundEnvelope, dialHintsForTransportTarget } from "./mesh-outbound-helper.js";
-import { withOutboundSendLock } from "./outbound-send-lock.js";
+import { withOutboundPeerLock } from "./outbound-peer-lock.js";
+import { deliverStagedChatAttachmentPipeline } from "./chat-attachment-deliver.js";
+import { buildPeerConnectionHealth } from "./peer-connection-health.js";
 import { pickBestLibp2pPeerDirectoryRecord, pickConnectedTransportForOwner, pickLibp2pFromConnectedPeers, resolveRecipientEnvelopePeerId } from "./peer-transport-resolve.js";
 import { webrtcCallTrace, webrtcCallWarn, shortCallId } from "./webrtc-call-trace.js";
 import {
@@ -422,6 +429,7 @@ import {
   resolveIpfsExportEngineSelection,
 } from "./ipfs-export-router.js";
 import { verifyVaultDocumentIpfsGateway } from "./vault-ipfs-gateway-verify.js";
+import { getCachedVaultIndex } from "./vault-index-cache.js";
 import { normalizeGatewayBaseUrl } from "./ipfs-gateway.js";
 import { createAgentShareProposalStore } from "./agent-share-proposal-store.js";
 import { PUBLISHED_LIB_CAPABILITY } from "./discovery-inbound.js";
@@ -563,7 +571,18 @@ import {
   isOpenClawEnvoymeshWebhookReady,
   resolveActiveWebSearchProvider,
 } from "./openclaw-gateway-config.js";
-import { resolveAssistantAgentUrl } from "./bridge/config.js";
+import {
+  applyBridgeConfigResolution,
+  bridgeConfigToView,
+  BridgeConfigSchema,
+  probeAllExtAgents,
+  probeExtAgentHealth,
+  resolveAssistantAgentUrl,
+  resolveBridgeStatusAgentType,
+  type BridgeConfig,
+  type ResolvedBridgeConfig,
+} from "./bridge/config.js";
+import { mergeBundledExtAgentRegistry } from "./bridge/bundled-ext-agents.js";
 import { reclaimAssistantGatewayPort } from "./openclaw-gateway-port.js";
 import { runInboundChatAssist } from "./inbound-chat-assist.js";
 import { recordTaskJournalActivity, emitOwnerReport } from "./agent-activity-hooks.js";
@@ -727,6 +746,10 @@ class NodeServiceImpl implements NodeService {
 
   private _nodeStatus: NodeStatus = "offline";
   private _bridgeStatus: BridgeStatus | null = null;
+  private _bridgeRuntimeConfig: ResolvedBridgeConfig | null = null;
+  private _extAgentHealthCache: Record<string, boolean> = {};
+  private _extAgentHealthPollTimer: ReturnType<typeof setInterval> | null = null;
+  private _bridgeConfigApplier: ((cfg: BridgeConfig) => void) | null = null;
   private _bridgeChatHandler: ((envelope: EnvoyEnvelope, remotePeerId: string) => Promise<void>) | null = null;
   private _styleAdapter: import("./style-adapter.js").StyleAdapter | null = null;
   private _wsPort: number = 3030;
@@ -843,6 +866,8 @@ class NodeServiceImpl implements NodeService {
   private _bondWarmTimer?: ReturnType<typeof setInterval>;
   /** Skip periodic bond warm when libp2p already has this many open connections. */
   private static readonly BOND_WARM_MAX_CONNECTIONS = 64;
+  /** First bond warm after mesh + relay check-in settle (e50 used 120s; 30s for faster reconnect). */
+  private static readonly BOND_WARM_STARTUP_DELAY_MS = 30_000;
   /** Defer startup profile refresh until mesh paths settle (avoids stale LAN dial storms). */
   private static readonly PROFILE_REFRESH_STARTUP_DELAY_MS = 90_000;
   private _profileRefreshStartupTimer?: ReturnType<typeof setTimeout>;
@@ -1551,8 +1576,7 @@ class NodeServiceImpl implements NodeService {
     return mesh;
   }
 
-  /**
-   * CLI path: the running `EnvoyMesh` from `index.ts` so bond/chat/block paths can set libp2p KEEP_ALIVE-style tags
+  /** CLI path: the running `EnvoyMesh` from `index.ts` so bond/chat/block paths can set libp2p KEEP_ALIVE-style tags
    * (reconnect queue redials automatically after disconnect).
    *
    * Parity with `startNode()` post-online hooks: bond warm, profile refresh, reachability tags.
@@ -1568,10 +1592,12 @@ class NodeServiceImpl implements NodeService {
       multiaddrs: (mesh.multiaddrs ?? []).map((a) => a.toString()),
     });
     this.emit("node:ready", { timestamp: Date.now() });
-    void this.resyncBondedContactReachabilityTags();
-    void this._scrubBondedContactDialState();
-    this._scheduleDeferredProfileRefresh("bindExternalMesh");
-    this._startBondWarmInterval();
+    void (async () => {
+      await this.resyncBondedContactReachabilityTags();
+      await this._scrubBondedContactDialState();
+      this._scheduleDeferredProfileRefresh("bindExternalMesh");
+      this._startBondWarmInterval();
+    })();
   }
 
   private _scheduleDeferredProfileRefresh(source: string): void {
@@ -3047,7 +3073,10 @@ class NodeServiceImpl implements NodeService {
   private async _dialHintsForChat(recipientPeerId: string, peerListenAddrs: string[] | undefined): Promise<string[]> {
     const config = await this._configStore.load();
     const mesh = this._reachableMesh();
-    const peerStoreAddrs = mesh ? await mesh.getPeerStoreDialHints(recipientPeerId) : [];
+    const peerStoreAddrs =
+      mesh && typeof mesh.getPeerStoreDialHints === "function"
+        ? await mesh.getPeerStoreDialHints(recipientPeerId)
+        : [];
     const mergedListen = mergeDialablePeerListenAddrs(
       recipientPeerId,
       peerListenAddrs,
@@ -3349,6 +3378,256 @@ class NodeServiceImpl implements NodeService {
       if (!view) return;
       return rag.indexChatMessage(threadPeerOwnerId, view);
     }).catch((err) => console.warn(`[rag] chat index failed:`, err));
+  }
+
+  private async _persistChatMessageAwait(
+    threadPeerOwnerId: string,
+    msg: ChatMessage,
+  ): Promise<void> {
+    if (!this._chatLogStore) return;
+    await this._chatLogStore.append(threadPeerOwnerId, msg);
+    void this._getRagService().then((rag) => {
+      if (!rag) return;
+      const view = chatLogRowsToViews([msg])[0];
+      if (!view) return;
+      return rag.indexChatMessage(threadPeerOwnerId, view);
+    }).catch((err) => console.warn(`[rag] chat index failed:`, err));
+  }
+
+  private _mapOutboundChatAttachments(
+    attachments: NonNullable<SendChatParams["attachments"]>,
+  ): NonNullable<SendChatParams["attachments"]> {
+    return attachments.map((a) => ({
+      id: a.id,
+      filename: a.filename,
+      mimeType: a.mimeType,
+      sizeBytes: a.sizeBytes,
+      sensitivity: a.sensitivity,
+      ...(a.vaultRelativePath ? { vaultRelativePath: a.vaultRelativePath } : {}),
+    }));
+  }
+
+  /** Build a signed outbound 1:1 chat envelope + UI message (no P2P send). */
+  private async _composeOutboundDirectChat(
+    targetOwnerId: string,
+    text: string,
+    attachments?: SendChatParams["attachments"],
+    opts?: { skipDialHints?: boolean; localOnly?: boolean },
+  ): Promise<{
+    envelope: EnvoyEnvelope;
+    emittedMsg: ChatMessage;
+    transportPeerId: string;
+    dialHints: string[];
+    listenAddrs?: string[];
+  }> {
+    const mesh = this._requireMesh();
+    const selfProfile = this._requireProfile();
+
+    let transportPeerId = "";
+    let recipientEnvelopePeerId: string | undefined;
+    let listenAddrs: string[] | undefined;
+
+    if (opts?.localOnly) {
+      // Persist locally first; background delivery will resolve transport.
+    } else {
+      ({ transportPeerId, recipientEnvelopePeerId, listenAddrs } =
+        await this._resolvePeerTransportForOwner(targetOwnerId));
+    }
+
+    const [selfHuman, recipientTrust] = await Promise.all([
+      this._humanProfileStore.loadHumanProfile(),
+      this._trustStore.getTrustRecord(targetOwnerId),
+    ]);
+
+    let dialHints: string[] = [];
+    if (!opts?.localOnly && !opts?.skipDialHints) {
+      dialHints = await raceWithTimeout(
+        this._dialHintsForChat(transportPeerId, listenAddrs),
+        30_000,
+        "_dialHintsForChat",
+      );
+    } else if (!opts?.localOnly && transportPeerId) {
+      dialHints = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs ?? [], []);
+    }
+
+    if (transportPeerId && !opts?.skipDialHints) {
+      void mesh.scrubPeerStoreDialHints(
+        transportPeerId,
+        mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, dialHints),
+      );
+      void this._tagBondedContactReachability(transportPeerId);
+    } else if (transportPeerId) {
+      void this._tagBondedContactReachability(transportPeerId);
+    }
+
+    const wireText = stripModelThinking(text);
+    const mappedAttachments = attachments?.length
+      ? this._mapOutboundChatAttachments(attachments)
+      : undefined;
+
+    const envelope = signUnsignedEnvelope(
+      createUnsignedEnvelope({
+        senderPeerId: derivePeerId(selfProfile.device.publicKeyPem),
+        senderPublicKey: selfProfile.device.publicKeyPem,
+        senderRole: "human",
+        recipientPeerId: recipientEnvelopePeerId,
+        recipientRole: "human",
+        intent: "chat.message",
+        payload: createChatMessagePayload({
+          senderOwnerId: selfProfile.owner.ownerId,
+          text: wireText,
+          attachments: mappedAttachments?.map((a) => ({
+            id: a.id,
+            filename: a.filename,
+            mimeType: a.mimeType,
+            sizeBytes: a.sizeBytes,
+            sensitivity: a.sensitivity,
+          })),
+          ...chatMessagePayloadDeviceFields({
+            deviceCertificate: selfProfile.deviceCertificate,
+            ownerPublicKeyPem: selfProfile.owner.publicKeyPem,
+          }),
+        }),
+      }),
+      selfProfile.device.privateKeyPem,
+    );
+
+    const emittedMsg: ChatMessage = {
+      messageId: envelope.messageId,
+      sender: {
+        nodeId: mesh.peerId,
+        ownerId: selfProfile.owner.ownerId,
+        displayName: selfHuman?.displayName ?? selfProfile.owner.ownerId,
+        actorRole: "human",
+      },
+      recipient: {
+        nodeId: transportPeerId || targetOwnerId,
+        ownerId: targetOwnerId,
+        displayName: recipientTrust?.displayName ?? targetOwnerId,
+      },
+      content: {
+        text: wireText,
+        ...(mappedAttachments?.length
+          ? { attachments: mappedAttachments.map((a) => ({ ...a })) }
+          : {}),
+      },
+      metadata: {
+        timestamp: envelope.createdAt,
+        deliveryReceipt: "pending",
+      },
+      signature: envelope.signature,
+    };
+
+    return { envelope, emittedMsg, transportPeerId, dialHints, listenAddrs };
+  }
+
+  private async _writeVaultBytes(relativePath: string, bytes: Buffer): Promise<void> {
+    const norm = relativePath.trim().replace(/^[\\/]+/, "");
+    if (!norm || norm.includes("..") || norm.includes("~")) {
+      throw new Error("Invalid vault path");
+    }
+    const abs = resolve(this._vaultDir, norm);
+    assertPathInsideVault(this._vaultDir, abs);
+    await mkdir(dirname(abs), { recursive: true });
+    await writeFile(abs, bytes, { mode: 0o600 });
+  }
+
+  private async _deliverStagedChatAttachment(input: {
+    targetOwnerId: string;
+    envelope: EnvoyEnvelope;
+    messageId: string;
+    transportPeerId: string;
+    dialHints: string[];
+    listenAddrs?: string[];
+    vaultRelativePath: string;
+    attachmentId: string;
+    sensitivity: "public" | "friends" | "private";
+    wireText: string;
+    wireAttachments: NonNullable<SendChatParams["attachments"]>;
+  }): Promise<void> {
+    const mesh = this._requireMesh();
+    let envelope = input.envelope;
+    let transportPeerId = input.transportPeerId;
+    let listenAddrs = input.listenAddrs;
+    let dialHints = input.dialHints;
+
+    void getCachedVaultIndex(this._vaultDir).catch(() => undefined);
+
+    const result = await deliverStagedChatAttachmentPipeline({
+      targetOwnerId: input.targetOwnerId,
+      messageId: input.messageId,
+      attachmentId: input.attachmentId,
+      onEvent: (event) => this.emit("chat:attachment-transfer", event),
+      deliverChat: async () => {
+        if (!transportPeerId) {
+          const composed = await this._composeOutboundDirectChat(
+            input.targetOwnerId,
+            input.wireText,
+            input.wireAttachments,
+          );
+          envelope = composed.envelope;
+          transportPeerId = composed.transportPeerId;
+          listenAddrs = composed.listenAddrs;
+          dialHints = composed.dialHints;
+        } else if (dialHints.length === 0) {
+          try {
+            dialHints = await raceWithTimeout(
+              this._dialHintsForChat(transportPeerId, listenAddrs),
+              30_000,
+              "_dialHintsForChat",
+            );
+          } catch {
+            dialHints = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs ?? [], []);
+          }
+        }
+
+        if (transportPeerId === mesh.peerId && this._bridgeChatHandler) {
+          await this._bridgeChatHandler(envelope, mesh.peerId);
+          return { delivered: true, deliveredAt: new Date().toISOString() };
+        }
+        if (!transportPeerId) {
+          return { delivered: false };
+        }
+        return this._deliverChatEnvelope(transportPeerId, envelope, dialHints, listenAddrs);
+      },
+      deliverShare: async () => {
+        await this._shareFileInternal(input.targetOwnerId, {
+          path: input.vaultRelativePath,
+          sensitivity: input.sensitivity,
+          deliveryChannel: "chat",
+          chatMessageId: input.messageId,
+          chatAttachmentId: input.attachmentId,
+        });
+      },
+    });
+
+    if (result.chatDelivered) {
+      this._lastLibp2pTransportByOwner.set(input.targetOwnerId, {
+        peerId: transportPeerId,
+        listenAddrs: listenAddrs ?? [],
+      });
+      await this._markOutboundChatDelivered(
+        input.targetOwnerId,
+        input.messageId,
+        envelope.createdAt,
+      );
+    } else {
+      void this._markOutboundChatFailed(
+        input.targetOwnerId,
+        input.messageId,
+        input.targetOwnerId,
+        "attachment chat.message delivery failed",
+      );
+    }
+
+    if (result.chatDelivered && !result.shareDelivered) {
+      void this._markOutboundChatFailed(
+        input.targetOwnerId,
+        input.messageId,
+        input.targetOwnerId,
+        "attachment file transfer failed",
+      );
+    }
   }
 
   /** Append one EnvoyAI row to the shared chat log and push to connected Social clients. */
@@ -3895,6 +4174,55 @@ class NodeServiceImpl implements NodeService {
     listenAddrs?: string[],
     preferCircuitHints?: boolean,
   ): Promise<ChatDeliverResult> {
+    if (!envelope.intent.startsWith("call.")) {
+      return this._withChatSendLock(transportPeerId, async () => {
+        const mesh = this._requireMesh();
+        let conn = mesh.getPeerConnectionInfo(transportPeerId);
+        if (!conn.connected) {
+          const dialTargets = [...new Set([...(listenAddrs ?? []), ...dialHints])];
+          for (const addr of dialTargets) {
+            const trimmed = addr.trim();
+            if (!trimmed) continue;
+            try {
+              await mesh.dial(trimmed);
+              conn = mesh.getPeerConnectionInfo(transportPeerId);
+              if (conn.connected) break;
+            } catch {
+              /* try next addr */
+            }
+          }
+        }
+        const preferCircuits = preferCircuitHints ?? !conn.direct;
+        const wasConnected = conn.connected;
+        if (conn.connected) {
+          try {
+            await mesh.send(transportPeerId, envelope, {
+              dialHints: [],
+              preferCircuitHints: preferCircuits && !conn.direct,
+            });
+            markOutboundPeerVerified(transportPeerId);
+            return { delivered: true, deliveredAt: new Date().toISOString() };
+          } catch (fastErr) {
+            console.warn(
+              `[send] connected message send failed for ${transportPeerId.slice(0, 12)}…, retrying:`,
+              fastErr instanceof Error ? fastErr.message : fastErr,
+            );
+          }
+        }
+        return deliverMessageEnvelopeWithRetry({
+          mesh,
+          transportPeerId,
+          envelope,
+          dialHints: wasConnected ? [] : dialHints,
+          peerListenAddrs: wasConnected ? [] : listenAddrs,
+          preferCircuitHints: preferCircuits,
+          rebuildDialHints: wasConnected
+            ? undefined
+            : () => this._dialHintsForChat(transportPeerId, listenAddrs),
+        });
+      });
+    }
+
     return this._withChatSendLock(transportPeerId, async () => {
       const mesh = this._requireMesh();
       let conn = mesh.getPeerConnectionInfo(transportPeerId);
@@ -3996,7 +4324,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   private async _withChatSendLock<T>(transportPeerId: string, fn: () => Promise<T>): Promise<T> {
-    return withOutboundSendLock(transportPeerId, fn);
+    return withOutboundPeerLock(transportPeerId, fn);
   }
 
   async sendChat(targetOwnerId: string, text: string, attachments?: SendChatParams["attachments"]): Promise<SendChatResult> {
@@ -4005,72 +4333,18 @@ class NodeServiceImpl implements NodeService {
     this.recordOwnerActivity();
     recordMeshActivity();
     const mesh = this._requireMesh();
-    const selfProfile = this._requireProfile();
 
     console.log(`[sendChat] targetOwnerId=${targetOwnerId}, text=${text}`);
 
-    let transportPeerId: string;
-    let recipientEnvelopePeerId: string | undefined;
-    let listenAddrs: string[] | undefined;
+    let composed: Awaited<ReturnType<typeof this._composeOutboundDirectChat>>;
     try {
-      ({ transportPeerId, recipientEnvelopePeerId, listenAddrs } =
-        await this._resolvePeerTransportForOwner(targetOwnerId));
+      composed = await this._composeOutboundDirectChat(targetOwnerId, text, attachments);
     } catch (err) {
       this._lastLibp2pTransportByOwner.delete(targetOwnerId);
       throw err;
     }
 
-    const [selfHuman, recipientTrust] = await Promise.all([
-      this._humanProfileStore.loadHumanProfile(),
-      this._trustStore.getTrustRecord(targetOwnerId),
-    ]);
-
-    const dialHints = await raceWithTimeout(
-      this._dialHintsForChat(transportPeerId, listenAddrs),
-      30_000,
-      "_dialHintsForChat",
-    );
-
-    void mesh.scrubPeerStoreDialHints(
-      transportPeerId,
-      mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, dialHints),
-    );
-
-    console.log(
-      `[sendChat] transportPeerId=${transportPeerId} envelopeRecipientPeerId=${recipientEnvelopePeerId ?? "(omitted)"} dialHints=${dialHints.length}`,
-    );
-
-    void this._tagBondedContactReachability(transportPeerId);
-
-    const wireText = stripModelThinking(text);
-
-    const envelope = signUnsignedEnvelope(
-      createUnsignedEnvelope({
-        senderPeerId: derivePeerId(selfProfile.device.publicKeyPem),
-        senderPublicKey: selfProfile.device.publicKeyPem,
-        senderRole: "human",
-        recipientPeerId: recipientEnvelopePeerId,
-        recipientRole: "human",
-        intent: "chat.message",
-        payload: createChatMessagePayload({
-          senderOwnerId: selfProfile.owner.ownerId,
-          text: wireText,
-          attachments: attachments?.map((a: NonNullable<SendChatParams["attachments"]>[number]) => ({
-            id: a.id,
-            filename: a.filename,
-            mimeType: a.mimeType,
-            sizeBytes: a.sizeBytes,
-            sensitivity: a.sensitivity,
-            ...(a.vaultRelativePath ? { vaultRelativePath: a.vaultRelativePath } : {}),
-          })),
-          ...chatMessagePayloadDeviceFields({
-            deviceCertificate: selfProfile.deviceCertificate,
-            ownerPublicKeyPem: selfProfile.owner.publicKeyPem,
-          }),
-        }),
-      }),
-      selfProfile.device.privateKeyPem,
-    );
+    const { envelope, emittedMsg, transportPeerId, dialHints, listenAddrs } = composed;
 
     let deliverResult: ChatDeliverResult = { delivered: false };
     try {
@@ -4082,8 +4356,10 @@ class NodeServiceImpl implements NodeService {
         deliverResult = await this._deliverChatEnvelope(transportPeerId, envelope, dialHints, listenAddrs);
       }
     } catch (err) {
-      this._lastLibp2pTransportByOwner.delete(targetOwnerId);
-      throw err;
+      console.warn(
+        `[sendChat] delivery failed for ${targetOwnerId.slice(0, 24)}… (persisting locally):`,
+        err instanceof Error ? err.message : err,
+      );
     }
 
     if (deliverResult.delivered) {
@@ -4094,32 +4370,16 @@ class NodeServiceImpl implements NodeService {
     }
 
     const deliveryReceipt = deliverResult.delivered ? ("delivered" as const) : ("sent" as const);
-    const emittedMsg: ChatMessage = {
-      messageId: envelope.messageId,
-      sender: {
-        nodeId: mesh.peerId,
-        ownerId: selfProfile.owner.ownerId,
-        displayName: selfHuman?.displayName ?? selfProfile.owner.ownerId,
-        actorRole: "human",
-      },
-      recipient: {
-        nodeId: transportPeerId,
-        ownerId: targetOwnerId,
-        displayName: recipientTrust?.displayName ?? targetOwnerId,
-      },
-      content: {
-        text: wireText,
-        ...(attachments?.length ? { attachments: attachments.map((a: NonNullable<SendChatParams["attachments"]>[number]) => ({ id: a.id, filename: a.filename, mimeType: a.mimeType, sizeBytes: a.sizeBytes, sensitivity: a.sensitivity, ...(a.vaultRelativePath ? { vaultRelativePath: a.vaultRelativePath } : {}) })) } : {}),
-      },
+    const outboundMsg: ChatMessage = {
+      ...emittedMsg,
       metadata: {
-        timestamp: envelope.createdAt,
+        ...emittedMsg.metadata,
         deliveryReceipt,
       },
-      signature: envelope.signature,
     };
-    console.log(`[sendChat] Emitting chat:message locally:`, emittedMsg);
-    this._persistChatMessage(targetOwnerId, emittedMsg);
-    this.emit("chat:message", emittedMsg);
+    console.log(`[sendChat] Emitting chat:message locally:`, outboundMsg);
+    this._persistChatMessage(targetOwnerId, outboundMsg);
+    this.emit("chat:message", outboundMsg);
     if (deliverResult.delivered) {
       await this._markOutboundChatDelivered(
         targetOwnerId,
@@ -4127,7 +4387,7 @@ class NodeServiceImpl implements NodeService {
         deliverResult.deliveredAt ?? envelope.createdAt,
       );
     }
-    this._styleAdapter?.learnFromMessage(true, wireText);
+    this._styleAdapter?.learnFromMessage(true, stripModelThinking(text));
     return {
       messageId: envelope.messageId,
       deliveryReceipt,
@@ -4383,8 +4643,13 @@ class NodeServiceImpl implements NodeService {
     }
     const profile = this._requireProfile();
     const mesh = this._requireMesh();
+    const ownerId = targetOwnerId.trim();
+    const dirRecord = await this._peerDirectoryStore.getPeerByOwnerId(ownerId);
+    const directoryListenAddrs = (dirRecord?.listenAddrs ?? [])
+      .map((a) => String(a).trim())
+      .filter(Boolean);
     const { transportPeerId, recipientEnvelopePeerId, listenAddrs } =
-      await this._resolvePeerTransportForOwner(targetOwnerId.trim());
+      await this._resolvePeerTransportForOwner(ownerId);
     const dialHints = await raceWithTimeout(
       this._dialHintsForChat(transportPeerId, listenAddrs),
       30_000,
@@ -4406,7 +4671,34 @@ class NodeServiceImpl implements NodeService {
       }),
       agentIdentity.agentPrivateKeyPem,
     );
-    await this._deliverCallEnvelope(transportPeerId, envelope, dialHints, listenAddrs);
+    const hints =
+      dialHints.length > 0
+        ? dialHints
+        : dialHintsForTransportTarget(transportPeerId);
+    // Prefer unfiltered peer-directory listen addrs for direct multiaddr dials (same-host dev/tests).
+    const dialTargets = [
+      ...new Set([
+        ...directoryListenAddrs,
+        ...(listenAddrs ?? []),
+        ...hints,
+        `/p2p/${transportPeerId}`,
+      ]),
+    ];
+    for (const addr of dialTargets) {
+      const trimmed = addr.trim();
+      if (!trimmed) continue;
+      try {
+        await mesh.send(trimmed, envelope, { dialHints: [] });
+        return { ok: true };
+      } catch {
+        /* try next dial target */
+      }
+    }
+    await deliverOutboundEnvelope(mesh, transportPeerId, envelope, {
+      dialHints: hints,
+      peerListenAddrs: listenAddrs,
+      rebuildDialHints: () => this._dialHintsForChat(transportPeerId, listenAddrs),
+    });
     return { ok: true };
   }
 
@@ -5956,17 +6248,15 @@ class NodeServiceImpl implements NodeService {
 
     // Forward to the external agent via HTTP. forwardToAgent calls receiveFromAgent
     // internally which delivers the reply back to the mobile via libp2p.
-    const bridgeConfig = this._bridgeStatus;
-    if (!bridgeConfig) return;
+    const runtime = this._bridgeRuntimeConfig;
+    if (!runtime) {
+      console.warn("[bridge] sendToBridge: bridge runtime config not loaded");
+      return;
+    }
 
     try {
       await forwardToAgent(
-        {
-          enabled: true,
-          agentUrl: bridgeConfig.agentUrl,
-          listenPort: 0,
-          agentName: bridgeConfig.agentName,
-        } as any,
+        runtime,
         {
           senderPeerId: meshPeerId,
           senderOwnerId: ownerId,
@@ -7150,11 +7440,7 @@ class NodeServiceImpl implements NodeService {
     const mimeType = params.mimeType?.trim() || mimeTypeForFilename(filename);
     const sensitivity = params.sensitivity ?? "friends";
 
-    await this.importToLibrary({
-      relativePath: vaultRelativePath,
-      contentBase64: params.contentBase64,
-      mimeType,
-    });
+    await this._writeVaultBytes(vaultRelativePath, bytes);
 
     const wireAttachment = {
       id: attachmentId,
@@ -7166,9 +7452,44 @@ class NodeServiceImpl implements NodeService {
     };
 
     let chatMessageId: string | undefined;
-    if (params.chatText !== undefined) {
-      const sendResult = await this.sendChat(params.targetOwnerId, params.chatText, [wireAttachment]);
-      chatMessageId = sendResult.messageId;
+    if (params.chatText !== undefined || isAudioMimeType(mimeType)) {
+      const text = resolveInboundChatDisplayText(params.chatText ?? "", [wireAttachment]);
+      let composed: Awaited<ReturnType<typeof this._composeOutboundDirectChat>>;
+      try {
+        composed = await this._composeOutboundDirectChat(
+          params.targetOwnerId,
+          text,
+          [wireAttachment],
+          { skipDialHints: true },
+        );
+      } catch (composeErr) {
+        console.warn(
+          `[chat-attachment] peer resolve failed for ${params.targetOwnerId.slice(0, 24)}… (persisting locally):`,
+          composeErr instanceof Error ? composeErr.message : composeErr,
+        );
+        composed = await this._composeOutboundDirectChat(
+          params.targetOwnerId,
+          text,
+          [wireAttachment],
+          { localOnly: true },
+        );
+      }
+      chatMessageId = composed.emittedMsg.messageId;
+      await this._persistChatMessageAwait(params.targetOwnerId, composed.emittedMsg);
+      this.emit("chat:message", composed.emittedMsg);
+      void this._deliverStagedChatAttachment({
+        targetOwnerId: params.targetOwnerId,
+        envelope: composed.envelope,
+        messageId: chatMessageId,
+        transportPeerId: composed.transportPeerId,
+        dialHints: composed.dialHints,
+        listenAddrs: composed.listenAddrs,
+        vaultRelativePath,
+        attachmentId,
+        sensitivity,
+        wireText: text,
+        wireAttachments: [wireAttachment],
+      });
     } else if (params.recordInChat !== false) {
       void this._recordFileShareInChat({
         peerOwnerId: params.targetOwnerId,
@@ -7179,17 +7500,23 @@ class NodeServiceImpl implements NodeService {
         mimeType,
         textOverride: params.caption?.trim() || `Sent ${filename}`,
       });
+      let shareRequestMessageId: string | undefined;
+      try {
+        ({ shareRequestMessageId } = await this._shareFileInternal(params.targetOwnerId, {
+          path: vaultRelativePath,
+          sensitivity,
+          deliveryChannel: "inbox",
+        }));
+      } catch (err) {
+        console.warn(
+          `[chat-attachment] share.request failed for ${params.targetOwnerId.slice(0, 24)}…:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+      return { attachmentId, vaultRelativePath, shareRequestMessageId, messageId: chatMessageId };
     }
 
-    const { shareRequestMessageId } = await this._shareFileInternal(params.targetOwnerId, {
-      path: vaultRelativePath,
-      sensitivity,
-      deliveryChannel: "chat",
-      chatMessageId,
-      chatAttachmentId: attachmentId,
-    });
-
-    return { attachmentId, vaultRelativePath, shareRequestMessageId, messageId: chatMessageId };
+    return { attachmentId, vaultRelativePath, messageId: chatMessageId };
   }
 
   async sendChatRoomAttachment(
@@ -9068,12 +9395,15 @@ class NodeServiceImpl implements NodeService {
       console.log(`[node-service] _relayBootstrapPeers assigned: ${bootstrapPeers.length} addresses: ${bootstrapPeers.join(", ")}`);
       if (config.relayEnabled && this._inboundGuard && this._discoverySeedStore) {
         this._stopRelayClientScheduler?.();
+        const relayWsUrl = await this.resolveRelayWsUrl();
         const relayDeps = {
           mesh: this._mesh,
           profile: this._profile!,
           bootstrapPeers,
           inboundGuard: this._inboundGuard,
           discoverySeedStore: this._discoverySeedStore,
+          peerDirectoryStore: this._peerDirectoryStore,
+          relayWsUrl,
         };
         await runRelayClientCycle(relayDeps);
         this._stopRelayClientScheduler = startRelayClientScheduler({
@@ -9096,11 +9426,16 @@ class NodeServiceImpl implements NodeService {
       this._nodeStatus = "running";
       this.emit("node:status", { status: this._nodeStatus, peerId: this._mesh.peerId });
       this.emit("node:online", { peerId: this._mesh.peerId, multiaddrs: this._mesh.multiaddrs.map(a => a.toString()) });
+      this.emit("node:ready", { timestamp: Date.now() });
       this._scheduleDeferredProfileRefresh("node:online");
       void this.refreshCapabilityIndex().catch((err) => {
         console.warn("[chain] refreshCapabilityIndex after node:online failed:", err);
       });
-      this._startBondWarmInterval();
+      void (async () => {
+        await this.resyncBondedContactReachabilityTags();
+        await this._scrubBondedContactDialState();
+        this._startBondWarmInterval();
+      })();
 
       // Wait longer for DHT to connect to bootstrap peers and stabilize routing table
       // DHT provide operations require the routing table to be populated
@@ -9473,7 +9808,10 @@ class NodeServiceImpl implements NodeService {
             displayName: selfHuman?.displayName ?? profile.owner.ownerId,
           },
           content: {
-            text: stripModelThinking(payload.text),
+            text: resolveInboundChatDisplayText(
+              stripModelThinking(payload.text),
+              payload.attachments,
+            ),
             ...(payload.attachments?.length
               ? { attachments: chatWireAttachmentsToContent(payload.attachments) }
               : {}),
@@ -9512,7 +9850,7 @@ class NodeServiceImpl implements NodeService {
             await runInboundChatAssist({
               envelope: guardDecision.envelope,
               senderOwnerId: payload.senderOwnerId,
-              chatText: payload.text,
+              chatText: resolveInboundChatDisplayText(payload.text, payload.attachments),
               remotePeerId,
               receivedAt,
               correlationId,
@@ -9741,6 +10079,201 @@ class NodeServiceImpl implements NodeService {
   setBridgeStatus(status: BridgeStatus): void {
     this._bridgeStatus = status;
     this.emit("bridge:status", status);
+  }
+
+  /** Phase 44 — wire hot-reload from index.ts createBridge.updateConfig. */
+  setBridgeConfigApplier(applier: (cfg: BridgeConfig) => void): void {
+    this._bridgeConfigApplier = applier;
+  }
+
+  setBridgeRuntimeConfig(cfg: ResolvedBridgeConfig): void {
+    this._bridgeRuntimeConfig = cfg;
+    this._syncExtAgentHealthPoller(cfg.enabled);
+  }
+
+  private _bridgeConfigPath(): string {
+    const nodeCwd = process.cwd();
+    const profileDirAbs =
+      this._profileDir && this._profileDir !== "/tmp/unknown"
+        ? resolve(nodeCwd, this._profileDir)
+        : null;
+    return profileDirAbs
+      ? join(profileDirAbs, "bridge-config.json")
+      : join(nodeCwd, "data", "default", "bridge-config.json");
+  }
+
+  private async _loadBridgeConfigFromDisk(): Promise<BridgeConfig> {
+    const { readFileSync, existsSync } = await import("node:fs");
+    const path = this._bridgeConfigPath();
+    if (!existsSync(path)) {
+      return BridgeConfigSchema.parse({});
+    }
+    try {
+      return BridgeConfigSchema.parse(JSON.parse(readFileSync(path, "utf-8")));
+    } catch {
+      return BridgeConfigSchema.parse({});
+    }
+  }
+
+  private async _saveBridgeConfigToDisk(cfg: BridgeConfig): Promise<void> {
+    const { writeFileSync, mkdirSync } = await import("node:fs");
+    const { dirname } = await import("node:path");
+    const path = this._bridgeConfigPath();
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, JSON.stringify(cfg, null, 2) + "\n", "utf-8");
+  }
+
+  /** Phase 44 — apply resolved config after hot reload (index.ts bridge applier). */
+  applyBridgeRuntimeConfig(resolved: ResolvedBridgeConfig): void {
+    this._bridgeRuntimeConfig = resolved;
+    this._syncExtAgentHealthPoller(resolved.enabled);
+    void this._refreshExtAgentHealth(resolved);
+  }
+
+  private _syncExtAgentHealthPoller(bridgeEnabled: boolean): void {
+    if (!bridgeEnabled) {
+      if (this._extAgentHealthPollTimer) {
+        clearInterval(this._extAgentHealthPollTimer);
+        this._extAgentHealthPollTimer = null;
+      }
+      return;
+    }
+    if (this._extAgentHealthPollTimer) return;
+    this._extAgentHealthPollTimer = setInterval(() => {
+      const cfg = this._bridgeRuntimeConfig;
+      if (cfg?.enabled) void this._refreshExtAgentHealth(cfg);
+    }, 30_000);
+  }
+
+  /** Probe all registry entries and update BridgeStatus.healthy for the active backend. */
+  private async _refreshExtAgentHealth(resolved: ResolvedBridgeConfig): Promise<void> {
+    const registry = resolved.extAgents ?? [];
+    if (registry.length === 0) {
+      const healthy = await probeExtAgentHealth(resolved.agentUrl, resolved.resolvedAdapter);
+      this._extAgentHealthCache = { __legacy__: healthy };
+      await this._applyBridgeHealthyToStatus(resolved, healthy);
+      return;
+    }
+
+    const probes = await probeAllExtAgents(registry);
+    this._extAgentHealthCache = Object.fromEntries(probes.map((p) => [p.id, p.healthy]));
+    const activeId = resolved.resolvedActiveExtAgentId;
+    const activeHealthy = activeId ? this._extAgentHealthCache[activeId] : undefined;
+    await this._applyBridgeHealthyToStatus(resolved, activeHealthy ?? false);
+  }
+
+  private async _applyBridgeHealthyToStatus(
+    resolved: ResolvedBridgeConfig,
+    healthy: boolean,
+  ): Promise<void> {
+    const prev = this._bridgeStatus;
+    if (!prev?.agentPeerId) return;
+    const agentType = resolveBridgeStatusAgentType();
+    this.setBridgeStatus({
+      ...prev,
+      enabled: resolved.enabled,
+      agentUrl: resolved.agentUrl,
+      agentName: resolved.agentName,
+      listenPort: resolved.listenPort,
+      activeExtAgentId: resolved.resolvedActiveExtAgentId ?? undefined,
+      adapter: resolved.resolvedAdapter,
+      healthy,
+      agentType,
+    });
+  }
+
+  private async _refreshBridgeStatusFromResolved(resolved: ResolvedBridgeConfig): Promise<void> {
+    await this._refreshExtAgentHealth(resolved);
+  }
+
+  async probeExtAgents(): Promise<import("@envoymesh/api").ProbeExtAgentsResult> {
+    const raw = await this._loadBridgeConfigFromDisk();
+    const resolved = applyBridgeConfigResolution(BridgeConfigSchema.parse(raw));
+    await this._refreshExtAgentHealth(resolved);
+    const registry = resolved.extAgents ?? [];
+    if (registry.length === 0) {
+      const healthy = this._extAgentHealthCache.__legacy__ ?? false;
+      return {
+        activeExtAgentId: resolved.resolvedActiveExtAgentId,
+        activeHealthy: healthy,
+        entries: [{
+          id: resolved.resolvedActiveExtAgentId ?? "__legacy__",
+          name: resolved.agentName,
+          adapter: resolved.resolvedAdapter,
+          url: resolved.agentUrl,
+          enabled: true,
+          healthy,
+          reachability: healthy ? "running" : "stopped",
+        }],
+      };
+    }
+    const activeId = resolved.resolvedActiveExtAgentId;
+    const entries = registry.map((e) => {
+      const healthy = e.enabled ? (this._extAgentHealthCache[e.id] ?? false) : false;
+      return {
+        id: e.id,
+        name: e.name,
+        adapter: e.adapter,
+        url: e.url,
+        enabled: e.enabled,
+        healthy,
+        reachability: !e.enabled
+          ? ("disabled" as const)
+          : healthy
+            ? ("running" as const)
+            : ("stopped" as const),
+      };
+    });
+    return {
+      activeExtAgentId: activeId,
+      activeHealthy: activeId ? this._extAgentHealthCache[activeId] : undefined,
+      entries,
+    };
+  }
+
+  async getBridgeConfig(): Promise<BridgeConfigView> {
+    const raw = await this._loadBridgeConfigFromDisk();
+    const resolved = applyBridgeConfigResolution(BridgeConfigSchema.parse(raw));
+    if (Object.keys(this._extAgentHealthCache).length === 0 && resolved.enabled) {
+      void this._refreshExtAgentHealth(resolved);
+    }
+    return bridgeConfigToView(resolved, this._extAgentHealthCache);
+  }
+
+  async updateBridgeConfig(params: UpdateBridgeConfigParams): Promise<UpdateBridgeConfigResult> {
+    try {
+      const raw = await this._loadBridgeConfigFromDisk();
+      const mergedExtAgents = mergeBundledExtAgentRegistry(
+        params.extAgents !== undefined ? params.extAgents : raw.extAgents,
+      );
+      const merged: BridgeConfig = {
+        ...raw,
+        ...(params.enabled !== undefined && { enabled: params.enabled }),
+        ...(params.listenPort !== undefined && { listenPort: params.listenPort }),
+        ...(params.secret !== undefined && { secret: params.secret || undefined }),
+        ...(params.activeExtAgent !== undefined && { activeExtAgent: params.activeExtAgent }),
+        extAgents: mergedExtAgents,
+      };
+      const hasRegistry = (merged.extAgents?.length ?? 0) > 0;
+      if (!hasRegistry) {
+        if (params.agentUrl !== undefined) merged.agentUrl = params.agentUrl;
+        if (params.agentName !== undefined) merged.agentName = params.agentName;
+      }
+      const resolved = applyBridgeConfigResolution(BridgeConfigSchema.parse(merged));
+      const toPersist: BridgeConfig = {
+        ...merged,
+        agentUrl: resolved.agentUrl,
+        agentName: resolved.agentName,
+      };
+      await this._saveBridgeConfigToDisk(toPersist);
+      this._bridgeRuntimeConfig = resolved;
+      this._bridgeConfigApplier?.(toPersist);
+      await this._refreshExtAgentHealth(resolved);
+      return { ok: true, config: bridgeConfigToView(resolved, this._extAgentHealthCache) };
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : String(err);
+      return { ok: false, reason };
+    }
   }
 
   setBridgeChatHandler(handler: (envelope: EnvoyEnvelope, remotePeerId: string) => Promise<void>): void {
@@ -10637,6 +11170,11 @@ class NodeServiceImpl implements NodeService {
     });
 
     // Bind device key for envelope addressing; libp2p transport id arrives via relay checkin / inbound traffic.
+    await this._peerDirectoryStore.ensurePeerFromInboundChat({
+      ownerId: requesterOwnerId,
+      peerId: envelopePeerId,
+      listenAddrs: [],
+    });
     await this._peerDirectoryStore.mergeInboundDeviceBinding({
       ownerId: requesterOwnerId,
       peerId: envelopePeerId,
@@ -11053,21 +11591,50 @@ class NodeServiceImpl implements NodeService {
   }
 
   private async _autoDiscoverRelayWsUrl(): Promise<string | undefined> {
-    // 1. Check configured relays in persisted config — only when directly connected
+    try {
+      const config = await this._configStore.load();
+      if (config?.configuredRelays?.length) {
+        for (const r of config.configuredRelays) {
+          if (!r.enabled || !r.addr?.includes("/ip4/")) {
+            continue;
+          }
+          const derived = NodeServiceImpl._deriveRelayWsUrl(r.addr);
+          if (derived) {
+            return derived;
+          }
+        }
+      }
+      const presets = config?.bootstrapPresets ?? [...DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS];
+      const relayEnabled = config?.relayEnabled !== false;
+      if (relayEnabled && presets.includes("cn-relay")) {
+        const derived = NodeServiceImpl._deriveRelayWsUrl(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
+        if (derived) {
+          return derived;
+        }
+      }
+    } catch {
+      /* no persisted config */
+    }
+
+    // Last resort: libp2p-connected relay (may be available after bootstrap settles).
     try {
       const config = await this._configStore.load();
       if (config?.configuredRelays?.length) {
         const r = config.configuredRelays.find(
-          (r) => r.addr.includes("/ip4/") && this._hasDirectConnectionTo(NodeServiceImpl._deriveRelayPeerId(r.addr) ?? ""),
+          (r) =>
+            r.addr.includes("/ip4/") &&
+            this._hasDirectConnectionTo(NodeServiceImpl._deriveRelayPeerId(r.addr) ?? ""),
         );
         if (r) {
           const derived = NodeServiceImpl._deriveRelayWsUrl(r.addr);
-          if (derived) return derived;
+          if (derived) {
+            return derived;
+          }
         }
       }
-    } catch { /* no persisted config */ }
-
-    // 2. Fall back to known community relay — only if directly connected
+    } catch {
+      /* ignore */
+    }
     const cnRelayPeerId = NodeServiceImpl._deriveRelayPeerId(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
     if (cnRelayPeerId && this._hasDirectConnectionTo(cnRelayPeerId)) {
       return NodeServiceImpl._deriveRelayWsUrl(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
@@ -11301,11 +11868,12 @@ class NodeServiceImpl implements NodeService {
           }
           // stale — fall through to redial
         } else {
+          if (isOutboundPeerRecentlyVerified(transportPeerId)) {
+            return existing;
+          }
           const probed = await mesh.probeBondedPeerConnection(transportPeerId);
-          if (probed.connected || options?.keepAlive === true) {
-            if (probed.connected) {
-              markOutboundPeerVerified(transportPeerId);
-            }
+          if (probed.connected) {
+            markOutboundPeerVerified(transportPeerId);
             return probed;
           }
           // stale — fall through to redial
@@ -11363,6 +11931,21 @@ class NodeServiceImpl implements NodeService {
     return result;
   }
 
+  async getPeerConnectionHealth(peerOwnerId: string): Promise<import("@envoymesh/api").PeerConnectionHealth> {
+    const connection = await this.getPeerConnectionInfo(peerOwnerId);
+    let transportPeerId: string | undefined;
+    try {
+      transportPeerId = (await this._resolvePeerTransportForOwner(peerOwnerId)).transportPeerId;
+    } catch {
+      transportPeerId = undefined;
+    }
+    return buildPeerConnectionHealth({
+      peerOwnerId,
+      transportPeerId,
+      connection,
+    });
+  }
+
   private _startBondWarmInterval(): void {
     if (this._bondWarmTimer) {
       clearInterval(this._bondWarmTimer);
@@ -11370,7 +11953,7 @@ class NodeServiceImpl implements NodeService {
     const runWarm = (): void => {
       void this._warmAllBondedContacts();
     };
-    setTimeout(runWarm, 120_000);
+    setTimeout(runWarm, NodeServiceImpl.BOND_WARM_STARTUP_DELAY_MS);
     this._bondWarmTimer = setInterval(runWarm, 60_000);
   }
 
@@ -12216,7 +12799,17 @@ class NodeServiceImpl implements NodeService {
       return { chainId: params.chainId, cancelled: [params.subtaskId] };
     }
     runtime.state.chainCancelled = true;
-    return { chainId: params.chainId, cancelled: [...runtime.state.subtasks.keys()] };
+    const cancelled = [...runtime.state.subtasks.keys()];
+    const hadTracker = this._chainTrackAbort.has(params.chainId);
+    this._emitChainState(params.chainId);
+    this._stopChainTracking(params.chainId);
+    // When no background tracker is running, purge now. Otherwise the tracker
+    // loop observes chainCancelled and purges on its next tick (≤30s), keeping
+    // chainGetState accurate briefly after cancel.
+    if (!hadTracker) {
+      this._purgeChainRuntime(params.chainId);
+    }
+    return { chainId: params.chainId, cancelled };
   }
 
   async chainListReports(params?: ChainListReportsParams): Promise<ChainListReportsResult> {
@@ -12591,6 +13184,11 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
                 this._emitChainState(state.chainId);
                 const row = await this._taskStore?.getChainReport(state.chainId);
                 if (row?.report) this._emitChainReport(row.report);
+                // Purge is handled by the tracking loop finally block, or
+                // immediately here when no tracker is running.
+                if (!this._chainTrackAbort.has(state.chainId)) {
+                  this._purgeChainRuntime(state.chainId);
+                }
               }
             });
           }
@@ -12682,23 +13280,29 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     this._chainTrackAbort.set(chainId, abort);
 
     void (async () => {
-      while (!abort.signal.aborted) {
+      try {
+        while (!abort.signal.aborted) {
+          const rt = this.chainRuntime.get(chainId);
+          if (!rt || rt.state.published || rt.state.chainCancelled) {
+            return;
+          }
+          if (rt.state.awards.size === 0) {
+            await new Promise((r) => setTimeout(r, 5_000));
+            continue;
+          }
+          try {
+            const deps = await this.buildChainOrchestratorDeps();
+            await trackChain(deps, rt.state, { tickMs: 30_000, maxTicks: 1 });
+          } catch (err) {
+            console.warn(`[chain.track] ${chainId} tick failed:`, err);
+          }
+          await new Promise((r) => setTimeout(r, 30_000));
+        }
+      } finally {
         const rt = this.chainRuntime.get(chainId);
-        if (!rt || rt.state.published || rt.state.chainCancelled) {
-          this._stopChainTracking(chainId);
-          return;
+        if (rt && (rt.state.published || rt.state.chainCancelled)) {
+          this._purgeChainRuntime(chainId);
         }
-        if (rt.state.awards.size === 0) {
-          await new Promise((r) => setTimeout(r, 5_000));
-          continue;
-        }
-        try {
-          const deps = await this.buildChainOrchestratorDeps();
-          await trackChain(deps, rt.state, { tickMs: 30_000, maxTicks: 1 });
-        } catch (err) {
-          console.warn(`[chain.track] ${chainId} tick failed:`, err);
-        }
-        await new Promise((r) => setTimeout(r, 30_000));
       }
     })();
   }
@@ -12708,6 +13312,28 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     if (abort) {
       abort.abort();
       this._chainTrackAbort.delete(chainId);
+    }
+  }
+
+  /** Drop in-memory chain orchestrator state after terminal lifecycle. */
+  private _purgeChainRuntime(chainId: string): void {
+    this._stopChainTracking(chainId);
+    const runtime = this.chainRuntime.get(chainId);
+    if (runtime) {
+      for (const subtaskId of runtime.state.subtasks.keys()) {
+        this._chainPendingBidExpirations.delete(subtaskId);
+      }
+    }
+    this.chainRuntime.delete(chainId);
+    this.chainBidStrategies.delete(chainId);
+    this._chainGoals.delete(chainId);
+    this._chainCostEstimates.delete(chainId);
+    const prefix = `${chainId}::`;
+    for (const [key, timer] of this._chainAutoEvaluateTimers) {
+      if (key.startsWith(prefix)) {
+        clearTimeout(timer);
+        this._chainAutoEvaluateTimers.delete(key);
+      }
     }
   }
 
@@ -13387,6 +14013,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
       }
       try {
         await this.warmContactConnection(targetOwnerId, {
+          source: "call",
           ...(canUpgradeToDirect ? { upgradeRelayToDirect: true } : undefined),
         });
       } catch (warmErr) {
@@ -13741,13 +14368,13 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     const profile = this._profile;
     if (!profile) return false;
 
+    const peerOwnerId = this.callManager.getSessionPeerOwnerId(callId);
     const rejected = this.callManager.rejectCall(
       callId,
       reason as "busy" | "declined" | "offline" | "error" | "no_answer",
     );
     if (!rejected) return false;
 
-    const peerOwnerId = this.callManager.getSessionPeerOwnerId(callId);
     if (!peerOwnerId) return false;
 
     const { createCallRejectPayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
@@ -13776,10 +14403,10 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     const profile = this._profile;
     if (!profile) return false;
 
+    const peerOwnerId = this.callManager.getSessionPeerOwnerId(callId);
     const ended = this.callManager.hangupCall(callId, "normal");
     if (!ended) return false;
 
-    const peerOwnerId = this.callManager.getSessionPeerOwnerId(callId);
     if (!peerOwnerId) {
       // Local-only session — no peer to notify.
       return true;
@@ -13854,8 +14481,16 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
       recipientRole: "human",
       payload,
     });
-    await this._sendCallResponseEnvelope(peerOwnerId, unsigned, "call.ice-candidate");
-    return true;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      if (attempt > 0) {
+        await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+      }
+      const delivered = await this._sendCallResponseEnvelope(peerOwnerId, unsigned, "call.ice-candidate");
+      if (delivered) {
+        return true;
+      }
+    }
+    return false;
   }
 
   /** Send call.reject to a remote owner without a local ringing session (busy path). */

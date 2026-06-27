@@ -20,6 +20,7 @@ import { generateEd25519KeyPair } from "@envoymesh/identity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { NodeServiceImpl } from "../src/node-service-impl.js";
+import { resetOutboundPeerFreshnessForTests } from "../src/outbound-peer-freshness.js";
 
 const PEER_OWNER_ID = "envoy:owner:remote";
 const TRANSPORT_PEER_ID = "12D3KooWRemotePeerTransportIdRegression";
@@ -104,6 +105,7 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
   });
 
   afterEach(async () => {
+    resetOutboundPeerFreshnessForTests();
     await rm(profileDir, { recursive: true, force: true });
   });
 
@@ -152,15 +154,25 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
       expect(ensurePeerReachable).toHaveBeenCalledTimes(1);
     });
 
-    it("keepAlive probes the open path and reports stale without redialing", async () => {
+    it("keepAlive probes the open path and redials when probe reports stale", async () => {
       probeBondedPeerConnection.mockResolvedValueOnce({ connected: false, direct: false });
 
       const info = await node.warmContactConnection(PEER_OWNER_ID, { keepAlive: true });
 
       expect(probeBondedPeerConnection).toHaveBeenCalledWith(TRANSPORT_PEER_ID);
-      expect(closeConnectionsToPeer).not.toHaveBeenCalled();
+      expect(ensurePeerReachable).toHaveBeenCalledTimes(1);
+      expect(info).toEqual({ connected: true, direct: true });
+    });
+
+    it("keepAlive skips probe when the path was recently verified", async () => {
+      const { markOutboundPeerVerified } = await import("../src/outbound-peer-freshness.js");
+      markOutboundPeerVerified(TRANSPORT_PEER_ID);
+
+      const info = await node.warmContactConnection(PEER_OWNER_ID, { keepAlive: true });
+
+      expect(probeBondedPeerConnection).not.toHaveBeenCalled();
       expect(ensurePeerReachable).not.toHaveBeenCalled();
-      expect(info).toEqual({ connected: false, direct: false });
+      expect(info).toEqual({ connected: true, direct: true });
     });
 
     it("verifyConnection probes in place without tearing down when still connected", async () => {
@@ -274,7 +286,9 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
 
       expect(readyHandler).toHaveBeenCalled();
       expect((node as any)._nodeStatus).toBe("running");
-      expect((node as any)._bondWarmTimer).toBeTruthy();
+      await vi.waitFor(() => {
+        expect((node as any)._bondWarmTimer).toBeTruthy();
+      });
     });
   });
 });
