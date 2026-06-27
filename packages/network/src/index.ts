@@ -2530,9 +2530,8 @@ export function filterDialHintsForOutboundSend(
   if (opts?.preferCircuitHints === true) {
     return filtered;
   }
-  if (hasDirectTcpDialHints(filtered)) {
-    return filtered.filter((h) => !h.includes("/p2p-circuit/"));
-  }
+  // Keep circuit/relay hints as fallback — stripping them entirely
+  // prevents relay fallback when direct LAN dials fail (e.g. firewalls).
   return filtered;
 }
 
