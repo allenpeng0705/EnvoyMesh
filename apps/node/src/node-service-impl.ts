@@ -765,6 +765,8 @@ class NodeServiceImpl implements NodeService {
   /** Phase 40F — worker capability index for chain worker discovery. */
   private readonly _capabilityIndex = new CapabilityIndex();
   private _capabilityIndexReady: Promise<void> | null = null;
+  /** Phase 43E — orchestrator goal text per chain (in-memory; cleared on chain purge). */
+  private readonly _chainGoals = new Map<string, string>();
   /** Phase 40F — worker-side pending bid expirations (subtaskId → bidExpiresAt). */
   private readonly _chainPendingBidExpirations = new Map<string, string>();
   /** Phase 40F — abort handles for background chain heartbeat trackers. */
