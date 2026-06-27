@@ -81,8 +81,8 @@ describe("usePeerReachability", () => {
 
     await waitFor(() => {
       expect(result.current.checking).toBe(true);
+      expect(peerReachabilityLabel(result.current.info, result.current.checking)).toBe("Checking…");
     });
-    expect(peerReachabilityLabel(result.current.info, result.current.checking)).toBe("Checking…");
 
     await waitFor(() => {
       expect(result.current.info?.connected).toBe(true);

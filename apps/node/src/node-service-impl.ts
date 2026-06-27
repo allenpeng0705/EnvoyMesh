@@ -11806,6 +11806,12 @@ class NodeServiceImpl implements NodeService {
       return { connected: false, direct: false };
     }
 
+    try {
+      await this._peerDirectoryStore.sanitizeListenAddrs();
+    } catch {
+      /* best-effort */
+    }
+
     listenAddrs = await this._mergeFreshListenAddrs(
       peerOwnerId,
       transportPeerId,
@@ -11890,7 +11896,7 @@ class NodeServiceImpl implements NodeService {
     }
 
     const dialableListen = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, dialHints);
-    void mesh.scrubPeerStoreDialHints(transportPeerId, dialableListen);
+    await mesh.scrubPeerStoreDialHints(transportPeerId, dialableListen);
 
     const preferCircuitHints = shouldPreferCircuitDialHints(listenAddrs, dialHints, transportPeerId);
 

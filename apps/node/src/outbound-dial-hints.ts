@@ -98,7 +98,7 @@ export async function buildOutboundDialHints(input: {
     }
   }
 
-  const hasDirect = hasDirectTcpDialHints([...nonLoopListen, ...peerSeeds]);
+  const hasDirect = hasDirectTcpDialHints(nonLoopListen);
   const peerSpecificCircuits = out.filter(
     (h) => h.includes(recipientPeerId) && h.includes("/p2p-circuit/"),
   );

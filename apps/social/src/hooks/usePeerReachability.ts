@@ -173,12 +173,15 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
         }
         return;
       }
-      const dueForRedial = now - lastRedialAtRef.current >= minRedialMs;
-      void runRefreshRef.current(generation, {
-        silent: true,
-        verifyOnly: !dueForRedial,
-        warm: dueForRedial,
-      });
+      if (!libp2pConnectedRef.current) {
+        const dueForRedial = now - lastRedialAtRef.current >= minRedialMs;
+        void runRefreshRef.current(generation, {
+          silent: false,
+          warm: true,
+          redial: dueForRedial,
+        });
+        return;
+      }
     }, pollMs);
 
     return () => clearInterval(id);

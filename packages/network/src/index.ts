@@ -94,6 +94,8 @@ export function getEnvoyContactKeepAlivePeerTagName(): string {
 const NEW_STREAM_ON_OPEN_CONNECTION_TIMEOUT_MS = 15_000;
 /** Per-hint dial cap when iterating multiaddrs (fail fast; libp2p default dialTimeout is 15s). */
 const HINT_DIAL_TIMEOUT_MS = 3_500;
+/** Same-LAN private RFC1918 dials — allow slow Windows/macOS firewalls to accept. */
+const LAN_HINT_DIAL_TIMEOUT_MS = 8_000;
 
 function promiseWithTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -503,14 +505,12 @@ export class EnvoyMesh {
     if (!idStr || idStr.startsWith("envoy_") || !this.node) {
       return [];
     }
-    const existingGood = await this.getPeerStoreDialHints(idStr);
-    const replacement = filterUsableOutboundPeerDialHints(
-      [
-        ...existingGood,
-        ...extraAddrs.filter((a) => !a.includes("/p2p-circuit/")),
-      ],
+    const fromExtra = filterUsableOutboundPeerDialHints(
+      extraAddrs.filter((a) => !a.includes("/p2p-circuit/")),
       idStr,
     );
+    const replacement =
+      fromExtra.length > 0 ? fromExtra : await this.getPeerStoreDialHints(idStr);
     try {
       await this.requireNode().peerStore.patch(peerIdFromString(idStr), {
         multiaddrs: replacement.map((a) => ma(a)),
@@ -1397,21 +1397,61 @@ export class EnvoyMesh {
       }
     }
     try {
-      const { stream } = await this.openOutboundStream(target, protocol, {
-        ...sendOptions,
-        dialHints: hintList,
-      });
-      try {
-        await stream.close();
-      } catch {
-        /* ignore */
-      }
+      await this.openOutboundStreamWithHintFallback(target, protocol, sendOptions, peerIdStr);
     } catch (e) {
       const detail = e instanceof Error ? e.message : String(e);
       console.warn(`[network] ensurePeerReachable failed for ${target.slice(0, 24)}…: ${detail}`);
       return { connected: false, direct: false };
     }
     return peerIdStr ? this.getPeerConnectionInfo(peerIdStr) : { connected: false, direct: false };
+  }
+
+  /** Try direct/LAN hints first; if circuits were stripped and direct failed, retry via relay. */
+  private async openOutboundStreamWithHintFallback(
+    target: string,
+    protocol: string,
+    sendOptions: MeshOutboundOptions | undefined,
+    peerIdStr: string | undefined,
+  ): Promise<{ stream: unknown; remotePeerId?: string }> {
+    const rawHints = sendOptions?.dialHints ?? [];
+    const directHints = filterDialHintsForOutboundSend(rawHints, peerIdStr ?? "", sendOptions);
+    try {
+      const opened = await this.openOutboundStream(target, protocol, {
+        ...sendOptions,
+        dialHints: directHints,
+      });
+      try {
+        await (opened.stream as { close?: () => Promise<void> }).close?.();
+      } catch {
+        /* ignore */
+      }
+      return opened;
+    } catch (directErr) {
+      const hasCircuits = rawHints.some((h) => h.includes("/p2p-circuit/"));
+      const strippedCircuits =
+        sendOptions?.preferCircuitHints !== true &&
+        hasDirectTcpDialHints(directHints) &&
+        hasCircuits;
+      if (!strippedCircuits) {
+        throw directErr;
+      }
+      const circuitHints = filterDialHintsForOutboundSend(rawHints, peerIdStr ?? "", {
+        ...sendOptions,
+        preferCircuitHints: true,
+      });
+      const opened = await this.openOutboundStream(target, protocol, {
+        ...sendOptions,
+        dialHints: circuitHints,
+        preferCircuitHints: true,
+        forceFreshDial: true,
+      });
+      try {
+        await (opened.stream as { close?: () => Promise<void> }).close?.();
+      } catch {
+        /* ignore */
+      }
+      return opened;
+    }
   }
 
   private isOutboundStreamWritable(stream: {
@@ -1569,10 +1609,12 @@ export class EnvoyMesh {
     };
 
     const dialOnce = async (addr: Multiaddr | string): Promise<{ stream: any; remotePeerId?: string }> => {
+      const addrStr = String(addr);
+      const perHintMs = isPrivateLanTcpDialHint(addrStr) ? LAN_HINT_DIAL_TIMEOUT_MS : HINT_DIAL_TIMEOUT_MS;
       const stream = await promiseWithTimeout(
         node.dialProtocol(addr as any, protocol),
-        HINT_DIAL_TIMEOUT_MS,
-        `dial ${String(addr).slice(0, 64)}`,
+        perHintMs,
+        `dial ${addrStr.slice(0, 64)}`,
       );
       const s = stream as { connection?: { remotePeer?: { toString(): string } } };
       const remotePeerId = s.connection?.remotePeer?.toString();
@@ -2349,6 +2391,10 @@ export function isPrivateOrUnroutableDialHint(addr: string): boolean {
  */
 export function isLikelyInboundConnSnapshotDialHint(addr: string): boolean {
   if (!addr.includes("/tcp/")) {
+    return false;
+  }
+  // Same-LAN peers using --listen tcp/0 advertise ephemeral listen ports; keep them dialable.
+  if (isPrivateLanTcpDialHint(addr)) {
     return false;
   }
   const match = addr.match(/\/tcp\/(\d+)\//);
