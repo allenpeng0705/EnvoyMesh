@@ -13,7 +13,6 @@ import { contactLabel, peerDisplayLabel } from "../../lib/display.js";
 import { PeerProfileAvatar } from "../PeerProfileAvatar.js";
 import { ChatIcon, BridgeIcon, AddIcon } from "../../icons.js";
 import { useChatThreadPreviews } from "../../hooks/useChatThreadPreviews.js";
-import { bondReachabilityClass, useBondsReachability } from "../../hooks/useBondsReachability.js";
 import { CreateGroupModal } from "./CreateGroupModal.js";
 import { RemoveContactConfirmModal } from "../RemoveContactConfirmModal.js";
 import { PullToRefresh } from "../PullToRefresh.js";
@@ -142,8 +141,6 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
     () => sortByLatestMessage(bonds, (contact: BondRecord) => contact.peerOwnerId, threadPreviews),
     [bonds, threadPreviews],
   );
-
-  const { map: bondReachability } = useBondsReachability(bondPeerIds, bonds.length > 0);
 
   const showAiSection = Boolean(onOpenAssistant) || bridgeStatus?.enabled;
 
@@ -325,8 +322,6 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
           {sortedBonds.map((contact) => {
             const pv = threadPreviews[contact.peerOwnerId];
             const label = contactLabel(contact);
-            const reachability = bondReachability.get(contact.peerOwnerId);
-            const reachClass = bondReachabilityClass(reachability);
             return (
               <div key={contact.peerOwnerId} className="thread-row-with-actions">
                 <button
@@ -345,17 +340,6 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
                   />
                   <span className="thread-meta">
                     <span className="thread-title-row">
-                      <span
-                        className={`thread-reachability-dot ${reachClass}`}
-                        title={
-                          reachClass === "online-direct"
-                            ? t("chat.reachabilityDirect")
-                            : reachClass === "online-relay"
-                              ? t("chat.reachabilityRelay")
-                              : t("chat.reachabilityOffline")
-                        }
-                        aria-hidden
-                      />
                       <span className="thread-title">{label}</span>
                       {pv ? <span className="thread-time">{pv.timeLabel}</span> : null}
                     </span>

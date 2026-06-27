@@ -376,7 +376,6 @@ import {
   ENVOY_MESSAGE_PROTOCOL,
   EnvoyMesh,
   filterBootstrapMultiaddrs,
-  filterRelayControlTargets,
   filterUsableOutboundPeerDialHints,
   ENVOY_CHAT_PROTOCOL,
   ENVOY_DATA_PROTOCOL,
@@ -409,7 +408,6 @@ import {
   isLibp2pPeerId,
 } from "./profile-sync-outbound.js";
 import { probeNearbyPeerProfile } from "./nearby-profile-probe.js";
-import { broadcastPresenceSignalToBonds } from "./presence-signal-outbound.js";
 import { deliverCallEnvelopeWithRetry, deliverChatEnvelopeWithRetry, deliverMessageEnvelopeWithRetry, sendExpectReplyWithRetry, type ChatDeliverResult } from "./chat-outbound-deliver.js";
 import { isOutboundPeerRecentlyVerified, markOutboundPeerVerified } from "./outbound-peer-freshness.js";
 import { deliverOutboundEnvelope, dialHintsForTransportTarget } from "./mesh-outbound-helper.js";
@@ -493,7 +491,7 @@ import {
   listFleetManifestsViaRuntime,
   revokeFleetManifestViaRuntime,
 } from "./node-service-fleet-manifest.js";
-import { startRelayClientScheduler, runRelayClientCycle, queryRelayLookupForPeer } from "./relay-client-cycle.js";
+import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
 import { startNodeStatsInterval } from "./node-stats-log.js";
@@ -866,12 +864,9 @@ class NodeServiceImpl implements NodeService {
   private readonly _nearbyProfileProbeInflight = new Set<string>();
   /** Keeps bonded contacts warm across NAT idle periods. */
   private _bondWarmTimer?: ReturnType<typeof setInterval>;
-  private _presenceSignalStartupTimer?: ReturnType<typeof setTimeout>;
   /** Skip periodic bond warm when libp2p already has this many open connections. */
   private static readonly BOND_WARM_MAX_CONNECTIONS = 64;
-  /** Announce tcp/0 listen ports to bonded contacts before bond warm (same-LAN cold start). */
-  private static readonly PRESENCE_SIGNAL_STARTUP_DELAY_MS = 10_000;
-  /** First bond warm after mesh settles (relay check-in, profile sync). */
+  /** First bond warm after mesh + relay check-in settle (e50 used 120s; 30s for faster reconnect). */
   private static readonly BOND_WARM_STARTUP_DELAY_MS = 30_000;
   /** Defer startup profile refresh until mesh paths settle (avoids stale LAN dial storms). */
   private static readonly PROFILE_REFRESH_STARTUP_DELAY_MS = 90_000;
@@ -1588,14 +1583,8 @@ class NodeServiceImpl implements NodeService {
    * Without these, `node:dev` never re-dialed LAN peers after restart and Social warmed contacts
    * while `_nodeStatus` was still offline (WS connected before mesh.start()).
    */
-  bindExternalMesh(
-    mesh: EnvoyMesh,
-    options?: { relayBootstrapPeers?: readonly string[] },
-  ): void {
+  bindExternalMesh(mesh: EnvoyMesh): void {
     this._externalMesh = mesh;
-    if (options?.relayBootstrapPeers?.length) {
-      this._relayBootstrapPeers = [...options.relayBootstrapPeers];
-    }
     this._nodeStatus = "running";
     this.emit("node:status", { status: this._nodeStatus, peerId: mesh.peerId });
     this.emit("node:online", {
@@ -1607,117 +1596,8 @@ class NodeServiceImpl implements NodeService {
       await this.resyncBondedContactReachabilityTags();
       await this._scrubBondedContactDialState();
       this._scheduleDeferredProfileRefresh("bindExternalMesh");
-      this._scheduleBondWarmup("bindExternalMesh");
-      this._schedulePresenceSignalBroadcast("bindExternalMesh");
+      this._startBondWarmInterval();
     })();
-  }
-
-  /** Refresh relay roster dial hints for a bonded libp2p peer before warm (tcp/0 LAN ports). */
-  private async _refreshRelayDialHintsForPeer(
-    transportPeerId: string,
-    ownerId?: string,
-  ): Promise<void> {
-    const mesh = this._reachableMesh();
-    const profile = this._profile;
-    if (!mesh || !profile || !this._inboundGuard || !this._discoverySeedStore) {
-      return;
-    }
-    const config = await this._configStore.load();
-    const bootstrapPeers = filterRelayControlTargets([
-      ...this._relayBootstrapPeers,
-      ...(config?.bootstrapPeers ?? []),
-    ]);
-    if (bootstrapPeers.length === 0) {
-      return;
-    }
-    try {
-      await queryRelayLookupForPeer(
-        {
-          mesh,
-          profile,
-          bootstrapPeers,
-          inboundGuard: this._inboundGuard,
-          discoverySeedStore: this._discoverySeedStore,
-          peerDirectoryStore: this._peerDirectoryStore,
-          relayWsUrl: this._relayPublicWsUrl ?? (await this.resolveRelayWsUrl()),
-        },
-        { targetPeerId: transportPeerId, targetOwnerId: ownerId },
-      );
-    } catch (err) {
-      console.warn(
-        `[relay-client] bonded peer lookup failed for ${transportPeerId.slice(0, 12)}…:`,
-        err instanceof Error ? err.message : err,
-      );
-    }
-  }
-
-  /** Push current listen multiaddrs to bonded contacts (system.signal) after tcp/0 restarts. */
-  private _schedulePresenceSignalBroadcast(_source: string): void {
-    if (this._presenceSignalStartupTimer) {
-      clearTimeout(this._presenceSignalStartupTimer);
-    }
-    this._presenceSignalStartupTimer = setTimeout(() => {
-      this._presenceSignalStartupTimer = undefined;
-      void this._broadcastPresenceSignalToBonds();
-    }, NodeServiceImpl.PRESENCE_SIGNAL_STARTUP_DELAY_MS);
-  }
-
-  private async _broadcastPresenceSignalToBonds(): Promise<void> {
-    const mesh = this._reachableMesh();
-    const profile = this._profile;
-    if (!mesh || !profile || this._nodeStatus !== "running") {
-      return;
-    }
-    const bonds = await this.getBonds();
-    const selfOwnerId = profile.owner.ownerId?.trim();
-    const bondOwnerIds = bonds
-      .filter((b) => b.level === "direct" || b.level === "referred")
-      .map((b) => b.peerOwnerId)
-      .filter((ownerId) => !selfOwnerId || ownerId.trim() !== selfOwnerId);
-    if (bondOwnerIds.length === 0) {
-      return;
-    }
-    const config = await this._configStore.load();
-    try {
-      await broadcastPresenceSignalToBonds({
-        mesh,
-        meshPeerId: mesh.peerId,
-        profile,
-        listenAddrs: mesh.multiaddrs ?? [],
-        bondOwnerIds,
-        config: config ?? undefined,
-        resolveLibp2pPeer: async (ownerId) => {
-          const resolved = await this._resolveLibp2pPeerForBondOwner(ownerId);
-          if (!resolved) {
-            return undefined;
-          }
-          return { peerId: resolved.transportPeerId, listenAddrs: resolved.listenAddrs };
-        },
-        dialHintsFor: (peerId, listenAddrs) => this._dialHintsForChat(peerId, listenAddrs),
-      });
-    } catch (err) {
-      console.warn("[presence] broadcast failed:", err);
-    }
-  }
-
-  async handleInboundPresenceSignal(ownerId: string, transportPeerId: string): Promise<void> {
-    const trimmedOwner = ownerId.trim();
-    const trimmedPeer = transportPeerId.trim();
-    if (!trimmedOwner || !trimmedPeer || !isLibp2pPeerId(trimmedPeer)) {
-      return;
-    }
-    this._lastLibp2pTransportByOwner.set(trimmedOwner, { peerId: trimmedPeer });
-    markOutboundPeerVerified(trimmedPeer);
-    try {
-      await this.warmContactConnection(trimmedOwner, { upgradeRelayToDirect: true });
-    } catch {
-      /* best-effort reciprocal warm */
-    }
-  }
-
-  /** Schedule deferred bond warm — avoids fighting chat-open / relay check-in at startup. */
-  private _scheduleBondWarmup(_source: string): void {
-    this._startBondWarmInterval();
   }
 
   private _scheduleDeferredProfileRefresh(source: string): void {
@@ -1831,20 +1711,7 @@ class NodeServiceImpl implements NodeService {
     }
     try {
       const record = await this._peerDirectoryStore.getPeerByPeerId(peerId);
-      let ownerId = record?.ownerId?.trim();
-      if (!ownerId || ownerId === peerId) {
-        const bonds = await this.getBonds();
-        for (const bond of bonds) {
-          if (bond.level !== "direct" && bond.level !== "referred") {
-            continue;
-          }
-          const dir = await this._peerDirectoryStore.getPeerByOwnerId(bond.peerOwnerId);
-          if (dir?.peerId === peerId) {
-            ownerId = bond.peerOwnerId;
-            break;
-          }
-        }
-      }
+      const ownerId = record?.ownerId?.trim();
       if (!ownerId || ownerId === peerId) {
         return;
       }
@@ -1852,9 +1719,6 @@ class NodeServiceImpl implements NodeService {
       if (!trust || trust.level === "blocked" || trust.level === "public") {
         return;
       }
-      console.log(
-        `[mdns] bonded LAN contact owner=${ownerId.slice(0, 20)}… peer=${peerId.slice(0, 12)}… addrs=${multiaddrs.filter((a) => isPrivateLanTcpDialHint(a)).join(", ")}`,
-      );
       await this.warmContactConnection(ownerId);
     } catch {
       /* best-effort */
@@ -9570,8 +9434,7 @@ class NodeServiceImpl implements NodeService {
       void (async () => {
         await this.resyncBondedContactReachabilityTags();
         await this._scrubBondedContactDialState();
-        this._scheduleBondWarmup("node:online");
-        this._schedulePresenceSignalBroadcast("node:online");
+        this._startBondWarmInterval();
       })();
 
       // Wait longer for DHT to connect to bootstrap peers and stabilize routing table
@@ -11953,12 +11816,7 @@ class NodeServiceImpl implements NodeService {
       listenAddrs,
     );
 
-    return this._warmContactConnectionTransport(
-      transportPeerId,
-      listenAddrs,
-      options,
-      peerOwnerId,
-    );
+    return this._warmContactConnectionTransport(transportPeerId, listenAddrs, options);
   }
 
   /** Merge cached inbound + peer-directory listen addrs before outbound dial. */
@@ -11990,7 +11848,6 @@ class NodeServiceImpl implements NodeService {
     transportPeerId: string,
     listenAddrs: string[] | undefined,
     options?: WarmContactConnectionOptions,
-    peerOwnerId?: string,
   ): Promise<PeerConnectionInfo> {
     const mesh = this._requireMesh();
     void this._tagBondedContactReachability(transportPeerId);
@@ -12026,18 +11883,6 @@ class NodeServiceImpl implements NodeService {
       }
     }
 
-    if (!existing.connected && peerOwnerId?.trim()) {
-      await this._refreshRelayDialHintsForPeer(transportPeerId, peerOwnerId);
-      listenAddrs = await this._mergeFreshListenAddrs(peerOwnerId, transportPeerId, listenAddrs);
-    } else if (peerOwnerId?.trim()) {
-      listenAddrs = await this._mergeFreshListenAddrs(peerOwnerId, transportPeerId, listenAddrs);
-      const hasLan = (listenAddrs ?? []).some((a) => isPrivateLanTcpDialHint(a));
-      if (!hasLan) {
-        await this._refreshRelayDialHintsForPeer(transportPeerId, peerOwnerId);
-        listenAddrs = await this._mergeFreshListenAddrs(peerOwnerId, transportPeerId, listenAddrs);
-      }
-    }
-
     let dialHints: string[];
     try {
       dialHints = await raceWithTimeout(
@@ -12045,26 +11890,9 @@ class NodeServiceImpl implements NodeService {
         WARM_CONTACT_DIAL_HINTS_TIMEOUT_MS,
         "_dialHintsForChat",
       );
-    } catch (err) {
-      console.warn(
-        `[warmContact] dial hints timed out for ${transportPeerId.slice(0, 12)}…:`,
-        err instanceof Error ? err.message : err,
-      );
-      dialHints = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, []);
+    } catch {
+      return mesh.getPeerConnectionInfo(transportPeerId);
     }
-
-    if (dialHints.length === 0) {
-      dialHints = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, dialHints);
-    }
-    if (dialHints.length === 0) {
-      dialHints = [`/p2p/${transportPeerId}`];
-    }
-
-    const lanHints = dialHints.filter((h) => isPrivateLanTcpDialHint(h));
-    const circuitHints = dialHints.filter((h) => h.includes("/p2p-circuit/"));
-    console.log(
-      `[warmContact] ${transportPeerId.slice(0, 12)}… hints=${dialHints.length} lan=${lanHints.length} circuit=${circuitHints.length}`,
-    );
 
     const dialableListen = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, dialHints);
     void mesh.scrubPeerStoreDialHints(transportPeerId, dialableListen);

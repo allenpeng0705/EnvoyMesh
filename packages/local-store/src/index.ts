@@ -1401,8 +1401,6 @@ export interface LocalPeerDirectoryStore {
   getPeerByPeerId(peerId: string): Promise<PeerDirectoryRecord | undefined>;
   /** Append dialable multiaddrs learned from inbound libp2p connections (e.g. relay circuit path). */
   mergeListenAddrsForPeerId(peerId: string, addrs: string[]): Promise<void>;
-  /** Remove known-bad dial hints after ECONNREFUSED / timeout / NO_RESERVATION. */
-  removeListenAddrsForPeerId(peerId: string, addrs: string[]): Promise<void>;
   /** Cap stored listen addrs per peer (repairs bloated directories from pre-cap merges). */
   compactListenAddrs(maxPerRecord?: number): Promise<{ recordsTouched: number; addrsRemoved: number }>;
   /** Strip ephemeral inbound TCP snapshots from every peer row. */
@@ -1746,10 +1744,7 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
         existing.deviceId = input.payload.deviceId;
         existing.devicePublicKeyPem = input.payload.deviceCertificate.devicePublicKeyPem;
         existing.lastSeenAt = seenAt;
-        existing.listenAddrs = capPeerListenAddrs([
-          ...existing.listenAddrs,
-          ...filterDialableListenAddrs(input.payload.listenAddrs ?? []),
-        ]);
+        existing.listenAddrs = input.payload.listenAddrs;
         await writePeerDirectoryFileAtomic(directoryPath, file);
         return existing;
       }
@@ -1767,10 +1762,7 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
         existing.deviceId = input.payload.deviceId;
         existing.devicePublicKeyPem = input.payload.deviceCertificate.devicePublicKeyPem;
         existing.lastSeenAt = seenAt;
-        existing.listenAddrs = capPeerListenAddrs([
-          ...existing.listenAddrs,
-          ...filterDialableListenAddrs(input.payload.listenAddrs ?? []),
-        ]);
+        existing.listenAddrs = input.payload.listenAddrs;
         await writePeerDirectoryFileAtomic(directoryPath, file);
         return existing;
       }
@@ -1782,7 +1774,7 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
         deviceId: input.payload.deviceId,
         devicePublicKeyPem: input.payload.deviceCertificate.devicePublicKeyPem,
         lastSeenAt: seenAt,
-        listenAddrs: capPeerListenAddrs(filterDialableListenAddrs(input.payload.listenAddrs ?? [])),
+        listenAddrs: input.payload.listenAddrs,
       };
       file.records.push(created);
       await writePeerDirectoryFileAtomic(directoryPath, file);
@@ -1835,26 +1827,6 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
           return;
         }
         record.listenAddrs = merged;
-        record.lastSeenAt = new Date().toISOString();
-        await writePeerDirectoryFileAtomic(directoryPath, file);
-      });
-    },
-
-    async removeListenAddrsForPeerId(peerId, addrs) {
-      const drop = new Set(addrs.map((a) => a.trim()).filter(Boolean));
-      if (drop.size === 0) {
-        return;
-      }
-      await withDirectory(async (file) => {
-        const record = file.records.find((r) => r.peerId === peerId);
-        if (!record) {
-          return;
-        }
-        const next = record.listenAddrs.filter((a) => !drop.has(a.trim()));
-        if (next.length === record.listenAddrs.length) {
-          return;
-        }
-        record.listenAddrs = next;
         record.lastSeenAt = new Date().toISOString();
         await writePeerDirectoryFileAtomic(directoryPath, file);
       });
@@ -2045,13 +2017,10 @@ function dedupeListenAddrList(addrs: string[]): string[] {
 
 /** Drop ephemeral TCP source ports captured from inbound connections (not dialable listen addrs). */
 function isLikelyEphemeralTcpSnapshot(addr: string): boolean {
-  if (/\/p2p\/[^/]+$/.test(addr.trim())) {
-    return false;
-  }
   if (!addr.includes("/tcp/")) {
     return false;
   }
-  const match = addr.match(/\/tcp\/(\d+)(?:\/|$)/);
+  const match = addr.match(/\/tcp\/(\d+)\//);
   if (!match) {
     return false;
   }

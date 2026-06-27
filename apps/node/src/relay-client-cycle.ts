@@ -3,7 +3,7 @@
  * CLI `index.ts` runs equivalent cycles; without this, cross-NAT chat lacks /p2p-circuit/ dial hints.
  */
 import { randomUUID } from "node:crypto";
-import type { EnvoyEnvelope, RelayLookupResponsePayload } from "@envoymesh/protocol";
+import type { EnvoyEnvelope } from "@envoymesh/protocol";
 import {
   createRelayCheckinPayload,
   createRelayLookupPayload,
@@ -14,13 +14,11 @@ import { derivePeerId, signUnsignedEnvelope } from "@envoymesh/identity";
 import type { EnvoyMesh } from "@envoymesh/network";
 import { sendEnvelopeWithRetry, sendExpectReplyWithRetry } from "./chat-outbound-deliver.js";
 import { filterRelayControlTargets } from "@envoymesh/network";
-import type { LocalPeerDirectoryStore } from "@envoymesh/local-store";
 import type { NodeProfile } from "@envoymesh/api";
 import type { InboundMessageGuard } from "./inbound-guard.js";
 import type { DiscoverySeedStore } from "./discovery-seed-store.js";
 import { logClientRelayLookupResponse, logRelayReachableAddrsForCheckin } from "./relay-checkin-log.js";
 import { recordRelayCheckinCycle, recordRelayLookupResult, type RelayCheckinAttempt } from "./relay-diagnostics-state.js";
-import { queryRelayWsLookupForPeer, runRelayWsControlCycle } from "./relay-ws-control-client.js";
 
 const RELAY_CLIENT_CYCLE_INTERVAL_MS = 30_000;
 const RELAY_LOOKUP_REPLY_TIMEOUT_MS = 30_000;
@@ -49,9 +47,6 @@ export interface RelayClientCycleDeps {
   bootstrapPeers: string[];
   inboundGuard: InboundMessageGuard;
   discoverySeedStore: DiscoverySeedStore;
-  peerDirectoryStore?: Pick<LocalPeerDirectoryStore, "mergeListenAddrsForPeerId">;
-  /** When set, relay.checkin/lookup also run over WebSocket (port 15432) — works when libp2p :4001 is blocked. */
-  relayWsUrl?: string;
 }
 
 async function sendRelayCheckin(deps: RelayClientCycleDeps, targets: string[]): Promise<RelayCheckinAttempt[]> {
@@ -113,14 +108,6 @@ async function applyRelayLookupResponse(
   deps: RelayClientCycleDeps,
 ): Promise<number> {
   const payload = parseRelayLookupResponsePayload(envelope.payload);
-  return persistRelayLookupResponse(payload, deps);
-}
-
-/** Store relay.lookup peers in discovery seeds + peer directory (direct LAN addrs from checkin). */
-export async function persistRelayLookupResponse(
-  payload: RelayLookupResponsePayload,
-  deps: RelayClientCycleDeps,
-): Promise<number> {
   const flat = dedupeAddrs(payload.peers.flatMap((peer) => peer.multiaddrs));
   logClientRelayLookupResponse({
     queryId: payload.queryId,
@@ -129,30 +116,12 @@ export async function persistRelayLookupResponse(
   });
   if (flat.length > 0) {
     await deps.discoverySeedStore.upsertMany(flat, "relay-peers");
-    console.log(`[relay-client] relay.lookup stored ${flat.length} multiaddr(s)`);
-  }
-  for (const peer of payload.peers) {
-    const directAddrs = peer.multiaddrs.filter(
-      (addr) => !addr.includes("/p2p-circuit/") && addr.includes(`/p2p/${peer.peerId}`),
-    );
-    if (directAddrs.length === 0) {
-      continue;
-    }
-    if (deps.peerDirectoryStore) {
-      await deps.peerDirectoryStore.mergeListenAddrsForPeerId(peer.peerId, directAddrs);
-    }
-    if (typeof deps.mesh.mergePeerStoreDialHints === "function") {
-      void deps.mesh.mergePeerStoreDialHints(peer.peerId, directAddrs);
-    }
+    console.log(`[relay-client] relay.lookup stored ${flat.length} circuit multiaddr(s)`);
   }
   return flat.length;
 }
 
-async function queryRelayLookup(
-  deps: RelayClientCycleDeps,
-  targets: string[],
-  payloadOverrides?: Partial<Parameters<typeof createRelayLookupPayload>[0]>,
-): Promise<void> {
+async function queryRelayLookup(deps: RelayClientCycleDeps, targets: string[]): Promise<void> {
   const { mesh, profile, inboundGuard } = deps;
   let bestLookup:
     | { ok: true; peerCount: number; circuitAddrsStored: number }
@@ -169,7 +138,6 @@ async function queryRelayLookup(
         maxFanout: 2,
         visibilityScope: "public",
         expiresAt: expiresAtFromNow(RELAY_CONTROL_TTL_MS),
-        ...payloadOverrides,
       });
       const signedEnvelope = signUnsignedEnvelope(
         createUnsignedEnvelope({
@@ -229,65 +197,7 @@ async function queryRelayLookup(
   }
 }
 
-/** Targeted relay.lookup for a bonded contact — fetches fresh LAN listen addrs from relay roster. */
-export async function queryRelayLookupForPeer(
-  deps: RelayClientCycleDeps,
-  input: { targetPeerId: string; targetOwnerId?: string },
-): Promise<boolean> {
-  const targetPeerId = input.targetPeerId.trim();
-  if (!targetPeerId) {
-    return false;
-  }
-
-  if (deps.relayWsUrl?.trim()) {
-    try {
-      const wsOk = await queryRelayWsLookupForPeer({
-        relayWsUrl: deps.relayWsUrl.trim(),
-        mesh: deps.mesh,
-        profile: deps.profile,
-        inboundGuard: deps.inboundGuard,
-        discoverySeedStore: deps.discoverySeedStore,
-        peerDirectoryStore: deps.peerDirectoryStore,
-        targetPeerId,
-        targetOwnerId: input.targetOwnerId,
-      });
-      if (wsOk) {
-        return true;
-      }
-    } catch (err) {
-      console.warn(
-        `[relay-ws] bonded peer lookup failed for ${targetPeerId.slice(0, 12)}…:`,
-        err instanceof Error ? err.message : err,
-      );
-    }
-  }
-
-  const targets = filterRelayControlTargets(deps.bootstrapPeers);
-  if (targets.length === 0) {
-    return false;
-  }
-  await queryRelayLookup(deps, targets, {
-    queryId: `node_service_relay_lookup_peer_${randomUUID()}`,
-    targetPeerId,
-    targetOwnerId: input.targetOwnerId?.trim() || undefined,
-    visibilityScope: "bonded",
-    maxResults: 4,
-  });
-  return true;
-}
-
 export async function runRelayClientCycle(deps: RelayClientCycleDeps): Promise<void> {
-  if (deps.relayWsUrl?.trim()) {
-    await runRelayWsControlCycle({
-      relayWsUrl: deps.relayWsUrl.trim(),
-      mesh: deps.mesh,
-      profile: deps.profile,
-      inboundGuard: deps.inboundGuard,
-      discoverySeedStore: deps.discoverySeedStore,
-      peerDirectoryStore: deps.peerDirectoryStore,
-    });
-  }
-
   const targets = filterRelayControlTargets(deps.bootstrapPeers);
   if (targets.length === 0) {
     console.warn("[relay-client] no relay control targets configured (need cn-relay or a --relay-server bootstrap addr)");

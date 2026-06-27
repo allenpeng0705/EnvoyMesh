@@ -2332,20 +2332,6 @@ export function hasDirectTcpDialHints(hints: readonly string[]): boolean {
   );
 }
 
-/** True when we have same-LAN direct TCP on a stable listen port (4011, 4001, …). */
-export function hasTrustedDirectDialHints(hints: readonly string[]): boolean {
-  return hints.some((h) => {
-    if (!isPrivateLanTcpDialHint(h)) {
-      return false;
-    }
-    const match = h.match(/\/tcp\/(\d+)(?:\/|$)/);
-    if (!match) {
-      return false;
-    }
-    return STABLE_LIBP2P_TCP_PORTS.has(Number(match[1]));
-  });
-}
-
 export function isPrivateOrUnroutableDialHint(addr: string): boolean {
   // Always keep circuit relay addresses — they work through relays regardless of NAT.
   if (addr.includes("/p2p-circuit/")) return false;
@@ -2365,15 +2351,10 @@ export function isPrivateOrUnroutableDialHint(addr: string): boolean {
  * source port on outbound-initiated TCP connections — not a dialable listen address.
  */
 export function isLikelyInboundConnSnapshotDialHint(addr: string): boolean {
-  const a = addr.trim();
-  /** Explicit listen multiaddrs (`tcp/0` bind ports) are dialable — not inbound snapshots. */
-  if (/\/p2p\/[^/]+$/.test(a)) {
+  if (!addr.includes("/tcp/")) {
     return false;
   }
-  if (!a.includes("/tcp/")) {
-    return false;
-  }
-  const match = a.match(/\/tcp\/(\d+)(?:\/|$)/);
+  const match = addr.match(/\/tcp\/(\d+)\//);
   if (!match) {
     return false;
   }
@@ -2519,7 +2500,7 @@ export function filterDialHintsForOutboundSend(
   if (opts?.preferCircuitHints === true) {
     return filtered;
   }
-  if (hasTrustedDirectDialHints(filtered)) {
+  if (hasDirectTcpDialHints(filtered)) {
     return filtered.filter((h) => !h.includes("/p2p-circuit/"));
   }
   return filtered;

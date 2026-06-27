@@ -105,8 +105,7 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
   });
 
   afterEach(async () => {
-    const { resetOutboundNetworkState } = await import("./helpers/outbound-network-harness.js");
-    resetOutboundNetworkState();
+    resetOutboundPeerFreshnessForTests();
     await rm(profileDir, { recursive: true, force: true });
   });
 
@@ -139,7 +138,7 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
       expect(closeConnectionsToPeer).not.toHaveBeenCalled();
     });
 
-    it("upgradeRelayToDirect closes relay and attempts direct dial (33aa02e model)", async () => {
+    it("upgradeRelayToDirect closes relay and redials when requested", async () => {
       getPeerConnectionInfo.mockReturnValue({ connected: true, direct: false });
 
       await node.warmContactConnection(PEER_OWNER_ID, { upgradeRelayToDirect: true });
@@ -155,20 +154,19 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
       expect(ensurePeerReachable).toHaveBeenCalledTimes(1);
     });
 
-    it("keepAlive redials when probe reports stale connection (e50c181 model)", async () => {
+    it("keepAlive probes the open path and redials when probe reports stale", async () => {
       probeBondedPeerConnection.mockResolvedValueOnce({ connected: false, direct: false });
-      getPeerConnectionInfo.mockReturnValue({ connected: true, direct: true });
 
-      await node.warmContactConnection(PEER_OWNER_ID, { keepAlive: true });
+      const info = await node.warmContactConnection(PEER_OWNER_ID, { keepAlive: true });
 
       expect(probeBondedPeerConnection).toHaveBeenCalledWith(TRANSPORT_PEER_ID);
       expect(ensurePeerReachable).toHaveBeenCalledTimes(1);
+      expect(info).toEqual({ connected: true, direct: true });
     });
 
-    it("keepAlive skips probe when path was recently verified (e50c181 model)", async () => {
+    it("keepAlive skips probe when the path was recently verified", async () => {
       const { markOutboundPeerVerified } = await import("../src/outbound-peer-freshness.js");
       markOutboundPeerVerified(TRANSPORT_PEER_ID);
-      getPeerConnectionInfo.mockReturnValue({ connected: true, direct: true });
 
       const info = await node.warmContactConnection(PEER_OWNER_ID, { keepAlive: true });
 
@@ -283,7 +281,6 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
         peerId: "12D3KooWSelfBindExternal",
         multiaddrs: ["/ip4/127.0.0.1/tcp/4011/p2p/12D3KooWSelfBindExternal"],
         tagContactForPersistentReachability: vi.fn(async () => {}),
-        setDialHintFailureHandler: vi.fn(),
       };
       (node as any).bindExternalMesh(mockMesh);
 

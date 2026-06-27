@@ -4,7 +4,6 @@ import {
   filterDialHintsForOutboundSend,
   hasDirectPrivateLanDialHints,
   hasDirectTcpDialHints,
-  hasTrustedDirectDialHints,
   isBrowserOnlyTransportDialHint,
   isLoopbackOrUnspecifiedDialHint,
   isLikelyInboundConnSnapshotDialHint,
@@ -88,46 +87,8 @@ describe("dial hint sorting", () => {
     });
   });
 
-  describe("hasTrustedDirectDialHints", () => {
-    it("trusts same-LAN stable ports but not WAN guesses or tcp/0 bind ports", () => {
-      const peerId = "12D3KooWTrustedDirectPeer";
-      const lanHigh = `/ip4/192.168.1.50/tcp/51924/p2p/${peerId}`;
-      const wanStable = `/ip4/8.8.8.8/tcp/4001/p2p/${peerId}`;
-      const cgnatGuess = `/ip4/106.37.112.84/tcp/4001/p2p/${peerId}`;
-      const lanStable = `/ip4/192.168.3.78/tcp/4011/p2p/${peerId}`;
-      const circuit = `/ip4/47.93.11.212/tcp/4001/p2p/relay/p2p-circuit/p2p/${peerId}`;
-      expect(hasTrustedDirectDialHints([lanHigh])).toBe(false);
-      expect(hasTrustedDirectDialHints([wanStable])).toBe(false);
-      expect(hasTrustedDirectDialHints([cgnatGuess])).toBe(false);
-      expect(hasTrustedDirectDialHints([lanStable])).toBe(true);
-      expect(hasTrustedDirectDialHints([circuit])).toBe(false);
-    });
-  });
-
   describe("filterDialHintsForOutboundSend", () => {
-    it("keeps circuits when only relay NAT public :4001 guess exists", () => {
-      const peerId = "12D3KooWFilterDialHintsPeer";
-      const natGuess = `/ip4/106.37.112.84/tcp/4001/p2p/${peerId}`;
-      const circuit = `/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${peerId}`;
-      const out = filterDialHintsForOutboundSend([natGuess, circuit], peerId, {
-        preferCircuitHints: false,
-      });
-      expect(out).toContain(circuit);
-      expect(out).toContain(natGuess);
-    });
-
-    it("keeps circuits when only stale tcp/0 listen ports exist", () => {
-      const peerId = "12D3KooWFilterDialHintsPeer";
-      const staleListen = `/ip4/192.168.3.78/tcp/51924/p2p/${peerId}`;
-      const circuit = `/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${peerId}`;
-      const out = filterDialHintsForOutboundSend([staleListen, circuit], peerId, {
-        preferCircuitHints: false,
-      });
-      expect(out).toContain(circuit);
-      expect(out).toContain(staleListen);
-    });
-
-    it("strips circuits when trusted LAN direct hints exist", () => {
+    it("strips circuits when direct TCP hints exist and circuits are not preferred", () => {
       const peerId = "12D3KooWFilterDialHintsPeer";
       const hints = [
         `/ip4/192.168.1.50/tcp/4011/p2p/${peerId}`,
@@ -222,21 +183,16 @@ describe("dial hint sorting", () => {
       expect(preferNonLoopbackDialHints([])).toEqual([]);
     });
 
-    it("filters raw inbound TCP snapshot ports without /p2p/ suffix", () => {
+    it("filters ephemeral inbound TCP snapshot ports for desktop outbound dials", () => {
       const target = "12D3KooWN67PannbfXrLPhgJkkRGWGN9UBV3Xfu5UpzdK1dY8qGD";
-      const rawSnapshot = `/ip4/192.168.3.78/tcp/64595`;
-      const listen54809 = `/ip4/192.168.3.78/tcp/54809/p2p/${target}`;
+      const ephemeral = `/ip4/192.168.3.78/tcp/64595/p2p/${target}`;
       const stable = `/ip4/192.168.3.78/tcp/4001/p2p/${target}`;
-      expect(isLikelyInboundConnSnapshotDialHint(rawSnapshot)).toBe(true);
-      expect(isLikelyInboundConnSnapshotDialHint(listen54809)).toBe(false);
-      expect(isUsableOutboundPeerDialHint(listen54809, target)).toBe(true);
+      expect(isLikelyInboundConnSnapshotDialHint(ephemeral)).toBe(true);
+      expect(isUsableOutboundPeerDialHint(ephemeral, target)).toBe(false);
       expect(isUsableOutboundPeerDialHint(stable, target)).toBe(true);
-      expect(hasDirectTcpDialHints([listen54809])).toBe(true);
+      expect(hasDirectTcpDialHints([ephemeral])).toBe(false);
       expect(hasDirectTcpDialHints([stable])).toBe(true);
-      expect(filterUsableOutboundPeerDialHints([listen54809, stable], target)).toEqual([
-        listen54809,
-        stable,
-      ]);
+      expect(filterUsableOutboundPeerDialHints([ephemeral, stable], target)).toEqual([stable]);
     });
 
     it("filters QUIC bootstrap circuit paths for desktop outbound dials", () => {
