@@ -498,6 +498,17 @@ try {
       maxHomeTunnelDataBytes: MAX_HOME_TUNNEL_DATA_BYTES,
       sharedProxyBudget,
       logPrefix: "[relay]",
+      onHomeControlEnvelope: ({ ws, peerId, envelope }) => {
+        handleWsRelayControlEnvelope({
+          ws,
+          envelope,
+          roster: wsRelayRoster,
+          relayPeerId: mesh.peerId,
+          meshMultiaddrs: mesh.multiaddrs,
+          advertiseAddrs: args.advertiseAddrs,
+          log: (msg) => console.log(msg),
+        });
+      },
     });
     homeTunnelProxyRef = homeTunnelProxy;
 

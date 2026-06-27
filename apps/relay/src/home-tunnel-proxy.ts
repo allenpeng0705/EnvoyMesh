@@ -79,6 +79,12 @@ export interface HomeTunnelProxyOptions {
   maxHomeTunnelDataBytes: number;
   /** Optional log prefix (defaults to "[relay]"). */
   logPrefix?: string;
+  /** relay.checkin / relay.lookup JSON envelopes on the home tunnel socket. */
+  onHomeControlEnvelope?: (input: {
+    ws: WebSocket;
+    peerId: string;
+    envelope: Record<string, unknown>;
+  }) => void;
 }
 
 export interface HomeTunnelProxy {
@@ -361,11 +367,16 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
           : Array.isArray(raw)
             ? Buffer.concat(raw).toString("utf-8")
             : new TextDecoder().decode(new Uint8Array(raw as ArrayBuffer));
-      let env: { type?: string; channelId?: string; data?: string };
+      let env: { type?: string; intent?: string; channelId?: string; data?: string };
       try {
         env = JSON.parse(text) as typeof env;
       } catch (err) {
         warn(`home-tunnel: bad frame from ${peerId.slice(0, 12)}…: ${(err as Error).message}`);
+        return;
+      }
+
+      if (typeof env.intent === "string" && env.intent.length > 0) {
+        opts.onHomeControlEnvelope?.({ ws, peerId, envelope: env as Record<string, unknown> });
         return;
       }
 

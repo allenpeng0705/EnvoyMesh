@@ -494,6 +494,7 @@ import {
 } from "./node-service-fleet-manifest.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { lookupBondedOwnerOverRelayWs } from "./relay-ws-control-client.js";
+import { lanListenAddrsForPresence, startLanBondedPresence } from "./lan-bonded-presence.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
 import { startNodeStatsInterval } from "./node-stats-log.js";
@@ -787,6 +788,7 @@ class NodeServiceImpl implements NodeService {
     { at: number; peerId: string; addrs: string[] }
   >();
   private static readonly _relayLookupCacheTtlMs = 30_000;
+  private _stopLanBondedPresence: (() => void) | undefined;
   private _presenceBroadcastTimer: ReturnType<typeof setInterval> | null = null;
   /** Phase 43E — estimated cost range captured at plan time. */
   private readonly _chainCostEstimates = new Map<string, { minUsd: number; maxUsd: number }>();
@@ -1612,6 +1614,61 @@ class NodeServiceImpl implements NodeService {
     setTimeout(() => {
       void this._warmAllBondedContacts();
     }, 6_000);
+    this._startLanBondedPresence();
+  }
+
+  private _startLanBondedPresence(): void {
+    this._stopLanBondedPresence?.();
+    this._stopLanBondedPresence = startLanBondedPresence({
+      getOwnPresence: () => {
+        const mesh = this._reachableMesh();
+        const profile = this._profile;
+        if (!mesh || !profile) {
+          return undefined;
+        }
+        const listenAddrs = lanListenAddrsForPresence(
+          mesh.peerId,
+          (mesh.multiaddrs ?? []).map((a) => a.toString()),
+        );
+        if (listenAddrs.length === 0) {
+          return undefined;
+        }
+        return {
+          v: 1 as const,
+          peerId: mesh.peerId,
+          ownerId: profile.owner.ownerId,
+          listenAddrs,
+          sentAt: new Date().toISOString(),
+        };
+      },
+      isBondedPeer: (input) => this._isBondedLanPeer(input.peerId, input.ownerId),
+      onPeerListenAddrs: (peerId, listenAddrs) => {
+        this.handleInboundSystemSignal(peerId, listenAddrs);
+      },
+      log: (msg) => console.log(msg),
+    });
+  }
+
+  private async _isBondedLanPeer(peerId: string, ownerId: string): Promise<boolean> {
+    const bonds = await this.getBonds();
+    const selfOwnerId = this._profile?.owner.ownerId?.trim();
+    const bondedOwners = new Set(
+      bonds
+        .filter((b) => b.level === "direct" || b.level === "referred")
+        .map((b) => b.peerOwnerId.trim())
+        .filter((id) => id && id !== selfOwnerId),
+    );
+    if (ownerId.trim() && bondedOwners.has(ownerId.trim())) {
+      return true;
+    }
+    try {
+      const records = await this._peerDirectoryStore.listPeerRecords();
+      return records.some(
+        (r) => r.peerId === peerId.trim() && bondedOwners.has(r.ownerId.trim()),
+      );
+    } catch {
+      return false;
+    }
   }
 
   /** Remember LAN listen ports learned from mDNS or verified system.signal (not inbound snapshots). */
@@ -9520,6 +9577,8 @@ class NodeServiceImpl implements NodeService {
         await this.resyncBondedContactReachabilityTags();
         await this._scrubBondedContactDialState();
         this._startBondWarmInterval();
+        this._startPresenceBroadcastInterval();
+        this._startLanBondedPresence();
       })();
 
       // Wait longer for DHT to connect to bootstrap peers and stabilize routing table
@@ -11976,6 +12035,7 @@ class NodeServiceImpl implements NodeService {
         relayWsUrl,
         profile,
         targetOwnerId: ownerId,
+        timeoutMs: 2_500,
       });
       if (result) {
         this._relayLookupCacheByOwner.set(ownerId, {

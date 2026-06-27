@@ -3121,6 +3121,48 @@ if (nodeService instanceof NodeServiceImpl) {
             console.log(`[node] public addr discovered via relay observed addr: ${addr}`);
           }
         },
+        onTunnelReady: (send) => {
+          const expiresAt = expiresAtFromNow(RELAY_CONTROL_TTL_MS);
+          const capabilities = relayCheckinCapabilities(profile.deviceCertificate.capabilities);
+          const payload = createRelayCheckinPayload({
+            peerId: mesh.peerId,
+            ownerId: profile.owner.ownerId,
+            relayReachableAddrs: mesh.multiaddrs,
+            capabilities,
+            advertisements: capabilities.map((capability) => ({
+              capability,
+              visibility: capability === "mesh.discovery" ? "public" : "bonded",
+              expiresAt,
+            })),
+            relayHints: relayClientState.activeRelays,
+            expiresAt,
+          });
+          const signedEnvelope = signUnsignedEnvelope(
+            createUnsignedEnvelope({
+              senderPeerId: derivePeerId(profile.device.publicKeyPem),
+              senderPublicKey: profile.device.publicKeyPem,
+              senderRole: "system",
+              intent: "relay.checkin",
+              payload,
+            }),
+            profile.device.privateKeyPem,
+          );
+          send(signedEnvelope);
+          console.log("[relay-checkin-home-tunnel] sent over /ws/home");
+        },
+        onRelayControlEnvelope: (envelope) => {
+          if (envelope.intent !== "relay.lookup.response") {
+            return;
+          }
+          void processRelayLookupResponse(parseRelayLookupResponsePayload(envelope.payload)).catch(
+            (err) => {
+              console.warn(
+                "[relay-lookup-home-tunnel] apply failed:",
+                err instanceof Error ? err.message : err,
+              );
+            },
+          );
+        },
       });
       relayTunnelClient.start();
       console.log(`[node] relay-tunnel: connecting to ${relayWsUrl} (peerId=${mesh.peerId.slice(0, 12)}…)`);
