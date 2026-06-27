@@ -2,6 +2,10 @@
  * Builds multiaddrs used as {@link EnvoyMesh}'s outbound `dialHints`.
  * Drops loopback/non-routable listen addrs recorded for the *remote* peer (they dial localhost on this machine),
  * merges discovery seeds + relay circuit paths — same ingredients as outbound chat.
+ *
+ * Ephemeral-port policy (same-LAN `--listen tcp/0`):
+ * - **Stable / peer-directory addrs** — drop ephemeral (inbound snapshots like :60974).
+ * - **mDNS / identify addrs** — keep RFC1918 ephemeral listen ports (e.g. :55353).
  */
 import {
   isLikelyInboundConnSnapshotDialHint,
@@ -9,6 +13,7 @@ import {
   isPrivateLanTcpDialHint,
   isPublicLibp2pBootstrapMultiaddr,
   isUsableOutboundPeerDialHint,
+  isUsableAdvertisedListenDialHint,
   buildSyntheticRelayCircuitHints,
   dedupeDialHintStrings,
   hasDirectTcpDialHints,
@@ -76,7 +81,7 @@ export async function buildOutboundDialHints(input: {
   /** Never dial the remote peer's loopback or local docker-bridge IP from our machine. */
   const nonLoopListen = raw
     .filter((a) => isUsableChatDialHint(a, recipientPeerId))
-    .filter((a) => !isLikelyInboundConnSnapshotDialHint(a));
+    .filter((a) => isUsableAdvertisedListenDialHint(a, recipientPeerId));
 
   const store = input.discoverySeedStore;
   if (!store) {
@@ -98,7 +103,11 @@ export async function buildOutboundDialHints(input: {
     }
   }
 
-  const hasDirect = hasDirectTcpDialHints(nonLoopListen);
+  const directCandidates = [
+    ...nonLoopListen,
+    ...peerSeeds.filter((s) => s.includes("/tcp/") && !s.includes("/p2p-circuit/")),
+  ];
+  const hasDirect = hasDirectTcpDialHints(directCandidates);
   const peerSpecificCircuits = out.filter(
     (h) => h.includes(recipientPeerId) && h.includes("/p2p-circuit/"),
   );
@@ -131,8 +140,8 @@ export function prioritizeDirectLanDialHints(hints: string[]): string[] {
   return [...lan, ...other];
 }
 
-/** Merge peer-directory / inbound-cache listen addrs, dropping ephemeral TCP snapshots. */
-export function mergeDialablePeerListenAddrs(
+/** Peer-directory / inbound-cache addrs — drop ephemeral inbound snapshots. */
+export function mergeStablePeerListenAddrs(
   recipientPeerId: string,
   ...sources: (string[] | undefined)[]
 ): string[] {
@@ -149,6 +158,45 @@ export function mergeDialablePeerListenAddrs(
     }
   }
   return out;
+}
+
+/** mDNS / identify listen addrs — keep LAN ephemeral ports for `--listen tcp/0`. */
+export function mergeAdvertisedPeerListenAddrs(
+  recipientPeerId: string,
+  ...sources: (string[] | undefined)[]
+): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const src of sources) {
+    for (const raw of src ?? []) {
+      const a = raw.trim();
+      if (!a || seen.has(a)) continue;
+      if (!isUsableAdvertisedListenDialHint(a, recipientPeerId)) continue;
+      seen.add(a);
+      out.push(a);
+    }
+  }
+  return out;
+}
+
+/** @deprecated Prefer {@link mergeListenAddrsForOutboundDial} with explicit stable vs advertised sources. */
+export function mergeDialablePeerListenAddrs(
+  recipientPeerId: string,
+  ...sources: (string[] | undefined)[]
+): string[] {
+  return mergeStablePeerListenAddrs(recipientPeerId, ...sources);
+}
+
+/** Split sources: peer-directory/inbound (strict) vs mDNS/identify (LAN ephemeral OK). */
+export function mergeListenAddrsForOutboundDial(
+  recipientPeerId: string,
+  stableSources: (string[] | undefined)[],
+  advertisedSources: (string[] | undefined)[],
+): string[] {
+  return dedupeDialHints([
+    ...mergeStablePeerListenAddrs(recipientPeerId, ...stableSources),
+    ...mergeAdvertisedPeerListenAddrs(recipientPeerId, ...advertisedSources),
+  ]);
 }
 
 /** Prefer direct LAN/TCP dials when we have routable non-circuit hints; avoid jumping to relay on same network. */

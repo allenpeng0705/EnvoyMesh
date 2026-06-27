@@ -464,7 +464,7 @@ import {
   transitionCapabilityProviderJob,
   transitionSocialProxySession,
 } from "@envoymesh/api";
-import { buildOutboundDialHints, mergeDialablePeerListenAddrs, shouldPreferCircuitDialHints } from "./outbound-dial-hints.js";
+import { buildOutboundDialHints, mergeAdvertisedPeerListenAddrs, mergeDialablePeerListenAddrs, mergeListenAddrsForOutboundDial, shouldPreferCircuitDialHints } from "./outbound-dial-hints.js";
 import {
   dialableInboundRemoteAddrs,
   mergeInboundPeerDialHintsIfDue,
@@ -1668,7 +1668,7 @@ class NodeServiceImpl implements NodeService {
       }
       const mesh = this._reachableMesh();
       if (mesh && multiaddrs.length > 0) {
-        const dialable = mergeDialablePeerListenAddrs(peerId, multiaddrs);
+        const dialable = mergeAdvertisedPeerListenAddrs(peerId, multiaddrs);
         void mesh.mergePeerStoreDialHints(peerId, dialable);
       }
       const profile = this._profile;
@@ -3069,14 +3069,18 @@ class NodeServiceImpl implements NodeService {
   private async _dialHintsForChat(recipientPeerId: string, peerListenAddrs: string[] | undefined): Promise<string[]> {
     const config = await this._configStore.load();
     const mesh = this._reachableMesh();
-    const peerStoreAddrs =
-      mesh && typeof mesh.getPeerStoreDialHints === "function"
-        ? await mesh.getPeerStoreDialHints(recipientPeerId)
-        : [];
-    const mergedListen = mergeDialablePeerListenAddrs(
+    let fromDiscovery: string[] = [];
+    if (mesh && typeof mesh.getAdvertisedPeerListenAddrs === "function") {
+      try {
+        fromDiscovery = await mesh.getAdvertisedPeerListenAddrs(recipientPeerId);
+      } catch {
+        /* best-effort */
+      }
+    }
+    const mergedListen = mergeListenAddrsForOutboundDial(
       recipientPeerId,
-      peerListenAddrs,
-      peerStoreAddrs,
+      [peerListenAddrs],
+      [fromDiscovery],
     );
     return buildOutboundDialHints({
       recipientPeerId,
@@ -3151,8 +3155,15 @@ class NodeServiceImpl implements NodeService {
         let listenAddrs = libp2p.listenAddrs;
         if (mesh) {
           try {
-            const storeAddrs = await mesh.getPeerStoreDialHints(libp2p.peerId);
-            const merged = mergeDialablePeerListenAddrs(libp2p.peerId, listenAddrs, storeAddrs);
+            const storeAddrs =
+              typeof mesh.getAdvertisedPeerListenAddrs === "function"
+                ? await mesh.getAdvertisedPeerListenAddrs(libp2p.peerId)
+                : await mesh.getPeerStoreDialHints(libp2p.peerId);
+            const merged = mergeListenAddrsForOutboundDial(
+              libp2p.peerId,
+              [listenAddrs],
+              [storeAddrs],
+            );
             if (merged.length > 0) {
               listenAddrs = merged;
             }
@@ -11837,11 +11848,19 @@ class NodeServiceImpl implements NodeService {
     } catch {
       /* best-effort */
     }
-    const merged = mergeDialablePeerListenAddrs(
+    let fromDiscovery: string[] = [];
+    const mesh = this._reachableMesh();
+    if (mesh && typeof mesh.getAdvertisedPeerListenAddrs === "function") {
+      try {
+        fromDiscovery = await mesh.getAdvertisedPeerListenAddrs(transportPeerId);
+      } catch {
+        /* best-effort */
+      }
+    }
+    const merged = mergeListenAddrsForOutboundDial(
       transportPeerId,
-      listenAddrs,
-      cached,
-      fromDir,
+      [listenAddrs, cached, fromDir],
+      [fromDiscovery],
     );
     return merged.length ? merged : listenAddrs;
   }
@@ -11895,12 +11914,16 @@ class NodeServiceImpl implements NodeService {
       return mesh.getPeerConnectionInfo(transportPeerId);
     }
 
-    const dialableListen = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, dialHints);
+    const dialableListen = mergeListenAddrsForOutboundDial(
+      transportPeerId,
+      [listenAddrs],
+      [dialHints.filter((h) => !h.includes("/p2p-circuit/"))],
+    );
     await mesh.scrubPeerStoreDialHints(transportPeerId, dialableListen);
 
     const preferCircuitHints = shouldPreferCircuitDialHints(listenAddrs, dialHints, transportPeerId);
 
-    void mesh.mergePeerStoreDialHints(transportPeerId, dialHints);
+    void mesh.mergePeerStoreDialHints(transportPeerId, dialableListen);
 
     const tearingDown =
       options?.redial === true ||

@@ -344,7 +344,7 @@ describe("peer directory store", () => {
     expect(repaired?.deviceId).toBe("envoy:device:bad");
   });
 
-  it("mergeListenAddrsForPeerId strips WAN ephemeral TCP snapshots even with no new addrs", async () => {
+  it("mergeListenAddrsForPeerId strips legacy ephemeral TCP snapshots even with no new addrs", async () => {
     const store = createLocalPeerDirectoryStore(profileDir);
     const peerId = "12D3KooWEphemeralScrubPeer";
     await writeFile(
@@ -359,7 +359,7 @@ describe("peer directory store", () => {
             deviceId: "legacy",
             lastSeenAt: new Date().toISOString(),
             listenAddrs: [
-              `/ip4/106.37.112.84/tcp/64595/p2p/${peerId}`,
+              `/ip4/192.168.3.78/tcp/64595/p2p/${peerId}`,
               `/ip4/192.168.3.78/tcp/4011/p2p/${peerId}`,
             ],
           },
@@ -373,32 +373,7 @@ describe("peer directory store", () => {
     expect(row?.listenAddrs.some((a) => a.includes("4011"))).toBe(true);
   });
 
-  it("mergeListenAddrsForPeerId keeps LAN ephemeral listen ports for tcp/0 dev nodes", async () => {
-    const store = createLocalPeerDirectoryStore(profileDir);
-    const peerId = "12D3KooWLanEphemeralPeer";
-    await writeFile(
-      join(profileDir, "peer-directory.json"),
-      JSON.stringify({
-        version: "0.1",
-        records: [
-          {
-            version: "0.1",
-            ownerId: "envoy:owner:lan-ephemeral",
-            peerId,
-            deviceId: "legacy",
-            lastSeenAt: new Date().toISOString(),
-            listenAddrs: [],
-          },
-        ],
-      }),
-      { mode: 0o600 },
-    );
-    await store.mergeListenAddrsForPeerId(peerId, [`/ip4/192.168.3.78/tcp/55353/p2p/${peerId}`]);
-    const row = await store.getPeerByPeerId(peerId);
-    expect(row?.listenAddrs.some((a) => a.includes("55353"))).toBe(true);
-  });
-
-  it("sanitizeListenAddrs strips WAN ephemeral snapshots from all rows", async () => {
+  it("sanitizeListenAddrs strips ephemeral snapshots from all rows", async () => {
     const store = createLocalPeerDirectoryStore(profileDir);
     const peerId = "12D3KooWSanitizeListenAddrsPeer";
     await writeFile(
@@ -412,7 +387,7 @@ describe("peer directory store", () => {
             peerId,
             deviceId: "legacy",
             lastSeenAt: new Date().toISOString(),
-            listenAddrs: [`/ip4/106.37.112.84/tcp/64595/p2p/${peerId}`],
+            listenAddrs: [`/ip4/192.168.3.78/tcp/64595/p2p/${peerId}`],
           },
         ],
       }),

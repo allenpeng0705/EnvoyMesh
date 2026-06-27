@@ -2020,10 +2020,6 @@ function isLikelyEphemeralTcpSnapshot(addr: string): boolean {
   if (!addr.includes("/tcp/")) {
     return false;
   }
-  // LAN nodes often listen on ephemeral ports (--listen tcp/0); keep those for same-subnet dials.
-  if (/\/ip4\/10\.\d+\.\d+\.\d+\//.test(addr)) return false;
-  if (/\/ip4\/172\.(1[6-9]|2\d|3[01])\.\d+\.\d+\//.test(addr)) return false;
-  if (/\/ip4\/192\.168\.\d+\.\d+\//.test(addr)) return false;
   const match = addr.match(/\/tcp\/(\d+)\//);
   if (!match) {
     return false;

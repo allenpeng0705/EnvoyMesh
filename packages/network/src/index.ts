@@ -499,18 +499,39 @@ export class EnvoyMesh {
     }
   }
 
+  /** Read mDNS/identify listen addrs from libp2p peerstore (includes LAN ephemeral ports). */
+  async getAdvertisedPeerListenAddrs(peerIdStr: string): Promise<string[]> {
+    const idStr = peerIdStr.trim();
+    if (!idStr || idStr.startsWith("envoy_") || !this.node) {
+      return [];
+    }
+    try {
+      const peerData = await this.requireNode().peerStore.get(peerIdFromString(idStr));
+      const out: string[] = [];
+      for (const entry of peerData.addresses ?? []) {
+        const raw = entry.multiaddr?.toString?.()?.trim();
+        if (raw && !raw.includes("/p2p-circuit/")) {
+          out.push(raw);
+        }
+      }
+      return filterAdvertisedListenDialHints(out, idStr);
+    } catch {
+      return [];
+    }
+  }
+
   /** Drop libp2p auto-learned ephemeral observed addrs; keep only filtered direct dial paths. */
   async scrubPeerStoreDialHints(peerIdStr: string, extraAddrs: readonly string[] = []): Promise<string[]> {
     const idStr = peerIdStr.trim();
     if (!idStr || idStr.startsWith("envoy_") || !this.node) {
       return [];
     }
-    const fromExtra = filterUsableOutboundPeerDialHints(
+    const fromExtra = filterAdvertisedListenDialHints(
       extraAddrs.filter((a) => !a.includes("/p2p-circuit/")),
       idStr,
     );
     const replacement =
-      fromExtra.length > 0 ? fromExtra : await this.getPeerStoreDialHints(idStr);
+      fromExtra.length > 0 ? fromExtra : await this.getAdvertisedPeerListenAddrs(idStr);
     try {
       await this.requireNode().peerStore.patch(peerIdFromString(idStr), {
         multiaddrs: replacement.map((a) => ma(a)),
@@ -529,8 +550,8 @@ export class EnvoyMesh {
     if (!idStr || idStr.startsWith("envoy_") || !this.node) {
       return;
     }
-    const existingGood = await this.getPeerStoreDialHints(idStr);
-    const merged = filterUsableOutboundPeerDialHints(
+    const existingGood = await this.getAdvertisedPeerListenAddrs(idStr);
+    const merged = filterAdvertisedListenDialHints(
       [...existingGood, ...addrs.filter((a) => !a.includes("/p2p-circuit/"))],
       idStr,
     );
@@ -1428,11 +1449,7 @@ export class EnvoyMesh {
       return opened;
     } catch (directErr) {
       const hasCircuits = rawHints.some((h) => h.includes("/p2p-circuit/"));
-      const strippedCircuits =
-        sendOptions?.preferCircuitHints !== true &&
-        hasDirectTcpDialHints(directHints) &&
-        hasCircuits;
-      if (!strippedCircuits) {
+      if (!hasCircuits) {
         throw directErr;
       }
       const circuitHints = filterDialHintsForOutboundSend(rawHints, peerIdStr ?? "", {
@@ -2359,7 +2376,7 @@ export function hasDirectPrivateLanDialHints(hints: readonly string[]): boolean 
   return hints.some((h) => isPrivateLanTcpDialHint(h));
 }
 
-/** True for direct (non-circuit) TCP hints that are not loopback. */
+/** True for direct (non-circuit) TCP hints that are dialable listen paths (incl. LAN tcp/0). */
 export function hasDirectTcpDialHints(hints: readonly string[]): boolean {
   return hints.some(
     (h) =>
@@ -2367,7 +2384,7 @@ export function hasDirectTcpDialHints(hints: readonly string[]): boolean {
       !h.includes("/p2p-circuit/") &&
       !isLoopbackOrUnspecifiedDialHint(h) &&
       !isDockerBridgeGatewayDialHint(h) &&
-      !isLikelyInboundConnSnapshotDialHint(h),
+      isDialableAdvertisedListenHint(h),
   );
 }
 
@@ -2386,15 +2403,10 @@ export function isPrivateOrUnroutableDialHint(addr: string): boolean {
 }
 
 /**
- * Inbound chat stores `connection.remoteAddr`, which is the remote side's ephemeral
- * source port on outbound-initiated TCP connections — not a dialable listen address.
+ * Ephemeral TCP port (typical inbound connection source port or `--listen tcp/0` listen port).
  */
-export function isLikelyInboundConnSnapshotDialHint(addr: string): boolean {
+export function isEphemeralTcpPort(addr: string): boolean {
   if (!addr.includes("/tcp/")) {
-    return false;
-  }
-  // Same-LAN peers using --listen tcp/0 advertise ephemeral listen ports; keep them dialable.
-  if (isPrivateLanTcpDialHint(addr)) {
     return false;
   }
   const match = addr.match(/\/tcp\/(\d+)\//);
@@ -2406,6 +2418,25 @@ export function isLikelyInboundConnSnapshotDialHint(addr: string): boolean {
     return false;
   }
   return port >= 32768;
+}
+
+/**
+ * Inbound chat stores `connection.remoteAddr`, which is the remote side's ephemeral
+ * source port on outbound-initiated TCP connections — not a dialable listen address.
+ */
+export function isLikelyInboundConnSnapshotDialHint(addr: string): boolean {
+  return isEphemeralTcpPort(addr);
+}
+
+/**
+ * mDNS / identify / peer-directory listen addrs: allow RFC1918 ephemeral ports
+ * (`--listen tcp/0`) but still drop WAN ephemeral snapshots.
+ */
+export function isDialableAdvertisedListenHint(addr: string): boolean {
+  if (!isEphemeralTcpPort(addr)) {
+    return true;
+  }
+  return isPrivateLanTcpDialHint(addr);
 }
 
 /** True when a multiaddr must not be used as bootstrap / relay.checkin target. */
@@ -2513,6 +2544,37 @@ export function isUsableOutboundPeerDialHint(addr: string, targetPeerId?: string
   return true;
 }
 
+/** Like {@link isUsableOutboundPeerDialHint} but keeps LAN ephemeral advertised listen ports. */
+export function isUsableAdvertisedListenDialHint(addr: string, targetPeerId?: string): boolean {
+  const a = addr.trim();
+  if (!a.startsWith("/")) {
+    return false;
+  }
+  if (isLoopbackOrUnspecifiedDialHint(a) || isDockerBridgeGatewayDialHint(a)) {
+    return false;
+  }
+  if (isPublicLibp2pBootstrapMultiaddr(a) || a.includes("bootstrap.libp2p.io")) {
+    return false;
+  }
+  if (
+    isBrowserOnlyTransportDialHint(a) ||
+    isIncompleteCircuitDialHint(a) ||
+    isUnusableDesktopCircuitDialHint(a)
+  ) {
+    return false;
+  }
+  if (!isDialableAdvertisedListenHint(a)) {
+    return false;
+  }
+  if (targetPeerId?.trim()) {
+    const last = lastPeerIdFromMultiaddr(a);
+    if (last && last !== targetPeerId.trim()) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export function filterUsableOutboundPeerDialHints(addrs: string[], targetPeerId: string): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
@@ -2530,6 +2592,23 @@ export function filterUsableOutboundPeerDialHints(addrs: string[], targetPeerId:
   return out;
 }
 
+export function filterAdvertisedListenDialHints(addrs: string[], targetPeerId: string): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of addrs) {
+    const a = raw.trim();
+    if (!a || seen.has(a)) {
+      continue;
+    }
+    if (!isUsableAdvertisedListenDialHint(a, targetPeerId)) {
+      continue;
+    }
+    seen.add(a);
+    out.push(a);
+  }
+  return out;
+}
+
 /**
  * When direct TCP/LAN hints exist and circuits are not explicitly preferred, drop `/p2p-circuit/`
  * paths so libp2p cannot fall through to stale relay reservations (NO_RESERVATION).
@@ -2539,7 +2618,7 @@ export function filterDialHintsForOutboundSend(
   targetPeerId: string,
   opts?: { preferCircuitHints?: boolean },
 ): string[] {
-  const filtered = filterUsableOutboundPeerDialHints([...hints], targetPeerId);
+  const filtered = filterAdvertisedListenDialHints([...hints], targetPeerId);
   if (opts?.preferCircuitHints === true) {
     return filtered;
   }

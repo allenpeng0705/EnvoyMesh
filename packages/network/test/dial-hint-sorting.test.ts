@@ -1,15 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
   filterUsableOutboundPeerDialHints,
+  filterAdvertisedListenDialHints,
   filterDialHintsForOutboundSend,
   hasDirectPrivateLanDialHints,
   hasDirectTcpDialHints,
   isBrowserOnlyTransportDialHint,
+  isDialableAdvertisedListenHint,
   isLoopbackOrUnspecifiedDialHint,
   isLikelyInboundConnSnapshotDialHint,
   isPrivateLanTcpDialHint,
   isQuicDialHint,
   isUnusableDesktopCircuitDialHint,
+  isUsableAdvertisedListenDialHint,
   isUsableOutboundPeerDialHint,
   preferNonLoopbackDialHints,
 } from "../src/index.js";
@@ -188,12 +191,13 @@ describe("dial hint sorting", () => {
       const lanEphemeral = `/ip4/192.168.3.78/tcp/55353/p2p/${target}`;
       const wanEphemeral = `/ip4/106.37.112.84/tcp/64595/p2p/${target}`;
       const stable = `/ip4/192.168.3.78/tcp/4001/p2p/${target}`;
-      expect(isLikelyInboundConnSnapshotDialHint(lanEphemeral)).toBe(false);
-      expect(isUsableOutboundPeerDialHint(lanEphemeral, target)).toBe(true);
+      expect(isLikelyInboundConnSnapshotDialHint(lanEphemeral)).toBe(true);
+      expect(isDialableAdvertisedListenHint(lanEphemeral)).toBe(true);
+      expect(isUsableOutboundPeerDialHint(lanEphemeral, target)).toBe(false);
+      expect(isUsableAdvertisedListenDialHint(lanEphemeral, target)).toBe(true);
       expect(isLikelyInboundConnSnapshotDialHint(wanEphemeral)).toBe(true);
-      expect(isUsableOutboundPeerDialHint(wanEphemeral, target)).toBe(false);
-      expect(isUsableOutboundPeerDialHint(stable, target)).toBe(true);
-      expect(filterUsableOutboundPeerDialHints([lanEphemeral, wanEphemeral, stable], target)).toEqual([
+      expect(isDialableAdvertisedListenHint(wanEphemeral)).toBe(false);
+      expect(filterAdvertisedListenDialHints([lanEphemeral, wanEphemeral, stable], target)).toEqual([
         lanEphemeral,
         stable,
       ]);

@@ -176,9 +176,9 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
       if (!libp2pConnectedRef.current) {
         const dueForRedial = now - lastRedialAtRef.current >= minRedialMs;
         void runRefreshRef.current(generation, {
-          silent: false,
-          warm: true,
-          redial: dueForRedial,
+          silent: true,
+          verifyOnly: !dueForRedial,
+          warm: dueForRedial,
         });
         return;
       }
