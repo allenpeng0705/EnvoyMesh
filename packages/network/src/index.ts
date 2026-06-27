@@ -93,7 +93,7 @@ export function getEnvoyContactKeepAlivePeerTagName(): string {
  */
 const NEW_STREAM_ON_OPEN_CONNECTION_TIMEOUT_MS = 15_000;
 /** Per-hint dial cap when iterating multiaddrs (fail fast; libp2p default dialTimeout is 15s). */
-const HINT_DIAL_TIMEOUT_MS = 3_500;
+const HINT_DIAL_TIMEOUT_MS = 10_000;
 
 function promiseWithTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
