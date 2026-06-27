@@ -3,27 +3,23 @@ import type { PeerConnectionInfo } from "@envoymesh/api";
 export type ReachabilityLabel = "offline" | "direct" | "relay";
 
 /** Background read interval while a chat thread is open. */
-export const REACHABILITY_OPEN_CHAT_POLL_MS = 30_000;
-/** Faster poll while UI still shows offline (background reconnect). */
-export const REACHABILITY_OPEN_CHAT_OFFLINE_POLL_MS = 12_000;
+export const REACHABILITY_OPEN_CHAT_POLL_MS = 10_000;
 /** Background read interval when chat is not focused (unused by open-chat hook today). */
 export const REACHABILITY_POLL_MS = 60_000;
 /** Keep showing Online through brief libp2p idle drops (quiet chats, tab switches). */
 export const REACHABILITY_OFFLINE_GRACE_MS = 5 * 60_000;
 /** Minimum gap between redial attempts when libp2p reports disconnected (background). */
 export const REACHABILITY_MIN_REDIAL_MS = 90_000;
-/** Faster redial while UI shows offline (background reconnect in open chat). */
-export const REACHABILITY_OPEN_CHAT_MIN_REDIAL_MS = 15_000;
+/** Faster redial while an active chat panel is open. */
+export const REACHABILITY_OPEN_CHAT_MIN_REDIAL_MS = 20_000;
 /** Consecutive disconnected polls before flipping Online → Offline. */
 export const REACHABILITY_STABLE_OFFLINE_POLLS = 4;
-/** Stricter offline threshold while chat is open (avoid Online ↔ Offline flicker). */
-export const REACHABILITY_OPEN_CHAT_STABLE_OFFLINE_POLLS = 6;
 /** Consecutive connected polls before flipping Offline → Online. */
 export const REACHABILITY_STABLE_ONLINE_POLLS = 1;
 /** Consecutive polls before switching Direct ↔ Relay label (background). */
 export const REACHABILITY_STABLE_PATH_POLLS = 5;
-/** Direct ↔ Relay label stability while a chat thread is open. */
-export const REACHABILITY_OPEN_CHAT_STABLE_PATH_POLLS = 3;
+/** Faster Direct ↔ Relay label updates while a chat thread is open. */
+export const REACHABILITY_OPEN_CHAT_STABLE_PATH_POLLS = 1;
 
 export function reachabilityLabel(info: Pick<PeerConnectionInfo, "connected" | "direct">): ReachabilityLabel {
   if (!info.connected) return "offline";
@@ -56,23 +52,18 @@ export function applyReachabilityHysteresis(
     holdOnline?: boolean;
     /** Show this reading immediately (cache seed on chat open). */
     immediate?: boolean;
-    /** Warm/dial finished — commit Offline/Online after Connecting. */
-    settled?: boolean;
     stablePathPolls?: number;
     stableOnlinePolls?: number;
-    stableOfflinePolls?: number;
   },
 ): { state: ReachabilityHysteresisState; info: PeerConnectionInfo | null; shouldUpdate: boolean } {
   const offlineGraceMs = options?.offlineGraceMs ?? REACHABILITY_OFFLINE_GRACE_MS;
   const holdOnline = options?.holdOnline === true;
   const stablePathPolls = options?.stablePathPolls ?? REACHABILITY_STABLE_PATH_POLLS;
   const stableOnlinePolls = options?.stableOnlinePolls ?? REACHABILITY_STABLE_ONLINE_POLLS;
-  const stableOfflinePolls = options?.stableOfflinePolls ?? REACHABILITY_STABLE_OFFLINE_POLLS;
   const label = reachabilityLabel(next);
   let { displayedLabel, lastConnectedAt, streakLabel, streakCount } = state;
 
-  // Seed online from cache immediately; commit after warm when settled; defer other offline blips.
-  if (options?.immediate || options?.settled || (displayedLabel === null && next.connected)) {
+  if (options?.immediate) {
     displayedLabel = label;
     if (next.connected) {
       lastConnectedAt = now;
@@ -127,7 +118,7 @@ export function applyReachabilityHysteresis(
     streakCount = 1;
   }
 
-  if (streakCount < stableOfflinePolls) {
+  if (streakCount < REACHABILITY_STABLE_OFFLINE_POLLS) {
     return {
       state: { displayedLabel, lastConnectedAt, streakLabel, streakCount },
       info: null,

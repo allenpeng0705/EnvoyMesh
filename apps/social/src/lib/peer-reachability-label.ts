@@ -1,11 +1,7 @@
 import type { PeerConnectionInfo } from "@envoymesh/api";
 
-/** English fallback labels (prefer {@link formatPeerReachabilityLabel} with i18n in UI). */
-export function peerReachabilityLabel(
-  info: PeerConnectionInfo | null,
-  connecting = false,
-): string {
-  if (connecting || info === null) return "Connecting…";
+export function peerReachabilityLabel(info: PeerConnectionInfo | null, checking = false): string {
+  if (checking || !info) return "Checking…";
   if (!info.connected) return "Offline";
   if (info.direct) return "Online · Direct";
   return "Online · Relay";
@@ -13,10 +9,10 @@ export function peerReachabilityLabel(
 
 export function formatPeerReachabilityLabel(
   info: PeerConnectionInfo | null,
-  connecting: boolean,
+  checking: boolean,
   t: (key: string, fallback?: string) => string,
 ): string {
-  if (connecting || info === null) {
+  if (checking || !info) {
     return t("contactChat.connecting", "Connecting…");
   }
   if (!info.connected) {

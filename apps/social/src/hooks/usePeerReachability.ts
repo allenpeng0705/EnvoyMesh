@@ -1,15 +1,3 @@
-/**
- * Live libp2p reachability for a bonded contact (direct P2P or relay circuit).
- *
- * Connecting flow (chat open):
- * 1. Read libp2p cache — if connected, show Online immediately.
- * 2. Otherwise show Connecting… and warm with fastDial (parallel hints, 8s hint cap).
- * 3. Commit Online/Offline when warm settles (settled flag).
- *
- * While Online: silent verifyOnly every 30s; hold Online through brief blips (grace + holdOnline).
- * While Offline: silent warm every 12s until connected.
- */
-
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { PeerConnectionInfo } from "@envoymesh/api";
 import { useNodeService } from "./useNodeService.js";
@@ -19,45 +7,16 @@ import {
   REACHABILITY_MIN_REDIAL_MS,
   REACHABILITY_OFFLINE_GRACE_MS,
   REACHABILITY_OPEN_CHAT_MIN_REDIAL_MS,
-  REACHABILITY_OPEN_CHAT_OFFLINE_POLL_MS,
   REACHABILITY_OPEN_CHAT_POLL_MS,
-  REACHABILITY_OPEN_CHAT_STABLE_OFFLINE_POLLS,
   REACHABILITY_OPEN_CHAT_STABLE_PATH_POLLS,
   REACHABILITY_POLL_MS,
 } from "../lib/peer-reachability-hysteresis.js";
 
 const OPEN_CHAT_HYSTERESIS_OPTS = {
   stablePathPolls: REACHABILITY_OPEN_CHAT_STABLE_PATH_POLLS,
-  stableOfflinePolls: REACHABILITY_OPEN_CHAT_STABLE_OFFLINE_POLLS,
 } as const;
 
-function isUiOnline(state: ReturnType<typeof createReachabilityHysteresisState>): boolean {
-  return state.displayedLabel !== null && state.displayedLabel !== "offline";
-}
-
-type ReadingFlags = {
-  immediate?: boolean;
-  settled?: boolean;
-  holdOnline?: boolean;
-};
-
-function flagsForReading(
-  next: PeerConnectionInfo,
-  opts: { silent?: boolean; immediate?: boolean; settled?: boolean },
-  holdOnlineWhileOnline: boolean,
-): ReadingFlags {
-  if (opts.immediate !== undefined || opts.settled !== undefined) {
-    return { immediate: opts.immediate, settled: opts.settled, holdOnline: holdOnlineWhileOnline };
-  }
-  if (opts.silent) {
-    if (next.connected) {
-      return { immediate: true };
-    }
-    return holdOnlineWhileOnline ? { holdOnline: true } : {};
-  }
-  return next.connected ? { immediate: true } : { settled: true };
-}
-
+/** Live libp2p reachability for a bonded contact (direct P2P or relay circuit). */
 export function usePeerReachability(peerOwnerId: string | null, enabled = true) {
   const nodeService = useNodeService();
   const nodeServiceRef = useRef(nodeService);
@@ -72,15 +31,12 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
   const refreshInFlightRef = useRef(false);
   const pendingRefreshRef = useRef(false);
   const peerGenerationRef = useRef(0);
-  const lastPeerOwnerIdRef = useRef<string | null>(null);
-  const nodeReadyRef = useRef(false);
 
-  const pollOnlineMs = enabled ? REACHABILITY_OPEN_CHAT_POLL_MS : REACHABILITY_POLL_MS;
-  const pollOfflineMs = enabled ? REACHABILITY_OPEN_CHAT_OFFLINE_POLL_MS : REACHABILITY_POLL_MS;
+  const pollMs = enabled ? REACHABILITY_OPEN_CHAT_POLL_MS : REACHABILITY_POLL_MS;
   const minRedialMs = enabled ? REACHABILITY_OPEN_CHAT_MIN_REDIAL_MS : REACHABILITY_MIN_REDIAL_MS;
 
   const applyReading = useCallback(
-    (next: PeerConnectionInfo, generation: number, opts?: ReadingFlags) => {
+    (next: PeerConnectionInfo, generation: number, opts?: { immediate?: boolean }) => {
       if (generation !== peerGenerationRef.current) {
         return;
       }
@@ -90,59 +46,14 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
       const result = applyReachabilityHysteresis(hysteresisRef.current, next, now, {
         offlineGraceMs: REACHABILITY_OFFLINE_GRACE_MS,
         immediate: opts?.immediate,
-        settled: opts?.settled,
-        holdOnline: opts?.holdOnline,
-        ...(enabled ? OPEN_CHAT_HYSTERESIS_OPTS : undefined),
+        ...OPEN_CHAT_HYSTERESIS_OPTS,
       });
       hysteresisRef.current = result.state;
       if (result.shouldUpdate && result.info) {
         setInfo(result.info);
       }
     },
-    [enabled],
-  );
-
-  const runOpenChatConnect = useCallback(
-    async (generation: number) => {
-      const ns = nodeServiceRef.current;
-      if (!peerOwnerId) {
-        return;
-      }
-      try {
-        setChecking(true);
-        const cached = await ns.getPeerConnectionInfo(peerOwnerId);
-        if (generation !== peerGenerationRef.current) {
-          return;
-        }
-
-        if (cached.connected) {
-          applyReading(cached, generation, { immediate: true });
-          return;
-        }
-
-        lastRedialAtRef.current = Date.now();
-        const warmed = await ns.warmContactConnection(peerOwnerId, {
-          source: "open_chat",
-          fastDial: true,
-        });
-        if (generation !== peerGenerationRef.current) {
-          return;
-        }
-        applyReading(warmed, generation, { settled: true });
-      } catch {
-        if (generation !== peerGenerationRef.current) {
-          return;
-        }
-        libp2pConnectedRef.current = false;
-        libp2pDirectRef.current = false;
-        applyReading({ connected: false, direct: false }, generation, { settled: true });
-      } finally {
-        if (generation === peerGenerationRef.current) {
-          setChecking(false);
-        }
-      }
-    },
-    [applyReading, peerOwnerId],
+    [],
   );
 
   const runRefresh = useCallback(
@@ -157,7 +68,6 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
         upgradeRelayToDirect?: boolean;
         silent?: boolean;
         immediate?: boolean;
-        settled?: boolean;
       },
     ) => {
       const ns = nodeServiceRef.current;
@@ -172,9 +82,8 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
         return;
       }
       refreshInFlightRef.current = true;
-      const showConnecting = !opts?.silent;
-      if (showConnecting) setChecking(true);
-      const holdOnlineWhileOnline = opts?.silent === true && isUiOnline(hysteresisRef.current);
+      const showChecking = !opts?.silent;
+      if (showChecking) setChecking(true);
       try {
         let next: PeerConnectionInfo;
         if (opts?.redial) {
@@ -182,7 +91,6 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
           next = await ns.warmContactConnection(peerOwnerId, {
             redial: true,
             upgradeRelayToDirect: true,
-            force: true,
           });
         } else if (opts?.upgradeRelayToDirect) {
           lastRedialAtRef.current = Date.now();
@@ -195,36 +103,26 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
           next = await ns.getPeerConnectionInfo(peerOwnerId);
         } else if (opts?.warm) {
           lastRedialAtRef.current = Date.now();
-          next = await ns.warmContactConnection(peerOwnerId, {
-            source: "open_chat",
-            fastDial: true,
-            ...(opts.silent ? undefined : { force: true }),
-          });
+          next = await ns.warmContactConnection(peerOwnerId);
         } else {
           next = await ns.getPeerConnectionInfo(peerOwnerId);
         }
-        applyReading(
-          next,
-          generation,
-          flagsForReading(next, opts ?? {}, holdOnlineWhileOnline),
-        );
+        applyReading(next, generation, opts?.immediate ? { immediate: true } : undefined);
       } catch {
         libp2pConnectedRef.current = false;
         libp2pDirectRef.current = false;
-        applyReading(
-          { connected: false, direct: false },
-          generation,
-          holdOnlineWhileOnline ? { holdOnline: true } : { settled: opts?.silent !== true },
-        );
+        applyReading({ connected: false, direct: false }, generation);
       } finally {
         refreshInFlightRef.current = false;
-        if (showConnecting) setChecking(false);
+        if (showChecking) setChecking(false);
         if (pendingRefreshRef.current) {
           pendingRefreshRef.current = false;
           void runRefreshRef.current(generation, {
             silent: true,
-            ...(libp2pConnectedRef.current || isUiOnline(hysteresisRef.current)
-              ? { verifyOnly: true }
+            ...(libp2pConnectedRef.current
+              ? libp2pDirectRef.current
+                ? { keepAlive: true }
+                : { upgradeRelayToDirect: true }
               : { warm: true }),
           });
         }
@@ -236,75 +134,61 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
   const runRefreshRef = useRef(runRefresh);
   runRefreshRef.current = runRefresh;
 
-  const runOpenChatConnectRef = useRef(runOpenChatConnect);
-  runOpenChatConnectRef.current = runOpenChatConnect;
-
   useEffect(() => {
-    const nodeReady = nodeService.isConnected && nodeService.isReady;
-    if (!enabled || !peerOwnerId || !nodeReady) {
-      nodeReadyRef.current = false;
+    if (!enabled || !peerOwnerId || !nodeService.isConnected || !nodeService.isReady) {
       setChecking(false);
       return;
     }
 
-    const peerChanged = lastPeerOwnerIdRef.current !== peerOwnerId;
-    const nodeJustReady = !nodeReadyRef.current;
-    nodeReadyRef.current = true;
-    lastPeerOwnerIdRef.current = peerOwnerId;
-
-    if (peerChanged || nodeJustReady) {
-      peerGenerationRef.current += 1;
-      hysteresisRef.current = createReachabilityHysteresisState();
-      libp2pConnectedRef.current = false;
-      libp2pDirectRef.current = false;
-      if (peerChanged) {
-        lastRedialAtRef.current = 0;
-      }
-      setInfo(null);
-      setChecking(true);
-      void runOpenChatConnectRef.current(peerGenerationRef.current);
-    }
-
+    peerGenerationRef.current += 1;
     const generation = peerGenerationRef.current;
+    hysteresisRef.current = createReachabilityHysteresisState();
+    lastRedialAtRef.current = 0;
+    libp2pConnectedRef.current = false;
+    libp2pDirectRef.current = false;
 
-    let pollTimer: ReturnType<typeof setTimeout> | undefined;
-    const schedulePoll = () => {
-      const delay = isUiOnline(hysteresisRef.current) ? pollOnlineMs : pollOfflineMs;
-      pollTimer = setTimeout(() => {
-        const now = Date.now();
-        const showingOnline = isUiOnline(hysteresisRef.current);
-        if (libp2pConnectedRef.current || showingOnline) {
-          if (!libp2pConnectedRef.current && showingOnline) {
-            const dueForRedial = now - lastRedialAtRef.current >= minRedialMs;
-            if (dueForRedial) {
-              void runRefreshRef.current(generation, { silent: true, warm: true });
-            } else {
-              void runRefreshRef.current(generation, { silent: true, verifyOnly: true });
-            }
-          } else {
-            void runRefreshRef.current(generation, { silent: true, verifyOnly: true });
-          }
-        } else {
-          void runRefreshRef.current(generation, { silent: true, warm: true });
-        }
-        schedulePoll();
-      }, delay);
-    };
-    schedulePoll();
-
-    return () => {
-      if (pollTimer !== undefined) {
-        clearTimeout(pollTimer);
+    void (async () => {
+      await runRefreshRef.current(generation, { verifyOnly: true, silent: true, immediate: true });
+      if (generation !== peerGenerationRef.current) {
+        return;
       }
-    };
+      if (libp2pConnectedRef.current) {
+        if (libp2pDirectRef.current) {
+          void runRefreshRef.current(generation, { silent: true, keepAlive: true });
+        } else {
+          void runRefreshRef.current(generation, { silent: true, upgradeRelayToDirect: true });
+        }
+        return;
+      }
+      void runRefreshRef.current(generation, { warm: true, silent: false });
+    })();
+
+    const id = setInterval(() => {
+      const now = Date.now();
+      if (libp2pConnectedRef.current) {
+        if (libp2pDirectRef.current) {
+          void runRefreshRef.current(generation, { silent: true, keepAlive: true });
+        } else {
+          void runRefreshRef.current(generation, { silent: true, upgradeRelayToDirect: true });
+        }
+        return;
+      }
+      const dueForRedial = now - lastRedialAtRef.current >= minRedialMs;
+      void runRefreshRef.current(generation, {
+        silent: true,
+        verifyOnly: !dueForRedial,
+        warm: dueForRedial,
+      });
+    }, pollMs);
+
+    return () => clearInterval(id);
   }, [
     enabled,
     minRedialMs,
     peerOwnerId,
     nodeService.isConnected,
     nodeService.isReady,
-    pollOnlineMs,
-    pollOfflineMs,
+    pollMs,
   ]);
 
   const refresh = useCallback(
@@ -315,11 +199,7 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
       keepAlive?: boolean;
       upgradeRelayToDirect?: boolean;
       silent?: boolean;
-    }) =>
-      runRefreshRef.current(peerGenerationRef.current, {
-        ...opts,
-        silent: opts?.silent ?? false,
-      }),
+    }) => runRefreshRef.current(peerGenerationRef.current, opts),
     [],
   );
 

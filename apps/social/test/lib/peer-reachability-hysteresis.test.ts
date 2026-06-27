@@ -3,7 +3,6 @@ import {
   applyReachabilityHysteresis,
   createReachabilityHysteresisState,
   REACHABILITY_OFFLINE_GRACE_MS,
-  REACHABILITY_OPEN_CHAT_STABLE_OFFLINE_POLLS,
   REACHABILITY_OPEN_CHAT_STABLE_PATH_POLLS,
   REACHABILITY_STABLE_OFFLINE_POLLS,
   REACHABILITY_STABLE_PATH_POLLS,
@@ -88,29 +87,16 @@ describe("peer-reachability-hysteresis", () => {
     expect(r.state.displayedLabel).toBe("relay");
   });
 
-  it("settled commits Offline after Connecting when warm finishes disconnected", () => {
-    let state = createReachabilityHysteresisState();
-    const r = applyReachabilityHysteresis(
-      state,
-      { connected: false, direct: false },
-      3_600_000,
-      { settled: true },
-    );
-    expect(r.shouldUpdate).toBe(true);
-    expect(r.info?.connected).toBe(false);
-    expect(r.state.displayedLabel).toBe("offline");
-  });
-
   it("holdOnline suppresses silent offline blips while UI shows Online", () => {
     let state = createReachabilityHysteresisState();
     let r = applyReachabilityHysteresis(state, { connected: true, direct: true }, 4_000_000);
     state = r.state;
-    for (let i = 0; i < REACHABILITY_OPEN_CHAT_STABLE_OFFLINE_POLLS; i++) {
+    for (let i = 0; i < REACHABILITY_STABLE_OFFLINE_POLLS; i++) {
       r = applyReachabilityHysteresis(
         state,
         { connected: false, direct: false },
         4_000_100 + i,
-        { holdOnline: true, stableOfflinePolls: REACHABILITY_OPEN_CHAT_STABLE_OFFLINE_POLLS },
+        { holdOnline: true },
       );
       state = r.state;
       expect(r.shouldUpdate).toBe(false);
