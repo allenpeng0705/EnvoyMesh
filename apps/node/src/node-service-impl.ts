@@ -11868,13 +11868,11 @@ class NodeServiceImpl implements NodeService {
             return existing;
           }
           const probed = await mesh.probeBondedPeerConnection(transportPeerId);
-          if (probed.connected || options?.keepAlive === true) {
-            if (probed.connected) {
-              markOutboundPeerVerified(transportPeerId);
-            }
+          if (probed.connected) {
+            markOutboundPeerVerified(transportPeerId);
             return probed;
           }
-          // stale — fall through to redial
+          // Probe failed (and may have closed stale conns) — fall through to redial.
         }
       } else {
         return existing;

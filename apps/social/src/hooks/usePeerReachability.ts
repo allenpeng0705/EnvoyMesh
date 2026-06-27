@@ -118,11 +118,7 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
           pendingRefreshRef.current = false;
           void runRefresh(generation, {
             silent: true,
-            ...(libp2pConnectedRef.current
-              ? libp2pDirectRef.current
-                ? { keepAlive: true }
-                : { upgradeRelayToDirect: true }
-              : { warm: true }),
+            ...(libp2pConnectedRef.current ? { keepAlive: true } : { warm: true }),
           });
         }
       }
@@ -162,11 +158,8 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
     const id = setInterval(() => {
       const now = Date.now();
       if (libp2pConnectedRef.current) {
-        if (libp2pDirectRef.current) {
-          void runRefresh(generation, { silent: true, keepAlive: true });
-        } else {
-          void runRefresh(generation, { silent: true, upgradeRelayToDirect: true });
-        }
+        // Periodic polls probe in place — do not tear down relay every 10s for LAN upgrade.
+        void runRefresh(generation, { silent: true, keepAlive: true });
         return;
       }
       const dueForRedial = now - lastRedialAtRef.current >= minRedialMs;
