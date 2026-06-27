@@ -9,7 +9,6 @@ import {
   isPrivateLanTcpDialHint,
   isPublicLibp2pBootstrapMultiaddr,
   isUsableOutboundPeerDialHint,
-  isDialableLanListenHint,
   buildSyntheticRelayCircuitHints,
   dedupeDialHintStrings,
   hasDirectTcpDialHints,
@@ -28,8 +27,6 @@ function dedupeDialHints(addrs: string[]): string[] {
 function isUsableChatDialHint(addr: string, targetPeerId: string): boolean {
   return isUsableOutboundPeerDialHint(addr, targetPeerId);
 }
-
-export { isDialableLanListenHint };
 
 /** Envoy/community relay bases for synthetic `/p2p-circuit/` dial hints — not libp2p public DHT bootstrap nodes. */
 function relayBasesForCircuitDial(input: {
@@ -77,19 +74,16 @@ export async function buildOutboundDialHints(input: {
   const recipientPeerId = input.recipientPeerId.trim();
   const raw = (input.peerListenAddrs ?? []).map((a) => a.trim()).filter(Boolean);
   /** Never dial the remote peer's loopback or local docker-bridge IP from our machine. */
-  /** Never dial the remote peer's loopback or local docker-bridge IP from our machine. */
-  const nonLoopListen = raw.filter(
-    (a) => isUsableChatDialHint(a, recipientPeerId) || isDialableLanListenHint(a, recipientPeerId),
-  );
+  const nonLoopListen = raw
+    .filter((a) => isUsableChatDialHint(a, recipientPeerId))
+    .filter((a) => !isLikelyInboundConnSnapshotDialHint(a));
 
   const store = input.discoverySeedStore;
   if (!store) {
     return dedupeDialHints(nonLoopListen);
   }
 
-  const seeds = (await store.listSeedAddrs()).filter(
-    (a) => isUsableChatDialHint(a, recipientPeerId) || isDialableLanListenHint(a, recipientPeerId),
-  );
+  const seeds = (await store.listSeedAddrs()).filter((a) => isUsableChatDialHint(a, recipientPeerId));
   const relayPool = dedupeDialHints([
     ...seeds.filter((s) => s.includes("/p2p-circuit/")),
     ...relayBasesForCircuitDial({ config: input.config, profileDir: input.profileDir }),
@@ -108,19 +102,15 @@ export async function buildOutboundDialHints(input: {
   const peerSpecificCircuits = out.filter(
     (h) => h.includes(recipientPeerId) && h.includes("/p2p-circuit/"),
   );
-  // Always include synthetic relay circuit hints as fallback — direct hints
-  // are tried first (prioritizeDirectLanDialHints sorts LAN ahead of relay),
-  // but when firewalls block direct LAN TCP, the relay path must be available.
-  const maxSynthetic = peerSpecificCircuits.length > 0 ? 1 : 3;
-  out.push(
-    ...buildSyntheticRelayCircuitHints(recipientPeerId, relayPool, maxSynthetic),
-  );
+  // Synthetic circuits guess the peer reserved on a relay — skip when LAN/direct exists or we already have relay.lookup paths.
+  if (!hasDirect) {
+    const maxSynthetic = peerSpecificCircuits.length > 0 ? 1 : 3;
+    out.push(
+      ...buildSyntheticRelayCircuitHints(recipientPeerId, relayPool, maxSynthetic),
+    );
+  }
 
-  const usable = dedupeDialHints(
-    out.filter(
-      (a) => isUsableChatDialHint(a, recipientPeerId) || isDialableLanListenHint(a, recipientPeerId),
-    ),
-  );
+  const usable = dedupeDialHints(out.filter((a) => isUsableChatDialHint(a, recipientPeerId)));
   const ordered = prioritizeDirectLanDialHints(usable);
   return filterDialHintsForOutboundSend(ordered, recipientPeerId, {
     preferCircuitHints: !hasDirect,
@@ -169,10 +159,7 @@ export function shouldPreferCircuitDialHints(
 ): boolean {
   const peerId = recipientPeerId?.trim() ?? "";
   const dialableListen = peerId
-    ? [
-        ...mergeDialablePeerListenAddrs(peerId, listenAddrs),
-        ...(listenAddrs ?? []).filter((a) => isDialableLanListenHint(a, peerId)),
-      ]
+    ? mergeDialablePeerListenAddrs(peerId, listenAddrs)
     : (listenAddrs ?? []).filter(
         (h) =>
           h.includes("/tcp/") &&
@@ -181,7 +168,7 @@ export function shouldPreferCircuitDialHints(
           !isLoopbackOrUnspecifiedDialHint(h),
       );
   const directCandidates = [
-    ...new Set(dialableListen),
+    ...dialableListen,
     ...dialHints.filter((h) => h.includes("/tcp/") && !h.includes("/p2p-circuit/")),
   ];
   if (hasDirectTcpDialHints(directCandidates)) {
