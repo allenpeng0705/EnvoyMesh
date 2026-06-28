@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -35,7 +34,9 @@ class _TerminalDetailScreenState
   InAppWebViewController? _webController;
   TerminalService? _terminalService;
   bool _attached = false;
+  bool _attaching = false;
   bool _tunnelUp = true;
+  String? _attachError;
 
   void Function()? _unsubRx;
   void Function()? _unsubClosed;
@@ -49,15 +50,15 @@ class _TerminalDetailScreenState
       onRefresh: () => _attach(),
     );
     _attach();
-    // Re-fit xterm.js when the keyboard shows/hides.
     WidgetsBinding.instance.addObserver(this);
   }
 
   Timer? _resizeTimer;
+  Timer? _reconnectTimer;
+  int _reconnectAttempts = 0;
 
   @override
   void didChangeMetrics() {
-    // Debounce: cancel the previous timer before scheduling a new one.
     _resizeTimer?.cancel();
     _resizeTimer = Timer(const Duration(milliseconds: 150), () {
       _webController?.evaluateJavascript(source: 'fitAddon.fit();');
@@ -67,6 +68,8 @@ class _TerminalDetailScreenState
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    _resizeTimer?.cancel();
+    _reconnectTimer?.cancel();
     _detach();
     super.dispose();
   }
@@ -74,40 +77,111 @@ class _TerminalDetailScreenState
   // -- Attach / detach --
 
   Future<void> _attach() async {
+    if (_attaching) return;
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+
     final client = ref.read(nodeProvider.notifier).client;
-    if (client == null) return;
+    if (client == null) {
+      if (mounted) {
+        setState(() {
+          _attached = false;
+          _tunnelUp = false;
+          _attachError = 'Not connected to home node';
+        });
+      }
+      return;
+    }
+
+    _attaching = true;
+    await _detachTunnel();
+    _removeEventListeners();
+
     final nodeService = NodeServiceClient(client);
     _terminalService = TerminalService(nodeService, client);
 
-    // Subscribe to PTY output from home node push events.
     _unsubRx = client.on('homeTerminalWs:rx', _onTerminalOutput);
-    _unsubClosed = client.on('homeTerminalWs:closed', (_) {
-      if (mounted) setState(() => _tunnelUp = false);
-    });
+    _unsubClosed = client.on('homeTerminalWs:closed', _onTerminalClosed);
 
     try {
       await _terminalService!.attach(widget.sessionId);
-      setState(() => _attached = true);
+      if (!mounted) return;
+      setState(() {
+        _attached = true;
+        _tunnelUp = true;
+        _attachError = null;
+      });
+      _reconnectAttempts = 0;
+      _focusTerminal();
     } catch (e) {
-      _terminalService!.setActiveSession(widget.sessionId);
-      setState(() => _attached = true);
+      if (!mounted) return;
+      setState(() {
+        _attached = false;
+        _tunnelUp = false;
+        _attachError = e.toString();
+      });
+    } finally {
+      _attaching = false;
+      await _pullToRefreshController.endRefreshing();
     }
+  }
 
-    // Focus the xterm.js WebView after attach.
+  void _onTerminalClosed(dynamic data) {
+    if (data is Map<String, dynamic>) {
+      final eventSessionId = data['sessionId'] as String?;
+      if (eventSessionId != null && eventSessionId != widget.sessionId) {
+        return;
+      }
+    }
+    if (!mounted) return;
+    setState(() {
+      _tunnelUp = false;
+      _attached = false;
+    });
+    _scheduleReconnect();
+  }
+
+  void _scheduleReconnect() {
+    if (!mounted || _attaching) return;
+    _reconnectTimer?.cancel();
+    _reconnectAttempts++;
+    final delayMs = (1000 * _reconnectAttempts).clamp(1000, 8000);
+    _reconnectTimer = Timer(Duration(milliseconds: delayMs), () {
+      if (mounted) _attach();
+    });
+  }
+
+  void _removeEventListeners() {
+    _unsubRx?.call();
+    _unsubRx = null;
+    _unsubClosed?.call();
+    _unsubClosed = null;
+  }
+
+  Future<void> _detachTunnel() async {
+    final service = _terminalService;
+    if (service != null) {
+      await service.detach();
+    }
+  }
+
+  void _detach() {
+    _reconnectTimer?.cancel();
+    _reconnectTimer = null;
+    _removeEventListeners();
+    unawaited(_detachTunnel());
+    _terminalService = null;
+    _attached = false;
+    _tunnelUp = true;
+    _attachError = null;
+  }
+
+  void _focusTerminal() {
     Future.delayed(const Duration(milliseconds: 500), () {
       _webController?.evaluateJavascript(
         source: 'term.focus(); fitAddon.fit();',
       );
     });
-  }
-
-  void _detach() {
-    _unsubRx?.call();
-    _unsubRx = null;
-    _terminalService?.detach();
-    _terminalService = null;
-    _attached = false;
-    _tunnelUp = true;
   }
 
   // -- PTY output → xterm.js --
@@ -130,7 +204,14 @@ class _TerminalDetailScreenState
   // -- xterm.js keystrokes → Flutter → home node --
 
   void _onKeyFromWeb(String data) {
-    _terminalService?.sendRaw(utf8.encode(data));
+    final sent = _terminalService?.sendRaw(utf8.encode(data)) ?? false;
+    if (!sent && mounted && _attached) {
+      setState(() {
+        _attached = false;
+        _tunnelUp = false;
+      });
+      _scheduleReconnect();
+    }
   }
 
   void _onResizeFromWeb(int cols, int rows) {
@@ -173,7 +254,7 @@ class _TerminalDetailScreenState
       appBar: AppBar(
         title: Text(widget.sessionName),
         actions: [
-          if (!_tunnelUp)
+          if (!_tunnelUp && _attached == false)
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: 8),
               child: Chip(
@@ -183,8 +264,8 @@ class _TerminalDetailScreenState
             ),
           if (!_attached)
             TextButton(
-              onPressed: _attach,
-              child: const Text('Reconnect'),
+              onPressed: _attaching ? null : _attach,
+              child: Text(_attaching ? 'Connecting…' : 'Reconnect'),
             ),
           IconButton(
             tooltip: 'Copy all output',
@@ -209,6 +290,20 @@ class _TerminalDetailScreenState
       body: SafeArea(
         child: Column(
           children: [
+            if (_attachError != null)
+              MaterialBanner(
+                content: Text(
+                  _attachError!,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: _attaching ? null : _attach,
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
             Expanded(
               child: Container(
                 color: Colors.black,
@@ -216,67 +311,59 @@ class _TerminalDetailScreenState
                   children: [
                     Expanded(
                       child: InAppWebView(
-                  pullToRefreshController: _pullToRefreshController,
-                  initialData: InAppWebViewInitialData(
-                    data: _terminalHtml,
-                    mimeType: 'text/html',
-                    encoding: 'utf-8',
-                  ),
-                  initialSettings: InAppWebViewSettings(
-                    javaScriptEnabled: true,
-                    transparentBackground: true,
-                    disableHorizontalScroll: true,
-                    disableVerticalScroll: false, // let xterm.js handle its own viewport
-                    supportZoom: false,
-                    useWideViewPort: false,
-                  ),
-                  onWebViewCreated: (controller) {
-                    _webController = controller;
-                    // Register JS → Flutter handlers.
-                    controller.addJavaScriptHandler(
-                      handlerName: 'termKey',
-                      callback: (args) {
-                        if (args.isNotEmpty) {
-                          _onKeyFromWeb(args[0].toString());
-                        }
-                      },
-                    );
-                    controller.addJavaScriptHandler(
-                      handlerName: 'termResize',
-                      callback: (args) {
-                        if (args.isNotEmpty) {
-                          try {
-                            final decoded =
-                                jsonDecode(args[0].toString())
-                                    as Map<String, dynamic>;
-                            _onResizeFromWeb(
-                              decoded['cols'] as int,
-                              decoded['rows'] as int,
-                            );
-                          } catch (_) {}
-                        }
-                      },
-                    );
-                    // Focus xterm after a short delay.
-                    Future.delayed(const Duration(milliseconds: 500), () {
-                      controller.evaluateJavascript(
-                        source: 'term.focus(); fitAddon.fit();',
-                      );
-                    });
-                  },
-                  onConsoleMessage: (_, msg) {
-                    // Debug: log JS console messages in Flutter debug mode.
-                    debugPrint('[xterm] ${msg.message}');
-                    },
-                  ),
+                        pullToRefreshController: _pullToRefreshController,
+                        initialData: InAppWebViewInitialData(
+                          data: _terminalHtml,
+                          mimeType: 'text/html',
+                          encoding: 'utf-8',
+                        ),
+                        initialSettings: InAppWebViewSettings(
+                          javaScriptEnabled: true,
+                          transparentBackground: true,
+                          disableHorizontalScroll: true,
+                          disableVerticalScroll: false,
+                          supportZoom: false,
+                          useWideViewPort: false,
+                        ),
+                        onWebViewCreated: (controller) {
+                          _webController = controller;
+                          controller.addJavaScriptHandler(
+                            handlerName: 'termKey',
+                            callback: (args) {
+                              if (args.isNotEmpty) {
+                                _onKeyFromWeb(args[0].toString());
+                              }
+                            },
+                          );
+                          controller.addJavaScriptHandler(
+                            handlerName: 'termResize',
+                            callback: (args) {
+                              if (args.isNotEmpty) {
+                                try {
+                                  final decoded =
+                                      jsonDecode(args[0].toString())
+                                          as Map<String, dynamic>;
+                                  _onResizeFromWeb(
+                                    decoded['cols'] as int,
+                                    decoded['rows'] as int,
+                                  );
+                                } catch (_) {}
+                              }
+                            },
+                          );
+                          _focusTerminal();
+                        },
+                        onConsoleMessage: (_, msg) {
+                          debugPrint('[xterm] ${msg.message}');
+                        },
+                      ),
+                    ),
+                    _buildSpecialKeysBar(),
+                  ],
                 ),
-                // Special keys bar below the terminal.
-                _buildSpecialKeysBar(),
-              ],
+              ),
             ),
-          ),
-          ),
-        ],
+          ],
         ),
       ),
     );
@@ -334,7 +421,6 @@ class _TerminalDetailScreenState
         ),
         onPressed: onTap ?? () {
           if (ctrl) {
-            // Send Ctrl+key: ASCII 0x01-0x1A for Ctrl+A through Ctrl+Z.
             final code = bytes.isNotEmpty ? bytes.codeUnitAt(0) : 0;
             if (code >= 0x61 && code <= 0x7A) {
               _terminalService?.sendRaw(Uint8List.fromList([code - 0x60]));
@@ -349,8 +435,6 @@ class _TerminalDetailScreenState
   }
 
   /// Inlined HTML that loads xterm.js from CDN.
-  /// Using [InAppWebViewInitialData] so we don't need the assets/ file
-  /// at runtime (it's still kept as a reference).
   static const _terminalHtml = '''
 <!DOCTYPE html>
 <html lang="en">

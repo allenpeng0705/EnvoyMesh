@@ -9,7 +9,7 @@ import { DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR } from "@envoymesh/api";
 const publicAm7 = "/dnsaddr/am7.bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA7W8R4Hk6x4pJ8Yf";
 
 describe("buildOutboundDialHints", () => {
-  it("does not synthesize circuit paths via public libp2p bootstrap nodes", async () => {
+  it("includes synthetic relay circuit hints alongside direct LAN hints as fallback", async () => {
     const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-dial-hints-empty-"));
     try {
       const seedStore = createDiscoverySeedStore(profileDir);
@@ -35,14 +35,14 @@ describe("buildOutboundDialHints", () => {
       });
 
       expect(hints.some((h) => h.includes("bootstrap.libp2p.io"))).toBe(false);
-      expect(hints.some((h) => h.includes("/p2p-circuit/p2p/12D3KooW"))).toBe(false);
+      expect(hints.some((h) => h.includes("/p2p-circuit/p2p/12D3KooW"))).toBe(true);
       expect(hints.some((h) => h.includes("192.168.1.50"))).toBe(true);
     } finally {
       await rm(profileDir, { recursive: true, force: true });
     }
   });
 
-  it("drops relay circuits when LAN listen addrs exist for the same peer", async () => {
+  it("keeps both LAN direct and relay circuit hints as fallback", async () => {
     const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-dial-hints-lan-circuit-"));
     try {
       const seedStore = createDiscoverySeedStore(profileDir);
@@ -59,7 +59,7 @@ describe("buildOutboundDialHints", () => {
       });
 
       expect(hints.some((h) => h.includes("192.168.3.78"))).toBe(true);
-      expect(hints.some((h) => h.includes("/p2p-circuit/"))).toBe(false);
+      expect(hints.some((h) => h.includes("/p2p-circuit/"))).toBe(true);
     } finally {
       await rm(profileDir, { recursive: true, force: true });
     }
@@ -132,7 +132,7 @@ describe("buildOutboundDialHints", () => {
     }
   });
 
-  it("drops ephemeral inbound TCP snapshot ports and still allows relay circuit fallback", async () => {
+  it("drops WAN ephemeral snapshots but keeps trusted LAN tcp/0 listen ports", async () => {
     const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-dial-hints-ephemeral-"));
     try {
       const seedStore = createDiscoverySeedStore(profileDir);
@@ -140,8 +140,8 @@ describe("buildOutboundDialHints", () => {
       const hints = await buildOutboundDialHints({
         recipientPeerId: target,
         peerListenAddrs: [
-          `/ip4/192.168.3.78/tcp/55093/p2p/${target}`,
-          `/ip4/192.168.3.78/tcp/60417/p2p/${target}`,
+          `/ip4/106.37.112.84/tcp/55093/p2p/${target}`,
+          `/ip4/192.168.3.78/tcp/61361/p2p/${target}`,
         ],
         discoverySeedStore: seedStore,
         config: {
@@ -162,7 +162,7 @@ describe("buildOutboundDialHints", () => {
       });
 
       expect(hints.some((h) => h.includes("55093"))).toBe(false);
-      expect(hints.some((h) => h.includes("60417"))).toBe(false);
+      expect(hints.some((h) => h.includes("61361"))).toBe(true);
       expect(hints.some((h) => h.includes("/p2p-circuit/p2p/12D3KooWN67"))).toBe(true);
     } finally {
       await rm(profileDir, { recursive: true, force: true });
@@ -195,6 +195,38 @@ describe("shouldPreferCircuitDialHints", () => {
       [`/ip4/192.168.1.50/tcp/4011/p2p/${peerId}`],
     );
     expect(merged).toEqual([`/ip4/192.168.1.50/tcp/4011/p2p/${peerId}`]);
+  });
+
+  it("buildOutboundDialHints keeps LAN tcp/0 listen ports from trusted peerListenAddrs", async () => {
+    const target = "12D3KooWLanEphemeralListen";
+    const lanListen = `/ip4/192.168.3.78/tcp/61361/p2p/${target}`;
+    const hints = await buildOutboundDialHints({
+      recipientPeerId: target,
+      peerListenAddrs: [lanListen],
+      discoverySeedStore: undefined,
+      config: undefined,
+    });
+    expect(hints).toContain(lanListen);
+    expect(hints.some((h) => h.includes("/p2p-circuit/"))).toBe(false);
+  });
+
+  it("buildOutboundDialHints keeps LAN ephemeral from mDNS discovery seeds", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-dial-hints-mdns-"));
+    try {
+      const seedStore = createDiscoverySeedStore(profileDir);
+      const target = "12D3KooWMdnsLanSeed";
+      const lanSeed = `/ip4/192.168.3.85/tcp/53915/p2p/${target}`;
+      await seedStore.upsertMany([lanSeed], "peer.discovery");
+      const hints = await buildOutboundDialHints({
+        recipientPeerId: target,
+        peerListenAddrs: [],
+        discoverySeedStore: seedStore,
+        config: undefined,
+      });
+      expect(hints).toContain(lanSeed);
+    } finally {
+      await rm(profileDir, { recursive: true, force: true });
+    }
   });
 
   it("prioritizeDirectLanDialHints puts RFC1918 addresses first", async () => {

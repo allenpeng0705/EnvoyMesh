@@ -18,6 +18,15 @@ import { join } from "node:path";
 import { handleDaemonAgentCardInbound } from "../src/daemon-agent-card-inbound.js";
 import type { BridgeIdentity } from "../src/bridge/pipe.js";
 
+function mockDeliverMesh(send = vi.fn()) {
+  return {
+    send,
+    getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: true, direct: true }),
+    closeConnectionsToPeer: vi.fn().mockResolvedValue(undefined),
+    getConnectedPeerIds: vi.fn().mockReturnValue([]),
+  };
+}
+
 describe("handleDaemonAgentCardInbound", () => {
   it("returns handled:false for non agent.card intents", async () => {
     const result = await handleDaemonAgentCardInbound({
@@ -107,7 +116,7 @@ describe("handleDaemonAgentCardInbound", () => {
         agentCardStore,
         humanProfileStore: createHumanProfileStore(profileDir),
         bridgeIdentity,
-        mesh: { send: vi.fn() } as never,
+        mesh: mockDeliverMesh() as never,
         nodeService: { recordAgentCardCached } as never,
       });
 
@@ -187,7 +196,7 @@ describe("handleDaemonAgentCardInbound", () => {
         agentCardStore: createAgentCardStore(profileDir),
         humanProfileStore: createHumanProfileStore(profileDir),
         bridgeIdentity,
-        mesh: { send } as never,
+        mesh: mockDeliverMesh(send) as never,
       });
 
       expect(result).toEqual({ handled: true, outcome: "responded" });

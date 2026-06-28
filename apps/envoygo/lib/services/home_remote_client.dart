@@ -401,8 +401,11 @@ class HomeRemoteClient {
   // -- RPC --
 
   /// Send a JSON-RPC call and wait for the response.
+  ///
+  /// [timeoutMs] defaults to 30s. Large uploads (e.g. voice notes) should
+  /// pass a longer timeout, though the home node returns after local persist.
   Future<dynamic> call(String method,
-      [Map<String, dynamic>? params]) async {
+      [Map<String, dynamic>? params, int? timeoutMs]) async {
     await ensureConnected();
     final ws = _ws;
     if (ws == null || ws.readyState != wsOpen) {
@@ -411,7 +414,8 @@ class HomeRemoteClient {
 
     final id = _generateId();
     final completer = Completer<dynamic>();
-    final timer = Timer(const Duration(seconds: 30), () {
+    final rpcTimeoutMs = timeoutMs ?? 30000;
+    final timer = Timer(Duration(milliseconds: rpcTimeoutMs), () {
       _pending.remove(id);
       if (!completer.isCompleted) {
         completer.completeError(

@@ -287,7 +287,7 @@ describe("schema / role-policy sync", () => {
 
   it("every call.* intent is policy-protected as human↔human", () => {
     const callIntents = EnvoyIntentSchema.options.filter((i) => i.startsWith("call."));
-    expect(callIntents.length).toBe(6);
+    expect(callIntents.length).toBe(7);
     for (const intent of callIntents) {
       expectAllowed(intent, "human", "human");
       expectDenied(intent, "agent", "agent");

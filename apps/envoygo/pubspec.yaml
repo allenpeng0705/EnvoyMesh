@@ -10,6 +10,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  flutter_localizations:
+    sdk: flutter
   # Transport
   web_socket_channel: ^3.0.2
   # State
@@ -23,7 +25,9 @@ dependencies:
   mobile_scanner: ^6.0.7
   image_picker: ^1.1.2
   # Audio recording (voice messages)
-  record: ^5.1.2
+  record: ^6.1.0
+  # Voice note playback
+  audioplayers: ^6.1.0
   # WebRTC (voice/video calls, Phase 38/42). Phase 42D bumps to ^0.14.0
   # for the API surface used by WebRtcCallTransport.
   flutter_webrtc: ^0.14.0
@@ -52,7 +56,7 @@ dependencies:
   # UI
   google_fonts: ^6.2.1
   cached_network_image: ^3.4.1
-  intl: ^0.19.0
+  intl: ^0.20.2
   # Platform detection
   flutter_web_plugins:
     sdk: flutter
@@ -72,5 +76,6 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  generate: true
   assets:
     - assets/terminal.html

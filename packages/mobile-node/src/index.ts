@@ -262,6 +262,8 @@ import type {
   BridgeStatus,
   OpenClawStatus,
   PeerConnectionInfo,
+  PeerConnectionHealth,
+  WarmContactConnectionOptions,
   ListAgentActivityParams,
   AgentActivityRecord,
 } from "@envoymesh/api";
@@ -3934,6 +3936,24 @@ You are the owner's personal AI assistant on EnvoyMesh.
         this._aiPrefs.contactAiPreferences = [...config.contactAiPreferences];
       }
       this._persistAiPrefs();
+
+      // Paired mobile: push model settings to the home node (EnvoyGo / Capacitor).
+      if (
+        this._isHomeRemotePaired() &&
+        (config.modelProviders !== undefined || config.chatAssistEnabled !== undefined)
+      ) {
+        const patch: Partial<NodeConfig> = {};
+        if (config.modelProviders !== undefined) {
+          patch.modelProviders = this._aiPrefs.modelProviders;
+        }
+        if (config.chatAssistEnabled !== undefined) {
+          patch.chatAssistEnabled = this._aiPrefs.chatAssistEnabled;
+        }
+        await this._homeRemoteCall("updateNodeConfig", patch);
+        const fresh = await this._homeRemoteCall<NodeConfig>("getNodeConfig", {});
+        this._homeNodeConfig = fresh;
+        this._events.emit("home:config-updated", { config: fresh });
+      }
     }
 
     if (oid != null && config.externalPublish !== undefined) {
@@ -4030,9 +4050,24 @@ You are the owner's personal AI assistant on EnvoyMesh.
     return this._relayOnlyReachabilityHint(peerOwnerId);
   }
 
-  async warmContactConnection(peerOwnerId: string): Promise<PeerConnectionInfo> {
+  async getPeerConnectionHealth(peerOwnerId: string): Promise<PeerConnectionHealth> {
+    const connection = await this.getPeerConnectionInfo(peerOwnerId);
+    return {
+      peerOwnerId,
+      ...connection,
+      warmInFlight: false,
+    };
+  }
+
+  async warmContactConnection(
+    peerOwnerId: string,
+    options?: WarmContactConnectionOptions,
+  ): Promise<PeerConnectionInfo> {
+    if (options?.verifyOnly) {
+      return this.getPeerConnectionInfo(peerOwnerId);
+    }
     const existing = await this.getPeerConnectionInfo(peerOwnerId);
-    if (existing.connected) {
+    if (existing.connected && !options?.redial && !options?.force) {
       return existing;
     }
     const transportPeerId = await this._resolveChatTransportPeerId(peerOwnerId);
@@ -4420,6 +4455,13 @@ You are the owner's personal AI assistant on EnvoyMesh.
   // -----------------------------------------------------------------------
 
   async getBridgeStatus(): Promise<BridgeStatus> {
+    if (this._isHomeRemotePaired() && this._homeRemoteOnline) {
+      try {
+        return await this._homeRemoteCall<BridgeStatus>("getBridgeStatus", {});
+      } catch {
+        /* fall through to local stub */
+      }
+    }
     const agentPeerId = this._state?.homeAgentPeerId?.trim() ?? "";
     const enabled = Boolean(agentPeerId && this._state?.sharedIdentity && this._state?.homeNodePeerId);
     const agentName = this._state?.homeAgentName?.trim() || "My Agent";
@@ -4431,6 +4473,20 @@ You are the owner's personal AI assistant on EnvoyMesh.
       agentName,
       agentPublicKeyPem: this._state?.homeAgentPubKey,
     };
+  }
+
+  async getBridgeConfig(): Promise<import("@envoymesh/api").BridgeConfigView> {
+    return this._homeRemoteCall("getBridgeConfig", {});
+  }
+
+  async updateBridgeConfig(
+    params: import("@envoymesh/api").UpdateBridgeConfigParams,
+  ): Promise<import("@envoymesh/api").UpdateBridgeConfigResult> {
+    return this._homeRemoteCall("updateBridgeConfig", params as Record<string, unknown>);
+  }
+
+  async probeExtAgents(): Promise<import("@envoymesh/api").ProbeExtAgentsResult> {
+    return this._homeRemoteCall("probeExtAgents", {});
   }
 
   /**
@@ -5716,7 +5772,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
     return {
       messageId: updated.messageId,
       sender: {
-        nodeId: updated.sender.ownerId ?? "",
+        nodeId: message.sender.nodeId || updated.sender.ownerId || "",
         ownerId: updated.sender.ownerId,
         displayName: updated.sender.displayName,
         actorRole: updated.sender.actorRole,
@@ -5724,7 +5780,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
         agentVerified: updated.sender.agentVerified,
       },
       recipient: {
-        nodeId: updated.recipient.ownerId ?? "",
+        nodeId: message.recipient.nodeId || updated.recipient.ownerId || "",
         ownerId: updated.recipient.ownerId,
         displayName: updated.recipient.displayName,
       },

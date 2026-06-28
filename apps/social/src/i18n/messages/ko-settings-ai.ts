@@ -1,6 +1,9 @@
+import { aiEngineMessagesKo } from "./ai-engine-locale.js";
+
 export const koAiSettingsMessages = {
   title: "AI 어시스턴트 설정",
   sectionDesc: "AI가 대신 응답하는 방식을 구성합니다.",
+  aiEngine: aiEngineMessagesKo,
   model: {
     heading: "모델 제공자",
     sectionDescCloud: "이 기기에서 채팅 지원 및 지식 답변용 클라우드 API를 구성합니다.",

@@ -41,8 +41,8 @@ describe("E2E approval → sendAgentChat (Phase 13A)", () => {
       }
     });
 
-    await alice.mesh.probePeer(bob.mesh.multiaddrs[0]!);
-    await bob.mesh.probePeer(alice.mesh.multiaddrs[0]!);
+    await alice.mesh.dial(bob.mesh.multiaddrs[0]!);
+    await bob.mesh.dial(alice.mesh.multiaddrs[0]!);
 
     await deliverHumanChat(bob, alice, "Hello Alice, can you help?");
 

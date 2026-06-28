@@ -7,6 +7,8 @@ export type InboundGuardDecision =
 
 export interface InboundMessageGuard {
   inspect(input: unknown): InboundGuardDecision;
+  /** Read-only replay check — does not mark the message as seen. */
+  isReplay(messageId: string): boolean;
 }
 
 export interface InboundMessageGuardOptions {
@@ -102,6 +104,12 @@ export function createInboundMessageGuard(
         }
       }
       return { action: "allow", envelope };
+    },
+    isReplay(messageId: string): boolean {
+      if (!messageId || typeof messageId !== "string") {
+        return true;
+      }
+      return seenMessageIds.has(messageId);
     },
   };
 }

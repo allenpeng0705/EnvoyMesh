@@ -4,7 +4,6 @@
  * Requires: npx playwright install chromium
  * Skips gracefully when the browser binary is not installed.
  */
-import { createServer } from "node:net";
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -32,18 +31,7 @@ vi.mock("node-pty", () => ({
 
 import { TerminalManager } from "../src/terminal-manager.js";
 import { TerminalWsServer } from "../src/terminal-ws-server.js";
-
-async function pickFreePort(): Promise<number> {
-  return await new Promise((resolve, reject) => {
-    const server = createServer();
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      const port = typeof address === "object" && address ? address.port : 0;
-      server.close((err) => (err ? reject(err) : resolve(port)));
-    });
-    server.on("error", reject);
-  });
-}
+import { createLocalhostChromiumPage, pickFreePort, waitForTcpPort } from "./playwright-e2e-port.js";
 
 function emitPtyOutput(text: string): void {
   for (const handler of onDataHandlers) {
@@ -55,6 +43,7 @@ describe("Playwright browser terminal WebSocket E2E", () => {
   let profileDir: string;
   let manager: TerminalManager;
   let wsServer: TerminalWsServer | null = null;
+  let wsPort = 0;
   let attachUrl = "";
   let sessionId = "";
 
@@ -62,13 +51,13 @@ describe("Playwright browser terminal WebSocket E2E", () => {
     onDataHandlers.length = 0;
     mockPty.write.mockClear();
     profileDir = await mkdtemp(join(tmpdir(), "envoy-term-pw-"));
-    const port = await pickFreePort();
+    wsPort = await pickFreePort();
     manager = new TerminalManager({ profileDir });
     await manager.waitUntilReady();
-    manager.setTerminalWsListenAddress(port, "/ws/terminal");
-    wsServer = new TerminalWsServer({ port, pathPrefix: "/ws/terminal", manager });
+    manager.setTerminalWsListenAddress(wsPort, "/ws/terminal");
+    wsServer = new TerminalWsServer({ port: wsPort, pathPrefix: "/ws/terminal", manager });
     wsServer.start();
-    await new Promise((r) => setTimeout(r, 100));
+    await waitForTcpPort("127.0.0.1", wsPort);
 
     const created = await manager.createTerminalSession({ title: "Playwright" });
     sessionId = created.sessionId;
@@ -85,27 +74,26 @@ describe("Playwright browser terminal WebSocket E2E", () => {
   });
 
   it("Chromium receives PTY stdout after sending stdin wire frame", async (ctx) => {
-    let chromium: typeof import("playwright").chromium;
+    let browser: Awaited<ReturnType<Awaited<typeof import("playwright")>["chromium"]["launch"]>> | undefined;
+    let context: Awaited<ReturnType<NonNullable<typeof browser>["newContext"]>> | undefined;
+    let page: Awaited<ReturnType<NonNullable<typeof context>["newPage"]>> | undefined;
     try {
-      chromium = (await import("playwright")).chromium;
-    } catch {
-      ctx.skip(true, "playwright package not installed");
-      return;
-    }
-
-    let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
-    try {
-      browser = await chromium.launch({ headless: true });
-    } catch {
+      const launched = await createLocalhostChromiumPage({ originPort: wsPort });
+      browser = launched.browser;
+      context = launched.context;
+      page = launched.page;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.includes("Cannot find module") || message.includes("playwright")) {
+        ctx.skip(true, "playwright package not installed");
+        return;
+      }
       ctx.skip(true, "Chromium not installed — run: npx playwright install chromium");
       return;
     }
 
     try {
-      const page = await browser.newPage();
-      await page.goto("about:blank");
-
-      await page.evaluate((url) => {
+      await page!.evaluate((url) => {
         (window as unknown as { __termOut: string[] }).__termOut = [];
         const ws = new WebSocket(url);
         ws.binaryType = "arraybuffer";
@@ -128,14 +116,14 @@ describe("Playwright browser terminal WebSocket E2E", () => {
         (window as unknown as { __termWs: WebSocket }).__termWs = ws;
       }, attachUrl);
 
-      await page.waitForFunction(() => (window as unknown as { __termWs?: WebSocket }).__termWs?.readyState === 1, {
+      await page!.waitForFunction(() => (window as unknown as { __termWs?: WebSocket }).__termWs?.readyState === 1, {
         timeout: 5000,
       });
 
       expect(mockPty.write).toHaveBeenCalledWith("echo browser-e2e\n");
       emitPtyOutput("browser-e2e ok\n");
 
-      await page.waitForFunction(
+      await page!.waitForFunction(
         () =>
           (window as unknown as { __termOut?: string[] }).__termOut?.some((line) =>
             line.includes("browser-e2e ok"),
@@ -143,12 +131,13 @@ describe("Playwright browser terminal WebSocket E2E", () => {
         { timeout: 5000 },
       );
 
-      const lines = await page.evaluate(
+      const lines = await page!.evaluate(
         () => (window as unknown as { __termOut: string[] }).__termOut.join(""),
       );
       expect(lines).toContain("browser-e2e ok");
     } finally {
-      await browser.close();
+      await context?.close().catch(() => {});
+      await browser?.close().catch(() => {});
     }
   });
 });

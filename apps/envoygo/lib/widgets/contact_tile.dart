@@ -1,10 +1,13 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/contact.dart';
+import '../providers/contact_reachability_provider.dart';
+import '../widgets/contact_reachability_badge.dart';
 
 /// Contact tile for the contacts list.
-class ContactTile extends StatelessWidget {
+class ContactTile extends ConsumerWidget {
   final Contact contact;
   final VoidCallback? onTap;
   final VoidCallback? onChat;
@@ -17,31 +20,35 @@ class ContactTile extends StatelessWidget {
   });
 
   @override
-  Widget build(BuildContext context) {
-    final isOnline = contact.lastSeen != null &&
-        DateTime.now().difference(contact.lastSeen!).inMinutes < 5;
+  Widget build(BuildContext context, WidgetRef ref) {
+    final reachability = ref.watch(contactReachabilityProvider);
+    final info = reachability.infoFor(contact.ownerId);
+    final checking = reachability.isChecking(contact.ownerId);
 
     return ListTile(
       leading: Stack(
+        clipBehavior: Clip.none,
         children: [
           _buildAvatar(contact),
-          if (isOnline)
-            Positioned(
-              right: 0,
-              bottom: 0,
-              child: Container(
-                width: 12,
-                height: 12,
-                decoration: const BoxDecoration(
-                  color: Colors.green,
-                  shape: BoxShape.circle,
-                ),
-              ),
+          Positioned(
+            right: -1,
+            bottom: -1,
+            child: ContactReachabilityBadge(
+              info: info,
+              checking: checking,
+              compact: true,
             ),
+          ),
         ],
       ),
       title: Text(contact.displayName ?? contact.ownerId),
-      subtitle: contact.displayName != null ? Text(contact.ownerId) : null,
+      subtitle: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (contact.displayName != null) Text(contact.ownerId),
+          ContactReachabilityBadge(info: info, checking: checking),
+        ],
+      ),
       trailing: TextButton(
         onPressed: onChat,
         child: const Text('Chat'),
@@ -83,4 +90,3 @@ class ContactTile extends StatelessWidget {
     return base64Decode(uri.substring(commaIdx + 1));
   }
 }
-

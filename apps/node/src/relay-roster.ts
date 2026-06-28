@@ -9,6 +9,7 @@ import type {
   RelaySummaryPayload,
   RelayVisibility,
 } from "@envoymesh/protocol";
+import { filterDialHintsForOutboundSend } from "@envoymesh/network";
 import { buildRelayCircuitMultiaddrs } from "./discovery-inbound.js";
 import type { RelaySummaryEntry } from "./relay-lookup-router.js";
 
@@ -170,7 +171,10 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
         candidates.push({
           peerId: entry.peerId,
           ownerId: visibility === "public" || visibility === "capability" ? undefined : entry.ownerId,
-          multiaddrs: buildRelayCircuitMultiaddrs(relayMultiaddrs, entry.peerId),
+          multiaddrs: dedupeAddrs([
+            ...directDialAddrsFromCheckin(entry),
+            ...buildRelayCircuitMultiaddrs(relayMultiaddrs, entry.peerId),
+          ]),
           viaRelayId: relayPeerId,
           capabilities: entry.capabilities,
           visibility,
@@ -345,6 +349,18 @@ function isVisible(candidate: RelayVisibility, requested: RelayVisibility): bool
     return requested === "capability" || requested === "bonded";
   }
   return true;
+}
+
+/** Direct listen addrs from relay.checkin (LAN tcp/0 ports) — not relay circuit paths. */
+function directDialAddrsFromCheckin(entry: RelayRosterEntry): string[] {
+  const direct = entry.relayReachableAddrs.filter(
+    (addr) => addr.includes(`/p2p/${entry.peerId}`) && !addr.includes("/p2p-circuit/"),
+  );
+  return filterDialHintsForOutboundSend(direct, entry.peerId);
+}
+
+function dedupeAddrs(input: string[]): string[] {
+  return dedupe(input);
 }
 
 function dedupe(input: string[]): string[] {

@@ -149,7 +149,7 @@ import UIKit
     registry.desiredPushTypes = [.voIP]
     objc_setAssociatedObject(
       registry,
-      &VoipChannelKey,
+      &AppDelegate.VoipChannelKey,
       channel,
       .OBJC_ASSOCIATION_RETAIN
     )

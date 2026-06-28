@@ -78,6 +78,10 @@ import type {
 } from "./company-invite.js";
 import type {
   BridgeStatus,
+  BridgeConfigView,
+  UpdateBridgeConfigParams,
+  UpdateBridgeConfigResult,
+  ProbeExtAgentsResult,
   OpenClawStatus,
   NodeConfig,
   RelayConfig,
@@ -735,8 +739,9 @@ export interface SendChatAttachmentParams {
 export interface SendChatAttachmentResult {
   attachmentId: string;
   vaultRelativePath: string;
-  shareRequestMessageId: string;
-  /** Present when `chatText` was provided — the outbound chat.message id. */
+  /** Omitted when share.request could not be delivered after retries. */
+  shareRequestMessageId?: string;
+  /** Present when a chat.message was sent (text and/or audio attachment). */
   messageId?: string;
 }
 
@@ -856,7 +861,29 @@ export interface PeerConnectionInfo {
   relayPeerId?: string;
 }
 
+/** Live reachability + coordinator state for UI and diagnostics. */
+export interface PeerConnectionHealth extends PeerConnectionInfo {
+  peerOwnerId: string;
+  transportPeerId?: string;
+  lastVerifiedAt?: string;
+  warmInFlight: boolean;
+  coordinatorBlocked?: string;
+  suggestedAction?: "wait" | "retry" | "relay_only";
+}
+
 /** Options for {@link NodeService.warmContactConnection}. */
+export type WarmContactSource =
+  | "bond_warm"
+  | "open_chat"
+  | "sidebar"
+  | "send"
+  | "settings"
+  | "lan_discovery"
+  | "presence_signal"
+  | "inbound"
+  | "call"
+  | "manual";
+
 export interface WarmContactConnectionOptions {
   /** Close stale libp2p paths and force a fresh dial (use after send failure). Default false. */
   redial?: boolean;
@@ -868,6 +895,12 @@ export interface WarmContactConnectionOptions {
   keepAlive?: boolean;
   /** When connected, verify with a chat stream; redial if stale. Use on chat open. */
   verifyConnection?: boolean;
+  /** Which subsystem initiated the warm (used by the node warm coordinator). */
+  source?: WarmContactSource;
+  /** Bypass warm coordinator cooldown (explicit user redial or send retry). */
+  force?: boolean;
+  /** Chat open: shorter dial-hint build timeout and parallel hint racing on the mesh. */
+  fastDial?: boolean;
 }
 
 export interface ChatDiagnosticsContact {
@@ -1077,6 +1110,8 @@ export interface NodeServiceEvents {
     recipientOwnerId: string;
     reason: string;
   };
+  /** Voice note / file attachment pipeline progress (chat → share → data). */
+  "chat:attachment-transfer": import("./attachment-transfer.js").ChatAttachmentTransferEvent;
 
   // File sharing events
   "share:offered": ShareOffer;
@@ -1732,6 +1767,15 @@ export interface NodeService {
    */
   getBridgeStatus(): Promise<BridgeStatus>;
 
+  /** Phase 44 — load bridge-config.json (registry + resolved active backend). */
+  getBridgeConfig(): Promise<BridgeConfigView>;
+
+  /** Phase 44 — persist bridge config and hot-update runtime forward target. */
+  updateBridgeConfig(params: UpdateBridgeConfigParams): Promise<UpdateBridgeConfigResult>;
+
+  /** Phase 44 — probe GET /status for every registry entry; refreshes BridgeStatus.healthy. */
+  probeExtAgents(): Promise<ProbeExtAgentsResult>;
+
   /**
    * Get the live status of the built-in OpenClaw agent (EnvoyAI).
    * `status.enabled` reflects the persisted `openclawEnabled` flag;
@@ -2020,6 +2064,8 @@ export interface NodeService {
    * @param peerOwnerId The owner's peer ID (e.g., envoy:owner:...)
    */
   getPeerConnectionInfo(peerOwnerId: string): Promise<PeerConnectionInfo>;
+  /** Reachability plus warm-coordinator state for open-chat UI. */
+  getPeerConnectionHealth(peerOwnerId: string): Promise<PeerConnectionHealth>;
 
   /**
    * Pre-dial a bonded contact so relay/P2P paths are warm before chat or file share.

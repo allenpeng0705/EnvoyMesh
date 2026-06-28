@@ -35,11 +35,17 @@ import { NodeServiceImpl } from "../src/node-service-impl.js";
 import { handleInboundShareRequest } from "../src/share-inbound.js";
 
 const meshes: EnvoyMesh[] = [];
+const services: NodeServiceImpl[] = [];
 const profileDirs: string[] = [];
 
 afterEach(async () => {
-  await Promise.all(meshes.splice(0).map((m) => m.stop().catch(() => {})));
-  await Promise.all(profileDirs.splice(0).map((d) => rm(d, { recursive: true, force: true })));
+  for (const service of services.splice(0)) {
+    await service.stopNode().catch(() => {});
+  }
+  meshes.splice(0);
+  for (const dir of profileDirs.splice(0)) {
+    await rm(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 }).catch(() => {});
+  }
 });
 
 interface TestNode {
@@ -99,6 +105,7 @@ async function createTestNode(): Promise<TestNode> {
   );
   service.bindCliTaskStore(taskStore);
   service.bindExternalMesh(mesh);
+  services.push(service);
   return { profileDir, vaultDir, profile, mesh, taskStore, trustStore, peerDirectory, human, service };
 }
 
@@ -256,7 +263,7 @@ describe("E2E document autonomy over libp2p (ADB-F)", () => {
     await mkdir(join(bob.vaultDir, "out"), { recursive: true });
     await writeFile(join(bob.vaultDir, "out/proposal.txt"), content, { mode: 0o600 });
 
-    await bob.mesh.probePeer(alice.mesh.multiaddrs[0]!);
+    await bob.mesh.dial(alice.mesh.multiaddrs[0]!);
 
     const turn = await bob.service.runDocumentAgentTurn('share "out/proposal.txt" to Alice');
     expect(turn.intent).toBe("share_propose");
@@ -289,7 +296,7 @@ describe("E2E document autonomy over libp2p (ADB-F)", () => {
     await mkdir(join(bob.vaultDir, "out"), { recursive: true });
     await writeFile(join(bob.vaultDir, "out/autonomy.txt"), content, { mode: 0o600 });
 
-    await bob.mesh.probePeer(alice.mesh.multiaddrs[0]!);
+    await bob.mesh.dial(alice.mesh.multiaddrs[0]!);
 
     const turn = await bob.service.runDocumentAgentTurn('share "out/autonomy.txt" to Alice');
     expect(turn.intent).toBe("share_propose");

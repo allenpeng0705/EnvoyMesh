@@ -16,6 +16,10 @@ const mockOn = vi.fn((_event: string, _cb: (...args: unknown[]) => void) => {
   return () => {};
 });
 
+vi.mock("../../src/context/NodeStateContext.js", () => ({
+  useNodeState: () => ({ bonds: [] }),
+}));
+
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useAgentCards: () => cards,
   useNodeService: () => ({

@@ -103,7 +103,9 @@ describe("inbound message guard", () => {
     const guard = createInboundMessageGuard();
     const envelope = signedPingEnvelope();
 
+    expect(guard.isReplay(envelope.messageId)).toBe(false);
     expect(guard.inspect(envelope).action).toBe("allow");
+    expect(guard.isReplay(envelope.messageId)).toBe(true);
     expect(guard.inspect(envelope)).toEqual({
       action: "reject",
       reason: "replayed message",

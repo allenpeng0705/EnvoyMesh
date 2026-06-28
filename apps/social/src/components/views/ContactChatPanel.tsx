@@ -3,7 +3,7 @@ import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService, useChatMessages } from "../../hooks/useNodeService.js";
 import { useChatDrafts } from "../../hooks/useChatDrafts.js";
-import { usePeerReachability, peerReachabilityLabel } from "../../hooks/usePeerReachability.js";
+import { usePeerReachability, formatPeerReachabilityLabel } from "../../hooks/usePeerReachability.js";
 import { useCallSessionContext } from "../../context/CallSessionContext.js";
 import type { ChatMessage, ContactAiPreferences } from "@envoymesh/api";
 import {
@@ -12,6 +12,8 @@ import {
   chatMessageTextForDisplay,
   MAX_CHAT_ATTACHMENT_BYTES,
   isContactComposeDraftSyncScope,
+  hasAudioChatAttachments,
+  isAudioPlaceholderChatText,
 } from "@envoymesh/api";
 import { createContactComposeDraftCrdt } from "../../lib/contact-compose-draft-crdt.js";
 import { ContactPrivateNotesPanel } from "../ContactPrivateNotesPanel.js";
@@ -216,10 +218,8 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
     return out;
   }, [messages, pendingOutbound]);
 
-  const { info: peerReachability, checking: reachabilityChecking, refresh: refreshReachability } = usePeerReachability(
-    selectedContact,
-    true,
-  );
+  const { info: peerReachability, checking: reachabilityChecking } =
+    usePeerReachability(selectedContact, true);
   const contactReachable = peerReachability?.connected === true;
 
   const isOutgoingMsg = useCallback(
@@ -565,6 +565,8 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
   const messageGroups = useMemo(() => groupMessagesByDate(displayMessages), [displayMessages]);
   const isHomeBridgeThread =
     Boolean(bridgeStatus?.enabled) && selectedContact === bridgeStatus?.agentPeerId;
+  const composerDisabled = !nodeMeshOnline;
+
   const displayName =
     selectedContact === bridgeStatus?.agentPeerId
       ? (bridgeStatus.agentName || t("chat.myAgent"))
@@ -646,7 +648,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
               <span className="contact-reachability-dot" aria-hidden />
               {isHomeBridgeThread && !contactReachable && !reachabilityChecking
                 ? t("contactChat.homeOffline")
-                : peerReachabilityLabel(peerReachability)}
+                : formatPeerReachabilityLabel(peerReachability, reachabilityChecking, t)}
             </span>
           </div>
         </div>
@@ -805,15 +807,38 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
                           )}
                           onDelete={() => void handleDeleteMessage(msg.messageId)}
                         >
-                          <ChatMessageText text={msg.content.text} identity={aiIdentity} />
-                          {msg.content.attachments?.map((attachment) => {
-                            const isAudio = attachment.mimeType?.split(";")[0]?.startsWith("audio/") === true;
-                            return isAudio ? (
-                              <ChatAudioAttachment key={attachment.id} attachment={attachment} transcription={msg.content.text?.trim() || undefined} />
-                            ) : (
-                              <ChatFileAttachment key={attachment.id} attachment={attachment} />
+                          {(() => {
+                            const hasAudio = hasAudioChatAttachments(msg.content.attachments);
+                            const displayText = msg.content.text?.trim() ?? "";
+                            const showText =
+                              displayText.length > 0 &&
+                              !(hasAudio && isAudioPlaceholderChatText(displayText));
+                            const transcription =
+                              displayText && !isAudioPlaceholderChatText(displayText)
+                                ? displayText
+                                : undefined;
+                            return (
+                              <>
+                                {showText ? (
+                                  <ChatMessageText text={displayText} identity={aiIdentity} />
+                                ) : null}
+                                {msg.content.attachments?.map((attachment) => {
+                                  const isAudio =
+                                    attachment.mimeType?.split(";")[0]?.startsWith("audio/") === true;
+                                  return isAudio ? (
+                                    <ChatAudioAttachment
+                                      key={attachment.id}
+                                      attachment={attachment}
+                                      transcription={transcription}
+                                      messageId={msg.messageId}
+                                    />
+                                  ) : (
+                                    <ChatFileAttachment key={attachment.id} attachment={attachment} />
+                                  );
+                                })}
+                              </>
                             );
-                          })}
+                          })()}
                         </ChatMessageBubble>
                       ))}
                     </div>
@@ -882,7 +907,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
             onSend={handleSendMessage}
             placeholder={chatInputPlaceholder}
             sendLabel={t("contactChat.send")}
-            disabled={!nodeMeshOnline}
+            disabled={composerDisabled}
             leading={
               <>
                 <button
@@ -890,7 +915,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
                   className="secondary chat-mic-btn"
                   title={t("audioMessage.record")}
                   aria-label={t("audioMessage.record")}
-                  disabled={!nodeMeshOnline}
+                  disabled={composerDisabled}
                   onClick={() => void voiceRecorder.start()}
                 >
                   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>

@@ -16,19 +16,25 @@ import 'package:envoygo/services/node_service_client.dart';
 import 'package:envoygo/services/pairing_service.dart';
 import 'package:envoygo/storage/secure_storage.dart';
 import 'package:envoygo/storage/local_database.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+
+import '../helpers/l10n_test_wrapper.dart';
 
 void main() {
+  setUpAll(() {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  });
+
   group('HomeScreen tabs', () {
     testWidgets('renders three tab navigation destinations',
         (tester) async {
       await tester.pumpWidget(
-        const ProviderScope(
-          child: MaterialApp(
-            home: _TestHomeScreen(),
-          ),
+        wrapWithL10n(
+          const _TestHomeScreen(),
         ),
       );
-      await tester.pump();
+      await tester.pumpAndSettle();
 
       expect(find.text('Chats'), findsOneWidget);
       expect(find.text('Contacts'), findsOneWidget);
@@ -126,12 +132,10 @@ void main() {
 
   group('MeScreen', () {
     testWidgets('shows pair button when disconnected', (tester) async {
-      await tester.pumpWidget(
-        const ProviderScope(
-          child: MaterialApp(home: MeScreen()),
-        ),
+      await pumpLocalizedWidget(
+        tester,
+        const MeScreen(),
       );
-      await tester.pump();
 
       expect(find.text('Not connected'), findsOneWidget);
       expect(find.text('Pair with a home node to get started'),
@@ -150,18 +154,21 @@ void main() {
         lastConnectedAt: DateTime.now(),
       );
 
-      await tester.pumpWidget(
-        ProviderScope(
-          overrides: [
-            nodeProvider.overrideWith(
-                (ref) => _FakeNodeNotifier(node)),
-          ],
-          child: const MaterialApp(home: MeScreen()),
-        ),
+      await pumpLocalizedWidget(
+        tester,
+        const MeScreen(),
+        overrides: [
+          nodeProvider.overrideWith(
+              (ref) => _FakeNodeNotifier(node)),
+        ],
       );
-      await tester.pump();
 
       expect(find.text('My Mac'), findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('Public Access'),
+        120,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(find.text('Public Access'), findsOneWidget);
     });
   });
@@ -252,7 +259,7 @@ class _FakeChatNotifier extends ChatNotifier {
   Future<void> markRead(String threadId,
       {String? contactOwnerId}) async {}
   @override
-  Future<void> createRoom(String name) async {}
+  Future<String?> createRoom(String name, {List<String> memberOwnerIds = const []}) async => null;
   @override
   Future<void> inviteToRoom(String roomId, String ownerId) async {}
   @override

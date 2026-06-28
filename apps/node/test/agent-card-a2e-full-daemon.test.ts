@@ -130,8 +130,8 @@ describe("E2E agent.card + task via full daemon handlers (Phase 13C)", () => {
       allIntents.push(envelope.intent);
     });
 
-    await alice.mesh.probePeer(bob.mesh.multiaddrs[0]!);
-    await bob.mesh.probePeer(alice.mesh.multiaddrs[0]!);
+    await alice.mesh.dial(bob.mesh.multiaddrs[0]!);
+    await bob.mesh.dial(alice.mesh.multiaddrs[0]!);
 
     const requested = await alice.service.requestAgentCard(bob.profile.owner.ownerId);
     expect(requested.ok).toBe(true);

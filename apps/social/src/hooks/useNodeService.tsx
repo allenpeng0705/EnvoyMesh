@@ -96,6 +96,7 @@ import type {
   ChainSaveRecipeResult,
   ChainDeleteRecipeParams,
   ChainDeleteRecipeResult,
+  WarmContactConnectionOptions,
 } from "@envoymesh/api";
 import { isChatRoomThreadKey, ENVOY_AI_THREAD_KEY, TERMINAL_ASSIST_RPC_TIMEOUT_MS } from "@envoymesh/api";
 import { mergeGroupDeliveryAck } from "@envoymesh/api/group-chat-delivery";
@@ -215,9 +216,10 @@ export interface NodeServiceClient {
   // Connection Status
   getConnectionStatus(): Promise<ConnectionStatus>;
   getPeerConnectionInfo(peerOwnerId: string): Promise<{ connected: boolean; direct: boolean; relayPeerId?: string }>;
+  getPeerConnectionHealth(peerOwnerId: string): Promise<import("@envoymesh/api").PeerConnectionHealth>;
   warmContactConnection(
     peerOwnerId: string,
-    options?: { redial?: boolean; verifyOnly?: boolean; upgradeRelayToDirect?: boolean; keepAlive?: boolean; verifyConnection?: boolean },
+    options?: WarmContactConnectionOptions,
   ): Promise<{ connected: boolean; direct: boolean; relayPeerId?: string }>;
   getChatDiagnostics(peerOwnerId?: string): Promise<ChatDiagnostics>;
   getConnectivityDiagnostics(): Promise<ConnectivityDiagnostics>;
@@ -263,6 +265,11 @@ export interface NodeServiceClient {
 
   // Agent Bridge
   getBridgeStatus(): Promise<BridgeStatus>;
+  getBridgeConfig(): Promise<import("@envoymesh/api").BridgeConfigView>;
+  updateBridgeConfig(
+    params: import("@envoymesh/api").UpdateBridgeConfigParams,
+  ): Promise<import("@envoymesh/api").UpdateBridgeConfigResult>;
+  probeExtAgents(): Promise<import("@envoymesh/api").ProbeExtAgentsResult>;
   getOpenClawStatus(): Promise<import("@envoymesh/api").OpenClawStatus>;
   getPairingPayload(): Promise<PairingPayload>;
   createWanJoinInvite(
@@ -771,7 +778,10 @@ function createWsNodeServiceClient(
     async getNodeConfig() { return wsClient.rpc("getNodeConfig"); },
     async getConnectionStatus() { return wsClient.rpc("getConnectionStatus"); },
     async getPeerConnectionInfo(peerOwnerId: string) { return wsClient.rpc("getPeerConnectionInfo", { peerOwnerId }); },
-    async warmContactConnection(peerOwnerId: string, options?: { redial?: boolean; verifyOnly?: boolean; upgradeRelayToDirect?: boolean; keepAlive?: boolean; verifyConnection?: boolean }) {
+    async getPeerConnectionHealth(peerOwnerId: string) {
+      return wsClient.rpc("getPeerConnectionHealth", { peerOwnerId });
+    },
+    async warmContactConnection(peerOwnerId: string, options?: WarmContactConnectionOptions) {
       return wsClient.rpc(
         "warmContactConnection",
         {
@@ -781,8 +791,10 @@ function createWsNodeServiceClient(
           ...(options?.upgradeRelayToDirect ? { upgradeRelayToDirect: true } : {}),
           ...(options?.keepAlive ? { keepAlive: true } : {}),
           ...(options?.verifyConnection ? { verifyConnection: true } : {}),
+          ...(options?.source ? { source: options.source } : {}),
+          ...(options?.force ? { force: true } : {}),
         },
-        { timeoutMs: 90_000 },
+        { timeoutMs: 45_000 },
       );
     },
     async getChatDiagnostics(peerOwnerId?: string) {
@@ -963,6 +975,11 @@ function createWsNodeServiceClient(
     },
 
     async getBridgeStatus() { return wsClient.rpc("getBridgeStatus"); },
+    async getBridgeConfig() { return wsClient.rpc("getBridgeConfig"); },
+    async updateBridgeConfig(params: import("@envoymesh/api").UpdateBridgeConfigParams) {
+      return wsClient.rpc("updateBridgeConfig", params as Record<string, unknown>);
+    },
+    async probeExtAgents() { return wsClient.rpc("probeExtAgents"); },
     async getOpenClawStatus() {
       return wsClient.rpc("getOpenClawStatus") as Promise<import("@envoymesh/api").OpenClawStatus>;
     },
@@ -1471,10 +1488,18 @@ export function NodeServiceProvider({
     if (connectionPrefs.autoConnect) {
       void nodeService
         .connect()
-        .then(() => {
+        .then(async () => {
           if (!active) return;
           setConnected(wsClient.isConnected());
           setLastError(wsClient.getLastError());
+          try {
+            const row = await nodeService.getNodeStatus();
+            if (active && row.status === "running") {
+              setReady(true);
+            }
+          } catch {
+            /* node may still be starting */
+          }
         })
         .catch((err) => {
           if (!active) return;
@@ -1525,6 +1550,32 @@ export function NodeServiceProvider({
       setReady(false);
     };
   }, [clientFactory, connectionPrefs.wsUrl]);
+
+  // Tauri/desktop: Social often connects before the node child process finishes startNode().
+  useEffect(() => {
+    if (clientFactory || !client || !connected || ready) {
+      return;
+    }
+    let active = true;
+    const probe = async (): Promise<void> => {
+      try {
+        const row = await client.getNodeStatus();
+        if (active && row.status === "running") {
+          setReady(true);
+        }
+      } catch {
+        /* retry until node:ready / node:online arrives */
+      }
+    };
+    void probe();
+    const id = window.setInterval(() => {
+      void probe();
+    }, 500);
+    return () => {
+      active = false;
+      window.clearInterval(id);
+    };
+  }, [clientFactory, client, connected, ready]);
 
   const prevAutoConnectRef = useRef(connectionPrefs.autoConnect);
   useEffect(() => {

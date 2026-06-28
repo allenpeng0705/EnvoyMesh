@@ -33,8 +33,9 @@ import { readFile, mkdir, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { join, extname } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { pickFreePort } from "./playwright-e2e-port.js";
 
-const WEB_PORT = 5411;
+let webPort = 0;
 const WORKSPACE_ROOT = join(import.meta.dirname, "..", "..", "..");
 const SOCIAL_DIST = join(WORKSPACE_ROOT, "apps", "social", "src", "dist");
 
@@ -79,8 +80,9 @@ beforeAll(async () => {
   if (!existsSync(SOCIAL_DIST)) {
     console.log(`[chain-e2e] WARNING: ${SOCIAL_DIST} does not exist after build`);
   }
+  webPort = await pickFreePort();
   webServer = createServer(serveStatic);
-  await new Promise<void>((r) => webServer.listen(WEB_PORT, r));
+  await new Promise<void>((r) => webServer.listen(webPort, "127.0.0.1", r));
   await mkdir(join(WORKSPACE_ROOT, "apps", "node", "test", "screenshots"), { recursive: true });
   try {
     const fs = await import("node:fs");
@@ -123,7 +125,7 @@ describe("chain Phase 40 — Social bundle smoke (Playwright)", () => {
     skipIf(ctx);
     const page = await browser.newPage();
     try {
-      await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "domcontentloaded" });
+      await page.goto(`http://127.0.0.1:${webPort}/`, { waitUntil: "domcontentloaded" });
       await sleep(2500);
       const body = await page.textContent("body");
       expect(body).toMatch(/EnvoyMesh|Welcome/);
@@ -139,7 +141,7 @@ describe("chain Phase 40 — Social bundle smoke (Playwright)", () => {
     skipIf(ctx);
     const page = await browser.newPage();
     try {
-      await page.goto(`http://localhost:${WEB_PORT}/`, { waitUntil: "domcontentloaded" });
+      await page.goto(`http://127.0.0.1:${webPort}/`, { waitUntil: "domcontentloaded" });
       await sleep(2500);
       // The Chains nav button only renders once the user is past the
       // SetupView. We just confirm the React bundle parses (i.e. no JS

@@ -253,7 +253,7 @@ describe("E2E transfer status (ADB-D)", () => {
     await mkdir(join(alice.vaultDir, "out"), { recursive: true });
     await writeFile(join(alice.vaultDir, "out/status.txt"), content, { mode: 0o600 });
 
-    await alice.mesh.probePeer(bob.mesh.multiaddrs[0]!);
+    await alice.mesh.dial(bob.mesh.multiaddrs[0]!);
 
     try {
       await alice.service.shareFile(bob.profile.owner.ownerId, {

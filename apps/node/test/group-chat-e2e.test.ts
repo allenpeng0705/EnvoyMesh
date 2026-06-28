@@ -40,9 +40,9 @@ describe.sequential("E2E group chat (three-node libp2p)", () => {
     wireNodeServiceInboundHandlers(bob);
     wireNodeServiceInboundHandlers(carol);
 
-    await alice.mesh.probePeer(bob.mesh.multiaddrs[0]!);
-    await alice.mesh.probePeer(carol.mesh.multiaddrs[0]!);
-    await bob.mesh.probePeer(carol.mesh.multiaddrs[0]!);
+    await alice.mesh.dial(bob.mesh.multiaddrs[0]!);
+    await alice.mesh.dial(carol.mesh.multiaddrs[0]!);
+    await bob.mesh.dial(carol.mesh.multiaddrs[0]!);
 
     const room = await alice.service.createChatRoom("Weekend", [
       bob.profile.owner.ownerId,
@@ -108,7 +108,7 @@ describe.sequential("E2E group chat (three-node libp2p)", () => {
     await registerBondedPeer(bob, alice, "Alice");
     wireNodeServiceInboundHandlers(alice);
     wireNodeServiceInboundHandlers(bob);
-    await alice.mesh.probePeer(bob.mesh.multiaddrs[0]!);
+    await alice.mesh.dial(bob.mesh.multiaddrs[0]!);
 
     const room = await alice.service.createChatRoom("Delivery", [bob.profile.owner.ownerId]);
     await waitForPhase13(async () => {

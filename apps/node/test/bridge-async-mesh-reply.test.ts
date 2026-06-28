@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
+import { applyBridgeConfigResolution, BridgeConfigSchema } from "../src/bridge/config.js";
 import { forwardAsyncMeshReply, resetBridgeAsyncReplyRateLimitForTests, checkBridgeAsyncReplyRateLimit } from "../src/bridge/async-mesh-reply.js";
 
 describe("forwardAsyncMeshReply (ADB-E)", () => {
@@ -29,6 +30,43 @@ describe("forwardAsyncMeshReply (ADB-E)", () => {
     expect(body.type).toBe("mesh.async_reply");
     expect(body.intent).toBe("discovery.response");
     expect(body.correlationId).toBe("corr-1");
+  });
+
+  it("uses per-agent inboundSecret for Authorization", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, text: async () => "" });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const config = applyBridgeConfigResolution(
+      BridgeConfigSchema.parse({
+        enabled: true,
+        secret: "global-secret",
+        activeExtAgent: "openclaw-ext",
+        extAgents: [
+          {
+            id: "openclaw-ext",
+            name: "OpenClaw",
+            adapter: "openclaw-webhook",
+            url: "http://127.0.0.1:18789/webhook/envoymesh",
+            inboundSecret: "agent-secret",
+            enabled: true,
+          },
+        ],
+      }),
+    );
+
+    await forwardAsyncMeshReply(config, {
+      intent: "knowledge.response",
+      correlationId: "corr-2",
+      senderPeerId: "envoy_agent_x",
+      remotePeerId: "12D3Peer",
+      messageId: "msg-2",
+      payload: { results: [] },
+    });
+
+    const [, init] = fetchMock.mock.calls[0]!;
+    expect((init as RequestInit).headers).toMatchObject({
+      Authorization: "Bearer agent-secret",
+    });
   });
 
   it("rate limits async forwards per minute", async () => {

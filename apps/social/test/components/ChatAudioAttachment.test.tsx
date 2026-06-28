@@ -23,6 +23,7 @@ function mockNodeService(overrides: Partial<ReturnType<typeof useNodeService>> =
   (useNodeService as any).mockReturnValue({
     readLibraryItemContent: mockReadLibraryItemContent,
     isConnected: true,
+    on: vi.fn(() => () => undefined),
     ...overrides,
   });
 }
@@ -130,5 +131,30 @@ describe("ChatAudioAttachment — Phase 37", () => {
     );
     expect(mockReadLibraryItemContent).not.toHaveBeenCalled();
     expect(screen.getByText(/loading/i)).toBeDefined();
+  });
+
+  it("hides placeholder transcription text", async () => {
+    mockNodeService();
+    mockReadLibraryItemContent.mockResolvedValue({
+      mimeType: "audio/webm",
+      contentBase64: btoa("fake-audio-bytes"),
+    });
+    renderWithI18n(
+      <ChatAudioAttachment
+        attachment={{
+          id: "test-att-6",
+          filename: "voice.webm",
+          mimeType: "audio/webm",
+          sizeBytes: 24000,
+          sensitivity: "friends",
+          vaultRelativePath: "chat/out/uuid/voice.webm",
+        }}
+        transcription="[Audio message — no transcription available]"
+      />,
+    );
+    await waitFor(() => {
+      expect(document.querySelector("audio")).toBeTruthy();
+    });
+    expect(screen.queryByText("[Audio message — no transcription available]")).toBeNull();
   });
 });

@@ -67,8 +67,8 @@ async function setupChainHomes(): Promise<{ orchestrator: Phase13TestNode; worke
     knowledge: [],
   });
 
-  await orchestrator.mesh.probePeer(worker.mesh.multiaddrs[0]!);
-  await worker.mesh.probePeer(orchestrator.mesh.multiaddrs[0]!);
+  await orchestrator.mesh.dial(worker.mesh.multiaddrs[0]!);
+  await worker.mesh.dial(orchestrator.mesh.multiaddrs[0]!);
 
   const requestedWorkerCard = await orchestrator.service.requestAgentCard(worker.profile.owner.ownerId);
   expect(requestedWorkerCard.ok).toBe(true);

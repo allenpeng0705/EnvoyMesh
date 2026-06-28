@@ -72,21 +72,63 @@ describe("peer-reachability-hysteresis", () => {
     expect(r.state.displayedLabel).toBe("relay");
   });
 
-  it("open-chat stablePathPolls=1 flips Direct to Relay on first poll", () => {
-    let state = createReachabilityHysteresisState();
-    const t0 = 4_000_000;
-    let r = applyReachabilityHysteresis(state, { connected: true, direct: true }, t0);
-    state = r.state;
-
-    r = applyReachabilityHysteresis(
-      state,
-      { connected: true, direct: false },
-      t0 + 1000,
-      { stablePathPolls: REACHABILITY_OPEN_CHAT_STABLE_PATH_POLLS },
-    );
-    expect(r.shouldUpdate).toBe(true);
-    expect(r.info?.direct).toBe(false);
+  it("first disconnected reading waits for hysteresis when label not yet shown", () => {
+    const state = createReachabilityHysteresisState();
+    const r = applyReachabilityHysteresis(state, { connected: false, direct: false }, 3_500_000);
+    expect(r.shouldUpdate).toBe(false);
+    expect(r.info).toBeNull();
   });
+
+  it("first connected reading with null displayedLabel updates UI immediately", () => {
+    const state = createReachabilityHysteresisState();
+    const r = applyReachabilityHysteresis(state, { connected: true, direct: false }, 3_500_000);
+    expect(r.shouldUpdate).toBe(true);
+    expect(r.info).toEqual({ connected: true, direct: false });
+    expect(r.state.displayedLabel).toBe("relay");
+  });
+
+  it("holdOnline suppresses silent offline blips while UI shows Online", () => {
+    let state = createReachabilityHysteresisState();
+    let r = applyReachabilityHysteresis(state, { connected: true, direct: true }, 4_000_000);
+    state = r.state;
+    for (let i = 0; i < REACHABILITY_STABLE_OFFLINE_POLLS; i++) {
+      r = applyReachabilityHysteresis(
+        state,
+        { connected: false, direct: false },
+        4_000_100 + i,
+        { holdOnline: true },
+      );
+      state = r.state;
+      expect(r.shouldUpdate).toBe(false);
+    }
+  });
+
+    it("open-chat stablePathPolls holds Direct through brief Relay blips", () => {
+      let state = createReachabilityHysteresisState();
+      const t0 = 4_000_000;
+      let r = applyReachabilityHysteresis(state, { connected: true, direct: true }, t0);
+      state = r.state;
+
+      for (let i = 0; i < REACHABILITY_OPEN_CHAT_STABLE_PATH_POLLS - 1; i++) {
+        r = applyReachabilityHysteresis(
+          state,
+          { connected: true, direct: false },
+          t0 + 1000 + i,
+          { stablePathPolls: REACHABILITY_OPEN_CHAT_STABLE_PATH_POLLS },
+        );
+        state = r.state;
+        expect(r.shouldUpdate).toBe(false);
+      }
+
+      r = applyReachabilityHysteresis(
+        state,
+        { connected: true, direct: false },
+        t0 + 5000,
+        { stablePathPolls: REACHABILITY_OPEN_CHAT_STABLE_PATH_POLLS },
+      );
+      expect(r.shouldUpdate).toBe(true);
+      expect(r.info?.direct).toBe(false);
+    });
 
   it("background stablePathPolls=5 holds Direct label through one Relay blip", () => {
     let state = createReachabilityHysteresisState();

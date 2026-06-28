@@ -1,0 +1,9 @@
+{
+  "name": "@envoymesh/ext-agent-adapter-pi",
+  "private": true,
+  "type": "module",
+  "description": "Pi coding-agent RPC sidecar for EnvoyMesh Ext Agent",
+  "scripts": {
+    "start": "node server.mjs"
+  }
+}

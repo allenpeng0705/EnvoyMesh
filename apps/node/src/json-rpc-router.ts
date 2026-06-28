@@ -26,6 +26,7 @@ import type {
   ChainListRecipesParams,
   ChainSaveRecipeParams,
   ChainDeleteRecipeParams,
+  WarmContactConnectionOptions,
 } from "@envoymesh/api";
 
 /**
@@ -223,6 +224,8 @@ export async function routeRpcMethod(
         contentBase64: params.contentBase64 as string,
         mimeType: params.mimeType as string | undefined,
         caption: params.caption as string | undefined,
+        chatText: params.chatText as string | undefined,
+        recordInChat: params.recordInChat as boolean | undefined,
         sensitivity: params.sensitivity as "public" | "friends" | "private" | undefined,
       });
     case "readLibraryItemContent":
@@ -235,7 +238,10 @@ export async function routeRpcMethod(
     case "listChatRooms":
       return ns.listChatRooms();
     case "createChatRoom":
-      return ns.createChatRoom(params.title as string, params.memberOwnerIds as string[]);
+      return ns.createChatRoom(
+        params.title as string,
+        (params.memberOwnerIds as string[] | undefined) ?? [],
+      );
     case "inviteToChatRoom":
       return ns.inviteToChatRoom(params.roomId as string, params.memberOwnerIds as string[]);
     case "leaveChatRoom":
@@ -387,6 +393,8 @@ export async function routeRpcMethod(
       return ns.getConnectionStatus();
     case "getPeerConnectionInfo":
       return ns.getPeerConnectionInfo(params.peerOwnerId as string);
+    case "getPeerConnectionHealth":
+      return ns.getPeerConnectionHealth(params.peerOwnerId as string);
     case "warmContactConnection":
       return ns.warmContactConnection(
         String(params.peerOwnerId ?? ""),
@@ -396,6 +404,8 @@ export async function routeRpcMethod(
           ...(params.upgradeRelayToDirect === true ? { upgradeRelayToDirect: true } : {}),
           ...(params.keepAlive === true ? { keepAlive: true } : {}),
           ...(params.verifyConnection === true ? { verifyConnection: true } : {}),
+          ...(typeof params.source === "string" ? { source: params.source as WarmContactConnectionOptions["source"] } : {}),
+          ...(params.force === true ? { force: true } : {}),
         },
       );
     case "getChatDiagnostics":
@@ -501,6 +511,12 @@ export async function routeRpcMethod(
       return ns.getTransferStatus(params.correlationId as string);
     case "getBridgeStatus":
       return ns.getBridgeStatus();
+    case "getBridgeConfig":
+      return ns.getBridgeConfig();
+    case "updateBridgeConfig":
+      return ns.updateBridgeConfig(params as import("@envoymesh/api").UpdateBridgeConfigParams);
+    case "probeExtAgents":
+      return ns.probeExtAgents();
     case "getOpenClawStatus":
       return ns.getOpenClawStatus();
     case "getPairingPayload":

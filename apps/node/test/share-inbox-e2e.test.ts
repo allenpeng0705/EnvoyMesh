@@ -90,7 +90,9 @@ describe("E2E share inbox accept + inbound write", () => {
       send: async () => 12,
       tagContactForPersistentReachability: async () => {},
       untagContactForPersistentReachability: async () => {},
-      getPeerConnectionInfo: async () => ({ connected: false, direct: false }),
+      getPeerConnectionInfo: () => ({ connected: false, direct: false }),
+      ensurePeerReachable: async () => ({ connected: true, direct: true }),
+      closeConnectionsToPeer: async () => 0,
       onDataTransfer(h: Handler) {
         handlers.push(h);
         return () => {};

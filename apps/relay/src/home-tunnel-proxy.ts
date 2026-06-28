@@ -60,6 +60,11 @@ export interface ProxyChannelState {
   orphanedAt?: number;
 }
 
+export interface ProxyConnectionBudget {
+  total: number;
+  max: number;
+}
+
 export interface HomeTunnelProxyOptions {
   /** Maximum concurrent home tunnels. Beyond this, /ws/home upgrades
    *  are rejected with 503. */
@@ -67,11 +72,19 @@ export interface HomeTunnelProxyOptions {
   /** Maximum concurrent mobile-proxy connections. Beyond this, mobile
    *  upgrades are closed with 1013. */
   maxProxyConnections: number;
+  /** When set, tunnel + libp2p fallback share one connection budget. */
+  sharedProxyBudget?: ProxyConnectionBudget;
   /** Per-frame data size cap (bytes). The home chunks PTY output to
    *  64KB so 128KB is plenty of headroom for base64 inflation. */
   maxHomeTunnelDataBytes: number;
   /** Optional log prefix (defaults to "[relay]"). */
   logPrefix?: string;
+  /** relay.checkin / relay.lookup JSON envelopes on the home tunnel socket. */
+  onHomeControlEnvelope?: (input: {
+    ws: WebSocket;
+    peerId: string;
+    envelope: Record<string, unknown>;
+  }) => void;
 }
 
 export interface HomeTunnelProxy {
@@ -155,6 +168,7 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
     maxHomeTunnels,
     maxProxyConnections,
     maxHomeTunnelDataBytes,
+    sharedProxyBudget,
     logPrefix = "[relay]",
   } = opts;
 
@@ -168,6 +182,33 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
   let proxyConnTotal = 0;
   let stopped = false;
   let orphanSweeper: ReturnType<typeof setInterval> | undefined;
+
+  const proxyBudgetFull = (): boolean =>
+    sharedProxyBudget
+      ? sharedProxyBudget.total >= sharedProxyBudget.max
+      : proxyConnTotal >= maxProxyConnections;
+
+  const acquireProxyBudget = (): void => {
+    if (sharedProxyBudget) {
+      sharedProxyBudget.total++;
+      proxyConnTotal = sharedProxyBudget.total;
+      return;
+    }
+    proxyConnTotal++;
+  };
+
+  const releaseProxyBudget = (): void => {
+    if (sharedProxyBudget) {
+      if (sharedProxyBudget.total > 0) {
+        sharedProxyBudget.total--;
+      }
+      proxyConnTotal = sharedProxyBudget.total;
+      return;
+    }
+    if (proxyConnTotal > 0) {
+      proxyConnTotal--;
+    }
+  };
 
   // ---- Helpers ----
   const log = (msg: string): void => {
@@ -326,11 +367,16 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
           : Array.isArray(raw)
             ? Buffer.concat(raw).toString("utf-8")
             : new TextDecoder().decode(new Uint8Array(raw as ArrayBuffer));
-      let env: { type?: string; channelId?: string; data?: string };
+      let env: { type?: string; intent?: string; channelId?: string; data?: string };
       try {
         env = JSON.parse(text) as typeof env;
       } catch (err) {
         warn(`home-tunnel: bad frame from ${peerId.slice(0, 12)}…: ${(err as Error).message}`);
+        return;
+      }
+
+      if (typeof env.intent === "string" && env.intent.length > 0) {
+        opts.onHomeControlEnvelope?.({ ws, peerId, envelope: env as Record<string, unknown> });
         return;
       }
 
@@ -475,11 +521,11 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
       try { ws.close(1011, "home tunnel not available"); } catch { /* ignore */ }
       return;
     }
-    if (proxyConnTotal >= maxProxyConnections) {
+    if (proxyBudgetFull()) {
       try { ws.close(1013, "relay proxy connections full"); } catch { /* ignore */ }
       return;
     }
-    proxyConnTotal++;
+    acquireProxyBudget();
     const conns = proxyConnByTarget.get(targetPeerId) ?? new Set();
     conns.add(ws);
     proxyConnByTarget.set(targetPeerId, conns);
@@ -585,7 +631,7 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
         s.delete(ws);
         if (s.size === 0) proxyConnByTarget.delete(targetPeerId);
       }
-      proxyConnTotal--;
+      releaseProxyBudget();
       // Tell the current tunnel (if any) to close the channel.
       const t = homeTunnels.get(targetPeerId);
       if (t && t.readyState === WebSocket.OPEN) {
@@ -670,6 +716,9 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
       proxyChannels.clear();
       proxyClaimResolvers.clear();
       proxyConnByTarget.clear();
+      if (sharedProxyBudget) {
+        sharedProxyBudget.total = 0;
+      }
       proxyConnTotal = 0;
       // Close all home tunnels.
       for (const t of homeTunnels.values()) {

@@ -34,7 +34,7 @@
     "install:openclaw:win": "powershell -ExecutionPolicy Bypass -File scripts/install-openclaw.ps1",
     "postinstall": "node scripts/fix-node-pty-perms.js",
     "cli": "tsx apps/cli/src/index.ts",
-    "node:dev": "tsc -b packages/api packages/local-store && cd apps/node && tsx src/index.ts",
+    "node:dev": "tsc -b packages/api packages/local-store packages/network && cd apps/node && tsx src/index.ts",
     "relay:dev": "npm exec -w @envoymesh/relay -- tsx src/index.ts",
     "relay:build": "npm run build -w @envoymesh/relay",
     "tauri:dev": "npm run dev -w @envoymesh/tauri --",

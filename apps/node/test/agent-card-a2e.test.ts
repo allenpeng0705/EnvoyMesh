@@ -255,8 +255,8 @@ describe("E2E agent.card + task loop (Phase 13C)", () => {
       }
     });
 
-    await aliceMesh.probePeer(bobMesh.multiaddrs[0]!);
-    await bobMesh.probePeer(aliceMesh.multiaddrs[0]!);
+    await aliceMesh.dial(bobMesh.multiaddrs[0]!);
+    await bobMesh.dial(aliceMesh.multiaddrs[0]!);
 
     const cardRequest = createUnsignedEnvelope({
       senderPeerId: aliceBridge.agentPeerId,

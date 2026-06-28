@@ -81,7 +81,7 @@ describe("buildChatDiagnostics", () => {
     expect(diagnostics.connectionStats.circuitPeers).toBe(1);
     expect(diagnostics.contact?.peerFound).toBe(true);
     expect(diagnostics.contact?.dialHintCount).toBeGreaterThan(0);
-    expect(diagnostics.contact?.sampleDialHints.some((h) => h.includes("/p2p-circuit/"))).toBe(true);
+    expect(diagnostics.contact?.sampleDialHints.some((h) => h.includes("/tcp/"))).toBe(true);
     expect(diagnostics.hints.length).toBeGreaterThan(0);
   });
 });

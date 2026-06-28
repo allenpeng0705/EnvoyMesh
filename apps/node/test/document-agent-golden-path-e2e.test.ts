@@ -307,7 +307,7 @@ describe("E2E document agent golden path (two-node libp2p)", () => {
     const bobItems = await bob.service.listLibraryItems();
     expect(bobItems.find((i) => i.relativePath.includes("golden.txt"))?.published).toBe(true);
 
-    await alice.mesh.probePeer(bob.mesh.multiaddrs[0]!);
+    await alice.mesh.dial(bob.mesh.multiaddrs[0]!);
 
     const discoverTurn = await alice.service.runDocumentAgentTurn("who has golden");
     expect(discoverTurn.intent).toBe("discover");

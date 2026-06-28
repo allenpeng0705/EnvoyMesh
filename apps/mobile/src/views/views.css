@@ -342,8 +342,8 @@
 
 .mv-message.outgoing {
   align-self: flex-end;
-  background: var(--color-primary);
-  color: var(--color-primary-on);
+  background: var(--message-outgoing-bg);
+  color: var(--message-outgoing-text);
   border-bottom-right-radius: var(--radius-xs);
 }
 
@@ -362,7 +362,7 @@
 }
 
 .mv-message.outgoing .mv-message-time {
-  color: rgba(255, 255, 255, 0.5);
+  color: var(--message-outgoing-time);
 }
 
 /* Date separator */

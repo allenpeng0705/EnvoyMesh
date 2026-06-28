@@ -123,6 +123,14 @@ export class CallManager {
     }
   }
 
+  /** Remove ended session bookkeeping to avoid unbounded Map growth. */
+  private _removeSession(callId: string): void {
+    const session = this._sessions.get(callId);
+    if (!session) return;
+    if (session.ringTimer) clearTimeout(session.ringTimer);
+    this._sessions.delete(callId);
+  }
+
   // ------------------------------------------------------------------
   // Outbound — caller initiates a call
   // ------------------------------------------------------------------
@@ -171,6 +179,7 @@ export class CallManager {
     session.status = "ended";
     this._emit({ type: "call:error", callId, error });
     this._emit({ type: "call:ended", callId, reason: "error" });
+    this._removeSession(callId);
   }
 
   // ------------------------------------------------------------------
@@ -259,6 +268,7 @@ export class CallManager {
         reason: "no_answer",
       });
     }
+    this._removeSession(callId);
   }
 
   // ------------------------------------------------------------------
@@ -397,6 +407,7 @@ export class CallManager {
       callId,
       reason: reason as "busy" | "declined" | "offline" | "error" | "no_answer",
     });
+    this._removeSession(callId);
     return true;
   }
 
@@ -417,6 +428,7 @@ export class CallManager {
       callId,
       reason: reason as "normal" | "error" | "no_answer",
     });
+    this._removeSession(callId);
     return true;
   }
 

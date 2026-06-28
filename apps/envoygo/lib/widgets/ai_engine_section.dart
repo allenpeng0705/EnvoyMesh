@@ -1,24 +1,11 @@
-// Phase 32 — AI Engine mirror (read-only).
+// Phase 32 — AI Engine status mirror (read-only overview).
 //
-// Mobile is a thin client; the AI engine (built-in OpenClaw + Ext Agent
-// bridge) lifecycle lives on the home node. This widget shows the user which
-// engines are currently reachable through the home node's mesh, sourced from
-// `getOpenClawStatus()` and `getBridgeStatus()`.
-//
-// The Built-in OpenClaw block is **read-only** here — the home-node owner
-// edits `node-config.json` and restarts to change it. The External Agent
-// Bridge block is **also** read-only in this phase (changes flow through
-// the home-node Settings → AI → AI Engine screen). The home node's UI
-// is the source of truth; this widget is a status mirror.
-//
-// (Note: the home-node's separate "Agent Network" tab in Settings is for
-// onboarding other nodes — pairing, fleet manifest, company invites — not
-// the AI engine on this home node.)
-//
-// Reflects the reframed Phase 32 design doc §1 / §4.4 / §4.5.
+// Built-in OpenClaw status is read-only here. External Agent Bridge is
+// configured in [ExtAgentSection] below (synced to the home node).
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../l10n/l10n_helpers.dart';
 import '../providers/node_provider.dart';
 import '../services/node_service_client.dart';
 
@@ -33,6 +20,16 @@ AiEngineMode computeAiEngineMode({
   if (openclawEnabled) return AiEngineMode.openclawOnly;
   if (bridgeEnabled) return AiEngineMode.extOnly;
   return AiEngineMode.off;
+}
+
+/// Formats the Ext Agent subtitle from home `getBridgeStatus()` JSON.
+String formatExtAgentBridgeSubtitle(Map<String, dynamic>? bridge) {
+  if (bridge == null) return '';
+  final name = bridge['agentName'] as String? ?? '';
+  final adapter = bridge['adapter'] as String? ?? '';
+  if (name.isEmpty && adapter.isEmpty) return '';
+  if (adapter.isEmpty) return name;
+  return '$name · $adapter';
 }
 
 class AiEngineSection extends ConsumerStatefulWidget {
@@ -86,21 +83,11 @@ class _AiEngineSectionState extends ConsumerState<AiEngineSection> {
     }
   }
 
-  String _modeLabel(AiEngineMode mode) {
-    switch (mode) {
-      case AiEngineMode.both:
-        return 'Built-in + Ext';
-      case AiEngineMode.openclawOnly:
-        return 'Built-in only';
-      case AiEngineMode.extOnly:
-        return 'Ext only';
-      case AiEngineMode.off:
-        return 'None';
-    }
-  }
+  String _bridgeSubtitle() => formatExtAgentBridgeSubtitle(_bridge);
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final bridgeEnabled = _bridge?['enabled'] == true;
     final openclawEnabled = _openClaw?['enabled'] == true;
     final openclawRunning = _openClaw?['running'] == true;
@@ -118,36 +105,37 @@ class _AiEngineSectionState extends ConsumerState<AiEngineSection> {
             Row(
               children: [
                 Expanded(
-                  child: Text('AI Engine',
+                  child: Text(l10n.aiEngineTitle,
                       style: Theme.of(context).textTheme.titleSmall),
                 ),
                 IconButton(
                   icon: const Icon(Icons.refresh, size: 18),
-                  tooltip: 'Refresh',
+                  tooltip: l10n.refresh,
                   onPressed: _loading ? null : _refresh,
                 ),
               ],
             ),
             const SizedBox(height: 4),
-            Text(_modeLabel(mode),
+            Text(localizedAiEngineMode(l10n, mode),
                 style: Theme.of(context).textTheme.bodySmall),
             const SizedBox(height: 8),
             _EngineRow(
-              label: 'Built-in OpenClaw',
+              label: l10n.builtInOpenClaw,
               enabled: openclawEnabled,
               running: openclawRunning,
               readOnly: true,
             ),
             const SizedBox(height: 4),
             _EngineRow(
-              label: 'External Agent Bridge',
+              label: l10n.externalAgentBridge,
               enabled: bridgeEnabled,
               running: _bridge != null && (_bridge!['agentPeerId'] as String? ?? '').isNotEmpty,
               readOnly: true,
+              subtitle: _bridgeSubtitle(),
             ),
             const SizedBox(height: 8),
             Text(
-              'Both blocks are read-only on mobile. Configure on the home node (Settings → AI → AI Engine). To disable Built-in OpenClaw, edit node-config.json on the home node and restart it.',
+              l10n.aiEngineReadOnlyHint,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Colors.grey,
                     fontSize: 11,
@@ -165,26 +153,50 @@ class _EngineRow extends StatelessWidget {
   final bool enabled;
   final bool running;
   final bool readOnly;
-  const _EngineRow({required this.label, required this.enabled, required this.running, this.readOnly = false});
+  final String subtitle;
+  const _EngineRow({
+    required this.label,
+    required this.enabled,
+    required this.running,
+    this.readOnly = false,
+    this.subtitle = '',
+  });
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final color = !enabled
         ? Colors.grey
         : (running ? Colors.green : Colors.orange);
     final statusText = !enabled
-        ? 'Disabled'
-        : (running ? 'Running' : 'Configured (not running)');
-    return Row(
+        ? l10n.statusDisabled
+        : (running ? l10n.statusRunning : l10n.statusConfiguredNotRunning);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Icon(Icons.circle, size: 10, color: color),
-        const SizedBox(width: 8),
-        Expanded(child: Text(label, style: Theme.of(context).textTheme.bodySmall)),
-        if (!readOnly)
-          Switch(value: enabled, onChanged: (_) {})
-        else
-          Text(statusText,
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: color)),
+        Row(
+          children: [
+            Icon(Icons.circle, size: 10, color: color),
+            const SizedBox(width: 8),
+            Expanded(child: Text(label, style: Theme.of(context).textTheme.bodySmall)),
+            if (!readOnly)
+              Switch(value: enabled, onChanged: (_) {})
+            else
+              Text(statusText,
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(color: color)),
+          ],
+        ),
+        if (subtitle.isNotEmpty)
+          Padding(
+            padding: const EdgeInsets.only(left: 18, top: 2),
+            child: Text(
+              subtitle,
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Colors.grey,
+                    fontSize: 11,
+                  ),
+            ),
+          ),
       ],
     );
   }

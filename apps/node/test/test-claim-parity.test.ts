@@ -58,6 +58,13 @@ const CLAIM_KEYWORDS: ClaimRule[] = [
       const isErrorMessageInspection =
         /does not treat .*timeout|ack timeout|timeout.*failure|allows retry/i.test(lower);
       if (isErrorMessageInspection) return true;
+      const isTimeoutParameterTest =
+        /\b(rejects|uses|passes)\b.*\btimeout\b/i.test(lower) ||
+        /\bstall timeout\b/i.test(lower) ||
+        /timeoutMs:\s*\d+/.test(body) ||
+        /CHAT_.*TIMEOUT/.test(body) ||
+        /stallTimeoutMs/.test(body);
+      if (isTimeoutParameterTest) return true;
       return /setTimeout\(|AbortSignal\.timeout\(|Promise\.race\(|new Promise\(\([^)]*\)\s*=>\s*setTimeout\(|vi\.useFakeTimers\(|vi\.advanceTimersByTime\(/.test(body);
     },
   },

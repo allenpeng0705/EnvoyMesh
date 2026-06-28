@@ -6,10 +6,12 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   cleanupPhase13Node,
+  connectPhase13Peers,
   createPhase13TestNode,
   registerBondedPeer,
   waitForPhase13,
   wireDiscoveryAndShareForAcquisition,
+  wireDocumentAcquisitionKnowledgeReply,
 } from "./phase13-e2e-harness.js";
 
 const nodes: Awaited<ReturnType<typeof createPhase13TestNode>>[] = [];
@@ -34,12 +36,18 @@ describe.sequential("E2E document acquisition vault inbox (pull share)", () => {
     const publishTurn = await bob.service.runDocumentAgentTurn('publish "shared/acq-catalog.txt"');
     expect(publishTurn.toolsUsed).toContain("mesh.library_publish");
 
+    wireDocumentAcquisitionKnowledgeReply(
+      bob,
+      "shared/acq-catalog.txt",
+      "The acq catalog document is shared/acq-catalog.txt",
+    );
+
     await alice.service.updateNodeConfig({
       documentAcquisitionEnabled: true,
       modelProviders: { mode: "mock" },
     });
 
-    await alice.mesh.probePeer(bob.mesh.multiaddrs[0]!);
+    await connectPhase13Peers(alice, bob);
 
     const started = await alice.service.startDocumentAcquisitionJob({
       query: "acq catalog",

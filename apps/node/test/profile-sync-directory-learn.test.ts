@@ -50,20 +50,23 @@ function winProfile() {
 }
 
 function mockMesh(): EnvoyMesh {
+  const conn = { connected: true, direct: true };
   return {
     peerId: "12D3KooWWinNode",
     multiaddrs: [],
     send: async () => undefined,
+    sendChat: async () => undefined,
     sendExpectReply: async () => {
       throw new Error("sendExpectReply not configured for this test");
     },
     onMessage: () => {},
-    probePeer: async () => undefined,
-    getPeerConnectionInfo: () => ({ connected: false, direct: false }),
+    getPeerConnectionInfo: () => conn,
+    getConnectedPeerIds: () => [],
     getPeerStoreDialHints: async () => [],
     mergePeerStoreDialHints: async () => {},
+    scrubPeerStoreDialHints: async () => [],
     tagContactForPersistentReachability: async () => {},
-    ensurePeerReachable: async () => ({ connected: true, direct: true }),
+    ensurePeerReachable: async () => conn,
     closeConnectionsToPeer: async () => 0,
     start: async () => undefined,
     stop: async () => undefined,
@@ -130,6 +133,7 @@ describe("profile.sync inbound learns libp2p for bond owner", () => {
     const responseEnvelope = signUnsignedEnvelope(responseUnsigned, macDevice.privateKeyPem);
     const meshWithReply = {
       ...mockMesh(),
+      sendChatExpectEnvelopeReply: async () => responseEnvelope,
       sendExpectReply: async () => responseEnvelope,
     } as unknown as EnvoyMesh;
     svc.bindExternalMesh(meshWithReply);

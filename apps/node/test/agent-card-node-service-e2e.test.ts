@@ -34,8 +34,8 @@ describe("E2E requestAgentCard via NodeServiceImpl (Phase 13C)", () => {
       knowledge: [],
     });
 
-    await alice.mesh.probePeer(bob.mesh.multiaddrs[0]!);
-    await bob.mesh.probePeer(alice.mesh.multiaddrs[0]!);
+    await alice.mesh.dial(bob.mesh.multiaddrs[0]!);
+    await bob.mesh.dial(alice.mesh.multiaddrs[0]!);
 
     const requested = await alice.service.requestAgentCard(bob.profile.owner.ownerId);
     expect(requested.ok).toBe(true);

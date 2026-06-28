@@ -1135,6 +1135,27 @@
   opacity: 0.6;
 }
 
+.thread-reachability-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--color-text-muted);
+  margin-right: 2px;
+}
+
+.thread-reachability-dot.online-direct {
+  background: var(--color-success, #22c55e);
+}
+
+.thread-reachability-dot.online-relay {
+  background: var(--color-warning, #eab308);
+}
+
+.thread-reachability-dot.offline {
+  background: var(--color-text-subtle, #94a3b8);
+}
+
 .message-delivery-status {
   font-size: 0.65rem;
   opacity: 0.85;
@@ -1192,6 +1213,21 @@
 
 .message-stack-row.is-outgoing .message-bubble-footer {
   justify-content: flex-end;
+}
+
+.message-bubble.outgoing .message-bubble-footer .message-delivery-status,
+.message-bubble.outgoing-agent .message-bubble-footer .message-delivery-status,
+.message-bubble.ai-outgoing .message-bubble-footer .message-delivery-status {
+  color: var(--message-outgoing-time);
+}
+
+.message-bubble.outgoing .message-bubble-footer .message-delivery-status.status-delivered,
+.message-bubble.outgoing .message-bubble-footer .message-delivery-status.status-read,
+.message-bubble.outgoing-agent .message-bubble-footer .message-delivery-status.status-delivered,
+.message-bubble.outgoing-agent .message-bubble-footer .message-delivery-status.status-read,
+.message-bubble.ai-outgoing .message-bubble-footer .message-delivery-status.status-delivered,
+.message-bubble.ai-outgoing .message-bubble-footer .message-delivery-status.status-read {
+  color: color-mix(in srgb, var(--message-outgoing-text) 55%, var(--color-success, #16a34a));
 }
 
 .chat-reachability-hint {
@@ -1352,10 +1388,61 @@
   cursor: text;
 }
 
+.message-bubble.outgoing .message-bubble-body,
+.message-bubble.outgoing-agent .message-bubble-body,
+.message-bubble.ai-outgoing .message-bubble-body {
+  color: var(--message-outgoing-text);
+}
+
+.message-bubble.outgoing .message-bubble-body :is(.message-text, .ai-message-text, .chat-audio-attachment, .chat-audio-loading, .chat-audio-transcription, .chat-audio-duration, .chat-audio-error, .answer-plain, .answer-block-paragraph, .answer-block-fallback) :where(p, li, span, div, h1, h2, h3, h4, h5, h6, strong, em),
+.message-bubble.outgoing-agent .message-bubble-body :is(.message-text, .ai-message-text) :where(p, li, span, div, h1, h2, h3, h4, h5, h6, strong, em),
+.message-bubble.ai-outgoing .message-bubble-body :is(.message-text, .ai-message-text, .answer-plain, .answer-block-paragraph, .answer-block-fallback) :where(p, li, span, div, h1, h2, h3, h4, h5, h6, strong, em) {
+  color: inherit;
+}
+
 .message-bubble-body .message-text,
 .message-bubble-body .ai-message-text {
   user-select: text;
   -webkit-user-select: text;
+}
+
+.message-bubble.outgoing .message-bubble-body .message-text,
+.message-bubble.outgoing .message-bubble-body .ai-message-text,
+.message-bubble.outgoing-agent .message-bubble-body .message-text,
+.message-bubble.ai-outgoing .message-bubble-body .ai-message-text {
+  color: var(--message-outgoing-text);
+}
+
+.message-bubble.outgoing .message-bubble-body .message-text a,
+.message-bubble.outgoing .message-bubble-body .ai-message-text a,
+.message-bubble.outgoing-agent .message-bubble-body .message-text a,
+.message-bubble.ai-outgoing .message-bubble-body .ai-message-text a {
+  color: var(--message-outgoing-link);
+}
+
+.message-bubble.outgoing .message-bubble-body .message-text code,
+.message-bubble.outgoing .message-bubble-body .ai-message-text code,
+.message-bubble.outgoing-agent .message-bubble-body .message-text code,
+.message-bubble.ai-outgoing .message-bubble-body .ai-message-text code {
+  background: var(--message-outgoing-code-bg);
+  color: var(--message-outgoing-text);
+}
+
+.message-bubble.outgoing .message-bubble-body .message-text pre,
+.message-bubble.outgoing .message-bubble-body .ai-message-text pre,
+.message-bubble.outgoing-agent .message-bubble-body .message-text pre,
+.message-bubble.ai-outgoing .message-bubble-body .ai-message-text pre {
+  background: var(--message-outgoing-overlay);
+  border-color: var(--message-outgoing-code-border);
+}
+
+.message-bubble.outgoing .message-bubble-body .message-text blockquote,
+.message-bubble.outgoing .message-bubble-body .ai-message-text blockquote,
+.message-bubble.outgoing-agent .message-bubble-body .message-text blockquote,
+.message-bubble.ai-outgoing .message-bubble-body .ai-message-text blockquote {
+  border-left-color: var(--message-outgoing-quote-border);
+  background: var(--message-outgoing-overlay);
+  color: var(--message-outgoing-text);
 }
 
 .message-bubble-meta,
@@ -1417,8 +1504,8 @@
 
 .message-bubble.outgoing .message-bubble-body ::selection,
 .message-bubble.ai-outgoing .message-bubble-body ::selection {
-  background: rgb(255 255 255 / 0.35);
-  color: var(--color-primary-on);
+  background: var(--message-outgoing-selection-bg);
+  color: var(--message-outgoing-text);
 }
 
 .message-bubble.incoming-peer .message-bubble-body ::selection,
@@ -1528,27 +1615,25 @@
 }
 
 .message-bubble.outgoing,
-.message-bubble.ai-outgoing,
 .message-bubble.outgoing-agent {
-  background: linear-gradient(145deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
-  color: var(--color-primary-on);
-  border: 1px solid var(--message-outgoing-code-border);
+  background: var(--message-outgoing-bg);
+  color: var(--message-outgoing-text);
+  border: none;
+  box-shadow: 0 1px 1px var(--message-outgoing-shadow);
 }
 
 .message-bubble.outgoing .message-bubble-badge,
-.message-bubble.ai-outgoing .message-bubble-badge,
 .message-bubble.outgoing-agent .message-bubble-badge {
   color: var(--message-outgoing-time);
 }
 
 .message-bubble.outgoing .message-bubble-time,
-.message-bubble.ai-outgoing .message-bubble-time,
 .message-bubble.outgoing-agent .message-bubble-time {
   color: var(--message-outgoing-time);
 }
 
 .message-bubble.outgoing-agent .message-bubble-badge {
-  color: color-mix(in srgb, var(--color-primary-on) 85%, var(--color-role-agent));
+  color: color-mix(in srgb, var(--message-outgoing-text) 72%, var(--color-role-agent));
 }
 
 .message-bubble.incoming-peer {
@@ -1597,8 +1682,10 @@
 }
 
 .message-bubble.ai-outgoing {
-  background: linear-gradient(145deg, var(--color-secondary) 0%, var(--color-secondary-hover) 100%);
-  color: var(--color-secondary-on);
+  background: var(--message-ai-outgoing-bg);
+  color: var(--message-outgoing-text);
+  border: none;
+  box-shadow: 0 1px 1px var(--message-outgoing-shadow);
 }
 
 .message-bubble.ai-outgoing .message-bubble-badge,
@@ -2185,7 +2272,7 @@
 .voice-note-recorder-send {
   border-color: var(--color-primary);
   background: var(--color-primary);
-  color: var(--color-primary-contrast, #fff);
+  color: var(--color-primary-on);
 }
 
 .voice-note-recorder-send:hover:not(:disabled) {

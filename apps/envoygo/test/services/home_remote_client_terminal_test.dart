@@ -187,5 +187,17 @@ void main() {
           encodeTerminalFrame(TerminalWireType.ping, Uint8List(0));
       expect(frame, [1, TerminalWireType.ping]);
     });
+
+    test('closeTerminalTunnel includes sessionId in params', () async {
+      final fake = _FakeWebSocket();
+      final client = await _connectedClient(fake);
+      client.closeTerminalTunnel(sessionId: 'sess-close-me');
+      final params = jsonDecode(fake.sent.single) as Map<String, dynamic>;
+      expect(params['method'], 'homeTerminalWsClose');
+      expect(
+        (params['params'] as Map<String, dynamic>)['sessionId'],
+        'sess-close-me',
+      );
+    });
   });
 }

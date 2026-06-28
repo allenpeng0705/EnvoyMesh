@@ -62,8 +62,8 @@ describe.sequential("E2E social proxy flow (two-node libp2p)", () => {
       }
     });
 
-    await alice.mesh.probePeer(bob.mesh.multiaddrs[0]!);
-    await bob.mesh.probePeer(alice.mesh.multiaddrs[0]!);
+    await alice.mesh.dial(bob.mesh.multiaddrs[0]!);
+    await bob.mesh.dial(alice.mesh.multiaddrs[0]!);
 
     const pass = await alice.service.runSocialProxyPass({
       targetOwnerId: bob.profile.owner.ownerId,

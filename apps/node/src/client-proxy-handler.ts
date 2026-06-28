@@ -105,7 +105,10 @@ export function createClientProxyHandler(
           }
 
           if (msg.method === "homeTerminalWsClose") {
-            rpcHomeTerminalWsClose(companion);
+            rpcHomeTerminalWsClose(
+              companion,
+              (msg.params ?? {}) as { sessionId?: string },
+            );
             await streamIo.write(encoder.encode(JSON.stringify({ id: msg.id, result: { ok: true } })));
             continue;
           }

@@ -197,10 +197,10 @@ describe("importFleetManifestViaRuntime", () => {
       },
       issuer.privateKeyPem,
     );
-    // Tamper with the signature.
+    // Tamper with manifest body while keeping the original signature.
     const tampered: FleetManifest = {
       ...manifest,
-      signature: manifest.signature.replace(/.$/, (c) => (c === "A" ? "B" : "A")),
+      label: "tampered-after-signing",
     };
     const result = await importFleetManifestViaRuntime(makeContext(), {
       manifest: tampered,

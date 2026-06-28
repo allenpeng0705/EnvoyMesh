@@ -176,7 +176,7 @@ describe("E2E document agent publish / unpublish catalog", () => {
       mode: 0o600,
     });
 
-    await alice.mesh.probePeer(bob.mesh.multiaddrs[0]!);
+    await alice.mesh.dial(bob.mesh.multiaddrs[0]!);
 
     const publishTurn = await bob.service.runDocumentAgentTurn('publish "catalog/ephemeral-note.txt"');
     expect(publishTurn.intent).toBe("publish");

@@ -33,6 +33,7 @@
  */
 
 import { WebSocket } from "ws";
+import type { EnvoyEnvelope } from "@envoymesh/protocol";
 
 export interface RelayTunnelClientOptions {
   /** Relay base WebSocket URL, e.g. `ws://47.93.11.212:15432/ws`. */
@@ -47,6 +48,10 @@ export interface RelayTunnelClientOptions {
   log?: (msg: string) => void;
   /** Called when the relay reports our observed public address (via the observed-addr frame). */
   onObservedAddr?: (addr: string) => void;
+  /** Fired once after home-tunnel-ack — send relay.checkin / relay.lookup on this socket. */
+  onTunnelReady?: (send: (envelope: EnvoyEnvelope) => void) => void | Promise<void>;
+  /** Inbound relay control replies (relay.lookup.response) on the home tunnel. */
+  onRelayControlEnvelope?: (envelope: EnvoyEnvelope) => void;
 }
 
 interface OpenChannel {
@@ -195,7 +200,14 @@ export class RelayTunnelClient {
         : Array.isArray(raw)
           ? Buffer.concat(raw as Buffer[]).toString("utf-8")
           : new TextDecoder().decode(new Uint8Array(raw as ArrayBuffer));
-    let env: { type?: string; channelId?: string; data?: string; token?: string; targetPeerId?: string };
+    let env: {
+      type?: string;
+      intent?: string;
+      channelId?: string;
+      data?: string;
+      token?: string;
+      targetPeerId?: string;
+    };
     try {
       env = JSON.parse(text);
     } catch {
@@ -203,8 +215,20 @@ export class RelayTunnelClient {
       return;
     }
 
+    if (typeof env.intent === "string" && env.intent.length > 0) {
+      this.opts.onRelayControlEnvelope?.(env as EnvoyEnvelope);
+      return;
+    }
+
     if (env.type === "home-tunnel-ack") {
       this.opts.log?.(`[relay-tunnel] ack received`);
+      if (this.opts.onTunnelReady) {
+        void Promise.resolve(
+          this.opts.onTunnelReady((envelope) => this.sendRelayControlEnvelope(envelope)),
+        ).catch((err) => {
+          this.opts.log?.(`[relay-tunnel] onTunnelReady failed: ${(err as Error).message}`);
+        });
+      }
       return;
     }
 
@@ -317,5 +341,10 @@ export class RelayTunnelClient {
     try {
       ws.send(JSON.stringify(obj));
     } catch { /* ignore */ }
+  }
+
+  /** relay.checkin / relay.lookup over the persistent /ws/home tunnel. */
+  sendRelayControlEnvelope(envelope: EnvoyEnvelope): void {
+    this.sendTunnelFrame(envelope);
   }
 }

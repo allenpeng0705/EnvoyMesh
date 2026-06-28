@@ -1,6 +1,9 @@
+import { aiEngineMessagesDe } from "./ai-engine-locale.js";
+
 export const deAiSettingsMessages = {
   title: "KI-Assistent-Einstellungen",
   sectionDesc: "Konfigurieren Sie, wie die KI in Ihrem Namen antwortet.",
+  aiEngine: aiEngineMessagesDe,
   model: {
     heading: "Modellanbieter",
     sectionDescCloud: "Cloud-API für Chat-Unterstützung und Wissensantworten auf diesem Gerät konfigurieren.",

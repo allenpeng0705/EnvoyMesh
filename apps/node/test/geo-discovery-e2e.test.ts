@@ -107,7 +107,7 @@ describe("Geo discovery two-node E2E", () => {
     const addr = dialableAddr(advertiser.mesh);
 
     const searcher = await createGeoNode([addr]);
-    await searcher.mesh.probePeer(addr);
+    await searcher.mesh.dial(addr);
 
     const discoveryLocation = { countryCode: "US", city: "Boston" };
     const cityTopic = "geo:city:US-boston";
@@ -249,7 +249,7 @@ describe("Geo discovery two-node E2E", () => {
     const advertiser = await createGeoNode();
     const addr = dialableAddr(advertiser.mesh);
     const searcher = await createGeoNode([addr]);
-    await searcher.mesh.probePeer(addr);
+    await searcher.mesh.dial(addr);
 
     const countryTopic = "geo:country:US";
     const cityTopic = "geo:city:US-boston";

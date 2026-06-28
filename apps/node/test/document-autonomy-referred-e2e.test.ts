@@ -234,7 +234,7 @@ describe("E2E document autonomy — referred bond blocks tier-2 auto-share", () 
     await mkdir(join(bob.vaultDir, "out"), { recursive: true });
     await writeFile(join(bob.vaultDir, "out/referred-only.txt"), "referred bond e2e", { mode: 0o600 });
 
-    await bob.mesh.probePeer(alice.mesh.multiaddrs[0]!);
+    await bob.mesh.dial(alice.mesh.multiaddrs[0]!);
 
     const turn = await bob.service.runDocumentAgentTurn('share "out/referred-only.txt" to Alice');
     expect(turn.intent).toBe("share_propose");

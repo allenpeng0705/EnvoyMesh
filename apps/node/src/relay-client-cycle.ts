@@ -3,7 +3,7 @@
  * CLI `index.ts` runs equivalent cycles; without this, cross-NAT chat lacks /p2p-circuit/ dial hints.
  */
 import { randomUUID } from "node:crypto";
-import type { EnvoyEnvelope } from "@envoymesh/protocol";
+import type { EnvoyEnvelope, RelayLookupResponsePayload } from "@envoymesh/protocol";
 import {
   createRelayCheckinPayload,
   createRelayLookupPayload,
@@ -17,8 +17,10 @@ import { filterRelayControlTargets } from "@envoymesh/network";
 import type { NodeProfile } from "@envoymesh/api";
 import type { InboundMessageGuard } from "./inbound-guard.js";
 import type { DiscoverySeedStore } from "./discovery-seed-store.js";
+import type { LocalPeerDirectoryStore } from "@envoymesh/local-store";
 import { logClientRelayLookupResponse, logRelayReachableAddrsForCheckin } from "./relay-checkin-log.js";
 import { recordRelayCheckinCycle, recordRelayLookupResult, type RelayCheckinAttempt } from "./relay-diagnostics-state.js";
+import { sendRelayCheckinOverWs, sendRelayLookupOverWs } from "./relay-ws-control-client.js";
 
 const RELAY_CLIENT_CYCLE_INTERVAL_MS = 30_000;
 const RELAY_LOOKUP_REPLY_TIMEOUT_MS = 30_000;
@@ -47,6 +49,9 @@ export interface RelayClientCycleDeps {
   bootstrapPeers: string[];
   inboundGuard: InboundMessageGuard;
   discoverySeedStore: DiscoverySeedStore;
+  relayWsUrl?: string;
+  peerDirectoryStore?: LocalPeerDirectoryStore;
+  onPeerDiscovered?: (peerId: string, multiaddrs: string[]) => Promise<void>;
 }
 
 async function sendRelayCheckin(deps: RelayClientCycleDeps, targets: string[]): Promise<RelayCheckinAttempt[]> {
@@ -73,6 +78,17 @@ async function sendRelayCheckin(deps: RelayClientCycleDeps, targets: string[]): 
     addrs: payload.relayReachableAddrs,
   });
   const results: RelayCheckinAttempt[] = [];
+  if (deps.relayWsUrl) {
+    try {
+      await sendRelayCheckinOverWs({ relayWsUrl: deps.relayWsUrl, mesh, profile });
+      console.log("[relay-client] relay.checkin ok via ws");
+      results.push({ target: "ws/client", ok: true });
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      console.warn(`[relay-client] relay.checkin ws failed error=${detail}`);
+      results.push({ target: "ws/client", ok: false, error: detail });
+    }
+  }
   for (const target of targets) {
     try {
       const signedEnvelope = signUnsignedEnvelope(
@@ -103,6 +119,27 @@ async function sendRelayCheckin(deps: RelayClientCycleDeps, targets: string[]): 
   return results;
 }
 
+async function mergeLookupPeersIntoDirectory(
+  payload: RelayLookupResponsePayload,
+  deps: RelayClientCycleDeps,
+): Promise<void> {
+  for (const peer of payload.peers) {
+    const directAddrs = peer.multiaddrs.filter(
+      (addr) => !addr.includes("/p2p-circuit/") && addr.includes(`/p2p/${peer.peerId}`),
+    );
+    if (directAddrs.length === 0) {
+      continue;
+    }
+    if (deps.peerDirectoryStore) {
+      await deps.peerDirectoryStore.mergeListenAddrsForPeerId(peer.peerId, directAddrs);
+    }
+    void deps.mesh.mergePeerStoreDialHints(peer.peerId, directAddrs);
+    if (deps.onPeerDiscovered) {
+      await deps.onPeerDiscovered(peer.peerId, directAddrs);
+    }
+  }
+}
+
 async function applyRelayLookupResponse(
   envelope: EnvoyEnvelope,
   deps: RelayClientCycleDeps,
@@ -116,8 +153,27 @@ async function applyRelayLookupResponse(
   });
   if (flat.length > 0) {
     await deps.discoverySeedStore.upsertMany(flat, "relay-peers");
-    console.log(`[relay-client] relay.lookup stored ${flat.length} circuit multiaddr(s)`);
+    console.log(`[relay-client] relay.lookup stored ${flat.length} multiaddr(s)`);
   }
+  await mergeLookupPeersIntoDirectory(payload, deps);
+  return flat.length;
+}
+
+async function applyRelayLookupPayload(
+  payload: RelayLookupResponsePayload,
+  deps: RelayClientCycleDeps,
+): Promise<number> {
+  const flat = dedupeAddrs(payload.peers.flatMap((peer) => peer.multiaddrs));
+  logClientRelayLookupResponse({
+    queryId: payload.queryId,
+    peerCount: payload.peers.length,
+    multiaddrs: flat,
+  });
+  if (flat.length > 0) {
+    await deps.discoverySeedStore.upsertMany(flat, "relay-peers");
+    console.log(`[relay-client] relay.lookup stored ${flat.length} multiaddr(s)`);
+  }
+  await mergeLookupPeersIntoDirectory(payload, deps);
   return flat.length;
 }
 
@@ -127,6 +183,40 @@ async function queryRelayLookup(deps: RelayClientCycleDeps, targets: string[]): 
     | { ok: true; peerCount: number; circuitAddrsStored: number }
     | { ok: false; error: string }
     | undefined;
+
+  if (deps.relayWsUrl) {
+    try {
+      const payload = createRelayLookupPayload({
+        queryId: `node_service_relay_lookup_${randomUUID()}`,
+        capability: "mesh.discovery",
+        maxResults: 32,
+        maxHops: 0,
+        maxFanout: 2,
+        visibilityScope: "public",
+        expiresAt: expiresAtFromNow(RELAY_CONTROL_TTL_MS),
+      });
+      const response = await sendRelayLookupOverWs({
+        relayWsUrl: deps.relayWsUrl,
+        profile,
+        lookup: payload,
+      });
+      const circuitAddrsStored = await applyRelayLookupPayload(response, deps);
+      console.log("[relay-client] relay.lookup ok via ws");
+      recordRelayLookupResult({
+        source: "node-service",
+        targets: ["ws/client"],
+        ok: true,
+        peerCount: response.peers.length,
+        circuitAddrsStored,
+      });
+      if (response.peers.length > 0) {
+        return;
+      }
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      console.warn(`[relay-client] relay.lookup ws failed error=${detail}`);
+    }
+  }
 
   for (const target of targets) {
     try {
@@ -199,7 +289,7 @@ async function queryRelayLookup(deps: RelayClientCycleDeps, targets: string[]): 
 
 export async function runRelayClientCycle(deps: RelayClientCycleDeps): Promise<void> {
   const targets = filterRelayControlTargets(deps.bootstrapPeers);
-  if (targets.length === 0) {
+  if (targets.length === 0 && !deps.relayWsUrl) {
     console.warn("[relay-client] no relay control targets configured (need cn-relay or a --relay-server bootstrap addr)");
     return;
   }

@@ -1,6 +1,9 @@
+import { aiEngineMessagesJa } from "./ai-engine-locale.js";
+
 export const jaAiSettingsMessages = {
   title: "AI アシスタント設定",
   sectionDesc: "AI があなたに代わって応答する方法を設定します。",
+  aiEngine: aiEngineMessagesJa,
   model: {
     heading: "モデルプロバイダー",
     sectionDescCloud: "このデバイスでチャット支援と知識回答用のクラウド API を設定します。",

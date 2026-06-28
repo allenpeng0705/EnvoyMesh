@@ -1,5 +1,9 @@
 /// A chat message.
 class ChatMessage {
+  /// Placeholder text for voice notes without transcription.
+  static const audioPlaceholderText =
+      '[Audio message — no transcription available]';
+
   /// Message ID from the server.
   final String id;
 
@@ -48,7 +52,46 @@ class ChatMessage {
       text: json['text'] as String?,
       createdAt: json['created_at'] as String?,
       isOutbound: (json['is_outbound'] as int?) == 1,
-      attachments: attList?.map((a) => ChatAttachment.fromJson(a as Map<String, dynamic>)).toList(),
+      attachments: attList
+          ?.map((a) => ChatAttachment.fromJson(a as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+
+  /// Parse a home-node [ChatMessage] RPC payload into a local message.
+  factory ChatMessage.fromRpcMap(
+    String threadId,
+    Map<String, dynamic> data, {
+    String? selfOwnerId,
+  }) {
+    final sender = data['sender'] as Map<String, dynamic>?;
+    final content = data['content'] as Map<String, dynamic>?;
+    final metadata = data['metadata'] as Map<String, dynamic>?;
+    final senderOwnerId =
+        ((data['senderOwnerId'] ?? sender?['ownerId']) as String?)?.trim();
+    final text = (data['text'] ?? content?['text']) as String?;
+    final messageId = (data['messageId'] ?? data['id']) as String?;
+    final createdAt =
+        (data['createdAt'] ?? metadata?['timestamp']) as String?;
+    final senderDisplayName =
+        (data['senderDisplayName'] ?? sender?['displayName']) as String?;
+    final isOutbound =
+        selfOwnerId != null && senderOwnerId != null && senderOwnerId == selfOwnerId;
+
+    final attachmentsRaw = content?['attachments'] as List<dynamic>?;
+    final attachments = attachmentsRaw
+        ?.map((a) => ChatAttachment.fromJson(a as Map<String, dynamic>))
+        .toList();
+
+    return ChatMessage(
+      id: messageId ?? 'msg_${DateTime.now().microsecondsSinceEpoch}',
+      threadId: threadId,
+      senderOwnerId: senderOwnerId,
+      senderDisplayName: isOutbound ? 'You' : senderDisplayName,
+      text: text,
+      createdAt: createdAt,
+      isOutbound: isOutbound,
+      attachments: attachments,
     );
   }
 
@@ -89,14 +132,18 @@ class ChatAttachment {
   bool get isAudio => mimeType.startsWith('audio/');
 
   factory ChatAttachment.fromJson(Map<String, dynamic> json) {
+    final id = (json['id'] as String?)?.trim() ?? '';
+    if (id.isEmpty) {
+      throw FormatException('ChatAttachment missing id');
+    }
     return ChatAttachment(
-      id: json['id'] as String,
-      filename: json['filename'] as String,
-      mimeType: json['mimeType'] as String,
-      sizeBytes: (json['sizeBytes'] as num).toInt(),
-      sensitivity: json['sensitivity'] as String,
+      id: id,
+      filename: (json['filename'] as String?)?.trim() ?? 'attachment',
+      mimeType: (json['mimeType'] as String?)?.trim() ?? 'application/octet-stream',
+      sizeBytes: (json['sizeBytes'] as num?)?.toInt() ?? 0,
+      sensitivity: (json['sensitivity'] as String?) ?? 'friends',
       vaultRelativePath: json['vaultRelativePath'] as String?,
-      durationSec: json['durationSec'] as int?,
+      durationSec: (json['durationSec'] as num?)?.toInt(),
     );
   }
 

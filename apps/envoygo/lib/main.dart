@@ -3,6 +3,7 @@ import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app.dart';
+import 'providers/locale_provider.dart';
 import 'providers/node_provider.dart';
 
 void main() {
@@ -31,9 +32,10 @@ class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
     // Load paired nodes on app start.
     Future.microtask(() async {
       try {
+        await ref.read(localeProvider.notifier).loadSaved();
         await ref.read(nodeProvider.notifier).loadPairedNodes();
       } catch (e) {
-        developer.log('[main] loadPairedNodes threw: $e', name: 'EnvoyGo');
+        developer.log('[main] startup init threw: $e', name: 'EnvoyGo');
       }
     });
   }

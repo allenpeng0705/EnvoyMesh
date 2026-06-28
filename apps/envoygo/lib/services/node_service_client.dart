@@ -5,6 +5,7 @@ import '../models/chain_active.dart';
 import '../models/chat_message.dart';
 import '../models/chat_room.dart';
 import '../models/contact.dart';
+import '../models/peer_connection_info.dart';
 import '../models/terminal_session.dart';
 import 'home_remote_client.dart';
 
@@ -28,6 +29,9 @@ class NodeServiceClient {
   final StreamController<Map<String, dynamic>> _eventController =
       StreamController<Map<String, dynamic>>.broadcast();
 
+  final StreamController<dynamic> _configController =
+      StreamController<dynamic>.broadcast();
+
   final List<void Function()> _unsubs = [];
 
   static const _callEvents = [
@@ -40,19 +44,21 @@ class NodeServiceClient {
     'call:ice-candidate',
   ];
 
+  static const _configEvents = [
+    'config:updated',
+  ];
+
   NodeServiceClient(this._client) {
     for (final event in _callEvents) {
       _unsubs.add(
         _client.on(event, (data) {
-          // Normalize: the home emits `{event, data}`; the provider expects
-          // a flat map with a `type` field. Re-stamp `type` defensively.
-          final payload = data is Map<String, dynamic>
-              ? Map<String, dynamic>.from(data)
-              : <String, dynamic>{};
-          payload['type'] ??= event;
+          final payload = _normalizePushEvent(event, data);
           _eventController.add(payload);
         }),
       );
+    }
+    for (final event in _configEvents) {
+      _unsubs.add(_client.on(event, (data) => _configController.add(data)));
     }
   }
 
@@ -68,11 +74,31 @@ class NodeServiceClient {
     }
     _unsubs.clear();
     _eventController.close();
+    _configController.close();
   }
 
   /// Stream of unsolicited push events from the home node (`call:*` today;
   /// easily extended). Consumed by [CallProvider].
   Stream<Map<String, dynamic>> get eventStream => _eventController.stream;
+
+  /// Flatten `{event, data}` envelopes and nested `data` maps from the home.
+  static Map<String, dynamic> _normalizePushEvent(String event, dynamic data) {
+    if (data is! Map) {
+      return {'type': event};
+    }
+    final raw = Map<String, dynamic>.from(data);
+    final nested = raw['data'];
+    if (nested is Map) {
+      final flat = Map<String, dynamic>.from(nested);
+      flat['type'] ??= raw['type'] ?? event;
+      return flat;
+    }
+    raw['type'] ??= event;
+    return raw;
+  }
+
+  /// Home node config patches (`config:updated`). Includes `modelProviders`.
+  Stream<dynamic> get configUpdateStream => _configController.stream;
 
   // -- Connection & pairing --
 
@@ -97,6 +123,11 @@ class NodeServiceClient {
   /// caller needs it locally before generating its offer.
   Future<Map<String, dynamic>> getNodeConfig() async {
     return await _client.call('getNodeConfig') as Map<String, dynamic>;
+  }
+
+  /// Push settings to the home node (synced across Social + EnvoyGo).
+  Future<void> updateNodeConfig(Map<String, dynamic> patch) async {
+    await _client.call('updateNodeConfig', patch);
   }
 
   /// Fetch the full pairing payload from the home node, including
@@ -133,6 +164,36 @@ class NodeServiceClient {
         as Map<String, dynamic>;
   }
 
+  /// Live libp2p reachability for a bonded contact (direct vs relay).
+  Future<PeerConnectionInfo> getPeerConnectionInfo(String peerOwnerId) async {
+    final result = await _client.call('getPeerConnectionInfo', {
+      'peerOwnerId': peerOwnerId,
+    }) as Map<String, dynamic>;
+    return PeerConnectionInfo.fromJson(result);
+  }
+
+  /// Warm or probe an existing path without forcing a full redial.
+  Future<PeerConnectionInfo> warmContactConnection(
+    String peerOwnerId, {
+    bool warm = false,
+    bool verifyOnly = false,
+    bool keepAlive = false,
+    bool redial = false,
+    bool upgradeRelayToDirect = false,
+    bool verifyConnection = false,
+  }) async {
+    final params = <String, dynamic>{'peerOwnerId': peerOwnerId};
+    if (warm) params['warm'] = true;
+    if (verifyOnly) params['verifyOnly'] = true;
+    if (keepAlive) params['keepAlive'] = true;
+    if (redial) params['redial'] = true;
+    if (upgradeRelayToDirect) params['upgradeRelayToDirect'] = true;
+    if (verifyConnection) params['verifyConnection'] = true;
+    final result = await _client.call('warmContactConnection', params)
+        as Map<String, dynamic>;
+    return PeerConnectionInfo.fromJson(result);
+  }
+
   // -- Chat — direct messages --
 
   Future<Map<String, dynamic>> sendChat(
@@ -164,6 +225,8 @@ class NodeServiceClient {
     required String contentBase64,
     required String mimeType,
     String? caption,
+    String? chatText,
+    bool? recordInChat,
   }) async {
     final params = <String, dynamic>{
       'targetOwnerId': targetOwnerId,
@@ -171,22 +234,35 @@ class NodeServiceClient {
       'contentBase64': contentBase64,
       'mimeType': mimeType,
       if (caption != null) 'caption': caption,
+      if (chatText != null) 'chatText': chatText,
+      if (recordInChat != null) 'recordInChat': recordInChat,
     };
-    return await _client.call('sendChatAttachment', params)
+    return await _client.call('sendChatAttachment', params, 120000)
         as Map<String, dynamic>;
   }
 
-  Future<List<ChatMessage>> listChatHistory(String targetOwnerId,
-      {String? before, int? limit}) async {
+  /// Fetch chat history from the home node for [peerOwnerId] (contact ownerId,
+  /// agent thread key, or `room:<roomId>` for groups).
+  Future<List<ChatMessage>> listChatHistoryForThread(
+    String threadId,
+    String peerOwnerId, {
+    String? selfOwnerId,
+    String? before,
+    int? limit,
+  }) async {
     final params = <String, dynamic>{
-      'targetOwnerId': targetOwnerId,
+      'peerOwnerId': peerOwnerId,
       if (before != null) 'before': before,
       if (limit != null) 'limit': limit,
     };
     final result = await _client.call('listChatHistory', params);
     final list = result as List<dynamic>;
     return list
-        .map((e) => ChatMessage.fromJson(e as Map<String, dynamic>))
+        .map((e) => ChatMessage.fromRpcMap(
+              threadId,
+              e as Map<String, dynamic>,
+              selfOwnerId: selfOwnerId,
+            ))
         .toList();
   }
 
@@ -212,16 +288,21 @@ class NodeServiceClient {
     }) as Map<String, dynamic>;
   }
 
-  Future<Map<String, dynamic>> createChatRoom(String name) async {
-    return await _client.call('createChatRoom', {'title': name})
-        as Map<String, dynamic>;
+  Future<Map<String, dynamic>> createChatRoom(
+    String name, {
+    List<String> memberOwnerIds = const [],
+  }) async {
+    return await _client.call('createChatRoom', {
+      'title': name,
+      'memberOwnerIds': memberOwnerIds,
+    }) as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> inviteToChatRoom(
       String roomId, String ownerId) async {
     return await _client.call('inviteToChatRoom', {
       'roomId': roomId,
-      'ownerId': ownerId,
+      'memberOwnerIds': [ownerId],
     }) as Map<String, dynamic>;
   }
 
@@ -232,7 +313,7 @@ class NodeServiceClient {
   Future<void> renameChatRoom(String roomId, String name) async {
     await _client.call('renameChatRoom', {
       'roomId': roomId,
-      'name': name,
+      'title': name,
     });
   }
 
@@ -253,6 +334,23 @@ class NodeServiceClient {
         as Map<String, dynamic>;
   }
 
+  /// Phase 44 — bridge registry view (`bridge-config.json` merged with health).
+  Future<Map<String, dynamic>> getBridgeConfig() async {
+    return await _client.call('getBridgeConfig') as Map<String, dynamic>;
+  }
+
+  /// Update active backend and/or registry on the home node.
+  Future<Map<String, dynamic>> updateBridgeConfig(
+      Map<String, dynamic> params) async {
+    return await _client.call('updateBridgeConfig', params)
+        as Map<String, dynamic>;
+  }
+
+  /// Probe HTTP health for registered ext agents on the home node.
+  Future<Map<String, dynamic>> probeExtAgents() async {
+    return await _client.call('probeExtAgents') as Map<String, dynamic>;
+  }
+
   /// Phase 32 — live status of the built-in OpenClaw agent (EnvoyAI) on the
   /// home node. Returns a map with `enabled`, `running`, and `url` keys.
   Future<Map<String, dynamic>> getOpenClawStatus() async {
@@ -271,11 +369,15 @@ class NodeServiceClient {
         .toList();
   }
 
-  Future<Map<String, dynamic>> createTerminalSession(
-      {String? cwd, String? command}) async {
+  Future<Map<String, dynamic>> createTerminalSession({
+    String? cwd,
+    String? title,
+    String? command,
+  }) async {
+    final resolvedTitle = title ?? command;
     return await _client.call('createTerminalSession', {
       if (cwd != null) 'cwd': cwd,
-      if (command != null) 'title': command,
+      if (resolvedTitle != null) 'title': resolvedTitle,
     }) as Map<String, dynamic>;
   }
 

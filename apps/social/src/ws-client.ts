@@ -27,6 +27,7 @@ export class WsClient {
   private reconnectAttempts = 0;
   private autoReconnectEnabled = true;
   private readonly maxReconnectDelay = 60000; // 1 minute max
+  private readonly loopbackMaxReconnectDelay = 8000;
   private lastPong = 0;
   private _statusCallbacks = new Set<ConnectionChangeHandler>();
   private _lastError: string | null = null;
@@ -80,6 +81,7 @@ export class WsClient {
     if (this._disposed) {
       return Promise.reject(new Error("WebSocket client has been disposed"));
     }
+    this.closeStaleSocket();
     return new Promise((resolve, reject) => {
       let resolved = false;
       try {
@@ -124,6 +126,7 @@ export class WsClient {
             clearTimeout(this._connectTimeout);
             this._connectTimeout = null;
           }
+          this._rejectPendingRequests(new Error("WebSocket disconnected"));
           this._statusCallbacks.forEach((cb) => cb("disconnected"));
           if (!resolved) {
             resolved = true;
@@ -162,16 +165,30 @@ export class WsClient {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+    this.closeStaleSocket();
+    this._rejectPendingRequests(new Error("WebSocket connection closed"));
+    this._statusCallbacks.forEach((cb) => cb("disconnected"));
+  }
+
+  /** Close an in-flight socket without clearing reconnect scheduling state. */
+  private closeStaleSocket(): void {
     const socket = this.ws;
     this.ws = null;
-    if (socket) {
-      socket.onclose = null;
-      socket.onerror = null;
-      socket.onopen = null;
-      socket.onmessage = null;
+    if (!socket) return;
+    socket.onclose = null;
+    socket.onerror = null;
+    socket.onopen = null;
+    socket.onmessage = null;
+    if (socket.readyState === WebSocket.OPEN || socket.readyState === WebSocket.CONNECTING) {
       socket.close();
     }
-    this._statusCallbacks.forEach((cb) => cb("disconnected"));
+  }
+
+  private _rejectPendingRequests(error: Error): void {
+    for (const pending of this.pendingRequests.values()) {
+      pending.reject(error);
+    }
+    this.pendingRequests.clear();
   }
 
   /** Close and reopen; optionally switch URL. Resets disposed state for manual retry. */
@@ -338,11 +355,10 @@ export class WsClient {
   private scheduleReconnect(): void {
     if (this._disposed || this.reconnectTimer || !this.autoReconnectEnabled) return;
 
-    // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 32s, 60s (cap)
-    const delay = Math.min(
-      1000 * Math.pow(2, this.reconnectAttempts),
-      this.maxReconnectDelay
-    );
+    const loopback = /^ws:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//i.test(this.url);
+    const baseDelay = loopback ? 250 : 1000;
+    const cap = loopback ? this.loopbackMaxReconnectDelay : this.maxReconnectDelay;
+    const delay = Math.min(baseDelay * Math.pow(2, this.reconnectAttempts), cap);
     this.reconnectAttempts++;
 
     console.log(`[ws-client] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})...`);

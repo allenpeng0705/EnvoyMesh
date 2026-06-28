@@ -117,39 +117,16 @@ export async function registerBondedPeer(
     level: "direct",
     displayName,
   });
-  const peerDirectoryPath = join(local.profileDir, "peer-directory.json");
-  let records: Array<{
-    version: "0.1";
-    ownerId: string;
-    peerId: string;
-    deviceId: string;
-    devicePublicKeyPem: string;
-    lastSeenAt: string;
-    listenAddrs: string[];
-  }> = [];
-  try {
-    const existing = JSON.parse(await readFile(peerDirectoryPath, "utf8")) as {
-      records?: typeof records;
-    };
-    records = existing.records ?? [];
-  } catch {
-    records = [];
-  }
-  const nextRecord = {
-    version: "0.1" as const,
+  await local.peerDirectory.ensurePeerFromInboundChat({
     ownerId: remote.profile.owner.ownerId,
     peerId: remote.mesh.peerId,
-    deviceId: deriveDeviceId(remote.profile.device.publicKeyPem),
-    devicePublicKeyPem: remote.profile.device.publicKeyPem,
-    lastSeenAt: new Date().toISOString(),
     listenAddrs: remote.mesh.multiaddrs.map(String),
-  };
-  const withoutOwner = records.filter((row) => row.ownerId !== remote.profile.owner.ownerId);
-  await writeFile(
-    peerDirectoryPath,
-    JSON.stringify({ version: "0.1", records: [...withoutOwner, nextRecord] }, null, 2),
-    { mode: 0o600 },
-  );
+  });
+  await local.peerDirectory.mergeInboundDeviceBinding({
+    peerId: remote.mesh.peerId,
+    ownerId: remote.profile.owner.ownerId,
+    devicePublicKeyPem: remote.profile.device.publicKeyPem,
+  });
 
   // Mirror the remote peer's published library onto the local node so the
   // circle proposer and mesh-awareness worker can read shared topics.
@@ -400,14 +377,14 @@ export async function waitForPhase13(
   throw new Error("waitForPhase13 timeout");
 }
 
-/** Dial every test node to every other (full mesh for small E2E clusters). */
+/** Dial every test node to every other (full mesh for small E2E clusters). Keeps connections open — probePeer closes immediately and loopback dial hints are filtered on redial. */
 export async function connectPhase13Peers(...nodes: Phase13TestNode[]): Promise<void> {
   for (let i = 0; i < nodes.length; i += 1) {
     for (let j = 0; j < nodes.length; j += 1) {
       if (i === j) continue;
       const local = nodes[i]!;
       const remote = nodes[j]!;
-      await local.mesh.probePeer(remote.mesh.multiaddrs[0]!);
+      await local.mesh.dial(remote.mesh.multiaddrs[0]!);
     }
   }
 }

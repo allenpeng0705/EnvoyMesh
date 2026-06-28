@@ -54,8 +54,8 @@ async function setupWorkerHome(
     knowledge: [],
   });
 
-  await orchestrator.mesh.probePeer(worker.mesh.multiaddrs[0]!);
-  await worker.mesh.probePeer(orchestrator.mesh.multiaddrs[0]!);
+  await orchestrator.mesh.dial(worker.mesh.multiaddrs[0]!);
+  await worker.mesh.dial(orchestrator.mesh.multiaddrs[0]!);
 
   const card = await orchestrator.service.requestAgentCard(worker.profile.owner.ownerId);
   expect(card.ok).toBe(true);

@@ -956,9 +956,6 @@ export function createLocalTaskStore(profileDir: string): LocalTaskStore {
     },
 
     async appendAuditEvent(event) {
-      if (event.type === "p2p.trace" || event.type === "message.rejected") {
-        return;
-      }
       await appendAuditQueued(event);
       await appendAuditIndexQueued(auditEventToIndexEntry(event));
     },
@@ -2023,7 +2020,7 @@ function isLikelyEphemeralTcpSnapshot(addr: string): boolean {
   if (!addr.includes("/tcp/")) {
     return false;
   }
-  const match = addr.match(/\/tcp\/(\d+)\//);
+  const match = addr.match(/\/tcp\/(\d+)(?:\/|$)/);
   if (!match) {
     return false;
   }
@@ -2035,7 +2032,9 @@ function isLikelyEphemeralTcpSnapshot(addr: string): boolean {
 }
 
 function filterDialableListenAddrs(addrs: string[]): string[] {
-  return dedupeListenAddrList(addrs.filter((a) => !isLikelyEphemeralTcpSnapshot(a)));
+  return dedupeListenAddrList(
+    addrs.filter((a) => a.includes("/p2p/") && !isLikelyEphemeralTcpSnapshot(a)),
+  );
 }
 
 /** Max dial hints retained per peer row — matches ensurePeerFromInboundChat / bond paths. */

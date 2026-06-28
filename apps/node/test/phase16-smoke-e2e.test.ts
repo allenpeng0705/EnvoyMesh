@@ -14,12 +14,14 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { BridgeIdentity } from "../src/bridge/pipe.js";
 import {
   cleanupPhase13Node,
+  connectPhase13Peers,
   createPhase13TestNode,
   ensureBridgeIdentity,
   ensureSocialProxyBridgeIdentity,
   registerBondedPeer,
   waitForPhase13,
   wireDiscoveryAndShareForAcquisition,
+  wireDocumentAcquisitionKnowledgeReply,
   wireFullDaemonAgentCardHandlers,
   wireInboundKnowledgeQueryReply,
   wireNodeServiceInboundHandlers,
@@ -87,6 +89,12 @@ describe.sequential("E2E Phase 16 combined smoke", () => {
     await writeFile(join(bob.vaultDir, docPath), docContent, { mode: 0o600 });
     await bob.service.runDocumentAgentTurn(`publish "${docPath}"`);
 
+    wireDocumentAcquisitionKnowledgeReply(
+      bob,
+      docPath,
+      "The phase16 smoke document is in shared/phase16-smoke.txt",
+    );
+
     await alice.service.updateNodeConfig({
       documentAcquisitionEnabled: true,
       capabilityProviderEnabled: true,
@@ -95,8 +103,7 @@ describe.sequential("E2E Phase 16 combined smoke", () => {
       modelProviders: { mode: "mock" },
     });
 
-    await alice.mesh.probePeer(bob.mesh.multiaddrs[0]!);
-    await bob.mesh.probePeer(alice.mesh.multiaddrs[0]!);
+    await connectPhase13Peers(alice, bob);
 
     // 16C — document acquisition (catalog fast path)
     const docJob = await alice.service.startDocumentAcquisitionJob({

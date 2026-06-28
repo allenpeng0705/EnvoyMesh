@@ -472,10 +472,11 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.getPeerConnectionInfo(peerOwnerId);
   }
 
-  async warmContactConnection(
-    peerOwnerId: string,
-    options?: { redial?: boolean; verifyOnly?: boolean; upgradeRelayToDirect?: boolean; keepAlive?: boolean; verifyConnection?: boolean },
-  ) {
+  async getPeerConnectionHealth(peerOwnerId: string) {
+    return this._ns.getPeerConnectionHealth(peerOwnerId);
+  }
+
+  async warmContactConnection(peerOwnerId: string, options?: import("@envoymesh/api").WarmContactConnectionOptions) {
     return this._ns.warmContactConnection(peerOwnerId, options);
   }
 
@@ -513,6 +514,18 @@ export class DirectCallClient implements NodeServiceClient {
 
   async getBridgeStatus() {
     return this._ns.getBridgeStatus();
+  }
+
+  async getBridgeConfig() {
+    return this._ns.getBridgeConfig();
+  }
+
+  async updateBridgeConfig(params: import("@envoymesh/api").UpdateBridgeConfigParams) {
+    return this._ns.updateBridgeConfig(params);
+  }
+
+  async probeExtAgents() {
+    return this._ns.probeExtAgents();
   }
 
   // Phase 38 — Voice/Video Calls

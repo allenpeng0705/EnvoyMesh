@@ -1,9 +1,11 @@
 # ADR: OpenClaw external agent bridge (Phase 9K)
 
 **Status:** Accepted  
-**Date:** 2026-05-28  
+**Date:** 2026-05-28 (protocol canonized 2026-06-24)  
 **Context:** EnvoyMesh ships an HTTP **P2P bridge** (`apps/node/src/bridge/`) so one home node can pipe `chat.message` traffic to an external agent. HomeClaw integrates via `channels/envoymesh`. OpenClaw needs the same wire contract without libp2p access.
 
+**Canonical protocol:** [envoymesh-bridge-protocol.md](./envoymesh-bridge-protocol.md) (v1)  
+**Multi-agent Ext Agent design:** [ext_agent_design.md](./ext_agent_design.md) (Phase 44)  
 **Operator guide:** [agent_bridge_guide.md](./agent_bridge_guide.md)
 
 ## Decision
@@ -23,6 +25,8 @@
    - **D:** Product docs + setup wizard — **Done** (`OpenClawExtension/docs/channels/envoymesh.md`, `openclaw onboard` wizard, `--with-docs` install).
 
 ## Wire contract
+
+> **Note:** The full v1 specification (adapter profiles, async mesh, tools, multi-agent registry) lives in [envoymesh-bridge-protocol.md](./envoymesh-bridge-protocol.md). The summary below matches that doc.
 
 ### Bridge → agent (`POST agentUrl`)
 
@@ -85,7 +89,7 @@ Example EnvoyMesh: `apps/node/data/default/bridge-config.openclaw.example.json`.
 ## Consequences
 
 - OpenClaw never holds libp2p keys; EnvoyMesh remains the only network face.
-- One bridge per node; one `agentUrl` per bridge (documented in bridge module).
+- One bridge per node; one **active** `agentUrl` at runtime (Phase 44 adds a registry + switch; see [ext_agent_design.md](./ext_agent_design.md)).
 - Phase 9I gateway (`ExternalAgentGateway`) remains orthogonal — bridge auth can still check `isAuthorized(agentId)` on `/bridge/send`.
 
 ## CI smokes

@@ -5,6 +5,7 @@ import type { AiIdentity } from "@envoymesh/api";
 import { applyAiIdentityForIdentity } from "@envoymesh/api";
 import type { ExternalAgentGateway } from "../external-agent-gateway.js";
 import type { BridgeConfig } from "./config.js";
+import { bridgeForwardAuthSecret } from "./config.js";
 
 export interface BridgeIdentity {
   agentPeerId: string;
@@ -71,8 +72,11 @@ export async function forwardToAgent(
   });
 
   const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (config.secret) {
-    headers["Authorization"] = `Bearer ${config.secret}`;
+  const authSecret = bridgeForwardAuthSecret(
+    config as BridgeConfig & { resolvedInboundSecret?: string },
+  );
+  if (authSecret) {
+    headers["Authorization"] = `Bearer ${authSecret}`;
   }
 
   console.log(`[bridge] forwardToAgent: POST ${config.agentUrl} from=${msg.senderOwnerId?.slice(0, 20)} text=${msg.text?.slice(0, 50)}`);

@@ -153,3 +153,250 @@ describe("AgentSettings — phase 32", () => {
     expect(disabled).toBeDefined();
   });
 });
+
+const extAgentsFixture = [
+  {
+    id: "homeclaw",
+    name: "HomeClaw",
+    adapter: "envoymesh-message",
+    url: "http://127.0.0.1:8010/message",
+    enabled: true,
+  },
+  {
+    id: "hermes",
+    name: "Hermes",
+    adapter: "envoymesh-message",
+    url: "http://127.0.0.1:8020/message",
+    enabled: true,
+  },
+] as const;
+
+describe("AgentSettings — phase 44 multi-agent", () => {
+  it("shows reachability badge when healthy is set", () => {
+    renderWithI18n(
+      <AgentSettings
+        envoyAI={{ enabled: true, running: true, url: "http://x" }}
+        extAgent={{
+          enabled: true,
+          configured: true,
+          name: "HomeClaw",
+          url: "http://127.0.0.1:8010/message",
+          listenPort: 3031,
+          activeExtAgent: "homeclaw",
+          activeExtAgentId: "homeclaw",
+          adapter: "envoymesh-message",
+          healthy: false,
+          extAgents: [
+            {
+              id: "homeclaw",
+              name: "HomeClaw",
+              adapter: "envoymesh-message",
+              url: "http://127.0.0.1:8010/message",
+              enabled: true,
+              healthy: false,
+              reachability: "stopped",
+            },
+            {
+              id: "hermes",
+              name: "Hermes",
+              adapter: "envoymesh-message",
+              url: "http://127.0.0.1:8020/message",
+              enabled: true,
+              healthy: true,
+              reachability: "running",
+            },
+          ],
+        }}
+        onExtAgentSave={noopAsync}
+      />,
+    );
+    expect(screen.getByText(/^Unreachable$/)).toBeDefined();
+    const table = document.querySelector(".settings-bridge-registry table.settings-table");
+    expect(table).toBeTruthy();
+    expect(table?.textContent).toMatch(/Stopped/);
+    expect(table?.textContent).toMatch(/Running/);
+  });
+
+  it("shows registry table and active agent card in read-only mode", () => {
+    renderWithI18n(
+      <AgentSettings
+        envoyAI={{ enabled: true, running: true, url: "http://x" }}
+        extAgent={{
+          enabled: true,
+          configured: true,
+          name: "HomeClaw",
+          url: "http://127.0.0.1:8010/message",
+          listenPort: 3031,
+          activeExtAgent: "homeclaw",
+          activeExtAgentId: "homeclaw",
+          adapter: "envoymesh-message",
+          extAgents: [...extAgentsFixture],
+        }}
+        onExtAgentSave={noopAsync}
+      />,
+    );
+    expect(document.querySelector(".ext-agent-active-card")).toBeTruthy();
+    expect(screen.getByDisplayValue("http://127.0.0.1:8010/message")).toBeDefined();
+    expect(screen.getByDisplayValue("8010")).toBeDefined();
+    expect(screen.queryByLabelText(/^Listen port$/i)).toBeNull();
+    expect(screen.getByRole("table").textContent).toMatch(/Hermes/);
+    const activeRow = document.querySelector('tr[data-active="true"]');
+    expect(activeRow?.textContent).toMatch(/HomeClaw/);
+  });
+
+  it("does not append agent name to section title when registry is present", () => {
+    renderWithI18n(
+      <AgentSettings
+        envoyAI={{ enabled: true, running: true, url: "http://x" }}
+        extAgent={{
+          enabled: true,
+          configured: true,
+          name: "HomeClaw",
+          url: "http://127.0.0.1:8010/message",
+          listenPort: 3031,
+          activeExtAgent: "homeclaw",
+          activeExtAgentId: "homeclaw",
+          extAgents: [...extAgentsFixture],
+        }}
+        onExtAgentSave={noopAsync}
+      />,
+    );
+    const titles = Array.from(document.querySelectorAll(".settings-section-title"));
+    const extTitle = titles.find((el) => /External Agent Bridge/i.test(el.textContent ?? ""));
+    expect(extTitle?.textContent).not.toMatch(/— HomeClaw/);
+  });
+
+  it("fills default fields when switching agent in configure mode", async () => {
+    renderWithI18n(
+      <AgentSettings
+        envoyAI={{ enabled: true, running: true, url: "http://x" }}
+        extAgent={{
+          enabled: true,
+          configured: true,
+          name: "HomeClaw",
+          url: "http://127.0.0.1:8010/message",
+          listenPort: 3031,
+          activeExtAgent: "homeclaw",
+          activeExtAgentId: "homeclaw",
+          extAgents: [...extAgentsFixture],
+        }}
+        onExtAgentSave={noopAsync}
+      />,
+    );
+    fireEvent.click(screen.getByText(/^Configure$/));
+    const select = await screen.findByRole("combobox", { name: /Active backend/i }) as HTMLSelectElement;
+    expect(select.value).toBe("homeclaw");
+    expect(screen.getByDisplayValue("http://127.0.0.1:8010/message")).toBeDefined();
+
+    fireEvent.change(select, { target: { value: "hermes" } });
+    expect(screen.getByDisplayValue("http://127.0.0.1:8020/message")).toBeDefined();
+  });
+
+  it("legacy configure mode offers bundled agents and add-custom option", async () => {
+    renderWithI18n(
+      <AgentSettings
+        envoyAI={{ enabled: true, running: true, url: "http://x" }}
+        extAgent={{
+          enabled: true,
+          configured: true,
+          name: "HomeClaw",
+          url: "http://127.0.0.1:8010/message",
+          listenPort: 3031,
+        }}
+        onExtAgentSave={noopAsync}
+      />,
+    );
+    fireEvent.click(screen.getByText(/^Configure$/));
+    const select = await screen.findByRole("combobox", { name: /Active backend/i }) as HTMLSelectElement;
+    expect(Array.from(select.options).some((o) => o.value === "homeclaw")).toBe(true);
+    expect(Array.from(select.options).some((o) => o.value === "__new_custom__")).toBe(true);
+    fireEvent.change(select, { target: { value: "__new_custom__" } });
+    expect(screen.getByPlaceholderText("my-agent")).toBeDefined();
+  });
+
+  it("saves a new custom agent from configure mode", async () => {
+    const onExtAgentSave = vi.fn().mockResolvedValue(undefined);
+    renderWithI18n(
+      <AgentSettings
+        envoyAI={{ enabled: true, running: true, url: "http://x" }}
+        extAgent={{
+          enabled: true,
+          configured: true,
+          name: "HomeClaw",
+          url: "http://127.0.0.1:8010/message",
+          listenPort: 3031,
+          extAgents: [...extAgentsFixture],
+        }}
+        onExtAgentSave={onExtAgentSave}
+      />,
+    );
+    fireEvent.click(screen.getByText(/^Configure$/));
+    const select = await screen.findByRole("combobox", { name: /Active backend/i }) as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "__new_custom__" } });
+    fireEvent.change(screen.getByPlaceholderText("my-agent"), { target: { value: "my-bot" } });
+    fireEvent.change(screen.getByPlaceholderText("e.g. HomeClaw"), { target: { value: "My Bot" } });
+    fireEvent.change(screen.getByPlaceholderText("http://127.0.0.1:8010/message"), {
+      target: { value: "http://127.0.0.1:9000/message" },
+    });
+    fireEvent.click(screen.getByText(/^Save$/));
+    await waitFor(() => expect(onExtAgentSave).toHaveBeenCalled());
+    const saved = onExtAgentSave.mock.calls[0]?.[0] as {
+      activeExtAgent?: string;
+      extAgents?: Array<{ id: string; url: string }>;
+    };
+    expect(saved.activeExtAgent).toBe("my-bot");
+    expect(saved.extAgents?.find((e) => e.id === "my-bot")?.url).toBe("http://127.0.0.1:9000/message");
+  });
+
+  it("shows active-backend select in edit mode and saves activeExtAgent", async () => {
+    const onExtAgentSave = vi.fn().mockResolvedValue(undefined);
+    renderWithI18n(
+      <AgentSettings
+        envoyAI={{ enabled: true, running: true, url: "http://x" }}
+        extAgent={{
+          enabled: true,
+          configured: true,
+          name: "HomeClaw",
+          url: "http://127.0.0.1:8010/message",
+          listenPort: 3031,
+          activeExtAgent: "homeclaw",
+          activeExtAgentId: "homeclaw",
+          extAgents: [...extAgentsFixture],
+        }}
+        onExtAgentSave={onExtAgentSave}
+      />,
+    );
+    fireEvent.click(screen.getByText(/^Configure$/));
+    const select = await screen.findByRole("combobox", { name: /Active backend/i }) as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "hermes" } });
+    fireEvent.click(screen.getByText(/^Save$/));
+    await waitFor(() => expect(onExtAgentSave).toHaveBeenCalled());
+    const saved = onExtAgentSave.mock.calls[0]?.[0] as {
+      activeExtAgent?: string;
+      extAgents?: unknown[];
+    };
+    expect(saved.activeExtAgent).toBe("hermes");
+    expect(saved.extAgents).toHaveLength(2);
+    expect(saved.url).toBe("http://127.0.0.1:8020/message");
+    expect(saved.name).toBe("Hermes");
+  });
+
+  it("legacy single-agent edit exposes agent picker and URL fields when no registry", async () => {
+    renderWithI18n(
+      <AgentSettings
+        envoyAI={{ enabled: true, running: true, url: "http://x" }}
+        extAgent={{
+          enabled: true,
+          configured: true,
+          name: "HomeClaw",
+          url: "http://127.0.0.1:8010/message",
+          listenPort: 3031,
+        }}
+        onExtAgentSave={noopAsync}
+      />,
+    );
+    fireEvent.click(screen.getByText(/^Configure$/));
+    expect(await screen.findByDisplayValue("http://127.0.0.1:8010/message")).toBeDefined();
+    expect(screen.getByRole("combobox", { name: /Active backend/i })).toBeDefined();
+  });
+});

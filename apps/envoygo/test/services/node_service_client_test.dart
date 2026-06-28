@@ -537,4 +537,320 @@ void main() {
       await callFuture;
     });
   });
+
+  group('NodeServiceClient config RPCs', () {
+    test('updateNodeConfig sends modelProviders patch', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture = client.updateNodeConfig({
+        'modelProviders': {
+          'mode': 'openai-compatible',
+          'endpoint': 'https://api.openai.com/v1',
+          'modelName': 'gpt-4o-mini',
+        },
+      });
+
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'updateNodeConfig');
+      expect(sent['params']['modelProviders']['mode'], 'openai-compatible');
+
+      mock.simulateMessage({'id': sent['id'], 'result': null});
+      await callFuture;
+    });
+
+    test('getBridgeConfig calls home RPC', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture = client.getBridgeConfig();
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'getBridgeConfig');
+
+      mock.simulateMessage({
+        'id': sent['id'],
+        'result': {
+          'enabled': true,
+          'listenPort': 3031,
+          'extAgents': [],
+          'agentUrl': 'http://127.0.0.1:8010/message',
+          'agentName': 'HomeClaw',
+        },
+      });
+      final result = await callFuture;
+      expect(result['agentName'], 'HomeClaw');
+    });
+
+    test('updateBridgeConfig sends activeExtAgent', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture = client.updateBridgeConfig({'activeExtAgent': 'hermes'});
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'updateBridgeConfig');
+      expect(sent['params']['activeExtAgent'], 'hermes');
+
+      mock.simulateMessage({
+        'id': sent['id'],
+        'result': {'ok': true},
+      });
+      await callFuture;
+    });
+  });
+
+  group('NodeServiceClient terminal RPCs', () {
+    test('listTerminalSessions parses home summaries', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture = client.listTerminalSessions();
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'listTerminalSessions');
+
+      mock.simulateMessage({
+        'id': sent['id'],
+        'result': [
+          {
+            'sessionId': 'sess-1',
+            'title': 'dev',
+            'cwd': '/tmp',
+            'shell': '/bin/zsh',
+            'state': 'running',
+            'createdAt': '2026-06-24T12:00:00.000Z',
+            'lastActivityAt': '2026-06-24T12:00:00.000Z',
+          },
+        ],
+      });
+
+      final sessions = await callFuture;
+      expect(sessions, hasLength(1));
+      expect(sessions.single.id, 'sess-1');
+      expect(sessions.single.runningProcess, '/bin/zsh');
+      expect(sessions.single.isRunning, isTrue);
+    });
+
+    test('createTerminalSession sends title and cwd', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture = client.createTerminalSession(
+        title: 'deploy',
+        cwd: '/Users/me/work',
+      );
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'createTerminalSession');
+      expect(sent['params'], {
+        'title': 'deploy',
+        'cwd': '/Users/me/work',
+      });
+
+      mock.simulateMessage({
+        'id': sent['id'],
+        'result': {
+          'sessionId': 'sess-new',
+          'title': 'deploy',
+          'cwd': '/Users/me/work',
+          'shell': '/bin/zsh',
+          'state': 'running',
+          'createdAt': '2026-06-24T12:00:00.000Z',
+          'lastActivityAt': '2026-06-24T12:00:00.000Z',
+        },
+      });
+
+      final summary = await callFuture;
+      expect(summary['sessionId'], 'sess-new');
+    });
+
+    test('homeTerminalWsOpen strips wsUrl to pathWithQuery', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final openFuture = client.homeTerminalWsOpen('sess-open');
+      await Future.delayed(Duration.zero);
+      final attachSent = _lastSent(mock);
+      expect(attachSent['method'], 'terminalAttach');
+      mock.simulateMessage({
+        'id': attachSent['id'],
+        'result': {
+          'sessionId': 'sess-open',
+          'token': 'tok',
+          'wsUrl': 'ws://127.0.0.1:3032/ws/terminal/sess-open?token=tok',
+          'cols': 80,
+          'rows': 24,
+        },
+      });
+
+      await Future.delayed(Duration.zero);
+      final openSent = _lastSent(mock);
+      expect(openSent['method'], 'homeTerminalWsOpen');
+      expect(openSent['params']['pathWithQuery'],
+          '/ws/terminal/sess-open?token=tok');
+
+      mock.simulateMessage({
+        'id': openSent['id'],
+        'result': {'ok': true},
+      });
+      expect(await openFuture, {'ok': true});
+    });
+
+    test('homeTerminalWsClose forwards sessionId', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture = client.homeTerminalWsClose(sessionId: 'sess-x');
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'homeTerminalWsClose');
+      expect(sent['params'], {'sessionId': 'sess-x'});
+
+      mock.simulateMessage({'id': sent['id'], 'result': null});
+      await callFuture;
+    });
+  });
+
+  group('NodeServiceClient group chat RPCs', () {
+    test('createChatRoom sends title and memberOwnerIds', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture = client.createChatRoom(
+        'Weekend',
+        memberOwnerIds: ['envoy:owner:bob'],
+      );
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'createChatRoom');
+      expect(sent['params'], {
+        'title': 'Weekend',
+        'memberOwnerIds': ['envoy:owner:bob'],
+      });
+
+      mock.simulateMessage({
+        'id': sent['id'],
+        'result': {
+          'roomId': 'room-1',
+          'title': 'Weekend',
+          'memberOwnerIds': ['envoy:owner:abc', 'envoy:owner:bob'],
+          'revision': 1,
+          'updatedAt': '2026-06-24T12:00:00.000Z',
+        },
+      });
+      final room = await callFuture;
+      expect(room['roomId'], 'room-1');
+    });
+
+    test('inviteToChatRoom sends memberOwnerIds array', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture =
+          client.inviteToChatRoom('room-1', 'envoy:owner:carol');
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'inviteToChatRoom');
+      expect(sent['params'], {
+        'roomId': 'room-1',
+        'memberOwnerIds': ['envoy:owner:carol'],
+      });
+
+      mock.simulateMessage({'id': sent['id'], 'result': {'roomId': 'room-1'}});
+      await callFuture;
+    });
+
+    test('listChatHistoryForThread uses peerOwnerId param', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture = client.listChatHistoryForThread(
+        'node1:room:room-1',
+        'room:room-1',
+        selfOwnerId: 'envoy:owner:abc',
+      );
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'listChatHistory');
+      expect(sent['params']['peerOwnerId'], 'room:room-1');
+
+      mock.simulateMessage({
+        'id': sent['id'],
+        'result': [
+          {
+            'messageId': 'm1',
+            'sender': {'ownerId': 'envoy:owner:abc'},
+            'content': {'text': 'hello'},
+            'metadata': {'timestamp': '2026-06-24T12:00:00.000Z'},
+          },
+        ],
+      });
+      final messages = await callFuture;
+      expect(messages, hasLength(1));
+      expect(messages.single.isOutbound, isTrue);
+    });
+  });
+
+  group('NodeServiceClient reachability RPCs', () {
+    test('getPeerConnectionInfo sends peerOwnerId and parses result',
+        () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture =
+          client.getPeerConnectionInfo('envoy:owner:alice');
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'getPeerConnectionInfo');
+      expect(sent['params'], {'peerOwnerId': 'envoy:owner:alice'});
+
+      mock.simulateMessage({
+        'id': sent['id'],
+        'result': {'connected': true, 'direct': false, 'relayPeerId': 'relay1'},
+      });
+      final info = await callFuture;
+      expect(info.connected, isTrue);
+      expect(info.direct, isFalse);
+      expect(info.relayPeerId, 'relay1');
+    });
+
+    test('warmContactConnection forwards keepAlive flag', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture = client.warmContactConnection(
+        'envoy:owner:bob',
+        keepAlive: true,
+      );
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'warmContactConnection');
+      expect(sent['params'], {
+        'peerOwnerId': 'envoy:owner:bob',
+        'keepAlive': true,
+      });
+
+      mock.simulateMessage({
+        'id': sent['id'],
+        'result': {'connected': true, 'direct': true},
+      });
+      final info = await callFuture;
+      expect(info.connected, isTrue);
+      expect(info.direct, isTrue);
+    });
+  });
 }

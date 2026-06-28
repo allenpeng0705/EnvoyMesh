@@ -49,8 +49,8 @@ describe("E2E structured_preferred (Phase 13C)", () => {
       }
     });
 
-    await alice.mesh.probePeer(bob.mesh.multiaddrs[0]!);
-    await bob.mesh.probePeer(alice.mesh.multiaddrs[0]!);
+    await alice.mesh.dial(bob.mesh.multiaddrs[0]!);
+    await bob.mesh.dial(alice.mesh.multiaddrs[0]!);
     await deliverAgentChat(
       {
         agentPeerId: bobAgent.agentPeerId,
@@ -84,8 +84,8 @@ describe("E2E structured_preferred (Phase 13C)", () => {
       agentInteractionMode: "structured_preferred",
     });
 
-    await alice.mesh.probePeer(bob.mesh.multiaddrs[0]!);
-    await bob.mesh.probePeer(alice.mesh.multiaddrs[0]!);
+    await alice.mesh.dial(bob.mesh.multiaddrs[0]!);
+    await bob.mesh.dial(alice.mesh.multiaddrs[0]!);
     await deliverHumanChat(bob, alice, "Hi Alice");
 
     await waitForPhase13(async () => (await alice.service.listPendingApprovals()).length === 1, 8000);

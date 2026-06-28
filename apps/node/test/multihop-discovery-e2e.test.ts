@@ -174,10 +174,10 @@ describe("E2E multi-hop discovery hop-2 relay-back", () => {
       onDiscoveryRequest: (count) => carolHopMatchCounts.push(count),
     });
 
-    await alice.mesh.probePeer(bob.mesh.multiaddrs[0]!);
-    await bob.mesh.probePeer(alice.mesh.multiaddrs[0]!);
-    await bob.mesh.probePeer(carol.mesh.multiaddrs[0]!);
-    await carol.mesh.probePeer(bob.mesh.multiaddrs[0]!);
+    await alice.mesh.dial(bob.mesh.multiaddrs[0]!);
+    await bob.mesh.dial(alice.mesh.multiaddrs[0]!);
+    await bob.mesh.dial(carol.mesh.multiaddrs[0]!);
+    await carol.mesh.dial(bob.mesh.multiaddrs[0]!);
 
     const started = await alice.service.requestMultiHopDiscovery({
       requestedCapabilities: ["music"],

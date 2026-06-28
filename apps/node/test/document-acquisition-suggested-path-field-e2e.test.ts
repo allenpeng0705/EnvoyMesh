@@ -47,7 +47,7 @@ describe.sequential("E2E document acquisition suggestedRelativePath field", () =
       modelProviders: { mode: "mock" },
     });
 
-    await alice.mesh.probePeer(bob.mesh.multiaddrs[0]!);
+    await alice.mesh.dial(bob.mesh.multiaddrs[0]!);
 
     const started = await alice.service.startDocumentAcquisitionJob({
       query: "wire field interop document acquisition",

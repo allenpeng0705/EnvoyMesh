@@ -20,6 +20,7 @@ import { generateEd25519KeyPair } from "@envoymesh/identity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { NodeServiceImpl } from "../src/node-service-impl.js";
+import { resetOutboundPeerFreshnessForTests } from "../src/outbound-peer-freshness.js";
 
 const PEER_OWNER_ID = "envoy:owner:remote";
 const TRANSPORT_PEER_ID = "12D3KooWRemotePeerTransportIdRegression";
@@ -84,6 +85,13 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
       send: vi.fn(),
       sendChat: vi.fn(),
       sendChatExpectReply: vi.fn(),
+      getConnectionStats: vi.fn(() => ({
+        totalConnections: 0,
+        totalPeerIds: 0,
+        circuitConnections: 0,
+        circuitPeers: 0,
+        dialQueue: 0,
+      })),
     };
     (node as any)._resolvePeerTransportForOwner = async (ownerId: string) => {
       if (ownerId !== PEER_OWNER_ID) {
@@ -104,6 +112,7 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
   });
 
   afterEach(async () => {
+    resetOutboundPeerFreshnessForTests();
     await rm(profileDir, { recursive: true, force: true });
   });
 
@@ -136,12 +145,12 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
       expect(closeConnectionsToPeer).not.toHaveBeenCalled();
     });
 
-    it("upgradeRelayToDirect closes relay and redials when requested", async () => {
+    it("upgradeRelayToDirect attempts direct dial without tearing down relay", async () => {
       getPeerConnectionInfo.mockReturnValue({ connected: true, direct: false });
 
       await node.warmContactConnection(PEER_OWNER_ID, { upgradeRelayToDirect: true });
 
-      expect(closeConnectionsToPeer).toHaveBeenCalledWith(TRANSPORT_PEER_ID);
+      expect(closeConnectionsToPeer).not.toHaveBeenCalled();
       expect(ensurePeerReachable).toHaveBeenCalledTimes(1);
     });
 
@@ -269,12 +278,21 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
         peerId: "12D3KooWSelfBindExternal",
         multiaddrs: ["/ip4/127.0.0.1/tcp/4011/p2p/12D3KooWSelfBindExternal"],
         tagContactForPersistentReachability: vi.fn(async () => {}),
+        getConnectionStats: vi.fn(() => ({
+          totalConnections: 0,
+          totalPeerIds: 0,
+          circuitConnections: 0,
+          circuitPeers: 0,
+          dialQueue: 0,
+        })),
       };
       (node as any).bindExternalMesh(mockMesh);
 
       expect(readyHandler).toHaveBeenCalled();
       expect((node as any)._nodeStatus).toBe("running");
-      expect((node as any)._bondWarmTimer).toBeTruthy();
+      await vi.waitFor(() => {
+        expect((node as any)._bondWarmTimer).toBeTruthy();
+      });
     });
   });
 });

@@ -3,6 +3,10 @@ import 'package:flutter/material.dart';
 import '../models/chat_message.dart';
 import 'chat_audio_player.dart';
 
+/// WeChat-style outgoing bubble colors (match Social `--message-outgoing-*` tokens).
+const _outgoingBubbleBg = Color(0xFF7DBD52);
+const _outgoingBubbleText = Color(0xFF191919);
+
 /// Chat bubble widget for a single message.
 class ChatBubble extends StatelessWidget {
   final ChatMessage message;
@@ -35,7 +39,7 @@ class ChatBubble extends StatelessWidget {
         constraints: const BoxConstraints(maxWidth: 300),
         decoration: BoxDecoration(
           color: isOutbound
-              ? colorScheme.primaryContainer
+              ? _outgoingBubbleBg
               : colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.only(
             topLeft: const Radius.circular(16),
@@ -63,7 +67,9 @@ class ChatBubble extends StatelessWidget {
             if (audioAtt != null && onLoadAudio != null) ...[
               ChatAudioPlayer(
                 attachment: audioAtt,
-                transcription: message.text,
+                transcription: message.text == ChatMessage.audioPlaceholderText
+                    ? null
+                    : message.text,
                 onLoadAudio: onLoadAudio!,
               ),
             ] else ...[
@@ -80,7 +86,9 @@ class ChatBubble extends StatelessWidget {
               else
                 Text(
                   message.text ?? '',
-                  style: TextStyle(color: colorScheme.onSurface),
+                  style: TextStyle(
+                    color: isOutbound ? _outgoingBubbleText : colorScheme.onSurface,
+                  ),
                 ),
             ],
           ],

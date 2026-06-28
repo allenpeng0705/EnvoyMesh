@@ -1,6 +1,9 @@
+import { aiEngineMessagesZh } from "./ai-engine-locale.js";
+
 export const zhAiSettingsMessages = {
   title: "AI 助手设置",
   sectionDesc: "配置 AI 如何代表你回复。",
+  aiEngine: aiEngineMessagesZh,
   model: {
     heading: "模型提供商",
     sectionDescCloud: "在此设备上配置云端 API，用于聊天辅助与知识问答。",

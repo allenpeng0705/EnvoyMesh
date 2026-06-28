@@ -85,7 +85,8 @@
   --color-primary-hover: #06ad56;
   --color-primary-active: #05944a;
   --color-primary-subtle: #e8f8ef;
-  --color-primary-on: #ffffff;
+  --color-primary-on: #191919;
+  --color-primary-contrast: var(--color-primary-on);
   --color-on-primary-subtle: #047857;
 
   --color-secondary: #0d9488;
@@ -127,6 +128,7 @@
   --color-surface: #ffffff;
   --color-surface-elevated: #ffffff;
   --color-surface-overlay: #ffffff;
+  --color-surface-subtle: var(--color-slate-50);
   --color-border: var(--color-slate-200);
   --color-border-subtle: var(--color-slate-200);
 
@@ -145,13 +147,22 @@
   --shadow-glow-lg: 0 0 40px rgb(7 193 96 / 0.16);
   --shadow-composer: 0 -4px 24px rgb(15 23 42 / 0.06);
 
-  --message-outgoing-overlay: rgb(255 255 255 / 0.15);
+  /* Outgoing chat bubbles — WeChat green; same in light and dark mode */
+  --message-outgoing-bg: #7dbd52;
+  --message-outgoing-bg-alt: #72b048;
+  --message-ai-outgoing-bg: #7dbd52;
+  --message-ai-outgoing-bg-alt: #72b048;
+  --message-outgoing-text: #191919;
+  --message-outgoing-overlay: rgb(0 0 0 / 0.06);
   --message-code-bg: rgb(100 116 139 / 0.12);
-  --message-outgoing-code-bg: rgb(255 255 255 / 0.15);
-  --message-outgoing-link: rgb(255 255 255 / 0.92);
-  --message-outgoing-time: rgb(255 255 255 / 0.78);
-  --message-outgoing-quote-border: rgb(255 255 255 / 0.55);
-  --message-outgoing-code-border: rgb(255 255 255 / 0.22);
+  --message-outgoing-code-bg: rgb(0 0 0 / 0.08);
+  --message-outgoing-link: #576b95;
+  --message-outgoing-time: rgb(0 0 0 / 0.45);
+  --message-outgoing-quote-border: rgb(0 0 0 / 0.12);
+  --message-outgoing-code-border: transparent;
+  --message-outgoing-selection-bg: rgb(0 0 0 / 0.12);
+  --message-outgoing-shadow: rgb(0 0 0 / 0.05);
+  --message-outgoing-highlight: rgb(255 255 255 / 0.2);
   --message-incoming-quote-bg: rgb(7 193 96 / 0.06);
 
   --chat-canvas-bg: var(--color-bg);
@@ -177,7 +188,8 @@
     --color-primary-hover: #4ade80;
     --color-primary-active: #10b981;
     --color-primary-subtle: #14532d;
-    --color-primary-on: #ffffff;
+    --color-primary-on: #191919;
+  --color-primary-contrast: var(--color-primary-on);
     --color-on-primary-subtle: #6ee7b7;
 
     --color-secondary: #2dd4bf;
@@ -216,6 +228,7 @@
     --color-surface: #334155;
     --color-surface-elevated: #475569;
     --color-surface-overlay: #64748b;
+    --color-surface-subtle: #293548;
     --color-border: #64748b;
     --color-border-subtle: #475569;
 
@@ -233,9 +246,7 @@
     --shadow-glow-lg: 0 0 40px rgb(52 211 153 / 0.16);
     --shadow-composer: 0 -4px 24px rgb(0 0 0 / 0.2);
 
-    --message-outgoing-overlay: rgb(255 255 255 / 0.14);
     --message-code-bg: rgb(15 23 42 / 0.35);
-    --message-outgoing-time: rgb(255 255 255 / 0.82);
     --message-incoming-quote-bg: rgb(52 211 153 / 0.08);
 
     --chat-canvas-bg: var(--color-bg);
@@ -260,7 +271,8 @@
   --color-primary-hover: #4ade80;
   --color-primary-active: #10b981;
   --color-primary-subtle: #14532d;
-  --color-primary-on: #ffffff;
+  --color-primary-on: #191919;
+  --color-primary-contrast: var(--color-primary-on);
   --color-on-primary-subtle: #6ee7b7;
 
   --color-secondary: #2dd4bf;
@@ -299,6 +311,7 @@
   --color-surface: #334155;
   --color-surface-elevated: #475569;
   --color-surface-overlay: #64748b;
+  --color-surface-subtle: #293548;
   --color-border: #64748b;
   --color-border-subtle: #475569;
 
@@ -316,9 +329,7 @@
   --shadow-glow-lg: 0 0 40px rgb(52 211 153 / 0.16);
   --shadow-composer: 0 -4px 24px rgb(0 0 0 / 0.2);
 
-  --message-outgoing-overlay: rgb(255 255 255 / 0.14);
   --message-code-bg: rgb(15 23 42 / 0.35);
-  --message-outgoing-time: rgb(255 255 255 / 0.82);
   --message-incoming-quote-bg: rgb(52 211 153 / 0.08);
 
   --chat-canvas-bg: var(--color-bg);
@@ -343,7 +354,8 @@
   --color-primary-hover: #06ad56;
   --color-primary-active: #05944a;
   --color-primary-subtle: #e8f8ef;
-  --color-primary-on: #ffffff;
+  --color-primary-on: #191919;
+  --color-primary-contrast: var(--color-primary-on);
   --color-on-primary-subtle: #047857;
 
   --color-secondary: #0d9488;
@@ -382,6 +394,7 @@
   --color-surface: #ffffff;
   --color-surface-elevated: #ffffff;
   --color-surface-overlay: #ffffff;
+  --color-surface-subtle: var(--color-slate-50);
   --color-border: var(--color-slate-200);
   --color-border-subtle: var(--color-slate-200);
 
@@ -399,9 +412,22 @@
   --shadow-glow-lg: 0 0 40px rgb(7 193 96 / 0.16);
   --shadow-composer: 0 -4px 24px rgb(15 23 42 / 0.06);
 
-  --message-outgoing-overlay: rgb(255 255 255 / 0.15);
+  /* Outgoing chat bubbles — WeChat green; same in light and dark mode */
+  --message-outgoing-bg: #7dbd52;
+  --message-outgoing-bg-alt: #72b048;
+  --message-ai-outgoing-bg: #7dbd52;
+  --message-ai-outgoing-bg-alt: #72b048;
+  --message-outgoing-text: #191919;
+  --message-outgoing-overlay: rgb(0 0 0 / 0.06);
   --message-code-bg: rgb(100 116 139 / 0.12);
-  --message-outgoing-time: rgb(255 255 255 / 0.78);
+  --message-outgoing-code-bg: rgb(0 0 0 / 0.08);
+  --message-outgoing-link: #576b95;
+  --message-outgoing-time: rgb(0 0 0 / 0.45);
+  --message-outgoing-quote-border: rgb(0 0 0 / 0.12);
+  --message-outgoing-code-border: transparent;
+  --message-outgoing-selection-bg: rgb(0 0 0 / 0.12);
+  --message-outgoing-shadow: rgb(0 0 0 / 0.05);
+  --message-outgoing-highlight: rgb(255 255 255 / 0.2);
   --message-incoming-quote-bg: rgb(7 193 96 / 0.06);
 
   --chat-canvas-bg: var(--color-bg);

@@ -8,11 +8,14 @@ import 'package:record/record.dart';
 import '../../models/chat_message.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/contact_provider.dart';
+import '../../providers/contact_reachability_provider.dart';
 import '../../providers/node_provider.dart';
-import '../../services/node_service_client.dart';
 import '../../widgets/chat_bubble.dart';
-import '../../widgets/chat_audio_player.dart';
+import '../../widgets/contact_reachability_badge.dart';
+import '../../widgets/voice_note_recorder_bar.dart';
 import '../call/voice_call_screen.dart';
+
+enum _VoiceNotePhase { idle, recording, ready, sending }
 
 /// Chat detail view — message list with compose bar.
 ///
@@ -45,10 +48,10 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
 
   // Phase 37 — audio recording state
   final _audioRecorder = AudioRecorder();
-  bool _isRecording = false;
-  bool _recordingGuard = false; // I1: prevents re-entry during async stop
+  _VoiceNotePhase _voicePhase = _VoiceNotePhase.idle;
   Timer? _recordTimer;
   int _recordingSeconds = 0;
+  String? _recordedPath;
   static const _maxRecordSeconds = 120;
 
   bool get _isRoom => widget.chatRoomId != null;
@@ -60,12 +63,18 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_initialized) {
         _initialized = true;
+        final ownerId = widget.contactOwnerId;
+        if (ownerId != null && ownerId.isNotEmpty) {
+          ref.read(contactReachabilityProvider.notifier).watch(ownerId);
+        }
         final notifier = ref.read(chatProvider.notifier);
         // Load from local DB first (instant), then from home node.
         notifier.loadMessagesFromDb(widget.threadId);
         if (_isAgent) {
           // EnvoyAI thread — load history using the agent's owner ID.
           notifier.loadAgentHistory(widget.threadId);
+        } else if (_isRoom && widget.chatRoomId != null) {
+          notifier.loadRoomHistory(widget.threadId, widget.chatRoomId!);
         } else {
           notifier.loadHistory(
             widget.threadId,
@@ -87,112 +96,156 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
 
   @override
   void dispose() {
+    final ownerId = widget.contactOwnerId;
+    if (ownerId != null && ownerId.isNotEmpty) {
+      ref.read(contactReachabilityProvider.notifier).unwatch(ownerId);
+    }
     _textController.dispose();
     _cancelRecordTimer();
     _audioRecorder.dispose();
     super.dispose();
   }
 
-  Future<void> _toggleRecording() async {
-    if (_recordingGuard) return; // I1: prevent re-entry
-    if (_isRecording) {
-      // Stop recording — set guard immediately
-      _recordingGuard = false;
-      _cancelRecordTimer();
-      final recordedSec = _recordingSeconds;
+  Future<void> _startVoiceRecording() async {
+    if (_voicePhase != _VoiceNotePhase.idle) return;
+    if (_isAgent || _isRoom || widget.contactOwnerId == null) return;
+
+    if (!await _audioRecorder.hasPermission()) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Microphone permission denied')),
+        );
+      }
+      return;
+    }
+
+    try {
+      final path =
+          '${Directory.systemTemp.path}/voice_${DateTime.now().microsecondsSinceEpoch}.m4a';
+      await _audioRecorder.start(
+        const RecordConfig(encoder: AudioEncoder.aacLc),
+        path: path,
+      );
+      _recordedPath = path;
       _recordingSeconds = 0;
-      final path = await _audioRecorder.stop();
-      if (path == null || !mounted) {
-        setState(() => _isRecording = false);
-        return;
-      }
-      setState(() => _isRecording = false);
-
-      final file = File(path);
-      final bytes = await file.readAsBytes();
-      final base64 = base64Encode(bytes);
-      final mimeType = 'audio/mp4'; // record package outputs MP4/AAC on both platforms
-
-      final nodeService = ref.read(nodeServiceProvider);
-      if (nodeService == null || widget.contactOwnerId == null) return;
-
-      try {
-        // 1. Upload to vault
-        final uploadResult = await nodeService.sendChatAttachment(
-          targetOwnerId: widget.contactOwnerId!,
-          filename: 'voice-note.m4a',
-          contentBase64: base64,
-          mimeType: mimeType,
-        );
-        final attachmentId = uploadResult['attachmentId'] as String? ??
-            (uploadResult['id'] as String?) ??
-            'att_${DateTime.now().microsecondsSinceEpoch}';
-        final vaultRelativePath = uploadResult['vaultRelativePath'] as String? ?? '';
-
-        // 2. Send chat message with attachment metadata
-        ref.read(chatProvider.notifier).sendMessage(
-              widget.contactOwnerId!,
-              '', // mobile has no transcription
-               attachments: [
-                {
-                  'id': attachmentId,
-                  'filename': 'voice-note.m4a',
-                  'mimeType': mimeType,
-                  'sizeBytes': bytes.length,
-                  'sensitivity': 'friends',
-                  'vaultRelativePath': vaultRelativePath,
-                  if (recordedSec > 0) 'durationSec': recordedSec,
-                },
-              ],
-            );
-      } catch (e) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Failed to send voice note')),
-          );
+      _recordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!mounted) {
+          _cancelRecordTimer();
+          return;
         }
-      }
-    } else {
-      // Start recording — set guard immediately
-      _recordingGuard = true;
-
-      if (!await _audioRecorder.hasPermission()) {
-        _recordingGuard = false;
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Microphone permission denied')),
-          );
+        setState(() => _recordingSeconds++);
+        if (_recordingSeconds >= _maxRecordSeconds) {
+          _stopVoiceRecording();
         }
-        return;
-      }
-      try {
-        await _audioRecorder.start(
-          const RecordConfig(encoder: AudioEncoder.aacLc),
-          path: '${Directory.systemTemp.path}/voice_${DateTime.now().microsecondsSinceEpoch}.m4a',
+      });
+      setState(() => _voicePhase = _VoiceNotePhase.recording);
+    } catch (_) {
+      _cancelRecordTimer();
+      _recordedPath = null;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to start recording')),
         );
+      }
+    }
+  }
+
+  Future<void> _stopVoiceRecording() async {
+    if (_voicePhase != _VoiceNotePhase.recording) return;
+    _cancelRecordTimer();
+    try {
+      await _audioRecorder.stop();
+    } catch (_) {
+      /* best-effort */
+    }
+    if (!mounted) return;
+    if (_recordingSeconds <= 0) {
+      await _cancelVoiceRecording();
+      return;
+    }
+    setState(() => _voicePhase = _VoiceNotePhase.ready);
+  }
+
+  Future<void> _cancelVoiceRecording() async {
+    _cancelRecordTimer();
+    if (_voicePhase == _VoiceNotePhase.recording) {
+      try {
+        await _audioRecorder.stop();
+      } catch (_) {
+        /* ignore */
+      }
+    }
+    final path = _recordedPath;
+    _recordedPath = null;
+    if (path != null) {
+      try {
+        await File(path).delete();
+      } catch (_) {
+        /* ignore */
+      }
+    }
+    if (mounted) {
+      setState(() {
+        _voicePhase = _VoiceNotePhase.idle;
         _recordingSeconds = 0;
-        _recordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-          if (!mounted) {
-            _cancelRecordTimer();
-            return;
-          }
-          _recordingSeconds++;
-          if (_recordingSeconds >= _maxRecordSeconds) {
-            // Auto-stop at max duration — delegate to toggle which handles full send
-            _recordingGuard = false; // unblock toggle's re-entry check
-            _cancelRecordTimer();
-            _toggleRecording(); // fire-and-forget: enters stop branch, uploads & sends
-          }
-        });
-        setState(() => _isRecording = true);
-      } catch (e) {
-        _cancelRecordTimer();
-        _recordingGuard = false;
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Failed to start recording')),
+      });
+    }
+  }
+
+  Future<void> _sendVoiceRecording() async {
+    if (_voicePhase == _VoiceNotePhase.recording) {
+      await _stopVoiceRecording();
+    }
+    if (_voicePhase != _VoiceNotePhase.ready) return;
+
+    final path = _recordedPath;
+    final contactOwnerId = widget.contactOwnerId;
+    if (path == null || contactOwnerId == null) return;
+
+    final nodeService = ref.read(nodeServiceProvider);
+    if (nodeService == null) return;
+
+    setState(() => _voicePhase = _VoiceNotePhase.sending);
+
+    try {
+      final bytes = await File(path).readAsBytes();
+      final base64 = base64Encode(bytes);
+      const mimeType = 'audio/mp4';
+      const filename = 'voice-note.m4a';
+
+      final ok = await ref.read(chatProvider.notifier).sendVoiceNote(
+            threadId: widget.threadId,
+            contactOwnerId: contactOwnerId,
+            contentBase64: base64,
+            filename: filename,
+            mimeType: mimeType,
+            sizeBytes: bytes.length,
+            durationSec: _recordingSeconds,
           );
-        }
+
+      if (!ok) {
+        throw StateError('sendVoiceNote failed');
+      }
+
+      try {
+        await File(path).delete();
+      } catch (_) {
+        /* ignore */
+      }
+      _recordedPath = null;
+      if (mounted) {
+        setState(() {
+          _voicePhase = _VoiceNotePhase.idle;
+          _recordingSeconds = 0;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _voicePhase = _VoiceNotePhase.ready);
+        final detail = e.toString().replaceFirst('Exception: ', '');
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to send voice note: $detail')),
+        );
       }
     }
   }
@@ -214,10 +267,31 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   Widget build(BuildContext context) {
     final chatState = ref.watch(chatProvider);
     final messages = chatState.messages[widget.threadId] ?? [];
+    final ownerId = widget.contactOwnerId;
+    final reachability = ref.watch(contactReachabilityProvider);
+    final peerInfo = ownerId != null ? reachability.infoFor(ownerId) : null;
+    final peerChecking =
+        ownerId != null && reachability.isChecking(ownerId);
+    final showReachability =
+        !_isAgent && !_isRoom && ownerId != null && ownerId.isNotEmpty;
 
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.displayName),
+        title: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              widget.displayName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            if (showReachability)
+              ContactReachabilityBadge(
+                info: peerInfo,
+                checking: peerChecking,
+              ),
+          ],
+        ),
         actions: [
           // Phase 42F — voice call action for direct-message chats
           // (not rooms / agents). Routes through CallProvider.startCall
@@ -291,44 +365,52 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
           ),
           SafeArea(
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 12, vertical: 8),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.image),
-                    onPressed: _pickAndSendImage,
-                  ),
-                  if (!_isAgent && !_isRoom)
-                    IconButton(
-                      icon: Icon(
-                        _isRecording ? Icons.stop : Icons.mic,
-                        color: _isRecording ? Colors.red : null,
-                      ),
-                      onPressed: _toggleRecording,
-                      tooltip: _isRecording ? 'Stop recording' : 'Record voice note',
-                    ),
-                  Expanded(
-                    child: TextField(
-                      controller: _textController,
-                      decoration: const InputDecoration(
-                        hintText: 'Type a message...',
-                        border: OutlineInputBorder(
-                          borderRadius:
-                              BorderRadius.all(Radius.circular(24)),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: _voicePhase != _VoiceNotePhase.idle
+                  ? VoiceNoteRecorderBar(
+                      isCapturing: _voicePhase == _VoiceNotePhase.recording,
+                      recordingSeconds: _recordingSeconds,
+                      maxSeconds: _maxRecordSeconds,
+                      sending: _voicePhase == _VoiceNotePhase.sending,
+                      onCancel: () => _cancelVoiceRecording(),
+                      onStop: _voicePhase == _VoiceNotePhase.recording
+                          ? () => _stopVoiceRecording()
+                          : null,
+                      onSend: () => _sendVoiceRecording(),
+                    )
+                  : Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.image),
+                          onPressed: _pickAndSendImage,
                         ),
-                        contentPadding:
-                            EdgeInsets.symmetric(horizontal: 16),
-                      ),
-                      onSubmitted: (_) => _sendMessage(),
+                        if (!_isAgent && !_isRoom)
+                          IconButton(
+                            icon: const Icon(Icons.mic),
+                            onPressed: _startVoiceRecording,
+                            tooltip: 'Record voice note',
+                          ),
+                        Expanded(
+                          child: TextField(
+                            controller: _textController,
+                            decoration: const InputDecoration(
+                              hintText: 'Type a message...',
+                              border: OutlineInputBorder(
+                                borderRadius:
+                                    BorderRadius.all(Radius.circular(24)),
+                              ),
+                              contentPadding:
+                                  EdgeInsets.symmetric(horizontal: 16),
+                            ),
+                            onSubmitted: (_) => _sendMessage(),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.send),
+                          onPressed: _sendMessage,
+                        ),
+                      ],
                     ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.send),
-                    onPressed: _sendMessage,
-                  ),
-                ],
-              ),
             ),
           ),
         ],

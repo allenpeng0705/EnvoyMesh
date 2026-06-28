@@ -2,7 +2,7 @@
 
 This is the living plan for EnvoyMesh. Update it whenever scope changes, decisions are made, or milestones are completed.
 
-**Related:** [EnvoyMesh scenarios](./scenarios.md) · [User stories](./UserStory.md) · [Alignment review](./alignment-review.md) · [Detailed design](./detailed-design.md) · **[EMP / EnvoyAI](./protocol-standard.md)** · [EnvoyAI design guide](./envoyai-protocol.md) · [QuickStart](../QuickStart.md) · [Agentic next step](./next-step.md) · [Discovery/connectivity POC](./poc-discovery-connectivity.md) · **[Live connectivity testing](./live-connectivity-testing.md)** · **[Operator relay fleet](./operator-relay-fleet.md)** · **[SQLite adoption](./sqlite-adoption.md)** · **[P2P file sharing (design plan)](./p2p-file-sharing-plan.md)** · **[AI Document Backbone (agent publish/find/share)](./ai-document-backbone-plan.md)** · **[Native owner agent (Assistant = Agent)](./native-owner-agent.md)** · **[IPFS / Helia integration](./helia-ipfs-integration-plan.md)** · **[External distribution via IPFS](./external-distribution-ipfs-plan.md)** · **[Kubo + Helia operator runbook](./envoymesh-with-kubo-helia.md)** · **[Trust mode & bilateral social mediation](./trust-mode-social-protocol.md)** · **[Trust mode implementation plan](./trust-mode-implementation-plan.md)** · **[A2A routing, actor disclosure & owner visibility](./a2a-actor-visibility-plan.md)** · **[Redesign strategy](./redesign-strategy.md)**
+**Related:** [EnvoyMesh scenarios](./scenarios.md) · [User stories](./UserStory.md) · [Alignment review](./alignment-review.md) · [Detailed design](./detailed-design.md) · **[EMP / EnvoyAI](./protocol-standard.md)** · [EnvoyAI design guide](./envoyai-protocol.md) · [QuickStart](../QuickStart.md) · [Agentic next step](./next-step.md) · [Discovery/connectivity POC](./poc-discovery-connectivity.md) · **[Live connectivity testing](./live-connectivity-testing.md)** · **[Operator relay fleet](./operator-relay-fleet.md)** · **[SQLite adoption](./sqlite-adoption.md)** · **[P2P file sharing (design plan)](./p2p-file-sharing-plan.md)** · **[AI Document Backbone (agent publish/find/share)](./ai-document-backbone-plan.md)** · **[Native owner agent (Assistant = Agent)](./native-owner-agent.md)** · **[IPFS / Helia integration](./helia-ipfs-integration-plan.md)** · **[External distribution via IPFS](./external-distribution-ipfs-plan.md)** · **[Kubo + Helia operator runbook](./envoymesh-with-kubo-helia.md)** · **[Trust mode & bilateral social mediation](./trust-mode-social-protocol.md)** · **[Trust mode implementation plan](./trust-mode-implementation-plan.md)** · **[A2A routing, actor disclosure & owner visibility](./a2a-actor-visibility-plan.md)** · **[Redesign strategy](./redesign-strategy.md)** · **[EnvoyMesh Bridge Protocol v1](./envoymesh-bridge-protocol.md)** · **[Ext Agent multi-provider design](./ext_agent_design.md)**
 
 ## Status Legend
 
@@ -78,7 +78,8 @@ Maintenance rule: keep this file as the source of truth for **done / left / next
 - [Phase 40 — Agent Network Collaboration Layer](#phase-40--agent-network-collaboration-layer-design--implementation)
 - [Phase 41 — Making Agent Network Usable & Powerful](#phase-41--making-agent-network-usable--powerful-designed)
 - [Phase 42 — Native WebRTC Voice Calls on EnvoyGo (shipped)](#phase-42--native-webrtc-voice-calls-on-envoygo-shipped)
-- [Phase 43 — Agent Network User Experience](#phase-43--agent-network-user-experience-planned)
+- [Phase 43 — Agent Network User Experience](#phase-43--agent-network-user-experience-x-shipped-2026-06-20)
+- [Phase 44 — Ext Agent Multi-Provider Super Channel](#phase-44--ext-agent-multi-provider-super-channel-planned)
 
 EnvoyMesh is a TypeScript-first, owner-controlled, peer-to-peer agent network.
 
@@ -1038,7 +1039,8 @@ Tasks:
 - `[x]` Role policy updated: `chat.message` allows agent↔human (at least one human role required)
 - `[x]` Wire bridge into node startup: identity generation, mesh.onMessage hook, graceful shutdown
 - `[x]` Unit tests: bridge pipe (signing, routing, auth, error handling), identity store (persistence)
-- `[x]` OpenClaw adapter ADR + example config: [openclaw-agent-bridge-adr.md](./openclaw-agent-bridge-adr.md), [agent_bridge_guide.md](./agent_bridge_guide.md), `bridge-config.openclaw.example.json`; channel plugin [OpenClawExtension/](../OpenClawExtension/) (chat + mesh tools + async + onboard wizard + `docs/channels/envoymesh.md`) + [openclaw-extension.md](./openclaw-extension.md) + E2E [openclaw-bridge-e2e-checklist.md](./openclaw-bridge-e2e-checklist.md); contract test `apps/node/test/bridge-openclaw-agent-mock.test.ts`; two-process smoke `npm run smoke:openclaw-bridge` in **ci-smoke-local**; live Gateway smoke `npm run smoke:openclaw-bridge:live` in **ci-smoke-openclaw-live** (`apps/node/src/openclaw-bridge-smoke/`, `ENVOYMESH_SMOKE_ECHO` test hook in plugin). HomeClaw `channels/envoymesh` unchanged.
+- `[x]` OpenClaw adapter ADR + example config: [openclaw-agent-bridge-adr.md](./openclaw-agent-bridge-adr.md), [envoymesh-bridge-protocol.md](./envoymesh-bridge-protocol.md), [agent_bridge_guide.md](./agent_bridge_guide.md), `bridge-config.openclaw.example.json`; channel plugin [OpenClawExtension/](../OpenClawExtension/) (chat + mesh tools + async + onboard wizard + `docs/channels/envoymesh.md`) + [openclaw-extension.md](./openclaw-extension.md) + E2E [openclaw-bridge-e2e-checklist.md](./openclaw-bridge-e2e-checklist.md); contract test `apps/node/test/bridge-openclaw-agent-mock.test.ts`; two-process smoke `npm run smoke:openclaw-bridge` in **ci-smoke-local**; live Gateway smoke `npm run smoke:openclaw-bridge:live` in **ci-smoke-openclaw-live** (`apps/node/src/openclaw-bridge-smoke/`, `ENVOYMESH_SMOKE_ECHO` test hook in plugin). HomeClaw `channels/envoymesh` unchanged.
+- `[ ]` **Phase 44 follow-on:** multi-agent registry + switch — [ext_agent_design.md](./ext_agent_design.md).
 
 **Architecture:**
 ```
@@ -1142,23 +1144,21 @@ Tasks:
 
 ## Current Milestone
 
-Milestone: **Phases 0–42 (42J deferred) shipped** — Core protocol through Phase 30 Terminals + Phase 31 EnvoyGo Flutter thin-client + Phase 32 Agent Network Membership + Phase 33 A2A Tool Exposure + Phase 34 Typed-Artifact + AgentCard UI + Phase 37 Audio Messages + Phase 38 Real-Time Voice/Video Calls + Phase 40 Agent Network Collaboration Layer + Phase 41 Agent Network Usability + Phase 42 Native WebRTC Voice Calls on EnvoyGo (mobile call path end-to-end; 42A–42I shipped, 42J two-iOS-device manual smoke deferred like Phase 38H). See [satellite-app-adr.md](./satellite-app-adr.md), [flutter-thin-client-design.md](./flutter-thin-client-design.md), [agent-network-config.md](./agent-network-config.md), [audio-message-support.md](./audio-message-support.md), [voice-video-call-support.md](./voice-video-call-support.md), and [agent_network.md](./agent_network.md).
+Milestone: **Phases 0–43 shipped** — Core protocol through Phase 42 Native WebRTC Voice Calls on EnvoyGo + Phase 43 Agent Network UX. **Active planning:** **Phase 44 — Ext Agent Multi-Provider Super Channel** (registry + switch for HomeClaw / Hermes / OpenHuman / Pi backends). See [ext_agent_design.md](./ext_agent_design.md), [envoymesh-bridge-protocol.md](./envoymesh-bridge-protocol.md), [satellite-app-adr.md](./satellite-app-adr.md), [flutter-thin-client-design.md](./flutter-thin-client-design.md), [agent-network-config.md](./agent-network-config.md), [audio-message-support.md](./audio-message-support.md), [voice-video-call-support.md](./voice-video-call-support.md), and [agent_network.md](./agent_network.md).
 
-**Last shipped:** **Phase 42 — Native WebRTC Voice Calls on EnvoyGo (42A–42I).** A bonded user on an EnvoyGo phone can place and receive a real-time WebRTC voice call to a Social/desktop browser user or to another EnvoyGo phone, with the home in the signaling path (trust check, identity binding, CallManager state machine) and the media path peer-to-peer (Path 2 ICE; Path 1 libp2p data channel is documented as not-available on `flutter_webrtc`). **9 sub-phases shipped (`8c9c464` → `78df804`).** 42A rewrote the home's `sendCallInvite` to resolve owner→device peer ID via `_resolvePeerTransportForOwner`, embed the SDP offer, and inject `iceServers` from `node-config` (with defensive 64 KB SDP cap + ICE-candidate grammar regex including `tcptype` / IPv6 / `stun:`/`turn:`). 42B wired the four response envelopes (`call.accept` / `call.reject` / `call.hangup` / `call.mute`) so the home actually sends them back to the peer — **and, in `78df804`, fixed a signature-mutation bug** that was making every response envelope signature-invalid (regression-tested). 42C replaced the five `UnimplementedError` call RPCs in `NodeServiceClient` with real JSON-RPC. 42D shipped `WebRtcCallTransport` for Flutter using `flutter_webrtc ^0.14.0` (resolved to 0.14.2) mirroring the desktop reference. 42E rewired `CallProvider` to drive the transport end-to-end. 42F wired `VoiceCallScreen` to `callProvider`, mounted `IncomingCallOverlay` into `home_screen.dart`, declared iOS `NSMicrophoneUsageDescription` + Android `RECORD_AUDIO` permissions, and added an `AudioSessionHelper` that configures iOS `AVAudioSession` (`playAndRecord` + `voiceChat` mode + `allowBluetooth`) on `startCall` / `acceptCall` and resets on `endCall` / `declineCall`. 42G added the test pyramid and **wired the previously-dead-code Social-UI caller for `createWebRtcCallTransport`** (`apps/social/src/hooks/useCallSession.ts`). 42H added TURN credentials support: 3-STUN default list (Google + Cloudflare + Twilio) injected when `node-config.iceServers` is empty, plus a Social UI TURN editor in `SettingsNodeTab.tsx` with Twilio / Cloudflare / coturn presets, "Reset to defaults", `missingCredentials` validation. 42I added iOS backgrounded calling: home dispatches APNs VoIP push on `call.invite` (extending the existing `push-notification.ts` module with a `tokenType: "alert" | "voip"` discriminator and a `sendVoipPush` helper) — **dispatch lives on the callee's home (where the phone registered its token), gated on the phone's WebSocket not being connected**; phone uses `flutter_callkit_incoming` + `CXProvider.reportNewIncomingCall` (reported synchronously in the PushKit delegate before `completion()`, per Apple's contract). **Bridges `HomeRemoteClient.on('call:*')` into a real `StreamController`** so the entire callee flow (`call:incoming` → ring → accept) actually fires in production (previously dead stub). **~101 new node tests + 49 new EnvoyGo tests + 5 new Social TURN-editor tests.** `flutter analyze` + `tsc -b` clean across all packages. **No new wire intents, no new schemas.** Allowed pubspec changes: `flutter_webrtc` bumped to `^0.14.0`; `flutter_callkit_incoming` added. `permission_handler` **not** added (we use `flutter_webrtc`'s built-in permission prompts). 42J two-iOS-device manual smoke deferred like Phase 38H. Design: [voice-video-call-envoygo.md](./voice-video-call-envoygo.md).
+**Last shipped:** **Phase 43 — Agent Network User Experience (2026-06-20).** Core P0/P1 chain usability: worker execution after accept, chat entry + templates, auto-evaluate/rebalance, live `chain:state` UI, bid transparency, two-home smoke, EnvoyGo active-chains mirror. See Phase 43 section below.
 
-**Active:** **ICE server transport wiring deferred** — Config plumbing complete (types, store, RPC, UI editor in `SettingsNodeTab.tsx`). The `WebRtcCallTransport` accepts `iceServers` as an option but no code creates one yet (Phase 38 call flow is entirely P2P envelope-based; the media transport is created when a call UI triggers transport creation — future work). See [voice-video-call-support.md](./voice-video-call-support.md) for ICE server settings documentation. Seven sub-phases (41A–41G) designed in [agent_network.md §13](./agent_network.md#13-phase-41--making-agent-network-usable--powerful). See Phase 41 section below for implementation checklist. Phase 40 (Agent Network Collaboration Layer) is fully shipped (40A–40E green, 455 tests, 13 wire intents).
+**Previously shipped (still relevant):** **Phase 42 — Native WebRTC Voice Calls on EnvoyGo (42A–42I).** Mobile call path end-to-end; 42J manual smoke deferred.
 
 ### Next planning pulls
 
-1. **Phase 40 — Agent Network Collaboration Layer** — active. [agent_network.md](./agent_network.md) is the design doc; the Phase 40 section below is the implementation checklist. 40A (protocol + stores) → 40B (orchestrator + worker runtime + RPC plumbing) → 40C (Social + EnvoyGo UI) → 40D (multi-bid, counter-bid UI, LLM decomposer) → 40E (cross-home chains; deferred until Phase 11 mobile parity).
-2. **Phase 39 — Voice/Video Call for EnvoyAI** — future (requires Phase 38). See Phase 39 section. Picks up after Phase 40 ships.
-3. **Phase 38H smoke tests** — 5 scenarios automated via Playwright (LAN call, incoming UI, mute/end, busy, trust enforcement; CI on every PR). 2 manual: cross-network TURN relay + EnvoyGo native screen. Lower priority during Phase 40; CI automation can land in parallel.
-4. **Phase 31I — Push notifications `[x]` shipped** — `apps/node/src/push-notification.ts` rewritten with file-backed token persistence (`push-tokens.json`), APNs HTTP/2 dispatch (native `node:http2` + ES256 JWT), FCM HTTP v1 dispatch (native `node:https` + OAuth2), `dispatchBondPush()` for bond requests. Both backends env-var gated — silently skip when unconfigured. Wired into chat pipeline (`index.ts` → `dispatchChatPush` after `chat:message`), RPC surface (`registerPushToken`/`unregisterPushToken` via `NodeServiceImpl` + `json-rpc-router` + `DirectCallClient`), initialized on `initNode()`. Zero new npm dependencies — all built on `node:crypto/http2/https/fs`. Configuration docs: [mobile_push_notification.md](./mobile_push_notification.md).
-5. **15E follow-ons** — hop-2 morning report ranking; physical two-NAT ledger row.
-6. **Story N — Async ADB orchestrator** — closes the remaining `[ ]` in Coverage row. Larger swing once the above are settled.
-7. **Parked until scoped:** Story E payment rail.
-8. **Phase 26 — DID WAN gateway resolver** — scoped below.
-9. **Chain template marketplace (future)** — share chain templates across the mesh via `discovery.request`. Parked until user demand materialises (4 built-in templates + AI chat creation cover current use cases).
+1. **Phase 44 — Ext Agent Multi-Provider Super Channel** — **active.** Design: [ext_agent_design.md](./ext_agent_design.md), protocol: [envoymesh-bridge-protocol.md](./envoymesh-bridge-protocol.md). 44A config schema → 44B runtime resolve + status RPC → 44C Social UI switch → 44D EnvoyGo mirror → 44E–44G reference adapters (Hermes, OpenHuman, Pi) → 44H docs/CI.
+2. **Phase 39 — Voice/Video Call for EnvoyAI** — future (requires Phase 38). See Phase 39 section.
+3. **Phase 38H / 42J smoke tests** — manual cross-network / two-iOS-device verification.
+4. **15E follow-ons** — hop-2 morning report ranking; physical two-NAT ledger row.
+5. **Story N — Async ADB orchestrator** — closes the remaining `[ ]` in Coverage row.
+6. **Parked until scoped:** Story E payment rail; EnvoyGo full node ([parked-envoygo-full-node-scope.md](./parked-envoygo-full-node-scope.md)); chain template marketplace.
+7. **Phase 26 — DID WAN gateway resolver** — scoped below.
 
 ### Phase 9 Architecture Overview
 
@@ -5622,11 +5622,112 @@ While finalizing Phase 42 we discovered a few of the shipped pieces were wire-le
 
 ---
 
+## Phase 44 — Ext Agent Multi-Provider Super Channel **`[ ]` planned**
+
+> **Status: `[ ]` designed, not started.** Design: [ext_agent_design.md](./ext_agent_design.md). Protocol: [envoymesh-bridge-protocol.md](./envoymesh-bridge-protocol.md) v1.
+
+**Goal:** Turn **Ext Agent** into a **super channel** — register multiple local agent backends (HomeClaw, Hermes, OpenHuman, Pi, OpenClaw-as-Ext, **and future adapters**), **switch** the active one from Settings, and keep **one bridge agent peer id** on the mesh so Social, EnvoyGo, and remote peers reach whichever backend is selected. EnvoyMesh remains the libp2p/policy/tools boundary; agents speak HTTP only.
+
+**Preconditions (shipped):**
+
+- Phase 9K — HTTP bridge (`forwardToAgent`, `/bridge/send`)
+- Phase 32 — Ext Agent UI toggle + `bridgeEnabled`; EnvoyAI vs Ext Agent split
+- HomeClaw `channels/envoymesh` + OpenClaw `OpenClawExtension` — reference adapters
+
+**Non-goals:** fan-out to multiple agents on one message; agents holding libp2p keys; replacing EnvoyAI built-in OpenClaw.
+
+### Investigation summary (2026-06-24)
+
+| Backend | Native bridge | Adapter profile | Implementation path |
+|---------|---------------|-----------------|---------------------|
+| HomeClaw | Yes | `envoymesh-message` | Shipped (`8010/message`) |
+| OpenClaw (Ext) | Yes | `openclaw-webhook` | Config + plugin |
+| Hermes Agent | No | `envoymesh-message` | Plugin or sidecar (Phase 44E) |
+| OpenHuman | No | `envoymesh-message` | Sidecar → Tauri `agent.chat` (44F) |
+| Pi | No | `envoymesh-message` | RPC sidecar → `pi --mode rpc` (44G) |
+
+**Extensibility:** any agent that implements Bridge Protocol v1 can be added to `extAgents[]` without a mesh or client protocol change. Hermes/OpenHuman/Pi are reference implementations, not an exhaustive list.
+
+### 44A — Config schema + resolution
+
+- `[x]` Extend `BridgeConfigSchema` (`apps/node/src/bridge/config.ts`): `activeExtAgent`, `extAgents[]` with `{ id, name, adapter, url, inboundSecret?, enabled, vendor?, notes? }`.
+- `[x]` `resolveActiveExtAgent(config)` — derive legacy `agentUrl` / `agentName` from active entry; backward compatible when only `agentUrl` present.
+- `[x]` Example `apps/node/data/default/bridge-config.multi-agent.example.json`.
+- `[x]` Unit tests: resolution, fallback, invalid active id, legacy migration.
+
+### 44B — Runtime + status RPC
+
+- `[x]` Refresh bridge `config.agentUrl` when bridge config reloads / UI saves (no full node restart).
+- `[x]` Extend `BridgeStatus` in `@envoymesh/api`: `activeExtAgentId`, `adapter`, optional `healthy`.
+- `[x]` Optional health probe on switch (`GET /status` for HomeClaw-style adapters).
+- `[x]` `getBridgeStatus()` + mobile proxy return new fields.
+- `[x]` `getBridgeConfig()` / `updateBridgeConfig()` RPC.
+
+### 44C — Social UI
+
+- `[x]` `AgentSettings.tsx`: active-agent `<select>` + registry table (name, adapter, enabled).
+- `[x]` Persist via `updateBridgeConfig` + `bridgeEnabled` in node config.
+- `[x]` i18n keys (`activeAgent`, `adapterProfile`, …) — English.
+- `[ ]` Component tests for switch + save.
+
+### 44D — EnvoyGo mirror
+
+- `[x]` Extend `BridgeStatus` + `AiEngineSection` subtitle (name · adapter).
+- `[x]` Home emits `bridge:status` on `updateBridgeConfig` / switch.
+- `[ ]` Flutter unit/widget tests for new fields.
+
+### 44E — Hermes adapter (reference)
+
+- `[x]` Spec + minimal sidecar under `tools/ext-agent-adapters/hermes/` (loopback `POST /message`, `/bridge/send`).
+- `[x]` Document operator setup in [agent_bridge_guide.md](./agent_bridge_guide.md).
+- `[x]` Vitest: registry switch (`bridge-registry-switch.test.ts`).
+
+### 44F — OpenHuman adapter (spike)
+
+- `[x]` Sidecar: HTTP `/message` → stub / optional `OPENHUMAN_RPC_URL` (`tools/ext-agent-adapters/openhuman/`).
+- `[x]` Document limitations (Tauri must be up; no cloud tunnel required).
+
+### 44G — Pi adapter (optional)
+
+- `[x]` Sidecar: spawn `pi --mode rpc` (`tools/ext-agent-adapters/pi/`).
+- `[x]` Document as **coding assistant** backend, not default chat agent.
+
+### 44H — Docs, protocol, CI
+
+- `[x]` [ext_agent_design.md](./ext_agent_design.md)
+- `[x]` [envoymesh-bridge-protocol.md](./envoymesh-bridge-protocol.md) v1
+- `[x]` Update [agent_bridge_guide.md](./agent_bridge_guide.md) multi-agent section (post-44C)
+- `[x]` CI: registry switch test (`apps/node/test/bridge-registry-switch.test.ts`)
+- `[x]` Health probe on switch (`probeExtAgentHealth` in `bridge/config.ts`)
+
+### Phase 44 exit criteria
+
+- `[x]` Owner registers ≥2 backends and switches active agent from Social without hand-editing JSON.
+- `[x]` Mesh peer / EnvoyGo use same `agentPeerId`; only reply personality changes.
+- `[x]` **EnvoyGo:** send/receive Ext Agent chat without regression; status labels reflect active backend after switch (44D).
+- `[x]` HomeClaw default path regression-free.
+- `[x]` Protocol doc is linked from ADR + operator guide.
+- `[x]` New third-party agent can register via `extAgents[]` + `envoymesh-message` without protocol bump.
+- `[x]` At least one non-HomeClaw adapter documented with runnable reference or spike (44E Hermes sidecar).
+
+### Cross-references
+
+- [ext_agent_design.md](./ext_agent_design.md) — §7.4 EnvoyGo access model
+- [envoymesh-bridge-protocol.md](./envoymesh-bridge-protocol.md) — §10 Companion clients
+- [agent-network-config.md](./agent-network-config.md) — Phase 32 EnvoyAI vs Ext Agent
+- `apps/node/src/bridge/config.ts`, `pipe.ts`, `index.ts`
+- `apps/social/src/components/views/settings/AgentSettings.tsx`
+- `apps/envoygo/lib/providers/chat_provider.dart`, `apps/envoygo/lib/widgets/ai_engine_section.dart`
+
+---
+
 ## Changelog (this document)
 
 | Date | Change |
 |------|--------|
-| 2026-06-20 | **Phase 43 — Agent Network User Experience planned.** Post-40F usability review consolidated into eight sub-phases (43A–43H): P0 = worker execution (`executeSubtask`), chat entry point + templates, smart defaults + composite bid ranking; P1 = live WebSocket UI, cost/trust transparency, single-home diagnostics; P2 = safety rails + power-user/mobile features. Phase 41 exit criteria corrected to reflect partial shipment. North star: "hire a temporary team" UX — hide chain/mandate IDs from default flow. |
+| 2026-06-24 | **Phase 44 — Ext Agent Multi-Provider Super Channel planned.** Investigation of HomeClaw (shipped), Hermes, OpenHuman, and Pi concluded all can use Bridge Protocol v1 via `envoymesh-message` or `openclaw-webhook` profiles. New docs: [ext_agent_design.md](./ext_agent_design.md), [envoymesh-bridge-protocol.md](./envoymesh-bridge-protocol.md). ADR + operator guide updated. Phase 44A–44H checklist: config registry + `activeExtAgent`, runtime resolve, Social switch UI, EnvoyGo mirror, reference adapters (Hermes → OpenHuman → Pi), CI. No code shipped yet. |
+| 2026-06-24 | **Phase 44A–44H shipped (core + reference adapters).** Multi-agent `extAgents[]` registry, hot reload, `getBridgeConfig`/`updateBridgeConfig` RPC, Social active-backend picker, EnvoyGo status mirror, health probe, Hermes/OpenHuman/Pi sidecars under `tools/ext-agent-adapters/`, `bridge-registry-switch.test.ts`, operator guide multi-agent section. |
+| 2026-06-24 | **Phase 44 design refinement:** extensibility section (open adapter registry, `vendor`/`notes`, §6.3 new profiles); EnvoyGo documented as already working for Ext Agent chat via `sendToBridge` — 44D is metadata/push only, not new wire. Protocol §10 companion clients; example config includes custom agent row. |
 | 2026-06-20 | **Phase 40F — Production integration shipped.** Wired `dispatchChainEnvelope` in `index.ts`, real orchestrator/worker deps (agent identity, mesh send, audit, `recordChainReport`), corrected inbound capability gate, `chainPlan`/`chainLaunch`/report RPCs, `CapabilityIndex` discovery, `trackChain` scheduler. Added `chain-production.ts` + tests. |
 | 2026-06-19 | **Phase 42A–42F shipped (sub-phases 42A / 42B / 42C / 42D / 42E / 42F).** The mobile call path now works end-to-end on the Flutter side. 42A rewrites the home's `sendCallInvite` to resolve owner→device peer ID via `_resolvePeerTransportForOwner` (previously passing the owner ID — broke the libp2p dial), embeds the SDP offer (previously `""` — schema violation since `z.string().min(1)`), and injects `iceServers` from `node-config` (previously unread). Adds defensive `validateSdpString` (64 KB cap) and `validateIceCandidate` (RFC-5245 §15.1 grammar) validators in `call-inbound.ts` so a malformed SDP can't crash `setRemoteDescription`. 42B wires the four response envelopes — `acceptCallInvite` / `declineCallInvite` / `endCall` / `setCallMuted` — so the home actually sends `call.accept` / `call.reject` / `call.hangup` / `call.mute` back to the peer (previously the four stubs only mutated local `CallManager` state). 42C replaces the five `UnimplementedError` stubs in `apps/envoygo/lib/services/node_service_client.dart` with real JSON-RPC implementations matching the new `NodeService` interface. 42D ships `apps/envoygo/lib/webrtc_call_transport.dart` — the native `flutter_webrtc` transport mirroring `apps/social/src/lib/webrtc-call-transport.ts:57-251`, with `startOffer` / `startAnswer` / `addIceCandidate` / `setMute` / `close` and pluggable `peerConnectionFactory` + `getUserMedia` seams for testing. 42E rewires `CallProvider` to build the transport, generate SDP via `startOffer` / `startAnswer`, and pass it through the corresponding JSON-RPC. `CallState` gains `remoteStream` + `transport` fields. 42F wires the active-call screen (`VoiceCallScreen` now a `ConsumerWidget` bound to `callProvider` with peer name + duration timer + mute/end buttons + remote stream binding), mounts the `IncomingCallOverlay` into `home_screen.dart` as a Stack overlay, adds a Call action button to `chat_detail_screen.dart` for direct-message chats, declares iOS `NSMicrophoneUsageDescription` + Android `RECORD_AUDIO` / `MODIFY_AUDIO_SETTINGS` / `INTERNET` permissions, and adds an `AudioSessionHelper` + `envoygo/audio_session` method channel that configures iOS `AVAudioSession` (`playAndRecord` + `voiceChat` mode + `allowBluetooth` option) on `startCall` / `acceptCall` and resets on `endCall` / `declineCall` / dispose. The overlay's ring timer + pulse animation now only run when the overlay is actually visible (`state.isIncoming`), keeping it cheap when idle. **~25 new tests across 8 files** (4 home + 4 EnvoyGo): `call-send-invite.test.ts`, `call-sdp-validation.test.ts`, `call-response-envelopes.test.ts`, extensions to `node_service_client_test.dart` (4 new), `webrtc_call_transport_test.dart`, `call_provider_test.dart` (10 new + 5 audio-session integration), `audio_session_helper_test.dart` (5 new). `flutter analyze` + `tsc -b apps/node` + `tsc -b apps/social` clean. **42G (two-CallManager jsdom integration + Playwright re-validation) and 42H (TURN credentials editor) and 42I (iOS VoIP push) deferred** — same shape as 42F: ship each, review, add tests, then ship the next. |
 | 2026-06-19 | **Phase 42H — TURN credentials for symmetric NAT shipped.** Most WebRTC calls work over STUN alone. Phase 42H adds the operator-facing knobs to handle the corner case (corporate firewall / mobile carrier symmetric NAT) where the relay is required. **(42H.1)** The home's `_effectiveCallIceServers` in `apps/node/src/node-service-impl.ts` already injects a 3-server STUN default (Google / Cloudflare / Twilio) when neither the caller nor `node-config.iceServers` provides a list — precedence is caller-supplied > node-config > default. **(42H.2)** New structured TURN editor in `Settings → Network → TURN servers` (`apps/social/src/components/views/SettingsNodeTab.tsx`) — a per-row table of URL / username / credential / TTL fields that replaces ad-hoc JSON editing. STUN-only entries stay owned by the existing JSON editor above; TURN entries are extracted on save, validated (`turn:` / `turns:` scheme, TTL ≥ 0), and merged back via `mergeTurnServers()`. The TTL is **client-side only** (not in the wire format) so operators see a rotation hint without expanding the protocol. **(42H.3)** New `apps/social/src/lib/turn-credentials.ts` (pure helpers — `isTurnUrl`, `extractTurnServers`, `mergeTurnServers`, `validateTurnDraft`, `makeTurnId`) backed by **21 unit tests** in `apps/social/test/lib/turn-credentials.test.ts` (all pass). Extended `apps/node/test/call-send-invite.test.ts` with a STUN+TURN round-trip test (`6b. node-config STUN+TURN entries are shipped verbatim`) — verifies the home ships the merged list (preserving TURN credentials for the callee to authenticate) rather than collapsing it back to the STUN-only default. **(42H.4)** New `docs/voice-video-call-support.md` §6.3.1 explaining the precedence, the editor, TTL semantics, and a "when to add TURN" decision matrix. **`npx tsc -b apps/social` clean; `npx vitest run` green for both new files; `npx tsc -b apps/node` clean.** |

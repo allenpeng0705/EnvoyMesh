@@ -1,11 +1,11 @@
+import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
+import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
 import '../models/chat_message.dart';
 
-/// Audio player widget for voice notes (Phase 37).
-///
-/// Fetches the audio file from the vault via [onLoadAudio] and
-/// renders playback controls. If a transcription is available via
-/// [message.text], it is shown below the player.
+/// Inline voice note playback with play/pause controls.
 class ChatAudioPlayer extends StatefulWidget {
   final ChatAttachment attachment;
   final String? transcription;
@@ -23,14 +23,44 @@ class ChatAudioPlayer extends StatefulWidget {
 }
 
 class _ChatAudioPlayerState extends State<ChatAudioPlayer> {
-  String? _audioUrl;
+  final _player = AudioPlayer();
+  String? _tempFilePath;
   bool _loading = true;
   bool _error = false;
+  bool _playing = false;
+  Duration _position = Duration.zero;
+  Duration _duration = Duration.zero;
+  StreamSubscription<Duration>? _positionSub;
+  StreamSubscription<Duration>? _durationSub;
+  StreamSubscription<void>? _completeSub;
 
   @override
   void initState() {
     super.initState();
+    _positionSub = _player.onPositionChanged.listen((pos) {
+      if (mounted) setState(() => _position = pos);
+    });
+    _durationSub = _player.onDurationChanged.listen((dur) {
+      if (mounted) setState(() => _duration = dur);
+    });
+    _completeSub = _player.onPlayerComplete.listen((_) {
+      if (mounted) setState(() => _playing = false);
+    });
     _load();
+  }
+
+  @override
+  void dispose() {
+    _positionSub?.cancel();
+    _durationSub?.cancel();
+    _completeSub?.cancel();
+    _player.dispose();
+    final path = _tempFilePath;
+    if (path != null) {
+      // Best-effort temp file cleanup.
+      File(path).delete();
+    }
+    super.dispose();
   }
 
   Future<void> _load() async {
@@ -44,22 +74,63 @@ class _ChatAudioPlayerState extends State<ChatAudioPlayer> {
     }
     try {
       final contentBase64 = await widget.onLoadAudio(vaultPath);
-      if (contentBase64 != null && mounted) {
+      if (contentBase64 == null || !mounted) {
         setState(() {
-          _audioUrl = 'data:${widget.attachment.mimeType};base64,$contentBase64';
           _loading = false;
+          _error = true;
         });
-      } else {
-        setState(() { _loading = false; _error = true; });
+        return;
       }
+      final bytes = base64Decode(contentBase64);
+      final ext = widget.attachment.mimeType.contains('mp4') ? 'm4a' : 'webm';
+      final file = File(
+        '${Directory.systemTemp.path}/voice_play_${DateTime.now().microsecondsSinceEpoch}.$ext',
+      );
+      await file.writeAsBytes(bytes);
+      _tempFilePath = file.path;
+      final hintSec = widget.attachment.durationSec;
+      if (hintSec != null && hintSec > 0) {
+        _duration = Duration(seconds: hintSec);
+      }
+      setState(() => _loading = false);
     } catch (_) {
-      if (mounted) setState(() { _loading = false; _error = true; });
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = true;
+        });
+      }
     }
+  }
+
+  Future<void> _togglePlayback() async {
+    final path = _tempFilePath;
+    if (path == null) return;
+    if (_playing) {
+      await _player.pause();
+      if (mounted) setState(() => _playing = false);
+      return;
+    }
+    await _player.play(DeviceFileSource(path));
+    if (mounted) setState(() => _playing = true);
+  }
+
+  String _formatDuration(Duration d) {
+    final total = d.inSeconds;
+    final minutes = total ~/ 60;
+    final seconds = total % 60;
+    return '$minutes:${seconds.toString().padLeft(2, '0')}';
   }
 
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
+    final totalLabel = _duration.inSeconds > 0
+        ? _formatDuration(_duration)
+        : _formatDurationFromHint(
+            widget.attachment.durationSec,
+            widget.attachment.sizeBytes,
+          );
 
     return Container(
       constraints: const BoxConstraints(maxWidth: 280),
@@ -84,72 +155,80 @@ class _ChatAudioPlayerState extends State<ChatAudioPlayer> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                Text('Loading audio…',
-                    style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 13)),
+                Text(
+                  'Loading audio…',
+                  style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 13),
+                ),
               ],
             )
-          else if (_error || _audioUrl == null)
+          else if (_error || _tempFilePath == null)
             Row(
               children: [
                 Icon(Icons.error_outline, size: 20, color: colorScheme.error),
                 const SizedBox(width: 8),
-                Text('Audio unavailable',
-                    style: TextStyle(color: colorScheme.error, fontSize: 13)),
+                Text(
+                  'Audio unavailable',
+                  style: TextStyle(color: colorScheme.error, fontSize: 13),
+                ),
               ],
             )
-          else ...[
-            // Simple playback button (no full audio player widget in Flutter;
-            // launch via url_launcher or use a package for inline playback).
-            // For MVP we render a play-button that says "Voice note".
+          else
             Row(
               children: [
-                Icon(Icons.play_circle_filled,
-                    size: 32, color: colorScheme.primary),
-                const SizedBox(width: 8),
-                Text(
-                  'Voice note',
-                  style: TextStyle(
-                      color: colorScheme.onSurface, fontSize: 14),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  icon: Icon(
+                    _playing ? Icons.pause_circle_filled : Icons.play_circle_filled,
+                    size: 36,
+                    color: colorScheme.primary,
+                  ),
+                  onPressed: _togglePlayback,
+                  tooltip: _playing ? 'Pause' : 'Play',
                 ),
-                const Spacer(),
-                Text(
-                  _formatDuration(widget.attachment.durationSec, widget.attachment.sizeBytes),
-                  style: TextStyle(
-                      color: colorScheme.onSurfaceVariant, fontSize: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Voice note',
+                        style: TextStyle(color: colorScheme.onSurface, fontSize: 14),
+                      ),
+                      Text(
+                        '${_formatDuration(_position)} / $totalLabel',
+                        style: TextStyle(
+                          color: colorScheme.onSurfaceVariant,
+                          fontSize: 12,
+                          fontFeatures: const [FontFeature.tabularFigures()],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ],
             ),
-            if (widget.transcription != null &&
-                widget.transcription!.isNotEmpty) ...[
-              const SizedBox(height: 6),
-              Text(
-                widget.transcription!,
-                style: TextStyle(
-                    color: colorScheme.onSurfaceVariant,
-                    fontSize: 13,
-                    fontStyle: FontStyle.italic),
-                maxLines: 3,
-                overflow: TextOverflow.ellipsis,
+          if (widget.transcription != null && widget.transcription!.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Text(
+              widget.transcription!,
+              style: TextStyle(
+                color: colorScheme.onSurfaceVariant,
+                fontSize: 13,
+                fontStyle: FontStyle.italic,
               ),
-            ],
+              maxLines: 3,
+              overflow: TextOverflow.ellipsis,
+            ),
           ],
         ],
       ),
     );
   }
 
-  /// Format duration for display. Uses [durationSec] when available,
-  /// otherwise falls back to an estimate from byte size (~32 kbps Opus).
-  String _formatDuration(int? durationSec, int sizeBytes) {
+  String _formatDurationFromHint(int? durationSec, int sizeBytes) {
     if (durationSec != null && durationSec > 0) {
-      final minutes = durationSec ~/ 60;
-      final seconds = durationSec % 60;
-      if (minutes > 0) return '${minutes}:${seconds.toString().padLeft(2, '0')}';
-      return '0:${seconds.toString().padLeft(2, '0')}';
+      return _formatDuration(Duration(seconds: durationSec));
     }
-    // Fallback to byte-size estimate
     final est = sizeBytes ~/ 4000;
-    if (est < 60) return '0:${est.toString().padLeft(2, '0')}';
-    return '${est ~/ 60}:${(est % 60).toString().padLeft(2, '0')}';
+    return _formatDuration(Duration(seconds: est.clamp(1, 9999)));
   }
 }

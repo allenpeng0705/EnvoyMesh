@@ -155,7 +155,9 @@ describe("inbound data transfer + savePath remapping", () => {
       send: async () => 12,
       tagContactForPersistentReachability: async () => {},
       untagContactForPersistentReachability: async () => {},
-      getPeerConnectionInfo: async () => ({ connected: false, direct: false }),
+      getPeerConnectionInfo: () => ({ connected: false, direct: false }),
+      ensurePeerReachable: async () => ({ connected: true, direct: true }),
+      closeConnectionsToPeer: async () => 0,
     };
 
     const node = new NodeServiceImpl(
