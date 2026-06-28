@@ -211,17 +211,12 @@ export interface EnvoyMeshOptions {
    * responsible for loading or generating the key — see
    * `apps/node/src/libp2p-key-loader.ts` for a file-backed implementation.
    */
-   libp2pPrivateKey?: import("@libp2p/interface").PrivateKey;
-   /**
-    * Allow loopback (127.x.x.x) connections — off by default for production.
-    * Enable in e2e tests only.
-    */
-   allowLoopbackPeers?: boolean;
-   enableP2pDebug?: boolean;
-   /**
-    * Log `[reachability] …` on `peer:disconnect` (peer store tags, reconnect-queue eligibility) and
-    * `peer:reconnect-failure` when libp2p exhausts KEEP_ALIVE redials. Does not imply full {@link enableP2pDebug}.
-    */
+  libp2pPrivateKey?: import("@libp2p/interface").PrivateKey;
+  enableP2pDebug?: boolean;
+  /**
+   * Log `[reachability] …` on `peer:disconnect` (peer store tags, reconnect-queue eligibility) and
+   * `peer:reconnect-failure` when libp2p exhausts KEEP_ALIVE redials. Does not imply full {@link enableP2pDebug}.
+   */
   enableReachabilityLog?: boolean;
   /**
    * When true with enableP2pDebug, periodically print `[relay-debug] SUMMARY: ...` from the relay connection scan.
@@ -359,9 +354,6 @@ export class EnvoyMesh {
       ],
       connectionEncrypters: [noise()],
       streamMuxers: [yamux()],
-      ...(this.options.allowLoopbackPeers
-        ? { connectionGater: { denyDialMultiaddr: async () => false } }
-        : {}),
       peerDiscovery: this.createPeerDiscoveryServices(),
       services: advancedConnectivityEnabled
         ? {
@@ -1417,9 +1409,7 @@ export class EnvoyMesh {
     } catch (e) {
       const detail = e instanceof Error ? e.message : String(e);
       console.warn(`[network] ensurePeerReachable failed for ${target.slice(0, 24)}…: ${detail}`);
-      // Existing connections may still be usable (e.g. relay not torn down by caller).
-      if (!peerIdStr) return { connected: false, direct: false };
-      return this.getPeerConnectionInfo(peerIdStr);
+      return { connected: false, direct: false };
     }
     return peerIdStr ? this.getPeerConnectionInfo(peerIdStr) : { connected: false, direct: false };
   }
@@ -1686,12 +1676,8 @@ export class EnvoyMesh {
         lastError = e;
       }
     }
-    // When upgrading from relay→direct, don't skip the limited-connection fallback:
-    // if the direct dial fails, reuse the existing relay connection.
     const skipLimitedFallback =
-      hasDirectTcpDialHints(hintsRaw) &&
-      !sendOptions?.preferCircuitHints &&
-      !sendOptions?.upgradeRelayToDirect;
+      hasDirectTcpDialHints(hintsRaw) && !sendOptions?.preferCircuitHints;
     if (!skipLimitedFallback) {
       const viaLimited = await openStreamOnLimitedConn();
       if (viaLimited) {
@@ -2316,9 +2302,7 @@ export function isPrivateLanTcpDialHint(addr: string): boolean {
   if (!a.includes("/tcp/") || a.includes("/p2p-circuit/")) {
     return false;
   }
-  // Loopback filtering is handled at the libp2p connectionGater level;
-  // keep the hint so e2e / same-machine tests can use explicit loopback dials.
-  if (isDockerBridgeGatewayDialHint(a)) {
+  if (isLoopbackOrUnspecifiedDialHint(a) || isDockerBridgeGatewayDialHint(a)) {
     return false;
   }
   if (/\/ip4\/10\.\d+\.\d+\.\d+\//.test(a)) return true;
@@ -2367,34 +2351,12 @@ export function isLikelyInboundConnSnapshotDialHint(addr: string): boolean {
   const a = addr.trim();
   // Keep addresses with a proper libp2p peer ID — these are dialable listen
   // multiaddrs, not ephemeral inbound-connection snapshots (restores 00b5b5d behavior).
-  if (/\/p2p\/[^/]+$/.test(a)) {
-    return false;
-  }
-  if (!a.includes("/tcp/")) {
-    return false;
-  }
+  if (/\/p2p\/[^/]+$/.test(a)) return false;
+  if (!a.includes("/tcp/")) return false;
   const match = a.match(/\/tcp\/(\d+)(?:\/|$)/);
-  if (!match) {
-    return false;
-  }
+  if (!match) return false;
   const port = Number(match[1]);
   return port > 32768 || port === 0;
-}
-
-/**
- * RFC1918 `--listen tcp/0` ports from mDNS / system.signal (trusted upstream).
- * Same numeric range as inbound snapshots — never infer from libp2p peerstore alone.
- */
-export function isDialableLanListenHint(addr: string, targetPeerId: string): boolean {
-  const a = addr.trim();
-  const peerId = targetPeerId.trim();
-  if (!a.startsWith("/") || !peerId || !a.includes(`/p2p/${peerId}`)) {
-    return false;
-  }
-  if (a.includes("/p2p-circuit/") || isLoopbackOrUnspecifiedDialHint(a)) {
-    return false;
-  }
-  return isPrivateLanTcpDialHint(a) && a.includes("/tcp/");
 }
 
 /** True when a multiaddr must not be used as bootstrap / relay.checkin target. */
@@ -2477,9 +2439,7 @@ export function isUsableOutboundPeerDialHint(addr: string, targetPeerId?: string
   if (!a.startsWith("/")) {
     return false;
   }
-  // Loopback filtering is handled at the libp2p connectionGater level;
-  // keep the hint so e2e / same-machine tests can use explicit loopback dials.
-  if (isDockerBridgeGatewayDialHint(a)) {
+  if (isLoopbackOrUnspecifiedDialHint(a) || isDockerBridgeGatewayDialHint(a)) {
     return false;
   }
   if (isPublicLibp2pBootstrapMultiaddr(a) || a.includes("bootstrap.libp2p.io")) {
@@ -2530,23 +2490,13 @@ export function filterDialHintsForOutboundSend(
   targetPeerId: string,
   opts?: { preferCircuitHints?: boolean },
 ): string[] {
-  const seen = new Set<string>();
-  const filtered: string[] = [];
-  for (const raw of hints) {
-    const h = raw.trim();
-    if (!h || seen.has(h)) {
-      continue;
-    }
-    if (isUsableOutboundPeerDialHint(h, targetPeerId) || isDialableLanListenHint(h, targetPeerId)) {
-      seen.add(h);
-      filtered.push(h);
-    }
-  }
+  const filtered = filterUsableOutboundPeerDialHints([...hints], targetPeerId);
   if (opts?.preferCircuitHints === true) {
     return filtered;
   }
-  // Keep circuit/relay hints as fallback — stripping them entirely
-  // prevents relay fallback when direct LAN dials fail (e.g. firewalls).
+  if (hasDirectTcpDialHints(filtered)) {
+    return filtered.filter((h) => !h.includes("/p2p-circuit/"));
+  }
   return filtered;
 }
 

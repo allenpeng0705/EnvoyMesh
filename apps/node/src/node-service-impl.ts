@@ -11317,6 +11317,11 @@ class NodeServiceImpl implements NodeService {
           }
           // stale — fall through to redial
         } else {
+          // Circuit-relay probes often false-negative; trust open relay path.
+          if (!existing.direct) {
+            markOutboundPeerVerified(transportPeerId);
+            return existing;
+          }
           const probed = await mesh.probeBondedPeerConnection(transportPeerId);
           if (probed.connected || options?.keepAlive === true) {
             if (probed.connected) {
@@ -11338,8 +11343,15 @@ class NodeServiceImpl implements NodeService {
         WARM_CONTACT_DIAL_HINTS_TIMEOUT_MS,
         "_dialHintsForChat",
       );
-    } catch {
-      return mesh.getPeerConnectionInfo(transportPeerId);
+    } catch (hintErr: unknown) {
+      dialHints = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs ?? []);
+      console.warn(
+        `[warmContact] dial hints timed out for ${transportPeerId.slice(0, 12)}…, using ${dialHints.length} listen addrs:`,
+        hintErr instanceof Error ? hintErr.message : hintErr,
+      );
+      if (dialHints.length === 0) {
+        return mesh.getPeerConnectionInfo(transportPeerId);
+      }
     }
 
     const dialableListen = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, dialHints);
@@ -11351,7 +11363,6 @@ class NodeServiceImpl implements NodeService {
 
     const tearingDown =
       options?.redial === true ||
-      options?.upgradeRelayToDirect === true ||
       (needsProbe && !options?.keepAlive);
     if (tearingDown) {
       try {
