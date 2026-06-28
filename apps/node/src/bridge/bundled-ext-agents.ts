@@ -13,3 +13,9 @@ export interface BundledExtAgentRegistration {
 export function getBundledExtAgentRegistrations(): BundledExtAgentRegistration[] {
   return [];
 }
+
+export function mergeBundledExtAgentRegistry(
+  _existing: BundledExtAgentRegistration[],
+): BundledExtAgentRegistration[] {
+  return [];
+}

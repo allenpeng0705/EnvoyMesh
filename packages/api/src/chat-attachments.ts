@@ -3,6 +3,15 @@ import type { ChatAttachment } from "./node-service.js";
 
 const AUDIO_MIME_PREFIXES = ["audio/", "video/"];
 
+export function resolveInboundChatDisplayText(
+  text: string,
+  _attachments?: unknown[],
+): string {
+  return text || "";
+}
+
+export const ENVOY_AI_THREAD_KEY = "envoy:ai";
+
 export function isAudioMimeType(mimeType?: string): boolean {
   if (!mimeType) return false;
   return AUDIO_MIME_PREFIXES.some((p) => mimeType.startsWith(p));
