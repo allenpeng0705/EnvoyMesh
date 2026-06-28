@@ -147,6 +147,8 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
       args.listen = [readValue(argv, ++index, arg)];
     } else if (arg === "--advertise-addr") {
       args.advertiseAddrs.push(readValue(argv, ++index, arg));
+    } else if (arg === "--max-connections") {
+      args.connectivityTuning.maxConnections = Number(readValue(argv, ++index, arg));
     } else if (arg === "--no-mdns") {
       args.enableMdns = false;
       args.enableMdnsExplicit = true;
@@ -322,6 +324,7 @@ Options:
   --connectivity-strict    Fail startup when wan-default bootstrap connectivity cannot be established. Env: ENVOYMESH_CONNECTIVITY_STRICT=1
   --listen <multiaddr>  Listen multiaddr. Default: /ip4/0.0.0.0/tcp/0
   --advertise-addr <multiaddr>  Reachable relay base address for relay.lookup /p2p-circuit/ paths (public IP or DNS, same TCP port as clients use). Repeatable. Env: ENVOYMESH_ADVERTISE_ADDRS (comma-separated). YAML: discovery.advertiseAddrs. Strongly recommended for --relay-server on WAN/cloud.
+  --max-connections <n>  Max libp2p connections. Default: 150. Lower to 50-80 to reduce DHT/bootstrap churn.
   --no-mdns             Disable local mDNS discovery.
   --dht                 Enable DHT discovery.
   --dht-client          Enable DHT in client mode.
