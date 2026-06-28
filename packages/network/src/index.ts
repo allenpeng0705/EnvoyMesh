@@ -446,6 +446,39 @@ export class EnvoyMesh {
 
     this.attachP2pDebug(this.node);
     this.attachReachabilityObservability(this.node);
+
+    // Establish circuit relay v2 reservations on configured relays so other
+    // peers can reach this node via relay (fixes NO_RESERVATION errors).
+    // Run asynchronously — do not block node startup.
+    if (this.options.enableRelay && !this.options.enableRelayServer && this.node) {
+      const relayAddrs = (this.options.bootstrapPeers ?? [])
+        .filter((a) => !isPublicLibp2pBootstrapMultiaddr(a));
+      void (async () => {
+        for (const addr of relayAddrs) {
+          try {
+            const conn = await promiseWithTimeout(
+              this.node!.dial(ma(addr)),
+              15_000,
+              `relay-reservation dial ${addr.slice(0, 64)}`,
+            );
+            const relayPid = conn.remotePeer;
+            await this.node!.peerStore.merge(relayPid, {
+              tags: { [CONTACT_KEEP_ALIVE_PEER_TAG]: { value: 1 } },
+            });
+            // Verify tag was stored
+            const stored = await this.node!.peerStore.get(relayPid);
+            const tagKeys = stored.tags ? Array.from(stored.tags.keys()) : [];
+            console.log(
+              `[relay] reserved on relay ${addr.slice(0, 64)} ` +
+              `(tagged ${relayPid.toString().slice(0, 12)}… tags=${JSON.stringify(tagKeys)})`,
+            );
+          } catch (e) {
+            const detail = e instanceof Error ? e.message : String(e);
+            console.warn(`[relay] reservation dial failed for ${addr.slice(0, 64)}: ${detail}`);
+          }
+        }
+      })();
+    }
   }
 
   async stop(): Promise<void> {
@@ -2348,18 +2381,21 @@ export function isPrivateOrUnroutableDialHint(addr: string): boolean {
  * source port on outbound-initiated TCP connections — not a dialable listen address.
  */
 export function isLikelyInboundConnSnapshotDialHint(addr: string): boolean {
-  if (!addr.includes("/tcp/")) {
+  const a = addr.trim();
+  // Keep addresses with a proper libp2p peer ID — these are dialable listen
+  // multiaddrs, not ephemeral inbound-connection snapshots (restores 00b5b5d behavior).
+  if (/\/p2p\/[^/]+$/.test(a)) {
     return false;
   }
-  const match = addr.match(/\/tcp\/(\d+)\//);
+  if (!a.includes("/tcp/")) {
+    return false;
+  }
+  const match = a.match(/\/tcp\/(\d+)(?:\/|$)/);
   if (!match) {
     return false;
   }
   const port = Number(match[1]);
-  if (STABLE_LIBP2P_TCP_PORTS.has(port)) {
-    return false;
-  }
-  return port >= 32768;
+  return port > 32768 || port === 0;
 }
 
 /** True when a multiaddr must not be used as bootstrap / relay.checkin target. */
@@ -2497,9 +2533,9 @@ export function filterDialHintsForOutboundSend(
   if (opts?.preferCircuitHints === true) {
     return filtered;
   }
-  if (hasDirectTcpDialHints(filtered)) {
-    return filtered.filter((h) => !h.includes("/p2p-circuit/"));
-  }
+  // Keep circuit/relay hints as fallback when direct TCP hints exist.
+  // Circuit hints are tried last by dialOpenStreamViaHints, so direct
+  // paths get priority without dropping the relay fallback entirely.
   return filtered;
 }
 

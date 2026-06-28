@@ -534,14 +534,12 @@ const connectivityRuntime: ResolvedConnectivityRuntime = resolveConnectivityRunt
   enableMdns: args.enableMdnsExplicit ? args.enableMdns : undefined,
   tuning: args.connectivityTuning,
 });
-args.enableMdns = connectivityRuntime.enableMdns;
-args.enableDht = connectivityRuntime.enableDht;
 const mesh = new EnvoyMesh({
   listen: args.listen,
   advertiseAddrs: args.advertiseAddrs,
-  enableMdns: connectivityRuntime.enableMdns,
-  mdnsIntervalMs: connectivityRuntime.mdnsIntervalMs,
-  enableDht: connectivityRuntime.enableDht,
+  enableMdns: args.enableMdns,
+  mdnsIntervalMs: args.mdnsIntervalMs,
+  enableDht: args.enableDht,
   dhtClientMode: args.dhtClientMode ?? true,
   bootstrapPeers: effectiveBootstrapPeers,
   enableRelay: args.enableRelay,
@@ -551,7 +549,7 @@ const mesh = new EnvoyMesh({
   enableQuic: args.enableQuic,
   enableP2pDebug: args.p2pDebug,
   enableRelayDebugSummary: args.relayDebugSummary,
-  ...(connectivityRuntime.maxConnections != null ? { maxConnections: connectivityRuntime.maxConnections } : {}),
+  ...(args.maxConnections != null ? { maxConnections: args.maxConnections } : {}),
   libp2pPrivateKey,
   onP2pDebug: (event) => {
     void appendP2pTrace(event);

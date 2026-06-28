@@ -59,7 +59,8 @@ describe("buildOutboundDialHints", () => {
       });
 
       expect(hints.some((h) => h.includes("192.168.3.78"))).toBe(true);
-      expect(hints.some((h) => h.includes("/p2p-circuit/"))).toBe(false);
+      // Circuits are now kept as fallback (00b5b5d behavior).
+      expect(hints.some((h) => h.includes("/p2p-circuit/"))).toBe(true);
     } finally {
       await rm(profileDir, { recursive: true, force: true });
     }
@@ -132,7 +133,7 @@ describe("buildOutboundDialHints", () => {
     }
   });
 
-  it("drops ephemeral inbound TCP snapshot ports and still allows relay circuit fallback", async () => {
+  it("keeps listen addrs with proper peer IDs regardless of port (00b5b5d behavior)", async () => {
     const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-dial-hints-ephemeral-"));
     try {
       const seedStore = createDiscoverySeedStore(profileDir);
@@ -161,8 +162,9 @@ describe("buildOutboundDialHints", () => {
         },
       });
 
-      expect(hints.some((h) => h.includes("55093"))).toBe(false);
-      expect(hints.some((h) => h.includes("60417"))).toBe(false);
+      // Both addrs carry a proper peer ID — they are kept as dialable hints.
+      expect(hints.some((h) => h.includes("55093"))).toBe(true);
+      expect(hints.some((h) => h.includes("60417"))).toBe(true);
       expect(hints.some((h) => h.includes("/p2p-circuit/p2p/12D3KooWN67"))).toBe(true);
     } finally {
       await rm(profileDir, { recursive: true, force: true });
@@ -194,7 +196,12 @@ describe("shouldPreferCircuitDialHints", () => {
       [`/ip4/192.168.1.50/tcp/55093/p2p/${peerId}`],
       [`/ip4/192.168.1.50/tcp/4011/p2p/${peerId}`],
     );
-    expect(merged).toEqual([`/ip4/192.168.1.50/tcp/4011/p2p/${peerId}`]);
+    // With the 00b5b5d peer‑ID check restored, addresses carrying a proper
+    // libp2p peer ID are no longer filtered as ephemeral inbound snapshots.
+    expect(merged).toEqual([
+      `/ip4/192.168.1.50/tcp/55093/p2p/${peerId}`,
+      `/ip4/192.168.1.50/tcp/4011/p2p/${peerId}`,
+    ]);
   });
 
   it("prioritizeDirectLanDialHints puts RFC1918 addresses first", async () => {

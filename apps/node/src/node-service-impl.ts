@@ -9370,7 +9370,7 @@ class NodeServiceImpl implements NodeService {
         enableRelay: config.relayEnabled,
         enableRelayServer: config.relayServerEnabled,
         enableAutoNat: true,
-        enableDcutr: true,
+        // enableDcutr removed — not available in current MeshOptions
         ...(connectivityRuntime.maxConnections != null
           ? { maxConnections: connectivityRuntime.maxConnections }
           : {}),
