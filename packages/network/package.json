@@ -5,24 +5,24 @@
   "scripts": {
     "build": "tsc -p tsconfig.json"
   },
-  "main": "./dist/src/index.js",
-  "types": "./dist/src/index.d.ts",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
   "exports": {
     ".": {
-      "types": "./dist/src/index.d.ts",
-      "import": "./dist/src/index.js"
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
     },
     "./data-framing": {
-      "types": "./dist/src/data-framing.d.ts",
-      "import": "./dist/src/data-framing.js"
+      "types": "./src/data-framing.ts",
+      "import": "./src/data-framing.ts"
     },
     "./protocols": {
-      "types": "./dist/src/protocols.d.ts",
-      "import": "./dist/src/protocols.js"
+      "types": "./src/protocols.ts",
+      "import": "./src/protocols.ts"
     },
     "./capability-topic-cid": {
-      "types": "./dist/src/capability-topic-cid.d.ts",
-      "import": "./dist/src/capability-topic-cid.js"
+      "types": "./src/capability-topic-cid.ts",
+      "import": "./src/capability-topic-cid.ts"
     }
   },
   "dependencies": {
