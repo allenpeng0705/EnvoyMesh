@@ -17,10 +17,7 @@ afterAll(async () => {
   }
 });
 
-// TODO: fix loopback dial in test harness and re-enable.
-// The underlying code fixes are sound — the test harness needs
-// allowLoopbackPeers and proper dial target configuration.
-describe.skip("networking e2e", () => {
+describe("networking e2e", () => {
   let alice: EnvoyMesh;
   let bob: EnvoyMesh;
 

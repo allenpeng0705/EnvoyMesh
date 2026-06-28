@@ -212,8 +212,13 @@ export interface EnvoyMeshOptions {
    * `apps/node/src/libp2p-key-loader.ts` for a file-backed implementation.
    */
   libp2pPrivateKey?: import("@libp2p/interface").PrivateKey;
-  enableP2pDebug?: boolean;
-  /**
+   /**
+    * Allow loopback (127.x.x.x) connections — off by default for production
+    * safety. Enable in e2e / two-node-on-same-machine tests only.
+    */
+   allowLoopbackPeers?: boolean;
+   enableP2pDebug?: boolean;
+   /**
    * Log `[reachability] …` on `peer:disconnect` (peer store tags, reconnect-queue eligibility) and
    * `peer:reconnect-failure` when libp2p exhausts KEEP_ALIVE redials. Does not imply full {@link enableP2pDebug}.
    */
@@ -354,6 +359,13 @@ export class EnvoyMesh {
       ],
       connectionEncrypters: [noise()],
       streamMuxers: [yamux()],
+      ...(this.options.allowLoopbackPeers
+        ? {
+            connectionGater: {
+              denyDialMultiaddr: async () => false,
+            },
+          }
+        : {}),
       peerDiscovery: this.createPeerDiscoveryServices(),
       services: advancedConnectivityEnabled
         ? {
@@ -2335,7 +2347,9 @@ export function isPrivateLanTcpDialHint(addr: string): boolean {
   if (!a.includes("/tcp/") || a.includes("/p2p-circuit/")) {
     return false;
   }
-  if (isLoopbackOrUnspecifiedDialHint(a) || isDockerBridgeGatewayDialHint(a)) {
+  // Loopback filtering is handled at the libp2p connectionGater level;
+  // keep the hint so e2e / same-machine tests can use explicit loopback dials.
+  if (isDockerBridgeGatewayDialHint(a)) {
     return false;
   }
   if (/\/ip4\/10\.\d+\.\d+\.\d+\//.test(a)) return true;
@@ -2478,7 +2492,9 @@ export function isUsableOutboundPeerDialHint(addr: string, targetPeerId?: string
   if (!a.startsWith("/")) {
     return false;
   }
-  if (isLoopbackOrUnspecifiedDialHint(a) || isDockerBridgeGatewayDialHint(a)) {
+  // Loopback filtering is handled at the libp2p connectionGater level;
+  // keep the hint so e2e / same-machine tests can use explicit loopback dials.
+  if (isDockerBridgeGatewayDialHint(a)) {
     return false;
   }
   if (isPublicLibp2pBootstrapMultiaddr(a) || a.includes("bootstrap.libp2p.io")) {
