@@ -1,0 +1,12 @@
+diff --git a/packages/api/src/index.ts b/packages/api/src/index.ts
+index 8d31c1f..54c4974 100644
+--- a/packages/api/src/index.ts
++++ b/packages/api/src/index.ts
+@@ -14,6 +14,7 @@ export * from "./pairing-token.js";
+ export * from "./envoy-contact-link.js";
+ export * from "./chat-device-auth.js";
+ export * from "./chat-attachments.js";
++export * from "./attachment-transfer.js";
+ export * from "./chat-actor.js";
+ export * from "./agent-visibility.js";
+ export * from "./agent-activity-map.js";

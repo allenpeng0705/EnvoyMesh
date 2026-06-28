@@ -1,0 +1,27 @@
+diff --git a/apps/node/src/node-service-impl.ts b/apps/node/src/node-service-impl.ts
+index beeeb35..3aacd7b 100644
+--- a/apps/node/src/node-service-impl.ts
++++ b/apps/node/src/node-service-impl.ts
+@@ -11189,6 +11189,22 @@ class NodeServiceImpl implements NodeService {
+     void this._tagBondedContactReachability(transportPeerId);
+   }
+ 
++  // Phase 44 stubs — cherry-picked API expects these but network-safe baseline
++  // doesn't need full implementations. Bridge config and health checks return defaults.
++  async getBridgeConfig(): Promise<any> {
++    return { enabled: false, agentUrl: "", assistantAgentUrl: "", agentName: "", extAgents: [] };
++  }
++  async updateBridgeConfig(_params: any): Promise<any> {
++    return { ok: true };
++  }
++  async probeExtAgents(): Promise<any> {
++    return { extAgents: [] };
++  }
++  async getPeerConnectionHealth(peerOwnerId: string): Promise<any> {
++    const info = await this.getPeerConnectionInfo(peerOwnerId);
++    return { connected: info.connected, direct: info.direct, reachabilityLabel: info.connected ? (info.direct ? "Online · Direct" : "Online · Relay") : "Offline", transportPeerId: peerOwnerId };
++  }
++
+   async getPeerConnectionInfo(peerOwnerId: string): Promise<PeerConnectionInfo> {
+     const mesh = this._reachableMesh();
+     if (!mesh) {
