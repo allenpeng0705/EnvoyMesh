@@ -291,7 +291,7 @@ export class EnvoyMesh {
     const browserMode = this.options.browserMode === true;
     const enableWebSocket = this.options.enableWebSocketTransport === true || browserMode;
 
-    const baseListen = this.options.listen ?? (browserMode ? [] : ["/ip4/0.0.0.0/tcp/4001"]);
+    const baseListen = this.options.listen ?? (browserMode ? [] : ["/ip4/0.0.0.0/tcp/0"]);
     let listenAddrs =
       this.options.enableQuic === true && !browserMode ? expandListenAddressesWithQuic(baseListen) : [...baseListen];
 
@@ -2372,7 +2372,7 @@ export function hasDirectTcpDialHints(hints: readonly string[]): boolean {
       !h.includes("/p2p-circuit/") &&
       !isLoopbackOrUnspecifiedDialHint(h) &&
       !isDockerBridgeGatewayDialHint(h) &&
-      (!isLikelyInboundConnSnapshotDialHint(h) || isPrivateLanTcpDialHint(h)),
+      !isLikelyInboundConnSnapshotDialHint(h),
   );
 }
 
