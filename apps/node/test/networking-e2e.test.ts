@@ -1,13 +1,13 @@
 /**
- * Networking E2E test — two-node connectivity in-process.
+ * Networking E2E test — verifies two nodes can start and connect.
  *
  * Creates two EnvoyMesh instances on loopback, establishes a direct
- * libp2p connection, and verifies basic message streaming.
+ * libp2p connection, and verifies the connection succeeds.
  *
  * Run: npx vitest run apps/node/test/networking-e2e.test.ts
  */
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { EnvoyMesh, ENVOY_MESSAGE_PROTOCOL } from "@envoymesh/network";
+import { EnvoyMesh } from "@envoymesh/network";
 
 const meshes: EnvoyMesh[] = [];
 
@@ -23,7 +23,7 @@ describe("networking e2e", () => {
 
   beforeAll(async () => {
     alice = new EnvoyMesh({
-      listen: ["/ip4/127.0.0.1/tcp/40231"],
+      listen: ["/ip4/127.0.0.1/tcp/40261"],
       enableCircuitRelayTransport: false,
       enableMdns: false,
       enableDht: false,
@@ -31,12 +31,10 @@ describe("networking e2e", () => {
       enableAutoNat: false,
       enableDcutr: false,
       enableQuic: false,
-      enableRelayDebugSummary: false,
-      enableP2pDebug: true,
       allowLoopbackPeers: true,
     });
     bob = new EnvoyMesh({
-      listen: ["/ip4/127.0.0.1/tcp/40232"],
+      listen: ["/ip4/127.0.0.1/tcp/40262"],
       enableCircuitRelayTransport: false,
       enableMdns: false,
       enableDht: false,
@@ -44,30 +42,28 @@ describe("networking e2e", () => {
       enableAutoNat: false,
       enableDcutr: false,
       enableQuic: false,
-      enableRelayDebugSummary: false,
-      enableP2pDebug: true,
       allowLoopbackPeers: true,
     });
     meshes.push(alice, bob);
     await alice.start();
     await bob.start();
-    console.log(`[e2e] alice.peerId=${alice.peerId}`);
-    console.log(`[e2e] bob.peerId=${bob.peerId}`);
-    const aAddrs = alice.node?.getMultiaddrs().map(a => a.toString()) ?? [];
-    const bAddrs = bob.node?.getMultiaddrs().map(a => a.toString()) ?? [];
-    console.log(`[e2e] alice addrs=${JSON.stringify(aAddrs)}`);
-    console.log(`[e2e] bob   addrs=${JSON.stringify(bAddrs)}`);
+    console.log(`[e2e] alice.peerId=${alice.peerId} bob.peerId=${bob.peerId}`);
   }, 20_000);
 
-  it("alice dials bob via loopback", async () => {
-    const bobAddr = `/ip4/127.0.0.1/tcp/40232/p2p/${bob.peerId}`;
-    console.log(`[e2e] dialing ${bobAddr}`);
+  it("both nodes start with valid peer IDs", () => {
+    expect(alice.peerId).toBeTruthy();
+    expect(bob.peerId).toBeTruthy();
+    expect(alice.peerId).not.toBe(bob.peerId);
+  });
+
+  it("alice can dial bob", async () => {
+    const bobAddr = `/ip4/127.0.0.1/tcp/40262/p2p/${bob.peerId}`;
     const result = await alice.ensurePeerReachable(
       bob.peerId,
-      ENVOY_MESSAGE_PROTOCOL,
+      "/envoymesh/message/0.1.0",
       { dialHints: [bobAddr], forceFreshDial: true },
     );
-    console.log(`[e2e] result connected=${result.connected} direct=${result.direct}`);
+    console.log(`[e2e] dial result: connected=${result.connected} direct=${result.direct}`);
     expect(result.connected).toBe(true);
   }, 15_000);
 });
