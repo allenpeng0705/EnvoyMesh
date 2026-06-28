@@ -2431,6 +2431,24 @@ function lastPeerIdFromMultiaddr(addr: string): string | undefined {
 }
 
 /**
+ * True when a multiaddr is a dialable LAN listen address for a specific peer.
+ * Filters out non-LAN, loopback, docker bridge, inbound snapshots, peer-ID mismatches,
+ * and circuit relay paths — used by LAN presence to pick suitable addresses for
+ * UDP announcements.
+ */
+export function isDialableLanListenHint(addr: string, targetPeerId: string): boolean {
+  const a = addr.trim();
+  if (!a.includes("/tcp/") || a.includes("/p2p-circuit/")) return false;
+  if (isLoopbackOrUnspecifiedDialHint(a) || isDockerBridgeGatewayDialHint(a)) return false;
+  if (isLikelyInboundConnSnapshotDialHint(a)) return false;
+  if (isPublicLibp2pBootstrapMultiaddr(a) || a.includes("bootstrap.libp2p.io")) return false;
+  if (!isPrivateLanTcpDialHint(a)) return false;
+  const last = lastPeerIdFromMultiaddr(a);
+  if (!last || last !== targetPeerId.trim()) return false;
+  return true;
+}
+
+/**
  * Filter multiaddrs for outbound dials to a specific libp2p peer.
  * Drops WebTransport, incomplete circuits, bootstrap nodes, and paths whose final `/p2p/` id ≠ target.
  */
@@ -2488,9 +2506,9 @@ export function filterUsableOutboundPeerDialHints(addrs: string[], targetPeerId:
 export function filterDialHintsForOutboundSend(
   hints: readonly string[],
   targetPeerId: string,
-  opts?: { preferCircuitHints?: boolean },
+  opts?: { preferCircuitHints?: boolean; allowLoopback?: boolean },
 ): string[] {
-  const filtered = filterUsableOutboundPeerDialHints([...hints], targetPeerId);
+  const filtered = filterUsableOutboundPeerDialHints([...hints], targetPeerId, opts?.allowLoopback);
   if (opts?.preferCircuitHints === true) {
     return filtered;
   }
