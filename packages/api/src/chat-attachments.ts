@@ -10,8 +10,6 @@ export function resolveInboundChatDisplayText(
   return text || "";
 }
 
-export const ENVOY_AI_THREAD_KEY = "envoy:ai";
-
 export function isAudioMimeType(mimeType?: string): boolean {
   if (!mimeType) return false;
   return AUDIO_MIME_PREFIXES.some((p) => mimeType.startsWith(p));
