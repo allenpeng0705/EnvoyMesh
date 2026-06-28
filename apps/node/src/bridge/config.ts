@@ -26,6 +26,18 @@ export const DEFAULT_BRIDGE_CONFIG: BridgeConfig = {
   agentName: "",
 };
 
+export interface ResolvedBridgeConfig extends BridgeConfig {
+  extAgents?: { agentId: string; url: string; name?: string }[];
+}
+
+export function applyBridgeConfigResolution(raw: BridgeConfig): ResolvedBridgeConfig {
+  return {
+    ...raw,
+    assistantAgentUrl: resolveAssistantAgentUrl(raw),
+    extAgents: [],
+  };
+}
+
 /** Built-in OpenClaw webhook URL for EnvoyAI / H2A turns. */
 export function resolveAssistantAgentUrl(cfg: {
   assistantAgentUrl?: string;
