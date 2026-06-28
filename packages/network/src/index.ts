@@ -172,6 +172,8 @@ export interface MeshOutboundOptions {
   verifyConnection?: boolean;
   /** When true, close an existing relay connection and redial direct if LAN hints exist. Default false. */
   upgradeRelayToDirect?: boolean;
+  /** When true, skip the loopback filter in isUsableOutboundPeerDialHint (e2e test support). */
+  allowLoopback?: boolean;
 }
 
 export interface EnvoyMeshOptions {
@@ -233,7 +235,12 @@ export interface EnvoyMeshOptions {
    * libp2p connection-manager cap. Defaults to {@link DEFAULT_CLIENT_MAX_CONNECTIONS} for client
    * nodes; relay-server nodes stay uncapped unless set explicitly.
    */
-  maxConnections?: number;
+   maxConnections?: number;
+   /**
+    * Allow loopback (127.x.x.x) connections — off by default for production
+    * safety. Enable in e2e / two-node-on-same-machine tests only.
+    */
+   allowLoopbackPeers?: boolean;
 }
 
 export interface CapabilityTopicProviderRecord {
