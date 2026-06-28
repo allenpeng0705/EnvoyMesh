@@ -38,6 +38,31 @@ export function applyBridgeConfigResolution(raw: BridgeConfig): ResolvedBridgeCo
   };
 }
 
+export interface BridgeConfigView {
+  enabled: boolean;
+  agentUrl: string;
+  assistantAgentUrl: string;
+  agentName: string;
+  extAgents: { agentId: string; url: string; name?: string; healthy?: boolean }[];
+}
+
+export function bridgeConfigToView(
+  resolved: ResolvedBridgeConfig,
+  _health: Record<string, boolean>,
+): BridgeConfigView {
+  return {
+    enabled: resolved.enabled,
+    agentUrl: resolved.agentUrl,
+    assistantAgentUrl: resolved.assistantAgentUrl ?? resolved.agentUrl,
+    agentName: resolved.agentName,
+    extAgents: (resolved.extAgents ?? []).map((a) => ({
+      agentId: a.agentId,
+      url: a.url,
+      name: a.name,
+    })),
+  };
+}
+
 /** Built-in OpenClaw webhook URL for EnvoyAI / H2A turns. */
 export function resolveAssistantAgentUrl(cfg: {
   assistantAgentUrl?: string;
@@ -48,4 +73,23 @@ export function resolveAssistantAgentUrl(cfg: {
   const agentUrl = cfg.agentUrl?.trim();
   if (agentUrl?.includes("/webhook/envoymesh")) return agentUrl;
   return DEFAULT_BRIDGE_CONFIG.assistantAgentUrl ?? "http://127.0.0.1:18789/webhook/envoymesh";
+}
+
+export async function probeAllExtAgents(
+  _config: ResolvedBridgeConfig,
+): Promise<{ agentId: string; healthy: boolean }[]> {
+  return [];
+}
+
+export async function probeExtAgentHealth(
+  _url: string,
+  _secret?: string,
+): Promise<boolean> {
+  return false;
+}
+
+export function resolveBridgeStatusAgentType(
+  _agentUrl?: string,
+): "homeclaw" | "envoyai" | "unknown" {
+  return "envoyai";
 }
