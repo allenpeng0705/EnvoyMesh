@@ -1,6 +1,13 @@
 import type { ChatRoomAttachment } from "@envoymesh/protocol";
 import type { ChatAttachment } from "./node-service.js";
 
+const AUDIO_MIME_PREFIXES = ["audio/", "video/"];
+
+export function isAudioMimeType(mimeType?: string): boolean {
+  if (!mimeType) return false;
+  return AUDIO_MIME_PREFIXES.some((p) => mimeType.startsWith(p));
+}
+
 export function deferredDirectChatAttachmentKey(
   peerOwnerId: string,
   messageId: string,
