@@ -454,37 +454,6 @@ export class EnvoyMesh {
 
     this.attachP2pDebug(this.node);
     this.attachReachabilityObservability(this.node);
-
-    // Establish circuit relay v2 reservations on configured relays so other
-    // peers can reach this node via relay (fixes NO_RESERVATION errors).
-    // Dialing the relay triggers identify → topology handler discovers
-    // RELAY_V2_HOP_CODEC → circuitRelayTransport requests a reservation.
-    // Run asynchronously — do not block node startup.
-    if (this.options.enableRelay && !this.options.enableRelayServer && this.node) {
-      const relayAddrs = (this.options.bootstrapPeers ?? [])
-        .filter((a) => !isPublicLibp2pBootstrapMultiaddr(a));
-      void (async () => {
-        for (const addr of relayAddrs) {
-          try {
-             const conn = await promiseWithTimeout(
-               this.node!.dial(ma(addr)),
-               15_000,
-               `relay-reservation dial ${addr.slice(0, 64)}`,
-             );
-             // Tag the relay peer so libp2p keeps the connection alive.
-             // Use the actual connection's remote peer — not addr parsing.
-             const relayPid = conn.remotePeer;
-             await this.node!.peerStore.merge(relayPid, {
-               tags: { [CONTACT_KEEP_ALIVE_PEER_TAG]: { value: 1 } },
-             });
-             console.log(`[relay] reserved on relay ${addr.slice(0, 64)} (tagged ${relayPid.toString().slice(0, 12)}…)`);
-          } catch (e) {
-            const detail = e instanceof Error ? e.message : String(e);
-            console.warn(`[relay] reservation dial failed for ${addr.slice(0, 64)}: ${detail}`);
-          }
-        }
-      })();
-    }
   }
 
   async stop(): Promise<void> {
