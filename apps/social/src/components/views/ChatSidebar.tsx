@@ -11,6 +11,7 @@ import { chatRoomThreadKey } from "@envoymesh/api";
 import { resolveContactAiAccessLevel } from "@envoymesh/api";
 import { contactLabel, peerDisplayLabel } from "../../lib/display.js";
 import { PeerProfileAvatar } from "../PeerProfileAvatar.js";
+import { BondReachabilityDot } from "../BondReachabilityDot.js";
 import { ChatIcon, BridgeIcon, AddIcon } from "../../icons.js";
 import { useChatThreadPreviews } from "../../hooks/useChatThreadPreviews.js";
 import { CreateGroupModal } from "./CreateGroupModal.js";
@@ -344,6 +345,7 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
                       {pv ? <span className="thread-time">{pv.timeLabel}</span> : null}
                     </span>
                     <span className="thread-subtitle">{pv?.text ?? t("chat.noMessagesYet")}</span>
+                    <BondReachabilityDot ownerId={contact.peerOwnerId} />
                   </span>
                 </button>
                 <button
