@@ -1375,7 +1375,7 @@ export class EnvoyMesh {
     const hintList = filterDialHintsForOutboundSend(
       sendOptions?.dialHints ?? [],
       peerIdStr ?? "",
-      sendOptions,
+      { ...sendOptions, allowLoopback: sendOptions?.allowLoopback ?? this.options.allowLoopbackPeers },
     );
     const canUpgradeRelayToDirect =
       sendOptions?.upgradeRelayToDirect === true &&
@@ -1503,7 +1503,7 @@ export class EnvoyMesh {
     const hintList = filterDialHintsForOutboundSend(
       sendOptions?.dialHints ?? [],
       peerIdStr ?? "",
-      sendOptions,
+      { ...sendOptions, allowLoopback: sendOptions?.allowLoopback ?? this.options.allowLoopbackPeers },
     );
     const skipLimitedReuse =
       hasDirectTcpDialHints(hintList) && !sendOptions?.preferCircuitHints;
@@ -2452,12 +2452,12 @@ export function isDialableLanListenHint(addr: string, targetPeerId: string): boo
  * Filter multiaddrs for outbound dials to a specific libp2p peer.
  * Drops WebTransport, incomplete circuits, bootstrap nodes, and paths whose final `/p2p/` id ≠ target.
  */
-export function isUsableOutboundPeerDialHint(addr: string, targetPeerId?: string): boolean {
+export function isUsableOutboundPeerDialHint(addr: string, targetPeerId?: string, allowLoopback?: boolean): boolean {
   const a = addr.trim();
   if (!a.startsWith("/")) {
     return false;
   }
-  if (isLoopbackOrUnspecifiedDialHint(a) || isDockerBridgeGatewayDialHint(a)) {
+  if (!allowLoopback && (isLoopbackOrUnspecifiedDialHint(a) || isDockerBridgeGatewayDialHint(a))) {
     return false;
   }
   if (isPublicLibp2pBootstrapMultiaddr(a) || a.includes("bootstrap.libp2p.io")) {
@@ -2482,7 +2482,7 @@ export function isUsableOutboundPeerDialHint(addr: string, targetPeerId?: string
   return true;
 }
 
-export function filterUsableOutboundPeerDialHints(addrs: string[], targetPeerId: string): string[] {
+export function filterUsableOutboundPeerDialHints(addrs: string[], targetPeerId: string, allowLoopback?: boolean): string[] {
   const seen = new Set<string>();
   const out: string[] = [];
   for (const raw of addrs) {
@@ -2490,7 +2490,7 @@ export function filterUsableOutboundPeerDialHints(addrs: string[], targetPeerId:
     if (!a || seen.has(a)) {
       continue;
     }
-    if (!isUsableOutboundPeerDialHint(a, targetPeerId)) {
+    if (!isUsableOutboundPeerDialHint(a, targetPeerId, allowLoopback)) {
       continue;
     }
     seen.add(a);
