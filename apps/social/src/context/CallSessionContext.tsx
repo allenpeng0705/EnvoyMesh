@@ -50,7 +50,7 @@ function GlobalCallOverlay({ session }: { session: UseCallSessionResult }) {
         <div className={`global-active-call-dock${callingCallType === "video" ? " global-active-call-dock--video" : ""}`}>
           <ActiveCallPanel
             peerDisplayName={activePeerDisplayName ?? activePeerName}
-            peerOwnerId={activeCall?.peerOwnerId ?? ""}
+            peerOwnerId=""
             callType={callingCallType ?? "audio"}
             isMuted={isMuted}
             isRemoteMuted={isRemoteMuted}

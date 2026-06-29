@@ -28,3 +28,4 @@ apps/node/data/default/**
 shared_vault/
 /packages/openclaw
 /.pnpm-store
+/.deepseek
