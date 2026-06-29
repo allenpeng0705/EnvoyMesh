@@ -3913,16 +3913,27 @@ class NodeServiceImpl implements NodeService {
         hintCount: dialHints.length,
       });
       if (!conn.connected) {
-        const dialTargets = [...new Set([...(listenAddrs ?? []), ...dialHints])];
-        for (const addr of dialTargets) {
-          const trimmed = addr.trim();
-          if (!trimmed) continue;
+        const dialTargets = [...new Set([...(listenAddrs ?? []), ...dialHints])]
+          .map((a) => a.trim())
+          .filter(Boolean);
+        if (dialTargets.length > 0) {
+          // Order by expected speed: LAN TCP first, then direct TCP, then relay circuits.
+          const ordered = [...dialTargets].sort((a, b) => {
+            const aLan = isPrivateLanTcpDialHint(a) ? 1 : 0;
+            const bLan = isPrivateLanTcpDialHint(b) ? 1 : 0;
+            if (aLan !== bLan) return bLan - aLan; // LAN first
+            const aCircuit = a.includes("/p2p-circuit/") ? 1 : 0;
+            const bCircuit = b.includes("/p2p-circuit/") ? 1 : 0;
+            if (aCircuit !== bCircuit) return aCircuit - bCircuit; // direct before circuit
+            return 0;
+          });
           try {
-            await mesh.dial(trimmed);
+            // Race all addresses simultaneously — first to connect wins.
+            // Addresses are ordered so fastest paths establish connections first.
+            await Promise.any(ordered.map((addr) => mesh.dial(addr)));
             conn = mesh.getPeerConnectionInfo(transportPeerId);
-            if (conn.connected) break;
           } catch {
-            /* try next addr */
+            /* all dials failed — fall through to retry path */
           }
         }
       }
@@ -13970,16 +13981,25 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
         }
       }
       if (!conn.connected) {
-        for (const addr of listenAddrs ?? []) {
-          const trimmed = addr.trim();
-          if (!trimmed) continue;
+        const addrs = (listenAddrs ?? []).map((a) => a.trim()).filter(Boolean);
+        if (addrs.length > 0) {
+          // Order by expected speed: LAN TCP first, then direct TCP, then circuits.
+          const ordered = [...addrs].sort((a, b) => {
+            const aLan = isPrivateLanTcpDialHint(a) ? 1 : 0;
+            const bLan = isPrivateLanTcpDialHint(b) ? 1 : 0;
+            if (aLan !== bLan) return bLan - aLan;
+            const aCircuit = a.includes("/p2p-circuit/") ? 1 : 0;
+            const bCircuit = b.includes("/p2p-circuit/") ? 1 : 0;
+            if (aCircuit !== bCircuit) return aCircuit - bCircuit;
+            return 0;
+          });
           try {
-            await mesh.dial(trimmed);
+            // Race all listen addresses simultaneously — first to connect wins.
+            await Promise.any(ordered.map((addr) => mesh.dial(addr)));
             conn = mesh.getPeerConnectionInfo(transport.transportPeerId);
             targetPeerId = transport.transportPeerId;
-            if (conn.connected) break;
           } catch {
-            /* try next addr */
+            /* all dials failed */
           }
         }
       }

@@ -1612,14 +1612,15 @@ export class EnvoyMesh {
       if (!hasRoutableHint) {
         return undefined;
       }
-      for (const ma of dialHintsToMultiaddrs(sortDialHints(routableHints), peerIdStr)) {
-        try {
-          return await dialOnce(ma);
-        } catch (e) {
-          lastError = e;
-        }
+      const addrs = dialHintsToMultiaddrs(sortDialHints(routableHints), peerIdStr);
+      try {
+        // Race all routable hints simultaneously — first to connect wins.
+        // Avoids a slow/stale address blocking a fast one.
+        return await Promise.any(addrs.map((ma) => dialOnce(ma)));
+      } catch (e) {
+        lastError = e instanceof AggregateError ? e.errors[0] : e;
+        return undefined;
       }
-      return undefined;
     };
 
     // Always prefer explicit filtered hints over bare `/p2p/id` (libp2p peerstore keeps ephemeral inbound observed addrs).
