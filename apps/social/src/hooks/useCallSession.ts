@@ -548,6 +548,11 @@ export function useCallSession(): UseCallSessionResult {
       mediaTypeRef.current = callType;
       webrtcCallTrace("ui:start-call", { target: shortCallId(targetOwnerId), callType });
 
+      // Show "Calling…" banner immediately — don't wait for invite to complete.
+      setActivePeerDisplayName(peerLabel);
+      setCallingState("connecting");
+      setConnectionState("connecting");
+
       path2FallbackSentRef.current = false;
 
       const nodeConfig = await nodeService.getNodeConfig();
