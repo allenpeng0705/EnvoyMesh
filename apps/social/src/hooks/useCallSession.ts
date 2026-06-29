@@ -51,6 +51,7 @@ export interface UseCallSessionResult {
   connectionState: string;
   dismissIncoming: () => void;
   callingState: string | null;
+  callingCallType: CallMediaType | null;
   activePeerDisplayName: string | null;
   startCall: (targetOwnerId: string, displayName?: string, callType?: CallMediaType) => Promise<void>;
   cancelCall: () => void;
@@ -75,6 +76,7 @@ export function useCallSession(): UseCallSessionResult {
   const [connectionState, setConnectionState] = useState("disconnected");
   const [pendingSdpOffer, setPendingSdpOffer] = useState<string | undefined>(undefined);
   const [callingState, setCallingState] = useState<string | null>(null);
+  const [callingCallType, setCallingCallType] = useState<CallMediaType | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [activePeerDisplayName, setActivePeerDisplayName] = useState<string | null>(null);
@@ -549,9 +551,10 @@ export function useCallSession(): UseCallSessionResult {
       mediaTypeRef.current = callType;
       webrtcCallTrace("ui:start-call", { target: shortCallId(targetOwnerId), callType });
 
-      // Show "Calling…" banner immediately — don't wait for invite to complete.
+      // Show calling UI immediately — don't wait for invite to complete.
       setActivePeerDisplayName(peerLabel);
       setCallingState("connecting");
+      setCallingCallType(callType);
       setConnectionState("connecting");
 
       path2FallbackSentRef.current = false;
@@ -630,6 +633,7 @@ export function useCallSession(): UseCallSessionResult {
     void nodeService.endCall(callingState);
     closeTransport();
     setCallingState(null);
+    setCallingCallType(null);
     setActivePeerDisplayName(null);
     activeCallIdRef.current = null;
     path2FallbackSentRef.current = false;
@@ -652,6 +656,7 @@ export function useCallSession(): UseCallSessionResult {
     connectionState,
     dismissIncoming,
     callingState,
+    callingCallType,
     activePeerDisplayName,
     startCall,
     cancelCall,

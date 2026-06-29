@@ -29,6 +29,7 @@ function GlobalCallOverlay({ session }: { session: UseCallSessionResult }) {
     remoteStream,
     localStream,
     callingState,
+    callingCallType,
     cancelCall,
   } = session;
 
@@ -46,16 +47,21 @@ function GlobalCallOverlay({ session }: { session: UseCallSessionResult }) {
         />
       ) : null}
       {callingState && !activeCall ? (
-        <div className="global-calling-banner" role="status" aria-live="polite">
-          <span className="calling-banner-pulse" aria-hidden />
-          <span className="calling-banner-text">
-            {activePeerDisplayName
-              ? t("call:callingWithName", { name: activePeerDisplayName })
-              : t("call:calling")}
-          </span>
-          <button type="button" className="calling-banner-cancel" onClick={() => cancelCall()}>
-            {t("call:cancelCall")}
-          </button>
+        <div className={`global-active-call-dock${callingCallType === "video" ? " global-active-call-dock--video" : ""}`}>
+          <ActiveCallPanel
+            peerDisplayName={activePeerDisplayName ?? activePeerName}
+            peerOwnerId={activeCall?.peerOwnerId ?? ""}
+            callType={callingCallType ?? "audio"}
+            isMuted={isMuted}
+            isRemoteMuted={isRemoteMuted}
+            micAvailable={micAvailable}
+            cameraAvailable={cameraAvailable}
+            connectionState={connectionState}
+            remoteStream={null}
+            localStream={localStream}
+            onToggleMute={toggleMute}
+            onEndCall={cancelCall}
+          />
         </div>
       ) : null}
       {activeCall ? (
