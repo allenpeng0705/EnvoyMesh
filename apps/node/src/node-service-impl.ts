@@ -841,8 +841,12 @@ class NodeServiceImpl implements NodeService {
   private readonly _nearbyProfileProbeInflight = new Set<string>();
   /** Keeps bonded contacts warm across NAT idle periods. */
   private _bondWarmTimer?: ReturnType<typeof setInterval>;
+  /** Per-contact last warm timestamp for cooldown throttling. */
+  private readonly _lastBondWarmAt = new Map<string, number>();
   /** Skip periodic bond warm when libp2p already has this many open connections. */
   private static readonly BOND_WARM_MAX_CONNECTIONS = 64;
+  /** Minimum interval between warm attempts for the same contact (ms). */
+  private static readonly BOND_WARM_PER_CONTACT_COOLDOWN_MS = 300_000;
   /** Defer startup profile refresh until mesh paths settle (avoids stale LAN dial storms). */
   private static readonly PROFILE_REFRESH_STARTUP_DELAY_MS = 90_000;
   private _profileRefreshStartupTimer?: ReturnType<typeof setTimeout>;
@@ -11407,8 +11411,9 @@ class NodeServiceImpl implements NodeService {
     const runWarm = (): void => {
       void this._warmAllBondedContacts();
     };
+    // First warm after 2 min, then every 5 min (reduced from 60s to avoid connection churn).
     setTimeout(runWarm, 120_000);
-    this._bondWarmTimer = setInterval(runWarm, 60_000);
+    this._bondWarmTimer = setInterval(runWarm, 300_000);
   }
 
   private async _warmAllBondedContacts(): Promise<void> {
@@ -11416,39 +11421,47 @@ class NodeServiceImpl implements NodeService {
       return;
     }
     const mesh = this._mesh;
-    if (mesh && mesh.getConnectionStats().totalConnections >= NodeServiceImpl.BOND_WARM_MAX_CONNECTIONS) {
+    if (!mesh) return;
+
+    const bonds = await this.getBonds();
+    const selfOwnerId = this._profile?.owner.ownerId?.trim();
+
+    if (mesh.getConnectionStats().totalConnections >= NodeServiceImpl.BOND_WARM_MAX_CONNECTIONS) {
       console.warn(
-        `[bond-warm] skipped: ${mesh.getConnectionStats().totalConnections} open libp2p connections (cap ${NodeServiceImpl.BOND_WARM_MAX_CONNECTIONS})`,
+        `[bond-warm] skipped: ${mesh.getConnectionStats().totalConnections} open connections (cap ${NodeServiceImpl.BOND_WARM_MAX_CONNECTIONS}). ` +
+        `Reduce bonded contacts or increase the cap.`,
       );
       return;
     }
-    const bonds = await this.getBonds();
-    const selfOwnerId = this._profile?.owner.ownerId?.trim();
+
+    const now = Date.now();
+    const cooldownMs = NodeServiceImpl.BOND_WARM_PER_CONTACT_COOLDOWN_MS;
+
     for (const bond of bonds) {
-      if (selfOwnerId && bond.peerOwnerId.trim() === selfOwnerId) {
-        continue;
-      }
-      if (bond.level !== "direct" && bond.level !== "referred") {
-        continue;
-      }
+      if (selfOwnerId && bond.peerOwnerId.trim() === selfOwnerId) continue;
+      if (bond.level !== "direct" && bond.level !== "referred") continue;
+
+      // Per-contact cooldown: skip if recently warmed.
+      const lastWarm = this._lastBondWarmAt.get(bond.peerOwnerId);
+      if (lastWarm && (now - lastWarm) < cooldownMs) continue;
+
       try {
         const info = await this.getPeerConnectionInfo(bond.peerOwnerId);
         if (info.connected) {
           try {
             const { transportPeerId } = await this._resolvePeerTransportForOwner(bond.peerOwnerId);
             if (isOutboundPeerRecentlyVerified(transportPeerId)) {
+              this._lastBondWarmAt.set(bond.peerOwnerId, now);
               continue;
             }
-          } catch {
-            /* fall through to keepAlive warm */
-          }
+          } catch { /* fall through */ }
+          this._lastBondWarmAt.set(bond.peerOwnerId, now);
           await this.warmContactConnection(bond.peerOwnerId, { keepAlive: true });
           continue;
         }
+        this._lastBondWarmAt.set(bond.peerOwnerId, now);
         await this.warmContactConnection(bond.peerOwnerId);
-      } catch {
-        /* best-effort keepalive */
-      }
+      } catch { /* best-effort */ }
     }
   }
 
