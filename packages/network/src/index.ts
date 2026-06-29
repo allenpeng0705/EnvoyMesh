@@ -2455,14 +2455,19 @@ export function isUsableOutboundPeerDialHint(addr: string, targetPeerId?: string
   ) {
     return false;
   }
-  if (isLikelyInboundConnSnapshotDialHint(a)) {
-    return false;
-  }
-  if (targetPeerId?.trim()) {
-    const last = lastPeerIdFromMultiaddr(a);
-    if (last && last !== targetPeerId.trim()) {
+  // When targetPeerId is provided, skip the inbound-snapshot check for
+  // addresses without a /p2p/ suffix: libp2p peer store strips peer IDs
+  // from stored addresses, making them look like ephemeral snapshots.
+  const hasExplicitPeer = lastPeerIdFromMultiaddr(a);
+  if (!targetPeerId?.trim()) {
+    if (isLikelyInboundConnSnapshotDialHint(a)) {
       return false;
     }
+  } else {
+    if (hasExplicitPeer && hasExplicitPeer !== targetPeerId.trim()) {
+      return false;
+    }
+    // No explicit peer ID — trust the caller's target. Skip snapshot check.
   }
   return true;
 }

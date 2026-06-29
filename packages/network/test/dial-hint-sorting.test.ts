@@ -183,16 +183,45 @@ describe("dial hint sorting", () => {
       expect(preferNonLoopbackDialHints([])).toEqual([]);
     });
 
-    it("filters ephemeral inbound TCP snapshot ports for desktop outbound dials", () => {
+    it("allows ephemeral-looking addresses when explicit peer ID matches target", () => {
       const target = "12D3KooWN67PannbfXrLPhgJkkRGWGN9UBV3Xfu5UpzdK1dY8qGD";
       const ephemeral = `/ip4/192.168.3.78/tcp/64595/p2p/${target}`;
       const stable = `/ip4/192.168.3.78/tcp/4001/p2p/${target}`;
       expect(isLikelyInboundConnSnapshotDialHint(ephemeral)).toBe(true);
-      expect(isUsableOutboundPeerDialHint(ephemeral, target)).toBe(false);
+      // With targetPeerId known and explicit peer ID matching, the snapshot
+      // heuristic is skipped — the caller knows who they're dialing.
+      expect(isUsableOutboundPeerDialHint(ephemeral, target)).toBe(true);
       expect(isUsableOutboundPeerDialHint(stable, target)).toBe(true);
       expect(hasDirectTcpDialHints([ephemeral])).toBe(false);
       expect(hasDirectTcpDialHints([stable])).toBe(true);
-      expect(filterUsableOutboundPeerDialHints([ephemeral, stable], target)).toEqual([stable]);
+      // Both addresses are now usable, though only stable counts as direct TCP.
+      expect(filterUsableOutboundPeerDialHints([ephemeral, stable], target)).toEqual([ephemeral, stable]);
+    });
+
+    it("allows addresses without /p2p/ suffix when targetPeerId is known", () => {
+      // libp2p peer store strips /p2p/ suffixes from stored addresses.
+      // Addresses without /p2p/ lack the trailing / the snapshot regex
+      // requires, so they are not flagged as snapshots — but they
+      // still need isUsableOutboundPeerDialHint to accept them.
+      const target = "12D3KooWN67PannbfXrLPhgJkkRGWGN9UBV3Xfu5UpzdK1dY8qGD";
+      const stripped = "/ip4/192.168.3.78/tcp/55093";
+      // No trailing / after the port — regex /\/tcp\/(\d+)\// doesn't match.
+      expect(isLikelyInboundConnSnapshotDialHint(stripped)).toBe(false);
+      // With targetPeerId known, passes through (explicit-peer mismatch guard
+      // only applies when an explicit /p2p/ peer ID is present).
+      expect(isUsableOutboundPeerDialHint(stripped, target)).toBe(true);
+    });
+
+    it("still filters ephemeral snapshot addresses when targetPeerId is not provided", () => {
+      const target = "12D3KooWN67PannbfXrLPhgJkkRGWGN9UBV3Xfu5UpzdK1dY8qGD";
+      const ephemeral = `/ip4/192.168.3.78/tcp/64595/p2p/${target}`;
+      const stripped = "/ip4/192.168.3.78/tcp/55093";
+      expect(isLikelyInboundConnSnapshotDialHint(ephemeral)).toBe(true);
+      // Without targetPeerId, the snapshot check still applies.
+      expect(isUsableOutboundPeerDialHint(ephemeral)).toBe(false);
+      // Stripped address is not flagged as snapshot (no trailing / after port),
+      // but isLoopbackOrUnspecifiedDialHint etc. don't catch it either.
+      expect(isUsableOutboundPeerDialHint(stripped)).toBe(true);
     });
 
     it("filters QUIC bootstrap circuit paths for desktop outbound dials", () => {

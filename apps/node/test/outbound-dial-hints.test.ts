@@ -65,6 +65,27 @@ describe("buildOutboundDialHints", () => {
     }
   });
 
+  it("preserves stripped listen addrs when recipient peer ID is known", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-dial-hints-stripped-"));
+    try {
+      const seedStore = createDiscoverySeedStore(profileDir);
+      const target = "12D3KooWN67PannbfXrLPhgJkkRGWGN9UBV3Xfu5UpzdK1dY8qGD";
+      // libp2p peer store strips /p2p/ suffixes from stored addresses.
+      // Without the trailing /p2p/ the snapshot regex does not match,
+      // so isUsableChatDialHint now lets these through.
+      const strippedTcp = "/ip4/192.168.3.78/tcp/55093";
+      const hints = await buildOutboundDialHints({
+        recipientPeerId: target,
+        peerListenAddrs: [strippedTcp],
+        discoverySeedStore: seedStore,
+        config: undefined,
+      });
+      expect(hints.some((h) => h.includes("55093"))).toBe(true);
+    } finally {
+      await rm(profileDir, { recursive: true, force: true });
+    }
+  });
+
   it("includes circuit seeds that match recipient peer id", async () => {
     const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-dial-hints-"));
     try {
@@ -132,7 +153,7 @@ describe("buildOutboundDialHints", () => {
     }
   });
 
-  it("drops ephemeral inbound TCP snapshot ports and still allows relay circuit fallback", async () => {
+  it("keeps ephemeral-looking addresses when explicit peer ID matches the recipient", async () => {
     const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-dial-hints-ephemeral-"));
     try {
       const seedStore = createDiscoverySeedStore(profileDir);
@@ -161,9 +182,11 @@ describe("buildOutboundDialHints", () => {
         },
       });
 
-      expect(hints.some((h) => h.includes("55093"))).toBe(false);
-      expect(hints.some((h) => h.includes("60417"))).toBe(false);
-      expect(hints.some((h) => h.includes("/p2p-circuit/p2p/12D3KooWN67"))).toBe(true);
+      // With explicit peer IDs matching the recipient, ephemeral-looking
+      // addresses are now preserved — isUsableChatDialHint trusts them
+      // when the caller knows the target.
+      expect(hints.some((h) => h.includes("55093"))).toBe(true);
+      expect(hints.some((h) => h.includes("60417"))).toBe(true);
     } finally {
       await rm(profileDir, { recursive: true, force: true });
     }
@@ -186,7 +209,7 @@ describe("shouldPreferCircuitDialHints", () => {
     expect(shouldPreferCircuitDialHints([], hints, "12D3KooWContact")).toBe(true);
   });
 
-  it("mergeDialablePeerListenAddrs drops ephemeral inbound TCP snapshots", async () => {
+  it("mergeDialablePeerListenAddrs preserves addresses when explicit peer ID matches recipient", async () => {
     const { mergeDialablePeerListenAddrs } = await import("../src/outbound-dial-hints.js");
     const peerId = "12D3KooWContact";
     const merged = mergeDialablePeerListenAddrs(
@@ -194,7 +217,13 @@ describe("shouldPreferCircuitDialHints", () => {
       [`/ip4/192.168.1.50/tcp/55093/p2p/${peerId}`],
       [`/ip4/192.168.1.50/tcp/4011/p2p/${peerId}`],
     );
-    expect(merged).toEqual([`/ip4/192.168.1.50/tcp/4011/p2p/${peerId}`]);
+    // Both addresses have explicit peer IDs matching the recipient.
+    // isUsableChatDialHint now trusts them when the caller knows the target,
+    // and the redundant snapshot filter has been removed.
+    expect(merged).toEqual([
+      `/ip4/192.168.1.50/tcp/55093/p2p/${peerId}`,
+      `/ip4/192.168.1.50/tcp/4011/p2p/${peerId}`,
+    ]);
   });
 
   it("prioritizeDirectLanDialHints puts RFC1918 addresses first", async () => {
