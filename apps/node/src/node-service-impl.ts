@@ -4036,11 +4036,19 @@ class NodeServiceImpl implements NodeService {
       this._trustStore.getTrustRecord(targetOwnerId),
     ]);
 
-    const dialHints = await raceWithTimeout(
-      this._dialHintsForChat(transportPeerId, listenAddrs),
-      30_000,
-      "_dialHintsForChat",
-    );
+    // If the peer is already connected, skip the disk-I/O-bound
+    // _dialHintsForChat computation (can block intermittently for 10s+).
+    const conn = mesh.getPeerConnectionInfo(transportPeerId);
+    let dialHints: string[];
+    if (conn.connected || mesh.getConnectedPeerIds().includes(transportPeerId)) {
+      dialHints = [];
+    } else {
+      dialHints = await raceWithTimeout(
+        this._dialHintsForChat(transportPeerId, listenAddrs),
+        10_000,
+        "_dialHintsForChat",
+      );
+    }
 
     void mesh.scrubPeerStoreDialHints(
       transportPeerId,
@@ -4048,7 +4056,7 @@ class NodeServiceImpl implements NodeService {
     );
 
     console.log(
-      `[sendChat] transportPeerId=${transportPeerId} envelopeRecipientPeerId=${recipientEnvelopePeerId ?? "(omitted)"} dialHints=${dialHints.length}`,
+      `[sendChat] transportPeerId=${transportPeerId} connected=${conn.connected} envelopeRecipientPeerId=${recipientEnvelopePeerId ?? "(omitted)"} dialHints=${dialHints.length}`,
     );
 
     void this._tagBondedContactReachability(transportPeerId);
@@ -8034,11 +8042,19 @@ class NodeServiceImpl implements NodeService {
     const { transportPeerId, recipientEnvelopePeerId, listenAddrs } =
       await this._resolvePeerTransportForOwner(targetOwnerId);
     const peerPath = file.relativePath.replace(/^[\\/]+/, "");
-    const dialHints = await raceWithTimeout(
-      this._dialHintsForChat(transportPeerId, listenAddrs),
-      30_000,
-      "_dialHintsForChat",
-    );
+
+    const mesh = this._requireMesh();
+    const conn = mesh.getPeerConnectionInfo(transportPeerId);
+    let dialHints: string[];
+    if (conn.connected || mesh.getConnectedPeerIds().includes(transportPeerId)) {
+      dialHints = [];
+    } else {
+      dialHints = await raceWithTimeout(
+        this._dialHintsForChat(transportPeerId, listenAddrs),
+        10_000,
+        "_dialHintsForChat",
+      );
+    }
 
     const correlationId = file.correlationId ?? randomUUID();
     const unsigned = createUnsignedEnvelope({
@@ -8107,15 +8123,17 @@ class NodeServiceImpl implements NodeService {
       throw new Error("File not found in vault");
     });
 
+    const mesh = this._requireMesh();
+    const conn = mesh.getPeerConnectionInfo(transportPeerId);
     let dialHints: string[];
-    try {
+    if (conn.connected || mesh.getConnectedPeerIds().includes(transportPeerId)) {
+      dialHints = [];
+    } else {
       dialHints = await raceWithTimeout(
         this._dialHintsForChat(transportPeerId, listenAddrs),
-        30_000,
+        10_000,
         "_dialHintsForChat",
       );
-    } catch (err) {
-      throw err;
     }
 
     const correlationId = randomUUID();
