@@ -230,6 +230,7 @@ async function handleCallInvite(
     payload.sdpOffer,
     payload.iceServers,
     payload.callType,
+    deps.remotePeerId,
   );
 
   if (!result.ok) {

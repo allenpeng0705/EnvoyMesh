@@ -33,6 +33,8 @@ interface InternalSession {
   ringTimer?: ReturnType<typeof setTimeout>;
   /** Owner ids of both participants for identity-binding checks. */
   participants: Set<string>;
+  /** libp2p transport peer ID of the remote party, captured from the inbound connection. */
+  callerTransportPeerId?: string;
 }
 
 export type InboundCallResult =
@@ -185,6 +187,7 @@ export class CallManager {
     sdpOffer: string,
     iceServers?: { urls: string; username?: string; credential?: string }[],
     callType: CallMediaType = "audio",
+    callerTransportPeerId?: string,
   ): InboundCallResult {
     const existing = this._sessions.get(callId);
     if (existing?.peerOwnerId === callerOwnerId) {
@@ -206,6 +209,7 @@ export class CallManager {
       status: "ringing",
       muted: false,
       participants: new Set([callerOwnerId]),
+      callerTransportPeerId,
     };
 
     session.ringTimer = setTimeout(() => {
@@ -449,6 +453,11 @@ export class CallManager {
 
   getSessionPeerOwnerId(callId: string): string | null {
     return this._sessions.get(callId)?.peerOwnerId ?? null;
+  }
+
+  /** Transport-level libp2p peer ID of the remote party, captured on inbound call.invite. */
+  getSessionCallerTransportPeerId(callId: string): string | null {
+    return this._sessions.get(callId)?.callerTransportPeerId ?? null;
   }
 
   isCallerMatch(callId: string, callerOwnerId: string): boolean {

@@ -13920,6 +13920,40 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     const profile = this._profile;
     if (!profile) return false;
     try {
+      // Fast path: if we have a cached transport peer ID from the inbound
+      // call.invite connection and the peer is still connected, send directly
+      // without re-resolving transport or dialing. This is critical for ICE
+      // candidates which must be delivered with minimal latency.
+      const callId =
+        typeof unsigned.payload === "object" &&
+        unsigned.payload !== null &&
+        "callId" in unsigned.payload
+          ? String((unsigned.payload as { callId?: string }).callId)
+          : undefined;
+      const cachedPeerId = callId ? this.callManager.getSessionCallerTransportPeerId(callId) : null;
+      if (cachedPeerId) {
+        const mesh = this._requireMesh();
+        const conn = mesh.getPeerConnectionInfo(cachedPeerId);
+        if (conn.connected || mesh.getConnectedPeerIds().includes(cachedPeerId)) {
+          try {
+            // Quick transport resolve just for recipientEnvelopePeerId —
+            // _lastLibp2pTransportByOwner cache makes this a fast map lookup.
+            const transport = await this._resolvePeerTransportForOwner(peerOwnerId);
+            unsigned.recipientPeerId = transport.recipientEnvelopePeerId;
+            const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem);
+            await this.deliverCallEnvelopeToTransportPeer(cachedPeerId, envelope as EnvoyEnvelope);
+            webrtcCallTrace("call-response:fast", {
+              intent: _intent,
+              peer: shortCallId(cachedPeerId),
+            });
+            return true;
+          } catch {
+            // Fast path failed — fall through to full delivery.
+            webrtcCallTrace("call-response:fast-failed-fallback", { intent: _intent });
+          }
+        }
+      }
+
       const transport = await this._resolvePeerTransportForOwner(peerOwnerId);
       const mesh = this._requireMesh();
       const records = await this._peerDirectoryStore.listPeerRecords();
