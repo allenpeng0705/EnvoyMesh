@@ -33,8 +33,8 @@ interface InternalSession {
   ringTimer?: ReturnType<typeof setTimeout>;
   /** Owner ids of both participants for identity-binding checks. */
   participants: Set<string>;
-  /** libp2p transport peer ID of the remote party, captured from the inbound connection. */
-  callerTransportPeerId?: string;
+  /** libp2p transport peer ID of the remote party, captured on inbound or set on outbound. */
+  remoteTransportPeerId?: string;
 }
 
 export type InboundCallResult =
@@ -209,7 +209,7 @@ export class CallManager {
       status: "ringing",
       muted: false,
       participants: new Set([callerOwnerId]),
-      callerTransportPeerId,
+      remoteTransportPeerId: callerTransportPeerId,
     };
 
     session.ringTimer = setTimeout(() => {
@@ -455,9 +455,17 @@ export class CallManager {
     return this._sessions.get(callId)?.peerOwnerId ?? null;
   }
 
-  /** Transport-level libp2p peer ID of the remote party, captured on inbound call.invite. */
-  getSessionCallerTransportPeerId(callId: string): string | null {
-    return this._sessions.get(callId)?.callerTransportPeerId ?? null;
+  /** Transport-level libp2p peer ID of the remote party, for fast response delivery. */
+  getSessionRemoteTransportPeerId(callId: string): string | null {
+    return this._sessions.get(callId)?.remoteTransportPeerId ?? null;
+  }
+
+  /** Store the transport peer ID for outbound calls so response delivery can use the fast path. */
+  setOutboundTransportPeerId(callId: string, peerId: string): void {
+    const session = this._sessions.get(callId);
+    if (session) {
+      session.remoteTransportPeerId = peerId;
+    }
   }
 
   isCallerMatch(callId: string, callerOwnerId: string): boolean {

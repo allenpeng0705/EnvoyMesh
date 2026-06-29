@@ -13372,23 +13372,8 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
       `[sendCallInvite] target=${targetOwnerId.slice(0, 24)} transport=${targetPeerId.slice(0, 12)} connected=${connBeforeWarm.connected} direct=${connBeforeWarm.direct}`,
     );
     if (!connBeforeWarm.connected && !liveConnected) {
-      let canUpgradeToDirect = false;
-      if (!connBeforeWarm.direct) {
-        try {
-          const warmHints = await raceWithTimeout(
-            this._dialHintsForChat(targetPeerId, listenAddrs),
-            10_000,
-            "_dialHintsForChat",
-          );
-          canUpgradeToDirect = hasDirectTcpDialHints(warmHints);
-        } catch {
-          canUpgradeToDirect = false;
-        }
-      }
       try {
-        await this.warmContactConnection(targetOwnerId, {
-          ...(canUpgradeToDirect ? { upgradeRelayToDirect: true } : undefined),
-        });
+        await this.warmContactConnection(targetOwnerId);
       } catch (warmErr) {
         console.warn(
           `[sendCallInvite] warm before invite failed for ${targetOwnerId}:`,
@@ -13397,16 +13382,19 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
       }
     }
 
+    // Re-check connectivity after warm — connBeforeWarm is now stale.
+    const connAfterWarm = mesh.getPeerConnectionInfo(targetPeerId);
+
     const effectiveIceServers = await this._effectiveCallIceServers(iceServers);
 
     let dialHints: string[];
-    if (connBeforeWarm.connected || liveConnected) {
+    if (connAfterWarm.connected || liveConnected) {
       dialHints = [];
     } else {
       try {
         dialHints = await raceWithTimeout(
           this._dialHintsForChat(targetPeerId, listenAddrs),
-          30_000,
+          10_000,
           "_dialHintsForChat",
         );
       } catch (hintErr) {
@@ -13418,8 +13406,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
       }
     }
 
-    const conn = mesh.getPeerConnectionInfo(targetPeerId);
-    const preferCircuitHints = conn.connected ? !conn.direct : !conn.direct;
+    const preferCircuitHints = connAfterWarm.connected ? !connAfterWarm.direct : !connAfterWarm.direct;
 
     const { createCallInvitePayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
     const { signUnsignedEnvelope } = await import("@envoymesh/identity");
@@ -13444,11 +13431,13 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     });
     const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as any;
 
-    const liveConn = mesh.getPeerConnectionInfo(targetPeerId);
+    // Store the transport peer ID on the outbound session so response
+    // delivery (ICE candidates, accept, etc.) can use the fast path.
+    this.callManager.setOutboundTransportPeerId(callId, targetPeerId);
 
     let deliverResult: ChatDeliverResult;
     try {
-      if (liveConn.connected || mesh.getConnectedPeerIds().includes(targetPeerId)) {
+      if (connAfterWarm.connected || mesh.getConnectedPeerIds().includes(targetPeerId)) {
         await mesh.sendChat(targetPeerId, envelope, { dialHints: [] });
         deliverResult = { delivered: true, deliveredAt: new Date().toISOString() };
       } else {
@@ -13456,7 +13445,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
           targetPeerId,
           envelope,
           dialHints,
-          connBeforeWarm.connected ? [] : listenAddrs,
+          listenAddrs,
           preferCircuitHints,
         );
       }
@@ -13930,7 +13919,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
         "callId" in unsigned.payload
           ? String((unsigned.payload as { callId?: string }).callId)
           : undefined;
-      const cachedPeerId = callId ? this.callManager.getSessionCallerTransportPeerId(callId) : null;
+      const cachedPeerId = callId ? this.callManager.getSessionRemoteTransportPeerId(callId) : null;
       if (cachedPeerId) {
         const mesh = this._requireMesh();
         const conn = mesh.getPeerConnectionInfo(cachedPeerId);
