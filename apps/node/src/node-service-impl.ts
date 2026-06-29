@@ -4098,7 +4098,12 @@ class NodeServiceImpl implements NodeService {
         await this._bridgeChatHandler(envelope, mesh.peerId);
         deliverResult = { delivered: true, deliveredAt: new Date().toISOString() };
       } else {
-        deliverResult = await this._deliverChatEnvelope(transportPeerId, envelope, dialHints, listenAddrs);
+        // When directly connected on LAN, skip the 45s delivery ack wait —
+        // delivery is nearly instant. Only wait for ack on relay/WAN.
+        const skipAck = conn.connected && conn.direct;
+        deliverResult = await this._deliverChatEnvelope(transportPeerId, envelope, dialHints, listenAddrs, {
+          ...(skipAck ? { expectDeliveryAck: false } : undefined),
+        });
       }
     } catch (err) {
       this._lastLibp2pTransportByOwner.delete(targetOwnerId);
