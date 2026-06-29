@@ -398,7 +398,6 @@ export function useCallSession(): UseCallSessionResult {
   const cancelCallRef = useRef<() => void>(() => {});
 
   // Caller ringback tone — play ringing sound while waiting for callee to answer.
-  const ringbackAudioRef = useRef<HTMLAudioElement | null>(null);
   useEffect(() => {
     if (!callingState || activeCall) return;
     // Use a simple oscillator-based ringback via AudioContext so we don't need an audio file.
