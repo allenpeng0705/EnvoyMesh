@@ -300,6 +300,7 @@ export function useCallSession(): UseCallSessionResult {
             // Callee-side local ack from acceptInboundCall — transport already running via acceptCall().
             if (activeCallIdRef.current === event.callId && transportRef.current) {
               webrtcCallTrace("ui:call-answered-local-ack", { callId: shortCallId(event.callId) });
+              setConnectionState("connected");
               break;
             }
           }
