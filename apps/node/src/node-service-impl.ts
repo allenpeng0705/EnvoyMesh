@@ -13384,7 +13384,12 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     );
     if (!connBeforeWarm.connected && !liveConnected) {
       try {
-        await this.warmContactConnection(targetOwnerId);
+        // If the existing connection is relay (not direct), ask warm to upgrade.
+        // _warmContactConnectionTransport already checks hasDirectTcpDialHints
+        // internally and keeps relay if no direct path exists.
+        await this.warmContactConnection(targetOwnerId, {
+          ...(!connBeforeWarm.direct ? { upgradeRelayToDirect: true } : undefined),
+        });
       } catch (warmErr) {
         console.warn(
           `[sendCallInvite] warm before invite failed for ${targetOwnerId}:`,
