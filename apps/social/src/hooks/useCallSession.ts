@@ -621,7 +621,7 @@ export function useCallSession(): UseCallSessionResult {
       activePeerRef.current = { ownerId: targetOwnerId, displayName: peerLabel, callType };
       setActivePeerDisplayName(peerLabel);
       setCallingState(callId);
-      setConnectionState("connecting");
+      setConnectionState("connected");
       flushPendingOutboundIce(callId);
       webrtcCallTrace("ui:invite-sent", { callId: shortCallId(callId), target: shortCallId(targetOwnerId) });
     },
