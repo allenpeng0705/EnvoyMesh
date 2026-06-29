@@ -183,19 +183,19 @@ describe("dial hint sorting", () => {
       expect(preferNonLoopbackDialHints([])).toEqual([]);
     });
 
-    it("allows ephemeral-looking addresses when explicit peer ID matches target", () => {
+    it("rejects ephemeral-looking addresses even when explicit peer ID matches", () => {
+      // Port 64595 ≥ 32768 → ephemeral source port, not a listen address.
+      // The matching peer ID does not override the snapshot heuristic —
+      // high ports are almost never valid listen addresses regardless of peer ID.
       const target = "12D3KooWN67PannbfXrLPhgJkkRGWGN9UBV3Xfu5UpzdK1dY8qGD";
       const ephemeral = `/ip4/192.168.3.78/tcp/64595/p2p/${target}`;
       const stable = `/ip4/192.168.3.78/tcp/4001/p2p/${target}`;
       expect(isLikelyInboundConnSnapshotDialHint(ephemeral)).toBe(true);
-      // With targetPeerId known and explicit peer ID matching, the snapshot
-      // heuristic is skipped — the caller knows who they're dialing.
-      expect(isUsableOutboundPeerDialHint(ephemeral, target)).toBe(true);
+      expect(isUsableOutboundPeerDialHint(ephemeral, target)).toBe(false);
       expect(isUsableOutboundPeerDialHint(stable, target)).toBe(true);
       expect(hasDirectTcpDialHints([ephemeral])).toBe(false);
       expect(hasDirectTcpDialHints([stable])).toBe(true);
-      // Both addresses are now usable, though only stable counts as direct TCP.
-      expect(filterUsableOutboundPeerDialHints([ephemeral, stable], target)).toEqual([ephemeral, stable]);
+      expect(filterUsableOutboundPeerDialHints([ephemeral, stable], target)).toEqual([stable]);
     });
 
     it("allows addresses without /p2p/ suffix when targetPeerId is known", () => {
@@ -320,17 +320,17 @@ describe("dial hint sorting", () => {
       expect(isPrivateLanTcpDialHint(ordered[1])).toBe(true);
     });
 
-    it("all dial targets pass isUsableOutboundPeerDialHint before racing", () => {
+    it("rejects ephemeral-with-p2p but allows stripped addresses", () => {
       const target = "12D3KooWAllUsablePeer";
-      const addrs = [
-        `/ip4/192.168.3.78/tcp/64595/p2p/${target}`,
-        `/ip4/192.168.3.78/tcp/4001/p2p/${target}`,
-        "/ip4/192.168.3.78/tcp/55093",
-      ];
-      // All three should now be usable with the Round 1 fix
-      for (const addr of addrs) {
-        expect(isUsableOutboundPeerDialHint(addr, target)).toBe(true);
-      }
+      // Ephemeral port WITH /p2p/ suffix → rejected (snapshot check applies)
+      const ephemeralWithP2p = `/ip4/192.168.3.78/tcp/64595/p2p/${target}`;
+      expect(isUsableOutboundPeerDialHint(ephemeralWithP2p, target)).toBe(false);
+      // Stable port with /p2p/ → accepted
+      const stableWithP2p = `/ip4/192.168.3.78/tcp/4001/p2p/${target}`;
+      expect(isUsableOutboundPeerDialHint(stableWithP2p, target)).toBe(true);
+      // Stripped address (no /p2p/) → accepted (trust caller's target)
+      const stripped = "/ip4/192.168.3.78/tcp/55093";
+      expect(isUsableOutboundPeerDialHint(stripped, target)).toBe(true);
     });
   });
 });

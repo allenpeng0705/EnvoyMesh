@@ -2457,20 +2457,28 @@ export function isUsableOutboundPeerDialHint(addr: string, targetPeerId?: string
   ) {
     return false;
   }
-  // When targetPeerId is provided, skip the inbound-snapshot check for
-  // addresses without a /p2p/ suffix: libp2p peer store strips peer IDs
-  // from stored addresses, making them look like ephemeral snapshots.
+  // Snapshot check: high TCP ports (≥32768) are almost always ephemeral
+  // source ports from inbound connections, not dialable listen addresses.
+  // Only skip this check for addresses WITHOUT a /p2p/ suffix — libp2p
+  // peer store strips peer IDs, making valid addresses look like snapshots.
   const hasExplicitPeer = lastPeerIdFromMultiaddr(a);
   if (!targetPeerId?.trim()) {
+    // No target peer ID — always apply snapshot filter.
     if (isLikelyInboundConnSnapshotDialHint(a)) {
       return false;
     }
-  } else {
-    if (hasExplicitPeer && hasExplicitPeer !== targetPeerId.trim()) {
+  } else if (hasExplicitPeer) {
+    // Address has an explicit /p2p/ peer ID. Verify it matches the target,
+    // then still apply the snapshot check — a matching peer ID on a high
+    // port is still ephemeral (e.g. port 62210 from an inbound connection).
+    if (hasExplicitPeer !== targetPeerId.trim()) {
       return false;
     }
-    // No explicit peer ID — trust the caller's target. Skip snapshot check.
+    if (isLikelyInboundConnSnapshotDialHint(a)) {
+      return false;
+    }
   }
+  // No explicit peer ID — trust the caller's target. Skip snapshot check.
   return true;
 }
 

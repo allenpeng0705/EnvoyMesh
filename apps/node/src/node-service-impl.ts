@@ -3927,13 +3927,16 @@ class NodeServiceImpl implements NodeService {
             if (aCircuit !== bCircuit) return aCircuit - bCircuit; // direct before circuit
             return 0;
           });
-          try {
-            // Race all addresses simultaneously — first to connect wins.
-            // Addresses are ordered so fastest paths establish connections first.
-            await Promise.any(ordered.map((addr) => mesh.dial(addr)));
-            conn = mesh.getPeerConnectionInfo(transportPeerId);
-          } catch {
-            /* all dials failed — fall through to retry path */
+          // Try addresses sequentially in speed order — stops at first success.
+          // Sequential avoids connection flapping from simultaneous dials.
+          for (const addr of ordered) {
+            try {
+              await mesh.dial(addr);
+              conn = mesh.getPeerConnectionInfo(transportPeerId);
+              if (conn.connected) break;
+            } catch {
+              /* try next addr */
+            }
           }
         }
       }
@@ -14021,13 +14024,16 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
             if (aCircuit !== bCircuit) return aCircuit - bCircuit;
             return 0;
           });
-          try {
-            // Race all listen addresses simultaneously — first to connect wins.
-            await Promise.any(ordered.map((addr) => mesh.dial(addr)));
-            conn = mesh.getPeerConnectionInfo(transport.transportPeerId);
-            targetPeerId = transport.transportPeerId;
-          } catch {
-            /* all dials failed */
+          // Try addresses sequentially in speed order — stops at first success.
+          for (const addr of ordered) {
+            try {
+              await mesh.dial(addr);
+              conn = mesh.getPeerConnectionInfo(transport.transportPeerId);
+              targetPeerId = transport.transportPeerId;
+              if (conn.connected) break;
+            } catch {
+              /* try next addr */
+            }
           }
         }
       }
@@ -14036,7 +14042,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
       try {
         dialHints = await raceWithTimeout(
           this._dialHintsForChat(targetPeerId, listenAddrs),
-          30_000,
+          10_000,
           "_dialHintsForChat",
         );
       } catch (hintErr) {

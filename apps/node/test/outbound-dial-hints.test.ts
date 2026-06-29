@@ -153,7 +153,10 @@ describe("buildOutboundDialHints", () => {
     }
   });
 
-  it("keeps ephemeral-looking addresses when explicit peer ID matches the recipient", async () => {
+  it("drops ephemeral snapshot ports even when peer ID matches", async () => {
+    // Port 55093 ≥ 32768 → ephemeral source port. The snapshot heuristic
+    // filters these even when the explicit /p2p/ peer ID matches —
+    // a matching peer ID on a high port is still an inbound snapshot.
     const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-dial-hints-ephemeral-"));
     try {
       const seedStore = createDiscoverySeedStore(profileDir);
@@ -182,11 +185,8 @@ describe("buildOutboundDialHints", () => {
         },
       });
 
-      // With explicit peer IDs matching the recipient, ephemeral-looking
-      // addresses are now preserved — isUsableChatDialHint trusts them
-      // when the caller knows the target.
-      expect(hints.some((h) => h.includes("55093"))).toBe(true);
-      expect(hints.some((h) => h.includes("60417"))).toBe(true);
+      expect(hints.some((h) => h.includes("55093"))).toBe(false);
+      expect(hints.some((h) => h.includes("60417"))).toBe(false);
     } finally {
       await rm(profileDir, { recursive: true, force: true });
     }
@@ -209,7 +209,7 @@ describe("shouldPreferCircuitDialHints", () => {
     expect(shouldPreferCircuitDialHints([], hints, "12D3KooWContact")).toBe(true);
   });
 
-  it("mergeDialablePeerListenAddrs preserves addresses when explicit peer ID matches recipient", async () => {
+  it("mergeDialablePeerListenAddrs drops ephemeral snapshot ports", async () => {
     const { mergeDialablePeerListenAddrs } = await import("../src/outbound-dial-hints.js");
     const peerId = "12D3KooWContact";
     const merged = mergeDialablePeerListenAddrs(
@@ -217,11 +217,9 @@ describe("shouldPreferCircuitDialHints", () => {
       [`/ip4/192.168.1.50/tcp/55093/p2p/${peerId}`],
       [`/ip4/192.168.1.50/tcp/4011/p2p/${peerId}`],
     );
-    // Both addresses have explicit peer IDs matching the recipient.
-    // isUsableChatDialHint now trusts them when the caller knows the target,
-    // and the redundant snapshot filter has been removed.
+    // The ephemeral (port 55093) is filtered by isUsableChatDialHint
+    // via isUsableOutboundPeerDialHint. Only the stable port remains.
     expect(merged).toEqual([
-      `/ip4/192.168.1.50/tcp/55093/p2p/${peerId}`,
       `/ip4/192.168.1.50/tcp/4011/p2p/${peerId}`,
     ]);
   });
