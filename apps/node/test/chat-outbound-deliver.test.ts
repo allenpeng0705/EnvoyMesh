@@ -532,4 +532,84 @@ describe("deliverChatEnvelopeWithRetry ack timeout", () => {
       expect.objectContaining({ timeoutMs: CHAT_DELIVERY_ACK_TIMEOUT_MS }),
     );
   });
+
+  // ------------------------------------------------------------------
+  // Regression: empty hints → correct ack timeout (should not be 45s on LAN)
+  // ------------------------------------------------------------------
+  it("resolveChatDeliveryAckTimeoutMs returns WAN timeout for empty hints", () => {
+    // Empty hints means hasDirectTcpDialHints returns false → falls back to WAN timeout.
+    // This is expected; the sendChat caller should override with expectDeliveryAck: false
+    // when the peer is directly connected to avoid the ack wait.
+    expect(resolveChatDeliveryAckTimeoutMs([])).toBe(CHAT_DELIVERY_ACK_TIMEOUT_MS);
+  });
+
+  it("resolveChatDeliveryAckTimeoutMs returns direct timeout for LAN hints", () => {
+    expect(resolveChatDeliveryAckTimeoutMs([
+      "/ip4/192.168.1.50/tcp/4011/p2p/12D3KooWPeer",
+    ])).toBe(12_000);
+  });
+
+  // ------------------------------------------------------------------
+  // Regression: skipPrepare must be true for directly connected peers
+  // even when canExpectAck is false (expectDeliveryAck: false).
+  // This prevents an unnecessary prepareOutboundChatConnection call.
+  // ------------------------------------------------------------------
+  it("skips prepare when directly connected even with expectDeliveryAck disabled", async () => {
+    resetOutboundPeerFreshnessForTests();
+    const sendChat = vi.fn().mockResolvedValue(undefined);
+    const ensurePeerReachable = vi.fn().mockResolvedValue({ connected: true, direct: true });
+    const mesh = {
+      sendChat,
+      sendChatExpectReply: undefined, // no ack support
+      closeConnectionsToPeer: vi.fn().mockResolvedValue(0),
+      ensurePeerReachable,
+      getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: true, direct: true }),
+    };
+
+    await deliverChatEnvelopeWithRetry({
+      mesh,
+      transportPeerId: "12D3KooWDirectSkipPeer",
+      envelope,
+      dialHints: [],
+      chatProtocol: "/envoy/chat/0.1",
+      maxAttempts: 1,
+      expectDeliveryAck: false, // ack disabled — canExpectAck should be false
+    });
+
+    // With direct connection, prepare (ensurePeerReachable) must NOT be called
+    // regardless of canExpectAck being false.
+    expect(ensurePeerReachable).not.toHaveBeenCalled();
+    // Should use sendChat (not sendChatExpectReply since ack is disabled)
+    expect(sendChat).toHaveBeenCalledTimes(1);
+  });
+
+  // ------------------------------------------------------------------
+  // Regression: expectDeliveryAck: false uses sendChat, not sendChatExpectReply
+  // ------------------------------------------------------------------
+  it("uses sendChat when expectDeliveryAck is false on direct connection", async () => {
+    resetOutboundPeerFreshnessForTests();
+    const sendChat = vi.fn().mockResolvedValue(undefined);
+    const sendChatExpectReply = vi.fn();
+    const mesh = {
+      sendChat,
+      sendChatExpectReply,
+      closeConnectionsToPeer: vi.fn().mockResolvedValue(0),
+      ensurePeerReachable: vi.fn().mockResolvedValue({ connected: true, direct: true }),
+      getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: true, direct: true }),
+    };
+
+    await deliverChatEnvelopeWithRetry({
+      mesh,
+      transportPeerId: "12D3KooWNoAckPeer",
+      envelope,
+      dialHints: [],
+      chatProtocol: "/envoy/chat/0.1",
+      maxAttempts: 1,
+      expectDeliveryAck: false,
+    });
+
+    expect(sendChat).toHaveBeenCalledTimes(1);
+    expect(sendChatExpectReply).not.toHaveBeenCalled();
+    expect(ensurePeerReachable).not.toHaveBeenCalled();
+  });
 });
