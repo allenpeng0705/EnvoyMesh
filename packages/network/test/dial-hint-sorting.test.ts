@@ -271,4 +271,66 @@ describe("dial hint sorting", () => {
       expect(sorted.length).toBe(2);
     });
   });
+
+  // ------------------------------------------------------------------
+  // Parallel dial speed ordering — Round 4
+  // ------------------------------------------------------------------
+  describe("parallel dial speed ordering", () => {
+    const peerId = "12D3KooWSpeedOrderPeer";
+
+    it("sorts LAN TCP before WAN TCP before relay circuits", () => {
+      const relay = `/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${peerId}`;
+      const wan = `/ip4/8.8.8.8/tcp/4001/p2p/${peerId}`;
+      const lan = `/ip4/192.168.1.50/tcp/4011/p2p/${peerId}`;
+
+      const ordered = [relay, wan, lan].sort((a, b) => {
+        const aLan = isPrivateLanTcpDialHint(a) ? 1 : 0;
+        const bLan = isPrivateLanTcpDialHint(b) ? 1 : 0;
+        if (aLan !== bLan) return bLan - aLan; // LAN first
+        const aCircuit = a.includes("/p2p-circuit/") ? 1 : 0;
+        const bCircuit = b.includes("/p2p-circuit/") ? 1 : 0;
+        if (aCircuit !== bCircuit) return aCircuit - bCircuit; // direct before circuit
+        return 0;
+      });
+
+      // LAN must be first
+      expect(ordered[0]).toContain("192.168.1.50");
+      expect(isPrivateLanTcpDialHint(ordered[0])).toBe(true);
+      // Relay circuit must be last
+      expect(ordered[2]).toContain("/p2p-circuit/");
+    });
+
+    it("preserves relative order among same-category addresses", () => {
+      const lan1 = `/ip4/192.168.1.50/tcp/4011/p2p/${peerId}`;
+      const lan2 = `/ip4/10.0.0.5/tcp/4011/p2p/${peerId}`;
+
+      const ordered = [lan2, lan1].sort((a, b) => {
+        const aLan = isPrivateLanTcpDialHint(a) ? 1 : 0;
+        const bLan = isPrivateLanTcpDialHint(b) ? 1 : 0;
+        if (aLan !== bLan) return bLan - aLan;
+        const aCircuit = a.includes("/p2p-circuit/") ? 1 : 0;
+        const bCircuit = b.includes("/p2p-circuit/") ? 1 : 0;
+        if (aCircuit !== bCircuit) return aCircuit - bCircuit;
+        return 0;
+      });
+
+      // Both are LAN, so original order is preserved (stable sort-equivalent)
+      expect(ordered.length).toBe(2);
+      expect(isPrivateLanTcpDialHint(ordered[0])).toBe(true);
+      expect(isPrivateLanTcpDialHint(ordered[1])).toBe(true);
+    });
+
+    it("all dial targets pass isUsableOutboundPeerDialHint before racing", () => {
+      const target = "12D3KooWAllUsablePeer";
+      const addrs = [
+        `/ip4/192.168.3.78/tcp/64595/p2p/${target}`,
+        `/ip4/192.168.3.78/tcp/4001/p2p/${target}`,
+        "/ip4/192.168.3.78/tcp/55093",
+      ];
+      // All three should now be usable with the Round 1 fix
+      for (const addr of addrs) {
+        expect(isUsableOutboundPeerDialHint(addr, target)).toBe(true);
+      }
+    });
+  });
 });

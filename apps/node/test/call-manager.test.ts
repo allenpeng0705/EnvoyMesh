@@ -409,6 +409,61 @@ describe("CallManager", () => {
   });
 
   // ------------------------------------------------------------------
+  // Transport peer ID storage — fast response delivery (Round 2 & 3)
+  // ------------------------------------------------------------------
+  describe("transport peer ID storage", () => {
+    it("getSessionRemoteTransportPeerId returns null for unknown callId", () => {
+      expect(cm.getSessionRemoteTransportPeerId("nonexistent")).toBeNull();
+    });
+
+    it("inboundCallReceived stores callerTransportPeerId as remoteTransportPeerId", () => {
+      cm.inboundCallReceived(
+        "call-1", "envoy:owner:alice", "peer-alice", "Alice", "v=0\r\n...",
+        undefined, undefined, "audio", "12D3KooWCallerTransport",
+      );
+      expect(cm.getSessionRemoteTransportPeerId("call-1")).toBe("12D3KooWCallerTransport");
+    });
+
+    it("inboundCallReceived without transport peer ID stores null", () => {
+      cm.inboundCallReceived(
+        "call-2", "envoy:owner:bob", "peer-bob", "Bob", "v=0\r\n...",
+      );
+      expect(cm.getSessionRemoteTransportPeerId("call-2")).toBeNull();
+    });
+
+    it("setOutboundTransportPeerId stores peer ID on outbound session", () => {
+      cm.outboundCallInitiated("call-3", LOCAL_OWNER, "envoy:owner:charlie", "Charlie");
+      cm.setOutboundTransportPeerId("call-3", "12D3KooWOutboundTransport");
+      expect(cm.getSessionRemoteTransportPeerId("call-3")).toBe("12D3KooWOutboundTransport");
+    });
+
+    it("setOutboundTransportPeerId on non-existent session is a no-op", () => {
+      cm.setOutboundTransportPeerId("nonexistent", "12D3KooWGhost");
+      expect(cm.getSessionRemoteTransportPeerId("nonexistent")).toBeNull();
+    });
+
+    it("inbound transport peer ID persists after call ends", () => {
+      const result = cm.inboundCallReceived(
+        "in-call", "envoy:owner:alice", "peer-alice", "Alice", "v=0\r\n...",
+        undefined, undefined, "audio", "12D3KooWInboundPeer",
+      );
+      expect(result).toEqual({ ok: true, callId: "in-call" });
+      expect(cm.getSessionRemoteTransportPeerId("in-call")).toBe("12D3KooWInboundPeer");
+      // End the call — transport peer ID is still stored on the session
+      cm.rejectCall("in-call", "declined");
+      expect(cm.getSessionRemoteTransportPeerId("in-call")).toBe("12D3KooWInboundPeer");
+    });
+
+    it("outbound transport peer ID set after outboundCallInitiated", () => {
+      const callId = cm.outboundCallInitiated("out-call", LOCAL_OWNER, "envoy:owner:bob", "Bob");
+      expect(callId).toBeTruthy();
+      expect(cm.getSessionRemoteTransportPeerId("out-call")).toBeNull(); // not set yet
+      cm.setOutboundTransportPeerId("out-call", "12D3KooWOutboundPeer");
+      expect(cm.getSessionRemoteTransportPeerId("out-call")).toBe("12D3KooWOutboundPeer");
+    });
+  });
+
+  // ------------------------------------------------------------------
   // Event unsubscribe
   // ------------------------------------------------------------------
   describe("event unsubscribe", () => {
