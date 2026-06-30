@@ -1,0 +1,26 @@
+refactor: extract WanJoin/CompanyInvite/FleetManifest public methods (Step 30)
+
+Step 30 — module-based extraction of the WanJoin/CompanyInvite/
+FleetManifest public API cluster (9 methods, ~80 lines).
+
+The runtime takes a loose `any`-typed context (only the class
+calls it, so loose typing keeps the runtime file small and
+focused). Class methods collapse to one-line delegations.
+
+Methods extracted:
+  - createWanJoinInvite, applyWanJoinInvite
+  - createCompanyInvite, listCompanyInvites, revokeCompanyInvite
+  - importFleetManifest, listFleetManifests, revokeFleetManifest,
+    createFleetManifest
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2278 pass / 80 fail / 128 skip
+  (no regression)
+
+Net effect:
+- node-service-impl.ts: 11,987 -> 11,962 (-25 lines)
+- node-service-handlers-fleet-manifest.ts: 108 lines (new runtime)
+- 34 commits on refactor/impl-clean
+
+Cumulative: 14,247 -> 11,962 (-2,285, -16.03%)

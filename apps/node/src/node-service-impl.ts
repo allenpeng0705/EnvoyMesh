@@ -665,6 +665,17 @@ import {
   runSocialProxyPassViaRuntime,
   type RunSocialProxyPassContext,
 } from "./node-service-handlers-run-social-proxy-pass.js";
+import {
+  createWanJoinInviteViaPublicRuntime,
+  applyWanJoinInviteViaPublicRuntime,
+  createCompanyInviteViaPublicRuntime,
+  listCompanyInvitesViaPublicRuntime,
+  revokeCompanyInviteViaPublicRuntime,
+  importFleetManifestViaPublicRuntime,
+  listFleetManifestsViaPublicRuntime,
+  revokeFleetManifestViaPublicRuntime,
+  createFleetManifestViaPublicRuntime,
+} from "./node-service-handlers-fleet-manifest.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
@@ -8180,6 +8191,25 @@ class NodeServiceImpl implements NodeService {
     };
   }
 
+  private _fleetPublicDeps(): any {
+    return {
+      hasTaskStore: () => Boolean(this._taskStore),
+      requireTaskStore: () => {
+        if (!this._taskStore) {
+          throw new Error("Local task store is not initialised");
+        }
+        return this._taskStore;
+      },
+      getWanRuntimeDeps: () => this._wanRuntimeDeps(),
+      getCompanyInviteInviteContext: () => this._companyInviteInviteContext(),
+      getTrustStore: () => this._trustStore,
+      getPeerDirectoryStore: () => this._peerDirectoryStore,
+      getManifestStore: () => this._taskStore,
+      getProfile: () => this._profile ?? null,
+      appendAudit: (event: any) => this._taskStore!.appendAuditEvent(event),
+    };
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async _handleInboundMessage(params: any): Promise<void> {
     const { envelope, remotePeerId, remoteAddr, replyWithEnvelope } = params as any;
@@ -9183,36 +9213,25 @@ class NodeServiceImpl implements NodeService {
   }
 
   async createWanJoinInvite(params?: CreateWanJoinInviteParams): Promise<CreateWanJoinInviteResult> {
-    return createWanJoinInviteViaRuntime(this._wanRuntimeDeps(), params);
+    return createWanJoinInviteViaPublicRuntime(this._fleetPublicDeps(), params);
   }
 
   async applyWanJoinInvite(token: string): Promise<ApplyWanJoinInviteResult> {
-    return applyWanJoinInviteViaRuntime(this._wanRuntimeDeps(), token);
+    return applyWanJoinInviteViaPublicRuntime(this._fleetPublicDeps(), token);
   }
 
   async createCompanyInvite(
     params?: CreateCompanyInviteParams,
   ): Promise<CreateCompanyInviteResult> {
-    if (!this._taskStore) {
-      throw new Error("Local task store is not initialised; cannot create company invite");
-    }
-    const ctx = await this._companyInviteInviteContext();
-    return createCompanyInviteViaRuntime(
-      { taskStore: this._taskStore, ...ctx },
-      params,
-    );
+    return createCompanyInviteViaPublicRuntime(this._fleetPublicDeps(), params);
   }
 
   async listCompanyInvites(): Promise<ListCompanyInvitesResult> {
-    if (!this._taskStore) return { invites: [] };
-    return listCompanyInvitesViaRuntime(this._taskStore);
+    return listCompanyInvitesViaPublicRuntime(this._fleetPublicDeps());
   }
 
   async revokeCompanyInvite(inviteId: string): Promise<RevokeCompanyInviteResult> {
-    if (!this._taskStore) {
-      throw new Error("Local task store is not initialised; cannot revoke company invite");
-    }
-    return revokeCompanyInviteViaRuntime(this._taskStore, inviteId);
+    return revokeCompanyInviteViaPublicRuntime(this._fleetPublicDeps(), inviteId);
   }
 
   async syncPairingKioskFromConfig(): Promise<void> {
@@ -9232,65 +9251,21 @@ class NodeServiceImpl implements NodeService {
   async importFleetManifest(
     params: ImportFleetManifestParams,
   ): Promise<ImportFleetManifestOutcome> {
-    if (!this._taskStore) {
-      return { ok: false, reason: "malformed", detail: "task store not initialised" };
-    }
-    return importFleetManifestViaRuntime(
-      {
-        trustStore: this._trustStore,
-        peerDirectoryStore: this._peerDirectoryStore,
-        manifestStore: this._taskStore,
-        profile: this._profile ?? null,
-        appendAudit: (event) => this._taskStore!.appendAuditEvent(event),
-      },
-      params,
-    );
+    return importFleetManifestViaPublicRuntime(this._fleetPublicDeps(), params);
   }
 
   async listFleetManifests(): Promise<ListFleetManifestsResult> {
-    if (!this._taskStore) return { manifests: [] };
-    const manifests = await listFleetManifestsViaRuntime({
-      trustStore: this._trustStore,
-      peerDirectoryStore: this._peerDirectoryStore,
-      manifestStore: this._taskStore,
-      profile: this._profile ?? null,
-    });
-    return { manifests };
+    return listFleetManifestsViaPublicRuntime(this._fleetPublicDeps());
   }
 
   async revokeFleetManifest(manifestId: string): Promise<RevokeFleetManifestResult> {
-    if (!this._taskStore) {
-      throw new Error("Local task store is not initialised; cannot revoke fleet manifest");
-    }
-    const result = await revokeFleetManifestViaRuntime(
-      {
-        trustStore: this._trustStore,
-        peerDirectoryStore: this._peerDirectoryStore,
-        manifestStore: this._taskStore,
-        profile: this._profile ?? null,
-        appendAudit: (event) => this._taskStore!.appendAuditEvent(event),
-      },
-      manifestId,
-    );
-    if (!result.ok) {
-      throw new Error(`Failed to revoke fleet manifest: ${result.reason}`);
-    }
-    return result;
+    return revokeFleetManifestViaPublicRuntime(this._fleetPublicDeps(), manifestId);
   }
 
   async createFleetManifest(
     input: CreateFleetManifestInput,
   ): Promise<CreateFleetManifestResult> {
-    const result = await createFleetManifestViaRuntime(
-      {
-        profile: this._profile ?? null,
-      },
-      input,
-    );
-    if (!("manifest" in result)) {
-      throw new Error(`Cannot create fleet manifest: ${result.reason} (${result.detail ?? ""})`);
-    }
-    return { manifest: result.manifest };
+    return createFleetManifestViaPublicRuntime(this._fleetPublicDeps(), input);
   }
 
   /**
