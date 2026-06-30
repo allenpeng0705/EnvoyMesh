@@ -1,0 +1,31 @@
+refactor: extract chat.room.message dispatcher (Step 39)
+
+Step 39 — module-based extraction of the `chat.room.message` inbound
+intent cluster (~70 lines) from `_handleInboundMessage` to its own
+runtime. Continues the per-intent extraction pattern established in
+Step 38.
+
+The cluster:
+  1. Parses the chat room payload
+  2. Dispatches to `handleInboundChatRoomMessageImpl`
+  3. Conditionally kicks off `runInboundChatAssist` for incoming
+     messages from bonded peers
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2277 pass / 81 fail / 128 skip
+  (no regression)
+
+Net effect:
+- node-service-impl.ts: 11,830 -> 11,796 (-34 lines)
+- node-service-handlers-chat-room-message.ts: 125 lines (new runtime)
+- 42 commits on refactor/impl-clean
+
+Cumulative: 14,247 -> 11,796 (-2,451, -17.20%)
+
+Two successful per-intent extractions in this session
+(Steps 38 + 39) prove the pattern works for ~70-90 line clusters.
+Remaining per-intent clusters in `_handleInboundMessage`:
+  - chat.message (biggest, ~120+ lines)
+  - chat.room.sync (small, ~15 lines)
+  - profile.* (medium, ~80 lines)
