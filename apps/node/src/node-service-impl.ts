@@ -603,6 +603,12 @@ import {
   startCapabilityDiscoverySchedulerViaRuntime,
   type CapabilityDiscoveryContext,
 } from "./node-service-capability-discovery.js";
+import {
+  initNodeViaRuntime,
+  ensureAgentStoresViaRuntime,
+  requireToolExecutionContextViaRuntime,
+  type AgentSetupContext,
+} from "./node-service-agent-setup.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
@@ -7412,6 +7418,24 @@ class NodeServiceImpl implements NodeService {
     };
   }
 
+  private _agentSetupContext(): AgentSetupContext {
+    return {
+      saveConfig: (config) => this._configStore.save(config),
+      loadConfig: () => this._configStore.load(),
+      getProfileDir: () => this._profileDir,
+      getProfile: () => this._profile,
+      setProfile: (p) => {
+        this._profile = p;
+      },
+      getTaskStore: () => this._taskStore,
+      setTaskStore: (s) => {
+        this._taskStore = s as never;
+      },
+      getNodeStatus: () => this._nodeStatus,
+      getToolExecutionContext: () => this.getToolExecutionContext(),
+    };
+  }
+
     private _manifestContext(): CapabilityManifestContext {
     return {
       getProfileDir: () => this._profileDir,
@@ -7838,45 +7862,7 @@ class NodeServiceImpl implements NodeService {
   // ============================================
 
   async initNode(profileDir: string, options?: InitNodeOptions): Promise<NodeInitResult> {
-    console.log(`[node-service] initNode called: profileDir=${profileDir}, options=`, options);
-    // Create profile directory structure
-    const profile = await loadOrCreateNodeProfile(profileDir);
-
-    // Write persisted config
-    const config: PersistedNodeConfig = {
-      version: "0.1",
-      profileDir,
-      discoveryProfile: options?.discoveryProfile ?? "lan-fast",
-      relayEnabled: options?.relayEnabled ?? true,
-      relayServerEnabled: options?.relayServerEnabled ?? false,
-      advertiseAddrs: options?.advertiseAddrs ?? [],
-      bootstrapPeers: options?.bootstrapPeers ?? [],
-      bootstrapPresets:
-        options?.bootstrapPresets ??
-        [...defaultBootstrapPresetsForDiscoveryProfile(options?.discoveryProfile ?? "lan-fast")],
-      configuredRelays: [],
-      modelProviders: { mode: "disabled" },
-      chatAssistEnabled: false,
-      autonomousKillSwitch: false,
-      autonomousPolicies: [],
-      contactAiPreferences: [],
-      updatedAt: new Date().toISOString(),
-    };
-
-    await this._configStore.save(config);
-    this._profile = profile;
-
-    // Phase 31I — initialize push notification service
-    void pushNotificationService.init(profileDir).catch(
-      (err) => console.warn("[node-service] push notification service init failed:", err),
-    );
-
-    return {
-      profileDir,
-      peerId: derivePeerId(profile.device.publicKeyPem),
-      ownerId: profile.owner.ownerId,
-      deviceId: profile.device.deviceId,
-    };
+    return initNodeViaRuntime(this._agentSetupContext(), profileDir, options);
   }
 
   getNodeStatus(): NodeStatus {
@@ -7888,38 +7874,11 @@ class NodeServiceImpl implements NodeService {
    * Safe to call when CLI already bound {@link bindCliTaskStore}.
    */
   private async _ensureAgentStores(): Promise<boolean> {
-    const config = await this._configStore.load();
-    if (!config?.profileDir) {
-      return Boolean(this._profile && this._taskStore);
-    }
-    if (!this._profile) {
-      this._profile = await loadOrCreateNodeProfile(config.profileDir);
-    }
-    if (!this._taskStore) {
-      this._taskStore = createLocalTaskStore(config.profileDir);
-    }
-    return Boolean(this._profile && this._taskStore);
+    return ensureAgentStoresViaRuntime(this._agentSetupContext());
   }
 
   private async _requireToolExecutionContext(): Promise<MeshToolContext> {
-    if (!(await this._ensureAgentStores())) {
-      if (this._nodeStatus === "starting") {
-        throw new Error("Node is still starting. Wait a moment and try again.");
-      }
-      if (this._nodeStatus === "offline") {
-        throw new Error("Node is offline. Complete setup or start the node from Settings → Node.");
-      }
-      const config = await this._configStore.load();
-      if (!config) {
-        throw new Error("Node not set up. Finish Welcome setup or run the Envoy node app.");
-      }
-      throw new Error("Node not ready for Assistant. Start the node from Settings → Node.");
-    }
-    const context = await this.getToolExecutionContext();
-    if (!context) {
-      throw new Error("Could not initialize agent identity. Check Settings → Node.");
-    }
-    return context;
+    return requireToolExecutionContextViaRuntime(this._agentSetupContext());
   }
 
   async startNode(): Promise<void> {

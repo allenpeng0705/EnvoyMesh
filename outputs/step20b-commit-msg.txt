@@ -1,0 +1,40 @@
+refactor: extract agent-setup helpers from Node Lifecycle (Step 20b)
+
+Step 20b — extract the three private helpers that wire up agent
+stores + init the node. The 50+14+21 = ~85 lines collapse to
+3-line delegations.
+
+  - initNode (50 lines) -> 1-line delegation
+  - _ensureAgentStores (14 lines) -> 1-line delegation
+  - _requireToolExecutionContext (21 lines) -> 1-line delegation
+
+The runtime is pure: takes an AgentSetupContext with 9 accessors
+(saveConfig, loadConfig, profileDir, profile get/set, taskStore
+get/set, nodeStatus, getToolExecutionContext). The class
+methods collapse to one-liners.
+
+11 new unit tests in apps/node/test/node-service-agent-setup.test.ts:
+  - initNode: returns owner/device ids, saves config, kicks off
+    push notification, uses discoveryProfile override
+  - ensureAgentStores: true when profile+store already set + no
+    profileDir in config, false when both missing, loads + creates
+    when profileDir is present
+  - requireToolExecutionContext: returns ctx when stores ready;
+    throws 'still starting' / 'offline' / 'not set up' / 'agent
+    identity' on the 4 distinct failure modes
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2227 pass / 81 fail / 128 skip
+  (was 2217 / 81 / 128 — +10 net new tests, 0 regressions. The +1
+  fail from baseline is the same flaky network test.)
+
+Net effect:
+- node-service-impl.ts: 12,691 -> 12,650 (-41 lines)
+- node-service-agent-setup.ts: 140 lines (new runtime)
+- 21 commits on refactor/impl-clean
+
+Remaining Node Lifecycle pieces (Steps 20c-onwards):
+  - stopNode (~85 lines)
+  - startNode (192 lines) — biggest
+  - _wireMeshEvents (432 lines) — hardest, ~30 event handlers
