@@ -22,7 +22,7 @@ import {
   rebalanceChain,
   type ChainState,
 } from "./chain-orchestrator.js";
-import { CHAIN_GOAL_TEMPLATES, mergeChainDefaults } from "./chain-defaults.js";
+import { CHAIN_GOAL_TEMPLATES, estimateChainCostRange, mergeChainDefaults } from "./chain-defaults.js";
 import { chainCostsToCsv } from "./chain-cost-export.js";
 import type {
   ChainGetStateParams,
@@ -47,6 +47,10 @@ import type {
   ChainSetDefaultsResult,
   ChainExportCostsParams,
   ChainExportCostsResult,
+  ChainPreviewGoalParams,
+  ChainPreviewGoalResult,
+  ChainStartFromGoalParams,
+  ChainStartFromGoalResult,
   ChainListRecipesParams,
   ChainListRecipesResult,
   ChainSaveRecipeParams,
@@ -202,6 +206,25 @@ export interface ChainContext {
   emitChainState(chainId: string): void;
   /** Start the heartbeat tracker for a launched chain. */
   startChainTracking(chainId: string): void;
+  /** Build a placeholder mandate for a new chain (chainPlan / chainPreviewGoal). */
+  placeholderMandate(chainId: string, chainMandateId: string): unknown;
+  /** Find capability providers (peer ids) for a given capability. */
+  findCapabilityProviders(capability: string): Promise<string[]>;
+  /** Compute diagnostics for a set of subtasks + candidate workers. */
+  chainDiagnosticsForSubtasks(
+    subtasks: Array<{ subtaskId: string; requiredCapability: string }>,
+    workersBySubtask: Record<string, string[]>,
+  ): unknown;
+  /** Run a chain from a free-form goal. */
+  runChainGoal(params: {
+    goal: string;
+    maxChainCostUsd?: number;
+    costCeilingUsd?: number;
+    allowLlm?: boolean;
+  }): Promise<
+    | { ok: true; chainId: string; chainMandateId: string; subtasks: Array<{ subtaskId: string }> }
+    | { ok: false; error: string }
+  >;
   /** Recipe persistence (optional — the runtime returns the builtin list when absent).
    *  Types are intentionally loose: the class is the source of truth for the
    *  recipe row shape, and the runtime just passes rows through. */
@@ -395,7 +418,7 @@ export async function chainListRecipesViaRuntime(
   _params?: ChainListRecipesParams,
 ): Promise<ChainListRecipesResult> {
   const builtin = CHAIN_GOAL_TEMPLATES.map(
-    ({ id, label, goal, maxChainCostUsd, costCeilingUsd }) => ({
+    ({ id, label, goal, maxChainCostUsd, costCeilingUsd }: { id: string; label: string; goal: string; maxChainCostUsd?: number; costCeilingUsd?: number }) => ({
       id,
       label,
       goal,
@@ -577,6 +600,107 @@ export async function chainCounterBidViaRuntime(
     subtaskId: params.subtaskId,
     ok: false,
     reason: result.reason as ChainCounterBidResult["reason"],
+  };
+}
+
+
+export async function chainPreviewGoalViaRuntime(
+  ctx: ChainContext,
+  params: ChainPreviewGoalParams,
+): Promise<ChainPreviewGoalResult> {
+  const template = params.templateId
+    ? CHAIN_GOAL_TEMPLATES.find((r: { id: string }) => r.id === params.templateId)
+    : undefined;
+  const goal = params.goal.trim() || template?.goal || "";
+  if (!goal) {
+    return { ok: false, subtasks: [], reason: "no_goal" };
+  }
+  const chainId = `chain_preview_${randomUUID()}`;
+  const chainMandateId = `chainmandate_${randomUUID()}`;
+  const mandate = {
+    ...(ctx.placeholderMandate(chainId, chainMandateId) as Record<string, unknown>),
+    maxChainCostUsd: params.maxChainCostUsd ?? template?.maxChainCostUsd ?? 10,
+    costCeilingUsd: params.costCeilingUsd ?? template?.costCeilingUsd ?? 3,
+  };
+  const state = createChainState(mandate as Parameters<typeof createChainState>[0]);
+  const deps = (await ctx.buildChainOrchestratorDeps()) as Parameters<typeof planChain>[0];
+  const plan = await planChain(deps, state, goal, { allowLlm: params.allowLlm ?? true });
+  if (!plan.ok) {
+    return { ok: false, subtasks: [], reason: (plan as { reason: string }).reason };
+  }
+  const workersBySubtask: Record<string, string[]> = {};
+  let maxWorkers = 0;
+  for (const subtask of plan.subtasks) {
+    const candidates = await ctx.findCapabilityProviders(subtask.requiredCapability);
+    workersBySubtask[subtask.subtaskId] = candidates;
+    maxWorkers = Math.max(maxWorkers, candidates.length);
+  }
+  const estimatedCostRange = estimateChainCostRange({
+    subtaskCount: plan.subtasks.length,
+    workerCandidateCount: maxWorkers,
+    maxChainCostUsd: mandate.maxChainCostUsd as number,
+  });
+  return {
+    ok: true,
+    chainId,
+    subtasks: plan.subtasks.map((s) => ({
+      subtaskId: s.subtaskId,
+      depth: s.depth,
+      requiredCapability: s.requiredCapability,
+      objective: s.objective,
+      workerCount: (workersBySubtask[s.subtaskId] ?? []).length,
+    })),
+    estimatedCostRange,
+    diagnostics: ctx.chainDiagnosticsForSubtasks(plan.subtasks, workersBySubtask) as never,
+  };
+}
+
+export async function chainStartFromGoalViaRuntime(
+  ctx: ChainContext,
+  params: ChainStartFromGoalParams,
+): Promise<ChainStartFromGoalResult> {
+  const template = params.templateId
+    ? CHAIN_GOAL_TEMPLATES.find((r: { id: string }) => r.id === params.templateId)
+    : undefined;
+  const goal = params.goal.trim() || template?.goal || "";
+  if (!goal) {
+    return { ok: false, error: "no_goal" };
+  }
+  const preview = await chainPreviewGoalViaRuntime(ctx, {
+    goal,
+    templateId: params.templateId,
+    maxChainCostUsd: params.maxChainCostUsd ?? template?.maxChainCostUsd,
+    costCeilingUsd: params.costCeilingUsd ?? template?.costCeilingUsd,
+    allowLlm: params.allowLlm,
+  });
+  if (!preview.ok || preview.subtasks.length === 0) {
+    return {
+      ok: false,
+      error: preview.reason ?? "plan_failed",
+      diagnostics: preview.diagnostics,
+    };
+  }
+  const result = await ctx.runChainGoal({
+    goal,
+    maxChainCostUsd: params.maxChainCostUsd ?? template?.maxChainCostUsd,
+    costCeilingUsd: params.costCeilingUsd ?? template?.costCeilingUsd,
+    allowLlm: params.allowLlm,
+  });
+  if (!result.ok) {
+    return { ok: false, error: result.error, diagnostics: preview.diagnostics };
+  }
+  return {
+    ok: true,
+    chainId: result.chainId,
+    chainMandateId: result.chainMandateId,
+    subtasks: result.subtasks.map((s) => ({
+      subtaskId: (s as { subtaskId: string }).subtaskId,
+      depth: 0,
+      requiredCapability: "",
+      objective: "",
+    })),
+    estimatedCostRange: preview.estimatedCostRange,
+    diagnostics: preview.diagnostics,
   };
 }
 

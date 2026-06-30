@@ -527,10 +527,12 @@ import {
   chainListReportsViaRuntime,
   chainPinReportViaRuntime,
   chainPlanViaRuntime,
+  chainPreviewGoalViaRuntime,
   chainRebalanceViaRuntime,
   chainSaveRecipeViaRuntime,
   chainSetBidStrategyViaRuntime,
   chainSetDefaultsViaRuntime,
+  chainStartFromGoalViaRuntime,
   type ChainContext,
 } from "./node-service-chains.js";
 import {
@@ -11901,6 +11903,13 @@ class NodeServiceImpl implements NodeService {
         this._evaluateAwardAndAccept(chainId, subtaskId, options as never) as never,
       emitChainState: (chainId) => this._emitChainState(chainId),
       startChainTracking: (chainId) => this._startChainTracking(chainId),
+      placeholderMandate: (chainId, chainMandateId) =>
+        this.placeholderMandate(chainId, chainMandateId) as never,
+      findCapabilityProviders: (capability) =>
+        this.findCapabilityProviders(capability) as never,
+      chainDiagnosticsForSubtasks: (subtasks, workersBySubtask) =>
+        this._chainDiagnosticsForSubtasks(subtasks as never, workersBySubtask as never) as never,
+      runChainGoal: (params) => this._runChainGoal(params) as never,
     };
   }
 
@@ -12494,92 +12503,11 @@ class NodeServiceImpl implements NodeService {
   }
 
   async chainPreviewGoal(params: ChainPreviewGoalParams): Promise<ChainPreviewGoalResult> {
-    const template = params.templateId
-      ? CHAIN_GOAL_TEMPLATES.find((r) => r.id === params.templateId)
-      : undefined;
-    const goal = params.goal.trim() || template?.goal || "";
-    if (!goal) {
-      return { ok: false, subtasks: [], reason: "no_goal" };
-    }
-    const chainId = `chain_preview_${randomUUID()}`;
-    const chainMandateId = `chainmandate_${randomUUID()}`;
-    const mandate = {
-      ...this.placeholderMandate(chainId, chainMandateId),
-      maxChainCostUsd: params.maxChainCostUsd ?? template?.maxChainCostUsd ?? 10,
-      costCeilingUsd: params.costCeilingUsd ?? template?.costCeilingUsd ?? 3,
-    };
-    const state = createChainState(mandate);
-    const deps = await this.buildChainOrchestratorDeps();
-    const plan = await planChain(deps, state, goal, { allowLlm: params.allowLlm ?? true });
-    if (!plan.ok) {
-      return { ok: false, subtasks: [], reason: (plan as { reason: string }).reason };
-    }
-    const workersBySubtask: Record<string, string[]> = {};
-    let maxWorkers = 0;
-    for (const subtask of plan.subtasks) {
-      const candidates = await this.findCapabilityProviders(subtask.requiredCapability);
-      workersBySubtask[subtask.subtaskId] = candidates;
-      maxWorkers = Math.max(maxWorkers, candidates.length);
-    }
-    const estimatedCostRange = estimateChainCostRange({
-      subtaskCount: plan.subtasks.length,
-      workerCandidateCount: maxWorkers,
-      maxChainCostUsd: mandate.maxChainCostUsd,
-    });
-    return {
-      ok: true,
-      chainId,
-      subtasks: plan.subtasks.map((s) => ({
-        subtaskId: s.subtaskId,
-        depth: s.depth,
-        requiredCapability: s.requiredCapability,
-        objective: s.objective,
-        workerCount: (workersBySubtask[s.subtaskId] ?? []).length,
-      })),
-      estimatedCostRange,
-      diagnostics: this._chainDiagnosticsForSubtasks(plan.subtasks, workersBySubtask),
-    };
+    return chainPreviewGoalViaRuntime(this._chainContext(), params);
   }
 
   async chainStartFromGoal(params: ChainStartFromGoalParams): Promise<ChainStartFromGoalResult> {
-    const template = params.templateId
-      ? CHAIN_GOAL_TEMPLATES.find((r) => r.id === params.templateId)
-      : undefined;
-    const goal = params.goal.trim() || template?.goal || "";
-    if (!goal) {
-      return { ok: false, error: "no_goal" };
-    }
-    const preview = await this.chainPreviewGoal({
-      goal,
-      templateId: params.templateId,
-      maxChainCostUsd: params.maxChainCostUsd ?? template?.maxChainCostUsd,
-      costCeilingUsd: params.costCeilingUsd ?? template?.costCeilingUsd,
-      allowLlm: params.allowLlm,
-    });
-    if (!preview.ok || preview.subtasks.length === 0) {
-      return {
-        ok: false,
-        error: preview.reason ?? "plan_failed",
-        diagnostics: preview.diagnostics,
-      };
-    }
-    const result = await this._runChainGoal({
-      goal,
-      maxChainCostUsd: params.maxChainCostUsd ?? template?.maxChainCostUsd,
-      costCeilingUsd: params.costCeilingUsd ?? template?.costCeilingUsd,
-      allowLlm: params.allowLlm,
-    });
-    if (!result.ok) {
-      return { ok: false, error: result.error, diagnostics: preview.diagnostics };
-    }
-    return {
-      ok: true,
-      chainId: result.chainId,
-      chainMandateId: result.chainMandateId,
-      subtasks: result.subtasks,
-      estimatedCostRange: preview.estimatedCostRange,
-      diagnostics: preview.diagnostics,
-    };
+    return chainStartFromGoalViaRuntime(this._chainContext(), params);
   }
 
   async chainExportCosts(params: ChainExportCostsParams): Promise<ChainExportCostsResult> {

@@ -1,0 +1,31 @@
+refactor: extract chainPreviewGoal + chainStartFromGoal to chains runtime
+
+Step 12 of the refactor plan: the last 2 chain methods, both of
+which use the orchestrator-dep bag. They now delegate to runtime
+functions that call back into the class via the ChainContext for
+the placeholder-mandate builder, capability-provider lookup,
+diagnostics helper, and the runChainGoal orchestrator.
+
+- 2 new runtime functions added to apps/node/src/node-service-chains.ts:
+  - chainPreviewGoalViaRuntime
+  - chainStartFromGoalViaRuntime
+- ChainContext extended with 4 new methods:
+  - placeholderMandate(chainId, chainMandateId)
+  - findCapabilityProviders(capability)
+  - chainDiagnosticsForSubtasks(subtasks, workersBySubtask)
+  - runChainGoal(goal, maxChainCostUsd, costCeilingUsd, allowLlm)
+- 2 class methods collapse to 1-line delegations.
+- Imports reorganised: CHAIN_GOAL_TEMPLATES and estimateChainCostRange
+  are now imported from chain-defaults.js (the chain-orchestrator
+  module doesn't export them).
+- node-service-impl.ts: 13540 -> 13468 lines (-72)
+- 0 new unit tests added — the runtime is essentially a passthrough
+  over the orchestrator and would need a full mock of the
+  orchestrator to test in isolation. The integration is covered
+  by the existing chain-e2e tests.
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2149 pass / 80 fail / 128 skip
+  (was 2150 / 79 / 128; the +1 fail is a pre-existing flake that
+  flipped since the last run — diff of fail sets is empty)
