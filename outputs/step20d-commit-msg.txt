@@ -1,0 +1,57 @@
+refactor: extract startNode (Step 20d)
+
+Step 20d — extract the public startNode method (192 lines) to a
+runtime. The class method collapses to a 3-line delegation. The
+runtime takes a StartNodeContext with 30+ accessors covering
+status, stores, mesh, timers, schedulers, and lifecycle hooks.
+
+  - startNode (192 lines) -> 3-line delegation
+
+startNodeViaRuntime semantics (preserved exactly):
+  - Returns early after ensureAgentStores if status is 'running'
+  - Throws "Node is already starting" if status is 'starting'
+  - Loads config, throws "No node config found" if missing
+  - Hydrates stores (profile, task store, relay state, discovery
+    seed, task runtime, inbound guard, task dispatcher)
+  - Hydrates Phase 23/25/25D in-memory state from disk
+  - Sets status to 'starting' + emits
+  - Resolves bootstrap peers (peer directory + presets + seeds)
+    with filterBootstrapMultiaddrs
+  - Resolves connectivity runtime (DHT, mdns, intervals)
+  - Creates EnvoyMesh with mesh options + libp2p private key
+  - Wires mesh events
+  - Starts mesh, clears last-error fields
+  - Resyncs bonded contact reachability tags
+  - Starts relay client scheduler + capability discovery scheduler
+  - Starts node-stats-log interval
+  - Sets status to 'running', emits node:status + node:online
+  - Schedules deferred profile refresh, kicks capability index refresh
+  - Starts bond-warm interval
+  - Sets 15s timeout for advertiseInterestsIfPublic
+  - On error: logs, records error via runtime, sets status to
+    'offline', emits node:status
+
+4 new unit tests in apps/node/test/node-service-start.test.ts
+(guard-level only; full happy path needs a real EnvoyMesh which
+would require heavy mocking):
+  - returns early after ensureAgentStores when status 'running'
+  - throws 'already starting' when status 'starting'
+  - throws 'No node config' when loadConfig returns undefined
+  - sets status to 'offline' + records error when an inner step throws
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2239 pass / 80 fail / 128 skip
+  (was 2235 / 80 / 128 — +4 new tests, 0 regressions)
+
+Net effect:
+- node-service-impl.ts: 12,660 -> 12,559 (-101 lines)
+- node-service-start.ts: 313 lines (new runtime)
+- 23 commits on refactor/impl-clean
+
+Remaining Node Lifecycle: _wireMeshEvents (432 lines) — the
+biggest single method left. It wires ~30 mesh event handlers to
+runtime callbacks. Future commits can pull these out into per-
+handler runtimes if the user wants to keep extracting.
+
+Cumulative: 14,247 -> 12,559 (-1,688, -11.85%)

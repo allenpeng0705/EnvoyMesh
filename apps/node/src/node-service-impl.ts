@@ -613,6 +613,10 @@ import {
   stopNodeViaRuntime,
   type StopNodeContext,
 } from "./node-service-stop.js";
+import {
+  startNodeViaRuntime,
+  type StartNodeContext,
+} from "./node-service-start.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
@@ -7946,195 +7950,90 @@ class NodeServiceImpl implements NodeService {
   }
 
   async startNode(): Promise<void> {
-    if (this._nodeStatus === "running") {
-      await this._ensureAgentStores();
-      return;
-    }
+    return startNodeViaRuntime(this._startNodeContext());
+  }
 
-    if (this._nodeStatus === "starting") {
-      throw new Error("Node is already starting");
-    }
-
-    try {
-      const config = await this._configStore.load();
-      if (!config) {
-        throw new Error("No node config found. Call initNode() first.");
-      }
-
-      // Load stores before emitting "starting" so Assistant RPC cannot race an empty task store.
-      this._profile = await loadOrCreateNodeProfile(config.profileDir);
-      this._taskStore = createLocalTaskStore(config.profileDir);
-      this._relayStateStore = createRelayStateStore(config.profileDir);
-      this._discoverySeedStore = this._discoverySeedStore ?? createDiscoverySeedStore(config.profileDir);
-      this._taskRuntimeStore = createTaskRuntimeStateStore(config.profileDir);
-      this._inboundGuard = createInboundMessageGuard();
-      this._taskDispatcher = createTaskDispatcher();
-
-      // Phase 26: hydrate Phase 23/25/25D in-memory state from disk
-      // (published library, intent history). Continuity sessions are loaded
-      // lazily on each continuity method call (no in-memory cache needed).
-      await this.loadPublishedLibraryFromDisk();
-      await this.loadIntentHistoryFromDisk();
-
-      this._nodeStatus = "starting";
-      this.emit("node:status", { status: this._nodeStatus });
-
-      // Compute effective bootstrap peers
-      // Must resolve bootstrapPresets to actual multiaddresses for mesh connectivity
-      const peerRecords = await this._peerDirectoryStore.listPeerRecords();
-      const peerDirAddrCount = peerRecords.reduce((n, r) => n + r.listenAddrs.length, 0);
-      const seedAddrs = seedAddrsForDiscoveryProfile(
-        config.discoveryProfile,
-        await this._discoverySeedStore.listSeedRecords(),
-      );
-
-      // Resolve bootstrap presets to actual multiaddresses
-      const resolvedPresetAddrs: string[] = [];
-      console.log(`[node-service] config.bootstrapPresets: ${JSON.stringify(config.bootstrapPresets)}`);
-      if (config.bootstrapPresets && config.bootstrapPresets.length > 0) {
-        console.log(`[node-service] Resolving ${config.bootstrapPresets.length} bootstrap presets: ${config.bootstrapPresets.join(", ")}`);
-        const resolvedResults = await resolveBootstrapAddresses(config.bootstrapPresets);
-        for (const result of resolvedResults) {
-          resolvedPresetAddrs.push(...result.resolved);
-          if (result.resolved.length === 0) {
-            console.warn(`[node-service] WARNING: Preset ${result.original} resolved to 0 addresses (using as-is)`);
-          }
-          console.log(`[node-service] Preset ${result.original} → ${result.resolved.length} addresses: ${result.resolved.join(", ")}`);
-        }
-      }
-
-      const rawBootstrapAddrs = [...config.bootstrapPeers, ...resolvedPresetAddrs, ...seedAddrs].filter(
-        (addr): addr is string =>
-          typeof addr === "string" && addr.trim().length > 0 && addr.startsWith("/"),
-      );
-      console.log(`[node-service] rawBootstrapAddrs (${rawBootstrapAddrs.length}): ${rawBootstrapAddrs.join(", ")}`);
-      console.log(`[node-service] config.bootstrapPeers: ${config.bootstrapPeers?.join(", ") ?? "undefined/empty"}`);
-      console.log(`[node-service] resolvedPresetAddrs: ${resolvedPresetAddrs.join(", ")}`);
-      const bootstrapPeers = filterBootstrapMultiaddrs([...new Set(rawBootstrapAddrs)]);
-      console.log(`[node-service] bootstrapPeers after filterBootstrapMultiaddrs: ${bootstrapPeers.length} - ${bootstrapPeers.join(", ")}`);
-      if (rawBootstrapAddrs.length !== bootstrapPeers.length || peerDirAddrCount > 0) {
-        console.log(
-          `[node-service] bootstrap addrs: kept=${bootstrapPeers.length} filtered=${rawBootstrapAddrs.length - bootstrapPeers.length} peer-dir-skipped=${peerDirAddrCount} (contact listen addrs use dial hints only)`,
-        );
-      }
-
-      console.log(`[node-service] Bootstrap peers resolved: ${bootstrapPeers.length} addresses`);
-      for (const bp of bootstrapPeers) {
-        console.log(`  - ${bp}`);
-      }
-
-      // Create EnvoyMesh
-      // DHT is always enabled when using wan-default discovery profile (for topic-based peer discovery)
-      // Bootstrap presets affect peer connectivity, not DHT availability
-      console.log(`[node-service] DHT configuration: discoveryProfile=${config.discoveryProfile}, bootstrapPresets=${config.bootstrapPresets?.length ?? 0}`);
-      const connectivityRuntime = resolveConnectivityRuntime({
-        profile: config.discoveryProfile,
-        enableMdns: resolveEnableMdns(config.discoveryProfile, config.enableMdns),
-        tuning: {
-          maxConnections: config.maxConnections,
-          mdnsIntervalMs: config.mdnsIntervalMs,
-          capabilityDiscoveryIntervalMs: config.capabilityDiscoveryIntervalMs,
-          lazyCapabilityDiscovery: config.lazyCapabilityDiscovery,
-          idleTimerStretch: config.idleTimerStretch,
-        },
-      });
-      console.log(`[node-service] Creating EnvoyMesh with enableDht=${connectivityRuntime.enableDht}`);
-      console.log(`[node-service] config object:`, JSON.stringify({
-        discoveryProfile: config.discoveryProfile,
-        relayEnabled: config.relayEnabled,
-        relayServerEnabled: config.relayServerEnabled,
-        bootstrapPeers: config.bootstrapPeers,
-        bootstrapPresets: config.bootstrapPresets,
-        maxConnections: connectivityRuntime.maxConnections,
-        lazyCapabilityDiscovery: connectivityRuntime.lazyCapabilityDiscovery,
-      }));
-
-      const meshOptions: EnvoyMeshOptions = {
-        listen: ["/ip4/0.0.0.0/tcp/0"],
-        advertiseAddrs: config.advertiseAddrs,
-        enableMdns: connectivityRuntime.enableMdns,
-        mdnsIntervalMs: connectivityRuntime.mdnsIntervalMs,
-        enableDht: connectivityRuntime.enableDht,
-        dhtClientMode: true,
-        bootstrapPeers,
-        enableRelay: config.relayEnabled,
-        enableRelayServer: config.relayServerEnabled,
-        enableAutoNat: true,
-        enableDcutr: true,
-        ...(connectivityRuntime.maxConnections != null
-          ? { maxConnections: connectivityRuntime.maxConnections }
-          : {}),
-        libp2pPrivateKey: await loadOrCreateLibp2pPrivateKey(
-          join(config.profileDir, "libp2p-private.key"),
-        ),
-      };
-
-      this._mesh = new EnvoyMesh(meshOptions);
-
-      // Wire mesh events
-      this._wireMeshEvents();
-
-      // Start mesh
-      await this._mesh.start();
-      this._lastNodeError = undefined;
-      this._lastNodeErrorAt = undefined;
-
-      void this._resyncBondedContactReachabilityTags();
-
-      this._relayBootstrapPeers = bootstrapPeers;
-      console.log(`[node-service] _relayBootstrapPeers assigned: ${bootstrapPeers.length} addresses: ${bootstrapPeers.join(", ")}`);
-      if (config.relayEnabled && this._inboundGuard && this._discoverySeedStore) {
-        this._stopRelayClientScheduler?.();
-        const relayDeps = {
-          mesh: this._mesh,
-          profile: this._profile!,
-          bootstrapPeers,
-          inboundGuard: this._inboundGuard,
-          discoverySeedStore: this._discoverySeedStore,
-        };
-        await runRelayClientCycle(relayDeps);
-        this._stopRelayClientScheduler = startRelayClientScheduler({
-          ...relayDeps,
-          intervalMs: DEFAULT_RELAY_CLIENT_CYCLE_INTERVAL_MS,
-        });
-      }
-
-      if (this._taskStore && this._discoverySeedStore) {
-        void this._runCapabilityDiscoveryCycle("startup", { connectivityRuntime });
-        this._startCapabilityDiscoveryScheduler(connectivityRuntime);
-      }
-
-      this._nodeProcessStartedAtMs = Date.now();
-      this._stopNodeStatsLogging?.();
-      this._stopNodeStatsLogging = startNodeStatsInterval(this._mesh, {
-        processStartedAtMs: this._nodeProcessStartedAtMs,
-      });
-
-      this._nodeStatus = "running";
-      this.emit("node:status", { status: this._nodeStatus, peerId: this._mesh.peerId });
-      this.emit("node:online", { peerId: this._mesh.peerId, multiaddrs: this._mesh.multiaddrs.map(a => a.toString()) });
-      this._scheduleDeferredProfileRefresh("node:online");
-      void this.refreshCapabilityIndex().catch((err) => {
-        console.warn("[chain] refreshCapabilityIndex after node:online failed:", err);
-      });
-      this._startBondWarmInterval();
-
-      // Wait longer for DHT to connect to bootstrap peers and stabilize routing table
-      // DHT provide operations require the routing table to be populated
-      this._advertiseInterestsStartupTimeout = setTimeout(() => {
-        void this._advertiseInterestsIfPublic();
-      }, 15000);
-    } catch (error) {
-      console.error("[node-service] startNode failed:", error);
-      this._recordNodeError("startNode", error);
-      if (this._advertiseInterestsStartupTimeout) {
-        clearTimeout(this._advertiseInterestsStartupTimeout);
-        this._advertiseInterestsStartupTimeout = undefined;
-      }
-      this._nodeStatus = "offline";
-      this.emit("node:status", { status: this._nodeStatus });
-      throw error;
-    }
+  private _startNodeContext(): StartNodeContext {
+    return {
+      getNodeStatus: () => this._nodeStatus,
+      setNodeStatus: (s) => {
+        this._nodeStatus = s;
+      },
+      emit: (event, payload) => this.emit?.(event as never, payload as never),
+      getProfile: () => this._profile,
+      setProfile: (p) => {
+        this._profile = p;
+      },
+      getTaskStore: () => this._taskStore,
+      setTaskStore: (s) => {
+        this._taskStore = s;
+      },
+      getRelayStateStore: () => this._relayStateStore,
+      setRelayStateStore: (s) => {
+        this._relayStateStore = s;
+      },
+      getDiscoverySeedStore: () => this._discoverySeedStore,
+      setDiscoverySeedStore: (s) => {
+        this._discoverySeedStore = s;
+      },
+      getTaskRuntimeStore: () => this._taskRuntimeStore,
+      setTaskRuntimeStore: (s) => {
+        this._taskRuntimeStore = s;
+      },
+      getInboundGuard: () => this._inboundGuard,
+      setInboundGuard: (g) => {
+        this._inboundGuard = g;
+      },
+      getTaskDispatcher: () => this._taskDispatcher,
+      setTaskDispatcher: (d) => {
+        this._taskDispatcher = d;
+      },
+      loadConfig: () => this._configStore.load(),
+      getMesh: () => this._mesh,
+      setMesh: (m) => {
+        this._mesh = m as never;
+      },
+      wireMeshEvents: () => this._wireMeshEvents(),
+      setRelayBootstrapPeers: (addrs) => {
+        this._relayBootstrapPeers = addrs;
+      },
+      setStopRelayClientScheduler: (fn) => {
+        this._stopRelayClientScheduler = fn;
+      },
+      setStopNodeStatsLogging: (fn) => {
+        this._stopNodeStatsLogging = fn;
+      },
+      setCapabilityDiscoveryTimer: (t) => {
+        this._capabilityDiscoveryTimer = t;
+      },
+      setAdvertiseInterestsStartupTimeout: (t) => {
+        this._advertiseInterestsStartupTimeout = t;
+      },
+      setLastNodeError: (v) => {
+        this._lastNodeError = v;
+      },
+      setLastNodeErrorAt: (v) => {
+        this._lastNodeErrorAt = v;
+      },
+      setNodeProcessStartedAtMs: (ms) => {
+        this._nodeProcessStartedAtMs = ms;
+      },
+      startBondWarmInterval: () => this._startBondWarmInterval(),
+      resyncBondedContactReachabilityTags: () =>
+        this._resyncBondedContactReachabilityTags(),
+      refreshCapabilityIndex: () => this.refreshCapabilityIndex(),
+      scheduleDeferredProfileRefresh: (reason) =>
+        this._scheduleDeferredProfileRefresh(reason),
+      advertiseInterestsIfPublic: () => this._advertiseInterestsIfPublic(),
+      loadPublishedLibraryFromDisk: () => this.loadPublishedLibraryFromDisk(),
+      loadIntentHistoryFromDisk: () => this.loadIntentHistoryFromDisk(),
+      recordNodeError: (context, err) => this._recordNodeError(context, err),
+      ensureAgentStores: () => this._ensureAgentStores(),
+      runCapabilityDiscoveryCycle: (source, opts) =>
+        this._runCapabilityDiscoveryCycle(source, opts),
+      startCapabilityDiscoveryScheduler: (runtime) =>
+        this._startCapabilityDiscoveryScheduler(runtime),
+    };
   }
 
   private _wireMeshEvents(): void {
