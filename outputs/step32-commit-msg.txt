@@ -1,0 +1,29 @@
+refactor: extract trivial store-accessor methods (Step 32)
+
+Step 32 — module-based extraction of 5 single-line store-accessor
+public methods:
+  - listAgentActivity, listCommerceReceipts
+  - listAgentCards, getAgentCard
+  - listAgentCircles
+
+The runtime takes a loose `any`-typed context. Class methods
+collapse to one-line delegations.
+
+Skipped (body shape differs from the simple runtime pattern):
+  - listAuditEvents (does query + map)
+  - listTaskJournalEntries (does filter + slice + reverse + map)
+  - getBonds (reads trustStore + peerDirectoryStore + constructs Map)
+  - getAgentIdentity (returns synthetic fallback)
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2278 pass / 80 fail / 128 skip
+  (no regression)
+
+Net effect:
+- node-service-impl.ts: 11,911 -> 11,921 (+10 lines — factory
+  overhead slightly exceeds the savings from 5 small methods)
+- node-service-handlers-store-accessors.ts: 106 lines (new runtime)
+- 36 commits on refactor/impl-clean
+
+Cumulative: 14,247 -> 11,921 (-2,326, -16.33%)

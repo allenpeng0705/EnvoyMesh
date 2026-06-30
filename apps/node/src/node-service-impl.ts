@@ -688,6 +688,13 @@ import {
   cancelCapabilityProviderJobViaPublicRuntime,
   runCapabilityProviderWorkerViaPublicRuntime,
 } from "./node-service-handlers-doc-acq-cap-prov.js";
+import {
+  listAgentActivityViaRuntime,
+  listCommerceReceiptsViaRuntime,
+  listAgentCardsViaRuntime,
+  getAgentCardViaRuntime,
+  listAgentCirclesViaRuntime,
+} from "./node-service-handlers-store-accessors.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
@@ -4477,13 +4484,11 @@ class NodeServiceImpl implements NodeService {
   }
 
   async listAgentActivity(params?: ListAgentActivityParams): Promise<AgentActivityRecord[]> {
-    if (!this._agentActivityStore) return [];
-    return this._agentActivityStore.list(params);
+    return listAgentActivityViaRuntime(this._storeAccessorDeps(), params);
   }
 
   async listCommerceReceipts(params?: ListCommerceReceiptsParams): Promise<CommerceReceiptRecord[]> {
-    if (!this._commerceReceiptStore) return [];
-    return this._commerceReceiptStore.list(params);
+    return listCommerceReceiptsViaRuntime(this._storeAccessorDeps(), params);
   }
 
   async recordCommerceReceipt(params: RecordCommerceReceiptParams): Promise<CommerceReceiptRecord> {
@@ -4588,16 +4593,11 @@ class NodeServiceImpl implements NodeService {
   }
 
   async listAgentCards(): Promise<CachedAgentCardSummary[]> {
-    if (!this._agentCardStore) return [];
-    const rows = await this._agentCardStore.list();
-    return rows.map((row) => summarizeAgentCard(row));
+    return listAgentCardsViaRuntime(this._storeAccessorDeps());
   }
 
   async getAgentCard(ownerId: string): Promise<CachedAgentCardSummary | undefined> {
-    if (!this._agentCardStore) return undefined;
-    const row = await this._agentCardStore.get(ownerId.trim());
-    if (!row) return undefined;
-    return summarizeAgentCard(row);
+    return getAgentCardViaRuntime(this._storeAccessorDeps(), ownerId);
   }
 
   /**
@@ -4887,8 +4887,7 @@ class NodeServiceImpl implements NodeService {
   // ----- Phase 23A — Agent Circle CRUD -----
 
   async listAgentCircles(): Promise<AgentCircle[]> {
-    if (!this._circleStore) return [];
-    return this._circleStore.listCircles();
+    return listAgentCirclesViaRuntime(this._storeAccessorDeps());
   }
 
   async createAgentCircle(input: {
@@ -8140,7 +8139,18 @@ class NodeServiceImpl implements NodeService {
     };
   }
 
-  private _fleetPublicDeps(): any {
+  private _storeAccessorDeps(): any {
+    return {
+      getAgentActivityStore: () => this._agentActivityStore,
+      getCommerceReceiptStore: () => this._commerceReceiptStore,
+      getTaskStore: () => this._taskStore,
+      getAgentCardStore: () => this._agentCardStore,
+      getCircleStore: () => this._circleStore,
+      summarizeAgentCard: (row: any) => summarizeAgentCard(row),
+    };
+  }
+
+    private _fleetPublicDeps(): any {
     return {
       hasTaskStore: () => Boolean(this._taskStore),
       requireTaskStore: () => {
