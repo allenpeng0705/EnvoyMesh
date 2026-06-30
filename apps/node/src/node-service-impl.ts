@@ -495,6 +495,12 @@ import {
   runMeshAwarenessPassViaRuntime,
   type AgentPassesContext,
 } from "./node-service-agent-passes.js";
+import {
+  buildIntentHistoryFilePath,
+  buildPublishedLibraryFilePath,
+  IntentHistoryStore,
+  PublishedLibraryStore,
+} from "./node-service-persistence.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
@@ -6078,12 +6084,9 @@ class NodeServiceImpl implements NodeService {
   // via setPeerPublishedLibrary() (called by the test harness today, and
   // by the bond-handshake / agent.card sync in a follow-on). The circle
   // proposer and mesh-awareness worker read from this map.
-  private readonly _publishedLibrary = new Map<string, Array<{
-    title: string;
-    topicTags: string[];
-    sensitivity: string;
-    publishedAt: string;
-  }>>();
+  private readonly _publishedLibraryStore = new PublishedLibraryStore({
+    getFilePath: () => buildPublishedLibraryFilePath(this._profileDir),
+  });
 
   // -------------------------------------------------------------------
   // Phase 25D — Intent history (predictIntent source)
@@ -6092,88 +6095,36 @@ class NodeServiceImpl implements NodeService {
   // INTENT_HISTORY_MAX entries to keep memory bounded. Persisted to
   // disk so predictions survive restarts.
   private static readonly INTENT_HISTORY_MAX = 50;
-  private readonly _intentHistory: Array<{ intent: string; query: string; timestamp: string }> = [];
-
+  private readonly _intentHistoryStore = new IntentHistoryStore({
+    maxEntries: NodeServiceImpl.INTENT_HISTORY_MAX,
+    getFilePath: () => buildIntentHistoryFilePath(this._profileDir),
+  });
   private _intentHistoryFilePath(): string | null {
-    const dir = this._profileDir;
-    if (!dir) return null;
-    return join(dir, "intent-history.json");
+    return buildIntentHistoryFilePath(this._profileDir);
   }
 
   /** Record a recent intent event for prediction. */
   async recordIntent(intent: string, query: string): Promise<void> {
-    this._intentHistory.push({ intent, query, timestamp: new Date().toISOString() });
-    while (this._intentHistory.length > NodeServiceImpl.INTENT_HISTORY_MAX) {
-      this._intentHistory.shift();
-    }
-    const path = this._intentHistoryFilePath();
-    if (!path) return;
-    try {
-      await mkdir(dirname(path), { recursive: true });
-      await writeFile(
-        path,
-        JSON.stringify({ version: "0.1", history: this._intentHistory }, null, 2),
-        { mode: 0o600 },
-      );
-    } catch (err) {
-      // Best-effort persistence: in-memory history is updated regardless,
-      // so predictions work in-process. Log the error so disk issues
-      // surface during dev, but don't fail the calling turn.
-      console.warn("[intent-history] persist failed:", err instanceof Error ? err.message : err);
-    }
+    this._intentHistoryStore.record(intent, query);
+    await this._intentHistoryStore.persist();
   }
 
   /** Load intent history from disk (called at startup). */
   async loadIntentHistoryFromDisk(): Promise<void> {
-    const path = this._intentHistoryFilePath();
-    if (!path) return;
-    try {
-      const raw = await readFile(path, "utf8");
-      const parsed = JSON.parse(raw) as { history?: Array<{ intent: string; query: string; timestamp: string }> };
-      if (Array.isArray(parsed.history)) {
-        this._intentHistory.length = 0;
-        for (const entry of parsed.history.slice(-NodeServiceImpl.INTENT_HISTORY_MAX)) {
-          this._intentHistory.push(entry);
-        }
-      }
-    } catch {
-      // No persisted history yet
-    }
+    await this._intentHistoryStore.loadFromDisk();
   }
 
   private _publishedLibraryFilePath(): string | null {
-    const dir = this._profileDir;
-    if (!dir) return null;
-    return join(dir, "published-library.json");
+    return buildPublishedLibraryFilePath(this._profileDir);
   }
 
-  /** Persist the published library to disk. */
   private async _persistPublishedLibrary(): Promise<void> {
-    const path = this._publishedLibraryFilePath();
-    if (!path) return;
-    const snapshot: Array<{ ownerId: string; entries: Array<{ title: string; topicTags: string[]; sensitivity: string; publishedAt: string }> }> = [];
-    for (const [ownerId, entries] of this._publishedLibrary.entries()) {
-      snapshot.push({ ownerId, entries });
-    }
-    await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, JSON.stringify({ version: "0.1", snapshot }, null, 2), { mode: 0o600 });
+    await this._publishedLibraryStore.persist();
   }
 
   /** Restore the published library from disk (if present). */
   async loadPublishedLibraryFromDisk(): Promise<void> {
-    const path = this._publishedLibraryFilePath();
-    if (!path) return;
-    try {
-      const raw = await readFile(path, "utf8");
-      const parsed = JSON.parse(raw) as { snapshot?: Array<{ ownerId: string; entries: Array<{ title: string; topicTags: string[]; sensitivity: string; publishedAt: string }> }> };
-      if (Array.isArray(parsed.snapshot)) {
-        for (const { ownerId, entries } of parsed.snapshot) {
-          this._publishedLibrary.set(ownerId, entries);
-        }
-      }
-    } catch {
-      // No persisted library yet — that's fine.
-    }
+    await this._publishedLibraryStore.loadFromDisk();
   }
 
   async publishDocument(input: {
@@ -6183,16 +6134,8 @@ class NodeServiceImpl implements NodeService {
   }): Promise<{ title: string; topicTags: string[]; sensitivity: string; publishedAt: string }> {
     const ownerId = this._profile?.owner.ownerId;
     if (!ownerId) throw new Error("owner profile not loaded");
-    const entry = {
-      title: input.title,
-      topicTags: input.topicTags,
-      sensitivity: input.sensitivity ?? "public",
-      publishedAt: new Date().toISOString(),
-    };
-    const list = this._publishedLibrary.get(ownerId) ?? [];
-    list.push(entry);
-    this._publishedLibrary.set(ownerId, list);
-    await this._persistPublishedLibrary();
+    const entry = this._publishedLibraryStore.publish(input);
+    await this._publishedLibraryStore.persist();
     return entry;
   }
 
@@ -6201,24 +6144,18 @@ class NodeServiceImpl implements NodeService {
    * or by agent.card sync). Idempotent: replaces any prior entries for
    * the same ownerId.
    */
-  setPeerPublishedLibrary(
+  async setPeerPublishedLibrary(
     ownerId: string,
     entries: Array<{ title: string; topicTags: string[]; sensitivity: string; publishedAt?: string }>,
   ): Promise<void> {
     // Preserve the original `publishedAt` for each entry when present;
     // only fall back to "now" for entries that don't carry one (which is
     // the case when the harness or sync layer pushes them in).
-    this._publishedLibrary.set(
-      ownerId,
-      entries.map((e) => ({
-        ...e,
-        publishedAt: e.publishedAt ?? new Date().toISOString(),
-      })),
-    );
+    this._publishedLibraryStore.setForPeer(ownerId, entries);
     // Surface persistence failures to the caller so they can retry or
     // surface the error. The in-memory state is updated regardless, but
     // the caller's await will reject if the write fails.
-    return this._persistPublishedLibrary();
+    return this._publishedLibraryStore.persist();
   }
 
   /**
@@ -6226,12 +6163,7 @@ class NodeServiceImpl implements NodeService {
    * Returns [] for unknown owners.
    */
   private async _getContactTopicsFromLibrary(ownerId: string): Promise<string[]> {
-    const entries = this._publishedLibrary.get(ownerId) ?? [];
-    const tags = new Set<string>();
-    for (const e of entries) {
-      for (const t of e.topicTags) tags.add(t);
-    }
-    return Array.from(tags);
+    return this._publishedLibraryStore.getTopicsForContact(ownerId);
   }
 
   /**
@@ -6245,12 +6177,7 @@ class NodeServiceImpl implements NodeService {
     sensitivity: string;
     publishedAt: string;
   }> {
-    if (ownerId !== undefined) {
-      return [...(this._publishedLibrary.get(ownerId) ?? [])];
-    }
-    const all: Array<{ title: string; topicTags: string[]; sensitivity: string; publishedAt: string }> = [];
-    for (const list of this._publishedLibrary.values()) all.push(...list);
-    return all;
+    return this._publishedLibraryStore.getEntries(ownerId);
   }
 
   // -------------------------------------------------------------------
@@ -11444,7 +11371,7 @@ class NodeServiceImpl implements NodeService {
         // the live in-process intent history (persisted across restarts).
         if (!config?.intentPredictionEnabled) return [];
         return predictIntent(
-          this._intentHistory.slice(),
+          this._intentHistoryStore.getHistory(),
           partial,
           { maxPredictions: config?.prefetchMaxResults ?? 3 },
         );
@@ -13908,8 +13835,8 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     }
 
     // In-memory state
-    this._publishedLibrary.clear();
-    this._intentHistory.length = 0;
+    this._publishedLibraryStore.clear();
+    this._intentHistoryStore.clear();
     // Continuity sessions managed by load/save pattern
 
     // On-disk state — overwrite each file with an empty/initial payload.
