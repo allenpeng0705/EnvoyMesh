@@ -990,21 +990,25 @@ class NodeServiceImpl implements NodeService {
   /** Phase 40F — worker capability index for chain worker discovery. */
   private readonly _capabilityIndex = new CapabilityIndex();
   private _capabilityIndexReady: Promise<void> | null = null;
-  /** Phase 40F — worker-side pending bid expirations (subtaskId → bidExpiresAt). */
-  private readonly _chainPendingBidExpirations = new Map<string, string>();
-  /** Phase 40F — abort handles for background chain heartbeat trackers. */
-  private readonly _chainTrackAbort = new Map<string, AbortController>();
-  /** Phase 43A — worker-side cached subtasks from propose envelopes. */
-  private readonly _chainWorkerSubtasks = new Map<
-    string,
-    { subtask: import("@envoymesh/protocol").ChainSubtask; orchestratorPeerId: string }
-  >();
-  /** Phase 43C — debounced auto-evaluate timers per (chainId, subtaskId). */
-  private readonly _chainAutoEvaluateTimers = new Map<string, ReturnType<typeof setTimeout>>();
-  /** Phase 43B — goal text per chain for UI display. */
-  private readonly _chainGoals = new Map<string, string>();
-  /** Phase 43E — estimated cost range captured at plan time. */
-  private readonly _chainCostEstimates = new Map<string, { minUsd: number; maxUsd: number }>();
+  // ---------------------------------------------------------------
+  // Chain runtime state — bundle of 6 Map fields used by the chains
+  // orchestrator (see ./node-service-chains.ts). Grouped into a single
+  // sub-object so the field list is easier to read.
+  // ---------------------------------------------------------------
+  private readonly _chainState = {
+    pendingBidExpirations: new Map<string, string>(),
+    trackAbort: new Map<string, AbortController>(),
+    workerSubtasks: new Map<
+      string,
+      {
+        subtask: import("@envoymesh/protocol").ChainSubtask;
+        orchestratorPeerId: string;
+      }
+    >(),
+    autoEvaluateTimers: new Map<string, ReturnType<typeof setTimeout>>(),
+    goals: new Map<string, string>(),
+    costEstimates: new Map<string, { minUsd: number; maxUsd: number }>(),
+  } as const;
 
   /** Latest QR / `getPairingPayload` token for optional companion auto-pair (short TTL). */
   private _pairingToken: string | null = null;
@@ -10329,8 +10333,8 @@ class NodeServiceImpl implements NodeService {
         this._taskStore!.getChainReport(chainId) as never,
       pinChainReport: (chainId, pinned) =>
         this._taskStore!.pinChainReport(chainId, pinned),
-      getChainGoal: (chainId) => this._chainGoals.get(chainId),
-      getChainCostEstimate: (chainId) => this._chainCostEstimates.get(chainId),
+      getChainGoal: (chainId) => this._chainState.goals.get(chainId),
+      getChainCostEstimate: (chainId) => this._chainState.costEstimates.get(chainId),
       snapshotToResult: (snap) => this.snapshotToResult(snap),
       bidsBySubtask: (state) => this.bidsBySubtask(state),
       getNodeConfig: () => this.getNodeConfig(),
@@ -10526,7 +10530,7 @@ class NodeServiceImpl implements NodeService {
       audit: orchDeps.audit,
       nodeCapabilities,
       handleWorkerPropose: async (envelope, payload) => {
-        this._chainWorkerSubtasks.set(payload.subtask.subtaskId, {
+        this._chainState.workerSubtasks.set(payload.subtask.subtaskId, {
           subtask: payload.subtask,
           orchestratorPeerId: envelope.senderPeerId,
         });
@@ -10536,7 +10540,7 @@ class NodeServiceImpl implements NodeService {
       handleWorkerAccept: async (envelope, payload) => {
         const result = await handleWorkerAccept(workerDeps, envelope, payload);
         if (result.ok) {
-          let subtask = this._chainWorkerSubtasks.get(payload.award.subtaskId)?.subtask;
+          let subtask = this._chainState.workerSubtasks.get(payload.award.subtaskId)?.subtask;
           if (!subtask) {
             for (const rt of this._chainStore.listActive()) {
               subtask = rt.state.subtasks.get(payload.award.subtaskId);
@@ -10657,7 +10661,7 @@ class NodeServiceImpl implements NodeService {
         baseCostUsd: baseStrategy.baseCostUsd,
         capabilityLocalEtaMs: baseStrategy.capabilityLocalEtaMs,
       },
-      pendingBidExpirations: this._chainPendingBidExpirations,
+      pendingBidExpirations: this._chainState.pendingBidExpirations,
     };
   }
 
@@ -10667,7 +10671,7 @@ class NodeServiceImpl implements NodeService {
     if (!runtime || runtime.state.published || runtime.state.chainCancelled) return;
 
     const abort = new AbortController();
-    this._chainTrackAbort.set(chainId, abort);
+    this._chainState.trackAbort.set(chainId, abort);
 
     void (async () => {
       while (!abort.signal.aborted) {
@@ -10692,10 +10696,10 @@ class NodeServiceImpl implements NodeService {
   }
 
   private _stopChainTracking(chainId: string): void {
-    const abort = this._chainTrackAbort.get(chainId);
+    const abort = this._chainState.trackAbort.get(chainId);
     if (abort) {
       abort.abort();
-      this._chainTrackAbort.delete(chainId);
+      this._chainState.trackAbort.delete(chainId);
     }
   }
 
@@ -10803,21 +10807,21 @@ class NodeServiceImpl implements NodeService {
     if (!runtime) return;
     const state = this.snapshotToResult(chainStateSnapshot(runtime.state));
     state.bidsBySubtask = this.bidsBySubtask(runtime.state);
-    state.goal = this._chainGoals.get(chainId);
-    state.estimatedCostRange = this._chainCostEstimates.get(chainId);
+    state.goal = this._chainState.goals.get(chainId);
+    state.estimatedCostRange = this._chainState.costEstimates.get(chainId);
     state.budgetWarningLevel = chainBudgetWarningLevel(runtime.state);
     this.emit("chain:state", state);
   }
 
   private _scheduleAutoEvaluate(chainId: string, subtaskId: string): void {
     const key = `${chainId}::${subtaskId}`;
-    const existing = this._chainAutoEvaluateTimers.get(key);
+    const existing = this._chainState.autoEvaluateTimers.get(key);
     if (existing) clearTimeout(existing);
     const timer = setTimeout(() => {
-      this._chainAutoEvaluateTimers.delete(key);
+      this._chainState.autoEvaluateTimers.delete(key);
       void this._autoEvaluateSubtask(chainId, subtaskId);
     }, CHAIN_AUTO_EVALUATE_MS);
-    this._chainAutoEvaluateTimers.set(key, timer);
+    this._chainState.autoEvaluateTimers.set(key, timer);
   }
 
   private async _autoEvaluateSubtask(chainId: string, subtaskId: string): Promise<void> {
@@ -10888,7 +10892,7 @@ class NodeServiceImpl implements NodeService {
       signature: "stub",
     };
     const state = createChainState(mandate);
-    this._chainGoals.set(chainId, input.goal);
+    this._chainState.goals.set(chainId, input.goal);
     this._chainStore.setRuntime(chainId, {
       state,
       bidStrategy: { baseCostUsd: 1, capabilityLocalEtaMs: 60_000, reputationDiscount: 1, etaSlackMs: 60_000 },
@@ -10908,7 +10912,7 @@ class NodeServiceImpl implements NodeService {
       workersBySubtask[subtask.subtaskId] = candidates.slice(0, 3);
       maxWorkers = Math.max(maxWorkers, candidates.length);
     }
-    this._chainCostEstimates.set(
+    this._chainState.costEstimates.set(
       chainId,
       estimateChainCostRange({
         subtaskCount: plan.subtasks.length,
