@@ -1,0 +1,55 @@
+refactor: extract stopNode (Step 20c)
+
+Step 20c — extract the stopNode method from the Node Lifecycle section.
+The 88-line method collapses to a 3-line delegation. The runtime
+takes a StopNodeContext with 14 accessors covering status, mesh,
+timers, and the various stop hooks.
+
+  - stopNode (88 lines) -> 3-line delegation
+
+stopNodeViaRuntime semantics (preserved exactly):
+  - Returns early if status is "offline"
+  - Sets status to "stopping", emits node:status { status }, clears
+    in-flight profile requests
+  - In try:
+    - await stopPairingKiosk()
+    - call _stopRelayClientScheduler?.() + clear
+    - clear capability-discovery timer
+    - call _stopNodeStatsLogging?.() + clear
+    - clear bond-warm timer
+    - clear profile-refresh startup timer
+    - clear chat-room sync flush timer
+    - mesh.stop() + clear mesh, clear external mesh
+    - clear advertise-interests periodic + startup timeout
+  - catches + logs
+  - Sets status to "offline", emits node:status { status } + node:offline { peerId }
+
+Subtle preservation: the relay-bootstrap-peers array is NOT cleared,
+matching the original comment about QR-modal UX during restart.
+
+7 new unit tests in apps/node/test/node-service-stop.test.ts:
+  - returns early when status offline
+  - sets status 'stopping' + emits node:status
+  - clears profile-request-inflight + calls stop hooks
+  - stops mesh + clears it + clears external mesh
+  - clears advertise timers
+  - swallows errors from stopPairingKiosk + still emits offline
+  - emits node:offline with the device id
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2235 pass / 80 fail / 128 skip
+  (was 2228 / 80 / 128 — +7 new tests, 0 regressions)
+
+Net effect:
+- node-service-impl.ts: 12,650 -> 12,660 (+10 lines, +1.1% per this step
+  — the factory context is bigger than the savings for a tight
+  method like stopNode)
+- node-service-stop.ts: 93 lines (new runtime)
+- 22 commits on refactor/impl-clean
+
+Remaining Node Lifecycle pieces (Steps 20d-e):
+  - startNode (192 lines) — bootstrap + connect + start schedulers
+  - _wireMeshEvents (432 lines) — wires ~30 event handlers; hardest
+
+Cumulative: 14,247 -> 12,660 (-1,587, -11.14%)

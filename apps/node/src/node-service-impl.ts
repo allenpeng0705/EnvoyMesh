@@ -609,6 +609,10 @@ import {
   requireToolExecutionContextViaRuntime,
   type AgentSetupContext,
 } from "./node-service-agent-setup.js";
+import {
+  stopNodeViaRuntime,
+  type StopNodeContext,
+} from "./node-service-stop.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
@@ -7436,6 +7440,66 @@ class NodeServiceImpl implements NodeService {
     };
   }
 
+  private _stopNodeContext(): StopNodeContext {
+    return {
+      getNodeStatus: () => this._nodeStatus,
+      setNodeStatus: (s) => {
+        this._nodeStatus = s;
+      },
+      emit: (event, payload) => this.emit?.(event as never, payload as never),
+      clearProfileRequestInflight: () => this._profileRequestInflight.clear(),
+      stopPairingKiosk: () => this.stopPairingKiosk(),
+      getAndClearRelayClientSchedulerStop: () => {
+        const fn = this._stopRelayClientScheduler;
+        this._stopRelayClientScheduler = undefined;
+        return fn;
+      },
+      getAndClearCapabilityDiscoveryTimer: () => {
+        const t = this._capabilityDiscoveryTimer;
+        this._capabilityDiscoveryTimer = undefined;
+        return t;
+      },
+      getAndClearNodeStatsLoggingStop: () => {
+        const fn = this._stopNodeStatsLogging;
+        this._stopNodeStatsLogging = undefined;
+        return fn;
+      },
+      getAndClearBondWarmTimer: () => {
+        const t = this._bondWarmTimer;
+        this._bondWarmTimer = undefined;
+        return t;
+      },
+      getAndClearProfileRefreshStartupTimer: () => {
+        const t = this._profileRefreshStartupTimer;
+        this._profileRefreshStartupTimer = undefined;
+        return t;
+      },
+      getAndClearChatRoomSyncFlushTimer: () => {
+        const t = this._chatRoomSyncFlushTimer;
+        this._chatRoomSyncFlushTimer = null;
+        return t;
+      },
+      getMesh: () => this._mesh as never,
+      setMesh: (m) => {
+        this._mesh = m as never;
+      },
+      clearExternalMesh: () => {
+        this._externalMesh = undefined;
+      },
+      getAndClearAdvertiseInterestsTimer: () => {
+        const t = this._advertiseInterestsTimer;
+        this._advertiseInterestsTimer = undefined;
+        return t;
+      },
+      getAndClearAdvertiseInterestsStartupTimeout: () => {
+        const t = this._advertiseInterestsStartupTimeout;
+        this._advertiseInterestsStartupTimeout = undefined;
+        return t;
+      },
+      getDeviceId: () => this._profile?.device?.deviceId,
+    };
+  }
+
     private _manifestContext(): CapabilityManifestContext {
     return {
       getProfileDir: () => this._profileDir,
@@ -8517,61 +8581,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   async stopNode(): Promise<void> {
-    if (this._nodeStatus === "offline") {
-      return;
-    }
-
-    this._nodeStatus = "stopping";
-    this.emit("node:status", { status: this._nodeStatus });
-    this._profileRequestInflight.clear();
-
-    try {
-      await this.stopPairingKiosk();
-      this._stopRelayClientScheduler?.();
-      this._stopRelayClientScheduler = undefined;
-      if (this._capabilityDiscoveryTimer) {
-        clearTimeout(this._capabilityDiscoveryTimer);
-        this._capabilityDiscoveryTimer = undefined;
-      }
-      this._stopNodeStatsLogging?.();
-      this._stopNodeStatsLogging = undefined;
-      if (this._bondWarmTimer) {
-        clearInterval(this._bondWarmTimer);
-        this._bondWarmTimer = undefined;
-      }
-      if (this._profileRefreshStartupTimer) {
-        clearTimeout(this._profileRefreshStartupTimer);
-        this._profileRefreshStartupTimer = undefined;
-      }
-      if (this._chatRoomSyncFlushTimer) {
-        clearInterval(this._chatRoomSyncFlushTimer);
-        this._chatRoomSyncFlushTimer = null;
-      }
-      // Don't clear _relayBootstrapPeers — keep the last known relay list so
-      // getPairingPayload() can still return useful fallback addresses if called
-      // during a brief stop/start window (e.g. QR modal open during node restart).
-      if (this._mesh) {
-        await this._mesh.stop();
-        this._mesh = undefined;
-      }
-      this._externalMesh = undefined;
-      // Clear periodic re-advertisement timer
-      if (this._advertiseInterestsTimer) {
-        clearInterval(this._advertiseInterestsTimer);
-        this._advertiseInterestsTimer = undefined;
-      }
-      // Clear startup timeout
-      if (this._advertiseInterestsStartupTimeout) {
-        clearTimeout(this._advertiseInterestsStartupTimeout);
-        this._advertiseInterestsStartupTimeout = undefined;
-      }
-    } catch (error) {
-      console.error("[node-service] Error stopping mesh:", error);
-    }
-
-    this._nodeStatus = "offline";
-    this.emit("node:status", { status: this._nodeStatus });
-    this.emit("node:offline", { peerId: this._profile?.device?.deviceId ?? "" });
+    return stopNodeViaRuntime(this._stopNodeContext());
   }
 
   // ============================================
