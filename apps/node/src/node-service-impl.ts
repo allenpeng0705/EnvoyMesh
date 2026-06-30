@@ -1124,31 +1124,31 @@ class NodeServiceImpl implements NodeService {
     { peerId: string; listenAddrs?: string[] }
   >();
   private readonly _inboundListenAddrMergeByPeer = new Map<string, number>();
-  /** Inbound push offers waiting for accept/decline — keyed by preview message id. */
-  private readonly _pendingInboundShareOffers = new Map<string, ShareOffer>();
-  /** Pending vault-relative rename on receive: key `senderPeerId + \\n + voucher source path`
-   * (matches {@link DataTransferVoucher} `relativePath` from sender).
-   */
-  private readonly _pendingDataTransferSavePath = new Map<string, string>();
-  /** Vault paths for 1:1 chat attachments when transfer completes before chat.message is persisted. */
-  private readonly _deferredDirectChatAttachmentVaultPath = new Map<string, string>();
-  /** Share / data-transfer correlation ids for progress tracking (ADB-D). */
-  private readonly _transferTracker = new TransferTracker();
-  private readonly _correlationByRequestMsgId = new Map<string, string>();
-  private readonly _correlationByPreviewMsgId = new Map<string, string>();
-  /** Inbound accept waiting for bytes — keyed by preview/share id. */
-  private readonly _inboundTransferByShareId = new Map<
-    string,
-    {
-      senderNodeId: string;
-      senderVaultRelativePath: string;
-      savePath: string;
-      senderOwnerId?: string;
-      chatRoomId?: string;
-      chatMessageId?: string;
-      chatAttachmentId?: string;
-    }
-  >();
+  // ---------------------------------------------------------------
+  // Transfer / file-share state — bundle of 7 Maps + 1 TransferTracker
+  // used by the file-sharing runtime (see ./node-service-fileshare.ts).
+  // Grouped into a single sub-object so the field list is easier to read.
+  // ---------------------------------------------------------------
+  private readonly _transferState = {
+    pendingInboundShareOffers: new Map<string, ShareOffer>(),
+    pendingDataTransferSavePath: new Map<string, string>(),
+    deferredDirectChatAttachmentVaultPath: new Map<string, string>(),
+    transferTracker: new TransferTracker(),
+    correlationByRequestMsgId: new Map<string, string>(),
+    correlationByPreviewMsgId: new Map<string, string>(),
+    inboundTransferByShareId: new Map<
+      string,
+      {
+        senderNodeId: string;
+        senderVaultRelativePath: string;
+        savePath: string;
+        senderOwnerId?: string;
+        chatRoomId?: string;
+        chatMessageId?: string;
+        chatAttachmentId?: string;
+      }
+    >(),
+  } as const;
 
   // Event listeners - stored for later emission
   private readonly listeners = new Map<keyof NodeServiceEvents, Set<(...args: any[]) => void>>();
@@ -1362,17 +1362,17 @@ class NodeServiceImpl implements NodeService {
   }
 
   private _upsertTransferStatus(status: TransferStatus): TransferStatus {
-    const saved = this._transferTracker.upsert(status);
+    const saved = this._transferState.transferTracker.upsert(status);
     this.emit("share:progress", saved);
     return saved;
   }
 
   async listActiveTransfers(): Promise<TransferStatus[]> {
-    return this._transferTracker.listActive();
+    return this._transferState.transferTracker.listActive();
   }
 
   async getTransferStatus(correlationId: string): Promise<TransferStatus | undefined> {
-    return this._transferTracker.get(correlationId);
+    return this._transferState.transferTracker.get(correlationId);
   }
 
   /** After inbound 1:1 chat.message is persisted, apply deferred vault paths from early transfers. */
@@ -1394,12 +1394,12 @@ class NodeServiceImpl implements NodeService {
     relativePath: string;
     totalBytes: number;
   }): void {
-    for (const [shareId, pending] of this._inboundTransferByShareId.entries()) {
+    for (const [shareId, pending] of this._transferState.inboundTransferByShareId.entries()) {
       if (pending.senderNodeId !== input.remotePeerId) continue;
       if (pending.savePath !== input.relativePath && pending.senderVaultRelativePath !== input.relativePath) {
         continue;
       }
-      const correlationId = this._correlationByPreviewMsgId.get(shareId) ?? shareId;
+      const correlationId = this._transferState.correlationByPreviewMsgId.get(shareId) ?? shareId;
       this._upsertTransferStatus({
         correlationId,
         phase: "verified",
@@ -1410,7 +1410,7 @@ class NodeServiceImpl implements NodeService {
         vaultRelativePath: input.relativePath,
         updatedAt: new Date().toISOString(),
       });
-      this._inboundTransferByShareId.delete(shareId);
+      this._transferState.inboundTransferByShareId.delete(shareId);
       if (pending.chatRoomId && pending.chatMessageId && pending.chatAttachmentId) {
         void this._applyRoomAttachmentVaultPath({
           roomId: pending.chatRoomId,
@@ -1464,10 +1464,10 @@ class NodeServiceImpl implements NodeService {
     console.log(
       `[share] linked preview ${previewMessageId.slice(0, 12)}… → file send ${pending.relativePath} to ${pending.toPeerId.slice(0, 12)}…`,
     );
-    const correlationId = this._correlationByRequestMsgId.get(inReplyToRequestMsgId);
+    const correlationId = this._transferState.correlationByRequestMsgId.get(inReplyToRequestMsgId);
     if (correlationId) {
-      this._correlationByPreviewMsgId.set(previewMessageId, correlationId);
-      this._correlationByRequestMsgId.delete(inReplyToRequestMsgId);
+      this._transferState.correlationByPreviewMsgId.set(previewMessageId, correlationId);
+      this._transferState.correlationByRequestMsgId.delete(inReplyToRequestMsgId);
     }
     const deferred = this._deferredShareAcceptByPreviewId.get(previewMessageId);
     if (deferred) {
@@ -1505,10 +1505,10 @@ class NodeServiceImpl implements NodeService {
       relativePath: pending.peerRelativePath,
       deliveryChannel: "inbox",
     });
-    const correlationId = this._correlationByRequestMsgId.get(input.inReplyToRequestMsgId);
+    const correlationId = this._transferState.correlationByRequestMsgId.get(input.inReplyToRequestMsgId);
     if (correlationId) {
-      this._correlationByPreviewMsgId.set(input.previewMessageId, correlationId);
-      this._correlationByRequestMsgId.delete(input.inReplyToRequestMsgId);
+      this._transferState.correlationByPreviewMsgId.set(input.previewMessageId, correlationId);
+      this._transferState.correlationByRequestMsgId.delete(input.inReplyToRequestMsgId);
     }
     return true;
   }
@@ -1567,7 +1567,7 @@ class NodeServiceImpl implements NodeService {
       chatMessageId: input.chatMessageId,
       chatAttachmentId: input.chatAttachmentId,
     };
-    this._pendingInboundShareOffers.set(input.shareId, offer);
+    this._transferState.pendingInboundShareOffers.set(input.shareId, offer);
     if (input.deliveryChannel !== "chat") {
       this.emit("share:offered", offer);
     }
@@ -1575,13 +1575,13 @@ class NodeServiceImpl implements NodeService {
 
   clearPendingShareStateForPreview(previewMessageId: string): void {
     this._pendingFileSendByPreviewMsgId.delete(previewMessageId);
-    const offer = this._pendingInboundShareOffers.get(previewMessageId);
+    const offer = this._transferState.pendingInboundShareOffers.get(previewMessageId);
     if (offer?.senderVaultRelativePath) {
-      this._pendingDataTransferSavePath.delete(
+      this._transferState.pendingDataTransferSavePath.delete(
         `${offer.senderNodeId}\n${offer.senderVaultRelativePath.replace(/^[\\/]+/, "")}`,
       );
     }
-    this._pendingInboundShareOffers.delete(previewMessageId);
+    this._transferState.pendingInboundShareOffers.delete(previewMessageId);
   }
 
   /**
@@ -1589,13 +1589,13 @@ class NodeServiceImpl implements NodeService {
    */
   resolveInboundDataTransferRelativePath(remotePeerId: string, voucherRelativePath: string): string {
     const norm = voucherRelativePath.replace(/^[\\/]+/, "");
-    const o = this._pendingDataTransferSavePath.get(`${remotePeerId}\n${norm}`);
+    const o = this._transferState.pendingDataTransferSavePath.get(`${remotePeerId}\n${norm}`);
     return o ?? norm;
   }
 
   consumeInboundDataTransferSaveMapping(remotePeerId: string, voucherSourceRelativePath: string): void {
     const norm = voucherSourceRelativePath.replace(/^[\\/]+/, "");
-    this._pendingDataTransferSavePath.delete(`${remotePeerId}\n${norm}`);
+    this._transferState.pendingDataTransferSavePath.delete(`${remotePeerId}\n${norm}`);
   }
 
   async maybeSendShareFileForInboundAccept(input: {
@@ -1655,7 +1655,7 @@ class NodeServiceImpl implements NodeService {
     }
 
     const correlationId =
-      this._correlationByPreviewMsgId.get(previewId) ?? input.envelope.correlationId ?? previewId;
+      this._transferState.correlationByPreviewMsgId.get(previewId) ?? input.envelope.correlationId ?? previewId;
     this._upsertTransferStatus({
       correlationId,
       phase: "transferring",
@@ -4063,13 +4063,13 @@ class NodeServiceImpl implements NodeService {
       vaultPath,
     );
     if (!updated) {
-      this._deferredDirectChatAttachmentVaultPath.set(
+      this._transferState.deferredDirectChatAttachmentVaultPath.set(
         deferredDirectChatAttachmentKey(threadPeerOwnerId, input.messageId, input.attachmentId),
         vaultPath,
       );
       return;
     }
-    this._deferredDirectChatAttachmentVaultPath.delete(
+    this._transferState.deferredDirectChatAttachmentVaultPath.delete(
       deferredDirectChatAttachmentKey(threadPeerOwnerId, input.messageId, input.attachmentId),
     );
     await this._emitDirectChatMessageAfterAttachmentUpdate(threadPeerOwnerId, input.messageId);
@@ -4090,7 +4090,7 @@ class NodeServiceImpl implements NodeService {
         message.messageId,
         attachment.id,
       );
-      const vaultPath = this._deferredDirectChatAttachmentVaultPath.get(key);
+      const vaultPath = this._transferState.deferredDirectChatAttachmentVaultPath.get(key);
       if (!vaultPath) continue;
       const updated = await this._chatLogStore.updateAttachmentVaultPath(
         threadPeerOwnerId,
@@ -4099,7 +4099,7 @@ class NodeServiceImpl implements NodeService {
         vaultPath,
       );
       if (!updated) continue;
-      this._deferredDirectChatAttachmentVaultPath.delete(key);
+      this._transferState.deferredDirectChatAttachmentVaultPath.delete(key);
       changed = true;
     }
     if (!changed) return;
@@ -7525,7 +7525,7 @@ class NodeServiceImpl implements NodeService {
         });
       },
       setCorrelationByRequestMsgId: (messageId, correlationId) => {
-        this._correlationByRequestMsgId.set(messageId, correlationId);
+        this._transferState.correlationByRequestMsgId.set(messageId, correlationId);
       },
       upsertTransferStatus: (status) => {
         this._upsertTransferStatus(status as never);
@@ -7636,7 +7636,7 @@ class NodeServiceImpl implements NodeService {
   
 
   async listPendingShareOffers(): Promise<ShareOffer[]> {
-    return [...this._pendingInboundShareOffers.values()];
+    return [...this._transferState.pendingInboundShareOffers.values()];
   }
 
   async shareFile(
@@ -7698,7 +7698,7 @@ class NodeServiceImpl implements NodeService {
     this.recordOwnerActivity();
     const mesh = this._requireMesh();
     const profile = this._requireProfile();
-    const offer = this._pendingInboundShareOffers.get(shareId);
+    const offer = this._transferState.pendingInboundShareOffers.get(shareId);
     if (!offer) {
       throw new Error(`No pending share offer for id=${shareId}`);
     }
@@ -7712,7 +7712,7 @@ class NodeServiceImpl implements NodeService {
       if (!isSafeVaultPath(this._vaultDir, saveNorm)) {
         throw new Error("Invalid save path");
       }
-      this._pendingDataTransferSavePath.set(`${offer.senderNodeId}\n${srcKey}`, saveNorm);
+      this._transferState.pendingDataTransferSavePath.set(`${offer.senderNodeId}\n${srcKey}`, saveNorm);
     }
 
     const records = await this._peerDirectoryStore.listPeerRecords();
@@ -7745,8 +7745,8 @@ class NodeServiceImpl implements NodeService {
     const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as EnvoyEnvelope;
     await this._deliverCallEnvelope(offer.senderNodeId, envelope, dialHints, rec?.listenAddrs);
     void this._tagBondedContactReachability(offer.senderNodeId);
-    this._correlationByPreviewMsgId.set(shareId, shareId);
-    this._inboundTransferByShareId.set(shareId, {
+    this._transferState.correlationByPreviewMsgId.set(shareId, shareId);
+    this._transferState.inboundTransferByShareId.set(shareId, {
       senderNodeId: offer.senderNodeId,
       senderVaultRelativePath: srcKey,
       savePath: saveNorm || srcKey || offer.filename,
@@ -7763,7 +7763,7 @@ class NodeServiceImpl implements NodeService {
       vaultRelativePath: saveNorm || srcKey || offer.filename,
       updatedAt: new Date().toISOString(),
     });
-    this._pendingInboundShareOffers.delete(shareId);
+    this._transferState.pendingInboundShareOffers.delete(shareId);
     const emitPath = saveNorm || srcKey || offer.filename;
     this.emit("share:accepted", { shareId, savePath: emitPath });
   }
@@ -7773,7 +7773,7 @@ class NodeServiceImpl implements NodeService {
     this.recordOwnerActivity();
     const mesh = this._requireMesh();
     const profile = this._requireProfile();
-    const offer = this._pendingInboundShareOffers.get(shareId);
+    const offer = this._transferState.pendingInboundShareOffers.get(shareId);
     if (!offer) {
       throw new Error(`No pending share offer for id=${shareId}`);
     }
@@ -7803,7 +7803,7 @@ class NodeServiceImpl implements NodeService {
     });
     const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as EnvoyEnvelope;
     await this._deliverCallEnvelope(offer.senderNodeId, envelope, dialHints, rec?.listenAddrs);
-    this._pendingInboundShareOffers.delete(shareId);
+    this._transferState.pendingInboundShareOffers.delete(shareId);
     this.emit("share:declined", { shareId });
   }
 

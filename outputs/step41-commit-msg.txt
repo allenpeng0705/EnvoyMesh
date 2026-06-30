@@ -1,0 +1,35 @@
+refactor: group 7 transfer-related state fields into _transferState (Step 41)
+
+Step 41 — field-grouping refactor. Bundle 7 fields used by the
+file-sharing runtime into a single typed sub-object `_transferState`.
+
+Fields moved:
+  - _pendingInboundShareOffers → _transferState.pendingInboundShareOffers
+  - _pendingDataTransferSavePath → _transferState.pendingDataTransferSavePath
+  - _deferredDirectChatAttachmentVaultPath →
+    _transferState.deferredDirectChatAttachmentVaultPath
+  - _transferTracker → _transferState.transferTracker
+  - _correlationByRequestMsgId → _transferState.correlationByRequestMsgId
+  - _correlationByPreviewMsgId → _transferState.correlationByPreviewMsgId
+  - _inboundTransferByShareId → _transferState.inboundTransferByShareId
+
+32 access sites updated in total.
+
+Benefits:
+  - Cohesion: 7 related fields now grouped together so they're
+    visually associated with their use case (transfer/file-share).
+  - Comments at the field declaration site now describe the GROUP
+    rather than scattered Phase-N comments per field.
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2277 pass / 81 fail / 128 skip
+  (no regression)
+
+Net effect:
+- node-service-impl.ts: 11,708 -> 11,708 (0 lines — the typed
+  sub-object literal with explicit type annotations is the same
+  length as the 7 separate declarations)
+- 45 commits on refactor/impl-clean
+
+Cumulative: 14,247 -> 11,708 (-2,539, -17.81%)
