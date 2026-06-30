@@ -484,6 +484,10 @@ import {
   revokeFleetManifestViaRuntime,
 } from "./node-service-fleet-manifest.js";
 import { discoverAndClusterViaRuntime } from "./node-service-discovery-clusterer.js";
+import {
+  formatMeshIntelligenceReport,
+  meshIntelligenceReportViaRuntime,
+} from "./node-service-mesh-intelligence.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
@@ -6032,76 +6036,14 @@ class NodeServiceImpl implements NodeService {
 
   // Phase 28 — Mesh Intelligence Report
   async generateMeshIntelligenceReport(): Promise<string> {
-    const { generateMeshIntelligenceReport } = await import("./mesh-intelligence.js");
-    const config = await this._configStore.load();
-    const bonds = await this.getBonds();
-    const ownerTopics: string[] = [];
-    const scores = new Map<string, number>();
-
-    const report = await generateMeshIntelligenceReport(
+    const report = await meshIntelligenceReportViaRuntime(
       {
-        scanBondedPeers: async () =>
-          bonds.map((b) => ({
-            ownerId: b.peerOwnerId,
-            displayName: b.displayName ?? b.peerOwnerId,
-            topics: [] as string[],
-            capabilities: [],
-            bondLevel: b.level,
-          })),
-        scanDiscovery: async (topics: string[], caps: string[]) => {
-          try {
-            const { generateDiscoveryClusters } = await import("./discovery-clusterer.js");
-            const bonds = await this.getBonds();
-            const clusters = await generateDiscoveryClusters(
-              {
-                broadcastDocumentDiscovery: async () => [],
-                broadcastCapabilityDiscovery: async () => [],
-                getBondedOwnerIds: async () => new Set(bonds.map((b) => b.peerOwnerId)),
-              },
-              { seedTopics: topics, seedCapabilities: caps, minClusterSize: 2, maxClusters: 3, maxHops: 1 },
-            );
-            const peers: Array<{ ownerId: string; displayName?: string; topics: string[]; capabilities: string[]; bondLevel?: string }> = [];
-            for (const cluster of clusters) {
-              for (const peer of cluster.peers) {
-                peers.push({ ownerId: peer.ownerId, displayName: peer.displayName, topics: peer.topics, capabilities: peer.capabilities, bondLevel: "public" });
-              }
-            }
-            return peers;
-          } catch { return []; }
-        },
-        getReputationScores: async () => scores,
-        findDormantBonds: async (thresholdDays: number) => {
-          const { findDormantBonds } = await import("./bond-steward.js");
-          const result = await findDormantBonds(
-            { getBonds: async () => bonds, getLastInteractionAt: async () => { throw new Error("not implemented"); } },
-            thresholdDays,
-          );
-          return result.dormantBonds.map((b) => ({
-            ownerId: b.peerOwnerId,
-            displayName: b.displayName,
-            topics: [],
-            capabilities: [],
-          }));
-        },
-        findSecondDegreeConnections: async () => [],
-        generateNarrative: async (prompt: string) => {
-          try {
-            return await this.knowledgeQuery(prompt);
-          } catch {
-            return "Unable to generate narrative — model not available.";
-          }
-        },
+        getBonds: () => this.getBonds(),
+        generateNarrative: (prompt) => this.knowledgeQuery(prompt),
       },
-      { ownerTopics, ownerCapabilities: [] },
+      {},
     );
-
-    return [
-      `## ${report.title}`,
-      `Generated: ${report.generatedAt}`,
-      `Analyzed: ${report.peersAnalyzed} peers`,
-      "",
-      ...report.sections.map((s) => `### ${s.heading}\n${s.content}`),
-    ].join("\n");
+    return formatMeshIntelligenceReport(report);
   }
 
   // Phase 27 — Proactive agent pass

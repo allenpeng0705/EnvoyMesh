@@ -1,0 +1,29 @@
+refactor: extract mesh intelligence report to node-service-mesh-intelligence.ts
+
+Step 2 of the node-service-impl.ts extraction plan.
+
+- New runtime module: apps/node/src/node-service-mesh-intelligence.ts (167 lines)
+  - Typed MeshIntelligenceContext { getBonds, generateNarrative }
+  - meshIntelligenceReportViaRuntime(ctx, opts) — orchestrates scanBondedPeers,
+    scanDiscovery, findDormantBonds, findSecondDegreeConnections, generateNarrative
+  - formatMeshIntelligenceReport(report) — markdown rendering
+  - Internal helpers: scanBondedPeersImpl, scanDiscoveryImpl,
+    findDormantBondsImpl, buildDeps
+- Class method NodeServiceImpl.generateMeshIntelligenceReport reduced
+  from 72 lines to 11 lines: build tiny context, call runtime, format.
+- node-service-impl.ts: 14171 -> 14113 lines (-58)
+- 12 new unit tests cover:
+  - opts forwarding + default empty arrays
+  - scanBondedPeers bond-to-peer shape mapping (displayName fallback)
+  - scanDiscovery clusterer call + peer flattening + bondLevel: "public"
+  - scanDiscovery error swallowing (returns [])
+  - findDormantBonds steward call + result re-shaping
+  - findSecondDegreeConnections returns [] (not yet wired)
+  - getReputationScores returns empty Map (not yet wired)
+  - generateNarrative pass-through + model-offline fallback
+  - formatMeshIntelligenceReport with sections + empty sections
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2055 pass / 79 fail / 128 skip
+  (was 2043 / 79 / 128 — +12 new tests, 0 regressions)
