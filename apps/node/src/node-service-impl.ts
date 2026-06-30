@@ -635,6 +635,10 @@ import {
   pairDeviceViaRuntime,
   type PairDeviceContext,
 } from "./node-service-handlers-pair-device.js";
+import {
+  pairSharedIdentityViaRuntime,
+  type PairSharedIdentityContext,
+} from "./node-service-handlers-pair-shared-identity.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
@@ -8102,6 +8106,23 @@ class NodeServiceImpl implements NodeService {
     };
   }
 
+  private _pairSharedIdentityContext(): PairSharedIdentityContext {
+    return {
+      requireProfile: () => this._requireProfile(),
+      validatePairingToken: (token) => this.validatePairingToken(token),
+      consumeCompanyInvite: (token, ownerId, deviceId) =>
+        this._consumeCompanyInviteOrThrow(token, ownerId, deviceId),
+      setTrustRecordDirect: (record) =>
+        this._trustStore.setTrustRecord(record as never).then(() => undefined) as Promise<void>,
+      mergeInboundDeviceBinding: (input) =>
+        this._peerDirectoryStore.mergeInboundDeviceBinding(input),
+      getSessionTokenStore: () => (this._sessionTokenStore as never) ?? null,
+      getDeviceAuthorizationStore: () =>
+        (this._deviceAuthorizationStore as never) ?? null,
+      getBridgeStatus: () => this.getBridgeStatus(),
+    };
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async _handleInboundMessage(params: any): Promise<void> {
     const { envelope, remotePeerId, remoteAddr, replyWithEnvelope } = params as any;
@@ -9381,117 +9402,12 @@ class NodeServiceImpl implements NodeService {
    * owner identity (same ownerId on both devices).
    */
   async pairSharedIdentity(params: PairSharedIdentityParams): Promise<PairSharedIdentityResult> {
-    const { requesterOwnerId, requesterDeviceId, requesterDevicePublicKeyPem, keyExchangePublicKey, pairingToken } = params;
-
-    if (!requesterOwnerId || !requesterDeviceId || !requesterDevicePublicKeyPem || !keyExchangePublicKey || !pairingToken) {
-      throw new Error("Missing required pairSharedIdentity params");
-    }
-
-    // Verify the ownerId matches — shared identity means the mobile claims the same owner
-    const profile = this._requireProfile();
-    if (requesterOwnerId !== profile.owner.ownerId) {
-      throw new Error(`ownerId mismatch — expected ${profile.owner.ownerId}, got ${requesterOwnerId}`);
-    }
-
-    // Validate the QR pairing token
-    const valid = await this.validatePairingToken(pairingToken);
-    if (!valid) {
-      throw new Error("Invalid or expired pairing token");
-    }
-
-    // Phase 35A: atomically consume a company-invite token (replay guard).
-    await this._consumeCompanyInviteOrThrow(
-      pairingToken,
-      requesterOwnerId,
-      requesterDeviceId,
+    return pairSharedIdentityViaRuntime(
+      this._pairSharedIdentityContext(),
+      createDeviceCertificate as never,
+      encryptOwnerKeyForDevice as never,
+      params,
     );
-
-    // Sign a device certificate authorizing this mobile device
-    const deviceCert = createDeviceCertificate({
-      owner: {
-        ownerId: profile.owner.ownerId,
-        publicKeyPem: profile.owner.publicKeyPem,
-        privateKeyPem: profile.owner.privateKeyPem,
-      },
-      device: {
-        deviceId: requesterDeviceId,
-        publicKeyPem: requesterDevicePublicKeyPem,
-        privateKeyPem: "", // mobile keeps its private key; only public part is certified
-      },
-      deviceProfile: "satellite",
-      capabilities: ["mesh.listen", "message.send", "device.sync"],
-    });
-
-    // ECDH-encrypt the owner private key for the mobile device
-    const keyExchangePubKeyBytes = Buffer.from(keyExchangePublicKey, "base64url");
-    const encrypted = await encryptOwnerKeyForDevice(
-      profile.owner.privateKeyPem,
-      keyExchangePubKeyBytes,
-    );
-
-    // Create trust record at "direct" level (same as pairDevice)
-    await this._trustStore.setTrustRecord({
-      peerOwnerId: requesterOwnerId,
-      level: "direct",
-      displayName: "Mobile (shared identity)",
-      note: "pairSharedIdentity",
-      now: new Date().toISOString(),
-    });
-
-    // Bind device key only — libp2p transport id is learned from mobile relay checkin / inbound streams.
-    await this._peerDirectoryStore.mergeInboundDeviceBinding({
-      ownerId: requesterOwnerId,
-      peerId: derivePeerId(requesterDevicePublicKeyPem),
-      devicePublicKeyPem: requesterDevicePublicKeyPem,
-    }).catch(() => undefined);
-
-    // Generate persistent session token
-    const sessionToken = randomUUID();
-    const now = new Date().toISOString();
-    if (this._sessionTokenStore) {
-      await this._sessionTokenStore.setToken({
-        token: sessionToken,
-        ownerId: requesterOwnerId,
-        deviceId: requesterDeviceId,
-        displayName: "Mobile (shared identity)",
-        createdAt: now,
-        lastUsedAt: now,
-      });
-    }
-
-    if (this._deviceAuthorizationStore) {
-      await this._deviceAuthorizationStore.registerAuthorizedDevice({
-        deviceId: requesterDeviceId,
-        devicePublicKeyPem: requesterDevicePublicKeyPem,
-        certificateId: deviceCert.certificateId,
-        deviceProfile: "satellite",
-        displayName: "Mobile (shared identity)",
-        pairedAt: now,
-      });
-    }
-
-    const bridgeStatus = await this.getBridgeStatus();
-    const result: PairSharedIdentityResult = {
-      sessionToken,
-      deviceCertificate: deviceCert as unknown as Record<string, unknown>,
-      encryptedOwnerKey: encrypted.encryptedKey,
-      ephemeralPublicKey: encrypted.ephemeralPublicKey,
-      iv: encrypted.iv,
-      authTag: encrypted.authTag,
-      ownerPublicKey: profile.owner.publicKeyPem,
-      ownerId: profile.owner.ownerId,
-    };
-    if (bridgeStatus.enabled) {
-      result.agentPeerId = bridgeStatus.agentPeerId;
-      if (bridgeStatus.agentPublicKeyPem) {
-        result.agentPubKey = bridgeStatus.agentPublicKeyPem;
-      }
-      if (bridgeStatus.agentName?.trim()) {
-        result.agentName = bridgeStatus.agentName.trim();
-      }
-    }
-
-    return result;
   }
 
   /** Mobile → Home: Update the mobile's reachable listen addresses (from UPnP).
