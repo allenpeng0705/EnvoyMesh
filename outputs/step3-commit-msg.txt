@@ -1,0 +1,33 @@
+refactor: extract proactive agent pass to node-service-proactive-agent.ts
+
+Step 3 of the node-service-impl.ts extraction plan.
+
+- New runtime module: apps/node/src/node-service-proactive-agent.ts (112 lines)
+  - Typed ProactiveAgentContext { runMeshAwareness, runConnectionSuggester,
+    getBonds, getDormantThresholdDays }
+  - ProactiveInsight + MeshAwarenessRow + ConnectionSuggestionRow
+    row types (subset of class return shapes)
+  - runProactiveAgentPassViaRuntime(ctx) — fan-out aggregation
+    with try/catch around each sub-pass
+- Class method NodeServiceImpl.runProactiveAgentPass reduced
+  from 47 lines to 11 lines: build tiny context, call runtime.
+- node-service-impl.ts: 14113 -> 14078 lines (-35)
+- 10 new unit tests cover:
+  - empty-all-sub-passes path
+  - mesh-awareness flattening
+  - connection-suggestion flattening (peerCount: 1)
+  - dormant_bonds insight only when steward reports >0
+  - threshold passes through (not hard-coded)
+  - mesh-awareness error swallowed, others succeed
+  - connection-suggester error swallowed, others succeed
+  - dormant-bond error swallowed, others succeed
+  - order preserved: mesh -> connections -> dormant
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2065 pass / 79 fail / 128 skip
+  (was 2055 / 79 / 128 — +10 new tests, 0 regressions)
+
+Note: one pre-existing flaky test (importFleetManifestViaRuntime >
+rejects a manifest with a bad signature) passed in this run, so the
+net delta is +10 pass / -0 fail vs the previous baseline of 2055/79.

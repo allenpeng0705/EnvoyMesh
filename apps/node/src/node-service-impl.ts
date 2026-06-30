@@ -488,6 +488,7 @@ import {
   formatMeshIntelligenceReport,
   meshIntelligenceReportViaRuntime,
 } from "./node-service-mesh-intelligence.js";
+import { runProactiveAgentPassViaRuntime } from "./node-service-proactive-agent.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
@@ -6048,51 +6049,15 @@ class NodeServiceImpl implements NodeService {
 
   // Phase 27 — Proactive agent pass
   async runProactiveAgentPass(): Promise<Array<{ kind: string; summary: string; matchedTopic: string; peerCount: number }>> {
-    const insights: Array<{ kind: string; summary: string; matchedTopic: string; peerCount: number }> = [];
-
-    // Run mesh awareness
-    try {
-      const awarenessInsights = await this.runMeshAwarenessPass();
-      for (const insight of awarenessInsights) {
-        insights.push({ kind: "mesh_activity", summary: insight.summary, matchedTopic: insight.matchedTopic, peerCount: insight.peerCount });
-      }
-    } catch { /* mesh awareness optional */ }
-
-    // Run connection suggestions
-    try {
-      const suggestions = await this.runConnectionSuggesterPass();
-      for (const s of suggestions) {
-        insights.push({
-          kind: "connection_suggested",
-          summary: `Suggested connection: ${s.remoteDisplayName} — ${s.reason}`,
-          matchedTopic: s.reason,
-          peerCount: 1,
-        });
-      }
-    } catch { /* connection suggestions optional */ }
-
-    // Check dormant bonds
-    try {
-      const config = await this._configStore.load();
-      const { findDormantBonds } = await import("./bond-steward.js");
-      const dormantResult = await findDormantBonds(
-        {
-          getBonds: async () => this.getBonds(),
-          getLastInteractionAt: async () => { throw new Error("not implemented"); },
-        },
-        config?.dormantBondThresholdDays ?? 90,
-      );
-      if (dormantResult.dormantBonds.length > 0) {
-        insights.push({
-          kind: "dormant_bonds",
-          summary: dormantResult.summary,
-          matchedTopic: "social_graph_health",
-          peerCount: dormantResult.dormantBonds.length,
-        });
-      }
-    } catch { /* dormant bond check optional */ }
-
-    return insights;
+    return runProactiveAgentPassViaRuntime({
+      runMeshAwareness: () => this.runMeshAwarenessPass(),
+      runConnectionSuggester: () => this.runConnectionSuggesterPass(),
+      getBonds: () => this.getBonds(),
+      getDormantThresholdDays: async () => {
+        const config = await this._configStore.load();
+        return config?.dormantBondThresholdDays ?? 90;
+      },
+    });
   }
 
   // Phase 23A+ — Discovery-driven clusterer
