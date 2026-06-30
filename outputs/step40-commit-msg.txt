@@ -1,0 +1,34 @@
+refactor: extract chat.message dispatcher (Step 40)
+
+Step 40 — module-based extraction of the `chat.message` inbound
+intent cluster (~130 lines) from `_handleInboundMessage` to its
+own runtime. This was the biggest intent in the inbound handler
+body. Continues the per-intent extraction pattern.
+
+The cluster:
+  1. Verifies the sender's device (verifyInboundChatDevice)
+  2. Records a delivery-ack reply
+  3. Builds a ChatMessage from the envelope
+  4. Persists it (chatLogStore.append or persistChatMessage)
+  5. Reconciles + emits the chat:message event
+  6. Conditionally kicks off runInboundChatAssist
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2277 pass / 81 fail / 128 skip
+  (no regression)
+
+Net effect:
+- node-service-impl.ts: 11,796 -> 11,708 (-88 lines)
+- node-service-handlers-chat-message.ts: 205 lines (new runtime)
+- 43 commits on refactor/impl-clean
+
+Cumulative: 14,247 -> 11,708 (-2,539, -17.81%)
+
+Three successful per-intent extractions in this session
+(Steps 38 + 39 + 40) prove the pattern works consistently. Total
+savings from per-intent extractions: 88 + 34 + 89 = 211 lines.
+
+Remaining per-intent clusters in `_handleInboundMessage`:
+  - chat.room.sync (small, ~15 lines — likely not worth extracting)
+  - profile.* (medium, ~80 lines)

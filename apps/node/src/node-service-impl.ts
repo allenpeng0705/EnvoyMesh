@@ -739,6 +739,11 @@ import { startNodeStatsInterval } from "./node-stats-log.js";
 import { handleInboundBondIntent } from "./bond-inbound.js";
 
 import {
+  handleChatMessageViaRuntime,
+  type ChatMessageContext,
+} from "./node-service-handlers-chat-message.js";
+
+import {
   handleChatRoomMessageViaRuntime,
   type ChatRoomMessageContext,
 } from "./node-service-handlers-chat-room-message.js";
@@ -8285,6 +8290,35 @@ class NodeServiceImpl implements NodeService {
     };
   }
 
+    private _chatMessageContext(): ChatMessageContext {
+    return {
+      getTaskStore: () => this._taskStore,
+      getChatDraftStore: () => this._chatDraftStore,
+      getChatLogStore: () => this._chatLogStore,
+      getProfile: () => this._profile,
+      getHumanProfileStore: () => this._humanProfileStore,
+      getTrustStore: () => this._trustStore,
+      getPeerDirectoryStore: () => this._peerDirectoryStore,
+      getStyleAdapter: () => this._styleAdapter,
+      getVaultDir: () => this._vaultDir,
+      getConfigStore: () => this._configStore,
+      getApprovalQueue: () => this._approvalQueue,
+      getAutoReplyLimitStore: () => this._autoReplyLimitStore,
+      getNodeConfig: () => this.getNodeConfig(),
+      getMesh: () => this._mesh,
+      persistChatMessage: (senderOwnerId, msg) =>
+        this._persistChatMessage(senderOwnerId, msg),
+      reconcileInboundDirectChatMessage: (senderOwnerId, msg) =>
+        this.reconcileInboundDirectChatMessage(senderOwnerId, msg),
+      emit: (event, payload) => this.emit?.(event as never, payload as never),
+      sendAgentChat: (targetOwnerId, text) =>
+        this.sendAgentChat(targetOwnerId, text) as never,
+      tagBondedContactReachability: (remotePeerId) =>
+        this._tagBondedContactReachability(remotePeerId),
+      isOwnerOnline: () => this.isOwnerOnline(),
+    };
+  }
+
     private async _handleInboundMessage(params: any): Promise<void> {
     const { envelope, remotePeerId, remoteAddr, replyWithEnvelope } = params as any;
     const mesh = this._mesh!;
@@ -8391,136 +8425,14 @@ class NodeServiceImpl implements NodeService {
       }
 
       if (intent === "chat.message") {
-        let payload: ReturnType<typeof parseChatMessagePayload>;
-        try {
-          payload = parseChatMessagePayload(envelope.payload);
-        } catch {
-          console.warn(`[chat.message] invalid payload from ${remotePeerId}`);
-          return;
-        }
-
-        const deviceAuth = await verifyInboundChatDevice(envelope, payload);
-        if (!deviceAuth.ok) {
-          console.warn(`[chat.message] rejected from ${remotePeerId}: ${deviceAuth.reason}`);
-          return;
-        }
-
-        const senderTrust = await this._trustStore.getTrustRecord(payload.senderOwnerId);
-        if (replyWithEnvelope && envelope.senderPeerId?.trim()) {
-          try {
-            await replyWithEnvelope(
-              buildSignedChatDeliveredEnvelope({
-                profile,
-                messageId: envelope.messageId,
-                recipientOwnerId: profile.owner.ownerId,
-                envelopeRecipientPeerId: envelope.senderPeerId,
-                correlationId: envelope.correlationId,
-              }),
-            );
-          } catch (err) {
-            console.warn(`[chat.message] delivery ack failed:`, err);
-          }
-        }
-        const selfHuman = await this._humanProfileStore.loadHumanProfile();
-        void this._peerDirectoryStore
-          .ensurePeerFromInboundChat({
-            ownerId: payload.senderOwnerId,
-            peerId: remotePeerId,
-            listenAddrs: dialableInboundRemoteAddrs(remoteAddr, remotePeerId),
-          })
-          .catch((err) => console.warn(`[peer-directory] ensurePeerFromInboundChat failed:`, err));
-        const incomingMsg: ChatMessage = {
-          messageId: envelope.messageId,
-          sender: {
-            nodeId: remotePeerId,
-            ownerId: payload.senderOwnerId,
-            displayName: formatChatSenderDisplayName(
-              senderTrust?.displayName ?? payload.senderOwnerId,
-              payload,
-            ),
-            ...chatSenderActorFromEnvelope(
-              envelope.senderRole,
-              envelope.agentCredential,
-              guardDecision.action === "allow",
-            ),
-          },
-          recipient: {
-            nodeId: mesh.peerId,
-            ownerId: profile.owner.ownerId,
-            displayName: selfHuman?.displayName ?? profile.owner.ownerId,
-          },
-          content: {
-            text: stripModelThinking(payload.text),
-            ...(payload.attachments?.length
-              ? { attachments: chatWireAttachmentsToContent(payload.attachments) }
-              : {}),
-          },
-          metadata: { timestamp: envelope.createdAt, deliveryReceipt: "delivered" },
-          signature: envelope.signature,
-        };
-        void (async () => {
-          if (this._chatLogStore) {
-            await this._chatLogStore.append(payload.senderOwnerId, incomingMsg);
-          } else {
-            this._persistChatMessage(payload.senderOwnerId, incomingMsg);
-          }
-          const emitMsg = await this.reconcileInboundDirectChatMessage(
-            payload.senderOwnerId,
-            incomingMsg,
-          );
-          this.emit("chat:message", emitMsg);
-        })();
-        if (senderTrust && senderTrust.level !== "blocked") {
-          void this._tagBondedContactReachability(remotePeerId);
-        }
-        if (
-          this._taskStore &&
-          this._chatDraftStore &&
-          this._profile &&
-          guardDecision.action === "allow"
-        ) {
-          const receivedAt = Date.now();
-          const correlationId = deriveCorrelationIdFromEnvelope(envelope);
-          void this._configStore.load().then(async (config) => {
-            if (!config || !this._taskStore || !this._chatDraftStore || !this._profile) {
-              return;
-            }
-            const nodeConfig = await this.getNodeConfig();
-            await runInboundChatAssist({
-              envelope: guardDecision.envelope,
-              senderOwnerId: payload.senderOwnerId,
-              chatText: payload.text,
-              remotePeerId,
-              receivedAt,
-              correlationId,
-              config,
-              modelProviders: nodeConfig.modelProviders,
-              profile: this._profile,
-              taskStore: this._taskStore,
-              trustStore: this._trustStore,
-              peerDirectoryStore: this._peerDirectoryStore,
-              draftStore: this._chatDraftStore,
-              chatLogStore: this._chatLogStore,
-              humanProfileStore: this._humanProfileStore,
-              agentIdentityStore: this._agentIdentityStore,
-              vaultDir: this._vaultDir,
-              styleAdapter: this._styleAdapter,
-              sendChat: (targetOwnerId, text) => this.sendAgentChat(targetOwnerId, text),
-              emitDraft: (threadPeerOwnerId, draft) => {
-                this.emit("chat:draft", {
-                  threadPeerOwnerId,
-                  draft: { ...draft, threadPeerOwnerId },
-                });
-              },
-              isOwnerOnline: () => this.isOwnerOnline(),
-              approvalQueue: this._approvalQueue,
-              autoReplyLimitStore: this._autoReplyLimitStore,
-              onAutoReplyPaused: (notification) => {
-                this.emit("chat:auto-reply-paused", notification);
-              },
-            });
-          });
-        }
+        await handleChatMessageViaRuntime(this._chatMessageContext(), {
+          envelope,
+          remotePeerId,
+          remoteAddr,
+          guardDecision,
+          replyWithEnvelope,
+        });
+        return;
       }
   }
 
