@@ -576,6 +576,13 @@ import {
   shareFileViaRuntime,
   requestShareFromLibraryViaRuntime,
 } from "./node-service-fileshare.js";
+import {
+  getCapabilityManifestViaRuntime,
+  updateCapabilityManifestViaRuntime,
+  addRelayViaRuntime,
+  removeRelayViaRuntime,
+  type CapabilityManifestContext,
+} from "./node-service-manifest.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
@@ -7326,7 +7333,18 @@ class NodeServiceImpl implements NodeService {
     };
   }
 
-  private _fileShareNetworkContext(): FileShareNetworkContext {
+  private _manifestContext(): CapabilityManifestContext {
+    return {
+      getProfileDir: () => this._profileDir,
+      getCapabilityManifestStore: () => this._capabilityManifestStore as never,
+      loadNodeConfig: async () => (await this._configStore.load()) as never,
+      saveNodeConfig: async (cfg) => {
+        await this._configStore.save(cfg as never);
+      },
+    };
+  }
+
+    private _fileShareNetworkContext(): FileShareNetworkContext {
     return {
       ...this._fileShareContext(),
       assertOnline: () => this._assertOnline(),
@@ -8103,8 +8121,7 @@ class NodeServiceImpl implements NodeService {
   // ============================================
 
   async getCapabilityManifest(): Promise<import("@envoymesh/api").CapabilityManifest | undefined> {
-    if (!this._capabilityManifestStore) return undefined;
-    return this._capabilityManifestStore.loadManifest();
+    return getCapabilityManifestViaRuntime(this._manifestContext());
   }
 
   async updateCapabilityManifest(params: {
@@ -8114,82 +8131,15 @@ class NodeServiceImpl implements NodeService {
     capabilities?: string[];
     description?: string;
   }): Promise<import("@envoymesh/api").CapabilityManifest> {
-    if (!this._capabilityManifestStore) {
-      throw new Error("Capability manifest store not available");
-    }
-    const existing = await this._capabilityManifestStore.loadManifest();
-    if (existing) {
-      const updated: import("@envoymesh/local-store").CapabilityManifest = {
-        ...existing,
-        ...(params.visibility !== undefined && { visibility: params.visibility }),
-        ...(params.sensitivityCeiling !== undefined && { sensitivityCeiling: params.sensitivityCeiling }),
-        ...(params.keywords !== undefined && { keywords: params.keywords }),
-        ...(params.capabilities !== undefined && { capabilities: params.capabilities }),
-        ...(params.description !== undefined && { description: params.description }),
-        updatedAt: new Date().toISOString(),
-      };
-      await this._capabilityManifestStore.saveManifest(updated);
-      return updated as import("@envoymesh/api").CapabilityManifest;
-    }
-    return this._capabilityManifestStore.createDefaultManifest(params);
+    return updateCapabilityManifestViaRuntime(this._manifestContext(), params);
   }
 
   async addRelay(addr: string, level?: number, region?: string): Promise<RelayConfig> {
-    const config = (await this._configStore.load()) ?? {
-      version: "0.1" as const,
-      profileDir: this._profileDir,
-      discoveryProfile: "lan-fast" as const,
-      relayEnabled: true,
-      relayServerEnabled: false,
-      advertiseAddrs: [] as string[],
-      bootstrapPeers: [] as string[],
-      bootstrapPresets: [] as string[],
-      configuredRelays: [],
-      modelProviders: { mode: "disabled" as const },
-      chatAssistEnabled: false,
-      autonomousKillSwitch: false,
-      autonomousPolicies: [],
-      contactAiPreferences: [],
-      updatedAt: new Date().toISOString(),
-    };
-
-    const relayId = `relay_${Date.now()}`;
-    const newRelay: RelayConfig = { relayId, addr, level, region, enabled: true };
-
-    // If address looks like a domain, try to resolve it to a multiaddr with peer ID
-    let resolvedAddr = addr;
-    if (looksLikeDomain(addr)) {
-      console.log(`[node-service] Resolving relay domain: ${addr}`);
-      const results = await resolveBootstrapAddresses([addr]);
-      if (results.length > 0 && results[0].resolved.length > 0) {
-        resolvedAddr = results[0].resolved[0];
-        console.log(`[node-service] Resolved ${addr} to ${resolvedAddr}`);
-      }
-    }
-
-    const updated: PersistedNodeConfig = {
-      ...config,
-      configuredRelays: [...config.configuredRelays, { ...newRelay, addr: resolvedAddr }],
-      updatedAt: new Date().toISOString(),
-    };
-
-    await this._configStore.save(updated);
-    return { ...newRelay, addr: resolvedAddr };
+    return addRelayViaRuntime(this._manifestContext(), addr, level, region);
   }
 
   async removeRelay(relayId: string): Promise<void> {
-    const config = await this._configStore.load();
-    if (!config) {
-      return;
-    }
-
-    const updated: PersistedNodeConfig = {
-      ...config,
-      configuredRelays: config.configuredRelays.filter((r) => r.relayId !== relayId),
-      updatedAt: new Date().toISOString(),
-    };
-
-    await this._configStore.save(updated);
+    await removeRelayViaRuntime(this._manifestContext(), relayId);
   }
 
   // ============================================

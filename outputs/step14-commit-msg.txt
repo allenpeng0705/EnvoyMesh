@@ -1,0 +1,39 @@
+refactor: extract Capability Manifest + relays to node-service-manifest.ts
+
+Step 14 of the refactor plan. The smallest remaining un-extracted
+section (Node Configuration is larger and tangled; this one is
+clean). 4 methods + addRelay/removeRelay helpers become 4 runtime
+functions.
+
+14 extracts:
+  - getCapabilityManifestViaRuntime
+  - updateCapabilityManifestViaRuntime (merges over existing or
+    falls back to createDefaultManifest)
+  - addRelayViaRuntime (with domain-resolution via
+    resolveBootstrapAddresses + looksLikeDomain, matching the
+    pre-extraction behaviour)
+  - removeRelayViaRuntime
+
+CapabilityManifestContext is a small bag: profile dir + capability
+manifest store + load/save node config. The class's
+`_manifestContext()` factory wires this up from existing fields
+(this._profileDir, this._capabilityManifestStore, this._configStore).
+
+A small refinement vs the pre-extraction class:
+  - addRelayViaRuntime uses `createDefaultPersistedNodeConfig(profileDir)`
+    from `./node-config-store.js` instead of inlining a partial config
+    literal. Same resulting shape, but DRY.
+
+node-service-impl.ts: 13,141 -> 13,091 lines (-50)
+node-service-manifest.ts: 143 lines (new file)
+9 new unit tests in apps/node/test/node-service-manifest.test.ts
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2193 pass / 79 fail / 128 skip
+  (was 2184 / 79 / 128 — +9 new tests, 0 regressions)
+
+Next up: Node Lifecycle (837 lines, line ~8196-9054) and Connection
+Status (830 lines, line ~9055-9473) — both have substantial class
+state coupling similar to what we did for 13c. We'll go module
+by module from there.
