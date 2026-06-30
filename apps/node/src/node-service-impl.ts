@@ -726,6 +726,12 @@ import {
   terminalExecViaRuntime,
   type TerminalExecContext,
 } from "./node-service-handlers-terminal-exec.js";
+import {
+  openInHerdrViaRuntime,
+  terminalGetHerdrExportHintViaRuntime,
+  type OpenInHerdrContext,
+  type TerminalGetHerdrExportHintContext,
+} from "./node-service-handlers-herdr.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
@@ -8170,7 +8176,20 @@ class NodeServiceImpl implements NodeService {
     };
   }
 
-  private _terminalExecContext(): TerminalExecContext {
+  private _openInHerdrContext(): OpenInHerdrContext {
+    return {
+      resolveOpenClawWorkspaceDir: () => this._resolveOpenClawWorkspaceDir(),
+    };
+  }
+
+  private _terminalGetHerdrExportHintContext(): TerminalGetHerdrExportHintContext {
+    return {
+      getProfileDir: () => this._profileDir,
+      requireTerminalManager: () => this._requireTerminalManager(),
+    };
+  }
+
+    private _terminalExecContext(): TerminalExecContext {
     return {
       requireTerminalManager: () => this._requireTerminalManager(),
     };
@@ -8949,54 +8968,16 @@ class NodeServiceImpl implements NodeService {
   async openInHerdr(
     params?: import("@envoymesh/api").OpenInHerdrParams,
   ): Promise<import("@envoymesh/api").OpenInHerdrResult> {
-    if (process.platform === "win32") {
-      return { ok: false, reason: "herdr.unsupportedPlatform" };
-    }
-    let cwd: string;
-    try {
-      cwd = params?.cwd?.trim() || this._resolveOpenClawWorkspaceDir();
-    } catch {
-      return { ok: false, reason: "herdr.workspaceUnavailable" };
-    }
-    const { spawn } = await import("node:child_process");
-    return await new Promise((resolve) => {
-      let settled = false;
-      const finish = (result: import("@envoymesh/api").OpenInHerdrResult) => {
-        if (settled) return;
-        settled = true;
-        resolve(result);
-      };
-      const child = spawn("herdr", [], {
-        cwd,
-        detached: true,
-        stdio: "ignore",
-      });
-      child.once("error", () => finish({ ok: false, reason: "herdr.spawnFailed" }));
-      child.unref();
-      process.nextTick(() => {
-        if (!settled) finish({ ok: true, cwd });
-      });
-    });
+    return openInHerdrViaRuntime(this._openInHerdrContext(), params);
   }
 
   async terminalGetHerdrExportHint(
     params: import("@envoymesh/api").TerminalHerdrExportHintParams,
   ): Promise<import("@envoymesh/api").TerminalHerdrExportHintResult> {
-    const sessionId = params.sessionId.trim();
-    if (!sessionId) {
-      throw new Error("terminal.sessionNotFound");
-    }
-    const manager = this._requireTerminalManager();
-    const summary = manager.listTerminalSessions().find((s) => s.sessionId === sessionId);
-    if (!summary) {
-      throw new Error("terminal.sessionNotFound");
-    }
-    if (summary.state !== "running") {
-      throw new Error("terminal.sessionNotRunning");
-    }
-    const scrollback = manager.getScrollbackTail(sessionId, 64 * 1024);
-    const { writeHerdrExportFile } = await import("./herdr-export.js");
-    return writeHerdrExportFile(this._profileDir, sessionId, summary.title, scrollback);
+    return terminalGetHerdrExportHintViaRuntime(
+      this._terminalGetHerdrExportHintContext(),
+      params,
+    ) as Promise<import("@envoymesh/api").TerminalHerdrExportHintResult>;
   }
 
   async lookupSessionToken(token: string): Promise<import("@envoymesh/local-store").SessionTokenRecord | undefined> {

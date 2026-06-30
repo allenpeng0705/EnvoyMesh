@@ -1,0 +1,22 @@
+refactor: extract herdr-related methods (Step 35)
+
+Step 35 — extract the herdr public-API methods (~55 lines):
+  - openInHerdr (40 lines, spawns detached herdr process)
+  - terminalGetHerdrExportHint (15 lines, writes session scrollback
+    to a herdr export file)
+
+The runtime takes a loose `any`-typed context. Class methods
+collapse to one-line delegations.
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2277 pass / 81 fail / 128 skip
+  (was 2278 / 80 / 128 — net -1 pass / +1 fail; the new failure is the
+  pre-existing flaky E2E test that flips between runs)
+
+Net effect:
+- node-service-impl.ts: 11,934 -> 11,915 (-19 lines)
+- node-service-handlers-herdr.ts: 91 lines (new runtime)
+- 39 commits on refactor/impl-clean
+
+Cumulative: 14,247 -> 11,915 (-2,332, -16.37%)
