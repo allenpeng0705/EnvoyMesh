@@ -639,6 +639,10 @@ import {
   pairSharedIdentityViaRuntime,
   type PairSharedIdentityContext,
 } from "./node-service-handlers-pair-shared-identity.js";
+import {
+  getPairingPayloadViaRuntime,
+  type GetPairingPayloadContext,
+} from "./node-service-handlers-pairing-payload.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
@@ -8123,6 +8127,25 @@ class NodeServiceImpl implements NodeService {
     };
   }
 
+  private _getPairingPayloadContext(): GetPairingPayloadContext {
+    return {
+      getBridgeStatus: () => this.getBridgeStatus(),
+      getReachableMesh: () => (this._mesh ?? this._externalMesh) as never,
+      getWsPort: () => this._wsPort,
+      getWsPath: () => this._wsPath,
+      getRelayPublicWsUrl: () => this._relayPublicWsUrl,
+      getRelayBootstrapPeers: () => this._relayBootstrapPeers,
+      getProfile: () => this._profile,
+      deriveRelayWsUrl: (addr) => NodeServiceImpl._deriveRelayWsUrl(addr),
+      autoDiscoverRelayWsUrl: () => this._autoDiscoverRelayWsUrl(),
+      autoDiscoverRelayPeerId: () => this._autoDiscoverRelayPeerId(),
+      setPairingToken: (token, issuedAt) => {
+        this._pairingToken = token;
+        this._pairingTokenIssuedAt = issuedAt;
+      },
+    };
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async _handleInboundMessage(params: any): Promise<void> {
     const { envelope, remotePeerId, remoteAddr, replyWithEnvelope } = params as any;
@@ -9122,152 +9145,7 @@ class NodeServiceImpl implements NodeService {
    * when no relay is known.
    */
   async getPairingPayload(): Promise<PairingPayload> {
-    const bridgeStatus = await this.getBridgeStatus();
-    const reachable = this._mesh ?? this._externalMesh;
-
-    // Derive LAN IP from multiaddrs, e.g. /ip4/192.168.1.100/tcp/63641 → 192.168.1.100.
-    // Skip 127.0.0.1 — it's unreachable from mobile devices on the same LAN.
-    let lanIp = "localhost";
-    const LOOPBACK_RE = /^127\./;
-    if (reachable?.multiaddrs) {
-      for (const addr of reachable.multiaddrs) {
-        const match = addr.match(/\/ip4\/([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)/);
-        if (match && !LOOPBACK_RE.test(match[1])) {
-          lanIp = match[1];
-          break;
-        }
-      }
-    }
-
-    const wsPort = (this._wsPort ?? 3030);
-    const wsPath = (this._wsPath ?? "/ws");
-    const lanWsUrl = `ws://${lanIp}:${wsPort}${wsPath}`;
-
-    // Resolve relay WebSocket URL:
-    //   undefined (not configured) → auto-discover from relays / bootstrap peers
-    //   "" (explicitly disabled)    → no relay proxy, direct LAN connection only
-    //   "<url>" (explicit URL)      → use this URL for relay proxy
-    const relayWsUrl = this._relayPublicWsUrl !== undefined
-      ? (this._relayPublicWsUrl || undefined) // "" → undefined (disabled)
-      : await this._autoDiscoverRelayWsUrl();
-
-    this._pairingToken = randomUUID();
-    this._pairingTokenIssuedAt = Date.now();
-
-    // When a relay is reachable, the mobile connects through it (any-network).
-    // Include `target` (home node peer ID) and `token` as query params so the
-    // relay knows which node to proxy to.
-    let wsUrl: string;
-    if (relayWsUrl) {
-      const params = new URLSearchParams();
-      if (reachable?.peerId) params.set("target", reachable.peerId);
-      params.set("token", this._pairingToken);
-      wsUrl = `${relayWsUrl}?${params.toString()}`;
-    } else {
-      wsUrl = lanWsUrl;
-    }
-
-    const payload: PairingPayload = { wsUrl };
-    // Expose the direct LAN URL separately so the mobile app can prefer it for
-    // ongoing traffic (lowest latency, no relay) when reachable. The relay URL
-    // remains the `wsUrl` for cold-start connectivity. Skip the placeholder
-    // "localhost" value — it's never useful to a mobile device.
-    if (lanIp && lanIp !== "localhost") {
-      payload.lanWsUrl = lanWsUrl;
-    }
-    payload.token = this._pairingToken;
-
-    // Include the relay's peer ID (not the home node's) so the mobile app can
-    // use it for RPC probe params and reconstructed dial URLs.
-    // Only set when auto-discovering — for explicit URLs we don't know the
-    // relay's peer ID unless it's in configuredRelays.
-    if (relayWsUrl && this._relayPublicWsUrl === undefined) {
-      payload.relayPeerId = await this._autoDiscoverRelayPeerId();
-    }
-
-    if (relayWsUrl) {
-      payload.relayWsUrl = relayWsUrl;
-    }
-
-    if (bridgeStatus.enabled) {
-      payload.agentPeerId = bridgeStatus.agentPeerId;
-      if (bridgeStatus.agentPublicKeyPem) {
-        payload.agentPubKey = bridgeStatus.agentPublicKeyPem;
-      }
-      if (bridgeStatus.agentName?.trim()) {
-        payload.agentName = bridgeStatus.agentName.trim();
-      }
-    }
-
-    // Include home node peer ID — needed by mobile to route back after pairing
-    if (reachable?.peerId) {
-      payload.homeNodePeerId = reachable.peerId;
-    }
-
-    // Phase 11: Include owner identity for multi-device shared-identity pairing.
-    // These are public info — safe for QR codes.
-    const profile = this._profile;
-    if (profile) {
-      payload.ownerPublicKey = profile.owner.publicKeyPem;
-      payload.ownerId = profile.owner.ownerId;
-    }
-
-    // Include ALL relay/bootstrap addresses so EnvoyGo has the complete
-    // fallback list immediately — before getPairingPayload() is called.
-    // EnvoyGo will try them in order; the first reachable one succeeds.
-    //
-    // For libp2p circuit relay: include libp2p multiaddrs directly.
-    // For WebSocket relay: convert to WebSocket URLs via deriveRelayWsUrl.
-    const allBootstrapPeers: string[] = [];
-
-    // Add community relay libp2p multiaddr for libp2p circuit relay support.
-    // This enables EnvoyGo to dial through the community relay even when
-    // the relay WebSocket is down but libp2p circuit relay is operational.
-    allBootstrapPeers.push(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
-
-    // Also add known-working public DHT bootstrap peers directly.
-    // These are hardcoded because DNS resolution for bootstrap.libp2p.io
-    // and its subdomains fails intermittently. Including them here ensures
-    // EnvoyGo can try circuit relay via am6 even if DNS fails.
-    allBootstrapPeers.push("/dnsaddr/am6.bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6LccNBoMmrjUqFq");
-    allBootstrapPeers.push("/dnsaddr/am7.bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA7W8R4Hk6x4pJ8Yf");
-    allBootstrapPeers.push("/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN");
-
-    // Add all configured bootstrap peers as-is (libp2p multiaddrs).
-    // _buildLibp2pCandidates() in EnvoyGo will create circuit relay
-    // candidates from these. Also convert to WebSocket URLs as fallback
-    // for WebSocket-only EnvoyGo.
-    for (const addr of this._relayBootstrapPeers) {
-      allBootstrapPeers.push(addr);
-      // Also add WebSocket URL if derivable (for WebSocket fallback).
-      const wsUrl = NodeServiceImpl._deriveRelayWsUrl(addr);
-      if (wsUrl) allBootstrapPeers.push(wsUrl);
-    }
-
-    if (allBootstrapPeers.length > 0) {
-      payload.bootstrapPeers = allBootstrapPeers;
-    }
-
-    // Always include all known bootstrap preset names so EnvoyGo can build
-    // p2p-am6/p2p-am7 candidates from the QR alone — without needing
-    // getBootstrapPeers() to succeed first. The preset names are not
-    // sensitive (public bootstrap server names only).
-    const allKnownPresets = [
-      "cn-relay",
-      "public-libp2p-am6",
-      "public-libp2p-am7",
-      "public-libp2p",
-    ];
-    // Deduplicate: include each preset only once, preferring whatever the
-    // home node is actually configured with (so EnvoyGo knows which relays
-    // the home node definitely connects to).
-    const homeConfiguredPresets = new Set(
-      this._relayBootstrapPeers.filter((p) => allKnownPresets.includes(p)),
-    );
-    const extraPresets = allKnownPresets.filter((p) => !homeConfiguredPresets.has(p));
-    payload.bootstrapPresetNames = [...homeConfiguredPresets, ...extraPresets];
-
-    return payload;
+    return getPairingPayloadViaRuntime(this._getPairingPayloadContext());
   }
 
   async createWanJoinInvite(params?: CreateWanJoinInviteParams): Promise<CreateWanJoinInviteResult> {

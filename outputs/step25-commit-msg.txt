@@ -1,0 +1,52 @@
+refactor: extract getPairingPayload (Step 25)
+
+Step 25 — extract the public getPairingPayload method (151 lines)
+which builds the QR-code pairing payload for mobile apps.
+
+The class method collapses to a 1-line delegation. The runtime
+takes a GetPairingPayloadContext with 11 accessors (getBridgeStatus,
+getReachableMesh, getWsPort, getWsPath, getRelayPublicWsUrl,
+getRelayBootstrapPeers, getProfile, deriveRelayWsUrl,
+autoDiscoverRelayWsUrl, autoDiscoverRelayPeerId, setPairingToken).
+
+The runtime body is a near-direct port of the original method
+semantics:
+  - Derives LAN IP from multiaddrs (skipping 127.0.0.1 loopback)
+  - Resolves relay WebSocket URL with 3-state semantics (undefined =
+    auto-discover, "" = disabled, "<url>" = explicit)
+  - Generates fresh pairing token + sets issued-at timestamp
+  - Builds wsUrl with target+token query params for relay case
+  - Aggregates bootstrap peers (community libp2p, configured
+    relays, WebSocket fallbacks)
+  - Aggregates bootstrap preset names (deduplicated, home-configured
+    first)
+
+8 new unit tests in
+apps/node/test/node-service-handlers-pairing-payload.test.ts:
+  - basic payload with LAN wsUrl when no relay
+  - 3030 / /ws defaults when wsPort / wsPath are undefined
+  - skips 127.0.0.1 when deriving LAN IP
+  - uses relay wsUrl with target+token params when relay is discovered
+  - treats empty-string relayPublicWsUrl as disabled (no auto-discover)
+  - includes bridge fields when bridge is enabled
+  - includes bootstrap peers + preset names
+  - includes homeNodePeerId when reachable
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2274 pass / 80 fail / 128 skip
+  (was 2265 / 81 / 128 — +8 new tests, 0 regressions)
+
+Net effect:
+- node-service-impl.ts: 12,402 -> 12,280 (-122 lines)
+- node-service-handlers-pairing-payload.ts: 161 lines (new runtime)
+- 29 commits total
+
+Cumulative: 14,247 -> 12,280 (-1,967, -13.81%)
+
+Next planned extractions:
+- _handleInboundMessage body (remaining ~300 lines, multiple intent dispatchers)
+- Terminal Agent Assist methods (~500 lines)
+- Herdr methods (~200 lines)
+- createFleetManifest (~50 lines)
+- pairThinClient (~50 lines)
