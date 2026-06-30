@@ -1,0 +1,35 @@
+refactor: extract agent passes module (Phases 23B / 25A / 23D)
+
+Step 4 of the node-service-impl.ts extraction plan. Per the user's
+"module by module" feedback, this commit groups three small agent
+passes into a single runtime module instead of one extraction per
+method.
+
+- New runtime module: apps/node/src/node-service-agent-passes.ts (154 lines)
+  - AgentPassesContext { getBonds, getProfileOwnerId, hasTaskStore,
+    loadConfig, getAgentActivityStore, getContactTopicsFromLibrary, emit }
+  - runConnectionSuggesterPassViaRuntime(ctx) — Phase 23B
+  - runMeshAwarenessPassViaRuntime(ctx) — Phase 25A
+  - chatRagSearchViaRuntime(ctx, query, opts) — Phase 23D (stub)
+  - Shared `AgentPassesContext` so the class can build it once and
+    pass it to all three pass functions.
+- Class methods now reduce to 1-line delegations each.
+- New private factory `_agentPassesContext()` on the class builds
+  the typed context from `this.*` fields.
+- node-service-impl.ts: 14078 -> 14038 lines (-40)
+- 10 new unit tests cover:
+  - connection suggester: hasTaskStore guard, hardcoded-empty
+    ownerTopics short-circuit, config load parity, no activity-record
+    side effects when empty
+  - mesh awareness: owner + per-bond topic lookup wiring, event
+    emission per insight, no emit when empty, verbatim return
+  - chat RAG stub: returns [] with or without opts
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2075 pass / 79 fail / 128 skip
+  (was 2065 / 79 / 128 — +10 new tests, 0 regressions)
+
+Note: connection suggester is currently a stub (hardcoded empty
+ownerTopics) — preserved as-is so this commit is a pure refactor.
+Future commits can wire real interest topics through the context.

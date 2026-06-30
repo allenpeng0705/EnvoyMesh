@@ -489,6 +489,12 @@ import {
   meshIntelligenceReportViaRuntime,
 } from "./node-service-mesh-intelligence.js";
 import { runProactiveAgentPassViaRuntime } from "./node-service-proactive-agent.js";
+import {
+  chatRagSearchViaRuntime,
+  runConnectionSuggesterPassViaRuntime,
+  runMeshAwarenessPassViaRuntime,
+  type AgentPassesContext,
+} from "./node-service-agent-passes.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
@@ -4825,43 +4831,29 @@ class NodeServiceImpl implements NodeService {
 
   // Phase 23B — Connection suggester pass
   async runConnectionSuggesterPass(): Promise<Array<{ remoteOwnerId: string; remoteDisplayName: string; reason: string; relevanceScore: number }>> {
-    const { matchPeerInterests } = await import("./connection-suggester.js");
-    const { recordConnectionSuggestion } = await import("./agent-activity-hooks.js");
-    if (!this._taskStore) return [];
+    return runConnectionSuggesterPassViaRuntime(this._agentPassesContext());
+  }
 
-    const config = await this._configStore.load();
-    const ownerTopics: string[] = [];
-    if (ownerTopics.length === 0) return [];
+  // Phase 23D — Chat RAG search
+  async chatRagSearch(_query: string, _opts?: { ownerId?: string; maxResults?: number }): Promise<Array<{ messageId: string; contactName: string; snippet: string; timestamp: string }>> {
+    return chatRagSearchViaRuntime(this._agentPassesContext(), _query, _opts);
+  }
 
-    const bonds = await this.getBonds();
-    const results: Array<{ remoteOwnerId: string; remoteDisplayName: string; reason: string; relevanceScore: number }> = [];
+  // Phase 25A — Mesh awareness pass
+  async runMeshAwarenessPass(): Promise<Array<{ kind: string; summary: string; matchedTopic: string; peerCount: number; createdAt: string }>> {
+    return runMeshAwarenessPassViaRuntime(this._agentPassesContext());
+  }
 
-    for (const bond of bonds) {
-      const peerTopics: string[] = [];
-      const peerCaps: string[] = []; // Capabilities from manifest (wired separately)
-      const match = matchPeerInterests(ownerTopics, peerTopics, peerCaps);
-
-      if (match.score > 0) {
-        const suggestion = {
-          remoteOwnerId: bond.peerOwnerId,
-          remoteDisplayName: bond.displayName ?? bond.peerOwnerId,
-          reason: `Matching interests: ${match.matchedTopics.join(", ")}`,
-          relevanceScore: match.score,
-        };
-        results.push(suggestion);
-
-        if (this._agentActivityStore) {
-          await recordConnectionSuggestion(
-            this._agentActivityStore,
-            suggestion,
-            this._profile?.owner.ownerId ?? "local-owner",
-            (record) => this.emit?.("agent:activity", record),
-          );
-        }
-      }
-    }
-
-    return results.sort((a, b) => b.relevanceScore - a.relevanceScore);
+  private _agentPassesContext(): AgentPassesContext {
+    return {
+      getBonds: () => this.getBonds(),
+      getProfileOwnerId: () => this._profile?.owner.ownerId ?? "local-owner",
+      hasTaskStore: () => Boolean(this._taskStore),
+      loadConfig: () => this._configStore.load(),
+      getAgentActivityStore: () => this._agentActivityStore,
+      getContactTopicsFromLibrary: (ownerId) => this._getContactTopicsFromLibrary(ownerId),
+      emit: (event, data) => this.emit?.(event as never, data as never),
+    };
   }
 
   // Phase 29 — OpenClaw Runtime
@@ -6072,43 +6064,11 @@ class NodeServiceImpl implements NodeService {
     );
   }
 
-  // Phase 23D — Chat RAG search
-  async chatRagSearch(query: string, opts?: { ownerId?: string; maxResults?: number }): Promise<Array<{ messageId: string; contactName: string; snippet: string; timestamp: string }>> {
-    const { searchChatHistory, formatChatRagResults } = await import("./chat-rag-service.js");
-    const deps = {
-      getMessages: async (ownerId?: string) => {
-        // TODO: wire to actual chat log store
-        return [];
-      },
-    };
-        // Chat log store not available in service impl — return stub
-    return [];
-  }
+  // Phase 23D — Chat RAG search  (delegation lives near the connection
+  // suggester / mesh awareness methods — see Phase 23B block above)
 
-  // Phase 25A — Mesh awareness pass
-  async runMeshAwarenessPass(): Promise<Array<{ kind: string; summary: string; matchedTopic: string; peerCount: number; createdAt: string }>> {
-    const { generateMeshInsights } = await import("./mesh-awareness-worker.js");
-    const localOwnerId = this._profile?.owner.ownerId ?? "";
-    const bonds = await this.getBonds();
-    const deps = {
-      getOwnerInterestTopics: async () => this._getContactTopicsFromLibrary(localOwnerId),
-      getBondedPeerTopics: async () => {
-        const out: Array<{ ownerId: string; topics: string[] }> = [];
-        for (const b of bonds) {
-          const topics = await this._getContactTopicsFromLibrary(b.peerOwnerId);
-          if (topics.length > 0) out.push({ ownerId: b.peerOwnerId, topics });
-        }
-        return out;
-      },
-    };
-    const insights = await generateMeshInsights(deps);
-    if (insights.length > 0) {
-      for (const insight of insights) {
-        this.emit?.("agent:awareness", insight);
-      }
-    }
-    return insights;
-  }
+  // Phase 25A — Mesh awareness pass  (delegation lives near the
+  // connection suggester block above)
 
   // -------------------------------------------------------------------
   // Phase 23 — Published library (E2E test support + cross-node topic sharing)

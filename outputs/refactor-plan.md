@@ -62,8 +62,9 @@ Items deferred: OpenClaw Runtime (~1171), Fleet Manifest inline cleanup, Agent C
 - [x] **Step 1** (cb9bc62): Discovery clusterer → `node-service-discovery-clusterer.ts`. -76 / +136 runtime / +192 test. 2043 pass / 79 fail. 7 new unit tests.
 - [x] **Step 2** (a9a94c4): Mesh Intelligence Report → `node-service-mesh-intelligence.ts`. -58 / +167 runtime / +287 test. 2055 pass / 79 fail. 12 new unit tests.
 - [x] **Step 3** (f0f8f5f): Proactive agent pass → `node-service-proactive-agent.ts`. -35 / +112 runtime / +207 test. 2065 pass / 79 fail. 10 new unit tests.
+- [x] **Step 4** (commit pending): Agent passes module → `node-service-agent-passes.ts` (Phases 23B + 25A + 23D grouped). -40 / +154 runtime / +171 test. 2075 pass / 79 fail. 10 new unit tests.
 
-Cumulative: `node-service-impl.ts` 14,247 → 14,078 lines (-169). 0 tsc errors. 0 regressions.
+Cumulative: `node-service-impl.ts` 14,247 → 14,038 lines (-209). 0 tsc errors. 0 regressions.
 
 ## Out of scope
 - Changing public API surface of `NodeService`.
