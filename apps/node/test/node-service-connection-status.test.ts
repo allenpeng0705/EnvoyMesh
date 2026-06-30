@@ -7,6 +7,8 @@ import {
   getConnectionStatusViaRuntime,
   getBridgeStatusViaRuntime,
   getOpenClawStatusViaRuntime,
+  lookupSessionTokenViaRuntime,
+  recordNodeErrorViaRuntime,
   type ConnectionStatusContext,
 } from "../src/node-service-connection-status.js";
 import type { BridgeStatus } from "@envoymesh/api";
@@ -152,5 +154,84 @@ describe("getOpenClawStatusViaRuntime", () => {
     });
     expect(out.childPid).toBeUndefined();
     expect(out.running).toBe(false);
+  });
+});
+
+describe("lookupSessionTokenViaRuntime", () => {
+  it("returns undefined when no session-token store is wired", async () => {
+    const out = await lookupSessionTokenViaRuntime(
+      { getSessionTokenStore: () => undefined },
+      "tok",
+    );
+    expect(out).toBeUndefined();
+  });
+
+  it("returns undefined when the store has no matching token", async () => {
+    const out = await lookupSessionTokenViaRuntime(
+      {
+        getSessionTokenStore: () => ({
+          getTokenByValue: () => undefined,
+        }),
+      },
+      "tok",
+    );
+    expect(out).toBeUndefined();
+  });
+
+  it("trims the input token before lookup", async () => {
+    const seen: string[] = [];
+    const out = await lookupSessionTokenViaRuntime(
+      {
+        getSessionTokenStore: () => ({
+          getTokenByValue: (t: string) => {
+            seen.push(t);
+            return undefined;
+          },
+        }),
+      },
+      "  tok  ",
+    );
+    expect(seen).toEqual(["tok"]);
+    expect(out).toBeUndefined();
+  });
+});
+
+describe("recordNodeErrorViaRuntime", () => {
+  it("stores the context-tagged error message", () => {
+    let lastError: string | undefined;
+    let lastErrorAt: string | undefined;
+    recordNodeErrorViaRuntime(
+      {
+        getLastNodeError: () => lastError,
+        setLastNodeError: (v: string) => {
+          lastError = v;
+        },
+        getLastNodeErrorAt: () => lastErrorAt,
+        setLastNodeErrorAt: (v: string) => {
+          lastErrorAt = v;
+        },
+      },
+      "boot",
+      new Error("missing config"),
+    );
+    expect(lastError).toBe("boot: missing config");
+    expect(lastErrorAt).toBeDefined();
+  });
+
+  it("serialises non-Error values as strings", () => {
+    let lastError: string | undefined;
+    recordNodeErrorViaRuntime(
+      {
+        getLastNodeError: () => undefined,
+        setLastNodeError: (v: string) => {
+          lastError = v;
+        },
+        getLastNodeErrorAt: () => undefined,
+        setLastNodeErrorAt: () => {},
+      },
+      "ctx",
+      "plain string",
+    );
+    expect(lastError).toBe("ctx: plain string");
   });
 });

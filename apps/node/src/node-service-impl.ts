@@ -587,7 +587,11 @@ import {
   getConnectionStatusViaRuntime,
   getBridgeStatusViaRuntime,
   getOpenClawStatusViaRuntime,
+  lookupSessionTokenViaRuntime,
+  recordNodeErrorViaRuntime,
   type ConnectionStatusContext,
+  type RecordNodeErrorAccess,
+  type SessionTokenAccess,
 } from "./node-service-connection-status.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
@@ -7339,7 +7343,26 @@ class NodeServiceImpl implements NodeService {
     };
   }
 
-  private _connectionStatusContext(): ConnectionStatusContext {
+  private _sessionTokenContext(): SessionTokenAccess {
+    return {
+      getSessionTokenStore: () => (this._sessionTokenStore as never) ?? undefined,
+    };
+  }
+
+  private _recordNodeErrorContext(): RecordNodeErrorAccess {
+    return {
+      getLastNodeError: () => this._lastNodeError,
+      setLastNodeError: (v) => {
+        this._lastNodeError = v;
+      },
+      getLastNodeErrorAt: () => this._lastNodeErrorAt,
+      setLastNodeErrorAt: (v) => {
+        this._lastNodeErrorAt = v;
+      },
+    };
+  }
+
+    private _connectionStatusContext(): ConnectionStatusContext {
     return {
       getLastNodeError: () => this._lastNodeError,
       getLastNodeErrorAt: () => this._lastNodeErrorAt,
@@ -9028,9 +9051,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   private _recordNodeError(context: string, err: unknown): void {
-    const msg = err instanceof Error ? err.message : String(err);
-    this._lastNodeError = `${context}: ${msg}`;
-    this._lastNodeErrorAt = new Date().toISOString();
+    recordNodeErrorViaRuntime(this._recordNodeErrorContext(), context, err);
   }
 
   setBridgeStatus(status: BridgeStatus): void {
@@ -9386,10 +9407,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   async lookupSessionToken(token: string): Promise<import("@envoymesh/local-store").SessionTokenRecord | undefined> {
-    if (!this._sessionTokenStore) {
-      return undefined;
-    }
-    return this._sessionTokenStore.getTokenByValue(token.trim());
+    return lookupSessionTokenViaRuntime(this._sessionTokenContext(), token);
   }
 
   async auditHomeRemoteRpc(input: {

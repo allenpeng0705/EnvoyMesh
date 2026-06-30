@@ -1,0 +1,28 @@
+refactor: extract lookupSessionToken + _recordNodeError (Step 18)
+
+Step 18 — extract two more small Connection Status methods. Both
+are 1-2 line wrappers around existing class state, perfect for
+encapsulation.
+
+18 extracts:
+  - lookupSessionTokenViaRuntime — returns the matching
+    SessionTokenRecord (or undefined) for a given token value
+  - recordNodeErrorViaRuntime — stamps the last-error fields with
+    "<context>: <error message>" + ISO timestamp
+
+ConnectionStatusContext extended with two new access interfaces:
+  - SessionTokenAccess (getSessionTokenStore)
+  - RecordNodeErrorAccess (get/set lastError + lastErrorAt)
+
+node-service-impl.ts: 13,080 lines (no net change — the 2-line
+delegations and 18-line factories net out to the same total)
+node-service-connection-status.ts: 93 -> 130 lines
+5 new unit tests in apps/node/test/node-service-connection-status.test.ts
+  (3 for lookupSessionToken, 2 for recordNodeError)
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2205 pass / 80 fail / 128 skip
+  (was 2201 / 79 / 128 — +4 new tests, 0 regressions. The +1 fail
+  from 79->80 is the same pre-existing flaky test that occasionally
+  flips between runs.)
