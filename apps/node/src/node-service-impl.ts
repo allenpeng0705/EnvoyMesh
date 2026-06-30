@@ -510,6 +510,20 @@ import {
   updateContinuitySessionViaRuntime,
   type ContinuityContext,
 } from "./node-service-continuity.js";
+import {
+  ChainStore,
+  chainCancelViaRuntime,
+  chainGetBidStrategyViaRuntime,
+  chainGetDefaultsViaRuntime,
+  chainGetReportViaRuntime,
+  chainGetStateViaRuntime,
+  chainListActiveViaRuntime,
+  chainListReportsViaRuntime,
+  chainPinReportViaRuntime,
+  chainSetBidStrategyViaRuntime,
+  chainSetDefaultsViaRuntime,
+  type ChainContext,
+} from "./node-service-chains.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
@@ -11765,28 +11779,18 @@ class NodeServiceImpl implements NodeService {
   // UI can start calling it.
   // ------------------------------------------------------------------
 
-  private chainRuntime = new Map<
-    string,
-    {
-      state: ReturnType<typeof createChainState>;
-      bidStrategy: { baseCostUsd: number; capabilityLocalEtaMs: number; reputationDiscount: number; etaSlackMs: number };
-    }
-  >();
-  private chainBidStrategies = new Map<
-    string,
-    { baseCostUsd: number; capabilityLocalEtaMs: number; reputationDiscount: number; etaSlackMs: number }
-  >();
+  private readonly _chainStore = new ChainStore();
 
   async chainPlan(params: ChainPlanParams): Promise<ChainPlanResult> {
     void this.ensureChainMandateLoaded(params.chainMandateId);
-    let runtime = this.chainRuntime.get(params.chainId);
+    let runtime = this._chainStore.getRuntime(params.chainId);
     if (!runtime) {
       const state = createChainState(this.placeholderMandate(params.chainId, params.chainMandateId));
       runtime = {
         state,
         bidStrategy: { baseCostUsd: 1, capabilityLocalEtaMs: 60_000, reputationDiscount: 1, etaSlackMs: 60_000 },
       };
-      this.chainRuntime.set(params.chainId, runtime);
+      this._chainStore.setRuntime(params.chainId, runtime);
     }
     const deps = await this.buildChainOrchestratorDeps();
     const plan = await planChain(deps, runtime.state, params.goal, { allowLlm: params.allowLlm ?? false });
@@ -11805,7 +11809,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   async chainLaunch(params: ChainLaunchParams): Promise<ChainLaunchResult> {
-    const runtime = this.chainRuntime.get(params.chainId);
+    const runtime = this._chainStore.getRuntime(params.chainId);
     if (!runtime) {
       return { chainId: params.chainId, proposed: 0, mandateBroadcastOk: false };
     }
@@ -11823,110 +11827,66 @@ class NodeServiceImpl implements NodeService {
   }
 
   async chainGetState(params: ChainGetStateParams): Promise<ChainGetStateResult> {
-    const runtime = this.chainRuntime.get(params.chainId);
-    if (!runtime) {
-      return {
-        chainId: params.chainId,
-        chainMandateId: "",
-        subtaskCount: 0,
-        bidCount: 0,
-        awardedCount: 0,
-        partialCount: 0,
-        cancelledCount: 0,
-        chainCancelled: false,
-        published: false,
-        budgetSpentUsd: 0,
-        budgetMaxUsd: 0,
-        budgetReservedUsd: 0,
-        budgetSynthesisUsd: 0,
-      };
-    }
-    const result = this.snapshotToResult(chainStateSnapshot(runtime.state));
-    result.bidsBySubtask = this.bidsBySubtask(runtime.state);
-    result.goal = this._chainGoals.get(params.chainId);
-    result.estimatedCostRange = this._chainCostEstimates.get(params.chainId);
-    result.budgetWarningLevel = chainBudgetWarningLevel(runtime.state);
-    return result;
+    return chainGetStateViaRuntime(this._chainContext(), params);
   }
 
-  async chainListActive(params?: ChainListActiveParams): Promise<ChainListActiveResult> {
-    void params;
-    const chains = [...this.chainRuntime.keys()].map((id) => {
-      const rt = this.chainRuntime.get(id)!;
-      const snap = this.snapshotToResult(chainStateSnapshot(rt.state));
-      snap.bidsBySubtask = this.bidsBySubtask(rt.state);
-      return snap;
-    });
-    return { chains };
+  async chainListActive(_params?: ChainListActiveParams): Promise<ChainListActiveResult> {
+    return chainListActiveViaRuntime(this._chainContext());
   }
 
   async chainCancel(params: ChainCancelParams): Promise<ChainCancelResult> {
-    const runtime = this.chainRuntime.get(params.chainId);
-    if (!runtime) return { chainId: params.chainId, cancelled: [] };
-    if (params.subtaskId) {
-      runtime.state.cancelledSubtasks.add(params.subtaskId);
-      return { chainId: params.chainId, cancelled: [params.subtaskId] };
-    }
-    runtime.state.chainCancelled = true;
-    return { chainId: params.chainId, cancelled: [...runtime.state.subtasks.keys()] };
+    return chainCancelViaRuntime(this._chainContext(), params);
   }
 
   async chainListReports(params?: ChainListReportsParams): Promise<ChainListReportsResult> {
-    if (!this._taskStore) return { reports: [] };
-    const rows = await this._taskStore.listChainReports(params);
-    return {
-      reports: rows.map((row) => ({
-        chainId: row.report.chainId,
-        chainMandateId: row.report.chainMandateId,
-        orchestratorOwnerId: row.report.orchestratorOwnerId,
-        orchestratorPeerId: row.report.orchestratorPeerId,
-        pinned: row.report.pinned ?? false,
-        createdAt: row.report.createdAt,
-        chainSummary: {
-          subtaskCount: row.report.chainSummary.subtaskCount,
-          workerCount: row.report.chainSummary.workerAllocations.length,
-          synthesisCostUsd: row.report.chainSummary.synthesisCostUsd,
-        },
-      })),
-    };
+    return chainListReportsViaRuntime(this._chainContext(), params);
   }
 
   async chainGetReport(params: ChainGetReportParams): Promise<ChainGetReportResult> {
-    if (!this._taskStore) return { report: null };
-    const row = await this._taskStore.getChainReport(params.chainId);
-    return { report: row?.report ?? null };
+    return chainGetReportViaRuntime(this._chainContext(), params);
   }
 
   async chainPinReport(params: ChainPinReportParams): Promise<ChainPinReportResult> {
-    if (this._taskStore) {
-      await this._taskStore.pinChainReport(params.chainId, params.pinned);
-    }
-    return { chainId: params.chainId, pinned: params.pinned };
+    return chainPinReportViaRuntime(this._chainContext(), params);
   }
 
   async chainSetBidStrategy(params: ChainSetBidStrategyParams): Promise<ChainSetBidStrategyResult> {
-    const strategy = {
-      baseCostUsd: params.baseCostUsd,
-      capabilityLocalEtaMs: params.capabilityLocalEtaMs,
-      reputationDiscount: params.reputationDiscount ?? 1.0,
-      etaSlackMs: params.etaSlackMs ?? 60_000,
-    };
-    this.chainBidStrategies.set(params.capability, strategy);
-    return { capability: params.capability, baseCostUsd: params.baseCostUsd };
+    return chainSetBidStrategyViaRuntime(this._chainContext(), params);
   }
 
   async chainGetBidStrategy(params: ChainGetBidStrategyParams): Promise<ChainGetBidStrategyResult> {
-    const s = this.chainBidStrategies.get(params.capability) ?? {
-      baseCostUsd: 1,
-      capabilityLocalEtaMs: 60_000,
-      reputationDiscount: 1,
-      etaSlackMs: 60_000,
+    return chainGetBidStrategyViaRuntime(this._chainContext(), params);
+  }
+
+  async chainGetDefaults(_params: ChainGetDefaultsParams): Promise<ChainGetDefaultsResult> {
+    return chainGetDefaultsViaRuntime(this._chainContext(), _params);
+  }
+
+  async chainSetDefaults(params: ChainSetDefaultsParams): Promise<ChainSetDefaultsResult> {
+    return chainSetDefaultsViaRuntime(this._chainContext(), params);
+  }
+
+  private _chainContext(): ChainContext {
+    return {
+      store: this._chainStore,
+      hasTaskStore: () => Boolean(this._taskStore),
+      listChainReports: (params) =>
+        this._taskStore!.listChainReports(params) as never,
+      getChainReport: (chainId) =>
+        this._taskStore!.getChainReport(chainId) as never,
+      pinChainReport: (chainId, pinned) =>
+        this._taskStore!.pinChainReport(chainId, pinned),
+      getChainGoal: (chainId) => this._chainGoals.get(chainId),
+      getChainCostEstimate: (chainId) => this._chainCostEstimates.get(chainId),
+      snapshotToResult: (snap) => this.snapshotToResult(snap),
+      bidsBySubtask: (state) => this.bidsBySubtask(state),
+      getNodeConfig: () => this.getNodeConfig(),
+      setNodeConfig: (cfg) => this.updateNodeConfig(cfg as never),
     };
-    return { capability: params.capability, ...s };
   }
 
   async chainEvaluateBids(params: ChainEvaluateBidsParams): Promise<ChainEvaluateBidsResult> {
-    const runtime = this.chainRuntime.get(params.chainId);
+    const runtime = this._chainStore.getRuntime(params.chainId);
     if (!runtime) {
       return { chainId: params.chainId, subtaskId: params.subtaskId, awarded: false };
     }
@@ -11954,7 +11914,7 @@ class NodeServiceImpl implements NodeService {
   }
 
 async chainCounterBid(params: ChainCounterBidParams): Promise<ChainCounterBidResult> {
-    const runtime = this.chainRuntime.get(params.chainId);
+    const runtime = this._chainStore.getRuntime(params.chainId);
     if (!runtime) {
       return { chainId: params.chainId, subtaskId: params.subtaskId, ok: false, reason: "no_such_subtask" };
     }
@@ -11983,7 +11943,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
   }
 
   async chainRebalance(params: ChainRebalanceParams): Promise<ChainRebalanceResult> {
-    const runtime = this.chainRuntime.get(params.chainId);
+    const runtime = this._chainStore.getRuntime(params.chainId);
     if (!runtime) {
       return { chainId: params.chainId, ok: false, reason: "cancelled" };
     }
@@ -12004,40 +11964,8 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     return { chainId: params.chainId, ok: false, reason: result.reason };
   }
 
-  /**
-   * Phase 40D — read the node's default chain policy. Defaults are sourced
-   * from the live `NodeConfig.chainDefaults` block; if the user hasn't set
-   * anything yet, returns a safe "manual" baseline.
-   */
-  async chainGetDefaults(_params: ChainGetDefaultsParams): Promise<ChainGetDefaultsResult> {
-    const cfg = await this.getNodeConfig();
-    return { defaults: mergeChainDefaults(cfg?.chainDefaults) };
-  }
-
-  /**
-   * Phase 40D — overwrite the node's default chain policy. Validates the
-   * incoming `ChainDefaultsConfig` against the Zod-derived shape so the
-   * owner can't accidentally store a malformed value (negative USD,
-   * confidence > 1, etc.).
-   */
-  async chainSetDefaults(params: ChainSetDefaultsParams): Promise<ChainSetDefaultsResult> {
-    const d = params.defaults ?? {};
-    if (
-      (d.stallTimeoutMs !== undefined && d.stallTimeoutMs <= 0) ||
-      (d.lowConfidenceThreshold !== undefined &&
-        (d.lowConfidenceThreshold < 0 || d.lowConfidenceThreshold > 1)) ||
-      (d.maxAutoRebalances !== undefined && d.maxAutoRebalances < 0) ||
-      (d.autoRebalanceIncrementUsd !== undefined && d.autoRebalanceIncrementUsd < 0) ||
-      (d.rebalancePolicy !== undefined &&
-        d.rebalancePolicy !== "manual" &&
-        d.rebalancePolicy !== "auto" &&
-        d.rebalancePolicy !== "never")
-    ) {
-      return { ok: false, defaults: d, reason: "validation_failed" };
-    }
-    await this.updateNodeConfig({ chainDefaults: d });
-    return { ok: true, defaults: d };
-  }
+  // (chainGetDefaults / chainSetDefaults have been moved to the runtime;
+  // their delegations live near the top of this block.)
 
   // --- private helpers ---
 
@@ -12131,7 +12059,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
    */
   async handleInboundChainEnvelope(envelope: EnvoyEnvelope): Promise<void> {
     const chainId = extractChainIdFromEnvelope(envelope);
-    const runtime = chainId ? this.chainRuntime.get(chainId) : undefined;
+    const runtime = chainId ? this._chainStore.getRuntime(chainId) : undefined;
     const inboundState = runtime?.state;
     const deps = await this.buildChainInboundDeps();
     const decision = await dispatchChainEnvelope(deps, envelope, inboundState);
@@ -12202,7 +12130,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
         if (result.ok) {
           let subtask = this._chainWorkerSubtasks.get(payload.award.subtaskId)?.subtask;
           if (!subtask) {
-            for (const rt of this.chainRuntime.values()) {
+            for (const rt of this._chainStore.listActive()) {
               subtask = rt.state.subtasks.get(payload.award.subtaskId);
               if (subtask) break;
             }
@@ -12221,7 +12149,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
       handleWorkerCancel: (envelope, payload) => handleWorkerCancel(workerDeps, envelope, payload),
       handleWorkerHeartbeat: (envelope, payload) => handleWorkerHeartbeat(workerDeps, envelope, payload),
       handleOrchestratorBid: async (envelope, payload, state) => {
-        const runtime = this.chainRuntime.get(state.chainId);
+        const runtime = this._chainStore.getRuntime(state.chainId);
         if (!runtime) return { ok: false, reason: "handler_denied" as const };
         const result = await handleOrchestratorBid(orchDeps, envelope, payload, runtime.state);
         if (result.ok) {
@@ -12231,7 +12159,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
         return result;
       },
       handleOrchestratorPartial: async (envelope, payload, state) => {
-        const runtime = this.chainRuntime.get(state.chainId);
+        const runtime = this._chainStore.getRuntime(state.chainId);
         if (!runtime) return { ok: false, reason: "handler_denied" as const };
         const result = await handleOrchestratorPartial(orchDeps, envelope, payload, runtime.state);
         if (result.ok) {
@@ -12250,12 +12178,12 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
         return result;
       },
       handleOrchestratorMerge: (envelope, payload, state) => {
-        const runtime = this.chainRuntime.get(state.chainId);
+        const runtime = this._chainStore.getRuntime(state.chainId);
         if (!runtime) return Promise.resolve({ ok: false, reason: "handler_denied" as const });
         return handleOrchestratorMerge(orchDeps, envelope, payload, runtime.state);
       },
       handleOrchestratorHeartbeat: (envelope, payload, state) => {
-        const runtime = this.chainRuntime.get(state.chainId);
+        const runtime = this._chainStore.getRuntime(state.chainId);
         if (!runtime) return Promise.resolve({ ok: false, reason: "handler_denied" as const });
         return handleOrchestratorHeartbeat(orchDeps, envelope, payload, runtime.state);
       },
@@ -12327,7 +12255,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
 
   private _startChainTracking(chainId: string): void {
     this._stopChainTracking(chainId);
-    const runtime = this.chainRuntime.get(chainId);
+    const runtime = this._chainStore.getRuntime(chainId);
     if (!runtime || runtime.state.published || runtime.state.chainCancelled) return;
 
     const abort = new AbortController();
@@ -12335,7 +12263,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
 
     void (async () => {
       while (!abort.signal.aborted) {
-        const rt = this.chainRuntime.get(chainId);
+        const rt = this._chainStore.getRuntime(chainId);
         if (!rt || rt.state.published || rt.state.chainCancelled) {
           this._stopChainTracking(chainId);
           return;
@@ -12419,7 +12347,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
       skipSensitivityGate?: boolean;
     },
   ): Promise<Awaited<ReturnType<typeof evaluateBids>>> {
-    const runtime = this.chainRuntime.get(chainId);
+    const runtime = this._chainStore.getRuntime(chainId);
     if (!runtime) return { ok: false, reason: "no_bids" };
     const deps = await this.buildChainOrchestratorDeps();
     const result = await evaluateBids(deps, runtime.state, {
@@ -12463,7 +12391,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
   }
 
   private _emitChainState(chainId: string): void {
-    const runtime = this.chainRuntime.get(chainId);
+    const runtime = this._chainStore.getRuntime(chainId);
     if (!runtime) return;
     const state = this.snapshotToResult(chainStateSnapshot(runtime.state));
     state.bidsBySubtask = this.bidsBySubtask(runtime.state);
@@ -12485,7 +12413,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
   }
 
   private async _autoEvaluateSubtask(chainId: string, subtaskId: string): Promise<void> {
-    const runtime = this.chainRuntime.get(chainId);
+    const runtime = this._chainStore.getRuntime(chainId);
     if (!runtime || runtime.state.chainCancelled || runtime.state.awards.has(subtaskId)) return;
     if (!subtasksAwaitingAward(runtime.state).includes(subtaskId)) return;
     const result = await this._evaluateAwardAndAccept(chainId, subtaskId, { policy: "composite" });
@@ -12553,7 +12481,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     };
     const state = createChainState(mandate);
     this._chainGoals.set(chainId, input.goal);
-    this.chainRuntime.set(chainId, {
+    this._chainStore.setRuntime(chainId, {
       state,
       bidStrategy: { baseCostUsd: 1, capabilityLocalEtaMs: 60_000, reputationDiscount: 1, etaSlackMs: 60_000 },
     });
@@ -12703,7 +12631,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
   }
 
   async chainExportCosts(params: ChainExportCostsParams): Promise<ChainExportCostsResult> {
-    const runtime = this.chainRuntime.get(params.chainId);
+    const runtime = this._chainStore.getRuntime(params.chainId);
     if (!runtime) {
       return { chainId: params.chainId, csv: "chainId,status\n" + `"${params.chainId}","not_found"\n` };
     }
@@ -13722,6 +13650,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     this._publishedLibraryStore.clear();
     this._intentHistoryStore.clear();
     this._continuityStore.clear();
+    this._chainStore.clear();
 
     // On-disk state — overwrite each file with an empty/initial payload.
     const { unlink } = await import("node:fs/promises");
