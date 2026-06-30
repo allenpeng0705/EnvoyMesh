@@ -1,0 +1,66 @@
+refactor: extract _wireMeshEvents wiring to runtime (Step 20e, Option B)
+
+Step 20e — Option B as agreed: extract the wiring structure to a
+runtime, leave the handler bodies as class methods.
+
+What changed:
+  - New runtime: apps/node/src/node-service-wire-mesh-events.ts
+    - wireMeshEventsViaRuntime(ctx) registers the inbound-message and
+      peer-discovered handlers with the mesh
+  - Class `_wireMeshEvents()` is now a 3-line delegation
+  - Class `_wireMeshEventsContext()` is a small factory that binds
+    the handlers
+  - Class `_handleInboundMessage(params)` preserves the original 200+-
+    line onMessage body verbatim, with `const mesh = this._mesh!;`
+    etc. added at the top to mimic the original closure captures
+  - Class `_handlePeerDiscovered(params)` preserves the original
+    3-line onPeerDiscovered body
+
+Net effect on line count:
+  - node-service-impl.ts: 12,559 -> 12,577 (+18 lines — slightly more
+    than the original because the factory + local-const declarations
+    add a small amount of overhead)
+  - node-service-wire-mesh-events.ts: 33 lines (new runtime)
+  - Total project size: roughly unchanged (~12,610 lines combined)
+
+Why this matters more than line count:
+  - The wiring pattern (mesh.onX(handler) registration) is now
+    encapsulated in a testable runtime
+  - The 432-line method body is split into 2 named methods with
+    clear single responsibilities
+  - Future commits can extract `_handleInboundMessage` body into a
+    per-intent runtime incrementally
+
+Subtle preservation: the original `const mesh = this._mesh!;`
+etc. local captures are preserved as local consts at the top of
+the new methods. This means the body code (`mesh.X`,
+`profile.X`, etc.) continues to work without text substitution.
+
+2 new unit tests in apps/node/test/node-service-wire-mesh-events.test.ts:
+  - registers both handlers with the mesh
+  - passes through the same handler references
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2241 pass / 80 fail / 128 skip
+  (was 2239 / 80 / 128 — +2 new tests, 0 regressions)
+
+Cumulative after 24 commits:
+- node-service-impl.ts: 14,247 -> 12,577 (-1,670, -11.72%)
+- 17 new runtime modules
+- +205 new unit tests
+
+Node Lifecycle is now 100% extracted:
+  - 20a: capability discovery scheduler
+  - 20b: agent-setup helpers
+  - 20c: stopNode
+  - 20d: startNode
+  - 20e: wireMeshEvents wiring
+
+What's left in node-service-impl.ts:
+  - The 200+-line _handleInboundMessage body (per-intent dispatch) —
+    this can be extracted incrementally per-handler cluster if desired
+  - Various Connection Status pieces (getPairingPayload, WanJoin,
+    CompanyInvite)
+  - Terminal Manager wiring
+  - Misc smaller methods

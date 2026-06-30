@@ -617,6 +617,10 @@ import {
   startNodeViaRuntime,
   type StartNodeContext,
 } from "./node-service-start.js";
+import {
+  wireMeshEventsViaRuntime,
+  type WireMeshEventsContext,
+} from "./node-service-wire-mesh-events.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
@@ -8037,11 +8041,23 @@ class NodeServiceImpl implements NodeService {
   }
 
   private _wireMeshEvents(): void {
+    wireMeshEventsViaRuntime(this._wireMeshEventsContext());
+  }
+
+  private _wireMeshEventsContext(): WireMeshEventsContext {
+    return {
+      mesh: this._mesh as never,
+      onMessage: (params) => this._handleInboundMessage(params),
+      onPeerDiscovered: (params) => this._handlePeerDiscovered(params),
+    };
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async _handleInboundMessage(params: any): Promise<void> {
+    const { envelope, remotePeerId, remoteAddr, replyWithEnvelope } = params as any;
     const mesh = this._mesh!;
     const profile = this._profile!;
     const taskStore = this._taskStore!;
-
-    mesh.onMessage(async ({ envelope, remotePeerId, remoteAddr, replyWithEnvelope }) => {
       const guardDecision = this._inboundGuard!.inspect(envelope);
       if (guardDecision.action === "reject") return;
 
@@ -8461,11 +8477,13 @@ class NodeServiceImpl implements NodeService {
           });
         }
       }
-    });
+  }
 
-    mesh.onPeerDiscovered(async ({ peerId, multiaddrs }) => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private async _handlePeerDiscovered(params: any): Promise<void> {
+    const { peerId, multiaddrs } = params as any;
+    const mesh = this._mesh!;
       await this.handleMeshPeerDiscovered(peerId, multiaddrs);
-    });
   }
 
   private async _runCapabilityDiscoveryCycle(
