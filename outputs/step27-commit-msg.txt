@@ -1,0 +1,33 @@
+refactor: extract runDocumentAgentTurn + _runDocumentAgentTurnCore (Step 27)
+
+Step 27 — extract the legacy runDocumentAgentTurn method (deprecated
+RPC entry point) and its private core.
+
+The class methods collapse to 1-line delegations. The runtime
+takes a RunDocumentAgentTurnContext with 10 accessors (incl.
+recordH2aOwnerTurn + runDocumentAgentTurnCore, used by the legacy
+wrapper).
+
+0 net new tests this step (the existing runOwnerAgentTurn tests
+already cover the openclaw/native-fallback path; this is just
+the legacy wrapper).
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2278 pass / 80 fail / 128 skip
+  (no change in counts)
+
+Net effect:
+- node-service-impl.ts: 11,986 -> 12,004 (+18 lines — the factory
+  context overhead for two small methods is slightly more than the
+  savings, but the wiring structure is now clean)
+- node-service-handlers-run-document-agent-turn.ts: 88 lines (new runtime)
+- 31 commits total
+
+Cumulative: 14,247 -> 12,004 (-2,243, -15.74%)
+
+Next planned extractions:
+- _handleInboundMessage body (remaining intent dispatchers)
+- Terminal Agent Assist methods
+- Herdr methods
+- More pair* methods

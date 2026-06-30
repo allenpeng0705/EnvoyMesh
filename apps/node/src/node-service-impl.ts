@@ -647,6 +647,12 @@ import {
   runOwnerAgentTurnViaRuntime,
   type RunOwnerAgentTurnContext,
 } from "./node-service-handlers-run-owner-agent-turn.js";
+import {
+  runDocumentAgentTurnViaRuntime,
+  runDocumentAgentTurnCoreViaRuntime,
+  type RunDocumentAgentTurnContext,
+  type RunDocumentAgentTurnLoop,
+} from "./node-service-handlers-run-document-agent-turn.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
@@ -8169,6 +8175,28 @@ class NodeServiceImpl implements NodeService {
     };
   }
 
+  private _runDocumentAgentTurnContext(): RunDocumentAgentTurnContext {
+    return {
+      requireToolExecutionContext: () => this._requireToolExecutionContext(),
+      listLibraryItems: (q) =>
+        this.listLibraryItems(q ? { query: q.query } : undefined) as never,
+      getBonds: () => this.getBonds() as never,
+      executeTool: (toolName, params) =>
+        (async () => {
+          const ctx = await this._requireToolExecutionContext();
+          return executeTool(toolName, params as never, ctx);
+        })() as never,
+      knowledgeQuery: (question) => this.knowledgeQuery(question) as never,
+      discoverPublishedLibrary: (p) =>
+        this.discoverPublishedLibrary(p as never) as never,
+      sendAgentChat: (targetOwnerId, text) =>
+        this.sendAgentChat(targetOwnerId, text) as never,
+      recordH2aOwnerTurn: (msg, turn) =>
+        this.recordH2aOwnerTurn(msg, turn as never),
+      runDocumentAgentTurnCore: (msg) => this._runDocumentAgentTurnCore(msg),
+    };
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async _handleInboundMessage(params: any): Promise<void> {
     const { envelope, remotePeerId, remoteAddr, replyWithEnvelope } = params as any;
@@ -10015,27 +10043,17 @@ class NodeServiceImpl implements NodeService {
   }
 
   async runDocumentAgentTurn(message: string): Promise<DocumentAgentTurnResult> {
-    console.warn(
-      "[EnvoyMesh] runDocumentAgentTurn is deprecated — use runOwnerAgentTurn from Assistant; RPC retained for one release.",
-    );
-    const turn = await this._runDocumentAgentTurnCore(message);
-    await this.recordH2aOwnerTurn(message, turn);
-    return turn;
+    return runDocumentAgentTurnViaRuntime(this._runDocumentAgentTurnContext(), message);
   }
 
-  private async _runDocumentAgentTurnCore(message: string): Promise<DocumentAgentTurnResult> {
-    this.recordOwnerActivity();
-    const context = await this._requireToolExecutionContext();
-    const turn = await runDocumentAgentTurnLoop({
+  private async _runDocumentAgentTurnCore(
+    message: string,
+  ): Promise<DocumentAgentTurnResult> {
+    return runDocumentAgentTurnCoreViaRuntime(
+      this._runDocumentAgentTurnContext(),
+      ((input) => runDocumentAgentTurnLoop(input as never)) as RunDocumentAgentTurnLoop,
       message,
-      listLibraryItems: (query) => this.listLibraryItems(query ? { query } : undefined),
-      getBonds: () => this.getBonds(),
-      executeTool: (toolName, params) => executeTool(toolName, params, context),
-      knowledgeQuery: (question) => this.knowledgeQuery(question),
-      discoverPublishedLibrary: (p) => this.discoverPublishedLibrary(p),
-      sendChat: (targetOwnerId, text) => this.sendAgentChat(targetOwnerId, text),
-    });
-    return { ...turn, answer: stripModelThinking(turn.answer) };
+    );
   }
 
   async runOwnerAgentTurn(message: string): Promise<OwnerAgentTurnResult> {
