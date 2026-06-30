@@ -1,0 +1,18 @@
+refactor: extract runSocialProxyPass (Step 29)
+
+Step 29 — extract the social-proxy pass wrapper (22 lines).
+
+The runtime takes a typed RunSocialProxyPassContext with 4 accessors.
+Class method collapses to a 1-line delegation.
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2278 pass / 80 fail / 128 skip
+  (no regression)
+
+Net effect:
+- node-service-impl.ts: 11,989 -> 11,987 (-2 lines)
+- node-service-handlers-run-social-proxy-pass.ts: 62 lines (new runtime)
+- 33 commits on refactor/impl-clean
+
+Cumulative: 14,247 -> 11,987 (-2,260, -15.86%)

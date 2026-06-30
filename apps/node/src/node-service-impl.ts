@@ -661,6 +661,10 @@ import {
   type FriendAutopilotContext,
   type SocialProxyContext,
 } from "./node-service-friend-autopilot.js";
+import {
+  runSocialProxyPassViaRuntime,
+  type RunSocialProxyPassContext,
+} from "./node-service-handlers-run-social-proxy-pass.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
@@ -4683,27 +4687,11 @@ class NodeServiceImpl implements NodeService {
     targetAgentPeerId?: string;
     focusSessionId?: string;
   }): Promise<{ ok: boolean; error?: string; correlationId?: string }> {
-    const config = await this.getNodeConfig();
-    if (!this._socialProxyStore) {
-      return { ok: false, error: "social proxy store unavailable" };
-    }
-    const deps = this._socialProxyOrchestratorDeps(config);
-    const result = await runSocialProxyPass({
-      ...deps,
-      focusSessionId: input?.focusSessionId,
-      targetCandidate:
-        input?.targetOwnerId && input?.targetPeerId
-          ? {
-              ownerId: input.targetOwnerId,
-              peerId: input.targetPeerId,
-              agentPeerId: input.targetAgentPeerId,
-            }
-          : undefined,
-    });
-    if (result.ok) {
-      await this.updateNodeConfig({ socialProxyLastPassAt: new Date().toISOString() });
-    }
-    return result;
+    return runSocialProxyPassViaRuntime(this._runSocialProxyPassContext(), input) as Promise<{
+      ok: boolean;
+      error?: string;
+      correlationId?: string;
+    }>;
   }
 
   private _socialProxyOrchestratorDeps(config: NodeConfig) {
@@ -8179,6 +8167,16 @@ class NodeServiceImpl implements NodeService {
       getSocialProxyOrchestratorDeps: (config) =>
         this._socialProxyOrchestratorDeps(config) as never,
       getPendingSocialIntroProposals: () => this._pendingSocialIntroProposals as never,
+    };
+  }
+
+  private _runSocialProxyPassContext(): RunSocialProxyPassContext {
+    return {
+      getNodeConfig: () => this.getNodeConfig(),
+      getSocialProxyOrchestratorDeps: (config) =>
+        this._socialProxyOrchestratorDeps(config) as never,
+      hasSocialProxyStore: () => Boolean(this._socialProxyStore),
+      updateNodeConfig: (cfg) => this.updateNodeConfig(cfg as never),
     };
   }
 
