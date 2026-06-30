@@ -6,14 +6,22 @@
  * strategy>`) and exposes the simple RPCs as runtime functions.
  *
  * The complex RPCs (`chainPlan`, `chainLaunch`, `chainRebalance`,
- * `chainEvaluateBids`, etc.) still live on the class because they
- * pull in many other class helpers; they read the store directly
- * via the class-owned `ChainStore` field. Future commits can lift
- * them out too.
+ * `chainEvaluateBids`, etc.) are also exposed here as runtime
+ * functions. They call back into the class via the `ChainContext`
+ * for the orchestrator-dep builder and the award-and-accept
+ * helper.
  */
 import { randomUUID } from "node:crypto";
 import { chainBudgetWarningLevel } from "./chain-auto-orchestrator.js";
-import { chainStateSnapshot, createChainState, type ChainState } from "./chain-orchestrator.js";
+import {
+  chainStateSnapshot,
+  counterBid,
+  createChainState,
+  launchChain,
+  planChain,
+  rebalanceChain,
+  type ChainState,
+} from "./chain-orchestrator.js";
 import { CHAIN_GOAL_TEMPLATES, mergeChainDefaults } from "./chain-defaults.js";
 import { chainCostsToCsv } from "./chain-cost-export.js";
 import type {
@@ -45,6 +53,16 @@ import type {
   ChainSaveRecipeResult,
   ChainDeleteRecipeParams,
   ChainDeleteRecipeResult,
+  ChainPlanParams,
+  ChainPlanResult,
+  ChainLaunchParams,
+  ChainLaunchResult,
+  ChainEvaluateBidsParams,
+  ChainEvaluateBidsResult,
+  ChainCounterBidParams,
+  ChainCounterBidResult,
+  ChainRebalanceParams,
+  ChainRebalanceResult,
 } from "@envoymesh/api";
 
 /* ---------- store ---------- */
@@ -169,6 +187,21 @@ export interface ChainContext {
   /** Chain config plumbing. */
   getNodeConfig(): Promise<unknown>;
   setNodeConfig(cfg: unknown): Promise<void>;
+  /** Build the orchestrator dep bag (calls into mesh + LLM + audit). */
+  buildChainOrchestratorDeps(): Promise<unknown>;
+  /** Run the bid evaluation + accept pipeline for a single subtask. */
+  evaluateAwardAndAccept(
+    chainId: string,
+    subtaskId: string,
+    options: { policy?: string; pickWorkerPeerId?: string },
+  ): Promise<
+    | { ok: true; bid: { workerPeerId: string; proposedCostUsd: number }; round: number }
+    | { ok: false; reason: string }
+  >;
+  /** Emit a `chain:state` event for the given chainId. */
+  emitChainState(chainId: string): void;
+  /** Start the heartbeat tracker for a launched chain. */
+  startChainTracking(chainId: string): void;
   /** Recipe persistence (optional — the runtime returns the builtin list when absent).
    *  Types are intentionally loose: the class is the source of truth for the
    *  recipe row shape, and the runtime just passes rows through. */
@@ -424,4 +457,150 @@ export async function chainDeleteRecipeViaRuntime(
   if (!ctx.hasTaskStore() || !ctx.deleteChainRecipe) return { ok: false, deleted: false };
   const deleted = await ctx.deleteChainRecipe(params.id);
   return { ok: deleted, deleted };
+}
+
+/* ---------- chainPlan / chainLaunch / chainEvaluateBids / chainCounterBid / chainRebalance ---------- */
+
+export async function chainPlanViaRuntime(
+  ctx: ChainContext,
+  params: ChainPlanParams,
+): Promise<ChainPlanResult> {
+  if (!ctx.store.getRuntime(params.chainId)) {
+    ctx.store.ensureRuntime(params.chainId, params.chainMandateId);
+  }
+  const deps = (await ctx.buildChainOrchestratorDeps()) as Parameters<typeof planChain>[0];
+  const entry = ctx.store.getRuntime(params.chainId);
+  if (!entry) return { chainId: params.chainId, subtasks: [] };
+  const plan = await planChain(deps, entry.state, params.goal, {
+    allowLlm: params.allowLlm ?? false,
+  });
+  if (!plan.ok) {
+    return { chainId: params.chainId, subtasks: [] };
+  }
+  return {
+    chainId: params.chainId,
+    subtasks: plan.subtasks.map((s) => ({
+      subtaskId: s.subtaskId,
+      depth: s.depth,
+      requiredCapability: s.requiredCapability,
+      objective: s.objective,
+    })),
+  };
+}
+
+export async function chainLaunchViaRuntime(
+  ctx: ChainContext,
+  params: ChainLaunchParams,
+): Promise<ChainLaunchResult> {
+  const entry = ctx.store.getRuntime(params.chainId);
+  if (!entry) {
+    return { chainId: params.chainId, proposed: 0, mandateBroadcastOk: false };
+  }
+  const deps = (await ctx.buildChainOrchestratorDeps()) as Parameters<typeof launchChain>[0];
+  const result = await launchChain(deps, entry.state, params.workersBySubtask);
+  if (result.ok) {
+    ctx.startChainTracking(params.chainId);
+    ctx.emitChainState(params.chainId);
+    return {
+      chainId: params.chainId,
+      proposed: result.proposed,
+      mandateBroadcastOk: result.mandateBroadcastOk,
+    };
+  }
+  // Result is {ok: false, reason} — synthesise the API shape.
+  return {
+    chainId: params.chainId,
+    proposed: 0,
+    mandateBroadcastOk: false,
+  };
+}
+
+export async function chainEvaluateBidsViaRuntime(
+  ctx: ChainContext,
+  params: ChainEvaluateBidsParams,
+): Promise<ChainEvaluateBidsResult> {
+  const entry = ctx.store.getRuntime(params.chainId);
+  if (!entry) {
+    return { chainId: params.chainId, subtaskId: params.subtaskId, awarded: false };
+  }
+  const policy =
+    params.policy === "highest_confidence" ? "composite" : params.policy;
+  const result = await ctx.evaluateAwardAndAccept(params.chainId, params.subtaskId, {
+    policy,
+    pickWorkerPeerId: params.pickWorkerPeerId,
+  });
+  if (result.ok) {
+    ctx.emitChainState(params.chainId);
+    return {
+      chainId: params.chainId,
+      subtaskId: params.subtaskId,
+      awarded: true,
+      workerPeerId: result.bid.workerPeerId,
+      round: result.round,
+      acceptedCostUsd: result.bid.proposedCostUsd,
+    };
+  }
+  return {
+    chainId: params.chainId,
+    subtaskId: params.subtaskId,
+    awarded: false,
+    reason: result.reason as ChainEvaluateBidsResult["reason"],
+  };
+}
+
+export async function chainCounterBidViaRuntime(
+  ctx: ChainContext,
+  params: ChainCounterBidParams,
+): Promise<ChainCounterBidResult> {
+  const entry = ctx.store.getRuntime(params.chainId);
+  if (!entry) {
+    return { chainId: params.chainId, subtaskId: params.subtaskId, ok: false, reason: "no_such_subtask" };
+  }
+  const deps = (await ctx.buildChainOrchestratorDeps()) as Parameters<typeof counterBid>[0];
+  const result = await counterBid(deps, entry.state, {
+    subtaskId: params.subtaskId,
+    newCostCeilingUsd: params.newCostCeilingUsd,
+    newDeadlineAt: params.newDeadlineAt,
+  });
+  if (result.ok) {
+    return {
+      chainId: params.chainId,
+      subtaskId: params.subtaskId,
+      ok: true,
+      rebroadcastAt: result.rebroadcastAt,
+      clearedBids: result.clearedBids,
+      newRound: result.newRound,
+    };
+  }
+  return {
+    chainId: params.chainId,
+    subtaskId: params.subtaskId,
+    ok: false,
+    reason: result.reason as ChainCounterBidResult["reason"],
+  };
+}
+
+export async function chainRebalanceViaRuntime(
+  ctx: ChainContext,
+  params: ChainRebalanceParams,
+): Promise<ChainRebalanceResult> {
+  const entry = ctx.store.getRuntime(params.chainId);
+  if (!entry) {
+    return { chainId: params.chainId, ok: false, reason: "cancelled" };
+  }
+  const deps = (await ctx.buildChainOrchestratorDeps()) as Parameters<typeof rebalanceChain>[0];
+  const result = await rebalanceChain(deps, entry.state, {
+    additionalBudgetUsd: params.additionalBudgetUsd,
+  });
+  if (result.ok) {
+    return {
+      chainId: params.chainId,
+      ok: true,
+      previousMaxUsd: result.previousMaxUsd,
+      newMaxUsd: result.newMaxUsd,
+      reEvaluated: result.reEvaluated,
+      autoTriggered: result.autoTriggered,
+    };
+  }
+  return { chainId: params.chainId, ok: false, reason: result.reason as ChainRebalanceResult["reason"] };
 }

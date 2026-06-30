@@ -513,16 +513,21 @@ import {
 import {
   ChainStore,
   chainCancelViaRuntime,
+  chainCounterBidViaRuntime,
   chainDeleteRecipeViaRuntime,
+  chainEvaluateBidsViaRuntime,
   chainExportCostsViaRuntime,
   chainGetBidStrategyViaRuntime,
   chainGetDefaultsViaRuntime,
   chainGetReportViaRuntime,
   chainGetStateViaRuntime,
+  chainLaunchViaRuntime,
   chainListActiveViaRuntime,
   chainListRecipesViaRuntime,
   chainListReportsViaRuntime,
   chainPinReportViaRuntime,
+  chainPlanViaRuntime,
+  chainRebalanceViaRuntime,
   chainSaveRecipeViaRuntime,
   chainSetBidStrategyViaRuntime,
   chainSetDefaultsViaRuntime,
@@ -11799,29 +11804,12 @@ class NodeServiceImpl implements NodeService {
 
   async chainPlan(params: ChainPlanParams): Promise<ChainPlanResult> {
     void this.ensureChainMandateLoaded(params.chainMandateId);
-    let runtime = this._chainStore.getRuntime(params.chainId);
-    if (!runtime) {
-      const state = createChainState(this.placeholderMandate(params.chainId, params.chainMandateId));
-      runtime = {
-        state,
-        bidStrategy: { baseCostUsd: 1, capabilityLocalEtaMs: 60_000, reputationDiscount: 1, etaSlackMs: 60_000 },
-      };
-      this._chainStore.setRuntime(params.chainId, runtime);
-    }
-    const deps = await this.buildChainOrchestratorDeps();
-    const plan = await planChain(deps, runtime.state, params.goal, { allowLlm: params.allowLlm ?? false });
-    if (!plan.ok) {
-      return { chainId: params.chainId, subtasks: [] };
-    }
-    return {
+    return chainPlanViaRuntime(this._chainContext(), {
       chainId: params.chainId,
-      subtasks: plan.subtasks.map((s) => ({
-        subtaskId: s.subtaskId,
-        depth: s.depth,
-        requiredCapability: s.requiredCapability,
-        objective: s.objective,
-      })),
-    };
+      chainMandateId: params.chainMandateId,
+      goal: params.goal,
+      allowLlm: params.allowLlm ?? false,
+    });
   }
 
   async chainLaunch(params: ChainLaunchParams): Promise<ChainLaunchResult> {
@@ -11908,86 +11896,24 @@ class NodeServiceImpl implements NodeService {
       deleteChainRecipe: this._taskStore
         ? (id) => this._taskStore!.deleteChainRecipe(id)
         : undefined,
+      buildChainOrchestratorDeps: () => this.buildChainOrchestratorDeps() as never,
+      evaluateAwardAndAccept: (chainId, subtaskId, options) =>
+        this._evaluateAwardAndAccept(chainId, subtaskId, options as never) as never,
+      emitChainState: (chainId) => this._emitChainState(chainId),
+      startChainTracking: (chainId) => this._startChainTracking(chainId),
     };
   }
 
   async chainEvaluateBids(params: ChainEvaluateBidsParams): Promise<ChainEvaluateBidsResult> {
-    const runtime = this._chainStore.getRuntime(params.chainId);
-    if (!runtime) {
-      return { chainId: params.chainId, subtaskId: params.subtaskId, awarded: false };
-    }
-    const awarded = await this._evaluateAwardAndAccept(params.chainId, params.subtaskId, {
-      policy: params.policy === "highest_confidence" ? "composite" : params.policy,
-      pickWorkerPeerId: params.pickWorkerPeerId,
-    });
-    if (awarded.ok) {
-      this._emitChainState(params.chainId);
-      return {
-        chainId: params.chainId,
-        subtaskId: params.subtaskId,
-        awarded: true,
-        workerPeerId: awarded.bid.workerPeerId,
-        round: awarded.round,
-        acceptedCostUsd: awarded.bid.proposedCostUsd,
-      };
-    }
-    return {
-      chainId: params.chainId,
-      subtaskId: params.subtaskId,
-      awarded: false,
-      reason: awarded.reason,
-    };
+    return chainEvaluateBidsViaRuntime(this._chainContext(), params);
   }
 
-async chainCounterBid(params: ChainCounterBidParams): Promise<ChainCounterBidResult> {
-    const runtime = this._chainStore.getRuntime(params.chainId);
-    if (!runtime) {
-      return { chainId: params.chainId, subtaskId: params.subtaskId, ok: false, reason: "no_such_subtask" };
-    }
-const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps();
-    const result = await counterBid(deps, runtime.state, {
-      subtaskId: params.subtaskId,
-      newCostCeilingUsd: params.newCostCeilingUsd,
-      newDeadlineAt: params.newDeadlineAt,
-    });
-    if (result.ok) {
-      return {
-        chainId: params.chainId,
-        subtaskId: params.subtaskId,
-        ok: true,
-        rebroadcastAt: result.rebroadcastAt,
-        clearedBids: result.clearedBids,
-        newRound: result.newRound,
-      };
-    }
-    return {
-      chainId: params.chainId,
-      subtaskId: params.subtaskId,
-      ok: false,
-      reason: result.reason,
-    };
+  async chainCounterBid(params: ChainCounterBidParams): Promise<ChainCounterBidResult> {
+    return chainCounterBidViaRuntime(this._chainContext(), params);
   }
 
   async chainRebalance(params: ChainRebalanceParams): Promise<ChainRebalanceResult> {
-    const runtime = this._chainStore.getRuntime(params.chainId);
-    if (!runtime) {
-      return { chainId: params.chainId, ok: false, reason: "cancelled" };
-    }
-    const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps();
-    const result = await rebalanceChain(deps, runtime.state, {
-      additionalBudgetUsd: params.additionalBudgetUsd,
-    });
-    if (result.ok) {
-      return {
-        chainId: params.chainId,
-        ok: true,
-        previousMaxUsd: result.previousMaxUsd,
-        newMaxUsd: result.newMaxUsd,
-        reEvaluated: result.reEvaluated,
-        autoTriggered: result.autoTriggered,
-      };
-    }
-    return { chainId: params.chainId, ok: false, reason: result.reason };
+    return chainRebalanceViaRuntime(this._chainContext(), params);
   }
 
   // (chainGetDefaults / chainSetDefaults have been moved to the runtime;

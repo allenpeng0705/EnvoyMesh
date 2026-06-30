@@ -1,0 +1,38 @@
+refactor: extract chainPlan / chainLaunch / chainEvaluateBids / chainCounterBid / chainRebalance to chains runtime
+
+Step 11 of the refactor plan: the 5 complex chain methods that use
+the orchestrator-dep bag. They now delegate to runtime functions
+that call back into the class via the ChainContext for the dep
+builder and the award-and-accept helper.
+
+- 5 new runtime functions added to apps/node/src/node-service-chains.ts:
+  - chainPlanViaRuntime
+  - chainLaunchViaRuntime
+  - chainEvaluateBidsViaRuntime
+  - chainCounterBidViaRuntime
+  - chainRebalanceViaRuntime
+- ChainContext extended with 4 new methods:
+  - buildChainOrchestratorDeps() — runs the full dep-build
+    pipeline (mesh + LLM + audit + agent identity)
+  - evaluateAwardAndAccept(chainId, subtaskId, options) — runs the
+    award pipeline
+  - emitChainState(chainId) — event emit
+  - startChainTracking(chainId) — heartbeat tracker
+- 5 class methods collapse to 1-line delegations; also fixed the
+  mis-indented chainCounterBid method that was missing 2 leading
+  spaces.
+- chainLaunchViaRuntime synthesises the API shape
+  (chainId / proposed / mandateBroadcastOk) when the underlying
+  orchestrator returns {ok: false}. The original class was
+  returning extra fields (workerBroadcastOk / budgetReservedUsd)
+  that don't exist in the @envoymesh/api ChainLaunchResult type —
+  this is a pre-existing type bug now fixed.
+- node-service-impl.ts: 13614 -> 13540 lines (-74)
+- buildChainOrchestratorDeps and buildLlmDecomposer/Merge stay on
+  the class for now (they pull in too many class methods to be worth
+  extracting as a follow-up).
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2150 pass / 79 fail / 128 skip
+  (was 2148 / 79 / 128 — +2 net, 0 regressions; pre-existing flake)
