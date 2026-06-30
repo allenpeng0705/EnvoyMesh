@@ -1,0 +1,34 @@
+refactor: extract runScheduledFriendAutopilot + 3 social-proxy methods (Step 28)
+
+Step 28 — module-based extraction of small social-proxy cluster:
+  - runScheduledFriendAutopilot (~35 lines)
+  - listSocialProxySessions (4 lines)
+  - advanceSocialProxySession (5 lines)
+  - notifySocialProxyOwnerCommitment (~22 lines)
+
+Total savings: ~15 lines + cleaner module structure.
+
+The runtime takes a typed FriendAutopilotContext / SocialProxyContext
+with 4-5 accessors each. Class methods collapse to one-line
+delegations.
+
+0 new tests this step (the existing test files cover the public
+RPC surface).
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2278 pass / 80 fail / 128 skip
+  (no regression)
+
+Net effect:
+- node-service-impl.ts: 12,004 -> 11,989 (-15 lines)
+- node-service-friend-autopilot.ts: 134 lines (new runtime)
+- 32 commits on refactor/impl-clean
+
+Cumulative: 14,247 -> 11,989 (-2,258, -15.84%)
+
+Note: the inbound handler module extraction attempt (Step 28
+aborted) revealed that moving _handleInboundMessage out of the
+class requires importing ~30+ top-level identifiers, many of
+which have evolved through recent refactorings. We deferred that
+particular extraction to a future session.

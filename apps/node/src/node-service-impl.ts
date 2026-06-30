@@ -653,6 +653,14 @@ import {
   type RunDocumentAgentTurnContext,
   type RunDocumentAgentTurnLoop,
 } from "./node-service-handlers-run-document-agent-turn.js";
+import {
+  runScheduledFriendAutopilotViaRuntime,
+  listSocialProxySessionsViaRuntime,
+  advanceSocialProxySessionViaRuntime,
+  notifySocialProxyOwnerCommitmentViaRuntime,
+  type FriendAutopilotContext,
+  type SocialProxyContext,
+} from "./node-service-friend-autopilot.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
@@ -4647,69 +4655,26 @@ class NodeServiceImpl implements NodeService {
   }
 
   async runScheduledFriendAutopilot(): Promise<{ ok: boolean; error?: string }> {
-    const config = await this.getNodeConfig();
-    const intervalHours = config.friendAutopilotIntervalHours ?? 0;
-    if (
-      !shouldRunScheduledFriendAutopilot({
-        friendAutopilotEnabled: config.friendAutopilotEnabled ?? false,
-        trustModeEnabled: config.trustModeEnabled ?? false,
-        intervalHours,
-        lastRunAt: config.friendAutopilotLastRunAt,
-      })
-    ) {
-      return { ok: false, error: "not due" };
-    }
-
-    const correlationId = randomUUID();
-    const pass = await runFriendAutopilotPass({
-      getContext: () => this.getToolExecutionContext(),
-    });
-    await this._recordFriendAutopilotPass({
-      ok: pass.ok,
-      error: pass.error,
-      trigger: "scheduled",
-      correlationId,
-    });
-    await this.updateNodeConfig({ friendAutopilotLastRunAt: new Date().toISOString() });
-    return { ok: pass.ok, error: pass.error };
+    return runScheduledFriendAutopilotViaRuntime(this._friendAutopilotContext());
   }
 
   async listSocialProxySessions(): Promise<SocialProxySession[]> {
-    if (!this._socialProxyStore) return [];
-    return this._socialProxyStore.list();
+    return listSocialProxySessionsViaRuntime(this._socialProxyContext());
   }
 
   async advanceSocialProxySession(sessionId: string): Promise<SocialProxySession | undefined> {
-    if (!this._socialProxyStore) return undefined;
-    const config = await this.getNodeConfig();
-    return advanceSocialProxySession(this._socialProxyOrchestratorDeps(config), sessionId.trim());
+    return advanceSocialProxySessionViaRuntime(this._socialProxyContext(), sessionId);
   }
 
   async notifySocialProxyOwnerCommitment(
     sessionId: string,
     ownerCommitmentRef: string,
   ): Promise<SocialProxySession | undefined> {
-    if (!this._socialProxyStore) return undefined;
-    const session = await this._socialProxyStore.get(sessionId.trim());
-    if (!session) {
-      throw new Error(`Social proxy session not found: ${sessionId}`);
-    }
-    if (session.introProposalMessageId) {
-      const row = this._pendingSocialIntroProposals.get(session.introProposalMessageId);
-      if (row) {
-        row.ownerCommitmentRef = ownerCommitmentRef;
-      }
-    }
-    const withRef = {
-      ...session,
+    return notifySocialProxyOwnerCommitmentViaRuntime(
+      this._socialProxyContext(),
+      sessionId,
       ownerCommitmentRef,
-      updatedAt: new Date().toISOString(),
-    };
-    const { session: next } = transitionSocialProxySession(withRef, "OWNER_APPROVE_INTRO", {
-      hasOwnerCommitmentRef: true,
-    });
-    await this._socialProxyStore.save(next);
-    return next;
+    );
   }
 
   async runSocialProxyPass(input?: {
@@ -8194,6 +8159,26 @@ class NodeServiceImpl implements NodeService {
       recordH2aOwnerTurn: (msg, turn) =>
         this.recordH2aOwnerTurn(msg, turn as never),
       runDocumentAgentTurnCore: (msg) => this._runDocumentAgentTurnCore(msg),
+    };
+  }
+
+  private _friendAutopilotContext(): FriendAutopilotContext {
+    return {
+      getNodeConfig: () => this.getNodeConfig(),
+      recordFriendAutopilotPass: (record) =>
+        this._recordFriendAutopilotPass(record),
+      updateNodeConfig: (cfg) => this.updateNodeConfig(cfg as never),
+      getToolExecutionContext: () => this.getToolExecutionContext() as never,
+    };
+  }
+
+  private _socialProxyContext(): SocialProxyContext {
+    return {
+      getSocialProxyStore: () => (this._socialProxyStore as never) ?? undefined,
+      getNodeConfig: () => this.getNodeConfig(),
+      getSocialProxyOrchestratorDeps: (config) =>
+        this._socialProxyOrchestratorDeps(config) as never,
+      getPendingSocialIntroProposals: () => this._pendingSocialIntroProposals as never,
     };
   }
 
