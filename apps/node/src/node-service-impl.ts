@@ -593,6 +593,11 @@ import {
   type RecordNodeErrorAccess,
   type SessionTokenAccess,
 } from "./node-service-connection-status.js";
+import {
+  getNodeConfigViaRuntime,
+  updateNodeConfigViaRuntime,
+  type NodeConfigContext,
+} from "./node-service-config.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
@@ -7374,6 +7379,19 @@ class NodeServiceImpl implements NodeService {
     };
   }
 
+  private _nodeConfigContext(): NodeConfigContext {
+    return {
+      getProfileDir: () => this._profileDir,
+      loadNodeConfig: () => this._configStore.load(),
+      saveNodeConfig: (config) => this._configStore.save(config),
+      getBridgeStatus: () => this._bridgeStatus ?? undefined,
+      getRelayPublicWsUrl: () => this._relayPublicWsUrl ?? null,
+      loadBridgeConfigSkillApiKeys: async () => (await this._loadBridgeConfigSkillApiKeys()) ?? ({} as Record<string, string>),
+      loadBridgeConfigWebSearchEnabled: async () => Boolean(await this._loadBridgeConfigWebSearchEnabled()),
+      getProfile: () => this._profile,
+    };
+  }
+
     private _manifestContext(): CapabilityManifestContext {
     return {
       getProfileDir: () => this._profileDir,
@@ -7706,136 +7724,9 @@ class NodeServiceImpl implements NodeService {
   // ============================================
 
   async getNodeConfig(): Promise<NodeConfig> {
-    const config = await this._configStore.load();
-    // Apply environment variable overrides for model providers
-    const modelProviders: ModelProviderConfig = config?.modelProviders ? {
-      ...config.modelProviders,
-      mode: (process.env.ENVOY_MODEL_MODE as ModelProviderConfig["mode"]) ?? config.modelProviders.mode,
-      endpoint: process.env.ENVOY_MODEL_ENDPOINT ?? config.modelProviders.endpoint,
-      apiKey: process.env.ENVOY_MODEL_API_KEY ?? config.modelProviders.apiKey,
-      modelName: process.env.ENVOY_MODEL_NAME ?? config.modelProviders.modelName,
-    } : {
-      mode: (process.env.ENVOY_MODEL_MODE as ModelProviderConfig["mode"]) ?? "disabled",
-      endpoint: process.env.ENVOY_MODEL_ENDPOINT,
-      apiKey: process.env.ENVOY_MODEL_API_KEY,
-      modelName: process.env.ENVOY_MODEL_NAME,
-    };
-
-    if (config) {
-      return {
-        profileDir: config.profileDir,
-        discoveryProfile: config.discoveryProfile,
-        enableMdns: resolveEnableMdns(config.discoveryProfile, config.enableMdns),
-        relayEnabled: config.relayEnabled,
-        relayServerEnabled: config.relayServerEnabled,
-        configuredRelays: config.configuredRelays,
-        advertiseAddrs: config.advertiseAddrs,
-        bootstrapPeers: config.bootstrapPeers,
-        bootstrapPresets: config.bootstrapPresets,
-        modelProviders,
-        terminalAssistModelName: config.terminalAssistModelName,
-        terminalCommandAllowPatterns: config.terminalCommandAllowPatterns,
-        terminalCommandDenyPatterns: config.terminalCommandDenyPatterns,
-        terminalCommandDestructivePatterns: config.terminalCommandDestructivePatterns,
-        terminalAgentModeDefault: config.terminalAgentModeDefault,
-        terminalAutoRunPolicy: config.terminalAutoRunPolicy,
-        terminalInlineSuggestEnabled: config.terminalInlineSuggestEnabled,
-        terminalXtermSlashIntercept: config.terminalXtermSlashIntercept,
-        chatAssistEnabled: config.chatAssistEnabled ?? false,
-        anonymousDiscoveryMode: config.anonymousDiscoveryMode ?? "off",
-        anonymousIntentAllowlist: config.anonymousIntentAllowlist ?? ["discovery.request"],
-        anonymousSensitivityCeiling: config.anonymousSensitivityCeiling ?? "public",
-        trustAnchorPublicKeys: config.trustAnchorPublicKeys ?? {},
-        autonomousKillSwitch: config.autonomousKillSwitch ?? false,
-        autonomousPolicies: ensureDefaultAutonomousPoliciesForModel(
-          config.autonomousPolicies,
-          modelProviders.mode,
-        ),
-        aiSettings: config.aiSettings,
-        contactAiPreferences: config.contactAiPreferences ?? [],
-         bridgeStatus: this._bridgeStatus ?? undefined,
-         skillApiKeys: await this._loadBridgeConfigSkillApiKeys(),
-         webSearchEnabled: await this._loadBridgeConfigWebSearchEnabled(),
-         companionPairingAutoAcceptWithToken: config.companionPairingAutoAcceptWithToken ?? false,
-        relayPublicWsUrl: config.relayPublicWsUrl ?? this._relayPublicWsUrl,
-        bridgeEnabled: config.bridgeEnabled ?? true,
-        openclawEnabled: config.openclawEnabled ?? true,
-        homeClawCoreBaseUrl: config.homeClawCoreBaseUrl,
-        trustModeEnabled: config.trustModeEnabled ?? false,
-        friendMatchingPreferencesText: config.friendMatchingPreferencesText,
-        friendMatchingPreferencesSigned: config.friendMatchingPreferencesSigned,
-        externalPublish: config.externalPublish
-          ? {
-              allowIpfs: config.externalPublish.allowIpfs ?? false,
-              gatewayAllowlist: config.externalPublish.gatewayAllowlist ?? [],
-              ipfsExportEngine: normalizeIpfsExportEngineSelection(
-                config.externalPublish.ipfsExportEngine,
-              ),
-              pinningEnabled: config.externalPublish.pinningEnabled ?? false,
-              pinningProvider: config.externalPublish.pinningProvider ?? "pinata",
-            }
-          : { allowIpfs: false },
-        maxConnections: config.maxConnections,
-        mdnsIntervalMs: config.mdnsIntervalMs,
-        capabilityDiscoveryIntervalMs: config.capabilityDiscoveryIntervalMs,
-        lazyCapabilityDiscovery: resolveLazyCapabilityDiscovery(config.discoveryProfile, {
-          lazyCapabilityDiscovery: config.lazyCapabilityDiscovery,
-        }),
-        idleTimerStretch: resolveIdleTimerStretch(config.discoveryProfile, {
-          idleTimerStretch: config.idleTimerStretch,
-        }),
-        agentVisibility: config.agentVisibility,
-        a2aChatNotifications: config.a2aChatNotifications ?? "off",
-        agentInteractionMode: config.agentInteractionMode ?? "structured_preferred",
-        friendAutopilotEnabled: config.friendAutopilotEnabled ?? false,
-        friendAutopilotIntervalHours: (config.friendAutopilotIntervalHours ?? 0) as 0 | 24 | 168,
-        friendAutopilotLastRunAt: config.friendAutopilotLastRunAt,
-        knowledgeSyndicationMaxSensitivity: config.knowledgeSyndicationMaxSensitivity,
-        socialProxyEnabled: config.socialProxyEnabled ?? false,
-        socialProxyMandateId: config.socialProxyMandateId,
-        socialProxyLastPassAt: config.socialProxyLastPassAt,
-        documentAcquisitionEnabled: config.documentAcquisitionEnabled ?? false,
-        documentAcquisitionMandateId: config.documentAcquisitionMandateId,
-        capabilityProviderEnabled: config.capabilityProviderEnabled ?? false,
-        capabilityProviderMandateId: config.capabilityProviderMandateId,
-        iceServers: config.iceServers,
-      };
-    }
-    return {
-      profileDir: this._profileDir,
-      discoveryProfile: "lan-fast" as const,
-      enableMdns: true,
-      relayEnabled: true,
-      relayServerEnabled: false,
-      configuredRelays: [],
-      advertiseAddrs: [],
-      bootstrapPeers: [],
-      bootstrapPresets: [],
-      modelProviders,
-      chatAssistEnabled: false,
-      anonymousDiscoveryMode: "off",
-      anonymousIntentAllowlist: ["discovery.request"],
-      anonymousSensitivityCeiling: "public",
-      trustAnchorPublicKeys: {},
-      autonomousKillSwitch: false,
-      autonomousPolicies: [],
-      contactAiPreferences: [],
-      bridgeStatus: this._bridgeStatus ?? undefined,
-      companionPairingAutoAcceptWithToken: false,
-      relayPublicWsUrl: this._relayPublicWsUrl,
-      bridgeEnabled: false,
-      openclawEnabled: true,
-      homeClawCoreBaseUrl: undefined,
-      trustModeEnabled: false,
-      friendMatchingPreferencesText: undefined,
-      externalPublish: { allowIpfs: false },
-      lazyCapabilityDiscovery: false,
-      idleTimerStretch: false,
-      a2aChatNotifications: "off",
-      agentInteractionMode: "structured_preferred",
-      friendAutopilotEnabled: false,
-    };
+    return getNodeConfigViaRuntime(this._nodeConfigContext());
   }
+
 
   async runCapabilityDiscovery(params?: { find?: boolean }): Promise<void> {
     this._assertOnline();
@@ -7874,270 +7765,9 @@ class NodeServiceImpl implements NodeService {
   }
 
   async updateNodeConfig(config: Partial<NodeConfig>): Promise<void> {
-    let validatedSigned: import("@envoymesh/protocol").FriendMatchingPreferencesPayload | undefined;
-    if (config.friendMatchingPreferencesSigned !== undefined) {
-      const profile = this._profile;
-      if (!profile) {
-        throw new Error("friendMatchingPreferencesSigned: node profile not initialized");
-      }
-      const parsed = parseFriendMatchingPreferencesPayload(config.friendMatchingPreferencesSigned);
-      const expMs = new Date(parsed.expiresAt).getTime();
-      if (!Number.isFinite(expMs) || expMs <= Date.now()) {
-        throw new Error("friendMatchingPreferencesSigned: expiresAt must be in the future");
-      }
-      if (parsed.ownerId !== profile.owner.ownerId) {
-        throw new Error("friendMatchingPreferencesSigned: ownerId does not match local owner");
-      }
-      if (!verifyFriendMatchingPreferences(parsed, profile.owner.publicKeyPem)) {
-        throw new Error("friendMatchingPreferencesSigned: invalid signature");
-      }
-      validatedSigned = parsed;
-    }
-
-    if (
-      validatedSigned === undefined &&
-      config.friendMatchingPreferencesText !== undefined &&
-      config.friendMatchingPreferencesText.length > MAX_FRIEND_MATCHING_PREFS_CHARS
-    ) {
-      throw new Error(
-        `friendMatchingPreferencesText exceeds ${MAX_FRIEND_MATCHING_PREFS_CHARS} characters (${config.friendMatchingPreferencesText.length})`,
-      );
-    }
-
-    const current = (await this._configStore.load()) ?? {
-      version: "0.1" as const,
-      profileDir: this._profileDir,
-      discoveryProfile: "lan-fast" as const,
-      relayEnabled: true,
-      relayServerEnabled: false,
-      advertiseAddrs: [] as string[],
-      bootstrapPeers: [] as string[],
-      bootstrapPresets: [] as string[],
-      configuredRelays: [],
-      modelProviders: { mode: "disabled" as const },
-      chatAssistEnabled: false,
-      anonymousDiscoveryMode: "off",
-      anonymousIntentAllowlist: ["discovery.request"],
-      anonymousSensitivityCeiling: "public",
-      autonomousKillSwitch: false,
-      autonomousPolicies: [],
-      contactAiPreferences: [],
-      updatedAt: new Date().toISOString(),
-    };
-
-    const updated: PersistedNodeConfig = {
-      ...current,
-      ...(config.discoveryProfile && { discoveryProfile: config.discoveryProfile }),
-      ...(config.enableMdns !== undefined && { enableMdns: config.enableMdns }),
-      ...(config.relayEnabled !== undefined && { relayEnabled: config.relayEnabled }),
-      ...(config.relayServerEnabled !== undefined && { relayServerEnabled: config.relayServerEnabled }),
-      ...(config.advertiseAddrs !== undefined && { advertiseAddrs: config.advertiseAddrs }),
-      ...(config.bootstrapPeers !== undefined && { bootstrapPeers: config.bootstrapPeers }),
-      ...(config.bootstrapPresets !== undefined && { bootstrapPresets: config.bootstrapPresets }),
-      ...(config.configuredRelays !== undefined && { configuredRelays: config.configuredRelays }),
-      ...(config.modelProviders && { modelProviders: { ...current.modelProviders, ...config.modelProviders } }),
-      ...(config.terminalAssistModelName !== undefined && {
-        terminalAssistModelName: config.terminalAssistModelName,
-      }),
-      ...(config.terminalCommandAllowPatterns !== undefined && {
-        terminalCommandAllowPatterns: config.terminalCommandAllowPatterns,
-      }),
-      ...(config.terminalCommandDenyPatterns !== undefined && {
-        terminalCommandDenyPatterns: config.terminalCommandDenyPatterns,
-      }),
-      ...(config.terminalCommandDestructivePatterns !== undefined && {
-        terminalCommandDestructivePatterns: config.terminalCommandDestructivePatterns,
-      }),
-      ...(config.terminalAgentModeDefault !== undefined && {
-        terminalAgentModeDefault: config.terminalAgentModeDefault,
-      }),
-      ...(config.terminalAutoRunPolicy !== undefined && {
-        terminalAutoRunPolicy: config.terminalAutoRunPolicy,
-      }),
-      ...(config.terminalInlineSuggestEnabled !== undefined && {
-        terminalInlineSuggestEnabled: config.terminalInlineSuggestEnabled,
-      }),
-      ...(config.terminalXtermSlashIntercept !== undefined && {
-        terminalXtermSlashIntercept: config.terminalXtermSlashIntercept,
-      }),
-      ...(config.chatAssistEnabled !== undefined && { chatAssistEnabled: config.chatAssistEnabled }),
-      ...(config.anonymousDiscoveryMode !== undefined && { anonymousDiscoveryMode: config.anonymousDiscoveryMode }),
-      ...(config.anonymousIntentAllowlist !== undefined && { anonymousIntentAllowlist: config.anonymousIntentAllowlist }),
-      ...(config.anonymousSensitivityCeiling !== undefined && { anonymousSensitivityCeiling: config.anonymousSensitivityCeiling }),
-      ...(config.trustAnchorPublicKeys !== undefined && { trustAnchorPublicKeys: config.trustAnchorPublicKeys }),
-      ...(config.autonomousKillSwitch !== undefined && { autonomousKillSwitch: config.autonomousKillSwitch }),
-      ...(config.autonomousPolicies !== undefined && { autonomousPolicies: config.autonomousPolicies }),
-      ...(config.aiSettings !== undefined && { aiSettings: config.aiSettings }),
-      ...(config.contactAiPreferences !== undefined && {
-        contactAiPreferences: config.contactAiPreferences,
-      }),
-      ...(config.companionPairingAutoAcceptWithToken !== undefined && {
-        companionPairingAutoAcceptWithToken: config.companionPairingAutoAcceptWithToken,
-      }),
-      ...(config.relayPublicWsUrl !== undefined && {
-        relayPublicWsUrl: config.relayPublicWsUrl,
-      }),
-      ...(config.bridgeEnabled !== undefined && {
-        bridgeEnabled: config.bridgeEnabled,
-      }),
-      ...(config.openclawEnabled !== undefined && {
-        openclawEnabled: config.openclawEnabled,
-      }),
-      ...(config.homeClawCoreBaseUrl !== undefined && {
-        homeClawCoreBaseUrl: config.homeClawCoreBaseUrl,
-      }),
-      ...(config.agentVisibility !== undefined && { agentVisibility: config.agentVisibility }),
-      ...(config.a2aChatNotifications !== undefined && {
-        a2aChatNotifications: config.a2aChatNotifications,
-      }),
-      ...(config.agentInteractionMode !== undefined && {
-        agentInteractionMode: config.agentInteractionMode,
-      }),
-      ...(config.trustModeEnabled !== undefined && { trustModeEnabled: config.trustModeEnabled }),
-      ...(config.friendAutopilotEnabled !== undefined && {
-        friendAutopilotEnabled: config.friendAutopilotEnabled,
-      }),
-      ...(config.friendAutopilotIntervalHours !== undefined && {
-        friendAutopilotIntervalHours: config.friendAutopilotIntervalHours,
-      }),
-      ...(config.friendAutopilotLastRunAt !== undefined && {
-        friendAutopilotLastRunAt: config.friendAutopilotLastRunAt,
-      }),
-      ...(Object.prototype.hasOwnProperty.call(config, "knowledgeSyndicationMaxSensitivity") && {
-        knowledgeSyndicationMaxSensitivity:
-          config.knowledgeSyndicationMaxSensitivity === null
-            ? undefined
-            : config.knowledgeSyndicationMaxSensitivity,
-      }),
-      ...(config.socialProxyEnabled !== undefined && {
-        socialProxyEnabled: config.socialProxyEnabled,
-      }),
-      ...(config.socialProxyMandateId !== undefined && {
-        socialProxyMandateId: config.socialProxyMandateId,
-      }),
-      ...(config.socialProxyLastPassAt !== undefined && {
-        socialProxyLastPassAt: config.socialProxyLastPassAt,
-      }),
-      ...(config.documentAcquisitionEnabled !== undefined && {
-        documentAcquisitionEnabled: config.documentAcquisitionEnabled,
-      }),
-      ...(config.documentAcquisitionMandateId !== undefined && {
-        documentAcquisitionMandateId: config.documentAcquisitionMandateId,
-      }),
-      ...(config.capabilityProviderEnabled !== undefined && {
-        capabilityProviderEnabled: config.capabilityProviderEnabled,
-      }),
-      ...(config.capabilityProviderMandateId !== undefined && {
-        capabilityProviderMandateId: config.capabilityProviderMandateId,
-      }),
-      ...(config.lanAutoBondEnabled !== undefined && {
-        lanAutoBondEnabled: config.lanAutoBondEnabled,
-      }),
-      ...(config.lanAutoBondFleetToken !== undefined && {
-        lanAutoBondFleetToken: config.lanAutoBondFleetToken,
-      }),
-      ...(config.pairingKioskEnabled !== undefined && {
-        pairingKioskEnabled: config.pairingKioskEnabled,
-      }),
-      ...(config.pairingKioskAdminToken !== undefined && {
-        pairingKioskAdminToken: config.pairingKioskAdminToken,
-      }),
-      ...(config.pairingKioskBindAddress !== undefined && {
-        pairingKioskBindAddress: config.pairingKioskBindAddress,
-      }),
-      ...(config.pairingKioskPort !== undefined && {
-        pairingKioskPort: config.pairingKioskPort,
-      }),
-      ...(config.pairingKioskAllowLanBind !== undefined && {
-        pairingKioskAllowLanBind: config.pairingKioskAllowLanBind,
-      }),
-      ...(config.pairingKioskExpiresAt !== undefined && {
-        pairingKioskExpiresAt: config.pairingKioskExpiresAt,
-      }),
-      ...(config.externalPublish !== undefined && {
-        externalPublish: {
-          allowIpfs: config.externalPublish.allowIpfs ?? false,
-          gatewayAllowlist: (config.externalPublish.gatewayAllowlist ?? [])
-            .map((entry) => normalizeGatewayBaseUrl(entry))
-            .filter(Boolean)
-            .slice(0, 10),
-          ipfsExportEngine: normalizeIpfsExportEngineSelection(
-            config.externalPublish.ipfsExportEngine ??
-              current.externalPublish?.ipfsExportEngine ??
-              "kubo",
-          ),
-          pinningEnabled: config.externalPublish.pinningEnabled ?? false,
-          pinningProvider:
-            config.externalPublish.pinningProvider ??
-            current.externalPublish?.pinningProvider ??
-            "pinata",
-        },
-      }),
-      ...(validatedSigned !== undefined && {
-        friendMatchingPreferencesSigned: validatedSigned,
-        friendMatchingPreferencesText: validatedSigned.text.trim(),
-      }),
-      ...(validatedSigned === undefined &&
-        config.friendMatchingPreferencesText !== undefined && {
-          friendMatchingPreferencesText:
-            config.friendMatchingPreferencesText.trim().length === 0
-              ? undefined
-              : config.friendMatchingPreferencesText.trim(),
-          /** Plain-text edits replace owner-signed prefs so UI and crypto-backed doc cannot drift. */
-          friendMatchingPreferencesSigned: undefined,
-        }),
-      updatedAt: new Date().toISOString(),
-    };
-
-    if (config.relayPublicWsUrl !== undefined) {
-      // empty string = explicitly disabled; any other value = explicit URL
-      this._relayPublicWsUrl = config.relayPublicWsUrl;
-    }
-
-    if (updated.discoveryProfile === "contacts-only" || updated.discoveryProfile === "relay-only") {
-      updated.bootstrapPresets = normalizeBootstrapPresetsForContactsOnly(updated.bootstrapPresets);
-    }
-
-    const tuningPatch = clampConnectivityTuningInput({
-      maxConnections: config.maxConnections,
-      mdnsIntervalMs: config.mdnsIntervalMs,
-      capabilityDiscoveryIntervalMs: config.capabilityDiscoveryIntervalMs,
-      lazyCapabilityDiscovery: config.lazyCapabilityDiscovery,
-      idleTimerStretch: config.idleTimerStretch,
-    });
-    Object.assign(updated, tuningPatch);
-
-    updated.autonomousPolicies = ensureDefaultAutonomousPoliciesForModel(
-      updated.autonomousPolicies,
-      updated.modelProviders.mode,
-    );
-
-    await this._configStore.save(updated);
-    this.emit("node:status", {
-      status: this._nodeStatus,
-      peerId: this._mesh?.peerId,
-    });
-    // Emit config:updated so listeners can refresh cached config values
-    this.emit("config:updated", {
-      autonomousKillSwitch: updated.autonomousKillSwitch ?? false,
-      autonomousPolicies: updated.autonomousPolicies ?? [],
-      chatAssistEnabled: updated.chatAssistEnabled ?? false,
-      modelProviders: updated.modelProviders,
-      aiSettings: updated.aiSettings,
-      contactAiPreferences: updated.contactAiPreferences ?? [],
-    });
-
-    // Phase 32 — `openclawEnabled` is a boot-time flag; no runtime side
-    // effect is needed here. The next home-node restart will pick up the
-    // new value via `_isOpenClawEnabled()` in `startOpenClaw()`. The
-    // persisted write above is what installers / setup tools use to
-    // change the flag; no UI action triggers this path.
-
-    // Phase 35D — pairing kiosk: re-sync the HTTP server on every config
-    // change so a Settings flip takes effect without a node restart. The
-    // function is a no-op when `pairingKioskEnabled` is false.
-    await this._syncPairingKioskFromConfig();
+    return updateNodeConfigViaRuntime(this._nodeConfigContext(), config);
   }
+
 
   async listRelays(): Promise<RelayConfig[]> {
     const config = await this._configStore.load();

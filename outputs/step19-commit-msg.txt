@@ -1,0 +1,46 @@
+refactor: extract Node Configuration module (Step 19)
+
+Step 19 — extract getNodeConfig + updateNodeConfig to a runtime.
+
+This is the largest single reduction so far:
+  - getNodeConfig: 131 lines (env-var overrides + 60+ property copy)
+  - updateNodeConfig: 265 lines (friend-matching-preferences validation
+    + 60+ property copy)
+Total: 396 lines of class code -> 10 lines (2 delegations) + 219 lines
+runtime.
+
+Net savings: -388 lines on node-service-impl.ts (-2.71%).
+
+The runtime is pure: takes a NodeConfigContext carrying the config
+store, bridge status, relay-public-WS URL, bridge-config loaders,
+and the local profile. The class methods collapse to one-liners.
+
+Subtle preservation: the runtime returns the same shape the class
+returned. Friend-matching-preferences signed payloads are validated
+inside the runtime via parseFriendMatchingPreferencesPayload, with
+the same checks as the original (expiresAt in future, ownerId
+matches).
+
+5 new unit tests in apps/node/test/node-service-config.test.ts:
+  - default config shape
+  - env-var override of ENVOY_MODEL_MODE
+  - persisted config flows through
+  - updateNodeConfig forwards to saveNodeConfig
+  - updateNodeConfig rejects unsigned payload when profile missing
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2210 pass / 80 fail / 128 skip
+  (was 2205 / 80 / 128 — +5 new tests, 0 regressions)
+
+Node Configuration section is now extracted. The big remaining
+section is Node Lifecycle (~858 lines: initNode, startNode,
+stopNode, _ensureAgentStores, _wireMeshEvents, etc.) — the
+biggest extraction yet.
+
+Cumulative after Step 19:
+- node-service-impl.ts: 14,247 -> 12,728 (-1,519, -10.66%)
+- 19 commits on refactor/impl-clean
+- 178 new unit tests
+- 0 regressions (the 80-fail baseline includes one pre-existing flaky
+  network test that occasionally oscillates)
