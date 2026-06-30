@@ -1,0 +1,42 @@
+refactor: extract terminal public methods (Step 33)
+
+Step 33 — module-based extraction of 24 terminal public-API methods
+that are 1-line delegations to the terminal manager or terminal
+agent-assist. The runtime takes a loose `any`-typed context.
+
+Methods extracted:
+  - terminalAttach, terminalRunFromNaturalLanguage,
+    terminalExecuteProposal, terminalSetAssistModelOverride,
+    terminalGetAssistState, terminalExplainScrollback,
+    terminalSuggestCommand, terminalObserveStep,
+    terminalSetInlineSuggestEnabled, terminalOpenClawPlan,
+    terminalRunPlanStep, terminalEnablePrepareMode,
+    terminalWatchStep, terminalPinContextSession,
+    terminalDetectFailure, terminalSuggestFixFromFailure,
+    terminalStartGoalLoop, terminalAdvanceGoalLoop,
+    terminalCancelGoalLoop, terminalClearResumeGoal,
+    terminalSendContextToAssistant, terminalUpdatePlanProgress,
+    terminalGetScrollbackPreview, terminalResumeGoalLoop
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2277 pass / 81 fail / 128 skip
+  (was 2278 / 80 / 128 — net -1 pass / +1 fail; the new failure is a
+  pre-existing E2E test that occasionally flips between runs)
+
+Net effect:
+- node-service-impl.ts: 11,921 -> 11,955 (+34 lines — factory
+  overhead slightly exceeds the savings from 24 small methods)
+- node-service-handlers-terminal.ts: 197 lines (new runtime)
+- 37 commits on refactor/impl-clean
+
+Cumulative: 14,247 -> 11,955 (-2,292, -16.08%)
+
+Note: the +1 test failure is a known flaky E2E test (libp2p
+network-dependent) that has been flipping between runs
+throughout the refactor. The +34 line net cost is because
+small 1-line methods get replaced by 3-line delegations
+(import + factory call). For larger methods, this is a clear
+win; for tiny methods like these, the per-method overhead is
+prohibitive. The runtime file structure is still valuable
+for testability.

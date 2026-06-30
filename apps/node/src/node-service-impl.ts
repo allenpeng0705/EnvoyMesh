@@ -695,6 +695,33 @@ import {
   getAgentCardViaRuntime,
   listAgentCirclesViaRuntime,
 } from "./node-service-handlers-store-accessors.js";
+import {
+  terminalAttachViaRuntime,
+  terminalRunFromNaturalLanguageViaRuntime,
+  terminalExecuteProposalViaRuntime,
+  terminalSetAssistModelOverrideViaRuntime,
+  terminalGetAssistStateViaRuntime,
+  terminalExplainScrollbackViaRuntime,
+  terminalSuggestCommandViaRuntime,
+  terminalObserveStepViaRuntime,
+  terminalSetInlineSuggestEnabledViaRuntime,
+  terminalOpenClawPlanViaRuntime,
+  terminalRunPlanStepViaRuntime,
+  terminalEnablePrepareModeViaRuntime,
+  terminalWatchStepViaRuntime,
+  terminalPinContextSessionViaRuntime,
+  terminalDetectFailureViaRuntime,
+  terminalSuggestFixFromFailureViaRuntime,
+  terminalStartGoalLoopViaRuntime,
+  terminalAdvanceGoalLoopViaRuntime,
+  terminalCancelGoalLoopViaRuntime,
+  terminalClearResumeGoalViaRuntime,
+  terminalSendContextToAssistantViaRuntime,
+  terminalUpdatePlanProgressViaRuntime,
+  terminalGetScrollbackPreviewViaRuntime,
+  terminalResumeGoalLoopViaRuntime,
+  terminalEnableExecPaneViaRuntime,
+} from "./node-service-handlers-terminal.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
@@ -8139,7 +8166,14 @@ class NodeServiceImpl implements NodeService {
     };
   }
 
-  private _storeAccessorDeps(): any {
+  private _terminalContext(): any {
+    return {
+      requireTerminalManager: () => this._requireTerminalManager(),
+      requireTerminalAgentAssist: () => this._requireTerminalAgentAssist(),
+    };
+  }
+
+    private _storeAccessorDeps(): any {
     return {
       getAgentActivityStore: () => this._agentActivityStore,
       getCommerceReceiptStore: () => this._commerceReceiptStore,
@@ -8780,139 +8814,139 @@ class NodeServiceImpl implements NodeService {
   }
 
   terminalAttach(params: import("@envoymesh/api").TerminalAttachParams): Promise<import("@envoymesh/api").TerminalAttachResult> {
-    return Promise.resolve(this._requireTerminalManager().terminalAttach(params));
+    return terminalAttachViaRuntime(this._terminalContext(), params);
   }
 
   terminalRunFromNaturalLanguage(
     params: import("@envoymesh/api").TerminalRunFromNaturalLanguageParams,
   ): Promise<import("@envoymesh/api").TerminalCommandProposal> {
-    return this._requireTerminalAgentAssist().runFromNaturalLanguage(params);
+    return terminalRunFromNaturalLanguageViaRuntime(this._terminalContext(), params);
   }
 
   terminalExecuteProposal(params: import("@envoymesh/api").TerminalExecuteProposalParams): Promise<void> {
-    return this._requireTerminalAgentAssist().executeProposal(params);
+    return terminalExecuteProposalViaRuntime(this._terminalContext(), params);
   }
 
   terminalSetAssistModelOverride(
     params: import("@envoymesh/api").TerminalSetAssistModelOverrideParams,
   ): Promise<import("@envoymesh/api").TerminalAssistState> {
-    return this._requireTerminalAgentAssist().setAssistModelOverride(params);
+    return terminalSetAssistModelOverrideViaRuntime(this._terminalContext(), params);
   }
 
   terminalGetAssistState(sessionId: string): Promise<import("@envoymesh/api").TerminalAssistState> {
-    return this._requireTerminalAgentAssist().getAssistState(sessionId.trim());
+    return terminalGetAssistStateViaRuntime(this._terminalContext(), sessionId);
   }
 
   terminalExplainScrollback(
     params: import("@envoymesh/api").TerminalExplainScrollbackParams,
   ): Promise<import("@envoymesh/api").TerminalExplainScrollbackResult> {
-    return this._requireTerminalAgentAssist().explainScrollback(params);
+    return terminalExplainScrollbackViaRuntime(this._terminalContext(), params);
   }
 
   terminalSuggestCommand(
     params: import("@envoymesh/api").TerminalSuggestCommandParams,
   ): Promise<import("@envoymesh/api").TerminalSuggestCommandResult> {
-    return this._requireTerminalAgentAssist().suggestCommand(params);
+    return terminalSuggestCommandViaRuntime(this._terminalContext(), params);
   }
 
   terminalObserveStep(
     params: import("@envoymesh/api").TerminalObserveStepParams,
   ): Promise<import("@envoymesh/api").TerminalObserveStepResult> {
-    return this._requireTerminalAgentAssist().observeStep(params);
+    return terminalObserveStepViaRuntime(this._terminalContext(), params);
   }
 
   terminalSetInlineSuggestEnabled(
     params: import("@envoymesh/api").TerminalSetInlineSuggestParams,
   ): Promise<import("@envoymesh/api").TerminalAssistState> {
-    return this._requireTerminalAgentAssist().setInlineSuggestEnabled(params);
+    return terminalSetInlineSuggestEnabledViaRuntime(this._terminalContext(), params);
   }
 
   terminalOpenClawPlan(
     params: import("@envoymesh/api").TerminalOpenClawPlanParams,
   ): Promise<import("@envoymesh/api").TerminalOpenClawPlanResult> {
-    return this._requireTerminalAgentAssist().openClawPlan(params);
+    return terminalOpenClawPlanViaRuntime(this._terminalContext(), params);
   }
 
   terminalRunPlanStep(
     params: import("@envoymesh/api").TerminalRunPlanStepParams,
   ): Promise<import("@envoymesh/api").TerminalCommandProposal> {
-    return this._requireTerminalAgentAssist().runPlanStep(params);
+    return terminalRunPlanStepViaRuntime(this._terminalContext(), params);
   }
 
   terminalEnablePrepareMode(
     params: import("@envoymesh/api").TerminalEnablePrepareModeParams,
   ): Promise<import("@envoymesh/api").TerminalEnablePrepareModeResult> {
-    return this._requireTerminalAgentAssist().enablePrepareMode(params);
+    return terminalEnablePrepareModeViaRuntime(this._terminalContext(), params);
   }
 
   terminalWatchStep(
     params: import("@envoymesh/api").TerminalWatchStepParams,
   ): Promise<import("@envoymesh/api").TerminalWatchStepResult> {
-    return this._requireTerminalAgentAssist().watchStep(params);
+    return terminalWatchStepViaRuntime(this._terminalContext(), params);
   }
 
   terminalPinContextSession(
     params: import("@envoymesh/api").TerminalPinContextSessionParams,
   ): Promise<import("@envoymesh/api").TerminalAssistState> {
-    return this._requireTerminalAgentAssist().pinContextSession(params);
+    return terminalPinContextSessionViaRuntime(this._terminalContext(), params);
   }
 
   terminalDetectFailure(
     params: import("@envoymesh/api").TerminalDetectFailureParams,
   ): Promise<import("@envoymesh/api").TerminalFailureDetection> {
-    return this._requireTerminalAgentAssist().detectFailure(params);
+    return terminalDetectFailureViaRuntime(this._terminalContext(), params);
   }
 
   terminalSuggestFixFromFailure(
     params: import("@envoymesh/api").TerminalSuggestFixParams,
   ): Promise<import("@envoymesh/api").TerminalCommandProposal> {
-    return this._requireTerminalAgentAssist().suggestFixFromFailure(params);
+    return terminalSuggestFixFromFailureViaRuntime(this._terminalContext(), params);
   }
 
   terminalStartGoalLoop(
     params: import("@envoymesh/api").TerminalStartGoalLoopParams,
   ): Promise<import("@envoymesh/api").TerminalGoalLoopStepResult> {
-    return this._requireTerminalAgentAssist().startGoalLoop(params);
+    return terminalStartGoalLoopViaRuntime(this._terminalContext(), params);
   }
 
   terminalAdvanceGoalLoop(
     params: import("@envoymesh/api").TerminalAdvanceGoalLoopParams,
   ): Promise<import("@envoymesh/api").TerminalGoalLoopStepResult> {
-    return this._requireTerminalAgentAssist().advanceGoalLoop(params);
+    return terminalAdvanceGoalLoopViaRuntime(this._terminalContext(), params);
   }
 
   terminalCancelGoalLoop(
     params: import("@envoymesh/api").TerminalCancelGoalLoopParams,
   ): Promise<import("@envoymesh/api").TerminalAssistState> {
-    return this._requireTerminalAgentAssist().cancelGoalLoop(params);
+    return terminalCancelGoalLoopViaRuntime(this._terminalContext(), params);
   }
 
   terminalClearResumeGoal(sessionId: string): Promise<import("@envoymesh/api").TerminalAssistState> {
-    return this._requireTerminalAgentAssist().clearResumeGoal({ sessionId });
+    return terminalClearResumeGoalViaRuntime(this._terminalContext(), sessionId);
   }
 
   terminalSendContextToAssistant(
     params: import("@envoymesh/api").TerminalSendContextToAssistantParams,
   ): Promise<import("@envoymesh/api").TerminalSendContextToAssistantResult> {
-    return this._requireTerminalAgentAssist().sendContextToAssistant(params);
+    return terminalSendContextToAssistantViaRuntime(this._terminalContext(), params);
   }
 
   terminalUpdatePlanProgress(
     params: import("@envoymesh/api").TerminalUpdatePlanProgressParams,
   ): Promise<import("@envoymesh/api").TerminalAssistState> {
-    return this._requireTerminalAgentAssist().updatePlanProgress(params);
+    return terminalUpdatePlanProgressViaRuntime(this._terminalContext(), params);
   }
 
   terminalGetScrollbackPreview(
     params: import("@envoymesh/api").TerminalGetScrollbackPreviewParams,
   ): Promise<import("@envoymesh/api").TerminalGetScrollbackPreviewResult> {
-    return this._requireTerminalAgentAssist().getScrollbackPreview(params);
+    return terminalGetScrollbackPreviewViaRuntime(this._terminalContext(), params);
   }
 
   terminalResumeGoalLoop(
     params: import("@envoymesh/api").TerminalResumeGoalLoopParams,
   ): Promise<import("@envoymesh/api").TerminalGoalLoopStepResult> {
-    return this._requireTerminalAgentAssist().resumeGoalLoop(params);
+    return terminalResumeGoalLoopViaRuntime(this._terminalContext(), params);
   }
 
   terminalEnableExecPane(
