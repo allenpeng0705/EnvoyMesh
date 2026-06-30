@@ -1,0 +1,44 @@
+refactor: extract network-driven file sharing (Step 13c)
+
+Step 13c of the refactor plan. The File Sharing section's
+network-driven methods are extracted to node-service-fileshare.ts
+behind a `FileShareNetworkContext` interface.
+
+13c extracts 3 public methods + 2 private helpers:
+  - discoverPublishedLibraryViaRuntime
+  - shareFileViaRuntime
+  - requestShareFromLibraryViaRuntime
+  - (the private _shareFileInternal / _requestShareFromLibraryInternal
+    bodies moved into the runtime; the old private methods are
+    deleted from the class)
+  - the call sites of _shareFileInternal (shareChatFileToMember
+    adapter and sendChatRoomAttachment) are rewired to call
+    shareFileViaRuntime directly
+
+FileShareNetworkContext extends FileShareContext with:
+  - assertOnline, requireMesh, requireProfile (mesh+profile gates)
+  - resolvePeerTransportForOwner, dialHintsForChat (transport)
+  - getBonds (filter to non-blocked)
+  - deliverCallEnvelope (mesh dispatch)
+  - setPendingPushShare / setPendingPullShare / setCorrelationByRequestMsgId
+    (writes to the private internal maps)
+  - upsertTransferStatus (status-log append)
+  - isVaultPathSafe, assertVaultFileExists (vault-path safety checks)
+
+The two callers of the now-deleted _shareFileInternal are
+rewired in this commit; both still go through the same audit-event
++ pending-share + transfer-status recording (now via the runtime).
+
+node-service-impl.ts: 13,344 -> 13,141 lines (-203)
+node-service-fileshare.ts: 496 -> 854 lines (+358 — includes the
+  3 runtime functions + the new FileShareNetworkContext interface)
+5 new unit tests in apps/node/test/node-service-fileshare-13c.test.ts
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2184 pass / 79 fail / 128 skip
+  (was 2179 / 79 / 128 — +5 new tests, 0 regressions)
+
+File Sharing section extraction is now complete (13a + 13b + 13c).
+The next big sections to extract are Capability Manifest (92 lines),
+Node Configuration (454 lines), and Node Lifecycle (837 lines).

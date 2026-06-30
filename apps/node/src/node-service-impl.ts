@@ -571,6 +571,10 @@ import {
   submitAgentShareProposalViaRuntime,
   verifyLibraryItemIpfsGatewayViaRuntime,
   type FileShareContext,
+  type FileShareNetworkContext,
+  discoverPublishedLibraryViaRuntime,
+  shareFileViaRuntime,
+  requestShareFromLibraryViaRuntime,
 } from "./node-service-fileshare.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
@@ -3627,7 +3631,7 @@ class NodeServiceImpl implements NodeService {
         void this.clearChatHistory(threadKey);
       },
       shareChatFileToMember: (targetOwnerId, shareInput) =>
-        this._shareFileInternal(targetOwnerId, {
+        shareFileViaRuntime(this._fileShareNetworkContext(), targetOwnerId, {
           path: shareInput.vaultRelativePath,
           sensitivity: shareInput.sensitivity,
           deliveryChannel: "chat",
@@ -6876,7 +6880,7 @@ class NodeServiceImpl implements NodeService {
       });
     }
 
-    const { shareRequestMessageId } = await this._shareFileInternal(params.targetOwnerId, {
+    const { shareRequestMessageId } = await shareFileViaRuntime(this._fileShareNetworkContext(), params.targetOwnerId, {
       path: vaultRelativePath,
       sensitivity,
       deliveryChannel: "chat",
@@ -7322,6 +7326,49 @@ class NodeServiceImpl implements NodeService {
     };
   }
 
+  private _fileShareNetworkContext(): FileShareNetworkContext {
+    return {
+      ...this._fileShareContext(),
+      assertOnline: () => this._assertOnline(),
+      requireMesh: () => this._requireMesh() as never,
+      requireProfile: () => this._requireProfile() as never,
+      resolvePeerTransportForOwner: (ownerId) =>
+        this._resolvePeerTransportForOwner(ownerId) as never,
+      dialHintsForChat: (peerId, listenAddrs) =>
+        this._dialHintsForChat(peerId, listenAddrs) as never,
+      getBonds: () => this.getBonds() as never,
+      deliverCallEnvelope: (targetPeerId, envelope, dialHints, listenAddrs) =>
+        this._deliverCallEnvelope(
+          targetPeerId,
+          envelope as never,
+          dialHints,
+          listenAddrs,
+        ) as never,
+      setPendingPushShare: (messageId, info) => {
+        this._pendingPushShareByRequestMsgId.set(messageId, {
+          relativePath: info.relativePath,
+          toPeerId: info.toPeerId,
+          deliveryChannel: info.deliveryChannel as never,
+        });
+      },
+      setPendingPullShare: (messageId, info) => {
+        this._pendingPullShareByRequestMsgId.set(messageId, {
+          peerRelativePath: info.peerRelativePath,
+          targetOwnerId: info.targetOwnerId,
+          toPeerId: info.toPeerId,
+          sensitivity: info.sensitivity as never,
+        });
+      },
+      setCorrelationByRequestMsgId: (messageId, correlationId) => {
+        this._correlationByRequestMsgId.set(messageId, correlationId);
+      },
+      upsertTransferStatus: (status) => {
+        this._upsertTransferStatus(status as never);
+      },
+      isVaultPathSafe: (rel) => isSafeVaultPath(this._vaultDir, rel),
+    };
+  }
+
   async listLibraryItems(params?: ListLibraryItemsParams): Promise<LibraryItem[]> {
     return listLibraryItemsViaRuntime(this._fileShareContext(), params);
   }
@@ -7402,111 +7449,12 @@ class NodeServiceImpl implements NodeService {
     return revealLibraryItemInFileManagerViaRuntime(this._fileShareContext(), relativePath);
   }
 
-  async discoverPublishedLibrary(params?: DiscoverPublishedLibraryParams): Promise<DiscoverPublishedLibraryPeerResult[]> {
-    this._assertOnline();
-    this.recordOwnerActivity();
-    const mesh = this._requireMesh();
-    const profile = this._requireProfile();
-
-    const bonds = (await this.getBonds()).filter((b) => b.level !== "blocked");
-    let targets = bonds;
-    if (params?.targetOwnerIds && params.targetOwnerIds.length > 0) {
-      const allow = new Set(params.targetOwnerIds);
-      targets = bonds.filter((b) => allow.has(b.peerOwnerId));
-    }
-    targets = [...targets].sort((a, b) => bondTrustRank(a.level) - bondTrustRank(b.level));
-
-    const results: DiscoverPublishedLibraryPeerResult[] = [];
-    const maxResults = params?.maxResultsPerPeer ?? 5;
-    const timeoutMs = params?.timeoutMsPerPeer ?? 15_000;
-
-    for (const bond of targets) {
-      const started = Date.now();
-      try {
-        const { transportPeerId, recipientEnvelopePeerId, listenAddrs } = await this._resolvePeerTransportForOwner(
-          bond.peerOwnerId,
-        );
-        const dialHints = await raceWithTimeout(
-          this._dialHintsForChat(transportPeerId, listenAddrs),
-          30_000,
-          "_dialHintsForChat",
-        );
-        const unsigned = createUnsignedEnvelope({
-          senderPeerId: derivePeerId(profile.device.publicKeyPem),
-          senderPublicKey: profile.device.publicKeyPem,
-          senderRole: "human",
-          recipientPeerId: recipientEnvelopePeerId,
-          recipientRole: "human",
-          intent: "discovery.request",
-          payload: createDiscoveryRequestPayload({
-            requesterOwnerId: profile.owner.ownerId,
-            requestedTagHashes: [],
-            requestedCapabilities: [PUBLISHED_LIB_CAPABILITY],
-            maxResults,
-            requestedSensitivity: "public",
-            fileTitleQuery: params?.fileTitleQuery,
-            requestedContentHashPrefixes: params?.contentHashPrefix ? [params.contentHashPrefix] : undefined,
-          }),
-          correlationId: randomUUID(),
-        });
-        const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem);
-        const reply = await sendExpectReplyWithRetry({
-          mesh,
-          transportPeerId,
-          envelope,
-          dialHints,
-          timeoutMs,
-        });
-        const latencyMs = Date.now() - started;
-        if (reply.intent !== "discovery.response") {
-          results.push({
-            peerOwnerId: bond.peerOwnerId,
-            displayName: bond.displayName,
-            libp2pPeerId: transportPeerId,
-            bondLevel: bond.level,
-            bondRank: bondTrustRank(bond.level),
-            files: [],
-            latencyMs,
-            error: `unexpected reply intent ${reply.intent}`,
-          });
-          continue;
-        }
-        const resp = parseDiscoveryResponsePayload(reply.payload);
-        const files: PublishedLibraryFileHit[] = resp.matches.flatMap((m) =>
-          (m.libraryMatches ?? []).map((f) => ({
-            documentId: f.documentId,
-            title: f.title,
-            relativePath: f.relativePath,
-            contentHash: f.contentHash,
-            byteLength: f.byteLength,
-            cid: f.cid,
-          })),
-        );
-        results.push({
-          peerOwnerId: bond.peerOwnerId,
-          displayName: bond.displayName,
-          libp2pPeerId: transportPeerId,
-          bondLevel: bond.level,
-          bondRank: bondTrustRank(bond.level),
-          files,
-          latencyMs,
-        });
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : String(e);
-        results.push({
-          peerOwnerId: bond.peerOwnerId,
-          displayName: bond.displayName,
-          libp2pPeerId: bond.libp2pPeerId ?? "",
-          bondLevel: bond.level,
-          bondRank: bondTrustRank(bond.level),
-          files: [],
-          latencyMs: Date.now() - started,
-          error: msg,
-        });
-      }
-    }
-    return results;
+  async discoverPublishedLibrary(
+    params?: DiscoverPublishedLibraryParams,
+  ): Promise<DiscoverPublishedLibraryPeerResult[]> {
+    return discoverPublishedLibraryViaRuntime(this._fileShareNetworkContext(), params);
   }
+
 
   async listAgentShareProposals(): Promise<AgentShareProposal[]> {
     return listAgentShareProposalsViaRuntime(this._fileShareContext());
@@ -7534,11 +7482,11 @@ class NodeServiceImpl implements NodeService {
       deliveryChannel?: "inbox" | "chat" | "agent";
     },
   ): Promise<void> {
-    await this._shareFileInternal(targetOwnerId, file);
+    await shareFileViaRuntime(this._fileShareNetworkContext(), targetOwnerId, file);
   }
 
   /**
-   * Request a file from a bonded peer's vault (pull share — `fileOrigin: responder`).
+   * Request a file from a bonded peer's vault (pull share - `fileOrigin: responder`).
    */
   async requestShareFromLibrary(
     targetOwnerId: string,
@@ -7548,158 +7496,7 @@ class NodeServiceImpl implements NodeService {
       correlationId?: string;
     },
   ): Promise<{ shareRequestMessageId: string }> {
-    return this._requestShareFromLibraryInternal(targetOwnerId, file);
-  }
-
-  private async _requestShareFromLibraryInternal(
-    targetOwnerId: string,
-    file: {
-      relativePath: string;
-      sensitivity: "public" | "friends" | "private";
-      correlationId?: string;
-    },
-  ): Promise<{ shareRequestMessageId: string }> {
-    this._assertOnline();
-    this.recordOwnerActivity();
-    const profile = this._requireProfile();
-    if (!this._taskStore) {
-      throw new Error("Task store not initialized — node is not fully wired");
-    }
-
-    const { transportPeerId, recipientEnvelopePeerId, listenAddrs } =
-      await this._resolvePeerTransportForOwner(targetOwnerId);
-    const peerPath = file.relativePath.replace(/^[\\/]+/, "");
-
-    const mesh = this._requireMesh();
-    const conn = mesh.getPeerConnectionInfo(transportPeerId);
-    let dialHints: string[];
-    if (conn.connected || mesh.getConnectedPeerIds().includes(transportPeerId)) {
-      dialHints = [];
-    } else {
-      dialHints = await raceWithTimeout(
-        this._dialHintsForChat(transportPeerId, listenAddrs),
-        10_000,
-        "_dialHintsForChat",
-      );
-    }
-
-    const correlationId = file.correlationId ?? randomUUID();
-    const unsigned = createUnsignedEnvelope({
-      senderPeerId: derivePeerId(profile.device.publicKeyPem),
-      senderPublicKey: profile.device.publicKeyPem,
-      senderRole: "human",
-      recipientPeerId: recipientEnvelopePeerId,
-      recipientRole: "human",
-      intent: "share.request",
-      payload: createShareRequestPayload({
-        requestType: "file",
-        relativePath: peerPath,
-        requestedSensitivity: file.sensitivity,
-        fileOrigin: "responder",
-        deliveryChannel: "inbox",
-        correlationId,
-      }),
-      correlationId,
-    });
-    const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as EnvoyEnvelope;
-    this._pendingPullShareByRequestMsgId.set(envelope.messageId, {
-      peerRelativePath: peerPath,
-      targetOwnerId,
-      toPeerId: transportPeerId,
-      sensitivity: file.sensitivity,
-    });
-    this._correlationByRequestMsgId.set(envelope.messageId, correlationId);
-    await this._deliverCallEnvelope(transportPeerId, envelope, dialHints, listenAddrs);
-    this._upsertTransferStatus({
-      correlationId,
-      phase: "negotiating",
-      remotePeerOwnerId: targetOwnerId,
-      remotePeerId: transportPeerId,
-      vaultRelativePath: peerPath,
-      updatedAt: new Date().toISOString(),
-    });
-    return { shareRequestMessageId: envelope.messageId };
-  }
-
-  private async _shareFileInternal(
-    targetOwnerId: string,
-    file: {
-      path: string;
-      sensitivity: "public" | "friends" | "private";
-      deliveryChannel?: "inbox" | "chat" | "agent";
-      chatRoomId?: string;
-      chatMessageId?: string;
-      chatAttachmentId?: string;
-    },
-  ): Promise<{ shareRequestMessageId: string }> {
-    this._assertOnline();
-    this.recordOwnerActivity();
-    const profile = this._requireProfile();
-    if (!this._taskStore) {
-      throw new Error("Task store not initialized — node is not fully wired");
-    }
-
-    const { transportPeerId, recipientEnvelopePeerId, listenAddrs } =
-      await this._resolvePeerTransportForOwner(targetOwnerId);
-
-    const norm = file.path.replace(/^[\\/]+/, "");
-    if (!isSafeVaultPath(this._vaultDir, norm)) {
-      throw new Error("Invalid vault path");
-    }
-    await stat(join(this._vaultDir, norm)).catch(() => {
-      throw new Error("File not found in vault");
-    });
-
-    const mesh = this._requireMesh();
-    const conn = mesh.getPeerConnectionInfo(transportPeerId);
-    let dialHints: string[];
-    if (conn.connected || mesh.getConnectedPeerIds().includes(transportPeerId)) {
-      dialHints = [];
-    } else {
-      dialHints = await raceWithTimeout(
-        this._dialHintsForChat(transportPeerId, listenAddrs),
-        10_000,
-        "_dialHintsForChat",
-      );
-    }
-
-    const correlationId = randomUUID();
-    const unsigned = createUnsignedEnvelope({
-      senderPeerId: derivePeerId(profile.device.publicKeyPem),
-      senderPublicKey: profile.device.publicKeyPem,
-      senderRole: "human",
-      recipientPeerId: recipientEnvelopePeerId,
-      recipientRole: "human",
-      intent: "share.request",
-      payload: createShareRequestPayload({
-        requestType: "file",
-        relativePath: norm,
-        requestedSensitivity: file.sensitivity,
-        fileOrigin: "sender",
-        deliveryChannel: file.deliveryChannel ?? "inbox",
-        chatRoomId: file.chatRoomId,
-        chatMessageId: file.chatMessageId,
-        chatAttachmentId: file.chatAttachmentId,
-      }),
-      correlationId,
-    });
-    const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as EnvoyEnvelope;
-    await this._deliverCallEnvelope(transportPeerId, envelope, dialHints, listenAddrs);
-    this._pendingPushShareByRequestMsgId.set(envelope.messageId, {
-      relativePath: norm,
-      toPeerId: transportPeerId,
-      deliveryChannel: file.deliveryChannel ?? "inbox",
-    });
-    this._correlationByRequestMsgId.set(envelope.messageId, correlationId);
-    this._upsertTransferStatus({
-      correlationId,
-      phase: "negotiating",
-      remotePeerOwnerId: targetOwnerId,
-      remotePeerId: transportPeerId,
-      vaultRelativePath: norm,
-      updatedAt: new Date().toISOString(),
-    });
-    return { shareRequestMessageId: envelope.messageId };
+    return requestShareFromLibraryViaRuntime(this._fileShareNetworkContext(), targetOwnerId, file);
   }
 
   /** Auto-accept chat-channel file shares from bonded contacts (skip Inbox). */
