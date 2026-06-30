@@ -513,13 +513,17 @@ import {
 import {
   ChainStore,
   chainCancelViaRuntime,
+  chainDeleteRecipeViaRuntime,
+  chainExportCostsViaRuntime,
   chainGetBidStrategyViaRuntime,
   chainGetDefaultsViaRuntime,
   chainGetReportViaRuntime,
   chainGetStateViaRuntime,
   chainListActiveViaRuntime,
+  chainListRecipesViaRuntime,
   chainListReportsViaRuntime,
   chainPinReportViaRuntime,
+  chainSaveRecipeViaRuntime,
   chainSetBidStrategyViaRuntime,
   chainSetDefaultsViaRuntime,
   type ChainContext,
@@ -11892,6 +11896,16 @@ class NodeServiceImpl implements NodeService {
       bidsBySubtask: (state) => this.bidsBySubtask(state),
       getNodeConfig: () => this.getNodeConfig(),
       setNodeConfig: (cfg) => this.updateNodeConfig(cfg as never),
+      listChainRecipes: this._taskStore
+        ? () => this._taskStore!.listChainRecipes() as never
+        : undefined,
+      saveChainRecipe: this._taskStore
+        ? (record) =>
+            this._taskStore!.saveChainRecipe(record as never) as never
+        : undefined,
+      deleteChainRecipe: this._taskStore
+        ? (id) => this._taskStore!.deleteChainRecipe(id)
+        : undefined,
     };
   }
 
@@ -12641,67 +12655,19 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
   }
 
   async chainExportCosts(params: ChainExportCostsParams): Promise<ChainExportCostsResult> {
-    const runtime = this._chainStore.getRuntime(params.chainId);
-    if (!runtime) {
-      return { chainId: params.chainId, csv: "chainId,status\n" + `"${params.chainId}","not_found"\n` };
-    }
-    return { chainId: params.chainId, csv: chainCostsToCsv(runtime.state) };
+    return chainExportCostsViaRuntime(this._chainContext(), params);
   }
 
   async chainListRecipes(_params?: ChainListRecipesParams): Promise<ChainListRecipesResult> {
-    const builtin = CHAIN_GOAL_TEMPLATES.map(({ id, label, goal, maxChainCostUsd, costCeilingUsd }) => ({
-      id,
-      label,
-      goal,
-      maxChainCostUsd,
-      costCeilingUsd,
-      saved: false as const,
-    }));
-    if (!this._taskStore) return { recipes: builtin };
-    const saved = (await this._taskStore.listChainRecipes()).map((r) => ({
-      id: r.id,
-      label: r.label,
-      goal: r.goal,
-      maxChainCostUsd: r.maxChainCostUsd,
-      costCeilingUsd: r.costCeilingUsd,
-      saved: true as const,
-    }));
-    return { recipes: [...saved, ...builtin] };
+    return chainListRecipesViaRuntime(this._chainContext(), _params);
   }
 
   async chainSaveRecipe(params: ChainSaveRecipeParams): Promise<ChainSaveRecipeResult> {
-    const label = params.label.trim();
-    const goal = params.goal.trim();
-    if (!label || !goal) {
-      return { ok: false, reason: "validation_failed" };
-    }
-    if (!this._taskStore) {
-      return { ok: false, reason: "validation_failed" };
-    }
-    const record = await this._taskStore.saveChainRecipe({
-      id: params.id ?? `recipe_${randomUUID()}`,
-      label,
-      goal,
-      maxChainCostUsd: params.maxChainCostUsd,
-      costCeilingUsd: params.costCeilingUsd,
-    });
-    return {
-      ok: true,
-      recipe: {
-        id: record.id,
-        label: record.label,
-        goal: record.goal,
-        maxChainCostUsd: record.maxChainCostUsd,
-        costCeilingUsd: record.costCeilingUsd,
-        saved: true,
-      },
-    };
+    return chainSaveRecipeViaRuntime(this._chainContext(), params);
   }
 
   async chainDeleteRecipe(params: ChainDeleteRecipeParams): Promise<ChainDeleteRecipeResult> {
-    if (!this._taskStore) return { ok: false, deleted: false };
-    const deleted = await this._taskStore.deleteChainRecipe(params.id);
-    return { ok: deleted, deleted };
+    return chainDeleteRecipeViaRuntime(this._chainContext(), params);
   }
 
   private async _appendChainAudit(event: {

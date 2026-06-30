@@ -10,8 +10,12 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import {
   chainCancelViaRuntime,
+  chainDeleteRecipeViaRuntime,
+  chainExportCostsViaRuntime,
   chainGetBidStrategyViaRuntime,
   chainGetStateViaRuntime,
+  chainListRecipesViaRuntime,
+  chainSaveRecipeViaRuntime,
   chainSetBidStrategyViaRuntime,
   ChainStore,
   type ChainContext,
@@ -177,5 +181,51 @@ describe("chainSetBidStrategyViaRuntime + chainGetBidStrategyViaRuntime", () => 
       capabilityLocalEtaMs: 10_000,
     });
     expect(out.baseCostUsd).toBe(7);
+  });
+});
+
+describe("chainExportCostsViaRuntime", () => {
+  it("returns the not_found CSV when no runtime entry exists", () => {
+    const store = new ChainStore();
+    const out = chainExportCostsViaRuntime(makeContext(store), { chainId: "nope" });
+    expect(out.chainId).toBe("nope");
+    expect(out.csv).toContain("not_found");
+  });
+});
+
+describe("chainListRecipesViaRuntime", () => {
+  it("returns just the built-in recipes when no task store context is provided", async () => {
+    const store = new ChainStore();
+    const out = await chainListRecipesViaRuntime(makeContext(store));
+    expect(out.recipes.length).toBeGreaterThan(0);
+    expect(out.recipes.every((r) => r.saved === false)).toBe(true);
+  });
+});
+
+describe("chainSaveRecipeViaRuntime", () => {
+  it("returns validation_failed when label is empty", async () => {
+    const store = new ChainStore();
+    const out = await chainSaveRecipeViaRuntime(makeContext(store), {
+      label: "  ",
+      goal: "do a thing",
+    });
+    expect(out.ok).toBe(false);
+  });
+
+  it("returns validation_failed when goal is empty", async () => {
+    const store = new ChainStore();
+    const out = await chainSaveRecipeViaRuntime(makeContext(store), {
+      label: "ok",
+      goal: "  ",
+    });
+    expect(out.ok).toBe(false);
+  });
+});
+
+describe("chainDeleteRecipeViaRuntime", () => {
+  it("returns ok:false when no task store context is provided", async () => {
+    const store = new ChainStore();
+    const out = await chainDeleteRecipeViaRuntime(makeContext(store), { id: "x" });
+    expect(out).toEqual({ ok: false, deleted: false });
   });
 });

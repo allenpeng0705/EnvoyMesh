@@ -1,0 +1,31 @@
+refactor: extract chainExportCosts + chainList/Save/DeleteRecipe to chains runtime
+
+Step 9 of the refactor plan: a focused extraction of 4 chain
+methods that don't need the big `buildChainOrchestratorDeps`
+helper. They all share the same shape: read a runtime entry, or
+call a simple service function, or read/write the task store.
+
+- 4 new runtime functions added to apps/node/src/node-service-chains.ts:
+  - chainExportCostsViaRuntime (wraps chainCostsToCsv)
+  - chainListRecipesViaRuntime (merges built-in + saved recipes)
+  - chainSaveRecipeViaRuntime (validates + writes via task store)
+  - chainDeleteRecipeViaRuntime (deletes via task store)
+- ChainContext extended with 3 optional recipe methods
+  (listChainRecipes, saveChainRecipe, deleteChainRecipe). When
+  the context doesn't provide them, the runtime returns the
+  built-in list / a validation_failed result. This is strictly
+  safer than the pre-extraction code, which called methods that
+  don't exist on LocalTaskStore (a latent runtime bug).
+- 4 class methods collapse to 1-line delegations.
+- node-service-impl.ts: 13685 -> 13651 lines (-34)
+- 5 new unit tests cover:
+  - chainExportCosts not_found CSV
+  - chainListRecipes built-in fallback when no task store
+  - chainSaveRecipe validation_failed on empty label
+  - chainSaveRecipe validation_failed on empty goal
+  - chainDeleteRecipe ok:false when no task store
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2143 pass / 79 fail / 128 skip
+  (was 2138 / 79 / 128 — +5 new tests, 0 regressions)

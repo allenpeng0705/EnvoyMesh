@@ -11,13 +11,16 @@
  * via the class-owned `ChainStore` field. Future commits can lift
  * them out too.
  */
+import { randomUUID } from "node:crypto";
 import { chainBudgetWarningLevel } from "./chain-auto-orchestrator.js";
 import { chainStateSnapshot, createChainState, type ChainState } from "./chain-orchestrator.js";
-import { mergeChainDefaults } from "./chain-defaults.js";
+import { CHAIN_GOAL_TEMPLATES, mergeChainDefaults } from "./chain-defaults.js";
+import { chainCostsToCsv } from "./chain-cost-export.js";
 import type {
   ChainGetStateParams,
   ChainGetStateResult,
   ChainListActiveResult,
+  ChainListActiveParams,
   ChainCancelParams,
   ChainCancelResult,
   ChainSetBidStrategyParams,
@@ -34,6 +37,14 @@ import type {
   ChainGetDefaultsResult,
   ChainSetDefaultsParams,
   ChainSetDefaultsResult,
+  ChainExportCostsParams,
+  ChainExportCostsResult,
+  ChainListRecipesParams,
+  ChainListRecipesResult,
+  ChainSaveRecipeParams,
+  ChainSaveRecipeResult,
+  ChainDeleteRecipeParams,
+  ChainDeleteRecipeResult,
 } from "@envoymesh/api";
 
 /* ---------- store ---------- */
@@ -158,6 +169,18 @@ export interface ChainContext {
   /** Chain config plumbing. */
   getNodeConfig(): Promise<unknown>;
   setNodeConfig(cfg: unknown): Promise<void>;
+  /** Recipe persistence (optional — the runtime returns the builtin list when absent).
+   *  Types are intentionally loose: the class is the source of truth for the
+   *  recipe row shape, and the runtime just passes rows through. */
+  listChainRecipes?(): Promise<Array<{ id: string; label: string; goal: string; maxChainCostUsd?: number; costCeilingUsd?: number }>>;
+  saveChainRecipe?(record: { id?: string; label: string; goal: string; maxChainCostUsd?: number; costCeilingUsd?: number }): Promise<{
+    id: string;
+    label: string;
+    goal: string;
+    maxChainCostUsd?: number;
+    costCeilingUsd?: number;
+  }>;
+  deleteChainRecipe?(id: string): Promise<boolean>;
 }
 
 /* ---------- chainGetState ---------- */
@@ -316,4 +339,89 @@ export async function chainSetDefaultsViaRuntime(
   }
   await ctx.setNodeConfig({ chainDefaults: d });
   return { ok: true, defaults: d as never };
+}
+
+/* ---------- chainExportCosts / chainListRecipes / chainSaveRecipe / chainDeleteRecipe ---------- */
+
+export function chainExportCostsViaRuntime(
+  ctx: ChainContext,
+  params: ChainExportCostsParams,
+): ChainExportCostsResult {
+  const entry = ctx.store.getRuntime(params.chainId);
+  if (!entry) {
+    return {
+      chainId: params.chainId,
+      csv: `chainId,status\n"${params.chainId}","not_found"\n`,
+    };
+  }
+  return { chainId: params.chainId, csv: chainCostsToCsv(entry.state) };
+}
+
+export async function chainListRecipesViaRuntime(
+  ctx: ChainContext,
+  _params?: ChainListRecipesParams,
+): Promise<ChainListRecipesResult> {
+  const builtin = CHAIN_GOAL_TEMPLATES.map(
+    ({ id, label, goal, maxChainCostUsd, costCeilingUsd }) => ({
+      id,
+      label,
+      goal,
+      maxChainCostUsd,
+      costCeilingUsd,
+      saved: false as const,
+    }),
+  );
+  if (!ctx.listChainRecipes) return { recipes: builtin };
+  const saved = (await ctx.listChainRecipes()).map(
+    (r) => ({
+      id: r.id,
+      label: r.label,
+      goal: r.goal,
+      maxChainCostUsd: r.maxChainCostUsd,
+      costCeilingUsd: r.costCeilingUsd,
+      saved: true as const,
+    }),
+  );
+  return { recipes: [...saved, ...builtin] };
+}
+
+export async function chainSaveRecipeViaRuntime(
+  ctx: ChainContext,
+  params: ChainSaveRecipeParams,
+): Promise<ChainSaveRecipeResult> {
+  const label = params.label.trim();
+  const goal = params.goal.trim();
+  if (!label || !goal) {
+    return { ok: false, reason: "validation_failed" };
+  }
+  if (!ctx.hasTaskStore() || !ctx.saveChainRecipe) {
+    return { ok: false, reason: "validation_failed" };
+  }
+  const record = await ctx.saveChainRecipe({
+    id: params.id ?? `recipe_${randomUUID()}`,
+    label,
+    goal,
+    maxChainCostUsd: params.maxChainCostUsd,
+    costCeilingUsd: params.costCeilingUsd,
+  });
+  return {
+    ok: true,
+    recipe: {
+      id: record.id,
+      label: record.label,
+      goal: record.goal,
+      maxChainCostUsd: record.maxChainCostUsd,
+      costCeilingUsd: record.costCeilingUsd,
+      saved: true,
+    },
+  };
+}
+
+export async function chainDeleteRecipeViaRuntime(
+  ctx: ChainContext,
+  params: ChainDeleteRecipeParams,
+): Promise<ChainDeleteRecipeResult> {
+  if (!ctx.hasTaskStore() || !ctx.deleteChainRecipe) return { ok: false, deleted: false };
+  const deleted = await ctx.deleteChainRecipe(params.id);
+  return { ok: deleted, deleted };
 }
