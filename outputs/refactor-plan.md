@@ -57,6 +57,10 @@ Items deferred: OpenClaw Runtime (~1171), Fleet Manifest inline cleanup, Agent C
 - Escalate to mid-sized (Intent history, Continuity) once the pattern is stable.
 - Largest extractions (Chains, Calls) last, when we have the rhythm.
 
+## Progress
+
+- [x] **Step 1** (commit pending): Discovery clusterer extracted to `node-service-discovery-clusterer.ts` (-76 lines, +136 runtime, +192 test). 0 tsc errors. 2043 pass / 79 fail (was 2036/79). 7 new unit tests.
+
 ## Out of scope
 - Changing public API surface of `NodeService`.
 - Modifying `@envoymesh/*` packages.

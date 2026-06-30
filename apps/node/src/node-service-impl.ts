@@ -483,6 +483,7 @@ import {
   listFleetManifestsViaRuntime,
   revokeFleetManifestViaRuntime,
 } from "./node-service-fleet-manifest.js";
+import { discoverAndClusterViaRuntime } from "./node-service-discovery-clusterer.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
@@ -6157,88 +6158,11 @@ class NodeServiceImpl implements NodeService {
     seedTopics?: string[],
     seedCapabilities?: string[],
   ): Promise<string> {
-    const { generateDiscoveryClusters, formatDiscoverySuggestions } = await import("./discovery-clusterer.js");
-    const config = await this._configStore.load();
-    const ownerTopics: string[] = seedTopics ?? [];
-    if (ownerTopics.length === 0 && !seedCapabilities?.length) {
-      return "No seed topics or capabilities provided. Tell me what you're interested in discovering.";
-    }
-
     const bonds = await this.getBonds();
-    const bondedPeers = bonds.map((b) => ({ ownerId: b.peerOwnerId, peerId: b.peerOwnerId }));
-    const bondedIds = new Set(bonds.map((b) => b.peerOwnerId));
-    const { signUnsignedEnvelope } = await import("@envoymesh/identity");
-
-    const deps = {
-      broadcastDocumentDiscovery: async (query: string, _maxHops?: number) => {
-        const { broadcastDocumentDiscovery } = await import("./document-discovery-broadcast.js");
-        const bdDeps = {
-          sendToPeer: async () => 0, // stub — needs mesh connectivity for real broadcast
-          getBondedPeers: async () => bondedPeers,
-          getAllKnownPeers: async () => bondedPeers,
-          signEnvelope: signUnsignedEnvelope as (unsigned: unknown, privateKeyPem: string) => unknown,
-          profile: {
-            owner: { ownerId: this._profile!.owner.ownerId },
-            device: {
-              deviceId: this._profile!.device.deviceId,
-              peerId: (this._profile!.device as unknown as { peerId?: string }).peerId ?? this._profile!.device.deviceId,
-              publicKeyPem: this._profile!.device.publicKeyPem,
-              privateKeyPem: this._profile!.device.privateKeyPem,
-            },
-          },
-        };
-        const results = await broadcastDocumentDiscovery(bdDeps, {
-          query,
-          maxHops: _maxHops ?? 2,
-          maxResults: 20,
-          timeoutMs: 15000,
-        });
-        return results.map((r: any) => ({
-          ownerId: r.ownerId,
-          displayName: r.metadata?.title,
-          topics: r.metadata?.topics ?? [],
-          capabilities: [],
-          isBonded: bondedIds.has(r.ownerId),
-        }));
-      },
-      broadcastCapabilityDiscovery: async (caps: string[], _maxHops?: number) => {
-        const { broadcastCapabilityDiscovery } = await import("./capability-discovery-broadcast.js");
-        const bcdDeps = {
-          sendToPeer: async () => 0,
-          getBondedPeers: async () => bondedPeers,
-          getAllKnownPeers: async () => bondedPeers,
-          signEnvelope: signUnsignedEnvelope as (unsigned: unknown, privateKeyPem: string) => unknown,
-          profile: {
-            owner: { ownerId: this._profile!.owner.ownerId },
-            device: {
-              deviceId: this._profile!.device.deviceId,
-              peerId: (this._profile!.device as unknown as { peerId?: string }).peerId ?? this._profile!.device.deviceId,
-              publicKeyPem: this._profile!.device.publicKeyPem,
-              privateKeyPem: this._profile!.device.privateKeyPem,
-            },
-          },
-        };
-        const results = await broadcastCapabilityDiscovery(bcdDeps, {
-          capabilityTags: caps,
-          maxHops: _maxHops ?? 2,
-          maxResults: 20,
-          timeoutMs: 15000,
-        });
-        return results.map((r: any) => ({
-          ownerId: r.ownerId,
-          topics: [],
-          capabilities: caps,
-          isBonded: bondedIds.has(r.ownerId),
-        }));
-      },
-      getBondedOwnerIds: async () => bondedIds,
-    };
-
-    const clusters = await generateDiscoveryClusters(deps, {
-      seedTopics: ownerTopics,
-      seedCapabilities: seedCapabilities ?? [],
-    });
-    return formatDiscoverySuggestions(clusters);
+    return discoverAndClusterViaRuntime(
+      { profile: this._profile!, bonds },
+      { seedTopics, seedCapabilities },
+    );
   }
 
   // Phase 23D — Chat RAG search
