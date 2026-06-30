@@ -1,0 +1,41 @@
+refactor: extract runOwnerAgentTurn (Step 26)
+
+Step 26 — extract the public runOwnerAgentTurn method (~320 lines)
+which handles a single "owner agent turn" (user typed something in
+the assistant, we produce a structured reply).
+
+The class method collapses to a 1-line delegation. The runtime
+takes a RunOwnerAgentTurnContext with 13 accessors (recordOwnerActivity,
+ensureOpenClawReady, begin/endOpenClawToolTracking,
+buildOpenClawTurnContext, askOpenClaw, persistEnvoyAiChatExchange,
+maybeIngestTerminalAssistantReply, getRagService, getTaskStore,
+runDocumentAgentTurnCore, getApprovalQueue).
+
+The runtime body is a direct port of the OpenClaw-first / native-
+fallback flow: if OpenClaw is ready, call it and persist; if it
+throws or is unavailable, fall through to the native planner.
+
+4 new unit tests in
+apps/node/test/node-service-handlers-run-owner-agent-turn.test.ts:
+  - happy path: uses OpenClaw and returns a knowledge turn
+  - falls back to native planner when OpenClaw unavailable
+  - falls back to native planner when OpenClaw throws
+  - throws if no RAG service or task store when falling back
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2278 pass / 80 fail / 128 skip
+  (was 2274 / 80 / 128 — +4 new tests, 0 regressions)
+
+Net effect:
+- node-service-impl.ts: 12,280 -> 11,986 (-294 lines)
+- node-service-handlers-run-owner-agent-turn.ts: 102 lines (new runtime)
+- 30 commits total
+
+Cumulative: 14,247 -> 11,986 (-2,261, -15.87%)
+
+Next planned extractions:
+- _handleInboundMessage body (remaining intent dispatchers)
+- Terminal Agent Assist methods
+- Herdr methods
+- createFleetManifest, pairThinClient, etc.

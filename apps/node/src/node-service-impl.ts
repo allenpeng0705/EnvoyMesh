@@ -643,6 +643,10 @@ import {
   getPairingPayloadViaRuntime,
   type GetPairingPayloadContext,
 } from "./node-service-handlers-pairing-payload.js";
+import {
+  runOwnerAgentTurnViaRuntime,
+  type RunOwnerAgentTurnContext,
+} from "./node-service-handlers-run-owner-agent-turn.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
@@ -8146,6 +8150,25 @@ class NodeServiceImpl implements NodeService {
     };
   }
 
+  private _runOwnerAgentTurnContext(): RunOwnerAgentTurnContext {
+    return {
+      recordOwnerActivity: () => this.recordOwnerActivity(),
+      ensureOpenClawReady: () => this._ensureOpenClawReady(),
+      beginOpenClawToolTracking: () => this._beginOpenClawToolTracking(),
+      endOpenClawToolTracking: () => this._endOpenClawToolTracking(),
+      buildOpenClawTurnContext: () => this._buildOpenClawTurnContext(),
+      askOpenClaw: (msg, ctx) => this.askOpenClaw(msg, ctx as never),
+      persistEnvoyAiChatExchange: (raw, turn, humanMsgId) =>
+        this._persistEnvoyAiChatExchange(raw, turn, humanMsgId),
+      maybeIngestTerminalAssistantReply: (sid, answer) =>
+        this._maybeIngestTerminalAssistantReply(sid, answer),
+      getRagService: () => this._getRagService() as never,
+      getTaskStore: () => this._taskStore as never,
+      runDocumentAgentTurnCore: (msg) => this._runDocumentAgentTurnCore(msg) as never,
+      getApprovalQueue: () => this._approvalQueue as never,
+    };
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async _handleInboundMessage(params: any): Promise<void> {
     const { envelope, remotePeerId, remoteAddr, replyWithEnvelope } = params as any;
@@ -10016,324 +10039,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   async runOwnerAgentTurn(message: string): Promise<OwnerAgentTurnResult> {
-    this.recordOwnerActivity();
-    const terminalSessionId = parseTerminalAssistantCorrelationId(message);
-    const agentMessage = terminalSessionId
-      ? stripTerminalAssistantCorrelationPrefix(message)
-      : message;
-
-    // Built-in OpenClaw (EnvoyAI): session memory, tools, multi-round reasoning.
-    if (await this._ensureOpenClawReady()) {
-      this._beginOpenClawToolTracking();
-      try {
-        const context = await this._buildOpenClawTurnContext();
-        const answer = stripModelThinking(await this.askOpenClaw(agentMessage, context));
-        const result: OwnerAgentTurnResult = {
-          answer,
-          domain: "knowledge" as const,
-          intent: "knowledge" as const,
-          toolsUsed: this._endOpenClawToolTracking(),
-          approvalItems: [],
-          modelUsed: "openclaw",
-        };
-        const humanMsgId = randomUUID();
-        await this._persistEnvoyAiChatExchange(message, result, humanMsgId);
-        this._maybeIngestTerminalAssistantReply(terminalSessionId, answer);
-        return result;
-      } catch (err) {
-        this._endOpenClawToolTracking();
-        console.warn("[openclaw] request failed, falling back to native planner:", err instanceof Error ? err.message : String(err));
-      }
-    } else {
-      console.warn("[openclaw] Gateway unavailable — using native LLM planner for this turn");
-    }
-
-    const context = await this._requireToolExecutionContext();
-    const config = await this._configStore.load();
-    const nodeConfig = await this.getNodeConfig();
-    const mesh = this._mesh;
-    const agentIdentitySection = await loadAgentIdentitySection(this._agentIdentityStore);
-    let localManifestCapabilities: string[] | undefined;
-    if (this._capabilityManifestStore) {
-      const manifest = await this._capabilityManifestStore.loadManifest();
-      localManifestCapabilities = manifest?.capabilities;
-    }
-
-    const pendingBeforeIds = new Set((await this.listPendingApprovals()).map((p) => p.id));
-
-    const turn = await runOwnerAgentTurnLoop({
-      message: agentMessage,
-      runDocumentTurn: () => this._runDocumentAgentTurnCore(agentMessage),
-      executeTool: (toolName, params) => executeTool(toolName, params, context),
-      matchRoutes: (goal) =>
-        matchAgentCapabilityRoutes({
-          goal,
-          localManifestCapabilities,
-          maxResults: 3,
-        }),
-      postureEnabled: {
-        socialProxy: config?.socialProxyEnabled ?? false,
-        documentAcquisition: config?.documentAcquisitionEnabled ?? false,
-        capabilityProvider: config?.capabilityProviderEnabled ?? false,
-        trustMode: config?.trustModeEnabled ?? false,
-        autonomousKillSwitch: config?.autonomousKillSwitch ?? false,
-      },
-      agentIdentitySection,
-      askPlanner: (prompt) =>
-        askOwnerAgentPlanner({
-          prompt,
-          modelProviders: nodeConfig.modelProviders,
-          requesterPeerId: mesh?.peerId ?? "local-owner",
-          agentIdentityStore: this._agentIdentityStore,
-        }),
-      scanOutbound: scanOwnerAgentOutbound,
-      startDocumentAcquisitionJob: (query) => this.startDocumentAcquisitionJob({ query }),
-      startCapabilityProviderJob: (input) =>
-        this.startCapabilityProviderJob({
-          goal: input.goal,
-          capabilityIds: input.capabilityIds,
-        }),
-      runSocialProxyPass: () => this.runSocialProxyPass(),
-      discoverAndCluster: (seedTopics?: string[], seedCapabilities?: string[]) =>
-        this.discoverAndCluster(seedTopics, seedCapabilities),
-      // meshIntelligenceReport not in OwnerAgentTurnDeps — call directly
-      chatRagSearch: (query: string, opts?: { ownerId?: string; maxResults?: number }) =>
-        this.chatRagSearch(query, opts),
-      predictIntent: (partial: string) => {
-        // Phase 25D — predict owner intent from partial input using
-        // the live in-process intent history (persisted across restarts).
-        if (!config?.intentPredictionEnabled) return [];
-        return predictIntent(
-          this._intentHistoryStore.getHistory(),
-          partial,
-          { maxPredictions: config?.prefetchMaxResults ?? 3 },
-        );
-      },
-      runTaskNegotiation: async (objective: string, capabilityTags: string[]) => {
-        // Phase 24A — Full A2A negotiation lifecycle
-        const { runTaskNegotiationLoop } = await import("./task-negotiation-loop.js");
-        const result = await runTaskNegotiationLoop(
-          {
-            discoverCapabilityProviders: async (tags: string[]) => {
-              const matches = await matchAgentCapabilityRoutes({
-                goal: objective,
-                localManifestCapabilities,
-                maxResults: 5,
-              });
-              const bonds = await this.getBonds();
-              return matches.filter((m) => {
-                // MatchedAgentCapabilityRoute doesn't carry ownerId/peerId directly;
-                // derive from the route's metadata when present.
-                const meta = m as unknown as { ownerId?: string; peerId?: string };
-                const bond = meta.ownerId
-                  ? bonds.find((b) => b.peerOwnerId === meta.ownerId)
-                  : undefined;
-                return bond != null;
-              }).map((m) => {
-                const meta = m as unknown as { ownerId?: string; peerId?: string; capabilities?: string[] };
-                return {
-                  ownerId: meta.ownerId ?? "(unknown)",
-                  peerId: meta.peerId ?? meta.ownerId ?? "(unknown)",
-                  capabilities: meta.capabilities ?? m.matchedCapabilityIds ?? [],
-                  bondLevel: bonds.find((b) => b.peerOwnerId === meta.ownerId)?.level ?? "public",
-                  reputationScore: 0.5,
-                };
-              });
-            },
-            sendTaskPropose: async (peerId, ownerId, objective, constraints) => {
-              const { sendAgentTaskPropose } = await import("./agent-task-propose-send.js");
-              const result = await sendAgentTaskPropose({
-                profile: this._profile!,
-                agentIdentity: agentIdentitySection as any,
-                recipientPeerId: peerId,
-                objective,
-                taskId: constraints?.correlationId as string ?? randomUUID(),
-              } as any);
-              return result.ok ? peerId : null;
-            },
-          },
-          {
-            executeTool: (toolName, params) => executeTool(toolName, params, context),
-            sendTaskResult: async (peerId, ownerId, taskId, result, corrId) => {
-              if (!this._mesh) return false;
-              try {
-                const { createTaskResultPayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
-                const unsigned = createUnsignedEnvelope({
-                  senderPeerId: mesh!.peerId,
-                  senderPublicKey: this._profile!.device.publicKeyPem,
-                  senderRole: "agent",
-                  recipientPeerId: peerId,
-                  recipientRole: "agent",
-                  intent: "task.result",
-                  payload: createTaskResultPayload({
-                    taskId,
-                    summary: typeof result === "string" ? result : JSON.stringify(result ?? ""),
-                    status: "completed",
-                  }),
-                correlationId: corrId,
-                agentCredential: (agentIdentitySection as any)?.credential,
-              });
-              const { signUnsignedEnvelope } = await import("@envoymesh/identity");
-              const signed = signUnsignedEnvelope(unsigned, this._profile!.device.privateKeyPem);
-              const dialHints = await this._dialHintsForChat(peerId, undefined);
-              await this._deliverCallEnvelope(peerId, signed, dialHints);
-              return true;
-              } catch { return false; }
-            },
-            sendTaskFeedback: async (peerId, ownerId, taskId, score, comment, corrId) => {
-              if (!this._mesh) return false;
-              try {
-                const { createTaskFeedbackPayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
-                const unsigned = createUnsignedEnvelope({
-                  senderPeerId: mesh!.peerId,
-                  senderPublicKey: this._profile!.device.publicKeyPem,
-                  senderRole: "agent",
-                  recipientPeerId: peerId,
-                  recipientRole: "agent",
-                  intent: "task.feedback",
-                  payload: createTaskFeedbackPayload({
-                    taskId,
-                    outcome: (score >= 0.5 ? "success" : "failure") as "success" | "failure",
-                    latencyMs: 0,
-                    notes: comment,
-                  }),
-                correlationId: corrId,
-                agentCredential: (agentIdentitySection as any)?.credential,
-              });
-              const { signUnsignedEnvelope } = await import("@envoymesh/identity");
-              const signed = signUnsignedEnvelope(unsigned, this._profile!.device.privateKeyPem);
-              const dialHints = await this._dialHintsForChat(peerId, undefined);
-              await this._deliverCallEnvelope(peerId, signed, dialHints);
-              return true;
-              } catch { return false; }
-            },
-          },
-          objective,
-          capabilityTags,
-        );
-        return result;
-      },
-      // Phase 24B — multi-step agent chain
-      runAgentChain: async (description: string, initialInput?: string) => {
-        const { runAgentChain, decomposeTask } = await import("./agent-chain-orchestrator.js");
-        const steps = decomposeTask(description);
-        if (steps.length === 0) {
-          return { ok: false, completedSteps: 0, totalSteps: 0, error: "no steps decomposed" };
-        }
-        // Local providers only — for now we use the capability manifest and
-        // bonded peer routes. A future wire-protocol extension can read
-        // remote provider cards.
-        const findProviders = async (capabilityTag: string) => {
-          const matches = await matchAgentCapabilityRoutes({
-            goal: description,
-            localManifestCapabilities,
-            maxResults: 5,
-          });
-          return matches
-            .filter((m) => (m.matchedCapabilityIds ?? []).includes(capabilityTag))
-            .map((m) => {
-              const meta = m as unknown as { ownerId?: string; peerId?: string };
-              return {
-                ownerId: meta.ownerId ?? "(unknown)",
-                peerId: meta.peerId ?? meta.ownerId ?? "(unknown)",
-                capabilities: m.matchedCapabilityIds ?? [],
-                reputationScore: 0.5,
-              };
-            });
-        };
-        const executeStep = async (
-          provider: { ownerId: string; peerId: string },
-          step: { label: string; capabilityTag: string },
-          input: string | undefined,
-        ): Promise<string | null> => {
-          // Local-only executor: the chain module can call this for the local
-          // owner. Remote provider execution is a follow-on (requires A2A
-          // task dispatch in the chain).
-          if (provider.ownerId !== (this._profile?.owner.ownerId ?? "")) return null;
-          // For the local owner, synthesize a deterministic echo so the chain
-          // demonstrates the data flow. Real synthesis is a follow-on.
-          return `${step.label}: ${input ?? ""}`.trim();
-        };
-        return runAgentChain({ findProviders, executeStep }, steps, initialInput);
-      },
-      // Phase 40 — multi-agent chain orchestrator. Routes a multi-step goal
-      // through planChain + chainLaunch. The synthesis happens asynchronously
-      // in the background as partials arrive. The runtime stores the
-      // ChainState so chainGetState/chainCancel/chainListActive can read it.
-      runChain: async (input) => this._runChainGoal(input),
-      // Phase 24D — service-mesh auto-accept gate
-      evaluateServiceTask: async (task) => {
-        const { evaluateServiceTask } = await import("./service-mesh-worker.js");
-        const autoAcceptPolicy = {
-          enabled: (config?.autonomousKillSwitch ?? true) === false,
-          maxSensitivity: "friends" as const,
-          maxConcurrentTasks: 3,
-          allowedActions: ["read", "search", "summarize"],
-        };
-        return evaluateServiceTask(
-          {
-            hasCapability: (tag) => (localManifestCapabilities ?? []).includes(tag),
-            getAutoAcceptPolicy: async () => autoAcceptPolicy,
-            getActiveTaskCount: async () => {
-              try {
-                return (await this.listPendingApprovals()).length;
-              } catch {
-                return 0;
-              }
-            },
-          },
-          task,
-        );
-      },
-      listAgentCircles: () => this.listAgentCircles(),
-      createAgentCircle: (input: any) => this.createAgentCircle(input),
-      updateAgentCircle: (circleId: string, update: any) => this.updateAgentCircle(circleId, update),
-      deleteAgentCircle: (circleId: string) => this.deleteAgentCircle(circleId),
-      proposeAgentCircles: () => this.proposeAgentCircles(),
-      countPendingApprovals: async () => {
-        const pending = await this.listPendingApprovals();
-        return pending.length;
-      },
-      getBonds: () => this.getBonds(),
-      auditPlannerRound: async (record) => {
-        if (!this._taskStore) return;
-        await this._taskStore.appendAuditEvent(
-          createAuditEvent({
-            type: "tool.called",
-            messageId: randomUUID(),
-            remotePeerId: "local",
-            direction: "local",
-            verificationStatus: "verified",
-            latencyMs: 0,
-            outcome: record.ok === false ? "deny" : "record",
-            summary: record.toolName
-              ? `owner agent planner round ${record.round}: ${record.toolName} — ${record.summary}`
-              : `owner agent planner round ${record.round}: ${record.summary}`,
-            createdAt: new Date().toISOString(),
-          }),
-        );
-      },
-    });
-
-    let approvalItems: OwnerAgentTurnResult["approvalItems"];
-    const pendingAfter = await this.listPendingApprovals();
-    const newApprovalItems = pendingAfter.filter((p) => !pendingBeforeIds.has(p.id));
-    if (turn.pendingApproval) {
-      approvalItems = newApprovalItems.length > 0 ? newApprovalItems : pendingAfter.slice(-1);
-    } else if (newApprovalItems.length > 0) {
-      approvalItems = newApprovalItems;
-    }
-
-    await this.recordH2aOwnerAgentTurn(message, turn);
-    // Phase 25D — record the intent for future predictions (only if a
-    // domain/intent was returned by the turn).
-    if (turn.intent) {
-      void this.recordIntent(turn.intent, agentMessage);
-    }
-    const result = { ...turn, approvalItems, answer: stripModelThinking(turn.answer) };
-    await this._persistEnvoyAiChatExchange(message, result);
-    this._maybeIngestTerminalAssistantReply(terminalSessionId, result.answer);
-    return result;
+    return runOwnerAgentTurnViaRuntime(this._runOwnerAgentTurnContext(), message);
   }
 
   /** Local H2A turn — Activity row for Assistant lane (Phase 15C / 18). */
