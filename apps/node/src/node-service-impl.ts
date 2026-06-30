@@ -547,6 +547,17 @@ import {
   setCallMutedViaRuntime,
   type CallContext,
 } from "./node-service-calls.js";
+import {
+  listAllLocalFilesViaRuntime,
+  listLibraryItemsViaRuntime,
+  listOpenClawWorkspaceFilesViaRuntime,
+  openLocalFileViaRuntime,
+  readLocalFileContentViaRuntime,
+  readOpenClawWorkspaceFileViaRuntime,
+  resolveOpenClawWorkspacePathViaRuntime,
+  setLibraryItemPublishedViaRuntime,
+  type FileShareContext,
+} from "./node-service-fileshare.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
@@ -7294,89 +7305,54 @@ class NodeServiceImpl implements NodeService {
   // File Sharing
   // ============================================
 
+  private _fileShareContext(): FileShareContext {
+    return {
+      getVaultDir: () => this._vaultDir,
+      getProfileDir: () => this._profileDir,
+      getNodeConfig: () => this.getNodeConfig(),
+    };
+  }
+
   async listLibraryItems(params?: ListLibraryItemsParams): Promise<LibraryItem[]> {
-    const index = await buildVaultIndex({ rootDir: this._vaultDir });
-    const publishedIds = await createPublishedLibraryStore(this._profileDir).loadDocumentIds();
-    const externalExports = await createPublishedExternalStore(this._profileDir).loadAll();
-    const q = params?.query?.trim().toLowerCase();
-    let docs = index.documents;
-    if (q) {
-      docs = docs.filter(
-        (d) =>
-          d.title.toLowerCase().includes(q) ||
-          d.relativePath.toLowerCase().includes(q),
-      );
-    }
-    return docs.map((d) => ({
-      documentId: d.documentId,
-      relativePath: d.relativePath,
-      title: d.title,
-      extension: d.extension,
-      byteLength: d.byteLength,
-      contentHash: d.contentHash,
-      updatedAt: d.updatedAt,
-      published: publishedIds.has(d.documentId),
-      publishedExternal: externalExports.get(d.documentId),
-    }));
+    return listLibraryItemsViaRuntime(this._fileShareContext(), params);
   }
 
   async listOpenClawWorkspaceFiles(params?: { query?: string }): Promise<WorkspaceFileItem[]> {
-    return listOpenClawWorkspaceFilesFromDir(openClawWorkspaceDir(this._profileDir), params?.query);
+    return listOpenClawWorkspaceFilesViaRuntime(this._fileShareContext(), params);
   }
 
   async listAllLocalFiles(params?: ListAllLocalFilesParams): Promise<ListAllLocalFilesResult> {
-    const [vaultItems, workspaceItems] = await Promise.all([
-      this.listLibraryItems(params),
-      this.listOpenClawWorkspaceFiles(params),
-    ]);
-    return buildAllLocalFilesList({ vaultItems, workspaceItems });
+    return listAllLocalFilesViaRuntime(this._fileShareContext(), params);
   }
 
   async readLocalFileContent(
     params: ReadLocalFileContentParams,
   ): Promise<ReadLibraryItemContentResult> {
-    if (params.source === "workspace") {
-      return this.readOpenClawWorkspaceFile({
-        relativePath: params.relativePath,
-        maxBytes: params.maxBytes,
-      });
-    }
-    let relativePath = params.relativePath.trim().replace(/^[\\/]+/, "");
-    if (!relativePath && params.documentId?.trim()) {
-      const match = (await this.listLibraryItems()).find((item) => item.documentId === params.documentId!.trim());
-      if (!match) {
-        throw new Error(`Document not found: ${params.documentId}`);
-      }
-      relativePath = match.relativePath;
-    }
-    return this.readLibraryItemContent({ relativePath, maxBytes: params.maxBytes });
+    return readLocalFileContentViaRuntime(
+      this._fileShareContext(),
+      (p) => this.readLibraryItemContent(p),
+      (p) => this.readOpenClawWorkspaceFile(p),
+      () => this.listLibraryItems(),
+      params,
+    );
   }
 
   async openLocalFile(params: OpenLocalFileParams): Promise<void> {
-    if (params.source === "workspace") {
-      const { absolutePath } = await this.resolveOpenClawWorkspacePath(params.relativePath);
-      await openPathWithDefaultApp(absolutePath);
-      return;
-    }
-    await this.openLibraryItem(params.relativePath);
+    return openLocalFileViaRuntime(this._fileShareContext(), (p) => this.openLibraryItem(p), params);
   }
 
   async resolveOpenClawWorkspacePath(relativePath: string): Promise<{ absolutePath: string }> {
-    const absolutePath = assertPathInsideOpenClawWorkspace(
-      openClawWorkspaceDir(this._profileDir),
-      relativePath,
-    );
-    return { absolutePath };
+    return resolveOpenClawWorkspacePathViaRuntime(this._fileShareContext(), relativePath);
   }
 
   async readOpenClawWorkspaceFile(
     params: ReadLibraryItemContentParams,
   ): Promise<ReadLibraryItemContentResult> {
-    return readOpenClawWorkspaceFileFromDir(openClawWorkspaceDir(this._profileDir), params);
+    return readOpenClawWorkspaceFileViaRuntime(this._fileShareContext(), params);
   }
 
   async setLibraryItemPublished(documentId: string, published: boolean): Promise<void> {
-    await createPublishedLibraryStore(this._profileDir).setPublished(documentId, published);
+    return setLibraryItemPublishedViaRuntime(this._fileShareContext(), documentId, published);
   }
 
   async exportLibraryItemToIpfs(documentId: string): Promise<ExportLibraryItemToIpfsResult> {
@@ -13144,8 +13120,8 @@ class NodeServiceImpl implements NodeService {
     return {
       callManager: this.callManager,
       getProfile: () => this._profile,
-      sendCallResponseEnvelope: (peerOwnerId, unsigned, intent) =>
-        this._sendCallResponseEnvelope(peerOwnerId, unsigned, intent),
+      sendCallResponseEnvelope: (peerOwnerId: string, unsigned: unknown, intent: string) =>
+        this._sendCallResponseEnvelope(peerOwnerId, unsigned as never, intent),
       loadConfig: () => this._configStore.load(),
     };
   }

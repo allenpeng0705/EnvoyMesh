@@ -1,0 +1,38 @@
+refactor: extract file sharing — simple ops to node-service-fileshare.ts
+
+Step 13a of the refactor plan. The File Sharing section is large
+(~677 lines, ~27 methods) and tangled, so we split it into 3
+commits:
+  - 13a (this): 8 simple operations that need only class fields
+  - 13b: IPFS audit-event operations
+  - 13c: complex network-driven operations
+
+Step 13a extracts:
+  - listLibraryItems
+  - listOpenClawWorkspaceFiles
+  - listAllLocalFiles
+  - setLibraryItemPublished
+  - resolveOpenClawWorkspacePath
+  - readOpenClawWorkspaceFile
+  - openLocalFile  (delegates to openLibraryItem via callback)
+  - readLocalFileContent  (delegates to readLibraryItemContent via callback)
+
+The two callbacks (`openVaultFile`, `readFromVault`) are a small
+pragmatic concession — they keep the dispatch logic in the runtime
+but call back into the class's heavier methods (which still wrap
+private helpers like resolveLibraryItemPath). When we extract
+those helpers in a follow-up, the callbacks collapse.
+
+The IPFS, publish, agent-share-proposal, and network-driven
+share / request-share operations stay on the class for now (13b,
+13c).
+
+- apps/node/src/node-service-fileshare.ts: 185 lines, 8 runtime
+  functions + FileShareContext interface
+- apps/node/src/node-service-impl.ts: 13468 -> 13444 lines (-24)
+- 18 new unit tests in apps/node/test/node-service-fileshare.test.ts
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2168 pass / 79 fail / 128 skip
+  (was 2150 / 79 / 128 — +18 new tests, 0 regressions)
