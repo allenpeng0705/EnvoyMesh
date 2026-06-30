@@ -501,6 +501,15 @@ import {
   IntentHistoryStore,
   PublishedLibraryStore,
 } from "./node-service-persistence.js";
+import {
+  buildContinuityFilePath,
+  ContinuityStore,
+  completeContinuitySessionViaRuntime,
+  getResumableSessionsViaRuntime,
+  startContinuitySessionViaRuntime,
+  updateContinuitySessionViaRuntime,
+  type ContinuityContext,
+} from "./node-service-continuity.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
@@ -6184,91 +6193,12 @@ class NodeServiceImpl implements NodeService {
   // Phase 25 — Cross-device continuity sessions
   // -------------------------------------------------------------------
   // Thin NodeService surface that delegates to the continuity-service
-  // module. State is held in a per-profile JSON file so sessions
-  // survive restarts. Real cross-device sync is wired via sync.state
-  // (a follow-on).
-  private _continuityFilePath(): string | null {
-    const dir = this._profileDir;
-    if (!dir) return null;
-    return join(dir, "continuity-sessions.json");
-  }
-
-  private async _loadContinuitySessions(): Promise<Array<{
-    sessionId: string;
-    description: string;
-    progress: string;
-    currentStep: number;
-    totalSteps: number;
-    deviceType?: string;
-    correlationId: string;
-    originDevice: string;
-    lastUpdatedAt: string;
-    active: boolean;
-  }>> {
-    const path = this._continuityFilePath();
-    if (!path) return [];
-    let parsed: unknown;
-    try {
-      const raw = await readFile(path, "utf8");
-      parsed = JSON.parse(raw);
-    } catch {
-      return [];
-    }
-    if (!parsed || typeof parsed !== "object") return [];
-    const sessions = (parsed as { sessions?: unknown }).sessions;
-    if (!Array.isArray(sessions)) return [];
-    // Validate each entry has the required string fields. Drop malformed
-    // entries rather than returning untyped data that could crash later.
-    return sessions.filter(
-      (s): s is {
-        sessionId: string;
-        description: string;
-        progress: string;
-        currentStep: number;
-        totalSteps: number;
-        deviceType?: string;
-        correlationId: string;
-        originDevice: string;
-        lastUpdatedAt: string;
-        active: boolean;
-      } =>
-        !!s &&
-        typeof s === "object" &&
-        typeof (s as Record<string, unknown>).sessionId === "string" &&
-        typeof (s as Record<string, unknown>).description === "string",
-    ) as Array<{
-      sessionId: string;
-      description: string;
-      progress: string;
-      currentStep: number;
-      totalSteps: number;
-      deviceType?: string;
-      correlationId: string;
-      originDevice: string;
-      lastUpdatedAt: string;
-      active: boolean;
-    }>;
-  }
-
-  private async _saveContinuitySessions(
-    sessions: Array<{
-      sessionId: string;
-      description: string;
-      progress: string;
-      currentStep: number;
-      totalSteps: number;
-      deviceType?: string;
-      correlationId: string;
-      originDevice: string;
-      lastUpdatedAt: string;
-      active: boolean;
-    }>,
-  ): Promise<void> {
-    const path = this._continuityFilePath();
-    if (!path) return;
-    await mkdir(dirname(path), { recursive: true });
-    await writeFile(path, JSON.stringify({ version: "0.1", sessions }, null, 2), { mode: 0o600 });
-  }
+  // module via the runtime in node-service-continuity.ts. State is
+  // held in a per-profile JSON file so sessions survive restarts.
+  // Real cross-device sync is wired via sync.state (a follow-on).
+  private readonly _continuityStore = new ContinuityStore({
+    getFilePath: () => buildContinuityFilePath(this._profileDir),
+  });
 
   async startContinuitySession(
     description: string,
@@ -6285,30 +6215,7 @@ class NodeServiceImpl implements NodeService {
     lastUpdatedAt: string;
     active: boolean;
   }> {
-    const ownerId = this._profile?.owner.ownerId ?? "local-owner";
-    const { startContinuitySession: csStart } = await import("./continuity-service.js");
-    // Build the session with deviceType pre-applied so we save exactly once.
-    // The continuity-service dep's saveSession writes the full list — passing
-    // it the enriched session means a single read+write per start call, with
-    // no race window between saves.
-    const created = await csStart(
-      {
-        listSessions: () => this._loadContinuitySessions(),
-        saveSession: async (s) => {
-          const enriched = { ...s, deviceType: opts?.deviceType };
-          const all = await this._loadContinuitySessions();
-          const without = all.filter((x) => x.sessionId !== enriched.sessionId);
-          await this._saveContinuitySessions([...without, enriched]);
-        },
-        getDeviceId: () => opts?.deviceType ?? ownerId,
-      },
-      description,
-      opts?.correlationId,
-    );
-    // Defensive: if saveSession was somehow never invoked (it always is in
-    // the current continuity-service), still return a value that includes
-    // the deviceType. The session came from csStart which we just called.
-    return { ...created, deviceType: opts?.deviceType };
+    return startContinuitySessionViaRuntime(this._continuityContext(), description, opts);
   }
 
   async updateContinuitySession(
@@ -6326,36 +6233,11 @@ class NodeServiceImpl implements NodeService {
     lastUpdatedAt: string;
     active: boolean;
   } | null> {
-    const { updateContinuitySession: csUpdate } = await import("./continuity-service.js");
-    return csUpdate(
-      {
-        listSessions: () => this._loadContinuitySessions(),
-        saveSession: async (s) => {
-          const all = await this._loadContinuitySessions();
-          const without = all.filter((x) => x.sessionId !== s.sessionId);
-          await this._saveContinuitySessions([...without, s]);
-        },
-        getDeviceId: () => this._profile?.owner.ownerId ?? "local-owner",
-      },
-      sessionId,
-      update,
-    );
+    return updateContinuitySessionViaRuntime(this._continuityContext(), sessionId, update);
   }
 
   async completeContinuitySession(sessionId: string): Promise<void> {
-    const { completeContinuitySession: csComplete } = await import("./continuity-service.js");
-    await csComplete(
-      {
-        listSessions: () => this._loadContinuitySessions(),
-        saveSession: async (s) => {
-          const all = await this._loadContinuitySessions();
-          const without = all.filter((x) => x.sessionId !== s.sessionId);
-          await this._saveContinuitySessions([...without, s]);
-        },
-        getDeviceId: () => this._profile?.owner.ownerId ?? "local-owner",
-      },
-      sessionId,
-    );
+    await completeContinuitySessionViaRuntime(this._continuityContext(), sessionId);
   }
 
   async getResumableSessions(): Promise<Array<{
@@ -6370,12 +6252,14 @@ class NodeServiceImpl implements NodeService {
     lastUpdatedAt: string;
     active: boolean;
   }>> {
-    const { getResumableSessions: csResumable } = await import("./continuity-service.js");
-    return csResumable({
-      listSessions: () => this._loadContinuitySessions(),
-      saveSession: async () => {},
+    return getResumableSessionsViaRuntime(this._continuityContext());
+  }
+
+  private _continuityContext(): ContinuityContext {
+    return {
+      store: this._continuityStore,
       getDeviceId: () => this._profile?.owner.ownerId ?? "local-owner",
-    });
+    };
   }
 
   async startDocumentAcquisitionJob(params: {
@@ -13837,7 +13721,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     // In-memory state
     this._publishedLibraryStore.clear();
     this._intentHistoryStore.clear();
-    // Continuity sessions managed by load/save pattern
+    this._continuityStore.clear();
 
     // On-disk state — overwrite each file with an empty/initial payload.
     const { unlink } = await import("node:fs/promises");

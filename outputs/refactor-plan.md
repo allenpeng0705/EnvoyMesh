@@ -64,8 +64,9 @@ Items deferred: OpenClaw Runtime (~1171), Fleet Manifest inline cleanup, Agent C
 - [x] **Step 3** (f0f8f5f): Proactive agent pass → `node-service-proactive-agent.ts`. -35 / +112 runtime / +207 test. 2065 pass / 79 fail. 10 new unit tests.
 - [x] **Step 4** (d1fa440): Agent passes module → `node-service-agent-passes.ts` (Phases 23B + 25A + 23D grouped). -40 / +154 runtime / +171 test. 2075 pass / 79 fail. 10 new unit tests.
 - [x] **Step 5** (63db484): Persistence stores module → `node-service-persistence.ts` (Phases 23 + 25D — `IntentHistoryStore` + `PublishedLibraryStore` as proper classes). -73 / +224 runtime / +215 test. 2094 pass / 79 fail. 19 new unit tests.
+- [x] **Step 6** (commit pending): Continuity module → `node-service-continuity.ts` (Phase 25 — `ContinuityStore` class + 4 high-level operations). -116 / +169 runtime / +233 test. 2110 pass / 79 fail. 17 new unit tests.
 
-Cumulative: `node-service-impl.ts` 14,247 → 13,965 lines (-282). 0 tsc errors. 0 regressions.
+Cumulative: `node-service-impl.ts` 14,247 → 13,849 lines (-398). 0 tsc errors. 0 regressions.
 
 ## Out of scope
 - Changing public API surface of `NodeService`.
