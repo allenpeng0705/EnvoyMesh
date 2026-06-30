@@ -1,0 +1,34 @@
+refactor: extract acceptCallInvite + _effectiveCallIceServers to calls runtime
+
+Step 10 of the refactor plan: a focused extraction of 2 more call
+methods. acceptCallInvite shares the same "build payload, sign,
+send" pattern as the other extracted call methods. _effectiveCallIceServers
+is a small config resolver that was previously inlined in the class.
+
+- 2 new runtime functions added to apps/node/src/node-service-calls.ts:
+  - acceptCallInviteViaRuntime (builds call.accept payload, signs
+    it, sends to the peer; calls acceptInboundCall on CallManager
+    when transitioning from ringing)
+  - effectiveCallIceServersViaRuntime (3-tier ICE server resolver:
+    caller-supplied > config-supplied > 3-server STUN default)
+- CallContext extended with loadConfig() (used by the ICE resolver).
+- IceServerConfig interface + DEFAULT_ICE_SERVERS constant moved
+  to the runtime (matches the original 3 STUN servers exactly).
+- Class methods collapse to 1-line delegations.
+- node-service-impl.ts: 13651 -> 13614 lines (-37)
+- 7 new unit tests cover:
+  - effectiveCallIceServers: caller-supplied empty list, config
+    non-empty list, 3-server STUN default fallback
+  - acceptCallInvite: profile missing, no peer, wrong status,
+    success path with call.accept envelope
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2148 pass / 79 fail / 128 skip
+  (was 2143 / 79 / 128 — +7 new tests, 0 regressions)
+
+Note: First run after this change showed 2 new failures in
+call-send-invite.test.ts and call-signaling-stun-default-e2e.test.ts
+because I had accidentally left DEFAULT_ICE_SERVERS as an empty
+array. Fixed by restoring the original 3 STUN server list (l.google,
+cloudflare, twilio).

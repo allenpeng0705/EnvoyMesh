@@ -529,7 +529,9 @@ import {
   type ChainContext,
 } from "./node-service-chains.js";
 import {
+  acceptCallInviteViaRuntime,
   declineCallInviteViaRuntime,
+  effectiveCallIceServersViaRuntime,
   endCallViaRuntime,
   getActiveCallViaRuntime,
   onCallEventViaRuntime,
@@ -13222,11 +13224,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
   private async _effectiveCallIceServers(
     callerSupplied?: { urls: string; username?: string; credential?: string }[],
   ): Promise<{ urls: string; username?: string; credential?: string }[]> {
-    // Explicit `[]` means Path 1 (no STUN/TURN) — do not inject defaults.
-    if (callerSupplied !== undefined) return callerSupplied;
-    const config = await this._configStore.load();
-    if (config?.iceServers && config.iceServers.length > 0) return config.iceServers;
-    return DEFAULT_ICE_SERVERS;
+    return effectiveCallIceServersViaRuntime(this._callContext(), callerSupplied);
   }
 
   private _recordCallRejected(callId: string, _reason: string): void {
@@ -13248,43 +13246,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     sdpAnswer: string,
     iceServers?: { urls: string; username?: string; credential?: string }[],
   ): Promise<boolean> {
-    const profile = this._profile;
-    if (!profile) return false;
-
-    const calleeOwnerId = profile.owner.ownerId;
-    const calleePeerId = derivePeerId(profile.device.publicKeyPem);
-
-    const peerOwnerId = this.callManager.getSessionPeerOwnerId(callId);
-    if (!peerOwnerId) return false;
-
-    const sessionStatus = this.callManager.getSessionStatus(callId);
-    if (sessionStatus !== "ringing" && sessionStatus !== "active") return false;
-
-    const { createCallAcceptPayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
-
-    const payload = createCallAcceptPayload({
-      callId,
-      calleeOwnerId,
-      calleePeerId,
-      sdpAnswer,
-      iceServers,
-    });
-
-    const unsigned = createUnsignedEnvelope({
-      intent: "call.accept",
-      senderPeerId: calleePeerId,
-      senderPublicKey: profile.device.publicKeyPem,
-      recipientRole: "human",
-      payload,
-    });
-    const delivered = await this._sendCallResponseEnvelope(peerOwnerId, unsigned, "call.accept");
-    if (!delivered) return false;
-
-    if (sessionStatus === "ringing") {
-      const accepted = this.callManager.acceptInboundCall(callId, calleeOwnerId);
-      if (!accepted) return false;
-    }
-    return true;
+    return acceptCallInviteViaRuntime(this._callContext(), callId, sdpAnswer, iceServers);
   }
 
   async declineCallInvite(callId: string, reason: string): Promise<boolean> {
@@ -13330,6 +13292,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
       getProfile: () => this._profile,
       sendCallResponseEnvelope: (peerOwnerId, unsigned, intent) =>
         this._sendCallResponseEnvelope(peerOwnerId, unsigned, intent),
+      loadConfig: () => this._configStore.load(),
     };
   }
 

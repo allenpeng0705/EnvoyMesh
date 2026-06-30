@@ -7,7 +7,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
+  acceptCallInviteViaRuntime,
   declineCallInviteViaRuntime,
+  effectiveCallIceServersViaRuntime,
   endCallViaRuntime,
   getActiveCallViaRuntime,
   onCallEventViaRuntime,
@@ -40,6 +42,7 @@ function makeCallManager(): CallManager {
     rejectCall: vi.fn(),
     getSessionStatus: vi.fn(),
     getSessionPeerOwnerId: vi.fn(),
+    acceptInboundCall: vi.fn(),
   } as unknown as CallManager;
 }
 
@@ -73,6 +76,7 @@ function makeContext(): CallContext {
       });
       return true;
     }),
+    loadConfig: async () => null,
   };
 }
 
@@ -201,5 +205,63 @@ describe("sendCallRejectToOwnerViaRuntime (busy path)", () => {
     expect(sentEnvelopes[0]?.intent).toBe("call.reject");
     expect((sentEnvelopes[0]?.payload as { reason: string }).reason).toBe("busy");
     expect((sentEnvelopes[0]?.payload as { callId: string }).callId).toBe(CALL_ID);
+  });
+});
+
+describe("effectiveCallIceServersViaRuntime", () => {
+  it("returns the caller-supplied list when provided (even when empty)", async () => {
+    const ctx = makeContext();
+    const out = await effectiveCallIceServersViaRuntime(ctx, []);
+    expect(out).toEqual([]);
+  });
+
+  it("returns the config-supplied list when present and non-empty", async () => {
+    const ctx = makeContext();
+    (ctx as unknown as { loadConfig: () => Promise<unknown> }).loadConfig = async () => ({
+      iceServers: [{ urls: "stun:example.com:3478" }],
+    });
+    const out = await effectiveCallIceServersViaRuntime(ctx);
+    expect(out).toEqual([{ urls: "stun:example.com:3478" }]);
+  });
+
+  it("falls back to the 3-server STUN default when no config and no caller input", async () => {
+    const ctx = makeContext();
+    const out = await effectiveCallIceServersViaRuntime(ctx);
+    expect(out).toEqual([
+      { urls: "stun:stun.l.google.com:19302" },
+      { urls: "stun:stun.cloudflare.com:3478" },
+      { urls: "stun:global.stun.twilio.com:3478" },
+    ]);
+  });
+});
+
+describe("acceptCallInviteViaRuntime", () => {
+  it("returns false when profile is not loaded", async () => {
+    getProfileValue = undefined;
+    expect(await acceptCallInviteViaRuntime(makeContext(), CALL_ID, "v=0\r\n...")).toBe(false);
+  });
+
+  it("returns false when the session has no peer", async () => {
+    (callManager.getSessionPeerOwnerId as ReturnType<typeof vi.fn>).mockReturnValueOnce(undefined);
+    expect(await acceptCallInviteViaRuntime(makeContext(), CALL_ID, "sdp")).toBe(false);
+  });
+
+  it("returns false when session status is neither ringing nor active", async () => {
+    (callManager.getSessionPeerOwnerId as ReturnType<typeof vi.fn>).mockReturnValueOnce("owner-2");
+    (callManager.getSessionStatus as ReturnType<typeof vi.fn>).mockReturnValueOnce("idle");
+    expect(await acceptCallInviteViaRuntime(makeContext(), CALL_ID, "sdp")).toBe(false);
+  });
+
+  it("sends call.accept to the peer on success", async () => {
+    (callManager.getSessionPeerOwnerId as ReturnType<typeof vi.fn>).mockReturnValueOnce("owner-2");
+    (callManager.getSessionStatus as ReturnType<typeof vi.fn>).mockReturnValueOnce("ringing");
+    (callManager.acceptInboundCall as ReturnType<typeof vi.fn>).mockReturnValueOnce(true);
+    const out = await acceptCallInviteViaRuntime(
+      makeContext(),
+      CALL_ID,
+      "v=0\r\nsdp-answer\r\n",
+    );
+    expect(out).toBe(true);
+    expect(sentEnvelopes[0]?.intent).toBe("call.accept");
   });
 });

@@ -27,6 +27,31 @@ import {
 import type { CallManager } from "./call-manager.js";
 import type { CallEvent, CallSession, NodeProfile } from "@envoymesh/api";
 
+/* ---------- effectiveCallIceServers ---------- */
+
+export interface IceServerConfig {
+  urls: string;
+  username?: string;
+  credential?: string;
+}
+
+const DEFAULT_ICE_SERVERS: IceServerConfig[] = [
+  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:stun.cloudflare.com:3478" },
+  { urls: "stun:global.stun.twilio.com:3478" },
+];
+
+export async function effectiveCallIceServersViaRuntime(
+  ctx: CallContext,
+  callerSupplied?: IceServerConfig[],
+): Promise<IceServerConfig[]> {
+  // Explicit `[]` means "no STUN/TURN" — do not inject defaults.
+  if (callerSupplied !== undefined) return callerSupplied;
+  const config = (await ctx.loadConfig()) as { iceServers?: IceServerConfig[] } | null;
+  if (config?.iceServers && config.iceServers.length > 0) return config.iceServers;
+  return DEFAULT_ICE_SERVERS;
+}
+
 export interface CallContext {
   /** The existing per-call state-machine. */
   callManager: CallManager;
@@ -38,6 +63,8 @@ export interface CallContext {
     unsigned: UnsignedEnvoyEnvelope,
     intent: string,
   ): Promise<boolean>;
+  /** Load the node config (used for ICE server defaults). */
+  loadConfig(): Promise<unknown>;
 }
 
 /* ---------- passthroughs ---------- */
@@ -179,6 +206,53 @@ export async function sendIceCandidateViaRuntime(
 }
 
 /* ---------- sendCallRejectToOwner (busy path — no local session) ---------- */
+
+/* ---------- acceptCallInvite ---------- */
+
+export async function acceptCallInviteViaRuntime(
+  ctx: CallContext,
+  callId: string,
+  sdpAnswer: string,
+  iceServers?: IceServerConfig[],
+): Promise<boolean> {
+  const profile = ctx.getProfile();
+  if (!profile) return false;
+
+  const calleeOwnerId = profile.owner.ownerId;
+  const calleePeerId = derivePeerId(profile.device.publicKeyPem);
+
+  const peerOwnerId = ctx.callManager.getSessionPeerOwnerId(callId);
+  if (!peerOwnerId) return false;
+
+  const sessionStatus = ctx.callManager.getSessionStatus(callId);
+  if (sessionStatus !== "ringing" && sessionStatus !== "active") return false;
+
+  const { createCallAcceptPayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
+
+  const payload = createCallAcceptPayload({
+    callId,
+    calleeOwnerId,
+    calleePeerId,
+    sdpAnswer,
+    iceServers,
+  });
+
+  const unsigned = createUnsignedEnvelope({
+    intent: "call.accept",
+    senderPeerId: calleePeerId,
+    senderPublicKey: profile.device.publicKeyPem,
+    recipientRole: "human",
+    payload,
+  });
+  const delivered = await ctx.sendCallResponseEnvelope(peerOwnerId, unsigned, "call.accept");
+  if (!delivered) return false;
+
+  if (sessionStatus === "ringing") {
+    const accepted = ctx.callManager.acceptInboundCall(callId, calleeOwnerId);
+    if (!accepted) return false;
+  }
+  return true;
+}
 
 export async function sendCallRejectToOwnerViaRuntime(
   ctx: CallContext,
