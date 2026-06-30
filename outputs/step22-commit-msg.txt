@@ -1,0 +1,41 @@
+refactor: extract pairing-kiosk trio (Step 22)
+
+Step 22 — extract the three pairing-kiosk methods as a clean
+runtime. The kiosk is a self-contained sub-system (Phase 35D) with
+clear inputs/outputs.
+
+Three methods extracted to node-service-pairing-kiosk.ts:
+  - syncPairingKioskFromConfigViaRuntime (50 lines, _syncPairingKioskFromConfig)
+  - stopPairingKioskViaRuntime (7 lines, stopPairingKiosk)
+  - getPairingKioskStatusViaRuntime (14 lines, _getPairingKioskStatus)
+
+Each runtime function takes a small `PairingKioskContext` covering
+the 6 fields/methods it needs (loadConfig, getKiosk, setKiosk,
+stopKiosk, getTaskStore, getCompanyInviteContext). The class
+methods collapse to one-line delegations.
+
+Subtle preservation: the kiosk's `mintInvite` callback now lives in
+the runtime but still uses the same `createCompanyInviteViaRuntime`
+helper (already extracted in Step 13c). The `taskStore` and
+`inviteCtx` are pulled from the context at call time.
+
+10 new unit tests in apps/node/test/node-service-pairing-kiosk.test.ts:
+  - stopPairingKiosk: returns early, closes on success, clears on
+    close-throws
+  - getPairingKioskStatus: missing config, disabled, running +
+    address/port, bindLan + expiresAt
+  - syncPairingKioskFromConfig: missing config, disabled, short
+    admin token warns + stops
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2255 pass / 80 fail / 128 skip
+  (was 2245 / 80 / 128 — +10 new tests, 0 regressions)
+
+Net effect:
+- node-service-impl.ts: 12,574 -> 12,532 (-42 lines)
+- node-service-pairing-kiosk.ts: 134 lines (new runtime)
+- 19 new runtime modules
+- 26 commits total
+
+Cumulative: 14,247 -> 12,532 (-1,715, -12.03%)

@@ -625,6 +625,12 @@ import {
   handleSharePreviewViaRuntime,
   type SharePreviewContext,
 } from "./node-service-handlers-share-preview.js";
+import {
+  syncPairingKioskFromConfigViaRuntime,
+  stopPairingKioskViaRuntime,
+  getPairingKioskStatusViaRuntime,
+  type PairingKioskContext,
+} from "./node-service-pairing-kiosk.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
@@ -8065,6 +8071,19 @@ class NodeServiceImpl implements NodeService {
     };
   }
 
+  private _pairingKioskContext(): PairingKioskContext {
+    return {
+      loadConfig: () => this._configStore.load(),
+      getKiosk: () => this._pairingKiosk,
+      setKiosk: (handle) => {
+        this._pairingKiosk = handle;
+      },
+      stopKiosk: () => this.stopPairingKiosk(),
+      getTaskStore: () => this._taskStore,
+      getCompanyInviteContext: () => this._companyInviteInviteContext(),
+    };
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async _handleInboundMessage(params: any): Promise<void> {
     const { envelope, remotePeerId, remoteAddr, replyWithEnvelope } = params as any;
@@ -8948,62 +8967,11 @@ class NodeServiceImpl implements NodeService {
    * default and the operator must opt in.
    */
   private async _syncPairingKioskFromConfig(): Promise<void> {
-    const cfg = await this._configStore.load();
-    if (!cfg) {
-      await this.stopPairingKiosk();
-      return;
-    }
-    if (cfg.pairingKioskEnabled !== true) {
-      await this.stopPairingKiosk();
-      return;
-    }
-    if (!cfg.pairingKioskAdminToken || cfg.pairingKioskAdminToken.length < 16) {
-      console.warn("[pairing-kiosk] enabled without a valid admin token; ignoring.");
-      await this.stopPairingKiosk();
-      return;
-    }
-    // Re-use the existing handle if config hasn't materially changed.
-    if (this._pairingKiosk) {
-      // For now we restart on every call. This is cheap; the kiosk serves
-      // a static page and proxies one mint-invite call. If we ever need
-      // hot-reload (e.g. token rotation without restart), we can diff.
-      await this.stopPairingKiosk();
-    }
-    try {
-      this._pairingKiosk = await startPairingKioskServer({
-        kioskAdminToken: cfg.pairingKioskAdminToken,
-        bindAddress: cfg.pairingKioskBindAddress,
-        port: cfg.pairingKioskPort,
-        allowLanBind: cfg.pairingKioskAllowLanBind === true,
-        kioskExpiresAt: cfg.pairingKioskExpiresAt,
-        mintInvite: async (input) => {
-          if (!this._taskStore) throw new Error("task store not initialized");
-          const ctx = await this._companyInviteInviteContext();
-          const result = await createCompanyInviteViaRuntime(
-            { taskStore: this._taskStore, ...ctx },
-            { expiresInHours: input.expiresInHours, note: input.note ?? "kiosk" },
-          );
-          return {
-            uri: result.uri,
-            expiresAt: result.invite.expiresAt,
-            inviteId: result.invite.inviteId,
-          };
-        },
-      });
-    } catch (err) {
-      console.warn("[pairing-kiosk] failed to start:", err);
-      this._pairingKiosk = null;
-    }
+    return syncPairingKioskFromConfigViaRuntime(this._pairingKioskContext());
   }
 
   async stopPairingKiosk(): Promise<void> {
-    if (!this._pairingKiosk) return;
-    try {
-      await this._pairingKiosk.close();
-    } catch (err) {
-      console.warn("[pairing-kiosk] close failed:", err);
-    }
-    this._pairingKiosk = null;
+    return stopPairingKioskViaRuntime(this._pairingKioskContext());
   }
 
   /**
@@ -9018,17 +8986,7 @@ class NodeServiceImpl implements NodeService {
     bindLan: boolean;
     expiresAt?: string;
   }> {
-    const cfg = await this._configStore.load();
-    const enabled = cfg?.pairingKioskEnabled === true;
-    const running = this._pairingKiosk != null;
-    return {
-      enabled,
-      running,
-      address: running ? this._pairingKiosk!.address : undefined,
-      port: running ? this._pairingKiosk!.port : undefined,
-      bindLan: cfg?.pairingKioskAllowLanBind === true,
-      expiresAt: cfg?.pairingKioskExpiresAt,
-    };
+    return (await getPairingKioskStatusViaRuntime(this._pairingKioskContext())) as never;
   }
 
   /**
