@@ -722,6 +722,10 @@ import {
   terminalResumeGoalLoopViaRuntime,
   terminalEnableExecPaneViaRuntime,
 } from "./node-service-handlers-terminal.js";
+import {
+  terminalExecViaRuntime,
+  type TerminalExecContext,
+} from "./node-service-handlers-terminal-exec.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
@@ -8166,7 +8170,13 @@ class NodeServiceImpl implements NodeService {
     };
   }
 
-  private _terminalContext(): any {
+  private _terminalExecContext(): TerminalExecContext {
+    return {
+      requireTerminalManager: () => this._requireTerminalManager(),
+    };
+  }
+
+    private _terminalContext(): any {
     return {
       requireTerminalManager: () => this._requireTerminalManager(),
       requireTerminalAgentAssist: () => this._requireTerminalAgentAssist(),
@@ -8778,40 +8788,9 @@ class NodeServiceImpl implements NodeService {
   }
 
   terminalExec(params: { sessionId: string; command: string }): Promise<{ output: string }> {
-    const mgr = this._requireTerminalManager();
-    mgr.writeStdin(params.sessionId, Buffer.from(params.command + "\r", "utf8"));
-
-    const maxWaitMs = 12_000;
-    const pollIntervalMs = 200;
-    const stableMs = 400;
-    const startedAt = Date.now();
-    let lastLen = mgr.getScrollback(params.sessionId).length;
-    let stableSince = 0;
-
-    return new Promise<{ output: string }>((resolve) => {
-      const poll = () => {
-        const currentBuf = mgr.getScrollback(params.sessionId);
-        const elapsed = Date.now() - startedAt;
-        if (currentBuf.length !== lastLen) {
-          lastLen = currentBuf.length;
-          stableSince = elapsed;
-        }
-        // Stabilised for 400 ms, or hit the 12 s ceiling.
-        if (elapsed >= maxWaitMs || (elapsed - stableSince >= stableMs && elapsed > 800)) {
-          // Return the last 2 MiB of the scrollback — large enough for
-          // full LLM responses and interactive options.
-          const maxTail = 2_097_152;
-          const tail = currentBuf.length > maxTail
-            ? currentBuf.subarray(currentBuf.length - maxTail)
-            : currentBuf;
-          resolve({ output: tail.toString("utf8") });
-          return;
-        }
-        setTimeout(poll, pollIntervalMs);
-      };
-      setTimeout(poll, pollIntervalMs);
-    });
+    return terminalExecViaRuntime(this._terminalExecContext(), params);
   }
+
 
   terminalAttach(params: import("@envoymesh/api").TerminalAttachParams): Promise<import("@envoymesh/api").TerminalAttachResult> {
     return terminalAttachViaRuntime(this._terminalContext(), params);

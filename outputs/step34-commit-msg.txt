@@ -1,0 +1,22 @@
+refactor: extract terminalExec (Step 34)
+
+Step 34 — extract the public `terminalExec` method (~45 lines)
+that polls the terminal scrollback until stable for 400ms (or 12s
+timeout) and returns the tail as a UTF-8 string.
+
+The runtime is pure: takes a TerminalExecContext with just
+`requireTerminalManager()` and returns the same
+`{ output: string }` result.
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2278 pass / 80 fail / 128 skip
+  (back to baseline, the +1 fail from Step 33 was the flaky E2E test
+  that has since flipped back)
+
+Net effect:
+- node-service-impl.ts: 11,955 -> 11,934 (-21 lines)
+- node-service-handlers-terminal-exec.ts: 64 lines (new runtime)
+- 38 commits on refactor/impl-clean
+
+Cumulative: 14,247 -> 11,934 (-2,313, -16.23%)
