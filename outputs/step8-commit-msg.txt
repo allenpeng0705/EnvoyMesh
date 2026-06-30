@@ -1,0 +1,44 @@
+refactor: extract calls module (Phase 38) — partial
+
+Step 8 of the node-service-impl.ts extraction plan. Same pragmatic
+approach as Step 7: extract the simple "build payload, sign, send"
+helpers; the big methods (sendCallInvite, sendCallReinvite,
+acceptCallInvite, _sendCallResponseEnvelope itself) stay on the
+class because they pull in mesh transport + ICE config.
+
+- New runtime module: apps/node/src/node-service-calls.ts (206 lines)
+  - CallContext { callManager, getProfile, sendCallResponseEnvelope }
+  - 7 runtime operations:
+    - getActiveCallViaRuntime + onCallEventViaRuntime (passthroughs)
+    - endCallViaRuntime
+    - setCallMutedViaRuntime
+    - declineCallInviteViaRuntime
+    - sendIceCandidateViaRuntime
+    - sendCallRejectToOwnerViaRuntime (busy path — no local session)
+- Static imports for protocol payload builders + envelope creator
+  (the class used dynamic `await import("@envoymesh/protocol")` —
+  the runtime upgrades them to static imports since the modules are
+  always needed).
+- Class methods collapse to 1-line delegations; new private
+  `_callContext()` factory builds the typed context.
+- node-service-impl.ts: 13778 -> 13685 lines (-93)
+- 14 new unit tests cover:
+  - getActiveCall + onCallEvent passthroughs
+  - endCall: profile missing, hangupCall returns false, local-only
+    (no peer), sends call.hangup to peer
+  - setCallMuted: profile missing, sends call.mute on success
+  - declineCallInvite: rejectCall fails, sends call.reject on
+    success with right reason
+  - sendIceCandidate: wrong status returns false, ringing
+    sends call.ice-candidate
+  - sendCallRejectToOwner: profile missing no-ops, sends
+    call.reject to caller with right reason + callId
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2138 pass / 79 fail / 128 skip
+  (was 2124 / 79 / 128 — +14 new tests, 0 regressions)
+
+Note: sendCallInvite, sendCallReinvite, acceptCallInvite,
+_sendCallResponseEnvelope remain on the class. They are good
+candidates for follow-up extraction if the user wants them out.

@@ -524,6 +524,16 @@ import {
   chainSetDefaultsViaRuntime,
   type ChainContext,
 } from "./node-service-chains.js";
+import {
+  declineCallInviteViaRuntime,
+  endCallViaRuntime,
+  getActiveCallViaRuntime,
+  onCallEventViaRuntime,
+  sendCallRejectToOwnerViaRuntime,
+  sendIceCandidateViaRuntime,
+  setCallMutedViaRuntime,
+  type CallContext,
+} from "./node-service-calls.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
@@ -12875,11 +12885,11 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
   // ------------------------------------------------------------------
 
   getActiveCall(): CallSession | null {
-    return this.callManager.getActiveCall();
+    return getActiveCallViaRuntime(this._callContext());
   }
 
   onCallEvent(handler: (event: CallEvent) => void): () => void {
-    return this.callManager.onCallEvent(handler);
+    return onCallEventViaRuntime(this._callContext(), handler);
   }
 
   async sendCallInvite(
@@ -13312,93 +13322,19 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
   }
 
   async declineCallInvite(callId: string, reason: string): Promise<boolean> {
-    const profile = this._profile;
-    if (!profile) return false;
-
-    const rejected = this.callManager.rejectCall(
+    return declineCallInviteViaRuntime(
+      this._callContext(),
       callId,
-      reason as "busy" | "declined" | "offline" | "error" | "no_answer",
+      reason as "busy" | "declined" | "no_answer" | "offline" | "error",
     );
-    if (!rejected) return false;
-
-    const peerOwnerId = this.callManager.getSessionPeerOwnerId(callId);
-    if (!peerOwnerId) return false;
-
-    const { createCallRejectPayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
-
-    const calleeOwnerId = profile.owner.ownerId;
-    const calleePeerId = derivePeerId(profile.device.publicKeyPem);
-    const payload = createCallRejectPayload({
-      callId,
-      calleeOwnerId,
-      calleePeerId,
-      reason: reason as "busy" | "declined" | "no_answer" | "offline" | "error",
-    });
-
-    const unsigned = createUnsignedEnvelope({
-      intent: "call.reject",
-      senderPeerId: calleePeerId,
-      senderPublicKey: profile.device.publicKeyPem,
-      recipientRole: "human",
-      payload,
-    });
-    await this._sendCallResponseEnvelope(peerOwnerId, unsigned, "call.reject");
-    return true;
   }
 
   async endCall(callId: string): Promise<boolean> {
-    const profile = this._profile;
-    if (!profile) return false;
-
-    const ended = this.callManager.hangupCall(callId, "normal");
-    if (!ended) return false;
-
-    const peerOwnerId = this.callManager.getSessionPeerOwnerId(callId);
-    if (!peerOwnerId) {
-      // Local-only session — no peer to notify.
-      return true;
-    }
-
-    const { createCallHangupPayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
-
-    const senderPeerId = derivePeerId(profile.device.publicKeyPem);
-    const payload = createCallHangupPayload({ callId, reason: "normal" });
-
-    const unsigned = createUnsignedEnvelope({
-      intent: "call.hangup",
-      senderPeerId,
-      senderPublicKey: profile.device.publicKeyPem,
-      recipientRole: "human",
-      payload,
-    });
-    await this._sendCallResponseEnvelope(peerOwnerId, unsigned, "call.hangup");
-    return true;
+    return endCallViaRuntime(this._callContext(), callId);
   }
 
   async setCallMuted(callId: string, muted: boolean): Promise<boolean> {
-    const profile = this._profile;
-    if (!profile) return false;
-
-    const updated = this.callManager.setMute(callId, muted);
-    if (!updated) return false;
-
-    const peerOwnerId = this.callManager.getSessionPeerOwnerId(callId);
-    if (!peerOwnerId) return false;
-
-    const { createCallMutePayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
-
-    const senderPeerId = derivePeerId(profile.device.publicKeyPem);
-    const payload = createCallMutePayload({ callId, muted });
-
-    const unsigned = createUnsignedEnvelope({
-      intent: "call.mute",
-      senderPeerId,
-      senderPublicKey: profile.device.publicKeyPem,
-      recipientRole: "human",
-      payload,
-    });
-    await this._sendCallResponseEnvelope(peerOwnerId, unsigned, "call.mute");
-    return true;
+    return setCallMutedViaRuntime(this._callContext(), callId, muted);
   }
 
   async sendIceCandidate(
@@ -13410,26 +13346,7 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
       usernameFragment?: string | null;
     },
   ): Promise<boolean> {
-    const profile = this._profile;
-    if (!profile) return false;
-    const status = this.callManager.getSessionStatus(callId);
-    if (status !== "ringing" && status !== "active") return false;
-
-    const peerOwnerId = this.callManager.getSessionPeerOwnerId(callId);
-    if (!peerOwnerId) return false;
-
-    const { createCallIceCandidatePayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
-    const senderPeerId = derivePeerId(profile.device.publicKeyPem);
-    const payload = createCallIceCandidatePayload({ callId, candidate });
-    const unsigned = createUnsignedEnvelope({
-      intent: "call.ice-candidate",
-      senderPeerId,
-      senderPublicKey: profile.device.publicKeyPem,
-      recipientRole: "human",
-      payload,
-    });
-    await this._sendCallResponseEnvelope(peerOwnerId, unsigned, "call.ice-candidate");
-    return true;
+    return sendIceCandidateViaRuntime(this._callContext(), callId, candidate);
   }
 
   /** Send call.reject to a remote owner without a local ringing session (busy path). */
@@ -13438,26 +13355,16 @@ const deps: ChainOrchestratorHandlerDeps = await this.buildChainOrchestratorDeps
     callerOwnerId: string,
     reason: import("@envoymesh/protocol").CallRejectPayload["reason"],
   ): Promise<void> {
-    const profile = this._profile;
-    if (!profile) return;
+    await sendCallRejectToOwnerViaRuntime(this._callContext(), callId, callerOwnerId, reason);
+  }
 
-    const { createCallRejectPayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
-    const calleeOwnerId = profile.owner.ownerId;
-    const calleePeerId = derivePeerId(profile.device.publicKeyPem);
-    const payload = createCallRejectPayload({
-      callId,
-      calleeOwnerId,
-      calleePeerId,
-      reason,
-    });
-    const unsigned = createUnsignedEnvelope({
-      intent: "call.reject",
-      senderPeerId: calleePeerId,
-      senderPublicKey: profile.device.publicKeyPem,
-      recipientRole: "human",
-      payload,
-    });
-    await this._sendCallResponseEnvelope(callerOwnerId, unsigned, "call.reject");
+  private _callContext(): CallContext {
+    return {
+      callManager: this.callManager,
+      getProfile: () => this._profile,
+      sendCallResponseEnvelope: (peerOwnerId, unsigned, intent) =>
+        this._sendCallResponseEnvelope(peerOwnerId, unsigned, intent),
+    };
   }
 
   private _wireCallManagerRemoteSignals(): void {
