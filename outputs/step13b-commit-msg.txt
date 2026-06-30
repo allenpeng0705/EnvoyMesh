@@ -1,0 +1,58 @@
+refactor: extract file sharing — IPFS audit + import + share ops (Step 13b)
+
+Step 13b of the refactor plan. The File Sharing section is large,
+so we split it: 13a covered simple list/publish; 13b covers the
+audit-event-aware and library-import operations.
+
+13b extracts 12 methods to node-service-fileshare.ts:
+  - exportLibraryItemToIpfsViaRuntime
+  - pinLibraryItemExternalViaRuntime
+  - verifyLibraryItemIpfsGatewayViaRuntime
+  - getIpfsEngineStatusViaRuntime
+  - getRagIndexStatusViaRuntime
+  - importToLibraryViaRuntime
+  - resolveLibraryItemPathViaRuntime
+  - readLibraryItemContentViaRuntime
+  - openLibraryItemViaRuntime
+  - revealLibraryItemInFileManagerViaRuntime
+  - listAgentShareProposalsViaRuntime
+  - dismissAgentShareProposalViaRuntime
+  - submitAgentShareProposalViaRuntime
+
+FileShareContext extended with 3 new accessors:
+  - getTaskStore() — used by the audit-event check that mirrors the
+    pre-extraction class behaviour ("Task store not initialized
+    — node is not fully wired")
+  - getRagService() — used by getRagIndexStatusViaRuntime (the original
+    class calls rag?.getIndexStatus(); the runtime preserves that
+    behaviour — this is the fix that prevents the document acquisition
+    E2E from regressing)
+  - appendAuditEvent() — used by the IPFS pin path to record the
+    "vault.ipfs_pin.completed" audit
+
+Two dead helpers removed from the class:
+  - _agentShareProposalStore field (no longer needed; runtime creates
+    its own store internally via createAgentShareProposalStore())
+  - _getAgentShareProposalStore() private method (also obsolete)
+
+A new private _appendAuditEvent(event) helper was added to the class
+to back the appendAuditEvent context field. It preserves the
+"no-op when _taskStore is null" behaviour.
+
+node-service-impl.ts: 13,444 -> 13,344 lines (-100)
+13 new unit tests in apps/node/test/node-service-fileshare-13b.test.ts
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2179 pass / 79 fail / 128 skip
+  (was 2168 / 79 / 128 — +11 new tests, 0 regressions)
+
+Note: one transient test failure during development
+(document-acquisition-local-rag-e2e, "waitForPhase13 timeout") was
+caused by getRagIndexStatusViaRuntime returning the default shape
+unconditionally. Fixed by adding getRagService() to the context.
+
+Remaining in File Sharing (for 13c): the network-driven methods —
+discoverPublishedLibrary, shareFile, requestShareFromLibrary,
+_shareFileInternal, _requestShareFromLibraryInternal — they reach
+deep into private mesh state and need their own commit.

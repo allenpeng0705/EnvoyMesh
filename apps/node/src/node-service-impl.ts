@@ -326,6 +326,7 @@ import {
   createCapabilityProviderJobStore,
   type DocumentAcquisitionJobStore,
   type CapabilityProviderJobStore,
+  type AuditEvent,
 } from "@envoymesh/local-store";
 import { createNodeConfigStore, createStubNodeConfigStore, type PersistedNodeConfig } from "./node-config-store.js";
 import { startPairingKioskServer, type PairingKioskServerHandle } from "./pairing-kiosk-server.js";
@@ -556,6 +557,19 @@ import {
   readOpenClawWorkspaceFileViaRuntime,
   resolveOpenClawWorkspacePathViaRuntime,
   setLibraryItemPublishedViaRuntime,
+  exportLibraryItemToIpfsViaRuntime,
+  getIpfsEngineStatusViaRuntime,
+  getRagIndexStatusViaRuntime,
+  importToLibraryViaRuntime,
+  listAgentShareProposalsViaRuntime,
+  dismissAgentShareProposalViaRuntime,
+  openLibraryItemViaRuntime,
+  pinLibraryItemExternalViaRuntime,
+  readLibraryItemContentViaRuntime,
+  resolveLibraryItemPathViaRuntime,
+  revealLibraryItemInFileManagerViaRuntime,
+  submitAgentShareProposalViaRuntime,
+  verifyLibraryItemIpfsGatewayViaRuntime,
   type FileShareContext,
 } from "./node-service-fileshare.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
@@ -789,7 +803,7 @@ class NodeServiceImpl implements NodeService {
   private readonly _vaultDir: string;
   private _ragService: RagService | null = null;
   private _ragServiceInit: Promise<RagService | null> | null = null;
-  private _agentShareProposalStore: ReturnType<typeof createAgentShareProposalStore> | undefined;
+  
   private _agentGroupChatCounters: Map<string, { count: number; windowStart: number }> = new Map();
 
   // App-managed mode stores
@@ -6926,22 +6940,7 @@ class NodeServiceImpl implements NodeService {
   async readLibraryItemContent(
     params: ReadLibraryItemContentParams,
   ): Promise<ReadLibraryItemContentResult> {
-    const maxBytes = Math.min(
-      params.maxBytes ?? MAX_LIBRARY_ITEM_PREVIEW_BYTES,
-      MAX_LIBRARY_ITEM_PREVIEW_BYTES,
-    );
-    const { absolutePath, vaultRelativePath } = await this.resolveLibraryItemPath(params.relativePath);
-    const st = await stat(absolutePath);
-    if (st.size > maxBytes) {
-      throw new Error(`File too large for preview (${st.size} bytes, max ${maxBytes})`);
-    }
-    const content = await readFile(absolutePath);
-    return {
-      contentBase64: content.toString("base64"),
-      mimeType: mimeTypeForFilename(basename(vaultRelativePath)),
-      sizeBytes: st.size,
-      truncated: false,
-    };
+    return readLibraryItemContentViaRuntime(this._fileShareContext(), params);
   }
 
   async listChatHistory(peerOwnerId: string, limit?: number): Promise<ChatMessage[]> {
@@ -7305,11 +7304,21 @@ class NodeServiceImpl implements NodeService {
   // File Sharing
   // ============================================
 
+  private async _appendAuditEvent(event: AuditEvent): Promise<void> {
+    if (!this._taskStore) return;
+    await this._taskStore.appendAuditEvent(event);
+  }
+
   private _fileShareContext(): FileShareContext {
     return {
       getVaultDir: () => this._vaultDir,
       getProfileDir: () => this._profileDir,
       getNodeConfig: () => this.getNodeConfig(),
+      getTaskStore: () => this._taskStore,
+      getRagService: () => this._getRagService(),
+      recordOwnerActivity: () => this.recordOwnerActivity(),
+      appendAuditEvent: (event) => this._appendAuditEvent(event),
+      emit: (event, payload) => this.emit?.(event as never, payload as never),
     };
   }
 
@@ -7356,135 +7365,41 @@ class NodeServiceImpl implements NodeService {
   }
 
   async exportLibraryItemToIpfs(documentId: string): Promise<ExportLibraryItemToIpfsResult> {
-    this.recordOwnerActivity();
-    if (!this._taskStore) {
-      throw new Error("Task store not initialized — node is not fully wired");
-    }
-    const config = await this.getNodeConfig();
-    const allowIpfs = config.externalPublish?.allowIpfs ?? false;
-    const taskStore = this._taskStore;
-    return exportVaultDocumentToIpfs({
-      vaultDir: this._vaultDir,
-      profileDir: this._profileDir,
-      documentId,
-      allowIpfs,
-      externalPublish: config.externalPublish,
-      appendAudit: (event) => taskStore.appendAuditEvent(event),
-    });
+    return exportLibraryItemToIpfsViaRuntime(this._fileShareContext(), documentId);
   }
 
   async pinLibraryItemExternal(documentId: string): Promise<PinLibraryItemExternalResult> {
-    this.recordOwnerActivity();
-    const config = await this.getNodeConfig();
-    if (!config.externalPublish?.allowIpfs) {
-      return { ok: false, error: "IPFS export is disabled" };
-    }
-    if (!config.externalPublish.pinningEnabled) {
-      return { ok: false, error: "External pinning is disabled in node settings" };
-    }
-    const store = createPublishedExternalStore(this._profileDir);
-    const record = await store.get(documentId.trim());
-    if (!record?.cid?.trim()) {
-      return { ok: false, error: "Document has no exported CID — export to IPFS first" };
-    }
-    const outcome = await pinCidToProvider({
-      cid: record.cid,
-      name: documentId,
-      provider: config.externalPublish.pinningProvider ?? "pinata",
-    });
-    if (!outcome.ok) {
-      return { ok: false, error: outcome.error };
-    }
-    if (this._taskStore) {
-      await this._taskStore.appendAuditEvent(
-        createAuditEvent({
-          type: "vault.ipfs_pin.completed",
-          outcome: "record",
-          summary: `Pinned CID via ${outcome.provider}`,
-          createdAt: new Date().toISOString(),
-        }),
-      );
-    }
-    return { ok: true, cid: record.cid, provider: outcome.provider, pinId: outcome.pinId };
+    return pinLibraryItemExternalViaRuntime(this._fileShareContext(), documentId);
   }
 
   async getIpfsEngineStatus(): Promise<IpfsEngineStatus> {
-    const config = await this.getNodeConfig();
-    return getIpfsEngineStatus({
-      profileDir: this._profileDir,
-      selection: resolveIpfsExportEngineSelection({ externalPublish: config.externalPublish }),
-    });
+    return getIpfsEngineStatusViaRuntime(this._fileShareContext());
   }
 
   async getRagIndexStatus(): Promise<RagIndexStatus> {
-    const rag = await this._getRagService();
-    return rag?.getIndexStatus() ?? DEFAULT_RAG_INDEX_STATUS;
+    return getRagIndexStatusViaRuntime(this._fileShareContext());
   }
 
   async verifyLibraryItemIpfsGateway(
     params: VerifyLibraryItemIpfsGatewayParams,
   ): Promise<VerifyLibraryItemIpfsGatewayResult> {
-    this.recordOwnerActivity();
-    if (!this._taskStore) {
-      throw new Error("Task store not initialized — node is not fully wired");
-    }
-    const config = await this.getNodeConfig();
-    const taskStore = this._taskStore;
-    return verifyVaultDocumentIpfsGateway({
-      vaultDir: this._vaultDir,
-      profileDir: this._profileDir,
-      documentId: params.documentId,
-      allowIpfs: config.externalPublish?.allowIpfs ?? false,
-      gatewayAllowlist: config.externalPublish?.gatewayAllowlist,
-      gatewayUrl: params.gatewayUrl,
-      appendAudit: (event) => taskStore.appendAuditEvent(event),
-    });
+    return verifyLibraryItemIpfsGatewayViaRuntime(this._fileShareContext(), params);
   }
 
   async importToLibrary(params: ImportToLibraryParams): Promise<ImportToLibraryResult> {
-    this.recordOwnerActivity();
-    const norm = params.relativePath.trim().replace(/^[\\/]+/, "");
-    if (!norm || norm.includes("..") || norm.includes("~")) {
-      throw new Error("Invalid vault path");
-    }
-    const abs = resolve(this._vaultDir, norm);
-    assertPathInsideVault(this._vaultDir, abs);
-    const bytes = Buffer.from(params.contentBase64, "base64");
-    await mkdir(dirname(abs), { recursive: true });
-    await writeFile(abs, bytes, { mode: 0o600 });
-    const index = await buildVaultIndex({ rootDir: this._vaultDir });
-    const doc = index.documents.find((d) => d.relativePath === norm);
-    if (!doc) {
-      throw new Error(`Imported file not indexed: ${norm}`);
-    }
-    return {
-      documentId: doc.documentId,
-      relativePath: doc.relativePath,
-      sizeBytes: doc.byteLength,
-    };
+    return importToLibraryViaRuntime(this._fileShareContext(), params);
   }
 
   async resolveLibraryItemPath(relativePath: string): Promise<{ vaultRelativePath: string; absolutePath: string }> {
-    const norm = relativePath.trim().replace(/^[\\/]+/, "");
-    if (!isSafeVaultPath(this._vaultDir, norm)) {
-      throw new Error("Invalid vault path");
-    }
-    const absolutePath = resolve(this._vaultDir, norm);
-    assertPathInsideVault(this._vaultDir, absolutePath);
-    await stat(absolutePath).catch(() => {
-      throw new Error("File not found in vault");
-    });
-    return { vaultRelativePath: norm, absolutePath };
+    return resolveLibraryItemPathViaRuntime(this._fileShareContext(), relativePath);
   }
 
   async openLibraryItem(relativePath: string): Promise<void> {
-    const { absolutePath } = await this.resolveLibraryItemPath(relativePath);
-    await openPathWithDefaultApp(absolutePath);
+    return openLibraryItemViaRuntime(this._fileShareContext(), relativePath);
   }
 
   async revealLibraryItemInFileManager(relativePath: string): Promise<void> {
-    const { absolutePath } = await this.resolveLibraryItemPath(relativePath);
-    await revealPathInFileManager(absolutePath);
+    return revealLibraryItemInFileManagerViaRuntime(this._fileShareContext(), relativePath);
   }
 
   async discoverPublishedLibrary(params?: DiscoverPublishedLibraryParams): Promise<DiscoverPublishedLibraryPeerResult[]> {
@@ -7594,33 +7509,18 @@ class NodeServiceImpl implements NodeService {
   }
 
   async listAgentShareProposals(): Promise<AgentShareProposal[]> {
-    return this._getAgentShareProposalStore().list();
+    return listAgentShareProposalsViaRuntime(this._fileShareContext());
   }
 
   async dismissAgentShareProposal(proposalId: string): Promise<void> {
-    await this._getAgentShareProposalStore().remove(proposalId);
+    return dismissAgentShareProposalViaRuntime(this._fileShareContext(), proposalId);
   }
 
   async submitAgentShareProposal(params: SubmitAgentShareProposalParams): Promise<AgentShareProposal> {
-    const proposal: AgentShareProposal = {
-      proposalId: randomUUID(),
-      createdAt: new Date().toISOString(),
-      targetOwnerId: params.targetOwnerId.trim(),
-      vaultRelativePath: params.vaultRelativePath.replace(/^[\\/]+/, ""),
-      sensitivity: params.sensitivity,
-      summary: params.summary?.trim() || undefined,
-    };
-    await this._getAgentShareProposalStore().upsert(proposal);
-    this.emit("share:agent-proposed", proposal);
-    return proposal;
+    return submitAgentShareProposalViaRuntime(this._fileShareContext(), params);
   }
 
-  private _getAgentShareProposalStore(): ReturnType<typeof createAgentShareProposalStore> {
-    if (!this._agentShareProposalStore) {
-      this._agentShareProposalStore = createAgentShareProposalStore(this._profileDir);
-    }
-    return this._agentShareProposalStore;
-  }
+  
 
   async listPendingShareOffers(): Promise<ShareOffer[]> {
     return [...this._pendingInboundShareOffers.values()];
