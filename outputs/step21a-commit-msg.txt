@@ -1,0 +1,41 @@
+refactor: extract share.preview inbound handler (Step 21a)
+
+Step 21a — extract the simplest of the ~8 intent dispatchers
+inside _handleInboundMessage. This is the first of several
+extractions that will incrementally decompose the 400-line
+handler body into per-intent runtime functions.
+
+  - share.preview handler (~20 lines) -> handleSharePreviewViaRuntime
+
+The handler's body is preserved (parseSharePreviewPayload,
+recordInboundPullSharePreview, linkOutboundSharePreviewFromInbound).
+The runtime takes a small SharePreviewContext interface with the two
+class methods needed. The class side gets a `_sharePreviewContext()`
+factory that wraps `this.recordInboundPullSharePreview` and
+`this.linkOutboundSharePreviewFromInbound`.
+
+Subtle coercion: `previewPayload.previewText` is `string | undefined`
+but the class method signature expects `string`. The runtime coerces
+with `?? ""` to preserve type safety — same semantic as the
+original code, just explicit.
+
+4 new unit tests in
+apps/node/test/node-service-handlers-share-preview.test.ts:
+  - returns true (handler consumed the envelope)
+  - silently swallows invalid payloads
+  - does not record when not a file transfer
+  - does not record when refused
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2245 pass / 80 fail / 128 skip
+  (was 2241 / 80 / 128 — +4 new tests, 0 regressions)
+
+Net effect:
+- node-service-impl.ts: 12,577 -> 12,574 (-3 lines)
+- node-service-handlers-share-preview.ts: 50 lines (new runtime)
+
+Cumulative after 25 commits:
+- node-service-impl.ts: 14,247 -> 12,574 (-1,673, -11.74%)
+- 18 new runtime modules
+- +209 new unit tests

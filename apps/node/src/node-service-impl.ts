@@ -621,6 +621,10 @@ import {
   wireMeshEventsViaRuntime,
   type WireMeshEventsContext,
 } from "./node-service-wire-mesh-events.js";
+import {
+  handleSharePreviewViaRuntime,
+  type SharePreviewContext,
+} from "./node-service-handlers-share-preview.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
@@ -8052,6 +8056,15 @@ class NodeServiceImpl implements NodeService {
     };
   }
 
+  private _sharePreviewContext(): SharePreviewContext {
+    return {
+      recordInboundPullSharePreview: (input) =>
+        this.recordInboundPullSharePreview(input),
+      linkOutboundSharePreviewFromInbound: (messageId, inReplyTo) =>
+        this.linkOutboundSharePreviewFromInbound(messageId, inReplyTo),
+    };
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async _handleInboundMessage(params: any): Promise<void> {
     const { envelope, remotePeerId, remoteAddr, replyWithEnvelope } = params as any;
@@ -8108,23 +8121,7 @@ class NodeServiceImpl implements NodeService {
       }
 
       if (intent === "share.preview") {
-        try {
-          const previewPayload = parseSharePreviewPayload(envelope.payload);
-          if (previewPayload.isFileTransfer && !previewPayload.refused) {
-            const recorded = this.recordInboundPullSharePreview({
-              previewMessageId: envelope.messageId,
-              inReplyToRequestMsgId: previewPayload.inReplyTo,
-              senderPeerId: remotePeerId,
-              previewText: previewPayload.previewText,
-              sensitivity: previewPayload.sensitivity as "public" | "friends" | "private",
-            });
-            if (!recorded) {
-              this.linkOutboundSharePreviewFromInbound(envelope.messageId, previewPayload.inReplyTo);
-            }
-          }
-        } catch {
-          /* ignore invalid preview */
-        }
+        handleSharePreviewViaRuntime(this._sharePreviewContext(), envelope, remotePeerId);
         return;
       }
 
