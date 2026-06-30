@@ -66,7 +66,7 @@ Items deferred: OpenClaw Runtime (~1171), Fleet Manifest inline cleanup, Agent C
 - [x] **Step 5** (63db484): Persistence stores module → `node-service-persistence.ts` (Phases 23 + 25D — `IntentHistoryStore` + `PublishedLibraryStore` as proper classes). -73 / +224 runtime / +215 test. 2094 pass / 79 fail. 19 new unit tests.
 - [x] **Step 6** (a9c858a): Continuity module → `node-service-continuity.ts` (Phase 25 — `ContinuityStore` class + 4 high-level operations). -116 / +169 runtime / +233 test. 2110 pass / 79 fail. 17 new unit tests.
 - [x] **Step 7** (d4d47f4): Chains module → `node-service-chains.ts` (Phase 40 — `ChainStore` class + 10 simple delegations; complex methods stay on class). -71 / +302 runtime / +181 test. 2124 pass / 79 fail. 13 new unit tests.
-- [x] **Step 8** (commit pending): Calls module → `node-service-calls.ts` (Phase 38 — 7 simple send-response / event-passthrough operations; complex methods stay on class). -93 / +206 runtime / +204 test. 2138 pass / 79 fail. 14 new unit tests.
+- [x] **Step 8** (50c2967): Calls module → `node-service-calls.ts` (Phase 38 — 7 simple send-response / event-passthrough operations; complex methods stay on class). -93 / +206 runtime / +204 test. 2138 pass / 79 fail. 14 new unit tests.
 
 Cumulative: `node-service-impl.ts` 14,247 → 13,685 lines (-562). 0 tsc errors. 0 regressions.
 
