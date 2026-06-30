@@ -631,6 +631,10 @@ import {
   getPairingKioskStatusViaRuntime,
   type PairingKioskContext,
 } from "./node-service-pairing-kiosk.js";
+import {
+  pairDeviceViaRuntime,
+  type PairDeviceContext,
+} from "./node-service-handlers-pair-device.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
@@ -8084,6 +8088,20 @@ class NodeServiceImpl implements NodeService {
     };
   }
 
+  private _pairDeviceContext(): PairDeviceContext {
+    return {
+      validatePairingToken: (token) => this.validatePairingToken(token),
+      consumeCompanyInvite: (token, ownerId, deviceId) =>
+        this._consumeCompanyInviteOrThrow(token, ownerId, deviceId),
+      setTrustRecordDirect: (record) =>
+        this._trustStore.setTrustRecord(record as never).then(() => undefined) as Promise<void>,
+      mergeInboundDeviceBinding: (input) =>
+        this._peerDirectoryStore.mergeInboundDeviceBinding(input),
+      getSessionTokenStore: () => (this._sessionTokenStore as never) ?? null,
+      getBridgeStatus: () => this.getBridgeStatus(),
+    };
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private async _handleInboundMessage(params: any): Promise<void> {
     const { envelope, remotePeerId, remoteAddr, replyWithEnvelope } = params as any;
@@ -9349,71 +9367,7 @@ class NodeServiceImpl implements NodeService {
    * token for future reconnections, and sets up a "direct" trust record.
    */
   async pairDevice(params: PairDeviceParams): Promise<PairDeviceResult> {
-    const { requesterOwnerId, requesterDeviceId, requesterDevicePublicKeyPem, pairingToken } = params;
-
-    if (!requesterOwnerId || !requesterDeviceId || !requesterDevicePublicKeyPem || !pairingToken) {
-      throw new Error("Missing required pairDevice params");
-    }
-
-    // Validate the QR pairing token (or a company-invite token — Phase 35A)
-    const valid = await this.validatePairingToken(pairingToken);
-    if (!valid) {
-      throw new Error("Invalid or expired pairing token");
-    }
-
-    // Phase 35A: atomically consume a company-invite token (replay guard).
-    await this._consumeCompanyInviteOrThrow(
-      pairingToken,
-      requesterOwnerId,
-      requesterDeviceId,
-    );
-
-    // Derive the requester's envelope peer id (for device binding) — not a libp2p dial target.
-    const envelopePeerId = derivePeerId(requesterDevicePublicKeyPem);
-
-    // Create trust record at "direct" level
-    await this._trustStore.setTrustRecord({
-      peerOwnerId: requesterOwnerId,
-      level: "direct",
-      displayName: "Companion",
-      note: "pairDevice",
-      now: new Date().toISOString(),
-    });
-
-    // Bind device key for envelope addressing; libp2p transport id arrives via relay checkin / inbound traffic.
-    await this._peerDirectoryStore.mergeInboundDeviceBinding({
-      ownerId: requesterOwnerId,
-      peerId: envelopePeerId,
-      devicePublicKeyPem: requesterDevicePublicKeyPem,
-    }).catch(() => undefined);
-
-    // Generate persistent session token
-    const sessionToken = randomUUID();
-    const now = new Date().toISOString();
-    if (this._sessionTokenStore) {
-      await this._sessionTokenStore.setToken({
-        token: sessionToken,
-        ownerId: requesterOwnerId,
-        deviceId: requesterDeviceId,
-        displayName: "Companion",
-        createdAt: now,
-        lastUsedAt: now,
-      });
-    }
-
-    const bridgeStatus = await this.getBridgeStatus();
-    const result: PairDeviceResult = { sessionToken };
-    if (bridgeStatus.enabled) {
-      result.agentPeerId = bridgeStatus.agentPeerId;
-      if (bridgeStatus.agentPublicKeyPem) {
-        result.agentPubKey = bridgeStatus.agentPublicKeyPem;
-      }
-      if (bridgeStatus.agentName?.trim()) {
-        result.agentName = bridgeStatus.agentName.trim();
-      }
-    }
-
-    return result;
+    return pairDeviceViaRuntime(this._pairDeviceContext(), params);
   }
 
   /**

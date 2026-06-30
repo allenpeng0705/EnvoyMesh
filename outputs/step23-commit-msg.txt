@@ -1,0 +1,43 @@
+refactor: extract pairDevice (Step 23)
+
+Step 23 — extract the public pairDevice method (78 lines) which
+handles QR-token pairing of a companion device to the home node.
+
+The class method collapses to a one-line delegation. The runtime
+takes a PairDeviceContext with 6 accessors (validatePairingToken,
+consumeCompanyInvite, setTrustRecordDirect,
+mergeInboundDeviceBinding, getSessionTokenStore, getBridgeStatus).
+
+Subtle type handling: setTrustRecordDirect coerces the
+Promise<TrustRecord> return to Promise<void> via `.then(() =>
+undefined)` since the context interface only needs void.
+
+6 new unit tests in
+apps/node/test/node-service-handlers-pair-device.test.ts:
+  - throws on missing required params
+  - throws on invalid token
+  - happy path: sets trust, binds device, returns session token
+  - includes bridge fields when bridgeStatus.enabled is true
+  - omits bridge fields when bridgeStatus.enabled is false
+  - skips session token store when null
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2261 pass / 80 fail / 128 skip
+  (was 2255 / 80 / 128 — +6 new tests, 0 regressions)
+
+Net effect:
+- node-service-impl.ts: 12,532 -> 12,486 (-46 lines)
+- node-service-handlers-pair-device.ts: 137 lines (new runtime)
+- 27 commits total
+
+Cumulative: 14,247 -> 12,486 (-1,761, -12.36%)
+
+Next planned extractions (largest remaining chunks):
+- getPairingPayload (~151 lines, very complex)
+- pairSharedIdentity (~120 lines)
+- WanJoin/CompanyInvite public methods
+- Terminal Agent Assist wiring
+- More inbound intent dispatchers
+
+Each extracted as a separate runtime module.
