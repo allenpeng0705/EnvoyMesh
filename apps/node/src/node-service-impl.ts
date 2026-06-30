@@ -737,6 +737,11 @@ import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capabi
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
 import { startNodeStatsInterval } from "./node-stats-log.js";
 import { handleInboundBondIntent } from "./bond-inbound.js";
+
+import {
+  handleBondIntentViaRuntime,
+  type BondHandlerContext,
+} from "./node-service-handlers-bond-intent.js";
 import { handleInboundSocialIntroIntent } from "./social-intro-inbound.js";
 import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
 import { askOwnerAgentPlanner, scanOwnerAgentOutbound } from "./owner-agent-planner-inbound.js";
@@ -8237,7 +8242,22 @@ class NodeServiceImpl implements NodeService {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private async _handleInboundMessage(params: any): Promise<void> {
+  private _bondHandlerContext(): BondHandlerContext {
+    return {
+      getTaskStore: () => this._taskStore,
+      getProfile: () => this._profile,
+      storePendingHelloRequest: (data) => this.storePendingHelloRequest(data),
+      emit: (event, payload) => this.emit?.(event as never, payload as never),
+      flushPendingRoomSyncs: () => this._flushPendingRoomSyncs(),
+      flushPendingRoomMessages: () => this._flushPendingRoomMessages(),
+      ensurePeerFromInboundChat: (input) =>
+        this._peerDirectoryStore.ensurePeerFromInboundChat(input),
+      tagBondedContactReachability: (remotePeerId) =>
+        this._tagBondedContactReachability(remotePeerId),
+    };
+  }
+
+    private async _handleInboundMessage(params: any): Promise<void> {
     const { envelope, remotePeerId, remoteAddr, replyWithEnvelope } = params as any;
     const mesh = this._mesh!;
     const profile = this._profile!;
@@ -8302,120 +8322,11 @@ class NodeServiceImpl implements NodeService {
         intent === "bond.challenge" ||
         intent === "bond.challenge.response"
       ) {
-        const receivedAt = Date.now();
-        const correlationId = deriveCorrelationIdFromEnvelope(envelope);
-        const bond = await handleInboundBondIntent(
-          {
-            envelope,
-            profile,
-            remotePeerId,
-            receivedAt,
-            correlationId,
-            taskStore,
-            trustStore: this._trustStore,
-          },
-          (helloData) => {
-            this.storePendingHelloRequest(helloData);
-            this.emit("hello:request", helloData);
-          },
-          async (bondData) => {
-            this.emit("bond:established", bondData);
-            void this._flushPendingRoomSyncs();
-            void this._flushPendingRoomMessages();
-            if (envelope.intent === "bond.request") {
-              try {
-                const payload = parseBondRequestPayload(envelope.payload);
-                await this._peerDirectoryStore.ensurePeerFromInboundChat({
-                  ownerId: payload.requesterOwnerId,
-                  peerId: remotePeerId,
-                  listenAddrs: dialableInboundRemoteAddrs(remoteAddr, remotePeerId),
-                });
-              } catch (err) {
-                console.error(`[bond:established] failed to store peer in directory:`, err);
-              }
-            } else if (envelope.intent === "bond.accept") {
-              try {
-                const payload = parseBondAcceptPayload(envelope.payload);
-                await this._peerDirectoryStore.ensurePeerFromInboundChat({
-                  ownerId: payload.responderOwnerId,
-                  peerId: remotePeerId,
-                  listenAddrs: dialableInboundRemoteAddrs(remoteAddr, remotePeerId),
-                });
-              } catch (err) {
-                console.error(`[bond:established] failed to store peer from bond.accept:`, err);
-              }
-            }
-            void this._tagBondedContactReachability(remotePeerId);
-          },
-        );
-        if (!bond.ok) {
-          await taskStore.appendAuditEvent(
-            createAuditEvent({
-              type: "message.rejected",
-              intent: envelope.intent,
-              messageId: envelope.messageId,
-              correlationId,
-              remotePeerId,
-              direction: "inbound",
-              verificationStatus: "rejected",
-              latencyMs: Date.now() - receivedAt,
-              outcome: "deny",
-              summary: `Rejected bond message: ${bond.reason}.`,
-              createdAt: envelope.createdAt,
-            }),
-          );
-          console.warn(`[rejected bond] ${envelope.intent}: ${bond.reason}`);
-          return;
-        }
-
-        if (bond.bondAcceptToRequester) {
-          const { requesterPeerId, requesterOwnerId } = bond.bondAcceptToRequester;
-          const humanProfile = await this._humanProfileStore.loadHumanProfile();
-          const displayName = humanProfile?.displayName ?? profile.owner.ownerId;
-          const unsignedAccept = createUnsignedEnvelope({
-            senderPeerId: derivePeerId(profile.device.publicKeyPem),
-            senderPublicKey: profile.device.publicKeyPem,
-            recipientPeerId: requesterPeerId,
-            intent: "bond.accept",
-            payload: createBondAcceptPayload({
-              responderOwnerId: profile.owner.ownerId,
-              requesterOwnerId,
-              message: `Hello from ${displayName}!`,
-            }),
-            correlationId,
-          });
-          const signedAccept = signUnsignedEnvelope(unsignedAccept, profile.device.privateKeyPem);
-          const requesterDir = await this._peerDirectoryStore.getPeerByOwnerId(requesterOwnerId);
-          try {
-            const autoHints = await buildOutboundDialHints({
-              recipientPeerId: requesterPeerId,
-              peerListenAddrs: requesterDir?.listenAddrs,
-              discoverySeedStore: this._discoverySeedStore,
-              config: await this._configStore.load(),
-            });
-            await this._deliverCallEnvelope(requesterPeerId, signedAccept, autoHints, requesterDir?.listenAddrs);
-            await taskStore.appendAuditEvent(
-              createAuditEvent({
-                type: "message.sent",
-                intent: signedAccept.intent,
-                messageId: signedAccept.messageId,
-                correlationId: signedAccept.correlationId,
-                remotePeerId: requesterPeerId,
-                direction: "outbound",
-                protocol: ENVOY_MESSAGE_PROTOCOL,
-                outcome: "record",
-                summary: "Sent bond.accept to requester after auto-accept.",
-                createdAt: signedAccept.createdAt,
-              }),
-            );
-            void this._tagBondedContactReachability(requesterPeerId);
-          } catch (err) {
-            console.error(
-              `[bond.request] auto-accept: failed to send bond.accept to requester ${requesterPeerId}:`,
-              err instanceof Error ? err.message : err,
-            );
-          }
-        }
+        await handleBondIntentViaRuntime(this._bondHandlerContext(), {
+          envelope,
+          remotePeerId,
+          remoteAddr,
+        });
         return;
       }
 

@@ -1,0 +1,39 @@
+refactor: extract bond.* intent dispatcher (Step 38)
+
+Step 38 — module-based extraction of the `bond.*` inbound intent
+cluster (~85 lines) from `_handleInboundMessage` to its own
+runtime. This is the first successful per-intent extraction in this
+session.
+
+Methods extracted:
+  - bond.request, bond.accept, bond.challenge, bond.challenge.response
+
+The runtime takes a `BondHandlerContext` with 8 accessors
+(getTaskStore, getProfile, storePendingHelloRequest, emit,
+flushPendingRoomSyncs, flushPendingRoomMessages,
+ensurePeerFromInboundChat, tagBondedContactReachability).
+
+The cluster uses several top-level identifiers (createAuditEvent,
+deriveCorrelationIdFromEnvelope, parseBondRequestPayload,
+parseBondAcceptPayload, dialableInboundRemoteAddrs,
+handleInboundBondIntent). The runtime adds these as imports
+rather than going through the context — pragmatic choice for
+free functions vs class state.
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2277 pass / 81 fail / 128 skip
+  (no regression)
+
+Net effect:
+- node-service-impl.ts: 11,919 -> 11,830 (-89 lines — biggest
+  single extraction win since Step 28)
+- node-service-handlers-bond-intent.ts: 123 lines (new runtime)
+- 41 commits on refactor/impl-clean
+
+Cumulative: 14,247 -> 11,830 (-2,417, -16.95%)
+
+This proves the per-intent extraction approach can work for
+~85-line clusters, even with multi-identifier dependencies. The
+remaining 9 inbound clusters (chat.message, profile.*, etc.) could
+each save 50-150 lines if we can extract them similarly.
