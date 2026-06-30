@@ -1,14 +1,7 @@
 /**
- * Connection Status runtime — minimal first extraction.
- *
- * Owns the read-only `getConnectionStatus()` method which reads:
- *   - last-error fields (private _lastNodeError / _lastNodeErrorAt)
- *   - mesh reachability + connection stats
- *   - node status string
- *   - bootstrap peers list
- *   - terminal manager presence
+ * Connection Status runtime — read-only bridge + openclaw status.
  */
-import type { ConnectionStatus } from "@envoymesh/api";
+import type { BridgeStatus, ConnectionStatus, OpenClawStatus } from "@envoymesh/api";
 
 export interface ConnectionStatusContext {
   /** The last-error context string (or undefined). */
@@ -27,6 +20,8 @@ export interface ConnectionStatusContext {
   getRelayBootstrapPeers(): string[];
   /** True when the local terminal manager has been instantiated. */
   hasTerminalManager(): boolean;
+  /** Return the current bridge status (or undefined if unset). */
+  getBridgeStatus?(): BridgeStatus | undefined;
 }
 
 export function getConnectionStatusViaRuntime(
@@ -58,5 +53,42 @@ export function getConnectionStatusViaRuntime(
     multiaddrs: mesh.multiaddrs,
     connectedRelays: mesh.getConnectionStats().circuitPeerIds,
     ...base,
+  };
+}
+
+/* ---------- bridge + openclaw status ---------- */
+
+const DEFAULT_BRIDGE_STATUS: BridgeStatus = {
+  enabled: false,
+  agentPeerId: "",
+  agentUrl: "",
+  listenPort: 0,
+  agentName: "",
+  agentType: undefined,
+};
+
+export function getBridgeStatusViaRuntime(
+  ctx: ConnectionStatusContext,
+): BridgeStatus {
+  return ctx.getBridgeStatus?.() ?? DEFAULT_BRIDGE_STATUS;
+}
+
+export async function getOpenClawStatusViaRuntime(
+  deps: {
+    isOpenClawEnabled: () => Promise<boolean>;
+    isOpenClawReady: () => boolean;
+    getAssistantAgentUrl: () => string;
+    getOpenClawGatewayChild: () => { killed: boolean; pid?: number } | undefined;
+  },
+): Promise<OpenClawStatus> {
+  const enabled = await deps.isOpenClawEnabled();
+  return {
+    enabled,
+    running: deps.isOpenClawReady(),
+    url: deps.getAssistantAgentUrl(),
+    childPid: (() => {
+      const c = deps.getOpenClawGatewayChild();
+      return c && !c.killed ? c.pid : undefined;
+    })(),
   };
 }

@@ -5,8 +5,11 @@ import { describe, expect, it, vi } from "vitest";
 
 import {
   getConnectionStatusViaRuntime,
+  getBridgeStatusViaRuntime,
+  getOpenClawStatusViaRuntime,
   type ConnectionStatusContext,
 } from "../src/node-service-connection-status.js";
+import type { BridgeStatus } from "@envoymesh/api";
 
 interface MockMesh {
   peerId: string;
@@ -94,5 +97,60 @@ describe("getConnectionStatusViaRuntime", () => {
     expect(out.online).toBe(false);
     expect(out.lastError).toBe("boot failed: missing config");
     expect(out.lastErrorAt).toBe("2026-06-30T00:00:00Z");
+  });
+});
+
+describe("getBridgeStatusViaRuntime", () => {
+  it("returns the default when no bridge status is set", () => {
+    const ctx: ConnectionStatusContext = {
+      ...makeCtx(),
+      getBridgeStatus: () => undefined,
+    };
+    const out = getBridgeStatusViaRuntime(ctx);
+    expect(out.enabled).toBe(false);
+    expect(out.agentPeerId).toBe("");
+    expect(out.listenPort).toBe(0);
+  });
+
+  it("returns the current bridge status when set", () => {
+    const bridge: BridgeStatus = {
+      enabled: true,
+      agentPeerId: "agent-peer-1",
+      agentUrl: "ws://example",
+      listenPort: 4001,
+      agentName: "my-agent",
+      agentType: "openclaw",
+    };
+    const ctx: ConnectionStatusContext = {
+      ...makeCtx(),
+      getBridgeStatus: () => bridge,
+    };
+    expect(getBridgeStatusViaRuntime(ctx)).toEqual(bridge);
+  });
+});
+
+describe("getOpenClawStatusViaRuntime", () => {
+  it("returns the openclaw status with child pid when running", async () => {
+    const out = await getOpenClawStatusViaRuntime({
+      isOpenClawEnabled: async () => true,
+      isOpenClawReady: () => true,
+      getAssistantAgentUrl: () => "http://127.0.0.1:9999",
+      getOpenClawGatewayChild: () => ({ killed: false, pid: 12345 }),
+    });
+    expect(out.enabled).toBe(true);
+    expect(out.running).toBe(true);
+    expect(out.url).toBe("http://127.0.0.1:9999");
+    expect(out.childPid).toBe(12345);
+  });
+
+  it("returns childPid: undefined when child is killed", async () => {
+    const out = await getOpenClawStatusViaRuntime({
+      isOpenClawEnabled: async () => true,
+      isOpenClawReady: () => false,
+      getAssistantAgentUrl: () => "http://127.0.0.1:9999",
+      getOpenClawGatewayChild: () => ({ killed: true }),
+    });
+    expect(out.childPid).toBeUndefined();
+    expect(out.running).toBe(false);
   });
 });

@@ -585,6 +585,8 @@ import {
 } from "./node-service-manifest.js";
 import {
   getConnectionStatusViaRuntime,
+  getBridgeStatusViaRuntime,
+  getOpenClawStatusViaRuntime,
   type ConnectionStatusContext,
 } from "./node-service-connection-status.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
@@ -7345,6 +7347,7 @@ class NodeServiceImpl implements NodeService {
       getNodeStatus: () => this._nodeStatus,
       getRelayBootstrapPeers: () => this._relayBootstrapPeers,
       hasTerminalManager: () => Boolean(this._terminalManager),
+      getBridgeStatus: () => this._bridgeStatus ?? undefined,
     };
   }
 
@@ -9600,7 +9603,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   async getBridgeStatus(): Promise<BridgeStatus> {
-    return this._bridgeStatus ?? { enabled: false, agentPeerId: "", agentUrl: "", listenPort: 0, agentName: "", agentType: undefined };
+    return getBridgeStatusViaRuntime(this._connectionStatusContext());
   }
 
   /**
@@ -9612,15 +9615,12 @@ class NodeServiceImpl implements NodeService {
    * are not part of this RPC.
    */
   async getOpenClawStatus(): Promise<OpenClawStatus> {
-    const enabled = await this._isOpenClawEnabled();
-    const child = this._openclawGatewayChild;
-    const running = this.isOpenClawReady();
-    return {
-      enabled,
-      running,
-      url: this._assistantAgentUrl,
-      childPid: child && !child.killed ? child.pid ?? undefined : undefined,
-    };
+    return getOpenClawStatusViaRuntime({
+      isOpenClawEnabled: () => this._isOpenClawEnabled(),
+      isOpenClawReady: () => this.isOpenClawReady(),
+      getAssistantAgentUrl: () => this._assistantAgentUrl,
+      getOpenClawGatewayChild: () => this._openclawGatewayChild ?? undefined,
+    });
   }
 
   /**

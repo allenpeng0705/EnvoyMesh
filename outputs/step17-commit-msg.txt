@@ -1,0 +1,38 @@
+refactor: extract getBridgeStatus + getOpenClawStatus (Step 17)
+
+Step 17 — extract two more read-only Connection Status methods. Both
+are small (1 line and 7 lines respectively) and follow the same
+`ConnectionStatusContext` pattern as Step 16.
+
+17 extracts:
+  - getBridgeStatusViaRuntime — returns the current bridge status
+    or a default zeroed-out BridgeStatus when none is set
+  - getOpenClawStatusViaRuntime — assembles the OpenClaw status from
+    the configured enablement flag, the live ready check, the
+    assistant URL, and the child process (when alive)
+
+ConnectionStatusContext extended with one new accessor:
+  - getBridgeStatus() — existing this._bridgeStatus field
+
+node-service-impl.ts: 13,080 -> 13,080 lines (0 net — the 10-line
+context factory + 2-line delegations net out to the 8 lines of the
+two inline bodies)
+node-service-connection-status.ts: 61 -> 93 lines
+4 new unit tests (in addition to the 4 from Step 16)
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2201 pass / 79 fail / 128 skip
+  (was 2193 / 79 / 128 — +8 new tests, 0 regressions)
+
+This commit combined with Step 16 brings the Connection Status
+section's contribution to:
+  - 3 methods extracted (getConnectionStatus, getBridgeStatus,
+    getOpenClawStatus)
+  - 8 unit tests covering the runtime functions
+  - 1 small context type reused across all 3 methods
+
+Future commits can extract more of the Connection Status section
+piece by piece: getPairingPayload, _recordNodeError, the various
+terminal-manager RPCs, the pairing-kiosk methods, the WanJoin /
+CompanyInvite RPCs.
