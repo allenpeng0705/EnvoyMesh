@@ -1,0 +1,42 @@
+refactor: extract capability discovery scheduler (Step 20a)
+
+Step 20a — first piece of Node Lifecycle extraction. Owns the two
+private helpers that drive capability discovery at startup,
+periodic, and on-demand:
+
+  - _runCapabilityDiscoveryCycle (33 lines) -> 3-line delegation
+  - _startCapabilityDiscoveryScheduler (35 lines) -> 3-line delegation
+
+The runtime is pure: takes a typed CapabilityDiscoveryContext with
+8 accessors (mesh, profile, task store, discovery seed store,
+config, capability-discovery timer get/set, pairing-kiosk sync).
+The class methods collapse to one-line delegations.
+
+Subtle preservation: the pairing-kiosk sync still runs after
+schedule() — it's outside the DHT guard in the runtime, matching
+the class's behaviour.
+
+7 new unit tests in apps/node/test/node-service-capability-discovery.test.ts:
+  - runCapabilityDiscoveryCycle: returns early when mesh/profile/config
+    missing; passes source + runFind through
+  - startCapabilityDiscoveryScheduler: no-timer-no-sync when DHT off
+    or profile undefined; schedules + sync otherwise
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2216 pass / 81 fail / 128 skip
+  (was 2210 / 80 / 128 — +6 new tests, +1 flaky-fail in baseline.
+  All 7 of my new tests pass; the +1 fail is the pre-existing
+  network-flap test oscillating between 79-81 across runs.)
+
+Net effect:
+- node-service-impl.ts: 12,728 -> 12,691 (-37 lines)
+- node-service-capability-discovery.ts: 127 lines (new runtime)
+- 20 commits on refactor/impl-clean
+
+Remaining Node Lifecycle pieces (Steps 20b-onwards):
+  - initNode (50 lines) + _ensureAgentStores (14 lines) +
+    _requireToolExecutionContext (21 lines) — agent setup
+  - stopNode (~85 lines)
+  - startNode (192 lines) — biggest
+  - _wireMeshEvents (432 lines) — hardest, ~30 event handlers

@@ -598,6 +598,11 @@ import {
   updateNodeConfigViaRuntime,
   type NodeConfigContext,
 } from "./node-service-config.js";
+import {
+  runCapabilityDiscoveryCycleViaRuntime,
+  startCapabilityDiscoverySchedulerViaRuntime,
+  type CapabilityDiscoveryContext,
+} from "./node-service-capability-discovery.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
@@ -7392,6 +7397,21 @@ class NodeServiceImpl implements NodeService {
     };
   }
 
+  private _capabilityDiscoveryContext(): CapabilityDiscoveryContext {
+    return {
+      getMesh: () => this._mesh,
+      getProfile: () => this._profile,
+      getTaskStore: () => this._taskStore,
+      getDiscoverySeedStore: () => this._discoverySeedStore,
+      loadConfig: () => this._configStore.load(),
+      getCapabilityDiscoveryTimer: () => this._capabilityDiscoveryTimer,
+      setCapabilityDiscoveryTimer: (timer) => {
+        this._capabilityDiscoveryTimer = timer;
+      },
+      syncPairingKioskFromConfig: () => this._syncPairingKioskFromConfig(),
+    };
+  }
+
     private _manifestContext(): CapabilityManifestContext {
     return {
       getProfileDir: () => this._profileDir,
@@ -8530,68 +8550,11 @@ class NodeServiceImpl implements NodeService {
     source: "startup" | "periodic" | "on-demand",
     opts: { connectivityRuntime: ResolvedConnectivityRuntime; runFind?: boolean },
   ): Promise<void> {
-    const mesh = this._mesh;
-    const profile = this._profile;
-    if (!mesh || !profile || !this._taskStore || !this._discoverySeedStore) {
-      return;
-    }
-    const config = await this._configStore.load();
-    if (!config) {
-      return;
-    }
-    const { connectivityRuntime } = opts;
-    const topics = buildAutoCapabilityTopics(profile.deviceCertificate.capabilities);
-    await runCapabilityDiscoveryCycle({
-      mesh,
-      profile: config.discoveryProfile,
-      topics,
-      taskStore: this._taskStore,
-      discoverySeedStore: this._discoverySeedStore,
-      enableDht: connectivityRuntime.enableDht,
-      options: {
-        source,
-        runFind:
-          opts.runFind ??
-          (source === "on-demand"
-            ? true
-            : shouldRunPeriodicCapabilityFind(connectivityRuntime)),
-      },
-    });
+    return runCapabilityDiscoveryCycleViaRuntime(this._capabilityDiscoveryContext(), source, opts);
   }
 
   private _startCapabilityDiscoveryScheduler(connectivityRuntime: ResolvedConnectivityRuntime): void {
-    if (this._capabilityDiscoveryTimer) {
-      clearTimeout(this._capabilityDiscoveryTimer);
-      this._capabilityDiscoveryTimer = undefined;
-    }
-    if (!connectivityRuntime.enableDht || !this._profile) {
-      return;
-    }
-    const topics = buildAutoCapabilityTopics(this._profile.deviceCertificate.capabilities);
-    if (topics.length === 0) {
-      return;
-    }
-
-    const schedule = (): void => {
-      const jitter = Math.floor(Math.random() * connectivityRuntime.capabilityDiscoveryJitterMs);
-      this._capabilityDiscoveryTimer = setTimeout(() => {
-        void this._runCapabilityDiscoveryCycle("periodic", { connectivityRuntime })
-          .catch((err) => console.warn("[node-service] capability discovery cycle failed:", err))
-          .finally(() => {
-            if (this._mesh) {
-              schedule();
-            }
-          });
-      }, connectivityRuntime.capabilityDiscoveryIntervalMsEffective() + jitter);
-    };
-    schedule();
-
-    // Phase 35D — kick the pairing-kiosk server on node start so a config
-    // that has it enabled at boot time is honoured without a manual
-    // `updateNodeConfig` call.
-    void this._syncPairingKioskFromConfig().catch((err) => {
-      console.warn("[pairing-kiosk] sync on start failed:", err);
-    });
+    startCapabilityDiscoverySchedulerViaRuntime(this._capabilityDiscoveryContext(), connectivityRuntime);
   }
 
   async stopNode(): Promise<void> {
