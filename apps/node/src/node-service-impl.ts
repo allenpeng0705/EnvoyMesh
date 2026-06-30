@@ -583,6 +583,10 @@ import {
   removeRelayViaRuntime,
   type CapabilityManifestContext,
 } from "./node-service-manifest.js";
+import {
+  getConnectionStatusViaRuntime,
+  type ConnectionStatusContext,
+} from "./node-service-connection-status.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
@@ -7333,7 +7337,18 @@ class NodeServiceImpl implements NodeService {
     };
   }
 
-  private _manifestContext(): CapabilityManifestContext {
+  private _connectionStatusContext(): ConnectionStatusContext {
+    return {
+      getLastNodeError: () => this._lastNodeError,
+      getLastNodeErrorAt: () => this._lastNodeErrorAt,
+      getReachableMesh: () => this._reachableMesh() as never,
+      getNodeStatus: () => this._nodeStatus,
+      getRelayBootstrapPeers: () => this._relayBootstrapPeers,
+      hasTerminalManager: () => Boolean(this._terminalManager),
+    };
+  }
+
+    private _manifestContext(): CapabilityManifestContext {
     return {
       getProfileDir: () => this._profileDir,
       getCapabilityManifestStore: () => this._capabilityManifestStore as never,
@@ -9006,33 +9021,7 @@ class NodeServiceImpl implements NodeService {
   // ============================================
 
   getConnectionStatus(): ConnectionStatus {
-    const diagnostics = {
-      lastError: this._lastNodeError ?? undefined,
-      lastErrorAt: this._lastNodeErrorAt ?? undefined,
-    };
-    const mesh = this._reachableMesh();
-    if (!mesh || this._nodeStatus !== "running") {
-      return {
-        online: false,
-        peerId: "",
-        multiaddrs: [],
-        connectedRelays: [],
-        bondedPeers: 0,
-        terminalsAvailable: Boolean(this._terminalManager),
-        bootstrapPeers: this._relayBootstrapPeers,
-        ...diagnostics,
-      };
-    }
-    return {
-      online: true,
-      peerId: mesh.peerId,
-      multiaddrs: mesh.multiaddrs,
-      connectedRelays: mesh.getConnectionStats().circuitPeerIds,
-      bondedPeers: 0,
-      terminalsAvailable: Boolean(this._terminalManager),
-      bootstrapPeers: this._relayBootstrapPeers,
-      ...diagnostics,
-    };
+    return getConnectionStatusViaRuntime(this._connectionStatusContext());
   }
 
   private _recordNodeError(context: string, err: unknown): void {

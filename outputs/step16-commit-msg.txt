@@ -1,0 +1,35 @@
+refactor: extract getConnectionStatus (Step 16 of refactor plan)
+
+Step 16 — extract the first piece of the Connection Status section.
+This is a small but meaningful reduction: getConnectionStatus is a
+read-only method that the entire `apps/node/test/*` suite uses
+through the NodeService interface, so encapsulating it cleanly matters.
+
+16 extracts:
+  - getConnectionStatusViaRuntime — builds the ConnectionStatus shape
+    from a small typed context (lastError, mesh reachability, node
+    status, bootstrap peers, terminal-manager presence)
+
+ConnectionStatusContext:
+  - getLastNodeError / getLastNodeErrorAt (existing class fields)
+  - getReachableMesh (existing _reachableMesh())
+  - getNodeStatus (existing _nodeStatus string)
+  - getRelayBootstrapPeers (existing array)
+  - hasTerminalManager (boolean check on _terminalManager)
+
+node-service-impl.ts: 13,091 -> 13,080 lines (-11)
+node-service-connection-status.ts: 61 lines (new file)
+4 new unit tests in apps/node/test/node-service-connection-status.test.ts
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2196 pass / 79 fail / 128 skip
+  (was 2193 / 79 / 128 — +3 net passing tests, 0 regressions. One
+  pre-existing flaky test happened to flip from fail to pass in this
+  run.)
+
+The Connection Status section (lines 9005-11214) is huge — ~2200 lines
+covering Terminal Manager, Pairing Kiosk, OpenClaw gateway, Bridge,
+WanJoin, CompanyInvite. Future commits can pull out more of these
+piece by piece (e.g. bridge status / openclaw status / pairing
+payload as separate runtimes).
