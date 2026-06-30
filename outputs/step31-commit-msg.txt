@@ -1,0 +1,26 @@
+refactor: extract Document Acquisition + Capability Provider public methods (Step 31)
+
+Step 31 — module-based extraction of the doc-acq + cap-prov public
+API cluster (10 methods, ~150 lines). The runtime takes a loose
+`any`-typed context (only the class calls it). Class methods
+collapse to one-line delegations.
+
+Methods extracted:
+  - startDocumentAcquisitionJob + getDocumentAcquisitionJob +
+    listDocumentAcquisitionJobs + cancelDocumentAcquisitionJob +
+    runDocumentAcquisitionWorker
+  - startCapabilityProviderJob + getCapabilityProviderJob +
+    listCapabilityProviderJobs + cancelCapabilityProviderJob +
+    runCapabilityProviderWorker
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2278 pass / 80 fail / 128 skip
+  (no regression)
+
+Net effect:
+- node-service-impl.ts: 11,962 -> 11,911 (-51 lines)
+- node-service-handlers-doc-acq-cap-prov.ts: 192 lines (new runtime)
+- 35 commits on refactor/impl-clean
+
+Cumulative: 14,247 -> 11,911 (-2,336, -16.39%)

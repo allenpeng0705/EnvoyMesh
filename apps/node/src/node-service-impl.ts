@@ -676,6 +676,18 @@ import {
   revokeFleetManifestViaPublicRuntime,
   createFleetManifestViaPublicRuntime,
 } from "./node-service-handlers-fleet-manifest.js";
+import {
+  startDocumentAcquisitionJobViaPublicRuntime,
+  getDocumentAcquisitionJobViaPublicRuntime,
+  listDocumentAcquisitionJobsViaPublicRuntime,
+  cancelDocumentAcquisitionJobViaPublicRuntime,
+  runDocumentAcquisitionWorkerViaPublicRuntime,
+  startCapabilityProviderJobViaPublicRuntime,
+  getCapabilityProviderJobViaPublicRuntime,
+  listCapabilityProviderJobsViaPublicRuntime,
+  cancelCapabilityProviderJobViaPublicRuntime,
+  runCapabilityProviderWorkerViaPublicRuntime,
+} from "./node-service-handlers-doc-acq-cap-prov.js";
 import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
@@ -6374,137 +6386,46 @@ class NodeServiceImpl implements NodeService {
     fileTitleHint?: string;
     pathHint?: string;
   }): Promise<{ jobId: string; correlationId: string }> {
-    const config = await this.getNodeConfig();
-    if (!this._documentAcquisitionJobStore) {
-      throw new Error("document acquisition store unavailable");
-    }
-    if (!config.documentAcquisitionEnabled) {
-      throw new Error("document acquisition disabled");
-    }
-    if (config.autonomousKillSwitch) {
-      throw new Error("autonomous kill switch active");
-    }
-    const policy = {
-      searchBondedOnly: true,
-      maxNegotiationRounds: 5,
-      maxActiveJobs: 3,
-      jobTtlHours: 72,
-    };
-    const localManifestCapabilities = await this._localManifestCapabilities();
-    const started = await startDocumentAcquisitionJobWorker(
-      {
-        postureRef: config.documentAcquisitionMandateId ?? "default-document-acquisition",
-        policy,
-        localManifestCapabilities,
-        listJobs: (activeOnly) => this._documentAcquisitionJobStore!.list(activeOnly),
-        saveJob: (job) => this._documentAcquisitionJobStore!.save(job),
-        recordActivity: async (input) => {
-          if (!this._agentActivityStore) return;
-          const record: AgentActivityRecord = {
-            activityId: randomUUID(),
-            correlationId: input.correlationId,
-            taskId: input.jobId,
-            domain: "knowledge",
-            kind: "document_acq_stage",
-            summary: input.summary,
-            createdAt: new Date().toISOString(),
-          };
-          await this._agentActivityStore.append(record);
-          await this._publishAgentActivity(record);
-        },
-      },
-      params,
-    );
-    await advanceDocumentAcquisitionJob(await this._documentAcquisitionWorkerDeps(config), started.jobId);
-    return started;
+    return startDocumentAcquisitionJobViaPublicRuntime(this._docAcqCapProvDeps(), params);
   }
 
   async getDocumentAcquisitionJob(jobId: string): Promise<DocumentAcquisitionJob | undefined> {
-    if (!this._documentAcquisitionJobStore) return undefined;
-    return this._documentAcquisitionJobStore.get(jobId.trim());
+    return getDocumentAcquisitionJobViaPublicRuntime(this._docAcqCapProvDeps(), jobId);
   }
 
   async listDocumentAcquisitionJobs(activeOnly?: boolean): Promise<DocumentAcquisitionJob[]> {
-    if (!this._documentAcquisitionJobStore) return [];
-    return this._documentAcquisitionJobStore.list(activeOnly);
+    return listDocumentAcquisitionJobsViaPublicRuntime(this._docAcqCapProvDeps(), activeOnly);
   }
 
   async cancelDocumentAcquisitionJob(jobId: string): Promise<void> {
-    if (!this._documentAcquisitionJobStore) return;
-    const job = await this._documentAcquisitionJobStore.get(jobId.trim());
-    if (!job) return;
-    const { job: next } = transitionDocumentAcquisitionJob(job, "KILL_SWITCH");
-    await this._documentAcquisitionJobStore.save(next);
+    return cancelDocumentAcquisitionJobViaPublicRuntime(this._docAcqCapProvDeps(), jobId);
   }
 
   async runDocumentAcquisitionWorker(): Promise<number> {
-    const config = await this.getNodeConfig();
-    return runDocumentAcquisitionWorkerTick(await this._documentAcquisitionWorkerDeps(config));
+    return runDocumentAcquisitionWorkerViaPublicRuntime(this._docAcqCapProvDeps());
   }
-
   async startCapabilityProviderJob(params: {
     goal: string;
     capabilityIds?: string[];
     targetOwnerId?: string;
   }): Promise<{ jobId: string; correlationId: string }> {
-    const config = await this.getNodeConfig();
-    if (!this._capabilityProviderJobStore) {
-      throw new Error("capability provider store unavailable");
-    }
-    if (!config.capabilityProviderEnabled) {
-      throw new Error("capability provider disabled");
-    }
-    if (config.autonomousKillSwitch) {
-      throw new Error("autonomous kill switch active");
-    }
-    const started = await startCapabilityProviderJobWorker(
-      {
-        postureRef: config.capabilityProviderMandateId ?? "default-capability-provider",
-        policy: { maxActiveJobs: 3, jobTtlHours: 72 },
-        listJobs: (activeOnly) => this._capabilityProviderJobStore!.list(activeOnly),
-        saveJob: (job) => this._capabilityProviderJobStore!.save(job),
-        recordActivity: async (input) => {
-          if (!this._agentActivityStore) return;
-          const record: AgentActivityRecord = {
-            activityId: randomUUID(),
-            correlationId: input.correlationId,
-            taskId: input.jobId,
-            domain: "research",
-            kind: "capability_provider_stage",
-            summary: input.summary,
-            createdAt: new Date().toISOString(),
-          };
-          await this._agentActivityStore.append(record);
-          await this._publishAgentActivity(record);
-        },
-      },
-      params,
-    );
-    await advanceCapabilityProviderJob(await this._capabilityProviderWorkerDeps(config), started.jobId);
-    return started;
+    return startCapabilityProviderJobViaPublicRuntime(this._docAcqCapProvDeps(), params);
   }
 
   async getCapabilityProviderJob(jobId: string): Promise<CapabilityProviderJob | undefined> {
-    if (!this._capabilityProviderJobStore) return undefined;
-    return this._capabilityProviderJobStore.get(jobId.trim());
+    return getCapabilityProviderJobViaPublicRuntime(this._docAcqCapProvDeps(), jobId);
   }
 
   async listCapabilityProviderJobs(activeOnly?: boolean): Promise<CapabilityProviderJob[]> {
-    if (!this._capabilityProviderJobStore) return [];
-    return this._capabilityProviderJobStore.list(activeOnly);
+    return listCapabilityProviderJobsViaPublicRuntime(this._docAcqCapProvDeps(), activeOnly);
   }
 
   async cancelCapabilityProviderJob(jobId: string): Promise<void> {
-    if (!this._capabilityProviderJobStore) return;
-    const job = await this._capabilityProviderJobStore.get(jobId.trim());
-    if (!job) return;
-    const { job: next } = transitionCapabilityProviderJob(job, "KILL_SWITCH");
-    await this._capabilityProviderJobStore.save(next);
+    return cancelCapabilityProviderJobViaPublicRuntime(this._docAcqCapProvDeps(), jobId);
   }
 
   async runCapabilityProviderWorker(): Promise<number> {
-    const config = await this.getNodeConfig();
-    return runCapabilityProviderWorkerTick(await this._capabilityProviderWorkerDeps(config));
+    return runCapabilityProviderWorkerViaPublicRuntime(this._docAcqCapProvDeps());
   }
 
   private async _localManifestCapabilities(): Promise<string[]> {
@@ -8188,6 +8109,34 @@ class NodeServiceImpl implements NodeService {
         this._socialProxyOrchestratorDeps(config) as never,
       hasSocialProxyStore: () => Boolean(this._socialProxyStore),
       updateNodeConfig: (cfg) => this.updateNodeConfig(cfg as never),
+    };
+  }
+
+  private _docAcqCapProvDeps(): any {
+    return {
+      getNodeConfig: () => this.getNodeConfig(),
+      hasDocumentAcquisitionJobStore: () => Boolean(this._documentAcquisitionJobStore),
+      requireDocumentAcquisitionJobStore: () => {
+        if (!this._documentAcquisitionJobStore) {
+          throw new Error("document acquisition store unavailable");
+        }
+        return this._documentAcquisitionJobStore;
+      },
+      getLocalManifestCapabilities: () => this._localManifestCapabilities(),
+      getDocumentAcquisitionWorkerDeps: (config: any) =>
+        this._documentAcquisitionWorkerDeps(config),
+      hasCapabilityProviderJobStore: () => Boolean(this._capabilityProviderJobStore),
+      requireCapabilityProviderJobStore: () => {
+        if (!this._capabilityProviderJobStore) {
+          throw new Error("capability provider store unavailable");
+        }
+        return this._capabilityProviderJobStore;
+      },
+      getCapabilityProviderWorkerDeps: (config: any) =>
+        this._capabilityProviderWorkerDeps(config),
+      hasAgentActivityStore: () => Boolean(this._agentActivityStore),
+      getAgentActivityStore: () => this._agentActivityStore,
+      publishAgentActivity: (record: any) => this._publishAgentActivity(record),
     };
   }
 
