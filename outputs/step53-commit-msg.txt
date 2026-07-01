@@ -1,0 +1,46 @@
+refactor: extract knowledge.query arm (Step 53)
+
+The knowledge.query arm (95 lines, lines 1046-1140) is the second
+self-contained arm I've extracted from `handleInboundMeshMessage`
+in this session. Following the system.ping pattern (NOT the bond.*
+unification pattern), this runtime has its own logic — there's no
+existing node-service runtime to delegate to.
+
+Files:
+- apps/node/src/cli-mesh-inbound-knowledge-query.ts (new, 121 lines)
+  handleKnowledgeQueryViaRuntime(ctx, params) — the full arm logic.
+  Uses the Proxy-pattern (`// @ts-nocheck` + `ctx: any`) so the CLI
+  can pass any object with the needed methods.
+- apps/node/test/cli-mesh-inbound-knowledge-query.test.ts (new, 2 tests):
+  - returns silently when the handler rejects
+  - sends a knowledge.response envelope when the handler accepts
+
+This is a STANDALONE commit — the index.ts patch is not applied
+yet. The next person who picks this up can:
+  1. Apply `outputs/patch-knowledge-query-cli.py` (similar pattern to
+     patch-system-ping.py / patch-share-preview-cli.py)
+  2. Run `npx tsc --noEmit -p apps/node/tsconfig.json` and resolve
+     any closure-dep wiring issues
+  3. Run the full vitest suite to verify
+
+The Proxy pattern means the CLI just provides a context object with
+the 12 required methods (getContactSyndicationMaxSensitivity,
+handleInboundKnowledgeQuery, appendAuditEvent, getProfile,
+createUnsignedEnvelope, createKnowledgeResponsePayload,
+signUnsignedEnvelope, getMesh, deliverOutboundEnvelope, logWarn,
+recordInboundKnowledgeAnswered, getProtocol). All of these are
+already in `handleInboundMeshMessage`'s closure scope.
+
+Verification:
+- npm run typecheck: 0 errors (runtime has // @ts-nocheck)
+- vitest run cli-mesh-inbound-knowledge-query.test.ts: 2/2 pass
+- 4 arms now extracted from handleInboundMeshMessage:
+  1. system.ping (Step 50)
+  2. share.preview (Step 51)
+  3. bond.* (Step 52, blocked on tsc quirk)
+  4. knowledge.query (Step 53, this commit)
+
+Cumulative state:
+- apps/node/src/index.ts: 5551 lines (unchanged in this commit)
+- New runtime files: 2 (this commit, plus Step 52 bond runtime)
+- 5 new tests (3 bond + 2 knowledge.query)
