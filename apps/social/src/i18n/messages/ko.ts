@@ -241,10 +241,6 @@ export const ko = mergeMessages(en, {
     homeOfflineHint:
       "홈 컴퓨터가 오프라인입니다 — 내 에이전트에 연결하려면 홈 노드와 브리지 에이전트(HomeClaw/OpenClaw)를 시작하세요.",
     contactOfflineHint: "연락처가 오프라인입니다 — 전송 시 연결을 시도하며 시간이 더 걸릴 수 있습니다.",
-    upgradeToDirect: "직접 연결로 전환",
-    upgradeToDirectTitle: "릴레이 대신 직접 LAN/TCP 연결 시도",
-    upgradeToDirectBusy: "연결 중…",
-    upgradeToDirectFailed: "직접 연결로 전환하지 못했습니다",
     pathUnverifiedHint: "직접 경로가 최근에 확인되지 않았습니다 — 첫 메시지 전송에 시간이 걸릴 수 있습니다.",
     attachFileTitle: "이미지 또는 파일 보내기",
     attachFileAria: "이미지 또는 파일 보내기",

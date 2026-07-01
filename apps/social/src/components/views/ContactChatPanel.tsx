@@ -216,7 +216,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
     return out;
   }, [messages, pendingOutbound]);
 
-  const { info: peerReachability, checking: reachabilityChecking, refresh: refreshReachability } = usePeerReachability(
+  const { info: peerReachability, checking: reachabilityChecking } = usePeerReachability(
     selectedContact,
     true,
   );
@@ -565,12 +565,6 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
   const messageGroups = useMemo(() => groupMessagesByDate(displayMessages), [displayMessages]);
   const isHomeBridgeThread =
     Boolean(bridgeStatus?.enabled) && selectedContact === bridgeStatus?.agentPeerId;
-  const [upgradeDirectBusy, setUpgradeDirectBusy] = useState(false);
-  const showUpgradeToDirect =
-    isBondedHumanContact &&
-    contactReachable &&
-    peerReachability?.direct === false &&
-    !isHomeBridgeThread;
   const showPathUnverifiedHint =
     isBondedHumanContact &&
     contactReachable &&
@@ -578,18 +572,6 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
     peerReachability?.pathVerified === false &&
     !reachabilityChecking &&
     !isHomeBridgeThread;
-
-  const handleUpgradeToDirect = useCallback(async () => {
-    if (upgradeDirectBusy) return;
-    setUpgradeDirectBusy(true);
-    try {
-      await refreshReachability({ upgradeRelayToDirect: true, silent: false });
-    } catch {
-      showToast(t("contactChat.upgradeToDirectFailed"), "error");
-    } finally {
-      setUpgradeDirectBusy(false);
-    }
-  }, [refreshReachability, showToast, t, upgradeDirectBusy]);
 
   const displayName =
     selectedContact === bridgeStatus?.agentPeerId
@@ -674,18 +656,6 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
                 ? t("contactChat.homeOffline")
                 : peerReachabilityLabel(peerReachability)}
             </span>
-            {showUpgradeToDirect ? (
-              <button
-                type="button"
-                className="contact-upgrade-direct-btn"
-                title={t("contactChat.upgradeToDirectTitle")}
-                aria-label={t("contactChat.upgradeToDirectTitle")}
-                disabled={upgradeDirectBusy || reachabilityChecking}
-                onClick={() => void handleUpgradeToDirect()}
-              >
-                {upgradeDirectBusy ? t("contactChat.upgradeToDirectBusy") : t("contactChat.upgradeToDirect")}
-              </button>
-            ) : null}
             {showPathUnverifiedHint ? (
               <p className="contact-path-unverified-hint">{t("contactChat.pathUnverifiedHint")}</p>
             ) : null}

@@ -243,10 +243,6 @@ export const it = mergeMessages(en, {
     homeOfflineHint:
       "Nodo offline — avvia il nodo e l'agente bridge per raggiungere Ext Agent.",
     contactOfflineHint: "Contatto offline — l'invio tenterà di connettersi e potrebbe richiedere più tempo.",
-    upgradeToDirect: "Passa a diretto",
-    upgradeToDirectTitle: "Prova una connessione LAN/TCP diretta invece del relay",
-    upgradeToDirectBusy: "Connessione…",
-    upgradeToDirectFailed: "Impossibile passare a connessione diretta",
     pathUnverifiedHint:
       "Percorso diretto non verificato di recente — il primo messaggio potrebbe richiedere un momento.",
     attachFileTitle: "Invia immagine o file",

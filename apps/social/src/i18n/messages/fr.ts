@@ -243,10 +243,6 @@ export const fr = mergeMessages(en, {
     homeOfflineHint:
       "Nœud hors ligne — démarrez votre nœud et l'agent pont pour joindre Ext Agent.",
     contactOfflineHint: "Contact hors ligne — l'envoi tentera de se connecter et peut prendre plus de temps.",
-    upgradeToDirect: "Passer en direct",
-    upgradeToDirectTitle: "Essayer une connexion LAN/TCP directe plutôt que le relais",
-    upgradeToDirectBusy: "Connexion…",
-    upgradeToDirectFailed: "Impossible de passer en connexion directe",
     pathUnverifiedHint:
       "Chemin direct non vérifié récemment — le premier message peut prendre un instant.",
     attachFileTitle: "Envoyer une image ou un fichier",

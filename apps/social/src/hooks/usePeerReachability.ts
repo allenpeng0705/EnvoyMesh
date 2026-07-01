@@ -9,6 +9,7 @@ import {
   REACHABILITY_OPEN_CHAT_KEEPALIVE_MS,
   REACHABILITY_OPEN_CHAT_MIN_REDIAL_MS,
   REACHABILITY_OPEN_CHAT_POLL_MS,
+  REACHABILITY_OPEN_CHAT_RELAY_UPGRADE_MS,
   REACHABILITY_OPEN_CHAT_STABLE_PATH_POLLS,
   REACHABILITY_POLL_MS,
 } from "../lib/peer-reachability-hysteresis.js";
@@ -33,6 +34,7 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
   const libp2pConnectedRef = useRef(false);
   const libp2pDirectRef = useRef(false);
   const lastRedialAtRef = useRef(0);
+  const lastRelayUpgradeAtRef = useRef(0);
   const refreshInFlightRef = useRef(false);
   const pendingRefreshRef = useRef(false);
   const peerGenerationRef = useRef(0);
@@ -102,6 +104,7 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
           });
         } else if (opts?.upgradeRelayToDirect) {
           lastRedialAtRef.current = Date.now();
+          lastRelayUpgradeAtRef.current = Date.now();
           next = await ns.warmContactConnection(peerOwnerId, { upgradeRelayToDirect: true });
         } else if (opts?.verifyConnection) {
           next = await ns.warmContactConnection(peerOwnerId, { verifyConnection: true });
@@ -154,6 +157,7 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
     const generation = peerGenerationRef.current;
     hysteresisRef.current = createReachabilityHysteresisState();
     lastRedialAtRef.current = 0;
+    lastRelayUpgradeAtRef.current = 0;
     libp2pConnectedRef.current = false;
     libp2pDirectRef.current = false;
 
@@ -169,6 +173,12 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
           if (generation !== peerGenerationRef.current) return;
           void runRefresh(generation, { warm: true, silent: true });
         }, OPEN_CHAT_DEFERRED_WARM_MS);
+      } else if (!libp2pDirectRef.current) {
+        // Prefer direct LAN/TCP when available instead of staying on relay.
+        deferredWarmTimer = setTimeout(() => {
+          if (generation !== peerGenerationRef.current) return;
+          void runRefresh(generation, { upgradeRelayToDirect: true, silent: true });
+        }, OPEN_CHAT_DEFERRED_WARM_MS);
       }
     });
 
@@ -178,7 +188,16 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
     if (enabled) {
       keepAliveId = setInterval(() => {
         if (!libp2pConnectedRef.current) return;
-        void runRefresh(generation, { silent: true, keepAlive: true });
+        const now = Date.now();
+        const dueRelayUpgrade =
+          !libp2pDirectRef.current &&
+          (lastRelayUpgradeAtRef.current === 0 ||
+            now - lastRelayUpgradeAtRef.current >= REACHABILITY_OPEN_CHAT_RELAY_UPGRADE_MS);
+        if (dueRelayUpgrade) {
+          void runRefresh(generation, { silent: true, upgradeRelayToDirect: true });
+        } else {
+          void runRefresh(generation, { silent: true, keepAlive: true });
+        }
       }, REACHABILITY_OPEN_CHAT_KEEPALIVE_MS);
 
       offlinePollId = setInterval(() => {

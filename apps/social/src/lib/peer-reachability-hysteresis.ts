@@ -6,6 +6,8 @@ export type ReachabilityLabel = "offline" | "direct" | "relay";
 export const REACHABILITY_OPEN_CHAT_POLL_MS = 10_000;
 /** Probe interval while connected with an open chat (libp2p keepAlive — ping / stream reuse). */
 export const REACHABILITY_OPEN_CHAT_KEEPALIVE_MS = 30_000;
+/** Minimum gap between automatic relay → direct upgrade attempts while chat is open. */
+export const REACHABILITY_OPEN_CHAT_RELAY_UPGRADE_MS = 60_000;
 /** Background read interval when chat is not focused (unused by open-chat hook today). */
 export const REACHABILITY_POLL_MS = 60_000;
 /** Keep showing Online through brief libp2p idle drops (quiet chats, tab switches). */
