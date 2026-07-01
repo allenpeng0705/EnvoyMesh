@@ -93,8 +93,17 @@ export async function handleBroadcastViaRuntime(
   }
 
   // 3. Response path.
+  // NOTE: handleInboundBroadcastResponse REQUIRES taskStore (it
+  // appends an audit event). The original code passed it via the
+  // closure; we read it from ctx. If taskStore is undefined (e.g.
+  // very early in node startup before startNode), we skip the
+  // response handler entirely — the original would have crashed
+  // here too, so behavior is equivalent.
+  const responseTaskStore = ctx.getTaskStore?.();
+  if (!responseTaskStore) return;
   const responseResult = await ctx.handleInboundBroadcastResponse({
     envelope,
+    taskStore: responseTaskStore,
   });
   if (!responseResult.ok) {
     ctx.logWarn(`[rejected broadcast.response] ${responseResult.reason}`);

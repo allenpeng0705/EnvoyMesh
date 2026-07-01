@@ -33,6 +33,7 @@ function makeMockCtx(
       device: { publicKeyPem: "PK", privateKeyPem: "PRIV" },
     })),
     getMesh: vi.fn(() => ({})),
+    getTaskStore: vi.fn(() => ({ appendAuditEvent: vi.fn(async () => {}) })),
     deliverOutboundEnvelope: vi.fn(async () => {}),
     createUnsignedEnvelope: vi.fn(() => ({})),
     signUnsignedEnvelope: vi.fn(() => ({

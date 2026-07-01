@@ -1,0 +1,48 @@
+refactor: fix broadcast.response taskStore regression (Step 85)
+
+The Step 71 broadcast.* patch silently dropped the `taskStore`
+parameter from the call to `handleInboundBroadcastResponse`. The
+inner function REQUIRES `taskStore` to append an audit event:
+
+    await taskStore.appendAuditEvent(createAuditEvent({ ... }));
+
+Without it, the call throws inside the try block, the catch returns
+`{ok: false, reason: "invalid broadcast.response payload: ..."}`,
+and the runtime logs a warn about an "invalid payload" when in
+reality the payload was fine — we just never recorded the audit.
+
+In production this means: every successful broadcast.response would
+emit a spurious warn to the operator + a misleading audit event
+("invalid broadcast.response payload: cannot read properties of
+undefined"). The original index.ts code passed `taskStore` explicitly
+and never had this issue.
+
+This was the same class of bug that bit knowledge.query in Step 84
+(missing context method, not missing argument). My audit script
+catches the former but not the latter.
+
+Fix:
+  - broadcast.ts: read taskStore from ctx.getTaskStore?.(); if
+    undefined, skip the response path (matches the original's
+    crash-on-undefined behavior).
+  - broadcast.test.ts: add `getTaskStore` to the mock so the response
+    path actually runs.
+
+KNOWN RISK — other runtimes may have similar argument-passing bugs
+that my audit does NOT catch. Specifically:
+  - relay.peers (Step 69): inner handler signatures need checking
+  - discovery (Step 73): inner handler signatures need checking
+  - share.request (Step 55): inner handler signatures need checking
+  - share.accept (Step 57): inner handler signatures need checking
+  - sync.state (Step 59): inner handler signatures need checking
+  - system.signal (Step 74): inner helper signatures need checking
+  - device.pair.* (Step 76/78): inner helper signatures need checking
+
+These need to be audited before this refactor is safe to ship to
+production. The audit script `outputs/audit-runtimes2.py` would need
+to be extended to verify each `ctx.helper({...})` call's arguments
+match the helper's parameter list. That audit is left as a follow-up.
+
+Verified:
+- npm run typecheck: 0 errors
+- npx vitest run cli-mesh-inbound-broadcast.test.ts: 3/3 pass
