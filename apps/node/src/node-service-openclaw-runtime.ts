@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import type { ChildProcess } from "node:child_process";
 import type {
   BondRecord,
+  BridgeStatus,
   ChatMessage,
   NodeConfig,
   NodeProfile,
@@ -18,8 +19,13 @@ import type {
   LocalChatLogStore,
   LocalTrustStore,
 } from "@envoymesh/local-store";
+import type { EnvoyMesh } from "@envoymesh/network";
 import type { OpenClawRuntime } from "../../../packages/openclaw-runtime/src/index.js";
 import { resolveBundledSkillsDir } from "./bundled-paths.js";
+import {
+  loadBridgeConfigSkillApiKeys,
+  loadBridgeConfigWebSearchEnabled,
+} from "./node-service-clawhub.js";
 import { resolveAssistantAgentUrl } from "./bridge/config.js";
 import { buildEnvoyMeshRetrievedContext } from "./openclaw-turn-context.js";
 import {
@@ -82,21 +88,155 @@ export function createOpenClawRuntimeState(): OpenClawRuntimeState {
   };
 }
 
-export interface OpenClawRuntimeDeps {
+export interface EnvoyAiChatContext {
+  getProfile(): NodeProfile | undefined;
+  getReachableMesh(): EnvoyMesh | undefined;
+  getChatLogStore(): LocalChatLogStore | null;
+  getHumanProfileStore(): HumanProfileStore;
+  getBridgeStatus(): BridgeStatus | undefined;
+  persistChatMessage(threadKey: string, msg: ChatMessage): void;
+  emitChatMessage(msg: ChatMessage): void;
+}
+
+export function recordEnvoyAiChatMessageViaRuntime(ctx: EnvoyAiChatContext, msg: ChatMessage): void {
+  ctx.persistChatMessage(ENVOY_AI_THREAD_KEY, msg);
+  ctx.emitChatMessage(msg);
+}
+
+export async function loadEnvoyAiChatHistoryViaRuntime(
+  ctx: EnvoyAiChatContext,
+  limit?: number,
+): Promise<ChatMessage[]> {
+  const chatLogStore = ctx.getChatLogStore();
+  if (!chatLogStore) return [];
+  const primary = await chatLogStore.listThread(ENVOY_AI_THREAD_KEY, limit);
+  const legacyPeerId = ctx.getBridgeStatus()?.agentPeerId?.trim();
+  if (!legacyPeerId || legacyPeerId === ENVOY_AI_THREAD_KEY) {
+    return primary as ChatMessage[];
+  }
+  const legacy = await chatLogStore.listThread(legacyPeerId, limit);
+  if (legacy.length === 0) {
+    return primary as ChatMessage[];
+  }
+  const byId = new Map<string, ChatMessage>();
+  for (const row of legacy) {
+    const meta = (row as ChatMessage).metadata;
+    if (meta?.deliveryChannel === "agent") continue;
+    const senderOwnerId = (row as ChatMessage).sender?.ownerId?.trim();
+    if (senderOwnerId && senderOwnerId !== legacyPeerId) continue;
+    byId.set(row.messageId, row as ChatMessage);
+  }
+  for (const row of primary) {
+    byId.set(row.messageId, row as ChatMessage);
+  }
+  return [...byId.values()].sort(
+    (a, b) =>
+      new Date(a.metadata.timestamp).getTime() - new Date(b.metadata.timestamp).getTime(),
+  );
+}
+
+export async function persistEnvoyAiChatExchangeViaRuntime(
+  ctx: EnvoyAiChatContext,
+  userText: string,
+  turn: OwnerAgentTurnResult,
+  humanMessageId?: string,
+): Promise<void> {
+  const profile = ctx.getProfile();
+  const mesh = ctx.getReachableMesh();
+  if (!profile || !mesh || !ctx.getChatLogStore()) {
+    return;
+  }
+
+  const trimmed = userText.trim();
+  const answer = turn.answer.trim();
+  if (!trimmed && !answer) {
+    return;
+  }
+
+  let selfHuman: Awaited<ReturnType<HumanProfileStore["loadHumanProfile"]>> | null = null;
+  try {
+    selfHuman = await ctx.getHumanProfileStore().loadHumanProfile();
+  } catch {
+    /* ignore */
+  }
+
+  const ownerId = profile.owner.ownerId;
+  const displayName = selfHuman?.displayName ?? ownerId;
+  const humanTimestamp = new Date().toISOString();
+  const aiTimestamp = new Date(Date.now() + 1).toISOString();
+  const bridgeAgentPeerId = ctx.getBridgeStatus()?.agentPeerId?.trim() || ENVOY_AI_THREAD_KEY;
+  const bridgeAgentId = ctx.getBridgeStatus()?.agentName?.trim();
+  const assistantTurn: NonNullable<ChatMessage["metadata"]["assistantTurn"]> = {
+    domain: turn.domain,
+    intent: turn.intent,
+    jobId: turn.jobId,
+    correlationId: turn.correlationId,
+    pendingApproval: turn.pendingApproval,
+    routeId: turn.routeId,
+    modelUsed: turn.modelUsed,
+    format: turn.format,
+    ...(turn.blocks?.length ? { blocks: turn.blocks } : {}),
+  };
+
+  if (trimmed && !humanMessageId) {
+    recordEnvoyAiChatMessageViaRuntime(ctx, {
+      messageId: randomUUID(),
+      sender: {
+        nodeId: mesh.peerId,
+        ownerId,
+        displayName,
+        actorRole: "human",
+      },
+      recipient: {
+        nodeId: bridgeAgentPeerId,
+        ownerId: ENVOY_AI_THREAD_KEY,
+        displayName: bridgeAgentId ?? "EnvoyAI",
+      },
+      content: { text: trimmed },
+      metadata: {
+        timestamp: humanTimestamp,
+        deliveryReceipt: "delivered",
+        deliveryChannel: "ai",
+      },
+      signature: "",
+    });
+  }
+
+  if (answer) {
+    recordEnvoyAiChatMessageViaRuntime(ctx, {
+      messageId: randomUUID(),
+      sender: {
+        nodeId: bridgeAgentPeerId,
+        ownerId: ENVOY_AI_THREAD_KEY,
+        displayName: "EnvoyAI",
+        actorRole: "agent",
+        agentVerified: true,
+      },
+      recipient: {
+        nodeId: mesh.peerId,
+        ownerId,
+        displayName,
+      },
+      content: { text: answer },
+      metadata: {
+        timestamp: aiTimestamp,
+        deliveryReceipt: "delivered",
+        deliveryChannel: "ai",
+        assistantTurn,
+      },
+      signature: "",
+    });
+  }
+}
+
+export interface OpenClawRuntimeDeps extends EnvoyAiChatContext {
   getBonds(): Promise<BondRecord[]>;
   getNodeConfig(): Promise<NodeConfig>;
   getRagService(): Promise<RagService | null>;
-  recordEnvoyAiChatMessage(msg: ChatMessage): void;
-  persistEnvoyAiChatExchange(
-    userText: string,
-    turn: OwnerAgentTurnResult,
-    humanMessageId?: string,
-  ): Promise<void>;
   loadBridgeConfigWebSearchEnabled(): Promise<boolean | undefined>;
   loadBridgeConfigSkillApiKeys(): Promise<Record<string, string> | undefined>;
   getProfileDir(): string;
   getProfileOwnerId(): string | undefined;
-  getProfile(): NodeProfile | null | undefined;
   getMeshPeerId(): string;
   getVaultDir(): string;
   humanProfileStore: HumanProfileStore;
@@ -105,6 +245,33 @@ export interface OpenClawRuntimeDeps {
   chatLogStore: LocalChatLogStore | null;
   trustStore: LocalTrustStore;
   loadConfig(): Promise<PersistedNodeConfig | undefined>;
+}
+
+export function buildOpenClawRuntimeDeps(host: any): OpenClawRuntimeDeps {
+  return {
+    getBonds: () => host.getBonds(),
+    getNodeConfig: () => host.getNodeConfig(),
+    getRagService: () => host._getRagService(),
+    getReachableMesh: () => host._reachableMesh(),
+    getChatLogStore: () => host._chatLogStore,
+    getHumanProfileStore: () => host._humanProfileStore,
+    getBridgeStatus: () => host._bridgeStatus ?? undefined,
+    persistChatMessage: (threadKey, msg) => host._persistChatMessage(threadKey, msg),
+    emitChatMessage: (msg) => host.emit("chat:message", msg),
+    loadBridgeConfigWebSearchEnabled: () => loadBridgeConfigWebSearchEnabled(),
+    loadBridgeConfigSkillApiKeys: () => loadBridgeConfigSkillApiKeys(),
+    getProfileDir: () => host._profileDir,
+    getProfileOwnerId: () => host._profile?.owner?.ownerId,
+    getProfile: () => host._profile,
+    getMeshPeerId: () => host._mesh?.peerId ?? "",
+    getVaultDir: () => host._vaultDir,
+    humanProfileStore: host._humanProfileStore,
+    capabilityManifestStore: host._capabilityManifestStore,
+    agentIdentityStore: host._agentIdentityStore,
+    chatLogStore: host._chatLogStore,
+    trustStore: host._trustStore,
+    loadConfig: () => host._configStore.load(),
+  };
 }
 
 export function waitForOpenClawReply(
@@ -865,7 +1032,7 @@ export async function sendToOpenClawViaRuntime(
     },
     signature: "",
   };
-  deps.recordEnvoyAiChatMessage(outboundMsg);
+  recordEnvoyAiChatMessageViaRuntime(deps, outboundMsg);
 
   let policyPrompt: string | undefined;
   let retrievedContext: string | undefined;
@@ -918,7 +1085,7 @@ export async function sendToOpenClawViaRuntime(
     })(),
   ]);
 
-  await deps.persistEnvoyAiChatExchange(text, {
+  await persistEnvoyAiChatExchangeViaRuntime(deps, text, {
     answer,
     domain: "knowledge",
     intent: "knowledge",

@@ -33,6 +33,45 @@ export interface NodeWanRuntimeDeps {
   getTaskStore(): LocalTaskStore | null;
 }
 
+export function buildWanRuntimeDeps(host: any): NodeWanRuntimeDeps {
+  return {
+    recordOwnerActivity: () => host.recordOwnerActivity(),
+    getNodeConfig: () => host.getNodeConfig(),
+    loadPersistedConfig: () => host._configStore.load(),
+    updateNodeConfig: (patch) => host.updateNodeConfig(patch),
+    reachableMesh: () => host._reachableMesh(),
+    getMesh: () => host._mesh,
+    getExternalMesh: () => host._externalMesh,
+    getNodeStatus: () => host._nodeStatus,
+    getDiscoverySeedStore: () => host._discoverySeedStore ?? null,
+    getTaskStore: () => host._taskStore ?? null,
+  };
+}
+
+export async function buildCompanyInviteInviteContext(host: any): Promise<{
+  ownerId: string;
+  ownerPublicKey?: string;
+  agentPeerId?: string;
+  agentName?: string;
+  wsUrl: string;
+  lanWsUrl?: string;
+  relayWsUrl?: string;
+  homeNodePeerId?: string;
+}> {
+  const profile = host._profile;
+  const payload = await host.getPairingPayload();
+  return {
+    ownerId: profile?.owner?.ownerId ?? payload.ownerId ?? "",
+    ownerPublicKey: profile?.owner?.publicKeyPem ?? payload.ownerPublicKey,
+    agentPeerId: payload.agentPeerId,
+    agentName: payload.agentName,
+    wsUrl: payload.wsUrl,
+    lanWsUrl: payload.lanWsUrl,
+    relayWsUrl: payload.relayWsUrl ?? host._relayPublicWsUrl,
+    homeNodePeerId: payload.homeNodePeerId,
+  };
+}
+
 function filterDialableMultiaddrs(addrs: readonly string[]): string[] {
   const out: string[] = [];
   for (const addr of addrs) {

@@ -110,6 +110,28 @@ export interface ChainOrchestrationContext {
   emit<K extends keyof NodeServiceEvents>(event: K, data: NodeServiceEvents[K]): void;
 }
 
+export function buildChainOrchestrationContext(host: any): ChainOrchestrationContext {
+  return {
+    getChainStore: () => host._chainStore,
+    getChainSideState: () => host._chainState,
+    getTaskStore: () => host._taskStore,
+    getProfile: () => host._profile,
+    getApprovalQueue: () => host._approvalQueue,
+    getCapabilityIndex: () => host._capabilityIndex,
+    getCapabilityIndexReady: () => host._capabilityIndexReady,
+    getPeerDirectoryStore: () => host._peerDirectoryStore,
+    getReachableMesh: () => host._reachableMesh(),
+    ensureAgentIdentity: () => host._ensureAgentIdentity(),
+    listAgentCards: () => host.listAgentCards(),
+    getLocalManifestCapabilities: () => host._localManifestCapabilities(),
+    getToolExecutionContext: () => host.getToolExecutionContext(),
+    getBonds: () => host.getBonds(),
+    getNodeConfig: () => host.getNodeConfig(),
+    updateNodeConfig: (cfg) => host.updateNodeConfig(cfg),
+    emit: (event, data) => host.emit(event, data),
+  };
+}
+
 /* ---------- ChainContext factory ---------- */
 
 export function buildChainContext(deps: ChainOrchestrationContext): ChainContext {

@@ -125,6 +125,30 @@ export type CallContext = CallContextCore & Partial<CallContextTransportDeps>;
 
 export type FullCallContext = CallContextCore & CallContextTransportDeps;
 
+export function buildFullCallContext(host: any): FullCallContext {
+  return {
+    callManager: host.callManager,
+    getProfile: () => host._profile,
+    sendCallResponseEnvelope: (peerOwnerId, unsigned, intent) =>
+      sendCallResponseEnvelopeViaRuntime(host._callContext(), peerOwnerId, unsigned, intent),
+    loadConfig: () => host._configStore.load(),
+    getMesh: () => host._mesh,
+    requireMesh: () => host._requireMesh(),
+    resolvePeerTransportForOwner: (targetOwnerId) => host._resolvePeerTransportForOwner(targetOwnerId),
+    warmContactConnection: (peerOwnerId, options) => host.warmContactConnection(peerOwnerId, options),
+    dialHintsForChat: (recipientPeerId, peerListenAddrs) =>
+      host._dialHintsForChat(recipientPeerId, peerListenAddrs),
+    deliverCallEnvelope: (transportPeerId, envelope, dialHints, listenAddrs, preferCircuitHints) =>
+      host._deliverCallEnvelope(transportPeerId, envelope, dialHints, listenAddrs, preferCircuitHints),
+    deliverCallEnvelopeToTransportPeer: (transportPeerId, envelope) =>
+      host.deliverCallEnvelopeToTransportPeer(transportPeerId, envelope),
+    trustStore: host._trustStore,
+    peerDirectoryStore: host._peerDirectoryStore,
+    transportCache: host._lastLibp2pTransportByOwner,
+    taskStore: host._taskStore,
+  };
+}
+
 function hasCallTransportDeps(ctx: CallContext): ctx is FullCallContext {
   return (
     typeof ctx.getMesh === "function" &&

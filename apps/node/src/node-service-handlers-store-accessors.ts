@@ -13,7 +13,20 @@
  */
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-export function listAgentActivityViaRuntime(deps: any, params: any): any[] {
+export interface StoreAccessorDeps {
+  getAgentActivityStore(): any;
+  getCommerceReceiptStore(): any;
+  getTaskStore(): any;
+  getAgentCardStore(): any;
+  getCircleStore(): any;
+  summarizeAgentCard(row: any): any;
+}
+
+export function buildStoreAccessorDeps(input: StoreAccessorDeps): StoreAccessorDeps {
+  return input;
+}
+
+export function listAgentActivityViaRuntime(deps: StoreAccessorDeps, params: any): any[] {
   const store = deps.getAgentActivityStore();
   if (!store) return [];
   return store.list(params);

@@ -123,6 +123,50 @@ export interface IdentityContext {
   getNearbyProfileProbeInflight(): Set<string>;
 }
 
+export function buildIdentityContext(host: any): IdentityContext {
+  return {
+    getProfile: () => host._profile,
+    requireProfile: () => host._requireProfile(),
+    assertOnline: () => host._assertOnline(),
+    getMesh: () => host._mesh,
+    getExternalMesh: () => host._externalMesh,
+    reachableMesh: () => host._reachableMesh(),
+    requireMesh: () => host._requireMesh(),
+    getRelayPublicWsUrl: () => host._relayPublicWsUrl,
+    getHumanProfileStore: () => host._humanProfileStore,
+    getPeerReputationStore: () => host._peerReputationStore ?? undefined,
+    getReputationAnchorStore: () => host._reputationAnchorStore ?? undefined,
+    getPeerProfileCacheStore: () => host._peerProfileCacheStore ?? undefined,
+    getContactOwnerKeyStore: () => host._contactOwnerKeyStore ?? undefined,
+    getConfigStore: () => host._configStore,
+    getCapabilityManifestStore: () => host._capabilityManifestStore ?? undefined,
+    getVaultDir: () => host._vaultDir,
+    getPeerDirectoryStore: () => host._peerDirectoryStore,
+    getBonds: () => host.getBonds(),
+    requestPeerProfile: (ownerId) => host.requestPeerProfile(ownerId),
+    refreshCapabilityIndex: () => host.refreshCapabilityIndex(),
+    emit: (event, payload) => host.emit(event, payload),
+    dialHintsForChat: (peerId, listenAddrs) => host._dialHintsForChat(peerId, listenAddrs),
+    rememberBondedPeerTransportFromInbound: (envelope, context) =>
+      host._rememberBondedPeerTransportFromInbound(envelope, context),
+    resolveLibp2pPeerForBondOwner: (ownerId) =>
+      host._resolveLibp2pPeerForBondOwner(ownerId) as Promise<
+        { transportPeerId: string; listenAddrs: string[] } | undefined
+      >,
+    getAgentIdentityStore: () => host._agentIdentityStore ?? undefined,
+    getAutoAdvertisedDiscoveryTopics: () => host._autoAdvertisedDiscoveryTopics,
+    setAutoAdvertisedDiscoveryTopics: (topics) => {
+      host._autoAdvertisedDiscoveryTopics = topics;
+    },
+    getAdvertiseInterestsTimer: () => host._advertiseInterestsTimer,
+    setAdvertiseInterestsTimer: (timer) => {
+      host._advertiseInterestsTimer = timer;
+    },
+    getNearbyProfileProbeLastAt: () => host._nearbyProfileProbeLastAt,
+    getNearbyProfileProbeInflight: () => host._nearbyProfileProbeInflight,
+  };
+}
+
 export function getProfileViaRuntime(ctx: IdentityContext): NodeProfile {
   return ctx.requireProfile();
 }

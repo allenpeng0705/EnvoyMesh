@@ -44,7 +44,7 @@ import {
   mergeDialablePeerListenAddrs,
   shouldPreferCircuitDialHints,
 } from "./outbound-dial-hints.js";
-import { dialableInboundRemoteAddrs } from "./inbound-dial-hint-learn.js";
+import { dialableInboundRemoteAddrs, mergeInboundPeerDialHintsIfDue } from "./inbound-dial-hint-learn.js";
 import { withOutboundSendLock } from "./outbound-send-lock.js";
 import {
   normalizeTransportPeerId,
@@ -102,6 +102,7 @@ export interface OutboundMessagingContext {
   setTransportCache(ownerId: string, entry: TransportCacheEntry): void;
   deleteTransportCache(ownerId: string): void;
   getPendingHelloRequesterPeerIds(): Iterable<{ requesterOwnerId: string; remotePeerId: string }>;
+  getInboundListenAddrMergeByPeer(): Map<string, number>;
   learnInboundDialHints(transportPeerId: string, remoteAddr?: string): Promise<unknown>;
   assertOnline(): void;
   recordOwnerActivity(): void;
@@ -162,6 +163,24 @@ export async function dialHintsForChatViaRuntime(
     discoverySeedStore: ctx.getDiscoverySeedStore(),
     config,
     profileDir: ctx.getProfileDir(),
+  });
+}
+
+export async function learnInboundDialHintsViaRuntime(
+  ctx: Pick<
+    OutboundMessagingContext,
+    "getReachableMesh" | "peerDirectoryStore" | "getInboundListenAddrMergeByPeer"
+  >,
+  remotePeerId: string,
+  remoteAddr?: string,
+): Promise<string[]> {
+  const mesh = ctx.getReachableMesh();
+  return mergeInboundPeerDialHintsIfDue({
+    remotePeerId,
+    remoteAddr,
+    lastMergeByPeer: ctx.getInboundListenAddrMergeByPeer(),
+    peerDirectory: ctx.peerDirectoryStore,
+    mesh: mesh ?? undefined,
   });
 }
 

@@ -1,0 +1,46 @@
+name: ci-node-refactor
+
+on:
+  pull_request:
+    paths:
+      - "apps/node/**"
+      - "packages/**"
+      - "package.json"
+      - "package-lock.json"
+      - ".github/workflows/ci-node-refactor.yml"
+  workflow_dispatch:
+
+jobs:
+  node-refactor-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Build node package
+        run: npm run node:build
+
+      - name: Refactoring regression suite
+        run: |
+          npx vitest run \
+            apps/node/test/node-service-outbound-messaging.test.ts \
+            apps/node/test/node-service-openclaw-runtime.test.ts \
+            apps/node/test/node-service-reachability.test.ts \
+            apps/node/test/post-merge-chat-regression.test.ts \
+            apps/node/test/peer-transport-resolve.test.ts \
+            apps/node/test/openclaw-lifecycle.test.ts \
+            apps/node/test/chat-outbound-deliver.test.ts \
+            apps/node/test/voice-message-chat.test.ts \
+            apps/node/test/node-service-send-agent-chat.test.ts \
+            apps/node/test/node-service-clawhub.test.ts \
+            apps/node/test/node-service-handlers-share-preview.test.ts \
+            apps/node/test/node-service-wire-mesh-events.test.ts \
+            apps/node/test/chat-attachment-auto-accept.test.ts

@@ -19,10 +19,28 @@ import { startCapabilityProviderJob, advanceCapabilityProviderJob, runCapability
 import { transitionCapabilityProviderJob } from "@envoymesh/api";
 import { randomUUID } from "node:crypto";
 
+export interface DocAcqCapProvDeps {
+  getNodeConfig(): Promise<any>;
+  hasDocumentAcquisitionJobStore(): boolean;
+  requireDocumentAcquisitionJobStore(): any;
+  getLocalManifestCapabilities(): Promise<string[]>;
+  getDocumentAcquisitionWorkerDeps(config: any): Promise<any>;
+  hasCapabilityProviderJobStore(): boolean;
+  requireCapabilityProviderJobStore(): any;
+  getCapabilityProviderWorkerDeps(config: any): Promise<any>;
+  hasAgentActivityStore(): boolean;
+  getAgentActivityStore(): any;
+  publishAgentActivity(record: any): Promise<void> | void;
+}
+
+export function buildDocAcqCapProvDeps(input: DocAcqCapProvDeps): DocAcqCapProvDeps {
+  return input;
+}
+
 /* ---------- Document Acquisition ---------- */
 
 export async function startDocumentAcquisitionJobViaPublicRuntime(
-  deps: any,
+  deps: DocAcqCapProvDeps,
   params: { query: string; fileTitleHint?: string; pathHint?: string },
 ): Promise<{ jobId: string; correlationId: string }> {
   const config = await deps.getNodeConfig();
@@ -74,7 +92,7 @@ export async function startDocumentAcquisitionJobViaPublicRuntime(
 }
 
 export function getDocumentAcquisitionJobViaPublicRuntime(
-  deps: any,
+  deps: DocAcqCapProvDeps,
   jobId: string,
 ): any {
   if (!deps.hasDocumentAcquisitionJobStore()) return undefined;
@@ -82,7 +100,7 @@ export function getDocumentAcquisitionJobViaPublicRuntime(
 }
 
 export function listDocumentAcquisitionJobsViaPublicRuntime(
-  deps: any,
+  deps: DocAcqCapProvDeps,
   activeOnly?: boolean,
 ): any[] {
   if (!deps.hasDocumentAcquisitionJobStore()) return [];
@@ -90,7 +108,7 @@ export function listDocumentAcquisitionJobsViaPublicRuntime(
 }
 
 export async function cancelDocumentAcquisitionJobViaPublicRuntime(
-  deps: any,
+  deps: DocAcqCapProvDeps,
   jobId: string,
 ): Promise<void> {
   if (!deps.hasDocumentAcquisitionJobStore()) return;
@@ -101,7 +119,7 @@ export async function cancelDocumentAcquisitionJobViaPublicRuntime(
 }
 
 export async function runDocumentAcquisitionWorkerViaPublicRuntime(
-  deps: any,
+  deps: DocAcqCapProvDeps,
 ): Promise<number> {
   const config = await deps.getNodeConfig();
   return runDocumentAcquisitionWorkerTick(
@@ -112,7 +130,7 @@ export async function runDocumentAcquisitionWorkerViaPublicRuntime(
 /* ---------- Capability Provider ---------- */
 
 export async function startCapabilityProviderJobViaPublicRuntime(
-  deps: any,
+  deps: DocAcqCapProvDeps,
   params: { goal: string; capabilityIds?: string[]; targetOwnerId?: string },
 ): Promise<{ jobId: string; correlationId: string }> {
   const config = await deps.getNodeConfig();
@@ -157,7 +175,7 @@ export async function startCapabilityProviderJobViaPublicRuntime(
 }
 
 export function getCapabilityProviderJobViaPublicRuntime(
-  deps: any,
+  deps: DocAcqCapProvDeps,
   jobId: string,
 ): any {
   if (!deps.hasCapabilityProviderJobStore()) return undefined;
@@ -165,7 +183,7 @@ export function getCapabilityProviderJobViaPublicRuntime(
 }
 
 export function listCapabilityProviderJobsViaPublicRuntime(
-  deps: any,
+  deps: DocAcqCapProvDeps,
   activeOnly?: boolean,
 ): any[] {
   if (!deps.hasCapabilityProviderJobStore()) return [];
@@ -173,7 +191,7 @@ export function listCapabilityProviderJobsViaPublicRuntime(
 }
 
 export async function cancelCapabilityProviderJobViaPublicRuntime(
-  deps: any,
+  deps: DocAcqCapProvDeps,
   jobId: string,
 ): Promise<void> {
   if (!deps.hasCapabilityProviderJobStore()) return;
@@ -184,7 +202,7 @@ export async function cancelCapabilityProviderJobViaPublicRuntime(
 }
 
 export async function runCapabilityProviderWorkerViaPublicRuntime(
-  deps: any,
+  deps: DocAcqCapProvDeps,
 ): Promise<number> {
   const config = await deps.getNodeConfig();
   return runCapabilityProviderWorkerTick(

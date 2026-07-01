@@ -14,17 +14,31 @@ import { createWanJoinInviteViaRuntime, applyWanJoinInviteViaRuntime } from "./n
 import { createCompanyInviteViaRuntime, listCompanyInvitesViaRuntime, revokeCompanyInviteViaRuntime } from "./node-service-company-invite.js";
 import { createFleetManifestViaRuntime, listFleetManifestsViaRuntime, revokeFleetManifestViaRuntime, importFleetManifestViaRuntime } from "./node-service-fleet-manifest.js";
 
-export type FleetManifestDeps = any;
+export type FleetPublicDeps = {
+  hasTaskStore(): boolean;
+  requireTaskStore(): any;
+  getWanRuntimeDeps(): any;
+  getCompanyInviteInviteContext(): Promise<any>;
+  getTrustStore(): any;
+  getPeerDirectoryStore(): any;
+  getManifestStore(): any;
+  getProfile(): any;
+  appendAudit(event: any): any;
+};
 
-export function createWanJoinInviteViaPublicRuntime(deps: any, params: any): any {
+export function buildFleetPublicDeps(input: FleetPublicDeps): FleetPublicDeps {
+  return input;
+}
+
+export function createWanJoinInviteViaPublicRuntime(deps: FleetPublicDeps, params: any): any {
   return createWanJoinInviteViaRuntime(deps.getWanRuntimeDeps() as never, params) as never;
 }
 
-export function applyWanJoinInviteViaPublicRuntime(deps: any, token: any): any {
+export function applyWanJoinInviteViaPublicRuntime(deps: FleetPublicDeps, token: any): any {
   return applyWanJoinInviteViaRuntime(deps.getWanRuntimeDeps() as never, token) as never;
 }
 
-export async function createCompanyInviteViaPublicRuntime(deps: any, params: any): Promise<any> {
+export async function createCompanyInviteViaPublicRuntime(deps: FleetPublicDeps, params: any): Promise<any> {
   if (!deps.hasTaskStore()) {
     throw new Error("Local task store is not initialised; cannot create company invite");
   }
@@ -35,19 +49,19 @@ export async function createCompanyInviteViaPublicRuntime(deps: any, params: any
   );
 }
 
-export function listCompanyInvitesViaPublicRuntime(deps: any): Promise<any> {
+export function listCompanyInvitesViaPublicRuntime(deps: FleetPublicDeps): Promise<any> {
   if (!deps.hasTaskStore()) return Promise.resolve({ invites: [] });
   return listCompanyInvitesViaRuntime(deps.requireTaskStore());
 }
 
-export async function revokeCompanyInviteViaPublicRuntime(deps: any, inviteId: any): Promise<any> {
+export async function revokeCompanyInviteViaPublicRuntime(deps: FleetPublicDeps, inviteId: any): Promise<any> {
   if (!deps.hasTaskStore()) {
     throw new Error("Local task store is not initialised; cannot revoke company invite");
   }
   return revokeCompanyInviteViaRuntime(deps.requireTaskStore() as never, inviteId);
 }
 
-export function importFleetManifestViaPublicRuntime(deps: any, params: any): Promise<any> {
+export function importFleetManifestViaPublicRuntime(deps: FleetPublicDeps, params: any): Promise<any> {
   if (!deps.hasTaskStore()) {
     return Promise.resolve({
       ok: false,
@@ -67,7 +81,7 @@ export function importFleetManifestViaPublicRuntime(deps: any, params: any): Pro
   );
 }
 
-export async function listFleetManifestsViaPublicRuntime(deps: any): Promise<any> {
+export async function listFleetManifestsViaPublicRuntime(deps: FleetPublicDeps): Promise<any> {
   if (!deps.hasTaskStore()) return Promise.resolve({ manifests: [] });
   const manifests = await listFleetManifestsViaRuntime({
     trustStore: deps.getTrustStore(),
@@ -78,7 +92,7 @@ export async function listFleetManifestsViaPublicRuntime(deps: any): Promise<any
   return { manifests };
 }
 
-export async function revokeFleetManifestViaPublicRuntime(deps: any, manifestId: any): Promise<any> {
+export async function revokeFleetManifestViaPublicRuntime(deps: FleetPublicDeps, manifestId: any): Promise<any> {
   if (!deps.hasTaskStore()) {
     throw new Error("Local task store is not initialised; cannot revoke fleet manifest");
   }
@@ -98,7 +112,7 @@ export async function revokeFleetManifestViaPublicRuntime(deps: any, manifestId:
   return result;
 }
 
-export async function createFleetManifestViaPublicRuntime(deps: any, input: any): Promise<any> {
+export async function createFleetManifestViaPublicRuntime(deps: FleetPublicDeps, input: any): Promise<any> {
   const result = await createFleetManifestViaRuntime({ profile: deps.getProfile() }, input);
   if (!("manifest" in result)) {
     throw new Error(

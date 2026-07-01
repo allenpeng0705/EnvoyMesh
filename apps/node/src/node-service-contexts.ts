@@ -1,5 +1,6 @@
 import type { BondContext } from "./node-service-bond.js";
 import type { OutboundMessagingContext } from "./node-service-outbound-messaging.js";
+import { learnInboundDialHintsViaRuntime } from "./node-service-outbound-messaging.js";
 import type { AgentPassesContext } from "./node-service-agent-passes.js";
 import type { ContinuityContext } from "./node-service-continuity.js";
 import type {
@@ -91,7 +92,7 @@ export interface OutboundMessagingContextDeps {
   setTransportCache: OutboundMessagingContext["setTransportCache"];
   deleteTransportCache: OutboundMessagingContext["deleteTransportCache"];
   getPendingHelloRequesterPeerIds: OutboundMessagingContext["getPendingHelloRequesterPeerIds"];
-  learnInboundDialHints: OutboundMessagingContext["learnInboundDialHints"];
+  getInboundListenAddrMergeByPeer: OutboundMessagingContext["getInboundListenAddrMergeByPeer"];
   assertOnline: OutboundMessagingContext["assertOnline"];
   recordOwnerActivity: OutboundMessagingContext["recordOwnerActivity"];
   requireProfile: OutboundMessagingContext["requireProfile"];
@@ -146,20 +147,22 @@ export interface FileShareNetworkContextDeps extends FileShareContextDeps {
   dialHintsForChat: FileShareNetworkContext["dialHintsForChat"];
   getBonds: FileShareNetworkContext["getBonds"];
   deliverCallEnvelope: FileShareNetworkContext["deliverCallEnvelope"];
-  getPendingPushShareByRequestMsgId: () => Map<
-    string,
-    { relativePath: string; toPeerId: string; deliveryChannel: unknown }
-  >;
-  getPendingPullShareByRequestMsgId: () => Map<
-    string,
-    {
-      peerRelativePath: string;
-      targetOwnerId: string;
-      toPeerId: string;
-      sensitivity: unknown;
-    }
-  >;
-  getTransferStateCorrelationByRequestMsgId: () => Map<string, string>;
+  getTransferState: () => {
+    correlationByRequestMsgId: Map<string, string>;
+    pendingPushShareByRequestMsgId: Map<
+      string,
+      { relativePath: string; toPeerId: string; deliveryChannel?: "inbox" | "chat" | "agent" }
+    >;
+    pendingPullShareByRequestMsgId: Map<
+      string,
+      {
+        peerRelativePath: string;
+        targetOwnerId: string;
+        toPeerId: string;
+        sensitivity: "public" | "friends" | "private";
+      }
+    >;
+  };
   upsertTransferStatus: FileShareNetworkContext["upsertTransferStatus"];
 }
 
@@ -589,8 +592,17 @@ export function buildOutboundMessagingContext(deps: OutboundMessagingContextDeps
       deps.deleteTransportCache(ownerId);
     },
     getPendingHelloRequesterPeerIds: () => deps.getPendingHelloRequesterPeerIds(),
+    getInboundListenAddrMergeByPeer: () => deps.getInboundListenAddrMergeByPeer(),
     learnInboundDialHints: (transportPeerId, remoteAddr) =>
-      deps.learnInboundDialHints(transportPeerId, remoteAddr),
+      learnInboundDialHintsViaRuntime(
+        {
+          getReachableMesh: () => deps.getReachableMesh(),
+          peerDirectoryStore: deps.peerDirectoryStore,
+          getInboundListenAddrMergeByPeer: () => deps.getInboundListenAddrMergeByPeer(),
+        },
+        transportPeerId,
+        remoteAddr,
+      ),
     assertOnline: () => deps.assertOnline(),
     recordOwnerActivity: () => deps.recordOwnerActivity(),
     requireProfile: () => deps.requireProfile(),
@@ -791,14 +803,14 @@ export function buildFileShareNetworkContext(deps: FileShareNetworkContextDeps):
         listenAddrs,
       ) as never,
     setPendingPushShare: (messageId, info) => {
-      deps.getPendingPushShareByRequestMsgId().set(messageId, {
+      deps.getTransferState().pendingPushShareByRequestMsgId.set(messageId, {
         relativePath: info.relativePath,
         toPeerId: info.toPeerId,
         deliveryChannel: info.deliveryChannel as never,
       });
     },
     setPendingPullShare: (messageId, info) => {
-      deps.getPendingPullShareByRequestMsgId().set(messageId, {
+      deps.getTransferState().pendingPullShareByRequestMsgId.set(messageId, {
         peerRelativePath: info.peerRelativePath,
         targetOwnerId: info.targetOwnerId,
         toPeerId: info.toPeerId,
@@ -806,7 +818,7 @@ export function buildFileShareNetworkContext(deps: FileShareNetworkContextDeps):
       });
     },
     setCorrelationByRequestMsgId: (messageId, correlationId) => {
-      deps.getTransferStateCorrelationByRequestMsgId().set(messageId, correlationId);
+      deps.getTransferState().correlationByRequestMsgId.set(messageId, correlationId);
     },
     upsertTransferStatus: (status) => {
       deps.upsertTransferStatus(status as never);
@@ -1264,4 +1276,48 @@ export function buildCallContext(deps: CallContextDeps): CallContext {
       deps.sendCallResponseEnvelope(peerOwnerId, unsigned as never, intent),
     loadConfig: () => deps.loadConfig(),
   };
+}
+
+export interface ServiceContextDeps {
+  bond: BondContextDeps;
+  outboundMessaging: OutboundMessagingContextDeps;
+  agentPasses: AgentPassesContextDeps;
+  continuity: ContinuityContextDeps;
+  fileShare: FileShareContextDeps;
+  sessionToken: SessionTokenContextDeps;
+  recordNodeError: RecordNodeErrorContextDeps;
+  connectionStatus: ConnectionStatusContextDeps;
+  nodeConfig: NodeConfigContextDeps;
+  capabilityDiscovery: CapabilityDiscoveryContextDeps;
+  agentSetup: AgentSetupContextDeps;
+  stopNode: StopNodeContextDeps;
+  manifest: ManifestContextDeps;
+  fileShareNetwork: FileShareNetworkContextDeps;
+  startNode: StartNodeContextDeps;
+  wireMeshEvents: WireMeshEventsContextDeps;
+  sharePreview: SharePreviewContextDeps;
+  pairingKiosk: PairingKioskContextDeps;
+  pairDevice: PairDeviceContextDeps;
+  pairSharedIdentity: PairSharedIdentityContextDeps;
+  getPairingPayload: GetPairingPayloadContextDeps;
+  runOwnerAgentTurn: RunOwnerAgentTurnContextDeps;
+  runDocumentAgentTurn: RunDocumentAgentTurnContextDeps;
+  friendAutopilot: FriendAutopilotContextDeps;
+  socialProxy: SocialProxyContextDeps;
+  runSocialProxyPass: RunSocialProxyPassContextDeps;
+  openInHerdr: OpenInHerdrContextDeps;
+  terminalGetHerdrExportHint: TerminalGetHerdrExportHintContextDeps;
+  terminalExec: TerminalExecContextDeps;
+  terminal: TerminalContextDeps;
+  bondHandler: BondHandlerContextDeps;
+  chatRoomMessage: ChatRoomMessageContextDeps;
+  chatMessage: ChatMessageContextDeps;
+  requestPeerProfile: RequestPeerProfileContextDeps;
+  smallProfileDelegations: SmallProfileDelegationsContextDeps;
+  validatePairingToken: ValidatePairingTokenContextDeps;
+  persistence: PersistenceContextDeps;
+  chatRoomSync: ChatRoomSyncContextDeps;
+  miscDelegations: MiscDelegationsContextDeps;
+  chain: ChainContextDeps;
+  call: CallContextDeps;
 }

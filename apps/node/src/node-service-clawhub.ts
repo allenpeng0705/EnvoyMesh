@@ -18,6 +18,15 @@ export interface ClawHubContext {
   startOpenClaw(): Promise<boolean>;
 }
 
+export function buildClawHubContext(host: any): ClawHubContext {
+  return {
+    resolveOpenClawWorkspaceDir: () => host._resolveOpenClawWorkspaceDir(),
+    loadBridgeConfigClawhubToken: () => loadBridgeConfigClawhubToken(),
+    stopOpenClaw: () => host.stopOpenClaw(),
+    startOpenClaw: () => host.startOpenClaw(),
+  };
+}
+
 export async function loadBridgeConfigWebSearchEnabled(
   cwd = process.cwd(),
 ): Promise<boolean | undefined> {
