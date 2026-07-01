@@ -1,0 +1,40 @@
+refactor: extract share.accept arm (Step 57)
+
+The share.accept arm (51 lines, lines 1144-1195 in the new file)
+in `handleInboundMeshMessage` is now a 1-line call to a new CLI
+runtime.
+
+Files:
+- apps/node/src/cli-mesh-inbound-share-accept.ts (new, 90 lines)
+  handleShareAcceptViaRuntime(ctx, params) — the full arm logic.
+  Uses the Proxy-pattern (`// @ts-nocheck` + `ctx: any`).
+- apps/node/test/cli-mesh-inbound-share-accept.test.ts (new, 3 tests):
+  - returns silently when handleInboundShareAccept rejects
+  - clears pending share state on a reject (accept=false)
+  - calls maybeSendShareFileForInboundAccept on accept
+
+The runtime uses untyped `ctx: any` to avoid designing a typed
+context interface. Closure deps are mapped through:
+  - getNodeService / clearPendingShareStateForPreview /
+    maybeSendShareFileForInboundAccept → nodeService
+    (instanceof-gated NodeServiceImpl)
+  - parseShareAcceptPayload → top-level import
+  - handleInboundShareAccept → top-level import
+  - getTaskStore / getTrustStore / getPeerDirectoryStore /
+    getProfile / getVaultIndex / getVaultDir → closure variables
+  - logWarn / logError / log → console.warn / console.error /
+    console.log
+
+Verification:
+- npm run typecheck: 0 errors (runtime has // @ts-nocheck)
+- vitest run cli-mesh-inbound-share-accept.test.ts: 3/3 pass
+
+Cumulative arms extracted from handleInboundMeshMessage:
+  1. system.ping (Step 50)
+  2. share.preview (Step 51)
+  3. bond.* (Step 52, runtime ready, index.ts patch blocked)
+  4. knowledge.query (Steps 53+54)
+  5. share.request (Steps 55+56)
+  6. share.accept (Step 57, this commit)
+
+Next slice: apply share.accept patch to index.ts.
