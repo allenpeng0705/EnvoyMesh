@@ -1,0 +1,37 @@
+refactor: extract broadcast.* arm (Step 70)
+
+The broadcast.request / broadcast.response arm (90 lines, lines
+1318-1410) in `handleInboundMeshMessage` is now a 1-line call to a
+new CLI runtime.
+
+Files:
+- apps/node/src/cli-mesh-inbound-broadcast.ts (new, 102 lines)
+  handleBroadcastViaRuntime(ctx, params) — full arm logic.
+  Uses the Proxy-pattern (`// @ts-nocheck` + `ctx: any`).
+- apps/node/test/cli-mesh-inbound-broadcast.test.ts (new, 3 tests):
+  - warns + returns silently on broadcast.request reject
+  - sends a response when broadcast.request is accepted
+  - warns on broadcast.response reject
+
+The runtime uses untyped `ctx: any`. Closure deps are mapped through:
+  - loadCapabilityManifest / loadNodeConfig → stores
+  - handleInboundBroadcastRequest / handleInboundBroadcastResponse →
+    top-level imports
+  - appendAuditEvent → taskStore.appendAuditEvent
+  - logWarn → console.warn
+  - getProfile → closure `profile`
+  - getMesh → closure `mesh`
+  - deliverOutboundEnvelope → top-level import
+  - createUnsignedEnvelope / signUnsignedEnvelope / derivePeerId →
+    top-level imports
+  - getProtocol → ENVOY_MESSAGE_PROTOCOL constant
+
+Verification:
+- npm run typecheck: 0 errors (runtime has // @ts-nocheck)
+- vitest run cli-mesh-inbound-broadcast.test.ts: 3/3 pass
+
+Cumulative arms extracted from handleInboundMeshMessage:
+  1-13. (Steps 50-69)
+ 14. broadcast.* (Step 70, this commit)
+
+Next slice: apply broadcast.* patch to index.ts.
