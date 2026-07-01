@@ -115,6 +115,7 @@ import {
   type RelayPeerCandidate,
   type HumanProfilePayload,
 } from "@envoymesh/protocol";
+import { handleShareRequestViaRuntime } from "./cli-mesh-inbound-share-request.js";
 import { handleKnowledgeQueryViaRuntime } from "./cli-mesh-inbound-knowledge-query.js";
 import { handleCliSharePreviewViaRuntime } from "./cli-mesh-inbound-share-preview.js";
 import { handleSystemPingViaRuntime } from "./cli-mesh-inbound-system-ping.js";
@@ -1101,123 +1102,42 @@ async function handleInboundMeshMessage({
 
   // ── share.request → responder sends signed share.preview ─────────────────
   if (envelope.intent === "share.request") {
-    const capabilityManifest = await capabilityManifestStore.loadManifest();
-    const share = await handleInboundShareRequest({
-      envelope,
-      remotePeerId,
-      receivedAt,
-      correlationId,
-      taskStore,
-      trustStore,
-      peerDirectoryStore,
-      profile,
-      vaultIndex,
-      vaultDir: vaultDirForNode,
-      modelProviders: currentModelProviders,
-      capabilityManifest,
-    });
-    if (!share.ok) {
-      void taskStore.appendAuditEvent(
-        createAuditEvent({
-          type: "message.rejected",
-          intent: envelope.intent,
-          messageId: envelope.messageId,
-          correlationId,
-          remotePeerId,
-          direction: "inbound",
-          verificationStatus: "rejected",
-          latencyMs: Date.now() - receivedAt,
-          outcome: "deny",
-          summary: `Rejected share.request: ${share.reason}.`,
-          createdAt: envelope.createdAt,
-        }),
-      );
-      console.warn(`[rejected share.request] ${share.reason}`);
-      return;
-    }
-
-    // Policy allowed — send signed share.preview back to sender
-    const unsignedResponse = createUnsignedEnvelope({
-      senderPeerId: derivePeerId(profile.device.publicKeyPem),
-      senderPublicKey: profile.device.publicKeyPem,
-      recipientPeerId: envelope.senderPeerId,
-      intent: "share.preview",
-      payload: createSharePreviewPayload(share.responsePayload),
-      correlationId,
-    });
-    const signedResponse = signUnsignedEnvelope(unsignedResponse, profile.device.privateKeyPem);
-    let previewDialHints: string[] = [];
-    try {
-      previewDialHints = await dialHintsForTransportPeer(
+    await handleShareRequestViaRuntime(
+      {
+        loadCapabilityManifest: () => capabilityManifestStore.loadManifest(),
+        handleInboundShareRequest: (input: any) =>
+          handleInboundShareRequest(input),
+        appendAuditEvent: (event: any) =>
+          taskStore.appendAuditEvent(event),
+        getProfile: () => profile,
+        derivePeerId,
+        createUnsignedEnvelope,
+        createSharePreviewPayload,
+        signUnsignedEnvelope,
+        dialHintsForTransportPeer,
+        deliverOutboundEnvelope,
+        parseShareRequestPayload,
+        resolveSenderOwnerId,
+        logWarn: (msg: any) => console.warn(msg),
+        getProtocol: () => ENVOY_MESSAGE_PROTOCOL,
+        getNodeService: () =>
+          nodeService instanceof NodeServiceImpl ? (nodeService as any) : null,
+        getMesh: () => mesh,
+        getTaskStore: () => taskStore,
+        getTrustStore: () => trustStore,
+        getPeerDirectoryStore: () => peerDirectoryStore,
+        getVaultIndex: () => vaultIndex,
+        getVaultDir: () => vaultDirForNode,
+        getModelProviders: () => currentModelProviders,
+      },
+      {
+        envelope,
         remotePeerId,
-        remoteAddr?.trim() ? [remoteAddr.trim()] : [],
-      );
-    } catch (err) {
-      console.warn(
-        `[share.request] preview dial hints failed for ${remotePeerId.slice(0, 12)}…:`,
-        err instanceof Error ? err.message : err,
-      );
-    }
-    await deliverOutboundEnvelope(mesh, remotePeerId, signedResponse, { dialHints: previewDialHints });
-    void taskStore.appendAuditEvent(
-      createAuditEvent({
-        type: "message.sent",
-        intent: signedResponse.intent,
-        messageId: signedResponse.messageId,
-        correlationId: signedResponse.correlationId,
-        remotePeerId,
-        direction: "outbound",
-        protocol: ENVOY_MESSAGE_PROTOCOL,
-        outcome: "record",
-        summary: `Sent share.preview for ${envelope.messageId}.`,
-        createdAt: signedResponse.createdAt,
-      }),
+        remoteAddr,
+        receivedAt,
+        correlationId,
+      },
     );
-    let shareRequestPayload: ReturnType<typeof parseShareRequestPayload> | null = null;
-    try {
-      shareRequestPayload = parseShareRequestPayload(envelope.payload);
-    } catch {
-      shareRequestPayload = null;
-    }
-    if (
-      shareRequestPayload?.requestType === "file" &&
-      nodeService instanceof NodeServiceImpl
-    ) {
-      if (shareRequestPayload.fileOrigin === "responder") {
-        nodeService.registerResponderFileSendAfterPreview(
-          signedResponse.messageId,
-          shareRequestPayload.relativePath,
-          remotePeerId,
-        );
-      }
-      if (shareRequestPayload.fileOrigin === "sender") {
-        const senderOwnerId = await resolveSenderOwnerId(
-          envelope.senderPeerId,
-          remotePeerId,
-          peerDirectoryStore,
-        );
-        await nodeService.recordInboundPushShareOffer({
-          shareId: signedResponse.messageId,
-          senderPeerId: remotePeerId,
-          senderOwnerId,
-          previewText: share.responsePayload.previewText,
-          sensitivity: share.responsePayload.sensitivity as "public" | "friends" | "private",
-          relativePath: shareRequestPayload.relativePath ?? "",
-          deliveryChannel: shareRequestPayload.deliveryChannel,
-          chatRoomId: shareRequestPayload.chatRoomId,
-          chatMessageId: shareRequestPayload.chatMessageId,
-          chatAttachmentId: shareRequestPayload.chatAttachmentId,
-        });
-        if (shareRequestPayload.deliveryChannel === "chat" && nodeService instanceof NodeServiceImpl) {
-          await nodeService.maybeAutoAcceptChatShare({
-            shareId: signedResponse.messageId,
-            senderOwnerId,
-            senderRelativePath: shareRequestPayload.relativePath ?? "",
-            requiresApproval: share.responsePayload.requiresApproval,
-          });
-        }
-      }
-    }
     return;
   }
 

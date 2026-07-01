@@ -1,0 +1,42 @@
+refactor: apply share.request patch (Step 56)
+
+Applied the index.ts patch from Step 55. The share.request arm
+(113 lines, lines 1103-1224) is now a 1-line call to
+`handleShareRequestViaRuntime`.
+
+Files touched:
+- apps/node/src/index.ts: -113 lines (share.request arm collapsed)
+- apps/node/src/cli-mesh-inbound-share-request.ts: unchanged (Step 55)
+- apps/node/test/cli-mesh-inbound-share-request.test.ts: unchanged
+
+The patch passes a context object that adapts closure dependencies
+to the runtime's untyped `ctx: any` interface:
+  - loadCapabilityManifest → capabilityManifestStore.loadManifest
+  - handleInboundShareRequest → top-level import
+  - appendAuditEvent → taskStore.appendAuditEvent
+  - getProfile → closure `profile`
+  - derivePeerId / createUnsignedEnvelope / createSharePreviewPayload /
+    signUnsignedEnvelope → top-level imports
+  - dialHintsForTransportPeer / deliverOutboundEnvelope → top-level imports
+  - parseShareRequestPayload → top-level import
+  - resolveSenderOwnerId → closure helper
+  - logWarn → console.warn
+  - getProtocol → ENVOY_MESSAGE_PROTOCOL constant
+  - getNodeService → instanceof-gated nodeService (or null)
+  - getMesh / getTaskStore / getTrustStore / getPeerDirectoryStore /
+    getVaultIndex / getVaultDir / getModelProviders → closure variables
+
+Verification:
+- npm run typecheck: 0 errors
+
+Net effect:
+- apps/node/src/index.ts: 5477 → 5364 (-113 lines)
+
+Cumulative arms extracted from handleInboundMeshMessage:
+  1. system.ping (Step 50)
+  2. share.preview (Step 51)
+  3. bond.* (Step 52, runtime ready, index.ts patch blocked)
+  4. knowledge.query (Steps 53+54, runtime + index.ts patch applied)
+  5. share.request (Steps 55+56, runtime + index.ts patch applied)
+
+Next slice: share.accept (lines 1224-1270, ~46 lines).
