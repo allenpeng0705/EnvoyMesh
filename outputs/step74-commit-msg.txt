@@ -1,0 +1,32 @@
+refactor: extract system.signal arm (Step 74)
+
+The system.signal arm (77 lines, lines 909-986) in
+`handleInboundMeshMessage` is now a 1-line call to a new CLI
+runtime.
+
+Files:
+- apps/node/src/cli-mesh-inbound-system-signal.ts (new, 107 lines)
+  handleSystemSignalViaRuntime(ctx, params) — full arm logic.
+  Uses the Proxy-pattern (`// @ts-nocheck` + `ctx: any`).
+- apps/node/test/cli-mesh-inbound-system-signal.test.ts (new, 3 tests):
+  - warns + audits + returns when not authorized
+  - warns + audits + returns when capability denies
+  - logs, audits, and upserts peer when authorized + allowed
+
+The runtime uses untyped `ctx: any`. Closure deps are mapped through:
+  - parseSystemSignalPayload → top-level import
+  - verifyAuthorizedDeviceEnvelope → top-level import
+  - evaluateCapability → top-level import
+  - appendAuditEvent → taskStore.appendAuditEvent
+  - logWarn / log → console.warn / console.log
+  - upsertPeerFromSignal → peerDirectoryStore.upsertPeerFromSignal
+
+Verification:
+- npm run typecheck: 0 errors (runtime has // @ts-nocheck)
+- vitest run cli-mesh-inbound-system-signal.test.ts: 3/3 pass
+
+Cumulative arms extracted from handleInboundMeshMessage:
+  1-17. (Steps 50-73)
+ 18. system.signal (Step 74, this commit)
+
+Next slice: apply system.signal patch to index.ts.
