@@ -1,0 +1,22 @@
+refactor: extract device.pair.deferred arm (Step 78)
+
+The device.pair.deferred arm (18 lines) in `handleInboundMeshMessage`
+is now a 1-line call to a new CLI runtime.
+
+Files:
+- apps/node/src/cli-mesh-inbound-device-pair-deferred.ts (new, 41 lines)
+  handleDevicePairDeferredViaRuntime(ctx, params).
+- apps/node/test/cli-mesh-inbound-device-pair-deferred.test.ts (new, 1 test):
+  - appends a verified audit event with the deferral reason
+
+This is the smallest arm extracted so far. Just parse + audit.
+
+Verification:
+- npm run typecheck: 0 errors (runtime has // @ts-nocheck)
+- vitest run cli-mesh-inbound-device-pair-deferred.test.ts: 1/1 pass
+
+Cumulative arms extracted from handleInboundMeshMessage:
+  1-21. (Steps 50-77)
+ 22. device.pair.deferred (Step 78, this commit)
+
+Next slice: apply device.pair.deferred patch to index.ts.
