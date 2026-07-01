@@ -115,6 +115,9 @@ import {
   type RelayPeerCandidate,
   type HumanProfilePayload,
 } from "@envoymesh/protocol";
+import { handleTaskFeedbackViaRuntime } from "./cli-mesh-inbound-task-feedback.js";
+import { handleChatRoomSyncViaRuntime } from "./cli-mesh-inbound-chat-room-sync.js";
+import { handleChatRoomMessageViaRuntime } from "./cli-mesh-inbound-chat-room-message.js";
 import { handleAgentCardViaRuntime } from "./cli-mesh-inbound-agent-card.js";
 import { handleSyncStateViaRuntime } from "./cli-mesh-inbound-sync-state.js";
 import { handleShareAcceptViaRuntime } from "./cli-mesh-inbound-share-accept.js";
@@ -1515,16 +1518,14 @@ async function handleInboundMeshMessage({
 
   // task.feedback — signed reputation feedback from peers about task outcomes
   if (envelope.intent === "task.feedback") {
-    const nodeConfig = await nodeConfigStore.load();
-    const result = await handleInboundTaskFeedback({
-      envelope,
-      taskStore,
-      reputationStore,
-      peerDirectoryStore,
-    });
-    if (!result.ok) {
-      console.warn(`[rejected task.feedback] ${result.reason}`);
-    }
+    await handleTaskFeedbackViaRuntime(
+      {
+        loadNodeConfig: () => nodeConfigStore.load(),
+        handleInboundTaskFeedback,
+        logWarn: (msg: any) => console.warn(msg),
+      },
+      { envelope, remotePeerId },
+    );
     return;
   }
 
@@ -1594,22 +1595,28 @@ async function handleInboundMeshMessage({
   }
 
   if (envelope.intent === "chat.room.sync" && nodeService instanceof NodeServiceImpl) {
-    try {
-      const payload = parseChatRoomSyncPayload(envelope.payload);
-      await nodeService.handleInboundChatRoomSync(envelope, payload);
-    } catch {
-      console.warn(`[chat.room.sync] invalid payload from ${remotePeerId}`);
-    }
+    await handleChatRoomSyncViaRuntime(
+      {
+        parseChatRoomSyncPayload,
+        handleInboundChatRoomSync: (env: any, payload: any) =>
+          (nodeService as NodeServiceImpl).handleInboundChatRoomSync(env, payload),
+        logWarn: (msg: any) => console.warn(msg),
+      },
+      { envelope, remotePeerId },
+    );
     return;
   }
 
   if (envelope.intent === "chat.room.message" && nodeService instanceof NodeServiceImpl) {
-    try {
-      const payload = parseChatRoomMessagePayload(envelope.payload);
-      await nodeService.handleInboundChatRoomMessage(envelope, payload, remotePeerId, replyWithEnvelope);
-    } catch {
-      console.warn(`[chat.room.message] invalid payload from ${remotePeerId}`);
-    }
+    await handleChatRoomMessageViaRuntime(
+      {
+        parseChatRoomMessagePayload,
+        handleInboundChatRoomMessage: (env: any, payload: any, rid: string, rwen: any) =>
+          (nodeService as NodeServiceImpl).handleInboundChatRoomMessage(env, payload, rid, rwen),
+        logWarn: (msg: any) => console.warn(msg),
+      },
+      { envelope, remotePeerId, replyWithEnvelope: replyWithEnvelope as any },
+    );
     return;
   }
 

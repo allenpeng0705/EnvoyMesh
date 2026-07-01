@@ -1,0 +1,55 @@
+refactor: extract task.feedback + chat.room.sync + chat.room.message arms (Steps 63-65)
+
+Three small inbound arms extracted in one commit. Each arm is
+~10-13 lines. Total: ~33 lines collapsed to 3 one-line delegations.
+
+Files:
+- apps/node/src/cli-mesh-inbound-task-feedback.ts (new, 31 lines)
+  handleTaskFeedbackViaRuntime — load config + delegate + warn-on-reject.
+- apps/node/src/cli-mesh-inbound-chat-room-sync.ts (new, 30 lines)
+  handleChatRoomSyncViaRuntime — try-parse + delegate + warn-on-error.
+- apps/node/src/cli-mesh-inbound-chat-room-message.ts (new, 36 lines)
+  handleChatRoomMessageViaRuntime — same pattern with replyWithEnvelope.
+- apps/node/test/cli-mesh-inbound-small-arms.test.ts (new, 6 tests):
+  - task.feedback: returns silently + warns on reject
+  - chat.room.sync: forwards parsed payload + warns on parse error
+  - chat.room.message: forwards + replyWithEnvelope + warns on parse error
+
+All 3 runtimes use `// @ts-nocheck` + `ctx: any` (the Proxy pattern).
+
+Patches (in `outputs/patch-small-arms-cli.py`):
+- task.feedback arm (13 lines): nodeConfig load + handleInboundTaskFeedback + warn
+- chat.room.sync arm (10 lines): parse + delegate + warn
+- chat.room.message arm (10 lines): parse + delegate + replyWithEnvelope + warn
+
+The replyWithEnvelope parameter needs an explicit `as any` cast
+because its declared type is `(envelope: EnvoyEnvelope) => Promise<void>`
+but the runtime expects `(envelope: unknown) => Promise<void>`.
+
+Verification:
+- npm run typecheck: 0 errors
+- vitest run cli-mesh-inbound-small-arms.test.ts: 6/6 pass
+
+Net effect:
+- apps/node/src/index.ts: 5252 → 5219 (-33 lines)
+
+Cumulative arms extracted from handleInboundMeshMessage:
+  1. system.ping (Step 50)
+  2. share.preview (Step 51)
+  3. bond.* (Step 52, runtime ready, index.ts patch blocked)
+  4. knowledge.query (Steps 53+54)
+  5. share.request (Steps 55+56)
+  6. share.accept (Steps 57+58)
+  7. sync.state (Steps 59+60)
+  8. agent.card.* (Steps 61+62)
+  9. task.feedback (Step 63, this commit)
+ 10. chat.room.sync (Step 64, this commit)
+ 11. chat.room.message (Step 65, this commit)
+
+Remaining big targets:
+- chat.message (~300 lines, lines 1615-1915)
+- device.pair.request (~200 lines)
+- relay.peers.request / response (~100 lines)
+- broadcast.request / response (~80 lines)
+- discovery.request / response (~88 lines)
+- official.credential (~64 lines)
