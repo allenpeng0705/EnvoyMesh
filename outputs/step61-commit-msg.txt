@@ -1,0 +1,40 @@
+refactor: extract agent.card.* arm (Step 61)
+
+The agent.card.request / agent.card.response arm (21 lines, lines
+1032-1052) in `handleInboundMeshMessage` is now a 1-line call to a
+new CLI runtime.
+
+Files:
+- apps/node/src/cli-mesh-inbound-agent-card.ts (new, 53 lines)
+  handleAgentCardViaRuntime(ctx, params) — the full arm logic.
+  Uses the Proxy-pattern (`// @ts-nocheck` + `ctx: any`).
+- apps/node/test/cli-mesh-inbound-agent-card.test.ts (new, 2 tests):
+  - returns silently when handled=true
+  - returns silently when handled=false (fall through is implicit)
+
+Note: The original arm does NOT have a `return;` at the end — control
+falls through to the next arm if the daemon handler doesn't handle
+the envelope. The runtime preserves this behavior.
+
+The runtime uses untyped `ctx: any`. Closure deps are mapped through:
+  - handleDaemonAgentCardInbound → top-level import
+  - getProfile → closure `profile`
+  - getTaskStore / getTrustStore / getAgentCardStore /
+    getHumanProfileStore / getBridgeIdentity / getMesh /
+    getNodeService → closure variables (or null)
+
+Verification:
+- npm run typecheck: 0 errors (runtime has // @ts-nocheck)
+- vitest run cli-mesh-inbound-agent-card.test.ts: 2/2 pass
+
+Cumulative arms extracted from handleInboundMeshMessage:
+  1. system.ping (Step 50)
+  2. share.preview (Step 51)
+  3. bond.* (Step 52, runtime ready, index.ts patch blocked)
+  4. knowledge.query (Steps 53+54)
+  5. share.request (Steps 55+56)
+  6. share.accept (Steps 57+58)
+  7. sync.state (Steps 59+60)
+  8. agent.card.* (Step 61, this commit)
+
+Next slice: apply agent.card.* patch to index.ts.
