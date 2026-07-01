@@ -37,6 +37,10 @@ export interface KnowledgeQueryParams {
  * Run the knowledge.query arm with CLI-inbound semantics.
  *
  * The runtime expects the context to provide:
+ *   - getTaskStore / getTrustStore / getPeerDirectoryStore /
+ *     getVaultIndex / getModelProviders / getChatLogStore /
+ *     getHumanProfileStore / getAgentIdentityStore / getKnowledgeBase /
+ *     getRagService / getKnowledgeSyndicationMaxSensitivity
  *   - getContactSyndicationMaxSensitivity(senderPeerId, remotePeerId)
  *   - handleInboundKnowledgeQuery(input)
  *   - appendAuditEvent(event)
@@ -67,6 +71,20 @@ export async function handleKnowledgeQueryViaRuntime(
     remotePeerId,
     receivedAt,
     correlationId: corrId,
+    taskStore: ctx.getTaskStore(),
+    trustStore: ctx.getTrustStore(),
+    peerDirectoryStore: ctx.getPeerDirectoryStore(),
+    profile: ctx.getProfile(),
+    vaultIndex: ctx.getVaultIndex(),
+    modelProviders: ctx.getModelProviders(),
+    chatLogStore: ctx.getChatLogStore(),
+    humanProfileStore: ctx.getHumanProfileStore(),
+    agentIdentityStore: ctx.getAgentIdentityStore(),
+    knowledgeBase: ctx.getKnowledgeBase(),
+    ragService: ctx.getRagService(),
+    knowledgeSyndicationMaxSensitivity:
+      ctx.getKnowledgeSyndicationMaxSensitivity(),
+    contactSyndicationMaxSensitivity,
   });
   if (!kq.ok) {
     await ctx.appendAuditEvent({
@@ -113,9 +131,11 @@ export async function handleKnowledgeQueryViaRuntime(
     summary: `Sent knowledge.response for ${envelope.messageId}.`,
     createdAt: signedResponse.createdAt,
   });
-  ctx.recordInboundKnowledgeAnswered({
-    remoteOwnerId: kq.senderOwnerId,
-    correlationId: corrId,
-    queryPreview: `${kq.queryPreview} (${kq.syndicatedSensitivity})`,
-  });
+  if (ctx.getNodeService()) {
+    ctx.recordInboundKnowledgeAnswered({
+      remoteOwnerId: kq.senderOwnerId,
+      correlationId: corrId,
+      queryPreview: `${kq.queryPreview} (${kq.syndicatedSensitivity})`,
+    });
+  }
 }

@@ -79,7 +79,14 @@ def find_runtime_calls(runtime_path):
         if body_end is None:
             continue
         body = call_args[brace+1:body_end]
-        items = re.split(r"[,;\n]+", body)
+        # Strip comments line by line before parsing.
+        cleaned_lines = []
+        for ln in body.split("\n"):
+            if ln.lstrip().startswith("//") or ln.lstrip().startswith("/*"):
+                continue
+            cleaned_lines.append(ln)
+        cleaned = "\n".join(cleaned_lines)
+        items = re.split(r"[,;\n]+", cleaned)
         names = []
         for item in items:
             item = item.strip()
