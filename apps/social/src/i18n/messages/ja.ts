@@ -241,6 +241,11 @@ export const ja = mergeMessages(en, {
     homeOfflineHint:
       "ホームコンピュータがオフラインです — 「マイエージェント」に接続するにはホームノードとブリッジエージェント（HomeClaw/OpenClaw）を起動してください。",
     contactOfflineHint: "連絡先がオフラインです — 送信時に接続を試み、時間がかかる場合があります。",
+    upgradeToDirect: "直接接続に切り替え",
+    upgradeToDirectTitle: "リレーではなく直接 LAN/TCP 接続を試す",
+    upgradeToDirectBusy: "接続中…",
+    upgradeToDirectFailed: "直接接続に切り替えできませんでした",
+    pathUnverifiedHint: "直接パスは最近確認されていません — 最初の送信に少し時間がかかる場合があります。",
     attachFileTitle: "画像またはファイルを送信",
     attachFileAria: "画像またはファイルを送信",
     shareVaultTitle: "ライブラリファイルを共有",

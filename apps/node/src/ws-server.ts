@@ -23,6 +23,7 @@ import {
   rpcHomeTerminalWsOpen,
   rpcHomeTerminalWsSend,
 } from "./home-terminal-ws.js";
+import { isSerializedWsRpcMethod } from "./ws-rpc-concurrency.js";
 
 
 /**
@@ -44,6 +45,8 @@ export class WsServer {
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private readonly heartbeatIntervalMs = 30000; // 30 seconds
   private onConnectionChange?: (connectedCount: number) => void;
+  /** Per-client queue tail for dial/send RPCs (reads run concurrently). */
+  private readonly slowRpcTail = new WeakMap<WebSocket, Promise<void>>();
 
   constructor(
     private readonly port: number = 3030,
@@ -235,7 +238,7 @@ export class WsServer {
     // Initialize subscription tracking for this client
     this.clientSubscriptions.set(ws, new Set());
 
-    ws.on("message", async (data: Buffer) => {
+    ws.on("message", (data: Buffer) => {
       try {
         const message = JSON.parse(data.toString()) as JsonRpcRequest;
         // Record owner activity for online/offline detection,
@@ -243,7 +246,7 @@ export class WsServer {
         if (message.method !== "on" && message.method !== "off") {
           this.nodeService.recordOwnerActivity();
         }
-        await this.handleMessage(ws, message);
+        this.dispatchRpc(ws, message);
       } catch (error) {
         console.error("[ws-server] Error handling message:", error);
         this.sendError(ws, "unknown", "Failed to process message");
@@ -357,6 +360,35 @@ export class WsServer {
         console.warn("[ws-server] deferred node:status snapshot failed:", e);
       }
     }, 350);
+  }
+
+  /**
+   * Fast read RPCs (listChatHistory, getPeerConnectionInfo, …) run concurrently.
+   * Dial/send RPCs serialize per WebSocket so one slow warm does not block reads.
+   */
+  private dispatchRpc(ws: WebSocket, message: JsonRpcRequest): void {
+    const run = () =>
+      this.handleMessage(ws, message).catch((error) => {
+        console.error("[ws-server] RPC failed:", error);
+        if (message.id !== undefined) {
+          this.sendError(ws, message.id, "Failed to process message");
+        }
+      });
+
+    if (isSerializedWsRpcMethod(message.method)) {
+      const prev = this.slowRpcTail.get(ws) ?? Promise.resolve();
+      const next = prev.then(run);
+      this.slowRpcTail.set(
+        ws,
+        next.then(
+          () => undefined,
+          () => undefined,
+        ),
+      );
+      return;
+    }
+
+    void run();
   }
 
   private async handleMessage(ws: WebSocket, message: JsonRpcRequest): Promise<void> {

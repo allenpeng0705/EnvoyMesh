@@ -11,6 +11,14 @@ import {
   REACHABILITY_OPEN_CHAT_STABLE_PATH_POLLS,
   REACHABILITY_POLL_MS,
 } from "../lib/peer-reachability-hysteresis.js";
+import {
+  canStartBondWarm,
+  markBondWarmFinished,
+  markBondWarmStarted,
+} from "../lib/bond-warm-coordinator.js";
+
+/** Delay before a background warm when opening chat with an offline contact (lets history RPC run first). */
+const OPEN_CHAT_DEFERRED_WARM_MS = 1_000;
 
 /** Live libp2p reachability for a bonded contact (direct P2P or relay circuit). */
 export function usePeerReachability(peerOwnerId: string | null, enabled = true) {
@@ -101,8 +109,17 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
         } else if (opts?.verifyOnly) {
           next = await ns.getPeerConnectionInfo(peerOwnerId);
         } else if (opts?.warm) {
-          lastRedialAtRef.current = Date.now();
-          next = await ns.warmContactConnection(peerOwnerId);
+          if (!canStartBondWarm(peerOwnerId)) {
+            next = await ns.getPeerConnectionInfo(peerOwnerId);
+          } else {
+            lastRedialAtRef.current = Date.now();
+            markBondWarmStarted(peerOwnerId);
+            try {
+              next = await ns.warmContactConnection(peerOwnerId);
+            } finally {
+              markBondWarmFinished(peerOwnerId);
+            }
+          }
         } else {
           next = await ns.getPeerConnectionInfo(peerOwnerId);
         }
@@ -118,11 +135,7 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
           pendingRefreshRef.current = false;
           void runRefresh(generation, {
             silent: true,
-            ...(libp2pConnectedRef.current
-              ? libp2pDirectRef.current
-                ? { keepAlive: true }
-                : { upgradeRelayToDirect: true }
-              : { warm: true }),
+            verifyOnly: true,
           });
         }
       }
@@ -143,30 +156,26 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
     libp2pConnectedRef.current = false;
     libp2pDirectRef.current = false;
 
-    void (async () => {
-      await runRefresh(generation, { verifyOnly: true, silent: true, immediate: true });
+    let deferredWarmTimer: ReturnType<typeof setTimeout> | undefined;
+
+    void runRefresh(generation, { verifyOnly: true, silent: true, immediate: true }).then(() => {
       if (generation !== peerGenerationRef.current) {
         return;
       }
-      if (libp2pConnectedRef.current) {
-        if (libp2pDirectRef.current) {
-          void runRefresh(generation, { silent: true, keepAlive: true });
-        } else {
-          void runRefresh(generation, { silent: true, upgradeRelayToDirect: true });
-        }
-        return;
+      if (!libp2pConnectedRef.current) {
+        // Background dial after chat history loads — avoids blocking the WS RPC queue on open.
+        deferredWarmTimer = setTimeout(() => {
+          if (generation !== peerGenerationRef.current) return;
+          void runRefresh(generation, { warm: true, silent: true });
+        }, OPEN_CHAT_DEFERRED_WARM_MS);
       }
-      void runRefresh(generation, { warm: true, silent: false });
-    })();
+    });
 
     const id = setInterval(() => {
       const now = Date.now();
       if (libp2pConnectedRef.current) {
-        if (libp2pDirectRef.current) {
-          void runRefresh(generation, { silent: true, keepAlive: true });
-        } else {
-          void runRefresh(generation, { silent: true, upgradeRelayToDirect: true });
-        }
+        // Snapshot-only polls while connected — relay upgrade and stream probes run on send/redial.
+        void runRefresh(generation, { silent: true, verifyOnly: true });
         return;
       }
       const dueForRedial = now - lastRedialAtRef.current >= minRedialMs;
@@ -177,7 +186,10 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
       });
     }, pollMs);
 
-    return () => clearInterval(id);
+    return () => {
+      if (deferredWarmTimer) clearTimeout(deferredWarmTimer);
+      clearInterval(id);
+    };
   }, [
     enabled,
     minRedialMs,

@@ -243,6 +243,12 @@ export const de = mergeMessages(en, {
     homeOfflineHint:
       "Knoten offline — starten Sie Ihren Knoten und Bridge-Agent, um Ext Agent zu erreichen.",
     contactOfflineHint: "Kontakt ist offline — beim Senden wird eine Verbindung versucht, was länger dauern kann.",
+    upgradeToDirect: "Auf Direktverbindung wechseln",
+    upgradeToDirectTitle: "Direkte LAN- oder TCP-Verbindung statt Relay versuchen",
+    upgradeToDirectBusy: "Wird verbunden…",
+    upgradeToDirectFailed: "Direktverbindung konnte nicht hergestellt werden",
+    pathUnverifiedHint:
+      "Direkter Pfad wurde kürzlich nicht verifiziert — die erste Nachricht kann einen Moment dauern.",
     attachFileTitle: "Bild oder Datei senden",
     attachFileAria: "Bild oder Datei senden",
     shareVaultTitle: "Bibliotheksdatei teilen",

@@ -92,8 +92,28 @@ export function getEnvoyContactKeepAlivePeerTagName(): string {
  * Reusing them for Envoy app protocols is wrong — we only reuse **unlimited** connections and otherwise dial fresh.
  */
 const NEW_STREAM_ON_OPEN_CONNECTION_TIMEOUT_MS = 15_000;
+/** Fail fast when reusing an existing chat stream (stale direct TCP is common on LAN). */
+const BONDED_CHAT_STREAM_REUSE_TIMEOUT_MS = 4_000;
 /** Per-hint dial cap when iterating multiaddrs (fail fast; libp2p default dialTimeout is 15s). */
 const HINT_DIAL_TIMEOUT_MS = 3_500;
+
+function streamReuseTimeoutMs(protocol: string): number {
+  return protocol === ENVOY_CHAT_PROTOCOL
+    ? BONDED_CHAT_STREAM_REUSE_TIMEOUT_MS
+    : NEW_STREAM_ON_OPEN_CONNECTION_TIMEOUT_MS;
+}
+
+function connectionInfoFromRemoteAddr(remoteAddr: string): {
+  connected: boolean;
+  direct: boolean;
+  relayPeerId?: string;
+} {
+  if (remoteAddr.includes("/p2p-circuit/")) {
+    const relayMatch = remoteAddr.match(/p2p-circuit\/p2p\/([^/]+)\/p2p\//);
+    return { connected: true, direct: false, relayPeerId: relayMatch?.[1] };
+  }
+  return { connected: true, direct: true };
+}
 
 function promiseWithTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
   return new Promise((resolve, reject) => {
@@ -725,14 +745,20 @@ export class EnvoyMesh {
     );
     for (const conn of conns) {
       const isLimited = (conn.remoteAddr?.toString?.() ?? "").includes("/p2p-circuit");
-      const opened = await this.openStreamOnConnection(conn, ENVOY_CHAT_PROTOCOL, isLimited);
+      const opened = await this.openStreamOnConnection(
+        conn,
+        ENVOY_CHAT_PROTOCOL,
+        isLimited,
+        streamReuseTimeoutMs(ENVOY_CHAT_PROTOCOL),
+      );
       if (opened) {
         try {
           await (opened.stream as { close?: () => Promise<void> }).close?.();
         } catch {
           /* ignore */
         }
-        return this.getPeerConnectionInfo(peerIdStr);
+        const remoteAddr = conn.remoteAddr?.toString?.() ?? "";
+        return connectionInfoFromRemoteAddr(remoteAddr);
       }
     }
 
@@ -1438,13 +1464,14 @@ export class EnvoyMesh {
     },
     protocol: string,
     limited: boolean,
+    timeoutMs: number = NEW_STREAM_ON_OPEN_CONNECTION_TIMEOUT_MS,
   ): Promise<{ stream: unknown; remotePeerId: string } | undefined> {
     const attemptOpen = async (useLimited: boolean): Promise<{ stream: unknown; remotePeerId: string }> => {
       const stream = await promiseWithTimeout(
         useLimited
           ? connection.newStream([protocol], { runOnLimitedConnection: true })
           : connection.newStream(protocol),
-        NEW_STREAM_ON_OPEN_CONNECTION_TIMEOUT_MS,
+        timeoutMs,
         useLimited ? `newStream(limited relay) ${protocol}` : `newStream ${protocol}`,
       );
       if (!this.isOutboundStreamWritable(stream as { writeStatus?: string; status?: string })) {
@@ -1507,24 +1534,36 @@ export class EnvoyMesh {
     );
     const skipLimitedReuse =
       hasDirectTcpDialHints(hintList) && !sendOptions?.preferCircuitHints;
+    const reuseStreamTimeoutMs = streamReuseTimeoutMs(protocol);
 
     if (peerIdStr && !sendOptions?.forceFreshDial) {
       const existing = this.findOpenConnectionToPeer(node, peerIdStr);
       if (existing) {
-        const opened = await this.openStreamOnConnection(existing, protocol, false);
+        const opened = await this.openStreamOnConnection(
+          existing,
+          protocol,
+          false,
+          reuseStreamTimeoutMs,
+        );
         if (opened) {
           return opened;
         }
       }
 
-      if (!skipLimitedReuse) {
-        const limitedExisting = this.findLimitedConnectionToPeer(node, peerIdStr);
-        if (limitedExisting) {
-          const opened = await this.openStreamOnConnection(limitedExisting, protocol, true);
-          if (opened) {
-            return opened;
-          }
+      // After a failed direct reuse, always try relay (stale direct + live circuit is common).
+      const limitedExisting = this.findLimitedConnectionToPeer(node, peerIdStr);
+      if (limitedExisting) {
+        const opened = await this.openStreamOnConnection(
+          limitedExisting,
+          protocol,
+          true,
+          reuseStreamTimeoutMs,
+        );
+        if (opened) {
+          return opened;
         }
+      } else if (!skipLimitedReuse) {
+        /* no limited conn to reuse; fall through to dial hints */
       }
     }
 

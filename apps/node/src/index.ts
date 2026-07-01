@@ -493,6 +493,7 @@ async function dialHintsForTransportPeer(
     discoverySeedStore,
     config: config ?? undefined,
     profileDir: args.profileDir,
+    localListenAddrs: mesh?.multiaddrs,
   });
 }
 
@@ -2555,6 +2556,7 @@ async function handleInboundMeshMessage({
           peerListenAddrs: requesterDir?.listenAddrs,
           discoverySeedStore,
           config: undefined,
+          localListenAddrs: mesh.multiaddrs,
         });
         await deliverOutboundEnvelope(mesh, requesterPeerId, signedAccept, { dialHints });
         void taskStore.appendAuditEvent(
@@ -3415,6 +3417,7 @@ async function getRecipientDialHints(recipientPeerId: string): Promise<string[] 
       discoverySeedStore,
       config: persistedNodeConfig,
       profileDir: args.profileDir,
+      localListenAddrs: mesh.multiaddrs,
     });
   } catch (err) {
     console.warn(

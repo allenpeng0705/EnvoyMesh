@@ -119,6 +119,12 @@ export const contactChatMessages = {
   use: "Use",
   homeOfflineHint: "Home computer offline — start your home node and bridge agent (HomeClaw/OpenClaw) to reach My Agent.",
   contactOfflineHint: "Contact is offline — sending will try to connect and may take longer.",
+  upgradeToDirect: "Upgrade to direct",
+  upgradeToDirectTitle: "Try a direct LAN or TCP connection instead of relay",
+  upgradeToDirectBusy: "Upgrading…",
+  upgradeToDirectFailed: "Could not upgrade to a direct path",
+  pathUnverifiedHint:
+    "Direct path not verified recently — the first message may take a moment to reconnect.",
   attachFileTitle: "Send image or file",
   attachFileAria: "Send image or file",
   emojiPickerTitle: "Insert emoji",

@@ -70,6 +70,8 @@ export async function buildOutboundDialHints(input: {
   discoverySeedStore: DiscoverySeedStore | undefined;
   config: PersistedNodeConfig | undefined;
   profileDir?: string;
+  /** Local node listen multiaddrs — same-subnet peers dial first. */
+  localListenAddrs?: string[] | undefined;
 }): Promise<string[]> {
   const recipientPeerId = input.recipientPeerId.trim();
   const raw = (input.peerListenAddrs ?? []).map((a) => a.trim()).filter(Boolean);
@@ -109,10 +111,60 @@ export async function buildOutboundDialHints(input: {
   }
 
   const usable = dedupeDialHints(out.filter((a) => isUsableChatDialHint(a, recipientPeerId)));
-  const ordered = prioritizeDirectLanDialHints(usable);
+  const ordered = prioritizeSameSubnetDialHints(
+    prioritizeDirectLanDialHints(usable),
+    input.localListenAddrs,
+  );
   return filterDialHintsForOutboundSend(ordered, recipientPeerId, {
     preferCircuitHints: !hasDirect,
   });
+}
+
+/** Parse dotted IPv4 from a libp2p multiaddr string. */
+export function parseIpv4FromMultiaddr(addr: string): string | null {
+  const m = addr.match(/\/ip4\/(\d+\.\d+\.\d+\.\d+)\//);
+  return m?.[1] ?? null;
+}
+
+/** True when two IPv4 addresses share the first `prefixOctets` (default /24). */
+export function ipv4SameSubnet(a: string, b: string, prefixOctets = 3): boolean {
+  const pa = a.split(".").map(Number);
+  const pb = b.split(".").map(Number);
+  if (pa.length !== 4 || pb.length !== 4 || pa.some((n) => !Number.isFinite(n)) || pb.some((n) => !Number.isFinite(n))) {
+    return false;
+  }
+  for (let i = 0; i < prefixOctets; i++) {
+    if (pa[i] !== pb[i]) return false;
+  }
+  return true;
+}
+
+/**
+ * When both peers are on the same LAN subnet, try those TCP hints before other RFC1918 paths.
+ */
+export function prioritizeSameSubnetDialHints(
+  hints: string[],
+  localListenAddrs: readonly string[] | undefined,
+): string[] {
+  const localIps = (localListenAddrs ?? [])
+    .map(parseIpv4FromMultiaddr)
+    .filter((ip): ip is string => ip != null);
+  if (localIps.length === 0) return hints;
+
+  const sameSubnet: string[] = [];
+  const otherLan: string[] = [];
+  const rest: string[] = [];
+  for (const h of hints) {
+    const remoteIp = parseIpv4FromMultiaddr(h);
+    if (remoteIp && localIps.some((lip) => ipv4SameSubnet(remoteIp, lip))) {
+      sameSubnet.push(h);
+    } else if (isPrivateLanTcpDialHint(h)) {
+      otherLan.push(h);
+    } else {
+      rest.push(h);
+    }
+  }
+  return [...sameSubnet, ...otherLan, ...rest];
 }
 
 /** Put same-LAN direct TCP hints first so Full-WAN profiles still dial locally when possible. */

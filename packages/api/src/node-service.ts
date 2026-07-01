@@ -854,6 +854,11 @@ export interface PeerConnectionInfo {
   direct: boolean;
   /** If relay connection, the relay's peer ID */
   relayPeerId?: string;
+  /**
+   * When connected, true if a chat stream probe succeeded within the freshness window (~45s).
+   * False means libp2p reports open but the path has not been verified recently.
+   */
+  pathVerified?: boolean;
 }
 
 /** Options for {@link NodeService.warmContactConnection}. */

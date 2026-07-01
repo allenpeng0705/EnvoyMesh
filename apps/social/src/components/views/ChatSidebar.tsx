@@ -13,6 +13,7 @@ import { contactLabel, peerDisplayLabel } from "../../lib/display.js";
 import { PeerProfileAvatar } from "../PeerProfileAvatar.js";
 import { ChatIcon, BridgeIcon, AddIcon } from "../../icons.js";
 import { useChatThreadPreviews } from "../../hooks/useChatThreadPreviews.js";
+import { useBondConnectionPreload } from "../../hooks/useBondConnectionPreload.js";
 import { CreateGroupModal } from "./CreateGroupModal.js";
 import { RemoveContactConfirmModal } from "../RemoveContactConfirmModal.js";
 import { PullToRefresh } from "../PullToRefresh.js";
@@ -131,6 +132,15 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
     [bondPeerIds, roomThreadKeys],
   );
   const threadPreviews = useChatThreadPreviews(previewThreadKeys);
+
+  const preloadBondIds = useMemo(
+    () =>
+      sortByLatestMessage(bonds, (contact: BondRecord) => contact.peerOwnerId, threadPreviews).map(
+        (c) => c.peerOwnerId,
+      ),
+    [bonds, threadPreviews],
+  );
+  const { preloadOnHover } = useBondConnectionPreload(preloadBondIds);
 
   const sortedChatRooms = useMemo(
     () => sortByLatestMessage(chatRooms, (room) => chatRoomThreadKey(room.roomId), threadPreviews),
@@ -328,6 +338,8 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
                   type="button"
                   className={`thread-row thread-row--contact ${selectedContact === contact.peerOwnerId ? "active" : ""}`}
                   onClick={() => onSelectContact(contact.peerOwnerId)}
+                  onMouseEnter={() => preloadOnHover(contact.peerOwnerId)}
+                  onFocus={() => preloadOnHover(contact.peerOwnerId)}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     setContextMenu({ ownerId: contact.peerOwnerId, x: e.clientX, y: e.clientY });

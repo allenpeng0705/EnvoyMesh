@@ -3,7 +3,7 @@
  * pre-Phase-42-fix working model (61f7513) without restoring old code.
  *
  * These tests lock in:
- *  - warmContactConnection: connected → return early; verifyOnly → read-only
+ *  - warmContactConnection: connected → return early; verifyOnly → probe without redial
  *  - sendChat transport cache: only remember route after delivered ack
  */
 
@@ -117,11 +117,13 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
       expect(closeConnectionsToPeer).not.toHaveBeenCalled();
     });
 
-    it("verifyOnly reads libp2p state and does not tear down or redial", async () => {
+    it("verifyOnly probes libp2p state without tearing down or redial", async () => {
       getPeerConnectionInfo.mockReturnValue({ connected: true, direct: false });
+      probeBondedPeerConnection.mockResolvedValueOnce({ connected: true, direct: false });
 
       const info = await node.warmContactConnection(PEER_OWNER_ID, { verifyOnly: true });
 
+      expect(probeBondedPeerConnection).toHaveBeenCalledWith(TRANSPORT_PEER_ID);
       expect(info).toEqual({ connected: true, direct: false });
       expect(ensurePeerReachable).not.toHaveBeenCalled();
       expect(closeConnectionsToPeer).not.toHaveBeenCalled();

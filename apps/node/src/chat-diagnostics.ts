@@ -127,6 +127,7 @@ export async function buildChatDiagnostics(input: BuildChatDiagnosticsInput): Pr
         discoverySeedStore: input.discoverySeedStore,
         config,
         profileDir: input.profileDir,
+        localListenAddrs: input.mesh?.multiaddrs,
       });
       const badPublicBootstrapHints = dialHints.filter((h) => isPublicLibp2pBootstrapMultiaddr(h)).length;
       let connection: PeerConnectionInfo | undefined;

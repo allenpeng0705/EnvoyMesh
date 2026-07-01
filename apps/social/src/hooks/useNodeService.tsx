@@ -99,7 +99,11 @@ import type {
 } from "@envoymesh/api";
 import { isChatRoomThreadKey, ENVOY_AI_THREAD_KEY, TERMINAL_ASSIST_RPC_TIMEOUT_MS } from "@envoymesh/api";
 import { mergeGroupDeliveryAck } from "@envoymesh/api/group-chat-delivery";
-import { replaceChatThreadsCache, snapshotChatThreadsCache } from "../lib/chat-threads-cache.js";
+import {
+  mergeMessagesIntoThread,
+  replaceChatThreadsCache,
+  snapshotChatThreadsCache,
+} from "../lib/chat-threads-cache.js";
 
 type InitNodeOptions = {
   discoveryProfile?: DiscoveryProfile;
@@ -1950,13 +1954,27 @@ export function useChatMessages(selectedContactOwnerId: string | null) {
   useEffect(() => {
     if (!client.isConnected) return;
     let cancelled = false;
-    void Promise.all([client.getProfile(), client.getConnectionStatus()])
-      .then(([prof, cs]) => {
+    // Load owner id first — chat history only needs ownerId for routing; do not block on
+    // getConnectionStatus (mesh may report offline while local chat log is still readable).
+    void client
+      .getProfile()
+      .then((prof) => {
         if (cancelled) return;
-        setSelfIds({
-          ownerId: prof?.owner?.ownerId ?? "",
+        const ownerId = prof?.owner?.ownerId ?? "";
+        setSelfIds((prev) => ({
+          ownerId: ownerId || prev?.ownerId || "",
+          peerId: prev?.peerId ?? "",
+        }));
+      })
+      .catch(console.error);
+    void client
+      .getConnectionStatus()
+      .then((cs) => {
+        if (cancelled) return;
+        setSelfIds((prev) => ({
+          ownerId: prev?.ownerId ?? "",
           peerId: cs?.peerId ?? "",
-        });
+        }));
       })
       .catch(console.error);
     return () => {
@@ -2026,28 +2044,31 @@ export function useChatMessages(selectedContactOwnerId: string | null) {
   }, [client, client.isConnected]);
 
   useEffect(() => {
-    if (!client.isConnected || !selectedContactOwnerId || !selfIds?.ownerId) return;
+    if (!client.isConnected || !selectedContactOwnerId) return;
     let cancelled = false;
-    void client
-      .listChatHistory(selectedContactOwnerId)
-      .then((history) => {
+    const threadKey = selectedContactOwnerId;
+    const loadHistory = async (attempt: number) => {
+      try {
+        const history = await client.listChatHistory(threadKey);
         if (cancelled || !Array.isArray(history)) return;
-        const self = selfIdsRef.current;
-        if (!self?.ownerId) return;
-        setThreads((prev) => {
-          let next = prev;
-          for (const msg of history) {
-            const n = appendChatToThreads(next, msg, self);
-            if (n) next = n;
-          }
-          return next;
-        });
-      })
-      .catch(console.error);
+        setThreads((prev) => mergeMessagesIntoThread(prev, threadKey, history));
+      } catch (err) {
+        if (cancelled) return;
+        if (attempt === 0) {
+          // Reachability warm/redial may still be occupying the node RPC queue — retry once.
+          window.setTimeout(() => {
+            if (!cancelled) void loadHistory(1);
+          }, 1_500);
+          return;
+        }
+        console.error("[useChatMessages] listChatHistory failed:", err);
+      }
+    };
+    void loadHistory(0);
     return () => {
       cancelled = true;
     };
-  }, [client, client.isConnected, selectedContactOwnerId, selfIds?.ownerId, setThreads]);
+  }, [client, client.isConnected, selectedContactOwnerId, setThreads]);
 
   useEffect(() => {
     if (!selfIds?.ownerId) return;

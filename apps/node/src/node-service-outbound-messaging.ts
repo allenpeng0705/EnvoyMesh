@@ -38,7 +38,12 @@ import {
   deliverChatEnvelopeWithRetry,
   type ChatDeliverResult,
 } from "./chat-outbound-deliver.js";
-import { markOutboundPeerVerified } from "./outbound-peer-freshness.js";
+import { markOutboundPeerVerified, isOutboundPeerRecentlyVerified } from "./outbound-peer-freshness.js";
+import {
+  canStartOwnerWarm,
+  markOwnerWarmFinished,
+  markOwnerWarmStarted,
+} from "./bond-warm-coordinator.js";
 import {
   buildOutboundDialHints,
   mergeDialablePeerListenAddrs,
@@ -144,6 +149,30 @@ export interface SendAgentChatContext extends OutboundMessagingContext {
   getTrustRecord(ownerId: string): Promise<{ displayName?: string } | undefined>;
 }
 
+function withPathVerified(
+  mesh: EnvoyMesh,
+  transportPeerId: string,
+  info: PeerConnectionInfo,
+): PeerConnectionInfo {
+  if (!info.connected) {
+    return info;
+  }
+  return {
+    ...info,
+    pathVerified: isOutboundPeerRecentlyVerified(transportPeerId),
+  };
+}
+
+function isDedupeableBackgroundWarm(options?: WarmContactConnectionOptions): boolean {
+  return (
+    !options?.redial &&
+    !options?.upgradeRelayToDirect &&
+    !options?.verifyConnection &&
+    !options?.keepAlive &&
+    options?.verifyOnly !== true
+  );
+}
+
 export async function dialHintsForChatViaRuntime(
   ctx: OutboundMessagingContext,
   recipientPeerId: string,
@@ -163,6 +192,7 @@ export async function dialHintsForChatViaRuntime(
     discoverySeedStore: ctx.getDiscoverySeedStore(),
     config,
     profileDir: ctx.getProfileDir(),
+    localListenAddrs: mesh?.multiaddrs,
   });
 }
 
@@ -626,7 +656,9 @@ export async function getPeerConnectionInfoViaRuntime(
     if (transportPeerId === mesh.peerId) {
       return { connected: true, direct: true };
     }
-    return mesh.getPeerConnectionInfo(transportPeerId);
+    // Fast libp2p snapshot for UI badges — no stream probe here (probe runs on send via
+    // warmContactConnection verifyConnection / prepareOutboundPeerConnection).
+    return withPathVerified(mesh, transportPeerId, mesh.getPeerConnectionInfo(transportPeerId));
   } catch (err) {
     console.warn(
       `[getPeerConnectionInfo] no route to ${peerOwnerId.slice(0, 24)}…:`,
@@ -672,7 +704,10 @@ export async function warmContactConnectionTransportViaRuntime(
   const existing = mesh.getPeerConnectionInfo(transportPeerId);
 
   if (options?.verifyOnly) {
-    return existing;
+    if (!existing.connected) {
+      return existing;
+    }
+    return mesh.probeBondedPeerConnection(transportPeerId);
   }
 
   const needsProbe = options?.keepAlive === true || options?.verifyConnection === true;
@@ -754,30 +789,52 @@ export async function warmContactConnectionViaRuntime(
   ctx.assertOnline();
   const selfOwnerId = ctx.getSelfOwnerId();
   if (selfOwnerId && peerOwnerId.trim() === selfOwnerId) {
-    return { connected: true, direct: true };
+    return { connected: true, direct: true, pathVerified: true };
   }
-  let transportPeerId: string;
-  let listenAddrs: string[] | undefined;
+
+  const dedupeWarm = isDedupeableBackgroundWarm(options);
+  if (dedupeWarm && !canStartOwnerWarm(peerOwnerId)) {
+    return getPeerConnectionInfoViaRuntime(ctx, peerOwnerId);
+  }
+  if (dedupeWarm) {
+    markOwnerWarmStarted(peerOwnerId);
+  }
+
   try {
-    const resolved = await ctx.resolvePeerTransportForOwner(peerOwnerId);
-    transportPeerId = resolved.transportPeerId;
-    listenAddrs = resolved.listenAddrs;
-  } catch (err) {
-    console.warn(
-      `[warmContact] no route to ${peerOwnerId.slice(0, 24)}…:`,
-      err instanceof Error ? err.message : err,
+    let transportPeerId: string;
+    let listenAddrs: string[] | undefined;
+    try {
+      const resolved = await ctx.resolvePeerTransportForOwner(peerOwnerId);
+      transportPeerId = resolved.transportPeerId;
+      listenAddrs = resolved.listenAddrs;
+    } catch (err) {
+      console.warn(
+        `[warmContact] no route to ${peerOwnerId.slice(0, 24)}…:`,
+        err instanceof Error ? err.message : err,
+      );
+      return { connected: false, direct: false };
+    }
+
+    listenAddrs = await mergeFreshListenAddrsViaRuntime(
+      ctx,
+      peerOwnerId,
+      transportPeerId,
+      listenAddrs,
     );
-    return { connected: false, direct: false };
+
+    const mesh = ctx.getReachableMesh();
+    const info = await warmContactConnectionTransportViaRuntime(
+      ctx,
+      transportPeerId,
+      listenAddrs,
+      options,
+    );
+    return mesh ? withPathVerified(mesh, transportPeerId, info) : info;
+  } finally {
+    if (dedupeWarm) {
+      markOwnerWarmFinished(peerOwnerId);
+    }
   }
-
-  listenAddrs = await mergeFreshListenAddrsViaRuntime(
-    ctx,
-    peerOwnerId,
-    transportPeerId,
-    listenAddrs,
-  );
-
-  return warmContactConnectionTransportViaRuntime(ctx, transportPeerId, listenAddrs, options);
 }
 
 export async function sendChatViaRuntime(

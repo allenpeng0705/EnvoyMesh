@@ -257,14 +257,11 @@ export async function deliverChatEnvelopeWithRetry(input: {
       const preferCircuitsOnPrepare = preferCircuits || attempt >= 2;
       const needsRelayUpgrade =
         conn.connected && !conn.direct && !preferCircuitsOnPrepare && hasDirectTcpDialHints(hints);
-      // Skip preparation when the peer is directly connected — no dial needed.
-      // Also skip when a recent verification confirms reachability (ack path).
+      // Verify stale direct/LAN paths before send; skip only when recently probed successful.
       const skipPrepare =
-        (conn.connected && conn.direct) ||
-        (canExpectAck &&
-          !needsRelayUpgrade &&
-          (isOutboundPeerRecentlyVerified(input.transportPeerId) ||
-            (conn.connected && conn.direct)));
+        !needsRelayUpgrade &&
+        isOutboundPeerRecentlyVerified(input.transportPeerId) &&
+        (conn.connected || canExpectAck);
       if (!skipPrepare) {
         const ready = await prepareOutboundChatConnection({
           mesh: input.mesh,

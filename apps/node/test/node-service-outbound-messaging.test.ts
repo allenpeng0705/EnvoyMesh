@@ -185,10 +185,11 @@ describe("warmContactConnectionTransportViaRuntime", () => {
     expect(mesh.closeConnectionsToPeer).not.toHaveBeenCalled();
   });
 
-  it("verifyOnly reads libp2p state without dialing", async () => {
+  it("verifyOnly probes libp2p state without dialing", async () => {
     const ctx = makeCtx();
     const mesh = ctx.requireMesh();
     vi.mocked(mesh.getPeerConnectionInfo).mockReturnValue({ connected: true, direct: false });
+    vi.mocked(mesh.probeBondedPeerConnection).mockResolvedValueOnce({ connected: true, direct: false });
 
     const info = await warmContactConnectionTransportViaRuntime(
       ctx,
@@ -197,6 +198,7 @@ describe("warmContactConnectionTransportViaRuntime", () => {
       { verifyOnly: true },
     );
 
+    expect(mesh.probeBondedPeerConnection).toHaveBeenCalledWith(TRANSPORT_ID);
     expect(info).toEqual({ connected: true, direct: false });
     expect(mesh.ensurePeerReachable).not.toHaveBeenCalled();
   });
@@ -206,7 +208,7 @@ describe("warmContactConnectionViaRuntime", () => {
   it("returns self shortcut for own owner id", async () => {
     const ctx = makeCtx();
     const info = await warmContactConnectionViaRuntime(ctx, "envoy:owner:self");
-    expect(info).toEqual({ connected: true, direct: true });
+    expect(info).toEqual({ connected: true, direct: true, pathVerified: true });
   });
 
   it("returns disconnected when resolve fails", async () => {
@@ -227,6 +229,22 @@ describe("getPeerConnectionInfoViaRuntime", () => {
     });
     const info = await getPeerConnectionInfoViaRuntime(ctx, "envoy:agent:bridge");
     expect(info).toEqual({ connected: true, direct: true });
+  });
+
+  it("returns libp2p snapshot without probing (probe runs on send / warm verifyConnection)", async () => {
+    const ctx = makeCtx();
+    const mesh = ctx.requireMesh() as {
+      getPeerConnectionInfo: ReturnType<typeof vi.fn>;
+      probeBondedPeerConnection: ReturnType<typeof vi.fn>;
+    };
+    mesh.getPeerConnectionInfo.mockReturnValue({ connected: true, direct: true, relayPeerId: "12Relay" });
+
+    const info = await getPeerConnectionInfoViaRuntime(ctx, OWNER_ID);
+
+    expect(mesh.probeBondedPeerConnection).not.toHaveBeenCalled();
+    expect(info.connected).toBe(true);
+    expect(info.direct).toBe(true);
+    expect(info.pathVerified).toBe(false);
   });
 });
 

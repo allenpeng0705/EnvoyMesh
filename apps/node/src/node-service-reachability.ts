@@ -17,7 +17,7 @@ import type { PersistedNodeConfig } from "./node-config-store.js";
 
 export const BOND_WARM_MAX_CONNECTIONS = 64;
 export const BOND_WARM_PER_CONTACT_COOLDOWN_MS = 300_000;
-const BOND_WARM_INITIAL_DELAY_MS = 120_000;
+const BOND_WARM_INITIAL_DELAY_MS = 45_000;
 const BOND_WARM_INTERVAL_MS = 300_000;
 
 export interface ReachabilityContext {

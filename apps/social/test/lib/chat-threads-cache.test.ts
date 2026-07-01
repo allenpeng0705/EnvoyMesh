@@ -2,6 +2,7 @@
 import { describe, expect, it } from "vitest";
 import type { ChatMessage } from "@envoymesh/api";
 import {
+  mergeMessagesIntoThread,
   readCachedThread,
   replaceChatThreadsCache,
   snapshotChatThreadsCache,
@@ -29,6 +30,21 @@ describe("chat-threads-cache", () => {
     expect(readCachedThread("envoy:owner:peer")).toHaveLength(1);
     expect(readCachedThread("envoy:owner:other")).toHaveLength(1);
     replaceChatThreadsCache({});
+  });
+
+  it("mergeMessagesIntoThread dedupes and sorts by timestamp", () => {
+    const older = {
+      ...sampleMsg("a"),
+      metadata: { timestamp: "2026-01-01T10:00:00.000Z" },
+    };
+    const newer = {
+      ...sampleMsg("b"),
+      metadata: { timestamp: "2026-01-02T10:00:00.000Z" },
+    };
+    const merged = mergeMessagesIntoThread({}, "envoy:owner:peer", [newer, older, newer]);
+    expect(merged["envoy:owner:peer"]).toHaveLength(2);
+    expect(merged["envoy:owner:peer"]?.[0]?.messageId).toBe("a");
+    expect(merged["envoy:owner:peer"]?.[1]?.messageId).toBe("b");
   });
 });
 

@@ -16,3 +16,25 @@ export function readCachedThread(contactOwnerId: string): ChatMessage[] | undefi
   if (!key) return undefined;
   return threadsByContact[key];
 }
+
+function messageTimestampMs(msg: ChatMessage): number {
+  const raw = msg.metadata?.timestamp;
+  const n = typeof raw === "string" ? new Date(raw).getTime() : NaN;
+  return Number.isFinite(n) ? n : 0;
+}
+
+/** Merge server/local history rows into a single thread key (ascending by time). */
+export function mergeMessagesIntoThread(
+  prev: Record<string, ChatMessage[]>,
+  threadKey: string,
+  incoming: readonly ChatMessage[],
+): Record<string, ChatMessage[]> {
+  const key = threadKey.trim();
+  if (!key || incoming.length === 0) return prev;
+  const byId = new Map((prev[key] ?? []).map((m) => [m.messageId, m]));
+  for (const msg of incoming) {
+    byId.set(msg.messageId, msg);
+  }
+  const merged = [...byId.values()].sort((a, b) => messageTimestampMs(a) - messageTimestampMs(b));
+  return { ...prev, [key]: merged };
+}

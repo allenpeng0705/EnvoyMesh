@@ -552,6 +552,8 @@ export interface PeerConnectionInfo {
     direct: boolean;
     /** If relay connection, the relay's peer ID */
     relayPeerId?: string;
+    /** When connected, true if path was verified within the freshness window (~45s). */
+    pathVerified?: boolean;
 }
 export interface ChatDiagnosticsContact {
     peerOwnerId: string;

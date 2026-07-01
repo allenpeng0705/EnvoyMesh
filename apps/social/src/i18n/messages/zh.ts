@@ -240,6 +240,11 @@ export const zh = mergeMessages(en, {
     homeOfflineHint:
       "主计算机离线 — 请启动主节点和桥接代理（HomeClaw/OpenClaw）以访问「我的代理」。",
     contactOfflineHint: "联系人离线 — 发送将尝试连接，可能需要更长时间。",
+    upgradeToDirect: "升级为直连",
+    upgradeToDirectTitle: "尝试直连 LAN/TCP，而非中继",
+    upgradeToDirectBusy: "连接中…",
+    upgradeToDirectFailed: "无法升级为直连",
+    pathUnverifiedHint: "直连路径最近未验证 — 首条消息可能需要片刻重新连接。",
     attachFileTitle: "发送图片或文件",
     attachFileAria: "发送图片或文件",
     shareVaultTitle: "分享资料库文件",

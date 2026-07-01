@@ -233,4 +233,20 @@ describe("shouldPreferCircuitDialHints", () => {
     ]);
     expect(ordered[0]).toContain("192.168.1.50");
   });
+
+  it("prioritizeSameSubnetDialHints prefers peers on the same /24 as this node", async () => {
+    const { prioritizeSameSubnetDialHints } = await import("../src/outbound-dial-hints.js");
+    const peerId = "12D3KooWContact";
+    const ordered = prioritizeSameSubnetDialHints(
+      [
+        `/ip4/10.0.0.5/tcp/4011/p2p/${peerId}`,
+        `/ip4/192.168.1.99/tcp/4011/p2p/${peerId}`,
+        `/ip4/192.168.1.50/tcp/4011/p2p/${peerId}`,
+      ],
+      [`/ip4/192.168.1.10/tcp/4010/p2p/12D3KooWLocal`],
+    );
+    expect(ordered[0]).toMatch(/192\.168\.1\.(50|99)/);
+    expect(ordered[1]).toMatch(/192\.168\.1\.(50|99)/);
+    expect(ordered[2]).toContain("10.0.0.5");
+  });
 });
