@@ -88,7 +88,7 @@ describe("voice message 1:1 chat", () => {
       signature: "sig",
     };
 
-    (node as any)._deferredDirectChatAttachmentVaultPath.set(
+    (node as any)._transferState.deferredDirectChatAttachmentVaultPath.set(
       deferredDirectChatAttachmentKey(senderOwner.ownerId, messageId, attachmentId),
       vaultPath,
     );
@@ -101,7 +101,7 @@ describe("voice message 1:1 chat", () => {
 
     expect(reconciled.content.attachments?.[0]?.vaultRelativePath).toBe(vaultPath);
     expect(
-      (node as any)._deferredDirectChatAttachmentVaultPath.has(
+      (node as any)._transferState.deferredDirectChatAttachmentVaultPath.has(
         deferredDirectChatAttachmentKey(senderOwner.ownerId, messageId, attachmentId),
       ),
     ).toBe(false);

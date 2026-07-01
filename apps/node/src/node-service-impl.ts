@@ -119,7 +119,6 @@ import {
   MAX_CHAT_ATTACHMENT_BYTES,
   MAX_LIBRARY_ITEM_PREVIEW_BYTES,
   pinCidToProvider,
-  buildOwnerDidPresentation,
   parseDidLookupInput,
   didKeysMatch,
   buildCommerceReceiptFromTaskResult,
@@ -206,7 +205,6 @@ import {
   resolveAiKnowledgeBaseSettings,
   chatMessagePayloadDeviceFields,
   chatSenderActorFromEnvelope,
-  applyAiIdentityForIdentity,
   shouldPushAgentActivity,
   shouldPostA2aChatLine,
   formatA2aChatSystemLine,
@@ -259,7 +257,6 @@ import {
   createDeviceCertificate,
   derivePeerId,
   encryptOwnerKeyForDevice,
-  signHumanProfile,
   signUnsignedEnvelope,
   verifyFriendMatchingPreferences,
   createAgentCredential,
@@ -543,11 +540,58 @@ import {
   endCallViaRuntime,
   getActiveCallViaRuntime,
   onCallEventViaRuntime,
+  recordCallRejectedViaRuntime,
+  sendCallInviteViaRuntime,
+  sendCallReinviteViaRuntime,
   sendCallRejectToOwnerViaRuntime,
+  sendCallResponseEnvelopeViaRuntime,
   sendIceCandidateViaRuntime,
   setCallMutedViaRuntime,
-  type CallContext,
+  type FullCallContext,
 } from "./node-service-calls.js";
+import {
+  acceptPendingHelloViaRuntime,
+  blockPeerViaRuntime,
+  declinePendingHelloViaRuntime,
+  getBondsViaRuntime,
+  revokeBondViaRuntime,
+  sendHelloViaRuntime,
+  unblockPeerViaRuntime,
+  type BondContext,
+} from "./node-service-bond.js";
+import {
+  deliverCallEnvelopeToTransportPeerViaRuntime,
+  deliverCallEnvelopeViaRuntime,
+  deliverChatEnvelopeViaRuntime,
+  dialHintsForChatViaRuntime,
+  getPeerConnectionInfoViaRuntime,
+  raceWithTimeout,
+  rememberBondedPeerTransportFromInboundViaRuntime,
+  resolveLibp2pPeerForBondOwnerViaRuntime,
+  resolvePeerTransportForOwnerViaRuntime,
+  sendChatViaRuntime,
+  sendAgentChatViaRuntime,
+  warmContactConnectionTransportViaRuntime,
+  warmContactConnectionViaRuntime,
+  type OutboundMessagingContext,
+  type SendAgentChatContext,
+} from "./node-service-outbound-messaging.js";
+import {
+  getOpenClawPluginsViaRuntime,
+  getTrendingOpenClawPluginsViaRuntime,
+  installOpenClawPluginViaRuntime,
+  loadBridgeConfigClawhubToken,
+  loadBridgeConfigSkillApiKeys,
+  loadBridgeConfigWebSearchEnabled,
+  reloadOpenClawConfigViaRuntime,
+  resolveOpenClawWorkspaceDirFromProfile,
+  saveClawhubTokenViaRuntime,
+  saveSkillApiKeysViaRuntime,
+  saveWebSearchEnabledViaRuntime,
+  searchOpenClawPluginsViaRuntime,
+  uninstallOpenClawPluginViaRuntime,
+  type ClawHubContext,
+} from "./node-service-clawhub.js";
 import {
   listAllLocalFilesViaRuntime,
   listLibraryItemsViaRuntime,
@@ -744,9 +788,108 @@ import {
   acceptHelloViaRuntime,
   declineSocialIntroProposalViaRuntime,
   resyncBondedContactReachabilityTagsViaRuntime,
-  syncProfileToBondsViaRuntime,
   type MiscDelegationsContext,
 } from "./node-service-handlers-misc-delegations.js";
+
+import {
+  BOND_WARM_MAX_CONNECTIONS,
+  _advertiseInterestsIfPublic,
+  _broadcastProfileSyncToBonds,
+  _loadHumanProfileForPhotoUpdate,
+  _probeNearbyPeerProfileAfterDiscovery,
+  _signAndSaveHumanProfile,
+  cacheDidContactKeyViaRuntime,
+  exportDidDocumentViaRuntime,
+  getAgentIdentityViaRuntime,
+  getHumanProfileViaRuntime,
+  getOwnerDidPresentationViaRuntime,
+  getPeerProfileViaRuntime,
+  getPeerReputationSummaryViaRuntime,
+  getProfileViaRuntime,
+  handleInboundProfileIntentViaRuntime,
+  listPeerProfilesViaRuntime,
+  refreshBondPeerProfilesViaRuntime,
+  removeProfileGalleryPhotoViaRuntime,
+  setPublicProfileThumbnailViaRuntime,
+  syncProfileToBondsViaRuntime,
+  updateAgentIdentityViaRuntime,
+  updateHumanProfileViaRuntime,
+  updateProfileGalleryPhotoVisibilityViaRuntime,
+  upsertProfileGalleryPhotoViaRuntime,
+  type IdentityContext,
+} from "./node-service-identity.js";
+
+import {
+  _appendChainAudit,
+  _autoEvaluateSubtask,
+  _bondLevelForWorkerOwner,
+  _chainDiagnosticsForSubtasks,
+  _emitChainReport,
+  _emitChainState,
+  _evaluateAwardAndAccept,
+  _executeApprovedChainAward,
+  _queueChainAwardApproval,
+  _rollbackSubtaskAward,
+  _runChainGoal,
+  _scheduleAutoEvaluate,
+  _startChainTracking,
+  _stopChainTracking,
+  bidsBySubtask,
+  buildChainContext,
+  buildChainInboundDeps,
+  buildChainOrchestratorDeps,
+  buildChainWorkerDeps,
+  ensureChainMandateLoaded,
+  evaluateBidsAsync,
+  findCapabilityProviders,
+  handleInboundChainEnvelope,
+  placeholderMandate,
+  refreshCapabilityIndex,
+  snapshotToResult,
+  type ChainOrchestrationContext,
+} from "./node-service-chain-orchestration.js";
+
+import {
+  buildAgentPassesContext,
+  buildAgentSetupContext,
+  buildBondContext,
+  buildBondHandlerContext,
+  buildCapabilityDiscoveryContext,
+  buildChatMessageContext,
+  buildChatRoomMessageContext,
+  buildChatRoomSyncContext,
+  buildConnectionStatusContext,
+  buildContinuityContext,
+  buildFileShareContext,
+  buildFileShareNetworkContext,
+  buildFriendAutopilotContext,
+  buildGetPairingPayloadContext,
+  buildManifestContext,
+  buildMiscDelegationsContext,
+  buildNodeConfigContext,
+  buildOpenInHerdrContext,
+  buildOutboundMessagingContext,
+  buildPairDeviceContext,
+  buildPairSharedIdentityContext,
+  buildPairingKioskContext,
+  buildPersistenceContext,
+  buildRecordNodeErrorContext,
+  buildRequestPeerProfileContext,
+  buildRunDocumentAgentTurnContext,
+  buildRunOwnerAgentTurnContext,
+  buildRunSocialProxyPassContext,
+  buildSessionTokenContext,
+  buildSharePreviewContext,
+  buildSmallProfileDelegationsContext,
+  buildSocialProxyContext,
+  buildStartNodeContext,
+  buildStopNodeContext,
+  buildTerminalContext,
+  buildTerminalExecContext,
+  buildTerminalGetHerdrExportHintContext,
+  buildValidatePairingTokenContext,
+  buildWireMeshEventsContext,
+} from "./node-service-contexts.js";
 
 import {
   handleChatRoomSyncViaRuntime,
@@ -766,13 +909,8 @@ import {
   validatePairingTokenViaRuntime,
   type ValidatePairingTokenContext,
 } from "./node-service-handlers-validate-pairing-token.js";
-import { upsertProfileGalleryPhotoViaRuntime } from "./node-service-handlers-upsert_profile_gallery_photo.js";
 
 import {
-  cacheDidContactKeyViaRuntime,
-  setPublicProfileThumbnailViaRuntime,
-  getAgentIdentityViaRuntime,
-  updateAgentIdentityViaRuntime,
   type SmallProfileDelegationsContext,
 } from "./node-service-handlers-small-profile-delegations.js";
 
@@ -799,8 +937,22 @@ import { handleInboundSocialIntroIntent } from "./social-intro-inbound.js";
 import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
 import { askOwnerAgentPlanner, scanOwnerAgentOutbound } from "./owner-agent-planner-inbound.js";
 import { loadAgentIdentitySection } from "./agent-identity-context.js";
-import { resolveBundledSkillsDir } from "./bundled-paths.js";
-import { spawnOpenClawGateway } from "./openclaw-gateway-spawn.js";
+import {
+  askOpenClawViaRuntime,
+  beginOpenClawToolTracking,
+  buildOpenClawTurnContextViaRuntime,
+  createOpenClawRuntimeState,
+  endOpenClawToolTracking,
+  ensureOpenClawReadyViaRuntime,
+  isOpenClawEnabledViaRuntime,
+  isOpenClawReadyViaRuntime,
+  recordOpenClawToolCallViaRuntime,
+  resolveOpenClawReply as resolveOpenClawReplyViaRuntime,
+  sendToOpenClawViaRuntime,
+  startOpenClawViaRuntime,
+  stopOpenClawViaRuntime,
+  type OpenClawRuntimeDeps,
+} from "./node-service-openclaw-runtime.js";
 import {
   chainStateSnapshot,
   counterBid,
@@ -850,7 +1002,6 @@ import {
 import { executeAcceptedSubtask } from "./chain-worker-executor.js";
 import { chainCostsToCsv } from "./chain-cost-export.js";
 import { requiresChainAwardApproval } from "./chain-sensitivity-gate.js";
-import { ensureOpenClawWorkspace, openClawGatewayStateDir, openClawWorkspaceDir } from "./openclaw-workspace.js";
 import {
   buildAllLocalFilesList,
 } from "./local-files.js";
@@ -860,18 +1011,6 @@ import {
   readOpenClawWorkspaceFileFromDir,
   type WorkspaceFileItem,
 } from "./openclaw-workspace-files.js";
-import {
-  buildEnvoyMeshRetrievedContext,
-} from "./openclaw-turn-context.js";
-import {
-  buildOpenClawGatewayAgentSection,
-  buildOpenClawGatewaySearchEnv,
-  buildOpenClawGatewaySkillEntries,
-  isOpenClawEnvoymeshWebhookReady,
-  resolveActiveWebSearchProvider,
-} from "./openclaw-gateway-config.js";
-import { resolveAssistantAgentUrl } from "./bridge/config.js";
-import { reclaimAssistantGatewayPort } from "./openclaw-gateway-port.js";
 import { runInboundChatAssist } from "./inbound-chat-assist.js";
 import { recordTaskJournalActivity, emitOwnerReport } from "./agent-activity-hooks.js";
 import { recordCommerceReceiptFromTaskResult } from "./commerce-receipt-inbound.js";
@@ -949,41 +1088,7 @@ function summarizeAgentCard(row: {
   return summary;
 }
 
-/** Unblocks when an underlying `fs.readFile` or mutex never settles (seen on some Windows setups). */
-function raceWithTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
-  return new Promise((resolve, reject) => {
-    let settled = false;
-    const t = setTimeout(() => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      reject(new Error(`${label} timed out after ${ms}ms`));
-    }, ms);
-    promise.then(
-      (v) => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        clearTimeout(t);
-        resolve(v);
-      },
-      (e) => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        clearTimeout(t);
-        reject(e);
-      },
-    );
-  });
-}
-
 /** Per-topic DHT provide/cancel cap so profile save does not block on sparse WAN bootstrap. */
-const DISCOVERY_TOPIC_OP_TIMEOUT_MS = 10_000;
-const WARM_CONTACT_DIAL_HINTS_TIMEOUT_MS = 10_000;
 
 /**
  * NodeServiceImpl implements the NodeService interface.
@@ -2075,68 +2180,62 @@ class NodeServiceImpl implements NodeService {
   // Identity
   // ============================================
 
+  private _identityContext(): IdentityContext {
+    return {
+      getProfile: () => this._profile,
+      requireProfile: () => this._requireProfile(),
+      assertOnline: () => this._assertOnline(),
+      getMesh: () => this._mesh,
+      getExternalMesh: () => this._externalMesh,
+      reachableMesh: () => this._reachableMesh(),
+      requireMesh: () => this._requireMesh(),
+      getRelayPublicWsUrl: () => this._relayPublicWsUrl,
+      getHumanProfileStore: () => this._humanProfileStore,
+      getPeerReputationStore: () => this._peerReputationStore ?? undefined,
+      getReputationAnchorStore: () => this._reputationAnchorStore ?? undefined,
+      getPeerProfileCacheStore: () => this._peerProfileCacheStore ?? undefined,
+      getContactOwnerKeyStore: () => this._contactOwnerKeyStore ?? undefined,
+      getConfigStore: () => this._configStore,
+      getCapabilityManifestStore: () => this._capabilityManifestStore ?? undefined,
+      getVaultDir: () => this._vaultDir,
+      getPeerDirectoryStore: () => this._peerDirectoryStore,
+      getBonds: () => this.getBonds(),
+      requestPeerProfile: (ownerId) => this.requestPeerProfile(ownerId),
+      refreshCapabilityIndex: () => this.refreshCapabilityIndex(),
+      emit: (event, payload) => this.emit(event as never, payload as never),
+      dialHintsForChat: (peerId, listenAddrs) => this._dialHintsForChat(peerId, listenAddrs),
+      rememberBondedPeerTransportFromInbound: (envelope, context) =>
+        this._rememberBondedPeerTransportFromInbound(envelope, context),
+      resolveLibp2pPeerForBondOwner: (ownerId) =>
+        this._resolveLibp2pPeerForBondOwner(ownerId) as Promise<
+          { transportPeerId: string; listenAddrs: string[] } | undefined
+        >,
+      getAgentIdentityStore: () => this._agentIdentityStore ?? undefined,
+      getAutoAdvertisedDiscoveryTopics: () => this._autoAdvertisedDiscoveryTopics,
+      setAutoAdvertisedDiscoveryTopics: (topics) => {
+        this._autoAdvertisedDiscoveryTopics = topics;
+      },
+      getAdvertiseInterestsTimer: () => this._advertiseInterestsTimer,
+      setAdvertiseInterestsTimer: (timer) => {
+        this._advertiseInterestsTimer = timer;
+      },
+      getNearbyProfileProbeLastAt: () => this._nearbyProfileProbeLastAt,
+      getNearbyProfileProbeInflight: () => this._nearbyProfileProbeInflight,
+    };
+  }
+
   getProfile(): NodeProfile {
-    return this._requireProfile();
+    return getProfileViaRuntime(this._identityContext());
   }
 
   getOwnerDidPresentation() {
-    const profile = this._requireProfile();
-    return buildOwnerDidPresentation({
-      ownerId: profile.owner.ownerId,
-      publicKeyPem: profile.owner.publicKeyPem,
-    });
+    return getOwnerDidPresentationViaRuntime(this._identityContext());
   }
 
-  /**
-   * Export the owner's DID document as portable JSON. Auto-includes
-   * service endpoints for the active relay and the agent (if known),
-   * so the resulting document is self-contained for handoff.
-   */
   exportDidDocument(input?: {
     services?: Array<{ id: string; type: string; serviceEndpoint: string; description?: string }>;
   }): string {
-    const profile = this._requireProfile();
-    const services: Array<{ id: string; type: string; serviceEndpoint: string; description?: string }> = [];
-    if (input?.services) {
-      for (const s of input.services) services.push(s);
-    } else {
-      // Auto-populate from runtime state
-      const mesh = this._mesh ?? this._externalMesh;
-      if (mesh) {
-        const relay = this._relayPublicWsUrl;
-        if (relay) {
-          services.push({
-            id: "#envoy-relay",
-            type: "EnvoyMeshRelay",
-            serviceEndpoint: relay,
-            description: "WebSocket relay for inbound envelopes",
-          });
-        }
-        if (mesh.peerId) {
-          services.push({
-            id: "#envoy-agent",
-            type: "EnvoyMeshAgent",
-            serviceEndpoint: `envoy_agent_${mesh.peerId.slice(-12)}`,
-            description: "Local agent peer id (last 12 chars)",
-          });
-        }
-      }
-    }
-
-    const inner = buildOwnerDidPresentation({
-      ownerId: profile.owner.ownerId,
-      publicKeyPem: profile.owner.publicKeyPem,
-      services,
-    });
-    const envelope = {
-      envelope: "envoymesh-did-export-v1" as const,
-      exportedAt: new Date().toISOString(),
-      did: inner.did,
-      ownerId: profile.owner.ownerId,
-      publicKeyPem: profile.owner.publicKeyPem,
-      document: inner.document,
-    };
-    return JSON.stringify(envelope);
+    return exportDidDocumentViaRuntime(this._identityContext(), input);
   }
 
   async resolveDidImport(input: string) {
@@ -2148,249 +2247,47 @@ class NodeServiceImpl implements NodeService {
   }
 
   async cacheDidContactKey(params: { ownerId: string; publicKeyPem: string }) {
-    return cacheDidContactKeyViaRuntime(this._smallProfileDelegationsContext(), params);
+    return cacheDidContactKeyViaRuntime(this._identityContext(), params);
   }
 
   async getPeerReputationSummary(peerOwnerId: string): Promise<PeerReputationSummary> {
-    const id = peerOwnerId.trim();
-    const localRecord = this._peerReputationStore
-      ? await this._peerReputationStore.getReputation(id)
-      : undefined;
-    const attestations = this._reputationAnchorStore
-      ? await this._reputationAnchorStore.listAttestations(id)
-      : [];
-
-    return {
-      peerOwnerId: id,
-      local: localRecord
-        ? {
-            successfulTasks: localRecord.successfulTasks,
-            failedTasks: localRecord.failedTasks,
-            avgLatencyMs: localRecord.avgLatencyMs,
-            abuseFlags: localRecord.abuseFlags,
-            lastUpdated: localRecord.lastUpdated,
-          }
-        : undefined,
-      attestations,
-    };
+    return getPeerReputationSummaryViaRuntime(this._identityContext(), peerOwnerId);
   }
 
   async getHumanProfile(): Promise<HumanProfile | undefined> {
-    const profile = await this._humanProfileStore.loadHumanProfile();
-    return profile as HumanProfile | undefined;
+    return getHumanProfileViaRuntime(this._identityContext());
   }
 
   async updateHumanProfile(input: CreateHumanProfileInput): Promise<HumanProfile> {
-    this._assertOnline();
-    const selfProfile = this._requireProfile();
-
-    // Validate required fields
-    if (!input.displayName || !input.displayName.trim()) {
-      throw new Error("displayName is required");
-    }
-    if (!input.username || !/^[a-zA-Z0-9_]{3,30}$/.test(input.username)) {
-      throw new Error("username must be 3-30 characters, letters, numbers, underscore only");
-    }
-
-    // Load existing profile
-    const existing = await this._humanProfileStore.loadHumanProfile();
-
-    // Merge updates
-    const updatedPayload: Omit<HumanProfilePayload, "signature"> = {
-      version: "0.1",
-      ownerId: selfProfile.owner.ownerId,
-      displayName: input.displayName.trim(),
-      username: input.username.trim(),
-      bio: input.bio ?? existing?.bio,
-      gender: input.gender ?? existing?.gender,
-      hobbies: input.hobbies ?? existing?.hobbies,
-      knowledge: input.knowledge ?? existing?.knowledge,
-      profileVisibility: input.profileVisibility ?? existing?.profileVisibility ?? "private",
-      discoveryLocation: input.discoveryLocation ?? existing?.discoveryLocation,
-      discoveryLocationPrecision:
-        input.discoveryLocationPrecision ?? existing?.discoveryLocationPrecision ?? "hidden",
-      capabilities: input.capabilities ?? existing?.capabilities,
-      publicThumbnail: existing?.publicThumbnail,
-      galleryPhotos: existing?.galleryPhotos,
-      updatedAt: new Date().toISOString(),
-    };
-
-    const signedProfile = await this._signAndSaveHumanProfile(updatedPayload);
-
-    const config = await this._configStore.load();
-    const isPublicNetwork = config?.bootstrapPresets && config.bootstrapPresets.length > 0;
-    const interests = [...(updatedPayload.hobbies ?? []), ...(updatedPayload.knowledge ?? [])];
-    const username = updatedPayload.username;
-    const locationTopics = deriveLocationDiscoveryTopics({
-      location: updatedPayload.discoveryLocation,
-      precision: updatedPayload.discoveryLocationPrecision,
-    });
-    const previousProfileCapabilityTags = profileCapabilityTags(existing?.capabilities);
-    const capabilityTags = profileCapabilityTags(updatedPayload.capabilities);
-    const capabilityTopics = profileCapabilityDiscoveryTopics(capabilityTags);
-    await this._syncProfileCapabilitiesToManifest(
-      previousProfileCapabilityTags,
-      capabilityTags,
-    );
-
-    // DHT advertise/cancel can hang on sparse networks — never block the RPC response.
-    void this._applyProfileDiscoveryAdvertising({
-      profileVisibility: updatedPayload.profileVisibility,
-      isPublicNetwork: Boolean(isPublicNetwork),
-      interests,
-      username,
-      locationTopics,
-      capabilityTopics,
-    }).catch((err) => {
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`[node-service] profile discovery advertising failed: ${msg}`);
-    });
-
-    return signedProfile;
-  }
-
-  private async _applyProfileDiscoveryAdvertising(input: {
-    profileVisibility: HumanProfilePayload["profileVisibility"];
-    isPublicNetwork: boolean;
-    interests: string[];
-    username: string;
-    locationTopics: string[];
-    capabilityTopics: string[];
-  }): Promise<void> {
-    console.log(
-      `[node-service] Checking DHT advertising: visibility=${input.profileVisibility}, isPublicNetwork=${input.isPublicNetwork}, interests=${JSON.stringify(input.interests)}, locationTopics=${JSON.stringify(input.locationTopics)}, capabilityTopics=${JSON.stringify(input.capabilityTopics)}`,
-    );
-    if (input.profileVisibility === "public" && input.isPublicNetwork) {
-      await this._advertisePublicDiscoveryTopics({
-        interests: input.interests,
-        username: input.username,
-        locationTopics: input.locationTopics,
-        capabilityTopics: input.capabilityTopics,
-      });
-    } else {
-      await this._cancelAutoAdvertisedDiscoveryTopics();
-    }
-  }
-
-  private async _signAndSaveHumanProfile(
-    payload: Omit<import("@envoymesh/protocol").HumanProfilePayload, "signature">,
-  ): Promise<HumanProfile> {
-    const selfProfile = this._requireProfile();
-    const signedProfile = signHumanProfile(payload, selfProfile.owner.privateKeyPem);
-    await raceWithTimeout(
-      this._humanProfileStore.saveHumanProfile(signedProfile),
-      15_000,
-      "saveHumanProfile",
-    );
-    void this._broadcastProfileSyncToBonds(signedProfile).catch((err) => {
-      console.warn("[profile.sync] broadcast failed:", err);
-    });
-    return signedProfile as HumanProfile;
-  }
-
-  private _mapCachedPeerProfile(row: CachedPeerProfile): PeerProfileView {
-    return {
-      ownerId: row.ownerId,
-      profile: row.profile as HumanProfile,
-      cachedAt: row.cachedAt,
-      thumbnailContentBase64: row.thumbnail?.contentBase64,
-      thumbnailMimeType: row.thumbnail?.mimeType,
-    };
+    return updateHumanProfileViaRuntime(this._identityContext(), input);
   }
 
   async getPeerProfile(ownerId: string): Promise<PeerProfileView | undefined> {
-    if (!this._peerProfileCacheStore) return undefined;
-    const row = await this._peerProfileCacheStore.get(ownerId);
-    return row ? this._mapCachedPeerProfile(row) : undefined;
+    return getPeerProfileViaRuntime(this._identityContext(), ownerId);
   }
 
   async listPeerProfiles(): Promise<PeerProfileView[]> {
-    if (!this._peerProfileCacheStore) return [];
-    const rows = await this._peerProfileCacheStore.list();
-    return rows.map((r) => this._mapCachedPeerProfile(r));
+    return listPeerProfilesViaRuntime(this._identityContext());
   }
 
   async syncProfileToBonds(): Promise<void> {
-    return syncProfileToBondsViaRuntime(this._miscDelegationsContext());
+    return syncProfileToBondsViaRuntime(this._identityContext());
   }
 
   async refreshBondPeerProfiles(): Promise<{ requested: number; failed: number }> {
-    const mesh = this._reachableMesh();
-    if (mesh && mesh.getConnectionStats().totalConnections >= NodeServiceImpl.BOND_WARM_MAX_CONNECTIONS) {
-      console.warn(
-        `[profile] refreshBondPeerProfiles skipped: ${mesh.getConnectionStats().totalConnections} open libp2p connections`,
-      );
-      return { requested: 0, failed: 0 };
-    }
-    const bonds = await this.getBonds();
-    let failed = 0;
-    let requested = 0;
-    for (const bond of bonds) {
-      if (bond.level !== "direct" && bond.level !== "referred") {
-        continue;
-      }
-      requested += 1;
-      const result = await this.requestPeerProfile(bond.peerOwnerId);
-      if (!result.ok) failed += 1;
-    }
-    void this.refreshCapabilityIndex().catch((err) => {
-      console.warn("[chain] refreshCapabilityIndex after bond refresh failed:", err);
-    });
-    return { requested, failed };
+    return refreshBondPeerProfilesViaRuntime(this._identityContext());
   }
 
   async requestPeerProfile(ownerId: string): Promise<{ ok: boolean; reason?: string }> {
     return requestPeerProfileViaRuntime(this._requestPeerProfileContext(), ownerId);
   }
 
-  // The runtime now owns _requestPeerProfileOnce's body; the in-flight
-  // dedupe + cooldown live there. We keep a thin wrapper here only to
-  // preserve the test surface (`_requestPeerProfileOnce` is private
-  // and called from a few tests).
   private async _requestPeerProfileOnce(ownerId: string): Promise<{ ok: boolean; reason?: string }> {
     return requestPeerProfileViaRuntime(this._requestPeerProfileContext(), ownerId);
   }
 
   private async _probeNearbyPeerProfileAfterDiscovery(peerId: string, multiaddrs: string[]): Promise<void> {
-    const mesh = this._mesh;
-    const profile = this._profile;
-    if (!mesh || !profile || !this._contactOwnerKeyStore || !this._peerProfileCacheStore) {
-      return;
-    }
-    if (peerId === mesh.peerId) {
-      return;
-    }
-    const lastAt = this._nearbyProfileProbeLastAt.get(peerId) ?? 0;
-    if (Date.now() - lastAt < NodeServiceImpl._NEARBY_PROFILE_PROBE_COOLDOWN_MS) {
-      return;
-    }
-    if (this._nearbyProfileProbeInflight.has(peerId)) {
-      return;
-    }
-    this._nearbyProfileProbeInflight.add(peerId);
-    try {
-      const enriched = await probeNearbyPeerProfile({
-        mesh,
-        profile,
-        contactOwnerKeyStore: this._contactOwnerKeyStore,
-        peerProfileCache: this._peerProfileCacheStore,
-        transportPeerId: peerId,
-        listenAddrs: multiaddrs,
-        dialHintsFor: (transportPeerId, addrs) => this._dialHintsForChat(transportPeerId, addrs ?? multiaddrs),
-        selfPeerId: mesh.peerId,
-        selfOwnerId: profile.owner.ownerId,
-      });
-      this._nearbyProfileProbeLastAt.set(peerId, Date.now());
-      if (!enriched) {
-        return;
-      }
-      this.emit("profile:updated", { ownerId: enriched.ownerId });
-      this.emit("peer:discovered", enriched);
-    } catch (err) {
-      console.warn(`[node-service] nearby profile probe failed for ${peerId}:`, err);
-    } finally {
-      this._nearbyProfileProbeInflight.delete(peerId);
-    }
+    return _probeNearbyPeerProfileAfterDiscovery(this._identityContext(), peerId, multiaddrs);
   }
 
   /**
@@ -2483,35 +2380,6 @@ class NodeServiceImpl implements NodeService {
     }
   }
 
-  private async _broadcastProfileSyncToBonds(humanProfile: HumanProfilePayload): Promise<void> {
-    if (!humanProfile.publicThumbnail) return;
-    const mesh = this._reachableMesh();
-    if (!mesh) return;
-    const profile = this._profile;
-    if (!profile) return;
-    const bonds = await this.getBonds();
-    const bondOwnerIds = bonds.map((b) => b.peerOwnerId);
-    if (bondOwnerIds.length === 0) return;
-
-    try {
-      await sendProfileSyncToBonds({
-        mesh,
-        profile,
-        humanProfile,
-        vaultDir: this._vaultDir,
-        bondOwnerIds,
-        resolveLibp2pPeer: async (ownerId) => {
-          const resolved = await this._resolveLibp2pPeerForBondOwner(ownerId);
-          if (!resolved) return undefined;
-          return { peerId: resolved.transportPeerId, listenAddrs: resolved.listenAddrs };
-        },
-        dialHintsFor: (peerId, listenAddrs) => this._dialHintsForChat(peerId, listenAddrs),
-      });
-    } catch (err) {
-      console.warn("[profile.sync] broadcast failed:", err);
-    }
-  }
-
   async handleInboundProfileIntent(
     envelope: EnvoyEnvelope,
     context?: {
@@ -2520,139 +2388,35 @@ class NodeServiceImpl implements NodeService {
       replyWithEnvelope?: (envelope: EnvoyEnvelope) => Promise<void>;
     },
   ): Promise<boolean> {
-    if (!this._contactOwnerKeyStore || !this._peerProfileCacheStore) return false;
-    await this._rememberBondedPeerTransportFromInbound(envelope, context);
-    if (
-      envelope.intent !== "profile.sync" &&
-      envelope.intent !== "profile.response" &&
-      envelope.intent !== "profile.request"
-    ) {
-      return false;
-    }
-    if (envelope.intent === "profile.request") {
-      const transportPeerId = context?.transportPeerId?.trim() ?? "";
-      const result = await handleInboundProfileRequest({
-        envelope,
-        transportPeerId,
-        contactOwnerKeyStore: this._contactOwnerKeyStore,
-        loadLocalProfile: async () => this._humanProfileStore.loadHumanProfile(),
-        sendProfileResponse: async (envelopeRecipientPeerId, local, replyTransportPeerId) => {
-          const profile = this._requireProfile();
-          const responseEnvelope = await buildSignedProfilePayloadEnvelope({
-            profile,
-            humanProfile: local,
-            vaultDir: this._vaultDir,
-            intent: "profile.response",
-            recipientPeerId: envelopeRecipientPeerId,
-          });
-          if (context?.replyWithEnvelope) {
-            try {
-              await context.replyWithEnvelope(responseEnvelope);
-              console.log(
-                `[profile.response] replied on inbound stream to ${envelopeRecipientPeerId.slice(0, 16)}…`,
-              );
-              return;
-            } catch (err) {
-              console.warn(
-                `[profile.response] inbound stream reply failed, dialing outbound:`,
-                err instanceof Error ? err.message : err,
-              );
-            }
-          }
-          const mesh = this._requireMesh();
-          const records = await this._peerDirectoryStore.listPeerRecords();
-          const rec = records.find((row) => row.peerId === replyTransportPeerId);
-          const listenAddrs = rec?.listenAddrs;
-          await sendProfileResponse({
-            mesh,
-            profile,
-            humanProfile: local,
-            vaultDir: this._vaultDir,
-            envelopeRecipientPeerId,
-            transportPeerId: replyTransportPeerId,
-            listenAddrs,
-            dialHintsFor: (peerId, addrs) => this._dialHintsForChat(peerId, addrs ?? listenAddrs),
-          });
-        },
-      });
-      if (result.handled) {
-        return true;
-      }
-      console.warn(`[profile.request] not handled: ${"reason" in result ? result.reason : "unknown"}`);
-      return false;
-    }
-    const result = await handleInboundProfileSync({
-      envelope,
-      contactOwnerKeyStore: this._contactOwnerKeyStore,
-      peerProfileCache: this._peerProfileCacheStore,
-    });
-    if (result.handled) {
-      this.emit("profile:updated", { ownerId: result.ownerId });
-      return true;
-    }
-    console.warn(`[${envelope.intent}] not handled: ${"reason" in result ? result.reason : "unknown"}`);
-    return false;
-  }
-
-  private async _loadHumanProfileForPhotoUpdate(): Promise<{
-    existing: import("@envoymesh/protocol").HumanProfilePayload;
-    base: Omit<import("@envoymesh/protocol").HumanProfilePayload, "signature">;
-  }> {
-    this._assertOnline();
-    const existing = await this._humanProfileStore.loadHumanProfile();
-    if (!existing) {
-      throw new Error("Create your profile before adding photos");
-    }
-    const { signature: _s, ...base } = existing;
-    return { existing, base: { ...base, updatedAt: new Date().toISOString() } };
+    return handleInboundProfileIntentViaRuntime(this._identityContext(), envelope, context);
   }
 
   async setPublicProfileThumbnail(params: SetPublicProfileThumbnailParams): Promise<HumanProfile> {
-    return setPublicProfileThumbnailViaRuntime(this._smallProfileDelegationsContext(), params);
+    return setPublicProfileThumbnailViaRuntime(this._identityContext(), params);
   }
 
   async upsertProfileGalleryPhoto(params: UpsertProfileGalleryPhotoParams): Promise<HumanProfile> {
-    return upsertProfileGalleryPhotoViaRuntime(this._upsert_profile_gallery_photo_context(), params);
+    return upsertProfileGalleryPhotoViaRuntime(this._identityContext(), params);
   }
 
-
   async removeProfileGalleryPhoto(params: { vaultRelativePath: string }): Promise<HumanProfile> {
-    const path = params.vaultRelativePath.trim().replace(/^[\\/]+/, "");
-    const { base, existing } = await this._loadHumanProfileForPhotoUpdate();
-    const gallery = (existing.galleryPhotos ?? []).filter((p) => p.vaultRelativePath !== path);
-    if (gallery.length === (existing.galleryPhotos ?? []).length) {
-      throw new Error("Gallery photo not found on profile");
-    }
-    return this._signAndSaveHumanProfile({ ...base, galleryPhotos: gallery });
+    return removeProfileGalleryPhotoViaRuntime(this._identityContext(), params);
   }
 
   async updateProfileGalleryPhotoVisibility(
     params: UpdateProfileGalleryPhotoVisibilityParams,
   ): Promise<HumanProfile> {
-    const path = params.vaultRelativePath.trim().replace(/^[\\/]+/, "");
-    const visibility = params.visibility as ProfileGalleryPhotoVisibility;
-    const { base, existing } = await this._loadHumanProfileForPhotoUpdate();
-    const gallery = (existing.galleryPhotos ?? []).map((p) =>
-      p.vaultRelativePath === path ? { ...p, visibility } : p,
-    );
-    if (!gallery.some((p) => p.vaultRelativePath === path)) {
-      throw new Error("Gallery photo not found on profile");
-    }
-    return this._signAndSaveHumanProfile({ ...base, galleryPhotos: gallery });
+    return updateProfileGalleryPhotoVisibilityViaRuntime(this._identityContext(), params);
   }
 
   async getAgentIdentity(): Promise<AgentIdentityDocument> {
-    return getAgentIdentityViaRuntime(this._smallProfileDelegationsContext());
+    return getAgentIdentityViaRuntime(this._identityContext());
   }
 
   async updateAgentIdentity(content: string): Promise<AgentIdentityDocument> {
-    return updateAgentIdentityViaRuntime(this._smallProfileDelegationsContext(), content);
+    return updateAgentIdentityViaRuntime(this._identityContext(), content);
   }
 
-  /**
-   * Advertise interests and username as DHT topics for peer discovery
-   * Runs continuously in background with periodic retries (like system topics)
-   */
   private _advertiseInterestsTimer?: ReturnType<typeof setInterval>;
   /** Topics auto-advertised from public profile (interests, username, geo) — cancelled when profile/network changes. */
   private _autoAdvertisedDiscoveryTopics: string[] = [];
@@ -2663,294 +2427,43 @@ class NodeServiceImpl implements NodeService {
   private _nodeProcessStartedAtMs = Date.now();
   private _relayBootstrapPeers: string[] = [];
 
-  private async _cancelDiscoveryTopics(topics: string[]): Promise<void> {
-    if (topics.length === 0) return;
-    const mesh = this._mesh ?? this._externalMesh;
-    if (!mesh) return;
-    for (const topic of topics) {
-      try {
-        await raceWithTimeout(
-          mesh.cancelCapabilityTopicReprovide(topic),
-          DISCOVERY_TOPIC_OP_TIMEOUT_MS,
-          `cancelCapabilityTopicReprovide(${topic})`,
-        );
-        console.log(`[node-service] Cancelled DHT topic: ${topic}`);
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.warn(`[node-service] Failed to cancel topic "${topic}": ${msg}`);
-      }
-    }
-  }
-
-  private async _cancelAutoAdvertisedDiscoveryTopics(): Promise<void> {
-    const removed = [...this._autoAdvertisedDiscoveryTopics];
-    this._autoAdvertisedDiscoveryTopics = [];
-    if (this._advertiseInterestsTimer) {
-      clearInterval(this._advertiseInterestsTimer);
-      this._advertiseInterestsTimer = undefined;
-    }
-    await this._cancelDiscoveryTopics(removed);
-  }
-
-  private async _syncProfileCapabilitiesToManifest(
-    previousProfileTags: string[],
-    nextProfileTags: string[],
-  ): Promise<void> {
-    if (!this._capabilityManifestStore) {
-      return;
-    }
-    if (previousProfileTags.length === 0 && nextProfileTags.length === 0) {
-      return;
-    }
-    let manifest = await this._capabilityManifestStore.loadManifest();
-    if (!manifest) {
-      manifest = await this._capabilityManifestStore.createDefaultManifest();
-    }
-    const { capabilities, changed } = syncProfileTagsToManifestCapabilities({
-      manifestCapabilities: manifest.capabilities,
-      previousProfileTags,
-      nextProfileTags,
-    });
-    if (!changed) {
-      return;
-    }
-    await this._capabilityManifestStore.saveManifest({
-      ...manifest,
-      capabilities,
-      updatedAt: new Date().toISOString(),
-    });
-  }
-
-  private async _advertisePublicDiscoveryTopics(input: {
-    interests: string[];
-    username: string;
-    locationTopics: string[];
-    capabilityTopics?: string[];
-  }): Promise<void> {
-    const topicSet = new Set<string>();
-    for (const interest of input.interests) {
-      topicSet.add(interest.toLowerCase());
-    }
-    topicSet.add(`username:${input.username.toLowerCase()}`);
-    for (const geo of input.locationTopics) {
-      topicSet.add(geo);
-    }
-    for (const capability of input.capabilityTopics ?? []) {
-      topicSet.add(capability);
-    }
-    const allTopics = [...topicSet];
-
-    const removed = this._autoAdvertisedDiscoveryTopics.filter((topic) => !topicSet.has(topic));
-    await this._cancelDiscoveryTopics(removed);
-    this._autoAdvertisedDiscoveryTopics = allTopics;
-
-    if (this._advertiseInterestsTimer) {
-      clearInterval(this._advertiseInterestsTimer);
-      this._advertiseInterestsTimer = undefined;
-    }
-
-    const advertisedTopics: string[] = [];
-    let allSuccess = true;
-
-    const advertiseOnce = async (topic: string): Promise<boolean> => {
-      try {
-        await raceWithTimeout(
-          this._requireMesh().provideCapabilityTopic(topic),
-          DISCOVERY_TOPIC_OP_TIMEOUT_MS,
-          `provideCapabilityTopic(${topic})`,
-        );
-        console.log(`[node-service] Successfully advertised topic: ${topic}`);
-        return true;
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.warn(`[node-service] Failed to advertise topic "${topic}": ${msg}`);
-        return false;
-      }
-    };
-
-    for (const topic of allTopics) {
-      const success = await advertiseOnce(topic);
-      if (success) {
-        advertisedTopics.push(topic);
-      } else {
-        allSuccess = false;
-      }
-    }
-
-    this.emit("discovery:advertising-complete", { topics: advertisedTopics, success: allSuccess });
-
-    this._advertiseInterestsTimer = setInterval(async () => {
-      console.log(`[node-service] Periodic re-advertisement for ${allTopics.length} topics...`);
-      let retrySuccess = true;
-      for (const topic of allTopics) {
-        const success = await advertiseOnce(topic);
-        if (!success) retrySuccess = false;
-      }
-      if (retrySuccess) {
-        console.log(`[node-service] All topics successfully advertised on retry`);
-      }
-    }, 5 * 60 * 1000);
-  }
-
-  /** @deprecated Use `_advertisePublicDiscoveryTopics` — kept as alias for tests. */
-  private async _advertiseInterests(interests: string[], username: string): Promise<void> {
-    return this._advertisePublicDiscoveryTopics({ interests, username, locationTopics: [] });
-  }
-
-  /**
-   * Re-advertise interests on DHT and rendezvous servers (called on node start/restart)
-   */
   private async _advertiseInterestsIfPublic(): Promise<void> {
-    // Defensive: the 15s startup timeout may fire after stopNode() cleared the mesh
-    if (!this._mesh) return;
-    const config = await this._configStore.load();
-    const profile = await this._humanProfileStore.loadHumanProfile();
-    if (!config || !profile) return;
-
-    const isPublicNetwork = config.bootstrapPresets && config.bootstrapPresets.length > 0;
-    if (profile.profileVisibility === "public" && isPublicNetwork) {
-      const interests = [...(profile.hobbies ?? []), ...(profile.knowledge ?? [])];
-      const locationTopics = deriveLocationDiscoveryTopics({
-        location: profile.discoveryLocation,
-        precision: profile.discoveryLocationPrecision,
-      });
-      const capabilityTopics = profileCapabilityDiscoveryTopics(
-        profileCapabilityTags(profile.capabilities),
-      );
-
-      // Advertise on DHT (with retry and exponential backoff)
-      await this._advertisePublicDiscoveryTopics({
-        interests,
-        username: profile.username,
-        locationTopics,
-        capabilityTopics,
-      });
-
-      // Also register with rendezvous servers and relay peers as fallback
-      // This runs in parallel with DHT advertising and uses relay-based discovery
-      void this._registerWithRendezvousServers(interests, profile.username);
-    } else {
-      await this._cancelAutoAdvertisedDiscoveryTopics();
-    }
-  }
-
-  /**
-   * Register our capabilities with configured rendezvous servers and bootstrap relay peers
-   * This is a fallback when DHT provide fails, using relay-based discovery instead
-   */
-  private async _registerWithRendezvousServers(interests: string[], username: string): Promise<void> {
-    // Defensive: the 15s startup timeout may fire after stopNode() cleared the mesh
-    const mesh = this._mesh;
-    if (!mesh) return;
-    const profileForRendezvous = this._profile;
-    if (!profileForRendezvous) {
-      return;
-    }
-
-    const config = await this._configStore.load();
-
-    // Build capabilities list from interests (as tags)
-    const capabilities = interests.map(interest => ({ tag: interest.toLowerCase() }));
-    // Also add username as a special capability
-    capabilities.push({ tag: `username:${username.toLowerCase()}` });
-
-    // Collect all relay addresses to register with
-    const relayAddrs: string[] = [];
-
-    // Add configured relays (manually added via addRelay)
-    if (config?.configuredRelays) {
-      for (const relay of config.configuredRelays) {
-        if (relay.enabled && relay.addr) {
-          relayAddrs.push(relay.addr);
-        }
-      }
-    }
-
-    // Add bootstrap preset relays (like cn-relay) if they look like relay addresses
-    if (config?.bootstrapPresets) {
-      for (const preset of config.bootstrapPresets) {
-        // cn-relay is a known relay preset
-        if (preset === "cn-relay") {
-          relayAddrs.push(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
-        }
-      }
-    }
-
-    // Add manually configured bootstrap peers if they look like relays
-    if (config?.bootstrapPeers) {
-      for (const peer of config.bootstrapPeers) {
-        // If it contains /p2p/ it's a full multiaddr with peer ID - likely a relay
-        if (peer.includes("/p2p/") && !relayAddrs.includes(peer)) {
-          relayAddrs.push(peer);
-        }
-      }
-    }
-
-    if (relayAddrs.length === 0) {
-      console.log("[node-service] No relays configured for rendezvous registration");
-      return;
-    }
-
-    console.log(`[node-service] Registering capabilities with ${relayAddrs.length} relay(s)`);
-
-    // Retry configuration for relay registration
-    const MAX_RETRIES = 3;
-    const BASE_TIMEOUT_MS = 15000;
-
-    for (const relayAddr of relayAddrs) {
-      let success = false;
-      let lastError: Error | undefined;
-
-      for (let attempt = 0; attempt < MAX_RETRIES && !success; attempt++) {
-        try {
-          console.log(`[node-service] Registering with rendezvous server: ${relayAddr} (attempt ${attempt + 1}/${MAX_RETRIES})`);
-
-          const envelope = signUnsignedEnvelope(
-            createUnsignedEnvelope({
-              senderPeerId: mesh.peerId,
-              senderPublicKey: profileForRendezvous.device.publicKeyPem,
-              recipientPeerId: relayAddr,
-              intent: "rendezvous.register",
-              payload: createRendezvousRegisterPayload({
-                peerId: mesh.peerId,
-                multiaddr: mesh.multiaddrs[0] ?? `/p2p/${mesh.peerId}`,
-                capabilities,
-                ttlSeconds: 3600,
-              }),
-            }),
-            profileForRendezvous.device.privateKeyPem,
-          );
-
-          // Send to relay and wait for response with retry
-          const response = await sendExpectReplyWithRetry({
-            mesh,
-            transportPeerId: relayAddr,
-            envelope,
-            dialHints: dialHintsForTransportTarget(relayAddr),
-            timeoutMs: BASE_TIMEOUT_MS * Math.pow(2, attempt),
-          });
-          console.log(`[node-service] Successfully registered with relay ${relayAddr}`);
-          success = true;
-        } catch (err) {
-          lastError = err instanceof Error ? err : new Error(String(err));
-          console.warn(`[node-service] Failed to register with relay ${relayAddr} (attempt ${attempt + 1}/${MAX_RETRIES}):`, lastError.message);
-
-          if (!success && attempt < MAX_RETRIES - 1) {
-            // Wait before retry
-            await new Promise((resolve) => setTimeout(resolve, BASE_TIMEOUT_MS * Math.pow(2, attempt)));
-          }
-        }
-      }
-
-      if (!success) {
-        console.warn(`[node-service] All ${MAX_RETRIES} attempts failed for relay ${relayAddr}: ${lastError?.message}`);
-      }
-    }
+    return _advertiseInterestsIfPublic(this._identityContext());
   }
 
   // ============================================
-  // Bond Management
+  // Bond Management (delegated to node-service-bond.ts)
   // ============================================
+
+  private _bondContext(): BondContext {
+    return buildBondContext({
+      assertOnline: () => this._assertOnline(),
+      requireMesh: () => this._requireMesh(),
+      requireProfile: () => this._requireProfile(),
+      trustStore: this._trustStore,
+      peerDirectoryStore: this._peerDirectoryStore,
+      humanProfileStore: this._humanProfileStore as BondContext["humanProfileStore"],
+      sessionTokenStore: this._sessionTokenStore ?? undefined,
+      getPendingSocialIntroProposals: () => this._pendingSocialIntroProposals,
+      getPendingHelloRequests: () => this._pendingHelloRequests,
+      dialHintsForChat: (recipientPeerId, peerListenAddrs) =>
+        this._dialHintsForChat(recipientPeerId, peerListenAddrs),
+      deliverCallEnvelope: (transportPeerId, envelope, dialHints, listenAddrs) =>
+        this._deliverCallEnvelope(transportPeerId, envelope, dialHints, listenAddrs),
+      tagBondedContactReachability: (peerId) => {
+        void this._tagBondedContactReachability(peerId);
+      },
+      untagReachabilityForOwner: (ownerId) => this._untagReachabilityForOwner(ownerId),
+      flushPendingRoomSyncs: () => {
+        void this._flushPendingRoomSyncs();
+      },
+      flushPendingRoomMessages: () => {
+        void this._flushPendingRoomMessages();
+      },
+      refreshBondPeerProfiles: () => this.refreshBondPeerProfiles(),
+      emit: (event, data) => this.emit(event, data as never),
+    });
+  }
 
   async sendHello(
     targetOwnerId: string,
@@ -2958,379 +2471,107 @@ class NodeServiceImpl implements NodeService {
     message: string,
     options?: SendHelloOptions,
   ): Promise<HelloResponse> {
-    this._assertOnline();
-    const mesh = this._requireMesh();
-    const selfProfile = this._requireProfile();
-
-    let introCorrelationId: string | undefined;
-    let ownerCommitmentRef: string | undefined;
-    let pendingIntro: (SocialIntroProposal & { ownerCommitmentRef?: string }) | undefined;
-
-    if (options?.introProposalMessageId) {
-      pendingIntro = this._pendingSocialIntroProposals.get(options.introProposalMessageId);
-      if (!pendingIntro) {
-        throw new Error(`No pending intro proposal for messageId=${options.introProposalMessageId}`);
-      }
-      if (!pendingIntro.ownerCommitmentRef) {
-        throw new Error("Approve the intro commitment before sending hello");
-      }
-      if (pendingIntro.candidateOwnerId.trim() !== targetOwnerId.trim()) {
-        throw new Error("Intro proposal candidate does not match hello target owner id");
-      }
-      introCorrelationId = pendingIntro.introCorrelationId;
-      ownerCommitmentRef = pendingIntro.ownerCommitmentRef;
-    }
-
-    // Find the target peer's peerId — Trust-mode intros prefer candidatePeerId from the proposal row
-    const peerRecords = await this._peerDirectoryStore.listPeerRecords();
-    let matchedRecord =
-      peerRecords.find((r) => r.ownerId === targetOwnerId) ??
-      peerRecords.find((r) => r.peerId === targetOwnerId);
-    let targetPeerId = matchedRecord?.peerId;
-
-    if (pendingIntro?.candidatePeerId) {
-      targetPeerId = pendingIntro.candidatePeerId;
-      matchedRecord =
-        peerRecords.find((r) => r.ownerId === pendingIntro.candidateOwnerId) ??
-        peerRecords.find((r) => r.peerId === pendingIntro.candidatePeerId);
-    }
-
-    // If not found in peer directory, maybe targetOwnerId IS a peerId (for DHT discovered peers)
-    if (!targetPeerId) {
-      // Check if it looks like a valid peerId
-      if (targetOwnerId.startsWith("Qm") || targetOwnerId.startsWith("12D3")) {
-        targetPeerId = targetOwnerId;
-        console.log(`[node-service] Sending hello to DHT-discovered peer: ${targetPeerId}`);
-      } else {
-        throw new Error(`Peer not found for owner: ${targetOwnerId}`);
-      }
-    }
-
-    console.log(`[node-service] sendHello to ${targetPeerId} (message: ${message})`);
-
-    const envelope = signUnsignedEnvelope(
-      createUnsignedEnvelope({
-        senderPeerId: derivePeerId(selfProfile.device.publicKeyPem),
-        senderPublicKey: selfProfile.device.publicKeyPem,
-        recipientPeerId: targetPeerId,
-        intent: "bond.request",
-        payload: createBondRequestPayload({
-          requesterOwnerId: selfProfile.owner.ownerId,
-          requesterDisplayName: profile.displayName,
-          message: `[HELLO] ${message}`,
-          proofOfContext: `displayName:${profile.displayName}`,
-          requestedLevel: "direct",
-          introCorrelationId,
-          ownerCommitmentRef,
-        }),
-      }),
-      selfProfile.device.privateKeyPem,
-    );
-
-    try {
-      const dialHints = await this._dialHintsForChat(targetPeerId, matchedRecord?.listenAddrs);
-      console.log(`[node-service] sendHello dialHints count=${dialHints.length}`);
-      await this._deliverCallEnvelope(targetPeerId, envelope, dialHints, matchedRecord?.listenAddrs);
-      console.log(`[node-service] Hello sent successfully to ${targetPeerId}`);
-
-      if (options?.introProposalMessageId) {
-        this._pendingSocialIntroProposals.delete(options.introProposalMessageId);
-      }
-
-      // Always record owner ↔ peerId after a successful bond.request (refresh if already present).
-      try {
-        await this._peerDirectoryStore.ensurePeerFromInboundChat({
-          ownerId: targetOwnerId,
-          peerId: targetPeerId,
-          listenAddrs: matchedRecord?.listenAddrs ?? [],
-        });
-      } catch (err) {
-        console.warn(`[peer-directory] sendHello ensurePeerFromInboundChat:`, err);
-      }
-      void this._tagBondedContactReachability(targetPeerId);
-    } catch (err) {
-      console.error(`[node-service] Failed to send hello to ${targetPeerId}:`, err);
-      // Provide a more helpful error message
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      if (errorMsg.includes("getComponents") || errorMsg.includes("connection failed") || errorMsg.includes("timeout")) {
-        throw new Error(`Cannot reach peer ${targetPeerId.slice(0, 12)}... - peer may be behind NAT/firewall. Try configuring a relay server.`);
-      }
-      throw new Error(`Failed to send hello: ${errorMsg}`);
-    }
-
-    return {
-      messageId: envelope.messageId,
-      inReplyTo: "",
-      decision: "accept", // Optimistic - actual response comes async via mesh
-      timestamp: new Date().toISOString(),
-    };
+    return sendHelloViaRuntime(this._bondContext(), targetOwnerId, profile, message, options);
   }
 
   async acceptHello(messageId: string): Promise<void> {
-    // Find the pending hello request
-    const pending = this._pendingHelloRequests.get(messageId);
-    if (!pending) {
-      console.warn(`[node-service] acceptHello: no pending request found for messageId=${messageId}`);
-      return;
-    }
-
-    const mesh = this._requireMesh();
-    const selfProfile = this._requireProfile();
-
-    // Store the bond in trust store (accept the connection)
-    await this._trustStore.setTrustRecord({
-      peerOwnerId: pending.requesterOwnerId,
-      displayName: pending.requesterDisplayName,
-      level: pending.requestedLevel as any ?? "direct",
-      note: pending.message || undefined,
-      now: new Date().toISOString(),
-    });
-
-    // Manual-approval hello never ran `emitBondEstablished` from bond-inbound, so index.ts did not
-    // upsert peer-directory. Persist requester libp2p id so sendChat can resolve owner → peerId.
-    try {
-      const requesterDir = await this._peerDirectoryStore.getPeerByOwnerId(pending.requesterOwnerId);
-      await this._peerDirectoryStore.ensurePeerFromInboundChat({
-        ownerId: pending.requesterOwnerId,
-        peerId: pending.remotePeerId,
-        listenAddrs: requesterDir?.listenAddrs ?? [],
-      });
-    } catch (err) {
-      console.warn(`[peer-directory] acceptHello ensurePeerFromInboundChat:`, err);
-    }
-
-    // Send bond.accept back to the requester
-    const { createBondAcceptPayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
-    const { signUnsignedEnvelope } = await import("@envoymesh/identity");
-    const humanProfile = await this._humanProfileStore.loadHumanProfile();
-    console.log(`[node-service] acceptHello: humanProfile loaded:`, humanProfile);
-    const displayName = humanProfile?.displayName ?? selfProfile.owner.ownerId;
-    console.log(`[node-service] acceptHello: using displayName="${displayName}" (humanProfile.displayName=${humanProfile?.displayName}, fallback=${selfProfile.owner.ownerId})`);
-
-    console.log(`[node-service] Sending bond.accept to ${pending.requesterOwnerId} at peerId ${pending.remotePeerId}`);
-    const acceptEnvelope = signUnsignedEnvelope(
-      createUnsignedEnvelope({
-        senderPeerId: derivePeerId(selfProfile.device.publicKeyPem),
-        senderPublicKey: selfProfile.device.publicKeyPem,
-        recipientPeerId: pending.remotePeerId,
-        intent: "bond.accept",
-        payload: createBondAcceptPayload({
-          responderOwnerId: selfProfile.owner.ownerId,
-          requesterOwnerId: pending.requesterOwnerId,
-          message: `Hello from ${displayName}!`,
-        }),
-      }),
-      selfProfile.device.privateKeyPem,
-    );
-    console.log(`[node-service] bond.accept envelope created: intent=${acceptEnvelope.intent}, recipientPeerId=${acceptEnvelope.recipientPeerId}, senderPeerId=${acceptEnvelope.senderPeerId}`);
-    try {
-      console.log(`[node-service] Attempting to send bond.accept to ${pending.remotePeerId} dialHints merged…`);
-      const requesterDir = await this._peerDirectoryStore.getPeerByOwnerId(pending.requesterOwnerId);
-      const acceptDialHints = await this._dialHintsForChat(pending.remotePeerId, requesterDir?.listenAddrs);
-      console.log(`[node-service] bond.accept dialHints count=${acceptDialHints.length}`);
-      await this._deliverCallEnvelope(pending.remotePeerId, acceptEnvelope, acceptDialHints, requesterDir?.listenAddrs);
-      console.log(`[node-service] bond.accept sent successfully to ${pending.remotePeerId}`);
-    } catch (sendError) {
-      console.error(`[node-service] Failed to send bond.accept to ${pending.remotePeerId}: ${sendError instanceof Error ? sendError.message : String(sendError)}`);
-      // Don't throw - still update UI and clean up
-    }
-
-    // Emit bond:established event so the UI updates
-    this.emit("bond:established", {
-      peerOwnerId: pending.requesterOwnerId,
-      displayName: pending.requesterDisplayName,
-    });
-
-    void this._flushPendingRoomSyncs();
-    void this._flushPendingRoomMessages();
-
-    void this.refreshBondPeerProfiles().catch((err) => {
-      console.warn("[profile] refreshBondPeerProfiles after hello accept failed:", err);
-    });
-    void this._tagBondedContactReachability(pending.remotePeerId);
-
-    // Remove from pending requests
-    this._pendingHelloRequests.delete(messageId);
-
-    console.log(`[node-service] Successfully accepted hello from ${pending.requesterOwnerId}`);
+    return acceptPendingHelloViaRuntime(this._bondContext(), messageId);
   }
 
   async declineHello(messageId: string, reason?: string): Promise<void> {
-    // Find and remove the pending hello request
-    const pending = this._pendingHelloRequests.get(messageId);
-    if (pending) {
-      console.log(`[node-service] Declining hello from ${pending.requesterOwnerId}: ${reason ?? "no reason"}`);
-      this._pendingHelloRequests.delete(messageId);
-    } else {
-      console.warn(`[node-service] declineHello: no pending request found for messageId=${messageId}`);
-    }
+    return declinePendingHelloViaRuntime(this._bondContext(), messageId, reason);
   }
 
   async blockPeer(peerOwnerId: string): Promise<void> {
-    await this._trustStore.setTrustRecord({
-      peerOwnerId,
-      level: "blocked",
-      now: new Date().toISOString(),
-    });
-    await this._untagReachabilityForOwner(peerOwnerId);
+    return blockPeerViaRuntime(this._bondContext(), peerOwnerId);
   }
 
   async unblockPeer(peerOwnerId: string): Promise<void> {
-    // Unblocking restores the peer to "public" level (no bond) rather than creating a new bond
-    // If a bond exists, update it; otherwise do nothing (no automatic bonding)
-    const existing = await this._trustStore.getTrustRecord(peerOwnerId);
-    if (existing) {
-      await this._trustStore.setTrustRecord({
-        peerOwnerId,
-        level: existing.level === "blocked" ? "public" : existing.level,
-        now: new Date().toISOString(),
-      });
-    }
+    return unblockPeerViaRuntime(this._bondContext(), peerOwnerId);
   }
 
   async revokeBond(peerOwnerId: string): Promise<void> {
-    await this._untagReachabilityForOwner(peerOwnerId);
-    await this._trustStore.removeTrustRecord(peerOwnerId);
-    if (this._sessionTokenStore) {
-      await this._sessionTokenStore.removeTokensForOwner(peerOwnerId);
-    }
-    this.emit("bond:revoked", { peerOwnerId });
+    return revokeBondViaRuntime(this._bondContext(), peerOwnerId);
   }
 
   async getBonds(): Promise<BondRecord[]> {
-    const trustRecords = await this._trustStore.listTrustRecords();
-    const dirRecords = await this._peerDirectoryStore.listPeerRecords();
-    const latestByOwner = new Map<string, { peerId: string; lastSeenAt: string }>();
-    for (const r of dirRecords) {
-      const libp2p = pickBestLibp2pPeerDirectoryRecord(dirRecords, r.ownerId);
-      if (libp2p) {
-        latestByOwner.set(r.ownerId, { peerId: libp2p.peerId, lastSeenAt: libp2p.lastSeenAt });
-      }
-    }
-    for (const r of dirRecords) {
-      if (latestByOwner.has(r.ownerId)) continue;
-      const cur = latestByOwner.get(r.ownerId);
-      if (!cur || r.lastSeenAt > cur.lastSeenAt) {
-        latestByOwner.set(r.ownerId, { peerId: r.peerId, lastSeenAt: r.lastSeenAt });
-      }
-    }
-    return trustRecords.map((record) => ({
-      peerOwnerId: record.peerOwnerId,
-      displayName: record.displayName,
-      libp2pPeerId: latestByOwner.get(record.peerOwnerId)?.peerId,
-      level: record.level,
-      createdAt: record.createdAt,
-      note: record.note,
-    }));
+    return getBondsViaRuntime(this._bondContext());
   }
 
   // ============================================
-  // Messaging
+  // Messaging (core transport delegated to node-service-outbound-messaging.ts)
   // ============================================
 
-  /**
-   * Merge peer-directory listen addrs with discovery seeds and synthetic relay circuit paths.
-   * Contacts from bond/hello often store empty listenAddrs; without `/p2p-circuit/...` hints, outbound
-   * chat fails across NAT for one direction.
-   */
-  private async _dialHintsForChat(recipientPeerId: string, peerListenAddrs: string[] | undefined): Promise<string[]> {
-    const config = await this._configStore.load();
-    const mesh = this._reachableMesh();
-    const peerStoreAddrs = mesh ? await mesh.getPeerStoreDialHints(recipientPeerId) : [];
-    const mergedListen = mergeDialablePeerListenAddrs(
-      recipientPeerId,
-      peerListenAddrs,
-      peerStoreAddrs,
-    );
-    return buildOutboundDialHints({
-      recipientPeerId,
-      peerListenAddrs: mergedListen.length ? mergedListen : peerListenAddrs,
-      discoverySeedStore: this._discoverySeedStore,
-      config,
-      profileDir: this._profileDir,
+  private _outboundMessagingContext(): OutboundMessagingContext {
+    return buildOutboundMessagingContext({
+      loadConfig: () => this._configStore.load(),
+      getReachableMesh: () => this._reachableMesh(),
+      requireMesh: () => this._requireMesh(),
+      getDiscoverySeedStore: () => this._discoverySeedStore,
+      getProfileDir: () => this._profileDir,
+      peerDirectoryStore: this._peerDirectoryStore,
+      getTransportCache: () => this._lastLibp2pTransportByOwner,
+      setTransportCache: (ownerId, entry) => {
+        this._lastLibp2pTransportByOwner.set(ownerId, entry);
+      },
+      deleteTransportCache: (ownerId) => {
+        this._lastLibp2pTransportByOwner.delete(ownerId);
+      },
+      getPendingHelloRequesterPeerIds: () => this._pendingHelloRequests.values(),
+      learnInboundDialHints: (transportPeerId, remoteAddr) =>
+        this._learnInboundDialHints(transportPeerId, remoteAddr),
+      assertOnline: () => this._assertOnline(),
+      recordOwnerActivity: () => this.recordOwnerActivity(),
+      requireProfile: () => this._requireProfile(),
+      loadHumanProfile: () => this._humanProfileStore.loadHumanProfile(),
+      getTrustDisplayName: async (ownerId) =>
+        (await this._trustStore.getTrustRecord(ownerId))?.displayName,
+      tagBondedContactReachability: (peerId) => {
+        void this._tagBondedContactReachability(peerId);
+      },
+      flushPendingRoomSyncs: () => {
+        void this._flushPendingRoomSyncs();
+      },
+      flushPendingRoomMessages: () => {
+        void this._flushPendingRoomMessages();
+      },
+      getBridgeAgentPeerId: () => this._bridgeStatus?.agentPeerId,
+      getSelfOwnerId: () => this._profile?.owner.ownerId?.trim(),
+      getBridgeChatHandler: () => this._bridgeChatHandler ?? undefined,
+      persistChatMessage: (threadPeerOwnerId, msg) => this._persistChatMessage(threadPeerOwnerId, msg),
+      emitChatMessage: (msg) => this.emit("chat:message", msg),
+      markOutboundChatDelivered: (threadPeerOwnerId, messageId, deliveredAt) =>
+        this._markOutboundChatDelivered(threadPeerOwnerId, messageId, deliveredAt),
+      learnFromMessage: (outgoing, text) => {
+        this._styleAdapter?.learnFromMessage(outgoing, text);
+      },
+      resolvePeerTransportForOwner: (targetOwnerId) => this._resolvePeerTransportForOwner(targetOwnerId),
+      deliverChatEnvelope: (transportPeerId, envelope, dialHints, listenAddrs, options) =>
+        this._deliverChatEnvelope(transportPeerId, envelope, dialHints, listenAddrs, options),
+      dialHintsForChat: (recipientPeerId, peerListenAddrs) =>
+        this._dialHintsForChat(recipientPeerId, peerListenAddrs),
     });
+  }
+
+  private async _dialHintsForChat(recipientPeerId: string, peerListenAddrs: string[] | undefined): Promise<string[]> {
+    return dialHintsForChatViaRuntime(this._outboundMessagingContext(), recipientPeerId, peerListenAddrs);
   }
 
   private async _rememberBondedPeerTransportFromInbound(
     envelope: EnvoyEnvelope,
     context?: { transportPeerId?: string; remoteAddr?: string },
   ): Promise<void> {
-    const transportPeerId = normalizeTransportPeerId(context?.transportPeerId);
-    const ownerId = ownerIdFromProfileIntent(envelope);
-    if (!transportPeerId || !ownerId) return;
-
-    const listenAddrs = context?.remoteAddr?.trim()
-      ? dialableInboundRemoteAddrs(context.remoteAddr, transportPeerId)
-      : [];
-    this._lastLibp2pTransportByOwner.set(ownerId, { peerId: transportPeerId, listenAddrs });
-    markOutboundPeerVerified(transportPeerId);
-
-    void this._learnInboundDialHints(transportPeerId, context?.remoteAddr).catch((err) =>
-      console.warn(`[peer-directory] inbound dial hint learn failed:`, err),
+    return rememberBondedPeerTransportFromInboundViaRuntime(
+      this._outboundMessagingContext(),
+      envelope,
+      context,
     );
-
-    try {
-      await this._peerDirectoryStore.ensurePeerFromInboundChat({
-        ownerId,
-        peerId: transportPeerId,
-        listenAddrs,
-      });
-      if (envelope.senderPublicKey?.trim()) {
-        await this._peerDirectoryStore.mergeInboundDeviceBinding({
-          peerId: transportPeerId,
-          devicePublicKeyPem: envelope.senderPublicKey,
-          ownerId,
-        });
-      }
-      console.log(
-        `[peer-directory] learned ${ownerId.slice(0, 20)}… → libp2p ${transportPeerId.slice(0, 12)}… from ${envelope.intent}`,
-      );
-    } catch (err) {
-      console.warn(`[peer-directory] learn from ${envelope.intent} failed:`, err);
-    }
   }
 
   private async _resolveLibp2pPeerForBondOwner(
     ownerId: string,
   ): Promise<{ transportPeerId: string; listenAddrs?: string[] } | undefined> {
-    const cached = this._lastLibp2pTransportByOwner.get(ownerId);
-    if (cached && isLibp2pPeerId(cached.peerId)) {
-      return { transportPeerId: cached.peerId, listenAddrs: cached.listenAddrs };
-    }
-
-    for (const pending of this._pendingHelloRequests.values()) {
-      if (pending.requesterOwnerId === ownerId && isLibp2pPeerId(pending.remotePeerId)) {
-        return { transportPeerId: pending.remotePeerId, listenAddrs: [] };
-      }
-    }
-
-    try {
-      const resolved = await this._resolvePeerTransportForOwner(ownerId);
-      return { transportPeerId: resolved.transportPeerId, listenAddrs: resolved.listenAddrs };
-    } catch {
-      const records = await this._peerDirectoryStore.listPeerRecords();
-      const libp2p = pickBestLibp2pPeerDirectoryRecord(records, ownerId);
-      if (libp2p) {
-        const mesh = this._reachableMesh();
-        let listenAddrs = libp2p.listenAddrs;
-        if (mesh) {
-          try {
-            const storeAddrs = await mesh.getPeerStoreDialHints(libp2p.peerId);
-            const merged = mergeDialablePeerListenAddrs(libp2p.peerId, listenAddrs, storeAddrs);
-            if (merged.length > 0) {
-              listenAddrs = merged;
-            }
-          } catch {
-            /* best-effort */
-          }
-        }
-        return { transportPeerId: libp2p.peerId, listenAddrs };
-      }
-      console.warn(
-        `[profile.sync] no libp2p route to ${ownerId.slice(0, 20)}…: Peer not found for owner (ask contact to message you once, or re-save their profile photo)`,
-      );
-      return undefined;
-    }
+    return resolveLibp2pPeerForBondOwnerViaRuntime(this._outboundMessagingContext(), ownerId);
   }
 
   private async _resolvePeerTransportForOwner(targetOwnerId: string): Promise<{
@@ -3338,193 +2579,7 @@ class NodeServiceImpl implements NodeService {
     recipientEnvelopePeerId: string | undefined;
     listenAddrs: string[] | undefined;
   }> {
-    const mesh = this._reachableMesh();
-    const isConnected = mesh
-      ? (peerId: string) => mesh.getPeerConnectionInfo(peerId).connected
-      : undefined;
-
-    const records = await raceWithTimeout(
-      this._peerDirectoryStore.listPeerRecords(),
-      25_000,
-      "listPeerRecords",
-    );
-    const connectedPeerIds = mesh?.getConnectedPeerIds() ?? [];
-
-    const liveConnected = pickConnectedTransportForOwner(
-      records,
-      targetOwnerId,
-      connectedPeerIds,
-      this._lastLibp2pTransportByOwner,
-    );
-    if (liveConnected) {
-      const listenAddrs = mergeDialablePeerListenAddrs(
-        liveConnected.peerId,
-        liveConnected.listenAddrs,
-        records.filter((r) => r.ownerId === targetOwnerId).flatMap((r) => r.listenAddrs ?? []),
-      );
-      this._lastLibp2pTransportByOwner.set(targetOwnerId, {
-        peerId: liveConnected.peerId,
-        listenAddrs,
-      });
-      return this._finalizePeerTransportResolve(
-        targetOwnerId,
-        liveConnected.peerId,
-        records,
-        listenAddrs,
-        isConnected,
-      );
-    }
-
-    const cachedTransport = this._lastLibp2pTransportByOwner.get(targetOwnerId);
-    if (cachedTransport && isLibp2pPeerId(cachedTransport.peerId)) {
-      let transportPeerId = cachedTransport.peerId;
-      let transportListenAddrs = cachedTransport.listenAddrs;
-      const bestConnected = pickBestLibp2pPeerDirectoryRecord(records, targetOwnerId, { isConnected });
-      if (
-        bestConnected &&
-        isLibp2pPeerId(bestConnected.peerId) &&
-        bestConnected.peerId !== transportPeerId &&
-        isConnected?.(bestConnected.peerId)
-      ) {
-        transportPeerId = bestConnected.peerId;
-        transportListenAddrs = bestConnected.listenAddrs ?? [];
-        this._lastLibp2pTransportByOwner.set(targetOwnerId, {
-          peerId: transportPeerId,
-          listenAddrs: transportListenAddrs,
-        });
-      } else if (isConnected && !isConnected(transportPeerId) && bestConnected && isLibp2pPeerId(bestConnected.peerId)) {
-        transportPeerId = bestConnected.peerId;
-        transportListenAddrs = bestConnected.listenAddrs ?? [];
-        this._lastLibp2pTransportByOwner.set(targetOwnerId, {
-          peerId: transportPeerId,
-          listenAddrs: transportListenAddrs,
-        });
-      }
-      let dirRow = records.find(
-        (r) => r.ownerId === targetOwnerId && r.peerId === transportPeerId,
-      );
-      if (!dirRow) {
-        dirRow = records.find((r) => r.peerId === transportPeerId);
-      }
-      if (!dirRow) {
-        dirRow = pickBestLibp2pPeerDirectoryRecord(records, targetOwnerId, { isConnected });
-      }
-      const ownerListenAddrs = records
-        .filter((r) => r.ownerId === targetOwnerId)
-        .flatMap((r) => r.listenAddrs ?? []);
-      const listenAddrs = mergeDialablePeerListenAddrs(
-        transportPeerId,
-        transportListenAddrs,
-        dirRow?.listenAddrs,
-        ownerListenAddrs,
-      );
-      return this._finalizePeerTransportResolve(
-        targetOwnerId,
-        transportPeerId,
-        records,
-        listenAddrs,
-        isConnected,
-      );
-    }
-
-    let targetPeer: Awaited<ReturnType<LocalPeerDirectoryStore["getPeerByOwnerId"]>>;
-    let libp2pRow =
-      pickBestLibp2pPeerDirectoryRecord(records, targetOwnerId, { isConnected }) ??
-      pickLibp2pFromConnectedPeers(records, targetOwnerId, connectedPeerIds);
-    if (libp2pRow) {
-      const listenAddrs = mergeDialablePeerListenAddrs(
-        libp2pRow.peerId,
-        libp2pRow.listenAddrs,
-        records.filter((r) => r.ownerId === targetOwnerId).flatMap((r) => r.listenAddrs ?? []),
-      );
-      this._lastLibp2pTransportByOwner.set(targetOwnerId, {
-        peerId: libp2pRow.peerId,
-        listenAddrs,
-      });
-      return this._finalizePeerTransportResolve(
-        targetOwnerId,
-        libp2pRow.peerId,
-        records,
-        listenAddrs,
-        isConnected,
-      );
-    }
-
-    try {
-      targetPeer = await raceWithTimeout(
-        this._peerDirectoryStore.getPeerByOwnerId(targetOwnerId),
-        25_000,
-        "getPeerByOwnerId",
-      );
-    } catch (err) {
-      throw err;
-    }
-    if (!targetPeer) {
-      targetPeer =
-        records.find((r) => r.ownerId === targetOwnerId) ??
-        records.find((r) => r.peerId === targetOwnerId) ??
-        undefined;
-    }
-    if (!targetPeer?.peerId) {
-      throw new Error(`Peer not found for owner: ${targetOwnerId}`);
-    }
-    const transportPeerId = targetPeer.peerId;
-    if (!isLibp2pPeerId(transportPeerId)) {
-      throw new Error(`Peer directory has Envoy envelope id for this owner (not libp2p).`);
-    }
-    const listenAddrs = mergeDialablePeerListenAddrs(
-      transportPeerId,
-      targetPeer.listenAddrs,
-      records.filter((r) => r.ownerId === targetOwnerId).flatMap((r) => r.listenAddrs ?? []),
-    );
-    this._lastLibp2pTransportByOwner.set(targetOwnerId, {
-      peerId: transportPeerId,
-      listenAddrs,
-    });
-    return this._finalizePeerTransportResolve(
-      targetOwnerId,
-      transportPeerId,
-      records,
-      listenAddrs,
-      isConnected,
-    );
-  }
-
-  /** Prefer a live libp2p connection for this owner when the primary route is down. */
-  private _finalizePeerTransportResolve(
-    targetOwnerId: string,
-    transportPeerId: string,
-    records: Awaited<ReturnType<LocalPeerDirectoryStore["listPeerRecords"]>>,
-    listenAddrs: string[],
-    isConnected: ((peerId: string) => boolean) | undefined,
-  ): {
-    transportPeerId: string;
-    recipientEnvelopePeerId: string | undefined;
-    listenAddrs: string[] | undefined;
-  } {
-    if (isConnected && !isConnected(transportPeerId)) {
-      const connected = records
-        .filter((r) => r.ownerId === targetOwnerId && isLibp2pPeerId(r.peerId) && isConnected(r.peerId))
-        .sort((a, b) => b.lastSeenAt.localeCompare(a.lastSeenAt));
-      const live = connected[0];
-      if (live) {
-        const merged = mergeDialablePeerListenAddrs(
-          live.peerId,
-          live.listenAddrs,
-          records.filter((r) => r.ownerId === targetOwnerId).flatMap((r) => r.listenAddrs ?? []),
-        );
-        return {
-          transportPeerId: live.peerId,
-          recipientEnvelopePeerId: resolveRecipientEnvelopePeerId(records, targetOwnerId, live.peerId),
-          listenAddrs: merged.length ? merged : undefined,
-        };
-      }
-    }
-    return {
-      transportPeerId,
-      recipientEnvelopePeerId: resolveRecipientEnvelopePeerId(records, targetOwnerId, transportPeerId),
-      listenAddrs: listenAddrs.length ? listenAddrs : undefined,
-    };
+    return resolvePeerTransportForOwnerViaRuntime(this._outboundMessagingContext(), targetOwnerId);
   }
 
   private _persistChatMessage(threadPeerOwnerId: string, msg: ChatMessage): void {
@@ -4041,40 +3096,25 @@ class NodeServiceImpl implements NodeService {
     listenAddrs?: string[],
     options?: { expectDeliveryAck?: boolean },
   ): Promise<ChatDeliverResult> {
-    return this._withChatSendLock(transportPeerId, async () => {
-      const mesh = this._requireMesh();
-      return deliverChatEnvelopeWithRetry({
-        mesh,
-        transportPeerId,
-        envelope,
-        dialHints,
-        peerListenAddrs: listenAddrs,
-        chatProtocol: ENVOY_CHAT_PROTOCOL,
-        rebuildDialHints: () => this._dialHintsForChat(transportPeerId, listenAddrs),
-        expectDeliveryAck: options?.expectDeliveryAck,
-      });
-    });
+    return deliverChatEnvelopeViaRuntime(
+      this._outboundMessagingContext(),
+      transportPeerId,
+      envelope,
+      dialHints,
+      listenAddrs,
+      options,
+    );
   }
 
-  /**
-   * Phase 42A — `call.*` envelope delivery on the chat libp2p protocol (same
-   * stable path as chat.message). Skips the delivery ack wait.
-   */
-  /**
-   * Deliver a signed `call.*` envelope on the chat protocol to an already-known libp2p peer
-   * (e.g. call.reject busy path from index.ts inbound handler).
-   */
   async deliverCallEnvelopeToTransportPeer(
     transportPeerId: string,
     envelope: EnvoyEnvelope,
   ): Promise<void> {
-    const mesh = this._requireMesh();
-    const conn = mesh.getPeerConnectionInfo(transportPeerId);
-    if (conn.connected || mesh.getConnectedPeerIds().includes(transportPeerId)) {
-      await mesh.sendChat(transportPeerId, envelope, { dialHints: [] });
-      return;
-    }
-    await this._deliverCallEnvelope(transportPeerId, envelope, [], undefined, false);
+    return deliverCallEnvelopeToTransportPeerViaRuntime(
+      this._outboundMessagingContext(),
+      transportPeerId,
+      envelope,
+    );
   }
 
   private async _deliverCallEnvelope(
@@ -4084,87 +3124,14 @@ class NodeServiceImpl implements NodeService {
     listenAddrs?: string[],
     preferCircuitHints?: boolean,
   ): Promise<ChatDeliverResult> {
-    return this._withChatSendLock(transportPeerId, async () => {
-      const mesh = this._requireMesh();
-      let conn = mesh.getPeerConnectionInfo(transportPeerId);
-      webrtcCallTrace("node:deliver-call-envelope", {
-        intent: envelope.intent,
-        callId: shortCallId(
-          typeof envelope.payload === "object" &&
-            envelope.payload !== null &&
-            "callId" in envelope.payload
-            ? String((envelope.payload as { callId?: string }).callId)
-            : undefined,
-        ),
-        peer: shortCallId(transportPeerId),
-        connected: conn.connected,
-        direct: conn.direct,
-        hintCount: dialHints.length,
-      });
-      if (!conn.connected) {
-        const dialTargets = [...new Set([...(listenAddrs ?? []), ...dialHints])]
-          .map((a) => a.trim())
-          .filter(Boolean);
-        if (dialTargets.length > 0) {
-          // Order by expected speed: LAN TCP first, then direct TCP, then relay circuits.
-          const ordered = [...dialTargets].sort((a, b) => {
-            const aLan = isPrivateLanTcpDialHint(a) ? 1 : 0;
-            const bLan = isPrivateLanTcpDialHint(b) ? 1 : 0;
-            if (aLan !== bLan) return bLan - aLan; // LAN first
-            const aCircuit = a.includes("/p2p-circuit/") ? 1 : 0;
-            const bCircuit = b.includes("/p2p-circuit/") ? 1 : 0;
-            if (aCircuit !== bCircuit) return aCircuit - bCircuit; // direct before circuit
-            return 0;
-          });
-          // Try addresses sequentially in speed order — stops at first success.
-          // Sequential avoids connection flapping from simultaneous dials.
-          for (const addr of ordered) {
-            try {
-              await mesh.dial(addr);
-              conn = mesh.getPeerConnectionInfo(transportPeerId);
-              if (conn.connected) break;
-            } catch {
-              /* try next addr */
-            }
-          }
-        }
-      }
-      const preferCircuits = preferCircuitHints ?? !conn.direct;
-      const wasConnected = conn.connected;
-      if (conn.connected) {
-        try {
-          await mesh.sendChat(transportPeerId, envelope, {
-            dialHints: [],
-            preferCircuitHints: preferCircuits && !conn.direct,
-          });
-          webrtcCallTrace("node:deliver-call-fast-path-ok", {
-            peer: shortCallId(transportPeerId),
-            direct: conn.direct,
-          });
-          return { delivered: true, deliveredAt: new Date().toISOString() };
-        } catch (fastErr) {
-          webrtcCallWarn("node:deliver-call-fast-path-failed", {
-            peer: shortCallId(transportPeerId),
-            error: fastErr instanceof Error ? fastErr.message.slice(0, 120) : String(fastErr),
-          });
-          console.warn(
-            `[call] connected send failed for ${transportPeerId.slice(0, 12)}…, retrying:`,
-            fastErr instanceof Error ? fastErr.message : fastErr,
-          );
-        }
-      }
-      return deliverCallEnvelopeWithRetry({
-        mesh,
-        transportPeerId,
-        envelope,
-        dialHints: wasConnected ? [] : dialHints,
-        peerListenAddrs: wasConnected ? [] : listenAddrs,
-        preferCircuitHints: preferCircuits,
-        rebuildDialHints: wasConnected
-          ? undefined
-          : () => this._dialHintsForChat(transportPeerId, listenAddrs),
-      });
-    });
+    return deliverCallEnvelopeViaRuntime(
+      this._outboundMessagingContext(),
+      transportPeerId,
+      envelope,
+      dialHints,
+      listenAddrs,
+      preferCircuitHints,
+    );
   }
 
   private async _markOutboundChatDelivered(
@@ -4198,261 +3165,21 @@ class NodeServiceImpl implements NodeService {
     this.emit("chat:delivery-failed", { threadKey, messageId, recipientOwnerId, reason });
   }
 
-  private async _withChatSendLock<T>(transportPeerId: string, fn: () => Promise<T>): Promise<T> {
-    return withOutboundSendLock(transportPeerId, fn);
-  }
 
   async sendChat(targetOwnerId: string, text: string, attachments?: SendChatParams["attachments"]): Promise<SendChatResult> {
-    this._assertOnline();
-    // Record owner activity when they send a message (keeps them "online" in automatic mode)
-    this.recordOwnerActivity();
-    recordMeshActivity();
-    const mesh = this._requireMesh();
-    const selfProfile = this._requireProfile();
-
-    console.log(`[sendChat] targetOwnerId=${targetOwnerId}, text=${text}`);
-
-    let transportPeerId: string;
-    let recipientEnvelopePeerId: string | undefined;
-    let listenAddrs: string[] | undefined;
-    try {
-      ({ transportPeerId, recipientEnvelopePeerId, listenAddrs } =
-        await this._resolvePeerTransportForOwner(targetOwnerId));
-    } catch (err) {
-      this._lastLibp2pTransportByOwner.delete(targetOwnerId);
-      throw err;
-    }
-
-    const [selfHuman, recipientTrust] = await Promise.all([
-      this._humanProfileStore.loadHumanProfile(),
-      this._trustStore.getTrustRecord(targetOwnerId),
-    ]);
-
-    // If the peer is already connected, skip the disk-I/O-bound
-    // _dialHintsForChat computation (can block intermittently for 10s+).
-    const conn = mesh.getPeerConnectionInfo(transportPeerId);
-    let dialHints: string[];
-    if (conn.connected || mesh.getConnectedPeerIds().includes(transportPeerId)) {
-      dialHints = [];
-    } else {
-      dialHints = await raceWithTimeout(
-        this._dialHintsForChat(transportPeerId, listenAddrs),
-        10_000,
-        "_dialHintsForChat",
-      );
-    }
-
-    void mesh.scrubPeerStoreDialHints(
-      transportPeerId,
-      mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, dialHints),
-    );
-
-    console.log(
-      `[sendChat] transportPeerId=${transportPeerId} connected=${conn.connected} envelopeRecipientPeerId=${recipientEnvelopePeerId ?? "(omitted)"} dialHints=${dialHints.length}`,
-    );
-
-    void this._tagBondedContactReachability(transportPeerId);
-
-    const wireText = stripModelThinking(text);
-
-    const envelope = signUnsignedEnvelope(
-      createUnsignedEnvelope({
-        senderPeerId: derivePeerId(selfProfile.device.publicKeyPem),
-        senderPublicKey: selfProfile.device.publicKeyPem,
-        senderRole: "human",
-        recipientPeerId: recipientEnvelopePeerId,
-        recipientRole: "human",
-        intent: "chat.message",
-        payload: createChatMessagePayload({
-          senderOwnerId: selfProfile.owner.ownerId,
-          text: wireText,
-          attachments: attachments?.map((a: NonNullable<SendChatParams["attachments"]>[number]) => ({
-            id: a.id,
-            filename: a.filename,
-            mimeType: a.mimeType,
-            sizeBytes: a.sizeBytes,
-            sensitivity: a.sensitivity,
-            ...(a.vaultRelativePath ? { vaultRelativePath: a.vaultRelativePath } : {}),
-          })),
-          ...chatMessagePayloadDeviceFields({
-            deviceCertificate: selfProfile.deviceCertificate,
-            ownerPublicKeyPem: selfProfile.owner.publicKeyPem,
-          }),
-        }),
-      }),
-      selfProfile.device.privateKeyPem,
-    );
-
-    let deliverResult: ChatDeliverResult = { delivered: false };
-    try {
-      if (transportPeerId === mesh.peerId && this._bridgeChatHandler) {
-        console.log(`[sendChat] self-send to ${targetOwnerId}, routing via bridge handler`);
-        await this._bridgeChatHandler(envelope, mesh.peerId);
-        deliverResult = { delivered: true, deliveredAt: new Date().toISOString() };
-      } else {
-        // When directly connected on LAN, skip the 45s delivery ack wait —
-        // delivery is nearly instant. Only wait for ack on relay/WAN.
-        const skipAck = conn.connected && conn.direct;
-        deliverResult = await this._deliverChatEnvelope(transportPeerId, envelope, dialHints, listenAddrs, {
-          ...(skipAck ? { expectDeliveryAck: false } : undefined),
-        });
-      }
-    } catch (err) {
-      this._lastLibp2pTransportByOwner.delete(targetOwnerId);
-      throw err;
-    }
-
-    if (deliverResult.delivered) {
-      this._lastLibp2pTransportByOwner.set(targetOwnerId, {
-        peerId: transportPeerId,
-        listenAddrs: listenAddrs ?? [],
-      });
-    }
-
-    const deliveryReceipt = deliverResult.delivered ? ("delivered" as const) : ("sent" as const);
-    const emittedMsg: ChatMessage = {
-      messageId: envelope.messageId,
-      sender: {
-        nodeId: mesh.peerId,
-        ownerId: selfProfile.owner.ownerId,
-        displayName: selfHuman?.displayName ?? selfProfile.owner.ownerId,
-        actorRole: "human",
-      },
-      recipient: {
-        nodeId: transportPeerId,
-        ownerId: targetOwnerId,
-        displayName: recipientTrust?.displayName ?? targetOwnerId,
-      },
-      content: {
-        text: wireText,
-        ...(attachments?.length ? { attachments: attachments.map((a: NonNullable<SendChatParams["attachments"]>[number]) => ({ id: a.id, filename: a.filename, mimeType: a.mimeType, sizeBytes: a.sizeBytes, sensitivity: a.sensitivity, ...(a.vaultRelativePath ? { vaultRelativePath: a.vaultRelativePath } : {}) })) } : {}),
-      },
-      metadata: {
-        timestamp: envelope.createdAt,
-        deliveryReceipt,
-      },
-      signature: envelope.signature,
-    };
-    console.log(`[sendChat] Emitting chat:message locally:`, emittedMsg);
-    this._persistChatMessage(targetOwnerId, emittedMsg);
-    this.emit("chat:message", emittedMsg);
-    if (deliverResult.delivered) {
-      await this._markOutboundChatDelivered(
-        targetOwnerId,
-        envelope.messageId,
-        deliverResult.deliveredAt ?? envelope.createdAt,
-      );
-    }
-    this._styleAdapter?.learnFromMessage(true, wireText);
-    return {
-      messageId: envelope.messageId,
-      deliveryReceipt,
-      deliveredAt: deliverResult.deliveredAt,
-    };
+    return sendChatViaRuntime(this._outboundMessagingContext(), targetOwnerId, text, attachments);
   }
 
   async sendAgentChat(targetOwnerId: string, text: string): Promise<SendChatResult> {
-    this._assertOnline();
-    recordMeshActivity();
-    const mesh = this._requireMesh();
-    const selfProfile = this._requireProfile();
-    const agentIdentity = await this._ensureAgentIdentity();
-    if (!agentIdentity) {
-      throw new Error("Agent identity is not available");
-    }
+    return sendAgentChatViaRuntime(this._sendAgentChatContext(), targetOwnerId, text);
+  }
 
-    const { transportPeerId, recipientEnvelopePeerId, listenAddrs } =
-      await this._resolvePeerTransportForOwner(targetOwnerId);
-
-    const [selfHuman, recipientTrust, config] = await Promise.all([
-      this._humanProfileStore.loadHumanProfile(),
-      this._trustStore.getTrustRecord(targetOwnerId),
-      this.getNodeConfig(),
-    ]);
-
-    let wireText = stripModelThinking(text);
-    const aiIdentity = config.aiSettings?.identity;
-    wireText = applyAiIdentityForIdentity(wireText, aiIdentity);
-    console.log(`[sendAgentChat] targetOwnerId=${targetOwnerId}, text=${wireText.slice(0, 80)}`);
-
-    const dialHints = await raceWithTimeout(
-      this._dialHintsForChat(transportPeerId, listenAddrs),
-      30_000,
-      "_dialHintsForChat",
-    );
-
-    void this._tagBondedContactReachability(transportPeerId);
-
-    const envelope = signUnsignedEnvelope(
-      createUnsignedEnvelope({
-        senderPeerId: agentIdentity.agentPeerId,
-        senderPublicKey: agentIdentity.agentPublicKeyPem,
-        senderRole: "agent",
-        recipientPeerId: recipientEnvelopePeerId,
-        recipientRole: "human",
-        intent: "chat.message",
-        payload: createChatMessagePayload({
-          senderOwnerId: agentIdentity.ownerId,
-          text: wireText,
-        }),
-        agentCredential: agentIdentity.agentCredential,
-      }),
-      agentIdentity.agentPrivateKeyPem,
-    );
-
-    let deliverResult: ChatDeliverResult = { delivered: false };
-    if (transportPeerId === mesh.peerId && this._bridgeChatHandler) {
-      await this._bridgeChatHandler(envelope, mesh.peerId);
-      deliverResult = { delivered: true, deliveredAt: new Date().toISOString() };
-    } else {
-      deliverResult = await this._deliverChatEnvelope(transportPeerId, envelope, dialHints, listenAddrs, {
-        expectDeliveryAck: false,
-      });
-    }
-
-    if (deliverResult.delivered || transportPeerId !== mesh.peerId) {
-      this._lastLibp2pTransportByOwner.set(targetOwnerId, {
-        peerId: transportPeerId,
-        listenAddrs: listenAddrs ?? [],
-      });
-    }
-
-    const deliveryReceipt = deliverResult.delivered ? ("delivered" as const) : ("sent" as const);
-    const emittedMsg: ChatMessage = {
-      messageId: envelope.messageId,
-      sender: {
-        nodeId: agentIdentity.agentPeerId,
-        ownerId: agentIdentity.ownerId,
-        displayName: selfHuman?.displayName ?? agentIdentity.ownerId,
-        actorRole: "agent",
-        agentId: agentIdentity.agentCredential.agentId,
-        agentVerified: true,
-      },
-      recipient: {
-        nodeId: transportPeerId,
-        ownerId: targetOwnerId,
-        displayName: recipientTrust?.displayName ?? targetOwnerId,
-      },
-      content: { text: wireText },
-      metadata: {
-        timestamp: envelope.createdAt,
-        deliveryReceipt,
-      },
-      signature: envelope.signature,
-    };
-    this._persistChatMessage(targetOwnerId, emittedMsg);
-    this.emit("chat:message", emittedMsg);
-    if (deliverResult.delivered) {
-      await this._markOutboundChatDelivered(
-        targetOwnerId,
-        envelope.messageId,
-        deliverResult.deliveredAt ?? envelope.createdAt,
-      );
-    }
+  private _sendAgentChatContext(): SendAgentChatContext {
     return {
-      messageId: envelope.messageId,
-      deliveryReceipt,
-      deliveredAt: deliverResult.deliveredAt,
+      ...this._outboundMessagingContext(),
+      ensureAgentIdentity: () => this._ensureAgentIdentity(),
+      getNodeConfig: () => this.getNodeConfig(),
+      getTrustRecord: (ownerId) => this._trustStore.getTrustRecord(ownerId),
     };
   }
 
@@ -4951,7 +3678,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   private _agentPassesContext(): AgentPassesContext {
-    return {
+    return buildAgentPassesContext({
       getBonds: () => this.getBonds(),
       getProfileOwnerId: () => this._profile?.owner.ownerId ?? "local-owner",
       hasTaskStore: () => Boolean(this._taskStore),
@@ -4959,951 +3686,113 @@ class NodeServiceImpl implements NodeService {
       getAgentActivityStore: () => this._agentActivityStore,
       getContactTopicsFromLibrary: (ownerId) => this._getContactTopicsFromLibrary(ownerId),
       emit: (event, data) => this.emit?.(event as never, data as never),
-    };
+    });
   }
 
   // Phase 29 — OpenClaw Runtime
-  private _openclawRuntime: import("../../../packages/openclaw-runtime/src/index.js").OpenClawRuntime | null = null;
-  private _openclawGatewayChild: import("node:child_process").ChildProcess | null = null;
-  private _openclawGatewayReady = false;
-  private _openclawStartPromise: Promise<boolean> | null = null;
-  private _assistantAgentUrl = "http://127.0.0.1:18789/webhook/envoymesh";
-  private _assistantAgentSecret: string | undefined;
-  private readonly _pendingOpenClawReplies = new Map<
-    string,
-    { resolve: (text: string) => void; reject: (error: Error) => void; timer: ReturnType<typeof setTimeout> }
-  >();
-  private static readonly _openClawReplyTimeoutMs = 180_000;
-  private static readonly _openClawRetrievedContextTimeoutMs = 25_000;
-  private static readonly _openClawStartupProbeAttempts = 300; // 300 × 1s = 5 minutes for cold start
-  private static readonly _openClawWatchdogIntervalMs = 60_000; // 1 minute between watchdog checks
-  private _openclawActiveTurnTools: string[] | null = null;
-  private _openClawAskInFlight = 0;
-  private _openClawGatewayRouteRegistered = false;
-  private _openClawLastProbeWarnAt = 0;
-  private _openClawAskChain: Promise<unknown> = Promise.resolve();
-  private _openclawWatchdogTimer: ReturnType<typeof setTimeout> | null = null;
-  private _openclawWatchdogRunning = false;
+  private readonly _openClawState = createOpenClawRuntimeState();
 
-  private _setOpenClawGatewayReady(ready: boolean): void {
-    this._openclawGatewayReady = ready;
-    if (!ready) {
-      this._openClawGatewayRouteRegistered = false;
-    }
-  }
-
-  /**
-   * Watchdog: if the gateway has been ready but the route stops responding,
-   * restart it automatically. Runs every _openClawWatchdogIntervalMs once started.
-   */
-  private _startOpenClawWatchdog(): void {
-    if (this._openclawWatchdogRunning) return;
-    this._openclawWatchdogRunning = true;
-    const tick = async () => {
-      if (!this._openclawWatchdogRunning) return;
-      // Only act if the gateway child is alive but the route is gone
-      if (
-        this._openclawGatewayChild &&
-        !this._openclawGatewayChild.killed &&
-        !this._openClawGatewayRouteRegistered
-      ) {
-        console.warn("[openclaw] Watchdog: gateway process alive but route unregistered — restarting");
-        this._openclawWatchdogRunning = false;
-        this._stopOpenClawWatchdog();
-        await this.startOpenClaw();
-        return;
-      }
-      if (!this._openclawWatchdogRunning) return;
-      this._openclawWatchdogTimer = setTimeout(tick, NodeServiceImpl._openClawWatchdogIntervalMs);
+  private _openClawRuntimeDeps(): OpenClawRuntimeDeps {
+    return {
+      getBonds: () => this.getBonds(),
+      getNodeConfig: () => this.getNodeConfig(),
+      getRagService: () => this._getRagService(),
+      recordEnvoyAiChatMessage: (msg) => this.recordEnvoyAiChatMessage(msg),
+      persistEnvoyAiChatExchange: (raw, turn, humanMsgId) =>
+        this._persistEnvoyAiChatExchange(raw, turn, humanMsgId),
+      loadBridgeConfigWebSearchEnabled: () => loadBridgeConfigWebSearchEnabled(),
+      loadBridgeConfigSkillApiKeys: () => loadBridgeConfigSkillApiKeys(),
+      getProfileDir: () => this._profileDir,
+      getProfileOwnerId: () => this._profile?.owner?.ownerId,
+      getProfile: () => this._profile,
+      getMeshPeerId: () => this._mesh?.peerId ?? "",
+      getVaultDir: () => this._vaultDir,
+      humanProfileStore: this._humanProfileStore,
+      capabilityManifestStore: this._capabilityManifestStore,
+      agentIdentityStore: this._agentIdentityStore,
+      chatLogStore: this._chatLogStore,
+      trustStore: this._trustStore,
+      loadConfig: () => this._configStore.load(),
     };
-    this._openclawWatchdogTimer = setTimeout(tick, NodeServiceImpl._openClawWatchdogIntervalMs);
-  }
-
-  private _stopOpenClawWatchdog(): void {
-    this._openclawWatchdogRunning = false;
-    if (this._openclawWatchdogTimer) {
-      clearTimeout(this._openclawWatchdogTimer);
-      this._openclawWatchdogTimer = null;
-    }
-  }
-
-  private _assistantGatewayPort(): number {
-    try {
-      const u = new URL(this._assistantAgentUrl);
-      if (u.port) return Number(u.port);
-      return u.protocol === "https:" ? 443 : 80;
-    } catch {
-      return 18789;
-    }
-  }
-
-  private async _withOpenClawAskLock<T>(fn: () => Promise<T>): Promise<T> {
-    this._openClawAskInFlight += 1;
-    try {
-      const run = this._openClawAskChain.then(fn, fn);
-      this._openClawAskChain = run.then(
-        () => undefined,
-        () => undefined,
-      );
-      return await run;
-    } finally {
-      this._openClawAskInFlight = Math.max(0, this._openClawAskInFlight - 1);
-    }
-  }
-
-  private async _probeOpenClawWebhook(options?: { quiet?: boolean }): Promise<boolean> {
-    try {
-      const resp = await fetch(this._assistantAgentUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-        signal: AbortSignal.timeout(2000),
-      });
-      if (!isOpenClawEnvoymeshWebhookReady(resp.status)) {
-        if (!options?.quiet) {
-          const now = Date.now();
-          if (now - this._openClawLastProbeWarnAt > 10_000) {
-            this._openClawLastProbeWarnAt = now;
-            console.warn(
-              `[openclaw] webhook probe got ${resp.status} at ${this._assistantAgentUrl} — EnvoyMesh route not registered`,
-            );
-          }
-        }
-        return false;
-      }
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  private async _waitForOpenClawGatewayReady(): Promise<boolean> {
-    for (let attempt = 0; attempt < NodeServiceImpl._openClawStartupProbeAttempts; attempt++) {
-      if (await this._probeOpenClawWebhook({ quiet: true })) {
-        return true;
-      }
-      await new Promise((r) => setTimeout(r, 1000));
-    }
-    return false;
-  }
-
-  private _rejectAllPendingOpenClawReplies(reason: string): void {
-    for (const [id, entry] of this._pendingOpenClawReplies) {
-      clearTimeout(entry.timer);
-      entry.reject(new Error(reason));
-      this._pendingOpenClawReplies.delete(id);
-    }
-  }
-
-  private _cancelOpenClawReply(correlationId: string, error: Error): void {
-    const entry = this._pendingOpenClawReplies.get(correlationId);
-    if (!entry) return;
-    clearTimeout(entry.timer);
-    this._pendingOpenClawReplies.delete(correlationId);
-    entry.reject(error);
   }
 
   /** Track mesh tools invoked during an OpenClaw H2A turn (via bridge execute-tool). */
   recordOpenClawToolCall(toolName: string): void {
-    if (this._openclawActiveTurnTools && !this._openclawActiveTurnTools.includes(toolName)) {
-      this._openclawActiveTurnTools.push(toolName);
-    }
-  }
-
-  private _beginOpenClawToolTracking(): void {
-    this._openclawActiveTurnTools = [];
-  }
-
-  private _endOpenClawToolTracking(): string[] {
-    const tools = this._openclawActiveTurnTools ?? [];
-    this._openclawActiveTurnTools = null;
-    return tools;
+    recordOpenClawToolCallViaRuntime(this._openClawState, toolName);
   }
 
   /** True when the built-in OpenClaw gateway webhook is reachable. */
   isOpenClawReady(): boolean {
-    return this._openclawGatewayReady && this._openclawGatewayChild != null && !this._openclawGatewayChild.killed;
+    return isOpenClawReadyViaRuntime(this._openClawState);
   }
 
-  /**
-   * Whether the built-in OpenClaw agent is enabled in the persisted config.
-   * Reads from disk every call (no in-memory cache) so a config update via
-   * `updateNodeConfig` is picked up by the next `startOpenClaw()`.
-   * Returns `true` when the field is absent (D1C: ships on by default).
-   */
   private async _isOpenClawEnabled(): Promise<boolean> {
-    const cfg = await this._configStore.load();
-    return cfg?.openclawEnabled ?? true;
+    return isOpenClawEnabledViaRuntime(this._openClawRuntimeDeps());
   }
 
   private async _ensureOpenClawReady(): Promise<boolean> {
-    if (this.isOpenClawReady()) return true;
-
-    // Gateway process still starting — poll without spawning a duplicate.
-    if (this._openclawGatewayChild && !this._openclawGatewayChild.killed) {
-      if (await this._waitForOpenClawGatewayReady()) {
-        this._setOpenClawGatewayReady(true);
-        this._startOpenClawWatchdog();
-        return true;
-      }
-      console.warn("[openclaw] Gateway process alive but webhook not responding");
-      return false;
-    }
-
-    console.log("[openclaw] Gateway not ready — starting...");
-    return await this.startOpenClaw();
+    return ensureOpenClawReadyViaRuntime(this._openClawState, this._openClawRuntimeDeps());
   }
 
   /** Resolve a pending sync OpenClaw ask() by correlationId (called from bridge /bridge/send). */
   resolveOpenClawReply(correlationId: string, text: string): void {
-    const entry = this._pendingOpenClawReplies.get(correlationId);
-    if (!entry) {
-      console.warn(`[openclaw] sync reply for unknown correlationId=${correlationId}`);
-      return;
-    }
-    clearTimeout(entry.timer);
-    this._pendingOpenClawReplies.delete(correlationId);
-    console.log(`[openclaw] sync reply resolved cid=${correlationId} len=${text.length}`);
-    entry.resolve(text);
-  }
-
-  private _waitForOpenClawReply(correlationId: string): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        const entry = this._pendingOpenClawReplies.get(correlationId);
-        if (!entry) return;
-        clearTimeout(entry.timer);
-        this._pendingOpenClawReplies.delete(correlationId);
-        entry.reject(new Error(`OpenClaw reply timed out after ${NodeServiceImpl._openClawReplyTimeoutMs / 1000}s`));
-      }, NodeServiceImpl._openClawReplyTimeoutMs);
-      this._pendingOpenClawReplies.set(correlationId, { resolve, reject, timer });
-    });
-  }
-
-  private async _buildOpenClawTurnContext(): Promise<{
-    ownerDisplayName?: string;
-    bonds?: Array<{ name: string; level: string; dormantDays?: number }>;
-    interests?: string[];
-    capabilities?: string[];
-    permissions?: { bondAutonomy: boolean; maxBondsPerDay: number; autoCircleContacts: boolean; maxSensitivity: string };
-    model?: { provider: string; baseUrl?: string; model?: string };
-  }> {
-    const config = await this._configStore.load();
-    const nodeConfig = await this.getNodeConfig();
-    const bonds = await this.getBonds();
-    let interests: string[] = [];
-    let ownerDisplayName: string | undefined;
-    try {
-      const profile = await this._humanProfileStore?.loadHumanProfile();
-      if (profile) {
-        ownerDisplayName = profile.displayName?.trim() || undefined;
-        interests = [...(profile.hobbies ?? []), ...(profile.knowledge ?? [])];
-      }
-    } catch { /* no profile yet */ }
-
-    let capabilities: string[] | undefined;
-    if (this._capabilityManifestStore) {
-      const manifest = await this._capabilityManifestStore.loadManifest();
-      capabilities = manifest?.capabilities;
-    }
-
-    const providers = nodeConfig.modelProviders;
-    const model =
-      providers?.mode && providers.mode !== "disabled"
-        ? {
-            provider: providers.mode,
-            baseUrl: providers.endpoint,
-            model: providers.modelName,
-          }
-        : { provider: "disabled" };
-
-    return {
-      ownerDisplayName,
-      bonds: bonds.map((b) => ({
-        name: b.displayName ?? b.peerOwnerId,
-        level: b.level,
-      })),
-      interests,
-      capabilities,
-      permissions: {
-        bondAutonomy: config?.bondAutonomyEnabled ?? false,
-        maxBondsPerDay: 0,
-        autoCircleContacts: false,
-        maxSensitivity: "public",
-      },
-      model,
-    };
-  }
-
-  private async _buildEnvoyMeshOpenClawPrompts(message: string): Promise<{
-    policyPrompt: string;
-    retrievedContext: string;
-  }> {
-    const turnContext = await this._buildOpenClawTurnContext();
-    const owner = this._profile?.owner;
-    const displayName = turnContext.ownerDisplayName ?? owner?.ownerId ?? "unknown";
-    const webSearchEnabled = (await this._loadBridgeConfigWebSearchEnabled()) ?? true;
-    const skillApiKeys = (await this._loadBridgeConfigSkillApiKeys()) ?? {};
-    const webSearch = resolveActiveWebSearchProvider({ webSearchEnabled, skillApiKeys });
-    const { buildAgentConfig, buildOpenClawSystemPrompt } = await import(
-      "../../../packages/openclaw-runtime/src/tool-bridge.js"
-    );
-    const agentConfig = buildAgentConfig({
-      owner: {
-        ownerId: owner?.ownerId ?? "unknown",
-        displayName,
-        interests: turnContext.interests ?? [],
-        capabilities: turnContext.capabilities ?? [],
-      },
-      permissions: turnContext.permissions ?? {
-        bondAutonomy: false,
-        maxBondsPerDay: 0,
-        autoCircleContacts: false,
-        maxSensitivity: "public",
-      },
-      bonds: (turnContext.bonds ?? []).map((b) => ({
-        displayName: b.name,
-        level: b.level,
-        dormantDays: b.dormantDays,
-      })),
-      model: turnContext.model ?? { provider: "disabled" },
-      webSearch,
-    });
-    const policyPrompt = buildOpenClawSystemPrompt(displayName, agentConfig);
-
-    const nodeConfig = await this.getNodeConfig();
-    const bonds = await this.getBonds();
-    let retrievedContext = "";
-    if (owner?.ownerId) {
-      try {
-        retrievedContext = await this._withOpenClawTimeout(
-          buildEnvoyMeshRetrievedContext({
-            message,
-            ownerId: owner.ownerId,
-            bonds: bonds.map((b) => ({
-              peerOwnerId: b.peerOwnerId,
-              displayName: b.displayName,
-            })),
-            chatLogStore: this._chatLogStore,
-            trustStore: this._trustStore,
-            humanProfileStore: this._humanProfileStore,
-            agentIdentityStore: this._agentIdentityStore,
-            vaultDir: this._vaultDir,
-            ragService: await this._getRagService(),
-            knowledgeBase: nodeConfig.aiSettings?.knowledgeBase,
-          }),
-          NodeServiceImpl._openClawRetrievedContextTimeoutMs,
-          "",
-        );
-      } catch (err) {
-        console.warn(
-          "[openclaw] retrieved context build failed:",
-          err instanceof Error ? err.message : String(err),
-        );
-      }
-    }
-
-    return { policyPrompt, retrievedContext };
-  }
-
-  private async _withOpenClawTimeout<T>(
-    promise: Promise<T>,
-    timeoutMs: number,
-    fallback: T,
-  ): Promise<T> {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    try {
-      return await Promise.race([
-        promise,
-        new Promise<T>((resolve) => {
-          timer = setTimeout(() => {
-            console.warn(`[openclaw] operation timed out after ${timeoutMs / 1000}s — continuing without full context`);
-            resolve(fallback);
-          }, timeoutMs);
-        }),
-      ]);
-    } finally {
-      if (timer) clearTimeout(timer);
-    }
-  }
-
-  private async _askOpenClawViaWebhook(
-    prompt: string,
-    envoyContext?: { policyPrompt?: string; retrievedContext?: string },
-  ): Promise<string> {
-    const ownerId = this._profile?.owner?.ownerId;
-    if (!ownerId) {
-      throw new Error("Owner profile not loaded");
-    }
-
-    const correlationId = `oc-ask-${randomUUID()}`;
-    console.log(`[openclaw] ask start cid=${correlationId} promptLen=${prompt.length}`);
-    const replyPromise = this._waitForOpenClawReply(correlationId);
-
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (this._assistantAgentSecret) {
-      headers.Authorization = `Bearer ${this._assistantAgentSecret}`;
-    }
-
-    let fromName = ownerId;
-    try {
-      const profile = await this._humanProfileStore?.loadHumanProfile();
-      if (profile?.displayName?.trim()) fromName = profile.displayName.trim();
-    } catch { /* use ownerId */ }
-
-    const body = JSON.stringify({
-      from: this._mesh?.peerId ?? "",
-      fromOwnerId: ownerId,
-      fromName,
-      text: prompt,
-      ...(envoyContext?.policyPrompt?.trim() ? { policyPrompt: envoyContext.policyPrompt.trim() } : {}),
-      ...(envoyContext?.retrievedContext?.trim()
-        ? { retrievedContext: envoyContext.retrievedContext.trim() }
-        : {}),
-      correlationId,
-    });
-
-    try {
-      const [text] = await Promise.all([
-        replyPromise,
-        (async () => {
-          const resp = await fetch(this._assistantAgentUrl, {
-            method: "POST",
-            headers,
-            body,
-            signal: AbortSignal.timeout(NodeServiceImpl._openClawReplyTimeoutMs),
-          });
-
-          if (!resp.ok) {
-            const detail = await resp.text().catch(() => "");
-            const err = new Error(
-              `OpenClaw webhook returned ${resp.status}${detail ? `: ${detail.slice(0, 200)}` : ""}`,
-            );
-            if (resp.status === 404) {
-              this._setOpenClawGatewayReady(false);
-            }
-            throw err;
-          }
-        })(),
-      ]);
-      console.log(`[openclaw] ask complete cid=${correlationId} answerLen=${text.length}`);
-      return text;
-    } catch (err) {
-      if (this._pendingOpenClawReplies.has(correlationId)) {
-        this._cancelOpenClawReply(
-          correlationId,
-          err instanceof Error ? err : new Error(String(err)),
-        );
-        void replyPromise.catch(() => {});
-      }
-      throw err;
-    }
+    resolveOpenClawReplyViaRuntime(this._openClawState, correlationId, text);
   }
 
   async startOpenClaw(): Promise<boolean> {
-    if ((await this._isOpenClawEnabled()) === false) return false;
-    if (this.isOpenClawReady()) return true;
-    if (this._openclawStartPromise) return this._openclawStartPromise;
-
-    this._openclawStartPromise = this._startOpenClawInner().finally(() => {
-      this._openclawStartPromise = null;
-    });
-    return this._openclawStartPromise;
-  }
-
-  private async _startOpenClawInner(): Promise<boolean> {
-    if (this._openclawGatewayChild && !this._openclawGatewayChild.killed && this._openclawGatewayReady) {
-      return true;
-    }
-    if (this._openclawGatewayChild && !this._openclawGatewayChild.killed) {
-      try { this._openclawGatewayChild.kill("SIGTERM"); } catch { /* ignore */ }
-      this._openclawGatewayChild = null;
-      this._setOpenClawGatewayReady(false);
-    }
-
-    const { existsSync, mkdirSync, writeFileSync, readFileSync } = await import("node:fs");
-    const { join, resolve } = await import("node:path");
-    const nodeCwd = process.cwd();
-    const bundledSkillsDir = resolveBundledSkillsDir(nodeCwd);
-
-    // 1. Read built-in OpenClaw webhook URL (never fall back to agentUrl — that is Ext Agent).
-    const profileDirAbs =
-      this._profileDir && this._profileDir !== "/tmp/unknown"
-        ? resolve(nodeCwd, this._profileDir)
-        : null;
-    const cfgPath = profileDirAbs
-      ? join(profileDirAbs, "bridge-config.json")
-      : join(nodeCwd, "data", "default", "bridge-config.json");
-    const defaultAssistantUrl = "http://127.0.0.1:18789/webhook/envoymesh";
-    let assistantUrl = defaultAssistantUrl;
-    let bridgeSecret: string | undefined;
-    let bridgeListenPort = 3031;
-    if (existsSync(cfgPath)) {
-      try {
-        const cfg = JSON.parse(readFileSync(cfgPath, "utf-8"));
-        assistantUrl = resolveAssistantAgentUrl(cfg);
-        bridgeSecret = typeof cfg?.secret === "string" && cfg.secret.trim() ? cfg.secret.trim() : undefined;
-        if (typeof cfg?.listenPort === "number") bridgeListenPort = cfg.listenPort;
-      } catch { /* use default */ }
-    }
-    this._assistantAgentUrl = assistantUrl;
-    this._assistantAgentSecret = bridgeSecret;
-    const bridgeUrl = `http://127.0.0.1:${bridgeListenPort}/bridge/send`;
-
-    // 3. Persistent gateway state + pre-seeded workspace (skip OpenClaw BOOTSTRAP onboarding)
-    const gwStateDir = profileDirAbs
-      ? openClawGatewayStateDir(profileDirAbs)
-      : join((await import("node:os")).tmpdir(), `envoymesh-gateway-${process.pid}`);
-    mkdirSync(gwStateDir, { recursive: true });
-    const gwConfigPath = join(gwStateDir, "openclaw.json");
-
-    let workspaceDir = gwStateDir;
-    if (profileDirAbs) {
-      const ownerId = this._profile?.owner?.ownerId ?? "unknown";
-      let displayName: string | undefined;
-      let interests: string[] = [];
-      let capabilities: string[] = [];
-      try {
-        const profile = await this._humanProfileStore?.loadHumanProfile();
-        if (profile) {
-          displayName = profile.displayName?.trim() || undefined;
-          interests = [...(profile.hobbies ?? []), ...(profile.knowledge ?? [])];
-        }
-      } catch { /* no profile */ }
-      if (this._capabilityManifestStore) {
-        try {
-          const manifest = await this._capabilityManifestStore.loadManifest();
-          capabilities = manifest?.capabilities ?? [];
-        } catch { /* no manifest */ }
-      }
-      let agentIdentitySnippet: string | undefined;
-      if (this._agentIdentityStore) {
-        try {
-          const doc = await this._agentIdentityStore.load();
-          const trimmed = doc.content?.trim();
-          if (trimmed) agentIdentitySnippet = trimmed.slice(0, 4000);
-        } catch { /* no identity doc */ }
-      }
-      let bondCount = 0;
-      try {
-        bondCount = (await this.getBonds()).length;
-      } catch { /* ignore */ }
-      workspaceDir = ensureOpenClawWorkspace(profileDirAbs, {
-        ownerId,
-        displayName,
-        interests,
-        capabilities,
-        agentIdentitySnippet,
-        bondCount,
-      }, {
-        legacySkillsDir: bundledSkillsDir,
-      });
-    }
-    workspaceDir = resolve(workspaceDir);
-    const gwStateDirAbs = resolve(gwStateDir);
-    const gwConfigPathAbs = resolve(gwConfigPath);
-
-    // Read node model config to pass to the gateway
-    let modelProvider: Record<string, unknown> = {};
-    try {
-      const nodeCfg = await this.getNodeConfig();
-      if (nodeCfg?.modelProviders?.mode && nodeCfg.modelProviders.mode !== "disabled") {
-        modelProvider = {
-          provider: nodeCfg.modelProviders.mode,
-          ...(nodeCfg.modelProviders.endpoint ? { baseUrl: nodeCfg.modelProviders.endpoint } : {}),
-          ...(nodeCfg.modelProviders.apiKey ? { apiKey: nodeCfg.modelProviders.apiKey } : {}),
-          ...(nodeCfg.modelProviders.modelName ? { model: nodeCfg.modelProviders.modelName } : {}),
-        };
-      }
-    } catch { /* use defaults */ }
-
-    // Read bridge config (skill keys + web search toggle)
-    let skillApiKeys: Record<string, string> = {};
-    let webSearchEnabled = true;
-    let clawhubToken: string | undefined;
-    try {
-      const bridgeCfg = JSON.parse(readFileSync(cfgPath, "utf-8"));
-      if (bridgeCfg?.skillApiKeys && typeof bridgeCfg.skillApiKeys === "object") {
-        skillApiKeys = bridgeCfg.skillApiKeys as Record<string, string>;
-      }
-      if (typeof bridgeCfg?.webSearchEnabled === "boolean") webSearchEnabled = bridgeCfg.webSearchEnabled;
-      if (typeof bridgeCfg?.clawhubToken === "string" && bridgeCfg.clawhubToken.trim()) {
-        clawhubToken = bridgeCfg.clawhubToken.trim();
-      }
-    } catch { /* use defaults */ }
-    const skillEntries = buildOpenClawGatewaySkillEntries(skillApiKeys);
-    const agentSection = buildOpenClawGatewayAgentSection({ webSearchEnabled, skillApiKeys });
-    const gatewaySearchEnv = buildOpenClawGatewaySearchEnv(skillApiKeys);
-
-    writeFileSync(gwConfigPathAbs, JSON.stringify({
-      gateway: { auth: { mode: "none" } },
-      agents: {
-        defaults: {
-          skipBootstrap: true,
-          workspace: workspaceDir,
-          ...(modelProvider.provider && modelProvider.model
-            ? { model: `${modelProvider.provider as string}/${modelProvider.model as string}` }
-            : {}),
-        },
-      },
-      channels: {
-        envoymesh: {
-          enabled: true,
-          bridgeUrl,
-          webhookPath: "/webhook/envoymesh",
-          dmPolicy: "open",
-          allowedOwnerIds: ["*"],
-        },
-      },
-      ...(Object.keys(skillEntries).length > 0 ? {
-        skills: { entries: skillEntries },
-      } : {}),
-      tools: agentSection.tools,
-      plugins: agentSection.plugins,
-      ...(modelProvider.provider ? {
-        models: {
-          providers: {
-            [modelProvider.provider as string]: {
-              api: "openai-completions",
-              ...(modelProvider.baseUrl ? { baseUrl: modelProvider.baseUrl } : {}),
-              ...(modelProvider.apiKey ? { apiKey: modelProvider.apiKey } : {}),
-              ...(modelProvider.model ? { models: [{ id: modelProvider.model, name: modelProvider.model, api: "openai-completions" }] } : {}),
-            },
-          },
-        },
-      } : {}),
-    }, null, 2), "utf-8");
-
-    // 4. Reclaim port if a stale gateway is listening without the EnvoyMesh webhook route.
-    const gatewayPort = this._assistantGatewayPort();
-    this._openClawGatewayRouteRegistered = false;
-    this._openClawLastProbeWarnAt = 0;
-    await reclaimAssistantGatewayPort({
-      port: gatewayPort,
-      webhookUrl: assistantUrl,
-      excludePid: this._openclawGatewayChild?.pid ?? undefined,
-      log: (message) => console.warn(message),
-    });
-
-    // 5. Spawn the OpenClaw gateway (bundled tsx tree, standalone binary, or dev pnpm).
-    const child = spawnOpenClawGateway({
-      nodeCwd,
-      gatewayPort,
-      gatewayEnv: {
-        ...gatewaySearchEnv,
-        OPENCLAW_STATE_DIR: gwStateDirAbs,
-        OPENCLAW_CONFIG_PATH: gwConfigPathAbs,
-        ENVOYMESH_BRIDGE_URL: bridgeUrl,
-        ENVOYMESH_ALLOWED_OWNER_IDS: this._profile?.owner?.ownerId ?? "*",
-        CLAWHUB_WORKDIR: workspaceDir,
-        ...(clawhubToken ? { CLAWHUB_TOKEN: clawhubToken } : {}),
-      },
-    });
-    child.stderr?.on("data", (d: Buffer) => {
-      const t = d.toString();
-      if (t.includes("Registered EnvoyMesh HTTP route")) {
-        this._openClawGatewayRouteRegistered = true;
-      }
-      const trimmed = t.trim();
-      if (trimmed) {
-        for (const line of trimmed.split("\n")) {
-          if (line) process.stderr.write(`[gateway] ${line}\n`);
-        }
-      }
-    });
-    child.on("exit", (code) => {
-      if (code) console.warn(`[openclaw] gateway exited code ${code}`);
-      this._openclawGatewayChild = null;
-      this._setOpenClawGatewayReady(false);
-      this._stopOpenClawWatchdog();
-      this._rejectAllPendingOpenClawReplies("OpenClaw gateway stopped");
-    });
-    this._openclawGatewayChild = child;
-    this._setOpenClawGatewayReady(false);
-
-    // 6. Wait for gateway webhook (route registers ~12s after spawn; 400 on empty POST means ready).
-    let gatewayReady = false;
-    if (child.exitCode == null) {
-      gatewayReady = await this._waitForOpenClawGatewayReady();
-    } else {
-      console.warn(
-        `[openclaw] Gateway process exited before webhook was ready (code ${child.exitCode}). ` +
-          `If port ${gatewayPort} is already in use by another OpenClaw instance, stop it first.`,
-      );
-    }
-
-    if (!gatewayReady) {
-      console.warn(
-        `[openclaw] Gateway not reachable after ${NodeServiceImpl._openClawStartupProbeAttempts}s at ${assistantUrl}. ` +
-          `Check [gateway] logs for "Registered EnvoyMesh HTTP route".`,
-      );
-    }
-
-    this._setOpenClawGatewayReady(gatewayReady);
-
-    // 7. Start watchdog so a crashed gateway is auto-restarted.
-    if (gatewayReady) {
-      this._startOpenClawWatchdog();
-    }
-
-    // 8. HTTP runtime: POST to built-in OpenClaw webhook, await sync reply via bridge correlationId.
-    this._openclawRuntime = {
-      isReady: () => this.isOpenClawReady(),
-      ask: async (prompt: string, envoyContext?: { policyPrompt?: string; retrievedContext?: string }) => {
-        return await this._askOpenClawViaWebhook(prompt, envoyContext);
-      },
-      stop: async () => {
-        await this.stopOpenClaw();
-      },
-    } as any;
-
-    console.log("[openclaw] Built-in OpenClaw gateway at", assistantUrl);
-    console.log("[openclaw] Gateway config:", gwConfigPathAbs);
-    if (modelProvider.provider) {
-      console.log("[openclaw] Model config:", JSON.stringify(modelProvider));
-    }
-    return gatewayReady;
+    return startOpenClawViaRuntime(this._openClawState, this._openClawRuntimeDeps());
   }
 
   private _resolveOpenClawWorkspaceDir(): string {
-    if (!this._profileDir || this._profileDir === "/tmp/unknown") {
-      throw new Error("OpenClaw workspace unavailable — profile not loaded");
-    }
     const ownerId = this._profile?.owner?.ownerId ?? "unknown";
-    return ensureOpenClawWorkspace(this._profileDir, { ownerId }, {
-      legacySkillsDir: resolveBundledSkillsDir(process.cwd()),
-    });
+    return resolveOpenClawWorkspaceDirFromProfile(this._profileDir, ownerId);
   }
 
-  private async _loadBridgeConfigClawhubToken(): Promise<string | undefined> {
-    try {
-      const { readFile } = await import("node:fs/promises");
-      const { join } = await import("node:path");
-      const cfgPath = join(process.cwd(), "data", "default", "bridge-config.json");
-      const cfg = JSON.parse(await readFile(cfgPath, "utf-8"));
-      const token = cfg?.clawhubToken;
-      return typeof token === "string" && token.trim() ? token.trim() : undefined;
-    } catch {
-      return undefined;
-    }
-  }
-
-  private async _execClawhub(args: string[], timeoutMs: number): Promise<string> {
-    const { execFileSync } = await import("node:child_process");
-    const bin = await this._clawhubBin();
-    const workdir = this._resolveOpenClawWorkspaceDir();
-    const token = await this._loadBridgeConfigClawhubToken();
-    return execFileSync(bin, [...args, "--workdir", workdir], {
-      encoding: "utf-8",
-      timeout: timeoutMs,
-      env: {
-        ...process.env,
-        CLAWHUB_WORKDIR: workdir,
-        ...(token ? { CLAWHUB_TOKEN: token } : {}),
-      },
-    }).trim();
+  private _clawHubContext(): ClawHubContext {
+    return {
+      resolveOpenClawWorkspaceDir: () => this._resolveOpenClawWorkspaceDir(),
+      loadBridgeConfigClawhubToken: () => loadBridgeConfigClawhubToken(),
+      stopOpenClaw: () => this.stopOpenClaw(),
+      startOpenClaw: () => this.startOpenClaw(),
+    };
   }
 
   // --- ClawHub skill/plugin management ---
 
-  private async _clawhubBin(): Promise<string> {
-    const { existsSync } = await import("node:fs");
-    const { join } = await import("node:path");
-    const { homedir } = await import("node:os");
-    const candidates = [
-      join(homedir(), ".npm-global", "bin", "clawhub"),
-      "/usr/local/bin/clawhub",
-    ];
-    const found = candidates.find((c) => existsSync(c));
-    if (found) return found;
-    // Try PATH as last resort
-    try {
-      const { execSync } = await import("node:child_process");
-      const which = execSync("which clawhub 2>/dev/null", { encoding: "utf-8", timeout: 2000 }).trim();
-      if (which && existsSync(which)) return which;
-    } catch { /* not found */ }
-    return "clawhub";
-  }
-
   async getOpenClawPlugins(): Promise<string[]> {
-    try {
-      const out = await this._execClawhub(["list"], 5000);
-      const lines = out.split("\n")
-        .map(l => l.trim())
-        .filter(l => l && !l.startsWith("Installed") && !l.startsWith("Skills") && !l.startsWith("Name") && !l.startsWith("No "));
-      console.log("[clawhub] list raw:", JSON.stringify(out.slice(0, 200)), "lines:", lines.length);
-      return lines.length ? lines : ["(no skills installed)"];
-    } catch (err: any) {
-      const msg = err.stderr?.toString() || err.message || "";
-      console.warn("[clawhub] list failed:", msg);
-      // If clawhub is not installed, return a helpful message instead of an error
-      if (msg.includes("command not found") || msg.includes("not found")) {
-        return ["__clawhub_missing__"];
-      }
-      return [msg.slice(0, 200)];
-    }
+    return getOpenClawPluginsViaRuntime(this._clawHubContext());
   }
 
   async getTrendingOpenClawPlugins(): Promise<string[]> {
-    try {
-      const resp = await fetch("https://clawhub.ai/api/v1/skills?limit=20", {
-        headers: { "Accept": "application/json" },
-        signal: AbortSignal.timeout(10000),
-      });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json() as any;
-      const items = data?.skills ?? data?.items ?? data ?? [];
-      return (Array.isArray(items) ? items : []).slice(0, 20).map((s: any) => {
-        const slug = s.slug ?? "";
-        const name = s.name ?? slug;
-        const desc = s.description ? ` — ${s.description.slice(0, 80)}` : "";
-        const ownerHandle = typeof s.owner === "string" ? s.owner : s.owner?.handle ?? "";
-        const url = ownerHandle && slug ? `https://clawhub.ai/${ownerHandle}/${slug}` : "";
-        return JSON.stringify({ slug, name, desc: desc.trim(), url, owner: ownerHandle });
-      });
-    } catch (err: any) {
-      return [`Error: ${err.message.slice(0, 200)}`];
-    }
+    return getTrendingOpenClawPluginsViaRuntime(this._clawHubContext());
   }
 
   async searchOpenClawPlugins(query: string): Promise<string[]> {
-    try {
-      const resp = await fetch(`https://clawhub.ai/api/v1/search?q=${encodeURIComponent(query)}`, {
-        headers: { "Accept": "application/json" },
-        signal: AbortSignal.timeout(10000),
-      });
-      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const data = await resp.json() as any;
-      console.log("[clawhub] search response keys:", Object.keys(data ?? {}).join(", "));
-      const items = data?.skills ?? data?.items ?? data?.results ?? data ?? [];
-      if (!Array.isArray(items)) {
-        console.warn("[clawhub] search: items is not array, type:", typeof items);
-        return [];
-      }
-      console.log("[clawhub] search: found", items.length, "results");
-      return items.slice(0, 20).map((s: any) => {
-        const slug = s.slug ?? "";
-        const name = s.name ?? slug;
-        const desc = s.description ? ` — ${s.description.slice(0, 80)}` : "";
-        // owner may be a string or an object like { handle, displayName, image }
-        const ownerHandle = typeof s.owner === "string" ? s.owner : s.owner?.handle ?? "";
-        const url = ownerHandle && slug ? `https://clawhub.ai/${ownerHandle}/${slug}` : "";
-        return JSON.stringify({ slug, name, desc: desc.trim(), url, owner: ownerHandle });
-      });
-    } catch (err: any) {
-      console.warn("[clawhub] search failed:", err.message);
-      return [`Error: ${err.message.slice(0, 200)}`];
-    }
+    return searchOpenClawPluginsViaRuntime(this._clawHubContext(), query);
   }
 
   async installOpenClawPlugin(name: string): Promise<{ ok: boolean; message: string }> {
-    const safe = /^[a-zA-Z0-9._-]+$/.test(name) ? name : null;
-    if (!safe) return { ok: false, message: "Invalid plugin name" };
-    try {
-      const out = await this._execClawhub(["install", safe], 60000);
-      await this.reloadOpenClawConfig();
-      return { ok: true, message: out || "Installed" };
-    } catch (err: any) {
-      const msg = err.stderr?.toString() || err.message || "Install failed";
-      if (msg.includes("command not found") || msg.includes("not found")) {
-        return { ok: false, message: "clawhub CLI not installed. Run: npm i -g clawhub && clawhub login" };
-      }
-      return { ok: false, message: msg.slice(0, 300) };
-    }
+    return installOpenClawPluginViaRuntime(this._clawHubContext(), name);
   }
 
   async uninstallOpenClawPlugin(name: string): Promise<{ ok: boolean; message: string }> {
-    const safe = /^[a-zA-Z0-9._-]+$/.test(name) ? name : null;
-    if (!safe) return { ok: false, message: "Invalid plugin name" };
-    try {
-      const out = await this._execClawhub(["uninstall", safe], 30000);
-      await this.reloadOpenClawConfig();
-      return { ok: true, message: out || "Uninstalled" };
-    } catch (err: any) {
-      const msg = err.stderr?.toString() || err.message || "Uninstall failed";
-      return { ok: false, message: msg.slice(0, 300) };
-    }
-  }
-
-  private async _loadBridgeConfigWebSearchEnabled(): Promise<boolean | undefined> {
-    try {
-      const { readFile } = await import("node:fs/promises");
-      const { join } = await import("node:path");
-      const cfgPath = join(process.cwd(), "data", "default", "bridge-config.json");
-      const cfg = JSON.parse(await readFile(cfgPath, "utf-8"));
-      return typeof cfg?.webSearchEnabled === "boolean" ? cfg.webSearchEnabled : undefined;
-    } catch { return undefined; }
-  }
-
-  private async _loadBridgeConfigSkillApiKeys(): Promise<Record<string, string> | undefined> {
-    try {
-      const { readFile } = await import("node:fs/promises");
-      const { join } = await import("node:path");
-      const cfgPath = join(process.cwd(), "data", "default", "bridge-config.json");
-      const cfg = JSON.parse(await readFile(cfgPath, "utf-8"));
-      return cfg?.skillApiKeys;
-    } catch { return undefined; }
+    return uninstallOpenClawPluginViaRuntime(this._clawHubContext(), name);
   }
 
   async saveWebSearchEnabled(enabled: boolean): Promise<{ ok: boolean }> {
-    try {
-      const { readFileSync, writeFileSync } = await import("node:fs");
-      const { join } = await import("node:path");
-      const cfgPath = join(process.cwd(), "data", "default", "bridge-config.json");
-      const cfg = JSON.parse(readFileSync(cfgPath, "utf-8"));
-      cfg.webSearchEnabled = enabled;
-      writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + "\n", "utf-8");
-      await this.stopOpenClaw();
-      await this.startOpenClaw();
-      return { ok: true };
-    } catch { return { ok: false }; }
+    return saveWebSearchEnabledViaRuntime(this._clawHubContext(), enabled);
   }
 
   async saveSkillApiKeys(keys: Record<string, string>): Promise<{ ok: boolean }> {
-    try {
-      const { readFileSync, writeFileSync } = await import("node:fs");
-      const { join } = await import("node:path");
-
-      const bridgeCfgPath = join(process.cwd(), "data", "default", "bridge-config.json");
-      const bridgeCfg = JSON.parse(readFileSync(bridgeCfgPath, "utf-8"));
-      bridgeCfg.skillApiKeys = Object.keys(keys).length > 0 ? keys : undefined;
-      writeFileSync(bridgeCfgPath, JSON.stringify(bridgeCfg, null, 2) + "\n", "utf-8");
-
-      await this.stopOpenClaw();
-      await this.startOpenClaw();
-      return { ok: true };
-    } catch {
-      return { ok: false };
-    }
+    return saveSkillApiKeysViaRuntime(this._clawHubContext(), keys);
   }
 
   async saveClawhubToken(token: string): Promise<{ ok: boolean }> {
-    try {
-      const { readFileSync, writeFileSync } = await import("node:fs");
-      const { join } = await import("node:path");
-      const cfgPath = join(process.cwd(), "data", "default", "bridge-config.json");
-      const cfg = JSON.parse(readFileSync(cfgPath, "utf-8"));
-      cfg.clawhubToken = token || undefined;
-      writeFileSync(cfgPath, JSON.stringify(cfg, null, 2) + "\n", "utf-8");
-      return { ok: true };
-    } catch (err: any) {
-      return { ok: false };
-    }
+    return saveClawhubTokenViaRuntime(token);
   }
 
   async stopOpenClaw(): Promise<void> {
-    this._rejectAllPendingOpenClawReplies("OpenClaw stopped");
-    this._setOpenClawGatewayReady(false);
-    this._stopOpenClawWatchdog();
-    const proc = this._openclawGatewayChild;
-    this._openclawGatewayChild = null;
-    if (proc && !proc.killed) {
-      try {
-        proc.kill("SIGTERM");
-        setTimeout(() => { if (!proc.killed) proc.kill("SIGKILL"); }, 3000);
-      } catch { /* ignore */ }
-    }
-    this._openclawRuntime = null;
+    return stopOpenClawViaRuntime(this._openClawState, this._openClawRuntimeDeps());
   }
 
   async askOpenClaw(prompt: string, _context?: {
@@ -5914,13 +3803,7 @@ class NodeServiceImpl implements NodeService {
     permissions?: { bondAutonomy: boolean; maxBondsPerDay: number; autoCircleContacts: boolean; maxSensitivity: string };
     model?: { provider: string; baseUrl?: string; model?: string };
   }): Promise<string> {
-    if (!(await this._ensureOpenClawReady())) {
-      throw new Error("OpenClaw not available");
-    }
-    const { policyPrompt, retrievedContext } = await this._buildEnvoyMeshOpenClawPrompts(prompt);
-    return this._withOpenClawAskLock(() =>
-      this._askOpenClawViaWebhook(prompt, { policyPrompt, retrievedContext }),
-    );
+    return askOpenClawViaRuntime(this._openClawState, this._openClawRuntimeDeps(), prompt, _context);
   }
 
   /**
@@ -5944,107 +3827,9 @@ class NodeServiceImpl implements NodeService {
   }
 
   async sendToOpenClaw(text: string): Promise<void> {
-    const ownerId = this._profile?.owner?.ownerId ?? "";
-    const now = new Date().toISOString();
-    const messageId = crypto.randomUUID();
-
-    // Persist the outbound message so it appears in the Social app chat history.
-    const outboundMsg: ChatMessage = {
-      messageId,
-      sender: {
-        nodeId: this._mesh?.peerId ?? "",
-        ownerId,
-        displayName: ownerId,
-        actorRole: "human",
-      },
-      recipient: {
-        nodeId: ENVOY_AI_THREAD_KEY,
-        displayName: "EnvoyAI",
-      },
-      content: { text },
-      metadata: {
-        timestamp: now,
-        deliveryReceipt: "sent",
-        deliveryChannel: "ai",
-      },
-      signature: "",
-    };
-    this.recordEnvoyAiChatMessage(outboundMsg);
-
-    let policyPrompt: string | undefined;
-    let retrievedContext: string | undefined;
-    try {
-      const prompts = await this._buildEnvoyMeshOpenClawPrompts(text);
-      policyPrompt = prompts.policyPrompt;
-      retrievedContext = prompts.retrievedContext;
-    } catch {
-      /* best-effort context */
-    }
-
-    // Use correlationId so the AI reply goes through resolveOpenClawReply →
-    // _persistEnvoyAiChatExchange (single, correct path) instead of
-    // receiveFromAgent → onSelfSendEnvelope (duplicate emission).
-    const correlationId = `oc-openclaw-${randomUUID()}`;
-    const replyPromise = this._waitForOpenClawReply(correlationId);
-
-    let fromName = ownerId;
-    try {
-      const profile = await this._humanProfileStore?.loadHumanProfile();
-      if (profile?.displayName?.trim()) fromName = profile.displayName.trim();
-    } catch { /* use ownerId */ }
-
-    const body = JSON.stringify({
-      from: this._mesh?.peerId ?? "",
-      fromOwnerId: ownerId,
-      fromName,
-      text,
-      ...(policyPrompt?.trim() ? { policyPrompt: policyPrompt.trim() } : {}),
-      ...(retrievedContext?.trim() ? { retrievedContext: retrievedContext.trim() } : {}),
-      correlationId,
-    });
-
-    const headers: Record<string, string> = { "Content-Type": "application/json" };
-    if (this._assistantAgentSecret) {
-      headers.Authorization = `Bearer ${this._assistantAgentSecret}`;
-    }
-
-    const [answer] = await Promise.all([
-      replyPromise,
-      (async () => {
-        const resp = await fetch(this._assistantAgentUrl, {
-          method: "POST",
-          headers,
-          body,
-          signal: AbortSignal.timeout(300_000),
-        });
-        if (!resp.ok) {
-          // If OpenClaw returns an error (e.g. 400, 404, 500), cancel the
-          // reply promise and fall through to the native LLM fallback below.
-          const detail = await resp.text().catch(() => "");
-          console.warn(`[openclaw] webhook returned ${resp.status}: ${detail.slice(0, 200)}`);
-          this._cancelOpenClawReply(correlationId, new Error(`OpenClaw webhook ${resp.status}`));
-        }
-      })(),
-    ]);
-
-    // Persist the AI response — reuse the existing human messageId so we don't
-    // create a duplicate storage row and duplicate WS event.
-    await this._persistEnvoyAiChatExchange(text, {
-      answer,
-      domain: "knowledge",
-      intent: "knowledge",
-      toolsUsed: [],
-      approvalItems: [],
-      modelUsed: "openclaw",
-    }, messageId);
+    return sendToOpenClawViaRuntime(this._openClawState, this._openClawRuntimeDeps(), text);
   }
 
-  /**
-   * Send a message to the external HTTP agent via the bridge.
-   * Persists the outbound message under the bridge agent's peer ID with
-   * deliveryChannel="agent" so it appears in the Ext Agent thread.
-   * The agent's reply arrives via receiveFromAgent → chat:message to the mobile.
-   */
   async sendToBridge(text: string): Promise<void> {
     const mesh = this._reachableMesh();
     const ownerId = this._profile?.owner?.ownerId ?? "";
@@ -6115,11 +3900,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   async reloadOpenClawConfig(): Promise<void> {
-    // The gateway needs the updated model config. Since our runtime
-    // is HTTP-based (not stdio), restart the gateway with new config.
-    console.log("[openclaw] Reloading config — restarting gateway...");
-    await this.stopOpenClaw();
-    await this.startOpenClaw();
+    return reloadOpenClawConfigViaRuntime(this._clawHubContext());
   }
 
   async executeOpenClawTool(toolName: string, params: Record<string, unknown>): Promise<unknown> {
@@ -6346,10 +4127,10 @@ class NodeServiceImpl implements NodeService {
   }
 
   private _continuityContext(): ContinuityContext {
-    return {
+    return buildContinuityContext({
       store: this._continuityStore,
       getDeviceId: () => this._profile?.owner.ownerId ?? "local-owner",
-    };
+    });
   }
 
   async startDocumentAcquisitionJob(params: {
@@ -6965,14 +4746,14 @@ class NodeServiceImpl implements NodeService {
           hasMention: (t: string) => t.includes("@envoy"),
           generateAnswer: async (prompt: string) => {
             if (await this._ensureOpenClawReady()) {
-              this._beginOpenClawToolTracking();
+              beginOpenClawToolTracking(this._openClawState);
               try {
-                const context = await this._buildOpenClawTurnContext();
+                const context = await buildOpenClawTurnContextViaRuntime(this._openClawRuntimeDeps());
                 return stripModelThinking(await this.askOpenClaw(prompt, context));
               } catch (err) {
                 console.warn("[openclaw] @envoy request failed, falling back:", err instanceof Error ? err.message : String(err));
               } finally {
-                this._endOpenClawToolTracking();
+                endOpenClawToolTracking(this._openClawState);
               }
             }
             const config = await this.getNodeConfig();
@@ -7247,7 +5028,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   private _fileShareContext(): FileShareContext {
-    return {
+    return buildFileShareContext({
       getVaultDir: () => this._vaultDir,
       getProfileDir: () => this._profileDir,
       getNodeConfig: () => this.getNodeConfig(),
@@ -7256,17 +5037,17 @@ class NodeServiceImpl implements NodeService {
       recordOwnerActivity: () => this.recordOwnerActivity(),
       appendAuditEvent: (event) => this._appendAuditEvent(event),
       emit: (event, payload) => this.emit?.(event as never, payload as never),
-    };
+    });
   }
 
   private _sessionTokenContext(): SessionTokenAccess {
-    return {
-      getSessionTokenStore: () => (this._sessionTokenStore as never) ?? undefined,
-    };
+    return buildSessionTokenContext({
+      sessionTokenStore: this._sessionTokenStore,
+    });
   }
 
   private _recordNodeErrorContext(): RecordNodeErrorAccess {
-    return {
+    return buildRecordNodeErrorContext({
       getLastNodeError: () => this._lastNodeError,
       setLastNodeError: (v) => {
         this._lastNodeError = v;
@@ -7275,11 +5056,11 @@ class NodeServiceImpl implements NodeService {
       setLastNodeErrorAt: (v) => {
         this._lastNodeErrorAt = v;
       },
-    };
+    });
   }
 
     private _connectionStatusContext(): ConnectionStatusContext {
-    return {
+    return buildConnectionStatusContext({
       getLastNodeError: () => this._lastNodeError,
       getLastNodeErrorAt: () => this._lastNodeErrorAt,
       getReachableMesh: () => this._reachableMesh() as never,
@@ -7287,24 +5068,24 @@ class NodeServiceImpl implements NodeService {
       getRelayBootstrapPeers: () => this._relayBootstrapPeers,
       hasTerminalManager: () => Boolean(this._terminalManager),
       getBridgeStatus: () => this._bridgeStatus ?? undefined,
-    };
+    });
   }
 
   private _nodeConfigContext(): NodeConfigContext {
-    return {
+    return buildNodeConfigContext({
       getProfileDir: () => this._profileDir,
       loadNodeConfig: () => this._configStore.load(),
       saveNodeConfig: (config) => this._configStore.save(config),
       getBridgeStatus: () => this._bridgeStatus ?? undefined,
       getRelayPublicWsUrl: () => this._relayPublicWsUrl ?? null,
-      loadBridgeConfigSkillApiKeys: async () => (await this._loadBridgeConfigSkillApiKeys()) ?? ({} as Record<string, string>),
-      loadBridgeConfigWebSearchEnabled: async () => Boolean(await this._loadBridgeConfigWebSearchEnabled()),
+      loadBridgeConfigSkillApiKeys: async () => (await loadBridgeConfigSkillApiKeys()) ?? ({} as Record<string, string>),
+      loadBridgeConfigWebSearchEnabled: async () => Boolean(await loadBridgeConfigWebSearchEnabled()),
       getProfile: () => this._profile,
-    };
+    });
   }
 
   private _capabilityDiscoveryContext(): CapabilityDiscoveryContext {
-    return {
+    return buildCapabilityDiscoveryContext({
       getMesh: () => this._mesh,
       getProfile: () => this._profile,
       getTaskStore: () => this._taskStore,
@@ -7315,11 +5096,11 @@ class NodeServiceImpl implements NodeService {
         this._capabilityDiscoveryTimer = timer;
       },
       syncPairingKioskFromConfig: () => this._syncPairingKioskFromConfig(),
-    };
+    });
   }
 
   private _agentSetupContext(): AgentSetupContext {
-    return {
+    return buildAgentSetupContext({
       saveConfig: (config) => this._configStore.save(config),
       loadConfig: () => this._configStore.load(),
       getProfileDir: () => this._profileDir,
@@ -7333,11 +5114,11 @@ class NodeServiceImpl implements NodeService {
       },
       getNodeStatus: () => this._nodeStatus,
       getToolExecutionContext: () => this.getToolExecutionContext(),
-    };
+    });
   }
 
   private _stopNodeContext(): StopNodeContext {
-    return {
+    return buildStopNodeContext({
       getNodeStatus: () => this._nodeStatus,
       setNodeStatus: (s) => {
         this._nodeStatus = s;
@@ -7393,23 +5174,30 @@ class NodeServiceImpl implements NodeService {
         return t;
       },
       getDeviceId: () => this._profile?.device?.deviceId,
-    };
+    });
   }
 
     private _manifestContext(): CapabilityManifestContext {
-    return {
+    return buildManifestContext({
       getProfileDir: () => this._profileDir,
       getCapabilityManifestStore: () => this._capabilityManifestStore as never,
       loadNodeConfig: async () => (await this._configStore.load()) as never,
       saveNodeConfig: async (cfg) => {
         await this._configStore.save(cfg as never);
       },
-    };
+    });
   }
 
     private _fileShareNetworkContext(): FileShareNetworkContext {
-    return {
-      ...this._fileShareContext(),
+    return buildFileShareNetworkContext({
+      getVaultDir: () => this._vaultDir,
+      getProfileDir: () => this._profileDir,
+      getNodeConfig: () => this.getNodeConfig() as never,
+      getTaskStore: () => this._taskStore as never,
+      getRagService: () => this._getRagService() as never,
+      recordOwnerActivity: () => this.recordOwnerActivity(),
+      appendAuditEvent: (event) => this._appendAuditEvent(event),
+      emit: (event, payload) => this.emit?.(event as never, payload as never),
       assertOnline: () => this._assertOnline(),
       requireMesh: () => this._requireMesh() as never,
       requireProfile: () => this._requireProfile() as never,
@@ -7425,29 +5213,13 @@ class NodeServiceImpl implements NodeService {
           dialHints,
           listenAddrs,
         ) as never,
-      setPendingPushShare: (messageId, info) => {
-        this._pendingPushShareByRequestMsgId.set(messageId, {
-          relativePath: info.relativePath,
-          toPeerId: info.toPeerId,
-          deliveryChannel: info.deliveryChannel as never,
-        });
-      },
-      setPendingPullShare: (messageId, info) => {
-        this._pendingPullShareByRequestMsgId.set(messageId, {
-          peerRelativePath: info.peerRelativePath,
-          targetOwnerId: info.targetOwnerId,
-          toPeerId: info.toPeerId,
-          sensitivity: info.sensitivity as never,
-        });
-      },
-      setCorrelationByRequestMsgId: (messageId, correlationId) => {
-        this._transferState.correlationByRequestMsgId.set(messageId, correlationId);
-      },
+      getPendingPushShareByRequestMsgId: () => this._pendingPushShareByRequestMsgId as never,
+      getPendingPullShareByRequestMsgId: () => this._pendingPullShareByRequestMsgId,
+      getTransferStateCorrelationByRequestMsgId: () => this._transferState.correlationByRequestMsgId,
       upsertTransferStatus: (status) => {
         this._upsertTransferStatus(status as never);
       },
-      isVaultPathSafe: (rel) => isSafeVaultPath(this._vaultDir, rel),
-    };
+    });
   }
 
   async listLibraryItems(params?: ListLibraryItemsParams): Promise<LibraryItem[]> {
@@ -7846,7 +5618,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   private _startNodeContext(): StartNodeContext {
-    return {
+    return buildStartNodeContext({
       getNodeStatus: () => this._nodeStatus,
       setNodeStatus: (s) => {
         this._nodeStatus = s;
@@ -7925,7 +5697,7 @@ class NodeServiceImpl implements NodeService {
         this._runCapabilityDiscoveryCycle(source, opts),
       startCapabilityDiscoveryScheduler: (runtime) =>
         this._startCapabilityDiscoveryScheduler(runtime),
-    };
+    });
   }
 
   private _wireMeshEvents(): void {
@@ -7933,24 +5705,24 @@ class NodeServiceImpl implements NodeService {
   }
 
   private _wireMeshEventsContext(): WireMeshEventsContext {
-    return {
+    return buildWireMeshEventsContext({
       mesh: this._mesh as never,
       onMessage: (params) => this._handleInboundMessage(params),
       onPeerDiscovered: (params) => this._handlePeerDiscovered(params),
-    };
+    });
   }
 
   private _sharePreviewContext(): SharePreviewContext {
-    return {
+    return buildSharePreviewContext({
       recordInboundPullSharePreview: (input) =>
         this.recordInboundPullSharePreview(input),
       linkOutboundSharePreviewFromInbound: (messageId, inReplyTo) =>
         this.linkOutboundSharePreviewFromInbound(messageId, inReplyTo),
-    };
+    });
   }
 
   private _pairingKioskContext(): PairingKioskContext {
-    return {
+    return buildPairingKioskContext({
       loadConfig: () => this._configStore.load(),
       getKiosk: () => this._pairingKiosk,
       setKiosk: (handle) => {
@@ -7959,11 +5731,11 @@ class NodeServiceImpl implements NodeService {
       stopKiosk: () => this.stopPairingKiosk(),
       getTaskStore: () => this._taskStore,
       getCompanyInviteContext: () => this._companyInviteInviteContext(),
-    };
+    });
   }
 
   private _pairDeviceContext(): PairDeviceContext {
-    return {
+    return buildPairDeviceContext({
       validatePairingToken: (token) => this.validatePairingToken(token),
       consumeCompanyInvite: (token, ownerId, deviceId) =>
         this._consumeCompanyInviteOrThrow(token, ownerId, deviceId),
@@ -7971,13 +5743,13 @@ class NodeServiceImpl implements NodeService {
         this._trustStore.setTrustRecord(record as never).then(() => undefined) as Promise<void>,
       mergeInboundDeviceBinding: (input) =>
         this._peerDirectoryStore.mergeInboundDeviceBinding(input),
-      getSessionTokenStore: () => (this._sessionTokenStore as never) ?? null,
+      sessionTokenStore: this._sessionTokenStore,
       getBridgeStatus: () => this.getBridgeStatus(),
-    };
+    });
   }
 
   private _pairSharedIdentityContext(): PairSharedIdentityContext {
-    return {
+    return buildPairSharedIdentityContext({
       requireProfile: () => this._requireProfile(),
       validatePairingToken: (token) => this.validatePairingToken(token),
       consumeCompanyInvite: (token, ownerId, deviceId) =>
@@ -7986,15 +5758,14 @@ class NodeServiceImpl implements NodeService {
         this._trustStore.setTrustRecord(record as never).then(() => undefined) as Promise<void>,
       mergeInboundDeviceBinding: (input) =>
         this._peerDirectoryStore.mergeInboundDeviceBinding(input),
-      getSessionTokenStore: () => (this._sessionTokenStore as never) ?? null,
-      getDeviceAuthorizationStore: () =>
-        (this._deviceAuthorizationStore as never) ?? null,
+      sessionTokenStore: this._sessionTokenStore,
+      deviceAuthorizationStore: this._deviceAuthorizationStore,
       getBridgeStatus: () => this.getBridgeStatus(),
-    };
+    });
   }
 
   private _getPairingPayloadContext(): GetPairingPayloadContext {
-    return {
+    return buildGetPairingPayloadContext({
       getBridgeStatus: () => this.getBridgeStatus(),
       getReachableMesh: () => (this._mesh ?? this._externalMesh) as never,
       getWsPort: () => this._wsPort,
@@ -8009,16 +5780,14 @@ class NodeServiceImpl implements NodeService {
         this._pairingToken = token;
         this._pairingTokenIssuedAt = issuedAt;
       },
-    };
+    });
   }
 
   private _runOwnerAgentTurnContext(): RunOwnerAgentTurnContext {
-    return {
+    return buildRunOwnerAgentTurnContext({
+      openClawState: this._openClawState,
+      getOpenClawRuntimeDeps: () => this._openClawRuntimeDeps(),
       recordOwnerActivity: () => this.recordOwnerActivity(),
-      ensureOpenClawReady: () => this._ensureOpenClawReady(),
-      beginOpenClawToolTracking: () => this._beginOpenClawToolTracking(),
-      endOpenClawToolTracking: () => this._endOpenClawToolTracking(),
-      buildOpenClawTurnContext: () => this._buildOpenClawTurnContext(),
       askOpenClaw: (msg, ctx) => this.askOpenClaw(msg, ctx as never),
       persistEnvoyAiChatExchange: (raw, turn, humanMsgId) =>
         this._persistEnvoyAiChatExchange(raw, turn, humanMsgId),
@@ -8028,20 +5797,15 @@ class NodeServiceImpl implements NodeService {
       getTaskStore: () => this._taskStore as never,
       runDocumentAgentTurnCore: (msg) => this._runDocumentAgentTurnCore(msg) as never,
       getApprovalQueue: () => this._approvalQueue as never,
-    };
+    });
   }
 
   private _runDocumentAgentTurnContext(): RunDocumentAgentTurnContext {
-    return {
+    return buildRunDocumentAgentTurnContext({
       requireToolExecutionContext: () => this._requireToolExecutionContext(),
       listLibraryItems: (q) =>
         this.listLibraryItems(q ? { query: q.query } : undefined) as never,
       getBonds: () => this.getBonds() as never,
-      executeTool: (toolName, params) =>
-        (async () => {
-          const ctx = await this._requireToolExecutionContext();
-          return executeTool(toolName, params as never, ctx);
-        })() as never,
       knowledgeQuery: (question) => this.knowledgeQuery(question) as never,
       discoverPublishedLibrary: (p) =>
         this.discoverPublishedLibrary(p as never) as never,
@@ -8050,37 +5814,37 @@ class NodeServiceImpl implements NodeService {
       recordH2aOwnerTurn: (msg, turn) =>
         this.recordH2aOwnerTurn(msg, turn as never),
       runDocumentAgentTurnCore: (msg) => this._runDocumentAgentTurnCore(msg),
-    };
+    });
   }
 
   private _friendAutopilotContext(): FriendAutopilotContext {
-    return {
+    return buildFriendAutopilotContext({
       getNodeConfig: () => this.getNodeConfig(),
       recordFriendAutopilotPass: (record) =>
         this._recordFriendAutopilotPass(record),
       updateNodeConfig: (cfg) => this.updateNodeConfig(cfg as never),
       getToolExecutionContext: () => this.getToolExecutionContext() as never,
-    };
+    });
   }
 
   private _socialProxyContext(): SocialProxyContext {
-    return {
+    return buildSocialProxyContext({
       getSocialProxyStore: () => (this._socialProxyStore as never) ?? undefined,
       getNodeConfig: () => this.getNodeConfig(),
       getSocialProxyOrchestratorDeps: (config) =>
         this._socialProxyOrchestratorDeps(config) as never,
       getPendingSocialIntroProposals: () => this._pendingSocialIntroProposals as never,
-    };
+    });
   }
 
   private _runSocialProxyPassContext(): RunSocialProxyPassContext {
-    return {
+    return buildRunSocialProxyPassContext({
       getNodeConfig: () => this.getNodeConfig(),
       getSocialProxyOrchestratorDeps: (config) =>
         this._socialProxyOrchestratorDeps(config) as never,
       hasSocialProxyStore: () => Boolean(this._socialProxyStore),
       updateNodeConfig: (cfg) => this.updateNodeConfig(cfg as never),
-    };
+    });
   }
 
   private _docAcqCapProvDeps(): any {
@@ -8112,29 +5876,29 @@ class NodeServiceImpl implements NodeService {
   }
 
   private _openInHerdrContext(): OpenInHerdrContext {
-    return {
+    return buildOpenInHerdrContext({
       resolveOpenClawWorkspaceDir: () => this._resolveOpenClawWorkspaceDir(),
-    };
+    });
   }
 
   private _terminalGetHerdrExportHintContext(): TerminalGetHerdrExportHintContext {
-    return {
+    return buildTerminalGetHerdrExportHintContext({
       getProfileDir: () => this._profileDir,
       requireTerminalManager: () => this._requireTerminalManager(),
-    };
+    });
   }
 
     private _terminalExecContext(): TerminalExecContext {
-    return {
+    return buildTerminalExecContext({
       requireTerminalManager: () => this._requireTerminalManager(),
-    };
+    });
   }
 
     private _terminalContext(): any {
-    return {
+    return buildTerminalContext({
       requireTerminalManager: () => this._requireTerminalManager(),
       requireTerminalAgentAssist: () => this._requireTerminalAgentAssist(),
-    };
+    });
   }
 
     private _storeAccessorDeps(): any {
@@ -8169,7 +5933,7 @@ class NodeServiceImpl implements NodeService {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private _bondHandlerContext(): BondHandlerContext {
-    return {
+    return buildBondHandlerContext({
       getTaskStore: () => this._taskStore,
       getProfile: () => this._profile,
       storePendingHelloRequest: (data) => this.storePendingHelloRequest(data),
@@ -8180,11 +5944,11 @@ class NodeServiceImpl implements NodeService {
         this._peerDirectoryStore.ensurePeerFromInboundChat(input),
       tagBondedContactReachability: (remotePeerId) =>
         this._tagBondedContactReachability(remotePeerId),
-    };
+    });
   }
 
     private _chatRoomMessageContext(): ChatRoomMessageContext {
-    return {
+    return buildChatRoomMessageContext({
       getTaskStore: () => this._taskStore,
       getChatDraftStore: () => this._chatDraftStore,
       getProfile: () => this._profile,
@@ -8203,11 +5967,11 @@ class NodeServiceImpl implements NodeService {
       sendAgentChat: (targetOwnerId, text) =>
         this.sendAgentChat(targetOwnerId, text) as never,
       emit: (event, payload) => this.emit?.(event as never, payload as never),
-    };
+    });
   }
 
     private _chatMessageContext(): ChatMessageContext {
-    return {
+    return buildChatMessageContext({
       getTaskStore: () => this._taskStore,
       getChatDraftStore: () => this._chatDraftStore,
       getChatLogStore: () => this._chatLogStore,
@@ -8232,11 +5996,11 @@ class NodeServiceImpl implements NodeService {
       tagBondedContactReachability: (remotePeerId) =>
         this._tagBondedContactReachability(remotePeerId),
       isOwnerOnline: () => this.isOwnerOnline(),
-    };
+    });
   }
 
     private _requestPeerProfileContext(): RequestPeerProfileContext {
-    return {
+    return buildRequestPeerProfileContext({
       requireMesh: () => this._requireMesh() as never,
       requireProfile: () => this._requireProfile(),
       getContactOwnerKeyStore: () => this._contactOwnerKeyStore ?? undefined,
@@ -8249,60 +6013,60 @@ class NodeServiceImpl implements NodeService {
       dialHintsForChat: (peerId, listenAddrs) =>
         this._dialHintsForChat(peerId, listenAddrs),
       emit: (event, payload) => this.emit?.(event as never, payload as never),
-      getProfileRequestCooldownMs: () => NodeServiceImpl._PROFILE_REQUEST_COOLDOWN_MS,
+      profileRequestCooldownMs: NodeServiceImpl._PROFILE_REQUEST_COOLDOWN_MS,
       getInFlightMap: () => this._profileRequestInflight,
       getLastAtMap: () => this._profileRequestLastAt,
-    };
+    });
   }
 
   private _smallProfileDelegationsContext(): SmallProfileDelegationsContext {
-    return {
+    return buildSmallProfileDelegationsContext({
       getContactOwnerKeyStore: () => this._contactOwnerKeyStore ?? undefined,
       getVaultDir: () => this._vaultDir,
       signAndSaveHumanProfile: (update) =>
-        this._signAndSaveHumanProfile(update as never),
+        _signAndSaveHumanProfile(this._identityContext(), update as never),
       loadHumanProfileForPhotoUpdate: () =>
-        this._loadHumanProfileForPhotoUpdate() as Promise<{ base: any; existing: any }>,
+        _loadHumanProfileForPhotoUpdate(this._identityContext()) as Promise<{ base: any; existing: any }>,
       getAgentIdentityStore: () => this._agentIdentityStore ?? undefined,
       assertOnline: () => this._assertOnline(),
-    };
+    });
   }
 
   private _validatePairingTokenContext(): ValidatePairingTokenContext {
-    return {
+    return buildValidatePairingTokenContext({
       getInMemoryToken: () => this._pairingToken ?? undefined,
       getInMemoryTokenIssuedAt: () => this._pairingTokenIssuedAt ?? undefined,
-      getInMemoryTokenTtlMs: () => NodeServiceImpl._pairingTokenTtlMs,
+      pairingTokenTtlMs: NodeServiceImpl._pairingTokenTtlMs,
       getSessionTokenStore: () => this._sessionTokenStore ?? undefined,
       getTaskStore: () => this._taskStore,
-    };
+    });
   }
 
   private _persistenceContext(): PersistenceContext {
-    return {
+    return buildPersistenceContext({
       recordIntent: (intent, query) => this._intentHistoryStore.record(intent, query) as never,
       persistIntentHistory: () => this._intentHistoryStore.persist() as never,
       loadIntentHistoryFromDisk: () => this._intentHistoryStore.loadFromDisk() as never,
       persistPublishedLibrary: () => this._publishedLibraryStore.persist() as never,
       loadPublishedLibraryFromDisk: () => this._publishedLibraryStore.loadFromDisk() as never,
       getContactTopicsFromLibrary: (ownerId) => this._publishedLibraryStore.getTopicsForContact(ownerId) as never,
-    };
+    });
   }
 
   private _chatRoomSyncContext(): ChatRoomSyncContext {
-    return {
+    return buildChatRoomSyncContext({
       getChatRoomDeps: () => this._chatRoomDeps(),
-    };
+    });
   }
 
     private _miscDelegationsContext(): MiscDelegationsContext {
-    return {
+    return buildMiscDelegationsContext({
       getPendingSocialIntroProposals: () => this._pendingSocialIntroProposals as any,
       resyncBondedContactReachabilityTags: () =>
         this._resyncBondedContactReachabilityTags() as never,
       loadHumanProfile: () => this._humanProfileStore.loadHumanProfile() as never,
-      broadcastProfileSyncToBonds: (profile) => this._broadcastProfileSyncToBonds(profile) as never,
-    };
+      broadcastProfileSyncToBonds: (profile) => _broadcastProfileSyncToBonds(this._identityContext(), profile) as never,
+    });
   }
 
     private async _handleInboundMessage(params: any): Promise<void> {
@@ -8533,7 +6297,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   private _isOpenClawTurnInProgress(): boolean {
-    return this._openClawAskInFlight > 0 || this._openclawActiveTurnTools !== null;
+    return this._openClawState.askInFlight > 0 || this._openClawState.activeTurnTools !== null;
   }
 
   private async _enrichTerminalSessions(
@@ -8887,9 +6651,9 @@ class NodeServiceImpl implements NodeService {
   async getOpenClawStatus(): Promise<OpenClawStatus> {
     return getOpenClawStatusViaRuntime({
       isOpenClawEnabled: () => this._isOpenClawEnabled(),
-      isOpenClawReady: () => this.isOpenClawReady(),
-      getAssistantAgentUrl: () => this._assistantAgentUrl,
-      getOpenClawGatewayChild: () => this._openclawGatewayChild ?? undefined,
+      isOpenClawReady: () => isOpenClawReadyViaRuntime(this._openClawState),
+      getAssistantAgentUrl: () => this._openClawState.assistantAgentUrl,
+      getOpenClawGatewayChild: () => this._openClawState.gatewayChild ?? undefined,
     });
   }
 
@@ -9383,91 +7147,14 @@ class NodeServiceImpl implements NodeService {
   }
 
   async getPeerConnectionInfo(peerOwnerId: string): Promise<PeerConnectionInfo> {
-    const mesh = this._reachableMesh();
-    if (!mesh) {
-      return { connected: false, direct: false };
-    }
-
-    // Bridge agent is always local — short-circuit before peer directory lookup.
-    if (this._bridgeStatus?.agentPeerId && peerOwnerId === this._bridgeStatus.agentPeerId) {
-      return { connected: true, direct: true };
-    }
-
-    const selfOwnerId = this._profile?.owner.ownerId?.trim();
-    if (selfOwnerId && peerOwnerId === selfOwnerId) {
-      return { connected: true, direct: true };
-    }
-
-    try {
-      const { transportPeerId } = await this._resolvePeerTransportForOwner(peerOwnerId);
-      if (transportPeerId === mesh.peerId) {
-        return { connected: true, direct: true };
-      }
-      return mesh.getPeerConnectionInfo(transportPeerId);
-    } catch (err) {
-      console.warn(
-        `[getPeerConnectionInfo] no route to ${peerOwnerId.slice(0, 24)}…:`,
-        err instanceof Error ? err.message : err,
-      );
-      return { connected: false, direct: false };
-    }
+    return getPeerConnectionInfoViaRuntime(this._outboundMessagingContext(), peerOwnerId);
   }
 
   async warmContactConnection(
     peerOwnerId: string,
     options?: WarmContactConnectionOptions,
   ): Promise<PeerConnectionInfo> {
-    this._assertOnline();
-    const selfOwnerId = this._profile?.owner.ownerId?.trim();
-    if (selfOwnerId && peerOwnerId.trim() === selfOwnerId) {
-      return { connected: true, direct: true };
-    }
-    let transportPeerId: string;
-    let listenAddrs: string[] | undefined;
-    try {
-      const resolved = await this._resolvePeerTransportForOwner(peerOwnerId);
-      transportPeerId = resolved.transportPeerId;
-      listenAddrs = resolved.listenAddrs;
-    } catch (err) {
-      console.warn(
-        `[warmContact] no route to ${peerOwnerId.slice(0, 24)}…:`,
-        err instanceof Error ? err.message : err,
-      );
-      return { connected: false, direct: false };
-    }
-
-    listenAddrs = await this._mergeFreshListenAddrs(
-      peerOwnerId,
-      transportPeerId,
-      listenAddrs,
-    );
-
-    return this._warmContactConnectionTransport(transportPeerId, listenAddrs, options);
-  }
-
-  /** Merge cached inbound + peer-directory listen addrs before outbound dial. */
-  private async _mergeFreshListenAddrs(
-    ownerId: string,
-    transportPeerId: string,
-    listenAddrs: string[] | undefined,
-  ): Promise<string[] | undefined> {
-    const cached = this._lastLibp2pTransportByOwner.get(ownerId.trim())?.listenAddrs;
-    let fromDir: string[] = [];
-    try {
-      const records = await this._peerDirectoryStore.listPeerRecords();
-      fromDir = records
-        .filter((r) => r.ownerId === ownerId.trim() || r.peerId === transportPeerId)
-        .flatMap((r) => r.listenAddrs ?? []);
-    } catch {
-      /* best-effort */
-    }
-    const merged = mergeDialablePeerListenAddrs(
-      transportPeerId,
-      listenAddrs,
-      cached,
-      fromDir,
-    );
-    return merged.length ? merged : listenAddrs;
+    return warmContactConnectionViaRuntime(this._outboundMessagingContext(), peerOwnerId, options);
   }
 
   private async _warmContactConnectionTransport(
@@ -9475,85 +7162,12 @@ class NodeServiceImpl implements NodeService {
     listenAddrs: string[] | undefined,
     options?: WarmContactConnectionOptions,
   ): Promise<PeerConnectionInfo> {
-    const mesh = this._requireMesh();
-    void this._tagBondedContactReachability(transportPeerId);
-    const existing = mesh.getPeerConnectionInfo(transportPeerId);
-
-    if (options?.verifyOnly) {
-      return existing;
-    }
-
-    const needsProbe = options?.keepAlive === true || options?.verifyConnection === true;
-    if (existing.connected && !options?.redial && !options?.upgradeRelayToDirect) {
-      if (needsProbe) {
-        if (options?.verifyConnection) {
-          const probed = await mesh.probeBondedPeerConnection(transportPeerId);
-          if (probed.connected) {
-            markOutboundPeerVerified(transportPeerId);
-            return probed;
-          }
-          // stale — fall through to redial
-        } else {
-          const probed = await mesh.probeBondedPeerConnection(transportPeerId);
-          if (probed.connected || options?.keepAlive === true) {
-            if (probed.connected) {
-              markOutboundPeerVerified(transportPeerId);
-            }
-            return probed;
-          }
-          // stale — fall through to redial
-        }
-      } else {
-        return existing;
-      }
-    }
-
-    let dialHints: string[];
-    try {
-      dialHints = await raceWithTimeout(
-        this._dialHintsForChat(transportPeerId, listenAddrs),
-        WARM_CONTACT_DIAL_HINTS_TIMEOUT_MS,
-        "_dialHintsForChat",
-      );
-    } catch {
-      return mesh.getPeerConnectionInfo(transportPeerId);
-    }
-
-    const dialableListen = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, dialHints);
-    void mesh.scrubPeerStoreDialHints(transportPeerId, dialableListen);
-
-    const preferCircuitHints = shouldPreferCircuitDialHints(listenAddrs, dialHints, transportPeerId);
-
-    void mesh.mergePeerStoreDialHints(transportPeerId, dialHints);
-
-    const tearingDown =
-      options?.redial === true ||
-      options?.upgradeRelayToDirect === true ||
-      (needsProbe && !options?.keepAlive);
-    if (tearingDown) {
-      try {
-        await mesh.closeConnectionsToPeer(transportPeerId);
-      } catch {
-        /* ignore */
-      }
-    }
-
-    const result = await mesh.ensurePeerReachable(transportPeerId, ENVOY_CHAT_PROTOCOL, {
-      dialHints,
-      preferCircuitHints,
-      forceFreshDial:
-        options?.redial === true ||
-        !existing.connected ||
-        options?.upgradeRelayToDirect === true ||
-        tearingDown,
-      upgradeRelayToDirect: options?.upgradeRelayToDirect === true || options?.redial === true,
-    });
-    void this._flushPendingRoomSyncs();
-    void this._flushPendingRoomMessages();
-    if (result.connected) {
-      markOutboundPeerVerified(transportPeerId);
-    }
-    return result;
+    return warmContactConnectionTransportViaRuntime(
+      this._outboundMessagingContext(),
+      transportPeerId,
+      listenAddrs,
+      options,
+    );
   }
 
   private _startBondWarmInterval(): void {
@@ -9578,9 +7192,9 @@ class NodeServiceImpl implements NodeService {
     const bonds = await this.getBonds();
     const selfOwnerId = this._profile?.owner.ownerId?.trim();
 
-    if (mesh.getConnectionStats().totalConnections >= NodeServiceImpl.BOND_WARM_MAX_CONNECTIONS) {
+    if (mesh.getConnectionStats().totalConnections >= BOND_WARM_MAX_CONNECTIONS) {
       console.warn(
-        `[bond-warm] skipped: ${mesh.getConnectionStats().totalConnections} open connections (cap ${NodeServiceImpl.BOND_WARM_MAX_CONNECTIONS}). ` +
+        `[bond-warm] skipped: ${mesh.getConnectionStats().totalConnections} open connections (cap ${BOND_WARM_MAX_CONNECTIONS}). ` +
         `Reduce bonded contacts or increase the cap.`,
       );
       return;
@@ -10058,47 +7672,6 @@ class NodeServiceImpl implements NodeService {
     return chainSetDefaultsViaRuntime(this._chainContext(), params);
   }
 
-  private _chainContext(): ChainContext {
-    return {
-      store: this._chainStore,
-      hasTaskStore: () => Boolean(this._taskStore),
-      listChainReports: (params) =>
-        this._taskStore!.listChainReports(params) as never,
-      getChainReport: (chainId) =>
-        this._taskStore!.getChainReport(chainId) as never,
-      pinChainReport: (chainId, pinned) =>
-        this._taskStore!.pinChainReport(chainId, pinned),
-      getChainGoal: (chainId) => this._chainState.goals.get(chainId),
-      getChainCostEstimate: (chainId) => this._chainState.costEstimates.get(chainId),
-      snapshotToResult: (snap) => this.snapshotToResult(snap),
-      bidsBySubtask: (state) => this.bidsBySubtask(state),
-      getNodeConfig: () => this.getNodeConfig(),
-      setNodeConfig: (cfg) => this.updateNodeConfig(cfg as never),
-      listChainRecipes: this._taskStore
-        ? () => this._taskStore!.listChainRecipes() as never
-        : undefined,
-      saveChainRecipe: this._taskStore
-        ? (record) =>
-            this._taskStore!.saveChainRecipe(record as never) as never
-        : undefined,
-      deleteChainRecipe: this._taskStore
-        ? (id) => this._taskStore!.deleteChainRecipe(id)
-        : undefined,
-      buildChainOrchestratorDeps: () => this.buildChainOrchestratorDeps() as never,
-      evaluateAwardAndAccept: (chainId, subtaskId, options) =>
-        this._evaluateAwardAndAccept(chainId, subtaskId, options as never) as never,
-      emitChainState: (chainId) => this._emitChainState(chainId),
-      startChainTracking: (chainId) => this._startChainTracking(chainId),
-      placeholderMandate: (chainId, chainMandateId) =>
-        this.placeholderMandate(chainId, chainMandateId) as never,
-      findCapabilityProviders: (capability) =>
-        this.findCapabilityProviders(capability) as never,
-      chainDiagnosticsForSubtasks: (subtasks, workersBySubtask) =>
-        this._chainDiagnosticsForSubtasks(subtasks as never, workersBySubtask as never) as never,
-      runChainGoal: (params) => this._runChainGoal(params) as never,
-    };
-  }
-
   async chainEvaluateBids(params: ChainEvaluateBidsParams): Promise<ChainEvaluateBidsResult> {
     return chainEvaluateBidsViaRuntime(this._chainContext(), params);
   }
@@ -10111,354 +7684,88 @@ class NodeServiceImpl implements NodeService {
     return chainRebalanceViaRuntime(this._chainContext(), params);
   }
 
-  // (chainGetDefaults / chainSetDefaults have been moved to the runtime;
-  // their delegations live near the top of this block.)
-
-  // --- private helpers ---
-
-  private ensureChainMandicate(_mandateId: string): void {
-    // Stub: in 40B.10, this will load the mandate from the persistent store.
-    return;
+  private _chainOrchestrationContext(): ChainOrchestrationContext {
+    return {
+      getChainStore: () => this._chainStore,
+      getChainSideState: () => this._chainState,
+      getTaskStore: () => this._taskStore,
+      getProfile: () => this._profile,
+      getApprovalQueue: () => this._approvalQueue,
+      getCapabilityIndex: () => this._capabilityIndex,
+      getCapabilityIndexReady: () => this._capabilityIndexReady,
+      getPeerDirectoryStore: () => this._peerDirectoryStore,
+      getReachableMesh: () => this._reachableMesh(),
+      ensureAgentIdentity: () => this._ensureAgentIdentity(),
+      listAgentCards: () => this.listAgentCards(),
+      getLocalManifestCapabilities: () => this._localManifestCapabilities(),
+      getToolExecutionContext: () => this.getToolExecutionContext(),
+      getBonds: () => this.getBonds(),
+      getNodeConfig: () => this.getNodeConfig(),
+      updateNodeConfig: (cfg) => this.updateNodeConfig(cfg as never),
+      emit: (event, data) => this.emit(event, data),
+    };
   }
 
+  private _chainContext(): ChainContext {
+    return buildChainContext(this._chainOrchestrationContext());
+  }
+
+  // --- private helpers (delegated to node-service-chain-orchestration.ts) ---
+
   private ensureChainMandateLoaded(mandateId: string): void {
-    this.ensureChainMandicate(mandateId);
+    ensureChainMandateLoaded(this._chainOrchestrationContext(), mandateId);
   }
 
   private placeholderMandate(chainId: string, chainMandateId: string) {
-    return {
-      version: "0.1" as const,
-      chainMandateId,
-      chainId,
-      issuerOwnerId: "envoy:owner:placeholder",
-      orchestratorOwnerId: "envoy:owner:placeholder",
-      maxChainCostUsd: 10,
-      costCeilingUsd: 3,
-      maxWorkers: 3,
-      allowDepth3: false,
-      maxSensitivity: "public" as const,
-      deadlineAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-      createdAt: new Date().toISOString(),
-      rebalancePolicy: "manual" as const,
-      maxAutoRebalances: 2,
-      autoRebalanceIncrementUsd: 5,
-      signature: "stub",
-    };
+    return placeholderMandate(chainId, chainMandateId);
   }
 
   private snapshotToResult(snap: ReturnType<typeof chainStateSnapshot>): ChainGetStateResult {
-    return {
-      chainId: snap.chainId,
-      chainMandateId: snap.chainMandate.chainMandateId,
-      subtaskCount: snap.subtaskCount,
-      bidCount: snap.bidCount,
-      awardedCount: snap.awardedCount,
-      partialCount: snap.partialCount,
-      cancelledCount: snap.cancelledCount,
-      chainCancelled: snap.chainCancelled,
-      published: snap.published,
-      budgetSpentUsd: snap.budgetSpentUsd,
-      budgetMaxUsd: snap.budgetMaxUsd,
-      budgetReservedUsd: snap.budgetReservedUsd,
-      budgetSynthesisUsd: snap.budgetSynthesisUsd,
-      rebalancePolicy: snap.rebalancePolicy,
-      autoRebalanceCount: snap.autoRebalanceCount,
-      maxAutoRebalances: snap.maxAutoRebalances,
-      autoRebalanceHistory: snap.autoRebalanceHistory,
-    };
+    return snapshotToResult(snap);
   }
 
   private bidsBySubtask(state: ChainState, now: Date = new Date()): NonNullable<ChainGetStateResult["bidsBySubtask"]> {
-    const groups = new Map<string, NonNullable<ChainGetStateResult["bidsBySubtask"]>[number]["bids"]>();
-    for (const [key, bid] of state.bids.entries()) {
-      if (Date.parse(bid.bidExpiresAt) <= now.getTime()) continue;
-      const idx = key.indexOf("::");
-      if (idx < 0) continue;
-      const subtaskId = key.slice(0, idx);
-      const list = groups.get(subtaskId) ?? [];
-      list.push({
-        bidKey: key,
-        workerPeerId: bid.workerPeerId,
-        workerOwnerId: bid.workerOwnerId,
-        proposedCostUsd: bid.proposedCostUsd,
-        proposedEtaAt: bid.proposedEtaAt,
-        bidExpiresAt: bid.bidExpiresAt,
-        rationale: bid.rationale,
-      });
-      groups.set(subtaskId, list);
-    }
-    return [...groups.entries()].map(([subtaskId, bids]) => ({ subtaskId, bids }));
+    return bidsBySubtask(state, now);
   }
 
   private async evaluateBidsAsync(state: ChainState, params: ChainEvaluateBidsParams): Promise<Awaited<ReturnType<typeof evaluateBids>>> {
-    const deps = await this.buildChainOrchestratorDeps();
-    return await evaluateBids(deps, state, {
-      subtaskId: params.subtaskId,
-      policy: params.policy,
-      maxRounds: params.maxRounds,
-      pickWorkerPeerId: params.pickWorkerPeerId,
-    });
+    return evaluateBidsAsync(this._chainOrchestrationContext(), state, params);
   }
 
-  /**
-   * Phase 40F — dispatch an inbound `task.chain.*` envelope through the chain
-   * router. Called from `apps/node/src/index.ts` for every chain intent.
-   */
   async handleInboundChainEnvelope(envelope: EnvoyEnvelope): Promise<void> {
-    const chainId = extractChainIdFromEnvelope(envelope);
-    const runtime = chainId ? this._chainStore.getRuntime(chainId) : undefined;
-    const inboundState = runtime?.state;
-    const deps = await this.buildChainInboundDeps();
-    const decision = await dispatchChainEnvelope(deps, envelope, inboundState);
-    if (!decision.ok) {
-      console.warn(`[chain.inbound] rejected ${envelope.intent}: ${decision.reason}`);
-    }
+    return handleInboundChainEnvelope(this._chainOrchestrationContext(), envelope);
   }
 
-  /**
-   * Phase 40F — refresh the capability index from cached agent cards.
-   * Called on startup and after bond establishment.
-   */
   async refreshCapabilityIndex(): Promise<void> {
-    if (this._capabilityIndexReady) {
-      await this._capabilityIndexReady;
-    }
-    const cards = await this.listAgentCards();
-    for (const card of cards) {
-      const peerId = card.sourceAgentPeerId;
-      if (!peerId) continue;
-      this._capabilityIndex.indexWorker({
-        peerId,
-        ownerId: card.ownerId,
-        capabilities: card.capabilities,
-        lastSeenAt: card.cachedAt,
-        displayName: card.displayName,
-      });
-    }
-  }
-
-  private async _chainTransportResolver(): Promise<ChainTransportResolver | null> {
-    const mesh = this._reachableMesh();
-    const profile = this._profile;
-    if (!mesh || !profile) return null;
-    const agentIdentity = await this._ensureAgentIdentity();
-    const agentPeerToOwner = new Map<string, string>();
-    for (const card of await this.listAgentCards()) {
-      if (card.sourceAgentPeerId) {
-        agentPeerToOwner.set(card.sourceAgentPeerId, card.ownerId);
-      }
-    }
-    return {
-      mesh,
-      peerDirectoryStore: this._peerDirectoryStore,
-      localDevicePublicKeyPem: profile.device.publicKeyPem,
-      localAgentPeerId: agentIdentity?.agentPeerId,
-      agentPeerToOwner,
-    };
+    return refreshCapabilityIndex(this._chainOrchestrationContext());
   }
 
   private async buildChainInboundDeps(): Promise<ChainInboundDeps> {
-    const orchDeps = await this.buildChainOrchestratorDeps();
-    const workerDeps = await this.buildChainWorkerDeps();
-    const nodeCapabilities = (await this._localManifestCapabilities()) as ChainInboundDeps["nodeCapabilities"];
-    return {
-      audit: orchDeps.audit,
-      nodeCapabilities,
-      handleWorkerPropose: async (envelope, payload) => {
-        this._chainState.workerSubtasks.set(payload.subtask.subtaskId, {
-          subtask: payload.subtask,
-          orchestratorPeerId: envelope.senderPeerId,
-        });
-        return handleWorkerPropose(workerDeps, envelope, payload);
-      },
-      handleWorkerMandate: (envelope, payload) => handleWorkerMandate(workerDeps, envelope, payload),
-      handleWorkerAccept: async (envelope, payload) => {
-        const result = await handleWorkerAccept(workerDeps, envelope, payload);
-        if (result.ok) {
-          let subtask = this._chainState.workerSubtasks.get(payload.award.subtaskId)?.subtask;
-          if (!subtask) {
-            for (const rt of this._chainStore.listActive()) {
-              subtask = rt.state.subtasks.get(payload.award.subtaskId);
-              if (subtask) break;
-            }
-          }
-          if (subtask) {
-            void executeAcceptedSubtask(
-              workerDeps,
-              { getToolContext: () => this.getToolExecutionContext() },
-              envelope.senderPeerId,
-              subtask,
-            ).catch((err) => console.warn("[chain.worker] execute failed:", err));
-          }
-        }
-        return result;
-      },
-      handleWorkerCancel: (envelope, payload) => handleWorkerCancel(workerDeps, envelope, payload),
-      handleWorkerHeartbeat: (envelope, payload) => handleWorkerHeartbeat(workerDeps, envelope, payload),
-      handleOrchestratorBid: async (envelope, payload, state) => {
-        const runtime = this._chainStore.getRuntime(state.chainId);
-        if (!runtime) return { ok: false, reason: "handler_denied" as const };
-        const result = await handleOrchestratorBid(orchDeps, envelope, payload, runtime.state);
-        if (result.ok) {
-          this._emitChainState(state.chainId);
-          this._scheduleAutoEvaluate(state.chainId, payload.bid.subtaskId);
-        }
-        return result;
-      },
-      handleOrchestratorPartial: async (envelope, payload, state) => {
-        const runtime = this._chainStore.getRuntime(state.chainId);
-        if (!runtime) return { ok: false, reason: "handler_denied" as const };
-        const result = await handleOrchestratorPartial(orchDeps, envelope, payload, runtime.state);
-        if (result.ok) {
-          this._emitChainState(state.chainId);
-          const profile = this._profile;
-          if (profile) {
-            void tryCompleteChainIfReady(orchDeps, runtime.state, profile).then(async (done) => {
-              if (done.published) {
-                this._emitChainState(state.chainId);
-                const row = await this._taskStore?.getChainReport(state.chainId);
-                if (row?.report) this._emitChainReport(row.report);
-              }
-            });
-          }
-        }
-        return result;
-      },
-      handleOrchestratorMerge: (envelope, payload, state) => {
-        const runtime = this._chainStore.getRuntime(state.chainId);
-        if (!runtime) return Promise.resolve({ ok: false, reason: "handler_denied" as const });
-        return handleOrchestratorMerge(orchDeps, envelope, payload, runtime.state);
-      },
-      handleOrchestratorHeartbeat: (envelope, payload, state) => {
-        const runtime = this._chainStore.getRuntime(state.chainId);
-        if (!runtime) return Promise.resolve({ ok: false, reason: "handler_denied" as const });
-        return handleOrchestratorHeartbeat(orchDeps, envelope, payload, runtime.state);
-      },
-      handleOwnerReport: async (envelope, payload) => {
-        if (!this._taskStore) {
-          return { ok: false, reason: "handler_denied" as const };
-        }
-        await this._taskStore.recordChainReport(payload.report);
-        this._emitChainReport(payload.report);
-        await this._taskStore.appendAuditEvent(
-          createAuditEvent({
-            type: "chain.report_received",
-            intent: envelope.intent,
-            messageId: envelope.messageId,
-            correlationId: envelope.correlationId,
-            remotePeerId: envelope.senderPeerId,
-            direction: "inbound",
-            verificationStatus: "verified",
-            outcome: "record",
-            summary: `chain report received chainId=${payload.report.chainId}`,
-            createdAt: envelope.createdAt,
-          }),
-        );
-        return { ok: true };
-      },
-    };
+    return buildChainInboundDeps(this._chainOrchestrationContext());
   }
 
   private async buildChainWorkerDeps(): Promise<ChainWorkerHandlerDeps> {
-    const agentIdentity = await this._ensureAgentIdentity();
-    const profile = this._profile;
-    if (!agentIdentity || !profile) {
-      throw new Error("agent identity unavailable for chain worker deps");
-    }
-    const baseStrategy = {
-      baseCostUsd: 1,
-      capabilityLocalEtaMs: 60_000,
-      reputationDiscount: 1,
-      etaSlackMs: 60_000,
-    };
-    const transport = await this._chainTransportResolver();
-    return {
-      sendEnvelope: async (recipientPeerId, envelope, _payload) => {
-        if (!transport) return false;
-        return sendChainEnvelopeOverMesh(transport, recipientPeerId, envelope);
-      },
-      now: () => new Date(),
-      signingKeyPem: agentIdentity.agentPrivateKeyPem,
-      publicKeyPem: agentIdentity.agentPublicKeyPem,
-      workerPeerId: agentIdentity.agentPeerId,
-      workerOwnerId: profile.owner.ownerId,
-      audit: {
-        record: (event) => {
-          void this._appendChainAudit({
-            ...event,
-            type: event.type as import("@envoymesh/local-store").AuditEventType,
-          });
-        },
-      },
-      workerContext: {
-        workerPeerId: agentIdentity.agentPeerId,
-        workerOwnerId: profile.owner.ownerId,
-        baseCostUsd: baseStrategy.baseCostUsd,
-        capabilityLocalEtaMs: baseStrategy.capabilityLocalEtaMs,
-      },
-      pendingBidExpirations: this._chainState.pendingBidExpirations,
-    };
+    return buildChainWorkerDeps(this._chainOrchestrationContext());
   }
 
   private _startChainTracking(chainId: string): void {
-    this._stopChainTracking(chainId);
-    const runtime = this._chainStore.getRuntime(chainId);
-    if (!runtime || runtime.state.published || runtime.state.chainCancelled) return;
-
-    const abort = new AbortController();
-    this._chainState.trackAbort.set(chainId, abort);
-
-    void (async () => {
-      while (!abort.signal.aborted) {
-        const rt = this._chainStore.getRuntime(chainId);
-        if (!rt || rt.state.published || rt.state.chainCancelled) {
-          this._stopChainTracking(chainId);
-          return;
-        }
-        if (rt.state.awards.size === 0) {
-          await new Promise((r) => setTimeout(r, 5_000));
-          continue;
-        }
-        try {
-          const deps = await this.buildChainOrchestratorDeps();
-          await trackChain(deps, rt.state, { tickMs: 30_000, maxTicks: 1 });
-        } catch (err) {
-          console.warn(`[chain.track] ${chainId} tick failed:`, err);
-        }
-        await new Promise((r) => setTimeout(r, 30_000));
-      }
-    })();
+    _startChainTracking(this._chainOrchestrationContext(), chainId);
   }
 
   private _stopChainTracking(chainId: string): void {
-    const abort = this._chainState.trackAbort.get(chainId);
-    if (abort) {
-      abort.abort();
-      this._chainState.trackAbort.delete(chainId);
-    }
+    _stopChainTracking(this._chainOrchestrationContext(), chainId);
   }
 
   private _emitChainReport(report: import("@envoymesh/protocol").ChainReport): void {
-    this.emit("chain:report", {
-      chainId: report.chainId,
-      executiveSummary: report.executiveSummary,
-      subtaskCount: report.chainSummary.subtaskCount,
-      workerCount: report.chainSummary.workerAllocations.length,
-      synthesisCostUsd: report.chainSummary.synthesisCostUsd,
-      createdAt: report.createdAt,
-    });
+    _emitChainReport(this._chainOrchestrationContext(), report);
   }
 
   private async _bondLevelForWorkerOwner(workerOwnerId: string): Promise<import("@envoymesh/api").BondLevel> {
-    const bonds = await this.getBonds();
-    return bonds.find((b) => b.peerOwnerId === workerOwnerId)?.level ?? "public";
+    return _bondLevelForWorkerOwner(this._chainOrchestrationContext(), workerOwnerId);
   }
 
   private async _rollbackSubtaskAward(state: ChainState, subtaskId: string): Promise<void> {
-    if (!state.awards.has(subtaskId)) return;
-    await state.ledger.release(subtaskId, "pending owner approval");
-    state.awards.delete(subtaskId);
-    state.awardedAt.delete(subtaskId);
+    return _rollbackSubtaskAward(state, subtaskId);
   }
 
   private async _queueChainAwardApproval(
@@ -10467,22 +7774,7 @@ class NodeServiceImpl implements NodeService {
     bid: import("@envoymesh/protocol").ChainSubtaskBid,
     reason: string,
   ): Promise<void> {
-    if (!this._approvalQueue) return;
-    const item = createApprovalItem(
-      "chain_award",
-      "Approve chain worker",
-      reason,
-      JSON.stringify({
-        chainId,
-        subtaskId,
-        workerPeerId: bid.workerPeerId,
-        workerOwnerId: bid.workerOwnerId,
-        acceptedCostUsd: bid.proposedCostUsd,
-      } satisfies ChainAwardApprovalPayload),
-      { metadata: { chainId, subtaskId, reason } },
-      "high",
-    );
-    this._approvalQueue.add(item);
+    return _queueChainAwardApproval(this._chainOrchestrationContext(), chainId, subtaskId, bid, reason);
   }
 
   private async _evaluateAwardAndAccept(
@@ -10494,95 +7786,30 @@ class NodeServiceImpl implements NodeService {
       skipSensitivityGate?: boolean;
     },
   ): Promise<Awaited<ReturnType<typeof evaluateBids>>> {
-    const runtime = this._chainStore.getRuntime(chainId);
-    if (!runtime) return { ok: false, reason: "no_bids" };
-    const deps = await this.buildChainOrchestratorDeps();
-    const result = await evaluateBids(deps, runtime.state, {
-      subtaskId,
-      policy: opts?.policy ?? "composite",
-      pickWorkerPeerId: opts?.pickWorkerPeerId,
-    });
-    if (!result.ok) return result;
-
-    if (!opts?.skipSensitivityGate) {
-      const bondLevel = await this._bondLevelForWorkerOwner(result.bid.workerOwnerId);
-      const gate = requiresChainAwardApproval(runtime.state.chainMandate, bondLevel);
-      if (gate.required) {
-        await this._rollbackSubtaskAward(runtime.state, subtaskId);
-        await this._queueChainAwardApproval(chainId, subtaskId, result.bid, gate.reason ?? "sensitivity gate");
-        return { ok: false, reason: "no_bids" };
-      }
-    }
-
-    await sendChainAccept(deps, result.bid.workerPeerId, result.award);
-    deps.audit.record({
-      type: "chain.awarded",
-      outcome: "allow",
-      intent: "task.chain.accept",
-      correlationId: chainId,
-      summary: `subtask=${subtaskId} worker=${result.bid.workerPeerId} cost=${result.bid.proposedCostUsd}`,
-    });
-    return result;
+    return _evaluateAwardAndAccept(this._chainOrchestrationContext(), chainId, subtaskId, opts);
   }
 
   private async _executeApprovedChainAward(payload: ChainAwardApprovalPayload): Promise<{ ok: boolean; error?: string }> {
-    const result = await this._evaluateAwardAndAccept(payload.chainId, payload.subtaskId, {
-      pickWorkerPeerId: payload.workerPeerId,
-      skipSensitivityGate: true,
-    });
-    if (!result.ok) {
-      return { ok: false, error: result.reason ?? "award failed" };
-    }
-    this._emitChainState(payload.chainId);
-    return { ok: true };
+    return _executeApprovedChainAward(this._chainOrchestrationContext(), payload);
   }
 
   private _emitChainState(chainId: string): void {
-    const runtime = this._chainStore.getRuntime(chainId);
-    if (!runtime) return;
-    const state = this.snapshotToResult(chainStateSnapshot(runtime.state));
-    state.bidsBySubtask = this.bidsBySubtask(runtime.state);
-    state.goal = this._chainState.goals.get(chainId);
-    state.estimatedCostRange = this._chainState.costEstimates.get(chainId);
-    state.budgetWarningLevel = chainBudgetWarningLevel(runtime.state);
-    this.emit("chain:state", state);
+    _emitChainState(this._chainOrchestrationContext(), chainId);
   }
 
   private _scheduleAutoEvaluate(chainId: string, subtaskId: string): void {
-    const key = `${chainId}::${subtaskId}`;
-    const existing = this._chainState.autoEvaluateTimers.get(key);
-    if (existing) clearTimeout(existing);
-    const timer = setTimeout(() => {
-      this._chainState.autoEvaluateTimers.delete(key);
-      void this._autoEvaluateSubtask(chainId, subtaskId);
-    }, CHAIN_AUTO_EVALUATE_MS);
-    this._chainState.autoEvaluateTimers.set(key, timer);
+    _scheduleAutoEvaluate(this._chainOrchestrationContext(), chainId, subtaskId);
   }
 
   private async _autoEvaluateSubtask(chainId: string, subtaskId: string): Promise<void> {
-    const runtime = this._chainStore.getRuntime(chainId);
-    if (!runtime || runtime.state.chainCancelled || runtime.state.awards.has(subtaskId)) return;
-    if (!subtasksAwaitingAward(runtime.state).includes(subtaskId)) return;
-    const result = await this._evaluateAwardAndAccept(chainId, subtaskId, { policy: "composite" });
-    if (result.ok) {
-      this._emitChainState(chainId);
-    }
+    return _autoEvaluateSubtask(this._chainOrchestrationContext(), chainId, subtaskId);
   }
 
   private _chainDiagnosticsForSubtasks(
     subtasks: Array<{ subtaskId: string; requiredCapability: string }>,
     workersBySubtask: Record<string, string[]>,
   ): string[] {
-    const diagnostics: string[] = [];
-    for (const subtask of subtasks) {
-      const workers = workersBySubtask[subtask.subtaskId] ?? [];
-      if (workers.length === 0) {
-        diagnostics.push(
-          `No workers for \`${subtask.requiredCapability}\` — ask a bonded contact to enable Capability Provider.`,
-        );
-      }
-    }
-    return diagnostics;
+    return _chainDiagnosticsForSubtasks(subtasks, workersBySubtask);
   }
 
   private async _runChainGoal(input: {
@@ -10598,94 +7825,26 @@ class NodeServiceImpl implements NodeService {
     subtasks: Array<{ subtaskId: string; depth: number; requiredCapability: string; objective: string }>;
     error?: string;
   }> {
-    const chainId = input.chainId ?? `chain_${randomUUID()}`;
-    const chainMandateId = `chainmandate_${randomUUID()}`;
-    const orchestratorOwnerId = this._profile?.owner.ownerId ?? "envoy:owner:placeholder";
-    let nodeDefaults = DEFAULT_CHAIN_DEFAULTS;
-    try {
-      const cfg = await this.getNodeConfig();
-      nodeDefaults = mergeChainDefaults(cfg?.chainDefaults);
-    } catch {
-      /* use production defaults */
-    }
-    const mandate = {
-      version: "0.1" as const,
-      chainMandateId,
-      chainId,
-      issuerOwnerId: orchestratorOwnerId,
-      orchestratorOwnerId,
-      maxChainCostUsd: input.maxChainCostUsd ?? 10,
-      costCeilingUsd: input.costCeilingUsd ?? 3,
-      maxWorkers: 3,
-      allowDepth3: false,
-      maxSensitivity: "public" as const,
-      deadlineAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-      createdAt: new Date().toISOString(),
-      rebalancePolicy: nodeDefaults.rebalancePolicy ?? "auto",
-      maxAutoRebalances: nodeDefaults.maxAutoRebalances ?? 2,
-      autoRebalanceIncrementUsd: nodeDefaults.autoRebalanceIncrementUsd ?? 5,
-      signature: "stub",
-    };
-    const state = createChainState(mandate);
-    this._chainState.goals.set(chainId, input.goal);
-    this._chainStore.setRuntime(chainId, {
-      state,
-      bidStrategy: { baseCostUsd: 1, capabilityLocalEtaMs: 60_000, reputationDiscount: 1, etaSlackMs: 60_000 },
-    });
+    return _runChainGoal(this._chainOrchestrationContext(), input);
+  }
 
-    const plan = await planChain(await this.buildChainOrchestratorDeps(), state, input.goal, {
-      allowLlm: input.allowLlm ?? nodeDefaults.allowLlmDecompose ?? false,
-    });
-    if (!plan.ok) {
-      return { ok: false, chainId, chainMandateId, subtasks: [], error: `plan failed: ${(plan as { reason: string }).reason}` };
-    }
+  private async _appendChainAudit(event: {
+    type: import("@envoymesh/local-store").AuditEventType;
+    outcome: "allow" | "deny" | "record";
+    intent: string;
+    remotePeerId?: string;
+    correlationId?: string;
+    summary?: string;
+  }): Promise<void> {
+    return _appendChainAudit(this._chainOrchestrationContext(), event);
+  }
 
-    const workersBySubtask: Record<string, string[]> = {};
-    let maxWorkers = 0;
-    for (const subtask of plan.subtasks) {
-      const candidates = await this.findCapabilityProviders(subtask.requiredCapability);
-      workersBySubtask[subtask.subtaskId] = candidates.slice(0, 3);
-      maxWorkers = Math.max(maxWorkers, candidates.length);
-    }
-    this._chainState.costEstimates.set(
-      chainId,
-      estimateChainCostRange({
-        subtaskCount: plan.subtasks.length,
-        workerCandidateCount: maxWorkers,
-        maxChainCostUsd: mandate.maxChainCostUsd,
-      }),
-    );
+  private async buildChainOrchestratorDeps(): Promise<ChainOrchestratorHandlerDeps> {
+    return buildChainOrchestratorDeps(this._chainOrchestrationContext());
+  }
 
-    const launch = await launchChain(await this.buildChainOrchestratorDeps(), state, workersBySubtask);
-    if (!launch.ok) {
-      return {
-        ok: false,
-        chainId,
-        chainMandateId,
-        subtasks: plan.subtasks.map((s) => ({
-          subtaskId: s.subtaskId,
-          depth: s.depth,
-          requiredCapability: s.requiredCapability,
-          objective: s.objective,
-        })),
-        error: `launch failed: ${(launch as { reason: string }).reason}`,
-      };
-    }
-
-    this._startChainTracking(chainId);
-    this._emitChainState(chainId);
-
-    return {
-      ok: true,
-      chainId,
-      chainMandateId,
-      subtasks: plan.subtasks.map((s) => ({
-        subtaskId: s.subtaskId,
-        depth: s.depth,
-        requiredCapability: s.requiredCapability,
-        objective: s.objective,
-      })),
-    };
+  private async findCapabilityProviders(capability: string): Promise<string[]> {
+    return findCapabilityProviders(this._chainOrchestrationContext(), capability);
   }
 
   async chainPreviewGoal(params: ChainPreviewGoalParams): Promise<ChainPreviewGoalResult> {
@@ -10712,182 +7871,6 @@ class NodeServiceImpl implements NodeService {
     return chainDeleteRecipeViaRuntime(this._chainContext(), params);
   }
 
-  private async _appendChainAudit(event: {
-    type: import("@envoymesh/local-store").AuditEventType;
-    outcome: "allow" | "deny" | "record";
-    intent: string;
-    remotePeerId?: string;
-    correlationId?: string;
-    summary?: string;
-  }): Promise<void> {
-    if (!this._taskStore) return;
-    await this._taskStore.appendAuditEvent(
-      createAuditEvent({
-        type: event.type,
-        intent: event.intent as import("@envoymesh/protocol").EnvoyIntent,
-        correlationId: event.correlationId,
-        remotePeerId: event.remotePeerId,
-        direction: "outbound",
-        verificationStatus: "verified",
-        outcome: event.outcome,
-        summary: event.summary ?? event.type,
-        createdAt: new Date().toISOString(),
-      }),
-    );
-  }
-
-  /**
-   * Build the ChainOrchestratorHandlerDeps from the node's runtime state.
-   * Used by `runChain`, `chainLaunch`, `chainEvaluateBids`, and the
-   * orchestrator-side inbound handlers.
-   */
-  private async buildChainOrchestratorDeps(): Promise<ChainOrchestratorHandlerDeps> {
-    const llmDecompose = await this.buildLlmDecomposerAsync();
-    const agentIdentity = await this._ensureAgentIdentity();
-    const profile = this._profile;
-    if (!agentIdentity || !profile) {
-      throw new Error("agent identity unavailable for chain orchestrator deps");
-    }
-    const transport = await this._chainTransportResolver();
-    return {
-      sendEnvelope: async (recipientPeerId, envelope, _payload) => {
-        if (!transport) return false;
-        return sendChainEnvelopeOverMesh(transport, recipientPeerId, envelope);
-      },
-      findWorkers: async (capability) => this.findCapabilityProviders(capability),
-      now: () => new Date(),
-      signingKeyPem: agentIdentity.agentPrivateKeyPem,
-      publicKeyPem: agentIdentity.agentPublicKeyPem,
-      orchestratorPeerId: agentIdentity.agentPeerId,
-      orchestratorOwnerId: profile.owner.ownerId,
-      audit: {
-        record: (event) => {
-          void this._appendChainAudit({
-            ...event,
-            type: event.type as import("@envoymesh/local-store").AuditEventType,
-          });
-        },
-      },
-      storeChainReport: async (report) => {
-        if (this._taskStore) {
-          await this._taskStore.recordChainReport(report);
-        }
-        this._emitChainReport(report);
-      },
-      llmDecompose,
-      llmMerge: await this.buildLlmMergeAsync(),
-    };
-  }
-
-  /**
-   * Phase 40D — wire the LLM decomposer into chain-orchestrator deps.
-   *
-   * Uses any model providers already configured on this node; falls back to
-   * a no-op when no providers are available so `planChain` runs the
-   * keyword decomposer instead. The audit log records every prompt so the
-   * owner can audit what was sent to the model.
-   */
-  private async buildLlmDecomposerAsync(): Promise<ChainOrchestratorHandlerDeps["llmDecompose"] | undefined> {
-    let nodeConfig: Awaited<ReturnType<typeof this.getNodeConfig>> | null = null;
-    try {
-      nodeConfig = await this.getNodeConfig();
-    } catch {
-      return undefined;
-    }
-    if (!nodeConfig) return undefined;
-    const modelCfg = nodeConfig.modelProviders;
-    if (!modelCfg || modelCfg.mode === "disabled") return undefined;
-    let providers: ReturnType<typeof buildModelProviders> = [];
-    try {
-      // `buildModelProviders` reads env overrides (ENVOY_MODEL_*) so the
-      // chain decomposer and chat-assist share the same provider pool.
-      providers = buildModelProviders(modelCfg, false, { trustedLocalAssist: true });
-    } catch {
-      return undefined;
-    }
-    if (providers.length === 0) return undefined;
-    const { createLlmDecomposer } = await import("./chain-decomposer.js");
-    const decomposer = createLlmDecomposer({
-      providers,
-      audit: { record: () => undefined },
-      timeoutMs: 30_000,
-    });
-    return async (goal: string) => decomposer(goal);
-  }
-
-  /**
-   * Phase 41A — wire the LLM merge adapter into chain-orchestrator deps.
-   *
-   * Uses the same model provider pool as the decomposer; falls back to
-   * undefined when no providers are available so synthesis falls through
-   * to the deterministic concatenate/owner_review path.
-   */
-  private async buildLlmMergeAsync(): Promise<ChainOrchestratorHandlerDeps["llmMerge"] | undefined> {
-    let nodeConfig: Awaited<ReturnType<typeof this.getNodeConfig>> | null = null;
-    try {
-      nodeConfig = await this.getNodeConfig();
-    } catch {
-      return undefined;
-    }
-    if (!nodeConfig) return undefined;
-    const modelCfg = nodeConfig.modelProviders;
-    if (!modelCfg || modelCfg.mode === "disabled") return undefined;
-    let providers: ReturnType<typeof buildModelProviders> = [];
-    try {
-      providers = buildModelProviders(modelCfg, false, { trustedLocalAssist: true });
-    } catch {
-      return undefined;
-    }
-    if (providers.length === 0) return undefined;
-
-    // Build a LlmProvider from the first available model provider
-    const { createLlmMergeAdapter } = await import("./chain-llm.js");
-    const llmProvider = {
-      complete: async (params: { systemPrompt: string; userPrompt: string; maxTokens?: number }) => {
-        const result = await routeModelRequest(
-          {
-            taskType: "chain.merge",
-            prompt: `${params.systemPrompt}\n\n${params.userPrompt}`,
-            sensitivity: "public",
-            ownerApproved: true,
-          },
-          providers,
-        );
-        if (result.decision.action === "deny" || !result.response) {
-          throw new Error("LLM merge denied");
-        }
-        return {
-          text: result.response.text,
-          usage: {
-            promptTokens: result.response.usage?.inputTokens ?? 0,
-            completionTokens: result.response.usage?.outputTokens ?? 0,
-          },
-        };
-      },
-    };
-    return createLlmMergeAdapter(llmProvider);
-  }
-
-  /** Discover workers from the Phase 41B capability index + bonded agent cards. */
-  private async findCapabilityProviders(capability: string): Promise<string[]> {
-    if (this._capabilityIndexReady) {
-      await this._capabilityIndexReady;
-    }
-    const indexed = this._capabilityIndex.findWorkers(capability);
-    if (indexed.length > 0) {
-      return indexed;
-    }
-    const cards = await this.listAgentCards();
-    const peers: string[] = [];
-    for (const card of cards) {
-      if (!card.sourceAgentPeerId) continue;
-      if (card.capabilities.includes(capability) || card.capabilities.includes("task.execute")) {
-        peers.push(card.sourceAgentPeerId);
-      }
-    }
-    return peers;
-  }
-
   // ------------------------------------------------------------------
   // Phase 38 — Voice/Video Calls
   // ------------------------------------------------------------------
@@ -10906,228 +7889,7 @@ class NodeServiceImpl implements NodeService {
     iceServers?: { urls: string; username?: string; credential?: string }[],
     callType: import("@envoymesh/api").CallMediaType = "audio",
   ): Promise<string | null> {
-    console.log(`[sendCallInvite] invoked target=${targetOwnerId.slice(0, 24)} sdpLen=${sdpOffer.length}`);
-    const profile = this._profile;
-    if (!profile) return null;
-    if (!this._mesh && !this._externalMesh) return null;
-
-    // The schema requires a real UUID — the stub used a non-UUID string
-    // that would fail `parseCallInvitePayload` on the receiving side.
-    const callId = randomUUID();
-    const senderPeerId = derivePeerId(profile.device.publicKeyPem);
-    webrtcCallTrace("sendCallInvite:start", {
-      callId: shortCallId(callId),
-      target: shortCallId(targetOwnerId),
-      sdpLen: sdpOffer.length,
-      path2: Boolean(iceServers?.length),
-    });
-    const trust = await this._trustStore.getTrustRecord(targetOwnerId);
-    const peerDisplayName = trust?.displayName?.trim() || targetOwnerId;
-
-    const initiated = this.callManager.outboundCallInitiated(
-      callId,
-      profile.owner.ownerId,
-      targetOwnerId,
-      peerDisplayName,
-      callType,
-    );
-    if (!initiated) return null;
-
-    let transport;
-    try {
-      transport = await this._resolvePeerTransportForOwner(targetOwnerId);
-    } catch (err) {
-      webrtcCallWarn("sendCallInvite:transport-resolve-failed", {
-        callId: shortCallId(callId),
-        target: shortCallId(targetOwnerId),
-        error: err instanceof Error ? err.message.slice(0, 120) : String(err),
-      });
-      console.warn(`[sendCallInvite] peer transport resolve failed for ${targetOwnerId}:`, err);
-      this._recordCallRejected(callId, "peer_unreachable");
-      return null;
-    }
-    const { transportPeerId, recipientEnvelopePeerId, listenAddrs } = transport;
-
-    const mesh = this._requireMesh();
-    const records = await this._peerDirectoryStore.listPeerRecords();
-    const connectedPeerIds = mesh.getConnectedPeerIds();
-    const liveConnected = pickConnectedTransportForOwner(
-      records,
-      targetOwnerId,
-      connectedPeerIds,
-      this._lastLibp2pTransportByOwner,
-    );
-    const targetPeerId = liveConnected?.peerId ?? transportPeerId;
-    const connBeforeWarm = mesh.getPeerConnectionInfo(targetPeerId);
-    webrtcCallTrace("sendCallInvite:transport-ready", {
-      callId: shortCallId(callId),
-      target: shortCallId(targetOwnerId),
-      transport: shortCallId(targetPeerId),
-      connected: connBeforeWarm.connected,
-      direct: connBeforeWarm.direct,
-    });
-    console.log(
-      `[sendCallInvite] target=${targetOwnerId.slice(0, 24)} transport=${targetPeerId.slice(0, 12)} connected=${connBeforeWarm.connected} direct=${connBeforeWarm.direct}`,
-    );
-    if (!connBeforeWarm.connected && !liveConnected) {
-      try {
-        // If the existing connection is relay (not direct), ask warm to upgrade.
-        // _warmContactConnectionTransport already checks hasDirectTcpDialHints
-        // internally and keeps relay if no direct path exists.
-        await this.warmContactConnection(targetOwnerId, {
-          ...(!connBeforeWarm.direct ? { upgradeRelayToDirect: true } : undefined),
-        });
-      } catch (warmErr) {
-        console.warn(
-          `[sendCallInvite] warm before invite failed for ${targetOwnerId}:`,
-          warmErr instanceof Error ? warmErr.message : warmErr,
-        );
-      }
-    }
-
-    // Re-check connectivity after warm — connBeforeWarm is now stale.
-    const connAfterWarm = mesh.getPeerConnectionInfo(targetPeerId);
-
-    const effectiveIceServers = await this._effectiveCallIceServers(iceServers);
-
-    let dialHints: string[];
-    if (connAfterWarm.connected || liveConnected) {
-      dialHints = [];
-    } else {
-      try {
-        dialHints = await raceWithTimeout(
-          this._dialHintsForChat(targetPeerId, listenAddrs),
-          10_000,
-          "_dialHintsForChat",
-        );
-      } catch (hintErr) {
-        console.warn(
-          `[sendCallInvite] dial hints failed for ${targetOwnerId}, using listen addrs:`,
-          hintErr instanceof Error ? hintErr.message : hintErr,
-        );
-        dialHints = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs ?? []);
-      }
-    }
-
-    const preferCircuitHints = connAfterWarm.connected ? !connAfterWarm.direct : !connAfterWarm.direct;
-
-    const { createCallInvitePayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
-    const { signUnsignedEnvelope } = await import("@envoymesh/identity");
-
-    const invitePayload = createCallInvitePayload({
-      callId,
-      callerOwnerId: profile.owner.ownerId,
-      callerPeerId: senderPeerId,
-      callType,
-      sdpOffer,
-      iceServers: effectiveIceServers,
-    });
-
-    const unsigned = createUnsignedEnvelope({
-      intent: "call.invite",
-      senderPeerId,
-      senderPublicKey: profile.device.publicKeyPem,
-      recipientPeerId: recipientEnvelopePeerId,
-      senderRole: "human",
-      recipientRole: "human",
-      payload: invitePayload,
-    });
-    const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as any;
-
-    // Store the transport peer ID on the outbound session so response
-    // delivery (ICE candidates, accept, etc.) can use the fast path.
-    this.callManager.setOutboundTransportPeerId(callId, targetPeerId);
-
-    let deliverResult: ChatDeliverResult;
-    try {
-      if (connAfterWarm.connected || mesh.getConnectedPeerIds().includes(targetPeerId)) {
-        await mesh.sendChat(targetPeerId, envelope, { dialHints: [] });
-        deliverResult = { delivered: true, deliveredAt: new Date().toISOString() };
-      } else {
-        deliverResult = await this._deliverCallEnvelope(
-          targetPeerId,
-          envelope,
-          dialHints,
-          listenAddrs,
-          preferCircuitHints,
-        );
-      }
-    } catch (deliverErr) {
-      const detail = deliverErr instanceof Error ? deliverErr.message : String(deliverErr);
-      webrtcCallWarn("sendCallInvite:delivery-failed", {
-        callId: shortCallId(callId),
-        target: shortCallId(targetOwnerId),
-        error: detail.slice(0, 120),
-      });
-      console.warn(`[sendCallInvite] call.invite delivery failed callId=${callId}:`, detail);
-      this.callManager.reportOutboundDeliveryFailed(
-        callId,
-        "Could not reach contact — check relay connection and try again.",
-      );
-      if (this._taskStore) {
-        await this._taskStore.appendAuditEvent(
-          createAuditEvent({
-            type: "message.rejected",
-            intent: "call.invite",
-            outcome: "deny",
-            summary: `call.invite delivery failed callId=${callId}: ${detail}`,
-            remotePeerId: targetOwnerId,
-          }),
-        ).catch(() => undefined);
-      }
-      return null;
-    }
-
-    if (!deliverResult.delivered) {
-      const detail = "No reachable path to contact before call.invite send";
-      webrtcCallWarn("sendCallInvite:delivery-not-delivered", {
-        callId: shortCallId(callId),
-        target: shortCallId(targetOwnerId),
-      });
-      console.warn(`[sendCallInvite] call.invite delivery failed callId=${callId}:`, detail);
-      this.callManager.reportOutboundDeliveryFailed(
-        callId,
-        "Could not reach contact — check relay connection and try again.",
-      );
-      if (this._taskStore) {
-        await this._taskStore.appendAuditEvent(
-          createAuditEvent({
-            type: "message.rejected",
-            intent: "call.invite",
-            outcome: "deny",
-            summary: `call.invite delivery failed callId=${callId}: ${detail}`,
-            remotePeerId: targetOwnerId,
-          }),
-        ).catch(() => undefined);
-      }
-      return null;
-    }
-
-    if (this._taskStore) {
-      await this._taskStore.appendAuditEvent(
-        createAuditEvent({
-          type: "message.sent",
-          intent: "call.invite",
-          outcome: "allow",
-          summary: `call.invite sent to ${targetOwnerId} callId=${callId}`,
-          remotePeerId: targetOwnerId,
-        }),
-      ).catch(() => undefined);
-    }
-
-    console.log(`[sendCallInvite] call.invite delivered to ${targetOwnerId} callId=${callId}`);
-    webrtcCallTrace("sendCallInvite:delivered", {
-      callId: shortCallId(callId),
-      target: shortCallId(targetOwnerId),
-    });
-
-    // NOTE (Phase 42I): the VoIP push is NOT dispatched from the caller's
-    // home here. The callee's phone registers its VoIP token with ITS OWN
-    // owner's home, so the caller's home has no token for the callee.
-    // The dispatch lives on the callee's side, in call-inbound.ts
-    // handleCallInvite (gated on the phone having no authenticated WS).
-
-    return callId;
+    return sendCallInviteViaRuntime(this._callContext(), targetOwnerId, sdpOffer, iceServers, callType);
   }
 
   async sendCallReinvite(
@@ -11136,121 +7898,7 @@ class NodeServiceImpl implements NodeService {
     iceServers?: { urls: string; username?: string; credential?: string }[],
     reason: "path1_timeout" | "path1_failed" = "path1_timeout",
   ): Promise<boolean> {
-    const profile = this._profile;
-    if (!profile || !this._mesh) return false;
-
-    const callerOwnerId = profile.owner.ownerId;
-    if (!this.callManager.canSendOutboundReinvite(callId, callerOwnerId)) return false;
-
-    const peerOwnerId = this.callManager.getSessionPeerOwnerId(callId);
-    if (!peerOwnerId) return false;
-
-    const effectiveIceServers = await this._effectiveCallIceServers(iceServers);
-    if (effectiveIceServers.length === 0) return false;
-
-    let transport;
-    try {
-      transport = await this._resolvePeerTransportForOwner(peerOwnerId);
-    } catch (err) {
-      console.warn(`[sendCallReinvite] peer transport resolve failed for ${peerOwnerId}:`, err);
-      return false;
-    }
-    const { transportPeerId, recipientEnvelopePeerId, listenAddrs } = transport;
-
-    const mesh = this._requireMesh();
-    let conn = mesh.getPeerConnectionInfo(transportPeerId);
-    if (!conn.connected) {
-      for (const addr of listenAddrs ?? []) {
-        const trimmed = addr.trim();
-        if (!trimmed) continue;
-        try {
-          await mesh.dial(trimmed);
-          conn = mesh.getPeerConnectionInfo(transportPeerId);
-          if (conn.connected) break;
-        } catch {
-          /* try next addr */
-        }
-      }
-    }
-    const preferCircuitHints = !conn.direct;
-
-    const dialHints = await raceWithTimeout(
-      this._dialHintsForChat(transportPeerId, listenAddrs),
-      30_000,
-      "_dialHintsForChat",
-    );
-
-    const senderPeerId = derivePeerId(profile.device.publicKeyPem);
-    const { createCallReinvitePayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
-    const { signUnsignedEnvelope } = await import("@envoymesh/identity");
-
-    const reinvitePayload = createCallReinvitePayload({
-      callId,
-      callerOwnerId,
-      callerPeerId: senderPeerId,
-      sdpOffer,
-      iceServers: effectiveIceServers,
-      reason,
-      transportPath: "path2",
-    });
-
-    const unsigned = createUnsignedEnvelope({
-      intent: "call.reinvite",
-      senderPeerId,
-      senderPublicKey: profile.device.publicKeyPem,
-      recipientPeerId: recipientEnvelopePeerId,
-      senderRole: "human",
-      recipientRole: "human",
-      payload: reinvitePayload,
-    });
-    const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as any;
-
-    const records = await this._peerDirectoryStore.listPeerRecords();
-    const liveConnected = pickLibp2pFromConnectedPeers(
-      records,
-      peerOwnerId,
-      mesh.getConnectedPeerIds(),
-    );
-    const targetPeerId = liveConnected?.peerId ?? transportPeerId;
-    conn = mesh.getPeerConnectionInfo(targetPeerId);
-
-    let deliverResult: ChatDeliverResult;
-    try {
-      if (conn.connected || mesh.getConnectedPeerIds().includes(targetPeerId)) {
-        await mesh.sendChat(targetPeerId, envelope, { dialHints: [] });
-        deliverResult = { delivered: true, deliveredAt: new Date().toISOString() };
-      } else {
-        deliverResult = await this._deliverCallEnvelope(
-          targetPeerId,
-          envelope,
-          dialHints,
-          listenAddrs,
-          preferCircuitHints,
-        );
-      }
-    } catch (deliverErr) {
-      console.warn(
-        `[sendCallReinvite] call.reinvite delivery failed callId=${callId}:`,
-        deliverErr instanceof Error ? deliverErr.message : deliverErr,
-      );
-      return false;
-    }
-
-    if (this._taskStore) {
-      await this._taskStore.appendAuditEvent(
-        createAuditEvent({
-          type: deliverResult.delivered ? "message.sent" : "message.rejected",
-          intent: "call.reinvite",
-          outcome: deliverResult.delivered ? "allow" : "deny",
-          summary: deliverResult.delivered
-            ? `call.reinvite sent callId=${callId} reason=${reason}`
-            : `call.reinvite delivery failed callId=${callId}`,
-          remotePeerId: peerOwnerId,
-        }),
-      ).catch(() => undefined);
-    }
-
-    return deliverResult.delivered;
+    return sendCallReinviteViaRuntime(this._callContext(), callId, sdpOffer, iceServers, reason);
   }
 
   /**
@@ -11267,18 +7915,8 @@ class NodeServiceImpl implements NodeService {
     return effectiveCallIceServersViaRuntime(this._callContext(), callerSupplied);
   }
 
-  private _recordCallRejected(callId: string, _reason: string): void {
-    // Let CallManager emit the canonical `call:rejected` event so the UI
-    // sees a single source of truth. Swallow any state-machine rejection
-    // (e.g. the call already ended) — this is best-effort cleanup.
-    try {
-      this.callManager.rejectCall(
-        callId,
-        "error" as "busy" | "declined" | "offline" | "error" | "no_answer",
-      );
-    } catch {
-      // best-effort
-    }
+  private _recordCallRejected(callId: string, reason: string): void {
+    recordCallRejectedViaRuntime(this._callContext(), callId, reason);
   }
 
   async acceptCallInvite(
@@ -11326,13 +7964,27 @@ class NodeServiceImpl implements NodeService {
     await sendCallRejectToOwnerViaRuntime(this._callContext(), callId, callerOwnerId, reason);
   }
 
-  private _callContext(): CallContext {
+  private _callContext(): FullCallContext {
     return {
       callManager: this.callManager,
       getProfile: () => this._profile,
-      sendCallResponseEnvelope: (peerOwnerId: string, unsigned: unknown, intent: string) =>
-        this._sendCallResponseEnvelope(peerOwnerId, unsigned as never, intent),
+      sendCallResponseEnvelope: (peerOwnerId, unsigned, intent) =>
+        sendCallResponseEnvelopeViaRuntime(this._callContext(), peerOwnerId, unsigned as never, intent),
       loadConfig: () => this._configStore.load(),
+      getMesh: () => this._mesh,
+      requireMesh: () => this._requireMesh(),
+      resolvePeerTransportForOwner: (targetOwnerId) => this._resolvePeerTransportForOwner(targetOwnerId),
+      warmContactConnection: (peerOwnerId, options) => this.warmContactConnection(peerOwnerId, options),
+      dialHintsForChat: (recipientPeerId, peerListenAddrs) =>
+        this._dialHintsForChat(recipientPeerId, peerListenAddrs),
+      deliverCallEnvelope: (transportPeerId, envelope, dialHints, listenAddrs, preferCircuitHints) =>
+        this._deliverCallEnvelope(transportPeerId, envelope, dialHints, listenAddrs, preferCircuitHints),
+      deliverCallEnvelopeToTransportPeer: (transportPeerId, envelope) =>
+        this.deliverCallEnvelopeToTransportPeer(transportPeerId, envelope),
+      trustStore: this._trustStore,
+      peerDirectoryStore: this._peerDirectoryStore,
+      transportCache: this._lastLibp2pTransportByOwner,
+      taskStore: this._taskStore,
     };
   }
 
@@ -11374,152 +8026,9 @@ class NodeServiceImpl implements NodeService {
   private async _sendCallResponseEnvelope(
     peerOwnerId: string,
     unsigned: UnsignedEnvoyEnvelope,
-    _intent: string,
+    intent: string,
   ): Promise<boolean> {
-    const profile = this._profile;
-    if (!profile) return false;
-    try {
-      // Fast path: if we have a cached transport peer ID from the inbound
-      // call.invite connection and the peer is still connected, send directly
-      // without re-resolving transport or dialing. This is critical for ICE
-      // candidates which must be delivered with minimal latency.
-      const callId =
-        typeof unsigned.payload === "object" &&
-        unsigned.payload !== null &&
-        "callId" in unsigned.payload
-          ? String((unsigned.payload as { callId?: string }).callId)
-          : undefined;
-      const cachedPeerId = callId ? this.callManager.getSessionRemoteTransportPeerId(callId) : null;
-      if (cachedPeerId) {
-        const mesh = this._requireMesh();
-        const conn = mesh.getPeerConnectionInfo(cachedPeerId);
-        if (conn.connected || mesh.getConnectedPeerIds().includes(cachedPeerId)) {
-          try {
-            // Quick transport resolve just for recipientEnvelopePeerId —
-            // _lastLibp2pTransportByOwner cache makes this a fast map lookup.
-            const transport = await this._resolvePeerTransportForOwner(peerOwnerId);
-            unsigned.recipientPeerId = transport.recipientEnvelopePeerId;
-            const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem);
-            await this.deliverCallEnvelopeToTransportPeer(cachedPeerId, envelope as EnvoyEnvelope);
-            webrtcCallTrace("call-response:fast", {
-              intent: _intent,
-              peer: shortCallId(cachedPeerId),
-            });
-            return true;
-          } catch {
-            // Fast path failed — fall through to full delivery.
-            webrtcCallTrace("call-response:fast-failed-fallback", { intent: _intent });
-          }
-        }
-      }
-
-      const transport = await this._resolvePeerTransportForOwner(peerOwnerId);
-      const mesh = this._requireMesh();
-      const records = await this._peerDirectoryStore.listPeerRecords();
-      const connectedPeerIds = mesh.getConnectedPeerIds();
-      const liveConnected = pickConnectedTransportForOwner(
-        records,
-        peerOwnerId,
-        connectedPeerIds,
-        this._lastLibp2pTransportByOwner,
-      );
-      let targetPeerId = liveConnected?.peerId ?? transport.transportPeerId;
-      let listenAddrs = liveConnected?.listenAddrs ?? transport.listenAddrs;
-      let conn = mesh.getPeerConnectionInfo(targetPeerId);
-      if (!conn.connected) {
-        targetPeerId = transport.transportPeerId;
-        listenAddrs = transport.listenAddrs;
-        conn = mesh.getPeerConnectionInfo(targetPeerId);
-      }
-      if (!conn.connected) {
-        try {
-          await mesh.dial(targetPeerId);
-          conn = mesh.getPeerConnectionInfo(targetPeerId);
-        } catch {
-          /* try listen addrs */
-        }
-      }
-      if (!conn.connected) {
-        const addrs = (listenAddrs ?? []).map((a) => a.trim()).filter(Boolean);
-        if (addrs.length > 0) {
-          // Order by expected speed: LAN TCP first, then direct TCP, then circuits.
-          const ordered = [...addrs].sort((a, b) => {
-            const aLan = isPrivateLanTcpDialHint(a) ? 1 : 0;
-            const bLan = isPrivateLanTcpDialHint(b) ? 1 : 0;
-            if (aLan !== bLan) return bLan - aLan;
-            const aCircuit = a.includes("/p2p-circuit/") ? 1 : 0;
-            const bCircuit = b.includes("/p2p-circuit/") ? 1 : 0;
-            if (aCircuit !== bCircuit) return aCircuit - bCircuit;
-            return 0;
-          });
-          // Try addresses sequentially in speed order — stops at first success.
-          for (const addr of ordered) {
-            try {
-              await mesh.dial(addr);
-              conn = mesh.getPeerConnectionInfo(transport.transportPeerId);
-              targetPeerId = transport.transportPeerId;
-              if (conn.connected) break;
-            } catch {
-              /* try next addr */
-            }
-          }
-        }
-      }
-      const preferCircuitHints = !conn.direct;
-      let dialHints: string[];
-      try {
-        dialHints = await raceWithTimeout(
-          this._dialHintsForChat(targetPeerId, listenAddrs),
-          10_000,
-          "_dialHintsForChat",
-        );
-      } catch (hintErr) {
-        console.warn(
-          `[call-response] dial hints failed for ${peerOwnerId}, using listen addrs:`,
-          hintErr instanceof Error ? hintErr.message : hintErr,
-        );
-        dialHints = mergeDialablePeerListenAddrs(targetPeerId, listenAddrs ?? []);
-      }
-      // Stamp the recipient device peer id BEFORE signing — the signature
-      // covers canonical JSON of the unsigned envelope.
-      unsigned.recipientPeerId = transport.recipientEnvelopePeerId;
-      const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem);
-      const deliverResult = await this._deliverCallEnvelope(
-        targetPeerId,
-        envelope,
-        conn.connected ? [] : dialHints,
-        conn.connected ? [] : listenAddrs,
-        preferCircuitHints,
-      );
-      if (!deliverResult.delivered) {
-        webrtcCallWarn("call-response:not-delivered", {
-          intent: _intent,
-          peer: shortCallId(targetPeerId),
-          callId: shortCallId(
-            typeof unsigned.payload === "object" &&
-              unsigned.payload !== null &&
-              "callId" in unsigned.payload
-              ? String((unsigned.payload as { callId?: string }).callId)
-              : undefined,
-          ),
-        });
-        console.warn(
-          `[call-response] could not deliver ${_intent} to ${peerOwnerId.slice(0, 24)}…`,
-        );
-        return false;
-      }
-      webrtcCallTrace("call-response:delivered", {
-        intent: _intent,
-        peer: shortCallId(targetPeerId),
-      });
-      return true;
-    } catch (err) {
-      console.warn(
-        `[call-response] could not deliver ${_intent} to ${peerOwnerId}:`,
-        err instanceof Error ? err.message : err,
-      );
-      return false;
-    }
+    return sendCallResponseEnvelopeViaRuntime(this._callContext(), peerOwnerId, unsigned, intent);
   }
 
   async clearAllUserData(): Promise<void> {

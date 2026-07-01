@@ -75,6 +75,7 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
     (node as any)._nodeStatus = "running";
     (node as any)._mesh = {
       peerId: "12D3KooWSelfPeerRegression",
+      getConnectedPeerIds: vi.fn(() => []),
       ensurePeerReachable,
       closeConnectionsToPeer,
       getPeerConnectionInfo,
@@ -228,9 +229,7 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
       }));
       (node as any)._persistChatMessage = vi.fn();
       (node as any).recordOwnerActivity = vi.fn();
-      (node as any)._requireProfile = () => (node as any)._profile;
-      (node as any)._humanProfileStore = { loadHumanProfile: vi.fn(async () => null) };
-      (node as any)._trustStore.getTrustRecord = vi.fn(async () => ({ displayName: "Remote" }));
+      (node as any).emit = vi.fn();
 
       await node.sendChat(PEER_OWNER_ID, "hello without ack");
       expect(cache.has(PEER_OWNER_ID)).toBe(false);
@@ -252,7 +251,7 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
       cache.set(PEER_OWNER_ID, { peerId: TRANSPORT_PEER_ID, listenAddrs: [] });
 
       (node as any)._resolvePeerTransportForOwner = async () => {
-        throw new Error("Peer not found");
+        throw new Error("Peer not found for owner: test");
       };
 
       await expect(node.sendChat(PEER_OWNER_ID, "should fail")).rejects.toThrow(/Peer not found/);

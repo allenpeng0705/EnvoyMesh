@@ -3,18 +3,17 @@
  *
  * Extracted from `node-service-impl.ts`. Wraps the existing
  * `CallManager` (which already owns per-call state-machine) and the
- * signed-envelope dispatch path. The runtime's contract is small:
- * it builds the right `call.*` payload, signs it, and hands it to
- * the class's `_sendCallResponseEnvelope` helper.
- *
- * The big methods (`sendCallInvite`, `sendCallReinvite`,
- * `acceptCallInvite`, `_sendCallResponseEnvelope` itself) stay on
- * the class — they pull in mesh transport, ICE config, and the
- * sign-and-deliver pipeline. This commit extracts the
- * send-response / mute / hangup / reject / ice-candidate helpers
- * which all share the same "build payload, sign, send" shape.
+ * signed-envelope dispatch path.
  */
-import { derivePeerId } from "@envoymesh/identity";
+import { randomUUID } from "node:crypto";
+import { derivePeerId, signUnsignedEnvelope } from "@envoymesh/identity";
+import {
+  createAuditEvent,
+  type LocalPeerDirectoryStore,
+  type LocalTaskStore,
+  type LocalTrustStore,
+} from "@envoymesh/local-store";
+import { isPrivateLanTcpDialHint, type EnvoyMesh } from "@envoymesh/network";
 import {
   createCallHangupPayload,
   createCallIceCandidatePayload,
@@ -22,10 +21,26 @@ import {
   createCallRejectPayload,
   createUnsignedEnvelope,
   type CallRejectPayload,
+  type EnvoyEnvelope,
   type UnsignedEnvoyEnvelope,
 } from "@envoymesh/protocol";
+import type {
+  CallEvent,
+  CallMediaType,
+  CallSession,
+  NodeProfile,
+  PeerConnectionInfo,
+  WarmContactConnectionOptions,
+} from "@envoymesh/api";
 import type { CallManager } from "./call-manager.js";
-import type { CallEvent, CallSession, NodeProfile } from "@envoymesh/api";
+import type { ChatDeliverResult } from "./chat-outbound-deliver.js";
+import { mergeDialablePeerListenAddrs } from "./outbound-dial-hints.js";
+import {
+  pickConnectedTransportForOwner,
+  pickLibp2pFromConnectedPeers,
+} from "./peer-transport-resolve.js";
+import { raceWithTimeout, type TransportCacheEntry } from "./node-service-outbound-messaging.js";
+import { webrtcCallTrace, webrtcCallWarn, shortCallId } from "./webrtc-call-trace.js";
 
 /* ---------- effectiveCallIceServers ---------- */
 
@@ -52,19 +67,77 @@ export async function effectiveCallIceServersViaRuntime(
   return DEFAULT_ICE_SERVERS;
 }
 
-export interface CallContext {
+export interface CallContextTransportDeps {
+  getMesh(): EnvoyMesh | undefined;
+  requireMesh(): EnvoyMesh;
+  resolvePeerTransportForOwner(targetOwnerId: string): Promise<{
+    transportPeerId: string;
+    recipientEnvelopePeerId: string | undefined;
+    listenAddrs: string[] | undefined;
+  }>;
+  warmContactConnection(
+    peerOwnerId: string,
+    options?: WarmContactConnectionOptions,
+  ): Promise<PeerConnectionInfo>;
+  dialHintsForChat(
+    recipientPeerId: string,
+    peerListenAddrs: string[] | undefined,
+  ): Promise<string[]>;
+  deliverCallEnvelope(
+    transportPeerId: string,
+    envelope: EnvoyEnvelope,
+    dialHints: string[],
+    listenAddrs?: string[],
+    preferCircuitHints?: boolean,
+  ): Promise<ChatDeliverResult>;
+  deliverCallEnvelopeToTransportPeer(
+    transportPeerId: string,
+    envelope: EnvoyEnvelope,
+  ): Promise<void>;
+  trustStore: LocalTrustStore;
+  peerDirectoryStore: LocalPeerDirectoryStore;
+  /** Owner id → last known libp2p transport (`_lastLibp2pTransportByOwner`). */
+  transportCache: Map<string, TransportCacheEntry>;
+  taskStore: LocalTaskStore | undefined;
+}
+
+export interface CallContextCore {
   /** The existing per-call state-machine. */
   callManager: CallManager;
   /** Local node profile (or undefined if not initialised). */
   getProfile(): NodeProfile | undefined;
-  /** Class's private helper that signs + delivers the unsigned envelope. */
+  /** Load the node config (used for ICE server defaults). */
+  loadConfig(): Promise<unknown>;
+  /**
+   * Signs + delivers call response envelopes. Impl wires this to
+   * `sendCallResponseEnvelopeViaRuntime`; accept/decline helpers call
+   * that function directly.
+   */
   sendCallResponseEnvelope(
     peerOwnerId: string,
     unsigned: UnsignedEnvoyEnvelope,
     intent: string,
   ): Promise<boolean>;
-  /** Load the node config (used for ICE server defaults). */
-  loadConfig(): Promise<unknown>;
+}
+
+/** Full call runtime context; transport deps optional until impl wires them. */
+export type CallContext = CallContextCore & Partial<CallContextTransportDeps>;
+
+export type FullCallContext = CallContextCore & CallContextTransportDeps;
+
+function hasCallTransportDeps(ctx: CallContext): ctx is FullCallContext {
+  return (
+    typeof ctx.getMesh === "function" &&
+    typeof ctx.requireMesh === "function" &&
+    typeof ctx.resolvePeerTransportForOwner === "function" &&
+    typeof ctx.warmContactConnection === "function" &&
+    typeof ctx.dialHintsForChat === "function" &&
+    typeof ctx.deliverCallEnvelope === "function" &&
+    typeof ctx.deliverCallEnvelopeToTransportPeer === "function" &&
+    ctx.trustStore !== undefined &&
+    ctx.peerDirectoryStore !== undefined &&
+    ctx.transportCache !== undefined
+  );
 }
 
 /* ---------- passthroughs ---------- */
@@ -78,6 +151,552 @@ export function onCallEventViaRuntime(
   handler: (event: CallEvent) => void,
 ): () => void {
   return ctx.callManager.onCallEvent(handler);
+}
+
+/* ---------- recordCallRejected ---------- */
+
+export function recordCallRejectedViaRuntime(ctx: CallContext, callId: string, _reason: string): void {
+  // Let CallManager emit the canonical `call:rejected` event so the UI
+  // sees a single source of truth. Swallow any state-machine rejection
+  // (e.g. the call already ended) — this is best-effort cleanup.
+  try {
+    ctx.callManager.rejectCall(
+      callId,
+      "error" as "busy" | "declined" | "offline" | "error" | "no_answer",
+    );
+  } catch {
+    // best-effort
+  }
+}
+
+/* ---------- sendCallResponseEnvelope ---------- */
+
+/**
+ * Phase 42B — common helper that resolves the peer's owner ID → device
+ * peer ID, stamps `recipientPeerId` on the **unsigned** envelope, then
+ * signs and sends through `deliverCallEnvelope` so retries + ack-skip
+ * match the call path.
+ */
+export async function sendCallResponseEnvelopeViaRuntime(
+  ctx: CallContext,
+  peerOwnerId: string,
+  unsigned: UnsignedEnvoyEnvelope,
+  _intent: string,
+): Promise<boolean> {
+  if (!hasCallTransportDeps(ctx)) {
+    return ctx.sendCallResponseEnvelope(peerOwnerId, unsigned, _intent);
+  }
+  const profile = ctx.getProfile();
+  if (!profile) return false;
+  try {
+    // Fast path: if we have a cached transport peer ID from the inbound
+    // call.invite connection and the peer is still connected, send directly
+    // without re-resolving transport or dialing. This is critical for ICE
+    // candidates which must be delivered with minimal latency.
+    const callId =
+      typeof unsigned.payload === "object" &&
+      unsigned.payload !== null &&
+      "callId" in unsigned.payload
+        ? String((unsigned.payload as { callId?: string }).callId)
+        : undefined;
+    const cachedPeerId = callId ? ctx.callManager.getSessionRemoteTransportPeerId(callId) : null;
+    if (cachedPeerId) {
+      const mesh = ctx.requireMesh();
+      const conn = mesh.getPeerConnectionInfo(cachedPeerId);
+      if (conn.connected || mesh.getConnectedPeerIds().includes(cachedPeerId)) {
+        try {
+          // Quick transport resolve just for recipientEnvelopePeerId —
+          // transportCache makes this a fast map lookup.
+          const transport = await ctx.resolvePeerTransportForOwner(peerOwnerId);
+          unsigned.recipientPeerId = transport.recipientEnvelopePeerId;
+          const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem);
+          await ctx.deliverCallEnvelopeToTransportPeer(cachedPeerId, envelope as EnvoyEnvelope);
+          webrtcCallTrace("call-response:fast", {
+            intent: _intent,
+            peer: shortCallId(cachedPeerId),
+          });
+          return true;
+        } catch {
+          // Fast path failed — fall through to full delivery.
+          webrtcCallTrace("call-response:fast-failed-fallback", { intent: _intent });
+        }
+      }
+    }
+
+    const transport = await ctx.resolvePeerTransportForOwner(peerOwnerId);
+    const mesh = ctx.requireMesh();
+    const records = await ctx.peerDirectoryStore.listPeerRecords();
+    const connectedPeerIds = mesh.getConnectedPeerIds();
+    const liveConnected = pickConnectedTransportForOwner(
+      records,
+      peerOwnerId,
+      connectedPeerIds,
+      ctx.transportCache,
+    );
+    let targetPeerId = liveConnected?.peerId ?? transport.transportPeerId;
+    let listenAddrs = liveConnected?.listenAddrs ?? transport.listenAddrs;
+    let conn = mesh.getPeerConnectionInfo(targetPeerId);
+    if (!conn.connected) {
+      targetPeerId = transport.transportPeerId;
+      listenAddrs = transport.listenAddrs;
+      conn = mesh.getPeerConnectionInfo(targetPeerId);
+    }
+    if (!conn.connected) {
+      try {
+        await mesh.dial(targetPeerId);
+        conn = mesh.getPeerConnectionInfo(targetPeerId);
+      } catch {
+        /* try listen addrs */
+      }
+    }
+    if (!conn.connected) {
+      const addrs = (listenAddrs ?? []).map((a) => a.trim()).filter(Boolean);
+      if (addrs.length > 0) {
+        // Order by expected speed: LAN TCP first, then direct TCP, then circuits.
+        const ordered = [...addrs].sort((a, b) => {
+          const aLan = isPrivateLanTcpDialHint(a) ? 1 : 0;
+          const bLan = isPrivateLanTcpDialHint(b) ? 1 : 0;
+          if (aLan !== bLan) return bLan - aLan;
+          const aCircuit = a.includes("/p2p-circuit/") ? 1 : 0;
+          const bCircuit = b.includes("/p2p-circuit/") ? 1 : 0;
+          if (aCircuit !== bCircuit) return aCircuit - bCircuit;
+          return 0;
+        });
+        // Try addresses sequentially in speed order — stops at first success.
+        for (const addr of ordered) {
+          try {
+            await mesh.dial(addr);
+            conn = mesh.getPeerConnectionInfo(transport.transportPeerId);
+            targetPeerId = transport.transportPeerId;
+            if (conn.connected) break;
+          } catch {
+            /* try next addr */
+          }
+        }
+      }
+    }
+    const preferCircuitHints = !conn.direct;
+    let dialHints: string[];
+    try {
+      dialHints = await raceWithTimeout(
+        ctx.dialHintsForChat(targetPeerId, listenAddrs),
+        10_000,
+        "_dialHintsForChat",
+      );
+    } catch (hintErr) {
+      console.warn(
+        `[call-response] dial hints failed for ${peerOwnerId}, using listen addrs:`,
+        hintErr instanceof Error ? hintErr.message : hintErr,
+      );
+      dialHints = mergeDialablePeerListenAddrs(targetPeerId, listenAddrs ?? []);
+    }
+    // Stamp the recipient device peer id BEFORE signing — the signature
+    // covers canonical JSON of the unsigned envelope.
+    unsigned.recipientPeerId = transport.recipientEnvelopePeerId;
+    const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem);
+    const deliverResult = await ctx.deliverCallEnvelope(
+      targetPeerId,
+      envelope,
+      conn.connected ? [] : dialHints,
+      conn.connected ? [] : listenAddrs,
+      preferCircuitHints,
+    );
+    if (!deliverResult.delivered) {
+      webrtcCallWarn("call-response:not-delivered", {
+        intent: _intent,
+        peer: shortCallId(targetPeerId),
+        callId: shortCallId(
+          typeof unsigned.payload === "object" &&
+            unsigned.payload !== null &&
+            "callId" in unsigned.payload
+            ? String((unsigned.payload as { callId?: string }).callId)
+            : undefined,
+        ),
+      });
+      console.warn(
+        `[call-response] could not deliver ${_intent} to ${peerOwnerId.slice(0, 24)}…`,
+      );
+      return false;
+    }
+    webrtcCallTrace("call-response:delivered", {
+      intent: _intent,
+      peer: shortCallId(targetPeerId),
+    });
+    return true;
+  } catch (err) {
+    console.warn(
+      `[call-response] could not deliver ${_intent} to ${peerOwnerId}:`,
+      err instanceof Error ? err.message : err,
+    );
+    return false;
+  }
+}
+
+/* ---------- sendCallInvite ---------- */
+
+export async function sendCallInviteViaRuntime(
+  ctx: FullCallContext,
+  targetOwnerId: string,
+  sdpOffer: string,
+  iceServers?: IceServerConfig[],
+  callType: CallMediaType = "audio",
+): Promise<string | null> {
+  console.log(`[sendCallInvite] invoked target=${targetOwnerId.slice(0, 24)} sdpLen=${sdpOffer.length}`);
+  const profile = ctx.getProfile();
+  if (!profile) return null;
+  if (!ctx.getMesh()) return null;
+
+  // The schema requires a real UUID — the stub used a non-UUID string
+  // that would fail `parseCallInvitePayload` on the receiving side.
+  const callId = randomUUID();
+  const senderPeerId = derivePeerId(profile.device.publicKeyPem);
+  webrtcCallTrace("sendCallInvite:start", {
+    callId: shortCallId(callId),
+    target: shortCallId(targetOwnerId),
+    sdpLen: sdpOffer.length,
+    path2: Boolean(iceServers?.length),
+  });
+  const trust = await ctx.trustStore.getTrustRecord(targetOwnerId);
+  const peerDisplayName = trust?.displayName?.trim() || targetOwnerId;
+
+  const initiated = ctx.callManager.outboundCallInitiated(
+    callId,
+    profile.owner.ownerId,
+    targetOwnerId,
+    peerDisplayName,
+    callType,
+  );
+  if (!initiated) return null;
+
+  let transport;
+  try {
+    transport = await ctx.resolvePeerTransportForOwner(targetOwnerId);
+  } catch (err) {
+    webrtcCallWarn("sendCallInvite:transport-resolve-failed", {
+      callId: shortCallId(callId),
+      target: shortCallId(targetOwnerId),
+      error: err instanceof Error ? err.message.slice(0, 120) : String(err),
+    });
+    console.warn(`[sendCallInvite] peer transport resolve failed for ${targetOwnerId}:`, err);
+    recordCallRejectedViaRuntime(ctx, callId, "peer_unreachable");
+    return null;
+  }
+  const { transportPeerId, recipientEnvelopePeerId, listenAddrs } = transport;
+
+  const mesh = ctx.requireMesh();
+  const records = await ctx.peerDirectoryStore.listPeerRecords();
+  const connectedPeerIds = mesh.getConnectedPeerIds();
+  const liveConnected = pickConnectedTransportForOwner(
+    records,
+    targetOwnerId,
+    connectedPeerIds,
+    ctx.transportCache,
+  );
+  const targetPeerId = liveConnected?.peerId ?? transportPeerId;
+  const connBeforeWarm = mesh.getPeerConnectionInfo(targetPeerId);
+  webrtcCallTrace("sendCallInvite:transport-ready", {
+    callId: shortCallId(callId),
+    target: shortCallId(targetOwnerId),
+    transport: shortCallId(targetPeerId),
+    connected: connBeforeWarm.connected,
+    direct: connBeforeWarm.direct,
+  });
+  console.log(
+    `[sendCallInvite] target=${targetOwnerId.slice(0, 24)} transport=${targetPeerId.slice(0, 12)} connected=${connBeforeWarm.connected} direct=${connBeforeWarm.direct}`,
+  );
+  if (!connBeforeWarm.connected && !liveConnected) {
+    try {
+      // If the existing connection is relay (not direct), ask warm to upgrade.
+      // warmContactConnectionTransport already checks hasDirectTcpDialHints
+      // internally and keeps relay if no direct path exists.
+      await ctx.warmContactConnection(targetOwnerId, {
+        ...(!connBeforeWarm.direct ? { upgradeRelayToDirect: true } : undefined),
+      });
+    } catch (warmErr) {
+      console.warn(
+        `[sendCallInvite] warm before invite failed for ${targetOwnerId}:`,
+        warmErr instanceof Error ? warmErr.message : warmErr,
+      );
+    }
+  }
+
+  // Re-check connectivity after warm — connBeforeWarm is now stale.
+  const connAfterWarm = mesh.getPeerConnectionInfo(targetPeerId);
+
+  const effectiveIceServers = await effectiveCallIceServersViaRuntime(ctx, iceServers);
+
+  let dialHints: string[];
+  if (connAfterWarm.connected || liveConnected) {
+    dialHints = [];
+  } else {
+    try {
+      dialHints = await raceWithTimeout(
+        ctx.dialHintsForChat(targetPeerId, listenAddrs),
+        10_000,
+        "_dialHintsForChat",
+      );
+    } catch (hintErr) {
+      console.warn(
+        `[sendCallInvite] dial hints failed for ${targetOwnerId}, using listen addrs:`,
+        hintErr instanceof Error ? hintErr.message : hintErr,
+      );
+      dialHints = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs ?? []);
+    }
+  }
+
+  const preferCircuitHints = connAfterWarm.connected ? !connAfterWarm.direct : !connAfterWarm.direct;
+
+  const { createCallInvitePayload, createUnsignedEnvelope: createUnsignedEnvelopeFn } =
+    await import("@envoymesh/protocol");
+
+  const invitePayload = createCallInvitePayload({
+    callId,
+    callerOwnerId: profile.owner.ownerId,
+    callerPeerId: senderPeerId,
+    callType,
+    sdpOffer,
+    iceServers: effectiveIceServers,
+  });
+
+  const unsigned = createUnsignedEnvelopeFn({
+    intent: "call.invite",
+    senderPeerId,
+    senderPublicKey: profile.device.publicKeyPem,
+    recipientPeerId: recipientEnvelopePeerId,
+    senderRole: "human",
+    recipientRole: "human",
+    payload: invitePayload,
+  });
+  const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as EnvoyEnvelope;
+
+  // Store the transport peer ID on the outbound session so response
+  // delivery (ICE candidates, accept, etc.) can use the fast path.
+  ctx.callManager.setOutboundTransportPeerId(callId, targetPeerId);
+
+  let deliverResult: ChatDeliverResult;
+  try {
+    if (connAfterWarm.connected || mesh.getConnectedPeerIds().includes(targetPeerId)) {
+      await mesh.sendChat(targetPeerId, envelope, { dialHints: [] });
+      deliverResult = { delivered: true, deliveredAt: new Date().toISOString() };
+    } else {
+      deliverResult = await ctx.deliverCallEnvelope(
+        targetPeerId,
+        envelope,
+        dialHints,
+        listenAddrs,
+        preferCircuitHints,
+      );
+    }
+  } catch (deliverErr) {
+    const detail = deliverErr instanceof Error ? deliverErr.message : String(deliverErr);
+    webrtcCallWarn("sendCallInvite:delivery-failed", {
+      callId: shortCallId(callId),
+      target: shortCallId(targetOwnerId),
+      error: detail.slice(0, 120),
+    });
+    console.warn(`[sendCallInvite] call.invite delivery failed callId=${callId}:`, detail);
+    ctx.callManager.reportOutboundDeliveryFailed(
+      callId,
+      "Could not reach contact — check relay connection and try again.",
+    );
+    if (ctx.taskStore) {
+      await ctx.taskStore
+        .appendAuditEvent(
+          createAuditEvent({
+            type: "message.rejected",
+            intent: "call.invite",
+            outcome: "deny",
+            summary: `call.invite delivery failed callId=${callId}: ${detail}`,
+            remotePeerId: targetOwnerId,
+          }),
+        )
+        .catch(() => undefined);
+    }
+    return null;
+  }
+
+  if (!deliverResult.delivered) {
+    const detail = "No reachable path to contact before call.invite send";
+    webrtcCallWarn("sendCallInvite:delivery-not-delivered", {
+      callId: shortCallId(callId),
+      target: shortCallId(targetOwnerId),
+    });
+    console.warn(`[sendCallInvite] call.invite delivery failed callId=${callId}:`, detail);
+    ctx.callManager.reportOutboundDeliveryFailed(
+      callId,
+      "Could not reach contact — check relay connection and try again.",
+    );
+    if (ctx.taskStore) {
+      await ctx.taskStore
+        .appendAuditEvent(
+          createAuditEvent({
+            type: "message.rejected",
+            intent: "call.invite",
+            outcome: "deny",
+            summary: `call.invite delivery failed callId=${callId}: ${detail}`,
+            remotePeerId: targetOwnerId,
+          }),
+        )
+        .catch(() => undefined);
+    }
+    return null;
+  }
+
+  if (ctx.taskStore) {
+    await ctx.taskStore
+      .appendAuditEvent(
+        createAuditEvent({
+          type: "message.sent",
+          intent: "call.invite",
+          outcome: "allow",
+          summary: `call.invite sent to ${targetOwnerId} callId=${callId}`,
+          remotePeerId: targetOwnerId,
+        }),
+      )
+      .catch(() => undefined);
+  }
+
+  console.log(`[sendCallInvite] call.invite delivered to ${targetOwnerId} callId=${callId}`);
+  webrtcCallTrace("sendCallInvite:delivered", {
+    callId: shortCallId(callId),
+    target: shortCallId(targetOwnerId),
+  });
+
+  // NOTE (Phase 42I): the VoIP push is NOT dispatched from the caller's
+  // home here. The callee's phone registers its VoIP token with ITS OWN
+  // owner's home, so the caller's home has no token for the callee.
+  // The dispatch lives on the callee's side, in call-inbound.ts
+  // handleCallInvite (gated on the phone having no authenticated WS).
+
+  return callId;
+}
+
+/* ---------- sendCallReinvite ---------- */
+
+export async function sendCallReinviteViaRuntime(
+  ctx: FullCallContext,
+  callId: string,
+  sdpOffer: string,
+  iceServers?: IceServerConfig[],
+  reason: "path1_timeout" | "path1_failed" = "path1_timeout",
+): Promise<boolean> {
+  const profile = ctx.getProfile();
+  if (!profile || !ctx.getMesh()) return false;
+
+  const callerOwnerId = profile.owner.ownerId;
+  if (!ctx.callManager.canSendOutboundReinvite(callId, callerOwnerId)) return false;
+
+  const peerOwnerId = ctx.callManager.getSessionPeerOwnerId(callId);
+  if (!peerOwnerId) return false;
+
+  const effectiveIceServers = await effectiveCallIceServersViaRuntime(ctx, iceServers);
+  if (effectiveIceServers.length === 0) return false;
+
+  let transport;
+  try {
+    transport = await ctx.resolvePeerTransportForOwner(peerOwnerId);
+  } catch (err) {
+    console.warn(`[sendCallReinvite] peer transport resolve failed for ${peerOwnerId}:`, err);
+    return false;
+  }
+  const { transportPeerId, recipientEnvelopePeerId, listenAddrs } = transport;
+
+  const mesh = ctx.requireMesh();
+  let conn = mesh.getPeerConnectionInfo(transportPeerId);
+  if (!conn.connected) {
+    for (const addr of listenAddrs ?? []) {
+      const trimmed = addr.trim();
+      if (!trimmed) continue;
+      try {
+        await mesh.dial(trimmed);
+        conn = mesh.getPeerConnectionInfo(transportPeerId);
+        if (conn.connected) break;
+      } catch {
+        /* try next addr */
+      }
+    }
+  }
+  const preferCircuitHints = !conn.direct;
+
+  const dialHints = await raceWithTimeout(
+    ctx.dialHintsForChat(transportPeerId, listenAddrs),
+    30_000,
+    "_dialHintsForChat",
+  );
+
+  const senderPeerId = derivePeerId(profile.device.publicKeyPem);
+  const { createCallReinvitePayload, createUnsignedEnvelope: createUnsignedEnvelopeFn } =
+    await import("@envoymesh/protocol");
+
+  const reinvitePayload = createCallReinvitePayload({
+    callId,
+    callerOwnerId,
+    callerPeerId: senderPeerId,
+    sdpOffer,
+    iceServers: effectiveIceServers,
+    reason,
+    transportPath: "path2",
+  });
+
+  const unsigned = createUnsignedEnvelopeFn({
+    intent: "call.reinvite",
+    senderPeerId,
+    senderPublicKey: profile.device.publicKeyPem,
+    recipientPeerId: recipientEnvelopePeerId,
+    senderRole: "human",
+    recipientRole: "human",
+    payload: reinvitePayload,
+  });
+  const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem) as EnvoyEnvelope;
+
+  const records = await ctx.peerDirectoryStore.listPeerRecords();
+  const liveConnected = pickLibp2pFromConnectedPeers(
+    records,
+    peerOwnerId,
+    mesh.getConnectedPeerIds(),
+  );
+  const targetPeerId = liveConnected?.peerId ?? transportPeerId;
+  conn = mesh.getPeerConnectionInfo(targetPeerId);
+
+  let deliverResult: ChatDeliverResult;
+  try {
+    if (conn.connected || mesh.getConnectedPeerIds().includes(targetPeerId)) {
+      await mesh.sendChat(targetPeerId, envelope, { dialHints: [] });
+      deliverResult = { delivered: true, deliveredAt: new Date().toISOString() };
+    } else {
+      deliverResult = await ctx.deliverCallEnvelope(
+        targetPeerId,
+        envelope,
+        dialHints,
+        listenAddrs,
+        preferCircuitHints,
+      );
+    }
+  } catch (deliverErr) {
+    console.warn(
+      `[sendCallReinvite] call.reinvite delivery failed callId=${callId}:`,
+      deliverErr instanceof Error ? deliverErr.message : deliverErr,
+    );
+    return false;
+  }
+
+  if (ctx.taskStore) {
+    await ctx.taskStore
+      .appendAuditEvent(
+        createAuditEvent({
+          type: deliverResult.delivered ? "message.sent" : "message.rejected",
+          intent: "call.reinvite",
+          outcome: deliverResult.delivered ? "allow" : "deny",
+          summary: deliverResult.delivered
+            ? `call.reinvite sent callId=${callId} reason=${reason}`
+            : `call.reinvite delivery failed callId=${callId}`,
+          remotePeerId: peerOwnerId,
+        }),
+      )
+      .catch(() => undefined);
+  }
+
+  return deliverResult.delivered;
 }
 
 /* ---------- endCall / declineCallInvite / setCallMuted ---------- */
@@ -107,7 +726,7 @@ export async function endCallViaRuntime(
     recipientRole: "human",
     payload,
   });
-  await ctx.sendCallResponseEnvelope(peerOwnerId, unsigned, "call.hangup");
+  await sendCallResponseEnvelopeViaRuntime(ctx, peerOwnerId, unsigned, "call.hangup");
   return true;
 }
 
@@ -134,7 +753,7 @@ export async function setCallMutedViaRuntime(
     recipientRole: "human",
     payload,
   });
-  await ctx.sendCallResponseEnvelope(peerOwnerId, unsigned, "call.mute");
+  await sendCallResponseEnvelopeViaRuntime(ctx, peerOwnerId, unsigned, "call.mute");
   return true;
 }
 
@@ -166,7 +785,7 @@ export async function declineCallInviteViaRuntime(
     recipientRole: "human",
     payload,
   });
-  await ctx.sendCallResponseEnvelope(peerOwnerId, unsigned, "call.reject");
+  await sendCallResponseEnvelopeViaRuntime(ctx, peerOwnerId, unsigned, "call.reject");
   return true;
 }
 
@@ -201,13 +820,11 @@ export async function sendIceCandidateViaRuntime(
     recipientRole: "human",
     payload,
   });
-  await ctx.sendCallResponseEnvelope(peerOwnerId, unsigned, "call.ice-candidate");
+  await sendCallResponseEnvelopeViaRuntime(ctx, peerOwnerId, unsigned, "call.ice-candidate");
   return true;
 }
 
-/* ---------- sendCallRejectToOwner (busy path — no local session) ---------- */
-
-/* ---------- acceptCallInvite ---------- */
+/* ---------- acceptCallInvite / sendCallRejectToOwner ---------- */
 
 export async function acceptCallInviteViaRuntime(
   ctx: CallContext,
@@ -227,7 +844,7 @@ export async function acceptCallInviteViaRuntime(
   const sessionStatus = ctx.callManager.getSessionStatus(callId);
   if (sessionStatus !== "ringing" && sessionStatus !== "active") return false;
 
-  const { createCallAcceptPayload, createUnsignedEnvelope } = await import("@envoymesh/protocol");
+  const { createCallAcceptPayload } = await import("@envoymesh/protocol");
 
   const payload = createCallAcceptPayload({
     callId,
@@ -244,7 +861,7 @@ export async function acceptCallInviteViaRuntime(
     recipientRole: "human",
     payload,
   });
-  const delivered = await ctx.sendCallResponseEnvelope(peerOwnerId, unsigned, "call.accept");
+  const delivered = await sendCallResponseEnvelopeViaRuntime(ctx, peerOwnerId, unsigned, "call.accept");
   if (!delivered) return false;
 
   if (sessionStatus === "ringing") {
@@ -277,5 +894,5 @@ export async function sendCallRejectToOwnerViaRuntime(
     recipientRole: "human",
     payload,
   });
-  await ctx.sendCallResponseEnvelope(callerOwnerId, unsigned, "call.reject");
+  await sendCallResponseEnvelopeViaRuntime(ctx, callerOwnerId, unsigned, "call.reject");
 }
