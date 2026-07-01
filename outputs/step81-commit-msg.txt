@@ -1,0 +1,32 @@
+refactor: apply profile.intent patch (Step 81)
+
+Applied the index.ts patch from Step 80. The profile.sync / response /
+request arm (30 lines, lines 931-960) is now a 1-line call to
+`handleProfileIntentViaRuntime`.
+
+The patch handles the runtime's boolean return value: if the runtime
+returns `true`, the arm consumes the envelope and returns; if it
+returns `false`, the arm falls through to the next arm. This
+preserves the original control flow (no `return;` at the end of
+the arm).
+
+The replyWithEnvelope parameter is cast to `any` (same pattern as
+in chat.room.message / discovery patches).
+
+Files touched:
+- apps/node/src/index.ts: -30 lines (profile.intent arm collapsed)
+
+Verification:
+- npm run typecheck: 0 errors
+
+Net effect:
+- apps/node/src/index.ts: 4799 → 4769 (-30 lines)
+
+Cumulative arms extracted from handleInboundMeshMessage:
+  1-24. (Steps 50-80)
+ 25. profile.sync/response/request (Steps 80+81)
+
+Remaining targets:
+  - device.pair.request (~200 lines, lines 1649-1729) — too complex
+  - chat.message (~300 lines, lines 1615-1915) — too entangled
+  - Other small arms (rendezvous, h2a control, etc.)

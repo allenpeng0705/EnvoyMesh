@@ -115,6 +115,7 @@ import {
   type RelayPeerCandidate,
   type HumanProfilePayload,
 } from "@envoymesh/protocol";
+import { handleProfileIntentViaRuntime } from "./cli-mesh-inbound-profile-intent.js";
 import { handleDevicePairDeferredViaRuntime } from "./cli-mesh-inbound-device-pair-deferred.js";
 import { handleDevicePairApproveViaRuntime } from "./cli-mesh-inbound-device-pair-approve.js";
 import { handleSystemSignalViaRuntime } from "./cli-mesh-inbound-system-signal.js";
@@ -933,30 +934,17 @@ async function handleInboundMeshMessage({
     envelope.intent === "profile.response" ||
     envelope.intent === "profile.request"
   ) {
-    if (nodeService instanceof NodeServiceImpl) {
-      const handled = await nodeService.handleInboundProfileIntent(envelope, {
-        transportPeerId: remotePeerId,
-        remoteAddr,
-        replyWithEnvelope,
-      });
-      if (handled) {
-        void taskStore.appendAuditEvent(
-          createAuditEvent({
-            type: "message.verified",
-            intent: envelope.intent,
-            messageId: envelope.messageId,
-            correlationId,
-            remotePeerId,
-            direction: "inbound",
-            verificationStatus: "verified",
-            latencyMs: Date.now() - receivedAt,
-            outcome: "allow",
-            summary: `Handled ${envelope.intent}.`,
-            createdAt: envelope.createdAt,
-          }),
-        );
-        return;
-      }
+    const profileHandled = await handleProfileIntentViaRuntime(
+      {
+        getNodeService: () =>
+          nodeService instanceof NodeServiceImpl ? (nodeService as any) : null,
+        appendAuditEvent: (event: any) =>
+          taskStore.appendAuditEvent(event),
+      },
+      { envelope, remotePeerId, remoteAddr, receivedAt, correlationId, replyWithEnvelope: replyWithEnvelope as any },
+    );
+    if (profileHandled) {
+      return;
     }
   }
 
