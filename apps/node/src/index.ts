@@ -1005,6 +1005,18 @@ async function handleInboundMeshMessage({
         },
         handleInboundKnowledgeQuery: (input: any) =>
           handleInboundKnowledgeQuery(input),
+        getTaskStore: () => taskStore,
+        getTrustStore: () => trustStore,
+        getPeerDirectoryStore: () => peerDirectoryStore,
+        getVaultIndex: () => vaultIndex,
+        getModelProviders: () => currentModelProviders,
+        getChatLogStore: () => chatLogStore,
+        getHumanProfileStore: () => humanProfileStore,
+        getAgentIdentityStore: () => agentIdentityStore,
+        getKnowledgeBase: () => currentAiSettings?.knowledgeBase,
+        getRagService: () => ragService,
+        getKnowledgeSyndicationMaxSensitivity: () =>
+          currentKnowledgeSyndicationMaxSensitivity,
         appendAuditEvent: (event: any) => taskStore.appendAuditEvent(event),
         getProfile: () => profile,
         derivePeerId,
@@ -1014,6 +1026,8 @@ async function handleInboundMeshMessage({
         getMesh: () => mesh,
         deliverOutboundEnvelope,
         logWarn: (msg: any) => console.warn(msg),
+        getNodeService: () =>
+          nodeService instanceof NodeServiceImpl ? (nodeService as any) : null,
         recordInboundKnowledgeAnswered: (input: any) => {
           if (nodeService instanceof NodeServiceImpl) {
             nodeService.recordInboundKnowledgeAnswered(input);

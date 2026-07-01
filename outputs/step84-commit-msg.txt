@@ -1,0 +1,22 @@
+refactor: add getNodeService to knowledge.query patch context (Step 84)
+
+The knowledge.query runtime (Step 53) calls `ctx.getNodeService()`
+to gate the `recordInboundKnowledgeAnswered` post-action. The
+initial Step 54 patch wired the runtime in index.ts but missed
+adding `getNodeService` to the context object — the call would have
+returned `undefined` and the post-action would have silently no-op'd.
+
+Fix: add `getNodeService: () => nodeService instanceof NodeServiceImpl
+? nodeService : null` to the patch context. tsc clean, all 3 unit
+tests pass.
+
+This was caught by `outputs/audit-runtimes2.py` which directly
+greps each runtime's ctx-method calls against the corresponding
+patch's context object. Previous regex-based audit
+(`outputs/audit-runtimes.py`) was too lenient.
+
+Verified:
+- npx tsc --noEmit -p apps/node/tsconfig.json: 0 errors
+- npx vitest run cli-mesh-inbound-knowledge-query.test.ts: 3/3 pass
+
+Cumulative state: index.ts ~5,313 lines, 20+ arms extracted.
