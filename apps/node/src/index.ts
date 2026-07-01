@@ -115,6 +115,7 @@ import {
   type RelayPeerCandidate,
   type HumanProfilePayload,
 } from "@envoymesh/protocol";
+import { handleBroadcastViaRuntime } from "./cli-mesh-inbound-broadcast.js";
 import { handleRelayPeersViaRuntime } from "./cli-mesh-inbound-relay-peers.js";
 import { handleOfficialCredentialViaRuntime } from "./cli-mesh-inbound-official-credential.js";
 import { handleTaskFeedbackViaRuntime } from "./cli-mesh-inbound-task-feedback.js";
@@ -1317,82 +1318,27 @@ async function handleInboundMeshMessage({
   }
 
   if (envelope.intent === "broadcast.request" || envelope.intent === "broadcast.response") {
-    const capabilityManifest = await capabilityManifestStore.loadManifest();
-    const nodeConfig = await nodeConfigStore.load();
-
-    if (envelope.intent === "broadcast.request") {
-      const result = await handleInboundBroadcastRequest({
-        envelope,
-        profile,
-        remotePeerId,
-        receivedAt,
-        correlationId,
-        taskStore,
-        trustStore,
-        capabilityManifest,
-        anonymousDiscoveryMode: nodeConfig?.anonymousDiscoveryMode ?? "off",
-        anonymousSensitivityCeiling: nodeConfig?.anonymousSensitivityCeiling ?? "public",
-      });
-      if (!result.ok) {
-        void taskStore.appendAuditEvent(
-          createAuditEvent({
-            type: "message.rejected",
-            intent: envelope.intent,
-            messageId: envelope.messageId,
-            correlationId,
-            remotePeerId,
-            direction: "inbound",
-            verificationStatus: "rejected",
-            latencyMs: Date.now() - receivedAt,
-            outcome: "deny",
-            summary: `Rejected broadcast.request: ${result.reason}.`,
-            createdAt: envelope.createdAt,
-          }),
-        );
-        console.warn(`[rejected broadcast] ${envelope.intent}: ${result.reason}`);
-        return;
-      }
-
-      // Send broadcast.response directly to the broadcaster (peer-to-peer, not via relay)
-      if (result.responsePayload) {
-        const { signUnsignedEnvelope: signEnv } = await import("@envoymesh/identity");
-        const { createUnsignedEnvelope: createUnsignedEnv } = await import("@envoymesh/protocol");
-        const unsignedResponse = createUnsignedEnv({
-          senderPeerId: derivePeerId(profile.device.publicKeyPem),
-          senderPublicKey: profile.device.publicKeyPem,
-          recipientPeerId: envelope.senderPeerId,
-          intent: "broadcast.response",
-          payload: result.responsePayload,
-          correlationId,
-        });
-        const signedResponse = signEnv(unsignedResponse, profile.device.privateKeyPem);
-        await deliverOutboundEnvelope(mesh, envelope.senderPeerId, signedResponse);
-        void taskStore.appendAuditEvent(
-          createAuditEvent({
-            type: "message.sent",
-            intent: signedResponse.intent,
-            messageId: signedResponse.messageId,
-            correlationId: signedResponse.correlationId,
-            remotePeerId: envelope.senderPeerId,
-            direction: "outbound",
-            protocol: ENVOY_MESSAGE_PROTOCOL,
-            outcome: "record",
-            summary: `Sent broadcast.response for queryId=${result.responsePayload.queryId}.`,
-            createdAt: signedResponse.createdAt,
-          }),
-        );
-      }
-      return;
-    }
-
-    // broadcast.response — record inbound response
-    const responseResult = await handleInboundBroadcastResponse({
-      envelope,
-      taskStore,
-    });
-    if (!responseResult.ok) {
-      console.warn(`[rejected broadcast.response] ${responseResult.reason}`);
-    }
+    await handleBroadcastViaRuntime(
+      {
+        loadCapabilityManifest: () => capabilityManifestStore.loadManifest(),
+        loadNodeConfig: () => nodeConfigStore.load(),
+        handleInboundBroadcastRequest: (input: any) =>
+          handleInboundBroadcastRequest(input),
+        handleInboundBroadcastResponse: (input: any) =>
+          handleInboundBroadcastResponse(input),
+        appendAuditEvent: (event: any) =>
+          taskStore.appendAuditEvent(event),
+        logWarn: (msg: any) => console.warn(msg),
+        getProfile: () => profile,
+        getMesh: () => mesh,
+        deliverOutboundEnvelope,
+        createUnsignedEnvelope,
+        signUnsignedEnvelope,
+        derivePeerId,
+        getProtocol: () => ENVOY_MESSAGE_PROTOCOL,
+      },
+      { envelope, remotePeerId, receivedAt, correlationId },
+    );
     return;
   }
 
