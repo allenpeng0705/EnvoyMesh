@@ -739,6 +739,11 @@ import { startNodeStatsInterval } from "./node-stats-log.js";
 import { handleInboundBondIntent } from "./bond-inbound.js";
 
 import {
+  handleChatRoomSyncViaRuntime,
+  type ChatRoomSyncContext,
+} from "./node-service-handlers-chat-room-sync.js";
+
+import {
   handleChatMessageViaRuntime,
   type ChatMessageContext,
 } from "./node-service-handlers-chat-message.js";
@@ -8319,6 +8324,12 @@ class NodeServiceImpl implements NodeService {
     };
   }
 
+    private _chatRoomSyncContext(): ChatRoomSyncContext {
+    return {
+      getChatRoomDeps: () => this._chatRoomDeps(),
+    };
+  }
+
     private async _handleInboundMessage(params: any): Promise<void> {
     const { envelope, remotePeerId, remoteAddr, replyWithEnvelope } = params as any;
     const mesh = this._mesh!;
@@ -8406,12 +8417,10 @@ class NodeServiceImpl implements NodeService {
       }
 
       if (intent === "chat.room.sync") {
-        try {
-          const payload = parseChatRoomSyncPayload(envelope.payload);
-          await handleInboundChatRoomSyncImpl(this._chatRoomDeps(), envelope, payload);
-        } catch {
-          console.warn(`[chat.room.sync] invalid payload from ${remotePeerId}`);
-        }
+        await handleChatRoomSyncViaRuntime(this._chatRoomSyncContext(), {
+          envelope,
+          remotePeerId,
+        });
         return;
       }
 

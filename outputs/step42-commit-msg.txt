@@ -1,0 +1,36 @@
+refactor: extract chat.room.sync dispatcher (Step 42)
+
+Step 42 — extract the tiny `chat.room.sync` handler (~10 lines)
+from `_handleInboundMessage` to its own runtime for hygiene.
+The cluster was previously inline; now it's a 5-line delegation.
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2277 pass / 81 fail / 128 skip
+  (no regression)
+
+Net effect:
+- node-service-impl.ts: 11,708 -> 11,717 (+9 lines — the chat.room.sync
+  block was already a clean 10-line delegation, so the factory
+  overhead slightly exceeds the savings)
+- node-service-handlers-chat-room-sync.ts: 32 lines (new runtime)
+- 46 commits on refactor/impl-clean
+
+Cumulative: 14,247 -> 11,717 (-2,530, -17.75%)
+
+Note: `profile.*` (5-line delegation to `handleInboundProfileIntent`)
+was kept inline — extracting it would add ~30 lines of factory
+context for zero net savings.
+
+All 5 major inbound intent clusters are now extracted:
+  - share.preview (Step 21a)
+  - social.intro.* (Step 21b)
+  - bond.* (Step 38)
+  - chat.room.sync (Step 42)
+  - chat.room.message (Step 39)
+  - chat.message (Step 40)
+
+The `_handleInboundMessage` body is now much shorter — the
+remaining content is mostly the early setup (mesh / profile /
+guardDecision) and late admin-event handlers (terminal-assist,
+herdr, etc.).
