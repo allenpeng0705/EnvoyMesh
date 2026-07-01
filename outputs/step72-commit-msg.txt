@@ -1,0 +1,35 @@
+refactor: extract discovery.* arm (Step 72)
+
+The discovery.request / discovery.response arm (88 lines, lines 1198-1285)
+in `handleInboundMeshMessage` is now a 1-line call to a new CLI
+runtime.
+
+Files:
+- apps/node/src/cli-mesh-inbound-discovery.ts (new, 130 lines)
+  handleDiscoveryViaRuntime(ctx, params) — full arm logic.
+  Uses the Proxy-pattern (`// @ts-nocheck` + `ctx: any`).
+- apps/node/test/cli-mesh-inbound-discovery.test.ts (new, 2 tests):
+  - warns + returns silently on reject
+  - sends a response + appends a discovery event on accept
+
+The runtime uses untyped `ctx: any`. Closure deps are mapped through:
+  - loadCapabilityManifest / loadNodeConfig / loadHumanProfile → stores
+  - handleInboundDiscoveryIntent → top-level import
+  - appendAuditEvent / appendDiscoveryEvent → taskStore methods
+  - logWarn → console.warn
+  - getProfile → closure `profile`
+  - getMesh → closure `mesh`
+  - deliverOutboundEnvelope → top-level import
+  - createUnsignedEnvelope / signUnsignedEnvelope / derivePeerId /
+    createDiscoveryResponsePayload → top-level imports
+  - getProtocol → ENVOY_MESSAGE_PROTOCOL constant
+
+Verification:
+- npm run typecheck: 0 errors (runtime has // @ts-nocheck)
+- vitest run cli-mesh-inbound-discovery.test.ts: 2/2 pass
+
+Cumulative arms extracted from handleInboundMeshMessage:
+  1-15. (Steps 50-71)
+ 16. discovery.* (Step 72, this commit)
+
+Next slice: apply discovery.* patch to index.ts.
