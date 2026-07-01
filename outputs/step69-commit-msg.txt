@@ -1,0 +1,48 @@
+refactor: apply relay.peers.* patch (Step 69)
+
+Applied the index.ts patch from Step 68. The relay.peers.* arm (90 lines,
+lines 1418-1510) is now a 1-line call to `handleRelayPeersViaRuntime`.
+
+Files touched:
+- apps/node/src/index.ts: -90 lines (relay.peers.* arm collapsed)
+
+The patch passes a context object that adapts closure dependencies:
+  - addObservedRelayPeerId → observedRelayPeerIds.add
+  - getConnectedRelayPeerIds → mesh.getConnectedRelayPeerIds
+  - getObservedRelayPeerIds → closure Set
+  - dedupeAddrs → top-level helper
+  - log / logWarn → console.log / console.warn
+  - getProfile → closure `profile`
+  - getMesh → closure `mesh`
+  - getTaskStore → closure `taskStore`
+  - relayDialMultiaddrsForCircuitRelay → top-level helper
+  - handleInboundRelayPeersIntent → top-level import
+  - appendAuditEvent → taskStore.appendAuditEvent
+  - parseRelayPeersResponsePayload → top-level import
+  - upsertManyDiscoverySeeds → discoverySeedStore.upsertMany
+  - dial → mesh.dial
+  - createUnsignedEnvelope / signUnsignedEnvelope / derivePeerId →
+    top-level imports
+  - deliverOutboundEnvelope → top-level import
+  - getProtocol → ENVOY_MESSAGE_PROTOCOL constant
+
+The `src` parameter to `upsertManyDiscoverySeeds` is cast to `any`
+because the helper signature requires a `DiscoverySeedSource` union
+type but the runtime accepts the raw string.
+
+Verification:
+- npm run typecheck: 0 errors
+
+Net effect:
+- apps/node/src/index.ts: 5207 → 5117 (-90 lines)
+
+Cumulative arms extracted from handleInboundMeshMessage:
+  1-12. (Steps 50-67)
+ 13. relay.peers.* (Steps 68+69)
+
+Next slices — biggest remaining:
+  - chat.message (~300 lines, lines 1615-1915) — needs incremental
+    refactor; too entangled for one-shot extraction
+  - device.pair.request (~200 lines, lines 1916-2118)
+  - broadcast.request / response (~80 lines)
+  - discovery.request / response (~88 lines)

@@ -115,6 +115,7 @@ import {
   type RelayPeerCandidate,
   type HumanProfilePayload,
 } from "@envoymesh/protocol";
+import { handleRelayPeersViaRuntime } from "./cli-mesh-inbound-relay-peers.js";
 import { handleOfficialCredentialViaRuntime } from "./cli-mesh-inbound-official-credential.js";
 import { handleTaskFeedbackViaRuntime } from "./cli-mesh-inbound-task-feedback.js";
 import { handleChatRoomSyncViaRuntime } from "./cli-mesh-inbound-chat-room-sync.js";
@@ -1416,104 +1417,34 @@ async function handleInboundMeshMessage({
   }
 
   if (envelope.intent === "relay.peers.request" || envelope.intent === "relay.peers.response") {
-    if (envelope.intent === "relay.peers.request") {
-      observedRelayPeerIds.add(remotePeerId);
-    }
-    const relayPeerIds = dedupeAddrs([...mesh.getConnectedRelayPeerIds(), ...observedRelayPeerIds]);
-    console.log(
-      `[mac-relay] received ${envelope.intent} from ${remotePeerId}, relayPeerIds=${JSON.stringify(relayPeerIds)}`,
+    await handleRelayPeersViaRuntime(
+      {
+        addObservedRelayPeerId: (id: string) =>
+          observedRelayPeerIds.add(id),
+        getConnectedRelayPeerIds: () => mesh.getConnectedRelayPeerIds(),
+        getObservedRelayPeerIds: () => observedRelayPeerIds,
+        dedupeAddrs,
+        log: (msg: any) => console.log(msg),
+        logWarn: (msg: any) => console.warn(msg),
+        getProfile: () => profile,
+        getMesh: () => mesh,
+        getTaskStore: () => taskStore,
+        relayDialMultiaddrsForCircuitRelay,
+        handleInboundRelayPeersIntent,
+        appendAuditEvent: (event: any) =>
+          taskStore.appendAuditEvent(event),
+        parseRelayPeersResponsePayload,
+        upsertManyDiscoverySeeds: (addrs: string[], src: string) =>
+          discoverySeedStore.upsertMany(addrs, src as any),
+        dial: (addr: string) => mesh.dial(addr),
+        createUnsignedEnvelope,
+        signUnsignedEnvelope,
+        derivePeerId,
+        deliverOutboundEnvelope,
+        getProtocol: () => ENVOY_MESSAGE_PROTOCOL,
+      },
+      { envelope, remotePeerId, receivedAt, correlationId, advertiseAddrs: args.advertiseAddrs },
     );
-    const relayPeers = await handleInboundRelayPeersIntent({
-      envelope,
-      profile,
-      remotePeerId,
-      receivedAt,
-      correlationId,
-      taskStore,
-      relayPeerIds,
-      relayMultiaddrs: relayDialMultiaddrsForCircuitRelay(mesh, args.advertiseAddrs),
-    });
-    if (!relayPeers.ok) {
-      void taskStore.appendAuditEvent(
-        createAuditEvent({
-          type: "message.rejected",
-          intent: envelope.intent,
-          messageId: envelope.messageId,
-          correlationId,
-          remotePeerId,
-          direction: "inbound",
-          verificationStatus: "rejected",
-          latencyMs: Date.now() - receivedAt,
-          outcome: "deny",
-          summary: `Rejected ${envelope.intent}: ${relayPeers.reason}.`,
-          createdAt: envelope.createdAt,
-        }),
-      );
-      console.warn(`[rejected relay.peers] ${envelope.intent}: ${relayPeers.reason}`);
-      return;
-    }
-
-    if (envelope.intent === "relay.peers.response") {
-      const payload = parseRelayPeersResponsePayload(envelope.payload);
-      const relayedAddrs = dedupeAddrs(payload.peers.flatMap((peer) => peer.multiaddrs));
-      if (relayedAddrs.length > 0) {
-        await discoverySeedStore.upsertMany(relayedAddrs, "relay-peers");
-        for (const addr of relayedAddrs) {
-          try {
-            await mesh.dial(addr);
-            void taskStore.appendAuditEvent(
-              createAuditEvent({
-                type: "p2p.trace",
-                direction: "outbound",
-                protocol: "relay.peers.dial.ok",
-                remotePeerId: addr,
-                outcome: "record",
-                summary: `relay peer dial ok addr=${addr}`,
-              }),
-            );
-          } catch (error) {
-            const message = error instanceof Error ? error.message : String(error);
-            void taskStore.appendAuditEvent(
-              createAuditEvent({
-                type: "p2p.trace",
-                direction: "outbound",
-                protocol: "relay.peers.dial.fail",
-                remotePeerId: addr,
-                outcome: "record",
-                summary: `relay peer dial failed addr=${addr} error=${message}`,
-              }),
-            );
-          }
-        }
-      }
-    }
-
-    if (envelope.intent === "relay.peers.request" && relayPeers.responsePayload) {
-      const unsignedResponse = createUnsignedEnvelope({
-        senderPeerId: derivePeerId(profile.device.publicKeyPem),
-        senderPublicKey: profile.device.publicKeyPem,
-        recipientPeerId: envelope.senderPeerId,
-        intent: "relay.peers.response",
-        payload: relayPeers.responsePayload,
-        correlationId,
-      });
-      const signedResponse = signUnsignedEnvelope(unsignedResponse, profile.device.privateKeyPem);
-      await deliverOutboundEnvelope(mesh, remotePeerId, signedResponse);
-      void taskStore.appendAuditEvent(
-        createAuditEvent({
-          type: "message.sent",
-          intent: signedResponse.intent,
-          messageId: signedResponse.messageId,
-          correlationId: signedResponse.correlationId,
-          remotePeerId,
-          direction: "outbound",
-          protocol: ENVOY_MESSAGE_PROTOCOL,
-          outcome: "record",
-          summary: `Sent relay.peers.response with ${relayPeers.responsePayload.peers.length} peer(s).`,
-          createdAt: signedResponse.createdAt,
-        }),
-      );
-    }
     return;
   }
 
