@@ -1,0 +1,18 @@
+chore: improve missing-arg audit script (v3)
+
+The v3 audit correctly:
+  - Strips comment lines before parsing the body
+  - Skips fields marked as optional in the signature (? suffix)
+  - Filters out TS type names (Record, Map, Set, string, number, etc.)
+
+Reports "No missing-arg issues found" across all 18 cli-mesh-inbound
+runtimes. The earlier v2 silently missed bugs because it didn't
+recognize optional fields and was tripped up by inline type names.
+
+This audit is the source of truth for the 4 fixed bugs:
+  - Step 85: broadcast missing taskStore
+  - Step 86: discovery missing taskStore/trustStore/profile
+  - Step 87: task.feedback missing taskStore/reputationStore/peerDirectoryStore
+  - Step 88: official.credential missing taskStore
+
+All found and fixed.
