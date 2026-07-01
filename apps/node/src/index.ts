@@ -115,6 +115,7 @@ import {
   type RelayPeerCandidate,
   type HumanProfilePayload,
 } from "@envoymesh/protocol";
+import { handleDevicePairApproveViaRuntime } from "./cli-mesh-inbound-device-pair-approve.js";
 import { handleSystemSignalViaRuntime } from "./cli-mesh-inbound-system-signal.js";
 import { handleDiscoveryViaRuntime } from "./cli-mesh-inbound-discovery.js";
 import { handleBroadcastViaRuntime } from "./cli-mesh-inbound-broadcast.js";
@@ -1849,48 +1850,19 @@ async function handleInboundMeshMessage({
   }
 
   if (envelope.intent === "device.pair.approve") {
-    const payload = parseDevicePairApprovePayload(envelope.payload);
-    const cert = payload.deviceCertificate;
-    if (
-      cert.deviceId !== profile.device.deviceId ||
-      cert.ownerId !== profile.owner.ownerId ||
-      !verifyDeviceCertificate(cert, profile.owner.publicKeyPem)
-    ) {
-      void taskStore.appendAuditEvent(
-        createAuditEvent({
-          type: "message.rejected",
-          intent: "device.pair.approve",
-          messageId: envelope.messageId,
-          correlationId,
-          remotePeerId,
-          direction: "inbound",
-          verificationStatus: "rejected",
-          latencyMs: Date.now() - receivedAt,
-          outcome: "deny",
-          summary: "Rejected device.pair.approve: certificate mismatch or invalid signature.",
-          createdAt: envelope.createdAt,
-        }),
-      );
-      return;
-    }
-
-    await saveNodeProfile(args.profileDir, { ...profile, deviceCertificate: cert });
-    void taskStore.appendAuditEvent(
-      createAuditEvent({
-        type: "message.verified",
-        intent: "device.pair.approve",
-        messageId: envelope.messageId,
-        correlationId,
-        remotePeerId,
-        direction: "inbound",
-        verificationStatus: "verified",
-        latencyMs: Date.now() - receivedAt,
-        outcome: "allow",
-        summary: `Applied paired device certificate for request ${payload.requestId}.`,
-        createdAt: envelope.createdAt,
-      }),
+    await handleDevicePairApproveViaRuntime(
+      {
+        parseDevicePairApprovePayload,
+        getProfile: () => profile,
+        verifyDeviceCertificate,
+        appendAuditEvent: (event: any) =>
+          taskStore.appendAuditEvent(event),
+        log: (msg: any) => console.log(msg),
+        saveNodeProfile: (profileDir: string, p: any) =>
+          saveNodeProfile(profileDir, p),
+      },
+      { envelope, remotePeerId, receivedAt, correlationId, profileDir: args.profileDir },
     );
-    console.log(`[pairing approved] request=${payload.requestId}`);
     return;
   }
 

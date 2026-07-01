@@ -1,0 +1,27 @@
+refactor: apply device.pair.approve patch (Step 77)
+
+Applied the index.ts patch from Step 76. The device.pair.approve arm
+(45 lines, lines 1851-1895) is now a 1-line call to
+`handleDevicePairApproveViaRuntime`.
+
+Files touched:
+- apps/node/src/index.ts: -45 lines (device.pair.approve arm collapsed)
+
+Verification:
+- npm run typecheck: 0 errors
+
+Net effect:
+- apps/node/src/index.ts: 4862 → 4817 (-45 lines)
+
+Cumulative arms extracted from handleInboundMeshMessage:
+  1-20. (Steps 50-76)
+ 21. device.pair.approve (Steps 76+77)
+
+Remaining targets:
+  - device.pair.deferred (~20 lines, lines 1895-1915)
+  - device.pair.request (~80 lines, lines 1649-1729)
+  - chat.message (~300 lines, lines 1615-1915) — too entangled for
+    one-shot extraction
+
+Steady state: index.ts is now ~4817 lines (was 5551 at the start
+of the CLI arm extraction cycle — a 13% reduction).
