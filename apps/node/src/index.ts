@@ -115,6 +115,7 @@ import {
   type RelayPeerCandidate,
   type HumanProfilePayload,
 } from "@envoymesh/protocol";
+import { handleCliSharePreviewViaRuntime } from "./cli-mesh-inbound-share-preview.js";
 import { handleSystemPingViaRuntime } from "./cli-mesh-inbound-system-ping.js";
 import { buildVaultIndex } from "@envoymesh/vault";
 import { createHash, randomUUID } from "node:crypto";
@@ -1137,36 +1138,10 @@ async function handleInboundMeshMessage({
 
   // ── share.preview (requester links preview id to outbound push send) ─────
   if (envelope.intent === "share.preview") {
-    try {
-      const previewPayload = parseSharePreviewPayload(envelope.payload);
-      if (
-        nodeService instanceof NodeServiceImpl &&
-        previewPayload.isFileTransfer &&
-        !previewPayload.refused
-      ) {
-        const senderOwnerId = await resolveSenderOwnerId(
-          envelope.senderPeerId,
-          remotePeerId,
-          peerDirectoryStore,
-        );
-        const recorded = nodeService.recordInboundPullSharePreview({
-          previewMessageId: envelope.messageId,
-          inReplyToRequestMsgId: previewPayload.inReplyTo,
-          senderPeerId: remotePeerId,
-          senderOwnerId,
-          previewText: previewPayload.previewText,
-          sensitivity: previewPayload.sensitivity as "public" | "friends" | "private",
-        });
-        if (!recorded) {
-          nodeService.linkOutboundSharePreviewFromInbound(envelope.messageId, previewPayload.inReplyTo);
-          console.log(
-            `[share.preview] linked outbound file send for request ${previewPayload.inReplyTo.slice(0, 12)}…`,
-          );
-        }
-      }
-    } catch {
-      // ignore invalid preview payloads for helper linkage
-    }
+    await handleCliSharePreviewViaRuntime(
+      { nodeService, peerDirectoryStore, resolveSenderOwnerId },
+      { envelope, remotePeerId },
+    );
     return;
   }
 

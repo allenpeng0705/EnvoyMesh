@@ -1,0 +1,62 @@
+refactor: extract share.preview arm (Step 51 — first unification slice)
+
+Second slice of the index.ts inbound refactor. The share.preview
+arm in `handleInboundMeshMessage` (originally 28 lines) is now a
+1-line call to a new CLI runtime that delegates to the existing
+`node-service-handlers-share-preview.ts` runtime.
+
+This is the FIRST **unification slice** of the analysis: the CLI
+inbound path now calls the same handler that the embedded/Tauri
+inbound path uses (`node-service-handlers-share-preview.ts`). The
+CLI adds only what the embedded path doesn't need:
+  - the `nodeService instanceof NodeServiceImpl` guard
+  - the `resolveSenderOwnerId` lookup
+
+The two runtimes are thin adapters over the same intent logic.
+
+What's in this commit:
+  - apps/node/src/cli-mesh-inbound-share-preview.ts (new, 97 lines)
+    `handleCliSharePreviewViaRuntime(ctx, params)` — the CLI
+    adapter. Context type has 3 typed fields:
+      - nodeService (NodeServiceImpl instance)
+      - peerDirectoryStore (LocalPeerDirectoryStore)
+      - resolveSenderOwnerId (function from ./share-inbound.js)
+  - apps/node/test/cli-mesh-inbound-share-preview.test.ts (new,
+    3 tests):
+      - recordInboundPullSharePreview is called on the node service
+      - the runtime returns false when nodeService is undefined
+        (embedded path)
+      - the resolved senderOwnerId is forwarded into the record call
+  - apps/node/src/index.ts: -25 lines (the 28-line arm is now 5
+    lines of delegation; the runtime adds back 97 lines but those
+    are typed + tested in isolation).
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test/cli-mesh-inbound-share-preview.test.ts:
+  3/3 pass
+- The new runtime is a true adapter — it re-exports the inner
+  `handleSharePreviewViaRuntime` from node-service-handlers-share-preview.ts
+  and only adds CLI-specific glue.
+
+Pattern that scales:
+1. For each arm with an existing `node-service-handlers-*.ts` runtime,
+   create a thin `cli-mesh-inbound-*.ts` adapter that calls the
+   node-service runtime with a CLI-specific context.
+2. Replace the arm in `handleInboundMeshMessage` with a 1-line call.
+3. Add 2-3 unit tests covering the CLI-specific behavior (e.g. the
+   `nodeService instanceof` guard).
+
+Net effect:
+- apps/node/src/index.ts: 5,548 -> 5,523 (-25 lines)
+- 2 new runtime files (97 + 169 lines for the adapter + tests)
+- 48 commits on refactor/impl-clean
+
+Next slice: the user can pick. The natural targets, in order of
+expected ROI:
+  1. bond.* (5 intents, ~160 lines) — has a runtime in
+     node-service-handlers-bond-intent.ts; the analysis calls this
+     out as the "biggest duplication risk".
+  2. chat.message (~300 lines) — has a runtime in
+     node-service-handlers-chat-message.ts; the unification is huge.
+  3. knowledge.query (~94 lines) — isolated, talks to RAG service.
