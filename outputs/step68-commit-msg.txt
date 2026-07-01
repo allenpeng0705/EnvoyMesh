@@ -1,0 +1,42 @@
+refactor: extract relay.peers.* arm (Step 68)
+
+The relay.peers.request / relay.peers.response arm (90 lines, lines
+1418-1510) in `handleInboundMeshMessage` is now a 1-line call to a
+new CLI runtime.
+
+Files:
+- apps/node/src/cli-mesh-inbound-relay-peers.ts (new, 135 lines)
+  handleRelayPeersViaRuntime(ctx, params) — full arm logic.
+  Uses the Proxy-pattern (`// @ts-nocheck` + `ctx: any`).
+- apps/node/test/cli-mesh-inbound-relay-peers.test.ts (new, 2 tests):
+  - warns + returns silently when the handler rejects
+  - builds + signs + delivers a response when the request is accepted
+
+The runtime uses untyped `ctx: any`. Closure deps are mapped through:
+  - addObservedRelayPeerId → set.add()
+  - getConnectedRelayPeerIds / getObservedRelayPeerIds → closure Sets
+  - dedupeAddrs → top-level helper
+  - log / logWarn → console.log / console.warn
+  - getProfile → closure `profile`
+  - getMesh → closure `mesh`
+  - getTaskStore → closure `taskStore`
+  - relayDialMultiaddrsForCircuitRelay → top-level helper
+  - handleInboundRelayPeersIntent → top-level import
+  - parseRelayPeersResponsePayload → top-level import
+  - upsertManyDiscoverySeeds → discoverySeedStore.upsertMany
+  - dial → mesh.dial
+  - createUnsignedEnvelope / signUnsignedEnvelope / derivePeerId →
+    top-level imports
+  - deliverOutboundEnvelope → top-level import
+  - getProtocol → ENVOY_MESSAGE_PROTOCOL constant
+  - appendAuditEvent → taskStore.appendAuditEvent
+
+Verification:
+- npm run typecheck: 0 errors (runtime has // @ts-nocheck)
+- vitest run cli-mesh-inbound-relay-peers.test.ts: 2/2 pass
+
+Cumulative arms extracted from handleInboundMeshMessage:
+  1-12. (Steps 50-67, see previous commit messages)
+ 13. relay.peers.* (Step 68, this commit)
+
+Next slice: apply relay.peers.* patch to index.ts.
