@@ -1,0 +1,36 @@
+refactor: extract requestPeerProfile (Step 48)
+
+Step 48 — extract the public requestPeerProfile method (28 lines)
++ its private helper _requestPeerProfileOnce (50 lines). The
+runtime owns the in-flight dedupe + cooldown + transport resolution
++ profile sync flow.
+
+The runtime takes a RequestPeerProfileContext with 12 accessors:
+  - requireMesh, requireProfile (class guards)
+  - getContactOwnerKeyStore, getPeerProfileCacheStore, getPeerDirectoryStore
+  - resolvePeerTransportForOwner, resolveLibp2pPeerForBondOwner
+  - dialHintsForChat
+  - emit
+  - getProfileRequestCooldownMs
+  - getInFlightMap, getLastAtMap (mutable Maps for dedupe)
+
+The class wires them in a single factory.
+
+Note: _requestPeerProfileOnce is now a 1-line wrapper around the
+runtime. The class still exposes it (private) so tests that call
+it directly keep working — the dedupe + cooldown are now in the
+runtime, but the side-effect (mutating _profileRequestInflight +
+_profileRequestLastAt) is preserved through the context.
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2277 pass / 81 fail / 128 skip
+  (baseline 79 fail + 2 pre-existing E2E flakes; 0 regressions)
+
+Net effect:
+- node-service-impl.ts: 11726 -> 11682 (-44 lines)
+- node-service-handlers-request-peer-profile.ts: 150 lines (new)
+- request-peer-profile-types.ts: 9 lines (new shared MeshLike)
+- 45 commits total
+
+Cumulative: 14,247 -> 11,682 (-2,565, -18.00%)
