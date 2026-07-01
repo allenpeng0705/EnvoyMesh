@@ -754,6 +754,15 @@ import {
 } from "./node-service-handlers-chat-room-sync.js";
 
 import {
+  recordIntentViaRuntime,
+  loadIntentHistoryFromDiskViaRuntime,
+  persistPublishedLibraryViaRuntime,
+  loadPublishedLibraryFromDiskViaRuntime,
+  getContactTopicsFromLibraryViaRuntime,
+  type PersistenceContext,
+} from "./node-service-handlers-persistence.js";
+
+import {
   handleChatMessageViaRuntime,
   type ChatMessageContext,
 } from "./node-service-handlers-chat-message.js";
@@ -6301,13 +6310,12 @@ class NodeServiceImpl implements NodeService {
 
   /** Record a recent intent event for prediction. */
   async recordIntent(intent: string, query: string): Promise<void> {
-    this._intentHistoryStore.record(intent, query);
-    await this._intentHistoryStore.persist();
+    return recordIntentViaRuntime(this._persistenceContext(), intent, query);
   }
 
   /** Load intent history from disk (called at startup). */
   async loadIntentHistoryFromDisk(): Promise<void> {
-    await this._intentHistoryStore.loadFromDisk();
+    return loadIntentHistoryFromDiskViaRuntime(this._persistenceContext());
   }
 
   private _publishedLibraryFilePath(): string | null {
@@ -6315,12 +6323,12 @@ class NodeServiceImpl implements NodeService {
   }
 
   private async _persistPublishedLibrary(): Promise<void> {
-    await this._publishedLibraryStore.persist();
+    return persistPublishedLibraryViaRuntime(this._persistenceContext());
   }
 
   /** Restore the published library from disk (if present). */
   async loadPublishedLibraryFromDisk(): Promise<void> {
-    await this._publishedLibraryStore.loadFromDisk();
+    return loadPublishedLibraryFromDiskViaRuntime(this._persistenceContext());
   }
 
   async publishDocument(input: {
@@ -6359,7 +6367,7 @@ class NodeServiceImpl implements NodeService {
    * Returns [] for unknown owners.
    */
   private async _getContactTopicsFromLibrary(ownerId: string): Promise<string[]> {
-    return this._publishedLibraryStore.getTopicsForContact(ownerId);
+    return getContactTopicsFromLibraryViaRuntime(this._persistenceContext(), ownerId);
   }
 
   /**
@@ -8332,7 +8340,18 @@ class NodeServiceImpl implements NodeService {
     };
   }
 
-    private _chatRoomSyncContext(): ChatRoomSyncContext {
+    private _persistenceContext(): PersistenceContext {
+    return {
+      recordIntent: (intent, query) => this._intentHistoryStore.record(intent, query) as never,
+      persistIntentHistory: () => this._intentHistoryStore.persist() as never,
+      loadIntentHistoryFromDisk: () => this._intentHistoryStore.loadFromDisk() as never,
+      persistPublishedLibrary: () => this._publishedLibraryStore.persist() as never,
+      loadPublishedLibraryFromDisk: () => this._publishedLibraryStore.loadFromDisk() as never,
+      getContactTopicsFromLibrary: (ownerId) => this._publishedLibraryStore.getTopicsForContact(ownerId) as never,
+    };
+  }
+
+  private _chatRoomSyncContext(): ChatRoomSyncContext {
     return {
       getChatRoomDeps: () => this._chatRoomDeps(),
     };
