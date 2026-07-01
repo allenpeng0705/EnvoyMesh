@@ -115,6 +115,7 @@ import {
   type RelayPeerCandidate,
   type HumanProfilePayload,
 } from "@envoymesh/protocol";
+import { handleSyncStateViaRuntime } from "./cli-mesh-inbound-sync-state.js";
 import { handleShareAcceptViaRuntime } from "./cli-mesh-inbound-share-accept.js";
 import { handleShareRequestViaRuntime } from "./cli-mesh-inbound-share-request.js";
 import { handleKnowledgeQueryViaRuntime } from "./cli-mesh-inbound-knowledge-query.js";
@@ -1175,47 +1176,16 @@ async function handleInboundMeshMessage({
   }
 
   if (envelope.intent === "sync.state") {
-    const syncResult = handleInboundSyncStateIntent({ envelope, profile });
-    if (!syncResult.ok) {
-      void taskStore.appendAuditEvent(
-        createAuditEvent({
-          type: "message.rejected",
-          intent: envelope.intent,
-          messageId: envelope.messageId,
-          correlationId,
-          remotePeerId,
-          direction: "inbound",
-          verificationStatus: "rejected",
-          latencyMs: Date.now() - receivedAt,
-          outcome: "deny",
-          summary: `Rejected sync.state: ${syncResult.reason}`,
-          createdAt: envelope.createdAt,
-        }),
-      );
-      return;
-    }
-    if (nodeService instanceof NodeServiceImpl) {
-      nodeService.emit("crdt:sync", {
-        scope: syncResult.scope,
-        updateBase64: syncResult.updateBase64,
-        senderOwnerId: syncResult.senderOwnerId,
-        remotePeerId,
-      });
-    }
-    void taskStore.appendAuditEvent(
-      createAuditEvent({
-        type: "message.verified",
-        intent: envelope.intent,
-        messageId: envelope.messageId,
-        correlationId,
-        remotePeerId,
-        direction: "inbound",
-        verificationStatus: "verified",
-        latencyMs: Date.now() - receivedAt,
-        outcome: "allow",
-        summary: `sync.state scope=${syncResult.scope}`,
-        createdAt: envelope.createdAt,
-      }),
+    await handleSyncStateViaRuntime(
+      {
+        handleInboundSyncStateIntent,
+        appendAuditEvent: (event: any) =>
+          taskStore.appendAuditEvent(event),
+        getProfile: () => profile,
+        getNodeService: () =>
+          nodeService instanceof NodeServiceImpl ? (nodeService as any) : null,
+      },
+      { envelope, remotePeerId, receivedAt, correlationId },
     );
     return;
   }

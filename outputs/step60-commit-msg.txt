@@ -1,0 +1,25 @@
+refactor: apply sync.state patch (Step 60)
+
+Applied the index.ts patch from Step 59. The sync.state arm (40 lines,
+lines 1177-1216) is now a 1-line call to `handleSyncStateViaRuntime`.
+
+Files touched:
+- apps/node/src/index.ts: -40 lines (sync.state arm collapsed)
+
+Verification:
+- npm run typecheck: 0 errors
+
+Net effect:
+- apps/node/src/index.ts: 5313 → 5273 (-40 lines)
+
+Cumulative arms extracted from handleInboundMeshMessage:
+  1. system.ping (Step 50)
+  2. share.preview (Step 51)
+  3. bond.* (Step 52, runtime ready, index.ts patch blocked)
+  4. knowledge.query (Steps 53+54)
+  5. share.request (Steps 55+56)
+  6. share.accept (Steps 57+58)
+  7. sync.state (Steps 59+60)
+
+Next slice: discovery.request / discovery.response (lines 1217-1305,
+~88 lines).
