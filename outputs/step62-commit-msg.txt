@@ -1,0 +1,36 @@
+refactor: apply agent.card.* patch (Step 62)
+
+Applied the index.ts patch from Step 61. The agent.card.request /
+agent.card.response arm (21 lines, lines 1032-1052) is now a 1-line
+call to `handleAgentCardViaRuntime`.
+
+This is the smallest arm extracted so far. Note that the original
+arm intentionally has no `return;` at the end — control flows to the
+next arm if `agentCard.handled` is false. The runtime preserves
+this fall-through behavior.
+
+Files touched:
+- apps/node/src/index.ts: -21 lines (agent.card.* arm collapsed)
+
+Verification:
+- npm run typecheck: 0 errors
+
+Net effect:
+- apps/node/src/index.ts: 5273 → 5252 (-21 lines)
+
+Cumulative arms extracted from handleInboundMeshMessage:
+  1. system.ping (Step 50)
+  2. share.preview (Step 51)
+  3. bond.* (Step 52, runtime ready, index.ts patch blocked)
+  4. knowledge.query (Steps 53+54)
+  5. share.request (Steps 55+56)
+  6. share.accept (Steps 57+58)
+  7. sync.state (Steps 59+60)
+  8. agent.card.* (Steps 61+62)
+
+Next slices — biggest remaining targets:
+  - chat.message (~300 lines, lines 1615-1915) — the biggest
+  - device.pair.request (~200 lines, lines 1916-2118)
+  - relay.peers.request / response (~100 lines)
+  - broadcast.request / response (~80 lines)
+  - discovery.request / response (~88 lines)

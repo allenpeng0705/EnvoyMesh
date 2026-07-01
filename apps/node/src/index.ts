@@ -115,6 +115,7 @@ import {
   type RelayPeerCandidate,
   type HumanProfilePayload,
 } from "@envoymesh/protocol";
+import { handleAgentCardViaRuntime } from "./cli-mesh-inbound-agent-card.js";
 import { handleSyncStateViaRuntime } from "./cli-mesh-inbound-sync-state.js";
 import { handleShareAcceptViaRuntime } from "./cli-mesh-inbound-share-accept.js";
 import { handleShareRequestViaRuntime } from "./cli-mesh-inbound-share-request.js";
@@ -1030,21 +1031,21 @@ async function handleInboundMeshMessage({
   }
 
   if (envelope.intent === "agent.card.request" || envelope.intent === "agent.card.response") {
-    const agentCard = await handleDaemonAgentCardInbound({
-      envelope,
-      profile,
-      remotePeerId,
-      receivedAt,
-      correlationId,
-      taskStore,
-      trustStore,
-      agentCardStore,
-      humanProfileStore,
-      bridgeIdentity,
-      mesh,
-      nodeService: nodeService instanceof NodeServiceImpl ? nodeService : null,
-    });
-    if (agentCard.handled) return;
+    await handleAgentCardViaRuntime(
+      {
+        handleDaemonAgentCardInbound,
+        getProfile: () => profile,
+        getTaskStore: () => taskStore,
+        getTrustStore: () => trustStore,
+        getAgentCardStore: () => agentCardStore,
+        getHumanProfileStore: () => humanProfileStore,
+        getBridgeIdentity: () => bridgeIdentity ?? null,
+        getMesh: () => mesh,
+        getNodeService: () =>
+          nodeService instanceof NodeServiceImpl ? (nodeService as any) : null,
+      },
+      { envelope, remotePeerId, receivedAt, correlationId },
+    );
   }
 
   if (envelope.intent === "knowledge.query") {
