@@ -1,0 +1,32 @@
+refactor: extract profile.sync / response / request arm (Step 80)
+
+The profile.sync / profile.response / profile.request arm (30 lines,
+lines 931-960) in `handleInboundMeshMessage` is now a 1-line call
+to a new CLI runtime.
+
+The arm has a unique control flow: it has NO `return;` at the end.
+If nodeService is missing or the inner handler returns `handled=false`,
+control falls through to the next arm. The runtime preserves this
+by returning a boolean (true = consumed, false = fall through).
+
+Files:
+- apps/node/src/cli-mesh-inbound-profile-intent.ts (new, 60 lines)
+  handleProfileIntentViaRuntime(ctx, params) — returns a boolean.
+- apps/node/test/cli-mesh-inbound-profile-intent.test.ts (new, 3 tests):
+  - returns false + does NOT audit when nodeService is missing
+  - returns false when handleInboundProfileIntent returns false
+  - returns true + audits when handled
+
+The runtime uses untyped `ctx: any`. Closure deps are mapped through:
+  - getNodeService → instanceof-gated nodeService (or null)
+  - appendAuditEvent → taskStore.appendAuditEvent
+
+Verification:
+- npm run typecheck: 0 errors (runtime has // @ts-nocheck)
+- vitest run cli-mesh-inbound-profile-intent.test.ts: 3/3 pass
+
+Cumulative arms extracted from handleInboundMeshMessage:
+  1-23. (Steps 50-79)
+ 24. profile.sync/response/request (Step 80, this commit)
+
+Next slice: apply profile.intent patch to index.ts.
