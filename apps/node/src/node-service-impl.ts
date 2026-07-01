@@ -766,6 +766,7 @@ import {
   validatePairingTokenViaRuntime,
   type ValidatePairingTokenContext,
 } from "./node-service-handlers-validate-pairing-token.js";
+import { upsertProfileGalleryPhotoViaRuntime } from "./node-service-handlers-upsert_profile_gallery_photo.js";
 
 import {
   cacheDidContactKeyViaRuntime,
@@ -2611,38 +2612,9 @@ class NodeServiceImpl implements NodeService {
   }
 
   async upsertProfileGalleryPhoto(params: UpsertProfileGalleryPhotoParams): Promise<HumanProfile> {
-    const mime = parseProfilePhotoMime(params.mimeType);
-    const visibility = params.visibility as ProfileGalleryPhotoVisibility;
-    const { base, existing } = await this._loadHumanProfileForPhotoUpdate();
-    const gallery = [...(existing.galleryPhotos ?? [])];
-    const photoId = params.photoId?.trim() || undefined;
-    const existingIdx = photoId
-      ? gallery.findIndex((p) => p.photoId === photoId)
-      : -1;
-    if (gallery.length >= MAX_PROFILE_GALLERY_PHOTOS && existingIdx < 0) {
-      throw new Error(`Gallery limit reached (max ${MAX_PROFILE_GALLERY_PHOTOS} photos)`);
-    }
-    const vaultRelativePath = profileGalleryVaultPath(mime, photoId);
-    const imported = await importProfilePhotoBytes({
-      vaultDir: this._vaultDir,
-      relativePath: vaultRelativePath,
-      contentBase64: params.contentBase64,
-      mimeType: mime,
-      maxBytes: MAX_PROFILE_GALLERY_PHOTO_BYTES,
-    });
-    const entry = ProfileGalleryPhotoSchema.parse({
-      ...imported,
-      photoId: photoId ?? photoIdFromGalleryPath(vaultRelativePath),
-      label: params.label?.trim() || undefined,
-      visibility,
-    });
-    if (existingIdx >= 0) {
-      gallery[existingIdx] = entry;
-    } else {
-      gallery.push(entry);
-    }
-    return this._signAndSaveHumanProfile({ ...base, galleryPhotos: gallery });
+    return upsertProfileGalleryPhotoViaRuntime(this._upsert_profile_gallery_photo_context(), params);
   }
+
 
   async removeProfileGalleryPhoto(params: { vaultRelativePath: string }): Promise<HumanProfile> {
     const path = params.vaultRelativePath.trim().replace(/^[\\/]+/, "");
@@ -11362,6 +11334,15 @@ class NodeServiceImpl implements NodeService {
         this._sendCallResponseEnvelope(peerOwnerId, unsigned as never, intent),
       loadConfig: () => this._configStore.load(),
     };
+  }
+
+  private _upsert_profile_gallery_photo_context(): any {
+    return new Proxy(this, {
+      get(target, prop) {
+        const value = (target as any)[prop];
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
   }
 
   private _wireCallManagerRemoteSignals(): void {
