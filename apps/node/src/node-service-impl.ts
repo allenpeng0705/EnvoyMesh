@@ -768,6 +768,14 @@ import {
 } from "./node-service-handlers-validate-pairing-token.js";
 
 import {
+  cacheDidContactKeyViaRuntime,
+  setPublicProfileThumbnailViaRuntime,
+  getAgentIdentityViaRuntime,
+  updateAgentIdentityViaRuntime,
+  type SmallProfileDelegationsContext,
+} from "./node-service-handlers-small-profile-delegations.js";
+
+import {
   handleChatMessageViaRuntime,
   type ChatMessageContext,
 } from "./node-service-handlers-chat-message.js";
@@ -2134,16 +2142,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   async cacheDidContactKey(params: { ownerId: string; publicKeyPem: string }) {
-    if (!this._contactOwnerKeyStore) {
-      return { ok: false, reason: "contact owner key store unavailable" };
-    }
-    const ownerId = params.ownerId.trim();
-    const publicKeyPem = params.publicKeyPem.trim();
-    if (!ownerId || !publicKeyPem) {
-      return { ok: false, reason: "ownerId and publicKeyPem are required" };
-    }
-    await this._contactOwnerKeyStore.upsert(ownerId, publicKeyPem);
-    return { ok: true };
+    return cacheDidContactKeyViaRuntime(this._smallProfileDelegationsContext(), params);
   }
 
   async getPeerReputationSummary(peerOwnerId: string): Promise<PeerReputationSummary> {
@@ -2672,17 +2671,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   async setPublicProfileThumbnail(params: SetPublicProfileThumbnailParams): Promise<HumanProfile> {
-    const mime = parseProfilePhotoMime(params.mimeType);
-    const imported = await importProfilePhotoBytes({
-      vaultDir: this._vaultDir,
-      relativePath: profileThumbnailVaultPath(mime),
-      contentBase64: params.contentBase64,
-      mimeType: mime,
-      maxBytes: MAX_PROFILE_THUMBNAIL_BYTES,
-    });
-    const publicThumbnail = ProfilePhotoRefSchema.parse(imported);
-    const { base } = await this._loadHumanProfileForPhotoUpdate();
-    return this._signAndSaveHumanProfile({ ...base, publicThumbnail });
+    return setPublicProfileThumbnailViaRuntime(this._smallProfileDelegationsContext(), params);
   }
 
   async upsertProfileGalleryPhoto(params: UpsertProfileGalleryPhotoParams): Promise<HumanProfile> {
@@ -2745,18 +2734,11 @@ class NodeServiceImpl implements NodeService {
   }
 
   async getAgentIdentity(): Promise<AgentIdentityDocument> {
-    if (!this._agentIdentityStore) {
-      throw new Error("Profile directory not initialized");
-    }
-    return this._agentIdentityStore.load();
+    return getAgentIdentityViaRuntime(this._smallProfileDelegationsContext());
   }
 
   async updateAgentIdentity(content: string): Promise<AgentIdentityDocument> {
-    this._assertOnline();
-    if (!this._agentIdentityStore) {
-      throw new Error("Profile directory not initialized");
-    }
-    return this._agentIdentityStore.save(content);
+    return updateAgentIdentityViaRuntime(this._smallProfileDelegationsContext(), content);
   }
 
   /**
@@ -8345,7 +8327,20 @@ class NodeServiceImpl implements NodeService {
     };
   }
 
-    private _validatePairingTokenContext(): ValidatePairingTokenContext {
+    private _smallProfileDelegationsContext(): SmallProfileDelegationsContext {
+    return {
+      getContactOwnerKeyStore: () => this._contactOwnerKeyStore ?? undefined,
+      getVaultDir: () => this._vaultDir,
+      signAndSaveHumanProfile: (update) =>
+        this._signAndSaveHumanProfile(update as never),
+      loadHumanProfileForPhotoUpdate: () =>
+        this._loadHumanProfileForPhotoUpdate() as Promise<{ base: any; existing: any }>,
+      getAgentIdentityStore: () => this._agentIdentityStore ?? undefined,
+      assertOnline: () => this._assertOnline(),
+    };
+  }
+
+  private _validatePairingTokenContext(): ValidatePairingTokenContext {
     return {
       getInMemoryToken: () => this._pairingToken ?? undefined,
       getInMemoryTokenIssuedAt: () => this._pairingTokenIssuedAt ?? undefined,

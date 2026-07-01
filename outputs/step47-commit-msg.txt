@@ -1,0 +1,27 @@
+refactor: extract 4 small profile/DID/agent-identity delegations (Step 47)
+
+Step 47 — extract 4 small public methods that wrap local-store
+reads/writes. Each class method becomes a 1-line delegation:
+
+  - cacheDidContactKey (10 lines)
+  - setPublicProfileThumbnail (12 lines)
+  - getAgentIdentity (4 lines)
+  - updateAgentIdentity (6 lines)
+
+The runtime takes a SmallProfileDelegationsContext with 6 accessors
+(contact-owner-key store, vault dir, profile-sign-and-save, profile
+load-for-photo, agent-identity store, assertOnline). The class
+wires them in a single factory.
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2276 pass / 81 fail / 128 skip
+  (baseline 79 fail + 2 pre-existing E2E flakes; 0 regressions)
+
+Net effect:
+- node-service-impl.ts: 11731 -> 11726 (-5 lines; the 4 small
+  methods save 26 lines but the factory adds 21 lines back)
+- node-service-handlers-small-profile-delegations.ts: 97 lines (new)
+- 44 commits total
+
+Cumulative: 14,247 -> 11,726 (-2,521, -17.69%)
