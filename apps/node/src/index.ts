@@ -115,6 +115,7 @@ import {
   type RelayPeerCandidate,
   type HumanProfilePayload,
 } from "@envoymesh/protocol";
+import { handleKnowledgeQueryViaRuntime } from "./cli-mesh-inbound-knowledge-query.js";
 import { handleCliSharePreviewViaRuntime } from "./cli-mesh-inbound-share-preview.js";
 import { handleSystemPingViaRuntime } from "./cli-mesh-inbound-system-ping.js";
 import { buildVaultIndex } from "@envoymesh/vault";
@@ -1044,95 +1045,48 @@ async function handleInboundMeshMessage({
   }
 
   if (envelope.intent === "knowledge.query") {
-    let contactSyndicationMaxSensitivity:
-      | import("@envoymesh/api").KnowledgeSyndicationSensitivity
-      | undefined;
-    if (envelope.agentCredential?.ownerId) {
-      contactSyndicationMaxSensitivity = currentContactAiPrefs.get(
-        envelope.agentCredential.ownerId,
-      )?.syndicationMaxSensitivity;
-    } else {
-      const records = await peerDirectoryStore.listPeerRecords();
-      const match =
-        records.find((r) => r.peerId === envelope.senderPeerId) ??
-        records.find((r) => r.peerId === remotePeerId);
-      if (match?.ownerId) {
-        contactSyndicationMaxSensitivity = currentContactAiPrefs.get(match.ownerId)
-          ?.syndicationMaxSensitivity;
-      }
-    }
-
-    const kq = await handleInboundKnowledgeQuery({
-      envelope,
-      remotePeerId,
-      receivedAt,
-      correlationId,
-      taskStore,
-      trustStore,
-      peerDirectoryStore,
-      profile,
-      vaultIndex,
-      modelProviders: currentModelProviders,
-      chatLogStore,
-      humanProfileStore,
-      agentIdentityStore,
-      knowledgeBase: currentAiSettings?.knowledgeBase,
-      ragService,
-      knowledgeSyndicationMaxSensitivity: currentKnowledgeSyndicationMaxSensitivity,
-      contactSyndicationMaxSensitivity,
-    });
-    if (!kq.ok) {
-      void taskStore.appendAuditEvent(
-        createAuditEvent({
-          type: "message.rejected",
-          intent: envelope.intent,
-          messageId: envelope.messageId,
-          correlationId,
-          remotePeerId,
-          direction: "inbound",
-          verificationStatus: "rejected",
-          latencyMs: Date.now() - receivedAt,
-          outcome: "deny",
-          summary: `Rejected knowledge.query: ${kq.reason}.`,
-          createdAt: envelope.createdAt,
-        }),
-      );
-      console.warn(`[rejected knowledge.query] ${kq.reason}`);
-      return;
-    }
-
-    // Policy allowed — send signed knowledge.response back to sender
-    const unsignedResponse = createUnsignedEnvelope({
-      senderPeerId: derivePeerId(profile.device.publicKeyPem),
-      senderPublicKey: profile.device.publicKeyPem,
-      recipientPeerId: envelope.senderPeerId,
-      intent: "knowledge.response",
-      payload: createKnowledgeResponsePayload(kq.responsePayload),
-      correlationId,
-    });
-    const signedResponse = signUnsignedEnvelope(unsignedResponse, profile.device.privateKeyPem);
-    await deliverOutboundEnvelope(mesh, remotePeerId, signedResponse);
-    void taskStore.appendAuditEvent(
-      createAuditEvent({
-        type: "message.sent",
-        intent: signedResponse.intent,
-        messageId: signedResponse.messageId,
-        correlationId: signedResponse.correlationId,
+    await handleKnowledgeQueryViaRuntime(
+      {
+        getContactSyndicationMaxSensitivity: async () => {
+          if (envelope.agentCredential?.ownerId) {
+            return currentContactAiPrefs.get(envelope.agentCredential.ownerId)
+              ?.syndicationMaxSensitivity;
+          }
+          const records = await peerDirectoryStore.listPeerRecords();
+          const match =
+            records.find((r) => r.peerId === envelope.senderPeerId) ??
+            records.find((r) => r.peerId === remotePeerId);
+          if (match?.ownerId) {
+            return currentContactAiPrefs.get(match.ownerId)
+              ?.syndicationMaxSensitivity;
+          }
+          return undefined;
+        },
+        handleInboundKnowledgeQuery: (input: any) =>
+          handleInboundKnowledgeQuery(input),
+        appendAuditEvent: (event: any) => taskStore.appendAuditEvent(event),
+        getProfile: () => profile,
+        derivePeerId,
+        createUnsignedEnvelope,
+        createKnowledgeResponsePayload,
+        signUnsignedEnvelope,
+        getMesh: () => mesh,
+        deliverOutboundEnvelope,
+        logWarn: (msg: any) => console.warn(msg),
+        recordInboundKnowledgeAnswered: (input: any) => {
+          if (nodeService instanceof NodeServiceImpl) {
+            nodeService.recordInboundKnowledgeAnswered(input);
+          }
+        },
+        getProtocol: () => ENVOY_MESSAGE_PROTOCOL,
+      },
+      {
+        envelope,
         remotePeerId,
-        direction: "outbound",
-        protocol: ENVOY_MESSAGE_PROTOCOL,
-        outcome: "record",
-        summary: `Sent knowledge.response for ${envelope.messageId}.`,
-        createdAt: signedResponse.createdAt,
-      }),
-    );
-    if (nodeService instanceof NodeServiceImpl) {
-      void nodeService.recordInboundKnowledgeAnswered({
-        remoteOwnerId: kq.senderOwnerId,
+        receivedAt,
         correlationId,
-        queryPreview: `${kq.queryPreview} (${kq.syndicatedSensitivity})`,
-      });
-    }
+      },
+    );
     return;
   }
 
