@@ -115,6 +115,7 @@ import {
   type RelayPeerCandidate,
   type HumanProfilePayload,
 } from "@envoymesh/protocol";
+import { handleDiscoveryViaRuntime } from "./cli-mesh-inbound-discovery.js";
 import { handleBroadcastViaRuntime } from "./cli-mesh-inbound-broadcast.js";
 import { handleRelayPeersViaRuntime } from "./cli-mesh-inbound-relay-peers.js";
 import { handleOfficialCredentialViaRuntime } from "./cli-mesh-inbound-official-credential.js";
@@ -1198,122 +1199,30 @@ async function handleInboundMeshMessage({
   }
 
   if (envelope.intent === "discovery.request" || envelope.intent === "discovery.response") {
-    const capabilityManifest = await capabilityManifestStore.loadManifest();
-    const nodeConfig = await nodeConfigStore.load();
-    const humanProfile = await humanProfileStore.loadHumanProfile().catch(() => undefined);
-    const discovery = await handleInboundDiscoveryIntent({
-      envelope,
-      profile,
-      remotePeerId,
-      receivedAt,
-      correlationId,
-      taskStore,
-      trustStore,
-      capabilityManifest,
-      anonymousDiscoveryMode: nodeConfig?.anonymousDiscoveryMode ?? "off",
-      anonymousIntentAllowlist: nodeConfig?.anonymousIntentAllowlist,
-      anonymousSensitivityCeiling: nodeConfig?.anonymousSensitivityCeiling ?? "public",
-      vaultDir: vaultDirForNode,
-      profileDir: args.profileDir,
-      humanProfile: humanProfile ?? undefined,
-      resolveReferralOwnerPublicKey: async (ownerId) => {
-        const row = await contactOwnerKeyStore.get(ownerId);
-        return row?.ownerPublicKeyPem;
+    await handleDiscoveryViaRuntime(
+      {
+        loadCapabilityManifest: () => capabilityManifestStore.loadManifest(),
+        loadNodeConfig: () => nodeConfigStore.load(),
+        loadHumanProfile: () =>
+          humanProfileStore.loadHumanProfile().catch(() => undefined),
+        handleInboundDiscoveryIntent: (input: any) =>
+          handleInboundDiscoveryIntent(input),
+        appendAuditEvent: (event: any) =>
+          taskStore.appendAuditEvent(event),
+        appendDiscoveryEvent: (event: any) =>
+          taskStore.appendDiscoveryEvent(event),
+        logWarn: (msg: any) => console.warn(msg),
+        getProfile: () => profile,
+        getMesh: () => mesh,
+        deliverOutboundEnvelope,
+        createUnsignedEnvelope,
+        createDiscoveryResponsePayload,
+        signUnsignedEnvelope,
+        derivePeerId,
+        getProtocol: () => ENVOY_MESSAGE_PROTOCOL,
       },
-    });
-    if (!discovery.ok) {
-      void taskStore.appendAuditEvent(
-        createAuditEvent({
-          type: "message.rejected",
-          intent: envelope.intent,
-          messageId: envelope.messageId,
-          correlationId,
-          remotePeerId,
-          direction: "inbound",
-          verificationStatus: "rejected",
-          latencyMs: Date.now() - receivedAt,
-          outcome: "deny",
-          summary: `Rejected ${envelope.intent}: ${discovery.reason}.`,
-          createdAt: envelope.createdAt,
-        }),
-      );
-      console.warn(`[rejected discovery] ${envelope.intent}: ${discovery.reason}`);
-      return;
-    }
-
-    if (envelope.intent === "discovery.request" && discovery.responsePayload) {
-      const unsignedResponse = createUnsignedEnvelope({
-        senderPeerId: derivePeerId(profile.device.publicKeyPem),
-        senderPublicKey: profile.device.publicKeyPem,
-        recipientPeerId: envelope.senderPeerId,
-        intent: "discovery.response",
-        payload: createDiscoveryResponsePayload(discovery.responsePayload),
-        correlationId,
-      });
-      const signedResponse = signUnsignedEnvelope(unsignedResponse, profile.device.privateKeyPem);
-      let latencyMs = 0;
-      if (replyWithEnvelope) {
-        await replyWithEnvelope(signedResponse);
-      } else {
-        await deliverOutboundEnvelope(mesh, remotePeerId, signedResponse);
-      }
-      void taskStore.appendAuditEvent(
-        createAuditEvent({
-          type: "message.sent",
-          intent: signedResponse.intent,
-          messageId: signedResponse.messageId,
-          correlationId: signedResponse.correlationId,
-          remotePeerId,
-          direction: "outbound",
-          latencyMs,
-          protocol: ENVOY_MESSAGE_PROTOCOL,
-          outcome: "record",
-          summary: `Sent discovery.response for ${envelope.messageId}.`,
-          createdAt: signedResponse.createdAt,
-        }),
-      );
-      await taskStore.appendDiscoveryEvent({
-        version: "0.1",
-        eventId: `discovery_${signedResponse.messageId}`,
-        createdAt: signedResponse.createdAt,
-        direction: "outbound",
-        intent: "discovery.response",
-        ownerId: profile.owner.ownerId,
-        remotePeerId,
-        correlationId: signedResponse.correlationId,
-        requestMessageId: envelope.messageId,
-        matchCount: discovery.responsePayload.matches.length,
-        requestedTagHashes: [],
-        requestedCapabilities: [],
-        matchedTagHashes: discovery.responsePayload.matches.flatMap((match) => match.matchedTagHashes),
-        matchedCapabilities: discovery.responsePayload.matches.flatMap(
-          (match) => match.matchedCapabilities,
-        ),
-        outcome: "record",
-        summary: `Sent discovery.response with ${discovery.responsePayload.matches.length} match(es).`,
-      });
-
-      const requestPayload = parseDiscoveryRequestPayload(envelope.payload);
-      const requesterTrust = await trustStore.getTrustRecord(requestPayload.requesterOwnerId);
-      if (nodeService instanceof NodeServiceImpl) {
-        nodeService.queueDiscoveryForwardFromInbound({
-          envelope,
-          requesterOwnerId: requestPayload.requesterOwnerId,
-          trustLevel: requesterTrust?.level ?? "public",
-          correlationId,
-        });
-      }
-    }
-
-    if (envelope.intent === "discovery.response" && correlationId && nodeService instanceof NodeServiceImpl) {
-      const responsePayload = parseDiscoveryResponsePayload(envelope.payload);
-      await nodeService.ingestInboundMultiHopDiscoveryResponse({
-        correlationId,
-        responderOwnerId: responsePayload.responderOwnerId,
-        matches: responsePayload.matches,
-        forwardPendingAck: responsePayload.forwardPendingAck,
-      });
-    }
+      { envelope, remotePeerId, receivedAt, correlationId, profileDir: args.profileDir, replyWithEnvelope: replyWithEnvelope as any },
+    );
     return;
   }
 
