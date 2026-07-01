@@ -1,0 +1,14 @@
+refactor: fix task.feedback missing taskStore/reputationStore/peerDirectoryStore (Step 87)
+
+The Step 63 task.feedback patch had a bug: the runtime called
+ctx.handleInboundTaskFeedback({envelope}) but the inner function
+requires taskStore, reputationStore, peerDirectoryStore. Without
+them, the function crashes on resolveOwnerIdFromPeerId() and the
+audit event is never recorded.
+
+Fix: add the 3 missing deps to the runtime call + update the test
+mocks.
+
+Verified:
+- npm run typecheck: 0 errors
+- vitest run cli-mesh-inbound-small-arms.test.ts: 6/6 pass

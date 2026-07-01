@@ -9,8 +9,10 @@ import { handleChatRoomMessageViaRuntime } from "../src/cli-mesh-inbound-chat-ro
 describe("cli-mesh-inbound-task-feedback", () => {
   it("returns silently after persisting feedback", async () => {
     const ctx = {
-      loadNodeConfig: vi.fn(async () => ({})),
       handleInboundTaskFeedback: vi.fn(async () => ({ ok: true })),
+      getTaskStore: vi.fn(() => ({})),
+      getReputationStore: vi.fn(() => ({})),
+      getPeerDirectoryStore: vi.fn(() => ({})),
       logWarn: vi.fn(),
     };
     await handleTaskFeedbackViaRuntime(ctx, {
@@ -22,11 +24,13 @@ describe("cli-mesh-inbound-task-feedback", () => {
 
   it("warns when the handler rejects", async () => {
     const ctx = {
-      loadNodeConfig: vi.fn(async () => ({})),
       handleInboundTaskFeedback: vi.fn(async () => ({
         ok: false,
         reason: "reputation_mismatch",
       })),
+      getTaskStore: vi.fn(() => ({})),
+      getReputationStore: vi.fn(() => ({})),
+      getPeerDirectoryStore: vi.fn(() => ({})),
       logWarn: vi.fn(),
     };
     await handleTaskFeedbackViaRuntime(ctx, {

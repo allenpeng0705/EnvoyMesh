@@ -21,9 +21,11 @@ export async function handleTaskFeedbackViaRuntime(
   ctx: any,
   params: TaskFeedbackParams,
 ): Promise<void> {
-  await ctx.loadNodeConfig();
   const result = await ctx.handleInboundTaskFeedback({
     envelope: params.envelope,
+    taskStore: ctx.getTaskStore(),
+    reputationStore: ctx.getReputationStore(),
+    peerDirectoryStore: ctx.getPeerDirectoryStore(),
   });
   if (!result.ok) {
     ctx.logWarn(`[rejected task.feedback] ${result.reason}`);
