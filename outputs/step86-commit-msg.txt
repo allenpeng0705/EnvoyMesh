@@ -1,0 +1,36 @@
+refactor: fix discovery runtime missing taskStore/trustStore/profile (Step 86)
+
+The Step 73 discovery.* patch had a critical bug: the runtime
+called `ctx.handleInboundDiscoveryIntent({envelope, remotePeerId,
+..., capabilityManifest, humanProfile, ...})` — but the inner
+function's signature REQUIRES `taskStore`, `trustStore`, and `profile`
+(non-optional). Without them, the function crashes at the first
+`taskStore.appendAuditEvent(...)` call and the audit event is never
+recorded.
+
+This was the second class of bug found by the new argument-passing
+audit (`outputs/audit-arg-passing.py`):
+  - Step 84: knowledge.query — missing CONTEXT METHOD
+  - Step 85: broadcast — missing ARG in `ctx.helper({envelope})`
+  - Step 86: discovery — missing ARGS in `ctx.helper({envelope, ...})`
+
+Fix: add `profile`, `taskStore`, `trustStore` to the runtime call
+(reading from ctx). The test mock also needs these to avoid an
+undefined access.
+
+The audit script now reports "no issues found" for discovery.
+Verified:
+- npm run typecheck: 0 errors
+- vitest run cli-mesh-inbound-discovery.test.ts: 2/2 pass
+
+Follow-up audits to do before shipping:
+- relay.peers.request/response — inner handler signature check
+- share.request — already audited, OK
+- share.accept — already audited, OK
+- sync.state — simple, OK
+- system.signal — uses verifyAuthorizedDeviceEnvelope + evaluateCapability
+- device.pair.approve — uses verifyDeviceCertificate
+- official.credential — uses trustAnchorPublicKeys only
+- task.feedback — uses handleInboundTaskFeedback
+
+These will be reviewed in subsequent commits.

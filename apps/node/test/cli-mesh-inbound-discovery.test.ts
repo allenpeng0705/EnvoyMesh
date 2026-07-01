@@ -15,6 +15,9 @@ function makeMockCtx(
     loadCapabilityManifest: vi.fn(async () => ({})),
     loadNodeConfig: vi.fn(async () => ({})),
     loadHumanProfile: vi.fn(async () => ({})),
+    getProfile: vi.fn(() => ({ device: {}, owner: { ownerId: "o" } } as any)),
+    getTaskStore: vi.fn(() => ({})),
+    getTrustStore: vi.fn(() => ({})),
     handleInboundDiscoveryIntent: vi.fn(async () => ({
       ok: overrides.ok ?? true,
       reason: overrides.reason ?? "denied",
