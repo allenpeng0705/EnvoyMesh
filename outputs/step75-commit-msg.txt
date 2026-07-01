@@ -1,0 +1,27 @@
+refactor: apply system.signal patch (Step 75)
+
+Applied the index.ts patch from Step 74. The system.signal arm (77 lines,
+lines 909-986) is now a 1-line call to `handleSystemSignalViaRuntime`.
+
+Files touched:
+- apps/node/src/index.ts: -77 lines (system.signal arm collapsed)
+
+Verification:
+- npm run typecheck: 0 errors
+
+Net effect:
+- apps/node/src/index.ts: 4939 → 4862 (-77 lines)
+
+Cumulative arms extracted from handleInboundMeshMessage:
+  1-18. (Steps 50-74)
+ 19. system.signal (Steps 74+75)
+
+Remaining big targets:
+  - chat.message (~300 lines, lines 1615-1915) — needs incremental
+    refactor; too entangled for one-shot extraction
+  - device.pair.request (~200 lines, lines 1916-2118)
+  - device.pair.approve (~46 lines)
+  - device.pair.deferred (~20 lines)
+
+Steady state: index.ts is now ~4862 lines (was 5551 at the start
+of the CLI arm extraction cycle — a 12% reduction).

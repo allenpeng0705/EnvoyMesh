@@ -115,6 +115,7 @@ import {
   type RelayPeerCandidate,
   type HumanProfilePayload,
 } from "@envoymesh/protocol";
+import { handleSystemSignalViaRuntime } from "./cli-mesh-inbound-system-signal.js";
 import { handleDiscoveryViaRuntime } from "./cli-mesh-inbound-discovery.js";
 import { handleBroadcastViaRuntime } from "./cli-mesh-inbound-broadcast.js";
 import { handleRelayPeersViaRuntime } from "./cli-mesh-inbound-relay-peers.js";
@@ -908,81 +909,20 @@ async function handleInboundMeshMessage({
   }
 
   if (envelope.intent === "system.signal") {
-    const payload = parseSystemSignalPayload(envelope.payload);
-    const authorized = verifyAuthorizedDeviceEnvelope(
-      envelope,
-      payload.deviceCertificate,
-      payload.ownerPublicKeyPem,
+    await handleSystemSignalViaRuntime(
+      {
+        parseSystemSignalPayload,
+        verifyAuthorizedDeviceEnvelope,
+        evaluateCapability,
+        appendAuditEvent: (event: any) =>
+          taskStore.appendAuditEvent(event),
+        logWarn: (msg: any) => console.warn(msg),
+        log: (msg: any) => console.log(msg),
+        upsertPeerFromSignal: (input: any) =>
+          peerDirectoryStore.upsertPeerFromSignal(input),
+      },
+      { envelope, remotePeerId, receivedAt, correlationId },
     );
-    const capabilityDecision = evaluateCapability(envelope.intent, payload.capabilities);
-
-    if (!authorized) {
-      console.warn(
-        `[rejected signal] from ${payload.ownerId}/${payload.deviceId} via libp2p peer ${remotePeerId}: unauthorized device`,
-      );
-      void taskStore.appendAuditEvent(
-        createAuditEvent({
-          type: "message.rejected",
-          intent: envelope.intent,
-          messageId: envelope.messageId,
-          correlationId,
-          remotePeerId,
-          direction: "inbound",
-          verificationStatus: "rejected",
-          latencyMs: Date.now() - receivedAt,
-          outcome: "deny",
-          summary: "Rejected signal: unauthorized device certificate.",
-          createdAt: envelope.createdAt,
-        }),
-      );
-      return;
-    }
-
-    if (capabilityDecision.action === "deny") {
-      console.warn(
-        `[rejected signal] from ${payload.ownerId}/${payload.deviceId}: ${capabilityDecision.reason}`,
-      );
-      void taskStore.appendAuditEvent(
-        createAuditEvent({
-          type: "message.rejected",
-          intent: envelope.intent,
-          messageId: envelope.messageId,
-          correlationId,
-          remotePeerId,
-          direction: "inbound",
-          verificationStatus: "rejected",
-          latencyMs: Date.now() - receivedAt,
-          outcome: "deny",
-          summary: `Rejected signal: ${capabilityDecision.reason}`,
-          createdAt: envelope.createdAt,
-        }),
-      );
-      return;
-    }
-
-    console.log(
-      `[verified signal] owner=${payload.ownerId} device=${payload.deviceId} profile=${payload.deviceProfile} capabilities=${payload.capabilities.join(",")}`,
-    );
-    void taskStore.appendAuditEvent(
-      createAuditEvent({
-        type: "message.verified",
-        intent: envelope.intent,
-        messageId: envelope.messageId,
-        correlationId,
-        remotePeerId,
-        direction: "inbound",
-        verificationStatus: "verified",
-        latencyMs: Date.now() - receivedAt,
-        outcome: "allow",
-        summary: `Verified signal for owner ${payload.ownerId}.`,
-        createdAt: envelope.createdAt,
-      }),
-    );
-    await peerDirectoryStore.upsertPeerFromSignal({
-      peerId: remotePeerId,
-      payload,
-      seenAt: envelope.createdAt,
-    });
     return;
   }
 
