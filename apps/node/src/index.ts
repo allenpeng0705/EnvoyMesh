@@ -115,6 +115,7 @@ import {
   type RelayPeerCandidate,
   type HumanProfilePayload,
 } from "@envoymesh/protocol";
+import { handleSystemPingViaRuntime } from "./cli-mesh-inbound-system-ping.js";
 import { buildVaultIndex } from "@envoymesh/vault";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile, stat, unlink, writeFile } from "node:fs/promises";
@@ -1005,24 +1006,20 @@ async function handleInboundMeshMessage({
   }
 
   if (envelope.intent === "system.ping") {
-    const payload = parseSystemPingPayload(envelope.payload);
-    console.log(
-      `[verified ping] from ${envelope.senderPeerId} via libp2p peer ${remotePeerId}: ${payload.message ?? payload.nonce}`,
-    );
-    void taskStore.appendAuditEvent(
-      createAuditEvent({
-        type: "message.verified",
-        intent: envelope.intent,
-        messageId: envelope.messageId,
-        correlationId,
+    await handleSystemPingViaRuntime(
+      { taskStore, parseSystemPingPayload, createAuditEvent },
+      {
+        envelope: {
+          messageId: envelope.messageId,
+          senderPeerId: envelope.senderPeerId,
+          createdAt: envelope.createdAt,
+          intent: envelope.intent,
+          payload: envelope.payload,
+        },
         remotePeerId,
-        direction: "inbound",
-        verificationStatus: "verified",
-        latencyMs: Date.now() - receivedAt,
-        outcome: "allow",
-        summary: "Verified ping message.",
-        createdAt: envelope.createdAt,
-      }),
+        correlationId,
+        receivedAt,
+      },
     );
     return;
   }

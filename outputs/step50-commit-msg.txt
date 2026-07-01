@@ -1,0 +1,53 @@
+refactor: extract system.ping arm from handleInboundMeshMessage (Step 50)
+
+First slice of the index.ts inbound refactor. The 1,851-line
+`handleInboundMeshMessage` function in apps/node/src/index.ts has
+~30 intent arms; this commit extracts the smallest, most isolated
+one (`system.ping`, 22 lines) as a standalone runtime.
+
+The full move-only extraction is too risky — the function closes over
+376 unique identifiers and many helper functions. The analysis
+correctly recommended "migrate one intent at a time". This commit
+validates the per-intent pattern before scaling to the other 29 arms.
+
+What's in this commit:
+  - apps/node/src/cli-mesh-inbound-system-ping.ts (new, 64 lines)
+    `handleSystemPingViaRuntime(ctx, params)` — the extracted arm.
+    Context type `SystemPingContext` is 3 fields:
+      - taskStore (closure)
+      - parseSystemPingPayload (top-level import)
+      - createAuditEvent (top-level import)
+    `// @ts-nocheck` on the runtime — same loose-typing pattern
+    as outputs/extract_method.py uses for node-service-impl refactor.
+  - apps/node/test/cli-mesh-inbound-system-ping.test.ts (new, 4 tests)
+    Covers: audit-event shape, message-vs-nonce fallback, no-op when
+    taskStore is undefined, log line content.
+  - apps/node/src/index.ts: import + arm-replaced. The new arm body
+    is 24 lines (vs 22 originally) — net -3 lines, but the value is
+    testability, not size.
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test/cli-mesh-inbound-system-ping.test.ts: 4/4 pass
+- npx vitest run apps/node/test (full suite): 93 fails — all
+  pre-existing E2E flakes (real-libp2p tests, unrelated to this
+  refactor). The diff between baseline and current is empty (0
+  new regressions).
+
+Pattern for next 29 arms:
+1. Survey the arm's closure deps (small, 5-15 fields typically)
+2. Write `cli-mesh-inbound-<intent>.ts` with typed `Context` and `Params`
+3. Replace the arm in index.ts with a delegation
+4. Add a unit test that exercises the observable side effects
+5. Commit
+
+Net effect:
+- node-service-impl.ts: 6,558 (unchanged)
+- apps/node/src/index.ts: 5,551 -> 5,548 (-3 lines)
+- 47 commits on refactor/impl-clean
+
+Next slice: the user can pick which arm is highest-priority. The
+natural next targets are `share.preview` (already has a runtime in
+node-service-handlers-share-preview.ts) and `chat.message` (also
+already has a handler). Migrating these to call the existing runtimes
+is the unification step the analysis describes.
