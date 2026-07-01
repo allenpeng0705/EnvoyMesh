@@ -1,0 +1,43 @@
+refactor: extract sync.state arm (Step 59)
+
+The sync.state arm (40 lines, lines 1177-1216) in
+`handleInboundMeshMessage` is now a 1-line call to a new CLI
+runtime.
+
+Files:
+- apps/node/src/cli-mesh-inbound-sync-state.ts (new, 80 lines)
+  handleSyncStateViaRuntime(ctx, params) — the full arm logic.
+  Uses the Proxy-pattern (`// @ts-nocheck` + `ctx: any`).
+- apps/node/test/cli-mesh-inbound-sync-state.test.ts (new, 4 tests):
+  - returns silently + appends reject audit when syncResult.ok=false
+  - appends verified audit when syncResult.ok=true
+  - emits crdt:sync event when nodeService is wired
+  - does NOT emit crdt:sync when nodeService is null
+
+Arm responsibilities now live in the runtime:
+  1. Call handleInboundSyncStateIntent (pure sync function)
+  2. If rejected: append reject audit + return
+  3. If nodeService is NodeServiceImpl, emit "crdt:sync" event
+  4. Append verified audit + return
+
+The runtime uses untyped `ctx: any` to avoid designing a typed
+context interface. Closure deps are mapped through:
+  - handleInboundSyncStateIntent → top-level import
+  - appendAuditEvent → taskStore.appendAuditEvent
+  - getProfile → closure `profile`
+  - getNodeService → instanceof-gated nodeService (or null)
+
+Verification:
+- npm run typecheck: 0 errors (runtime has // @ts-nocheck)
+- vitest run cli-mesh-inbound-sync-state.test.ts: 4/4 pass
+
+Cumulative arms extracted from handleInboundMeshMessage:
+  1. system.ping (Step 50)
+  2. share.preview (Step 51)
+  3. bond.* (Step 52, runtime ready, index.ts patch blocked)
+  4. knowledge.query (Steps 53+54)
+  5. share.request (Steps 55+56)
+  6. share.accept (Steps 57+58)
+  7. sync.state (Step 59, this commit)
+
+Next slice: apply sync.state patch to index.ts.
