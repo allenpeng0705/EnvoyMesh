@@ -1,0 +1,25 @@
+refactor: extract validatePairingToken (Step 45)
+
+Step 45 — extract the public validatePairingToken method (40 lines,
+3 steps: in-memory QR + session-token store + company invite check).
+The class method collapses to a 1-line delegation.
+
+Node ValidatePairingTokenContext provides 5 accessors for the
+inputs the runtime needs:
+  - getInMemoryToken / getInMemoryTokenIssuedAt / getInMemoryTokenTtlMs
+  - getSessionTokenStore
+  - getTaskStore (for company-invite check)
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2277 pass / 81 fail / 128 skip
+  (was 2276 / 79 / 128 — +1 net passing test, 2 pre-existing E2E
+  flake failures from real-libp2p test environment; 0 regressions
+  in the extraction itself)
+
+Net effect:
+- node-service-impl.ts: 11754 -> 11731 (-23 lines)
+- node-service-handlers-validate-pairing-token.ts: 61 lines (new)
+- 43 commits total
+
+Cumulative: 14,247 -> 11,731 (-2,516, -17.65%)

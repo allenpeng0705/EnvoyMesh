@@ -763,6 +763,11 @@ import {
 } from "./node-service-handlers-persistence.js";
 
 import {
+  validatePairingTokenViaRuntime,
+  type ValidatePairingTokenContext,
+} from "./node-service-handlers-validate-pairing-token.js";
+
+import {
   handleChatMessageViaRuntime,
   type ChatMessageContext,
 } from "./node-service-handlers-chat-message.js";
@@ -8340,7 +8345,17 @@ class NodeServiceImpl implements NodeService {
     };
   }
 
-    private _persistenceContext(): PersistenceContext {
+    private _validatePairingTokenContext(): ValidatePairingTokenContext {
+    return {
+      getInMemoryToken: () => this._pairingToken ?? undefined,
+      getInMemoryTokenIssuedAt: () => this._pairingTokenIssuedAt ?? undefined,
+      getInMemoryTokenTtlMs: () => NodeServiceImpl._pairingTokenTtlMs,
+      getSessionTokenStore: () => this._sessionTokenStore ?? undefined,
+      getTaskStore: () => this._taskStore,
+    };
+  }
+
+  private _persistenceContext(): PersistenceContext {
     return {
       recordIntent: (intent, query) => this._intentHistoryStore.record(intent, query) as never,
       persistIntentHistory: () => this._intentHistoryStore.persist() as never,
@@ -8931,45 +8946,7 @@ class NodeServiceImpl implements NodeService {
    * When a persisted token is matched, [lastUsedAt] is touched.
    */
   async validatePairingToken(token: string): Promise<boolean> {
-    const t = token.trim();
-    if (!t) {
-      return false;
-    }
-
-    // 1. Check in-memory QR pairing token (30-min TTL, see _pairingTokenTtlMs)
-    if (this._pairingToken && t === this._pairingToken) {
-      if (Date.now() - this._pairingTokenIssuedAt <= NodeServiceImpl._pairingTokenTtlMs) {
-        return true;
-      }
-    }
-
-    // 2. Check persisted session token store (no TTL)
-    if (this._sessionTokenStore) {
-      const record = await this._sessionTokenStore.getTokenByValue(t);
-      if (record) {
-        // Touch lastUsedAt
-        record.lastUsedAt = new Date().toISOString();
-        await this._sessionTokenStore.setToken(record);
-        return true;
-      }
-    }
-
-    // 3. Company invites (Phase 35A). `findCompanyInviteByToken` returns
-    //    undefined for unknown / revoked / expired invites. We accept
-    //    unconsumed invites here — the per-device check happens later in
-    //    `consumeCompanyInviteViaRuntime` (called from `pairDevice`,
-    //    `pairSharedIdentity`, `pairThinClient`). Note: a *previously-consumed*
-    //    invite is still returned by `findCompanyInviteByToken` so a legitimate
-    //    re-pair by the same device can succeed; the consume call returns the
-    //    same record (idempotent) for that case.
-    if (this._taskStore) {
-      const invite = await this._taskStore.findCompanyInviteByToken(t);
-      if (invite && !invite.revokedAt && Date.parse(invite.expiresAt) > Date.now()) {
-        return true;
-      }
-    }
-
-    return false;
+    return validatePairingTokenViaRuntime(this._validatePairingTokenContext(), token);
   }
 
   async getBridgeStatus(): Promise<BridgeStatus> {
