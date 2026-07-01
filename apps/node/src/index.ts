@@ -115,6 +115,7 @@ import {
   type RelayPeerCandidate,
   type HumanProfilePayload,
 } from "@envoymesh/protocol";
+import { handleShareAcceptViaRuntime } from "./cli-mesh-inbound-share-accept.js";
 import { handleShareRequestViaRuntime } from "./cli-mesh-inbound-share-request.js";
 import { handleKnowledgeQueryViaRuntime } from "./cli-mesh-inbound-knowledge-query.js";
 import { handleCliSharePreviewViaRuntime } from "./cli-mesh-inbound-share-preview.js";
@@ -1142,48 +1143,25 @@ async function handleInboundMeshMessage({
   }
 
   if (envelope.intent === "share.accept") {
-    if (nodeService instanceof NodeServiceImpl) {
-      try {
-        const acc = parseShareAcceptPayload(envelope.payload);
-        if (!acc.accept) {
-          nodeService.clearPendingShareStateForPreview(acc.inReplyTo);
-        }
-      } catch {
-        // ignore parse errors; handleInboundShareAccept will reject
-      }
-    }
-    const share = await handleInboundShareAccept({
-      envelope,
-      remotePeerId,
-      receivedAt,
-      correlationId,
-      taskStore,
-      trustStore,
-      peerDirectoryStore,
-      profile,
-      vaultIndex,
-    });
-    if (!share.ok) {
-      console.warn(`[share.accept denied] ${share.reason}`);
-      return;
-    }
-    if (nodeService instanceof NodeServiceImpl) {
-      try {
-        await nodeService.maybeSendShareFileForInboundAccept({
-          envelope,
-          remotePeerId,
-          taskStore,
-          vaultDir: vaultDirForNode,
-          inboundConnectionAddrs: remoteAddr?.trim() ? [remoteAddr.trim()] : undefined,
-        });
-      } catch (err) {
-        console.error(
-          `[share.accept] outbound file transfer failed peer=${remotePeerId.slice(0, 12)}…:`,
-          err instanceof Error ? err.message : err,
-        );
-      }
-    }
-    console.log(`[share.accept] peer=${remotePeerId} proceeding with content share`);
+    await handleShareAcceptViaRuntime(
+      {
+        getNodeService: () =>
+          nodeService instanceof NodeServiceImpl ? (nodeService as any) : null,
+        parseShareAcceptPayload,
+        handleInboundShareAccept: (input: any) =>
+          handleInboundShareAccept(input),
+        getTaskStore: () => taskStore,
+        getTrustStore: () => trustStore,
+        getPeerDirectoryStore: () => peerDirectoryStore,
+        getProfile: () => profile,
+        getVaultIndex: () => vaultIndex,
+        getVaultDir: () => vaultDirForNode,
+        logWarn: (msg: any) => console.warn(msg),
+        logError: (msg: any) => console.error(msg),
+        log: (msg: any) => console.log(msg),
+      },
+      { envelope, remotePeerId, remoteAddr, receivedAt, correlationId },
+    );
     return;
   }
 

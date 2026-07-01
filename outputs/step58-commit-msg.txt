@@ -1,0 +1,31 @@
+refactor: apply share.accept patch (Step 58)
+
+Applied the index.ts patch from Step 57. The share.accept arm (51 lines,
+lines 1144-1195) is now a 1-line call to `handleShareAcceptViaRuntime`.
+
+Files touched:
+- apps/node/src/index.ts: -51 lines (share.accept arm collapsed)
+
+The patch passes a context object that adapts closure dependencies:
+  - getNodeService → instanceof-gated nodeService (or null)
+  - parseShareAcceptPayload → top-level import
+  - handleInboundShareAccept → top-level import
+  - getTaskStore / getTrustStore / getPeerDirectoryStore /
+    getProfile / getVaultIndex / getVaultDir → closure variables
+  - logWarn / logError / log → console.warn / console.error / console.log
+
+Verification:
+- npm run typecheck: 0 errors
+
+Net effect:
+- apps/node/src/index.ts: 5364 → 5313 (-51 lines)
+
+Cumulative arms extracted from handleInboundMeshMessage:
+  1. system.ping (Step 50)
+  2. share.preview (Step 51)
+  3. bond.* (Step 52, runtime ready, index.ts patch blocked)
+  4. knowledge.query (Steps 53+54)
+  5. share.request (Steps 55+56)
+  6. share.accept (Steps 57+58)
+
+Next slice: sync.state (lines 1196-1240, ~44 lines).
