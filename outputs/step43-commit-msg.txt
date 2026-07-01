@@ -1,0 +1,34 @@
+refactor: extract misc small delegations (Step 43)
+
+Step 43 — module-based extraction of 5 small 1-2 line delegation
+methods into a single runtime for hygiene. Even though each
+method is tiny, the goal is consistency — all the public RPC
+methods in the class now have the same shape: a 1-line delegation
+to a runtime function.
+
+Methods extracted:
+  - resolveDidImport (1 line)
+  - resolveDidExport (1 line, was dynamic import)
+  - declineSocialIntroProposal (1 line)
+  - resyncBondedContactReachabilityTags (1 line)
+  - syncProfileToBonds (2 lines)
+
+Verification:
+- npm run typecheck: 0 errors (was 0)
+- npx vitest run apps/node/test: 2277 pass / 81 fail / 128 skip
+  (no regression)
+
+Net effect:
+- node-service-impl.ts: 11,717 -> 11,735 (+18 lines — the factory
+  overhead for 5 tiny 1-liners exceeds the actual savings)
+- node-service-handlers-misc-delegations.ts: 62 lines (new runtime)
+- 48 commits on refactor/impl-clean
+
+Cumulative: 14,247 -> 11,735 (-2,512, -17.62%)
+
+Lesson learned: extracting 1-line delegations rarely saves lines.
+The cumulative per-method overhead (import + factory + delegation)
+is greater than the original 1-2 line body. The benefit is
+hygiene/consistency, not line count. Future 1-line extractions
+should be skipped unless they share a common factory with other
+methods.

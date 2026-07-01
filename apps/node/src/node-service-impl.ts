@@ -739,6 +739,16 @@ import { startNodeStatsInterval } from "./node-stats-log.js";
 import { handleInboundBondIntent } from "./bond-inbound.js";
 
 import {
+  resolveDidImportViaRuntime,
+  resolveDidExportViaRuntime,
+  acceptHelloViaRuntime,
+  declineSocialIntroProposalViaRuntime,
+  resyncBondedContactReachabilityTagsViaRuntime,
+  syncProfileToBondsViaRuntime,
+  type MiscDelegationsContext,
+} from "./node-service-handlers-misc-delegations.js";
+
+import {
   handleChatRoomSyncViaRuntime,
   type ChatRoomSyncContext,
 } from "./node-service-handlers-chat-room-sync.js";
@@ -1350,7 +1360,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   async declineSocialIntroProposal(messageId: string): Promise<void> {
-    this._pendingSocialIntroProposals.delete(messageId);
+    return declineSocialIntroProposalViaRuntime(this._miscDelegationsContext(), messageId);
   }
 
   /**
@@ -1870,7 +1880,7 @@ class NodeServiceImpl implements NodeService {
 
   /** Re-apply contact reachability tags from the trust store (after cold start or mesh restart). */
   async resyncBondedContactReachabilityTags(): Promise<void> {
-    await this._resyncBondedContactReachabilityTags();
+    return resyncBondedContactReachabilityTagsViaRuntime(this._miscDelegationsContext());
   }
 
   /** Drop stale ephemeral listen addrs from disk + libp2p peerstore for bonded contacts. */
@@ -2102,12 +2112,11 @@ class NodeServiceImpl implements NodeService {
   }
 
   async resolveDidImport(input: string) {
-    return resolveDidImportInput(input);
+    return resolveDidImportViaRuntime(null, input);
   }
 
   async resolveDidExport(input: string) {
-    const { resolveDidExportInput } = await import("@envoymesh/api/did-import");
-    return resolveDidExportInput(input);
+    return resolveDidExportViaRuntime(null, input);
   }
 
   async cacheDidContactKey(params: { ownerId: string; publicKeyPem: string }) {
@@ -2283,8 +2292,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   async syncProfileToBonds(): Promise<void> {
-    const hp = await this._humanProfileStore.loadHumanProfile();
-    if (hp) await this._broadcastProfileSyncToBonds(hp);
+    return syncProfileToBondsViaRuntime(this._miscDelegationsContext());
   }
 
   async refreshBondPeerProfiles(): Promise<{ requested: number; failed: number }> {
@@ -8327,6 +8335,16 @@ class NodeServiceImpl implements NodeService {
     private _chatRoomSyncContext(): ChatRoomSyncContext {
     return {
       getChatRoomDeps: () => this._chatRoomDeps(),
+    };
+  }
+
+    private _miscDelegationsContext(): MiscDelegationsContext {
+    return {
+      getPendingSocialIntroProposals: () => this._pendingSocialIntroProposals as any,
+      resyncBondedContactReachabilityTags: () =>
+        this._resyncBondedContactReachabilityTags() as never,
+      loadHumanProfile: () => this._humanProfileStore.loadHumanProfile() as never,
+      broadcastProfileSyncToBonds: (profile) => this._broadcastProfileSyncToBonds(profile) as never,
     };
   }
 
