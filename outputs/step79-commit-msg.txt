@@ -1,0 +1,26 @@
+refactor: apply device.pair.deferred patch (Step 79)
+
+Applied the index.ts patch from Step 78. The device.pair.deferred arm
+(18 lines) is now a 1-line call to `handleDevicePairDeferredViaRuntime`.
+
+Files touched:
+- apps/node/src/index.ts: -18 lines (device.pair.deferred arm collapsed)
+
+Verification:
+- npm run typecheck: 0 errors
+
+Net effect:
+- apps/node/src/index.ts: 4817 → 4799 (-18 lines)
+
+Cumulative arms extracted from handleInboundMeshMessage:
+  1-22. (Steps 50-78)
+ 23. device.pair.deferred (Steps 78+79)
+
+Remaining targets:
+  - device.pair.request (~80 lines, lines 1649-1729)
+  - chat.message (~300 lines, lines 1615-1915) — too entangled
+  - profile.sync / response / request (~30 lines)
+  - Other small arms
+
+Steady state: index.ts is now ~4799 lines (was 5551 at the start
+of the CLI arm extraction cycle — a 13.6% reduction).

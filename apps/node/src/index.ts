@@ -115,6 +115,7 @@ import {
   type RelayPeerCandidate,
   type HumanProfilePayload,
 } from "@envoymesh/protocol";
+import { handleDevicePairDeferredViaRuntime } from "./cli-mesh-inbound-device-pair-deferred.js";
 import { handleDevicePairApproveViaRuntime } from "./cli-mesh-inbound-device-pair-approve.js";
 import { handleSystemSignalViaRuntime } from "./cli-mesh-inbound-system-signal.js";
 import { handleDiscoveryViaRuntime } from "./cli-mesh-inbound-discovery.js";
@@ -1867,21 +1868,13 @@ async function handleInboundMeshMessage({
   }
 
   if (envelope.intent === "device.pair.deferred") {
-    const payload = parseDevicePairDeferredPayload(envelope.payload);
-    void taskStore.appendAuditEvent(
-      createAuditEvent({
-        type: "message.verified",
-        intent: "device.pair.deferred",
-        messageId: envelope.messageId,
-        correlationId,
-        remotePeerId,
-        direction: "inbound",
-        verificationStatus: "verified",
-        latencyMs: Date.now() - receivedAt,
-        outcome: "record",
-        summary: `Pairing request ${payload.requestId} deferred: ${payload.reason}`,
-        createdAt: envelope.createdAt,
-      }),
+    await handleDevicePairDeferredViaRuntime(
+      {
+        parseDevicePairDeferredPayload,
+        appendAuditEvent: (event: any) =>
+          taskStore.appendAuditEvent(event),
+      },
+      { envelope, remotePeerId, receivedAt, correlationId },
     );
     return;
   }
