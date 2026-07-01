@@ -28,7 +28,7 @@ const WEB_PORT = 5500;
 const NODE1_PORT = 3061;
 const NODE2_PORT = 3063;
 const WORKSPACE_ROOT = join(import.meta.dirname, "..", "..", "..");
-const SOCIAL_DIST = join(WORKSPACE_ROOT, "apps", "social", "dist");
+const SOCIAL_DIST = join(WORKSPACE_ROOT, "apps", "social", "src", "dist");
 const CLI = join(WORKSPACE_ROOT, "apps", "cli", "src", "index.ts");
 
 const MIME: Record<string, string> = {

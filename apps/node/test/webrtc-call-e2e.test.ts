@@ -37,7 +37,7 @@ import {
 
 const WEB_PORT = 5400;
 const WORKSPACE_ROOT = join(import.meta.dirname, "..", "..", "..");
-const SOCIAL_DIST = join(WORKSPACE_ROOT, "apps", "social", "dist");
+const SOCIAL_DIST = join(WORKSPACE_ROOT, "apps", "social", "src", "dist");
 
 // --------------------------------------------------------------------------
 // Static file server

@@ -16,7 +16,7 @@ import { setTimeout as sleep } from "node:timers/promises";
 
 const WEB_PORT = 5401;
 const ROOT = join(import.meta.dirname, "..", "..", "..");
-const DIST = join(ROOT, "apps", "social", "dist");
+const DIST = join(ROOT, "apps", "social", "src", "dist");
 const MIME: Record<string, string> = { ".html": "text/html", ".js": "application/javascript", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".woff2": "font/woff2" };
 
 async function serve(req: any, res: any) {

@@ -1,6 +1,28 @@
 /**
  * Vitest global setup.
  *
+ * Loads repo-root `.env` for test-only variables (e.g. TEST_RELAY_ADDR).
+ * Existing process.env values take precedence.
+ */
+import { existsSync, readFileSync } from "node:fs";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)));
+const envPath = resolve(repoRoot, ".env");
+if (existsSync(envPath)) {
+  for (const line of readFileSync(envPath, "utf8").split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) continue;
+    const eq = trimmed.indexOf("=");
+    if (eq === -1) continue;
+    const key = trimmed.slice(0, eq).trim();
+    const value = trimmed.slice(eq + 1).trim().replace(/^['"]|['"]$/g, "");
+    if (process.env[key] === undefined) process.env[key] = value;
+  }
+}
+
+/**
  * Patches `os.networkInterfaces()` to return a stub loopback interface when
  * the host environment has none (e.g. some sandboxes). Without this, libp2p's
  * `multicast-dns` throws `uv_interface_addresses returned Unknown system
