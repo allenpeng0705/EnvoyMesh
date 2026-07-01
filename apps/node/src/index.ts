@@ -115,6 +115,7 @@ import {
   type RelayPeerCandidate,
   type HumanProfilePayload,
 } from "@envoymesh/protocol";
+import { handleOfficialCredentialViaRuntime } from "./cli-mesh-inbound-official-credential.js";
 import { handleTaskFeedbackViaRuntime } from "./cli-mesh-inbound-task-feedback.js";
 import { handleChatRoomSyncViaRuntime } from "./cli-mesh-inbound-chat-room-sync.js";
 import { handleChatRoomMessageViaRuntime } from "./cli-mesh-inbound-chat-room-message.js";
@@ -1531,16 +1532,14 @@ async function handleInboundMeshMessage({
 
   // official.credential — verify signed credentials from trusted anchors
   if (envelope.intent === "official.credential") {
-    const nodeConfig = await nodeConfigStore.load();
-    const trustAnchorPublicKeys = nodeConfig?.trustAnchorPublicKeys ?? {};
-    const result = await handleInboundOfficialCredential({
-      envelope,
-      taskStore,
-      trustAnchorPublicKeys,
-    });
-    if (!result.ok) {
-      console.warn(`[rejected official.credential] ${result.reason}`);
-    }
+    await handleOfficialCredentialViaRuntime(
+      {
+        loadNodeConfig: () => nodeConfigStore.load(),
+        handleInboundOfficialCredential,
+        logWarn: (msg: any) => console.warn(msg),
+      },
+      { envelope },
+    );
     return;
   }
 
