@@ -24,6 +24,7 @@ export async function handleOfficialCredentialViaRuntime(
   const trustAnchorPublicKeys = nodeConfig?.trustAnchorPublicKeys ?? {};
   const result = await ctx.handleInboundOfficialCredential({
     envelope: params.envelope,
+    taskStore: ctx.getTaskStore(),
     trustAnchorPublicKeys,
   });
   if (!result.ok) {

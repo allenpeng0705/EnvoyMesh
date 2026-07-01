@@ -1,0 +1,20 @@
+refactor: fix official.credential missing taskStore (Step 88)
+
+The Step 67 official.credential patch had a bug: the runtime called
+ctx.handleInboundOfficialCredential({envelope, trustAnchorPublicKeys})
+but the inner function REQUIRES taskStore (it appends audit events
+on unknown-anchor rejection paths). Without taskStore, the function
+would crash on `taskStore.appendAuditEvent(...)` and return ok:false.
+
+Fix:
+  - runtime: add `taskStore: ctx.getTaskStore()` to the call
+  - test mocks: add `getTaskStore: vi.fn(() => ({ appendAuditEvent }))`
+    to all 3 contexts
+
+Found by `outputs/audit-missing-args-v2.py` after fixing the
+depth-decrement bug (the audit was previously silently failing
+because `depth -= 1` came AFTER the depth==0 check).
+
+Verified:
+- npm run typecheck: 0 errors
+- vitest run cli-mesh-inbound-official-credential.test.ts: 3/3 pass

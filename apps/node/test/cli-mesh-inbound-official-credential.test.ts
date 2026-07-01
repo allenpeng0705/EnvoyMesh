@@ -10,6 +10,7 @@ describe("cli-mesh-inbound-official-credential", () => {
       loadNodeConfig: vi.fn(async () => ({})),
       handleInboundOfficialCredential: vi.fn(async () => ({ ok: true })),
       logWarn: vi.fn(),
+      getTaskStore: vi.fn(() => ({ appendAuditEvent: vi.fn(async () => {}) })),
     };
     await handleOfficialCredentialViaRuntime(ctx, { envelope: {} });
     expect(ctx.logWarn).not.toHaveBeenCalled();
@@ -23,6 +24,7 @@ describe("cli-mesh-inbound-official-credential", () => {
         reason: "unknown_anchor",
       })),
       logWarn: vi.fn(),
+      getTaskStore: vi.fn(() => ({ appendAuditEvent: vi.fn(async () => {}) })),
     };
     await handleOfficialCredentialViaRuntime(ctx, { envelope: {} });
     expect(ctx.logWarn).toHaveBeenCalled();
@@ -36,6 +38,7 @@ describe("cli-mesh-inbound-official-credential", () => {
       })),
       handleInboundOfficialCredential,
       logWarn: vi.fn(),
+      getTaskStore: vi.fn(() => ({ appendAuditEvent: vi.fn(async () => {}) })),
     };
     await handleOfficialCredentialViaRuntime(ctx, { envelope: {} });
     expect(handleInboundOfficialCredential).toHaveBeenCalledWith(
