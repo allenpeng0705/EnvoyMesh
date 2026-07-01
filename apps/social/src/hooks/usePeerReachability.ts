@@ -6,6 +6,7 @@ import {
   createReachabilityHysteresisState,
   REACHABILITY_MIN_REDIAL_MS,
   REACHABILITY_OFFLINE_GRACE_MS,
+  REACHABILITY_OPEN_CHAT_KEEPALIVE_MS,
   REACHABILITY_OPEN_CHAT_MIN_REDIAL_MS,
   REACHABILITY_OPEN_CHAT_POLL_MS,
   REACHABILITY_OPEN_CHAT_STABLE_PATH_POLLS,
@@ -171,24 +172,45 @@ export function usePeerReachability(peerOwnerId: string | null, enabled = true) 
       }
     });
 
-    const id = setInterval(() => {
-      const now = Date.now();
-      if (libp2pConnectedRef.current) {
-        // Snapshot-only polls while connected — relay upgrade and stream probes run on send/redial.
-        void runRefresh(generation, { silent: true, verifyOnly: true });
-        return;
-      }
-      const dueForRedial = now - lastRedialAtRef.current >= minRedialMs;
-      void runRefresh(generation, {
-        silent: true,
-        verifyOnly: !dueForRedial,
-        warm: dueForRedial,
-      });
-    }, pollMs);
+    let keepAliveId: ReturnType<typeof setInterval> | undefined;
+    let offlinePollId: ReturnType<typeof setInterval> | undefined;
+
+    if (enabled) {
+      keepAliveId = setInterval(() => {
+        if (!libp2pConnectedRef.current) return;
+        void runRefresh(generation, { silent: true, keepAlive: true });
+      }, REACHABILITY_OPEN_CHAT_KEEPALIVE_MS);
+
+      offlinePollId = setInterval(() => {
+        if (libp2pConnectedRef.current) return;
+        const now = Date.now();
+        const dueForRedial = now - lastRedialAtRef.current >= minRedialMs;
+        void runRefresh(generation, {
+          silent: true,
+          verifyOnly: !dueForRedial,
+          warm: dueForRedial,
+        });
+      }, pollMs);
+    } else {
+      offlinePollId = setInterval(() => {
+        const now = Date.now();
+        if (libp2pConnectedRef.current) {
+          void runRefresh(generation, { silent: true, verifyOnly: true });
+          return;
+        }
+        const dueForRedial = now - lastRedialAtRef.current >= minRedialMs;
+        void runRefresh(generation, {
+          silent: true,
+          verifyOnly: !dueForRedial,
+          warm: dueForRedial,
+        });
+      }, pollMs);
+    }
 
     return () => {
       if (deferredWarmTimer) clearTimeout(deferredWarmTimer);
-      clearInterval(id);
+      if (keepAliveId) clearInterval(keepAliveId);
+      if (offlinePollId) clearInterval(offlinePollId);
     };
   }, [
     enabled,

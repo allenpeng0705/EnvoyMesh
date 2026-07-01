@@ -2,8 +2,10 @@ import type { PeerConnectionInfo } from "@envoymesh/api";
 
 export type ReachabilityLabel = "offline" | "direct" | "relay";
 
-/** Background read interval while a chat thread is open. */
+/** Background read interval while a chat thread is open (offline / redial polling). */
 export const REACHABILITY_OPEN_CHAT_POLL_MS = 10_000;
+/** Probe interval while connected with an open chat (libp2p keepAlive — ping / stream reuse). */
+export const REACHABILITY_OPEN_CHAT_KEEPALIVE_MS = 30_000;
 /** Background read interval when chat is not focused (unused by open-chat hook today). */
 export const REACHABILITY_POLL_MS = 60_000;
 /** Keep showing Online through brief libp2p idle drops (quiet chats, tab switches). */
