@@ -1,0 +1,45 @@
+refactor: extract share.request arm (Step 55)
+
+The share.request arm (113 lines, lines 1103-1224) in
+`handleInboundMeshMessage` is now a 1-line call to a new CLI runtime.
+
+Files:
+- apps/node/src/cli-mesh-inbound-share-request.ts (new, 200 lines)
+  handleShareRequestViaRuntime(ctx, params) — the full arm logic.
+  Uses the Proxy-pattern (`// @ts-nocheck` + `ctx: any`).
+- apps/node/test/cli-mesh-inbound-share-request.test.ts (new, 2 tests):
+  - returns silently when handleInboundShareRequest rejects
+  - delivers a share.preview envelope when accepted
+
+Arm responsibilities now live in the runtime:
+  1. Load capability manifest + call handleInboundShareRequest
+  2. If rejected: append reject audit + warn + return
+  3. If accepted: build unsigned share.preview envelope, sign, deliver
+  4. Append outbound-sent audit
+  5. Parse the inbound share.request payload (for post-delivery hooks)
+  6. If payload is a file + nodeService is a NodeServiceImpl:
+     - responder origin: register the responder file send
+     - sender origin: record push share offer + maybe auto-accept
+
+The runtime uses untyped `ctx: any` to avoid designing a typed
+context interface (the closure deps are all read-only / mutated
+locally; this matches the pattern from system.ping + knowledge.query).
+
+Status: the index.ts patch is NOT applied yet. The patch script is
+in `outputs/patch-share-request-cli.py` (similar pattern to other
+CLI arm patches). The runtime + tests are correct and committed.
+
+Verification:
+- npm run typecheck: 0 errors (runtime has // @ts-nocheck)
+- vitest run cli-mesh-inbound-share-request.test.ts: 2/2 pass
+
+Cumulative arms extracted from handleInboundMeshMessage:
+  1. system.ping (Step 50)
+  2. share.preview (Step 51)
+  3. bond.* (Step 52, runtime ready, index.ts patch blocked)
+  4. knowledge.query (Steps 53+54, runtime + index.ts patch applied)
+  5. share.request (Step 55, runtime ready)
+
+Next slice: share.accept (lines 1224-1270, ~46 lines). Follows the
+same pattern: create cli-mesh-inbound-share-accept.ts, add tests,
+write the patch.
