@@ -1,0 +1,39 @@
+fix(envoygo): fix broken bidirectional sync (Issue 1) and memory leak (Issue 2)
+
+The previous commit ("bidirectional sync") used
+`nodeServiceProvider.whenValueAvailable()` — but this is NOT a
+Riverpod method. It would throw `NoSuchMethodError` at runtime when
+the settings screens opened. Even if it had worked, the listener
+was never removed, leaking memory and causing phantom re-loads.
+
+This commit fixes both issues with a real Riverpod pattern:
+
+  - In initState, use `ref.listenManual<NodeServiceClient?>(...)` to
+    react to the nodeServiceProvider value. The callback fires
+    immediately with the current client (if any) and re-fires when
+    the client changes (e.g., user pairs while the settings screen
+    is open).
+  - When the client becomes available, attach the
+    `home:config-updated` listener. The HomeRemoteClient.on() method
+    returns an unsubscribe function which we store in `_configUnsub`.
+  - In dispose, call `_configUnsub?.call()` to remove the listener,
+    then `_clientSub?.close()` to tear down the Riverpod
+    subscription, then the existing controller disposes. No more
+    memory leak; no more phantom re-loads.
+
+Files touched:
+  - apps/envoygo/lib/screens/settings/ai_model_settings_screen.dart
+  - apps/envoygo/lib/screens/settings/ai_engine_settings_screen.dart
+  - The new `_clientSub` and `_configUnsub` fields are marked
+    `// ignore: unused_field` because the analyzer may flag them
+    as unread fields (they're used via callbacks).
+
+The home node's `home:config-updated` emit (added in the previous
+commit) stays the same. The full flow now works:
+  1. User edits a setting on EnvoyGo → screen calls
+     `updateModelProviders` or `updateAiEngineSettings` →
+     home node persists + emits `home:config-updated`.
+  2. Screen's listener (if still open) fires → calls `_load()` →
+     screen refreshes.
+  3. Same when a different client (Social UI, another mobile) edits
+     the home node — the event propagates to all subscribed clients.

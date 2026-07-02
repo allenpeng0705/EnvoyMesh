@@ -52,6 +52,14 @@ class _AiModelSettingsScreenState
   bool _obscureApiKey = true;
   bool _saving = false;
   bool _loaded = false;
+  // Bidirectional sync — handles the subscription so we can tear it
+  // down on dispose. The Riverpod Provider is a synchronous lookup
+  // (no Future/Stream), so we use listenManual to react to client
+  // changes (e.g. user pairs/disconnects while the screen is open).
+  // ignore: unused_field
+  ProviderSubscription<NodeServiceClient?>? _clientSub;
+  // ignore: unused_field
+  void Function()? _configUnsub;
 
   @override
   void initState() {
@@ -60,12 +68,22 @@ class _AiModelSettingsScreenState
     _modelNameCtl = TextEditingController();
     _apiKeyCtl = TextEditingController();
     // Bidirectional sync: re-load when the home node's config changes
-    // (e.g. via the Social UI or another mobile device).
-    nodeServiceProvider
-        .whenValueAvailable()
-        .then((c) => c?.on("home:config-updated", (_) {
-              if (mounted) _loadCurrent();
-            }));
+    // (e.g. via the Social UI or another mobile device). We use
+    // ref.listenManual to react to client changes (not a Future),
+    // and we tear down the listener in dispose() to avoid leaks.
+    _clientSub = ref.listenManual<NodeServiceClient?>(
+      nodeServiceProvider,
+      (prev, next) {
+        _configUnsub?.call();
+        _configUnsub = null;
+        if (next != null) {
+          _configUnsub = next.on('home:config-updated', (_) {
+            if (mounted) _loadCurrent();
+          });
+        }
+      },
+      fireImmediately: true,
+    );
     _loadCurrent();
   }
 
@@ -98,6 +116,10 @@ class _AiModelSettingsScreenState
 
   @override
   void dispose() {
+    _configUnsub?.call();
+    _configUnsub = null;
+    _clientSub?.close();
+    _clientSub = null;
     _endpointCtl.dispose();
     _modelNameCtl.dispose();
     _apiKeyCtl.dispose();

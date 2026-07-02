@@ -32,17 +32,28 @@ class _AiEngineSettingsScreenState
   bool _bridgeEnabled = false;
   bool _openclawEnabled = true;
   bool _saving = false;
+  // Bidirectional sync — see comment in ai_model_settings_screen.
+  // ignore: unused_field
+  ProviderSubscription<NodeServiceClient?>? _clientSub;
+  // ignore: unused_field
+  void Function()? _configUnsub;
 
   @override
   void initState() {
     super.initState();
-    // Bidirectional sync: re-load when the home node's config changes
-    // (e.g. via the Social UI or another mobile device).
-    nodeServiceProvider
-        .whenValueAvailable()
-        .then((c) => c?.on("home:config-updated", (_) {
-              if (mounted) _load();
-            }));
+    _clientSub = ref.listenManual<NodeServiceClient?>(
+      nodeServiceProvider,
+      (prev, next) {
+        _configUnsub?.call();
+        _configUnsub = null;
+        if (next != null) {
+          _configUnsub = next.on('home:config-updated', (_) {
+            if (mounted) _load();
+          });
+        }
+      },
+      fireImmediately: true,
+    );
     _load();
   }
 
@@ -277,5 +288,14 @@ class _ErrorView extends StatelessWidget {
         ],
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _configUnsub?.call();
+    _configUnsub = null;
+    _clientSub?.close();
+    _clientSub = null;
+    super.dispose();
   }
 }
