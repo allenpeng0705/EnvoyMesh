@@ -1,0 +1,16 @@
+fix(envoygo): use nodeServiceProvider in external_agents_settings_screen.dart
+
+Xcode build error:
+  lib/screens/settings/external_agents_settings_screen.dart:45:43:
+    Error: The getter 'nodeServiceClient' isn't defined for the
+    type 'NodeState'.
+
+The screen used `ref.read(nodeProvider).nodeServiceClient`, but
+`NodeState` doesn't expose `nodeServiceClient`. The correct
+provider is `nodeServiceProvider` from
+`lib/providers/contact_provider.dart` (which returns the
+`NodeServiceClient?`). The AI Model screen was already using it
+correctly — I copied the wrong reference for the External Agents
+screen.
+
+Fix: swap the import + swap both usages (2 in the file).

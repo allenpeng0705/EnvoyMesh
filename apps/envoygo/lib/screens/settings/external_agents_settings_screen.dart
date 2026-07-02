@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../../providers/node_provider.dart';
+import '../../providers/contact_provider.dart' show nodeServiceProvider;
 import '../../services/node_service_client.dart';
 
 /// External Agents settings — Phase EnvoyGo settings (slice 2).
@@ -42,7 +42,7 @@ class _ExternalAgentsSettingsScreenState
       _loading = true;
       _error = null;
     });
-    final client = ref.read(nodeProvider).nodeServiceClient;
+    final client = ref.read(nodeServiceProvider);
     if (client == null) {
       setState(() {
         _loading = false;
@@ -90,7 +90,7 @@ class _ExternalAgentsSettingsScreenState
     );
     if (confirm != true) return;
 
-    final client = ref.read(nodeProvider).nodeServiceClient;
+    final client = ref.read(nodeServiceProvider);
     if (client == null) return;
     final err = await client.revokeExternalAgent(agentId);
     if (!mounted) return;
