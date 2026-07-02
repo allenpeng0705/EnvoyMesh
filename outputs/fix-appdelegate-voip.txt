@@ -1,0 +1,18 @@
+fix(envoygo): reference VoipChannelKey via AppDelegate. prefix
+
+Swift compiler error:
+  Static member 'VoipChannelKey' cannot be used on instance of type
+  'AppDelegate'
+  apps/envoygo/ios/Runner/AppDelegate.swift:151:7
+
+`VoipChannelKey` is declared `private static var VoipChannelKey:
+UInt8 = 0` (line 173). In Swift, static members are accessed via the
+type name (`AppDelegate.VoipChannelKey`), not as a bare
+identifier. The other two call sites (lines 190, 245) already use
+the correct `&AppDelegate.VoipChannelKey` form. The third call
+site (line 151, inside `registerVoipPushRegistry`) was the
+inconsistent one.
+
+Fix: prepend `AppDelegate.` to the single inconsistent reference.
+
+Verified by reading the file: all three call sites now match.
