@@ -1,0 +1,29 @@
+feat(envoygo): bidirectional sync between mobile settings and home node
+
+The user wanted the home node's settings (AI Model + AI Engine
+toggles) to flow both ways:
+  - Mobile → home node (already worked: updateModelProviders +
+    updateAiEngineSettings call updateNodeConfig)
+  - Home node → mobile (broken: changes made via the Social UI or
+    another mobile device did not show up on EnvoyGo)
+
+This commit adds the home-node → mobile direction.
+
+1. Home node: `updateNodeConfig` now emits a `home:config-updated`
+   event with the new config after the save. The event type was
+   already defined in `NodeServiceEvents` (line 1121 of
+   packages/api/src/node-service.ts) but never emitted.
+
+2. Mobile: the AI Model and AI Engine settings screens register a
+   listener in `initState` that calls `_loadCurrent` / `_load`
+   whenever the event fires. The screens now refresh in real time
+   when the home node's config changes from any source.
+
+3. Removed the duplicate AI Model tile that was rendering twice
+   in me_screen.dart (an older Settings section that the new
+   Phase EnvoyGo settings section superseded). One Settings section
+   remains, with one AI Model tile.
+
+Verification:
+- npm run typecheck: 0 errors (PersistedNodeConfig cast to NodeConfig
+  for the emit payload)

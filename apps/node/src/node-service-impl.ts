@@ -4456,7 +4456,13 @@ class NodeServiceImpl implements NodeService {
   }
 
   async updateNodeConfig(config: Partial<NodeConfig>): Promise<void> {
-    return updateNodeConfigViaRuntime(this._nodeConfigContext(), config);
+    await updateNodeConfigViaRuntime(this._nodeConfigContext(), config);
+    // Bidirectional sync: notify subscribers (mobile, Social UI,
+    // another EnvoyGo device) that the node config changed so they
+    // can re-render.
+    this.emit("home:config-updated", {
+      config: (await this._configStore.load())! as unknown as NodeConfig,
+    });
   }
 
 

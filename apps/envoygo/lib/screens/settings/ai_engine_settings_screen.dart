@@ -36,6 +36,13 @@ class _AiEngineSettingsScreenState
   @override
   void initState() {
     super.initState();
+    // Bidirectional sync: re-load when the home node's config changes
+    // (e.g. via the Social UI or another mobile device).
+    nodeServiceProvider
+        .whenValueAvailable()
+        .then((c) => c?.on("home:config-updated", (_) {
+              if (mounted) _load();
+            }));
     _load();
   }
 
