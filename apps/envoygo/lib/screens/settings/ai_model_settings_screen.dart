@@ -49,7 +49,6 @@ class _AiModelSettingsScreenState
   late TextEditingController _modelNameCtl;
   late TextEditingController _apiKeyCtl;
   String _mode = 'mock';
-  bool _requireApproval = true;
   bool _obscureApiKey = true;
   bool _saving = false;
   bool _loaded = false;
@@ -77,17 +76,12 @@ class _AiModelSettingsScreenState
       final endpoint = (mp['endpoint'] as String?) ?? '';
       final modelName = (mp['modelName'] as String?) ?? '';
       final apiKey = (mp['apiKey'] as String?) ?? '';
-      final requireApproval =
-          mp['requireApprovalForCloud'] is bool
-              ? mp['requireApprovalForCloud'] as bool
-              : true;
       if (!mounted) return;
       setState(() {
         _mode = mode;
         _endpointCtl.text = endpoint;
         _modelNameCtl.text = modelName;
         _apiKeyCtl.text = apiKey;
-        _requireApproval = requireApproval;
         _loaded = true;
       });
     } catch (_) {
@@ -116,7 +110,6 @@ class _AiModelSettingsScreenState
         if (_modelNameCtl.text.trim().isNotEmpty)
           'modelName': _modelNameCtl.text.trim(),
         if (_apiKeyCtl.text.isNotEmpty) 'apiKey': _apiKeyCtl.text,
-        'requireApprovalForCloud': _requireApproval,
       };
       final ok = await client.updateModelProviders(patch);
       if (!mounted) return;
@@ -210,16 +203,6 @@ class _AiModelSettingsScreenState
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  SwitchListTile(
-                    title: const Text('Require approval for cloud'),
-                    subtitle: const Text(
-                      'Cloud providers ask the owner before each request',
-                    ),
-                    value: _requireApproval,
-                    onChanged: (v) =>
-                        setState(() => _requireApproval = v ?? true),
                   ),
                   const SizedBox(height: 24),
                   FilledButton.icon(
