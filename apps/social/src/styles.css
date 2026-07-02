@@ -5306,6 +5306,33 @@ button:disabled {
   border-radius: 9999px;
   padding: 0.125rem;
   overflow: visible;
+  /* Don't let the parent flex container compress the switch when
+     the chat header is tight on space (e.g. long group name + multiple
+     header buttons) — that was clipping the AI / manual / assistant
+     icons off the right edge. */
+  flex-shrink: 0;
+  flex: 0 0 auto;
+}
+
+/* The right side of the chat header (manage / add / leave buttons + the
+   assistant switch) also needs to be flexible enough to wrap on tight
+   viewports but not so flexible that the switch gets pushed off the
+   right edge. */
+.chat-header-right {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  max-width: 100%;
+}
+
+/* When the header has to fit both a long group name AND the action
+   cluster, prefer to ellipsize the chat name over clipping the actions. */
+.chat-header-left {
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .assistant-switch-btn {

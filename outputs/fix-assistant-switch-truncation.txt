@@ -1,0 +1,31 @@
+fix(social): prevent assistant-switch from being clipped by right edge
+
+The top-right "AI / manual / assistant" mode switch in the chat
+header (group + 1:1) was being clipped by the right edge when:
+  - The chat/group name is long, AND
+  - The user has multiple header buttons (manage / add / leave)
+
+Root cause: `.assistant-switch` (the pill containing the AI label
++ two mode buttons) had no `flex-shrink: 0`, so the parent
+`justify-content: space-between` flex container compressed it when
+the left side grew. Additionally, `.chat-header-right` was never
+defined as a class — the right side had no flex layout at all, so
+buttons were stacking with default block flow and overflowing.
+
+Fix (apps/social/src/styles.css):
+  - `.assistant-switch` — add `flex-shrink: 0; flex: 0 0 auto;` so
+    the switch never gets compressed
+  - `.chat-header-right` (NEW) — add `display: flex; gap; flex-shrink: 0;
+    flex-wrap: wrap; justify-content: flex-end; max-width: 100%;` so
+    the action cluster lays out correctly and wraps on tight viewports
+  - `.chat-header-left` (NEW) — add `min-width: 0; flex: 1 1 auto;`
+    so the LEFT side is the one that shrinks first (the chat name
+    will ellipsize rather than the actions getting clipped)
+
+Verified:
+- npx tsc --noEmit -p apps/social/tsconfig.json: 0 errors
+- The same `.assistant-switch` class is used in
+  GroupChatPanel.tsx and ContactChatPanel.tsx — both benefit
+  from this single CSS change
+
+No JSX changes. No behavioral changes. Pure CSS fix.
