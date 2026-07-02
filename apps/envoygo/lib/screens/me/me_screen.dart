@@ -2,8 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../settings/ai_engine_settings_screen.dart';
 import '../settings/ai_model_settings_screen.dart';
-import '../settings/external_agents_settings_screen.dart';
 import '../../models/stored_node.dart';
 import '../../providers/node_provider.dart';
 import '../../widgets/ai_engine_section.dart';
@@ -220,12 +220,28 @@ class MeScreen extends ConsumerWidget {
         ],
         const SizedBox(height: 16),
 
-        // AI Engine (Phase 32 — read-only mirror of home node state).
-        // (Note: the "Agent Network" tab on the home node is for onboarding
-        // other nodes — pairing, fleet manifest, company invites — not the
-        // AI engine. This is the AI engine.)
+        // AI Engine (Phase 32 mirror + Phase EnvoyGo settings slice 2).
+        // Tapping the section navigates to the AI Engine settings screen
+        // (bridgeEnabled + openclawEnabled toggles).
         if (nodeState.activeNode != null) ...[
           const _SectionHeader(title: 'AI Engine'),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.psychology),
+              title: const Text('AI Engine'),
+              subtitle: const Text(
+                'Bridge + OpenClaw toggles. Tap to configure.',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const AiEngineSettingsScreen(),
+                  ),
+                );
+              },
+            ),
+          ),
           const AiEngineSection(),
           const SizedBox(height: 16),
         ],
@@ -252,13 +268,6 @@ class MeScreen extends ConsumerWidget {
               },
             ),
           ),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.extension_outlined),
-              title: const Text('External Agents'),
-              subtitle: const Text(
-                'Manage authorized OpenClaw / HomeClaw instances',
-              ),
               trailing: const Icon(Icons.chevron_right),
               onTap: () {
                 Navigator.of(context).push(
@@ -366,25 +375,6 @@ class MeScreen extends ConsumerWidget {
                     ),
                   ),
                 ),
-                ListTile(
-                  leading: const Icon(Icons.shield_moon_outlined),
-                  title: const Text('External Agents'),
-                  subtitle: const Text(
-                    'OpenClaw / HomeClaw instances authorized to call local tools',
-                  ),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) =>
-                          const ExternalAgentsSettingsScreen(),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-        ],
 
         // Theme
         const _SectionHeader(title: 'Preferences'),

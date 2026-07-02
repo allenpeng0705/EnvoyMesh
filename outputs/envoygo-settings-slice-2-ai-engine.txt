@@ -1,0 +1,56 @@
+feat(envoygo): Phase EnvoyGo settings slice 2 — AI Engine (replaces External Agents)
+
+The user clarified: the "External Agents" tile I built earlier
+(wire up `listExternalAgents` / `revokeExternalAgent` for the home
+node's ExternalAgentGateway) wasn't the intended feature. What they
+wanted was the home node's **AI Engine** settings — the
+`bridgeEnabled` + `openclawEnabled` toggles in the NodeConfig,
+mirrored in the Social UI's `SettingsAITab` and now exposed on
+EnvoyGo.
+
+This commit:
+  1. Reverts the Phase EnvoyGo slice 2 from commit 3967a76a —
+     removes the ExternalAgentGateway wiring, the
+     `listExternalAgents` / `revokeExternalAgent` RPCs, and the
+     `ExternalAgentConfig` / `ListExternalAgentsParams/Result` /
+     `RevokeExternalAgentParams/Result` types. Cleans up all 4
+     files: `packages/api/src/ws-protocol.ts`,
+     `packages/api/src/node-service.ts`,
+     `apps/node/src/node-service-impl.ts`,
+     `apps/node/src/json-rpc-router.ts`. The
+     `apps/envoygo/lib/screens/settings/external_agents_settings_screen.dart`
+     file is deleted.
+  2. Adds the **AI Engine** settings screen
+     (`apps/envoygo/lib/screens/settings/ai_engine_settings_screen.dart`):
+     - Status card at the top showing OpenClaw running/state (URL,
+       port, child PID). Pulled via the existing `getOpenClawStatus`
+       RPC, which the home node already supports.
+     - Two SwitchListTiles: **Bridge enabled** (assistant bridge
+       active) and **OpenClaw enabled** (built-in OpenClaw gateway
+       spawned on next node start). Both write through the existing
+       `updateNodeConfig` RPC, sending a partial `{ bridgeEnabled,
+       openclawEnabled }` patch.
+     - Save button shows a snackbar + reloads so the status card
+       reflects any change.
+  3. Adds `updateAiEngineSettings({ bridgeEnabled, openclawEnabled })`
+     to `NodeServiceClient` (slim wrapper over `updateNodeConfig`).
+  4. Updates `me_screen.dart`: the existing AI Engine section
+     (lines 222-229, a read-only mirror via `AiEngineSection`) is
+     now a tappable Card that pushes the new settings screen on
+     tap. The External Agents tile previously added to the Settings
+     section is removed. Import for the new screen added.
+
+Verification:
+- npm run typecheck: 0 errors
+- API package rebuilt cleanly with the reverted types
+
+Cumulative Phase EnvoyGo settings:
+  - slice 1: AI Model settings (configures the LLM provider for
+    EnvoyAI / assistant turns)
+  - slice 2: AI Engine settings (this commit — toggles the
+    bridge + OpenClaw gateway on/off)
+
+The future user will need to rebuild the iOS app for the new
+screen to appear. The addressable name is
+`AiEngineSettingsScreen`; the route is from the AI Engine section
+of the Me screen.

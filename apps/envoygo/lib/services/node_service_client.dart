@@ -133,27 +133,6 @@ class NodeServiceClient {
     return result['ok'] == true;
   }
 
-  // -- External agents (Phase EnvoyGo settings slice 2) --
-  /// List all external agents authorized to call local tools
-  /// (OpenClaw, HomeClaw, etc.).
-  Future<List<Map<String, dynamic>>> listExternalAgents() async {
-    final result = await _client.call('listExternalAgents');
-    final map = result as Map<String, dynamic>;
-    final agents = (map['agents'] as List<dynamic>?) ?? const [];
-    return agents.cast<Map<String, dynamic>>();
-  }
-
-  /// Revoke an external agent's authorization.
-  /// Returns null on success, or an error message.
-  Future<String?> revokeExternalAgent(String agentId) async {
-    try {
-      await _client.call('revokeExternalAgent', {'agentId': agentId});
-      return null;
-    } catch (e) {
-      return e.toString();
-    }
-  }
-
   // -- Contacts & bonds --
 
   Future<List<Contact>> getBonds() async {
@@ -294,6 +273,24 @@ class NodeServiceClient {
   Future<Map<String, dynamic>> getOpenClawStatus() async {
     return await _client.call('getOpenClawStatus')
         as Map<String, dynamic>;
+  }
+
+  /// Update the AI Engine toggles on the home node. Mirrors the
+  /// Social UI's "AI Engine" section in the home node's
+  /// SettingsAITab.
+  /// [bridgeEnabled] — whether the assistant bridge is active.
+  /// [openclawEnabled] — whether the built-in OpenClaw gateway is
+  /// spawned on next node start.
+  Future<bool> updateAiEngineSettings({
+    bool? bridgeEnabled,
+    bool? openclawEnabled,
+  }) async {
+    final patch = <String, dynamic>{};
+    if (bridgeEnabled != null) patch['bridgeEnabled'] = bridgeEnabled;
+    if (openclawEnabled != null) patch['openclawEnabled'] = openclawEnabled;
+    if (patch.isEmpty) return true;
+    final result = await _client.call('updateNodeConfig', patch);
+    return (result as Map<String, dynamic>)['ok'] == true;
   }
 
   // -- Terminals --

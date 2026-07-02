@@ -247,7 +247,7 @@ export type RpcMethods =
   | "startNode"
   | "stopNode"
   // P2P relay — forward a pre-signed envelope from a remote client
-  | "listExternalAgents" | "revokeExternalAgent" | "forwardEnvelope"
+  | "forwardEnvelope"
   /** HTTP proxy from mobile Companion to HomeClaw Core on the home LAN (SSR-safe paths only). */
   | "homeclawCoreProxy"
   // HomeClaw Core WebSocket tunnel
@@ -1842,39 +1842,4 @@ export interface ChainReportReceivedEvent {
   workerCount?: number;
   synthesisCostUsd?: number;
   createdAt?: string;
-}
-
-/* ---- Phase EnvoyGo settings (slice 2): External Agents ----
- * Mirror the in-process `ExternalAgentSession` from
- * `apps/node/src/external-agent-gateway.ts`. Keep these in sync. */
-export type ExternalAgentCapability =
-    | "find_knowledge"
-    | "find_contact"
-    | "send_message"
-    | "get_owner_profile"
-    | "query_graph"
-    | "list_sessions"
-    | "get_escalation_status";
-export interface ExternalAgentConfig {
-    agentId: string;
-    agentPeerId: string;
-    agentName: string;
-    authorizedBy: string;
-    capabilities: ExternalAgentCapability[];
-    createdAt: string;
-    lastActivityAt: string;
-    isRevoked: boolean;
-    revokedAt?: string;
-}
-export interface ListExternalAgentsParams {}
-export interface ListExternalAgentsResult {
-    agents: ExternalAgentConfig[];
-}
-export interface RevokeExternalAgentParams {
-    agentId: string;
-}
-export interface RevokeExternalAgentResult {
-    ok: boolean;
-    agentId: string;
-    alreadyRevoked: boolean;
 }
