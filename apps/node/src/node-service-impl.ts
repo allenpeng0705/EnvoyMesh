@@ -356,6 +356,14 @@ import { buildServiceContextDeps, deriveRelayWsUrl } from "./node-service-impl-s
 import { createTaskDispatcher } from "./task-dispatcher.js";
 import { CallManager } from "./call-manager.js";
 import { pushNotificationService } from "./push-notification.js";
+import { ExternalAgentGateway } from "./external-agent-gateway.js";
+import type {
+  ListExternalAgentsParams,
+  ListExternalAgentsResult,
+  RevokeExternalAgentParams,
+  RevokeExternalAgentResult,
+} from "@envoymesh/api";
+
 import {
   parseTerminalAssistantCorrelationId,
   stripTerminalAssistantCorrelationPrefix,
@@ -1224,6 +1232,7 @@ class NodeServiceImpl implements NodeService {
   private readonly _capabilityProviderJobStore: CapabilityProviderJobStore | null;
   private readonly _circleStore: AgentCircleStore | null;
   private _approvalQueue: ApprovalQueue | null = null;
+  private readonly _externalAgentGateway = new ExternalAgentGateway();
 
   /** Best-effort last failure for {@link getConnectionStatus} (cleared on successful {@link startNode}). */
   private _lastNodeError?: string;
@@ -2429,6 +2438,21 @@ class NodeServiceImpl implements NodeService {
       ensureAgentIdentity: () => this._ensureAgentIdentity(),
       getNodeConfig: () => this.getNodeConfig(),
       getTrustRecord: (ownerId) => this._trustStore.getTrustRecord(ownerId),
+    };
+  }
+
+  async listExternalAgents(_params?: ListExternalAgentsParams): Promise<ListExternalAgentsResult> {
+    const sessions = this._externalAgentGateway.listAgents(true);
+    return { agents: sessions };
+  }
+
+  async revokeExternalAgent(params: RevokeExternalAgentParams): Promise<RevokeExternalAgentResult> {
+    const alreadyRevoked = !this._externalAgentGateway.getAgent(params.agentId);
+    const revoked = this._externalAgentGateway.revokeAgent(params.agentId);
+    return {
+      ok: revoked,
+      agentId: params.agentId,
+      alreadyRevoked,
     };
   }
 

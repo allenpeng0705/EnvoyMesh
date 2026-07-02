@@ -1,0 +1,56 @@
+feat(envoygo): Phase EnvoyGo settings (slice 2) — External Agents
+
+Completes Phase EnvoyGo settings by adding the External Agents
+settings screen + the protocol + runtime wiring to manage
+authorized OpenClaw / HomeClaw instances.
+
+The Me screen now has a Settings section (only when paired) with
+two tiles: AI Model (slice 1) and External Agents (slice 2).
+
+What's new:
+
+Protocol (packages/api/src/ws-protocol.ts):
+  - ExternalAgentCapability union (find_knowledge | find_contact |
+    send_message | get_owner_profile | query_graph | list_sessions |
+    get_escalation_status)
+  - ExternalAgentConfig (agentId / agentPeerId / agentName /
+    authorizedBy / capabilities[] / createdAt / lastActivityAt /
+    isRevoked / revokedAt?)
+  - ListExternalAgentsParams / ListExternalAgentsResult
+  - RevokeExternalAgentParams / RevokeExternalAgentResult
+  - RpcMethods union extended with "listExternalAgents" +
+    "revokeExternalAgent"
+
+Node-side (apps/node/src/):
+  - NodeServiceImpl: instantiates ExternalAgentGateway as
+    `_externalAgentGateway`; adds `listExternalAgents()` and
+    `revokeExternalAgent(agentId)` public methods (1-line delegations
+    to the gateway).
+  - json-rpc-router.ts: dispatches both new methods.
+  - packages/api/src/node-service.ts: interface extended with both
+    method signatures + the 4 new types imported from ws-protocol.
+
+Mobile-side (apps/envoygo/lib/):
+  - services/node_service_client.dart: `listExternalAgents()` and
+    `revokeExternalAgent(agentId)` client methods.
+  - screens/settings/external_agents_settings_screen.dart: full
+    list + revoke UI. Shows agent name + agentId, capability chips,
+    authorized-by + created/last-activity timestamps, a "Revoked"
+    pill if isRevoked=true, and a red Revoke button (with confirm
+    dialog) for active agents. Pull-to-refresh + retry on error.
+  - screens/me/me_screen.dart: Settings section with 2 tiles (only
+    when paired), each pushing the corresponding screen.
+
+Verification:
+- npm run typecheck: 0 errors
+- The flutter build can't be verified in this environment (the
+  flutter SDK at /Users/shileipeng/Documents/flutter has a
+  permission error on engine.stamp — see commit fix(envoygo): pin
+  record_linux 1.3.x to fix Xcode build). The user will verify on
+  the next build.
+
+Cumulative Phase EnvoyGo settings:
+  - slice 1 (commit 5bb7e08): AI model settings screen
+  - slice 2 (this commit): External Agents settings screen
+  - both reachable from the Me screen → Settings section, only when
+    paired (nodeState.activeNode != null).

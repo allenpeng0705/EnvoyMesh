@@ -346,6 +346,46 @@ class MeScreen extends ConsumerWidget {
           const SizedBox(height: 16),
         ],
 
+        // Phase EnvoyGo settings — slice 1+2 (only when paired).
+        if (nodeState.activeNode != null) ...[
+          const _SectionHeader(title: 'Settings'),
+          Card(
+            child: Column(
+              children: [
+                ListTile(
+                  leading: const Icon(Icons.smart_toy_outlined),
+                  title: const Text('AI Model'),
+                  subtitle: Text(
+                    'Provider ${nodeState.activeNode!.name} uses for the assistant',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const AiModelSettingsScreen(),
+                    ),
+                  ),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.shield_moon_outlined),
+                  title: const Text('External Agents'),
+                  subtitle: const Text(
+                    'OpenClaw / HomeClaw instances authorized to call local tools',
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) =>
+                          const ExternalAgentsSettingsScreen(),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
+
         // Theme
         const _SectionHeader(title: 'Preferences'),
         Card(

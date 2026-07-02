@@ -112,6 +112,10 @@ import type {
   PruneRevokedDevicesResult,
   ListDeviceRevocationsResult,
   SendChatParams,
+  ListExternalAgentsParams,
+  ListExternalAgentsResult,
+  RevokeExternalAgentParams,
+  RevokeExternalAgentResult,
 } from "./ws-protocol.js";
 
 // ============================================
@@ -1425,6 +1429,12 @@ export interface NodeService {
   listAgentCards(): Promise<CachedAgentCardSummary[]>;
 
   getAgentCard(ownerId: string): Promise<CachedAgentCardSummary | undefined>;
+
+  /** Phase EnvoyGo settings (slice 2): list external agents authorized to call local tools. */
+  listExternalAgents(params?: ListExternalAgentsParams): Promise<ListExternalAgentsResult>;
+
+  /** Phase EnvoyGo settings (slice 2): revoke an external agent's authorization. */
+  revokeExternalAgent(params: RevokeExternalAgentParams): Promise<RevokeExternalAgentResult>;
 
   /** Send agent.card.request to a bonded peer (response cached on reply). */
   requestAgentCard(targetOwnerId: string): Promise<{ ok: boolean; error?: string }>;

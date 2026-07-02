@@ -422,6 +422,12 @@ export async function routeRpcMethod(
       return ns.getNodeConfig();
     case "updateNodeConfig":
       return ns.updateNodeConfig(params as any);
+    case "listExternalAgents":
+      return ns.listExternalAgents();
+    case "revokeExternalAgent":
+      return ns.revokeExternalAgent(
+        params as unknown as import("@envoymesh/api").RevokeExternalAgentParams,
+      );
     case "listRelays":
       return ns.listRelays();
     case "addRelay":

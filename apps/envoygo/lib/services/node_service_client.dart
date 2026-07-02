@@ -133,6 +133,27 @@ class NodeServiceClient {
     return result['ok'] == true;
   }
 
+  // -- External agents (Phase EnvoyGo settings slice 2) --
+  /// List all external agents authorized to call local tools
+  /// (OpenClaw, HomeClaw, etc.).
+  Future<List<Map<String, dynamic>>> listExternalAgents() async {
+    final result = await _client.call('listExternalAgents');
+    final map = result as Map<String, dynamic>;
+    final agents = (map['agents'] as List<dynamic>?) ?? const [];
+    return agents.cast<Map<String, dynamic>>();
+  }
+
+  /// Revoke an external agent's authorization.
+  /// Returns null on success, or an error message.
+  Future<String?> revokeExternalAgent(String agentId) async {
+    try {
+      await _client.call('revokeExternalAgent', {'agentId': agentId});
+      return null;
+    } catch (e) {
+      return e.toString();
+    }
+  }
+
   // -- Contacts & bonds --
 
   Future<List<Contact>> getBonds() async {
