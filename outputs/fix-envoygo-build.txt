@@ -1,0 +1,35 @@
+fix(envoygo): pin record_linux 1.3.x to fix Xcode build
+
+Xcode build was failing with:
+  record_linux-0.7.2/lib/record_linux.dart:12:7: Error: The non-abstract
+  class 'RecordLinux' is missing implementations for these members:
+   - RecordMethodChannelPlatformInterface.startStream
+  record_linux-0.7.2/lib/record_linux.dart:36:16: Error: The method
+  'RecordLinux.hasPermission' has fewer named arguments than those
+  of overridden method 'RecordMethodChannelPlatformInterface.hasPermission'.
+
+Root cause: `record_linux 0.7.2` (transitive dep of `record: ^5.1.2`
+in pubspec.yaml) was published BEFORE
+`record_platform_interface 1.6.0` added `startStream()` and the
+`hasPermission(request:)` named-arg. The pub cache had
+`record_linux 1.3.1` (which IS compatible with the 1.6.0 interface)
+but the lockfile resolved to 0.7.2.
+
+Fix:
+  - pubspec.yaml: add `dependency_overrides: record_linux: ^1.3.0`
+    so the next `pub get` resolves to a compatible version
+  - pubspec.lock: bump the locked version from 0.7.2 to 1.3.1
+    (with the correct SHA256 from the pub cache) so the build
+    works without forcing a re-fetch
+
+When the user next runs `flutter pub get` (or Xcode triggers it),
+the override will pull record_linux 1.3.x (which has startStream +
+the new hasPermission signature), and the build should succeed.
+
+NOTE: The local Flutter SDK at /Users/shileipeng/Documents/flutter
+has a separate issue — its `update_engine_version.sh` fails with
+"Operation not permitted" trying to write `engine.stamp`. This
+prevents `flutter pub get` from running in this environment. The
+lockfile edit above is the workaround; once the flutter cache
+permission is fixed, a real `flutter pub get` will verify the
+resolution.
