@@ -12,6 +12,7 @@
 import { createAuditEvent } from "@envoymesh/local-store";
 import { parseFriendMatchingPreferencesPayload } from "@envoymesh/protocol";
 import type { PersistedNodeConfig } from "./node-config-store.js";
+import { createDefaultPersistedNodeConfig } from "./node-config-store.js";
 import {
   ensureDefaultAutonomousPoliciesForModel,
   resolveEnableMdns,
@@ -22,6 +23,7 @@ import { normalizeIpfsExportEngineSelection } from "./ipfs-export-router.js";
 import type {
   ModelProviderConfig,
   NodeConfig,
+  ExtAgentDefinition,
 } from "@envoymesh/api";
 
 export interface NodeConfigContext {
@@ -39,6 +41,12 @@ export interface NodeConfigContext {
   loadBridgeConfigSkillApiKeys(): Promise<Record<string, string>>;
   /** Read the bridge web-search enabled flag (may be async). */
   loadBridgeConfigWebSearchEnabled(): Promise<boolean>;
+  /** External agent settings from bridge-config.json. */
+  loadBridgeExtAgentSettings(): Promise<{
+    activeExtAgentId?: string;
+    extAgents: ExtAgentDefinition[];
+    bridgeListenPort: number;
+  }>;
   /** Current node profile (or undefined) — needed for friend-matching validation. */
   getProfile(): { owner: { ownerId: string } } | undefined;
 }
@@ -68,6 +76,7 @@ export async function getNodeConfigViaRuntime(
 ): Promise<NodeConfig> {
   const config = await ctx.loadNodeConfig();
   const modelProviders = applyModelProviderEnvOverrides(config?.modelProviders);
+  const extAgentSettings = await ctx.loadBridgeExtAgentSettings();
 
   if (config) {
     return {
@@ -109,6 +118,9 @@ export async function getNodeConfigViaRuntime(
       relayPublicWsUrl: config.relayPublicWsUrl ?? ctx.getRelayPublicWsUrl() ?? undefined,
       bridgeEnabled: config.bridgeEnabled ?? true,
       openclawEnabled: config.openclawEnabled ?? true,
+      activeExtAgentId: extAgentSettings.activeExtAgentId,
+      extAgents: extAgentSettings.extAgents,
+      bridgeListenPort: extAgentSettings.bridgeListenPort,
       homeClawCoreBaseUrl: config.homeClawCoreBaseUrl,
       trustModeEnabled: config.trustModeEnabled ?? false,
       friendMatchingPreferencesText: config.friendMatchingPreferencesText,
@@ -175,6 +187,9 @@ export async function getNodeConfigViaRuntime(
       relayPublicWsUrl: ctx.getRelayPublicWsUrl() ?? undefined,
     bridgeEnabled: false,
     openclawEnabled: true,
+    activeExtAgentId: extAgentSettings.activeExtAgentId,
+    extAgents: extAgentSettings.extAgents,
+    bridgeListenPort: extAgentSettings.bridgeListenPort,
     homeClawCoreBaseUrl: undefined,
     trustModeEnabled: false,
     friendMatchingPreferencesText: undefined,
@@ -216,8 +231,23 @@ export async function updateNodeConfigViaRuntime(
     }
     validatedSigned = parsed;
   }
+
+  const existing = await ctx.loadNodeConfig();
+  const profileDir = ctx.getProfileDir();
+  const base = existing ?? createDefaultPersistedNodeConfig(profileDir);
+  const {
+    activeExtAgentId: _activeExtAgentId,
+    extAgents: _extAgents,
+    bridgeListenPort: _bridgeListenPort,
+    bridgeStatus: _bridgeStatus,
+    skillApiKeys: _skillApiKeys,
+    webSearchEnabled: _webSearchEnabled,
+    ...persistedPatch
+  } = config;
+
   await ctx.saveNodeConfig({
-    ...config,
+    ...base,
+    ...persistedPatch,
     friendMatchingPreferencesSigned: validatedSigned as never,
   } as never);
   // Best-effort audit event when the task store is wired (caller-side).

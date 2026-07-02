@@ -20,7 +20,7 @@ export const aiSettingsMessages = {
     provider: "Provider",
     webhook: "Webhook",
     model: "Model",
-    agentLabel: "Agent Label",
+    selectAgent: "External agent",
     webhookUrl: "Webhook URL",
     listenPort: "Listen Port",
     active: "Active",

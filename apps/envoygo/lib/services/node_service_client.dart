@@ -283,22 +283,26 @@ class NodeServiceClient {
         as Map<String, dynamic>;
   }
 
-  /// Update the AI Engine toggles on the home node. Mirrors the
-  /// Social UI's "AI Engine" section in the home node's
-  /// SettingsAITab.
-  /// [bridgeEnabled] — whether the assistant bridge is active.
-  /// [openclawEnabled] — whether the built-in OpenClaw gateway is
-  /// spawned on next node start.
+  /// Update AI Engine settings on the home node. Syncs with the Social UI
+  /// Settings → AI → AI Engine section via `updateNodeConfig`.
   Future<bool> updateAiEngineSettings({
     bool? bridgeEnabled,
     bool? openclawEnabled,
+    String? activeExtAgentId,
+    List<Map<String, dynamic>>? extAgents,
+    int? bridgeListenPort,
   }) async {
     final patch = <String, dynamic>{};
     if (bridgeEnabled != null) patch['bridgeEnabled'] = bridgeEnabled;
     if (openclawEnabled != null) patch['openclawEnabled'] = openclawEnabled;
+    if (activeExtAgentId != null) {
+      patch['activeExtAgentId'] = activeExtAgentId;
+    }
+    if (extAgents != null) patch['extAgents'] = extAgents;
+    if (bridgeListenPort != null) patch['bridgeListenPort'] = bridgeListenPort;
     if (patch.isEmpty) return true;
-    final result = await _client.call('updateNodeConfig', patch);
-    return (result as Map<String, dynamic>)['ok'] == true;
+    await _client.call('updateNodeConfig', patch);
+    return true;
   }
 
   // -- Terminals --

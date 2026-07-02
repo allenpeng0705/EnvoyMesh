@@ -195,6 +195,7 @@ export interface NodeConfigContextDeps {
   getRelayPublicWsUrl: NodeConfigContext["getRelayPublicWsUrl"];
   loadBridgeConfigSkillApiKeys: NodeConfigContext["loadBridgeConfigSkillApiKeys"];
   loadBridgeConfigWebSearchEnabled: NodeConfigContext["loadBridgeConfigWebSearchEnabled"];
+  loadBridgeExtAgentSettings: NodeConfigContext["loadBridgeExtAgentSettings"];
   getProfile: NodeConfigContext["getProfile"];
 }
 
@@ -708,6 +709,7 @@ export function buildNodeConfigContext(deps: NodeConfigContextDeps): NodeConfigC
     getRelayPublicWsUrl: () => deps.getRelayPublicWsUrl(),
     loadBridgeConfigSkillApiKeys: async () => (await deps.loadBridgeConfigSkillApiKeys()) ?? ({} as Record<string, string>),
     loadBridgeConfigWebSearchEnabled: async () => Boolean(await deps.loadBridgeConfigWebSearchEnabled()),
+    loadBridgeExtAgentSettings: () => deps.loadBridgeExtAgentSettings(),
     getProfile: () => deps.getProfile(),
   };
 }

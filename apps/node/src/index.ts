@@ -192,7 +192,7 @@ import { createBridge } from "./bridge/index.js";
 import { executeTool as runRegistryTool, listAgentTools } from "./tool-registry.js";
 import { loadBridgeIdentity, saveBridgeIdentity } from "./bridge/identity-store.js";
 import type { BridgeConfig } from "./bridge/config.js";
-import { BridgeConfigSchema, resolveAssistantAgentUrl } from "./bridge/config.js";
+import { BridgeConfigSchema, resolveAssistantAgentUrl, applyActiveExtAgent, bridgeConfigToStatusFields } from "./bridge/config.js";
 import {
   ExternalAgentGateway,
   createExternalAgentSession,
@@ -342,10 +342,10 @@ if (!bridgeIdentity) {
 let bridgeConfig: BridgeConfig = BridgeConfigSchema.parse({});
 try {
   const raw = await readFile(join(args.profileDir, "bridge-config.json"), "utf-8");
-  bridgeConfig = BridgeConfigSchema.parse(JSON.parse(raw));
-  console.log(`[bridge] loaded config: enabled=${bridgeConfig.enabled}`);
+  bridgeConfig = applyActiveExtAgent(BridgeConfigSchema.parse(JSON.parse(raw)));
+  console.log(`[bridge] loaded config: enabled=${bridgeConfig.enabled}, agent=${bridgeConfig.activeExtAgent ?? bridgeConfig.agentName}`);
 } catch {
-  // use defaults; disabled by default
+  bridgeConfig = applyActiveExtAgent(BridgeConfigSchema.parse({}));
 }
 // Merge UI toggle from persisted config — bridgeEnabled: true overrides bridge-config.json.
 // Default to false when no persisted config exists (D1C: built-in OpenClaw is the default agent;
@@ -3017,14 +3017,17 @@ if (nodeService instanceof NodeServiceImpl && bridgeHttpReady) {
   const assistantUrl = resolveAssistantAgentUrl(bridgeConfig);
   const agentType: "envoyai" | "external" =
     assistantUrl.includes("/webhook/envoymesh") ? "envoyai" : "external";
+  const bridgeFields = bridgeConfigToStatusFields(bridgeConfig);
   nodeService.setBridgeStatus({
     enabled: true,
     agentPeerId: bridge.agentPeerId,
-    agentUrl: bridgeConfig.agentUrl,
-    listenPort: bridgeConfig.listenPort,
-    agentName: bridgeConfig.agentName ?? "",
+    agentUrl: bridgeFields.agentUrl,
+    listenPort: bridgeFields.listenPort,
+    agentName: bridgeFields.agentName,
     agentPublicKeyPem: bridgeIdentity.agentPublicKeyPem,
     agentType,
+    activeExtAgentId: bridgeFields.activeExtAgentId,
+    extAgents: bridgeFields.extAgents,
   });
   // Register bridge agent as a virtual peer so sendChat can resolve it.
   // ownerId = bridge agent peer ID (lookup key for sendChat)

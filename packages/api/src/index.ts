@@ -19,6 +19,7 @@ export * from "./agent-visibility.js";
 export * from "./agent-activity-map.js";
 export * from "./agent-interaction.js";
 export * from "./agent-network-mode.js";
+export * from "./ext-agent.js";
 export * from "./approval-queue.js";
 export * from "./approval-executor.js";
 export * from "./task-dispatcher.js";

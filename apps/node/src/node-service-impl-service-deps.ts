@@ -14,6 +14,8 @@ import {
   loadBridgeConfigSkillApiKeys,
   loadBridgeConfigWebSearchEnabled,
 } from "./node-service-clawhub.js";
+import { loadBridgeConfigFromProfile } from "./bridge/bridge-config-store.js";
+import { bridgeConfigToStatusFields } from "./bridge/config.js";
 import {
   _broadcastProfileSyncToBonds,
   _loadHumanProfileForPhotoUpdate,
@@ -177,6 +179,24 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
             getRelayPublicWsUrl: () => host._relayPublicWsUrl ?? null,
             loadBridgeConfigSkillApiKeys: async () => (await loadBridgeConfigSkillApiKeys()) ?? ({} as Record<string, string>),
             loadBridgeConfigWebSearchEnabled: async () => Boolean(await loadBridgeConfigWebSearchEnabled()),
+            loadBridgeExtAgentSettings: async () => {
+              try {
+                const cfg = await loadBridgeConfigFromProfile(host._profileDir);
+                const fields = bridgeConfigToStatusFields(cfg);
+                return {
+                  activeExtAgentId: fields.activeExtAgentId,
+                  extAgents: fields.extAgents,
+                  bridgeListenPort: fields.listenPort,
+                };
+              } catch (err) {
+                console.warn("[node-config] loadBridgeExtAgentSettings failed:", err);
+                return {
+                  activeExtAgentId: "homeclaw",
+                  extAgents: [],
+                  bridgeListenPort: 3031,
+                };
+              }
+            },
             getProfile: () => host._profile,
           },
       capabilityDiscovery: {

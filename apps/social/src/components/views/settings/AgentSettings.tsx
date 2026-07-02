@@ -21,11 +21,14 @@
  * Built-in block, and makes the Ext Agent block actually persist.
  */
 
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useMemo } from "react";
 import { useT } from "../../../context/I18nContext.js";
 import {
   computeAiEngineMode,
+  DEFAULT_EXT_AGENTS,
+  mergeExtAgentPresets,
   type AiEngineMode,
+  type ExtAgentDefinition,
 } from "@envoymesh/api";
 
 interface EnvoyAIInfo {
@@ -45,12 +48,14 @@ interface ExtAgentConfig {
   name?: string;
   url?: string;
   listenPort?: number;
+  activeExtAgentId?: string;
+  extAgents?: ExtAgentDefinition[];
 }
 
 interface Props {
   envoyAI: EnvoyAIInfo;
   extAgent: ExtAgentConfig;
-  /** Persists the Ext Agent `enabled` flag (and other fields) to the home node. */
+  /** Persists Ext Agent settings to the home node (synced to mobile). */
   onExtAgentSave: (config: ExtAgentConfig) => Promise<void>;
 }
 
@@ -61,22 +66,93 @@ const MODE_LABEL_KEY: Record<AiEngineMode, string> = {
   "off": "settings.ai.aiEngine.modeOff",
 };
 
+function withMergedAgents(config: ExtAgentConfig): ExtAgentConfig {
+  const extAgents = mergeExtAgentPresets(config.extAgents);
+  const activeExtAgentId =
+    config.activeExtAgentId?.trim() ||
+    extAgents.find((a) => a.enabled)?.id ||
+    DEFAULT_EXT_AGENTS[0]?.id;
+  const active = extAgents.find((a) => a.id === activeExtAgentId) ?? extAgents[0];
+  return {
+    ...config,
+    extAgents,
+    activeExtAgentId: active?.id,
+    name: config.name ?? active?.name,
+    url: config.url ?? active?.url,
+  };
+}
+
 export function AgentSettings({ envoyAI, extAgent, onExtAgentSave }: Props) {
   const t = useT();
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState<ExtAgentConfig>(extAgent);
+  const [draft, setDraft] = useState<ExtAgentConfig>(() => withMergedAgents(extAgent));
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
 
-  useEffect(() => { setDraft(extAgent); }, [extAgent]);
+  useEffect(() => {
+    if (editing) return;
+    setDraft(withMergedAgents(extAgent));
+  }, [
+    editing,
+    extAgent.enabled,
+    extAgent.configured,
+    extAgent.name,
+    extAgent.url,
+    extAgent.listenPort,
+    extAgent.activeExtAgentId,
+    extAgent.extAgents,
+  ]);
+
+  const selectableAgents = useMemo(
+    () => mergeExtAgentPresets(draft.extAgents),
+    [draft.extAgents],
+  );
 
   const mode = computeAiEngineMode(extAgent.enabled, envoyAI.enabled);
 
+  const selectAgent = useCallback((agentId: string) => {
+    setDraft((prev) => {
+      const extAgents = mergeExtAgentPresets(prev.extAgents);
+      const selected = extAgents.find((a) => a.id === agentId);
+      if (!selected) return prev;
+      return {
+        ...prev,
+        extAgents,
+        activeExtAgentId: selected.id,
+        name: selected.name,
+        url: selected.url,
+      };
+    });
+  }, []);
+
+  const updateActiveAgentUrl = useCallback((url: string) => {
+    setDraft((prev) => {
+      const activeId = prev.activeExtAgentId;
+      const extAgents = mergeExtAgentPresets(prev.extAgents).map((agent) =>
+        agent.id === activeId ? { ...agent, url } : agent,
+      );
+      const active = extAgents.find((a) => a.id === activeId);
+      return {
+        ...prev,
+        extAgents,
+        url,
+        name: active?.name ?? prev.name,
+      };
+    });
+  }, []);
+
   const handleExtSave = useCallback(async () => {
     setSaving(true);
-    try { await onExtAgentSave(draft); setSaved(true); setTimeout(() => setSaved(false), 2000); }
-    catch (e) { console.error(e); }
-    finally { setSaving(false); setEditing(false); }
+    try {
+      await onExtAgentSave(withMergedAgents(draft));
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setSaving(false);
+      setEditing(false);
+    }
   }, [draft, onExtAgentSave]);
 
   // 3-state status badge for the built-in block.
@@ -90,6 +166,11 @@ export function AgentSettings({ envoyAI, extAgent, onExtAgentSave }: Props) {
     : envoyAI.running
       ? "status-on"
       : "status-warn";
+
+  const activeAgentLabel =
+    selectableAgents.find((a) => a.id === extAgent.activeExtAgentId)?.name ||
+    extAgent.name ||
+    "—";
 
   return (
     <div className="settings-agent">
@@ -134,8 +215,8 @@ export function AgentSettings({ envoyAI, extAgent, onExtAgentSave }: Props) {
         <div className="settings-section-header">
           <span className="settings-section-title">
             {t("settings.ai.aiEngine.extAgent")}
-            {extAgent.configured && extAgent.name ? (
-              <span className="settings-section-subtitle"> — {extAgent.name}</span>
+            {extAgent.configured && activeAgentLabel !== "—" ? (
+              <span className="settings-section-subtitle"> — {activeAgentLabel}</span>
             ) : (
               <span className="settings-section-subtitle dim"> — {t("settings.ai.aiEngine.notConfigured")}</span>
             )}
@@ -149,8 +230,8 @@ export function AgentSettings({ envoyAI, extAgent, onExtAgentSave }: Props) {
         {!editing ? (
           <>
             <div className="settings-field readonly">
-              <label>{t("settings.ai.aiEngine.agentLabel")}</label>
-              <input type="text" value={extAgent.name || "—"} readOnly disabled />
+              <label>{t("settings.ai.aiEngine.selectAgent")}</label>
+              <input type="text" value={activeAgentLabel} readOnly disabled />
             </div>
             <div className="settings-field readonly">
               <label>{t("settings.ai.aiEngine.webhookUrl")}</label>
@@ -160,28 +241,32 @@ export function AgentSettings({ envoyAI, extAgent, onExtAgentSave }: Props) {
               <label>{t("settings.ai.aiEngine.listenPort")}</label>
               <input type="text" value={extAgent.listenPort?.toString() || "3031"} readOnly disabled />
             </div>
-            <button className="btn btn-secondary" onClick={() => { setDraft(extAgent); setEditing(true); }}>
+            <button className="btn btn-secondary" onClick={() => { setDraft(withMergedAgents(extAgent)); setEditing(true); }}>
               {t("settings.ai.aiEngine.configure")}
             </button>
           </>
         ) : (
           <>
             <div className="settings-field">
-              <label>{t("settings.ai.aiEngine.agentLabel")}</label>
-              <input
-                type="text"
-                value={draft.name || ""}
-                onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-                placeholder="e.g. HomeClaw"
-              />
+              <label>{t("settings.ai.aiEngine.selectAgent")}</label>
+              <select
+                value={draft.activeExtAgentId ?? ""}
+                onChange={(e) => selectAgent(e.target.value)}
+              >
+                {selectableAgents.map((agent) => (
+                  <option key={agent.id} value={agent.id}>
+                    {agent.name}
+                  </option>
+                ))}
+              </select>
             </div>
             <div className="settings-field">
               <label>{t("settings.ai.aiEngine.webhookUrl")}</label>
               <input
                 type="text"
                 value={draft.url || ""}
-                onChange={(e) => setDraft({ ...draft, url: e.target.value })}
-                placeholder="http://host.docker.internal:18790/message"
+                onChange={(e) => updateActiveAgentUrl(e.target.value)}
+                placeholder="http://127.0.0.1:8010/message"
               />
             </div>
             <div className="settings-field">
@@ -189,7 +274,7 @@ export function AgentSettings({ envoyAI, extAgent, onExtAgentSave }: Props) {
               <input
                 type="number"
                 value={draft.listenPort ?? 3031}
-                onChange={(e) => setDraft({ ...draft, listenPort: parseInt(e.target.value) || 3031 })}
+                onChange={(e) => setDraft({ ...draft, listenPort: parseInt(e.target.value, 10) || 3031 })}
               />
             </div>
             <div className="settings-field checkbox">

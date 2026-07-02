@@ -1162,7 +1162,7 @@ export function SettingsAITab() {
   const nodeService = useNodeService();
   const { showToast } = useToast();
   const isMobileNode = useIsInProcessMobileNode();
-  const { nodeConfig, refreshNodeConfig } = useNodeState();
+  const { nodeConfig, refreshNodeConfig, bridgeStatus } = useNodeState();
   const aiSettings = nodeConfig?.aiSettings ?? defaultAiSettings();
   const documentAutonomy = normalizeDocumentAutonomyPolicy(aiSettings.documentAutonomy);
   const profileMedia = normalizeProfileMediaPolicy(aiSettings.profileMedia);
@@ -1294,44 +1294,70 @@ export function SettingsAITab() {
     url: string;
     childPid?: number;
   } | null>(null);
-  const [bridgeStatus, setBridgeStatus] = useState<{
-    enabled: boolean;
-    agentPeerId: string;
-    agentUrl: string;
-    listenPort: number;
-    agentName: string;
-    agentPublicKeyPem?: string;
-    agentType?: "envoyai" | "external";
-  } | null>(null);
 
-  const refreshAgentStatus = useCallback(async () => {
+  const refreshOpenClawStatus = useCallback(async () => {
     try {
-      const [oc, br] = await Promise.all([
-        nodeService.getOpenClawStatus(),
-        nodeService.getBridgeStatus(),
-      ]);
+      const oc = await nodeService.getOpenClawStatus();
       setOpenClawStatus({
         enabled: oc.enabled,
         running: oc.running,
         url: oc.url,
         childPid: oc.childPid,
       });
-      setBridgeStatus(br);
     } catch (e) {
-      console.warn("[SettingsAITab] failed to fetch agent status", e);
+      console.warn("[SettingsAITab] failed to fetch OpenClaw status", e);
     }
   }, [nodeService]);
 
-  useEffect(() => { void refreshAgentStatus(); }, [refreshAgentStatus]);
+  useEffect(() => { void refreshOpenClawStatus(); }, [refreshOpenClawStatus]);
 
-  // Refetch after any nodeConfig change so the live status reflects persisted state.
-  const lastConfigRef = useRef(nodeConfig);
+  // Refetch OpenClaw live status when persisted AI-engine flags change.
+  const lastEngineFlagsRef = useRef<string>("");
   useEffect(() => {
-    if (lastConfigRef.current !== nodeConfig) {
-      lastConfigRef.current = nodeConfig;
-      void refreshAgentStatus();
-    }
-  }, [nodeConfig, refreshAgentStatus]);
+    const key = `${nodeConfig?.bridgeEnabled ?? false}:${nodeConfig?.openclawEnabled ?? true}:${nodeConfig?.activeExtAgentId ?? ""}`;
+    if (lastEngineFlagsRef.current === key) return;
+    lastEngineFlagsRef.current = key;
+    void refreshOpenClawStatus();
+  }, [
+    nodeConfig?.bridgeEnabled,
+    nodeConfig?.openclawEnabled,
+    nodeConfig?.activeExtAgentId,
+    refreshOpenClawStatus,
+  ]);
+
+  const envoyAIInfo = useMemo(
+    () => ({
+      enabled: nodeConfig?.openclawEnabled ?? true,
+      running: openClawStatus?.running ?? false,
+      url: openClawStatus?.url ?? "",
+      childPid: openClawStatus?.childPid,
+    }),
+    [nodeConfig?.openclawEnabled, openClawStatus],
+  );
+
+  const extAgentConfig = useMemo(
+    () => ({
+      enabled: nodeConfig?.bridgeEnabled ?? false,
+      configured: Boolean(bridgeStatus?.agentPeerId),
+      name: bridgeStatus?.agentName ?? "",
+      url: bridgeStatus?.agentUrl ?? "",
+      listenPort: bridgeStatus?.listenPort ?? nodeConfig?.bridgeListenPort ?? 3031,
+      activeExtAgentId: bridgeStatus?.activeExtAgentId ?? nodeConfig?.activeExtAgentId,
+      extAgents: bridgeStatus?.extAgents ?? nodeConfig?.extAgents,
+    }),
+    [
+      nodeConfig?.bridgeEnabled,
+      nodeConfig?.activeExtAgentId,
+      nodeConfig?.extAgents,
+      nodeConfig?.bridgeListenPort,
+      bridgeStatus?.agentPeerId,
+      bridgeStatus?.agentName,
+      bridgeStatus?.agentUrl,
+      bridgeStatus?.listenPort,
+      bridgeStatus?.activeExtAgentId,
+      bridgeStatus?.extAgents,
+    ],
+  );
 
   const handleExtAgentSave = useCallback(async (next: {
     enabled: boolean;
@@ -1339,10 +1365,16 @@ export function SettingsAITab() {
     name?: string;
     url?: string;
     listenPort?: number;
+    activeExtAgentId?: string;
+    extAgents?: import("@envoymesh/api").ExtAgentDefinition[];
   }) => {
-    await updateNodeConfigPartial({ bridgeEnabled: next.enabled });
-    setTimeout(() => { void refreshAgentStatus(); }, 800);
-  }, [updateNodeConfigPartial, refreshAgentStatus]);
+    await updateNodeConfigPartial({
+      bridgeEnabled: next.enabled,
+      activeExtAgentId: next.activeExtAgentId,
+      extAgents: next.extAgents,
+      bridgeListenPort: next.listenPort,
+    });
+  }, [updateNodeConfigPartial]);
 
   // Phase 35C — LAN auto-bond lives in SettingsAgentNetworkTab. The settings
   // tab here is dedicated to AI behaviour (provider, rules, terminal assist,
@@ -1386,21 +1418,10 @@ export function SettingsAITab() {
       <section className="settings-section">
         <h4>{t("settings.ai.aiEngine.heading")}</h4>
         <p className="section-desc">{t("settings.ai.aiEngine.desc")}</p>
-        {openClawStatus && bridgeStatus ? (
+        {openClawStatus ? (
           <AgentSettings
-            envoyAI={{
-              enabled: nodeConfig?.openclawEnabled ?? true,
-              running: openClawStatus.running,
-              url: openClawStatus.url,
-              childPid: openClawStatus.childPid,
-            }}
-            extAgent={{
-              enabled: nodeConfig?.bridgeEnabled ?? false,
-              configured: Boolean(bridgeStatus.agentPeerId),
-              name: bridgeStatus.agentName,
-              url: bridgeStatus.agentUrl,
-              listenPort: bridgeStatus.listenPort,
-            }}
+            envoyAI={envoyAIInfo}
+            extAgent={extAgentConfig}
             onExtAgentSave={handleExtAgentSave}
           />
         ) : (

@@ -420,6 +420,12 @@ import { normalizeGatewayBaseUrl } from "./ipfs-gateway.js";
 import { createAgentShareProposalStore } from "./agent-share-proposal-store.js";
 import { PUBLISHED_LIB_CAPABILITY } from "./discovery-inbound.js";
 import { loadBridgeIdentity, saveBridgeIdentity } from "./bridge/identity-store.js";
+import {
+  applyExtAgentSettingsPatch,
+  extractExtAgentSettingsPatch,
+} from "./bridge/bridge-config-store.js";
+import { bridgeConfigToStatusFields } from "./bridge/config.js";
+import type { BridgeConfig } from "./bridge/config.js";
 import { forwardToAgent, receiveFromAgent } from "./bridge/index.js";
 import type { BridgeIdentity } from "./bridge/pipe.js";
 
@@ -4456,12 +4462,42 @@ class NodeServiceImpl implements NodeService {
   }
 
   async updateNodeConfig(config: Partial<NodeConfig>): Promise<void> {
-    await updateNodeConfigViaRuntime(this._nodeConfigContext(), config);
+    const { nodePatch, extPatch } = extractExtAgentSettingsPatch(
+      config as Record<string, unknown>,
+    );
+    const hasExtPatch = Object.keys(extPatch).length > 0;
+    const hasNodePatch = Object.keys(nodePatch).length > 0;
+
+    if (hasExtPatch) {
+      const bridgeCfg = await applyExtAgentSettingsPatch(this._profileDir, extPatch);
+      this._refreshBridgeStatusFromConfig(bridgeCfg);
+    }
+    if (hasNodePatch) {
+      await updateNodeConfigViaRuntime(this._nodeConfigContext(), nodePatch as Partial<NodeConfig>);
+    }
     // Bidirectional sync: notify subscribers (mobile, Social UI,
     // another EnvoyGo device) that the node config changed so they
     // can re-render.
-    this.emit("home:config-updated", {
-      config: (await this._configStore.load())! as unknown as NodeConfig,
+    try {
+      this.emit("home:config-updated", {
+        config: await this.getNodeConfig(),
+      });
+    } catch (err) {
+      console.warn("[node-service] home:config-updated emit failed:", err);
+    }
+  }
+
+  private _refreshBridgeStatusFromConfig(bridgeCfg: BridgeConfig): void {
+    const fields = bridgeConfigToStatusFields(bridgeCfg);
+    const current = this._bridgeStatus;
+    if (!current) return;
+    this.setBridgeStatus({
+      ...current,
+      agentUrl: fields.agentUrl,
+      agentName: fields.agentName,
+      listenPort: fields.listenPort,
+      activeExtAgentId: fields.activeExtAgentId,
+      extAgents: fields.extAgents,
     });
   }
 

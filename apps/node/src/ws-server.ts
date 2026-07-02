@@ -116,6 +116,9 @@ export class WsServer {
       nodeServiceImpl.on("node:ready", (data: unknown) => this.emitEvent("node:ready", data));
       nodeServiceImpl.on("node:offline", (data: unknown) => this.emitEvent("node:offline", data));
       nodeServiceImpl.on("bridge:status", (data: unknown) => this.emitEvent("bridge:status", data));
+      nodeServiceImpl.on("home:config-updated", (data: unknown) =>
+        this.emitEvent("home:config-updated", data),
+      );
       nodeServiceImpl.on("p2p:envelope", (data: unknown) => this.emitEvent("p2p:envelope", data));
       nodeServiceImpl.on("crdt:sync", (data: unknown) => this.emitEvent("crdt:sync", data));
       nodeServiceImpl.on("discovery:multihop-update", (data: unknown) =>

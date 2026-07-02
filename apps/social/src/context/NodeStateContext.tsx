@@ -229,9 +229,9 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
       if (profile) setHumanProfile(profile);
     }).catch(() => {});
 
-    // Bridge status
+    // Bridge status (always store — Settings needs ext-agent fields even when disabled)
     nodeService.getBridgeStatus().then((status) => {
-      if (status.enabled) setBridgeStatus(status);
+      setBridgeStatus(status);
     }).catch(() => {});
 
     // Paired diagnostics — MobileApp debug bar reads this.
@@ -256,7 +256,7 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
       }
       // Bridge status may have been set after initial load
       nodeService.getBridgeStatus().then((s) => {
-        if (s?.enabled) setBridgeStatus(s);
+        if (s) setBridgeStatus(s);
       }).catch(() => {});
       // Paired diagnostics may have changed alongside the status flip
       nodeService.getPairedDiagnostics?.().then((diag) => {
@@ -458,6 +458,14 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
       console.error("[NodeState] refreshNodeConfig failed:", e);
     }
   }, [nodeService]);
+
+  // Bidirectional sync — mobile / another client saved via updateNodeConfig.
+  useEffect(() => {
+    if (!wsTransportOpen) return;
+    return nodeService.on("home:config-updated", () => {
+      void refreshNodeConfig();
+    });
+  }, [nodeService, wsTransportOpen, refreshNodeConfig]);
 
   const refreshHumanProfile = useCallback(async () => {
     try {

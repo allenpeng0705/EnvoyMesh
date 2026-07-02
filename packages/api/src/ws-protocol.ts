@@ -29,6 +29,8 @@
 
 import type { DeviceProfile, DeviceRevocationReason, DeviceRevocationRecord, FriendMatchingPreferencesPayload } from "@envoymesh/protocol";
 import type { AgentVisibilityConfig, A2aChatNotificationMode } from "./agent-visibility.js";
+import type { ExtAgentDefinition } from "./ext-agent.js";
+export type { ExtAgentDefinition } from "./ext-agent.js";
 
 // ============================================
 // Message Types
@@ -457,6 +459,12 @@ export interface NodeConfig {
    * value is the source of truth — this comment describes the *new* default.
    */
   bridgeEnabled?: boolean;
+  /** Active external agent id — persisted in bridge-config.json. */
+  activeExtAgentId?: string;
+  /** External agent definitions — persisted in bridge-config.json. */
+  extAgents?: ExtAgentDefinition[];
+  /** Bridge HTTP listen port — persisted in bridge-config.json. */
+  bridgeListenPort?: number;
   /**
    * Whether the built-in OpenClaw agent (EnvoyAI) is enabled (toggle in Settings UI).
    * When false, the gateway child process is not spawned on next start and any running
@@ -599,6 +607,10 @@ export interface BridgeStatus {
   agentPublicKeyPem?: string;
   /** "envoyai" for the built-in OpenClaw assistant, "external" for a third-party HTTP agent. */
   agentType?: "envoyai" | "external";
+  /** Selected external agent id (homeclaw, hermes, openhuman, …). */
+  activeExtAgentId?: string;
+  /** Configured external agents (merged with built-in presets on read). */
+  extAgents?: ExtAgentDefinition[];
 }
 
 /**

@@ -21,6 +21,11 @@ function makeCtx(
     getRelayPublicWsUrl: () => null,
     loadBridgeConfigSkillApiKeys: async () => ({}),
     loadBridgeConfigWebSearchEnabled: async () => false,
+    loadBridgeExtAgentSettings: async () => ({
+      activeExtAgentId: "homeclaw",
+      extAgents: [],
+      bridgeListenPort: 3031,
+    }),
     getProfile: () => undefined,
     ...overrides,
   };
@@ -67,17 +72,34 @@ describe("getNodeConfigViaRuntime", () => {
 });
 
 describe("updateNodeConfigViaRuntime", () => {
-  it("forwards a plain partial to saveNodeConfig", async () => {
+  it("merges partial updates into the persisted config", async () => {
     let saved: PersistedNodeConfig | undefined;
+    const existing = {
+      profileDir: "/profile",
+      version: "0.1" as const,
+      discoveryProfile: "lan-fast" as const,
+      relayEnabled: true,
+      relayServerEnabled: false,
+      advertiseAddrs: [],
+      bootstrapPeers: [],
+      bootstrapPresets: [],
+      configuredRelays: [],
+      modelProviders: { mode: "disabled" as const },
+      chatAssistEnabled: true,
+      contactAiPreferences: [],
+      updatedAt: "2020-01-01T00:00:00.000Z",
+    };
     await updateNodeConfigViaRuntime(
       makeCtx({
+        loadNodeConfig: async () => existing as PersistedNodeConfig,
         saveNodeConfig: async (c) => {
           saved = c as PersistedNodeConfig;
         },
       }),
       { relayEnabled: false },
     );
-    expect(saved).toEqual({ relayEnabled: false });
+    expect(saved?.relayEnabled).toBe(false);
+    expect(saved?.chatAssistEnabled).toBe(true);
   });
 
   it("rejects friendMatchingPreferencesSigned when no profile is set", async () => {
