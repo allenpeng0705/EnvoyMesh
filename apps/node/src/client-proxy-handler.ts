@@ -92,7 +92,7 @@ export function createClientProxyHandler(
           }
 
           if (msg.method === "homeTerminalWsSend") {
-            const err = rpcHomeTerminalWsSend(companion, (msg.params ?? {}) as { dataBase64: string });
+            const err = rpcHomeTerminalWsSend(companion, (msg.params ?? {}) as { dataBase64: string; sessionId?: string });
             await streamIo.write(
               encoder.encode(
                 JSON.stringify({
@@ -105,7 +105,7 @@ export function createClientProxyHandler(
           }
 
           if (msg.method === "homeTerminalWsClose") {
-            rpcHomeTerminalWsClose(companion);
+            rpcHomeTerminalWsClose(companion, (msg.params ?? {}) as { sessionId?: string });
             await streamIo.write(encoder.encode(JSON.stringify({ id: msg.id, result: { ok: true } })));
             continue;
           }

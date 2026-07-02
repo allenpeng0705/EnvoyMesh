@@ -113,4 +113,19 @@ describe("MobileNode home-remote terminal integration (mock home)", () => {
       "/ws/terminal/term-1?token=tok",
     );
   });
+
+  it("routes homeTerminalWsSend with sessionId through HomeRemoteClient", async () => {
+    const sendSpy = vi.fn().mockResolvedValue({ ok: true });
+    vi.spyOn(
+      node as unknown as { _ensureHomeRemote: () => { sendTerminalFrame: typeof sendSpy } },
+      "_ensureHomeRemote",
+    ).mockReturnValue({
+      sendTerminalFrame: sendSpy,
+    } as never);
+
+    const payload = Buffer.from("test").toString("base64");
+    const result = await node.homeTerminalWsSend({ dataBase64: payload, sessionId: "term-1" });
+    expect(result.ok).toBe(true);
+    expect(sendSpy).toHaveBeenCalledWith(expect.any(Uint8Array), "term-1");
+  });
 });

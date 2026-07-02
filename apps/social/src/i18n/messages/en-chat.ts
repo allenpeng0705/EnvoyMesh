@@ -196,6 +196,7 @@ export const terminalMessages = {
   selectSessionDesc: "Choose a session from the sidebar or create a new terminal.",
   sessionExited: "This session has exited.",
   connecting: "Connecting…",
+  reconnecting: "Reconnecting…",
   connectionError: "Connection error",
   disconnected: "Disconnected",
   exitedWithCode: "[Process exited with code {code}]",

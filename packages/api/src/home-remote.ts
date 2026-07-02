@@ -29,6 +29,21 @@ export interface HomeTerminalWsOpenParams {
 
 export interface HomeTerminalWsSendParams {
   dataBase64: string;
+  /** Required when multiple PTY tunnels are open for one companion. */
+  sessionId?: string;
+}
+
+export interface HomeTerminalWsCloseParams {
+  sessionId?: string;
+}
+
+export interface HomeTerminalWsRxEvent {
+  sessionId?: string;
+  dataBase64: string;
+}
+
+export interface HomeTerminalWsClosedEvent {
+  sessionId?: string;
 }
 
 export interface HomeTerminalWsRpcResult {

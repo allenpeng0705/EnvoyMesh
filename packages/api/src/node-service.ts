@@ -1148,8 +1148,8 @@ export interface NodeServiceEvents {
   "terminal:assistant-proposal": import("./terminal-agent.js").TerminalAssistantProposalEvent;
 
   /** Home terminal PTY tunnel bytes (Phase 30E — mobile HomeRemote). */
-  "homeTerminalWs:rx": { dataBase64: string };
-  "homeTerminalWs:closed": Record<string, never>;
+  "homeTerminalWs:rx": import("./home-remote.js").HomeTerminalWsRxEvent;
+  "homeTerminalWs:closed": import("./home-remote.js").HomeTerminalWsClosedEvent;
 
   /** Phase 43D — live chain state push for ChainsView. */
   "chain:state": ChainGetStateResult;
@@ -2010,7 +2010,7 @@ export interface NodeService {
   ): Promise<import("./terminal.js").TerminalHerdrExportHintResult>;
   homeTerminalWsOpen(params: import("./home-remote.js").HomeTerminalWsOpenParams): Promise<import("./home-remote.js").HomeTerminalWsRpcResult>;
   homeTerminalWsSend(params: import("./home-remote.js").HomeTerminalWsSendParams): Promise<import("./home-remote.js").HomeTerminalWsRpcResult>;
-  homeTerminalWsClose(): Promise<import("./home-remote.js").HomeTerminalWsRpcResult>;
+  homeTerminalWsClose(params?: import("./home-remote.js").HomeTerminalWsCloseParams): Promise<import("./home-remote.js").HomeTerminalWsRpcResult>;
 
   // ----- Connection Status -----
 

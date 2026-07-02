@@ -3,6 +3,8 @@ import {
   encodeTerminalFrame,
   encodeTerminalResize,
   TerminalWireType,
+  type HomeTerminalWsClosedEvent,
+  type HomeTerminalWsRxEvent,
 } from "@envoymesh/api";
 
 function base64ToBytes(b64: string): Uint8Array {
@@ -25,6 +27,13 @@ function wsSendBytes(ws: WebSocket, bytes: Uint8Array): void {
 export function terminalPathFromAttachWsUrl(wsUrl: string): string {
   const u = new URL(wsUrl);
   return `${u.pathname}${u.search}`;
+}
+
+export function terminalSessionIdFromPath(pathWithQuery: string): string | null {
+  const pathOnly = pathWithQuery.split("?")[0] ?? "";
+  const m = /^\/ws\/terminal\/([^/?#]+)/.exec(pathOnly);
+  const id = m?.[1]?.trim() ?? "";
+  return id || null;
 }
 
 export interface TerminalTransport {
@@ -115,32 +124,44 @@ export class TerminalWsClient implements TerminalTransport {
 }
 
 export interface HomeRemoteTerminalClientOptions {
+  sessionId: string;
   homeTerminalWsOpen(params: { pathWithQuery: string }): Promise<{ ok: boolean; error?: string }>;
-  homeTerminalWsSend(params: { dataBase64: string }): Promise<{ ok: boolean; error?: string }>;
-  homeTerminalWsClose(): Promise<{ ok: boolean }>;
-  subscribeRx: (handler: (data: { dataBase64: string }) => void) => () => void;
-  subscribeClosed: (handler: () => void) => () => void;
+  homeTerminalWsSend(params: {
+    dataBase64: string;
+    sessionId: string;
+  }): Promise<{ ok: boolean; error?: string }>;
+  homeTerminalWsClose(params: { sessionId: string }): Promise<{ ok: boolean; error?: string }>;
+  subscribeRx: (handler: (data: HomeTerminalWsRxEvent) => void) => () => void;
+  subscribeClosed: (handler: (data: HomeTerminalWsClosedEvent) => void) => () => void;
   pathWithQuery: string;
   cols: number;
   rows: number;
   onData: (data: Uint8Array) => void;
   onExit?: (exitCode: number) => void;
   onStatusChange?: (status: TerminalWsStatus) => void;
+  /** Called when the home closes this session's PTY tunnel (network blip, token expiry, etc.). */
+  onTunnelClosed?: () => void;
+  onSendError?: (message: string) => void;
 }
+
+/** Proactive attach-token refresh while a mobile session stays open (~8 min, token TTL is 10 min). */
+export const HOME_REMOTE_TERMINAL_TOKEN_REFRESH_MS = 8 * 60_000;
 
 export class HomeRemoteTerminalClient implements TerminalTransport {
   private unsubRx: (() => void) | null = null;
   private unsubClosed: (() => void) | null = null;
   private readonly options: HomeRemoteTerminalClientOptions;
+  private open = false;
 
   constructor(options: HomeRemoteTerminalClientOptions) {
     this.options = options;
   }
 
   async connect(): Promise<void> {
-    this.close();
+    this.detachLocal();
     this.options.onStatusChange?.("connecting");
     this.unsubRx = this.options.subscribeRx((data) => {
+      if (data.sessionId && data.sessionId !== this.options.sessionId) return;
       const frame = decodeTerminalFrame(base64ToBytes(data.dataBase64));
       if (!frame) return;
       if (frame.type === TerminalWireType.Stdout) {
@@ -153,8 +174,11 @@ export class HomeRemoteTerminalClient implements TerminalTransport {
         this.options.onExit?.(code);
       }
     });
-    this.unsubClosed = this.options.subscribeClosed(() => {
+    this.unsubClosed = this.options.subscribeClosed((data) => {
+      if (data.sessionId && data.sessionId !== this.options.sessionId) return;
+      this.open = false;
       this.options.onStatusChange?.("closed");
+      this.options.onTunnelClosed?.();
     });
 
     const result = await this.options.homeTerminalWsOpen({ pathWithQuery: this.options.pathWithQuery });
@@ -162,26 +186,45 @@ export class HomeRemoteTerminalClient implements TerminalTransport {
       this.options.onStatusChange?.("error");
       throw new Error(result.error ?? "homeTerminalWsOpen failed");
     }
+    this.open = true;
     this.options.onStatusChange?.("open");
-    this.sendResize(this.options.cols, this.options.rows);
+    await this.sendFrame(encodeTerminalResize(this.options.cols, this.options.rows));
   }
 
   sendInput(data: string): void {
     const bytes = new TextEncoder().encode(data);
-    const frame = encodeTerminalFrame(TerminalWireType.Stdin, bytes);
-    void this.options.homeTerminalWsSend({ dataBase64: bytesToBase64(frame) });
+    void this.sendFrame(encodeTerminalFrame(TerminalWireType.Stdin, bytes));
   }
 
   sendResize(cols: number, rows: number): void {
-    const frame = encodeTerminalResize(cols, rows);
-    void this.options.homeTerminalWsSend({ dataBase64: bytesToBase64(frame) });
+    void this.sendFrame(encodeTerminalResize(cols, rows));
   }
 
   close(): void {
+    if (this.open) {
+      void this.options.homeTerminalWsClose({ sessionId: this.options.sessionId });
+    }
+    this.detachLocal();
+  }
+
+  private detachLocal(): void {
+    this.open = false;
     this.unsubRx?.();
     this.unsubRx = null;
     this.unsubClosed?.();
     this.unsubClosed = null;
-    void this.options.homeTerminalWsClose();
+  }
+
+  private async sendFrame(frame: Uint8Array): Promise<void> {
+    if (!this.open) return;
+    const result = await this.options.homeTerminalWsSend({
+      dataBase64: bytesToBase64(frame),
+      sessionId: this.options.sessionId,
+    });
+    if (!result.ok) {
+      this.open = false;
+      this.options.onSendError?.(result.error ?? "homeTerminalWsSend failed");
+      this.options.onStatusChange?.("closed");
+    }
   }
 }

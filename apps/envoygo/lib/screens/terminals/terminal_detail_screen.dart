@@ -87,10 +87,17 @@ class _TerminalDetailScreenState
 
     try {
       await _terminalService!.attach(widget.sessionId);
-      setState(() => _attached = true);
+      if (mounted) setState(() => _attached = true);
     } catch (e) {
-      _terminalService!.setActiveSession(widget.sessionId);
-      setState(() => _attached = true);
+      if (mounted) {
+        setState(() {
+          _attached = false;
+          _tunnelUp = false;
+        });
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Terminal attach failed: $e')),
+        );
+      }
     }
 
     // Focus the xterm.js WebView after attach.

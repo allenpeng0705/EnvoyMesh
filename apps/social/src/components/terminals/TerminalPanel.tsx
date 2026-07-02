@@ -10,6 +10,7 @@ import { useNodeService } from "../../hooks/useNodeService.js";
 import { useT } from "../../context/I18nContext.js";
 import {
   HomeRemoteTerminalClient,
+  HOME_REMOTE_TERMINAL_TOKEN_REFRESH_MS,
   TerminalWsClient,
   terminalPathFromAttachWsUrl,
   type TerminalTransport,
@@ -78,6 +79,9 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
   const xtermSlashInterceptRef = useRef(xtermSlashIntercept);
   const xtermCleanupRef = useRef<(() => void) | null>(null);
   const onDataDisposableRef = useRef<{ dispose: () => void } | null>(null);
+  const reattachAttemptsRef = useRef(0);
+  const reconnectingRef = useRef(false);
+  const tokenRefreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [xtermReady, setXtermReady] = useState(false);
   const sessionReady = Boolean(session && session.state === "running" && !homeOffline);
 
@@ -403,78 +407,130 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
     setGhostSuggestion("");
     lineBufferRef.current = "";
     setShowNestedMultiplexerTip(false);
+    reattachAttemptsRef.current = 0;
+    reconnectingRef.current = false;
+    if (tokenRefreshTimerRef.current) {
+      clearInterval(tokenRefreshTimerRef.current);
+      tokenRefreshTimerRef.current = null;
+    }
 
     if (!sessionReady || !xtermReady) {
       return;
     }
 
     let cancelled = false;
+    const isCancelled = () => cancelled;
 
-    void (async () => {
-      try {
-        const attach = await nodeService.terminalAttach({
-          sessionId: session!.sessionId,
-          cols: termRef.current?.cols,
-          rows: termRef.current?.rows,
-        });
-        if (cancelled || !termRef.current) return;
-
-        const noteNestedMultiplexer = (text: string) => {
-          if (shouldShowNestedMultiplexerTip(text)) {
-            setShowNestedMultiplexerTip(true);
-          }
-        };
-
-        const callbacks = {
-          cols: attach.cols,
-          rows: attach.rows,
-          onData: (data: Uint8Array) => {
-            const decoded = new TextDecoder().decode(data);
-            termRef.current?.write(decoded);
-            noteNestedMultiplexer(decoded);
-          },
-          onExit: (code: number) => {
-            termRef.current?.writeln(`\r\n${t("terminals.exitedWithCode", { code: String(code) })}`);
-          },
-          onStatusChange: (s: "connecting" | "open" | "closed" | "error") => {
-            if (s === "connecting") setStatus(t("terminals.connecting"));
-            else if (s === "open") setStatus(useHomeRemote ? t("terminals.runningOnHome") : "");
-            else if (s === "error") setStatus(t("terminals.connectionError"));
-            else if (s === "closed") setStatus(t("terminals.disconnected"));
-          },
-        };
-
-        let transport: TerminalTransport;
-        if (useHomeRemote) {
-          transport = new HomeRemoteTerminalClient({
-            ...callbacks,
-            pathWithQuery: terminalPathFromAttachWsUrl(attach.wsUrl),
-            homeTerminalWsOpen: (params) => nodeService.homeTerminalWsOpen(params),
-            homeTerminalWsSend: (params) => nodeService.homeTerminalWsSend(params),
-            homeTerminalWsClose: () => nodeService.homeTerminalWsClose(),
-            subscribeRx: (handler) => nodeService.on("homeTerminalWs:rx", handler),
-            subscribeClosed: (handler) => nodeService.on("homeTerminalWs:closed", handler),
-          });
-          await transport.connect();
-        } else {
-          transport = new TerminalWsClient({
-            ...callbacks,
-            wsUrl: attach.wsUrl,
-          });
-          transport.connect();
-        }
-
-        transportRef.current = transport;
-        fitTerminal();
-      } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : String(e);
-        setStatus(msg === "homeRemote.offline" ? t("terminals.homeOffline") : msg);
+    const scheduleReattach = () => {
+      if (isCancelled() || reconnectingRef.current || !useHomeRemote) return;
+      if (reattachAttemptsRef.current >= 5) {
+        setStatus(t("terminals.disconnected"));
+        return;
       }
-    })();
+      reconnectingRef.current = true;
+      reattachAttemptsRef.current += 1;
+      setStatus(t("terminals.reconnecting"));
+      const delayMs = Math.min(500 * reattachAttemptsRef.current, 3000);
+      setTimeout(() => {
+        if (isCancelled()) return;
+        void connectTransport().finally(() => {
+          reconnectingRef.current = false;
+        });
+      }, delayMs);
+    };
+
+    const connectTransport = async (): Promise<void> => {
+      if (isCancelled() || !termRef.current || !session?.sessionId) return;
+      transportRef.current?.close();
+      transportRef.current = null;
+      termRef.current.reset();
+
+      const attach = await nodeService.terminalAttach({
+        sessionId: session.sessionId,
+        cols: termRef.current.cols,
+        rows: termRef.current.rows,
+      });
+      if (isCancelled() || !termRef.current) return;
+
+      const noteNestedMultiplexer = (text: string) => {
+        if (shouldShowNestedMultiplexerTip(text)) {
+          setShowNestedMultiplexerTip(true);
+        }
+      };
+
+      const callbacks = {
+        cols: attach.cols,
+        rows: attach.rows,
+        onData: (data: Uint8Array) => {
+          const decoded = new TextDecoder().decode(data);
+          termRef.current?.write(decoded);
+          noteNestedMultiplexer(decoded);
+        },
+        onExit: (code: number) => {
+          termRef.current?.writeln(`\r\n${t("terminals.exitedWithCode", { code: String(code) })}`);
+        },
+        onStatusChange: (s: "connecting" | "open" | "closed" | "error") => {
+          if (s === "connecting") setStatus(t("terminals.connecting"));
+          else if (s === "open") {
+            reattachAttemptsRef.current = 0;
+            setStatus(useHomeRemote ? t("terminals.runningOnHome") : "");
+          } else if (s === "error") setStatus(t("terminals.connectionError"));
+          else if (s === "closed") setStatus(t("terminals.disconnected"));
+        },
+      };
+
+      let transport: TerminalTransport;
+      if (useHomeRemote) {
+        transport = new HomeRemoteTerminalClient({
+          ...callbacks,
+          sessionId: session.sessionId,
+          pathWithQuery: terminalPathFromAttachWsUrl(attach.wsUrl),
+          homeTerminalWsOpen: (params) => nodeService.homeTerminalWsOpen(params),
+          homeTerminalWsSend: (params) => nodeService.homeTerminalWsSend(params),
+          homeTerminalWsClose: (params) => nodeService.homeTerminalWsClose(params),
+          subscribeRx: (handler) => nodeService.on("homeTerminalWs:rx", handler),
+          subscribeClosed: (handler) => nodeService.on("homeTerminalWs:closed", handler),
+          onTunnelClosed: scheduleReattach,
+          onSendError: (msg) => {
+            setStatus(msg === "homeRemote.notConnected" ? t("terminals.homeOffline") : msg);
+            scheduleReattach();
+          },
+        });
+        await transport.connect();
+      } else {
+        transport = new TerminalWsClient({
+          ...callbacks,
+          wsUrl: attach.wsUrl,
+        });
+        transport.connect();
+      }
+
+      transportRef.current = transport;
+      fitTerminal();
+    };
+
+    void connectTransport().catch((e: unknown) => {
+      const msg = e instanceof Error ? e.message : String(e);
+      setStatus(msg === "homeRemote.offline" ? t("terminals.homeOffline") : msg);
+    });
+
+    if (useHomeRemote) {
+      tokenRefreshTimerRef.current = setInterval(() => {
+        if (isCancelled() || reconnectingRef.current) return;
+        setStatus(t("terminals.reconnecting"));
+        void connectTransport().catch(() => {
+          setStatus(t("terminals.disconnected"));
+        });
+      }, HOME_REMOTE_TERMINAL_TOKEN_REFRESH_MS);
+    }
 
     return () => {
       cancelled = true;
       if (suggestTimerRef.current) clearTimeout(suggestTimerRef.current);
+      if (tokenRefreshTimerRef.current) {
+        clearInterval(tokenRefreshTimerRef.current);
+        tokenRefreshTimerRef.current = null;
+      }
       transportRef.current?.close();
       transportRef.current = null;
     };
@@ -567,10 +623,11 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
         if (useHomeRemote) {
           transport = new HomeRemoteTerminalClient({
             ...callbacks,
+            sessionId: execSessionId,
             pathWithQuery: terminalPathFromAttachWsUrl(attach.wsUrl),
             homeTerminalWsOpen: (params) => nodeService.homeTerminalWsOpen(params),
             homeTerminalWsSend: (params) => nodeService.homeTerminalWsSend(params),
-            homeTerminalWsClose: () => nodeService.homeTerminalWsClose(),
+            homeTerminalWsClose: (params) => nodeService.homeTerminalWsClose(params),
             subscribeRx: (handler) => nodeService.on("homeTerminalWs:rx", handler),
             subscribeClosed: (handler) => nodeService.on("homeTerminalWs:closed", handler),
           });

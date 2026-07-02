@@ -700,9 +700,18 @@ export async function routeRpcMethod(
     case "homeTerminalWsOpen":
       return ns.homeTerminalWsOpen({ pathWithQuery: String(params.pathWithQuery ?? "") });
     case "homeTerminalWsSend":
-      return ns.homeTerminalWsSend({ dataBase64: String(params.dataBase64 ?? "") });
+      return ns.homeTerminalWsSend({
+        dataBase64: String(params.dataBase64 ?? ""),
+        ...(params.sessionId != null && String(params.sessionId).trim()
+          ? { sessionId: String(params.sessionId).trim() }
+          : {}),
+      });
     case "homeTerminalWsClose":
-      return ns.homeTerminalWsClose();
+      return ns.homeTerminalWsClose(
+        params.sessionId != null && String(params.sessionId).trim()
+          ? { sessionId: String(params.sessionId).trim() }
+          : undefined,
+      );
     case "forwardEnvelope":
       return ns.forwardEnvelope(params.envelope as Record<string, unknown>, params.dialHints as string[] | undefined);
     case "getOpenClawPlugins":

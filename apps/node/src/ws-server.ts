@@ -470,13 +470,13 @@ export class WsServer {
     }
 
     if (method === "homeTerminalWsSend") {
-      const err = rpcHomeTerminalWsSend(ws, (params ?? {}) as { dataBase64: string });
+      const err = rpcHomeTerminalWsSend(ws, (params ?? {}) as { dataBase64: string; sessionId?: string });
       this.sendResponse(ws, String(id), err === null ? { ok: true } : { ok: false, error: err });
       return;
     }
 
     if (method === "homeTerminalWsClose") {
-      rpcHomeTerminalWsClose(ws);
+      rpcHomeTerminalWsClose(ws, (params ?? {}) as { sessionId?: string });
       this.sendResponse(ws, String(id), { ok: true });
       return;
     }

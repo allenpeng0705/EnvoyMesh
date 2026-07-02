@@ -552,31 +552,34 @@ export class HomeRemoteClient {
     return this.call("homeTerminalWsOpen", { pathWithQuery });
   }
 
-  sendTerminalFrame(bytes: Uint8Array): { ok: boolean; error?: string } {
-    const ws = this.ws;
-    if (!ws || ws.readyState !== WS_READY_STATE_OPEN) {
-      return { ok: false, error: "homeRemote.notConnected" };
-    }
-    const id = crypto.randomUUID();
+  async sendTerminalFrame(bytes: Uint8Array, sessionId?: string): Promise<{ ok: boolean; error?: string }> {
     const dataBase64 = Buffer.from(bytes).toString("base64");
-    ws.send(JSON.stringify({ id, method: "homeTerminalWsSend", params: { dataBase64 } }));
-    return { ok: true };
+    try {
+      return await this.call<{ ok: boolean; error?: string }>("homeTerminalWsSend", {
+        dataBase64,
+        ...(sessionId?.trim() ? { sessionId: sessionId.trim() } : {}),
+      });
+    } catch (e: unknown) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
   }
 
   sendTerminalInput(text: string): void {
     const bytes = new TextEncoder().encode(text);
-    this.sendTerminalFrame(encodeTerminalFrame(TerminalWireType.Stdin, bytes));
+    void this.sendTerminalFrame(encodeTerminalFrame(TerminalWireType.Stdin, bytes));
   }
 
   sendTerminalResize(cols: number, rows: number): void {
-    this.sendTerminalFrame(encodeTerminalResize(cols, rows));
+    void this.sendTerminalFrame(encodeTerminalResize(cols, rows));
   }
 
-  closeTerminalTunnel(): void {
-    const ws = this.ws;
-    if (!ws || ws.readyState !== WS_READY_STATE_OPEN) return;
-    const id = crypto.randomUUID();
-    ws.send(JSON.stringify({ id, method: "homeTerminalWsClose", params: {} }));
+  async closeTerminalTunnel(sessionId?: string): Promise<{ ok: boolean; error?: string }> {
+    try {
+      await this.call("homeTerminalWsClose", sessionId?.trim() ? { sessionId: sessionId.trim() } : {});
+      return { ok: true };
+    } catch (e: unknown) {
+      return { ok: false, error: e instanceof Error ? e.message : String(e) };
+    }
   }
 
   dispose(): void {

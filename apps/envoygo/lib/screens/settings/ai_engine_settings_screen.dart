@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/contact_provider.dart' show nodeServiceProvider;
+import '../../services/node_service_client.dart';
 
 /// AI Engine settings — Phase EnvoyGo settings (slice 2 — AI Engine).
 ///
@@ -196,6 +197,15 @@ class _AiEngineSettingsScreenState
                 ),
     );
   }
+
+  @override
+  void dispose() {
+    _configUnsub?.call();
+    _configUnsub = null;
+    _clientSub?.close();
+    _clientSub = null;
+    super.dispose();
+  }
 }
 
 class _StatusCard extends StatelessWidget {
@@ -288,14 +298,5 @@ class _ErrorView extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  @override
-  void dispose() {
-    _configUnsub?.call();
-    _configUnsub = null;
-    _clientSub?.close();
-    _clientSub = null;
-    super.dispose();
   }
 }

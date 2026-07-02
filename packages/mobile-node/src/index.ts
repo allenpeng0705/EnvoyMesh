@@ -1449,14 +1449,16 @@ export class MobileNode implements NodeService {
   homeTerminalWsSend(
     params: import("@envoymesh/api").HomeTerminalWsSendParams,
   ): Promise<import("@envoymesh/api").HomeTerminalWsRpcResult> {
-    const bytes = Uint8Array.from(Buffer.from(params.dataBase64, "base64"));
-    const result = this._ensureHomeRemote().sendTerminalFrame(bytes);
-    return Promise.resolve({ ok: result.ok, error: result.error });
+    return this._ensureHomeRemote().sendTerminalFrame(
+      Uint8Array.from(Buffer.from(params.dataBase64, "base64")),
+      params.sessionId,
+    );
   }
 
-  async homeTerminalWsClose(): Promise<import("@envoymesh/api").HomeTerminalWsRpcResult> {
-    this._ensureHomeRemote().closeTerminalTunnel();
-    return { ok: true };
+  async homeTerminalWsClose(
+    params?: import("@envoymesh/api").HomeTerminalWsCloseParams,
+  ): Promise<import("@envoymesh/api").HomeTerminalWsRpcResult> {
+    return this._ensureHomeRemote().closeTerminalTunnel(params?.sessionId);
   }
 
   // -----------------------------------------------------------------------
@@ -8170,10 +8172,16 @@ You are the owner's personal AI assistant on EnvoyMesh.
         upgradeSweepMs: 30_000,
       });
       this._homeRemote.on("homeTerminalWs:rx", (data) => {
-        this._events.emit("homeTerminalWs:rx", data as { dataBase64: string });
+        this._events.emit(
+          "homeTerminalWs:rx",
+          data as import("@envoymesh/api").HomeTerminalWsRxEvent,
+        );
       });
       this._homeRemote.on("homeTerminalWs:closed", (data) => {
-        this._events.emit("homeTerminalWs:closed", (data ?? {}) as Record<string, never>);
+        this._events.emit(
+          "homeTerminalWs:closed",
+          (data ?? {}) as import("@envoymesh/api").HomeTerminalWsClosedEvent,
+        );
       });
       this._homeRemote.on("terminal:session-updated", (data) => {
         this._events.emit("terminal:session-updated", data as { sessions: import("@envoymesh/api").TerminalSessionSummary[] });

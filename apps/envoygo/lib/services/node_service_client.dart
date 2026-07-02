@@ -58,6 +58,14 @@ class NodeServiceClient {
 
   /// Release the HomeRemoteClient event subscriptions. Safe to call once
   /// on disposal; the stream closes with it.
+  /// Subscribe to a push event from the home node. Returns an
+  /// unsubscribe function. Re-exposes the underlying
+  /// [HomeRemoteClient.on] so the settings screens can listen for
+  /// `home:config-updated`.
+  void Function() on(String event, void Function(dynamic) handler) {
+    return _client.on(event, handler);
+  }
+
   void dispose() {
     for (final unsub in _unsubs) {
       try {

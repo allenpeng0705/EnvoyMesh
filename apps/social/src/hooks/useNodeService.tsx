@@ -384,7 +384,7 @@ export interface NodeServiceClient {
   ): Promise<import("@envoymesh/api").TerminalHerdrExportHintResult>;
   homeTerminalWsOpen(params: import("@envoymesh/api").HomeTerminalWsOpenParams): Promise<import("@envoymesh/api").HomeTerminalWsRpcResult>;
   homeTerminalWsSend(params: import("@envoymesh/api").HomeTerminalWsSendParams): Promise<import("@envoymesh/api").HomeTerminalWsRpcResult>;
-  homeTerminalWsClose(): Promise<import("@envoymesh/api").HomeTerminalWsRpcResult>;
+  homeTerminalWsClose(params?: import("@envoymesh/api").HomeTerminalWsCloseParams): Promise<import("@envoymesh/api").HomeTerminalWsRpcResult>;
 
   // AI / Knowledge Query
   knowledgeQuery(question: string): Promise<string>;
@@ -1223,8 +1223,10 @@ function createWsNodeServiceClient(
         import("@envoymesh/api").HomeTerminalWsRpcResult
       >;
     },
-    async homeTerminalWsClose() {
-      return wsClient.rpc("homeTerminalWsClose", {}) as Promise<import("@envoymesh/api").HomeTerminalWsRpcResult>;
+    async homeTerminalWsClose(params?: import("@envoymesh/api").HomeTerminalWsCloseParams) {
+      return wsClient.rpc("homeTerminalWsClose", (params ?? {}) as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").HomeTerminalWsRpcResult
+      >;
     },
     async knowledgeQuery(question: string) { return wsClient.rpc("knowledgeQuery", { question }) as Promise<string>; },
     async runDocumentAgentTurn(message: string) {
