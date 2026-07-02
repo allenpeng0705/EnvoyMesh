@@ -1,0 +1,17 @@
+fix(envoygo): remove leftover fragment in me_screen.dart Settings section
+
+The earlier "remove External Agents tile" patch script's
+`end_marker` ("          ),\n") was too generic — it matched the
+WRONG closing brace (the AI Model tile's `Card`), not the
+External Agents tile's `Card`. Result: the opening half of the
+External Agents tile (Card + ListTile + leading) was removed, but
+the closing half (trailing + onTap + MaterialPageRoute + )) remained
+floating. The build failed with "Can't find ']' to match '['"
+because the children list was unbalanced.
+
+Fix: remove the leftover closing half (from "          ),
+              trailing: const Icon(Icons.chevron_right)," through
+the matching "        ],").
+
+Verified: me_screen.dart now parses cleanly. The Settings section
+has only the AI Model tile (External Agents is fully gone).

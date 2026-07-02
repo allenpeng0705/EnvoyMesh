@@ -268,16 +268,6 @@ class MeScreen extends ConsumerWidget {
               },
             ),
           ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => const ExternalAgentsSettingsScreen(),
-                  ),
-                );
-              },
-            ),
-          ),
           const SizedBox(height: 16),
         ],
 
