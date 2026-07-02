@@ -1,0 +1,10 @@
+fix(envoygo): remove duplicate AI Model tile in me_screen.dart
+
+There were two Settings sections rendering the same AI Model tile.
+The newer one (Phase EnvoyGo settings) was correct; the older one
+(introduced by an earlier commit) was redundant. Removed the older
+block.
+
+After this fix there is exactly one "Settings" section with one
+"AI Model" tile, and the "AI Engine" section above it is its own
+tappable card pointing to the AI Engine settings screen.

@@ -246,31 +246,6 @@ class MeScreen extends ConsumerWidget {
           const SizedBox(height: 16),
         ],
 
-        // Settings (Phase EnvoyGo settings). Only shown when paired —
-        // the settings mutate the home node's config so they're
-        // meaningless without a live connection.
-        if (nodeState.activeNode != null) ...[
-          const _SectionHeader(title: 'Settings'),
-          Card(
-            child: ListTile(
-              leading: const Icon(Icons.smart_toy_outlined),
-              title: const Text('AI Model'),
-              subtitle: const Text(
-                'Provider, endpoint, model name, API key',
-              ),
-              trailing: const Icon(Icons.chevron_right),
-              onTap: () {
-                Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => const AiModelSettingsScreen(),
-                  ),
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 16),
-        ],
-
         // Chains (Phase 40 — read-only mirror of the home node's
         // chain-reports store). Tap a row to see the executive summary,
         // sections, and per-worker cost. Authoring happens on the home
