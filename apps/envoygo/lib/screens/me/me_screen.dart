@@ -365,6 +365,11 @@ class MeScreen extends ConsumerWidget {
                     ),
                   ),
                 ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
 
         // Theme
         const _SectionHeader(title: 'Preferences'),

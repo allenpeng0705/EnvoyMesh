@@ -1,0 +1,9 @@
+fix(envoygo): close Settings section that was left open
+
+The "Phase EnvoyGo settings" patch that added the new Card(Column)
+Settings section didn't include the closing fragments
+(close children: [ array, close Card, close if-spread). The
+build failed with "Can't find ')' to match '('".
+
+Fix: insert the 3 missing lines (], const SizedBox(height: 16), ],
+before the "// Theme" section.
