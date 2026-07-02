@@ -99,6 +99,21 @@ class NodeServiceClient {
     return await _client.call('getNodeConfig') as Map<String, dynamic>;
   }
 
+  /// AI model settings (Phase EnvoyGo settings) — push a partial
+  /// `modelProviders` update to the home node. The home node accepts
+  /// any `Partial<NodeConfig>` shape; the partial-update contract
+  /// means callers can ship only the fields they want to change and
+  /// leave everything else untouched.
+  ///
+  /// Returns `true` on success. Throws on transport / RPC error.
+  Future<bool> updateModelProviders(
+      Map<String, dynamic> modelProvidersPatch) async {
+    final result = await _client.call('updateNodeConfig', {
+      'modelProviders': modelProvidersPatch,
+    }) as Map<String, dynamic>;
+    return result['ok'] == true;
+  }
+
   /// Fetch the full pairing payload from the home node, including
   /// bootstrap peer addresses for multi-relay fallback.
   Future<Map<String, dynamic>> getPairingPayload() async {

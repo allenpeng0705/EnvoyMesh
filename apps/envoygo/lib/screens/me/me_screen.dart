@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../settings/ai_model_settings_screen.dart';
+import '../settings/external_agents_settings_screen.dart';
 import '../../models/stored_node.dart';
 import '../../providers/node_provider.dart';
 import '../../widgets/ai_engine_section.dart';
@@ -225,6 +227,48 @@ class MeScreen extends ConsumerWidget {
         if (nodeState.activeNode != null) ...[
           const _SectionHeader(title: 'AI Engine'),
           const AiEngineSection(),
+          const SizedBox(height: 16),
+        ],
+
+        // Settings (Phase EnvoyGo settings). Only shown when paired —
+        // the settings mutate the home node's config so they're
+        // meaningless without a live connection.
+        if (nodeState.activeNode != null) ...[
+          const _SectionHeader(title: 'Settings'),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.smart_toy_outlined),
+              title: const Text('AI Model'),
+              subtitle: const Text(
+                'Provider, endpoint, model name, API key',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const AiModelSettingsScreen(),
+                  ),
+                );
+              },
+            ),
+          ),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.extension_outlined),
+              title: const Text('External Agents'),
+              subtitle: const Text(
+                'Manage authorized OpenClaw / HomeClaw instances',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const ExternalAgentsSettingsScreen(),
+                  ),
+                );
+              },
+            ),
+          ),
           const SizedBox(height: 16),
         ],
 

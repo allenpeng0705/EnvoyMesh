@@ -1,0 +1,71 @@
+feat(envoygo): add Settings section to Me screen (AI model + Ext Agent)
+
+Phase EnvoyGo settings (slice 1 — AI model):
+
+Files:
+- apps/envoygo/lib/services/node_service_client.dart
+  - Add `updateModelProviders(Map<String, dynamic>)` method.
+    Sends a `Partial<NodeConfig>` update with the `modelProviders`
+    block. The home node already accepts this in its
+    `updateNodeConfig` runtime (line 4458 in node-service-impl.ts).
+
+- apps/envoygo/lib/screens/settings/ai_model_settings_screen.dart (new)
+  - Provider-mode dropdown (disabled / mock / ollama / litellm /
+    openai-compatible / anthropic-compatible) — mirrors the
+    server-side `ModelProviderMode` union.
+  - Endpoint URL field (Ollama / LiteLLM / OpenAI host examples in
+    helper text).
+  - Model name field.
+  - API key field with show/hide toggle.
+  - "Require approval for cloud" switch.
+  - Save button → `client.updateModelProviders(patch)`.
+  - Read current config via the new `nodeServiceProvider` from
+    contact_provider.dart (the standard typed-access pattern for the
+    active HomeRemoteClient).
+
+- apps/envoygo/lib/screens/settings/external_agents_settings_screen.dart
+  (new, stub)
+  - Phase 2 stub. Shows a "Coming soon" card explaining the
+    requirements (new protocol types + new home-node RPCs).
+  - Reachable from the Me screen so the navigation pattern is
+    complete, but the body is intentionally a placeholder.
+
+- apps/envoygo/lib/screens/me/me_screen.dart
+  - Add `Settings` section (after `AI Engine`, only when paired —
+    `if (nodeState.activeNode != null)`).
+  - Tile 1: `AI Model` → `AiModelSettingsScreen`.
+  - Tile 2: `External Agents` → `ExternalAgentsSettingsScreen` (stub).
+  - Both use `Navigator.push(MaterialPageRoute(...))` — no
+    `app.dart` routing changes needed (MaterialApp is still
+    `home: HomeScreen`).
+
+Why Me screen and "only when paired":
+The user's instruction was to put the settings on the Me screen
+and only display when paired. The settings mutate the home
+node's config, so they're meaningless without a live connection.
+The `if (nodeState.activeNode != null)` guard handles this exactly.
+
+Phase 2 TODO (External Agents — full implementation):
+  1. Add new protocol types in packages/api/src/ws-protocol.d.ts:
+     - `ExternalAgentConfig` (id, name, ownerId, capabilities[],
+       createdAt, isRevoked)
+     - `ListExternalAgentsResult`
+     - `RevokeExternalAgentParams` / `Result`
+  2. Add new home-node RPCs in apps/node/src/node-service-impl.ts:
+     - `listExternalAgents()` — returns all authorized agents
+     - `revokeExternalAgent(id)` — sets isRevoked=true
+  3. Wire the corresponding client methods in
+     `node_service_client.dart`.
+  4. Replace the ExternalAgentsSettingsScreen stub body with the
+     real list + revoke UI.
+
+The Me screen is already wired to navigate to that screen, so
+Phase 2 is purely additive.
+
+Verification:
+- All changes use existing patterns: `nodeServiceProvider`,
+  `Navigator.push`, `Form` / `TextFormField`, existing icons
+  from `MaterialIcons`. No new dependencies.
+- Flutter SDK on this machine has a separate engine.stamp
+  permission issue that prevents running `flutter analyze` here.
+  Run `flutter analyze` on a working machine to verify.
