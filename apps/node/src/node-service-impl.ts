@@ -1139,6 +1139,7 @@ class NodeServiceImpl implements NodeService {
   private _mesh: EnvoyMesh | undefined;
   /** When libp2p is started by `index.ts` (CLI) with `createNodeService(undefined, …)`, this points at that stack for reachability tagging. */
   private _externalMesh?: EnvoyMesh;
+  private _deferredExternalMeshStart?: () => Promise<void>;
   private _profile: NodeProfile | undefined;
   private readonly _trustStore: LocalTrustStore;
   private readonly _peerDirectoryStore: LocalPeerDirectoryStore;
@@ -1721,6 +1722,11 @@ class NodeServiceImpl implements NodeService {
     void this._scrubBondedContactDialState();
     this._scheduleDeferredProfileRefresh("bindExternalMesh");
     this._startBondWarmInterval();
+  }
+
+  /** CLI `index.ts` path: start the pre-built libp2p stack after first-run setup writes node-config.json. */
+  registerDeferredExternalMeshStart(fn: () => Promise<void>): void {
+    this._deferredExternalMeshStart = fn;
   }
 
   private _scheduleDeferredProfileRefresh(source: string): void {
@@ -4571,6 +4577,13 @@ class NodeServiceImpl implements NodeService {
   }
 
   async startNode(): Promise<void> {
+    if (this._deferredExternalMeshStart && this._nodeStatus !== "running") {
+      await this._deferredExternalMeshStart();
+      if (!this._mesh && !this._externalMesh) {
+        throw new Error("Failed to start home node mesh after setup.");
+      }
+      return;
+    }
     return startNodeViaRuntime(this._startNodeContext());
   }
 

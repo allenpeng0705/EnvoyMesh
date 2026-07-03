@@ -10,6 +10,7 @@
     "beforeBuildCommand": "bash ../../scripts/fetch-node-sidecar.sh && bash ../../scripts/stage-tauri-openclaw-bundle.sh && bash ../../scripts/stage-tauri-node-bundle.sh"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "title": "EnvoyMesh",

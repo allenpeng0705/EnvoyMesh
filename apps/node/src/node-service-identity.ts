@@ -289,7 +289,11 @@ export async function updateHumanProfileViaRuntime(
   ctx: IdentityContext,
   input: CreateHumanProfileInput,
 ): Promise<HumanProfile> {
-  ctx.assertOnline();
+  const persistedConfig = await ctx.getConfigStore().load();
+  // First-run setup writes node-config.json before libp2p is up; allow profile save then.
+  if (!persistedConfig) {
+    ctx.assertOnline();
+  }
   const selfProfile = ctx.requireProfile();
 
   if (!input.displayName || !input.displayName.trim()) {

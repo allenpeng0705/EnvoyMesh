@@ -99,6 +99,8 @@ export interface ExternalPublishConfig {
 }
 export interface NodeConfig {
     profileDir: string;
+    /** False when `node-config.json` has not been written yet (first-run setup pending). */
+    nodeInitialized?: boolean;
     discoveryProfile: DiscoveryProfile;
     enableMdns?: boolean;
     relayEnabled: boolean;

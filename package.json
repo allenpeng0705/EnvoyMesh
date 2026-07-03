@@ -43,6 +43,7 @@
     "tauri:build:win": "npm run build:win -w @envoymesh/tauri --",
     "tauri:build:linux": "npm run build:linux -w @envoymesh/tauri --",
     "social:dev": "npm run dev -w @envoymesh/social --",
+    "social:dev:with-node": "ENVOYMESH_AUTO_NODE=1 npm run dev -w @envoymesh/social --",
     "social:build": "npm run build -w @envoymesh/social --",
     "node:build": "tsc -b apps/node",
     "test": "vitest run",

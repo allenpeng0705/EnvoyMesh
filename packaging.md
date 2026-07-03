@@ -45,7 +45,35 @@ npm run social:dev    # Start the Social UI (http://localhost:5173)
 # No platform packages — runs from source with hot-reload
 ```
 
-### 2. Local Desktop App Build
+### 2. Portable Bundle (recommended for distribution)
+
+Produces a self-contained directory you can hand to a user, plus a
+`.tar.gz` (mac/Linux) or `.zip` (Windows). The bundle includes the
+EnvoyMesh node, Social UI, **OpenClaw gateway packaged in**, a Node.js
+runtime, and a one-command launcher (`./start.sh` or `start.bat`).
+
+```bash
+# macOS / Linux — full bundle, source-built OpenClaw, Node sidecar included
+./scripts/bundle.sh
+
+# Windows PowerShell
+.\scripts\bundle.ps1
+
+# Common flags (same names on both scripts, see docs/bundle-scripts.md):
+./scripts/bundle.sh --version 0.2.0 --out dist
+./scripts/bundle.sh --skip-openclaw-build   # reuse packages/openclaw/dist
+./scripts/bundle.sh --use-openclaw-binary   # fetch prebuilt OpenClaw
+./scripts/bundle.sh --no-bundled-node       # smaller, target needs Node 22+
+./scripts/bundle.sh --no-archive            # stage only, skip tar/zip
+
+# Output:
+#   release/envoymesh-{version}-{platform}-{arch}/        staged directory
+#   release/envoymesh-{version}-{platform}-{arch}.tar.gz   archive
+```
+
+Full reference: [`docs/bundle-scripts.md`](bundle-scripts.md).
+
+### 3. Local Desktop App Build (Tauri native installers)
 
 ```bash
 # macOS .dmg
@@ -64,7 +92,7 @@ npm run social:dev    # Start the Social UI (http://localhost:5173)
 # Output: apps/tauri/src-tauri/target/release/bundle/
 ```
 
-### 3. CI Release (GitHub Actions)
+### 4. CI Release (GitHub Actions)
 
 ```bash
 git tag tauri-v0.2.0 && git push
@@ -74,14 +102,15 @@ git tag tauri-v0.2.0 && git push
 
 ## What's Inside Each Build
 
-| Component | dev (`setup.sh`) | Desktop App (`build-desktop.sh`) | CI Release |
-|-----------|:---:|:---:|:---:|
-| EnvoyMesh Node | ✅ source | ✅ bundled | ✅ bundled |
-| Social UI | ✅ dev server | ✅ Vite build | ✅ Vite build |
-| OpenClaw Agent | auto-discovered (PATH/bundled) | ✅ bundled binary | ✅ bundled binary |
-| Node.js Runtime | local install | ✅ bundled | ✅ bundled |
-| Kubo (IPFS) | — | ✅ opt-in flag | ✅ opt-in flag |
-| Helia (pure-JS IPFS) | ✅ npm package | ✅ npm package | ✅ npm package |
+| Component | dev (`setup.sh`) | Portable Bundle (`bundle.sh`) | Desktop App (`build-desktop.sh`) | CI Release |
+|-----------|:---:|:---:|:---:|:---:|
+| EnvoyMesh Node | ✅ source | ✅ bundled | ✅ bundled | ✅ bundled |
+| Social UI | ✅ dev server | ✅ Vite build | ✅ Vite build | ✅ Vite build |
+| OpenClaw Agent | auto-discovered (PATH/bundled) | ✅ **bundled by default** | ✅ bundled binary | ✅ bundled binary |
+| Node.js Runtime | local install | ✅ bundled sidecar (opt-out) | ✅ bundled | ✅ bundled |
+| Kubo (IPFS) | — | — | ✅ opt-in flag | ✅ opt-in flag |
+| Helia (pure-JS IPFS) | ✅ npm package | ✅ npm package | ✅ npm package | ✅ npm package |
+| Toolchain prereqs | Node 22+ only | Node 22+ only | Rust + Xcode CLT / MSVC + webkit2gtk | Same as Desktop |
 
 ## Kubo Build Flags
 

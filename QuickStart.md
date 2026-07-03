@@ -12,6 +12,11 @@ Requirements narrative: [docs/UserStory.md](docs/UserStory.md). Scenario backlog
 
 ## Install
 
+Both `scripts/setup.sh` (mac/Linux) and `scripts/setup.ps1` (Windows) do the
+same six steps in the same order. They are deliberately kept as twins — if
+you change one, change the other in the same commit. Full reference and
+design notes: [docs/setup-scripts.md](docs/setup-scripts.md).
+
 From the repository root:
 
 ```bash
@@ -28,6 +33,36 @@ npm run setup
 npm run setup:win
 ```
 
+### Setup flags
+
+Both scripts accept the same three flags, with shell-native spelling:
+
+| Purpose | mac/Linux | Windows PowerShell |
+| --- | --- | --- |
+| Use a local OpenClaw checkout (skip GitHub clone) | `--local /path/to/openclaw` | `-LocalOpenClawPath C:\path\to\openclaw` |
+| Skip the long OpenClaw build + smoke test | `--skip-openclaw-build` | `-SkipOpenClawBuild` |
+| Skip the final TypeScript typecheck | `--skip-typecheck` | `-SkipTypecheck` |
+| Show usage and exit | `-h`, `--help` | `-?`, `-h`, `-Help` (PowerShell convention) |
+
+Examples:
+
+```bash
+# Re-run quickly with the OpenClaw build + typecheck already verified
+./scripts/setup.sh --skip-openclaw-build --skip-typecheck
+
+# Bootstrap from a local OpenClaw checkout (good when the GitHub repo is
+# slow or you're developing openclaw in parallel)
+./scripts/setup.sh --local ~/work/openclaw
+```
+
+```powershell
+# Windows equivalent
+.\scripts\setup.ps1 -LocalOpenClawPath C:\work\openclaw
+.\scripts\setup.ps1 -SkipOpenClawBuild -SkipTypecheck
+```
+
+### OpenClaw bootstrap only
+
 If you only need the OpenClaw (EnvoyAI) bootstrap without the full build:
 
 ```bash
@@ -40,8 +75,23 @@ If you only need the OpenClaw (EnvoyAI) bootstrap without the full build:
 .\scripts\install-openclaw.ps1 -LocalOpenClawPath C:\path\to\openclaw
 ```
 
-`setup.sh` and `setup.ps1` are kept in sync step-for-step. If you change
-one, change the other in the same commit.
+### What the setup script does
+
+Six steps, in order:
+
+0. **Clean stale artifacts** — drop an incomplete `packages/openclaw/dist`.
+1. **Toolchain check** — verify Node 22+; install pnpm if missing.
+2. **Install EnvoyMesh dependencies** — `npm install` at the root.
+3. **OpenClaw bootstrap + extension copy** — clone (or use `--local`),
+   copy `OpenClawExtension` into `packages/openclaw/extensions/envoymesh`.
+4. **Build OpenClaw gateway** — `pnpm install --no-frozen-lockfile` + metadata
+   generation + `pnpm run build` + smoke-test the webhook. Skipped if you
+   pass `--skip-openclaw-build` / `-SkipOpenClawBuild`.
+5. **Bridge config template** — copy
+   `apps/node/data/default/bridge-config.openclaw.example.json` to
+   `bridge-config.json` if no file exists yet.
+6. **TypeScript typecheck** — `tsc -p tsconfig.json` for `@envoymesh/api` and
+   `@envoymesh/node`. Skipped if you pass `--skip-typecheck` / `-SkipTypecheck`.
 
 The plain `npm install` from a fresh clone also works; the setup scripts
 are an opinionated one-shot that also bootstraps the OpenClaw submodule,
@@ -50,7 +100,7 @@ smoke-tests the webhook.
 
 ## Build And Verify
 
-Run the TypeScript build check:
+Run the TypeScript build check (also runs as setup step 6):
 
 ```bash
 npm run typecheck

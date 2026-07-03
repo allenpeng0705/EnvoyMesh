@@ -52,6 +52,7 @@ import {
   ENVOY_DATA_PROTOCOL,
   ENVOY_MESSAGE_PROTOCOL,
   EnvoyMesh,
+  type EnvoyMeshOptions,
   filterBootstrapMultiaddrs,
   filterRelayControlTargets,
   filterUsableOutboundPeerDialHints,
@@ -287,6 +288,103 @@ if (persistedNodeConfig) {
   );
 }
 
+const vaultDirForNode = process.env.ENVOYMESH_VAULT ?? join(process.cwd(), "shared_vault");
+
+// Model provider configuration — loaded from persisted config after nodeService is created
+let currentModelProviders: ModelProviderConfig = { mode: "mock" };
+let currentChatAssistEnabled = false;
+let currentAutonomousKillSwitch = false;
+let currentAutonomousPolicies: readonly AutonomousPolicy[] = [];
+let currentTrustModeEnabled = false;
+let currentKnowledgeSyndicationMaxSensitivity:
+  | import("@envoymesh/api").KnowledgeSyndicationSensitivity
+  | undefined;
+let currentAiSettings: AiSettings | undefined;
+let currentContactAiPrefs: Map<
+  string,
+  {
+    aiAccessLevel: "none" | "assistant_only" | "full";
+    knowledgeAccess: "public" | "professional" | "personal";
+    priority: "high" | "low";
+    syndicationMaxSensitivity?: "public" | "friends" | "private";
+  }
+> = new Map();
+
+// Start Social WS before bridge/vault/libp2p so the UI can connect immediately.
+let wsServerForEvents: WsServer | null = null;
+const approvalQueue = new ApprovalQueue();
+const nodeService = createNodeService(
+  undefined,
+  trustStore,
+  peerDirectoryStore,
+  humanProfileStore,
+  args.profileDir,
+  profile,
+  vaultDirForNode,
+);
+const modeController = new ModeController(createDefaultModeConfig(), taskStore);
+const sessionManager = new SessionManager(new FileSessionStore(join(args.profileDir, "sessions")));
+const styleAdapter = new StyleAdapter();
+const triggerStore = new TriggerStore();
+const digestGenerator = new DigestGenerator(
+  createDefaultDigestConfig(join(args.profileDir, "digests")),
+);
+const wsServer = new WsServer(3030, "/ws", {
+  onConnectionChange: (connectedCount) => {
+    if (connectedCount > 0) {
+      modeController.markOwnerConnected();
+    } else {
+      modeController.markOwnerDisconnected();
+    }
+  },
+});
+wsServer.start(nodeService);
+wsServerForEvents = wsServer;
+if (nodeService instanceof NodeServiceImpl) {
+  nodeService.setWsListenAddress(3030, "/ws");
+  nodeService.bindCliTaskStore(taskStore);
+  nodeService.bindApprovalQueue(approvalQueue);
+  const nodeConfig = await nodeService.getNodeConfig();
+  currentModelProviders = nodeConfig.modelProviders;
+  if (nodeConfig.relayPublicWsUrl) {
+    nodeService.setRelayPublicWsUrl(nodeConfig.relayPublicWsUrl);
+  }
+  currentChatAssistEnabled =
+    process.env.ENVOY_CHAT_ASSIST_ENABLED === "true" ? true : nodeConfig.chatAssistEnabled;
+  currentAutonomousKillSwitch = nodeConfig.autonomousKillSwitch ?? false;
+  currentAutonomousPolicies = nodeConfig.autonomousPolicies ?? [];
+  currentTrustModeEnabled = nodeConfig.trustModeEnabled ?? false;
+  currentKnowledgeSyndicationMaxSensitivity = nodeConfig.knowledgeSyndicationMaxSensitivity;
+  currentAiSettings = nodeConfig.aiSettings;
+  currentContactAiPrefs = new Map(
+    (nodeConfig.contactAiPreferences ?? []).map((p: ContactAiPreferences) => [
+      p.peerOwnerId,
+      {
+        aiAccessLevel: p.aiAccessLevel,
+        knowledgeAccess: p.knowledgeAccess,
+        priority: p.priority,
+        syndicationMaxSensitivity: p.syndicationMaxSensitivity,
+      },
+    ]),
+  );
+  console.log(`[model] provider mode=${currentModelProviders.mode}`);
+  console.log(`[chat] assist ${currentChatAssistEnabled ? "enabled" : "disabled"}`);
+  console.log(
+    `[autonomous] killSwitch=${currentAutonomousKillSwitch}, policies=${currentAutonomousPolicies.length}`,
+  );
+}
+console.log("[node] Social WebSocket listening on ws://127.0.0.1:3030/ws");
+
+// Register deferred mesh start immediately — module init continues for ~2000 lines and
+// the UI can finish setup before that completes.
+if (!persistedNodeConfig && nodeService instanceof NodeServiceImpl) {
+  nodeService.emit("node:status", { status: "offline" });
+  nodeService.registerDeferredExternalMeshStart(async () => {
+    await ensureCliMeshActivated(true);
+  });
+  console.log("[node] First-run setup pending — libp2p deferred until setup completes");
+}
+
 // External Agent Gateway — manages external agent sessions, capabilities, and action logging
 const gateway = new ExternalAgentGateway();
 
@@ -366,7 +464,6 @@ const discoverySeedStore = createDiscoverySeedStore(args.profileDir);
 const taskRuntimeStore = createTaskRuntimeStateStore(args.profileDir);
 const resolvedArgs = await resolveNodeArgsTargetsByOwnerId(args, peerDirectoryStore);
 const inboundGuard = createInboundMessageGuard();
-const vaultDirForNode = process.env.ENVOYMESH_VAULT ?? join(process.cwd(), "shared_vault");
 let vaultIndex: Awaited<ReturnType<typeof buildVaultIndex>> | null = null;
 let ragService: RagService | null = null;
 let emitRagReindexProgress: ((progress: import("@envoymesh/api").RagIndexProgress) => void) | undefined;
@@ -416,6 +513,15 @@ async function refreshRagService(): Promise<void> {
   }
 }
 
+if (nodeService instanceof NodeServiceImpl) {
+  emitRagReindexProgress = (progress) => {
+    if (nodeService.hasListeners("rag:reindex")) {
+      nodeService.emit("rag:reindex", progress);
+    }
+  };
+  void refreshRagService();
+}
+
 function scheduleChatRagIndex(threadOwnerId: string, message: Parameters<typeof chatLogStore.append>[1]): void {
   if (!ragService) return;
   const view = chatLogRowsToViews([message])[0];
@@ -425,33 +531,6 @@ function scheduleChatRagIndex(threadOwnerId: string, message: Parameters<typeof 
   );
 }
 
-// Model provider configuration — loaded from persisted config after nodeService is created
-let currentModelProviders: ModelProviderConfig = { mode: "mock" };
-
-// Chat assist setting — loaded from persisted config after nodeService is created
-let currentChatAssistEnabled = false;
-
-// Autonomous policy configuration — loaded from persisted config after nodeService is created
-let currentAutonomousKillSwitch = false;
-let currentAutonomousPolicies: readonly AutonomousPolicy[] = [];
-let currentTrustModeEnabled = false;
-let currentKnowledgeSyndicationMaxSensitivity:
-  | import("@envoymesh/api").KnowledgeSyndicationSensitivity
-  | undefined;
-
-// AI Settings — identity mode, online/offline behavior (loaded from persisted config)
-let currentAiSettings: AiSettings | undefined;
-
-// Contact AI preferences — per-contact access levels (loaded from persisted config)
-let currentContactAiPrefs: Map<
-  string,
-  {
-    aiAccessLevel: "none" | "assistant_only" | "full";
-    knowledgeAccess: "public" | "professional" | "personal";
-    priority: "high" | "low";
-    syndicationMaxSensitivity?: "public" | "friends" | "private";
-  }
-> = new Map();
 let friendAutopilotRunInFlight = false;
 let socialProxyRunInFlight = false;
 let documentAcquisitionRunInFlight = false;
@@ -515,8 +594,6 @@ async function dialHintsForTransportPeer(
   });
 }
 
-// WebSocket server reference for event emission
-let wsServerForEvents: WsServer | null = null;
 const peerDirCompact = await peerDirectoryStore.compactListenAddrs();
 if (peerDirCompact.addrsRemoved > 0) {
   console.log(
@@ -723,6 +800,14 @@ let rendezvousSweeper: ReturnType<typeof setInterval> | undefined;
 let modeTransitionTimer: ReturnType<typeof setInterval> | undefined;
 const processStartedAt = Date.now();
 let meshStarted = false;
+let relayTunnelClient: RelayTunnelClient | null = null;
+let cliMeshActivationInFlight = false;
+let cliMeshActivationPromise: Promise<void> | undefined;
+let publicAddrPeriodicDiscoveryStarted = false;
+let cliMeshReadyResolve: (() => void) | undefined;
+const cliMeshReadyPromise = new Promise<void>((resolve) => {
+  cliMeshReadyResolve = resolve;
+});
 let lastKnownLibp2pPeerId = "";
 let lastEventLoopLagMs = 0;
 const recentFatalErrors: Array<{ at: number; message: string }> = [];
@@ -2195,85 +2280,6 @@ mesh.onMessage(async (params) => {
   scheduleMeshInboundDrain();
 });
 
-const approvalQueue = new ApprovalQueue();
-
-const nodeService = createNodeService(
-  undefined,
-  trustStore,
-  peerDirectoryStore,
-  humanProfileStore,
-  args.profileDir,
-  profile,
-  vaultDirForNode,
-);
-
-// Start Social WS as early as possible — RAG backfill and libp2p must not delay port 3030.
-const modeController = new ModeController(createDefaultModeConfig(), taskStore);
-const sessionManager = new SessionManager(new FileSessionStore(join(args.profileDir, "sessions")));
-const styleAdapter = new StyleAdapter();
-const triggerStore = new TriggerStore();
-const digestGenerator = new DigestGenerator(
-  createDefaultDigestConfig(join(args.profileDir, "digests")),
-);
-const wsServer = new WsServer(3030, "/ws", {
-  onConnectionChange: (connectedCount) => {
-    if (connectedCount > 0) {
-      modeController.markOwnerConnected();
-    } else {
-      modeController.markOwnerDisconnected();
-    }
-  },
-});
-wsServer.start(nodeService);
-wsServerForEvents = wsServer;
-if (nodeService instanceof NodeServiceImpl) {
-  nodeService.setWsListenAddress(3030, "/ws");
-}
-
-if (nodeService instanceof NodeServiceImpl) {
-  emitRagReindexProgress = (progress) => {
-    if (nodeService.hasListeners("rag:reindex")) {
-      nodeService.emit("rag:reindex", progress);
-    }
-  };
-  nodeService.bindCliTaskStore(taskStore);
-  nodeService.bindApprovalQueue(approvalQueue);
-  // bindExternalMesh + resyncBondedContactReachabilityTags run after mesh.start()
-  // (mesh.peerId requires libp2p to be up).
-  // Load model provider config from persisted config
-  const nodeConfig = await nodeService.getNodeConfig();
-  currentModelProviders = nodeConfig.modelProviders;
-  // Restore relay pairing proxy URL from persisted config (Phase 10A relay bridge)
-  if (nodeConfig.relayPublicWsUrl) {
-    nodeService.setRelayPublicWsUrl(nodeConfig.relayPublicWsUrl);
-  }
-  // Environment variable can override chat assist setting
-  currentChatAssistEnabled = process.env.ENVOY_CHAT_ASSIST_ENABLED === "true" ? true : nodeConfig.chatAssistEnabled;
-  // Load autonomous policy config
-  currentAutonomousKillSwitch = nodeConfig.autonomousKillSwitch ?? false;
-  currentAutonomousPolicies = nodeConfig.autonomousPolicies ?? [];
-  currentTrustModeEnabled = nodeConfig.trustModeEnabled ?? false;
-  currentKnowledgeSyndicationMaxSensitivity = nodeConfig.knowledgeSyndicationMaxSensitivity;
-  // Load AI settings
-  currentAiSettings = nodeConfig.aiSettings;
-  // Load contact AI preferences into a Map for fast lookup
-  currentContactAiPrefs = new Map(
-    (nodeConfig.contactAiPreferences ?? []).map((p: ContactAiPreferences) => [
-      p.peerOwnerId,
-      {
-        aiAccessLevel: p.aiAccessLevel,
-        knowledgeAccess: p.knowledgeAccess,
-        priority: p.priority,
-        syndicationMaxSensitivity: p.syndicationMaxSensitivity,
-      },
-    ]),
-  );
-  console.log(`[model] provider mode=${currentModelProviders.mode}`);
-  console.log(`[chat] assist ${currentChatAssistEnabled ? "enabled" : "disabled"}`);
-  console.log(`[autonomous] killSwitch=${currentAutonomousKillSwitch}, policies=${currentAutonomousPolicies.length}`);
-  void refreshRagService();
-}
-
 // ── Public IP discovery ────────────────────────────────────────────────────────
 // Priority: UPnP → STUN → autoNAT → relay-observed
 // First valid result wins; we inject it into mesh so provideSelf() advertises
@@ -2347,6 +2353,168 @@ async function discoverAndSetPublicAddr(mesh: EnvoyMesh, args: NodeArgs): Promis
   console.log(`[node] relay-observed addr: wired via relay-tunnel-client callback`);
 }
 
+let clientProxyHandlerRegistered = false;
+
+async function registerClientProxyHandler(): Promise<void> {
+  if (!(nodeService instanceof NodeServiceImpl) || !meshStarted || clientProxyHandlerRegistered) {
+    return;
+  }
+  await mesh.handleRawProtocol(CLIENT_PROXY_PROTOCOL, createClientProxyHandler(nodeService));
+  clientProxyHandlerRegistered = true;
+  console.log(`[node] client-proxy protocol handler registered: ${CLIENT_PROXY_PROTOCOL}`);
+}
+
+async function startRelayTunnelIfConfigured(): Promise<void> {
+  if (!(nodeService instanceof NodeServiceImpl) || !meshStarted || relayTunnelClient) {
+    return;
+  }
+  try {
+    const relayWsUrl = await nodeService.resolveRelayWsUrl();
+    if (relayWsUrl) {
+      relayTunnelClient = new RelayTunnelClient({
+        relayWsUrl,
+        homePeerId: mesh.peerId,
+        localWsServerUrl: `ws://127.0.0.1:3030/ws`,
+        log: (msg) => console.log(msg),
+        onObservedAddr: (addr) => {
+          const ipMatch = addr.match(/^\/ip4\/([^\/]+)/);
+          if (ipMatch) {
+            const publicIp = ipMatch[1];
+            const fixedAddr = `/ip4/${publicIp}/tcp/4001`;
+            mesh.setAdvertisedAddress(fixedAddr);
+            console.log(
+              `[node] public addr discovered via relay: ${addr} -> advertising ${fixedAddr} (configure port forwarding: external 4001 -> internal libp2p port)`,
+            );
+          } else {
+            mesh.setAdvertisedAddress(addr);
+            console.log(`[node] public addr discovered via relay observed addr: ${addr}`);
+          }
+        },
+      });
+      relayTunnelClient.start();
+      console.log(`[node] relay-tunnel: connecting to ${relayWsUrl} (peerId=${mesh.peerId.slice(0, 12)}…)`);
+    } else {
+      console.log(
+        `[node] relay-tunnel: skipped (no relay reachable — set relayPublicWsUrl or ensure a configured relay is connected)`,
+      );
+    }
+  } catch (err) {
+    console.warn(`[node] relay-tunnel: failed to resolve relay URL: ${(err as Error).message}`);
+  }
+}
+
+async function activateCliMesh(reloadDiscoveryFromConfig: boolean): Promise<void> {
+  if (meshStarted) {
+    return;
+  }
+  if (cliMeshActivationInFlight && cliMeshActivationPromise) {
+    await cliMeshActivationPromise;
+    return;
+  }
+  cliMeshActivationInFlight = true;
+  cliMeshActivationPromise = (async () => {
+    try {
+      if (reloadDiscoveryFromConfig) {
+        const config = await nodeConfigStore.load();
+        if (!config) {
+          throw new Error("No node config found. Complete setup first.");
+        }
+        applyPersistedDiscoveryConfig(args, config);
+        const connectivityRuntime = resolveConnectivityRuntime({
+          profile: args.discoveryProfile,
+          enableMdns: args.enableMdnsExplicit ? args.enableMdns : undefined,
+          tuning: args.connectivityTuning,
+        });
+        args.enableMdns = connectivityRuntime.enableMdns;
+        args.enableDht = connectivityRuntime.enableDht;
+
+        const resolvedBootstrapResults = await resolveBootstrapAddresses(args.bootstrapPeers);
+        const resolvedBootstrapPeers = resolvedBootstrapResults.flatMap((r) => r.resolved);
+        const persistedSeedAddrs = seedAddrsForDiscoveryProfile(
+          args.discoveryProfile,
+          await discoverySeedStore.listSeedRecords(),
+        );
+        const rawBootstrapPeers = dedupeAddrs([...resolvedBootstrapPeers, ...persistedSeedAddrs]);
+        const effectivePeers = filterBootstrapMultiaddrs(rawBootstrapPeers);
+
+        const meshOpts = (mesh as unknown as { options: EnvoyMeshOptions }).options;
+        meshOpts.bootstrapPeers = effectivePeers;
+        meshOpts.enableMdns = connectivityRuntime.enableMdns;
+        meshOpts.mdnsIntervalMs = connectivityRuntime.mdnsIntervalMs;
+        meshOpts.enableDht = connectivityRuntime.enableDht;
+        meshOpts.enableRelay = args.enableRelay;
+        meshOpts.enableRelayServer = args.enableRelayServer;
+        if (connectivityRuntime.maxConnections != null) {
+          meshOpts.maxConnections = connectivityRuntime.maxConnections;
+        }
+      }
+
+      await mesh.start();
+      meshStarted = true;
+      lastKnownLibp2pPeerId = mesh.peerId;
+
+      void discoverAndSetPublicAddr(mesh, args);
+      if (!publicAddrPeriodicDiscoveryStarted) {
+        publicAddrPeriodicDiscoveryStarted = true;
+        setInterval(() => {
+          void discoverAndSetPublicAddr(mesh, args);
+        }, 10 * 60 * 1000);
+      }
+
+      if (args.enableDht) {
+        let advertiseAttempt = 0;
+        const advertise = () => {
+          advertiseAttempt++;
+          console.log(`[node] DHT self-advertisement attempt ${advertiseAttempt}...`);
+          mesh.provideSelf().catch((err) => console.warn("[node] provideSelf failed:", err));
+        };
+        setTimeout(() => advertise(), 30000);
+        setTimeout(() => advertise(), 60000);
+        setTimeout(() => advertise(), 90000);
+      }
+
+      if (nodeService instanceof NodeServiceImpl) {
+        nodeService.bindExternalMesh(mesh);
+      }
+
+      if (args.enableRelayServer) {
+        rendezvousRegistry = new CapabilityRegistry({ verbosity: "minimal", logPrefix: "[node-rendezvous]" });
+        rendezvousSweeper = rendezvousRegistry.startSweeper();
+        console.log("[node] Rendezvous capability registry enabled (--relay-server)");
+      }
+
+      if (args.bootstrapPeers.length > 0) {
+        await discoverySeedStore.upsertMany(args.bootstrapPeers, "manual-bootstrap");
+      }
+
+      console.log("Envoy node started");
+
+      stopNodeStatsLogging = startNodeStatsInterval(mesh, {
+        processStartedAtMs: processStartedAt,
+        relayRosterSize: () => relayRoster.entries().length,
+      });
+
+      await registerClientProxyHandler();
+      await startRelayTunnelIfConfigured();
+    } finally {
+      cliMeshActivationInFlight = false;
+    }
+  })();
+  await cliMeshActivationPromise;
+}
+
+async function ensureCliMeshActivated(reloadDiscoveryFromConfig: boolean): Promise<void> {
+  await cliMeshReadyPromise;
+  if (meshStarted) {
+    return;
+  }
+  if (cliMeshActivationPromise) {
+    await cliMeshActivationPromise;
+    return;
+  }
+  await activateCliMesh(reloadDiscoveryFromConfig);
+}
+
 installEnvoyDataTransferReceiver({
   mesh,
   peerDirectoryStore,
@@ -2368,64 +2536,14 @@ installEnvoyDataTransferReceiver({
       : undefined,
 });
 
-await mesh.start();
-meshStarted = true;
-lastKnownLibp2pPeerId = mesh.peerId;
+cliMeshReadyResolve?.();
+cliMeshReadyResolve = undefined;
 
-// ── Public IP discovery (UPnP → STUN → autoNAT → relay-observed) ─────────────
-// Goal: populate mesh's _appendAnnounce so provideSelf() advertises a
-// direct-dial address to DHT, enabling mobile clients to find this node
-// without relying on the relay WebSocket tunnel.
-//
-// Priority order: UPnP (automatic port forwarding) → STUN → autoNAT → relay-observed
-// The first valid result wins and is injected into mesh via setAdvertisedAddress().
-// Subsequent results are ignored. We re-run periodically to catch dynamic IP changes.
-void discoverAndSetPublicAddr(mesh, args);
-
-// Also re-run discovery periodically (every 10 min) to catch dynamic IP changes.
-setInterval(() => {
-  void discoverAndSetPublicAddr(mesh, args);
-}, 10 * 60 * 1000);
-
-// Announce this node on the DHT so mobile clients can find it via findPeer().
-// This is essential for DHT-based discovery to work when the relay is down.
-// Wait 30s for DHT bootstrap + circuit relay connections to establish first.
-if (args.enableDht) {
-  let advertiseAttempt = 0;
-  const advertise = () => {
-    advertiseAttempt++;
-    console.log(`[node] DHT self-advertisement attempt ${advertiseAttempt}...`);
-    mesh.provideSelf().catch((err) =>
-      console.warn("[node] provideSelf failed:", err),
-    );
-  };
-  // Wait for DHT connections to stabilize before first attempt
-  setTimeout(() => advertise(), 30000); // First attempt at 30s
-  setTimeout(() => advertise(), 60000); // Retry at 60s
-  setTimeout(() => advertise(), 90000); // Retry at 90s
+if (persistedNodeConfig) {
+  await ensureCliMeshActivated(false);
+} else {
+  console.log("[node] Social WebSocket ready — complete setup in the UI to start the mesh");
 }
-
-if (nodeService instanceof NodeServiceImpl) {
-  nodeService.bindExternalMesh(mesh);
-}
-
-if (args.enableRelayServer) {
-  rendezvousRegistry = new CapabilityRegistry({ verbosity: "minimal", logPrefix: "[node-rendezvous]" });
-  rendezvousSweeper = rendezvousRegistry.startSweeper();
-  console.log("[node] Rendezvous capability registry enabled (--relay-server)");
-}
-
-if (args.bootstrapPeers.length > 0) {
-  await discoverySeedStore.upsertMany(args.bootstrapPeers, "manual-bootstrap");
-}
-
-console.log("Envoy node started");
-
-// Start periodic self-monitoring stats (crash prevention)
-stopNodeStatsLogging = startNodeStatsInterval(mesh, {
-  processStartedAtMs: processStartedAt,
-  relayRosterSize: () => relayRoster.entries().length,
-});
 
 // Periodic cleanup of expired rate limit entries
 rateLimitCleanupInterval = setInterval(() => {
@@ -2555,60 +2673,8 @@ if (nodeService instanceof NodeServiceImpl) {
   nodeService.setTerminalAgentAssist(terminalAgentAssist);
 }
 
-// Register client-proxy protocol handler (Phase 10A relay bridge)
-// Mobile app connects to relay's WebSocket; relay proxies to home node via this libp2p stream.
-if (nodeService instanceof NodeServiceImpl) {
-  await mesh.handleRawProtocol(CLIENT_PROXY_PROTOCOL, createClientProxyHandler(nodeService));
-  console.log(`[node] client-proxy protocol handler registered: ${CLIENT_PROXY_PROTOCOL}`);
-} else {
-  console.warn(`[node] client-proxy handler NOT registered: nodeService is not NodeServiceImpl`);
-}
-
-// Register persistent WebSocket tunnel to the relay (TURN-like, NAT-traversal).
-// The home node dials OUT to the relay's /ws/home?peerId=<homePeerId>. The relay
-// uses this to bridge mobile clients to the home node's local ws-server (port
-// 3030) for pairing and as a fallback when direct libp2p dials fail. This is
-// the primary fix for pairing from any network — it removes the requirement
-// that the relay can reach the home node via libp2p.
-let relayTunnelClient: RelayTunnelClient | null = null;
-if (nodeService instanceof NodeServiceImpl) {
-  try {
-    const relayWsUrl = await nodeService.resolveRelayWsUrl();
-    if (relayWsUrl) {
-      relayTunnelClient = new RelayTunnelClient({
-        relayWsUrl,
-        homePeerId: mesh.peerId,
-        localWsServerUrl: `ws://127.0.0.1:3030/ws`,
-        log: (msg) => console.log(msg),
-        // Method 2: capture relay-observed address so we can advertise it to DHT.
-        // The relay reports the ephemeral source port of our TCP connection (e.g. 28746),
-        // not our actual listen port. Fix the port to the conventional libp2p port (4001)
-        // so other peers can dial us directly when port forwarding is configured.
-        // The user should forward router external port 4001 -> internal libp2p port.
-        onObservedAddr: (addr) => {
-          // addr format: /ip4/1.2.3.4/tcp/EPHEMERAL_PORT
-          const ipMatch = addr.match(/^\/ip4\/([^\/]+)/);
-          if (ipMatch) {
-            const publicIp = ipMatch[1];
-            // Use conventional libp2p port 4001. User must forward router port 4001
-            // to this node's internal libp2p listen port.
-            const fixedAddr = `/ip4/${publicIp}/tcp/4001`;
-            mesh.setAdvertisedAddress(fixedAddr);
-            console.log(`[node] public addr discovered via relay: ${addr} -> advertising ${fixedAddr} (configure port forwarding: external 4001 -> internal libp2p port)`);
-          } else {
-            mesh.setAdvertisedAddress(addr);
-            console.log(`[node] public addr discovered via relay observed addr: ${addr}`);
-          }
-        },
-      });
-      relayTunnelClient.start();
-      console.log(`[node] relay-tunnel: connecting to ${relayWsUrl} (peerId=${mesh.peerId.slice(0, 12)}…)`);
-    } else {
-      console.log(`[node] relay-tunnel: skipped (no relay reachable — set relayPublicWsUrl or ensure a configured relay is connected)`);
-    }
-  } catch (err) {
-    console.warn(`[node] relay-tunnel: failed to resolve relay URL: ${(err as Error).message}`);
-  }
+if (nodeService instanceof NodeServiceImpl && !meshStarted) {
+  console.log("[node] client-proxy deferred until first-run setup completes");
 }
 
 await runNodeHealthCycle("startup");
@@ -3029,6 +3095,7 @@ if (nodeService instanceof NodeServiceImpl && bridgeHttpReady) {
     activeExtAgentId: bridgeFields.activeExtAgentId,
     extAgents: bridgeFields.extAgents,
   });
+  if (meshStarted) {
   // Register bridge agent as a virtual peer so sendChat can resolve it.
   // ownerId = bridge agent peer ID (lookup key for sendChat)
   // peerId = home node's libp2p ID (transport)
@@ -3040,6 +3107,7 @@ if (nodeService instanceof NodeServiceImpl && bridgeHttpReady) {
     console.warn(`[bridge] failed to register agent in peer directory: ${err.message}`);
   });
   console.log(`[bridge] agent peer ${bridge.agentPeerId} registered`);
+  }
 
   // Register bridge agent in the external agent gateway for session management
   gateway.registerAgent(
@@ -3059,6 +3127,7 @@ if (args.configPath) {
 }
 console.log(`Owner ID: ${profile.owner.ownerId}`);
 console.log(`Device ID: ${profile.device.deviceId}`);
+if (meshStarted) {
 console.log(`libp2p Peer ID: ${mesh.peerId}`);
 console.log(`libp2p private key loaded (stable Peer ID across restarts)`);
 console.log(`Configured --listen: ${args.listen.join(", ")}`);
@@ -3093,6 +3162,9 @@ if (args.enableRelayServer && args.discoveryProfile === "wan-default" && args.ad
     "[connectivity warning] relay-server on wan-default without advertised bases: relay.lookup /p2p-circuit/ paths use getMultiaddrs only. Clients outside this machine's subnets (e.g. home Windows → cloud VM private 172.x) may not dial those addresses. Set --advertise-addr, YAML discovery.advertiseAddrs, or ENVOYMESH_ADVERTISE_ADDRS (comma-separated). Port must match what clients use; open the security group / firewall.",
   );
 }
+} else {
+  console.log("[node] libp2p mesh offline until first-run setup writes node-config.json");
+}
 
 void taskStore.appendAuditEvent(
   createAuditEvent({
@@ -3115,6 +3187,7 @@ for (const warning of connectivityWarnings) {
     }),
   );
 }
+if (meshStarted) {
 if (args.discoveryProfile === "wan-default" && effectiveBootstrapPeers.length > 0) {
   console.log(
     `[connectivity] probing ${effectiveBootstrapPeers.length} bootstrap peer(s) for wan-default…`,
@@ -3211,6 +3284,7 @@ if (args.enableRelay || args.enableRelayServer) {
     reportRelayBackgroundError("relay.manager.snapshot.startup", error);
   }
   scheduleRelayManagerSnapshot();
+}
 }
 
 // ─── Discovery Queue Processor (Phase 8I: low-priority queue for anonymous discovery) ───
@@ -3462,13 +3536,27 @@ if (resolvedArgs.humanProfileUpdate) {
 
 console.log("Press Ctrl+C to stop.");
 
+let shutdownInProgress = false;
+
 async function shutdown(): Promise<void> {
-  await bridge.stop();
-  if (nodeService instanceof NodeServiceImpl) {
-    try { await nodeService.stopOpenClaw?.(); } catch { /* ok */ }
-    nodeService.setBridgeStatus({ enabled: false, agentPeerId: "", agentUrl: "", listenPort: 0, agentName: "" });
+  if (shutdownInProgress) {
+    return;
   }
-  await wsServer.stop();
+  shutdownInProgress = true;
+  try {
+    await bridge.stop();
+    if (nodeService instanceof NodeServiceImpl) {
+      try {
+        await nodeService.stopOpenClaw?.();
+      } catch {
+        /* ok */
+      }
+      nodeService.setBridgeStatus({ enabled: false, agentPeerId: "", agentUrl: "", listenPort: 0, agentName: "" });
+    }
+    relayTunnelClient?.stop();
+    relayTunnelClient = null;
+    terminalWsServer.stop();
+    await wsServer.stop();
   if (bootstrapReprobeTimer) {
     clearTimeout(bootstrapReprobeTimer);
     bootstrapReprobeTimer = undefined;
@@ -3525,9 +3613,19 @@ async function shutdown(): Promise<void> {
   }
   const { shutdownKuboIpfsEngine } = await import("./kubo-ipfs-engine.js");
   await shutdownKuboIpfsEngine();
-  await mesh.stop();
-  meshStarted = false;
-  process.exit(0);
+  if (meshStarted) {
+    await mesh.stop();
+    meshStarted = false;
+  }
+  } catch (err) {
+    console.error("[node] shutdown error:", err);
+  }
+}
+
+function requestProcessExit(exitCode: number): void {
+  void shutdown().finally(() => {
+    process.exit(exitCode);
+  });
 }
 
 async function runLocalCapabilityDiscoveryCycle(
@@ -3865,18 +3963,8 @@ async function restartLibp2pForNodeHealth(reason: string): Promise<void> {
 
 async function exitForNodeSupervisor(reason: string): Promise<void> {
   console.error(`[node-health] critical; exiting for supervisor restart: ${reason}`);
-  try {
-    await bridge.stop();
-    wsServer.stop();
-    if (meshStarted) {
-      await mesh.stop();
-      meshStarted = false;
-    }
-  } catch (error) {
-    console.error("[node-health] failed to stop cleanly before supervisor exit:", error);
-  } finally {
-    process.exit(2);
-  }
+  await shutdown();
+  process.exit(2);
 }
 
 async function appendNodeHealthTrace(protocol: string, summary: string): Promise<void> {
@@ -4697,13 +4785,13 @@ async function appendRelayInboundAudit(
 }
 
 process.on("SIGINT", () => {
-  console.log('[node] SIGINT received — shutting down...');
-  shutdown().then(() => process.exit(0));
+  console.log("[node] SIGINT received — shutting down...");
+  requestProcessExit(0);
 });
 
 process.on("SIGTERM", () => {
-  console.log('[node] SIGTERM received — shutting down...');
-  shutdown().then(() => process.exit(0));
+  console.log("[node] SIGTERM received — shutting down...");
+  requestProcessExit(0);
 });
 
 // ============================================================================

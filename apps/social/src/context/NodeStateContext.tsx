@@ -441,10 +441,11 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!wsTransportOpen) return;
     const unsub = nodeService.on("node:online", () => {
+      if (nodeConfig?.nodeInitialized === false) return;
       void nodeService.refreshBondPeerProfiles?.().catch(() => {});
     });
     return unsub;
-  }, [nodeService, wsTransportOpen]);
+  }, [nodeService, wsTransportOpen, nodeConfig?.nodeInitialized]);
 
   // -----------------------------------------------------------------------
   // Helper functions

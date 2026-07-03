@@ -1,8 +1,7 @@
 #!/bin/bash
-# EnvoyMesh Release Packager
-# Creates a single installable bundle for all platforms.
+# EnvoyMesh Release Packager (DEPRECATED — superseded by scripts/bundle.sh)
 #
-# Usage: ./scripts/package-release.sh [version]
+# Creates a single installable bundle for all platforms.
 #
 # Output:
 #   release/envoymesh-{version}-macos.dmg
@@ -14,6 +13,23 @@
 #   - Social UI (bundled React app)
 #   - OpenClaw agent (bundled binary or fallback)
 #   - setup.sh (post-install)
+#
+# ---------------------------------------------------------------------------
+# DEPRECATION NOTE
+# ---------------------------------------------------------------------------
+# This script is a thin skeleton that copies source files into a tarball.
+# It does not compile the EnvoyMesh node, does not include a Node.js
+# runtime, and the install.sh it generates is rough.
+#
+# For new bundles, use one of:
+#
+#   ./scripts/bundle.sh          # mac/linux — produces release/envoymesh-*.tar.gz
+#   ./scripts/bundle.ps1         # Windows   — produces release/envoymesh-*.tar.gz
+#
+# See docs/bundle-scripts.md for the contract and the full flag reference.
+# This file is kept for now to avoid breaking any external automation that
+# references it; remove it after one release cycle.
+# ---------------------------------------------------------------------------
 
 set -e
 

@@ -81,6 +81,7 @@ export async function getNodeConfigViaRuntime(
   if (config) {
     return {
       profileDir: config.profileDir,
+      nodeInitialized: true,
       discoveryProfile: config.discoveryProfile,
       enableMdns: resolveEnableMdns(config.discoveryProfile, config.enableMdns),
       relayEnabled: config.relayEnabled,
@@ -165,6 +166,7 @@ export async function getNodeConfigViaRuntime(
   }
   return {
     profileDir: ctx.getProfileDir(),
+    nodeInitialized: false,
     discoveryProfile: "lan-fast" as const,
     enableMdns: true,
     relayEnabled: true,

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNodeState } from "./context/NodeStateContext.js";
 import { useT } from "./context/I18nContext.js";
 import { useNodeService } from "./hooks/useNodeService.js";
@@ -20,10 +20,22 @@ import { AutoReplyPausedNotifier } from "./components/AutoReplyPausedNotifier.js
 import { CallSessionProvider } from "./context/CallSessionContext.js";
 import { isTauriShell, restartTauriNodeProcess } from "./lib/tauri-shell.js";
 import { WS_LOOPBACK_URL } from "@envoymesh/api";
+import type { HumanProfile, NodeConfig, NodeStatus } from "@envoymesh/api";
 
 export type ViewName = "chat" | "assistant" | "discover" | "library" | "chains" | "profile" | "settings";
 
 export type ChatPanelMode = "threads" | "inbox" | "terminals";
+
+function needsFirstRunSetup(
+  _nodeStatus: NodeStatus,
+  humanProfile: HumanProfile | null,
+  nodeConfig: NodeConfig | null,
+): boolean {
+  if (nodeConfig?.nodeInitialized === false) return true;
+  const displayName = humanProfile?.displayName?.trim();
+  const username = humanProfile?.username?.trim();
+  return !displayName || !username;
+}
 
 function ConnectingSplash({
   reconnectAttempts,
@@ -36,6 +48,7 @@ function ConnectingSplash({
   tauriShell,
   autoConnect,
   wsUrl,
+  nodeBootstrapping,
 }: {
   reconnectAttempts: number;
   lastError: string | null;
@@ -47,6 +60,7 @@ function ConnectingSplash({
   tauriShell?: boolean;
   autoConnect: boolean;
   wsUrl: string;
+  nodeBootstrapping?: boolean;
 }) {
   const t = useT();
   return (
@@ -58,11 +72,13 @@ function ConnectingSplash({
           <div className="loading-spinner envoy-splash__spinner" />
           <h2 className="envoy-splash__title">{t("splash.connectingTitle")}</h2>
           <p className="envoy-splash__detail">
-            {!autoConnect && reconnectAttempts === 0
-              ? t("splash.autoConnectOff")
-              : reconnectAttempts > 0
-                ? t("splash.reconnectAttempt", { count: reconnectAttempts })
-                : t("splash.openingChannel", { wsUrl })}
+            {tauriShell && nodeBootstrapping && reconnectAttempts === 0
+              ? t("splash.startingNode")
+              : !autoConnect && reconnectAttempts === 0
+                ? t("splash.autoConnectOff")
+                : reconnectAttempts > 0
+                  ? t("splash.reconnectAttempt", { count: reconnectAttempts })
+                  : t("splash.openingChannel", { wsUrl })}
           </p>
           {isRelayUnreachable && (
             <p className="envoy-splash__relay-warn">{t("splash.relayWarn")}</p>
@@ -84,7 +100,8 @@ function ConnectingSplash({
               )}
             </div>
           )}
-          {(isRelayUnreachable || lastError || !autoConnect) && (
+          {(isRelayUnreachable || lastError || !autoConnect) &&
+          !(tauriShell && nodeBootstrapping && reconnectAttempts < 3) ? (
             <div className="envoy-splash__error">
               <p>
                 {lastError ??
@@ -107,7 +124,7 @@ function ConnectingSplash({
                 </button>
               </div>
             </div>
-          )}
+          ) : null}
         </div>
       </div>
     </div>
@@ -151,6 +168,46 @@ export function App() {
   const tauriShell = isTauriShell();
   const [restartNodeBusy, setRestartNodeBusy] = useState(false);
   const [restartNodeError, setRestartNodeError] = useState<string | null>(null);
+  const [nodeBootstrapping, setNodeBootstrapping] = useState(() => isTauriShell());
+  const tauriBootstrapStarted = useRef(false);
+
+  useEffect(() => {
+    if (!tauriShell || isConnected) {
+      setNodeBootstrapping(false);
+      return;
+    }
+    if (tauriBootstrapStarted.current) {
+      return;
+    }
+    tauriBootstrapStarted.current = true;
+    let cancelled = false;
+    void (async () => {
+      try {
+        await nodeService.waitForConnection(120_000);
+        if (!cancelled) {
+          await nodeService.reconnect();
+        }
+      } catch {
+        if (cancelled) return;
+        try {
+          const result = await restartTauriNodeProcess();
+          if (result.ok) {
+            await nodeService.waitForConnection(120_000);
+            await nodeService.reconnect();
+          }
+        } catch (error) {
+          console.error("[App] Tauri home node bootstrap failed:", error);
+        }
+      } finally {
+        if (!cancelled) {
+          setNodeBootstrapping(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tauriShell, isConnected, nodeService]);
   const isLocalWs = /^ws:\/\/(127\.0\.0\.1|localhost)(:\d+)?\//i.test(
     appSettings.wsUrl.trim() || WS_LOOPBACK_URL,
   );
@@ -209,6 +266,7 @@ export function App() {
           tauriShell={tauriShell}
           autoConnect={appSettings.autoConnect}
           wsUrl={appSettings.wsUrl.trim() || WS_LOOPBACK_URL}
+          nodeBootstrapping={nodeBootstrapping}
         />
       </ToastProvider>
     );
@@ -222,7 +280,7 @@ export function App() {
     );
   }
 
-  if (nodeStatus === "offline") {
+  if (needsFirstRunSetup(nodeStatus, humanProfile, nodeConfig)) {
     return (
       <ToastProvider>
         <SetupView />

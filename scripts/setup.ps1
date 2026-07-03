@@ -13,7 +13,18 @@
 #   * A typecheck pass on packages/api + apps/node
 #
 # Usage (from the repo root, in PowerShell):
-#   .\scripts\setup.ps1
+#   .\scripts\setup.ps1 [-LocalOpenClawPath <path>] [-SkipOpenClawBuild] [-SkipTypecheck] [-?]
+#
+# Flags (see docs/setup-scripts.md for the full reference):
+#   -LocalOpenClawPath <path>   Use a local OpenClaw checkout instead of
+#                                cloning from GitHub (forwarded to
+#                                install-openclaw.ps1). Only consulted when
+#                                packages/openclaw is missing.
+#   -SkipOpenClawBuild          Skip pnpm install + build + smoke for OpenClaw
+#                                (step 4). Useful for fast re-runs once the
+#                                build is already verified.
+#   -SkipTypecheck              Skip the final TypeScript typecheck (step 6).
+#   -?                          Print this message and exit.
 #
 # After setup:
 #   npm run node:dev     # starts bridge :3031 + OpenClaw gateway :18789 + EnvoyAI
@@ -138,6 +149,19 @@ function Invoke-ExternalQuiet {
         return $LASTEXITCODE
     } finally {
         $ErrorActionPreference = $prevEap
+    }
+}
+
+# Pick a random free loopback port in the user-private range. Used by the
+# gateway smoke test so we never collide with the historical hard-coded
+# port (something else may already be listening there).
+function Get-FreeLoopbackPort {
+    $listener = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 0)
+    $listener.Start()
+    try {
+        return ([System.Net.IPEndPoint]$listener.LocalEndpoint).Port
+    } finally {
+        $listener.Stop()
     }
 }
 
@@ -385,9 +409,19 @@ export * from "../src/cli/run-main.ts";
     }
 
     # Smoke-test the gateway + envoymesh webhook on a free high port.
+    # Everything below is wrapped in try/finally so Ctrl-C, errors, or a
+    # successful pass all tear the gateway down and restore the env vars
+    # (CI, OPENCLAW_*, ENVOYMESH_BRIDGE_URL) we mutated.
     Write-Info "Smoke-testing gateway webhook..."
     $gwState = Join-Path ([System.IO.Path]::GetTempPath()) ("envoymesh-gateway-smoke-" + [System.Guid]::NewGuid().ToString("N"))
     New-Item -ItemType Directory -Force -Path $gwState | Out-Null
+    $envBackup = [ordered]@{
+        "CI" = $env:CI
+        "OPENCLAW_STATE_DIR" = $env:OPENCLAW_STATE_DIR
+        "OPENCLAW_CONFIG_PATH" = $env:OPENCLAW_CONFIG_PATH
+        "OPENCLAW_BUNDLED_PLUGINS_DIR" = $env:OPENCLAW_BUNDLED_PLUGINS_DIR
+        "ENVOYMESH_BRIDGE_URL" = $env:ENVOYMESH_BRIDGE_URL
+    }
     $gwConfig = @"
 {
   "gateway": { "auth": { "mode": "none" } },
@@ -403,7 +437,7 @@ export * from "../src/cli/run-main.ts";
 }
 "@
     Set-Content -Path (Join-Path $gwState "openclaw.json") -Value $gwConfig -Encoding UTF8
-    $smokePort = 18799
+    $smokePort = Get-FreeLoopbackPort
     $env:OPENCLAW_STATE_DIR = $gwState
     $env:OPENCLAW_CONFIG_PATH = (Join-Path $gwState "openclaw.json")
     $env:OPENCLAW_BUNDLED_PLUGINS_DIR = (Resolve-Path "extensions").Path
@@ -434,6 +468,7 @@ export * from "../src/cli/run-main.ts";
         Write-Warn "Skipping gateway smoke start (node or tsx/openclaw.mjs missing)"
     }
     $gwOk = $false
+    try {
     for ($i = 1; $i -le 45; $i++) {
         try {
             $resp = Invoke-WebRequest -UseBasicParsing -TimeoutSec 2 -Method POST -Uri "http://127.0.0.1:$smokePort/webhook/envoymesh" -ContentType "application/json" -Body "{}" -ErrorAction Stop
@@ -442,7 +477,7 @@ export * from "../src/cli/run-main.ts";
             $code = 0
         }
         if ($code -ne 0 -and $code -ne 404) {
-            Write-Ok "Gateway webhook responded (HTTP $code)"
+            Write-Ok "Gateway webhook responded (HTTP $code on port $smokePort)"
             $gwOk = $true
             break
         }
@@ -451,12 +486,21 @@ export * from "../src/cli/run-main.ts";
     if (-not $gwOk) {
         Write-Warn "Webhook smoke test timed out — check packages\openclaw build logs"
     }
-    # Tear down the smoke-test gateway. Stop-Process is best-effort.
-    if ($gwProc) {
-        try { Stop-Process -Id $gwProc.Id -Force -ErrorAction SilentlyContinue } catch {}
+    } finally {
+        # Always tear down the gateway + temp state, then restore env.
+        if ($gwProc -and -not $gwProc.HasExited) {
+            try { Stop-Process -Id $gwProc.Id -Force -ErrorAction SilentlyContinue } catch {}
+            Start-Sleep -Milliseconds 500
+        }
+        if (Test-Path $gwState) {
+            Remove-Item -Recurse -Force $gwState -ErrorAction SilentlyContinue
+        }
+        foreach ($k in $envBackup.Keys) {
+            $orig = $envBackup[$k]
+            if ($null -eq $orig) { Remove-Item "Env:$k" -ErrorAction SilentlyContinue }
+            else                  { Set-Item -Path "Env:$k" -Value $orig }
+        }
     }
-    Start-Sleep -Milliseconds 500
-    Remove-Item -Recurse -Force $gwState -ErrorAction SilentlyContinue
 
     Pop-Location
 

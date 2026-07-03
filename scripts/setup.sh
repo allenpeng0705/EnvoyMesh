@@ -6,13 +6,59 @@
 # in sync step-for-step. If you change this file, update setup.ps1 in the
 # same commit and vice versa.
 #
-# Usage: ./scripts/setup.sh
+# Usage: ./scripts/setup.sh [--local /path/to/openclaw]
+#                          [--skip-openclaw-build] [--skip-typecheck] [-h|--help]
+#
+# Flags (see docs/setup-scripts.md for the full reference):
+#   --local /path/to/openclaw   Use a local OpenClaw checkout instead of
+#                               cloning from GitHub (forwarded to
+#                               install-openclaw.sh). Only consulted when
+#                               packages/openclaw is missing.
+#   --skip-openclaw-build       Skip pnpm install + build + smoke for OpenClaw
+#                               (step 4). Useful for fast re-runs once the
+#                               build is already verified.
+#   --skip-typecheck            Skip the final TypeScript typecheck (step 6).
+#   -h, --help                  Print this message and exit.
 #
 # After setup:
 #   npm run node:dev    # starts bridge :3031 + OpenClaw gateway :18789 + EnvoyAI
 #   npm run social:dev  # Social UI (terminal 2)
 
+# Keep semantics tight: an error anywhere aborts the script, AND pipeline
+# commands (e.g. `pnpm install ... 2>&1 | tail -5`) propagate the *real*
+# exit code instead of `tail`'s. Without pipefail, a failing pnpm or build
+# step would silently look like success and the script would march on.
 set -e
+set -o pipefail
+
+# ---- CLI flags (kept symmetric with scripts/setup.ps1) ----
+LOCAL_OPENCLAW_PATH=""
+SKIP_OPENCLAW_BUILD=0
+SKIP_TYPECHECK=0
+print_usage() {
+  cat <<'USAGE'
+Usage: ./scripts/setup.sh [options]
+
+Options:
+  --local /path/to/openclaw   Use a local OpenClaw checkout instead of cloning
+                              from GitHub (forwarded to install-openclaw.sh).
+  --skip-openclaw-build       Skip pnpm install / build / smoke for OpenClaw.
+  --skip-typecheck            Skip the final TypeScript typecheck pass.
+  -h, --help                  Show this message and exit.
+USAGE
+}
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --local)
+      [ $# -ge 2 ] || { echo "Missing value for --local" >&2; exit 1; }
+      LOCAL_OPENCLAW_PATH="$2"; shift 2 ;;
+    --skip-openclaw-build) SKIP_OPENCLAW_BUILD=1; shift ;;
+    --skip-typecheck)      SKIP_TYPECHECK=1; shift ;;
+    -h|--help)             print_usage; exit 0 ;;
+    *) echo "Unknown argument: $1" >&2; print_usage >&2; exit 1 ;;
+  esac
+done
+
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 ORIG_DIR="$ROOT"
 cd "$ROOT"
@@ -60,8 +106,23 @@ echo "[3/6] OpenClaw bootstrap..."
 if [ ! -f packages/openclaw/openclaw.mjs ] && [ ! -f packages/openclaw/package.json ]; then
   echo "  packages/openclaw missing — install-openclaw will clone from GitHub..."
 fi
+
+# Forward --local to install-openclaw.sh. If the local checkout already
+# populated packages/openclaw on a previous run, install-openclaw.sh's
+# "bundled found" short-circuit skips the copy — which is the right call,
+# the user probably wants idempotence there.
+INSTALL_OC_ARGS=()
+if [ -n "$LOCAL_OPENCLAW_PATH" ]; then
+  echo "  Using local OpenClaw checkout: $LOCAL_OPENCLAW_PATH"
+  INSTALL_OC_ARGS=(--local "$LOCAL_OPENCLAW_PATH")
+fi
+
 if [ -f scripts/install-openclaw.sh ]; then
+  if [ "${#INSTALL_OC_ARGS[@]}" -gt 0 ]; then
+    bash scripts/install-openclaw.sh "${INSTALL_OC_ARGS[@]}" || { echo "  ✗ install-openclaw.sh failed"; exit 1; }
+  else
   bash scripts/install-openclaw.sh || { echo "  ✗ install-openclaw.sh failed"; exit 1; }
+  fi
 else
   echo "  install-openclaw.sh not found — skipping"
 fi
@@ -84,8 +145,16 @@ fi
 echo ""
 
 # ---- Step 4: Build OpenClaw gateway ----
-echo "[4/6] Building OpenClaw gateway..."
-if [ -f packages/openclaw/package.json ]; then
+if [ "$SKIP_OPENCLAW_BUILD" = "1" ]; then
+  echo "[4/6] Building OpenClaw gateway (SKIPPED -- --skip-openclaw-build)..."
+elif [ ! -f packages/openclaw/package.json ]; then
+  echo "[4/6] Building OpenClaw gateway..."
+  echo "  ⚠ packages/openclaw not found — EnvoyAI will use native LLM fallback only"
+  echo "    Fix: ./scripts/install-openclaw.sh"
+  echo "    or:  ./scripts/setup.sh --local /path/to/openclaw"
+  echo "    or:  git clone --depth 1 https://github.com/openclaw/openclaw.git packages/openclaw"
+else
+  echo "[4/6] Building OpenClaw gateway..."
   cd packages/openclaw
 
   if [ -d "../../.pnpm-store" ]; then
@@ -154,10 +223,42 @@ STUB
     echo "  ⚠ envoymesh not in metadata — run: cd packages/openclaw && pnpm exec tsx scripts/generate-bundled-channel-config-metadata.ts"
   fi
 
-  # Smoke test gateway + envoymesh webhook (no bridge required for listen check)
+  # ---- Smoke test gateway + envoymesh webhook ----
+  # Pick a free loopback port (random in 18000-22999) instead of hard-coding
+  # 18799 — the historical port could already be occupied by a stray dev
+  # server, which would give us a false-positive response.
+  # The trap below guarantees the gateway is killed and GW_STATE is removed
+  # on every exit path: Ctrl-C, error, or normal completion.
   echo "  Smoke-testing gateway webhook..."
   GW_STATE=$(mktemp -d)
-  cat > "$GW_STATE/openclaw.json" << 'EOF'
+  GW_STATE_CREATED=1
+  GW_PID=""
+  cleanup_smoke() {
+    # Tear down the background gateway and the temp state dir. Idempotent.
+    if [ -n "${GW_PID:-}" ] && kill -0 "$GW_PID" 2>/dev/null; then
+      kill "$GW_PID" 2>/dev/null || true
+      wait "$GW_PID" 2>/dev/null || true
+    fi
+    if [ -n "${GW_STATE_CREATED:-}" ] && [ -d "${GW_STATE:-}" ]; then
+      rm -rf "$GW_STATE" 2>/dev/null || true
+    fi
+  }
+  trap cleanup_smoke EXIT INT TERM
+
+  SMOKE_PORT=""
+  for ((_probe = 0; _probe < 25; _probe++)); do
+    _candidate=$(( 18000 + RANDOM % 5000 ))
+    # bash /dev/tcp fails (non-zero subshell exit) when nothing is listening.
+    if ! (exec 3<>/dev/tcp/127.0.0.1/"$_candidate") 2>/dev/null; then
+      SMOKE_PORT="$_candidate"
+      break
+    fi
+  done
+
+  if [ -z "$SMOKE_PORT" ]; then
+    echo "  ⚠ Could not find a free loopback port after 25 attempts — skipping smoke test"
+  else
+    cat > "$GW_STATE/openclaw.json" << 'EOF'
 {
   "gateway": { "auth": { "mode": "none" } },
   "channels": {
@@ -171,29 +272,33 @@ STUB
   }
 }
 EOF
-  OPENCLAW_STATE_DIR="$GW_STATE" \
-  OPENCLAW_CONFIG_PATH="$GW_STATE/openclaw.json" \
-  OPENCLAW_BUNDLED_PLUGINS_DIR="$(pwd)/extensions" \
-  ENVOYMESH_BRIDGE_URL="http://127.0.0.1:3031/bridge/send" \
-  CI=true pnpm exec tsx openclaw.mjs gateway --port 18799 --bind loopback --auth none --allow-unconfigured &
-  GW_PID=$!
-  GW_OK=false
-  for i in $(seq 1 45); do
-    CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST http://127.0.0.1:18799/webhook/envoymesh \
-      -H "Content-Type: application/json" -d '{}' 2>/dev/null || echo "000")
-    if [ "$CODE" != "000" ] && [ "$CODE" != "404" ]; then
-      echo "  ✓ Gateway webhook responded (HTTP $CODE)"
-      GW_OK=true
-      break
+    OPENCLAW_STATE_DIR="$GW_STATE" \
+    OPENCLAW_CONFIG_PATH="$GW_STATE/openclaw.json" \
+    OPENCLAW_BUNDLED_PLUGINS_DIR="$(pwd)/extensions" \
+    ENVOYMESH_BRIDGE_URL="http://127.0.0.1:3031/bridge/send" \
+    CI=true pnpm exec tsx openclaw.mjs gateway --port "$SMOKE_PORT" --bind loopback --auth none --allow-unconfigured &
+    GW_PID=$!
+    GW_OK=false
+    # C-style for loop works in bash 3.2+; `seq 1 45` is not guaranteed on
+    # stock macOS (Xcode CLT only) so we avoid it for portability.
+    for ((i = 1; i <= 45; i++)); do
+      CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "http://127.0.0.1:$SMOKE_PORT/webhook/envoymesh" \
+        -H "Content-Type: application/json" -d '{}' 2>/dev/null || echo "000")
+      if [ "$CODE" != "000" ] && [ "$CODE" != "404" ]; then
+        echo "  ✓ Gateway webhook responded (HTTP $CODE on port $SMOKE_PORT)"
+        GW_OK=true
+        break
+      fi
+      sleep 1
+    done
+    if [ "$GW_OK" = "false" ]; then
+      echo "  ⚠ Webhook smoke test timed out — check packages/openclaw build logs"
     fi
-    sleep 1
-  done
-  if [ "$GW_OK" = "false" ]; then
-    echo "  ⚠ Webhook smoke test timed out — check packages/openclaw build logs"
   fi
-  kill $GW_PID 2>/dev/null || true
-  wait $GW_PID 2>/dev/null || true
-  rm -rf "$GW_STATE"
+  cleanup_smoke
+  GW_PID=""
+  GW_STATE_CREATED=""
+  trap - EXIT INT TERM
 
   if [ ! -f node_modules/tsx/dist/cli.mjs ] || [ ! -f openclaw.mjs ]; then
     echo "  ✗ OpenClaw gateway not ready — pnpm install did not produce tsx + openclaw.mjs"
@@ -203,10 +308,6 @@ EOF
   echo "  ✓ OpenClaw gateway ready (packages/openclaw)"
 
   cd "$ORIG_DIR"
-else
-  echo "  ✗ packages/openclaw not found — EnvoyAI will use native LLM fallback only"
-  echo "    Fix: ./scripts/install-openclaw.sh"
-  echo "    or: git clone --depth 1 https://github.com/openclaw/openclaw.git packages/openclaw"
 fi
 echo ""
 
@@ -229,11 +330,16 @@ fi
 echo ""
 
 # ---- Step 6: Typecheck ----
-echo "[6/6] TypeScript check (packages/api + apps/node)..."
-npm exec -w @envoymesh/api -- tsc -p tsconfig.json 2>/dev/null && \
-  npm exec -w @envoymesh/node -- tsc -p tsconfig.json 2>/dev/null && \
-  echo "  ✓ Core packages typecheck OK" || \
-  echo "  ⚠ Typecheck warnings — run: npm run typecheck"
+if [ "$SKIP_TYPECHECK" = "1" ]; then
+  echo "[6/6] TypeScript check (SKIPPED -- --skip-typecheck)..."
+else
+  echo "[6/6] TypeScript check (packages/api + apps/node)..."
+  # pipefail is now set, so tsc's exit code propagates through `2>/dev/null`.
+  npm exec -w @envoymesh/api -- tsc -p tsconfig.json 2>&1 | tail -3 && \
+    npm exec -w @envoymesh/node -- tsc -p tsconfig.json 2>&1 | tail -3 && \
+    echo "  ✓ Core packages typecheck OK" || \
+    echo "  ⚠ Typecheck warnings — run: npm run typecheck"
+fi
 echo ""
 
 echo "============================================"

@@ -30,3 +30,4 @@ shared_vault/
 /.pnpm-store
 /.deepseek
 /.deepseek
+/release

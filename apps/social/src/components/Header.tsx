@@ -9,6 +9,7 @@ import { useT } from "../context/I18nContext.js";
 import { DarkModeIcon, LightModeIcon, QRCodeIcon } from "../icons.js";
 import { LocaleSwitcher } from "./LocaleSwitcher.js";
 import { ProfilePhotoAvatar } from "./ProfilePhotoAvatar.js";
+import logoUrl from "../assets/logo.svg";
 
 interface HeaderProps {
   currentView: ViewName;
@@ -89,7 +90,7 @@ export function Header({
   return (
     <header className="header app-header">
       <div className="header-left">
-        <img src="/assets/logo.svg" alt="Envoy" className="logo" />
+        <img src={logoUrl} alt="Envoy" className="logo" />
         <span className="logo-text">Envoy</span>
       </div>
       <nav className="header-nav app-header__nav" aria-label={t("nav.primary")}>

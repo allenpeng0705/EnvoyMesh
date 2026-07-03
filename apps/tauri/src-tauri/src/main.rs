@@ -1,6 +1,8 @@
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use tauri::{Manager, State};
 use tracing::{error, info, warn, Level};
 use tracing::subscriber::set_global_default;
@@ -127,6 +129,21 @@ fn resolve_node_exe(resource_dir: Option<&Path>) -> PathBuf {
 }
 
 fn node_app_root(node_entry: &Path) -> PathBuf {
+    // Bundled layout: resources/node/dist/src/index.js → cwd is resources/node
+    if node_entry
+        .parent()
+        .and_then(|p| p.parent())
+        .and_then(|p| p.file_name())
+        .is_some_and(|name| name == "dist")
+    {
+        return node_entry
+            .parent()
+            .and_then(|src| src.parent())
+            .and_then(|dist| dist.parent())
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| node_entry.parent().unwrap_or(node_entry).to_path_buf());
+    }
+    // Legacy flat layout: resources/node/src/index.js → cwd is resources/node
     node_entry
         .parent()
         .and_then(|src| src.parent())
@@ -136,6 +153,8 @@ fn node_app_root(node_entry: &Path) -> PathBuf {
 
 fn bundled_node_entry(resource_dir: &Path) -> Option<PathBuf> {
     let candidates = [
+        resource_dir.join("node/dist/src/index.js"),
+        resource_dir.join("resources/node/dist/src/index.js"),
         resource_dir.join("node/src/index.js"),
         resource_dir.join("resources/node/src/index.js"),
     ];
@@ -204,10 +223,55 @@ fn is_port_in_use(port: u16) -> bool {
     std::net::TcpListener::bind(format!("127.0.0.1:{}", port)).is_err()
 }
 
+fn wait_for_port(port: u16, timeout: Duration) -> bool {
+    let start = Instant::now();
+    while start.elapsed() < timeout {
+        if is_port_in_use(port) {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    false
+}
+
+fn pipe_child_logs(label: &str, stream: Option<impl std::io::Read + Send + 'static>) {
+    if let Some(stream) = stream {
+        let label = label.to_string();
+        std::thread::spawn(move || {
+            for line in BufReader::new(stream).lines() {
+                match line {
+                    Ok(line) if !line.is_empty() => info!("[{}] {}", label, line),
+                    Ok(_) => {}
+                    Err(_) => break,
+                }
+            }
+        });
+    }
+}
+
 fn stop_node_child(child_slot: &mut Option<Child>) {
     if let Some(mut child) = child_slot.take() {
-        let _ = child.kill();
+        let pid = child.id();
+        #[cfg(unix)]
+        {
+            let _ = Command::new("kill")
+                .args(["-TERM", &format!("-{pid}")])
+                .status();
+        }
+        #[cfg(not(unix))]
+        {
+            let _ = child.kill();
+        }
         let _ = child.wait();
+    }
+}
+
+fn stop_node_from_app(app: &tauri::AppHandle) {
+    if let Some(state) = app.try_state::<NodeProcessState>() {
+        if let Ok(mut child_guard) = state.child.lock() {
+            stop_node_child(&mut *child_guard);
+            info!("Node process stopped");
+        }
     }
 }
 
@@ -241,6 +305,12 @@ fn spawn_node_process(config: &NodeSpawnConfig) -> Result<Child, String> {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
 
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        command.process_group(0);
+    }
+
     if let Some(exe) = &config.bundled_ipfs {
         command.env("ENVOYMESH_IPFS_EXE", exe);
     }
@@ -267,6 +337,10 @@ fn spawn_node_process(config: &NodeSpawnConfig) -> Result<Child, String> {
             "Failed to spawn node process ({:?}): {}",
             config.node_exe, e
         )
+    }).map(|mut child| {
+        pipe_child_logs("node", child.stdout.take());
+        pipe_child_logs("node", child.stderr.take());
+        child
     })
 }
 
@@ -360,7 +434,14 @@ fn main() {
 
             let initial_child = match spawn_node_process(&spawn_config) {
                 Ok(child) => {
-                    info!("Node process spawned successfully");
+                    info!("Node process spawned — waiting for WebSocket on port 3030…");
+                    if wait_for_port(3030, Duration::from_secs(120)) {
+                        info!("Home node WebSocket is ready on port 3030");
+                    } else {
+                        warn!(
+                            "Home node WebSocket not ready after 120s — Social UI will retry"
+                        );
+                    }
                     Some(child)
                 }
                 Err(e) => {
@@ -379,17 +460,15 @@ fn main() {
         })
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
-                info!("Window close requested, shutting down...");
-
-                let app = window.app_handle();
-                let node_state: State<NodeProcessState> = app.state();
-                let mut child_guard = node_state.child.lock().unwrap();
-                stop_node_child(&mut *child_guard);
-                info!("Node process killed");
-
-                std::process::exit(0);
+                info!("Window close requested, shutting down node...");
+                stop_node_from_app(window.app_handle());
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                stop_node_from_app(&app_handle);
+            }
+        });
 }

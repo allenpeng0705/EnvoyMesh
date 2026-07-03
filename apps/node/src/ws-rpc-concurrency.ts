@@ -29,7 +29,6 @@ export const WS_SERIALIZED_RPC_METHODS = new Set<string>([
   "sendToOpenClaw",
   "sendToBridge",
   "startNode",
-  "initNode",
   "meshIntelligenceReport",
   "discoverAndCluster",
   "discoverPublishedLibrary",

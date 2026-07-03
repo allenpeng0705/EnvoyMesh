@@ -6,8 +6,9 @@ function readTauriInvoke(): TauriInvoke | null {
   }
   const w = window as Window & {
     __TAURI__?: { core?: { invoke?: TauriInvoke } };
+    __TAURI_INTERNALS__?: { invoke?: TauriInvoke };
   };
-  return w.__TAURI__?.core?.invoke ?? null;
+  return w.__TAURI__?.core?.invoke ?? w.__TAURI_INTERNALS__?.invoke ?? null;
 }
 
 /** True when Social runs inside the Tauri desktop shell (not browser-only dev). */

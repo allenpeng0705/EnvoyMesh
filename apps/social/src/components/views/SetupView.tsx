@@ -1,69 +1,150 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useT } from "../../context/I18nContext.js";
+import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
-import { getNetworkPresets, networkPresetById, type NetworkPresetId } from "../../lib/network-presets.js";
-import type { ModelProviderConfig } from "@envoymesh/api";
+import { networkPresetById, type NetworkPresetId } from "../../lib/network-presets.js";
+import { isTauriShell, restartTauriNodeProcess } from "../../lib/tauri-shell.js";
+import type { ModelProviderConfig, ModelProviderMode } from "@envoymesh/api";
 
-type WizardStep = "profile" | "network" | "ai";
+type WizardStep = "profile" | "ai";
+type AiChoice = "skip" | "configure";
+
+const DEFAULT_SETUP_NETWORK_PRESET: NetworkPresetId = "explore-public";
+
+function validateModelSetup(
+  mode: ModelProviderMode,
+  endpoint: string,
+  modelName: string,
+  apiKey: string,
+): "endpoint" | "modelName" | "apiKey" | null {
+  const endpointTrimmed = endpoint.trim();
+  const modelNameTrimmed = modelName.trim();
+  const apiKeyTrimmed = apiKey.trim();
+
+  if (mode === "ollama") {
+    return modelNameTrimmed ? null : "modelName";
+  }
+  if (mode === "litellm") {
+    if (!endpointTrimmed) return "endpoint";
+    if (!modelNameTrimmed) return "modelName";
+    return null;
+  }
+  if (mode === "openai-compatible" || mode === "anthropic-compatible") {
+    if (!endpointTrimmed) return "endpoint";
+    if (!modelNameTrimmed) return "modelName";
+    if (!apiKeyTrimmed) return "apiKey";
+    return null;
+  }
+  return "endpoint";
+}
 
 export function SetupView() {
   const t = useT();
   const nodeService = useNodeService();
-  const networkPresets = useMemo(() => getNetworkPresets(t), [t]);
+  const { nodeConfig, refreshNodeConfig, refreshHumanProfile } = useNodeState();
+  const tauriShell = isTauriShell();
+  const wanPreset = useMemo(() => networkPresetById(DEFAULT_SETUP_NETWORK_PRESET), []);
 
   const [step, setStep] = useState<WizardStep>("profile");
   const [setupProfileDir, setSetupProfileDir] = useState("./data/default");
   const [displayName, setDisplayName] = useState("");
   const [username, setUsername] = useState("");
-  const [networkPreset, setNetworkPreset] = useState<NetworkPresetId>("same-wifi");
-  const [setupBootstrapPeers, setSetupBootstrapPeers] = useState("");
-  const [aiChoice, setAiChoice] = useState<"skip" | "configure">("skip");
+  const [aiChoice, setAiChoice] = useState<AiChoice>("skip");
+  const [modelMode, setModelMode] = useState<ModelProviderMode>("openai-compatible");
   const [modelEndpoint, setModelEndpoint] = useState("");
   const [modelName, setModelName] = useState("");
   const [modelApiKey, setModelApiKey] = useState("");
-  const [showAdvanced, setShowAdvanced] = useState(false);
   const [isInitializing, setIsInitializing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const preset = networkPresetById(networkPreset);
+  useEffect(() => {
+    const dir = nodeConfig?.profileDir?.trim();
+    if (dir) setSetupProfileDir(dir);
+  }, [nodeConfig?.profileDir]);
+
+  const modelProviderHints = useMemo(() => {
+    switch (modelMode) {
+      case "ollama":
+        return {
+          endpointPlaceholder: t("settings.ai.model.endpointPlaceholderOllama"),
+          hint: t("settings.ai.model.endpointHintOllama"),
+          apiKeyHint: t("settings.ai.model.apiKeyHintOllama"),
+        };
+      case "litellm":
+        return {
+          endpointPlaceholder: t("settings.ai.model.endpointPlaceholderLitellm"),
+          hint: t("settings.ai.model.endpointHintLitellm"),
+          apiKeyHint: t("settings.ai.model.apiKeyHintLitellm"),
+        };
+      case "anthropic-compatible":
+        return {
+          endpointPlaceholder: t("settings.ai.model.endpointPlaceholderAnthropic"),
+          hint: t("settings.ai.model.endpointHintAnthropic"),
+          apiKeyHint: t("settings.ai.model.apiKeyHintAnthropic"),
+        };
+      default:
+        return {
+          endpointPlaceholder: t("settings.ai.model.endpointPlaceholderOpenAi"),
+          hint: t("settings.ai.model.endpointHintOpenAi"),
+          apiKeyHint: t("settings.ai.model.apiKeyHintOpenAi"),
+        };
+    }
+  }, [modelMode, t]);
+
+  const modelValidationError =
+    aiChoice === "configure"
+      ? validateModelSetup(modelMode, modelEndpoint, modelName, modelApiKey)
+      : null;
 
   const handleFinish = async () => {
-    if (!setupProfileDir.trim()) return;
+    const profileDir = setupProfileDir.trim();
+    if (!profileDir) return;
     if (!displayName.trim() || !/^[a-zA-Z0-9_]{3,30}$/.test(username.trim())) {
       setError(t("setup.profileError"));
       setStep("profile");
       return;
     }
+    if (aiChoice === "configure") {
+      const modelError = validateModelSetup(modelMode, modelEndpoint, modelName, modelApiKey);
+      if (modelError) {
+        setError(t(`setup.modelError.${modelError}`));
+        setStep("ai");
+        return;
+      }
+    }
     setIsInitializing(true);
     setError(null);
     try {
-      const bootstrapPeers = setupBootstrapPeers
-        .split(",")
-        .map((s) => s.trim())
-        .filter(Boolean);
-
-      await nodeService.initNode(setupProfileDir, {
-        discoveryProfile: preset.discoveryProfile,
-        bootstrapPeers,
-        bootstrapPresets: [...preset.bootstrapPresets],
-      });
-
       const modelProviders: ModelProviderConfig =
-        aiChoice === "configure" && modelEndpoint.trim()
-          ? {
-              mode: "openai-compatible",
-              endpoint: modelEndpoint.trim(),
+        aiChoice === "skip"
+          ? { mode: "disabled" }
+          : {
+              mode: modelMode,
+              endpoint: modelEndpoint.trim() || undefined,
               modelName: modelName.trim() || undefined,
               apiKey: modelApiKey.trim() || undefined,
-            }
-          : { mode: "disabled" };
+            };
 
+      // Write initial node-config.json (skip initNode — profile keys already exist from node startup).
       await nodeService.updateNodeConfig({
+        discoveryProfile: wanPreset.discoveryProfile,
+        bootstrapPeers: [],
+        bootstrapPresets: [...wanPreset.bootstrapPresets],
+        relayEnabled: true,
         modelProviders,
         chatAssistEnabled: aiChoice === "configure",
+        openclawEnabled: true,
       });
 
-      await nodeService.startNode();
+      if (tauriShell) {
+        const restart = await restartTauriNodeProcess();
+        if (restart.ok) {
+          await nodeService.waitForConnection(25_000);
+          await nodeService.reconnect();
+        }
+      } else {
+        await nodeService.startNode();
+      }
 
       await nodeService.updateHumanProfile({
         displayName: displayName.trim(),
@@ -72,6 +153,9 @@ export function SetupView() {
         hobbies: [],
         profileVisibility: "private",
       });
+
+      await refreshNodeConfig();
+      await refreshHumanProfile();
     } catch (err) {
       console.error("Failed to initialize node:", err);
       setError(err instanceof Error ? err.message : String(err));
@@ -87,10 +171,9 @@ export function SetupView() {
         <p className="muted">{t("setup.lede")}</p>
 
         <div className="setup-wizard-steps" aria-label={t("setup.progressLabel")}>
-          {(["profile", "network", "ai"] as WizardStep[]).map((s, i) => (
+          {(["profile", "ai"] as WizardStep[]).map((s, i) => (
             <span key={s} className={`setup-wizard-step${step === s ? " active" : ""}`}>
-              {i + 1}.{" "}
-              {s === "profile" ? t("setup.stepYou") : s === "network" ? t("setup.stepNetwork") : t("setup.stepAi")}
+              {i + 1}. {s === "profile" ? t("setup.stepYou") : t("setup.stepAi")}
             </span>
           ))}
         </div>
@@ -123,70 +206,26 @@ export function SetupView() {
                 />
                 <small>{t("setup.usernameHint")}</small>
               </div>
+              {!tauriShell ? (
+                <div className="form-group">
+                  <label>{t("setup.profileDir")}</label>
+                  <input
+                    type="text"
+                    value={setupProfileDir}
+                    onChange={(e) => setSetupProfileDir(e.target.value)}
+                    placeholder={t("setup.profileDirPlaceholder")}
+                  />
+                  <small>{t("setup.profileDirHint")}</small>
+                </div>
+              ) : null}
               <button
                 type="button"
                 className="primary"
                 disabled={!displayName.trim() || !username.trim()}
-                onClick={() => setStep("network")}
+                onClick={() => setStep("ai")}
               >
                 {t("setup.continue")}
               </button>
-            </>
-          )}
-
-          {step === "network" && (
-            <>
-              <div className="form-group">
-                <label>{t("setup.networkTitle")}</label>
-                <div className="network-preset-cards" role="radiogroup" aria-label={t("setup.networkPresetAria")}>
-                  {networkPresets.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      role="radio"
-                      aria-checked={networkPreset === p.id}
-                      className={`network-preset-card${networkPreset === p.id ? " network-preset-card--active" : ""}`}
-                      onClick={() => setNetworkPreset(p.id)}
-                    >
-                      <strong>{p.label}</strong>
-                      <span>{p.description}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <button type="button" className="secondary" onClick={() => setShowAdvanced((v) => !v)}>
-                {showAdvanced ? t("setup.hideAdvanced") : t("setup.showAdvanced")}
-              </button>
-              {showAdvanced && (
-                <>
-                  <div className="form-group">
-                    <label>{t("setup.profileDir")}</label>
-                    <input
-                      type="text"
-                      value={setupProfileDir}
-                      onChange={(e) => setSetupProfileDir(e.target.value)}
-                      placeholder={t("setup.profileDirPlaceholder")}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label>{t("setup.bootstrapPeers")}</label>
-                    <input
-                      type="text"
-                      value={setupBootstrapPeers}
-                      onChange={(e) => setSetupBootstrapPeers(e.target.value)}
-                      placeholder={t("setup.bootstrapPeersPlaceholder")}
-                    />
-                  </div>
-                </>
-              )}
-              <div className="setup-wizard-nav">
-                <button type="button" className="secondary" onClick={() => setStep("profile")}>
-                  {t("setup.back")}
-                </button>
-                <button type="button" className="primary" onClick={() => setStep("ai")}>
-                  {t("setup.continue")}
-                </button>
-              </div>
             </>
           )}
 
@@ -195,75 +234,98 @@ export function SetupView() {
               <div className="form-group">
                 <label>{t("setup.aiTitle")}</label>
                 <p className="field-desc">{t("setup.aiLede")}</p>
-                <div className="settings-radio-group">
-                  <label className={`settings-radio-option ${aiChoice === "skip" ? "active" : ""}`}>
-                    <input
-                      type="radio"
-                      name="setup-ai"
-                      checked={aiChoice === "skip"}
-                      onChange={() => setAiChoice("skip")}
-                    />
-                    <div className="radio-content">
-                      <strong>{t("setup.aiSkip")}</strong>
-                      <span>{t("setup.aiSkipDesc")}</span>
-                    </div>
-                  </label>
-                  <label className={`settings-radio-option ${aiChoice === "configure" ? "active" : ""}`}>
-                    <input
-                      type="radio"
-                      name="setup-ai"
-                      checked={aiChoice === "configure"}
-                      onChange={() => setAiChoice("configure")}
-                    />
-                    <div className="radio-content">
-                      <strong>{t("setup.aiConfigure")}</strong>
-                      <span>{t("setup.aiConfigureDesc")}</span>
-                    </div>
-                  </label>
+              </div>
+              <div className="form-group">
+                <div className="network-preset-cards" role="radiogroup" aria-label={t("setup.aiChoiceAria")}>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={aiChoice === "skip"}
+                    className={`network-preset-card${aiChoice === "skip" ? " network-preset-card--active" : ""}`}
+                    onClick={() => setAiChoice("skip")}
+                  >
+                    <strong>{t("setup.aiSkip")}</strong>
+                    <span>{t("setup.aiSkipDesc")}</span>
+                  </button>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={aiChoice === "configure"}
+                    className={`network-preset-card${aiChoice === "configure" ? " network-preset-card--active" : ""}`}
+                    onClick={() => setAiChoice("configure")}
+                  >
+                    <strong>{t("setup.aiConfigure")}</strong>
+                    <span>{t("setup.aiConfigureDesc")}</span>
+                  </button>
                 </div>
               </div>
               {aiChoice === "configure" && (
                 <>
                   <div className="form-group">
-                    <label>{t("setup.endpoint")}</label>
+                    <label htmlFor="setup-model-mode">{t("settings.ai.model.providerLabel")}</label>
+                    <select
+                      id="setup-model-mode"
+                      className="settings-select"
+                      value={modelMode}
+                      onChange={(e) => setModelMode(e.target.value as ModelProviderMode)}
+                    >
+                      <option value="openai-compatible">{t("settings.ai.model.modeOpenAiCompatible")}</option>
+                      <option value="anthropic-compatible">{t("settings.ai.model.modeAnthropicCompatible")}</option>
+                      <option value="ollama">{t("settings.ai.model.modeOllama")}</option>
+                      <option value="litellm">{t("settings.ai.model.modeLitellm")}</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="setup-model-endpoint">{t("settings.ai.model.endpointUrl")}</label>
                     <input
+                      id="setup-model-endpoint"
                       type="text"
                       value={modelEndpoint}
                       onChange={(e) => setModelEndpoint(e.target.value)}
-                      placeholder={t("setup.endpointPlaceholder")}
+                      placeholder={
+                        modelProviderHints.endpointPlaceholder || t("settings.ai.model.endpointPlaceholderDefault")
+                      }
                     />
+                    {modelProviderHints.hint ? <small>{modelProviderHints.hint}</small> : null}
                   </div>
                   <div className="form-group">
-                    <label>{t("setup.modelName")}</label>
+                    <label htmlFor="setup-model-name">{t("settings.ai.model.modelName")}</label>
                     <input
+                      id="setup-model-name"
                       type="text"
                       value={modelName}
                       onChange={(e) => setModelName(e.target.value)}
-                      placeholder={t("setup.modelNamePlaceholder")}
+                      placeholder={t("settings.ai.model.modelNamePlaceholder")}
                     />
                   </div>
                   <div className="form-group">
-                    <label>{t("setup.apiKey")}</label>
+                    <label htmlFor="setup-model-api-key">{t("settings.ai.model.apiKey")}</label>
                     <input
+                      id="setup-model-api-key"
                       type="password"
                       value={modelApiKey}
                       onChange={(e) => setModelApiKey(e.target.value)}
-                      placeholder={t("setup.apiKeyPlaceholder")}
+                      placeholder={t("settings.ai.model.apiKeyPlaceholder")}
                     />
+                    {modelProviderHints.apiKeyHint ? <small>{modelProviderHints.apiKeyHint}</small> : null}
                   </div>
                 </>
               )}
               <div className="setup-wizard-nav">
-                <button type="button" className="secondary" onClick={() => setStep("network")}>
+                <button type="button" className="secondary" onClick={() => setStep("profile")}>
                   {t("setup.back")}
                 </button>
                 <button
                   type="button"
                   className="primary"
-                  disabled={isInitializing}
+                  disabled={isInitializing || (aiChoice === "configure" && modelValidationError !== null)}
                   onClick={() => void handleFinish()}
                 >
-                  {isInitializing ? t("setup.finishing") : t("setup.finish")}
+                  {isInitializing
+                    ? t("setup.finishing")
+                    : aiChoice === "skip"
+                      ? t("setup.launch")
+                      : t("setup.finish")}
                 </button>
               </div>
             </>
