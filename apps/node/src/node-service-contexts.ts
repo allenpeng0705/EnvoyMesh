@@ -209,6 +209,8 @@ export interface CapabilityDiscoveryContextDeps {
   getCapabilityDiscoveryTimer: CapabilityDiscoveryContext["getCapabilityDiscoveryTimer"];
   setCapabilityDiscoveryTimer: CapabilityDiscoveryContext["setCapabilityDiscoveryTimer"];
   syncPairingKioskFromConfig: CapabilityDiscoveryContext["syncPairingKioskFromConfig"];
+  /** Load the owner's signed human profile (hobbies/knowledge/location). */
+  loadHumanProfile: CapabilityDiscoveryContext["loadHumanProfile"];
 }
 
 export interface AgentSetupContextDeps {
@@ -730,6 +732,7 @@ export function buildCapabilityDiscoveryContext(deps: CapabilityDiscoveryContext
       deps.setCapabilityDiscoveryTimer(timer);
     },
     syncPairingKioskFromConfig: () => deps.syncPairingKioskFromConfig(),
+    loadHumanProfile: () => deps.loadHumanProfile(),
   };
 }
 

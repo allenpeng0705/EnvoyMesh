@@ -10,6 +10,14 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="$ROOT/apps/tauri/src-tauri/resources/node-runtime"
 mkdir -p "$DEST"
 
+# Reuse an already-staged sidecar to avoid re-downloading on every build
+# (and to allow offline rebuilds). Override with FETCH_NODE_SIDECAR=1.
+if [ -x "$DEST/node" ] && [ "${FETCH_NODE_SIDECAR:-0}" != "1" ]; then
+  echo "[fetch-node-sidecar] Reusing staged sidecar: $DEST/node ($("$DEST/node" --version))"
+  echo "[fetch-node-sidecar] Set FETCH_NODE_SIDECAR=1 to force a fresh download."
+  exit 0
+fi
+
 if [ -n "${1:-}" ]; then
   VERSION="$1"
   echo "[fetch-node-sidecar] Using pinned Node version: $VERSION"

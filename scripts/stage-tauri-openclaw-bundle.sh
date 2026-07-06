@@ -13,6 +13,14 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SOURCE="$ROOT/packages/openclaw"
 DEST="$ROOT/apps/tauri/src-tauri/resources/openclaw"
 
+# Reuse an already-staged OpenClaw tree to skip pnpm install (network) on
+# rebuilds. Override with STAGE_OPENCLAW_BUNDLE=1 to force re-stage.
+if [ -f "$DEST/openclaw.mjs" ] && [ -f "$DEST/package.json" ] && [ -d "$DEST/node_modules" ] && [ "${STAGE_OPENCLAW_BUNDLE:-0}" != "1" ]; then
+  echo "[stage-tauri-openclaw-bundle] Reusing staged OpenClaw at $DEST"
+  echo "[stage-tauri-openclaw-bundle] Set STAGE_OPENCLAW_BUNDLE=1 to force re-stage."
+  exit 0
+fi
+
 stage_from_source() {
   echo "Staging OpenClaw from $SOURCE → $DEST"
 

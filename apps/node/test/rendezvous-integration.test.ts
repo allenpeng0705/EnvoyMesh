@@ -224,11 +224,14 @@ describe("NodeServiceImpl - Discovery Configuration", () => {
 
       await (nodeService as any)._advertiseInterestsIfPublic();
 
-      // Should advertise hobbies (2) + knowledge (1) + username topic = 4
+      // Should advertise hobbies (2) + knowledge (1) + username topic = 4.
+      // Interests are normalized to `interest:<slug>` by computePublicDiscoveryTopics
+      // (and matched on the search side by interestTopicFor) — see the
+      // advertise/search contract test in capability-discovery-topics.test.ts.
       expect(mockMesh.provideCapabilityTopic).toHaveBeenCalledTimes(4);
-      expect(mockMesh.provideCapabilityTopic).toHaveBeenCalledWith("music");
-      expect(mockMesh.provideCapabilityTopic).toHaveBeenCalledWith("tech");
-      expect(mockMesh.provideCapabilityTopic).toHaveBeenCalledWith("science");
+      expect(mockMesh.provideCapabilityTopic).toHaveBeenCalledWith("interest:music");
+      expect(mockMesh.provideCapabilityTopic).toHaveBeenCalledWith("interest:tech");
+      expect(mockMesh.provideCapabilityTopic).toHaveBeenCalledWith("interest:science");
       expect(mockMesh.provideCapabilityTopic).toHaveBeenCalledWith("username:testuser");
     });
 

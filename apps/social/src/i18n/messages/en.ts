@@ -66,6 +66,7 @@ export const en = {
     pairingLabel: "EnvoyGo",
     pairingTitle: "Pair EnvoyGo mobile app",
     pairingClick: "Show QR code to pair the EnvoyGo app with this home node",
+    guideClick: "Getting started guide",
   },
   pairing: {
     title: "Pair EnvoyGo",
@@ -99,6 +100,42 @@ export const en = {
     confirm: "Confirm",
     delete: "Delete",
     clear: "Clear",
+    close: "Close",
+  },
+  guide: {
+    title: "Welcome to Envoy",
+    lede: "Here's the 30-second tour. You can reopen this anytime from the ? button in the top bar.",
+    reopenHint: "Tip: reopen this guide anytime from the ? button in the top bar.",
+    done: "Got it",
+    discover: {
+      title: "Find people",
+      body: "Open Discover to search the mesh by name, interest, or location. We already searched for people who share your interests — say hello to connect.",
+      cta: "Open Discover",
+    },
+    chat: {
+      title: "Chat with friends",
+      body: "Direct messages and group chats live here. Calls happen peer-to-peer — no central server, no new ports.",
+      cta: "Open Chat",
+    },
+    agent: {
+      title: "Your AI agent",
+      body: "Your personal AI runs on this device, follows your policy, and can talk to other people's agents to coordinate tasks. Message it like any contact.",
+      cta: "Open AI chat",
+    },
+    contacts: {
+      title: "Contacts & trust",
+      body: "Each contact has a trust tier (public, introduced, friend) that controls what they can access. Upgrade trust when you know someone better.",
+      cta: "See contacts",
+    },
+    settings: {
+      title: "Settings",
+      body: "Configure your model provider, network, agent network, and privacy. Add a profile photo and interests here too.",
+      cta: "Open Settings",
+    },
+    privacy: {
+      title: "You're in control",
+      body: "Your keys, your data, your rules. EnvoyMesh has no central account server — identity is cryptographic and everything is auditable on your own device.",
+    },
   },
   splash: {
     connectingTitle: "Connecting to EnvoyMesh",
@@ -311,6 +348,8 @@ export const en = {
       "Search the network by name, interest, or location. Same Wi‑Fi and contact links are below when you need them.",
     advanced: "More discovery options",
     backToSearch: "Back to search",
+    emptyGraphAutoSearching:
+      "Searching the mesh for people who share your interests…",
     tabs: {
       nearby: "Same Wi‑Fi — people nearby",
       pasteLink: "Paste a contact link",
@@ -442,6 +481,7 @@ export const en = {
     hello: {
       sent: "Hello sent! When they accept, they'll appear under My contacts.",
       sentToast: "Hello sent — waiting for them to accept",
+      autoSentToast: "We said hello to your top match — waiting for them to accept.",
       offline: "Connect first in Settings → Network, then try again.",
       failed: "Could not reach them. Try Paste a link if you are not on the same Wi‑Fi.",
     },

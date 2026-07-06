@@ -44,6 +44,7 @@ import {
   sendExpectReplyWithRetry,
 } from "./chat-outbound-deliver.js";
 import { deliverOutboundExpectReply } from "./mesh-outbound-helper.js";
+import { interestTopicFor } from "./capability-discovery.js";
 import type { createNodeConfigStore } from "./node-config-store.js";
 import type { DiscoverySeedStore } from "./discovery-seed-store.js";
 import {
@@ -147,10 +148,18 @@ export class NodeDiscoveryRuntime {
         }
       }
 
-      // 4. Public libp2p network: search by interest as DHT topic
+      // 4. Public libp2p network: search by interest as DHT topic.
+      // Interests are advertised under the canonical `interest:<slug>` topic
+      // (see computePublicDiscoveryTopics + buildInterestTopics). Normalize
+      // the raw query interests through `interestTopicFor` so the search key
+      // matches the advertised key — without this, a peer that picked
+      // "Machine Learning" advertises `interest:machine-learning` but this
+      // search would look up `machine learning` and miss it.
       if (isPublicNetwork && query.interests && query.interests.length > 0) {
         for (const interest of query.interests) {
-          const topicResults = await this.searchByTopic(interest.toLowerCase(), maxResults);
+          const topic = interestTopicFor(interest);
+          if (!topic) continue;
+          const topicResults = await this.searchByTopic(topic, maxResults);
           for (const r of topicResults) {
             if (!results.some((existing) => existing.nodeId === r.nodeId)) {
               results.push(r);
@@ -1210,10 +1219,20 @@ export class NodeDiscoveryRuntime {
         if (!relay.enabled) continue;
 
         try {
-          console.log(`[node-service] Searching rendezvous server ${relay.addr} for interests: ${interests.join(", ")}`);
+          // Normalize raw interests to the canonical `interest:<slug>` tag
+          // vocabulary. Rendezvous registers advertise under the same form
+          // (see _registerWithRendezvousServers, which receives interests
+          // from computePublicDiscoveryTopics — already `interest:<slug>`).
+          // Filtering empties guards against user-entered junk interests.
+          const normalizedTags = interests
+            .map((interest) => interestTopicFor(interest))
+            .filter(Boolean);
+          if (normalizedTags.length === 0) continue;
+
+          console.log(`[node-service] Searching rendezvous server ${relay.addr} for tags: ${normalizedTags.join(", ")}`);
 
           const queryPayload = {
-            match: interests.map((interest) => ({ tag: interest.toLowerCase() })) as any,
+            match: normalizedTags.map((tag) => ({ tag })) as any,
           };
 
           const envelope = signUnsignedEnvelope(

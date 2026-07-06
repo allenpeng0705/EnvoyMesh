@@ -86,6 +86,87 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
       .finally(() => setMorningReportLoading(false));
   }, [nodeService]);
 
+  // Cold-start: when the user has zero bonds, automatically run an
+  // interest- + location-based search once per owner so the Discover tab
+  // isn't empty on first launch. Gated by a localStorage flag so it does
+  // not refire on every visit.
+  useEffect(() => {
+    if (bonds.length > 0) return;
+    const ownerId = humanProfile?.ownerId;
+    if (!ownerId) return;
+    const interests = [...(humanProfile?.hobbies ?? []), ...(humanProfile?.knowledge ?? [])];
+    const loc = humanProfile?.discoveryLocation;
+    const locPrecision = humanProfile?.discoveryLocationPrecision;
+    if (interests.length === 0 && !loc) return;
+    const flagKey = `envoymesh_auto_discover_done:${ownerId}`;
+    if (typeof localStorage !== "undefined" && localStorage.getItem(flagKey)) return;
+
+    let cancelled = false;
+    setNetworkSearching(true);
+    const run = async () => {
+      try {
+        await nodeService.runCapabilityDiscovery({ find: true }).catch(() => {});
+        const topics =
+          loc && locPrecision && locPrecision !== "hidden"
+            ? locationSearchTopics({ location: loc, scope: "city" })
+            : [];
+        const results = await nodeService.searchPeers({
+          ...(interests.length > 0 ? { interests } : {}),
+          ...(topics.length > 0 ? { topics } : {}),
+          maxResults: 20,
+        });
+        if (!cancelled) {
+          setNetworkResults(results);
+          if (typeof localStorage !== "undefined") {
+            localStorage.setItem(flagKey, "1");
+          }
+
+          // Auto-hello the single best (top) match. Still respects the trust
+          // boundary: the recipient must accept; we send exactly one hello to
+          // a peer the user is not already bonded to and has not already
+          // hello'd. Reduces cold-start friction without auto-bonding.
+          const bondedOwnerIds = new Set(bonds.map((b) => b.peerOwnerId));
+          const helloedIds = new Set(outboundHellos);
+          const top = results.find(
+            (r) =>
+              r.ownerId &&
+              r.ownerId !== ownerId &&
+              !bondedOwnerIds.has(r.ownerId) &&
+              !helloedIds.has(r.ownerId),
+          );
+          if (top?.ownerId) {
+            try {
+              const helloProfile: HelloProfile = {
+                displayName: humanProfile?.displayName ?? "Envoy User",
+                bio: humanProfile?.bio ?? "",
+                interests: [...(humanProfile?.hobbies ?? []), ...(humanProfile?.knowledge ?? [])],
+                whatShares: [],
+              };
+              await sendHello(
+                top.ownerId,
+                helloProfile,
+                "Hi — Envoy suggested we might share interests. I'd like to connect.",
+              );
+              markOutboundHello(top.ownerId);
+              setOutboundHellos(loadOutboundHellos());
+              showToast?.(t("discover.hello.autoSentToast"), "success");
+            } catch {
+              /* non-fatal — recipient may be offline; user can retry manually */
+            }
+          }
+        }
+      } catch {
+        /* non-fatal — user can search manually */
+      } finally {
+        if (!cancelled) setNetworkSearching(false);
+      }
+    };
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [nodeService, bonds, outboundHellos, humanProfile, sendHello, showToast, t]);
+
   useEffect(() => {
     if (!multiHopCorrelationId) return;
     const unsub = nodeService.on("discovery:multihop-update", (session) => {

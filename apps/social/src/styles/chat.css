@@ -3416,3 +3416,115 @@
   border-radius: var(--radius-2xl);
   overflow: hidden;
 }
+
+/* ─── Getting-started guide modal ────────────────────────────────────
+   First-run guide shown once per owner after setup, re-openable from the
+   Header Help (?) button. Rendered via ModalPortal like other modals. */
+
+.header-guide-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text-muted);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+.header-guide-btn:hover {
+  color: var(--color-text);
+  background: var(--color-surface-elevated);
+}
+
+.getting-started-guide {
+  width: min(40rem, calc(100vw - var(--space-6)));
+  max-height: min(80vh, 40rem);
+  display: flex;
+  flex-direction: column;
+  padding: var(--space-6);
+}
+.getting-started-guide__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.getting-started-guide__header h2 {
+  margin: 0;
+}
+.getting-started-guide__close {
+  flex-shrink: 0;
+}
+.getting-started-guide__lede {
+  margin: var(--space-3) 0 var(--space-4);
+  color: var(--color-text-muted);
+  font-size: 0.9375rem;
+  line-height: 1.5;
+}
+.getting-started-guide__sections {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-right: var(--space-2);
+}
+.guide-section {
+  display: flex;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-elevated);
+}
+.guide-section__icon {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-md);
+  background: var(--color-primary-subtle, color-mix(in srgb, var(--color-primary) 12%, transparent));
+  color: var(--color-primary);
+}
+.guide-section__body {
+  flex: 1;
+  min-width: 0;
+}
+.guide-section__title {
+  margin: 0 0 var(--space-1);
+  font-size: 0.9375rem;
+  font-weight: 600;
+}
+.guide-section__text {
+  margin: 0 0 var(--space-2);
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+.guide-section__cta {
+  font-size: 0.8125rem;
+}
+.getting-started-guide__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border, var(--color-slate-200));
+}
+.getting-started-guide__hint {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--color-text-muted);
+}
+@media (max-width: 30rem) {
+  .getting-started-guide__hint {
+    display: none;
+  }
+}

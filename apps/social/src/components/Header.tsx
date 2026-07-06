@@ -6,7 +6,7 @@ import type {
 import type { ViewName } from "../App.js";
 import { useTheme } from "../context/ThemeContext.js";
 import { useT } from "../context/I18nContext.js";
-import { DarkModeIcon, LightModeIcon, QRCodeIcon } from "../icons.js";
+import { DarkModeIcon, LightModeIcon, QRCodeIcon, InfoIcon } from "../icons.js";
 import { LocaleSwitcher } from "./LocaleSwitcher.js";
 import { ProfilePhotoAvatar } from "./ProfilePhotoAvatar.js";
 import { isEffectiveNodeRunning } from "../lib/effective-node-status.js";
@@ -25,6 +25,8 @@ interface HeaderProps {
   relayUnreachable?: boolean;
   onRetryConnect?: () => void;
   onOpenPairing?: () => void;
+  /** Open the getting-started guide modal (Header Help "?" button). */
+  onOpenGuide?: () => void;
 }
 
 export function Header({
@@ -39,6 +41,7 @@ export function Header({
   relayUnreachable,
   onRetryConnect,
   onOpenPairing,
+  onOpenGuide,
 }: HeaderProps) {
   const t = useT();
   const { theme, resolved, setTheme } = useTheme();
@@ -191,6 +194,17 @@ export function Header({
           </div>
         )}
         <LocaleSwitcher />
+        {onOpenGuide && (
+          <button
+            type="button"
+            className="header-guide-btn"
+            onClick={onOpenGuide}
+            title={t("header.guideClick")}
+            aria-label={t("header.guideClick")}
+          >
+            <InfoIcon size={16} />
+          </button>
+        )}
         <button
           type="button"
           className="theme-toggle-btn"

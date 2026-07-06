@@ -17,9 +17,15 @@ import { LibraryView } from "./components/views/LibraryView.js";
 import { H2AChannelView } from "./components/views/H2AChannelView.js";
 import { ChainsView } from "./components/views/ChainsView.js";
 import { AutoReplyPausedNotifier } from "./components/AutoReplyPausedNotifier.js";
+import { GettingStartedGuide } from "./components/GettingStartedGuide.js";
 import { CallSessionProvider } from "./context/CallSessionContext.js";
 import { isTauriShell, restartTauriNodeProcess } from "./lib/tauri-shell.js";
-import { isFirstRunSetupComplete, hasCompletedFirstRunSetup } from "./lib/storage.js";
+import {
+  isFirstRunSetupComplete,
+  hasCompletedFirstRunSetup,
+  hasSeenGettingStartedGuide,
+  markGettingStartedGuideSeen,
+} from "./lib/storage.js";
 import { WS_LOOPBACK_URL } from "@envoymesh/api";
 import type { HumanProfile, NodeConfig, NodeStatus } from "@envoymesh/api";
 
@@ -301,6 +307,18 @@ export function App() {
   const [chatSelectedContact, setChatSelectedContact] = useState<string | null>(null);
   const [chatPanelMode, setChatPanelMode] = useState<ChatPanelMode>("threads");
   const [pairingOpen, setPairingOpen] = useState(false);
+  const [guideOpen, setGuideOpen] = useState(false);
+
+  // Auto-open the getting-started guide once per owner after setup completes.
+  // Re-openable any time via the Header Help (?) button.
+  useEffect(() => {
+    const ownerId = humanProfile?.ownerId;
+    if (!ownerId) return;
+    if (!hasSeenGettingStartedGuide(ownerId)) {
+      setGuideOpen(true);
+      markGettingStartedGuideSeen(ownerId);
+    }
+  }, [humanProfile?.ownerId]);
 
   const isPublicNetwork = (nodeConfig?.bootstrapPresets ?? []).length > 0;
 
@@ -369,6 +387,7 @@ export function App() {
             relayUnreachable={isRelayUnreachable}
             onRetryConnect={handleRetryConnect}
             onOpenPairing={() => setPairingOpen(true)}
+            onOpenGuide={() => setGuideOpen(true)}
           />
         </ErrorBoundary>
 
@@ -428,6 +447,15 @@ export function App() {
           </main>
         </ErrorBoundary>
         {pairingOpen && <PairingQRModal onClose={() => setPairingOpen(false)} />}
+        {guideOpen && (
+          <GettingStartedGuide
+            onClose={() => setGuideOpen(false)}
+            onNavigate={(v) => {
+              setCurrentView(v);
+              if (v === "chat") setChatPanelMode("threads");
+            }}
+          />
+        )}
       </div>
       </CallSessionProvider>
     </ToastProvider>

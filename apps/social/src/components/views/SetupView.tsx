@@ -5,12 +5,50 @@ import { useNodeService } from "../../hooks/useNodeService.js";
 import { networkPresetById, type NetworkPresetId } from "../../lib/network-presets.js";
 import { markFirstRunSetupComplete } from "../../lib/storage.js";
 import { isTauriShell, restartTauriNodeProcess } from "../../lib/tauri-shell.js";
-import type { ModelProviderConfig, ModelProviderMode } from "@envoymesh/api";
+import { SUGGESTED_TOPICS } from "../../lib/display.js";
+import { getCurrentPosition } from "../../lib/geolocation-adapter.js";
+import type {
+  ModelProviderConfig,
+  ModelProviderMode,
+  DiscoveryLocation,
+} from "@envoymesh/api";
+import { encodeGeohash, NEARBY_GEOHASH_PRECISION } from "@envoymesh/api";
 
-type WizardStep = "profile" | "ai";
+type WizardStep = "profile" | "interests" | "ai";
 type AiChoice = "skip" | "configure";
+type LocationChoice = "auto" | "skip";
+
+const MIN_INTERESTS = 3;
 
 const DEFAULT_SETUP_NETWORK_PRESET: NetworkPresetId = "explore-public";
+
+/** Best-effort ISO-3166 alpha-2 country code from navigator.language or IANA timezone. */
+function detectCountryFromLocale(): string | null {
+  // 1) navigator.language / languages often carry a region subtag (e.g. "en-US", "zh-CN").
+  const candidates = [
+    ...(navigator.languages ?? []),
+    navigator.language,
+  ];
+  for (const tag of candidates) {
+    if (!tag) continue;
+    const match = /[-_]([A-Za-z]{2})$/.exec(tag);
+    if (match) return match[1].toUpperCase();
+  }
+  // 2) Fallback: a small IANA timezone → country table for common zones.
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  if (tz) {
+    const tzCountry: Record<string, string> = {
+      "America/New_York": "US", "America/Chicago": "US", "America/Denver": "US",
+      "America/Los_Angeles": "US", "America/Toronto": "CA", "America/Vancouver": "CA",
+      "Europe/London": "GB", "Europe/Paris": "FR", "Europe/Berlin": "DE",
+      "Europe/Madrid": "ES", "Europe/Rome": "IT", "Europe/Amsterdam": "NL",
+      "Asia/Tokyo": "JP", "Asia/Shanghai": "CN", "Asia/Hong_Kong": "HK",
+      "Asia/Singapore": "SG", "Asia/Seoul": "KR", "Australia/Sydney": "AU",
+    };
+    if (tzCountry[tz]) return tzCountry[tz];
+  }
+  return null;
+}
 
 function validateModelSetup(
   mode: ModelProviderMode,
@@ -57,6 +95,55 @@ export function SetupView({ waitingForNode = false }: { waitingForNode?: boolean
   const [modelApiKey, setModelApiKey] = useState("");
   const [isInitializing, setIsInitializing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Interests + location (cold-start discovery).
+  const [selectedInterests, setSelectedInterests] = useState<string[]>([]);
+  const [customInterestInput, setCustomInterestInput] = useState("");
+  const [locationChoice, setLocationChoice] = useState<LocationChoice>("auto");
+  const [locating, setLocating] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [resolvedLocation, setResolvedLocation] = useState<DiscoveryLocation | null>(null);
+
+  const interestsRemaining = Math.max(0, MIN_INTERESTS - selectedInterests.length);
+  const toggleInterest = (topic: string) => {
+    const slug = topic.trim().toLowerCase();
+    if (!slug) return;
+    setSelectedInterests((prev) =>
+      prev.includes(slug) ? prev.filter((t) => t !== slug) : [...prev, slug],
+    );
+  };
+
+  const detectLocation = async (): Promise<void> => {
+    setLocationError(null);
+    setLocating(true);
+    try {
+      const pos = await getCurrentPosition({ timeoutMs: 12_000, maximumAgeMs: 600_000 });
+      const geohash = encodeGeohash(pos.latitude, pos.longitude, NEARBY_GEOHASH_PRECISION);
+      const countryCode = detectCountryFromLocale() ?? "US";
+      setResolvedLocation({ countryCode, geohash });
+    } catch {
+      // Permission denied, timeout, or no geolocation API at all.
+      // Soft fallback: derive a coarse country from locale if possible.
+      const cc = detectCountryFromLocale();
+      if (cc) {
+        setResolvedLocation({ countryCode: cc });
+      } else {
+        setLocationError(t("setup.locationDenied"));
+        setLocationChoice("skip");
+      }
+    } finally {
+      setLocating(false);
+    }
+  };
+
+  // Auto-detect location when the user first enters the interests step
+  // (default choice is "auto"). They can opt out before finishing.
+  useEffect(() => {
+    if (step !== "interests" || locationChoice !== "auto" || locating) return;
+    if (resolvedLocation || locationError) return;
+    void detectLocation();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [step, locationChoice]);
 
   useEffect(() => {
     const dir = nodeConfig?.profileDir?.trim();
@@ -139,12 +226,20 @@ export function SetupView({ waitingForNode = false }: { waitingForNode?: boolean
       });
 
       // Persist profile before any node restart — reconnect reads human-profile.json from disk.
+      const discoveryLocation =
+        locationChoice === "auto" && resolvedLocation ? resolvedLocation : undefined;
       await nodeService.updateHumanProfile({
         displayName: displayName.trim(),
         username: username.trim(),
         bio: "",
-        hobbies: [],
+        hobbies: selectedInterests,
         profileVisibility: "public",
+        ...(discoveryLocation
+          ? {
+              discoveryLocation,
+              discoveryLocationPrecision: "city" as const,
+            }
+          : {}),
       });
 
       const verifiedProfile = await nodeService.getHumanProfile();
@@ -158,6 +253,13 @@ export function SetupView({ waitingForNode = false }: { waitingForNode?: boolean
 
       // Start mesh on the running node (deferred until setup writes node-config.json).
       await nodeService.startNode();
+
+      // Advertise the just-saved interests + location on the DHT so the
+      // first-run auto-search (and peers) can find this new user quickly.
+      // find:false = provide only; no DHT lookup churn at startup.
+      await nodeService.runCapabilityDiscovery({ find: false }).catch(() => {
+        /* non-fatal — periodic scheduler will retry */
+      });
 
       // OpenClaw only picks up model provider env after a process restart.
       if (tauriShell && aiChoice === "configure") {
@@ -200,9 +302,14 @@ export function SetupView({ waitingForNode = false }: { waitingForNode?: boolean
         ) : null}
 
         <div className="setup-wizard-steps" aria-label={t("setup.progressLabel")}>
-          {(["profile", "ai"] as WizardStep[]).map((s, i) => (
+          {(["profile", "interests", "ai"] as WizardStep[]).map((s, i) => (
             <span key={s} className={`setup-wizard-step${step === s ? " active" : ""}`}>
-              {i + 1}. {s === "profile" ? t("setup.stepYou") : t("setup.stepAi")}
+              {i + 1}.{" "}
+              {s === "profile"
+                ? t("setup.stepYou")
+                : s === "interests"
+                  ? t("setup.stepInterests")
+                  : t("setup.stepAi")}
             </span>
           ))}
         </div>
@@ -251,10 +358,152 @@ export function SetupView({ waitingForNode = false }: { waitingForNode?: boolean
                 type="button"
                 className="primary"
                 disabled={!displayName.trim() || !username.trim() || (waitingForNode && !isConnected)}
-                onClick={() => setStep("ai")}
+                onClick={() => setStep("interests")}
               >
                 {waitingForNode && !isConnected ? t("setup.waitingForNode") : t("setup.continue")}
               </button>
+            </>
+          )}
+
+          {step === "interests" && (
+            <>
+              <div className="form-group">
+                <label>{t("setup.interestsTitle")}</label>
+                <p className="field-desc">{t("setup.interestsLede")}</p>
+              </div>
+
+              <div className="form-group">
+                <div className="topic-chips setup-topic-chips" role="group" aria-label={t("setup.stepInterests")}>
+                  {SUGGESTED_TOPICS.map((topic) => {
+                    const active = selectedInterests.includes(topic.toLowerCase());
+                    return (
+                      <button
+                        key={topic}
+                        type="button"
+                        className={`topic-chip${active ? " topic-chip--active" : ""}`}
+                        aria-pressed={active}
+                        onClick={() => toggleInterest(topic)}
+                      >
+                        {topic}
+                      </button>
+                    );
+                  })}
+                </div>
+                <small>
+                  {interestsRemaining > 0
+                    ? t("setup.interestsMinHint", { count: interestsRemaining })
+                    : t("setup.interestsSelected", { count: selectedInterests.length })}
+                </small>
+              </div>
+
+              <div className="form-group setup-add-interest">
+                <label htmlFor="setup-custom-interest">{t("setup.interestsAddOwn")}</label>
+                <div className="search-bar setup-add-interest__row">
+                  <div className="search-input-wrapper">
+                    <input
+                      id="setup-custom-interest"
+                      type="text"
+                      value={customInterestInput}
+                      onChange={(e) => setCustomInterestInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          const v = customInterestInput.trim();
+                          if (v) {
+                            toggleInterest(v);
+                            setCustomInterestInput("");
+                          }
+                        }
+                      }}
+                      placeholder={t("setup.interestsAddOwnPlaceholder")}
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    className="search-btn btn-secondary"
+                    disabled={!customInterestInput.trim()}
+                    onClick={() => {
+                      const v = customInterestInput.trim();
+                      if (v) {
+                        toggleInterest(v);
+                        setCustomInterestInput("");
+                      }
+                    }}
+                  >
+                    {t("setup.interestsAdd")}
+                  </button>
+                </div>
+                {selectedInterests.some((i) => !SUGGESTED_TOPICS.includes(i)) ? (
+                  <div className="topic-chips setup-topic-chips setup-topic-chips--custom">
+                    {selectedInterests
+                      .filter((i) => !SUGGESTED_TOPICS.includes(i))
+                      .map((i) => (
+                        <button
+                          key={i}
+                          type="button"
+                          className="topic-chip topic-chip--active"
+                          aria-pressed={true}
+                          onClick={() => toggleInterest(i)}
+                        >
+                          {i} ✕
+                        </button>
+                      ))}
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="form-group setup-location">
+                <label>{t("setup.locationTitle")}</label>
+                <p className="field-desc">{t("setup.locationLede")}</p>
+                <div className="network-preset-cards" role="radiogroup" aria-label={t("setup.locationTitle")}>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={locationChoice === "auto"}
+                    className={`network-preset-card${locationChoice === "auto" ? " network-preset-card--active" : ""}`}
+                    onClick={() => {
+                      setLocationChoice("auto");
+                      if (!resolvedLocation && !locating) void detectLocation();
+                    }}
+                  >
+                    <strong>{t("setup.locationUseRecommended")}</strong>
+                    <span>
+                      {locating
+                        ? t("setup.locationDetecting")
+                        : resolvedLocation
+                          ? t("setup.interestsSelected", { count: 1 })
+                          : t("setup.locationUseRecommended")}
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    role="radio"
+                    aria-checked={locationChoice === "skip"}
+                    className={`network-preset-card${locationChoice === "skip" ? " network-preset-card--active" : ""}`}
+                    onClick={() => setLocationChoice("skip")}
+                  >
+                    <strong>{t("setup.locationSkip")}</strong>
+                    <span>{t("setup.locationSkip")}</span>
+                  </button>
+                </div>
+                {locationError ? (
+                  <small className="setup-location-error">{locationError}</small>
+                ) : null}
+              </div>
+
+              <div className="setup-wizard-nav">
+                <button type="button" className="secondary" onClick={() => setStep("profile")}>
+                  {t("setup.back")}
+                </button>
+                <button
+                  type="button"
+                  className="primary"
+                  disabled={interestsRemaining > 0 || (waitingForNode && !isConnected)}
+                  onClick={() => setStep("ai")}
+                >
+                  {waitingForNode && !isConnected ? t("setup.waitingForNode") : t("setup.continue")}
+                </button>
+              </div>
             </>
           )}
 
@@ -341,7 +590,7 @@ export function SetupView({ waitingForNode = false }: { waitingForNode?: boolean
                 </>
               )}
               <div className="setup-wizard-nav">
-                <button type="button" className="secondary" onClick={() => setStep("profile")}>
+                <button type="button" className="secondary" onClick={() => setStep("interests")}>
                   {t("setup.back")}
                 </button>
                 <button

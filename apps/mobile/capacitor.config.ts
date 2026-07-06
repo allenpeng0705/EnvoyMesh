@@ -44,6 +44,7 @@ export default {
     "CapacitorSQLitePlugin",
     "EnvoyQrScanner",
     "FilesystemPlugin",
+    "GeolocationPlugin",
     "SecureStoragePlugin",
   ],
 } satisfies ConfigWithNative;

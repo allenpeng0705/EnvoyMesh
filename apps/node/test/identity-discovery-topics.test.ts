@@ -2,13 +2,23 @@ import { describe, it, expect } from "vitest";
 import { computePublicDiscoveryTopics } from "../src/node-service-identity.js";
 
 describe("computePublicDiscoveryTopics", () => {
-  it("returns lowercase trimmed interests from hobbies + knowledge", () => {
+  it("returns interest:<slug> topics from hobbies + knowledge", () => {
     const result = computePublicDiscoveryTopics({
       hobbies: ["Music", "  tech  "],
       knowledge: ["Science"],
       username: "alice",
     });
-    expect(result.interests).toEqual(["music", "tech", "science"]);
+    expect(result.interests).toEqual(["interest:music", "interest:tech", "interest:science"]);
+  });
+
+  it("slugifies multi-word interests consistently with search side", () => {
+    // "Machine Learning" → "interest:machine-learning". This is the exact
+    // normalization the search side applies via interestTopicFor(); pinning
+    // it here guards against advertise/search drift.
+    const result = computePublicDiscoveryTopics({
+      hobbies: ["Machine Learning", "AI/ML"],
+    });
+    expect(result.interests).toEqual(["interest:machine-learning", "interest:ai-ml"]);
   });
 
   it("builds username topic when username is present", () => {

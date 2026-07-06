@@ -43,6 +43,30 @@ export function hasCompletedFirstRunSetup(): boolean {
   return Boolean(stored.ownerId?.trim());
 }
 
+// First-run getting-started guide — auto-opens once per owner after setup,
+// re-openable any time from the header Help button.
+const GUIDE_SEEN_KEY_PREFIX = "envoymesh.guideSeen:";
+
+export function hasSeenGettingStartedGuide(ownerId: string | undefined): boolean {
+  const id = ownerId?.trim();
+  if (!id) return false;
+  try {
+    return localStorage.getItem(GUIDE_SEEN_KEY_PREFIX + id) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function markGettingStartedGuideSeen(ownerId: string): void {
+  const id = ownerId.trim();
+  if (!id) return;
+  try {
+    localStorage.setItem(GUIDE_SEEN_KEY_PREFIX + id, "1");
+  } catch {
+    /* storage may be unavailable (private mode) — non-fatal */
+  }
+}
+
 // App settings
 
 export interface AppSettings {

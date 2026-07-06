@@ -214,6 +214,7 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
               host._capabilityDiscoveryTimer = timer;
             },
             syncPairingKioskFromConfig: () => host._syncPairingKioskFromConfig(),
+            loadHumanProfile: () => host._humanProfileStore.loadHumanProfile(),
           },
       agentSetup: {
             saveConfig: (config) => host._configStore.save(config),

@@ -796,7 +796,7 @@ import {
   queryRelayLookupWithDeps,
   type RelayClientCycleDeps,
 } from "./relay-client-cycle.js";
-import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
+import { buildProfileDiscoveryTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
 import { startNodeStatsInterval } from "./node-stats-log.js";
 import { handleInboundBondIntent } from "./bond-inbound.js";
@@ -4534,7 +4534,17 @@ class NodeServiceImpl implements NodeService {
     if (!this._taskStore || !this._discoverySeedStore) {
       throw new Error("Node stores not initialized");
     }
-    const topics = buildAutoCapabilityTopics(profile.deviceCertificate.capabilities);
+    const humanProfile = await this._humanProfileStore.loadHumanProfile().catch(() => undefined);
+    const geoTopics = deriveLocationDiscoveryTopics({
+      location: humanProfile?.discoveryLocation ?? null,
+      precision: humanProfile?.discoveryLocationPrecision ?? null,
+    });
+    const topics = buildProfileDiscoveryTopics({
+      capabilities: profile.deviceCertificate.capabilities,
+      hobbies: humanProfile?.hobbies,
+      knowledge: humanProfile?.knowledge,
+      geoTopics,
+    });
     await runCapabilityDiscoveryCycle({
       mesh,
       profile: discoveryProfile,

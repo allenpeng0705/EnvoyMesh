@@ -178,6 +178,7 @@ import { ApprovalQueue } from "@envoymesh/api";
 import { DigestGenerator, createDefaultDigestConfig, getDigestPeriodDates } from "./digest-generator.js";
 import type { AutonomousDomain, AutonomousPolicy, AiSettings, ChatMessage, ContactAiPreferences } from "@envoymesh/api";
 import { buildVaultIndexOptionsFromKnowledgeBase } from "@envoymesh/api";
+import { deriveLocationDiscoveryTopics } from "@envoymesh/api";
 import { stripModelThinking, applyAiIdentityForIdentity, ENVOY_AI_THREAD_KEY } from "@envoymesh/api";
 import { resolveNodeArgsTargetsByOwnerId } from "./owner-targeting.js";
 import { createTaskDispatcher, isA2ATaskIntent, type DispatcherDecision } from "./task-dispatcher.js";
@@ -251,7 +252,7 @@ import { createClientProxyHandler } from "./client-proxy-handler.js";
 import { RelayTunnelClient } from "./relay-tunnel-client.js";
 import { startNodeStatsInterval } from "./node-stats-log.js";
 import { recordRelayCheckinCycle, recordRelayLookupResult } from "./relay-diagnostics-state.js";
-import { runCapabilityDiscoveryCycle, buildAutoCapabilityTopics } from "./capability-discovery.js";
+import { runCapabilityDiscoveryCycle, buildProfileDiscoveryTopics } from "./capability-discovery.js";
 import {
   resolveConnectivityRuntime,
   recordMeshActivity,
@@ -851,7 +852,17 @@ if (args.discoveryProfile === "wan-default" && effectiveBootstrapPeers.length ==
   );
 }
 
-const autoCapabilityTopics = buildAutoCapabilityTopics(profile.deviceCertificate.capabilities);
+const startupHumanProfile = await humanProfileStore.loadHumanProfile().catch(() => undefined);
+const startupGeoTopics = deriveLocationDiscoveryTopics({
+  location: startupHumanProfile?.discoveryLocation ?? null,
+  precision: startupHumanProfile?.discoveryLocationPrecision ?? null,
+});
+const autoCapabilityTopics = buildProfileDiscoveryTopics({
+  capabilities: profile.deviceCertificate.capabilities,
+  hobbies: startupHumanProfile?.hobbies,
+  knowledge: startupHumanProfile?.knowledge,
+  geoTopics: startupGeoTopics,
+});
 const observedRelayPeerIds = new Set<string>();
 const relayStateStore = createRelayStateStore(args.profileDir);
 const [persistedRelayBook, persistedSummaries] = await Promise.all([

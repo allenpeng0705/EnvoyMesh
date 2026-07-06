@@ -16,7 +16,7 @@
  * to one-line delegations.
  */
 import {
-  buildAutoCapabilityTopics,
+  buildProfileDiscoveryTopics,
   runCapabilityDiscoveryCycle,
 } from "./capability-discovery.js";
 import {
@@ -26,6 +26,11 @@ import {
 import type { DiscoverySeedStore } from "./discovery-seed-store.js";
 import type { LocalTaskStore } from "@envoymesh/local-store";
 import type { DiscoveryProfile } from "@envoymesh/api";
+import { deriveLocationDiscoveryTopics } from "@envoymesh/api";
+import type {
+  DiscoveryLocation,
+  DiscoveryLocationPrecision,
+} from "@envoymesh/protocol";
 
 export interface CapabilityDiscoveryContext {
   /** Live mesh instance (or undefined when stopped). */
@@ -44,6 +49,16 @@ export interface CapabilityDiscoveryContext {
   setCapabilityDiscoveryTimer(timer: NodeJS.Timeout | undefined): void;
   /** Sync the pairing-kiosk server after node start (Phase 35D). */
   syncPairingKioskFromConfig(): Promise<void>;
+  /** Load the owner's signed human profile (hobbies/knowledge/location), if any. */
+  loadHumanProfile(): Promise<HumanProfileLite | undefined>;
+}
+
+/** Subset of `HumanProfilePayload` consumed by the discovery scheduler. */
+export interface HumanProfileLite {
+  hobbies?: readonly string[] | null;
+  knowledge?: readonly string[] | null;
+  discoveryLocation?: DiscoveryLocation | null;
+  discoveryLocationPrecision?: DiscoveryLocationPrecision | null;
 }
 
 export type CapabilityDiscoverySource = "startup" | "periodic" | "on-demand";
@@ -61,7 +76,19 @@ export async function runCapabilityDiscoveryCycleViaRuntime(
   const config = await ctx.loadConfig();
   if (!config) return;
   const { connectivityRuntime } = opts;
-  const topics = buildAutoCapabilityTopics(profile.deviceCertificate.capabilities);
+  const humanProfile = await ctx.loadHumanProfile().catch(() => undefined);
+  const geoTopics = humanProfile
+    ? deriveLocationDiscoveryTopics({
+        location: humanProfile.discoveryLocation ?? null,
+        precision: humanProfile.discoveryLocationPrecision ?? null,
+      })
+    : [];
+  const topics = buildProfileDiscoveryTopics({
+    capabilities: profile.deviceCertificate.capabilities,
+    hobbies: humanProfile?.hobbies,
+    knowledge: humanProfile?.knowledge,
+    geoTopics,
+  });
   await runCapabilityDiscoveryCycle({
     mesh: mesh as never,
     profile: config.discoveryProfile,
@@ -93,10 +120,10 @@ export function startCapabilityDiscoverySchedulerViaRuntime(
   if (!connectivityRuntime.enableDht || !profile) {
     return;
   }
-  const topics = buildAutoCapabilityTopics(profile.deviceCertificate.capabilities);
-  if (topics.length === 0) {
-    return;
-  }
+  // Note: we no longer short-circuit on empty capability topics here. A new
+  // user typically has zero capabilities but has chosen interests in setup —
+  // the async cycle below loads the human profile and merges interest +
+  // geo topics. Short-circuiting would suppress advertising those interests.
 
   const schedule = (): void => {
     const jitter = Math.floor(

@@ -53,6 +53,7 @@ import {
 import { sendExpectReplyWithRetry } from "./chat-outbound-deliver.js";
 import { dialHintsForTransportTarget } from "./mesh-outbound-helper.js";
 import { probeNearbyPeerProfile } from "./nearby-profile-probe.js";
+import { interestTopicFor } from "./capability-discovery.js";
 import { raceWithTimeout } from "./node-service-outbound-messaging.js";
 import {
   importProfilePhotoBytes,
@@ -898,8 +899,12 @@ export function computePublicDiscoveryTopics(profile: {
   discoveryLocationPrecision?: "country" | "region" | "city" | "town" | "hidden" | "nearby" | string | null;
   capabilities?: ReadonlyArray<{ tag?: string } | { type?: string } | { descriptor?: string }>;
 }): { interests: string[]; usernameTopic: string; locationTopics: string[]; capabilityTopics: string[] } {
+  // Normalize hobbies + knowledge into the canonical `interest:<slug>` topic
+  // vocabulary. This MUST match the search-side normalization in
+  // NodeDiscoveryRuntime.searchPeers (which also routes raw interests through
+  // `interestTopicFor`) so advertise and search agree on the on-wire topic.
   const interests = [...(profile.hobbies ?? []), ...(profile.knowledge ?? [])]
-    .map((s) => s.toLowerCase().trim())
+    .map((s) => interestTopicFor(s))
     .filter(Boolean);
   const username = (profile.username ?? "").toLowerCase().trim();
   const usernameTopic = username ? `username:${username}` : "";

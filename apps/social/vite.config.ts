@@ -140,6 +140,15 @@ export default defineConfig({
   /** loro-crdt WASM bundler uses top-level-await (Phase 15E contact notes). */
   build: {
     target: "esnext",
+    rollupOptions: {
+      // @capacitor/geolocation is a Capacitor plugin that only resolves inside
+      // the native iOS/Android shell (declared in apps/mobile). The web/Tauri
+      // build never reaches this import — it sits behind a runtime
+      // `isNativePlatform()` guard in src/lib/geolocation-adapter.ts and falls
+      // back to navigator.geolocation. Mark it external so Rollup doesn't try
+      // to bundle it for the web build.
+      external: ["@capacitor/geolocation"],
+    },
   },
   optimizeDeps: {
     esbuildOptions: {

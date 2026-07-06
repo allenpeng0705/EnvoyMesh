@@ -19,6 +19,7 @@
     "@capacitor/android": "^8.0.0",
     "@capacitor/core": "^8.0.0",
     "@capacitor/filesystem": "^8.0.0",
+    "@capacitor/geolocation": "^8.0.0",
     "@capacitor/ios": "^8.0.0",
     "@envoymesh/api": "0.1.0",
     "@envoymesh/mobile-identity": "0.1.0",
@@ -37,6 +38,6 @@
     "vite": "^6.0.0"
   },
   "comments": {
-    "plugins": "Additional Capacitor plugins to install when building: @capacitor/android, @capacitor/ios, @capacitor/filesystem, @capacitor/preferences, @capacitor-community/sqlite, @capacitor-community/barcode-scanner, capacitor-secure-storage-plugin"
+    "plugins": "Additional Capacitor plugins to install when building: @capacitor/android, @capacitor/ios, @capacitor/filesystem, @capacitor/geolocation, @capacitor/preferences, @capacitor-community/sqlite, @capacitor-community/barcode-scanner, capacitor-secure-storage-plugin"
   }
 }
