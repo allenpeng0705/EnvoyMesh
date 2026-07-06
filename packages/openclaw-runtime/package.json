@@ -3,10 +3,16 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "src/index.js",
-  "types": "src/index.ts",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./tool-bridge": "./src/tool-bridge.ts"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./tool-bridge": {
+      "types": "./dist/tool-bridge.d.ts",
+      "import": "./dist/tool-bridge.js"
+    }
   }
 }

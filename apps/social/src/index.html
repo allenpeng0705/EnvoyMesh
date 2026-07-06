@@ -21,7 +21,19 @@
     <link rel="stylesheet" href="./styles/chat.css" />
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <div class="app" role="status" aria-live="polite" aria-busy="true">
+        <div class="envoy-splash">
+          <div class="envoy-splash__backdrop" aria-hidden="true"></div>
+          <div class="envoy-splash__card">
+            <div class="envoy-splash__mesh" aria-hidden="true"></div>
+            <div class="loading-spinner envoy-splash__spinner" aria-hidden="true"></div>
+            <h2 class="envoy-splash__title">Starting EnvoyMesh…</h2>
+            <p class="envoy-splash__detail">Loading the app and home node. First launch can take 1–2 minutes.</p>
+          </div>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/main.tsx"></script>
   </body>
 </html>

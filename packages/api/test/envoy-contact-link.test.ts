@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildEnvoyContactUri, parseEnvoyContactUri } from "../src/envoy-contact-link.js";
+import { buildEnvoyContactQrUri, buildEnvoyContactUri, parseEnvoyContactUri } from "../src/envoy-contact-link.js";
 import { encodeWanJoinInviteV1 } from "../src/wan-join-invite.js";
 
 describe("envoy-contact-link", () => {
@@ -32,5 +32,18 @@ describe("envoy-contact-link", () => {
     });
     const parsed = parseEnvoyContactUri(uri);
     expect(parsed.joinToken).toBe(joinToken);
+  });
+
+  it("buildEnvoyContactQrUri omits join token for QR-safe payload", () => {
+    const qrUri = buildEnvoyContactQrUri({
+      peerId: "12D3KooWPeerExample",
+      displayName: "Alice",
+      ownerId: "envoy:owner:alice",
+    });
+    expect(qrUri).not.toContain("join=");
+    expect(qrUri.length).toBeLessThan(300);
+    const parsed = parseEnvoyContactUri(qrUri);
+    expect(parsed.peerId).toBe("12D3KooWPeerExample");
+    expect(parsed.joinToken).toBeUndefined();
   });
 });

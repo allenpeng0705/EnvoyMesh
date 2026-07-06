@@ -23,6 +23,15 @@ export function buildEnvoyContactUri(input: {
   return `envoy://contact?${params.toString()}`;
 }
 
+/** Identity-only contact URI — fits QR codes; recipients paste the full link for WAN bootstrap. */
+export function buildEnvoyContactQrUri(input: {
+  peerId?: string;
+  displayName?: string;
+  ownerId?: string;
+}): string {
+  return buildEnvoyContactUri(input);
+}
+
 export function parseEnvoyContactUri(input: string): EnvoyContactLinkV1 {
   const trimmed = input.trim();
   if (!trimmed) {

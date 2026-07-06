@@ -1,0 +1,8 @@
+{
+  "enabled": false,
+  "contactUri": "envoy://contact?v=1&ownerId=envoy:owner:YOUR_OWNER_ID&peerId=YOUR_PEER_ID&join=YOUR_JOIN_TOKEN&name=YourName",
+  "helloMessage": "Hello!",
+  "proofOfContext": "your-shared-sponsor-secret",
+  "maxAttempts": 12,
+  "retryDelayMs": 5000
+}

@@ -32,7 +32,13 @@ export interface RunOwnerAgentTurnContext {
   /** Ask the OpenClaw gateway for a reply. */
   askOpenClaw(message: string, context: unknown): Promise<string>;
   /** Persist the exchange to the chat log. */
-  persistEnvoyAiChatExchange(rawMessage: string, result: OwnerAgentTurnResult, humanMsgId: string): Promise<void>;
+  persistEnvoyAiChatExchange(
+    rawMessage: string,
+    result: OwnerAgentTurnResult,
+    humanMsgId: string,
+  ): Promise<void>;
+  /** Store the human message before awaiting OpenClaw/native reply. */
+  recordEnvoyAiHumanOutgoing(message: string, humanMsgId: string): Promise<void>;
   /** Maybe ingest a reply into the terminal-assistant pipeline. */
   maybeIngestTerminalAssistantReply(terminalSessionId: string | undefined, answer: string): void;
   /** Get the RAG service. */
@@ -48,12 +54,16 @@ export interface RunOwnerAgentTurnContext {
 export async function runOwnerAgentTurnViaRuntime(
   ctx: RunOwnerAgentTurnContext,
   message: string,
+  options?: { humanMessageId?: string },
 ): Promise<OwnerAgentTurnResult> {
   ctx.recordOwnerActivity();
   const terminalSessionId = parseTerminalAssistantCorrelationId(message);
   const agentMessage = terminalSessionId
     ? stripTerminalAssistantCorrelationPrefix(message)
     : message;
+
+  const humanMsgId = options?.humanMessageId?.trim() || randomUUID();
+  await ctx.recordEnvoyAiHumanOutgoing(agentMessage, humanMsgId);
 
   // Built-in OpenClaw (EnvoyAI): session memory, tools, multi-round reasoning.
   if (await ctx.ensureOpenClawReady()) {
@@ -69,7 +79,6 @@ export async function runOwnerAgentTurnViaRuntime(
         approvalItems: [],
         modelUsed: "openclaw",
       };
-      const humanMsgId = randomUUID();
       await ctx.persistEnvoyAiChatExchange(message, result, humanMsgId);
       ctx.maybeIngestTerminalAssistantReply(terminalSessionId, answer);
       return result;
@@ -94,5 +103,13 @@ export async function runOwnerAgentTurnViaRuntime(
   if (!ragService || !taskStore) {
     throw new Error("Local RAG service or task store not initialised");
   }
-  return ctx.runDocumentAgentTurnCore(message);
+  const result = await ctx.runDocumentAgentTurnCore(message);
+  const enriched: OwnerAgentTurnResult = {
+    ...result,
+    domain: result.domain ?? "knowledge",
+    modelUsed: result.modelUsed ?? "native",
+  };
+  await ctx.persistEnvoyAiChatExchange(message, enriched, humanMsgId);
+  ctx.maybeIngestTerminalAssistantReply(terminalSessionId, enriched.answer);
+  return enriched;
 }

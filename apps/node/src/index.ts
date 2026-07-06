@@ -154,6 +154,8 @@ import {
 } from "./inbound-dial-hint-learn.js";
 import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key-loader.js";
 import { handleInboundBondIntent } from "./bond-inbound.js";
+import { tryBondAutonomyInboundAutoAccept } from "./bond-autonomy-inbound.js";
+import { createBondAutonomyDailyCounter } from "./bond-autonomy-daily-counter.js";
 import { handleInboundSocialIntroIntent } from "./social-intro-inbound.js";
 import { handleInboundDiscoveryIntent, handleInboundRelayPeersIntent, expandCircuitDialCandidates, processDiscoveryQueue } from "./discovery-inbound.js";
 import { handleInboundSyncStateIntent } from "./sync-state-inbound.js";
@@ -188,7 +190,15 @@ import { TerminalAgentAssist } from "./terminal-agent-assist.js";
 import { TerminalWsServer } from "./terminal-ws-server.js";
 import type { ModelProviderConfig } from "@envoymesh/api";
 import { evaluateInboundEnvelopeRolePolicy } from "./role-policy.js";
-import { TERMINAL_WS_PORT } from "./service-ports.js";
+import {
+  BRIDGE_HTTP_PORT,
+  OPENCLAW_GATEWAY_PORT,
+  SOCIAL_WS_PORT,
+  TERMINAL_WS_PORT,
+  openClawGatewayWebhookUrl,
+  socialWsLoopbackUrl,
+  devServicePortsConfigured,
+} from "./service-ports.js";
 import { createBridge } from "./bridge/index.js";
 import { executeTool as runRegistryTool, listAgentTools } from "./tool-registry.js";
 import { loadBridgeIdentity, saveBridgeIdentity } from "./bridge/identity-store.js";
@@ -216,6 +226,7 @@ import {
   noteRelayFailure,
   noteRelaySuccess,
 } from "./relay-roster.js";
+import { getRelayClientAdvertisedTopics } from "./relay-client-cycle.js";
 import { createRelayLookupRouter } from "./relay-lookup-router.js";
 import { logRelayReachableAddrsForCheckin, logRelayServerCheckinAccepted, logRelayServerLookupResponse, logClientRelayLookupResponse, describeMultiaddrReachability } from "./relay-checkin-log.js";
 import {
@@ -277,6 +288,7 @@ const capabilityManifestStore = createCapabilityManifestStore(args.profileDir);
 const reputationStore = createLocalPeerReputationStore(args.profileDir);
 const contactOwnerKeyStore = createContactOwnerKeyStore(args.profileDir);
 const nodeConfigStore = createNodeConfigStore(args.profileDir);
+const bondAutonomyDailyCounter = createBondAutonomyDailyCounter(args.profileDir);
 const deviceAuthorizationStore = createDeviceAuthorizationStore(args.profileDir);
 const agentCardStore = createAgentCardStore(args.profileDir);
 bindDeviceAuthorizationStore(deviceAuthorizationStore);
@@ -329,7 +341,7 @@ const triggerStore = new TriggerStore();
 const digestGenerator = new DigestGenerator(
   createDefaultDigestConfig(join(args.profileDir, "digests")),
 );
-const wsServer = new WsServer(3030, "/ws", {
+const wsServer = new WsServer(SOCIAL_WS_PORT, "/ws", {
   onConnectionChange: (connectedCount) => {
     if (connectedCount > 0) {
       modeController.markOwnerConnected();
@@ -341,7 +353,7 @@ const wsServer = new WsServer(3030, "/ws", {
 wsServer.start(nodeService);
 wsServerForEvents = wsServer;
 if (nodeService instanceof NodeServiceImpl) {
-  nodeService.setWsListenAddress(3030, "/ws");
+  nodeService.setWsListenAddress(SOCIAL_WS_PORT, "/ws");
   nodeService.bindCliTaskStore(taskStore);
   nodeService.bindApprovalQueue(approvalQueue);
   const nodeConfig = await nodeService.getNodeConfig();
@@ -373,7 +385,11 @@ if (nodeService instanceof NodeServiceImpl) {
     `[autonomous] killSwitch=${currentAutonomousKillSwitch}, policies=${currentAutonomousPolicies.length}`,
   );
 }
-console.log("[node] Social WebSocket listening on ws://127.0.0.1:3030/ws");
+if (devServicePortsConfigured()) {
+  console.log(
+    `[node] Service ports (dev): ws=${SOCIAL_WS_PORT}, bridge=${BRIDGE_HTTP_PORT}, terminal=${TERMINAL_WS_PORT}, gateway=${OPENCLAW_GATEWAY_PORT}`,
+  );
+}
 
 // Register deferred mesh start immediately — module init continues for ~2000 lines and
 // the UI can finish setup before that completes.
@@ -445,12 +461,19 @@ try {
 } catch {
   bridgeConfig = applyActiveExtAgent(BridgeConfigSchema.parse({}));
 }
+bridgeConfig = {
+  ...bridgeConfig,
+  listenPort: BRIDGE_HTTP_PORT,
+  assistantAgentUrl: openClawGatewayWebhookUrl(),
+};
 // Merge UI toggle from persisted config — bridgeEnabled: true overrides bridge-config.json.
 // Default to false when no persisted config exists (D1C: built-in OpenClaw is the default agent;
 // the Ext Agent bridge is opt-in).
+let openclawEnabledForBridge = true;
 {
   try {
     const persistedCfg = await nodeConfigStore.load();
+    openclawEnabledForBridge = persistedCfg?.openclawEnabled ?? true;
     const uiEnabled = persistedCfg?.bridgeEnabled ?? false;
     if (uiEnabled && !bridgeConfig.enabled) {
       bridgeConfig = { ...bridgeConfig, enabled: true };
@@ -458,8 +481,17 @@ try {
     }
   } catch { /* ignore — persisted config may not exist yet */ }
 }
-/** Bridge UI + registration when HTTP bridge is enabled (secret optional → see bridge/index.ts localhost auth) */
+/** Ext Agent UI + peer registration when bridge HTTP is explicitly enabled */
 const bridgeHttpReady = bridgeConfig.enabled;
+/** Built-in OpenClaw posts sync replies to POST /bridge/send — listener required even when Ext Agent is off */
+const bridgeListenForOpenClaw = openclawEnabledForBridge;
+/** Built-in OpenClaw lifecycle (gateway auth, bridge status, peer directory) */
+const bridgeAgentLifecycleReady = bridgeHttpReady || bridgeListenForOpenClaw;
+if (bridgeListenForOpenClaw && !bridgeConfig.enabled) {
+  console.log(
+    `[bridge] HTTP listener will start for built-in OpenClaw (POST /bridge/send on port ${BRIDGE_HTTP_PORT})`,
+  );
+}
 const discoverySeedStore = createDiscoverySeedStore(args.profileDir);
 const taskRuntimeStore = createTaskRuntimeStateStore(args.profileDir);
 const resolvedArgs = await resolveNodeArgsTargetsByOwnerId(args, peerDirectoryStore);
@@ -519,6 +551,7 @@ if (nodeService instanceof NodeServiceImpl) {
       nodeService.emit("rag:reindex", progress);
     }
   };
+  nodeService.setRelayBookProvider(() => relayRoster.relayBook());
   void refreshRagService();
 }
 
@@ -2090,6 +2123,25 @@ async function handleInboundMeshMessage({
           console.warn(`[reachability] bond tag failed:`, err),
         );
       },
+      envelope.intent === "bond.request"
+        ? async (payload) => {
+            const cfg = await nodeConfigStore.load();
+            const result = await tryBondAutonomyInboundAutoAccept({
+              envelope,
+              remotePeerId,
+              profile,
+              trustStore,
+              taskStore,
+              config: cfg,
+              autonomousKillSwitch: cfg?.autonomousKillSwitch ?? false,
+              getDailyAutoBondCount: () => bondAutonomyDailyCounter.getCount(),
+              incrementDailyAutoBondCount: () => bondAutonomyDailyCounter.increment(),
+              hasIntroCorrelation: async () => false,
+              getTrustOverlapScore: async () => 0,
+            });
+            return result.accepted ? result : { accepted: false as const };
+          }
+        : undefined,
     );
     if (!bond.ok) {
       void taskStore.appendAuditEvent(
@@ -2374,7 +2426,7 @@ async function startRelayTunnelIfConfigured(): Promise<void> {
       relayTunnelClient = new RelayTunnelClient({
         relayWsUrl,
         homePeerId: mesh.peerId,
-        localWsServerUrl: `ws://127.0.0.1:3030/ws`,
+        localWsServerUrl: socialWsLoopbackUrl(),
         log: (msg) => console.log(msg),
         onObservedAddr: (addr) => {
           const ipMatch = addr.match(/^\/ip4\/([^\/]+)/);
@@ -2471,6 +2523,28 @@ async function activateCliMesh(reloadDiscoveryFromConfig: boolean): Promise<void
         setTimeout(() => advertise(), 30000);
         setTimeout(() => advertise(), 60000);
         setTimeout(() => advertise(), 90000);
+
+        // CLI path doesn't go through NodeServiceImpl.startNode, so call the
+        // DHT advertising pipeline directly. This makes interest topics from
+        // the human profile (hobbies, knowledge, username) discoverable via
+        // `findCapabilityTopicProviders` on the public DHT.
+        if (nodeService instanceof NodeServiceImpl) {
+          // CLI path doesn't go through NodeServiceImpl.startNode, so call the
+          // DHT advertising pipeline directly. This makes interest topics from
+          // the human profile (hobbies, knowledge, username) discoverable via
+          // `findCapabilityTopicProviders` on the public DHT.
+          setTimeout(() => {
+            void nodeService._advertiseInterestsIfPublic().catch((err) => {
+              console.warn("[node] advertiseInterestsIfPublic failed:", err);
+            });
+          }, 5_000);
+          // Re-advertise periodically (NodeService path also does this).
+          setInterval(() => {
+            void nodeService._advertiseInterestsIfPublic().catch((err) => {
+              console.warn("[node] advertiseInterestsIfPublic (periodic) failed:", err);
+            });
+          }, 5 * 60 * 1000);
+        }
       }
 
       if (nodeService instanceof NodeServiceImpl) {
@@ -2990,6 +3064,7 @@ async function getRecipientDialHints(recipientPeerId: string): Promise<string[] 
 
 const bridge = createBridge({
   config: bridgeConfig,
+  listenForOpenClaw: bridgeListenForOpenClaw,
   identity: bridgeIdentity,
   mesh,
   getRecipientPeerId,
@@ -3074,9 +3149,10 @@ if (nodeService instanceof NodeServiceImpl) {
   });
 }
 
-// Emit bridge status for Social UI and register bridge agent in peer directory.
-// Requires enabled + non-empty secret so UI matches an actually listening HTTP bridge.
-if (nodeService instanceof NodeServiceImpl && bridgeHttpReady) {
+// Register built-in bridge agent for OpenClaw sync replies + optional Ext Agent UI.
+// `bridgeAgentLifecycleReady`: gateway auth + agent peer id (Tauri OpenClaw-only OR dev full bridge).
+// `bridgeHttpReady`: Ext Agent bridge toggle / Settings UI only.
+if (nodeService instanceof NodeServiceImpl && bridgeAgentLifecycleReady) {
   // Determine agent type: built-in EnvoyAI vs external HTTP agent.
   // resolveAssistantAgentUrl uses assistantAgentUrl if set, or agentUrl if it
   // routes to /webhook/envoymesh, else defaults to the built-in webhook.
@@ -3085,7 +3161,7 @@ if (nodeService instanceof NodeServiceImpl && bridgeHttpReady) {
     assistantUrl.includes("/webhook/envoymesh") ? "envoyai" : "external";
   const bridgeFields = bridgeConfigToStatusFields(bridgeConfig);
   nodeService.setBridgeStatus({
-    enabled: true,
+    enabled: bridgeHttpReady,
     agentPeerId: bridge.agentPeerId,
     agentUrl: bridgeFields.agentUrl,
     listenPort: bridgeFields.listenPort,
@@ -3238,8 +3314,17 @@ if (args.discoveryProfile === "wan-default" && effectiveBootstrapPeers.length > 
   scheduleBootstrapReprobe(effectiveBootstrapPeers);
 }
 if (args.enableDht && autoCapabilityTopics.length > 0) {
-  await runLocalCapabilityDiscoveryCycle("startup");
-  scheduleCapabilityDiscovery();
+  // Fire-and-forget: DHT startup cycle can take 30s+ when behind NAT (per-topic
+  // provide timeouts). Don't block the relay-checkin / relay-lookup startup
+  // sequences — relay-roster advertisements are more important than local DHT
+  // provides in WAN/NAT environments.
+  void runLocalCapabilityDiscoveryCycle("startup")
+    .catch((error) => {
+      reportRelayBackgroundError("capability.discovery.startup", error);
+    })
+    .finally(() => {
+      scheduleCapabilityDiscovery();
+    });
 }
 if (args.enableRelay && effectiveBootstrapPeers.length > 0) {
   try {
@@ -3770,17 +3855,44 @@ async function runRelayCheckinCycle(source: "startup" | "periodic"): Promise<voi
       addrs: mesh.multiaddrs,
     });
   }
+  // Compute topicHash advertisements for the topics this node currently
+  // publishes via DHT, so the relay server's roster can answer cross-NAT
+  // relay.lookup queries by topic (fallback for `searchPeers`).
+  const advertisedTopics = getRelayClientAdvertisedTopics();
+  const { cidForCapabilityTopic } = await import("@envoymesh/network");
+  const topicHashes = await Promise.all(
+    advertisedTopics.map((topic) =>
+      cidForCapabilityTopic(topic).then((cid) => cid.toString()).catch(() => null),
+    ),
+  );
+  const topicAds = advertisedTopics
+    .map((topic, idx) =>
+      topicHashes[idx] ? { topicHash: topicHashes[idx]!, visibility: "public" as const, expiresAt } : null,
+    )
+    .filter((ad): ad is { topicHash: string; visibility: "public"; expiresAt: string } => ad !== null);
+  if (topicAds.length > 0) {
+    console.log(
+      `[relay-checkin] including ${topicAds.length} topicHash advertisement(s) for relay roster (sample: ${topicAds[0].topicHash.slice(0, 12)}…)`,
+    );
+  }
   for (const target of targets) {
     const payload = createRelayCheckinPayload({
       peerId: mesh.peerId,
       ownerId: profile.owner.ownerId,
       relayReachableAddrs: mesh.multiaddrs,
       capabilities,
-      advertisements: capabilities.map((capability) => ({
-        capability,
-        visibility: capability === "mesh.discovery" ? "public" : "bonded",
-        expiresAt,
-      })),
+      advertisements: [
+        ...capabilities.map((capability) => ({
+          capability,
+          visibility: (capability === "mesh.discovery" ? "public" : "bonded") as
+            | "public"
+            | "bonded"
+            | "private"
+            | "capability",
+          expiresAt,
+        })),
+        ...topicAds,
+      ],
       relayHints: relayClientState.activeRelays,
       expiresAt,
     });
@@ -3798,6 +3910,7 @@ async function runRelayCheckinCycle(source: "startup" | "periodic"): Promise<voi
     try {
       await deliverOutboundEnvelope(mesh, target, signedEnvelope);
       noteRelaySuccess(relayClientState, relayHintFromAddr(target));
+      await tagRelayOk(mesh, target);
       await appendRelayTrace("relay.checkin.ok", target, `relay checkin ok source=${source} target=${target}`);
       checkinResults.push({ target, ok: true });
     } catch (error) {
@@ -3814,6 +3927,19 @@ async function runRelayCheckinCycle(source: "startup" | "periodic"): Promise<voi
 
 function relayCheckinCapabilities(capabilities: readonly string[]): string[] {
   return [...new Set(["mesh.discovery", ...capabilities])];
+}
+
+async function tagRelayOk(mesh: EnvoyMesh, target: string): Promise<void> {
+  if (!target.startsWith("/")) return;
+  const m = target.match(/\/p2p\/([^/]+)/);
+  const relayId = m?.[1];
+  if (!relayId || relayId.startsWith("envoy_")) return;
+  try {
+    await mesh.tagRelayForPersistentReachability(relayId);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[relay-checkin] tagRelayForPersistentReachability failed target=${relayId} error=${msg}`);
+  }
 }
 
 function scheduleRelayLookup(): void {

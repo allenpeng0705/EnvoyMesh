@@ -75,6 +75,17 @@ export interface NodeDiscoveryRuntimeDeps {
   dialHintsForChat(recipientPeerId: string, peerListenAddrs: string[] | undefined): Promise<string[]>;
   emitMultiHopUpdate(session: MultiHopDiscoverySessionView): void;
   loadHumanProfile?: () => Promise<HumanProfilePayload | undefined>;
+  /**
+   * Cross-NAT fallback when local DHT returns 0 providers for a topic.
+   * Issues a `relay.lookup` (by topicHash) to the node's known bootstrap
+   * relays so peers behind NAT-only circuits can still be discovered via
+   * the relay server's roster.
+   */
+  queryRelayLookupByTopic?(params: {
+    topic: string;
+    topicHash: string;
+    maxResults: number;
+  }): Promise<PeerSearchResult[]>;
 }
 
 export class NodeDiscoveryRuntime {
@@ -297,45 +308,76 @@ export class NodeDiscoveryRuntime {
       }
 
       console.log(`[searchPeers] Searching DHT for topic: "${topic}" (limit: ${maxResults})`);
+      let providers: Awaited<ReturnType<EnvoyMesh["findCapabilityTopicProviders"]>> = [];
       try {
-        const providers = await mesh.findCapabilityTopicProviders(topic, {
+        providers = await mesh.findCapabilityTopicProviders(topic, {
           limit: maxResults,
           queryTimeoutMs: 8_000,
         });
         console.log(`[searchPeers] Found ${providers.length} providers for topic "${topic}"`);
-        const trustRecords = await this.deps.trustStore.listTrustRecords();
-        const peerRecords = await this.deps.peerDirectoryStore.listPeerRecords();
-        const trustByPeerId = new Map<string, (typeof trustRecords)[number]>();
-        for (const record of trustRecords) {
-          const peer = peerRecords.find((p) => p.ownerId === record.peerOwnerId);
-          if (peer?.peerId) {
-            trustByPeerId.set(peer.peerId, record);
-          }
-        }
-        if (providers.length > 0 && this.deps.discoverySeedStore) {
-          const addrs = providers.flatMap((p) => p.multiaddrs ?? []);
-          if (addrs.length > 0) {
-            await this.deps.discoverySeedStore.upsertMany(addrs, "capability-topic");
-          }
-        }
-        return providers.map((provider) => {
-          const trust = trustByPeerId.get(provider.peerId);
-          const peerRecord = peerRecords.find((p) => p.peerId === provider.peerId);
-          return {
-            nodeId: provider.peerId,
-            ownerId: peerRecord?.ownerId ?? provider.peerId,
-            displayName: trust?.displayName ?? provider.peerId.slice(0, 12) + "...",
-            interests: [topic],
-            profileVisibility: "public" as const,
-            discoverySource: "dht-capability-topic" as const,
-            trustLevel: trust?.level,
-            signedRecordValid: provider.signedRecord ? true : provider.signedRecordInvalid ? false : undefined,
-          };
-        });
       } catch (err) {
         console.log(`[searchPeers] Topic "${topic}" query failed:`, err instanceof Error ? err.message : err);
-        return [];
       }
+      const trustRecords = await this.deps.trustStore.listTrustRecords();
+      const peerRecords = await this.deps.peerDirectoryStore.listPeerRecords();
+      const trustByPeerId = new Map<string, (typeof trustRecords)[number]>();
+      for (const record of trustRecords) {
+        const peer = peerRecords.find((p) => p.ownerId === record.peerOwnerId);
+        if (peer?.peerId) {
+          trustByPeerId.set(peer.peerId, record);
+        }
+      }
+      if (providers.length > 0 && this.deps.discoverySeedStore) {
+        const addrs = providers.flatMap((p) => p.multiaddrs ?? []);
+        if (addrs.length > 0) {
+          await this.deps.discoverySeedStore.upsertMany(addrs, "capability-topic");
+        }
+      }
+      const dhtResults = providers.map((provider) => {
+        const trust = trustByPeerId.get(provider.peerId);
+        const peerRecord = peerRecords.find((p) => p.peerId === provider.peerId);
+        return {
+          nodeId: provider.peerId,
+          ownerId: peerRecord?.ownerId ?? provider.peerId,
+          displayName: trust?.displayName ?? provider.peerId.slice(0, 12) + "...",
+          interests: [topic],
+          profileVisibility: "public" as const,
+          discoverySource: "dht-capability-topic" as const,
+          trustLevel: trust?.level,
+          signedRecordValid: provider.signedRecord ? true : provider.signedRecordInvalid ? false : undefined,
+        };
+      });
+
+      // Cross-NAT fallback: if local DHT returned no providers (often the case
+      // when the node is behind NAT and the local routing table is empty),
+      // ask the bootstrap relays for the topicHash via relay.lookup. The
+      // relay server's roster is populated by other clients' relay.checkin
+      // advertisements, so it works without a direct DHT connection.
+      if (dhtResults.length === 0 && this.deps.queryRelayLookupByTopic) {
+        try {
+          const { cidForCapabilityTopic } = await import("@envoymesh/network");
+          const cid = await cidForCapabilityTopic(topic);
+          const fallback = await this.deps.queryRelayLookupByTopic({
+            topic,
+            topicHash: cid.toString(),
+            maxResults,
+          });
+          if (fallback.length > 0) {
+            console.log(
+              `[searchPeers] relay-roster fallback returned ${fallback.length} peers for topic "${topic}"`,
+            );
+          }
+          return fallback;
+        } catch (err) {
+          console.log(
+            `[searchPeers] relay-roster fallback failed for "${topic}":`,
+            err instanceof Error ? err.message : err,
+          );
+          return dhtResults;
+        }
+      }
+
+      return dhtResults;
     }
 
     async discoverCapabilityTopic(params: DiscoverCapabilityTopicParams): Promise<DiscoverCapabilityTopicResult> {

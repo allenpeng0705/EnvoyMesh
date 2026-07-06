@@ -68,6 +68,9 @@ export {
 /** Prefix `keep-alive-*` triggers libp2p reconnect-on-disconnect queue for bonded contacts */
 const CONTACT_KEEP_ALIVE_PEER_TAG = `${KEEP_ALIVE}-envoymesh-contact`;
 
+/** Tag prefix used to keep relay peer IDs connected across churn. */
+const RELAY_KEEP_ALIVE_PEER_TAG = `${KEEP_ALIVE}-envoymesh-relay`;
+
 /** True when reconnect-queue schedules redials after disconnect (any peer-store tag prefixed with KEEP_ALIVE, same rule as libp2p reconnect queue). */
 export function peerTagsTriggerReconnectQueue(tagNames: Iterable<string>): boolean {
   for (const name of tagNames) {
@@ -585,6 +588,44 @@ export class EnvoyMesh {
     await this.requireNode().peerStore.merge(peerIdFromString(idStr), {
       tags: { [CONTACT_KEEP_ALIVE_PEER_TAG]: undefined },
     });
+  }
+
+  /**
+   * Mark a relay peer as persistently reachable (libp2p KEEP_ALIVE +
+   * reconnect-queue). Use when the relay is observed providing a working
+   * `/p2p-circuit/` reservation so the connection survives churn and
+   * cross-NAT reachability remains stable.
+   */
+  async tagRelayForPersistentReachability(relayPeerId: string): Promise<void> {
+    const idStr = relayPeerId.trim();
+    if (!idStr || idStr.startsWith("envoy_")) return;
+    await this.requireNode().peerStore.merge(peerIdFromString(idStr), {
+      tags: { [RELAY_KEEP_ALIVE_PEER_TAG]: { value: 100 } },
+    });
+  }
+
+  /** Undo {@link tagRelayForPersistentReachability}. */
+  async untagRelayForPersistentReachability(relayPeerId: string): Promise<void> {
+    const idStr = relayPeerId.trim();
+    if (!idStr || idStr.startsWith("envoy_")) return;
+    await this.requireNode().peerStore.merge(peerIdFromString(idStr), {
+      tags: { [RELAY_KEEP_ALIVE_PEER_TAG]: undefined },
+    });
+  }
+
+  /** Whether a relay peer is currently tagged for persistent reachability. */
+  hasRelayKeepAliveTag(relayPeerId: string): boolean {
+    const idStr = relayPeerId.trim();
+    if (!idStr) return false;
+    try {
+      const peer = (this.requireNode().peerStore as unknown as { get: (id: unknown) => { tags?: Record<string, unknown> } }).get(
+        peerIdFromString(idStr),
+      );
+      const tagNames = Object.keys(peer?.tags ?? {});
+      return tagNames.includes(RELAY_KEEP_ALIVE_PEER_TAG);
+    } catch {
+      return false;
+    }
   }
 
   /** Live libp2p connection-manager snapshot (open connections only). */

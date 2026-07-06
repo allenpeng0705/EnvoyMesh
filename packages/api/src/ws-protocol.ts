@@ -240,6 +240,8 @@ export type RpcMethods =
   // Node Configuration
   | "getNodeConfig"
   | "updateNodeConfig"
+  | "getSetupSponsorFriendConfig"
+  | "runSetupSponsorFriend"
   | "listRelays"
   | "addRelay"
   | "removeRelay"
@@ -580,6 +582,33 @@ export interface NodeConfig {
   documentAcquisitionMandateId?: string;
   capabilityProviderEnabled?: boolean;
   capabilityProviderMandateId?: string;
+  /** Phase 19 — agent-driven inbound bond auto-accept. Default false. */
+  bondAutonomyEnabled?: boolean;
+  bondAutonomyMandateId?: string;
+  bondAutonomyMaxAutoBondsPerDay?: number;
+  bondAutonomyRequireReferralProof?: boolean;
+  bondAutonomyMaxAutoBondTier?: "referred" | "direct";
+  bondAutonomyMinTrustOverlapScore?: number;
+  bondAutonomyNotifyOwnerOnAutoBond?: boolean;
+  /**
+   * When set, bond autonomy only auto-accepts inbound hellos whose
+   * `proofOfContext` equals this token (matches installer `setupSponsorFriendProofOfContext`).
+   */
+  bondAutonomySponsorProofToken?: string;
+  /** Zero-step first friend on first setup (installer / distributor). */
+  setupSponsorFriendEnabled?: boolean;
+  setupSponsorFriendContactUri?: string;
+  setupSponsorFriendOwnerId?: string;
+  setupSponsorFriendPeerId?: string;
+  setupSponsorFriendJoinToken?: string;
+  setupSponsorFriendDisplayName?: string;
+  setupSponsorFriendHelloMessage?: string;
+  setupSponsorFriendProofOfContext?: string;
+  setupSponsorFriendMaxAttempts?: number;
+  setupSponsorFriendRetryDelayMs?: number;
+  setupSponsorFriendCompletedAt?: string;
+  setupSponsorFriendLastError?: string;
+  setupSponsorFriendAttempts?: number;
   /**
    * Phase 38 — WebRTC ICE servers (STUN/TURN) for voice/video calls.
    * When unset, the default set of public STUN servers is used.
@@ -1351,6 +1380,26 @@ export interface UpdateNodeConfigParams {
   idleTimerStretch?: boolean;
   /** Phase 42 — Cost estimation */
   chainCostEstimationEnabled?: boolean;
+  /** Phase 19 — bond autonomy auto-accept inbound hellos. */
+  bondAutonomyEnabled?: boolean;
+  bondAutonomyMandateId?: string;
+  bondAutonomyMaxAutoBondsPerDay?: number;
+  bondAutonomyRequireReferralProof?: boolean;
+  bondAutonomyMaxAutoBondTier?: "referred" | "direct";
+  bondAutonomyMinTrustOverlapScore?: number;
+  bondAutonomyNotifyOwnerOnAutoBond?: boolean;
+  bondAutonomySponsorProofToken?: string;
+  /** Zero-step first friend on first setup. */
+  setupSponsorFriendEnabled?: boolean;
+  setupSponsorFriendContactUri?: string;
+  setupSponsorFriendOwnerId?: string;
+  setupSponsorFriendPeerId?: string;
+  setupSponsorFriendJoinToken?: string;
+  setupSponsorFriendDisplayName?: string;
+  setupSponsorFriendHelloMessage?: string;
+  setupSponsorFriendProofOfContext?: string;
+  setupSponsorFriendMaxAttempts?: number;
+  setupSponsorFriendRetryDelayMs?: number;
 }
 
 export interface RunCapabilityDiscoveryParams {

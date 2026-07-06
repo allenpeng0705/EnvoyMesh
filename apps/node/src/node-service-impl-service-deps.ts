@@ -33,7 +33,10 @@ import {
   _runChainGoal,
   _startChainTracking,
 } from "./node-service-chain-orchestration.js";
-import { persistEnvoyAiChatExchangeViaRuntime } from "./node-service-openclaw-runtime.js";
+import {
+  persistEnvoyAiChatExchangeViaRuntime,
+  recordEnvoyAiHumanOutgoingViaRuntime,
+} from "./node-service-openclaw-runtime.js";
 import { upsertTransferStatusViaRuntime } from "./node-service-transfer-inbound.js";
 import {
   handleInboundMessageViaRuntime,
@@ -170,6 +173,7 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
             getRelayBootstrapPeers: () => host._relayBootstrapPeers,
             hasTerminalManager: () => Boolean(host._terminalManager),
             getBridgeStatus: () => host._bridgeStatus ?? undefined,
+            getRelayBook: () => host._relayBookProvider?.() ?? [],
           },
       nodeConfig: {
             getProfileDir: () => host._profileDir,
@@ -373,6 +377,9 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
             setStopRelayClientScheduler: (fn) => {
               host._stopRelayClientScheduler = fn;
             },
+            setRelayClientCycleDeps: (deps) => {
+              host._relayClientCycleDeps = deps;
+            },
             setStopNodeStatsLogging: (fn) => {
               host._stopNodeStatsLogging = fn;
             },
@@ -479,6 +486,8 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
             askOpenClaw: (msg, ctx) => host.askOpenClaw(msg, ctx as never),
             persistEnvoyAiChatExchange: (raw, turn, humanMsgId) =>
               persistEnvoyAiChatExchangeViaRuntime(host._openClawRuntimeDeps(), raw, turn, humanMsgId),
+            recordEnvoyAiHumanOutgoing: (msg, humanMsgId) =>
+              recordEnvoyAiHumanOutgoingViaRuntime(host._openClawRuntimeDeps(), msg, humanMsgId),
             maybeIngestTerminalAssistantReply: (sid, answer) =>
               host._maybeIngestTerminalAssistantReply(sid, answer),
             getRagService: () => host._getRagService() as never,

@@ -389,7 +389,10 @@ export interface NodeServiceClient {
   // AI / Knowledge Query
   knowledgeQuery(question: string): Promise<string>;
   runDocumentAgentTurn(message: string): Promise<import("@envoymesh/api").DocumentAgentTurnResult>;
-  runOwnerAgentTurn(message: string): Promise<import("@envoymesh/api").OwnerAgentTurnResult>;
+  runOwnerAgentTurn(
+    message: string,
+    options?: import("@envoymesh/api").RunOwnerAgentTurnOptions,
+  ): Promise<import("@envoymesh/api").OwnerAgentTurnResult>;
 
   // Phase 23A — AI-curated circles
   listAgentCircles(): Promise<import("@envoymesh/api").AgentCircle[]>;
@@ -461,6 +464,8 @@ export interface NodeServiceClient {
   // Node Configuration
   getNodeConfig(): Promise<NodeConfig>;
   updateNodeConfig(config: Partial<NodeConfig>): Promise<void>;
+  getSetupSponsorFriendConfig(): Promise<import("@envoymesh/api").ResolvedSetupSponsorFriend>;
+  runSetupSponsorFriend(): Promise<import("@envoymesh/api").RunSetupSponsorFriendResult>;
   listRelays(): Promise<RelayConfig[]>;
   addRelay(addr: string, level?: number, region?: string): Promise<RelayConfig>;
   removeRelay(relayId: string): Promise<void>;
@@ -1232,10 +1237,12 @@ function createWsNodeServiceClient(
     async runDocumentAgentTurn(message: string) {
       return wsClient.rpc("runDocumentAgentTurn", { message }) as Promise<import("@envoymesh/api").DocumentAgentTurnResult>;
     },
-    async runOwnerAgentTurn(message: string) {
-      return wsClient.rpc("runOwnerAgentTurn", { message }, {
-        timeoutMs: 300_000,
-      }) as Promise<import("@envoymesh/api").OwnerAgentTurnResult>;
+    async runOwnerAgentTurn(message: string, options?: import("@envoymesh/api").RunOwnerAgentTurnOptions) {
+      return wsClient.rpc(
+        "runOwnerAgentTurn",
+        { message, humanMessageId: options?.humanMessageId },
+        { timeoutMs: 300_000 },
+      ) as Promise<import("@envoymesh/api").OwnerAgentTurnResult>;
     },
     async listAgentCircles() {
       return wsClient.rpc("listAgentCircles", {}) as Promise<import("@envoymesh/api").AgentCircle[]>;
@@ -1382,6 +1389,16 @@ function createWsNodeServiceClient(
     async advertiseTopic(topic: string) { return wsClient.rpc("advertiseTopic", { topic }); },
     async stopAdvertiseTopic(topic: string) { return wsClient.rpc("stopAdvertiseTopic", { topic }); },
     async updateNodeConfig(config: Partial<NodeConfig>) { return wsClient.rpc("updateNodeConfig", config); },
+    async getSetupSponsorFriendConfig() {
+      return wsClient.rpc("getSetupSponsorFriendConfig") as Promise<
+        import("@envoymesh/api").ResolvedSetupSponsorFriend
+      >;
+    },
+    async runSetupSponsorFriend() {
+      return wsClient.rpc("runSetupSponsorFriend") as Promise<
+        import("@envoymesh/api").RunSetupSponsorFriendResult
+      >;
+    },
     async listRelays() { return wsClient.rpc("listRelays"); },
     async addRelay(addr: string, level?: number, region?: string) { return wsClient.rpc("addRelay", { addr, level, region }); },
     async removeRelay(relayId: string) { return wsClient.rpc("removeRelay", { relayId }); },
@@ -1572,10 +1589,13 @@ export function NodeServiceProvider({
   if (!client) {
     return (
       <div className="app">
-        <div className="loading">
-          <div className="loading-content">
-            <div className="loading-spinner" />
-            <h2>Starting Envoy Social</h2>
+        <div className="envoy-splash" role="status" aria-live="polite" aria-busy="true">
+          <div className="envoy-splash__backdrop" aria-hidden />
+          <div className="envoy-splash__card">
+            <div className="envoy-splash__mesh" aria-hidden />
+            <div className="loading-spinner envoy-splash__spinner" />
+            <h2 className="envoy-splash__title">Starting EnvoyMesh…</h2>
+            <p className="envoy-splash__detail">Loading the app. Your home node may still be starting.</p>
           </div>
         </div>
       </div>

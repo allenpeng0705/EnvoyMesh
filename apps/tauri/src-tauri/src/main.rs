@@ -1,7 +1,8 @@
-use std::io::{BufRead, BufReader};
+use std::fs::{File, OpenOptions};
+use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::{Manager, State};
 use tracing::{error, info, warn, Level};
@@ -17,11 +18,64 @@ struct NodeSpawnConfig {
     ipfs_repo_dir: PathBuf,
     bundled_ipfs: Option<PathBuf>,
     tauri_resource_dir: Option<PathBuf>,
+    node_log_file: Option<Arc<Mutex<File>>>,
 }
 
 struct NodeProcessState {
     child: Mutex<Option<Child>>,
     config: NodeSpawnConfig,
+}
+
+#[derive(Clone)]
+struct AppLogPaths {
+    logs_dir: PathBuf,
+    node_log: PathBuf,
+    social_log: PathBuf,
+}
+
+fn ensure_logs_dir(app_data_dir: &Path) -> AppLogPaths {
+    let logs_dir = app_data_dir.join("logs");
+    std::fs::create_dir_all(&logs_dir).expect("Failed to create logs dir");
+    AppLogPaths {
+        node_log: logs_dir.join("node.log"),
+        social_log: logs_dir.join("social.log"),
+        logs_dir,
+    }
+}
+
+fn open_append_log(path: &Path) -> Option<File> {
+    OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .ok()
+}
+
+fn pipe_child_logs(
+    label: &str,
+    stream: Option<impl std::io::Read + Send + 'static>,
+    log_file: Option<Arc<Mutex<File>>>,
+) {
+    if let Some(stream) = stream {
+        let label = label.to_string();
+        std::thread::spawn(move || {
+            for line in BufReader::new(stream).lines() {
+                match line {
+                    Ok(line) if !line.is_empty() => {
+                        info!("[{}] {}", label, line);
+                        if let Some(ref file) = log_file {
+                            if let Ok(mut guard) = file.lock() {
+                                let _ = writeln!(guard, "[{}] {}", label, line);
+                                let _ = guard.flush();
+                            }
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(_) => break,
+                }
+            }
+        });
+    }
 }
 
 /// Compile-time manifest dir (dev builds) — only valid on the machine that built the binary.
@@ -223,6 +277,63 @@ fn is_port_in_use(port: u16) -> bool {
     std::net::TcpListener::bind(format!("127.0.0.1:{}", port)).is_err()
 }
 
+const NODE_SIDECAR_PORTS: [u16; 3] = [3030, 3031, 3032];
+
+/// Terminate any process still listening on the home-node service ports (orphaned sidecars).
+fn kill_stale_listeners_on_node_ports() {
+    #[cfg(unix)]
+    {
+        for port in NODE_SIDECAR_PORTS {
+            if !is_port_in_use(port) {
+                continue;
+            }
+            let Ok(output) = Command::new("lsof")
+                .args(["-ti", &format!(":{}", port)])
+                .output()
+            else {
+                continue;
+            };
+            let pids = String::from_utf8_lossy(&output.stdout);
+            for pid_str in pids.lines() {
+                let pid = pid_str.trim();
+                if pid.is_empty() {
+                    continue;
+                }
+                warn!(
+                    "Killing stale listener on port {} (pid {})",
+                    port, pid
+                );
+                let _ = Command::new("kill").args(["-TERM", pid]).status();
+            }
+        }
+        std::thread::sleep(Duration::from_millis(400));
+        for port in NODE_SIDECAR_PORTS {
+            if !is_port_in_use(port) {
+                continue;
+            }
+            let Ok(output) = Command::new("lsof")
+                .args(["-ti", &format!(":{}", port)])
+                .output()
+            else {
+                continue;
+            };
+            let pids = String::from_utf8_lossy(&output.stdout);
+            for pid_str in pids.lines() {
+                let pid = pid_str.trim();
+                if pid.is_empty() {
+                    continue;
+                }
+                warn!(
+                    "Force-killing stale listener on port {} (pid {})",
+                    port, pid
+                );
+                let _ = Command::new("kill").args(["-KILL", pid]).status();
+            }
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+}
+
 fn wait_for_port(port: u16, timeout: Duration) -> bool {
     let start = Instant::now();
     while start.elapsed() < timeout {
@@ -232,21 +343,6 @@ fn wait_for_port(port: u16, timeout: Duration) -> bool {
         std::thread::sleep(Duration::from_millis(200));
     }
     false
-}
-
-fn pipe_child_logs(label: &str, stream: Option<impl std::io::Read + Send + 'static>) {
-    if let Some(stream) = stream {
-        let label = label.to_string();
-        std::thread::spawn(move || {
-            for line in BufReader::new(stream).lines() {
-                match line {
-                    Ok(line) if !line.is_empty() => info!("[{}] {}", label, line),
-                    Ok(_) => {}
-                    Err(_) => break,
-                }
-            }
-        });
-    }
 }
 
 fn stop_node_child(child_slot: &mut Option<Child>) {
@@ -276,6 +372,7 @@ fn stop_node_from_app(app: &tauri::AppHandle) {
 }
 
 fn spawn_node_process(config: &NodeSpawnConfig) -> Result<Child, String> {
+    kill_stale_listeners_on_node_ports();
     if !config.node_path.is_file() {
         return Err(format!(
             "Node entry not found at {:?} (rebuild the app)",
@@ -332,22 +429,80 @@ fn spawn_node_process(config: &NodeSpawnConfig) -> Result<Child, String> {
         command.env("ENVOYMESH_NODE_EXE", &config.node_exe);
     }
 
+    command.env("ENVOYMESH_NODE_BUNDLE_DIR", &config.node_cwd);
+
+    let log_file = config.node_log_file.clone();
     command.spawn().map_err(|e| {
         format!(
             "Failed to spawn node process ({:?}): {}",
             config.node_exe, e
         )
     }).map(|mut child| {
-        pipe_child_logs("node", child.stdout.take());
-        pipe_child_logs("node", child.stderr.take());
+        pipe_child_logs("node", child.stdout.take(), log_file.clone());
+        pipe_child_logs("node", child.stderr.take(), log_file);
         child
     })
+}
+
+#[derive(serde::Serialize)]
+struct AppLogPathsResponse {
+    logs_dir: String,
+    node_log: String,
+    social_log: String,
+}
+
+#[tauri::command]
+fn get_app_log_paths(log_paths: State<'_, AppLogPaths>) -> AppLogPathsResponse {
+    AppLogPathsResponse {
+        logs_dir: log_paths.logs_dir.display().to_string(),
+        node_log: log_paths.node_log.display().to_string(),
+        social_log: log_paths.social_log.display().to_string(),
+    }
+}
+
+#[tauri::command]
+fn append_social_log(log_paths: State<'_, AppLogPaths>, line: String) -> Result<(), String> {
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&log_paths.social_log)
+        .map_err(|e| e.to_string())?;
+    writeln!(file, "{line}").map_err(|e| e.to_string())?;
+    file.flush().map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+#[tauri::command]
+fn reveal_log_dir(log_paths: State<'_, AppLogPaths>) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg(&log_paths.logs_dir)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("explorer")
+            .arg(&log_paths.logs_dir)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        Command::new("xdg-open")
+            .arg(&log_paths.logs_dir)
+            .spawn()
+            .map_err(|e| e.to_string())?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
 fn restart_node_process(state: State<'_, NodeProcessState>) -> Result<(), String> {
     let mut child_guard = state.child.lock().map_err(|e| e.to_string())?;
     stop_node_child(&mut child_guard);
+    kill_stale_listeners_on_node_ports();
     let child = spawn_node_process(&state.config)?;
     info!("Node process restarted from Social UI");
     *child_guard = Some(child);
@@ -367,7 +522,12 @@ fn main() {
     }
 
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![restart_node_process])
+        .invoke_handler(tauri::generate_handler![
+            restart_node_process,
+            get_app_log_paths,
+            append_social_log,
+            reveal_log_dir
+        ])
         .setup(move |app| {
             info!("Tauri app setup starting");
 
@@ -377,6 +537,11 @@ fn main() {
                 .expect("Failed to get app data dir");
             std::fs::create_dir_all(&app_data_dir).expect("Failed to create app data dir");
             info!("App data directory: {:?}", app_data_dir);
+
+            let log_paths = ensure_logs_dir(&app_data_dir);
+            info!("Log directory: {:?}", log_paths.logs_dir);
+            let node_log_file = open_append_log(&log_paths.node_log).map(|f| Arc::new(Mutex::new(f)));
+            app.manage(log_paths);
 
             let profile_dir = app_data_dir.join("profile");
             std::fs::create_dir_all(&profile_dir).expect("Failed to create profile dir");
@@ -430,18 +595,14 @@ fn main() {
                 ipfs_repo_dir: ipfs_repo_dir.clone(),
                 bundled_ipfs: bundled_ipfs.clone(),
                 tauri_resource_dir: resource_dir.clone(),
+                node_log_file,
             };
 
             let initial_child = match spawn_node_process(&spawn_config) {
                 Ok(child) => {
-                    info!("Node process spawned — waiting for WebSocket on port 3030…");
-                    if wait_for_port(3030, Duration::from_secs(120)) {
-                        info!("Home node WebSocket is ready on port 3030");
-                    } else {
-                        warn!(
-                            "Home node WebSocket not ready after 120s — Social UI will retry"
-                        );
-                    }
+                    info!(
+                        "Node process spawned — showing UI immediately; home node continues starting in background"
+                    );
                     Some(child)
                 }
                 Err(e) => {
@@ -453,6 +614,17 @@ fn main() {
             app.manage(NodeProcessState {
                 child: Mutex::new(initial_child),
                 config: spawn_config,
+            });
+
+            // Log when the Social WebSocket is up — do not block window creation on this wait.
+            std::thread::spawn(|| {
+                if wait_for_port(3030, Duration::from_secs(120)) {
+                    info!("Home node WebSocket is ready on port 3030");
+                } else {
+                    warn!(
+                        "Home node WebSocket not ready after 120s — Social UI will retry"
+                    );
+                }
             });
 
             info!("Tauri app setup complete");

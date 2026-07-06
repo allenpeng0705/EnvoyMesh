@@ -121,6 +121,13 @@ export interface IdentityContext {
   setAdvertiseInterestsTimer(timer: ReturnType<typeof setInterval> | undefined): void;
   getNearbyProfileProbeLastAt(): Map<string, number>;
   getNearbyProfileProbeInflight(): Set<string>;
+  /**
+   * Notify active relay checkin scheduler of the topics currently being
+   * advertised. The relay client uses this to populate `advertisements[]`
+   * with topicHash entries so the relay server's roster can be queried by
+   * topic (cross-NAT fallback for `searchPeers` when local DHT is empty).
+   */
+  notifyAdvertisedDiscoveryTopics?(topics: string[]): Promise<void> | void;
 }
 
 export function buildIdentityContext(host: any): IdentityContext {
@@ -164,6 +171,8 @@ export function buildIdentityContext(host: any): IdentityContext {
     },
     getNearbyProfileProbeLastAt: () => host._nearbyProfileProbeLastAt,
     getNearbyProfileProbeInflight: () => host._nearbyProfileProbeInflight,
+    notifyAdvertisedDiscoveryTopics: (topics) =>
+      host._notifyAdvertisedDiscoveryTopics?.(topics) ?? Promise.resolve(),
   };
 }
 
@@ -289,11 +298,8 @@ export async function updateHumanProfileViaRuntime(
   ctx: IdentityContext,
   input: CreateHumanProfileInput,
 ): Promise<HumanProfile> {
-  const persistedConfig = await ctx.getConfigStore().load();
-  // First-run setup writes node-config.json before libp2p is up; allow profile save then.
-  if (!persistedConfig) {
-    ctx.assertOnline();
-  }
+  // Human profile is persisted locally — do not require mesh online (first-run setup
+  // writes node-config.json before libp2p starts).
   const selfProfile = ctx.requireProfile();
 
   if (!input.displayName || !input.displayName.trim()) {
@@ -879,22 +885,52 @@ export async function _advertiseInterests(
   return _advertisePublicDiscoveryTopics(ctx, { interests, username, locationTopics: [] });
 }
 
+/**
+ * Compute the topic strings published for a profile under wan-default discovery
+ * (interests + username + location + capability tags). Used by both DHT
+ * (`provideCapabilityTopic`) and relay-checkin advertising.
+ */
+export function computePublicDiscoveryTopics(profile: {
+  hobbies?: string[];
+  knowledge?: string[];
+  username?: string;
+  discoveryLocation?: unknown;
+  discoveryLocationPrecision?: "country" | "region" | "city" | "town" | "hidden" | "nearby" | string | null;
+  capabilities?: ReadonlyArray<{ tag?: string } | { type?: string } | { descriptor?: string }>;
+}): { interests: string[]; usernameTopic: string; locationTopics: string[]; capabilityTopics: string[] } {
+  const interests = [...(profile.hobbies ?? []), ...(profile.knowledge ?? [])]
+    .map((s) => s.toLowerCase().trim())
+    .filter(Boolean);
+  const username = (profile.username ?? "").toLowerCase().trim();
+  const usernameTopic = username ? `username:${username}` : "";
+  const locationTopics = deriveLocationDiscoveryTopics({
+    location: profile.discoveryLocation as Parameters<typeof deriveLocationDiscoveryTopics>[0]["location"],
+    precision: (profile.discoveryLocationPrecision ?? undefined) as
+      | Parameters<typeof deriveLocationDiscoveryTopics>[0]["precision"],
+  });
+  const capabilitiesForTags = (profile.capabilities ?? []).map((c) => ({
+    tag: "tag" in c && typeof c.tag === "string" ? c.tag : "",
+  }));
+  const capabilityTags = profileCapabilityTags(
+    capabilitiesForTags as Parameters<typeof profileCapabilityTags>[0],
+  );
+  const capabilityTopics = profileCapabilityDiscoveryTopics(capabilityTags);
+  return { interests, usernameTopic, locationTopics, capabilityTopics };
+}
+
 export async function _advertiseInterestsIfPublic(ctx: IdentityContext): Promise<void> {
-  if (!ctx.getMesh()) return;
+  // CLI path sets _externalMesh (via bindExternalMesh) while Tauri/mobile
+  // path sets _mesh. Use either as the readiness signal.
+  if (!ctx.getMesh() && !ctx.getExternalMesh()) return;
   const config = await ctx.getConfigStore().load();
   const profile = await ctx.getHumanProfileStore().loadHumanProfile();
   if (!config || !profile) return;
 
   const isPublicNetwork = config.bootstrapPresets && config.bootstrapPresets.length > 0;
   if (profile.profileVisibility === "public" && isPublicNetwork) {
-    const interests = [...(profile.hobbies ?? []), ...(profile.knowledge ?? [])];
-    const locationTopics = deriveLocationDiscoveryTopics({
-      location: profile.discoveryLocation,
-      precision: profile.discoveryLocationPrecision,
-    });
-    const capabilityTopics = profileCapabilityDiscoveryTopics(
-      profileCapabilityTags(profile.capabilities),
-    );
+    const { interests, usernameTopic, locationTopics, capabilityTopics } =
+      computePublicDiscoveryTopics(profile);
+    const username = (profile.username ?? "").toLowerCase();
 
     await _advertisePublicDiscoveryTopics(ctx, {
       interests,
@@ -904,8 +940,17 @@ export async function _advertiseInterestsIfPublic(ctx: IdentityContext): Promise
     });
 
     void _registerWithRendezvousServers(ctx, interests, profile.username);
+    // Notify any active relay checkins of the new topic set so the relay
+    // server's roster (indexed by topicHash) reflects the current profile.
+    void ctx.notifyAdvertisedDiscoveryTopics?.([
+      ...interests,
+      ...(usernameTopic ? [usernameTopic] : []),
+      ...locationTopics,
+      ...capabilityTopics,
+    ]);
   } else {
     await _cancelAutoAdvertisedDiscoveryTopics(ctx);
+    void ctx.notifyAdvertisedDiscoveryTopics?.([]);
   }
 }
 

@@ -9,6 +9,7 @@ import { useT } from "../context/I18nContext.js";
 import { DarkModeIcon, LightModeIcon, QRCodeIcon } from "../icons.js";
 import { LocaleSwitcher } from "./LocaleSwitcher.js";
 import { ProfilePhotoAvatar } from "./ProfilePhotoAvatar.js";
+import { isEffectiveNodeRunning } from "../lib/effective-node-status.js";
 import logoUrl from "../assets/logo.svg";
 
 interface HeaderProps {
@@ -55,7 +56,7 @@ export function Header({
         ? t("header.themeDark")
         : t("header.themeLight");
 
-  const publicConnectivityReady = nodeStatus === "running" || Boolean(connectionStatus?.online);
+  const publicConnectivityReady = isEffectiveNodeRunning(nodeStatus, connectionStatus);
   const publicStatusTitle =
     isPublicNetwork && !publicConnectivityReady && connectionStatus?.lastError?.trim()
       ? connectionStatus.lastError
@@ -67,18 +68,17 @@ export function Header({
       ? t("nav.openProfileWithPeer", { peerId })
       : t("nav.openProfile");
 
+  const isNodeTransitional = nodeStatus === "starting" || nodeStatus === "stopping";
   const nodeStatusClass =
-    nodeStatus === "running"
+    isEffectiveNodeRunning(nodeStatus, connectionStatus)
       ? "running"
-      : nodeStatus === "starting" || nodeStatus === "stopping"
+      : isNodeTransitional
         ? "transitional"
         : "offline";
-  const isNodeOffline = nodeStatus === "offline";
-  const isNodeTransitional = nodeStatus === "starting" || nodeStatus === "stopping";
-  // On a public network, "running" with `connectionStatus.online === false` means
-  // the node is up but can't reach the mesh — surface that as a chip too.
+  const isNodeOffline =
+    !isEffectiveNodeRunning(nodeStatus, connectionStatus) && !isNodeTransitional;
   const isNetworkError =
-    isPublicNetwork && nodeStatus === "running" && !connectionStatus?.online;
+    isPublicNetwork && isEffectiveNodeRunning(nodeStatus, connectionStatus) && !connectionStatus?.online;
 
   const chatAriaLabel =
     inboxActivityCount > 0

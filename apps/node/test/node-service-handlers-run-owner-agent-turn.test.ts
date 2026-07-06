@@ -19,6 +19,7 @@ function makeCtx(
     buildOpenClawTurnContext: vi.fn(async () => ({})),
     askOpenClaw: vi.fn(async () => "answer"),
     persistEnvoyAiChatExchange: vi.fn(async () => undefined),
+    recordEnvoyAiHumanOutgoing: vi.fn(async () => undefined),
     maybeIngestTerminalAssistantReply: vi.fn(),
     getRagService: vi.fn(() => ({})),
     getTaskStore: vi.fn(() => ({})),
@@ -46,6 +47,7 @@ describe("runOwnerAgentTurnViaRuntime", () => {
     expect(out.modelUsed).toBe("openclaw");
     expect(out.toolsUsed).toEqual(["tool1", "tool2"]);
     expect(spies.recordOwnerActivity).toHaveBeenCalledTimes(1);
+    expect(spies.recordEnvoyAiHumanOutgoing).toHaveBeenCalledTimes(1);
     expect(spies.persistEnvoyAiChatExchange).toHaveBeenCalledTimes(1);
   });
 
@@ -65,6 +67,8 @@ describe("runOwnerAgentTurnViaRuntime", () => {
     expect(spies.askOpenClaw).not.toHaveBeenCalled();
     expect(spies.runDocumentAgentTurnCore).toHaveBeenCalled();
     expect(out.answer).toBe("native answer");
+    expect(out.modelUsed).toBe("native");
+    expect(spies.persistEnvoyAiChatExchange).toHaveBeenCalledTimes(1);
   });
 
   it("falls back to native planner when OpenClaw throws", async () => {
@@ -78,6 +82,8 @@ describe("runOwnerAgentTurnViaRuntime", () => {
     spies.runDocumentAgentTurnCore.mockImplementation(nativeCore.getMockImplementation()!);
     const out = (await runOwnerAgentTurnViaRuntime(ctx, "hi")) as Record<string, unknown>;
     expect(out.answer).toBe("fallback");
+    expect(out.modelUsed).toBe("native");
+    expect(spies.persistEnvoyAiChatExchange).toHaveBeenCalledTimes(1);
     expect(spies.beginOpenClawToolTracking).toHaveBeenCalledTimes(1);
     expect(spies.endOpenClawToolTracking).toHaveBeenCalledTimes(1);
   });

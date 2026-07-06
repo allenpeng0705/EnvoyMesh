@@ -40,23 +40,7 @@ import type {
   SocialIntroProposal,
 } from "@envoymesh/api";
 import { ENVOY_AI_THREAD_KEY } from "@envoymesh/api";
-
-// ---------------------------------------------------------------------------
-// Shared state
-// ---------------------------------------------------------------------------
-
-function parseNodeStatusFromRpc(result: unknown): NodeStatus | null {
-  if (typeof result === "string") {
-    return result as NodeStatus;
-  }
-  if (result && typeof result === "object" && "status" in result) {
-    const status = (result as { status?: unknown }).status;
-    if (typeof status === "string") {
-      return status as NodeStatus;
-    }
-  }
-  return null;
-}
+import { parseNodeStatusFromRpc } from "../lib/effective-node-status.js";
 
 interface NodeStateValue {
   // Connection
@@ -224,9 +208,20 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     // Connection status (may be offline until startNode completes; node:online / node:status refresh later)
     void refreshConnectionStatus();
 
-    // Human profile
+    // Human profile — keep prior display name if reconnect returns empty (setup just finished).
     nodeService.getHumanProfile().then((profile) => {
-      if (profile) setHumanProfile(profile);
+      if (!profile) return;
+      setHumanProfile((prev) => {
+        if (
+          prev?.displayName?.trim() &&
+          prev?.username?.trim() &&
+          !profile.displayName?.trim() &&
+          !profile.username?.trim()
+        ) {
+          return prev;
+        }
+        return profile;
+      });
     }).catch(() => {});
 
     // Bridge status (always store — Settings needs ext-agent fields even when disabled)
@@ -308,6 +303,49 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
       window.clearInterval(iv);
     };
   }, [wsTransportOpen, nodeStatus, connectionStatus?.online, refreshConnectionStatus]);
+
+  /** Reconcile stale offline when mesh is up but lifecycle event was missed. */
+  useEffect(() => {
+    if (!wsTransportOpen) return;
+    if (nodeStatus === "running") return;
+    if (nodeConfig?.nodeInitialized === false) return;
+
+    let cancelled = false;
+    let ticks = 0;
+    const iv = window.setInterval(() => {
+      if (cancelled) return;
+      ticks += 1;
+      void nodeService
+        .getNodeStatus()
+        .then((result) => {
+          if (cancelled) return;
+          const status = parseNodeStatusFromRpc(result);
+          if (status) setNodeStatus(status);
+        })
+        .catch(() => {});
+      void refreshConnectionStatus();
+      if (ticks >= 30) window.clearInterval(iv);
+    }, 2000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(iv);
+    };
+  }, [nodeService, wsTransportOpen, nodeStatus, nodeConfig?.nodeInitialized, refreshConnectionStatus]);
+
+  /** Zero-step sponsor friend — retry when mesh becomes reachable. */
+  useEffect(() => {
+    if (!wsTransportOpen || nodeStatus !== "running") return;
+    void nodeService.runSetupSponsorFriend().then((result) => {
+      if (!result.ok && !result.skipped) {
+        console.warn("[NodeState] setup sponsor friend:", result.reason ?? "failed");
+      } else if (result.ok && result.helloMessageId) {
+        console.info("[NodeState] setup sponsor friend sent hello:", result.helloMessageId);
+      }
+    }).catch((err) => {
+      console.warn("[NodeState] setup sponsor friend error:", err);
+    });
+  }, [nodeService, wsTransportOpen, nodeStatus]);
 
   // config:updated — keep nodeConfig in sync
   useEffect(() => {
@@ -471,7 +509,18 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
   const refreshHumanProfile = useCallback(async () => {
     try {
       const profile = await nodeService.getHumanProfile();
-      if (profile) setHumanProfile(profile);
+      if (!profile) return;
+      setHumanProfile((prev) => {
+        if (
+          prev?.displayName?.trim() &&
+          prev?.username?.trim() &&
+          !profile.displayName?.trim() &&
+          !profile.username?.trim()
+        ) {
+          return prev;
+        }
+        return profile;
+      });
     } catch (e) {
       console.error("[NodeState] refreshHumanProfile failed:", e);
     }

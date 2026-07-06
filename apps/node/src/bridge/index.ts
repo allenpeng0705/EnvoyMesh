@@ -55,6 +55,11 @@ export interface CreateBridgeOptions {
   getAiIdentity?: () => AiIdentity | undefined;
   /** Resolves pending OpenClaw ask() calls when bridge receives a reply. */
   resolveOpenClawReply?: (correlationId: string, text: string) => void;
+  /**
+   * Start the localhost HTTP listener even when `config.enabled` is false.
+   * Required for built-in OpenClaw (EnvoyAI) sync replies via POST /bridge/send.
+   */
+  listenForOpenClaw?: boolean;
 }
 
 /**
@@ -67,7 +72,8 @@ export function createBridge(options: CreateBridgeOptions): {
   _handleMessage: (envelope: any, remotePeerId: string) => Promise<void>;
 } {
   const config = BridgeConfigSchema.parse(options.config);
-  if (!config.enabled) {
+  const shouldListen = config.enabled || options.listenForOpenClaw === true;
+  if (!shouldListen) {
     return { agentPeerId: options.identity.agentPeerId, stop: async () => {}, _handleMessage: async () => {} };
   }
   const secretTrimmed = config.secret?.trim() ?? "";

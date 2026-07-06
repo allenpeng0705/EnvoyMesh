@@ -24,6 +24,25 @@ export function saveToStorage<T>(key: string, value: T): void {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
+const SETUP_COMPLETE_KEY = "envoymesh.setupComplete";
+
+export function markFirstRunSetupComplete(ownerId: string): void {
+  saveToStorage(SETUP_COMPLETE_KEY, { ownerId, completedAt: new Date().toISOString() });
+}
+
+export function isFirstRunSetupComplete(ownerId: string | undefined): boolean {
+  const id = ownerId?.trim();
+  if (!id) return false;
+  const stored = loadFromStorage(SETUP_COMPLETE_KEY, { ownerId: "" });
+  return stored.ownerId === id;
+}
+
+/** True when this browser profile has finished setup at least once (used before RPC connects). */
+export function hasCompletedFirstRunSetup(): boolean {
+  const stored = loadFromStorage(SETUP_COMPLETE_KEY, { ownerId: "" });
+  return Boolean(stored.ownerId?.trim());
+}
+
 // App settings
 
 export interface AppSettings {
@@ -33,6 +52,12 @@ export interface AppSettings {
   showConnectionStatus: boolean;
   /** UI locale (en default). */
   locale?: string;
+}
+
+function resolveDefaultWsUrl(): string {
+  const fromEnv = import.meta.env.VITE_ENVOYMESH_WS_URL?.trim();
+  if (fromEnv) return normalizeLoopbackWsUrl(fromEnv);
+  return WS_LOOPBACK_URL;
 }
 
 export const DEFAULT_APP_SETTINGS: AppSettings = {
@@ -46,8 +71,15 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
 const APP_SETTINGS_KEY = "envoymesh:app-settings";
 
 export function loadAppSettings(): AppSettings {
-  const loaded = loadFromStorage<AppSettings>(APP_SETTINGS_KEY, DEFAULT_APP_SETTINGS);
-  return { ...loaded, wsUrl: normalizeLoopbackWsUrl(loaded.wsUrl.trim() || DEFAULT_APP_SETTINGS.wsUrl) };
+  const defaults = { ...DEFAULT_APP_SETTINGS, wsUrl: resolveDefaultWsUrl() };
+  const loaded = loadFromStorage<AppSettings>(APP_SETTINGS_KEY, defaults);
+  let wsUrl = normalizeLoopbackWsUrl(loaded.wsUrl.trim() || defaults.wsUrl);
+  // Dev env wins over localStorage so alt-port nodes work without clearing browser storage.
+  const devOverride = import.meta.env.DEV ? import.meta.env.VITE_ENVOYMESH_WS_URL?.trim() : undefined;
+  if (devOverride) {
+    wsUrl = normalizeLoopbackWsUrl(devOverride);
+  }
+  return { ...loaded, wsUrl };
 }
 
 export function saveAppSettings(settings: AppSettings): void {

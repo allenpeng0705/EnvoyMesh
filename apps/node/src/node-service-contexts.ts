@@ -185,6 +185,7 @@ export interface ConnectionStatusContextDeps {
   getRelayBootstrapPeers: ConnectionStatusContext["getRelayBootstrapPeers"];
   hasTerminalManager: ConnectionStatusContext["hasTerminalManager"];
   getBridgeStatus: ConnectionStatusContext["getBridgeStatus"];
+  getRelayBook: ConnectionStatusContext["getRelayBook"];
 }
 
 export interface NodeConfigContextDeps {
@@ -273,6 +274,7 @@ export interface StartNodeContextDeps {
   wireMeshEvents: StartNodeContext["wireMeshEvents"];
   setRelayBootstrapPeers: StartNodeContext["setRelayBootstrapPeers"];
   setStopRelayClientScheduler: StartNodeContext["setStopRelayClientScheduler"];
+  setRelayClientCycleDeps: StartNodeContext["setRelayClientCycleDeps"];
   setStopNodeStatsLogging: StartNodeContext["setStopNodeStatsLogging"];
   setCapabilityDiscoveryTimer: StartNodeContext["setCapabilityDiscoveryTimer"];
   setAdvertiseInterestsStartupTimeout: StartNodeContext["setAdvertiseInterestsStartupTimeout"];
@@ -352,6 +354,7 @@ export interface RunOwnerAgentTurnContextDeps {
   recordOwnerActivity: RunOwnerAgentTurnContext["recordOwnerActivity"];
   askOpenClaw: RunOwnerAgentTurnContext["askOpenClaw"];
   persistEnvoyAiChatExchange: RunOwnerAgentTurnContext["persistEnvoyAiChatExchange"];
+  recordEnvoyAiHumanOutgoing: RunOwnerAgentTurnContext["recordEnvoyAiHumanOutgoing"];
   maybeIngestTerminalAssistantReply: RunOwnerAgentTurnContext["maybeIngestTerminalAssistantReply"];
   getRagService: RunOwnerAgentTurnContext["getRagService"];
   getTaskStore: RunOwnerAgentTurnContext["getTaskStore"];
@@ -697,6 +700,7 @@ export function buildConnectionStatusContext(deps: ConnectionStatusContextDeps):
     getRelayBootstrapPeers: () => deps.getRelayBootstrapPeers(),
     hasTerminalManager: () => deps.hasTerminalManager(),
     getBridgeStatus: () => deps.getBridgeStatus?.(),
+    getRelayBook: () => deps.getRelayBook?.() ?? [],
   };
 }
 
@@ -876,6 +880,9 @@ export function buildStartNodeContext(deps: StartNodeContextDeps): StartNodeCont
     setStopRelayClientScheduler: (fn) => {
       deps.setStopRelayClientScheduler(fn);
     },
+    setRelayClientCycleDeps: (deps_) => {
+      deps.setRelayClientCycleDeps(deps_);
+    },
     setStopNodeStatsLogging: (fn) => {
       deps.setStopNodeStatsLogging(fn);
     },
@@ -1001,6 +1008,8 @@ export function buildRunOwnerAgentTurnContext(deps: RunOwnerAgentTurnContextDeps
     askOpenClaw: (msg, ctx) => deps.askOpenClaw(msg, ctx as never),
     persistEnvoyAiChatExchange: (raw, turn, humanMsgId) =>
       deps.persistEnvoyAiChatExchange(raw, turn, humanMsgId),
+    recordEnvoyAiHumanOutgoing: (msg, humanMsgId) =>
+      deps.recordEnvoyAiHumanOutgoing(msg, humanMsgId),
     maybeIngestTerminalAssistantReply: (sid, answer) =>
       deps.maybeIngestTerminalAssistantReply(sid, answer),
     getRagService: () => deps.getRagService() as never,

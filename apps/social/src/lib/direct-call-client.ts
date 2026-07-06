@@ -772,8 +772,11 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.runDocumentAgentTurn(message);
   }
 
-  async runOwnerAgentTurn(message: string) {
-    return this._ns.runOwnerAgentTurn(message);
+  async runOwnerAgentTurn(
+    message: string,
+    options?: Parameters<NodeService["runOwnerAgentTurn"]>[1],
+  ) {
+    return this._ns.runOwnerAgentTurn(message, options);
   }
 
   // Phase 23A — AI-curated circles
@@ -908,6 +911,14 @@ export class DirectCallClient implements NodeServiceClient {
 
   async updateNodeConfig(config: Parameters<NodeService["updateNodeConfig"]>[0]) {
     return this._ns.updateNodeConfig(config);
+  }
+
+  async getSetupSponsorFriendConfig() {
+    return this._ns.getSetupSponsorFriendConfig();
+  }
+
+  async runSetupSponsorFriend() {
+    return this._ns.runSetupSponsorFriend();
   }
 
   async listRelays() {

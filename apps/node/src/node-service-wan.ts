@@ -8,6 +8,7 @@ import type {
 } from "@envoymesh/api";
 import {
   buildEnvoyJoinUri,
+  clampWanJoinInviteExpiresInHours,
   decodeWanJoinInviteV1,
   encodeWanJoinInviteV1,
   assertWanJoinInviteNotExpired,
@@ -92,19 +93,18 @@ export async function createWanJoinInviteViaRuntime(
   deps.recordOwnerActivity();
   const config = await deps.getNodeConfig();
   const reachable = deps.getMesh() ?? deps.getExternalMesh();
-  const expiresInHours =
-    typeof params?.expiresInHours === "number" && params.expiresInHours > 0
-      ? Math.min(params.expiresInHours, 24 * 30)
-      : 168;
+  const expiresInHours = clampWanJoinInviteExpiresInHours(params?.expiresInHours);
   const now = new Date();
+  const targetMultiaddrs = filterDialableMultiaddrs(reachable?.multiaddrs ?? []);
+  const compact = params?.compact === true;
   const invite = {
     v: 1 as const,
     createdAt: now.toISOString(),
     expiresAt: new Date(now.getTime() + expiresInHours * 60 * 60 * 1000).toISOString(),
     note: params?.note?.trim() || undefined,
     targetPeerId: reachable?.peerId,
-    targetMultiaddrs: filterDialableMultiaddrs(reachable?.multiaddrs ?? []),
-    bootstrapPeers: [...config.bootstrapPeers],
+    targetMultiaddrs: compact ? targetMultiaddrs.slice(0, 3) : targetMultiaddrs,
+    bootstrapPeers: compact ? [] : [...config.bootstrapPeers],
     bootstrapPresets: [...config.bootstrapPresets],
   };
   const token = encodeWanJoinInviteV1(invite);

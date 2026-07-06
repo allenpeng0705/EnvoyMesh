@@ -1,7 +1,14 @@
+import { useEffect, useState } from "react";
 import { useTheme } from "../../context/ThemeContext.js";
 import { useI18n, useT } from "../../context/I18nContext.js";
 import { ActivityView } from "./ActivityView.js";
 import { AuthorizedDevicesSection } from "./AuthorizedDevicesSection.js";
+import {
+  getTauriAppLogPaths,
+  isTauriShell,
+  revealTauriLogDir,
+  type AppLogPaths,
+} from "../../lib/tauri-shell.js";
 import type { ThemeMode } from "../../context/ThemeContext.js";
 import type { LocaleId } from "../../i18n/types.js";
 
@@ -9,6 +16,13 @@ export function SettingsAppTab() {
   const t = useT();
   const { locale, setLocale, localeOptions } = useI18n();
   const { theme, setTheme } = useTheme();
+  const tauriShell = isTauriShell();
+  const [logPaths, setLogPaths] = useState<AppLogPaths | null>(null);
+
+  useEffect(() => {
+    if (!tauriShell) return;
+    void getTauriAppLogPaths().then(setLogPaths);
+  }, [tauriShell]);
   // Connection and Behavior sections were moved to the Network tab —
   // they are network-shape settings (WebSocket URL, auto-connect,
   // notifications, P2P/Relay indicator) and belong alongside the rest
@@ -64,6 +78,34 @@ export function SettingsAppTab() {
           management is housekeeping/audit information and pairs
           naturally with the other App-shaped items in this tab. */}
       <AuthorizedDevicesSection />
+
+      {tauriShell ? (
+        <div className="settings-card">
+          <h4>{t("settings.app.logsTitle")}</h4>
+          <p className="settings-hint">{t("settings.app.logsHint")}</p>
+          {logPaths ? (
+            <dl className="settings-dl settings-dl--compact">
+              <dt>{t("settings.app.logsDir")}</dt>
+              <dd>
+                <code className="settings-code-block">{logPaths.logsDir}</code>
+              </dd>
+              <dt>{t("settings.app.nodeLog")}</dt>
+              <dd>
+                <code className="settings-code-block">{logPaths.nodeLog}</code>
+              </dd>
+              <dt>{t("settings.app.socialLog")}</dt>
+              <dd>
+                <code className="settings-code-block">{logPaths.socialLog}</code>
+              </dd>
+            </dl>
+          ) : (
+            <p className="muted">{t("settings.app.logsLoading")}</p>
+          )}
+          <button type="button" className="secondary" onClick={() => void revealTauriLogDir()}>
+            {t("settings.app.openLogsFolder")}
+          </button>
+        </div>
+      ) : null}
 
       {/* Activity — embedded here so a single "App" tab covers everything
           the user previously had to visit via a separate tab. The

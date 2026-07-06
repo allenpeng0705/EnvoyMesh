@@ -82,6 +82,17 @@ export async function handleInboundBondIntent(
   },
   emitHelloRequest?: BondInboundEvents["hello:request"],
   emitBondEstablished?: BondInboundEvents["bond:established"],
+  tryBondAutonomyAutoAccept?: (payload: {
+    requesterOwnerId: string;
+    requesterDisplayName?: string;
+    proofOfContext?: string;
+    introCorrelationId?: string;
+    requestedLevel?: string;
+  }) => Promise<
+    | { accepted: true; requesterOwnerId: string; requesterPeerId: string; displayName?: string }
+    | { accepted: false }
+    | null
+  >,
 ): Promise<BondInboundResult> {
   const { envelope, profile, remotePeerId, receivedAt, correlationId, taskStore, trustStore } = input;
 
@@ -155,7 +166,35 @@ export async function handleInboundBondIntent(
           },
         };
       } else {
-        // outcome === "record" - manual approval needed
+        // outcome === "record" - manual approval needed (unless bond autonomy accepts)
+        if (tryBondAutonomyAutoAccept) {
+          const auto = await tryBondAutonomyAutoAccept({
+            requesterOwnerId: payload.requesterOwnerId,
+            requesterDisplayName: payload.requesterDisplayName,
+            proofOfContext: payload.proofOfContext,
+            introCorrelationId: payload.introCorrelationId,
+            requestedLevel: payload.requestedLevel,
+          });
+          if (auto && auto.accepted) {
+            console.log(
+              `[bond.request] bond autonomy auto-accepted from ${payload.requesterOwnerId}`,
+            );
+            if (emitBondEstablished) {
+              emitBondEstablished({
+                peerOwnerId: auto.requesterOwnerId,
+                displayName: auto.displayName ?? payload.requesterDisplayName,
+              });
+            }
+            return {
+              ok: true,
+              bondAcceptToRequester: {
+                requesterPeerId: auto.requesterPeerId,
+                requesterOwnerId: auto.requesterOwnerId,
+              },
+            };
+          }
+        }
+
         console.log(`[bond.request] ${summary} - manual approval required`);
 
         // Emit hello:request event for user to accept/decline

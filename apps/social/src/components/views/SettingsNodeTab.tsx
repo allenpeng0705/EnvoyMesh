@@ -43,7 +43,12 @@ import type {
   AgentActivityDomain,
   AgentInteractionMode,
   PeerConnectionInfo,
+  WanJoinInviteExpiryPresetId,
 } from "@envoymesh/api";
+import {
+  WanJoinInviteExpirySelect,
+  expiresInHoursForPreset,
+} from "../common/WanJoinInviteExpirySelect.js";
 
 const WAN_TWO_NAT_CHECKLIST_STORAGE = "envoymesh:wan-two-nat-checklist:v1";
 
@@ -231,12 +236,16 @@ export function SettingsNodeTab() {
   const [wanInvitePaste, setWanInvitePaste] = useState("");
   const [wanInviteApplyBusy, setWanInviteApplyBusy] = useState(false);
   const [wanInviteApplyMsg, setWanInviteApplyMsg] = useState<string | null>(null);
+  const [wanInviteExpiryPreset, setWanInviteExpiryPreset] =
+    useState<WanJoinInviteExpiryPresetId>("days7");
 
   const handleShowWanJoinInvite = useCallback(async () => {
     setWanJoinLoading(true);
     setWanInviteApplyMsg(null);
     try {
-      const result = await nodeService.createWanJoinInvite({ expiresInHours: 168 });
+      const result = await nodeService.createWanJoinInvite({
+        expiresInHours: expiresInHoursForPreset(wanInviteExpiryPreset),
+      });
       setWanJoinUri(result.uri);
       const dataUrl = await QRCode.toDataURL(result.uri, { width: 256, margin: 1 });
       setWanJoinQr(dataUrl);
@@ -246,7 +255,7 @@ export function SettingsNodeTab() {
     } finally {
       setWanJoinLoading(false);
     }
-  }, [nodeService]);
+  }, [nodeService, wanInviteExpiryPreset]);
 
   const handleApplyWanJoinInvite = useCallback(async () => {
     setWanInviteApplyBusy(true);
@@ -1354,14 +1363,23 @@ export function SettingsNodeTab() {
               {t("settings.network.agentBridge.wanInviteDesc")}
             </p>
             {!wanJoinQr ? (
-              <button
-                type="button"
-                className="settings-button"
-                onClick={() => { void handleShowWanJoinInvite(); }}
-                disabled={wanJoinLoading}
-              >
-                {wanJoinLoading ? t("settings.network.agentBridge.generating") : t("settings.network.agentBridge.showWanInviteQr")}
-              </button>
+              <>
+                <WanJoinInviteExpirySelect
+                  id="wan-invite-expiry"
+                  value={wanInviteExpiryPreset}
+                  onChange={setWanInviteExpiryPreset}
+                  disabled={wanJoinLoading}
+                  messageScope="settings"
+                />
+                <button
+                  type="button"
+                  className="settings-button"
+                  onClick={() => { void handleShowWanJoinInvite(); }}
+                  disabled={wanJoinLoading}
+                >
+                  {wanJoinLoading ? t("settings.network.agentBridge.generating") : t("settings.network.agentBridge.showWanInviteQr")}
+                </button>
+              </>
             ) : (
               <div style={{ textAlign: "center" }}>
                 <img

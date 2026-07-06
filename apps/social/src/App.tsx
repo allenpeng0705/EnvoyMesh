@@ -19,12 +19,33 @@ import { ChainsView } from "./components/views/ChainsView.js";
 import { AutoReplyPausedNotifier } from "./components/AutoReplyPausedNotifier.js";
 import { CallSessionProvider } from "./context/CallSessionContext.js";
 import { isTauriShell, restartTauriNodeProcess } from "./lib/tauri-shell.js";
+import { isFirstRunSetupComplete, hasCompletedFirstRunSetup } from "./lib/storage.js";
 import { WS_LOOPBACK_URL } from "@envoymesh/api";
 import type { HumanProfile, NodeConfig, NodeStatus } from "@envoymesh/api";
 
 export type ViewName = "chat" | "assistant" | "discover" | "library" | "chains" | "profile" | "settings";
 
 export type ChatPanelMode = "threads" | "inbox" | "terminals";
+
+type TauriBootstrapPhase = "node" | "gateway" | "slow";
+
+function useTauriBootstrapPhase(active: boolean): TauriBootstrapPhase {
+  const [phase, setPhase] = useState<TauriBootstrapPhase>("node");
+  useEffect(() => {
+    if (!active) {
+      setPhase("node");
+      return;
+    }
+    setPhase("node");
+    const gatewayTimer = window.setTimeout(() => setPhase("gateway"), 12_000);
+    const slowTimer = window.setTimeout(() => setPhase("slow"), 45_000);
+    return () => {
+      window.clearTimeout(gatewayTimer);
+      window.clearTimeout(slowTimer);
+    };
+  }, [active]);
+  return phase;
+}
 
 function needsFirstRunSetup(
   _nodeStatus: NodeStatus,
@@ -34,7 +55,28 @@ function needsFirstRunSetup(
   if (nodeConfig?.nodeInitialized === false) return true;
   const displayName = humanProfile?.displayName?.trim();
   const username = humanProfile?.username?.trim();
+  if (displayName && username) return false;
+  // node-config.json exists but profile RPC is still loading after reconnect — avoid wizard flash.
+  if (nodeConfig?.nodeInitialized === true && isFirstRunSetupComplete(humanProfile?.ownerId)) {
+    return false;
+  }
   return !displayName || !username;
+}
+
+/** First-run desktop: show the setup wizard while the home node is still starting. */
+function shouldShowSetupWhileConnecting(
+  tauriShell: boolean,
+  isConnected: boolean,
+  nodeConfig: NodeConfig | null,
+  humanProfile: HumanProfile | null,
+): boolean {
+  if (!tauriShell || isConnected) return false;
+  if (nodeConfig?.nodeInitialized === false) return true;
+  if (nodeConfig?.nodeInitialized === true) return false;
+  const displayName = humanProfile?.displayName?.trim();
+  const username = humanProfile?.username?.trim();
+  if (displayName && username) return false;
+  return !hasCompletedFirstRunSetup();
 }
 
 function ConnectingSplash({
@@ -63,6 +105,13 @@ function ConnectingSplash({
   nodeBootstrapping?: boolean;
 }) {
   const t = useT();
+  const bootstrapPhase = useTauriBootstrapPhase(Boolean(tauriShell && nodeBootstrapping));
+  const bootstrapDetail =
+    bootstrapPhase === "slow"
+      ? t("splash.startingNodeSlow")
+      : bootstrapPhase === "gateway"
+        ? t("splash.startingGateway")
+        : t("splash.startingNode");
   return (
     <div className="app">
       <div className="envoy-splash" role="status" aria-live="polite">
@@ -73,13 +122,16 @@ function ConnectingSplash({
           <h2 className="envoy-splash__title">{t("splash.connectingTitle")}</h2>
           <p className="envoy-splash__detail">
             {tauriShell && nodeBootstrapping && reconnectAttempts === 0
-              ? t("splash.startingNode")
+              ? bootstrapDetail
               : !autoConnect && reconnectAttempts === 0
                 ? t("splash.autoConnectOff")
                 : reconnectAttempts > 0
                   ? t("splash.reconnectAttempt", { count: reconnectAttempts })
                   : t("splash.openingChannel", { wsUrl })}
           </p>
+          {tauriShell && nodeBootstrapping && reconnectAttempts === 0 ? (
+            <p className="envoy-splash__hint">{t("splash.firstLaunchHint")}</p>
+          ) : null}
           {isRelayUnreachable && (
             <p className="envoy-splash__relay-warn">{t("splash.relayWarn")}</p>
           )}
@@ -251,6 +303,14 @@ export function App() {
   const [pairingOpen, setPairingOpen] = useState(false);
 
   const isPublicNetwork = (nodeConfig?.bootstrapPresets ?? []).length > 0;
+
+  if (!isConnected && shouldShowSetupWhileConnecting(tauriShell, isConnected, nodeConfig, humanProfile)) {
+    return (
+      <ToastProvider>
+        <SetupView waitingForNode />
+      </ToastProvider>
+    );
+  }
 
   if (!isConnected) {
     return (

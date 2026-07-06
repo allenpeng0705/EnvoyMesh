@@ -3,8 +3,8 @@
 The Tauri desktop app bundles a platform Node.js binary so end users do not need a separate Node install.
 
 ```bash
-./scripts/fetch-node-sidecar.sh          # default Node 22.13.0
-./scripts/fetch-node-sidecar.sh 22.13.0  # pin a version
+./scripts/fetch-node-sidecar.sh            # auto: latest nodejs.org release >= OpenClaw minimum
+./scripts/fetch-node-sidecar.sh 22.19.0  # pin an exact version
 ```
 
 Expected layout after fetch:

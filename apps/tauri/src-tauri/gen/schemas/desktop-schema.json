@@ -387,6 +387,12 @@
       "description": "Permission identifier",
       "oneOf": [
         {
+          "description": "Read/write desktop app diagnostic log files.",
+          "type": "string",
+          "const": "allow-app-logs",
+          "markdownDescription": "Read/write desktop app diagnostic log files."
+        },
+        {
           "description": "Restart the EnvoyMesh node child process from Social UI.",
           "type": "string",
           "const": "allow-restart-node-process",

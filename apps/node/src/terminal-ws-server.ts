@@ -58,6 +58,17 @@ export class TerminalWsServer {
       void this.handleUpgrade(req, socket as Socket, head);
     });
 
+    this.httpServer.on("error", (err: NodeJS.ErrnoException) => {
+      if (err.code === "EADDRINUSE") {
+        console.warn(
+          `[terminal-ws] Port ${this.port} already in use — terminal attach disabled for this session`,
+        );
+        this.stop();
+        return;
+      }
+      console.error(`[terminal-ws] HTTP server error: ${err.message}`);
+    });
+
     this.httpServer.listen(this.port, "127.0.0.1", () => {
       console.log(`[terminal-ws] Listening on ws://127.0.0.1:${this.port}${this.pathPrefix}/{sessionId}`);
     });

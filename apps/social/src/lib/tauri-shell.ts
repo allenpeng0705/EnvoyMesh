@@ -33,3 +33,36 @@ export async function restartTauriNodeProcess(): Promise<{ ok: true } | { ok: fa
     return { ok: false, reason };
   }
 }
+
+export type AppLogPaths = {
+  logsDir: string;
+  nodeLog: string;
+  socialLog: string;
+};
+
+export async function getTauriAppLogPaths(): Promise<AppLogPaths | null> {
+  const invoke = readTauriInvoke();
+  if (!invoke) return null;
+  try {
+    return (await invoke("get_app_log_paths")) as AppLogPaths;
+  } catch {
+    return null;
+  }
+}
+
+export async function appendSocialLogLine(line: string): Promise<void> {
+  const invoke = readTauriInvoke();
+  if (!invoke) return;
+  await invoke("append_social_log", { line });
+}
+
+export async function revealTauriLogDir(): Promise<boolean> {
+  const invoke = readTauriInvoke();
+  if (!invoke) return false;
+  try {
+    await invoke("reveal_log_dir");
+    return true;
+  } catch {
+    return false;
+  }
+}

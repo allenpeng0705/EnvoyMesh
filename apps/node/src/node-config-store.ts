@@ -132,6 +132,13 @@ export interface PersistedNodeConfig {
   /** Phase 19 — bond autonomy posture (agent-driven bond acceptance). */
   bondAutonomyEnabled?: boolean;
   bondAutonomyMandateId?: string;
+  bondAutonomyMaxAutoBondsPerDay?: number;
+  bondAutonomyRequireReferralProof?: boolean;
+  bondAutonomyMaxAutoBondTier?: "referred" | "direct";
+  bondAutonomyMinTrustOverlapScore?: number;
+  bondAutonomyNotifyOwnerOnAutoBond?: boolean;
+  /** When set, only auto-accept when inbound proofOfContext matches. */
+  bondAutonomySponsorProofToken?: string;
   /** Phase 23C — bond steward dormant threshold in days. */
   dormantBondThresholdDays?: number;
   /** Phase 23C — auto-nudge owner about dormant bonds. */
@@ -193,6 +200,20 @@ export interface PersistedNodeConfig {
   iceServers?: { urls: string; username?: string; credential?: string }[];
   /** Phase 42 — enable LLM cost estimation in chainPlan. Default false (no LLM cost). */
   chainCostEstimationEnabled?: boolean;
+  /** Zero-step first friend on first setup (distributor installer). */
+  setupSponsorFriendEnabled?: boolean;
+  setupSponsorFriendContactUri?: string;
+  setupSponsorFriendOwnerId?: string;
+  setupSponsorFriendPeerId?: string;
+  setupSponsorFriendJoinToken?: string;
+  setupSponsorFriendDisplayName?: string;
+  setupSponsorFriendHelloMessage?: string;
+  setupSponsorFriendProofOfContext?: string;
+  setupSponsorFriendMaxAttempts?: number;
+  setupSponsorFriendRetryDelayMs?: number;
+  setupSponsorFriendCompletedAt?: string;
+  setupSponsorFriendLastError?: string;
+  setupSponsorFriendAttempts?: number;
 }
 
 export interface NodeConfigStore {

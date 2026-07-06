@@ -27,8 +27,12 @@ function makeCtx(
     nodeStatus: string;
     bootstrapPeers: string[];
     hasTerminalManager: boolean;
+    relayBook?: Array<{ relayId: string; region?: string; addrs: string[] }>;
   }> = {},
 ): ConnectionStatusContext {
+  const defaultBook = [
+    { relayId: "12D3KooWBookedRelay", region: "eu", addrs: ["/ip4/1.2.3.4/tcp/4001"] },
+  ];
   return {
     getLastNodeError: () => overrides.lastError,
     getLastNodeErrorAt: () => overrides.lastErrorAt,
@@ -36,6 +40,7 @@ function makeCtx(
     getNodeStatus: () => overrides.nodeStatus ?? "running",
     getRelayBootstrapPeers: () => overrides.bootstrapPeers ?? [],
     hasTerminalManager: () => overrides.hasTerminalManager ?? false,
+    getRelayBook: () => overrides.relayBook ?? defaultBook,
   };
 }
 
@@ -77,6 +82,7 @@ describe("getConnectionStatusViaRuntime", () => {
         nodeStatus: "running",
         bootstrapPeers: ["/dns4/relay-a.example/tcp/443"],
         hasTerminalManager: true,
+        relayBook: [],
       }),
     );
     expect(out.online).toBe(true);
@@ -99,6 +105,51 @@ describe("getConnectionStatusViaRuntime", () => {
     expect(out.online).toBe(false);
     expect(out.lastError).toBe("boot failed: missing config");
     expect(out.lastErrorAt).toBe("2026-06-30T00:00:00Z");
+  });
+
+  it("keeps Connected Relays populated from /p2p-circuit/ multiaddrs when no live circuit peer is open", () => {
+    const out = getConnectionStatusViaRuntime(
+      makeCtx({
+        mesh: {
+          peerId: "self",
+          multiaddrs: [
+            "/ip4/127.0.0.1/tcp/50825/p2p/self",
+            "/ip4/185.255.131.86/tcp/4001/p2p/12D3KooWRelay1/p2p-circuit/p2p/12D3KooWRelay2",
+          ],
+          getConnectionStats: () => ({ circuitPeerIds: [] }),
+        },
+        relayBook: [],
+      }),
+    );
+    expect(out.connectedRelays).toEqual(["12D3KooWRelay2"]);
+  });
+
+  it("unions live circuit peers with relay-book entries (live leads, book fills churn gaps)", () => {
+    const out = getConnectionStatusViaRuntime(
+      makeCtx({
+        mesh: {
+          peerId: "self",
+          multiaddrs: [
+            "/ip4/185.255.131.86/tcp/4001/p2p/12D3KooWRelay2/p2p-circuit/p2p/12D3KooWBookedRelay",
+          ],
+          getConnectionStats: () => ({ circuitPeerIds: ["12D3KooWRelay2"] }),
+        },
+      }),
+    );
+    expect(out.connectedRelays).toEqual(["12D3KooWRelay2", "12D3KooWBookedRelay"]);
+  });
+
+  it("falls back to relay-book entries when live stats and multiaddrs have no circuit info", () => {
+    const out = getConnectionStatusViaRuntime(
+      makeCtx({
+        mesh: {
+          peerId: "self",
+          multiaddrs: ["/ip4/192.168.3.85/tcp/50825/p2p/self"],
+          getConnectionStats: () => ({ circuitPeerIds: [] }),
+        },
+      }),
+    );
+    expect(out.connectedRelays).toEqual(["12D3KooWBookedRelay"]);
   });
 });
 

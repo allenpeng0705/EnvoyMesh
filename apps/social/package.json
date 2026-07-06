@@ -16,6 +16,7 @@
     "emoji-picker-element": "^1.29.1",
     "loro-crdt": "^1.12.1",
     "marked": "^18.0.3",
+    "qrcode": "^1.5.4",
     "react": "^19.2.3",
     "react-dom": "^19.2.3",
     "yjs": "^13.6.30"

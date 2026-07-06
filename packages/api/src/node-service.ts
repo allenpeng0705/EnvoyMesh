@@ -223,10 +223,20 @@ export interface SocialIntroProposal {
   commitmentApproved?: boolean;
 }
 
+/** Optional flags for {@link NodeService.runOwnerAgentTurn} (Assistant UI). */
+export interface RunOwnerAgentTurnOptions {
+  /** Client-assigned id for the human message (matches optimistic UI bubble). */
+  humanMessageId?: string;
+}
+
 /** Optional flags for {@link NodeService.sendHello} (Trust-mode bond linkage). */
 export interface SendHelloOptions {
   /** Matches {@link SocialIntroProposal.messageId}; requires prior approveSocialIntroCommitment. */
   introProposalMessageId?: string;
+  /** Override bond.request proofOfContext (e.g. installer sponsor token). */
+  proofOfContext?: string;
+  /** Known libp2p peer id when owner directory lookup is not seeded yet (e.g. setup sponsor friend). */
+  targetPeerId?: string;
 }
 
 // ============================================
@@ -481,7 +491,13 @@ export interface PeerSearchResult {
   /** Portable did:key when owner public key is known */
   did?: string;
   /** Where this hit came from (local bond, DHT topic, rendezvous, …) */
-  discoverySource?: "local" | "dht-capability-topic" | "dht-peer-routing" | "rendezvous" | "did-lookup";
+  discoverySource?:
+    | "local"
+    | "dht-capability-topic"
+    | "dht-peer-routing"
+    | "rendezvous"
+    | "did-lookup"
+    | "relay-roster-topic";
   trustLevel?: string;
   signedRecordValid?: boolean;
 }
@@ -637,9 +653,14 @@ export type PinLibraryItemExternalResult =
   | { ok: false; error: string };
 
 export interface CreateWanJoinInviteParams {
-  /** Hours until invite expires (default 168 = 7 days). */
+  /** Hours until invite expires (default 168 = 7 days, max 8760 = 1 year). */
   expiresInHours?: number;
   note?: string;
+  /**
+   * Omit accumulated bootstrap peer multiaddrs; keep presets + target dial paths only.
+   * Produces a smaller token for contact links (full link copy, not QR payload).
+   */
+  compact?: boolean;
 }
 
 export interface CreateWanJoinInviteResult {
@@ -1677,6 +1698,12 @@ export interface NodeService {
    */
   updateNodeConfig(config: Partial<NodeConfig>): Promise<void>;
 
+  /** Resolved bundled + persisted setup sponsor friend config (read-only). */
+  getSetupSponsorFriendConfig(): Promise<import("./setup-sponsor-friend.js").ResolvedSetupSponsorFriend>;
+
+  /** Run zero-step sponsor hello after first setup (idempotent). */
+  runSetupSponsorFriend(): Promise<import("./setup-sponsor-friend.js").RunSetupSponsorFriendResult>;
+
   /**
    * List configured relays
    */
@@ -2058,7 +2085,10 @@ export interface NodeService {
    */
   runDocumentAgentTurn(message: string): Promise<DocumentAgentTurnResult>;
   /** Phase 18 — native owner agent orchestration (Assistant primary backend). */
-  runOwnerAgentTurn(message: string): Promise<OwnerAgentTurnResult>;
+  runOwnerAgentTurn(
+    message: string,
+    options?: RunOwnerAgentTurnOptions,
+  ): Promise<OwnerAgentTurnResult>;
 
   // ----- Phase 16 — EnvoyAI postures -----
 

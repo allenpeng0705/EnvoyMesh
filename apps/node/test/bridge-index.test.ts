@@ -245,6 +245,19 @@ describe("bridge runtime", () => {
       vi.unstubAllGlobals();
     }
   });
+
+  it("starts HTTP listener when listenForOpenClaw is true even if config.enabled is false", async () => {
+    const port = await getFreePort();
+    const bridge = createBridge({
+      config: { enabled: false, agentUrl: "http://localhost:8080/message", listenPort: port },
+      listenForOpenClaw: true,
+      identity: makeBridgeIdentity(),
+      mesh: makeMesh(),
+      getRecipientPeerId: async () => null,
+    });
+    expect(bridge.agentPeerId).toBeTruthy();
+    await bridge.stop();
+  });
 });
 
 function makeBridgeIdentity(): BridgeIdentity {

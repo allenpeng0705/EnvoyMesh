@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-app-logs"
+description = "Read/write desktop app diagnostic log files."
+commands.allow = ["get_app_log_paths", "append_social_log", "reveal_log_dir"]

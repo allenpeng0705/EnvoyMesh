@@ -1,12 +1,22 @@
 #!/usr/bin/env bash
 # Download Node.js runtime binary into apps/tauri/src-tauri/resources/node-runtime/.
-# Usage: ./scripts/fetch-node-sidecar.sh [version]
+#
+# Usage:
+#   ./scripts/fetch-node-sidecar.sh           # auto: latest nodejs.org release >= OpenClaw minimum
+#   ./scripts/fetch-node-sidecar.sh 22.19.0   # pin an exact version
 set -euo pipefail
 
-VERSION="${1:-22.13.0}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="$ROOT/apps/tauri/src-tauri/resources/node-runtime"
 mkdir -p "$DEST"
+
+if [ -n "${1:-}" ]; then
+  VERSION="$1"
+  echo "[fetch-node-sidecar] Using pinned Node version: $VERSION"
+else
+  echo "[fetch-node-sidecar] Resolving Node version from OpenClaw requirement + nodejs.org..."
+  VERSION="$(node "$ROOT/scripts/resolve-node-sidecar-version.mjs")"
+fi
 
 OS="$(uname -s | tr '[:upper:]' '[:lower:]')"
 ARCH="$(uname -m)"

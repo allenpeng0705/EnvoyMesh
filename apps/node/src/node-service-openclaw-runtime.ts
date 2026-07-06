@@ -20,13 +20,14 @@ import type {
   LocalTrustStore,
 } from "@envoymesh/local-store";
 import type { EnvoyMesh } from "@envoymesh/network";
-import type { OpenClawRuntime } from "../../../packages/openclaw-runtime/src/index.js";
+import type { OpenClawRuntime } from "@envoymesh/openclaw-runtime";
 import { resolveBundledSkillsDir } from "./bundled-paths.js";
+import { resolveAssistantAgentUrl } from "./bridge/config.js";
 import {
   loadBridgeConfigSkillApiKeys,
   loadBridgeConfigWebSearchEnabled,
 } from "./node-service-clawhub.js";
-import { resolveAssistantAgentUrl } from "./bridge/config.js";
+import { BRIDGE_HTTP_PORT, OPENCLAW_GATEWAY_PORT, openClawGatewayWebhookUrl } from "./service-ports.js";
 import { buildEnvoyMeshRetrievedContext } from "./openclaw-turn-context.js";
 import {
   buildOpenClawGatewayAgentSection,
@@ -75,7 +76,7 @@ export function createOpenClawRuntimeState(): OpenClawRuntimeState {
     gatewayChild: null,
     gatewayReady: false,
     startPromise: null,
-    assistantAgentUrl: "http://127.0.0.1:18789/webhook/envoymesh",
+    assistantAgentUrl: openClawGatewayWebhookUrl(),
     assistantAgentSecret: undefined,
     pendingReplies: new Map(),
     activeTurnTools: null,
@@ -101,6 +102,55 @@ export interface EnvoyAiChatContext {
 export function recordEnvoyAiChatMessageViaRuntime(ctx: EnvoyAiChatContext, msg: ChatMessage): void {
   ctx.persistChatMessage(ENVOY_AI_THREAD_KEY, msg);
   ctx.emitChatMessage(msg);
+}
+
+/** Store the owner's outbound EnvoyAI turn (before OpenClaw/native reply). */
+export async function recordEnvoyAiHumanOutgoingViaRuntime(
+  ctx: EnvoyAiChatContext,
+  userText: string,
+  messageId: string,
+): Promise<void> {
+  const trimmed = userText.trim();
+  if (!trimmed) return;
+
+  const profile = ctx.getProfile();
+  const mesh = ctx.getReachableMesh();
+  if (!profile || !mesh || !ctx.getChatLogStore()) {
+    return;
+  }
+
+  let displayName = profile.owner.ownerId;
+  try {
+    const human = await ctx.getHumanProfileStore().loadHumanProfile();
+    if (human?.displayName?.trim()) {
+      displayName = human.displayName.trim();
+    }
+  } catch {
+    /* use ownerId */
+  }
+
+  const bridgeAgentPeerId = ctx.getBridgeStatus()?.agentPeerId?.trim() || ENVOY_AI_THREAD_KEY;
+  recordEnvoyAiChatMessageViaRuntime(ctx, {
+    messageId,
+    sender: {
+      nodeId: mesh.peerId,
+      ownerId: profile.owner.ownerId,
+      displayName,
+      actorRole: "human",
+    },
+    recipient: {
+      nodeId: bridgeAgentPeerId,
+      ownerId: ENVOY_AI_THREAD_KEY,
+      displayName: "EnvoyAI",
+    },
+    content: { text: trimmed },
+    metadata: {
+      timestamp: new Date().toISOString(),
+      deliveryReceipt: "delivered",
+      deliveryChannel: "ai",
+    },
+    signature: "",
+  });
 }
 
 export async function loadEnvoyAiChatHistoryViaRuntime(
@@ -167,7 +217,7 @@ export async function persistEnvoyAiChatExchangeViaRuntime(
   const bridgeAgentPeerId = ctx.getBridgeStatus()?.agentPeerId?.trim() || ENVOY_AI_THREAD_KEY;
   const bridgeAgentId = ctx.getBridgeStatus()?.agentName?.trim();
   const assistantTurn: NonNullable<ChatMessage["metadata"]["assistantTurn"]> = {
-    domain: turn.domain,
+    domain: turn.domain ?? "knowledge",
     intent: turn.intent,
     jobId: turn.jobId,
     correlationId: turn.correlationId,
@@ -339,7 +389,7 @@ function assistantGatewayPort(state: OpenClawRuntimeState): number {
     if (u.port) return Number(u.port);
     return u.protocol === "https:" ? 443 : 80;
   } catch {
-    return 18789;
+    return OPENCLAW_GATEWAY_PORT;
   }
 }
 
@@ -544,7 +594,7 @@ async function buildEnvoyMeshOpenClawPrompts(
   const skillApiKeys = (await deps.loadBridgeConfigSkillApiKeys()) ?? {};
   const webSearch = resolveActiveWebSearchProvider({ webSearchEnabled, skillApiKeys });
   const { buildAgentConfig, buildOpenClawSystemPrompt } = await import(
-    "../../../packages/openclaw-runtime/src/tool-bridge.js"
+    "@envoymesh/openclaw-runtime/tool-bridge"
   );
   const agentConfig = buildAgentConfig({
     owner: {
@@ -706,18 +756,21 @@ async function startOpenClawInner(
   const cfgPath = profileDirAbs
     ? join(profileDirAbs, "bridge-config.json")
     : join(nodeCwd, "data", "default", "bridge-config.json");
-  const defaultAssistantUrl = "http://127.0.0.1:18789/webhook/envoymesh";
+  const defaultAssistantUrl = openClawGatewayWebhookUrl();
   let assistantUrl = defaultAssistantUrl;
   let bridgeSecret: string | undefined;
-  let bridgeListenPort = 3031;
+  let bridgeListenPort = BRIDGE_HTTP_PORT;
   if (existsSync(cfgPath)) {
     try {
       const cfg = JSON.parse(readFileSync(cfgPath, "utf-8"));
       assistantUrl = resolveAssistantAgentUrl(cfg);
       bridgeSecret = typeof cfg?.secret === "string" && cfg.secret.trim() ? cfg.secret.trim() : undefined;
-      if (typeof cfg?.listenPort === "number") bridgeListenPort = cfg.listenPort;
     } catch { /* use default */ }
   }
+  if (assistantUrl.includes("127.0.0.1") && assistantUrl.includes("/webhook/envoymesh")) {
+    assistantUrl = openClawGatewayWebhookUrl();
+  }
+  bridgeListenPort = BRIDGE_HTTP_PORT;
   state.assistantAgentUrl = assistantUrl;
   state.assistantAgentSecret = bridgeSecret;
   const bridgeUrl = `http://127.0.0.1:${bridgeListenPort}/bridge/send`;

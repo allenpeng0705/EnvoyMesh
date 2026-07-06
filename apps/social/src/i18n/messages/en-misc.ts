@@ -88,6 +88,7 @@ export const setupMessages = {
   stepYou: "You",
   stepAi: "AI",
   profileError: "Enter a display name and username (3–30 chars, letters/numbers/_).",
+  profilePersistError: "Could not save your profile to disk. Try Launch again — if it keeps failing, quit the app and retry.",
   displayName: "Display name",
   displayNamePlaceholder: "Alice",
   username: "Username",
@@ -113,6 +114,9 @@ export const setupMessages = {
   },
   finish: "Finish setup",
   finishing: "Starting…",
+  connectingBanner:
+    "Your home node is starting in the background — fill in your profile while you wait. First launch can take 1–2 minutes.",
+  waitingForNode: "Waiting for home node…",
 } as const;
 
 export const activityMessages = {

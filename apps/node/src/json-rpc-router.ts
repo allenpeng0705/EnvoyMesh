@@ -422,6 +422,10 @@ export async function routeRpcMethod(
       return ns.getNodeConfig();
     case "updateNodeConfig":
       return ns.updateNodeConfig(params as any);
+    case "getSetupSponsorFriendConfig":
+      return ns.getSetupSponsorFriendConfig();
+    case "runSetupSponsorFriend":
+      return ns.runSetupSponsorFriend();
     case "listRelays":
       return ns.listRelays();
     case "addRelay":
@@ -449,7 +453,12 @@ export async function routeRpcMethod(
     case "runDocumentAgentTurn":
       return ns.runDocumentAgentTurn(params.message as string);
     case "runOwnerAgentTurn":
-      return ns.runOwnerAgentTurn(params.message as string);
+      return ns.runOwnerAgentTurn(
+        params.message as string,
+        typeof params.humanMessageId === "string"
+          ? { humanMessageId: params.humanMessageId }
+          : undefined,
+      );
     case "listSocialProxySessions":
       return ns.listSocialProxySessions();
     case "runSocialProxyPass":

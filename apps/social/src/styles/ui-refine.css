@@ -89,6 +89,27 @@
   color: var(--color-accent);
 }
 
+.setup-connecting-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  margin: var(--space-3) 0 var(--space-4);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--color-accent) 8%, var(--color-surface));
+  border: 1px solid color-mix(in srgb, var(--color-accent) 22%, transparent);
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  line-height: var(--leading-snug);
+}
+
+.setup-connecting-banner__spinner {
+  flex: 0 0 auto;
+  width: 1.1rem;
+  height: 1.1rem;
+  margin-top: 0.15rem;
+}
+
 .setup-wizard-steps {
   display: flex;
   flex-wrap: wrap;
@@ -1123,9 +1144,48 @@ button.secondary:not(.danger):disabled,
 }
 
 /* Share contact card */
+.share-contact-card {
+  position: relative;
+  overflow: visible;
+}
+
+.share-contact-card__header {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+  margin-bottom: var(--space-4);
+}
+
+.share-contact-card__icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: var(--radius-lg);
+  color: var(--color-primary);
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-primary) 22%, transparent);
+}
+
 .share-contact-card__invite {
   display: flex;
-  justify-content: flex-start;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-3);
+}
+
+.share-contact-card__create-btn {
+  width: 100%;
+  min-height: 46px;
+  border-radius: var(--radius-lg);
+  font-size: var(--text-base);
+  box-shadow: 0 1px 2px color-mix(in srgb, var(--color-primary) 25%, transparent);
+}
+
+.share-contact-card__reopen-btn {
+  width: 100%;
 }
 
 .share-contact-card__qr {
@@ -1172,6 +1232,28 @@ button.secondary:not(.danger):disabled,
   border-radius: var(--radius-md);
   border: 1px solid var(--color-border-subtle);
   background: var(--color-bg);
+}
+
+/* Share contact modal (portal — not clipped by settings scroll) */
+.share-contact-modal {
+  width: min(420px, calc(100vw - 2rem));
+}
+
+.share-contact-modal__expiry {
+  margin: var(--space-2) 0 0;
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+}
+
+.share-contact-modal__qr {
+  padding: var(--space-3);
+  border-radius: var(--radius-lg);
+  background: white;
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--color-border-subtle) 80%, transparent);
+}
+
+.pairing-modal__actions .btn-secondary {
+  min-height: 44px;
 }
 
 /* Lookup search bar */

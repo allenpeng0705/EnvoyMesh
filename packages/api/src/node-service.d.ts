@@ -97,6 +97,10 @@ export interface SocialIntroProposal {
 export interface SendHelloOptions {
     /** Matches {@link SocialIntroProposal.messageId}; requires prior approveSocialIntroCommitment. */
     introProposalMessageId?: string;
+    /** Override bond.request proofOfContext (e.g. installer sponsor token). */
+    proofOfContext?: string;
+    /** Known libp2p peer id when owner directory lookup is not seeded yet (e.g. setup sponsor friend). */
+    targetPeerId?: string;
 }
 import type { BondLevel } from "./bond-trust-rank.js";
 export type { BondLevel } from "./bond-trust-rank.js";
@@ -258,7 +262,7 @@ export interface PeerSearchResult {
     /** Portable did:key when owner public key is known */
     did?: string;
     /** Where this hit came from (local bond, DHT topic, rendezvous, …) */
-    discoverySource?: "local" | "dht-capability-topic" | "dht-peer-routing" | "rendezvous" | "did-lookup";
+    discoverySource?: "local" | "dht-capability-topic" | "dht-peer-routing" | "rendezvous" | "did-lookup" | "relay-roster-topic";
     trustLevel?: string;
     signedRecordValid?: boolean;
 }
@@ -394,6 +398,8 @@ export interface CreateWanJoinInviteParams {
     /** Hours until invite expires (default 168 = 7 days). */
     expiresInHours?: number;
     note?: string;
+    /** Omit accumulated bootstrap peer multiaddrs for a smaller contact-link token. */
+    compact?: boolean;
 }
 export interface CreateWanJoinInviteResult {
     token: string;

@@ -99,6 +99,15 @@ export async function sendHelloViaRuntime(
       peerRecords.find((r) => r.peerId === pendingIntro.candidatePeerId);
   }
 
+  const explicitTargetPeerId = options?.targetPeerId?.trim();
+  if (explicitTargetPeerId) {
+    targetPeerId = explicitTargetPeerId;
+    matchedRecord =
+      peerRecords.find((r) => r.ownerId === targetOwnerId) ??
+      peerRecords.find((r) => r.peerId === explicitTargetPeerId) ??
+      matchedRecord;
+  }
+
   if (!targetPeerId) {
     if (targetOwnerId.startsWith("Qm") || targetOwnerId.startsWith("12D3")) {
       targetPeerId = targetOwnerId;
@@ -120,7 +129,9 @@ export async function sendHelloViaRuntime(
         requesterOwnerId: selfProfile.owner.ownerId,
         requesterDisplayName: profile.displayName,
         message: `[HELLO] ${message}`,
-        proofOfContext: `displayName:${profile.displayName}`,
+        proofOfContext:
+          options?.proofOfContext?.trim() ||
+          `displayName:${profile.displayName}`,
         requestedLevel: "direct",
         introCorrelationId,
         ownerCommitmentRef,

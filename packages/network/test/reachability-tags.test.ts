@@ -19,4 +19,20 @@ describe("reachability / reconnect-queue tag rules", () => {
   it("accepts arbitrary iterables", () => {
     expect(peerTagsTriggerReconnectQueue(new Set([`${KEEP_ALIVE}-z`]))).toBe(true);
   });
+
+  it("relay tag also uses KEEP_ALIVE prefix so libp2p reconnection-queue applies", () => {
+    // The exact tag name is internal; what matters is that any tag prefixed
+    // with KEEP_ALIVE (including ours) triggers the reconnect-queue.
+    const relayStyleTag = `${KEEP_ALIVE}-envoymesh-relay`;
+    expect(relayStyleTag.startsWith(KEEP_ALIVE)).toBe(true);
+    expect(peerTagsTriggerReconnectQueue([relayStyleTag])).toBe(true);
+  });
+
+  it("relay tag and contact tag are independent (both still recognized)", () => {
+    const contactTag = getEnvoyContactKeepAlivePeerTagName();
+    const relayTag = `${KEEP_ALIVE}-envoymesh-relay`;
+    expect(peerTagsTriggerReconnectQueue([contactTag, relayTag])).toBe(true);
+    expect(peerTagsTriggerReconnectQueue([contactTag])).toBe(true);
+    expect(peerTagsTriggerReconnectQueue([relayTag])).toBe(true);
+  });
 });

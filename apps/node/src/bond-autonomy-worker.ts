@@ -47,6 +47,8 @@ export interface BondAutonomyWorkerDeps {
   hasIntroCorrelation: (requesterOwnerId: string, responderOwnerId: string) => Promise<boolean>;
   /** Get trust-mode overlap score between two owners (0.0–1.0). */
   getTrustOverlapScore: (requesterOwnerId: string, responderOwnerId: string) => Promise<number>;
+  /** When set, inbound proofOfContext must match exactly. */
+  sponsorProofToken?: string;
 }
 
 export interface BondAutonomyEvalResult {
@@ -76,6 +78,17 @@ export async function evaluateBondAutonomy(
   }
 
   const policy = deps.posturePolicy;
+
+  if (deps.sponsorProofToken?.trim()) {
+    const expected = deps.sponsorProofToken.trim();
+    const actual = input.proofOfContext?.trim();
+    if (!actual || actual !== expected) {
+      return {
+        allowed: false,
+        reason: "sponsor proof token mismatch or missing",
+      };
+    }
+  }
 
   // Check daily cap
   if (policy.maxAutoBondsPerDay > 0) {

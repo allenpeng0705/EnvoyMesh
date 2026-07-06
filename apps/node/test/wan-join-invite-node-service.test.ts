@@ -54,4 +54,33 @@ describe("NodeServiceImpl WAN join invite", () => {
     const after = await svc.getNodeConfig();
     expect(after.bootstrapPeers.length).toBeGreaterThanOrEqual(peerCountBefore);
   });
+
+  it("createWanJoinInvite clamps expiresInHours to one year", async () => {
+    const created = await svc.createWanJoinInvite({ expiresInHours: 99999 });
+    const decoded = decodeWanJoinInviteV1(parseEnvoyJoinUri(created.token));
+    expect(decoded.expiresAt).toBeTruthy();
+    const expiresMs = Date.parse(decoded.expiresAt!);
+    const createdMs = Date.parse(decoded.createdAt);
+    const hours = (expiresMs - createdMs) / (60 * 60 * 1000);
+    expect(hours).toBeGreaterThan(8700);
+    expect(hours).toBeLessThanOrEqual(8760);
+  });
+
+  it("createWanJoinInvite compact omits accumulated bootstrap peers", async () => {
+    await svc.updateNodeConfig({
+      bootstrapPeers: [
+        "/ip4/1.2.3.4/tcp/4001/p2p/12D3KooWExistingBootstrap",
+        "/ip4/5.6.7.8/tcp/4001/p2p/12D3KooWAnotherBootstrap",
+      ],
+      bootstrapPresets: ["public-libp2p", "cn-relay"],
+    });
+    const full = await svc.createWanJoinInvite({ expiresInHours: 24 });
+    const compact = await svc.createWanJoinInvite({ expiresInHours: 24, compact: true });
+    const fullDecoded = decodeWanJoinInviteV1(parseEnvoyJoinUri(full.token));
+    const compactDecoded = decodeWanJoinInviteV1(parseEnvoyJoinUri(compact.token));
+    expect(fullDecoded.bootstrapPeers.length).toBeGreaterThan(0);
+    expect(compactDecoded.bootstrapPeers).toEqual([]);
+    expect(compactDecoded.bootstrapPresets).toEqual(["public-libp2p", "cn-relay"]);
+    expect(compact.token.length).toBeLessThan(full.token.length);
+  });
 });

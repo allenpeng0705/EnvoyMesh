@@ -80,8 +80,14 @@ export class WsServer {
       });
     });
 
-    this.httpServer.on("error", (err: Error) => {
+    this.httpServer.on("error", (err: NodeJS.ErrnoException) => {
       console.error(`[ws-server] HTTP server error: ${err.message}`);
+      if (err.code === "EADDRINUSE") {
+        console.error(
+          `[ws-server] Social WebSocket port ${this.port} is already in use — exiting so the desktop shell can retry`,
+        );
+        process.exit(1);
+      }
     });
 
     this.wss.on("error", (err: Error) => {

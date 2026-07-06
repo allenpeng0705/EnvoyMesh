@@ -1028,6 +1028,351 @@ function FleetManifestSection() {
   );
 }
 
+/**
+ * Bond autonomy — auto-accept inbound hellos (sponsor node).
+ */
+function BondAutonomySection() {
+  const t = useT();
+  const nodeService = useNodeService();
+  const { nodeConfig, refreshNodeConfig } = useNodeState();
+  const [enabled, setEnabled] = useState(false);
+  const [maxPerDay, setMaxPerDay] = useState("50");
+  const [requireReferralProof, setRequireReferralProof] = useState(true);
+  const [maxTier, setMaxTier] = useState<"direct" | "referred">("direct");
+  const [minOverlap, setMinOverlap] = useState("0");
+  const [notifyOwner, setNotifyOwner] = useState(true);
+  const [sponsorToken, setSponsorToken] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setEnabled(nodeConfig?.bondAutonomyEnabled ?? false);
+    setMaxPerDay(String(nodeConfig?.bondAutonomyMaxAutoBondsPerDay ?? 50));
+    setRequireReferralProof(nodeConfig?.bondAutonomyRequireReferralProof ?? true);
+    setMaxTier(nodeConfig?.bondAutonomyMaxAutoBondTier ?? "direct");
+    setMinOverlap(String(nodeConfig?.bondAutonomyMinTrustOverlapScore ?? 0));
+    setNotifyOwner(nodeConfig?.bondAutonomyNotifyOwnerOnAutoBond ?? true);
+    setSponsorToken(nodeConfig?.bondAutonomySponsorProofToken ?? "");
+  }, [nodeConfig]);
+
+  const handleSave = useCallback(async () => {
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      await nodeService.updateNodeConfig({
+        bondAutonomyEnabled: enabled,
+        bondAutonomyMaxAutoBondsPerDay: Number.parseInt(maxPerDay, 10) || 0,
+        bondAutonomyRequireReferralProof: requireReferralProof,
+        bondAutonomyMaxAutoBondTier: maxTier,
+        bondAutonomyMinTrustOverlapScore: Number.parseFloat(minOverlap) || 0,
+        bondAutonomyNotifyOwnerOnAutoBond: notifyOwner,
+        bondAutonomySponsorProofToken: sponsorToken.trim() || undefined,
+      } as Parameters<typeof nodeService.updateNodeConfig>[0]);
+      await refreshNodeConfig();
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  }, [
+    enabled,
+    maxPerDay,
+    maxTier,
+    minOverlap,
+    nodeService,
+    notifyOwner,
+    refreshNodeConfig,
+    requireReferralProof,
+    sponsorToken,
+  ]);
+
+  return (
+    <section className="settings-section">
+      <h4>{t("settings.agentNetwork.bondAutonomy.heading")}</h4>
+      <p className="section-desc">{t("settings.agentNetwork.bondAutonomy.desc")}</p>
+      <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => setEnabled(e.target.checked)}
+          disabled={saving}
+        />
+        <span>{t("settings.agentNetwork.bondAutonomy.enableLabel")}</span>
+      </label>
+      <div className="form-group">
+        <label>{t("settings.agentNetwork.bondAutonomy.maxPerDayLabel")}</label>
+        <input
+          type="number"
+          min={0}
+          value={maxPerDay}
+          onChange={(e) => setMaxPerDay(e.target.value)}
+          disabled={saving}
+        />
+      </div>
+      <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+        <input
+          type="checkbox"
+          checked={requireReferralProof}
+          onChange={(e) => setRequireReferralProof(e.target.checked)}
+          disabled={saving}
+        />
+        <span>{t("settings.agentNetwork.bondAutonomy.requireReferralProofLabel")}</span>
+      </label>
+      <div className="form-group">
+        <label>{t("settings.agentNetwork.bondAutonomy.maxTierLabel")}</label>
+        <select
+          className="settings-select"
+          value={maxTier}
+          onChange={(e) => setMaxTier(e.target.value as "direct" | "referred")}
+          disabled={saving}
+        >
+          <option value="direct">{t("settings.agentNetwork.bondAutonomy.maxTierDirect")}</option>
+          <option value="referred">{t("settings.agentNetwork.bondAutonomy.maxTierReferred")}</option>
+        </select>
+      </div>
+      <div className="form-group">
+        <label>{t("settings.agentNetwork.bondAutonomy.minOverlapLabel")}</label>
+        <input
+          type="number"
+          min={0}
+          max={1}
+          step={0.1}
+          value={minOverlap}
+          onChange={(e) => setMinOverlap(e.target.value)}
+          disabled={saving}
+        />
+      </div>
+      <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+        <input
+          type="checkbox"
+          checked={notifyOwner}
+          onChange={(e) => setNotifyOwner(e.target.checked)}
+          disabled={saving}
+        />
+        <span>{t("settings.agentNetwork.bondAutonomy.notifyOwnerLabel")}</span>
+      </label>
+      <div className="form-group">
+        <label>{t("settings.agentNetwork.bondAutonomy.sponsorTokenLabel")}</label>
+        <input
+          type="text"
+          value={sponsorToken}
+          onChange={(e) => setSponsorToken(e.target.value)}
+          placeholder={t("settings.agentNetwork.bondAutonomy.sponsorTokenPlaceholder")}
+          disabled={saving}
+        />
+        <p className="settings-hint">{t("settings.agentNetwork.bondAutonomy.sponsorTokenHelp")}</p>
+      </div>
+      <button type="button" className="settings-button" onClick={() => { void handleSave(); }} disabled={saving}>
+        {saving ? t("settings.agentNetwork.bondAutonomy.saving") : t("settings.agentNetwork.bondAutonomy.save")}
+      </button>
+      {saved ? <span className="settings-hint"> {t("settings.agentNetwork.bondAutonomy.saved")}</span> : null}
+      {error ? <p className="library-view-error">{error}</p> : null}
+    </section>
+  );
+}
+
+/**
+ * Setup sponsor friend — installer zero-step first friend overrides.
+ */
+function SetupSponsorFriendSection() {
+  const t = useT();
+  const nodeService = useNodeService();
+  const { nodeConfig, refreshNodeConfig } = useNodeState();
+  const [resolvedSource, setResolvedSource] = useState<string>("none");
+  const [enabled, setEnabled] = useState(false);
+  const [contactUri, setContactUri] = useState("");
+  const [ownerId, setOwnerId] = useState("");
+  const [helloMessage, setHelloMessage] = useState("Hello!");
+  const [proofOfContext, setProofOfContext] = useState("");
+  const [maxAttempts, setMaxAttempts] = useState("12");
+  const [retryDelayMs, setRetryDelayMs] = useState("5000");
+  const [saving, setSaving] = useState(false);
+  const [running, setRunning] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [runMsg, setRunMsg] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const refreshResolved = useCallback(async () => {
+    try {
+      const resolved = await nodeService.getSetupSponsorFriendConfig();
+      setResolvedSource(resolved.source);
+    } catch {
+      setResolvedSource("none");
+    }
+  }, [nodeService]);
+
+  useEffect(() => {
+    setEnabled(nodeConfig?.setupSponsorFriendEnabled ?? false);
+    setContactUri(nodeConfig?.setupSponsorFriendContactUri ?? "");
+    setOwnerId(nodeConfig?.setupSponsorFriendOwnerId ?? "");
+    setHelloMessage(nodeConfig?.setupSponsorFriendHelloMessage ?? "Hello!");
+    setProofOfContext(nodeConfig?.setupSponsorFriendProofOfContext ?? "");
+    setMaxAttempts(String(nodeConfig?.setupSponsorFriendMaxAttempts ?? 12));
+    setRetryDelayMs(String(nodeConfig?.setupSponsorFriendRetryDelayMs ?? 5000));
+    void refreshResolved();
+  }, [nodeConfig, refreshResolved]);
+
+  const handleSave = useCallback(async () => {
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      await nodeService.updateNodeConfig({
+        setupSponsorFriendEnabled: enabled,
+        setupSponsorFriendContactUri: contactUri.trim() || undefined,
+        setupSponsorFriendOwnerId: ownerId.trim() || undefined,
+        setupSponsorFriendHelloMessage: helloMessage.trim() || undefined,
+        setupSponsorFriendProofOfContext: proofOfContext.trim() || undefined,
+        setupSponsorFriendMaxAttempts: Number.parseInt(maxAttempts, 10) || undefined,
+        setupSponsorFriendRetryDelayMs: Number.parseInt(retryDelayMs, 10) || undefined,
+      } as Parameters<typeof nodeService.updateNodeConfig>[0]);
+      await refreshNodeConfig();
+      await refreshResolved();
+      setSaved(true);
+      window.setTimeout(() => setSaved(false), 3000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSaving(false);
+    }
+  }, [
+    contactUri,
+    enabled,
+    helloMessage,
+    maxAttempts,
+    nodeService,
+    ownerId,
+    proofOfContext,
+    refreshNodeConfig,
+    refreshResolved,
+    retryDelayMs,
+  ]);
+
+  const handleRun = useCallback(async () => {
+    setRunning(true);
+    setRunMsg(null);
+    setError(null);
+    try {
+      const result = await nodeService.runSetupSponsorFriend();
+      if (result.ok && !result.skipped) {
+        setRunMsg(t("settings.agentNetwork.setupSponsorFriend.runOk"));
+      } else if (result.skipped) {
+        setRunMsg(result.reason ?? "skipped");
+      } else {
+        setRunMsg(t("settings.agentNetwork.setupSponsorFriend.runFailed", { error: result.reason ?? "unknown" }));
+      }
+      await refreshNodeConfig();
+      await refreshResolved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRunning(false);
+    }
+  }, [nodeService, refreshNodeConfig, refreshResolved, t]);
+
+  return (
+    <section className="settings-section">
+      <h4>{t("settings.agentNetwork.setupSponsorFriend.heading")}</h4>
+      <p className="section-desc">{t("settings.agentNetwork.setupSponsorFriend.desc")}</p>
+      <p className="settings-hint">
+        {t("settings.agentNetwork.setupSponsorFriend.resolvedLabel", { source: resolvedSource })}
+      </p>
+      {nodeConfig?.setupSponsorFriendCompletedAt ? (
+        <p className="settings-hint">
+          {t("settings.agentNetwork.setupSponsorFriend.statusCompleted", {
+            at: nodeConfig.setupSponsorFriendCompletedAt,
+          })}
+        </p>
+      ) : (
+        <p className="settings-hint">{t("settings.agentNetwork.setupSponsorFriend.statusPending")}</p>
+      )}
+      {nodeConfig?.setupSponsorFriendLastError ? (
+        <p className="library-view-error">
+          {t("settings.agentNetwork.setupSponsorFriend.statusLastError", {
+            error: nodeConfig.setupSponsorFriendLastError,
+          })}
+        </p>
+      ) : null}
+      <label style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => setEnabled(e.target.checked)}
+          disabled={saving || running}
+        />
+        <span>{t("settings.agentNetwork.setupSponsorFriend.enableLabel")}</span>
+      </label>
+      <div className="form-group">
+        <label>{t("settings.agentNetwork.setupSponsorFriend.contactUriLabel")}</label>
+        <input
+          type="text"
+          value={contactUri}
+          onChange={(e) => setContactUri(e.target.value)}
+          placeholder={t("settings.agentNetwork.setupSponsorFriend.contactUriPlaceholder")}
+          disabled={saving || running}
+        />
+      </div>
+      <div className="form-group">
+        <label>{t("settings.agentNetwork.setupSponsorFriend.ownerIdLabel")}</label>
+        <input type="text" value={ownerId} onChange={(e) => setOwnerId(e.target.value)} disabled={saving || running} />
+      </div>
+      <div className="form-group">
+        <label>{t("settings.agentNetwork.setupSponsorFriend.helloMessageLabel")}</label>
+        <input
+          type="text"
+          value={helloMessage}
+          onChange={(e) => setHelloMessage(e.target.value)}
+          disabled={saving || running}
+        />
+      </div>
+      <div className="form-group">
+        <label>{t("settings.agentNetwork.setupSponsorFriend.proofLabel")}</label>
+        <input
+          type="text"
+          value={proofOfContext}
+          onChange={(e) => setProofOfContext(e.target.value)}
+          disabled={saving || running}
+        />
+      </div>
+      <div className="form-group">
+        <label>{t("settings.agentNetwork.setupSponsorFriend.maxAttemptsLabel")}</label>
+        <input
+          type="number"
+          min={1}
+          value={maxAttempts}
+          onChange={(e) => setMaxAttempts(e.target.value)}
+          disabled={saving || running}
+        />
+      </div>
+      <div className="form-group">
+        <label>{t("settings.agentNetwork.setupSponsorFriend.retryDelayLabel")}</label>
+        <input
+          type="number"
+          min={1000}
+          value={retryDelayMs}
+          onChange={(e) => setRetryDelayMs(e.target.value)}
+          disabled={saving || running}
+        />
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+        <button type="button" className="settings-button" onClick={() => { void handleSave(); }} disabled={saving || running}>
+          {saving ? t("settings.agentNetwork.setupSponsorFriend.saving") : t("settings.agentNetwork.setupSponsorFriend.save")}
+        </button>
+        <button type="button" className="settings-button" onClick={() => { void handleRun(); }} disabled={saving || running}>
+          {running ? t("settings.agentNetwork.setupSponsorFriend.running") : t("settings.agentNetwork.setupSponsorFriend.runNow")}
+        </button>
+        {saved ? <span className="settings-hint">{t("settings.agentNetwork.setupSponsorFriend.saved")}</span> : null}
+        {runMsg ? <span className="settings-hint">{runMsg}</span> : null}
+      </div>
+      {error ? <p className="library-view-error">{error}</p> : null}
+    </section>
+  );
+}
+
 export function SettingsAgentNetworkTab() {
   const t = useT();
   const isMobileNode = useIsInProcessMobileNode();
@@ -1046,6 +1391,8 @@ export function SettingsAgentNetworkTab() {
   return (
     <>
       <AgentNetworkIntro />
+      <BondAutonomySection />
+      <SetupSponsorFriendSection />
       <LanAutoBondSection />
       <CompanyInvitesSection />
       <PairingKioskSection />

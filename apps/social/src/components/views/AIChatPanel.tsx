@@ -67,6 +67,19 @@ function domainLabel(domain: OwnerAgentDomain, t: TFunction): string {
   }
 }
 
+function normalizeTurnDomain(domain: string | undefined): OwnerAgentDomain {
+  const normalized = domain?.trim().toLowerCase();
+  if (
+    normalized === "social" ||
+    normalized === "document" ||
+    normalized === "service" ||
+    normalized === "knowledge"
+  ) {
+    return normalized;
+  }
+  return "knowledge";
+}
+
 function AiTurnMetaChips({
   turn,
   t,
@@ -78,7 +91,8 @@ function AiTurnMetaChips({
   onOpenActivity?: () => void;
   onOpenInbox?: () => void;
 }) {
-  const showMeta = turn.domain !== "knowledge" || turn.jobId || turn.pendingApproval || turn.modelUsed;
+  const domain = normalizeTurnDomain(turn.domain);
+  const showMeta = domain !== "knowledge" || turn.jobId || turn.pendingApproval || turn.modelUsed;
   if (!showMeta) return null;
 
   return (
@@ -88,8 +102,8 @@ function AiTurnMetaChips({
           {turn.modelUsed === "openclaw" ? "🧠 OpenClaw" : "⚡ Native"}
         </span>
       )}
-      {turn.domain !== "knowledge" && (
-        <span className="ai-turn-meta-chip ai-turn-meta-chip--domain">{domainLabel(turn.domain, t)}</span>
+      {domain !== "knowledge" && (
+        <span className="ai-turn-meta-chip ai-turn-meta-chip--domain">{domainLabel(domain, t)}</span>
       )}
       {turn.jobId && (
         <span className="ai-turn-meta-chip ai-turn-meta-chip--job" title={turn.correlationId ?? undefined}>
@@ -260,7 +274,22 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox }: AIChatPanelProps = 
           );
         }
       }
-      setAiMessages(converted);
+      setAiMessages((prev) => {
+        const serverIds = new Set(converted.map((m) => m.id));
+        const serverUserTexts = new Set(
+          converted.filter((m) => m.role === "user").map((m) => m.text.trim()),
+        );
+        const pendingLocal = prev.filter(
+          (m) =>
+            m.role === "user" &&
+            !serverIds.has(m.id) &&
+            !serverUserTexts.has(m.text.trim()),
+        );
+        const merged = [...converted, ...pendingLocal].sort(
+          (a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime(),
+        );
+        return merged;
+      });
     } catch {
       /* node may still be starting */
     }
@@ -352,12 +381,25 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox }: AIChatPanelProps = 
       const view = chatMessageToAiMessage(msg, selfOwnerId);
       if (!view) return;
       reloadSeqRef.current += 1;
-      setAiMessages((prev) =>
-        mergeAiChatMessages(prev as AiChatMessageView[], [view]).map((row) => ({
-          ...row,
-          turn: row.turn as AiMessage["turn"],
-        })),
-      );
+      setAiMessages((prev) => {
+        const withoutDuplicateUser =
+          view.role === "user"
+            ? prev.filter(
+                (m) =>
+                  !(
+                    m.role === "user" &&
+                    m.id !== view.id &&
+                    m.text.trim() === view.text.trim()
+                  ),
+              )
+            : prev;
+        return mergeAiChatMessages(withoutDuplicateUser as AiChatMessageView[], [view]).map(
+          (row) => ({
+            ...row,
+            turn: row.turn as AiMessage["turn"],
+          }),
+        );
+      });
       setIsAiLoading(false);
     });
     return unsub;
@@ -430,7 +472,9 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox }: AIChatPanelProps = 
       const outbound = linkedTerminalSessionId
         ? `[correlationId=${linkedTerminalSessionId}]\n${question.trim()}`
         : question.trim();
-      const turn = await nodeService.runOwnerAgentTurn(outbound);
+      const turn = await nodeService.runOwnerAgentTurn(outbound, {
+        humanMessageId: userMsg.id,
+      });
       await reloadEnvoyAiHistory(turn);
     } catch (error) {
       const msg = error instanceof Error ? error.message : t("aiChat.responseFailed");

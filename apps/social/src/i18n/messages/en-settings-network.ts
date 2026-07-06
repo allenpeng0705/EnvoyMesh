@@ -277,7 +277,14 @@ export const networkSettingsMessages = {
     hideQr: "Hide QR",
     wanInviteTitle: "Invite to mesh (WAN)",
     wanInviteDesc:
-      "Share bootstrap peers + this node's dial hints for first contact over the internet. Tokens are unsigned — treat like a join URL (short-lived, trusted channel).",
+      "Share bootstrap peers + this node's dial hints for first contact over the internet. Tokens are unsigned — treat like a join URL (up to 1 year for installer builds).",
+    expiry: {
+      label: "Invite expires",
+      days7: "7 days (default)",
+      days30: "30 days",
+      year1: "1 year",
+      year1Hint: "Recommended when the invite is baked into a long-lived installer.",
+    },
     showWanInviteQr: "Show WAN invite QR",
     wanInviteQrAlt: "WAN join invite QR",
     copyLink: "Copy link",

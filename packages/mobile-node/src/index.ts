@@ -3942,6 +3942,25 @@ You are the owner's personal AI assistant on EnvoyMesh.
       saveMobileExternalPublish(oid, config.externalPublish);
     }
   }
+
+  async getSetupSponsorFriendConfig(): Promise<
+    import("@envoymesh/api").ResolvedSetupSponsorFriend
+  > {
+    return {
+      enabled: false,
+      helloMessage: "Hello!",
+      maxAttempts: 12,
+      retryDelayMs: 5000,
+      source: "none",
+    };
+  }
+
+  async runSetupSponsorFriend(): Promise<
+    import("@envoymesh/api").RunSetupSponsorFriendResult
+  > {
+    return { ok: true, skipped: true, reason: "mobile-not-supported" };
+  }
+
   async listRelays(): Promise<RelayConfig[]> {
     return this._relayUrls.map((addr, i) => ({
       relayId: `mobile-relay-${i}`,

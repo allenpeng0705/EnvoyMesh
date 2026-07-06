@@ -3,6 +3,7 @@ import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { networkPresetById, type NetworkPresetId } from "../../lib/network-presets.js";
+import { markFirstRunSetupComplete } from "../../lib/storage.js";
 import { isTauriShell, restartTauriNodeProcess } from "../../lib/tauri-shell.js";
 import type { ModelProviderConfig, ModelProviderMode } from "@envoymesh/api";
 
@@ -38,10 +39,10 @@ function validateModelSetup(
   return "endpoint";
 }
 
-export function SetupView() {
+export function SetupView({ waitingForNode = false }: { waitingForNode?: boolean }) {
   const t = useT();
   const nodeService = useNodeService();
-  const { nodeConfig, refreshNodeConfig, refreshHumanProfile } = useNodeState();
+  const { isConnected, nodeConfig, refreshNodeConfig, refreshHumanProfile } = useNodeState();
   const tauriShell = isTauriShell();
   const wanPreset = useMemo(() => networkPresetById(DEFAULT_SETUP_NETWORK_PRESET), []);
 
@@ -99,6 +100,7 @@ export function SetupView() {
   const handleFinish = async () => {
     const profileDir = setupProfileDir.trim();
     if (!profileDir) return;
+    if (!isConnected) return;
     if (!displayName.trim() || !/^[a-zA-Z0-9_]{3,30}$/.test(username.trim())) {
       setError(t("setup.profileError"));
       setStep("profile");
@@ -136,26 +138,46 @@ export function SetupView() {
         openclawEnabled: true,
       });
 
-      if (tauriShell) {
-        const restart = await restartTauriNodeProcess();
-        if (restart.ok) {
-          await nodeService.waitForConnection(25_000);
-          await nodeService.reconnect();
-        }
-      } else {
-        await nodeService.startNode();
-      }
-
+      // Persist profile before any node restart — reconnect reads human-profile.json from disk.
       await nodeService.updateHumanProfile({
         displayName: displayName.trim(),
         username: username.trim(),
         bio: "",
         hobbies: [],
-        profileVisibility: "private",
+        profileVisibility: "public",
       });
+
+      const verifiedProfile = await nodeService.getHumanProfile();
+      if (!verifiedProfile?.displayName?.trim() || !verifiedProfile?.username?.trim()) {
+        throw new Error(t("setup.profilePersistError"));
+      }
 
       await refreshNodeConfig();
       await refreshHumanProfile();
+      markFirstRunSetupComplete(verifiedProfile.ownerId);
+
+      // Start mesh on the running node (deferred until setup writes node-config.json).
+      await nodeService.startNode();
+
+      // OpenClaw only picks up model provider env after a process restart.
+      if (tauriShell && aiChoice === "configure") {
+        const restart = await restartTauriNodeProcess();
+        if (restart.ok) {
+          await nodeService.waitForConnection(25_000);
+          await nodeService.reconnect();
+        }
+      }
+
+      await refreshNodeConfig();
+      await refreshHumanProfile();
+
+      const sponsorResult = await nodeService.runSetupSponsorFriend().catch((sponsorErr) => {
+        console.warn("[SetupView] setup sponsor friend failed:", sponsorErr);
+        return { ok: false as const, reason: String(sponsorErr) };
+      });
+      if (!sponsorResult.ok && !("skipped" in sponsorResult && sponsorResult.skipped)) {
+        console.warn("[SetupView] setup sponsor friend:", sponsorResult.reason ?? "failed");
+      }
     } catch (err) {
       console.error("Failed to initialize node:", err);
       setError(err instanceof Error ? err.message : String(err));
@@ -169,6 +191,13 @@ export function SetupView() {
       <div className="setup-view setup-wizard">
         <h1>{t("setup.welcome")}</h1>
         <p className="muted">{t("setup.lede")}</p>
+
+        {waitingForNode && !isConnected ? (
+          <p className="setup-connecting-banner" role="status" aria-live="polite">
+            <span className="loading-spinner setup-connecting-banner__spinner" aria-hidden />
+            {t("setup.connectingBanner")}
+          </p>
+        ) : null}
 
         <div className="setup-wizard-steps" aria-label={t("setup.progressLabel")}>
           {(["profile", "ai"] as WizardStep[]).map((s, i) => (
@@ -221,10 +250,10 @@ export function SetupView() {
               <button
                 type="button"
                 className="primary"
-                disabled={!displayName.trim() || !username.trim()}
+                disabled={!displayName.trim() || !username.trim() || (waitingForNode && !isConnected)}
                 onClick={() => setStep("ai")}
               >
-                {t("setup.continue")}
+                {waitingForNode && !isConnected ? t("setup.waitingForNode") : t("setup.continue")}
               </button>
             </>
           )}
@@ -318,14 +347,20 @@ export function SetupView() {
                 <button
                   type="button"
                   className="primary"
-                  disabled={isInitializing || (aiChoice === "configure" && modelValidationError !== null)}
+                  disabled={
+                    isInitializing ||
+                    (waitingForNode && !isConnected) ||
+                    (aiChoice === "configure" && modelValidationError !== null)
+                  }
                   onClick={() => void handleFinish()}
                 >
                   {isInitializing
                     ? t("setup.finishing")
-                    : aiChoice === "skip"
-                      ? t("setup.launch")
-                      : t("setup.finish")}
+                    : waitingForNode && !isConnected
+                      ? t("setup.waitingForNode")
+                      : aiChoice === "skip"
+                        ? t("setup.launch")
+                        : t("setup.finish")}
                 </button>
               </div>
             </>

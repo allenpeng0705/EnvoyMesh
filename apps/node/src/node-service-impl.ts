@@ -645,6 +645,10 @@ import {
   type NodeConfigContext,
 } from "./node-service-config.js";
 import {
+  resolveEffectiveSetupSponsorFriend,
+  runSetupSponsorFriendOnService,
+} from "./node-service-setup-sponsor-friend.js";
+import {
   runCapabilityDiscoveryCycleViaRuntime,
   startCapabilityDiscoverySchedulerViaRuntime,
   type CapabilityDiscoveryContext,
@@ -785,7 +789,13 @@ import {
   type OpenInHerdrContext,
   type TerminalGetHerdrExportHintContext,
 } from "./node-service-handlers-herdr.js";
-import { startRelayClientScheduler, runRelayClientCycle } from "./relay-client-cycle.js";
+import {
+  startRelayClientScheduler,
+  runRelayClientCycle,
+  setRelayClientAdvertisedTopics,
+  queryRelayLookupWithDeps,
+  type RelayClientCycleDeps,
+} from "./relay-client-cycle.js";
 import { buildAutoCapabilityTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
 import { startNodeStatsInterval } from "./node-stats-log.js";
@@ -1179,6 +1189,7 @@ class NodeServiceImpl implements NodeService {
   private _nodeStatus: NodeStatus = "offline";
   private _bridgeStatus: BridgeStatus | null = null;
   private _bridgeChatHandler: ((envelope: EnvoyEnvelope, remotePeerId: string) => Promise<void>) | null = null;
+  private _relayBookProvider: (() => Array<{ relayId: string; region?: string; addrs: string[] }>) | null = null;
   private _styleAdapter: import("./style-adapter.js").StyleAdapter | null = null;
   private _wsPort: number = 3030;
   private _wsPath: string = "/ws";
@@ -2023,13 +2034,24 @@ class NodeServiceImpl implements NodeService {
   private _autoAdvertisedDiscoveryTopics: string[] = [];
   private _advertiseInterestsStartupTimeout?: ReturnType<typeof setTimeout>;
   private _stopRelayClientScheduler?: () => void;
+  private _relayClientCycleDeps?: RelayClientCycleDeps;
   private _capabilityDiscoveryTimer?: ReturnType<typeof setTimeout>;
   private _stopNodeStatsLogging?: () => void;
   private _nodeProcessStartedAtMs = Date.now();
   private _relayBootstrapPeers: string[] = [];
 
-  private async _advertiseInterestsIfPublic(): Promise<void> {
+  async _advertiseInterestsIfPublic(): Promise<void> {
     return _advertiseInterestsIfPublic(this._identityContext());
+  }
+
+  /**
+   * Called by the identity runtime whenever the advertised discovery topic
+   * set changes. Propagates the new set to the relay client cycle so the
+   * next `relay.checkin` includes topicHash entries in its `advertisements[]`,
+   * making the topic discoverable via `relay.lookup` (cross-NAT fallback).
+   */
+  private async _notifyAdvertisedDiscoveryTopics(topics: string[]): Promise<void> {
+    setRelayClientAdvertisedTopics(topics);
   }
 
   private _serviceContextDeps(): ServiceContextDeps {
@@ -4100,9 +4122,70 @@ class NodeServiceImpl implements NodeService {
           await Promise.allSettled(ownerIds.map((ownerId) => this.requestPeerProfile(ownerId)));
         },
         loadHumanProfile: () => this._humanProfileStore.loadHumanProfile(),
+        queryRelayLookupByTopic: (params) => this._queryRelayLookupByTopic(params),
       });
     }
     return this._discoveryRuntimeCache;
+  }
+
+  /**
+   * Cross-NAT fallback for `searchPeers`: when the local DHT returns 0
+   * providers, ask our bootstrap relays for the topicHash via `relay.lookup`.
+   * The relay server's roster is indexed by topicHash (set during
+   * `relay.checkin`), so this works without a direct DHT connection.
+   */
+  private async _queryRelayLookupByTopic(params: {
+    topic: string;
+    topicHash: string;
+    maxResults: number;
+  }): Promise<PeerSearchResult[]> {
+    const deps = this._relayClientCycleDeps;
+    if (!deps || !this._mesh) return [];
+    const { filterRelayControlTargets } = await import("@envoymesh/network");
+    const targets = filterRelayControlTargets(deps.bootstrapPeers);
+    if (targets.length === 0) return [];
+    try {
+      const responses = await queryRelayLookupWithDeps(deps, targets, {
+        topicHash: params.topicHash,
+        maxResults: params.maxResults,
+        visibilityScope: "public",
+      });
+      const results: PeerSearchResult[] = [];
+      const trustRecords = await this._trustStore.listTrustRecords();
+      const peerRecords = await this._peerDirectoryStore.listPeerRecords();
+      const trustByPeerId = new Map<string, (typeof trustRecords)[number]>();
+      for (const record of trustRecords) {
+        const peer = peerRecords.find((p) => p.ownerId === record.peerOwnerId);
+        if (peer?.peerId) {
+          trustByPeerId.set(peer.peerId, record);
+        }
+      }
+      const seen = new Set<string>();
+      for (const response of responses) {
+        for (const candidate of response.peers) {
+          if (seen.has(candidate.peerId)) continue;
+          seen.add(candidate.peerId);
+          const trust = trustByPeerId.get(candidate.peerId);
+          const peerRecord = peerRecords.find((p) => p.peerId === candidate.peerId);
+          results.push({
+            nodeId: candidate.peerId,
+            ownerId: candidate.ownerId ?? peerRecord?.ownerId ?? candidate.peerId,
+            displayName: trust?.displayName ?? candidate.peerId.slice(0, 12) + "...",
+            interests: [params.topic],
+            profileVisibility: "public",
+            discoverySource: "relay-roster-topic",
+            trustLevel: trust?.level,
+          });
+        }
+      }
+      return results;
+    } catch (err) {
+      console.warn(
+        `[searchPeers] queryRelayLookupByTopic failed:`,
+        err instanceof Error ? err.message : err,
+      );
+      return [];
+    }
   }
 
   async searchPeers(query: SearchQuery): Promise<PeerSearchResult[]> {
@@ -4493,6 +4576,29 @@ class NodeServiceImpl implements NodeService {
     }
   }
 
+  async getSetupSponsorFriendConfig(): Promise<
+    import("@envoymesh/api").ResolvedSetupSponsorFriend
+  > {
+    const persisted = await this._configStore.load();
+    return resolveEffectiveSetupSponsorFriend({
+      persisted: persisted ?? undefined,
+      nodeBundleDir: process.env.ENVOYMESH_NODE_BUNDLE_DIR,
+    });
+  }
+
+  async runSetupSponsorFriend(): Promise<
+    import("@envoymesh/api").RunSetupSponsorFriendResult
+  > {
+    return runSetupSponsorFriendOnService(this, {
+      loadNodeConfig: () => this._configStore.load(),
+      saveNodeConfig: (config) => this._configStore.save(config),
+      getProfileDir: () => this._profileDir,
+      nodeBundleDir: process.env.ENVOYMESH_NODE_BUNDLE_DIR,
+      assertOnline: () => this._assertOnline(),
+    });
+  }
+
+
   private _refreshBridgeStatusFromConfig(bridgeCfg: BridgeConfig): void {
     const fields = bridgeConfigToStatusFields(bridgeCfg);
     const current = this._bridgeStatus;
@@ -4561,6 +4667,9 @@ class NodeServiceImpl implements NodeService {
   }
 
   getNodeStatus(): NodeStatus {
+    if (this._nodeStatus !== "running" && (this._externalMesh || this._mesh)) {
+      this._nodeStatus = "running";
+    }
     return this._nodeStatus;
   }
 
@@ -4806,6 +4915,18 @@ class NodeServiceImpl implements NodeService {
 
   setBridgeChatHandler(handler: (envelope: EnvoyEnvelope, remotePeerId: string) => Promise<void>): void {
     this._bridgeChatHandler = handler;
+  }
+
+  /**
+   * Wire the relay-book provider used by {@link getConnectionStatus} to keep the
+   * Settings → Network Status panel populated even when no live libp2p circuit
+   * connection is open at probe time. The provider returns the most recent
+   * discovered/verified relay entries (region, addrs).
+   */
+  setRelayBookProvider(
+    provider: () => Array<{ relayId: string; region?: string; addrs: string[] }>,
+  ): void {
+    this._relayBookProvider = provider;
   }
 
   setStyleAdapter(adapter: import("./style-adapter.js").StyleAdapter): void {
@@ -5820,8 +5941,11 @@ class NodeServiceImpl implements NodeService {
     );
   }
 
-  async runOwnerAgentTurn(message: string): Promise<OwnerAgentTurnResult> {
-    return runOwnerAgentTurnViaRuntime(this._runOwnerAgentTurnContext(), message);
+  async runOwnerAgentTurn(
+    message: string,
+    options?: import("@envoymesh/api").RunOwnerAgentTurnOptions,
+  ): Promise<OwnerAgentTurnResult> {
+    return runOwnerAgentTurnViaRuntime(this._runOwnerAgentTurnContext(), message, options);
   }
 
   /** Local H2A turn — Activity row for Assistant lane (Phase 15C / 18). */

@@ -161,6 +161,41 @@ describe("evaluateBondAutonomy", () => {
     expect(result.allowed).toBe(true);
   });
 
+  it("rejects when sponsor proof token mismatches", async () => {
+    const deps = makeDeps({
+      sponsorProofToken: "expected-token",
+      posturePolicy: makePolicy({ requireReferralProof: true }),
+    });
+    const result = await evaluateBondAutonomy(
+      {
+        requesterOwnerId: "envoy:owner:peer",
+        requesterPeerId: "peer-1",
+        requestedLevel: "direct",
+        proofOfContext: "wrong-token",
+      },
+      deps,
+    );
+    expect(result.allowed).toBe(false);
+    expect(result.reason).toContain("sponsor proof");
+  });
+
+  it("accepts when sponsor proof token matches", async () => {
+    const deps = makeDeps({
+      sponsorProofToken: "fleet-secret",
+      posturePolicy: makePolicy({ requireReferralProof: true }),
+    });
+    const result = await evaluateBondAutonomy(
+      {
+        requesterOwnerId: "envoy:owner:peer",
+        requesterPeerId: "peer-1",
+        requestedLevel: "direct",
+        proofOfContext: "fleet-secret",
+      },
+      deps,
+    );
+    expect(result.allowed).toBe(true);
+  });
+
   it("rejects when intro correlation not found", async () => {
     const deps = makeDeps({
       posturePolicy: makePolicy({ requireReferralProof: true }),

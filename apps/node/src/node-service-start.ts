@@ -24,7 +24,7 @@ import { resolveBootstrapAddresses } from "./bootstrap-resolver.js";
 import { EnvoyMesh, filterBootstrapMultiaddrs, type EnvoyMeshOptions } from "@envoymesh/network";
 import { seedAddrsForDiscoveryProfile } from "./peer-discovery-telemetry.js";
 import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key-loader.js";
-import { runRelayClientCycle, startRelayClientScheduler } from "./relay-client-cycle.js";
+import { runRelayClientCycle, startRelayClientScheduler, type RelayClientCycleDeps } from "./relay-client-cycle.js";
 import { startNodeStatsInterval } from "./node-stats-log.js";
 import { DEFAULT_RELAY_CLIENT_CYCLE_INTERVAL_MS } from "@envoymesh/api";
 import type { NodeProfile, NodeStatus, DiscoveryProfile } from "@envoymesh/api";
@@ -97,6 +97,12 @@ export interface StartNodeContext {
   ensureAgentStores(): Promise<boolean>;
   runCapabilityDiscoveryCycle(source: "startup", opts: { connectivityRuntime: ResolvedConnectivityRuntime }): Promise<void>;
   startCapabilityDiscoveryScheduler(connectivityRuntime: ResolvedConnectivityRuntime): void;
+  /**
+   * Persist the relay-client cycle deps so the discovery runtime can issue
+   * `relay.lookup` queries (cross-NAT topic fallback) without reconstructing
+   * the scheduler.
+   */
+  setRelayClientCycleDeps(deps: RelayClientCycleDeps): void;
 }
 
 export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> {
@@ -246,13 +252,14 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
     const discoverySeedStore = ctx.getDiscoverySeedStore();
     if ((config.relayEnabled ?? true) && inboundGuard && discoverySeedStore) {
       ctx.setStopRelayClientScheduler(undefined);
-      const relayDeps = {
+      const relayDeps: RelayClientCycleDeps = {
         mesh: mesh as never,
         profile: ctx.getProfile()!,
         bootstrapPeers,
         inboundGuard,
         discoverySeedStore,
       };
+      ctx.setRelayClientCycleDeps(relayDeps);
       await runRelayClientCycle(relayDeps as never);
       const stopFn = startRelayClientScheduler({
         ...relayDeps,

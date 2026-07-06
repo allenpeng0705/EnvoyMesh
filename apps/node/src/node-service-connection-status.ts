@@ -27,6 +27,8 @@ export interface ConnectionStatusContext {
   hasTerminalManager(): boolean;
   /** Return the current bridge status (or undefined if unset). */
   getBridgeStatus?(): BridgeStatus | undefined;
+  /** Return the relay book entries the node has discovered and verified. */
+  getRelayBook?(): Array<{ relayId: string; region?: string; addrs: string[] }>;
 }
 
 export function getConnectionStatusViaRuntime(
@@ -56,9 +58,55 @@ export function getConnectionStatusViaRuntime(
     online: true,
     peerId: mesh.peerId,
     multiaddrs: mesh.multiaddrs,
-    connectedRelays: mesh.getConnectionStats().circuitPeerIds,
+    connectedRelays: collectConnectedRelayLabels(
+      mesh.getConnectionStats().circuitPeerIds,
+      mesh.multiaddrs,
+      ctx.getRelayBook?.(),
+    ),
     ...base,
   };
+}
+
+/**
+ * Compose the relay labels rendered in the Settings → Network Status panel.
+ *
+ * libp2p `getConnections()` only lists peers with an open TCP session — when
+ * no outbound dial is active the array is empty even though the node is
+ * ready to relay. To avoid the "Offline" flicker, we union three sources:
+ *
+ *   1. live circuit-relay peer IDs from libp2p connection stats
+ *   2. relay hosts already known via our advertised /p2p-circuit multiaddrs
+ *   3. verified relay-book entries (relay.checkin → discovery, persisted)
+ *
+ * Each label is the libp2p peer id (so the panel is consistent across
+ * sources) — duplicate peer ids collapse naturally.
+ */
+function collectConnectedRelayLabels(
+  circuitPeerIds: string[],
+  multiaddrs: string[],
+  relayBook?: Array<{ relayId: string; region?: string; addrs: string[] }>,
+): string[] {
+  const seen = new Set<string>();
+  const labels: string[] = [];
+  const push = (id: string) => {
+    if (!id || seen.has(id)) return;
+    seen.add(id);
+    labels.push(id);
+  };
+  for (const id of circuitPeerIds) push(id);
+  // /p2p-circuit/p2p/<relayPeerId> — the relay's libp2p id
+  for (const maddr of multiaddrs) {
+    const m = maddr.match(/\/p2p-circuit\/p2p\/([^/]+)/);
+    if (m?.[1]) push(m[1]);
+  }
+  // Relay book entries survive across restarts and dial churn — show them
+  // last so live connections still lead.
+  if (relayBook?.length) {
+    for (const entry of relayBook) {
+      if (entry.relayId) push(entry.relayId);
+    }
+  }
+  return labels;
 }
 
 /* ---------- bridge + openclaw status ---------- */

@@ -42,6 +42,9 @@
       "import": "./dist/discovery-location.js"
     }
   },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
   "dependencies": {
     "@envoymesh/identity": "0.1.0",
     "@envoymesh/protocol": "0.1.0",

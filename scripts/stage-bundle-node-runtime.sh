@@ -42,7 +42,7 @@ copy_workspace_pkg() {
 }
 
 echo "  Staging @envoymesh workspace packages..."
-for pkg in protocol identity bonds network vault local-store api models rag ipfs-helia; do
+for pkg in protocol identity bonds network vault local-store api models rag ipfs-helia openclaw-runtime; do
   copy_workspace_pkg "$pkg"
 done
 
@@ -85,6 +85,13 @@ fi
 
 if [ -f "$ROOT/envoymesh.node.example.yaml" ]; then
   cp "$ROOT/envoymesh.node.example.yaml" "$DEST/" 2>/dev/null || true
+fi
+
+if [ -f "$ROOT/bundled-sponsor-friend.json" ]; then
+  echo "  Staging bundled sponsor friend config..."
+  cp "$ROOT/bundled-sponsor-friend.json" "$DEST/bundled-sponsor-friend.json"
+elif [ -f "$ROOT/bundled-sponsor-friend.json.example" ] && [ "${ENVOYMESH_COPY_SPONSOR_EXAMPLE:-}" = "1" ]; then
+  cp "$ROOT/bundled-sponsor-friend.json.example" "$DEST/bundled-sponsor-friend.json"
 fi
 
 echo "  ✓ Node runtime staged at $DEST"
