@@ -266,6 +266,42 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
           setCodeInviteHint("pair");
           return;
         }
+        if (parsed.kind === "invite") {
+          // Company / kiosk invite (Phase 35A/35D joiner side): redeem the
+          // bearer token, which seeds connectivity + sends a hello to the
+          // issuer so the bond is established.
+          setCodeInviteApplyBusy(true);
+          try {
+            const result = await nodeService.redeemCompanyInvite({
+              token: parsed.token,
+              wsUrl: parsed.wsUrl,
+              ownerId: parsed.ownerId,
+            });
+            if (result.ok) {
+              setCodeInviteApplyOk(true);
+              setCodeInviteApplyMsg(t("discover.paste.inviteRedeemed"));
+              await refreshNodeConfig();
+            } else {
+              setCodeInviteApplyOk(false);
+              setCodeInviteApplyMsg(
+                result.reason
+                  ? t("discover.paste.inviteRedeemedWithReason", { reason: result.reason })
+                  : t("discover.paste.inviteRedeemedFailed"),
+              );
+            }
+          } catch (error) {
+            setCodeInviteApplyOk(false);
+            setCodeInviteApplyMsg(error instanceof Error ? error.message : String(error));
+          } finally {
+            setCodeInviteApplyBusy(false);
+          }
+          setPasteResults([]);
+          return;
+        } else if (parsed.kind === "invite-invalid") {
+          setPasteResults([]);
+          setCodeInviteHint("invite-invalid");
+          return;
+        }
         if (parsed.kind === "contact") {
           if (parsed.wanJoinToken) {
             setCodeInviteApplyBusy(true);
@@ -582,6 +618,10 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
         ) : isPaste && codeInviteHint === "join-invalid" ? (
           <p className="discover-status discover-status--error" role="status">
             {t("discover.paste.joinInvalidHint")}
+          </p>
+        ) : isPaste && codeInviteHint === "invite-invalid" ? (
+          <p className="discover-status discover-status--error" role="status">
+            {t("discover.paste.inviteInvalidHint")}
           </p>
         ) : null}
 

@@ -3124,8 +3124,26 @@ textarea::placeholder {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  height: 100vh;
+  /*
+   * `safe center` keeps the wizard vertically centered when it fits the
+   * viewport (preserving the original look for the short profile/ai steps),
+   * but falls back to top alignment when content overflows so the top of
+   * the form is never clipped. Previously `justify-content: center` alone
+   * pushed the taller interests step up and out of view with no way to
+   * scroll back to it.
+   */
+  justify-content: safe center;
+  /*
+   * Fill the parent `.app` (height:100vh) and scroll internally. Using
+   * height:100% + overflow-y:auto makes THIS element the scroll container,
+   * so the body never scrolls and the form scrolls within the viewport.
+   * `flex: 1` and `min-height: 0` together defeat the default flex-item
+   * `min-height: auto` behavior that would otherwise block the inner scroll.
+   */
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
   padding: 2rem;
   background: linear-gradient(135deg, var(--color-primary-subtle) 0%, var(--color-bg) 50%, var(--color-primary-subtle) 100%);
 }
@@ -5203,6 +5221,26 @@ button:disabled {
 }
 
 .topic-chip:hover {
+  background: var(--color-primary);
+  color: var(--color-primary-on);
+  border-color: var(--color-primary);
+}
+
+/*
+ * Selected state — used by SetupView's interest picker (and any future
+ * topic-chip selection UI). Persistent selection must read distinctly from
+ * the transient :hover, so the selected chip keeps the solid primary fill
+ * even while hovered. Without this rule the `topic-chip--active` class
+ * applied in SetupView was a no-op and selected chips looked identical to
+ * unselected ones.
+ */
+.topic-chip--active {
+  background: var(--color-primary);
+  color: var(--color-primary-on);
+  border-color: var(--color-primary);
+}
+
+.topic-chip--active:hover {
   background: var(--color-primary);
   color: var(--color-primary-on);
   border-color: var(--color-primary);

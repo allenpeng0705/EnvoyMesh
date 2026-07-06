@@ -134,23 +134,60 @@ function nodeDevSidecarPlugin(): Plugin {
   };
 }
 
+/**
+ * Keep `@capacitor/geolocation` external in BOTH dev and build.
+ *
+ * This package only resolves inside the Capacitor native shell (it's a
+ * dependency of apps/mobile, not apps/social). The web/Tauri Social app
+ * reaches it via a runtime-guarded dynamic `import("@capacitor/geolocation")`
+ * in src/lib/geolocation-adapter.ts — guarded by
+ * `window.Capacitor.isNativePlatform()` so it's never actually evaluated on
+ * web/Tauri.
+ *
+ * Vite's production build respects `build.rollupOptions.external`, but the dev
+ * server's `vite:import-analysis` plugin resolves the specifier eagerly and
+ * throws "Failed to resolve import" — even with the vite-ignore pragma inside
+ * the dynamic import. The reliable workaround (per vitejs/vite#6582, #22416)
+ * is to mark the dep external in `resolveId` (so dev emits the bare specifier
+ * as-is) AND add it to `optimizeDeps.exclude` (so esbuild's pre-bundler skips
+ * it too).
+ */
+function externalizeCapacitorGeolocation(): Plugin {
+  const EXTERNAL_ID = "@capacitor/geolocation";
+  return {
+    name: "envoymesh-externalize-capacitor-geolocation",
+    enforce: "pre",
+    resolveId(source) {
+      if (source === EXTERNAL_ID) {
+        return { id: EXTERNAL_ID, external: true };
+      }
+      return null;
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [nodeDevSidecarPlugin(), react(), wasm(), topLevelAwait()],
+  plugins: [
+    nodeDevSidecarPlugin(),
+    react(),
+    wasm(),
+    topLevelAwait(),
+    externalizeCapacitorGeolocation(),
+  ],
   root: "src",
   /** loro-crdt WASM bundler uses top-level-await (Phase 15E contact notes). */
   build: {
     target: "esnext",
     rollupOptions: {
-      // @capacitor/geolocation is a Capacitor plugin that only resolves inside
-      // the native iOS/Android shell (declared in apps/mobile). The web/Tauri
-      // build never reaches this import — it sits behind a runtime
-      // `isNativePlatform()` guard in src/lib/geolocation-adapter.ts and falls
-      // back to navigator.geolocation. Mark it external so Rollup doesn't try
-      // to bundle it for the web build.
+      // Mirrors the dev-server externalization above for production parity.
       external: ["@capacitor/geolocation"],
     },
   },
   optimizeDeps: {
+    // Prevent esbuild's pre-bundler from trying to process a package that
+    // isn't installed in apps/social. Without this the resolveId override
+    // gets bypassed.
+    exclude: ["@capacitor/geolocation"],
     esbuildOptions: {
       target: "esnext",
     },

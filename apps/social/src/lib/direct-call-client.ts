@@ -565,6 +565,10 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.revokeCompanyInvite(inviteId);
   }
 
+  async redeemCompanyInvite(params: import("@envoymesh/api").RedeemCompanyInviteParams) {
+    return this._ns.redeemCompanyInvite(params);
+  }
+
   async syncPairingKioskFromConfig() {
     return this._ns.syncPairingKioskFromConfig();
   }

@@ -37,6 +37,10 @@ import {
   TaskChainPartialPayloadSchema,
   TaskChainProposePayloadSchema,
   TaskChainReportPayloadSchema,
+  ChainHandoffRequestPayloadSchema,
+  ChainHandoffDelegatePayloadSchema,
+  ChainRelayRouteSchema,
+  ChainArbitrationPayloadSchema,
   evaluateEnvelopeRolePolicy,
   type EnvoyEnvelope,
   type TaskChainAcceptPayload,
@@ -48,6 +52,10 @@ import {
   type TaskChainPartialPayload,
   type TaskChainProposePayload,
   type TaskChainReportPayload,
+  type ChainHandoffRequestPayload,
+  type ChainHandoffDelegatePayload,
+  type ChainRelayRoute,
+  type ChainArbitrationPayload,
 } from "@envoymesh/protocol";
 
 import type {
@@ -80,6 +88,18 @@ const WORKER_RECEIVE_INTENTS = new Set<string>([
   "task.chain.propose",
   "task.chain.accept",
   "task.chain.cancel",
+]);
+
+/**
+ * Phase 40E — Cross-orchestrator / cross-home intents. All are `agent↔agent`
+ * (enforced by the role-policy table) and require `chain.orchestrate` on the
+ * recipient, since both sides are acting as orchestrators.
+ */
+const HANDOFF_INTENTS = new Set<string>([
+  "task.chain.handoff",
+  "task.chain.delegate",
+  "task.chain.relay",
+  "task.chain.arbitration",
 ]);
 
 // ---------------------------------------------------------------------------
@@ -125,6 +145,13 @@ export async function dispatchChainEnvelope(
     }
   } else if (WORKER_RECEIVE_INTENTS.has(intent)) {
     // Worker intents are agent↔agent per role policy (already enforced above).
+  } else if (HANDOFF_INTENTS.has(intent)) {
+    // Phase 40E — orchestrator↔orchestrator intents. Require chain.orchestrate.
+    if (!deps.nodeCapabilities.includes("chain.orchestrate")) {
+      const reason: ChainInboundRejectReason = "missing_orchestrator_capability";
+      await emitDeny(deps, envelope, reason);
+      return { ok: false, reason };
+    }
   } else if (intent === "task.chain.heartbeat") {
     // Orchestrator-originated heartbeat to a worker — no chain.orchestrate required.
   } else if (intent !== "task.chain.report") {
@@ -166,6 +193,14 @@ function parsePayloadByIntent(
       return wrap(TaskChainHeartbeatPayloadSchema, payload, "malformed_heartbeat_payload");
     case "task.chain.report":
       return wrap(TaskChainReportPayloadSchema, payload, "malformed_report_payload");
+    case "task.chain.handoff":
+      return wrap(ChainHandoffRequestPayloadSchema, payload, "malformed_handoff_payload");
+    case "task.chain.delegate":
+      return wrap(ChainHandoffDelegatePayloadSchema, payload, "malformed_delegate_payload");
+    case "task.chain.relay":
+      return wrap(ChainRelayRouteSchema, payload, "malformed_relay_payload");
+    case "task.chain.arbitration":
+      return wrap(ChainArbitrationPayloadSchema, payload, "malformed_arbitration_payload");
     default:
       return { ok: false, reason: "unknown_chain_intent" };
   }
@@ -192,7 +227,11 @@ type ChainPayloadUnion =
   | TaskChainMergePayload
   | TaskChainCancelPayload
   | TaskChainHeartbeatPayload
-  | TaskChainReportPayload;
+  | TaskChainReportPayload
+  | ChainHandoffRequestPayload
+  | ChainHandoffDelegatePayload
+  | ChainRelayRoute
+  | ChainArbitrationPayload;
 
 // ---------------------------------------------------------------------------
 // Internal — handler dispatch
@@ -247,6 +286,29 @@ async function dispatchToHandler(
         );
       case "task.chain.report":
         return await deps.handleOwnerReport(envelope, payload as TaskChainReportPayload);
+      case "task.chain.handoff":
+        if (!deps.handleHandoffRequest) {
+          return { ok: false, reason: "no_handoff_handler" };
+        }
+        return await deps.handleHandoffRequest(
+          envelope,
+          payload as ChainHandoffRequestPayload,
+        );
+      case "task.chain.delegate":
+        if (!deps.handleDelegate) {
+          return { ok: false, reason: "no_handoff_handler" };
+        }
+        return await deps.handleDelegate(envelope, payload as ChainHandoffDelegatePayload);
+      case "task.chain.relay":
+        if (!deps.handleRelay) {
+          return { ok: false, reason: "no_handoff_handler" };
+        }
+        return await deps.handleRelay(envelope, payload as ChainRelayRoute);
+      case "task.chain.arbitration":
+        if (!deps.handleArbitration) {
+          return { ok: false, reason: "no_handoff_handler" };
+        }
+        return await deps.handleArbitration(envelope, payload as ChainArbitrationPayload);
       default:
         return { ok: false, reason: "unknown_chain_intent" };
     }
@@ -286,4 +348,4 @@ async function emitDeny(
 // Re-exports for callers
 // ---------------------------------------------------------------------------
 
-export { ORCHESTRATOR_RECEIVE_INTENTS, WORKER_RECEIVE_INTENTS };
+export { ORCHESTRATOR_RECEIVE_INTENTS, WORKER_RECEIVE_INTENTS, HANDOFF_INTENTS };

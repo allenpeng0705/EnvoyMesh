@@ -52,6 +52,8 @@ interface AiMessage {
 export interface AIChatPanelProps {
   onOpenActivity?: () => void;
   onOpenInbox?: () => void;
+  /** Navigate to the Chains tab (used by the inline chain-report card). */
+  onOpenChains?: () => void;
 }
 
 function domainLabel(domain: OwnerAgentDomain, t: TFunction): string {
@@ -203,7 +205,7 @@ function groupByDate(msgs: AiMessage[]): [string, AiMessage[]][] {
   return [...groups.entries()];
 }
 
-export function AIChatPanel({ onOpenActivity, onOpenInbox }: AIChatPanelProps = {}) {
+export function AIChatPanel({ onOpenActivity, onOpenInbox, onOpenChains }: AIChatPanelProps = {}) {
   const t = useT();
   const nodeService = useNodeService();
   const toast = useToast();
@@ -664,6 +666,7 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox }: AIChatPanelProps = 
                               <ChainReportInlineCard
                                 chainId={msg.chainReport.chainId}
                                 report={msg.chainReport.report}
+                                onOpenChains={onOpenChains}
                               />
                             ) : (
                               <AnswerRenderer

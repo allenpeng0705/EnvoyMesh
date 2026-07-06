@@ -123,6 +123,10 @@ export function computeChainBid(input: ComputeChainBidInput): ComputeChainBidRes
     proposedCostUsd: Number(rawCost.toFixed(6)),
     proposedEtaAt: new Date(proposedEtaMs).toISOString(),
     bidExpiresAt: new Date(bidExpiresMs).toISOString(),
+    // Surface the capability the worker is offering so the orchestrator's
+    // composite ranker can score precision against the subtask's
+    // requiredCapability without falling back to the peer-id proxy.
+    capability: subtask.requiredCapability,
     rationale: `${subtask.requiredCapability}: $${Number(rawCost.toFixed(2))} · ~${etaMinutes} min`,
     createdAt: now.toISOString(),
   });
@@ -222,11 +226,15 @@ export function bidScore(
   const repNorm = Math.max(0, Math.min(1, repScore / 100));
 
   // Freshness
-  // Precision: check if the worker's bid matches the required capability
-  // If no requiredCapability is provided, default to 1 (no penalty)
-  const precision = input.requiredCapability
-    ? capabilityMatchPrecision(bid.workerPeerId, input.requiredCapability) // Note: we use workerPeerId as a proxy for capability here since bids don't carry capability
-    : 1;
+  // Precision: check if the worker's offered capability matches the required
+  // capability. Prefer `bid.capability` (Phase 40 protocol field); fall back
+  // to the legacy `workerPeerId` proxy when an older worker omitted it, so we
+  // don't regress ranking for peers that haven't upgraded yet.
+  let precision = 1;
+  if (input.requiredCapability) {
+    const offered = bid.capability ?? bid.workerPeerId;
+    precision = capabilityMatchPrecision(offered, input.requiredCapability);
+  }
 
   const score =
     weights.cost * costNorm +

@@ -2,6 +2,7 @@ import "./ensure-node-version.js";
 import "./dom-event-polyfill.js";
 import { evaluateCapability } from "@envoymesh/bonds";
 import { createAgentCardAutoFetcher } from "./agent-card-auto-fetcher.js";
+import { matchPeerInterests } from "./connection-suggester.js";
 import {
   auditEventForDispatcherDecision,
   buildRelayManagerSnapshot,
@@ -2147,8 +2148,49 @@ async function handleInboundMeshMessage({
               autonomousKillSwitch: cfg?.autonomousKillSwitch ?? false,
               getDailyAutoBondCount: () => bondAutonomyDailyCounter.getCount(),
               incrementDailyAutoBondCount: () => bondAutonomyDailyCounter.increment(),
-              hasIntroCorrelation: async () => false,
-              getTrustOverlapScore: async () => 0,
+              hasIntroCorrelation: async (requesterOwnerId: string, _responderOwnerId: string) => {
+                // Real implementation: a hello is referral-vouched when there's
+                // a pending social-intro proposal whose candidate is this
+                // requester and whose introCorrelationId matches the one
+                // carried in the bond.request payload.
+                try {
+                  const proposals = await nodeService.listPendingSocialIntroProposals();
+                  return proposals.some(
+                    (p) =>
+                      p.candidateOwnerId === requesterOwnerId &&
+                      Boolean(p.introCorrelationId),
+                  );
+                } catch {
+                  return false;
+                }
+              },
+              getTrustOverlapScore: async (requesterOwnerId: string, responderOwnerId: string) => {
+                // Real implementation: compute interest/capability overlap
+                // between the owner's profile and the requester's cached
+                // peer profile, reusing the connection-suggester matcher.
+                try {
+                  if (requesterOwnerId === responderOwnerId) return 1;
+                  const ownerProfile = await nodeService.getHumanProfile();
+                  const peerView = await nodeService.getPeerProfile(requesterOwnerId);
+                  if (!ownerProfile || !peerView) return 0;
+                  const ownerTopics = [
+                    ...(ownerProfile.hobbies ?? []),
+                    ...(ownerProfile.knowledge ?? []),
+                  ];
+                  const peerProfile = peerView.profile;
+                  const peerTopics = [
+                    ...(peerProfile.hobbies ?? []),
+                    ...(peerProfile.knowledge ?? []),
+                  ];
+                  const peerCaps = (peerProfile.capabilities ?? []).map((c) =>
+                    "tag" in c ? c.tag : "descriptor" in c ? c.descriptor : "",
+                  );
+                  const { score } = matchPeerInterests(ownerTopics, peerTopics, peerCaps);
+                  return score;
+                } catch {
+                  return 0;
+                }
+              },
             });
             return result.accepted ? result : { accepted: false as const };
           }

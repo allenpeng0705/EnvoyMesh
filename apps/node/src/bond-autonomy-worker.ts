@@ -73,8 +73,13 @@ export async function evaluateBondAutonomy(
   },
   deps: BondAutonomyWorkerDeps,
 ): Promise<BondAutonomyEvalResult> {
-  if (!deps.enabled || !deps.posturePolicy || !deps.agentIdentity) {
-    return { allowed: false, reason: "bond_autonomy not enabled or no agent identity" };
+  // NOTE: `agentIdentity` is intentionally NOT required here. The inbound
+  // auto-accept path (`tryBondAutonomyInboundAutoAccept`) passes `null`
+  // because it writes the trust record directly rather than sending a wire
+  // `bond.accept` envelope. The agent identity is only needed for the
+  // outbound send path (`sendAgentBondAccept`), which has its own guard.
+  if (!deps.enabled || !deps.posturePolicy) {
+    return { allowed: false, reason: "bond_autonomy not enabled or no policy" };
   }
 
   const policy = deps.posturePolicy;

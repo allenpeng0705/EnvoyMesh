@@ -1,8 +1,17 @@
 export const agentNetworkSettingsMessages = {
-  title: "Agent Network",
+  title: "Devices & Fleet",
   intro:
     "Configure how this node bonds with other fleet members. Four paths are available — pick the one that fits your team. All four are **off by default** until you turn them on.",
   quickReferenceTitle: "Which path should I use?",
+  groupAutoBondTitle: "Auto-bond (sponsor node + installer)",
+  groupAutoBondDesc:
+    "These two work as a pair: the sponsor node auto-accepts hellos that carry a matching proof token, and installer builds send that token on first launch. Set the **same token** on both sides.",
+  groupInvitesTitle: "Invites",
+  groupInvitesDesc:
+    "Mint links a colleague can paste into their Social UI to join this node.",
+  groupOperatorTitle: "Operator tools",
+  groupOperatorDesc:
+    "Pre-stage trust for many nodes at once, or auto-bond everyone on the office Wi-Fi.",
   quickReference: {
     companyInvites:
       "Long-lived bearer links. Best when members are remote or the LAN is unreliable. Each invite is single-use.",
@@ -87,6 +96,25 @@ export const agentNetworkSettingsMessages = {
     labelLabel: "Manifest label (optional)",
     membersLabel:
       "Members as JSON: an array of { ownerId, deviceId, devicePublicKeyPem, role, trustLevel, displayName? }",
+    roleTemplateLabel: "Start from a role template:",
+    roleTemplate: {
+      operator: {
+        label: "Operator",
+        hint: "Full trust — co-admin who can manage the fleet. trustLevel: direct.",
+      },
+      engineer: {
+        label: "Engineer",
+        hint: "Standard team member — chat, share, chains. trustLevel: direct.",
+      },
+      contractor: {
+        label: "Contractor",
+        hint: "Introduced member — limited access, introduced-only sensitivity. trustLevel: referred.",
+      },
+      visitor: {
+        label: "Visitor",
+        hint: "Minimal trust — public-tier access only. trustLevel: public.",
+      },
+    },
     signButton: "Sign manifest with this node's owner key",
     signing: "Signing…",
     importButton: "Import on this node",

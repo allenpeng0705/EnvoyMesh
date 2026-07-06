@@ -70,6 +70,8 @@ import type {
   CreateCompanyInviteResult,
   ListCompanyInvitesResult,
   RevokeCompanyInviteResult,
+  RedeemCompanyInviteParams,
+  RedeemCompanyInviteResult,
   CreateFleetManifestInput,
   CreateFleetManifestResult,
   ImportFleetManifestOutcome,
@@ -810,7 +812,9 @@ import {
 } from "./node-service-handlers-misc-delegations.js";
 
 import {
+  _advertiseInterests,
   _advertiseInterestsIfPublic,
+  _advertisePublicDiscoveryTopics,
   _probeNearbyPeerProfileAfterDiscovery,
   cacheDidContactKeyViaRuntime,
   exportDidDocumentViaRuntime,
@@ -2042,6 +2046,28 @@ class NodeServiceImpl implements NodeService {
 
   async _advertiseInterestsIfPublic(): Promise<void> {
     return _advertiseInterestsIfPublic(this._identityContext());
+  }
+
+  /**
+   * Low-level DHT topic advertisement. Bridges the module-level
+   * `_advertisePublicDiscoveryTopics` so internal callers (and tests) can
+   * drive a real instance's IdentityContext without reconstructing it.
+   * `interests` are advertised verbatim (no `interest:` normalization) —
+   * production code routes raw hobbies/knowledge through
+   * `computePublicDiscoveryTopics` first.
+   */
+  async _advertisePublicDiscoveryTopics(input: {
+    interests: string[];
+    username: string;
+    locationTopics: string[];
+    capabilityTopics?: string[];
+  }): Promise<void> {
+    return _advertisePublicDiscoveryTopics(this._identityContext(), input);
+  }
+
+  /** @deprecated bridge to `_advertisePublicDiscoveryTopics` — kept for legacy tests. */
+  async _advertiseInterests(interests: string[], username: string): Promise<void> {
+    return _advertiseInterests(this._identityContext(), interests, username);
   }
 
   /**
@@ -5380,6 +5406,62 @@ class NodeServiceImpl implements NodeService {
 
   async revokeCompanyInvite(inviteId: string): Promise<RevokeCompanyInviteResult> {
     return revokeCompanyInviteViaPublicRuntime(this._fleetPublicDeps(), inviteId);
+  }
+
+  async redeemCompanyInvite(
+    params: RedeemCompanyInviteParams,
+  ): Promise<RedeemCompanyInviteResult> {
+    const token = params.token?.trim();
+    if (!token) {
+      return { ok: false, reason: "missing-token" };
+    }
+    const targetOwnerId = params.ownerId?.trim();
+    if (!targetOwnerId) {
+      return { ok: false, reason: "missing-owner-id" };
+    }
+
+    // 1) Seed connectivity so this node can reach the issuer. The invite's
+    //    wsUrl points at the issuer's home node; record it as a manual
+    //    discovery seed so subsequent searchPeers/sendHello can dial it.
+    const wsUrl = params.wsUrl?.trim();
+    if (wsUrl && this._discoverySeedStore) {
+      try {
+        await this._discoverySeedStore.upsertMany([wsUrl], "manual-bootstrap");
+      } catch (err) {
+        console.warn("[redeemCompanyInvite] seed upsert failed:", err);
+      }
+    }
+
+    // 2) Send a hello to the issuer's owner to establish the bond. Mirrors
+    //    the working Setup Sponsor Friend flow.
+    try {
+      const humanProfile = await this._humanProfileStore.loadHumanProfile();
+      const helloProfile = {
+        displayName: humanProfile?.displayName ?? "Envoy User",
+        bio: humanProfile?.bio ?? "",
+        interests: [
+          ...(humanProfile?.hobbies ?? []),
+          ...(humanProfile?.knowledge ?? []),
+        ],
+        whatShares: [],
+      };
+      const helloMessage =
+        params.helloMessage?.trim() || "Hi — I'd like to join your fleet.";
+      const hello = await this.sendHello(targetOwnerId, helloProfile, helloMessage, {
+        proofOfContext: token,
+      });
+      return {
+        ok: true,
+        ownerId: targetOwnerId,
+        helloMessageId: hello.messageId,
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        ownerId: targetOwnerId,
+        reason: err instanceof Error ? err.message : String(err),
+      };
+    }
   }
 
   async syncPairingKioskFromConfig(): Promise<void> {

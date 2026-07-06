@@ -10,9 +10,10 @@ export interface H2AChannelViewProps {
   onBackToChats?: () => void;
   onOpenActivity?: () => void;
   onOpenInbox?: () => void;
+  onOpenChains?: () => void;
 }
 
-export function H2AChannelView({ onBackToChats, onOpenActivity, onOpenInbox }: H2AChannelViewProps) {
+export function H2AChannelView({ onBackToChats, onOpenActivity, onOpenInbox, onOpenChains }: H2AChannelViewProps) {
   const t = useT();
   const nodeService = useNodeService();
   const [activity, setActivity] = useState<AgentActivityRecord[]>([]);
@@ -173,7 +174,7 @@ export function H2AChannelView({ onBackToChats, onOpenActivity, onOpenInbox }: H
       </aside>
 
       <section className="h2a-channel-main chat-area">
-        <AIChatPanel onOpenActivity={onOpenActivity} onOpenInbox={onOpenInbox} />
+        <AIChatPanel onOpenActivity={onOpenActivity} onOpenInbox={onOpenInbox} onOpenChains={onOpenChains} />
       </section>
       </div>
     </div>

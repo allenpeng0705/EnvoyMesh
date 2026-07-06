@@ -20,6 +20,12 @@ import type {
   TaskChainProposePayload,
   TaskChainReportPayload,
 } from "@envoymesh/protocol";
+import type {
+  ChainHandoffRequestPayload,
+  ChainHandoffDelegatePayload,
+  ChainArbitrationPayload,
+} from "@envoymesh/protocol";
+import type { ChainRelayRoute } from "@envoymesh/protocol";
 
 /**
  * Minimal structural type for the bits of `ChainState` that the inbound
@@ -50,6 +56,11 @@ export type ChainInboundRejectReason =
   | "malformed_cancel_payload"
   | "malformed_heartbeat_payload"
   | "malformed_report_payload"
+  | "malformed_handoff_payload"
+  | "malformed_delegate_payload"
+  | "malformed_relay_payload"
+  | "malformed_arbitration_payload"
+  | "no_handoff_handler"
   | "handler_exception"
   | "handler_denied";
 
@@ -134,5 +145,28 @@ export interface ChainInboundDeps {
   handleOwnerReport: (
     envelope: EnvoyEnvelope,
     payload: TaskChainReportPayload,
+  ) => Promise<ChainInboundDecision>;
+
+  // Phase 40E — Cross-orchestrator handoff / arbitration handlers.
+  // Optional: when unset, the dispatcher rejects the matching intent with
+  // `no_handoff_handler` instead of `unknown_chain_intent`, so callers can
+  // distinguish "not implemented here" from "not a chain intent at all".
+  // Wired in `node-service-chain-orchestration.ts` once the runtime context
+  // exposes the handoff store + arbitration store.
+  handleHandoffRequest?: (
+    envelope: EnvoyEnvelope,
+    payload: ChainHandoffRequestPayload,
+  ) => Promise<ChainInboundDecision>;
+  handleDelegate?: (
+    envelope: EnvoyEnvelope,
+    payload: ChainHandoffDelegatePayload,
+  ) => Promise<ChainInboundDecision>;
+  handleRelay?: (
+    envelope: EnvoyEnvelope,
+    payload: ChainRelayRoute,
+  ) => Promise<ChainInboundDecision>;
+  handleArbitration?: (
+    envelope: EnvoyEnvelope,
+    payload: ChainArbitrationPayload,
   ) => Promise<ChainInboundDecision>;
 }

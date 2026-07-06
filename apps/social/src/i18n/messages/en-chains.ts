@@ -20,7 +20,7 @@ export const chainsMessages = {
     unknown: "Unknown",
   },
   active: {
-    empty: "No active chains. Ask EnvoyAI to plan a multi-step goal to start one.",
+    empty: "No active chains yet. Click \"New chain\" to decompose a goal across your bonded contacts' agents.",
     progress: "{partial}/{awarded} of {total} subtasks",
     cancel: "Cancel",
     cancelTitle: "Cancel this chain",
@@ -28,6 +28,7 @@ export const chainsMessages = {
     cancelConfirmMessage: "Workers will be notified and the synthesis will stop.",
     cancelled: "Chain cancelled",
     cancelFailed: "Failed to cancel chain",
+    manage: "Manage",
   },
   reports: {
     empty: "No reports yet.",
@@ -61,6 +62,11 @@ export const chainsMessages = {
   detail: {
     empty: "Select a chain on the left to see its report.",
     pending: "This chain is still in progress. The published report will appear here once synthesis finishes.",
+    bidsTitle: "Live bids",
+    budgetTitle: "Budget",
+    loadFailed: "Could not load chain state.",
+    finalized: "This chain is complete — see the report.",
+    cancelled: "This chain was cancelled.",
   },
   tree: {
     title: "Subtask tree",
@@ -121,6 +127,8 @@ export const chainsMessages = {
     countering: "Rebroadcasting…",
     counterCancel: "Cancel",
     counterInvalid: "Ceiling must be a positive number.",
+    counterSent: "Counter-bid sent — waiting for new bids",
+    counterFailed: "Counter-bid failed",
   },
   rebalance: {
     spent: "Spent ${spent} / ${max}",
@@ -149,6 +157,18 @@ export const chainsMessages = {
     previewFailed: "Could not preview plan",
     runAsChain: "Run as chain",
     exportCsv: "Export costs (CSV)",
+    newChain: "New chain",
+    composerLabel: "What do you want your agents to accomplish?",
+    composerPlaceholder: "e.g. Research the latest developments in local LLMs and summarize the top 3",
+    preview: "Preview plan",
+    template: {
+      research: "Research a topic",
+      researchGoal: "Research the latest developments in {topic} and summarize the key findings",
+      summarize: "Summarize a document",
+      summarizeGoal: "Summarize this document and extract the 5 most important action items",
+      askNetwork: "Ask my network",
+      askNetworkGoal: "Ask my bonded contacts what tools they recommend for {topic}",
+    },
   },
   recipes: {
     save: "Save as recipe",

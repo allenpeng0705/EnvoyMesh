@@ -278,6 +278,9 @@ export interface NodeServiceClient {
   ): Promise<import("@envoymesh/api").CreateCompanyInviteResult>;
   listCompanyInvites(): Promise<import("@envoymesh/api").ListCompanyInvitesResult>;
   revokeCompanyInvite(inviteId: string): Promise<import("@envoymesh/api").RevokeCompanyInviteResult>;
+  redeemCompanyInvite(
+    params: import("@envoymesh/api").RedeemCompanyInviteParams,
+  ): Promise<import("@envoymesh/api").RedeemCompanyInviteResult>;
   syncPairingKioskFromConfig(): Promise<void>;
   getPairingKioskStatus(): Promise<import("@envoymesh/api").PairingKioskStatus>;
   importFleetManifest(
@@ -1000,6 +1003,14 @@ function createWsNodeServiceClient(
       return wsClient.rpc("revokeCompanyInvite", { inviteId }) as Promise<
         import("@envoymesh/api").RevokeCompanyInviteResult
       >;
+    },
+    async redeemCompanyInvite(
+      params: import("@envoymesh/api").RedeemCompanyInviteParams,
+    ) {
+      return wsClient.rpc(
+        "redeemCompanyInvite",
+        params as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").RedeemCompanyInviteResult>;
     },
     async syncPairingKioskFromConfig() {
       return wsClient.rpc("syncPairingKioskFromConfig") as Promise<void>;

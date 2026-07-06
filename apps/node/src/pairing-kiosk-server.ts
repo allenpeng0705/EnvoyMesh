@@ -24,6 +24,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { createHash, timingSafeEqual } from "node:crypto";
 import type { AddressInfo } from "node:net";
+import QRCode from "qrcode";
 
 const DEFAULT_KIOSK_BIND = "127.0.0.1";
 const DEFAULT_KIOSK_PORT = 3737;
@@ -102,19 +103,20 @@ const DEFAULT_HTML = (params: { postPairUrl: string }): string => `<!doctype htm
       button { padding: 0.6rem 1rem; font-size: 1rem; }
       pre  { background: #f4f4f4; padding: 0.6rem; overflow-x: auto; }
       .muted { color: #666; font-size: 0.85rem; }
+      #result svg { width: 220px; height: 220px; image-rendering: pixelated; }
     </style>
   </head>
   <body>
     <h1>EnvoyMesh Pairing Kiosk</h1>
     <p>This page is hosted by an EnvoyMesh home node. Click the button to mint a one-shot company invite and copy the URI into your Social UI.</p>
     <button id="pair">Pair this device</button>
-    <pre id="result" hidden></pre>
+    <div id="result" hidden></div>
     <p class="muted">POST ${params.postPairUrl}</p>
     <script>
       document.getElementById("pair").addEventListener("click", async () => {
         const out = document.getElementById("result");
         out.hidden = false;
-        out.textContent = "Requesting invite…";
+        out.innerHTML = "<p>Requesting invite…</p>";
         try {
           const resp = await fetch(${JSON.stringify(params.postPairUrl)}, {
             method: "POST",
@@ -122,13 +124,21 @@ const DEFAULT_HTML = (params: { postPairUrl: string }): string => `<!doctype htm
             body: JSON.stringify({}),
           });
           if (!resp.ok) {
-            out.textContent = "Error " + resp.status + ": " + (await resp.text());
+            out.innerHTML = "<p>Error " + resp.status + ": " + (await resp.text()) + "</p>";
             return;
           }
           const data = await resp.json();
-          out.textContent = "envoy://invite?token=" + data.token + "\\n\\nExpires: " + data.expiresAt + "\\nInvite ID: " + data.inviteId + "\\n\\nCopy the URI above into your Social UI to complete pairing.";
+          const uri = "envoy://invite?token=" + data.token;
+          // Prefer the QR code (scan with phone); fall back to text URI.
+          const qrHtml = data.qrSvg
+            ? '<div style="background:#fff;padding:12px;display:inline-block;margin-bottom:8px">' + data.qrSvg + '</div><p class="muted">Scan with your phone, or copy the link below.</p>'
+            : '<p class="muted">No QR available — copy the link below.</p>';
+          out.innerHTML = qrHtml +
+            '<pre>' + uri + '</pre>' +
+            '<p class="muted">Expires: ' + data.expiresAt + '<br>Invite ID: ' + data.inviteId + '</p>' +
+            '<p>Open EnvoyMesh → Discover → Paste a contact link, then paste the URI above.</p>';
         } catch (e) {
-          out.textContent = "Network error: " + e;
+          out.innerHTML = "<p>Network error: " + e + "</p>";
         }
       });
     </script>
@@ -241,6 +251,14 @@ export async function startPairingKioskServer(
           expiresInHours: hours,
           note: body.note?.slice(0, 200),
         });
+        // Generate a QR code SVG for the invite URI so visitors can scan it
+        // with their phone camera instead of copy-pasting. Medium error
+        // correction handles minor screen glare on a kiosk display.
+        const qrSvg = await QRCode.toString(minted.uri, {
+          type: "svg",
+          errorCorrectionLevel: "M",
+          margin: 1,
+        }).catch(() => "");
         send(
           res,
           200,
@@ -250,6 +268,7 @@ export async function startPairingKioskServer(
             inviteId: minted.inviteId,
             expiresAt: minted.expiresAt,
             adminTokenFingerprint: fingerprintToken(options.kioskAdminToken),
+            qrSvg,
           }),
           "application/json",
         );

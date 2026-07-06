@@ -221,6 +221,7 @@ export type RpcMethods =
   | "createCompanyInvite"
   | "listCompanyInvites"
   | "revokeCompanyInvite"
+  | "redeemCompanyInvite"
   | "syncPairingKioskFromConfig"
   | "getPairingKioskStatus"
   | "importFleetManifest"

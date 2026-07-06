@@ -416,6 +416,7 @@ export function App() {
                     setCurrentView("chat");
                     setChatPanelMode("inbox");
                   }}
+                  onOpenChains={() => setCurrentView("chains")}
                 />
               </SwipeBack>
             )}

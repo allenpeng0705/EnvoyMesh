@@ -47,10 +47,13 @@ export async function getCurrentPosition(
 
   if (hasCapacitorNative()) {
     try {
-      // `/* @vite-ignore */` tells Vite (dev import-analysis AND build) not to
-      // resolve this specifier — it only exists in the Capacitor native shell
-      // (apps/mobile). The runtime `isNativePlatform()` guard above ensures we
-      // never reach this import on web/Tauri, where it would otherwise throw.
+      // This dynamic import is the runtime entry point for the native
+      // geolocation plugin. The `@capacitor/geolocation` package is only
+      // installed in apps/mobile; on web/Tauri it isn't on disk, so both
+      // Vite's dev server and the production build are configured to treat
+      // it as external (see vite.config.ts → externalizeCapacitorGeolocation).
+      // The `isNativePlatform()` guard above ensures this import is only
+      // evaluated inside the native shell where the package resolves.
       const { Geolocation } = await import(/* @vite-ignore */ "@capacitor/geolocation");
       const pos = await Geolocation.getCurrentPosition({
         timeout,

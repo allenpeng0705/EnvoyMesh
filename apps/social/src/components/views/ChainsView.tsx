@@ -4,7 +4,10 @@
  * Displays active chains with subtask progress and budget burn-down.
  * Polls chainListActive on mount and uses ConfirmDialog for cancel confirmation.
  *
- * Renders at Settings → Activity → Chains tab.
+ * Phase 43 follow-up: this view is now the primary chain entry point — a
+ * "New chain" button + goal composer lives here (not only in AI chat), so a
+ * user can start a multi-agent chain without first finding the hidden
+ * "Run as chain" affordance under a chat message.
  */
 
 import React, { useEffect, useState, useCallback } from "react";
@@ -14,6 +17,8 @@ import { useToast } from "../../hooks/useToast.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { ConfirmDialog } from "../ConfirmDialog.js";
 import { ChainReportView } from "../ChainReportView.js";
+import { ChainStartDialog } from "../ChainStartDialog.js";
+import { ChainDetailPanel } from "../ChainDetailPanel.js";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -91,6 +96,16 @@ export function ChainsView({ onBack }: ChainsViewProps = {}) {
     onConfirm: () => void;
   } | null>(null);
 
+  // Chain creation flow (Phase 43 follow-up): a "New chain" button opens a
+  // goal composer; the preview+launch reuses ChainStartDialog.
+  const [newChainGoal, setNewChainGoal] = useState<string | null>(null);
+  const [composing, setComposing] = useState(false);
+  const [goalDraft, setGoalDraft] = useState("");
+
+  // Chain detail view: clicking an active chain opens the management panel
+  // (bid inbox + subtask tree + rebalance bar) that was previously orphaned.
+  const [detailChainId, setDetailChainId] = useState<string | null>(null);
+
   const loadChains = useCallback(async () => {
     try {
       const result = await nodeService.chainListActive();
@@ -164,12 +179,39 @@ export function ChainsView({ onBack }: ChainsViewProps = {}) {
     [nodeService, showToast, t],
   );
 
+  // Quick-start goal templates — mirror the Phase 43B RPC defaults so a new
+  // user has one-tap on-ramps without having to author a goal from scratch.
+  const goalTemplates: { label: string; goal: string }[] = [
+    { label: t("chains.start.template.research"), goal: t("chains.start.template.researchGoal") },
+    { label: t("chains.start.template.summarize"), goal: t("chains.start.template.summarizeGoal") },
+    { label: t("chains.start.template.askNetwork"), goal: t("chains.start.template.askNetworkGoal") },
+  ];
+
+  const openComposer = useCallback((initialGoal?: string) => {
+    setGoalDraft(initialGoal ?? "");
+    setComposing(true);
+  }, []);
+
+  const launchChain = useCallback(() => {
+    const goal = goalDraft.trim();
+    if (!goal) return;
+    setComposing(false);
+    setNewChainGoal(goal);
+  }, [goalDraft]);
+
+  const handleStarted = useCallback(() => {
+    setNewChainGoal(null);
+    void loadChains();
+  }, [loadChains]);
+
   // ---- Render ----
 
   if (loading && chains.length === 0) {
     return (
       <div className="chains-view">
-        <h3>{t("chains.nav")}</h3>
+        <div className="chains-view__header">
+          <h3>{t("chains.nav")}</h3>
+        </div>
         <p className="chains-loading">{t("chains.loading")}</p>
       </div>
     );
@@ -181,15 +223,110 @@ export function ChainsView({ onBack }: ChainsViewProps = {}) {
   const completedChains = chains.filter((c) => c.status === "completed");
   const cancelledChains = chains.filter((c) => c.status === "cancelled");
 
+  // When a chain detail is open, render the management panel instead of the list.
+  if (detailChainId) {
+    const chain = chains.find((c) => c.chainId === detailChainId);
+    return (
+      <div className="chains-view">
+        <ChainDetailPanel
+          chainId={detailChainId}
+          goal={chain?.goal}
+          onBack={() => setDetailChainId(null)}
+          onChanged={() => void loadChains()}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="chains-view">
-      <h3>{t("chains.nav")}</h3>
+      <div className="chains-view__header">
+        <h3>{t("chains.nav")}</h3>
+        <button
+          type="button"
+          className="primary btn-sm chains-view__new-btn"
+          onClick={() => openComposer()}
+        >
+          {t("chains.start.newChain")}
+        </button>
+      </div>
 
-      {activeChains.length === 0 ? (
-        <p className="chains-empty">{t("chains.active.empty")}</p>
+      {composing ? (
+        <div className="chain-composer">
+          <label htmlFor="chain-goal-input" className="chain-composer__label">
+            {t("chains.start.composerLabel")}
+          </label>
+          <textarea
+            id="chain-goal-input"
+            className="chain-composer__input"
+            value={goalDraft}
+            onChange={(e) => setGoalDraft(e.target.value)}
+            placeholder={t("chains.start.composerPlaceholder")}
+            rows={3}
+            autoFocus
+          />
+          <div className="chain-composer__templates">
+            {goalTemplates.map((tpl) => (
+              <button
+                key={tpl.label}
+                type="button"
+                className="topic-chip chain-composer__template"
+                onClick={() => setGoalDraft(tpl.goal)}
+              >
+                {tpl.label}
+              </button>
+            ))}
+          </div>
+          <div className="chain-composer__actions">
+            <button type="button" className="secondary btn-sm" onClick={() => setComposing(false)}>
+              {t("chains.start.cancel")}
+            </button>
+            <button
+              type="button"
+              className="primary btn-sm"
+              onClick={launchChain}
+              disabled={goalDraft.trim().length < 8}
+            >
+              {t("chains.start.preview")}
+            </button>
+          </div>
+        </div>
+      ) : null}
+
+      {newChainGoal ? (
+        <ChainStartDialog
+          goal={newChainGoal}
+          onClose={() => setNewChainGoal(null)}
+          onStarted={handleStarted}
+        />
+      ) : null}
+
+      {activeChains.length === 0 && !composing ? (
+        <div className="chains-empty">
+          <p>{t("chains.active.empty")}</p>
+          <button
+            type="button"
+            className="primary"
+            onClick={() => openComposer()}
+          >
+            {t("chains.start.newChain")}
+          </button>
+        </div>
       ) : (
         activeChains.map((chain) => (
-          <div key={chain.chainId} className="chain-card">
+          <div
+            key={chain.chainId}
+            className="chain-card chain-card--clickable"
+            onClick={() => setDetailChainId(chain.chainId)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setDetailChainId(chain.chainId);
+              }
+            }}
+          >
             <div className="chain-card-header">
               <span className={`chain-status-badge status-${chain.status}`}>
                 {chain.status === "running"
@@ -237,14 +374,30 @@ export function ChainsView({ onBack }: ChainsViewProps = {}) {
             <div className="chain-card-actions">
               <button
                 type="button"
+                className="btn-sm chain-card__manage-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setDetailChainId(chain.chainId);
+                }}
+              >
+                {t("chains.active.manage")}
+              </button>
+              <button
+                type="button"
                 className="btn-sm"
-                onClick={() => void handleExportCosts(chain.chainId)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  void handleExportCosts(chain.chainId);
+                }}
               >
                 {t("chains.start.exportCsv")}
               </button>
               <button
                 className="btn-sm btn-danger"
-                onClick={() => handleCancel(chain.chainId)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleCancel(chain.chainId);
+                }}
               >
                 {t("chains.active.cancel")}
               </button>
@@ -273,6 +426,7 @@ export function ChainsView({ onBack }: ChainsViewProps = {}) {
                   })}
                 </span>
               </div>
+              {chain.goal ? <p className="chain-card-goal">{chain.goal}</p> : null}
               <div className="chain-card-actions">
                 <button
                   type="button"

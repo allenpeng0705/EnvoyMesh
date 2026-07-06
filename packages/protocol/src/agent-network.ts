@@ -228,6 +228,14 @@ export const ChainSubtaskBidSchema = z.object({
   proposedEtaAt: z.string().datetime(),
   /** ISO datetime at which this bid expires. Required, must be parseable as a future datetime. */
   bidExpiresAt: z.string().datetime(),
+  /**
+   * The capability tag the worker is offering to fulfill this subtask with.
+   * Used by the orchestrator's composite bid ranking (`bidScore` precision
+   * component) instead of the previous `workerPeerId` proxy. Optional for
+   * backward compatibility — older workers omit it and the ranker falls
+   * back to the peer-id proxy or a neutral 1.0 score.
+   */
+  capability: z.string().min(1).max(120).optional(),
   /** Free-text rationale or proposed tweaks (for counter-bid UI). */
   rationale: z.string().max(2000).optional(),
   createdAt: z.string().datetime(),

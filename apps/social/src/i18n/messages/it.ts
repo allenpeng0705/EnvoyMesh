@@ -78,6 +78,11 @@ export const it = mergeMessages(en, {
       body: "Your personal AI runs on this device, follows your policy, and can talk to other people's agents to coordinate tasks. Message it like any contact.",
       cta: "Open AI chat",
     },
+    chains: {
+      title: "Multi-agent chains",
+      body: "Open Chains to decompose a goal (like 'research then summarize') across your bonded contacts' agents. They bid, you award, and results merge into one report.",
+      cta: "Open Chains",
+    },
     contacts: {
       title: "Contacts & trust",
       body: "Each contact has a trust tier (public, introduced, friend) that controls what they can access. Upgrade trust when you know someone better.",

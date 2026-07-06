@@ -122,6 +122,11 @@ export const en = {
       body: "Your personal AI runs on this device, follows your policy, and can talk to other people's agents to coordinate tasks. Message it like any contact.",
       cta: "Open AI chat",
     },
+    chains: {
+      title: "Multi-agent chains",
+      body: "Open Chains to decompose a goal (like 'research then summarize') across your bonded contacts' agents. They bid, you award, and results merge into one report.",
+      cta: "Open Chains",
+    },
     contacts: {
       title: "Contacts & trust",
       body: "Each contact has a trust tier (public, introduced, friend) that controls what they can access. Upgrade trust when you know someone better.",
@@ -163,7 +168,7 @@ export const en = {
     tabs: {
       account: "Account",
       ai: "AI",
-      agentNetwork: "Agent Network",
+      agentNetwork: "Devices & Fleet",
       network: "Network",
       app: "App",
     },
@@ -445,6 +450,12 @@ export const en = {
       pairLinkHint: "That link is for pairing a phone with your home node. Open Settings → Devices to scan it.",
       joinInvalidHint:
         "That invite link looks incomplete. Ask your friend to generate a new link from Share contact card.",
+      inviteRedeemed:
+        "Fleet invite redeemed — we said hello to the issuer. They'll appear under Contacts once accepted.",
+      inviteRedeemedFailed: "Could not redeem that fleet invite. Ask the issuer for a new link.",
+      inviteRedeemedWithReason: "Could not redeem that fleet invite: {reason}",
+      inviteInvalidHint:
+        "That fleet invite link looks incomplete. Ask the issuer to mint a new one from Settings → Devices & Fleet.",
     },
     search: {
       panelTitle: "Search the network",

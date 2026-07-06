@@ -75,6 +75,8 @@ import type {
   CreateCompanyInviteResult,
   ListCompanyInvitesResult,
   RevokeCompanyInviteResult,
+  RedeemCompanyInviteParams,
+  RedeemCompanyInviteResult,
 } from "./company-invite.js";
 import type {
   BridgeStatus,
@@ -1828,6 +1830,18 @@ export interface NodeService {
    * invite returns the latest record unchanged.
    */
   revokeCompanyInvite(inviteId: string): Promise<RevokeCompanyInviteResult>;
+
+  /**
+   * Phase 35A joiner side — redeem a company/kiosk invite parsed from an
+   * `envoy://invite?token=…` URI. Applies the issuer's connection info
+   * (bootstrap peers / wsUrl) locally so this node can reach the issuer,
+   * then sends a hello to the issuer's owner to establish the bond.
+   *
+   * Called from the Social UI when a joiner pastes an invite into the
+   * Discover paste box. Mirrors the working Setup Sponsor Friend flow
+   * (`applyWanJoinInvite` → `searchPeers` → `sendHello`).
+   */
+  redeemCompanyInvite(params: RedeemCompanyInviteParams): Promise<RedeemCompanyInviteResult>;
 
   /**
    * Phase 35D — re-sync the pairing-kiosk HTTP server with the latest

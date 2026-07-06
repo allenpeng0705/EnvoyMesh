@@ -59,6 +59,8 @@ import {
 } from "./chain-production.js";
 import { dispatchChainEnvelope } from "./chain-inbound.js";
 import type { ChainInboundDeps } from "./chain-inbound-types.js";
+import { applyArbitration, createArbitrationStore, type ArbitrationStore } from "./chain-arbitration.js";
+import { signCanonicalPayload } from "@envoymesh/identity";
 import {
   handleWorkerAccept,
   handleWorkerCancel,
@@ -88,6 +90,27 @@ export interface ChainSideState {
   autoEvaluateTimers: Map<string, ReturnType<typeof setTimeout>>;
   goals: Map<string, string>;
   costEstimates: Map<string, { minUsd: number; maxUsd: number }>;
+}
+
+/**
+ * Phase 40E — per-chain arbitration ownership ledgers.
+ *
+ * Module-level (in-memory) registry keyed by chainId. The inbound arbitration
+ * handler records remote ownership entries here so future local award
+ * decisions can consult "who owns what" before committing budget. Lost
+ * arbitration entries cause the local orchestrator to release reserved
+ * budget via `releaseOwnership` (deeper follow-up); for now this establishes
+ * the convergence record path.
+ */
+const chainArbitrationStores = new Map<string, ArbitrationStore>();
+
+function getChainArbitrationStore(chainId: string): ArbitrationStore {
+  let store = chainArbitrationStores.get(chainId);
+  if (!store) {
+    store = createArbitrationStore();
+    chainArbitrationStores.set(chainId, store);
+  }
+  return store;
 }
 
 export interface ChainOrchestrationContext {
@@ -181,6 +204,28 @@ function ensureChainMandicate(_mandateId: string): void {
 
 export function ensureChainMandateLoaded(_deps: ChainOrchestrationContext, mandateId: string): void {
   ensureChainMandicate(mandateId);
+}
+
+/**
+ * Sign a chain mandate with the owner's Ed25519 private key, following the
+ * project's canonical-JSON signing convention (same as `signMandate` in
+ * `@envoymesh/identity`). The signature covers every field except `signature`
+ * itself.
+ *
+ * Used in place of the previous `signature: "stub"` literal on locally-built
+ * mandates so cross-node verification (`verifyCanonicalPayload`) succeeds.
+ * Falls back to the legacy `"stub"` signature only when no owner key is
+ * available (e.g. dev fixtures without a profile), preserving backward
+ * compatibility with existing unit tests.
+ */
+export function signChainMandate<T extends Record<string, unknown>>(
+  unsignedMandate: T,
+  ownerPrivateKeyPem: string | undefined,
+): T & { signature: string } {
+  const signature = ownerPrivateKeyPem
+    ? signCanonicalPayload(unsignedMandate, ownerPrivateKeyPem)
+    : "stub";
+  return { ...unsignedMandate, signature };
 }
 
 export function placeholderMandate(chainId: string, chainMandateId: string) {
@@ -425,6 +470,62 @@ export async function buildChainInboundDeps(deps: ChainOrchestrationContext): Pr
           createdAt: envelope.createdAt,
         }),
       );
+      return { ok: true };
+    },
+
+    // Phase 40E — Cross-orchestrator handoff / arbitration inbound handlers.
+    // These make the 4 previously-unroutable intents reachable on the wire.
+    // Full sub-chain execution orchestration (spawning the delegated sub-chain
+    // locally, wiring the arbitration store into award decisions) is a deeper
+    // follow-up; these handlers establish the audit + ownership-record path so
+    // peers observe `chain.handoff.*` / `chain.arbitration.*` events instead
+    // of silent `unknown_chain_intent` denials.
+    handleHandoffRequest: async (envelope, payload) => {
+      await orchDeps.audit.record({
+        type: "chain.handoff.request_received",
+        outcome: "record",
+        intent: envelope.intent,
+        remotePeerId: envelope.senderPeerId,
+        correlationId: envelope.correlationId,
+        summary: `chainId=${payload.chainId} newOrchestrator=${payload.newOrchestratorPeerId} subtasks=${payload.subtaskIds.length}`,
+      });
+      return { ok: true };
+    },
+    handleDelegate: async (envelope, payload) => {
+      await orchDeps.audit.record({
+        type: "chain.handoff.delegate_received",
+        outcome: "record",
+        intent: envelope.intent,
+        remotePeerId: envelope.senderPeerId,
+        correlationId: envelope.correlationId,
+        summary: `chainId=${payload.chainId} subChainId=${payload.subChainId} subtasks=${payload.subtaskIds.length} cost=${payload.estimatedCostUsd}`,
+      });
+      return { ok: true };
+    },
+    handleRelay: async (envelope, payload) => {
+      await orchDeps.audit.record({
+        type: "chain.relay.received",
+        outcome: "record",
+        intent: envelope.intent,
+        remotePeerId: envelope.senderPeerId,
+        correlationId: envelope.correlationId,
+        summary: `chainId=${payload.chainId} innerIntent=${payload.innerIntent} recipient=${payload.recipientPeerId} hops=${payload.viaRelays.length}`,
+      });
+      return { ok: true };
+    },
+    handleArbitration: async (envelope, payload) => {
+      // Record the arbitration entry in the local ownership ledger so future
+      // award decisions can consult it. `applyArbitration` is idempotent.
+      const store = getChainArbitrationStore(payload.entry.chainId);
+      applyArbitration(store, payload.entry);
+      await orchDeps.audit.record({
+        type: "chain.arbitration.converged",
+        outcome: "record",
+        intent: envelope.intent,
+        remotePeerId: envelope.senderPeerId,
+        correlationId: envelope.correlationId,
+        summary: `chainId=${payload.entry.chainId} owner=${payload.entry.currentOwnerPeerId} seq=${payload.entry.seq} status=${payload.entry.status}`,
+      });
       return { ok: true };
     },
   };
@@ -835,7 +936,9 @@ export async function _runChainGoal(
 }> {
   const chainId = input.chainId ?? `chain_${randomUUID()}`;
   const chainMandateId = `chainmandate_${randomUUID()}`;
-  const orchestratorOwnerId = deps.getProfile()?.owner.ownerId ?? "envoy:owner:placeholder";
+  const ownerProfile = deps.getProfile();
+  const orchestratorOwnerId = ownerProfile?.owner.ownerId ?? "envoy:owner:placeholder";
+  const ownerPrivateKeyPem = ownerProfile?.owner.privateKeyPem;
   let nodeDefaults = DEFAULT_CHAIN_DEFAULTS;
   try {
     const cfg = await deps.getNodeConfig();
@@ -843,24 +946,26 @@ export async function _runChainGoal(
   } catch {
     /* use production defaults */
   }
-  const mandate = {
-    version: "0.1" as const,
-    chainMandateId,
-    chainId,
-    issuerOwnerId: orchestratorOwnerId,
-    orchestratorOwnerId,
-    maxChainCostUsd: input.maxChainCostUsd ?? 10,
-    costCeilingUsd: input.costCeilingUsd ?? 3,
-    maxWorkers: 3,
-    allowDepth3: false,
-    maxSensitivity: "public" as const,
-    deadlineAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
-    createdAt: new Date().toISOString(),
-    rebalancePolicy: nodeDefaults.rebalancePolicy ?? "auto",
-    maxAutoRebalances: nodeDefaults.maxAutoRebalances ?? 2,
-    autoRebalanceIncrementUsd: nodeDefaults.autoRebalanceIncrementUsd ?? 5,
-    signature: "stub",
-  };
+  const mandate = signChainMandate(
+    {
+      version: "0.1" as const,
+      chainMandateId,
+      chainId,
+      issuerOwnerId: orchestratorOwnerId,
+      orchestratorOwnerId,
+      maxChainCostUsd: input.maxChainCostUsd ?? 10,
+      costCeilingUsd: input.costCeilingUsd ?? 3,
+      maxWorkers: 3,
+      allowDepth3: false,
+      maxSensitivity: "public" as const,
+      deadlineAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
+      createdAt: new Date().toISOString(),
+      rebalancePolicy: nodeDefaults.rebalancePolicy ?? "auto",
+      maxAutoRebalances: nodeDefaults.maxAutoRebalances ?? 2,
+      autoRebalanceIncrementUsd: nodeDefaults.autoRebalanceIncrementUsd ?? 5,
+    },
+    ownerPrivateKeyPem,
+  );
   const state = createChainState(mandate);
   const chainSide = deps.getChainSideState();
   chainSide.goals.set(chainId, input.goal);

@@ -530,6 +530,13 @@ export async function routeRpcMethod(
       return ns.listCompanyInvites();
     case "revokeCompanyInvite":
       return ns.revokeCompanyInvite(String(params.inviteId ?? ""));
+    case "redeemCompanyInvite":
+      return ns.redeemCompanyInvite({
+        token: String(params.token ?? ""),
+        wsUrl: params.wsUrl as string | undefined,
+        ownerId: params.ownerId as string | undefined,
+        helloMessage: params.helloMessage as string | undefined,
+      });
     case "syncPairingKioskFromConfig":
       return ns.syncPairingKioskFromConfig();
     case "getPairingKioskStatus":

@@ -106,6 +106,13 @@ export function GettingStartedGuide({ onClose, onNavigate }: GettingStartedGuide
               onAction={() => go("chat")}
             />
             <GuideSection
+              icon={<SettingsIcon size={22} />}
+              title={t("guide.chains.title")}
+              body={t("guide.chains.body")}
+              actionLabel={t("guide.chains.cta")}
+              onAction={() => go("chains")}
+            />
+            <GuideSection
               icon={<ContactsIcon size={22} />}
               title={t("guide.contacts.title")}
               body={t("guide.contacts.body")}

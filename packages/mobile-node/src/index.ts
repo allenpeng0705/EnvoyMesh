@@ -1154,6 +1154,15 @@ export class MobileNode implements NodeService {
     return this._homeRemoteCall("revokeCompanyInvite", { inviteId });
   }
 
+  async redeemCompanyInvite(
+    params: import("@envoymesh/api").RedeemCompanyInviteParams,
+  ): Promise<import("@envoymesh/api").RedeemCompanyInviteResult> {
+    return this._homeRemoteCall(
+      "redeemCompanyInvite",
+      params as unknown as Record<string, unknown>,
+    );
+  }
+
   // -----------------------------------------------------------
   // Phase 35D — Pairing Kiosk
   // -----------------------------------------------------------

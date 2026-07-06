@@ -4,10 +4,56 @@ import { parseEnvoyContactUri } from "@envoymesh/api";
 export type ParsedContactCode =
   | { kind: "pair"; pairUri: string; inviteUri: string }
   | { kind: "contact"; contactUri: string; peerId?: string; wanJoinToken?: string; displayName?: string }
+  | { kind: "invite"; inviteUri: string; token: string; wsUrl?: string; ownerId?: string }
   | { kind: "wan-join"; inviteUri: string; wanJoinToken: string }
   | { kind: "join-invalid"; inviteUri: string }
+  | { kind: "invite-invalid"; inviteUri: string }
   | { kind: "peer-id"; peerId: string }
   | { kind: "invalid"; message: string };
+
+/**
+ * Parse an `envoy://invite?token=…` company/kiosk invite URI.
+ *
+ * These are minted by the issuer's Company Invites / Pairing Kiosk and redeemed
+ * by a joiner pasting them into the Discover paste box. The `token` is the
+ * bearer secret; `wsUrl`/`ownerId`/`ownerPublicKey` carry the issuer's
+ * connection info so the joiner's node can reach the issuer and bond.
+ *
+ * Strict on the `envoy://invite` / `invite?` prefix to reject clipboard-
+ * injection confusion (mirrors `parseEnvoyJoinUri`).
+ */
+function parseEnvoyInvite(input: string): {
+  token: string;
+  wsUrl?: string;
+  ownerId?: string;
+  ownerPublicKey?: string;
+  agentPeerId?: string;
+  agentName?: string;
+} {
+  const trimmed = input.trim();
+  let search: URLSearchParams;
+  if (trimmed.startsWith("envoy://invite")) {
+    const url = new URL(trimmed);
+    if (url.protocol !== "envoy:" || url.hostname !== "invite") {
+      throw new Error("Expected envoy://invite link");
+    }
+    search = url.searchParams;
+  } else if (trimmed.startsWith("invite?")) {
+    search = new URLSearchParams(trimmed.slice("invite?".length));
+  } else {
+    throw new Error("Expected envoy://invite link");
+  }
+  const token = search.get("token")?.trim();
+  if (!token) throw new Error("Invite link is missing token");
+  return {
+    token,
+    wsUrl: search.get("wsUrl")?.trim() || undefined,
+    ownerId: search.get("ownerId")?.trim() || undefined,
+    ownerPublicKey: search.get("ownerPublicKey")?.trim() || undefined,
+    agentPeerId: search.get("agentPeerId")?.trim() || undefined,
+    agentName: search.get("agentName")?.trim() || undefined,
+  };
+}
 
 /** True for typical libp2p peer IDs (base58btc, often starting with Qm or 12D3). */
 export function looksLikePeerId(value: string): boolean {
@@ -48,6 +94,22 @@ export function parseContactCode(input: string): ParsedContactCode {
         kind: "invalid",
         message: error instanceof Error ? error.message : "That contact link looks invalid.",
       };
+    }
+  }
+
+  // Company / kiosk invite: envoy://invite?token=… (Phase 35A / 35D joiner side).
+  if (trimmed.startsWith("envoy://invite") || trimmed.startsWith("invite?")) {
+    try {
+      const invite = parseEnvoyInvite(trimmed);
+      return {
+        kind: "invite",
+        inviteUri: trimmed.startsWith("envoy://") ? trimmed : `envoy://${trimmed}`,
+        token: invite.token,
+        wsUrl: invite.wsUrl,
+        ownerId: invite.ownerId,
+      };
+    } catch {
+      return { kind: "invite-invalid", inviteUri: trimmed };
     }
   }
 

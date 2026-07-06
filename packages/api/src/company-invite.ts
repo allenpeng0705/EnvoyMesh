@@ -53,3 +53,27 @@ export interface RevokeCompanyInviteResult {
   ok: true;
   invite: CompanyInviteRecord;
 }
+
+/**
+ * Phase 35A joiner side — redeem a company/kiosk invite.
+ * Fields come from parsing an `envoy://invite?token=…` URI.
+ */
+export interface RedeemCompanyInviteParams {
+  /** Bearer token from the invite URI (required). */
+  token: string;
+  /** Issuer's home node WebSocket URL (applied as a bootstrap seed when present). */
+  wsUrl?: string;
+  /** Issuer's owner id (the bond target for the hello). */
+  ownerId?: string;
+  /** Optional human-friendly message attached to the auto-hello. */
+  helloMessage?: string;
+}
+
+export interface RedeemCompanyInviteResult {
+  ok: boolean;
+  /** Owner id the hello was sent to, when one was resolvable. */
+  ownerId?: string;
+  /** Hello message id, when a hello was sent. */
+  helloMessageId?: string;
+  reason?: string;
+}

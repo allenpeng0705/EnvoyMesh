@@ -706,6 +706,36 @@ function PairingKioskSection() {
  * so a malformed entry surfaces a useful error instead of producing a
  * broken manifest.
  */
+/**
+ * Built-in role templates for fleet manifests. Each template pre-fills the
+ * `role` + `trustLevel` fields so operators don't hand-author them per member.
+ * The `applyTemplate` helper injects a skeleton member JSON into the textarea;
+ * the operator still fills in `ownerId` / `deviceId` / `devicePublicKeyPem`.
+ */
+const FLEET_ROLE_TEMPLATES = [
+  { id: "operator", role: "operator", trustLevel: "direct" as const },
+  { id: "engineer", role: "engineer", trustLevel: "direct" as const },
+  { id: "contractor", role: "contractor", trustLevel: "referred" as const },
+  { id: "visitor", role: "visitor", trustLevel: "public" as const },
+] as const;
+
+/** Build a skeleton members JSON array for a given role template. */
+function skeletonMembersForTemplate(templateId: string): string {
+  const tpl = FLEET_ROLE_TEMPLATES.find((t) => t.id === templateId);
+  if (!tpl) return "";
+  const skeleton = [
+    {
+      ownerId: "envoy:owner:REPLACE",
+      deviceId: "envoy:device:REPLACE",
+      devicePublicKeyPem: "-----BEGIN PUBLIC KEY-----\nREPLACE\n-----END PUBLIC KEY-----",
+      role: tpl.role,
+      trustLevel: tpl.trustLevel,
+      displayName: "Name",
+    },
+  ];
+  return JSON.stringify(skeleton, null, 2);
+}
+
 function FleetManifestSection() {
   const t = useT();
   const nodeService = useNodeService();
@@ -877,6 +907,25 @@ function FleetManifestSection() {
         disabled={signing || importing}
         style={{ width: "100%", marginBottom: 4 }}
       />
+      <div className="fleet-role-templates">
+        <span className="fleet-role-templates__label">
+          {t("settings.agentNetwork.fleetManifest.roleTemplateLabel")}
+        </span>
+        <div className="topic-chips">
+          {FLEET_ROLE_TEMPLATES.map((tpl) => (
+            <button
+              key={tpl.id}
+              type="button"
+              className="topic-chip"
+              title={t(`settings.agentNetwork.fleetManifest.roleTemplate.${tpl.id}.hint`)}
+              onClick={() => setJsonDraft(skeletonMembersForTemplate(tpl.id))}
+              disabled={signing || importing}
+            >
+              {t(`settings.agentNetwork.fleetManifest.roleTemplate.${tpl.id}.label`)}
+            </button>
+          ))}
+        </div>
+      </div>
       <textarea
         placeholder={t("settings.agentNetwork.fleetManifest.membersLabel")}
         value={jsonDraft}
@@ -1391,11 +1440,26 @@ export function SettingsAgentNetworkTab() {
   return (
     <>
       <AgentNetworkIntro />
+
+      <section className="settings-section">
+        <h4>{t("settings.agentNetwork.groupAutoBondTitle")}</h4>
+        <p className="section-desc">{t("settings.agentNetwork.groupAutoBondDesc")}</p>
+      </section>
       <BondAutonomySection />
       <SetupSponsorFriendSection />
-      <LanAutoBondSection />
+
+      <section className="settings-section">
+        <h4>{t("settings.agentNetwork.groupInvitesTitle")}</h4>
+        <p className="section-desc">{t("settings.agentNetwork.groupInvitesDesc")}</p>
+      </section>
       <CompanyInvitesSection />
       <PairingKioskSection />
+
+      <section className="settings-section">
+        <h4>{t("settings.agentNetwork.groupOperatorTitle")}</h4>
+        <p className="section-desc">{t("settings.agentNetwork.groupOperatorDesc")}</p>
+      </section>
+      <LanAutoBondSection />
       <FleetManifestSection />
     </>
   );
