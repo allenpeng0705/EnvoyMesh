@@ -26,7 +26,11 @@ import {
   decodeEnvoymeshCronPayload,
   formatReminderDeliveryText,
 } from "./remind-payload.js";
-import { takeDueEnvoymeshReminderForTarget } from "./remind-delivery-registry.js";
+import {
+  countMissedEnvoymeshReminders,
+  takeDueEnvoymeshReminderForTarget,
+  takeEnvoymeshReminderForTargetUnchecked,
+} from "./remind-delivery-registry.js";
 import { EnvoymeshChannelConfigSchema } from "./config-schema.js";
 import {
   collectEnvoymeshGatewayRoutingWarnings,
@@ -39,20 +43,47 @@ import type { ResolvedEnvoymeshAccount } from "./types.js";
 
 const CHANNEL_ID = "envoymesh";
 
-/** Pending correlation IDs for sync ask() calls, keyed by ownerId. */
-const pendingCorrelationIds = new Map<string, string>();
+/**
+ * Pending correlation IDs for sync ask() calls, keyed by ownerId. Stored
+ * alongside an expiry timestamp so abandoned entries (sender crashed, network
+ * dropped, etc.) don't accumulate forever — the OpenClaw ask() timeout is
+ * 180s, so a 30 min TTL comfortably covers retries + a few restart cycles.
+ */
+const PENDING_CORRELATION_TTL_MS = 30 * 60_000;
+const pendingCorrelationIds = new Map<string, { correlationId: string; expiresAt: number }>();
+let pendingCorrelationSweepCounter = 0;
+
+function sweepExpiredCorrelationIds(now: number): void {
+  // Light periodic sweep on the write path so we don't accumulate abandoned
+  // entries. We don't need a separate timer — every ~64th set call walks
+  // the map, which is cheap (entries are O(#active_owners)).
+  if ((++pendingCorrelationSweepCounter & 63) !== 0) {
+    return;
+  }
+  for (const [key, value] of pendingCorrelationIds) {
+    if (value.expiresAt <= now) {
+      pendingCorrelationIds.delete(key);
+    }
+  }
+}
+
 export function setPendingCorrelationId(ownerId: string, correlationId: string): void {
-  pendingCorrelationIds.set(ownerId, correlationId);
+  const now = Date.now();
+  pendingCorrelationIds.set(ownerId, { correlationId, expiresAt: now + PENDING_CORRELATION_TTL_MS });
+  sweepExpiredCorrelationIds(now);
 }
 
 /** Take and remove a pending correlationId for an inbound reply target. */
 export function takePendingCorrelationId(targetId: string): string | undefined {
-  const cid = pendingCorrelationIds.get(targetId);
-  if (cid) {
-    pendingCorrelationIds.delete(targetId);
-    return cid;
+  const entry = pendingCorrelationIds.get(targetId);
+  if (!entry) {
+    return undefined;
   }
-  return undefined;
+  pendingCorrelationIds.delete(targetId);
+  if (entry.expiresAt <= Date.now()) {
+    return undefined;
+  }
+  return entry.correlationId;
 }
 
 const resolveEnvoymeshDmPolicy = createScopedDmSecurityResolver<ResolvedEnvoymeshAccount>({
@@ -229,10 +260,26 @@ async function sendEnvoymeshText(
       outboundText = decoded.payload.content;
       usedDirectReminder = true;
     } else {
-      const pending = takeDueEnvoymeshReminderForTarget(bridgeTo);
+      // First try the normal due-window lookup.
+      let pending = takeDueEnvoymeshReminderForTarget(bridgeTo);
+      if (!pending) {
+        // Fallback: the cron might have been scheduled against an owner id
+        // and is now being delivered to a different peer id, or the agent is
+        // responding outside the normal due window. Try a timing-agnostic
+        // lookup so we don't silently drop a fire-able reminder.
+        pending = takeEnvoymeshReminderForTargetUnchecked(bridgeTo);
+      }
       if (pending) {
         outboundText = pending.content;
         usedDirectReminder = true;
+      } else {
+        // Surface missed reminders as a short note, so the user understands
+        // why their scheduled reminder didn't show up — instead of the
+        // pre-fix behavior of silently deleting them.
+        const missed = countMissedEnvoymeshReminders();
+        if (missed > 0) {
+          outboundText = `[envoymesh] ${missed} scheduled reminder(s) were missed while the agent was unavailable. They have been dropped.`;
+        }
       }
     }
   }

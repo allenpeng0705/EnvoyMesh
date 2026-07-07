@@ -2,6 +2,8 @@
  * OpenClaw runtime — gateway lifecycle, webhook ask/send, sync reply correlation.
  */
 import { randomUUID } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import type { ChildProcess } from "node:child_process";
 import type {
   BondRecord,
@@ -68,6 +70,12 @@ export interface OpenClawRuntimeState {
   askChain: Promise<unknown>;
   watchdogTimer: ReturnType<typeof setTimeout> | null;
   watchdogRunning: boolean;
+  /**
+   * Optional filesystem path used to persist outstanding sync-reply
+   * correlation ids. Set via `bindOpenClawPendingReplyPersistence` so the
+   * node-host can decide where to write (typically `<profileDir>/openclaw-pending-replies.json`).
+   */
+  pendingRepliesPath: string | null;
 }
 
 export function createOpenClawRuntimeState(): OpenClawRuntimeState {
@@ -86,7 +94,93 @@ export function createOpenClawRuntimeState(): OpenClawRuntimeState {
     askChain: Promise.resolve(),
     watchdogTimer: null,
     watchdogRunning: false,
+    pendingRepliesPath: null,
   };
+}
+
+/**
+ * Bind a filesystem path used to persist outstanding sync-reply correlation
+ * ids. After a node restart, the bridge can return 410 for any replies
+ * whose correlationId is no longer in `state.pendingReplies` — this is the
+ * signal for the gateway side to retry the ask with a fresh cid.
+ */
+export function bindOpenClawPendingReplyPersistence(
+  state: OpenClawRuntimeState,
+  pendingRepliesPath: string | null,
+): void {
+  state.pendingRepliesPath = pendingRepliesPath;
+}
+
+function persistPendingReplies(state: OpenClawRuntimeState): void {
+  const path = state.pendingRepliesPath;
+  if (!path) {
+    return;
+  }
+  try {
+    const payload = {
+      version: 1,
+      savedAt: Date.now(),
+      correlationIds: Array.from(state.pendingReplies.keys()),
+    };
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, JSON.stringify(payload), "utf8");
+  } catch (err) {
+    // Persistence is best-effort. Failing to write should not break the
+    // sync-ask path — we just lose crash-recovery for this entry.
+    console.warn(
+      `[openclaw] failed to persist pending reply state: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  }
+}
+
+function clearPersistedPendingReplies(state: OpenClawRuntimeState): void {
+  const path = state.pendingRepliesPath;
+  if (!path) {
+    return;
+  }
+  try {
+    if (existsSync(path)) {
+      unlinkSync(path);
+    }
+  } catch {
+    /* ignore */
+  }
+}
+
+/**
+ * On node startup, look for a leftover pending-replies file. Any cid that
+ * arrives after this point will get a 410 from the bridge (because the
+ * in-memory `state.pendingReplies` is empty), and the gateway will retry.
+ * We log a warning so operators can correlate "stale 410s" with node
+ * restarts in their logs.
+ */
+export function loadAndReportOrphanedOpenClawPendingReplies(
+  pendingRepliesPath: string | null,
+): string[] {
+  if (!pendingRepliesPath || !existsSync(pendingRepliesPath)) {
+    return [];
+  }
+  let parsed: { version?: number; correlationIds?: string[] } | null = null;
+  try {
+    parsed = JSON.parse(readFileSync(pendingRepliesPath, "utf8"));
+  } catch {
+    return [];
+  }
+  const cids = Array.isArray(parsed?.correlationIds) ? parsed!.correlationIds : [];
+  if (cids.length > 0) {
+    console.warn(
+      `[openclaw] ${cids.length} pending sync reply correlationId(s) were lost ` +
+        `across the last restart. The gateway will see 410 for any replies to those ` +
+        `cids and the original ask will be retried automatically.`,
+    );
+  }
+  // Remove the stale file so we don't keep logging on every restart.
+  try {
+    unlinkSync(pendingRepliesPath);
+  } catch {
+    /* ignore */
+  }
+  return cids;
 }
 
 export interface EnvoyAiChatContext {
@@ -334,10 +428,19 @@ export function waitForOpenClawReply(
       if (!entry) return;
       clearTimeout(entry.timer);
       state.pendingReplies.delete(correlationId);
+      persistPendingReplies(state);
       entry.reject(new Error(`OpenClaw reply timed out after ${OPEN_CLAW_REPLY_TIMEOUT_MS / 1000}s`));
     }, OPEN_CLAW_REPLY_TIMEOUT_MS);
     state.pendingReplies.set(correlationId, { resolve, reject, timer });
+    persistPendingReplies(state);
   });
+}
+
+export function hasOpenClawPendingReply(
+  state: OpenClawRuntimeState,
+  correlationId: string,
+): boolean {
+  return state.pendingReplies.has(correlationId);
 }
 
 export function resolveOpenClawReply(
@@ -352,6 +455,11 @@ export function resolveOpenClawReply(
   }
   clearTimeout(entry.timer);
   state.pendingReplies.delete(correlationId);
+  if (state.pendingReplies.size === 0) {
+    clearPersistedPendingReplies(state);
+  } else {
+    persistPendingReplies(state);
+  }
   console.log(`[openclaw] sync reply resolved cid=${correlationId} len=${text.length}`);
   entry.resolve(text);
 }
@@ -365,6 +473,11 @@ export function cancelOpenClawReply(
   if (!entry) return;
   clearTimeout(entry.timer);
   state.pendingReplies.delete(correlationId);
+  if (state.pendingReplies.size === 0) {
+    clearPersistedPendingReplies(state);
+  } else {
+    persistPendingReplies(state);
+  }
   entry.reject(error);
 }
 
@@ -374,6 +487,7 @@ export function rejectAllPendingOpenClawReplies(state: OpenClawRuntimeState, rea
     entry.reject(new Error(reason));
   }
   state.pendingReplies.clear();
+  clearPersistedPendingReplies(state);
 }
 
 function setOpenClawGatewayReady(state: OpenClawRuntimeState, ready: boolean): void {
@@ -767,9 +881,13 @@ async function startOpenClawInner(
       bridgeSecret = typeof cfg?.secret === "string" && cfg.secret.trim() ? cfg.secret.trim() : undefined;
     } catch { /* use default */ }
   }
-  if (assistantUrl.includes("127.0.0.1") && assistantUrl.includes("/webhook/envoymesh")) {
-    assistantUrl = openClawGatewayWebhookUrl();
-  }
+  // Note: pre-fix this block force-reset the URL whenever it contained
+  // "127.0.0.1" and "/webhook/envoymesh" — which silently overrode legitimate
+  // user customizations of the OpenClaw gateway port (e.g. someone running
+  // the gateway on 127.0.0.1:19999 to avoid clashing with the default
+  // 18789). The reset is no longer needed: `defaultAssistantUrl` already
+  // reflects the current `OPENCLAW_GATEWAY_PORT`, and `resolveAssistantAgentUrl`
+  // honors an explicit `assistantAgentUrl` from the bridge config.
   bridgeListenPort = BRIDGE_HTTP_PORT;
   state.assistantAgentUrl = assistantUrl;
   state.assistantAgentSecret = bridgeSecret;

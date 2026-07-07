@@ -8,7 +8,11 @@ import {
 } from "openclaw/plugin-sdk/webhook-ingress";
 import { dispatchEnvoymeshAsyncInboundEvent } from "./async-inbound-event.js";
 import { sendBridgeMessage } from "./bridge-client.js";
-import { isDuplicateAsyncInbound, isDuplicateInbound } from "./dedup.js";
+import {
+  isDuplicateAsyncInbound,
+  isDuplicateInbound,
+  syntheticInboundMessageId,
+} from "./dedup.js";
 import { rememberMeshPeer } from "./peer-routing.js";
 import {
   isEnvoymeshAsyncWebhookPayload,
@@ -20,7 +24,16 @@ import {
 
 const MAX_BODY_BYTES = 64 * 1024;
 const BODY_TIMEOUT_MS = 5_000;
-const webhookInFlightLimiter = createWebhookInFlightLimiter();
+
+const ENV_IN_FLIGHT_PER_KEY = Number.parseInt(
+  process.env.ENVOYMESH_WEBHOOK_MAX_IN_FLIGHT ?? "",
+  10,
+);
+const webhookInFlightLimiter = createWebhookInFlightLimiter(
+  Number.isFinite(ENV_IN_FLIGHT_PER_KEY) && ENV_IN_FLIGHT_PER_KEY > 0
+    ? { maxInFlightPerKey: ENV_IN_FLIGHT_PER_KEY }
+    : undefined,
+);
 
 export type EnvoymeshWebhookDeliver = (msg: EnvoymeshInboundMessage) => Promise<void>;
 export type EnvoymeshAsyncWebhookDeliver = (msg: EnvoymeshAsyncInboundMessage) => Promise<void>;
@@ -110,11 +123,19 @@ function toInboundMessage(payload: EnvoymeshWebhookPayload): EnvoymeshInboundMes
   if (!fromOwnerId || !text) {
     return null;
   }
+  const messageId = (payload.messageId ?? "").trim() ||
+    syntheticInboundMessageId({
+      fromOwnerId,
+      from,
+      text,
+      timestamp: Date.now(),
+    });
   return {
     from,
     fromOwnerId,
     fromName,
     text,
+    messageId,
     policyPrompt,
     retrievedContext,
     systemPrompt,
@@ -141,6 +162,15 @@ export function createEnvoymeshWebhookHandler(deps: EnvoymeshWebhookHandlerDeps)
       inFlightKey: `envoymesh:${deps.account.accountId}`,
     });
     if (!requestLifecycle.ok) {
+      // The SDK writes 429 to the response before returning `{ ok: false }`
+      // when the in-flight limiter rejects. Surface a clear log so operators
+      // can spot the case (was previously silent).
+      if (res.headersSent && res.statusCode === 429) {
+        deps.log?.warn?.(
+          `EnvoyMesh webhook rejected by in-flight limiter (account=${deps.account.accountId}). ` +
+            "Inbound traffic exceeds concurrent-handler capacity. Raise the limit or scale out the agent.",
+        );
+      }
       return;
     }
 
@@ -207,8 +237,8 @@ export function createEnvoymeshWebhookHandler(deps: EnvoymeshWebhookHandlerDeps)
         return;
       }
 
-      if (isDuplicateInbound(msg.fromOwnerId, msg.text)) {
-        deps.log?.info?.(`EnvoyMesh duplicate inbound skipped for ${msg.fromOwnerId}`);
+      if (isDuplicateInbound(msg.messageId)) {
+        deps.log?.info?.(`EnvoyMesh duplicate inbound skipped (messageId=${msg.messageId}, owner=${msg.fromOwnerId})`);
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ status: "ok", warning: "deduplicated" }));
         return;

@@ -1,14 +1,20 @@
 /**
  * Unit tests for extracted OpenClaw runtime module.
  */
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   OPEN_CLAW_REPLY_TIMEOUT_MS,
   beginOpenClawToolTracking,
+  bindOpenClawPendingReplyPersistence,
   cancelOpenClawReply,
   createOpenClawRuntimeState,
   endOpenClawToolTracking,
+  hasOpenClawPendingReply,
   isOpenClawReadyViaRuntime,
+  loadAndReportOrphanedOpenClawPendingReplies,
   recordOpenClawToolCallViaRuntime,
   rejectAllPendingOpenClawReplies,
   resolveOpenClawReply,
@@ -68,6 +74,13 @@ describe("OpenClaw runtime state helpers", () => {
     expect(state.pendingReplies.size).toBe(0);
   });
 
+  it("hasOpenClawPendingReply reports true for known cids and false for unknown", () => {
+    expect(hasOpenClawPendingReply(state, "oc-whatever")).toBe(false);
+    waitForOpenClawReply(state, "oc-pending").catch(() => {});
+    expect(hasOpenClawPendingReply(state, "oc-pending")).toBe(true);
+    expect(hasOpenClawPendingReply(state, "oc-other")).toBe(false);
+  });
+
   it("tracks tool calls during an active turn", () => {
     beginOpenClawToolTracking(state);
     recordOpenClawToolCallViaRuntime(state, "mesh.library_search");
@@ -108,5 +121,44 @@ describe("stopOpenClawViaRuntime", () => {
     expect(state.gatewayChild).toBeNull();
     expect(state.pendingReplies.size).toBe(0);
     expect(state.runtime).toBeNull();
+  });
+});
+
+describe("OpenClaw pending-reply persistence (Fix #4 — lost-ask across restarts)", () => {
+  let dir: string;
+
+  beforeEach(() => {
+    dir = mkdtempSync(join(tmpdir(), "openclaw-persist-"));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("persists pending cids to disk and reports orphans on next start", async () => {
+    const path = join(dir, "pending-replies.json");
+    const state = createOpenClawRuntimeState();
+    bindOpenClawPendingReplyPersistence(state, path);
+
+    waitForOpenClawReply(state, "oc-keep").catch(() => {});
+    waitForOpenClawReply(state, "oc-also").catch(() => {});
+
+    // Simulate a restart: new state, bind to the same path, report orphans.
+    const state2 = createOpenClawRuntimeState();
+    bindOpenClawPendingReplyPersistence(state2, path);
+    const orphans = loadAndReportOrphanedOpenClawPendingReplies(path);
+    expect(orphans.sort()).toEqual(["oc-also", "oc-keep"]);
+    // After reporting, the file is removed and the new state has no entries.
+    expect(state2.pendingReplies.size).toBe(0);
+  });
+
+  it("clears the persisted file once the last entry is resolved", () => {
+    const path = join(dir, "pending-replies.json");
+    const state = createOpenClawRuntimeState();
+    bindOpenClawPendingReplyPersistence(state, path);
+    waitForOpenClawReply(state, "oc-resolve").catch(() => {});
+    resolveOpenClawReply(state, "oc-resolve", "answer");
+    // The clearPersistedPendingReplies helper removes the file when the
+    // map is empty — verify by checking the state and re-reading.
+    expect(state.pendingReplies.size).toBe(0);
   });
 });

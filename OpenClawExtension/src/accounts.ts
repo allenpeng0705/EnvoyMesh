@@ -69,15 +69,18 @@ export function resolveAccount(
       : "default";
 
   let dmPolicy = merged.dmPolicy ?? "allowlist";
-  let allowedOwnerIds = parseAllowedOwnerIds(
+  const allowedOwnerIds = parseAllowedOwnerIds(
     merged.allowedOwnerIds ?? process.env.ENVOYMESH_ALLOWED_OWNER_IDS,
   );
 
-  // Zero-config: if no owner IDs configured, default to open for local use.
-  if (allowedOwnerIds.length === 0 && dmPolicy === "allowlist") {
-    dmPolicy = "open";
-    allowedOwnerIds = ["*"];
-  }
+  // Intentionally NOT auto-flipping dmPolicy to "open"/"*" when the allowlist
+  // is empty. Pre-fix this silently turned a misconfigured allowlist into a
+  // public-DM policy, which is a security regression AND confuses operators
+  // when they later add explicit owner ids and find that earlier behavior
+  // "worked" because the policy had been quietly downgraded. The gateway
+  // startup checks (collectEnvoymeshGatewayStartupIssues) already refuse to
+  // register the inbound route for empty-allowlist accounts, so this is the
+  // safe default.
 
   return {
     accountId: id,

@@ -42,6 +42,8 @@ export interface BridgeDeps {
   getAiIdentity?: () => AiIdentity | undefined;
   /** Resolves OpenClaw ask() pending replies by correlationId. */
   resolveOpenClawReply?: (correlationId: string, text: string) => void;
+  /** Peek whether a pending entry exists for a given correlationId. */
+  hasOpenClawPendingReply?: (correlationId: string) => boolean;
 }
 
 export interface P2PMessage {
@@ -49,6 +51,11 @@ export interface P2PMessage {
   senderOwnerId: string;
   senderDisplayName?: string;
   text: string;
+  /**
+   * Unique envelope id from the inbound P2P envelope. Threaded through to the
+   * external agent so it can dedup retries by id rather than by (sender, text).
+   */
+  messageId?: string;
 }
 
 export interface AgentResponse {
@@ -68,6 +75,7 @@ export async function forwardToAgent(
     fromOwnerId: msg.senderOwnerId,
     fromName: msg.senderDisplayName ?? msg.senderOwnerId,
     text: msg.text,
+    ...(msg.messageId ? { messageId: msg.messageId } : {}),
   });
 
   const headers: Record<string, string> = { "Content-Type": "application/json" };

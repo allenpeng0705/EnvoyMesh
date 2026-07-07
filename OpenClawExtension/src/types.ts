@@ -28,6 +28,13 @@ export type EnvoymeshInboundMessage = {
   fromOwnerId: string;
   fromName: string;
   text: string;
+  /**
+   * Unique id of the inbound P2P envelope. Used to dedup retries: a retried
+   * webhook POST with the same `messageId` is treated as the same logical
+   * message and not delivered twice. Falls back to a synthetic id when the
+   * bridge doesn't send one.
+   */
+  messageId: string;
   /** Trusted EnvoyMesh policy (appended to OpenClaw system prompt). */
   policyPrompt?: string;
   /** Trusted EnvoyMesh retrieved context: vault RAG, chat history, profile. */
@@ -42,6 +49,10 @@ export type EnvoymeshChatWebhookPayload = {
   fromOwnerId?: string;
   fromName?: string;
   text?: string;
+  /**
+   * Optional P2P envelope id. Strongly recommended — see EnvoymeshInboundMessage.messageId.
+   */
+  messageId?: string;
   policyPrompt?: string;
   retrievedContext?: string;
   systemPrompt?: string;

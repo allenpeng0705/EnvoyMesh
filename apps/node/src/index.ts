@@ -279,6 +279,13 @@ try {
 } catch {
   // missing index is fine
 }
+// Run cost-rollup retention once at startup (non-blocking): collapses daily
+// rows older than 30 days into monthly rows and drops monthly rows older than
+// a year. Follows the chain-reports-store precedent of caller-driven GC, but
+// triggered here so the file stays bounded without manual RPC calls.
+void taskStore.runCostRollupRetention().catch((err) => {
+  console.warn("[cost-rollup] startup retention failed:", err);
+});
 const trustStore = createLocalTrustStore(args.profileDir);
 const peerDirectoryStore = createLocalPeerDirectoryStore(args.profileDir);
 const humanProfileStore = createHumanProfileStore(args.profileDir);
@@ -3141,6 +3148,12 @@ const bridge = createBridge({
     if (nodeService instanceof NodeServiceImpl) {
       nodeService.resolveOpenClawReply(correlationId, text);
     }
+  },
+  hasOpenClawPendingReply: (correlationId) => {
+    if (nodeService instanceof NodeServiceImpl) {
+      return nodeService.hasOpenClawPendingReply(correlationId);
+    }
+    return false;
   },
   onSelfSendEnvelope: async (envelope, _remotePeerId) => {
     // Deliver bridge agent reply locally — emit chat:message + persist to log

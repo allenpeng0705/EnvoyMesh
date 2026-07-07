@@ -96,6 +96,8 @@ import type {
   ListAgentActivityParams,
   ListAuditEventsParams,
   ListTaskJournalParams,
+  GetCostSummaryParams,
+  CostSummary,
   AuditEventSummary,
   TaskJournalSummary,
   PeerReputationSummary,
@@ -967,6 +969,9 @@ import {
   recordEnvoyAiChatMessageViaRuntime,
   recordOpenClawToolCallViaRuntime,
   resolveOpenClawReply as resolveOpenClawReplyViaRuntime,
+  hasOpenClawPendingReply as hasOpenClawPendingReplyViaRuntime,
+  bindOpenClawPendingReplyPersistence as bindOpenClawPendingReplyPersistenceViaRuntime,
+  loadAndReportOrphanedOpenClawPendingReplies as loadAndReportOrphanedOpenClawPendingRepliesViaRuntime,
   sendToOpenClawViaRuntime,
   startOpenClawViaRuntime,
   stopOpenClawViaRuntime,
@@ -1641,6 +1646,7 @@ class NodeServiceImpl implements NodeService {
       profileDir && profileDir !== "/tmp/unknown" ? createLocalChatLogStore(profileDir) : null;
     this._chatRoomStore =
       profileDir && profileDir !== "/tmp/unknown" ? createLocalChatRoomStore(profileDir) : null;
+    this._bindOpenClawPersistence();
     this._chatRoomPendingSyncStore =
       profileDir && profileDir !== "/tmp/unknown"
         ? createLocalChatRoomPendingSyncStore(profileDir)
@@ -2581,6 +2587,30 @@ class NodeServiceImpl implements NodeService {
     }));
   }
 
+  async getCostSummary(params?: GetCostSummaryParams): Promise<CostSummary> {
+    if (!this._taskStore) {
+      return {
+        totalCalls: 0,
+        totalInputTokens: 0,
+        totalOutputTokens: 0,
+        totalCostUsd: 0,
+        byProvider: [],
+        byPeriod: [],
+      };
+    }
+    return this._taskStore.summarizeModelCallCosts({
+      since: params?.since,
+      until: params?.until,
+      providerId: params?.providerId,
+      taskType: params?.taskType,
+    });
+  }
+
+  async runCostRollupRetention(): Promise<{ collapsed: number; dropped: number }> {
+    if (!this._taskStore) return { collapsed: 0, dropped: 0 };
+    return this._taskStore.runCostRollupRetention();
+  }
+
   async listTaskJournalEntries(params?: ListTaskJournalParams): Promise<TaskJournalSummary[]> {
     if (!this._taskStore) return [];
     const limit = Math.max(1, Math.min(params?.limit ?? 100, 500));
@@ -2966,7 +2996,18 @@ class NodeServiceImpl implements NodeService {
     const { findDormantBonds } = await import("./bond-steward.js");
     const deps = {
       getBonds: async () => this.getBonds(),
-      getLastInteractionAt: async () => null, // TODO: wire chat log store
+      getLastInteractionAt: async (peerOwnerId: string): Promise<string | null> => {
+        // Read the most recent chat message timestamp for this peer from the
+        // persisted chat log. Returns null when there's no history (which
+        // `findDormantBonds` treats as "very old" → dormant).
+        if (!this._chatLogStore) return null;
+        try {
+          const recent = await this._chatLogStore.listThread(peerOwnerId, 1);
+          return recent.length > 0 ? recent[0].metadata.timestamp : null;
+        } catch {
+          return null;
+        }
+      },
     };
     return findDormantBonds(deps, thresholdDays ?? 90);
   }
@@ -2993,6 +3034,16 @@ class NodeServiceImpl implements NodeService {
   // Phase 29 — OpenClaw Runtime
   private readonly _openClawState = createOpenClawRuntimeState();
 
+  private _bindOpenClawPersistence(): void {
+    if (this._profileDir === "/tmp/unknown") {
+      return;
+    }
+    const path = join(this._profileDir, "openclaw-pending-replies.json");
+    bindOpenClawPendingReplyPersistenceViaRuntime(this._openClawState, path);
+    // Surface any cids that were orphaned by the last restart.
+    loadAndReportOrphanedOpenClawPendingRepliesViaRuntime(path);
+  }
+
   private _openClawRuntimeDeps(): OpenClawRuntimeDeps {
     return buildOpenClawRuntimeDeps(this);
   }
@@ -3018,6 +3069,11 @@ class NodeServiceImpl implements NodeService {
   /** Resolve a pending sync OpenClaw ask() by correlationId (called from bridge /bridge/send). */
   resolveOpenClawReply(correlationId: string, text: string): void {
     resolveOpenClawReplyViaRuntime(this._openClawState, correlationId, text);
+  }
+
+  /** Peek whether a pending sync OpenClaw ask() exists for a correlationId. */
+  hasOpenClawPendingReply(correlationId: string): boolean {
+    return hasOpenClawPendingReplyViaRuntime(this._openClawState, correlationId);
   }
 
   async startOpenClaw(): Promise<boolean> {
