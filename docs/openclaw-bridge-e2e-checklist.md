@@ -55,6 +55,9 @@ Use the steps below for full manual validation (bonded peer, agent replies, mesh
 - [ ] OpenClaw receives inbound (check Gateway / agent session)
 - [ ] Agent reply appears on mesh as `chat.message` from the agent
 - [ ] No duplicate messages (webhook HTTP body should not echo chat text for delivery)
+- [ ] Same text sent twice in a row from the peer → both delivered (dedup is by `messageId`, not by `(ownerId, text)`)
+- [ ] Repeat a chat round-trip across a node restart → no replies get lost (the runtime persists `correlationId` → `<profileDir>/openclaw-pending-replies.json` and the bridge returns `410` for stale asks so the gateway can re-issue)
+- [ ] If a sync ask times out, check node logs for `[bridge] OpenClaw sync reply for unknown correlationId=…` — confirms the bridge detected the lost ask and the OpenClaw side should retry with a fresh cid
 
 ## E. Mesh tools (optional)
 

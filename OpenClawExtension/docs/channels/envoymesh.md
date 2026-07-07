@@ -116,7 +116,13 @@ The bridge may `POST` `type: "mesh.async_reply"` (`discovery.response`, `knowled
 Inbound (`agentUrl`):
 
 ```json
-{ "from": "<peerId>", "fromOwnerId": "<envoy:owner:…>", "fromName": "…", "text": "…" }
+{
+  "from": "<peerId>",
+  "fromOwnerId": "<envoy:owner:…>",
+  "fromName": "…",
+  "text": "…",
+  "messageId": "<unique envelope id>"
+}
 ```
 
 Outbound (`bridgeUrl`):
@@ -127,6 +133,18 @@ Outbound (`bridgeUrl`):
 
 Replies must use `to` = inbound `from` (peer id). Sync HTTP response bodies from the webhook are not used for P2P delivery.
 
+**Dedup:** the plugin dedups inbound deliveries by `messageId` (LRU 500). If
+the bridge doesn't send a `messageId` (legacy), a 10-second content-hash
+fallback catches the typical retry of a network-blip delivery but does not
+drop legitimate user repeats after the window expires.
+
+**Sync-reply protocol (built-in EnvoyAI):** the bridge returns `410` +
+`{"ok": false, "mode": "unknown-correlation"}` when a `/bridge/send` arrives
+with a `correlationId` that has no matching pending ask. This typically
+means the node restarted between the ask and the reply. The OpenClaw side
+can re-issue the ask with a fresh `correlationId` instead of silently
+dropping the answer.
+
 ## Troubleshooting
 
 | Symptom | Check |
@@ -135,7 +153,9 @@ Replies must use `to` = inbound `from` (peer id). Sync HTTP response bodies from
 | 401 inbound | `inboundSecret` vs bridge `Authorization` |
 | 401 `/bridge/send` | `bridgeSecret` vs `bridge-config.json` `secret` |
 | 403 sender | Add `fromOwnerId` to `allowedOwnerIds` |
+| 410 `/bridge/send` (sync-reply) | `mode: "unknown-correlation"` — the original ask was lost across a restart. Re-issue with a fresh `correlationId`. |
 | Duplicate P2P messages | Do not return chat text in webhook HTTP body |
+| Repeated text silently dropped | The bridge must send `messageId`. If you're not in control of the bridge, check that the plugin is on a build with messageId-based dedup (`>= 2026.7.x`). |
 
 ## Related
 

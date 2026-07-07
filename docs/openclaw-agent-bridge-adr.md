@@ -31,9 +31,15 @@
   "from": "<senderPeerId>",
   "fromOwnerId": "<envoy:owner:…>",
   "fromName": "<display name>",
-  "text": "<message body>"
+  "text": "<message body>",
+  "messageId": "<unique envelope id>"
 }
 ```
+
+`messageId` is the unique id of the inbound P2P envelope. The agent must
+treat repeated `messageId`s as duplicate deliveries of the same logical
+message and not re-process them. This is how the bridge absorbs retries of
+a flaky webhook.
 
 Optional header: `Authorization: Bearer <secret>` when `bridge-config.json` sets `secret`.
 
@@ -42,11 +48,27 @@ Optional header: `Authorization: Bearer <secret>` when `bridge-config.json` sets
 ```json
 {
   "to": "<recipientPeerId>",
-  "text": "<reply body>"
+  "text": "<reply body>",
+  "correlationId": "<optional, see sync-reply below>"
 }
 ```
 
 `to` must be the mesh peer id from inbound `from` (not owner id). Optional same Bearer secret.
+
+#### Sync-reply path (built-in EnvoyAI)
+
+When the runtime calls `ask()` on the OpenClaw webhook, the bridge keeps a
+pending Promise keyed by the `correlationId` that was sent on the inbound
+request. The agent's reply is delivered via `/bridge/send` with the same
+`correlationId`:
+
+- `200` + `{"ok": true, "mode": "sync-reply"}` when a matching ask is in
+  flight — the reply resolves the pending Promise and is consumed
+  in-process, not forwarded to the mesh.
+- `410` + `{"ok": false, "mode": "unknown-correlation"}` when no matching
+  ask exists. This typically means the node restarted between the ask and
+  the reply. The OpenClaw side can re-issue the ask with a fresh
+  `correlationId` instead of silently dropping the answer.
 
 ### Async mesh (phase C)
 
@@ -79,7 +101,7 @@ Example EnvoyMesh: `apps/node/data/default/bridge-config.openclaw.example.json`.
 |-------|----------|----------|
 | Runtime | FastAPI channel → Core `/inbound` | OpenClaw `channel.inbound.run` |
 | Reply path | Channel POSTs `/bridge/send` after Core response | Plugin `delivery.deliver` POSTs `/bridge/send` (no sync P2P from HTTP response) |
-| Dedup | SHA256(ownerId:text) LRU 200 | Same algorithm in plugin |
+| Dedup | Per-`messageId` from `EnvoyEnvelope.messageId` (LRU 500), with 10s content-hash fallback for legacy bridges that don't send one | Same algorithm in plugin (see `OpenClawExtension/src/dedup.ts`) |
 | User id | Fixed `user_id` in config | Per-sender session from `fromOwnerId` |
 
 ## Consequences

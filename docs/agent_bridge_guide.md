@@ -49,9 +49,16 @@ sequenceDiagram
   "from": "<senderPeerId>",
   "fromOwnerId": "<envoy:owner:…>",
   "fromName": "<display name>",
-  "text": "<message body>"
+  "text": "<message body>",
+  "messageId": "<unique envelope id>"
 }
 ```
+
+`messageId` is the unique id of the inbound P2P envelope (carried through from
+`EnvoyEnvelope.messageId`). The agent should treat repeated `messageId`s as
+duplicate deliveries and not re-process them — this is how retries of a
+flaky webhook are absorbed. The OpenClaw plugin dedups on `messageId` with a
+10-second content-hash fallback for legacy bridges that don't send one.
 
 Optional: `Authorization: Bearer <secret>` when `bridge-config.json` sets `secret`.
 
@@ -60,9 +67,25 @@ Optional: `Authorization: Bearer <secret>` when `bridge-config.json` sets `secre
 ```json
 {
   "to": "<recipientPeerId>",
-  "text": "<reply body>"
+  "text": "<reply body>",
+  "correlationId": "<optional, see below>"
 }
 ```
+
+`to` must be the mesh peer id from inbound `from` (not owner id). Optional same
+Bearer secret.
+
+**Sync H2A ask replies (built-in EnvoyAI path):** the bridge also supports a
+sync-reply mode used by the runtime's `ask()` — the agent POSTs the same body
+shape with a `correlationId` matching the original ask. The bridge returns:
+
+- `200` + `{"ok": true, "mode": "sync-reply"}` when a matching ask is in
+  flight — the reply resolves the pending Promise and is consumed
+  in-process, not forwarded to the mesh.
+- `410` + `{"ok": false, "mode": "unknown-correlation"}` when no matching ask
+  exists (typically because the node restarted between the ask and the reply).
+  The OpenClaw side can re-issue the ask with a fresh `correlationId` instead
+  of silently dropping the answer.
 
 **Async mesh (OpenClaw plugin):** `POST agentUrl` with `type: "mesh.async_reply"` for `discovery.response` / `knowledge.response`. See [openclaw-agent-bridge-adr.md](./openclaw-agent-bridge-adr.md).
 
@@ -287,6 +310,7 @@ Start **HomeClaw** (with envoymesh channel) and the **EnvoyMesh node** with the 
 | **401 on webhook** | `inboundSecret` vs bridge `Authorization: Bearer` |
 | **401 on `/bridge/send`** | `bridgeSecret` vs `bridge-config.json` `secret` |
 | **403 sender not allowed** (OpenClaw) | Add peer `fromOwnerId` to `allowedOwnerIds` |
+| **410 on `/bridge/send` (sync-reply path)** | `mode: "unknown-correlation"` — the node restarted between the ask and the reply. The OpenClaw side can re-issue the ask with a fresh `correlationId`. |
 | **Reply routing error** | Inbound must include `from`; `to` must be peer id `envoy_…` |
 | **Duplicate messages** | Do not return chat text in webhook HTTP body; use `/bridge/send` only |
 | **No EnvoyMesh route** (OpenClaw) | Restart Gateway; `channels.envoymesh.enabled` |
