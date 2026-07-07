@@ -1,10 +1,9 @@
 /**
- * Phase 40 — Social UI: ChainsView, ChainTreeView, ChainReportRenderer,
- * CompositeArtifactRenderer tests.
+ * Phase 40 — Social UI: ChainReportRenderer + CompositeArtifactRenderer tests.
  *
- * Validates the rendering of multi-agent chain data: status chips,
- * subtask trees, report sections, citations, and the weighted composite
- * artifact table.
+ * Validates the rendering of multi-agent chain reports: sections, citations,
+ * and the weighted composite artifact table. (ChainTreeView was removed as
+ * orphaned code — chain detail now uses ChainBidInbox + ChainRebalanceBar.)
  */
 
 /** @vitest-environment jsdom */
@@ -16,7 +15,6 @@ afterEach(() => cleanup());
 
 import type { ChainReport, CompositeArtifact, CompositeArtifactPart } from "@envoymesh/api";
 
-import { ChainTreeView, type ChainSubtaskNode } from "../../src/components/ChainTreeView.js";
 import { ChainReportRenderer } from "../../src/components/ChainReportRenderer.js";
 import { CompositeArtifactRenderer } from "../../src/components/CompositeArtifactRenderer.js";
 import { I18nContext, type TFunction } from "../../src/context/i18n-context.js";
@@ -97,101 +95,6 @@ function makeReport(overrides: Partial<ChainReport> = {}): ChainReport {
     ...overrides,
   };
 }
-
-describe("ChainTreeView", () => {
-  it("renders subtask rows with state chips", () => {
-    const subtasks: ChainSubtaskNode[] = [
-      {
-        subtaskId: "subtask_a",
-        depth: 1,
-        requiredCapability: "task.execute",
-        objective: "analyze Q3",
-        state: "awarded",
-        costUsd: 2,
-      },
-      {
-        subtaskId: "subtask_b",
-        depth: 1,
-        requiredCapability: "task.execute",
-        objective: "analyze Q4",
-        state: "partial",
-        costUsd: 3,
-      },
-    ];
-    render(wrap(<ChainTreeView chainId="chain_x" chainMandateId="chainmandate_x" subtasks={subtasks} />));
-    expect(screen.getAllByText("subtask_a").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("subtask_b").length).toBeGreaterThan(0);
-    expect(screen.getByText("analyze Q3")).toBeDefined();
-    expect(screen.getByText("analyze Q4")).toBeDefined();
-    // Cost is rendered
-    expect(screen.getAllByText("$2.00").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("$3.00").length).toBeGreaterThan(0);
-  });
-
-  it("renders the empty placeholder when no subtasks", () => {
-    render(wrap(<ChainTreeView chainId="chain_x" chainMandateId="chainmandate_x" subtasks={[]} />));
-    expect(screen.getByText("No subtasks yet.")).toBeDefined();
-  });
-
-  it("renders bids and workers", () => {
-    const subtasks: ChainSubtaskNode[] = [
-      {
-        subtaskId: "subtask_a",
-        depth: 1,
-        requiredCapability: "task.execute",
-        objective: "x",
-        state: "bidding",
-        bids: [
-          { workerPeerId: "12D3KooW-w1", proposedCostUsd: 1.5 },
-          { workerPeerId: "12D3KooW-w2", proposedCostUsd: 2 },
-        ],
-      },
-    ];
-    render(
-      wrap(
-        <ChainTreeView
-          chainId="chain_x"
-          chainMandateId="chainmandate_x"
-          subtasks={subtasks}
-          workersBySubtask={{
-            subtask_a: [
-              {
-                workerPeerId: "12D3KooW-w1",
-                ownerId: "envoy:owner:w1",
-                state: "awarded",
-                costUsd: 1.5,
-              },
-            ],
-          }}
-        />,
-      ),
-    );
-    expect(screen.getAllByText("$1.50").length).toBeGreaterThan(0);
-    expect(screen.getAllByText("$2.00").length).toBeGreaterThan(0);
-    expect(screen.getByText("envoy:owner:w1")).toBeDefined();
-  });
-
-  it("highlights the highlighted subtask", () => {
-    const subtasks: ChainSubtaskNode[] = [
-      { subtaskId: "subtask_a", depth: 1, requiredCapability: "task.execute", objective: "a", state: "awarded" },
-      { subtaskId: "subtask_b", depth: 1, requiredCapability: "task.execute", objective: "b", state: "awarded" },
-    ];
-    render(
-      wrap(
-        <ChainTreeView
-          chainId="chain_x"
-          chainMandateId="chainmandate_x"
-          subtasks={subtasks}
-          highlightedSubtaskId="subtask_b"
-        />,
-      ),
-    );
-    const row = document.querySelector('[data-subtask-id="subtask_b"]') || document.querySelector('[data-highlighted="true"]');
-    // The highlighted attribute should be on subtask_b's row
-    const highlightedRow = document.querySelector('[data-highlighted="true"]');
-    expect(highlightedRow).toBeDefined();
-  });
-});
 
 describe("ChainReportRenderer", () => {
   it("renders header, sections, and citations", () => {

@@ -9,7 +9,8 @@ import {
 } from "@envoymesh/protocol";
 import { evaluatePolicy } from "@envoymesh/bonds";
 import type { VaultIndex } from "@envoymesh/vault";
-import { buildModelProviders, routeModelRequest } from "@envoymesh/models";
+import { buildModelProviders } from "@envoymesh/models";
+import { routeModelRequestWithCostTracking } from "./model-cost-tracking.js";
 import {
   resolveKnowledgeSyndicationSensitivity,
   syndicationSensitivityToKnowledgeAccess,
@@ -70,7 +71,7 @@ export async function handleInboundKnowledgeQuery(input: {
   remotePeerId: string;
   receivedAt: number;
   correlationId: string | undefined;
-  taskStore: Pick<LocalTaskStore, "appendAuditEvent">;
+  taskStore: Pick<LocalTaskStore, "appendAuditEvent" | "recordModelCallCost">;
   trustStore: LocalTrustStore;
   peerDirectoryStore: LocalPeerDirectoryStore;
   profile: NodeProfile;
@@ -336,7 +337,7 @@ Query: ${payload.query}`;
   const providers = buildModelProviders(modelProviders, ownerApproved);
   console.log(`[knowledge-query] providers.length=${providers.length}`);
 
-  const modelResult = await routeModelRequest(
+  const modelResult = await routeModelRequestWithCostTracking(
     {
       taskType: "knowledge.query",
       prompt,
@@ -345,6 +346,7 @@ Query: ${payload.query}`;
       ownerApproved,
     },
     providers,
+    { taskStore },
   );
   console.log(`[knowledge-query] modelResult:`, JSON.stringify(modelResult));
 

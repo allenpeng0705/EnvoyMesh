@@ -41,7 +41,7 @@ export function ChatView({
   const t = useT();
   const nodeService = useNodeService();
   const isMobileNode = useIsInProcessMobileNode();
-  const { connectionStatus } = useNodeState();
+  const { connectionStatus, nodeConfig, bonds } = useNodeState();
   const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
   const [terminalSessions, setTerminalSessions] = useState<TerminalSessionSummary[]>([]);
   const [selectedTerminalId, setSelectedTerminalId] = useState<string | null>(() => loadTerminalSelectedSessionId());
@@ -195,12 +195,32 @@ export function ChatView({
                 <div className="no-chat-selected-icon">
                   <ChatIcon size={48} />
                 </div>
-                <h3>{t("chat.selectContact")}</h3>
-                <p>{t("chat.selectContactDesc")}</p>
-                {onOpenAssistant && (
-                  <button type="button" className="primary" style={{ marginTop: "1rem" }} onClick={onOpenAssistant}>
-                    {t("chat.openAssistant")}
-                  </button>
+                {bonds.length === 0 ? (
+                  <>
+                    <h3>{t("chat.welcomeTitle")}</h3>
+                    <p>{t("chat.welcomeDesc")}</p>
+                    {onOpenDiscover && (
+                      <button type="button" className="primary" style={{ marginTop: "1rem" }} onClick={onOpenDiscover}>
+                        {t("chat.openDiscover")}
+                      </button>
+                    )}
+                    {/* Show "Open EnvoyAI" only when AI is not disabled */}
+                    {onOpenAssistant && nodeConfig?.modelProviders?.mode !== "disabled" && (
+                      <button type="button" className="secondary" style={{ marginTop: "0.5rem" }} onClick={onOpenAssistant}>
+                        {t("chat.openAssistant")}
+                      </button>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <h3>{t("chat.selectContact")}</h3>
+                    <p>{t("chat.selectContactDesc")}</p>
+                    {onOpenAssistant && nodeConfig?.modelProviders?.mode !== "disabled" && (
+                      <button type="button" className="primary" style={{ marginTop: "1rem" }} onClick={onOpenAssistant}>
+                        {t("chat.openAssistant")}
+                      </button>
+                    )}
+                  </>
                 )}
               </div>
             )}

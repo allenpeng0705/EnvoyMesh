@@ -371,4 +371,19 @@ export const aiSettingsMessages = {
       "e.g., Hi {ownerName} is currently away. I'll let them know you reached out!",
     addButton: "Add Rule",
   },
+  cost: {
+    heading: "Model Cost",
+    sectionDesc: "Per-call cost tracked across cloud and local LLM providers.",
+    loading: "Loading…",
+    totalCost: "Total cost",
+    totalCalls: "Calls",
+    tokensInOut: "Tokens in / out",
+    byProvider: "By provider",
+    range: {
+      today: "Today",
+      "7d": "7 days",
+      "30d": "30 days",
+      all: "All time",
+    },
+  },
 } as const;

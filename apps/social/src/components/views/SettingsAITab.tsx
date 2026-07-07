@@ -18,6 +18,7 @@ import type {
   AiRuleActionType,
   AiRuleCategory,
   AiSettings,
+  CostSummary,
   DocumentAutonomyPolicy,
   ModelProviderMode,
   RagIndexStatus,
@@ -1158,6 +1159,161 @@ function TerminalAssistSettings({
   );
 }
 
+const COST_RANGE_PRESETS = ["today", "7d", "30d", "all"] as const;
+type CostRangePreset = (typeof COST_RANGE_PRESETS)[number];
+
+function costRangeToSince(preset: CostRangePreset): string | undefined {
+  if (preset === "today") {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d.toISOString();
+  }
+  if (preset === "7d") {
+    const d = new Date();
+    d.setDate(d.getDate() - 7);
+    return d.toISOString();
+  }
+  if (preset === "30d") {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return d.toISOString();
+  }
+  return undefined;
+}
+
+function formatCost(usd: number): string {
+  if (usd === 0) return "$0.00";
+  if (usd < 0.01) return `<$0.01`;
+  if (usd < 1) return `$${usd.toFixed(4)}`;
+  return `$${usd.toFixed(2)}`;
+}
+
+function formatTokens(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
+  return String(n);
+}
+
+/**
+ * Owner-facing cost dashboard. Reads from the daily/monthly rollup store via
+ * getCostSummary — no raw audit scanning, so it stays fast even for a year of
+ * history. Renders nothing when the node reports no recorded calls (e.g. fresh
+ * install or mock-only provider).
+ */
+function CostDashboardPanel() {
+  const t = useT();
+  const nodeService = useNodeService();
+  const [summary, setSummary] = useState<CostSummary | null>(null);
+  const [range, setRange] = useState<CostRangePreset>("7d");
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      setLoading(true);
+      try {
+        const next = await nodeService.getCostSummary({ since: costRangeToSince(range) });
+        if (!cancelled) setSummary(next);
+      } catch {
+        if (!cancelled) setSummary(null);
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [nodeService, range]);
+
+  if (loading) {
+    return (
+      <section className="settings-section">
+        <h4>{t("settings.ai.cost.heading", "Model Cost")}</h4>
+        <p className="settings-hint">{t("settings.ai.cost.loading", "Loading…")}</p>
+      </section>
+    );
+  }
+
+  if (!summary || (summary.totalCalls === 0 && summary.byProvider.length === 0)) {
+    return null;
+  }
+
+  const maxProviderCost = Math.max(0.0001, ...summary.byProvider.map((p) => p.costUsd));
+
+  return (
+    <section className="settings-section">
+      <h4>{t("settings.ai.cost.heading", "Model Cost")}</h4>
+      <p className="section-desc">
+        {t(
+          "settings.ai.cost.sectionDesc",
+          "Per-call cost tracked across cloud and local LLM providers.",
+        )}
+      </p>
+
+      <div className="settings-toggle-row" style={{ justifyContent: "flex-start", gap: 8 }}>
+        {COST_RANGE_PRESETS.map((preset) => (
+          <button
+            key={preset}
+            type="button"
+            className={`chip-button${range === preset ? " chip-button--active" : ""}`}
+            onClick={() => setRange(preset)}
+          >
+            {t(`settings.ai.cost.range.${preset}`, preset)}
+          </button>
+        ))}
+      </div>
+
+      <div className="form-group">
+        <div className="settings-cost-totals">
+          <div className="settings-cost-total">
+            <span className="settings-cost-total-value">{formatCost(summary.totalCostUsd)}</span>
+            <span className="settings-cost-total-label">
+              {t("settings.ai.cost.totalCost", "Total cost")}
+            </span>
+          </div>
+          <div className="settings-cost-total">
+            <span className="settings-cost-total-value">{summary.totalCalls}</span>
+            <span className="settings-cost-total-label">
+              {t("settings.ai.cost.totalCalls", "Calls")}
+            </span>
+          </div>
+          <div className="settings-cost-total">
+            <span className="settings-cost-total-value">
+              {formatTokens(summary.totalInputTokens)} / {formatTokens(summary.totalOutputTokens)}
+            </span>
+            <span className="settings-cost-total-label">
+              {t("settings.ai.cost.tokensInOut", "Tokens in / out")}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {summary.byProvider.length > 0 && (
+        <div className="form-group">
+          <label>{t("settings.ai.cost.byProvider", "By provider")}</label>
+          <ul className="settings-cost-breakdown">
+            {summary.byProvider.map((row) => (
+              <li key={row.providerId} className="settings-cost-breakdown-row">
+                <span className="settings-cost-breakdown-label">{row.providerId}</span>
+                <div className="settings-cost-breakdown-bar" aria-hidden="true">
+                  <div
+                    className="settings-cost-breakdown-fill"
+                    style={{ width: `${(row.costUsd / maxProviderCost) * 100}%` }}
+                  />
+                </div>
+                <span className="settings-cost-breakdown-value">
+                  {formatCost(row.costUsd)}{" "}
+                  <span className="settings-cost-breakdown-calls">×{row.calls}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function SettingsAITab() {
   const t = useT();
   const nodeService = useNodeService();
@@ -1436,6 +1592,13 @@ export function SettingsAITab() {
           now "Devices & Fleet" (device bonding), clearing the naming clash. */}
       <section className="settings-section">
         <ChainDefaultsPanel />
+      </section>
+
+      {/* Per-call model cost dashboard. Reads from the rollup store so it
+          stays fast for a year of history. Renders nothing on a fresh
+          install (no recorded calls) or on mobile (stubbed to empty). */}
+      <section className="settings-section">
+        <CostDashboardPanel />
       </section>
 
       <section className="settings-section">

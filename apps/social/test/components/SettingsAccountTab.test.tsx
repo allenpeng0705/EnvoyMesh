@@ -83,9 +83,9 @@ describe("SettingsAccountTab (Profile / Identity / Privacy)", () => {
       expect(screen.getByText("Your profile")).toBeDefined();
     });
     expect(screen.getByText("Identity")).toBeDefined();
-    // Privacy section headings (formerly the standalone Privacy tab)
+    // Privacy section headings (formerly the standalone Privacy tab).
+    // Trust Mode moved to the Network tab — no longer rendered here.
     expect(screen.getByText("Autonomy Controls")).toBeDefined();
-    expect(screen.getByText("Trust Mode")).toBeDefined();
     expect(screen.getByText("Data Management")).toBeDefined();
     expect(screen.getByText("Knowledge Sharing")).toBeDefined();
     // Authorized Devices is no longer rendered here — it now lives in
@@ -141,20 +141,9 @@ describe("SettingsAccountTab (Profile / Identity / Privacy)", () => {
     });
   });
 
-  it("toggles trust mode and persists it", async () => {
-    renderWithI18n(<SettingsAccountTab />);
-    await waitFor(() => {
-      expect(screen.getByText("Trust Mode")).toBeDefined();
-    });
-    const trustModeSection = screen.getByText("Trust Mode").closest("section");
-    expect(trustModeSection).toBeDefined();
-    const checkboxes = trustModeSection!.querySelectorAll('input[type="checkbox"]');
-    expect(checkboxes.length).toBeGreaterThan(0);
-    fireEvent.click(checkboxes[0]!);
-    await waitFor(() => {
-      expect(updateNodeConfig).toHaveBeenCalledWith({ trustModeEnabled: true });
-    });
-  });
+  // Trust Mode toggle moved to Settings → Network (Trust & Matching) to
+  // avoid a duplicate write to the same `trustModeEnabled` field. The
+  // toggle is tested in SettingsNodeTab.test.tsx.
 
   it("calls clearAllUserData when the user confirms the Clear All Data dialog", async () => {
     renderWithI18n(<SettingsAccountTab />);

@@ -1,63 +1,58 @@
 /**
  * Phase 42F — Chain Defaults panel.
  *
- * Configurable chain settings embedded in the AI Settings tab.
- * Controls: max chain budget, default stall policy, bid ranking
- * weights, cost estimation toggle.
+ * Configurable chain settings embedded in the AI Settings tab. Every field
+ * shown here is persisted via `chainSetDefaults` (no UI-only state that
+ * silently vanishes on reload). Non-persisting fields (bid weights, max
+ * budget, cost estimation) were removed in favor of the real persistent
+ * knobs from `ChainDefaultsConfig`.
  */
 
-import React, { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useNodeService } from "../../../hooks/useNodeService.js";
 import { useT } from "../../../context/I18nContext.js";
 import type { ChainDefaultsConfig } from "@envoymesh/api";
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
-interface ChainDefaults {
-  maxChainBudgetUsd: number;
-  defaultStallPolicy: ChainDefaultsConfig["rebalancePolicy"];
-  bidWeights: {
-    cost: number;
-    reputation: number;
-    freshness: number;
-    precision: number;
-  };
-  costEstimationEnabled: boolean;
-  maxNegotiationRounds: number;
+interface ChainDefaultsState {
+  rebalancePolicy: NonNullable<ChainDefaultsConfig["rebalancePolicy"]>;
+  stallTimeoutMs: number;
+  lowConfidenceThreshold: number;
+  maxAutoRebalances: number;
+  autoRebalanceIncrementUsd: number;
+  allowLlmDecompose: boolean;
 }
 
-// ---------------------------------------------------------------------------
-// Component
-// ---------------------------------------------------------------------------
+const DEFAULTS: ChainDefaultsState = {
+  rebalancePolicy: "auto",
+  stallTimeoutMs: 60_000,
+  lowConfidenceThreshold: 0.5,
+  maxAutoRebalances: 2,
+  autoRebalanceIncrementUsd: 5,
+  allowLlmDecompose: false,
+};
 
 export function ChainDefaultsPanel() {
   const t = useT();
   const nodeService = useNodeService();
-  const [defaults, setDefaults] = useState<ChainDefaults>({
-    maxChainBudgetUsd: 10,
-    defaultStallPolicy: "manual",
-    bidWeights: { cost: 35, reputation: 30, freshness: 20, precision: 15 },
-    costEstimationEnabled: false,
-    maxNegotiationRounds: 3,
-  });
+  const [defaults, setDefaults] = useState<ChainDefaultsState>(DEFAULTS);
   const [saveState, setSaveState] = useState<"idle" | "saving" | "saved" | "error">("idle");
 
-  // Load chain defaults from the node once on mount.
-  // Only updates rebalancePolicy (the only field the node currently persists).
-  // Does NOT overwrite bidWeights / costEstimationEnabled / maxNegotiationRounds
-  // since those are UI-only for now.
+  // Load the persisted chain defaults on mount.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
         const result = await nodeService.chainGetDefaults({});
         if (!cancelled && result.defaults) {
-          setDefaults((prev) => ({
-            ...prev,
-            defaultStallPolicy: result.defaults?.rebalancePolicy ?? prev.defaultStallPolicy,
-          }));
+          const d = result.defaults;
+          setDefaults({
+            rebalancePolicy: d.rebalancePolicy ?? DEFAULTS.rebalancePolicy,
+            stallTimeoutMs: d.stallTimeoutMs ?? DEFAULTS.stallTimeoutMs,
+            lowConfidenceThreshold: d.lowConfidenceThreshold ?? DEFAULTS.lowConfidenceThreshold,
+            maxAutoRebalances: d.maxAutoRebalances ?? DEFAULTS.maxAutoRebalances,
+            autoRebalanceIncrementUsd: d.autoRebalanceIncrementUsd ?? DEFAULTS.autoRebalanceIncrementUsd,
+            allowLlmDecompose: d.allowLlmDecompose ?? DEFAULTS.allowLlmDecompose,
+          });
         }
       } catch {
         // Node may not yet support chainGetDefaults — keep defaults
@@ -68,49 +63,30 @@ export function ChainDefaultsPanel() {
     };
   }, [nodeService]);
 
-  const writeField = useCallback(
-    (field: string, value: unknown) => {
-      setDefaults((prev) => {
-        const next = { ...prev };
-        if (field.startsWith("bidWeights.")) {
-          const key = field.split(".")[1] as keyof ChainDefaults["bidWeights"];
-          next.bidWeights = { ...next.bidWeights, [key]: value };
-        } else {
-          (next as Record<string, unknown>)[field] = value;
-        }
-        return next;
-      });
-      setSaveState("idle");
-    },
-    [],
-  );
+  const writeField = useCallback(<K extends keyof ChainDefaultsState>(field: K, value: ChainDefaultsState[K]) => {
+    setDefaults((prev) => ({ ...prev, [field]: value }));
+    setSaveState("idle");
+  }, []);
 
   const handleSave = useCallback(async () => {
     setSaveState("saving");
     try {
-      // Persist the rebalance policy via chainSetDefaults
       await nodeService.chainSetDefaults({
         defaults: {
-          rebalancePolicy: defaults.defaultStallPolicy,
+          rebalancePolicy: defaults.rebalancePolicy,
+          stallTimeoutMs: defaults.stallTimeoutMs,
+          lowConfidenceThreshold: defaults.lowConfidenceThreshold,
+          maxAutoRebalances: defaults.maxAutoRebalances,
+          autoRebalanceIncrementUsd: defaults.autoRebalanceIncrementUsd,
+          allowLlmDecompose: defaults.allowLlmDecompose,
         },
       });
-      // Note: maxChainBudgetUsd, bidWeights, maxNegotiationRounds, and
-      // costEstimationEnabled are not yet wired to persistent config.
-      // They are held in component state only (Phase 40D.6 scope).
       setSaveState("saved");
     } catch (err) {
       console.error("[ChainDefaultsPanel] save failed:", err);
       setSaveState("error");
     }
   }, [nodeService, defaults]);
-
-  // Validate bid weights sum to 100
-  const weightSum =
-    defaults.bidWeights.cost +
-    defaults.bidWeights.reputation +
-    defaults.bidWeights.freshness +
-    defaults.bidWeights.precision;
-  const weightsValid = weightSum === 100;
 
   return (
     <div className="chain-defaults-panel">
@@ -119,16 +95,16 @@ export function ChainDefaultsPanel() {
         {t("chainDefaults.description")}
       </p>
 
-      {/* Default stall policy */}
+      {/* Rebalance policy */}
       <div className="chain-default-row">
         <label htmlFor="chain-stall-policy">
           {t("chainDefaults.stallPolicy")}
         </label>
         <select
           id="chain-stall-policy"
-          value={defaults.defaultStallPolicy}
+          value={defaults.rebalancePolicy}
           onChange={(e) =>
-            writeField("defaultStallPolicy", e.target.value)
+            writeField("rebalancePolicy", e.target.value as ChainDefaultsState["rebalancePolicy"])
           }
         >
           <option value="manual">{t("chainDefaults.stallPolicyManual")}</option>
@@ -137,84 +113,98 @@ export function ChainDefaultsPanel() {
         </select>
       </div>
 
-      {/* Bid ranking weights */}
-      <h5>{t("chainDefaults.bidWeights")}</h5>
-      <p className="chain-default-hint">{t("chainDefaults.bidWeightsHint")}</p>
-
+      {/* Stall timeout */}
       <div className="chain-default-row">
-        <label htmlFor="chain-bid-cost">
-          {t("chainDefaults.bidWeightCost")}
+        <label htmlFor="chain-stall-timeout">
+          {t("chainDefaults.stallTimeoutLabel")}
         </label>
         <input
-          id="chain-bid-cost"
+          id="chain-stall-timeout"
           type="number"
-          min={0}
-          max={100}
-          value={defaults.bidWeights.cost}
+          min={10_000}
+          max={600_000}
+          step={10_000}
+          value={defaults.stallTimeoutMs}
           onChange={(e) =>
-            writeField("bidWeights.cost", parseInt(e.target.value, 10) || 0)
+            writeField("stallTimeoutMs", parseInt(e.target.value, 10) || DEFAULTS.stallTimeoutMs)
           }
         />
-      </div>
-      <div className="chain-default-row">
-        <label htmlFor="chain-bid-reputation">
-          {t("chainDefaults.bidWeightReputation")}
-        </label>
-        <input
-          id="chain-bid-reputation"
-          type="number"
-          min={0}
-          max={100}
-          value={defaults.bidWeights.reputation}
-          onChange={(e) =>
-            writeField("bidWeights.reputation", parseInt(e.target.value, 10) || 0)
-          }
-        />
-      </div>
-      <div className="chain-default-row">
-        <label htmlFor="chain-bid-freshness">
-          {t("chainDefaults.bidWeightFreshness")}
-        </label>
-        <input
-          id="chain-bid-freshness"
-          type="number"
-          min={0}
-          max={100}
-          value={defaults.bidWeights.freshness}
-          onChange={(e) =>
-            writeField("bidWeights.freshness", parseInt(e.target.value, 10) || 0)
-          }
-        />
-      </div>
-      <div className="chain-default-row">
-        <label htmlFor="chain-bid-precision">
-          {t("chainDefaults.bidWeightPrecision")}
-        </label>
-        <input
-          id="chain-bid-precision"
-          type="number"
-          min={0}
-          max={100}
-          value={defaults.bidWeights.precision}
-          onChange={(e) =>
-            writeField("bidWeights.precision", parseInt(e.target.value, 10) || 0)
-          }
-        />
+        <small className="chain-default-hint">{t("chainDefaults.stallTimeoutHint")}</small>
       </div>
 
-      {!weightsValid && (
-        <p className="chain-default-error">
-          {t("chainDefaults.weightsError", { sum: weightSum })}
-        </p>
-      )}
+      {/* Max auto-rebalances */}
+      <div className="chain-default-row">
+        <label htmlFor="chain-max-rebalances">
+          {t("chainDefaults.maxAutoRebalancesLabel")}
+        </label>
+        <input
+          id="chain-max-rebalances"
+          type="number"
+          min={0}
+          max={10}
+          value={defaults.maxAutoRebalances}
+          onChange={(e) =>
+            writeField("maxAutoRebalances", parseInt(e.target.value, 10) || 0)
+          }
+        />
+        <small className="chain-default-hint">{t("chainDefaults.maxAutoRebalancesHint")}</small>
+      </div>
+
+      {/* Auto-rebalance increment */}
+      <div className="chain-default-row">
+        <label htmlFor="chain-rebalance-increment">
+          {t("chainDefaults.rebalanceIncrementLabel")}
+        </label>
+        <input
+          id="chain-rebalance-increment"
+          type="number"
+          min={0.5}
+          max={50}
+          step={0.5}
+          value={defaults.autoRebalanceIncrementUsd}
+          onChange={(e) =>
+            writeField("autoRebalanceIncrementUsd", parseFloat(e.target.value) || DEFAULTS.autoRebalanceIncrementUsd)
+          }
+        />
+        <small className="chain-default-hint">{t("chainDefaults.rebalanceIncrementHint")}</small>
+      </div>
+
+      {/* Low confidence threshold */}
+      <div className="chain-default-row">
+        <label htmlFor="chain-confidence">
+          {t("chainDefaults.lowConfidenceLabel")}
+        </label>
+        <input
+          id="chain-confidence"
+          type="number"
+          min={0}
+          max={1}
+          step={0.1}
+          value={defaults.lowConfidenceThreshold}
+          onChange={(e) =>
+            writeField("lowConfidenceThreshold", parseFloat(e.target.value) || 0)
+          }
+        />
+        <small className="chain-default-hint">{t("chainDefaults.lowConfidenceHint")}</small>
+      </div>
+
+      {/* LLM decompose toggle */}
+      <div className="chain-default-row chain-default-row--toggle">
+        <label htmlFor="chain-llm-decompose">
+          {t("chainDefaults.allowLlmDecomposeLabel")}
+        </label>
+        <input
+          id="chain-llm-decompose"
+          type="checkbox"
+          checked={defaults.allowLlmDecompose}
+          onChange={(e) => writeField("allowLlmDecompose", e.target.checked)}
+        />
+        <small className="chain-default-hint">{t("chainDefaults.allowLlmDecomposeHint")}</small>
+      </div>
 
       <button
         className="btn-sm btn-primary"
-        disabled={
-          saveState === "saving" ||
-          !weightsValid ||
-          defaults.defaultStallPolicy === undefined
-        }
+        disabled={saveState === "saving"}
         onClick={handleSave}
       >
         {saveState === "saving"
@@ -223,7 +213,7 @@ export function ChainDefaultsPanel() {
             ? t("chainDefaults.saved")
             : saveState === "error"
               ? t("chainDefaults.saveFailed")
-              : t("chainDefaults.saveStallPolicy")}
+              : t("chainDefaults.saveButton")}
       </button>
     </div>
   );

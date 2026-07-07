@@ -175,6 +175,9 @@ export class DirectCallClient implements NodeServiceClient {
   async blockPeer(peerOwnerId: string) {
     return this._ns.blockPeer(peerOwnerId);
   }
+  async unblockPeer(peerOwnerId: string) {
+    return this._ns.unblockPeer(peerOwnerId);
+  }
 
   async revokeBond(peerOwnerId: string) {
     return this._ns.revokeBond(peerOwnerId);
@@ -394,6 +397,14 @@ export class DirectCallClient implements NodeServiceClient {
 
   async listTaskJournalEntries(params?: Parameters<NodeService["listTaskJournalEntries"]>[0]) {
     return this._ns.listTaskJournalEntries(params);
+  }
+
+  async getCostSummary(params?: Parameters<NodeService["getCostSummary"]>[0]) {
+    return this._ns.getCostSummary(params);
+  }
+
+  async runCostRollupRetention() {
+    return this._ns.runCostRollupRetention();
   }
 
   async listAgentCards() {

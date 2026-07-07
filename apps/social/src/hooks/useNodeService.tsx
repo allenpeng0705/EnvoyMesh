@@ -167,6 +167,7 @@ export interface NodeServiceClient {
   acceptHello(messageId: string): Promise<void>;
   declineHello(messageId: string, reason?: string): Promise<void>;
   blockPeer(peerOwnerId: string): Promise<void>;
+  unblockPeer(peerOwnerId: string): Promise<void>;
   revokeBond(peerOwnerId: string): Promise<void>;
   getBonds(): Promise<BondRecord[]>;
   listPendingSocialIntroProposals(): Promise<SocialIntroProposal[]>;
@@ -199,6 +200,8 @@ export interface NodeServiceClient {
   ): Promise<import("@envoymesh/api").CommerceReceiptRecord>;
   listAuditEvents(params?: import("@envoymesh/api").ListAuditEventsParams): Promise<import("@envoymesh/api").AuditEventSummary[]>;
   listTaskJournalEntries(params?: import("@envoymesh/api").ListTaskJournalParams): Promise<import("@envoymesh/api").TaskJournalSummary[]>;
+  getCostSummary(params?: import("@envoymesh/api").GetCostSummaryParams): Promise<import("@envoymesh/api").CostSummary>;
+  runCostRollupRetention(): Promise<{ collapsed: number; dropped: number }>;
   listAgentCards(): Promise<import("@envoymesh/api").CachedAgentCardSummary[]>;
   getAgentCard(ownerId: string): Promise<import("@envoymesh/api").CachedAgentCardSummary | undefined>;
   requestAgentCard(targetOwnerId: string): Promise<{ ok: boolean; error?: string }>;
@@ -674,6 +677,7 @@ function createWsNodeServiceClient(
       return wsClient.rpc("declineSocialIntroProposal", { messageId });
     },
     async blockPeer(peerOwnerId: string) { return wsClient.rpc("blockPeer", { peerOwnerId }); },
+    async unblockPeer(peerOwnerId: string) { return wsClient.rpc("unblockPeer", { peerOwnerId }); },
     async revokeBond(peerOwnerId: string) { return wsClient.rpc("revokeBond", { peerOwnerId }); },
     async getBonds() { return wsClient.rpc("getBonds"); },
     async sendChat(targetOwnerId: string, text: string) {
@@ -742,6 +746,14 @@ function createWsNodeServiceClient(
       return wsClient.rpc("listTaskJournalEntries", (params ?? {}) as Record<string, unknown>) as Promise<
         import("@envoymesh/api").TaskJournalSummary[]
       >;
+    },
+    async getCostSummary(params?: import("@envoymesh/api").GetCostSummaryParams) {
+      return wsClient.rpc("getCostSummary", (params ?? {}) as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").CostSummary
+      >;
+    },
+    async runCostRollupRetention() {
+      return wsClient.rpc("runCostRollupRetention") as Promise<{ collapsed: number; dropped: number }>;
     },
     async listAgentCards() {
       return wsClient.rpc("listAgentCards") as Promise<import("@envoymesh/api").CachedAgentCardSummary[]>;

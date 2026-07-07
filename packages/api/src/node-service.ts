@@ -229,6 +229,8 @@ export interface SocialIntroProposal {
 export interface RunOwnerAgentTurnOptions {
   /** Client-assigned id for the human message (matches optimistic UI bubble). */
   humanMessageId?: string;
+  /** Client locale (e.g. "en", "zh") — used by the scripted tutor fallback. */
+  locale?: string;
 }
 
 /** Optional flags for {@link NodeService.sendHello} (Trust-mode bond linkage). */
@@ -310,7 +312,7 @@ export interface ChatMessage {
       correlationId?: string;
       pendingApproval?: boolean;
       routeId?: string;
-      modelUsed?: "openclaw" | "native";
+      modelUsed?: "openclaw" | "native" | "scripted-tutor";
       format?: string;
       blocks?: import("./owner-agent-types.js").StructuredBlock[];
     };
@@ -460,6 +462,37 @@ export interface ListAuditEventsParams {
   since?: string;
   until?: string;
   limit?: number;
+}
+
+/** Filters for the owner cost dashboard. */
+export interface GetCostSummaryParams {
+  /** ISO timestamp; only rows with period >= since are aggregated. */
+  since?: string;
+  /** ISO timestamp; only rows with period < until are aggregated. */
+  until?: string;
+  /** Restrict to a single providerId (e.g. "cloud.anthropic"). */
+  providerId?: string;
+  /** Restrict to a single taskType (e.g. "knowledge.query"). */
+  taskType?: string;
+}
+
+/** Aggregated cost summary returned by getCostSummary. */
+export interface CostSummary {
+  totalCalls: number;
+  totalInputTokens: number;
+  totalOutputTokens: number;
+  totalCostUsd: number;
+  byProvider: Array<{
+    providerId: string;
+    calls: number;
+    costUsd: number;
+  }>;
+  byPeriod: Array<{
+    period: string;
+    granularity: "day" | "month";
+    calls: number;
+    costUsd: number;
+  }>;
 }
 
 export interface TaskJournalSummary {
@@ -1440,6 +1473,12 @@ export interface NodeService {
 
   /** Filtered audit trail for Activity drill-down (summaries only). */
   listAuditEvents(params?: ListAuditEventsParams): Promise<AuditEventSummary[]>;
+
+  /** Aggregated per-call model cost summary for the owner AI dashboard. */
+  getCostSummary(params?: GetCostSummaryParams): Promise<CostSummary>;
+
+  /** Run cost rollup retention (collapse old daily rows to monthly). Returns counts. */
+  runCostRollupRetention(): Promise<{ collapsed: number; dropped: number }>;
 
   /** Task journal rows for Activity drill-down. */
   listTaskJournalEntries(params?: ListTaskJournalParams): Promise<TaskJournalSummary[]>;

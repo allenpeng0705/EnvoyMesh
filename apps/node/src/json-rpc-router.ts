@@ -293,6 +293,15 @@ export async function routeRpcMethod(
         taskId: params.taskId as string | undefined,
         limit: params.limit as number | undefined,
       });
+    case "getCostSummary":
+      return ns.getCostSummary({
+        since: params.since as string | undefined,
+        until: params.until as string | undefined,
+        providerId: params.providerId as string | undefined,
+        taskType: params.taskType as string | undefined,
+      });
+    case "runCostRollupRetention":
+      return ns.runCostRollupRetention();
     case "listAgentCards":
       return ns.listAgentCards();
     case "getAgentCard":

@@ -131,6 +131,7 @@ export const setupMessages = {
   connectingBanner:
     "Your home node is starting in the background — fill in your profile while you wait. First launch can take 1–2 minutes.",
   waitingForNode: "Waiting for home node…",
+  sponsorIntroduced: "We introduced you to your first contact — they'll appear in Chat once they accept.",
 } as const;
 
 export const activityMessages = {

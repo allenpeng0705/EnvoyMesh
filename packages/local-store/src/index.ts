@@ -64,6 +64,14 @@ import {
   type LocalChainReportsStore,
 } from "./chain-reports-store.js";
 import {
+  createCostRollupStore,
+  type CostRollupEntry,
+  type CostRollupStore,
+  type CostSummary,
+  type CostSummaryFilters,
+  type RecordCallInput,
+} from "./cost-rollup-store.js";
+import {
   createLocalChainRecipesStore,
   type ChainRecipeRecord,
   type LocalChainRecipesStore,
@@ -725,6 +733,13 @@ export interface LocalTaskStore {
     recipe: Omit<ChainRecipeRecord, "createdAt" | "updatedAt"> & { createdAt?: string },
   ): Promise<ChainRecipeRecord>;
   deleteChainRecipe(id: string): Promise<boolean>;
+  // Per-call cost tracking.
+  /** Merge one model call's actual usage into the daily cost rollup. */
+  recordModelCallCost(input: RecordCallInput): Promise<void>;
+  /** Aggregate rollup entries into a dashboard summary. */
+  summarizeModelCallCosts(filters?: CostSummaryFilters): Promise<CostSummary>;
+  /** Run retention: collapse old daily rows to monthly, drop very old monthly. */
+  runCostRollupRetention(now?: Date): Promise<{ collapsed: number; dropped: number }>;
 }
 
 export type AbuseFlag = "none" | "slow_response" | "no_answer" | "malicious" | "offensive";
@@ -888,6 +903,7 @@ export function createLocalTaskStore(profileDir: string): LocalTaskStore {
   const fleetManifestStore = createLocalFleetManifestStore(profileDir);
   const chainReportsStore = createLocalChainReportsStore(profileDir);
   const chainRecipesStore = createLocalChainRecipesStore(profileDir);
+  const costRollupStore = createCostRollupStore(profileDir);
 
   const auditEventToIndexEntry = (event: AuditEvent): JsonlIndexEntry => ({
     id: event.eventId,
@@ -1081,6 +1097,15 @@ export function createLocalTaskStore(profileDir: string): LocalTaskStore {
     },
     async deleteChainRecipe(id) {
       return chainRecipesStore.deleteRecipe(id);
+    },
+    async recordModelCallCost(input) {
+      return costRollupStore.recordCall(input);
+    },
+    async summarizeModelCallCosts(filters) {
+      return costRollupStore.summarize(filters);
+    },
+    async runCostRollupRetention(now) {
+      return costRollupStore.runRetention(now);
     },
   };
 }
@@ -2505,3 +2530,4 @@ export * from "./task-results-store.js";
 export * from "./company-invite-store.js";
 export * from "./fleet-manifest-store.js";
 export * from "./chain-reports-store.js";
+export * from "./cost-rollup-store.js";

@@ -9,7 +9,7 @@
       "@envoymesh/social/*": ["../social/src/*"]
     }
   },
-  "include": ["capacitor.config.ts", "src/**/*.ts", "src/**/*.tsx"],
+  "include": ["capacitor.config.ts", "src/**/*.ts", "src/**/*.tsx", "src/**/*.d.ts"],
   "references": [
     { "path": "../../packages/protocol" },
     { "path": "../../packages/api" },

@@ -166,13 +166,8 @@ export function SettingsAccountTab() {
     },
   );
 
-  const trustModeToggle = useOptimisticToggle(
-    nodeConfig?.trustModeEnabled ?? false,
-    async (trustModeEnabled) => {
-      await nodeService.updateNodeConfig({ trustModeEnabled });
-      await refreshNodeConfig();
-    },
-  );
+  // Trust Mode toggle moved to Settings → Network (Trust & Matching) —
+  // both tabs previously wrote the same `trustModeEnabled` field.
 
   const handleClearAllData = useCallback(async () => {
     setConfirm({
@@ -371,26 +366,8 @@ export function SettingsAccountTab() {
         </div>
       </section>
 
-      <section className="settings-section">
-        <h3>{t("settings.account.privacy.trustMode.title")}</h3>
-        <p className="section-desc">
-          {t("settings.account.privacy.trustMode.desc")}
-        </p>
-        <div className="settings-toggle-row">
-          <div className="toggle-info">
-            <strong>{t("settings.account.privacy.trustMode.enable")}</strong>
-            <span className="toggle-desc">{t("settings.account.privacy.trustMode.enableDesc")}</span>
-          </div>
-          <label className="toggle-switch">
-            <input
-              type="checkbox"
-              checked={trustModeToggle.checked}
-              onChange={trustModeToggle.onCheckboxChange}
-            />
-            <span className="slider" />
-          </label>
-        </div>
-      </section>
+      {/* Trust Mode toggle lives in Settings → Network (Trust & Matching)
+          to avoid a duplicate write to the same `trustModeEnabled` field. */}
 
       <section className="settings-section">
         <h3>{t("settings.account.privacy.dataManagement.title")}</h3>

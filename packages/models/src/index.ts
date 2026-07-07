@@ -8,6 +8,7 @@ import {
   type EgressScanResult,
   type EgressSecretMatch,
 } from "./semantic-firewall.js";
+import { computeCallCost } from "./pricing-catalog.js";
 
 function modelAuditRandomId(): string {
   const c = globalThis.crypto as Crypto | undefined;
@@ -57,7 +58,16 @@ export interface ModelResponse {
   usage?: {
     inputTokens?: number;
     outputTokens?: number;
+    /**
+     * Pre-existing field. Historically the caller-supplied estimate OR the
+     * LiteLLM-reported cost. After per-call cost tracking, prefer reading
+     * `actualCostUsd` for the resolved actual cost.
+     */
     estimatedCost?: number;
+    /** Resolved actual cost (USD) via computeCallCost three-tier fallback. */
+    actualCostUsd?: number;
+    /** Which tier produced actualCostUsd. */
+    pricingSource?: "provider" | "catalog" | "mock" | "unknown";
   };
 }
 
@@ -72,6 +82,7 @@ export interface ModelRoutingAuditEvent {
   createdAt: string;
   providerId?: string;
   providerType?: ModelProviderType;
+  modelName?: string;
   taskType: string;
   sensitivity: Sensitivity;
   requesterPeerId?: string;
@@ -79,6 +90,13 @@ export interface ModelRoutingAuditEvent {
   reason?: string;
   estimatedCost?: number;
   ownerApproved: boolean;
+  /** Actual measured usage when the call completed (absent on deny/approval_required). */
+  actualUsage?: {
+    inputTokens: number;
+    outputTokens: number;
+    costUsd: number;
+    pricingSource: "provider" | "catalog" | "mock" | "unknown";
+  };
 }
 
 export interface ModelRouterResult {
@@ -206,6 +224,8 @@ export function createMockModelProvider(input: CreateMockModelProviderInput = {}
           inputTokens: request.prompt.length,
           outputTokens: responseText.length,
           estimatedCost: request.estimatedCost ?? 0,
+          actualCostUsd: 0,
+          pricingSource: "mock",
         },
       };
     },
@@ -249,14 +269,27 @@ export function createLiteLlmProvider(input: CreateLiteLlmProviderInput): ModelP
         throw new Error(`LiteLLM provider ${policy.providerId} returned no text`);
       }
 
+      const inputTokens = body.usage?.prompt_tokens;
+      const outputTokens = body.usage?.completion_tokens;
+      const providerReportedCost = body.usage?.total_cost;
+      const cost = computeCallCost({
+        providerId: policy.providerId,
+        modelName: input.modelName,
+        inputTokens,
+        outputTokens,
+        providerReportedCost,
+      });
+
       return {
         providerId: policy.providerId,
         modelName: input.modelName,
         text,
         usage: {
-          inputTokens: body.usage?.prompt_tokens,
-          outputTokens: body.usage?.completion_tokens,
-          estimatedCost: request.estimatedCost ?? body.usage?.total_cost,
+          inputTokens,
+          outputTokens,
+          estimatedCost: request.estimatedCost ?? providerReportedCost,
+          actualCostUsd: cost.costUsd,
+          pricingSource: cost.pricingSource,
         },
       };
     },
@@ -327,14 +360,27 @@ export function createOpenAiProvider(input: CreateOpenAiProviderInput = {}): Mod
         throw new Error(`OpenAI provider ${providerId} returned no text`);
       }
 
+      const inputTokens = body.usage?.prompt_tokens;
+      const outputTokens = body.usage?.completion_tokens;
+      const providerReportedCost = body.usage?.total_cost;
+      const cost = computeCallCost({
+        providerId,
+        modelName,
+        inputTokens,
+        outputTokens,
+        providerReportedCost,
+      });
+
       return {
         providerId,
         modelName,
         text,
         usage: {
-          inputTokens: body.usage?.prompt_tokens,
-          outputTokens: body.usage?.completion_tokens,
-          estimatedCost: request.estimatedCost ?? body.usage?.total_cost,
+          inputTokens,
+          outputTokens,
+          estimatedCost: request.estimatedCost ?? providerReportedCost,
+          actualCostUsd: cost.costUsd,
+          pricingSource: cost.pricingSource,
         },
       };
     },
@@ -386,13 +432,25 @@ export function createAnthropicProvider(input: CreateAnthropicProviderInput = {}
         throw new Error(`Anthropic provider ${providerId} returned no text`);
       }
 
+      const inputTokens = body.usage?.input_tokens;
+      const outputTokens = body.usage?.output_tokens;
+      const cost = computeCallCost({
+        providerId,
+        modelName,
+        inputTokens,
+        outputTokens,
+      });
+
       return {
         providerId,
         modelName,
         text,
         usage: {
-          inputTokens: body.usage?.input_tokens,
-          outputTokens: body.usage?.output_tokens,
+          inputTokens,
+          outputTokens,
+          estimatedCost: request.estimatedCost,
+          actualCostUsd: cost.costUsd,
+          pricingSource: cost.pricingSource,
         },
       };
     },
@@ -689,10 +747,39 @@ export async function routeModelRequest(
     };
   }
 
+  const response = await provider.complete(sanitizedRequest);
+
+  // Mirror the provider's already-computed actual usage onto the audit event.
+  // Providers compute actualCostUsd/pricingSource from the true provider-reported
+  // cost (body.usage.total_cost), NOT from request.estimatedCost (which is the
+  // caller's pre-flight guess). Reusing response.usage.actualCostUsd here avoids
+  // double-computation and prevents the caller's estimate from leaking into the
+  // rollup as if it were an authoritative provider figure.
+  let auditWithUsage = auditEvent;
+  if (
+    response.usage?.inputTokens !== undefined &&
+    response.usage?.outputTokens !== undefined &&
+    response.usage?.actualCostUsd !== undefined &&
+    response.usage?.pricingSource
+  ) {
+    auditWithUsage = {
+      ...auditEvent,
+      modelName: response.modelName,
+      actualUsage: {
+        inputTokens: response.usage.inputTokens,
+        outputTokens: response.usage.outputTokens,
+        costUsd: response.usage.actualCostUsd,
+        pricingSource: response.usage.pricingSource,
+      },
+    };
+  } else if (response.modelName) {
+    auditWithUsage = { ...auditEvent, modelName: response.modelName };
+  }
+
   return {
     decision,
-    auditEvent,
-    response: await provider.complete(sanitizedRequest),
+    auditEvent: auditWithUsage,
+    response,
   };
 }
 
@@ -766,3 +853,13 @@ export {
 export type { ParsedTerminalCommandProposal } from "./terminal-command-proposal.js";
 export { parseTerminalSuggestResponse, TerminalSuggestResponseSchema } from "./terminal-suggest-response.js";
 export type { ParsedTerminalSuggestResponse } from "./terminal-suggest-response.js";
+
+// ─── Per-call cost tracking ────────────────────────────────────────────────────
+
+export {
+  computeCallCost,
+  lookupPricing,
+  CATALOG_AS_OF,
+  PRICING_CATALOG,
+} from "./pricing-catalog.js";
+export type { ModelPricing, PricingSource, ModelCallCost } from "./pricing-catalog.js";

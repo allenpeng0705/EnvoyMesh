@@ -314,13 +314,19 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
     }
 
     if (text.startsWith("/ai ")) {
-      const question = text.slice(4);
+      const question = text.slice(4).trim();
+      if (!question) return;
       void (async () => {
         try {
           const answer = await nodeService.knowledgeQuery(question);
-          console.log("[ContactChatPanel] AI answer:", answer);
+          // Surface the answer via a toast — the dedicated Assistant view
+          // (H2AChannelView) is the primary AI surface, but this slash
+          // command gives quick inline feedback rather than silently
+          // discarding the result.
+          showToast(answer || t("contactChat.aiEmpty"), "info");
         } catch (e) {
-          console.error("[ContactChatPanel] AI query failed:", e);
+          const msg = e instanceof Error ? e.message : String(e);
+          showToast(t("contactChat.aiFailed", { reason: msg }), "error");
         }
       })();
       setChatInput("");

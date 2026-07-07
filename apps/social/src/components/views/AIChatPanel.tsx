@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react";
-import { useT } from "../../context/I18nContext.js";
+import { useT, useI18n } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService, useIsInProcessMobileNode } from "../../hooks/useNodeService.js";
 import { useToast } from "../../hooks/useToast.js";
@@ -101,7 +101,11 @@ function AiTurnMetaChips({
     <div className="ai-turn-meta" role="status">
       {turn.modelUsed && (
         <span className="ai-turn-meta-chip ai-turn-meta-chip--model" title={`Model: ${turn.modelUsed}`}>
-          {turn.modelUsed === "openclaw" ? "🧠 OpenClaw" : "⚡ Native"}
+          {turn.modelUsed === "openclaw"
+            ? "🧠 OpenClaw"
+            : turn.modelUsed === "scripted-tutor"
+              ? "📋 Guide"
+              : "⚡ Native"}
         </span>
       )}
       {domain !== "knowledge" && (
@@ -207,10 +211,11 @@ function groupByDate(msgs: AiMessage[]): [string, AiMessage[]][] {
 
 export function AIChatPanel({ onOpenActivity, onOpenInbox, onOpenChains }: AIChatPanelProps = {}) {
   const t = useT();
+  const { locale } = useI18n();
   const nodeService = useNodeService();
   const toast = useToast();
   const isMobileNode = useIsInProcessMobileNode();
-  const { nodeConfig, humanProfile, nodeStatus, connectionStatus } = useNodeState();
+  const { nodeConfig, humanProfile, nodeStatus, connectionStatus, bonds } = useNodeState();
   const homeRemote = connectionStatus?.homeRemote;
   const assistantHomeOffline =
     isMobileNode && homeRemote?.paired === true && homeRemote?.homeOnline === false;
@@ -402,7 +407,12 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox, onOpenChains }: AICha
           }),
         );
       });
-      setIsAiLoading(false);
+      // Only clear the "Thinking..." indicator when an AI response arrives —
+      // NOT when the human message echo comes back (which would hide the
+      // loading state before the AI has responded).
+      if (view.role === "ai") {
+        setIsAiLoading(false);
+      }
     });
     return unsub;
   }, [nodeService, selfOwnerId]);
@@ -476,6 +486,7 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox, onOpenChains }: AICha
         : question.trim();
       const turn = await nodeService.runOwnerAgentTurn(outbound, {
         humanMessageId: userMsg.id,
+        locale,
       });
       await reloadEnvoyAiHistory(turn);
     } catch (error) {
@@ -616,22 +627,45 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox, onOpenChains }: AICha
           </p>
         )}
         {aiMessages.length === 0 ? (
-          <div className="empty-state">
-            <div className="empty-state-icon">
-              <ChatIcon size={40} />
+          <div className="ai-welcome-container">
+            {/* Welcome bubble from EnvoyAI — Layer 4: a conversational intro
+                that feels like a message from a helpful contact. */}
+            <div className="message-stack-row is-incoming ai-welcome-bubble">
+              <div className="message-stack">
+                <div className="message-bubble message-bubble--ai">
+                  <div className="ai-welcome-greeting">{t("aiChat.welcomeGreeting")}</div>
+                  <p>{t("aiChat.welcomeBody")}</p>
+                </div>
+              </div>
             </div>
-            <div className="empty-state-title">{t("aiChat.emptyTitle")}</div>
-            <div className="empty-state-desc">{t("aiChat.emptyDesc")}</div>
-            <div className="ai-suggestions">
-              <button type="button" onClick={() => draftRef.current?.setPlainText(t("aiChat.suggestHelp"))}>
-                {t("aiChat.suggestHelp")}
-              </button>
-              <button type="button" onClick={() => draftRef.current?.setPlainText(t("aiChat.suggestSummarize"))}>
-                {t("aiChat.suggestSummarize")}
-              </button>
-              <button type="button" onClick={() => draftRef.current?.setPlainText(t("aiChat.suggestDraft"))}>
-                {t("aiChat.suggestDraft")}
-              </button>
+            <div className="empty-state">
+              <div className="empty-state-icon">
+                <ChatIcon size={40} />
+              </div>
+              <div className="empty-state-title">{t("aiChat.emptyTitle")}</div>
+              <div className="empty-state-desc">{t("aiChat.emptyDesc")}</div>
+              <div className="ai-suggestions">
+                {/* Onboarding-focused suggestions — Layer 2 */}
+                <button type="button" onClick={() => draftRef.current?.setPlainText(t("aiChat.suggestGetStarted"))}>
+                  {t("aiChat.suggestGetStarted")}
+                </button>
+                <button type="button" onClick={() => draftRef.current?.setPlainText(t("aiChat.suggestFindContacts"))}>
+                  {t("aiChat.suggestFindContacts")}
+                </button>
+                <button type="button" onClick={() => draftRef.current?.setPlainText(t("aiChat.suggestWhatCanDo"))}>
+                  {t("aiChat.suggestWhatCanDo")}
+                </button>
+                {/* General suggestions — shown when user has more context */}
+                <button type="button" onClick={() => draftRef.current?.setPlainText(t("aiChat.suggestHelp"))}>
+                  {t("aiChat.suggestHelp")}
+                </button>
+                <button type="button" onClick={() => draftRef.current?.setPlainText(t("aiChat.suggestSummarize"))}>
+                  {t("aiChat.suggestSummarize")}
+                </button>
+                <button type="button" onClick={() => draftRef.current?.setPlainText(t("aiChat.suggestDraft"))}>
+                  {t("aiChat.suggestDraft")}
+                </button>
+              </div>
             </div>
           </div>
         ) : (
@@ -680,10 +714,18 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox, onOpenChains }: AICha
                               />
                             )}
                           </ChatMessageBubble>
-                          {msg.role === "user" && msg.text.trim().length > 8 ? (
+                          {/* "Run as chain" — only shown when the user has bonded
+                              contacts (chains need workers) and the message looks
+                              like a task (>20 chars, not a simple greeting/question).
+                              Kept subtle so it doesn't clutter normal conversation. */}
+                          {msg.role === "user" &&
+                          bonds.length > 0 &&
+                          msg.text.trim().length > 20 &&
+                          !/^(hi|hello|hey|thanks|ok|yes|no|你好|谢谢|好的|是的|不是)/i.test(msg.text.trim()) ? (
                             <button
                               type="button"
-                              className="ai-run-chain-btn"
+                              className="ai-run-chain-btn ai-run-chain-btn--subtle"
+                              title={t("chains.start.runAsChainHint", "Decompose this into a multi-agent task chain")}
                               onClick={() => setChainGoal(stripModelThinking(msg.text))}
                             >
                               {t("chains.start.runAsChain")}

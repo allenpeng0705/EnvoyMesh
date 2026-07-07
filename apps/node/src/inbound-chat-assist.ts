@@ -45,7 +45,7 @@ export async function runInboundChatAssist(input: {
   config: PersistedNodeConfig;
   modelProviders: ModelProviderConfig;
   profile: NodeProfile;
-  taskStore: Pick<LocalTaskStore, "appendAuditEvent">;
+  taskStore: Pick<LocalTaskStore, "appendAuditEvent" | "recordModelCallCost">;
   trustStore: LocalTrustStore;
   peerDirectoryStore: LocalPeerDirectoryStore;
   draftStore: ChatDraftStore;

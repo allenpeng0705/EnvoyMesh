@@ -25,6 +25,7 @@ import type { PairDeviceContext } from "./node-service-handlers-pair-device.js";
 import type { PairSharedIdentityContext } from "./node-service-handlers-pair-shared-identity.js";
 import type { GetPairingPayloadContext } from "./node-service-handlers-pairing-payload.js";
 import type { RunOwnerAgentTurnContext } from "./node-service-handlers-run-owner-agent-turn.js";
+import type { ScriptedTutorState } from "./scripted-tutor.js";
 import type { RunDocumentAgentTurnContext } from "./node-service-handlers-run-document-agent-turn.js";
 import type {
   FriendAutopilotContext,
@@ -362,6 +363,8 @@ export interface RunOwnerAgentTurnContextDeps {
   getTaskStore: RunOwnerAgentTurnContext["getTaskStore"];
   runDocumentAgentTurnCore: RunOwnerAgentTurnContext["runDocumentAgentTurnCore"];
   getApprovalQueue: RunOwnerAgentTurnContext["getApprovalQueue"];
+  /** Scripted tutor state for onboarding fallback (bond/interest/model info). */
+  getScriptedTutorState: () => Promise<ScriptedTutorState>;
 }
 
 export interface RunDocumentAgentTurnContextDeps {
@@ -1019,6 +1022,7 @@ export function buildRunOwnerAgentTurnContext(deps: RunOwnerAgentTurnContextDeps
     getTaskStore: () => deps.getTaskStore() as never,
     runDocumentAgentTurnCore: (msg) => deps.runDocumentAgentTurnCore(msg) as never,
     getApprovalQueue: () => deps.getApprovalQueue() as never,
+    getScriptedTutorState: () => deps.getScriptedTutorState(),
   };
 }
 

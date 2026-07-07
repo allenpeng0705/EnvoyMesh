@@ -1,5 +1,9 @@
 /**
  * @vitest-environment jsdom
+ *
+ * Tests for the rewritten ChainDefaultsPanel — every field shown now
+ * persists via chainSetDefaults (the old non-persisting bid-weights UI
+ * was removed). Verifies load, edit, save, and error states.
  */
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -44,62 +48,92 @@ describe("ChainDefaultsPanel", () => {
   it("loads rebalancePolicy from chainGetDefaults on mount", async () => {
     chainGetDefaults.mockResolvedValueOnce({ defaults: { rebalancePolicy: "auto" } });
     renderPanel();
-    // After load, the stall policy select should reflect "auto"
     await waitFor(() => {
       const select = screen.getByLabelText(/When a worker stalls/);
       expect((select as HTMLSelectElement).value).toBe("auto");
     });
   });
 
-  it("preserves user-edited bid weights when chainGetDefaults returns", async () => {
-    chainGetDefaults.mockResolvedValueOnce({ defaults: { rebalancePolicy: "auto" } });
+  it("loads all persistent fields from chainGetDefaults on mount", async () => {
+    chainGetDefaults.mockResolvedValueOnce({
+      defaults: {
+        rebalancePolicy: "auto",
+        stallTimeoutMs: 30_000,
+        maxAutoRebalances: 5,
+        autoRebalanceIncrementUsd: 3,
+        lowConfidenceThreshold: 0.3,
+        allowLlmDecompose: true,
+      },
+    });
     renderPanel();
     await waitFor(() => {
-      expect(screen.getByText("Chain Defaults")).toBeDefined();
+      const stallTimeout = screen.getByLabelText(/Stall timeout/) as HTMLInputElement;
+      expect(stallTimeout.value).toBe("30000");
+      const maxRebalances = screen.getByLabelText(/Max auto-rebalances/) as HTMLInputElement;
+      expect(maxRebalances.value).toBe("5");
     });
-    // The user edits a bid weight input
-    const costInput = screen.getByLabelText(/Cost \(%\)/);
-    fireEvent.change(costInput, { target: { value: "50" } });
-    // The state update should be reflected
-    expect((costInput as HTMLInputElement).value).toBe("50");
   });
 
-  it("save calls chainSetDefaults with only the rebalancePolicy", async () => {
+  it("save calls chainSetDefaults with all persistent fields", async () => {
     renderPanel();
     await waitFor(() => {
       expect(screen.getByText("Chain Defaults")).toBeDefined();
     });
-    const saveBtn = screen.getByRole("button", { name: /Save Rebalance Policy/ });
+    const saveBtn = screen.getByRole("button", { name: /Save defaults/ });
     fireEvent.click(saveBtn);
     await waitFor(() => {
-      expect(chainSetDefaults).toHaveBeenCalledWith({
-        defaults: { rebalancePolicy: "manual" },
-      });
+      expect(chainSetDefaults).toHaveBeenCalledTimes(1);
+      const call = chainSetDefaults.mock.calls[0][0];
+      expect(call.defaults.rebalancePolicy).toBe("auto"); // default
+      expect(call.defaults.stallTimeoutMs).toBeDefined();
+      expect(call.defaults.maxAutoRebalances).toBeDefined();
+      expect(call.defaults.allowLlmDecompose).toBeDefined();
     });
   });
 
-  it("shows weight validation error when bid weights do not sum to 100", async () => {
+  it("reflects edited rebalancePolicy in the save call", async () => {
     renderPanel();
     await waitFor(() => {
       expect(screen.getByText("Chain Defaults")).toBeDefined();
     });
-    // Change one weight so the sum is no longer 100
-    const costInput = screen.getByLabelText(/Cost \(%\)/);
-    fireEvent.change(costInput, { target: { value: "10" } });
+    const select = screen.getByLabelText(/When a worker stalls/) as HTMLSelectElement;
+    fireEvent.change(select, { target: { value: "never" } });
+    const saveBtn = screen.getByRole("button", { name: /Save defaults/ });
+    fireEvent.click(saveBtn);
     await waitFor(() => {
-      expect(screen.getByText(/Weights must sum to 100%/)).toBeDefined();
+      expect(chainSetDefaults).toHaveBeenCalledWith(
+        expect.objectContaining({
+          defaults: expect.objectContaining({ rebalancePolicy: "never" }),
+        }),
+      );
     });
   });
 
-  it("disables the save button when weights are invalid", async () => {
+  it("toggles allowLlmDecompose and persists it", async () => {
     renderPanel();
     await waitFor(() => {
       expect(screen.getByText("Chain Defaults")).toBeDefined();
     });
-    const costInput = screen.getByLabelText(/Cost \(%\)/);
-    fireEvent.change(costInput, { target: { value: "10" } });
-    const saveBtn = screen.getByRole("button", { name: /Save Rebalance Policy/ }) as HTMLButtonElement;
-    expect(saveBtn.disabled).toBe(true);
+    const llmToggle = screen.getByLabelText(/Allow LLM task decomposition/);
+    fireEvent.click(llmToggle);
+    const saveBtn = screen.getByRole("button", { name: /Save defaults/ });
+    fireEvent.click(saveBtn);
+    await waitFor(() => {
+      const call = chainSetDefaults.mock.calls[0][0];
+      expect(call.defaults.allowLlmDecompose).toBe(true);
+    });
+  });
+
+  it("shows saved state after successful save", async () => {
+    renderPanel();
+    await waitFor(() => {
+      expect(screen.getByText("Chain Defaults")).toBeDefined();
+    });
+    const saveBtn = screen.getByRole("button", { name: /Save defaults/ });
+    fireEvent.click(saveBtn);
+    await waitFor(() => {
+      expect(screen.getByText("Saved")).toBeDefined();
+    });
   });
 
   it("shows error state when chainSetDefaults rejects", async () => {
@@ -109,10 +143,10 @@ describe("ChainDefaultsPanel", () => {
     await waitFor(() => {
       expect(screen.getByText("Chain Defaults")).toBeDefined();
     });
-    const saveBtn = screen.getByRole("button", { name: /Save Rebalance Policy/ });
+    const saveBtn = screen.getByRole("button", { name: /Save defaults/ });
     fireEvent.click(saveBtn);
     await waitFor(() => {
-      expect(consoleErrorSpy).toHaveBeenCalled();
+      expect(screen.getByText("Save failed")).toBeDefined();
     });
     consoleErrorSpy.mockRestore();
   });

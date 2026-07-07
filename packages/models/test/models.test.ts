@@ -217,6 +217,134 @@ describe("model router", () => {
     });
   });
 
+  it("routeModelRequest populates actualUsage on the audit event when a real provider returns tokens", async () => {
+    // Fake fetch returning an OpenAI-shaped response with token usage.
+    const fakeFetch = async (_url: string | URL | Request, _init?: RequestInit) =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [{ message: { content: "Hello world" } }],
+          usage: { prompt_tokens: 1234, completion_tokens: 567, total_cost: undefined },
+        }),
+      }) as Response;
+
+    const provider = createLiteLlmProvider({
+      providerId: "cloud.openai-compatible",
+      providerType: "cloud",
+      modelName: "gpt-4o-mini",
+      endpoint: "https://example.invalid/v1",
+      apiKey: "fake",
+      fetchImplementation: fakeFetch as typeof fetch,
+      policy: {
+        enabled: true,
+        allowedSensitivity: ["public", "friends", "trusted", "private"],
+        allowedTaskTypes: ["*"],
+        requiresOwnerApproval: false,
+      },
+    });
+
+    const result = await routeModelRequest(
+      {
+        taskType: "knowledge.query",
+        prompt: "What is EnvoyMesh?",
+        sensitivity: "public",
+        ownerApproved: true,
+      },
+      [provider],
+    );
+
+    expect(result.decision.action).toBe("allow");
+    expect(result.response?.usage).toMatchObject({
+      inputTokens: 1234,
+      outputTokens: 567,
+    });
+    // Cost computed from catalog (no provider-reported cost).
+    expect(result.response?.usage?.actualCostUsd).toBeGreaterThan(0);
+    expect(result.response?.usage?.pricingSource).toBe("catalog");
+    // Audit event carries the resolved usage for rollup.
+    expect(result.auditEvent.actualUsage).toMatchObject({
+      inputTokens: 1234,
+      outputTokens: 567,
+      pricingSource: "catalog",
+    });
+    expect(result.auditEvent.actualUsage?.costUsd).toBeGreaterThan(0);
+    expect(result.auditEvent.modelName).toBe("gpt-4o-mini");
+  });
+
+  it("routeModelRequest forces actualUsage to $0 with pricingSource=mock for the mock provider", async () => {
+    const provider = createMockModelProvider({
+      providerId: "local.mock",
+      providerType: "local",
+      responseText: "Local answer",
+    });
+
+    const result = await routeModelRequest(
+      {
+        taskType: "knowledge.query",
+        prompt: "Hello",
+        sensitivity: "private",
+      },
+      [provider],
+    );
+
+    expect(result.auditEvent.actualUsage).toMatchObject({
+      pricingSource: "mock",
+      costUsd: 0,
+    });
+  });
+
+  it("routeModelRequest does NOT let request.estimatedCost leak as a provider-reported cost", async () => {
+    // Regression: the caller's pre-flight estimate (request.estimatedCost) must
+    // not be treated as the authoritative provider figure on the audit event,
+    // otherwise the rollup would record a guess as if it were measured.
+    const fakeFetch = async (_url: string | URL | Request, _init?: RequestInit) =>
+      ({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          choices: [{ message: { content: "Hello world" } }],
+          // No total_cost from provider — must fall through to catalog.
+          usage: { prompt_tokens: 1000, completion_tokens: 500 },
+        }),
+      }) as Response;
+
+    const provider = createLiteLlmProvider({
+      providerId: "cloud.openai-compatible",
+      providerType: "cloud",
+      modelName: "gpt-4o-mini",
+      endpoint: "https://example.invalid/v1",
+      apiKey: "fake",
+      fetchImplementation: fakeFetch as typeof fetch,
+      policy: {
+        enabled: true,
+        allowedSensitivity: ["public", "friends", "trusted", "private"],
+        allowedTaskTypes: ["*"],
+        requiresOwnerApproval: false,
+      },
+    });
+
+    // Caller supplies a wildly wrong estimate (would be ~222x too high if
+    // treated as authoritative).
+    const result = await routeModelRequest(
+      {
+        taskType: "knowledge.query",
+        prompt: "What is EnvoyMesh?",
+        sensitivity: "public",
+        ownerApproved: true,
+        estimatedCost: 0.1,
+      },
+      [provider],
+    );
+
+    expect(result.decision.action).toBe("allow");
+    // Catalog computation: 1000/1000 * 0.00015 + 500/1000 * 0.0006 = 0.00045
+    expect(result.auditEvent.actualUsage?.costUsd).toBeCloseTo(0.00045, 6);
+    expect(result.auditEvent.actualUsage?.pricingSource).toBe("catalog");
+    // The caller's estimate must NOT appear as the recorded actual cost.
+    expect(result.auditEvent.actualUsage?.costUsd).not.toBe(0.1);
+  });
+
   it("creates deny audit events without provider metadata", () => {
     const auditEvent = createModelRoutingAuditEvent(
       {
@@ -285,7 +413,8 @@ describe("model router", () => {
       sensitivity: "public",
     });
 
-    expect(response).toEqual({
+    // Provider-reported total_cost wins (tier 1) → actualCostUsd mirrors it.
+    expect(response).toMatchObject({
       providerId: "cloud.litellm.openai",
       modelName: "gpt-4o-mini",
       text: "LiteLLM answer",
@@ -293,6 +422,8 @@ describe("model router", () => {
         inputTokens: 10,
         outputTokens: 3,
         estimatedCost: 0.01,
+        actualCostUsd: 0.01,
+        pricingSource: "provider",
       },
     });
     expect(requests[0].url).toBe("http://127.0.0.1:4000/v1/chat/completions");

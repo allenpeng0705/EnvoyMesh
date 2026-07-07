@@ -17,6 +17,7 @@ import { useBondConnectionPreload } from "../../hooks/useBondConnectionPreload.j
 import { CreateGroupModal } from "./CreateGroupModal.js";
 import { RemoveContactConfirmModal } from "../RemoveContactConfirmModal.js";
 import { PullToRefresh } from "../PullToRefresh.js";
+import { loadOutboundHellos } from "../../lib/discover-peer-state.js";
 import type { BondRecord } from "@envoymesh/api";
 
 function sortByLatestMessage<T>(
@@ -61,6 +62,13 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
   const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [outboundHellos, setOutboundHellos] = useState<Set<string>>(() => loadOutboundHellos());
+
+  // Refresh outbound hellos when the sidebar mounts (e.g. after auto-hello
+  // from Discover or the sponsor friend flow).
+  useEffect(() => {
+    setOutboundHellos(loadOutboundHellos());
+  }, []);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
@@ -376,11 +384,24 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
         </>
       ) : null}
 
+      {/* Pending outgoing hellos — show when the user has sent a hello
+          (auto-hello or manual) that hasn't been accepted yet. This gives
+          visible feedback that "something is happening" even with 0 bonds. */}
+      {bonds.length === 0 && outboundHellos.size > 0 && (
+        <div className="chat-sidebar-pending">
+          <div className="chat-sidebar-pending__header">
+            {t("chat.pendingHellos", { count: outboundHellos.size })}
+          </div>
+          <p className="chat-sidebar-pending__desc">{t("chat.pendingHellosDesc")}</p>
+        </div>
+      )}
+
       {bonds.length === 0 &&
       chatRooms.length === 0 &&
       pendingHellOs.length === 0 &&
       pendingIntroProposals.length === 0 &&
-      pendingMessages.length === 0 ? (
+      pendingMessages.length === 0 &&
+      outboundHellos.size === 0 ? (
         <div className="empty-state">
           <div className="empty-state-icon">
             <ChatIcon size={32} />
@@ -423,6 +444,29 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
             );
           })}
           <div className="context-menu-divider" role="separator" />
+          {/* Trust tier: block / unblock. The bonds list refreshes via the
+              existing `bonds:updated` event listener after the RPC resolves. */}
+          {(() => {
+            const bond = bonds.find((b) => b.peerOwnerId === contextMenu.ownerId);
+            const isBlocked = bond?.level === "blocked";
+            return (
+              <div
+                className="context-menu-item context-menu-item--danger"
+                onClick={() => {
+                  const ownerId = contextMenu.ownerId;
+                  setContextMenu(null);
+                  void (isBlocked
+                    ? nodeService.unblockPeer(ownerId)
+                    : nodeService.blockPeer(ownerId)
+                  ).catch((err) => {
+                    console.error("[ChatSidebar] trust-tier change failed:", err);
+                  });
+                }}
+              >
+                {isBlocked ? t("contacts.unblock") : t("contacts.block")}
+              </div>
+            );
+          })()}
           <div
             className="context-menu-item context-menu-item--danger"
             onClick={() => {

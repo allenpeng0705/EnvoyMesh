@@ -17,6 +17,7 @@ import {
 } from "./terminal-assistant-command.js";
 import { stripModelThinking } from "@envoymesh/api";
 import type { OwnerAgentTurnResult } from "@envoymesh/api";
+import { getScriptedTutorReply, type ScriptedTutorState } from "./scripted-tutor.js";
 
 export interface RunOwnerAgentTurnContext {
   /** Record owner activity. */
@@ -49,12 +50,14 @@ export interface RunOwnerAgentTurnContext {
   runDocumentAgentTurnCore(message: string): Promise<OwnerAgentTurnResult>;
   /** Approval queue. */
   getApprovalQueue(): unknown;
+  /** Get scripted-tutor state (bond count, interest count, model mode). */
+  getScriptedTutorState?(): Promise<ScriptedTutorState>;
 }
 
 export async function runOwnerAgentTurnViaRuntime(
   ctx: RunOwnerAgentTurnContext,
   message: string,
-  options?: { humanMessageId?: string },
+  options?: { humanMessageId?: string; locale?: string },
 ): Promise<OwnerAgentTurnResult> {
   ctx.recordOwnerActivity();
   const terminalSessionId = parseTerminalAssistantCorrelationId(message);
@@ -93,6 +96,34 @@ export async function runOwnerAgentTurnViaRuntime(
     console.warn(
       "[openclaw] Gateway unavailable — using native LLM planner for this turn",
     );
+  }
+
+  // Scripted onboarding tutor fallback — when no model is configured (or the
+  // RAG/task stores aren't ready), return a helpful scripted response instead
+  // of throwing. This ensures every new user can interact with the assistant
+  // for onboarding help, even without a cloud API key.
+  if (ctx.getScriptedTutorState) {
+    try {
+      const tutorState = await ctx.getScriptedTutorState();
+      // Merge the client-provided locale so the tutor responds in the right language.
+      tutorState.locale = options?.locale;
+      const scriptedReply = getScriptedTutorReply(agentMessage, tutorState);
+      if (scriptedReply) {
+        const result: OwnerAgentTurnResult = {
+          answer: scriptedReply,
+          domain: "knowledge",
+          intent: "knowledge",
+          toolsUsed: [],
+          approvalItems: [],
+          modelUsed: "scripted-tutor",
+        };
+        await ctx.persistEnvoyAiChatExchange(message, result, humanMsgId);
+        ctx.maybeIngestTerminalAssistantReply(terminalSessionId, scriptedReply);
+        return result;
+      }
+    } catch {
+      // If tutor state lookup fails, continue to the normal fallback below.
+    }
   }
 
   // Native LLM planner fallback (the original class wraps the entire

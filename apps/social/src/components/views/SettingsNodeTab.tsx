@@ -553,11 +553,21 @@ export function SettingsNodeTab() {
           <dd>
             {connectionStatus?.connectedRelays?.length
               ? connectionStatus.connectedRelays.map((r) => (
-                  <span key={r} className="settings-hint" style={{ display: "block" }}>
+                  <span
+                    key={r}
+                    className="settings-hint"
+                    style={{ display: "flex", alignItems: "center", gap: 6 }}
+                  >
+                    <span className="status-dot online" aria-hidden />
                     {r}
                   </span>
                 ))
-              : t("settings.network.networkStatus.offline")}
+              : (
+                <span className="settings-hint" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  <span className="status-dot offline" aria-hidden />
+                  {t("settings.network.networkStatus.offline")}
+                </span>
+              )}
           </dd>
           <dt>{t("settings.network.networkStatus.bondedPeers")}</dt>
           <dd>

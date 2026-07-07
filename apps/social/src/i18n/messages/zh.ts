@@ -314,6 +314,12 @@ export const zh = mergeMessages(en, {
     modelNotSet: "未设置",
     emptyTitle: "与 AI 助手聊天",
     emptyDesc: "提问、获取任务帮助或起草消息",
+    welcomeGreeting: "👋 你好！我是你的 Envoy 助手。",
+    welcomeBody:
+      "我可以帮你找联系人、解释 EnvoyMesh 的功能，并引导你完成第一步。随时问我 — 即使没有配置模型，我也能帮你入门！",
+    suggestGetStarted: "帮我入门",
+    suggestFindContacts: "如何找联系人？",
+    suggestWhatCanDo: "EnvoyMesh 能做什么？",
     suggestHelp: "你能帮我做什么？",
     suggestSummarize: "总结我最近的对话",
     suggestDraft: "帮我起草一条消息",

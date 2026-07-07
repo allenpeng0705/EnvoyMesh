@@ -156,6 +156,7 @@ export const chainsMessages = {
     failed: "Could not start chain",
     previewFailed: "Could not preview plan",
     runAsChain: "Run as chain",
+    runAsChainHint: "Decompose this into a multi-agent task chain across your contacts' agents",
     exportCsv: "Export costs (CSV)",
     newChain: "New chain",
     composerLabel: "What do you want your agents to accomplish?",

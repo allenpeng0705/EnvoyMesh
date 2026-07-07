@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { createAuditEvent, type LocalTaskStore, type LocalTrustStore, type LocalPeerDirectoryStore, type NodeProfile, type ChatDraftStore, type LocalChatLogStore, type HumanProfileStore, type AgentIdentityStore } from "@envoymesh/local-store";
-import { buildModelProviders, routeModelRequest, type ModelProvider } from "@envoymesh/models";
+import { buildModelProviders, type ModelProvider } from "@envoymesh/models";
+import { routeModelRequestWithCostTracking } from "./model-cost-tracking.js";
 import type { VaultIndex } from "@envoymesh/vault";
 import type { AiIdentity, AiKnowledgeBaseSettings, AiRule, ModelProviderConfig } from "@envoymesh/api";
 import { applyAiIdentityToDraftText } from "@envoymesh/api";
@@ -50,7 +51,7 @@ export async function generateChatDraft(input: {
   remotePeerId: string;
   receivedAt: number;
   correlationId: string | undefined;
-  taskStore: Pick<LocalTaskStore, "appendAuditEvent">;
+  taskStore: Pick<LocalTaskStore, "appendAuditEvent" | "recordModelCallCost">;
   trustStore: LocalTrustStore;
   peerDirectoryStore: LocalPeerDirectoryStore;
   profile: NodeProfile;
@@ -334,7 +335,7 @@ Received message:
 Write your reply draft below:`;
 
   // Route through model router
-  const modelResult = await routeModelRequest(
+  const modelResult = await routeModelRequestWithCostTracking(
     {
       taskType: "chat.draft",
       prompt,
@@ -343,6 +344,7 @@ Write your reply draft below:`;
       ownerApproved: false,
     },
     providers,
+    { taskStore },
   );
 
   // Audit model routing

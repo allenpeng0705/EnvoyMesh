@@ -2660,6 +2660,25 @@ You are the owner's personal AI assistant on EnvoyMesh.
     }));
   }
 
+  // Per-call cost tracking is desktop-only for v1 (mobile has no rollup store).
+  // Return an empty summary so the dashboard renders without errors on mobile.
+  async getCostSummary(
+    _params?: import("@envoymesh/api").GetCostSummaryParams,
+  ): Promise<import("@envoymesh/api").CostSummary> {
+    return {
+      totalCalls: 0,
+      totalInputTokens: 0,
+      totalOutputTokens: 0,
+      totalCostUsd: 0,
+      byProvider: [],
+      byPeriod: [],
+    };
+  }
+
+  async runCostRollupRetention(): Promise<{ collapsed: number; dropped: number }> {
+    return { collapsed: 0, dropped: 0 };
+  }
+
   async listAgentCards(): Promise<import("@envoymesh/api").CachedAgentCardSummary[]> {
     const rows = await this._agentCardStore.list();
     return rows.map((row) => summarizeCachedAgentCard(row));

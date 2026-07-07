@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
+import { useToastOptional } from "../../hooks/useToast.js";
 import { networkPresetById, type NetworkPresetId } from "../../lib/network-presets.js";
 import { markFirstRunSetupComplete } from "../../lib/storage.js";
 import { isTauriShell, restartTauriNodeProcess } from "../../lib/tauri-shell.js";
@@ -80,6 +81,7 @@ function validateModelSetup(
 export function SetupView({ waitingForNode = false }: { waitingForNode?: boolean }) {
   const t = useT();
   const nodeService = useNodeService();
+  const { showToast } = useToastOptional();
   const { isConnected, nodeConfig, refreshNodeConfig, refreshHumanProfile } = useNodeState();
   const tauriShell = isTauriShell();
   const wanPreset = useMemo(() => networkPresetById(DEFAULT_SETUP_NETWORK_PRESET), []);
@@ -277,7 +279,10 @@ export function SetupView({ waitingForNode = false }: { waitingForNode?: boolean
         console.warn("[SetupView] setup sponsor friend failed:", sponsorErr);
         return { ok: false as const, reason: String(sponsorErr) };
       });
-      if (!sponsorResult.ok && !("skipped" in sponsorResult && sponsorResult.skipped)) {
+      if (sponsorResult.ok && !("skipped" in sponsorResult && sponsorResult.skipped)) {
+        // Surface the sponsor introduction so the user knows a contact is coming.
+        showToast?.(t("setup.sponsorIntroduced"), "success");
+      } else if (!sponsorResult.ok && !("skipped" in sponsorResult && sponsorResult.skipped)) {
         console.warn("[SetupView] setup sponsor friend:", sponsorResult.reason ?? "failed");
       }
     } catch (err) {

@@ -216,6 +216,7 @@ export function App() {
     humanProfile,
     connectionStatus,
     appSettings,
+    bonds,
   } = useNodeState();
 
   const inboxActivityCount = useInboxActivityCount();
@@ -304,17 +305,43 @@ export function App() {
 
   const [currentView, setCurrentView] = useState<ViewName>("chat");
   const [settingsTab, setSettingsTab] = useState<SettingsTabId>("account");
+  const didInitialNav = useRef(false);
+
+  // Cold-start: land 0-bond users on Discover (not Chat) so they SEE the
+  // auto-search results + auto-hello. Only fires once per session — after
+  // this the user's manual navigation is respected.
+  useEffect(() => {
+    if (didInitialNav.current) return;
+    if (!nodeStatusHydrated) return;
+    // Only redirect when the user truly has zero contacts. Once they have
+    // even one bond (including the sponsor friend), respect the "chat" default.
+    if (bonds.length === 0) {
+      setCurrentView("discover");
+    }
+    didInitialNav.current = true;
+  }, [nodeStatusHydrated, bonds.length]);
   const [chatSelectedContact, setChatSelectedContact] = useState<string | null>(null);
   const [chatPanelMode, setChatPanelMode] = useState<ChatPanelMode>("threads");
   const [pairingOpen, setPairingOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
 
-  // Auto-open the getting-started guide once per owner after setup completes.
-  // Re-openable any time via the Header Help (?) button.
+  // Capture whether setup was already complete WHEN THE APP LOADED — before
+  // the setup wizard runs. This distinguishes "first launch" (setup not yet
+  // complete at boot) from "return visit" (setup was already done). Used to
+  // suppress the guide modal on the very first launch.
+  const setupWasCompleteAtBoot = useRef(hasCompletedFirstRunSetup());
+
+  // Auto-open the getting-started guide on the SECOND launch (not the first).
+  // On first launch the user just finished setup + lands on Discover — stacking
+  // a modal on top would be overwhelming. The guide opens on their next session,
+  // and is re-openable any time via the Header Help (?) button.
   useEffect(() => {
     const ownerId = humanProfile?.ownerId;
     if (!ownerId) return;
-    if (!hasSeenGettingStartedGuide(ownerId)) {
+    if (hasSeenGettingStartedGuide(ownerId)) return;
+    // Only auto-open if setup was already completed before this app session
+    // started (i.e. this is a return visit, not the first run just finished).
+    if (setupWasCompleteAtBoot.current) {
       setGuideOpen(true);
       markGettingStartedGuideSeen(ownerId);
     }

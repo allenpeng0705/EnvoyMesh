@@ -55,6 +55,7 @@ import {
   routeModelRequest,
   inferTerminalCommandFallback,
 } from "@envoymesh/models";
+import { routeModelRequestWithCostTracking } from "./model-cost-tracking.js";
 
 import {
   buildTerminalAssistPrompt,
@@ -653,7 +654,7 @@ export class TerminalAgentAssist {
 
     const settings = await this.getAssistSettings();
     const providers = await this.buildAssistProviders(sessionId, settings);
-    const modelResult = await routeModelRequest(
+    const modelResult = await this.routeAssistModel(
       {
         taskType: "terminal.suggest",
         prompt,
@@ -758,7 +759,7 @@ export class TerminalAgentAssist {
 
     const settings = await this.getAssistSettings();
     const providers = await this.buildAssistProviders(sessionId, settings);
-    const modelResult = await routeModelRequest(
+    const modelResult = await this.routeAssistModel(
       {
         taskType: "terminal.explain",
         prompt,
@@ -923,6 +924,23 @@ export class TerminalAgentAssist {
     });
   }
 
+  /**
+   * Cost-aware wrapper. Uses the shared cost-tracking helper when a task store
+   * is wired (so per-call cost lands in the rollup); falls back to plain
+   * `routeModelRequest` otherwise. Either way the result shape is identical.
+   */
+  private async routeAssistModel(
+    request: Parameters<typeof routeModelRequest>[0],
+    providers: Parameters<typeof routeModelRequest>[1],
+  ) {
+    if (this.taskStore) {
+      return routeModelRequestWithCostTracking(request, providers, {
+        taskStore: this.taskStore,
+      });
+    }
+    return routeModelRequest(request, providers);
+  }
+
   private async proposeFromModel(input: {
     sessionId: string;
     prompt: string;
@@ -942,7 +960,7 @@ export class TerminalAgentAssist {
 
     let modelResult;
     try {
-      modelResult = await routeModelRequest(
+      modelResult = await this.routeAssistModel(
         {
           taskType,
           prompt,

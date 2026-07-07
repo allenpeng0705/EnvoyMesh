@@ -2790,6 +2790,52 @@ textarea::placeholder {
   color: var(--color-primary-on);
 }
 
+/* "Run as chain" — subtle action under task-like user messages */
+.ai-run-chain-btn--subtle {
+  display: inline-block;
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  margin-top: 2px;
+  border: 1px solid var(--color-border, var(--color-slate-200));
+  background: transparent;
+  color: var(--color-text-muted);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity var(--transition-fast);
+}
+.ai-run-chain-btn--subtle:hover {
+  opacity: 1;
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+/* Welcome bubble — Layer 4 conversational intro from EnvoyAI */
+.ai-welcome-container {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.ai-welcome-bubble {
+  max-width: 85%;
+}
+.ai-welcome-bubble .message-bubble {
+  background: var(--color-surface-elevated, var(--color-slate-100));
+  padding: 0.875rem 1rem;
+  border-radius: var(--radius-lg);
+  line-height: 1.55;
+}
+.ai-welcome-greeting {
+  font-weight: 600;
+  margin-bottom: 0.35rem;
+  font-size: 0.95rem;
+}
+.ai-welcome-bubble p {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--color-text-muted);
+}
+
 .ai-message {
   display: flex;
   flex-direction: column;
@@ -3581,6 +3627,93 @@ textarea::placeholder {
   height: 100%;
   background: var(--color-primary);
   transition: width 0.2s ease;
+}
+
+/* Per-call model cost dashboard (SettingsAITab → CostDashboardPanel) */
+.chip-button {
+  padding: 0.3rem 0.75rem;
+  font-size: var(--text-sm, 0.85rem);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+.chip-button:hover {
+  border-color: var(--color-primary);
+}
+.chip-button--active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: var(--color-surface);
+}
+
+.settings-cost-totals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.25rem;
+  margin-top: 0.5rem;
+}
+.settings-cost-total {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 5rem;
+}
+.settings-cost-total-value {
+  font-size: var(--text-lg, 1.1rem);
+  font-weight: 600;
+  color: var(--color-text);
+}
+.settings-cost-total-label {
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-text-muted, var(--color-text));
+  opacity: 0.75;
+}
+
+.settings-cost-breakdown {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.settings-cost-breakdown-row {
+  display: grid;
+  grid-template-columns: minmax(8rem, 1fr) 2fr auto;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: var(--text-sm, 0.85rem);
+}
+.settings-cost-breakdown-label {
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-cost-breakdown-bar {
+  height: 0.4rem;
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-border);
+  overflow: hidden;
+}
+.settings-cost-breakdown-fill {
+  height: 100%;
+  background: var(--color-primary);
+  transition: width 0.2s ease;
+}
+.settings-cost-breakdown-value {
+  font-variant-numeric: tabular-nums;
+  color: var(--color-text);
+  white-space: nowrap;
+}
+.settings-cost-breakdown-calls {
+  color: var(--color-text-muted, var(--color-text));
+  opacity: 0.7;
+  font-size: var(--text-xs, 0.75rem);
+  margin-left: 0.25rem;
 }
 
 .settings-input,

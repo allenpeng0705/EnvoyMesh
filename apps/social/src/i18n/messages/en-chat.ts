@@ -4,6 +4,11 @@ export const chatMessages = {
   inbox: "Inbox",
   selectContact: "Select a contact",
   selectContactDesc: "Choose a bonded contact from the list to start a human conversation.",
+  welcomeTitle: "Welcome to Envoy!",
+  welcomeDesc:
+    "You don't have any contacts yet. Head to Discover to find people who share your interests, or paste a contact link from a friend.",
+  pendingHellos: "Waiting on {count} hello reply",
+  pendingHellosDesc: "We've said hello on your behalf — they'll appear here once accepted.",
   openAssistant: "Open EnvoyAI",
   terminals: "Terminals",
   assistant: "EnvoyAI",
@@ -83,6 +88,8 @@ export const contactChatMessages = {
   sendingFile: "Sending {filename}…",
   deleteConfirm: "Delete this message?",
   deleteConfirmMessage: "This cannot be undone.",
+  aiEmpty: "AI returned no answer.",
+  aiFailed: "AI query failed: {reason}",
   messageDeleted: "Message deleted",
   deleteFailed: "Could not delete message",
   clearConfirm: "Clear all messages?",
@@ -159,6 +166,12 @@ export const aiChatMessages = {
   modelNotSet: "Not set",
   emptyTitle: "Chat with your AI assistant",
   emptyDesc: "Ask questions, get help with tasks, or draft messages",
+  welcomeGreeting: "👋 Hi! I'm your Envoy assistant.",
+  welcomeBody:
+    "I can help you find contacts, explain how EnvoyMesh works, and guide you through your first steps. Ask me anything — even without a model configured, I can help you get started!",
+  suggestGetStarted: "Help me get started",
+  suggestFindContacts: "How do I find contacts?",
+  suggestWhatCanDo: "What can EnvoyMesh do?",
   suggestHelp: "What can you help me with?",
   suggestSummarize: "Summarize my recent conversations",
   suggestDraft: "Help me draft a message",
@@ -328,6 +341,13 @@ export const h2aMessages = {
   activityEmpty: "Activity from vault assist and agent tools appears here.",
   viewAllActivity: "View all activity",
   contextAria: "Assistant context",
+  webSearchTitle: "Web Search",
+  webSearchLabel: "Built-in web search",
+  webSearchDesc:
+    "Uses DuckDuckGo when no search API key is configured; uses Tavily (or other keys from Skills) when present.",
+  skillsTitle: "Skills & Plugins",
+  manageSkills: "Manage OpenClaw Skills",
+  skillsDesc: "Browse installed skills, search ClawHub, and install new plugins.",
 } as const;
 
 export const messageBubbleMessages = {

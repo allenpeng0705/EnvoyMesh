@@ -19,6 +19,7 @@ export function H2AChannelView({ onBackToChats, onOpenActivity, onOpenInbox, onO
   const [activity, setActivity] = useState<AgentActivityRecord[]>([]);
   const [pendingApprovals, setPendingApprovals] = useState<PendingApprovalSummary[]>([]);
   const [reportLoading, setReportLoading] = useState(false);
+  const [reportText, setReportText] = useState<string | null>(null);
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [webSearchOn, setWebSearchOn] = useState(true);
 
@@ -120,11 +121,13 @@ export function H2AChannelView({ onBackToChats, onOpenActivity, onOpenInbox, onO
             disabled={reportLoading}
             onClick={() => {
               setReportLoading(true);
+              setReportText(null);
               nodeService.generateMeshIntelligenceReport?.()
                 ?.then((report) => {
                   if (typeof report === "string") {
-                    setReportLoading(false);
+                    setReportText(report);
                   }
+                  setReportLoading(false);
                 })
                 ?.catch(() => setReportLoading(false));
             }}
@@ -136,12 +139,29 @@ export function H2AChannelView({ onBackToChats, onOpenActivity, onOpenInbox, onO
           <p className="field-desc" style={{ marginTop: "4px" }}>
             {t("h2a.reportDesc", "AI analysis of your entire mesh — health, trends, dormant bonds, reputation.")}
           </p>
+          {reportText ? (
+            <pre
+              className="h2a-report-output"
+              style={{
+                whiteSpace: "pre-wrap",
+                background: "var(--color-surface-elevated, #f4f4f4)",
+                padding: "0.6rem",
+                marginTop: "0.5rem",
+                maxHeight: "20rem",
+                overflowY: "auto",
+                fontSize: "0.8rem",
+                lineHeight: 1.5,
+              }}
+            >
+              {reportText}
+            </pre>
+          ) : null}
         </div>
 
         <div className="h2a-rail-block">
-          <h4>Web Search</h4>
+          <h4>{t("h2a.webSearchTitle")}</h4>
           <label className="toggle-row" style={{ marginTop: "4px" }}>
-            <span>Built-in web search</span>
+            <span>{t("h2a.webSearchLabel")}</span>
             <input
               type="checkbox"
               checked={webSearchOn}
@@ -153,22 +173,22 @@ export function H2AChannelView({ onBackToChats, onOpenActivity, onOpenInbox, onO
             />
           </label>
           <p className="field-desc" style={{ marginTop: "4px" }}>
-            Uses DuckDuckGo when no search API key is configured; uses Tavily (or other keys from Skills) when present.
+            {t("h2a.webSearchDesc")}
           </p>
         </div>
 
         <div className="h2a-rail-block">
-          <h4>Skills & Plugins</h4>
+          <h4>{t("h2a.skillsTitle")}</h4>
           <button
             type="button"
             className="secondary"
             style={{ width: "100%", marginTop: "4px" }}
             onClick={() => setSkillsOpen(true)}
           >
-            Manage OpenClaw Skills
+            {t("h2a.manageSkills")}
           </button>
           <p className="field-desc" style={{ marginTop: "4px" }}>
-            Browse installed skills, search ClawHub, and install new plugins.
+            {t("h2a.skillsDesc")}
           </p>
         </div>
       </aside>

@@ -495,6 +495,19 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
             getTaskStore: () => host._taskStore as never,
             runDocumentAgentTurnCore: (msg) => host._runDocumentAgentTurnCore(msg) as never,
             getApprovalQueue: () => host._approvalQueue as never,
+            getScriptedTutorState: async () => {
+              const profile = await host._humanProfileStore.loadHumanProfile();
+              const bonds = await host.getBonds();
+              const cfg = await host._configStore.load();
+              return {
+                bondCount: bonds.length,
+                interestCount:
+                  (profile?.hobbies?.length ?? 0) + (profile?.knowledge?.length ?? 0),
+                hasModel: cfg?.modelProviders?.mode
+                  ? cfg.modelProviders.mode !== "disabled"
+                  : false,
+              };
+            },
           },
       runDocumentAgentTurn: {
             requireToolExecutionContext: () => host._requireToolExecutionContext(),

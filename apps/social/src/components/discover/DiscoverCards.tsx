@@ -2,7 +2,6 @@ import type {
   MorningReportEntry,
   MultiHopDiscoveryMatch,
   PeerSearchResult,
-  ResolvedDidImport,
   BondRecord,
 } from "@envoymesh/api";
 import { useT } from "../../context/I18nContext.js";
@@ -209,70 +208,6 @@ export function FriendSuggestionsPanel({
           );
         })}
       </ul>
-    </section>
-  );
-}
-
-/** @deprecated Use FriendSuggestionsPanel */
-export const MorningReportPanel = FriendSuggestionsPanel;
-
-export function DidImportPanel({
-  input,
-  onInputChange,
-  busy,
-  error,
-  result,
-  onImport,
-}: {
-  input: string;
-  onInputChange: (value: string) => void;
-  busy: boolean;
-  error: string | null;
-  result: ResolvedDidImport | null;
-  onImport: () => void;
-}) {
-  const t = useT();
-  return (
-    <section className="discover-panel did-import-panel" aria-labelledby="did-import-heading">
-      <header className="discover-panel__header">
-        <h4 id="did-import-heading" className="discover-panel__title">
-          {t("discoverCards.didImportTitle")}
-        </h4>
-        <p className="discover-panel__lede">{t("discoverCards.didImportLede")}</p>
-      </header>
-      <div className="did-import-panel__form">
-        <textarea
-          className="did-import-panel__input"
-          rows={4}
-          placeholder={t("discoverCards.didImportPlaceholder")}
-          value={input}
-          onChange={(e) => onInputChange(e.target.value)}
-        />
-        <button
-          type="button"
-          className="search-btn did-import-panel__submit"
-          disabled={busy || !input.trim()}
-          onClick={() => void onImport()}
-        >
-          {busy ? t("discoverCards.resolving") : t("discoverCards.importForLookup")}
-        </button>
-      </div>
-      {error && (
-        <p className="did-import-panel__error" role="alert">
-          {error}
-        </p>
-      )}
-      {result && (
-        <div className="did-import-panel__success" role="status">
-          <strong>{t("discoverCards.resolved")}</strong>
-          <p className="did-import-panel__did" title={result.did}>
-            {result.did}
-          </p>
-          <p className="did-import-panel__owner">
-            {t("discoverCards.ownerLabel")} <code>{result.ownerId}</code>
-          </p>
-        </div>
-      )}
     </section>
   );
 }

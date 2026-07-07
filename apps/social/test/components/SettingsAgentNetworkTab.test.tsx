@@ -125,10 +125,10 @@ afterEach(() => {
 });
 
 describe("SettingsAgentNetworkTab — landing", () => {
-  it("renders the Agent Network title and quick-reference intro", async () => {
+  it("renders the Devices & Fleet title and quick-reference intro", async () => {
     renderWithI18n(<SettingsAgentNetworkTab />);
     await waitFor(() => {
-      expect(screen.getByText("Agent Network")).toBeDefined();
+      expect(screen.getByText("Devices & Fleet")).toBeDefined();
     });
     expect(screen.getByText("Which path should I use?")).toBeDefined();
   });
@@ -152,11 +152,19 @@ describe("SettingsAgentNetworkTab — LAN auto-bond (Phase 35C)", () => {
       lanAutoBondFleetToken: "",
     };
     renderWithI18n(<SettingsAgentNetworkTab />);
-    // Generate a token (in the LAN Auto-Bond section — first Generate button).
-    const generates = await waitFor(() => screen.getAllByText("Generate"));
-    fireEvent.click(generates[0] as HTMLElement);
-    const saves = await waitFor(() => screen.getAllByText("Save"));
-    fireEvent.click(saves[0] as HTMLElement);
+    // Find the LAN Auto-Bond section by its heading, then find the
+    // Generate + Save buttons within that section (the tab now has grouped
+    // sections with multiple Generate/Save buttons).
+    await waitFor(() => {
+      expect(screen.getAllByText("LAN Auto-Bond").length).toBeGreaterThan(0);
+    });
+    // The LAN section's Generate button generates a fleet token.
+    const allGenerates = screen.getAllByText("Generate");
+    // Click the last Generate button (LAN section is in the Operator group,
+    // which renders after Auto-bond + Invites).
+    fireEvent.click(allGenerates[allGenerates.length - 1] as HTMLElement);
+    const allSaves = screen.getAllByText("Save");
+    fireEvent.click(allSaves[allSaves.length - 1] as HTMLElement);
     await waitFor(() => {
       expect(updateNodeConfig).toHaveBeenCalled();
     });
@@ -172,10 +180,12 @@ describe("SettingsAgentNetworkTab — LAN auto-bond (Phase 35C)", () => {
       () => screen.getAllByPlaceholderText(/paste a long random string/)[0] as HTMLInputElement,
     ));
     fireEvent.change(tokenInput, { target: { value: "abc" } });
+    // The LAN Auto-Bond enable toggle — find the checkbox within the LAN section.
+    // After restructuring, the LAN section is last; its checkbox is the last one.
     const checkboxes = screen.getAllByRole("checkbox");
-    fireEvent.click(checkboxes[0] as HTMLElement); // enable toggle
-    const saves = await waitFor(() => screen.getAllByText("Save"));
-    fireEvent.click(saves[0] as HTMLElement);
+    fireEvent.click(checkboxes[checkboxes.length - 1] as HTMLElement);
+    const allSaves = screen.getAllByText("Save");
+    fireEvent.click(allSaves[allSaves.length - 1] as HTMLElement);
     expect(updateNodeConfig).not.toHaveBeenCalled();
     await waitFor(() => {
       expect(screen.getByText(/at least 8 characters/)).toBeDefined();

@@ -8,6 +8,18 @@ import wasm from "vite-plugin-wasm";
 import topLevelAwait from "vite-plugin-top-level-await";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
+
+/** Read the workspace version from the root package.json for build-time injection. */
+function readAppVersion(): string {
+  try {
+    const pkg = JSON.parse(
+      readFileSync(resolve(repoRoot, "package.json"), "utf8"),
+    ) as { version?: string };
+    return pkg.version ?? "0.0.0";
+  } catch {
+    return "0.0.0";
+  }
+}
 const socialSrc = resolve(repoRoot, "apps/social/src");
 
 function readHeliaVersionForDefine(): string {
@@ -39,6 +51,7 @@ export default defineConfig({
   base: "./",
   define: {
     __ENVOYMESH_HELIA_VERSION__: JSON.stringify(readHeliaVersionForDefine()),
+    __APP_VERSION__: JSON.stringify(readAppVersion()),
   },
   build: {
     outDir: "dist",

@@ -5,9 +5,10 @@ import {
   routeModelRequest,
 } from "@envoymesh/models";
 import { loadAgentIdentitySection } from "./agent-identity-context.js";
-import type { AgentIdentityStore } from "@envoymesh/local-store";
+import type { AgentIdentityStore, LocalTaskStore } from "@envoymesh/local-store";
 import type { ModelProviderConfig } from "@envoymesh/api";
 import { stripModelThinking } from "@envoymesh/api";
+import { routeModelRequestWithCostTracking } from "./model-cost-tracking.js";
 
 /**
  * Call the configured model with an owner-agent planner prompt (Phase 18B).
@@ -18,6 +19,8 @@ export async function askOwnerAgentPlanner(input: {
   modelProviders: ModelProviderConfig;
   requesterPeerId: string;
   agentIdentityStore?: AgentIdentityStore | null;
+  /** When provided, per-call cost is rolled up for the dashboard. */
+  taskStore?: Pick<LocalTaskStore, "recordModelCallCost">;
 }): Promise<string | null> {
   if (input.modelProviders.mode === "disabled") {
     return null;
@@ -39,16 +42,28 @@ export async function askOwnerAgentPlanner(input: {
   }
 
   const providers = buildModelProviders(input.modelProviders, true, { trustedLocalAssist: true });
-  const modelResult = await routeModelRequest(
-    {
-      taskType: "owner.agent.planner",
-      prompt: firewall.text,
-      sensitivity: "friends",
-      ownerApproved: true,
-      requesterPeerId: input.requesterPeerId,
-    },
-    providers,
-  );
+  const modelResult = input.taskStore
+    ? await routeModelRequestWithCostTracking(
+        {
+          taskType: "owner.agent.planner",
+          prompt: firewall.text,
+          sensitivity: "friends",
+          ownerApproved: true,
+          requesterPeerId: input.requesterPeerId,
+        },
+        providers,
+        { taskStore: input.taskStore },
+      )
+    : await routeModelRequest(
+        {
+          taskType: "owner.agent.planner",
+          prompt: firewall.text,
+          sensitivity: "friends",
+          ownerApproved: true,
+          requesterPeerId: input.requesterPeerId,
+        },
+        providers,
+      );
 
   if (modelResult.decision.action !== "allow" || !modelResult.response?.text) {
     return null;

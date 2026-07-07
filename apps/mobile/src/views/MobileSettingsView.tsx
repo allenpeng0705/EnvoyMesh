@@ -196,7 +196,7 @@ export function MobileSettingsView({
               <div className="mv-section-group-title">{t("mobile.settings.about")}</div>
               <div className="mv-section-row">
                 <span className="mv-section-label">{t("mobile.settings.version")}</span>
-                <span className="mv-section-value">Phase 11</span>
+                <span className="mv-section-value">{__APP_VERSION__}</span>
               </div>
               <div className="mv-section-row">
                 <span className="mv-section-label">{t("mobile.settings.platform")}</span>

@@ -43,9 +43,8 @@ describe("ChainsView", () => {
     chainListActive.mockResolvedValueOnce({ chains: [] });
     renderChainsView();
     await waitFor(() => {
-      expect(
-        screen.getByText("No active chains. Ask EnvoyAI to plan a multi-step goal to start one."),
-      ).toBeDefined();
+      // New empty state invites the user to click "New chain"
+      expect(screen.getByText(/No active chains yet/)).toBeDefined();
     });
   });
 

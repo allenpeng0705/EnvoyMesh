@@ -25,6 +25,9 @@ import { resolveChatBubblePresentation } from "@envoymesh/api";
 import { ChatMessageBubble } from "../ChatMessageBubble.js";
 import { ChatMessageText } from "../ChatMessageText.js";
 import { ChatFileAttachment } from "../ChatFileAttachment.js";
+import { ChatAudioAttachment } from "../ChatAudioAttachment.js";
+import { VoiceNoteRecorderBar } from "../VoiceNoteRecorderBar.js";
+import { useVoiceNoteRecorder } from "../../hooks/useVoiceNoteRecorder.js";
 import { ChatIcon, EditIcon, AttachIcon } from "../../icons.js";
 import { ChatComposer } from "../ChatComposer.js";
 import { useToast } from "../../hooks/useToast.js";
@@ -95,6 +98,14 @@ export function GroupChatPanel({
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const lastSendRef = useRef<{ at: number; text: string } | null>(null);
   const [attachBusy, setAttachBusy] = useState(false);
+
+  // Voice notes — mirrors the ContactChatPanel flow but targets the group room
+  // via `sendChatRoomAttachment` instead of `sendChatAttachment`.
+  const voiceRecorder = useVoiceNoteRecorder({
+    onError: (code) => {
+      setSendError(t(`audioMessage.${code}`));
+    },
+  });
 
   const roomId = parseChatRoomThreadKey(threadKey);
   const isCreator = !!room && humanProfile?.ownerId === room.creatorOwnerId;
@@ -260,6 +271,37 @@ export function GroupChatPanel({
       if (fileInputRef.current) fileInputRef.current.value = "";
     }
   };
+
+  const handleSendVoiceNote = useCallback(async () => {
+    if (voiceRecorder.phase === "sending" || !roomId) return;
+    voiceRecorder.setSending();
+    const capture = await voiceRecorder.finalizeCapture();
+    if (!capture) {
+      voiceRecorder.setIdle();
+      return;
+    }
+    const { blob, mimeType, transcription } = capture;
+    const ext = mimeType.includes("mp4") ? "m4a" : "webm";
+    const filename = `voice-note.${ext}`;
+    try {
+      const contentBase64 = await fileToBase64(
+        new File([blob], `voice-${Date.now()}.${ext}`, { type: mimeType }),
+      );
+      await nodeService.sendChatRoomAttachment({
+        roomId,
+        filename,
+        contentBase64,
+        mimeType,
+        caption: transcription || undefined,
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : t("contactChat.sendFailed");
+      setSendError(msg);
+      setTimeout(() => setSendError(null), 8000);
+    } finally {
+      voiceRecorder.setIdle();
+    }
+  }, [voiceRecorder, roomId, nodeService, t]);
 
   const handleSend = () => {
     const text = stripModelThinking(chatInput).trim();
@@ -502,9 +544,18 @@ export function GroupChatPanel({
                             deliveryReceipt={index === stack.length - 1 ? msgReceipt : undefined}
                             deliveryDetail={index === stack.length - 1 ? msgDeliveryDetail : undefined}
                           >
-                            {msg.content.attachments?.map((attachment) => (
-                              <ChatFileAttachment key={attachment.id} attachment={attachment} />
-                            ))}
+                            {msg.content.attachments?.map((attachment) => {
+                              const isAudio = attachment.mimeType?.split(";")[0]?.startsWith("audio/") === true;
+                              return isAudio ? (
+                                <ChatAudioAttachment
+                                  key={attachment.id}
+                                  attachment={attachment}
+                                  transcription={msg.content.text?.trim() || undefined}
+                                />
+                              ) : (
+                                <ChatFileAttachment key={attachment.id} attachment={attachment} />
+                              );
+                            })}
                             {msg.content.text.trim() ? (
                               <ChatMessageText text={msg.content.text} identity={aiIdentity} />
                             ) : null}
@@ -556,6 +607,16 @@ export function GroupChatPanel({
             </div>
           </div>
         ) : null}
+        {voiceRecorder.phase !== "idle" ? (
+          <VoiceNoteRecorderBar
+            isCapturing={voiceRecorder.isCapturing}
+            recordingSeconds={voiceRecorder.recordingSeconds}
+            maxSeconds={voiceRecorder.maxSeconds}
+            sending={voiceRecorder.phase === "sending"}
+            onCancel={voiceRecorder.cancel}
+            onSend={() => void handleSendVoiceNote()}
+          />
+        ) : null}
         <footer className="chat-input">
           <ChatComposer
             value={chatInput}
@@ -588,6 +649,17 @@ export function GroupChatPanel({
                     if (file) void handleAttachFile(file);
                   }}
                 />
+                {/* Voice note mic button — starts the recorder bar above */}
+                <button
+                  type="button"
+                  className="secondary chat-mic-btn"
+                  title={t("audioMessage.recordTitle")}
+                  aria-label={t("audioMessage.recordAria")}
+                  disabled={!nodeMeshOnline || voiceRecorder.phase !== "idle"}
+                  onClick={() => void voiceRecorder.start()}
+                >
+                  🎤
+                </button>
               </>
             }
           />

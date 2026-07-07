@@ -1,5 +1,0 @@
-snapshot: false
-usable with target: true
-usable without: true
-regex test: false
-regex match: null

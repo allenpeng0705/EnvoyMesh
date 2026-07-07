@@ -124,6 +124,8 @@ export type RpcMethods =
   | "recordCommerceReceipt"
   | "listAuditEvents"
   | "listTaskJournalEntries"
+  | "getCostSummary"
+  | "runCostRollupRetention"
   | "listAgentCards"
   | "getAgentCard"
   | "requestAgentCard"
