@@ -140,6 +140,7 @@ describe("bridge-gateway integration", () => {
     const gateway = new ExternalAgentGateway();
     const agentId = identity.agentCredential.agentId;
     const resolveOpenClawReply = vi.fn();
+    const hasOpenClawPendingReply = vi.fn().mockReturnValue(true);
 
     gateway.registerAgent(
       createExternalAgentSession(agentId, identity.agentPeerId, "EnvoyAI", identity.ownerId),
@@ -153,6 +154,7 @@ describe("bridge-gateway integration", () => {
       getRecipientPeerId: async (id) => id,
       gateway,
       resolveOpenClawReply,
+      hasOpenClawPendingReply,
     });
 
     try {
@@ -169,6 +171,49 @@ describe("bridge-gateway integration", () => {
       const body = await res.json();
       expect(body).toEqual({ ok: true, mode: "sync-reply" });
       expect(resolveOpenClawReply).toHaveBeenCalledWith("oc-ask-test-1", "OpenClaw answer");
+      expect(hasOpenClawPendingReply).toHaveBeenCalledWith("oc-ask-test-1");
+    } finally {
+      await bridge.stop();
+    }
+  });
+
+  it("returns 410 for OpenClaw sync reply when correlationId unknown (lost-ask recovery)", async () => {
+    const port = await getFreePort();
+    const identity = makeBridgeIdentity();
+    const gateway = new ExternalAgentGateway();
+    const agentId = identity.agentCredential.agentId;
+    const resolveOpenClawReply = vi.fn();
+    const hasOpenClawPendingReply = vi.fn().mockReturnValue(false);
+
+    gateway.registerAgent(
+      createExternalAgentSession(agentId, identity.agentPeerId, "EnvoyAI", identity.ownerId),
+    );
+
+    const bridge = createBridge({
+      config: { enabled: false, agentUrl: "http://localhost:8080/message", listenPort: port },
+      listenForOpenClaw: true,
+      identity,
+      mesh: makeMesh(),
+      getRecipientPeerId: async (id) => id,
+      gateway,
+      resolveOpenClawReply,
+      hasOpenClawPendingReply,
+    });
+
+    try {
+      const res = await fetch(`http://127.0.0.1:${port}/bridge/send`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          to: "envoy:owner:self",
+          text: "OpenClaw answer",
+          correlationId: "oc-ask-lost",
+        }),
+      });
+      expect(res.status).toBe(410);
+      const body = await res.json();
+      expect(body).toEqual({ ok: false, mode: "unknown-correlation" });
+      expect(resolveOpenClawReply).not.toHaveBeenCalled();
     } finally {
       await bridge.stop();
     }

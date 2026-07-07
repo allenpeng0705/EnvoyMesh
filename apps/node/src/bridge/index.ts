@@ -56,6 +56,12 @@ export interface CreateBridgeOptions {
   /** Resolves pending OpenClaw ask() calls when bridge receives a reply. */
   resolveOpenClawReply?: (correlationId: string, text: string) => void;
   /**
+   * Peek whether a pending OpenClaw ask() entry exists for this correlationId.
+   * Used to detect a lost-ask across a restart so the OpenClaw side can retry
+   * instead of silently dropping the reply.
+   */
+  hasOpenClawPendingReply?: (correlationId: string) => boolean;
+  /**
    * Start the localhost HTTP listener even when `config.enabled` is false.
    * Required for built-in OpenClaw (EnvoyAI) sync replies via POST /bridge/send.
    */
@@ -263,14 +269,28 @@ export function createBridge(options: CreateBridgeOptions): {
         return;
       }
 
-      // Sync H2A ask(): resolve pending OpenClaw reply without P2P chat delivery.
-      if (typeof correlationId === "string" && correlationId.trim()) {
-        console.log(`[bridge] OpenClaw sync reply cid=${correlationId.trim()} len=${text.length}`);
-        options.resolveOpenClawReply?.(correlationId.trim(), text);
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: true, mode: "sync-reply" }));
+    // Sync H2A ask(): resolve pending OpenClaw reply without P2P chat delivery.
+    if (typeof correlationId === "string" && correlationId.trim()) {
+      const trimmedCid = correlationId.trim();
+      // Peek-then-resolve: if the runtime says no pending entry, the ask was
+      // lost (likely because the bridge or node restarted between the ask()
+      // and the OpenClaw reply). Return 410 so the OpenClaw side can retry
+      // the ask with a fresh cid instead of silently dropping the answer.
+      if (options.hasOpenClawPendingReply && !options.hasOpenClawPendingReply(trimmedCid)) {
+        console.warn(
+          `[bridge] OpenClaw sync reply for unknown correlationId=${trimmedCid} ` +
+            "(ask likely lost across restart). Returning 410 so the gateway can retry.",
+        );
+        res.writeHead(410, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, mode: "unknown-correlation" }));
         return;
       }
+      console.log(`[bridge] OpenClaw sync reply cid=${trimmedCid} len=${text.length}`);
+      options.resolveOpenClawReply?.(trimmedCid, text);
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ ok: true, mode: "sync-reply" }));
+      return;
+    }
 
       const result = await receiveFromAgent(deps, { to, text });
       console.log(`[bridge] receiveFromAgent ok: msgId=${result.messageId} toPeerId=${result.recipientPeerId?.slice(0, 20)}…`);
@@ -363,6 +383,7 @@ export function createBridge(options: CreateBridgeOptions): {
           senderPeerId: remotePeerId,
           senderOwnerId: payload.senderOwnerId,
           text: payload.text,
+          messageId: envelope.messageId,
         });
 
         options.gateway?.logAction({

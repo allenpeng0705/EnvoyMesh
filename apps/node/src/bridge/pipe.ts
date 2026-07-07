@@ -49,6 +49,11 @@ export interface P2PMessage {
   senderOwnerId: string;
   senderDisplayName?: string;
   text: string;
+  /**
+   * Unique envelope id from the inbound P2P envelope. Threaded through to the
+   * external agent so it can dedup retries by id rather than by (sender, text).
+   */
+  messageId?: string;
 }
 
 export interface AgentResponse {
@@ -68,6 +73,7 @@ export async function forwardToAgent(
     fromOwnerId: msg.senderOwnerId,
     fromName: msg.senderDisplayName ?? msg.senderOwnerId,
     text: msg.text,
+    ...(msg.messageId ? { messageId: msg.messageId } : {}),
   });
 
   const headers: Record<string, string> = { "Content-Type": "application/json" };

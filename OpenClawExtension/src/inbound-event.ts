@@ -105,7 +105,7 @@ export async function dispatchEnvoymeshInboundEvent(params: {
     raw: params.msg,
     adapter: {
       ingest: (msg) => ({
-        id: `${params.account.accountId}:${msg.fromOwnerId}:${msg.text.slice(0, 64)}`,
+        id: `${params.account.accountId}:${msg.fromOwnerId}:${msg.messageId}`,
         timestamp: Date.now(),
         rawText: msg.text,
         textForAgent: msg.text,

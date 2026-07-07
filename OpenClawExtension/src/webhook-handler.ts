@@ -8,7 +8,12 @@ import {
 } from "openclaw/plugin-sdk/webhook-ingress";
 import { dispatchEnvoymeshAsyncInboundEvent } from "./async-inbound-event.js";
 import { sendBridgeMessage } from "./bridge-client.js";
-import { isDuplicateAsyncInbound, isDuplicateInbound } from "./dedup.js";
+import {
+  isDuplicateAsyncInbound,
+  isDuplicateInbound,
+  isLegacyDuplicateFallback,
+  syntheticInboundMessageId,
+} from "./dedup.js";
 import { rememberMeshPeer } from "./peer-routing.js";
 import {
   isEnvoymeshAsyncWebhookPayload,
@@ -20,7 +25,16 @@ import {
 
 const MAX_BODY_BYTES = 64 * 1024;
 const BODY_TIMEOUT_MS = 5_000;
-const webhookInFlightLimiter = createWebhookInFlightLimiter();
+
+const ENV_IN_FLIGHT_PER_KEY = Number.parseInt(
+  process.env.ENVOYMESH_WEBHOOK_MAX_IN_FLIGHT ?? "",
+  10,
+);
+const webhookInFlightLimiter = createWebhookInFlightLimiter(
+  Number.isFinite(ENV_IN_FLIGHT_PER_KEY) && ENV_IN_FLIGHT_PER_KEY > 0
+    ? { maxInFlightPerKey: ENV_IN_FLIGHT_PER_KEY }
+    : undefined,
+);
 
 export type EnvoymeshWebhookDeliver = (msg: EnvoymeshInboundMessage) => Promise<void>;
 export type EnvoymeshAsyncWebhookDeliver = (msg: EnvoymeshAsyncInboundMessage) => Promise<void>;
@@ -110,11 +124,26 @@ function toInboundMessage(payload: EnvoymeshWebhookPayload): EnvoymeshInboundMes
   if (!fromOwnerId || !text) {
     return null;
   }
+  const messageId = (payload.messageId ?? "").trim() ||
+    syntheticInboundMessageId({
+      fromOwnerId,
+      from,
+      text,
+      timestamp: Date.now(),
+    });
+  // `isLegacy` is true when the bridge did not provide a stable messageId,
+  // so the synthetic id will be fresh for every delivery. We pair that with
+  // a content-hash fallback window so the bridge's typical 1–10s retry of a
+  // network-blip delivery is still recognized as a duplicate. Legitimate
+  // user repeats outside the window pass through normally.
+  const isLegacy = !(payload.messageId ?? "").trim();
   return {
     from,
     fromOwnerId,
     fromName,
     text,
+    messageId,
+    isLegacy,
     policyPrompt,
     retrievedContext,
     systemPrompt,
@@ -141,6 +170,15 @@ export function createEnvoymeshWebhookHandler(deps: EnvoymeshWebhookHandlerDeps)
       inFlightKey: `envoymesh:${deps.account.accountId}`,
     });
     if (!requestLifecycle.ok) {
+      // The SDK writes 429 to the response before returning `{ ok: false }`
+      // when the in-flight limiter rejects. Surface a clear log so operators
+      // can spot the case (was previously silent).
+      if (res.headersSent && res.statusCode === 429) {
+        deps.log?.warn?.(
+          `EnvoyMesh webhook rejected by in-flight limiter (account=${deps.account.accountId}). ` +
+            "Inbound traffic exceeds concurrent-handler capacity. Raise the limit or scale out the agent.",
+        );
+      }
       return;
     }
 
@@ -207,8 +245,23 @@ export function createEnvoymeshWebhookHandler(deps: EnvoymeshWebhookHandlerDeps)
         return;
       }
 
-      if (isDuplicateInbound(msg.fromOwnerId, msg.text)) {
-        deps.log?.info?.(`EnvoyMesh duplicate inbound skipped for ${msg.fromOwnerId}`);
+      if (
+        isDuplicateInbound(msg.messageId) ||
+        // Legacy-bridge retry guard: when the bridge didn't send a stable
+        // messageId, the synthetic id is fresh per delivery. Use a
+        // content-hash + short window so the typical 1–10s retry of a
+        // network-blip delivery is still recognized as a duplicate.
+        (msg.isLegacy === true &&
+          isLegacyDuplicateFallback({
+            fromOwnerId: msg.fromOwnerId,
+            from: msg.from,
+            text: msg.text,
+          }))
+      ) {
+        deps.log?.info?.(
+          `EnvoyMesh duplicate inbound skipped (messageId=${msg.messageId}, ` +
+            `isLegacy=${msg.isLegacy === true ? "true" : "false"}, owner=${msg.fromOwnerId})`,
+        );
         res.writeHead(200, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ status: "ok", warning: "deduplicated" }));
         return;

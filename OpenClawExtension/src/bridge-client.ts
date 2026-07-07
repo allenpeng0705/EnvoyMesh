@@ -1,5 +1,5 @@
 import { bridgeAuthHeaders } from "./bridge-auth.js";
-import { bridgeExecuteToolUrl, bridgeListToolsUrl } from "./bridge-url.js";
+import { bridgeExecuteToolUrl, bridgeListToolsUrl, bridgeSendUrl } from "./bridge-url.js";
 
 export type BridgeMeshTool = {
   name: string;
@@ -17,7 +17,7 @@ export async function sendBridgeMessage(params: {
 }): Promise<boolean> {
   const body: Record<string, unknown> = { to: params.to, text: params.text };
   if (params.correlationId) body.correlationId = params.correlationId;
-  const res = await fetch(params.bridgeUrl, {
+  const res = await fetch(bridgeSendUrl(params.bridgeUrl), {
     method: "POST",
     headers: bridgeAuthHeaders(params.bridgeSecret),
     body: JSON.stringify(body),
