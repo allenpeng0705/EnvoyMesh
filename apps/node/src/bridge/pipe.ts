@@ -113,7 +113,7 @@ export async function receiveFromAgent(
   const messageId = `bridge-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 
   // Truncate long LLM replies to fit within the protocol text limit.
-  // The ChatMessagePayloadSchema enforces max 64000 chars; we truncate here
+  // The ChatMessagePayloadSchema enforces max 128000 chars; we truncate here
   // with a marker so the bridge never fails on long agent responses.
   const MAX_TEXT = 128000;
   let text = response.text;
