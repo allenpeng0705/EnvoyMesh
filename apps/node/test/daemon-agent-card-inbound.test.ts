@@ -17,6 +17,37 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { handleDaemonAgentCardInbound } from "../src/daemon-agent-card-inbound.js";
 import type { BridgeIdentity } from "../src/bridge/pipe.js";
+import type { EnvoyMesh } from "@envoymesh/network";
+
+/** Mesh mock for tests of `handleDaemonAgentCardInbound` — it goes through
+ * `sendEnvelopeWithRetry` which needs `getPeerConnectionInfo`,
+ * `closeConnectionsToPeer`, and `ensurePeerReachable` in addition to `send`. */
+function createMockMesh(send: ReturnType<typeof vi.fn>): EnvoyMesh {
+  return {
+    peerId: "12D3KooWLocalTest",
+    multiaddrs: [],
+    send,
+    sendExpectReply: vi.fn(async () => {
+      throw new Error("sendExpectReply not configured for this test");
+    }),
+    sendChatExpectEnvelopeReply: vi.fn(async () => {
+      throw new Error("sendChatExpectEnvelopeReply not configured for this test");
+    }),
+    onMessage: () => {},
+    probePeer: async () => undefined,
+    getPeerConnectionInfo: () => ({ connected: true, direct: true }),
+    getPeerStoreDialHints: async () => [],
+    mergePeerStoreDialHints: async () => {},
+    scrubPeerStoreDialHints: async () => [],
+    tagContactForPersistentReachability: async () => {},
+    untagContactForPersistentReachability: async () => {},
+    ensurePeerReachable: async () => ({ connected: true, direct: true }),
+    closeConnectionsToPeer: async () => 0,
+    getConnectedPeerIds: () => [],
+    start: async () => undefined,
+    stop: async () => undefined,
+  } as unknown as EnvoyMesh;
+}
 
 describe("handleDaemonAgentCardInbound", () => {
   it("returns handled:false for non agent.card intents", async () => {
@@ -36,10 +67,10 @@ describe("handleDaemonAgentCardInbound", () => {
       trustStore: {} as never,
       agentCardStore: {} as never,
       humanProfileStore: {} as never,
-      bridgeIdentity: null,
-      mesh: { send: vi.fn() } as never,
-    });
-    expect(result).toEqual({ handled: false });
+        bridgeIdentity: null,
+        mesh: createMockMesh(vi.fn()),
+      });
+      expect(result).toEqual({ handled: false });
   });
 
   it("caches inbound agent.card.response and calls recordAgentCardCached hook", async () => {
@@ -107,7 +138,7 @@ describe("handleDaemonAgentCardInbound", () => {
         agentCardStore,
         humanProfileStore: createHumanProfileStore(profileDir),
         bridgeIdentity,
-        mesh: { send: vi.fn() } as never,
+        mesh: createMockMesh(vi.fn()),
         nodeService: { recordAgentCardCached } as never,
       });
 
@@ -187,7 +218,7 @@ describe("handleDaemonAgentCardInbound", () => {
         agentCardStore: createAgentCardStore(profileDir),
         humanProfileStore: createHumanProfileStore(profileDir),
         bridgeIdentity,
-        mesh: { send } as never,
+        mesh: createMockMesh(send),
       });
 
       expect(result).toEqual({ handled: true, outcome: "responded" });

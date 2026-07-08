@@ -475,6 +475,9 @@ export const en = {
       scanningBonds: "Scanning bonds…",
       noMatches: "No matches yet",
       noResults: "No peers found for “{query}”",
+      browsePeersHeading: "People you can reach",
+      browsePeersHint:
+        "Searched the mesh for matching topics — here are the peers we found on the network. You can say hello to start a conversation.",
       querying: "Querying network…",
       lookingUp: "Looking up peer on the network…",
       queryingDht: "Querying DHT capability topic providers…",

@@ -39,6 +39,7 @@ const mockNodeService = {
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: () => mockNodeService,
+  useIsInProcessMobileNode: () => false,
 }));
 
 vi.mock("../../src/context/NodeStateContext.js", () => ({

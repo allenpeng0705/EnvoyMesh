@@ -740,6 +740,43 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
               />
             ))}
           </ul>
+        ) : discoveredPeers.length > 0 ? (
+          <div className="search-empty search-empty--browse">
+            <p className="search-empty__heading">
+              {t("discover.search.browsePeersHeading", "People you can reach")}
+            </p>
+            <p className="search-empty__hint">
+              {t(
+                "discover.search.browsePeersHint",
+                "Searched the mesh for matching topics — here are the peers we found on the network. You can say hello to start a conversation.",
+              )}
+            </p>
+            <ul className="search-results peer-results-list">
+              {discoveredPeers.slice(0, 20).map((peer) => {
+                const helloState = resolvePeerHelloState(peer.ownerId, peer.nodeId, bonds, outboundHellos);
+                const fakeResult = {
+                  nodeId: peer.nodeId,
+                  ownerId: peer.ownerId,
+                  displayName: peer.displayName ?? peer.ownerId,
+                  username: undefined,
+                  bio: undefined,
+                  interests: peer.interests ?? [],
+                  profileVisibility: peer.profileVisibility ?? ("public" as const),
+                  trustLevel: helloState === "connected" ? ("direct" as const) : undefined,
+                  signedRecordValid: true,
+                };
+                return (
+                  <PeerResultCard
+                    key={peer.nodeId}
+                    result={fakeResult}
+                    index={0}
+                    helloState={helloState}
+                    onSayHello={handleSayHello}
+                  />
+                );
+              })}
+            </ul>
+          </div>
         ) : query.trim() && !isSearching && !(isPaste && codeInviteHint) ? (
           <div className="search-empty">
             <p>{t("discover.search.noResults", { query })}</p>

@@ -20,6 +20,7 @@ describe("runSetupSponsorFriendViaRuntime", () => {
         interests: [],
         whatShares: [],
       }),
+      loadNodeProfile: async () => undefined,
       assertOnline: () => {},
     });
 

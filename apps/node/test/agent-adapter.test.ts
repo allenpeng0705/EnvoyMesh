@@ -56,6 +56,16 @@ function createMockMesh() {
         matchScore: 0.8,
       },
     }),
+    closeConnectionsToPeer: vi.fn().mockResolvedValue(0),
+    ensurePeerReachable: vi.fn().mockResolvedValue({
+      connected: true,
+      direct: true,
+    }),
+    getPeerConnectionInfo: vi.fn().mockReturnValue({
+      connected: true,
+      direct: true,
+    }),
+    getConnectedPeerIds: vi.fn().mockReturnValue([]),
     peerId: "QmMockPeer",
   };
 }

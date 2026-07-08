@@ -55,7 +55,14 @@ let nodeStatus: "offline" | "starting" | "running" | "stopping" = "running";
 const humanProfile = { ownerId: "envoy:owner:test" };
 
 vi.mock("../../src/context/NodeStateContext.js", () => ({
-  useNodeState: () => ({ nodeConfig, nodeStatus, humanProfile, bridgeStatus: null }),
+  useNodeState: () => ({
+    nodeConfig,
+    nodeStatus,
+    humanProfile,
+    bridgeStatus: null,
+    connectionStatus: null,
+    bonds: [],
+  }),
 }));
 
 afterEach(() => {
@@ -120,7 +127,12 @@ describe("AIChatPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: /^Send$/i }));
 
     await waitFor(() => {
-      expect(runOwnerAgentTurn).toHaveBeenCalledWith("list my library files");
+      // The component calls `runOwnerAgentTurn(outbound, { humanMessageId, locale })`
+      // — two args: the user message and an options object. Verify the
+      // first arg contains the user's text.
+      expect(runOwnerAgentTurn).toHaveBeenCalled();
+      const [outbound] = runOwnerAgentTurn.mock.calls[0] ?? [];
+      expect(outbound?.text ?? outbound).toContain("list my library files");
     });
     expect(await screen.findByText(/report\.txt/i)).toBeDefined();
   });

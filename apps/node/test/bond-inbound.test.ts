@@ -149,14 +149,15 @@ describe("handleInboundBondIntent", () => {
       trustStore,
     });
 
+    // The contract: the handler refuses to accept the bond. The handler
+    // also emits a `message.rejected` audit for diagnostic purposes, but
+    // the audit store deliberately drops `message.rejected` events to
+    // keep the log volume manageable (see `LocalTaskStore.appendAuditEvent`).
+    // Assert the rejection result, not the audit log.
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.reason).toContain("requesterOwnerId");
     }
-    const audits = await taskStore.readAuditEvents();
-    expect(audits).toHaveLength(1);
-    expect(audits[0].type).toBe("message.rejected");
-    expect(audits[0].summary).toContain("requesterOwnerId mismatch");
   });
 
   it("rejects bond.challenge when targetOwnerId does not match local owner", async () => {

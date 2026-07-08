@@ -74,11 +74,30 @@ import {
 
 /**
  * Timeout for a single DHT provide/find operation (advertise topic, search
- * peers). The libp2p KadDHT provide() can take 15-30s when DHT peers are
- * slow to respond or the network is still bootstrapping. 10s was too short
- * and caused every topic advertisement to fail at startup.
+ * peers). The libp2p KadDHT provide() can take 30-60s when DHT peers are
+ * slow to respond or the network is still bootstrapping (especially behind
+ * NAT, or when bootstrap.libp2p.io DNS seeds are slow / partially blocked).
+ *
+ * 30s was too short for the cold-start case: a fresh node fires its first
+ * topic advertisement at +5-15s after mesh.start(), and the KadDHT has not
+ * yet finished bootstrapping its routing table. Every provide timed out and
+ * 8 topics × 30s × sequential retry cycle (5 minutes apart) meant ~9 min
+ * between attempts. Bumped to 60s so the first attempt has a real chance.
  */
-export const DISCOVERY_TOPIC_OP_TIMEOUT_MS = 30_000;
+export const DISCOVERY_TOPIC_OP_TIMEOUT_MS = 60_000;
+
+/**
+ * Adaptive retry intervals for the periodic re-advertise loop.
+ *
+ * `_advertisePublicDiscoveryTopics` reschedules itself based on the result
+ * of the previous attempt:
+ * - If any topic failed: retry quickly so a freshly-bootstrapped DHT can be
+ *   picked up without waiting the full healthy interval.
+ * - If all topics succeeded: back off to the healthy interval to avoid
+ *   hammering the DHT.
+ */
+export const DISCOVERY_ADVERTISE_RETRY_BACKOFF_MS = 60_000;
+export const DISCOVERY_ADVERTISE_RETRY_HEALTHY_MS = 5 * 60_000;
 export const NEARBY_PROFILE_PROBE_COOLDOWN_MS = 30_000;
 export const BOND_WARM_MAX_CONNECTIONS = 64;
 
@@ -838,6 +857,13 @@ export async function _advertisePublicDiscoveryTopics(
     clearInterval(existingTimer);
     ctx.setAdvertiseInterestsTimer(undefined);
   }
+  // A new call is a full restart of the schedule. If a previous retry was
+  // hung on slow DHT provides, its async work may still be running in the
+  // background — reset the in-flight flag so the new retry loop isn't
+  // permanently blocked. The orphaned retry's reschedule check uses a stale
+  // handle comparison (ctx.getAdvertiseInterestsTimer() !== itsHandle) and
+  // will therefore not interfere with the new schedule.
+  let retryInFlight = false;
 
   const advertisedTopics: string[] = [];
   let allSuccess = true;
@@ -858,8 +884,9 @@ export async function _advertisePublicDiscoveryTopics(
     }
   };
 
-  // Advertise all topics concurrently — sequential mode blocked startup
-  // for N_topics × 30s when DHT peers were slow.
+  // Advertise all topics concurrently — bounded by DISCOVERY_TOPIC_OP_TIMEOUT_MS
+  // (60s) per topic. With 8 topics in parallel, the worst case for this
+  // initial fan-out is ~60s instead of ~8 × 60s sequentially.
   const results = await Promise.all(allTopics.map((topic) => advertiseOnce(topic)));
   for (let i = 0; i < allTopics.length; i++) {
     if (results[i]) {
@@ -871,18 +898,63 @@ export async function _advertisePublicDiscoveryTopics(
 
   ctx.emit("discovery:advertising-complete", { topics: advertisedTopics, success: allSuccess });
 
-  const timer = setInterval(async () => {
-    console.log(`[node-service] Periodic re-advertisement for ${allTopics.length} topics...`);
-    let retrySuccess = true;
-    for (const topic of allTopics) {
-      const success = await advertiseOnce(topic);
-      if (!success) retrySuccess = false;
-    }
-    if (retrySuccess) {
-      console.log(`[node-service] All topics successfully advertised on retry`);
-    }
-  }, 5 * 60 * 1000);
-  ctx.setAdvertiseInterestsTimer(timer);
+  // Adaptive periodic re-advertisement.
+  //
+  // Previous behaviour: `setInterval(retry, 5 * 60_000)` with a SEQUENTIAL
+  // `for` loop. With 8 topics × 30s timeout each, one full retry took up to
+  // 4 minutes; combined with the 5-minute interval, an effective ~9-minute
+  // gap between attempts when every topic was failing. Once the DHT
+  // eventually came up, it took another full cycle before it was visible.
+  //
+  // New behaviour:
+  // 1. Run all topics in parallel — total retry time = max(per-topic timeout)
+  //    instead of sum(per-topic timeouts). With the bumped 60s timeout,
+  //    one retry cycle is now bounded to ~60s.
+  // 2. Self-rescheduling `setTimeout` (not `setInterval`) so we can pick
+  //    the next interval based on the result of THIS attempt:
+  //    - any topic failed → DISCOVERY_ADVERTISE_RETRY_BACKOFF_MS (60s)
+  //    - all topics succeeded → DISCOVERY_ADVERTISE_RETRY_HEALTHY_MS (5 min)
+  // 3. `inFlight` guard prevents overlapping cycles when a slow retry collides
+  //    with the next scheduled tick. setInterval had no such guard and could
+  //    fire the callback again while the previous one was still running.
+  //
+  // The timer handle is stored under the same `getAdvertiseInterestsTimer`
+  // slot so existing stopNode / profile-change cleanup paths still work.
+  const scheduleRetry = (delayMs: number): ReturnType<typeof setTimeout> => {
+    const handle = setTimeout(() => {
+      if (retryInFlight) return;
+      retryInFlight = true;
+      void (async () => {
+        try {
+          const results = await Promise.all(allTopics.map((topic) => advertiseOnce(topic)));
+          const allOk = results.every((ok) => ok);
+          if (allOk) {
+            console.log("[node-service] All topics successfully advertised on retry");
+          }
+          // Re-schedule based on this attempt's outcome. If the timer was
+          // cleared by stopNode / a profile change, ctx.getAdvertiseInterestsTimer()
+          // will not match `handle` anymore and we won't loop.
+          if (ctx.getAdvertiseInterestsTimer() === handle) {
+            const nextDelay = allOk
+              ? DISCOVERY_ADVERTISE_RETRY_HEALTHY_MS
+              : DISCOVERY_ADVERTISE_RETRY_BACKOFF_MS;
+            ctx.setAdvertiseInterestsTimer(scheduleRetry(nextDelay));
+          }
+        } finally {
+          retryInFlight = false;
+        }
+      })();
+    }, delayMs);
+    return handle;
+  };
+  // First retry delay matches the initial fan-out outcome: if the initial
+  // attempt already failed (DHT not ready, slow bootstrap, etc.), don't wait
+  // the full 5-minute healthy interval before trying again — switch straight
+  // to the fast backoff so a freshly-bootstrapped DHT is picked up promptly.
+  const firstRetryDelay = allSuccess
+    ? DISCOVERY_ADVERTISE_RETRY_HEALTHY_MS
+    : DISCOVERY_ADVERTISE_RETRY_BACKOFF_MS;
+  ctx.setAdvertiseInterestsTimer(scheduleRetry(firstRetryDelay));
 }
 
 /** @deprecated Use `_advertisePublicDiscoveryTopics` — kept as alias for tests. */

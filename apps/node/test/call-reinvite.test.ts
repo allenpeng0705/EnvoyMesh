@@ -49,10 +49,15 @@ describe("handleCallIntent call.reinvite", () => {
       getTrustRecord: vi.fn(async () => ({ level: "direct", displayName: "Alice" })),
     } as any;
 
+    const peerDirectoryStore = {
+      listPeerRecords: vi.fn(async () => []),
+      getPeerByPeerId: vi.fn(async () => null),
+    } as any;
+
     const handled = await handleCallIntent(makeReinviteEnvelope(), {
       callManager: cm,
       trustStore,
-      peerDirectoryStore: {} as any,
+      peerDirectoryStore,
       sendResponseEnvelope: vi.fn(async () => undefined),
     });
 

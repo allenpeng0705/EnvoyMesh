@@ -12,7 +12,7 @@ describe("bond-warm-coordinator (node)", () => {
     resetOwnerWarmCoordinatorForTests();
   });
 
-  it("dedupes overlapping owner warms", () => {
+  it("enforces single-warm-at-a-time plus cooldown before restart", () => {
     expect(canStartOwnerWarm("envoy:owner:b")).toBe(true);
     markOwnerWarmStarted("envoy:owner:b");
     expect(canStartOwnerWarm("envoy:owner:b")).toBe(false);

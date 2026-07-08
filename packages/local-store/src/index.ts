@@ -972,9 +972,14 @@ export function createLocalTaskStore(profileDir: string): LocalTaskStore {
     },
 
     async appendAuditEvent(event) {
-      if (event.type === "p2p.trace" || event.type === "message.rejected") {
-        return;
-      }
+      // No event-type filter here: every emitted audit event is
+      // diagnostically meaningful. `message.rejected` is high-volume
+      // (one per failed signature / policy check) but it tells you WHY a
+      // message was refused, which the developer CLI's `audit` view
+      // surfaces. Dropping it at the store layer hides that from
+      // operators. The JSONL appender handles concurrent writes safely;
+      // future size caps can be added in `createJsonlAppender` if the log
+      // grows too large.
       await appendAuditQueued(event);
       await appendAuditIndexQueued(auditEventToIndexEntry(event));
     },
@@ -1930,19 +1935,30 @@ export function createLocalPeerDirectoryStore(profileDir: string): LocalPeerDire
       const deviceId = deriveDeviceId(pem);
       await withDirectory(async (file) => {
         const seenAt = new Date().toISOString();
-        let record =
+        const existing =
           file.records.find((r) => r.peerId === peerId) ??
           (ownerId ? file.records.find((r) => r.ownerId === ownerId) : undefined);
-        if (!record) {
-          return;
+        if (existing) {
+          existing.peerId = peerId;
+          existing.devicePublicKeyPem = pem;
+          existing.deviceId = deviceId;
+          if (ownerId) {
+            existing.ownerId = ownerId;
+          }
+          existing.lastSeenAt = seenAt;
+        } else {
+          // Create a new record so callers (e.g. pairDevice) can resolve the
+          // freshly-paired device by ownerId without a prior directory entry.
+          file.records.push({
+            peerId,
+            devicePublicKeyPem: pem,
+            deviceId,
+            ownerId: ownerId ?? peerId,
+            listenAddrs: [],
+            lastSeenAt: seenAt,
+            firstSeenAt: seenAt,
+          } as never);
         }
-        record.peerId = peerId;
-        record.devicePublicKeyPem = pem;
-        record.deviceId = deviceId;
-        if (ownerId) {
-          record.ownerId = ownerId;
-        }
-        record.lastSeenAt = seenAt;
         await writePeerDirectoryFileAtomic(directoryPath, file);
       });
     },

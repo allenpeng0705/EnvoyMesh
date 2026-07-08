@@ -62,9 +62,12 @@ function mockMesh(): EnvoyMesh {
     getPeerConnectionInfo: () => ({ connected: false, direct: false }),
     getPeerStoreDialHints: async () => [],
     mergePeerStoreDialHints: async () => {},
+    scrubPeerStoreDialHints: async () => [],
     tagContactForPersistentReachability: async () => {},
+    untagContactForPersistentReachability: async () => {},
     ensurePeerReachable: async () => ({ connected: true, direct: true }),
     closeConnectionsToPeer: async () => 0,
+    getConnectedPeerIds: () => [MAC_LIBP2P],
     start: async () => undefined,
     stop: async () => undefined,
   } as unknown as EnvoyMesh;
@@ -131,6 +134,7 @@ describe("profile.sync inbound learns libp2p for bond owner", () => {
     const meshWithReply = {
       ...mockMesh(),
       sendExpectReply: async () => responseEnvelope,
+      sendChatExpectEnvelopeReply: async () => responseEnvelope,
     } as unknown as EnvoyMesh;
     svc.bindExternalMesh(meshWithReply);
 

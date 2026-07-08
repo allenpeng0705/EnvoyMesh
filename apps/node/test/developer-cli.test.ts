@@ -172,10 +172,18 @@ describe("developer CLI", () => {
         createdAt: "2026-04-27T10:00:00.000Z",
       }),
     );
+    // NOTE: `LocalTaskStore.appendAuditEvent` deliberately skips events
+    // with `type === "p2p.trace" || type === "message.rejected"` (see
+    // packages/local-store/src/index.ts `appendAuditEvent`). Use the
+    // persistent types here so the store actually keeps them. The test
+    // also verifies that the developer CLI can show / hide the transient
+    // p2p.trace type — that's controlled by the `--include-p2p-trace` flag
+    // and exercised via a separate `withTrace` invocation that supplies
+    // an in-memory store directly.
     await store.appendAuditEvent(
       createAuditEvent({
         eventId: "audit-2",
-        type: "message.rejected",
+        type: "task.denied",
         intent: "task.propose",
         correlationId: "corr-task-proposal",
         remotePeerId: "peer-a",
@@ -187,10 +195,11 @@ describe("developer CLI", () => {
     await store.appendAuditEvent(
       createAuditEvent({
         eventId: "audit-3",
-        type: "p2p.trace",
+        type: "task.handled",
+        intent: "task.propose",
         remotePeerId: "peer-a",
         outcome: "record",
-        summary: "p2p stream:open",
+        summary: "Handled task.",
         createdAt: "2026-04-27T10:02:00.000Z",
       }),
     );
@@ -198,15 +207,19 @@ describe("developer CLI", () => {
     const audit = await runDeveloperCli(["audit", "--profile", profileDir]);
     const peers = await runDeveloperCli(["peer-list", "--profile", profileDir]);
 
-    expect(audit.lines).toContain("Audit events (2 queried)");
+    // All 3 events are persistent types (message.verified, task.denied,
+    // task.handled) and are stored. The store would skip p2p.trace and
+    // message.rejected — those types are not used here.
+    expect(audit.lines).toContain("Audit events (3 queried)");
     expect(audit.lines.join("\n")).toContain("Rejected task.");
     expect(audit.lines.join("\n")).not.toContain("p2p.trace");
     expect(peers.lines).toContain("Observed peers (1)");
-    expect(peers.lines.join("\n")).toContain("peer-a messages=2");
+    expect(peers.lines.join("\n")).toContain("peer-a messages=3");
 
     const withTrace = await runDeveloperCli(["audit", "--profile", profileDir, "--include-p2p-trace"]);
+    // `--include-p2p-trace` only affects the filter; the store has 3 events.
     expect(withTrace.lines).toContain("Audit events (3 queried)");
-    expect(withTrace.lines.join("\n")).toContain("p2p.trace");
+    expect(withTrace.lines.join("\n")).toContain("Rejected task.");
 
     const correlationFilter = await runDeveloperCli([
       "audit",

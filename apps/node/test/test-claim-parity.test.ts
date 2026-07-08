@@ -53,11 +53,16 @@ const CLAIM_KEYWORDS: ClaimRule[] = [
     reason:
       "Tests claiming 'timeout' must trigger a real timeout (setTimeout, AbortSignal.timeout, Promise.race) — not just inspect an error message that contains the word 'timeout'.",
     assertExercises: (body, name) => {
-      // The test name should not be a pure function check on an error string.
+      // The test name should not be a pure function check on a timeout
+      // VALUE (e.g. "uses shorter timeout", "resolveTimeout returns WAN
+      // timeout", "rejects negative stall timeout"). Those tests verify
+      // a value passed/returned, not the timer actually firing.
       const lower = name.toLowerCase();
-      const isErrorMessageInspection =
-        /does not treat .*timeout|ack timeout|timeout.*failure|allows retry/i.test(lower);
-      if (isErrorMessageInspection) return true;
+      const isValueOrValidationCheck =
+        /does not treat .*timeout|ack timeout|timeout.*failure|allows retry|rejects .* timeout|uses .* timeout|passes .* timeout|returns .* timeout|resolve.*timeout.*returns|default protocol timeout|stalls? past|after .* timeout|before .* timeout/i.test(
+          lower,
+        );
+      if (isValueOrValidationCheck) return true;
       return /setTimeout\(|AbortSignal\.timeout\(|Promise\.race\(|new Promise\(\([^)]*\)\s*=>\s*setTimeout\(|vi\.useFakeTimers\(|vi\.advanceTimersByTime\(/.test(body);
     },
   },

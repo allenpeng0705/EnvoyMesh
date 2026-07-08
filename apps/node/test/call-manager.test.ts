@@ -419,7 +419,9 @@ describe("CallManager", () => {
     it("inboundCallReceived stores callerTransportPeerId as remoteTransportPeerId", () => {
       cm.inboundCallReceived(
         "call-1", "envoy:owner:alice", "peer-alice", "Alice", "v=0\r\n...",
-        undefined, undefined, "audio", "12D3KooWCallerTransport",
+        undefined,
+        "audio",
+        "12D3KooWCallerTransport",
       );
       expect(cm.getSessionRemoteTransportPeerId("call-1")).toBe("12D3KooWCallerTransport");
     });
@@ -445,7 +447,9 @@ describe("CallManager", () => {
     it("inbound transport peer ID persists after call ends", () => {
       const result = cm.inboundCallReceived(
         "in-call", "envoy:owner:alice", "peer-alice", "Alice", "v=0\r\n...",
-        undefined, undefined, "audio", "12D3KooWInboundPeer",
+        undefined,
+        "audio",
+        "12D3KooWInboundPeer",
       );
       expect(result).toEqual({ ok: true, callId: "in-call" });
       expect(cm.getSessionRemoteTransportPeerId("in-call")).toBe("12D3KooWInboundPeer");

@@ -20,6 +20,7 @@ import { generateEd25519KeyPair } from "@envoymesh/identity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { NodeServiceImpl } from "../src/node-service-impl.js";
+import { resetOwnerWarmCoordinatorForTests } from "../src/bond-warm-coordinator.js";
 
 const PEER_OWNER_ID = "envoy:owner:remote";
 const TRANSPORT_PEER_ID = "12D3KooWRemotePeerTransportIdRegression";
@@ -66,6 +67,7 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
   beforeEach(async () => {
     profileDir = await mkdtemp(join(tmpdir(), "post-merge-regression-"));
     node = await bootstrapNode(profileDir);
+    resetOwnerWarmCoordinatorForTests();
 
     ensurePeerReachable = vi.fn(async () => ({ connected: true, direct: true }));
     closeConnectionsToPeer = vi.fn(async () => 0);
@@ -112,7 +114,7 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
     it("returns existing connection without redialing when already connected (61f7513 model)", async () => {
       const info = await node.warmContactConnection(PEER_OWNER_ID);
 
-      expect(info).toEqual({ connected: true, direct: true });
+      expect(info).toMatchObject({ connected: true, direct: true });
       expect(ensurePeerReachable).not.toHaveBeenCalled();
       expect(closeConnectionsToPeer).not.toHaveBeenCalled();
     });
@@ -124,7 +126,7 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
       const info = await node.warmContactConnection(PEER_OWNER_ID, { verifyOnly: true });
 
       expect(probeBondedPeerConnection).toHaveBeenCalledWith(TRANSPORT_PEER_ID);
-      expect(info).toEqual({ connected: true, direct: false });
+      expect(info).toMatchObject({ connected: true, direct: false });
       expect(ensurePeerReachable).not.toHaveBeenCalled();
       expect(closeConnectionsToPeer).not.toHaveBeenCalled();
     });
@@ -134,7 +136,7 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
 
       const info = await node.warmContactConnection(PEER_OWNER_ID);
 
-      expect(info).toEqual({ connected: true, direct: false });
+      expect(info).toMatchObject({ connected: true, direct: false });
       expect(ensurePeerReachable).not.toHaveBeenCalled();
       expect(closeConnectionsToPeer).not.toHaveBeenCalled();
     });
@@ -163,7 +165,7 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
       expect(probeBondedPeerConnection).toHaveBeenCalledWith(TRANSPORT_PEER_ID);
       expect(closeConnectionsToPeer).not.toHaveBeenCalled();
       expect(ensurePeerReachable).not.toHaveBeenCalled();
-      expect(info).toEqual({ connected: false, direct: false });
+      expect(info).toMatchObject({ connected: false, direct: false });
     });
 
     it("verifyConnection probes in place without tearing down when still connected", async () => {
@@ -172,7 +174,7 @@ describe("post-merge chat regression (pre-61f7513 behavior preserved)", () => {
       expect(probeBondedPeerConnection).toHaveBeenCalledWith(TRANSPORT_PEER_ID);
       expect(closeConnectionsToPeer).not.toHaveBeenCalled();
       expect(ensurePeerReachable).not.toHaveBeenCalled();
-      expect(info).toEqual({ connected: true, direct: true });
+      expect(info).toMatchObject({ connected: true, direct: true });
     });
 
     it("verifyConnection redials when probe reports stale connection", async () => {

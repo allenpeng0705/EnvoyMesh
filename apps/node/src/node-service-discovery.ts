@@ -1178,9 +1178,25 @@ export class NodeDiscoveryRuntime {
         }
       };
 
-      // Build results from peer records
+      // Build results from peer records.
+      // With a text query, only matching peers (bonded or not) are returned.
+      // Without a text query, return bonded peers + a sample of unbonded
+      // directory peers (up to half the maxResults budget) so the user
+      // always has a browsable list when search returns no text matches.
+      // Blocked peers are NEVER returned (Phase 9 trust policy).
+      const blockedOwnerIds = new Set<string>();
+      for (const record of trustRecords) {
+        if (record.level === "blocked") {
+          blockedOwnerIds.add(record.peerOwnerId);
+        }
+      }
+      const unbondedSampleLimit = Math.max(1, Math.floor(maxResults / 2));
+      let unbondedSampled = 0;
       for (const record of peerRecords) {
         const displayName = displayNameByOwner.get(record.ownerId) ?? record.ownerId;
+        if (blockedOwnerIds.has(record.ownerId)) {
+          continue; // never surface blocked peers
+        }
         const isBonded = bondedOwnerIds.has(record.ownerId);
         const hasTextQuery =
           Boolean(query.queryText?.trim()) ||
@@ -1196,6 +1212,9 @@ export class NodeDiscoveryRuntime {
 
         if (isBonded) {
           pushResult(record, displayName);
+        } else if (unbondedSampled < unbondedSampleLimit) {
+          pushResult(record, displayName);
+          unbondedSampled += 1;
         }
       }
 

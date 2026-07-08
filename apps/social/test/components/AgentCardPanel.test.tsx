@@ -10,6 +10,11 @@ vi.mock("../../src/context/I18nContext.js", () => ({
   useT: () => (key: string, fallback?: string) => fallback ?? key,
 }));
 
+// Stub NodeState — AgentCardPanel only consumes `bonds` from it.
+vi.mock("../../src/context/NodeStateContext.js", () => ({
+  useNodeState: () => ({ bonds: [] }),
+}));
+
 let cards: CachedAgentCardSummary[] = [];
 const mockListAgentCards = vi.fn(async () => cards);
 const mockOn = vi.fn((_event: string, _cb: (...args: unknown[]) => void) => {

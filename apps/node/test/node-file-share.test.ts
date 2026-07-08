@@ -46,6 +46,36 @@ function testProfile(ownerId: string) {
   };
 }
 
+/**
+ * Build a minimal mesh mock that satisfies the `OutboundDeliverMesh`
+ * interface expected by `sendVaultFileViaDataTransfer` (which uses
+ * `prepareOutboundPeerConnection` internally). Tests pass an
+ * `onSend` implementation that captures the (toPeerId, voucher, chunks)
+ * triple and returns a fake message count.
+ */
+function createMockDataTransferMesh(
+  onSend: (toPeerId: string, voucher: Uint8Array, chunks: Uint8Array[]) => Promise<number> | number,
+  peerId = "12D3KooMockSender",
+): {
+  peerId: string;
+  sendDataTransfer: ReturnType<typeof vi.fn>;
+  closeConnectionsToPeer: ReturnType<typeof vi.fn>;
+  ensurePeerReachable: ReturnType<typeof vi.fn>;
+  getPeerConnectionInfo: ReturnType<typeof vi.fn>;
+  getConnectedPeerIds: ReturnType<typeof vi.fn>;
+  sendExpectReply: ReturnType<typeof vi.fn>;
+} {
+  return {
+    peerId,
+    sendDataTransfer: vi.fn().mockImplementation(onSend as never),
+    closeConnectionsToPeer: vi.fn().mockResolvedValue(0),
+    ensurePeerReachable: vi.fn().mockResolvedValue({ connected: true, direct: true }),
+    getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: true, direct: true }),
+    getConnectedPeerIds: vi.fn().mockReturnValue([]),
+    sendExpectReply: vi.fn().mockResolvedValue({}),
+  };
+}
+
 describe("sendVaultFileViaDataTransfer", () => {
   it("reads file, signs voucher, chunks content, and calls mesh.sendDataTransfer", async () => {
     const profile = testProfile("envoy:owner:sender-test");
@@ -54,13 +84,13 @@ describe("sendVaultFileViaDataTransfer", () => {
     await writeFile(join(vaultDir, "notes/readme.md"), "hello world from vault", { mode: 0o600 });
 
     let capturedArgs: { toPeerId: string; voucher: Uint8Array; chunks: Uint8Array[] } | null = null;
-    const mesh = {
-      peerId: "12D3KooLocalSender",
-      sendDataTransfer: vi.fn<any>().mockImplementation(async (toPeerId: string, voucher: Uint8Array, chunks: Uint8Array[]) => {
+    const mesh = createMockDataTransferMesh(
+      async (toPeerId, voucher, chunks) => {
         capturedArgs = { toPeerId, voucher, chunks };
         return 42;
-      }),
-    };
+      },
+      "12D3KooLocalSender",
+    );
 
     await sendVaultFileViaDataTransfer({
       mesh: mesh as any,
@@ -99,13 +129,10 @@ describe("sendVaultFileViaDataTransfer", () => {
     await writeFile(join(vaultDir, "large.bin"), content, { mode: 0o600 });
 
     let capturedChunks: Uint8Array[] = [];
-    const mesh = {
-      peerId: "12D3KooChunkTest",
-      sendDataTransfer: vi.fn<any>().mockImplementation(async (_to: string, _v: Uint8Array, chunks: Uint8Array[]) => {
-        capturedChunks = chunks;
-        return 10;
-      }),
-    };
+    const mesh = createMockDataTransferMesh(async (_to, _v, chunks) => {
+      capturedChunks = chunks;
+      return 10;
+    });
 
     await sendVaultFileViaDataTransfer({
       mesh: mesh as any,
@@ -131,10 +158,7 @@ describe("sendVaultFileViaDataTransfer", () => {
     const profile = testProfile("envoy:owner:unsafe-test");
     const taskStore = createLocalTaskStore(profileDir);
 
-    const mesh = {
-      peerId: "12D3KooUnsafe",
-      sendDataTransfer: vi.fn(),
-    };
+    const mesh = createMockDataTransferMesh(vi.fn());
 
     await expect(
       sendVaultFileViaDataTransfer({
@@ -154,7 +178,7 @@ describe("sendVaultFileViaDataTransfer", () => {
     const profile = testProfile("envoy:owner:abs-test");
     const taskStore = createLocalTaskStore(profileDir);
 
-    const mesh = { peerId: "12D3KooAbs", sendDataTransfer: vi.fn() };
+    const mesh = createMockDataTransferMesh(vi.fn());
 
     // Traversal attempt: "a/../b" contains ".." and is blocked by isSafeVaultPath
     await expect(
@@ -178,14 +202,11 @@ describe("sendVaultFileViaDataTransfer", () => {
     await writeFile(join(vaultDir, "data/file.txt"), "content here", { mode: 0o600 });
 
     let capturedPath: string | null = null;
-    const mesh = {
-      peerId: "12D3KooNorm",
-      sendDataTransfer: vi.fn<any>().mockImplementation(async (_: string, v: Uint8Array, _c: Uint8Array[]) => {
-        const parsed = JSON.parse(new TextDecoder().decode(v));
-        capturedPath = parsed.relativePath;
-        return 5;
-      }),
-    };
+    const mesh = createMockDataTransferMesh(async (_, v) => {
+      const parsed = JSON.parse(new TextDecoder().decode(v));
+      capturedPath = parsed.relativePath;
+      return 5;
+    });
 
     await sendVaultFileViaDataTransfer({
       mesh: mesh as any,
@@ -204,10 +225,7 @@ describe("sendVaultFileViaDataTransfer", () => {
     const taskStore = createLocalTaskStore(profileDir);
     await writeFile(join(vaultDir, "audit.txt"), "audit content", { mode: 0o600 });
 
-    const mesh = {
-      peerId: "12D3KooAudit",
-      sendDataTransfer: vi.fn<any>().mockResolvedValue(10),
-    };
+    const mesh = createMockDataTransferMesh(async () => 10);
 
     await sendVaultFileViaDataTransfer({
       mesh: mesh as any,

@@ -129,7 +129,15 @@ export async function buildChatDiagnostics(input: BuildChatDiagnosticsInput): Pr
         profileDir: input.profileDir,
         localListenAddrs: input.mesh?.multiaddrs,
       });
-      const badPublicBootstrapHints = dialHints.filter((h) => isPublicLibp2pBootstrapMultiaddr(h)).length;
+      // `buildOutboundDialHints` strips /p2p-circuit/ hints when a direct TCP
+      // path exists; merge them back so the diagnostics panel can show whether
+      // a relay fallback is available.
+      const seedCircuitHints = input.discoverySeedStore
+        ? (await input.discoverySeedStore.listSeedAddrs())
+            .filter((a) => a.includes("/p2p-circuit/") && a.includes(peerRecord.peerId))
+        : [];
+      const merged = Array.from(new Set([...dialHints, ...seedCircuitHints]));
+      const badPublicBootstrapHints = merged.filter((h) => isPublicLibp2pBootstrapMultiaddr(h)).length;
       let connection: PeerConnectionInfo | undefined;
       if (input.mesh) {
         connection = input.mesh.getPeerConnectionInfo(peerRecord.peerId);
@@ -139,8 +147,8 @@ export async function buildChatDiagnostics(input: BuildChatDiagnosticsInput): Pr
         peerFound: true,
         transportPeerId: peerRecord.peerId,
         storedListenAddrs: (peerRecord.listenAddrs ?? []).length,
-        dialHintCount: dialHints.length,
-        sampleDialHints: dialHints.slice(0, SAMPLE_HINT_LIMIT).map((h) => truncateAddr(h)),
+        dialHintCount: merged.length,
+        sampleDialHints: merged.slice(0, SAMPLE_HINT_LIMIT).map((h) => truncateAddr(h)),
         badPublicBootstrapHints,
         connection,
       };

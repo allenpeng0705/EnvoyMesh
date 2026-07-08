@@ -5765,7 +5765,9 @@ You are the owner's personal AI assistant on EnvoyMesh.
     return {
       messageId: updated.messageId,
       sender: {
-        nodeId: updated.sender.ownerId ?? "",
+        // The chat-log row only stores ownerId; preserve the envelope peer
+        // ID from the inbound message so listeners see the real node id.
+        nodeId: message.sender.nodeId,
         ownerId: updated.sender.ownerId,
         displayName: updated.sender.displayName,
         actorRole: updated.sender.actorRole,
@@ -5773,7 +5775,8 @@ You are the owner's personal AI assistant on EnvoyMesh.
         agentVerified: updated.sender.agentVerified,
       },
       recipient: {
-        nodeId: updated.recipient.ownerId ?? "",
+        // Same — the recipient's envelope peer id stays on the inbound message.
+        nodeId: message.recipient.nodeId,
         ownerId: updated.recipient.ownerId,
         displayName: updated.recipient.displayName,
       },

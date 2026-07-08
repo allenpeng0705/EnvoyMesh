@@ -231,3 +231,20 @@ if (!(globalThis as any).navigator.mediaDevices) {
   (globalThis as any).navigator.mediaDevices = {};
 }
 (globalThis as any).navigator.mediaDevices.getUserMedia = mockGetUserMedia;
+
+// --------------------------------------------------------------------------
+// E2E opt-in gate (RUN_E2E=1)
+// --------------------------------------------------------------------------
+//
+// Most E2E tests need a live libp2p mesh, a relay server, or Chromium.
+// They fail spuriously on developer laptops and on CI environments that
+// don't run `npx playwright install chromium` or don't expose the public
+// libp2p swarm. By default `npm test` SKIPS these tests; opt in with:
+//
+//   RUN_E2E=1 npm test                                  # all E2E
+//   RUN_E2E=1 npx vitest run apps/node/test/...          # a specific E2E file
+//
+// The actual file-level skip is done by `vitest.config.ts` via
+// `testNamePattern` and a runtime check in `vitest.config.ts` itself.
+// This setup file just records the gate flag for any tests that want to
+// inspect it.

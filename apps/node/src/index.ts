@@ -2593,11 +2593,16 @@ async function activateCliMesh(reloadDiscoveryFromConfig: boolean): Promise<void
           // DHT advertising pipeline directly. This makes interest topics from
           // the human profile (hobbies, knowledge, username) discoverable via
           // `findCapabilityTopicProviders` on the public DHT.
+          //
+          // 15s delay (matching NodeServiceImpl.startNode path) gives the
+          // KadDHT a real chance to populate its routing table before the
+          // first provide. At +5s the DHT was still bootstrapping and every
+          // topic timed out at 30s.
           setTimeout(() => {
             void nodeService._advertiseInterestsIfPublic().catch((err) => {
               console.warn("[node] advertiseInterestsIfPublic failed:", err);
             });
-          }, 5_000);
+          }, 15_000);
           // Re-advertise periodically (NodeService path also does this).
           setInterval(() => {
             void nodeService._advertiseInterestsIfPublic().catch((err) => {

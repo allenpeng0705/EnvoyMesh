@@ -15,7 +15,8 @@ const mocks = vi.hoisted(() => ({
   shouldRunPeriodicCapabilityFind: vi.fn(() => true),
 }));
 
-vi.mock("../src/capability-discovery.js", () => ({
+vi.mock("../src/capability-discovery.js", async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
   buildAutoCapabilityTopics: mocks.buildAutoCapabilityTopics,
   runCapabilityDiscoveryCycle: mocks.runCapabilityDiscoveryCycle,
 }));
@@ -33,6 +34,7 @@ function makeCtx(
     getTaskStore: () => ({ appendAudit: vi.fn() } as never),
     getDiscoverySeedStore: () => ({ upsert: vi.fn() } as never),
     loadConfig: async () => ({ discoveryProfile: "lan-fast" }),
+    loadHumanProfile: async () => undefined,
     getCapabilityDiscoveryTimer: () => undefined,
     setCapabilityDiscoveryTimer: () => {},
     syncPairingKioskFromConfig: async () => {},

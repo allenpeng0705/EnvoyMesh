@@ -4656,6 +4656,16 @@ class NodeServiceImpl implements NodeService {
     if (hasNodePatch) {
       await updateNodeConfigViaRuntime(this._nodeConfigContext(), nodePatch as Partial<NodeConfig>);
     }
+    // Sync the runtime relay-public-WS-URL with the persisted config so
+    // the user's preference takes effect immediately. `setRelayPublicWsUrl`
+    // distinguishes three cases:
+    //   - `undefined` (no key in patch) — leave runtime value untouched
+    //   - `""` (empty string) — explicit "disabled" → clear runtime value
+    //     so `getPairingPayload` falls back to LAN discovery
+    //   - non-empty string — explicit URL → set runtime value
+    if (Object.prototype.hasOwnProperty.call(config, "relayPublicWsUrl")) {
+      this.setRelayPublicWsUrl(config.relayPublicWsUrl);
+    }
     // Bidirectional sync: notify subscribers (mobile, Social UI,
     // another EnvoyGo device) that the node config changed so they
     // can re-render.

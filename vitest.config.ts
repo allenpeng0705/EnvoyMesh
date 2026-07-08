@@ -43,10 +43,44 @@ export default defineConfig({
   },
   test: {
     include: ["packages/*/test/**/*.test.{ts,tsx}", "apps/*/test/**/*.test.{ts,tsx}"],
-    exclude: [
-      "**/node_modules/**",
-      "packages/openclaw/test/**",
-    ],
+    exclude: (() => {
+      const always = ["**/node_modules/**", "packages/openclaw/test/**"];
+      // Default: skip E2E tests in `npm test`. They need libp2p mesh,
+      // a relay server, or Chromium — see vitest.setup.ts. Opt in with
+      // RUN_E2E=1 (or use a `test:e2e:*` script in package.json).
+      if (process.env.RUN_E2E === "1") return always;
+      return [
+        ...always,
+        // File-name conventions
+        "**/integration/**/*.test.ts",
+        "**/test/**/*e2e*.test.ts",
+        "**/test/**/*a2e*.test.ts",
+        "**/test/**/*smoke*.test.ts",
+        "**/test/**/*playwright*.test.ts",
+        "**/test/**/*two-home*.test.ts",
+        "**/test/**/*three-home*.test.ts",
+        "**/test/**/*two-node*.test.ts",
+        "**/test/**/*three-node*.test.ts",
+        "**/test/**/*chain-playwright*.test.ts",
+        "**/test/**/*chain-e2e*.test.ts",
+        "**/test/**/*federated-rag*.test.ts",
+        "**/test/**/*phase-*-e2e*.test.ts",
+        // Specific files that don't match the above patterns but are E2E
+        "**/test/agent-e2e-real.test.ts",
+        "**/test/agent-e2e.test.ts",
+        "**/test/approval-send-agent-chat-e2e.test.ts",
+        "**/test/bidirectional-chat-e2e.test.ts",
+        "**/test/chain-three-home-smoke.test.ts",
+        "**/test/chain-two-home-smoke.test.ts",
+        "**/test/geo-discovery-wan-signoff.test.ts",
+        "**/test/wan-relay-signoff-e2e.test.ts",
+        "**/test/relay-chat-e2e.test.ts",
+        "**/test/relay-bridge-e2e.test.ts",
+        "**/test/relay-broadcast-e2e.test.ts",
+        "**/test/two-node-file-share-e2e.test.ts",
+        "**/test/two-node-playwright-e2e.test.ts",
+      ];
+    })(),
     setupFiles: ["./vitest.setup.ts"],
     testTimeout: 60000,
     hookTimeout: 60000,
