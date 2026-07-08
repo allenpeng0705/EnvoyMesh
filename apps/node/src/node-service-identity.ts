@@ -72,7 +72,13 @@ import {
   sendProfileSyncToBonds,
 } from "./profile-sync-outbound.js";
 
-export const DISCOVERY_TOPIC_OP_TIMEOUT_MS = 10_000;
+/**
+ * Timeout for a single DHT provide/find operation (advertise topic, search
+ * peers). The libp2p KadDHT provide() can take 15-30s when DHT peers are
+ * slow to respond or the network is still bootstrapping. 10s was too short
+ * and caused every topic advertisement to fail at startup.
+ */
+export const DISCOVERY_TOPIC_OP_TIMEOUT_MS = 30_000;
 export const NEARBY_PROFILE_PROBE_COOLDOWN_MS = 30_000;
 export const BOND_WARM_MAX_CONNECTIONS = 64;
 
@@ -852,10 +858,12 @@ export async function _advertisePublicDiscoveryTopics(
     }
   };
 
-  for (const topic of allTopics) {
-    const success = await advertiseOnce(topic);
-    if (success) {
-      advertisedTopics.push(topic);
+  // Advertise all topics concurrently — sequential mode blocked startup
+  // for N_topics × 30s when DHT peers were slow.
+  const results = await Promise.all(allTopics.map((topic) => advertiseOnce(topic)));
+  for (let i = 0; i < allTopics.length; i++) {
+    if (results[i]) {
+      advertisedTopics.push(allTopics[i]);
     } else {
       allSuccess = false;
     }

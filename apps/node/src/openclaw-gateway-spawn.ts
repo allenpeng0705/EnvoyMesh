@@ -5,16 +5,22 @@ import { resolveBundledOpenClawDir, resolveStandaloneOpenClawBinary } from "./bu
 
 export function ensureOpenClawEntryBootstrap(ocDir: string): void {
   const entryPath = join(ocDir, "dist", "entry.js");
-  if (existsSync(entryPath)) {
-    return;
-  }
+  // Always overwrite. The stub must call runCli directly because tsx sets
+  // process.argv[1] to tsx/cli.mjs, which makes src/entry.ts's isMainModule
+  // guard return false (skipping all side effects).
   mkdirSync(join(ocDir, "dist"), { recursive: true });
   writeFileSync(
     entryPath,
     [
-      "// EnvoyMesh bootstrap — re-exports the gateway from TS source.",
-      "// openclaw.mjs loads this file; tsx handles .ts resolution.",
-      `export * from "../src/cli/run-main.ts";`,
+      "// EnvoyMesh bootstrap — calls runCli directly.",
+      "// We can't import src/entry.ts because its isMainModule guard checks",
+      "// process.argv[1], which under tsx points to tsx/cli.mjs, not entry.ts.",
+      "// So we import runCli and call it ourselves.",
+      `import { runCli } from "../src/cli/run-main.ts";`,
+      `runCli(process.argv).catch((err) => {`,
+      `  console.error("[entry] Fatal error:", err);`,
+      `  process.exit(1);`,
+      `});`,
       "",
     ].join("\n"),
     "utf-8",

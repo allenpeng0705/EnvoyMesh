@@ -384,6 +384,7 @@ export type OutboundCallDeliverMesh = Pick<
   | "ensurePeerReachable"
   | "getPeerConnectionInfo"
   | "getConnectedPeerIds"
+  | "peerId"
 >;
 
 export type OutboundProfileDeliverMesh = OutboundCallDeliverMesh;
@@ -443,6 +444,34 @@ export async function deliverCallEnvelopeWithRetry(input: {
   /** When true, try relay circuit paths before stale direct WAN hints. */
   preferCircuitHints?: boolean;
 }): Promise<ChatDeliverResult> {
+  // Self-dial guard: if the target peer is the local node itself, abort
+  // immediately instead of going through the retry loop.
+  // Wrapped in try/catch because mesh.peerId throws if the node isn't started.
+  let localPeerId: string | undefined;
+  try {
+    localPeerId = input.mesh.peerId;
+  } catch {
+    // Node not started — can't determine local peer ID; skip the guard.
+  }
+  if (localPeerId && input.transportPeerId === localPeerId) {
+    webrtcCallTrace("deliver-call:self-skip", {
+      intent: input.envelope.intent,
+      peer: shortCallId(input.transportPeerId),
+    });
+    return { delivered: false };
+  }
+
+  // Invalid peer ID format guard: envoy_ runtime IDs are not libp2p multiaddr
+  // peer IDs and cause "Please pass a multibase decoder" errors. Skip them
+  // immediately rather than retrying.
+  if (input.transportPeerId.startsWith("envoy_") || input.transportPeerId.startsWith("envoy:")) {
+    webrtcCallTrace("deliver-call:invalid-peer-id", {
+      intent: input.envelope.intent,
+      peer: shortCallId(input.transportPeerId),
+    });
+    return { delivered: false };
+  }
+
   const maxAttempts = input.maxAttempts ?? CHAT_SEND_MAX_ATTEMPTS;
   const intent = input.envelope.intent;
   const callId =

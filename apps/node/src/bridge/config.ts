@@ -5,6 +5,7 @@ import {
   mergeExtAgentPresets,
   resolveActiveExtAgent,
 } from "@envoymesh/api";
+import { openClawGatewayWebhookUrl } from "../service-ports.js";
 
 export const ExtAgentDefinitionSchema = z.object({
   id: z.string().min(1),
@@ -55,7 +56,9 @@ export function resolveAssistantAgentUrl(cfg: {
   if (explicit) return explicit;
   const agentUrl = cfg.agentUrl?.trim();
   if (agentUrl?.includes("/webhook/envoymesh")) return agentUrl;
-  return DEFAULT_BRIDGE_CONFIG.assistantAgentUrl ?? "http://127.0.0.1:18789/webhook/envoymesh";
+  // Use the actual gateway port from service-ports.ts (respects
+  // ENVOYMESH_GATEWAY_PORT env var, not a hardcoded 18789).
+  return openClawGatewayWebhookUrl();
 }
 
 export function normalizeBridgeExtAgents(cfg: BridgeConfig): ExtAgentDefinition[] {

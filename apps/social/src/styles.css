@@ -5379,6 +5379,70 @@ button:disabled {
   border-color: var(--color-primary);
 }
 
+/* Setup interests — prominent counter + selected chips */
+.setup-interests-counter {
+  display: inline-block;
+  padding: 0.4rem 0.8rem;
+  border-radius: var(--radius-md);
+  background: var(--color-surface-elevated, var(--color-slate-100));
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  margin-bottom: 0.75rem;
+}
+.setup-interests-counter--complete {
+  background: color-mix(in srgb, var(--color-success, #22c55e) 15%, transparent);
+  color: var(--color-success, #22c55e);
+}
+.setup-add-interest__row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.setup-add-interest__input {
+  flex: 1;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-border, var(--color-slate-200));
+  border-radius: var(--radius-md);
+  font-size: 0.9375rem;
+  min-width: 0;
+}
+.setup-add-interest__input:focus {
+  outline: 2px solid var(--color-primary);
+  outline-offset: -1px;
+  border-color: var(--color-primary);
+}
+.setup-add-interest__btn {
+  flex-shrink: 0;
+  padding: 0.5rem 1rem;
+  white-space: nowrap;
+}
+.setup-add-interest__hint {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--color-text-muted);
+}
+.setup-selected-interests {
+  margin-top: 0.25rem;
+}
+.topic-chip--selected {
+  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  color: var(--color-primary);
+  border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
+  font-weight: 500;
+}
+.topic-chip--selected:hover {
+  background: color-mix(in srgb, var(--color-danger, #ef4444) 12%, transparent);
+  color: var(--color-danger, #ef4444);
+  border-color: var(--color-danger, #ef4444);
+}
+.topic-chip__remove {
+  margin-left: 0.25rem;
+  opacity: 0.6;
+  font-size: 0.75rem;
+}
+
 /* Search Status */
 .search-status {
   margin-top: 1rem;

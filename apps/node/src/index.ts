@@ -3202,8 +3202,19 @@ bridgeHandleMessage = bridge._handleMessage;
 if (nodeService instanceof NodeServiceImpl) {
   nodeService.setBridgeChatHandler(bridge._handleMessage);
   nodeService.setStyleAdapter(styleAdapter);
-  void nodeService.startOpenClaw().then((started) => {
-    if (started && nodeService.isOpenClawReady()) {
+}
+
+// Start the OpenClaw gateway (EnvoyAI). Use duck-typing in addition to
+// instanceof — tsx/esbuild can create duplicate module instances that break
+// instanceof checks, causing startOpenClaw to never be called.
+const openClawCapable = nodeService as unknown as {
+  startOpenClaw?: () => Promise<boolean>;
+  isOpenClawReady?: () => boolean;
+};
+if (typeof openClawCapable.startOpenClaw === "function") {
+  console.log("[openclaw] Starting OpenClaw gateway...");
+  void openClawCapable.startOpenClaw().then((started) => {
+    if (started && openClawCapable.isOpenClawReady?.()) {
       console.log("[openclaw] Built-in agent ready (EnvoyAI)");
     } else if (started) {
       console.warn("[openclaw] Gateway spawned but webhook not reachable yet — EnvoyAI will retry on first message");
@@ -4081,6 +4092,14 @@ function scheduleNodeHealth(): void {
 }
 
 async function runNodeHealthCycle(source: "startup" | "periodic"): Promise<void> {
+  // First-run deferred state: setup has never been completed in the UI, so
+  // mesh.start() must wait. Telling the health monitor about this prevents
+  // it from racing the deferred activation by calling mesh.start() directly,
+  // which on an unconfigured mesh either no-ops or starts with empty options
+  // (no bootstrap peers / DHT / relay) — the classic dmg first-launch bug.
+  const meshStartDeferred =
+    !persistedNodeConfig && nodeService instanceof NodeServiceImpl && !meshStarted;
+
   const result = evaluateNodeHealth({
     startedAtMs: processStartedAt,
     meshStarted,
@@ -4091,6 +4110,7 @@ async function runNodeHealthCycle(source: "startup" | "periodic"): Promise<void>
     recentFatalErrors,
     previous: nodeHealthState,
     relayClientOnly: isRelayClientNode({ relayServerEnabled: args.enableRelayServer }),
+    ...(meshStartDeferred ? { meshStartDeferred: true } : {}),
   });
   nodeHealthState = result.state;
   nodeHealthSnapshot = result.snapshot;
@@ -4113,6 +4133,18 @@ async function runNodeHealthCycle(source: "startup" | "periodic"): Promise<void>
 async function restartLibp2pForNodeHealth(reason: string): Promise<void> {
   if (libp2pRepairInProgress) {
     await appendNodeHealthTrace("node.health.repair", "node health libp2p restart already in progress");
+    return;
+  }
+  // Defensive guard: if first-run setup is still pending in the UI, do NOT
+  // touch mesh.start(). The deferred activation registered in module init
+  // is the only path that should bring the mesh up in this state.
+  const meshStartDeferred =
+    !persistedNodeConfig && nodeService instanceof NodeServiceImpl && !meshStarted;
+  if (meshStartDeferred) {
+    await appendNodeHealthTrace(
+      "node.health.repair",
+      "node health libp2p restart skipped (first-run setup pending)",
+    );
     return;
   }
   const nowMs = Date.now();

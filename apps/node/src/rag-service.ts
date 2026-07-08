@@ -185,7 +185,10 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
         ]);
         void flushSoon();
       } catch (error) {
-        console.warn(`[rag] chat index skipped: ${error}`);
+        const msg = error instanceof Error ? error.message : String(error);
+        if (!msg.includes("embeddings response missing vector")) {
+          console.warn(`[rag] chat index skipped: ${msg}`);
+        }
       }
     },
 
@@ -416,7 +419,13 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
           return runLexical();
         }
       } catch (error) {
-        console.warn(`[rag] chat vector search failed, falling back to lexical: ${error}`);
+        const msg = error instanceof Error ? error.message : String(error);
+        // Suppress "embeddings response missing vector" — this is expected when
+        // the model provider doesn't support embeddings (e.g. MiniMax). The
+        // lexical fallback is correct behavior, not an error.
+        if (!msg.includes("embeddings response missing vector")) {
+          console.warn(`[rag] chat vector search failed, falling back to lexical: ${msg}`);
+        }
       }
 
       return runLexical();
@@ -489,7 +498,10 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
           });
         }
       } catch (error) {
-        console.warn(`[rag] vault vector search failed, falling back to lexical: ${error}`);
+        const msg = error instanceof Error ? error.message : String(error);
+        if (!msg.includes("embeddings response missing vector")) {
+          console.warn(`[rag] vault vector search failed, falling back to lexical: ${msg}`);
+        }
       }
 
       return lexicalVaultKnowledgeBase({

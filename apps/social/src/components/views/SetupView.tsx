@@ -86,6 +86,38 @@ export function SetupView({ waitingForNode = false }: { waitingForNode?: boolean
   const tauriShell = isTauriShell();
   const wanPreset = useMemo(() => networkPresetById(DEFAULT_SETUP_NETWORK_PRESET), []);
 
+  // Waiting-for-node state: elapsed timer + restart recovery.
+  const [waitElapsed, setWaitElapsed] = useState(0);
+  const [showRestartButton, setShowRestartButton] = useState(false);
+  const [restartBusy, setRestartBusy] = useState(false);
+  const [restartError, setRestartError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!waitingForNode || isConnected) return;
+    let secs = 0;
+    const timer = setInterval(() => {
+      secs += 1;
+      setWaitElapsed(secs);
+      if (secs >= 30) setShowRestartButton(true);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [waitingForNode, isConnected]);
+
+  const handleRestartNode = async () => {
+    setRestartBusy(true);
+    setRestartError(null);
+    try {
+      const result = await restartTauriNodeProcess();
+      if (!result.ok) {
+        setRestartError(result.reason);
+      }
+    } catch (err) {
+      setRestartError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRestartBusy(false);
+    }
+  };
+
   const [step, setStep] = useState<WizardStep>("profile");
   const [setupProfileDir, setSetupProfileDir] = useState("./data/default");
   const [displayName, setDisplayName] = useState("");
@@ -300,10 +332,39 @@ export function SetupView({ waitingForNode = false }: { waitingForNode?: boolean
         <p className="muted">{t("setup.lede")}</p>
 
         {waitingForNode && !isConnected ? (
-          <p className="setup-connecting-banner" role="status" aria-live="polite">
-            <span className="loading-spinner setup-connecting-banner__spinner" aria-hidden />
-            {t("setup.connectingBanner")}
-          </p>
+          <div className="setup-connecting-banner" role="status" aria-live="polite">
+            <div className="setup-connecting-banner__row">
+              <span className="loading-spinner setup-connecting-banner__spinner" aria-hidden />
+              <span>{t("setup.connectingBanner")}</span>
+            </div>
+            <p className="setup-connecting-banner__phase">
+              {waitElapsed < 12
+                ? t("setup.phaseStarting")
+                : waitElapsed < 45
+                  ? t("setup.phaseGateway")
+                  : t("setup.phaseSlow")}
+            </p>
+            {showRestartButton ? (
+              <div className="setup-connecting-banner__actions">
+                <span className="setup-connecting-banner__hint">{t("setup.stuckHint")}</span>
+                <button
+                  type="button"
+                  className="secondary btn-sm"
+                  disabled={restartBusy}
+                  onClick={handleRestartNode}
+                >
+                  {restartBusy ? t("setup.restarting") : t("setup.restartNode")}
+                </button>
+              </div>
+            ) : (
+              <p className="setup-connecting-banner__timer">
+                {t("setup.waitElapsed", { seconds: waitElapsed })}
+              </p>
+            )}
+            {restartError ? (
+              <p className="setup-connecting-banner__error">{restartError}</p>
+            ) : null}
+          </div>
         ) : null}
 
         <div className="setup-wizard-steps" aria-label={t("setup.progressLabel")}>
@@ -377,6 +438,16 @@ export function SetupView({ waitingForNode = false }: { waitingForNode?: boolean
                 <p className="field-desc">{t("setup.interestsLede")}</p>
               </div>
 
+              {/* Selected interests counter — prominent feedback */}
+              <div className={`setup-interests-counter ${interestsRemaining === 0 ? "setup-interests-counter--complete" : ""}`}>
+                {interestsRemaining === 0 ? (
+                  <span>✅ {t("setup.interestsSelected", { count: selectedInterests.length })}</span>
+                ) : (
+                  <span>⬡ {t("setup.interestsMinHint", { count: interestsRemaining })}</span>
+                )}
+              </div>
+
+              {/* Suggested topics — click to toggle, show checkmark when active */}
               <div className="form-group">
                 <div className="topic-chips setup-topic-chips" role="group" aria-label={t("setup.stepInterests")}>
                   {SUGGESTED_TOPICS.map((topic) => {
@@ -389,43 +460,38 @@ export function SetupView({ waitingForNode = false }: { waitingForNode?: boolean
                         aria-pressed={active}
                         onClick={() => toggleInterest(topic)}
                       >
-                        {topic}
+                        {active ? "✓ " : ""}{topic}
                       </button>
                     );
                   })}
                 </div>
-                <small>
-                  {interestsRemaining > 0
-                    ? t("setup.interestsMinHint", { count: interestsRemaining })
-                    : t("setup.interestsSelected", { count: selectedInterests.length })}
-                </small>
               </div>
 
+              {/* Custom interest input — wider, clearer affordance */}
               <div className="form-group setup-add-interest">
                 <label htmlFor="setup-custom-interest">{t("setup.interestsAddOwn")}</label>
-                <div className="search-bar setup-add-interest__row">
-                  <div className="search-input-wrapper">
-                    <input
-                      id="setup-custom-interest"
-                      type="text"
-                      value={customInterestInput}
-                      onChange={(e) => setCustomInterestInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === "Enter") {
-                          e.preventDefault();
-                          const v = customInterestInput.trim();
-                          if (v) {
-                            toggleInterest(v);
-                            setCustomInterestInput("");
-                          }
+                <div className="setup-add-interest__row">
+                  <input
+                    id="setup-custom-interest"
+                    type="text"
+                    className="setup-add-interest__input"
+                    value={customInterestInput}
+                    onChange={(e) => setCustomInterestInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        const v = customInterestInput.trim();
+                        if (v) {
+                          toggleInterest(v);
+                          setCustomInterestInput("");
                         }
-                      }}
-                      placeholder={t("setup.interestsAddOwnPlaceholder")}
-                    />
-                  </div>
+                      }
+                    }}
+                    placeholder={t("setup.interestsAddOwnPlaceholder")}
+                  />
                   <button
                     type="button"
-                    className="search-btn btn-secondary"
+                    className="btn-secondary setup-add-interest__btn"
                     disabled={!customInterestInput.trim()}
                     onClick={() => {
                       const v = customInterestInput.trim();
@@ -438,24 +504,31 @@ export function SetupView({ waitingForNode = false }: { waitingForNode?: boolean
                     {t("setup.interestsAdd")}
                   </button>
                 </div>
-                {selectedInterests.some((i) => !SUGGESTED_TOPICS.includes(i)) ? (
-                  <div className="topic-chips setup-topic-chips setup-topic-chips--custom">
-                    {selectedInterests
-                      .filter((i) => !SUGGESTED_TOPICS.includes(i))
-                      .map((i) => (
-                        <button
-                          key={i}
-                          type="button"
-                          className="topic-chip topic-chip--active"
-                          aria-pressed={true}
-                          onClick={() => toggleInterest(i)}
-                        >
-                          {i} ✕
-                        </button>
-                      ))}
-                  </div>
-                ) : null}
+                <small className="setup-add-interest__hint">
+                  {t("setup.interestsAddHint", "Type a topic and press Enter or click Add")}
+                </small>
               </div>
+
+              {/* All selected interests (including custom) — removable chips */}
+              {selectedInterests.length > 0 ? (
+                <div className="form-group">
+                  <label>{t("setup.interestsYourSelection", "Your selected interests:")}</label>
+                  <div className="topic-chips setup-topic-chips setup-selected-interests">
+                    {selectedInterests.map((i) => (
+                      <button
+                        key={i}
+                        type="button"
+                        className="topic-chip topic-chip--selected"
+                        aria-pressed={true}
+                        onClick={() => toggleInterest(i)}
+                        title={t("setup.interestsRemove", "Click to remove")}
+                      >
+                        ✓ {i} <span className="topic-chip__remove">✕</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
 
               <div className="form-group setup-location">
                 <label>{t("setup.locationTitle")}</label>

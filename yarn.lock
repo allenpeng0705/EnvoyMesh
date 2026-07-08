@@ -308,6 +308,13 @@
   dependencies:
     "@capacitor/synapse" "^1.0.4"
 
+"@capacitor/geolocation@^8.0.0":
+  version "8.2.0"
+  resolved "https://mirrors.huaweicloud.com/repository/npm/@capacitor/geolocation/-/geolocation-8.2.0.tgz"
+  integrity sha512-N29QcoIPmme0xSxRkm7+3hjoHp6mBAOarxecvtCCZKyOBeKiJsFUq981cezg2XWBa6fhCXJMCCjQPngKK/dIag==
+  dependencies:
+    "@capacitor/synapse" "^1.0.4"
+
 "@capacitor/ios@^8.0.0":
   version "8.4.0"
   resolved "https://mirrors.huaweicloud.com/repository/npm/@capacitor/ios/-/ios-8.4.0.tgz"

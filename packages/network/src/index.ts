@@ -975,7 +975,20 @@ export class EnvoyMesh {
   ): Promise<{ cid: CID; signedRecord?: import("@envoymesh/protocol").SignedCapabilityTopicRecord }> {
     this.requireDhtForCapabilityTopics();
     const cid = await cidForCapabilityTopic(topic);
-    await this.requireNode().contentRouting.provide(cid, options);
+    // Wrap provide() in a timeout — the underlying libp2p KadDHT provide
+    // can hang for a long time when DHT peers are unreachable. This is
+    // especially common at startup when the DHT hasn't bootstrapped yet.
+    await Promise.race([
+      this.requireNode().contentRouting.provide(cid, options),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error(`provide timeout for ${topic}`)), 30_000),
+      ),
+    ]).catch((err) => {
+      // Don't throw — provide is best-effort. The topic will be re-advertised
+      // on the next periodic cycle once the DHT has more peers.
+      if (!err.message.includes("timeout")) throw err;
+      console.warn(`[p2p] provideCapabilityTopic: ${err.message} — will retry on next cycle`);
+    });
 
     let signedRecord: import("@envoymesh/protocol").SignedCapabilityTopicRecord | undefined;
     if (options?.signingKey) {
@@ -1438,6 +1451,17 @@ export class EnvoyMesh {
     protocol: string = ENVOY_CHAT_PROTOCOL,
     sendOptions?: MeshOutboundOptions,
   ): Promise<{ connected: boolean; direct: boolean; relayPeerId?: string }> {
+    // Self-dial guard: skip if the target is the local node (by peer ID in
+    // the multiaddr or direct peer ID match). Wrapped in try/catch because
+    // requireNode() throws if the node isn't started.
+    try {
+      const selfPeerId = this.requireNode().peerId.toString();
+      if (target === selfPeerId || target.includes(`/p2p/${selfPeerId}`)) {
+        return { connected: false, direct: false };
+      }
+    } catch {
+      // Node not started — skip the self-dial check.
+    }
     const peerIdStr = parsePeerIdFromDialTarget(target);
     const hintList = filterDialHintsForOutboundSend(
       sendOptions?.dialHints ?? [],
@@ -1475,7 +1499,16 @@ export class EnvoyMesh {
       }
     } catch (e) {
       const detail = e instanceof Error ? e.message : String(e);
-      console.warn(`[network] ensurePeerReachable failed for ${target.slice(0, 24)}…: ${detail}`);
+      // Suppress common DHT noise: "limited connection" and "protocol selection"
+      // failures are expected when dialing random DHT peers that don't speak
+      // EnvoyMesh. Only log genuine errors (timeouts, connection refused, etc.).
+      const isDhtNoise =
+        detail.includes("limited connection") ||
+        detail.includes("Protocol selection failed") ||
+        detail.includes("could not negotiate");
+      if (!isDhtNoise) {
+        console.warn(`[network] ensurePeerReachable failed for ${target.slice(0, 24)}…: ${detail}`);
+      }
       return { connected: false, direct: false };
     }
     return peerIdStr ? this.getPeerConnectionInfo(peerIdStr) : { connected: false, direct: false };
@@ -1547,10 +1580,10 @@ export class EnvoyMesh {
       const protocolOnlyFailure =
         detail.includes("Protocol selection failed") || detail.includes("could not negotiate");
       if (protocolOnlyFailure) {
-        // Peer may accept chat streams on this connection but not message — do not tear down chat.
-        console.warn(
-          `[network] stream open failed on existing connection (${detail}); trying another path`,
-        );
+        // Protocol negotiation failure is extremely common on the public DHT —
+        // random peers don't speak /envoymesh/message/0.1.0. This is NOT an
+        // error; it's expected for non-EnvoyMesh peers. Suppress the log to
+        // avoid noise (was previously logged on every attempt).
         return undefined;
       }
       console.warn(

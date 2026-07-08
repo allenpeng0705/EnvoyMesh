@@ -310,16 +310,34 @@ export function App() {
   // Cold-start: land 0-bond users on Discover (not Chat) so they SEE the
   // auto-search results + auto-hello. Only fires once per session — after
   // this the user's manual navigation is respected.
+  // IMPORTANT: must wait for bonds to actually load (not just nodeStatusHydrated)
+  // because bonds start as [] and load asynchronously via RPC.
   useEffect(() => {
     if (didInitialNav.current) return;
-    if (!nodeStatusHydrated) return;
-    // Only redirect when the user truly has zero contacts. Once they have
-    // even one bond (including the sponsor friend), respect the "chat" default.
-    if (bonds.length === 0) {
-      setCurrentView("discover");
+    if (!nodeStatusHydrated || !isConnected) return;
+    if (bonds.length > 0) {
+      // User has contacts → respect the "chat" default
+      didInitialNav.current = true;
+      return;
     }
+    // bonds.length === 0 + connected → could be genuinely empty or still loading.
+    // Wait a short grace period for the bonds RPC to resolve, then decide.
+    const timer = setTimeout(() => {
+      if (didInitialNav.current) return;
+      if (bonds.length === 0) {
+        setCurrentView("discover");
+      }
+      didInitialNav.current = true;
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [nodeStatusHydrated, isConnected, bonds.length]);
+
+  // Navigation handler — any manual nav cancels the cold-start redirect.
+  const navigateTo = (view: ViewName) => {
     didInitialNav.current = true;
-  }, [nodeStatusHydrated, bonds.length]);
+    setCurrentView(view);
+    if (view === "chat") setChatPanelMode("threads");
+  };
   const [chatSelectedContact, setChatSelectedContact] = useState<string | null>(null);
   const [chatPanelMode, setChatPanelMode] = useState<ChatPanelMode>("threads");
   const [pairingOpen, setPairingOpen] = useState(false);
@@ -401,10 +419,7 @@ export function App() {
         <ErrorBoundary>
           <Header
             currentView={currentView}
-            onNavigate={(v) => {
-              setCurrentView(v);
-              if (v === "chat") setChatPanelMode("threads");
-            }}
+            onNavigate={navigateTo}
             inboxActivityCount={inboxActivityCount}
             isPublicNetwork={isPublicNetwork}
             connectionStatus={connectionStatus}
@@ -427,48 +442,48 @@ export function App() {
                 panelMode={chatPanelMode}
                 onPanelModeChange={setChatPanelMode}
                 inboxActivityCount={inboxActivityCount}
-                onOpenAssistant={() => setCurrentView("assistant")}
-                onOpenDiscover={() => setCurrentView("discover")}
+                onOpenAssistant={() => navigateTo("assistant")}
+                onOpenDiscover={() => navigateTo("discover")}
               />
             )}
             {currentView === "assistant" && (
-              <SwipeBack onSwipeBack={() => setCurrentView("chat")}>
+              <SwipeBack onSwipeBack={() => navigateTo("chat")}>
                 <H2AChannelView
-                  onBackToChats={() => setCurrentView("chat")}
+                  onBackToChats={() => navigateTo("chat")}
                   onOpenActivity={() => {
                     setSettingsTab("app");
-                    setCurrentView("settings");
+                    navigateTo("settings");
                   }}
                   onOpenInbox={() => {
-                    setCurrentView("chat");
+                    navigateTo("chat");
                     setChatPanelMode("inbox");
                   }}
-                  onOpenChains={() => setCurrentView("chains")}
+                  onOpenChains={() => navigateTo("chains")}
                 />
               </SwipeBack>
             )}
             {currentView === "discover" && (
-              <SwipeBack onSwipeBack={() => setCurrentView("chat")}>
+              <SwipeBack onSwipeBack={() => navigateTo("chat")}>
                 <DiscoverView />
               </SwipeBack>
             )}
             {currentView === "library" && (
-              <SwipeBack onSwipeBack={() => setCurrentView("chat")}>
+              <SwipeBack onSwipeBack={() => navigateTo("chat")}>
                 <LibraryView />
               </SwipeBack>
             )}
             {currentView === "chains" && (
-              <SwipeBack onSwipeBack={() => setCurrentView("chat")}>
-                <ChainsView onBack={() => setCurrentView("chat")} />
+              <SwipeBack onSwipeBack={() => navigateTo("chat")}>
+                <ChainsView onBack={() => navigateTo("chat")} />
               </SwipeBack>
             )}
             {currentView === "profile" && (
-              <SwipeBack onSwipeBack={() => setCurrentView("chat")}>
+              <SwipeBack onSwipeBack={() => navigateTo("chat")}>
                 <ProfileView />
               </SwipeBack>
             )}
             {currentView === "settings" && (
-              <SwipeBack onSwipeBack={() => setCurrentView("chat")}>
+              <SwipeBack onSwipeBack={() => navigateTo("chat")}>
                 <SettingsView tab={settingsTab} onTabChange={setSettingsTab} />
               </SwipeBack>
             )}
@@ -478,10 +493,7 @@ export function App() {
         {guideOpen && (
           <GettingStartedGuide
             onClose={() => setGuideOpen(false)}
-            onNavigate={(v) => {
-              setCurrentView(v);
-              if (v === "chat") setChatPanelMode("threads");
-            }}
+            onNavigate={navigateTo}
           />
         )}
       </div>

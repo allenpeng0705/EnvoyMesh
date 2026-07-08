@@ -91,8 +91,8 @@
 
 .setup-connecting-banner {
   display: flex;
-  align-items: flex-start;
-  gap: var(--space-3);
+  flex-direction: column;
+  gap: var(--space-2);
   margin: var(--space-3) 0 var(--space-4);
   padding: var(--space-3) var(--space-4);
   border-radius: var(--radius-md);
@@ -102,12 +102,44 @@
   color: var(--color-text-muted);
   line-height: var(--leading-snug);
 }
-
+.setup-connecting-banner__row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+}
 .setup-connecting-banner__spinner {
   flex: 0 0 auto;
   width: 1.1rem;
   height: 1.1rem;
   margin-top: 0.15rem;
+}
+.setup-connecting-banner__phase {
+  font-weight: 600;
+  font-size: var(--text-xs);
+  color: var(--color-text);
+  padding-left: 2.2rem;
+}
+.setup-connecting-banner__timer {
+  font-size: var(--text-xs);
+  color: var(--color-text-muted);
+  padding-left: 2.2rem;
+  opacity: 0.7;
+}
+.setup-connecting-banner__actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-left: 2.2rem;
+  margin-top: var(--space-1);
+}
+.setup-connecting-banner__hint {
+  font-size: var(--text-xs);
+  color: var(--color-warning, #f59e0b);
+}
+.setup-connecting-banner__error {
+  font-size: var(--text-xs);
+  color: var(--color-danger, #ef4444);
+  padding-left: 2.2rem;
 }
 
 .setup-wizard-steps {

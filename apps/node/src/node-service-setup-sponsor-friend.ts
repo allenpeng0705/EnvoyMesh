@@ -58,6 +58,8 @@ export interface SetupSponsorFriendRuntimeDeps {
     options?: SendHelloOptions,
   ): Promise<{ messageId: string }>;
   loadHelloProfile(): Promise<HelloProfile>;
+  /** Load the local node profile (for self-check). */
+  loadNodeProfile(): Promise<{ owner: { ownerId: string }; peerId: string } | undefined>;
   assertOnline(): void;
 }
 
@@ -76,6 +78,19 @@ export async function runSetupSponsorFriendViaRuntime(
 
   if (!resolved.enabled || !resolved.ownerId) {
     return { ok: true, skipped: true, reason: "disabled-or-incomplete" };
+  }
+
+  // Self-check: if the sponsor's peer ID or owner ID matches the local node,
+  // skip gracefully. This happens when the sponsor themselves runs the app —
+  // they can't bond with themselves.
+  const localProfile = await deps.loadNodeProfile();
+  if (localProfile) {
+    if (resolved.peerId && localProfile.peerId === resolved.peerId) {
+      return { ok: true, skipped: true, reason: "sponsor-is-self-peer" };
+    }
+    if (localProfile.owner.ownerId === resolved.ownerId) {
+      return { ok: true, skipped: true, reason: "sponsor-is-self-owner" };
+    }
   }
 
   deps.assertOnline();
@@ -154,7 +169,7 @@ export async function runSetupSponsorFriendViaRuntime(
 /** Convenience wrapper using NodeService when available. */
 export async function runSetupSponsorFriendOnService(
   ns: NodeService,
-  deps: Omit<SetupSponsorFriendRuntimeDeps, "applyWanJoinInvite" | "searchPeers" | "sendHello" | "loadHelloProfile">,
+  deps: Omit<SetupSponsorFriendRuntimeDeps, "applyWanJoinInvite" | "searchPeers" | "sendHello" | "loadHelloProfile" | "loadNodeProfile">,
 ): Promise<RunSetupSponsorFriendResult> {
   return runSetupSponsorFriendViaRuntime({
     ...deps,
@@ -173,6 +188,15 @@ export async function runSetupSponsorFriendOnService(
         interests: hp.hobbies ?? [],
         whatShares: [],
       };
+    },
+    loadNodeProfile: async () => {
+      try {
+        const np = ns.getProfile();
+        const peerId = (ns as unknown as { peerId?: string }).peerId;
+        return { owner: { ownerId: np.owner.ownerId }, peerId: peerId ?? "" };
+      } catch {
+        return undefined;
+      }
     },
   });
 }

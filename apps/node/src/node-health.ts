@@ -53,6 +53,18 @@ export interface NodeHealthInput {
   relayClientOnly?: boolean;
   /** Override the MAX_RSS_BYTES threshold (used by tests to avoid env-var timing issues). */
   maxRssBytesOverride?: number;
+  /**
+   * The CLI / Tauri app startup path. When setup has not yet been completed
+   * (no persisted node config) the mesh is intentionally not started — the
+   * UI must finish onboarding before `startNode()` is allowed to run.
+   *
+   * Setting this true tells the health monitor:
+   *   - the `mesh is not started` reason is *expected*, not a fault
+   *   - do NOT request `restart-libp2p` — that path bypasses the setup gate
+   *     and would either no-op or start a half-configured mesh
+   *   - report status as `degraded` (known pending) rather than `unhealthy`
+   */
+  meshStartDeferred?: boolean;
 }
 
 function readMaxRssBytes(envName: string, defaultMb: number): number {
@@ -96,8 +108,17 @@ export function evaluateNodeHealth(input: NodeHealthInput): { snapshot: NodeHeal
   const recentFatalErrors = input.recentFatalErrors.filter((item) => current - item.at <= FATAL_ERROR_WINDOW_MS);
 
   if (!input.meshStarted) {
-    reasons.push("mesh is not started");
-    actions.add("restart-libp2p");
+    if (input.meshStartDeferred) {
+      // First-run / setup is still pending in the UI — do NOT call mesh.start()
+      // from this codepath. The CLI registers a deferred start that fires after
+      // setup writes node-config.json; if we race it we either no-op or start
+      // a mesh with empty options (no bootstrap peers / DHT / relay), which
+      // looks healthy until the next health tick and then loops again.
+      reasons.push("mesh start deferred until first-run setup completes");
+    } else {
+      reasons.push("mesh is not started");
+      actions.add("restart-libp2p");
+    }
   }
 
   if (input.meshStarted && input.listenAddrs.length === 0) {

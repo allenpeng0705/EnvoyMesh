@@ -35,8 +35,14 @@ write_entry_bootstrap() {
   local target_dir="$1"
   mkdir -p "$target_dir/dist"
   cat > "$target_dir/dist/entry.js" << 'STUB'
-// EnvoyMesh bootstrap — re-exports the gateway from TS source.
-export * from "../src/cli/run-main.ts";
+// EnvoyMesh bootstrap — calls runCli directly.
+// We can't import src/entry.ts because its isMainModule guard checks
+// process.argv[1], which under tsx points to tsx/cli.mjs, not entry.ts.
+import { runCli } from "../src/cli/run-main.ts";
+runCli(process.argv).catch((err) => {
+  console.error("[entry] Fatal error:", err);
+  process.exit(1);
+});
 STUB
 }
 

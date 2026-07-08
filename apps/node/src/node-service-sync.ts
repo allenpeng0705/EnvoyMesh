@@ -38,7 +38,13 @@ export async function sendSyncStateUpdateViaMesh(
     const peers = await deps.peerDirectoryStore.listPeerRecords();
     for (const row of peers) {
       if (row.ownerId === profile.owner.ownerId && row.peerId !== selfPeerId) {
-        targets.push(row.peerId);
+        // Skip envoy_ runtime IDs (they can't be dialed via libp2p).
+        // Any other peer ID format (12D3Koo..., Qm..., or multibase CIDv1)
+        // is allowed through.
+        const pid = row.peerId.trim();
+        if (!pid.startsWith("envoy_") && !pid.startsWith("envoy:")) {
+          targets.push(pid);
+        }
       }
     }
   }

@@ -46,7 +46,7 @@ import type { PersistedNodeConfig } from "./node-config-store.js";
 
 export const OPEN_CLAW_REPLY_TIMEOUT_MS = 180_000;
 export const OPEN_CLAW_RETRIEVED_CONTEXT_TIMEOUT_MS = 25_000;
-export const OPEN_CLAW_STARTUP_PROBE_ATTEMPTS = 300; // 300 × 1s = 5 minutes for cold start
+export const OPEN_CLAW_STARTUP_PROBE_ATTEMPTS = 90; // 90 × 1s = 90 seconds for cold start
 export const OPEN_CLAW_WATCHDOG_INTERVAL_MS = 60_000; // 1 minute between watchdog checks
 
 export type OpenClawPendingReply = {
@@ -555,6 +555,16 @@ async function probeOpenClawWebhook(
 
 async function waitForOpenClawGatewayReady(state: OpenClawRuntimeState): Promise<boolean> {
   for (let attempt = 0; attempt < OPEN_CLAW_STARTUP_PROBE_ATTEMPTS; attempt++) {
+    // Bail early if the gateway process exited mid-probe (avoids wasting
+    // 90s probing a dead port).
+    if (state.gatewayChild?.exitCode !== null && state.gatewayChild !== null) {
+      console.warn("[openclaw] Gateway process exited during startup probe — stopping wait");
+      return false;
+    }
+    if (!state.gatewayChild) {
+      console.warn("[openclaw] Gateway child is null during startup probe — stopping wait");
+      return false;
+    }
     if (await probeOpenClawWebhook(state, { quiet: true })) {
       return true;
     }
@@ -568,17 +578,41 @@ function startOpenClawWatchdog(state: OpenClawRuntimeState, deps: OpenClawRuntim
   state.watchdogRunning = true;
   const tick = async () => {
     if (!state.watchdogRunning) return;
-    if (
-      state.gatewayChild &&
-      !state.gatewayChild.killed &&
-      !state.gatewayRouteRegistered
-    ) {
+
+    // Case 1: Gateway process is alive but route unregistered → restart.
+    if (state.gatewayChild && !state.gatewayChild.killed && !state.gatewayRouteRegistered) {
       console.warn("[openclaw] Watchdog: gateway process alive but route unregistered — restarting");
       state.watchdogRunning = false;
       stopOpenClawWatchdog(state);
-      await startOpenClawViaRuntime(state, deps);
+      await startOpenClawViaRuntime(state, deps).catch((err) => {
+        console.warn("[openclaw] Watchdog restart failed:", err instanceof Error ? err.message : String(err));
+      });
       return;
     }
+
+    // Case 2: Gateway process died (crashed or was killed) → proactive restart.
+    if (!state.gatewayChild || state.gatewayChild.killed) {
+      console.warn("[openclaw] Watchdog: gateway process died — restarting");
+      state.watchdogRunning = false;
+      stopOpenClawWatchdog(state);
+      setOpenClawGatewayReady(state, false);
+      await startOpenClawViaRuntime(state, deps).catch((err) => {
+        console.warn("[openclaw] Watchdog restart failed:", err instanceof Error ? err.message : String(err));
+      });
+      return;
+    }
+
+    // Case 3: Gateway alive and registered → periodically probe to confirm
+    // it's still responding. If the probe fails, mark unready so the next
+    // turn triggers a re-spawn.
+    if (state.gatewayReady && state.gatewayRouteRegistered) {
+      const ok = await probeOpenClawWebhook(state, { quiet: true }).catch(() => false);
+      if (!ok) {
+        console.warn("[openclaw] Watchdog: gateway alive but probe failed — marking unready");
+        setOpenClawGatewayReady(state, false);
+      }
+    }
+
     if (!state.watchdogRunning) return;
     state.watchdogTimer = setTimeout(tick, OPEN_CLAW_WATCHDOG_INTERVAL_MS);
   };
@@ -822,7 +856,9 @@ async function askOpenClawViaWebhook(
           const err = new Error(
             `OpenClaw webhook returned ${resp.status}${detail ? `: ${detail.slice(0, 200)}` : ""}`,
           );
-          if (resp.status === 404) {
+          if (resp.status === 404 || resp.status >= 500) {
+            // 404 = route gone; 5xx = gateway erroring → mark unready so
+            // the next turn triggers a re-spawn.
             setOpenClawGatewayReady(state, false);
           }
           throw err;
@@ -877,20 +913,23 @@ async function startOpenClawInner(
   if (existsSync(cfgPath)) {
     try {
       const cfg = JSON.parse(readFileSync(cfgPath, "utf-8"));
-      assistantUrl = resolveAssistantAgentUrl(cfg);
       bridgeSecret = typeof cfg?.secret === "string" && cfg.secret.trim() ? cfg.secret.trim() : undefined;
+      // Resolve assistantAgentUrl: if the config has an explicit one that
+      // points at /webhook/envoymesh, respect it (custom port). Otherwise
+      // always use the env-aware default from service-ports.ts. We NEVER let
+      // a stale persisted URL override the current ENVOYMESH_GATEWAY_PORT.
+      const explicit = cfg.assistantAgentUrl?.trim();
+      if (explicit && explicit.includes("/webhook/envoymesh")) {
+        assistantUrl = explicit;
+      } else {
+        assistantUrl = defaultAssistantUrl;
+      }
     } catch { /* use default */ }
   }
-  // Note: pre-fix this block force-reset the URL whenever it contained
-  // "127.0.0.1" and "/webhook/envoymesh" — which silently overrode legitimate
-  // user customizations of the OpenClaw gateway port (e.g. someone running
-  // the gateway on 127.0.0.1:19999 to avoid clashing with the default
-  // 18789). The reset is no longer needed: `defaultAssistantUrl` already
-  // reflects the current `OPENCLAW_GATEWAY_PORT`, and `resolveAssistantAgentUrl`
-  // honors an explicit `assistantAgentUrl` from the bridge config.
   bridgeListenPort = BRIDGE_HTTP_PORT;
   state.assistantAgentUrl = assistantUrl;
   state.assistantAgentSecret = bridgeSecret;
+  console.log(`[openclaw] Assistant webhook URL: ${assistantUrl} (port: ${assistantGatewayPort(state)})`);
   const bridgeUrl = `http://127.0.0.1:${bridgeListenPort}/bridge/send`;
 
   const gwStateDir = profileDirAbs
@@ -1037,6 +1076,7 @@ async function startOpenClawInner(
       ...(clawhubToken ? { CLAWHUB_TOKEN: clawhubToken } : {}),
     },
   });
+  console.log(`[openclaw] Gateway process spawned (pid=${child.pid}), waiting for webhook at ${assistantUrl}...`);
   child.stderr?.on("data", (d: Buffer) => {
     const t = d.toString();
     if (t.includes("Registered EnvoyMesh HTTP route")) {
@@ -1053,8 +1093,12 @@ async function startOpenClawInner(
     if (code) console.warn(`[openclaw] gateway exited code ${code}`);
     state.gatewayChild = null;
     setOpenClawGatewayReady(state, false);
-    stopOpenClawWatchdog(state);
+    state.gatewayRouteRegistered = false;
     rejectAllPendingOpenClawReplies(state, "OpenClaw gateway stopped");
+    // NOTE: Do NOT stop the watchdog here. The watchdog's Case 2 will detect
+    // the null gatewayChild on its next tick and proactively restart it.
+    // Previously this stopped the watchdog entirely, meaning a crashed gateway
+    // stayed dead until the next user message.
   });
   state.gatewayChild = child;
   setOpenClawGatewayReady(state, false);
@@ -1104,7 +1148,25 @@ export async function ensureOpenClawReadyViaRuntime(
   state: OpenClawRuntimeState,
   deps: OpenClawRuntimeDeps,
 ): Promise<boolean> {
-  if (isOpenClawReadyViaRuntime(state)) return true;
+  // Fast path: if we believe we're ready, verify with a quick probe.
+  // This catches the case where the gateway process is alive but hung
+  // (not responding to HTTP) — a common failure mode after running for
+  // hours or days. Without this probe, a hung gateway would cause every
+  // message to time out at the 180s reply timeout.
+  if (isOpenClawReadyViaRuntime(state)) {
+    const ok = await probeOpenClawWebhook(state, { quiet: true }).catch(() => false);
+    if (ok) return true;
+    // Gateway was "ready" but probe failed — it's hung or crashed.
+    console.warn("[openclaw] Gateway was marked ready but probe failed — re-evaluating");
+    setOpenClawGatewayReady(state, false);
+    state.gatewayRouteRegistered = false;
+    // Kill the stale process so startOpenClawInner spawns a fresh one.
+    if (state.gatewayChild && !state.gatewayChild.killed) {
+      try { state.gatewayChild.kill("SIGTERM"); } catch { /* ignore */ }
+      state.gatewayChild = null;
+    }
+    // Fall through to restart logic below.
+  }
 
   if (state.gatewayChild && !state.gatewayChild.killed) {
     if (await waitForOpenClawGatewayReady(state)) {

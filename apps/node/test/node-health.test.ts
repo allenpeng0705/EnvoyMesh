@@ -151,4 +151,47 @@ describe("node health", () => {
     expect(result.snapshot.actions).toContain("restart-libp2p");
     expect(result.snapshot.actions).not.toContain("exit-for-supervisor");
   });
+
+  it("does not restart libp2p when mesh start is deferred for first-run setup", () => {
+    const result = evaluateNodeHealth({
+      now: () => now,
+      startedAtMs,
+      meshStarted: false,
+      listenAddrs: [],
+      relayPeerCount: 0,
+      recentFatalErrors: [],
+      previous: createInitialNodeHealthState(),
+      meshStartDeferred: true,
+    });
+
+    // The CLI registers a deferred mesh start that fires after the UI
+    // completes first-run setup. Restarting from this codepath races the
+    // deferred start and either no-ops or starts a mesh with empty options.
+    expect(result.snapshot.status).toBe("degraded");
+    expect(result.snapshot.actions).not.toContain("restart-libp2p");
+    expect(result.snapshot.actions).toEqual(["none"]);
+    expect(result.snapshot.reasons.some((r) => r.includes("deferred"))).toBe(true);
+  });
+
+  it("keeps the restart counter at zero across deferred cycles", () => {
+    // First few ticks are deferred — counter must not accumulate, otherwise
+    // once setup finally completes and mesh genuinely goes unhealthy,
+    // exit-for-supervisor fires prematurely.
+    let state = createInitialNodeHealthState();
+    for (let i = 0; i < 5; i++) {
+      const result = evaluateNodeHealth({
+        now: () => now,
+        startedAtMs,
+        meshStarted: false,
+        listenAddrs: [],
+        relayPeerCount: 0,
+        recentFatalErrors: [],
+        previous: state,
+        meshStartDeferred: true,
+      });
+      state = result.state;
+    }
+    expect(state.consecutiveRestartRequests).toBe(0);
+    expect(state.counters.restartRequested).toBe(0);
+  });
 });

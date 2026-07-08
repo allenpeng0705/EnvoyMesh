@@ -123,74 +123,76 @@ export async function runCapabilityDiscoveryCycle(deps: {
   const limit = options.limit ?? CAPABILITY_DISCOVERY_MAX_PROVIDERS;
   const source = options.source;
 
-  for (const topic of topics) {
-    try {
-      await mesh.provideCapabilityTopic(topic);
+  // Advertise all topics concurrently (not sequentially) to avoid blocking
+  // startup for N_topics × 10s. Each provide has its own internal timeout.
+  await Promise.allSettled(
+    topics.map(async (topic) => {
+      try {
+        await mesh.provideCapabilityTopic(topic);
+        await taskStore.appendAuditEvent(
+          createAuditEvent({
+            type: "p2p.trace",
+            direction: "outbound",
+            protocol: "discovery.capability.provide.ok",
+            outcome: "record",
+            summary: `capability provide ok topic=${topic} source=${source}`,
+          }),
+        );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        await taskStore.appendAuditEvent(
+          createAuditEvent({
+            type: "p2p.trace",
+            direction: "outbound",
+            protocol: "discovery.capability.provide.fail",
+            outcome: "record",
+            summary: `capability provide failed topic=${topic} source=${source} error=${message}`,
+          }),
+        );
+        return; // skip find if provide failed
+      }
+
+      if (!runFind) return;
+
+      let providers:
+        | Array<{
+            peerId: string;
+            multiaddrs: string[];
+          }>
+        | undefined;
+      try {
+        providers = await mesh.findCapabilityTopicProviders(topic, {
+          queryTimeoutMs,
+          limit,
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        await taskStore.appendAuditEvent(
+          createAuditEvent({
+            type: "p2p.trace",
+            direction: "outbound",
+            protocol: "discovery.capability.find.fail",
+            outcome: "record",
+            summary: `capability find failed topic=${topic} source=${source} error=${message}`,
+          }),
+        );
+        return;
+      }
+
+      const remoteProviders = providers.filter((provider) => provider.peerId !== mesh.peerId);
+      const discoveredAddrs = dedupeAddrs(remoteProviders.flatMap((provider) => provider.multiaddrs));
+      if (discoveredAddrs.length > 0) {
+        await discoverySeedStore.upsertMany(discoveredAddrs, "capability-topic");
+      }
       await taskStore.appendAuditEvent(
         createAuditEvent({
           type: "p2p.trace",
           direction: "outbound",
-          protocol: "discovery.capability.provide.ok",
+          protocol: "discovery.capability.find.ok",
           outcome: "record",
-          summary: `capability provide ok topic=${topic} source=${source}`,
+          summary: `capability find ok topic=${topic} source=${source} providers=${providers.length} remote=${remoteProviders.length} addrs=${discoveredAddrs.length}`,
         }),
       );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      await taskStore.appendAuditEvent(
-        createAuditEvent({
-          type: "p2p.trace",
-          direction: "outbound",
-          protocol: "discovery.capability.provide.fail",
-          outcome: "record",
-          summary: `capability provide failed topic=${topic} source=${source} error=${message}`,
-        }),
-      );
-      continue;
-    }
-
-    if (!runFind) {
-      continue;
-    }
-
-    let providers:
-      | Array<{
-          peerId: string;
-          multiaddrs: string[];
-        }>
-      | undefined;
-    try {
-      providers = await mesh.findCapabilityTopicProviders(topic, {
-        queryTimeoutMs,
-        limit,
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      await taskStore.appendAuditEvent(
-        createAuditEvent({
-          type: "p2p.trace",
-          direction: "outbound",
-          protocol: "discovery.capability.find.fail",
-          outcome: "record",
-          summary: `capability find failed topic=${topic} source=${source} error=${message}`,
-        }),
-      );
-      continue;
-    }
-
-    const remoteProviders = providers.filter((provider) => provider.peerId !== mesh.peerId);
-    const discoveredAddrs = dedupeAddrs(remoteProviders.flatMap((provider) => provider.multiaddrs));
-    if (discoveredAddrs.length > 0) {
-      await discoverySeedStore.upsertMany(discoveredAddrs, "capability-topic");
-    }
-    await taskStore.appendAuditEvent(
-      createAuditEvent({
-        type: "p2p.trace",
-        direction: "outbound",
-        protocol: "discovery.capability.find.ok",
-        outcome: "record",
-        summary: `capability find ok topic=${topic} source=${source} providers=${providers.length} remote=${remoteProviders.length} addrs=${discoveredAddrs.length}`,
-      }),
-    );
-  }
+    }),
+  );
 }
