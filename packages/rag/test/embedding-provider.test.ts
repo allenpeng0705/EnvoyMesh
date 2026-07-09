@@ -294,10 +294,13 @@ describe("embedding parser cache (auto mode)", () => {
     expect(getCachedEmbeddingParser("https://api.unknown-trailing.example/v1/")).toBe("openai");
   });
 
-  it("known hosts (preset-matched) skip the cache and go straight to the preset's shape", async () => {
-    // MiniMax is in the preset table → responseShape resolves to "minimax"
-    // before any embed call. The cache isn't touched on this path (and
-    // shouldn't be — preset already knows the shape).
+  it("known hosts (preset-matched) use the auto sniff-and-cache path", async () => {
+    // As of 2026-07-10 the international MiniMax preset's default
+    // responseShape is `"auto"` rather than `"minimax"` — the actual
+    // international endpoint returns the OpenAI envelope on real calls,
+    // but the legacy flat envelope ({ embedding }) is still tested here to
+    // confirm the sniff logic still falls back to the minimax parser when
+    // the OpenAI shape doesn't match.
     const url = "https://api.minimaxi.com/v1/embeddings";
     const payload = { embedding: [3, 3] };
     const fetchMock = makeFetchMock(new Map([[url, payload]]));
@@ -309,8 +312,45 @@ describe("embedding parser cache (auto mode)", () => {
 
     const vectors = await provider.embed("hello");
     expect(vectors).toEqual([3, 3]);
-    expect(getCachedEmbeddingParser("https://api.minimaxi.com/v1")).toBeUndefined();
+    // Sniff-and-cache path: OpenAI parse failed (no `data[]`), minimax parse
+    // succeeded ({ embedding: [3, 3] }), so `"minimax"` is now cached for
+    // this endpoint.
+    expect(getCachedEmbeddingParser("https://api.minimaxi.com/v1")).toBe("minimax");
   });
+
+  it(
+    "MiniMax international endpoint returns the OpenAI envelope — cache binds 'openai' on first call",
+    async () => {
+      // Regression for the 2026-07-10 chat-backfill failure
+      // (`[rag] chat backfill batch failed ... minimax: missing embedding at root`).
+      // The fix at embedding-resolver.ts switched the api.minimaxi.com preset
+      // from `defaultResponseShape: "minimax"` to `defaultResponseShape: "auto"`
+      // because the international endpoint returns the OpenAI-compatible
+      // envelope on real calls. This test pins that contract so a future
+      // revert of the preset is caught at unit-test time, not in production.
+      const url = "https://api.minimaxi.com/v1/embeddings";
+      // Mirror the typical OpenAI-compatible body: { data: [{ embedding, index }] }
+      const payload = {
+        object: "list",
+        data: [
+          { object: "embedding", embedding: [0.1, 0.2, 0.3], index: 0 },
+        ],
+        model: "embo-01",
+        usage: { prompt_tokens: 1, total_tokens: 1, completion_tokens: 0 },
+      };
+      const fetchMock = makeFetchMock(new Map([[url, payload]]));
+
+      const provider = createEmbeddingProvider({
+        embedding: { mode: "openai-compatible", endpoint: "https://api.minimaxi.com/v1" },
+        fetchImplementation: fetchMock as unknown as typeof fetch,
+      });
+
+      const vectors = await provider.embed("hello");
+      expect(vectors).toEqual([0.1, 0.2, 0.3]);
+      // Cache should bind to `openai`, not the legacy `minimax` shape.
+      expect(getCachedEmbeddingParser("https://api.minimaxi.com/v1")).toBe("openai");
+    }
+  );
 
   it("Zhipu / DashScope hosts skip the cache and use the OpenAI-shape preset directly", async () => {
     // Zhipu and DashScope both expose the OpenAI envelope. Their presets
@@ -385,15 +425,22 @@ describe("embedding parser cache (auto mode)", () => {
 // --- Provider preset inheritance (chat model → embedding defaults) --------
 //
 // The embedding settings follow the chat-model config when fields are
-// blank. The matcher is hostname-based: api.minimaxi.com → embo-01 +
-// minimax shape, api.openai.com → text-embedding-3-small + openai shape,
-// anything else falls through to the existing per-mode defaults. Per-field
-// overrides on the embedding settings win.
+// blank. The matcher is hostname-based: api.minimaxi.com → embo-01 with
+// shape auto-detected on first call, api.openai.com → text-embedding-3-small
+// + openai shape, anything else falls through to the existing per-mode
+// defaults. Per-field overrides on the embedding settings win.
+//
+// Why `auto` for MiniMax: as of 2026-07-10 the international endpoint
+// returns the OpenAI-compatible envelope ({ data: [{ embedding }] }), not
+// the legacy flat shape ({ embedding } / { vectors }). `auto` lets the
+// sniff-and-cache logic in `embedOpenAiCompatible` pick the winner on
+// first call and stay sticky for the process lifetime — robust against
+// future envelope changes too.
 
 describe("inferEmbeddingProviderFromEndpoint", () => {
   it("recognizes api.minimaxi.com (international MiniMax)", () => {
     expect(inferEmbeddingProviderFromEndpoint("https://api.minimaxi.com/v1"))
-      .toEqual({ defaultEmbeddingModel: "embo-01", defaultResponseShape: "minimax" });
+      .toEqual({ defaultEmbeddingModel: "embo-01", defaultResponseShape: "auto" });
   });
 
   it("recognizes api.openai.com", () => {
@@ -418,17 +465,17 @@ describe("inferEmbeddingProviderFromEndpoint", () => {
 
   it("is tolerant of trailing paths and ports", () => {
     expect(inferEmbeddingProviderFromEndpoint("https://api.minimaxi.com:443/v1/embeddings"))
-      .toEqual({ defaultEmbeddingModel: "embo-01", defaultResponseShape: "minimax" });
+      .toEqual({ defaultEmbeddingModel: "embo-01", defaultResponseShape: "auto" });
   });
 
   it("is tolerant of bare hostnames without protocol", () => {
     expect(inferEmbeddingProviderFromEndpoint("api.minimaxi.com/v1"))
-      .toEqual({ defaultEmbeddingModel: "embo-01", defaultResponseShape: "minimax" });
+      .toEqual({ defaultEmbeddingModel: "embo-01", defaultResponseShape: "auto" });
   });
 
   it("case-insensitive host match", () => {
     expect(inferEmbeddingProviderFromEndpoint("https://API.MinimaxI.com/v1"))
-      .toEqual({ defaultEmbeddingModel: "embo-01", defaultResponseShape: "minimax" });
+      .toEqual({ defaultEmbeddingModel: "embo-01", defaultResponseShape: "auto" });
   });
 
   it("returns undefined for unknown hosts", () => {
@@ -463,7 +510,7 @@ describe("resolveEmbeddingConfig — chat-model inheritance", () => {
     expect(config.mode).toBe("openai-compatible");
     expect(config.endpoint).toBe("https://api.minimaxi.com/v1");
     expect(config.modelName).toBe("embo-01");             // inherited from preset
-    expect(config.responseShape).toBe("minimax");         // inherited from preset
+    expect(config.responseShape).toBe("auto");           // inherited from preset (sniff-and-cache)
     expect(config.apiKey).toBe("test");                  // inherited from chat
   });
 
@@ -508,7 +555,7 @@ describe("resolveEmbeddingConfig — chat-model inheritance", () => {
       },
     });
     expect(config.modelName).toBe("custom-embed-v2");
-    expect(config.responseShape).toBe("minimax");         // preset still applies for unset fields
+    expect(config.responseShape).toBe("auto");           // preset still applies for unset fields
   });
 
   it("honors explicit responseShape override even when a preset matches", () => {
@@ -601,7 +648,7 @@ describe("resolveEmbeddingConfig — chat-model inheritance", () => {
     // Even with mode explicit and endpoint explicit, the preset matches the host,
     // so modelName + responseShape inherit. Explicit modelName override still wins.
     expect(config.modelName).toBe("embo-01");
-    expect(config.responseShape).toBe("minimax");
+    expect(config.responseShape).toBe("auto");
   });
 
   it("honors explicit modelName from a different host", () => {

@@ -66,8 +66,16 @@ export const KNOWN_EMBEDDING_PROVIDERS: ReadonlyArray<EmbeddingProviderRule> = [
   {
     hostname: /^api\.minimaxi\.com$/i,
     preset: {
+      // `auto` defers shape detection to the first call. The
+      // sniff-and-cache machinery in `embedOpenAiCompatible` tries the
+      // OpenAI envelope first (covers MiniMax's actual international
+      // response), falls back to the legacy MiniMax flat shape if needed,
+      // and caches the winner per endpoint for the rest of the process.
+      // Hardcoding `"minimax"` here broke chat backfill 2026-07-10 because
+      // the international endpoint returns the OpenAI-compatible envelope.
+      // Explicit per-field overrides on the embedding settings still win.
       defaultEmbeddingModel: "embo-01",
-      defaultResponseShape: "minimax",
+      defaultResponseShape: "auto",
     },
   },
   {

@@ -98,6 +98,8 @@ export const DISCOVERY_TOPIC_OP_TIMEOUT_MS = 60_000;
  */
 export const DISCOVERY_ADVERTISE_RETRY_BACKOFF_MS = 60_000;
 export const DISCOVERY_ADVERTISE_RETRY_HEALTHY_MS = 5 * 60_000;
+/** Maximum backoff after consecutive all-fail cycles (capped so a recovered DHT is picked up within 5 min). */
+export const DISCOVERY_ADVERTISE_RETRY_BACKOFF_MAX_MS = 5 * 60_000;
 export const NEARBY_PROFILE_PROBE_COOLDOWN_MS = 30_000;
 export const BOND_WARM_MAX_CONNECTIONS = 64;
 
@@ -896,10 +898,39 @@ export async function _advertisePublicDiscoveryTopics(
     }
   };
 
+  // Cycle-level gate: if the DHT route table is empty from this node's
+  // perspective, every `provide()` call below would hang for its full
+  // 30 s timeout (no peers to receive the records). One CLEAR summary
+  // per cycle is far better than 16 individual "provide timeout" lines
+  // that say nothing actionable. We use `connectedPeerIds` rather than
+  // the full peer-store because what we care about is "is there a peer
+  // available to write through right now" — pending-bootstrap entries
+  // don't count.
+  //
+  // Threshold: 2+ connected peers (1 is almost certainly the configured
+  // relay; we need at least one more to route the provide record
+  // through). This matches the user's 2026-07-10 symptom:
+  // `[node-stats] totalPeers=1 relayRoster=1` produced 16 per-topic
+  // timeouts every retry cycle against the community relay.
+  const connectedPeers = ctx.requireMesh().getConnectedPeerIds();
+  const skipPublishThisCycle = connectedPeers.length < 2;
+  if (skipPublishThisCycle) {
+    console.warn(
+      `[node-service] Discovery advertise cycle: only ${connectedPeers.length} peer(s) connected ` +
+      `(${connectedPeers.slice(0, 2).map((p) => p.slice(0, 12) + "…").join(", ") || "none"}). ` +
+      `DHT route table is empty — skipping ${allTopics.length} topic publishes this cycle to avoid ` +
+      `30 s per-topic timeouts. Add a real bootstrap peer (libp2p public bootstrap like ` +
+      `"https://github.com/libp2p/notes/issues/6" worked examples, or any node you trust) to ` +
+      `bootstrapPeers if you want capability topics to land.`,
+    );
+  }
+
   // Advertise all topics concurrently — bounded by DISCOVERY_TOPIC_OP_TIMEOUT_MS
   // (60s) per topic. With 8 topics in parallel, the worst case for this
   // initial fan-out is ~60s instead of ~8 × 60s sequentially.
-  const results = await Promise.all(allTopics.map((topic) => advertiseOnce(topic)));
+  const results = skipPublishThisCycle
+    ? new Array<boolean>(allTopics.length).fill(false)
+    : await Promise.all(allTopics.map((topic) => advertiseOnce(topic)));
   for (let i = 0; i < allTopics.length; i++) {
     if (results[i]) {
       advertisedTopics.push(allTopics[i]);
@@ -932,6 +963,41 @@ export async function _advertisePublicDiscoveryTopics(
   //
   // The timer handle is stored under the same `getAdvertiseInterestsTimer`
   // slot so existing stopNode / profile-change cleanup paths still work.
+  // Adaptive periodic re-advertisement with exponential backoff on
+  // consecutive failure cycles.
+  //
+  // Previous behaviour: 60s if any topic failed, 5 min if all succeeded —
+  // binary, no growth. On a loaded community DHT this hammers the network
+  // with 11+ parallel provides every minute indefinitely, never slowing.
+  // (Symptoms: `[p2p] provideCapabilityTopic: provide timeout for <topic>`
+  // repeats dominate the log.)
+  //
+  // New behaviour: each retry cycle that fails (any topic) doubles the
+  // next-cycle delay, capped at the healthy interval (5 min). A single
+  // all-success cycle resets the counter. So:
+  //   cycle N: failure → next = 60s
+  //   cycle N+1: failure → next = 120s
+  //   cycle N+2: failure → next = 240s
+  //   ...
+  //   cycle N+k: failure → next = min(60s * 2^k, 5min)
+  //   any cycle where all topics succeed → counter resets, next = 5 min.
+  //
+  // A recovered DHT is still picked up within one 5-min ceiling window; an
+  // unavailable DHT no longer floods the network or pins the timeout timer.
+  let consecutiveFailureCycles = allSuccess ? 0 : 1;
+  const computeNextDelay = (hadAnyFailure: boolean): number => {
+    if (!hadAnyFailure) {
+      consecutiveFailureCycles = 0;
+      return DISCOVERY_ADVERTISE_RETRY_HEALTHY_MS;
+    }
+    consecutiveFailureCycles += 1;
+    // 60s, 120s, 240s, ..., cap at BACKOFF_MAX (= HEALTHY). After ~6
+    // failures we're already at the ceiling, so this doesn't grow without
+    // bound.
+    const proposed = DISCOVERY_ADVERTISE_RETRY_BACKOFF_MS * 2 ** (consecutiveFailureCycles - 1);
+    return Math.min(proposed, DISCOVERY_ADVERTISE_RETRY_BACKOFF_MAX_MS);
+  };
+
   const scheduleRetry = (delayMs: number): ReturnType<typeof setTimeout> => {
     const handle = setTimeout(() => {
       if (retryInFlight) return;
@@ -941,15 +1007,38 @@ export async function _advertisePublicDiscoveryTopics(
           const results = await Promise.all(allTopics.map((topic) => advertiseOnce(topic)));
           const allOk = results.every((ok) => ok);
           if (allOk) {
-            console.log("[node-service] All topics successfully advertised on retry");
+            if (consecutiveFailureCycles > 0) {
+              // First successful cycle after a streak of failures — useful
+              // recovery signal in the log without adding per-cycle noise.
+              console.log(
+                `[node-service] All topics successfully advertised after ${consecutiveFailureCycles} failed cycle(s); backoff reset.`,
+              );
+            } else {
+              console.log("[node-service] All topics successfully advertised on retry");
+            }
+          } else if (consecutiveFailureCycles >= 3) {
+            // Once we're well into the backoff curve, drop the per-topic
+            // WARN to a single cycle-summary line — otherwise the log is
+            // a wall of identical `[p2p] provideCapabilityTopic: provide
+            // timeout for <topic>` entries every cycle, drowning out
+            // operator-relevant messages.
+            const failedCount = results.filter((ok) => !ok).length;
+            console.warn(
+              `[node-service] Discovery advertise cycle: ${failedCount}/${allTopics.length} topics timed out. ` +
+              `Backoff streak: ${consecutiveFailureCycles} cycle(s); next attempt in ` +
+              `${Math.round(
+                Math.min(
+                  DISCOVERY_ADVERTISE_RETRY_BACKOFF_MS * 2 ** consecutiveFailureCycles,
+                  DISCOVERY_ADVERTISE_RETRY_BACKOFF_MAX_MS,
+                ) / 1000,
+              )}s.`,
+            );
           }
           // Re-schedule based on this attempt's outcome. If the timer was
           // cleared by stopNode / a profile change, ctx.getAdvertiseInterestsTimer()
           // will not match `handle` anymore and we won't loop.
           if (ctx.getAdvertiseInterestsTimer() === handle) {
-            const nextDelay = allOk
-              ? DISCOVERY_ADVERTISE_RETRY_HEALTHY_MS
-              : DISCOVERY_ADVERTISE_RETRY_BACKOFF_MS;
+            const nextDelay = computeNextDelay(!allOk);
             ctx.setAdvertiseInterestsTimer(scheduleRetry(nextDelay));
           }
         } finally {

@@ -1144,9 +1144,30 @@ export class EnvoyMesh {
     // whether to back off or retry. We return `timedOut: true` instead of
     // throwing so the periodic schedule doesn't crash, but the boolean
     // propagates to the caller.
+    //
+    // Promise.race discards the loser's error/reason. We attach a .catch on
+    // the inner provide so the actual libp2p error (NoPeersFoundError,
+    // NotConnectedError, encode failure, ...) is logged before it's lost —
+    // seeing "provide timeout for X" 11 times in a row tells us the race
+    // fired, not WHY. The first timeout-streak log includes the underlying
+    // libp2p error so operators can distinguish "DHT simply busy"
+    // (timeout + nothing else) from "DHT route table empty" (timeout +
+    // NoPeersFoundError) from "encode broke" (real error, not timeout).
+    let loggedLibp2pError = false;
+    const providePromise = this.requireNode().contentRouting.provide(cid, options);
+    void providePromise.catch((err) => {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      if (!errMsg.toLowerCase().includes("timeout")) {
+        // Real libp2p error (not the synthetic timeout) — log it once.
+        console.warn(
+          `[p2p] provideCapabilityTopic: libp2p error for ${topic}: ${errMsg}`,
+        );
+        loggedLibp2pError = true;
+      }
+    });
     try {
       await Promise.race([
-        this.requireNode().contentRouting.provide(cid, options),
+        providePromise,
         new Promise((_, reject) =>
           setTimeout(() => reject(new Error(`provide timeout for ${topic}`)), 30_000),
         ),
@@ -1155,7 +1176,10 @@ export class EnvoyMesh {
       const msg = err instanceof Error ? err.message : String(err);
       if (msg.includes("timeout")) {
         timedOut = true;
-        console.warn(`[p2p] provideCapabilityTopic: ${msg} — will retry on next cycle`);
+        const libp2pSuffix = loggedLibp2pError ? "" : " (no underlying libp2p error surfaced)";
+        console.warn(
+          `[p2p] provideCapabilityTopic: ${msg} — will retry on next cycle${libp2pSuffix}`,
+        );
       } else {
         // Non-timeout errors (e.g. encode failure, unexpected libp2p
         // rejection) — surface so they aren't silently lost.
@@ -2595,10 +2619,30 @@ export class EnvoyMesh {
     lines.push(`advertised_addrs=${advertisedCount}`);
     const listenCount = this.node?.getMultiaddrs().length ?? 0;
     lines.push(`listen_addrs=${listenCount}`);
+    // Surface the actual connection count at startup so operators can
+    // catch the "DHT route table empty" case early — without this, the
+    // only symptom is a wall of `provide timeout for <topic>` lines
+    // minutes later once the periodic advertise kicks in.
+    const connectionStats = this.getConnectionStats();
+    const connectedPeerCount = connectionStats.connectedPeerIds.length;
+    const relayPeerCount = connectionStats.circuitPeerIds.length;
+    lines.push(`peers=${connectedPeerCount}`);
+    lines.push(`relay_peers=${relayPeerCount}`);
     if (!this.relayEverReserved && (this.options.enableRelay || this.options.enableRelayServer)) {
       lines.push(
         "→ Discover may not work: no relay reservation yet. " +
         "If this persists past 30s, the configured relay is unreachable from this network.",
+      );
+    }
+    if (this.options.enableDht && connectedPeerCount < 2) {
+      // The DHT is enabled but this node has only 1 (or 0) connected peers —
+      // typically 1 = the configured relay, which doesn't serve modern DHT
+      // routing. Capability/interest/geo publishing would hang every 30 s
+      // without this signal, drowning the log.
+      lines.push(
+        `→ DHT is enabled but only ${connectedPeerCount} peer(s) connected — ` +
+        `capability-topic publishes will time out. Add a real bootstrap peer ` +
+        `(e.g. libp2p public bootstrap, or a node you trust) to bootstrapPeers.`,
       );
     }
     console.log(`[p2p] discovery readiness: ${lines.join("  ")}`);

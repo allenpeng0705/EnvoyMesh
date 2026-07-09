@@ -144,16 +144,22 @@ async function embedOpenAiCompatible(
       return parseEmbeddingsResponse(payload, texts.length, cached);
     }
     // First time touching this endpoint — try the common shape first
-    // (covers OpenAI / Zhipu / Qwen / etc.), fall back to MiniMax, cache
-    // whichever succeeds. Only throws after both fail.
+    // (covers OpenAI / Zhipu / Qwen / MiniMax international / etc.), fall
+    // back to legacy MiniMax flat envelope, cache whichever succeeds.
+    // Only throws after both fail (with both error messages attached).
     try {
       const vectors = parseOpenAiEmbeddings(payload, texts.length);
       embeddingParserCache.set(cacheKey, "openai");
+      // Surface the binding so operators can see which envelope won when
+      // diagnosing embedding failures — silent cache hits are otherwise
+      // invisible.
+      console.info(`[rag] embeddings parser cached: openai for ${cacheKey}`);
       return vectors;
     } catch (openAiErr) {
       try {
         const vectors = parseMiniMaxEmbeddings(payload, texts.length);
         embeddingParserCache.set(cacheKey, "minimax");
+        console.info(`[rag] embeddings parser cached: minimax for ${cacheKey}`);
         return vectors;
       } catch (minimaxErr) {
         const oaMsg = openAiErr instanceof Error ? openAiErr.message : String(openAiErr);
