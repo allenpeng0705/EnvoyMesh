@@ -7,14 +7,14 @@
  * 3. Matching peers respond directly to broadcaster (P2P, not via relay)
  *
  * Requirements:
- * - A running relay server accessible at TEST_RELAY_ADDR environment variable,
- *   OR the community relay at 47.93.11.212:4001 (the default fallback).
+ * - A running relay server accessible at TEST_RELAY_ADDR environment variable.
+ *   The community relay at 47.93.11.212:4001 does NOT serve the circuit-relay-v2
+ *   reservation protocol this test needs (verified 2026-07-10 — TCP reachable but
+ *   modern protocol negotiation fails), so we cannot default the relay address
+ *   like the other relay-E2E files do. Operators must run a private relay and
+ *   export its multiaddr to run this test.
  *
  * Usage:
- *   # Default community relay
- *   npx vitest run apps/node/test/relay-broadcast-e2e.test.ts
- *
- *   # Custom relay
  *   TEST_RELAY_ADDR=/ip4/127.0.0.1/tcp/4001/p2p/... npx vitest run apps/node/test/relay-broadcast-e2e.test.ts
  */
 
@@ -42,12 +42,12 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
-import { DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR } from "@envoymesh/api";
 
-// Default to the community relay at 47.93.11.212:4001 when no explicit
-// TEST_RELAY_ADDR is provided. Operators can override by exporting
-// TEST_RELAY_ADDR before running the test.
-const RELAY_ADDR = process.env.TEST_RELAY_ADDR || DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR;
+// The community relay at 47.93.11.212:4001 does not serve the
+// circuit-relay-v2 reservation protocol this test needs (verified
+// 2026-07-10). The test only runs when an operator provides a private
+// relay via TEST_RELAY_ADDR.
+const RELAY_ADDR = process.env.TEST_RELAY_ADDR || null;
 
 const meshes: EnvoyMesh[] = [];
 
@@ -305,12 +305,10 @@ async function startMeshWithRelay(): Promise<EnvoyMesh> {
   const mesh = new EnvoyMesh({
     listen: ["/ip4/127.0.0.1/tcp/0"],
     enableMdns: false,
-    // The broadcast path requires the relay hop to be reachable inbound
-    // for the responder's reply. `enableRelay: true` adds the
-    // circuit-relay-v2 transport and `/p2p-circuit` listen addr so this
-    // node can obtain a relay reservation on the configured bootstrap
-    // relay. Without this the responder can't reach the broadcaster
-    // behind NAT and the test times out at `waitFor`.
+    // The broadcast fanout goes through the relay. Without `enableRelay: true`
+    // this mesh never obtains a circuit-relay-v2 reservation and the responder
+    // can't reply to a behind-NAT broadcaster — the waitFor(predicate, 30s)
+    // below would then time out.
     enableRelay: true,
     bootstrapPeers: RELAY_ADDR ? [RELAY_ADDR] : [],
   });

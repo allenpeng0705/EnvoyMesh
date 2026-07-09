@@ -35,7 +35,7 @@ Tests included in CI today: see `apps/node/test/**/*e2e*.test.ts` with `RUN_E2E=
     - `wan-relay-signoff-e2e.test.ts` -- 1/1 passing in 2.7s
     - `geo-discovery-wan-signoff.test.ts` -- 2/2 passing in 226s (advertises `geo:city:US-geo-signoff` to the live DHT; the rendezvous discovery flow finds the peer through the relay)
     - `agent-e2e-real.test.ts` -- already had the default-relay pattern (commit `8a6f2c1`); all 16 describes work against the community relay
-    - `relay-broadcast-e2e.test.ts` -- still hard-skipped. The community relay uses rendezvous-based discovery, not broadcast fanout (`broadcast.request` with TTL=1). The test passes against a private relay running the fanout handler. Run with `TEST_RELAY_ADDR=/ip4/<fanout-relay>/...` to exercise against a private deployment.
+    - `relay-broadcast-e2e.test.ts` -- still hard-skipped. The community relay at 47.93.11.212:4001 is TCP-reachable but does not serve the circuit-relay-v2 reservation protocol (see diagnostic confirmed 2026-07-10 in the entry below). The test also had two test-layer bugs that are now fixed (`enableRelay: true` was missing from `startMeshWithRelay()`, and the `waitFor(..., 5000)` deadline was 25 s shorter than the 30 s reservation budget). Run with `TEST_RELAY_ADDR=/ip4/<fanout-relay>/...` once a compatible private relay exists.
 
 ### ⏸ Still skipped (real work; not laziness)
 
@@ -45,7 +45,7 @@ Tests included in CI today: see `apps/node/test/**/*e2e*.test.ts` with `RUN_E2E=
 - **profile-thumbnail-sync-e2e describe** (3 tests): `setPublicProfileThumbnail` → `syncProfileToBonds` doesn't include the inline thumbnail bytes in `profile.sync`.
 - **library-publish-export-multi-node-e2e** (1 test, line 333): CID surfacing -- `exportLibraryItemToIpfs` doesn't propagate the CID to the bonded peer's library view.
 - **document-acquisition-vault-inbox-e2e** (whole describe): `ensurePeerReachable` fails -- bonded peer addresses aren't registered in the peer-directory.
-- **relay-broadcast-e2e** (whole describe, 2 tests): the broadcast fanout protocol (`broadcast.request` via relay TTL=1) requires a relay that implements the fanout service. The community relay at 47.93.11.212:4001 uses rendezvous-based discovery instead. Tests pass against a private relay that runs the broadcast-fanout handler.
+- **relay-broadcast-e2e** (whole describe, 2 tests): the broadcast fanout protocol (`broadcast.request` via relay TTL=1) requires a relay that implements the circuit-relay-v2 reservation protocol — the community relay at 47.93.11.212:4001 does not. **Diagnostic confirmed 2026-07-10**: a fresh libp2p node (latest @libp2p/circuit-relay-v2) can TCP-dial the community relay in <100 ms but every modern libp2p stream protocol negotiation fails (`/ipfs/0.1.0/identify/1.0.0` rejects with "Protocol selection failed"), no `relay:reservation` event fires after 30s, and `installRelayLogging`'s `relay:reservation:error` is also silent — the relay speaks a libp2p version whose protocol negotiation table is incompatible with ours, so the reservation handshake never starts. The test file was also previously broken at the test layer (`startMeshWithRelay()` did not pass `enableRelay: true`, and the `waitFor(..., 5000)` deadline was 25 s shorter than the 30 s reservation handshake budget). Those test bugs are now fixed in `apps/node/test/relay-broadcast-e2e.test.ts` and the test will pass against a private relay that supports our protocol version. Run with `TEST_RELAY_ADDR=/ip4/<fanout-relay>/...` once one exists.
 - **geo-discovery-wan-signoff** (whole describe, 2 tests): geo:city topic requires a deployed relay. **Resolved 2026-07-09** — defaults to the community relay, both tests pass in ~3.7 min against the live relay.
 
 ### ⏭ Skipped via orchestrator gate (chromium UI mock-gap)
@@ -137,15 +137,30 @@ once the file-share fixture is in place.
 ### `apps/node/test/relay-broadcast-e2e.test.ts` (whole describe)
 
 **Symptom:** Both tests `Timed out waiting for condition` because the relay
-broadcast assumes a public relay topology that the in-process harness can't
-provide.
+broadcast assumes a relay topology that completes the circuit-relay-v2
+reservation handshake.
 
-**Root cause:** These tests require `services/envoy-relay-node` running on a
-publicly-reachable address. The unit harness uses two local libp2p nodes --
-`broadcast.request` only finds matches through a relay's DHT/gossipsub.
+**Root cause:** Diagnosed 2026-07-10 — the community relay at
+47.93.11.212:4001:4001 is TCP-reachable (<100 ms dial) but does not speak
+the modern libp2p stream protocol negotiation our libp2p version uses
+(`/ipfs/0.1.0/identify/1.0.0` rejects with "Protocol selection failed",
+no `relay:reservation` event after 30 s, no `relay:reservation:error`
+either). The reservation handshake never starts because the identify step
+is the gate the relay fails. These tests require a relay running a
+libp2p version compatible with ours that also implements the broadcast
+fanout protocol (`broadcast.request` via relay TTL=1).
 
-**Fix:** Run against a deployed relay, or add a mocked relay that intercepts
-`protocol('/envoymesh/relay/0.1.0/...')` and forwards messages.
+Additionally there was a test-layer bug: `startMeshWithRelay()` did not
+pass `enableRelay: true` (the mesh silently never attempted reservation,
+and the readiness summary printed `relay=OFF` not `relay=PENDING`); the
+`waitFor(..., 5000)` deadline was 25 s shorter than the 30 s reservation
+timeout so the test could never pass even on a working relay. Both bugs
+fixed in this round.
+
+**Fix:** Run against a private relay running a libp2p version compatible
+with ours (the one in this repo's `package.json`) that also implements
+the broadcast-fanout handler. With the test-layer fixes landed here, the
+suite will pass when such a relay exists.
 
 ---
 
