@@ -295,6 +295,40 @@ Full reference: `docs/test-orchestrator.md`.
 - Vitest config maps `@envoymesh/*` imports to source `.ts` files for direct testing without build
 - Tests are run via the orchestrator (`npm run test:*`) or directly via `npm test` / `npx vitest` (watch mode)
 
+### Testing relays
+
+**Community relay** — exported as `DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR`
+from `packages/api/src/default-bootstrap.ts:15`:
+`/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo`
+
+Use it as a TCP-reachable bootstrap peer for relay-E2E tests. Override with
+`TEST_RELAY_ADDR=/ip4/.../p2p/...` (exported env var) to point a test at a
+private relay instead.
+
+**What it serves:** rendezvous-based discovery + gossipsub pubsub. **What it
+does NOT serve:** circuit-relay-v2 reservation. Verified 2026-07-10: a fresh
+libp2p node can TCP-dial it in <100 ms, but `stream.newStream(
+['/ipfs/0.1.0/identify/1.0.0'])` rejects with "Protocol selection failed",
+the `relay:reservation` event never fires, and `relay:reservation:error`
+is also silent. The relay speaks a libp2p version whose protocol negotiation
+table is incompatible with ours (latest `@libp2p/circuit-relay-v2`) — a
+relay-side issue, not fixable from the client.
+
+| Test family | Use community relay? | Why |
+|---|---|---|
+| `relay-chat-e2e.test.ts`, `wan-relay-signoff-e2e.test.ts`, `agent-e2e-real.test.ts` | ✅ default | They need the relay as a TCP peer for bootstrap/discovery, not as a circuit-relay hop |
+| `relay-broadcast-e2e.test.ts` (broadcast fanout via relay) | ❌ hard-skipped by default | Needs a relay that supports our libp2p protocol version **and** the broadcast-fanout handler. Run with `TEST_RELAY_ADDR=<private>` |
+| `geo-discovery-wan-signoff.test.ts` (`geo:city:US-geo-signoff` topic) | ⚠️ gated on `GEO_WAN_DISABLE_GATE=0` | Live DHT is loaded with publishers from many concurrent test runs; `searchPeers` times out at 180 s. Pass ≈1 in 3 runs |
+
+Existing patterns:
+- `const RELAY_ADDR = process.env.TEST_RELAY_ADDR || DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR;`
+- `const itRelayed = RELAY_ADDR ? it : it.skip;`
+- `describe.skipIf(!RELAY_ADDR)` for the file-level gate
+
+This file-level gate is the right shape: missing relay = whole describe
+skipped (no per-test pollution); present relay = all `it`s in the describe
+run against the live relay, with each test re-deciding via `itRelayed`.
+
 ---
 
 ## Code Conventions & Patterns
