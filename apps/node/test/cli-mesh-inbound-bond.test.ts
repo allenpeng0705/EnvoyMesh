@@ -61,6 +61,17 @@ function makeContext(
       owner: { ownerId: "owner-1" },
       device: { deviceId: "device-1" },
     }),
+    getTrustStore: () => ({
+      // Minimal in-memory stub so handleBondIntentViaRuntime can call
+      // .getTrustRecord(...) / .setTrustRecord(...) without TypeError.
+      records: new Map<string, { peerOwnerId: string; level: string }>(),
+      async getTrustRecord(peerOwnerId: string) {
+        return this.records.get(peerOwnerId) ?? null;
+      },
+      async setTrustRecord(input: { peerOwnerId: string; level: string }) {
+        this.records.set(input.peerOwnerId, input);
+      },
+    }) as never,
     storePendingHelloRequest: (_data) => {
       // No-op; the test checks via wsServer.
     },

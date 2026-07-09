@@ -6,6 +6,7 @@
  * `bond.challenge.response` envelopes.
  */
 import { createAuditEvent, deriveCorrelationIdFromEnvelope } from "@envoymesh/local-store";
+import type { LocalTrustStore } from "@envoymesh/local-store";
 import {
   parseBondAcceptPayload,
   parseBondRequestPayload,
@@ -18,6 +19,7 @@ import { handleInboundBondIntent } from "./bond-inbound.js";
 export interface BondHandlerContext {
   getTaskStore(): any;
   getProfile(): any;
+  getTrustStore(): LocalTrustStore;
   storePendingHelloRequest(data: any): void;
   emit(event: string, payload: unknown): void;
   flushPendingRoomSyncs(): Promise<void> | void;
@@ -66,7 +68,7 @@ export async function handleBondIntentViaRuntime(
       receivedAt,
       correlationId,
       taskStore,
-      trustStore: undefined as never,
+      trustStore: ctx.getTrustStore(),
     },
     (helloData: unknown) => {
       ctx.storePendingHelloRequest(helloData);

@@ -656,6 +656,11 @@ function createWsNodeServiceClient(
     async getAgentIdentity() { return wsClient.rpc("getAgentIdentity"); },
     async updateAgentIdentity(content: string) { return wsClient.rpc("updateAgentIdentity", { content }); },
     async sendHello(targetOwnerId: string, profile: HelloProfile, message: string, options?: SendHelloOptions) {
+      // sendHello does a real libp2p dial + envelope delivery (same as
+      // sendChat), which routinely exceeds the WS RPC default 30s budget.
+      // Bump to 120s to match sendChat / sendAgentChat — otherwise peers on
+      // WAN / behind NAT trip the default timeout and the user only sees a
+      // silent `console.error` (InboxView / SearchView catch and swallow).
       return wsClient.rpc("sendHello", {
         targetOwnerId,
         profile,
@@ -663,10 +668,16 @@ function createWsNodeServiceClient(
         ...(options?.introProposalMessageId
           ? { introProposalMessageId: options.introProposalMessageId }
           : {}),
-      });
+      }, { timeoutMs: 120_000 });
     },
-    async acceptHello(messageId: string) { return wsClient.rpc("acceptHello", { messageId }); },
-    async declineHello(messageId: string, reason?: string) { return wsClient.rpc("declineHello", { messageId, reason }); },
+    async acceptHello(messageId: string) {
+      // Same dial budget rationale as sendHello — acceptHello sends a
+      // bond.accept envelope back to the requester over libp2p.
+      return wsClient.rpc("acceptHello", { messageId }, { timeoutMs: 120_000 });
+    },
+    async declineHello(messageId: string, reason?: string) {
+      return wsClient.rpc("declineHello", { messageId, reason }, { timeoutMs: 30_000 });
+    },
     async listPendingSocialIntroProposals() {
       return wsClient.rpc("listPendingSocialIntroProposals") as Promise<SocialIntroProposal[]>;
     },

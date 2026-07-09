@@ -4,7 +4,7 @@ import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService, useAgentShareProposals, useShareOffers, usePendingApprovals } from "../../hooks/useNodeService.js";
 import { IncomingShareOffersSection } from "../file-share/IncomingShareOffersSection.js";
 import type { HelloProfile, HelloRequest, ChatMessage, SocialIntroProposal, PendingApprovalSummary } from "@envoymesh/api";
-import { peerDisplayLabel } from "../../lib/display.js";
+import { peerDisplayLabel, shortOwnerId } from "../../lib/display.js";
 
 export interface InboxViewProps {
   /** When nested under Chat → Inbox, omit duplicate page title */
@@ -121,25 +121,40 @@ export function InboxView({ embedded = false }: InboxViewProps) {
     }
   };
 
-  const pendingStrangerRow = (msg: ChatMessage) => (
-    <li key={msg.messageId} className="inbox-item inbox-item-stranger">
-      <div className="inbox-sender">
-        <span className="avatar large">{peerDisplayLabel(msg.sender).charAt(0) || "?"}</span>
-        <div className="inbox-sender-info">
-          <strong>{peerDisplayLabel(msg.sender)}</strong>
-          <span className="owner-id">{msg.sender.ownerId ?? msg.sender.nodeId}</span>
+  const pendingStrangerRow = (msg: ChatMessage) => {
+    // Render the sender header without duplicating the technical ID:
+    //   * strong label = peerDisplayLabel (displayName, falls back to nodeId)
+    //   * owner-id line only shown if it adds information, and shown
+    //     truncated so a 50-char `envoy:owner:…` doesn't dominate the row.
+    // Previously the same full owner ID was rendered twice (strong + span),
+    // which read as a duplicated ID string before the message body.
+    const label = peerDisplayLabel(msg.sender);
+    const technicalId = msg.sender.ownerId ?? msg.sender.nodeId ?? "";
+    const technicalIsUseful =
+      technicalId.trim().length > 0 && technicalId.trim() !== label.trim();
+    const avatarInitial = label.trim().charAt(0) || "?";
+    return (
+      <li key={msg.messageId} className="inbox-item inbox-item-stranger">
+        <div className="inbox-sender">
+          <span className="avatar large">{avatarInitial}</span>
+          <div className="inbox-sender-info">
+            <strong>{label}</strong>
+            {technicalIsUseful && (
+              <span className="owner-id">{shortOwnerId(technicalId)}</span>
+            )}
+          </div>
         </div>
-      </div>
-      {msg.content?.text && (
-        <p className="inbox-message">&ldquo;{msg.content.text}&rdquo;</p>
-      )}
-      <div className="inbox-actions">
-        <button type="button" className="accept" onClick={() => handleSayHello(msg.sender.ownerId ?? msg.sender.nodeId)}>
-          {t("common.sayHello")}
-        </button>
-      </div>
-    </li>
-  );
+        {msg.content?.text && (
+          <p className="inbox-message">&ldquo;{msg.content.text}&rdquo;</p>
+        )}
+        <div className="inbox-actions">
+          <button type="button" className="accept" onClick={() => handleSayHello(msg.sender.ownerId ?? msg.sender.nodeId)}>
+            {t("common.sayHello")}
+          </button>
+        </div>
+      </li>
+    );
+  };
 
   const empty =
     pendingHellOs.length === 0 &&

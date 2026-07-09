@@ -420,6 +420,7 @@ export interface TerminalContextDeps {
 export interface BondHandlerContextDeps {
   getTaskStore: BondHandlerContext["getTaskStore"];
   getProfile: BondHandlerContext["getProfile"];
+  getTrustStore: BondHandlerContext["getTrustStore"];
   storePendingHelloRequest: BondHandlerContext["storePendingHelloRequest"];
   emit: BondHandlerContext["emit"];
   flushPendingRoomSyncs: BondHandlerContext["flushPendingRoomSyncs"];
@@ -1110,6 +1111,7 @@ export function buildBondHandlerContext(deps: BondHandlerContextDeps): BondHandl
   return {
     getTaskStore: () => deps.getTaskStore(),
     getProfile: () => deps.getProfile(),
+    getTrustStore: () => deps.getTrustStore(),
     storePendingHelloRequest: (data) => deps.storePendingHelloRequest(data),
     emit: (event, payload) => deps.emit?.(event as never, payload as never),
     flushPendingRoomSyncs: () => deps.flushPendingRoomSyncs(),

@@ -103,6 +103,7 @@ export async function handleCliBondIntentViaRuntime(
   const wrappedCtx: BondHandlerContext = {
     getTaskStore: () => ctx.getTaskStore(),
     getProfile: () => ctx.getProfile(),
+    getTrustStore: () => ctx.getTrustStore(),
     storePendingHelloRequest: (data) => {
       ctx.storePendingHelloRequest(data);
       if (ctx.wsServerForEvents) {

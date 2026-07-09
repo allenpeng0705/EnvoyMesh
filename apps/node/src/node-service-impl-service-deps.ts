@@ -561,6 +561,7 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
       bondHandler: {
             getTaskStore: () => host._taskStore,
             getProfile: () => host._profile,
+            getTrustStore: () => host._trustStore,
             storePendingHelloRequest: (data) => host.storePendingHelloRequest(data),
             emit: (event, payload) => host.emit?.(event as never, payload as never),
             flushPendingRoomSyncs: () => host._flushPendingRoomSyncs(),

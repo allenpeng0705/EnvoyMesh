@@ -65,7 +65,10 @@ function policySummaryText(
 
 /**
  * Inbound `bond.*` handling: validate EMP payload, run [`evaluatePolicy`](@envoymesh/bonds), write audit.
- * Does not mutate trust store (owner / CLI approves bonds separately).
+ *
+ * Note: `bond.accept` DOES mutate the trust store. The caller must supply a
+ * non-nullish `trustStore` — otherwise the handler throws and the envelope is
+ * rejected (we'd otherwise silently break bond symmetry).
  *
  * @param emitHelloRequest - optional callback to emit hello:request event after bond request is accepted
  * @param emitBondEstablished - optional callback to emit bond:established event after bond is stored
@@ -295,6 +298,19 @@ export async function handleInboundBondIntent(
 
     if (envelope.intent === "bond.accept") {
       console.log(`[bond-inbound] handling bond.accept from ${remotePeerId}`);
+
+      // bond.accept writes a trust record on the receiver's side (we are
+      // bonding the sender). The handler MUST have a LocalTrustStore —
+      // previously the embedded NodeService path passed
+      // `trustStore: undefined as never`, which crashed silently with a
+      // TypeError and made the bond asymmetric (sender trusted, but
+      // receiver had no record). Fail loudly here rather than silently
+      // dropping the envelope.
+      if (!trustStore) {
+        throw new Error(
+          "bond.accept requires a LocalTrustStore — internal wiring bug in handleBondIntentViaRuntime",
+        );
+      }
 
       // Phase 19: bond_autonomy posture — agent bond.accept requires bond_autonomy credential
       if (envelope.senderRole === "agent") {

@@ -6,12 +6,13 @@ import {
   generateDeviceIdentity,
   generateOwnerIdentity,
 } from "@envoymesh/identity";
+import { handleBondIntentViaRuntime } from "../src/node-service-handlers-bond-intent.js";
 import {
   createLocalTaskStore,
   createLocalTrustStore,
   type NodeProfile,
 } from "@envoymesh/local-store";
-import { createUnsignedEnvelope, createBondRequestPayload, type EnvoyEnvelope } from "@envoymesh/protocol";
+import { createUnsignedEnvelope, createBondAcceptPayload, createBondRequestPayload, type EnvoyEnvelope } from "@envoymesh/protocol";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -365,5 +366,138 @@ describe("handleInboundBondIntent", () => {
     // Trust store should now have the bond
     const record = await trustStore.getTrustRecord(strangerOwner.ownerId);
     expect(record?.level).toBe("direct");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Regression: handleBondIntentViaRuntime must thread trustStore into
+// handleInboundBondIntent for bond.accept.
+//
+// Background: previously the embedded NodeService path passed
+//   trustStore: undefined as never
+// to handleInboundBondIntent, which crashed inside the bond.accept branch
+// with "Cannot read properties of undefined (reading 'setTrustRecord')".
+// The crash was caught by the outer try/catch and surfaced only as a
+// "rejected bond" audit event, so bonds became asymmetric (the accepter
+// recorded the requester, but the requester never recorded the accepter).
+//
+// These tests exercise the production wrapper end-to-end.
+// ---------------------------------------------------------------------------
+
+describe("handleBondIntentViaRuntime — bond.accept trustStore wiring", () => {
+  function buildRuntimeCtx(args: {
+    profile: NodeProfile;
+    taskStore: ReturnType<typeof createLocalTaskStore>;
+    trustStore: ReturnType<typeof createLocalTrustStore>;
+    peerDirectory: { ensurePeerFromInboundChat: ReturnType<typeof import("vitest").vi.fn> };
+  }) {
+    return {
+      getTaskStore: () => args.taskStore,
+      getProfile: () => args.profile,
+      getTrustStore: () => args.trustStore,
+      storePendingHelloRequest: () => undefined,
+      emit: () => undefined,
+      flushPendingRoomSyncs: () => undefined,
+      flushPendingRoomMessages: () => undefined,
+      ensurePeerFromInboundChat: args.peerDirectory.ensurePeerFromInboundChat,
+      tagBondedContactReachability: () => undefined,
+    };
+  }
+
+  it("writes a direct trust record when B accepts A's bond request", async () => {
+    const profileA = testProfile();
+    const taskStore = createLocalTaskStore(profileDir);
+    const trustStore = createLocalTrustStore(profileDir);
+    const ensurePeerFromInboundChat = (await import("vitest")).vi.fn(async () => undefined);
+    const ctx = buildRuntimeCtx({ profile: profileA, taskStore, trustStore, peerDirectory: { ensurePeerFromInboundChat } });
+
+    // B sends a bond.accept to A; A is the requester.
+    const profileB = testProfile();
+    const envelope: EnvoyEnvelope = {
+      ...createUnsignedEnvelope({
+        senderPeerId: "libp2p-b",
+        senderPublicKey: profileB.device.publicKeyPem,
+        senderRole: "human",
+        recipientPeerId: derivePeerId(profileA.device.publicKeyPem),
+        recipientRole: "human",
+        intent: "bond.accept",
+        payload: createBondAcceptPayload({
+          responderOwnerId: profileB.owner.ownerId,
+          requesterOwnerId: profileA.owner.ownerId,
+          message: "Hello from B!",
+        }),
+        createdAt: "2026-04-27T10:00:00.000Z",
+        messageId: "bond-accept-1",
+      }),
+      signature: "signature",
+    };
+
+    const consumed = await handleBondIntentViaRuntime(ctx, {
+      envelope: envelope as any,
+      remotePeerId: "libp2p-b",
+      remoteAddr: "/ip4/127.0.0.1/tcp/4001",
+    });
+
+    expect(consumed).toBe(true);
+    const record = await trustStore.getTrustRecord(profileB.owner.ownerId);
+    expect(record?.level).toBe("direct");
+    expect(record?.displayName).toBe("B");
+  });
+
+  it("surfaces a 'wiring bug' diagnostic when getTrustStore is missing — no silent bond asymmetry", async () => {
+    const profileA = testProfile();
+    const taskStore = createLocalTaskStore(profileDir);
+    const trustStore = createLocalTrustStore(profileDir);
+    const ensurePeerFromInboundChat = (await import("vitest")).vi.fn(async () => undefined);
+    const ctx = buildRuntimeCtx({ profile: profileA, taskStore, trustStore, peerDirectory: { ensurePeerFromInboundChat } });
+    // Sabotage: replace getTrustStore with one that returns undefined.
+    (ctx as { getTrustStore: () => unknown }).getTrustStore = () => undefined;
+
+    const profileB = testProfile();
+    const envelope: EnvoyEnvelope = {
+      ...createUnsignedEnvelope({
+        senderPeerId: "libp2p-b",
+        senderPublicKey: profileB.device.publicKeyPem,
+        senderRole: "human",
+        recipientPeerId: derivePeerId(profileA.device.publicKeyPem),
+        recipientRole: "human",
+        intent: "bond.accept",
+        payload: createBondAcceptPayload({
+          responderOwnerId: profileB.owner.ownerId,
+          requesterOwnerId: profileA.owner.ownerId,
+          message: "Hello from B!",
+        }),
+        createdAt: "2026-04-27T10:00:00.000Z",
+        messageId: "bond-accept-2",
+      }),
+      signature: "signature",
+    };
+
+    // Spy on console.warn so we can verify the diagnostic is loud.
+    const warnSpy = (await import("vitest")).vi.spyOn(console, "warn").mockImplementation(() => {});
+
+    // The wrapper doesn't propagate the inner throw — it catches and
+    // turns it into a `rejected bond: <reason>` warning (and an audit
+    // event). That's the right path: callers don't crash, but operators
+    // get a greppable signal that A's bond was rejected for an internal
+    // reason rather than a protocol-level rejection.
+    const consumed = await handleBondIntentViaRuntime(ctx, {
+      envelope: envelope as any,
+      remotePeerId: "libp2p-b",
+      remoteAddr: "/ip4/127.0.0.1/tcp/4001",
+    });
+    expect(consumed).toBe(true);
+
+    // The rejection log must mention the wiring problem so it's
+    // identifiable, not just a generic "invalid bond payload".
+    const warnCalls = warnSpy.mock.calls.map((args) => String(args[0]));
+    expect(
+      warnCalls.some((line) => /bond\.accept requires a LocalTrustStore/.test(line)),
+    ).toBe(true);
+
+    warnSpy.mockRestore();
+
+    // And critically, no half-written trust record leaked into the store.
+    expect(await trustStore.getTrustRecord(profileB.owner.ownerId)).toBeUndefined();
   });
 });
