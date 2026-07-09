@@ -31,3 +31,4 @@ shared_vault/
 /.deepseek
 /.deepseek
 /release
+/ci-artifacts
