@@ -197,10 +197,16 @@ describe("importFleetManifestViaRuntime", () => {
       },
       issuer.privateKeyPem,
     );
-    // Tamper with the signature.
+    // Tamper with the signature. Toggling the LAST char is unreliable for
+    // base64url Ed25519 sigs: the last char's low 4 bits are padding
+    // dropped on decode, so swapping A↔B leaves the decoded 64-byte
+    // signature identical and the (now-tampered-looking) string still
+    // verifies. Toggling the FIRST char instead always changes byte 0
+    // (the first 6 base64 bits map to byte 0), guaranteeing a no-op-free
+    // tamper.
     const tampered: FleetManifest = {
       ...manifest,
-      signature: manifest.signature.replace(/.$/, (c) => (c === "A" ? "B" : "A")),
+      signature: manifest.signature.replace(/^./, (c) => (c === "A" ? "B" : "A")),
     };
     const result = await importFleetManifestViaRuntime(makeContext(), {
       manifest: tampered,

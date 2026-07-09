@@ -95,7 +95,17 @@ describe("Playwright browser terminal WebSocket E2E", () => {
 
     let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
     try {
-      browser = await chromium.launch({ headless: true });
+      browser = await chromium.launch({
+        headless: true,
+        // Private Network Access (PNA, Chromium 94+) blocks `ws://` calls from
+        // a secure context (here: `about:blank` + then-injected scripts) to
+        // loopback addresses with `ERR_BLOCKED_BY_LOCAL_NETWORK_ACCESS_CHECKS`.
+        // The terminal WebSocket attaches to `ws://127.0.0.1:<port>/ws/terminal/...`
+        // and the harness has no UI to grant the PNA permission, so we disable
+        // the cross-origin web-security check for this test only. `--no-sandbox`
+        // is the standard headless-container escape.
+        args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-web-security"],
+      });
     } catch {
       ctx.skip(true, "Chromium not installed — run: npx playwright install chromium");
       return;

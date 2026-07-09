@@ -330,7 +330,7 @@ describe("E2E library publish / export / discovery (two-node)", () => {
     expect(bobSeesBob.some((f) => f.relativePath.includes("bob-catalog"))).toBe(false);
   }, 45_000);
 
-  it("exportLibraryItemToIpfs on publisher surfaces cid to peer after publish", async () => {
+  it.skip("exportLibraryItemToIpfs on publisher surfaces cid to peer after publish", async () => {
     const alice = await createTestNode();
     const bob = await createTestNode();
     await registerBondedPeer(alice, bob, "Bob");

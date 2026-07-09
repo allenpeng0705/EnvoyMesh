@@ -29,7 +29,7 @@ function formatPreview(text: string, max = 52): string {
 /** Other party's owner id in a 1:1 thread (requires self owner id when both sides have one). */
 function threadPeerOwnerId(msg: ChatMessage, selfOwnerId: string | undefined): string | null {
   const so = msg.sender.ownerId;
-  const ro = msg.recipient.ownerId;
+  const ro = msg.recipient?.ownerId;
   if (selfOwnerId) {
     if (so && so !== selfOwnerId) return so;
     if (ro && ro !== selfOwnerId) return ro;

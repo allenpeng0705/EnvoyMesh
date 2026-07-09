@@ -7,6 +7,7 @@ on:
 jobs:
   smoke-local:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
@@ -19,37 +20,26 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Typecheck
-        run: npm run typecheck
-
-      - name: Unit and integration tests
-        run: npm test
-
-      - name: OpenClaw bridge two-process smoke
-        run: npm run smoke:openclaw-bridge
+      # The orchestrator runs: typecheck → unit → social-build →
+      # e2e-fast (libp2p, ~60s) → e2e-playwright (chromium, auto-installs) → smoke.
+      # Per-phase logs land in ci-artifacts/test/<phase>.log.
+      # See docs/test-orchestrator.md and scripts/test.sh for the full contract.
+      - name: Run test orchestrator (full: typecheck + unit + E2E + smoke)
+        run: npm run test:full
 
       - name: Mobile Capacitor production build
         run: npm run build -w @envoymesh/mobile
 
-      - name: Phase 13 two-node smoke (PR signal)
-        run: npm run smoke:phase13
-
-      - name: Build Social UI for E2E tests
-        run: npm run build -w @envoymesh/social -- --mode development
-
-      - name: Playwright E2E smoke (WebRTC + Social UI)
-        run: |
-          npx playwright install chromium
-          npx vitest run apps/node/test/webrtc-call-e2e.test.ts apps/node/test/social-ui-e2e.test.ts
-
-      - name: Generate smoke artifacts
+      - name: Generate smoke-checklist + pairing timeline artifacts
         run: |
           mkdir -p ci-artifacts
           npm run cli -w @envoymesh/node -- smoke-checklist --output ./ci-artifacts/smoke-checklist.md
           npm run cli -w @envoymesh/node -- pairing timeline --profile ./data/default --format json --output ./ci-artifacts/pairing-timeline.json
 
-      - name: Upload smoke artifacts
+      - name: Upload all test/smoke artifacts (always, even on failure)
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: smoke-local-artifacts
           path: ci-artifacts/**
+          retention-days: 14

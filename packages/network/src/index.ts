@@ -1937,11 +1937,29 @@ export class EnvoyMesh {
     return this.requireNode().dial(dialTarget as any);
   }
 
+  /**
+   * Open a libp2p connection to the target and keep it open for subsequent sends.
+   *
+   * Previously this method closed the connection immediately, which forced every
+   * downstream `send*` call to redial — but the bare-peer-ID dial path strips
+   * loopback addresses from peer-directory hints (intentional for production,
+   * where dialing your own loopback never reaches a remote peer). Tests pair
+   * two nodes on the same host, so the only dialable hint for a freshly probed
+   * peer is its loopback listen addr; closing immediately meant the next
+   * send had no path and exhausted retries with `No reachable path …`.
+   *
+   * Keeping the connection open lets the send path's `findOpenConnectionToPeer`
+   * reuse the established libp2p connection (the bare-peer-ID path becomes
+   * inert for already-connected peers). Production callers that only want
+   * latency measurement can still ignore the returned connection — the dial
+   * time is unchanged.
+   *
+   * Returns the elapsed dial time in milliseconds.
+   */
   async probePeer(target: string): Promise<number> {
     const dialTarget = this._normalizeDialTarget(target);
     const startedAt = Date.now();
-    const connection = await this.requireNode().dial(dialTarget as any);
-    await connection.close();
+    await this.requireNode().dial(dialTarget as any);
     return Date.now() - startedAt;
   }
 

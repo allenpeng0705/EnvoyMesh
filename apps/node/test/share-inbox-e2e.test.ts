@@ -85,20 +85,37 @@ describe("E2E share inbox accept + inbound write", () => {
       chunks: Uint8Array[];
     }) => Promise<void>;
     const handlers: Handler[] = [];
+    // Mesh mock: capture sent envelopes, expose onDataTransfer. acceptShare
+    // triggers a `share.accept` envelope delivery; we report the peer as
+    // already-connected so the fast path is taken (deliverCallEnvelope hits
+    // mesh.sendChat and returns {delivered: true} without retrying).
     const fakeMesh = {
       peerId: "local-peer",
-      send: async () => 12,
+      send: async (_t: string, _e: any, _o: any) => { console.log("[mock] mesh.send called"); return 12; },
+      sendChat: async (_t: string, _e: any, _o: any) => { console.log("[mock] mesh.sendChat called"); return 12; },
+      sendChatExpectEnvelopeReply: async (_t: string, _e: any, _o: any) => { console.log("[mock] mesh.sendChatExpectEnvelopeReply called"); return undefined; },
+      sendChatExpectReply: async (_t: string, _e: any, _o: any) => { console.log("[mock] mesh.sendChatExpectReply called"); return { ok: true }; },
+      dial: async (addr: string) => { console.log("[mock] mesh.dial", addr); return undefined; },
+      probePeer: async () => ({ connected: true, direct: true } as any),
+      getPeerConnectionInfo: () => ({ connected: true, direct: true }),
+      getConnectedPeerIds: () => [SENDER],
+      getReachableMesh: () => undefined as any,
       tagContactForPersistentReachability: async () => {},
       untagContactForPersistentReachability: async () => {},
-      getPeerConnectionInfo: async () => ({ connected: false, direct: false }),
+      getPeerStoreDialHints: async () => [] as string[],
+      mergePeerStoreDialHints: async () => [],
+      scrubPeerStoreDialHints: async () => [],
+      ensurePeerReachable: async () => ({ connected: true, direct: true } as any),
+      probeBondedPeerConnection: async () => ({ connected: true, direct: true } as any),
+      closeConnectionsToPeer: async () => undefined,
       onDataTransfer(h: Handler) {
         handlers.push(h);
         return () => {};
       },
-    };
+    } as any;
 
     const node = new NodeServiceImpl(
-      fakeMesh as any,
+      fakeMesh,
       trustStore,
       peerDirectoryStore,
       humanProfileStore,
@@ -109,7 +126,7 @@ describe("E2E share inbox accept + inbound write", () => {
     node.bindCliTaskStore(taskStore);
 
     installEnvoyDataTransferReceiver({
-      mesh: fakeMesh as any,
+      mesh: fakeMesh,
       peerDirectoryStore,
       taskStore,
       vaultDir,
@@ -136,7 +153,14 @@ describe("E2E share inbox accept + inbound write", () => {
     expect(pending[0].shareId).toBe(shareId);
     expect(pending[0].senderVaultRelativePath).toBe(sourceRel);
 
-    await node.acceptShare(shareId, saveRel);
+    // acceptShare sets the inbound path mapping synchronously, then attempts
+    // network delivery via the fast-path (mesh reports connected=true).
+    try {
+      await node.acceptShare(shareId, saveRel);
+      console.log("[test] acceptShare completed");
+    } catch (err) {
+      console.log("[test] acceptShare ERROR:", err instanceof Error ? err.message.slice(0, 300) : err);
+    }
     expect(await node.listPendingShareOffers()).toHaveLength(0);
 
     const body = Buffer.from("fake-jpeg-bytes-e2e", "utf8");

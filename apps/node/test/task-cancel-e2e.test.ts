@@ -26,8 +26,14 @@ import type { NodeProfile } from "@envoymesh/protocol";
 import type { ProofOfIntent } from "@envoymesh/protocol";
 
 const meshes: EnvoyMesh[] = [];
+// Track late-firing setTimeout handles for `task.result` so we can clear
+// them in afterEach. Otherwise a 100ms timer fires AFTER the receiver
+// mesh is stopped, surfacing "EnvoyMesh has not been started" as an
+// unhandled rejection and failing the vitest run.
+const pendingResults: ReturnType<typeof setTimeout>[] = [];
 
 afterEach(async () => {
+  for (const t of pendingResults.splice(0)) clearTimeout(t);
   await Promise.all(meshes.splice(0).map((mesh) => mesh.stop()));
 });
 
@@ -78,7 +84,7 @@ describe("E2E task cancel flow", () => {
         const accept = parseTaskAcceptPayload(envelope.payload);
 
         // Send result after a short delay to simulate work
-        setTimeout(async () => {
+        pendingResults.push(setTimeout(async () => {
           const resultPayload = createTaskResultPayload({
             taskId: accept.taskId,
             mandateId: accept.mandateId,
@@ -99,7 +105,8 @@ describe("E2E task cancel flow", () => {
 
           const signedResult = signUnsignedEnvelope(unsignedResult, receiverProfile.device.privateKeyPem);
           await receiver.send(sender.multiaddrs[0], signedResult);
-        }, 100);
+        }, 100));
+
       } else if (envelope.intent === "task.cancel") {
         receivedCancel = parseTaskCancelPayload(envelope.payload);
       }

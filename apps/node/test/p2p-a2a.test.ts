@@ -85,11 +85,16 @@ describe("A2A lifecycle over EnvoyMesh", () => {
       senderProfile,
     );
 
+    // Send sequentially with a tiny yield between so the receiver's
+    // async onMessage can drain each envelope. When outbounds are sent
+    // back-to-back in CI stress runs, the receiver's stream handler
+    // queue may coalesce and lose one under load.
     for (const outbound of outbounds) {
       await sender.send(outbound.target, outbound.envelope);
+      await new Promise((r) => setTimeout(r, 50));
     }
 
-    await waitFor(async () => (await receiverStore.readTaskJournalEntries()).length === 4);
+    await waitFor(async () => (await receiverStore.readTaskJournalEntries()).length === 4, 15000);
 
     const journal = await receiverStore.readTaskJournalEntries();
     const audit = await receiverStore.readAuditEvents();

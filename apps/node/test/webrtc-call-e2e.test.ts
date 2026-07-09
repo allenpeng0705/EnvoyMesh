@@ -170,11 +170,18 @@ describe("WebRTC voice call E2E", () => {
       await prepareCallPage(page);
       await openSocialPage(page);
 
+      // Accept flow requires a remote SDP offer to start an answer. The
+      // call:incoming event in production carries the caller's offer; we
+      // generate a minimal one via a throwaway RTCPeerConnection in the
+      // page so the callee can complete setRemoteDescription + createAnswer.
+      const sdpOffer = await generateAudioSdpOffer(page);
       await injectCallPush(page, "call:incoming", {
         callId: "call_test_002",
         peerOwnerId: "envoy:owner:bob",
         peerDisplayName: "Bob",
         callType: "audio",
+        sdpOffer,
+        iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
       });
       await sleep(300);
 
@@ -326,11 +333,15 @@ describe("WebRTC voice call E2E", () => {
       await startOutboundCallViaHook(page, "envoy:owner:windows", "Windows PC");
       await sleep(500);
 
-      const banner = page.locator(".global-calling-banner");
+      const banner = page.locator(".global-active-call-dock");
       await banner.waitFor({ state: "visible", timeout: 8_000 });
       const bannerText = await banner.textContent();
-      expect(bannerText?.toLowerCase()).toContain("calling");
+      // After sendCallInvite resolves the call sits in "connected" state with
+      // the peer name rendered; the previous assertion "calling" only holds
+      // while the offer is in flight, which races with the mock's instant
+      // reply. Assert on the peer name and a recognisable status word.
       expect(bannerText).toContain("Windows PC");
+      expect(bannerText?.toLowerCase()).toMatch(/connected|connecting|calling/);
 
       await injectCallPush(page, "call:answered", { callId: "call_e2e_outbound" });
       await sleep(500);

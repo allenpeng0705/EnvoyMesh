@@ -4102,8 +4102,14 @@ async function runNodeHealthCycle(source: "startup" | "periodic"): Promise<void>
   // it from racing the deferred activation by calling mesh.start() directly,
   // which on an unconfigured mesh either no-ops or starts with empty options
   // (no bootstrap peers / DHT / relay) — the classic dmg first-launch bug.
-  const meshStartDeferred =
-    !persistedNodeConfig && nodeService instanceof NodeServiceImpl && !meshStarted;
+  // Also true when the deferred-start callback is still registered (post-restart
+  // before setup writes node-config.json on a different run), so the restart
+  // path defers in either case. `mesh.multiaddrs` would throw "EnvoyMesh has
+  // not been started" if the mesh is not running yet, so guard with the
+  // `meshStarted` flag rather than probing the multiaddrs getter.
+  const hasDeferred =
+    nodeService instanceof NodeServiceImpl && nodeService.hasDeferredMeshStart();
+  const meshStartDeferred = hasDeferred || !meshStarted;
 
   const result = evaluateNodeHealth({
     startedAtMs: processStartedAt,
@@ -4140,11 +4146,11 @@ async function restartLibp2pForNodeHealth(reason: string): Promise<void> {
     await appendNodeHealthTrace("node.health.repair", "node health libp2p restart already in progress");
     return;
   }
-  // Defensive guard: if first-run setup is still pending in the UI, do NOT
-  // touch mesh.start(). The deferred activation registered in module init
-  // is the only path that should bring the mesh up in this state.
+  // Defensive guard: if a deferred-start callback is registered, the mesh
+  // is waiting for first-run setup to complete. The deferred activation in
+  // module init is the only path that should bring the mesh up in this state.
   const meshStartDeferred =
-    !persistedNodeConfig && nodeService instanceof NodeServiceImpl && !meshStarted;
+    nodeService instanceof NodeServiceImpl && nodeService.hasDeferredMeshStart();
   if (meshStartDeferred) {
     await appendNodeHealthTrace(
       "node.health.repair",

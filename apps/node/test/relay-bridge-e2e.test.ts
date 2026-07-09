@@ -456,10 +456,15 @@ describe("Relay bridge E2E (real libp2p)", () => {
 
     await home.handleRawProtocol(CLIENT_PROXY_PROTOCOL, createClientProxyHandler(svc));
 
-    // Do NOT populate the peer store — dial directly with bare peer ID
+    // Do NOT populate the peer store — dial directly with bare peer ID.
+    // The dial fails with "no outbound dial attempted" (libp2p's
+    // DialQueue.calculateMultiaddrs throws when there are zero hints AND
+    // the peer-store has no addresses for the target — that produces
+    // `NoValidAddressesError`, but our path short-circuits to a plain
+    // Error with this message before libp2p even gets the dial request).
     const barePeerId = home.peerId;
     await expect(
       relay.dialProtocol(barePeerId, CLIENT_PROXY_PROTOCOL),
-    ).rejects.toThrow(/No valid addresses|no addresses|no transport|connection failed/i);
+    ).rejects.toThrow(/No valid addresses|no addresses|no transport|connection failed|no outbound dial/i);
   });
 });

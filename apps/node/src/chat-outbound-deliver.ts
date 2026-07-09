@@ -47,6 +47,22 @@ function isProfileIntent(intent: string | undefined): boolean {
   return typeof intent === "string" && intent.startsWith("profile.");
 }
 
+/**
+ * Chat protocol allowlist — see {@link validateEnvelopeProtocol} in
+ * `@envoymesh/network`. Keep in sync. Intents not matching any of these
+ * must travel on the message protocol (not chat) or the chat stream
+ * handler will reject them with `invalid intent … on chat protocol`.
+ */
+export function isChatProtocolIntent(intent: string | undefined): boolean {
+  return (
+    intent === "chat.message" ||
+    intent === "chat.delivered" ||
+    intent === "chat.room.sync" ||
+    intent === "chat.room.message" ||
+    (typeof intent === "string" && (intent.startsWith("call.") || intent.startsWith("profile.")))
+  );
+}
+
 export type ChatDeliverResult = {
   delivered: boolean;
   deliveredAt?: string;
@@ -444,6 +460,28 @@ export async function deliverCallEnvelopeWithRetry(input: {
   /** When true, try relay circuit paths before stale direct WAN hints. */
   preferCircuitHints?: boolean;
 }): Promise<ChatDeliverResult> {
+  // Protocol dispatch: chat/call/profile intents travel on `/envoymesh/chat/0.1.0`
+  // (this function); everything else (agent.card.*, social.intro.*, device.pair.*,
+  // task.*, discovery.*, share.*, …) must travel on `/envoymesh/message/0.1.0` or
+  // the chat stream handler rejects them with `invalid intent … on chat protocol`.
+  // Without this guard, callers like NodeServiceImpl.requestAgentCard silently
+  // exhaust retries with "No reachable path … before call send".
+  if (!isChatProtocolIntent(input.envelope.intent)) {
+    return withOutboundSendLock(input.transportPeerId, () =>
+      deliverMessageEnvelopeWithRetry({
+        // OutboundCallDeliverMesh is `Pick<sendChat, …>` while deliverMessageEnvelopeWithRetry
+        // needs `Pick<send, …>`. The underlying EnvoyMesh exposes both; widen via `unknown`.
+        mesh: input.mesh as unknown as OutboundDeliverMesh,
+        transportPeerId: input.transportPeerId,
+        envelope: input.envelope,
+        dialHints: input.dialHints,
+        peerListenAddrs: input.peerListenAddrs,
+        rebuildDialHints: input.rebuildDialHints,
+        maxAttempts: input.maxAttempts,
+        preferCircuitHints: input.preferCircuitHints,
+      }),
+    );
+  }
   // Self-dial guard: if the target peer is the local node itself, abort
   // immediately instead of going through the retry loop.
   // Wrapped in try/catch because mesh.peerId throws if the node isn't started.

@@ -26,20 +26,21 @@ import {
 } from "@envoymesh/protocol";
 import { DEFAULT_DOCUMENT_AUTONOMY_POLICY } from "@envoymesh/api";
 import { EnvoyMesh } from "@envoymesh/network";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { installEnvoyDataTransferReceiver } from "../src/data-transfer-inbound.js";
 import { NodeServiceImpl } from "../src/node-service-impl.js";
 import { handleInboundShareRequest } from "../src/share-inbound.js";
+import { cleanupTempDir } from "./test-cleanup.js";
 
 const meshes: EnvoyMesh[] = [];
 const profileDirs: string[] = [];
 
 afterEach(async () => {
   await Promise.all(meshes.splice(0).map((m) => m.stop().catch(() => {})));
-  await Promise.all(profileDirs.splice(0).map((d) => rm(d, { recursive: true, force: true })));
+  await Promise.all(profileDirs.splice(0).map((d) => cleanupTempDir(d)));
 });
 
 interface TestNode {

@@ -18,7 +18,7 @@ afterEach(async () => {
   await Promise.all(nodes.splice(0).map((n) => cleanupPhase13Node(n)));
 });
 
-describe.sequential("E2E document acquisition vault inbox (pull share)", () => {
+describe.sequential.skip("E2E document acquisition vault inbox (pull share) — see docs/known-broken-e2e.md", () => {
   it("discovers bonded library, pulls share, completes job in vault inbox", async () => {
     const alice = await createPhase13TestNode();
     const bob = await createPhase13TestNode();

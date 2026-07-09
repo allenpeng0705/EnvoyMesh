@@ -1,0 +1,81 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.5 [39m[90m/Users/shileipeng/Documents/mygithub/EnvoyMesh[39m
+
+[90mstdout[2m | apps/node/test/webrtc-call-e2e.test.ts[2m > [22m[2mWebRTC voice call E2E
+[22m[39m[e2e] Web server on :5400
+
+[90mstdout[2m | apps/node/test/social-ui-e2e.test.ts
+[22m[39m[e2e] ready
+
+[90mstdout[2m | apps/node/test/webrtc-call-e2e.test.ts[2m > [22m[2mWebRTC voice call E2E
+[22m[39m[e2e] Chromium launched
+
+[90mstdout[2m | apps/node/test/terminal-playwright-browser.test.ts[2m > [22m[2mPlaywright browser terminal WebSocket E2E[2m > [22m[2mChromium receives PTY stdout after sending stdin wire frame
+[22m[39m[terminal-ws] Listening on ws://127.0.0.1:55521/ws/terminal/{sessionId}
+
+ [32m✓[39m apps/node/test/terminal-playwright-browser.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 448[2mms[22m[39m
+     [33m[2m✓[22m[39m Chromium receives PTY stdout after sending stdin wire frame [33m 447[2mms[22m[39m
+[90mstdout[2m | apps/node/test/social-ui-e2e.test.ts[2m > [22m[2mchat[2m > [22m[2mmessage renders
+[22m[39m[page] log: [ws-mock] installed
+
+[90mstdout[2m | apps/node/test/social-ui-e2e.test.ts[2m > [22m[2mchat[2m > [22m[2mmessage renders
+[22m[39m[page] log: [ws-client] Connected
+
+[90mstdout[2m | apps/node/test/social-ui-e2e.test.ts[2m > [22m[2mchat[2m > [22m[2mmessage renders
+[22m[39m[page] warning: [NodeState] setup sponsor friend: failed
+
+[90mstdout[2m | apps/node/test/social-ui-e2e.test.ts[2m > [22m[2mchat[2m > [22m[2mmessage renders
+[22m[39m[page] warning: [NodeState] setup sponsor friend: failed
+
+ [32m✓[39m apps/node/test/webrtc-call-e2e.test.ts [2m([22m[2m13 tests[22m[2m)[22m[33m 37759[2mms[22m[39m
+     [33m[2m✓[22m[39m 1. page loads [33m 2185[2mms[22m[39m
+     [33m[2m✓[22m[39m 2. IncomingCallModal appears on call:incoming [33m 2592[2mms[22m[39m
+     [33m[2m✓[22m[39m 3. Accept call → ActiveCallPanel visible [33m 2974[2mms[22m[39m
+     [33m[2m✓[22m[39m 4. End call closes ActiveCallPanel [33m 3294[2mms[22m[39m
+     [33m[2m✓[22m[39m 5. Decline incoming call [33m 2938[2mms[22m[39m
+     [33m[2m✓[22m[39m 6. Mute toggle in ActiveCallPanel [33m 3271[2mms[22m[39m
+     [33m[2m✓[22m[39m 7. call:reinvite updates incoming offer (Path 1 → Path 2 UI) [33m 2422[2mms[22m[39m
+     [33m[2m✓[22m[39m 8. outbound Calling banner → active dock when getUserMedia fails (listen-only) [33m 3335[2mms[22m[39m
+     [33m[2m✓[22m[39m 9. accept incoming call shows listen-only active dock when getUserMedia fails [33m 2955[2mms[22m[39m
+     [33m[2m✓[22m[39m 10. incoming video call modal shows video copy [33m 2598[2mms[22m[39m
+     [33m[2m✓[22m[39m 11. accept video incoming → video active dock [33m 2943[2mms[22m[39m
+     [33m[2m✓[22m[39m 12. outbound video call sends callType video via sendCallInvite RPC [33m 2849[2mms[22m[39m
+     [33m[2m✓[22m[39m 13. video call with camera denied shows audio-only hint [33m 2980[2mms[22m[39m
+ [32m✓[39m apps/node/test/social-ui-e2e.test.ts [2m([22m[2m31 tests[22m[2m)[22m[33m 67589[2mms[22m[39m
+     [33m[2m✓[22m[39m page loads [33m 1698[2mms[22m[39m
+     [33m[2m✓[22m[39m message renders [33m 2584[2mms[22m[39m
+     [33m[2m✓[22m[39m multi messages [33m 2273[2mms[22m[39m
+     [33m[2m✓[22m[39m attachment renders [33m 2106[2mms[22m[39m
+     [33m[2m✓[22m[39m AI badge [33m 2093[2mms[22m[39m
+     [33m[2m✓[22m[39m indicator [33m 1904[2mms[22m[39m
+     [33m[2m✓[22m[39m malformed event [33m 1900[2mms[22m[39m
+     [33m[2m✓[22m[39m event flood [33m 1912[2mms[22m[39m
+     [33m[2m✓[22m[39m room message [33m 2095[2mms[22m[39m
+     [33m[2m✓[22m[39m multi-participant [33m 1927[2mms[22m[39m
+     [33m[2m✓[22m[39m approval [33m 1898[2mms[22m[39m
+     [33m[2m✓[22m[39m renders [33m 1613[2mms[22m[39m
+     [33m[2m✓[22m[39m edit & save [33m 2456[2mms[22m[39m
+     [33m[2m✓[22m[39m renders [33m 2459[2mms[22m[39m
+     [33m[2m✓[22m[39m mode chip both [33m 2099[2mms[22m[39m
+     [33m[2m✓[22m[39m mode chip ext only [33m 2100[2mms[22m[39m
+     [33m[2m✓[22m[39m mode chip off [33m 2112[2mms[22m[39m
+     [33m[2m✓[22m[39m survives disconnect [33m 1922[2mms[22m[39m
+     [33m[2m✓[22m[39m chat after reconnect [33m 2317[2mms[22m[39m
+     [33m[2m✓[22m[39m chat assist on [33m 2111[2mms[22m[39m
+     [33m[2m✓[22m[39m auto-reply on [33m 2112[2mms[22m[39m
+     [33m[2m✓[22m[39m kill switch on [33m 2116[2mms[22m[39m
+     [33m[2m✓[22m[39m chain created [33m 2112[2mms[22m[39m
+     [33m[2m✓[22m[39m subtask proposal [33m 1913[2mms[22m[39m
+     [33m[2m✓[22m[39m worker bid [33m 2108[2mms[22m[39m
+     [33m[2m✓[22m[39m chain complete [33m 2114[2mms[22m[39m
+     [33m[2m✓[22m[39m negotiation counter [33m 2099[2mms[22m[39m
+     [33m[2m✓[22m[39m chain card renders with budget and status [33m 2738[2mms[22m[39m
+     [33m[2m✓[22m[39m completed chain shows cost and view report button [33m 2754[2mms[22m[39m
+     [33m[2m✓[22m[39m chain card renders status badge [33m 2747[2mms[22m[39m
+     [33m[2m✓[22m[39m failed/cancelled chain shows error badge [33m 2772[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m3 passed[39m[22m[90m (3)[39m
+[2m      Tests [22m [1m[32m45 passed[39m[22m[90m (45)[39m
+[2m   Start at [22m 13:41:53
+[2m   Duration [22m 67.73s[2m (transform 441ms, setup 69ms, import 555ms, tests 105.80s, environment 0ms)[22m
+

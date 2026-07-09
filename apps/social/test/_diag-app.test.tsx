@@ -82,7 +82,7 @@ describe("diag", () => {
     // the client is a Proxy-backed fake. Used during development to verify
     // that no new mount-time hook is missing from the fake client. Pass
     // intentionally; failures should be fixed in fakeClient() above.
-    const { container } = render(
+    const { container, unmount } = render(
       <I18nTestProvider>
         <ThemeProvider>
           <NodeServiceProvider clientFactory={fakeClient}>
@@ -94,5 +94,11 @@ describe("diag", () => {
       </I18nTestProvider>,
     );
     expect(container.innerHTML.length).toBeGreaterThan(0);
+    // Unmount immediately so any pending React 19 effects (useEffect with
+    // no cleanup, scheduled re-renders) get torn down before the test's
+    // jsdom env is destroyed. Otherwise an async render scheduled during
+    // mount throws "ReferenceError: window is not defined" after the test
+    // completes and vitest reports an unhandled error for the run.
+    unmount();
   });
 });

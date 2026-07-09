@@ -42,7 +42,7 @@ export function PeerProfileGalleryStrip({ ownerId, bondLevel }: PeerProfileGalle
     };
   }, [nodeService, ownerId]);
 
-  const gallery = peer?.profile.galleryPhotos ?? [];
+  const gallery = peer?.profile?.galleryPhotos ?? [];
   const visible = gallery.filter((photo) => canViewProfileGalleryPhoto(photo.visibility, bondLevel));
   if (visible.length === 0) {
     return null;

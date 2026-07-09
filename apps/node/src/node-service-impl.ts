@@ -1750,6 +1750,11 @@ class NodeServiceImpl implements NodeService {
     this._deferredExternalMeshStart = fn;
   }
 
+  /** True when a deferred start is registered and the mesh has not yet come up. */
+  hasDeferredMeshStart(): boolean {
+    return typeof this._deferredExternalMeshStart === "function" && this._nodeStatus !== "running";
+  }
+
   private _scheduleDeferredProfileRefresh(source: string): void {
     if (this._profileRefreshStartupTimer) {
       clearTimeout(this._profileRefreshStartupTimer);

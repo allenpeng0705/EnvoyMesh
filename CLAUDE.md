@@ -227,14 +227,29 @@ npm install
 # TypeScript type-check (uses project references for all packages)
 npm run typecheck
 
-# Run all tests (vitest)
-npm test
+# ====== Test orchestrator (recommended) ======
+#
+# Unified entry point in scripts/test.sh / scripts/test.ps1
+# Phases: typecheck → unit → social-build → e2e-fast → e2e-playwright → smoke → bundle
+#
 
-# Run a single package's tests
-npx vitest run packages/identity/test/
+npm run test:orchestrator -- dev    # Fast dev loop (~35s, no E2E)
+npm run test:dev                    # same as above
+npm run test:full                   # All tests + libp2p E2E + smoke (~10min)
+npm run test:bundle                 # `full` + scripts/bundle.sh (pre-release gate)
+npm run test:ci                     # Same as `full` + bail + JUnit
 
-# Run tests in watch mode
-npx vitest
+# Or call directly (more flags available):
+bash scripts/test.sh dev --filter "nodeService-fleet-manifest" --watch
+bash scripts/test.sh full --no-typecheck --skip-playwright
+bash scripts/test.sh bundle --no-typecheck   # pre-release gate (skip tsc)
+
+# ====== Direct vitest (legacy back-compat) ======
+# (the orchestrator handles these; only use these for ad-hoc debugging)
+
+npm test                                  # All unit tests (no E2E)
+npx vitest run packages/identity/test/    # Single package
+npx vitest                                # Watch mode
 
 # Build a specific package
 npm exec -w @envoymesh/<package> -- tsc -p tsconfig.json
@@ -249,14 +264,36 @@ npm run smoke:local
 npm run cli -w @envoymesh/node -- --help
 ```
 
+### Test orchestrator (`scripts/test.sh` / `scripts/test.ps1`)
+
+A single entry point that runs the right tests for the right context. Six modes:
+
+| Mode     | typecheck | unit | social-build | e2e-fast | e2e-playwright | smoke | bundle.sh | bail |
+|----------|:---------:|:----:|:------------:|:--------:|:--------------:|:-----:|:---------:|:----:|
+| `dev`    |     ✓     |  ✓   |      –       |    –     |       –        |   –   |     –     |  –   |
+| `unit`   |     ✓     |  ✓   |      –       |    –     |       –        |   –   |     –     |  –   |
+| `e2e`    |     –     |  –   |      ✓       |    ✓     |       ✓        |   –   |     –     |  –   |
+| `full`   |     ✓     |  ✓   |      ✓       |    ✓     |       ✓        |   ✓   |     –     |  –   |
+| `ci`     |     ✓     |  ✓   |      ✓       |    ✓     |       ✓        |   ✓   |     –     |  ✓   |
+| `bundle` |     ✓     |  ✓   |      ✓       |    ✓     |       ✓        |   ✓   |     ✓     |  ✓   |
+
+Flags: `--filter PATTERN` `--bail` `--no-typecheck` `--no-build` `--watch`
+`--artifacts DIR` `--skip-playwright` `--quiet`.
+
+Each phase logs to `ci-artifacts/test/<phase>.log`. The CI workflow uploads
+this whole directory as an artifact on failure.
+
+Full reference: `docs/test-orchestrator.md`.
+
 ### Test conventions
 
 - Tests live in `packages/*/test/` and `apps/*/test/`
 - Filename matches: `<module>.test.ts` or `<module>.test.tsx`
 - React component tests use `@testing-library/react` with jsdom environment (`/** @vitest-environment jsdom */`)
+- E2E tests gate on `RUN_E2E=1` environment variable (the orchestrator handles this per phase)
 - Uses Vitest with `describe`/`it`/`expect`
 - Vitest config maps `@envoymesh/*` imports to source `.ts` files for direct testing without build
-- Tests are run with `npm test` (CI) or `npx vitest` (watch mode)
+- Tests are run via the orchestrator (`npm run test:*`) or directly via `npm test` / `npx vitest` (watch mode)
 
 ---
 

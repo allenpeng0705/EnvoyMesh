@@ -150,16 +150,34 @@ describe("inbound data transfer + savePath remapping", () => {
       }),
     };
 
+    // Mock mesh that records sent envelopes without doing real libp2p I/O.
+    // `acceptShare` triggers a `share.accept` envelope delivery (chat
+    // protocol) to the original sender. We can't run a real libp2p mesh
+    // here, so we capture-and-no-op.
+    const sentEnvelopes: any[] = [];
     const fakeMesh = {
       peerId: "local-peer",
-      send: async () => 12,
+      send: async (_t: string, e: any) => { sentEnvelopes.push(e); return 12; },
+      sendChat: async (_t: string, e: any, _o: any) => { sentEnvelopes.push(e); return 12; },
+      sendChatExpectEnvelopeReply: async (_t: string, e: any, _o: any) => sentEnvelopes.push(e),
+      sendChatExpectReply: async (_t: string, e: any, _o: any) => { sentEnvelopes.push(e); return { ok: true }; },
+      dial: async () => undefined,
+      probePeer: async () => ({ connected: true, direct: true } as any),
+      getPeerConnectionInfo: () => ({ connected: true, direct: true }),
+      getConnectedPeerIds: () => [SENDER],
+      getReachableMesh: () => undefined as any,
       tagContactForPersistentReachability: async () => {},
       untagContactForPersistentReachability: async () => {},
-      getPeerConnectionInfo: async () => ({ connected: false, direct: false }),
-    };
+      getPeerStoreDialHints: async () => [] as string[],
+      mergePeerStoreDialHints: async () => [],
+      scrubPeerStoreDialHints: async () => [] as string[],
+      ensurePeerReachable: async () => ({ connected: false } as any),
+      probeBondedPeerConnection: async () => undefined,
+      closeConnectionsToPeer: async () => undefined,
+    } as any;
 
     const node = new NodeServiceImpl(
-      fakeMesh as any,
+      fakeMesh,
       trustStore,
       peerDirectoryStore,
       humanProfileStore,
@@ -184,6 +202,9 @@ describe("inbound data transfer + savePath remapping", () => {
       relativePath: "src/from.txt",
     });
 
+    // Fast-path accepts: mock mesh reports the peer as already connected so
+    // acceptShare completes synchronously (deliverCallEnvelope hits the fast
+    // path with mesh.send → returns delivered: true without retrying).
     await node.acceptShare(shareId, "saved/here.txt");
 
     expect(node.resolveInboundDataTransferRelativePath(SENDER, "src/from.txt")).toBe("saved/here.txt");

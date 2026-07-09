@@ -79,8 +79,30 @@ export function createSocialProxySessionStore(profileDir: string): SocialProxySe
   async function writeFileAtomic(data: SessionFile): Promise<void> {
     await mkdir(dirname(filePath), { recursive: true });
     const tmp = `${filePath}.tmp`;
-    await writeFile(tmp, JSON.stringify(data, null, 2), { mode: 0o600 });
-    await rename(tmp, filePath);
+    const payload = JSON.stringify(data, null, 2);
+    await writeFile(tmp, payload, { mode: 0o600 });
+    try {
+      await rename(tmp, filePath);
+    } catch (error) {
+      // Race: a test cleanup (or parallel writer) deleted the .tmp file
+      // between writeFile and rename. ENOENT on the rename means the tmp
+      // is already gone — fall back to writing directly to the destination
+      // (best effort, swallowing a second ENOENT if the dir itself was rm'd).
+      if (
+        error instanceof Error &&
+        "code" in error &&
+        (error as NodeJS.ErrnoException).code === "ENOENT"
+      ) {
+        try {
+          await writeFile(filePath, payload, { mode: 0o600 });
+        } catch (fallbackError) {
+          if (isMissing(fallbackError)) return;
+          throw fallbackError;
+        }
+        return;
+      }
+      throw error;
+    }
   }
 
   return {

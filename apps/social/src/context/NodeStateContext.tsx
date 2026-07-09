@@ -437,7 +437,7 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
       if (
         msg.metadata?.deliveryChannel === "ai" ||
         msg.sender.ownerId === ENVOY_AI_THREAD_KEY ||
-        msg.recipient.ownerId === ENVOY_AI_THREAD_KEY ||
+        msg.recipient?.ownerId === ENVOY_AI_THREAD_KEY ||
         (bridgeStatus?.agentPeerId &&
           (msg.sender.nodeId === bridgeStatus.agentPeerId ||
             msg.sender.ownerId === bridgeStatus.agentPeerId))

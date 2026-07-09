@@ -1,0 +1,728 @@
+
+[1m[30m[46m RUN [49m[39m[22m [36mv4.1.5 [39m[90m/Users/shileipeng/Documents/mygithub/EnvoyMesh[39m
+
+(node:39559) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:39560) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+[90mstdout[2m | apps/node/test/chain-two-home-smoke.test.ts[2m > [22m[2mE2E two-home chain smoke (libp2p)[2m > [22m[2morchestrator home + worker home complete a chain to a stored report
+[22m[39m[webrtc-call] #1 node:deliver-call-envelope {"intent":"agent.card.request","callId":"(none)","peer":"12D3KooWEN2y…","connected":true,"direct":true,"hintCount":1}
+
+[90mstdout[2m | apps/node/test/chain-two-home-smoke.test.ts[2m > [22m[2mE2E two-home chain smoke (libp2p)[2m > [22m[2morchestrator home + worker home complete a chain to a stored report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/message/0.1.0, remotePeerId=12D3KooWRHFq4WA7bnuaict1VarndEX6pxyP9e25EdRafFDM9Dva
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[webrtc-call] #1 node:deliver-call-envelope {"intent":"agent.card.request","callId":"(none)","peer":"12D3KooWJikg…","connected":true,"direct":true,"hintCount":1}
+
+[90mstdout[2m | apps/node/test/chain-two-home-smoke.test.ts[2m > [22m[2mE2E two-home chain smoke (libp2p)[2m > [22m[2morchestrator home + worker home complete a chain to a stored report
+[22m[39m[webrtc-call] #2 node:deliver-call-fast-path-ok {"peer":"12D3KooWEN2y…","direct":true}
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/message/0.1.0, remotePeerId=12D3KooWL2ifgk5fqQkE5MZmUh11xJmEAWLpzMH8B4FkCGeu8pBv
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[webrtc-call] #2 node:deliver-call-fast-path-ok {"peer":"12D3KooWJikg…","direct":true}
+
+[90mstdout[2m | apps/node/test/chain-two-home-smoke.test.ts[2m > [22m[2mE2E two-home chain smoke (libp2p)[2m > [22m[2morchestrator home + worker home complete a chain to a stored report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/chat/0.1.0, remotePeerId=12D3KooWRHFq4WA7bnuaict1VarndEX6pxyP9e25EdRafFDM9Dva
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/chat/0.1.0, remotePeerId=12D3KooWL2ifgk5fqQkE5MZmUh11xJmEAWLpzMH8B4FkCGeu8pBv
+
+[90mstdout[2m | apps/node/test/chain-two-home-smoke.test.ts[2m > [22m[2mE2E two-home chain smoke (libp2p)[2m > [22m[2morchestrator home + worker home complete a chain to a stored report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/chat/0.1.0, remotePeerId=12D3KooWEN2yN34VZyr22rgWBRA497Uhum3rPmZJZojczFhKuujP
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/chat/0.1.0, remotePeerId=12D3KooWJikgKjj3MjqqzmqBrRy3BqC1sHjpQbVmwqANsZkZNtRx
+
+[90mstdout[2m | apps/node/test/chain-two-home-smoke.test.ts[2m > [22m[2mE2E two-home chain smoke (libp2p)[2m > [22m[2morchestrator home + worker home complete a chain to a stored report
+[22m[39m[peer-directory] learned envoy:owner:kUr4pKK9… → libp2p 12D3KooWRHFq… from profile.request
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[peer-directory] learned envoy:owner:rPJpt8jW… → libp2p 12D3KooWL2if… from profile.request
+
+[90mstderr[2m | apps/node/test/chain-two-home-smoke.test.ts[2m > [22m[2mE2E two-home chain smoke (libp2p)[2m > [22m[2morchestrator home + worker home complete a chain to a stored report
+[22m[39mEnvoyMesh inbound stream failed ZodError: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "0.1"
+    ],
+    "path": [
+      "profile",
+      "version"
+    ],
+    "message": "Invalid input: expected \"0.1\""
+  },
+  {
+    "expected": "string",
+    "code": "invalid_type",
+    "path": [
+      "profile",
+      "ownerId"
+    ],
+    "message": "Invalid input: expected string, received undefined"
+  },
+  {
+    "expected": "string",
+    "code": "invalid_type",
+    "path": [
+      "profile",
+      "username"
+    ],
+    "message": "Invalid input: expected string, received undefined"
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "public",
+      "private"
+    ],
+    "path": [
+      "profile",
+      "profileVisibility"
+    ],
+    "message": "Invalid option: expected one of \"public\"|\"private\""
+  },
+  {
+    "expected": "string",
+    "code": "invalid_type",
+    "path": [
+      "profile",
+      "updatedAt"
+    ],
+    "message": "Invalid input: expected string, received undefined"
+  },
+  {
+    "expected": "string",
+    "code": "invalid_type",
+    "path": [
+      "profile",
+      "signature"
+    ],
+    "message": "Invalid input: expected string, received undefined"
+  }
+]
+    at createProfileSyncPayload [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mpackages/protocol/src/index.ts:965:35[90m)[39m
+    at buildSignedProfilePayloadEnvelope [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mapps/node/src/profile-sync-outbound.ts:37:19[90m)[39m
+    at Object.sendProfileResponse [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mapps/node/src/node-service-identity.ts:554:34[90m)[39m
+    at handleInboundProfileRequest [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mapps/node/src/profile-sync-inbound.ts:82:3[90m)[39m
+    at handleInboundProfileIntentViaRuntime [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mapps/node/src/node-service-identity.ts:547:20[90m)[39m
+    at handleInboundMessageViaRuntime [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mapps/node/src/node-service-wire-mesh-events.ts:191:5[90m)[39m
+    at async Promise.all (index 1)
+    at EnvoyMesh.dispatch [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mpackages/network/src/index.ts:2004:5[90m)[39m
+    at [90m/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mpackages/network/src/index.ts:2065:11
+    at [90mfile:///Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mnode_modules/[4mlibp2p[24m/dist/src/connection.js:185:17
+
+[90mstderr[2m | apps/node/test/chain-two-home-smoke.test.ts[2m > [22m[2mE2E two-home chain smoke (libp2p)[2m > [22m[2morchestrator home + worker home complete a chain to a stored report
+[22m[39m[expect-reply] profile attempt 1/3 failed for 12D3KooWEN2y…: sendExpectReply: peer closed stream without a reply
+
+[90mstdout[2m | apps/node/test/chain-two-home-smoke.test.ts[2m > [22m[2mE2E two-home chain smoke (libp2p)[2m > [22m[2morchestrator home + worker home complete a chain to a stored report
+[22m[39m[peer-directory] learned envoy:owner:txXwOLis… → libp2p 12D3KooWEN2y… from profile.request
+
+[90mstderr[2m | apps/node/test/chain-two-home-smoke.test.ts[2m > [22m[2mE2E two-home chain smoke (libp2p)[2m > [22m[2morchestrator home + worker home complete a chain to a stored report
+[22m[39mEnvoyMesh inbound stream failed ZodError: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "0.1"
+    ],
+    "path": [
+      "profile",
+      "version"
+    ],
+    "message": "Invalid input: expected \"0.1\""
+  },
+  {
+    "expected": "string",
+    "code": "invalid_type",
+    "path": [
+      "profile",
+      "ownerId"
+    ],
+    "message": "Invalid input: expected string, received undefined"
+  },
+  {
+    "expected": "string",
+    "code": "invalid_type",
+    "path": [
+      "profile",
+      "username"
+    ],
+    "message": "Invalid input: expected string, received undefined"
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "public",
+      "private"
+    ],
+    "path": [
+      "profile",
+      "profileVisibility"
+    ],
+    "message": "Invalid option: expected one of \"public\"|\"private\""
+  },
+  {
+    "expected": "string",
+    "code": "invalid_type",
+    "path": [
+      "profile",
+      "updatedAt"
+    ],
+    "message": "Invalid input: expected string, received undefined"
+  },
+  {
+    "expected": "string",
+    "code": "invalid_type",
+    "path": [
+      "profile",
+      "signature"
+    ],
+    "message": "Invalid input: expected string, received undefined"
+  }
+]
+    at createProfileSyncPayload [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mpackages/protocol/src/index.ts:965:35[90m)[39m
+    at buildSignedProfilePayloadEnvelope [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mapps/node/src/profile-sync-outbound.ts:37:19[90m)[39m
+    at Object.sendProfileResponse [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mapps/node/src/node-service-identity.ts:554:34[90m)[39m
+    at handleInboundProfileRequest [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mapps/node/src/profile-sync-inbound.ts:82:3[90m)[39m
+    at handleInboundProfileIntentViaRuntime [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mapps/node/src/node-service-identity.ts:547:20[90m)[39m
+    at handleInboundMessageViaRuntime [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mapps/node/src/node-service-wire-mesh-events.ts:191:5[90m)[39m
+    at async Promise.all (index 1)
+    at EnvoyMesh.dispatch [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mpackages/network/src/index.ts:2004:5[90m)[39m
+    at [90m/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mpackages/network/src/index.ts:2065:11
+    at [90mfile:///Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mnode_modules/[4mlibp2p[24m/dist/src/connection.js:185:17
+
+[90mstderr[2m | apps/node/test/chain-two-home-smoke.test.ts[2m > [22m[2mE2E two-home chain smoke (libp2p)[2m > [22m[2morchestrator home + worker home complete a chain to a stored report
+[22m[39m[expect-reply] profile attempt 1/3 failed for 12D3KooWRHFq…: sendExpectReply: peer closed stream without a reply
+
+[90mstderr[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39mEnvoyMesh inbound stream failed ZodError: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "0.1"
+    ],
+    "path": [
+      "profile",
+      "version"
+    ],
+    "message": "Invalid input: expected \"0.1\""
+  },
+  {
+    "expected": "string",
+    "code": "invalid_type",
+    "path": [
+      "profile",
+      "ownerId"
+    ],
+    "message": "Invalid input: expected string, received undefined"
+  },
+  {
+    "expected": "string",
+    "code": "invalid_type",
+    "path": [
+      "profile",
+      "username"
+    ],
+    "message": "Invalid input: expected string, received undefined"
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "public",
+      "private"
+    ],
+    "path": [
+      "profile",
+      "profileVisibility"
+    ],
+    "message": "Invalid option: expected one of \"public\"|\"private\""
+  },
+  {
+    "expected": "string",
+    "code": "invalid_type",
+    "path": [
+      "profile",
+      "updatedAt"
+    ],
+    "message": "Invalid input: expected string, received undefined"
+  },
+  {
+    "expected": "string",
+    "code": "invalid_type",
+    "path": [
+      "profile",
+      "signature"
+    ],
+    "message": "Invalid input: expected string, received undefined"
+  }
+]
+    at createProfileSyncPayload [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mpackages/protocol/src/index.ts:965:35[90m)[39m
+    at buildSignedProfilePayloadEnvelope [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mapps/node/src/profile-sync-outbound.ts:37:19[90m)[39m
+    at Object.sendProfileResponse [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mapps/node/src/node-service-identity.ts:554:34[90m)[39m
+    at handleInboundProfileRequest [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mapps/node/src/profile-sync-inbound.ts:82:3[90m)[39m
+    at handleInboundProfileIntentViaRuntime [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mapps/node/src/node-service-identity.ts:547:20[90m)[39m
+    at handleInboundMessageViaRuntime [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mapps/node/src/node-service-wire-mesh-events.ts:191:5[90m)[39m
+    at async Promise.all (index 1)
+    at EnvoyMesh.dispatch [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mpackages/network/src/index.ts:2004:5[90m)[39m
+    at [90m/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mpackages/network/src/index.ts:2065:11
+    at [90mfile:///Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mnode_modules/[4mlibp2p[24m/dist/src/connection.js:185:17
+
+[90mstderr[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[expect-reply] profile attempt 1/3 failed for 12D3KooWJikg…: sendExpectReply: peer closed stream without a reply
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[peer-directory] learned envoy:owner:l31jiQf3… → libp2p 12D3KooWJikg… from profile.request
+
+[90mstderr[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39mEnvoyMesh inbound stream failed ZodError: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "0.1"
+    ],
+    "path": [
+      "profile",
+      "version"
+    ],
+    "message": "Invalid input: expected \"0.1\""
+  },
+  {
+    "expected": "string",
+    "code": "invalid_type",
+    "path": [
+      "profile",
+      "ownerId"
+    ],
+    "message": "Invalid input: expected string, received undefined"
+  },
+  {
+    "expected": "string",
+    "code": "invalid_type",
+    "path": [
+      "profile",
+      "username"
+    ],
+    "message": "Invalid input: expected string, received undefined"
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "public",
+      "private"
+    ],
+    "path": [
+      "profile",
+      "profileVisibility"
+    ],
+    "message": "Invalid option: expected one of \"public\"|\"private\""
+  },
+  {
+    "expected": "string",
+    "code": "invalid_type",
+    "path": [
+      "profile",
+      "updatedAt"
+    ],
+    "message": "Invalid input: expected string, received undefined"
+  },
+  {
+    "expected": "string",
+    "code": "invalid_type",
+    "path": [
+      "profile",
+      "signature"
+    ],
+    "message": "Invalid input: expected string, received undefined"
+  }
+]
+    at createProfileSyncPayload [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mpackages/protocol/src/index.ts:965:35[90m)[39m
+    at buildSignedProfilePayloadEnvelope [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mapps/node/src/profile-sync-outbound.ts:37:19[90m)[39m
+    at Object.sendProfileResponse [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mapps/node/src/node-service-identity.ts:554:34[90m)[39m
+    at handleInboundProfileRequest [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mapps/node/src/profile-sync-inbound.ts:82:3[90m)[39m
+    at handleInboundProfileIntentViaRuntime [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mapps/node/src/node-service-identity.ts:547:20[90m)[39m
+    at handleInboundMessageViaRuntime [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mapps/node/src/node-service-wire-mesh-events.ts:191:5[90m)[39m
+    at async Promise.all (index 1)
+    at EnvoyMesh.dispatch [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mpackages/network/src/index.ts:2004:5[90m)[39m
+    at [90m/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mpackages/network/src/index.ts:2065:11
+    at [90mfile:///Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mnode_modules/[4mlibp2p[24m/dist/src/connection.js:185:17
+
+[90mstderr[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[expect-reply] profile attempt 1/3 failed for 12D3KooWL2if…: sendExpectReply: peer closed stream without a reply
+
+[90mstdout[2m | apps/node/test/chain-two-home-smoke.test.ts[2m > [22m[2mE2E two-home chain smoke (libp2p)[2m > [22m[2morchestrator home + worker home complete a chain to a stored report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/chat/0.1.0, remotePeerId=12D3KooWRHFq4WA7bnuaict1VarndEX6pxyP9e25EdRafFDM9Dva
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/chat/0.1.0, remotePeerId=12D3KooWL2ifgk5fqQkE5MZmUh11xJmEAWLpzMH8B4FkCGeu8pBv
+
+[90mstdout[2m | apps/node/test/chain-two-home-smoke.test.ts[2m > [22m[2mE2E two-home chain smoke (libp2p)[2m > [22m[2morchestrator home + worker home complete a chain to a stored report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/chat/0.1.0, remotePeerId=12D3KooWEN2yN34VZyr22rgWBRA497Uhum3rPmZJZojczFhKuujP
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/chat/0.1.0, remotePeerId=12D3KooWJikgKjj3MjqqzmqBrRy3BqC1sHjpQbVmwqANsZkZNtRx
+
+[90mstderr[2m | apps/node/test/chain-two-home-smoke.test.ts[2m > [22m[2mE2E two-home chain smoke (libp2p)[2m > [22m[2morchestrator home + worker home complete a chain to a stored report
+[22m[39m[expect-reply] profile attempt 2/3 failed for 12D3KooWEN2y…: sendExpectReply: peer closed stream without a reply
+
+[90mstderr[2m | apps/node/test/chain-two-home-smoke.test.ts[2m > [22m[2mE2E two-home chain smoke (libp2p)[2m > [22m[2morchestrator home + worker home complete a chain to a stored report
+[22m[39m[expect-reply] profile attempt 2/3 failed for 12D3KooWRHFq…: sendExpectReply: peer closed stream without a reply
+
+[90mstderr[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[expect-reply] profile attempt 2/3 failed for 12D3KooWJikg…: sendExpectReply: peer closed stream without a reply
+
+[90mstderr[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[expect-reply] profile attempt 2/3 failed for 12D3KooWL2if…: sendExpectReply: peer closed stream without a reply
+
+[90mstdout[2m | apps/node/test/chain-two-home-smoke.test.ts[2m > [22m[2mE2E two-home chain smoke (libp2p)[2m > [22m[2morchestrator home + worker home complete a chain to a stored report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/chat/0.1.0, remotePeerId=12D3KooWRHFq4WA7bnuaict1VarndEX6pxyP9e25EdRafFDM9Dva
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/chat/0.1.0, remotePeerId=12D3KooWL2ifgk5fqQkE5MZmUh11xJmEAWLpzMH8B4FkCGeu8pBv
+
+[90mstdout[2m | apps/node/test/chain-two-home-smoke.test.ts[2m > [22m[2mE2E two-home chain smoke (libp2p)[2m > [22m[2morchestrator home + worker home complete a chain to a stored report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/chat/0.1.0, remotePeerId=12D3KooWEN2yN34VZyr22rgWBRA497Uhum3rPmZJZojczFhKuujP
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/chat/0.1.0, remotePeerId=12D3KooWJikgKjj3MjqqzmqBrRy3BqC1sHjpQbVmwqANsZkZNtRx
+
+[90mstderr[2m | apps/node/test/chain-two-home-smoke.test.ts[2m > [22m[2mE2E two-home chain smoke (libp2p)[2m > [22m[2morchestrator home + worker home complete a chain to a stored report
+[22m[39m[expect-reply] profile attempt 3/3 failed for 12D3KooWEN2y…: sendExpectReply: peer closed stream without a reply
+
+[90mstderr[2m | apps/node/test/chain-two-home-smoke.test.ts[2m > [22m[2mE2E two-home chain smoke (libp2p)[2m > [22m[2morchestrator home + worker home complete a chain to a stored report
+[22m[39m[expect-reply] profile attempt 3/3 failed for 12D3KooWRHFq…: sendExpectReply: peer closed stream without a reply
+
+[90mstderr[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[expect-reply] profile attempt 3/3 failed for 12D3KooWJikg…: sendExpectReply: peer closed stream without a reply
+
+[90mstderr[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[expect-reply] profile attempt 3/3 failed for 12D3KooWL2if…: sendExpectReply: peer closed stream without a reply
+
+[90mstdout[2m | apps/node/test/chain-two-home-smoke.test.ts[2m > [22m[2mE2E two-home chain smoke (libp2p)[2m > [22m[2morchestrator home + worker home complete a chain to a stored report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/message/0.1.0, remotePeerId=12D3KooWEN2yN34VZyr22rgWBRA497Uhum3rPmZJZojczFhKuujP
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/message/0.1.0, remotePeerId=12D3KooWJikgKjj3MjqqzmqBrRy3BqC1sHjpQbVmwqANsZkZNtRx
+
+[90mstdout[2m | apps/node/test/chain-two-home-smoke.test.ts[2m > [22m[2mE2E two-home chain smoke (libp2p)[2m > [22m[2morchestrator home + worker home complete a chain to a stored report
+[22m[39m[agent.card] cached card for envoy:owner:txXwOLisGXfC9LmGSTHSNJDTxPQVPTJGvnj_qLpXnt4
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[agent.card] cached card for envoy:owner:l31jiQf3I-zw2LHR8wOW8ejITPoY0hYOVLA1g35EA4Q
+
+[90mstdout[2m | apps/node/test/chain-two-home-smoke.test.ts[2m > [22m[2mE2E two-home chain smoke (libp2p)[2m > [22m[2morchestrator home + worker home complete a chain to a stored report
+[22m[39m[webrtc-call] #3 node:deliver-call-envelope {"intent":"agent.card.request","callId":"(none)","peer":"12D3KooWRHFq…","connected":true,"direct":true,"hintCount":1}
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[webrtc-call] #3 node:deliver-call-envelope {"intent":"agent.card.request","callId":"(none)","peer":"12D3KooWL2if…","connected":true,"direct":true,"hintCount":1}
+
+[90mstdout[2m | apps/node/test/chain-two-home-smoke.test.ts[2m > [22m[2mE2E two-home chain smoke (libp2p)[2m > [22m[2morchestrator home + worker home complete a chain to a stored report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/message/0.1.0, remotePeerId=12D3KooWEN2yN34VZyr22rgWBRA497Uhum3rPmZJZojczFhKuujP
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/message/0.1.0, remotePeerId=12D3KooWJikgKjj3MjqqzmqBrRy3BqC1sHjpQbVmwqANsZkZNtRx
+
+[90mstdout[2m | apps/node/test/chain-two-home-smoke.test.ts[2m > [22m[2mE2E two-home chain smoke (libp2p)[2m > [22m[2morchestrator home + worker home complete a chain to a stored report
+[22m[39m[webrtc-call] #4 node:deliver-call-fast-path-ok {"peer":"12D3KooWRHFq…","direct":true}
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[webrtc-call] #4 node:deliver-call-fast-path-ok {"peer":"12D3KooWL2if…","direct":true}
+
+[90mstdout[2m | apps/node/test/chain-two-home-smoke.test.ts[2m > [22m[2mE2E two-home chain smoke (libp2p)[2m > [22m[2morchestrator home + worker home complete a chain to a stored report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/message/0.1.0, remotePeerId=12D3KooWRHFq4WA7bnuaict1VarndEX6pxyP9e25EdRafFDM9Dva
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/message/0.1.0, remotePeerId=12D3KooWL2ifgk5fqQkE5MZmUh11xJmEAWLpzMH8B4FkCGeu8pBv
+
+[90mstdout[2m | apps/node/test/chain-two-home-smoke.test.ts[2m > [22m[2mE2E two-home chain smoke (libp2p)[2m > [22m[2morchestrator home + worker home complete a chain to a stored report
+[22m[39m[agent.card] cached card for envoy:owner:kUr4pKK90G282fyQrzKPUOUPm5iS40A5kfSvVzqc9DM
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[agent.card] cached card for envoy:owner:rPJpt8jWu2e39hj51jXv7MHUlHQ-C63bQro6aamLhes
+
+[90mstdout[2m | apps/node/test/chain-two-home-smoke.test.ts[2m > [22m[2mE2E two-home chain smoke (libp2p)[2m > [22m[2morchestrator home + worker home complete a chain to a stored report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/message/0.1.0, remotePeerId=12D3KooWRHFq4WA7bnuaict1VarndEX6pxyP9e25EdRafFDM9Dva
+
+[90mstdout[2m | apps/node/test/chain-two-home-smoke.test.ts[2m > [22m[2mE2E two-home chain smoke (libp2p)[2m > [22m[2morchestrator home + worker home complete a chain to a stored report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/message/0.1.0, remotePeerId=12D3KooWRHFq4WA7bnuaict1VarndEX6pxyP9e25EdRafFDM9Dva
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[webrtc-call] #5 node:deliver-call-envelope {"intent":"agent.card.request","callId":"(none)","peer":"12D3KooWNJsk…","connected":true,"direct":true,"hintCount":1}
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/message/0.1.0, remotePeerId=12D3KooWL2ifgk5fqQkE5MZmUh11xJmEAWLpzMH8B4FkCGeu8pBv
+
+[90mstdout[2m | apps/node/test/chain-two-home-smoke.test.ts[2m > [22m[2mE2E two-home chain smoke (libp2p)[2m > [22m[2morchestrator home + worker home complete a chain to a stored report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/message/0.1.0, remotePeerId=12D3KooWEN2yN34VZyr22rgWBRA497Uhum3rPmZJZojczFhKuujP
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[webrtc-call] #6 node:deliver-call-fast-path-ok {"peer":"12D3KooWNJsk…","direct":true}
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/chat/0.1.0, remotePeerId=12D3KooWL2ifgk5fqQkE5MZmUh11xJmEAWLpzMH8B4FkCGeu8pBv
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/chat/0.1.0, remotePeerId=12D3KooWNJskBYybmY9qgkVfbGopaA6ri2us6xCaYmbPwgVyAcVi
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[peer-directory] learned envoy:owner:rPJpt8jW… → libp2p 12D3KooWL2if… from profile.request
+
+[90mstderr[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39mEnvoyMesh inbound stream failed ZodError: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "0.1"
+    ],
+    "path": [
+      "profile",
+      "version"
+    ],
+    "message": "Invalid input: expected \"0.1\""
+  },
+  {
+    "expected": "string",
+    "code": "invalid_type",
+    "path": [
+      "profile",
+      "ownerId"
+    ],
+    "message": "Invalid input: expected string, received undefined"
+  },
+  {
+    "expected": "string",
+    "code": "invalid_type",
+    "path": [
+      "profile",
+      "username"
+    ],
+    "message": "Invalid input: expected string, received undefined"
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "public",
+      "private"
+    ],
+    "path": [
+      "profile",
+      "profileVisibility"
+    ],
+    "message": "Invalid option: expected one of \"public\"|\"private\""
+  },
+  {
+    "expected": "string",
+    "code": "invalid_type",
+    "path": [
+      "profile",
+      "updatedAt"
+    ],
+    "message": "Invalid input: expected string, received undefined"
+  },
+  {
+    "expected": "string",
+    "code": "invalid_type",
+    "path": [
+      "profile",
+      "signature"
+    ],
+    "message": "Invalid input: expected string, received undefined"
+  }
+]
+    at createProfileSyncPayload [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mpackages/protocol/src/index.ts:965:35[90m)[39m
+    at buildSignedProfilePayloadEnvelope [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mapps/node/src/profile-sync-outbound.ts:37:19[90m)[39m
+    at Object.sendProfileResponse [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mapps/node/src/node-service-identity.ts:554:34[90m)[39m
+    at handleInboundProfileRequest [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mapps/node/src/profile-sync-inbound.ts:82:3[90m)[39m
+    at handleInboundProfileIntentViaRuntime [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mapps/node/src/node-service-identity.ts:547:20[90m)[39m
+    at handleInboundMessageViaRuntime [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mapps/node/src/node-service-wire-mesh-events.ts:191:5[90m)[39m
+    at async Promise.all (index 1)
+    at EnvoyMesh.dispatch [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mpackages/network/src/index.ts:2004:5[90m)[39m
+    at [90m/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mpackages/network/src/index.ts:2065:11
+    at [90mfile:///Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mnode_modules/[4mlibp2p[24m/dist/src/connection.js:185:17
+
+[90mstderr[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[expect-reply] profile attempt 1/3 failed for 12D3KooWNJsk…: sendExpectReply: peer closed stream without a reply
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[peer-directory] learned envoy:owner:bwYbvx0k… → libp2p 12D3KooWNJsk… from profile.request
+
+[90mstderr[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39mEnvoyMesh inbound stream failed ZodError: [
+  {
+    "code": "invalid_value",
+    "values": [
+      "0.1"
+    ],
+    "path": [
+      "profile",
+      "version"
+    ],
+    "message": "Invalid input: expected \"0.1\""
+  },
+  {
+    "expected": "string",
+    "code": "invalid_type",
+    "path": [
+      "profile",
+      "ownerId"
+    ],
+    "message": "Invalid input: expected string, received undefined"
+  },
+  {
+    "expected": "string",
+    "code": "invalid_type",
+    "path": [
+      "profile",
+      "username"
+    ],
+    "message": "Invalid input: expected string, received undefined"
+  },
+  {
+    "code": "invalid_value",
+    "values": [
+      "public",
+      "private"
+    ],
+    "path": [
+      "profile",
+      "profileVisibility"
+    ],
+    "message": "Invalid option: expected one of \"public\"|\"private\""
+  },
+  {
+    "expected": "string",
+    "code": "invalid_type",
+    "path": [
+      "profile",
+      "updatedAt"
+    ],
+    "message": "Invalid input: expected string, received undefined"
+  },
+  {
+    "expected": "string",
+    "code": "invalid_type",
+    "path": [
+      "profile",
+      "signature"
+    ],
+    "message": "Invalid input: expected string, received undefined"
+  }
+]
+    at createProfileSyncPayload [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mpackages/protocol/src/index.ts:965:35[90m)[39m
+    at buildSignedProfilePayloadEnvelope [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mapps/node/src/profile-sync-outbound.ts:37:19[90m)[39m
+    at Object.sendProfileResponse [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mapps/node/src/node-service-identity.ts:554:34[90m)[39m
+    at handleInboundProfileRequest [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mapps/node/src/profile-sync-inbound.ts:82:3[90m)[39m
+    at handleInboundProfileIntentViaRuntime [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mapps/node/src/node-service-identity.ts:547:20[90m)[39m
+    at handleInboundMessageViaRuntime [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mapps/node/src/node-service-wire-mesh-events.ts:191:5[90m)[39m
+    at async Promise.all (index 1)
+    at EnvoyMesh.dispatch [90m(/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mpackages/network/src/index.ts:2004:5[90m)[39m
+    at [90m/Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mpackages/network/src/index.ts:2065:11
+    at [90mfile:///Users/shileipeng/Documents/mygithub/EnvoyMesh/[39mnode_modules/[4mlibp2p[24m/dist/src/connection.js:185:17
+
+[90mstderr[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[expect-reply] profile attempt 1/3 failed for 12D3KooWL2if…: sendExpectReply: peer closed stream without a reply
+
+[90mstdout[2m | apps/node/test/chain-two-home-smoke.test.ts[2m > [22m[2mE2E two-home chain smoke (libp2p)[2m > [22m[2morchestrator home + worker home complete a chain to a stored report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/message/0.1.0, remotePeerId=12D3KooWRHFq4WA7bnuaict1VarndEX6pxyP9e25EdRafFDM9Dva
+
+[90mstdout[2m | apps/node/test/chain-two-home-smoke.test.ts[2m > [22m[2mE2E two-home chain smoke (libp2p)[2m > [22m[2morchestrator home + worker home complete a chain to a stored report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/message/0.1.0, remotePeerId=12D3KooWEN2yN34VZyr22rgWBRA497Uhum3rPmZJZojczFhKuujP
+
+[90mstdout[2m | apps/node/test/chain-two-home-smoke.test.ts[2m > [22m[2mE2E two-home chain smoke (libp2p)[2m > [22m[2morchestrator home + worker home complete a chain to a stored report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/message/0.1.0, remotePeerId=12D3KooWEN2yN34VZyr22rgWBRA497Uhum3rPmZJZojczFhKuujP
+
+[90mstderr[2m | apps/node/test/chain-two-home-smoke.test.ts[2m > [22m[2mE2E two-home chain smoke (libp2p)[2m > [22m[2morchestrator home + worker home complete a chain to a stored report
+[22m[39m[network] outbound /envoymesh/message/0.1.0 dial failed for 12D3KooWRHFq4WA7bnuaict1VarndEX6pxyP9e25EdRafFDM9Dva: Can not dial self
+
+[90mstderr[2m | apps/node/test/chain-two-home-smoke.test.ts[2m > [22m[2mE2E two-home chain smoke (libp2p)[2m > [22m[2morchestrator home + worker home complete a chain to a stored report
+[22m[39m[send] attempt 1/3 failed for 12D3KooWRHFq…: Can not dial self
+
+ [32m✓[39m apps/node/test/chain-two-home-smoke.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 2709[2mms[22m[39m
+     [33m[2m✓[22m[39m orchestrator home + worker home complete a chain to a stored report [33m 2708[2mms[22m[39m
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/chat/0.1.0, remotePeerId=12D3KooWL2ifgk5fqQkE5MZmUh11xJmEAWLpzMH8B4FkCGeu8pBv
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/chat/0.1.0, remotePeerId=12D3KooWNJskBYybmY9qgkVfbGopaA6ri2us6xCaYmbPwgVyAcVi
+
+[90mstderr[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[expect-reply] profile attempt 2/3 failed for 12D3KooWNJsk…: sendExpectReply: peer closed stream without a reply
+
+[90mstderr[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[expect-reply] profile attempt 2/3 failed for 12D3KooWL2if…: sendExpectReply: peer closed stream without a reply
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/chat/0.1.0, remotePeerId=12D3KooWL2ifgk5fqQkE5MZmUh11xJmEAWLpzMH8B4FkCGeu8pBv
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/chat/0.1.0, remotePeerId=12D3KooWNJskBYybmY9qgkVfbGopaA6ri2us6xCaYmbPwgVyAcVi
+
+[90mstderr[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[expect-reply] profile attempt 3/3 failed for 12D3KooWNJsk…: sendExpectReply: peer closed stream without a reply
+
+[90mstderr[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[expect-reply] profile attempt 3/3 failed for 12D3KooWL2if…: sendExpectReply: peer closed stream without a reply
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/message/0.1.0, remotePeerId=12D3KooWNJskBYybmY9qgkVfbGopaA6ri2us6xCaYmbPwgVyAcVi
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[agent.card] cached card for envoy:owner:bwYbvx0kJ-4EGGRZV5apYmllSgnXqCGkK-shLsEjAnE
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[webrtc-call] #7 node:deliver-call-envelope {"intent":"agent.card.request","callId":"(none)","peer":"12D3KooWL2if…","connected":true,"direct":true,"hintCount":1}
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/message/0.1.0, remotePeerId=12D3KooWNJskBYybmY9qgkVfbGopaA6ri2us6xCaYmbPwgVyAcVi
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[webrtc-call] #8 node:deliver-call-fast-path-ok {"peer":"12D3KooWL2if…","direct":true}
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/message/0.1.0, remotePeerId=12D3KooWL2ifgk5fqQkE5MZmUh11xJmEAWLpzMH8B4FkCGeu8pBv
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[agent.card] cached card for envoy:owner:rPJpt8jWu2e39hj51jXv7MHUlHQ-C63bQro6aamLhes
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/message/0.1.0, remotePeerId=12D3KooWL2ifgk5fqQkE5MZmUh11xJmEAWLpzMH8B4FkCGeu8pBv
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/message/0.1.0, remotePeerId=12D3KooWL2ifgk5fqQkE5MZmUh11xJmEAWLpzMH8B4FkCGeu8pBv
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/message/0.1.0, remotePeerId=12D3KooWL2ifgk5fqQkE5MZmUh11xJmEAWLpzMH8B4FkCGeu8pBv
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/message/0.1.0, remotePeerId=12D3KooWL2ifgk5fqQkE5MZmUh11xJmEAWLpzMH8B4FkCGeu8pBv
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/message/0.1.0, remotePeerId=12D3KooWNJskBYybmY9qgkVfbGopaA6ri2us6xCaYmbPwgVyAcVi
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/message/0.1.0, remotePeerId=12D3KooWJikgKjj3MjqqzmqBrRy3BqC1sHjpQbVmwqANsZkZNtRx
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/message/0.1.0, remotePeerId=12D3KooWL2ifgk5fqQkE5MZmUh11xJmEAWLpzMH8B4FkCGeu8pBv
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/message/0.1.0, remotePeerId=12D3KooWJikgKjj3MjqqzmqBrRy3BqC1sHjpQbVmwqANsZkZNtRx
+
+[90mstdout[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[network] INBOUND STREAM: protocol=/envoymesh/message/0.1.0, remotePeerId=12D3KooWJikgKjj3MjqqzmqBrRy3BqC1sHjpQbVmwqANsZkZNtRx
+
+[90mstderr[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[network] outbound /envoymesh/message/0.1.0 dial failed for 12D3KooWL2ifgk5fqQkE5MZmUh11xJmEAWLpzMH8B4FkCGeu8pBv: Can not dial self
+
+[90mstderr[2m | apps/node/test/chain-three-home-smoke.test.ts[2m > [22m[2mE2E three-home chain smoke (libp2p)[2m > [22m[2morchestrator + two worker homes: both bid, chain completes to report
+[22m[39m[send] attempt 1/3 failed for 12D3KooWL2if…: Can not dial self
+
+ [32m✓[39m apps/node/test/chain-three-home-smoke.test.ts [2m([22m[2m1 test[22m[2m)[22m[33m 5289[2mms[22m[39m
+     [33m[2m✓[22m[39m orchestrator + two worker homes: both bid, chain completes to report [33m 5288[2mms[22m[39m
+
+[2m Test Files [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+[2m      Tests [22m [1m[32m2 passed[39m[22m[90m (2)[39m
+[2m   Start at [22m 13:43:03
+[2m   Duration [22m 6.63s[2m (transform 1.62s, setup 42ms, import 2.50s, tests 8.00s, environment 0ms)[22m
+

@@ -89,8 +89,14 @@ function GlobalCallOverlay({ session }: { session: UseCallSessionResult }) {
 export function CallSessionProvider({ children }: { children: ReactNode }) {
   const session = useCallSession();
 
+  // Always expose the call session on `window.__envoyCallSession` so the
+  // chromium E2E tests can drive outbound calls via the dev hook. The previous
+  // `if (!import.meta.env.DEV) return;` guard tree-shook the assignment in
+  // `vite build` output (DEV is false for `vite build` regardless of
+  // `--mode`), which made `waitForCallSessionHook` time out and silently
+  // disabled test 8 / 12. The cost in production is one window property and
+  // a single useEffect per session change — negligible.
   useEffect(() => {
-    if (!import.meta.env.DEV) return;
     (window as unknown as { __envoyCallSession?: UseCallSessionResult }).__envoyCallSession = session;
     return () => {
       delete (window as unknown as { __envoyCallSession?: UseCallSessionResult }).__envoyCallSession;

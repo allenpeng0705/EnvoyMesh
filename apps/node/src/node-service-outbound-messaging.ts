@@ -36,6 +36,8 @@ import {
 import {
   deliverCallEnvelopeWithRetry,
   deliverChatEnvelopeWithRetry,
+  deliverMessageEnvelopeWithRetry,
+  isChatProtocolIntent,
   type ChatDeliverResult,
 } from "./chat-outbound-deliver.js";
 import { markOutboundPeerVerified, isOutboundPeerRecentlyVerified } from "./outbound-peer-freshness.js";
@@ -180,7 +182,10 @@ export async function dialHintsForChatViaRuntime(
 ): Promise<string[]> {
   const config = await ctx.loadConfig();
   const mesh = ctx.getReachableMesh();
-  const peerStoreAddrs = mesh ? await mesh.getPeerStoreDialHints(recipientPeerId) : [];
+  const peerStoreAddrs =
+    mesh && typeof mesh.getPeerStoreDialHints === "function"
+      ? await mesh.getPeerStoreDialHints(recipientPeerId)
+      : [];
   const mergedListen = mergeDialablePeerListenAddrs(
     recipientPeerId,
     peerListenAddrs,
@@ -536,12 +541,25 @@ export async function deliverCallEnvelopeToTransportPeerViaRuntime(
   envelope: EnvoyEnvelope,
 ): Promise<void> {
   const mesh = ctx.requireMesh();
+  // Protocol dispatch: chat/call/profile use `mesh.sendChat` (chat protocol);
+  // other intents (agent.card.*, social.intro.*, …) must use `mesh.send`
+  // (message protocol) — sending them on chat yields `invalid intent …
+  // on chat protocol` and the retry loop never recovers.
+  const useChatProtocol = isChatProtocolIntent(envelope.intent);
   const conn = mesh.getPeerConnectionInfo(transportPeerId);
   if (conn.connected || mesh.getConnectedPeerIds().includes(transportPeerId)) {
-    await mesh.sendChat(transportPeerId, envelope, { dialHints: [] });
+    if (useChatProtocol) {
+      await mesh.sendChat(transportPeerId, envelope, { dialHints: [] });
+    } else {
+      await mesh.send(transportPeerId, envelope, { dialHints: [] });
+    }
     return;
   }
-  await deliverCallEnvelopeViaRuntime(ctx, transportPeerId, envelope, [], undefined, false);
+  if (useChatProtocol) {
+    await deliverCallEnvelopeViaRuntime(ctx, transportPeerId, envelope, [], undefined, false);
+  } else {
+    await deliverMessageEnvelopeViaRuntime(ctx, transportPeerId, envelope, [], undefined, false);
+  }
 }
 
 export async function deliverCallEnvelopeViaRuntime(
@@ -555,6 +573,10 @@ export async function deliverCallEnvelopeViaRuntime(
   return withChatSendLock(transportPeerId, async () => {
     const mesh = ctx.requireMesh();
     let conn = mesh.getPeerConnectionInfo(transportPeerId);
+    // Fast-path: chat/call/profile uses chat protocol; everything else uses
+    // message protocol (otherwise the chat stream handler rejects with
+    // `invalid intent … on chat protocol`).
+    const useChatProtocol = isChatProtocolIntent(envelope.intent);
     webrtcCallTrace("node:deliver-call-envelope", {
       intent: envelope.intent,
       callId: shortCallId(
@@ -598,10 +620,17 @@ export async function deliverCallEnvelopeViaRuntime(
     const wasConnected = conn.connected;
     if (conn.connected) {
       try {
-        await mesh.sendChat(transportPeerId, envelope, {
-          dialHints: [],
-          preferCircuitHints: preferCircuits && !conn.direct,
-        });
+        if (useChatProtocol) {
+          await mesh.sendChat(transportPeerId, envelope, {
+            dialHints: [],
+            preferCircuitHints: preferCircuits && !conn.direct,
+          });
+        } else {
+          await mesh.send(transportPeerId, envelope, {
+            dialHints: [],
+            preferCircuitHints: preferCircuits && !conn.direct,
+          });
+        }
         webrtcCallTrace("node:deliver-call-fast-path-ok", {
           peer: shortCallId(transportPeerId),
           direct: conn.direct,
@@ -628,6 +657,43 @@ export async function deliverCallEnvelopeViaRuntime(
       rebuildDialHints: wasConnected
         ? undefined
         : () => dialHintsForChatViaRuntime(ctx, transportPeerId, listenAddrs),
+    });
+  });
+}
+
+/**
+ * Message-protocol sibling of {@link deliverCallEnvelopeViaRuntime} for
+ * non-chat-protocol intents (agent.card.*, social.intro.*, device.pair.*,
+ * task.*, discovery.*, share.*, …). Chat/call/profile intents must NOT go
+ * through this — they use the chat protocol for bonded-contact reliability.
+ */
+export async function deliverMessageEnvelopeViaRuntime(
+  ctx: OutboundMessagingContext,
+  transportPeerId: string,
+  envelope: EnvoyEnvelope,
+  dialHints: string[],
+  listenAddrs?: string[],
+  preferCircuitHints?: boolean,
+): Promise<ChatDeliverResult> {
+  return withChatSendLock(transportPeerId, async () => {
+    const mesh = ctx.requireMesh();
+    const conn = mesh.getPeerConnectionInfo(transportPeerId);
+    if (conn.connected || mesh.getConnectedPeerIds().includes(transportPeerId)) {
+      try {
+        await mesh.send(transportPeerId, envelope, { dialHints: [] });
+        return { delivered: true, deliveredAt: new Date().toISOString() };
+      } catch {
+        /* fall through to retry with rebuildDialHints */
+      }
+    }
+    return deliverMessageEnvelopeWithRetry({
+      mesh,
+      transportPeerId,
+      envelope,
+      dialHints,
+      peerListenAddrs: listenAddrs,
+      preferCircuitHints: preferCircuitHints ?? !conn.direct,
+      rebuildDialHints: () => dialHintsForChatViaRuntime(ctx, transportPeerId, listenAddrs),
     });
   });
 }
@@ -745,11 +811,15 @@ export async function warmContactConnectionTransportViaRuntime(
   }
 
   const dialableListen = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, dialHints);
-  void mesh.scrubPeerStoreDialHints(transportPeerId, dialableListen);
+  if (typeof mesh.scrubPeerStoreDialHints === "function") {
+    void mesh.scrubPeerStoreDialHints(transportPeerId, dialableListen);
+  }
 
   const preferCircuitHints = shouldPreferCircuitDialHints(listenAddrs, dialHints, transportPeerId);
 
-  void mesh.mergePeerStoreDialHints(transportPeerId, dialHints);
+  if (typeof mesh.mergePeerStoreDialHints === "function") {
+    void mesh.mergePeerStoreDialHints(transportPeerId, dialHints);
+  }
 
   const tearingDown =
     options?.redial === true ||
@@ -879,10 +949,12 @@ export async function sendChatViaRuntime(
     );
   }
 
-  void mesh.scrubPeerStoreDialHints(
-    transportPeerId,
-    mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, dialHints),
-  );
+  if (typeof mesh.scrubPeerStoreDialHints === "function") {
+    void mesh.scrubPeerStoreDialHints(
+      transportPeerId,
+      mergeDialablePeerListenAddrs(transportPeerId, listenAddrs, dialHints),
+    );
+  }
 
   console.log(
     `[sendChat] transportPeerId=${transportPeerId} connected=${conn.connected} envelopeRecipientPeerId=${recipientEnvelopePeerId ?? "(omitted)"} dialHints=${dialHints.length}`,

@@ -26,12 +26,13 @@ import {
   parseShareRequestPayload,
 } from "@envoymesh/protocol";
 import { EnvoyMesh } from "@envoymesh/network";
-import { readFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { readFile, mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { installEnvoyDataTransferReceiver } from "../src/data-transfer-inbound.js";
 import { sendVaultFileViaDataTransfer } from "../src/node-file-share.js";
+import { cleanupTempDir } from "./test-cleanup.js";
 import { NodeServiceImpl } from "../src/node-service-impl.js";
 import { handleInboundShareRequest } from "../src/share-inbound.js";
 
@@ -40,7 +41,7 @@ const profileDirs: string[] = [];
 
 afterEach(async () => {
   await Promise.all(meshes.splice(0).map((m) => m.stop().catch(() => {})));
-  await Promise.all(profileDirs.splice(0).map((d) => rm(d, { recursive: true, force: true })));
+  await Promise.all(profileDirs.splice(0).map((d) => cleanupTempDir(d)));
 });
 
 interface TestNode {

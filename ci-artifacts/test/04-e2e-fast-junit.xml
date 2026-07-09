@@ -1,0 +1,2171 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<testsuites name="vitest tests" tests="221" failures="3" errors="0" time="41.76951638">
+    <testsuite name="apps/cli/test/cli.test.ts" timestamp="2026-07-08T17:13:49.537Z" hostname="Allens-MacBook-Pro-3.local" tests="29" failures="0" errors="0" skipped="0" time="27.796418542">
+        <testcase classname="apps/cli/test/cli.test.ts" name="CLI &gt; help and version &gt; shows help with no args" time="0.09641075">
+        </testcase>
+        <testcase classname="apps/cli/test/cli.test.ts" name="CLI &gt; help and version &gt; shows help with --help" time="0.137922417">
+        </testcase>
+        <testcase classname="apps/cli/test/cli.test.ts" name="CLI &gt; help and version &gt; shows help with help" time="0.132850583">
+        </testcase>
+        <testcase classname="apps/cli/test/cli.test.ts" name="CLI &gt; help and version &gt; shows version" time="0.150713083">
+        </testcase>
+        <testcase classname="apps/cli/test/cli.test.ts" name="CLI &gt; help and version &gt; shows version with -v" time="0.154554334">
+        </testcase>
+        <testcase classname="apps/cli/test/cli.test.ts" name="CLI &gt; setup &gt; setup command exists" time="10.005418542">
+        </testcase>
+        <testcase classname="apps/cli/test/cli.test.ts" name="CLI &gt; setup &gt; setup works from repo root" time="10.00632375">
+        </testcase>
+        <testcase classname="apps/cli/test/cli.test.ts" name="CLI &gt; status and doctor &gt; status shows health check" time="2.538972208">
+        </testcase>
+        <testcase classname="apps/cli/test/cli.test.ts" name="CLI &gt; status and doctor &gt; doctor shows diagnostics" time="0.144370083">
+        </testcase>
+        <testcase classname="apps/cli/test/cli.test.ts" name="CLI &gt; identity &gt; shows identity when config exists" time="0.097508166">
+        </testcase>
+        <testcase classname="apps/cli/test/cli.test.ts" name="CLI &gt; identity &gt; id alias works" time="0.095380958">
+        </testcase>
+        <testcase classname="apps/cli/test/cli.test.ts" name="CLI &gt; config &gt; shows bridge config" time="0.093060042">
+        </testcase>
+        <testcase classname="apps/cli/test/cli.test.ts" name="CLI &gt; version &gt; shows versions" time="0.130388125">
+        </testcase>
+        <testcase classname="apps/cli/test/cli.test.ts" name="CLI &gt; gateway &gt; gateway status reports" time="0.100902583">
+        </testcase>
+        <testcase classname="apps/cli/test/cli.test.ts" name="CLI &gt; gateway &gt; gateway with unknown subcommand shows usage" time="0.094298917">
+        </testcase>
+        <testcase classname="apps/cli/test/cli.test.ts" name="CLI &gt; gateway &gt; gw alias works" time="0.102412125">
+        </testcase>
+        <testcase classname="apps/cli/test/cli.test.ts" name="CLI &gt; unknown command &gt; shows error for unknown command" time="0.088352208">
+        </testcase>
+        <testcase classname="apps/cli/test/cli.test.ts" name="CLI &gt; openclaw passthrough &gt; openclaw --version passes through" time="0.127331625">
+        </testcase>
+        <testcase classname="apps/cli/test/cli.test.ts" name="CLI &gt; openclaw passthrough &gt; oc alias works" time="0.1239335">
+        </testcase>
+        <testcase classname="apps/cli/test/cli.test.ts" name="CLI helpers (unit) &gt; handles empty args gracefully" time="0.106076875">
+        </testcase>
+        <testcase classname="apps/cli/test/cli.test.ts" name="CLI helpers (unit) &gt; handles extra whitespace in args" time="2.448599583">
+        </testcase>
+        <testcase classname="apps/cli/test/cli.test.ts" name="CLI helpers (unit) &gt; all commands are listed in help" time="0.089462917">
+        </testcase>
+        <testcase classname="apps/cli/test/cli.test.ts" name="CLI non-destructive commands &gt; discover returns without error" time="0.109823959">
+        </testcase>
+        <testcase classname="apps/cli/test/cli.test.ts" name="CLI non-destructive commands &gt; peers returns without error" time="0.101370333">
+        </testcase>
+        <testcase classname="apps/cli/test/cli.test.ts" name="CLI non-destructive commands &gt; logs returns without error" time="0.146268333">
+        </testcase>
+        <testcase classname="apps/cli/test/cli.test.ts" name="CLI non-destructive commands &gt; vault list returns without error" time="0.09353575">
+        </testcase>
+        <testcase classname="apps/cli/test/cli.test.ts" name="CLI non-destructive commands &gt; send without args shows usage" time="0.093828834">
+        </testcase>
+        <testcase classname="apps/cli/test/cli.test.ts" name="CLI non-destructive commands &gt; agent without args shows usage" time="0.090911417">
+        </testcase>
+        <testcase classname="apps/cli/test/cli.test.ts" name="CLI non-destructive commands &gt; chat without args shows usage" time="0.090859292">
+        </testcase>
+    </testsuite>
+    <testsuite name="apps/relay/test/home-tunnel-recovery.test.ts" timestamp="2026-07-08T17:13:49.541Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/relay/test/relay-handlers.test.ts" timestamp="2026-07-08T17:13:49.541Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/relay/test/relay-health.test.ts" timestamp="2026-07-08T17:13:49.541Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/mobile/test/decode-envoy-pair-qr.test.ts" timestamp="2026-07-08T17:13:49.541Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/mobile/test/scan-envoy-pair-native.test.ts" timestamp="2026-07-08T17:13:49.541Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/bonds/test/bonds.test.ts" timestamp="2026-07-08T17:13:49.541Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/identity/test/did-registration.test.ts" timestamp="2026-07-08T17:13:49.542Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/identity/test/identity.test.ts" timestamp="2026-07-08T17:13:49.542Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/mobile-models/test/index.test.ts" timestamp="2026-07-08T17:13:49.542Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/local-store/test/agent-activity-store.test.ts" timestamp="2026-07-08T17:13:49.542Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/local-store/test/agent-identity-store.test.ts" timestamp="2026-07-08T17:13:49.542Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/local-store/test/audit-query-index.test.ts" timestamp="2026-07-08T17:13:49.542Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/local-store/test/chain-reports-store.test.ts" timestamp="2026-07-08T17:13:49.542Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/local-store/test/chat-log-store.test.ts" timestamp="2026-07-08T17:13:49.542Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/local-store/test/chat-room-pending-message-store.test.ts" timestamp="2026-07-08T17:13:49.542Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/local-store/test/chat-room-pending-sync-store.test.ts" timestamp="2026-07-08T17:13:49.542Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/local-store/test/chat-room-store.test.ts" timestamp="2026-07-08T17:13:49.542Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/local-store/test/commerce-receipt-store.test.ts" timestamp="2026-07-08T17:13:49.543Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/local-store/test/connectivity-stage-d.test.ts" timestamp="2026-07-08T17:13:49.543Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/local-store/test/contact-owner-key-store.test.ts" timestamp="2026-07-08T17:13:49.543Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/local-store/test/cost-rollup-store.test.ts" timestamp="2026-07-08T17:13:49.543Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/local-store/test/device-authorization-store.test.ts" timestamp="2026-07-08T17:13:49.543Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/local-store/test/discovery-digest.test.ts" timestamp="2026-07-08T17:13:49.543Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/local-store/test/jsonl-query-index.test.ts" timestamp="2026-07-08T17:13:49.543Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/local-store/test/jsonl-resilience.test.ts" timestamp="2026-07-08T17:13:49.543Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/local-store/test/multihop-discovery-store.test.ts" timestamp="2026-07-08T17:13:49.543Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/local-store/test/peer-directory.test.ts" timestamp="2026-07-08T17:13:49.543Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/local-store/test/peer-profile-cache.test.ts" timestamp="2026-07-08T17:13:49.543Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/local-store/test/relay-manager.test.ts" timestamp="2026-07-08T17:13:49.544Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/local-store/test/reputation-anchor-store.test.ts" timestamp="2026-07-08T17:13:49.544Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/local-store/test/session-token-store.test.ts" timestamp="2026-07-08T17:13:49.544Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/local-store/test/storage-gate.test.ts" timestamp="2026-07-08T17:13:49.544Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/local-store/test/task-runtime-state.test.ts" timestamp="2026-07-08T17:13:49.544Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/local-store/test/wan-connectivity-axes.test.ts" timestamp="2026-07-08T17:13:49.544Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/agent-activity-map.test.ts" timestamp="2026-07-08T17:13:49.544Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/agent-interaction.test.ts" timestamp="2026-07-08T17:13:49.544Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/agent-network-mode.test.ts" timestamp="2026-07-08T17:13:49.544Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/agent-visibility.test.ts" timestamp="2026-07-08T17:13:49.544Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/ai-embedding-limits.test.ts" timestamp="2026-07-08T17:13:49.545Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/ai-identity-prefix.test.ts" timestamp="2026-07-08T17:13:49.545Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/ai-knowledge-base.test.ts" timestamp="2026-07-08T17:13:49.545Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/answer-block-file.test.ts" timestamp="2026-07-08T17:13:49.545Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/auto-reply-limits.test.ts" timestamp="2026-07-08T17:13:49.545Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/autonomous-policy-defaults.test.ts" timestamp="2026-07-08T17:13:49.545Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/capability-intent-routing-extensions.test.ts" timestamp="2026-07-08T17:13:49.545Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/capability-intent-routing.test.ts" timestamp="2026-07-08T17:13:49.545Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/capability-provider.test.ts" timestamp="2026-07-08T17:13:49.546Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/capability-route-executor.test.ts" timestamp="2026-07-08T17:13:49.546Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/chat-actor.test.ts" timestamp="2026-07-08T17:13:49.546Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/chat-attachments.test.ts" timestamp="2026-07-08T17:13:49.546Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/chat-delivered.test.ts" timestamp="2026-07-08T17:13:49.546Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/chat-device-auth.test.ts" timestamp="2026-07-08T17:13:49.546Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/chat-room-integration.test.ts" timestamp="2026-07-08T17:13:49.546Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/chat-room-service.test.ts" timestamp="2026-07-08T17:13:49.546Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/commerce-receipt.test.ts" timestamp="2026-07-08T17:13:49.546Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/connectivity-tuning.test.ts" timestamp="2026-07-08T17:13:49.546Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/contact-ai-access.test.ts" timestamp="2026-07-08T17:13:49.547Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/contact-compose-draft-scope.test.ts" timestamp="2026-07-08T17:13:49.547Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/contact-notes-sync-scope.test.ts" timestamp="2026-07-08T17:13:49.547Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/default-bootstrap.test.ts" timestamp="2026-07-08T17:13:49.547Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/did-import.test.ts" timestamp="2026-07-08T17:13:49.547Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/discovery-hop.test.ts" timestamp="2026-07-08T17:13:49.547Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/discovery-location.test.ts" timestamp="2026-07-08T17:13:49.547Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/discovery-privacy.test.ts" timestamp="2026-07-08T17:13:49.547Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/discovery-referral-attestation.test.ts" timestamp="2026-07-08T17:13:49.547Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/document-acquisition.test.ts" timestamp="2026-07-08T17:13:49.547Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/document-agent-loop.test.ts" timestamp="2026-07-08T17:13:49.547Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/document-autonomy.test.ts" timestamp="2026-07-08T17:13:49.547Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/emp-supported-capabilities.test.ts" timestamp="2026-07-08T17:13:49.547Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/envoy-contact-link.test.ts" timestamp="2026-07-08T17:13:49.547Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/envoy-disclosure.test.ts" timestamp="2026-07-08T17:13:49.548Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/envoy-pair-uri.test.ts" timestamp="2026-07-08T17:13:49.548Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/friend-autopilot.test.ts" timestamp="2026-07-08T17:13:49.548Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/group-chat-delivery.test.ts" timestamp="2026-07-08T17:13:49.548Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/h2a-wire-semantics.test.ts" timestamp="2026-07-08T17:13:49.548Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/ipfs-pinning.test.ts" timestamp="2026-07-08T17:13:49.548Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/knowledge-syndication.test.ts" timestamp="2026-07-08T17:13:49.549Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/library-request-share.test.ts" timestamp="2026-07-08T17:13:49.549Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/model-thinking.test.ts" timestamp="2026-07-08T17:13:49.549Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/owner-agent-chain.test.ts" timestamp="2026-07-08T17:13:49.549Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/owner-agent-loop.test.ts" timestamp="2026-07-08T17:13:49.549Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/owner-agent-planner.test.ts" timestamp="2026-07-08T17:13:49.549Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/owner-did-presentation.test.ts" timestamp="2026-07-08T17:13:49.550Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/profile-capabilities.test.ts" timestamp="2026-07-08T17:13:49.550Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/profile-media.test.ts" timestamp="2026-07-08T17:13:49.550Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/setup-sponsor-friend.test.ts" timestamp="2026-07-08T17:13:49.550Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/social-proxy-session.test.ts" timestamp="2026-07-08T17:13:49.550Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/strip-image-metadata.test.ts" timestamp="2026-07-08T17:13:49.550Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/terminal-wire.test.ts" timestamp="2026-07-08T17:13:49.550Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/wan-join-invite-limits.test.ts" timestamp="2026-07-08T17:13:49.550Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/wan-join-invite.test.ts" timestamp="2026-07-08T17:13:49.550Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/wan-signoff-evidence.test.ts" timestamp="2026-07-08T17:13:49.551Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/api/test/wan-two-nat-checklist.test.ts" timestamp="2026-07-08T17:13:49.551Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/mobile-identity/test/identity-interop.test.ts" timestamp="2026-07-08T17:13:49.551Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/mobile-identity/test/index.test.ts" timestamp="2026-07-08T17:13:49.551Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/ipfs-helia/test/helia-ipfs-export.test.ts" timestamp="2026-07-08T17:13:49.551Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/mobile-storage/test/agent-activity-store.test.ts" timestamp="2026-07-08T17:13:49.551Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/mobile-storage/test/audit-journal-store.test.ts" timestamp="2026-07-08T17:13:49.552Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/mobile-storage/test/index.test.ts" timestamp="2026-07-08T17:13:49.552Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/mobile-vault/test/index.test.ts" timestamp="2026-07-08T17:13:49.552Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/mobile-node/test/data-transfer.test.ts" timestamp="2026-07-08T17:13:49.552Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/mobile-node/test/document-agent-mobile-e2e.test.ts" timestamp="2026-07-08T17:13:49.552Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/mobile-node/test/home-remote-assistant.test.ts" timestamp="2026-07-08T17:13:49.552Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/mobile-node/test/home-remote-client.test.ts" timestamp="2026-07-08T17:13:49.552Z" hostname="Allens-MacBook-Pro-3.local" tests="9" failures="0" errors="0" skipped="7" time="0.908977875">
+        <testcase classname="packages/mobile-node/test/home-remote-client.test.ts" name="terminalPathFromAttachWsUrl &gt; extracts path and query from loopback attach URL" time="0.000819291">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/home-remote-client.test.ts" name="HomeRemoteClient RPC &gt; calls JSON-RPC methods over a mock home WebSocket" time="0.017357875">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/home-remote-client.test.ts" name="HomeRemoteClient RPC &gt; falls back to the next candidate when the first is unreachable" time="0.889974125">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/home-remote-client.test.ts" name="HomeRemoteClient RPC &gt; prefers the higher-priority candidate when reachable" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/home-remote-client.test.ts" name="HomeRemoteClient RPC &gt; notifies onActiveTransportChange when a transport is selected" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/home-remote-client.test.ts" name="HomeRemoteClient RPC &gt; selects the libp2p candidate when a custom createTransport opens it" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/home-remote-client.test.ts" name="HomeRemoteClient RPC &gt; clears this.ws after a failed candidate so racing RPCs don&apos;t send on a dead socket" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/home-remote-client.test.ts" name="HomeRemoteClient RPC &gt; backoff cooldown skips higher-priority candidates that just failed" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/home-remote-client.test.ts" name="HomeRemoteClient RPC &gt; dispose() clears the probe cooldown and the upgrading guard" time="0">
+            <skipped/>
+        </testcase>
+    </testsuite>
+    <testsuite name="packages/mobile-node/test/home-remote-terminal.test.ts" timestamp="2026-07-08T17:13:49.554Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/mobile-node/test/index.test.ts" timestamp="2026-07-08T17:13:49.554Z" hostname="Allens-MacBook-Pro-3.local" tests="108" failures="0" errors="0" skipped="36" time="0.308362459">
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; construction &gt; creates a MobileNode with given config" time="0.001603917">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; construction &gt; has no state before initialization" time="0.000200916">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; construction &gt; createMobileNode is a convenience factory" time="0.000131583">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; toRelayDirectClientWsUrl &gt; replaces trailing /ws with /ws/client once (no doubling)" time="0.000226208">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; toRelayDirectClientWsUrl &gt; appends /ws/client when URL has no path" time="0.000094292">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; toRelayDirectClientWsUrl &gt; leaves /ws/client URLs unchanged" time="0.00007275">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; toRelayDirectClientWsUrl &gt; strips trailing slashes before rewriting" time="0.0000615">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; toRelayDirectClientWsUrl &gt; returns empty string for whitespace-only URL" time="0.000059375">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; toRelayDirectClientWsUrl &gt; strips the QR&apos;s ?target=…&amp;token=… query string before resolving the path (regression)" time="0.000077292">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; toRelayDirectClientWsUrl &gt; strips query string from a bare-origin URL before appending /ws/client" time="0.000098375">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; standalone identity &gt; initStandalone generates owner, device, and agent identities" time="0.032557875">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; standalone identity &gt; after initStandalone, sharedIdentity is false" time="0.001601917">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; standalone identity &gt; initNode after initStandalone returns correct IDs" time="0.001889">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; standalone identity &gt; updateHumanProfile persists discoveryLocation and precision" time="0.00987725">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; standalone identity &gt; initStandalone without prior init also triggers standalone init" time="0.002229">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; shareFile (FS-C) &gt; rejects when the node is not running" time="0.001529584">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; shareFile (FS-C) &gt; rejects traversal in vault path before resolving peer" time="0.134103208">
+            <system-out>
+[mobile-node] starting libp2p mesh (browser-mode), bootstrap: [ &apos;/dns4/relay.example.com/tcp/9000/ws&apos; ]
+
+[mobile-node] libp2p mesh started, peerId=12D3KooWABzjLDzitRFEhuvADdZXFF5DA3u5kCFJGB99G6USW6Ni
+
+            </system-out>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; shared identity (import from home node) &gt; importOwnerIdentity sets sharedIdentity to true" time="0.001453833">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; shared identity (import from home node) &gt; shared identity uses same ownerId but different deviceId" time="0.000968416">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; shared identity (import from home node) &gt; importOwnerIdentity reuses opts.device (pairWithHomeNode must not regenerate device)" time="0.000738667">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; lifecycle &gt; startNode transitions to running and emits events" time="0.005662125">
+            <system-out>
+[mobile-node] starting libp2p mesh (browser-mode), bootstrap: [ &apos;/dns4/relay.example.com/tcp/9000/ws&apos; ]
+
+[mobile-node] libp2p mesh started, peerId=12D3KooWABzjLDzitRFEhuvADdZXFF5DA3u5kCFJGB99G6USW6Ni
+
+            </system-out>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; lifecycle &gt; stopNode transitions to offline" time="0.005326958">
+            <system-out>
+[mobile-node] starting libp2p mesh (browser-mode), bootstrap: [ &apos;/dns4/relay.example.com/tcp/9000/ws&apos; ]
+
+[mobile-node] libp2p mesh started, peerId=12D3KooWABzjLDzitRFEhuvADdZXFF5DA3u5kCFJGB99G6USW6Ni
+
+            </system-out>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; lifecycle &gt; getNodeStatus returns offline for uninitialized node" time="0.000824916">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; getProfile &gt; returns owner and device identity" time="0.000725375">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; getProfile &gt; returns null deviceCertificate in standalone mode" time="0.0006925">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; bond management &gt; sendHello sends bond.request (relay) and returns optimistic accept" time="0.007384125">
+            <system-out>
+[mobile-node] starting libp2p mesh (browser-mode), bootstrap: []
+
+[mobile-node] libp2p mesh started, peerId=12D3KooWABzjLDzitRFEhuvADdZXFF5DA3u5kCFJGB99G6USW6Ni
+
+            </system-out>
+            <system-err>
+[mobile-node] sendHello mesh send failed, using relay: multiaddrs[0].getComponents is not a function
+
+            </system-err>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; bond management &gt; sendHello throws when target peer id cannot be resolved" time="0.004412709">
+            <system-out>
+[mobile-node] starting libp2p mesh (browser-mode), bootstrap: []
+
+[mobile-node] libp2p mesh started, peerId=12D3KooWABzjLDzitRFEhuvADdZXFF5DA3u5kCFJGB99G6USW6Ni
+
+            </system-out>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; bond management &gt; getBonds returns bond list from trust store" time="0.00405425">
+            <system-out>
+[mobile-node] starting libp2p mesh (browser-mode), bootstrap: []
+
+[mobile-node] libp2p mesh started, peerId=12D3KooWABzjLDzitRFEhuvADdZXFF5DA3u5kCFJGB99G6USW6Ni
+
+            </system-out>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; bond management &gt; storePendingHelloRequest records a pending accept (same as desktop NodeService)" time="0.003353209">
+            <system-out>
+[mobile-node] starting libp2p mesh (browser-mode), bootstrap: []
+
+[mobile-node] libp2p mesh started, peerId=12D3KooWABzjLDzitRFEhuvADdZXFF5DA3u5kCFJGB99G6USW6Ni
+
+[mobile-node] stored pending hello request: messageId=m1, from=o1
+
+            </system-out>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; bond management &gt; acceptHello applies a pending bond and clears the queue" time="0.005069167">
+            <system-out>
+[mobile-node] starting libp2p mesh (browser-mode), bootstrap: []
+
+[mobile-node] libp2p mesh started, peerId=12D3KooWABzjLDzitRFEhuvADdZXFF5DA3u5kCFJGB99G6USW6Ni
+
+[mobile-node] stored pending hello request: messageId=acc1, from=envoy:owner:alice
+
+            </system-out>
+            <system-err>
+[mobile-node] mesh bond.accept failed, falling back to relay: multiaddrs[0].getComponents is not a function
+
+            </system-err>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; bond management &gt; declineHello drops a pending request without creating a bond" time="0.003510166">
+            <system-out>
+[mobile-node] starting libp2p mesh (browser-mode), bootstrap: []
+
+[mobile-node] libp2p mesh started, peerId=12D3KooWABzjLDzitRFEhuvADdZXFF5DA3u5kCFJGB99G6USW6Ni
+
+[mobile-node] stored pending hello request: messageId=dec1, from=envoy:owner:bob
+[mobile-node] declineHello from envoy:owner:bob: no thanks
+
+            </system-out>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; bond management &gt; blockPeer sets trust level to blocked" time="0.003721916">
+            <system-out>
+[mobile-node] starting libp2p mesh (browser-mode), bootstrap: []
+
+[mobile-node] libp2p mesh started, peerId=12D3KooWABzjLDzitRFEhuvADdZXFF5DA3u5kCFJGB99G6USW6Ni
+
+            </system-out>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; bond management &gt; unblockPeer removes trust entry" time="0.003666375">
+            <system-out>
+[mobile-node] starting libp2p mesh (browser-mode), bootstrap: []
+
+[mobile-node] libp2p mesh started, peerId=12D3KooWABzjLDzitRFEhuvADdZXFF5DA3u5kCFJGB99G6USW6Ni
+
+            </system-out>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; bond management &gt; revokeBond removes trust entry and emits bond:revoked" time="0.003461375">
+            <system-out>
+[mobile-node] starting libp2p mesh (browser-mode), bootstrap: []
+
+[mobile-node] libp2p mesh started, peerId=12D3KooWABzjLDzitRFEhuvADdZXFF5DA3u5kCFJGB99G6USW6Ni
+
+            </system-out>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; messaging &gt; forwardEnvelope rejects malformed JSON" time="0.001629166">
+            <system-err>
+[mobile-node] forwardEnvelope parse: [
+  {
+    &quot;expected&quot;: &quot;string&quot;,
+    &quot;code&quot;: &quot;invalid_type&quot;,
+    &quot;path&quot;: [
+      &quot;messageId&quot;
+    ],
+    &quot;message&quot;: &quot;Invalid input: expected string, received undefined&quot;
+  },
+  {
+    &quot;expected&quot;: &quot;string&quot;,
+    &quot;code&quot;: &quot;invalid_type&quot;,
+    &quot;path&quot;: [
+      &quot;createdAt&quot;
+    ],
+    &quot;message&quot;: &quot;Invalid input: expected string, received undefined&quot;
+  },
+  {
+    &quot;expected&quot;: &quot;string&quot;,
+    &quot;code&quot;: &quot;invalid_type&quot;,
+    &quot;path&quot;: [
+      &quot;senderPeerId&quot;
+    ],
+    &quot;message&quot;: &quot;Invalid input: expected string, received undefined&quot;
+  },
+  {
+    &quot;expected&quot;: &quot;string&quot;,
+    &quot;code&quot;: &quot;invalid_type&quot;,
+    &quot;path&quot;: [
+      &quot;senderPublicKey&quot;
+    ],
+    &quot;message&quot;: &quot;Invalid input: expected string, received undefined&quot;
+  },
+  {
+    &quot;code&quot;: &quot;invalid_value&quot;,
+    &quot;values&quot;: [
+      &quot;human&quot;,
+      &quot;agent&quot;,
+      &quot;system&quot;
+    ],
+    &quot;path&quot;: [
+      &quot;senderRole&quot;
+    ],
+    &quot;message&quot;: &quot;Invalid option: expected one of \&quot;human\&quot;|\&quot;agent\&quot;|\&quot;system\&quot;&quot;
+  },
+  {
+    &quot;code&quot;: &quot;invalid_value&quot;,
+    &quot;values&quot;: [
+      &quot;human&quot;,
+      &quot;agent&quot;,
+      &quot;system&quot;
+    ],
+    &quot;path&quot;: [
+      &quot;recipientRole&quot;
+    ],
+    &quot;message&quot;: &quot;Invalid option: expected one of \&quot;human\&quot;|\&quot;agent\&quot;|\&quot;system\&quot;&quot;
+  },
+  {
+    &quot;code&quot;: &quot;invalid_value&quot;,
+    &quot;values&quot;: [
+      &quot;system.ping&quot;,
+      &quot;system.signal&quot;,
+      &quot;agent.card.request&quot;,
+      &quot;agent.card.response&quot;,
+      &quot;auth.challenge&quot;,
+      &quot;auth.challenge.response&quot;,
+      &quot;bond.request&quot;,
+      &quot;bond.accept&quot;,
+      &quot;bond.challenge&quot;,
+      &quot;bond.challenge.response&quot;,
+      &quot;discovery.request&quot;,
+      &quot;discovery.response&quot;,
+      &quot;relay.peers.request&quot;,
+      &quot;relay.peers.response&quot;,
+      &quot;relay.checkin&quot;,
+      &quot;relay.lookup&quot;,
+      &quot;relay.lookup.response&quot;,
+      &quot;relay.hints.request&quot;,
+      &quot;relay.hints.response&quot;,
+      &quot;relay.join.request&quot;,
+      &quot;relay.join.response&quot;,
+      &quot;relay.register&quot;,
+      &quot;relay.register.response&quot;,
+      &quot;relay.summary&quot;,
+      &quot;chat.message&quot;,
+      &quot;chat.delivered&quot;,
+      &quot;chat.room.sync&quot;,
+      &quot;chat.room.message&quot;,
+      &quot;knowledge.query&quot;,
+      &quot;knowledge.response&quot;,
+      &quot;task.mandate&quot;,
+      &quot;task.propose&quot;,
+      &quot;task.negotiate&quot;,
+      &quot;task.accept&quot;,
+      &quot;task.reject&quot;,
+      &quot;task.cancel&quot;,
+      &quot;task.heartbeat&quot;,
+      &quot;task.result&quot;,
+      &quot;report.create&quot;,
+      &quot;sync.state&quot;,
+      &quot;device.pair.request&quot;,
+      &quot;device.pair.approve&quot;,
+      &quot;device.pair.deferred&quot;,
+      &quot;device.revoke&quot;,
+      &quot;device.merge&quot;,
+      &quot;rendezvous.register&quot;,
+      &quot;rendezvous.query&quot;,
+      &quot;rendezvous.response&quot;,
+      &quot;share.preview&quot;,
+      &quot;share.request&quot;,
+      &quot;share.accept&quot;,
+      &quot;social.intro.owner-ready&quot;,
+      &quot;social.intro.propose&quot;,
+      &quot;social.intro.sync&quot;,
+      &quot;broadcast.request&quot;,
+      &quot;broadcast.response&quot;,
+      &quot;broadcast.cancel&quot;,
+      &quot;task.feedback&quot;,
+      &quot;official.credential&quot;,
+      &quot;profile.sync&quot;,
+      &quot;profile.request&quot;,
+      &quot;profile.response&quot;,
+      &quot;call.invite&quot;,
+      &quot;call.reinvite&quot;,
+      &quot;call.accept&quot;,
+      &quot;call.reject&quot;,
+      &quot;call.hangup&quot;,
+      &quot;call.ice-candidate&quot;,
+      &quot;call.mute&quot;,
+      &quot;task.chain.mandate&quot;,
+      &quot;task.chain.propose&quot;,
+      &quot;task.chain.bid&quot;,
+      &quot;task.chain.accept&quot;,
+      &quot;task.chain.partial&quot;,
+      &quot;task.chain.merge&quot;,
+      &quot;task.chain.cancel&quot;,
+      &quot;task.chain.heartbeat&quot;,
+      &quot;task.chain.report&quot;,
+      &quot;task.chain.handoff&quot;,
+      &quot;task.chain.delegate&quot;,
+      &quot;task.chain.relay&quot;,
+      &quot;task.chain.arbitration&quot;
+    ],
+    &quot;path&quot;: [
+      &quot;intent&quot;
+    ],
+    &quot;message&quot;: &quot;Invalid option: expected one of \&quot;system.ping\&quot;|\&quot;system.signal\&quot;|\&quot;agent.card.request\&quot;|\&quot;agent.card.response\&quot;|\&quot;auth.challenge\&quot;|\&quot;auth.challenge.response\&quot;|\&quot;bond.request\&quot;|\&quot;bond.accept\&quot;|\&quot;bond.challenge\&quot;|\&quot;bond.challenge.response\&quot;|\&quot;discovery.request\&quot;|\&quot;discovery.response\&quot;|\&quot;relay.peers.request\&quot;|\&quot;relay.peers.response\&quot;|\&quot;relay.checkin\&quot;|\&quot;relay.lookup\&quot;|\&quot;relay.lookup.response\&quot;|\&quot;relay.hints.request\&quot;|\&quot;relay.hints.response\&quot;|\&quot;relay.join.request\&quot;|\&quot;relay.join.response\&quot;|\&quot;relay.register\&quot;|\&quot;relay.register.response\&quot;|\&quot;relay.summary\&quot;|\&quot;chat.message\&quot;|\&quot;chat.delivered\&quot;|\&quot;chat.room.sync\&quot;|\&quot;chat.room.message\&quot;|\&quot;knowledge.query\&quot;|\&quot;knowledge.response\&quot;|\&quot;task.mandate\&quot;|\&quot;task.propose\&quot;|\&quot;task.negotiate\&quot;|\&quot;task.accept\&quot;|\&quot;task.reject\&quot;|\&quot;task.cancel\&quot;|\&quot;task.heartbeat\&quot;|\&quot;task.result\&quot;|\&quot;report.create\&quot;|\&quot;sync.state\&quot;|\&quot;device.pair.request\&quot;|\&quot;device.pair.approve\&quot;|\&quot;device.pair.deferred\&quot;|\&quot;device.revoke\&quot;|\&quot;device.merge\&quot;|\&quot;rendezvous.register\&quot;|\&quot;rendezvous.query\&quot;|\&quot;rendezvous.response\&quot;|\&quot;share.preview\&quot;|\&quot;share.request\&quot;|\&quot;share.accept\&quot;|\&quot;social.intro.owner-ready\&quot;|\&quot;social.intro.propose\&quot;|\&quot;social.intro.sync\&quot;|\&quot;broadcast.request\&quot;|\&quot;broadcast.response\&quot;|\&quot;broadcast.cancel\&quot;|\&quot;task.feedback\&quot;|\&quot;official.credential\&quot;|\&quot;profile.sync\&quot;|\&quot;profile.request\&quot;|\&quot;profile.response\&quot;|\&quot;call.invite\&quot;|\&quot;call.reinvite\&quot;|\&quot;call.accept\&quot;|\&quot;call.reject\&quot;|\&quot;call.hangup\&quot;|\&quot;call.ice-candidate\&quot;|\&quot;call.mute\&quot;|\&quot;task.chain.mandate\&quot;|\&quot;task.chain.propose\&quot;|\&quot;task.chain.bid\&quot;|\&quot;task.chain.accept\&quot;|\&quot;task.chain.partial\&quot;|\&quot;task.chain.merge\&quot;|\&quot;task.chain.cancel\&quot;|\&quot;task.chain.heartbeat\&quot;|\&quot;task.chain.report\&quot;|\&quot;task.chain.handoff\&quot;|\&quot;task.chain.delegate\&quot;|\&quot;task.chain.relay\&quot;|\&quot;task.chain.arbitration\&quot;&quot;
+  },
+  {
+    &quot;expected&quot;: &quot;string&quot;,
+    &quot;code&quot;: &quot;invalid_type&quot;,
+    &quot;path&quot;: [
+      &quot;signature&quot;
+    ],
+    &quot;message&quot;: &quot;Invalid input: expected string, received undefined&quot;
+  }
+]
+
+            </system-err>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; messaging &gt; forwardEnvelope rejects tampered signed envelope" time="0.003669">
+            <system-err>
+[mobile-node] forwardEnvelope: signature verification failed
+
+            </system-err>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; messaging &gt; sendChat does not throw" time="0.002089333">
+            <system-err>
+[mobile-node] sendChat: no envoy_* device id in trust store for this owner; using owner id as recipientPeerId — add bond with envelope peer id when available
+
+            </system-err>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; messaging &gt; listChatHistory returns persisted messages after sendChat" time="0.001371375">
+            <system-err>
+[mobile-node] sendChat: no envoy_* device id in trust store for this owner; using owner id as recipientPeerId — add bond with envelope peer id when available
+
+            </system-err>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; config &gt; getNodeConfig returns configured relays and profile directory" time="0.000358042">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; config &gt; listRelays returns the configured relay URLs" time="0.000102875">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; connection status &gt; getConnectionStatus returns offline when not started" time="0.000712833">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; connection status &gt; getConnectionStatus returns online after startNode" time="0.004014625">
+            <system-out>
+[mobile-node] starting libp2p mesh (browser-mode), bootstrap: [ &apos;/dns4/relay.example.com/tcp/9000/ws&apos; ]
+
+[mobile-node] libp2p mesh started, peerId=12D3KooWABzjLDzitRFEhuvADdZXFF5DA3u5kCFJGB99G6USW6Ni
+
+            </system-out>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; connection status &gt; getPeerConnectionInfo returns relay-connected" time="0.000764041">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; agent bridge &gt; getBridgeStatus returns disabled with agent peer ID" time="0.0007175">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; agent bridge &gt; getPairingPayload returns pairing data" time="0.000757208">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; AI / knowledge query &gt; knowledgeQuery throws when node not initialized" time="0.000143666">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; AI / knowledge query &gt; knowledgeQuery routes via configured providers after init (default mock)" time="0.00125525">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; events &gt; on() returns unsubscribe function" time="0.000737375">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; events &gt; hasListeners returns false for event with no listeners" time="0.000669333">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; events &gt; hasListeners returns true for event with listeners" time="0.000674875">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; events &gt; startNode emits node:online event" time="0.003908084">
+            <system-out>
+[mobile-node] starting libp2p mesh (browser-mode), bootstrap: [ &apos;/dns4/relay.example.com/tcp/9000/ws&apos; ]
+
+[mobile-node] libp2p mesh started, peerId=12D3KooWABzjLDzitRFEhuvADdZXFF5DA3u5kCFJGB99G6USW6Ni
+
+            </system-out>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; activity tracking &gt; recordOwnerActivity does not throw" time="0.000132167">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; activity tracking &gt; isOwnerOnline returns true in manual mode before activity" time="0.00008275">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; shared identity persistence &gt; persistSharedIdentity saves and can be restored" time="0.000825">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; shared identity persistence &gt; persistSharedIdentity saves device certificate JSON" time="0.001273333">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; shared identity persistence &gt; sendChat attaches device certificate in shared-identity mode" time="0.007583875">
+            <system-out>
+[mobile-node] starting libp2p mesh (browser-mode), bootstrap: [ &apos;/dns4/relay.example.com/tcp/9000/ws&apos; ]
+
+[mobile-node] libp2p mesh started, peerId=12D3KooWABzjLDzitRFEhuvADdZXFF5DA3u5kCFJGB99G6USW6Ni
+
+            </system-out>
+            <system-err>
+[mobile-node] sendChat: no envoy_* device id in trust store for this owner; using owner id as recipientPeerId — add bond with envelope peer id when available
+
+[mobile-node] device revocation sync from home failed: Error: homeRemote.notConfigured
+    at HomeRemoteClient.connectInternal (/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/mobile-node/src/home-remote-client.ts:221:40)
+    at processTicksAndRejections (node:internal/process/task_queues:103:5)
+
+            </system-err>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; shared identity persistence &gt; restoreSharedIdentity reconstructs full state" time="0.000943083">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; shared identity persistence &gt; restoreSharedIdentity sets sharedIdentity flag correctly" time="0.000737375">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; restoreFromSecureStorage &gt; throws if SecureStorage is not configured" time="0.000169667">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; restoreFromSecureStorage &gt; throws if no persisted identity exists" time="0.000163">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; restoreFromSecureStorage &gt; restores state from secure storage keys" time="0.003295625">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; paired-mode thin client (getBonds) &gt; returns local trust store when not paired" time="0.00116725">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; paired-mode thin client (getBonds) &gt; returns local trust store when paired but bootstrap has not run yet" time="0.000806458">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; paired-mode thin client (getBonds) &gt; returns the home&apos;s bonds (not the local trust store) when paired and bootstrap has run" time="0.000860708">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; paired-mode thin client (getBonds) &gt; falls back to the local trust store when paired but _homeBonds is null (bootstrap failed)" time="0.000784875">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; home-remote tunnel URL (paired) &gt; builds a clean tunnel URL when the stored relay URL has a trailing /ws path" time="0.000880209">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; home-remote tunnel URL (paired) &gt; strips query string from the pairing-time relay URL before rebuilding (regression)" time="0.000834542">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; home-remote tunnel URL (paired) &gt; appends /ws when the stored relay URL is the bare origin" time="0.000700833">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; home-remote tunnel URL (paired) &gt; returns no candidates when there is no session token" time="0.00075175">
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; inbound envelope routing &gt; emits chat:message for inbound chat.message envelope" time="0.001434917">
+            <system-err>
+[mobile-node] sendChat: no envoy_* device id in trust store for this owner; using owner id as recipientPeerId — add bond with envelope peer id when available
+
+            </system-err>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; inbound envelope routing &gt; sendChat persists message to listChatHistory" time="0.003381542">
+            <system-err>
+[mobile-node] sendChat: no envoy_* device id in trust store for this owner; using owner id as recipientPeerId — add bond with envelope peer id when available
+
+[mobile-node] sendChat: no envoy_* device id in trust store for this owner; using owner id as recipientPeerId — add bond with envelope peer id when available
+
+[mobile-node] sendChat: no envoy_* device id in trust store for this owner; using owner id as recipientPeerId — add bond with envelope peer id when available
+
+            </system-err>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; inbound envelope routing &gt; listChatHistory with limit works" time="0.00690175">
+            <system-err>
+[mobile-node] sendChat: no envoy_* device id in trust store for this owner; using owner id as recipientPeerId — add bond with envelope peer id when available
+
+[mobile-node] sendChat: no envoy_* device id in trust store for this owner; using owner id as recipientPeerId — add bond with envelope peer id when available
+
+[mobile-node] sendChat: no envoy_* device id in trust store for this owner; using owner id as recipientPeerId — add bond with envelope peer id when available
+
+[mobile-node] sendChat: no envoy_* device id in trust store for this owner; using owner id as recipientPeerId — add bond with envelope peer id when available
+
+[mobile-node] sendChat: no envoy_* device id in trust store for this owner; using owner id as recipientPeerId — add bond with envelope peer id when available
+
+            </system-err>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; inbound envelope routing &gt; routes inbound chat.message envelope to chat:message event" time="0.008179042">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; libp2p key persistence &gt; _loadOrCreateLibp2pKey creates a valid Ed25519 key" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; libp2p key persistence &gt; _loadOrCreateLibp2pKey returns the SAME key on second call (persistence)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; libp2p key persistence &gt; _loadOrCreateLibp2pKey handles corrupted localStorage gracefully" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; DHT search and advertise integration &gt; _searchDhtTopic returns empty array when mesh is not started" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; DHT search and advertise integration &gt; _advertiseTopicsOnDht is a no-op when mesh is not started" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; DHT search and advertise integration &gt; _advertiseTopicsOnDht calls contentRouting.provide for each topic when mesh is available" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; DHT search and advertise integration &gt; advertiseTopic normalizes topic and delegates to _advertiseTopicsOnDht" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; DHT search and advertise integration &gt; advertiseTopic throws for whitespace-only topic" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; DHT search and advertise integration &gt; stopAdvertiseTopic calls cancelReprovide when libp2p exposes it" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; DHT search and advertise integration &gt; searchPeers merges DHT results with trust store results when searching by displayName" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; DHT search and advertise integration &gt; searchPeers filters out self from DHT results" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; DHT advertise lifecycle &gt; _startDhtAdvertise schedules initial timer, _stopDhtAdvertise cancels it" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; DHT advertise lifecycle &gt; _stopDhtAdvertise is idempotent (safe to call twice)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; DHT advertise lifecycle &gt; _startDhtAdvertise replaces existing timer on second call" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; searchPeers self-filtering &gt; searchPeers filters out self by ownerId from trust store" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; searchPeers self-filtering &gt; searchPeers filters out self by agentPeerId" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; searchPeers self-filtering &gt; searchPeers returns trusted peers matching interest" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; _sendToRelay mesh vs relay routing &gt; sends non-chat messages via relay sockets (not mesh)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; _sendToRelay mesh vs relay routing &gt; sends chat messages via relay when trust store has no libp2pPeerId" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; _sendToRelay mesh vs relay routing &gt; sends chat via mesh when trust store has libp2pPeerId" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; stopNode cleanup &gt; stopNode drains all pending rendezvous queries" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; stopNode cleanup &gt; stopNode clears all relay backoff timers" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; stopNode cleanup &gt; stopNode cleans up DHT advertise timer" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; stopNode cleanup &gt; stopNode transitions status to offline" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; E2E two-node relay chat &gt; two nodes can exchange chat messages via simulated relay" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; E2E two-node relay chat &gt; two nodes with bonded relationship can see each other in search" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; E2E two-node relay chat &gt; sendHello followed by sendChat resolves libp2p peer ID from bond" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; E2E two-node relay chat &gt; stopNode on one side does not crash the other" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; IPFS export &gt; exportLibraryItemToIpfs throws when allowIpfs is false" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; IPFS export &gt; getIpfsEngineStatus reports Helia available on mobile" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; IPFS export &gt; verifyLibraryItemIpfsGateway rejects when IPFS is disabled" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; device dedup across re-pairs &gt; reuses the persisted device keypair for the same home node" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; device dedup across re-pairs &gt; mints distinct device keys for distinct home nodes" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; device dedup across re-pairs &gt; falls back to a fresh device when the persisted blob is corrupt" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/mobile-node/test/index.test.ts" name="MobileNode &gt; device dedup across re-pairs &gt; falls back to a fresh device when secureStorage is not configured" time="0">
+            <skipped/>
+        </testcase>
+    </testsuite>
+    <testsuite name="packages/mobile-node/test/libp2p-stream-socket.test.ts" timestamp="2026-07-08T17:13:49.566Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/mobile-node/test/library-import-e2e.test.ts" timestamp="2026-07-08T17:13:49.566Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/mobile-node/test/mobile-agent-card-e2e.test.ts" timestamp="2026-07-08T17:13:49.566Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/mobile-node/test/mobile-approval-e2e.test.ts" timestamp="2026-07-08T17:13:49.566Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/mobile-node/test/mobile-audit-drilldown.test.ts" timestamp="2026-07-08T17:13:49.567Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/mobile-node/test/mobile-audit-log.test.ts" timestamp="2026-07-08T17:13:49.567Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/mobile-node/test/mobile-chat-draft.test.ts" timestamp="2026-07-08T17:13:49.567Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/mobile-node/test/mobile-cloud-model.test.ts" timestamp="2026-07-08T17:13:49.567Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/mobile-node/test/mobile-ipfs-export.test.ts" timestamp="2026-07-08T17:13:49.567Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/mobile-node/test/mobile-ipfs-gateway-verify.test.ts" timestamp="2026-07-08T17:13:49.567Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/mobile-node/test/mobile-node-prefs.test.ts" timestamp="2026-07-08T17:13:49.568Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/mobile-node/test/mobile-profile-photo-e2e.test.ts" timestamp="2026-07-08T17:13:49.568Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/mobile-node/test/mobile-profile-photo-import.test.ts" timestamp="2026-07-08T17:13:49.568Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/mobile-node/test/mobile-profile-sync-e2e.test.ts" timestamp="2026-07-08T17:13:49.568Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/mobile-node/test/mobile-remote-bridge.test.ts" timestamp="2026-07-08T17:13:49.568Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/mobile-node/test/multi-device-shared-identity.test.ts" timestamp="2026-07-08T17:13:49.568Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/mobile-node/test/network-import-guard.test.ts" timestamp="2026-07-08T17:13:49.568Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/mobile-node/test/runtime-detection.test.ts" timestamp="2026-07-08T17:13:49.568Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/models/test/models.test.ts" timestamp="2026-07-08T17:13:49.568Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/models/test/pricing-catalog.test.ts" timestamp="2026-07-08T17:13:49.568Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/models/test/terminal-command-proposal.test.ts" timestamp="2026-07-08T17:13:49.568Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/models/test/terminal-suggest-response.test.ts" timestamp="2026-07-08T17:13:49.569Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/openclaw-runtime/test/index.test.ts" timestamp="2026-07-08T17:13:49.569Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/network/test/bootstrap-multiaddr-filter.test.ts" timestamp="2026-07-08T17:13:49.569Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/network/test/capability-registry.test.ts" timestamp="2026-07-08T17:13:49.569Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/network/test/capability-topic.test.ts" timestamp="2026-07-08T17:13:49.569Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/network/test/codec.test.ts" timestamp="2026-07-08T17:13:49.569Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/network/test/connection-stats.test.ts" timestamp="2026-07-08T17:13:49.569Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/network/test/connectivity-options.test.ts" timestamp="2026-07-08T17:13:49.569Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/network/test/data-framing.test.ts" timestamp="2026-07-08T17:13:49.569Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/network/test/dht-capability-topic.test.ts" timestamp="2026-07-08T17:13:49.569Z" hostname="Allens-MacBook-Pro-3.local" tests="15" failures="0" errors="0" skipped="15" time="1.069281125">
+        <testcase classname="packages/network/test/dht-capability-topic.test.ts" name="DHT capability topic providers &gt; findCapabilityTopicProviders settles (bounded query; no infinite hang)" time="1.068632167">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/network/test/dht-capability-topic.test.ts" name="DHT capability topic providers &gt; rejects capability topic APIs when DHT is disabled" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/network/test/dht-capability-topic.test.ts" name="signed capability topic record &gt; createSignedCapabilityTopicRecord produces a valid record" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/network/test/dht-capability-topic.test.ts" name="signed capability topic record &gt; verifySignedCapabilityTopicRecord passes with correct key" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/network/test/dht-capability-topic.test.ts" name="signed capability topic record &gt; verifySignedCapabilityTopicRecord fails with wrong key" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/network/test/dht-capability-topic.test.ts" name="signed capability topic record &gt; verifySignedCapabilityTopicRecord fails on stale record" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/network/test/dht-capability-topic.test.ts" name="signed capability topic record &gt; verifySignedCapabilityTopicRecord fails on empty fields" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/network/test/dht-capability-topic.test.ts" name="capability topic record multiaddr encoding &gt; encodeCapabilityTopicRecordToMultiaddr + decodeCapabilityTopicRecordFromMultiaddr roundtrip correctly" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/network/test/dht-capability-topic.test.ts" name="capability topic record multiaddr encoding &gt; decodeCapabilityTopicRecordFromMultiaddr returns null for non-capability multiaddr" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/network/test/dht-capability-topic.test.ts" name="capability topic record multiaddr encoding &gt; decodeCapabilityTopicRecordFromMultiaddr returns null for missing required params" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/network/test/dht-capability-topic.test.ts" name="capability topic record multiaddr encoding &gt; decodeCapabilityTopicRecordFromMultiaddr returns null for invalid ttl" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/network/test/dht-capability-topic.test.ts" name="capability topic record multiaddr encoding &gt; encode omits optional scope fields when not provided" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/network/test/dht-capability-topic.test.ts" name="provideCapabilityTopic with signing &gt; provideCapabilityTopic returns signed record when signingKey is provided" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/network/test/dht-capability-topic.test.ts" name="provideCapabilityTopic with signing &gt; provideCapabilityTopic returns no signedRecord when signingKey is omitted" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="packages/network/test/dht-capability-topic.test.ts" name="findCapabilityTopicProviders with verification &gt; findCapabilityTopicProviders returns array and includes signedRecord field" time="0">
+            <skipped/>
+        </testcase>
+    </testsuite>
+    <testsuite name="packages/network/test/dial-hint-sorting.test.ts" timestamp="2026-07-08T17:13:49.572Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/network/test/mdns-discovery.test.ts" timestamp="2026-07-08T17:13:49.572Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/network/test/open-stream-protocol-failure.test.ts" timestamp="2026-07-08T17:13:49.573Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/network/test/protocols.test.ts" timestamp="2026-07-08T17:13:49.573Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/network/test/quic-listen.test.ts" timestamp="2026-07-08T17:13:49.573Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/network/test/quic-transport.test.ts" timestamp="2026-07-08T17:13:49.573Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/network/test/raw-bytes.test.ts" timestamp="2026-07-08T17:13:49.573Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/network/test/reachability-tags.test.ts" timestamp="2026-07-08T17:13:49.573Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/network/test/send-expect-reply.test.ts" timestamp="2026-07-08T17:13:49.573Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/network/test/signed-ping.test.ts" timestamp="2026-07-08T17:13:49.576Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/network/test/signed-signal.test.ts" timestamp="2026-07-08T17:13:49.576Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/network/test/validate-envelope-protocol.test.ts" timestamp="2026-07-08T17:13:49.577Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/a2a-chat-notifications.test.ts" timestamp="2026-07-08T17:13:49.578Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/a2a-task-roundtrip.test.ts" timestamp="2026-07-08T17:13:49.578Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/a2a-tool-exposure.test.ts" timestamp="2026-07-08T17:13:49.579Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/agent-activity-hooks.test.ts" timestamp="2026-07-08T17:13:49.579Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/agent-adapter.test.ts" timestamp="2026-07-08T17:13:49.579Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/agent-card-a2e-full-daemon.test.ts" timestamp="2026-07-08T17:13:49.579Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/agent-card-a2e.test.ts" timestamp="2026-07-08T17:13:49.579Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/agent-card-auto-fetch.test.ts" timestamp="2026-07-08T17:13:49.579Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/agent-card-inbound.test.ts" timestamp="2026-07-08T17:13:49.580Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/agent-card-node-service-e2e.test.ts" timestamp="2026-07-08T17:13:49.580Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/agent-e2e-real.test.ts" timestamp="2026-07-08T17:13:49.580Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/agent-e2e.test.ts" timestamp="2026-07-08T17:13:49.580Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/agent-group-chat-responder.test.ts" timestamp="2026-07-08T17:13:49.580Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/agent-identity-context.test.ts" timestamp="2026-07-08T17:13:49.580Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/agent-share-proposal-store.test.ts" timestamp="2026-07-08T17:13:49.580Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/agent-visibility-ws.test.ts" timestamp="2026-07-08T17:13:49.581Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/ai-context.test.ts" timestamp="2026-07-08T17:13:49.581Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/approval-executor.test.ts" timestamp="2026-07-08T17:13:49.581Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/approval-queue.test.ts" timestamp="2026-07-08T17:13:49.583Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/approval-send-agent-chat-e2e.test.ts" timestamp="2026-07-08T17:13:49.583Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/args.test.ts" timestamp="2026-07-08T17:13:49.583Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/autonomous-inbound.test.ts" timestamp="2026-07-08T17:13:49.583Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/autonomous-integration.test.ts" timestamp="2026-07-08T17:13:49.584Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/bidirectional-chat-e2e.test.ts" timestamp="2026-07-08T17:13:49.584Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/bond-autonomy-guard.test.ts" timestamp="2026-07-08T17:13:49.584Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/bond-autonomy-inbound.test.ts" timestamp="2026-07-08T17:13:49.584Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/bond-autonomy-worker.test.ts" timestamp="2026-07-08T17:13:49.584Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/bond-challenge.test.ts" timestamp="2026-07-08T17:13:49.584Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/bond-inbound-extended.test.ts" timestamp="2026-07-08T17:13:49.584Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/bond-inbound.test.ts" timestamp="2026-07-08T17:13:49.584Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/bond-warm-coordinator.test.ts" timestamp="2026-07-08T17:13:49.584Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/bridge-async-mesh-reply.test.ts" timestamp="2026-07-08T17:13:49.584Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/bridge-config-store.test.ts" timestamp="2026-07-08T17:13:49.584Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/bridge-correlation-roundtrip.test.ts" timestamp="2026-07-08T17:13:49.584Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/bridge-discovery-async-e2e.test.ts" timestamp="2026-07-08T17:13:49.584Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/bridge-execute-tool.test.ts" timestamp="2026-07-08T17:13:49.584Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/bridge-gateway-integration.test.ts" timestamp="2026-07-08T17:13:49.585Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/bridge-identity-store.test.ts" timestamp="2026-07-08T17:13:49.585Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/bridge-index.test.ts" timestamp="2026-07-08T17:13:49.585Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/bridge-knowledge-async-e2e.test.ts" timestamp="2026-07-08T17:13:49.585Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/bridge-openclaw-agent-mock.test.ts" timestamp="2026-07-08T17:13:49.585Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/bridge-pipe.test.ts" timestamp="2026-07-08T17:13:49.585Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/broadcast-inbound-extended.test.ts" timestamp="2026-07-08T17:13:49.585Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/broadcast-inbound-matching.test.ts" timestamp="2026-07-08T17:13:49.585Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/broadcast-inbound.test.ts" timestamp="2026-07-08T17:13:49.585Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/bundled-paths.test.ts" timestamp="2026-07-08T17:13:49.585Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/call-ice-candidate.test.ts" timestamp="2026-07-08T17:13:49.585Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/call-integration.test.ts" timestamp="2026-07-08T17:13:49.585Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/call-manager.test.ts" timestamp="2026-07-08T17:13:49.585Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/call-reinvite.test.ts" timestamp="2026-07-08T17:13:49.585Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/call-response-envelopes.test.ts" timestamp="2026-07-08T17:13:49.585Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/call-sdp-validation.test.ts" timestamp="2026-07-08T17:13:49.585Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/call-send-invite.test.ts" timestamp="2026-07-08T17:13:49.585Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/call-signaling-chat-first-e2e.test.ts" timestamp="2026-07-08T17:13:49.586Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/call-signaling-connection-bound-e2e.test.ts" timestamp="2026-07-08T17:13:49.586Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/call-signaling-decline-e2e.test.ts" timestamp="2026-07-08T17:13:49.586Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/call-signaling-e2e-full-flow.test.ts" timestamp="2026-07-08T17:13:49.586Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/call-signaling-ice-trickle-e2e.test.ts" timestamp="2026-07-08T17:13:49.586Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/call-signaling-lifecycle-e2e.test.ts" timestamp="2026-07-08T17:13:49.586Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/call-signaling-stun-default-e2e.test.ts" timestamp="2026-07-08T17:13:49.586Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/call-signaling-unreachable-e2e.test.ts" timestamp="2026-07-08T17:13:49.586Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/call-signaling-video-e2e.test.ts" timestamp="2026-07-08T17:13:49.586Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/call-two-home-e2e.test.ts" timestamp="2026-07-08T17:13:49.586Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/capability-discovery-broadcast.test.ts" timestamp="2026-07-08T17:13:49.586Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/capability-discovery-topics.test.ts" timestamp="2026-07-08T17:13:49.586Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/capability-index.test.ts" timestamp="2026-07-08T17:13:49.586Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/capability-manifest.test.ts" timestamp="2026-07-08T17:13:49.586Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/capability-provider-route-e2e.test.ts" timestamp="2026-07-08T17:13:49.586Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/capability-provider-worker.test.ts" timestamp="2026-07-08T17:13:49.586Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/chain-bid-capability.test.ts" timestamp="2026-07-08T17:13:49.586Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/chain-bid-multiround.test.ts" timestamp="2026-07-08T17:13:49.586Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/chain-bid-strategy-composite.test.ts" timestamp="2026-07-08T17:13:49.586Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/chain-bid-strategy.test.ts" timestamp="2026-07-08T17:13:49.587Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/chain-budget-ledger.test.ts" timestamp="2026-07-08T17:13:49.587Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/chain-decomposer.test.ts" timestamp="2026-07-08T17:13:49.587Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/chain-defaults-rpc.test.ts" timestamp="2026-07-08T17:13:49.587Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/chain-e2e.test.ts" timestamp="2026-07-08T17:13:49.587Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/chain-handoff.test.ts" timestamp="2026-07-08T17:13:49.587Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/chain-inbound.test.ts" timestamp="2026-07-08T17:13:49.587Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/chain-llm.test.ts" timestamp="2026-07-08T17:13:49.587Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/chain-orchestrator.test.ts" timestamp="2026-07-08T17:13:49.587Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/chain-phase43.test.ts" timestamp="2026-07-08T17:13:49.587Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/chain-production.test.ts" timestamp="2026-07-08T17:13:49.587Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/chain-rebalance-policy.test.ts" timestamp="2026-07-08T17:13:49.587Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/chain-report-synthesizer.test.ts" timestamp="2026-07-08T17:13:49.587Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/chain-sensitivity-gate.test.ts" timestamp="2026-07-08T17:13:49.587Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/chain-worker.test.ts" timestamp="2026-07-08T17:13:49.587Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/chat-attachment-auto-accept.test.ts" timestamp="2026-07-08T17:13:49.587Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/chat-attachment.test.ts" timestamp="2026-07-08T17:13:49.587Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/chat-device-auth.test.ts" timestamp="2026-07-08T17:13:49.588Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/chat-diagnostics.test.ts" timestamp="2026-07-08T17:13:49.588Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/chat-draft-inbound.test.ts" timestamp="2026-07-08T17:13:49.588Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/chat-message.test.ts" timestamp="2026-07-08T17:13:49.588Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/chat-outbound-deliver-call.test.ts" timestamp="2026-07-08T17:13:49.588Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/chat-outbound-deliver.test.ts" timestamp="2026-07-08T17:13:49.588Z" hostname="Allens-MacBook-Pro-3.local" tests="27" failures="0" errors="0" skipped="18" time="0.867258542">
+        <testcase classname="apps/node/test/chat-outbound-deliver.test.ts" name="rotateDialHintsForRetry &gt; keeps direct LAN hints first on the first retry when LAN paths exist" time="0.000857917">
+        </testcase>
+        <testcase classname="apps/node/test/chat-outbound-deliver.test.ts" name="rotateDialHintsForRetry &gt; puts circuit hints first on later retries when only relay paths exist" time="0.000109792">
+        </testcase>
+        <testcase classname="apps/node/test/chat-outbound-deliver.test.ts" name="isChatAckFailureLikelyAfterWrite &gt; detects stream reset after write" time="0.00019675">
+        </testcase>
+        <testcase classname="apps/node/test/chat-outbound-deliver.test.ts" name="isChatAckFailureLikelyAfterWrite &gt; treats ack timeout as post-write failure (message likely delivered, no retry)" time="0.000123542">
+        </testcase>
+        <testcase classname="apps/node/test/chat-outbound-deliver.test.ts" name="deliverChatEnvelopeWithRetry &gt; retries after first send failure and succeeds on second attempt" time="0.801566291">
+            <system-out>
+[sendChat] closed 1 stale connection(s) before retry 2/3
+
+[sendChat] delivered on attempt 2/3
+
+            </system-out>
+            <system-err>
+[sendChat] attempt 1/3 failed for 12D3KooWRetr…: stale connection
+
+            </system-err>
+        </testcase>
+        <testcase classname="apps/node/test/chat-outbound-deliver.test.ts" name="deliverChatEnvelopeWithRetry &gt; warms path before first send when not connected" time="0.000246875">
+        </testcase>
+        <testcase classname="apps/node/test/chat-outbound-deliver.test.ts" name="deliverChatEnvelopeWithRetry &gt; upgrades relay connection to direct before send when LAN hints exist" time="0.00125775">
+        </testcase>
+        <testcase classname="apps/node/test/chat-outbound-deliver.test.ts" name="deliverChatEnvelopeWithRetry &gt; uses sendChatExpectReply when available and returns delivered ack" time="0.0004385">
+        </testcase>
+        <testcase classname="apps/node/test/chat-outbound-deliver.test.ts" name="deliverChatEnvelopeWithRetry &gt; skips pre-send verify when peer was recently verified" time="0.000697292">
+            <system-out>
+[sendChat] delivered without ack (fallback after ack failures)
+
+            </system-out>
+            <system-err>
+[sendChat] attempt 1/1 failed for 12D3KooWFres…: [
+  {
+    &quot;expected&quot;: &quot;string&quot;,
+    &quot;code&quot;: &quot;invalid_type&quot;,
+    &quot;path&quot;: [
+      &quot;recipientOwnerId&quot;
+    ],
+    &quot;message&quot;: &quot;Invalid input: expected string, received undefined&quot;
+  }
+]
+
+            </system-err>
+        </testcase>
+        <testcase classname="apps/node/test/chat-outbound-deliver.test.ts" name="deliverChatEnvelopeWithRetry &gt; retries after send failure on a connected direct path after pre-send verify" time="0.060946917">
+            <system-err>
+[sendChat] attempt 1/2 failed for 12D3KooWStal…: Cannot send on stream 3
+
+            </system-err>
+            <skipped/>
+        </testcase>
+        <testcase classname="apps/node/test/chat-outbound-deliver.test.ts" name="deliverChatEnvelopeWithRetry &gt; falls back to send without ack after ack attempts fail" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="apps/node/test/chat-outbound-deliver.test.ts" name="deliverChatEnvelopeWithRetry &gt; does not retry when ack times out after send" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="apps/node/test/chat-outbound-deliver.test.ts" name="deliverChatEnvelopeWithRetry &gt; does not retry when ack fails after send (stream reset)" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="apps/node/test/chat-outbound-deliver.test.ts" name="deliverDataTransferWithRetry &gt; retries after first transfer failure and succeeds on second attempt" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="apps/node/test/chat-outbound-deliver.test.ts" name="deliverDataTransferWithRetry &gt; warms data path before first transfer when not connected" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="apps/node/test/chat-outbound-deliver.test.ts" name="deliverExpectReplyWithRetry &gt; verifies connected peer before profile expect-reply send" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="apps/node/test/chat-outbound-deliver.test.ts" name="deliverExpectReplyWithRetry &gt; retries after sendExpectReply failure and succeeds on second attempt" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="apps/node/test/chat-outbound-deliver.test.ts" name="resolveChatDeliveryAckTimeoutMs &gt; uses shorter timeout for direct TCP dial hints" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="apps/node/test/chat-outbound-deliver.test.ts" name="resolveChatDeliveryAckTimeoutMs &gt; uses default protocol timeout for relay-only hints" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="apps/node/test/chat-outbound-deliver.test.ts" name="prepareOutboundPeerConnection freshness &gt; skips verify for recently verified relay connections" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="apps/node/test/chat-outbound-deliver.test.ts" name="deliverChatEnvelopeWithRetry ack timeout &gt; passes LAN timeout to sendChatExpectReply for direct TCP hints" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="apps/node/test/chat-outbound-deliver.test.ts" name="deliverChatEnvelopeWithRetry ack timeout &gt; passes WAN timeout to sendChatExpectReply for relay-only hints" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="apps/node/test/chat-outbound-deliver.test.ts" name="deliverChatEnvelopeWithRetry ack timeout &gt; resolveChatDeliveryAckTimeoutMs returns WAN timeout for empty hints" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="apps/node/test/chat-outbound-deliver.test.ts" name="deliverChatEnvelopeWithRetry ack timeout &gt; resolveChatDeliveryAckTimeoutMs returns direct timeout for LAN hints" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="apps/node/test/chat-outbound-deliver.test.ts" name="deliverChatEnvelopeWithRetry ack timeout &gt; skips prepare when directly connected and recently verified" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="apps/node/test/chat-outbound-deliver.test.ts" name="deliverChatEnvelopeWithRetry ack timeout &gt; verifies direct connection before send when not recently verified" time="0">
+            <skipped/>
+        </testcase>
+        <testcase classname="apps/node/test/chat-outbound-deliver.test.ts" name="deliverChatEnvelopeWithRetry ack timeout &gt; uses sendChat when expectDeliveryAck is false on direct connection" time="0">
+            <skipped/>
+        </testcase>
+    </testsuite>
+    <testsuite name="apps/node/test/clawhub-integration.test.ts" timestamp="2026-07-08T17:13:49.590Z" hostname="Allens-MacBook-Pro-3.local" tests="4" failures="0" errors="0" skipped="0" time="1.829207584">
+        <testcase classname="apps/node/test/clawhub-integration.test.ts" name="ClawHub binary resolution &gt; finds clawhub at global npm bin path" time="1.827845042">
+        </testcase>
+        <testcase classname="apps/node/test/clawhub-integration.test.ts" name="ClawHub binary resolution &gt; falls back to &apos;clawhub&apos; when binary not found" time="0.000174542">
+        </testcase>
+        <testcase classname="apps/node/test/clawhub-integration.test.ts" name="Input sanitization for install/uninstall &gt; rejects names with shell metacharacters" time="0.000260166">
+        </testcase>
+        <testcase classname="apps/node/test/clawhub-integration.test.ts" name="Input sanitization for install/uninstall &gt; accepts valid plugin names" time="0.000127958">
+        </testcase>
+    </testsuite>
+    <testsuite name="apps/node/test/cli-actions.test.ts" timestamp="2026-07-08T17:13:49.590Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/cli-mesh-inbound-agent-card.test.ts" timestamp="2026-07-08T17:13:49.591Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/cli-mesh-inbound-bond.test.ts" timestamp="2026-07-08T17:13:49.591Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/cli-mesh-inbound-broadcast.test.ts" timestamp="2026-07-08T17:13:49.591Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/cli-mesh-inbound-device-pair-approve.test.ts" timestamp="2026-07-08T17:13:49.591Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/cli-mesh-inbound-device-pair-deferred.test.ts" timestamp="2026-07-08T17:13:49.591Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/cli-mesh-inbound-discovery.test.ts" timestamp="2026-07-08T17:13:49.591Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/cli-mesh-inbound-knowledge-query.test.ts" timestamp="2026-07-08T17:13:49.591Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/cli-mesh-inbound-official-credential.test.ts" timestamp="2026-07-08T17:13:49.591Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/cli-mesh-inbound-profile-intent.test.ts" timestamp="2026-07-08T17:13:49.591Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/cli-mesh-inbound-relay-peers.test.ts" timestamp="2026-07-08T17:13:49.591Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/cli-mesh-inbound-share-accept.test.ts" timestamp="2026-07-08T17:13:49.591Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/cli-mesh-inbound-share-preview.test.ts" timestamp="2026-07-08T17:13:49.591Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/cli-mesh-inbound-share-request.test.ts" timestamp="2026-07-08T17:13:49.591Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/cli-mesh-inbound-small-arms.test.ts" timestamp="2026-07-08T17:13:49.591Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/cli-mesh-inbound-sync-state.test.ts" timestamp="2026-07-08T17:13:49.591Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/cli-mesh-inbound-system-ping.test.ts" timestamp="2026-07-08T17:13:49.591Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/cli-mesh-inbound-system-signal.test.ts" timestamp="2026-07-08T17:13:49.592Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/client-proxy-e2e.test.ts" timestamp="2026-07-08T17:13:49.592Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/commerce-receipt-node-service.test.ts" timestamp="2026-07-08T17:13:49.592Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/company-invite-store.test.ts" timestamp="2026-07-08T17:13:49.592Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/connectivity-diagnostics.test.ts" timestamp="2026-07-08T17:13:49.592Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/context-injector.test.ts" timestamp="2026-07-08T17:13:49.592Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/context-manager.test.ts" timestamp="2026-07-08T17:13:49.592Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/daemon-agent-card-inbound.test.ts" timestamp="2026-07-08T17:13:49.592Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/daemon-task-inbound-task-result.test.ts" timestamp="2026-07-08T17:13:49.592Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/developer-cli.test.ts" timestamp="2026-07-08T17:13:49.592Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/digest-generator.test.ts" timestamp="2026-07-08T17:13:49.592Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/discovery-advertising-schedule.test.ts" timestamp="2026-07-08T17:13:49.592Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/discovery-clusterer.test.ts" timestamp="2026-07-08T17:13:49.592Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/discovery-forward.test.ts" timestamp="2026-07-08T17:13:49.592Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/discovery-geo-tags.test.ts" timestamp="2026-07-08T17:13:49.592Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/discovery-inbound-extended.test.ts" timestamp="2026-07-08T17:13:49.592Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/discovery-inbound.test.ts" timestamp="2026-07-08T17:13:49.592Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/discovery-library-match.test.ts" timestamp="2026-07-08T17:13:49.593Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/discovery-load-spam.test.ts" timestamp="2026-07-08T17:13:49.593Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/discovery-queue.test.ts" timestamp="2026-07-08T17:13:49.593Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/discovery-report.test.ts" timestamp="2026-07-08T17:13:49.593Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/discovery-search-agent-e2e.test.ts" timestamp="2026-07-08T17:13:49.593Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/discovery-seed-store.test.ts" timestamp="2026-07-08T17:13:49.593Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/discovery-topic-search-relay-fallback.test.ts" timestamp="2026-07-08T17:13:49.593Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/document-acquisition-failure-e2e.test.ts" timestamp="2026-07-08T17:13:49.593Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/document-acquisition-local-rag-e2e.test.ts" timestamp="2026-07-08T17:13:49.593Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/document-acquisition-rag-negotiation-e2e.test.ts" timestamp="2026-07-08T17:13:49.593Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/document-acquisition-suggested-path-field-e2e.test.ts" timestamp="2026-07-08T17:13:49.593Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/document-acquisition-vault-inbox-e2e.test.ts" timestamp="2026-07-08T17:13:49.593Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/document-acquisition-worker.test.ts" timestamp="2026-07-08T17:13:49.593Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/document-agent-discovery-request.test.ts" timestamp="2026-07-08T17:13:49.593Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/document-agent-e2e.test.ts" timestamp="2026-07-08T17:13:49.593Z" hostname="Allens-MacBook-Pro-3.local" tests="8" failures="0" errors="0" skipped="0" time="0.817370459">
+        <testcase classname="apps/node/test/document-agent-e2e.test.ts" name="E2E document agent (single node) &gt; lists library files via runDocumentAgentTurn" time="0.034614625">
+            <system-err>
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-rFm06S/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-rFm06S/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[EnvoyMesh] runDocumentAgentTurn is deprecated — use runOwnerAgentTurn from Assistant; RPC retained for one release.
+
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-rFm06S/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+            </system-err>
+        </testcase>
+        <testcase classname="apps/node/test/document-agent-e2e.test.ts" name="E2E document agent (single node) &gt; publish and unpublish via runDocumentAgentTurn" time="0.011195583">
+            <system-err>
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-7ung9p/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-7ung9p/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-7ung9p/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[EnvoyMesh] runDocumentAgentTurn is deprecated — use runOwnerAgentTurn from Assistant; RPC retained for one release.
+
+[EnvoyMesh] runDocumentAgentTurn is deprecated — use runOwnerAgentTurn from Assistant; RPC retained for one release.
+
+            </system-err>
+        </testcase>
+        <testcase classname="apps/node/test/document-agent-e2e.test.ts" name="E2E document agent (single node) &gt; share propose creates Inbox agent proposal" time="0.150925542">
+            <system-err>
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-75YnTV/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-75YnTV/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-75YnTV/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-75YnTV/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[EnvoyMesh] runDocumentAgentTurn is deprecated — use runOwnerAgentTurn from Assistant; RPC retained for one release.
+
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-75YnTV/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-75YnTV/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[profile.sync] no libp2p route to envoy:owner:alex…: Peer not found for owner (ask contact to message you once, or re-save their profile photo)
+
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-75YnTV/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-75YnTV/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+            </system-err>
+        </testcase>
+        <testcase classname="apps/node/test/document-agent-e2e.test.ts" name="E2E document agent (single node) &gt; request share from sends chat without auto-download" time="0.006626084">
+            <system-err>
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-IdRaCy/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-IdRaCy/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[EnvoyMesh] runDocumentAgentTurn is deprecated — use runOwnerAgentTurn from Assistant; RPC retained for one release.
+
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-IdRaCy/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-IdRaCy/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-IdRaCy/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-IdRaCy/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[profile.sync] no libp2p route to envoy:owner:sam…: Peer not found for owner (ask contact to message you once, or re-save their profile photo)
+
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-IdRaCy/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+            </system-err>
+        </testcase>
+        <testcase classname="apps/node/test/document-agent-e2e.test.ts" name="E2E document agent (single node) &gt; discover intent includes request hints in answer" time="0.005426917">
+            <system-err>
+[EnvoyMesh] runDocumentAgentTurn is deprecated — use runOwnerAgentTurn from Assistant; RPC retained for one release.
+
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-iLHGhg/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-iLHGhg/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-iLHGhg/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+            </system-err>
+        </testcase>
+        <testcase classname="apps/node/test/document-agent-e2e.test.ts" name="E2E document agent (two-node libp2p) &gt; discovers published metadata from bonded peer" time="0.534876084">
+            <system-out>
+[network] INBOUND STREAM: protocol=/envoymesh/message/0.1.0, remotePeerId=12D3KooWCpypM3njfnsBD7g8LixH1fmCoCs4anPbWu5J1HsaYJLo
+
+[network] INBOUND STREAM: protocol=/envoymesh/message/0.1.0, remotePeerId=12D3KooWCpypM3njfnsBD7g8LixH1fmCoCs4anPbWu5J1HsaYJLo
+
+            </system-out>
+            <system-err>
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-aJjaN5/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-aJjaN5/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-bAe0Y4/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-aJjaN5/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-bAe0Y4/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-bAe0Y4/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+            </system-err>
+        </testcase>
+        <testcase classname="apps/node/test/document-agent-e2e.test.ts" name="E2E document agent (two-node libp2p) &gt; request share from peer delivers chat message over libp2p" time="0.032147209">
+            <system-out>
+[network] INBOUND STREAM: protocol=/envoymesh/message/0.1.0, remotePeerId=12D3KooWAVBT9yvmd2jGP1r59jjcKYdLYKQ1Kz9hoqZeJTTuWsKk
+
+[network] INBOUND STREAM: protocol=/envoymesh/message/0.1.0, remotePeerId=12D3KooWAVBT9yvmd2jGP1r59jjcKYdLYKQ1Kz9hoqZeJTTuWsKk
+
+[sendAgentChat] targetOwnerId=envoy:owner:yMp2OqJWz3sYNXE9Y0i_yr-Tfk6NY1L5NRLTB5gOgEE, text=[Envoy AI] Could you share a file matching &quot;notes&quot;?
+
+I found this published meta
+
+[network] INBOUND STREAM: protocol=/envoymesh/chat/0.1.0, remotePeerId=12D3KooWAVBT9yvmd2jGP1r59jjcKYdLYKQ1Kz9hoqZeJTTuWsKk
+
+            </system-out>
+            <system-err>
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-VN07Ry/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-VN07Ry/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-zIbp0W/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-zIbp0W/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-VN07Ry/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-zIbp0W/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[EnvoyMesh] runDocumentAgentTurn is deprecated — use runOwnerAgentTurn from Assistant; RPC retained for one release.
+
+            </system-err>
+        </testcase>
+        <testcase classname="apps/node/test/document-agent-e2e.test.ts" name="E2E document agent (two-node libp2p) &gt; full flow: publish → discover → request share (no vault bytes on requester)" time="0.040702625">
+            <system-out>
+[network] INBOUND STREAM: protocol=/envoymesh/message/0.1.0, remotePeerId=12D3KooWSgjnPA51zEANtU1K3tTkeiHcHR3QaEkZSQh5yaDrktUw
+
+[network] INBOUND STREAM: protocol=/envoymesh/message/0.1.0, remotePeerId=12D3KooWSgjnPA51zEANtU1K3tTkeiHcHR3QaEkZSQh5yaDrktUw
+
+[network] INBOUND STREAM: protocol=/envoymesh/message/0.1.0, remotePeerId=12D3KooWSgjnPA51zEANtU1K3tTkeiHcHR3QaEkZSQh5yaDrktUw
+
+[sendAgentChat] targetOwnerId=envoy:owner:PiLPFmFOBEWf4_QyY93-rK85FnSb-pxDPUPp8dzdQF8, text=[Envoy AI] Could you share a file matching &quot;golden&quot;?
+
+I found this published met
+
+[network] INBOUND STREAM: protocol=/envoymesh/chat/0.1.0, remotePeerId=12D3KooWSgjnPA51zEANtU1K3tTkeiHcHR3QaEkZSQh5yaDrktUw
+
+            </system-out>
+            <system-err>
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-ULMBsW/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-ULMBsW/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-v7Xsve/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-v7Xsve/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-ULMBsW/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-doc-agent-e2e-v7Xsve/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+[EnvoyMesh] runDocumentAgentTurn is deprecated — use runOwnerAgentTurn from Assistant; RPC retained for one release.
+
+[EnvoyMesh] runDocumentAgentTurn is deprecated — use runOwnerAgentTurn from Assistant; RPC retained for one release.
+
+            </system-err>
+        </testcase>
+    </testsuite>
+    <testsuite name="apps/node/test/document-agent-golden-path-e2e.test.ts" timestamp="2026-07-08T17:13:49.595Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/document-agent-loop-integration.test.ts" timestamp="2026-07-08T17:13:49.595Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/document-agent-publish-unpublish-e2e.test.ts" timestamp="2026-07-08T17:13:49.595Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/document-autonomy-enforcement.test.ts" timestamp="2026-07-08T17:13:49.596Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/document-autonomy-libp2p-e2e.test.ts" timestamp="2026-07-08T17:13:49.596Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/document-autonomy-referred-e2e.test.ts" timestamp="2026-07-08T17:13:49.596Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/document-discovery-broadcast.test.ts" timestamp="2026-07-08T17:13:49.596Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/envoy-invite-uri.test.ts" timestamp="2026-07-08T17:13:49.596Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/external-agent-gateway.test.ts" timestamp="2026-07-08T17:13:49.596Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/federated-rag.test.ts" timestamp="2026-07-08T17:13:49.596Z" hostname="Allens-MacBook-Pro-3.local" tests="1" failures="1" errors="0" skipped="0" time="0">
+        <testcase classname="apps/node/test/federated-rag.test.ts" name="apps/node/test/federated-rag.test.ts" time="0">
+            <failure message="Cannot find module &apos;../src/federated-rag.js&apos; imported from /Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/node/test/federated-rag.test.ts" type="Error">
+Error: Cannot find module &apos;../src/federated-rag.js&apos; imported from /Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/node/test/federated-rag.test.ts
+ ❯ apps/node/test/federated-rag.test.ts:5:1
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { code: &apos;ERR_MODULE_NOT_FOUND&apos; }
+            </failure>
+        </testcase>
+    </testsuite>
+    <testsuite name="apps/node/test/file-share-e2e.test.ts" timestamp="2026-07-08T17:13:49.597Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/fleet-manifest-store.test.ts" timestamp="2026-07-08T17:13:49.597Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/geo-discovery-e2e.test.ts" timestamp="2026-07-08T17:13:49.597Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/geo-discovery-wan-signoff.test.ts" timestamp="2026-07-08T17:13:49.597Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/group-chat-e2e.test.ts" timestamp="2026-07-08T17:13:49.597Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/helia-ipfs-engine.test.ts" timestamp="2026-07-08T17:13:49.598Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/herdr-export.test.ts" timestamp="2026-07-08T17:13:49.598Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/home-terminal-ws-multisession.test.ts" timestamp="2026-07-08T17:13:49.598Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/homeclaw-core-proxy.test.ts" timestamp="2026-07-08T17:13:49.598Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/identity-discovery-topics.test.ts" timestamp="2026-07-08T17:13:49.598Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/inbound-chat-assist.test.ts" timestamp="2026-07-08T17:13:49.598Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/inbound-dial-hint-learn.test.ts" timestamp="2026-07-08T17:13:49.598Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/inbound-guard.test.ts" timestamp="2026-07-08T17:13:49.598Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/ipfs-export-engine-kubo.test.ts" timestamp="2026-07-08T17:13:49.598Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/ipfs-export-router.test.ts" timestamp="2026-07-08T17:13:49.598Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/ipfs-gateway.test.ts" timestamp="2026-07-08T17:13:49.598Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/ipfs-helia-kubo-parity.test.ts" timestamp="2026-07-08T17:13:49.598Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/ipfs-kubo-golden.test.ts" timestamp="2026-07-08T17:13:49.598Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/json-rpc-document-agent.test.ts" timestamp="2026-07-08T17:13:49.598Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/json-rpc-phase13.test.ts" timestamp="2026-07-08T17:13:49.598Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/json-rpc-router-ipfs.test.ts" timestamp="2026-07-08T17:13:49.598Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/knowledge-e2e.test.ts" timestamp="2026-07-08T17:13:49.598Z" hostname="Allens-MacBook-Pro-3.local" tests="1" failures="0" errors="0" skipped="1" time="0.822536334">
+        <testcase classname="apps/node/test/knowledge-e2e.test.ts" name="E2E knowledge query between bonded peers &gt; exchanges knowledge.query and knowledge.response between paired nodes" time="0.821816958">
+            <system-err>
+[peer-directory] recovery attempt failed: ENOENT: no such file or directory, open &apos;/var/folders/mn/5mb_s8js6zj9rcd3z3dk9b3m0000gn/T/envoymesh-kq-e2e-bob-rsjOsv/peer-directory.json&apos;
+
+[peer-directory] could not recover, returning empty directory
+
+            </system-err>
+            <skipped/>
+        </testcase>
+    </testsuite>
+    <testsuite name="apps/node/test/knowledge-query-agent-e2e.test.ts" timestamp="2026-07-08T17:13:49.599Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/knowledge-query-inbound-extended.test.ts" timestamp="2026-07-08T17:13:49.599Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/knowledge-query-inbound.test.ts" timestamp="2026-07-08T17:13:49.599Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/kubo-ipfs-engine.test.ts" timestamp="2026-07-08T17:13:49.599Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/kubo-ipfs-export.test.ts" timestamp="2026-07-08T17:13:49.599Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/libp2p-key-loader.test.ts" timestamp="2026-07-08T17:13:49.599Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/libp2p-repair-policy.test.ts" timestamp="2026-07-08T17:13:49.599Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/library-import-e2e.test.ts" timestamp="2026-07-08T17:13:49.599Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/library-list.test.ts" timestamp="2026-07-08T17:13:49.599Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/library-publish-export-multi-node-e2e.test.ts" timestamp="2026-07-08T17:13:49.599Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/local-files.test.ts" timestamp="2026-07-08T17:13:49.599Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/mesh-intelligence.test.ts" timestamp="2026-07-08T17:13:49.599Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/mode-controller.test.ts" timestamp="2026-07-08T17:13:49.599Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/multihop-discovery-e2e.test.ts" timestamp="2026-07-08T17:13:49.600Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/multihop-forward-inbound.test.ts" timestamp="2026-07-08T17:13:49.600Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/network-modes.test.ts" timestamp="2026-07-08T17:13:49.600Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-config-openclaw-enabled.test.ts" timestamp="2026-07-08T17:13:49.600Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-config-service.test.ts" timestamp="2026-07-08T17:13:49.600Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-config-store-autonomous.test.ts" timestamp="2026-07-08T17:13:49.600Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-config-store-migrate.test.ts" timestamp="2026-07-08T17:13:49.600Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-file-share.test.ts" timestamp="2026-07-08T17:13:49.600Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-health.test.ts" timestamp="2026-07-08T17:13:49.600Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-service-agent-passes.test.ts" timestamp="2026-07-08T17:13:49.600Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-service-agent-setup.test.ts" timestamp="2026-07-08T17:13:49.600Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-service-calls.test.ts" timestamp="2026-07-08T17:13:49.600Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-service-capability-discovery.test.ts" timestamp="2026-07-08T17:13:49.600Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-service-chains.test.ts" timestamp="2026-07-08T17:13:49.600Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-service-clawhub.test.ts" timestamp="2026-07-08T17:13:49.600Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-service-company-invite.test.ts" timestamp="2026-07-08T17:13:49.600Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-service-config.test.ts" timestamp="2026-07-08T17:13:49.600Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-service-connection-status.test.ts" timestamp="2026-07-08T17:13:49.601Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-service-continuity.test.ts" timestamp="2026-07-08T17:13:49.601Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-service-discovery-clusterer.test.ts" timestamp="2026-07-08T17:13:49.601Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-service-discovery.test.ts" timestamp="2026-07-08T17:13:49.601Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-service-fileshare-13b.test.ts" timestamp="2026-07-08T17:13:49.601Z" hostname="Allens-MacBook-Pro-3.local" tests="11" failures="0" errors="0" skipped="0" time="1.271062584">
+        <testcase classname="apps/node/test/node-service-fileshare-13b.test.ts" name="resolveLibraryItemPathViaRuntime &gt; throws when vault dir is missing" time="1.26686925">
+        </testcase>
+        <testcase classname="apps/node/test/node-service-fileshare-13b.test.ts" name="resolveLibraryItemPathViaRuntime &gt; throws &apos;File not found in vault&apos; for an unindexed path" time="0.001231667">
+        </testcase>
+        <testcase classname="apps/node/test/node-service-fileshare-13b.test.ts" name="listAgentShareProposalsViaRuntime + dismissAgentShareProposalViaRuntime &gt; listAgentShareProposals returns [] when profile dir is missing" time="0.000400459">
+        </testcase>
+        <testcase classname="apps/node/test/node-service-fileshare-13b.test.ts" name="listAgentShareProposalsViaRuntime + dismissAgentShareProposalViaRuntime &gt; dismissAgentShareProposal no-ops silently when profile dir is missing" time="0.000248375">
+        </testcase>
+        <testcase classname="apps/node/test/node-service-fileshare-13b.test.ts" name="getRagIndexStatusViaRuntime &gt; returns the DEFAULT shape when the RAG service is unavailable" time="0.000190166">
+        </testcase>
+        <testcase classname="apps/node/test/node-service-fileshare-13b.test.ts" name="getRagIndexStatusViaRuntime &gt; returns the RAG service&apos;s status when wired" time="0.000123833">
+        </testcase>
+        <testcase classname="apps/node/test/node-service-fileshare-13b.test.ts" name="getIpfsEngineStatusViaRuntime &gt; returns a status shape even when profile dir is missing" time="0.00013375">
+        </testcase>
+        <testcase classname="apps/node/test/node-service-fileshare-13b.test.ts" name="exportLibraryItemToIpfsViaRuntime &gt; throws Task-store-not-initialised when both vault and audit are missing" time="0.000180125">
+        </testcase>
+        <testcase classname="apps/node/test/node-service-fileshare-13b.test.ts" name="verifyLibraryItemIpfsGatewayViaRuntime &gt; throws Task-store-not-initialised when audit context is missing" time="0.000250292">
+        </testcase>
+        <testcase classname="apps/node/test/node-service-fileshare-13b.test.ts" name="pinLibraryItemExternalViaRuntime &gt; returns ok:false when IPFS export is disabled" time="0.000221458">
+        </testcase>
+        <testcase classname="apps/node/test/node-service-fileshare-13b.test.ts" name="pinLibraryItemExternalViaRuntime &gt; returns ok:false when external pinning is disabled" time="0.000173833">
+        </testcase>
+    </testsuite>
+    <testsuite name="apps/node/test/node-service-fileshare-13c.test.ts" timestamp="2026-07-08T17:13:49.601Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-service-fileshare.test.ts" timestamp="2026-07-08T17:13:49.601Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-service-fleet-manifest.test.ts" timestamp="2026-07-08T17:13:49.601Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-service-handlers-pair-device.test.ts" timestamp="2026-07-08T17:13:49.601Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-service-handlers-pair-shared-identity.test.ts" timestamp="2026-07-08T17:13:49.601Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-service-handlers-pairing-payload.test.ts" timestamp="2026-07-08T17:13:49.602Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-service-handlers-run-owner-agent-turn.test.ts" timestamp="2026-07-08T17:13:49.602Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-service-handlers-share-preview.test.ts" timestamp="2026-07-08T17:13:49.602Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-service-ipfs.test.ts" timestamp="2026-07-08T17:13:49.602Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-service-lan-auto-bond.test.ts" timestamp="2026-07-08T17:13:49.602Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-service-manifest.test.ts" timestamp="2026-07-08T17:13:49.602Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-service-mesh-intelligence.test.ts" timestamp="2026-07-08T17:13:49.602Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-service-openclaw-runtime.test.ts" timestamp="2026-07-08T17:13:49.602Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-service-outbound-messaging.test.ts" timestamp="2026-07-08T17:13:49.602Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-service-pairing-kiosk.test.ts" timestamp="2026-07-08T17:13:49.602Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-service-persistence.test.ts" timestamp="2026-07-08T17:13:49.602Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-service-proactive-agent.test.ts" timestamp="2026-07-08T17:13:49.602Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-service-reachability.test.ts" timestamp="2026-07-08T17:13:49.602Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-service-send-agent-chat.test.ts" timestamp="2026-07-08T17:13:49.602Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-service-start.test.ts" timestamp="2026-07-08T17:13:49.602Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-service-stop.test.ts" timestamp="2026-07-08T17:13:49.602Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-service-wire-mesh-events.test.ts" timestamp="2026-07-08T17:13:49.603Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/node-stats-log.test.ts" timestamp="2026-07-08T17:13:49.603Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/open-in-herdr.test.ts" timestamp="2026-07-08T17:13:49.603Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/openclaw-gateway-config.test.ts" timestamp="2026-07-08T17:13:49.603Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/openclaw-gateway-port.test.ts" timestamp="2026-07-08T17:13:49.603Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/openclaw-lifecycle.test.ts" timestamp="2026-07-08T17:13:49.603Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/openclaw-reply.test.ts" timestamp="2026-07-08T17:13:49.603Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/openclaw-turn-context.test.ts" timestamp="2026-07-08T17:13:49.603Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/openclaw-workspace-files.test.ts" timestamp="2026-07-08T17:13:49.603Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/openclaw-workspace.test.ts" timestamp="2026-07-08T17:13:49.603Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/outbound-delivery-regression.test.ts" timestamp="2026-07-08T17:13:49.603Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/outbound-dial-hints.test.ts" timestamp="2026-07-08T17:13:49.603Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/outbound-send-lock.test.ts" timestamp="2026-07-08T17:13:49.603Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/owner-agent-turn-integration.test.ts" timestamp="2026-07-08T17:13:49.603Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/owner-targeting.test.ts" timestamp="2026-07-08T17:13:49.603Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/p2p-a2a.test.ts" timestamp="2026-07-08T17:13:49.604Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/pairing-chat-e2e.test.ts" timestamp="2026-07-08T17:13:49.604Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/pairing-kiosk-server.test.ts" timestamp="2026-07-08T17:13:49.604Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/pairing-lifecycle.test.ts" timestamp="2026-07-08T17:13:49.604Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/pairing-payload.test.ts" timestamp="2026-07-08T17:13:49.604Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/peer-directory-learn.test.ts" timestamp="2026-07-08T17:13:49.604Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/peer-discovery-telemetry.test.ts" timestamp="2026-07-08T17:13:49.604Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/peer-transport-resolve.test.ts" timestamp="2026-07-08T17:13:49.604Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/phase-18-e2e.test.ts" timestamp="2026-07-08T17:13:49.604Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/phase-18-multinode-e2e.test.ts" timestamp="2026-07-08T17:13:49.604Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/phase-19-22-e2e.test.ts" timestamp="2026-07-08T17:13:49.604Z" hostname="Allens-MacBook-Pro-3.local" tests="1" failures="1" errors="0" skipped="0" time="0">
+        <testcase classname="apps/node/test/phase-19-22-e2e.test.ts" name="apps/node/test/phase-19-22-e2e.test.ts" time="0">
+            <failure message="Cannot find module &apos;../src/federated-rag.js&apos; imported from /Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/node/test/phase-19-22-e2e.test.ts" type="Error">
+Error: Cannot find module &apos;../src/federated-rag.js&apos; imported from /Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/node/test/phase-19-22-e2e.test.ts
+ ❯ apps/node/test/phase-19-22-e2e.test.ts:722:1
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { code: &apos;ERR_MODULE_NOT_FOUND&apos; }
+            </failure>
+        </testcase>
+    </testsuite>
+    <testsuite name="apps/node/test/phase-23-25-deferred-tasks.test.ts" timestamp="2026-07-08T17:13:49.605Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/phase-23-social-graph.test.ts" timestamp="2026-07-08T17:13:49.605Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/phase-24-25-marketplace-awareness.test.ts" timestamp="2026-07-08T17:13:49.605Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/phase16-kill-switch-e2e.test.ts" timestamp="2026-07-08T17:13:49.605Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/post-merge-chat-regression.test.ts" timestamp="2026-07-08T17:13:49.605Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/profile-capabilities-discovery.test.ts" timestamp="2026-07-08T17:13:49.605Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/profile-photo-import.test.ts" timestamp="2026-07-08T17:13:49.605Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/profile-photo-node-e2e.test.ts" timestamp="2026-07-08T17:13:49.605Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/profile-sync-directory-learn.test.ts" timestamp="2026-07-08T17:13:49.605Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/profile-sync-inbound.test.ts" timestamp="2026-07-08T17:13:49.605Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/profile-sync-outbound.test.ts" timestamp="2026-07-08T17:13:49.605Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/profile-thumbnail-sync-e2e.test.ts" timestamp="2026-07-08T17:13:49.605Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/published-external-store.test.ts" timestamp="2026-07-08T17:13:49.605Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/push-notification.test.ts" timestamp="2026-07-08T17:13:49.605Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/rag-service.test.ts" timestamp="2026-07-08T17:13:49.605Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/relay-bridge-e2e.test.ts" timestamp="2026-07-08T17:13:49.605Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/relay-broadcast-e2e.test.ts" timestamp="2026-07-08T17:13:49.606Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/relay-chat-e2e.test.ts" timestamp="2026-07-08T17:13:49.606Z" hostname="Allens-MacBook-Pro-3.local" tests="2" failures="0" errors="0" skipped="0" time="4.168173333">
+        <testcase classname="apps/node/test/relay-chat-e2e.test.ts" name="E2E relay-mediated chat &gt; exchanges chat messages via relay server" time="2.124497083">
+            <system-out>
+[network] INBOUND STREAM: protocol=/envoymesh/chat/0.1.0, remotePeerId=12D3KooWNJMyTPSrNSYUbHrdaRR9h3TTEfUMHED9P51uEyYUivad
+
+            </system-out>
+        </testcase>
+        <testcase classname="apps/node/test/relay-chat-e2e.test.ts" name="E2E relay-mediated chat &gt; verifies multiple messages exchange via relay" time="2.042977708">
+            <system-out>
+[network] INBOUND STREAM: protocol=/envoymesh/chat/0.1.0, remotePeerId=12D3KooWHL1uXUCdCJpVpShiGtiJtj7WqnA7U9zzDZKticSu57TM
+
+[network] INBOUND STREAM: protocol=/envoymesh/chat/0.1.0, remotePeerId=12D3KooWHL1uXUCdCJpVpShiGtiJtj7WqnA7U9zzDZKticSu57TM
+
+[network] INBOUND STREAM: protocol=/envoymesh/chat/0.1.0, remotePeerId=12D3KooWHL1uXUCdCJpVpShiGtiJtj7WqnA7U9zzDZKticSu57TM
+
+            </system-out>
+        </testcase>
+    </testsuite>
+    <testsuite name="apps/node/test/relay-client-cycle-topichash.test.ts" timestamp="2026-07-08T17:13:49.606Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/relay-health.test.ts" timestamp="2026-07-08T17:13:49.606Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/relay-lookup-router.test.ts" timestamp="2026-07-08T17:13:49.606Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/relay-roster-topichash-roundtrip.test.ts" timestamp="2026-07-08T17:13:49.606Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/relay-roster.test.ts" timestamp="2026-07-08T17:13:49.606Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/relay-tunnel-client.test.ts" timestamp="2026-07-08T17:13:49.606Z" hostname="Allens-MacBook-Pro-3.local" tests="3" failures="0" errors="0" skipped="2" time="0.815307459">
+        <testcase classname="apps/node/test/relay-tunnel-client.test.ts" name="RelayTunnelClient &gt; connects to /ws/home and receives ack" time="0.206203583">
+        </testcase>
+        <testcase classname="apps/node/test/relay-tunnel-client.test.ts" name="RelayTunnelClient &gt; opens a local ws-server connection when relay sends &apos;open&apos;" time="0.608386458">
+            <skipped/>
+        </testcase>
+        <testcase classname="apps/node/test/relay-tunnel-client.test.ts" name="RelayTunnelClient &gt; handles relay &apos;close&apos; by closing local connection" time="0">
+            <skipped/>
+        </testcase>
+    </testsuite>
+    <testsuite name="apps/node/test/relay-websocket-bridge-e2e.test.ts" timestamp="2026-07-08T17:13:49.606Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/rendezvous-integration.test.ts" timestamp="2026-07-08T17:13:49.606Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/report-create-activity-e2e.test.ts" timestamp="2026-07-08T17:13:49.606Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/reputation-inbound.test.ts" timestamp="2026-07-08T17:13:49.606Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/role-policy.test.ts" timestamp="2026-07-08T17:13:49.606Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/sandbox-egress.test.ts" timestamp="2026-07-08T17:13:49.606Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/scripted-tutor.test.ts" timestamp="2026-07-08T17:13:49.607Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/search-peers.test.ts" timestamp="2026-07-08T17:13:49.607Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/send-agent-chat-e2e.test.ts" timestamp="2026-07-08T17:13:49.607Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/send-openclaw-duplicate.test.ts" timestamp="2026-07-08T17:13:49.607Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/service-ports.test.ts" timestamp="2026-07-08T17:13:49.607Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/session-manager.test.ts" timestamp="2026-07-08T17:13:49.607Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/session-token-persistence.test.ts" timestamp="2026-07-08T17:13:49.607Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/setup-sponsor-friend-runtime.test.ts" timestamp="2026-07-08T17:13:49.607Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/share-inbound-extended.test.ts" timestamp="2026-07-08T17:13:49.607Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/share-inbound.test.ts" timestamp="2026-07-08T17:13:49.607Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/share-inbox-e2e.test.ts" timestamp="2026-07-08T17:13:49.607Z" hostname="Allens-MacBook-Pro-3.local" tests="1" failures="1" errors="0" skipped="0" time="0.023498042">
+        <testcase classname="apps/node/test/share-inbox-e2e.test.ts" name="E2E share inbox accept + inbound write &gt; offer → list → accept(savePath) → verified transfer lands at chosen vault path" time="0.022582">
+            <failure message="mesh.getPeerStoreDialHints is not a function" type="TypeError">
+TypeError: mesh.getPeerStoreDialHints is not a function
+ ❯ dialHintsForChatViaRuntime apps/node/src/node-service-outbound-messaging.ts:185:44
+            </failure>
+        </testcase>
+    </testsuite>
+    <testsuite name="apps/node/test/social-intro-inbound.test.ts" timestamp="2026-07-08T17:13:49.607Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/social-proxy-flow-e2e.test.ts" timestamp="2026-07-08T17:13:49.607Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/social-proxy-kill-switch-e2e.test.ts" timestamp="2026-07-08T17:13:49.607Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/structured-preferred-e2e.test.ts" timestamp="2026-07-08T17:13:49.607Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/style-adapter.test.ts" timestamp="2026-07-08T17:13:49.608Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/sync-state-inbound.test.ts" timestamp="2026-07-08T17:13:49.608Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/task-activity-e2e.test.ts" timestamp="2026-07-08T17:13:49.608Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/task-cancel-e2e.test.ts" timestamp="2026-07-08T17:13:49.608Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/task-dispatcher.test.ts" timestamp="2026-07-08T17:13:49.608Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/task-lifecycle.test.ts" timestamp="2026-07-08T17:13:49.608Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/task-results-store.test.ts" timestamp="2026-07-08T17:13:49.608Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/task-runtime-apply-collect.test.ts" timestamp="2026-07-08T17:13:49.608Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/task-runtime-guard.test.ts" timestamp="2026-07-08T17:13:49.608Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/task-store.test.ts" timestamp="2026-07-08T17:13:49.608Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/terminal-activity.test.ts" timestamp="2026-07-08T17:13:49.608Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/terminal-agent-assist.test.ts" timestamp="2026-07-08T17:13:49.608Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/terminal-assist-context.test.ts" timestamp="2026-07-08T17:13:49.608Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/terminal-assist-live-integration.test.ts" timestamp="2026-07-08T17:13:49.608Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/terminal-assist-persist.test.ts" timestamp="2026-07-08T17:13:49.608Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/terminal-assist-prompt-firewall.test.ts" timestamp="2026-07-08T17:13:49.608Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/terminal-assist-prompt.test.ts" timestamp="2026-07-08T17:13:49.608Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/terminal-assistant-command.test.ts" timestamp="2026-07-08T17:13:49.608Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/terminal-failure-detect.test.ts" timestamp="2026-07-08T17:13:49.608Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/terminal-manager.test.ts" timestamp="2026-07-08T17:13:49.609Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/terminal-node-service-enrichment.test.ts" timestamp="2026-07-08T17:13:49.609Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/terminal-plan-parser.test.ts" timestamp="2026-07-08T17:13:49.609Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/terminal-session-enrichment.test.ts" timestamp="2026-07-08T17:13:49.609Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/terminal-ws-integration.test.ts" timestamp="2026-07-08T17:13:49.609Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/test-claim-parity.test.ts" timestamp="2026-07-08T17:13:49.609Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/tool-registry-gateway.test.ts" timestamp="2026-07-08T17:13:49.609Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/tool-registry.test.ts" timestamp="2026-07-08T17:13:49.609Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/tools.test.ts" timestamp="2026-07-08T17:13:49.609Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/transfer-status-e2e.test.ts" timestamp="2026-07-08T17:13:49.609Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/transfer-tracker.test.ts" timestamp="2026-07-08T17:13:49.609Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/trigger-store.test.ts" timestamp="2026-07-08T17:13:49.609Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/trust-mode-intro-bond-flow.test.ts" timestamp="2026-07-08T17:13:49.609Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/trust-store.test.ts" timestamp="2026-07-08T17:13:49.609Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/two-node-file-share-e2e.test.ts" timestamp="2026-07-08T17:13:49.609Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/vault-index-cache.test.ts" timestamp="2026-07-08T17:13:49.609Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/vault-ipfs-export-service.test.ts" timestamp="2026-07-08T17:13:49.610Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/vault-ipfs-gateway-verify.test.ts" timestamp="2026-07-08T17:13:49.610Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/voice-message-chat.test.ts" timestamp="2026-07-08T17:13:49.610Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/wan-join-invite-node-service.test.ts" timestamp="2026-07-08T17:13:49.610Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/wan-relay-signoff-e2e.test.ts" timestamp="2026-07-08T17:13:49.610Z" hostname="Allens-MacBook-Pro-3.local" tests="1" failures="0" errors="0" skipped="1" time="1.072062042">
+        <testcase classname="apps/node/test/wan-relay-signoff-e2e.test.ts" name="WAN §4 relay sign-off (automated) &gt; relay-bootstrap clients exchange signed traffic (§4 baseline)" time="1.071391833">
+            <skipped/>
+        </testcase>
+    </testsuite>
+    <testsuite name="apps/node/test/ws-rpc-concurrency.test.ts" timestamp="2026-07-08T17:13:49.610Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/protocol/test/agent-network-handoff.test.ts" timestamp="2026-07-08T17:13:49.610Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/protocol/test/agent-network.test.ts" timestamp="2026-07-08T17:13:49.610Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/protocol/test/artifact.test.ts" timestamp="2026-07-08T17:13:49.610Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/protocol/test/call-schemas.test.ts" timestamp="2026-07-08T17:13:49.610Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/protocol/test/capability-topic-record.test.ts" timestamp="2026-07-08T17:13:49.610Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/protocol/test/chat-room-payload.test.ts" timestamp="2026-07-08T17:13:49.610Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/protocol/test/emp-conformance-vectors.test.ts" timestamp="2026-07-08T17:13:49.610Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/protocol/test/envoyai-posture.test.ts" timestamp="2026-07-08T17:13:49.610Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/protocol/test/protocol.test.ts" timestamp="2026-07-08T17:13:49.610Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/protocol/test/role-policy-table.test.ts" timestamp="2026-07-08T17:13:49.611Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/protocol/test/sync-state-payload.test.ts" timestamp="2026-07-08T17:13:49.611Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/rag/test/embedding-provider.test.ts" timestamp="2026-07-08T17:13:49.611Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/rag/test/mcp-knowledge-client.test.ts" timestamp="2026-07-08T17:13:49.611Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/rag/test/sqlite-vector-store.test.ts" timestamp="2026-07-08T17:13:49.611Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/rag/test/vector-math.test.ts" timestamp="2026-07-08T17:13:49.611Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/rag/test/vector-store.test.ts" timestamp="2026-07-08T17:13:49.611Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/vault/test/chunk-document.test.ts" timestamp="2026-07-08T17:13:49.611Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/vault/test/document-text-extract.test.ts" timestamp="2026-07-08T17:13:49.611Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/vault/test/vault-path-safety.test.ts" timestamp="2026-07-08T17:13:49.611Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="packages/vault/test/vault.test.ts" timestamp="2026-07-08T17:13:49.611Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+    <testsuite name="apps/node/test/integration/bootstrap-relay.test.ts" timestamp="2026-07-08T17:13:49.611Z" hostname="Allens-MacBook-Pro-3.local" tests="0" failures="0" errors="0" skipped="0" time="0">
+    </testsuite>
+</testsuites>
