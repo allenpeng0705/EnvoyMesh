@@ -55,6 +55,13 @@ function createMockMesh(provideImpl: (topic: string) => Promise<unknown>) {
   return {
     peerId: "QmMockPeer123456",
     multiaddrs: ["/ip4/127.0.0.1/tcp/4001/p2p/QmMockPeer123456"],
+    // Default: simulate at least 2 connected peers so the cycle-level
+    // "DHT route table empty" gate doesn't fire in normal tests. Tests
+    // that exercise the empty-route-table path can override this.
+    getConnectedPeerIds: vi.fn().mockReturnValue([
+      "12D3KooWRoutesTablePeerA",
+      "12D3KooWRoutesTablePeerB",
+    ]),
     // provideCapabilityTopic now returns { cid, signedRecord?, timedOut }
     // so callers can distinguish a landed put from a stalled one. Wrap
     // the inner impl so test fixtures don't need to repeat the boilerplate.
@@ -367,6 +374,76 @@ describe("discovery topic advertising — timeout + adaptive retry", () => {
 
       // Sanity: the periodic setInterval still uses 5 * 60 * 1000 (unchanged).
       expect(src).toMatch(/setInterval\([\s\S]*?5\s*\*\s*60\s*\*\s*1000/);
+    });
+  });
+
+  describe("DHT-route-table-empty gate (2026-07-10)", () => {
+    it("skips per-topic provides when fewer than 2 peers are connected, emits a single summary per cycle", async () => {
+      // User symptom: 16 topics × 30 s timeout per cycle, every 60 s, forever.
+      // Root cause: only the relay is connected — the community relay doesn't
+      // serve modern DHT routing — so every `contentRouting.provide()` call
+      // hangs without ever resolving. The gate at `_advertisePublicDiscoveryTopics`
+      // checks `mesh.getConnectedPeerIds()` and skips the fan-out entirely if
+      // fewer than 2 peers are connected, emitting one WARN instead.
+
+      const mesh = createMockMesh(async () => ({ cid: {} as never }));
+      // Override the default 2-peer mock to simulate the symptom.
+      (mesh.getConnectedPeerIds as ReturnType<typeof vi.fn>).mockReturnValue([
+        // One peer — almost certainly the configured community relay.
+        "12D3KooWCommunityRelay",
+      ]);
+
+      const nodeService = new NodeServiceImpl(
+        mesh as any,
+        createMockTrustStore(),
+        createMockPeerDirectoryStore(),
+        createMockHumanProfileStore(),
+        "/tmp/test",
+      );
+      setConfigStore(nodeService, createNullConfigStore());
+      setExternalMesh(nodeService, mesh);
+
+      // Spy on console.warn so we can assert the gate's summary line is
+      // emitted exactly ONCE per cycle (not 16 times — that was the bug).
+      const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+      const advertisePromise = _advertisePublicDiscoveryTopics(
+        (nodeService as any)._identityContext(),
+        {
+          interests: ["music", "tech", "science"],
+          username: "alice",
+          locationTopics: ["geo:country:CN"],
+          capabilityTopics: ["coding-help", "lang:en"],
+        },
+      );
+      await flushAsync();
+      await advertisePromise;
+
+      // Critical assertion: provideCapabilityTopic must NOT have been called
+      // for any of the 7 topics — the gate skipped the fan-out entirely.
+      expect(mesh.provideCapabilityTopic).not.toHaveBeenCalled();
+
+      // Exactly one WARN line per cycle summarizing the gate's reasoning.
+      // Filter to the gate's specific message; the schedule also emits other
+      // non-cycle warns we don't want to count.
+      const gateWarnings = warnSpy.mock.calls.filter((args) => {
+        const msg = args[0];
+        return (
+          typeof msg === "string" &&
+          msg.includes("Discovery advertise cycle") &&
+          msg.includes("skipping")
+        );
+      });
+      expect(gateWarnings).toHaveLength(1);
+
+      const message = gateWarnings[0]![0] as string;
+      // Must mention the connected-peer count (so operators see the actual
+      // diagnostic at-a-glance), and the topics it would have published
+      // (so they can confirm they're not silently dropped forever).
+      expect(message).toMatch(/only 1 peer\(s\) connected/);
+      expect(message).toMatch(/skipping \d+ topic publishes this cycle/);
+
+      warnSpy.mockRestore();
     });
   });
 });
