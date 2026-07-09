@@ -15,16 +15,45 @@ export type AiRagMode = "vector" | "lexical" | "hybrid";
 /** Which vault KB partitions to search. */
 export type AiKnowledgeBaseScope = "public" | "owner";
 
+/**
+ * Upstream HTTP response envelope shape for embedding APIs. Providers wrap
+ * their vectors in different JSON shapes; the parser in
+ * `@envoymesh/rag`'s `embedding-provider.ts` dispatches on this hint.
+ *
+ *   * `openai`  — `{ data: [{ embedding: number[] }, ...] }`
+ *                Used by OpenAI, Zhipu, Qwen DashScope `/compatible-mode`,
+ *                and any standard OpenAI-compatible host.
+ *   * `minimax` — `{ embedding: number[] }` for a single input, and
+ *                `{ vectors: number[][] }` for batch input.
+ *                Used by MiniMax (embo-01).
+ *   * `auto`    — try `openai` first, fall back to `minimax`. Useful when
+ *                you don't know which shape a host returns.
+ *
+ * Default when unset: `openai` (back-compat with existing configs that
+ * pre-date this field).
+ */
+export type EmbeddingResponseShape = "openai" | "minimax" | "auto";
+
 export interface AiEmbeddingSettings {
   /** mock | ollama | openai-compatible | inherit (from modelProviders). Default: inherit */
   mode?: "mock" | "ollama" | "openai-compatible" | "inherit";
-  /** Embedding model name (e.g. nomic-embed-text, text-embedding-3-small). */
+  /** Embedding model name (e.g. nomic-embed-text, text-embedding-3-small, embo-01). */
   modelName?: string;
   /** API root. OpenAI-compatible uses `/v1/embeddings`; Ollama uses `/api/embeddings`. */
   endpoint?: string;
   apiKey?: string;
   /** Max tokens per embed API call (e.g. MiniMax embo-01 = 4096). Caps vault chunk size and truncates at embed time. */
   maxInputTokens?: number;
+  /**
+   * Parser hint for the HTTP response when `mode` is `openai-compatible`.
+   * See `EmbeddingResponseShape` for the full list. The HTTP transport
+   * (`POST {endpoint}/embeddings` with `{model, input}` body and
+   * `Authorization: Bearer …`) is identical across providers — only the
+   * response envelope differs.
+   *
+   * Default: `openai`.
+   */
+  responseShape?: EmbeddingResponseShape;
 }
 
 export interface AiKnowledgeBaseSettings {

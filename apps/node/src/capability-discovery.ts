@@ -125,19 +125,31 @@ export async function runCapabilityDiscoveryCycle(deps: {
 
   // Advertise all topics concurrently (not sequentially) to avoid blocking
   // startup for N_topics × 10s. Each provide has its own internal timeout.
+  // `provideCapabilityTopic` no longer throws on timeout — it returns
+  // `{ timedOut: true }` so we can audit the distinction between "the put
+  // landed" and "the put stalled waiting for DHT peers".
   await Promise.allSettled(
     topics.map(async (topic) => {
       try {
-        await mesh.provideCapabilityTopic(topic);
+        const result = await mesh.provideCapabilityTopic(topic);
         await taskStore.appendAuditEvent(
           createAuditEvent({
             type: "p2p.trace",
             direction: "outbound",
-            protocol: "discovery.capability.provide.ok",
+            protocol: result.timedOut
+              ? "discovery.capability.provide.timeout"
+              : "discovery.capability.provide.ok",
             outcome: "record",
-            summary: `capability provide ok topic=${topic} source=${source}`,
+            summary: result.timedOut
+              ? `capability provide timed out topic=${topic} source=${source} (DHT may have no reachable peers)`
+              : `capability provide ok topic=${topic} source=${source}`,
           }),
         );
+        if (result.timedOut) {
+          // Skip find if provide didn't land — we'd just be querying an
+          // empty DHT and the result would be misleading.
+          return;
+        }
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);
         await taskStore.appendAuditEvent(

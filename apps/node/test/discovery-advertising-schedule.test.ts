@@ -55,7 +55,13 @@ function createMockMesh(provideImpl: (topic: string) => Promise<unknown>) {
   return {
     peerId: "QmMockPeer123456",
     multiaddrs: ["/ip4/127.0.0.1/tcp/4001/p2p/QmMockPeer123456"],
-    provideCapabilityTopic: vi.fn(provideImpl),
+    // provideCapabilityTopic now returns { cid, signedRecord?, timedOut }
+    // so callers can distinguish a landed put from a stalled one. Wrap
+    // the inner impl so test fixtures don't need to repeat the boilerplate.
+    provideCapabilityTopic: vi.fn(async (topic: string) => {
+      const inner = await provideImpl(topic);
+      return { timedOut: false, ...(inner as object) };
+    }),
     cancelCapabilityTopicReprovide: vi.fn().mockResolvedValue(undefined),
     findCapabilityTopicProviders: vi.fn().mockResolvedValue([]),
     send: vi.fn().mockResolvedValue(1),

@@ -280,10 +280,18 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
           );
           // Surface a one-time hint to help the user fix misconfigured embeddings.
           if (/missing vector/i.test(errMsg)) {
+            // Common causes:
+            //   - chat-completions endpoint was wired in as the embeddings endpoint
+            //   - upstream returns the OpenAI shape (data[].embedding) and we have
+            //     configured a parser that expects MiniMax (or vice versa)
             console.warn(
-              "[rag] hint: the embeddings endpoint returned a response without a vector field. " +
-                "If you are using an OpenAI-compatible chat-completions provider as the embeddings endpoint, " +
-                "switch the embedding mode to 'mock' (or 'ollama' for a local model) in AI Settings → Knowledge.",
+              "[rag] hint: the embeddings endpoint returned a response that didn't parse as an embeddings payload. " +
+                "Causes and fixes:\n" +
+                "  * you're pointing at the chat-completions endpoint — pick a real /embeddings URL;\n" +
+                "  * the API returns a different envelope than OpenAI (e.g. MiniMax embo-01 returns `{embedding}` or `{vectors}` at the root). " +
+                "Set `embedding.responseShape` in AI Settings → Knowledge to `minimax` (or `auto` to try both);\n" +
+                "  * your key has no embeddings entitlement — use a different provider;\n" +
+                "  * fallback: switch embedding mode to `mock` (or `ollama` for local) in AI Settings → Knowledge.",
             );
           }
           return;

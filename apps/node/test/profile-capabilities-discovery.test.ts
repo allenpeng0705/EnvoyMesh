@@ -126,7 +126,7 @@ describe("Profile capability discovery wiring", () => {
 
   it("removes dropped profile capability tags from manifest on save", async () => {
     const { mesh, service, profileDir } = await createNode();
-    vi.spyOn(mesh, "provideCapabilityTopic").mockResolvedValue({ cid: {} as never });
+    vi.spyOn(mesh, "provideCapabilityTopic").mockResolvedValue({ cid: {} as never, timedOut: false });
     const manifestStore = createCapabilityManifestStore(profileDir);
 
     await service.updateHumanProfile({

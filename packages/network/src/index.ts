@@ -20,6 +20,7 @@ import { multiaddr as ma, type Multiaddr } from "@multiformats/multiaddr";
 import type { CID } from "multiformats/cid";
 import { createLibp2p, type Libp2p } from "libp2p";
 import type { Uint8ArrayList } from "uint8arraylist";
+import net from "node:net";
 import { decodeEnvelope, encodeEnvelope } from "./codec.js";
 import {
   encodeDataTransferBody,
@@ -97,8 +98,52 @@ export function getEnvoyContactKeepAlivePeerTagName(): string {
 const NEW_STREAM_ON_OPEN_CONNECTION_TIMEOUT_MS = 15_000;
 /** Fail fast when reusing an existing chat stream (stale direct TCP is common on LAN). */
 const BONDED_CHAT_STREAM_REUSE_TIMEOUT_MS = 4_000;
-/** Per-hint dial cap when iterating multiaddrs (fail fast; libp2p default dialTimeout is 15s). */
-const HINT_DIAL_TIMEOUT_MS = 3_500;
+/**
+ * Per-hint dial cap when iterating multiaddrs.
+ *
+ * History:
+ *   3_500ms  — original; fired before TCP+Noise+Yamux on cross-region
+ *              dials, marking every multiaddr unreachable.
+ *   15_000ms — first bump; matched libp2p's own default dialTimeout.
+ *              Still too tight for the community relay at 47.93.11.212
+ *              where the circuit-relay-v2 reservation handshake
+ *              competes for the same budget.
+ *   30_000ms — current; gives the libp2p transport (and any reservation
+ *              handshake that piggybacks on the dial) a real chance to
+ *              complete across slow cross-region paths.
+ *
+ * Multiaddr iteration within a single `sendChat` still falls through to
+ * the next hint on this timeout, so a slow hint doesn't block the whole
+ * send — it just gets skipped.
+ *
+ * The companion libp2p knobs in `createLibp2p({ connectionManager })` —
+ * `dialTimeout` and `addressDialTimeout` — must move in lockstep with
+ * this constant or the libp2p-level dial can still cap at the lower
+ * value and override our per-hint race.
+ */
+const HINT_DIAL_TIMEOUT_MS = 30_000;
+
+/**
+ * circuit-relay-v2 reservation-protocol timeout.
+ *
+ * Distinct from `HINT_DIAL_TIMEOUT_MS` (which caps the raw TCP dial to
+ * the relay) — this caps the **multi-step reservation handshake** that
+ * runs over the dialed connection: the relay confirms it has a slot,
+ * returns reservation limits (TTL, data/duration caps), and the client
+ * acks. Defaults to **5_000ms** in `@libp2p/circuit-relay-v2`, which is
+ * too tight for slow cross-region paths — the dial completes, the
+ * handshake starts, and the reservation times out 5s in before the
+ * multi-step protocol finishes.
+ *
+ * Set to match `HINT_DIAL_TIMEOUT_MS` so the two budgets agree: the
+ * dial gives the connection, the reservation gives the slot. With
+ * this at 5_000 and `HINT_DIAL_TIMEOUT_MS` at 30_000, a slow relay
+ * would dial successfully then fail reservation 25s before the dial
+ * timeout ever fires — the user sees `relay=PENDING` and the
+ * readiness summary's "no reservation yet" warning without any
+ * obvious reason.
+ */
+const RELAY_RESERVATION_TIMEOUT_MS = 30_000;
 
 function streamReuseTimeoutMs(protocol: string): number {
   return protocol === ENVOY_CHAT_PROTOCOL
@@ -296,6 +341,16 @@ export class EnvoyMesh {
     disconnect: (event: unknown) => void;
     reconnectFailure?: (event: unknown) => void;
   };
+  /** libp2p circuit-relay-v2 event handlers installed at start(), torn down at stop(). */
+  private relayLoggingHandlers?: {
+    reservation: (event: unknown) => void;
+    reservationError: (event: unknown) => void;
+    advertSuccess: (event: unknown) => void;
+    advertError: (event: unknown) => void;
+  };
+  /** Track whether we've ever successfully reserved a relay slot. Used to log a startup summary. */
+  private relayEverReserved = false;
+  private relayEverAdvertised = false;
 
   constructor(private readonly options: EnvoyMeshOptions = {}) {}
 
@@ -362,8 +417,13 @@ export class EnvoyMesh {
         reconnectRetryInterval: 5000,
         reconnectBackoffFactor: 1.5,
         maxParallelReconnects: 10,
-        dialTimeout: 15_000,
-        addressDialTimeout: 10_000,
+        // Bumped from 15s/10s to 30s in lockstep with HINT_DIAL_TIMEOUT_MS.
+        // The libp2p-level dialTimeout is the hard ceiling for any single
+        // multiaddr dial (the per-hint race above is the soft ceiling for
+        // multiaddr iteration). Keeping them in lockstep ensures both
+        // bounds agree and the slower of the two wins.
+        dialTimeout: 30_000,
+        addressDialTimeout: 30_000,
       },
       addresses: {
         listen: listenAddrs,
@@ -372,7 +432,9 @@ export class EnvoyMesh {
       transports: [
         ...(browserMode ? [] : [tcp()]),
         ...(enableWebSocket ? [webSockets()] : []),
-        ...(this.options.enableRelay || this.options.enableRelayServer || browserMode ? [circuitRelayTransport()] : []),
+        ...(this.options.enableRelay || this.options.enableRelayServer || browserMode
+          ? [circuitRelayTransport({ reservationCompletionTimeout: RELAY_RESERVATION_TIMEOUT_MS })]
+          : []),
         ...(quicTransportFactory && !browserMode ? [quicTransportFactory()] : []),
       ],
       connectionEncrypters: [noise()],
@@ -402,6 +464,13 @@ export class EnvoyMesh {
 
     await this.installEnvelopeInboundHandler(ENVOY_MESSAGE_PROTOCOL);
     await this.installEnvelopeInboundHandler(ENVOY_CHAT_PROTOCOL);
+
+    // Subscribe to libp2p circuit-relay-v2 events so operators can see
+    // whether we successfully reserved a slot on a relay hop (inbound
+    // reachability) and whether the relay advertised our address. Without
+    // these logs, a stuck DHT + no relay reservation is indistinguishable
+    // from "everything is fine" in the existing log stream.
+    this.installRelayLogging();
 
     await this.node.handle(ENVOY_DATA_PROTOCOL, async (stream: any, connection: any) => {
       const remotePeerId = connection.remotePeer.toString();
@@ -443,16 +512,17 @@ export class EnvoyMesh {
 
     // node.start() starts all transports including circuit-relay-v2. When relay
     // is enabled, the relay transport may try to reach configured relay servers
-    // during startup. If those servers are unreachable, each dial attempt
-    // blocks for dialTimeout (15 s).  Without a timeout, the entire start()
-    // can hang for minutes, keeping the Social UI in "Connecting…" forever.
+    // during startup. If those servers are slow, each dial attempt
+    // blocks for dialTimeout (30 s after the recent bump).  Without an
+    // overall timeout, the entire start() can hang for minutes, keeping
+    // the Social UI in "Connecting…" forever.
     //
-    // A 25 s deadline gives the relay transport ~1 full dialTimeout cycle
-    // (15 s) plus headroom for TCP + QUIC listen, DHT bootstrap, and the
+    // A 60 s deadline gives the relay transport ~2 full dialTimeout cycles
+    // (30 s) plus headroom for TCP + QUIC listen, DHT bootstrap, and the
     // relay auto-reservation handshake.  If it still hasn't finished, we
     // continue — the node is functional for direct P2P, and relay
     // connectivity will be established asynchronously when possible.
-    const NODE_START_DEADLINE_MS = 25_000;
+    const NODE_START_DEADLINE_MS = 60_000;
     try {
       await promiseWithTimeout(
         Promise.resolve(this.node.start()),
@@ -469,6 +539,18 @@ export class EnvoyMesh {
 
     this.attachP2pDebug(this.node);
     this.attachReachabilityObservability(this.node);
+
+    // Fire-and-forget startup diagnostics. Don't await — these are
+    // operator-visibility probes, not on the critical path. The relay
+    // reservation + DHT bootstrap complete asynchronously in the
+    // background, and the readiness summary reflects whatever state
+    // we've reached by the time it runs (~50-200ms after start()).
+    void this.probeBootstrapPeers();
+    this.warnOnAdvertisedPortMismatch();
+    // Defer the readiness summary by 200ms so any synchronous
+    // relay:reservation events that fired during start() get a chance
+    // to flip relayEverReserved first.
+    setTimeout(() => this.logDiscoveryReadiness(), 200).unref?.();
   }
 
   async stop(): Promise<void> {
@@ -480,9 +562,38 @@ export class EnvoyMesh {
       clearInterval(this.relayDebugTimer);
       this.relayDebugTimer = undefined;
     }
+    // Surface the relay state at shutdown so an operator tailing the
+    // log can see whether the node ever got inbound reachability while
+    // it was up. No reservation after a reasonable startup window is
+    // a strong signal that DHT bootstrap + relay connection both failed.
+    // Only emit when relay was actually enabled — otherwise it's just
+    // noise (e.g. relay-disabled tests, browser mode).
+    const relayEnabled =
+      this.options.enableRelay ||
+      this.options.enableRelayServer ||
+      // browserMode defaults to true when listen addrs is empty; we
+      // can't read it here directly, but the absence of `node` is a
+      // safe proxy. The presence of relay:reservation handlers is the
+      // real signal.
+      this.relayLoggingHandlers !== undefined;
+    if (relayEnabled && !this.relayEverReserved) {
+      console.warn(
+        `[p2p] stop(): node NEVER reserved a relay slot during this run. ` +
+        `Other peers cannot dial this node inbound via /p2p-circuit/. ` +
+        `Check [relay] reservation lines above for the failure cause.`,
+      );
+    } else if (relayEnabled && !this.relayEverAdvertised) {
+      console.warn(
+        `[p2p] stop(): relay reservation OK but address never ADVERTISED through relay. ` +
+        `Peers that haven't learned our address another way cannot findPeer(thisNode).`,
+      );
+    }
+    this.detachRelayLogging();
     this.detachReachabilityObservability();
     await this.node.stop();
     this.node = undefined;
+    this.relayEverReserved = false;
+    this.relayEverAdvertised = false;
   }
 
   get peerId(): string {
@@ -865,11 +976,17 @@ export class EnvoyMesh {
     return () => (node as any).removeEventListener("self:reachable", handlerFn);
   }
 
-  async provideSelf(): Promise<void> {
+  /**
+   * Announce this node's peer ID + addresses into the DHT so other peers can
+   * `findPeer` it. Best-effort: returns a status object so callers can log
+   * accurately. Previously logged "SUCCESS" even when the broadcast put
+   * timed out because no DHT peers were reachable, which hid real outages.
+   */
+  async provideSelf(): Promise<{ advertised: number; timedOut: boolean }> {
     console.log("[p2p] provideSelf: starting...");
     if (!this.options.enableDht) {
       console.warn("[p2p] provideSelf: DHT not enabled, skipping self-advertisement");
-      return;
+      return { advertised: 0, timedOut: false };
     }
     const node = this.requireNode();
     const selfPeerId = node.peerId.toString();
@@ -901,7 +1018,7 @@ export class EnvoyMesh {
 
       if (uniqueAddrs.length === 0) {
         console.warn(`[p2p] provideSelf: no publicly dialable addresses to advertise`);
-        return;
+        return { advertised: 0, timedOut: false };
       }
 
       const key = fromString(selfPeerId);
@@ -909,13 +1026,37 @@ export class EnvoyMesh {
       const value = new TextEncoder().encode(JSON.stringify(info));
 
       // Advertise via contentRouting.put — this broadcasts to k-closest peers.
+      // Race against a hard timeout so a stuck DHT (zero reachable peers,
+      // bootstrap still in progress) doesn't block this call indefinitely.
+      // The previous version awaited put() with no upper bound.
       console.log(`[p2p] provideSelf: calling contentRouting.put (broadcast)`);
       console.log(`[p2p] provideSelf: advertised addrs: ${uniqueAddrs.join(", ")}`);
-      await node.contentRouting.put(key, value);
+      let broadcastTimedOut = false;
+      try {
+        await Promise.race([
+          node.contentRouting.put(key, value),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("provideSelf broadcast put timeout")), 15_000),
+          ),
+        ]);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes("timeout")) {
+          broadcastTimedOut = true;
+          console.warn(
+            `[p2p] provideSelf: broadcast put timed out after 15s — ` +
+            `DHT likely has no reachable peers. Self-record NOT advertised; ` +
+            `other nodes cannot findPeer(thisNode) until the DHT bootstrap completes.`,
+          );
+        } else {
+          throw err;
+        }
+      }
 
       // Also PUT directly to each configured bootstrap peer so the record
       // propagates to that specific DHT network. libp2p's put() accepts
       // a `peers` array to target specific peers directly.
+      let directPutTimedOut = false;
       const bootstrapPeers = this.options.bootstrapPeers ?? [];
       if (bootstrapPeers.length > 0) {
         // Extract peer IDs from bootstrap multiaddr strings (format: /ip4/x.x.x.x/tcp/N/p2p/<peerId>)
@@ -939,14 +1080,31 @@ export class EnvoyMesh {
             await (node.contentRouting as any).put(key, value, { peers: targetPeers });
             console.log(`[p2p] provideSelf: direct-put to bootstrap peers OK`);
           } catch (err) {
-            console.warn(`[p2p] provideSelf: direct-put to bootstrap peers FAILED: ${err}`);
+            const msg = err instanceof Error ? err.message : String(err);
+            if (msg.includes("timeout")) {
+              directPutTimedOut = true;
+              console.warn(`[p2p] provideSelf: direct-put to bootstrap peers timed out`);
+            } else {
+              console.warn(`[p2p] provideSelf: direct-put to bootstrap peers FAILED: ${err}`);
+            }
           }
         }
       }
 
+      const timedOut = broadcastTimedOut || directPutTimedOut;
+      if (timedOut) {
+        console.warn(
+          `[p2p] provideSelf: FAILED (timed out) - advertised ${uniqueAddrs.length} addrs ` +
+          `LOCALLY but did NOT propagate to DHT. Peer ${selfPeerId.slice(0, 12)}… is undiscoverable until next cycle.`,
+        );
+        return { advertised: uniqueAddrs.length, timedOut: true };
+      }
+
       console.log(`[p2p] provideSelf: SUCCESS - advertised ${uniqueAddrs.length} addresses for peer ${selfPeerId.slice(0, 12)}…`);
+      return { advertised: uniqueAddrs.length, timedOut: false };
     } catch (err) {
       console.error(`[p2p] provideSelf: FAILED - ${err}`);
+      return { advertised: 0, timedOut: true };
     }
   }
 
@@ -972,23 +1130,38 @@ export class EnvoyMesh {
       /** Optional version scope tag. */
       ver?: string;
     },
-  ): Promise<{ cid: CID; signedRecord?: import("@envoymesh/protocol").SignedCapabilityTopicRecord }> {
+  ): Promise<{ cid: CID; signedRecord?: import("@envoymesh/protocol").SignedCapabilityTopicRecord; timedOut: boolean }> {
     this.requireDhtForCapabilityTopics();
     const cid = await cidForCapabilityTopic(topic);
+    let timedOut = false;
+
     // Wrap provide() in a timeout — the underlying libp2p KadDHT provide
     // can hang for a long time when DHT peers are unreachable. This is
     // especially common at startup when the DHT hasn't bootstrapped yet.
-    await Promise.race([
-      this.requireNode().contentRouting.provide(cid, options),
-      new Promise((_, reject) =>
-        setTimeout(() => reject(new Error(`provide timeout for ${topic}`)), 30_000),
-      ),
-    ]).catch((err) => {
-      // Don't throw — provide is best-effort. The topic will be re-advertised
-      // on the next periodic cycle once the DHT has more peers.
-      if (!err.message.includes("timeout")) throw err;
-      console.warn(`[p2p] provideCapabilityTopic: ${err.message} — will retry on next cycle`);
-    });
+    //
+    // IMPORTANT: don't swallow the timeout silently. Callers need to know
+    // whether the put actually landed so they can log accurately and decide
+    // whether to back off or retry. We return `timedOut: true` instead of
+    // throwing so the periodic schedule doesn't crash, but the boolean
+    // propagates to the caller.
+    try {
+      await Promise.race([
+        this.requireNode().contentRouting.provide(cid, options),
+        new Promise((_, reject) =>
+          setTimeout(() => reject(new Error(`provide timeout for ${topic}`)), 30_000),
+        ),
+      ]);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (msg.includes("timeout")) {
+        timedOut = true;
+        console.warn(`[p2p] provideCapabilityTopic: ${msg} — will retry on next cycle`);
+      } else {
+        // Non-timeout errors (e.g. encode failure, unexpected libp2p
+        // rejection) — surface so they aren't silently lost.
+        throw err;
+      }
+    }
 
     let signedRecord: import("@envoymesh/protocol").SignedCapabilityTopicRecord | undefined;
     if (options?.signingKey) {
@@ -1009,18 +1182,23 @@ export class EnvoyMesh {
       // Also store the signed record in the DHT so queriers can retrieve it.
       // Use Promise.race with a hard timeout so this doesn't block indefinitely when no DHT peers are available.
       const recordBytes = Buffer.from(JSON.stringify(signedRecord), "utf8");
-      await Promise.race([
-        this.requireNode().contentRouting.put(cid.bytes, recordBytes, options),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("put timeout")), 5000)),
-      ]).catch((err) => {
-        if (!err.message.includes("timeout")) {
+      try {
+        await Promise.race([
+          this.requireNode().contentRouting.put(cid.bytes, recordBytes, options),
+          new Promise((_, reject) => setTimeout(() => reject(new Error("put timeout")), 5000)),
+        ]);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        if (msg.includes("timeout")) {
+          timedOut = true;
+          console.warn(`[p2p] provideCapabilityTopic (signed record): ${msg}`);
+        } else {
           throw err;
         }
-        // Timeout is acceptable — record is still announced via provide(); put is best-effort DHT propagation
-      });
+      }
     }
 
-    return { cid, signedRecord };
+    return { cid, signedRecord, timedOut };
   }
 
   async cancelCapabilityTopicReprovide(topic: string, options?: RoutingOptions): Promise<void> {
@@ -2142,6 +2320,288 @@ export class EnvoyMesh {
     }
     const s = String(detail ?? "?").trim();
     return s.length <= 14 ? s : `${s.slice(0, 12)}…`;
+  }
+
+  /**
+   * Hook circuit-relay-v2 events so operators can see in the log stream
+   * whether this node successfully:
+   *   1. reserved a slot on a relay hop (inbound reachability via relay)
+   *   2. advertised its address through the relay (other peers can find us)
+   *
+   * Without these, "relay is configured but not reachable" is invisible.
+   * The events are emitted by `@libp2p/circuit-relay-v2` and aren't in the
+   * libp2p interface types, so we use untyped handlers.
+   */
+  private installRelayLogging(): void {
+    const node = this.node;
+    if (!node) return;
+    const typed = node as Libp2p & {
+      addEventListener?: (type: string, handler: (event: unknown) => void) => void;
+      removeEventListener?: (type: string, handler: (event: unknown) => void) => void;
+    };
+    if (typeof typed.addEventListener !== "function") return;
+    // Idempotent — guards against accidental double-install during start()/restart cycles.
+    if (this.relayLoggingHandlers) return;
+
+    const reservation = (event: unknown) => {
+      const detail = (event as { detail?: unknown })?.detail as
+        | { relayPeerId?: { toString(): string }; ttl?: number; limit?: { data?: number; duration?: number } }
+        | undefined;
+      const relayId = detail?.relayPeerId?.toString() ?? "?";
+      this.relayEverReserved = true;
+      console.log(
+        `[relay] RESERVED slot on relay=${relayId.slice(0, 12)}… ` +
+        `(ttl=${detail?.ttl ?? "?"}s, limit=${detail?.limit?.data ?? "?"}B/${detail?.limit?.duration ?? "?"}s). ` +
+        `Other peers can now reach this node via /p2p-circuit/p2p/${relayId.slice(0, 12)}…/p2p/<us>.`,
+      );
+    };
+
+    const reservationError = (event: unknown) => {
+      const detail = (event as { detail?: unknown })?.detail;
+      const msg = detail instanceof Error ? detail.message : String(detail ?? "");
+      console.warn(
+        `[relay] reservation FAILED: ${msg || "(no detail)"} — ` +
+        `this node cannot be reached inbound through a relay until this succeeds. ` +
+        `Check that at least one configured relay (cn-relay, public-libp2p, or a custom entry) is reachable.`,
+      );
+    };
+
+    const advertSuccess = (_event: unknown) => {
+      this.relayEverAdvertised = true;
+      console.log(`[relay] address ADVERTISED through relay — other peers can now findPeer(thisNode).`);
+    };
+
+    const advertError = (event: unknown) => {
+      const detail = (event as { detail?: unknown })?.detail;
+      const msg = detail instanceof Error ? detail.message : String(detail ?? "");
+      console.warn(`[relay] address advertisement FAILED: ${msg || "(no detail)"}`);
+    };
+
+    typed.addEventListener("relay:reservation", reservation);
+    typed.addEventListener("relay:reservation:error", reservationError);
+    typed.addEventListener("relay:advert:success", advertSuccess);
+    typed.addEventListener("relay:advert:error", advertError);
+
+    this.relayLoggingHandlers = { reservation, reservationError, advertSuccess, advertError };
+  }
+
+  private detachRelayLogging(): void {
+    const node = this.node;
+    const handlers = this.relayLoggingHandlers;
+    this.relayLoggingHandlers = undefined;
+    if (!node || !handlers) return;
+    const typed = node as Libp2p & {
+      removeEventListener?: (type: string, handler: (event: unknown) => void) => void;
+    };
+    if (typeof typed.removeEventListener !== "function") return;
+    typed.removeEventListener("relay:reservation", handlers.reservation);
+    typed.removeEventListener("relay:reservation:error", handlers.reservationError);
+    typed.removeEventListener("relay:advert:success", handlers.advertSuccess);
+    typed.removeEventListener("relay:advert:error", handlers.advertError);
+  }
+
+  /**
+   * TCP-level reachability probe for a single host:port. Distinct from
+   * the libp2p-level `dialProtocol`: this tests raw TCP connectivity
+   * (firewall, NAT, ISP blocks, "host down", DNS resolution) without
+   * involving the libp2p Noise+Yamux handshake. Surfaces the underlying
+   * "can I even open a socket to this address?" question that the
+   * 15s dial timeout hides behind a less specific error.
+   *
+   * Resolves with `{ ok: true }` on TCP connect, or `{ ok: false, reason }`
+   * after the deadline. Never throws.
+   */
+  private tcpProbe(
+    host: string,
+    port: number,
+    timeoutMs: number,
+  ): Promise<{ ok: boolean; reason?: string }> {
+    return new Promise((resolve) => {
+      let settled = false;
+      const socket = new net.Socket();
+      const finish = (result: { ok: boolean; reason?: string }) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        try {
+          socket.destroy();
+        } catch {
+          /* ignore */
+        }
+        resolve(result);
+      };
+      // Use a single source of truth for the timeout. We don't also call
+      // `socket.setTimeout()` because its default behavior is to fire a
+      // 'timeout' event and then close the socket, which would race with
+      // our manual timer and could resolve the promise twice.
+      const timer = setTimeout(() => finish({ ok: false, reason: `timeout after ${timeoutMs}ms` }), timeoutMs);
+      socket.once("connect", () => {
+        finish({ ok: true });
+      });
+      // Use the broad 'error' event for any TCP failure (ECONNREFUSED,
+      // EHOSTUNREACH, ENETUNREACH, EHOSTDOWN, ETIMEDOUT, certificate
+      // issues, etc.). The error object's `code` is the POSIX errno
+      // string, which is the most useful signal an operator can act on.
+      socket.once("error", (err: NodeJS.ErrnoException) => {
+        const code = err.code ? `${err.code}` : "unknown";
+        const syscode = err.syscall ? ` (${err.syscall})` : "";
+        finish({ ok: false, reason: `${code}${syscode}: ${err.message}` });
+      });
+      try {
+        socket.connect(port, host);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        finish({ ok: false, reason: `connect threw: ${msg}` });
+      }
+    });
+  }
+
+  /**
+   * Walk every configured bootstrap peer and TCP-probe it. Surfaces in
+   * the log which one(s) are reachable so an operator can immediately
+   * distinguish "the relay is down" from "my firewall blocks the relay"
+   * from "DNS isn't resolving". Probes run in parallel with a 5s budget
+   * per host so the worst case is 5s regardless of how many peers are
+   * configured. Non-blocking — fires after node.start() returns.
+   *
+   * Why this exists: libp2p's `dialProtocol` reports "dial timed out"
+   * at 15s without telling the operator whether the issue is
+   * TCP-level (firewall, relay dead) or libp2p-level (protocol
+   * mismatch, peer store stale). A bare TCP probe answers the first
+   * half and the relay logging above answers the second.
+   */
+  private async probeBootstrapPeers(): Promise<void> {
+    const peers = this.options.bootstrapPeers ?? [];
+    if (peers.length === 0) {
+      console.log(
+        `[p2p] bootstrap probe: no bootstrap peers configured — DHT will only see peers it discovers via mDNS/relay-checkin.`,
+      );
+      return;
+    }
+    const probes = peers.map(async (addr) => {
+      // Parse /ip4/x.x.x.x/tcp/N/p2p/<peerId> → { host, port }.
+      // Skip ws/wss (WebSocket-only) and p2p-circuit — those aren't
+      // raw-TCP-probeable.
+      let host: string;
+      let port: number;
+      try {
+        const m = ma(addr);
+        const components = m.getComponents();
+        const ip4 = components.find((c) => c.code === 4);
+        const ip6 = components.find((c) => c.code === 41);
+        const tcp = components.find((c) => c.code === 6);
+        if (!tcp) {
+          console.log(`[p2p] bootstrap probe: skip non-TCP peer ${addr}`);
+          return;
+        }
+        if (ip4 && typeof ip4.value === "string") {
+          host = ip4.value;
+        } else if (ip6 && typeof ip6.value === "string") {
+          host = ip6.value;
+        } else {
+          console.log(`[p2p] bootstrap probe: skip non-IP peer ${addr}`);
+          return;
+        }
+        port = Number(tcp.value);
+        if (!Number.isFinite(port)) {
+          console.log(`[p2p] bootstrap probe: invalid port in ${addr}`);
+          return;
+        }
+      } catch {
+        console.warn(`[p2p] bootstrap probe: invalid multiaddr ${addr}`);
+        return;
+      }
+
+      const result = await this.tcpProbe(host, port, 5_000);
+      if (result.ok) {
+        console.log(`[p2p] bootstrap probe: REACHABLE ${host}:${port} (${addr})`);
+      } else {
+        console.warn(
+          `[p2p] bootstrap probe: UNREACHABLE ${host}:${port} — ${result.reason}. ` +
+          `Check that the relay/service is up, your firewall allows outbound to ${host}:${port}, ` +
+          `and your ISP/network doesn't block this destination.`,
+        );
+      }
+    });
+    await Promise.all(probes);
+  }
+
+  /**
+   * Detect the "advertised port doesn't match listen port" misconfiguration
+   * that catches operators running behind NAT without port forwarding.
+   * autoNAT reports observed addresses — those may not be inbound-routable.
+   * Symptom: this node's DHT record is published with port P1 but the
+   * OS only has a listener on port P2, so dial-back from peers fails.
+   */
+  private warnOnAdvertisedPortMismatch(): void {
+    if (!this.node) return;
+    const listenAddrs = this.node.getMultiaddrs();
+    // Collect the set of TCP ports this node is actually listening on.
+    const listenPorts = new Set<number>();
+    for (const la of listenAddrs) {
+      for (const c of la.getComponents()) {
+        if (c.code === 6 && typeof c.value === "string") {
+          const p = Number(c.value);
+          if (Number.isFinite(p)) listenPorts.add(p);
+        }
+      }
+    }
+    // For each announced address, check if the port appears in any listen addr.
+    for (const announced of this._appendAnnounce) {
+      try {
+        const m = ma(announced);
+        const components = m.getComponents();
+        const tcp = components.find((c) => c.code === 6);
+        if (!tcp || typeof tcp.value !== "string") continue;
+        const port = Number(tcp.value);
+        if (!Number.isFinite(port) || listenPorts.has(port)) continue;
+        console.warn(
+          `[p2p] PORT MISMATCH: advertised address ${announced} has port ${port} ` +
+          `but this node is not listening on port ${port}. ` +
+          `Other peers that try to dial back to this address will fail. ` +
+          `Fix: configure your router to forward external port ${port} → ` +
+          `this machine's port ${port}, or remove this address from advertiseAddrs ` +
+          `and rely on circuit-relay for inbound reachability.`,
+        );
+      } catch {
+        /* skip invalid */
+      }
+    }
+  }
+
+  /**
+   * One-line summary of the node's discovery readiness after start().
+   * Operators tailing the log can read this single line and know
+   * whether Discover will work — no log archaeology required.
+   */
+  private logDiscoveryReadiness(): void {
+    const lines: string[] = [];
+    if (this.options.enableRelay || this.options.enableRelayServer) {
+      lines.push(`relay=${this.relayEverReserved ? "RESERVED" : "PENDING"}`);
+    } else {
+      lines.push("relay=OFF");
+    }
+    if (this.options.enableDht) {
+      lines.push("dht=ON");
+    } else {
+      lines.push("dht=OFF");
+    }
+    if (this.options.enableMdns) {
+      lines.push("mDNS=ON");
+    } else {
+      lines.push("mDNS=OFF");
+    }
+    const advertisedCount = this._appendAnnounce.length;
+    lines.push(`advertised_addrs=${advertisedCount}`);
+    const listenCount = this.node?.getMultiaddrs().length ?? 0;
+    lines.push(`listen_addrs=${listenCount}`);
+    if (!this.relayEverReserved && (this.options.enableRelay || this.options.enableRelayServer)) {
+      lines.push(
+        "→ Discover may not work: no relay reservation yet. " +
+        "If this persists past 30s, the configured relay is unreachable from this network.",
+      );
+    }
+    console.log(`[p2p] discovery readiness: ${lines.join("  ")}`);
   }
 
   private detachReachabilityObservability(): void {

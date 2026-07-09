@@ -1,7 +1,10 @@
 /**
  * WAN sign-off for Phase 17A geo discovery (live DHT via relay bootstrap).
  *
- *   TEST_RELAY_ADDR=/ip4/.../p2p/... npm test -- apps/node/test/geo-discovery-wan-signoff.test.ts
+ * Default relay: community relay at 47.93.11.212:4001. Override with
+ * TEST_RELAY_ADDR=/ip4/.../p2p/... when running against a private relay.
+ *
+ *   npx vitest run apps/node/test/geo-discovery-wan-signoff.test.ts
  *
  * Exit criteria: two relay-bootstrap nodes with public profiles + same city find each other
  * via searchPeers({ topics: ['geo:city:…'] }) without a prior bond.
@@ -15,7 +18,12 @@
  * Runtime: ~9 minutes with TEST_RELAY_ADDR (skipped in CI by default).
  * Staging note: advertises `geo:city:US-geo-signoff` on the live DHT — test-only rendezvous topic.
  */
-import { defaultBootstrapPresetsForDiscoveryProfile, deriveLocationDiscoveryTopics, locationSearchTopics } from "@envoymesh/api";
+import {
+  DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
+  defaultBootstrapPresetsForDiscoveryProfile,
+  deriveLocationDiscoveryTopics,
+  locationSearchTopics,
+} from "@envoymesh/api";
 import {
   createDeviceCertificate,
   generateDeviceIdentity,
@@ -34,7 +42,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { NodeServiceImpl } from "../src/node-service-impl.js";
 import { resolveBootstrapAddresses } from "../src/bootstrap-resolver.js";
 
-const RELAY_ADDR = process.env.TEST_RELAY_ADDR || null;
+const RELAY_ADDR = process.env.TEST_RELAY_ADDR || DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR;
 const itRelayed = RELAY_ADDR ? it : it.skip;
 const WAN_TIMEOUT_MS = 180_000;
 const BOOTSTRAP_SETTLE_MS = 8_000;
@@ -52,7 +60,7 @@ afterEach(async () => {
   await Promise.all(profileDirs.splice(0).map((d) => rm(d, { recursive: true, force: true })));
 });
 
-describe.skip("WAN geo discovery sign-off — see docs/known-broken-e2e.md", () => {
+describe.skipIf(!RELAY_ADDR)("WAN geo discovery sign-off (live relay)", () => {
   itRelayed(
     "relay-bootstrap nodes find each other on geo:city topic without prior bond",
     async () => {

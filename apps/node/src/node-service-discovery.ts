@@ -1300,8 +1300,18 @@ export class NodeDiscoveryRuntime {
       }
       try {
         console.log(`[node-service] Advertising topic: "${topic}" on DHT`);
-        await mesh.provideCapabilityTopic(topic);
-        console.log(`[node-service] Successfully advertised topic: ${topic}`);
+        // provideCapabilityTopic returns { timedOut } so we can log
+        // accurately. Previously the function swallowed the timeout and
+        // we logged "Successfully advertised" even when nothing landed.
+        const result = await mesh.provideCapabilityTopic(topic);
+        if (result.timedOut) {
+          console.warn(
+            `[node-service] advertiseTopic "${topic}" TIMED OUT — ` +
+            `DHT likely has no reachable peers. Topic will be re-advertised on next cycle.`,
+          );
+        } else {
+          console.log(`[node-service] Successfully advertised topic: ${topic}`);
+        }
       } catch (err) {
         console.error(`[node-service] Failed to advertise topic ${topic}:`, err);
         throw err;

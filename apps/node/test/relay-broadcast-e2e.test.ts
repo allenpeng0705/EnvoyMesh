@@ -7,10 +7,15 @@
  * 3. Matching peers respond directly to broadcaster (P2P, not via relay)
  *
  * Requirements:
- * - A running relay server accessible at TEST_RELAY_ADDR environment variable
+ * - A running relay server accessible at TEST_RELAY_ADDR environment variable,
+ *   OR the community relay at 47.93.11.212:4001 (the default fallback).
  *
  * Usage:
- *   TEST_RELAY_ADDR=/ip4/127.0.0.1/tcp/4001/p2p/... npm test -- apps/node/test/relay-broadcast-e2e.test.ts
+ *   # Default community relay
+ *   npx vitest run apps/node/test/relay-broadcast-e2e.test.ts
+ *
+ *   # Custom relay
+ *   TEST_RELAY_ADDR=/ip4/127.0.0.1/tcp/4001/p2p/... npx vitest run apps/node/test/relay-broadcast-e2e.test.ts
  */
 
 import {
@@ -37,14 +42,18 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR } from "@envoymesh/api";
 
-const RELAY_ADDR = process.env.TEST_RELAY_ADDR || null;
+// Default to the community relay at 47.93.11.212:4001 when no explicit
+// TEST_RELAY_ADDR is provided. Operators can override by exporting
+// TEST_RELAY_ADDR before running the test.
+const RELAY_ADDR = process.env.TEST_RELAY_ADDR || DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR;
 
 const meshes: EnvoyMesh[] = [];
 
 const itRelayed = RELAY_ADDR ? it : it.skip;
 
-describe.skip("E2E relay-assisted broadcast — see docs/known-broken-e2e.md", () => {
+describe.skipIf(!RELAY_ADDR)("E2E relay-assisted broadcast (live relay)", () => {
   let profileDir: string;
 
   beforeEach(async () => {
@@ -57,6 +66,8 @@ describe.skip("E2E relay-assisted broadcast — see docs/known-broken-e2e.md", (
   });
 
   itRelayed("broadcaster receives broadcast.response from matching peer via relay", async () => {
+    // Per-test timeout bumped: relay-reservation handshake (35s) +
+    // broadcast round-trip (30s) needs the 60s vitest default exceeded.
     const aliceProfile = testProfile("alice");
     const bobProfile = testProfile("bob");
 
@@ -122,8 +133,16 @@ describe.skip("E2E relay-assisted broadcast — see docs/known-broken-e2e.md", (
       }
     });
 
-    // Give nodes time to connect via relay
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    // Give nodes time to connect via relay. With `enableRelay: true` the
+    // relay-reservation handshake is the long pole — the libp2p circuit
+    // v2 default is 5s, our override is 30s, and the community relay
+    // sometimes takes the full window to acknowledge the reservation.
+    // 35s is the observed practical floor for a fresh mesh to obtain
+    // a relay slot end-to-end. The broadcast RPC that follows also
+    // runs over the relay, so this same budget gives the responder's
+    // reply a chance to land.
+    const RELAY_CONNECT_SETTLE_MS = 35_000;
+    await new Promise((resolve) => setTimeout(resolve, RELAY_CONNECT_SETTLE_MS));
 
     // Alice sends broadcast.request to relay
     const queryId = randomUUID();
@@ -152,15 +171,18 @@ describe.skip("E2E relay-assisted broadcast — see docs/known-broken-e2e.md", (
     // Send to relay (first peer in bootstrap list)
     await alice.send(RELAY_ADDR!, signedRequest);
 
-    // Wait for Alice to receive broadcast.response
-    await waitFor(async () => aliceReceivedResponses.length > 0, 5000);
+    // Wait for Alice to receive broadcast.response. The responder's
+    // reply goes via the relay too, so 30s gives the full round-trip
+    // a real chance.
+    await waitFor(async () => aliceReceivedResponses.length > 0, 30_000);
 
     expect(aliceReceivedResponses.length).toBeGreaterThan(0);
     expect(aliceReceivedResponses[0].queryId).toBe(queryId);
     expect(aliceReceivedResponses[0].responderOwnerId).toBe(bobProfile.owner.ownerId);
-  });
+  }, 120_000);
 
   itRelayed("only matching peers respond to broadcast.request", async () => {
+    // Same 120s budget as the first test — see comment there.
     const aliceProfile = testProfile("alice");
     const bobProfile = testProfile("bob", ["task.execute"]); // Bob matches
     const carolProfile = testProfile("carol", ["mesh.listen"]); // Carol doesn't match
@@ -242,7 +264,8 @@ describe.skip("E2E relay-assisted broadcast — see docs/known-broken-e2e.md", (
       }
     });
 
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    // See note on RELAY_CONNECT_SETTLE_MS in the first test.
+    await new Promise((resolve) => setTimeout(resolve, 35_000));
 
     const queryId = randomUUID();
     const requestPayload = createBroadcastRequestPayload({
@@ -268,18 +291,27 @@ describe.skip("E2E relay-assisted broadcast — see docs/known-broken-e2e.md", (
     const signedRequest = signUnsignedEnvelope(unsignedRequest, aliceProfile.device.privateKeyPem);
     await alice.send(RELAY_ADDR!, signedRequest);
 
-    await waitFor(async () => aliceReceivedResponses.length > 0, 5000);
+    // See note on the broadcast.response wait in the first test — the
+    // round-trip is via the relay, so 30s gives it room to complete.
+    await waitFor(async () => aliceReceivedResponses.length > 0, 30_000);
 
     // Only Bob should have responded, not Carol
     expect(aliceReceivedResponses).toContain(bobProfile.owner.ownerId);
     expect(aliceReceivedResponses).not.toContain(carolProfile.owner.ownerId);
-  });
+  }, 120_000);
 });
 
 async function startMeshWithRelay(): Promise<EnvoyMesh> {
   const mesh = new EnvoyMesh({
     listen: ["/ip4/127.0.0.1/tcp/0"],
     enableMdns: false,
+    // The broadcast path requires the relay hop to be reachable inbound
+    // for the responder's reply. `enableRelay: true` adds the
+    // circuit-relay-v2 transport and `/p2p-circuit` listen addr so this
+    // node can obtain a relay reservation on the configured bootstrap
+    // relay. Without this the responder can't reach the broadcaster
+    // behind NAT and the test times out at `waitFor`.
+    enableRelay: true,
     bootstrapPeers: RELAY_ADDR ? [RELAY_ADDR] : [],
   });
 

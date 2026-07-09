@@ -209,6 +209,12 @@ export default defineConfig({
       "@envoymesh/api/chat-room-service": resolve(repoRoot, "packages/api/src/chat-room-service.ts"),
       "@envoymesh/api": resolve(repoRoot, "packages/api/src/index.ts"),
       "@envoymesh/protocol": resolve(repoRoot, "packages/protocol/src/index.ts"),
+      // Browser-safe subpath — does NOT pull in node:crypto / node:fs.
+      // The full `@envoymesh/rag` root depends on Node builtins and is
+      // intentionally not aliased here; the Social UI must import this
+      // resolver subpath instead.
+      "@envoymesh/rag/embedding-resolver": resolve(repoRoot, "packages/rag/src/embedding-resolver.ts"),
+      "@envoymesh/rag": resolve(repoRoot, "packages/rag/src/index.ts"),
     },
   },
 });

@@ -259,8 +259,12 @@ export const aiSettingsMessages = {
     retrievalVector: "Vector (embeddings, recommended)",
     retrievalHybrid: "Hybrid (vector + keyword fallback)",
     retrievalLexical: "Lexical (keywords only)",
+    embeddingInheritBanner:
+      "Each field falls back to the chat-model setting when blank. Pick a chat-model provider above (OpenAI, MiniMax, Zhipu, Qwen, etc.) and these drop-downs follow automatically. Set a field here only to override.",
     embeddingModel: "Embedding model",
-    embeddingPlaceholder: "inherit from chat model or e.g. nomic-embed-text",
+    embeddingPlaceholder: "inherit from chat model (e.g. embo-01 on MiniMax, text-embedding-3-small on OpenAI)",
+    embeddingResolvedHint: "→ Effective value when blank: {value}",
+    embeddingApiKeyInherited: "→ Inherits API key from chat model",
     embeddingMode: "Embedding provider",
     embeddingModeInherit: "Inherit from chat model (default)",
     embeddingModeOpenAiCompatible: "OpenAI-compatible (e.g. embo-01 at MiniMax)",
@@ -273,6 +277,12 @@ export const aiSettingsMessages = {
     embeddingApiKey: "Embedding API key",
     embeddingApiKeyPlaceholder: "sk-… (blank = inherit chat key)",
     embeddingMaxInputTokens: "Max input tokens per embed call",
+    embeddingResponseShape: "Embeddings response shape",
+    embeddingResponseShapeOpenAi: "OpenAI / Zhipu / Qwen (data[] envelope)",
+    embeddingResponseShapeMinimax: "MiniMax embo-01 (root-level)",
+    embeddingResponseShapeAuto: "Auto-detect (try OpenAI, then MiniMax)",
+    embeddingResponseShapeHint:
+      "How the upstream wraps its vectors in JSON. The HTTP transport (POST /embeddings, bearer auth) is identical — only the response envelope differs. Auto-detects from the chat-model endpoint; pick `minimax` to force MiniMax shape, `openai` to force OpenAI-shape on a host that supports both.",
     embeddingMaxInputTokensHint:
       "Caps vault chunk size and truncates long messages at embed time. embo-01 = 4096, text-embedding-3-* = 8191. Blank = auto-detect from model name.",
     purgeRagOnDelete: "Purge RAG when deleting chat",

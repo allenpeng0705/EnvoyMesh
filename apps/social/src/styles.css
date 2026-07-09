@@ -4038,6 +4038,18 @@ textarea::placeholder {
   line-height: var(--leading-relaxed);
 }
 
+/* Inherited/effective-value hint under a Settings input. Slightly more
+   muted than `.field-desc` and prefixed with a `→` so it reads as
+   "what will actually be used", not as primary guidance. */
+.rag-resolved-hint {
+  font-size: var(--text-xs, 0.75rem);
+  font-style: italic;
+  color: var(--color-text-muted);
+  opacity: 0.85;
+  margin-top: var(--space-1, 0.25rem);
+  font-family: var(--font-mono, ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace);
+}
+
 /* Settings Radio Group */
 .settings-radio-group {
   display: flex;

@@ -2578,7 +2578,20 @@ async function activateCliMesh(reloadDiscoveryFromConfig: boolean): Promise<void
         const advertise = () => {
           advertiseAttempt++;
           console.log(`[node] DHT self-advertisement attempt ${advertiseAttempt}...`);
-          mesh.provideSelf().catch((err) => console.warn("[node] provideSelf failed:", err));
+          mesh.provideSelf()
+            .then((status) => {
+              if (status.timedOut) {
+                console.warn(
+                  `[node] DHT self-advertisement attempt ${advertiseAttempt} TIMED OUT ` +
+                  `(advertised=${status.advertised}). Other nodes cannot findPeer(thisNode) until DHT bootstrap completes.`,
+                );
+              } else if (status.advertised === 0) {
+                console.warn(`[node] DHT self-advertisement attempt ${advertiseAttempt}: no addresses to advertise`);
+              } else {
+                console.log(`[node] DHT self-advertisement attempt ${advertiseAttempt}: OK (${status.advertised} addrs)`);
+              }
+            })
+            .catch((err) => console.warn("[node] provideSelf failed:", err));
         };
         setTimeout(() => advertise(), 30000);
         setTimeout(() => advertise(), 60000);

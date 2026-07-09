@@ -37,7 +37,10 @@ const createMockHumanProfileStore = (profile?: any): HumanProfileStore => ({
 const createMockMesh = (overrides: any = {}) => ({
   peerId: "QmMockPeer123456",
   multiaddrs: ["/ip4/127.0.0.1/tcp/4001/p2p/QmMockPeer123456"],
-  provideCapabilityTopic: vi.fn().mockResolvedValue(undefined),
+  // provideCapabilityTopic now returns { cid, signedRecord?, timedOut } so
+  // callers can distinguish a landed put from a stalled one. Tests mock
+  // the success path with `timedOut: false`.
+  provideCapabilityTopic: vi.fn().mockResolvedValue({ timedOut: false }),
   cancelCapabilityTopicReprovide: vi.fn().mockResolvedValue(undefined),
   findCapabilityTopicProviders: vi.fn().mockResolvedValue([]),
   send: vi.fn().mockResolvedValue(1),

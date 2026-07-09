@@ -1,20 +1,27 @@
-import type { AiEmbeddingSettings, ModelProviderConfig } from "@envoymesh/api";
-import {
-  resolveEmbeddingMaxInputTokens,
-  truncateTextForEmbedding,
+import type {
+  AiEmbeddingSettings,
+  EmbeddingResponseShape,
+  ModelProviderConfig,
 } from "@envoymesh/api";
+import { truncateTextForEmbedding } from "@envoymesh/api";
 import { createHash } from "node:crypto";
+import {
+  KNOWN_EMBEDDING_PROVIDERS,
+  inferEmbeddingProviderFromEndpoint,
+  resolveEmbeddingConfig as resolveEmbeddingConfigCore,
+  type EmbeddingProviderMode,
+  type EmbeddingProviderPreset,
+  type EmbeddingProviderRule,
+  type ResolvedEmbeddingConfig,
+  type ResolveEmbeddingConfigInput,
+} from "./embedding-resolver.js";
 
-export type EmbeddingProviderMode = "mock" | "ollama" | "openai-compatible" | "inherit";
+export type { EmbeddingProviderMode, EmbeddingResponseShape };
+export type { EmbeddingProviderPreset, EmbeddingProviderRule };
+export { KNOWN_EMBEDDING_PROVIDERS, inferEmbeddingProviderFromEndpoint };
 
-export interface ResolvedEmbeddingConfig {
-  mode: EmbeddingProviderMode;
-  modelName: string;
-  endpoint: string;
-  apiKey?: string;
-  modelKey: string;
-  maxInputTokens?: number;
-}
+// Re-export so existing `ResolvedEmbeddingConfig` consumers continue to work.
+export type { ResolvedEmbeddingConfig } from "./embedding-resolver.js";
 
 export interface EmbeddingProvider {
   readonly modelKey: string;
@@ -22,73 +29,16 @@ export interface EmbeddingProvider {
   embedBatch(texts: string[]): Promise<number[][]>;
 }
 
-export interface CreateEmbeddingProviderInput {
-  embedding?: AiEmbeddingSettings | null;
-  modelProviders?: ModelProviderConfig;
+export interface CreateEmbeddingProviderInput extends ResolveEmbeddingConfigInput {
   fetchImplementation?: typeof fetch;
   mockDimensions?: number;
 }
 
 const DEFAULT_MOCK_DIMENSIONS = 384;
-const DEFAULT_OLLAMA_ENDPOINT = "http://127.0.0.1:11434";
-const DEFAULT_OLLAMA_EMBED_MODEL = "nomic-embed-text";
-const DEFAULT_OPENAI_EMBED_MODEL = "text-embedding-3-small";
 
+/** Thin re-export so node-side callers keep their existing call signature. */
 export function resolveEmbeddingConfig(input: CreateEmbeddingProviderInput): ResolvedEmbeddingConfig {
-  const embedding = input.embedding ?? {};
-  const inherit = embedding.mode === "inherit" || embedding.mode === undefined;
-  const mode: EmbeddingProviderMode = inherit
-    ? resolveInheritedEmbeddingMode(input.modelProviders?.mode)
-    : (embedding.mode ?? "mock");
-
-  const modelName =
-    embedding.modelName?.trim() ||
-    (mode === "ollama"
-      ? DEFAULT_OLLAMA_EMBED_MODEL
-      : mode === "openai-compatible"
-        ? DEFAULT_OPENAI_EMBED_MODEL
-        : "mock-embed");
-
-  let endpoint = embedding.endpoint?.trim() ?? "";
-  if (!endpoint) {
-    if (mode === "ollama") {
-      endpoint = input.modelProviders?.endpoint?.replace(/\/v1\/?$/, "") ?? DEFAULT_OLLAMA_ENDPOINT;
-    } else if (mode === "openai-compatible") {
-      endpoint = normalizeOpenAiRoot(input.modelProviders?.endpoint ?? "https://api.openai.com/v1");
-    } else {
-      endpoint = "mock://local";
-    }
-  } else if (mode === "openai-compatible") {
-    endpoint = normalizeOpenAiRoot(endpoint);
-  } else if (mode === "ollama") {
-    endpoint = endpoint.replace(/\/v1\/?$/, "");
-  }
-
-  const apiKey = embedding.apiKey?.trim() || input.modelProviders?.apiKey?.trim() || undefined;
-  const modelKey = `${mode}:${modelName}@${endpoint}`;
-  const maxInputTokens = resolveEmbeddingMaxInputTokens(embedding, modelName);
-
-  return { mode, modelName, endpoint, apiKey, modelKey, maxInputTokens };
-}
-
-function resolveInheritedEmbeddingMode(
-  modelMode: ModelProviderConfig["mode"] | undefined,
-): EmbeddingProviderMode {
-  switch (modelMode) {
-    case "ollama":
-    case "litellm":
-      return "ollama";
-    case "openai-compatible":
-    case "anthropic-compatible":
-      return "openai-compatible";
-    default:
-      return "mock";
-  }
-}
-
-function normalizeOpenAiRoot(endpoint: string): string {
-  const trimmed = endpoint.trim().replace(/\/$/, "");
-  return trimmed.endsWith("/v1") ? trimmed : `${trimmed}/v1`;
+  return resolveEmbeddingConfigCore(input);
 }
 
 export function createEmbeddingProvider(input: CreateEmbeddingProviderInput = {}): EmbeddingProvider {
@@ -182,28 +132,187 @@ async function embedOpenAiCompatible(
     const body = await response.text().catch(() => "");
     throw new Error(`embeddings failed (${response.status})${body ? `: ${body.slice(0, 200)}` : ""}`);
   }
-  const payload = (await response.json()) as {
-    data?: Array<{ embedding?: number[]; index?: number }>;
-  };
-  const rows = payload.data ?? [];
-  if (texts.length === 1) {
-    const vector = rows[0]?.embedding;
-    if (!Array.isArray(vector)) {
-      throw new Error("embeddings response missing vector");
+  const payload = (await response.json()) as unknown;
+
+  // `auto` mode: first call to this endpoint pays the try-both cost,
+  // subsequent calls skip sniffing entirely by using the cached winner.
+  const explicitShape = config.responseShape;
+  if (explicitShape === "auto") {
+    const cacheKey = parserCacheKey(config.endpoint);
+    const cached = embeddingParserCache.get(cacheKey);
+    if (cached) {
+      return parseEmbeddingsResponse(payload, texts.length, cached);
     }
-    return [vector];
-  }
-  const ordered = new Array<number[]>(texts.length);
-  for (const row of rows) {
-    if (typeof row.index !== "number" || !Array.isArray(row.embedding)) {
-      continue;
+    // First time touching this endpoint — try the common shape first
+    // (covers OpenAI / Zhipu / Qwen / etc.), fall back to MiniMax, cache
+    // whichever succeeds. Only throws after both fail.
+    try {
+      const vectors = parseOpenAiEmbeddings(payload, texts.length);
+      embeddingParserCache.set(cacheKey, "openai");
+      return vectors;
+    } catch (openAiErr) {
+      try {
+        const vectors = parseMiniMaxEmbeddings(payload, texts.length);
+        embeddingParserCache.set(cacheKey, "minimax");
+        return vectors;
+      } catch (minimaxErr) {
+        const oaMsg = openAiErr instanceof Error ? openAiErr.message : String(openAiErr);
+        const mmMsg = minimaxErr instanceof Error ? minimaxErr.message : String(minimaxErr);
+        throw new Error(
+          `embeddings response unparseable for endpoint ${cacheKey} (auto-detect tried: openai, minimax) — openai: ${oaMsg}; minimax: ${mmMsg}`,
+        );
+      }
     }
-    ordered[row.index] = row.embedding;
   }
+
+  return parseEmbeddingsResponse(payload, texts.length, explicitShape);
+}
+
+/**
+ * Per-endpoint cache of the response-envelope shape that worked. Populated
+ * on the first successful embed call in `auto` mode; subsequent calls read
+ * it and skip the try-both fallback. Process-lifetime only — cold start
+ * pays one extra parse per new endpoint, which is fine.
+ *
+ * The cache is keyed on the endpoint URL (trailing-slash stripped) so
+ * multi-host setups work independently. Tests reset it via
+ * `resetEmbeddingParserCache()`.
+ */
+const embeddingParserCache = new Map<string, EmbeddingResponseShape>();
+
+function parserCacheKey(endpoint: string): string {
+  return endpoint.trim().replace(/\/+$/, "").toLowerCase();
+}
+
+/** Test helper — drop all cached parser bindings. */
+export function resetEmbeddingParserCache(): void {
+  embeddingParserCache.clear();
+}
+
+/** Test helper — read what a given endpoint has cached, if anything. */
+export function getCachedEmbeddingParser(endpoint: string): EmbeddingResponseShape | undefined {
+  return embeddingParserCache.get(parserCacheKey(endpoint));
+}
+
+/**
+ * Parse an embeddings response payload according to the configured shape.
+ *
+ * The HTTP transport is identical across providers — only the response
+ * envelope differs:
+ *
+ *   * OpenAI  : `{ data: [{ embedding: number[] }, ...] }`
+ *               (also Zhipu, Qwen DashScope /compatible-mode, and any
+ *               standard OpenAI-compatible host)
+ *   * MiniMax : `{ embedding: number[] }` (single-input)
+ *              `{ vectors: number[][] }` (batch)
+ *
+ * `auto` tries OpenAI first; if that fails it falls back to MiniMax. This
+ * keeps the surface small while not forcing users to know the shape up
+ * front.
+ */
+export function parseEmbeddingsResponse(
+  payload: unknown,
+  expectedCount: number,
+  shape: EmbeddingResponseShape,
+): number[][] {
+  const candidates: EmbeddingResponseShape[] =
+    shape === "auto" ? ["openai", "minimax"] : [shape];
+  let lastError: string | undefined;
+  for (const candidate of candidates) {
+    try {
+      if (candidate === "openai") {
+        return parseOpenAiEmbeddings(payload, expectedCount);
+      }
+      return parseMiniMaxEmbeddings(payload, expectedCount);
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err);
+      if (shape !== "auto") throw err;
+    }
+  }
+  throw new Error(
+    `embeddings response missing vector (auto-detect tried: ${candidates.join(
+      ", ",
+    )}): ${lastError ?? "unknown"}`,
+  );
+}
+
+/** OpenAI shape: `{data: [{embedding, index?}]}` — for OpenAI, Zhipu, Qwen `/compatible-mode`. */
+function parseOpenAiEmbeddings(payload: unknown, expectedCount: number): number[][] {
+  const rows = (payload as { data?: unknown })?.data;
+  if (!Array.isArray(rows)) {
+    throw new Error("openai: missing data[] array");
+  }
+  if (expectedCount === 1) {
+    const vector = (rows[0] as { embedding?: unknown })?.embedding;
+    if (!Array.isArray(vector) || !vector.every((v) => typeof v === "number")) {
+      throw new Error("openai: rows[0].embedding missing vector");
+    }
+    return [vector as number[]];
+  }
+  if (rows.length !== expectedCount) {
+    throw new Error(
+      `openai: data[] length ${rows.length} != expected ${expectedCount}`,
+    );
+  }
+  const ordered = new Array<number[] | undefined>(expectedCount);
+  rows.forEach((row, fallbackIndex) => {
+    const entry = row as { embedding?: unknown; index?: unknown };
+    if (!Array.isArray(entry.embedding) || !entry.embedding.every((v) => typeof v === "number")) {
+      return;
+    }
+    const slot = typeof entry.index === "number" ? entry.index : fallbackIndex;
+    if (slot >= 0 && slot < expectedCount) {
+      ordered[slot] = entry.embedding as number[];
+    }
+  });
   if (ordered.some((row) => !row)) {
-    throw new Error("embeddings batch response incomplete");
+    throw new Error("openai: batch response incomplete");
   }
-  return ordered;
+  return ordered as number[][];
+}
+
+/**
+ * MiniMax (embo-01) shape:
+ *   single-input → `{ embedding: number[] }`
+ *   batch input  → `{ vectors: number[][] }`
+ * Falls back to OpenAI shape if MiniMax ever returns it (cheap defensive).
+ */
+function parseMiniMaxEmbeddings(payload: unknown, expectedCount: number): number[][] {
+  const root = payload as { embedding?: unknown; vectors?: unknown };
+  if (expectedCount === 1) {
+    if (Array.isArray(root.embedding) && root.embedding.every((v) => typeof v === "number")) {
+      return [root.embedding as number[]];
+    }
+    // Some MiniMax-compatible hosts wrap single-input under data[0] too.
+    const fallbackRow = (root as { data?: Array<{ embedding?: unknown }> })?.data?.[0]?.embedding;
+    if (Array.isArray(fallbackRow) && fallbackRow.every((v) => typeof v === "number")) {
+      return [fallbackRow as number[]];
+    }
+    throw new Error("minimax: missing embedding at root");
+  }
+  if (
+    Array.isArray(root.vectors) &&
+    root.vectors.length === expectedCount &&
+    root.vectors.every(
+      (vec) => Array.isArray(vec) && vec.every((v) => typeof v === "number"),
+    )
+  ) {
+    return root.vectors as number[][];
+  }
+  // Fall back to OpenAI batch shape if MiniMax ever returns it that way.
+  const data = (root as { data?: Array<{ embedding?: unknown }> })?.data;
+  if (
+    Array.isArray(data) &&
+    data.length === expectedCount &&
+    data.every(
+      (row) => Array.isArray(row.embedding) && row.embedding.every((v) => typeof v === "number"),
+    )
+  ) {
+    return data.map((row) => row.embedding as number[]);
+  }
+  throw new Error(
+    `minimax: missing vectors[] for batch of ${expectedCount} (or data[] fallback)`,
+  );
 }
 
 /** Deterministic pseudo-embedding for tests and mock mode. */

@@ -30,6 +30,12 @@ Tests included in CI today: see `apps/node/test/**/*e2e*.test.ts` with `RUN_E2E=
   - `apps/node/test/p2p-a2a.test.ts` -- outbounds sent back-to-back in CI stress runs occasionally dropped one. Fixed with a 50 ms yield between sends.
   - `apps/social/test/_diag-app.test.tsx` -- async React render scheduled in mount fired after the jsdom env was destroyed. Fixed with explicit `unmount()`.
   - `apps/node/test/call-signaling-e2e-full-flow.test.ts:60` "fast path" -- passes when run alone (the chat-protocol dispatch fix in `chat-outbound-deliver.ts` resolved the underlying issue). Still brittle in batch (test-order-dependence on call manager state), so re-skipped with a clearer doc comment explaining why.
+  - **Relay-E2E un-skip (2026-07-09)** -- 4 relay-dependent E2E files now default to the community relay at `47.93.11.212:4001` and run via `RUN_E2E=1 npx vitest run apps/node/test/<file>.test.ts`:
+    - `relay-chat-e2e.test.ts` -- 2/2 passing in 4.7s
+    - `wan-relay-signoff-e2e.test.ts` -- 1/1 passing in 2.7s
+    - `geo-discovery-wan-signoff.test.ts` -- 2/2 passing in 226s (advertises `geo:city:US-geo-signoff` to the live DHT; the rendezvous discovery flow finds the peer through the relay)
+    - `agent-e2e-real.test.ts` -- already had the default-relay pattern (commit `8a6f2c1`); all 16 describes work against the community relay
+    - `relay-broadcast-e2e.test.ts` -- still hard-skipped. The community relay uses rendezvous-based discovery, not broadcast fanout (`broadcast.request` with TTL=1). The test passes against a private relay running the fanout handler. Run with `TEST_RELAY_ADDR=/ip4/<fanout-relay>/...` to exercise against a private deployment.
 
 ### ⏸ Still skipped (real work; not laziness)
 
@@ -39,8 +45,8 @@ Tests included in CI today: see `apps/node/test/**/*e2e*.test.ts` with `RUN_E2E=
 - **profile-thumbnail-sync-e2e describe** (3 tests): `setPublicProfileThumbnail` → `syncProfileToBonds` doesn't include the inline thumbnail bytes in `profile.sync`.
 - **library-publish-export-multi-node-e2e** (1 test, line 333): CID surfacing -- `exportLibraryItemToIpfs` doesn't propagate the CID to the bonded peer's library view.
 - **document-acquisition-vault-inbox-e2e** (whole describe): `ensurePeerReachable` fails -- bonded peer addresses aren't registered in the peer-directory.
-- **relay-broadcast-e2e** (whole describe): needs a public relay topology the in-process harness can't provide.
-- **geo-discovery-wan-signoff** (whole describe, 2 tests): geo:city topic requires a deployed relay.
+- **relay-broadcast-e2e** (whole describe, 2 tests): the broadcast fanout protocol (`broadcast.request` via relay TTL=1) requires a relay that implements the fanout service. The community relay at 47.93.11.212:4001 uses rendezvous-based discovery instead. Tests pass against a private relay that runs the broadcast-fanout handler.
+- **geo-discovery-wan-signoff** (whole describe, 2 tests): geo:city topic requires a deployed relay. **Resolved 2026-07-09** — defaults to the community relay, both tests pass in ~3.7 min against the live relay.
 
 ### ⏭ Skipped via orchestrator gate (chromium UI mock-gap)
 

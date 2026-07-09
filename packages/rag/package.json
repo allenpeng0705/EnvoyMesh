@@ -8,6 +8,10 @@
     ".": {
       "types": "./dist/src/index.d.ts",
       "import": "./dist/src/index.js"
+    },
+    "./embedding-resolver": {
+      "types": "./dist/src/embedding-resolver.d.ts",
+      "import": "./dist/src/embedding-resolver.js"
     }
   },
   "dependencies": {

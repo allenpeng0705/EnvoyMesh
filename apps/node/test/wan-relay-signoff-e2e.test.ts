@@ -4,7 +4,10 @@
  * When TEST_RELAY_ADDR is set, two relay-bootstrap clients must exchange
  * signed chat traffic — evidence for [wan-connectivity-signoff.md](../../docs/wan-connectivity-signoff.md).
  *
- *   TEST_RELAY_ADDR=/ip4/127.0.0.1/tcp/4001/p2p/... npm test -- apps/node/test/wan-relay-signoff-e2e.test.ts
+ * Default relay: community relay at 47.93.11.212:4001. Override with
+ * TEST_RELAY_ADDR when running against a private relay.
+ *
+ *   npx vitest run apps/node/test/wan-relay-signoff-e2e.test.ts
  */
 
 import {
@@ -26,12 +29,13 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR } from "@envoymesh/api";
 
-const RELAY_ADDR = process.env.TEST_RELAY_ADDR || null;
+const RELAY_ADDR = process.env.TEST_RELAY_ADDR || DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR;
 const itRelayed = RELAY_ADDR ? it : it.skip;
 const meshes: EnvoyMesh[] = [];
 
-describe("WAN §4 relay sign-off (automated)", () => {
+describe("WAN §4 relay sign-off (automated, live relay)", () => {
   let profileDir: string;
 
   beforeEach(async () => {

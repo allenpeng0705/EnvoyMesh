@@ -47,6 +47,10 @@ import {
   type AgentIdentityDocument,
   type ProfileMediaPolicy,
 } from "@envoymesh/api";
+// Browser-safe subpath — does NOT pull in node:crypto / node:fs. The full
+// `@envoymesh/rag` root depends on Node builtins and is intentionally not
+// imported here; the resolver subpath is the only entry point the UI uses.
+import { resolveEmbeddingConfig } from "@envoymesh/rag/embedding-resolver";
 
 // ---------------------------------------------------------------------------
 // "Add Rule" form — now fully controlled via React state (fixes the
@@ -161,12 +165,32 @@ function RagIndexStatusPanel() {
 function KnowledgeBaseSettings(props: {
   value: AiKnowledgeBaseSettings;
   onChange: (next: AiKnowledgeBaseSettings) => Promise<void>;
+  modelProviders?: import("@envoymesh/api").ModelProviderConfig;
 }) {
   const t = useT();
   const kb = props.value;
   const patch = async (partial: Partial<AiKnowledgeBaseSettings>) => {
     await props.onChange({ ...kb, ...partial });
   };
+
+  // Compute the effective embedding config against the chat-model
+  // providers, so we can show users the value that will actually be used
+  // when they leave a field blank. Re-runs whenever the embedding panel
+  // or the chat model provider changes.
+  const resolved = useMemo(
+    () => resolveEmbeddingConfig({
+      embedding: kb.embedding,
+      modelProviders: props.modelProviders,
+    }),
+    [kb.embedding, props.modelProviders],
+  );
+
+  // Which fields are *not* explicitly set by the user? Only those get an
+  // inherited-value hint below the input.
+  const hasExplicitModelName = !!kb.embedding?.modelName?.trim();
+  const hasExplicitResponseShape = !!kb.embedding?.responseShape;
+  const hasExplicitEndpoint = !!kb.embedding?.endpoint?.trim();
+  const hasExplicitApiKey = !!kb.embedding?.apiKey?.trim();
 
   return (
     <>
@@ -201,8 +225,9 @@ function KnowledgeBaseSettings(props: {
             <option value="lexical">{t("settings.ai.rag.retrievalLexical")}</option>
           </select>
         </div>
-        <div className="form-group">
-          <label>{t("settings.ai.rag.embeddingProvider")}</label>
+      <p className="rag-inherit-banner">{t("settings.ai.rag.embeddingInheritBanner")}</p>
+      <div className="form-group">
+        <label>{t("settings.ai.rag.embeddingProvider")}</label>
           <select
             value={kb.embedding?.mode ?? "inherit"}
             onChange={async (e) => {
@@ -241,6 +266,36 @@ function KnowledgeBaseSettings(props: {
               });
             }}
           />
+          {!hasExplicitModelName && resolved.modelName ? (
+            <p className="rag-resolved-hint">
+              {t("settings.ai.rag.embeddingResolvedHint", { value: resolved.modelName })}
+            </p>
+          ) : null}
+        </div>
+        <div className="form-group">
+          <label>{t("settings.ai.rag.embeddingResponseShape")}</label>
+          <select
+            value={kb.embedding?.responseShape ?? "auto"}
+            onChange={async (e) => {
+              await patch({
+                embedding: {
+                  ...kb.embedding,
+                  mode: kb.embedding?.mode ?? "inherit",
+                  responseShape: e.target.value as "openai" | "minimax" | "auto",
+                },
+              });
+            }}
+          >
+            <option value="openai">{t("settings.ai.rag.embeddingResponseShapeOpenAi")}</option>
+            <option value="minimax">{t("settings.ai.rag.embeddingResponseShapeMinimax")}</option>
+            <option value="auto">{t("settings.ai.rag.embeddingResponseShapeAuto")}</option>
+          </select>
+          <p className="field-desc">{t("settings.ai.rag.embeddingResponseShapeHint")}</p>
+          {!hasExplicitResponseShape && resolved.responseShape && resolved.responseShape !== "auto" ? (
+            <p className="rag-resolved-hint">
+              {t("settings.ai.rag.embeddingResolvedHint", { value: resolved.responseShape })}
+            </p>
+          ) : null}
         </div>
       </div>
 
@@ -262,6 +317,11 @@ function KnowledgeBaseSettings(props: {
             }}
           />
           <p className="field-desc">{t("settings.ai.rag.embeddingEndpointHint")}</p>
+          {!hasExplicitEndpoint && resolved.endpoint && resolved.endpoint !== "mock://local" ? (
+            <p className="rag-resolved-hint">
+              {t("settings.ai.rag.embeddingResolvedHint", { value: resolved.endpoint })}
+            </p>
+          ) : null}
         </div>
         <div className="form-group">
           <label>{t("settings.ai.rag.embeddingApiKey")}</label>
@@ -279,6 +339,12 @@ function KnowledgeBaseSettings(props: {
               });
             }}
           />
+          {/* Don't reveal the inherited chat key in the DOM — just say
+              that an inheritance is in effect so the user knows the
+              password field is intentionally blank. */}
+          {!hasExplicitApiKey && resolved.apiKey ? (
+            <p className="rag-resolved-hint">{t("settings.ai.rag.embeddingApiKeyInherited")}</p>
+          ) : null}
         </div>
         <div className="form-group">
           <label>{t("settings.ai.rag.embeddingMaxInputTokens")}</label>
@@ -299,6 +365,11 @@ function KnowledgeBaseSettings(props: {
             }}
           />
           <p className="field-desc">{t("settings.ai.rag.embeddingMaxInputTokensHint")}</p>
+          {!kb.embedding?.maxInputTokens && resolved.maxInputTokens ? (
+            <p className="rag-resolved-hint">
+              {t("settings.ai.rag.embeddingResolvedHint", { value: resolved.maxInputTokens })}
+            </p>
+          ) : null}
         </div>
       </div>
 
@@ -2031,6 +2102,7 @@ export function SettingsAITab() {
           onChange={async (knowledgeBase) => {
             await updateAiSettings({ knowledgeBase });
           }}
+          modelProviders={nodeConfig?.modelProviders}
         />
       </section>
 

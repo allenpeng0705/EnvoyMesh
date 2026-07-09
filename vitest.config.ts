@@ -38,6 +38,7 @@ export default defineConfig({
       "@envoymesh/mobile-storage": resolve(rootDir, "packages/mobile-storage/src/index.ts"),
       "@envoymesh/mobile-vault": resolve(rootDir, "packages/mobile-vault/src/index.ts"),
       "@envoymesh/mobile-node": resolve(rootDir, "packages/mobile-node/src/index.ts"),
+      "@envoymesh/rag/embedding-resolver": resolve(rootDir, "packages/rag/src/embedding-resolver.ts"),
       "@envoymesh/rag": resolve(rootDir, "packages/rag/src/index.ts"),
     },
   },

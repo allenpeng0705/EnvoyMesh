@@ -4,13 +4,14 @@
  * These tests verify that two nodes can exchange chat messages when
  * their communication is mediated by a relay server.
  *
- * Requirements:
- * - A running relay server accessible at TEST_RELAY_ADDR environment variable
- * - Or pass --relay-addr=/ip4/.../tcp/4001/p2p/Qm... to the test
+ * Default relay: community relay at 47.93.11.212:4001. Override with
+ * TEST_RELAY_ADDR when running against a private relay.
  *
- * Usage:
- *   # With relay server
- *   TEST_RELAY_ADDR=/ip4/127.0.0.1/tcp/4001/p2p/... npm test -- apps/node/test/relay-chat-e2e.test.ts
+ *   # Default community relay
+ *   npx vitest run apps/node/test/relay-chat-e2e.test.ts
+ *
+ *   # Custom relay
+ *   TEST_RELAY_ADDR=/ip4/127.0.0.1/tcp/4001/p2p/... npx vitest run apps/node/test/relay-chat-e2e.test.ts
  *
  *   # Without relay (tests will be skipped)
  *   npm test -- apps/node/test/relay-chat-e2e.test.ts
@@ -35,8 +36,12 @@ import type { NodeProfile } from "@envoymesh/local-store";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR } from "@envoymesh/api";
 
-const RELAY_ADDR = process.env.TEST_RELAY_ADDR || null;
+// Default to the community relay at 47.93.11.212:4001 when no explicit
+// TEST_RELAY_ADDR is provided. Operators can override by exporting
+// TEST_RELAY_ADDR before running the test.
+const RELAY_ADDR = process.env.TEST_RELAY_ADDR || DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR;
 
 const meshes: EnvoyMesh[] = [];
 

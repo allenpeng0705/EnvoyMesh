@@ -168,7 +168,7 @@ describe("Geo discovery two-node E2E", () => {
     const cityTopic = "geo:city:US-boston";
     const countryTopic = "geo:country:US";
 
-    vi.spyOn(advertiser.mesh, "provideCapabilityTopic").mockResolvedValue({ cid: {} as never });
+    vi.spyOn(advertiser.mesh, "provideCapabilityTopic").mockResolvedValue({ cid: {} as never, timedOut: false });
     const cancelSpy = vi
       .spyOn(advertiser.mesh, "cancelCapabilityTopicReprovide")
       .mockResolvedValue(undefined);
@@ -201,7 +201,7 @@ describe("Geo discovery two-node E2E", () => {
 
   it("private profile cancels auto-advertised geo topics", async () => {
     const advertiser = await createGeoNode();
-    vi.spyOn(advertiser.mesh, "provideCapabilityTopic").mockResolvedValue({ cid: {} as never });
+    vi.spyOn(advertiser.mesh, "provideCapabilityTopic").mockResolvedValue({ cid: {} as never, timedOut: false });
     const cancelSpy = vi
       .spyOn(advertiser.mesh, "cancelCapabilityTopicReprovide")
       .mockResolvedValue(undefined);
@@ -254,7 +254,7 @@ describe("Geo discovery two-node E2E", () => {
     const countryTopic = "geo:country:US";
     const cityTopic = "geo:city:US-boston";
 
-    vi.spyOn(advertiser.mesh, "provideCapabilityTopic").mockResolvedValue({ cid: {} as never });
+    vi.spyOn(advertiser.mesh, "provideCapabilityTopic").mockResolvedValue({ cid: {} as never, timedOut: false });
     vi.spyOn(searcher.mesh, "findCapabilityTopicProviders").mockImplementation(async (topic) => {
       if (topic !== countryTopic && topic !== cityTopic) return [];
       return [{ peerId: advertiser.mesh.peerId, multiaddrs: [addr] }];
@@ -283,7 +283,7 @@ describe("Geo discovery two-node E2E", () => {
     const addr = dialableAddr(node.mesh);
     const selfTopic = "geo:city:US-boston";
 
-    vi.spyOn(node.mesh, "provideCapabilityTopic").mockResolvedValue({ cid: {} as never });
+    vi.spyOn(node.mesh, "provideCapabilityTopic").mockResolvedValue({ cid: {} as never, timedOut: false });
     vi.spyOn(node.mesh, "findCapabilityTopicProviders").mockImplementation(async (topic) => {
       if (topic !== selfTopic) return [];
       return [{ peerId: node.mesh.peerId, multiaddrs: [addr] }];

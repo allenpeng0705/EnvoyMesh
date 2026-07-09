@@ -870,11 +870,23 @@ export async function _advertisePublicDiscoveryTopics(
 
   const advertiseOnce = async (topic: string): Promise<boolean> => {
     try {
-      await raceWithTimeout(
+      // provideCapabilityTopic now returns { timedOut } so we can
+      // distinguish "put landed" from "put stalled waiting for DHT peers"
+      // instead of just trusting the unconditional "Successfully
+      // advertised" log. The outer raceWithTimeout is kept as a hard
+      // safety net in case the inner race swallows something else.
+      const result = await raceWithTimeout(
         ctx.requireMesh().provideCapabilityTopic(topic),
         DISCOVERY_TOPIC_OP_TIMEOUT_MS,
         `provideCapabilityTopic(${topic})`,
       );
+      if (result.timedOut) {
+        console.warn(
+          `[node-service] advertiseTopic "${topic}" TIMED OUT — ` +
+          `DHT likely has no reachable peers. Will retry next cycle.`,
+        );
+        return false;
+      }
       console.log(`[node-service] Successfully advertised topic: ${topic}`);
       return true;
     } catch (err) {

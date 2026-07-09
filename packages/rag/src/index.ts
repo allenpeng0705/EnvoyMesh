@@ -8,6 +8,17 @@ export {
   type EmbeddingProviderMode,
   type ResolvedEmbeddingConfig,
 } from "./embedding-provider.js";
+// Browser-safe resolver subpath — no Node-only deps, safe to import from
+// the Social UI for "effective value" hints in Settings. Node-side callers
+// can keep using the `@envoymesh/rag` root import above.
+export {
+  resolveEmbeddingConfig as resolveEmbeddingConfigBrowserSafe,
+  inferEmbeddingProviderFromEndpoint,
+  KNOWN_EMBEDDING_PROVIDERS,
+  type EmbeddingProviderPreset,
+  type EmbeddingProviderRule,
+  type ResolveEmbeddingConfigInput,
+} from "./embedding-resolver.js";
 export {
   formatExternalKnowledgeSection,
   searchExternalMcpKnowledge,
