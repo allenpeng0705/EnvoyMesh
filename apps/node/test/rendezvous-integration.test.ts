@@ -43,6 +43,15 @@ const createMockMesh = (overrides: any = {}) => ({
   provideCapabilityTopic: vi.fn().mockResolvedValue({ timedOut: false }),
   cancelCapabilityTopicReprovide: vi.fn().mockResolvedValue(undefined),
   findCapabilityTopicProviders: vi.fn().mockResolvedValue([]),
+  // Default: 2+ connected peers so the
+  // `[node-service] Discovery advertise cycle: only N peer(s) connected —
+  // skipping K topic publishes` gate introduced 2026-07-10 doesn't fire in
+  // tests that don't exercise the empty-route-table path. Override via the
+  // `overrides` arg to test the gate itself.
+  getConnectedPeerIds: vi.fn().mockReturnValue([
+    "12D3KooWRoutesTablePeerA",
+    "12D3KooWRoutesTablePeerB",
+  ]),
   send: vi.fn().mockResolvedValue(1),
   sendExpectReply: vi.fn().mockResolvedValue({ payload: { matches: [] } }),
   start: vi.fn().mockResolvedValue(undefined),

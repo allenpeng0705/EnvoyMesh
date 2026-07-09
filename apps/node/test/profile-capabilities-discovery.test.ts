@@ -99,6 +99,15 @@ describe("Profile capability discovery wiring", () => {
   it("syncs profile capability tags into manifest and advertises DHT topics", async () => {
     const { mesh, service, profileDir } = await createNode();
     const advertised: string[] = [];
+    // 2026-07-10: the DHT-route-table-empty gate
+    // (`_advertisePublicDiscoveryTopics` skips fan-out when fewer than 2
+    // peers are connected) requires this stub. The test creates an
+    // EnvoyMesh with `bootstrapPeers: []`, so without this spy the gate
+    // would skip the advertising it was set up to verify.
+    vi.spyOn(mesh, "getConnectedPeerIds").mockReturnValue([
+      "12D3KooWPeerAMockForGate",
+      "12D3KooWPeerBMockForGate",
+    ]);
     vi.spyOn(mesh, "provideCapabilityTopic").mockImplementation(async (topic) => {
       advertised.push(topic);
       return { cid: {} as never };
@@ -126,6 +135,12 @@ describe("Profile capability discovery wiring", () => {
 
   it("removes dropped profile capability tags from manifest on save", async () => {
     const { mesh, service, profileDir } = await createNode();
+    // 2026-07-10: same DHT-route-table-empty gate override as above —
+    // see comment in the first test.
+    vi.spyOn(mesh, "getConnectedPeerIds").mockReturnValue([
+      "12D3KooWPeerAMockForGate",
+      "12D3KooWPeerBMockForGate",
+    ]);
     vi.spyOn(mesh, "provideCapabilityTopic").mockResolvedValue({ cid: {} as never, timedOut: false });
     const manifestStore = createCapabilityManifestStore(profileDir);
 
