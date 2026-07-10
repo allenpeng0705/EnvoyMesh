@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { useToastOptional } from "../../hooks/useToast.js";
@@ -52,6 +52,44 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
     acceptHello,
     declineHello,
   } = useNodeState();
+
+  // Cached lookup of the bundled sponsor-friend proofOfContext. When the
+  // installer ships a bundled sponsor-friend.json with a proofOfContext, the
+  // same token lets a node configured with `bondAutonomy.sponsorProofToken`
+  // auto-accept our hello on the recipient side. We resolve it once and cache
+  // it in a ref — the bundled config is static for the lifetime of the app.
+  const proofOfContextRef = useRef<{
+    state: "pending" | "resolved";
+    value: string | undefined;
+  }>({ state: "pending", value: undefined });
+
+  useEffect(() => {
+    if (proofOfContextRef.current.state !== "pending") return;
+    let cancelled = false;
+    void nodeService
+      .getSetupSponsorFriendStatus()
+      .then((status) => {
+        if (cancelled) return;
+        const token = status?.config?.proofOfContext?.trim();
+        proofOfContextRef.current = {
+          state: "resolved",
+          value: token && token.length > 0 ? token : undefined,
+        };
+      })
+      .catch(() => {
+        // Bundled config is best-effort — fall back to no proof token.
+        if (cancelled) return;
+        proofOfContextRef.current = { state: "resolved", value: undefined };
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [nodeService]);
+
+  const getHelloProofOfContext = useCallback((): string | undefined => {
+    const cached = proofOfContextRef.current;
+    return cached.state === "resolved" ? cached.value : undefined;
+  }, []);
 
   const [networkQuery, setNetworkQuery] = useState("");
   const [pasteQuery, setPasteQuery] = useState("");
@@ -142,21 +180,39 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
                 interests: [...(humanProfile?.hobbies ?? []), ...(humanProfile?.knowledge ?? [])],
                 whatShares: [],
               };
+              const proofOfContext = getHelloProofOfContext();
               await sendHello(
                 top.ownerId,
                 helloProfile,
                 "Hi — Envoy suggested we might share interests. I'd like to connect.",
+                proofOfContext ? { proofOfContext } : undefined,
               );
               markOutboundHello(top.ownerId);
               setOutboundHellos(loadOutboundHellos());
               showToast?.(t("discover.hello.autoSentToast"), "success");
-            } catch {
-              /* non-fatal — recipient may be offline; user can retry manually */
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              // Don't mark outbound on failure — that way the next cold-start (or
+              // a manual search) can retry. Surface the error so the user knows
+              // the auto-hello didn't go through.
+              showToast?.(
+                t("discover.hello.autoSendFailed", { error: message }),
+                "error",
+              );
             }
           }
         }
-      } catch {
-        /* non-fatal — user can search manually */
+      } catch (error) {
+        // Don't mark the auto-discover flag on failure — let the next cold-start
+        // (or a manual search) retry. Surface so the user knows nothing came
+        // back, rather than silently showing "no one here yet".
+        if (!cancelled) {
+          const message = error instanceof Error ? error.message : String(error);
+          showToast?.(
+            t("discover.hello.autoSendFailed", { error: message }),
+            "error",
+          );
+        }
       } finally {
         if (!cancelled) setNetworkSearching(false);
       }
@@ -165,7 +221,7 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
     return () => {
       cancelled = true;
     };
-  }, [nodeService, bonds, outboundHellos, humanProfile, sendHello, showToast, t]);
+  }, [nodeService, bonds, outboundHellos, humanProfile, sendHello, showToast, t, getHelloProofOfContext]);
 
   useEffect(() => {
     if (!multiHopCorrelationId) return;
@@ -421,7 +477,13 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
         interests: [...(humanProfile?.hobbies ?? []), ...(humanProfile?.knowledge ?? [])],
         whatShares: [],
       };
-      await sendHello(targetId, profile, "Hi — I'd like to connect on Envoy.");
+      const proofOfContext = getHelloProofOfContext();
+      await sendHello(
+        targetId,
+        profile,
+        "Hi — I'd like to connect on Envoy.",
+        proofOfContext ? { proofOfContext } : undefined,
+      );
       markOutboundHello(targetId);
       setOutboundHellos(loadOutboundHellos());
       setHelloHint(t("discover.hello.sent"));

@@ -135,9 +135,24 @@ export function PeerResultCard({
           {t("common.connected")}
         </span>
       ) : helloState === "sent" ? (
-        <span className="discover-peer-card__status discover-peer-card__status--sent" role="status">
-          {t("common.helloSentWaiting")}
-        </span>
+        <div className="peer-result-card__pending-actions">
+          <span
+            className="discover-peer-card__status discover-peer-card__status--sent"
+            role="status"
+            title={t("common.helloSentWaitingHelp")}
+          >
+            {t("common.helloSentWaiting")}
+          </span>
+          <button
+            type="button"
+            className="peer-result-card__action peer-result-card__action--ghost"
+            aria-label={t("common.helloResend")}
+            title={t("common.helloResend")}
+            onClick={() => void onSayHello(result.ownerId)}
+          >
+            {t("common.helloResend")}
+          </button>
+        </div>
       ) : (
         <button type="button" className="peer-result-card__action" onClick={() => void onSayHello(result.ownerId)}>
           {t("discoverCards.sayHello")}
@@ -195,9 +210,23 @@ export function FriendSuggestionsPanel({
               </div>
               <div className="friend-suggestion-card__actions">
                 {helloState === "sent" ? (
-                  <span className="discover-peer-card__status discover-peer-card__status--sent" role="status">
-                    {t("common.helloSentWaiting")}
-                  </span>
+                  <>
+                    <span
+                      className="discover-peer-card__status discover-peer-card__status--sent"
+                      role="status"
+                      title={t("common.helloSentWaitingHelp")}
+                    >
+                      {t("common.helloSentWaiting")}
+                    </span>
+                    <button
+                      type="button"
+                      className="discover-secondary-btn"
+                      onClick={() => void onSayHello(entry.ownerId)}
+                      title={t("common.helloResend")}
+                    >
+                      {t("common.helloResend")}
+                    </button>
+                  </>
                 ) : (
                   <button type="button" className="discover-primary-btn" onClick={() => onSayHello(entry.ownerId)}>
                     {t("discoverCards.sayHello")}

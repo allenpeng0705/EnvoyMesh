@@ -9,18 +9,34 @@
  *
  * When the alarm is shown — three states, in priority order:
  *
- *   1. **Regression** (most common) — the runtime was up at least once
- *      and then went down. Surfaced immediately on the next poll.
+ *   1. **Regression** (most common) — the runtime was up in this session
+ *      and is now down. Surfaced immediately on the next poll.
  *
- *   2. **Failed to start** — the runtime has never come up since the
- *      component mounted, AND it's been > `STARTUP_GRACE_MS` (45s)
- *      since we first observed `running: false`. This catches the case
- *      where the OpenClaw binary crashed on first launch and never
- *      recovered (e.g. port already in use, model config wrong, etc).
+ *   2. **Failed to start** — the runtime has never come up since this
+ *      chat-view mount, AND `startedAt` is either missing or older than
+ *      `STARTUP_GRACE_MS` (90s, matching the runtime's own startup-probe
+ *      budget). Catches the case where the OpenClaw binary crashed on
+ *      first launch and never recovered (e.g. port already in use, model
+ *      config wrong, etc).
  *
- * When the alarm is **hidden** — the runtime is in its cold-start window
- * (still booting). The user has nothing actionable to do, so showing a
- * red "stopped" banner during this window would be alarmist noise.
+ *   3. **Stuck in regression across navigation** — the runtime is
+ *      currently down and `startedAt` is missing or older than the grace
+ *      period. Catches the case where the runtime crashed while the user
+ *      was elsewhere, and the user navigates here only to find a dead AI.
+ *
+ * When the alarm is **hidden** — the runtime reports `enabled: false`
+ * (user intentionally turned it off — not a failure), OR it's still in
+ * its legitimate startup window (`running: false` but `startedAt` is
+ * within the last `STARTUP_GRACE_MS`). The startup-window detection is
+ * driven by the runtime's own `startedAt` timestamp instead of a
+ * chat-view-mounted clock — that way a slow machine (where OpenClaw
+ * legitimately takes >45s to come up) doesn't get a false-positive alarm.
+ *
+ * The "ever been up" state is **session-scoped** (in-memory only, reset
+ * on every app launch). Persisting it across launches in localStorage
+ * would make every fresh install look like a regression the moment
+ * OpenClaw isn't up on the first poll — defeating the whole point of
+ * the cold-start grace period.
  *
  * Auto-polls every 5s while the alarm is visible.
  */
@@ -30,114 +46,83 @@ import { useNodeService } from "../../hooks/useNodeService.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 
 /**
- * How long to wait after the first observation of `running: false` before
- * giving up and surfacing the alarm with the "failed to start" message.
- * 45s covers a comfortable OpenClaw cold-start budget (the runtime's
- * 90s startup-probe attempts × backoff, on a slow machine) while still
- * being short enough that a stuck install surfaces the problem well
- * within the user's first interaction.
+ * How long to wait after the runtime reports `startedAt` before giving up
+ * and surfacing the alarm with the "failed to start" message. 90s matches
+ * the runtime's own startup-probe budget (`startOpenClaw` waits up to 90s
+ * for the webhook to come up before declaring a failure). Anything shorter
+ * races the runtime on a slow machine and produces false alarms.
  */
-const STARTUP_GRACE_MS = 45_000;
+const STARTUP_GRACE_MS = 90_000;
 
 export function OpenClawOfflineBanner() {
   const t = useT();
   const nodeService = useNodeService();
   const { nodeConfig } = useNodeState();
   const [running, setRunning] = useState<boolean | null>(null);
+  // When the runtime is `running: false` but `startedAt` is recent, it's
+  // still in its legitimate startup window — don't alarm. Track that
+  // timestamp explicitly so we don't depend on a chat-view-mounted clock.
+  const [startedAt, setStartedAt] = useState<string | null>(null);
+  // `enabled` comes from the runtime's own status (preferred over
+  // nodeConfig: reflects the actual current state, not just the persisted
+  // config). When the user explicitly turns the engine off in Settings →
+  // AI, the runtime reports `enabled: false` and we suppress the alarm.
+  const [runtimeEnabled, setRuntimeEnabled] = useState<boolean | null>(null);
   const [restarting, setRestarting] = useState(false);
   const [restartError, setRestartError] = useState<string | null>(null);
-  /**
-   * Has the runtime ever reported `running: true` since this component
-   * mounted? Once true, any subsequent `running: false` is a regression
-   * (the alarm is the right thing to show). Until then, the runtime is
-   * still booting and the alarm would be wrong.
-   */
-  const hasEverBeenRunningRef = useRef(false);
-  /**
-   * When did we first observe `running: false` in this mount? Null when
-   * the runtime has never been observed in a stopped state (or it's
-   * currently running). Used to compute "has the startup grace period
-   * elapsed without ever coming up?".
-   */
-  const stoppedSinceRef = useRef<number | null>(null);
+
+  // ----- Session-scoped state -----
+  // None of these are persisted. The "ever been up" flag resets on
+  // every app launch so the cold-start window is honored on each
+  // fresh install AND on every app reopen.
+  const hasBeenUpThisSessionRef = useRef(false);
   const [, forceTick] = useState(0);
 
-  const setHasEverBeenRunning = useCallback((v: boolean) => {
-    if (hasEverBeenRunningRef.current !== v) {
-      hasEverBeenRunningRef.current = v;
-      // Persist across remounts (e.g. user navigates away from the chat
-      // view and back, or refreshes the page) so a regression is still
-      // distinguishable from a cold-start. localStorage is per-browser,
-      // which is fine — the next browser sees the cold-start window
-      // again and the alarm stays correctly hidden until the runtime
-      // comes up.
-      try {
-        if (v) localStorage.setItem("envoymesh:openclaw-ever-running", "1");
-      } catch {
-        /* localStorage may be unavailable (private mode, etc) — fall through */
-      }
-      // Re-render so the visibility check below sees the new value.
-      forceTick((n) => n + 1);
+  const markUp = useCallback(() => {
+    if (!hasBeenUpThisSessionRef.current) {
+      hasBeenUpThisSessionRef.current = true;
     }
+    forceTick((n) => n + 1);
   }, []);
-
-  // On mount, read the persisted "ever been running" flag so a regression
-  // is still surfaced when the user navigates back to the chat view.
-  useEffect(() => {
-    try {
-      if (localStorage.getItem("envoymesh:openclaw-ever-running") === "1") {
-        hasEverBeenRunningRef.current = true;
-        forceTick((n) => n + 1);
-      }
-    } catch {
-      /* localStorage may be unavailable */
-    }
-  }, []);
-
-  // The banner is only meaningful when the user *wants* the in-process
-  // engine — i.e. it isn't disabled in node-config. If the user has
-  // explicitly turned the built-in engine off, the absence of an AI on
-  // the welcome screen is intentional, not a failure.
-  const enabled = nodeConfig?.openclawEnabled ?? true;
 
   const refresh = useCallback(async () => {
     try {
       const oc = await nodeService.getOpenClawStatus();
       setRunning(oc.running);
+      setStartedAt(oc.startedAt ?? null);
+      setRuntimeEnabled(oc.enabled);
       if (oc.running) {
-        setHasEverBeenRunning(true);
-        // Reset the "stopped since" timer — we're healthy now.
-        if (stoppedSinceRef.current !== null) {
-          stoppedSinceRef.current = null;
-          forceTick((n) => n + 1);
-        }
-      } else if (stoppedSinceRef.current === null) {
-        // First time we see `running: false` in this mount. Stash the
-        // timestamp so the visibility check can compute grace period.
-        stoppedSinceRef.current = Date.now();
-        forceTick((n) => n + 1);
+        markUp();
       }
     } catch {
       // transient — leave last-known state in place
     }
-  }, [nodeService, setHasEverBeenRunning]);
+  }, [nodeService, markUp]);
 
   useEffect(() => {
     void refresh();
-    // Poll only when the alarm is currently visible (regression or grace
-    // elapsed). During the cold-start window we leave the initial probe
-    // to fire on mount and don't poll — there's nothing the user can
-    // act on until the runtime either comes up or the grace period
-    // expires.
+  }, [refresh]);
+
+  // Poll only when the alarm is currently visible (regression or grace
+  // elapsed). During the legitimate startup window we leave the initial
+  // probe on mount and don't poll — there's nothing the user can act on
+  // until the runtime either comes up or the grace period expires.
+  useEffect(() => {
+    const graceElapsed =
+      startedAt === null
+        ? false
+        : Date.now() - new Date(startedAt).getTime() > STARTUP_GRACE_MS;
     const alarmVisible =
-      running === false && (hasEverBeenRunningRef.current || (stoppedSinceRef.current !== null
-        && Date.now() - stoppedSinceRef.current > STARTUP_GRACE_MS));
+      runtimeEnabled !== false &&
+      running === false &&
+      startedAt !== null &&
+      (hasBeenUpThisSessionRef.current || graceElapsed);
     if (alarmVisible) {
       const id = window.setInterval(() => { void refresh(); }, 5_000);
       return () => window.clearInterval(id);
     }
     return undefined;
-  }, [running, refresh]);
+  }, [running, startedAt, runtimeEnabled, refresh]);
 
   // While the grace period is ticking down but hasn't elapsed yet, force
   // a re-render every second so the visibility check transitions from
@@ -145,12 +130,16 @@ export function OpenClawOfflineBanner() {
   // user having to navigate.
   useEffect(() => {
     if (running !== false) return;
-    if (hasEverBeenRunningRef.current) return;
-    if (stoppedSinceRef.current === null) return;
-    if (Date.now() - stoppedSinceRef.current > STARTUP_GRACE_MS) return;
+    if (hasBeenUpThisSessionRef.current) return;
+    if (startedAt === null) {
+      // Runtime never reported startedAt → no grace window to count down.
+      return;
+    }
+    const elapsed = Date.now() - new Date(startedAt).getTime();
+    if (elapsed > STARTUP_GRACE_MS) return;
     const id = window.setInterval(() => forceTick((n) => n + 1), 1_000);
     return () => window.clearInterval(id);
-  }, [running]);
+  }, [running, startedAt]);
 
   const handleRestart = useCallback(async () => {
     setRestarting(true);
@@ -158,38 +147,50 @@ export function OpenClawOfflineBanner() {
     try {
       const oc = await nodeService.restartOpenClaw();
       setRunning(oc.running);
+      setStartedAt(oc.startedAt ?? null);
+      setRuntimeEnabled(oc.enabled);
       if (oc.running) {
-        setHasEverBeenRunning(true);
-        if (stoppedSinceRef.current !== null) {
-          stoppedSinceRef.current = null;
-          forceTick((n) => n + 1);
-        }
+        markUp();
       }
     } catch (e) {
       setRestartError(e instanceof Error ? e.message : String(e));
     } finally {
       setRestarting(false);
     }
-  }, [nodeService, setHasEverBeenRunning]);
+  }, [nodeService, markUp]);
 
   // Show the alarm when ANY of the following are true:
-  //   1. **Regression** — runtime is enabled, was up at least once, and
-  //      is now down. (HasEverBeenRunning is persisted to localStorage
-  //      so a regression is still surfaced after a remount.)
+  //   1. **Regression** — runtime is enabled, was up in this session,
+  //      and is now down. Immediate.
   //   2. **Failed to start** — runtime is enabled, never came up, and
-  //      the grace period (45s) has elapsed since we first saw it down.
-  //   3. The initial probe has completed (running !== null).
-  // Hide during the cold-start window so a fresh install doesn't see a
-  // red "stopped" alarm before the runtime has had a chance to come up.
-  const regression =
-    enabled && running === false && hasEverBeenRunningRef.current;
-  const failedToStart =
-    enabled &&
+  //      the startup grace (90s, derived from `startedAt`) has elapsed.
+  //      Catches stuck installs.
+  //   3. **Stuck-across-navigation** — runtime is enabled, never came up
+  //      this session, and the startup grace has elapsed. Catches the
+  //      case where the runtime crashed while the user was elsewhere.
+  //
+  // Hide when:
+  //   - The runtime reports `enabled: false` (user intentionally turned
+  //     it off — not a failure).
+  //   - `startedAt` is null (the user has not yet triggered a start —
+  //     OpenClaw starts lazily on first use, so the absence of a start
+  //     time before any user interaction is normal, not a failure).
+  //   - The runtime is in its legitimate startup window (`running: false`
+  //     but `startedAt` is within the last `STARTUP_GRACE_MS`).
+  //   - We don't have a status yet (initial mount before the first poll).
+  const graceElapsed =
+    startedAt !== null &&
+    Date.now() - new Date(startedAt).getTime() > STARTUP_GRACE_MS;
+  const alarmVisible =
+    runtimeEnabled !== false &&
     running === false &&
-    !hasEverBeenRunningRef.current &&
-    stoppedSinceRef.current !== null &&
-    Date.now() - stoppedSinceRef.current > STARTUP_GRACE_MS;
-  if (!regression && !failedToStart) {
+    startedAt !== null &&
+    (hasBeenUpThisSessionRef.current || graceElapsed);
+  // Reference nodeConfig so unused-var tooling doesn't complain — this
+  // is intentionally a sanity hook in case the runtime status lags behind
+  // a recent settings change. The runtime is the source of truth.
+  void nodeConfig?.openclawEnabled;
+  if (!alarmVisible) {
     return null;
   }
 

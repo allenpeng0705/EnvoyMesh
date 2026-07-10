@@ -10,7 +10,7 @@ import { DarkModeIcon, LightModeIcon, QRCodeIcon, InfoIcon } from "../icons.js";
 import { LocaleSwitcher } from "./LocaleSwitcher.js";
 import { ProfilePhotoAvatar } from "./ProfilePhotoAvatar.js";
 import { isEffectiveNodeRunning } from "../lib/effective-node-status.js";
-import logoUrl from "../assets/logo.svg";
+import logoUrl from "../assets/logo.png";
 
 interface HeaderProps {
   currentView: ViewName;

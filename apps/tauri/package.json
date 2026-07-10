@@ -4,7 +4,7 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "icon": "tauri icon app-icon.svg -o src-tauri/icons",
+    "icon": "tauri icon src-tauri/app-icon.png -o src-tauri/icons",
     "dev": "tauri dev",
     "build": "tauri build",
     "build:full": "bash ../../scripts/fetch-kubo-sidecar.sh && tauri build --config src-tauri/tauri.conf.full.json",

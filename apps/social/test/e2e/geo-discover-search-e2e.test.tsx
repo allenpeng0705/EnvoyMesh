@@ -27,6 +27,7 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     runCapabilityDiscovery,
     getMorningReport,
     getPeerProfile: vi.fn().mockResolvedValue(null),
+    getSetupSponsorFriendStatus: vi.fn().mockResolvedValue({ config: null, state: {}, sponsorProofTokenRequired: false }),
     requestMultiHopDiscovery: vi.fn(),
     getMultiHopDiscoverySession: vi.fn(),
     applyWanJoinInvite: vi.fn(),
