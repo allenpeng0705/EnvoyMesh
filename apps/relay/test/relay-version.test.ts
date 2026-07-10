@@ -29,6 +29,29 @@ describe("buildRelayVersionReport", () => {
     expect(report.identify).toMatch(/^\d+\.\d+\.\d+/);
   });
 
+  it("reports the actual installed @envoymesh/network version", () => {
+    // Regression: @envoymesh/* packages are ESM-only (their exports map
+    // declares no `require` condition), so require.resolve() refuses them
+    // with "No exports main defined". The reporter falls back to reading
+    // `node_modules/@envoymesh/network/package.json` directly via the
+    // symlink that npm workspaces places at the root node_modules.
+    const report = buildRelayVersionReport(new Date().toISOString());
+    expect(report.network).toBeTruthy();
+    expect(report.network).toMatch(/^\d+\.\d+\.\d+/);
+  });
+
+  it("reports the actual installed @envoymesh/protocol version", () => {
+    const report = buildRelayVersionReport(new Date().toISOString());
+    expect(report.protocol).toBeTruthy();
+    expect(report.protocol).toMatch(/^\d+\.\d+\.\d+/);
+  });
+
+  it("reports the actual installed @envoymesh/identity version", () => {
+    const report = buildRelayVersionReport(new Date().toISOString());
+    expect(report.identity).toBeTruthy();
+    expect(report.identity).toMatch(/^\d+\.\d+\.\d+/);
+  });
+
   it("reports node runtime + platform", () => {
     const report = buildRelayVersionReport(new Date().toISOString());
     expect(report.node).toMatch(/^v\d+\.\d+\.\d+/);

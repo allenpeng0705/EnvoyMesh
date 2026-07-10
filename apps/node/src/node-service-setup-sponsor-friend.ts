@@ -139,12 +139,26 @@ export async function runSetupSponsorFriendViaRuntime(
     }
   }
 
-  deps.assertOnline();
-  const profile = await deps.loadHelloProfile();
+  // assertOnline() + loadHelloProfile() live INSIDE the per-attempt try so
+  // their failure modes are persisted the same way as network errors. Without
+  // this, an early call from SetupView/NodeStateContext (right after
+  // startNode or after the Tauri node process restart for OpenClaw
+  // provider env) hits a node still in `"starting"` state. The throw from
+  // `_assertOnline()` (`Node is starting. Start the node first.`) would
+  // propagate out of the runtime, the for-loop's catch block never runs,
+  // and no `setupSponsorFriend*` fields land in node-config.json — leaving
+  // the tile stuck on "Not started yet" with no actionable hint.
   let lastError: string | undefined;
+  let profile: HelloProfile | undefined;
 
   for (let attempt = 1; attempt <= resolved.maxAttempts; attempt += 1) {
     try {
+      deps.assertOnline();
+      // Load the hello profile lazily — failure here is also persisted, so
+      // a half-initialized profile surfaces as a clear error in the tile
+      // instead of an opaque "Not started yet".
+      profile ??= await deps.loadHelloProfile();
+
       if (resolved.joinToken) {
         await deps.applyWanJoinInvite(resolved.joinToken);
       }

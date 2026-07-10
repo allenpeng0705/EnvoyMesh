@@ -15,7 +15,7 @@
  *     a partial install produces a usable "here's what's there" report
  *     instead of a 500.
  */
-import { readFileSync } from "node:fs";
+import { readFileSync, existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
@@ -57,28 +57,79 @@ const PACKAGES_TO_REPORT = [
 type PackageName = (typeof PACKAGES_TO_REPORT)[number];
 
 /**
+ * Walk up from `startDir` looking for a `node_modules` directory that
+ * contains `<pkg>/package.json`. Returns the absolute path to the package's
+ * manifest, or null if not found at any level.
+ *
+ * Why we don't stop at the *first* node_modules: in a monorepo with hoisted
+ * dependencies, `apps/<x>/node_modules` may exist (for app-specific deps)
+ * but workspace packages like `@envoymesh/<name>` are symlinked only into
+ * the *root* `node_modules/@envoymesh/`. Stopping early would miss them.
+ *
+ * Used as a fallback for ESM-only workspace packages whose `exports` map
+ * declares no `require` condition (so `require.resolve()` refuses them
+ * with "No exports main defined"). Their `package.json` is plain JSON and
+ * always readable directly from the symlink, regardless of the exports map.
+ */
+function findPackageManifest(startDir: string, pkg: string): string | null {
+  let dir = startDir;
+  while (true) {
+    const candidate = resolve(dir, "node_modules", pkg, "package.json");
+    if (existsSync(candidate)) return candidate;
+    const parent = dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+/**
  * Read a package's resolved version from node_modules.
  * Returns null when the package isn't installed or its manifest is unreadable.
  *
- * Note: we can't `require.resolve("@libp2p/<x>/package.json")` directly because
- * modern js-libp2p packages set an `exports` map that only declares the entry
- * point — `package.json` is not an exposed subpath, and Node refuses the
- * lookup. Instead we resolve the package's entry point and walk one level up
- * to the package root, then read `<root>/package.json` directly.
+ * Two resolution strategies — try both because they handle different layouts:
+ *
+ * 1. `require.resolve(pkg)` + walk-up: works for packages whose `exports` map
+ *    declares a `require` condition (most @libp2p/* packages do, including
+ *    `@libp2p/circuit-relay-v2`, `@libp2p/identify`, `@libp2p/kad-dht`).
+ *
+ * 2. Read `node_modules/<pkg>/package.json` directly: works for our own
+ *    `@envoymesh/*` workspace packages, which declare only an `import`
+ *    condition in their `exports` map. Node refuses `require.resolve()`
+ *    on those ("No exports main defined"), but the symlink is always
+ *    present at the workspace root and the manifest is plain JSON, so we
+ *    can just read it.
+ *
+ * Layout assumed for strategy 1: `dist/src/index.js` → walk up 3 → `<pkg-root>/`.
+ * This matches the tsc output for both libp2p packages and our @envoymesh/*
+ * packages, so the same walk-up logic works once we've resolved the entry.
  */
 function readInstalledVersion(pkg: PackageName): string | null {
+  // Strategy 1: require.resolve — works for CJS-compatible exports maps.
   try {
     const require = createRequire(import.meta.url);
-    // Resolve the package's main entry, which is exposed via the exports map.
     const entryPath = require.resolve(pkg);
-    // Walk up: dist/src/index.js → dist/src/ → dist/ → <package-root>/
+    // dist/src/index.js → dist/src/ → dist/ → <package-root>/
     const packageRoot = dirname(dirname(dirname(entryPath)));
     const manifestPath = resolve(packageRoot, "package.json");
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as { version?: string };
-    return typeof manifest.version === "string" ? manifest.version : null;
+    if (typeof manifest.version === "string") return manifest.version;
   } catch {
-    return null;
+    // fall through to strategy 2
   }
+
+  // Strategy 2: read the symlinked manifest directly. Works for ESM-only
+  // workspace packages that don't expose a `require` condition.
+  const manifestPath = findPackageManifest(dirname(fileURLToPath(import.meta.url)), pkg);
+  if (manifestPath) {
+    try {
+      const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as { version?: string };
+      if (typeof manifest.version === "string") return manifest.version;
+    } catch {
+      // fall through to null
+    }
+  }
+
+  return null;
 }
 
 /**

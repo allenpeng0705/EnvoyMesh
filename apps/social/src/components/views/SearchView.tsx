@@ -694,7 +694,15 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
                 <SearchIcon size={20} />
               </span>
               <div>
-                <strong>{t("discover.search.searchingFor", { query })}</strong>
+                {/* When the user hasn't typed a query, the auto-discover
+                    effect is what set networkSearching=true. Don't show
+                    `Searching for ""` — that's confusing and looks broken.
+                    Fall back to the auto-discover banner instead. */}
+                <strong>
+                  {query
+                    ? t("discover.search.searchingFor", { query })
+                    : t("discover.emptyGraphAutoSearching")}
+                </strong>
                 <p>
                   {isPaste
                     ? t("discover.search.lookingUp")

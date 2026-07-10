@@ -141,4 +141,120 @@ describe("runSetupSponsorFriendViaRuntime — error kind", () => {
       }),
     );
   });
+
+  it("persists lastError when assertOnline() throws (e.g. node still 'starting')", async () => {
+    // Regression: SetupView/NodeStateContext may call runSetupSponsorFriend
+    // right after startNode() or after the Tauri node process restart for
+    // OpenClaw provider env. The node is in `"starting"` state at that
+    // moment, so _assertOnline() throws "Node is starting. Start the node
+    // first." Before the fix, the throw escaped the for-loop's catch
+    // block and no setupSponsorFriend* fields landed in node-config.json —
+    // leaving the tile stuck on "Not started yet" with no actionable hint.
+    const saveNodeConfig = vi.fn(async () => {});
+    const assertOnline = vi.fn(() => {
+      throw new Error("Node is starting. Start the node first.");
+    });
+
+    // Lower maxAttempts + retryDelayMs via the persisted config so the
+    // test doesn't have to wait 12 × 5s for the loop to exhaust itself.
+    // The bundled config (loaded from <repo>/bundled-sponsor-friend.json
+    // by the runtime's loader) provides enabled + ownerId; persisted
+    // overrides tune the retry budget.
+    const result = await runSetupSponsorFriendViaRuntime({
+      loadNodeConfig: async () => ({
+        version: "0.1",
+        profileDir: "/tmp/profile",
+        discoveryProfile: "wan-default",
+        enableMdns: true,
+        relayEnabled: true,
+        relayServerEnabled: false,
+        advertiseAddrs: [],
+        bootstrapPeers: [],
+        bootstrapPresets: [],
+        configuredRelays: [],
+        modelProviders: { mode: "disabled" },
+        chatAssistEnabled: false,
+        contactAiPreferences: [],
+        updatedAt: new Date().toISOString(),
+        setupSponsorFriendEnabled: true,
+        setupSponsorFriendOwnerId: "envoy:owner:test",
+        setupSponsorFriendPeerId: "12D3KooWTest",
+        setupSponsorFriendMaxAttempts: 1,
+        setupSponsorFriendRetryDelayMs: 0,
+      }),
+      saveNodeConfig,
+      getProfileDir: () => "/tmp/profile",
+      nodeBundleDir: "/tmp/bundle",
+      applyWanJoinInvite: vi.fn(async () => ({})),
+      searchPeers: vi.fn(async () => []),
+      sendHello: vi.fn(async () => ({ messageId: "msg-1" })),
+      loadHelloProfile: async () => ({
+        displayName: "New User",
+        bio: "",
+        interests: [],
+        whatShares: [],
+      }),
+      loadNodeProfile: async () => undefined,
+      assertOnline,
+    });
+
+    expect(result.ok).toBe(false);
+    expect(saveNodeConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        setupSponsorFriendLastError: expect.stringContaining("Node is starting"),
+        // "starting" is not in the network/proof regex; classify as "other"
+        setupSponsorFriendLastErrorKind: "other",
+      }),
+    );
+  });
+
+  it("persists lastError when loadHelloProfile() throws", async () => {
+    // Companion to the assertOnline regression — if the human profile
+    // isn't initialized yet, the runtime should surface that as a clear
+    // error in the tile instead of an opaque "Not started yet".
+    const saveNodeConfig = vi.fn(async () => {});
+    const loadHelloProfile = vi.fn(async () => {
+      throw new Error("Human profile not initialized");
+    });
+
+    const result = await runSetupSponsorFriendViaRuntime({
+      loadNodeConfig: async () => ({
+        version: "0.1",
+        profileDir: "/tmp/profile",
+        discoveryProfile: "wan-default",
+        enableMdns: true,
+        relayEnabled: true,
+        relayServerEnabled: false,
+        advertiseAddrs: [],
+        bootstrapPeers: [],
+        bootstrapPresets: [],
+        configuredRelays: [],
+        modelProviders: { mode: "disabled" },
+        chatAssistEnabled: false,
+        contactAiPreferences: [],
+        updatedAt: new Date().toISOString(),
+        setupSponsorFriendEnabled: true,
+        setupSponsorFriendOwnerId: "envoy:owner:test",
+        setupSponsorFriendPeerId: "12D3KooWTest",
+        setupSponsorFriendMaxAttempts: 1,
+        setupSponsorFriendRetryDelayMs: 0,
+      }),
+      saveNodeConfig,
+      getProfileDir: () => "/tmp/profile",
+      nodeBundleDir: "/tmp/bundle",
+      applyWanJoinInvite: vi.fn(async () => ({})),
+      searchPeers: vi.fn(async () => []),
+      sendHello: vi.fn(async () => ({ messageId: "msg-1" })),
+      loadHelloProfile,
+      loadNodeProfile: async () => undefined,
+      assertOnline: () => {},
+    });
+
+    expect(result.ok).toBe(false);
+    expect(saveNodeConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        setupSponsorFriendLastError: expect.stringContaining("Human profile not initialized"),
+      }),
+    );
+  });
 });

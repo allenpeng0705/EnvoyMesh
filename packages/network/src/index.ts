@@ -3264,7 +3264,8 @@ function validateEnvelopeProtocol(protocol: string, envelope: EnvoyEnvelope): vo
       envelope.intent !== "chat.room.sync" &&
       envelope.intent !== "chat.room.message" &&
       !envelope.intent.startsWith("call.") &&
-      !envelope.intent.startsWith("profile.")
+      !envelope.intent.startsWith("profile.") &&
+      !envelope.intent.startsWith("bond.")
     ) {
       throw new Error(`invalid intent ${envelope.intent} on chat protocol`);
     }

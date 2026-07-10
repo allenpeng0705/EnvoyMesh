@@ -56,14 +56,26 @@ export function SponsorSetupTile() {
     void refresh();
   }, [refresh]);
 
-  // While the run is in flight, poll every 2s to surface the outcome as
-  // soon as the runtime finishes (which can take up to 60s — 12 attempts
-  // × 5s retry delay).
+  // Poll periodically while the tile is active so background activity
+  // (NodeStateContext's auto-trigger, the runtime persisting per-attempt
+  // errors) shows up. The earlier useEffect only refreshes on mount and
+  // when `runState.kind` changes — but NodeStateContext's auto-trigger
+  // doesn't update the tile's local `runState`, so without this poll the
+  // tile would stay on the mount-time snapshot ("Not started yet") even
+  // after the runtime has run and persisted failures.
+  //
+  // Gate on `isActive` so the poll stops once the tile hides itself
+  // (lastRunSucceeded → return null). One RPC per 2s while visible.
+  const isActive = Boolean(
+    status?.config.enabled &&
+      status.config.ownerId &&
+      !(status.state?.completedAt && runState.kind !== "running"),
+  );
   useEffect(() => {
-    if (runState.kind !== "running") return;
+    if (!isActive) return;
     const id = window.setInterval(() => { void refresh(); }, 2_000);
     return () => window.clearInterval(id);
-  }, [runState.kind, refresh]);
+  }, [refresh, isActive]);
 
   const sponsorName = useMemo(
     () => status?.config.displayName ?? status?.config.ownerId ?? null,
