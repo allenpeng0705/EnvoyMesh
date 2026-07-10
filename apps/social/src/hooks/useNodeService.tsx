@@ -1444,18 +1444,21 @@ function createWsNodeServiceClient(
       >;
     },
     async runSetupSponsorFriend() {
-      // The runtime retries up to setupSponsorFriendMaxAttempts (default 12)
-      // with setupSponsorFriendRetryDelayMs (default 5000ms) between attempts,
-      // so the worst case is ~12 × (call time + 5s delay). The default
-      // RPC client timeout of 30s fires before the runtime finishes its
-      // retry loop, returning a misleading "Request runSetupSponsorFriend
-      // timed out" error — which the UI then surfaces as "Couldn't reach
-      // {name}" with no `lastErrorKind` to drive the network/proof-token
-      // hint. Bump the timeout to 120s (matches the `sendChat` /
-      // `acceptHello` pattern for long-running ops) so the runtime's
-      // classified result reaches the caller.
+      // The runtime is fire-and-forget: the RPC kicks off the retry loop
+      // in the background and returns immediately with
+      // `{ ok: true, running: true }`. The runtime's worst case is well
+      // over the default 30s RPC timeout (12 attempts × 30s+ each), so
+      // waiting for the loop synchronously would either need a much
+      // longer timeout or risk surfacing a misleading "timed out" error
+      // before the runtime classifies any failure. The UI's polling of
+      // getSetupSponsorFriendStatus surfaces the final result.
+      //
+      // 60s still gives the synchronous "skipped" paths (already-completed,
+      // sponsor-is-self, disabled-or-incomplete) plenty of time to return
+      // and gives the self-check + first-attempt kickoff a comfortable
+      // budget.
       return wsClient.rpc("runSetupSponsorFriend", undefined, {
-        timeoutMs: 120_000,
+        timeoutMs: 60_000,
       }) as Promise<
         import("@envoymesh/api").RunSetupSponsorFriendResult
       >;

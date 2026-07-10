@@ -40,7 +40,7 @@ export function logNodeRuntimeStats(mesh: EnvoyMesh, context: NodeStatsLogContex
   if (conn.totalConnections >= HIGH_CONNECTION_COUNT_WARN) {
     const dialPart = conn.dialQueueLength != null ? ` dialQueue=${conn.dialQueueLength}` : "";
     console.warn(
-      `[node-stats] WARNING: ${conn.totalConnections} open libp2p connections (peers=${conn.totalPeerIds}${dialPart}) — check relay dial churn; bond warm runs every 60s per contact`,
+      `[node-stats] WARNING: ${conn.totalConnections} open libp2p connections (peers=${conn.totalPeerIds}${dialPart}) — check relay dial churn; bond-warm interval=${60_000 * 5}ms (5min) per contact with ${60_000 * 5}ms per-contact cooldown (cap ${"see BOND_WARM_MAX_CONNECTIONS"})`,
     );
   }
 }

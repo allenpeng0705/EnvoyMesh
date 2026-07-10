@@ -79,6 +79,16 @@ export type ResolvedSetupSponsorFriend = {
 
 export type RunSetupSponsorFriendResult = {
   ok: boolean;
+  /**
+   * When true, the runtime kicked off the retry loop in the background
+   * and returned immediately. The UI should poll
+   * `getSetupSponsorFriendStatus` to see the final result. Without this
+   * the RPC client's default 30-120s timeout would fire before the
+   * runtime's worst-case retry budget (12 attempts × 30s+) completes,
+   * surfacing a misleading "Request runSetupSponsorFriend timed out"
+   * error.
+   */
+  running?: boolean;
   skipped?: boolean;
   reason?: string;
   ownerId?: string;

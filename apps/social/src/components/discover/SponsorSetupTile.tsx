@@ -86,6 +86,19 @@ export function SponsorSetupTile() {
     setRunState({ kind: "running" });
     try {
       const result = await nodeService.runSetupSponsorFriend();
+      // The runtime is now fire-and-forget: the RPC returns immediately
+      // with `{ ok: true, running: true }` and the retry loop continues
+      // in the background. The result of each attempt is persisted to
+      // node-config.json; the polling useEffect (above) surfaces the
+      // final state. The only "ok without running" case is the
+      // `skipped: true` path (already-completed, sponsor-is-self, etc.).
+      if (result.running) {
+        // Stay in "running" state; the polling useEffect will surface
+        // the actual outcome (success, classified failure, or
+        // already-completed) when the runtime finishes.
+        await refresh();
+        return;
+      }
       if (result.ok) {
         setRunState({ kind: "succeeded", helloMessageId: result.helloMessageId });
       } else if (result.skipped) {

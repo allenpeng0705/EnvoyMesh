@@ -624,8 +624,24 @@ function startOpenClawWatchdog(state: OpenClawRuntimeState, deps: OpenClawRuntim
   const tick = async () => {
     if (!state.watchdogRunning) return;
 
-    // Case 1: Gateway process is alive but route unregistered → restart.
-    if (state.gatewayChild && !state.gatewayChild.killed && !state.gatewayRouteRegistered) {
+    // Case 1: Gateway process is alive but neither the stderr route-
+    // registration signal nor the startup probe showed it ready → restart.
+    //
+    // `gatewayRouteRegistered` is set by the stderr listener at line ~1132,
+    // which watches for the literal "Registered EnvoyMesh HTTP route"
+    // message. openclaw's logger (tslog) writes that to a rolling log file
+    // (default in `~/.cache/openclaw/openclaw-YYYY-MM-DD.log`), NOT to
+    // stderr, so the signal can stay false even when the gateway is
+    // actually serving. `gatewayReady` is set by `waitForOpenClawGatewayReady`
+    // which probes the webhook URL directly — that's the source of truth.
+    // Accept EITHER signal as positive, otherwise the watchdog restarts a
+    // working gateway in a loop.
+    if (
+      state.gatewayChild &&
+      !state.gatewayChild.killed &&
+      !state.gatewayRouteRegistered &&
+      !state.gatewayReady
+    ) {
       console.warn("[openclaw] Watchdog: gateway process alive but route unregistered — restarting");
       recordOpenClawError(state, "Gateway process alive but HTTP route never registered — restarting");
       state.watchdogRunning = false;
@@ -653,10 +669,13 @@ function startOpenClawWatchdog(state: OpenClawRuntimeState, deps: OpenClawRuntim
       return;
     }
 
-    // Case 3: Gateway alive and registered → periodically probe to confirm
-    // it's still responding. If the probe fails, mark unready so the next
-    // turn triggers a re-spawn.
-    if (state.gatewayReady && state.gatewayRouteRegistered) {
+    // Case 3: Gateway ready (set by the startup probe at waitForOpenClawGatewayReady)
+    // → periodically probe to confirm it's still responding. If the probe
+    // fails, mark unready so the next turn triggers a re-spawn. Key on
+    // `gatewayReady` rather than `gatewayRouteRegistered` because openclaw's
+    // tslog writes the registration message to a file, not stderr — see the
+    // Case 1 comment for details.
+    if (state.gatewayReady) {
       const ok = await probeOpenClawWebhook(state, { quiet: true }).catch(() => false);
       if (!ok) {
         console.warn("[openclaw] Watchdog: gateway alive but probe failed — marking unready");

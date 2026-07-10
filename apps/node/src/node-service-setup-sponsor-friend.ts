@@ -126,6 +126,13 @@ export async function runSetupSponsorFriendViaRuntime(
     return { ok: true, skipped: true, reason: "disabled-or-incomplete" };
   }
 
+  // After the early return above, `resolved.ownerId` is guaranteed to be
+  // a non-empty string, but the public type of `ResolvedSetupSponsorFriend`
+  // declares it as `string | undefined`. Capture it in a narrowed local so
+  // the rest of the function (and the background retry loop below) can use
+  // it as `string` without `!` non-null assertions at every use site.
+  const ownerId: string = resolved.ownerId;
+
   // Self-check: if the sponsor's peer ID or owner ID matches the local node,
   // skip gracefully. This happens when the sponsor themselves runs the app —
   // they can't bond with themselves.
@@ -134,7 +141,7 @@ export async function runSetupSponsorFriendViaRuntime(
     if (resolved.peerId && localProfile.peerId === resolved.peerId) {
       return { ok: true, skipped: true, reason: "sponsor-is-self-peer" };
     }
-    if (localProfile.owner.ownerId === resolved.ownerId) {
+    if (localProfile.owner.ownerId === ownerId) {
       return { ok: true, skipped: true, reason: "sponsor-is-self-owner" };
     }
   }
@@ -148,6 +155,48 @@ export async function runSetupSponsorFriendViaRuntime(
   // propagate out of the runtime, the for-loop's catch block never runs,
   // and no `setupSponsorFriend*` fields land in node-config.json — leaving
   // the tile stuck on "Not started yet" with no actionable hint.
+  //
+  // The retry loop is fire-and-forget: the RPC returns immediately with
+  // `{ ok: true, running: true }` so the UI's RPC timeout (typically 30-120s)
+  // doesn't kill the wait mid-attempt. The runtime's worst case is
+  // maxAttempts × (per-attempt-call-time + retryDelayMs) — easily 6+ minutes
+  // when the per-attempt `expect-reply` budget is involved — and a real RPC
+  // timeout would surface as a misleading "Request runSetupSponsorFriend
+  // timed out" before the runtime classifies any failure. The retry loop
+  // persists state after each attempt, and the UI's polling
+  // (getSetupSponsorFriendStatus) surfaces the final result.
+  void runSetupSponsorFriendRetryLoop({
+    deps,
+    existing,
+    resolved,
+    ownerId,
+  }).catch((err) => {
+    // The loop's internal try/catch already persists every per-attempt
+    // failure. This catch is a final safety net for unexpected throws
+    // outside that path (e.g. a dep throwing synchronously).
+    const message = err instanceof Error ? err.message : String(err);
+    console.error("[runSetupSponsorFriend] retry loop terminated unexpectedly:", message);
+  });
+
+  return {
+    ok: true,
+    running: true,
+    ownerId,
+  };
+}
+
+interface SetupSponsorFriendRetryLoopParams {
+  deps: SetupSponsorFriendRuntimeDeps;
+  existing: Awaited<ReturnType<SetupSponsorFriendRuntimeDeps["loadNodeConfig"]>>;
+  resolved: Awaited<ReturnType<typeof resolveEffectiveSetupSponsorFriend>>;
+  /** Pre-narrowed sponsor owner id (caller guarantees non-empty). */
+  ownerId: string;
+}
+
+async function runSetupSponsorFriendRetryLoop(
+  params: SetupSponsorFriendRetryLoopParams,
+): Promise<void> {
+  const { deps, existing, resolved, ownerId } = params;
   let lastError: string | undefined;
   let profile: HelloProfile | undefined;
 
@@ -167,7 +216,7 @@ export async function runSetupSponsorFriendViaRuntime(
         await deps.searchPeers({ peerId: resolved.peerId });
       }
 
-      const hello = await deps.sendHello(resolved.ownerId, profile, resolved.helloMessage, {
+      const hello = await deps.sendHello(ownerId, profile, resolved.helloMessage, {
         proofOfContext: resolved.proofOfContext,
         targetPeerId: resolved.peerId,
       });
@@ -198,11 +247,10 @@ export async function runSetupSponsorFriendViaRuntime(
         updatedAt: new Date().toISOString(),
       });
 
-      return {
-        ok: true,
-        ownerId: resolved.ownerId,
-        helloMessageId: hello.messageId,
-      };
+      console.log(
+        `[runSetupSponsorFriend] succeeded on attempt ${attempt} for ownerId=${resolved.ownerId}`,
+      );
+      return;
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
       const lastErrorKind = classifySponsorError(lastError);
@@ -233,18 +281,18 @@ export async function runSetupSponsorFriendViaRuntime(
         setupSponsorFriendLastErrorKind: lastErrorKind,
         updatedAt: new Date().toISOString(),
       });
+      console.warn(
+        `[runSetupSponsorFriend] attempt ${attempt}/${resolved.maxAttempts} failed: ${lastError}`,
+      );
       if (attempt < resolved.maxAttempts) {
         await sleep(resolved.retryDelayMs);
       }
     }
   }
 
-  return {
-    ok: false,
-    reason: lastError ?? "sponsor hello failed",
-    ownerId: resolved.ownerId,
-    lastErrorKind: classifySponsorError(lastError),
-  };
+  console.warn(
+    `[runSetupSponsorFriend] exhausted ${resolved.maxAttempts} attempts; last error: ${lastError ?? "(none)"}`,
+  );
 }
 
 /** Convenience wrapper using NodeService when available. */

@@ -231,6 +231,14 @@ export async function warmAllBondedContactsViaRuntime(ctx: ReachabilityContext):
   const bonds = await ctx.getBonds();
   const selfOwnerId = ctx.getProfile()?.owner.ownerId?.trim();
 
+  // The cap is enforced INSIDE the loop too. The pre-loop check is just a
+  // fast-path that lets us skip the entire cycle when the cap is already
+  // blown (e.g. 178 bonds but only 64 connection slots); without it we'd
+  // walk every bond just to bail per-iteration. Each `warmContactConnection`
+  // call below can ADD a connection (when the peer isn't already
+  // connected), so the cap must also be re-checked before each warm call —
+  // otherwise a single cycle can push totalConnections well past the cap
+  // before the next cycle's pre-check has a chance to refuse.
   if (mesh.getConnectionStats().totalConnections >= BOND_WARM_MAX_CONNECTIONS) {
     console.warn(
       `[bond-warm] skipped: ${mesh.getConnectionStats().totalConnections} open connections (cap ${BOND_WARM_MAX_CONNECTIONS}). ` +
@@ -248,6 +256,16 @@ export async function warmAllBondedContactsViaRuntime(ctx: ReachabilityContext):
 
     const lastWarm = lastBondWarmAt.get(bond.peerOwnerId);
     if (lastWarm && now - lastWarm < BOND_WARM_PER_CONTACT_COOLDOWN_MS) continue;
+
+    // Per-iteration cap check — see comment above. Bail out of the cycle
+    // (without breaking the cooldown) so the next 5-min cycle can re-
+    // evaluate when the cap headroom grows.
+    if (mesh.getConnectionStats().totalConnections >= BOND_WARM_MAX_CONNECTIONS) {
+      console.warn(
+        `[bond-warm] cap ${BOND_WARM_MAX_CONNECTIONS} reached mid-cycle at bond ${bond.peerOwnerId.slice(0, 12)}… — deferring remaining ${bonds.length - (bonds.indexOf(bond))} bonds to next cycle`,
+      );
+      break;
+    }
 
     try {
       const info = await ctx.getPeerConnectionInfo(bond.peerOwnerId);

@@ -4,11 +4,28 @@ import {
   runSetupSponsorFriendViaRuntime,
 } from "../src/node-service-setup-sponsor-friend.js";
 
+/**
+ * The runtime is fire-and-forget: the RPC kicks off the retry loop and
+ * returns immediately. Tests that need to assert post-loop state must
+ * wait until the mocked deps settle. `flushSponsorLoop` drains pending
+ * microtasks + a few macrotask ticks (the loop awaits at least one
+ * `sleep` between attempts and several awaited deps per attempt) so
+ * `saveNodeConfig` calls land before the assertion.
+ */
+async function flushSponsorLoop() {
+  for (let i = 0; i < 10; i++) {
+    await new Promise<void>((r) => setTimeout(r, 0));
+  }
+}
+
 describe("runSetupSponsorFriendViaRuntime", () => {
-  it("passes bundled peerId to sendHello when owner is not in peer directory", async () => {
+  it("returns { running: true } immediately and runs the loop in the background", async () => {
     const sendHello = vi.fn(async () => ({ messageId: "msg-1" }));
     const saveNodeConfig = vi.fn(async () => {});
 
+    // The RPC returns immediately with `running: true`, NOT after the
+    // retry loop completes. The UI then polls getSetupSponsorFriendStatus
+    // (which reads the persisted state) to see the final outcome.
     const result = await runSetupSponsorFriendViaRuntime({
       loadNodeConfig: async () => undefined,
       saveNodeConfig,
@@ -28,6 +45,11 @@ describe("runSetupSponsorFriendViaRuntime", () => {
     });
 
     expect(result.ok).toBe(true);
+    expect(result.running).toBe(true);
+    expect(result.ownerId).toBe("envoy:owner:diBymBI4fBdIe0V_bhwFXhEijf4FVd0uDvyIh_X1E9I");
+
+    // Now wait for the background loop to actually call sendHello.
+    await flushSponsorLoop();
     expect(sendHello).toHaveBeenCalledWith(
       "envoy:owner:diBymBI4fBdIe0V_bhwFXhEijf4FVd0uDvyIh_X1E9I",
       expect.objectContaining({ displayName: "New User" }),
@@ -76,7 +98,7 @@ describe("classifySponsorError", () => {
   });
 });
 
-describe("runSetupSponsorFriendViaRuntime — error kind", () => {
+describe("runSetupSponsorFriendViaRuntime — error kind (background loop)", () => {
   it("persists lastErrorKind='network-unreachable' when transport can't reach sponsor", async () => {
     const saveNodeConfig = vi.fn(async () => {});
     const sendHello = vi.fn(async () => {
@@ -101,7 +123,8 @@ describe("runSetupSponsorFriendViaRuntime — error kind", () => {
       assertOnline: () => {},
     });
 
-    expect(result.ok).toBe(false);
+    expect(result.running).toBe(true);
+    await flushSponsorLoop();
     expect(saveNodeConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         setupSponsorFriendLastError: expect.stringContaining("No reachable path"),
@@ -116,7 +139,7 @@ describe("runSetupSponsorFriendViaRuntime — error kind", () => {
       throw new Error("bond.request rejected: invalid proof token");
     });
 
-    await runSetupSponsorFriendViaRuntime({
+    const result = await runSetupSponsorFriendViaRuntime({
       loadNodeConfig: async () => undefined,
       saveNodeConfig,
       getProfileDir: () => "/tmp/profile",
@@ -134,6 +157,8 @@ describe("runSetupSponsorFriendViaRuntime — error kind", () => {
       assertOnline: () => {},
     });
 
+    expect(result.running).toBe(true);
+    await flushSponsorLoop();
     expect(saveNodeConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         setupSponsorFriendLastError: expect.stringContaining("invalid proof token"),
@@ -198,7 +223,8 @@ describe("runSetupSponsorFriendViaRuntime — error kind", () => {
       assertOnline,
     });
 
-    expect(result.ok).toBe(false);
+    expect(result.running).toBe(true);
+    await flushSponsorLoop();
     expect(saveNodeConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         setupSponsorFriendLastError: expect.stringContaining("Node is starting"),
@@ -250,7 +276,8 @@ describe("runSetupSponsorFriendViaRuntime — error kind", () => {
       assertOnline: () => {},
     });
 
-    expect(result.ok).toBe(false);
+    expect(result.running).toBe(true);
+    await flushSponsorLoop();
     expect(saveNodeConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         setupSponsorFriendLastError: expect.stringContaining("Human profile not initialized"),
