@@ -11,6 +11,52 @@ import type { HelloProfile, NodeService, SendHelloOptions } from "@envoymesh/api
 import { loadBundledSponsorFriendConfig } from "./bundled-sponsor-friend-loader.js";
 import type { PersistedNodeConfig } from "./node-config-store.js";
 
+/**
+ * Classification of a sponsor-hello failure. Drives which hint the UI
+ * surfaces — proof-token hints for token mismatches, network hints for
+ * reachability failures, and a generic message for everything else.
+ *
+ *   - `network-unreachable` — all transport paths failed (libp2p direct,
+ *     relay-tunnel, etc.). Operator needs to check Settings → Network on
+ *     both sides and/or pick a relay both nodes can reach.
+ *   - `proof-token-mismatch` — recipient requires a matching
+ *     `bondAutonomySponsorProofToken` and the hello was rejected because
+ *     the bundled `proofOfContext` doesn't match. Operator needs to set
+ *     the same token on the recipient's node-config.json.
+ *   - `other` — anything else (rate limit, schema mismatch, recipient
+ *     policy denies, transient). Generic retry hint.
+ */
+export type SponsorFailureKind =
+  | "network-unreachable"
+  | "proof-token-mismatch"
+  | "other";
+
+/**
+ * Classify the error message produced by the hello send. Pure function so
+ * it can be unit-tested without wiring the full runtime.
+ */
+export function classifySponsorError(message: string | undefined): SponsorFailureKind {
+  const m = (message ?? "").toLowerCase();
+  if (!m) return "other";
+  // Network reachability patterns from chat-outbound-deliver / network layer.
+  if (
+    /no reachable path|could not dial|dial backoff|dial tcp|connection refused|connection reset|econnrefused|etimedout|enotfound|ehostunreach|network is unreachable|relay.*unreachable|relay.*closed|relay.*timeout|relay.*disconnected|i\/o timeout|operation timed out/.test(
+      m,
+    )
+  ) {
+    return "network-unreachable";
+  }
+  // Proof-token mismatch from bondAutonomyWorker / bond.request handler.
+  if (
+    /proof.?of.?context|sponsor.?proof.?token|proofoftoken|token.?mismatch|invalid.?proof|missing.?proof/.test(
+      m,
+    )
+  ) {
+    return "proof-token-mismatch";
+  }
+  return "other";
+}
+
 export function persistedSetupSponsorFriendConfig(
   config: PersistedNodeConfig | undefined,
 ): SetupSponsorFriendConfig | null {
@@ -145,14 +191,34 @@ export async function runSetupSponsorFriendViaRuntime(
       };
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
-      if (existing) {
-        await deps.saveNodeConfig({
-          ...existing,
-          setupSponsorFriendAttempts: attempt,
-          setupSponsorFriendLastError: lastError,
+      const lastErrorKind = classifySponsorError(lastError);
+      // Always persist progress — first-run failures must survive a restart
+      // so the operator can see "we tried and here's why" on next launch.
+      // Use the same default-base pattern as the success path.
+      const base =
+        existing ??
+        ({
+          version: "0.1",
+          profileDir: deps.getProfileDir(),
+          discoveryProfile: "wan-default",
+          relayEnabled: true,
+          relayServerEnabled: false,
+          advertiseAddrs: [],
+          bootstrapPeers: [],
+          bootstrapPresets: [],
+          configuredRelays: [],
+          modelProviders: { mode: "disabled" },
+          chatAssistEnabled: false,
+          contactAiPreferences: [],
           updatedAt: new Date().toISOString(),
-        });
-      }
+        } satisfies PersistedNodeConfig);
+      await deps.saveNodeConfig({
+        ...base,
+        setupSponsorFriendAttempts: attempt,
+        setupSponsorFriendLastError: lastError,
+        setupSponsorFriendLastErrorKind: lastErrorKind,
+        updatedAt: new Date().toISOString(),
+      });
       if (attempt < resolved.maxAttempts) {
         await sleep(resolved.retryDelayMs);
       }
@@ -163,6 +229,7 @@ export async function runSetupSponsorFriendViaRuntime(
     ok: false,
     reason: lastError ?? "sponsor hello failed",
     ownerId: resolved.ownerId,
+    lastErrorKind: classifySponsorError(lastError),
   };
 }
 

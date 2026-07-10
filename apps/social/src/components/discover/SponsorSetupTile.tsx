@@ -169,9 +169,21 @@ export function SponsorSetupTile() {
       <div className={`sponsor-setup-tile-status status-${runState.kind}`}>
         {t(statusKey, statusParams)}
       </div>
-      {runState.kind === "failed" && status.sponsorProofTokenRequired && status.config.proofOfContext && (
+      {lastAttempt?.lastErrorKind === "proof-token-mismatch" &&
+        status.sponsorProofTokenRequired &&
+        status.config.proofOfContext && (
+          <div className="sponsor-setup-tile-hint">
+            {t("discover.sponsorTile.proofTokenHint", {
+              token: status.config.proofOfContext,
+              name: sponsorName ?? status.config.ownerId,
+            })}
+          </div>
+        )}
+      {lastAttempt?.lastErrorKind === "network-unreachable" && (
         <div className="sponsor-setup-tile-hint">
-          {t("discover.sponsorTile.proofTokenHint", { token: status.config.proofOfContext })}
+          {t("discover.sponsorTile.networkHint", {
+            name: sponsorName ?? status.config.ownerId ?? "sponsor",
+          })}
         </div>
       )}
       <div className="sponsor-setup-tile-actions">

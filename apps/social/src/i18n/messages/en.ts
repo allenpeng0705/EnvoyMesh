@@ -372,13 +372,23 @@ export const en = {
       statusIdle: "Not started yet",
       statusRunning: "Connecting to {name}…",
       statusSucceeded: "Connected to {name} — check your contacts.",
-      statusFailed: "Couldn't reach {name}",
+      statusFailed: "Couldn't reach {name} ({reason})",
       statusSkipped: "Skipped: {reason}",
       retryNow: "Retry now",
       retrying: "Retrying…",
       useDifferentContact: "Use a different contact",
+      // Network reachability hint — fires when the transport layer can't
+      // deliver the hello (libp2p direct / relay-tunnel all failed). The
+      // proof-token is irrelevant here; the operator needs to verify
+      // both nodes can reach each other via Settings → Network.
+      networkHint:
+        "We couldn't deliver the hello — no transport path to {name}. Check: (1) both nodes are connected in Settings → Network, (2) the relay in Settings → Network is reachable from this machine, (3) you and {name} share at least one bootstrap preset. After fixing, tap Retry.",
+      // Proof-token hint — fires only when the runtime confirmed a token
+      // mismatch. Tells the operator exactly which file + field to set
+      // on the SPONSOR's machine (not the local machine). The token is
+      // a shared secret the sponsor's bondAutonomy gates on.
       proofTokenHint:
-        "The sponsor side needs to set bondAutonomy.sponsorProofToken to \"{token}\" to auto-accept. Ask the sponsor to add it to their node-config.json (under bondAutonomy.sponsorProofToken) and try again.",
+        "Sponsor requires a shared proof token to auto-accept. On {name}'s machine, edit their node-config.json (default: ./data/default/node-config.json) and set the top-level field: \"bondAutonomySponsorProofToken\": \"{token}\". Restart their node after saving. Verify the value matches exactly (no extra whitespace).",
       pastePrompt: "Paste a contact URI like envoy://contact?v=1&…",
       pasteApply: "Apply",
       pasteCancel: "Cancel",

@@ -4712,6 +4712,7 @@ class NodeServiceImpl implements NodeService {
       completedAt: persisted?.setupSponsorFriendCompletedAt,
       lastAttemptAt: persisted?.setupSponsorFriendCompletedAt,
       lastError: persisted?.setupSponsorFriendLastError,
+      lastErrorKind: persisted?.setupSponsorFriendLastErrorKind,
       attempts: persisted?.setupSponsorFriendAttempts,
     };
     return {

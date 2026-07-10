@@ -39,6 +39,10 @@ import {
   RENDEZVOUS_RESPONSE_PLACEHOLDER_SIGNATURE,
   type EnvoyEnvelope,
 } from "@envoymesh/protocol";
+import {
+  buildRelayVersionReport,
+  buildRelayProtocolReport,
+} from "./relay-version.js";
 
 // ============================================================================
 // CONSTANTS & CONFIGURATION
@@ -120,11 +124,19 @@ if (args.advertiseAddrs.length > 0) {
   console.log(`[relay] Advertise (append to libp2p announce): ${args.advertiseAddrs.join(", ")}`);
 }
 if (args.httpPort) {
-  console.log(`[relay] HTTP info endpoint: enabled (port ${args.httpPort})`);
-  console.log(`[relay] WebSocket endpoints: /ws (mobile client-proxy), /ws/home (home node tunnel), /ws/client (direct client)`);
-} else {
-  console.log(`[relay] HTTP info endpoint: disabled`);
-}
+    console.log(`[relay] HTTP info endpoint: enabled (port ${args.httpPort})`);
+    console.log(`[relay] WebSocket endpoints: /ws (mobile client-proxy), /ws/home (home node tunnel), /ws/client (direct client)`);
+    // Surface the resolved libp2p versions + node version at startup so
+    // operators can verify a redeploy actually picked up the new code
+    // without needing to curl /version. The two should always agree;
+    // divergence usually means the deployment ran a stale binary.
+    const version = buildRelayVersionReport(new Date(startedAtMs).toISOString());
+    console.log(`[relay] libp2p stack: circuit-relay-v2=${version.circuitRelayV2 ?? "?"} identify=${version.identify ?? "?"} kad-dht=${version.kadDht ?? "?"} libp2p=${version.libp2p ?? "?"}`);
+    console.log(`[relay] @envoymesh stack: network=${version.network ?? "?"} protocol=${version.protocol ?? "?"} identity=${version.identity ?? "?"}`);
+    console.log(`[relay] runtime: node=${version.node} platform=${version.platform}`);
+  } else {
+    console.log(`[relay] HTTP info endpoint: disabled`);
+  }
 
 // Create minimal EnvoyMesh for relay-only operation
 const mesh = new EnvoyMesh({
@@ -435,6 +447,20 @@ try {
             clientProxy: true,
           }),
         );
+      } else if (req.url === "/version") {
+        // Resolved libp2p + @envoymesh/* package versions + node + platform.
+        // Operators rely on this to verify a redeploy actually picked up
+        // the latest build — a stale package-lock.json can pin old versions
+        // even after `git pull && ./scripts/run-relay.sh`.
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(buildRelayVersionReport(new Date(startedAtMs).toISOString())));
+      } else if (req.url === "/protocols") {
+        // The protocol strings the relay accepts on inbound streams + uses
+        // when dialing outbound. Compare against what connecting peers
+        // expect — a missing entry here is the smoking gun for "Protocol
+        // selection failed" handshake errors.
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify(buildRelayProtocolReport()));
       } else if (req.url === "/health") {
         const snapshot = relayHealthSnapshot ?? {
           status: started ? "healthy" : "starting",

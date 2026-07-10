@@ -31,6 +31,15 @@ export type SetupSponsorFriendState = {
   completedAt?: string;
   lastAttemptAt?: string;
   lastError?: string;
+  /**
+   * Classified failure kind for the last error. Drives which hint the UI
+   * surfaces — a `network-unreachable` failure shouldn't suggest
+   * `bondAutonomy.sponsorProofToken` configuration (the message comes from
+   * the transport layer, not the bond handler). The classification is
+   * done in the runtime (`classifySponsorError`) and stored alongside
+   * `lastError` so the UI doesn't have to re-derive it from raw text.
+   */
+  lastErrorKind?: "network-unreachable" | "proof-token-mismatch" | "other";
   attempts?: number;
 };
 
@@ -74,6 +83,13 @@ export type RunSetupSponsorFriendResult = {
   reason?: string;
   ownerId?: string;
   helloMessageId?: string;
+  /**
+   * Classified failure kind — only set when `ok` is false. Mirrors
+   * `SetupSponsorFriendState.lastErrorKind`. Lets the UI surface a
+   * specific hint immediately on a manual retry (without waiting for
+   * the persisted state to be re-read).
+   */
+  lastErrorKind?: "network-unreachable" | "proof-token-mismatch" | "other";
 };
 
 const DEFAULT_HELLO = "Hello!";

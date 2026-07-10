@@ -213,6 +213,9 @@ export interface PersistedNodeConfig {
   setupSponsorFriendRetryDelayMs?: number;
   setupSponsorFriendCompletedAt?: string;
   setupSponsorFriendLastError?: string;
+  /** Classified failure kind for the last error — drives the UI hint.
+   *  See `classifySponsorError` in `node-service-setup-sponsor-friend.ts`. */
+  setupSponsorFriendLastErrorKind?: "network-unreachable" | "proof-token-mismatch" | "other";
   setupSponsorFriendAttempts?: number;
 }
 
