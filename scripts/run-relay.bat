@@ -2,6 +2,10 @@
 :: EnvoyMesh Relay Server Quick Start Script
 :: For Windows
 :: Usage: run-relay.bat [--profile DIR] [--port PORT] [--advertise IP] [--http-port PORT]
+::
+:: Always rebuilds apps/relay and its workspace deps before launching.
+:: tsc -b is incremental (1-3 s on no-op), and stale binaries are the #1
+:: source of "why isn't my fix live" relay bugs.
 
 setlocal enabledelayedexpansion
 
@@ -13,6 +17,7 @@ set "LISTEN_PORT=%RELAY_PORT%"
 if "%LISTEN_PORT%"=="" set "LISTEN_PORT=4001"
 set "ADVERTISE_ADDR="
 set "HTTP_PORT="
+set "SKIP_REBUILD=0"
 
 :: Parse arguments
 :parse_args
@@ -41,6 +46,16 @@ if "%~1"=="--http-port" (
     shift
     goto :parse_args
 )
+if "%~1"=="--rebuild" (
+    :: Accepted for backward compat — build is always on now.
+    shift
+    goto :parse_args
+)
+if "%~1"=="--no-rebuild" (
+    set "SKIP_REBUILD=1"
+    shift
+    goto :parse_args
+)
 if "%~1"=="--help" goto :show_help
 if "%~1"=="-h" goto :show_help
 echo Unknown option: %~1
@@ -56,7 +71,9 @@ echo   --profile ^<dir^>    Profile directory (default: .\data\relay)
 echo   --port ^<port^>      Listen port (default: 4001)
 echo   --advertise ^<IP^>   Public IP for advertise address
 echo   --http-port ^<port^>  HTTP port for /info endpoint (optional)
-echo   --help, -h           Show this help
+echo   --rebuild          (legacy no-op — build is always on)
+echo   --no-rebuild       Skip the pre-launch build (escape hatch)
+echo   --help, -h         Show this help
 echo.
 echo Environment variables:
 echo   ENVOYMESH_PROFILE     Profile directory
@@ -65,11 +82,31 @@ echo   RELAY_PORT             Default listen port
 exit /b 0
 
 :run_relay
-:: Build relay if not exists
-if not exist "%RELAY_DIR%apps\relay\dist\index.js" (
-    echo Building relay server...
-    cd /d "%RELAY_DIR%"
+:: Always rebuild protocol + api + network + relay before launch.
+:: The relay's prebuild hook runs `tsc -p ../../packages/network/tsconfig.json`,
+:: so `npm run relay:build` covers network. We also build protocol and api
+:: explicitly so their dist/ is current for the relay to import.
+if "%SKIP_REBUILD%"=="0" (
+    echo Building relay server ^(incremental^)...
+    echo   protocol
+    pushd "%RELAY_DIR%\packages\protocol"
+    call npx tsc -p tsconfig.json
+    popd
+    echo   api
+    pushd "%RELAY_DIR%\packages\api"
+    call npx tsc -p tsconfig.json
+    popd
+    echo   identity + network
+    pushd "%RELAY_DIR%"
+    call npm run build -w @envoymesh/identity -w @envoymesh/network
+    popd
+    echo   relay
+    pushd "%RELAY_DIR%"
     call npm run relay:build
+    popd
+    echo Build done.
+) else (
+    echo Skipping build ^(--no-rebuild^).
 )
 
 :: Create profile directory
