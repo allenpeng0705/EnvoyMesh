@@ -65,6 +65,12 @@ export type SetupSponsorFriendStatus = {
 
 export type ResolvedSetupSponsorFriend = {
   enabled: boolean;
+  /**
+   * The envoy://contact?… URI that was the source of truth for ownerId/peerId/joinToken/displayName.
+   * Persisted alongside the parsed fields so the Settings UI can show the user a single,
+   * copy-pasteable URI instead of four disconnected inputs.
+   */
+  contactUri?: string;
   ownerId?: string;
   peerId?: string;
   joinToken?: string;
@@ -207,6 +213,7 @@ export function resolveSetupSponsorFriendConfig(input: {
 
   return {
     enabled: Boolean(ownerId),
+    contactUri,
     ownerId,
     peerId,
     joinToken,

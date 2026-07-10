@@ -1249,19 +1249,29 @@ function SetupSponsorFriendSection() {
     try {
       const resolved = await nodeService.getSetupSponsorFriendConfig();
       setResolvedSource(resolved.source);
+      // Populate inputs from the RESOLVED (bundled + persisted, merged) config,
+      // not just the persisted nodeConfig. Otherwise an installer node that has
+      // never had `updateNodeConfig` called with sponsor overrides shows empty
+      // inputs even though the runtime is happily running on bundled defaults.
+      // The runtime keeps re-resolving on every call, so this stays in sync.
+      setEnabled(resolved.enabled);
+      setContactUri(resolved.contactUri ?? "");
+      setOwnerId(resolved.ownerId ?? "");
+      setHelloMessage(resolved.helloMessage || "Hello!");
+      setProofOfContext(resolved.proofOfContext ?? "");
+      setMaxAttempts(String(resolved.maxAttempts || 12));
+      setRetryDelayMs(String(resolved.retryDelayMs || 5000));
     } catch {
       setResolvedSource("none");
     }
   }, [nodeService]);
 
   useEffect(() => {
-    setEnabled(nodeConfig?.setupSponsorFriendEnabled ?? false);
-    setContactUri(nodeConfig?.setupSponsorFriendContactUri ?? "");
-    setOwnerId(nodeConfig?.setupSponsorFriendOwnerId ?? "");
-    setHelloMessage(nodeConfig?.setupSponsorFriendHelloMessage ?? "Hello!");
-    setProofOfContext(nodeConfig?.setupSponsorFriendProofOfContext ?? "");
-    setMaxAttempts(String(nodeConfig?.setupSponsorFriendMaxAttempts ?? 12));
-    setRetryDelayMs(String(nodeConfig?.setupSponsorFriendRetryDelayMs ?? 5000));
+    // The persisted nodeConfig only carries values the user has explicitly saved.
+    // The RESOLVED config carries bundled + persisted merged — and that is what
+    // the runtime actually uses, so the Settings form has to mirror it.
+    // We do NOT keep reading from `nodeConfig` here because that would overwrite
+    // the bundled-derived values every time the polling refresh fires.
     void refreshResolved();
   }, [nodeConfig, refreshResolved]);
 
@@ -1328,8 +1338,20 @@ function SetupSponsorFriendSection() {
       <h4>{t("settings.agentNetwork.setupSponsorFriend.heading")}</h4>
       <p className="section-desc">{t("settings.agentNetwork.setupSponsorFriend.desc")}</p>
       <p className="settings-hint">
-        {t("settings.agentNetwork.setupSponsorFriend.resolvedLabel", { source: resolvedSource })}
+        {t("settings.agentNetwork.setupSponsorFriend.resolvedLabel", {
+          source:
+            t(
+              `settings.agentNetwork.setupSponsorFriend.source${
+                resolvedSource.charAt(0).toUpperCase() + resolvedSource.slice(1)
+              }`,
+            ) || resolvedSource,
+        })}
       </p>
+      {resolvedSource === "bundled" ? (
+        <p className="settings-hint">
+          {t("settings.agentNetwork.setupSponsorFriend.bundledReadonlyHint")}
+        </p>
+      ) : null}
       {nodeConfig?.setupSponsorFriendCompletedAt ? (
         <p className="settings-hint">
           {t("settings.agentNetwork.setupSponsorFriend.statusCompleted", {

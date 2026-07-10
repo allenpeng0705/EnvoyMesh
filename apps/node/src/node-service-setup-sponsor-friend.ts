@@ -12,6 +12,21 @@ import { loadBundledSponsorFriendConfig } from "./bundled-sponsor-friend-loader.
 import type { PersistedNodeConfig } from "./node-config-store.js";
 
 /**
+ * Module-level set of owner ids with an in-flight retry loop. Prevents
+ * duplicate loops when SetupView's auto-trigger and NodeStateContext's
+ * auto-trigger both fire (or when the user clicks Retry during a running
+ * cycle). The set is small (one entry per configured sponsor — usually
+ * 1, occasionally 2-3 for a power user) so we don't bother with TTLs or
+ * eviction; the loop's finally-handler deletes its entry on completion.
+ */
+const activeSponsorLoops = new Set<string>();
+
+/** Test helper — clear the single-flight set between tests. */
+export function __resetActiveSponsorLoopsForTests(): void {
+  activeSponsorLoops.clear();
+}
+
+/**
  * Classification of a sponsor-hello failure. Drives which hint the UI
  * surfaces — proof-token hints for token mismatches, network hints for
  * reachability failures, and a generic message for everything else.
@@ -133,15 +148,30 @@ export async function runSetupSponsorFriendViaRuntime(
   // it as `string` without `!` non-null assertions at every use site.
   const ownerId: string = resolved.ownerId;
 
+  // Single-flight: if a retry loop is already in flight for this sponsor,
+  // don't spawn a duplicate. Two concurrent loops would race on
+  // saveNodeConfig (last-write-wins — correct end state, but each loop
+  // does up to 12×30s of work, and they'd compete for the dial queue).
+  // The caller still gets `running: true` so the UI behaves the same.
+  if (activeSponsorLoops.has(ownerId)) {
+    console.log(
+      `[runSetupSponsorFriend] loop already in flight for ownerId=${ownerId.slice(0, 16)}…; returning running: true without spawning a duplicate`,
+    );
+    return { ok: true, running: true, ownerId };
+  }
+  activeSponsorLoops.add(ownerId);
+
   // Self-check: if the sponsor's peer ID or owner ID matches the local node,
   // skip gracefully. This happens when the sponsor themselves runs the app —
   // they can't bond with themselves.
   const localProfile = await deps.loadNodeProfile();
   if (localProfile) {
     if (resolved.peerId && localProfile.peerId === resolved.peerId) {
+      activeSponsorLoops.delete(ownerId);
       return { ok: true, skipped: true, reason: "sponsor-is-self-peer" };
     }
     if (localProfile.owner.ownerId === ownerId) {
+      activeSponsorLoops.delete(ownerId);
       return { ok: true, skipped: true, reason: "sponsor-is-self-owner" };
     }
   }
@@ -170,13 +200,21 @@ export async function runSetupSponsorFriendViaRuntime(
     existing,
     resolved,
     ownerId,
-  }).catch((err) => {
-    // The loop's internal try/catch already persists every per-attempt
-    // failure. This catch is a final safety net for unexpected throws
-    // outside that path (e.g. a dep throwing synchronously).
-    const message = err instanceof Error ? err.message : String(err);
-    console.error("[runSetupSponsorFriend] retry loop terminated unexpectedly:", message);
-  });
+  })
+    .catch((err) => {
+      // The loop's internal try/catch already persists every per-attempt
+      // failure. This catch is a final safety net for unexpected throws
+      // outside that path (e.g. a dep throwing synchronously).
+      const message = err instanceof Error ? err.message : String(err);
+      console.error("[runSetupSponsorFriend] retry loop terminated unexpectedly:", message);
+    })
+    .finally(() => {
+      // Release the single-flight slot. Whether the loop succeeded,
+      // exhausted its retries, or threw, the next caller is allowed to
+      // spawn a fresh run (e.g. the user clicks Retry after seeing the
+      // final failure).
+      activeSponsorLoops.delete(ownerId);
+    });
 
   return {
     ok: true,

@@ -152,10 +152,10 @@ export const agentNetworkSettingsMessages = {
     maxTierReferred: "Referred only",
     minOverlapLabel: "Min trust overlap score (0–1, 0 = skip check)",
     notifyOwnerLabel: "Notify owner after auto-accept",
-    sponsorTokenLabel: "Sponsor proof token (optional — only accept matching proofOfContext)",
-    sponsorTokenPlaceholder: "same secret embedded in your installer builds",
+    sponsorTokenLabel: "Sponsor proof token (matches installer's proofOfContext)",
+    sponsorTokenPlaceholder: "paste the same value from the installer",
     sponsorTokenHelp:
-      "When set, only hellos whose proofOfContext equals this token are auto-accepted. Match setupSponsorFriendProofOfContext on installer nodes.",
+      "Shared secret with installer nodes. Paste the exact value the installer operator sets in their **Setup sponsor friend** > `proofOfContext` field. If left blank, the token gate is disabled and bond requests are evaluated only by the other auto-accept rules above. Mismatched tokens are rejected as `proof-token-mismatch`.",
     save: "Save",
     saving: "Saving…",
     saved: "Saved",
@@ -183,5 +183,11 @@ export const agentNetworkSettingsMessages = {
     saving: "Saving…",
     saved: "Saved",
     resolvedLabel: "Effective config source: {source}",
+    sourceBundled: "bundled defaults (read-only unless you save an override)",
+    sourcePersisted: "your saved overrides",
+    sourceMerged: "merged (bundled + your overrides)",
+    sourceNone: "no sponsor configured",
+    bundledReadonlyHint:
+      "These values come from the bundled installer config. Save overrides to change them for this node.",
   },
 } as const;

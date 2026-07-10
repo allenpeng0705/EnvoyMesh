@@ -15,11 +15,32 @@ describe("setup-sponsor-friend", () => {
       },
     });
     expect(resolved.enabled).toBe(true);
+    expect(resolved.contactUri).toBe(
+      "envoy://contact?v=1&ownerId=envoy:owner:abc&peerId=12D3KooGTest&join=token123&name=Sponsor",
+    );
     expect(resolved.ownerId).toBe("envoy:owner:abc");
     expect(resolved.peerId).toBe("12D3KooGTest");
     expect(resolved.joinToken).toBe("token123");
     expect(resolved.proofOfContext).toBe("secret");
     expect(resolved.source).toBe("bundled");
+  });
+
+  it("persisted contactUri wins over bundled", () => {
+    const resolved = resolveSetupSponsorFriendConfig({
+      bundled: {
+        enabled: true,
+        contactUri: "envoy://contact?v=1&ownerId=envoy:owner:bundled&peerId=12D3KooB",
+      },
+      persisted: {
+        enabled: true,
+        contactUri: "envoy://contact?v=1&ownerId=envoy:owner:persisted&peerId=12D3KooP",
+      },
+    });
+    expect(resolved.contactUri).toBe(
+      "envoy://contact?v=1&ownerId=envoy:owner:persisted&peerId=12D3KooP",
+    );
+    expect(resolved.ownerId).toBe("envoy:owner:persisted");
+    expect(resolved.source).toBe("merged");
   });
 
   it("persisted overrides bundled", () => {
