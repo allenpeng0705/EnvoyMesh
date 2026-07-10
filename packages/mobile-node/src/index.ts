@@ -3983,6 +3983,38 @@ You are the owner's personal AI assistant on EnvoyMesh.
     };
   }
 
+  /**
+   * Full sponsor-friend status for the discover-view tile. Mobile forwards
+   * to the paired home node when available; otherwise returns a no-op
+   * status (the sponsor only lives on the home node, so a standalone
+   * mobile has nothing to report).
+   */
+  async getSetupSponsorFriendStatus(): Promise<
+    import("@envoymesh/api").SetupSponsorFriendStatus
+  > {
+    if (this._isHomeRemotePaired() && this._homeRemoteOnline) {
+      try {
+        return await this._homeRemoteCall<import("@envoymesh/api").SetupSponsorFriendStatus>(
+          "getSetupSponsorFriendStatus",
+          {},
+        );
+      } catch {
+        // fall through to offline default
+      }
+    }
+    return {
+      config: {
+        enabled: false,
+        helloMessage: "Hello!",
+        maxAttempts: 12,
+        retryDelayMs: 5000,
+        source: "none",
+      },
+      state: {},
+      sponsorProofTokenRequired: false,
+    };
+  }
+
   async runSetupSponsorFriend(): Promise<
     import("@envoymesh/api").RunSetupSponsorFriendResult
   > {
@@ -4491,6 +4523,23 @@ You are the owner's personal AI assistant on EnvoyMesh.
     if (this._isHomeRemotePaired() && this._homeRemoteOnline) {
       try {
         return await this._homeRemoteCall<OpenClawStatus>("getOpenClawStatus", {});
+      } catch {
+        // fall through to offline default
+      }
+    }
+    return { enabled: false, running: false, url: "" };
+  }
+
+  /**
+   * Restart the built-in OpenClaw gateway. Mobile forwards to the home
+   * node when paired; otherwise no-op (the gateway only lives on the home).
+   * The chat view's offline banner calls this so a mobile user can recover
+   * a stopped gateway without driving a desktop session.
+   */
+  async restartOpenClaw(): Promise<OpenClawStatus> {
+    if (this._isHomeRemotePaired() && this._homeRemoteOnline) {
+      try {
+        return await this._homeRemoteCall<OpenClawStatus>("restartOpenClaw", {});
       } catch {
         // fall through to offline default
       }

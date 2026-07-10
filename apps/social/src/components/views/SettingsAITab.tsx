@@ -1521,7 +1521,11 @@ export function SettingsAITab() {
     running: boolean;
     url: string;
     childPid?: number;
+    lastError?: string | null;
+    lastErrorAt?: string | null;
+    consecutiveRestartFailures?: number;
   } | null>(null);
+  const [restartingOpenClaw, setRestartingOpenClaw] = useState(false);
 
   const refreshOpenClawStatus = useCallback(async () => {
     try {
@@ -1531,6 +1535,9 @@ export function SettingsAITab() {
         running: oc.running,
         url: oc.url,
         childPid: oc.childPid,
+        lastError: oc.lastError ?? null,
+        lastErrorAt: oc.lastErrorAt ?? null,
+        consecutiveRestartFailures: oc.consecutiveRestartFailures ?? 0,
       });
     } catch (e) {
       console.warn("[SettingsAITab] failed to fetch OpenClaw status", e);
@@ -1538,6 +1545,40 @@ export function SettingsAITab() {
   }, [nodeService]);
 
   useEffect(() => { void refreshOpenClawStatus(); }, [refreshOpenClawStatus]);
+
+  // While the runtime is in a Stopped state, auto-poll every 5s so the
+  // operator can sit on the settings page and watch the watchdog (or their
+  // own manual restart) recover — without manually reloading. The moment
+  // `running` flips to true we stop polling, so this is free in the
+  // common case where the runtime is healthy.
+  useEffect(() => {
+    if (!openClawStatus || openClawStatus.running) return;
+    const id = window.setInterval(() => { void refreshOpenClawStatus(); }, 5_000);
+    return () => window.clearInterval(id);
+  }, [openClawStatus?.running, openClawStatus != null, refreshOpenClawStatus]);
+
+  const handleRestartOpenClaw = useCallback(async () => {
+    setRestartingOpenClaw(true);
+    try {
+      // Use the dedicated restart RPC — kills the child, waits for the
+      // webhook port to release, spawns a fresh gateway, and returns the
+      // post-restart status. We seed our state from that so the operator
+      // sees the new state immediately, then follow with a full refresh.
+      const oc = await nodeService.restartOpenClaw();
+      setOpenClawStatus({
+        enabled: oc.enabled,
+        running: oc.running,
+        url: oc.url,
+        childPid: oc.childPid,
+        lastError: oc.lastError ?? null,
+        lastErrorAt: oc.lastErrorAt ?? null,
+        consecutiveRestartFailures: oc.consecutiveRestartFailures ?? 0,
+      });
+      await refreshOpenClawStatus();
+    } finally {
+      setRestartingOpenClaw(false);
+    }
+  }, [nodeService, refreshOpenClawStatus]);
 
   // Refetch OpenClaw live status when persisted AI-engine flags change.
   const lastEngineFlagsRef = useRef<string>("");
@@ -1559,6 +1600,9 @@ export function SettingsAITab() {
       running: openClawStatus?.running ?? false,
       url: openClawStatus?.url ?? "",
       childPid: openClawStatus?.childPid,
+      lastError: openClawStatus?.lastError ?? null,
+      lastErrorAt: openClawStatus?.lastErrorAt ?? null,
+      consecutiveRestartFailures: openClawStatus?.consecutiveRestartFailures ?? 0,
     }),
     [nodeConfig?.openclawEnabled, openClawStatus],
   );
@@ -1651,6 +1695,8 @@ export function SettingsAITab() {
             envoyAI={envoyAIInfo}
             extAgent={extAgentConfig}
             onExtAgentSave={handleExtAgentSave}
+            onRestartOpenClaw={handleRestartOpenClaw}
+            restartingOpenClaw={restartingOpenClaw}
           />
         ) : (
           <p className="settings-hint">{t("settings.ai.aiEngine.loading")}</p>

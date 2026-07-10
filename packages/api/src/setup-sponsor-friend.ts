@@ -34,6 +34,26 @@ export type SetupSponsorFriendState = {
   attempts?: number;
 };
 
+/**
+ * Full status the settings/discover UI consumes — resolved effective config
+ * plus the last-attempt state from persisted config. The fresh-install UX
+ * surfaces this so the user can see "we tried to add <sponsor> and here's
+ * why it didn't work", not just the badge.
+ */
+export type SetupSponsorFriendStatus = {
+  /** The resolved effective config (bundled + persisted, merged). */
+  config: ResolvedSetupSponsorFriend;
+  /** The persisted last-attempt state — null when no run has been recorded yet. */
+  state: SetupSponsorFriendState;
+  /**
+   * True when the bundled/persisted config carries a `proofOfContext`. When
+   * true, the sponsor side needs to set `bondAutonomy.sponsorProofToken`
+   * to the same value to auto-accept. The UI surfaces this as a hint on
+   * failure so the user knows what to ask the sponsor to configure.
+   */
+  sponsorProofTokenRequired: boolean;
+};
+
 export type ResolvedSetupSponsorFriend = {
   enabled: boolean;
   ownerId?: string;

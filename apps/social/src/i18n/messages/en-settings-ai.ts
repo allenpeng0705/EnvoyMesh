@@ -17,6 +17,19 @@ export const aiSettingsMessages = {
     running: "Running",
     stopped: "Stopped",
     disabled: "Disabled",
+    // ----- Built-in OpenClaw failure surface -----
+    // Shown under the "Built-in OpenClaw" block when the runtime has a
+    // recorded failure (port in use, spawn error, watchdog restart loop, etc).
+    // Gives operators a real reason instead of just the "Stopped" badge.
+    lastError: "Last error",
+    lastErrorAt: "at {time}",
+    restartAttempts: "{count} restart attempt(s) since last successful start",
+    lastErrorHint:
+      "The watchdog will keep trying. If this persists, restart the home node, check the gateway port isn't in use, and review logs for the '[openclaw]' / '[gateway]' tags.",
+    // Recovery action — directly underneath the error block.
+    restartNow: "Restart now",
+    restarting: "Restarting…",
+    openSettings: "Open AI settings",
     provider: "Provider",
     webhook: "Webhook",
     model: "Model",

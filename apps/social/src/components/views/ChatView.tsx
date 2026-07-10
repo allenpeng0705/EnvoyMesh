@@ -14,6 +14,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useIsInProcessMobileNode, useNodeService } from "../../hooks/useNodeService.js";
 import type { ChatRoom } from "@envoymesh/api";
 import { loadTerminalSelectedSessionId, saveTerminalSelectedSessionId } from "../../lib/storage.js";
+import { OpenClawOfflineBanner } from "./OpenClawOfflineBanner.js";
 
 /**
  * ChatView is a layout shell: sidebar + AI or contact thread, with Inbox as a second panel.
@@ -112,6 +113,7 @@ export function ChatView({
 
   return (
     <div className={`chat-view${panelMode === "terminals" ? " chat-view--terminals" : ""}`}>
+      <OpenClawOfflineBanner />
       <div className="chat-view-primary-tabs" aria-label={t("chat.tabsLabel")}>
         <button
           type="button"

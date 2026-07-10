@@ -358,6 +358,29 @@ export const en = {
     backToSearch: "Back to search",
     emptyGraphAutoSearching:
       "Searching the mesh for people who share your interests…",
+    // ----- Sponsor-friend setup tile (fresh-install first contact) -----
+    // Visible when the bundled or persisted config points at a sponsor.
+    // Replaces the silent "you have no contacts" blank state with a
+    // visible "we tried to add <sponsor>, here's why" affordance.
+    sponsorTile: {
+      heading: "Add your first contact",
+      configuredFor: "Bundled for: {name}",
+      unconfigured: "No sponsor configured. Paste a contact code below to add one.",
+      statusIdle: "Not started yet",
+      statusRunning: "Connecting to {name}…",
+      statusSucceeded: "Connected to {name} — check your contacts.",
+      statusFailed: "Couldn't reach {name}",
+      statusSkipped: "Skipped: {reason}",
+      retryNow: "Retry now",
+      retrying: "Retrying…",
+      useDifferentContact: "Use a different contact",
+      proofTokenHint:
+        "The sponsor side needs to set bondAutonomy.sponsorProofToken to \"{token}\" to auto-accept. Ask the sponsor to add it to their node-config.json (under bondAutonomy.sponsorProofToken) and try again.",
+      pastePrompt: "Paste a contact URI like envoy://contact?v=1&…",
+      pasteApply: "Apply",
+      pasteCancel: "Cancel",
+      pasteApplied: "Applied — trying to add the contact now.",
+    },
     tabs: {
       nearby: "Same Wi‑Fi — people nearby",
       pasteLink: "Paste a contact link",

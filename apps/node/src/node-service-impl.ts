@@ -975,6 +975,7 @@ import {
   sendToOpenClawViaRuntime,
   startOpenClawViaRuntime,
   stopOpenClawViaRuntime,
+  restartOpenClawViaRuntime,
   buildOpenClawRuntimeDeps,
   type OpenClawRuntimeDeps,
 } from "./node-service-openclaw-runtime.js";
@@ -4693,6 +4694,33 @@ class NodeServiceImpl implements NodeService {
     });
   }
 
+  /**
+   * Full status the settings/discover UI consumes — resolved config plus the
+   * last-attempt state plus a flag telling the UI whether the sponsor side
+   * needs to set `bondAutonomy.sponsorProofToken` to match. Backs the
+   * "Sponsor setup" tile in the discover view.
+   */
+  async getSetupSponsorFriendStatus(): Promise<
+    import("@envoymesh/api").SetupSponsorFriendStatus
+  > {
+    const persisted = await this._configStore.load();
+    const config = await resolveEffectiveSetupSponsorFriend({
+      persisted: persisted ?? undefined,
+      nodeBundleDir: process.env.ENVOYMESH_NODE_BUNDLE_DIR,
+    });
+    const state: import("@envoymesh/api").SetupSponsorFriendState = {
+      completedAt: persisted?.setupSponsorFriendCompletedAt,
+      lastAttemptAt: persisted?.setupSponsorFriendCompletedAt,
+      lastError: persisted?.setupSponsorFriendLastError,
+      attempts: persisted?.setupSponsorFriendAttempts,
+    };
+    return {
+      config,
+      state,
+      sponsorProofTokenRequired: Boolean(config.proofOfContext),
+    };
+  }
+
   async runSetupSponsorFriend(): Promise<
     import("@envoymesh/api").RunSetupSponsorFriendResult
   > {
@@ -5443,7 +5471,25 @@ class NodeServiceImpl implements NodeService {
       isOpenClawReady: () => isOpenClawReadyViaRuntime(this._openClawState),
       getAssistantAgentUrl: () => this._openClawState.assistantAgentUrl,
       getOpenClawGatewayChild: () => this._openClawState.gatewayChild ?? undefined,
+      getOpenClawError: () => ({
+        lastError: this._openClawState.lastError,
+        lastErrorAt: this._openClawState.lastErrorAt,
+        consecutiveRestartFailures: this._openClawState.consecutiveRestartFailures,
+      }),
     });
+  }
+
+  /**
+   * Force-restart the built-in OpenClaw gateway. Used by the AI → AI
+   * Engine "Restart now" button and by the chat view's offline banner so
+   * the user can recover from a "Stopped" state without bouncing the
+   * whole home node. Returns the post-restart status.
+   */
+  async restartOpenClaw(): Promise<OpenClawStatus> {
+    return restartOpenClawViaRuntime(
+      this._openClawState,
+      this._openClawRuntimeDeps(),
+    );
   }
 
   /**

@@ -132,9 +132,21 @@ export async function getOpenClawStatusViaRuntime(
     isOpenClawReady: () => boolean;
     getAssistantAgentUrl: () => string;
     getOpenClawGatewayChild: () => { killed: boolean; pid?: number } | undefined;
+    /**
+     * Optional — returns the runtime's last recorded failure reason so the
+     * settings page can show "why is it Stopped" alongside the status badge.
+     * Older callers that don't supply this still work; `lastError` and friends
+     * will simply be undefined on the response.
+     */
+    getOpenClawError?: () => {
+      lastError: string | null;
+      lastErrorAt: string | null;
+      consecutiveRestartFailures: number;
+    };
   },
 ): Promise<OpenClawStatus> {
   const enabled = await deps.isOpenClawEnabled();
+  const err = deps.getOpenClawError?.();
   return {
     enabled,
     running: deps.isOpenClawReady(),
@@ -143,6 +155,9 @@ export async function getOpenClawStatusViaRuntime(
       const c = deps.getOpenClawGatewayChild();
       return c && !c.killed ? c.pid : undefined;
     })(),
+    lastError: err?.lastError ?? null,
+    lastErrorAt: err?.lastErrorAt ?? null,
+    consecutiveRestartFailures: err?.consecutiveRestartFailures ?? 0,
   };
 }
 

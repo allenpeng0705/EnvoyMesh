@@ -3526,6 +3526,92 @@ textarea::placeholder {
   background: var(--color-warning-subtle, rgba(245, 158, 11, 0.12));
   color: var(--color-warning, #f59e0b);
 }
+
+/* Built-in OpenClaw "why is it stopped" error block. Shown only when
+   the runtime has a recorded failure (port in use, spawn error, watchdog
+   restart loop). Kept compact — the runtime's own text already says the
+   *what*, the styling is just to make it visible. */
+.settings-field.openclaw-error {
+  border-left: 3px solid var(--color-danger, #ef4444);
+  background: var(--color-danger-subtle, rgba(239, 68, 68, 0.06));
+  padding-left: 0.75rem;
+}
+.settings-field.openclaw-error .openclaw-error-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.25rem 0 0.25rem 0;
+}
+.settings-field.openclaw-error .openclaw-error-message {
+  font-family: var(--font-mono, ui-monospace, "SF Mono", monospace);
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--color-danger, #ef4444);
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.settings-field.openclaw-error .openclaw-error-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-text-muted, #6b7280);
+}
+.settings-field.openclaw-error .openclaw-error-meta span {
+  white-space: nowrap;
+}
+.settings-field.openclaw-error .openclaw-error-hint {
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-text-muted, #6b7280);
+  font-style: italic;
+}
+.settings-field.openclaw-error .openclaw-error-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.25rem;
+}
+.settings-field.openclaw-error .openclaw-error-restart-fail {
+  color: var(--color-danger, #ef4444);
+  font-size: var(--text-xs, 0.75rem);
+}
+
+/* Chat-view banner — shown at the top of ChatView when the built-in
+   OpenClaw engine is configured but not running. Mirrors the settings
+   page's error styling so the user gets the same affordance in the place
+   where the pain actually happens (they tried to chat, the AI is dead). */
+.openclaw-offline-banner {
+  background: var(--color-danger-subtle, rgba(239, 68, 68, 0.08));
+  border-bottom: 1px solid var(--color-danger, #ef4444);
+  padding: 0.75rem 1rem;
+}
+.openclaw-offline-banner-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  max-width: 100%;
+}
+.openclaw-offline-banner-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.openclaw-offline-banner-title {
+  font-weight: var(--font-semibold, 600);
+  color: var(--color-danger, #ef4444);
+  font-size: var(--text-sm, 0.875rem);
+  margin-bottom: 0.15rem;
+}
+.openclaw-offline-banner-desc {
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-text-muted, #6b7280);
+  line-height: 1.4;
+}
+.openclaw-offline-banner-error {
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-danger, #ef4444);
+  margin-top: 0.25rem;
+  font-family: var(--font-mono, ui-monospace, "SF Mono", monospace);
+}
 .settings-agent-mode .settings-hint {
   margin: 0;
   color: var(--color-text-muted, #6b7280);
@@ -8756,5 +8842,79 @@ button:disabled {
   padding: 0.375rem 0.5rem;
   border: 1px solid var(--color-border, #e5e7eb);
   border-radius: var(--radius-sm, 0.25rem);
+}
+
+/* Sponsor setup tile — surfaced on the discover view when a bundled or
+   persisted sponsor-friend config is present. Replaces the silent
+   "you have no contacts" blank state on a fresh install with a visible
+   "we tried to add <sponsor>, here's why" affordance. */
+.sponsor-setup-tile {
+  margin: 1rem 0 1.25rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-left: 3px solid var(--color-primary, #3b82f6);
+  border-radius: var(--radius-md, 0.5rem);
+  background: var(--color-bg-elevated, rgba(59, 130, 246, 0.04));
+}
+.sponsor-setup-tile-header h3 {
+  margin: 0 0 0.25rem;
+  font-size: var(--text-base, 1rem);
+  font-weight: var(--font-semibold, 600);
+}
+.sponsor-setup-tile-target {
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--color-text-muted, #6b7280);
+}
+.sponsor-setup-tile-status {
+  margin: 0.5rem 0 0.75rem;
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: var(--font-medium, 500);
+}
+.sponsor-setup-tile-status.status-running { color: var(--color-primary, #3b82f6); }
+.sponsor-setup-tile-status.status-succeeded { color: var(--color-success, #10b981); }
+.sponsor-setup-tile-status.status-failed { color: var(--color-danger, #ef4444); }
+.sponsor-setup-tile-status.status-skipped,
+.sponsor-setup-tile-status.status-idle { color: var(--color-text-muted, #6b7280); }
+.sponsor-setup-tile-hint {
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-text-muted, #6b7280);
+  background: var(--color-warning-subtle, rgba(245, 158, 11, 0.06));
+  border-left: 2px solid var(--color-warning, #f59e0b);
+  padding: 0.5rem 0.75rem;
+  border-radius: var(--radius-sm, 0.25rem);
+  margin-bottom: 0.75rem;
+  font-family: var(--font-mono, ui-monospace, "SF Mono", monospace);
+  word-break: break-word;
+}
+.sponsor-setup-tile-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+.sponsor-setup-tile-paste {
+  margin-top: 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+.sponsor-setup-tile-paste-input {
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-border, #e5e7eb);
+  border-radius: var(--radius-sm, 0.25rem);
+  font-family: var(--font-mono, ui-monospace, "SF Mono", monospace);
+  font-size: var(--text-sm, 0.875rem);
+  word-break: break-all;
+}
+.sponsor-setup-tile-paste-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+.sponsor-setup-tile-paste-error {
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-danger, #ef4444);
+}
+.sponsor-setup-tile-paste-info {
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-success, #10b981);
 }
 

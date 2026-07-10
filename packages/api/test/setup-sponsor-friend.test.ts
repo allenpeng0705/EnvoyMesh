@@ -43,4 +43,34 @@ describe("setup-sponsor-friend", () => {
   it("parseSetupSponsorFriendConfig rejects missing enabled", () => {
     expect(parseSetupSponsorFriendConfig({ ownerId: "x" })).toBeUndefined();
   });
+
+  it("resolveSetupSponsorFriendConfig surfaces proofOfContext for the UI hint", () => {
+    const resolved = resolveSetupSponsorFriendConfig({
+      bundled: {
+        enabled: true,
+        ownerId: "envoy:owner:abc",
+        proofOfContext: "shared-secret-token",
+        helloMessage: "Hi!",
+      },
+    });
+    expect(resolved.enabled).toBe(true);
+    expect(resolved.proofOfContext).toBe("shared-secret-token");
+    // The UI uses this to decide whether to surface the
+    // "ask the sponsor to set bondAutonomy.sponsorProofToken" hint.
+    expect(Boolean(resolved.proofOfContext)).toBe(true);
+  });
+
+  it("resolveSetupSponsorFriendConfig leaves proofOfContext undefined when not bundled", () => {
+    const resolved = resolveSetupSponsorFriendConfig({
+      bundled: {
+        enabled: true,
+        ownerId: "envoy:owner:abc",
+        helloMessage: "Hi!",
+      },
+    });
+    expect(resolved.proofOfContext).toBeUndefined();
+    // No proofOfContext → no auto-accept gate on the sponsor side, so
+    // the UI should NOT surface the "configure sponsorProofToken" hint.
+    expect(Boolean(resolved.proofOfContext)).toBe(false);
+  });
 });

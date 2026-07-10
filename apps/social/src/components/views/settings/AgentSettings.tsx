@@ -40,6 +40,15 @@ interface EnvoyAIInfo {
   url: string;
   /** Gateway child PID, when running. */
   childPid?: number;
+  /** Last stop/failure reason recorded by the runtime. Null when healthy. */
+  lastError?: string | null;
+  /** ISO timestamp of `lastError`. Null when `lastError` is null. */
+  lastErrorAt?: string | null;
+  /**
+   * Number of consecutive restart attempts since the last successful start.
+   * 0 when running cleanly. Lets the UI show the watchdog is in a fail loop.
+   */
+  consecutiveRestartFailures?: number;
 }
 
 interface ExtAgentConfig {
@@ -57,6 +66,15 @@ interface Props {
   extAgent: ExtAgentConfig;
   /** Persists Ext Agent settings to the home node (synced to mobile). */
   onExtAgentSave: (config: ExtAgentConfig) => Promise<void>;
+  /**
+   * Force-restart the built-in OpenClaw gateway. Wired to the "Restart now"
+   * button that appears next to the error block when the runtime has a
+   * recorded failure. Returns the post-restart status; the parent updates
+   * its state from that and re-renders.
+   */
+  onRestartOpenClaw?: () => Promise<void>;
+  /** True while a `onRestartOpenClaw` call is in flight. Disables the button. */
+  restartingOpenClaw?: boolean;
 }
 
 const MODE_LABEL_KEY: Record<AiEngineMode, string> = {
@@ -82,12 +100,23 @@ function withMergedAgents(config: ExtAgentConfig): ExtAgentConfig {
   };
 }
 
-export function AgentSettings({ envoyAI, extAgent, onExtAgentSave }: Props) {
+export function AgentSettings({ envoyAI, extAgent, onExtAgentSave, onRestartOpenClaw, restartingOpenClaw }: Props) {
   const t = useT();
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<ExtAgentConfig>(() => withMergedAgents(extAgent));
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [restartError, setRestartError] = useState<string | null>(null);
+
+  const handleRestart = useCallback(async () => {
+    if (!onRestartOpenClaw) return;
+    setRestartError(null);
+    try {
+      await onRestartOpenClaw();
+    } catch (e) {
+      setRestartError(e instanceof Error ? e.message : String(e));
+    }
+  }, [onRestartOpenClaw]);
 
   useEffect(() => {
     if (editing) return;
@@ -206,6 +235,56 @@ export function AgentSettings({ envoyAI, extAgent, onExtAgentSave }: Props) {
           <div className="settings-field readonly">
             <label>{"PID"}</label>
             <input type="text" value={String(envoyAI.childPid)} readOnly disabled />
+          </div>
+        )}
+        {/*
+          Surface "why is it stopped" alongside the status badge. Only shown
+          when there's a recorded failure (lastError) — a clean stop with no
+          cause isn't a problem worth a red banner for.
+        */}
+        {envoyAI.lastError && (
+          <div className="settings-field readonly openclaw-error">
+            <label>{t("settings.ai.aiEngine.lastError")}</label>
+            <div className="openclaw-error-body">
+              <div className="openclaw-error-message">{envoyAI.lastError}</div>
+              <div className="openclaw-error-meta">
+                {envoyAI.lastErrorAt && (
+                  <span className="openclaw-error-time">
+                    {t("settings.ai.aiEngine.lastErrorAt", {
+                      time: new Date(envoyAI.lastErrorAt).toLocaleString(),
+                    })}
+                  </span>
+                )}
+                {(envoyAI.consecutiveRestartFailures ?? 0) > 0 && (
+                  <span className="openclaw-error-restarts">
+                    {t("settings.ai.aiEngine.restartAttempts", {
+                      count: envoyAI.consecutiveRestartFailures ?? 0,
+                    })}
+                  </span>
+                )}
+              </div>
+              <div className="openclaw-error-hint">
+                {t("settings.ai.aiEngine.lastErrorHint")}
+              </div>
+              {onRestartOpenClaw && (
+                <div className="openclaw-error-actions">
+                  <button
+                    className="btn btn-primary"
+                    onClick={() => void handleRestart()}
+                    disabled={restartingOpenClaw}
+                  >
+                    {restartingOpenClaw
+                      ? t("settings.ai.aiEngine.restarting")
+                      : t("settings.ai.aiEngine.restartNow")}
+                  </button>
+                  {restartError && (
+                    <span className="openclaw-error-restart-fail">
+                      {restartError}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         )}
       </div>

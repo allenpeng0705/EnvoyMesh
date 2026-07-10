@@ -1,6 +1,7 @@
 import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { SearchView } from "./SearchView.js";
+import { SponsorSetupTile } from "../discover/SponsorSetupTile.js";
 
 export function DiscoverView() {
   const t = useT();
@@ -18,6 +19,7 @@ export function DiscoverView() {
           </p>
         ) : null}
       </header>
+      <SponsorSetupTile />
       <SearchView embedded />
     </div>
   );

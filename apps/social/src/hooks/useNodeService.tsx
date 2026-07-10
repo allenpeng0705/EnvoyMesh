@@ -271,6 +271,8 @@ export interface NodeServiceClient {
   // Agent Bridge
   getBridgeStatus(): Promise<BridgeStatus>;
   getOpenClawStatus(): Promise<import("@envoymesh/api").OpenClawStatus>;
+  /** Force-restart the built-in OpenClaw gateway. */
+  restartOpenClaw(): Promise<import("@envoymesh/api").OpenClawStatus>;
   getPairingPayload(): Promise<PairingPayload>;
   createWanJoinInvite(
     params?: import("@envoymesh/api").CreateWanJoinInviteParams,
@@ -471,6 +473,7 @@ export interface NodeServiceClient {
   getNodeConfig(): Promise<NodeConfig>;
   updateNodeConfig(config: Partial<NodeConfig>): Promise<void>;
   getSetupSponsorFriendConfig(): Promise<import("@envoymesh/api").ResolvedSetupSponsorFriend>;
+  getSetupSponsorFriendStatus(): Promise<import("@envoymesh/api").SetupSponsorFriendStatus>;
   runSetupSponsorFriend(): Promise<import("@envoymesh/api").RunSetupSponsorFriendResult>;
   listRelays(): Promise<RelayConfig[]>;
   addRelay(addr: string, level?: number, region?: string): Promise<RelayConfig>;
@@ -1001,6 +1004,13 @@ function createWsNodeServiceClient(
     async getOpenClawStatus() {
       return wsClient.rpc("getOpenClawStatus") as Promise<import("@envoymesh/api").OpenClawStatus>;
     },
+    async restartOpenClaw() {
+      // Force-restart is potentially slow (kill child + 250ms port-release
+      // wait + 90s startup probe budget). Use the long-form RPC variant
+      // with a 120s timeout so the button doesn't time out at the default
+      // 30s while the gateway is still trying to come up.
+      return wsClient.rpc("restartOpenClaw", {}, { timeoutMs: 120_000 }) as Promise<import("@envoymesh/api").OpenClawStatus>;
+    },
     async getPairingPayload() { return wsClient.rpc("getPairingPayload"); },
     async createWanJoinInvite(params?: import("@envoymesh/api").CreateWanJoinInviteParams) {
       return wsClient.rpc("createWanJoinInvite", (params ?? {}) as Record<string, unknown>) as Promise<
@@ -1426,6 +1436,11 @@ function createWsNodeServiceClient(
     async getSetupSponsorFriendConfig() {
       return wsClient.rpc("getSetupSponsorFriendConfig") as Promise<
         import("@envoymesh/api").ResolvedSetupSponsorFriend
+      >;
+    },
+    async getSetupSponsorFriendStatus() {
+      return wsClient.rpc("getSetupSponsorFriendStatus") as Promise<
+        import("@envoymesh/api").SetupSponsorFriendStatus
       >;
     },
     async runSetupSponsorFriend() {

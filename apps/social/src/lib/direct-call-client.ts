@@ -539,6 +539,10 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.getOpenClawStatus();
   }
 
+  async restartOpenClaw() {
+    return this._ns.restartOpenClaw();
+  }
+
   async getOpenClawPlugins() { return this._ns.getOpenClawPlugins(); }
   async searchOpenClawPlugins(query: string) { return this._ns.searchOpenClawPlugins(query); }
   async getTrendingOpenClawPlugins() { return this._ns.getTrendingOpenClawPlugins(); }
@@ -930,6 +934,10 @@ export class DirectCallClient implements NodeServiceClient {
 
   async getSetupSponsorFriendConfig() {
     return this._ns.getSetupSponsorFriendConfig();
+  }
+
+  async getSetupSponsorFriendStatus() {
+    return this._ns.getSetupSponsorFriendStatus();
   }
 
   async runSetupSponsorFriend() {

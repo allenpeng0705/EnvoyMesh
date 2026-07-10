@@ -433,6 +433,8 @@ export async function routeRpcMethod(
       return ns.updateNodeConfig(params as any);
     case "getSetupSponsorFriendConfig":
       return ns.getSetupSponsorFriendConfig();
+    case "getSetupSponsorFriendStatus":
+      return ns.getSetupSponsorFriendStatus();
     case "runSetupSponsorFriend":
       return ns.runSetupSponsorFriend();
     case "listRelays":

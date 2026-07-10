@@ -32,6 +32,16 @@ export const chatMessages = {
   aiSection: "AI",
   groupsSection: "Group",
   addGroupAria: "Create a group",
+  // ----- Built-in OpenClaw offline banner -----
+  // Surfaced at the top of ChatView when the OpenClaw gateway isn't
+  // running. Lives in chatMessages (not en.ts) because the t() call
+  // uses the top-level `chat.*` path — en.ts's other `chat:` is nested
+  // under `mobile.chat.*` and isn't reachable from there.
+  openclawOfflineTitle: "Built-in OpenClaw is stopped",
+  openclawOfflineDesc: "The local AI engine isn't running, so 'Open EnvoyAI' won't be able to answer. Restart it to recover — most failures are the webhook port already being held by a leftover process.",
+  openclawOfflineRestart: "Restart",
+  openclawOfflineSettings: "Open settings",
+  openclawOfflineRestarting: "Restarting…",
 } as const;
 
 export const groupChatMessages = {

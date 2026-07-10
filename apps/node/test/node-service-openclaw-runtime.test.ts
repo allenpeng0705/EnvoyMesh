@@ -10,11 +10,13 @@ import {
   beginOpenClawToolTracking,
   bindOpenClawPendingReplyPersistence,
   cancelOpenClawReply,
+  clearOpenClawError,
   createOpenClawRuntimeState,
   endOpenClawToolTracking,
   hasOpenClawPendingReply,
   isOpenClawReadyViaRuntime,
   loadAndReportOrphanedOpenClawPendingReplies,
+  recordOpenClawError,
   recordOpenClawToolCallViaRuntime,
   rejectAllPendingOpenClawReplies,
   resolveOpenClawReply,
@@ -162,3 +164,54 @@ describe("OpenClaw pending-reply persistence (Fix #4 — lost-ask across restart
     expect(state.pendingReplies.size).toBe(0);
   });
 });
+
+describe("OpenClaw error tracking (lastError surface for settings UI)", () => {
+  let state: OpenClawRuntimeState;
+
+  beforeEach(() => {
+    state = createOpenClawRuntimeState();
+    // Fresh state should have no error and zero restart attempts — the
+    // settings UI relies on these defaults to render a clean status.
+    expect(state.lastError).toBeNull();
+    expect(state.lastErrorAt).toBeNull();
+    expect(state.consecutiveRestartFailures).toBe(0);
+  });
+
+  it("records a watchdog-style restart-failure reason with timestamp", () => {
+    recordOpenClawError(state, "Gateway process died — restarting");
+    expect(state.lastError).toBe("Gateway process died — restarting");
+    expect(state.lastErrorAt).not.toBeNull();
+    // ISO 8601 sanity check — lastErrorAt must be parseable.
+    expect(Number.isFinite(Date.parse(state.lastErrorAt as string))).toBe(true);
+    expect(state.consecutiveRestartFailures).toBe(1);
+  });
+
+  it("bumps consecutiveRestartFailures on each call (most-recent cause wins)", () => {
+    recordOpenClawError(state, "first cause");
+    expect(state.consecutiveRestartFailures).toBe(1);
+    recordOpenClawError(state, "second cause — overrides first");
+    expect(state.consecutiveRestartFailures).toBe(2);
+    expect(state.lastError).toBe("second cause — overrides first");
+    // Timestamp should advance on the second call.
+    expect(state.lastErrorAt).not.toBeNull();
+  });
+
+  it("clears the recorded error on a successful start", () => {
+    recordOpenClawError(state, "some prior failure");
+    recordOpenClawError(state, "another failure");
+    expect(state.consecutiveRestartFailures).toBe(2);
+
+    clearOpenClawError(state);
+    expect(state.lastError).toBeNull();
+    expect(state.lastErrorAt).toBeNull();
+    expect(state.consecutiveRestartFailures).toBe(0);
+  });
+});
+
+// Note: restartOpenClawViaRuntime is covered by an end-to-end integration
+// test in apps/node/test/agent-bridge.test.ts (and the manual operator
+// flow on the settings page). We don't add a unit test here because the
+// function calls child_process.spawn with a real binary; mocking the
+// OpenClawRuntimeDeps surface fully would be a brittle integration test
+// for the unit suite. TypeScript pins the returned status shape at
+// compile time.

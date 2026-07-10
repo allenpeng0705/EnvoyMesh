@@ -76,6 +76,20 @@ export interface OpenClawRuntimeState {
    * node-host can decide where to write (typically `<profileDir>/openclaw-pending-replies.json`).
    */
   pendingRepliesPath: string | null;
+  /**
+   * Last stop/failure reason (port in use, spawn failure, probe fail, etc).
+   * Cleared on a successful start. Surfaced via `getOpenClawStatus()` so the
+   * AI → AI Engine settings page can show operators *why* the runtime is
+   * "Stopped" instead of just displaying the status badge.
+   */
+  lastError: string | null;
+  /** ISO timestamp of `lastError`. Cleared together with `lastError`. */
+  lastErrorAt: string | null;
+  /**
+   * Consecutive restart attempts since the last successful start.
+   * Reset to 0 on success. Lets the UI flag a watchdog that's in a fail loop.
+   */
+  consecutiveRestartFailures: number;
 }
 
 export function createOpenClawRuntimeState(): OpenClawRuntimeState {
@@ -95,7 +109,28 @@ export function createOpenClawRuntimeState(): OpenClawRuntimeState {
     watchdogTimer: null,
     watchdogRunning: false,
     pendingRepliesPath: null,
+    lastError: null,
+    lastErrorAt: null,
+    consecutiveRestartFailures: 0,
   };
+}
+
+/**
+ * Record a runtime-level failure so the settings UI can surface the *why*
+ * alongside the "Stopped" badge. Idempotent — overwrites prior values so the
+ * most recent cause wins, which is what an operator wants to see.
+ */
+export function recordOpenClawError(state: OpenClawRuntimeState, reason: string): void {
+  state.lastError = reason;
+  state.lastErrorAt = new Date().toISOString();
+  state.consecutiveRestartFailures += 1;
+}
+
+/** Clear the recorded error — called when the gateway reaches a healthy state. */
+export function clearOpenClawError(state: OpenClawRuntimeState): void {
+  state.lastError = null;
+  state.lastErrorAt = null;
+  state.consecutiveRestartFailures = 0;
 }
 
 /**
@@ -558,11 +593,14 @@ async function waitForOpenClawGatewayReady(state: OpenClawRuntimeState): Promise
     // Bail early if the gateway process exited mid-probe (avoids wasting
     // 90s probing a dead port).
     if (state.gatewayChild?.exitCode !== null && state.gatewayChild !== null) {
+      const code = state.gatewayChild.exitCode;
       console.warn("[openclaw] Gateway process exited during startup probe — stopping wait");
+      recordOpenClawError(state, `Gateway process exited during startup probe (exit code ${code ?? "?"})`);
       return false;
     }
     if (!state.gatewayChild) {
       console.warn("[openclaw] Gateway child is null during startup probe — stopping wait");
+      recordOpenClawError(state, "Gateway child is null during startup probe");
       return false;
     }
     if (await probeOpenClawWebhook(state, { quiet: true })) {
@@ -570,6 +608,13 @@ async function waitForOpenClawGatewayReady(state: OpenClawRuntimeState): Promise
     }
     await new Promise((r) => setTimeout(r, 1000));
   }
+  // The 90s probe budget elapsed without the webhook coming up. Most common
+  // cause: another OpenClaw instance is already on the webhook port, or the
+  // gateway crashed and stderr didn't surface a useful error.
+  recordOpenClawError(
+    state,
+    `Gateway webhook not reachable after ${OPEN_CLAW_STARTUP_PROBE_ATTEMPTS}s — port may be in use or gateway failed to register`,
+  );
   return false;
 }
 
@@ -582,10 +627,13 @@ function startOpenClawWatchdog(state: OpenClawRuntimeState, deps: OpenClawRuntim
     // Case 1: Gateway process is alive but route unregistered → restart.
     if (state.gatewayChild && !state.gatewayChild.killed && !state.gatewayRouteRegistered) {
       console.warn("[openclaw] Watchdog: gateway process alive but route unregistered — restarting");
+      recordOpenClawError(state, "Gateway process alive but HTTP route never registered — restarting");
       state.watchdogRunning = false;
       stopOpenClawWatchdog(state);
       await startOpenClawViaRuntime(state, deps).catch((err) => {
-        console.warn("[openclaw] Watchdog restart failed:", err instanceof Error ? err.message : String(err));
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn("[openclaw] Watchdog restart failed:", msg);
+        recordOpenClawError(state, `Watchdog restart failed: ${msg}`);
       });
       return;
     }
@@ -593,11 +641,14 @@ function startOpenClawWatchdog(state: OpenClawRuntimeState, deps: OpenClawRuntim
     // Case 2: Gateway process died (crashed or was killed) → proactive restart.
     if (!state.gatewayChild || state.gatewayChild.killed) {
       console.warn("[openclaw] Watchdog: gateway process died — restarting");
+      recordOpenClawError(state, "Gateway process died — restarting");
       state.watchdogRunning = false;
       stopOpenClawWatchdog(state);
       setOpenClawGatewayReady(state, false);
       await startOpenClawViaRuntime(state, deps).catch((err) => {
-        console.warn("[openclaw] Watchdog restart failed:", err instanceof Error ? err.message : String(err));
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn("[openclaw] Watchdog restart failed:", msg);
+        recordOpenClawError(state, `Watchdog restart failed: ${msg}`);
       });
       return;
     }
@@ -609,6 +660,7 @@ function startOpenClawWatchdog(state: OpenClawRuntimeState, deps: OpenClawRuntim
       const ok = await probeOpenClawWebhook(state, { quiet: true }).catch(() => false);
       if (!ok) {
         console.warn("[openclaw] Watchdog: gateway alive but probe failed — marking unready");
+        recordOpenClawError(state, "Gateway alive but webhook probe failed — marking unready");
         setOpenClawGatewayReady(state, false);
       }
     }
@@ -1089,8 +1141,18 @@ async function startOpenClawInner(
       }
     }
   });
+  child.on("error", (err) => {
+    // Spawn-time failures (ENOENT, EACCES, EPERM, …) surface here. The
+    // runtime will record the cause so the settings page can show it.
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[openclaw] gateway spawn error: ${msg}`);
+    recordOpenClawError(state, `Gateway spawn error: ${msg}`);
+  });
   child.on("exit", (code) => {
-    if (code) console.warn(`[openclaw] gateway exited code ${code}`);
+    if (code) {
+      console.warn(`[openclaw] gateway exited code ${code}`);
+      recordOpenClawError(state, `Gateway process exited with code ${code}`);
+    }
     state.gatewayChild = null;
     setOpenClawGatewayReady(state, false);
     state.gatewayRouteRegistered = false;
@@ -1107,10 +1169,22 @@ async function startOpenClawInner(
   if (child.exitCode == null) {
     gatewayReady = await waitForOpenClawGatewayReady(state);
   } else {
+    const code = child.exitCode;
     console.warn(
-      `[openclaw] Gateway process exited before webhook was ready (code ${child.exitCode}). ` +
+      `[openclaw] Gateway process exited before webhook was ready (code ${code}). ` +
         `If port ${gatewayPort} is already in use by another OpenClaw instance, stop it first.`,
     );
+    recordOpenClawError(
+      state,
+      `Gateway exited before webhook was ready (code ${code}). ` +
+        `Port ${gatewayPort} may already be in use by another OpenClaw instance.`,
+    );
+  }
+
+  if (gatewayReady) {
+    // Healthy start — clear any prior recorded error so the settings page
+    // doesn't show stale failure text after recovery.
+    clearOpenClawError(state);
   }
 
   if (!gatewayReady) {
@@ -1213,6 +1287,49 @@ export async function stopOpenClawViaRuntime(
   }
   state.runtime = null;
 }
+
+/**
+ * Force-restart the built-in OpenClaw gateway. Used by the AI → AI Engine
+ * settings page's "Restart now" button and by the chat view's banner — gives
+ * the user a way to recover from a "Stopped" state without bouncing the
+ * whole home node. Kills any existing child, waits briefly for the OS to
+ * release the webhook port, then spawns a fresh gateway.
+ *
+ * Returns the new runtime status so the caller can update its UI without
+ * a follow-up poll.
+ */
+export async function restartOpenClawViaRuntime(
+  state: OpenClawRuntimeState,
+  deps: OpenClawRuntimeDeps,
+): Promise<OpenClawStatusShape> {
+  await stopOpenClawViaRuntime(state, deps);
+  // Brief settle so the OS releases the webhook port and any half-closed
+  // sockets are reaped. 250ms is enough on Linux/macOS; shorter would risk
+  // EADDRINUSE on the spawn immediately below.
+  await new Promise((r) => setTimeout(r, 250));
+  const ready = await startOpenClawViaRuntime(state, deps);
+  const child = state.gatewayChild;
+  return {
+    enabled: true,
+    running: ready,
+    url: state.assistantAgentUrl,
+    childPid: child && !child.killed ? child.pid : undefined,
+    lastError: state.lastError,
+    lastErrorAt: state.lastErrorAt,
+    consecutiveRestartFailures: state.consecutiveRestartFailures,
+  };
+}
+
+/** Minimal status shape returned by {@link restartOpenClawViaRuntime}. */
+export type OpenClawStatusShape = {
+  enabled: boolean;
+  running: boolean;
+  url: string;
+  childPid?: number;
+  lastError: string | null;
+  lastErrorAt: string | null;
+  consecutiveRestartFailures: number;
+};
 
 export async function askOpenClawViaRuntime(
   state: OpenClawRuntimeState,

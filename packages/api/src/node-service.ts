@@ -1741,6 +1741,13 @@ export interface NodeService {
 
   /** Resolved bundled + persisted setup sponsor friend config (read-only). */
   getSetupSponsorFriendConfig(): Promise<import("./setup-sponsor-friend.js").ResolvedSetupSponsorFriend>;
+  /**
+   * Full status the settings/discover UI consumes — resolved effective config
+   * plus the last-attempt state from persisted config. The fresh-install UX
+   * surfaces this so the user can see "we tried to add <sponsor> and here's
+   * why it didn't work", not just the badge.
+   */
+  getSetupSponsorFriendStatus(): Promise<import("./setup-sponsor-friend.js").SetupSponsorFriendStatus>;
 
   /** Run zero-step sponsor hello after first setup (idempotent). */
   runSetupSponsorFriend(): Promise<import("./setup-sponsor-friend.js").RunSetupSponsorFriendResult>;
@@ -1812,6 +1819,16 @@ export interface NodeService {
    * Phase 32 — mirrors `getBridgeStatus` for the in-process agent.
    */
   getOpenClawStatus(): Promise<OpenClawStatus>;
+
+  /**
+   * Force-restart the built-in OpenClaw gateway (kills the child, waits for
+   * the webhook port to be released, spawns a fresh gateway). Returns the
+   * resulting status so the caller can refresh its UI without a follow-up
+   * poll. Bound to the AI → AI Engine "Restart now" button and the chat
+   * view's offline banner — gives the user a path to recover from a
+   * "Stopped" state without bouncing the whole home node.
+   */
+  restartOpenClaw(): Promise<OpenClawStatus>;
 
   // ClawHub skill marketplace
   getOpenClawPlugins(): Promise<string[]>;

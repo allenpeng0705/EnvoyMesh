@@ -205,6 +205,7 @@ export type RpcMethods =
    // Agent Bridge
    | "getBridgeStatus"
    | "getOpenClawStatus"
+   | "restartOpenClaw"
    // ClawHub skills
    | "getOpenClawPlugins"
     | "searchOpenClawPlugins"
@@ -243,7 +244,8 @@ export type RpcMethods =
   // Node Configuration
   | "getNodeConfig"
   | "updateNodeConfig"
-  | "getSetupSponsorFriendConfig"
+   | "getSetupSponsorFriendConfig"
+   | "getSetupSponsorFriendStatus"
   | "runSetupSponsorFriend"
   | "listRelays"
   | "addRelay"
@@ -662,6 +664,21 @@ export interface OpenClawStatus {
   childPid?: number;
   /** ISO timestamp when the current child process was spawned. */
   startedAt?: string;
+  /**
+   * Last stop/failure reason (port in use, spawn failure, probe fail, etc).
+   * Null when the runtime is healthy or has never been started.
+   * Surfaced in the AI → AI Engine settings page so operators can see
+   * *why* a "Stopped" badge is showing, not just that it is.
+   */
+  lastError?: string | null;
+  /** ISO timestamp of `lastError`. Null when `lastError` is null. */
+  lastErrorAt?: string | null;
+  /**
+   * Number of consecutive restart attempts since the last successful start.
+   * 0 when running cleanly. Lets the UI show "restart attempts: 3" so the
+   * operator can see the watchdog is in a fail loop and needs intervention.
+   */
+  consecutiveRestartFailures?: number;
 }
 
 /**
