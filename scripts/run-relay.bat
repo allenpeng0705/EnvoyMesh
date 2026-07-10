@@ -96,9 +96,9 @@ if "%SKIP_REBUILD%"=="0" (
     pushd "%RELAY_DIR%\packages\api"
     call npx tsc -p tsconfig.json
     popd
-    echo   identity + network
+    echo   network ^(tsc -b pulls @envoymesh/identity in transitively^)
     pushd "%RELAY_DIR%"
-    call npm run build -w @envoymesh/identity -w @envoymesh/network
+    call npm run build -w @envoymesh/network
     popd
     echo   relay
     pushd "%RELAY_DIR%"

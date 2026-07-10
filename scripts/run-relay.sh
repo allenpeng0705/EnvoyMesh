@@ -82,8 +82,8 @@ if [ "${SKIP_REBUILD:-0}" != "1" ]; then
     (cd "$PROJECT_ROOT/packages/protocol" && npx tsc -p tsconfig.json)
     echo "  api"
     (cd "$PROJECT_ROOT/packages/api" && npx tsc -p tsconfig.json)
-    echo "  identity + network (relay's prebuild covers this via tsc -b)"
-    (cd "$PROJECT_ROOT" && npm run build -w @envoymesh/identity -w @envoymesh/network)
+    echo "  network (tsc -b pulls @envoymesh/identity in transitively)"
+    (cd "$PROJECT_ROOT" && npm run build -w @envoymesh/network)
     echo "  relay"
     (cd "$PROJECT_ROOT" && npm run relay:build)
     echo "Build done."
