@@ -18,7 +18,8 @@ import { randomUUID } from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
 import { byteStream } from "@libp2p/utils";
 import { CapabilityRegistry, CLIENT_PROXY_PROTOCOL, EnvoyMesh } from "@envoymesh/network";
-import { parseRelayArgs } from "./args.js";
+import { parseRelayArgs, PUBLIC_RELAY_V2_DEFAULTS } from "./args.js";
+import type { CircuitRelayServerConfig } from "@envoymesh/network";
 import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key-loader.js";
 import { createHomeTunnelProxy } from "./home-tunnel-proxy.js";
 import {
@@ -42,6 +43,7 @@ import {
 import {
   buildRelayVersionReport,
   buildRelayProtocolReport,
+  setActiveCircuitRelayServerConfig,
 } from "./relay-version.js";
 
 // ============================================================================
@@ -138,6 +140,52 @@ if (args.httpPort) {
     console.log(`[relay] HTTP info endpoint: disabled`);
   }
 
+// Resolve the circuit-relay-v2 server config: public-mode preset fills in
+// production values, then any individual override (CLI / env var) wins.
+// The resolved object is what gets passed to `EnvoyMesh` and surfaced on
+// `/version` — keep it pure (no side effects) so the log line + the
+// /version payload can never disagree.
+function resolveCircuitRelayServerConfig(): CircuitRelayServerConfig {
+  if (!args.relayPublicMode
+    && args.relayMaxReservations === null
+    && args.relayReservationTtlMs === null
+    && args.relayDefaultDataLimitBytes === null
+    && args.relayDefaultDurationLimitMs === null
+    && args.relayHopTimeoutMs === null
+    && args.relayMaxOutboundStopStreams === null) {
+    return {};
+  }
+  const config: CircuitRelayServerConfig = {};
+  const maxReservations = args.relayMaxReservations
+    ?? (args.relayPublicMode ? PUBLIC_RELAY_V2_DEFAULTS.maxReservations : undefined);
+  if (maxReservations !== undefined) config.maxReservations = maxReservations;
+  const reservationTtl = args.relayReservationTtlMs
+    ?? (args.relayPublicMode ? PUBLIC_RELAY_V2_DEFAULTS.reservationTtlMs : undefined);
+  if (reservationTtl !== undefined) config.reservationTtl = reservationTtl;
+  const defaultDataLimit = args.relayDefaultDataLimitBytes
+    ?? (args.relayPublicMode ? PUBLIC_RELAY_V2_DEFAULTS.defaultDataLimitBytes : undefined);
+  if (defaultDataLimit !== undefined) config.defaultDataLimit = defaultDataLimit;
+  const defaultDurationLimit = args.relayDefaultDurationLimitMs
+    ?? (args.relayPublicMode ? PUBLIC_RELAY_V2_DEFAULTS.defaultDurationLimitMs : undefined);
+  if (defaultDurationLimit !== undefined) config.defaultDurationLimit = defaultDurationLimit;
+  const hopTimeout = args.relayHopTimeoutMs
+    ?? (args.relayPublicMode ? PUBLIC_RELAY_V2_DEFAULTS.hopTimeoutMs : undefined);
+  if (hopTimeout !== undefined) config.hopTimeout = hopTimeout;
+  const maxOutboundStopStreams = args.relayMaxOutboundStopStreams
+    ?? (args.relayPublicMode ? PUBLIC_RELAY_V2_DEFAULTS.maxOutboundStopStreams : undefined);
+  if (maxOutboundStopStreams !== undefined) config.maxOutboundStopStreams = maxOutboundStopStreams;
+  return config;
+}
+
+const circuitRelayServerConfig = resolveCircuitRelayServerConfig();
+
+// Surface the resolved v2 server config on /version. We have to do this
+// before any /version call — `buildRelayVersionReport()` reads from a
+// module-level slot populated by this setter.
+setActiveCircuitRelayServerConfig(
+  Object.keys(circuitRelayServerConfig).length > 0 ? circuitRelayServerConfig : null,
+);
+
 // Create minimal EnvoyMesh for relay-only operation
 const mesh = new EnvoyMesh({
   listen: args.listen,
@@ -150,7 +198,37 @@ const mesh = new EnvoyMesh({
   dhtClientMode: args.dhtClientMode,
   bootstrapPeers: args.bootstrapPeers,
   libp2pPrivateKey,
+  circuitRelayServer: circuitRelayServerConfig,
 });
+
+// Log the active v2 server config so operators can verify the redeploy
+// picked up the right values without needing to curl /version. The same
+// object is also surfaced on /version, so the log line and the endpoint
+// payload are guaranteed to agree (they're built from the same source).
+if (Object.keys(circuitRelayServerConfig).length > 0) {
+  const parts: string[] = [];
+  if (circuitRelayServerConfig.maxReservations !== undefined) {
+    parts.push(`maxReservations=${circuitRelayServerConfig.maxReservations}`);
+  }
+  if (circuitRelayServerConfig.reservationTtl !== undefined) {
+    parts.push(`reservationTtl=${circuitRelayServerConfig.reservationTtl}ms`);
+  }
+  if (circuitRelayServerConfig.defaultDataLimit !== undefined) {
+    parts.push(`defaultDataLimit=${circuitRelayServerConfig.defaultDataLimit}B`);
+  }
+  if (circuitRelayServerConfig.defaultDurationLimit !== undefined) {
+    parts.push(`defaultDurationLimit=${circuitRelayServerConfig.defaultDurationLimit}ms`);
+  }
+  if (circuitRelayServerConfig.hopTimeout !== undefined) {
+    parts.push(`hopTimeout=${circuitRelayServerConfig.hopTimeout}ms`);
+  }
+  if (circuitRelayServerConfig.maxOutboundStopStreams !== undefined) {
+    parts.push(`maxOutboundStopStreams=${circuitRelayServerConfig.maxOutboundStopStreams}`);
+  }
+  console.log(`[relay] circuit-relay-v2 server config: ${parts.join(" ")}${args.relayPublicMode ? " (public mode)" : ""}`);
+} else {
+  console.log(`[relay] circuit-relay-v2 server config: libp2p defaults (15 reservations, 2 min TTL, 128 KiB data) — pass --relay-public-mode for community-relay tuning`);
+}
 
 let started = false;
 let httpServer: ReturnType<typeof createServer> | null = null;
@@ -474,6 +552,18 @@ try {
             : 200;
         res.writeHead(statusCode, { "Content-Type": "application/json" });
         res.end(JSON.stringify(snapshot));
+      } else if (req.url === "/reservations") {
+        // Live circuit-relay-v2 reservation store size. Operators rely on
+        // this to see "is the store filling up?" in real time without
+        // scraping the relay log. A persistently-near-cap count means
+        // the public-mode preset (or hand-tuned override) is too tight.
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({
+          count: mesh.getCircuitRelayReservationCount(),
+          maxReservations: circuitRelayServerConfig.maxReservations ?? 15,
+          publicMode: args.relayPublicMode,
+          checkedAt: new Date().toISOString(),
+        }));
       } else {
         res.writeHead(404);
         res.end();

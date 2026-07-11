@@ -242,6 +242,43 @@ export interface MeshOutboundOptions {
   upgradeRelayToDirect?: boolean;
 }
 
+/**
+ * Optional configuration for the `circuitRelayServer` service that the
+ * network stack registers when {@link EnvoyMeshOptions.enableRelayServer} is true.
+ *
+ * Mirrors the libp2p `CircuitRelayServerInit` + nested `ServerReservationStoreInit`
+ * shapes. Pass `undefined` (the default) to use libp2p's defaults
+ * (`maxReservations=15`, `reservationTtl=2min`, `defaultDataLimit=128KiB`,
+ * `defaultDurationLimit=2min`, `hopTimeout=30s`).
+ *
+ * Operators running a **public community relay** should override these to
+ * reasonable production values (256 reservations, 1 MiB data, 30 min duration,
+ * 60 s hop timeout). The defaults are tight because they target an embedded
+ * use case, not a community server.
+ */
+export interface CircuitRelayServerConfig {
+  /** Maximum concurrent reservations the relay will grant. Default 15. */
+  maxReservations?: number;
+  /** Reservation TTL in ms. Default 2 minutes. */
+  reservationTtl?: number;
+  /** Per-reservation data limit in bytes. Default 128 KiB. */
+  defaultDataLimit?: number;
+  /** Per-reservation duration limit in ms. Default 2 minutes. */
+  defaultDurationLimit?: number;
+  /** Time allowed for an inbound HOP stream to complete. Default 30 s. */
+  hopTimeout?: number;
+  /**
+   * Maximum simultaneous inbound HOP streams. Leave undefined for the
+   * libp2p default (currently unbounded).
+   */
+  maxInboundHopStreams?: number;
+  /**
+   * Maximum simultaneous outbound STOP streams. Default 300.
+   * Inbound relayed connections use one STOP stream each.
+   */
+  maxOutboundStopStreams?: number;
+}
+
 export interface EnvoyMeshOptions {
   listen?: string[];
   /**
@@ -259,6 +296,12 @@ export interface EnvoyMeshOptions {
   bootstrapTimeoutMs?: number;
   enableRelay?: boolean;
   enableRelayServer?: boolean;
+  /**
+   * Tuning for the `circuitRelayServer` service. Only consulted when
+   * `enableRelayServer` is true. Public/community relays should override
+   * the libp2p defaults — they target an embedded use case.
+   */
+  circuitRelayServer?: CircuitRelayServerConfig;
   enableAutoNat?: boolean;
   enableDcutr?: boolean;
   /** When true, register the QUIC transport and add matching `/udp/.../quic-v1` listeners for each TCP listen address. */
@@ -329,6 +372,37 @@ export interface EnvoyMeshPeerDiscoveryService {
   ): void;
 }
 
+/**
+ * Convert the user-facing {@link CircuitRelayServerConfig} into the libp2p
+ * `CircuitRelayServerInit` shape. Filters out undefined fields so the libp2p
+ * default kicks in for any unset value — easier to reason about than passing
+ * `undefined` into nested objects.
+ */
+function buildCircuitRelayServerInit(
+  config: CircuitRelayServerConfig | undefined,
+): Record<string, unknown> {
+  if (!config) return {};
+  const reservations: Record<string, unknown> = {};
+  if (config.maxReservations !== undefined) reservations.maxReservations = config.maxReservations;
+  if (config.reservationTtl !== undefined) reservations.reservationTtl = config.reservationTtl;
+  if (config.defaultDataLimit !== undefined) {
+    // libp2p's ReservationStore expects a bigint, not a number.
+    reservations.defaultDataLimit = BigInt(config.defaultDataLimit);
+  }
+  if (config.defaultDurationLimit !== undefined) {
+    reservations.defaultDurationLimit = config.defaultDurationLimit;
+  }
+  const init: Record<string, unknown> = {};
+  if (Object.keys(reservations).length > 0) init.reservations = reservations;
+  if (config.hopTimeout !== undefined) init.hopTimeout = config.hopTimeout;
+  if (config.maxInboundHopStreams !== undefined) init.maxInboundHopStreams = config.maxInboundHopStreams;
+  if (config.maxOutboundStopStreams !== undefined) init.maxOutboundStopStreams = config.maxOutboundStopStreams;
+  return init;
+}
+
+/** Exported for testing. */
+export const __testing = { buildCircuitRelayServerInit };
+
 export class EnvoyMesh {
   private readonly handlers = new Set<MeshMessageHandler>();
   private readonly dataHandlers = new Set<MeshDataTransferHandler>();
@@ -351,8 +425,16 @@ export class EnvoyMesh {
   /** Track whether we've ever successfully reserved a relay slot. Used to log a startup summary. */
   private relayEverReserved = false;
   private relayEverAdvertised = false;
+  /**
+   * The circuit-relay-v2 server config that was passed to {@link EnvoyMesh}.
+   * Captured here so observability endpoints (`/version`, `/reservations`) can
+   * surface the active limits without re-reading the options object.
+   */
+  private readonly circuitRelayServerConfig: CircuitRelayServerConfig | undefined;
 
-  constructor(private readonly options: EnvoyMeshOptions = {}) {}
+  constructor(private readonly options: EnvoyMeshOptions = {}) {
+    this.circuitRelayServerConfig = options.circuitRelayServer;
+  }
 
   async start(): Promise<void> {
     if (this.node) {
@@ -453,7 +535,11 @@ export class EnvoyMesh {
                   }),
                 }
               : {}),
-            ...(this.options.enableRelayServer ? { relay: circuitRelayServer() } : {}),
+            ...(this.options.enableRelayServer
+              ? {
+                  relay: circuitRelayServer(buildCircuitRelayServerInit(this.options.circuitRelayServer)),
+                }
+              : {}),
             ...(this.options.enableAutoNat && !browserMode ? { autoNAT: autoNAT() } : {}),
             ...(this.options.enableDcutr && !browserMode ? { dcutr: dcutr() } : {}),
           }
@@ -794,6 +880,35 @@ export class EnvoyMesh {
   /** Open libp2p remote peer ids from the connection manager (direct + relay). */
   getConnectedPeerIds(): string[] {
     return this.getConnectionStats().connectedPeerIds;
+  }
+
+  /**
+   * Returns the `circuitRelayServer` config that was passed to this mesh.
+   * Operators use this to expose the active v2 server limits on
+   * `/version`-style HTTP endpoints without re-deriving them from
+   * environment variables. Returns `undefined` when the mesh is in
+   * client-only mode (no `enableRelayServer`).
+   */
+  getCircuitRelayServerConfig(): CircuitRelayServerConfig | undefined {
+    return this.circuitRelayServerConfig;
+  }
+
+  /**
+   * Returns the current number of active circuit-relay-v2 reservations on
+   * this node, when running as a relay server. Returns 0 when the mesh
+   * is not acting as a relay server, when `start()` has not run, or when
+   * libp2p has not yet registered the relay service.
+   *
+   * Useful for /health and /reservations endpoints so operators can see
+   * "is the reservation store filling up?" in real time.
+   */
+  getCircuitRelayReservationCount(): number {
+    const node = this.node;
+    if (!node || !this.options.enableRelayServer) return 0;
+    const services = node.services as Record<string, unknown> | undefined;
+    const relay = services?.relay as { reservations?: { size?: number } } | undefined;
+    const size = relay?.reservations?.size;
+    return typeof size === "number" ? size : 0;
   }
 
   /**

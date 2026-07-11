@@ -42,6 +42,23 @@ export interface RelayVersionReport {
   platform: string;
   /** ISO timestamp the relay started. */
   startedAt: string;
+  /**
+   * Active circuit-relay-v2 server config (maxReservations, reservationTtl,
+   * defaultDataLimit, defaultDurationLimit, hopTimeout, maxOutboundStopStreams).
+   * Null when the relay is running with libp2p's built-in defaults (i.e.
+   * neither `--relay-public-mode` nor any `--relay-*` override was set).
+   * Operators use this to verify a redeploy actually picked up the new
+   * tuning — the values shown here are the values the running `circuitRelayServer()`
+   * was constructed with.
+   */
+  circuitRelayServerConfig: {
+    maxReservations?: number;
+    reservationTtl?: number;
+    defaultDataLimit?: number;
+    defaultDurationLimit?: number;
+    hopTimeout?: number;
+    maxOutboundStopStreams?: number;
+  } | null;
 }
 
 const PACKAGES_TO_REPORT = [
@@ -136,8 +153,32 @@ function readInstalledVersion(pkg: PackageName): string | null {
  * Build the version report. Cached after first call — the versions don't
  * change during a process lifetime, and `/version` may be polled by
  * monitoring tools.
+ *
+ * The active circuit-relay-v2 server config is captured from the closure
+ * via `setActiveCircuitRelayServerConfig()` — set this once at startup
+ * with whatever the relay resolved, and the report will reflect it. We
+ * don't pass it as a function arg because the cached-report contract
+ * (return the same object on repeated calls) would otherwise be broken
+ * by callers passing the config in different ways.
  */
 let cachedReport: RelayVersionReport | null = null;
+let activeCircuitRelayServerConfig:
+  | { maxReservations?: number; reservationTtl?: number; defaultDataLimit?: number; defaultDurationLimit?: number; hopTimeout?: number; maxOutboundStopStreams?: number }
+  | null
+  | undefined = undefined;
+
+/** Set the active v2 server config used by `buildRelayVersionReport()`. */
+export function setActiveCircuitRelayServerConfig(
+  config:
+    | { maxReservations?: number; reservationTtl?: number; defaultDataLimit?: number; defaultDurationLimit?: number; hopTimeout?: number; maxOutboundStopStreams?: number }
+    | null
+    | undefined,
+): void {
+  activeCircuitRelayServerConfig = config ?? null;
+  // Invalidate the cache so the next call picks up the new config.
+  cachedReport = null;
+}
+
 export function buildRelayVersionReport(startedAtIso: string): RelayVersionReport {
   if (cachedReport) return cachedReport;
   cachedReport = {
@@ -151,6 +192,7 @@ export function buildRelayVersionReport(startedAtIso: string): RelayVersionRepor
     node: process.version,
     platform: `${process.platform}-${process.arch}`,
     startedAt: startedAtIso,
+    circuitRelayServerConfig: activeCircuitRelayServerConfig ?? null,
   };
   return cachedReport;
 }
@@ -158,6 +200,7 @@ export function buildRelayVersionReport(startedAtIso: string): RelayVersionRepor
 /** Reset the cache — only used by tests. */
 export function resetRelayVersionReportCache(): void {
   cachedReport = null;
+  activeCircuitRelayServerConfig = undefined;
 }
 
 /**

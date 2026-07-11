@@ -9,6 +9,7 @@ import {
   buildRelayVersionReport,
   buildRelayProtocolReport,
   resetRelayVersionReportCache,
+  setActiveCircuitRelayServerConfig,
 } from "../src/relay-version.js";
 
 describe("buildRelayVersionReport", () => {
@@ -80,6 +81,46 @@ describe("buildRelayVersionReport", () => {
     // missing — exercised indirectly by the fact that nothing throws here.
     const report = buildRelayVersionReport("2026-07-10T00:00:00.000Z");
     expect(report).toBeDefined();
+  });
+
+  it("returns null circuitRelayServerConfig when none was set", () => {
+    // `setActiveCircuitRelayServerConfig` is called by the relay's
+    // `index.ts` once at startup. When called with no config (e.g. the
+    // caller used libp2p defaults), the report surfaces null — operators
+    // can tell at a glance "this relay is running with built-in defaults".
+    const report = buildRelayVersionReport("2026-07-10T00:00:00.000Z");
+    expect(report.circuitRelayServerConfig).toBeNull();
+  });
+
+  it("surfaces the active circuit-relay-v2 server config when set", () => {
+    setActiveCircuitRelayServerConfig({
+      maxReservations: 256,
+      reservationTtl: 600_000,
+      defaultDataLimit: 1_048_576,
+      defaultDurationLimit: 1_800_000,
+      hopTimeout: 60_000,
+      maxOutboundStopStreams: 300,
+    });
+    const report = buildRelayVersionReport("2026-07-10T00:00:00.000Z");
+    expect(report.circuitRelayServerConfig).toEqual({
+      maxReservations: 256,
+      reservationTtl: 600_000,
+      defaultDataLimit: 1_048_576,
+      defaultDurationLimit: 1_800_000,
+      hopTimeout: 60_000,
+      maxOutboundStopStreams: 300,
+    });
+  });
+
+  it("invalidates the cache when the active config changes", () => {
+    // First call: no config set.
+    const first = buildRelayVersionReport("2026-07-10T00:00:00.000Z");
+    expect(first.circuitRelayServerConfig).toBeNull();
+    // Setting a new config must invalidate the cached report so a
+    // redeploy can change the values without a process restart.
+    setActiveCircuitRelayServerConfig({ maxReservations: 512 });
+    const second = buildRelayVersionReport("2026-07-10T00:00:00.000Z");
+    expect(second.circuitRelayServerConfig).toEqual({ maxReservations: 512 });
   });
 });
 

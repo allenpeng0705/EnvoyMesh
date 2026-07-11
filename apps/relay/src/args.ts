@@ -8,6 +8,92 @@ export interface RelayArgs {
   httpPort: number | null;
   enableRendezvous: boolean;
   wsAuthToken: string;
+  /**
+   * Public-mode presets for the circuit-relay-v2 server config. When true,
+   * applies production values (256 reservations, 1 MiB data, 30 min
+   * duration, 60 s hop timeout) unless any of the individual
+   * `--relay-*` CLI args / `ENVOYMESH_RELAY_*` env vars override them.
+   *
+   * Why a "public" preset instead of just bigger defaults: the
+   * `circuitRelayServer()` call has libp2p-defaults (max 15 reservations,
+   * 2 min TTL, 128 KiB) that target an embedded use case. A community
+   * relay needs much higher limits, but a developer running a local
+   * relay for tests wants the small defaults. The preset is the
+   * opt-in to "I'm serving public traffic."
+   */
+  relayPublicMode: boolean;
+  /** Override `maxReservations` on the circuit-relay-v2 server. */
+  relayMaxReservations: number | null;
+  /** Override `reservationTtl` (ms) on the circuit-relay-v2 server. */
+  relayReservationTtlMs: number | null;
+  /** Override `defaultDataLimit` (bytes) on the circuit-relay-v2 server. */
+  relayDefaultDataLimitBytes: number | null;
+  /** Override `defaultDurationLimit` (ms) on the circuit-relay-v2 server. */
+  relayDefaultDurationLimitMs: number | null;
+  /** Override `hopTimeout` (ms) on the circuit-relay-v2 server. */
+  relayHopTimeoutMs: number | null;
+  /** Override `maxOutboundStopStreams` on the circuit-relay-v2 server. */
+  relayMaxOutboundStopStreams: number | null;
+}
+
+/**
+ * Public-mode defaults for a community relay. These are the values a
+ * well-run public relay should run with — much higher than the libp2p
+ * defaults, which target an embedded use case (15 reservations, 2 min
+ * TTL, 128 KiB data, 2 min duration, 30 s hop).
+ *
+ * Why these specific values (vs. the libp2p defaults):
+ *
+ * - **maxReservations = 1024** — the libp2p default (15) is fine for an
+ *   embedded process but fills up immediately for a public relay. 1024
+ *   covers ~1k active users with reservations; the memory cost is
+ *   trivial (~200 KiB for the entire store).
+ * - **reservationTtl = 30 min** — at 1024 reservations, a 10-min TTL
+ *   means ~1.7 renewals/sec hitting the relay. 30 min drops that to
+ *   ~0.6/sec, ~3× less load. The trade-off: stale reservations hold
+ *   their slot longer after a peer disconnects abruptly, but the
+ *   `connection:close` event handler clears them in libp2p.
+ * - **defaultDataLimit = 4 MiB** — covers a chat message with a few
+ *   small image attachments. 1 MiB was tight for image sharing.
+ * - **defaultDurationLimit = 60 min** — long chat sessions shouldn't
+ *   get cut off mid-conversation. 30 min was OK but margin is cheap.
+ * - **hopTimeout = 90 s** — matches the client-side
+ *   `HINT_DIAL_TIMEOUT_MS = 30 s` plus a margin for slow cross-region
+ *   paths where the reservation handshake piggybacks on the dial.
+ *   60 s was already an improvement over libp2p's 30 s default; 90 s
+ *   leaves more headroom for really slow paths without making failure
+ *   detection painfully slow.
+ * - **maxOutboundStopStreams = 1024** — each inbound relayed connection
+ *   uses one STOP stream. Matching the reservation count means a peer
+ *   with a reservation can actually be reached (vs. the libp2p default
+ *   of 300, which would cap concurrent relayed connections at 300 even
+ *   with 1024 active reservations — i.e. 724 of those reservations
+ *   would be useless for reaching their holder).
+ */
+export const PUBLIC_RELAY_V2_DEFAULTS = Object.freeze({
+  maxReservations: 1024,
+  reservationTtlMs: 30 * 60_000, // 30 minutes
+  defaultDataLimitBytes: 4 * 1024 * 1024, // 4 MiB
+  defaultDurationLimitMs: 60 * 60_000, // 60 minutes
+  hopTimeoutMs: 90_000, // 90 seconds
+  maxOutboundStopStreams: 1024, // matches maxReservations
+});
+
+function parsePositiveInt(name: string, raw: string | undefined): number | null {
+  if (raw === undefined || raw === "") return null;
+  const n = Number(raw);
+  if (!Number.isFinite(n) || !Number.isInteger(n) || n <= 0) {
+    throw new Error(`${name} must be a positive integer, got "${raw}"`);
+  }
+  return n;
+}
+
+function parseBoolean(name: string, raw: string | undefined): boolean {
+  if (raw === undefined) return false;
+  const normalized = raw.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  throw new Error(`${name} must be a boolean (1/0/true/false), got "${raw}"`);
 }
 
 export function parseRelayArgs(argv: string[]): RelayArgs {
@@ -22,7 +108,22 @@ export function parseRelayArgs(argv: string[]): RelayArgs {
     httpPort: 15432,
     enableRendezvous: true,
     wsAuthToken: "",
+    relayPublicMode: false,
+    relayMaxReservations: null,
+    relayReservationTtlMs: null,
+    relayDefaultDataLimitBytes: null,
+    relayDefaultDurationLimitMs: null,
+    relayHopTimeoutMs: null,
+    relayMaxOutboundStopStreams: null,
   };
+
+  // Apply environment variables FIRST. CLI args override them below.
+  // The order is the conventional "most specific wins" — explicit CLI
+  // flags trump ambient env vars, which in turn trump the hard-coded
+  // defaults. Flipping this order (env after CLI) is a silent
+  // precedence inversion operators hit when they set the same var in
+  // both their .env and the systemd unit.
+  applyEnvVars(args);
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
@@ -47,6 +148,38 @@ export function parseRelayArgs(argv: string[]): RelayArgs {
         throw new Error(`Invalid port: ${port}. Must be between 1 and 65535`);
       }
       args.httpPort = port;
+    } else if (arg === "--relay-public-mode") {
+      args.relayPublicMode = true;
+    } else if (arg === "--relay-max-reservations") {
+      args.relayMaxReservations = parsePositiveInt(
+        "--relay-max-reservations",
+        getValue(argv, ++i, arg),
+      );
+    } else if (arg === "--relay-reservation-ttl-ms") {
+      args.relayReservationTtlMs = parsePositiveInt(
+        "--relay-reservation-ttl-ms",
+        getValue(argv, ++i, arg),
+      );
+    } else if (arg === "--relay-default-data-limit-bytes") {
+      args.relayDefaultDataLimitBytes = parsePositiveInt(
+        "--relay-default-data-limit-bytes",
+        getValue(argv, ++i, arg),
+      );
+    } else if (arg === "--relay-default-duration-limit-ms") {
+      args.relayDefaultDurationLimitMs = parsePositiveInt(
+        "--relay-default-duration-limit-ms",
+        getValue(argv, ++i, arg),
+      );
+    } else if (arg === "--relay-hop-timeout-ms") {
+      args.relayHopTimeoutMs = parsePositiveInt(
+        "--relay-hop-timeout-ms",
+        getValue(argv, ++i, arg),
+      );
+    } else if (arg === "--relay-max-outbound-stop-streams") {
+      args.relayMaxOutboundStopStreams = parsePositiveInt(
+        "--relay-max-outbound-stop-streams",
+        getValue(argv, ++i, arg),
+      );
     } else if (arg === "--help" || arg === "-h") {
       printHelp();
       process.exit(0);
@@ -55,7 +188,15 @@ export function parseRelayArgs(argv: string[]): RelayArgs {
     }
   }
 
-  // Apply environment variables
+  return args;
+}
+
+/**
+ * Apply environment variables to the `RelayArgs` object. Extracted from
+ * `parseRelayArgs` so the precedence (env, then CLI) is obvious — and so
+ * tests can exercise the env-handling path in isolation if needed.
+ */
+function applyEnvVars(args: RelayArgs): void {
   const envProfile = process.env.ENVOYMESH_PROFILE?.trim();
   if (envProfile) {
     args.profileDir = envProfile;
@@ -80,7 +221,48 @@ export function parseRelayArgs(argv: string[]): RelayArgs {
     args.wsAuthToken = envWsAuthToken;
   }
 
-  return args;
+  if (process.env.ENVOYMESH_RELAY_PUBLIC_MODE !== undefined) {
+    args.relayPublicMode = parseBoolean(
+      "ENVOYMESH_RELAY_PUBLIC_MODE",
+      process.env.ENVOYMESH_RELAY_PUBLIC_MODE,
+    );
+  }
+  if (process.env.ENVOYMESH_RELAY_MAX_RESERVATIONS !== undefined) {
+    args.relayMaxReservations = parsePositiveInt(
+      "ENVOYMESH_RELAY_MAX_RESERVATIONS",
+      process.env.ENVOYMESH_RELAY_MAX_RESERVATIONS,
+    );
+  }
+  if (process.env.ENVOYMESH_RELAY_RESERVATION_TTL_MS !== undefined) {
+    args.relayReservationTtlMs = parsePositiveInt(
+      "ENVOYMESH_RELAY_RESERVATION_TTL_MS",
+      process.env.ENVOYMESH_RELAY_RESERVATION_TTL_MS,
+    );
+  }
+  if (process.env.ENVOYMESH_RELAY_DEFAULT_DATA_LIMIT_BYTES !== undefined) {
+    args.relayDefaultDataLimitBytes = parsePositiveInt(
+      "ENVOYMESH_RELAY_DEFAULT_DATA_LIMIT_BYTES",
+      process.env.ENVOYMESH_RELAY_DEFAULT_DATA_LIMIT_BYTES,
+    );
+  }
+  if (process.env.ENVOYMESH_RELAY_DEFAULT_DURATION_LIMIT_MS !== undefined) {
+    args.relayDefaultDurationLimitMs = parsePositiveInt(
+      "ENVOYMESH_RELAY_DEFAULT_DURATION_LIMIT_MS",
+      process.env.ENVOYMESH_RELAY_DEFAULT_DURATION_LIMIT_MS,
+    );
+  }
+  if (process.env.ENVOYMESH_RELAY_HOP_TIMEOUT_MS !== undefined) {
+    args.relayHopTimeoutMs = parsePositiveInt(
+      "ENVOYMESH_RELAY_HOP_TIMEOUT_MS",
+      process.env.ENVOYMESH_RELAY_HOP_TIMEOUT_MS,
+    );
+  }
+  if (process.env.ENVOYMESH_RELAY_MAX_OUTBOUND_STOP_STREAMS !== undefined) {
+    args.relayMaxOutboundStopStreams = parsePositiveInt(
+      "ENVOYMESH_RELAY_MAX_OUTBOUND_STOP_STREAMS",
+      process.env.ENVOYMESH_RELAY_MAX_OUTBOUND_STOP_STREAMS,
+    );
+  }
 }
 
 function getValue(argv: string[], index: number, flag: string): string {
@@ -134,13 +316,29 @@ Options:
                            Env: ENVOYMESH_WS_AUTH_TOKEN
   --http-port <port>    HTTP info endpoint port. Default: 15432 (optional).
                          Returns {peerId, addrs} at /info and OK at /health
+  --relay-public-mode   Apply community-relay presets to circuit-relay-v2
+                         server config (256 reservations, 1 MiB data, 30 min
+                         duration, 60 s hop timeout). The libp2p defaults
+                         (15 reservations, 2 min TTL, 128 KiB data) target
+                         an embedded use case — use this for public relays.
+                         Env: ENVOYMESH_RELAY_PUBLIC_MODE (1/0)
+  --relay-max-reservations <n>  Override max concurrent reservations.
+                         Env: ENVOYMESH_RELAY_MAX_RESERVATIONS
+  --relay-reservation-ttl-ms <ms>  Override reservation TTL in ms.
+                         Env: ENVOYMESH_RELAY_RESERVATION_TTL_MS
+  --relay-default-data-limit-bytes <n>  Override per-reservation data limit.
+                         Env: ENVOYMESH_RELAY_DEFAULT_DATA_LIMIT_BYTES
+  --relay-default-duration-limit-ms <ms>  Override per-reservation duration.
+                         Env: ENVOYMESH_RELAY_DEFAULT_DURATION_LIMIT_MS
+  --relay-hop-timeout-ms <ms>  Override inbound HOP stream timeout.
+                         Env: ENVOYMESH_RELAY_HOP_TIMEOUT_MS
+  --relay-max-outbound-stop-streams <n>  Override max simultaneous STOP streams.
+                         Env: ENVOYMESH_RELAY_MAX_OUTBOUND_STOP_STREAMS
   --help, -h            Show this help.
 
 Example:
-  # Run relay server with public IP
-  npm run relay:dev -- --profile ./data/relay1 --advertise-addr /ip4/1.2.3.4/tcp/4001
-
-  # Run with bootstrap peers
-  npm run relay:dev -- --bootstrap /ip4/1.2.3.4/tcp/4001/p2p/Qm...
+  # Run a public community relay
+  npm run relay:dev -- --relay-public-mode \\
+    --advertise-addr /ip4/1.2.3.4/tcp/4001
 `);
 }
