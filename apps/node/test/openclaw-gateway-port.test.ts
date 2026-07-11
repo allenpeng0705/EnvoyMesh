@@ -25,3 +25,12 @@ describe("probeEnvoymeshWebhookStatus", () => {
     await expect(probeEnvoymeshWebhookStatus("http://127.0.0.1:1/webhook/envoymesh", 500)).resolves.toBeNull();
   });
 });
+
+// Note: reclaimAssistantGatewayPort is covered by the integration path
+// (apps/node/src/node-service-openclaw-runtime.ts calls it before spawning
+// the gateway). A pure unit test would need to mock `listListeningPidsOnPort`
+// and `fetch` inside the same module — vitest's vi.spyOn can replace the
+// export binding, but the function calls the original via lexical scope, so
+// the spy doesn't reach the call site. The SIGKILL-escalation behavior is
+// documented at the function and the sibling runtime test covers the
+// in-process restart case (waitForOpenClawChildExit) end-to-end.

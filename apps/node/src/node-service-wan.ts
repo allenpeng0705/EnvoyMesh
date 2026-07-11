@@ -3,6 +3,7 @@ import type {
   ConnectivityDiagnostics,
   CreateWanJoinInviteParams,
   CreateWanJoinInviteResult,
+  DialableAddrMode,
   NodeConfig,
   NodeStatus,
 } from "@envoymesh/api";
@@ -73,14 +74,82 @@ export async function buildCompanyInviteInviteContext(host: any): Promise<{
   };
 }
 
-function filterDialableMultiaddrs(addrs: readonly string[]): string[] {
+/**
+ * Address filter modes for outbound invite / contact URI generation.
+ * Re-exported from `@envoymesh/api` so call sites can stay generic; the
+ * filter function itself lives here (it depends on private multiaddr
+ * parsing helpers and isn't part of the public API).
+ */
+export type { DialableAddrMode };
+
+const IPV4_OCTET_RE = /^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/;
+
+function parseIpv4(addr: string): number[] | null {
+  const m = addr.match(/\/ip4\/([0-9.]+)/);
+  if (!m) return null;
+  const parts = m[1].split(".");
+  if (parts.length !== 4) return null;
+  const nums = parts.map((p) => Number.parseInt(p, 10));
+  if (nums.some((n) => !Number.isInteger(n) || n < 0 || n > 255)) return null;
+  return nums;
+}
+
+function isLoopbackOrUnspecIpv4(parts: number[]): boolean {
+  // 127.0.0.0/8 — loopback
+  if (parts[0] === 127) return true;
+  // 0.0.0.0 — unspecified
+  if (parts[0] === 0 && parts[1] === 0 && parts[2] === 0 && parts[3] === 0) return true;
+  return false;
+}
+
+function isRoutablePublicIpv4(parts: number[]): boolean {
+  // 10.0.0.0/8 — RFC1918 private
+  if (parts[0] === 10) return false;
+  // 172.16.0.0/12 — RFC1918 private (172.16-31)
+  if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return false;
+  // 192.168.0.0/16 — RFC1918 private
+  if (parts[0] === 192 && parts[1] === 168) return false;
+  // 169.254.0.0/16 — link-local
+  if (parts[0] === 169 && parts[1] === 254) return false;
+  // 100.64.0.0/10 — CGNAT (carrier-grade NAT). Even if the address is
+  // technically "public-looking", it's behind the carrier's NAT and is
+  // not directly dialable from outside the carrier's network.
+  if (parts[0] === 100 && parts[1] >= 64 && parts[1] <= 127) return false;
+  // 127.0.0.0/8 and 0.0.0.0 are not public (caught by the loopback
+  // check above, but belt-and-suspenders).
+  if (parts[0] === 127 || parts[0] === 0) return false;
+  return true;
+}
+
+function isLoopbackOrUnspec(addr: string): boolean {
+  if (addr.includes("/ip6/::1") || addr.includes("/ip6/::/")) return true;
+  const v4 = parseIpv4(addr);
+  if (v4) return isLoopbackOrUnspecIpv4(v4);
+  // Non-IP multiaddrs (DNS, etc.) — assume dialable in `"all"` mode.
+  return false;
+}
+
+function isPublicRoutable(addr: string): boolean {
+  if (addr.includes("/ip6/::1") || addr.includes("/ip6/::/")) return false;
+  if (addr.includes("/ip6/fe80:")) return false; // IPv6 link-local
+  if (addr.includes("/ip6/fc") || addr.includes("/ip6/fd")) return false; // IPv6 ULA
+  const v4 = parseIpv4(addr);
+  if (v4) return isRoutablePublicIpv4(v4);
+  // Non-IP (DNS, etc.) — accept by default; the dial layer will fail
+  // later if the hostname resolves to a private range.
+  return true;
+}
+
+export function filterDialableMultiaddrs(
+  addrs: readonly string[],
+  mode: DialableAddrMode = "wan-public",
+): string[] {
   const out: string[] = [];
   for (const addr of addrs) {
     const trimmed = addr.trim();
     if (!trimmed) continue;
-    const ip4 = trimmed.match(/\/ip4\/([0-9.]+)/)?.[1];
-    if (ip4 && (ip4.startsWith("127.") || ip4 === "0.0.0.0")) continue;
-    if (trimmed.includes("/ip6/::1")) continue;
+    if (isLoopbackOrUnspec(trimmed)) continue;
+    if (mode === "wan-public" && !isPublicRoutable(trimmed)) continue;
     out.push(trimmed);
   }
   return out.slice(0, 8);
@@ -95,7 +164,17 @@ export async function createWanJoinInviteViaRuntime(
   const reachable = deps.getMesh() ?? deps.getExternalMesh();
   const expiresInHours = clampWanJoinInviteExpiresInHours(params?.expiresInHours);
   const now = new Date();
-  const targetMultiaddrs = filterDialableMultiaddrs(reachable?.multiaddrs ?? []);
+  // WAN join invites cross network boundaries by default — strip RFC1918
+  // + CGNAT addresses so the invite doesn't ship LAN-only addresses that
+  // the recipient can't dial. The relay-circuit multiaddrs (e.g. via
+  // 47.93.11.212) survive this filter — they are public if the relay is.
+  // Callers that explicitly know the recipient is on the same LAN (e.g.
+  // mobile pairing kiosk) can opt back in with `addressFilter: "lan-paired"`.
+  const addressFilter: DialableAddrMode = params?.addressFilter ?? "wan-public";
+  const targetMultiaddrs = filterDialableMultiaddrs(
+    reachable?.multiaddrs ?? [],
+    addressFilter,
+  );
   const compact = params?.compact === true;
   const invite = {
     v: 1 as const,

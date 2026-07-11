@@ -12,7 +12,7 @@
  * the sponsor's `bondAutonomy.sponsorProofToken` doesn't match the
  * bundled `proofOfContext` — the tile surfaces a hint to copy-paste).
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useT } from "../../context/I18nContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { parseContactCode } from "../../lib/discover-contact-code.js";
@@ -47,14 +47,71 @@ export function SponsorSetupTile() {
       if (s.state?.completedAt && runState.kind === "idle") {
         setRunState({ kind: "succeeded" });
       }
+      return s;
     } catch {
       // transient — leave last-known state in place
+      return null;
     }
   }, [nodeService, runState.kind]);
 
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  // Auto-trigger the sponsor setup loop on mount when the persisted
+  // status shows a previous failure (or no completion yet) and the tile
+  // is eligible. The runtime's single-flight guard (`activeSponsorLoops`
+  // set in `node-service-setup-sponsor-friend.ts`) means this is safe
+  // to call even if NodeStateContext's auto-trigger already fired — the
+  // second caller just gets `running: true` and the loop continues.
+  //
+  // Without this, the tile would sit at "Not started yet" / "Couldn't
+  // reach {name}" until the user clicks Retry, even though the loop
+  // would happily start on its own once the user interacts. The
+  // auto-trigger brings the tile's `runState` in sync with what the
+  // runtime is actually doing.
+  const autoTriggeredRef = useRef(false);
+  useEffect(() => {
+    // Wait for the first status fetch to land before deciding.
+    if (autoTriggeredRef.current) return;
+    if (!status) return;
+    if (!status.config.enabled || !status.config.ownerId) return;
+    if (status.state?.completedAt) return; // nothing to retry
+    autoTriggeredRef.current = true;
+    void (async () => {
+      try {
+        const result = await nodeService.runSetupSponsorFriend();
+        if (result.running) {
+          // Loop started (or was already in flight). Tile moves to
+          // "Connecting…" — polling will surface the final state.
+          setRunState({ kind: "running" });
+          await refresh();
+        } else if (result.ok) {
+          setRunState({ kind: "succeeded", helloMessageId: result.helloMessageId });
+        } else if (result.skipped) {
+          setRunState({ kind: "skipped", reason: result.reason ?? "skipped" });
+        } else {
+          setRunState({ kind: "failed", reason: result.reason ?? "sponsor hello failed" });
+        }
+      } catch (e) {
+        // Mid-RPC WS drop is common during the long sendHello call —
+        // fall through to the next handler below which re-polls the
+        // status to learn the truth instead of demoting to "failed".
+        const message = e instanceof Error ? e.message : String(e);
+        setRunState({ kind: "running" });
+        const latest = await refresh();
+        if (!latest?.state?.lastError) {
+          // Polling didn't surface a failure either — the loop is
+          // probably healthy and the WS error was a transient blip.
+          // Keep "running" and let the next poll cycle report the
+          // outcome.
+          return;
+        }
+        // Polling confirmed the loop has already failed. Surface it.
+        setRunState({ kind: "failed", reason: message });
+      }
+    })();
+  }, [status, nodeService, refresh]);
 
   // Poll periodically while the tile is active so background activity
   // (NodeStateContext's auto-trigger, the runtime persisting per-attempt
@@ -108,7 +165,25 @@ export function SponsorSetupTile() {
       }
       await refresh();
     } catch (e) {
-      setRunState({ kind: "failed", reason: e instanceof Error ? e.message : String(e) });
+      // Mid-RPC WS drop: the server's heartbeat may have terminated us
+      // while sendHello was blocking the node event loop. The runtime
+      // loop is likely still healthy — re-poll the status to learn
+      // whether it had already classified a failure, and only demote
+      // to "failed" if the persisted state confirms it.
+      const message = e instanceof Error ? e.message : String(e);
+      const latest = await refresh();
+      if (latest?.state?.lastError) {
+        setRunState({ kind: "failed", reason: latest.state.lastError });
+      } else {
+        // No persisted failure → the loop is probably still running.
+        // Stay in "running" and let the polling useEffect surface the
+        // outcome. This prevents the "flash and show Retry" UX when a
+        // transient WS blip happens during the loop.
+        setRunState({ kind: "running" });
+      }
+      // Suppress unused-var warning for `message` (kept for the case
+      // where a future change wants to surface it).
+      void message;
     }
   }, [nodeService, refresh]);
 

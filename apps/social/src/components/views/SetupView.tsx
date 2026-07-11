@@ -6,7 +6,7 @@ import { useToastOptional } from "../../hooks/useToast.js";
 import { networkPresetById, type NetworkPresetId } from "../../lib/network-presets.js";
 import { markFirstRunSetupComplete } from "../../lib/storage.js";
 import { isTauriShell, restartTauriNodeProcess } from "../../lib/tauri-shell.js";
-import { SUGGESTED_TOPICS } from "../../lib/display.js";
+import { SUGGESTED_TOPICS, INTEREST_CATEGORIES } from "../../lib/display.js";
 import { getCurrentPosition } from "../../lib/geolocation-adapter.js";
 import type {
   ModelProviderConfig,
@@ -146,6 +146,21 @@ export function SetupView({ waitingForNode = false }: { waitingForNode?: boolean
       prev.includes(slug) ? prev.filter((t) => t !== slug) : [...prev, slug],
     );
   };
+  const addCustomInterest = () => {
+    const v = customInterestInput.trim();
+    if (!v) return;
+    toggleInterest(v);
+    setCustomInterestInput("");
+  };
+  // Suggested = any slug that appears in SUGGESTED_TOPICS. Custom = everything
+  // else the user has typed. Splitting the two lets us render the "Your picks"
+  // group only when there are custom entries — otherwise we'd render an empty
+  // section just to say "no custom interests yet".
+  const suggestedSet = useMemo(() => new Set(SUGGESTED_TOPICS), []);
+  const customSelected = useMemo(
+    () => selectedInterests.filter((i) => !suggestedSet.has(i)),
+    [selectedInterests, suggestedSet],
+  );
 
   const detectLocation = async (): Promise<void> => {
     setLocationError(null);
@@ -433,102 +448,123 @@ export function SetupView({ waitingForNode = false }: { waitingForNode?: boolean
 
           {step === "interests" && (
             <>
-              <div className="form-group">
+              <div className="form-group setup-interests-header">
                 <label>{t("setup.interestsTitle")}</label>
                 <p className="field-desc">{t("setup.interestsLede")}</p>
               </div>
 
-              {/* Selected interests counter — prominent feedback */}
+              {/* Selected interests counter — compact pill that turns green
+                  when the MIN_INTERESTS threshold is met. Sits above the
+                  category grid so the user can see progress at a glance
+                  without scrolling. */}
               <div className={`setup-interests-counter ${interestsRemaining === 0 ? "setup-interests-counter--complete" : ""}`}>
-                {interestsRemaining === 0 ? (
-                  <span>✅ {t("setup.interestsSelected", { count: selectedInterests.length })}</span>
-                ) : (
-                  <span>⬡ {t("setup.interestsMinHint", { count: interestsRemaining })}</span>
-                )}
+                {interestsRemaining === 0
+                  ? <span>✓ {t("setup.interestsSelected", { count: selectedInterests.length })}</span>
+                  : <span>⬡ {t("setup.interestsMinHint", { count: interestsRemaining })}</span>}
               </div>
 
-              {/* Suggested topics — click to toggle, show checkmark when active */}
-              <div className="form-group">
-                <div className="topic-chips setup-topic-chips" role="group" aria-label={t("setup.stepInterests")}>
-                  {SUGGESTED_TOPICS.map((topic) => {
-                    const active = selectedInterests.includes(topic.toLowerCase());
-                    return (
-                      <button
-                        key={topic}
-                        type="button"
-                        className={`topic-chip${active ? " topic-chip--active" : ""}`}
-                        aria-pressed={active}
-                        onClick={() => toggleInterest(topic)}
-                      >
-                        {active ? "✓ " : ""}{topic}
-                      </button>
-                    );
-                  })}
-                </div>
+              {/* Categorized suggested topics. Each topic is a chip with
+                  a checkmark when active. The single "all selected"
+                  duplicate list that used to live at the bottom of the
+                  step is gone — the top chips already show selection
+                  state, so re-listing them was just visual noise. */}
+              <div className="form-group setup-interests-categories" role="group" aria-label={t("setup.stepInterests")}>
+                {INTEREST_CATEGORIES.map((category) => {
+                  // Look up the localized label by category id. Falls back
+                  // to the English literal from display.ts when a locale
+                  // hasn't translated the new key — same fallback path
+                  // the rest of the setup strings use.
+                  const labelKey =
+                    `setup.interestsCategory${
+                      category.id.charAt(0).toUpperCase() + category.id.slice(1)
+                    }` as const;
+                  return (
+                  <div key={category.id} className="setup-interests-category">
+                    <div className="setup-interests-category__head">
+                      <span className="setup-interests-category__icon" aria-hidden>{category.icon}</span>
+                      <span className="setup-interests-category__label">{t(labelKey, category.label)}</span>
+                    </div>
+                    <div className="topic-chips setup-interests-category__chips">
+                      {category.topics.map((topic) => {
+                        const active = selectedInterests.includes(topic);
+                        return (
+                          <button
+                            key={topic}
+                            type="button"
+                            className={`topic-chip${active ? " topic-chip--active" : ""}`}
+                            aria-pressed={active}
+                            onClick={() => toggleInterest(topic)}
+                          >
+                            {active ? "✓ " : ""}{topic}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  );
+                })}
+
+                {/* Custom picks — only rendered when the user has added
+                    at least one. Putting them in a labeled section (not
+                    the duplicate full-list we had before) keeps the
+                    visual scope clean: this group grows only when the
+                    user types. Click to remove. */}
+                {customSelected.length > 0 ? (
+                  <div className="setup-interests-category setup-interests-category--custom">
+                    <div className="setup-interests-category__head">
+                      <span className="setup-interests-category__icon" aria-hidden>✨</span>
+                      <span className="setup-interests-category__label">{t("setup.interestsCategoryYours", "Your picks")}</span>
+                    </div>
+                    <div className="topic-chips setup-interests-category__chips">
+                      {customSelected.map((topic) => (
+                        <button
+                          key={topic}
+                          type="button"
+                          className="topic-chip topic-chip--active topic-chip--custom"
+                          aria-pressed={true}
+                          onClick={() => toggleInterest(topic)}
+                          title={t("setup.interestsRemove", "Click to remove")}
+                        >
+                          ✓ {topic} <span className="topic-chip__remove" aria-hidden>✕</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
               </div>
 
-              {/* Custom interest input — wider, clearer affordance */}
+              {/* Custom interest input — full-width field with the Add
+                  button stacked underneath (not crammed next to the
+                  input, which made the field unusable on narrow viewports).
+                  Enter inside the input also submits. */}
               <div className="form-group setup-add-interest">
                 <label htmlFor="setup-custom-interest">{t("setup.interestsAddOwn")}</label>
-                <div className="setup-add-interest__row">
-                  <input
-                    id="setup-custom-interest"
-                    type="text"
-                    className="setup-add-interest__input"
-                    value={customInterestInput}
-                    onChange={(e) => setCustomInterestInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        const v = customInterestInput.trim();
-                        if (v) {
-                          toggleInterest(v);
-                          setCustomInterestInput("");
-                        }
-                      }
-                    }}
-                    placeholder={t("setup.interestsAddOwnPlaceholder")}
-                  />
-                  <button
-                    type="button"
-                    className="btn-secondary setup-add-interest__btn"
-                    disabled={!customInterestInput.trim()}
-                    onClick={() => {
-                      const v = customInterestInput.trim();
-                      if (v) {
-                        toggleInterest(v);
-                        setCustomInterestInput("");
-                      }
-                    }}
-                  >
-                    {t("setup.interestsAdd")}
-                  </button>
-                </div>
+                <input
+                  id="setup-custom-interest"
+                  type="text"
+                  className="setup-add-interest__input"
+                  value={customInterestInput}
+                  onChange={(e) => setCustomInterestInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      addCustomInterest();
+                    }
+                  }}
+                  placeholder={t("setup.interestsAddOwnPlaceholder")}
+                />
+                <button
+                  type="button"
+                  className="primary setup-add-interest__btn"
+                  disabled={!customInterestInput.trim()}
+                  onClick={addCustomInterest}
+                >
+                  {t("setup.interestsAdd")}
+                </button>
                 <small className="setup-add-interest__hint">
                   {t("setup.interestsAddHint", "Type a topic and press Enter or click Add")}
                 </small>
               </div>
-
-              {/* All selected interests (including custom) — removable chips */}
-              {selectedInterests.length > 0 ? (
-                <div className="form-group">
-                  <label>{t("setup.interestsYourSelection", "Your selected interests:")}</label>
-                  <div className="topic-chips setup-topic-chips setup-selected-interests">
-                    {selectedInterests.map((i) => (
-                      <button
-                        key={i}
-                        type="button"
-                        className="topic-chip topic-chip--selected"
-                        aria-pressed={true}
-                        onClick={() => toggleInterest(i)}
-                        title={t("setup.interestsRemove", "Click to remove")}
-                      >
-                        ✓ {i} <span className="topic-chip__remove">✕</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
 
               <div className="form-group setup-location">
                 <label>{t("setup.locationTitle")}</label>

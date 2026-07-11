@@ -105,11 +105,20 @@ export const setupMessages = {
   interestsMinHint: "Select at least {count} more",
   interestsSelected: "{count} selected",
   interestsAddOwn: "Add your own",
-  interestsAddOwnPlaceholder: "e.g. cycling, jazz, ml",
+  interestsAddOwnPlaceholder: "e.g. cycling, jazz, indie games",
   interestsAddHint: "Type a topic and press Enter or click Add",
   interestsYourSelection: "Your selected interests:",
   interestsRemove: "Click to remove",
   interestsAdd: "Add",
+  // Section labels inside the categorized interests grid. Keys rather than
+  // hard-coded strings so translators can localize them; English is the
+  // source of truth and other locales fall back via the i18n layer until
+  // they're explicitly translated.
+  interestsCategoryCreative: "Creative",
+  interestsCategoryTech: "Tech",
+  interestsCategoryEntertainment: "Entertainment",
+  interestsCategoryLifestyle: "Lifestyle",
+  interestsCategoryYours: "Your picks",
   locationTitle: "Find people near you?",
   locationLede: "Sharing a coarse location helps surface nearby contacts. We use a city-level geohash — never your exact spot.",
   locationUseRecommended: "Use my location (recommended)",

@@ -44,6 +44,17 @@ export class WsServer {
   private readonly authenticatedClients = new Map<WebSocket, string>();
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private readonly heartbeatIntervalMs = 30000; // 30 seconds
+  /**
+   * How many consecutive missed pongs to tolerate before terminating a
+   * client. The runtime can be busy for tens of seconds on a single
+   * `sendHello` dial (e.g. the sponsor-friend auto-trigger path
+   * dials multiple private addresses that ECONNREFUSED, each taking
+   * the full 3.5s dial timeout). One missed pong is too aggressive —
+   * the node is healthy, it's just slow. 3 missed pongs (90s of slack)
+   * gives long-running RPCs room to finish without the WS server
+   * tearing down the social-app connection.
+   */
+  private readonly heartbeatMissedPongsTolerance = 3;
   private onConnectionChange?: (connectedCount: number) => void;
   /** Per-client queue tail for dial/send RPCs (reads run concurrently). */
   private readonly slowRpcTail = new WeakMap<WebSocket, Promise<void>>();
@@ -169,12 +180,21 @@ export class WsServer {
   private startHeartbeat(): void {
     this.heartbeatInterval = setInterval(() => {
       this.wss.clients.forEach((ws) => {
-        if ((ws as any).isAlive === false) {
-          console.log("[ws-server] Terminating inactive client");
+        // We use a missed-pongs counter instead of a single isAlive flag
+        // so the server can ride out a long `sendHello` dial without
+        // tearing down a healthy client. One missed pong is normal under
+        // load (libp2p dialing private addresses can monopolize the
+        // event loop for tens of seconds); only N consecutive misses
+        // (default 3, ~90s of slack) actually terminate.
+        const missed = ((ws as any).missedPongs as number | undefined) ?? 0;
+        if (missed >= this.heartbeatMissedPongsTolerance) {
+          console.log(
+            `[ws-server] Terminating client after ${missed} consecutive missed pongs`,
+          );
           ws.terminate();
           return;
         }
-        (ws as any).isAlive = false;
+        (ws as any).missedPongs = missed + 1;
         ws.ping();
       });
     }, this.heartbeatIntervalMs);
@@ -287,10 +307,12 @@ export class WsServer {
       console.error(`[ws-server] Client ${clientId} error:`, error);
     });
 
-    // Track client for heartbeat
-    (ws as any).isAlive = true;
+    // Track client for heartbeat. The counter resets on every pong the
+    // server receives; missedPongs only climbs when pong responses stall
+    // (e.g. the node's event loop is busy with a long sendHello dial).
+    (ws as any).missedPongs = 0;
     ws.on("pong", () => {
-      (ws as any).isAlive = true;
+      (ws as any).missedPongs = 0;
     });
 
     // Auto-subscribe to all events for this client (push all events without explicit "on" subscription)

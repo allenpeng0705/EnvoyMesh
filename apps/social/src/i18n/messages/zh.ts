@@ -520,6 +520,14 @@ export const zh = mergeMessages(en, {
     interestsAddOwn: "添加自定义",
     interestsAddOwnPlaceholder: "例如：骑行、爵士、机器学习",
     interestsAdd: "添加",
+    // Categorized interest grid labels (Phase 11+ redesign).
+    // Falls back to English in en bundle; other locales inherit via
+    // mergeMessages(en, overrides).
+    interestsCategoryCreative: "创意",
+    interestsCategoryTech: "科技",
+    interestsCategoryEntertainment: "娱乐",
+    interestsCategoryLifestyle: "生活",
+    interestsCategoryYours: "我的选择",
     locationTitle: "寻找附近的人？",
     locationLede: "分享粗略位置有助于发现附近的联系人。我们只使用城市级 geohash — 绝不会暴露你的精确位置。",
     locationUseRecommended: "使用我的位置（推荐）",

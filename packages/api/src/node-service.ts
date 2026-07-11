@@ -687,6 +687,21 @@ export type PinLibraryItemExternalResult =
   | { ok: true; cid: string; provider: import("./ipfs-pinning.js").IpfsPinningProvider; pinId?: string }
   | { ok: false; error: string };
 
+/**
+ * Address filter mode for outbound WAN join invites / contact codes.
+ *
+ *   - `"wan-public"` (default) — strip RFC1918 + CGNAT + link-local so
+ *     the invite doesn't ship LAN-only addresses that the recipient
+ *     can't dial from another network. Use for any invite that may be
+ *     sent cross-network (DMG-baked sponsor-friend, share-contact QR,
+ *     public join link).
+ *   - `"lan-paired"` — keep private addresses. Use only for explicit
+ *     "the recipient is on this LAN" flows (mobile pairing kiosk, local
+ *     home pairing).
+ *   - `"all"` — historical behavior. Strips only loopback / unspecified.
+ */
+export type DialableAddrMode = "lan-paired" | "wan-public" | "all";
+
 export interface CreateWanJoinInviteParams {
   /** Hours until invite expires (default 168 = 7 days, max 8760 = 1 year). */
   expiresInHours?: number;
@@ -696,6 +711,13 @@ export interface CreateWanJoinInviteParams {
    * Produces a smaller token for contact links (full link copy, not QR payload).
    */
   compact?: boolean;
+  /**
+   * Which multiaddr classes to include for the target node. Default
+   * `"wan-public"` because the most common use case is cross-network.
+   * Set to `"lan-paired"` only for flows where the recipient is on the
+   * same network as the sender (e.g. mobile pairing kiosk).
+   */
+  addressFilter?: DialableAddrMode;
 }
 
 export interface CreateWanJoinInviteResult {

@@ -26,6 +26,38 @@ export const SUGGESTED_TOPICS = [
   "news", "sports", "fashion", "photography", "coding",
 ];
 
+/**
+ * Grouped version of {@link SUGGESTED_TOPICS} used by the first-run setup
+ * interests step. A flat 15-item row reads as a wall of chips; splitting
+ * into 4 categories with labels gives the user a sense of where to look
+ * for what. Order matters: each topic in a category appears in the order
+ * listed. Custom (user-typed) interests land in a synthetic "Your picks"
+ * category rendered separately so they never get hidden by the suggested
+ * list scrolling.
+ *
+ * Icon choice: kept to single-glyph emoji that render in the system font
+ * (no emoji font dependency on Linux/Tauri WebView). The list reads
+ * consistently cross-platform; if a glyph is missing on some
+ * environment it degrades to a tofu box, not an empty space.
+ */
+export interface InterestCategory {
+  /** Stable id for React keys + tests. */
+  id: string;
+  /** Human label. Localized at the call site. */
+  label: string;
+  /** Single-glyph icon — emoji works in Tauri WebView and browser. */
+  icon: string;
+  /** Topic slugs in display order. */
+  topics: string[];
+}
+
+export const INTEREST_CATEGORIES: readonly InterestCategory[] = [
+  { id: "creative",  label: "Creative",     icon: "🎨", topics: ["art", "photography", "music", "fashion"] },
+  { id: "tech",      label: "Tech",         icon: "💻", topics: ["tech", "coding", "science", "gaming"] },
+  { id: "entertainment", label: "Entertainment", icon: "🎬", topics: ["movies", "books", "news"] },
+  { id: "lifestyle", label: "Lifestyle",    icon: "🏃", topics: ["travel", "food", "fitness", "sports"] },
+] as const;
+
 /** Plain-language bond level for contact lists. */
 export function bondLevelLabel(level: string | undefined): string {
   switch (level) {

@@ -4,6 +4,7 @@
  */
 
 import { WS_LOOPBACK_URL } from "@envoymesh/api";
+import { detectBrowserLocale } from "../i18n/types.js";
 
 /** macOS often resolves `localhost` to IPv6 ::1 while the node binds IPv4 — normalize saved URLs. */
 export function normalizeLoopbackWsUrl(url: string): string {
@@ -103,7 +104,23 @@ export function loadAppSettings(): AppSettings {
   if (devOverride) {
     wsUrl = normalizeLoopbackWsUrl(devOverride);
   }
-  return { ...loaded, wsUrl };
+  // Auto-detect locale on first launch (when the user has never explicitly
+  // picked one and the stored value is the default "en"). Falls back to
+  // navigator.language → matched to one of the 7 supported locales. Once
+  // the user picks anything in Settings or the header dropdown, the
+  // explicit value lands in localStorage and this branch is skipped.
+  let locale = loaded.locale?.trim() || defaults.locale;
+  if (locale === DEFAULT_APP_SETTINGS.locale) {
+    // Only auto-detect when the user hasn't picked a different locale yet.
+    // The detection only runs on first launch because the persisted
+    // value will be either the default "en" (no real choice) or a
+    // locale the user explicitly selected.
+    const detected = detectBrowserLocale();
+    if (detected !== DEFAULT_APP_SETTINGS.locale) {
+      locale = detected;
+    }
+  }
+  return { ...loaded, wsUrl, locale };
 }
 
 export function saveAppSettings(settings: AppSettings): void {

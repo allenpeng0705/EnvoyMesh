@@ -1,6 +1,8 @@
 /**
  * Unit tests for extracted OpenClaw runtime module.
  */
+import type { ChildProcess } from "node:child_process";
+import { EventEmitter } from "node:events";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,9 +23,53 @@ import {
   rejectAllPendingOpenClawReplies,
   resolveOpenClawReply,
   stopOpenClawViaRuntime,
+  waitForOpenClawChildExit,
   waitForOpenClawReply,
   type OpenClawRuntimeState,
 } from "../src/node-service-openclaw-runtime.js";
+
+/**
+ * Minimal ChildProcess mock — only the surface `waitForOpenClawChildExit`
+ * actually uses: `kill`, `once`, and the `exitCode` / `signalCode` / `killed`
+ * flags. Emits real `exit` events on demand so the test can drive the
+ * lifecycle deterministically.
+ *
+ * `killed` is set to `true` only AFTER the OS has reaped the process
+ * (i.e. after `emitExit` is called), NOT when `kill()` is invoked. In
+ * real life, `child.killed` flips true once the signal has actually been
+ * delivered, but Node's own semantics make it a flag the *parent* sets to
+ * indicate "I sent a kill" — for our helper's purposes, we want the
+ * early-return guard (`child.killed`) to mean "the process is gone",
+ * which only becomes true after the reaper observes the exit.
+ */
+function makeFakeChild(): ChildProcess & {
+  emitExit: (code: number | null) => void;
+  killCalls: Array<NodeJS.Signals | undefined>;
+} {
+  const ee = new EventEmitter();
+  const killCalls: Array<NodeJS.Signals | undefined> = [];
+  const child = {
+    killed: false,
+    exitCode: null as number | null,
+    signalCode: null as NodeJS.Signals | null,
+    kill: vi.fn((signal?: NodeJS.Signals) => {
+      killCalls.push(signal);
+      // Do NOT flip `killed` here — the wait-for-exit helper would
+      // short-circuit. `killed` reflects reaper observation, not signal
+      // delivery. emitExit() is what marks the child as gone.
+      return true;
+    }) as unknown as ChildProcess["kill"],
+    once: ee.once.bind(ee) as unknown as ChildProcess["once"],
+    on: ee.on.bind(ee) as unknown as ChildProcess["on"],
+    emit: ee.emit.bind(ee) as unknown as ChildProcess["emit"],
+    emitExit: (code: number | null) => {
+      child.exitCode = code;
+      child.killed = true;
+      ee.emit("exit", code, null);
+    },
+  };
+  return Object.assign(child, { killCalls });
+}
 
 describe("OpenClaw runtime state helpers", () => {
   let state: OpenClawRuntimeState;
@@ -111,18 +157,51 @@ describe("isOpenClawReadyViaRuntime", () => {
 
 describe("stopOpenClawViaRuntime", () => {
   it("clears pending replies and gateway state", async () => {
-    const state = createOpenClawRuntimeState();
-    state.gatewayReady = true;
-    state.gatewayChild = { killed: false, kill: vi.fn() } as never;
-    const pending = waitForOpenClawReply(state, "oc-stop");
-    pending.catch(() => {});
+    vi.useFakeTimers();
+    try {
+      const state = createOpenClawRuntimeState();
+      state.gatewayReady = true;
+      const fakeChild = makeFakeChild();
+      state.gatewayChild = fakeChild as unknown as ChildProcess;
+      const pending = waitForOpenClawReply(state, "oc-stop");
+      pending.catch(() => {});
 
-    await stopOpenClawViaRuntime(state, {} as never);
+      const p = stopOpenClawViaRuntime(state, {} as never);
+      // Run the SIGTERM → 3s grace → SIGKILL → 250ms settle sequence.
+      fakeChild.emitExit(0);
+      await vi.runAllTimersAsync();
+      await p;
 
-    expect(state.gatewayReady).toBe(false);
-    expect(state.gatewayChild).toBeNull();
-    expect(state.pendingReplies.size).toBe(0);
-    expect(state.runtime).toBeNull();
+      expect(state.gatewayReady).toBe(false);
+      expect(state.gatewayChild).toBeNull();
+      expect(state.pendingReplies.size).toBe(0);
+      expect(state.runtime).toBeNull();
+      // The runtime sent SIGTERM (graceful path), not SIGKILL.
+      expect(fakeChild.killCalls).toEqual(["SIGTERM"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("escalates to SIGKILL and waits when the child is stuck during graceful stop", async () => {
+    vi.useFakeTimers();
+    try {
+      const state = createOpenClawRuntimeState();
+      const fakeChild = makeFakeChild();
+      state.gatewayChild = fakeChild as unknown as ChildProcess;
+
+      const p = stopOpenClawViaRuntime(state, {} as never);
+      // Burn through the full 3s grace — child never emits 'exit'.
+      await vi.advanceTimersByTimeAsync(3000);
+      // Helper escalates to SIGKILL, then waits 250ms for the OS to reap.
+      await vi.advanceTimersByTimeAsync(250);
+      await p;
+
+      expect(fakeChild.killCalls).toEqual(["SIGTERM", "SIGKILL"]);
+      expect(state.gatewayChild).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -215,3 +294,63 @@ describe("OpenClaw error tracking (lastError surface for settings UI)", () => {
 // OpenClawRuntimeDeps surface fully would be a brittle integration test
 // for the unit suite. TypeScript pins the returned status shape at
 // compile time.
+
+describe("waitForOpenClawChildExit (watchdog restart-loop guard)", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("resolves immediately when the child has already exited", async () => {
+    const child = makeFakeChild();
+    child.exitCode = 0;
+    await expect(
+      waitForOpenClawChildExit(child, { graceMs: 1500 }),
+    ).resolves.toBeUndefined();
+    expect(child.kill).not.toHaveBeenCalled();
+  });
+
+  it("resolves immediately when the child was already killed", async () => {
+    const child = makeFakeChild();
+    child.killed = true;
+    await expect(
+      waitForOpenClawChildExit(child, { graceMs: 1500 }),
+    ).resolves.toBeUndefined();
+    expect(child.kill).not.toHaveBeenCalled();
+  });
+
+  it("resolves when the child emits 'exit' within the grace window", async () => {
+    const child = makeFakeChild();
+    const p = waitForOpenClawChildExit(child, { graceMs: 1500 });
+    // Exit before the grace timer fires.
+    await vi.advanceTimersByTimeAsync(500);
+    child.emitExit(0);
+    await expect(p).resolves.toBeUndefined();
+    expect(child.kill).not.toHaveBeenCalled();
+  });
+
+  it("sends SIGKILL and resolves after the kill grace when the child is stuck", async () => {
+    const child = makeFakeChild();
+    const p = waitForOpenClawChildExit(child, { graceMs: 1500 });
+    // Burn through the 1.5s grace — child never emits 'exit'.
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(child.kill).toHaveBeenCalledWith("SIGKILL");
+    // Then the 250ms kill-settle window.
+    await vi.advanceTimersByTimeAsync(250);
+    await expect(p).resolves.toBeUndefined();
+  });
+
+  it("treats a slow SIGTERM exit as success (does not escalate to SIGKILL)", async () => {
+    // Simulates the real happy path: child receives SIGTERM, runs cleanup,
+    // emits 'exit' 1.2s later — comfortably inside the 1.5s grace window.
+    const child = makeFakeChild();
+    const p = waitForOpenClawChildExit(child, { graceMs: 1500 });
+    await vi.advanceTimersByTimeAsync(1200);
+    child.emitExit(0);
+    await expect(p).resolves.toBeUndefined();
+    // The runtime sent SIGTERM, not us — so the helper never escalates.
+    expect(child.killCalls).toEqual([]);
+  });
+});

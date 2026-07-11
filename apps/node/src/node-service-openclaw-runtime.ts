@@ -92,6 +92,47 @@ export interface OpenClawRuntimeState {
   consecutiveRestartFailures: number;
 }
 
+/**
+ * Module-level set of all currently-running OpenClaw gateway children that
+ * THIS process has spawned. Used by the `process.on("exit", ...)` hook below
+ * to guarantee the gateway is killed even when the parent process exits via
+ * a path that bypasses `stopOpenClawViaRuntime` (e.g. an unhandled rejection
+ * that calls `process.exit(1)`, or a Tauri-side SIGTERM that races with the
+ * graceful shutdown chain).
+ *
+ * `process.on("exit")` is the right hook: it runs synchronously on every
+ * normal exit (including `process.exit(0)`), and can only do sync work —
+ * which is exactly what `child.kill("SIGKILL")` is. The OS reaps the child
+ * asynchronously; the next-start orphan cleanup picks up any lock residue.
+ * SIGKILL of the parent itself cannot be caught here, but Tauri is the
+ * parent of node, not us, and Tauri already sends SIGTERM to node first.
+ */
+const activeOpenClawGatewayChildren = new Set<ChildProcess>();
+let openClawExitHookInstalled = false;
+
+function installOpenClawExitHookOnce(): void {
+  if (openClawExitHookInstalled) return;
+  openClawExitHookInstalled = true;
+  process.on("exit", () => {
+    for (const child of activeOpenClawGatewayChildren) {
+      if (child.killed || child.exitCode != null || child.signalCode != null) continue;
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        /* best-effort — child may have just exited, or we may lack permission */
+      }
+    }
+  });
+}
+
+function trackOpenClawGatewayChild(child: ChildProcess): void {
+  installOpenClawExitHookOnce();
+  activeOpenClawGatewayChildren.add(child);
+  child.once("exit", () => {
+    activeOpenClawGatewayChildren.delete(child);
+  });
+}
+
 export function createOpenClawRuntimeState(): OpenClawRuntimeState {
   return {
     runtime: null,
@@ -532,6 +573,48 @@ function setOpenClawGatewayReady(state: OpenClawRuntimeState, ready: boolean): v
   }
 }
 
+/**
+ * Wait for a spawned OpenClaw gateway child to fully exit, sending SIGKILL
+ * if it has not exited within `graceMs`. Returns when the child has emitted
+ * its `exit` event OR when the OS reaps the SIGKILL'd process. Does nothing
+ * if the child is already exited or killed.
+ *
+ * Exported for unit testing — `apps/node/test/node-service-openclaw-runtime.test.ts`.
+ */
+export function waitForOpenClawChildExit(
+  child: ChildProcess,
+  options: { graceMs: number },
+): Promise<void> {
+  if (child.exitCode != null || child.signalCode != null || child.killed) {
+    return Promise.resolve();
+  }
+  return new Promise<void>((resolve) => {
+    let resolved = false;
+    let killGraceTimer: ReturnType<typeof setTimeout> | null = null;
+    const finish = () => {
+      if (resolved) return;
+      resolved = true;
+      clearTimeout(graceTimer);
+      if (killGraceTimer) clearTimeout(killGraceTimer);
+      resolve();
+    };
+    const graceTimer = setTimeout(() => {
+      // Slow or stuck child — escalate to SIGKILL so the OS reaps it and
+      // closes the listening socket. The next acquirer will reclaim the
+      // gateway lock automatically (port-free + PID-dead → owner dead).
+      try {
+        child.kill("SIGKILL");
+      } catch {
+        /* already dead or permission denied */
+      }
+      // Brief settle so the OS reaps the zombie and the kernel releases
+      // the listening port before the new child tries to bind it.
+      killGraceTimer = setTimeout(finish, 250);
+    }, options.graceMs);
+    child.once("exit", finish);
+  });
+}
+
 function assistantGatewayPort(state: OpenClawRuntimeState): number {
   try {
     const u = new URL(state.assistantAgentUrl);
@@ -959,9 +1042,22 @@ async function startOpenClawInner(
     return true;
   }
   if (state.gatewayChild && !state.gatewayChild.killed) {
-    try { state.gatewayChild.kill("SIGTERM"); } catch { /* ignore */ }
+    const oldChild = state.gatewayChild;
     state.gatewayChild = null;
     setOpenClawGatewayReady(state, false);
+    try { oldChild.kill("SIGTERM"); } catch { /* ignore */ }
+    // Wait for the old child to actually exit before spawning the new one.
+    // Without this, the gateway lock is still held by the dying child —
+    // openclaw only releases the lock AFTER its `params.start({...})` server
+    // startup completes (run-loop.ts:855 `finally` → releaseLockIfHeld →
+    // exitProcess). When the watchdog fires because startup is slow or
+    // stuck, the new child can't acquire the lock within the 5s budget
+    // (`acquireGatewayLock` polls, then throws `lock timeout after 5000ms`),
+    // exits, and the watchdog restart-loops. SIGKILL at 1.5s forces the
+    // process out so the OS closes the listening socket and the next
+    // acquirer reclaims the lock (port-free + PID-dead → owner dead →
+    // fs.rm(lockPath) → retry succeeds).
+    await waitForOpenClawChildExit(oldChild, { graceMs: 1500 });
   }
 
   const { existsSync, mkdirSync, writeFileSync, readFileSync } = await import("node:fs");
@@ -1182,6 +1278,11 @@ async function startOpenClawInner(
     // stayed dead until the next user message.
   });
   state.gatewayChild = child;
+  // Register the child with the module-level tracker so the `process.on("exit")`
+  // hook can SIGKILL it if the node process exits via a path that bypasses
+  // `stopOpenClawViaRuntime` (e.g. a Tauri SIGTERM that races with the graceful
+  // shutdown chain, or an unhandled rejection that calls `process.exit(1)`).
+  trackOpenClawGatewayChild(child);
   setOpenClawGatewayReady(state, false);
 
   let gatewayReady = false;
@@ -1299,10 +1400,17 @@ export async function stopOpenClawViaRuntime(
   const proc = state.gatewayChild;
   state.gatewayChild = null;
   if (proc && !proc.killed) {
-    try {
-      proc.kill("SIGTERM");
-      setTimeout(() => { if (!proc.killed) proc.kill("SIGKILL"); }, 3000);
-    } catch { /* ignore */ }
+    // Actually wait for the child to exit. The previous implementation
+    // scheduled SIGKILL via setTimeout(3000) but did not await — if the
+    // parent called `process.exit()` before the 3s elapsed, the SIGKILL
+    // never fired and the openclaw child was orphaned holding the
+    // gateway lock, breaking the next start. We bound the wait at
+    // ~3.25s (3s grace + 250ms OS-reap settle); if the child still
+    // hasn't exited after that, the process.on("exit") hook fires
+    // SIGKILL synchronously when this function returns and the parent
+    // eventually exits.
+    try { proc.kill("SIGTERM"); } catch { /* ignore */ }
+    await waitForOpenClawChildExit(proc, { graceMs: 3000 });
   }
   state.runtime = null;
 }

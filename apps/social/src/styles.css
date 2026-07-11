@@ -5479,66 +5479,140 @@ button:disabled {
 
 /* Setup interests — prominent counter + selected chips */
 .setup-interests-counter {
-  display: inline-block;
-  padding: 0.4rem 0.8rem;
-  border-radius: var(--radius-md);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: var(--radius-full);
   background: var(--color-surface-elevated, var(--color-slate-100));
   font-size: 0.875rem;
   font-weight: 600;
   color: var(--color-text-muted);
-  margin-bottom: 0.75rem;
+  margin: 0 0 1rem 0;
+  border: 1px solid var(--color-border-subtle);
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
 }
 .setup-interests-counter--complete {
   background: color-mix(in srgb, var(--color-success, #22c55e) 15%, transparent);
   color: var(--color-success, #22c55e);
+  border-color: color-mix(in srgb, var(--color-success, #22c55e) 35%, transparent);
 }
-.setup-add-interest__row {
+
+/* Categorized grid of suggested interests. Each category is a soft
+   card with a single-row label + a wrapping row of topic chips. The
+   grid stays in document flow (no fixed heights) so it expands with
+   the count of selected chips without scroll-jacking. */
+.setup-interests-categories {
   display: flex;
-  gap: 0.5rem;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin: 0 0 1.25rem 0;
+}
+.setup-interests-category {
+  padding: 0.85rem 0.9rem 0.95rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-lg);
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+.setup-interests-category:hover {
+  border-color: color-mix(in srgb, var(--color-primary) 25%, var(--color-border-subtle));
+}
+.setup-interests-category--custom {
+  border-style: dashed;
+  background: color-mix(in srgb, var(--color-primary) 4%, var(--color-surface));
+}
+.setup-interests-category__head {
+  display: flex;
   align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0.6rem;
 }
-.setup-add-interest__input {
-  flex: 1;
-  padding: 0.5rem 0.75rem;
-  border: 1px solid var(--color-border, var(--color-slate-200));
-  border-radius: var(--radius-md);
-  font-size: 0.9375rem;
-  min-width: 0;
+.setup-interests-category__icon {
+  font-size: 1.05rem;
+  line-height: 1;
 }
-.setup-add-interest__input:focus {
-  outline: 2px solid var(--color-primary);
-  outline-offset: -1px;
-  border-color: var(--color-primary);
-}
-.setup-add-interest__btn {
-  flex-shrink: 0;
-  padding: 0.5rem 1rem;
-  white-space: nowrap;
-}
-.setup-add-interest__hint {
-  display: block;
-  margin-top: 0.35rem;
+.setup-interests-category__label {
   font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
   color: var(--color-text-muted);
 }
-.setup-selected-interests {
-  margin-top: 0.25rem;
+.setup-interests-category__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  /* Buttons inside a flex row default to `align-items: stretch`,
+     which made every chip fill the row width and look like a stack
+     of full-width cards. Opting into `flex-start` keeps chips at
+     their natural content width. */
+  align-items: flex-start;
 }
-.topic-chip--selected {
-  background: color-mix(in srgb, var(--color-primary) 12%, transparent);
-  color: var(--color-primary);
-  border-color: color-mix(in srgb, var(--color-primary) 30%, transparent);
-  font-weight: 500;
+
+/* Per-chip look. Reuses the existing `.topic-chip` and
+   `.topic-chip--active` from the global stylesheet — this only adds
+   the "custom" variant for chips the user typed (accent border +
+   ✕ affordance to make it obviously removable). */
+.topic-chip--custom {
+  border: 1px solid color-mix(in srgb, var(--color-primary) 40%, transparent);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
 }
-.topic-chip--selected:hover {
+.topic-chip--custom:hover {
   background: color-mix(in srgb, var(--color-danger, #ef4444) 12%, transparent);
   color: var(--color-danger, #ef4444);
   border-color: var(--color-danger, #ef4444);
 }
 .topic-chip__remove {
-  margin-left: 0.25rem;
-  opacity: 0.6;
+  margin-left: 0.15rem;
+  opacity: 0.7;
+  font-size: 0.7rem;
+  line-height: 1;
+}
+
+/* Custom interest input — full-width field, Add button stacked below.
+   The previous design had input + Add side-by-side, which squeezed
+   the input to ~50% width and made it visibly broken on narrow
+   viewports. Stacking keeps both at full width and gives the input
+   the visual weight it deserves. */
+.setup-add-interest {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.setup-add-interest__input {
+  width: 100%;
+  padding: 0.7rem 0.9rem;
+  border: 1px solid var(--color-border, var(--color-slate-200));
+  border-radius: var(--radius-md);
+  font-size: 0.9375rem;
+  font-family: inherit;
+  background: var(--color-bg);
+  color: var(--color-text);
+  box-sizing: border-box;
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+.setup-add-interest__input:focus {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 18%, transparent);
+}
+.setup-add-interest__btn {
+  align-self: flex-start;
+  padding: 0.55rem 1.2rem;
+  white-space: nowrap;
+  font-weight: 600;
+}
+.setup-add-interest__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.setup-add-interest__hint {
+  display: block;
   font-size: 0.75rem;
+  color: var(--color-text-muted);
 }
 
 /* Search Status */
