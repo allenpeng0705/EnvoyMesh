@@ -36,13 +36,16 @@ describe("buildOutboundDialHints", () => {
 
       expect(hints.some((h) => h.includes("bootstrap.libp2p.io"))).toBe(false);
       expect(hints.some((h) => h.includes("/p2p-circuit/p2p/12D3KooW"))).toBe(false);
-      expect(hints.some((h) => h.includes("192.168.1.50"))).toBe(true);
+      // wan-default profile now applies the wan-public address filter, so
+      // the cached LAN listen addr is dropped — the circuit fallback (or
+      // relay.lookup seeds) is the only viable path for a different network.
+      expect(hints.some((h) => h.includes("192.168.1.50"))).toBe(false);
     } finally {
       await rm(profileDir, { recursive: true, force: true });
     }
   });
 
-  it("drops relay circuits when LAN listen addrs exist for the same peer", async () => {
+  it("drops LAN listen addrs and keeps the circuit relay when discoveryProfile is wan-default", async () => {
     const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-dial-hints-lan-circuit-"));
     try {
       const seedStore = createDiscoverySeedStore(profileDir);
@@ -55,24 +58,63 @@ describe("buildOutboundDialHints", () => {
         recipientPeerId: target,
         peerListenAddrs: [`/ip4/192.168.3.78/tcp/4011/p2p/${target}`],
         discoverySeedStore: seedStore,
-        config: undefined,
+        config: undefined, // defaults to wan-public (no discoveryProfile → wan-default)
       });
 
-      expect(hints.some((h) => h.includes("192.168.3.78"))).toBe(true);
-      expect(hints.some((h) => h.includes("/p2p-circuit/"))).toBe(false);
+      // Cached LAN listen addr is dropped — the user's current network can't
+      // dial 192.168.3.x. Circuit relay seed survives the wan-public filter.
+      expect(hints.some((h) => h.includes("192.168.3.78"))).toBe(false);
+      expect(hints.some((h) => h.includes("/p2p-circuit/"))).toBe(true);
     } finally {
       await rm(profileDir, { recursive: true, force: true });
     }
   });
 
-  it("preserves stripped listen addrs when recipient peer ID is known", async () => {
+  it("keeps LAN listen addrs when discoveryProfile is lan-fast (same-network home setup)", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-dial-hints-lan-fast-"));
+    try {
+      const seedStore = createDiscoverySeedStore(profileDir);
+      const target = "12D3KooWLanFastContact";
+      const lanAddr = `/ip4/192.168.3.78/tcp/4011/p2p/${target}`;
+      const hints = await buildOutboundDialHints({
+        recipientPeerId: target,
+        peerListenAddrs: [lanAddr],
+        discoverySeedStore: seedStore,
+        config: {
+          version: "0.1",
+          profileDir,
+          discoveryProfile: "lan-fast",
+          relayEnabled: true,
+          relayServerEnabled: false,
+          advertiseAddrs: [],
+          bootstrapPeers: [DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR],
+          bootstrapPresets: ["cn-relay"],
+          configuredRelays: [],
+          modelProviders: { mode: "mock" },
+          chatAssistEnabled: false,
+          contactAiPreferences: [],
+          updatedAt: new Date().toISOString(),
+        },
+      });
+
+      // lan-fast profile keeps LAN hints — same-LAN direct is faster than relay.
+      expect(hints.some((h) => h.includes("192.168.3.78"))).toBe(true);
+    } finally {
+      await rm(profileDir, { recursive: true, force: true });
+    }
+  });
+
+  it("filters RFC1918 listen addrs at wan-public even when the peer ID matches a stored record", async () => {
+    // The bug we're fixing: a previous same-network session caches the
+    // peer's LAN listen addr (192.168.3.x). On a different network, that
+    // addr is unreachable — the dial burns 30s on a guaranteed-timeout.
+    // With wan-public, the LAN is stripped so the circuit fallback runs
+    // immediately (and still fails fast if the sponsor side is down, but
+    // at least it fails on a dialable address).
     const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-dial-hints-stripped-"));
     try {
       const seedStore = createDiscoverySeedStore(profileDir);
       const target = "12D3KooWN67PannbfXrLPhgJkkRGWGN9UBV3Xfu5UpzdK1dY8qGD";
-      // libp2p peer store strips /p2p/ suffixes from stored addresses.
-      // Without the trailing /p2p/ the snapshot regex does not match,
-      // so isUsableChatDialHint now lets these through.
       const strippedTcp = "/ip4/192.168.3.78/tcp/55093";
       const hints = await buildOutboundDialHints({
         recipientPeerId: target,
@@ -80,7 +122,8 @@ describe("buildOutboundDialHints", () => {
         discoverySeedStore: seedStore,
         config: undefined,
       });
-      expect(hints.some((h) => h.includes("55093"))).toBe(true);
+      // wan-public strips 192.168.3.78 (RFC1918) regardless of /p2p/ suffix.
+      expect(hints.some((h) => h.includes("55093"))).toBe(false);
     } finally {
       await rm(profileDir, { recursive: true, force: true });
     }
@@ -187,6 +230,57 @@ describe("buildOutboundDialHints", () => {
 
       expect(hints.some((h) => h.includes("55093"))).toBe(false);
       expect(hints.some((h) => h.includes("60417"))).toBe(false);
+    } finally {
+      await rm(profileDir, { recursive: true, force: true });
+    }
+  });
+
+  it("regression: dial hint list excludes cached LAN listen addrs when profile is wan-default (sponsor-setup retry-loop fix)", async () => {
+    // The exact bug seen in production on 2026-07-11: sendHello to a peer
+    // we used to share a LAN with was being routed to the cached 192.168.3.85
+    // listen addr first, blocking the 47.93.11.212 circuit fallback. The
+    // dial burned 30s on the LAN addr, the circuit never got tried, and the
+    // sponsor-setup retry loop spun. With wan-public stripping, the LAN is
+    // dropped and the circuit (the only cross-network path) is what the
+    // dial layer actually attempts.
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-dial-hints-regression-"));
+    try {
+      const seedStore = createDiscoverySeedStore(profileDir);
+      const sponsorPeerId = "12D3KooWQsD3ougrAJjmKeevSiY2azE5CKqLjcijyYreS6fUFYCR";
+      const sponsorLanAddr = `/ip4/192.168.3.85/tcp/64589/p2p/${sponsorPeerId}`;
+      const sponsorCircuitSeed =
+        "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo/p2p-circuit/" +
+        `p2p/${sponsorPeerId}`;
+      await seedStore.upsertSuccess(sponsorCircuitSeed, "relay.lookup");
+
+      const hints = await buildOutboundDialHints({
+        recipientPeerId: sponsorPeerId,
+        peerListenAddrs: [sponsorLanAddr],
+        discoverySeedStore: seedStore,
+        config: {
+          version: "0.1",
+          profileDir,
+          discoveryProfile: "wan-default",
+          relayEnabled: true,
+          relayServerEnabled: false,
+          advertiseAddrs: [],
+          bootstrapPeers: [DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR],
+          bootstrapPresets: ["cn-relay"],
+          configuredRelays: [],
+          modelProviders: { mode: "mock" },
+          chatAssistEnabled: false,
+          contactAiPreferences: [],
+          updatedAt: new Date().toISOString(),
+        },
+      });
+
+      // The cached LAN addr is unreachable from the current network — the
+      // previous behavior prioritized it (slow timeout), starving the
+      // circuit fallback. The fix strips it.
+      expect(hints.some((h) => h.includes("192.168.3.85"))).toBe(false);
+      // The circuit relay survives the filter — it's the dialable path.
+      expect(hints.some((h) => h.includes("/p2p-circuit/"))).toBe(true);
+      expect(hints.some((h) => h.includes("47.93.11.212"))).toBe(true);
     } finally {
       await rm(profileDir, { recursive: true, force: true });
     }

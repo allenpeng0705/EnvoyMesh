@@ -1,7 +1,7 @@
 @echo off
 :: EnvoyMesh Relay Server Quick Start Script
 :: For Windows
-:: Usage: run-relay.bat [--profile DIR] [--port PORT] [--advertise IP] [--http-port PORT]
+:: Usage: run-relay.bat [--profile DIR] [--port PORT] [--advertise IP] [--http-port PORT] [--public-mode]
 ::
 :: Always rebuilds apps/relay and its workspace deps before launching.
 :: tsc -b is incremental (1-3 s on no-op), and stale binaries are the #1
@@ -18,6 +18,8 @@ if "%LISTEN_PORT%"=="" set "LISTEN_PORT=4001"
 set "ADVERTISE_ADDR="
 set "HTTP_PORT="
 set "SKIP_REBUILD=0"
+set "PUBLIC_MODE=%ENVOYMESH_RELAY_PUBLIC_MODE%"
+if "%PUBLIC_MODE%"=="" set "PUBLIC_MODE=0"
 
 :: Parse arguments
 :parse_args
@@ -46,6 +48,24 @@ if "%~1"=="--http-port" (
     shift
     goto :parse_args
 )
+if "%~1"=="--public-mode" (
+    :: Apply community-relay presets to circuit-relay-v2: 1024
+    :: reservations, 30 min TTL, 4 MiB data, 60 min duration, 90 s
+    :: hop timeout, 1024 outbound stop streams. Default (off) keeps
+    :: libp2p's embedded-use defaults (15 reservations, 2 min TTL).
+    :: Public mode is the only way a remote peer can reserve a slot
+    :: on this relay when they're not on its allowlist.
+    set "PUBLIC_MODE=1"
+    shift
+    goto :parse_args
+)
+if "%~1"=="--private-mode" (
+    :: Explicit opt-out. Useful when the env var accidentally enabled
+    :: public mode but the operator wants embedded defaults for this run.
+    set "PUBLIC_MODE=0"
+    shift
+    goto :parse_args
+)
 if "%~1"=="--rebuild" (
     :: Accepted for backward compat — build is always on now.
     shift
@@ -71,14 +91,21 @@ echo   --profile ^<dir^>    Profile directory (default: .\data\relay)
 echo   --port ^<port^>      Listen port (default: 4001)
 echo   --advertise ^<IP^>   Public IP for advertise address
 echo   --http-port ^<port^>  HTTP port for /info endpoint (optional)
+echo   --public-mode      Apply community-relay presets to circuit-relay-v2
+echo                      (1024 reservations, 30 min TTL, 4 MiB data, etc.).
+echo                      Default is private mode (libp2p embedded defaults,
+echo                      15 reservations, 2 min TTL) which only serves peers
+echo                      on the relay's allowlist. Public mode accepts any peer.
+echo   --private-mode     Force private mode for this run (overrides env var).
 echo   --rebuild          (legacy no-op — build is always on)
 echo   --no-rebuild       Skip the pre-launch build (escape hatch)
 echo   --help, -h         Show this help
 echo.
 echo Environment variables:
-echo   ENVOYMESH_PROFILE     Profile directory
-echo   ENVOYMESH_BOOTSTRAP   Bootstrap peers (comma-separated)
-echo   RELAY_PORT             Default listen port
+echo   ENVOYMESH_PROFILE          Profile directory
+echo   ENVOYMESH_BOOTSTRAP        Bootstrap peers (comma-separated)
+echo   RELAY_PORT                 Default listen port
+echo   ENVOYMESH_RELAY_PUBLIC_MODE  Set to 1 to enable public mode (default: 0)
 exit /b 0
 
 :run_relay
@@ -128,6 +155,11 @@ if not "%HTTP_PORT%"=="" (
     set "CMD=!CMD! --http-port !HTTP_PORT!"
 )
 
+:: Add public-mode flag if requested
+if "%PUBLIC_MODE%"=="1" (
+    set "CMD=!CMD! --relay-public-mode"
+)
+
 :: Add bootstrap peers if set
 if not "%ENVOYMESH_BOOTSTRAP%"=="" (
     for %%P in (%ENVOYMESH_BOOTSTRAP%) do (
@@ -145,6 +177,12 @@ if not "%ADVERTISE_ADDR%"=="" (
 )
 if not "%HTTP_PORT%"=="" (
     echo   HTTP Info: port %HTTP_PORT% (/info endpoint)
+)
+if "%PUBLIC_MODE%"=="1" (
+    echo   Mode:    PUBLIC ^(1024 reservations, 30 min TTL, 4 MiB data^)
+) else (
+    echo   Mode:    PRIVATE ^(libp2p defaults: 15 reservations, 2 min TTL^)
+    echo            Use --public-mode to accept reservations from non-allowlisted peers
 )
 echo ==========================================
 echo.

@@ -14,10 +14,33 @@ import {
   hasDirectTcpDialHints,
   filterDialHintsForOutboundSend,
 } from "@envoymesh/network";
+import type { DialableAddrMode } from "@envoymesh/api";
 import { expandCircuitDialCandidates } from "./discovery-inbound.js";
 import type { DiscoverySeedStore } from "./discovery-seed-store.js";
 import { createDefaultPersistedNodeConfig, type PersistedNodeConfig } from "./node-config-store.js";
 import { DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR, DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS } from "@envoymesh/api";
+import { filterDialableMultiaddrs } from "./node-service-wan.js";
+
+/**
+ * Map the node's `discoveryProfile` to the right {@link DialableAddrMode}
+ * for outbound dials.
+ *
+ * - `"lan-fast"` — same-LAN home setup; keep RFC1918 / CGNAT so direct
+ *   dials work. (`"all"`)
+ * - everything else (`"wan-default"`, `"relay-only"`, `"contacts-only"`)
+ *   — strip RFC1918 / CGNAT / link-local / ULA. Cached LAN addresses
+ *   from a previous same-network session will be dropped so we don't
+ *   burn 30s dialing addresses that aren't reachable anymore. (`"wan-public"`)
+ *
+ * Callers that need an explicit mode (e.g. same-LAN mobile pairing
+ * kiosk) can pass `addressFilter` directly.
+ */
+function defaultAddressFilterForProfile(
+  config: PersistedNodeConfig | undefined,
+): DialableAddrMode {
+  if (config?.discoveryProfile === "lan-fast") return "all";
+  return "wan-public";
+}
 
 function dedupeDialHints(addrs: string[]): string[] {
   return dedupeDialHintStrings(addrs);
@@ -72,6 +95,13 @@ export async function buildOutboundDialHints(input: {
   profileDir?: string;
   /** Local node listen multiaddrs — same-subnet peers dial first. */
   localListenAddrs?: string[] | undefined;
+  /**
+   * Which multiaddr classes to keep in the final dial hint list. Defaults
+   * to `defaultAddressFilterForProfile(config)` — `wan-public` for any
+   * `discoveryProfile` other than `lan-fast`. Pass explicitly for flows
+   * that need to override (e.g. mobile pairing kiosk on the same LAN).
+   */
+  addressFilter?: DialableAddrMode;
 }): Promise<string[]> {
   const recipientPeerId = input.recipientPeerId.trim();
   const raw = (input.peerListenAddrs ?? []).map((a) => a.trim()).filter(Boolean);
@@ -80,7 +110,10 @@ export async function buildOutboundDialHints(input: {
 
   const store = input.discoverySeedStore;
   if (!store) {
-    return dedupeDialHints(nonLoopListen);
+    return filterDialHintsByAddressFilter(
+      dedupeDialHints(nonLoopListen),
+      input.addressFilter ?? defaultAddressFilterForProfile(input.config),
+    );
   }
 
   const seeds = (await store.listSeedAddrs()).filter((a) => isUsableChatDialHint(a, recipientPeerId));
@@ -115,9 +148,34 @@ export async function buildOutboundDialHints(input: {
     prioritizeDirectLanDialHints(usable),
     input.localListenAddrs,
   );
-  return filterDialHintsForOutboundSend(ordered, recipientPeerId, {
-    preferCircuitHints: !hasDirect,
+  // Apply the address-class filter (wan-public by default for non-lan-fast
+  // profiles). This must happen AFTER prioritization so the surviving order
+  // reflects the prioritization, and BEFORE the circuit-prefer step so
+  // `hasDirect` is computed from what's actually dialable. Without this,
+  // a stale LAN address from a previous same-network session would block
+  // the circuit fallback — the dial would burn 30s on the LAN address,
+  // time out, and only then try the circuit, repeating every retry.
+  const addressFilter = input.addressFilter ?? defaultAddressFilterForProfile(input.config);
+  const filtered = filterDialHintsByAddressFilter(ordered, addressFilter);
+  const hasSurvivingDirect = hasDirectTcpDialHints(filtered);
+  return filterDialHintsForOutboundSend(filtered, recipientPeerId, {
+    preferCircuitHints: !hasSurvivingDirect,
   });
+}
+
+/**
+ * Apply the {@link DialableAddrMode} filter to a list of multiaddrs. Used
+ * at the end of `buildOutboundDialHints` to strip cached LAN/CGNAT addresses
+ * that the current network can't actually dial. Kept as a thin wrapper
+ * (not inlined) so the rule lives in one place — `filterDialableMultiaddrs`
+ * in `node-service-wan.ts` is the single source of truth.
+ */
+function filterDialHintsByAddressFilter(
+  addrs: readonly string[],
+  mode: DialableAddrMode,
+): string[] {
+  if (mode === "all") return [...addrs];
+  return filterDialableMultiaddrs([...addrs], mode);
 }
 
 /** Parse dotted IPv4 from a libp2p multiaddr string. */
