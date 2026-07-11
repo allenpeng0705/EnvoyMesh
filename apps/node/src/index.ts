@@ -147,6 +147,7 @@ import { chatSenderActorFromEnvelope, resolveEmpSupportedCapabilities } from "@e
 import { buildSignedChatDeliveredEnvelope } from "@envoymesh/api/chat-delivered";
 import { verifyInboundChatDevice, formatChatSenderDisplayName, bindDeviceAuthorizationStore } from "./chat-device-auth.js";
 import { chatWireAttachmentsToContent } from "@envoymesh/api";
+import { DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR } from "@envoymesh/api";
 import { buildOutboundDialHints } from "./outbound-dial-hints.js";
 import {
   dialableInboundRemoteAddrs,
@@ -2648,6 +2649,79 @@ async function activateCliMesh(reloadDiscoveryFromConfig: boolean): Promise<void
 
       await registerClientProxyHandler();
       await startRelayTunnelIfConfigured();
+
+      // Eagerly dial the configured relay hops so the circuit-relay-v2
+      // reservation is in place before the first /p2p-circuit/ dial.
+      // Without this, the first outbound sponsor-hello has to do the
+      // reservation + the relay-lookup + the bond.request in a single
+      // shot, racing the timeout. With this, the local node shows
+      // `circuitPeers > 0` early and the first hello hits a warm circuit.
+      //
+      // We use configuredRelays (operator-curated) first and fall back to
+      // the resolved bootstrap peers (which include the community relay
+      // when `relayEnabled !== false`). Each dial is best-effort and
+      // 10s-bounded; the function returns a summary we log so the
+      // operator can see "relays reached: 1/2" at startup.
+      try {
+        const initialConfig = await nodeConfigStore.load();
+        const configuredRelayAddrs = (initialConfig?.configuredRelays ?? [])
+          .filter((r: { enabled?: boolean; addr?: string }) => r.enabled && r.addr?.trim())
+          .map((r: { addr: string }) => r.addr.trim());
+        const bootstrapRelayAddrs = effectiveBootstrapPeers.filter(
+          (a: string) => !configuredRelayAddrs.includes(a),
+        );
+        const relaysToWarm = [...configuredRelayAddrs, ...bootstrapRelayAddrs].slice(0, 4);
+        if (relaysToWarm.length > 0) {
+          const result = await mesh.eagerConnectToRelays(relaysToWarm, { timeoutMs: 10_000 });
+          console.log(
+            `[p2p] eager relay warmup: attempted=${result.attempted} connected=${result.connected} failed=${result.failed}` +
+              (result.failures.length > 0 ? ` failures=${JSON.stringify(result.failures)}` : ""),
+          );
+        }
+
+        // Force a circuit-relay-v2 reservation on each known relay so
+        // /p2p-circuit/ dials to this node succeed. libp2p's default client
+        // is lazy and only reserves when it perceives an outbound dial need,
+        // so a hub node that just sits and waits for inbound bonds ends up
+        // with zero reservation and inbound /p2p-circuit/ dials get
+        // "NO_RESERVATION" from the relay.
+        //
+        // Source-of-truth for "what is a relay":
+        //   1. `configuredRelays[]` from node-config (operator-curated)
+        //   2. The cn-relay bootstrap preset (default-public community relay
+        //      at 47.93.11.212, which we know speaks circuit-relay-v2) IF
+        //      it ends up in the effective bootstrap peer list.
+        // We deliberately do NOT pass `relaysToWarm` (which includes
+        // bootstrap.libp2p.io, target circuit addresses, bare peer IDs)
+        // because libp2p's addRelay throws "Cannot read properties of
+        // undefined (reading 'peerId')" for non-relay direct dials.
+        // Bypassed by --no-relay-reservation / ENVOYMESH_RELAY_RESERVATION=0.
+        if (args.enableRelay && args.enableRelayReservation) {
+          const knownRelayAddrs = [...configuredRelayAddrs];
+          if (
+            !knownRelayAddrs.includes(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR) &&
+            effectiveBootstrapPeers.includes(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR)
+          ) {
+            knownRelayAddrs.push(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
+          }
+          if (knownRelayAddrs.length > 0) {
+            try {
+              const resv = await mesh.requestRelayReservation(knownRelayAddrs);
+              console.log(
+                `[p2p] relay reservation request: attempted=${resv.attempted} reserved=${resv.reserved} failed=${resv.failed} skipped=${resv.skipped}` +
+                  (resv.failures.length > 0 ? ` failures=${JSON.stringify(resv.failures)}` : "") +
+                  (resv.skipped > 0 ? ` skipReasons=${JSON.stringify(resv.skipReasons)}` : ""),
+              );
+            } catch (e) {
+              const message = e instanceof Error ? e.message : String(e);
+              console.warn(`[p2p] relay reservation request threw (non-fatal): ${message}`);
+            }
+          }
+        }
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        console.warn(`[p2p] eager relay warmup threw (non-fatal): ${message}`);
+      }
     } finally {
       cliMeshActivationInFlight = false;
     }

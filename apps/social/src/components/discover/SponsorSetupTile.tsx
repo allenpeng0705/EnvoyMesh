@@ -21,8 +21,10 @@ type RunState =
   | { kind: "idle" }
   | { kind: "running" }
   | { kind: "succeeded"; helloMessageId?: string }
-  | { kind: "failed"; reason: string }
-  | { kind: "skipped"; reason: string };
+  | { kind: "failed"; reason: string; errorKind?: string }
+  | { kind: "skipped"; reason: string }
+  | { kind: "cooldown"; until: string; reason: string; errorKind?: string }
+  | { kind: "profileNotReady"; reason: string };
 
 export function SponsorSetupTile() {
   const t = useT();
@@ -77,6 +79,12 @@ export function SponsorSetupTile() {
     if (!status) return;
     if (!status.config.enabled || !status.config.ownerId) return;
     if (status.state?.completedAt) return; // nothing to retry
+    // Respect cooldown — the runtime is explicitly pausing auto-retry
+    // after a failed cycle. Don't re-trigger until the user clicks Retry
+    // (forceBypassGuards=true) or the cooldown expires.
+    if (status.state?.cooldownUntil && Date.parse(status.state.cooldownUntil) > Date.now()) {
+      return;
+    }
     autoTriggeredRef.current = true;
     void (async () => {
       try {
@@ -89,6 +97,24 @@ export function SponsorSetupTile() {
         } else if (result.ok) {
           setRunState({ kind: "succeeded", helloMessageId: result.helloMessageId });
         } else if (result.skipped) {
+          // Map runtime skip reasons to tile states so the user gets a
+          // real signal instead of "Retrying".
+          if (result.reason === "cooldown" && result.cooldownUntil) {
+            setRunState({
+              kind: "cooldown",
+              until: result.cooldownUntil,
+              reason: status.state?.lastError ?? "sponsor not reachable",
+              errorKind: result.lastErrorKind ?? status.state?.lastErrorKind,
+            });
+            return;
+          }
+          if (result.reason === "profile-not-ready") {
+            setRunState({
+              kind: "profileNotReady",
+              reason: "Finish setting up your profile, then tap Retry.",
+            });
+            return;
+          }
           setRunState({ kind: "skipped", reason: result.reason ?? "skipped" });
         } else {
           setRunState({ kind: "failed", reason: result.reason ?? "sponsor hello failed" });
@@ -142,7 +168,9 @@ export function SponsorSetupTile() {
   const handleRetry = useCallback(async () => {
     setRunState({ kind: "running" });
     try {
-      const result = await nodeService.runSetupSponsorFriend();
+      // Manual Retry always bypasses the runtime's cooldown + profile
+      // guards. The user explicitly asked for a fresh attempt.
+      const result = await nodeService.runSetupSponsorFriend({ forceBypassGuards: true });
       // The runtime is now fire-and-forget: the RPC returns immediately
       // with `{ ok: true, running: true }` and the retry loop continues
       // in the background. The result of each attempt is persisted to
@@ -159,6 +187,13 @@ export function SponsorSetupTile() {
       if (result.ok) {
         setRunState({ kind: "succeeded", helloMessageId: result.helloMessageId });
       } else if (result.skipped) {
+        if (result.reason === "profile-not-ready") {
+          setRunState({
+            kind: "profileNotReady",
+            reason: "Finish setting up your profile, then tap Retry.",
+          });
+          return;
+        }
         setRunState({ kind: "skipped", reason: result.reason ?? "skipped" });
       } else {
         setRunState({ kind: "failed", reason: result.reason ?? "sponsor hello failed" });
@@ -237,23 +272,58 @@ export function SponsorSetupTile() {
     return null;
   }
 
+  // Cooldown countdown — recompute on each render so the user sees seconds
+  // tick down. Re-evaluated when the polling useEffect fires every 2s.
+  let cooldownSecondsRemaining: number | null = null;
+  if (runState.kind === "cooldown") {
+    const ms = Date.parse(runState.until) - Date.now();
+    cooldownSecondsRemaining = ms > 0 ? Math.ceil(ms / 1000) : 0;
+  } else if (
+    runState.kind !== "running" &&
+    runState.kind !== "succeeded" &&
+    lastAttempt?.cooldownUntil
+  ) {
+    const ms = Date.parse(lastAttempt.cooldownUntil) - Date.now();
+    if (ms > 0) cooldownSecondsRemaining = Math.ceil(ms / 1000);
+  }
+
   const statusKey =
     runState.kind === "running"
       ? "discover.sponsorTile.statusRunning"
       : runState.kind === "succeeded"
         ? "discover.sponsorTile.statusSucceeded"
-        : runState.kind === "failed"
-          ? "discover.sponsorTile.statusFailed"
-          : runState.kind === "skipped"
-            ? "discover.sponsorTile.statusSkipped"
-            : lastAttempt?.lastError
+        : runState.kind === "cooldown"
+          ? "discover.sponsorTile.statusCooldown"
+          : runState.kind === "profileNotReady"
+            ? "discover.sponsorTile.statusProfileNotReady"
+            : runState.kind === "failed"
               ? "discover.sponsorTile.statusFailed"
-              : "discover.sponsorTile.statusIdle";
+              : runState.kind === "skipped"
+                ? "discover.sponsorTile.statusSkipped"
+                : cooldownSecondsRemaining != null
+                  ? "discover.sponsorTile.statusCooldown"
+                  : lastAttempt?.lastErrorKind === "profile-not-ready"
+                    ? "discover.sponsorTile.statusProfileNotReady"
+                    : lastAttempt?.lastError
+                      ? "discover.sponsorTile.statusFailed"
+                      : "discover.sponsorTile.statusIdle";
   const statusParams: Record<string, string> = {
     name: sponsorName ?? status.config.ownerId,
   };
   if (runState.kind === "skipped") statusParams.reason = runState.reason;
   if (runState.kind === "failed") statusParams.reason = runState.reason;
+  if (runState.kind === "cooldown") {
+    statusParams.reason = runState.reason;
+    statusParams.seconds = String(cooldownSecondsRemaining ?? 0);
+  } else if (
+    runState.kind !== "running" &&
+    runState.kind !== "succeeded" &&
+    runState.kind !== "profileNotReady" &&
+    cooldownSecondsRemaining != null
+  ) {
+    statusParams.reason = lastAttempt?.lastError ?? "sponsor not reachable";
+    statusParams.seconds = String(cooldownSecondsRemaining);
+  }
   if (runState.kind === "idle" && lastAttempt?.lastError) statusParams.reason = lastAttempt.lastError;
 
   return (
@@ -279,7 +349,8 @@ export function SponsorSetupTile() {
             })}
           </div>
         )}
-      {lastAttempt?.lastErrorKind === "network-unreachable" && (
+      {(lastAttempt?.lastErrorKind === "network-unreachable" ||
+        runState.kind === "cooldown") && (
         <div className="sponsor-setup-tile-hint">
           {t("discover.sponsorTile.networkHint", {
             name: sponsorName ?? status.config.ownerId ?? "sponsor",

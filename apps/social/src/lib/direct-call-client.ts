@@ -940,8 +940,8 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.getSetupSponsorFriendStatus();
   }
 
-  async runSetupSponsorFriend() {
-    return this._ns.runSetupSponsorFriend();
+  async runSetupSponsorFriend(input?: { forceBypassGuards?: boolean }) {
+    return this._ns.runSetupSponsorFriend(input);
   }
 
   async listRelays() {

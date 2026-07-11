@@ -374,6 +374,15 @@ export const en = {
       statusSucceeded: "Connected to {name} — check your contacts.",
       statusFailed: "Couldn't reach {name} ({reason})",
       statusSkipped: "Skipped: {reason}",
+      // Cooldown: the runtime paused auto-retry after a failed cycle. The
+      // user can either wait or tap Retry now to bypass.
+      statusCooldown: "Paused — will try again in {seconds}s ({reason})",
+      // Profile-readiness: the local human profile isn't loaded yet. NOT a
+      // network problem; the user needs to finish profile setup first.
+      statusProfileNotReady: "Profile not ready — finish setting up your profile, then tap Retry.",
+      // Surface the network-hint even during the cooldown window so the
+      // user can act on it (e.g. check Settings → Network) before the
+      // cooldown expires.
       retryNow: "Retry now",
       retrying: "Retrying…",
       useDifferentContact: "Use a different contact",

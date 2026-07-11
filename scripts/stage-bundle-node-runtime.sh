@@ -94,4 +94,9 @@ elif [ -f "$ROOT/bundled-sponsor-friend.json.example" ] && [ "${ENVOYMESH_COPY_S
   cp "$ROOT/bundled-sponsor-friend.json.example" "$DEST/bundled-sponsor-friend.json"
 fi
 
+if [ -f "$ROOT/node-config.json" ]; then
+  echo "  Staging bundled node-config.json..."
+  cp "$ROOT/node-config.json" "$DEST/node-config.json"
+fi
+
 echo "  ✓ Node runtime staged at $DEST"

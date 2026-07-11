@@ -1,0 +1,30 @@
+{
+  "_comment": "Default node-config.json bundled with the desktop app. Located in apps/tauri/src-tauri/resources/node/. Loaded by the runtime as a fallback when the profile dir has no node-config.json (i.e. first-run or after a profile reset). Customize via Settings → Network in the UI; the profile-dir copy takes precedence and is the only one that survives bundle updates.",
+
+  "version": "0.1",
+  "profileDir": "./data/default",
+  "discoveryProfile": "wan-default",
+  "enableMdns": false,
+  "relayEnabled": true,
+  "relayServerEnabled": false,
+  "advertiseAddrs": [],
+  "bootstrapPeers": [
+    "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo"
+  ],
+  "bootstrapPresets": [
+    "public-libp2p",
+    "public-libp2p-am6",
+    "public-libp2p-am7",
+    "cn-relay"
+  ],
+  "configuredRelays": [
+    {
+      "addr": "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo",
+      "enabled": true
+    }
+  ],
+  "modelProviders": { "mode": "disabled" },
+  "chatAssistEnabled": false,
+  "contactAiPreferences": [],
+  "updatedAt": "2026-07-11T00:00:00.000Z"
+}

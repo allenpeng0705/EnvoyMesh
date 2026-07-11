@@ -436,7 +436,9 @@ export async function routeRpcMethod(
     case "getSetupSponsorFriendStatus":
       return ns.getSetupSponsorFriendStatus();
     case "runSetupSponsorFriend":
-      return ns.runSetupSponsorFriend();
+      return ns.runSetupSponsorFriend({
+        forceBypassGuards: params.forceBypassGuards === true,
+      });
     case "listRelays":
       return ns.listRelays();
     case "addRelay":

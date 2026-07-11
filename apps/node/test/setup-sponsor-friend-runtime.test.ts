@@ -392,3 +392,249 @@ describe("runSetupSponsorFriendViaRuntime — error kind (background loop)", () 
     await new Promise((r) => setTimeout(r, 10));
   });
 });
+
+describe("runSetupSponsorFriendViaRuntime — cooldown + profile-not-ready guards", () => {
+  // Phase 1 + 2: the user-visible "Retrying" loop had two root causes:
+  //   1. After 12 attempts fail, the runtime kept accepting new auto-
+  //      triggers with no backoff. The next call to runSetupSponsorFriend
+  //      started a fresh 12-attempt cycle immediately, dialing the same
+  //      unreachable target. The UI never got a "failed" state.
+  //   2. The loop ran with no human profile loaded, so each attempt hit
+  //      "Human profile not initialized" 12 times before giving up.
+  //
+  // The fix: persist a `cooldownUntil` after exhaustion (and after
+  // profile-not-ready) and have runSetupSponsorFriend refuse to spawn a
+  // new loop while the cooldown is active. The tile shows a countdown
+  // instead of "Retrying" until the user clicks Retry (forceBypassGuards).
+
+  const persistedBase = {
+    version: "0.1" as const,
+    profileDir: "/tmp/profile",
+    discoveryProfile: "wan-default" as const,
+    enableMdns: true,
+    relayEnabled: true,
+    relayServerEnabled: false,
+    advertiseAddrs: [],
+    bootstrapPeers: [],
+    bootstrapPresets: [],
+    configuredRelays: [],
+    modelProviders: { mode: "disabled" as const },
+    chatAssistEnabled: false,
+    contactAiPreferences: [],
+    updatedAt: new Date().toISOString(),
+    setupSponsorFriendEnabled: true,
+    setupSponsorFriendOwnerId: "envoy:owner:cooldown-test",
+    setupSponsorFriendPeerId: "12D3KooWCooldown",
+    setupSponsorFriendMaxAttempts: 1,
+    setupSponsorFriendRetryDelayMs: 0,
+  };
+
+  it("returns skipped=cooldown when persisted cooldownUntil is in the future", async () => {
+    // Regression: a previously-failed cycle set cooldownUntil = +60s.
+    // The next auto-trigger (e.g. SetupView on mount, or NodeStateContext
+    // on reconnect) must NOT spawn a fresh 12-attempt loop. Instead it
+    // returns skipped=cooldown so the tile shows a countdown.
+    const futureIso = new Date(Date.now() + 60_000).toISOString();
+    const sendHello = vi.fn(async () => ({ messageId: "msg-1" }));
+
+    const result = await runSetupSponsorFriendViaRuntime({
+      loadNodeConfig: async () => ({
+        ...persistedBase,
+        setupSponsorFriendCooldownUntil: futureIso,
+        setupSponsorFriendLastError: "Failed to send hello: No reachable path",
+        setupSponsorFriendLastErrorKind: "network-unreachable",
+      }),
+      saveNodeConfig: vi.fn(async () => {}),
+      getProfileDir: () => "/tmp/profile",
+      nodeBundleDir: "/tmp/bundle",
+      applyWanJoinInvite: vi.fn(async () => ({})),
+      searchPeers: vi.fn(async () => []),
+      sendHello,
+      loadHelloProfile: async () => ({
+        displayName: "Test",
+        bio: "",
+        interests: [],
+        whatShares: [],
+      }),
+      loadNodeProfile: async () => undefined,
+      assertOnline: () => {},
+    });
+
+    expect(result.skipped).toBe(true);
+    expect(result.reason).toBe("cooldown");
+    expect(result.cooldownUntil).toBe(futureIso);
+    expect(result.lastErrorKind).toBe("network-unreachable");
+    expect(sendHello).not.toHaveBeenCalled();
+  });
+
+  it("forceBypassGuards=true bypasses the cooldown and spawns a fresh loop", async () => {
+    // The Retry button uses this path — the user explicitly asked for a
+    // fresh attempt, so we don't gate them on the cooldown.
+    const futureIso = new Date(Date.now() + 60_000).toISOString();
+    const sendHello = vi.fn(async () => ({ messageId: "msg-retry" }));
+
+    const result = await runSetupSponsorFriendViaRuntime(
+      {
+        loadNodeConfig: async () => ({
+          ...persistedBase,
+          setupSponsorFriendCooldownUntil: futureIso,
+        }),
+        saveNodeConfig: vi.fn(async () => {}),
+        getProfileDir: () => "/tmp/profile",
+        nodeBundleDir: "/tmp/bundle",
+        applyWanJoinInvite: vi.fn(async () => ({})),
+        searchPeers: vi.fn(async () => []),
+        sendHello,
+        loadHelloProfile: async () => ({
+          displayName: "Test",
+          bio: "",
+          interests: [],
+          whatShares: [],
+        }),
+        loadNodeProfile: async () => undefined,
+        assertOnline: () => {},
+      },
+      { forceBypassGuards: true },
+    );
+
+    expect(result.running).toBe(true);
+    await flushSponsorLoop();
+    expect(sendHello).toHaveBeenCalled();
+  });
+
+  it("returns skipped=profile-not-ready when probeHumanProfileReady reports not ready", async () => {
+    // The runtime's profile-readiness guard prevents a fresh loop from
+    // burning 12 attempts when the local human profile isn't saved yet.
+    // The tile gates its auto-trigger on profile readiness separately;
+    // this is the runtime-side belt-and-suspenders.
+    const probeHumanProfileReady = vi.fn(async () => false);
+    const sendHello = vi.fn(async () => ({ messageId: "msg-1" }));
+
+    const result = await runSetupSponsorFriendViaRuntime({
+      loadNodeConfig: async () => persistedBase,
+      saveNodeConfig: vi.fn(async () => {}),
+      getProfileDir: () => "/tmp/profile",
+      nodeBundleDir: "/tmp/bundle",
+      applyWanJoinInvite: vi.fn(async () => ({})),
+      searchPeers: vi.fn(async () => []),
+      sendHello,
+      loadHelloProfile: async () => {
+        throw new Error("Human profile not initialized");
+      },
+      probeHumanProfileReady,
+      loadNodeProfile: async () => undefined,
+      assertOnline: () => {},
+    });
+
+    expect(result.skipped).toBe(true);
+    expect(result.reason).toBe("profile-not-ready");
+    expect(result.lastErrorKind).toBe("profile-not-ready");
+    expect(sendHello).not.toHaveBeenCalled();
+  });
+
+  it("persists cooldownUntil + skipReason after exhausting maxAttempts", async () => {
+    // After 12 attempts fail (here, 1 attempt in the test) the runtime
+    // must write cooldownUntil + skipReason so the tile shows "Paused"
+    // and the next auto-trigger is gated. Without this, the user sees
+    // "Retrying" forever and the loop dials the same unreachable
+    // target back-to-back.
+    const saveNodeConfig = vi.fn(async () => {});
+    const sendHello = vi.fn(async () => {
+      throw new Error("Failed to send hello: No reachable path to 12D3KooWTest…");
+    });
+
+    const result = await runSetupSponsorFriendViaRuntime({
+      loadNodeConfig: async () => persistedBase,
+      saveNodeConfig,
+      getProfileDir: () => "/tmp/profile",
+      nodeBundleDir: "/tmp/bundle",
+      applyWanJoinInvite: vi.fn(async () => ({})),
+      searchPeers: vi.fn(async () => []),
+      sendHello,
+      loadHelloProfile: async () => ({
+        displayName: "Test",
+        bio: "",
+        interests: [],
+        whatShares: [],
+      }),
+      loadNodeProfile: async () => undefined,
+      assertOnline: () => {},
+    });
+
+    expect(result.running).toBe(true);
+    await flushSponsorLoop();
+    expect(saveNodeConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        setupSponsorFriendCooldownUntil: expect.any(String),
+        setupSponsorFriendSkipReason: "cooldown",
+      }),
+    );
+    // Verify the cooldown is roughly 60s in the future (default).
+    const lastCall = saveNodeConfig.mock.calls.at(-1)?.[0] as { setupSponsorFriendCooldownUntil?: string };
+    const untilMs = lastCall.setupSponsorFriendCooldownUntil
+      ? Date.parse(lastCall.setupSponsorFriendCooldownUntil)
+      : 0;
+    const deltaMs = untilMs - Date.now();
+    expect(deltaMs).toBeGreaterThan(55_000);
+    expect(deltaMs).toBeLessThan(65_000);
+  });
+
+  it("bails out early on profile-not-ready (no 12 wasted attempts)", async () => {
+    // Regression for the 2026-07-11 "Retrying" loop: the original loop
+    // burned all 12 attempts on "Human profile not initialized" before
+    // giving up. The fix: classify the error as profile-not-ready and
+    // return early after the first attempt, with a cooldown.
+    const saveNodeConfig = vi.fn(async () => {});
+    const loadHelloProfile = vi.fn(async () => {
+      throw new Error("Human profile not initialized");
+    });
+
+    const result = await runSetupSponsorFriendViaRuntime({
+      loadNodeConfig: async () => ({
+        ...persistedBase,
+        // Allow the runtime to "retry" 3 times so we can verify it
+        // bails out before exhausting the budget. With the bug, the
+        // runtime would persist lastError 3 times; with the fix, the
+        // runtime bails on attempt 1.
+        setupSponsorFriendMaxAttempts: 3,
+      }),
+      saveNodeConfig,
+      getProfileDir: () => "/tmp/profile",
+      nodeBundleDir: "/tmp/bundle",
+      applyWanJoinInvite: vi.fn(async () => ({})),
+      searchPeers: vi.fn(async () => []),
+      sendHello: vi.fn(async () => ({ messageId: "msg-1" })),
+      loadHelloProfile,
+      loadNodeProfile: async () => undefined,
+      assertOnline: () => {},
+    });
+
+    expect(result.running).toBe(true);
+    await flushSponsorLoop();
+    // loadHelloProfile was called once. If the runtime bailed, sendHello
+    // was never called (the loadHelloProfile throw was caught before
+    // sendHello). With the bug, the loop would have called sendHello
+    // after each loadHelloProfile retry — 3 times.
+    expect(loadHelloProfile).toHaveBeenCalledTimes(1);
+    expect(saveNodeConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        setupSponsorFriendLastErrorKind: "profile-not-ready",
+        setupSponsorFriendSkipReason: "profile-not-ready",
+        setupSponsorFriendCooldownUntil: expect.any(String),
+      }),
+    );
+  });
+});
+
+describe("classifySponsorError — profile-not-ready", () => {
+  it("classifies 'Human profile not initialized' as profile-not-ready", () => {
+    // Important: the network patterns include "not initialized" via the
+    // substring match — but the dedicated profile-not-ready check runs
+    // FIRST so the user gets the right hint. Without the explicit check
+    // this would land in "network-unreachable" and the tile would show
+    // a "check Settings → Network" hint instead of "Profile required".
+    expect(classifySponsorError("Human profile not initialized")).toBe(
+      "profile-not-ready",
+    );
+  });
+});

@@ -1,6 +1,7 @@
 import { mkdir, readFile, rename, unlink, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { loadBundledNodeConfig } from "./bundled-node-config-loader.js";
 import {
   defaultBootstrapPresetsForDiscoveryProfile,
   normalizeBootstrapPresetsForContactsOnly,
@@ -40,6 +41,13 @@ export interface PersistedNodeConfig {
   enableMdns?: boolean; // Optional, defaults to true if not set
   relayEnabled: boolean;
   relayServerEnabled: boolean;
+  /**
+   * Force a circuit-relay-v2 reservation on each configured relay at startup
+   * so the local node stays inbound-reachable via /p2p-circuit/. Default true
+   * when relayEnabled is true. Set false for ultra-low-memory nodes that
+   * never expect to be dialed.
+   */
+  relayReservationEnabled?: boolean;
   advertiseAddrs: string[];
   bootstrapPeers: string[];
   bootstrapPresets: string[];
@@ -211,12 +219,27 @@ export interface PersistedNodeConfig {
   setupSponsorFriendProofOfContext?: string;
   setupSponsorFriendMaxAttempts?: number;
   setupSponsorFriendRetryDelayMs?: number;
+  setupSponsorFriendCooldownMs?: number;
   setupSponsorFriendCompletedAt?: string;
   setupSponsorFriendLastError?: string;
   /** Classified failure kind for the last error — drives the UI hint.
    *  See `classifySponsorError` in `node-service-setup-sponsor-friend.ts`. */
-  setupSponsorFriendLastErrorKind?: "network-unreachable" | "proof-token-mismatch" | "other";
+  setupSponsorFriendLastErrorKind?:
+    | "network-unreachable"
+    | "proof-token-mismatch"
+    | "profile-not-ready"
+    | "other";
   setupSponsorFriendAttempts?: number;
+  /** ISO timestamp until which auto-retry is paused. Set by the runtime
+   *  when the loop exhausts `maxAttempts`. The tile shows a countdown
+   *  and the auto-trigger gate is closed until this time. */
+  setupSponsorFriendCooldownUntil?: string;
+  /** Why a sponsor hello was skipped (not started, not auto-retrying).
+   *  Mirrors `SetupSponsorFriendState.skipReason`. */
+  setupSponsorFriendSkipReason?: string;
+  /** ISO timestamp of the last attempt start (whether it succeeded or
+   *  failed). Useful for the UI to show "last tried X minutes ago". */
+  setupSponsorFriendLastAttemptAt?: string;
 }
 
 export interface NodeConfigStore {
@@ -233,6 +256,7 @@ export function createDefaultPersistedNodeConfig(profileDir: string): PersistedN
     enableMdns: true,
     relayEnabled: true,
     relayServerEnabled: false,
+    relayReservationEnabled: true,
     advertiseAddrs: [],
     bootstrapPeers: [],
     bootstrapPresets: [],
@@ -282,6 +306,24 @@ export function createNodeConfigStore(profileDir: string): NodeConfigStore {
         return undefined;
       } catch (error) {
         if (isMissingFileError(error)) {
+          // No profile-dir copy yet — try the bundled default from the
+          // desktop app's resource dir. This is the path that turns a fresh
+          // install into a working mesh on first launch (CN relay preset,
+          // standard bootstrap presets, wan-default profile) instead of
+          // leaving the user staring at "libp2p mesh offline until first-run
+          // setup writes node-config.json" until they manually opt in via
+          // Settings. The profile-dir copy is the source of truth once
+          // written; we DON'T auto-write the bundled config to disk —
+          // saving happens only on user-initiated save() (Settings → Network).
+          // This keeps the bundled config a pure default the user can compare
+          // against via git, rather than a copy that drifts.
+          const bundled = await loadBundledNodeConfig(process.env.ENVOYMESH_NODE_BUNDLE_DIR);
+          if (bundled) {
+            // Override profileDir with the actual runtime profile dir —
+            // the bundled file is canonical for the other fields, but the
+            // user's actual profile dir is canonical for where state lives.
+            return { ...bundled, profileDir, updatedAt: new Date().toISOString() };
+          }
           return undefined;
         }
         console.warn(`[node-config] failed to read ${path}: ${error}`);
@@ -325,6 +367,10 @@ function tryMigrateNodeConfig(value: unknown, profileDir: string): PersistedNode
     relayEnabled: typeof file.relayEnabled === "boolean" ? file.relayEnabled : defaults.relayEnabled,
     relayServerEnabled:
       typeof file.relayServerEnabled === "boolean" ? file.relayServerEnabled : defaults.relayServerEnabled,
+    relayReservationEnabled:
+      typeof file.relayReservationEnabled === "boolean"
+        ? file.relayReservationEnabled
+        : defaults.relayReservationEnabled,
     advertiseAddrs: Array.isArray(file.advertiseAddrs)
       ? file.advertiseAddrs.filter((a): a is string => typeof a === "string")
       : defaults.advertiseAddrs,
@@ -421,7 +467,7 @@ export function describeNodeConfigValidationFailure(value: unknown): string {
   return "unknown validation failure";
 }
 
-function isValidNodeConfig(value: unknown): value is PersistedNodeConfig {
+export function isValidNodeConfig(value: unknown): value is PersistedNodeConfig {
   if (value === null || typeof value !== "object") {
     return false;
   }

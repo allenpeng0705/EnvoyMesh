@@ -474,7 +474,9 @@ export interface NodeServiceClient {
   updateNodeConfig(config: Partial<NodeConfig>): Promise<void>;
   getSetupSponsorFriendConfig(): Promise<import("@envoymesh/api").ResolvedSetupSponsorFriend>;
   getSetupSponsorFriendStatus(): Promise<import("@envoymesh/api").SetupSponsorFriendStatus>;
-  runSetupSponsorFriend(): Promise<import("@envoymesh/api").RunSetupSponsorFriendResult>;
+  runSetupSponsorFriend(input?: {
+    forceBypassGuards?: boolean;
+  }): Promise<import("@envoymesh/api").RunSetupSponsorFriendResult>;
   listRelays(): Promise<RelayConfig[]>;
   addRelay(addr: string, level?: number, region?: string): Promise<RelayConfig>;
   removeRelay(relayId: string): Promise<void>;
@@ -1443,7 +1445,7 @@ function createWsNodeServiceClient(
         import("@envoymesh/api").SetupSponsorFriendStatus
       >;
     },
-    async runSetupSponsorFriend() {
+    async runSetupSponsorFriend(input?: { forceBypassGuards?: boolean }) {
       // The runtime is fire-and-forget: the RPC kicks off the retry loop
       // in the background and returns immediately with
       // `{ ok: true, running: true }`. The runtime's worst case is well
@@ -1457,7 +1459,7 @@ function createWsNodeServiceClient(
       // sponsor-is-self, disabled-or-incomplete) plenty of time to return
       // and gives the self-check + first-attempt kickoff a comfortable
       // budget.
-      return wsClient.rpc("runSetupSponsorFriend", undefined, {
+      return wsClient.rpc("runSetupSponsorFriend", input, {
         timeoutMs: 60_000,
       }) as Promise<
         import("@envoymesh/api").RunSetupSponsorFriendResult

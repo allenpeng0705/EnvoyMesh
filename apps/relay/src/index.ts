@@ -564,6 +564,29 @@ try {
           publicMode: args.relayPublicMode,
           checkedAt: new Date().toISOString(),
         }));
+      } else if (req.url === "/reservations/inspect") {
+        // Per-peer reservation snapshot. Operators use this to answer
+        // "who actually has a reservation on my relay?" without scraping
+        // libp2p internals. Crucial for debugging /p2p-circuit/ dial
+        // failures: if the target peer is not in this list, the relay
+        // will refuse STOP traffic to them with NO_RESERVATION, and the
+        // dialer's "peer closed stream" error is the symptom — the root
+        // cause is on the target side (stale addRelay, expired TTL,
+        // wrong relay, etc).
+        try {
+          const reservations = mesh.inspectCircuitRelayReservations();
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            count: reservations.length,
+            reservations,
+            checkedAt: new Date().toISOString(),
+          }));
+        } catch (inspectErr) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            error: inspectErr instanceof Error ? inspectErr.message : String(inspectErr),
+          }));
+        }
       } else {
         res.writeHead(404);
         res.end();

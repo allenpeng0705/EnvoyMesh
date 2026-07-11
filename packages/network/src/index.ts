@@ -895,8 +895,8 @@ export class EnvoyMesh {
 
   /**
    * Returns the current number of active circuit-relay-v2 reservations on
-   * this node, when running as a relay server. Returns 0 when the mesh
-   * is not acting as a relay server, when `start()` has not run, or when
+   * this node, when running as a relay server. Returns 0 when the mesh is
+   * not acting as a relay server, when `start()` has not run, or when
    * libp2p has not yet registered the relay service.
    *
    * Useful for /health and /reservations endpoints so operators can see
@@ -909,6 +909,304 @@ export class EnvoyMesh {
     const relay = services?.relay as { reservations?: { size?: number } } | undefined;
     const size = relay?.reservations?.size;
     return typeof size === "number" ? size : 0;
+  }
+
+  /**
+   * Snapshot the live circuit-relay-v2 reservation store. Each entry
+   * corresponds to a peer that has an active RESERVE on this node.
+   *
+   * Operators use this to answer "who actually has a reservation on my
+   * relay?" without scraping libp2p internals — useful when an
+   * /p2p-circuit/ dial keeps failing and we need to know whether the
+   * target has a reservation, has expired, or never made one. The
+   * returned shape is stable across libp2p versions: `peerId`,
+   * `addr` (the multiaddr they registered with, useful for spotting
+   * stale LAN / outdated listen addrs), `expireAt` (ms epoch), and
+   * `limit` (data/duration limits the relay applied).
+   *
+   * Returns `[]` when the mesh is not acting as a relay server, when
+   * `start()` has not run, or when libp2p has not yet registered the
+   * relay service.
+   */
+  inspectCircuitRelayReservations(): Array<{
+    peerId: string;
+    addr?: string;
+    expireAt: number;
+    limit?: { data?: number; duration?: number };
+  }> {
+    const node = this.node;
+    if (!node || !this.options.enableRelayServer) return [];
+    const services = node.services as Record<string, unknown> | undefined;
+    const relay = services?.relay as
+      | {
+          reservationStore?: {
+            reservations?: {
+              entries?: () => IterableIterator<[unknown, { addr?: { toString?: () => string }; expiry?: Date; limit?: { data?: number; duration?: number } }]>;
+            };
+          };
+        }
+      | undefined;
+    const reservations = relay?.reservationStore?.reservations;
+    if (!reservations?.entries) return [];
+    const out: Array<{
+      peerId: string;
+      addr?: string;
+      expireAt: number;
+      limit?: { data?: number; duration?: number };
+    }> = [];
+    try {
+      for (const [peerId, reservation] of reservations.entries()) {
+        let peerIdStr = "";
+        try {
+          peerIdStr = (peerId as { toString?: () => string })?.toString?.() ?? String(peerId);
+        } catch {
+          peerIdStr = String(peerId);
+        }
+        const addrStr = reservation?.addr?.toString?.();
+        const expireAt = reservation?.expiry instanceof Date
+          ? reservation.expiry.getTime()
+          : (typeof reservation?.expiry === "number" ? reservation.expiry : 0);
+        const limit = reservation?.limit
+          ? {
+              ...(typeof reservation.limit.data === "number" ? { data: reservation.limit.data } : {}),
+              ...(typeof reservation.limit.duration === "number" ? { duration: reservation.limit.duration } : {}),
+            }
+          : undefined;
+        const entry: { peerId: string; addr?: string; expireAt: number; limit?: { data?: number; duration?: number } } = {
+          peerId: peerIdStr,
+          expireAt,
+        };
+        if (addrStr !== undefined) entry.addr = addrStr;
+        if (limit) entry.limit = limit;
+        out.push(entry);
+      }
+    } catch {
+      // reservations Map API may change; swallow and return what we got
+    }
+    return out;
+  }
+
+  /**
+   * Eagerly dial the supplied relay multiaddrs in parallel so this node
+   * establishes DIRECT connections to each relay hop as early as possible.
+   *
+   * Why this exists: libp2p's circuit-relay-v2 client is lazy — it only
+   * reserves a slot on a relay when an outbound `/p2p-circuit/` dial is
+   * attempted. For a fresh-install sponsor-hello flow the first circuit
+   * dial burns the round-trip cost of the reservation AND the relay
+   * lookup in one shot, racing the bond.request timeout. Pre-dialing the
+   * relay means the reservation is already in place when the sponsor
+   * hello fires, so the dial hits a warm circuit.
+   *
+   * Each dial is best-effort: a single failure does not abort the rest.
+   * Returns a summary so callers (startup log, RPC, /health) can show
+   * "relays reached: 1/2" without re-deriving from the connection manager.
+   *
+   * Safe to call before `start()` completes — dials queue on libp2p's
+   * connection manager. Safe to call multiple times — libp2p dedupes
+   * pending dials to the same peer.
+   */
+  async eagerConnectToRelays(
+    relayMultiaddrs: readonly string[],
+    options: { timeoutMs?: number } = {},
+  ): Promise<{ attempted: number; connected: number; failed: number; failures: string[] }> {
+    const node = this.node;
+    if (!node) {
+      return { attempted: 0, connected: 0, failed: 0, failures: ["mesh-not-started"] };
+    }
+    const timeoutMs = options.timeoutMs ?? 10_000;
+    const failures: string[] = [];
+    let connected = 0;
+    let failed = 0;
+    const results = await Promise.allSettled(
+      relayMultiaddrs.map(async (addr) => {
+        // Dial with a tight per-relay timeout — the goal is to confirm
+        // reachability, not to maintain the connection (libp2p's
+        // connection manager handles the long-term keepalive).
+        const c = await Promise.race([
+          node.dial(ma(addr)),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => reject(new Error("relay-dial-timeout")), timeoutMs),
+          ),
+        ]);
+        return { addr, ok: true as const, conn: c };
+      }),
+    );
+    for (let i = 0; i < results.length; i += 1) {
+      const r = results[i];
+      const addr = relayMultiaddrs[i];
+      if (r.status === "fulfilled") {
+        connected += 1;
+        if (this.options.enableP2pDebug) {
+          console.log(`[p2p] eager relay dial OK: ${addr}`);
+        }
+      } else {
+        failed += 1;
+        const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
+        failures.push(`${addr}: ${reason}`);
+        if (this.options.enableP2pDebug) {
+          console.warn(`[p2p] eager relay dial FAILED: ${addr} (${reason})`);
+        }
+      }
+    }
+    return { attempted: relayMultiaddrs.length, connected, failed, failures };
+  }
+
+  /**
+   * Force a circuit-relay-v2 reservation on each of the supplied relay multiaddrs.
+   *
+   * Why this exists: libp2p's circuit-relay-v2 client is lazy — it only creates
+   * a reservation on a connected relay when it perceives an outbound /p2p-circuit/
+   * dial *need* (see `@libp2p/circuit-relay-v2` reservation-store.js line ~158:
+   * `if (type === 'discovered' && pendingReservations.length === 0) throw HadEnoughRelaysError`).
+   * That breaks hub / "always-reachable" nodes that just sit there and wait for
+   * inbound traffic — their reservation expires after the TTL and never renews,
+   * so peers trying to dial them via /p2p-circuit/ get "NO_RESERVATION" from
+   * the relay and the stream is closed.
+   *
+   * Workaround: bypass the "no need" gate by calling
+   * `reservationStore.addRelay(peerId, 'configured')` directly. The `'configured'`
+   * type is the manual path that libp2p itself uses for statically-configured
+   * relays and skips the pendingReservations check. libp2p's own refresh timer
+   * (set in reservation-store.js after the reservation is created) keeps it
+   * alive as long as the relay connection is up.
+   *
+   * The relay connection itself is established by `eagerConnectToRelays`; this
+   * method only requests the reservation. Call both in sequence on startup
+   * when the node needs to be inbound-reachable via relay.
+   *
+   * @param relayMultiaddrs full multiaddrs with a /p2p/<relayPeerId> tail
+   * @returns per-relay outcome
+   */
+  async requestRelayReservation(
+    relayMultiaddrs: readonly string[],
+  ): Promise<{
+    attempted: number;
+    reserved: number;
+    failed: number;
+    skipped: number;
+    skipReasons: string[];
+    failures: string[];
+  }> {
+    const node = this.node;
+    if (!node) {
+      return { attempted: 0, reserved: 0, failed: 0, skipped: 0, skipReasons: [], failures: ["mesh-not-started"] };
+    }
+    // libp2p registers circuit relay transport as a generic `transport-N` via
+    // transportManager; there's no `services['@libp2p/...']` entry. Walk the
+    // transport list and pick the one whose [Symbol.toStringTag] is
+    // '@libp2p/circuit-relay-v2-transport'. `.bind(reservationStore)` is
+    // required: extracting the method as a free variable and then calling
+    // it loses `this`, so `this.peerId.equals(peerId)` at
+    // @libp2p/circuit-relay-v2/src/transport/reservation-store.ts:194 throws
+    // "Cannot read properties of undefined (reading 'peerId')".
+    const transportManager = (node as { components?: { transportManager?: { getTransports?: () => unknown[] } } })
+      .components?.transportManager;
+    const allTransports = transportManager?.getTransports?.() ?? [];
+    let addRelay: ((peerId: unknown, type: string) => Promise<unknown>) | undefined;
+    for (const t of allTransports as Array<{
+      reservationStore?: { addRelay?: (peerId: unknown, type: string) => Promise<unknown> };
+      [Symbol.toStringTag]?: string;
+    }>) {
+      if (t[Symbol.toStringTag] === "@libp2p/circuit-relay-v2-transport") {
+        if (t.reservationStore?.addRelay) {
+          addRelay = t.reservationStore.addRelay.bind(t.reservationStore);
+        }
+        break;
+      }
+    }
+    if (!addRelay) {
+      return {
+        attempted: relayMultiaddrs.length,
+        reserved: 0,
+        failed: relayMultiaddrs.length,
+        skipped: 0,
+        skipReasons: [],
+        failures: ["circuit-relay-v2 transport not registered (enableRelay: false?)"],
+      };
+    }
+    const failures: string[] = [];
+    let reserved = 0;
+    let failed = 0;
+    let skipped = 0;
+    const skipReasons: string[] = [];
+    const results = await Promise.allSettled(
+      relayMultiaddrs.map(async (addr) => {
+        let parsed: ReturnType<typeof ma>;
+        try {
+          parsed = ma(addr);
+        } catch (err) {
+          throw new Error(`invalid multiaddr ${addr}: ${(err as Error).message}`);
+        }
+        // Only attempt reservation on direct-to-relay multiaddrs. Skip:
+        //   - /p2p-circuit/... (target circuit dials, not relay hops)
+        //   - bare peer IDs (no transport, no relay to dial)
+        // Both shapes would otherwise throw an obscure
+        // "Cannot read properties of undefined (reading 'peerId')" deep
+        // inside libp2p's addRelay → openConnection.
+        if (addr.includes("/p2p-circuit/")) {
+          skipped += 1;
+          skipReasons.push(`${addr}: contains /p2p-circuit/ (target dial, not a relay)`);
+          return { addr, ok: false as const, skipped: true };
+        }
+        const p2pComponent = parsed.getComponents().find((c) => c.code === 421);
+        const peerIdStr = p2pComponent?.value as string | undefined;
+        if (!peerIdStr) {
+          skipped += 1;
+          skipReasons.push(`${addr}: no /p2p/<relay> tail`);
+          return { addr, ok: false as const, skipped: true };
+        }
+        const pid = peerIdFromString(peerIdStr);
+        // 'configured' bypasses the lazy "no need" gate; libp2p will open the
+        // connection if needed and start the refresh timer.
+        try {
+          await addRelay(pid, "configured");
+        } catch (relayErr) {
+          const err = relayErr as Error & { code?: string; stack?: string };
+          // Log the full stack to the operator's console so we can see the
+          // path through libp2p internals (most "Cannot read properties of
+          // undefined (reading 'peerId')" errors come from a place we don't
+          // control). Also re-throw so the summary failures array captures
+          // the message.
+          console.error(
+            `[p2p] relay reservation addRelay FAILED for ${pid.toString()}:\n${err.stack ?? err.message}`,
+          );
+          const wrapped = new Error(
+            `addRelay(${pid.toString()}, configured) failed: ${err.message}` +
+              (err.code ? ` [code=${err.code}]` : ""),
+          );
+          throw wrapped;
+        }
+        return { addr, ok: true as const };
+      }),
+    );
+    for (let i = 0; i < results.length; i += 1) {
+      const r = results[i];
+      const addr = relayMultiaddrs[i];
+      if (r.status === "fulfilled") {
+        if (r.value?.skipped) {
+          // already counted in skipped + skipReasons above
+        } else {
+          reserved += 1;
+          if (this.options.enableP2pDebug) {
+            console.log(`[p2p] relay reservation requested: ${addr}`);
+          }
+        }
+      } else {
+        failed += 1;
+        const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
+        failures.push(`${addr}: ${reason}`);
+        if (this.options.enableP2pDebug) {
+          console.warn(`[p2p] relay reservation FAILED: ${addr} (${reason})`);
+        }
+      }
+    }
+    if (this.options.enableP2pDebug && skipped > 0) {
+      console.log(
+        `[p2p] relay reservation skipped ${skipped} non-relay address(es): ${JSON.stringify(skipReasons)}`,
+      );
+    }
+    return { attempted: relayMultiaddrs.length, reserved, failed, skipped, skipReasons, failures };
   }
 
   /**

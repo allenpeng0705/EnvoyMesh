@@ -4722,16 +4722,20 @@ class NodeServiceImpl implements NodeService {
     };
   }
 
-  async runSetupSponsorFriend(): Promise<
+  async runSetupSponsorFriend(input?: { forceBypassGuards?: boolean }): Promise<
     import("@envoymesh/api").RunSetupSponsorFriendResult
   > {
-    return runSetupSponsorFriendOnService(this, {
-      loadNodeConfig: () => this._configStore.load(),
-      saveNodeConfig: (config) => this._configStore.save(config),
-      getProfileDir: () => this._profileDir,
-      nodeBundleDir: process.env.ENVOYMESH_NODE_BUNDLE_DIR,
-      assertOnline: () => this._assertOnline(),
-    });
+    return runSetupSponsorFriendOnService(
+      this,
+      {
+        loadNodeConfig: () => this._configStore.load(),
+        saveNodeConfig: (config) => this._configStore.save(config),
+        getProfileDir: () => this._profileDir,
+        nodeBundleDir: process.env.ENVOYMESH_NODE_BUNDLE_DIR,
+        assertOnline: () => this._assertOnline(),
+      },
+      { forceBypassGuards: input?.forceBypassGuards === true },
+    );
   }
 
 

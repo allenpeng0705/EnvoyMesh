@@ -32,6 +32,16 @@ export interface NodeArgs {
   bootstrapPeers: string[];
   enableRelay: boolean;
   enableRelayServer: boolean;
+  /**
+   * Force a circuit-relay-v2 reservation on each configured/resolved relay at
+   * startup so the local node stays inbound-reachable via `/p2p-circuit/`.
+   * libp2p's default client is lazy and only reserves when it perceives an
+   * outbound dial need, so a hub node that just sits and waits for inbound
+   * bonds ends up with zero reservation and `/p2p-circuit/...<hub>` dials
+   * from peers get "NO_RESERVATION" from the relay. Defaults to true when
+   * `enableRelay` is true; can be turned off with `--no-relay-reservation`.
+   */
+  enableRelayReservation: boolean;
   enableAutoNat: boolean;
   enableDcutr: boolean;
   enableUpnp: boolean;
@@ -107,6 +117,7 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
     bootstrapPeers: [DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR],
     enableRelay: false,
     enableRelayServer: false,
+    enableRelayReservation: true,
     enableAutoNat: false,
     enableDcutr: false,
     enableUpnp: false,
@@ -167,6 +178,10 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
       args.enableRelay = true;
     } else if (arg === "--relay-server") {
       args.enableRelayServer = true;
+    } else if (arg === "--relay-reservation") {
+      args.enableRelayReservation = true;
+    } else if (arg === "--no-relay-reservation") {
+      args.enableRelayReservation = false;
     } else if (arg === "--autonat") {
       args.enableAutoNat = true;
     } else if (arg === "--dcutr") {
@@ -336,6 +351,7 @@ Options:
   --join-invite <token> Apply a WAN join-invite token (adds bootstrap peers/presets). See: npm run cli -w @envoymesh/node -- invite
   --relay               Enable circuit relay transport.
   --relay-server        Enable this node as a circuit relay server.
+  --relay-reservation   Force a circuit-relay-v2 reservation on each configured relay at startup so /p2p-circuit/ dials reach this node. Default when --relay is set. Disable with --no-relay-reservation. Env: ENVOYMESH_RELAY_RESERVATION (1/true or 0/false).
   --autonat             Enable AutoNAT service.
   --stun-server <h:p>  STUN server host:port for public IP discovery (default: stun.l.google.com:19302). Repeatable.
   --dcutr               Enable DCUtR hole punching service.
@@ -567,6 +583,9 @@ export function applyPersistedDiscoveryConfig(
   if (typeof config.relayServerEnabled === "boolean") {
     args.enableRelayServer = config.relayServerEnabled;
   }
+  if (typeof config.relayReservationEnabled === "boolean") {
+    args.enableRelayReservation = config.relayReservationEnabled;
+  }
   args.bootstrapPresets = [...config.bootstrapPresets];
   args.bootstrapPeers = [...config.bootstrapPeers];
   applyDiscoveryProfileDefaults(args, customPresetRegistry);
@@ -692,6 +711,13 @@ function applyEnvironmentArgs(args: NodeArgs): void {
   const envRelayDebugSummary = (process.env.ENVOYMESH_RELAY_DEBUG_SUMMARY ?? "").trim().toLowerCase();
   if (envRelayDebugSummary === "1" || envRelayDebugSummary === "true" || envRelayDebugSummary === "yes") {
     args.relayDebugSummary = true;
+  }
+
+  const envRelayReservation = (process.env.ENVOYMESH_RELAY_RESERVATION ?? "").trim().toLowerCase();
+  if (envRelayReservation === "0" || envRelayReservation === "false" || envRelayReservation === "no") {
+    args.enableRelayReservation = false;
+  } else if (envRelayReservation === "1" || envRelayReservation === "true" || envRelayReservation === "yes") {
+    args.enableRelayReservation = true;
   }
 
   const envAdvertiseAddrs = (process.env.ENVOYMESH_ADVERTISE_ADDRS ?? "")

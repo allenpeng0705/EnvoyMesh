@@ -25,6 +25,19 @@ export type SetupSponsorFriendConfig = {
   maxAttempts?: number;
   /** Delay between retries in ms. Default 5000. */
   retryDelayMs?: number;
+  /**
+   * How long to pause auto-retry after a cycle exhausts `maxAttempts`
+   * (or hits a permanent skip like `profile-not-ready`). Default 60000.
+   * The tile shows a countdown to `cooldownUntil`; the user can manually
+   * bypass with the Retry button.
+   */
+  cooldownMs?: number;
+  /**
+   * Force-start a fresh cycle even if `cooldownUntil` is in the future
+   * or the human profile isn't loaded yet. Set by the manual Retry
+   * button. Default false.
+   */
+  forceBypassGuards?: boolean;
 };
 
 export type SetupSponsorFriendState = {
@@ -39,8 +52,30 @@ export type SetupSponsorFriendState = {
    * done in the runtime (`classifySponsorError`) and stored alongside
    * `lastError` so the UI doesn't have to re-derive it from raw text.
    */
-  lastErrorKind?: "network-unreachable" | "proof-token-mismatch" | "other";
+  lastErrorKind?:
+    | "network-unreachable"
+    | "proof-token-mismatch"
+    | "profile-not-ready"
+    | "other";
   attempts?: number;
+  /**
+   * ISO timestamp until which auto-retry is paused after a failed cycle.
+   * The runtime sets this to `now + cooldownMs` when the loop exhausts
+   * `maxAttempts`. The tile surfaces a countdown instead of "Retrying" so
+   * the user gets a real signal that the loop is taking a breather, not
+   * silently hammering the dial. Manual Retry bypasses the cooldown.
+   */
+  cooldownUntil?: string;
+  /**
+   * Why a sponsor hello was skipped (not started, not auto-retrying). Set
+   * when the runtime refuses to start a fresh cycle — current values:
+   *   - `"cooldown"` — `cooldownUntil` is in the future.
+   *   - `"profile-not-ready"` — `getHumanProfile()` returned null.
+   *   - `"disabled-or-incomplete"` — config not enabled or no ownerId.
+   *   - `"already-completed"` — `setupSponsorFriendCompletedAt` is set.
+   *   - `"sponsor-is-self-peer"` / `"sponsor-is-self-owner"` — local profile matches.
+   */
+  skipReason?: string;
 };
 
 /**
@@ -105,12 +140,23 @@ export type RunSetupSponsorFriendResult = {
    * specific hint immediately on a manual retry (without waiting for
    * the persisted state to be re-read).
    */
-  lastErrorKind?: "network-unreachable" | "proof-token-mismatch" | "other";
+  lastErrorKind?:
+    | "network-unreachable"
+    | "proof-token-mismatch"
+    | "profile-not-ready"
+    | "other";
+  /**
+   * ISO timestamp at which the auto-retry cooldown expires. Set when the
+   * runtime returns `skipped: true, reason: "cooldown"`. The UI shows a
+   * countdown to this value and gates the next auto-trigger on it.
+   */
+  cooldownUntil?: string;
 };
 
 const DEFAULT_HELLO = "Hello!";
 const DEFAULT_MAX_ATTEMPTS = 12;
 const DEFAULT_RETRY_DELAY_MS = 5000;
+const DEFAULT_COOLDOWN_MS = 60_000;
 
 function normalizeOptionalString(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -122,6 +168,10 @@ function normalizePositiveInt(value: unknown, fallback: number): number {
   if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
   const n = Math.floor(value);
   return n > 0 ? n : fallback;
+}
+
+function normalizeBoolean(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
 }
 
 /** Parse a partial config object from JSON / env / node-config. */
@@ -141,6 +191,10 @@ export function parseSetupSponsorFriendConfig(raw: unknown): SetupSponsorFriendC
     maxAttempts: obj.maxAttempts === undefined ? undefined : normalizePositiveInt(obj.maxAttempts, DEFAULT_MAX_ATTEMPTS),
     retryDelayMs:
       obj.retryDelayMs === undefined ? undefined : normalizePositiveInt(obj.retryDelayMs, DEFAULT_RETRY_DELAY_MS),
+    cooldownMs: obj.cooldownMs === undefined ? undefined : normalizePositiveInt(obj.cooldownMs, DEFAULT_COOLDOWN_MS),
+    forceBypassGuards: obj.forceBypassGuards === undefined
+      ? undefined
+      : normalizeBoolean(obj.forceBypassGuards, false),
   };
 }
 

@@ -1771,8 +1771,14 @@ export interface NodeService {
    */
   getSetupSponsorFriendStatus(): Promise<import("./setup-sponsor-friend.js").SetupSponsorFriendStatus>;
 
-  /** Run zero-step sponsor hello after first setup (idempotent). */
-  runSetupSponsorFriend(): Promise<import("./setup-sponsor-friend.js").RunSetupSponsorFriendResult>;
+  /**
+   * Run zero-step sponsor hello after first setup (idempotent). Manual
+   * Retry button passes `forceBypassGuards: true` to skip the runtime's
+   * cooldown + profile-readiness guards.
+   */
+  runSetupSponsorFriend(input?: {
+    forceBypassGuards?: boolean;
+  }): Promise<import("./setup-sponsor-friend.js").RunSetupSponsorFriendResult>;
 
   /**
    * List configured relays
