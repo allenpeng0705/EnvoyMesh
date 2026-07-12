@@ -164,33 +164,59 @@ function Import-VcVarsIfNeeded {
 function Invoke-ExternalQuiet {
     param(
         [string]$Exe,
-        [Parameter(ValueFromRemainingArguments = $true)][string[]]$ToolArgs
+        [Parameter(ValueFromRemainingArguments = $true)][string[]]$ToolArgs,
+        # Lines from the tail of the log to show on failure. Default 100
+        # (was 30 — too small for a multi-stage build where the real error
+        # can be hundreds of lines above the final "stale temp file" line).
+        [int]$TailLines = 100,
+        # Stream output live to the console as well as the log. Off by
+        # default for short ops; on for the Tauri build so the user can
+        # see what stage actually failed.
+        [switch]$Stream
     )
     $prevEap = $ErrorActionPreference
     $ErrorActionPreference = "SilentlyContinue"
-    # Capture every byte (stdout + stderr) to a temp log so we can tail it on
-    # failure. Live console output stays quiet; on non-zero exit we surface the
-    # tail so the next person isn't staring at a silent "exit 1".
+    # Capture every byte (stdout + stderr) to a temp log so we can tail it
+    # on failure. -Stream also pipes through Tee-Object so the operator
+    # sees progress live — important for builds that take >5 min and
+    # where a "silent" run looks like a hang.
     $logPath = Join-Path $env:TEMP "envoymesh-build-$([guid]::NewGuid()).log"
+    $exit = 0
     try {
-        & $Exe @ToolArgs *> $logPath
+        if ($Stream) {
+            & $Exe @ToolArgs 2>&1 | Tee-Object -FilePath $logPath | Out-Host
+        } else {
+            & $Exe @ToolArgs *> $logPath
+        }
         $exit = $LASTEXITCODE
         if ($exit -ne 0) {
+            $cmdDesc = if ($ToolArgs.Count -gt 0) { "$Exe $($ToolArgs -join ' ')" } else { $Exe }
             $lines = @(Get-Content $logPath -ErrorAction SilentlyContinue)
-            if ($lines.Count -gt 0) {
-                $tail = $lines | Select-Object -Last 30
-                $cmdDesc = if ($ToolArgs.Count -gt 0) { "$Exe $($ToolArgs -join ' ')" } else { $Exe }
-                Write-Host ""
-                Write-Host "    --- $cmdDesc failed (exit $exit). Last 30 lines of $logPath ---" -ForegroundColor DarkGray
-                $tail | ForEach-Object { Write-Host "      $_" -ForegroundColor DarkGray }
-                Write-Host "    --- end ---" -ForegroundColor DarkGray
-                Write-Host ""
+            $lineCount = $lines.Count
+            Write-Host ""
+            Write-Host "    --- $cmdDesc failed (exit $exit) ---" -ForegroundColor DarkGray
+            if ($lineCount -gt 0) {
+                $shown = [Math]::Min($TailLines, $lineCount)
+                Write-Host "    --- Last $shown of $lineCount lines from $logPath ---" -ForegroundColor DarkGray
+                $lines | Select-Object -Last $shown | ForEach-Object {
+                    Write-Host "      $_" -ForegroundColor DarkGray
+                }
+            } else {
+                Write-Host "    --- (no captured output — the command was silent, or its output went elsewhere) ---" -ForegroundColor DarkGray
             }
+            Write-Host "    --- Full log preserved at: $logPath ---" -ForegroundColor DarkGray
+            Write-Host "    --- end ---" -ForegroundColor DarkGray
+            Write-Host ""
         }
         return $exit
     } finally {
         $ErrorActionPreference = $prevEap
-        Remove-Item $logPath -ErrorAction SilentlyContinue
+        # Only delete the log on success. On failure, the operator needs the
+        # full log to diagnose — this is the single most useful thing we can
+        # leave behind. The next successful run gets a fresh log.
+        if ($exit -eq 0) {
+            Remove-Item $logPath -ErrorAction SilentlyContinue
+        }
     }
 }
 
@@ -722,8 +748,8 @@ Push-Location $TauriAppDir
 try {
     if (-not (Test-Path "node_modules")) {
         Write-Info "Installing @envoymesh/tauri dependencies..."
-        npm install
-        if ($LASTEXITCODE -ne 0) {
+        $niExit = Invoke-ExternalQuiet npm install -Stream
+        if ($niExit -ne 0) {
             Write-Fail "npm install failed in apps\tauri"
             Pop-Location
             exit 1
@@ -738,8 +764,34 @@ try {
         }
     }
 
-    Write-Info "Tauri build (x86_64-pc-windows-msvc)..."
-    $tauriBuildExit = Invoke-ExternalQuiet $tauriCmd @tauriArgs
+    # Resource size check — NSIS has a hard 2 GB installer cap. When the
+    # bundled tree (Node sidecar + EnvoyMesh node + OpenClaw + Social UI)
+    # approaches that, makensis fails deep inside the build with a vague
+    # "stale temp file" message and the real error is hidden. Print the
+    # staged size up-front so the next failure mode is at least visible.
+    $resourceBytes = 0L
+    if (Test-Path $TauriResources) {
+        $sum = (Get-ChildItem -Path $TauriResources -Recurse -File -ErrorAction SilentlyContinue |
+                Measure-Object -Property Length -Sum -ErrorAction SilentlyContinue).Sum
+        if ($null -ne $sum) { $resourceBytes = [long]$sum }
+    }
+    $resourceMb = [math]::Round($resourceBytes / 1MB, 1)
+    Write-Info "Staged Tauri resources: $resourceMb MB"
+    if ($resourceBytes -gt 1.5GB) {
+        Write-Warn "Resources exceed 1.5 GB — NSIS (2 GB hard cap) is at risk. Consider WiX instead (-SkipMsi:`$false) or trim packages\openclaw\extensions\."
+    } elseif ($resourceBytes -gt 1.8GB) {
+        Write-Fail "Resources exceed 1.8 GB — NSIS will likely fail. Switch to WiX with -SkipMsi:`$false or shrink the staged tree."
+        Pop-Location
+        exit 1
+    }
+
+    # Stream the Tauri build live. Tauri/Cargo/makensis together emit a
+    # lot of output over 5-15 min, and the failure (if any) is usually
+    # well above the last 30 lines. Tee-Object through -Stream means the
+    # operator sees progress AND the full log lands in the temp file
+    # that Invoke-ExternalQuiet preserves on failure.
+    Write-Info "Tauri build (x86_64-pc-windows-msvc) — this can take 5-15 minutes..."
+    $tauriBuildExit = Invoke-ExternalQuiet $tauriCmd @tauriArgs -Stream
     if ($tauriBuildExit -ne 0) {
         Write-Fail "Tauri build failed (exit $tauriBuildExit)"
         Pop-Location
