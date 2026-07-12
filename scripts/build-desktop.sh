@@ -1,20 +1,23 @@
 #!/bin/bash
 # Tauri Desktop App Builder
-# Builds EnvoyMesh.app (.dmg on macOS), .exe (Windows), .AppImage (Linux)
+# Builds EnvoyMesh.app (.dmg on macOS), .AppImage/.deb (Linux)
 # with OpenClaw + Node.js bundled inside (no separate install for end users).
 #
-# Usage: ./scripts/build-desktop.sh [macos|windows|linux|all]
+# Windows builds are NOT supported by this script — use scripts/build-desktop.ps1
+# on a Windows host. Cross-compiling Tauri to x86_64-pc-windows-msvc from macOS
+# or Linux requires xwin + lld + MSVC header splicing, which is fragile and
+# out of scope for this project.
+#
+# Usage: ./scripts/build-desktop.sh [macos|linux|all]
 #
 # Output (copied from Cargo target dir into the repo):
 #   release/envoymesh-desktop-{version}-macos-{arch}.dmg
 #   release/envoymesh-desktop-{version}-linux-{arch}.deb
 #   release/envoymesh-desktop-{version}-linux-{arch}.AppImage
-#   release/envoymesh-desktop-{version}-windows-{arch}.exe
 #   release/envoymesh-desktop-{version}-{platform}-{arch}/   (folder with all of the above)
 #
 # Prerequisites:
 #   macOS: Xcode Command Line Tools
-#   Windows: Visual Studio Build Tools
 #   Linux: libwebkit2gtk-4.1-dev, libgtk-3-dev, etc.
 
 set -euo pipefail
@@ -228,18 +231,8 @@ case "${TARGET}" in
           '*/release/bundle/deb/*.deb' \
           '*/release/bundle/appimage/*.AppImage')" || true
         ;;
-    windows)
-        echo "  Building for Windows..."
-        install_tauri_cli
-        run_tauri_build --target x86_64-pc-windows-msvc
-        echo ""
-        echo "[4/5] Publishing Windows artifacts to ${OUT_DIR}/..."
-        PUBLISHED="$(publish_desktop_release windows \
-          '*/release/bundle/nsis/*.exe' \
-          '*/release/bundle/msi/*.msi')" || true
-        ;;
     *)
-        echo "error: unknown target '$TARGET' (use macos|linux|windows|all)" >&2
+        echo "error: unknown target '$TARGET' (use macos|linux|all — for Windows use scripts/build-desktop.ps1)" >&2
         exit 1
         ;;
 esac

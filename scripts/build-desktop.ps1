@@ -103,6 +103,48 @@ function Require-Command {
     return $cmd
 }
 
+# Source vcvars64.bat from a Visual Studio install so cl.exe / link.exe / the
+# Windows SDK are on PATH and INCLUDE / LIB are set. By design, VS Build Tools
+# does NOT add MSVC to the global PATH — Microsoft expects you to use a
+# Developer Command Prompt. We auto-detect any VS install (Build Tools, Community,
+# Professional, Enterprise) and pull its env vars into the current process.
+#
+# No-op if cl.exe is already on PATH (e.g. user is in a Developer Command Prompt).
+function Import-VcVarsIfNeeded {
+    if (Get-Command "cl.exe" -ErrorAction SilentlyContinue) {
+        return  # already in a VS dev environment
+    }
+    # vswhere.exe ships with the VS Installer and is the supported way to find
+    # any VS install on the box. Default path: C:\Program Files (x86)\Microsoft
+    # Visual Studio\Installer\vswhere.exe
+    $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+    if (-not (Test-Path $vswhere)) {
+        return  # no VS Installer, no MSVC install possible — let the build fail with a clear error
+    }
+    $installPath = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath 2>$null
+    if (-not $installPath) {
+        return  # VS Installer present but no MSVC workload installed — build will fail loudly below
+    }
+    $vcvars = Join-Path $installPath "VC\Auxiliary\Build\vcvars64.bat"
+    if (-not (Test-Path $vcvars)) {
+        return
+    }
+    # Source the .bat and harvest its env vars into the current process.
+    # cmd /c "... && set" prints the final env, which we parse and apply.
+    Write-Info "Sourcing MSVC env from $vcvars"
+    $envLines = & cmd.exe /c "`"$vcvars`" >NUL && set" 2>$null
+    foreach ($line in $envLines) {
+        if ($line -match '^([A-Za-z_][A-Za-z0-9_()]*)=(.*)$') {
+            [System.Environment]::SetEnvironmentVariable($matches[1], $matches[2], 'Process')
+        }
+    }
+    if (Get-Command "cl.exe" -ErrorAction SilentlyContinue) {
+        Write-Info "MSVC env active: cl.exe is now reachable"
+    } else {
+        Write-Warn "Sourced $vcvars but cl.exe is still not reachable — the C++ workload may not be installed"
+    }
+}
+
 function Invoke-ExternalQuiet {
     param(
         [string]$Exe,
@@ -110,11 +152,29 @@ function Invoke-ExternalQuiet {
     )
     $prevEap = $ErrorActionPreference
     $ErrorActionPreference = "SilentlyContinue"
+    # Capture every byte (stdout + stderr) to a temp log so we can tail it on
+    # failure. Live console output stays quiet; on non-zero exit we surface the
+    # tail so the next person isn't staring at a silent "exit 1".
+    $logPath = Join-Path $env:TEMP "envoymesh-build-$([guid]::NewGuid()).log"
     try {
-        & $Exe @ToolArgs 2>&1 | Out-Null
-        return $LASTEXITCODE
+        & $Exe @ToolArgs *> $logPath
+        $exit = $LASTEXITCODE
+        if ($exit -ne 0) {
+            $lines = @(Get-Content $logPath -ErrorAction SilentlyContinue)
+            if ($lines.Count -gt 0) {
+                $tail = $lines | Select-Object -Last 30
+                $cmdDesc = if ($ToolArgs.Count -gt 0) { "$Exe $($ToolArgs -join ' ')" } else { $Exe }
+                Write-Host ""
+                Write-Host "    --- $cmdDesc failed (exit $exit). Last 30 lines of $logPath ---" -ForegroundColor DarkGray
+                $tail | ForEach-Object { Write-Host "      $_" -ForegroundColor DarkGray }
+                Write-Host "    --- end ---" -ForegroundColor DarkGray
+                Write-Host ""
+            }
+        }
+        return $exit
     } finally {
         $ErrorActionPreference = $prevEap
+        Remove-Item $logPath -ErrorAction SilentlyContinue
     }
 }
 
@@ -572,13 +632,17 @@ try {
     Write-Fail "rustc not found. Install rustup: https://rustup.rs"
     exit 1
 }
+# If cl/link aren't on PATH, try to source vcvars64.bat from a Visual Studio
+# install. VS Build Tools doesn't add MSVC to the global PATH by design, so
+# this is the common case for anyone running the script from regular PowerShell.
+Import-VcVarsIfNeeded
 # Confirm MSVC toolchain. tauri build needs the C++ workload installed via
 # Visual Studio Build Tools. We surface a warning rather than failing hard
 # because the user may have a different-but-equivalent setup.
 $cl = Get-Command "cl" -ErrorAction SilentlyContinue
 $link = Get-Command "link" -ErrorAction SilentlyContinue
 if (-not $cl -or -not $link) {
-    Write-Warn "MSVC `cl`/`link` not on PATH — if `tauri build` fails with a linker error, install Visual Studio Build Tools 2022 with the 'Desktop development with C++' workload (https://visualstudio.microsoft.com/visual-cpp-build-tools/)."
+    Write-Warn "MSVC `cl`/`link` not on PATH — install Visual Studio Build Tools 2022 with the 'Desktop development with C++' workload (https://visualstudio.microsoft.com/visual-cpp-build-tools/). Run this script from a 'Developer Command Prompt for VS 2022' if the workload is installed but cl/link still aren't found."
 }
 
 # Tauri CLI. Prefer `cargo tauri` (the cargo subcommand) when available; fall
