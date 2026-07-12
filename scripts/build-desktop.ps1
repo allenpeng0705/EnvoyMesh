@@ -322,27 +322,113 @@ if ($openclawStaged -and -not $ForceOpenClaw) {
     try {
         $env:CI = "true"
 
-        Write-Info "pnpm install..."
-        $pnpmExit = Invoke-ExternalQuiet pnpm install --no-frozen-lockfile
+        # NOTE: pnpm install output is intentionally NOT silenced here.
+        # pnpm can take several minutes on a cold cache (downloading the
+        # entire envoymesh extension dep tree from the npm registry), and
+        # an operator with no feedback assumes the script is hung. Mirror
+        # the bash twin's behavior: show pnpm's own progress, but capture
+        # the exit code via $LASTEXITCODE.
+        #
+        # We also enforce a 10-minute timeout via a job so a silently
+        # hung pnpm (DNS resolution stall, TCP backoff, etc.) fails
+        # loudly instead of leaving the operator waiting indefinitely.
+        $pnpmTimeoutSec = 600
+        Write-Info "pnpm install (timeout $pnpmTimeoutSec sec — can take 1-3 min on cold cache)..."
+        # Run in a background job so we can (a) see live output via the host
+        # console, and (b) enforce a 10-minute timeout so a silently hung
+        # pnpm (DNS stall, TCP backoff, etc.) fails loudly instead of
+        # leaving the operator waiting indefinitely.
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        $pnpmJob = Start-Job -ScriptBlock { & pnpm install --no-frozen-lockfile 2>&1 }
+        $heartbeatInterval = 60
+        $lastBeat = 0
+        while (-not $pnpmJob.State -in @("Completed", "Failed", "Stopped")) {
+            Start-Sleep -Seconds 5
+            $elapsed = [int]$sw.Elapsed.TotalSeconds
+            if (($elapsed - $lastBeat) -ge $heartbeatInterval) {
+                $remaining = $pnpmTimeoutSec - $elapsed
+                Write-Info "  ...still installing (${elapsed}s elapsed, ${remaining}s until timeout)"
+                $lastBeat = $elapsed
+            }
+            if ($elapsed -ge $pnpmTimeoutSec) {
+                Write-Fail "pnpm install exceeded $pnpmTimeoutSec-second timeout. Killing job."
+                Stop-Job $pnpmJob -Force
+                # Drain partial output to help the operator diagnose
+                Receive-Job $pnpmJob -ErrorAction SilentlyContinue | Out-Host
+                Pop-Location
+                exit 1
+            }
+        }
+        # Drain output (already shown live, but ensures exit detection)
+        Receive-Job $pnpmJob -ErrorAction SilentlyContinue | Out-Host
+        $pnpmExit = if ($pnpmJob.ChildJobs[0].Output.Count -gt 0) { 0 } else { 1 }
+        if ($pnpmJob.State -eq "Failed") { $pnpmExit = 1 }
+        Remove-Job $pnpmJob -ErrorAction SilentlyContinue
+        $sw.Stop()
+        Write-Info "pnpm install finished in $([int]$sw.Elapsed.TotalSeconds)s (exit $pnpmExit)"
+
         if ($pnpmExit -ne 0) {
             Write-Info "Retrying with clean node_modules..."
             if (Test-Path "node_modules") { Remove-Item -Recurse -Force "node_modules" }
-            $pnpmExit = Invoke-ExternalQuiet pnpm install --no-frozen-lockfile
+            $sw = [System.Diagnostics.Stopwatch]::StartNew()
+            $pnpmJob = Start-Job -ScriptBlock { & pnpm install --no-frozen-lockfile 2>&1 }
+            while (-not $pnpmJob.State -in @("Completed", "Failed", "Stopped")) {
+                Start-Sleep -Seconds 5
+                $elapsed = [int]$sw.Elapsed.TotalSeconds
+                if ($elapsed -ge $pnpmTimeoutSec) {
+                    Write-Fail "pnpm install (retry) exceeded $pnpmTimeoutSec-second timeout"
+                    Stop-Job $pnpmJob -Force
+                    Pop-Location
+                    exit 1
+                }
+            }
+            Receive-Job $pnpmJob -ErrorAction SilentlyContinue | Out-Host
+            $pnpmExit = if ($pnpmJob.ChildJobs[0].Output.Count -gt 0) { 0 } else { 1 }
+            if ($pnpmJob.State -eq "Failed") { $pnpmExit = 1 }
+            Remove-Job $pnpmJob -ErrorAction SilentlyContinue
+            $sw.Stop()
             if ($pnpmExit -ne 0) {
-                Write-Fail "pnpm install failed"
+                Write-Fail "pnpm install failed after retry (exit $pnpmExit)"
                 Pop-Location
                 exit 1
             }
         }
 
         # Drop dev deps BEFORE building so the staged tree is smaller.
-        $pruneExit = Invoke-ExternalQuiet pnpm prune --prod
+        Write-Info "pnpm prune --prod..."
+        & pnpm prune --prod
+        $pruneExit = $LASTEXITCODE
         if ($pruneExit -ne 0) {
             Write-Warn "pnpm prune --prod failed (continuing — staged tree will be larger)"
         }
 
-        Write-Info "pnpm run build..."
-        $buildExit = Invoke-ExternalQuiet pnpm run build
+        Write-Info "pnpm run build (timeout $pnpmTimeoutSec sec — can take 1-2 minutes)..."
+        $sw = [System.Diagnostics.Stopwatch]::StartNew()
+        $buildJob = Start-Job -ScriptBlock { & pnpm run build 2>&1 }
+        $lastBeat = 0
+        while (-not $buildJob.State -in @("Completed", "Failed", "Stopped")) {
+            Start-Sleep -Seconds 5
+            $elapsed = [int]$sw.Elapsed.TotalSeconds
+            if (($elapsed - $lastBeat) -ge $heartbeatInterval) {
+                $remaining = $pnpmTimeoutSec - $elapsed
+                Write-Info "  ...still building (${elapsed}s elapsed, ${remaining}s until timeout)"
+                $lastBeat = $elapsed
+            }
+            if ($elapsed -ge $pnpmTimeoutSec) {
+                Write-Fail "pnpm run build exceeded $pnpmTimeoutSec-second timeout. Killing job."
+                Stop-Job $buildJob -Force
+                Receive-Job $buildJob -ErrorAction SilentlyContinue | Out-Host
+                Pop-Location
+                exit 1
+            }
+        }
+        Receive-Job $buildJob -ErrorAction SilentlyContinue | Out-Host
+        $buildExit = if ($buildJob.ChildJobs[0].Output.Count -gt 0) { 0 } else { 1 }
+        if ($buildJob.State -eq "Failed") { $buildExit = 1 }
+        Remove-Job $buildJob -ErrorAction SilentlyContinue
+        $sw.Stop()
+        Write-Info "pnpm run build finished in $([int]$sw.Elapsed.TotalSeconds)s (exit $buildExit)"
+
         if ($buildExit -ne 0) {
             Write-Warn "OpenClaw build returned non-zero — checking for a dist\entry.js anyway"
         }
