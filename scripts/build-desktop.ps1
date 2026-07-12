@@ -153,6 +153,32 @@ Write-Host ""
 
 Write-Step "1/5  Staging sidecars..."
 
+# Self-heal: stage-bundle-node-runtime.ps1 will Write-Error if
+# apps\node\dist\src\index.js is missing (i.e. `npm run node:build` was never
+# run on this machine). The bash twin (build-desktop.sh) gets a free pass
+# because tauri.conf.json's beforeBuildCommand runs the stage scripts, but
+# the beforeBuildCommand also invokes `bash` directly, which on a stock
+# Windows box without Git-Bash/MSYS fails before doing anything useful. So
+# for the PowerShell path we build the node dist up-front and skip the
+# fragile beforeBuildCommand step.
+$nodeDistEntry = Join-Path $RepoRoot "apps/node/dist/src/index.js"
+if (-not (Test-Path $nodeDistEntry)) {
+    Write-Info "apps\node\dist\src\index.js missing — running `npm run node:build`..."
+    $buildExit = Invoke-ExternalQuiet npm run node:build
+    if ($buildExit -ne 0) {
+        Write-Fail "npm run node:build failed (exit $buildExit). The Tauri bundle requires a compiled EnvoyMesh node at apps\node\dist\."
+        Write-Info "  Try: cd $RepoRoot ; npm ci ; npm run node:build"
+        exit 1
+    }
+    if (-not (Test-Path $nodeDistEntry)) {
+        Write-Fail "npm run node:build returned 0 but apps\node\dist\src\index.js is still missing — check the build output for errors."
+        exit 1
+    }
+    Write-Ok "EnvoyMesh node built"
+} else {
+    Write-Info "apps\node\dist\src\index.js already present (skipping npm run node:build)"
+}
+
 # 1a. Node.js sidecar (the binary the Tauri shell spawns to run the EnvoyMesh node).
 Write-Info "Staging Node.js sidecar..."
 $nodeRuntimeDest = Join-Path $TauriResources "node-runtime"
@@ -209,9 +235,22 @@ if (-not (Test-Path $stageNodePs1)) {
     Write-Fail "$stageNodePs1 missing — this script must live in scripts\ next to its bash twin."
     exit 1
 }
-& $stageNodePs1 -Dest (Join-Path $TauriResources "node")
-if ($LASTEXITCODE -ne 0) {
+# The inner script uses `Write-Error` with $ErrorActionPreference="Stop", which
+# becomes a terminating exception in the outer scope. Capture the actual
+# message so the user sees WHY it failed (not just "failed").
+$stageError = $null
+try {
+    & $stageNodePs1 -Dest (Join-Path $TauriResources "node")
+} catch {
+    $stageError = $_.Exception.Message
+}
+if ($stageError -or $LASTEXITCODE -ne 0) {
     Write-Fail "stage-bundle-node-runtime.ps1 failed"
+    if ($stageError) {
+        Write-Info "  Reason: $stageError"
+    }
+    Write-Info "  The most common cause is a workspace package without a built dist. From the repo root, run:"
+    Write-Info "    npm run node:build"
     exit 1
 }
 
