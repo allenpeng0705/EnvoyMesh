@@ -2879,7 +2879,18 @@ export class EnvoyMesh {
       console.warn(`[relay] address advertisement FAILED: ${msg || "(no detail)"}`);
     };
 
-    typed.addEventListener("relay:reservation", reservation);
+    // The libp2p circuit-relay-v2 transport's ReservationStore dispatches
+    // `relay:created-reservation` (NOT `relay:reservation`) when a
+    // reservation is created via `addRelay(pid, "configured")`. The
+    // CircuitRelayService (the server-side, separate component) does
+    // emit `relay:reservation`, but we never wire it as a relay server,
+    // so listening on it here was a no-op — relayEverReserved stayed
+    // false even when the reservation actually landed. The fix is to
+    // listen on the actual transport-side event name. Without this,
+    // `logDiscoveryReadiness()` always reports `relay=PENDING` even when
+    // `/reservations/inspect` on the relay shows the peer in the live
+    // store, which kept the auto-bond `probeMeshReady` gate stuck.
+    typed.addEventListener("relay:created-reservation", reservation);
     typed.addEventListener("relay:reservation:error", reservationError);
     typed.addEventListener("relay:advert:success", advertSuccess);
     typed.addEventListener("relay:advert:error", advertError);
@@ -2896,7 +2907,7 @@ export class EnvoyMesh {
       removeEventListener?: (type: string, handler: (event: unknown) => void) => void;
     };
     if (typeof typed.removeEventListener !== "function") return;
-    typed.removeEventListener("relay:reservation", handlers.reservation);
+    typed.removeEventListener("relay:created-reservation", handlers.reservation);
     typed.removeEventListener("relay:reservation:error", handlers.reservationError);
     typed.removeEventListener("relay:advert:success", handlers.advertSuccess);
     typed.removeEventListener("relay:advert:error", handlers.advertError);
