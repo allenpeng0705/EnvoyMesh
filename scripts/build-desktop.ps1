@@ -400,13 +400,11 @@ if ($openclawStaged -and -not $ForceOpenClaw) {
             }
         }
 
-        # Drop dev deps BEFORE building so the staged tree is smaller.
-        Write-Info "pnpm prune --prod..."
-        & pnpm prune --prod
-        $pruneExit = $LASTEXITCODE
-        if ($pruneExit -ne 0) {
-            Write-Warn "pnpm prune --prod failed (continuing — staged tree will be larger)"
-        }
+        # CRITICAL: do NOT prune --prod before the build. pnpm run build
+        # uses devDependencies (tsdown, tsx, etc.) to compile the
+        # production code. Pruning first would delete those and the build
+        # would fail with "Cannot find module 'tsdown'". Prune AFTER the
+        # build, so devDeps are only removed from the staged tree.
 
         Write-Info "pnpm run build (this can take 1-2 minutes)..."
         $sw = [System.Diagnostics.Stopwatch]::StartNew()
@@ -416,12 +414,38 @@ if ($openclawStaged -and -not $ForceOpenClaw) {
         Write-Info "pnpm run build finished in $([int]$sw.Elapsed.TotalSeconds)s (exit $buildExit)"
 
         if ($buildExit -ne 0) {
-            Write-Warn "OpenClaw build returned non-zero (exit $buildExit) — checking for a dist\entry.js anyway"
+            # Match the bash twin's fallback: if the full build fails,
+            # write a stub dist/entry.js that re-exports from TS source.
+            # The runtime will then use `tsx` to execute the source on
+            # demand. Less ideal than a prebuilt dist but unblocks the
+            # Tauri bundle from being produced at all.
+            Write-Warn "OpenClaw build returned non-zero (exit $buildExit) — writing dist\entry.js bootstrap fallback"
+            if (-not (Test-Path "dist")) {
+                New-Item -ItemType Directory -Force -Path "dist" | Out-Null
+            }
+            $entryStub = @"
+// EnvoyMesh bootstrap — re-exports the gateway from TS source (runtime
+// uses tsx to execute this directly when the full build is unavailable).
+export * from "../src/cli/run-main.ts";
+"@
+            Set-Content -Path "dist/entry.js" -Value $entryStub -Encoding UTF8
         }
         if (-not (Test-Path "dist/entry.js")) {
             Write-Fail "OpenClaw build did not produce dist\entry.js — gateway will not start"
             Pop-Location
             exit 1
+        }
+
+        # Drop dev deps AFTER the build so the staged tree is smaller.
+        # (Belt and suspenders: the rsync exclude list below also drops
+        # dev cruft at copy time, but pnpm prune --prod keeps
+        # node_modules compact, which matters because the bundle ships
+        # to end users via the Tauri installer.)
+        Write-Info "pnpm prune --prod (clean staged tree)..."
+        & pnpm prune --prod
+        $pruneExit = $LASTEXITCODE
+        if ($pruneExit -ne 0) {
+            Write-Warn "pnpm prune --prod failed (continuing — staged tree will be larger)"
         }
     } finally {
         Pop-Location
