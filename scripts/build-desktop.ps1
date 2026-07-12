@@ -237,18 +237,21 @@ if (-not (Test-Path $stageNodePs1)) {
 }
 # The inner script uses `Write-Error` with $ErrorActionPreference="Stop", which
 # becomes a terminating exception in the outer scope. Capture the actual
-# message so the user sees WHY it failed (not just "failed").
+# message so the user sees WHY it failed (not just "failed"). Note: we only
+# gate on $stageError, NOT on $LASTEXITCODE — PowerShell's $LASTEXITCODE
+# carries over from the last external command in the inner script (e.g. a
+# non-zero `npm ls` exit), so it's not a reliable signal that the staging
+# itself failed. The inner script's `Write-Host "  ✓ Node runtime staged ..."`
+# at the end is the authoritative "it worked" indicator.
 $stageError = $null
 try {
     & $stageNodePs1 -Dest (Join-Path $TauriResources "node")
 } catch {
     $stageError = $_.Exception.Message
 }
-if ($stageError -or $LASTEXITCODE -ne 0) {
+if ($stageError) {
     Write-Fail "stage-bundle-node-runtime.ps1 failed"
-    if ($stageError) {
-        Write-Info "  Reason: $stageError"
-    }
+    Write-Info "  Reason: $stageError"
     Write-Info "  The most common cause is a workspace package without a built dist. From the repo root, run:"
     Write-Info "    npm run node:build"
     exit 1

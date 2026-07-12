@@ -67,7 +67,19 @@ foreach ($modPath in $npmLines) {
         "$Root/node_modules/@envoymesh/*" { continue }
     }
     if (-not (Test-Path (Join-Path $modPath "package.json"))) { continue }
-    $pkgName = node -e "const p=require(process.argv[1]); process.stdout.write(p.name||'')" (Join-Path $modPath "package.json")
+    # Read package.json via PowerShell instead of `node -e` — the `node -e`
+    # form breaks on Windows because `process.argv[1]` for `node -e` is the
+    # literal string "[eval]" (not the user-supplied path), so `require()`
+    # throws "Cannot find module '[eval]'" and the node process exits
+    # non-zero. Callers that check $LASTEXITCODE would then see a false
+    # failure even though the copy below succeeded.
+    $pkgJson = $null
+    try {
+        $pkgJson = Get-Content (Join-Path $modPath "package.json") -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+    } catch {
+        continue
+    }
+    $pkgName = $pkgJson.name
     if ([string]::IsNullOrWhiteSpace($pkgName)) { continue }
     if ($pkgName -like "@envoymesh/*") { continue }
     $destMod = Join-Path $Dest "node_modules/$pkgName"
