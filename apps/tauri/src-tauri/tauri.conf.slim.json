@@ -2,12 +2,12 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "EnvoyMesh",
   "version": "0.1.0",
-  "identifier": "dev.envoymesh.app",
+  "identifier": "dev.envoymesh.desktop",
   "build": {
     "frontendDist": "../../social/src/dist",
     "devUrl": null,
     "beforeDevCommand": "",
-    "beforeBuildCommand": "bash ../../scripts/fetch-node-sidecar.sh && bash ../../scripts/stage-tauri-openclaw-bundle.sh && bash ../../scripts/stage-tauri-node-bundle.sh"
+    "beforeBuildCommand": ""
   },
   "app": {
     "withGlobalTauri": true,
