@@ -87,6 +87,20 @@ export interface NodeDiscoveryRuntimeDeps {
     topicHash: string;
     maxResults: number;
   }): Promise<PeerSearchResult[]>;
+  /**
+   * The bundled sponsor's identity (the peer the local node was
+   * shipped to auto-bond to, e.g. via a DMG installer). The bundled
+   * `contactUri` carries `displayName`, `ownerId`, and `peerId` —
+   * sources the local peer directory record may lack before a bond
+   * has been established. Surfacing it lets `searchLocalPeers` match
+   * a name like "Allen Peng" even when the peer record has an empty
+   * `listenAddrs` list and no displayName populated yet.
+   */
+  getBundledSponsorIdentity?(): Promise<{
+    ownerId: string;
+    peerId: string;
+    displayName: string;
+  } | undefined>;
 }
 
 export class NodeDiscoveryRuntime {
@@ -1104,6 +1118,25 @@ export class NodeDiscoveryRuntime {
       const peerRecords = await this.deps.peerDirectoryStore.listPeerRecords();
       const trustRecords = await this.deps.trustStore.listTrustRecords();
 
+      // Bundled sponsor fallback: the DMG ships a `bundled-sponsor-friend.json`
+      // whose `contactUri` carries `displayName`, `ownerId`, and `peerId`. On
+      // a fresh install (no bond, no inbound profile sync, no DHT), the local
+      // peer directory record for the sponsor has an empty `listenAddrs` and
+      // no displayName. The bundled `displayName` is the only name we have
+      // until the bond completes. Read it once per search and use it as a
+      // fallback when the trust store + peer profile cache have no name for
+      // the matching owner.
+      let bundledSponsorIdentity:
+        | { ownerId: string; peerId: string; displayName: string }
+        | undefined;
+      if (this.deps.getBundledSponsorIdentity) {
+        try {
+          bundledSponsorIdentity = await this.deps.getBundledSponsorIdentity();
+        } catch {
+          bundledSponsorIdentity = undefined;
+        }
+      }
+
       const profileByOwner = new Map<string, HumanProfilePayload>();
       if (this.deps.peerProfileCacheStore) {
         const cached = await this.deps.peerProfileCacheStore.list();
@@ -1112,12 +1145,24 @@ export class NodeDiscoveryRuntime {
         }
       }
 
-      // Build a map of ownerId -> displayName from trust records
+      // Build a map of ownerId -> displayName from trust records, with the
+      // bundled sponsor's displayName as a last-resort fallback. Without
+      // this, a never-bonded sponsor has no name in any local source and
+      // the search can't match their bundled display name.
       const displayNameByOwner = new Map<string, string>();
       for (const record of trustRecords) {
         if (record.displayName) {
           displayNameByOwner.set(record.peerOwnerId, record.displayName);
         }
+      }
+      if (
+        bundledSponsorIdentity
+        && !displayNameByOwner.has(bundledSponsorIdentity.ownerId)
+      ) {
+        displayNameByOwner.set(
+          bundledSponsorIdentity.ownerId,
+          bundledSponsorIdentity.displayName,
+        );
       }
 
       // Get bonded peers (trust level exists and is not "blocked")

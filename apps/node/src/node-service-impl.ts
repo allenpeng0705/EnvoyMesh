@@ -332,6 +332,7 @@ import { createDiscoverySeedStore, type DiscoverySeedStore } from "./discovery-s
 import { seedAddrsForDiscoveryProfile, peerDiscoverySourceFromMultiaddrs, shouldPersistPeerDiscoverySeeds } from "./peer-discovery-telemetry.js";
 import { resolveBootstrapAddresses, looksLikeDomain } from "./bootstrap-resolver.js";
 import { createInboundMessageGuard, type InboundMessageGuard } from "./inbound-guard.js";
+import { backfillBundledSponsorPeerAddresses, loadBundledSponsorFriendParsed } from "./bundled-sponsor-friend-loader.js";
 import { buildModelProviders, routeModelRequest } from "@envoymesh/models";
 import { bindDeviceAuthorizationStore } from "./chat-device-auth.js";
 import {
@@ -2103,6 +2104,96 @@ class NodeServiceImpl implements NodeService {
 
   private _bondContext(): BondContext {
     return buildBondContext(this._serviceContextDeps().bond);
+  }
+
+  /**
+   * Gather the sponsor's known multiaddrs from the bundled config
+   * (which is the source of truth for the sponsor's libp2p
+   * reachability) and the local peer directory (which may have
+   * fresher addresses from mDNS / DHT discovery). The smart
+   * address-filter picker uses the union to decide whether to try
+   * LAN first or skip it.
+   *
+   * One call to `loadBundledSponsorFriendParsed` does the bundled
+   * parse (load + parseEnvoyContactUri + parseEnvoyJoinUri +
+   * decodeWanJoinInviteV1) and returns both the multiaddrs AND the
+   * parsed `link` so the peer-directory lookup doesn't need a
+   * second parse.
+   */
+  private async _gatherSponsorMultiaddrs(): Promise<string[]> {
+    // Best-effort: backfill the bundled multiaddrs into the peer
+    // directory record so a future search/contact-list read has the
+    // addresses even if the auto-bond never completes. The merge is
+    // idempotent so a re-run is safe.
+    await backfillBundledSponsorPeerAddresses(
+      this._peerDirectoryStore,
+      process.env.ENVOYMESH_NODE_BUNDLE_DIR,
+    );
+    const parsed = await loadBundledSponsorFriendParsed(
+      process.env.ENVOYMESH_NODE_BUNDLE_DIR,
+    );
+    if (!parsed) return [];
+    const fromBundled = parsed.multiaddrs;
+    if (fromBundled.length === 0) return fromBundled;
+    // If the bundled contactUri carries a peerId, also pull the
+    // peer-directory record so fresh discoveries count. Bundled
+    // wins for ties (it carries the authoritative addresses from
+    // the sponsor's QR code); we just dedupe.
+    const peerId = parsed.link.peerId;
+    if (!peerId) return fromBundled;
+    let record;
+    try {
+      record = await this._peerDirectoryStore.getPeerByPeerId(peerId);
+    } catch {
+      // Peer-directory lookup failed — fall back to bundled-only.
+      return fromBundled;
+    }
+    if (!record?.listenAddrs || record.listenAddrs.length === 0) {
+      return fromBundled;
+    }
+    const seen = new Set(fromBundled);
+    const merged = [...fromBundled];
+    for (const addr of record.listenAddrs) {
+      if (!seen.has(addr)) {
+        seen.add(addr);
+        merged.push(addr);
+      }
+    }
+    return merged;
+  }
+
+  /**
+   * Wait for the local bond context to fire `bond:established` for a
+   * specific target ownerId. Returns when the matching event fires
+   * (local accept-bond reply from the sponsor landed and the trust
+   * store was updated); rejects on timeout.
+   *
+   * The local `sendHello` only proves the bytes left the local
+   * libp2p stream. The actual bond is established when the sponsor
+   * sends `bond.accept` back, which is what fires this event from
+   * `node-service-bond.ts:271`. Without this gate, the
+   * setup-sponsor-friend loop marks `setupSponsorFriendCompletedAt`
+   * the instant the local send returns — silently masking relay
+   * stream drops and NAT rebinds as "completed".
+   */
+  private _waitForBondEstablished(
+    targetOwnerId: string,
+    timeoutMs: number,
+  ): Promise<{ peerOwnerId: string; displayName?: string }> {
+    return new Promise((resolve, reject) => {
+      let timer: NodeJS.Timeout | undefined;
+      const handler = (data: { peerOwnerId: string; displayName?: string }) => {
+        if (data.peerOwnerId !== targetOwnerId) return;
+        if (timer) clearTimeout(timer);
+        unsubscribe();
+        resolve(data);
+      };
+      const unsubscribe = this.on("bond:established", handler as never);
+      timer = setTimeout(() => {
+        unsubscribe();
+        reject(new Error(`bond:established for ${targetOwnerId} timed out after ${timeoutMs}ms`));
+      }, timeoutMs);
+    });
   }
 
   async sendHello(
@@ -4212,6 +4303,36 @@ class NodeServiceImpl implements NodeService {
         },
         loadHumanProfile: () => this._humanProfileStore.loadHumanProfile(),
         queryRelayLookupByTopic: (params) => this._queryRelayLookupByTopic(params),
+        // Bundled sponsor identity (displayName + ownerId + peerId) from
+        // the DMG-shipped `bundled-sponsor-friend.json`. Used by
+        // `searchLocalPeers` as a fallback name source when the local
+        // trust store + peer profile cache have no displayName for the
+        // matching owner — i.e. a fresh install where the sponsor hasn't
+        // bonded yet. Without this, typing the bundled sponsor's name
+        // returns empty in local-only discovery mode.
+        getBundledSponsorIdentity: async () => {
+          // Best-effort: backfill the bundled multiaddrs into the peer
+          // directory so the contact list's dial hints are populated
+          // for manual sends. Idempotent — does nothing on subsequent
+          // calls. Catches errors so a peer-dir hiccup never breaks
+          // the bundled identity read.
+          await backfillBundledSponsorPeerAddresses(
+            this._peerDirectoryStore,
+            process.env.ENVOYMESH_NODE_BUNDLE_DIR,
+          );
+          const parsed = await loadBundledSponsorFriendParsed(
+            process.env.ENVOYMESH_NODE_BUNDLE_DIR,
+          );
+          if (!parsed) return undefined;
+          const ownerId = parsed.link.ownerId;
+          const peerId = parsed.link.peerId;
+          if (!ownerId || !peerId) return undefined;
+          // `displayName` lives in the bundled contactUri's `name=` query
+          // param (parseEnvoyContactUri exposes it as `displayName`).
+          const displayName = parsed.link.displayName;
+          if (!displayName) return undefined;
+          return { ownerId, peerId, displayName };
+        },
       });
     }
     return this._discoveryRuntimeCache;
@@ -4760,6 +4881,32 @@ class NodeServiceImpl implements NodeService {
           if (mesh.getConnectedRelayPeerIds().length > 0) return Promise.resolve(true);
           return Promise.resolve(mesh.getConnectedPeerIds().length > 0);
         },
+        // Smart address-filter: gather the sponsor's known multiaddrs
+        // from the bundled config (the sponsor's QR-code contactUri
+        // carries the libp2p targetMultiaddrs inside its base64 join
+        // token — same URI the local node would put on its own QR
+        // code). Merge with any peer-directory records for the same
+        // peerId/ownerId so fresh mDNS / DHT discoveries count too.
+        // The smart picker (`pickAddressFilterForPeer` in
+        // `outbound-dial-hints.ts`) decides per attempt whether to
+        // try LAN first or skip it. Falls back to the local profile
+        // default when the sponsor's addresses are unknown — no env
+        // override needed; the runtime figures it out.
+        peerMultiaddrs: await this._gatherSponsorMultiaddrs(),
+        localDiscoveryProfile: (await this._configStore.load())?.discoveryProfile,
+        // Wait-for-bond.established: subscribe to the node service's
+        // EventEmitter and resolve the promise when an event for the
+        // target ownerId fires. The local `sendHello` only proves the
+        // bytes left this node's libp2p stream — it doesn't wait for
+        // the sponsor's accept-bond reply. Without this gate, the
+        // loop used to mark `setupSponsorFriendCompletedAt` the
+        // instant the local send returned, masking relay stream
+        // drops and NAT rebinds as silent success. 30s timeout →
+        // falls through to the existing retry path with a
+        // `sponsor-no-ack` classification so the UI can hint
+        // differently from `network-unreachable`.
+        waitForBondEstablished: (targetOwnerId, timeoutMs) =>
+          this._waitForBondEstablished(targetOwnerId, timeoutMs),
       },
       { forceBypassGuards: input?.forceBypassGuards === true },
     );

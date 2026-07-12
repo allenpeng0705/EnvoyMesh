@@ -842,15 +842,29 @@ export async function _advertisePublicDiscoveryTopics(
 ): Promise<void> {
   const topicSet = new Set<string>();
   for (const interest of input.interests) {
-    topicSet.add(interest.toLowerCase());
+    // Defensively route through `interestTopicFor` so callers can pass
+    // either raw hobbies ("music") OR pre-normalized topics
+    // ("interest:music"). The production call site
+    // (`computePublicDiscoveryTopics`) already pre-normalizes, so this
+    // is a no-op for it. But tests + future callers can pass raw
+    // values and still get the right on-wire topic. Without this
+    // guard, the search side looks up "interest:music" via
+    // `interestTopicFor` while the advertise side publishes "music",
+    // and the two never meet.
+    const topic = interestTopicFor(interest);
+    if (topic) topicSet.add(topic);
   }
   topicSet.add(`username:${input.username.toLowerCase()}`);
   // Publish the display name as its own topic so name-based search can find
   // humans by what they call themselves in the UI, not just by their @handle.
   // The search side (node-service-discovery) routes raw query text through
   // the same `displayNameTopicFor` helper, so advertise and search agree.
-  const dnTopic = displayNameTopicFor(input.displayName);
-  if (dnTopic) topicSet.add(dnTopic);
+  // `displayName` is optional (some test fixtures + a future "username
+  // only" profile variant won't have one) — skip if missing.
+  if (input.displayName) {
+    const dnTopic = displayNameTopicFor(input.displayName);
+    if (dnTopic) topicSet.add(dnTopic);
+  }
   for (const geo of input.locationTopics) {
     topicSet.add(geo);
   }

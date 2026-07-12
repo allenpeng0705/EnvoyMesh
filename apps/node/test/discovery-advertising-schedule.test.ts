@@ -225,7 +225,10 @@ describe("discovery topic advertising — timeout + adaptive retry", () => {
       // Advance the remaining 1s — retry fires.
       await vi.advanceTimersByTimeAsync(2000);
       await flushAsync();
-      expect(mesh.provideCapabilityTopic).toHaveBeenCalledWith("music");
+      // Interests are normalized to `interest:<slug>` on advertise,
+      // so the retry publishes the same canonical topic as the search
+      // side looks up.
+      expect(mesh.provideCapabilityTopic).toHaveBeenCalledWith("interest:music");
     });
 
     it("schedules a backoff retry after any topic fails", async () => {
@@ -233,12 +236,13 @@ describe("discovery topic advertising — timeout + adaptive retry", () => {
       // simulates DHT coming up late. After the failure, the first retry
       // should fire at BACKOFF (60s), not HEALTHY (5 min).
       //
-      // Note: `_advertisePublicDiscoveryTopics` passes raw interest strings
-      // (e.g. "music") to provideCapabilityTopic — it does NOT normalize to
-      // `interest:music`. The mock matches on those raw strings.
+      // Note: `_advertisePublicDiscoveryTopics` defensively normalizes
+      // interests to `interest:<slug>` via `interestTopicFor` so the
+      // on-wire topic matches the search side. The mock receives the
+      // canonical form ("interest:science") and matches on that.
       let scienceCount = 0;
       const mesh = createMockMesh(async (topic: string) => {
-        if (topic === "science") {
+        if (topic === "interest:science") {
           scienceCount++;
           if (scienceCount === 1) {
             // First attempt fails — DHT not ready. Retry will succeed.
@@ -326,10 +330,12 @@ describe("discovery topic advertising — timeout + adaptive retry", () => {
       await flushAsync();
 
       const calls = mesh.provideCapabilityTopic.mock.calls.map((c) => c[0]);
-      // Second-call topic set: music, books, username:alice → 3 calls.
+      // Second-call topic set: interest:music, interest:books,
+      // username:alice → 3 calls. Interests are normalized to
+      // `interest:<slug>` so the on-wire topic matches the search side.
       expect(calls.length).toBe(3);
-      expect(calls).toContain("music");
-      expect(calls).toContain("books");
+      expect(calls).toContain("interest:music");
+      expect(calls).toContain("interest:books");
       expect(calls).toContain("username:alice");
     });
   });

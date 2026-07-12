@@ -230,6 +230,7 @@ export interface PersistedNodeConfig {
     | "profile-not-ready"
     | "mesh-not-ready"
     | "protocol-mismatch"
+    | "sponsor-no-ack"
     | "other";
   setupSponsorFriendAttempts?: number;
   /** ISO timestamp until which auto-retry is paused. Set by the runtime

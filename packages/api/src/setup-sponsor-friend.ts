@@ -58,6 +58,7 @@ export type SetupSponsorFriendState = {
     | "profile-not-ready"
     | "mesh-not-ready"
     | "protocol-mismatch"
+    | "sponsor-no-ack"
     | "other";
   attempts?: number;
   /**
@@ -150,6 +151,7 @@ export type RunSetupSponsorFriendResult = {
     | "profile-not-ready"
     | "mesh-not-ready"
     | "protocol-mismatch"
+    | "sponsor-no-ack"
     | "other";
   /**
    * ISO timestamp at which the auto-retry cooldown expires. Set when the

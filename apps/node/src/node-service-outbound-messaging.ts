@@ -179,6 +179,7 @@ export async function dialHintsForChatViaRuntime(
   ctx: OutboundMessagingContext,
   recipientPeerId: string,
   peerListenAddrs: string[] | undefined,
+  addressFilter?: "lan-paired" | "wan-public" | "all",
 ): Promise<string[]> {
   const config = await ctx.loadConfig();
   const mesh = ctx.getReachableMesh();
@@ -198,6 +199,7 @@ export async function dialHintsForChatViaRuntime(
     config,
     profileDir: ctx.getProfileDir(),
     localListenAddrs: mesh?.multiaddrs,
+    addressFilter,
   });
 }
 

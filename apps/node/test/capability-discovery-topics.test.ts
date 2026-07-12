@@ -174,4 +174,19 @@ describe("displayname topic advertise/search contract", () => {
       expect(fromAdvertise.startsWith("displayname:")).toBe(true);
     }
   });
+
+  it("helpers are idempotent for already-normalized topics", () => {
+    // The production advertise call site (`computePublicDiscoveryTopics`)
+    // pre-normalizes interests + display names. The defensive
+    // normalization in `_advertisePublicDiscoveryTopics` would otherwise
+    // double-prefix them. Pin the idempotency contract so a future
+    // refactor doesn't silently break the on-wire topic vocabulary.
+    expect(interestTopicFor("interest:music")).toBe("interest:music");
+    expect(interestTopicFor("interest:machine-learning")).toBe(
+      "interest:machine-learning",
+    );
+    expect(displayNameTopicFor("displayname:allen-peng")).toBe(
+      "displayname:allen-peng",
+    );
+  });
 });

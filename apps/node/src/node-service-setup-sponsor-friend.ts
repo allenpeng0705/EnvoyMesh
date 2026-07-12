@@ -9,6 +9,7 @@ import {
 } from "@envoymesh/api";
 import type { HelloProfile, NodeService, SendHelloOptions } from "@envoymesh/api";
 import { loadBundledSponsorFriendConfig } from "./bundled-sponsor-friend-loader.js";
+import { pickAddressFilterForPeer } from "./outbound-dial-hints.js";
 import type { PersistedNodeConfig } from "./node-config-store.js";
 
 /**
@@ -51,6 +52,7 @@ export type SponsorFailureKind =
   | "profile-not-ready"
   | "mesh-not-ready"
   | "protocol-mismatch"
+  | "sponsor-no-ack"
   | "other";
 
 /**
@@ -109,6 +111,16 @@ export function classifySponsorError(message: string | undefined): SponsorFailur
     )
   ) {
     return "network-unreachable";
+  }
+  // Sponsor-no-ack — the local sendHello completed but the sponsor
+  // never emitted `bond.established` within the configured timeout. The
+  // bytes may have been lost in transit (relay stream drop, NAT rebind,
+  // etc.) or the sponsor's accept handler may have silently rejected.
+  // Surface this distinctly from `network-unreachable` so the UI can
+  // hint at "the message was sent but the sponsor didn't accept" rather
+  // than "we couldn't reach the sponsor at all".
+  if (/sponsor did not acknowledge|sponsor-no-ack|did not acknowledge bond/.test(m)) {
+    return "sponsor-no-ack";
   }
   // Protocol-mismatch — the envelope's intent isn't accepted on the
   // protocol it was routed to (e.g. `bond.request` landed on the chat
@@ -230,6 +242,41 @@ export interface SetupSponsorFriendRuntimeDeps {
   /** Load the local node profile (for self-check). */
   loadNodeProfile(): Promise<{ owner: { ownerId: string }; peerId: string } | undefined>;
   assertOnline(): void;
+  /**
+   * Wait for the sponsor's `bond.established` event for a given
+   * `targetOwnerId` (i.e. the requester side — that's who emits the
+   * event after the sponsor side stores the bond). Resolves when the
+   * event fires, rejects on timeout.
+   *
+   * The runtime subscribes to the bond context's `bond:established`
+   * event and resolves the promise when an event matching the target
+   * owner fires. Times out with a "sponsor-no-ack" error so the loop
+   * can fall through to the existing retry path. Used to fix the
+   * false-positive-completion bug (where `setupSponsorFriendCompletedAt`
+   * was being persisted the instant `sendHello` returned locally, even
+   * though the message might have been lost in transit over the
+   * relay).
+   */
+  waitForBondEstablished?(
+    targetOwnerId: string,
+    timeoutMs: number,
+  ): Promise<{ peerOwnerId: string; displayName?: string }>;
+  /**
+   * Optional: the sponsor's known multiaddrs (bundled config +
+   * peer directory). Used by the smart address-filter picker to decide
+   * whether to try LAN first (`"all"`) or skip LAN entirely
+   * (`"wan-public"`). When omitted, the loop falls back to the local
+   * profile default — `defaultAddressFilterForProfile`-equivalent
+   * behavior, which is fine for the first-attempt dial.
+   */
+  peerMultiaddrs?: string[];
+  /**
+   * Optional: local node's `discoveryProfile` (e.g. `"lan-fast"`,
+   * `"wan-default"`). The smart picker reads this to honor a local
+   * opt-in to RFC1918 paths when the peer might be on the same LAN.
+   * When omitted, the picker defaults to `"wan-public"` for any peer.
+   */
+  localDiscoveryProfile?: string;
   /** Optional: read the current cooldown from a custom source (test seam). */
   now?(): number;
 }
@@ -246,7 +293,22 @@ export async function runSetupSponsorFriendViaRuntime(
 ): Promise<RunSetupSponsorFriendResult> {
   const now = deps.now ? deps.now() : Date.now();
   const existing = await deps.loadNodeConfig();
-  if (existing?.setupSponsorFriendCompletedAt) {
+  // Manual retry (forceBypassGuards=true) always re-runs, even if a
+  // previous attempt was marked completed. The previous attempt may
+  // have been a false positive — pre-fix the runtime marked
+  // `setupSponsorFriendCompletedAt` the instant `sendHello` returned
+  // locally, before the sponsor's `bond.established` event fired. If
+  // the user is clicking "Try again", they're explicitly asking to
+  // clear that stale state. The loop will re-set the timestamp on
+  // success (idempotent for already-bonded peers — bondAutonomy on
+  // the sponsor side just no-ops an already-bonded requester).
+  //
+  // Auto-trigger (no forceBypassGuards) still respects the
+  // completedAt marker so we don't hammer the sponsor's auto-accept
+  // every restart. The runtime is the source of truth for "we
+  // successfully bonded"; the user's manual override is the explicit
+  // escape hatch.
+  if (existing?.setupSponsorFriendCompletedAt && input.forceBypassGuards !== true) {
     return { ok: true, skipped: true, reason: "already-completed" };
   }
 
@@ -490,7 +552,44 @@ async function runSetupSponsorFriendRetryLoop(
       const hello = await deps.sendHello(ownerId, profile, resolved.helloMessage, {
         proofOfContext: resolved.proofOfContext,
         targetPeerId: resolved.peerId,
+        // Smart address-filter: inspect the peer's known multiaddrs and
+        // pick the right mode automatically. If the peer has LAN
+        // addresses (RFC1918 / link-local TCP), try LAN first via "all"
+        // (the dialer falls back to relay if LAN paths are stale). If
+        // the peer is known WAN-only, skip LAN entirely with
+        // "wan-public" (no point burning the LAN timeout). If we have
+        // no peer addrs at all, defer to the local profile default
+        // (wan-public for production, all for lan-fast). Read the
+        // local profile inside the loop so a profile change mid-loop
+        // (rare, but possible during a long retry cycle) takes effect
+        // on the next attempt. The picker lives in
+        // `outbound-dial-hints.ts` next to the local-profile default.
+        addressFilter: pickAddressFilterForPeer(
+          deps.peerMultiaddrs,
+          deps.localDiscoveryProfile ?? (await deps.loadNodeConfig())?.discoveryProfile,
+        ),
       });
+
+      // Wait for the sponsor's `bond.established` event before marking
+      // the loop COMPLETED. The local `sendHello` only proves the bytes
+      // left the local libp2p stream; it doesn't wait for the sponsor's
+      // `accept-bond` reply. If the message is lost in transit (relay
+      // stream drop, NAT rebind, etc.) the runtime used to silently
+      // mark COMPLETED anyway, which masked the real failure. Now we
+      // require a matching `bond:established` event with a 30s timeout.
+      // On timeout, fall through to the existing error path with a new
+      // failure kind `sponsor-no-ack` so the loop can retry.
+      if (deps.waitForBondEstablished) {
+        const ACKNOWLEDGEMENT_TIMEOUT_MS = 30_000;
+        try {
+          await deps.waitForBondEstablished(ownerId, ACKNOWLEDGEMENT_TIMEOUT_MS);
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          throw new Error(
+            `sponsor did not acknowledge bond within ${ACKNOWLEDGEMENT_TIMEOUT_MS}ms: ${msg}`,
+          );
+        }
+      }
 
       const base = buildBasePersistedConfig(existing, deps);
       await deps.saveNodeConfig({

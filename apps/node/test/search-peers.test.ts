@@ -397,4 +397,81 @@ describe("Username-based Search", () => {
     // Node not initialized, so should return empty for username search
     expect(Array.isArray(results)).toBe(true);
   });
+
+  it("matches bundled sponsor displayName when no trust record or profile cache has it", async () => {
+    // Simulates a fresh install: a never-bonded sponsor shows up in the
+    // peer directory (e.g. from the bundled contactUri's peerId), but
+    // there's no trust record (no bond), no peer profile cache (no
+    // inbound profile sync), and no DHT/relay (isolated dev env). The
+    // bundled sponsor's displayName lives in the DMG-shipped
+    // `bundled-sponsor-friend.json` and is exposed to the discovery
+    // runtime via the `getBundledSponsorIdentity` dep. Without that
+    // fallback, "Allen Peng" returns empty even though the peer record
+    // is right there.
+    const peerRecords = [
+      {
+        peerId: "peer-sponsor",
+        ownerId: "owner-sponsor",
+        deviceId: "dev1",
+        lastSeenAt: new Date().toISOString(),
+        listenAddrs: [],
+      },
+    ];
+    const trustStore = createMockTrustStore([]);
+    const peerDirectoryStore = createMockPeerDirectoryStore(peerRecords);
+    const humanProfileStore = createMockHumanProfileStore();
+
+    const nodeService = new NodeServiceImpl(
+      undefined,
+      trustStore,
+      peerDirectoryStore,
+      humanProfileStore,
+      "/tmp/test",
+    );
+
+    // Inject a custom discovery runtime so we can supply
+    // getBundledSponsorIdentity without going through the bundled
+    // config file path (test seam).
+    const { NodeDiscoveryRuntime } = await import(
+      "../src/node-service-discovery.js"
+    );
+    const customRuntime = new NodeDiscoveryRuntime({
+      getProfile: () => undefined,
+      requireProfile: () => {
+        throw new Error("profile required");
+      },
+      getMesh: () => undefined,
+      requireMesh: () => {
+        throw new Error("mesh required");
+      },
+      getReachableMesh: () => undefined,
+      trustStore,
+      peerDirectoryStore,
+      configStore: stubConfigStore,
+      contactOwnerKeyStore: null,
+      multihopDiscoveryStore: null,
+      peerProfileCacheStore: null,
+      getApprovalQueue: () => null,
+      resolvePeerTransportForOwner: async () => ({
+        transportPeerId: "",
+        recipientEnvelopePeerId: undefined,
+        listenAddrs: undefined,
+      }),
+      dialHintsForChat: async () => [],
+      emitMultiHopUpdate: () => {},
+      loadHumanProfile: async () => undefined,
+      getBundledSponsorIdentity: async () => ({
+        ownerId: "owner-sponsor",
+        peerId: "peer-sponsor",
+        displayName: "Allen Peng",
+      }),
+    });
+    (nodeService as any)._discoveryRuntimeCache = customRuntime;
+
+    const results = await nodeService.searchPeers({ queryText: "allen peng" });
+    expect(results).toHaveLength(1);
+    expect(results[0].displayName).toBe("Allen Peng");
+    expect(results[0].ownerId).toBe("owner-sponsor");
+    expect(results[0].discoverySource).toBe("local");
+  });
 });

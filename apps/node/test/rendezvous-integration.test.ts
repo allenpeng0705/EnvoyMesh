@@ -236,15 +236,19 @@ describe("NodeServiceImpl - Discovery Configuration", () => {
 
       await (nodeService as any)._advertiseInterestsIfPublic();
 
-      // Should advertise hobbies (2) + knowledge (1) + username topic = 4.
-      // Interests are normalized to `interest:<slug>` by computePublicDiscoveryTopics
-      // (and matched on the search side by interestTopicFor) — see the
-      // advertise/search contract test in capability-discovery-topics.test.ts.
-      expect(mockMesh.provideCapabilityTopic).toHaveBeenCalledTimes(4);
+      // Should advertise hobbies (2) + knowledge (1) + username + display
+      // name topics = 5. Interests are normalized to `interest:<slug>`
+      // by computePublicDiscoveryTopics (and matched on the search side
+      // by interestTopicFor) — see the advertise/search contract test
+      // in capability-discovery-topics.test.ts. The display name is
+      // published as `displayname:<slug>` so name-based search can
+      // find humans by their UI name, not just their @handle.
+      expect(mockMesh.provideCapabilityTopic).toHaveBeenCalledTimes(5);
       expect(mockMesh.provideCapabilityTopic).toHaveBeenCalledWith("interest:music");
       expect(mockMesh.provideCapabilityTopic).toHaveBeenCalledWith("interest:tech");
       expect(mockMesh.provideCapabilityTopic).toHaveBeenCalledWith("interest:science");
       expect(mockMesh.provideCapabilityTopic).toHaveBeenCalledWith("username:testuser");
+      expect(mockMesh.provideCapabilityTopic).toHaveBeenCalledWith("displayname:test-user");
     });
 
     it("should not advertise when bootstrapPresets is empty (not public network)", async () => {
@@ -301,8 +305,10 @@ describe("NodeServiceImpl - Discovery Configuration", () => {
 
       await (nodeService as any)._advertiseInterests(["music", "tech"], "alice");
 
-      expect(mockMesh.provideCapabilityTopic).toHaveBeenCalledWith("music");
-      expect(mockMesh.provideCapabilityTopic).toHaveBeenCalledWith("tech");
+      // Interests are normalized to `interest:<slug>` so the on-wire
+      // topic matches the search-side lookup (interestTopicFor).
+      expect(mockMesh.provideCapabilityTopic).toHaveBeenCalledWith("interest:music");
+      expect(mockMesh.provideCapabilityTopic).toHaveBeenCalledWith("interest:tech");
       expect(mockMesh.provideCapabilityTopic).toHaveBeenCalledWith("username:alice");
     });
 
@@ -324,7 +330,7 @@ describe("NodeServiceImpl - Discovery Configuration", () => {
       await (nodeService as any)._advertiseInterests(["music"], "alice");
 
       expect(handler).toHaveBeenCalledWith({
-        topics: ["music", "username:alice"],
+        topics: ["interest:music", "username:alice"],
         success: true,
       });
     });
@@ -373,7 +379,11 @@ describe("NodeServiceImpl - Discovery Configuration", () => {
         locationTopics: ["geo:country:US", "geo:city:US-boston"],
       });
 
-      expect(mockMesh.provideCapabilityTopic).toHaveBeenCalledWith("music");
+      // Interests are defensively normalized to `interest:<slug>` by the
+      // implementation (interestTopicFor), so a raw "music" input becomes
+      // the on-wire "interest:music". The search side does the same
+      // normalization, so the two paths agree.
+      expect(mockMesh.provideCapabilityTopic).toHaveBeenCalledWith("interest:music");
       expect(mockMesh.provideCapabilityTopic).toHaveBeenCalledWith("username:alice");
       expect(mockMesh.provideCapabilityTopic).toHaveBeenCalledWith("geo:country:US");
       expect(mockMesh.provideCapabilityTopic).toHaveBeenCalledWith("geo:city:US-boston");
@@ -493,7 +503,10 @@ describe("NodeServiceImpl - Discovery Configuration", () => {
       });
 
       await vi.waitFor(() => {
-        expect(mockMesh.cancelCapabilityTopicReprovide).toHaveBeenCalledWith("music");
+        // The interest was normalized to "interest:music" on advertise
+        // (matching the on-wire topic vocabulary the search side uses),
+        // so cancellation targets the same normalized topic.
+        expect(mockMesh.cancelCapabilityTopicReprovide).toHaveBeenCalledWith("interest:music");
         expect(mockMesh.cancelCapabilityTopicReprovide).toHaveBeenCalledWith("username:alice");
         expect(mockMesh.cancelCapabilityTopicReprovide).toHaveBeenCalledWith("geo:country:US");
         expect(mockMesh.cancelCapabilityTopicReprovide).toHaveBeenCalledWith("geo:city:US-boston");

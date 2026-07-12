@@ -41,7 +41,11 @@ export interface BondContext {
   sessionTokenStore?: { removeTokensForOwner(ownerId: string): Promise<void> };
   getPendingSocialIntroProposals(): Map<string, SocialIntroProposal & { ownerCommitmentRef?: string }>;
   getPendingHelloRequests(): Map<string, PendingHelloRequest>;
-  dialHintsForChat(recipientPeerId: string, peerListenAddrs: string[] | undefined): Promise<string[]>;
+  dialHintsForChat(
+    recipientPeerId: string,
+    peerListenAddrs: string[] | undefined,
+    addressFilter?: "lan-paired" | "wan-public" | "all",
+  ): Promise<string[]>;
   deliverCallEnvelope(
     transportPeerId: string,
     envelope: EnvoyEnvelope,
@@ -141,7 +145,11 @@ export async function sendHelloViaRuntime(
   );
 
   try {
-    const dialHints = await ctx.dialHintsForChat(targetPeerId, matchedRecord?.listenAddrs);
+    const dialHints = await ctx.dialHintsForChat(
+      targetPeerId,
+      matchedRecord?.listenAddrs,
+      options?.addressFilter,
+    );
     console.log(`[node-service] sendHello dialHints count=${dialHints.length}`);
     await ctx.deliverCallEnvelope(targetPeerId, envelope, dialHints, matchedRecord?.listenAddrs);
     console.log(`[node-service] Hello sent successfully to ${targetPeerId}`);
@@ -242,7 +250,10 @@ export async function acceptPendingHelloViaRuntime(ctx: BondContext, messageId: 
   try {
     console.log(`[node-service] Attempting to send bond.accept to ${pending.remotePeerId} dialHints merged…`);
     const requesterDir = await ctx.peerDirectoryStore.getPeerByOwnerId(pending.requesterOwnerId);
-    const acceptDialHints = await ctx.dialHintsForChat(pending.remotePeerId, requesterDir?.listenAddrs);
+    const acceptDialHints = await ctx.dialHintsForChat(
+      pending.remotePeerId,
+      requesterDir?.listenAddrs,
+    );
     console.log(`[node-service] bond.accept dialHints count=${acceptDialHints.length}`);
     await ctx.deliverCallEnvelope(
       pending.remotePeerId,

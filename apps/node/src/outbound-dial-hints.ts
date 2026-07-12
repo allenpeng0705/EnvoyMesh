@@ -42,6 +42,61 @@ function defaultAddressFilterForProfile(
   return "wan-public";
 }
 
+/**
+ * Smart address-filter selection for outbound dials to a known peer.
+ *
+ * Inspects the peer's known multiaddrs (bundled config + peer directory)
+ * and decides whether to try LAN first, WAN-only, or fall back to the
+ * local profile's default. The goal is to avoid wasted dial timeouts:
+ *
+ * - Local node is on `discoveryProfile: "lan-fast"` → always `"all"`.
+ *   Same-LAN home setups explicitly opt into RFC1918; honor that
+ *   regardless of what we know about the peer's addresses (the LAN
+ *   discovery may not have caught up yet).
+ * - Otherwise, if the peer's known multiaddrs include any RFC1918 /
+ *   link-local / CGNAT TCP path → `"all"`. The dialer tries LAN
+ *   addrs first and falls back to the relay circuit if the LAN paths
+ *   are stale. Right for same-Mac dev and same-LAN home setups.
+ * - Otherwise, if the peer has any non-circuit WAN addrs (public IP
+ *   or DNS) → `"wan-public"`. Skips the LAN attempt entirely; the
+ *   LAN timeout would never succeed.
+ * - Otherwise (peer has only circuit / loopback / unspecified addrs,
+ *   or no addrs at all) → `"wan-public"`. The dialer's "wan-public"
+ *   mode still allows circuit dials (they're the only viable path
+ *   anyway).
+ */
+export function pickAddressFilterForPeer(
+  peerMultiaddrs: readonly string[] | undefined,
+  localDiscoveryProfile: string | undefined,
+): DialableAddrMode {
+  // Same-LAN home setup wins over any per-peer inspection.
+  if (localDiscoveryProfile === "lan-fast") return "all";
+
+  // No peer addresses known — fall back to "wan-public". The
+  // lan-fast branch above already handled that case.
+  if (!peerMultiaddrs || peerMultiaddrs.length === 0) {
+    return "wan-public";
+  }
+
+  // Inspect the peer's known multiaddrs. We only need to know whether
+  // any LAN addrs are present — "has any LAN" maps to "all", "no
+  // LAN" maps to "wan-public". Whether the peer also has WAN addrs
+  // doesn't change the answer.
+  const hasLan = peerMultiaddrs.some((addr) =>
+    isPrivateLanTcpDialHint(addr),
+  );
+
+  // LAN addrs present: try LAN first. The dialer's "wan-public" mode
+  // would skip the LAN addrs entirely, so we need "all" to keep them
+  // in the candidate set. The dialer falls back to circuit (and
+  // eventually to relay) if the LAN paths are stale.
+  if (hasLan) return "all";
+
+  // No LAN addrs: "wan-public" — this still allows circuit dials,
+  // so the all-circuit/loopback/unspecified edge case is covered.
+  return "wan-public";
+}
+
 function dedupeDialHints(addrs: string[]): string[] {
   return dedupeDialHintStrings(addrs);
 }

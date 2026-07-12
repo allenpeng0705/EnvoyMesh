@@ -44,8 +44,17 @@ export function slugifyTopic(value: string): string {
  * This is the single source of truth for the interest topic vocabulary —
  * both advertise (capability-discovery / identity) and search
  * (node-service-discovery) MUST route raw interests through this.
+ *
+ * Idempotent: passing an already-normalized topic ("interest:music")
+ * returns it unchanged instead of double-prefixing
+ * ("interest:interest-music"). This matters because the production
+ * advertise call site (`computePublicDiscoveryTopics`) pre-normalizes
+ * its interests, and the defensive normalization in
+ * `_advertisePublicDiscoveryTopics` would otherwise double-prefix
+ * them.
  */
 export function interestTopicFor(rawInterest: string): string {
+  if (rawInterest.startsWith("interest:")) return rawInterest;
   const slug = slugifyTopic(rawInterest);
   return slug ? `interest:${slug}` : "";
 }
@@ -64,8 +73,11 @@ export function interestTopicFor(rawInterest: string): string {
  * Both advertise (node-service-identity → _advertisePublicDiscoveryTopics)
  * and search (node-service-discovery → searchPeers) MUST route raw display
  * names through this so the on-wire topic keys agree.
+ *
+ * Idempotent: passing an already-normalized topic returns it unchanged.
  */
 export function displayNameTopicFor(rawDisplayName: string): string {
+  if (rawDisplayName.startsWith("displayname:")) return rawDisplayName;
   const slug = slugifyTopic(rawDisplayName);
   return slug ? `displayname:${slug}` : "";
 }

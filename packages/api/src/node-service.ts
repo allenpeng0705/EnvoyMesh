@@ -241,6 +241,14 @@ export interface SendHelloOptions {
   proofOfContext?: string;
   /** Known libp2p peer id when owner directory lookup is not seeded yet (e.g. setup sponsor friend). */
   targetPeerId?: string;
+  /**
+   * Override the dial-hint address filter for this call. Defaults to
+   * `defaultAddressFilterForProfile(config)`. Pass `"all"` to keep
+   * loopback / RFC1918 / CGNAT hints (e.g. same-Mac dev where the
+   * relay-circuit path is broken and only loopback / LAN will reach
+   * the recipient). Pass `"lan-paired"` to keep LAN only.
+   */
+  addressFilter?: DialableAddrMode;
 }
 
 // ============================================

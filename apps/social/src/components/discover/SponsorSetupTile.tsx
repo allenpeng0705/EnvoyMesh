@@ -263,12 +263,22 @@ export function SponsorSetupTile() {
     return null;
   }
 
-  // Hide on success — the contact will now show in the bond list and
-  // re-surfacing the tile is noise. The user can still trigger a fresh
-  // run by re-pairing / re-pasting if they want to re-run.
+  // Hide on a clean success — the contact will now show in the bond
+  // list and re-surfacing the tile is noise. BUT if there's any
+  // sign of failure (lastError, lastErrorKind set, or zero attempts
+  // recorded), keep the tile visible so the user can re-trigger via
+  // "Try again". This is the escape hatch for the false-positive
+  // bug: pre-fix the runtime used to mark `setupSponsorFriendCompletedAt`
+  // the instant `sendHello` returned locally, before the sponsor's
+  // `bond.established` event fired. Without this fallback, users with
+  // a stuck `completedAt` have no UI to clear the state.
   const lastAttempt = status.state;
-  const lastRunSucceeded = Boolean(lastAttempt?.completedAt) && runState.kind !== "running";
-  if (lastRunSucceeded) {
+  const looksSuccessful = Boolean(lastAttempt?.completedAt) && runState.kind !== "running";
+  const hasFailureSignal =
+    Boolean(lastAttempt?.lastError) ||
+    Boolean(lastAttempt?.lastErrorKind) ||
+    (lastAttempt?.attempts ?? 0) === 0;
+  if (looksSuccessful && !hasFailureSignal) {
     return null;
   }
 
