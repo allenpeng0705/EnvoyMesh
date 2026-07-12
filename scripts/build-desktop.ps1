@@ -337,21 +337,33 @@ if ($stageError) {
 Write-Info "Staging OpenClaw gateway..."
 $openclawSrc = Join-Path $RepoRoot "packages/openclaw"
 $openclawDest = Join-Path $TauriResources "openclaw"
-# Self-healing: if the staged tree exists from a previous run, prune its
-# devDependencies in-place. pnpm prune --prod is idempotent and fast (~5-10s).
-# This is the safety net for the NSIS 2 GB limit: a staged tree with
-# devDependencies still present blows past 2 GB and makensis crashes with
-# "Internal compiler error #12345: error mmapping file ... is out of range".
-# The user should never need -ForceOpenClaw just to get a working bundle.
-if ((Test-Path (Join-Path $openclawDest "package.json")) -and `
-    (Test-Path (Join-Path $openclawDest "node_modules")) -and `
-    -not $SkipOpenClawPrune) {
-    Write-Info "Pruning devDependencies from staged OpenClaw (idempotent — safe to skip with -SkipOpenClawPrune)..."
-    Push-Location $openclawDest
+# Self-healing: if the staged tree's node_modules exists from a previous run
+# AND we still have access to the source, re-prune in the SOURCE (where pnpm's
+# preinstall scripts live) and copy the pruned node_modules to staged. This
+# is the safety net for the NSIS 2 GB limit: a staged tree with devDeps
+# still present blows past 2 GB and makensis crashes with "Internal compiler
+# error #12345: error mmapping file ... is out of range". The user should
+# never need -ForceOpenClaw just to get a working bundle.
+# (Earlier we tried to prune in the staged copy, but the staged copy excludes
+# `scripts/` so pnpm's preinstall script crashed. Pruning has to happen where
+# pnpm can actually find its postinstall scripts — that's the source.)
+if (-not $SkipOpenClawPrune -and `
+    (Test-Path (Join-Path $openclawSrc "package.json")) -and `
+    (Test-Path (Join-Path $openclawSrc "node_modules")) -and `
+    (Test-Path (Join-Path $openclawDest "node_modules"))) {
+    Write-Info "Pruning devDependencies from OpenClaw source (idempotent — safe to skip with -SkipOpenClawPrune)..."
+    Push-Location $openclawSrc
     try {
-        & pnpm prune --prod
-        if ($LASTEXITCODE -ne 0) {
-            Write-Warn "pnpm prune --prod failed in staged copy (continuing — bundle may exceed 2 GB NSIS limit)"
+        & pnpm prune --prod 2>&1 | Out-Null
+        if ($LASTEXITCODE -eq 0) {
+            # Re-copy the freshly-pruned node_modules to staged.
+            $nmSrc = Join-Path $openclawSrc "node_modules"
+            $nmDst = Join-Path $openclawDest "node_modules"
+            if (Test-Path $nmDst) { Remove-Item -Recurse -Force $nmDst }
+            Copy-Item -Recurse -Force $nmSrc $nmDst
+            Write-Ok "Re-copied pruned node_modules to staged tree"
+        } else {
+            Write-Warn "pnpm prune --prod failed in source (continuing — bundle may exceed 2 GB NSIS limit)"
         }
     } finally {
         Pop-Location
