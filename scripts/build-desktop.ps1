@@ -164,16 +164,25 @@ function Import-VcVarsIfNeeded {
 function Invoke-ExternalQuiet {
     param(
         [string]$Exe,
+        # CONSUME THE REST: anything after `$Exe` on the call site flows
+        # here. This MUST be the last param before any switches.
         [Parameter(ValueFromRemainingArguments = $true)][string[]]$ToolArgs,
-        # Lines from the tail of the log to show on failure. Default 100
-        # (was 30 — too small for a multi-stage build where the real error
-        # can be hundreds of lines above the final "stale temp file" line).
-        [int]$TailLines = 100,
         # Stream output live to the console as well as the log. Off by
         # default for short ops; on for the Tauri build so the user can
         # see what stage actually failed.
         [switch]$Stream
     )
+    # Lines from the tail of the log to show on failure. Hardcoded (was
+    # an `[int]$TailLines` param, but PowerShell's positional binding
+    # consumes the second positional ("run" in `npm run typecheck`) into
+    # the int param BEFORE the ValueFromRemainingArguments param above
+    # can collect the rest — `npm run typecheck` blew up with
+    # "Cannot convert value 'run' to type 'System.Int32'"). Override
+    # with $env:ENVOYMESH_TAIL_LINES if you need a different depth.
+    $TailLines = 100
+    if ($env:ENVOYMESH_TAIL_LINES -and $env:ENVOYMESH_TAIL_LINES -match '^\d+$') {
+        $TailLines = [int]$env:ENVOYMESH_TAIL_LINES
+    }
     $prevEap = $ErrorActionPreference
     $ErrorActionPreference = "SilentlyContinue"
     # Capture every byte (stdout + stderr) to a temp log so we can tail it
