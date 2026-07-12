@@ -56,6 +56,8 @@ export type SetupSponsorFriendState = {
     | "network-unreachable"
     | "proof-token-mismatch"
     | "profile-not-ready"
+    | "mesh-not-ready"
+    | "protocol-mismatch"
     | "other";
   attempts?: number;
   /**
@@ -71,6 +73,8 @@ export type SetupSponsorFriendState = {
    * when the runtime refuses to start a fresh cycle — current values:
    *   - `"cooldown"` — `cooldownUntil` is in the future.
    *   - `"profile-not-ready"` — `getHumanProfile()` returned null.
+   *   - `"mesh-not-ready"` — libp2p mesh isn't fully up yet.
+   *   - `"protocol-mismatch"` — `bond.request` landed on the wrong protocol.
    *   - `"disabled-or-incomplete"` — config not enabled or no ownerId.
    *   - `"already-completed"` — `setupSponsorFriendCompletedAt` is set.
    *   - `"sponsor-is-self-peer"` / `"sponsor-is-self-owner"` — local profile matches.
@@ -144,6 +148,8 @@ export type RunSetupSponsorFriendResult = {
     | "network-unreachable"
     | "proof-token-mismatch"
     | "profile-not-ready"
+    | "mesh-not-ready"
+    | "protocol-mismatch"
     | "other";
   /**
    * ISO timestamp at which the auto-retry cooldown expires. Set when the

@@ -228,6 +228,8 @@ export interface PersistedNodeConfig {
     | "network-unreachable"
     | "proof-token-mismatch"
     | "profile-not-ready"
+    | "mesh-not-ready"
+    | "protocol-mismatch"
     | "other";
   setupSponsorFriendAttempts?: number;
   /** ISO timestamp until which auto-retry is paused. Set by the runtime

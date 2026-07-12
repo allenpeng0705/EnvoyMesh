@@ -44,7 +44,7 @@ import {
   sendExpectReplyWithRetry,
 } from "./chat-outbound-deliver.js";
 import { deliverOutboundExpectReply } from "./mesh-outbound-helper.js";
-import { interestTopicFor } from "./capability-discovery.js";
+import { displayNameTopicFor, interestTopicFor } from "./capability-discovery.js";
 import type { createNodeConfigStore } from "./node-config-store.js";
 import type { DiscoverySeedStore } from "./discovery-seed-store.js";
 import {
@@ -144,6 +144,24 @@ export class NodeDiscoveryRuntime {
         for (const r of usernameResults) {
           if (!results.some((existing) => existing.nodeId === r.nodeId)) {
             results.push({ ...r, username: query.username });
+          }
+        }
+      }
+
+      // 3b. Display-name discovery: search DHT for displayname:<slug> topic.
+      // The Social UI's "By name" search sends free-text (`queryText`) that
+      // the user types in — typically a display name like "Allen Peng", not
+      // the @handle. Without this, name search is limited to local directory
+      // hits (which are empty for a never-bonded peer). Both sides route
+      // through `displayNameTopicFor` so the on-wire slugs match exactly.
+      if (isPublicNetwork && query.queryText) {
+        const dnTopic = displayNameTopicFor(query.queryText);
+        if (dnTopic) {
+          const dnResults = await this.searchByTopic(dnTopic, maxResults);
+          for (const r of dnResults) {
+            if (!results.some((existing) => existing.nodeId === r.nodeId)) {
+              results.push(r);
+            }
           }
         }
       }

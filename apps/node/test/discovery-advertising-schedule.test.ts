@@ -169,6 +169,7 @@ describe("discovery topic advertising — timeout + adaptive retry", () => {
         {
           interests: ["music", "tech", "science"],
           username: "alice",
+          displayName: "",
           locationTopics: ["geo:country:US"],
           capabilityTopics: ["coding-help"],
         },
@@ -205,6 +206,7 @@ describe("discovery topic advertising — timeout + adaptive retry", () => {
         {
           interests: ["music"],
           username: "alice",
+          displayName: "",
           locationTopics: [],
         },
       );
@@ -260,6 +262,7 @@ describe("discovery topic advertising — timeout + adaptive retry", () => {
       const promise = _advertisePublicDiscoveryTopics(ctx, {
         interests: ["music", "science"],
         username: "alice",
+        displayName: "",
         locationTopics: [],
       });
       await flushAsync();
@@ -300,7 +303,7 @@ describe("discovery topic advertising — timeout + adaptive retry", () => {
       // First call: 1 topic
       const p1 = _advertisePublicDiscoveryTopics(
         (nodeService as any)._identityContext(),
-        { interests: ["music"], username: "alice", locationTopics: [] },
+        { interests: ["music"], username: "alice", displayName: "", locationTopics: [] },
       );
       await flushAsync();
       await p1;
@@ -308,7 +311,7 @@ describe("discovery topic advertising — timeout + adaptive retry", () => {
       // Second call: 2 topics (different set, superset of first)
       const p2 = _advertisePublicDiscoveryTopics(
         (nodeService as any)._identityContext(),
-        { interests: ["music", "books"], username: "alice", locationTopics: [] },
+        { interests: ["music", "books"], username: "alice", displayName: "", locationTopics: [] },
       );
       await flushAsync();
       await p2;
@@ -412,6 +415,7 @@ describe("discovery topic advertising — timeout + adaptive retry", () => {
         {
           interests: ["music", "tech", "science"],
           username: "alice",
+          displayName: "",
           locationTopics: ["geo:country:CN"],
           capabilityTopics: ["coding-help", "lang:en"],
         },

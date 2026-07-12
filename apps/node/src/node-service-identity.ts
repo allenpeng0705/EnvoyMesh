@@ -53,7 +53,7 @@ import {
 import { sendExpectReplyWithRetry } from "./chat-outbound-deliver.js";
 import { dialHintsForTransportTarget } from "./mesh-outbound-helper.js";
 import { probeNearbyPeerProfile } from "./nearby-profile-probe.js";
-import { interestTopicFor } from "./capability-discovery.js";
+import { displayNameTopicFor, interestTopicFor } from "./capability-discovery.js";
 import { raceWithTimeout } from "./node-service-outbound-messaging.js";
 import {
   importProfilePhotoBytes,
@@ -378,6 +378,7 @@ export async function updateHumanProfileViaRuntime(
     isPublicNetwork: Boolean(isPublicNetwork),
     interests,
     username,
+    displayName: updatedPayload.displayName,
     locationTopics,
     capabilityTopics,
   }).catch((err) => {
@@ -747,6 +748,7 @@ export async function _applyProfileDiscoveryAdvertising(
     isPublicNetwork: boolean;
     interests: string[];
     username: string;
+    displayName: string;
     locationTopics: string[];
     capabilityTopics: string[];
   },
@@ -758,6 +760,7 @@ export async function _applyProfileDiscoveryAdvertising(
     await _advertisePublicDiscoveryTopics(ctx, {
       interests: input.interests,
       username: input.username,
+      displayName: input.displayName,
       locationTopics: input.locationTopics,
       capabilityTopics: input.capabilityTopics,
     });
@@ -832,6 +835,7 @@ export async function _advertisePublicDiscoveryTopics(
   input: {
     interests: string[];
     username: string;
+    displayName: string;
     locationTopics: string[];
     capabilityTopics?: string[];
   },
@@ -841,6 +845,12 @@ export async function _advertisePublicDiscoveryTopics(
     topicSet.add(interest.toLowerCase());
   }
   topicSet.add(`username:${input.username.toLowerCase()}`);
+  // Publish the display name as its own topic so name-based search can find
+  // humans by what they call themselves in the UI, not just by their @handle.
+  // The search side (node-service-discovery) routes raw query text through
+  // the same `displayNameTopicFor` helper, so advertise and search agree.
+  const dnTopic = displayNameTopicFor(input.displayName);
+  if (dnTopic) topicSet.add(dnTopic);
   for (const geo of input.locationTopics) {
     topicSet.add(geo);
   }
@@ -1063,8 +1073,14 @@ export async function _advertiseInterests(
   ctx: IdentityContext,
   interests: string[],
   username: string,
+  displayName: string = "",
 ): Promise<void> {
-  return _advertisePublicDiscoveryTopics(ctx, { interests, username, locationTopics: [] });
+  return _advertisePublicDiscoveryTopics(ctx, {
+    interests,
+    username,
+    displayName,
+    locationTopics: [],
+  });
 }
 
 /**
@@ -1121,6 +1137,7 @@ export async function _advertiseInterestsIfPublic(ctx: IdentityContext): Promise
     await _advertisePublicDiscoveryTopics(ctx, {
       interests,
       username: profile.username,
+      displayName: profile.displayName,
       locationTopics,
       capabilityTopics,
     });

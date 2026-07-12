@@ -11,6 +11,7 @@ import {
   buildAutoCapabilityTopics,
   buildInterestTopics,
   buildProfileDiscoveryTopics,
+  displayNameTopicFor,
   interestTopicFor,
   slugifyTopic,
 } from "../src/capability-discovery.js";
@@ -123,5 +124,54 @@ describe("interest topic advertise/search contract", () => {
     expect(slugifyTopic("Music")).toBe("music");
     expect(slugifyTopic("MACHINE LEARNING")).toBe("machine-learning");
     expect(slugifyTopic("  spaces  ")).toBe("spaces");
+  });
+});
+
+/**
+ * Display-name topic advertise/search contract.
+ *
+ * The Social UI's "By name" search lets users type free-text — typically a
+ * display name like "Allen Peng", NOT the @handle. Both advertise
+ * (node-service-identity._advertisePublicDiscoveryTopics) and search
+ * (NodeDiscoveryRuntime.searchPeers) MUST route raw display names through
+ * `displayNameTopicFor` so the on-wire topic keys agree. Without this,
+ * `searchPeers({ queryText: "Allen Peng" })` looks up
+ * `displayname:allen-peng` but Allen's node advertised the same key only if
+ * it also routed its display name through the same helper — pinning the
+ * shared vocabulary here.
+ */
+describe("displayname topic advertise/search contract", () => {
+  it("displayNameTopicFor slugifies spaces, case, and punctuation", () => {
+    expect(displayNameTopicFor("Allen Peng")).toBe("displayname:allen-peng");
+    expect(displayNameTopicFor("allen peng")).toBe("displayname:allen-peng");
+    expect(displayNameTopicFor("ALLEN PENG")).toBe("displayname:allen-peng");
+    expect(displayNameTopicFor("  Allen  Peng  ")).toBe("displayname:allen-peng");
+    expect(displayNameTopicFor("Emily O'Brien")).toBe("displayname:emily-o-brien");
+  });
+
+  it("displayNameTopicFor returns empty string for unusable input", () => {
+    expect(displayNameTopicFor("")).toBe("");
+    expect(displayNameTopicFor("   ")).toBe("");
+    expect(displayNameTopicFor("---")).toBe("");
+    expect(displayNameTopicFor("!!!")).toBe("");
+  });
+
+  it("displayNameTopicFor and the search-side slug agree for typical names", () => {
+    // The advertise side (input.displayName → displayNameTopicFor) and the
+    // search side (query.queryText → displayNameTopicFor) produce the same
+    // topic key for the same human name. This is the contract that lets
+    // "Allen Peng" typed into the UI find Allen in the DHT.
+    const inputs = [
+      "Allen Peng",
+      "  Emily  Carter  ",
+      "Maya-Rose Kim",
+      "J. R. Smith",
+    ];
+    for (const raw of inputs) {
+      const fromAdvertise = displayNameTopicFor(raw);
+      const fromSearch = displayNameTopicFor(raw);
+      expect(fromAdvertise).toBe(fromSearch);
+      expect(fromAdvertise.startsWith("displayname:")).toBe(true);
+    }
   });
 });

@@ -2071,6 +2071,7 @@ class NodeServiceImpl implements NodeService {
   async _advertisePublicDiscoveryTopics(input: {
     interests: string[];
     username: string;
+    displayName: string;
     locationTopics: string[];
     capabilityTopics?: string[];
   }): Promise<void> {
@@ -2078,8 +2079,8 @@ class NodeServiceImpl implements NodeService {
   }
 
   /** @deprecated bridge to `_advertisePublicDiscoveryTopics` — kept for legacy tests. */
-  async _advertiseInterests(interests: string[], username: string): Promise<void> {
-    return _advertiseInterests(this._identityContext(), interests, username);
+  async _advertiseInterests(interests: string[], username: string, displayName: string = ""): Promise<void> {
+    return _advertiseInterests(this._identityContext(), interests, username, displayName);
   }
 
   /**
@@ -4733,6 +4734,32 @@ class NodeServiceImpl implements NodeService {
         getProfileDir: () => this._profileDir,
         nodeBundleDir: process.env.ENVOYMESH_NODE_BUNDLE_DIR,
         assertOnline: () => this._assertOnline(),
+        // Mesh-readiness probe: returns true only when the libp2p mesh
+        // is set AND has registered listen addrs (event loop running).
+        // The auto-trigger in NodeStateContext fires the moment
+        // nodeStatus flips to "running", which can be tens of seconds
+        // before the mesh's event loop is fully online. Without this
+        // gate, the loop fires immediately, `searchPeers` returns []
+        // with "Node not initialized" (silently), and `sendHello`
+        // proceeds with `dialHints count=1` against a mesh that can't
+        // route — burning all 12 attempts before the operator sees a
+        // final state. The runtime uses the result to skip the spawn
+        // entirely with a `mesh-not-ready` skip reason.
+        probeMeshReady: () => {
+          const mesh = this._mesh ?? this._externalMesh;
+          if (!mesh) return Promise.resolve(false);
+          // `mesh.multiaddrs` is the listen-address list populated by
+          // libp2p during `node.start()`. Empty list = the event loop
+          // hasn't fully started yet, regardless of what nodeStatus
+          // reports. (EnvoyMesh has no `isStarted()` method.)
+          if (mesh.multiaddrs.length === 0) return Promise.resolve(false);
+          // If the mesh has any connected peer (relay or otherwise),
+          // the routing substrate is alive and the loop's `sendHello`
+          // will get useful dial hints. Without this, the loop would
+          // race the relay reservation and burn attempts.
+          if (mesh.getConnectedRelayPeerIds().length > 0) return Promise.resolve(true);
+          return Promise.resolve(mesh.getConnectedPeerIds().length > 0);
+        },
       },
       { forceBypassGuards: input?.forceBypassGuards === true },
     );

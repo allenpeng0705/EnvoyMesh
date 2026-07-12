@@ -51,6 +51,26 @@ export function interestTopicFor(rawInterest: string): string {
 }
 
 /**
+ * Canonical topic string for a user's display name: `displayname:<slug>`.
+ * Returns "" if the slug is empty (e.g. user typed only punctuation).
+ *
+ * Why this exists: the Social UI's "By name" search lets users type
+ * free-text — typically a display name like "Allen Peng", NOT the @handle
+ * (`username:allen_peng`). The username-topic lookup is exact (no
+ * slug), so `"Allen Peng"` doesn't match the advertised `username:allen_peng`.
+ * Publishing + looking up the display name as its own topic (slugged the
+ * same way on both sides) gives name search a real handle to query.
+ *
+ * Both advertise (node-service-identity → _advertisePublicDiscoveryTopics)
+ * and search (node-service-discovery → searchPeers) MUST route raw display
+ * names through this so the on-wire topic keys agree.
+ */
+export function displayNameTopicFor(rawDisplayName: string): string {
+  const slug = slugifyTopic(rawDisplayName);
+  return slug ? `displayname:${slug}` : "";
+}
+
+/**
  * Build `interest:<slug>` DHT topics from a human profile's hobbies + knowledge.
  * Empty/duplicate/unsuitable tags are dropped. Used to advertise a new user's
  * chosen interests so peers running `searchPeers({ interests: ["music"] })`

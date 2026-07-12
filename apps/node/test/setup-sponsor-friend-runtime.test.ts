@@ -103,6 +103,53 @@ describe("classifySponsorError", () => {
     );
   });
 
+  it("classifies libp2p mesh-not-ready errors as mesh-not-ready", () => {
+    expect(classifySponsorError("Node is starting. Start the node first.")).toBe(
+      "mesh-not-ready",
+    );
+    expect(classifySponsorError("[searchPeers] Node not initialized")).toBe(
+      "mesh-not-ready",
+    );
+    expect(classifySponsorError("libp2p not yet started")).toBe(
+      "mesh-not-ready",
+    );
+  });
+
+  it("classifies the observed limited-connection + ensurePeerReachable family as network-unreachable", () => {
+    // These were classified as "other" before 2026-07-12 because the
+    // patterns weren't in the regex. They cause the loop to burn all
+    // 12 attempts with no actionable hint — fix is to route them to
+    // network-unreachable so the UI surfaces a network hint.
+    expect(
+      classifySponsorError(
+        "ensurePeerReachable failed for /ip4/47.93.11.212/tcp/40…: The operation was aborted due to timeout",
+      ),
+    ).toBe("network-unreachable");
+    expect(
+      classifySponsorError(
+        "outbound /envoymesh/message/0.1.0 dial failed for /p2p-circuit/…: Cannot open protocol stream on limited connection",
+      ),
+    ).toBe("network-unreachable");
+    expect(
+      classifySponsorError("sendExpectReply: peer closed stream without a reply"),
+    ).toBe("network-unreachable");
+    expect(
+      classifySponsorError("stream open failed on existing connection (Unexpected EOF)"),
+    ).toBe("network-unreachable");
+  });
+
+  it("classifies protocol-routing errors as protocol-mismatch", () => {
+    // Surfaced from the 2026-07-12 Emily log: bond.request landed on
+    // the chat protocol because the deliver-call fast path doesn't
+    // gate on intent. This is a code bug, not operator-network.
+    expect(
+      classifySponsorError("invalid intent bond.request on chat protocol"),
+    ).toBe("protocol-mismatch");
+    expect(
+      classifySponsorError("unsupported intent: foo on /envoymesh/chat/0.1.0"),
+    ).toBe("protocol-mismatch");
+  });
+
   it("falls back to 'other' for unrecognized errors", () => {
     expect(classifySponsorError("rate limited")).toBe("other");
     expect(classifySponsorError(undefined)).toBe("other");
@@ -239,8 +286,14 @@ describe("runSetupSponsorFriendViaRuntime — error kind (background loop)", () 
     expect(saveNodeConfig).toHaveBeenCalledWith(
       expect.objectContaining({
         setupSponsorFriendLastError: expect.stringContaining("Node is starting"),
-        // "starting" is not in the network/proof regex; classify as "other"
-        setupSponsorFriendLastErrorKind: "other",
+        // "node is starting" matches the mesh-not-ready pattern
+        // (added 2026-07-12 to surface the libp2p-not-up case
+        // distinctly from a real network failure). The runtime's
+        // bail-on-mesh-not-ready branch then persists this kind
+        // and short-circuits the rest of the retry budget.
+        setupSponsorFriendLastErrorKind: "mesh-not-ready",
+        setupSponsorFriendSkipReason: "mesh-not-ready",
+        setupSponsorFriendCooldownUntil: expect.any(String),
       }),
     );
   });
@@ -390,6 +443,123 @@ describe("runSetupSponsorFriendViaRuntime — error kind (background loop)", () 
     // tests that share an ownerId.
     (sendHelloGate as unknown as { _release?: () => void })._release?.();
     await new Promise((r) => setTimeout(r, 10));
+  });
+
+  it("skips spawn when probeMeshReady() returns false (mesh not up yet)", async () => {
+    // Phase 4 of the sponsor-loop fix: gate the spawn on mesh readiness
+    // so the loop doesn't fire on the same tick as nodeStatus="running"
+    // and burn all 12 attempts against a mesh that can't route yet.
+    // The skip must be classified as mesh-not-ready so the UI can
+    // show "Mesh is starting" instead of a generic "Retrying".
+    const saveNodeConfig = vi.fn(async () => {});
+    const sendHello = vi.fn(async () => ({ messageId: "msg-1" }));
+
+    const result = await runSetupSponsorFriendViaRuntime(
+      {
+        loadNodeConfig: async () => ({
+          version: "0.1",
+          profileDir: "/tmp/profile",
+          discoveryProfile: "wan-default",
+          enableMdns: true,
+          relayEnabled: true,
+          relayServerEnabled: false,
+          advertiseAddrs: [],
+          bootstrapPeers: [],
+          bootstrapPresets: [],
+          configuredRelays: [],
+          modelProviders: { mode: "disabled" },
+          chatAssistEnabled: false,
+          contactAiPreferences: [],
+          updatedAt: new Date().toISOString(),
+          setupSponsorFriendEnabled: true,
+          setupSponsorFriendOwnerId: "envoy:owner:test",
+          setupSponsorFriendPeerId: "12D3KooWTest",
+          setupSponsorFriendMaxAttempts: 1,
+          setupSponsorFriendRetryDelayMs: 0,
+        }),
+        saveNodeConfig,
+        getProfileDir: () => "/tmp/profile",
+        nodeBundleDir: "/tmp/bundle",
+        applyWanJoinInvite: vi.fn(async () => ({})),
+        searchPeers: vi.fn(async () => []),
+        sendHello,
+        loadHelloProfile: async () => ({
+          displayName: "New User",
+          bio: "",
+          interests: [],
+          whatShares: [],
+        }),
+        loadNodeProfile: async () => undefined,
+        assertOnline: () => {},
+        // Mesh is not ready — the spawn must be skipped, not entered.
+        probeMeshReady: async () => false,
+      },
+      { forceBypassGuards: false },
+    );
+
+    // Spawn was skipped (not running) because the mesh wasn't up.
+    expect(result.ok).toBe(true);
+    expect(result.skipped).toBe(true);
+    expect(result.reason).toBe("mesh-not-ready");
+    expect(result.lastErrorKind).toBe("mesh-not-ready");
+    // The loop never ran, so sendHello was never called.
+    expect(sendHello).not.toHaveBeenCalled();
+    // The skip does NOT persist on its own — matching the
+    // profile-not-ready skip behavior. The tile reads the live
+    // `getSetupSponsorFriendStatus` for the hint, not a stale
+    // persisted snapshot, so the in-memory return is the source
+    // of truth for the "Mesh is starting" UX.
+    expect(saveNodeConfig).not.toHaveBeenCalled();
+  });
+
+  it("runs the loop when probeMeshReady() returns true", async () => {
+    // Companion to the above: when the mesh is up, the loop fires
+    // normally and sendHello is called.
+    const saveNodeConfig = vi.fn(async () => {});
+    const sendHello = vi.fn(async () => ({ messageId: "msg-1" }));
+
+    const result = await runSetupSponsorFriendViaRuntime({
+      loadNodeConfig: async () => ({
+        version: "0.1",
+        profileDir: "/tmp/profile",
+        discoveryProfile: "wan-default",
+        enableMdns: true,
+        relayEnabled: true,
+        relayServerEnabled: false,
+        advertiseAddrs: [],
+        bootstrapPeers: [],
+        bootstrapPresets: [],
+        configuredRelays: [],
+        modelProviders: { mode: "disabled" },
+        chatAssistEnabled: false,
+        contactAiPreferences: [],
+        updatedAt: new Date().toISOString(),
+        setupSponsorFriendEnabled: true,
+        setupSponsorFriendOwnerId: "envoy:owner:test",
+        setupSponsorFriendPeerId: "12D3KooWTest",
+        setupSponsorFriendMaxAttempts: 1,
+        setupSponsorFriendRetryDelayMs: 0,
+      }),
+      saveNodeConfig,
+      getProfileDir: () => "/tmp/profile",
+      nodeBundleDir: "/tmp/bundle",
+      applyWanJoinInvite: vi.fn(async () => ({})),
+      searchPeers: vi.fn(async () => []),
+      sendHello,
+      loadHelloProfile: async () => ({
+        displayName: "New User",
+        bio: "",
+        interests: [],
+        whatShares: [],
+      }),
+      loadNodeProfile: async () => undefined,
+      assertOnline: () => {},
+      probeMeshReady: async () => true,
+    });
+
+    expect(result.running).toBe(true);
+    await flushSponsorLoop();
+    expect(sendHello).toHaveBeenCalledTimes(1);
   });
 });
 

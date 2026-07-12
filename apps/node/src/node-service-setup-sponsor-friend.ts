@@ -49,19 +49,25 @@ export type SponsorFailureKind =
   | "network-unreachable"
   | "proof-token-mismatch"
   | "profile-not-ready"
+  | "mesh-not-ready"
+  | "protocol-mismatch"
   | "other";
 
 /**
  * Classify the error message produced by the hello send. Pure function so
  * it can be unit-tested without wiring the full runtime.
+ *
+ * Order matters — earlier patterns win. Profile-not-ready must beat the
+ * network patterns because the underlying "Human profile not initialized"
+ * string contains the substring "not initialized" which would otherwise
+ * trip the "operation timed out" pattern (it doesn't today, but keeping
+ * the comment as a tripwire). Mesh-not-ready must beat network patterns
+ * because we want to surface a "wait for the network" hint, not a "your
+ * network is down" hint.
  */
 export function classifySponsorError(message: string | undefined): SponsorFailureKind {
   const m = (message ?? "").toLowerCase();
   if (!m) return "other";
-  // Profile-not-ready must be checked BEFORE the network patterns, because
-  // the underlying "Human profile not initialized" string contains the
-  // substring "not initialized" which otherwise doesn't trip the network
-  // patterns but is the very specific signal we want to surface separately.
   if (
     /human profile not initialized|profile not (yet )?initialized|profile not ready|missing profile/.test(
       m,
@@ -69,18 +75,52 @@ export function classifySponsorError(message: string | undefined): SponsorFailur
   ) {
     return "profile-not-ready";
   }
+  // Mesh-not-ready — the libp2p mesh exists but hasn't started its event
+  // loop yet, or the bound `mesh` instance is undefined when the loop
+  // fires. The original signal in the runtime is `"[searchPeers] Node
+  // not initialized"` from `node-service-discovery` when `getMesh()`
+  // returns null/undefined, plus the libp2p `"not started"` family
+  // thrown by `node.start()` callers.
+  if (
+    /node not initialized|mesh not (yet )?ready|mesh not started|libp2p not (yet )?started|node.start.*not (yet )?called|envoy not started|envoymesh not started|node is starting/.test(
+      m,
+    )
+  ) {
+    return "mesh-not-ready";
+  }
   // Network reachability patterns from chat-outbound-deliver / network layer.
   // `no outbound dial attempted` is the dial layer's signal that it had
   // no usable candidate addrs (all filtered by addressFilter, all LAN
   // stripped under wan-public, etc.) — semantically a reachability
   // failure from the operator's perspective, even though no actual
   // dial was attempted.
+  //
+  // Includes the libp2p `ensurePeerReachable` and `Cannot open protocol
+  // stream on limited connection` families observed in 2026-07-12 log:
+  //   "[network] ensurePeerReachable failed for /ip4/47.93.11.212/…:
+  //    The operation was aborted due to timeout"
+  //   "[network] outbound /envoymesh/message/0.1.0 dial failed for
+  //    …/p2p-circuit/…: Cannot open protocol stream on limited connection"
+  //   "expect-reply attempt N/3 failed for /ip4/…: sendExpectReply:
+  //    peer closed stream without a reply"
   if (
-    /no reachable path|could not dial|dial backoff|dial tcp|connection refused|connection reset|econnrefused|etimedout|enotfound|ehostunreach|network is unreachable|relay.*unreachable|relay.*closed|relay.*timeout|relay.*disconnected|i\/o timeout|operation timed out|no outbound dial attempted/.test(
+    /no reachable path|could not dial|dial backoff|dial tcp|connection refused|connection reset|econnrefused|etimedout|enotfound|ehostunreach|network is unreachable|relay.*unreachable|relay.*closed|relay.*timeout|relay.*disconnected|i\/o timeout|operation timed out|no outbound dial attempted|ensurepeerreachable failed|cannot open protocol stream on limited connection|peer closed stream without a reply|stream open failed|unexpected eof|connection error|sendexpectreply/.test(
       m,
     )
   ) {
     return "network-unreachable";
+  }
+  // Protocol-mismatch — the envelope's intent isn't accepted on the
+  // protocol it was routed to (e.g. `bond.request` landed on the chat
+  // protocol, which only accepts `chat.message`). Surfacing this lets
+  // the UI show a "protocol routing" hint instead of "network" — these
+  // are code bugs, not operator-network bugs.
+  if (
+    /invalid intent .* on .* protocol|protocol.*rejected|unsupported intent|unknown intent|intent.*not (yet )?supported|unsupported protocol/.test(
+      m,
+    )
+  ) {
+    return "protocol-mismatch";
   }
   // Proof-token mismatch from bondAutonomyWorker / bond.request handler.
   if (
@@ -170,6 +210,23 @@ export interface SetupSponsorFriendRuntimeDeps {
    *  probes `loadHelloProfile()` on its own. The probe is split out so
    *  callers (UI) can read profile state without forcing a load. */
   probeHumanProfileReady?(): Promise<boolean>;
+  /** Optional explicit libp2p mesh-readiness probe — used by the auto-trigger
+   *  to gate the loop on the mesh being actually up, not just on
+   *  `nodeStatus === "running"`. The NodeStateContext auto-trigger fires
+   *  the moment nodeStatus becomes "running", which can be tens of seconds
+   *  before the libp2p mesh's event loop is fully online. Sending
+   *  `bond.request` against a not-yet-started mesh returns either
+   *  `"Node not initialized"` from `searchPeers` (silently, no error) or
+   *  a `dialHints count=1` sendHello that times out at 30s — the loop
+   *  burns 12 attempts before the operator sees a final state.
+   *
+   *  The probe should return `true` only when the underlying
+   *  `EnvoyMesh` instance is started AND the relay circuit (if enabled)
+   *  has a reservation, so the first attempt of the loop has a
+   *  non-empty set of routable dial hints. When omitted, the runtime
+   *  skips the gate and falls back to the existing per-attempt
+   *  `assertOnline()` check. */
+  probeMeshReady?(): Promise<boolean>;
   /** Load the local node profile (for self-check). */
   loadNodeProfile(): Promise<{ owner: { ownerId: string }; peerId: string } | undefined>;
   assertOnline(): void;
@@ -247,6 +304,33 @@ export async function runSetupSponsorFriendViaRuntime(
           reason: "profile-not-ready",
           ownerId,
           lastErrorKind: "profile-not-ready",
+        };
+      }
+    }
+
+    // Mesh-readiness guard — nodeStatus flips to "running" the moment the
+    // process is up, but the libp2p mesh can take another 10-30s to
+    // register listen addrs, complete the DHT bootstrap, and (if
+    // configured) land a relay reservation. Without this guard, the loop
+    // fires immediately, `searchPeers` returns `[]` with `"Node not
+    // initialized"` (silently, no error), and `sendHello` proceeds with
+    // `dialHints count=1` against a mesh that can't actually route —
+    // burning all 12 attempts before the operator sees a final state.
+    //
+    // Skip is also classified as `mesh-not-ready` so the UI can show a
+    // "waiting for the network" hint instead of "Retrying" forever.
+    if (deps.probeMeshReady) {
+      const meshReady = await deps.probeMeshReady();
+      if (!meshReady) {
+        console.log(
+          `[runSetupSponsorFriend] libp2p mesh not ready for ownerId=${ownerId.slice(0, 16)}…; not spawning a loop`,
+        );
+        return {
+          ok: true,
+          skipped: true,
+          reason: "mesh-not-ready",
+          ownerId,
+          lastErrorKind: "mesh-not-ready",
         };
       }
     }
@@ -378,6 +462,18 @@ async function runSetupSponsorFriendRetryLoop(
   for (let attempt = 1; attempt <= resolved.maxAttempts; attempt += 1) {
     try {
       deps.assertOnline();
+      // Re-probe mesh readiness inside the loop too. The guard at the call
+      // site is the first line of defense (skips the spawn entirely), but
+      // libp2p can still be initializing when the loop's first iteration
+      // runs if the spawn raced with `node.start()`. Re-probing here
+      // turns that race from "burn 12 attempts" into "bail on the first
+      // one with a classified hint".
+      if (deps.probeMeshReady) {
+        const meshReady = await deps.probeMeshReady();
+        if (!meshReady) {
+          throw new Error("libp2p mesh not ready yet — deferring bond.request");
+        }
+      }
       // Load the hello profile lazily — failure here is also persisted, so
       // a half-initialized profile surfaces as a clear error in the tile
       // instead of an opaque "Not started yet".
@@ -452,6 +548,52 @@ async function runSetupSponsorFriendRetryLoop(
         });
         console.warn(
           `[runSetupSponsorFriend] bailing out: profile not ready. Cooldown until ${new Date(
+            Date.now() + cooldownMs,
+          ).toISOString()}`,
+        );
+        return;
+      }
+
+      // mesh-not-ready is transient (libp2p finishes its event loop
+      // eventually) but the 30s dial timeout makes per-attempt burns
+      // costly. Same bail-and-cooldown pattern as profile-not-ready
+      // so the UI shows "Mesh is starting" instead of "Retrying" for
+      // 60s, and the next auto-trigger has a fresh window to probe.
+      if (lastErrorKind === "mesh-not-ready") {
+        const base2 = buildBasePersistedConfig(existing, deps);
+        await deps.saveNodeConfig({
+          ...base2,
+          setupSponsorFriendLastError: lastError,
+          setupSponsorFriendLastErrorKind: "mesh-not-ready",
+          setupSponsorFriendSkipReason: "mesh-not-ready",
+          setupSponsorFriendCooldownUntil: new Date(Date.now() + cooldownMs).toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+        console.warn(
+          `[runSetupSponsorFriend] bailing out: libp2p mesh not ready. Cooldown until ${new Date(
+            Date.now() + cooldownMs,
+          ).toISOString()}`,
+        );
+        return;
+      }
+
+      // protocol-mismatch is a code bug, not a network or operator
+      // issue. Bail with a permanent-ish cooldown (still respects
+      // `forceBypassGuards` for Retry) so the operator sees the
+      // classified hint and can file a bug instead of watching 12
+      // attempts spam "Retrying".
+      if (lastErrorKind === "protocol-mismatch") {
+        const base2 = buildBasePersistedConfig(existing, deps);
+        await deps.saveNodeConfig({
+          ...base2,
+          setupSponsorFriendLastError: lastError,
+          setupSponsorFriendLastErrorKind: "protocol-mismatch",
+          setupSponsorFriendSkipReason: "protocol-mismatch",
+          setupSponsorFriendCooldownUntil: new Date(Date.now() + cooldownMs).toISOString(),
+          updatedAt: new Date().toISOString(),
+        });
+        console.warn(
+          `[runSetupSponsorFriend] bailing out: protocol-mismatch. Cooldown until ${new Date(
             Date.now() + cooldownMs,
           ).toISOString()}`,
         );
