@@ -356,106 +356,45 @@ if ($openclawStaged -and -not $ForceOpenClaw) {
             }
         }
 
-        # Run pnpm via Start-Process + Wait-Process. The previous attempt
-        # used a background reader job (`Get-Content -Wait`) which holds the
-        # stdout file open, blocking pnpm from opening the same file for
-        # write — Windows sharing violation made pnpm exit in 0s with
-        # exit 1. Use the proper Start-Process + Wait-Process pattern
-        # instead, which lets pnpm own its stdout/stderr files cleanly
-        # and uses the process object's ExitCode for a reliable result.
-        $pnpmTimeoutSec = 600
-        Write-Info "pnpm install (timeout $pnpmTimeoutSec sec — can take 1-3 min on cold cache)..."
-
+        # Run pnpm via the synchronous call operator (`&`). This is the
+        # pattern that worked for the user when they ran pnpm install
+        # directly. It streams live output to the console, captures
+        # $LASTEXITCODE in the parent scope, and avoids the Windows-only
+        # pitfalls of Start-Process:
+        #   - `Start-Process pnpm` fails with "%1 is not a valid Win32
+        #     application" because pnpm is a .cmd shim, not a .exe
+        #   - `Start-Process -RedirectStandardOutput` + a reader job
+        #     holding the same file causes a sharing violation that makes
+        #     pnpm exit in 0s with code 1
+        # `& pnpm install` works because PowerShell resolves pnpm
+        # through PATHEXT (pnpm.cmd / pnpm.ps1) and inherits the parent's
+        # stdout/stderr naturally.
+        #
+        # Trade-off: no automatic timeout. The operator can Ctrl-C if pnpm
+        # hangs. The previous 10-min timeout was a nice-to-have; correctness
+        # beats having a perfect hang protection. pnpm install takes
+        # <30s on a warm cache and <3min on cold; pathological hangs are
+        # rare and Ctrl-C handles them.
+        Write-Info "pnpm install (this can take 1-3 min on cold cache)..."
         $sw = [System.Diagnostics.Stopwatch]::StartNew()
-        $pnpmProc = Start-Process -FilePath "pnpm" -ArgumentList @("install", "--no-frozen-lockfile") `
-                                     -WorkingDirectory (Get-Location) `
-                                     -PassThru -NoNewWindow `
-                                     -RedirectStandardOutput "pnpm.out" `
-                                     -RedirectStandardError "pnpm.err"
-        $heartbeatInterval = 60
-        $lastBeat = 0
-        # Wait-Process -Timeout returns $true if the process exited within
-        # the window, $false if the timeout fired. We loop with smaller
-        # chunks so we can emit a heartbeat and respect the overall
-        # $pnpmTimeoutSec budget.
-        $timedOut = $false
-        while (-not $pnpmProc.HasExited) {
-            $exited = $pnpmProc.WaitForExit(5000)
-            $elapsed = [int]$sw.Elapsed.TotalSeconds
-            if (($elapsed - $lastBeat) -ge $heartbeatInterval) {
-                $remaining = $pnpmTimeoutSec - $elapsed
-                Write-Info "  ...still installing (${elapsed}s elapsed, ${remaining}s until timeout)"
-                $lastBeat = $elapsed
-            }
-            if ($elapsed -ge $pnpmTimeoutSec) {
-                $timedOut = $true
-                break
-            }
-        }
-        if ($timedOut) {
-            Write-Fail "pnpm install exceeded $pnpmTimeoutSec-second timeout. Killing process."
-            Stop-Process -Id $pnpmProc.Id -Force -ErrorAction SilentlyContinue
-            Start-Sleep -Seconds 2
-        }
-        $pnpmProc.Refresh()
-        $pnpmExit = $pnpmProc.ExitCode
+        & pnpm install --no-frozen-lockfile 2>&1 | Tee-Object -FilePath "pnpm.out" | Out-Host
+        $pnpmExit = $LASTEXITCODE
         $sw.Stop()
-
-        # Show pnpm's output now that the process has finished (file is no
-        # longer locked). Only the LAST 30 lines of stdout / 50 of stderr
-        # — pnpm can produce hundreds of "Progress: resolved N" lines
-        # that bury the actual error.
-        if (Test-Path "pnpm.out") {
-            $pnpmOutLines = (Get-Content "pnpm.out" -ErrorAction SilentlyContinue) | Select-Object -Last 30
-            if ($pnpmOutLines) {
-                Write-Host "  --- pnpm stdout (last 30 lines) ---" -ForegroundColor DarkGray
-                $pnpmOutLines | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
-            }
-        }
-        if (Test-Path "pnpm.err") {
-            $pnpmErrLines = (Get-Content "pnpm.err" -ErrorAction SilentlyContinue) | Select-Object -Last 50
-            if ($pnpmErrLines) {
-                Write-Host "  --- pnpm stderr (last 50 lines) ---" -ForegroundColor DarkRed
-                $pnpmErrLines | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkRed }
-            }
-        }
         Write-Info "pnpm install finished in $([int]$sw.Elapsed.TotalSeconds)s (exit $pnpmExit)"
 
         if ($pnpmExit -ne 0) {
             Write-Info "Retrying with clean node_modules..."
             if (Test-Path "node_modules") { Remove-Item -Recurse -Force "node_modules" }
             $sw = [System.Diagnostics.Stopwatch]::StartNew()
-            $pnpmProc = Start-Process -FilePath "pnpm" -ArgumentList @("install", "--no-frozen-lockfile") `
-                                         -WorkingDirectory (Get-Location) `
-                                         -PassThru -NoNewWindow `
-                                         -RedirectStandardOutput "pnpm.out" `
-                                         -RedirectStandardError "pnpm.err"
-            while (-not $pnpmProc.HasExited) {
-                $pnpmProc.WaitForExit(5000) | Out-Null
-                $elapsed = [int]$sw.Elapsed.TotalSeconds
-                if ($elapsed -ge $pnpmTimeoutSec) {
-                    Write-Fail "pnpm install (retry) exceeded $pnpmTimeoutSec-second timeout"
-                    Stop-Process -Id $pnpmProc.Id -Force -ErrorAction SilentlyContinue
-                    Pop-Location
-                    exit 1
-                }
-            }
-            $pnpmProc.Refresh()
-            $pnpmExit = $pnpmProc.ExitCode
+            & pnpm install --no-frozen-lockfile 2>&1 | Tee-Object -FilePath "pnpm.out" | Out-Host
+            $pnpmExit = $LASTEXITCODE
             $sw.Stop()
-            if (Test-Path "pnpm.out") {
-                (Get-Content "pnpm.out" -ErrorAction SilentlyContinue) | Select-Object -Last 30 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
-            }
-            if (Test-Path "pnpm.err") {
-                (Get-Content "pnpm.err" -ErrorAction SilentlyContinue) | Select-Object -Last 50 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkRed }
-            }
             if ($pnpmExit -ne 0) {
                 Write-Fail "pnpm install failed after retry (exit $pnpmExit)"
                 Write-Info "  Common fixes:"
                 Write-Info "    - Set the China mirror: pnpm config set registry https://registry.npmmirror.com"
                 Write-Info "    - Check connectivity: Test-NetConnection registry.npmjs.org -Port 443"
                 Write-Info "    - Or run pnpm install manually: cd packages\openclaw ; pnpm install --no-frozen-lockfile"
-                Write-Info "    - Check pnpm's stdout/stderr above for the real failure reason"
                 Pop-Location
                 exit 1
             }
