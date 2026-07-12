@@ -3,12 +3,13 @@
 # EnvoyMesh Tauri Desktop Builder (Windows / PowerShell)
 #
 # PowerShell twin of scripts/build-desktop.sh. Builds the native Windows
-# installer (NSIS .exe + WiX .msi) for the Tauri desktop app, with OpenClaw
-# gateway + EnvoyMesh Node.js runtime bundled inside.
+# installer (NSIS .exe by default; WiX .msi is opt-in) for the Tauri desktop
+# app, with OpenClaw gateway + EnvoyMesh Node.js runtime bundled inside.
 #
 # Usage (from the repo root, in PowerShell):
 #   .\scripts\build-desktop.ps1 [-Out <dir>] [-Version <ver>] [-ForceOpenClaw]
-#                                [-ForceNodeSidecar] [-SkipTypecheck] [-?]
+#                                [-ForceNodeSidecar] [-SkipTypecheck]
+#                                [-SkipMsi[:$false]] [-?]
 #
 # Flags:
 #   -Out <dir>               Output directory (default: release\)
@@ -18,11 +19,15 @@
 #   -ForceNodeSidecar         Re-download the Node.js sidecar even if it is already
 #                             staged at apps\tauri\src-tauri\resources\node-runtime
 #   -SkipTypecheck            Skip tsc -b before bundling
+#   -SkipMsi                  Default $true — pass --bundles nsis to tauri build
+#                             so the slow WiX .msi step is skipped (3 GB resource
+#                             tree takes 10-20 min for light.exe). Use -SkipMsi:$false
+#                             to build both NSIS and MSI.
 #   -?                        Print this message and exit
 #
 # Output (copied from Cargo target dir into the repo):
 #   release\envoymesh-desktop-{version}-windows-x64.exe   NSIS installer
-#   release\envoymesh-desktop-{version}-windows-x64.msi   WiX MSI
+#   release\envoymesh-desktop-{version}-windows-x64.msi   WiX MSI (only if -SkipMsi:$false)
 #   release\envoymesh-desktop-{version}-windows-x64\       Folder with both
 #
 # Prerequisites (Windows):
@@ -58,7 +63,12 @@ param(
     [switch]$ForceNodeSidecar,
 
     # Skip tsc -b before bundling
-    [switch]$SkipTypecheck
+    [switch]$SkipTypecheck,
+
+    # Skip the WiX .msi bundle (default: $true). The .msi build is slow on
+    # large resource trees; NSIS is the de-facto Windows installer format.
+    # Use -SkipMsi:$false to also produce a .msi (for enterprise deployment).
+    [switch]$SkipMsi = $true
 )
 
 $ErrorActionPreference = "Stop"
@@ -649,13 +659,10 @@ if (-not $cl -or -not $link) {
 # back to `npx tauri` (the JS wrapper). cargo install tauri-cli installs to
 # %USERPROFILE%\.cargo\bin, so the next session finds it without -g.
 $tauriCmd = $null
-$tauriArgs = @("build")
 if (Get-Command "cargo-tauri" -ErrorAction SilentlyContinue) {
     $tauriCmd = "cargo"
-    $tauriArgs = @("tauri", "build")
 } elseif (Get-Command "npx" -ErrorAction SilentlyContinue) {
     $tauriCmd = "npx"
-    $tauriArgs = @("tauri", "build")
 } else {
     Write-Info "Installing @tauri-apps/cli globally..."
     npm install -g @tauri-apps/cli
@@ -664,7 +671,13 @@ if (Get-Command "cargo-tauri" -ErrorAction SilentlyContinue) {
         exit 1
     }
     $tauriCmd = "npx"
-    $tauriArgs = @("tauri", "build")
+}
+# Build the tauri args. -SkipMsi (default $true) restricts tauri to the NSIS
+# bundle, dodging the slow light.exe link step on the 3 GB resource tree.
+# Use -SkipMsi:$false to also produce a WiX .msi (for enterprise deployment).
+$tauriArgs = @("tauri", "build")
+if ($SkipMsi) {
+    $tauriArgs += @("--bundles", "nsis")
 }
 
 Push-Location $TauriAppDir
