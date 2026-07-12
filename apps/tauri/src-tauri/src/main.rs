@@ -277,9 +277,14 @@ fn is_port_in_use(port: u16) -> bool {
     std::net::TcpListener::bind(format!("127.0.0.1:{}", port)).is_err()
 }
 
+#[cfg(unix)]
 const NODE_SIDECAR_PORTS: [u16; 3] = [3030, 3031, 3032];
 
 /// Terminate any process still listening on the home-node service ports (orphaned sidecars).
+/// Unix-only: uses `lsof` to discover listeners. On Windows the sidecar port
+/// cleanup is skipped (the Windows port-binding model is different and we
+/// don't have a reliable cross-platform equivalent in the build script).
+#[cfg(unix)]
 fn kill_stale_listeners_on_node_ports() {
     #[cfg(unix)]
     {
@@ -347,6 +352,7 @@ fn wait_for_port(port: u16, timeout: Duration) -> bool {
 
 fn stop_node_child(child_slot: &mut Option<Child>) {
     if let Some(mut child) = child_slot.take() {
+        #[cfg(unix)]
         let pid = child.id();
         #[cfg(unix)]
         {
@@ -372,6 +378,7 @@ fn stop_node_from_app(app: &tauri::AppHandle) {
 }
 
 fn spawn_node_process(config: &NodeSpawnConfig) -> Result<Child, String> {
+    #[cfg(unix)]
     kill_stale_listeners_on_node_ports();
     if !config.node_path.is_file() {
         return Err(format!(
@@ -502,6 +509,7 @@ fn reveal_log_dir(log_paths: State<'_, AppLogPaths>) -> Result<(), String> {
 fn restart_node_process(state: State<'_, NodeProcessState>) -> Result<(), String> {
     let mut child_guard = state.child.lock().map_err(|e| e.to_string())?;
     stop_node_child(&mut child_guard);
+    #[cfg(unix)]
     kill_stale_listeners_on_node_ports();
     let child = spawn_node_process(&state.config)?;
     info!("Node process restarted from Social UI");
