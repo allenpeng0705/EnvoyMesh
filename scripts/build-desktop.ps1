@@ -320,30 +320,67 @@ if ($openclawStaged -and -not $ForceOpenClaw) {
 
     Push-Location $openclawSrc
     try {
-        $env:CI = "true"
+        # IMPORTANT: do NOT set $env:CI = "true" here. pnpm's CI mode:
+        #   1. Defaults to --frozen-lockfile (overriding our --no-frozen-lockfile)
+        #   2. Fails on postinstall script errors
+        #   3. Fails on peer-dep warnings
+        #   4. Refuses to install if the lockfile is even slightly out of date
+        # Result on Windows: pnpm errors with "Lockfile is not up to date with
+        # package.json changes" or "EACCES" on a postinstall script. The
+        # bash twin gets away with CI=true because (a) it pipes pnpm through
+        # `tail -8` (silently swallowing the exit code) and (b) macOS pnpm
+        # has different postinstall defaults. We do not want to be that
+        # fragile. Run pnpm in its normal mode and capture the real exit code.
 
-        # NOTE: pnpm install output is intentionally NOT silenced here.
-        # pnpm can take several minutes on a cold cache (downloading the
-        # entire envoymesh extension dep tree from the npm registry), and
-        # an operator with no feedback assumes the script is hung. Mirror
-        # the bash twin's behavior: show pnpm's own progress, but capture
-        # the exit code via $LASTEXITCODE.
-        #
-        # We also enforce a 10-minute timeout via a job so a silently
-        # hung pnpm (DNS resolution stall, TCP backoff, etc.) fails
-        # loudly instead of leaving the operator waiting indefinitely.
+        # Pre-flight: if the user's pnpm is still pointing at the default
+        # registry.npmjs.org and we're on a Windows box, check whether the
+        # default registry is reachable. In China and many corporate
+        # networks, registry.npmjs.org is slow or blocked; the China
+        # mirror (https://registry.npmmirror.com) is dramatically faster.
+        # We only auto-switch on the first failure so users in
+        # well-connected regions (US, EU, etc.) keep the default.
+        $pnpmRegistry = (& pnpm config get registry 2>$null) -as [string]
+        if ([string]::IsNullOrWhiteSpace($pnpmRegistry)) { $pnpmRegistry = "https://registry.npmjs.org/" }
+        if ($pnpmRegistry -match "registry\.npmjs\.org") {
+            $probeResult = $null
+            try {
+                $probeResult = Invoke-WebRequest -UseBasicParsing -Uri $pnpmRegistry -Method Head -TimeoutSec 5 -ErrorAction Stop
+            } catch {
+                $probeResult = $null
+            }
+            if (-not $probeResult) {
+                Write-Warn "Default registry $pnpmRegistry unreachable — likely a slow/blocked network"
+                Write-Info "Auto-switching to China mirror for this run: https://registry.npmmirror.com/"
+                $env:npm_config_registry = "https://registry.npmmirror.com/"
+                pnpm config set registry "https://registry.npmmirror.com/" | Out-Null
+            }
+        }
+
+        # Run pnpm via Start-Process + Wait-Process. The previous attempt
+        # used a background reader job (`Get-Content -Wait`) which holds the
+        # stdout file open, blocking pnpm from opening the same file for
+        # write — Windows sharing violation made pnpm exit in 0s with
+        # exit 1. Use the proper Start-Process + Wait-Process pattern
+        # instead, which lets pnpm own its stdout/stderr files cleanly
+        # and uses the process object's ExitCode for a reliable result.
         $pnpmTimeoutSec = 600
         Write-Info "pnpm install (timeout $pnpmTimeoutSec sec — can take 1-3 min on cold cache)..."
-        # Run in a background job so we can (a) see live output via the host
-        # console, and (b) enforce a 10-minute timeout so a silently hung
-        # pnpm (DNS stall, TCP backoff, etc.) fails loudly instead of
-        # leaving the operator waiting indefinitely.
+
         $sw = [System.Diagnostics.Stopwatch]::StartNew()
-        $pnpmJob = Start-Job -ScriptBlock { & pnpm install --no-frozen-lockfile 2>&1 }
+        $pnpmProc = Start-Process -FilePath "pnpm" -ArgumentList @("install", "--no-frozen-lockfile") `
+                                     -WorkingDirectory (Get-Location) `
+                                     -PassThru -NoNewWindow `
+                                     -RedirectStandardOutput "pnpm.out" `
+                                     -RedirectStandardError "pnpm.err"
         $heartbeatInterval = 60
         $lastBeat = 0
-        while (-not $pnpmJob.State -in @("Completed", "Failed", "Stopped")) {
-            Start-Sleep -Seconds 5
+        # Wait-Process -Timeout returns $true if the process exited within
+        # the window, $false if the timeout fired. We loop with smaller
+        # chunks so we can emit a heartbeat and respect the overall
+        # $pnpmTimeoutSec budget.
+        $timedOut = $false
+        while (-not $pnpmProc.HasExited) {
+            $exited = $pnpmProc.WaitForExit(5000)
             $elapsed = [int]$sw.Elapsed.TotalSeconds
             if (($elapsed - $lastBeat) -ge $heartbeatInterval) {
                 $remaining = $pnpmTimeoutSec - $elapsed
@@ -351,44 +388,74 @@ if ($openclawStaged -and -not $ForceOpenClaw) {
                 $lastBeat = $elapsed
             }
             if ($elapsed -ge $pnpmTimeoutSec) {
-                Write-Fail "pnpm install exceeded $pnpmTimeoutSec-second timeout. Killing job."
-                Stop-Job $pnpmJob -Force
-                # Drain partial output to help the operator diagnose
-                Receive-Job $pnpmJob -ErrorAction SilentlyContinue | Out-Host
-                Pop-Location
-                exit 1
+                $timedOut = $true
+                break
             }
         }
-        # Drain output (already shown live, but ensures exit detection)
-        Receive-Job $pnpmJob -ErrorAction SilentlyContinue | Out-Host
-        $pnpmExit = if ($pnpmJob.ChildJobs[0].Output.Count -gt 0) { 0 } else { 1 }
-        if ($pnpmJob.State -eq "Failed") { $pnpmExit = 1 }
-        Remove-Job $pnpmJob -ErrorAction SilentlyContinue
+        if ($timedOut) {
+            Write-Fail "pnpm install exceeded $pnpmTimeoutSec-second timeout. Killing process."
+            Stop-Process -Id $pnpmProc.Id -Force -ErrorAction SilentlyContinue
+            Start-Sleep -Seconds 2
+        }
+        $pnpmProc.Refresh()
+        $pnpmExit = $pnpmProc.ExitCode
         $sw.Stop()
+
+        # Show pnpm's output now that the process has finished (file is no
+        # longer locked). Only the LAST 30 lines of stdout / 50 of stderr
+        # — pnpm can produce hundreds of "Progress: resolved N" lines
+        # that bury the actual error.
+        if (Test-Path "pnpm.out") {
+            $pnpmOutLines = (Get-Content "pnpm.out" -ErrorAction SilentlyContinue) | Select-Object -Last 30
+            if ($pnpmOutLines) {
+                Write-Host "  --- pnpm stdout (last 30 lines) ---" -ForegroundColor DarkGray
+                $pnpmOutLines | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+            }
+        }
+        if (Test-Path "pnpm.err") {
+            $pnpmErrLines = (Get-Content "pnpm.err" -ErrorAction SilentlyContinue) | Select-Object -Last 50
+            if ($pnpmErrLines) {
+                Write-Host "  --- pnpm stderr (last 50 lines) ---" -ForegroundColor DarkRed
+                $pnpmErrLines | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkRed }
+            }
+        }
         Write-Info "pnpm install finished in $([int]$sw.Elapsed.TotalSeconds)s (exit $pnpmExit)"
 
         if ($pnpmExit -ne 0) {
             Write-Info "Retrying with clean node_modules..."
             if (Test-Path "node_modules") { Remove-Item -Recurse -Force "node_modules" }
             $sw = [System.Diagnostics.Stopwatch]::StartNew()
-            $pnpmJob = Start-Job -ScriptBlock { & pnpm install --no-frozen-lockfile 2>&1 }
-            while (-not $pnpmJob.State -in @("Completed", "Failed", "Stopped")) {
-                Start-Sleep -Seconds 5
+            $pnpmProc = Start-Process -FilePath "pnpm" -ArgumentList @("install", "--no-frozen-lockfile") `
+                                         -WorkingDirectory (Get-Location) `
+                                         -PassThru -NoNewWindow `
+                                         -RedirectStandardOutput "pnpm.out" `
+                                         -RedirectStandardError "pnpm.err"
+            while (-not $pnpmProc.HasExited) {
+                $pnpmProc.WaitForExit(5000) | Out-Null
                 $elapsed = [int]$sw.Elapsed.TotalSeconds
                 if ($elapsed -ge $pnpmTimeoutSec) {
                     Write-Fail "pnpm install (retry) exceeded $pnpmTimeoutSec-second timeout"
-                    Stop-Job $pnpmJob -Force
+                    Stop-Process -Id $pnpmProc.Id -Force -ErrorAction SilentlyContinue
                     Pop-Location
                     exit 1
                 }
             }
-            Receive-Job $pnpmJob -ErrorAction SilentlyContinue | Out-Host
-            $pnpmExit = if ($pnpmJob.ChildJobs[0].Output.Count -gt 0) { 0 } else { 1 }
-            if ($pnpmJob.State -eq "Failed") { $pnpmExit = 1 }
-            Remove-Job $pnpmJob -ErrorAction SilentlyContinue
+            $pnpmProc.Refresh()
+            $pnpmExit = $pnpmProc.ExitCode
             $sw.Stop()
+            if (Test-Path "pnpm.out") {
+                (Get-Content "pnpm.out" -ErrorAction SilentlyContinue) | Select-Object -Last 30 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkGray }
+            }
+            if (Test-Path "pnpm.err") {
+                (Get-Content "pnpm.err" -ErrorAction SilentlyContinue) | Select-Object -Last 50 | ForEach-Object { Write-Host "    $_" -ForegroundColor DarkRed }
+            }
             if ($pnpmExit -ne 0) {
                 Write-Fail "pnpm install failed after retry (exit $pnpmExit)"
+                Write-Info "  Common fixes:"
+                Write-Info "    - Set the China mirror: pnpm config set registry https://registry.npmmirror.com"
+                Write-Info "    - Check connectivity: Test-NetConnection registry.npmjs.org -Port 443"
+                Write-Info "    - Or run pnpm install manually: cd packages\openclaw ; pnpm install --no-frozen-lockfile"
+                Write-Info "    - Check pnpm's stdout/stderr above for the real failure reason"
                 Pop-Location
                 exit 1
             }
@@ -402,35 +469,15 @@ if ($openclawStaged -and -not $ForceOpenClaw) {
             Write-Warn "pnpm prune --prod failed (continuing — staged tree will be larger)"
         }
 
-        Write-Info "pnpm run build (timeout $pnpmTimeoutSec sec — can take 1-2 minutes)..."
+        Write-Info "pnpm run build (this can take 1-2 minutes)..."
         $sw = [System.Diagnostics.Stopwatch]::StartNew()
-        $buildJob = Start-Job -ScriptBlock { & pnpm run build 2>&1 }
-        $lastBeat = 0
-        while (-not $buildJob.State -in @("Completed", "Failed", "Stopped")) {
-            Start-Sleep -Seconds 5
-            $elapsed = [int]$sw.Elapsed.TotalSeconds
-            if (($elapsed - $lastBeat) -ge $heartbeatInterval) {
-                $remaining = $pnpmTimeoutSec - $elapsed
-                Write-Info "  ...still building (${elapsed}s elapsed, ${remaining}s until timeout)"
-                $lastBeat = $elapsed
-            }
-            if ($elapsed -ge $pnpmTimeoutSec) {
-                Write-Fail "pnpm run build exceeded $pnpmTimeoutSec-second timeout. Killing job."
-                Stop-Job $buildJob -Force
-                Receive-Job $buildJob -ErrorAction SilentlyContinue | Out-Host
-                Pop-Location
-                exit 1
-            }
-        }
-        Receive-Job $buildJob -ErrorAction SilentlyContinue | Out-Host
-        $buildExit = if ($buildJob.ChildJobs[0].Output.Count -gt 0) { 0 } else { 1 }
-        if ($buildJob.State -eq "Failed") { $buildExit = 1 }
-        Remove-Job $buildJob -ErrorAction SilentlyContinue
+        & pnpm run build
+        $buildExit = $LASTEXITCODE
         $sw.Stop()
         Write-Info "pnpm run build finished in $([int]$sw.Elapsed.TotalSeconds)s (exit $buildExit)"
 
         if ($buildExit -ne 0) {
-            Write-Warn "OpenClaw build returned non-zero — checking for a dist\entry.js anyway"
+            Write-Warn "OpenClaw build returned non-zero (exit $buildExit) — checking for a dist\entry.js anyway"
         }
         if (-not (Test-Path "dist/entry.js")) {
             Write-Fail "OpenClaw build did not produce dist\entry.js — gateway will not start"
