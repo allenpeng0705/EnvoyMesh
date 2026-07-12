@@ -143,7 +143,7 @@ const HINT_DIAL_TIMEOUT_MS = 30_000;
  * readiness summary's "no reservation yet" warning without any
  * obvious reason.
  */
-const RELAY_RESERVATION_TIMEOUT_MS = 30_000;
+const RELAY_RESERVATION_TIMEOUT_MS = 60_000;
 
 function streamReuseTimeoutMs(protocol: string): number {
   return protocol === ENVOY_CHAT_PROTOCOL
@@ -1104,13 +1104,22 @@ export class EnvoyMesh {
       .components?.transportManager;
     const allTransports = transportManager?.getTransports?.() ?? [];
     let addRelay: ((peerId: unknown, type: string) => Promise<unknown>) | undefined;
+    let hasReservation:
+      | ((peerId: ReturnType<typeof peerIdFromString>) => boolean)
+      | undefined;
     for (const t of allTransports as Array<{
-      reservationStore?: { addRelay?: (peerId: unknown, type: string) => Promise<unknown> };
+      reservationStore?: {
+        addRelay?: (peerId: unknown, type: string) => Promise<unknown>;
+        hasReservation?: (peerId: ReturnType<typeof peerIdFromString>) => boolean;
+      };
       [Symbol.toStringTag]?: string;
     }>) {
       if (t[Symbol.toStringTag] === "@libp2p/circuit-relay-v2-transport") {
         if (t.reservationStore?.addRelay) {
           addRelay = t.reservationStore.addRelay.bind(t.reservationStore);
+        }
+        if (t.reservationStore?.hasReservation) {
+          hasReservation = t.reservationStore.hasReservation.bind(t.reservationStore);
         }
         break;
       }
@@ -1130,6 +1139,19 @@ export class EnvoyMesh {
     let failed = 0;
     let skipped = 0;
     const skipReasons: string[] = [];
+    // How many times to retry an `addRelay` whose reservation did not
+    // actually land on the relay. The libp2p `addRelay` can return success
+    // before the RESERVE round-trip completes — without retry+verify the
+    // client/server state desync leaves the peer looking "reserved" to
+    // the local node but unreachable to anyone dialing it via the relay.
+    const RESERVATION_VERIFY_ATTEMPTS = 3;
+    // How long to wait after addRelay resolves before checking
+    // `hasReservation`. The relay processes RESERVE in <100ms in
+    // practice; 1s gives a healthy margin without slowing the warmup
+    // noticeably.
+    const RESERVATION_VERIFY_SETTLE_MS = 1_000;
+    // Backoff between verify-retry attempts.
+    const RESERVATION_VERIFY_BACKOFF_MS = 2_000;
     const results = await Promise.allSettled(
       relayMultiaddrs.map(async (addr) => {
         let parsed: ReturnType<typeof ma>;
@@ -1159,25 +1181,68 @@ export class EnvoyMesh {
         const pid = peerIdFromString(peerIdStr);
         // 'configured' bypasses the lazy "no need" gate; libp2p will open the
         // connection if needed and start the refresh timer.
-        try {
-          await addRelay(pid, "configured");
-        } catch (relayErr) {
-          const err = relayErr as Error & { code?: string; stack?: string };
-          // Log the full stack to the operator's console so we can see the
-          // path through libp2p internals (most "Cannot read properties of
-          // undefined (reading 'peerId')" errors come from a place we don't
-          // control). Also re-throw so the summary failures array captures
-          // the message.
-          console.error(
-            `[p2p] relay reservation addRelay FAILED for ${pid.toString()}:\n${err.stack ?? err.message}`,
-          );
-          const wrapped = new Error(
-            `addRelay(${pid.toString()}, configured) failed: ${err.message}` +
-              (err.code ? ` [code=${err.code}]` : ""),
-          );
-          throw wrapped;
+        //
+        // Wrap each attempt in verify-then-retry: after addRelay resolves,
+        // check the local reservation store. If the reservation is missing
+        // (client/server state desync — observed on community relay
+        // 47.93.11.212 where the relay log shows CONNECTs but no
+        // corresponding RESERVE), retry with backoff. Without this, a
+        // "successful" warmup left the peer with `relayRoster=0` and all
+        // downstream /p2p-circuit/ dials fail with NO_RESERVATION.
+        for (let attempt = 1; attempt <= RESERVATION_VERIFY_ATTEMPTS; attempt += 1) {
+          try {
+            await addRelay(pid, "configured");
+          } catch (relayErr) {
+            const err = relayErr as Error & { code?: string; stack?: string };
+            // Log the full stack to the operator's console so we can see the
+            // path through libp2p internals (most "Cannot read properties of
+            // undefined (reading 'peerId')" errors come from a place we
+            // don't control). Also re-throw so the summary failures array
+            // captures the message.
+            console.error(
+              `[p2p] relay reservation addRelay FAILED for ${pid.toString()}:\n${err.stack ?? err.message}`,
+            );
+            const wrapped = new Error(
+              `addRelay(${pid.toString()}, configured) failed: ${err.message}` +
+                (err.code ? ` [code=${err.code}]` : ""),
+            );
+            throw wrapped;
+          }
+          // Verification step: did the reservation actually land? If
+          // `hasReservation` is missing (older libp2p) skip the check and
+          // trust addRelay's return value.
+          if (hasReservation) {
+            await new Promise((r) => setTimeout(r, RESERVATION_VERIFY_SETTLE_MS));
+            if (hasReservation(pid)) {
+              if (this.options.enableP2pDebug && attempt > 1) {
+                console.log(
+                  `[p2p] relay reservation verified for ${pid.toString()} on attempt ${attempt}/${RESERVATION_VERIFY_ATTEMPTS}`,
+                );
+              }
+              return { addr, ok: true as const, attempts: attempt };
+            }
+            // addRelay returned but reservation isn't in the local store.
+            // Most likely the hop stream was closed mid-handshake (relay
+            // log shows the smoking gun: relay's `handleConnect` returns
+            // "Cannot write to a stream that is closed"). Retry with
+            // backoff so the next attempt gets a fresh hop stream.
+            if (attempt < RESERVATION_VERIFY_ATTEMPTS) {
+              if (this.options.enableP2pDebug) {
+                console.warn(
+                  `[p2p] relay reservation addRelay returned but local store empty for ${pid.toString()}, attempt ${attempt}/${RESERVATION_VERIFY_ATTEMPTS} — retrying in ${RESERVATION_VERIFY_BACKOFF_MS}ms`,
+                );
+              }
+              await new Promise((r) => setTimeout(r, RESERVATION_VERIFY_BACKOFF_MS));
+              continue;
+            }
+            throw new Error(
+              `addRelay(${pid.toString()}, configured) returned but reservation did not land after ${RESERVATION_VERIFY_ATTEMPTS} attempts (client/server state desync)`,
+            );
+          }
+          return { addr, ok: true as const, attempts: 1 };
         }
-        return { addr, ok: true as const };
+        // Unreachable — the for-loop either returns or throws.
+        throw new Error(`addRelay(${pid.toString()}, configured): exhausted retries without throwing`);
       }),
     );
     for (let i = 0; i < results.length; i += 1) {

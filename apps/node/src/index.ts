@@ -2672,7 +2672,15 @@ async function activateCliMesh(reloadDiscoveryFromConfig: boolean): Promise<void
         );
         const relaysToWarm = [...configuredRelayAddrs, ...bootstrapRelayAddrs].slice(0, 4);
         if (relaysToWarm.length > 0) {
-          const result = await mesh.eagerConnectToRelays(relaysToWarm, { timeoutMs: 10_000 });
+          // Bumped from 10_000 to 30_000 (2026-07-12). The 10s ceiling was
+          // tight enough that the very first TCP+Noise+Yamux+IDENTIFY hop
+          // could race the reservation handshake on cross-region relays
+          // (community relay at 47.93.11.212 is the worst offender). With
+          // 30s the warmup has room to actually open the connection
+          // *and* let `requestRelayReservation` complete. libp2p dedupes
+          // pending dials to the same peer, so re-running the warmup is
+          // safe and cheap.
+          const result = await mesh.eagerConnectToRelays(relaysToWarm, { timeoutMs: 30_000 });
           console.log(
             `[p2p] eager relay warmup: attempted=${result.attempted} connected=${result.connected} failed=${result.failed}` +
               (result.failures.length > 0 ? ` failures=${JSON.stringify(result.failures)}` : ""),

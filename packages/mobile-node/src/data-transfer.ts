@@ -155,7 +155,17 @@ export async function sendMobileVaultFileDataTransfer(input: {
   const hints = input.dialHints?.length
     ? input.dialHints
     : [`/p2p/${input.toLibp2pPeerId}`];
-  const dialTimeoutMs = input.hintDialTimeoutMs ?? 3_500;
+  // Bumped from 3_500ms to 30_000ms (2026-07-12). The previous 3.5s default
+  // was tight enough that the libp2p circuit-relay-v2 reservation handshake
+  // (RESERVE → relay → RESERVE response) could be killed mid-flight on
+  // cross-region dials, leaving the client thinking `addRelay()` returned
+  // success while the relay never actually created the reservation. The
+  // resulting client/server state desync made the peer look "connected" to
+  // the local node but unreachable to anyone trying to dial it via the
+  // relay. 30s matches `HINT_DIAL_TIMEOUT_MS` in `@envoymesh/network` so
+  // the two budgets agree. Callers can still override via
+  // `input.hintDialTimeoutMs` for latency-sensitive paths.
+  const dialTimeoutMs = input.hintDialTimeoutMs ?? 30_000;
   let lastErr: unknown = new Error("data transfer dial failed");
   for (const hint of hints) {
     let stream: any;
