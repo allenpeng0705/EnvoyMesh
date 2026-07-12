@@ -68,7 +68,13 @@ param(
     # Skip the WiX .msi bundle (default: $true). The .msi build is slow on
     # large resource trees; NSIS is the de-facto Windows installer format.
     # Use -SkipMsi:$false to also produce a .msi (for enterprise deployment).
-    [switch]$SkipMsi = $true
+    [switch]$SkipMsi = $true,
+
+    # Skip the staged-OpenClaw pnpm prune step. Default: $false (always prune
+    # the staged tree's devDependencies — required to stay under NSIS's 2 GB
+    # installer limit). Use -SkipOpenClawPrune only if you've manually
+    # curated the staged tree and know what you're doing.
+    [switch]$SkipOpenClawPrune
 )
 
 $ErrorActionPreference = "Stop"
@@ -331,6 +337,26 @@ if ($stageError) {
 Write-Info "Staging OpenClaw gateway..."
 $openclawSrc = Join-Path $RepoRoot "packages/openclaw"
 $openclawDest = Join-Path $TauriResources "openclaw"
+# Self-healing: if the staged tree exists from a previous run, prune its
+# devDependencies in-place. pnpm prune --prod is idempotent and fast (~5-10s).
+# This is the safety net for the NSIS 2 GB limit: a staged tree with
+# devDependencies still present blows past 2 GB and makensis crashes with
+# "Internal compiler error #12345: error mmapping file ... is out of range".
+# The user should never need -ForceOpenClaw just to get a working bundle.
+if ((Test-Path (Join-Path $openclawDest "package.json")) -and `
+    (Test-Path (Join-Path $openclawDest "node_modules")) -and `
+    -not $SkipOpenClawPrune) {
+    Write-Info "Pruning devDependencies from staged OpenClaw (idempotent — safe to skip with -SkipOpenClawPrune)..."
+    Push-Location $openclawDest
+    try {
+        & pnpm prune --prod
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warn "pnpm prune --prod failed in staged copy (continuing — bundle may exceed 2 GB NSIS limit)"
+        }
+    } finally {
+        Pop-Location
+    }
+}
 $openclawStaged = (Test-Path (Join-Path $openclawDest "openclaw.mjs")) -and `
                   (Test-Path (Join-Path $openclawDest "package.json")) -and `
                   (Test-Path (Join-Path $openclawDest "node_modules"))
