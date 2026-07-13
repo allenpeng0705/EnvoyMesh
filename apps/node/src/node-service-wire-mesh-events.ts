@@ -114,7 +114,12 @@ export async function handleInboundMessageViaRuntime(
   const profile = ctx.getProfile();
   const taskStore = ctx.getTaskStore();
   const guardDecision = ctx.inspectInbound(envelope);
-  if (guardDecision.action === "reject") return;
+  if (guardDecision.action === "reject") {
+    console.warn(
+      `[inbound-guard] REJECTED envelope intent=${envelope.intent} from ${remotePeerId}: ${guardDecision.reason}`,
+    );
+    return;
+  }
 
   if (remoteAddr?.trim()) {
     void ctx.learnInboundDialHints(remotePeerId, remoteAddr).catch((err) =>

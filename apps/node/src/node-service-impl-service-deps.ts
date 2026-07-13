@@ -570,6 +570,7 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
               host._peerDirectoryStore.ensurePeerFromInboundChat(input),
             tagBondedContactReachability: (remotePeerId) =>
               host._tagBondedContactReachability(remotePeerId),
+            tryBondAutonomyAutoAccept: host._tryBondAutonomyAutoAccept?.bind(host),
           },
       chatRoomMessage: {
             getTaskStore: () => host._taskStore,

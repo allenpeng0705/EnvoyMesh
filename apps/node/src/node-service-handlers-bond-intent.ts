@@ -30,6 +30,18 @@ export interface BondHandlerContext {
     listenAddrs: string[];
   }): Promise<void>;
   tagBondedContactReachability(remotePeerId: string): Promise<void> | void;
+  tryBondAutonomyAutoAccept?: (payload: {
+    envelope: any;
+    requesterOwnerId: string;
+    requesterDisplayName?: string;
+    proofOfContext?: string;
+    introCorrelationId?: string;
+    requestedLevel?: string;
+  }) => Promise<
+    | { accepted: true; requesterOwnerId: string; requesterPeerId: string; displayName?: string }
+    | { accepted: false }
+    | null
+  >;
 }
 
 export interface BondHandlerParams {
@@ -103,6 +115,7 @@ export async function handleBondIntentViaRuntime(
       }
       await ctx.tagBondedContactReachability(remotePeerId);
     },
+    ctx.tryBondAutonomyAutoAccept,
   );
   if (!bond.ok) {
     await taskStore.appendAuditEvent(

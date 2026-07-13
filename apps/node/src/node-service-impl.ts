@@ -805,6 +805,7 @@ import { buildProfileDiscoveryTopics, runCapabilityDiscoveryCycle } from "./capa
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
 import { startNodeStatsInterval } from "./node-stats-log.js";
 import { handleInboundBondIntent } from "./bond-inbound.js";
+import { tryBondAutonomyInboundAutoAccept } from "./bond-autonomy-inbound.js";
 
 import {
   resolveDidImportViaRuntime,
@@ -1214,6 +1215,8 @@ class NodeServiceImpl implements NodeService {
   /** Phase 40F — worker capability index for chain worker discovery. */
   private readonly _capabilityIndex = new CapabilityIndex();
   private _capabilityIndexReady: Promise<void> | null = null;
+  /** Bond autonomy daily counter — resets at midnight UTC to enforce maxAutoBondsPerDay. */
+  private _bondAutonomyDailyCounter = { count: 0, date: "" };
   // ---------------------------------------------------------------
   // Chain runtime state — bundle of 6 Map fields used by the chains
   // orchestrator (see ./node-service-chains.ts). Grouped into a single
@@ -2193,6 +2196,56 @@ class NodeServiceImpl implements NodeService {
         unsubscribe();
         reject(new Error(`bond:established for ${targetOwnerId} timed out after ${timeoutMs}ms`));
       }, timeoutMs);
+    });
+  }
+
+  /**
+   * Bond autonomy auto-accept callback for the wireMeshEventsViaRuntime path.
+   * Mirrors the CLI path in index.ts which calls tryBondAutonomyInboundAutoAccept
+   * directly. Without this, bond autonomy is completely broken on the
+   * NodeService/embedded path (Tauri, mobile, etc.).
+   */
+  private async _tryBondAutonomyAutoAccept(payload: {
+    envelope: any;
+    requesterOwnerId: string;
+    requesterDisplayName?: string;
+    proofOfContext?: string;
+    introCorrelationId?: string;
+    requestedLevel?: string;
+  }): Promise<
+    | { accepted: true; requesterOwnerId: string; requesterPeerId: string; displayName?: string }
+    | { accepted: false }
+    | null
+  > {
+    if (!this._profile || !this._trustStore || !this._taskStore) return null;
+    const cfg = await this._configStore.load();
+    // Reset daily counter at midnight UTC.
+    const today = new Date().toISOString().slice(0, 10);
+    if (this._bondAutonomyDailyCounter.date !== today) {
+      this._bondAutonomyDailyCounter = { count: 0, date: today };
+    }
+    return tryBondAutonomyInboundAutoAccept({
+      envelope: payload.envelope,
+      remotePeerId: "", // filled by tryBondAutonomyInboundAutoAccept from payload
+      profile: this._profile,
+      trustStore: this._trustStore,
+      taskStore: this._taskStore,
+      config: cfg,
+      autonomousKillSwitch: cfg?.autonomousKillSwitch ?? false,
+      getDailyAutoBondCount: () => Promise.resolve(this._bondAutonomyDailyCounter.count),
+      incrementDailyAutoBondCount: async () => {
+        this._bondAutonomyDailyCounter.count += 1;
+      },
+      hasIntroCorrelation: async (requester, responder) => {
+        // TODO: check intro store for correlation between requester and responder
+        return false;
+      },
+      getTrustOverlapScore: async () => 0,
+    }).then((result) => {
+      if (result.accepted) {
+        return result;
+      }
+      return { accepted: false as const };
     });
   }
 

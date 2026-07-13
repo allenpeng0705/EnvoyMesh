@@ -617,10 +617,10 @@ async function runSetupSponsorFriendRetryLoop(
         await deps.applyWanJoinInvite(resolved.joinToken);
       }
 
-      if (resolved.peerId) {
-        await deps.searchPeers({ peerId: resolved.peerId });
-      }
-
+      // searchPeers is deferred until after sendHello so the DHT query
+      // runs with a live mesh and can actually resolve the peer ID.
+      // The search result is just a cache warm — the bond itself does not
+      // depend on it.
       const hello = await deps.sendHello(ownerId, profile, resolved.helloMessage, {
         proofOfContext: resolved.proofOfContext,
         targetPeerId: resolved.peerId,
@@ -641,6 +641,17 @@ async function runSetupSponsorFriendRetryLoop(
           deps.localDiscoveryProfile ?? (await deps.loadNodeConfig())?.discoveryProfile,
         ),
       });
+
+      // Cache the sponsor's peer record in the local directory after a
+      // successful sendHello. This is best-effort — failure here does not
+      // block the bond flow.
+      if (resolved.peerId) {
+        try {
+          await deps.searchPeers({ peerId: resolved.peerId });
+        } catch {
+          /* best-effort cache warm */
+        }
+      }
 
       // Wait for the sponsor's `bond.established` event before marking
       // the loop COMPLETED. The local `sendHello` only proves the bytes

@@ -2200,10 +2200,15 @@ export class EnvoyMesh {
       // Suppress common DHT noise: "limited connection" and "protocol selection"
       // failures are expected when dialing random DHT peers that don't speak
       // EnvoyMesh. Only log genuine errors (timeouts, connection refused, etc.).
+      // However, "limited connection" errors on explicit circuit dials are NOT
+      // noise — they indicate the circuit transport returned a limited connection
+      // that cannot open application protocol streams, which is a real failure.
+      const hasCircuitHint = hintList.some((h) => h.includes("/p2p-circuit/"));
       const isDhtNoise =
-        detail.includes("limited connection") ||
-        detail.includes("Protocol selection failed") ||
-        detail.includes("could not negotiate");
+        !hasCircuitHint &&
+        (detail.includes("limited connection") ||
+          detail.includes("Protocol selection failed") ||
+          detail.includes("could not negotiate"));
       if (!isDhtNoise) {
         console.warn(`[network] ensurePeerReachable failed for ${target.slice(0, 24)}…: ${detail}`);
       }

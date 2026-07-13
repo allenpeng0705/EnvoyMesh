@@ -427,6 +427,7 @@ export interface BondHandlerContextDeps {
   flushPendingRoomMessages: BondHandlerContext["flushPendingRoomMessages"];
   ensurePeerFromInboundChat: BondHandlerContext["ensurePeerFromInboundChat"];
   tagBondedContactReachability: BondHandlerContext["tagBondedContactReachability"];
+  tryBondAutonomyAutoAccept?: BondHandlerContext["tryBondAutonomyAutoAccept"];
 }
 
 export interface ChatRoomMessageContextDeps {
@@ -1120,6 +1121,7 @@ export function buildBondHandlerContext(deps: BondHandlerContextDeps): BondHandl
       deps.ensurePeerFromInboundChat(input),
     tagBondedContactReachability: (remotePeerId) =>
       deps.tagBondedContactReachability(remotePeerId),
+    tryBondAutonomyAutoAccept: deps.tryBondAutonomyAutoAccept,
   };
 }
 

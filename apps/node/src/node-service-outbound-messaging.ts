@@ -593,6 +593,7 @@ export async function deliverCallEnvelopeViaRuntime(
       direct: conn.direct,
       hintCount: dialHints.length,
     });
+    const preferCircuits = preferCircuitHints ?? !conn.direct;
     if (!conn.connected) {
       const dialTargets = [...new Set([...(listenAddrs ?? []), ...dialHints])]
         .map((a) => a.trim())
@@ -604,7 +605,9 @@ export async function deliverCallEnvelopeViaRuntime(
           if (aLan !== bLan) return bLan - aLan;
           const aCircuit = a.includes("/p2p-circuit/") ? 1 : 0;
           const bCircuit = b.includes("/p2p-circuit/") ? 1 : 0;
-          if (aCircuit !== bCircuit) return aCircuit - bCircuit;
+          // When circuit hints are preferred, sort them BEFORE non-circuit (lower sort value = first).
+          // When circuits are NOT preferred, keep circuit last (original behavior).
+          if (aCircuit !== bCircuit) return preferCircuits ? bCircuit - aCircuit : aCircuit - bCircuit;
           return 0;
         });
         for (const addr of ordered) {
@@ -612,13 +615,15 @@ export async function deliverCallEnvelopeViaRuntime(
             await mesh.dial(addr);
             conn = mesh.getPeerConnectionInfo(transportPeerId);
             if (conn.connected) break;
-          } catch {
-            /* try next addr */
+          } catch (dialErr) {
+            console.debug(
+              `[deliver] mesh.dial failed for ${addr.slice(0, 60)}…:`,
+              dialErr instanceof Error ? dialErr.message : dialErr,
+            );
           }
         }
       }
     }
-    const preferCircuits = preferCircuitHints ?? !conn.direct;
     const wasConnected = conn.connected;
     if (conn.connected) {
       try {

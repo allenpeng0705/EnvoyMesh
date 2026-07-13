@@ -86,6 +86,7 @@ export async function handleInboundBondIntent(
   emitHelloRequest?: BondInboundEvents["hello:request"],
   emitBondEstablished?: BondInboundEvents["bond:established"],
   tryBondAutonomyAutoAccept?: (payload: {
+    envelope: any;
     requesterOwnerId: string;
     requesterDisplayName?: string;
     proofOfContext?: string;
@@ -172,6 +173,7 @@ export async function handleInboundBondIntent(
         // outcome === "record" - manual approval needed (unless bond autonomy accepts)
         if (tryBondAutonomyAutoAccept) {
           const auto = await tryBondAutonomyAutoAccept({
+            envelope,
             requesterOwnerId: payload.requesterOwnerId,
             requesterDisplayName: payload.requesterDisplayName,
             proofOfContext: payload.proofOfContext,
