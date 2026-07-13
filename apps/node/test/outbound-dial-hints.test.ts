@@ -288,13 +288,39 @@ describe("buildOutboundDialHints", () => {
 });
 
 describe("shouldPreferCircuitDialHints", () => {
-  it("prefers direct LAN TCP over relay when LAN listen addrs exist", async () => {
+  it("prefers circuits when only private LAN direct TCP hints exist (cross-network fix)", async () => {
     const { shouldPreferCircuitDialHints } = await import("../src/outbound-dial-hints.js");
     const listen = ["/ip4/192.168.1.50/tcp/4011/p2p/12D3KooWContact"];
     const hints = [
       "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWContact",
     ];
+    // Private-LAN-only direct hints are unreachable cross-network;
+    // circuits must be preferred so the relay fallback gets a chance.
+    expect(shouldPreferCircuitDialHints(listen, hints, "12D3KooWContact")).toBe(true);
+  });
+
+  it("prefers direct when public routable TCP hints exist alongside circuits", async () => {
+    const { shouldPreferCircuitDialHints } = await import("../src/outbound-dial-hints.js");
+    const listen = ["/ip4/203.0.113.50/tcp/4011/p2p/12D3KooWContact"];
+    const hints = [
+      "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWContact",
+    ];
+    // Public IP is directly reachable — prefer it over relay.
     expect(shouldPreferCircuitDialHints(listen, hints, "12D3KooWContact")).toBe(false);
+  });
+
+  it("prefers circuits when private LAN hints exist without any public direct", async () => {
+    const { shouldPreferCircuitDialHints } = await import("../src/outbound-dial-hints.js");
+    // Simulates the sponsor-friend scenario: sponsor has 192.168.3.85 addresses
+    // but the new user is on a different network.
+    const listen = [
+      "/ip4/192.168.3.85/tcp/64589/p2p/12D3KooWSponsor",
+      "/ip4/192.168.3.85/tcp/4001/p2p/12D3KooWSponsor",
+    ];
+    const hints = [
+      "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWSponsor",
+    ];
+    expect(shouldPreferCircuitDialHints(listen, hints, "12D3KooWSponsor")).toBe(true);
   });
 
   it("allows relay when no direct TCP hints exist", async () => {

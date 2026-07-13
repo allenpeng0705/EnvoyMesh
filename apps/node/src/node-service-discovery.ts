@@ -149,11 +149,15 @@ export class NodeDiscoveryRuntime {
       const config = await this.deps.configStore.load();
       const isPublicNetwork = config?.bootstrapPresets && config.bootstrapPresets.length > 0;
       const isPrivateRelay = config?.relayEnabled && config?.configuredRelays && config.configuredRelays.length > 0;
+      // Any DHT-capable or relay-capable config can search topics.
+      // searchByTopic() has a relay.lookup fallback when DHT returns empty,
+      // so the gate just needs to allow the search to run — not guarantee DHT.
+      const canSearchTopics = isPublicNetwork || isPrivateRelay;
 
       const results: PeerSearchResult[] = [];
 
       // 3. Username-based discovery: search DHT for username:xxx topic
-      if (isPublicNetwork && query.username) {
+      if (canSearchTopics && query.username) {
         const usernameResults = await this.searchByTopic(`username:${query.username.toLowerCase()}`, maxResults);
         for (const r of usernameResults) {
           if (!results.some((existing) => existing.nodeId === r.nodeId)) {
@@ -168,7 +172,7 @@ export class NodeDiscoveryRuntime {
       // the @handle. Without this, name search is limited to local directory
       // hits (which are empty for a never-bonded peer). Both sides route
       // through `displayNameTopicFor` so the on-wire slugs match exactly.
-      if (isPublicNetwork && query.queryText) {
+      if (canSearchTopics && query.queryText) {
         const dnTopic = displayNameTopicFor(query.queryText);
         if (dnTopic) {
           const dnResults = await this.searchByTopic(dnTopic, maxResults);
@@ -186,8 +190,8 @@ export class NodeDiscoveryRuntime {
       // the raw query interests through `interestTopicFor` so the search key
       // matches the advertised key — without this, a peer that picked
       // "Machine Learning" advertises `interest:machine-learning` but this
-      // search would look up `machine learning` and miss it.
-      if (isPublicNetwork && query.interests && query.interests.length > 0) {
+      // search would look up "machine learning" and miss it.
+      if (canSearchTopics && query.interests && query.interests.length > 0) {
         for (const interest of query.interests) {
           const topic = interestTopicFor(interest);
           if (!topic) continue;

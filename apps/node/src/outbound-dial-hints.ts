@@ -7,6 +7,7 @@ import {
   isLikelyInboundConnSnapshotDialHint,
   isLoopbackOrUnspecifiedDialHint,
   isPrivateLanTcpDialHint,
+  isPrivateOrUnroutableDialHint,
   isPublicLibp2pBootstrapMultiaddr,
   isUsableOutboundPeerDialHint,
   buildSyntheticRelayCircuitHints,
@@ -313,7 +314,12 @@ export function mergeDialablePeerListenAddrs(
   return out;
 }
 
-/** Prefer direct LAN/TCP dials when we have routable non-circuit hints; avoid jumping to relay on same network. */
+/** Prefer direct LAN/TCP dials when we have routable non-circuit hints; avoid jumping to relay on same network.
+ *
+ * **Cross-network safeguard:** If all direct TCP hints are private LAN (RFC1918 /
+ * link-local / CGNAT), prefer circuits instead — the LAN addresses are unreachable
+ * from other networks and would burn 30 s per attempt with no chance of success.
+ */
 export function shouldPreferCircuitDialHints(
   listenAddrs: string[] | undefined,
   dialHints: string[],
@@ -334,7 +340,13 @@ export function shouldPreferCircuitDialHints(
     ...dialHints.filter((h) => h.includes("/tcp/") && !h.includes("/p2p-circuit/")),
   ];
   if (hasDirectTcpDialHints(directCandidates)) {
-    return false;
+    // Only prefer direct when at least one hint is publicly routable.
+    // Private-LAN-only hints are unreachable cross-network; preferring
+    // circuits gives the relay fallback a chance to work.
+    const hasPublicDirect = directCandidates.some(
+      (h) => isPrivateLanTcpDialHint(h) ? false : !isPrivateOrUnroutableDialHint(h),
+    );
+    return !hasPublicDirect;
   }
   return dialHints.some((h) => h.includes("/p2p-circuit/"));
 }

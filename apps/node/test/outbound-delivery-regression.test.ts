@@ -67,7 +67,7 @@ describe("call.invite outbound delivery", () => {
       ENVOY_CHAT_PROTOCOL,
       expect.objectContaining({
         dialHints: ["/ip4/192.168.1.50/tcp/4011/p2p/12D3KooWSharePeerCold"],
-        preferCircuitHints: false,
+        preferCircuitHints: true,
       }),
     );
     expect(sendChat).toHaveBeenCalledTimes(1);

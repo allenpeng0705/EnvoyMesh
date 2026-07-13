@@ -3642,8 +3642,16 @@ export function filterUsableOutboundPeerDialHints(addrs: string[], targetPeerId:
 }
 
 /**
- * When direct TCP/LAN hints exist and circuits are not explicitly preferred, drop `/p2p-circuit/`
- * paths so libp2p cannot fall through to stale relay reservations (NO_RESERVATION).
+ * When direct TCP hints exist and circuits are not explicitly preferred, drop
+ * `/p2p-circuit/` paths so libp2p cannot fall through to stale relay
+ * reservations (NO_RESERVATION).
+ *
+ * **Cross-network safeguard:** If ALL direct TCP hints are private LAN
+ * (RFC1918 / link-local / CGNAT) and none are publicly routable, circuit
+ * hints are KEPT.  Private-LAN addresses are unreachable from other networks;
+ * stripping circuits would leave no viable path.  This fixes the sponsor-
+ * friend auto-bond scenario where the bundled config carries the sponsor's
+ * home LAN addresses (192.168.x) but the new user is on a different network.
  */
 export function filterDialHintsForOutboundSend(
   hints: readonly string[],
@@ -3654,7 +3662,16 @@ export function filterDialHintsForOutboundSend(
   if (opts?.preferCircuitHints === true) {
     return filtered;
   }
-  if (hasDirectTcpDialHints(filtered)) {
+  // Only strip circuits when we have at least one publicly routable direct
+  // TCP hint.  Private-LAN-only direct hints (192.168.x, 10.x, 172.16-31,
+  // 169.254.x) are unreachable cross-network — the circuit fallback must
+  // survive so the dial layer can try the relay path.
+  const hasPublicDirect = filtered.some(
+    (h) =>
+      hasDirectTcpDialHints([h]) &&
+      !isPrivateOrUnroutableDialHint(h),
+  );
+  if (hasPublicDirect) {
     return filtered.filter((h) => !h.includes("/p2p-circuit/"));
   }
   return filtered;

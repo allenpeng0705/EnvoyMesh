@@ -88,15 +88,41 @@ describe("dial hint sorting", () => {
   });
 
   describe("filterDialHintsForOutboundSend", () => {
-    it("strips circuits when direct TCP hints exist and circuits are not preferred", () => {
+    it("keeps circuits when all direct TCP hints are private LAN (cross-network fix)", () => {
       const peerId = "12D3KooWFilterDialHintsPeer";
       const hints = [
         `/ip4/192.168.1.50/tcp/4011/p2p/${peerId}`,
         `/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${peerId}`,
       ];
       const out = filterDialHintsForOutboundSend(hints, peerId, { preferCircuitHints: false });
-      expect(out.some((h) => h.includes("/p2p-circuit/"))).toBe(false);
+      // Private-LAN-only direct hints are unreachable cross-network;
+      // circuit hints must survive as the only viable fallback.
+      expect(out.some((h) => h.includes("/p2p-circuit/"))).toBe(true);
       expect(out.some((h) => h.includes("192.168.1.50"))).toBe(true);
+    });
+
+    it("strips circuits when public direct TCP hints exist", () => {
+      const peerId = "12D3KooWFilterDialHintsPeer";
+      const hints = [
+        `/ip4/203.0.113.50/tcp/4011/p2p/${peerId}`,
+        `/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${peerId}`,
+      ];
+      const out = filterDialHintsForOutboundSend(hints, peerId, { preferCircuitHints: false });
+      // Public IP is directly reachable — no need for relay circuit.
+      expect(out.some((h) => h.includes("/p2p-circuit/"))).toBe(false);
+      expect(out.some((h) => h.includes("203.0.113.50"))).toBe(true);
+    });
+
+    it("strips circuits when mixed public + private direct TCP hints exist", () => {
+      const peerId = "12D3KooWFilterDialHintsPeer";
+      const hints = [
+        `/ip4/192.168.1.50/tcp/4011/p2p/${peerId}`,
+        `/ip4/203.0.113.50/tcp/4011/p2p/${peerId}`,
+        `/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${peerId}`,
+      ];
+      const out = filterDialHintsForOutboundSend(hints, peerId, { preferCircuitHints: false });
+      // Public IP exists → strip circuits.
+      expect(out.some((h) => h.includes("/p2p-circuit/"))).toBe(false);
     });
 
     it("keeps circuits when no direct path exists", () => {
@@ -104,6 +130,21 @@ describe("dial hint sorting", () => {
       const circuit = `/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${peerId}`;
       const out = filterDialHintsForOutboundSend([circuit], peerId, { preferCircuitHints: false });
       expect(out).toContain(circuit);
+    });
+
+    it("keeps circuits for sponsor-setup cross-network scenario", () => {
+      // Exact reproduction of the production bug: sponsor at 192.168.3.85
+      // with relay circuit through 47.93.11.212. New user on different network.
+      const sponsorId = "12D3KooWQsD3ougrAJjmKeevSiY2azE5CKqLjcijyYreS6fUFYCR";
+      const relayId = "12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo";
+      const hints = [
+        `/ip4/192.168.3.85/tcp/64589/p2p/${sponsorId}`,
+        `/ip4/192.168.3.85/tcp/4001/p2p/${sponsorId}`,
+        `/ip4/47.93.11.212/tcp/4001/p2p/${relayId}/p2p-circuit/p2p/${sponsorId}`,
+      ];
+      const out = filterDialHintsForOutboundSend(hints, sponsorId, { preferCircuitHints: false });
+      // All direct hints are 192.168.x → circuit must survive.
+      expect(out.some((h) => h.includes("/p2p-circuit/"))).toBe(true);
     });
   });
 

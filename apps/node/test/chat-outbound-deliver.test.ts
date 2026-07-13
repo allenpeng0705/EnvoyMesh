@@ -100,7 +100,7 @@ describe("deliverChatEnvelopeWithRetry", () => {
     expect(sendChat).toHaveBeenCalledTimes(1);
   });
 
-  it("upgrades relay connection to direct before send when LAN hints exist", async () => {
+  it("upgrades relay connection to direct before send when public direct hints exist", async () => {
     const sendChatExpectReply = vi.fn().mockResolvedValue({
       intent: "chat.delivered",
       payload: {
@@ -123,8 +123,8 @@ describe("deliverChatEnvelopeWithRetry", () => {
       mesh,
       transportPeerId: "12D3KooWUpgradePeer",
       envelope: { ...envelope, messageId: "msg-1" },
-      dialHints: ["/ip4/192.168.1.50/tcp/4011/p2p/12D3KooWUpgradePeer"],
-      peerListenAddrs: ["/ip4/192.168.1.50/tcp/4011/p2p/12D3KooWUpgradePeer"],
+      dialHints: ["/ip4/203.0.113.50/tcp/4011/p2p/12D3KooWUpgradePeer"],
+      peerListenAddrs: ["/ip4/203.0.113.50/tcp/4011/p2p/12D3KooWUpgradePeer"],
       chatProtocol: "/envoy/chat/0.1",
       maxAttempts: 1,
     });
@@ -134,6 +134,50 @@ describe("deliverChatEnvelopeWithRetry", () => {
       "12D3KooWUpgradePeer",
       "/envoy/chat/0.1",
       expect.objectContaining({ preferCircuitHints: false, forceFreshDial: true }),
+    );
+    expect(sendChatExpectReply).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not upgrade relay to direct when only private LAN hints exist", async () => {
+    // Private-LAN-only hints are unreachable cross-network; circuits are
+    // preferred so the relay fallback gets a chance instead of burning 30s
+    // on an unreachable LAN address.
+    const sendChatExpectReply = vi.fn().mockResolvedValue({
+      intent: "chat.delivered",
+      payload: {
+        messageId: "msg-1",
+        recipientOwnerId: "envoy:owner:abc",
+        deliveredAt: "2026-05-28T12:00:00.000Z",
+      },
+    });
+    const closeConnectionsToPeer = vi.fn().mockResolvedValue(1);
+    const ensurePeerReachable = vi.fn().mockResolvedValue({ connected: true, direct: false });
+    const mesh = {
+      sendChat: vi.fn(),
+      sendChatExpectReply,
+      closeConnectionsToPeer,
+      ensurePeerReachable,
+      getPeerConnectionInfo: vi.fn().mockReturnValue({ connected: true, direct: false }),
+    };
+
+    await deliverChatEnvelopeWithRetry({
+      mesh,
+      transportPeerId: "12D3KooWLanOnlyPeer",
+      envelope: { ...envelope, messageId: "msg-1" },
+      dialHints: ["/ip4/192.168.1.50/tcp/4011/p2p/12D3KooWLanOnlyPeer"],
+      peerListenAddrs: ["/ip4/192.168.1.50/tcp/4011/p2p/12D3KooWLanOnlyPeer"],
+      chatProtocol: "/envoy/chat/0.1",
+      maxAttempts: 1,
+    });
+
+    // No upgrade attempt — private LAN is unreachable cross-network.
+    expect(closeConnectionsToPeer).not.toHaveBeenCalled();
+    // ensurePeerReachable still runs (warm the relay path) but with
+    // preferCircuitHints=true so the dial layer tries circuits first.
+    expect(ensurePeerReachable).toHaveBeenCalledWith(
+      "12D3KooWLanOnlyPeer",
+      "/envoy/chat/0.1",
+      expect.objectContaining({ preferCircuitHints: true }),
     );
     expect(sendChatExpectReply).toHaveBeenCalledTimes(1);
   });
