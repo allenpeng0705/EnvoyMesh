@@ -594,11 +594,20 @@ export async function deliverCallEnvelopeViaRuntime(
       hintCount: dialHints.length,
     });
     const preferCircuits = preferCircuitHints ?? !conn.direct;
+    const hasCircuitHints = dialHints.some((h) => h.includes("/p2p-circuit/"));
     if (!conn.connected) {
       const dialTargets = [...new Set([...(listenAddrs ?? []), ...dialHints])]
         .map((a) => a.trim())
-        .filter(Boolean);
+        .filter((a) => {
+          if (!a) return false;
+          // When circuits are preferred and circuit hints exist, skip private LAN
+          // addresses — they're unreachable for cross-network peers and waste 30s
+          // per attempt on timeouts.
+          if (preferCircuits && hasCircuitHints && isPrivateLanTcpDialHint(a)) return false;
+          return true;
+        });
       if (dialTargets.length > 0) {
+        console.warn(`[deliver] dialTargets(${dialTargets.length}) preferCircuits=${preferCircuits} hasCircuit=${hasCircuitHints}: ${dialTargets.map((t) => t.slice(0, 90)).join(" | ")}`);
         const ordered = [...dialTargets].sort((a, b) => {
           const aLan = isPrivateLanTcpDialHint(a) ? 1 : 0;
           const bLan = isPrivateLanTcpDialHint(b) ? 1 : 0;
@@ -659,7 +668,13 @@ export async function deliverCallEnvelopeViaRuntime(
       transportPeerId,
       envelope,
       dialHints: wasConnected ? [] : dialHints,
-      peerListenAddrs: wasConnected ? [] : listenAddrs,
+      // Filter out private LAN listenAddrs when circuits are preferred —
+      // the retry path's ensurePeerReachable will waste 30s per LAN attempt.
+      peerListenAddrs: wasConnected
+        ? []
+        : preferCircuits && hasCircuitHints
+          ? (listenAddrs ?? []).filter((a) => !isPrivateLanTcpDialHint(a.trim()))
+          : listenAddrs,
       preferCircuitHints: preferCircuits,
       rebuildDialHints: wasConnected
         ? undefined
@@ -693,13 +708,18 @@ export async function deliverMessageEnvelopeViaRuntime(
         /* fall through to retry with rebuildDialHints */
       }
     }
+    const preferCircuits = preferCircuitHints ?? !conn.direct;
+    const hasCircuit = dialHints.some((h) => h.includes("/p2p-circuit/"));
     return deliverMessageEnvelopeWithRetry({
       mesh,
       transportPeerId,
       envelope,
       dialHints,
-      peerListenAddrs: listenAddrs,
-      preferCircuitHints: preferCircuitHints ?? !conn.direct,
+      // Filter out private LAN listenAddrs when circuits are preferred
+      peerListenAddrs: preferCircuits && hasCircuit
+        ? (listenAddrs ?? []).filter((a) => !isPrivateLanTcpDialHint(a.trim()))
+        : listenAddrs,
+      preferCircuitHints: preferCircuits,
       rebuildDialHints: () => dialHintsForChatViaRuntime(ctx, transportPeerId, listenAddrs),
     });
   });
