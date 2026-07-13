@@ -2168,7 +2168,12 @@ class NodeServiceImpl implements NodeService {
       process.env.ENVOYMESH_NODE_BUNDLE_DIR,
     );
     if (!parsed) return [];
-    const fromBundled = parsed.multiaddrs;
+    // Merge targetMultiaddrs (circuit/WAN) with bootstrapPeers (direct
+    // LAN/WAN stripped by wan-public filter).  This lets the smart
+    // address-filter picker (`pickAddressFilterForPeer`) see LAN addrs
+    // and return `"all"` instead of `"wan-public"`, so direct LAN paths
+    // survive the dial hint filter for same-network sponsor/sponsoree.
+    const fromBundled = [...parsed.multiaddrs, ...(parsed.bootstrapPeers ?? [])];
     if (fromBundled.length === 0) return fromBundled;
     // If the bundled contactUri carries a peerId, also pull the
     // peer-directory record so fresh discoveries count. Bundled

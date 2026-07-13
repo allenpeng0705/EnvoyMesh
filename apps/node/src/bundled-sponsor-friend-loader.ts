@@ -102,6 +102,14 @@ export function resetBundledSponsorFriendCache(): void {
 export type BundledSponsorFriendParsed = {
   /** Sponsor multiaddrs from the join token's `targetMultiaddrs`. */
   multiaddrs: string[];
+  /** Sponsor bootstrap peers from the join token's `bootstrapPeers`.
+   *  These include the sponsor's direct LAN/WAN addrs that were stripped
+   *  from `targetMultiaddrs` by the `wan-public` filter at invite creation
+   *  time.  Passing them through lets the smart address-filter picker
+   *  (`pickAddressFilterForPeer`) see LAN addrs and return `"all"`
+   *  instead of `"wan-public"`, so direct LAN paths survive the dial
+   *  hint filter. */
+  bootstrapPeers: string[];
   /** Parsed `contactUri` — used to look up the peer directory by
    *  `peerId` without re-parsing. */
   link: ReturnType<typeof parseEnvoyContactUri>;
@@ -130,11 +138,11 @@ export async function loadBundledSponsorFriendParsed(
   try {
     const link = parseEnvoyContactUri(bundled.contactUri);
     if (!link.joinToken) {
-      return { multiaddrs: [], link };
+      return { multiaddrs: [], bootstrapPeers: [], link };
     }
     const rawToken = parseEnvoyJoinUri(link.joinToken);
     const invite = decodeWanJoinInviteV1(rawToken);
-    return { multiaddrs: invite.targetMultiaddrs ?? [], link };
+    return { multiaddrs: invite.targetMultiaddrs ?? [], bootstrapPeers: invite.bootstrapPeers ?? [], link };
   } catch {
     // Malformed URI — treat as no known addrs; the smart picker
     // will fall back to the local profile default rather than crash.
@@ -165,11 +173,16 @@ export async function backfillBundledSponsorPeerAddresses(
   const parsed = await loadBundledSponsorFriendParsed(nodeBundleDir);
   if (!parsed) return;
   const peerId = parsed.link.peerId;
-  if (!peerId || parsed.multiaddrs.length === 0) return;
+  if (!peerId || (parsed.multiaddrs.length === 0 && parsed.bootstrapPeers.length === 0)) return;
+  // Merge both targetMultiaddrs and bootstrapPeers into the peer
+  // directory.  targetMultiaddrs has the sponsor's circuit/WAN addrs;
+  // bootstrapPeers has the sponsor's direct LAN/WAN addrs that were
+  // stripped by the wan-public filter at invite creation time.
+  const allAddrs = [...parsed.multiaddrs, ...parsed.bootstrapPeers];
   try {
     await peerDirectoryStore.mergeListenAddrsForPeerId(
       peerId,
-      parsed.multiaddrs,
+      allAddrs,
     );
   } catch {
     // Peer dir might not be ready, or merged addresses might be

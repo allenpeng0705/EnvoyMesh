@@ -35,7 +35,7 @@ import {
   type OwnerIdentity,
 } from "@envoymesh/identity";
 import { randomUUID } from "node:crypto";
-import { appendFile, mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { appendFile, mkdir, open, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { basename, dirname, join } from "node:path";
 import {
   createJsonlIndexAppender,
@@ -686,6 +686,11 @@ export interface LocalTaskStore {
   readTaskJournalEntries(): Promise<TaskJournalEntry[]>;
   appendAuditEvent(event: AuditEvent): Promise<void>;
   readAuditEvents(): Promise<AuditEvent[]>;
+  /** Scoped tail reader: reads only the last ~`limit` matching events from
+   *  the audit log without parsing the entire file. Used by the relay
+   *  manager snapshot cycle (which only needs the last 12 relay.* traces)
+   *  to avoid blocking the event loop on a 100+ MB audit file every 30s. */
+  readAuditEventsTail(filter: { protocolPrefix?: string; limit: number }): Promise<AuditEvent[]>;
   queryAuditEvents(params?: JsonlIndexQueryParams): Promise<AuditEvent[]>;
   rebuildAuditQueryIndex(): Promise<number>;
   appendDiscoveryEvent(event: DiscoveryEvent): Promise<void>;
@@ -992,6 +997,10 @@ export function createLocalTaskStore(profileDir: string): LocalTaskStore {
 
     async readAuditEvents() {
       return readJsonLines<AuditEvent>(auditEventsPath);
+    },
+
+    async readAuditEventsTail(filter) {
+      return readJsonLinesTail<AuditEvent>(auditEventsPath, filter);
     },
 
     async queryAuditEvents(params = {}) {
@@ -2262,6 +2271,72 @@ async function readJsonLines<T>(path: string): Promise<T[]> {
     console.warn(`[local-store] skipped ${parts.join(", ")} line(s) in ${basename(path)}`);
   }
   return parsed;
+}
+
+/**
+ * Read only the **tail** of a JSONL file — avoids loading the entire file
+ * into memory.  Used by `readAuditEventsTail` (relay manager snapshot)
+ * so a 100+ MB audit log doesn't block the event loop every 30 s.
+ *
+ * Strategy: read the last `scanBytes` of the file (default 256 KB),
+ * split into lines, parse lines matching the optional `protocolPrefix`
+ * filter, and return the last `limit` matches.
+ *
+ * `scanBytes` is generous enough that a 256 KB window captures at
+ * least 12 relay trace lines in all realistic deployments (each line
+ * is ~300-500 bytes).
+ */
+async function readJsonLinesTail<T>(
+  path: string,
+  filter: { protocolPrefix?: string; limit: number },
+  scanBytes = 256 * 1024,
+): Promise<T[]> {
+  let fileHandle;
+  try {
+    fileHandle = await open(path, "r");
+  } catch (error) {
+    if (isMissingFileError(error)) return [];
+    throw error;
+  }
+  try {
+    const { size } = await stat(path);
+    if (size === 0) return [];
+
+    const readStart = Math.max(0, size - scanBytes);
+    const buf = Buffer.alloc(size - readStart);
+    await fileHandle.read(buf, 0, buf.length, readStart);
+
+    // Split into lines (strip any partial first line that was cut by the
+    // byte window — it's incomplete JSON and can't be parsed).
+    const text = buf.toString("utf8");
+    const lines = text.split("\n");
+    if (lines.length > 1 && lines[0]!.trim().length > 0) lines.shift();
+
+    const matched: T[] = [];
+    // Walk lines in reverse so we can stop early once we have `limit`.
+    for (let i = lines.length - 1; i >= 0; i--) {
+      const line = lines[i]!;
+      if (line.trim().length === 0) continue;
+      if (line.length > MAX_JSONL_LINE_CHARS) continue;
+      let parsed: T;
+      try {
+        parsed = JSON.parse(line) as T;
+      } catch {
+        continue;
+      }
+      // Apply optional protocol prefix filter (checks `parsed.protocol`).
+      if (filter.protocolPrefix) {
+        const obj = parsed as Record<string, unknown>;
+        const protocol = typeof obj.protocol === "string" ? obj.protocol : "";
+        if (!protocol.startsWith(filter.protocolPrefix)) continue;
+      }
+      matched.unshift(parsed);
+      if (matched.length >= filter.limit) break;
+    }
+    return matched;
+  } finally {
+    await fileHandle.close();
+  }
 }
 
 async function readTrustStoreFile(path: string): Promise<TrustStoreFile> {

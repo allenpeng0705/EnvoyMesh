@@ -280,6 +280,26 @@ try {
 } catch {
   // missing index is fine
 }
+// Startup audit-events.jsonl size guard: a 100+ MB audit log causes the
+// relay manager snapshot cycle (every 30 s) to read-parse the entire file,
+// blocking the event loop for tens of seconds.  Truncate when it exceeds
+// 64 MB — the JSONL appender recreates the file on the next append, and
+// the scoped tail reader (`readAuditEventsTail`) avoids this class of
+// problem for periodic cycles.
+try {
+  const auditEventsPath = join(args.profileDir, "audit-events.jsonl");
+  const auditStat = await stat(auditEventsPath);
+  const auditMb = auditStat.size / (1024 * 1024);
+  if (auditMb > 64) {
+    await unlink(auditEventsPath);
+    console.warn(
+      `[audit] removed bloated audit-events.jsonl (${auditMb.toFixed(0)}MB) — ` +
+        "relay manager snapshot was blocking the event loop; file recreates on next append",
+    );
+  }
+} catch {
+  // missing audit file is fine
+}
 // Run cost-rollup retention once at startup (non-blocking): collapses daily
 // rows older than 30 days into monthly rows and drops monthly rows older than
 // a year. Follows the chain-reports-store precedent of caller-driven GC, but
@@ -4520,7 +4540,13 @@ function relayHealthProtocol(status: RelayHealthSnapshot["status"]): string {
 }
 
 async function runRelayManagerSnapshotCycle(source: "startup" | "periodic"): Promise<void> {
-  const auditEvents = await taskStore.readAuditEvents();
+  // Scoped tail reader: only the last 12 relay.* traces are needed for
+  // the snapshot.  Avoids reading the entire (potentially 100+ MB) audit
+  // log every 30 s, which was blocking the event loop for tens of seconds.
+  const auditEvents = await taskStore.readAuditEventsTail({
+    protocolPrefix: "relay.",
+    limit: 12,
+  });
   const snapshot = buildRelayManagerSnapshot({
     auditEvents,
     runtime: buildRelayManagerRuntimeState(),
@@ -5513,6 +5539,13 @@ async function runBootstrapReprobe(peers: string[]): Promise<void> {
     const message = error instanceof Error ? error.message : String(error);
     pushBootstrapProbeResult({ peer, ok: false, error: message });
     console.warn(`[connectivity] bootstrap reprobe FAILED for ${peer.slice(0, 60)}…: ${message.slice(0, 80)}`);
+    // Aggregate diagnostic: warn when the last N results (one per peer)
+    // are all failures — helps operators distinguish "all peers
+    // unreachable" from a single-peer transient error.
+    const recent = bootstrapProbeResults.slice(-peers.length);
+    if (recent.length >= peers.length && recent.every((r) => !r.ok)) {
+      console.warn(`[connectivity] ALL bootstrap reprobe peers failed this cycle (${peers.length}/${peers.length})`);
+    }
     void taskStore.appendAuditEvent(
       createAuditEvent({
         type: "p2p.trace",
