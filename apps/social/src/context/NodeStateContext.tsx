@@ -347,6 +347,22 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     });
   }, [nodeService, wsTransportOpen, nodeStatus]);
 
+  /** Re-trigger sponsor friend when the human profile is saved.
+   *  On first launch the profile doesn't exist yet, so the effect above
+   *  bails with "profile-not-ready".  Once the user completes the
+   *  profile setup (display name + save), the "profile:updated" event
+   *  fires and we retry — the profile is now ready so the loop can
+   *  actually send the bond.request. */
+  useEffect(() => {
+    if (!wsTransportOpen || nodeStatus !== "running") return;
+    const unsub = nodeService.on("profile:updated", () => {
+      void nodeService.runSetupSponsorFriend().catch((err) => {
+        console.warn("[NodeState] setup sponsor friend re-trigger after profile save error:", err);
+      });
+    });
+    return unsub;
+  }, [nodeService, wsTransportOpen, nodeStatus]);
+
   // config:updated — keep nodeConfig in sync
   useEffect(() => {
     if (!wsTransportOpen) return;
