@@ -50,6 +50,7 @@ import {
   buildOutboundDialHints,
   mergeDialablePeerListenAddrs,
   shouldPreferCircuitDialHints,
+  isMultiaddrPeerIdsValid,
 } from "./outbound-dial-hints.js";
 import { dialableInboundRemoteAddrs, mergeInboundPeerDialHintsIfDue } from "./inbound-dial-hint-learn.js";
 import { withOutboundSendLock } from "./outbound-send-lock.js";
@@ -604,10 +605,16 @@ export async function deliverCallEnvelopeViaRuntime(
           // addresses — they're unreachable for cross-network peers and waste 30s
           // per attempt on timeouts.
           if (preferCircuits && hasCircuitHints && isPrivateLanTcpDialHint(a)) return false;
+          // Drop multiaddrs with invalid base58btc peer IDs — a single bad
+          // character (e.g. lowercase-L 'l') causes SyntaxError at dial time.
+          if (!isMultiaddrPeerIdsValid(a)) {
+            console.warn(`[deliver] dropping multiaddr with invalid base58btc peer ID: ${a.slice(0, 60)}…`);
+            return false;
+          }
           return true;
         });
       if (dialTargets.length > 0) {
-        console.warn(`[deliver] dialTargets(${dialTargets.length}) preferCircuits=${preferCircuits} hasCircuit=${hasCircuitHints}: ${dialTargets.map((t) => t.slice(0, 90)).join(" | ")}`);
+        console.warn(`[deliver] dialTargets(${dialTargets.length}) preferCircuits=${preferCircuits} hasCircuit=${hasCircuitHints}: ${dialTargets.map((t) => t.slice(0, 160)).join(" | ")}`);
         const ordered = [...dialTargets].sort((a, b) => {
           const aLan = isPrivateLanTcpDialHint(a) ? 1 : 0;
           const bLan = isPrivateLanTcpDialHint(b) ? 1 : 0;
@@ -626,7 +633,7 @@ export async function deliverCallEnvelopeViaRuntime(
             if (conn.connected) break;
           } catch (dialErr) {
             console.warn(
-              `[deliver] mesh.dial failed for ${addr.slice(0, 60)}…:`,
+              `[deliver] mesh.dial failed for ${addr.slice(0, 160)}…:`,
               dialErr instanceof Error ? dialErr.message : dialErr,
             );
           }
@@ -715,10 +722,14 @@ export async function deliverMessageEnvelopeViaRuntime(
       transportPeerId,
       envelope,
       dialHints,
-      // Filter out private LAN listenAddrs when circuits are preferred
-      peerListenAddrs: preferCircuits && hasCircuit
-        ? (listenAddrs ?? []).filter((a) => !isPrivateLanTcpDialHint(a.trim()))
-        : listenAddrs,
+      // Filter out private LAN listenAddrs when circuits are preferred,
+      // and drop multiaddrs with invalid base58btc peer IDs.
+      peerListenAddrs: (listenAddrs ?? []).filter((a) => {
+        const t = a.trim();
+        if (preferCircuits && hasCircuit && isPrivateLanTcpDialHint(t)) return false;
+        if (!isMultiaddrPeerIdsValid(t)) return false;
+        return true;
+      }),
       preferCircuitHints: preferCircuits,
       rebuildDialHints: () => dialHintsForChatViaRuntime(ctx, transportPeerId, listenAddrs),
     });

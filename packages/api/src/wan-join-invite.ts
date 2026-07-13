@@ -155,18 +155,67 @@ export function wanJoinInviteSeedAddrs(invite: WanJoinInviteV1): string[] {
   ]);
 }
 
+/**
+ * Quick sanity check for a peer ID string. A corrupted peer ID crashes
+ * `@libp2p/bootstrap` on startup and makes the node unrecoverable.
+ * This is intentionally lenient — it only catches obviously broken strings
+ * (wrong characters, too short). The real validation happens downstream
+ * in `peerIdFromString()` inside `isUnusableBootstrapMultiaddr()`.
+ */
+function isValidPeerIdShape(s: string): boolean {
+  const t = s.trim();
+  if (t.length < 10) return false;
+  // All characters must be valid base58 (no 0, O, I, l)
+  return /^[1-9A-HJ-NP-Za-km-z]+$/.test(t);
+}
+
+/**
+ * Filter out bootstrap entries that could crash @libp2p/bootstrap.
+ * Multiaddrs with corrupted peer IDs or bare invalid peer IDs are dropped.
+ */
+function filterUnsafeBootstrapEntries(entries: readonly string[]): string[] {
+  return entries.filter((entry) => {
+    const t = entry.trim();
+    if (!t) return false;
+    // Bare peer ID (no / prefix)
+    if (!t.startsWith("/")) {
+      if (!isValidPeerIdShape(t)) {
+        console.warn(`[wan-join-invite] dropping invalid bare peerId: ${t}`);
+        return false;
+      }
+      return true;
+    }
+    // Multiaddr — check ALL /p2p/<peerId> segments, not just the last one.
+    // Circuit multiaddrs have two: /p2p/<relayId>/p2p-circuit/p2p/<targetId>.
+    // A corrupted relay ID (e.g. containing lowercase-L) would crash
+    // multiaddr parsing at dial time if not caught here.
+    const segments = t.split("/p2p/");
+    for (let i = 1; i < segments.length; i++) {
+      const peerIdStr = segments[i]!.split("/")[0]!.trim();
+      if (peerIdStr && !isValidPeerIdShape(peerIdStr)) {
+        console.warn(`[wan-join-invite] dropping multiaddr with invalid peerId in /p2p/ segment: ${t.slice(0, 80)}`);
+        return false;
+      }
+    }
+    return true;
+  });
+}
+
 export function mergeWanJoinInviteBootstrap(input: {
   bootstrapPeers: readonly string[];
   bootstrapPresets: readonly string[];
   invite: WanJoinInviteV1;
 }): { bootstrapPeers: string[]; bootstrapPresets: string[]; seedAddrs: string[] } {
   const seedAddrs = wanJoinInviteSeedAddrs(input.invite);
+  const inviteEntries = filterUnsafeBootstrapEntries([
+    ...input.invite.bootstrapPeers,
+    ...(input.invite.targetMultiaddrs ?? []),
+    ...(input.invite.targetPeerId ? [input.invite.targetPeerId] : []),
+  ]);
   return {
     bootstrapPeers: dedupeBootstrapStrings([
       ...input.bootstrapPeers,
-      ...input.invite.bootstrapPeers,
-      ...(input.invite.targetMultiaddrs ?? []),
-      ...(input.invite.targetPeerId ? [input.invite.targetPeerId] : []),
+      ...inviteEntries,
     ]),
     bootstrapPresets: dedupeBootstrapStrings([
       ...input.bootstrapPresets,

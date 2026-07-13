@@ -2667,8 +2667,12 @@ async function activateCliMesh(reloadDiscoveryFromConfig: boolean): Promise<void
         const configuredRelayAddrs = (initialConfig?.configuredRelays ?? [])
           .filter((r: { enabled?: boolean; addr?: string }) => r.enabled && r.addr?.trim())
           .map((r: { addr: string }) => r.addr.trim());
+        // Only include direct relay addresses in the warmup — circuit
+        // multiaddrs (containing /p2p-circuit/) are peer-to-peer paths
+        // THROUGH a relay, not relay server endpoints. Dialing them as
+        // relay servers is wrong and wastes 30s per attempt.
         const bootstrapRelayAddrs = effectiveBootstrapPeers.filter(
-          (a: string) => !configuredRelayAddrs.includes(a),
+          (a: string) => !configuredRelayAddrs.includes(a) && !a.includes("/p2p-circuit/"),
         );
         const relaysToWarm = [...configuredRelayAddrs, ...bootstrapRelayAddrs].slice(0, 4);
         if (relaysToWarm.length > 0) {

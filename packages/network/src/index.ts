@@ -2818,7 +2818,10 @@ export class EnvoyMesh {
       ...(this.options.bootstrapPeers && this.options.bootstrapPeers.length > 0
         ? [
             bootstrap({
-              list: this.options.bootstrapPeers,
+              // Filter out unusable addresses BEFORE passing to @libp2p/bootstrap.
+              // A corrupted peer ID (bad base58btc) crashes the bootstrap module
+              // and makes the node unrecoverable on startup.
+              list: this.options.bootstrapPeers.filter((a) => !isUnusableBootstrapMultiaddr(a)),
               timeout: this.options.bootstrapTimeoutMs ?? 15_000,
             }),
           ]
@@ -3007,7 +3010,11 @@ export class EnvoyMesh {
    * half and the relay logging above answers the second.
    */
   private async probeBootstrapPeers(): Promise<void> {
-    const peers = this.options.bootstrapPeers ?? [];
+    // Filter out unusable entries before probing — a corrupted peer ID
+    // in bootstrapPeers would crash `ma()` below.
+    const peers = (this.options.bootstrapPeers ?? []).filter(
+      (a) => !isUnusableBootstrapMultiaddr(a),
+    );
     if (peers.length === 0) {
       console.log(
         `[p2p] bootstrap probe: no bootstrap peers configured — DHT will only see peers it discovers via mDNS/relay-checkin.`,
@@ -3511,7 +3518,14 @@ export function isLikelyInboundConnSnapshotDialHint(addr: string): boolean {
   return port >= 32768;
 }
 
-/** True when a multiaddr must not be used as bootstrap / relay.checkin target. */
+/**
+ * True when a multiaddr must not be used as bootstrap / relay.checkin target.
+ *
+ * This catches malformed multiaddrs, loopback/DOCKER addresses, and —
+ * critically — addresses whose embedded peer ID is not valid base58btc.
+ * An invalid peer ID would crash @libp2p/bootstrap on startup, making the
+ * node completely unrecoverable.
+ */
 export function isUnusableBootstrapMultiaddr(addr: string): boolean {
   const a = addr.trim();
   if (!a.startsWith("/")) {
@@ -3528,6 +3542,21 @@ export function isUnusableBootstrapMultiaddr(addr: string): boolean {
   }
   if (isBrowserOnlyTransportDialHint(a) || isIncompleteCircuitDialHint(a)) {
     return true;
+  }
+  // Validate ALL /p2p/<peerId> segments (not just the last one).
+  // Circuit multiaddrs have two: /p2p/<relayId>/p2p-circuit/p2p/<targetId>.
+  // A corrupted relay ID (e.g. containing lowercase-L 'l', which is not
+  // valid base58btc) crashes @libp2p/bootstrap and makes the node
+  // unrecoverable on startup.
+  const p2pSegments = a.split("/p2p/");
+  for (let i = 1; i < p2pSegments.length; i++) {
+    const peerIdStr = p2pSegments[i]!.split("/")[0]!.trim();
+    if (!peerIdStr) return true;
+    try {
+      peerIdFromString(peerIdStr);
+    } catch {
+      return true;
+    }
   }
   return false;
 }

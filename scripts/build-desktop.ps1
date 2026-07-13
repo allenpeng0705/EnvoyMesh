@@ -264,20 +264,15 @@ Write-Host ""
 
 Write-Step "1/5  Staging sidecars..."
 
-# Self-heal: stage-bundle-node-runtime.ps1 will Write-Error if
-# apps\node\dist\src\index.js is missing (i.e. `npm run node:build` was never
-# run on this machine). The bash twin (build-desktop.sh) gets a free pass
-# because tauri.conf.json's beforeBuildCommand runs the stage scripts, but
-# the beforeBuildCommand also invokes `bash` directly, which on a stock
-# Windows box without Git-Bash/MSYS fails before doing anything useful. So
-# for the PowerShell path we build the node dist up-front and skip the
-# fragile beforeBuildCommand step.
+Write-Step "1/5  Building workspace packages..."
+
 $nodeDistEntry = Join-Path $RepoRoot "apps/node/dist/src/index.js"
-if (-not (Test-Path $nodeDistEntry)) {
-    Write-Info "apps\node\dist\src\index.js missing — running `npm run node:build`..."
-    $buildExit = Invoke-ExternalQuiet npm run node:build
-    if ($buildExit -ne 0) {
-        Write-Fail "npm run node:build failed (exit $buildExit). The Tauri bundle requires a compiled EnvoyMesh node at apps\node\dist\."
+
+if (-not $SkipTypecheck) {
+    Write-Info "TypeScript build (tsc -b)..."
+    $tcExit = Invoke-ExternalQuiet npm run node:build
+    if ($tcExit -ne 0) {
+        Write-Fail "npm run node:build failed (exit $tcExit). The Tauri bundle requires a compiled EnvoyMesh node at apps\node\dist\."
         Write-Info "  Try: cd $RepoRoot ; npm ci ; npm run node:build"
         exit 1
     }
@@ -285,9 +280,13 @@ if (-not (Test-Path $nodeDistEntry)) {
         Write-Fail "npm run node:build returned 0 but apps\node\dist\src\index.js is still missing — check the build output for errors."
         exit 1
     }
-    Write-Ok "EnvoyMesh node built"
+    Write-Ok "EnvoyMesh node compiled"
 } else {
-    Write-Info "apps\node\dist\src\index.js already present (skipping npm run node:build)"
+    Write-Info "-SkipTypecheck: skipping npm run node:build"
+    if (-not (Test-Path $nodeDistEntry)) {
+        Write-Fail "apps\node\dist\src\index.js missing and -SkipTypecheck was passed — cannot continue"
+        exit 1
+    }
 }
 
 # 1a. Node.js sidecar (the binary the Tauri shell spawns to run the EnvoyMesh node).
@@ -765,13 +764,7 @@ try {
         }
     }
 
-    if (-not $SkipTypecheck) {
-        Write-Info "Typecheck (tsc -b)..."
-        $tcExit = Invoke-ExternalQuiet npm run typecheck
-        if ($tcExit -ne 0) {
-            Write-Warn "typecheck reported warnings (continuing — fix before release)"
-        }
-    }
+    # (Typecheck already done in Step 1.)
 
     # Resource size check — NSIS has a hard 2 GB installer cap. When the
     # bundled tree (Node sidecar + EnvoyMesh node + OpenClaw + Social UI)

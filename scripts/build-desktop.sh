@@ -161,9 +161,12 @@ publish_desktop_release() {
   echo "$dest"
 }
 
-# Step 1: Fetch sidecars (Node.js + OpenClaw + compiled node)
-echo "[1/5] Staging sidecars (Node.js, OpenClaw, EnvoyMesh node)..."
+# Step 1: Build workspace packages + Node runtime, then stage sidecars
+echo "[1/5] Building workspace packages + Node runtime..."
 cd "${PROJECT_DIR}"
+tsc -b
+echo ""
+echo "[1/5] continued — Staging sidecars (Node.js, OpenClaw, EnvoyMesh node)..."
 bash scripts/fetch-node-sidecar.sh
 bash scripts/stage-tauri-openclaw-bundle.sh
 bash scripts/stage-tauri-node-bundle.sh

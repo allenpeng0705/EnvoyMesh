@@ -23,6 +23,31 @@ import { DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR, DEFAULT_PUBLIC_LIBP2P_BOO
 import { filterDialableMultiaddrs } from "./node-service-wan.js";
 
 /**
+ * base58btc valid alphabet (RFC 4648 subset used by Bitcoin/IPFS):
+ *   123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz
+ * Note: 0, O, I, l (lowercase-L) are explicitly excluded. A single
+ * invalid character in a multiaddr's `/p2p/<id>` causes a
+ * `SyntaxError: Non-base58btc character` at dial time. This guard
+ * catches that early so corrupted addresses are silently dropped
+ * rather than crashing the dial loop.
+ */
+const BASE58BTC_RE = /^[1-9A-HJ-NP-Za-km-z]+$/;
+
+/** Return true if every peer-ID segment in the multiaddr is valid base58btc. */
+export function isMultiaddrPeerIdsValid(addr: string): boolean {
+  const parts = addr.split("/p2p/");
+  // parts[0] is the transport prefix; parts[1..] are peer ID segments
+  for (let i = 1; i < parts.length; i++) {
+    // Each `/p2p/<value>` segment — the value may be followed by another
+    // protocol (e.g. `/p2p/QmFoo/p2p-circuit/p2p/QmBar`), so take only
+    // the first component after the peer ID.
+    const peerId = parts[i]!.split("/")[0]!.trim();
+    if (!peerId || !BASE58BTC_RE.test(peerId)) return false;
+  }
+  return true;
+}
+
+/**
  * Map the node's `discoveryProfile` to the right {@link DialableAddrMode}
  * for outbound dials.
  *
@@ -140,7 +165,16 @@ function relayBasesForCircuitDial(input: {
   if (cfgPresets.includes("cn-relay") || config?.relayEnabled !== false) {
     bases.push(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
   }
-  return dedupeDialHints(bases);
+  // Drop any multiaddr whose /p2p/ segments contain invalid base58btc chars.
+  // A corrupted peer ID (e.g. containing 'l' = lowercase-L, which is not
+  // valid base58btc) causes a SyntaxError at dial time that kills the
+  // entire retry loop. This guard catches that early.
+  const validated = bases.filter((a) => {
+    if (isMultiaddrPeerIdsValid(a)) return true;
+    console.warn(`[dial-hints] dropping multiaddr with invalid base58btc peer ID: ${a.slice(0, 80)}…`);
+    return false;
+  });
+  return dedupeDialHints(validated);
 }
 
 export async function buildOutboundDialHints(input: {
