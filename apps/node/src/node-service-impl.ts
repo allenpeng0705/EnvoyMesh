@@ -1175,6 +1175,8 @@ class NodeServiceImpl implements NodeService {
     { threadKey: string; pending: Set<string> }
   >();
   private _chatRoomSyncFlushTimer: ReturnType<typeof setInterval> | null = null;
+  /** Periodic prune of unbounded per-peer Maps to prevent memory leaks over multi-week runs. */
+  private _memoryPruneTimer: ReturnType<typeof setInterval> | null = null;
   private readonly _agentActivityStore: LocalAgentActivityStore | null;
   private readonly _agentCardStore: AgentCardStore | null;
   private readonly _chatDraftStore: ChatDraftStore | null;
@@ -1665,6 +1667,37 @@ class NodeServiceImpl implements NodeService {
         void this._flushPendingRoomMessages();
       }, 90_000);
     }
+    // Periodic prune of per-peer Maps that grow unbounded over multi-week
+    // runs.  Each map tracks the last activity timestamp for a given peer;
+    // entries older than 2× their cooldown period are dead weight.
+    this._memoryPruneTimer = setInterval(() => {
+      try {
+        const now = Date.now();
+        const profileCutoff = now - NodeServiceImpl._PROFILE_REQUEST_COOLDOWN_MS * 120; // ~30 days
+        const probeCutoff = now - NodeServiceImpl._NEARBY_PROFILE_PROBE_COOLDOWN_MS * 120;
+        const mergeCutoff = now - 2 * 60 * 60 * 1000; // 2 hours (dial-hint throttle)
+        let pruned = 0;
+        for (const [k, v] of this._profileRequestLastAt) if (v < profileCutoff) { this._profileRequestLastAt.delete(k); pruned++; }
+        for (const [k, v] of this._nearbyProfileProbeLastAt) if (v < probeCutoff) { this._nearbyProfileProbeLastAt.delete(k); pruned++; }
+        for (const k of this._lastLibp2pTransportByOwner.keys()) {
+          // Owner entries don't have timestamps — limit by total count instead.
+          // 1000 unique owners is generous for a personal node.
+        }
+        for (const [k, v] of this._inboundListenAddrMergeByPeer) if (v < mergeCutoff) { this._inboundListenAddrMergeByPeer.delete(k); pruned++; }
+        // Cap _lastLibp2pTransportByOwner at 1000 entries (oldest evicted).
+        if (this._lastLibp2pTransportByOwner.size > 1000) {
+          const entries = [...this._lastLibp2pTransportByOwner.entries()];
+          this._lastLibp2pTransportByOwner.clear();
+          for (const entry of entries.slice(-1000)) this._lastLibp2pTransportByOwner.set(entry[0], entry[1]);
+          pruned += entries.length - 1000;
+        }
+        if (pruned > 0) {
+          console.log(`[node-service] Pruned ${pruned} stale per-peer cache entries`);
+        }
+      } catch (err) {
+        console.error("[node-service] memory prune error:", err);
+      }
+    }, 60 * 60 * 1000); // 1 hour
     this._agentActivityStore =
       profileDir && profileDir !== "/tmp/unknown" ? createLocalAgentActivityStore(profileDir) : null;
     this._agentCardStore =

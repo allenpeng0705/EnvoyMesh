@@ -159,7 +159,7 @@ import { handleInboundBondIntent } from "./bond-inbound.js";
 import { tryBondAutonomyInboundAutoAccept } from "./bond-autonomy-inbound.js";
 import { createBondAutonomyDailyCounter } from "./bond-autonomy-daily-counter.js";
 import { handleInboundSocialIntroIntent } from "./social-intro-inbound.js";
-import { handleInboundDiscoveryIntent, handleInboundRelayPeersIntent, expandCircuitDialCandidates, processDiscoveryQueue } from "./discovery-inbound.js";
+import { handleInboundDiscoveryIntent, handleInboundRelayPeersIntent, expandCircuitDialCandidates, processDiscoveryQueue, clearExpiredQueueEntries } from "./discovery-inbound.js";
 import { handleInboundSyncStateIntent } from "./sync-state-inbound.js";
 import { handleInboundBroadcastRequest, handleInboundBroadcastResponse } from "./broadcast-inbound.js";
 import { pushNotificationService } from "./push-notification.js";
@@ -2802,6 +2802,53 @@ rateLimitCleanupInterval = setInterval(() => {
   }
 }, 60_000);
 
+// Periodic prune of inbound dial-hint throttle timestamps.
+// Without this the Map grows unbounded (one entry per unique peer)
+// and leaks memory over multi-week runs.
+const DIAL_HINT_THROTTLE_PRUNE_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
+const DIAL_HINT_THROTTLE_MAX_AGE_MS = 2 * 60 * 60 * 1000; // 2 hours
+setInterval(() => {
+  try {
+    const cutoff = Date.now() - DIAL_HINT_THROTTLE_MAX_AGE_MS;
+    let pruned = 0;
+    for (const [peerId, ts] of lastListenAddrMergeByPeer.entries()) {
+      if (ts < cutoff) {
+        lastListenAddrMergeByPeer.delete(peerId);
+        pruned++;
+      }
+    }
+    if (pruned > 0) {
+      console.log(`[node] Pruned ${pruned} stale dial-hint throttle entries`);
+    }
+  } catch (err) {
+    console.error("[node] dial-hint throttle prune error:", err);
+  }
+}, DIAL_HINT_THROTTLE_PRUNE_INTERVAL_MS);
+
+// Weekly re-prune of peer directory records and cost-rollup retention.
+// These are also run at startup, but on 30-day runs without restart the
+// directory can grow past 500 records and cost rows can accumulate.
+const PERIODIC_DATA_PRUNE_INTERVAL_MS = 7 * 24 * 60 * 60 * 1000; // 1 week
+setInterval(() => {
+  try {
+    void peerDirectoryStore.capPeerRecordCount().then((result) => {
+      if (result.recordsRemoved > 0) {
+        console.log(`[peer-directory] periodic prune: removed ${result.recordsRemoved} oldest record(s)`);
+      }
+    });
+    void peerDirectoryStore.compactListenAddrs().then((result) => {
+      if (result.addrsRemoved > 0) {
+        console.log(`[peer-directory] periodic compact: removed ${result.addrsRemoved} stale listen addrs`);
+      }
+    });
+    void taskStore.runCostRollupRetention().catch((err) => {
+      console.warn("[cost-rollup] periodic retention failed:", err);
+    });
+  } catch (err) {
+    console.error("[node] periodic data prune error:", err);
+  }
+}, PERIODIC_DATA_PRUNE_INTERVAL_MS);
+
 startEventLoopLagMonitor();
 
 const { loadPersistedAssistState } = await import("./terminal-assist-persist.js");
@@ -3564,6 +3611,13 @@ async function runDiscoveryQueueCycle(): Promise<void> {
       return 0;
     },
   };
+  // Prune fully-expired per-peer queues so the outer Map doesn't grow forever
+  // over multi-week runs.  Each cycle only removes peers whose queues are
+  // entirely stale, so the cost is negligible.
+  const cleared = clearExpiredQueueEntries();
+  if (cleared > 0) {
+    console.log(`[discovery-queue] pruned ${cleared} expired queue entries for fully-expired peers`);
+  }
   const processed = await processDiscoveryQueue(meshInterface);
   if (processed.length > 0) {
     console.log(`[discovery-queue] processed ${processed.length} queued request(s)`);
@@ -3846,6 +3900,10 @@ async function shutdown(): Promise<void> {
   if (relaySummaryTimer) {
     clearTimeout(relaySummaryTimer);
     relaySummaryTimer = undefined;
+  }
+  if (discoveryQueueTimer) {
+    clearTimeout(discoveryQueueTimer);
+    discoveryQueueTimer = undefined;
   }
   if (relayManagerSnapshotTimer) {
     clearTimeout(relayManagerSnapshotTimer);
