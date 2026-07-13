@@ -247,6 +247,12 @@ export type AuditEventType =
   | "bond.revoked"
   | "device.merge"
   | "device.revoked"
+  // Setup-sponsor-friend skip observability — the runtime returns
+  // `{ skipped: true, reason: <X> }` from `runSetupSponsorFriend` when a
+  // guard fires (mesh-not-ready, profile-not-ready, cooldown, etc.) and
+  // does NOT persist that decision. The audit event lands here so the
+  // UI can surface a "waiting for <X>" hint instead of looking dead.
+  | "setup.sponsor_friend.skipped"
   // Phase 40 — Agent Network Collaboration Layer.
   // Chain events flow through createAuditEvent using:
   //   - taskId     → the orchestrator's chain-level taskId (also stored in

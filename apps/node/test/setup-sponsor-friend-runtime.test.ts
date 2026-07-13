@@ -808,3 +808,155 @@ describe("classifySponsorError — profile-not-ready", () => {
     );
   });
 });
+
+describe("runSetupSponsorFriendViaRuntime — skip observability audit events", () => {
+  // Skips are NOT persisted to node-config.json (the in-memory return
+  // is the source of truth for the tile). The audit log is the only
+  // signal that lets the UI distinguish "we're waiting for X" from
+  // "we never started". These tests pin the audit-event contract so
+  // future refactors don't silently drop the signal.
+  const baseConfig = {
+    version: "0.1" as const,
+    profileDir: "/tmp/profile",
+    discoveryProfile: "wan-default" as const,
+    enableMdns: true,
+    relayEnabled: true,
+    relayServerEnabled: false,
+    advertiseAddrs: [],
+    bootstrapPeers: [],
+    bootstrapPresets: [],
+    configuredRelays: [],
+    modelProviders: { mode: "disabled" as const },
+    chatAssistEnabled: false,
+    contactAiPreferences: [],
+    updatedAt: new Date().toISOString(),
+    setupSponsorFriendEnabled: true,
+    setupSponsorFriendOwnerId: "envoy:owner:audit-test",
+    setupSponsorFriendPeerId: "12D3KooWAuditTest",
+    setupSponsorFriendMaxAttempts: 1,
+    setupSponsorFriendRetryDelayMs: 0,
+  };
+
+  function makeDeps(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+    return {
+      loadNodeConfig: async () => baseConfig,
+      saveNodeConfig: async () => {},
+      getProfileDir: () => "/tmp/profile",
+      nodeBundleDir: "/tmp/bundle",
+      applyWanJoinInvite: async () => ({}),
+      searchPeers: async () => [],
+      sendHello: async () => ({ messageId: "msg-1" }),
+      loadHelloProfile: async () => ({
+        displayName: "New User",
+        bio: "",
+        interests: [],
+        whatShares: [],
+      }),
+      loadNodeProfile: async () => undefined,
+      assertOnline: () => {},
+      ...overrides,
+    };
+  }
+
+  it("emits a setup.sponsor_friend.skipped audit event when the mesh is not ready", async () => {
+    const appendAudit = vi.fn(async () => {});
+
+    const result = await runSetupSponsorFriendViaRuntime(
+      makeDeps({
+        appendAudit,
+        probeMeshReady: async () => false,
+      }) as Parameters<typeof runSetupSponsorFriendViaRuntime>[0],
+    );
+
+    expect(result.reason).toBe("mesh-not-ready");
+    // The audit write is fire-and-forget — let the microtask drain.
+    await flushSponsorLoop();
+    expect(appendAudit).toHaveBeenCalledTimes(1);
+    const event = appendAudit.mock.calls[0]?.[0] as {
+      type: string;
+      outcome: string;
+      correlationId?: string;
+      summary: string;
+    };
+    expect(event.type).toBe("setup.sponsor_friend.skipped");
+    expect(event.outcome).toBe("record");
+    expect(event.correlationId).toBe("envoy:owner:audit-test");
+    expect(event.summary).toContain("mesh-not-ready");
+  });
+
+  it("emits a setup.sponsor_friend.skipped audit event when the profile is not ready", async () => {
+    const appendAudit = vi.fn(async () => {});
+
+    const result = await runSetupSponsorFriendViaRuntime(
+      makeDeps({
+        appendAudit,
+        probeHumanProfileReady: async () => false,
+      }) as Parameters<typeof runSetupSponsorFriendViaRuntime>[0],
+    );
+
+    expect(result.reason).toBe("profile-not-ready");
+    await flushSponsorLoop();
+    expect(appendAudit).toHaveBeenCalledTimes(1);
+    const event = appendAudit.mock.calls[0]?.[0] as { summary: string };
+    expect(event.summary).toContain("profile-not-ready");
+  });
+
+  it("emits a setup.sponsor_friend.skipped audit event with cooldown expiry when the cooldown is active", async () => {
+    const appendAudit = vi.fn(async () => {});
+    const cooldownUntil = new Date(Date.now() + 30_000).toISOString();
+    const config = {
+      ...baseConfig,
+      setupSponsorFriendCooldownUntil: cooldownUntil,
+    };
+
+    const result = await runSetupSponsorFriendViaRuntime(
+      makeDeps({
+        appendAudit,
+        loadNodeConfig: async () => config,
+      }) as Parameters<typeof runSetupSponsorFriendViaRuntime>[0],
+    );
+
+    expect(result.reason).toBe("cooldown");
+    expect(result.cooldownUntil).toBe(cooldownUntil);
+    await flushSponsorLoop();
+    expect(appendAudit).toHaveBeenCalledTimes(1);
+    const event = appendAudit.mock.calls[0]?.[0] as { summary: string };
+    expect(event.summary).toContain("cooldown");
+    // The cooldown expiry is encoded in the summary so the UI audit
+    // view can render a "retry at HH:MM" hint without re-querying the
+    // persisted config.
+    expect(event.summary).toContain(cooldownUntil);
+  });
+
+  it("does NOT emit an audit event for already-completed (deliberate no-op)", async () => {
+    const appendAudit = vi.fn(async () => {});
+
+    const result = await runSetupSponsorFriendViaRuntime(
+      makeDeps({
+        appendAudit,
+        loadNodeConfig: async () => ({
+          ...baseConfig,
+          setupSponsorFriendCompletedAt: new Date().toISOString(),
+        }),
+      }) as Parameters<typeof runSetupSponsorFriendViaRuntime>[0],
+    );
+
+    expect(result.reason).toBe("already-completed");
+    await flushSponsorLoop();
+    // already-completed is the user-bonded state — the audit log
+    // already has a bond.pre_staged / bond.established event for that.
+    // Emitting another "skipped" event here would be noise.
+    expect(appendAudit).not.toHaveBeenCalled();
+  });
+
+  it("does NOT crash when appendAudit is omitted (back-compat with tests that don't wire it)", async () => {
+    // The dep is optional. A test that only cares about the in-memory
+    // return shape shouldn't have to mock appendAudit.
+    const result = await runSetupSponsorFriendViaRuntime(
+      makeDeps({ probeMeshReady: async () => false }) as Parameters<
+        typeof runSetupSponsorFriendViaRuntime
+      >[0],
+    );
+    expect(result.reason).toBe("mesh-not-ready");
+  });
+});

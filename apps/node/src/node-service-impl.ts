@@ -4855,6 +4855,12 @@ class NodeServiceImpl implements NodeService {
         getProfileDir: () => this._profileDir,
         nodeBundleDir: process.env.ENVOYMESH_NODE_BUNDLE_DIR,
         assertOnline: () => this._assertOnline(),
+        // Audit observability for skip reasons. Skips are not persisted
+        // to node-config.json (per the test contract on line 507 of
+        // setup-sponsor-friend-runtime.test.ts), so the audit log is
+        // the only signal that lets the UI distinguish "we're waiting
+        // for the network" from "we never started".
+        appendAudit: (event) => this._appendAuditEvent(event),
         // Mesh-readiness probe: returns true only when the libp2p mesh
         // is set AND has registered listen addrs (event loop running).
         // The auto-trigger in NodeStateContext fires the moment

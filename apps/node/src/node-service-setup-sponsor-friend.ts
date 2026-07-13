@@ -8,6 +8,7 @@ import {
   type SetupSponsorFriendConfig,
 } from "@envoymesh/api";
 import type { HelloProfile, NodeService, SendHelloOptions } from "@envoymesh/api";
+import { createAuditEvent, type AuditEvent } from "@envoymesh/local-store";
 import { loadBundledSponsorFriendConfig } from "./bundled-sponsor-friend-loader.js";
 import { pickAddressFilterForPeer } from "./outbound-dial-hints.js";
 import type { PersistedNodeConfig } from "./node-config-store.js";
@@ -203,6 +204,53 @@ function isCooldownActive(
   return { active: true, until: untilIso };
 }
 
+/**
+ * Fire-and-forget observability hook for a setup-sponsor-friend skip.
+ * The runtime never persists skip decisions (the loop's
+ * `getSetupSponsorFriendStatus` reads the in-memory return), so without
+ * this the UI can't tell "we're waiting for the network" from "we
+ * never started" — both look the same on disk. The audit event is the
+ * single source of truth for "what is the runtime waiting on right
+ * now?". The dep is optional: tests that don't wire it simply skip
+ * the audit write and the runtime still returns the same skip result.
+ *
+ * Outcome is `"record"` (not `"deny"`): this is an in-process wait, not
+ * a security decision. The `summary` carries the human-readable reason
+ * and any extra context (e.g. cooldown expiry). `correlationId` is the
+ * sponsor's `ownerId` so a UI audit query can filter to one sponsor.
+ */
+function recordSponsorSkip(input: {
+  deps: SetupSponsorFriendRuntimeDeps;
+  ownerId: string;
+  reason: string;
+  extra?: string;
+}): void {
+  const { deps, ownerId, reason, extra } = input;
+  if (!deps.appendAudit) return;
+  // Don't await — the runtime is fire-and-forget on the RPC return path
+  // and we don't want a slow audit write to block the skip return.
+  // Errors are logged but never thrown: the in-memory skip is still
+  // the source of truth for the UI's behavior.
+  void deps
+    .appendAudit(
+      createAuditEvent({
+        type: "setup.sponsor_friend.skipped",
+        correlationId: ownerId,
+        outcome: "record",
+        summary: extra
+          ? `setup.sponsor-friend skipped: ${reason} (${extra})`
+          : `setup.sponsor-friend skipped: ${reason}`,
+      }),
+    )
+    .catch((err) => {
+      const message = err instanceof Error ? err.message : String(err);
+      console.warn(
+        `[runSetupSponsorFriend] audit emit failed for skip reason=${reason}:`,
+        message,
+      );
+    });
+}
+
 export interface SetupSponsorFriendRuntimeDeps {
   loadNodeConfig(): Promise<PersistedNodeConfig | undefined>;
   saveNodeConfig(config: PersistedNodeConfig): Promise<void>;
@@ -279,6 +327,18 @@ export interface SetupSponsorFriendRuntimeDeps {
   localDiscoveryProfile?: string;
   /** Optional: read the current cooldown from a custom source (test seam). */
   now?(): number;
+  /**
+   * Optional: append an audit event for observability hooks. The runtime
+   * fires a `setup.sponsor_friend.skipped` event whenever it returns
+   * `{ skipped: true, reason: <X> }` (mesh-not-ready, profile-not-ready,
+   * cooldown, etc.) so the UI can surface "waiting for the network"
+   * hints instead of looking dead. Skips are NOT persisted to
+   * node-config.json — the audit log is the only signal. When this dep
+   * is omitted (e.g. in unit tests that don't care about the audit
+   * side-effect) the runtime is a no-op for the audit write and the
+   * skip still returns as before.
+   */
+  appendAudit?: (event: AuditEvent) => Promise<void>;
 }
 
 export interface RunSetupSponsorFriendInput {
@@ -309,6 +369,8 @@ export async function runSetupSponsorFriendViaRuntime(
   // successfully bonded"; the user's manual override is the explicit
   // escape hatch.
   if (existing?.setupSponsorFriendCompletedAt && input.forceBypassGuards !== true) {
+    // No audit event here — "already-completed" is a deliberate no-op
+    // (the user already bonded). The UI's tile is the source of truth.
     return { ok: true, skipped: true, reason: "already-completed" };
   }
 
@@ -318,6 +380,8 @@ export async function runSetupSponsorFriendViaRuntime(
   });
 
   if (!resolved.enabled || !resolved.ownerId) {
+    // No audit event here — the runtime wasn't configured, so the UI
+    // shows "Setup not configured" from the resolved config itself.
     return { ok: true, skipped: true, reason: "disabled-or-incomplete" };
   }
 
@@ -338,6 +402,12 @@ export async function runSetupSponsorFriendViaRuntime(
       console.log(
         `[runSetupSponsorFriend] cooldown active for ownerId=${ownerId.slice(0, 16)}… until ${cooldown.until}; manual Retry can bypass`,
       );
+      recordSponsorSkip({
+        deps,
+        ownerId,
+        reason: "cooldown",
+        extra: cooldown.until ? `until=${cooldown.until}` : undefined,
+      });
       return {
         ok: true,
         skipped: true,
@@ -360,6 +430,7 @@ export async function runSetupSponsorFriendViaRuntime(
         console.log(
           `[runSetupSponsorFriend] profile not ready for ownerId=${ownerId.slice(0, 16)}…; not spawning a loop`,
         );
+        recordSponsorSkip({ deps, ownerId, reason: "profile-not-ready" });
         return {
           ok: true,
           skipped: true,
@@ -387,6 +458,7 @@ export async function runSetupSponsorFriendViaRuntime(
         console.log(
           `[runSetupSponsorFriend] libp2p mesh not ready for ownerId=${ownerId.slice(0, 16)}…; not spawning a loop`,
         );
+        recordSponsorSkip({ deps, ownerId, reason: "mesh-not-ready" });
         return {
           ok: true,
           skipped: true,
