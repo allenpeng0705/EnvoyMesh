@@ -164,7 +164,7 @@ publish_desktop_release() {
 # Step 1: Build workspace packages + Node runtime, then stage sidecars
 echo "[1/5] Building workspace packages + Node runtime..."
 cd "${PROJECT_DIR}"
-tsc -b
+npx tsc -b
 echo ""
 echo "[1/5] continued — Staging sidecars (Node.js, OpenClaw, EnvoyMesh node)..."
 bash scripts/fetch-node-sidecar.sh
