@@ -877,6 +877,24 @@ export class EnvoyMesh {
     return result;
   }
 
+  /**
+   * Returns true when at least one circuit-relay-v2 reservation has ever
+   * landed on this node's local ReservationStore. Set by the
+   * `relay:created-reservation` event listener in `installRelayLogging()`.
+   *
+   * Differs from `getConnectedRelayPeerIds()` — that requires an OPEN
+   * circuit connection (which only exists once a peer has actively
+   * relayed through us or vice versa). A reservation alone doesn't open
+   * a connection; it just gives us the ability to RECEIVE inbound
+   * relays. For the auto-bond probe (`probeMeshReady`) this is the
+   * right signal: the loop needs to be able to dial the sponsor
+   * THROUGH the relay, which only requires the local reservation to
+   * be in place — not an existing inbound connection.
+   */
+  hasRelayReservation(): boolean {
+    return this.relayEverReserved;
+  }
+
   /** Open libp2p remote peer ids from the connection manager (direct + relay). */
   getConnectedPeerIds(): string[] {
     return this.getConnectionStats().connectedPeerIds;

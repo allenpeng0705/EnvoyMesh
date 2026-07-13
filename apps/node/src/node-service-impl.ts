@@ -4874,10 +4874,21 @@ class NodeServiceImpl implements NodeService {
           // hasn't fully started yet, regardless of what nodeStatus
           // reports. (EnvoyMesh has no `isStarted()` method.)
           if (mesh.multiaddrs.length === 0) return Promise.resolve(false);
-          // If the mesh has any connected peer (relay or otherwise),
-          // the routing substrate is alive and the loop's `sendHello`
-          // will get useful dial hints. Without this, the loop would
-          // race the relay reservation and burn attempts.
+          // Relay reservation landed. This is the strongest "ready"
+          // signal: the loop's `sendHello` can route through the
+          // relay circuit even with no direct peers or open circuit
+          // connections. A reservation alone doesn't open a connection
+          // (that only happens on first traffic), so the
+          // `getConnectedRelayPeerIds()` check below would otherwise
+          // block forever. See `mesh.hasRelayReservation()` for the
+          // distinction between reservation and active connection.
+          if (typeof mesh.hasRelayReservation === "function" && mesh.hasRelayReservation()) {
+            return Promise.resolve(true);
+          }
+          // Fallback for older meshes without `hasRelayReservation`:
+          // require an active circuit connection OR a direct peer
+          // connection. This is the original "routing substrate is
+          // alive" check.
           if (mesh.getConnectedRelayPeerIds().length > 0) return Promise.resolve(true);
           return Promise.resolve(mesh.getConnectedPeerIds().length > 0);
         },
