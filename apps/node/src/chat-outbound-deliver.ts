@@ -571,6 +571,7 @@ export async function deliverCallEnvelopeWithRetry(input: {
         });
         if (!ready && !input.mesh.getPeerConnectionInfo(input.transportPeerId).connected) {
           lastErr = new Error(`No reachable path to ${input.transportPeerId.slice(0, 12)}… before call send`);
+          console.warn(`[deliver-call] prepare-failed attempt ${attempt + 1}/${maxAttempts} for ${input.transportPeerId.slice(0, 24)}…: ${lastErr instanceof Error ? lastErr.message : lastErr}`);
           webrtcCallWarn("deliver-call:prepare-failed", {
             attempt: attempt + 1,
             callId: shortCallId(callId),
@@ -690,6 +691,7 @@ export async function deliverMessageEnvelopeWithRetry(input: {
         });
         if (!ready && !input.mesh.getPeerConnectionInfo(input.transportPeerId).connected) {
           lastErr = new Error(`No reachable path to ${input.transportPeerId.slice(0, 12)}… before send`);
+          console.warn(`[send] prepare-failed attempt ${attempt + 1}/${maxAttempts} for ${input.transportPeerId.slice(0, 24)}…: ${lastErr instanceof Error ? lastErr.message : lastErr}`);
           continue;
         }
       }
@@ -707,6 +709,7 @@ export async function deliverMessageEnvelopeWithRetry(input: {
         });
         if (!ready) {
           lastErr = new Error(`No reachable path to ${input.transportPeerId.slice(0, 12)}… before send`);
+          console.warn(`[send] retry-prepare-failed attempt ${attempt + 1}/${maxAttempts} for ${input.transportPeerId.slice(0, 24)}…: ${lastErr instanceof Error ? lastErr.message : lastErr}`);
           continue;
         }
       }

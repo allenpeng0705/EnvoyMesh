@@ -616,7 +616,7 @@ export async function deliverCallEnvelopeViaRuntime(
             conn = mesh.getPeerConnectionInfo(transportPeerId);
             if (conn.connected) break;
           } catch (dialErr) {
-            console.debug(
+            console.warn(
               `[deliver] mesh.dial failed for ${addr.slice(0, 60)}…:`,
               dialErr instanceof Error ? dialErr.message : dialErr,
             );

@@ -804,7 +804,6 @@ import {
 import { buildProfileDiscoveryTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
 import { startNodeStatsInterval } from "./node-stats-log.js";
-import { handleInboundBondIntent } from "./bond-inbound.js";
 import { tryBondAutonomyInboundAutoAccept } from "./bond-autonomy-inbound.js";
 
 import {
