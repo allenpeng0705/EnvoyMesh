@@ -201,6 +201,11 @@ export async function applyWanJoinInviteViaRuntime(
   deps.recordOwnerActivity();
   const invite = decodeWanJoinInviteV1(parseEnvoyJoinUri(token));
   assertWanJoinInviteNotExpired(invite);
+  console.log(
+    `[wan-join] parsed join invite: targetPeerId=${invite.targetPeerId?.slice(0, 16) ?? "unknown"}… ` +
+      `bootstrapPeers=${invite.bootstrapPeers.length} presets=${invite.bootstrapPresets?.length ?? 0} ` +
+      `expiresAt=${invite.expiresAt}`,
+  );
   const config = await deps.getNodeConfig();
   const beforePeers = new Set(config.bootstrapPeers);
   const beforePresets = new Set(config.bootstrapPresets);
@@ -217,6 +222,11 @@ export async function applyWanJoinInviteViaRuntime(
   if (seedStore && merged.seedAddrs.length > 0) {
     await seedStore.upsertMany(merged.seedAddrs, "manual-bootstrap");
   }
+  const peersAdded = merged.bootstrapPeers.filter((p) => !beforePeers.has(p)).length;
+  const presetsAdded = merged.bootstrapPresets.filter((p) => !beforePresets.has(p)).length;
+  console.log(
+    `[wan-join] applied join invite: added ${peersAdded} bootstrap peers, ${presetsAdded} presets, ${merged.seedAddrs.length} seeds`,
+  );
   return {
     ok: true,
     bootstrapPeersAdded: merged.bootstrapPeers.filter((p) => !beforePeers.has(p)).length,

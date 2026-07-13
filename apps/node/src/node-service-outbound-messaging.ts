@@ -638,6 +638,11 @@ export async function deliverCallEnvelopeViaRuntime(
             );
           }
         }
+        if (!conn.connected) {
+          console.warn(
+            `[deliver] all ${ordered.length} dial targets exhausted for ${transportPeerId.slice(0, 16)}… — unable to establish connection`,
+          );
+        }
       }
     }
     const wasConnected = conn.connected;

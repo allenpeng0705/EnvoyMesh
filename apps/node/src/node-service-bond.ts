@@ -150,7 +150,7 @@ export async function sendHelloViaRuntime(
       matchedRecord?.listenAddrs,
       options?.addressFilter,
     );
-    console.log(`[node-service] sendHello dialHints count=${dialHints.length}`);
+    console.log(`[node-service] sendHello dialHints count=${dialHints.length}: ${dialHints.map((h) => h.slice(0, 100)).join(" | ")}`);
     await ctx.deliverCallEnvelope(targetPeerId, envelope, dialHints, matchedRecord?.listenAddrs);
     console.log(`[node-service] Hello sent successfully to ${targetPeerId}`);
 

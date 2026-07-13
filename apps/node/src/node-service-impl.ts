@@ -4959,12 +4959,18 @@ class NodeServiceImpl implements NodeService {
         // entirely with a `mesh-not-ready` skip reason.
         probeMeshReady: () => {
           const mesh = this._mesh ?? this._externalMesh;
-          if (!mesh) return Promise.resolve(false);
+          if (!mesh) {
+            console.log(`[probeMeshReady] false — no mesh instance`);
+            return Promise.resolve(false);
+          }
           // `mesh.multiaddrs` is the listen-address list populated by
           // libp2p during `node.start()`. Empty list = the event loop
           // hasn't fully started yet, regardless of what nodeStatus
           // reports. (EnvoyMesh has no `isStarted()` method.)
-          if (mesh.multiaddrs.length === 0) return Promise.resolve(false);
+          if (mesh.multiaddrs.length === 0) {
+            console.log(`[probeMeshReady] false — no listen addrs yet`);
+            return Promise.resolve(false);
+          }
           // Relay reservation landed. This is the strongest "ready"
           // signal: the loop's `sendHello` can route through the
           // relay circuit even with no direct peers or open circuit
@@ -4974,14 +4980,26 @@ class NodeServiceImpl implements NodeService {
           // block forever. See `mesh.hasRelayReservation()` for the
           // distinction between reservation and active connection.
           if (typeof mesh.hasRelayReservation === "function" && mesh.hasRelayReservation()) {
+            console.log(`[probeMeshReady] true — relay reservation active, addrs=${mesh.multiaddrs.length}`);
             return Promise.resolve(true);
           }
           // Fallback for older meshes without `hasRelayReservation`:
           // require an active circuit connection OR a direct peer
           // connection. This is the original "routing substrate is
           // alive" check.
-          if (mesh.getConnectedRelayPeerIds().length > 0) return Promise.resolve(true);
-          return Promise.resolve(mesh.getConnectedPeerIds().length > 0);
+          const relayPeers = mesh.getConnectedRelayPeerIds().length;
+          const directPeers = mesh.getConnectedPeerIds().length;
+          const ready = relayPeers > 0 || directPeers > 0;
+          if (!ready) {
+            console.log(
+              `[probeMeshReady] false — no relay reservation, no connected peers (relayPeers=${relayPeers}, directPeers=${directPeers}, addrs=${mesh.multiaddrs.length})`,
+            );
+          } else {
+            console.log(
+              `[probeMeshReady] true — peers connected (relayPeers=${relayPeers}, directPeers=${directPeers})`,
+            );
+          }
+          return Promise.resolve(ready);
         },
         // Smart address-filter: gather the sponsor's known multiaddrs
         // from the bundled config (the sponsor's QR-code contactUri

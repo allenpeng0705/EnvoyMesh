@@ -605,6 +605,9 @@ async function runSetupSponsorFriendRetryLoop(
       if (deps.probeMeshReady) {
         const meshReady = await deps.probeMeshReady();
         if (!meshReady) {
+          console.log(
+            `[setupSponsorFriend] attempt ${attempt}/${resolved.maxAttempts}: mesh not ready, deferring`,
+          );
           throw new Error("libp2p mesh not ready yet — deferring bond.request");
         }
       }
@@ -664,6 +667,9 @@ async function runSetupSponsorFriendRetryLoop(
       // failure kind `sponsor-no-ack` so the loop can retry.
       if (deps.waitForBondEstablished) {
         const ACKNOWLEDGEMENT_TIMEOUT_MS = 30_000;
+        console.log(
+          `[setupSponsorFriend] sendHello OK, waiting up to ${ACKNOWLEDGEMENT_TIMEOUT_MS}ms for sponsor bond.established acknowledgement...`,
+        );
         try {
           await deps.waitForBondEstablished(ownerId, ACKNOWLEDGEMENT_TIMEOUT_MS);
         } catch (err) {

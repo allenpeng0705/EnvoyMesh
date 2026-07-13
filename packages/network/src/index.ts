@@ -1489,6 +1489,29 @@ export class EnvoyMesh {
     const addrs = node.getMultiaddrs();
     console.log(`[p2p] provideSelf: peerId=${selfPeerId.slice(0, 12)}…, addrs count=${addrs?.length ?? 0}`);
 
+    // Log DHT routing table size — if the table is empty, DHT puts will
+    // time out because there are no peers to replicate to. This helps
+    // operators distinguish "empty table → expected timeout" from "populated
+    // table → unexpected timeout" (a real network problem).
+    try {
+      const dht = (node.services as any)?.dht ?? (node as any).dht;
+      if (dht?.routingTable) {
+        const rt = dht.routingTable;
+        const bucketCount = rt.buckets?.length ?? 0;
+        let peerCount = 0;
+        if (rt.buckets) {
+          for (const bucket of rt.buckets) peerCount += bucket.peers?.size ?? 0;
+        }
+        console.log(`[p2p] provideSelf: DHT routing table: ${bucketCount} buckets, ${peerCount} peers`);
+      } else if (dht?.kbucket) {
+        // Alternative KadDHT implementation
+        const peers = Array.isArray(dht.kbucket) ? dht.kbucket : [];
+        console.log(`[p2p] provideSelf: DHT kbucket entries: ${peers.length}`);
+      }
+    } catch {
+      // DHT introspection is best-effort
+    }
+
     try {
       // Collect publicly dialable addresses:
       // 1. Non-private listen addrs (direct interfaces)
@@ -2210,7 +2233,17 @@ export class EnvoyMesh {
           detail.includes("Protocol selection failed") ||
           detail.includes("could not negotiate"));
       if (!isDhtNoise) {
-        console.warn(`[network] ensurePeerReachable failed for ${target.slice(0, 24)}…: ${detail}`);
+        // Classify common relay-specific errors for faster diagnosis.
+        const noReservation =
+          detail.includes("NO_RESERVATION") || detail.includes("no reservation") || detail.includes("relay reservation");
+        if (noReservation) {
+          console.warn(
+            `[network] NO_RESERVATION: peer ${peerIdStr ?? target.slice(0, 16)}… has no active reservation on the relay. ` +
+              `Is the target connected to a relay? Error: ${detail.slice(0, 120)}`,
+          );
+        } else {
+          console.warn(`[network] ensurePeerReachable failed for ${target.slice(0, 24)}…: ${detail}`);
+        }
       }
       return { connected: false, direct: false };
     }
@@ -3318,6 +3351,18 @@ export class EnvoyMesh {
     if (!this.options.enableP2pDebug) {
       return;
     }
+
+    // Unconditional peer connect/disconnect logging (unlike the detailed
+    // p2p-debug events below, these are always visible for diagnostics).
+    typedNode.addEventListener("peer:connect", (event: any) => {
+      const remotePeerId = event.detail?.toString?.() ?? String(event.detail);
+      console.log(`[p2p] peer ${remotePeerId.slice(0, 16)}… connected`);
+    });
+
+    typedNode.addEventListener("peer:disconnect", (event: any) => {
+      const remotePeerId = event.detail?.toString?.() ?? String(event.detail);
+      console.log(`[p2p] peer ${remotePeerId.slice(0, 16)}… disconnected`);
+    });
 
     typedNode.addEventListener("peer:connect", (event: any) => {
       const remotePeerId = event.detail?.toString?.() ?? String(event.detail);

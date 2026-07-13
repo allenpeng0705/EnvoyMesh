@@ -322,6 +322,9 @@ export class NodeDiscoveryRuntime {
         const node = (mesh as any).node;
         if (node?.peerRouting) {
           const peer = await node.peerRouting.findPeer(peerId, { timeout: 10000 });
+          console.log(
+            `[searchPeers] found ${peerId.slice(0, 16)}… via DHT (${peer.multiaddrs.length} addr(s))`,
+          );
           return [{
             nodeId: peer.id.toString(),
             ownerId: peer.id.toString(),
@@ -332,6 +335,7 @@ export class NodeDiscoveryRuntime {
         }
         // Direct dial attempt
         await mesh.dial(`/p2p/${peerId}`);
+        console.log(`[searchPeers] found ${peerId.slice(0, 16)}… via direct dial`);
         return [{
           nodeId: peerId,
           ownerId: peerId,

@@ -45,11 +45,15 @@ export async function tryBondAutonomyInboundAutoAccept(input: {
 }): Promise<BondAutonomyInboundAutoAcceptResult> {
   const autonomy = bondAutonomyConfigFromPersisted(input.config);
   if (!autonomy.enabled || input.autonomousKillSwitch) {
+    console.log(
+      `[bond.autonomy] disabled (enabled=${autonomy.enabled}, killSwitch=${input.autonomousKillSwitch ?? false}) for peer ${input.remotePeerId.slice(0, 16)}…`,
+    );
     return { accepted: false, reason: "bond autonomy disabled" };
   }
 
   const posturePolicy = resolveBondAutonomyPostureFromConfig(autonomy);
   if (!posturePolicy) {
+    console.log(`[bond.autonomy] policy unavailable — posture config is incomplete`);
     return { accepted: false, reason: "bond autonomy policy unavailable" };
   }
 
@@ -57,6 +61,7 @@ export async function tryBondAutonomyInboundAutoAccept(input: {
   try {
     payload = parseBondRequestPayload(input.envelope.payload);
   } catch {
+    console.log(`[bond.autonomy] invalid bond.request payload from ${input.remotePeerId.slice(0, 16)}…`);
     return { accepted: false, reason: "invalid bond.request payload" };
   }
 
@@ -88,6 +93,9 @@ export async function tryBondAutonomyInboundAutoAccept(input: {
   );
 
   if (!evalResult.allowed) {
+    console.log(
+      `[bond.autonomy] policy DENIED from ${payload.requesterOwnerId}: ${evalResult.reason}`,
+    );
     return { accepted: false, reason: evalResult.reason };
   }
 
@@ -114,6 +122,10 @@ export async function tryBondAutonomyInboundAutoAccept(input: {
       summary: `bond.request auto-accepted via bond autonomy (${evalResult.reason}) from ${payload.requesterOwnerId}`,
       createdAt: input.envelope.createdAt,
     }),
+  );
+
+  console.log(
+    `[bond.autonomy] auto-accepted from ${payload.requesterOwnerId} at level=${level} (${evalResult.reason})`,
   );
 
   return {

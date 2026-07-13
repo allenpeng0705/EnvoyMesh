@@ -5512,6 +5512,7 @@ async function runBootstrapReprobe(peers: string[]): Promise<void> {
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     pushBootstrapProbeResult({ peer, ok: false, error: message });
+    console.warn(`[connectivity] bootstrap reprobe FAILED for ${peer.slice(0, 60)}…: ${message.slice(0, 80)}`);
     void taskStore.appendAuditEvent(
       createAuditEvent({
         type: "p2p.trace",

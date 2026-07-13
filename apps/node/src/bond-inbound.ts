@@ -197,6 +197,10 @@ export async function handleInboundBondIntent(
                 requesterOwnerId: auto.requesterOwnerId,
               },
             };
+          } else if (auto && !auto.accepted) {
+            console.log(
+              `[bond.request] bond autonomy REJECTED from ${payload.requesterOwnerId}: ${("reason" in auto ? (auto as { reason: string }).reason : "unknown")}`,
+            );
           }
         }
 
@@ -448,6 +452,7 @@ export async function handleInboundBondIntent(
     return { ok: false, reason: "not a bond intent" };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    console.error(`[bond.inbound] UNEXPECTED error processing bond intent: ${message}`, error instanceof Error ? error.stack : undefined);
     return { ok: false, reason: `invalid bond payload: ${message}` };
   }
 }
