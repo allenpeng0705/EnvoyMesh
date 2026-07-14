@@ -29,7 +29,7 @@ const RED = "\x1b[31m";
 const CYAN = "\x1b[36m";
 const DIM = "\x1b[2m";
 const RESET = "\x1b[0m";
-const RELAY_CONTROL_TTL_MS = 90_000;
+const RELAY_CONTROL_TTL_MS = 300_000;
 const RELAY_LOOKUP_INTERVAL_MS = 10_000;
 const RELAY_LOOKUP_REPLY_TIMEOUT_MS = 30_000;
 

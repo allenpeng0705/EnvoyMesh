@@ -77,6 +77,7 @@ async function checkinPeer(
   roster.checkin({
     peerId: peer.peerId,
     ownerId: peer.ownerId,
+    displayName: peer.displayName,
     relayReachableAddrs: [],
     capabilities: ["mesh.discovery"],
     advertisements: [
@@ -205,7 +206,7 @@ function rosterLookupFallback(
       return {
         nodeId: p.peerId,
         ownerId: resolvedOwnerId,
-        displayName: trust?.displayName ?? p.peerId.slice(0, 12) + "...",
+        displayName: trust?.displayName ?? p.displayName ?? p.peerId.slice(0, 12) + "...",
         interests: [params.topic],
         profileVisibility: "public",
         discoverySource: "relay-roster-topic" as const,
