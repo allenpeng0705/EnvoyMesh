@@ -314,11 +314,13 @@ export function SettingsNodeTab() {
   const publicLibp2pToggle = useOptimisticToggle(isPublicLibp2pDiscovery, async (enabled) => {
     const nextProfile: DiscoveryProfile = enabled ? "wan-default" : "contacts-only";
     const bootstrapPresets = [...defaultBootstrapPresetsForDiscoveryProfile(nextProfile)];
+    // Keep mDNS on for wan-default (LAN + WAN); off for contacts-only.
+    const mdnsForProfile = nextProfile === "wan-default";
     bootstrapPresetsSavingRef.current += 1;
     setBootstrapPresetSyncNonce((n) => n + 1);
     try {
       setBootstrapPresets(bootstrapPresets);
-      await nodeService.updateNodeConfig({ discoveryProfile: nextProfile, bootstrapPresets });
+      await nodeService.updateNodeConfig({ discoveryProfile: nextProfile, bootstrapPresets, enableMdns: mdnsForProfile });
       await restartNodeAfterConnectivityChange();
     } finally {
       bootstrapPresetsSavingRef.current -= 1;
@@ -330,11 +332,14 @@ export function SettingsNodeTab() {
   const setDiscoveryProfile = useCallback(
     async (nextProfile: DiscoveryProfile) => {
       const presets = [...defaultBootstrapPresetsForDiscoveryProfile(nextProfile)];
+      // Sync mDNS with profile: LAN-capable profiles need mDNS on;
+      // contacts-only/relay-only don't use mDNS so turn it off.
+      const mdnsForProfile = nextProfile === "lan-fast" || nextProfile === "wan-default";
       bootstrapPresetsSavingRef.current += 1;
       setBootstrapPresetSyncNonce((n) => n + 1);
       try {
         setBootstrapPresets(presets);
-        await nodeService.updateNodeConfig({ discoveryProfile: nextProfile, bootstrapPresets: presets });
+        await nodeService.updateNodeConfig({ discoveryProfile: nextProfile, bootstrapPresets: presets, enableMdns: mdnsForProfile });
         await restartNodeAfterConnectivityChange();
       } finally {
         bootstrapPresetsSavingRef.current -= 1;

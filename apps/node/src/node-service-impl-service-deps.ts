@@ -406,6 +406,7 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
             scheduleDeferredProfileRefresh: (reason) =>
               host._scheduleDeferredProfileRefresh(reason),
             advertiseInterestsIfPublic: () => host._advertiseInterestsIfPublic(),
+            loadHumanProfile: () => host._humanProfileStore.loadHumanProfile(),
             loadPublishedLibraryFromDisk: () => host.loadPublishedLibraryFromDisk(),
             loadIntentHistoryFromDisk: () => host.loadIntentHistoryFromDisk(),
             recordNodeError: (context, err) => host._recordNodeError(context, err),

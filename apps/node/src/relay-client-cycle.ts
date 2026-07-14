@@ -22,7 +22,7 @@ import { recordRelayCheckinCycle, recordRelayLookupResult, type RelayCheckinAtte
 
 const RELAY_CLIENT_CYCLE_INTERVAL_MS = 30_000;
 const RELAY_LOOKUP_REPLY_TIMEOUT_MS = 30_000;
-const RELAY_CONTROL_TTL_MS = 90_000;
+const RELAY_CONTROL_TTL_MS = 300_000;
 
 /**
  * Topics currently advertised via DHT (`provideCapabilityTopic`). The relay
@@ -93,6 +93,7 @@ function relayCheckinCapabilities(capabilities: readonly string[]): string[] {
 export interface RelayClientCycleDeps {
   mesh: EnvoyMesh;
   profile: NodeProfile;
+  displayName?: string;
   bootstrapPeers: string[];
   inboundGuard: InboundMessageGuard;
   discoverySeedStore: DiscoverySeedStore;
@@ -112,6 +113,7 @@ async function sendRelayCheckin(deps: RelayClientCycleDeps, targets: string[]): 
   const payload = createRelayCheckinPayload({
     peerId: mesh.peerId,
     ownerId: profile.owner.ownerId,
+    displayName: deps.displayName,
     relayReachableAddrs: mesh.multiaddrs,
     capabilities: relayCheckinCapabilities(profile.deviceCertificate.capabilities),
     advertisements: [

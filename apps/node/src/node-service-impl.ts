@@ -4441,16 +4441,28 @@ class NodeServiceImpl implements NodeService {
   }): Promise<PeerSearchResult[]> {
     const deps = this._relayClientCycleDeps;
     const mesh = this._mesh ?? this._externalMesh;
-    if (!deps || !mesh) return [];
+    if (!deps) {
+      console.warn(`[searchPeers] _queryRelayLookupByTopic: _relayClientCycleDeps not set`);
+      return [];
+    }
+    if (!mesh) {
+      console.warn(`[searchPeers] _queryRelayLookupByTopic: mesh not available`);
+      return [];
+    }
     const { filterRelayControlTargets } = await import("@envoymesh/network");
     const targets = filterRelayControlTargets(deps.bootstrapPeers);
-    if (targets.length === 0) return [];
+    if (targets.length === 0) {
+      console.warn(`[searchPeers] _queryRelayLookupByTopic: no relay control targets (bootstrapPeers=${deps.bootstrapPeers.length})`);
+      return [];
+    }
     try {
+      console.log(`[searchPeers] _queryRelayLookupByTopic: querying ${targets.length} relay(s) for topicHash=${params.topicHash.slice(0, 20)}…`);
       const responses = await queryRelayLookupWithDeps(deps, targets, {
         topicHash: params.topicHash,
         maxResults: params.maxResults,
         visibilityScope: "public",
       });
+      console.log(`[searchPeers] _queryRelayLookupByTopic: got ${responses.length} response(s), total peers=${responses.reduce((s, r) => s + r.peers.length, 0)}`);
       const results: PeerSearchResult[] = [];
       const trustRecords = await this._trustStore.listTrustRecords();
       const peerRecords = await this._peerDirectoryStore.listPeerRecords();
@@ -4471,12 +4483,24 @@ class NodeServiceImpl implements NodeService {
           results.push({
             nodeId: candidate.peerId,
             ownerId: candidate.ownerId ?? peerRecord?.ownerId ?? candidate.peerId,
-            displayName: trust?.displayName ?? candidate.peerId.slice(0, 12) + "...",
+            displayName: trust?.displayName ?? candidate.displayName ?? candidate.peerId.slice(0, 12) + "...",
             interests: [params.topic],
             profileVisibility: "public",
             discoverySource: "relay-roster-topic",
             trustLevel: trust?.level,
           });
+        }
+      }
+      // Enrich any remaining truncated peer IDs from the profile cache.
+      if (this._peerProfileCacheStore) {
+        for (const result of results) {
+          if (!/^12[Dd]3\w{6,}\.\.\.$/.test(result.displayName) && result.displayName.length > 15) continue;
+          try {
+            const cached = await this._peerProfileCacheStore.get(result.ownerId);
+            if (cached?.profile?.displayName) {
+              result.displayName = cached.profile.displayName;
+            }
+          } catch { /* cache miss is fine */ }
         }
       }
       return results;

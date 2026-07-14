@@ -71,7 +71,10 @@ export function resolveConnectivityRuntime(input: {
     capabilityDiscoveryJitterMs: DEFAULT_CAPABILITY_DISCOVERY_JITTER_MS,
     lazyCapabilityDiscovery: resolveLazyCapabilityDiscovery(profile, tuning),
     idleTimerStretch,
-    relayCycleIntervalMs: (baseMs = relayBase) => stretch(baseMs),
+    // Cap relay checkin idle-stretch to 2x (max 60s) so checkin
+    // coverage gaps stay within the 300s TTL. Full 4x stretch
+    // (120s) risks entry expiry between checkins.
+    relayCycleIntervalMs: (baseMs = relayBase) => Math.min(stretch(baseMs), baseMs * 2),
     bootstrapReprobeIntervalMs: (baseMs = reprobeBase) => stretch(baseMs),
     capabilityDiscoveryIntervalMsEffective: () => stretch(capabilityBase),
   };

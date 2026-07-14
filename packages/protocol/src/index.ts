@@ -1147,6 +1147,7 @@ export const RelayHintSchema = z.object({
 export const RelayPeerCandidateSchema = z.object({
   peerId: z.string().min(1),
   ownerId: z.string().min(1).optional(),
+  displayName: z.string().optional(),
   multiaddrs: z.array(z.string().min(1)).default([]),
   viaRelayId: z.string().min(1).optional(),
   capabilities: z.array(z.string().min(1)).default([]),
@@ -1157,6 +1158,7 @@ export const RelayPeerCandidateSchema = z.object({
 export const RelayCheckinPayloadSchema = z.object({
   peerId: z.string().min(1),
   ownerId: z.string().min(1).optional(),
+  displayName: z.string().optional(),
   relayReachableAddrs: z.array(z.string().min(1)).default([]),
   capabilities: z.array(z.string().min(1)).default([]),
   advertisements: z.array(RelayAdvertisementSchema).default([]),

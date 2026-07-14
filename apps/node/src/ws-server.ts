@@ -141,6 +141,8 @@ export class WsServer {
       nodeServiceImpl.on("discovery:multihop-update", (data: unknown) =>
         this.emitEvent("discovery:multihop-update", data),
       );
+      nodeServiceImpl.on("peer:discovered", (data: unknown) => this.emitEvent("peer:discovered", data));
+      nodeServiceImpl.on("peer:lost", (data: unknown) => this.emitEvent("peer:lost", data));
       // Phase 25A — Mesh awareness insights
       nodeServiceImpl.on("agent:awareness", (data: unknown) => this.emitEvent("agent:awareness", data));
       nodeServiceImpl.on("terminal:session-updated", (data: unknown) =>

@@ -103,6 +103,31 @@ export interface NodeDiscoveryRuntimeDeps {
   } | undefined>;
 }
 
+/**
+ * Enrich displayName for search results whose displayName is a truncated
+ * peer ID by looking up the peer's profile in the cache.  This covers
+ * peers whose profiles were synced (profile.sync) but who are not yet
+ * bonded contacts.
+ */
+async function enrichDisplayNames(
+  results: Array<{ nodeId: string; ownerId: string; displayName: string }>,
+  store?: PeerProfileCacheStore | null,
+): Promise<void> {
+  if (!store) return;
+  for (const result of results) {
+    // Skip results that already have a human-readable name (not a peer ID prefix).
+    if (!/^12[Dd]3\w{6,}\.\.\.$/.test(result.displayName) && result.displayName.length > 15) continue;
+    try {
+      const cached = await store.get(result.ownerId);
+      if (cached?.profile?.displayName) {
+        result.displayName = cached.profile.displayName;
+      }
+    } catch {
+      // cache miss is fine — keep the truncated peer ID
+    }
+  }
+}
+
 export class NodeDiscoveryRuntime {
   constructor(private readonly deps: NodeDiscoveryRuntimeDeps) {}
 
@@ -147,7 +172,8 @@ export class NodeDiscoveryRuntime {
 
       // 3. Determine search mode based on network configuration
       const config = await this.deps.configStore.load();
-      const isPublicNetwork = config?.bootstrapPresets && config.bootstrapPresets.length > 0;
+      const isPublicNetwork = (config?.bootstrapPresets && config.bootstrapPresets.length > 0) ||
+        (config?.bootstrapPeers && config.bootstrapPeers.length > 0);
       const isPrivateRelay = config?.relayEnabled && config?.configuredRelays && config.configuredRelays.length > 0;
       // Any DHT-capable or relay-capable config can search topics.
       // searchByTopic() has a relay.lookup fallback when DHT returns empty,
@@ -402,6 +428,9 @@ export class NodeDiscoveryRuntime {
           signedRecordValid: provider.signedRecord ? true : provider.signedRecordInvalid ? false : undefined,
         };
       });
+      // Enrich displayName from peer profile cache (e.g. peers whose
+      // profiles were synced via profile.sync but not yet bonded).
+      await enrichDisplayNames(dhtResults, this.deps.peerProfileCacheStore);
 
       // Cross-NAT fallback: if local DHT returned no providers (often the case
       // when the node is behind NAT and the local routing table is empty),

@@ -361,7 +361,8 @@ export async function updateHumanProfileViaRuntime(
   const signedProfile = await _signAndSaveHumanProfile(ctx, updatedPayload);
 
   const config = await ctx.getConfigStore().load();
-  const isPublicNetwork = config?.bootstrapPresets && config.bootstrapPresets.length > 0;
+  const isPublicNetwork = (config?.bootstrapPresets && config.bootstrapPresets.length > 0) ||
+    (config?.bootstrapPeers && config.bootstrapPeers.length > 0);
   const interests = [...(updatedPayload.hobbies ?? []), ...(updatedPayload.knowledge ?? [])];
   const username = updatedPayload.username;
   const locationTopics = deriveLocationDiscoveryTopics({
@@ -1142,11 +1143,27 @@ export async function _advertiseInterestsIfPublic(ctx: IdentityContext): Promise
   const profile = await ctx.getHumanProfileStore().loadHumanProfile();
   if (!config || !profile) return;
 
-  const isPublicNetwork = config.bootstrapPresets && config.bootstrapPresets.length > 0;
+  const isPublicNetwork = (config.bootstrapPresets && config.bootstrapPresets.length > 0) ||
+    (config.bootstrapPeers && config.bootstrapPeers.length > 0);
+  console.log(
+    `[advertiseInterests] visibility=${profile.profileVisibility} presets=${config.bootstrapPresets?.length ?? 0} peers=${config.bootstrapPeers?.length ?? 0} isPublicNetwork=${isPublicNetwork}`,
+  );
   if (profile.profileVisibility === "public" && isPublicNetwork) {
     const { interests, usernameTopic, locationTopics, capabilityTopics } =
       computePublicDiscoveryTopics(profile);
     const username = (profile.username ?? "").toLowerCase();
+
+    const displayNameTopic = profile.displayName ? displayNameTopicFor(profile.displayName) : undefined;
+    const allTopics = [
+      ...interests,
+      ...(usernameTopic ? [usernameTopic] : []),
+      ...(displayNameTopic ? [displayNameTopic] : []),
+      ...locationTopics,
+      ...capabilityTopics,
+    ];
+    console.log(
+      `[advertiseInterests] advertising ${allTopics.length} topic(s): ${allTopics.slice(0, 5).join(", ")}${allTopics.length > 5 ? "…" : ""}`,
+    );
 
     await _advertisePublicDiscoveryTopics(ctx, {
       interests,
@@ -1160,15 +1177,11 @@ export async function _advertiseInterestsIfPublic(ctx: IdentityContext): Promise
     // Notify any active relay checkins of the new topic set so the relay
     // server's roster (indexed by topicHash) reflects the current profile.
     // Include the displayName topic so relay.lookup by name works.
-    const displayNameTopic = profile.displayName ? displayNameTopicFor(profile.displayName) : undefined;
-    void ctx.notifyAdvertisedDiscoveryTopics?.([
-      ...interests,
-      ...(usernameTopic ? [usernameTopic] : []),
-      ...(displayNameTopic ? [displayNameTopic] : []),
-      ...locationTopics,
-      ...capabilityTopics,
-    ]);
+    void ctx.notifyAdvertisedDiscoveryTopics?.(allTopics);
   } else {
+    console.log(
+      `[advertiseInterests] SKIPPED — visibility=${profile.profileVisibility} isPublicNetwork=${isPublicNetwork}; clearing advertised topics`,
+    );
     await _cancelAutoAdvertisedDiscoveryTopics(ctx);
     void ctx.notifyAdvertisedDiscoveryTopics?.([]);
   }
@@ -1179,7 +1192,7 @@ export async function _registerWithRendezvousServers(
   interests: string[],
   username: string,
 ): Promise<void> {
-  const mesh = ctx.getMesh();
+  const mesh = ctx.getMesh() ?? ctx.getExternalMesh();
   if (!mesh) return;
   const profileForRendezvous = ctx.getProfile();
   if (!profileForRendezvous) {

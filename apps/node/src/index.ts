@@ -757,7 +757,7 @@ const RELAY_LOOKUP_INTERVAL_MS = 30_000;
 /** Client relay.lookup uses same-stream reply; allow slow paths. */
 const RELAY_LOOKUP_REPLY_TIMEOUT_MS = 30_000;
 const RELAY_SUMMARY_INTERVAL_MS = 60_000;
-const RELAY_CONTROL_TTL_MS = 90_000;
+const RELAY_CONTROL_TTL_MS = 300_000;
 /** Child relay relay.lookup forward: read reply on same stream (per-hop). */
 const RELAY_FORWARD_LOOKUP_REPLY_MS = 12_000;
 const RELAY_MANAGER_SNAPSHOT_INTERVAL_MS = 30_000;
@@ -2633,9 +2633,21 @@ async function activateCliMesh(reloadDiscoveryFromConfig: boolean): Promise<void
           // first provide. At +5s the DHT was still bootstrapping and every
           // topic timed out at 30s.
           setTimeout(() => {
-            void nodeService._advertiseInterestsIfPublic().catch((err) => {
-              console.warn("[node] advertiseInterestsIfPublic failed:", err);
-            });
+            void nodeService._advertiseInterestsIfPublic()
+              .then(() => {
+                // After topics are advertised into the module-level variable
+                // consumed by checkin, immediately fire a relay checkin so
+                // the relay roster gets the topicHash ads without waiting
+                // for the next periodic cycle (which may be 30-120s away).
+                if (args.enableRelay && effectiveBootstrapPeers.length > 0) {
+                  void runRelayCheckinCycle("post-advertise").catch((err) => {
+                    console.warn("[node] post-advertise checkin failed:", err);
+                  });
+                }
+              })
+              .catch((err) => {
+                console.warn("[node] advertiseInterestsIfPublic failed:", err);
+              });
           }, 15_000);
           // Re-advertise periodically (NodeService path also does this).
           setInterval(() => {
@@ -3198,6 +3210,8 @@ nodeService.on("chat:draft", (data) => wsServer.emitEvent("chat:draft", data));
 nodeService.on("agent:activity", (data) => wsServer.emitEvent("agent:activity", data));
 nodeService.on("chain:state", (data) => wsServer.emitEvent("chain:state", data));
 nodeService.on("chain:report", (data) => wsServer.emitEvent("chain:report", data));
+nodeService.on("peer:discovered", (data) => wsServer.emitEvent("peer:discovered", data));
+nodeService.on("peer:lost", (data) => wsServer.emitEvent("peer:lost", data));
 nodeService.on("bond:established", (data) => {
   console.log(`[index.ts] nodeService bond:established event fired, peerOwnerId=${data.peerOwnerId}`);
   wsServer.emitEvent("bond:established", data);
@@ -4100,9 +4114,10 @@ function scheduleRelayCheckin(): void {
   }, connectivityRuntime.relayCycleIntervalMs());
 }
 
-async function runRelayCheckinCycle(source: "startup" | "periodic"): Promise<void> {
+async function runRelayCheckinCycle(source: "startup" | "periodic" | "post-advertise"): Promise<void> {
   const targets = relayControlTargets();
   const expiresAt = expiresAtFromNow(RELAY_CONTROL_TTL_MS);
+  const displayName = (await humanProfileStore.loadHumanProfile().catch(() => undefined))?.displayName;
   const capabilities = relayCheckinCapabilities(profile.deviceCertificate.capabilities);
   const checkinResults: Array<{ target: string; ok: boolean; error?: string }> = [];
   if (targets.length > 0) {
@@ -4138,6 +4153,7 @@ async function runRelayCheckinCycle(source: "startup" | "periodic"): Promise<voi
     const payload = createRelayCheckinPayload({
       peerId: mesh.peerId,
       ownerId: profile.owner.ownerId,
+      displayName,
       relayReachableAddrs: mesh.multiaddrs,
       capabilities,
       advertisements: [

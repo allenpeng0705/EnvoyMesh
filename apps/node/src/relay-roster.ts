@@ -15,6 +15,7 @@ import type { RelaySummaryEntry } from "./relay-lookup-router.js";
 export interface RelayRosterEntry {
   peerId: string;
   ownerId?: string;
+  displayName?: string;
   relayReachableAddrs: string[];
   /** Set when peer reconnects with a different address than previously stored. */
   addrChangedAt?: number;

@@ -90,6 +90,7 @@ export interface StartNodeContext {
   refreshCapabilityIndex(): Promise<void>;
   scheduleDeferredProfileRefresh(reason: string): void;
   advertiseInterestsIfPublic(): Promise<void>;
+  loadHumanProfile(): Promise<import("@envoymesh/api").HumanProfile | undefined>;
   loadPublishedLibraryFromDisk(): Promise<void>;
   loadIntentHistoryFromDisk(): Promise<void>;
   recordNodeError(context: string, err: unknown): void;
@@ -252,9 +253,11 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
     const discoverySeedStore = ctx.getDiscoverySeedStore();
     if ((config.relayEnabled ?? true) && inboundGuard && discoverySeedStore) {
       ctx.setStopRelayClientScheduler(undefined);
+      const humanProfile = await ctx.loadHumanProfile();
       const relayDeps: RelayClientCycleDeps = {
         mesh: mesh as never,
         profile: ctx.getProfile()!,
+        displayName: humanProfile?.displayName,
         bootstrapPeers,
         inboundGuard,
         discoverySeedStore,

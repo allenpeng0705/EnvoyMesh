@@ -289,6 +289,7 @@ export interface StartNodeContextDeps {
   refreshCapabilityIndex: StartNodeContext["refreshCapabilityIndex"];
   scheduleDeferredProfileRefresh: StartNodeContext["scheduleDeferredProfileRefresh"];
   advertiseInterestsIfPublic: StartNodeContext["advertiseInterestsIfPublic"];
+  loadHumanProfile: StartNodeContext["loadHumanProfile"];
   loadPublishedLibraryFromDisk: StartNodeContext["loadPublishedLibraryFromDisk"];
   loadIntentHistoryFromDisk: StartNodeContext["loadIntentHistoryFromDisk"];
   recordNodeError: StartNodeContext["recordNodeError"];
@@ -916,6 +917,7 @@ export function buildStartNodeContext(deps: StartNodeContextDeps): StartNodeCont
     scheduleDeferredProfileRefresh: (reason) =>
       deps.scheduleDeferredProfileRefresh(reason),
     advertiseInterestsIfPublic: () => deps.advertiseInterestsIfPublic(),
+    loadHumanProfile: () => deps.loadHumanProfile(),
     loadPublishedLibraryFromDisk: () => deps.loadPublishedLibraryFromDisk(),
     loadIntentHistoryFromDisk: () => deps.loadIntentHistoryFromDisk(),
     recordNodeError: (context, err) => deps.recordNodeError(context, err),

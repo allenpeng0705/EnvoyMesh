@@ -42,6 +42,7 @@ export function buildRelayCircuitMultiaddrs(relayMultiaddrs: string[], targetPee
 export interface RelayRosterEntry {
   peerId: string;
   ownerId?: string;
+  displayName?: string;
   relayReachableAddrs: string[];
   /** Set when peer reconnects with a different address than previously stored. */
   addrChangedAt?: number;
@@ -121,6 +122,7 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
       const entry: RelayRosterEntry = {
         peerId,
         ownerId: payload.ownerId,
+        displayName: payload.displayName,
         relayReachableAddrs: newAddrs,
         addrChangedAt: addrChanged ? current : existing?.addrChangedAt,
         firstSeenAt: existing?.firstSeenAt ?? current,
@@ -164,6 +166,7 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
         candidates.push({
           peerId: entry.peerId,
           ownerId: visibility === "public" || visibility === "capability" ? undefined : entry.ownerId,
+          displayName: entry.displayName,
           multiaddrs: buildRelayCircuitMultiaddrs(relayMultiaddrs, entry.peerId),
           viaRelayId: relayPeerId,
           capabilities: entry.capabilities,
