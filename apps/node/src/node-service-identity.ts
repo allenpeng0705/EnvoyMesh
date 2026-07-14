@@ -42,6 +42,7 @@ import type {
   ReputationAnchorStore,
 } from "@envoymesh/local-store";
 import type { EnvoyMesh } from "@envoymesh/network";
+import { ENVOY_CHAT_PROTOCOL } from "@envoymesh/network";
 import {
   createRendezvousRegisterPayload,
   createUnsignedEnvelope,
@@ -470,6 +471,20 @@ export async function _probeNearbyPeerProfileAfterDiscovery(
   }
   inflight.add(peerId);
   try {
+    // Newly discovered peers may not have an open connection yet.  The
+    // profile expect-reply path (chat protocol) requires a live connection
+    // and throws immediately when one is absent — so dial first.
+    // ensurePeerReachable tries direct TCP, relay circuit, and other
+    // paths so cross-NAT peers are reachable too.
+    const connectedPeerIds = mesh.getConnectedPeerIds();
+    if (!connectedPeerIds.includes(peerId)) {
+      try {
+        await mesh.ensurePeerReachable(peerId, ENVOY_CHAT_PROTOCOL);
+      } catch {
+        // Dial failed — still attempt the probe (another path may succeed).
+      }
+    }
+
     const enriched = await probeNearbyPeerProfile({
       mesh,
       profile,
