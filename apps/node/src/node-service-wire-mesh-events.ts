@@ -35,12 +35,14 @@ export interface WireMeshEventsMeshLike {
   onPeerDiscovered(
     handler: (params: WireMeshEventsPeerDiscoveredParams) => Promise<void>,
   ): void;
+  onPeerDisconnect(handler: (peerId: string) => void): void;
 }
 
 export interface WireMeshEventsContext {
   mesh: WireMeshEventsMeshLike;
   onMessage: (params: WireMeshEventsMessageParams) => Promise<void>;
   onPeerDiscovered: (params: WireMeshEventsPeerDiscoveredParams) => Promise<void>;
+  onPeerDisconnect: (peerId: string) => void;
 }
 
 export interface WireMeshInboundContext {
@@ -104,6 +106,7 @@ export interface WireMeshPeerDiscoveredContext {
 export function wireMeshEventsViaRuntime(ctx: WireMeshEventsContext): void {
   ctx.mesh.onMessage(ctx.onMessage);
   ctx.mesh.onPeerDiscovered(ctx.onPeerDiscovered);
+  ctx.mesh.onPeerDisconnect(ctx.onPeerDisconnect);
 }
 
 export async function handleInboundMessageViaRuntime(

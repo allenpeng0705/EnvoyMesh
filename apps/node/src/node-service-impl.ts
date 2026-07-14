@@ -1199,6 +1199,9 @@ class NodeServiceImpl implements NodeService {
   private _inboundGuard: InboundMessageGuard | undefined;
   private _taskDispatcher: ReturnType<typeof createTaskDispatcher> | undefined;
 
+  /** Bootstrap peer IDs to exclude from discovery UI (set during start). */
+  _bootstrapPeerIdSet: Set<string> = new Set();
+
   private _nodeStatus: NodeStatus = "offline";
   private _bridgeStatus: BridgeStatus | null = null;
   private _bridgeChatHandler: ((envelope: EnvoyEnvelope, remotePeerId: string) => Promise<void>) | null = null;

@@ -540,7 +540,9 @@ export interface PeerSearchResult {
     | "dht-peer-routing"
     | "rendezvous"
     | "did-lookup"
-    | "relay-roster-topic";
+    | "relay-roster-topic"
+    | "mdns"
+    | "bootstrap";
   trustLevel?: string;
   signedRecordValid?: boolean;
 }

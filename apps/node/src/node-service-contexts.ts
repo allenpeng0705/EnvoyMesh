@@ -296,12 +296,14 @@ export interface StartNodeContextDeps {
   ensureAgentStores: StartNodeContext["ensureAgentStores"];
   runCapabilityDiscoveryCycle: StartNodeContext["runCapabilityDiscoveryCycle"];
   startCapabilityDiscoveryScheduler: StartNodeContext["startCapabilityDiscoveryScheduler"];
+  setBootstrapPeerIds: StartNodeContext["setBootstrapPeerIds"];
 }
 
 export interface WireMeshEventsContextDeps {
   mesh: WireMeshEventsContext["mesh"];
   onMessage: WireMeshEventsContext["onMessage"];
   onPeerDiscovered: WireMeshEventsContext["onPeerDiscovered"];
+  onPeerDisconnect: WireMeshEventsContext["onPeerDisconnect"];
 }
 
 export interface SharePreviewContextDeps {
@@ -926,6 +928,7 @@ export function buildStartNodeContext(deps: StartNodeContextDeps): StartNodeCont
       deps.runCapabilityDiscoveryCycle(source, opts),
     startCapabilityDiscoveryScheduler: (runtime) =>
       deps.startCapabilityDiscoveryScheduler(runtime),
+    setBootstrapPeerIds: (ids) => { deps.setBootstrapPeerIds(ids); },
   };
 }
 
@@ -934,6 +937,7 @@ export function buildWireMeshEventsContext(deps: WireMeshEventsContextDeps): Wir
     mesh: deps.mesh as never,
     onMessage: (params) => deps.onMessage(params),
     onPeerDiscovered: (params) => deps.onPeerDiscovered(params),
+    onPeerDisconnect: (peerId) => deps.onPeerDisconnect(peerId),
   };
 }
 

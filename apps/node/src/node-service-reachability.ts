@@ -48,6 +48,8 @@ export interface ReachabilityContext {
   getBondWarmTimer(): ReturnType<typeof setInterval> | undefined;
   setBondWarmTimer(timer: ReturnType<typeof setInterval> | undefined): void;
   getLastBondWarmAt(): Map<string, number>;
+  /** Set of bootstrap peer IDs that should be excluded from discovery UI. */
+  getBootstrapPeerIds(): Set<string>;
 }
 
 export function buildReachabilityContext(host: any): ReachabilityContext {
@@ -74,6 +76,7 @@ export function buildReachabilityContext(host: any): ReachabilityContext {
       host._bondWarmTimer = timer;
     },
     getLastBondWarmAt: () => host._lastBondWarmAt,
+    getBootstrapPeerIds: () => host._bootstrapPeerIdSet ?? new Set<string>(),
   };
 }
 
@@ -110,6 +113,12 @@ export async function handleMeshPeerDiscoveredViaRuntime(
     const discoveryProfile = config?.discoveryProfile ?? "wan-default";
     const source = peerDiscoverySourceFromMultiaddrs(multiaddrs);
     const discoverySeedStore = ctx.getDiscoverySeedStore();
+
+    // Skip bootstrap/relay infrastructure peers — they are not EnvoyMesh
+    // contacts. We still do seed-store + peer-directory + dial-hint work
+    // (below), but we skip UI emission and probing.
+    const bootstrapPeerIds = ctx.getBootstrapPeerIds();
+    const isInfrastructure = bootstrapPeerIds.has(peerId) || source === "relay";
     if (
       shouldPersistPeerDiscoverySeeds(discoveryProfile, source) &&
       multiaddrs.length > 0 &&
@@ -129,15 +138,15 @@ export async function handleMeshPeerDiscoveredViaRuntime(
     if (mesh && profile && peerId === mesh.peerId) {
       return;
     }
-    ctx.emit("peer:discovered", {
-      nodeId: peerId,
-      ownerId: peerId,
-      displayName: `Peer ${peerId.slice(0, 8)}`,
-      username: undefined,
-      bio: undefined,
-      interests: [] as string[],
-      profileVisibility: "public" as const,
-    });
+    if (isInfrastructure) {
+      return;
+    }
+    // Do NOT emit a placeholder "Peer 12D3KooW" event here. Only emit
+    // peer:discovered after a successful profile probe confirms this is
+    // an EnvoyMesh node with a real display name. The probe fires
+    // _probeNearbyPeerProfileAfterDiscovery which emits the event on
+    // success. Non-EnvoyMesh peers (Kubo, other libp2p software) simply
+    // never appear in the UI.
     void ctx.probeNearbyPeerProfileAfterDiscovery(peerId, multiaddrs);
     void ctx.maybeFireLanAutoBond(peerId);
     void warmBondedContactAfterLanDiscoveryViaRuntime(ctx, peerId, multiaddrs);

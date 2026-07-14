@@ -73,6 +73,9 @@ export interface StartNodeContext {
     relayServerEnabled?: boolean;
   } | undefined>;
 
+  /** Set bootstrap peer IDs so the reachability layer can filter them from discovery UI. */
+  setBootstrapPeerIds(ids: Set<string>): void;
+
   // Mesh + lifecycle wiring
   getMesh(): unknown | undefined;
   setMesh(mesh: unknown): void;
@@ -193,6 +196,19 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
     console.log(
       `[node-service] bootstrapPeers after filterBootstrapMultiaddrs: ${bootstrapPeers.length} - ${bootstrapPeers.join(", ")}`,
     );
+
+    // Extract bootstrap peer IDs and wire them into the reachability layer
+    // so they are filtered from the discovery UI.
+    const bootstrapPeerIdSet = new Set<string>();
+    for (const addr of bootstrapPeers) {
+      const p2pIdx = addr.lastIndexOf("/p2p/");
+      if (p2pIdx >= 0) {
+        bootstrapPeerIdSet.add(addr.substring(p2pIdx + 5));
+      }
+    }
+    if (bootstrapPeerIdSet.size > 0) {
+      ctx.setBootstrapPeerIds(bootstrapPeerIdSet);
+    }
 
     console.log(`[node-service] Bootstrap peers resolved: ${bootstrapPeers.length} addresses`);
     for (const bp of bootstrapPeers) {

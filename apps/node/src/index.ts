@@ -680,10 +680,27 @@ const resolvedBootstrapPeers = resolvedBootstrapResults.flatMap((r) => r.resolve
 
 const rawBootstrapPeers = dedupeAddrs([...resolvedBootstrapPeers, ...persistedSeedAddrs]);
 const effectiveBootstrapPeers = filterBootstrapMultiaddrs(rawBootstrapPeers);
+
+// Build a set of bootstrap peer IDs so we can exclude them from the
+// "People on this network" / "People you can reach" discovery UI.
+// Bootstrap peers are infrastructure (relays, public libp2p DHT nodes) —
+// not EnvoyMesh contacts the user should see.
+const bootstrapPeerIdSet = new Set<string>();
+for (const addr of effectiveBootstrapPeers) {
+  const p2pIdx = addr.lastIndexOf("/p2p/");
+  if (p2pIdx >= 0) {
+    bootstrapPeerIdSet.add(addr.substring(p2pIdx + 5));
+  }
+}
 if (rawBootstrapPeers.length !== effectiveBootstrapPeers.length || peerDirectorySeedAddrs.length > 0) {
   console.log(
     `[connectivity] bootstrap addrs: kept=${effectiveBootstrapPeers.length} filtered=${rawBootstrapPeers.length - effectiveBootstrapPeers.length} peer-dir-skipped=${peerDirectorySeedAddrs.length} (contact listen addrs use dial hints only)`,
   );
+}
+// Wire bootstrap peer IDs into the node service so it can filter them
+// from the discovery UI (they are infrastructure, not contacts).
+if (nodeService instanceof NodeServiceImpl && bootstrapPeerIdSet.size > 0) {
+  nodeService._bootstrapPeerIdSet = bootstrapPeerIdSet;
 }
 const libp2pPrivateKey = await loadOrCreateLibp2pPrivateKey(
   join(args.profileDir, "libp2p-private.key"),
@@ -935,6 +952,14 @@ mesh.onPeerDiscovered(async (peer) => {
   if (args.peerDiscoveryLog) {
     console.log(`[peer-discovery] peer=${peer.peerId} source=${source} addrs=${peer.multiaddrs.length}`);
   }
+  // Skip bootstrap/relay infrastructure peers — they are not EnvoyMesh
+  // contacts and should never appear in the discovery UI.
+  if (bootstrapPeerIdSet.has(peer.peerId)) {
+    if (args.peerDiscoveryLog) {
+      console.log(`[peer-discovery] skipped bootstrap peer=${peer.peerId}`);
+    }
+    return;
+  }
   if (
     shouldRecordPeerDiscoveryAudit(peer.peerId, source, { force: args.peerDiscoveryLog })
   ) {
@@ -952,6 +977,14 @@ mesh.onPeerDiscovered(async (peer) => {
   // Seeds + peer-directory listen addrs: handleMeshPeerDiscovered (same as startNode path).
   if (nodeService instanceof NodeServiceImpl) {
     void nodeService.handleMeshPeerDiscovered(peer.peerId, peer.multiaddrs);
+  }
+});
+
+// Forward peer disconnects to the UI so "People you can reach" removes
+// departed peers in real-time.
+mesh.onPeerDisconnect((peerId) => {
+  if (nodeService instanceof NodeServiceImpl) {
+    nodeService.emit("peer:lost", { nodeId: peerId });
   }
 });
 

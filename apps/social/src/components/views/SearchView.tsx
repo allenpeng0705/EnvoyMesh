@@ -97,6 +97,7 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
   const [pasteResults, setPasteResults] = useState<PeerSearchResult[]>([]);
   const [networkSearching, setNetworkSearching] = useState(false);
   const [pasteSearching, setPasteSearching] = useState(false);
+  const [discoveryVisibleCount, setDiscoveryVisibleCount] = useState(20);
   const [morningReport, setMorningReport] = useState<MorningReportEntry[] | null>(null);
   const [morningReportLoading, setMorningReportLoading] = useState(false);
 
@@ -799,17 +800,24 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
         ) : null}
 
         {!isSearching && searchResults.length > 0 ? (
-          <ul className="search-results peer-results-list">
-            {searchResults.map((result, index) => (
-              <PeerResultCard
-                key={result.nodeId}
-                result={result}
-                index={index}
-                helloState={resolvePeerHelloState(result.ownerId, result.nodeId, bonds, outboundHellos)}
-                onSayHello={handleSayHello}
-              />
-            ))}
-          </ul>
+          <>
+            <ul className="search-results peer-results-list">
+              {searchResults.map((result, index) => (
+                <PeerResultCard
+                  key={result.nodeId}
+                  result={result}
+                  index={index}
+                  helloState={resolvePeerHelloState(result.ownerId, result.nodeId, bonds, outboundHellos)}
+                  onSayHello={handleSayHello}
+                />
+              ))}
+            </ul>
+            {searchResults.length > 20 && (
+              <p className="search-results__count" role="status">
+                {t("discover.search.resultCount", { count: searchResults.length })}
+              </p>
+            )}
+          </>
         ) : discoveredPeers.length > 0 ? (
           <div className="search-empty search-empty--browse">
             <p className="search-empty__heading">
@@ -822,7 +830,7 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
               )}
             </p>
             <ul className="search-results peer-results-list">
-              {discoveredPeers.slice(0, 20).map((peer) => {
+              {discoveredPeers.slice(0, discoveryVisibleCount).map((peer) => {
                 const helloState = resolvePeerHelloState(peer.ownerId, peer.nodeId, bonds, outboundHellos);
                 const fakeResult = {
                   nodeId: peer.nodeId,
@@ -846,6 +854,15 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
                 );
               })}
             </ul>
+            {discoveredPeers.length > discoveryVisibleCount && (
+              <button
+                type="button"
+                className="search-empty__show-more"
+                onClick={() => setDiscoveryVisibleCount((c) => c + 20)}
+              >
+                {t("discover.search.showMore", { remaining: discoveredPeers.length - discoveryVisibleCount })}
+              </button>
+            )}
           </div>
         ) : query.trim() && !isSearching && !(isPaste && codeInviteHint) ? (
           <div className="search-empty">

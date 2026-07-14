@@ -407,6 +407,7 @@ export class EnvoyMesh {
   private readonly handlers = new Set<MeshMessageHandler>();
   private readonly dataHandlers = new Set<MeshDataTransferHandler>();
   private readonly peerDiscoveryHandlers = new Set<MeshPeerDiscoveryHandler>();
+  private readonly peerDisconnectHandlers = new Set<(peerId: string) => void>();
   private relayDebugTimer?: ReturnType<typeof setInterval>;
   private node?: Libp2p;
   /** Additional announce addresses discovered at runtime (e.g. via STUN or relay observed addr). */
@@ -1862,6 +1863,12 @@ export class EnvoyMesh {
   onPeerDiscovered(handler: MeshPeerDiscoveryHandler): () => void {
     this.peerDiscoveryHandlers.add(handler);
     return () => this.peerDiscoveryHandlers.delete(handler);
+  }
+
+  /** Subscribe to peer disconnect events. Returns an unsubscribe function. */
+  onPeerDisconnect(handler: (peerId: string) => void): () => void {
+    this.peerDisconnectHandlers.add(handler);
+    return () => this.peerDisconnectHandlers.delete(handler);
   }
 
   /**
@@ -3348,12 +3355,21 @@ export class EnvoyMesh {
       }, 5000);
     }
 
+    // Dispatch peer disconnects to registered handlers — unconditional so
+    // that the NodeService peer:lost pipeline fires even when enableP2pDebug
+    // is off (the default).
+    typedNode.addEventListener("peer:disconnect", (event: any) => {
+      const remotePeerId = event.detail?.toString?.() ?? String(event.detail);
+      for (const handler of this.peerDisconnectHandlers) {
+        handler(remotePeerId);
+      }
+    });
+
     if (!this.options.enableP2pDebug) {
       return;
     }
 
-    // Unconditional peer connect/disconnect logging (unlike the detailed
-    // p2p-debug events below, these are always visible for diagnostics).
+    // Peer connect/disconnect logging (only when p2p-debug is enabled).
     typedNode.addEventListener("peer:connect", (event: any) => {
       const remotePeerId = event.detail?.toString?.() ?? String(event.detail);
       console.log(`[p2p] peer ${remotePeerId.slice(0, 16)}… connected`);

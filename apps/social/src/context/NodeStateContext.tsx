@@ -392,7 +392,8 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     return unsub;
   }, [nodeService, wsTransportOpen]);
 
-  // peer:discovered — track nearby peers
+  // peer:discovered — track nearby peers (only confirmed EnvoyMesh nodes
+  // arrive here; non-EnvoyMesh peers are filtered at the service layer).
   useEffect(() => {
     if (!wsTransportOpen) return;
     const selfOwnerId = humanProfile?.ownerId?.trim() ?? "";
@@ -410,6 +411,30 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     });
     return unsub;
   }, [nodeService, wsTransportOpen, bonds, humanProfile?.ownerId]);
+
+  // Safety net: remove any entries that still have placeholder names after
+  // 60s (shouldn't happen with the service-layer filter, but protects
+  // against edge cases like stale events from a reconnected WebSocket).
+  useEffect(() => {
+    if (!wsTransportOpen) return;
+    const timer = setInterval(() => {
+      setDiscoveredPeers((prev) => {
+        if (prev.length === 0) return prev;
+        const cleaned = prev.filter((p) => !/^Peer\s\w{8}$/.test(p.displayName));
+        return cleaned.length === prev.length ? prev : cleaned;
+      });
+    }, 30_000);
+    return () => clearInterval(timer);
+  }, [wsTransportOpen]);
+
+  // peer:lost — remove departed peers from the discovered list
+  useEffect(() => {
+    if (!wsTransportOpen) return;
+    const unsub = nodeService.on("peer:lost", (data) => {
+      setDiscoveredPeers((prev) => prev.filter((p) => p.nodeId !== data.nodeId));
+    });
+    return unsub;
+  }, [nodeService, wsTransportOpen]);
 
   // profile:updated — refresh nearby card names after profile probe
   useEffect(() => {

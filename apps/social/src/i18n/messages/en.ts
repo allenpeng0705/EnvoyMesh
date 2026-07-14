@@ -539,6 +539,8 @@ export const en = {
       geoNeedsProfile: "Set your country (and city) in Profile → About to search by place.",
       geoSearching: "Searching geo topics on the DHT…",
       geoCitySummary: "{count} peers in {city} on the wider mesh this week",
+      showMore: "Show more ({remaining} remaining)",
+      resultCount: "{count} peers found",
     },
     hello: {
       sent: "Hello sent! When they accept, they'll appear under My contacts.",

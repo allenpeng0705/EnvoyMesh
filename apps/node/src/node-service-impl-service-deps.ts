@@ -415,6 +415,7 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
               host._runCapabilityDiscoveryCycle(source, opts),
             startCapabilityDiscoveryScheduler: (runtime) =>
               host._startCapabilityDiscoveryScheduler(runtime),
+            setBootstrapPeerIds: (ids) => { host._bootstrapPeerIdSet = ids; },
           },
       wireMeshEvents: {
             mesh: host._mesh as never,
@@ -424,6 +425,7 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
                 { handleMeshPeerDiscovered: (peerId, multiaddrs) => host.handleMeshPeerDiscovered(peerId, multiaddrs) },
                 params,
               ),
+            onPeerDisconnect: (peerId) => host.emit("peer:lost", { nodeId: peerId }),
           },
       sharePreview: {
             recordInboundPullSharePreview: (input) =>

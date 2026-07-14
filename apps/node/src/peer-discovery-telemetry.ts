@@ -1,7 +1,7 @@
 import type { DiscoveryProfile } from "@envoymesh/api";
 import type { DiscoverySeedSource } from "./discovery-seed-store.js";
 
-export type PeerDiscoverySource = "relay" | "unknown";
+export type PeerDiscoverySource = "relay" | "mdns" | "bootstrap" | "unknown";
 
 const MAX_AUDITED_PEER_IDS = 512;
 const auditedPeerIds = new Set<string>();
@@ -48,7 +48,27 @@ export function resetPeerDiscoveryAuditStateForTests(): void {
 }
 
 export function peerDiscoverySourceFromMultiaddrs(multiaddrs: readonly string[]): PeerDiscoverySource {
-  return multiaddrs.some((addr) => addr.includes("/p2p-circuit")) ? "relay" : "unknown";
+  if (multiaddrs.length === 0) return "unknown";
+  // Relay-sourced peers arrive via circuit relay addresses.
+  if (multiaddrs.some((addr) => addr.includes("/p2p-circuit"))) return "relay";
+  // mDNS peers typically have private/LAN addresses (no public IP, no DNS).
+  // Bootstrap/infrastructure peers typically have public IPs or DNS hostnames.
+  // This heuristic helps the caller decide whether to emit a UI event.
+  const hasPrivateAddr = multiaddrs.some((addr) => {
+    if (addr.includes("/ip4/192.168.") || addr.includes("/ip4/10.") || addr.includes("/ip4/127.")) return true;
+    if (addr.includes("/ip6/fe80")) return true;
+    // RFC 1918: 172.16.0.0/12 (172.16.x.x – 172.31.x.x)
+    const m = addr.match(/\/ip4\/172\.(\d+)\./);
+    if (m) {
+      const octet = parseInt(m[1], 10);
+      if (octet >= 16 && octet <= 31) return true;
+    }
+    return false;
+  });
+  if (hasPrivateAddr && !multiaddrs.some((addr) => addr.includes("/dns"))) {
+    return "mdns";
+  }
+  return "unknown";
 }
 
 export function shouldPersistPeerDiscoverySeeds(
