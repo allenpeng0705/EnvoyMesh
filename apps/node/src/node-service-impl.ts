@@ -4440,7 +4440,8 @@ class NodeServiceImpl implements NodeService {
     maxResults: number;
   }): Promise<PeerSearchResult[]> {
     const deps = this._relayClientCycleDeps;
-    if (!deps || !this._mesh) return [];
+    const mesh = this._mesh ?? this._externalMesh;
+    if (!deps || !mesh) return [];
     const { filterRelayControlTargets } = await import("@envoymesh/network");
     const targets = filterRelayControlTargets(deps.bootstrapPeers);
     if (targets.length === 0) return [];

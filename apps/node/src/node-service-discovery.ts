@@ -367,8 +367,14 @@ export class NodeDiscoveryRuntime {
       } catch (err) {
         console.log(`[searchPeers] Topic "${topic}" query failed:`, err instanceof Error ? err.message : err);
       }
-      const trustRecords = await this.deps.trustStore.listTrustRecords();
-      const peerRecords = await this.deps.peerDirectoryStore.listPeerRecords();
+      let trustRecords: Awaited<ReturnType<typeof this.deps.trustStore.listTrustRecords>> = [];
+      let peerRecords: Awaited<ReturnType<typeof this.deps.peerDirectoryStore.listPeerRecords>> = [];
+      try {
+        trustRecords = await this.deps.trustStore.listTrustRecords();
+        peerRecords = await this.deps.peerDirectoryStore.listPeerRecords();
+      } catch (err) {
+        console.warn("[searchPeers] Failed to load trust/peer records, continuing without enrichment:", err instanceof Error ? err.message : err);
+      }
       const trustByPeerId = new Map<string, (typeof trustRecords)[number]>();
       for (const record of trustRecords) {
         const peer = peerRecords.find((p) => p.ownerId === record.peerOwnerId);
