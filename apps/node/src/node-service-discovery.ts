@@ -408,27 +408,32 @@ export class NodeDiscoveryRuntime {
       // ask the bootstrap relays for the topicHash via relay.lookup. The
       // relay server's roster is populated by other clients' relay.checkin
       // advertisements, so it works without a direct DHT connection.
-      if (dhtResults.length === 0 && this.deps.queryRelayLookupByTopic) {
-        try {
-          const { cidForCapabilityTopic } = await import("@envoymesh/network");
-          const cid = await cidForCapabilityTopic(topic);
-          const fallback = await this.deps.queryRelayLookupByTopic({
-            topic,
-            topicHash: cid.toString(),
-            maxResults,
-          });
-          if (fallback.length > 0) {
+      if (dhtResults.length === 0) {
+        if (!this.deps.queryRelayLookupByTopic) {
+          console.log(`[searchPeers] DHT returned 0 for "${topic}" but queryRelayLookupByTopic dep is not wired — no relay fallback`);
+        } else {
+          console.log(`[searchPeers] DHT returned 0 for "${topic}" — trying relay-roster fallback`);
+          try {
+            const { cidForCapabilityTopic } = await import("@envoymesh/network");
+            const cid = await cidForCapabilityTopic(topic);
+            console.log(`[searchPeers] relay.lookup for "${topic}" topicHash=${cid.toString().slice(0, 20)}…`);
+            const fallback = await this.deps.queryRelayLookupByTopic({
+              topic,
+              topicHash: cid.toString(),
+              maxResults,
+            });
+            if (fallback.length > 0) {
+              console.log(
+                `[searchPeers] relay-roster fallback returned ${fallback.length} peers for topic "${topic}"`,
+              );
+            }
+            return fallback;
+          } catch (err) {
             console.log(
-              `[searchPeers] relay-roster fallback returned ${fallback.length} peers for topic "${topic}"`,
+              `[searchPeers] relay-roster fallback failed for "${topic}":`,
+              err instanceof Error ? err.message : err,
             );
           }
-          return fallback;
-        } catch (err) {
-          console.log(
-            `[searchPeers] relay-roster fallback failed for "${topic}":`,
-            err instanceof Error ? err.message : err,
-          );
-          return dhtResults;
         }
       }
 

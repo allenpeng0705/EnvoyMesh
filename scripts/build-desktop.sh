@@ -162,19 +162,28 @@ publish_desktop_release() {
 }
 
 # Step 1: Build workspace packages + Node runtime, then stage sidecars
-echo "[1/5] Building workspace packages + Node runtime..."
+echo "[1/6] Building workspace packages + Node runtime..."
 cd "${PROJECT_DIR}"
 npx tsc -b
 echo ""
-echo "[1/5] continued — Staging sidecars (Node.js, OpenClaw, EnvoyMesh node)..."
+echo "[1/6] continued — Staging sidecars (Node.js, OpenClaw, EnvoyMesh node)..."
 bash scripts/fetch-node-sidecar.sh
 bash scripts/stage-tauri-openclaw-bundle.sh
 bash scripts/stage-tauri-node-bundle.sh
 bash scripts/verify-tauri-resources.sh
 echo ""
 
-# Step 2: Build Social UI (Tauri frontendDist → apps/social/src/dist)
-echo "[2/5] Building Social UI..."
+# Step 2: Run discovery E2E tests (fast — ~15ms, catches relay/DHT regressions)
+echo "[2/6] Running discovery E2E tests..."
+cd "${PROJECT_DIR}"
+npx vitest run apps/node/test/discovery-search-roundtrip.test.ts || {
+  echo "error: discovery E2E tests failed — aborting build. Fix tests before rebuilding." >&2
+  exit 1
+}
+echo ""
+
+# Step 3: Build Social UI (Tauri frontendDist → apps/social/src/dist)
+echo "[3/6] Building Social UI..."
 cd "${PROJECT_DIR}/apps/social"
 npm install
 npm run build
@@ -185,8 +194,8 @@ fi
 cd "${PROJECT_DIR}"
 echo ""
 
-# Step 3: Build Tauri
-echo "[3/5] Building Tauri desktop app..."
+# Step 4: Build Tauri
+echo "[4/6] Building Tauri desktop app..."
 
 install_tauri_cli() {
     if ! command -v cargo-tauri &> /dev/null && ! npx tauri --version &> /dev/null; then
@@ -221,7 +230,7 @@ case "${TARGET}" in
             exit 1
         fi
         echo ""
-        echo "[4/5] Publishing macOS artifacts to ${OUT_DIR}/..."
+        echo "[5/6] Publishing macOS artifacts to ${OUT_DIR}/..."
         PUBLISHED="$(publish_desktop_release macos '*/release/bundle/dmg/*.dmg')" || true
         ;;
     linux)
@@ -229,7 +238,7 @@ case "${TARGET}" in
         install_tauri_cli
         run_tauri_build --target x86_64-unknown-linux-gnu
         echo ""
-        echo "[4/5] Publishing Linux artifacts to ${OUT_DIR}/..."
+        echo "[5/6] Publishing Linux artifacts to ${OUT_DIR}/..."
         PUBLISHED="$(publish_desktop_release linux \
           '*/release/bundle/deb/*.deb' \
           '*/release/bundle/appimage/*.AppImage')" || true
@@ -243,8 +252,8 @@ esac
 cd "${PROJECT_DIR}"
 echo ""
 
-# Step 5: Summary
-echo "[5/5] Build complete"
+# Step 6: Summary
+echo "[6/6] Build complete"
 echo ""
 echo "============================================"
 echo "  Release output"
