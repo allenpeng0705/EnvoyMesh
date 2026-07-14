@@ -141,12 +141,24 @@ export async function handleMeshPeerDiscoveredViaRuntime(
     if (isInfrastructure) {
       return;
     }
-    // Do NOT emit a placeholder "Peer 12D3KooW" event here. Only emit
-    // peer:discovered after a successful profile probe confirms this is
-    // an EnvoyMesh node with a real display name. The probe fires
-    // _probeNearbyPeerProfileAfterDiscovery which emits the event on
-    // success. Non-EnvoyMesh peers (Kubo, other libp2p software) simply
-    // never appear in the UI.
+    // Emit an immediate placeholder so the peer appears in "People on this
+    // network" right away.  The probe runs in the background — on success it
+    // emits an updated peer:discovered with the real displayName; on failure
+    // it emits peer:lost to remove the placeholder.
+    // Only set discoverySource for values valid in PeerSearchResult.
+    // "relay" is already blocked by isInfrastructure above; "unknown" has
+    // no matching PeerSearchResult variant so we omit it.
+    const emitSource = source === "mdns" || source === "bootstrap"
+      ? source
+      : undefined;
+    ctx.emit("peer:discovered", {
+      nodeId: peerId,
+      ownerId: "",
+      displayName: "",
+      interests: [],
+      profileVisibility: "public" as const,
+      ...(emitSource ? { discoverySource: emitSource } : {}),
+    });
     void ctx.probeNearbyPeerProfileAfterDiscovery(peerId, multiaddrs);
     void ctx.maybeFireLanAutoBond(peerId);
     void warmBondedContactAfterLanDiscoveryViaRuntime(ctx, peerId, multiaddrs);

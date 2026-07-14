@@ -392,35 +392,44 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     return unsub;
   }, [nodeService, wsTransportOpen]);
 
-  // peer:discovered — track nearby peers (only confirmed EnvoyMesh nodes
-  // arrive here; non-EnvoyMesh peers are filtered at the service layer).
+  // peer:discovered — track nearby peers.  A placeholder (empty displayName)
+  // arrives immediately when a peer is discovered; a second event with real
+  // profile data follows if the probe succeeds.  If the peer is already
+  // bonded, remove any lingering placeholder.
   useEffect(() => {
     if (!wsTransportOpen) return;
     const selfOwnerId = humanProfile?.ownerId?.trim() ?? "";
     const unsub = nodeService.on("peer:discovered", (data) => {
       if (selfOwnerId && data.ownerId === selfOwnerId) return;
-      if (bonds.some((b) => b.peerOwnerId === data.ownerId)) return;
+      const isBonded = bonds.some((b) => b.peerOwnerId === data.ownerId);
+      if (isBonded) {
+        // Probe confirmed this is a bonded contact — remove the placeholder.
+        setDiscoveredPeers((prev) => prev.filter((p) => p.nodeId !== data.nodeId));
+        return;
+      }
       setDiscoveredPeers((prev) => {
         const existing = prev.find((p) => p.nodeId === data.nodeId);
         if (existing) {
           return prev.map((p) => (p.nodeId === data.nodeId ? { ...p, ...data } : p));
         }
-        if (prev.some((p) => p.nodeId === data.nodeId)) return prev;
         return [...prev, data];
       });
     });
     return unsub;
   }, [nodeService, wsTransportOpen, bonds, humanProfile?.ownerId]);
 
-  // Safety net: remove any entries that still have placeholder names after
-  // 60s (shouldn't happen with the service-layer filter, but protects
-  // against edge cases like stale events from a reconnected WebSocket).
+  // Safety net: remove entries with empty/placeholder display names that
+  // weren't cleaned up by peer:lost (e.g. after a WebSocket reconnection).
+  // Runs every 30s.
   useEffect(() => {
     if (!wsTransportOpen) return;
     const timer = setInterval(() => {
       setDiscoveredPeers((prev) => {
         if (prev.length === 0) return prev;
-        const cleaned = prev.filter((p) => !/^Peer\s\w{8}$/.test(p.displayName));
+        const cleaned = prev.filter((p) => {
+          const name = p.displayName?.trim() ?? "";
+          return name.length > 0 && !/^Peer\s\w{8}$/.test(name);
+        });
         return cleaned.length === prev.length ? prev : cleaned;
       });
     }, 30_000);

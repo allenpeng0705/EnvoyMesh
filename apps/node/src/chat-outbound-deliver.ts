@@ -843,37 +843,6 @@ export async function deliverExpectReplyWithRetry(input: {
     );
   }
 
-  if (useChatProtocol) {
-    if (!isPeerLiveConnected(input.mesh, input.transportPeerId)) {
-      throw new Error(
-        `No open connection to ${input.transportPeerId.slice(0, 12)}… for profile request`,
-      );
-    }
-    let lastProfileErr: unknown;
-    for (let attempt = 0; attempt < maxAttempts; attempt++) {
-      if (attempt > 0) {
-        await sleep(CHAT_SEND_RETRY_BASE_MS * attempt);
-      }
-      try {
-        const reply = await sendExpectReply(input.transportPeerId, input.envelope, {
-          timeoutMs,
-          dialHints: [],
-          preferCircuitHints: false,
-          forceFreshDial: false,
-        });
-        markOutboundPeerVerified(input.transportPeerId);
-        return reply;
-      } catch (err) {
-        lastProfileErr = err;
-        console.warn(
-          `[expect-reply] profile attempt ${attempt + 1}/${maxAttempts} failed for ${input.transportPeerId.slice(0, 12)}…:`,
-          err instanceof Error ? err.message : err,
-        );
-      }
-    }
-    throw lastProfileErr instanceof Error ? lastProfileErr : new Error(String(lastProfileErr));
-  }
-
   let lastErr: unknown;
   let hints = input.dialHints;
   const preferCircuits = shouldPreferCircuitDialHints(

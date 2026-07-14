@@ -4,7 +4,7 @@
   "version": "0.1",
   "profileDir": "./data/default",
   "discoveryProfile": "wan-default",
-  "enableMdns": false,
+  "enableMdns": true,
   "relayEnabled": true,
   "relayServerEnabled": false,
   "advertiseAddrs": [],

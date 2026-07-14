@@ -498,12 +498,19 @@ export async function _probeNearbyPeerProfileAfterDiscovery(
     });
     lastAtMap.set(peerId, Date.now());
     if (!enriched) {
+      // Probe returned null — peer is not an EnvoyMesh node (or
+      // unreachable).  Emit peer:lost to remove the placeholder that
+      // handleMeshPeerDiscoveredViaRuntime emitted earlier.
+      ctx.emit("peer:lost", { nodeId: peerId });
       return;
     }
     ctx.emit("profile:updated", { ownerId: enriched.ownerId });
     ctx.emit("peer:discovered", enriched);
   } catch (err) {
     console.warn(`[node-service] nearby profile probe failed for ${peerId}:`, err);
+    // Probe threw — clean up the placeholder that handleMeshPeerDiscovered
+    // emitted earlier so it doesn't linger in the UI.
+    ctx.emit("peer:lost", { nodeId: peerId });
   } finally {
     inflight.delete(peerId);
   }
