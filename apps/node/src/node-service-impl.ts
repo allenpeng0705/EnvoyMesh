@@ -4372,7 +4372,7 @@ class NodeServiceImpl implements NodeService {
       this._discoveryRuntimeCache = new NodeDiscoveryRuntime({
         getProfile: () => this._profile,
         requireProfile: () => this._requireProfile(),
-        getMesh: () => this._mesh,
+        getMesh: () => this._mesh ?? this._externalMesh,
         requireMesh: () => this._requireMesh(),
         getReachableMesh: () => this._reachableMesh(),
         trustStore: this._trustStore,

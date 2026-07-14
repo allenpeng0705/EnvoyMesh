@@ -68,7 +68,7 @@ export interface RelayRosterOptions {
 // Factory
 // ---------------------------------------------------------------------------
 
-const DEFAULT_ROSTER_TTL_MS = 120_000;
+const DEFAULT_ROSTER_TTL_MS = 600_000; // 10 minutes — must outlast checkin intervals (~30-60s) with margin
 const DEFAULT_MAX_ROSTER_ENTRIES = 10_000;
 const DEFAULT_MAX_RELAY_HINTS = 50;
 
