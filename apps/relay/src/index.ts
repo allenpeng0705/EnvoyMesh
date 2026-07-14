@@ -36,10 +36,14 @@ import {
   parseBroadcastCancelPayload,
   createBroadcastCancelPayload,
   parseTaskCancelPayload,
+  parseRelayCheckinPayload,
+  parseRelayLookupPayload,
+  createRelayLookupResponsePayload,
   RENDEZVOUS_RESPONSE_PLACEHOLDER_PUBLIC_KEY,
   RENDEZVOUS_RESPONSE_PLACEHOLDER_SIGNATURE,
   type EnvoyEnvelope,
 } from "@envoymesh/protocol";
+import { createRelayRoster } from "./relay-roster.js";
 import {
   buildRelayVersionReport,
   buildRelayProtocolReport,
@@ -233,6 +237,7 @@ if (Object.keys(circuitRelayServerConfig).length > 0) {
 let started = false;
 let httpServer: ReturnType<typeof createServer> | null = null;
 let capabilityRegistry: CapabilityRegistry | undefined;
+const relayRoster = createRelayRoster();
 let rendezvousSweeper: ReturnType<typeof setInterval> | undefined;
 let statsInterval: ReturnType<typeof setInterval> | undefined;
 let rateLimitCleanupInterval: ReturnType<typeof setInterval> | undefined;
@@ -523,6 +528,7 @@ try {
             addrs: mesh.multiaddrs,
             rendezvous: args.enableRendezvous,
             clientProxy: true,
+            rosterSize: relayRoster.size(),
           }),
         );
       } else if (req.url === "/version") {
@@ -870,11 +876,22 @@ try {
           const intent = envelope.intent as string;
           const payload = (envelope.payload as Record<string, unknown>) ?? {};
 
-          // ---- relay.checkin — track connected peer ----
+          // ---- relay.checkin — track connected peer + store in roster ----
           if (intent === "relay.checkin") {
             if (senderPeerId) {
               peerId = senderPeerId;
               directClients.set(ws, peerId);
+            }
+            // Also store in the relay roster so relay.lookup can find this peer
+            try {
+              const checkinPayload = parseRelayCheckinPayload(payload);
+              relayRoster.checkin(checkinPayload, senderPeerId);
+              const topicCount = checkinPayload.advertisements.filter((a) => a.topicHash).length;
+              console.log(
+                `[relay] direct-client checkin peer=${checkinPayload.peerId} topics=${topicCount} roster=${relayRoster.size()}`,
+              );
+            } catch (err) {
+              console.warn(`[relay] direct-client: failed to parse relay.checkin for roster:`, err);
             }
             return;
           }
@@ -1024,6 +1041,10 @@ try {
         `[relay] Registry stats: ${stats.totalEntries} entries, ${stats.tagIndexSize} tags, ${stats.typeIndexSize} types`,
       );
     }
+    const rosterSize = relayRoster.size();
+    if (rosterSize > 0) {
+      console.log(`[relay] Roster stats: ${rosterSize} peers`);
+    }
   }, 60_000);
 
   /**
@@ -1112,6 +1133,66 @@ try {
             console.error("[relay] Failed to ACK rendezvous.query:", replyErr);
           }
         }
+      }
+      return;
+    }
+
+    // Handle relay.checkin — store peer in roster for relay.lookup
+    if (intent === "relay.checkin") {
+      try {
+        const payload = parseRelayCheckinPayload(message.envelope.payload);
+        const { entry, addrChanged, reconnect } = relayRoster.checkin(
+          payload,
+          message.envelope.senderPeerId,
+        );
+        const topicCount = entry.advertisements.filter((a) => a.topicHash).length;
+        const note =
+          addrChanged && reconnect
+            ? `addr_changed reconnect`
+            : addrChanged
+              ? `addr_changed`
+              : reconnect
+                ? "reconnect"
+                : "ok";
+        console.log(
+          `[relay] checkin peer=${payload.peerId} topics=${topicCount} cap=${entry.capabilities.length} roster=${relayRoster.size()} ${note}`,
+        );
+      } catch (error) {
+        console.error("[relay] Failed to handle relay.checkin:", error);
+      }
+      return;
+    }
+
+    // Handle relay.lookup — search roster and reply with matching peers
+    if (intent === "relay.lookup") {
+      try {
+        const payload = parseRelayLookupPayload(message.envelope.payload);
+        const response = relayRoster.lookup({
+          payload,
+          requesterPeerId: message.envelope.senderPeerId,
+          relayMultiaddrs: mesh.multiaddrs,
+          relayPeerId: mesh.peerId,
+        });
+        console.log(
+          `[relay] lookup query=${payload.queryId} peers=${response.peers.length} roster=${relayRoster.size()}`,
+        );
+        if (message.replyWithEnvelope) {
+          await message.replyWithEnvelope({
+            version: "0.1",
+            messageId: randomUUID(),
+            createdAt: new Date().toISOString(),
+            senderPeerId: mesh.peerId,
+            senderPublicKey: RENDEZVOUS_RESPONSE_PLACEHOLDER_PUBLIC_KEY,
+            senderRole: "agent",
+            recipientPeerId: message.envelope.senderPeerId,
+            recipientRole: "agent",
+            intent: "relay.lookup.response",
+            signature: RENDEZVOUS_RESPONSE_PLACEHOLDER_SIGNATURE,
+            payload: response,
+          } as EnvoyEnvelope);
+        }
+      } catch (error) {
+        console.error("[relay] Failed to handle relay.lookup:", error);
       }
       return;
     }

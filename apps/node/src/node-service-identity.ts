@@ -1159,9 +1159,12 @@ export async function _advertiseInterestsIfPublic(ctx: IdentityContext): Promise
     void _registerWithRendezvousServers(ctx, interests, profile.username);
     // Notify any active relay checkins of the new topic set so the relay
     // server's roster (indexed by topicHash) reflects the current profile.
+    // Include the displayName topic so relay.lookup by name works.
+    const displayNameTopic = profile.displayName ? displayNameTopicFor(profile.displayName) : undefined;
     void ctx.notifyAdvertisedDiscoveryTopics?.([
       ...interests,
       ...(usernameTopic ? [usernameTopic] : []),
+      ...(displayNameTopic ? [displayNameTopic] : []),
       ...locationTopics,
       ...capabilityTopics,
     ]);
