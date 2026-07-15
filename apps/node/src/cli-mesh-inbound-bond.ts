@@ -208,7 +208,9 @@ async function sendAutoAccept(
     const unsignedAccept = ctx.createUnsignedEnvelope({
       senderPeerId: ctx.derivePeerId(profile.device.publicKeyPem),
       senderPublicKey: profile.device.publicKeyPem,
+      senderRole: "human",
       recipientPeerId: signal.requesterPeerId,
+      recipientRole: "human",
       intent: "bond.accept",
       payload: ctx.createBondAcceptPayload({
         responderOwnerId: profile.owner.ownerId,

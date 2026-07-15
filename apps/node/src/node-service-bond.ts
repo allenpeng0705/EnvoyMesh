@@ -127,7 +127,9 @@ export async function sendHelloViaRuntime(
     createUnsignedEnvelope({
       senderPeerId: derivePeerId(selfProfile.device.publicKeyPem),
       senderPublicKey: selfProfile.device.publicKeyPem,
+      senderRole: "human",
       recipientPeerId: targetPeerId,
+      recipientRole: "human",
       intent: "bond.request",
       payload: createBondRequestPayload({
         requesterOwnerId: selfProfile.owner.ownerId,
@@ -234,7 +236,9 @@ export async function acceptPendingHelloViaRuntime(ctx: BondContext, messageId: 
     createUnsignedEnvelope({
       senderPeerId: derivePeerId(selfProfile.device.publicKeyPem),
       senderPublicKey: selfProfile.device.publicKeyPem,
+      senderRole: "human",
       recipientPeerId: pending.remotePeerId,
+      recipientRole: "human",
       intent: "bond.accept",
       payload: createBondAcceptPayload({
         responderOwnerId: selfProfile.owner.ownerId,

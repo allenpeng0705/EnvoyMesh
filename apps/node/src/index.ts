@@ -2294,7 +2294,9 @@ async function handleInboundMeshMessage({
       const unsignedAccept = createUnsignedEnvelope({
         senderPeerId: derivePeerId(profile.device.publicKeyPem),
         senderPublicKey: profile.device.publicKeyPem,
+        senderRole: "human",
         recipientPeerId: requesterPeerId,
+        recipientRole: "human",
         intent: "bond.accept",
         payload: createBondAcceptPayload({
           responderOwnerId: profile.owner.ownerId,
