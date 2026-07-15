@@ -14,11 +14,25 @@ import type { DiscoverySeedStore } from "./discovery-seed-store.js";
 import { mergeDialablePeerListenAddrs } from "./outbound-dial-hints.js";
 import { isOutboundPeerRecentlyVerified } from "./outbound-peer-freshness.js";
 import type { PersistedNodeConfig } from "./node-config-store.js";
+import { NEARBY_PROFILE_PROBE_COOLDOWN_MS } from "./node-service-identity.js";
 
 export const BOND_WARM_MAX_CONNECTIONS = 64;
 export const BOND_WARM_PER_CONTACT_COOLDOWN_MS = 300_000;
 const BOND_WARM_INITIAL_DELAY_MS = 45_000;
 const BOND_WARM_INTERVAL_MS = 300_000;
+
+/**
+ * After this many consecutive failed profile probes a peer is considered a
+ * non-EnvoyMesh device (printer, TV, etc.) and suppressed from the discovery
+ * UI for NON_ENVOY_PEER_SUPPRESS_COOLDOWN_MS.
+ */
+export const NON_ENVOY_PEER_SUPPRESS_AFTER_FAILURES = 3;
+/**
+ * How long (ms) to suppress a known non-EnvoyMesh peer before retrying the
+ * probe once.  5 minutes keeps the "People on this network" list clean while
+ * still allowing a retry if the peer later becomes an EnvoyMesh node.
+ */
+export const NON_ENVOY_PEER_SUPPRESS_COOLDOWN_MS = 300_000;
 
 export interface ReachabilityContext {
   getNodeStatus(): NodeStatus | string;
@@ -50,6 +64,16 @@ export interface ReachabilityContext {
   getLastBondWarmAt(): Map<string, number>;
   /** Set of bootstrap peer IDs that should be excluded from discovery UI. */
   getBootstrapPeerIds(): Set<string>;
+  /** Timestamp of last nearby-profile probe per peerId (shared with identity module). */
+  getNearbyProfileProbeLastAt(): Map<string, number>;
+  /** Cooldown ms for nearby-profile probes (shared with identity module). */
+  getNearbyProfileProbeCooldownMs(): number;
+  /** True when the peer has failed ≥ N consecutive probes and is within suppression cooldown. */
+  isNonEnvoyPeerSuppressed(peerId: string): boolean;
+  /** Record a failed probe attempt (increments fail count). */
+  markNonEnvoyPeerFailed(peerId: string): void;
+  /** Reset fail count (called on successful probe). */
+  resetNonEnvoyPeerFailCount(peerId: string): void;
 }
 
 export function buildReachabilityContext(host: any): ReachabilityContext {
@@ -77,6 +101,11 @@ export function buildReachabilityContext(host: any): ReachabilityContext {
     },
     getLastBondWarmAt: () => host._lastBondWarmAt,
     getBootstrapPeerIds: () => host._bootstrapPeerIdSet ?? new Set<string>(),
+    getNearbyProfileProbeLastAt: () => host._nearbyProfileProbeLastAt,
+    getNearbyProfileProbeCooldownMs: () => NEARBY_PROFILE_PROBE_COOLDOWN_MS,
+    isNonEnvoyPeerSuppressed: (peerId) => host._isNonEnvoyPeerSuppressed(peerId),
+    markNonEnvoyPeerFailed: (peerId) => host._markNonEnvoyPeerFailed(peerId),
+    resetNonEnvoyPeerFailCount: (peerId) => host._resetNonEnvoyPeerFailCount(peerId),
   };
 }
 
@@ -139,6 +168,24 @@ export async function handleMeshPeerDiscoveredViaRuntime(
       return;
     }
     if (isInfrastructure) {
+      return;
+    }
+    // --- Discovery placeholder suppression ---
+    // Skip placeholder emission for peers whose profile probe recently
+    // ran (success or failure).  The nearby-profile probe cooldown already
+    // prevents redundant probes; this guard also prevents the useless
+    // placeholder flicker in the UI for non-EnvoyMesh LAN devices that
+    // mDNS re-discovers every few seconds.
+    const probeLastAt = ctx.getNearbyProfileProbeLastAt();
+    const lastProbeAt = probeLastAt.get(peerId) ?? 0;
+    const probeCooldownMs = ctx.getNearbyProfileProbeCooldownMs();
+    if (Date.now() - lastProbeAt < probeCooldownMs) {
+      return;
+    }
+    // Peers that have failed ≥ N consecutive probes are known non-EnvoyMesh
+    // devices (printers, TVs, etc.).  Suppress them for a longer cooldown
+    // so they don't cycle in "People on this network".
+    if (ctx.isNonEnvoyPeerSuppressed(peerId)) {
       return;
     }
     // Emit an immediate placeholder so the peer appears in "People on this

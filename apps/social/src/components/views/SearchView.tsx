@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { useToastOptional } from "../../hooks/useToast.js";
-import { SUGGESTED_TOPICS } from "../../lib/display.js";
+import { SUGGESTED_TOPICS, nearbyPeerLabel } from "../../lib/display.js";
 import {
   FriendSuggestionsPanel,
   MultiHopResultCard,
@@ -835,7 +835,7 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
                 const fakeResult = {
                   nodeId: peer.nodeId,
                   ownerId: peer.ownerId,
-                  displayName: peer.displayName ?? peer.ownerId,
+                  displayName: nearbyPeerLabel(peer.displayName, peer.nodeId),
                   username: undefined,
                   bio: undefined,
                   interests: peer.interests ?? [],

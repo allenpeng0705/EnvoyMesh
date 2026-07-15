@@ -42,7 +42,6 @@ import type {
   ReputationAnchorStore,
 } from "@envoymesh/local-store";
 import type { EnvoyMesh } from "@envoymesh/network";
-import { ENVOY_CHAT_PROTOCOL } from "@envoymesh/network";
 import {
   createRendezvousRegisterPayload,
   createUnsignedEnvelope,
@@ -150,6 +149,10 @@ export interface IdentityContext {
   setAdvertiseInterestsTimer(timer: ReturnType<typeof setInterval> | undefined): void;
   getNearbyProfileProbeLastAt(): Map<string, number>;
   getNearbyProfileProbeInflight(): Set<string>;
+  /** Record a failed probe attempt (for non-EnvoyMesh suppression). */
+  markNonEnvoyPeerFailed(peerId: string): void;
+  /** Reset fail count on successful probe. */
+  resetNonEnvoyPeerFailCount(peerId: string): void;
   /**
    * Notify active relay checkin scheduler of the topics currently being
    * advertised. The relay client uses this to populate `advertisements[]`
@@ -200,6 +203,8 @@ export function buildIdentityContext(host: any): IdentityContext {
     },
     getNearbyProfileProbeLastAt: () => host._nearbyProfileProbeLastAt,
     getNearbyProfileProbeInflight: () => host._nearbyProfileProbeInflight,
+    markNonEnvoyPeerFailed: (peerId) => host._markNonEnvoyPeerFailed(peerId),
+    resetNonEnvoyPeerFailCount: (peerId) => host._resetNonEnvoyPeerFailCount(peerId),
     notifyAdvertisedDiscoveryTopics: (topics) =>
       host._notifyAdvertisedDiscoveryTopics?.(topics) ?? Promise.resolve(),
   };
@@ -474,14 +479,22 @@ export async function _probeNearbyPeerProfileAfterDiscovery(
     // Newly discovered peers may not have an open connection yet.  The
     // profile expect-reply path (chat protocol) requires a live connection
     // and throws immediately when one is absent — so dial first.
-    // ensurePeerReachable tries direct TCP, relay circuit, and other
-    // paths so cross-NAT peers are reachable too.
+    //
+    // We use mesh.dial(addr) directly rather than ensurePeerReachable because
+    // the hint-filtering pipeline inside ensurePeerReachable strips loopback
+    // addresses (intentional for production WAN dials, but it breaks same-Mac
+    // LAN testing where 127.0.0.1 is the only path).
     const connectedPeerIds = mesh.getConnectedPeerIds();
     if (!connectedPeerIds.includes(peerId)) {
       try {
-        await mesh.ensurePeerReachable(peerId, ENVOY_CHAT_PROTOCOL);
+        const tcpAddr = multiaddrs.find((a) =>
+          a.includes("/tcp/") && !a.includes("/ws/") && !a.includes("/wss/"),
+        );
+        const dialTarget = tcpAddr ?? `/p2p/${peerId}`;
+        await mesh.dial(dialTarget);
       } catch {
-        // Dial failed — still attempt the probe (another path may succeed).
+        // Dial failed — still attempt the probe (relay or another path
+        // may succeed for WAN peers).
       }
     }
 
@@ -502,8 +515,10 @@ export async function _probeNearbyPeerProfileAfterDiscovery(
       // unreachable).  Emit peer:lost to remove the placeholder that
       // handleMeshPeerDiscoveredViaRuntime emitted earlier.
       ctx.emit("peer:lost", { nodeId: peerId });
+      ctx.markNonEnvoyPeerFailed(peerId);
       return;
     }
+    ctx.resetNonEnvoyPeerFailCount(peerId);
     ctx.emit("profile:updated", { ownerId: enriched.ownerId });
     ctx.emit("peer:discovered", enriched);
   } catch (err) {
@@ -511,6 +526,7 @@ export async function _probeNearbyPeerProfileAfterDiscovery(
     // Probe threw — clean up the placeholder that handleMeshPeerDiscovered
     // emitted earlier so it doesn't linger in the UI.
     ctx.emit("peer:lost", { nodeId: peerId });
+    ctx.markNonEnvoyPeerFailed(peerId);
   } finally {
     inflight.delete(peerId);
   }

@@ -1011,6 +1011,8 @@ import {
   untagReachabilityForOwnerViaRuntime,
   buildReachabilityContext,
   type ReachabilityContext,
+  NON_ENVOY_PEER_SUPPRESS_AFTER_FAILURES,
+  NON_ENVOY_PEER_SUPPRESS_COOLDOWN_MS,
 } from "./node-service-reachability.js";
 import {
   chainStateSnapshot,
@@ -1292,6 +1294,10 @@ class NodeServiceImpl implements NodeService {
   private readonly _profileRequestLastAt = new Map<string, number>();
   private readonly _nearbyProfileProbeLastAt = new Map<string, number>();
   private readonly _nearbyProfileProbeInflight = new Set<string>();
+  /** Consecutive failed profile-probe count per peer (for non-EnvoyMesh suppression). */
+  private readonly _nonEnvoyPeerFailCount = new Map<string, number>();
+  /** Timestamp of last failed probe per peer (for non-EnvoyMesh suppression). */
+  private readonly _nonEnvoyPeerLastFailedAt = new Map<string, number>();
   /** Keeps bonded contacts warm across NAT idle periods. */
   private _bondWarmTimer?: ReturnType<typeof setInterval>;
   /** Per-contact last warm timestamp for cooldown throttling. */
@@ -1679,9 +1685,11 @@ class NodeServiceImpl implements NodeService {
         const profileCutoff = now - NodeServiceImpl._PROFILE_REQUEST_COOLDOWN_MS * 120; // ~30 days
         const probeCutoff = now - NodeServiceImpl._NEARBY_PROFILE_PROBE_COOLDOWN_MS * 120;
         const mergeCutoff = now - 2 * 60 * 60 * 1000; // 2 hours (dial-hint throttle)
+        const nonEnvoyCutoff = now - NON_ENVOY_PEER_SUPPRESS_COOLDOWN_MS * 2; // 10 minutes
         let pruned = 0;
         for (const [k, v] of this._profileRequestLastAt) if (v < profileCutoff) { this._profileRequestLastAt.delete(k); pruned++; }
         for (const [k, v] of this._nearbyProfileProbeLastAt) if (v < probeCutoff) { this._nearbyProfileProbeLastAt.delete(k); pruned++; }
+        for (const [k, v] of this._nonEnvoyPeerLastFailedAt) if (v < nonEnvoyCutoff) { this._nonEnvoyPeerLastFailedAt.delete(k); this._nonEnvoyPeerFailCount.delete(k); pruned++; }
         for (const k of this._lastLibp2pTransportByOwner.keys()) {
           // Owner entries don't have timestamps — limit by total count instead.
           // 1000 unique owners is generous for a personal node.
@@ -1844,6 +1852,27 @@ class NodeServiceImpl implements NodeService {
 
   private _reachabilityContext(): ReachabilityContext {
     return buildReachabilityContext(this);
+  }
+
+  /** True when the peer has failed ≥ N consecutive probes and is within suppression cooldown. */
+  private _isNonEnvoyPeerSuppressed(peerId: string): boolean {
+    const failCount = this._nonEnvoyPeerFailCount.get(peerId) ?? 0;
+    if (failCount < NON_ENVOY_PEER_SUPPRESS_AFTER_FAILURES) return false;
+    const lastFailed = this._nonEnvoyPeerLastFailedAt.get(peerId) ?? 0;
+    return Date.now() - lastFailed < NON_ENVOY_PEER_SUPPRESS_COOLDOWN_MS;
+  }
+
+  /** Record a failed probe attempt (increments fail count, records timestamp). */
+  private _markNonEnvoyPeerFailed(peerId: string): void {
+    const count = (this._nonEnvoyPeerFailCount.get(peerId) ?? 0) + 1;
+    this._nonEnvoyPeerFailCount.set(peerId, count);
+    this._nonEnvoyPeerLastFailedAt.set(peerId, Date.now());
+  }
+
+  /** Reset fail count on successful probe. */
+  private _resetNonEnvoyPeerFailCount(peerId: string): void {
+    this._nonEnvoyPeerFailCount.delete(peerId);
+    this._nonEnvoyPeerLastFailedAt.delete(peerId);
   }
 
   private _transferInboundContext(): TransferInboundContext {
