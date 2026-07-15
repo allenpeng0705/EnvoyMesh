@@ -408,6 +408,7 @@ export class EnvoyMesh {
   private readonly dataHandlers = new Set<MeshDataTransferHandler>();
   private readonly peerDiscoveryHandlers = new Set<MeshPeerDiscoveryHandler>();
   private readonly peerDisconnectHandlers = new Set<(peerId: string) => void>();
+  private readonly peerConnectHandlers = new Set<MeshPeerDiscoveryHandler>();
   private relayDebugTimer?: ReturnType<typeof setInterval>;
   private node?: Libp2p;
   /** Additional announce addresses discovered at runtime (e.g. via STUN or relay observed addr). */
@@ -1869,6 +1870,20 @@ export class EnvoyMesh {
   onPeerDisconnect(handler: (peerId: string) => void): () => void {
     this.peerDisconnectHandlers.add(handler);
     return () => this.peerDisconnectHandlers.delete(handler);
+  }
+
+  /**
+   * Subscribe to peer connect events.  Unlike onPeerDiscovered (which fires
+   * at most once per peer from mDNS/bootstrap), this fires every time a peer
+   * transitions to "connected" — covering relay dials, inbound connections,
+   * and circuit-relay paths that pre-empt mDNS discovery.
+   *
+   * The handler receives the peerId and whatever multiaddrs are available in
+   * the libp2p peer store at connection time.
+   */
+  onPeerConnect(handler: MeshPeerDiscoveryHandler): () => void {
+    this.peerConnectHandlers.add(handler);
+    return () => this.peerConnectHandlers.delete(handler);
   }
 
   /**
@@ -3362,6 +3377,19 @@ export class EnvoyMesh {
       const remotePeerId = event.detail?.toString?.() ?? String(event.detail);
       for (const handler of this.peerDisconnectHandlers) {
         handler(remotePeerId);
+      }
+    });
+
+    // Dispatch peer connects to registered handlers — unconditional so
+    // that the NodeService discovery pipeline can process peers that
+    // connected via relay/inbound before mDNS fires (libp2p only emits
+    // peer:discovery once per peer — if the connection manager adds the
+    // peer to the store first, subsequent mDNS re-discoveries are silent).
+    typedNode.addEventListener("peer:connect", async (event: any) => {
+      const remotePeerId = event.detail?.toString?.() ?? String(event.detail);
+      const multiaddrs = await this.getPeerStoreDialHints(remotePeerId);
+      for (const handler of this.peerConnectHandlers) {
+        handler({ peerId: remotePeerId, multiaddrs });
       }
     });
 

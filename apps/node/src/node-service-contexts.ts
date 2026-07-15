@@ -304,6 +304,7 @@ export interface WireMeshEventsContextDeps {
   onMessage: WireMeshEventsContext["onMessage"];
   onPeerDiscovered: WireMeshEventsContext["onPeerDiscovered"];
   onPeerDisconnect: WireMeshEventsContext["onPeerDisconnect"];
+  onPeerConnect: WireMeshEventsContext["onPeerConnect"];
 }
 
 export interface SharePreviewContextDeps {
@@ -938,6 +939,7 @@ export function buildWireMeshEventsContext(deps: WireMeshEventsContextDeps): Wir
     onMessage: (params) => deps.onMessage(params),
     onPeerDiscovered: (params) => deps.onPeerDiscovered(params),
     onPeerDisconnect: (peerId) => deps.onPeerDisconnect(peerId),
+    onPeerConnect: (params) => deps.onPeerConnect(params),
   };
 }
 

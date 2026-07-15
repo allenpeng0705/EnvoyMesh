@@ -153,6 +153,12 @@ export const contactChatMessages = {
   inputOnline: "Type a message...",
   inputOffline: "Node offline",
   send: "Send",
+  // Localized labels for the chat header thread kind chip. Keep as separate
+  // keys (rather than reusing chat.aiChat.title / groupChat.threadKindLabel)
+  // so the human/agent/ai variants stay in one place and one language per
+  // contact chat.
+  threadKindDirect: "Direct message",
+  threadKindAgent: "Agent chat",
 } as const;
 
 export const aiChatMessages = {

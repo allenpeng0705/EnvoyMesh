@@ -426,6 +426,11 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
                 params,
               ),
             onPeerDisconnect: (peerId) => host.emit("peer:lost", { nodeId: peerId }),
+            onPeerConnect: (params) =>
+              handlePeerDiscoveredViaRuntime(
+                { handleMeshPeerDiscovered: (peerId, multiaddrs) => host.handleMeshPeerDiscovered(peerId, multiaddrs) },
+                params,
+              ),
           },
       sharePreview: {
             recordInboundPullSharePreview: (input) =>

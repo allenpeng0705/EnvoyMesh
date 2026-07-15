@@ -36,6 +36,9 @@ export interface WireMeshEventsMeshLike {
     handler: (params: WireMeshEventsPeerDiscoveredParams) => Promise<void>,
   ): void;
   onPeerDisconnect(handler: (peerId: string) => void): void;
+  onPeerConnect(
+    handler: (params: WireMeshEventsPeerDiscoveredParams) => Promise<void>,
+  ): void;
 }
 
 export interface WireMeshEventsContext {
@@ -43,6 +46,7 @@ export interface WireMeshEventsContext {
   onMessage: (params: WireMeshEventsMessageParams) => Promise<void>;
   onPeerDiscovered: (params: WireMeshEventsPeerDiscoveredParams) => Promise<void>;
   onPeerDisconnect: (peerId: string) => void;
+  onPeerConnect: (params: WireMeshEventsPeerDiscoveredParams) => Promise<void>;
 }
 
 export interface WireMeshInboundContext {
@@ -107,6 +111,7 @@ export function wireMeshEventsViaRuntime(ctx: WireMeshEventsContext): void {
   ctx.mesh.onMessage(ctx.onMessage);
   ctx.mesh.onPeerDiscovered(ctx.onPeerDiscovered);
   ctx.mesh.onPeerDisconnect(ctx.onPeerDisconnect);
+  ctx.mesh.onPeerConnect(ctx.onPeerConnect);
 }
 
 export async function handleInboundMessageViaRuntime(

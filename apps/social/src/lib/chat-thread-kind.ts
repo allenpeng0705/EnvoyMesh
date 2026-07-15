@@ -46,13 +46,20 @@ export function messageVisualVariantForMessage(
   return messageVisualVariant(outgoing, threadKind);
 }
 
-export function threadKindLabel(kind: ChatThreadKind): string {
+/**
+ * Localized label for the chat thread kind. Callers pass the i18n `t`
+ * function so this stays a pure helper (no React context inside `lib/`).
+ */
+export function threadKindLabel(
+  kind: ChatThreadKind,
+  t: (key: string) => string,
+): string {
   switch (kind) {
     case "ai":
-      return "Envoy AI";
+      return t("chat.aiChat.title");
     case "agent":
       return "";
     default:
-      return "Direct message";
+      return t("contactChat.threadKindDirect");
   }
 }

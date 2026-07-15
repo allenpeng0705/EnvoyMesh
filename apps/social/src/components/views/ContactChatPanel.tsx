@@ -655,7 +655,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
           )}
           <div className="chat-header-titles">
             <span className="chat-name">{displayName}</span>
-            <span className={`chat-header-kind kind-${threadKind}`}>{threadKindLabel(threadKind)}</span>
+            <span className={`chat-header-kind kind-${threadKind}`}>{threadKindLabel(threadKind, t)}</span>
             <span className={`contact-reachability ${reachabilityClass}`} title={t("contactChat.p2pPathTitle")}>
               <span className="contact-reachability-dot" aria-hidden />
               {isHomeBridgeThread && !contactReachable && !reachabilityChecking

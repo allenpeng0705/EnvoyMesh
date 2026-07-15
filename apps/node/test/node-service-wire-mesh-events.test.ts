@@ -10,34 +10,40 @@ import {
 } from "../src/node-service-wire-mesh-events.js";
 
 describe("wireMeshEventsViaRuntime", () => {
-  it("registers onMessage, onPeerDiscovered, and onPeerDisconnect handlers with the mesh", () => {
+  it("registers onMessage, onPeerDiscovered, onPeerDisconnect, and onPeerConnect handlers with the mesh", () => {
     const onMessage = vi.fn(async () => undefined);
     const onPeerDiscovered = vi.fn(async () => undefined);
     const onPeerDisconnect = vi.fn();
+    const onPeerConnect = vi.fn(async () => undefined);
     const mesh = {
       onMessage: vi.fn(),
       onPeerDiscovered: vi.fn(),
       onPeerDisconnect: vi.fn(),
+      onPeerConnect: vi.fn(),
     };
-    wireMeshEventsViaRuntime({ mesh, onMessage, onPeerDiscovered, onPeerDisconnect });
+    wireMeshEventsViaRuntime({ mesh, onMessage, onPeerDiscovered, onPeerDisconnect, onPeerConnect });
     expect(mesh.onMessage).toHaveBeenCalledTimes(1);
     expect(mesh.onPeerDiscovered).toHaveBeenCalledTimes(1);
     expect(mesh.onPeerDisconnect).toHaveBeenCalledTimes(1);
+    expect(mesh.onPeerConnect).toHaveBeenCalledTimes(1);
     expect(mesh.onMessage).toHaveBeenCalledWith(onMessage);
     expect(mesh.onPeerDiscovered).toHaveBeenCalledWith(onPeerDiscovered);
     expect(mesh.onPeerDisconnect).toHaveBeenCalledWith(onPeerDisconnect);
+    expect(mesh.onPeerConnect).toHaveBeenCalledWith(onPeerConnect);
   });
 
   it("passes the same handler references that were provided", () => {
     const onMessage = vi.fn(async () => undefined);
     const onPeerDiscovered = vi.fn(async () => undefined);
     const onPeerDisconnect = vi.fn();
+    const onPeerConnect = vi.fn(async () => undefined);
     const mesh = {
       onMessage: vi.fn(),
       onPeerDiscovered: vi.fn(),
       onPeerDisconnect: vi.fn(),
+      onPeerConnect: vi.fn(),
     };
-    wireMeshEventsViaRuntime({ mesh, onMessage, onPeerDiscovered, onPeerDisconnect });
+    wireMeshEventsViaRuntime({ mesh, onMessage, onPeerDiscovered, onPeerDisconnect, onPeerConnect });
     // The registered handler is exactly the function we passed.
     const registeredMessageHandler = (mesh.onMessage as ReturnType<typeof vi.fn>).mock
       .calls[0][0];
@@ -48,6 +54,9 @@ describe("wireMeshEventsViaRuntime", () => {
     const registeredDisconnectHandler = (mesh.onPeerDisconnect as ReturnType<typeof vi.fn>).mock
       .calls[0][0];
     expect(registeredDisconnectHandler).toBe(onPeerDisconnect);
+    const registeredConnectHandler = (mesh.onPeerConnect as ReturnType<typeof vi.fn>).mock
+      .calls[0][0];
+    expect(registeredConnectHandler).toBe(onPeerConnect);
   });
 });
 

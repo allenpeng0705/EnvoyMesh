@@ -305,36 +305,9 @@ export function App() {
 
   const [currentView, setCurrentView] = useState<ViewName>("chat");
   const [settingsTab, setSettingsTab] = useState<SettingsTabId>("account");
-  const didInitialNav = useRef(false);
 
-  // Cold-start: land 0-bond users on Discover (not Chat) so they SEE the
-  // auto-search results + auto-hello. Only fires once per session — after
-  // this the user's manual navigation is respected.
-  // IMPORTANT: must wait for bonds to actually load (not just nodeStatusHydrated)
-  // because bonds start as [] and load asynchronously via RPC.
-  useEffect(() => {
-    if (didInitialNav.current) return;
-    if (!nodeStatusHydrated || !isConnected) return;
-    if (bonds.length > 0) {
-      // User has contacts → respect the "chat" default
-      didInitialNav.current = true;
-      return;
-    }
-    // bonds.length === 0 + connected → could be genuinely empty or still loading.
-    // Wait a short grace period for the bonds RPC to resolve, then decide.
-    const timer = setTimeout(() => {
-      if (didInitialNav.current) return;
-      if (bonds.length === 0) {
-        setCurrentView("discover");
-      }
-      didInitialNav.current = true;
-    }, 2000);
-    return () => clearTimeout(timer);
-  }, [nodeStatusHydrated, isConnected, bonds.length]);
-
-  // Navigation handler — any manual nav cancels the cold-start redirect.
+  // Navigation handler.
   const navigateTo = (view: ViewName) => {
-    didInitialNav.current = true;
     setCurrentView(view);
     if (view === "chat") setChatPanelMode("threads");
   };
