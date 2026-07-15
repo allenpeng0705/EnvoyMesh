@@ -51,11 +51,19 @@ export function NearbyPeersPanel({
         </div>
       ) : (
         <ul className="around-me-list">
-          {discoveredPeers.map((peer) => {
-            const targetId = peer.ownerId || peer.nodeId;
-            const helloState = resolvePeerHelloState(peer.ownerId, peer.nodeId, bonds, outboundHellos);
-            const label = nearbyPeerLabel(peer.displayName, peer.nodeId);
-            const displayLabel = label === "Someone nearby" ? t("discover.nearby.someoneNearby") : label;
+          {discoveredPeers
+            .filter((peer) => {
+              // Only show peers with a real profile (non-empty ownerId means
+              // the profile probe succeeded).  Skip "Someone nearby" placeholders.
+              if (!peer.ownerId) return false;
+              const label = nearbyPeerLabel(peer.displayName, peer.nodeId);
+              return label !== "Someone nearby";
+            })
+            .map((peer) => {
+              const targetId = peer.ownerId || peer.nodeId;
+              const helloState = resolvePeerHelloState(peer.ownerId, peer.nodeId, bonds, outboundHellos);
+              const label = nearbyPeerLabel(peer.displayName, peer.nodeId);
+              const displayLabel = label === "Someone nearby" ? t("discover.nearby.someoneNearby") : label;
             return (
               <DiscoverPeerCard
                 key={peer.nodeId}

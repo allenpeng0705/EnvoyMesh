@@ -392,15 +392,27 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     return unsub;
   }, [nodeService, wsTransportOpen]);
 
-  // peer:discovered — track nearby peers.  A placeholder (empty displayName)
+  // peer:discovered + peer:lost — track nearby peers with debounced updates
+  // to prevent rapid add/remove flicker.  A placeholder (empty displayName)
   // arrives immediately when a peer is discovered; a second event with real
   // profile data follows if the probe succeeds.  If the peer is already
   // bonded, remove any lingering placeholder.
   useEffect(() => {
     if (!wsTransportOpen) return;
     const selfOwnerId = humanProfile?.ownerId?.trim() ?? "";
-    const unsub = nodeService.on("peer:discovered", (data) => {
+    let pendingFlush: ReturnType<typeof setTimeout> | undefined;
+    let dirty = false;
+
+    const flush = () => {
+      dirty = false;
+      pendingFlush = undefined;
+    };
+
+    const unsub1 = nodeService.on("peer:discovered", (data: any) => {
       if (selfOwnerId && data.ownerId === selfOwnerId) return;
+      // Skip placeholders with no ownerId — the UI won't show them anyway
+      // and buffering prevents the "many entries then vanish" flicker.
+      if (!data.ownerId) return;
       const isBonded = bonds.some((b) => b.peerOwnerId === data.ownerId);
       if (isBonded) {
         // Probe confirmed this is a bonded contact — remove the placeholder.
@@ -414,8 +426,25 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
         }
         return [...prev, data];
       });
+      if (!dirty) {
+        dirty = true;
+        pendingFlush = setTimeout(flush, 500);
+      }
     });
-    return unsub;
+
+    const unsub2 = nodeService.on("peer:lost", (data: any) => {
+      setDiscoveredPeers((prev) => prev.filter((p) => p.nodeId !== data.nodeId));
+      if (!dirty) {
+        dirty = true;
+        pendingFlush = setTimeout(flush, 500);
+      }
+    });
+
+    return () => {
+      unsub1();
+      unsub2();
+      if (pendingFlush !== undefined) clearTimeout(pendingFlush);
+    };
   }, [nodeService, wsTransportOpen, bonds, humanProfile?.ownerId]);
 
   // Safety net: remove entries with empty/placeholder display names that
@@ -435,15 +464,6 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     }, 30_000);
     return () => clearInterval(timer);
   }, [wsTransportOpen]);
-
-  // peer:lost — remove departed peers from the discovered list
-  useEffect(() => {
-    if (!wsTransportOpen) return;
-    const unsub = nodeService.on("peer:lost", (data) => {
-      setDiscoveredPeers((prev) => prev.filter((p) => p.nodeId !== data.nodeId));
-    });
-    return unsub;
-  }, [nodeService, wsTransportOpen]);
 
   // profile:updated — refresh nearby card names after profile probe
   useEffect(() => {

@@ -37,6 +37,9 @@ const PROBE_COOLDOWN_MS = 30_000;
 function mockIdentityContext(overrides: Partial<IdentityContext> = {}): IdentityContext {
   const lastAtMap = new Map<string, number>();
   const inflight = new Set<string>();
+  const peerDirStore = {
+    ensurePeerFromInboundChat: vi.fn().mockResolvedValue(undefined),
+  };
   return {
     getProfile: () =>
       ({
@@ -81,7 +84,7 @@ function mockIdentityContext(overrides: Partial<IdentityContext> = {}): Identity
     getConfigStore: () => ({ load: vi.fn().mockResolvedValue(null) }),
     getCapabilityManifestStore: () => undefined,
     getVaultDir: () => "/tmp/vault",
-    getPeerDirectoryStore: {} as any,
+    getPeerDirectoryStore: () => peerDirStore,
     getBonds: vi.fn().mockResolvedValue([]),
     requestPeerProfile: vi.fn().mockResolvedValue({ ok: true }),
     refreshCapabilityIndex: vi.fn().mockResolvedValue(undefined),
@@ -138,6 +141,13 @@ describe("_probeNearbyPeerProfileAfterDiscovery", () => {
     expect(emit.mock.calls[1][1]).toEqual(enriched);
     expect(ctx.resetNonEnvoyPeerFailCount).toHaveBeenCalledWith("12D3KooWPeerA");
     expect(ctx.markNonEnvoyPeerFailed).not.toHaveBeenCalled();
+    // Verify the ownerId→peerId mapping is persisted for sendHello resolution.
+    const peerDir = ctx.getPeerDirectoryStore();
+    expect(peerDir.ensurePeerFromInboundChat).toHaveBeenCalledWith({
+      ownerId: "envoy:owner:alice",
+      peerId: "12D3KooWPeerA",
+      listenAddrs: LAN_MULTIADDRS,
+    });
   });
 
   // ---- Probe result: null (non-EnvoyMesh or unreachable) -----------------

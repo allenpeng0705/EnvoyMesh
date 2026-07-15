@@ -538,6 +538,13 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
     const setQuery = isPaste ? setPasteQuery : setNetworkQuery;
     const searchResults = isPaste ? pasteResults : networkResults;
     const isSearching = isPaste ? pasteSearching : networkSearching;
+    // Only show peers with real profiles (non-empty ownerId, not "Someone
+    // nearby") — placeholders are useless since "Say hello" can't work.
+    const realPeers = discoveredPeers.filter((p) => {
+      if (!p.ownerId) return false;
+      const label = nearbyPeerLabel(p.displayName, p.nodeId);
+      return label !== "Someone nearby";
+    });
     return (
       <section className="discover-panel discover-lookup-panel">
         {isPaste ? (
@@ -818,7 +825,7 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
               </p>
             )}
           </>
-        ) : discoveredPeers.length > 0 ? (
+        ) : realPeers.length > 0 ? (
           <div className="search-empty search-empty--browse">
             <p className="search-empty__heading">
               {t("discover.search.browsePeersHeading", "People you can reach")}
@@ -830,7 +837,7 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
               )}
             </p>
             <ul className="search-results peer-results-list">
-              {discoveredPeers.slice(0, discoveryVisibleCount).map((peer) => {
+              {realPeers.slice(0, discoveryVisibleCount).map((peer) => {
                 const helloState = resolvePeerHelloState(peer.ownerId, peer.nodeId, bonds, outboundHellos);
                 const fakeResult = {
                   nodeId: peer.nodeId,
@@ -854,13 +861,13 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
                 );
               })}
             </ul>
-            {discoveredPeers.length > discoveryVisibleCount && (
+            {realPeers.length > discoveryVisibleCount && (
               <button
                 type="button"
                 className="search-empty__show-more"
                 onClick={() => setDiscoveryVisibleCount((c) => c + 20)}
               >
-                {t("discover.search.showMore", { remaining: discoveredPeers.length - discoveryVisibleCount })}
+                {t("discover.search.showMore", { remaining: realPeers.length - discoveryVisibleCount })}
               </button>
             )}
           </div>

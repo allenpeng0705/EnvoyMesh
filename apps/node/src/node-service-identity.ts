@@ -519,6 +519,17 @@ export async function _probeNearbyPeerProfileAfterDiscovery(
       return;
     }
     ctx.resetNonEnvoyPeerFailCount(peerId);
+    // Persist the ownerId→peerId mapping so that sendHello and other
+    // outbound operations can resolve the peer later.
+    try {
+      await ctx.getPeerDirectoryStore().ensurePeerFromInboundChat({
+        ownerId: enriched.ownerId,
+        peerId: enriched.nodeId,
+        listenAddrs: multiaddrs,
+      });
+    } catch {
+      // Non-critical — the events below still reach the UI.
+    }
     ctx.emit("profile:updated", { ownerId: enriched.ownerId });
     ctx.emit("peer:discovered", enriched);
   } catch (err) {
