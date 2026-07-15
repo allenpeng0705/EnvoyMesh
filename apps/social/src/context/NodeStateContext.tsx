@@ -392,33 +392,18 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     return unsub;
   }, [nodeService, wsTransportOpen]);
 
-  // peer:discovered + peer:lost — track nearby peers with debounced updates
-  // to prevent rapid add/remove flicker.  A placeholder (empty displayName)
-  // arrives immediately when a peer is discovered; a second event with real
-  // profile data follows if the probe succeeds.  If the peer is already
-  // bonded, remove any lingering placeholder.
+  // peer:discovered + peer:lost — track nearby peers.  Placeholders (empty
+  // ownerId) are filtered at the source by the node-side suppression layer
+  // (30s probe cooldown + 5min non-EnvoyMesh suppression), so we only see
+  // enriched events with real profile data.
   useEffect(() => {
     if (!wsTransportOpen) return;
     const selfOwnerId = humanProfile?.ownerId?.trim() ?? "";
-    let pendingFlush: ReturnType<typeof setTimeout> | undefined;
-    let dirty = false;
-
-    const flush = () => {
-      dirty = false;
-      pendingFlush = undefined;
-    };
 
     const unsub1 = nodeService.on("peer:discovered", (data: any) => {
       if (selfOwnerId && data.ownerId === selfOwnerId) return;
-      // Skip placeholders with no ownerId — the UI won't show them anyway
-      // and buffering prevents the "many entries then vanish" flicker.
+      // Skip placeholders with no ownerId — the UI won't show them anyway.
       if (!data.ownerId) return;
-      const isBonded = bonds.some((b) => b.peerOwnerId === data.ownerId);
-      if (isBonded) {
-        // Probe confirmed this is a bonded contact — remove the placeholder.
-        setDiscoveredPeers((prev) => prev.filter((p) => p.nodeId !== data.nodeId));
-        return;
-      }
       setDiscoveredPeers((prev) => {
         const existing = prev.find((p) => p.nodeId === data.nodeId);
         if (existing) {
@@ -426,26 +411,17 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
         }
         return [...prev, data];
       });
-      if (!dirty) {
-        dirty = true;
-        pendingFlush = setTimeout(flush, 500);
-      }
     });
 
     const unsub2 = nodeService.on("peer:lost", (data: any) => {
       setDiscoveredPeers((prev) => prev.filter((p) => p.nodeId !== data.nodeId));
-      if (!dirty) {
-        dirty = true;
-        pendingFlush = setTimeout(flush, 500);
-      }
     });
 
     return () => {
       unsub1();
       unsub2();
-      if (pendingFlush !== undefined) clearTimeout(pendingFlush);
     };
-  }, [nodeService, wsTransportOpen, bonds, humanProfile?.ownerId]);
+  }, [nodeService, wsTransportOpen, humanProfile?.ownerId]);
 
   // Safety net: remove entries with empty/placeholder display names that
   // weren't cleaned up by peer:lost (e.g. after a WebSocket reconnection).

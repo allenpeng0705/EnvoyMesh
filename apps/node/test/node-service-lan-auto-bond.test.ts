@@ -217,9 +217,32 @@ describe("evaluateLanAutoBondReceipt", () => {
         lanAutoBondFleetToken: "fleet-secret-1",
       }),
     });
-    const decision = await evaluateLanAutoBondReceipt(deps, makeEnvelope("different"));
+    const decision = await evaluateLanAutoBondReceipt(deps, makeEnvelope("different-token"));
     expect(decision.accept).toBe(false);
     expect(decision.reason).toBe("token-mismatch");
+  });
+
+  it("rejects self-targeting (requesterOwnerId matches own owner)", async () => {
+    const deps = baseDeps({
+      loadConfig: async () => ({
+        ...((await baseDeps().loadConfig()) as PersistedNodeConfig),
+        lanAutoBondEnabled: true,
+        lanAutoBondFleetToken: "fleet-secret-1",
+      }),
+      getOwnOwnerId: () => "envoy:owner:self",
+    });
+    const selfEnvelope: { payload: unknown } = {
+      payload: {
+        requestId: "req-1",
+        requesterOwnerId: "envoy:owner:self",
+        requesterDeviceId: "envoy:device:1",
+        requesterDevicePublicKeyPem: "pem",
+        createdAt: new Date().toISOString(),
+        lanFleetToken: "fleet-secret-1",
+      },
+    };
+    const decision = await evaluateLanAutoBondReceipt(deps, selfEnvelope);
+    expect(decision).toEqual({ accept: false, reason: "self-target" });
   });
 
   it("accepts on matching token", async () => {

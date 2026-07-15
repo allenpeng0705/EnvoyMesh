@@ -101,6 +101,7 @@ function mockIdentityContext(overrides: Partial<IdentityContext> = {}): Identity
     getNearbyProfileProbeInflight: () => inflight,
     markNonEnvoyPeerFailed: vi.fn(),
     resetNonEnvoyPeerFailCount: vi.fn(),
+    maybeFireLanAutoBond: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }

@@ -207,7 +207,9 @@ export async function handleMeshPeerDiscoveredViaRuntime(
       ...(emitSource ? { discoverySource: emitSource } : {}),
     });
     void ctx.probeNearbyPeerProfileAfterDiscovery(peerId, multiaddrs);
-    void ctx.maybeFireLanAutoBond(peerId);
+    // Auto-bond is fired inside probeNearbyPeerProfileAfterDiscovery on
+    // probe success — the peer must be connected (probe dials first) and
+    // confirmed as an EnvoyMesh node before we attempt pairing.
     void warmBondedContactAfterLanDiscoveryViaRuntime(ctx, peerId, multiaddrs);
   } catch (err) {
     console.warn(`[node-service] handleMeshPeerDiscovered failed for ${peerId.slice(0, 12)}…:`, err);

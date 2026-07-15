@@ -83,7 +83,8 @@ export interface LanAutoBondReceiveDecision {
     | "no-token-on-envelope"
     | "no-local-token"
     | "disabled"
-    | "token-mismatch";
+    | "token-mismatch"
+    | "self-target";
   fingerprint?: string;
 }
 
@@ -104,7 +105,11 @@ export async function buildLanAutoBondRequest(
   const token = cfg.lanAutoBondFleetToken?.trim();
   if (!token) return { ok: false, reason: "no-token" };
   const ownOwner = deps.getOwnOwnerId();
-  if (!targetPeerId || targetPeerId === ownOwner) return { ok: false, reason: "self-target" };
+  if (!targetPeerId) return { ok: false, reason: "self-target" };
+  // Self-bond guard: targetPeerId is a libp2p transport ID — also compare
+  // against our ownerId (human identity DID).  The receive side
+  // (evaluateLanAutoBondReceipt) gets a second guard with requesterOwnerId.
+  if (targetPeerId === ownOwner) return { ok: false, reason: "self-target" };
 
   const identity = deps.getLocalIdentity();
   const payload = createDevicePairRequestPayload({
@@ -173,6 +178,13 @@ export async function evaluateLanAutoBondReceipt(
     return { accept: false, reason: "no-token-on-envelope" };
   }
   if (!payload.lanFleetToken) return { accept: false, reason: "no-token-on-envelope" };
+
+  // Self-bond guard: reject pair-requests from our own owner identity.
+  // This can happen via mDNS loopback or relay echo.
+  const ownOwnerId = deps.getOwnOwnerId();
+  if (payload.requesterOwnerId && payload.requesterOwnerId === ownOwnerId) {
+    return { accept: false, reason: "self-target" };
+  }
 
   const cfg = await deps.loadConfig();
   if (!cfg?.lanAutoBondEnabled) return { accept: false, reason: "disabled" };

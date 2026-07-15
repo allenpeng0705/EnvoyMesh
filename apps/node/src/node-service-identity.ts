@@ -153,6 +153,8 @@ export interface IdentityContext {
   markNonEnvoyPeerFailed(peerId: string): void;
   /** Reset fail count on successful probe. */
   resetNonEnvoyPeerFailCount(peerId: string): void;
+  /** Attempt LAN auto-bond (fire-and-forget, gated by cooldown + config). */
+  maybeFireLanAutoBond(peerId: string): Promise<void>;
   /**
    * Notify active relay checkin scheduler of the topics currently being
    * advertised. The relay client uses this to populate `advertisements[]`
@@ -205,6 +207,7 @@ export function buildIdentityContext(host: any): IdentityContext {
     getNearbyProfileProbeInflight: () => host._nearbyProfileProbeInflight,
     markNonEnvoyPeerFailed: (peerId) => host._markNonEnvoyPeerFailed(peerId),
     resetNonEnvoyPeerFailCount: (peerId) => host._resetNonEnvoyPeerFailCount(peerId),
+    maybeFireLanAutoBond: (peerId) => host._maybeFireLanAutoBond(peerId),
     notifyAdvertisedDiscoveryTopics: (topics) =>
       host._notifyAdvertisedDiscoveryTopics?.(topics) ?? Promise.resolve(),
   };
@@ -532,6 +535,9 @@ export async function _probeNearbyPeerProfileAfterDiscovery(
     }
     ctx.emit("profile:updated", { ownerId: enriched.ownerId });
     ctx.emit("peer:discovered", enriched);
+    // Probe succeeded and a connection is open — fire LAN auto-bond now
+    // (gated by cooldown + config inside _maybeFireLanAutoBond).
+    void ctx.maybeFireLanAutoBond(peerId);
   } catch (err) {
     console.warn(`[node-service] nearby profile probe failed for ${peerId}:`, err);
     // Probe threw — clean up the placeholder that handleMeshPeerDiscovered

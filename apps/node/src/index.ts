@@ -1916,9 +1916,9 @@ async function handleInboundMeshMessage({
         return;
       }
       // If the envelope *did* carry a fleet token but we declined (disabled,
-      // token-mismatch, …) emit a `message.rejected` audit so the operator
-      // can see why nothing happened.
-      if (decision.reason === "token-mismatch" || decision.reason === "disabled") {
+      // token-mismatch, self-target, …) emit a `message.rejected` audit so the
+      // operator can see why nothing happened.
+      if (decision.reason === "token-mismatch" || decision.reason === "disabled" || decision.reason === "self-target") {
         void taskStore.appendAuditEvent(
           createAuditEvent({
             type: "message.rejected",
@@ -1931,6 +1931,16 @@ async function handleInboundMeshMessage({
           }),
         );
       }
+      // Self-target short-circuit: skip the companion-pairing and manual-approval
+      // fallback paths — we should never accept a pair request from ourselves.
+      if (decision.reason === "self-target") {
+        return;
+      }
+    }
+
+    // Self-bond guard for the companion-pairing fallback path as well.
+    if (payload.requesterOwnerId && profile?.owner.ownerId && payload.requesterOwnerId === profile.owner.ownerId) {
+      return;
     }
 
     const allowAuto =

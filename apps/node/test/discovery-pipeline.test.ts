@@ -196,12 +196,14 @@ describe("handleMeshPeerDiscoveredViaRuntime", () => {
     expect(probe).not.toHaveBeenCalled();
   });
 
-  it("calls maybeFireLanAutoBond for non-infrastructure peer", async () => {
+  it("does NOT call maybeFireLanAutoBond directly (moved to probe success path)", async () => {
     const autoBond = vi.fn().mockResolvedValue(undefined);
     const ctx = mockContext({ maybeFireLanAutoBond: autoBond });
     await handleMeshPeerDiscoveredViaRuntime(ctx, "12D3KooWPeerA", LAN_MULTIADDRS);
 
-    expect(autoBond).toHaveBeenCalledWith("12D3KooWPeerA");
+    // Auto-bond now fires inside _probeNearbyPeerProfileAfterDiscovery on
+    // probe success — not from the discovery handler directly.
+    expect(autoBond).not.toHaveBeenCalled();
   });
 
   // ---- Placeholder suppression --------------------------------------------
