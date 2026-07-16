@@ -1,7 +1,9 @@
 <p align="center">
   <img src="apps/tauri/src-tauri/app-icon.png" alt="EnvoyMesh" width="128" height="128" />
-  <br />
-  <img src="logo_with_text.png" alt="EnvoyMesh" width="520" />
+</p>
+
+<p align="center">
+  <strong>EnvoyMesh — Secure P2P Agentic Mesh</strong>
 </p>
 
 <p align="center">
