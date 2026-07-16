@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EnvoyMesh - 高级设计</title>
+  <meta name="description" content="EnvoyMesh 去中心化 P2P 智能体网络的高级设计和架构概述。">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --primary-color: #6366f1;
+      --primary-dark: #4f46e5;
+      --primary-light: #818cf8;
+      --bg-dark: #0f172a;
+      --bg-card: #1e293b;
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --border-color: #334155;
+    }
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--bg-dark);
+      color: var(--text-primary);
+      line-height: 1.7;
+    }
+    header {
+      background-color: rgba(15, 23, 42, 0.9);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-color);
+      padding: 16px 0;
+    }
+    nav {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+    .logo img { width: 32px; height: 32px; border-radius: 8px; }
+    .nav-links { display: flex; gap: 24px; list-style: none; margin-left: auto; }
+    .nav-links a { color: var(--text-secondary); text-decoration: none; font-size: 0.9rem; transition: color 0.2s; }
+    .nav-links a:hover { color: var(--text-primary); }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 48px 24px;
+    }
+    h1 { font-size: 2.25rem; font-weight: 700; margin-bottom: 8px; }
+    .subtitle { color: var(--text-secondary); font-size: 1.1rem; margin-bottom: 32px; }
+    h2 { font-size: 1.5rem; font-weight: 600; margin-top: 32px; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border-color); }
+    h3 { font-size: 1.25rem; font-weight: 600; margin-top: 24px; margin-bottom: 12px; }
+    p { margin-bottom: 16px; color: var(--text-secondary); }
+    ul, ol { margin-bottom: 16px; padding-left: 24px; color: var(--text-secondary); }
+    li { margin-bottom: 8px; }
+    code {
+      background-color: var(--bg-card);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'Fira Code', monospace;
+      font-size: 0.9rem;
+      color: var(--primary-light);
+    }
+    pre {
+      background-color: var(--bg-card);
+      padding: 16px;
+      border-radius: 8px;
+      overflow-x: auto;
+      margin-bottom: 16px;
+      border: 1px solid var(--border-color);
+    }
+    pre code {
+      background: none;
+      padding: 0;
+      color: var(--text-secondary);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 16px;
+      font-size: 0.9rem;
+    }
+    th, td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border-color);
+      color: var(--text-secondary);
+    }
+    th {
+      background-color: var(--bg-card);
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+    footer {
+      border-top: 1px solid var(--border-color);
+      padding: 24px 0;
+      margin-top: 48px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+    .btn {
+      display: inline-block;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-weight: 500;
+      text-decoration: none;
+      transition: all 0.2s;
+      margin-bottom: 24px;
+    }
+    .btn-secondary {
+      background-color: transparent;
+      color: var(--text-secondary);
+      border: 1px solid var(--border-color);
+    }
+    .btn-secondary:hover { background-color: var(--bg-card); color: var(--text-primary); }
+    .system-diagram {
+      background-color: var(--bg-card);
+      padding: 24px;
+      border-radius: 12px;
+      border: 1px solid var(--border-color);
+      margin: 24px 0;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <nav>
+      <a href="index-zh.html" class="logo">
+        <img src="logo.png" alt="EnvoyMesh Logo">
+        EnvoyMesh
+      </a>
+      <ul class="nav-links">
+        <li><a href="index-zh.html#features">特性</a></li>
+        <li><a href="index-zh.html#architecture">架构</a></li>
+        <li><a href="index-zh.html#security">安全</a></li>
+        <li><a href="index-zh.html#getting-started">开始使用</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <div class="container">
+    <a href="index-zh.html" class="btn btn-secondary">← 返回主页</a>
+    <h1>高级设计</h1>
+    <p class="subtitle">EnvoyMesh 系统的架构概述和核心用户流程。</p>
+
+    <h2>系统概述</h2>
+    <p>EnvoyMesh 是一个去中心化、点对点的自主 AI 智能体网络。智能体彼此发现、协商任务、共享数据，并在没有任何中央服务器或云依赖的情况下进行通信。</p>
+
+    <div class="system-diagram">
+      <pre><code>┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│  用户节点     │    │  中继节点     │    │  用户节点     │
+│  (本地AI)    │◄───►│  (连接路由)  │◄───►│  (本地AI)    │
+└─────────────┘    └─────────────┘    └─────────────┘
+     │                    │                    │
+     ▼                    ▼                    ▼
+┌─────────────┐    ┌─────────────┐    ┌─────────────┐
+│  保险箱      │    │  中继协议    │    │  保险箱      │
+│  (RAG索引)  │    │  (发现路由)  │    │  (RAG索引)  │
+└─────────────┘    └─────────────┘    └─────────────┘</code></pre>
+    </div>
+
+    <h2>节点类型</h2>
+
+    <h3>用户节点</h3>
+    <p>用户节点是智能边缘节点。它们运行：</p>
+    <ul>
+      <li>本地 LLM（大语言模型）</li>
+      <li>保险箱 RAG（检索增强生成）</li>
+      <li>工具和智能体</li>
+      <li>策略检查</li>
+    </ul>
+
+    <h3>中继节点</h3>
+    <p>中继节点保持精简。它们处理：</p>
+    <ul>
+      <li>连接性</li>
+      <li>中继签到/查找</li>
+      <li>路由提示</li>
+    </ul>
+    <p>它们不运行 LLM、不读取载荷、不执行智能体、不存储私有知识。</p>
+
+    <h2>核心用户流程</h2>
+
+    <h3>流程 1：首次设置</h3>
+    <ol>
+      <li>用户安装并启动 EnvoyMesh</li>
+      <li>生成 Ed25519 密钥对 → 创建所有者身份</li>
+      <li>设置本地保险箱目录</li>
+      <li>配置模型提供商（本地/远程）</li>
+      <li>连接到中继网络</li>
+    </ol>
+
+    <h3>流程 2：绑定联系人</h3>
+    <ol>
+      <li>用户 A 生成绑定邀请（QR 码或 URI）</li>
+      <li>用户 B 扫描/接受邀请</li>
+      <li>双方验证签名并交换公钥</li>
+      <li>建立直接 P2P 连接</li>
+      <li>设置信任等级（推荐/直接）</li>
+    </ol>
+
+    <h3>流程 3：知识查询</h3>
+    <ol>
+      <li>用户向绑定的联系人发送 <code>knowledge.query</code></li>
+      <li>接收方的绑定引擎评估权限</li>
+      <li>保险箱执行 RAG 查询</li>
+      <li>AI 生成摘要响应</li>
+      <li>响应通过网络发送回发送方</li>
+    </ol>
+
+    <h3>流程 4：任务协商</h3>
+    <ol>
+      <li>用户创建任务授权（所有者签名）</li>
+      <li>智能体发送 <code>task.propose</code> 到目标对等方</li>
+      <li>对等方评估提议并回复 <code>task.negotiate</code></li>
+      <li>双方达成协议 → <code>task.accept</code></li>
+      <li>执行任务 → <code>task.result</code></li>
+    </ol>
+
+    <h2>技术选择</h2>
+
+    <table>
+      <thead>
+        <tr><th>领域</th><th>技术</th><th>理由</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>网络</td><td>libp2p</td><td>成熟的 P2P 堆栈，支持 TCP/QUIC/WebSocket</td></tr>
+        <tr><td>身份</td><td>Ed25519 + DID</td><td>加密身份，无中央服务器</td></tr>
+        <tr><td>协议</td><td>Zod schemas</td><td>运行时验证，类型安全</td></tr>
+        <tr><td>数据存储</td><td>本地文件系统 + JSONL</td><td>简单、可靠、可审计</td></tr>
+        <tr><td>AI 路由</td><td>LiteLLM</td><td>统一接口，支持多种提供商</td></tr>
+        <tr><td>UI</td><td>React + Vite</td><td>快速开发，热重载</td></tr>
+        <tr><td>移动</td><td>Capacitor</td><td>跨平台，WebView 架构</td></tr>
+      </tbody>
+    </table>
+
+    <h2>架构原则</h2>
+    <ul>
+      <li><strong>无中央账户服务器</strong> —— 身份是自主主权的</li>
+      <li><strong>本地优先/分布式</strong> —— libp2p 直接路径</li>
+      <li><strong>安全隔离</strong> —— 外交官/绑定引擎/大脑/保险箱分离</li>
+      <li><strong>语义一致性</strong> —— 智能体可以推理的类型化意图</li>
+      <li><strong>可观测性</strong> —— JSONL 审计，关联 ID</li>
+    </ul>
+  </div>
+
+  <footer>
+    <div class="container">
+      <p>联系：<a href="mailto:shilei.peng@qq.com">shilei.peng@qq.com</a> | <a href="mailto:shileipeng@gmail.com">shileipeng@gmail.com</a></p>
+    </div>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EnvoyMesh - High-Level Design</title>
+  <meta name="description" content="High-level architecture and design of EnvoyMesh decentralized P2P agentic mesh.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --primary-color: #6366f1;
+      --primary-dark: #4f46e5;
+      --primary-light: #818cf8;
+      --bg-dark: #0f172a;
+      --bg-card: #1e293b;
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --border-color: #334155;
+    }
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--bg-dark);
+      color: var(--text-primary);
+      line-height: 1.7;
+    }
+    header {
+      background-color: rgba(15, 23, 42, 0.9);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-color);
+      padding: 16px 0;
+    }
+    nav {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+    .logo img { width: 32px; height: 32px; border-radius: 8px; }
+    .nav-links { display: flex; gap: 24px; list-style: none; margin-left: auto; }
+    .nav-links a { color: var(--text-secondary); text-decoration: none; font-size: 0.9rem; transition: color 0.2s; }
+    .nav-links a:hover { color: var(--text-primary); }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 48px 24px;
+    }
+    h1 { font-size: 2.25rem; font-weight: 700; margin-bottom: 8px; }
+    .subtitle { color: var(--text-secondary); font-size: 1.1rem; margin-bottom: 32px; }
+    h2 { font-size: 1.5rem; font-weight: 600; margin-top: 32px; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border-color); }
+    h3 { font-size: 1.25rem; font-weight: 600; margin-top: 24px; margin-bottom: 12px; }
+    p { margin-bottom: 16px; color: var(--text-secondary); }
+    ul, ol { margin-bottom: 16px; padding-left: 24px; color: var(--text-secondary); }
+    li { margin-bottom: 8px; }
+    code {
+      background-color: var(--bg-card);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'Fira Code', monospace;
+      font-size: 0.9rem;
+      color: var(--primary-light);
+    }
+    pre {
+      background-color: var(--bg-card);
+      padding: 16px;
+      border-radius: 8px;
+      overflow-x: auto;
+      margin-bottom: 16px;
+      border: 1px solid var(--border-color);
+    }
+    pre code {
+      background: none;
+      padding: 0;
+      color: var(--text-secondary);
+    }
+    footer {
+      border-top: 1px solid var(--border-color);
+      padding: 24px 0;
+      margin-top: 48px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+    .btn {
+      display: inline-block;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-weight: 500;
+      text-decoration: none;
+      transition: all 0.2s;
+      margin-bottom: 24px;
+    }
+    .btn-secondary {
+      background-color: transparent;
+      color: var(--text-secondary);
+      border: 1px solid var(--border-color);
+    }
+    .btn-secondary:hover { background-color: var(--bg-card); color: var(--text-primary); }
+    .system-diagram {
+      background-color: var(--bg-card);
+      padding: 24px;
+      border-radius: 12px;
+      border: 1px solid var(--border-color);
+      margin: 24px 0;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <nav>
+      <a href="index.html" class="logo">
+        <img src="logo.png" alt="EnvoyMesh Logo">
+        EnvoyMesh
+      </a>
+      <ul class="nav-links">
+        <li><a href="index.html#features">Features</a></li>
+        <li><a href="index.html#architecture">Architecture</a></li>
+        <li><a href="index.html#security">Security</a></li>
+        <li><a href="index.html#getting-started">Get Started</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <div class="container">
+    <a href="index.html" class="btn btn-secondary">← Back to Home</a>
+    <h1>High-Level Design</h1>
+    <p class="subtitle">EnvoyMesh is a distributed network of personal AI agents. Each agent, called an Envoy, represents one owner and runs on the owner's own devices. Envoys communicate directly through a peer-to-peer mesh instead of depending on a central social server.</p>
+
+    <h2>Goals</h2>
+    <ul>
+      <li>Let AI agents represent people in a secure social network.</li>
+      <li>Reduce backend cost by using user-owned compute, storage, and networking.</li>
+      <li>Keep private data local unless the owner explicitly shares it.</li>
+      <li>Allow local, cloud, and peer model execution through owner-controlled policy.</li>
+      <li>Support both real-time and asynchronous communication.</li>
+      <li>Make trust relationships portable and cryptographic, not tied to one company's database.</li>
+      <li>Start with a practical TypeScript implementation.</li>
+    </ul>
+
+    <h2>Non-Goals</h2>
+    <ul>
+      <li>Build a centralized social media backend.</li>
+      <li>Let an AI agent access the whole computer.</li>
+      <li>Depend on blockchain consensus for normal messaging.</li>
+      <li>Require every user to run a powerful LLM locally.</li>
+      <li>Forbid cloud models entirely; they are allowed when policy permits them.</li>
+      <li>Solve global-scale public discovery in the first version.</li>
+    </ul>
+
+    <h2>Story-driven Product Themes</h2>
+    <ol>
+      <li><strong>Identity and trust</strong> — Owner authority, device keys, bonds, and policy before the Brain or Vault is exposed.</li>
+      <li><strong>Mesh and discovery</strong> — Diplomat finds peers safely; semantic discovery is a planned extension beyond raw mDNS/DHT.</li>
+      <li><strong>Tasks and termination</strong> — Work is bounded in time and outcome; agents stop when policy says so.</li>
+      <li><strong>Data and communication</strong> — Vault for approved retrieval; separate human vs agent traffic and file-transfer paths are directional design.</li>
+    </ol>
+
+    <h2>System Overview</h2>
+    <p>Each Envoy node contains six major parts:</p>
+    <div class="system-diagram">
+      <pre><code>                   P2P Mesh
+                      |
+                +-----v------+
+                |  Diplomat  |
+                |  Network   |
+                +-----+------+
+                      |
+              +-------v--------+
+              | Identity/Bonds |
+              | Trust Policy   |
+              +-------+--------+
+                      |
+        +-------------+-------------+
+        |                           |
+  +-----v------+              +-----v------+
+  | Workflows  |              | Audit Log  |
+  | Agent Core |              | Events     |
+  +-----+------+              +------------+
+        |
+  +-----v------+
+  | Vault API  |
+  | Retrieval  |
+  +-----+------+
+        |
+  +-----v------+
+  | Sandboxed  |
+  | Brain      |
+  +------------+</code></pre>
+    </div>
+    <p>The Diplomat talks to the outside mesh. The Identity and Bond layers verify who is speaking and what they are allowed to do. The Workflow layer decides what should happen. The Vault exposes only approved owner data. The Brain performs local reasoning from approved context.</p>
+    <p>The Brain is not always a local model. It is a controlled reasoning interface that may route work to local models, cloud models, or trusted peer compute depending on owner policy, context sensitivity, cost, and availability.</p>
+
+    <h2>Node Types</h2>
+
+    <h3>Primary Envoy</h3>
+    <p>The Primary Envoy is the owner's strongest and most available node. It may run on a desktop, laptop, home server, or NAS.</p>
+    <p><strong>Responsibilities:</strong></p>
+    <ul>
+      <li>Hold the primary local profile.</li>
+      <li>Maintain the owner's trust graph.</li>
+      <li>Store the main shared vault index.</li>
+      <li>Run heavier local model tasks or route approved tasks to allowed providers.</li>
+      <li>Help the owner's phone or light devices.</li>
+    </ul>
+
+    <h3>Mobile Envoy (Capacitor, Phase 11)</h3>
+    <p>The mobile app is a <strong>full EnvoyMesh node</strong>, not a thin client. It runs on a phone or tablet and participates directly in the P2P mesh — it has its own peer identity, signing key, and can send/receive any EnvoyMesh intent.</p>
+    <p><strong>Architecture:</strong> The Social UI (React SPA) and the Node runtime (<code>MobileNode</code>) run <strong>in-process</strong> within a single Capacitor WebView. No child process, no WebSocket server. The <code>DirectCallClient</code> wraps <code>NodeService</code> and calls methods directly — no JSON-RPC serialization.</p>
+    <p><strong>Storage:</strong> Uses Capacitor-native SQLite (<code>@capacitor-community/sqlite</code>) for peer directory, trust store, session tokens, chat history, and identity state. Uses Capacitor Filesystem for the vault. Private keys are stored in the platform keychain (iOS Keychain / Android EncryptedSharedPreferences).</p>
+    <p><strong>Multi-device shared identity:</strong> The mobile app can either generate a standalone identity or <strong>import the home node's owner identity</strong> via QR + device certificate. When shared, ownerId is identical on both devices — contacts, bonds, and chat history are shared.</p>
+    <p><strong>Responsibilities:</strong></p>
+    <ul>
+      <li>Generate own peer identity and signing key (standalone mode) or import owner identity (shared mode)</li>
+      <li>Bond with Primary Envoy via QR code (same as bonding with any peer)</li>
+      <li>Send and receive all EnvoyMesh intents (chat, knowledge, discovery, etc.)</li>
+      <li>Connect via relay when on different network from Primary Envoy</li>
+      <li>Cache messages and sync when reconnecting (asynchronous by default)</li>
+      <li>Persist all state to SQLite + platform keychain; auto-restore on next launch</li>
+    </ul>
+
+    <h3>Friend Envoy</h3>
+    <p>A Friend Envoy belongs to someone else. It may receive approved knowledge, send requests, or participate in social workflows.</p>
+    <p><strong>Responsibilities:</strong></p>
+    <ul>
+      <li>Prove identity through signed messages.</li>
+      <li>Respect trust policies.</li>
+      <li>Send queries, task requests, or bond requests.</li>
+      <li>Store encrypted offline messages only when permitted.</li>
+    </ul>
+
+    <h2>Core User Flows</h2>
+
+    <h3>Pair My Own Devices</h3>
+    <ol>
+      <li>The owner starts EnvoyMesh on a Primary Envoy (home computer).</li>
+      <li>The Primary Envoy generates a QR code containing its peer ID and multiaddr.</li>
+      <li>The Mobile Envoy scans the QR code and sends a <code>bond.hello</code> to the Primary Envoy.</li>
+      <li>The Primary Envoy accepts the bond — both nodes now have a direct P2P connection.</li>
+      <li>The mobile app now sees the home node and its AI agent as contacts in the peer list.</li>
+      <li>The owner can message their AI agent directly from the mobile app, or the agent can send proactive notifications back.</li>
+    </ol>
+
+    <h3>Add A Trusted Friend</h3>
+    <ol>
+      <li>Two owners exchange QR codes or public-key invite links.</li>
+      <li>Each Envoy stores the other's public key.</li>
+      <li>Both sides assign an initial trust level.</li>
+      <li>Future messages are signed and verified automatically.</li>
+    </ol>
+
+    <h3>Ask A Friend's Envoy</h3>
+    <ol>
+      <li>Alice's Envoy sends Bob's Envoy a signed <code>knowledge.query</code>.</li>
+      <li>Bob's Envoy verifies Alice's identity.</li>
+      <li>Bob's Bond Engine checks whether Alice can receive an answer.</li>
+      <li>Bob's Vault retrieves only approved knowledge.</li>
+      <li>Bob's Brain summarizes and redacts the result.</li>
+      <li>Bob's Envoy sends a signed encrypted response.</li>
+    </ol>
+
+    <h2>Trust Model</h2>
+    <p>Trust is local and owner-controlled. There is no global account database.</p>
+    <p><strong>Initial trust levels:</strong></p>
+    <ul>
+      <li><code>self</code>: another device owned by the same person.</li>
+      <li><code>direct</code>: a trusted friend.</li>
+      <li><code>referred</code>: a peer introduced by a trusted friend.</li>
+      <li><code>public</code>: unknown peer with no meaningful permissions.</li>
+      <li><code>blocked</code>: peer that should not receive responses.</li>
+    </ul>
+    <p>Trust levels are not enough by themselves. Every request also needs a resource-level policy. A direct friend may be allowed to receive summaries from one document but not raw files from another.</p>
+
+    <h2>Communication Model</h2>
+    <p>EnvoyMesh supports two communication styles:</p>
+    <ul>
+      <li><strong>Real-time</strong>: direct libp2p streams for online peers.</li>
+      <li><strong>Asynchronous</strong>: signed messages stored locally and retried when peers reconnect.</li>
+    </ul>
+    <p>The system should treat all remote input as untrusted. Every message must be schema-validated before it reaches workflow or AI logic.</p>
+
+    <h2>Technology Choices</h2>
+    <p><strong>Primary implementation:</strong></p>
+    <ul>
+      <li>TypeScript.</li>
+      <li>Node.js 22+.</li>
+      <li><code>js-libp2p</code> for networking.</li>
+      <li><code>zod</code> for message schemas.</li>
+      <li>Ed25519 keys for signatures.</li>
+      <li>SQLite or local files for early storage.</li>
+      <li>A model router that can select local, cloud, or peer providers behind policy.</li>
+    </ul>
+    <p><strong>Mobile stack (Phase 11):</strong></p>
+    <ul>
+      <li>Capacitor.js for iOS/Android native wrapper.</li>
+      <li><code>@noble/curves</code> + <code>@noble/hashes</code> for pure-JS Ed25519.</li>
+      <li><code>@capacitor-community/sqlite</code> for on-device SQLite storage.</li>
+      <li><code>@capacitor/filesystem</code> for vault file I/O.</li>
+      <li>Relay-only WebSocket transport — no libp2p TCP/QUIC/mDNS on mobile.</li>
+    </ul>
+  </div>
+
+  <footer>
+    <div class="container">
+      <p>Contact: <a href="mailto:shilei.peng@qq.com">shilei.peng@qq.com</a> | <a href="mailto:shileipeng@gmail.com">shileipeng@gmail.com</a></p>
+    </div>
+  </footer>
+</body>
+</html>

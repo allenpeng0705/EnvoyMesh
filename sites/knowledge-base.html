@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EnvoyMesh - Knowledge Base & RAG</title>
+  <meta name="description" content="Knowledge base, vault, and RAG architecture for EnvoyMesh decentralized P2P agentic mesh.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --primary-color: #6366f1;
+      --primary-dark: #4f46e5;
+      --primary-light: #818cf8;
+      --bg-dark: #0f172a;
+      --bg-card: #1e293b;
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --border-color: #334155;
+    }
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--bg-dark);
+      color: var(--text-primary);
+      line-height: 1.7;
+    }
+    header {
+      background-color: rgba(15, 23, 42, 0.9);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-color);
+      padding: 16px 0;
+    }
+    nav {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+    .logo img { width: 32px; height: 32px; border-radius: 8px; }
+    .nav-links { display: flex; gap: 24px; list-style: none; margin-left: auto; }
+    .nav-links a { color: var(--text-secondary); text-decoration: none; font-size: 0.9rem; transition: color 0.2s; }
+    .nav-links a:hover { color: var(--text-primary); }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 48px 24px;
+    }
+    h1 { font-size: 2.25rem; font-weight: 700; margin-bottom: 8px; }
+    .subtitle { color: var(--text-secondary); font-size: 1.1rem; margin-bottom: 32px; }
+    h2 { font-size: 1.5rem; font-weight: 600; margin-top: 32px; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border-color); }
+    h3 { font-size: 1.25rem; font-weight: 600; margin-top: 24px; margin-bottom: 12px; }
+    p { margin-bottom: 16px; color: var(--text-secondary); }
+    ul, ol { margin-bottom: 16px; padding-left: 24px; color: var(--text-secondary); }
+    li { margin-bottom: 8px; }
+    code {
+      background-color: var(--bg-card);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'Fira Code', monospace;
+      font-size: 0.9rem;
+      color: var(--primary-light);
+    }
+    pre {
+      background-color: var(--bg-card);
+      padding: 16px;
+      border-radius: 8px;
+      overflow-x: auto;
+      margin-bottom: 16px;
+      border: 1px solid var(--border-color);
+    }
+    pre code {
+      background: none;
+      padding: 0;
+      color: var(--text-secondary);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 16px;
+      font-size: 0.9rem;
+    }
+    th, td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border-color);
+      color: var(--text-secondary);
+    }
+    th {
+      background-color: var(--bg-card);
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+    footer {
+      border-top: 1px solid var(--border-color);
+      padding: 24px 0;
+      margin-top: 48px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+    .btn {
+      display: inline-block;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-weight: 500;
+      text-decoration: none;
+      transition: all 0.2s;
+      margin-bottom: 24px;
+    }
+    .btn-secondary {
+      background-color: transparent;
+      color: var(--text-secondary);
+      border: 1px solid var(--border-color);
+    }
+    .btn-secondary:hover { background-color: var(--bg-card); color: var(--text-primary); }
+    .system-diagram {
+      background-color: var(--bg-card);
+      padding: 24px;
+      border-radius: 12px;
+      border: 1px solid var(--border-color);
+      margin: 24px 0;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <nav>
+      <a href="index.html" class="logo">
+        <img src="logo.png" alt="EnvoyMesh Logo">
+        EnvoyMesh
+      </a>
+      <ul class="nav-links">
+        <li><a href="index.html#features">Features</a></li>
+        <li><a href="index.html#architecture">Architecture</a></li>
+        <li><a href="index.html#security">Security</a></li>
+        <li><a href="index.html#getting-started">Get Started</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <div class="container">
+    <a href="index.html" class="btn btn-secondary">← Back to Home</a>
+    <h1>Knowledge Base & RAG</h1>
+    <p class="subtitle">How EnvoyMesh stores documents, retrieves relevant snippets, and assembles LLM prompts for chat drafts, knowledge queries, and Envoy AI.</p>
+
+    <h2>Core Principles</h2>
+    <ol>
+      <li><strong>Vault is the Foundation</strong> — The EnvoyMesh vault is a local-first file store with RAG indexing. It works standalone — no plugins required.</li>
+      <li><strong>Sensitivity is Per-Item</strong> — Folders organize content. Sensitivity labels control access. The same folder can contain public and private items.</li>
+      <li><strong>Plugins are Optional Guests</strong> — EnvoyMesh owns the vault. Plugins read/write content folders but never touch internal metadata.</li>
+      <li><strong>Public Knowledge is Genuinely Public</strong> — Public items are discoverable and queryable by all EnvoyMesh peers.</li>
+    </ol>
+
+    <h2>Vault Core</h2>
+    <table>
+      <thead>
+        <tr><th>Capability</th><th>Description</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Import files</td><td>Any file type: MD, PDF, Word, images, etc.</td></tr>
+        <tr><td>Create notes</td><td>Native Markdown editor (no plugin needed)</td></tr>
+        <tr><td>RAG indexing</td><td>Vector + lexical + hybrid modes</td></tr>
+        <tr><td>Embedding search</td><td>Configurable embedding provider</td></tr>
+        <tr><td>Sensitivity labels</td><td>Public / friends / private per item</td></tr>
+        <tr><td>Publish/share</td><td>Toggle items public for mesh-wide discovery</td></tr>
+        <tr><td>Knowledge queries</td><td>Peers can query public items via <code>knowledge.query</code></td></tr>
+      </tbody>
+    </table>
+
+    <h3>Sensitivity Levels</h3>
+    <table>
+      <thead>
+        <tr><th>Item</th><th>Owner</th><th>Bonded</th><th>Stranger</th><th>Agent</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Public items</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+        <tr><td>Friends items</td><td>✅</td><td>✅</td><td>❌</td><td>✅</td></tr>
+        <tr><td>Private items</td><td>✅</td><td>❌</td><td>❌</td><td>✅</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Obsidian Integration</h2>
+    <p>Add Obsidian-style knowledge management to the vault without requiring users to switch apps. Users who already use Obsidian can point the plugin at their vault. Users who don't can use the native vault features.</p>
+    <h3>How It Works</h3>
+    <ol>
+      <li><strong>Vault directory is shared</strong> — EnvoyMesh vault root is also the Obsidian vault</li>
+      <li><strong>Frontmatter parsing</strong> extracts metadata → enriches vault index</li>
+      <li><strong>Link graph</strong> built from <code>[[wiki-links]]</code> → exposed to agent</li>
+      <li><strong>File watcher</strong> monitors changes → triggers re-index</li>
+    </ol>
+
+    <h3>Frontmatter Integration</h3>
+    <p>Obsidian notes can declare sensitivity in frontmatter:</p>
+    <pre><code>---
+title: LLM Benchmarks 2025
+tags: [ai, llm, benchmarks]
+aliases: [AI Model Comparison]
+published: true
+date: 2025-06-15
+---</code></pre>
+
+    <table>
+      <thead>
+        <tr><th>Frontmatter Field</th><th>Maps To</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>published: true/false</code></td><td>Sensitivity override</td></tr>
+        <tr><td><code>tags: [...]</code></td><td>Enriches vault index metadata</td></tr>
+        <tr><td><code>aliases: [...]</code></td><td>Alternative titles for search</td></tr>
+        <tr><td><code>date:</code></td><td>Creation date for sorting</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Public Knowledge Mesh</h2>
+    <p>Public vault items are discoverable and queryable by <strong>all</strong> EnvoyMesh peers, not just bonded contacts.</p>
+
+    <h3>Access Control</h3>
+    <table>
+      <thead>
+        <tr><th>Peer Type</th><th>Can Query</th><th>Items Returned</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Owner</td><td>✅</td><td>Public + friends + private</td></tr>
+        <tr><td>Bonded contact</td><td>✅</td><td>Public + friends</td></tr>
+        <tr><td>Stranger</td><td>✅</td><td>Public only</td></tr>
+        <tr><td>Unknown</td><td>❌</td><td>None</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Rate Limiting</h3>
+    <table>
+      <thead>
+        <tr><th>Peer Type</th><th>Rate Limit</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Bonded contact</td><td>Standard (per-contact)</td></tr>
+        <tr><td>Stranger</td><td>Strict (e.g. 5 queries/minute, 50/hour)</td></tr>
+        <tr><td>Unknown</td><td>Rejected</td></tr>
+      </tbody>
+    </table>
+
+    <h2>RAG Pipeline</h2>
+    <p>LLM prompts are assembled from multiple context sources:</p>
+    <div class="system-diagram">
+      <pre><code>┌─────────────────────────────────────────────────────────────────┐
+│                        LLM prompt (one call)                       │
+├─────────────────────────────────────────────────────────────────┤
+│ 1. Agent identity (agent-identity.md)                           │
+│ 2. AI identity mode (invisible / transparent / defensive)       │
+│ 3. Rules / status / bond permissions                            │
+│ 4. Relationship + human profile context                         │
+│ 5. Recent chat messages + RAG hits from older chat              │
+│ 6. Vault knowledge snippets (RAG)                               │
+│ 7. External MCP knowledge (if configured)                       │
+│ 8. User query or inbound message                                │
+└─────────────────────────────────────────────────────────────────┘</code></pre>
+    </div>
+
+    <h2>Supported File Formats</h2>
+    <p><strong>Native text</strong> (read directly): <code>.txt</code>, <code>.md</code>, <code>.json</code>, <code>.csv</code></p>
+    <p><strong>Extracted text</strong> (parsed at index time): <code>.pdf</code>, <code>.docx</code>, <code>.doc</code>, <code>.pptx</code>, <code>.ppt</code>, <code>.xlsx</code>, <code>.xls</code>, <code>.html</code>, <code>.htm</code>, <code>.rtf</code></p>
+
+    <h2>Operations</h2>
+    <h3>Add Documents</h3>
+    <ol>
+      <li>Import files: Library tab → Import (or drag & drop)</li>
+      <li>Create notes: Notes section → New note (native Markdown editor)</li>
+      <li>Files are indexed incrementally — no restart needed</li>
+    </ol>
+    <h3>Share Public Knowledge</h3>
+    <ol>
+      <li>Library tab → select item → toggle Published</li>
+      <li>Public items are advertised to the mesh for discovery</li>
+      <li>Any peer can query your public items (rate-limited for strangers)</li>
+    </ol>
+  </div>
+
+  <footer>
+    <div class="container">
+      <p>Contact: <a href="mailto:shilei.peng@qq.com">shilei.peng@qq.com</a> | <a href="mailto:shileipeng@gmail.com">shileipeng@gmail.com</a></p>
+    </div>
+  </footer>
+</body>
+</html>

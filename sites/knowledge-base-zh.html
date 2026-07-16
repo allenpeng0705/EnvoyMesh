@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EnvoyMesh - 知识库与 RAG</title>
+  <meta name="description" content="EnvoyMesh 去中心化 P2P 智能体网络的知识库、保险箱和 RAG 架构。">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --primary-color: #6366f1;
+      --primary-dark: #4f46e5;
+      --primary-light: #818cf8;
+      --bg-dark: #0f172a;
+      --bg-card: #1e293b;
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --border-color: #334155;
+    }
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--bg-dark);
+      color: var(--text-primary);
+      line-height: 1.7;
+    }
+    header {
+      background-color: rgba(15, 23, 42, 0.9);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-color);
+      padding: 16px 0;
+    }
+    nav {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+    .logo img { width: 32px; height: 32px; border-radius: 8px; }
+    .nav-links { display: flex; gap: 24px; list-style: none; margin-left: auto; }
+    .nav-links a { color: var(--text-secondary); text-decoration: none; font-size: 0.9rem; transition: color 0.2s; }
+    .nav-links a:hover { color: var(--text-primary); }
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 48px 24px;
+    }
+    h1 { font-size: 2.25rem; font-weight: 700; margin-bottom: 8px; }
+    .subtitle { color: var(--text-secondary); font-size: 1.1rem; margin-bottom: 32px; }
+    h2 { font-size: 1.5rem; font-weight: 600; margin-top: 32px; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border-color); }
+    h3 { font-size: 1.25rem; font-weight: 600; margin-top: 24px; margin-bottom: 12px; }
+    p { margin-bottom: 16px; color: var(--text-secondary); }
+    ul, ol { margin-bottom: 16px; padding-left: 24px; color: var(--text-secondary); }
+    li { margin-bottom: 8px; }
+    code {
+      background-color: var(--bg-card);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'Fira Code', monospace;
+      font-size: 0.9rem;
+      color: var(--primary-light);
+    }
+    pre {
+      background-color: var(--bg-card);
+      padding: 16px;
+      border-radius: 8px;
+      overflow-x: auto;
+      margin-bottom: 16px;
+      border: 1px solid var(--border-color);
+    }
+    pre code {
+      background: none;
+      padding: 0;
+      color: var(--text-secondary);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 16px;
+      font-size: 0.9rem;
+    }
+    th, td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border-color);
+      color: var(--text-secondary);
+    }
+    th {
+      background-color: var(--bg-card);
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+    footer {
+      border-top: 1px solid var(--border-color);
+      padding: 24px 0;
+      margin-top: 48px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+    .btn {
+      display: inline-block;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-weight: 500;
+      text-decoration: none;
+      transition: all 0.2s;
+      margin-bottom: 24px;
+    }
+    .btn-secondary {
+      background-color: transparent;
+      color: var(--text-secondary);
+      border: 1px solid var(--border-color);
+    }
+    .btn-secondary:hover { background-color: var(--bg-card); color: var(--text-primary); }
+    .system-diagram {
+      background-color: var(--bg-card);
+      padding: 24px;
+      border-radius: 12px;
+      border: 1px solid var(--border-color);
+      margin: 24px 0;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <nav>
+      <a href="index-zh.html" class="logo">
+        <img src="logo.png" alt="EnvoyMesh Logo">
+        EnvoyMesh
+      </a>
+      <ul class="nav-links">
+        <li><a href="index-zh.html#features">特性</a></li>
+        <li><a href="index-zh.html#architecture">架构</a></li>
+        <li><a href="index-zh.html#security">安全</a></li>
+        <li><a href="index-zh.html#getting-started">开始使用</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <div class="container">
+    <a href="index-zh.html" class="btn btn-secondary">← 返回主页</a>
+    <h1>知识库与 RAG</h1>
+    <p class="subtitle">EnvoyMesh 如何存储文档、检索相关片段，并为聊天草稿、知识查询和 Envoy AI 组装 LLM 提示。</p>
+
+    <h2>核心原则</h2>
+    <ol>
+      <li><strong>保险箱是基础</strong> —— EnvoyMesh 保险箱是一个本地优先的文件存储，带有 RAG 索引。它可以独立工作 —— 无需插件。</li>
+      <li><strong>敏感度是逐项的</strong> —— 文件夹组织内容。敏感度标签控制访问。同一个文件夹可以包含公开和私有的项目。</li>
+      <li><strong>插件是可选的客人</strong> —— EnvoyMesh 拥有保险箱。插件可以读写内容文件夹，但从不接触内部元数据。</li>
+      <li><strong>公共知识是真正公开的</strong> —— 公共项目可被所有 EnvoyMesh 对等方发现和查询。</li>
+    </ol>
+
+    <h2>保险箱核心</h2>
+    <table>
+      <thead>
+        <tr><th>功能</th><th>描述</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>导入文件</td><td>任何文件类型：MD、PDF、Word、图片等</td></tr>
+        <tr><td>创建笔记</td><td>原生 Markdown 编辑器（无需插件）</td></tr>
+        <tr><td>RAG 索引</td><td>向量 + 词法 + 混合模式</td></tr>
+        <tr><td>嵌入搜索</td><td>可配置的嵌入提供商</td></tr>
+        <tr><td>敏感度标签</td><td>公开/朋友/私有，逐项设置</td></tr>
+        <tr><td>发布/分享</td><td>切换项目为公开以进行全网发现</td></tr>
+        <tr><td>知识查询</td><td>对等方可通过 <code>knowledge.query</code> 查询公开项目</td></tr>
+      </tbody>
+    </table>
+
+    <h3>敏感度级别</h3>
+    <table>
+      <thead>
+        <tr><th>项目</th><th>所有者</th><th>绑定联系人</th><th>陌生人</th><th>智能体</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>公开项目</td><td>✅</td><td>✅</td><td>✅</td><td>✅</td></tr>
+        <tr><td>朋友项目</td><td>✅</td><td>✅</td><td>❌</td><td>✅</td></tr>
+        <tr><td>私有项目</td><td>✅</td><td>❌</td><td>❌</td><td>✅</td></tr>
+      </tbody>
+    </table>
+
+    <h2>Obsidian 集成</h2>
+    <p>在保险箱中添加 Obsidian 风格的知识管理，无需用户切换应用。已经使用 Obsidian 的用户可以将插件指向他们的保险箱。未使用的用户可以使用原生保险箱功能。</p>
+    <h3>工作原理</h3>
+    <ol>
+      <li><strong>保险箱目录共享</strong> —— EnvoyMesh 保险箱根目录同时也是 Obsidian 保险箱</li>
+      <li><strong>Frontmatter 解析</strong> 提取元数据 → 丰富保险箱索引</li>
+      <li><strong>链接图谱</strong> 从 <code>[[wiki-links]]</code> 构建 → 暴露给智能体</li>
+      <li><strong>文件监视器</strong> 监控变化 → 触发重新索引</li>
+    </ol>
+
+    <h3>Frontmatter 集成</h3>
+    <p>Obsidian 笔记可以在 frontmatter 中声明敏感度：</p>
+    <pre><code>---
+title: LLM 基准测试 2025
+tags: [ai, llm, benchmarks]
+aliases: [AI 模型对比]
+published: true
+date: 2025-06-15
+---</code></pre>
+
+    <table>
+      <thead>
+        <tr><th>Frontmatter 字段</th><th>映射到</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>published: true/false</code></td><td>敏感度覆盖</td></tr>
+        <tr><td><code>tags: [...]</code></td><td>丰富保险箱索引元数据</td></tr>
+        <tr><td><code>aliases: [...]</code></td><td>搜索的替代标题</td></tr>
+        <tr><td><code>date:</code></td><td>排序用的创建日期</td></tr>
+      </tbody>
+    </table>
+
+    <h2>公共知识网络</h2>
+    <p>公共保险箱项目可被<strong>所有</strong> EnvoyMesh 对等方发现和查询，而不仅仅是绑定联系人。</p>
+
+    <h3>访问控制</h3>
+    <table>
+      <thead>
+        <tr><th>对等方类型</th><th>可查询</th><th>返回项目</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>所有者</td><td>✅</td><td>公开 + 朋友 + 私有</td></tr>
+        <tr><td>绑定联系人</td><td>✅</td><td>公开 + 朋友</td></tr>
+        <tr><td>陌生人</td><td>✅</td><td>仅公开</td></tr>
+        <tr><td>未知</td><td>❌</td><td>无</td></tr>
+      </tbody>
+    </table>
+
+    <h3>速率限制</h3>
+    <table>
+      <thead>
+        <tr><th>对等方类型</th><th>速率限制</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>绑定联系人</td><td>标准（按联系人）</td></tr>
+        <tr><td>陌生人</td><td>严格（如每分钟 5 次查询，每小时 50 次）</td></tr>
+        <tr><td>未知</td><td>拒绝</td></tr>
+      </tbody>
+    </table>
+
+    <h2>RAG 管道</h2>
+    <p>LLM 提示由多个上下文源组装：</p>
+    <div class="system-diagram">
+      <pre><code>┌─────────────────────────────────────────────────────────────────┐
+│                        LLM 提示（一次调用）                        │
+├─────────────────────────────────────────────────────────────────┤
+│ 1. 智能体身份 (agent-identity.md)                               │
+│ 2. AI 身份模式 (隐形 / 透明 / 防御)                             │
+│ 3. 规则 / 状态 / 绑定权限                                        │
+│ 4. 关系 + 人类档案上下文                                         │
+│ 5. 最近聊天消息 + 旧聊天的 RAG 命中                              │
+│ 6. 保险箱知识片段 (RAG)                                         │
+│ 7. 外部 MCP 知识（如已配置）                                      │
+│ 8. 用户查询或入站消息                                            │
+└─────────────────────────────────────────────────────────────────┘</code></pre>
+    </div>
+
+    <h2>支持的文件格式</h2>
+    <p><strong>原生文本</strong>（直接读取）：<code>.txt</code>、<code>.md</code>、<code>.json</code>、<code>.csv</code></p>
+    <p><strong>提取文本</strong>（索引时解析）：<code>.pdf</code>、<code>.docx</code>、<code>.doc</code>、<code>.pptx</code>、<code>.ppt</code>、<code>.xlsx</code>、<code>.xls</code>、<code>.html</code>、<code>.htm</code>、<code>.rtf</code></p>
+
+    <h2>操作</h2>
+    <h3>添加文档</h3>
+    <ol>
+      <li>导入文件：库标签 → 导入（或拖放）</li>
+      <li>创建笔记：笔记部分 → 新建笔记（原生 Markdown 编辑器）</li>
+      <li>文件增量索引 —— 无需重启</li>
+    </ol>
+    <h3>分享公共知识</h3>
+    <ol>
+      <li>库标签 → 选择项目 → 切换发布</li>
+      <li>公开项目被广告到网络进行发现</li>
+      <li>任何对等方都可以查询你的公开项目（陌生人有速率限制）</li>
+    </ol>
+  </div>
+
+  <footer>
+    <div class="container">
+      <p>联系：<a href="mailto:shilei.peng@qq.com">shilei.peng@qq.com</a> | <a href="mailto:shileipeng@gmail.com">shileipeng@gmail.com</a></p>
+    </div>
+  </footer>
+</body>
+</html>

@@ -1,0 +1,1094 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EnvoyMesh Network</title>
+  <meta name="description" content="A decentralized, peer-to-peer mesh for autonomous AI agents. Your identity is cryptographic, your AI agent works for you, and security is by design.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    :root {
+      --primary-color: #6366f1;
+      --primary-dark: #4f46e5;
+      --primary-light: #818cf8;
+      --secondary-color: #06b6d4;
+      --accent-color: #f59e0b;
+      --bg-dark: #0f172a;
+      --bg-card: #1e293b;
+      --bg-card-hover: #334155;
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --border-color: #334155;
+      --gradient-primary: linear-gradient(135deg, #6366f1 0%, #06b6d4 100%);
+      --gradient-secondary: linear-gradient(135deg, #4f46e5 0%, #3b82f6 100%);
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background-color: var(--bg-dark);
+      color: var(--text-primary);
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    ::selection {
+      background-color: var(--primary-color);
+      color: white;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* Header */
+    header {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      background-color: rgba(15, 23, 42, 0.9);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-color);
+      transition: all 0.3s ease;
+    }
+
+    header.scrolled {
+      background-color: rgba(15, 23, 42, 0.95);
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 64px;
+    }
+
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--text-primary);
+      font-weight: 600;
+      font-size: 1.25rem;
+    }
+
+    .logo img {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+    }
+
+    .nav-links {
+      display: flex;
+      gap: 24px;
+      list-style: none;
+    }
+
+    .nav-links a {
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 400;
+      transition: color 0.2s ease;
+    }
+
+    .nav-links a:hover {
+      color: var(--text-primary);
+    }
+
+    .nav-actions {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+    }
+
+    .btn {
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-weight: 500;
+      font-size: 0.9rem;
+      text-decoration: none;
+      transition: all 0.2s ease;
+      border: none;
+      cursor: pointer;
+    }
+
+    .btn-primary {
+      background: var(--gradient-primary);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 4px 20px rgba(99, 102, 241, 0.3);
+    }
+
+    .btn-secondary {
+      background-color: transparent;
+      color: var(--text-secondary);
+      border: 1px solid var(--border-color);
+    }
+
+    .btn-secondary:hover {
+      background-color: var(--bg-card);
+      color: var(--text-primary);
+    }
+
+    /* Hero Section */
+    .hero {
+      padding: 120px 0 80px;
+      text-align: center;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: -50%;
+      left: -50%;
+      width: 200%;
+      height: 200%;
+      background: radial-gradient(circle at 30% 30%, rgba(99, 102, 241, 0.15) 0%, transparent 50%),
+                  radial-gradient(circle at 70% 70%, rgba(6, 182, 212, 0.1) 0%, transparent 50%);
+      animation: float 20s ease-in-out infinite;
+    }
+
+    @keyframes float {
+      0%, 100% { transform: translate(0, 0); }
+      50% { transform: translate(20px, -20px); }
+    }
+
+    .hero-content {
+      position: relative;
+      z-index: 1;
+    }
+
+    .hero-logo {
+      width: 80px;
+      height: 80px;
+      border-radius: 16px;
+      margin-bottom: 24px;
+      box-shadow: 0 8px 32px rgba(99, 102, 241, 0.3);
+    }
+
+    .hero h1 {
+      font-size: 3.5rem;
+      font-weight: 700;
+      margin-bottom: 16px;
+      background: var(--gradient-primary);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .hero p {
+      font-size: 1.25rem;
+      color: var(--text-secondary);
+      max-width: 600px;
+      margin: 0 auto 32px;
+      line-height: 1.8;
+    }
+
+    .hero-stats {
+      display: flex;
+      justify-content: center;
+      gap: 48px;
+      margin-top: 48px;
+    }
+
+    .stat-item {
+      text-align: center;
+    }
+
+    .stat-value {
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--primary-light);
+    }
+
+    .stat-label {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    /* Features Section */
+    .features {
+      padding: 80px 0;
+    }
+
+    .section-header {
+      text-align: center;
+      margin-bottom: 64px;
+    }
+
+    .section-header h2 {
+      font-size: 2.5rem;
+      font-weight: 700;
+      margin-bottom: 16px;
+    }
+
+    .section-header p {
+      font-size: 1.1rem;
+      color: var(--text-secondary);
+      max-width: 500px;
+      margin: 0 auto;
+    }
+
+    .features-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 24px;
+    }
+
+    .feature-card {
+      background-color: var(--bg-card);
+      border-radius: 16px;
+      padding: 32px;
+      border: 1px solid var(--border-color);
+      transition: all 0.3s ease;
+    }
+
+    .feature-card:hover {
+      transform: translateY(-4px);
+      border-color: var(--primary-color);
+      box-shadow: 0 8px 32px rgba(99, 102, 241, 0.1);
+    }
+
+    .feature-icon {
+      width: 48px;
+      height: 48px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 20px;
+      font-size: 1.5rem;
+    }
+
+    .feature-icon.blue {
+      background-color: rgba(59, 130, 246, 0.1);
+      color: #3b82f6;
+    }
+
+    .feature-icon.green {
+      background-color: rgba(34, 197, 94, 0.1);
+      color: #22c55e;
+    }
+
+    .feature-icon.purple {
+      background-color: rgba(168, 85, 247, 0.1);
+      color: #a855f7;
+    }
+
+    .feature-icon.cyan {
+      background-color: rgba(6, 182, 212, 0.1);
+      color: #06b6d4;
+    }
+
+    .feature-icon.orange {
+      background-color: rgba(249, 115, 22, 0.1);
+      color: #f97316;
+    }
+
+    .feature-icon.pink {
+      background-color: rgba(236, 72, 153, 0.1);
+      color: #ec4899;
+    }
+
+    .feature-card h3 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 12px;
+    }
+
+    .feature-card p {
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+      line-height: 1.7;
+    }
+
+    /* Architecture Section */
+    .architecture {
+      padding: 80px 0;
+      background-color: var(--bg-card);
+    }
+
+    .architecture-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 48px;
+      align-items: center;
+    }
+
+    .arch-diagram {
+      position: relative;
+      background-color: var(--bg-dark);
+      border-radius: 16px;
+      padding: 32px;
+      border: 1px solid var(--border-color);
+    }
+
+    .arch-layer {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 16px 20px;
+      margin-bottom: 12px;
+      background-color: var(--bg-card);
+      border-radius: 8px;
+      border-left: 4px solid var(--primary-color);
+    }
+
+    .arch-layer:last-child {
+      margin-bottom: 0;
+    }
+
+    .arch-layer.cyan { border-left-color: var(--secondary-color); }
+    .arch-layer.green { border-left-color: #22c55e; }
+    .arch-layer.orange { border-left-color: #f97316; }
+    .arch-layer.purple { border-left-color: #a855f7; }
+
+    .arch-layer-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+      background-color: rgba(99, 102, 241, 0.1);
+      color: var(--primary-light);
+    }
+
+    .arch-layer h4 {
+      font-weight: 600;
+      font-size: 1rem;
+    }
+
+    .arch-layer p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    /* Security Section */
+    .security {
+      padding: 80px 0;
+    }
+
+    .security-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 24px;
+    }
+
+    .security-card {
+      background-color: var(--bg-card);
+      border-radius: 16px;
+      padding: 28px;
+      border: 1px solid var(--border-color);
+      text-align: center;
+    }
+
+    .security-card svg {
+      width: 40px;
+      height: 40px;
+      margin-bottom: 16px;
+    }
+
+    .security-card h3 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+    }
+
+    .security-card p {
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+    }
+
+    /* Getting Started */
+    .getting-started {
+      padding: 80px 0;
+      background: var(--gradient-secondary);
+    }
+
+    .getting-started .container {
+      text-align: center;
+    }
+
+    .getting-started h2 {
+      font-size: 2.5rem;
+      font-weight: 700;
+      margin-bottom: 16px;
+      color: white;
+    }
+
+    .getting-started p {
+      font-size: 1.1rem;
+      color: rgba(255, 255, 255, 0.8);
+      max-width: 500px;
+      margin: 0 auto 32px;
+    }
+
+    .code-block {
+      background-color: rgba(0, 0, 0, 0.3);
+      border-radius: 12px;
+      padding: 24px;
+      text-align: left;
+      margin-bottom: 32px;
+      overflow-x: auto;
+    }
+
+    .code-block code {
+      font-family: 'Fira Code', 'Monaco', monospace;
+      font-size: 0.9rem;
+      color: #e2e8f0;
+    }
+
+    /* Footer */
+    footer {
+      padding: 48px 0 24px;
+      border-top: 1px solid var(--border-color);
+    }
+
+    .footer-content {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 24px;
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 24px;
+      list-style: none;
+    }
+
+    .footer-links a {
+      color: var(--text-muted);
+      text-decoration: none;
+      font-size: 0.9rem;
+      transition: color 0.2s ease;
+    }
+
+    .footer-links a:hover {
+      color: var(--text-secondary);
+    }
+
+    .footer-contact {
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+
+    .footer-contact a {
+      color: var(--text-secondary);
+      text-decoration: none;
+    }
+
+    .footer-contact a:hover {
+      color: var(--text-primary);
+    }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .nav-links {
+        display: none;
+      }
+
+      .hero h1 {
+        font-size: 2.25rem;
+      }
+
+      .hero p {
+        font-size: 1.1rem;
+      }
+
+      .hero-stats {
+        gap: 24px;
+      }
+
+      .stat-value {
+        font-size: 1.5rem;
+      }
+
+      .section-header h2 {
+        font-size: 1.75rem;
+      }
+
+      .architecture-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .getting-started h2 {
+        font-size: 1.75rem;
+      }
+
+      .footer-content {
+        flex-direction: column;
+        text-align: center;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- Header -->
+  <header>
+    <nav class="container">
+      <a href="#" class="logo">
+        <img src="logo.png" alt="EnvoyMesh Logo">
+        EnvoyMesh
+      </a>
+      <ul class="nav-links">
+        <li><a href="#features">Features</a></li>
+        <li><a href="#architecture">Architecture</a></li>
+        <li><a href="#security">Security</a></li>
+        <li><a href="#getting-started">Get Started</a></li>
+      </ul>
+      <div class="nav-actions">
+        <a href="index-zh.html" class="btn btn-secondary">中文</a>
+        <a href="https://github.com/allenpeng0705/EnvoyMesh" target="_blank" class="btn btn-secondary">GitHub</a>
+        <a href="#getting-started" class="btn btn-primary">Install Now</a>
+      </div>
+    </nav>
+  </header>
+
+  <!-- Hero Section -->
+  <section class="hero">
+    <div class="container hero-content">
+      <img src="logo-180.png" alt="EnvoyMesh Logo" class="hero-logo">
+      <h1>Decentralized P2P Agentic Mesh</h1>
+      <p>A distributed social network, agent network, and knowledge sharing system. Chat peer-to-peer, run AI agents locally with OpenClaw, connect external agents, and access everything from anywhere.</p>
+      <div class="nav-actions" style="justify-content: center;">
+        <a href="https://github.com/allenpeng0705/EnvoyMesh" target="_blank" class="btn btn-primary">View on GitHub</a>
+        <a href="#getting-started" class="btn btn-secondary">Quick Start</a>
+      </div>
+      <div class="hero-stats">
+        <div class="stat-item">
+          <div class="stat-value">Open Source</div>
+          <div class="stat-label">MIT License</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value">Mac/Linux/Windows</div>
+          <div class="stat-label">EnvoyMesh Desktop</div>
+        </div>
+        <div class="stat-item">
+          <div class="stat-value">iOS/Android</div>
+          <div class="stat-label">EnvoyGo Mobile</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- System Architecture Section -->
+  <section class="architecture" style="padding: 60px 0;">
+    <div class="container">
+      <div class="section-header">
+        <h2>System Architecture</h2>
+        <p>A decentralized mesh where every node is a fully-capable peer.</p>
+      </div>
+      <div style="display: flex; justify-content: center; margin-top: 32px;">
+        <div style="max-width: 950px; width: 100%;">
+          <svg viewBox="0 0 950 600" style="width: 100%; height: auto;">
+            <defs>
+              <linearGradient id="meshGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" style="stop-color:#6366f1;stop-opacity:0.3" />
+                <stop offset="100%" style="stop-color:#06b6d4;stop-opacity:0.3" />
+              </linearGradient>
+              <filter id="glow">
+                <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+                <feMerge>
+                  <feMergeNode in="coloredBlur"/>
+                  <feMergeNode in="SourceGraphic"/>
+                </feMerge>
+              </filter>
+              <marker id="arrowhead" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+                <polygon points="0 0, 8 2.5, 0 5" fill="#6366f1" />
+              </marker>
+              <marker id="arrowheadCyan" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+                <polygon points="0 0, 8 2.5, 0 5" fill="#06b6d4" />
+              </marker>
+              <marker id="arrowheadPurple" markerWidth="8" markerHeight="5" refX="7" refY="2.5" orient="auto">
+                <polygon points="0 0, 8 2.5, 0 5" fill="#a855f7" />
+              </marker>
+            </defs>
+            
+            <!-- P2P Mesh Network Background -->
+            <g opacity="0.08">
+              <circle cx="180" cy="100" r="120" fill="none" stroke="#6366f1" stroke-width="2" />
+              <circle cx="770" cy="100" r="120" fill="none" stroke="#a855f7" stroke-width="2" />
+              <circle cx="475" cy="500" r="150" fill="none" stroke="#06b6d4" stroke-width="2" />
+              <line x1="100" y1="50" x2="850" y2="50" stroke="#6366f1" stroke-width="1" />
+              <line x1="150" y1="20" x2="800" y2="80" stroke="#06b6d4" stroke-width="1" />
+              <line x1="200" y1="80" x2="750" y2="30" stroke="#a855f7" stroke-width="1" />
+            </g>
+
+            <!-- P2P Mesh Header -->
+            <text x="475" y="40" text-anchor="middle" font-size="16" font-weight="600" fill="#f8fafc">EnvoyMesh Network</text>
+            <line x1="200" y1="55" x2="750" y2="55" stroke="#334155" stroke-width="2" stroke-dasharray="5,5" />
+
+            <!-- Primary Envoy Node (Desktop) -->
+            <g transform="translate(80, 70)">
+              <rect x="0" y="0" width="200" height="440" rx="12" fill="#1e293b" stroke="#6366f1" stroke-width="2" filter="url(#glow)" />
+              <text x="100" y="25" text-anchor="middle" font-size="14" font-weight="600" fill="#6366f1">Primary Envoy</text>
+              <text x="100" y="45" text-anchor="middle" font-size="11" fill="#94a3b8">Desktop / Home Server</text>
+              <line x1="20" y1="55" x2="180" y2="55" stroke="#334155" stroke-width="1" />
+              
+              <!-- Diplomat Layer -->
+              <rect x="25" y="70" width="150" height="50" rx="6" fill="rgba(99,102,241,0.2)" stroke="#6366f1" stroke-width="1" />
+              <text x="100" y="92" text-anchor="middle" font-size="11" font-weight="600" fill="#818cf8">Diplomat</text>
+              <text x="100" y="108" text-anchor="middle" font-size="9" fill="#94a3b8">Network / libp2p</text>
+              
+              <!-- Identity/Bonds Layer -->
+              <rect x="25" y="135" width="150" height="50" rx="6" fill="rgba(6,182,212,0.2)" stroke="#06b6d4" stroke-width="1" />
+              <text x="100" y="157" text-anchor="middle" font-size="11" font-weight="600" fill="#22d3ee">Identity / Bonds</text>
+              <text x="100" y="173" text-anchor="middle" font-size="9" fill="#94a3b8">Trust Policy</text>
+              
+              <!-- Workflows/Agent Core Layer -->
+              <rect x="25" y="200" width="150" height="50" rx="6" fill="rgba(34,197,94,0.2)" stroke="#22c55e" stroke-width="1" />
+              <text x="100" y="222" text-anchor="middle" font-size="11" font-weight="600" fill="#4ade80">Workflows</text>
+              <text x="100" y="238" text-anchor="middle" font-size="9" fill="#94a3b8">OpenClaw Agent</text>
+              
+              <!-- Vault API Layer -->
+              <rect x="25" y="265" width="150" height="50" rx="6" fill="rgba(249,115,22,0.2)" stroke="#f97316" stroke-width="1" />
+              <text x="100" y="287" text-anchor="middle" font-size="11" font-weight="600" fill="#fb923c">Vault API</text>
+              <text x="100" y="303" text-anchor="middle" font-size="9" fill="#94a3b8">Knowledge Retrieval</text>
+              
+              <!-- Sandboxed Brain Layer -->
+              <rect x="25" y="330" width="150" height="50" rx="6" fill="rgba(168,85,247,0.2)" stroke="#a855f7" stroke-width="1" />
+              <text x="100" y="352" text-anchor="middle" font-size="11" font-weight="600" fill="#c084fc">Sandboxed Brain</text>
+              <text x="100" y="368" text-anchor="middle" font-size="9" fill="#94a3b8">Local LLM / AI</text>
+              
+              <!-- Audit Log -->
+              <rect x="25" y="395" width="150" height="35" rx="6" fill="rgba(148,163,184,0.2)" stroke="#64748b" stroke-width="1" />
+              <text x="100" y="415" text-anchor="middle" font-size="10" font-weight="600" fill="#94a3b8">Audit Log</text>
+              
+              <!-- Internal flow arrows -->
+              <line x1="100" y1="120" x2="100" y2="135" stroke="#6366f1" stroke-width="2" marker-end="url(#arrowhead)" class="internal-flow" />
+              <line x1="100" y1="185" x2="100" y2="200" stroke="#06b6d4" stroke-width="2" marker-end="url(#arrowheadCyan)" class="internal-flow-delay" />
+              <line x1="100" y1="250" x2="100" y2="265" stroke="#22c55e" stroke-width="2" marker-end="url(#arrowhead)" class="internal-flow-delay-2" />
+              <line x1="100" y1="315" x2="100" y2="330" stroke="#f97316" stroke-width="2" marker-end="url(#arrowhead)" class="internal-flow-delay-3" />
+              <line x1="100" y1="380" x2="100" y2="395" stroke="#a855f7" stroke-width="2" marker-end="url(#arrowheadPurple)" class="internal-flow-delay-4" />
+            </g>
+
+            <!-- EnvoyGo Mobile Node -->
+            <g transform="translate(320, 180)">
+              <rect x="0" y="0" width="120" height="280" rx="12" fill="#1e293b" stroke="#06b6d4" stroke-width="2" filter="url(#glow)" />
+              <text x="60" y="22" text-anchor="middle" font-size="13" font-weight="600" fill="#06b6d4">EnvoyGo</text>
+              <text x="60" y="38" text-anchor="middle" font-size="10" fill="#94a3b8">Mobile App</text>
+              <line x1="10" y1="45" x2="110" y2="45" stroke="#334155" stroke-width="1" />
+              
+              <!-- Mobile layers -->
+              <rect x="15" y="58" width="90" height="40" rx="4" fill="rgba(6,182,212,0.2)" stroke="#06b6d4" stroke-width="1" />
+              <text x="60" y="78" text-anchor="middle" font-size="9" font-weight="600" fill="#22d3ee">Identity</text>
+              <text x="60" y="92" text-anchor="middle" font-size="8" fill="#94a3b8">Ed25519 Keys</text>
+              
+              <rect x="15" y="105" width="90" height="40" rx="4" fill="rgba(99,102,241,0.2)" stroke="#6366f1" stroke-width="1" />
+              <text x="60" y="125" text-anchor="middle" font-size="9" font-weight="600" fill="#818cf8">Chat UI</text>
+              <text x="60" y="139" text-anchor="middle" font-size="8" fill="#94a3b8">P2P Messaging</text>
+              
+              <rect x="15" y="152" width="90" height="40" rx="4" fill="rgba(249,115,22,0.2)" stroke="#f97316" stroke-width="1" />
+              <text x="60" y="172" text-anchor="middle" font-size="9" font-weight="600" fill="#fb923c">Terminal</text>
+              <text x="60" y="186" text-anchor="middle" font-size="8" fill="#94a3b8">Remote Access</text>
+              
+              <rect x="15" y="199" width="90" height="40" rx="4" fill="rgba(34,197,94,0.2)" stroke="#22c55e" stroke-width="1" />
+              <text x="60" y="219" text-anchor="middle" font-size="9" font-weight="600" fill="#4ade80">Agents</text>
+              <text x="60" y="233" text-anchor="middle" font-size="8" fill="#94a3b8">Agent Control</text>
+              
+              <!-- Internal flow arrows -->
+              <line x1="60" y1="98" x2="60" y2="105" stroke="#06b6d4" stroke-width="1.5" marker-end="url(#arrowheadCyan)" class="internal-flow" />
+              <line x1="60" y1="145" x2="60" y2="152" stroke="#6366f1" stroke-width="1.5" marker-end="url(#arrowhead)" class="internal-flow-delay" />
+              <line x1="60" y1="192" x2="60" y2="199" stroke="#f97316" stroke-width="1.5" marker-end="url(#arrowhead)" class="internal-flow-delay-2" />
+            </g>
+
+            <!-- Friend Envoy Node -->
+            <g transform="translate(480, 70)">
+              <rect x="0" y="0" width="200" height="440" rx="12" fill="#1e293b" stroke="#a855f7" stroke-width="2" filter="url(#glow)" />
+              <text x="100" y="25" text-anchor="middle" font-size="14" font-weight="600" fill="#a855f7">Friend Envoy</text>
+              <text x="100" y="45" text-anchor="middle" font-size="11" fill="#94a3b8">Remote Peer</text>
+              <line x1="20" y1="55" x2="180" y2="55" stroke="#334155" stroke-width="1" />
+              
+              <!-- Layers -->
+              <rect x="25" y="70" width="150" height="50" rx="6" fill="rgba(99,102,241,0.2)" stroke="#6366f1" stroke-width="1" />
+              <text x="100" y="92" text-anchor="middle" font-size="11" font-weight="600" fill="#818cf8">Diplomat</text>
+              <text x="100" y="108" text-anchor="middle" font-size="9" fill="#94a3b8">Network</text>
+              
+              <rect x="25" y="135" width="150" height="50" rx="6" fill="rgba(6,182,212,0.2)" stroke="#06b6d4" stroke-width="1" />
+              <text x="100" y="157" text-anchor="middle" font-size="11" font-weight="600" fill="#22d3ee">Bonds</text>
+              <text x="100" y="173" text-anchor="middle" font-size="9" fill="#94a3b8">Trust Policy</text>
+              
+              <rect x="25" y="200" width="150" height="50" rx="6" fill="rgba(34,197,94,0.2)" stroke="#22c55e" stroke-width="1" />
+              <text x="100" y="222" text-anchor="middle" font-size="11" font-weight="600" fill="#4ade80">Workflows</text>
+              <text x="100" y="238" text-anchor="middle" font-size="9" fill="#94a3b8">AI Agent</text>
+              
+              <rect x="25" y="265" width="150" height="50" rx="6" fill="rgba(249,115,22,0.2)" stroke="#f97316" stroke-width="1" />
+              <text x="100" y="287" text-anchor="middle" font-size="11" font-weight="600" fill="#fb923c">Vault</text>
+              <text x="100" y="303" text-anchor="middle" font-size="9" fill="#94a3b8">Knowledge</text>
+              
+              <rect x="25" y="330" width="150" height="50" rx="6" fill="rgba(168,85,247,0.2)" stroke="#a855f7" stroke-width="1" />
+              <text x="100" y="352" text-anchor="middle" font-size="11" font-weight="600" fill="#c084fc">Brain</text>
+              <text x="100" y="368" text-anchor="middle" font-size="9" fill="#94a3b8">LLM / AI</text>
+              
+              <rect x="25" y="395" width="150" height="35" rx="6" fill="rgba(148,163,184,0.2)" stroke="#64748b" stroke-width="1" />
+              <text x="100" y="415" text-anchor="middle" font-size="10" font-weight="600" fill="#94a3b8">Audit Log</text>
+              
+              <!-- Internal flow arrows -->
+              <line x1="100" y1="120" x2="100" y2="135" stroke="#6366f1" stroke-width="2" marker-end="url(#arrowhead)" class="internal-flow" />
+              <line x1="100" y1="185" x2="100" y2="200" stroke="#06b6d4" stroke-width="2" marker-end="url(#arrowheadCyan)" class="internal-flow-delay" />
+              <line x1="100" y1="250" x2="100" y2="265" stroke="#22c55e" stroke-width="2" marker-end="url(#arrowhead)" class="internal-flow-delay-2" />
+              <line x1="100" y1="315" x2="100" y2="330" stroke="#f97316" stroke-width="2" marker-end="url(#arrowhead)" class="internal-flow-delay-3" />
+              <line x1="100" y1="380" x2="100" y2="395" stroke="#a855f7" stroke-width="2" marker-end="url(#arrowheadPurple)" class="internal-flow-delay-4" />
+            </g>
+
+            <!-- External Agents (HomeClaw, Hermes, OpenHuman) -->
+            <g transform="translate(80, 520)">
+              <text x="100" y="15" text-anchor="middle" font-size="10" font-weight="600" fill="#94a3b8">External Agents</text>
+              <line x1="20" y1="22" x2="180" y2="22" stroke="#334155" stroke-width="1" />
+              
+              <rect x="10" y="30" width="60" height="35" rx="4" fill="#1e293b" stroke="#3b82f6" stroke-width="1.5" />
+              <text x="40" y="50" text-anchor="middle" font-size="9" font-weight="600" fill="#60a5fa">HomeClaw</text>
+              
+              <rect x="75" y="30" width="60" height="35" rx="4" fill="#1e293b" stroke="#8b5cf6" stroke-width="1.5" />
+              <text x="105" y="50" text-anchor="middle" font-size="9" font-weight="600" fill="#a78bfa">Hermes</text>
+              
+              <rect x="140" y="30" width="60" height="35" rx="4" fill="#1e293b" stroke="#ec4899" stroke-width="1.5" />
+              <text x="170" y="50" text-anchor="middle" font-size="9" font-weight="600" fill="#f472b6">OpenHuman</text>
+            </g>
+
+            <!-- Obsidian Integration -->
+            <g transform="translate(300, 265)">
+              <rect x="0" y="0" width="60" height="35" rx="4" fill="#1e293b" stroke="#8b5cf6" stroke-width="1.5" />
+              <text x="30" y="22" text-anchor="middle" font-size="9" font-weight="600" fill="#a78bfa">Obsidian</text>
+            </g>
+
+            <!-- Connection Lines -->
+            <path id="path-primary-envoygo" d="M 280 180 L 320 180" stroke="#6366f1" stroke-width="2" fill="none" stroke-dasharray="6,3" />
+            <path id="path-envoygo-friend" d="M 440 220 L 480 220" stroke="#06b6d4" stroke-width="2" fill="none" stroke-dasharray="6,3" />
+            <path id="path-primary-friend" d="M 280 300 Q 380 350 480 300" stroke="#a855f7" stroke-width="2" fill="none" stroke-dasharray="6,3" />
+            
+            <!-- External Agent Connection -->
+            <path id="path-agents-workflow" d="M 100 520 L 100 440" stroke="#22c55e" stroke-width="1.5" fill="none" stroke-dasharray="4,2" />
+            
+            <!-- Obsidian Connection -->
+            <path id="path-obsidian-vault" d="M 0 17.5 L -40 17.5 L -40 280" stroke="#a855f7" stroke-width="1.5" fill="none" stroke-dasharray="4,2" transform="translate(300, 265)" />
+
+            <!-- Connection Labels -->
+            <text x="300" y="172" text-anchor="middle" font-size="9" fill="#818cf8">Signed Envelopes</text>
+            <text x="460" y="212" text-anchor="middle" font-size="9" fill="#22d3ee">Chat / Media</text>
+            <text x="380" y="365" text-anchor="middle" font-size="9" fill="#c084fc">Knowledge Sync</text>
+            <text x="92" y="485" text-anchor="middle" font-size="8" fill="#4ade80" transform="rotate(-90, 92, 485)">Agent API</text>
+            <text x="278" y="280" text-anchor="middle" font-size="8" fill="#a78bfa">Vault Import</text>
+
+            <!-- Animated Data Packets -->
+            <circle r="4" fill="#6366f1">
+              <animateMotion dur="3s" repeatCount="indefinite" path="M 280 180 L 320 180" />
+              <animate attributeName="opacity" values="0.3;1;0.3" dur="1.5s" repeatCount="indefinite" />
+            </circle>
+            <circle r="4" fill="#06b6d4">
+              <animateMotion dur="3.5s" repeatCount="indefinite" path="M 440 220 L 480 220" />
+              <animate attributeName="opacity" values="0.3;1;0.3" dur="1.5s" repeatCount="indefinite" />
+            </circle>
+            <circle r="4" fill="#a855f7">
+              <animateMotion dur="5s" repeatCount="indefinite" path="M 280 300 Q 380 350 480 300" />
+              <animate attributeName="opacity" values="0.3;1;0.3" dur="2s" repeatCount="indefinite" />
+            </circle>
+            <circle r="3" fill="#22c55e">
+              <animateMotion dur="4s" repeatCount="indefinite" path="M 100 520 L 100 440" />
+              <animate attributeName="opacity" values="0.3;1;0.3" dur="2s" repeatCount="indefinite" />
+            </circle>
+
+          </svg>
+        </div>
+      </div>
+      <style>
+        .internal-flow { animation: glow 2s ease-in-out infinite; }
+        .internal-flow-delay { animation: glow 2s ease-in-out infinite 0.3s; }
+        .internal-flow-delay-2 { animation: glow 2s ease-in-out infinite 0.6s; }
+        .internal-flow-delay-3 { animation: glow 2s ease-in-out infinite 0.9s; }
+        .internal-flow-delay-4 { animation: glow 2s ease-in-out infinite 1.2s; }
+        
+        @keyframes glow {
+          0%, 100% { opacity: 0.3; }
+          50% { opacity: 1; }
+        }
+      </style>
+    </div>
+  </section>
+
+  <!-- Features Section -->
+  <section class="features" id="features">
+    <div class="container">
+      <div class="section-header">
+        <h2>Core Features</h2>
+        <p>Everything you need for secure, private communication and AI-powered workflows.</p>
+      </div>
+      <div class="features-grid">
+        <div class="feature-card">
+          <div class="feature-icon blue">💬</div>
+          <h3>P2P Social Communication</h3>
+          <p>Direct chat, group chat, voice messages, and WebRTC audio/video calls. All communication happens peer-to-peer — no third-party servers.</p>
+          <pre style="background: rgba(59, 130, 246, 0.08); margin-top: 12px; font-size: 0.7rem; padding: 10px;">User A ◄───► User B ◄───► User C
+    │                    │
+    └────────────────────┘ (Group Chat)</pre>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon green">🤖</div>
+          <h3>Built-in OpenClaw Agent</h3>
+          <p>Run OpenClaw, the built-in AI agent, on your local machine. Extend its skills directly through EnvoyMesh and automate your workflows.</p>
+          <pre style="background: rgba(34, 197, 94, 0.08); margin-top: 12px; font-size: 0.7rem; padding: 10px;">┌─────────────────┐
+│ Home Machine    │
+│ ┌─────────────┐ │
+│ │ OpenClaw    │ │
+│ │ AI Agent    │ │
+│ │ (built-in)  │ │
+│ └─────┬───────┘ │
+│       │ Skills   │
+│ ┌─────▼───────┐ │
+│ │ EnvoyMesh   │ │
+│ │ Extensions  │ │
+│ └─────────────┘ │
+└─────────────────┘</pre>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon purple">🔗</div>
+          <h3>Agent Super Channel</h3>
+          <p>Connect with external agents through EnvoyMesh. Access HomeClaw, Hermes, OpenHuman, and other AI agents in one unified interface:</p>
+          <div style="margin-top: 16px; display: flex; flex-wrap: wrap; gap: 8px;">
+            <a href="https://www.homeclaw.cn/" target="_blank" style="padding: 6px 12px; background-color: rgba(168, 85, 247, 0.15); border-radius: 6px; font-size: 0.8rem; text-decoration: none; color: #a855f7;">HomeClaw</a>
+            <a href="https://hermes-agent.nousresearch.com/" target="_blank" style="padding: 6px 12px; background-color: rgba(168, 85, 247, 0.15); border-radius: 6px; font-size: 0.8rem; text-decoration: none; color: #a855f7;">Hermes</a>
+            <a href="https://www.openhuman.dev/" target="_blank" style="padding: 6px 12px; background-color: rgba(168, 85, 247, 0.15); border-radius: 6px; font-size: 0.8rem; text-decoration: none; color: #a855f7;">OpenHuman</a>
+          </div>
+          <pre style="background: rgba(168, 85, 247, 0.08); margin-top: 12px; font-size: 0.7rem; padding: 10px;">        ┌───────────┐
+        │ EnvoyMesh │
+        │ (Gateway) │
+        └─────┬─────┘
+   ┌──────────┼──────────┐
+   ▼          ▼          ▼
+HomeClaw   Hermes   OpenHuman</pre>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon cyan">📱</div>
+          <h3>EnvoyGo Mobile</h3>
+          <p>Access your EnvoyMesh node from anywhere. Run terminal commands on your home machine, chat with your agents, and control your network remotely.</p>
+          <pre style="background: rgba(6, 182, 212, 0.08); margin-top: 12px; font-size: 0.7rem; padding: 10px;">┌──────────┐     Relay     ┌──────────┐
+│ EnvoyGo  │◄─────────────►│ Home     │
+│ (Phone)  │    Network    │ Terminal │
+│          │               │ Commands │
+└──────────┘               └──────────┘</pre>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon orange">🌐</div>
+          <h3>Agent Network Infrastructure</h3>
+          <p>Set up multi-agent collaboration on LAN or WAN. Let multiple AI agents work together and execute tasks for you across your private network.</p>
+          <pre style="background: rgba(249, 115, 22, 0.08); margin-top: 12px; font-size: 0.7rem; padding: 10px;">LAN/WAN Network
+    │
+    ├──► Agent A (Desktop)
+    │
+    ├──► Agent B (Server)
+    │
+    └──► Agent C (Raspberry Pi)
+            │
+            └──► Task Collaboration</pre>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon pink">📚</div>
+          <h3>Knowledge Base</h3>
+          <p>Built-in knowledge store with public and private sections. Share public knowledge in the EnvoyMesh network. Use Obsidian as your knowledge source:</p>
+          <div style="margin-top: 16px;">
+            <a href="https://obsidian.md/" target="_blank" style="padding: 6px 12px; background-color: rgba(236, 72, 153, 0.15); border-radius: 6px; font-size: 0.8rem; text-decoration: none; color: #ec4899;">Obsidian Integration</a>
+          </div>
+          <pre style="background: rgba(236, 72, 153, 0.08); margin-top: 12px; font-size: 0.7rem; padding: 10px;">Vault/
+├── Public/    (Shared in Mesh)
+│   └── docs/
+├── Friends/   (Bonded access)
+│   └── notes/
+└── Private/   (Owner only)
+    └── secrets/
+
+◄── Obsidian Plugin ──►</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Architecture Section -->
+  <section class="architecture" id="architecture">
+    <div class="container">
+      <div class="section-header">
+        <h2>How It Works</h2>
+        <p>EnvoyMesh follows a layered security architecture — each component has a clear boundary and responsibility.</p>
+      </div>
+      <div class="architecture-grid">
+        <div class="arch-diagram">
+          <div class="arch-layer">
+            <div class="arch-layer-icon">🌐</div>
+            <div>
+              <h4>Diplomat (Network)</h4>
+              <p>libp2p connections, message parsing, rate limiting</p>
+            </div>
+          </div>
+          <div class="arch-layer cyan">
+            <div class="arch-layer-icon">🔑</div>
+            <div>
+              <h4>Identity & Bonds</h4>
+              <p>Signature verification, trust tiers, policy enforcement</p>
+            </div>
+          </div>
+          <div class="arch-layer green">
+            <div class="arch-layer-icon">⚙️</div>
+            <div>
+              <h4>Workflows & Agent Core</h4>
+              <p>Task execution, AI routing, workflow management</p>
+            </div>
+          </div>
+          <div class="arch-layer orange">
+            <div class="arch-layer-icon">📦</div>
+            <div>
+              <h4>Vault API</h4>
+              <p>Knowledge retrieval, document indexing, secure storage</p>
+            </div>
+          </div>
+          <div class="arch-layer purple">
+            <div class="arch-layer-icon">🧠</div>
+            <div>
+              <h4>Sandboxed Brain</h4>
+              <p>Local/remote model execution, semantic firewall</p>
+            </div>
+          </div>
+        </div>
+        <div>
+          <h3>Security Pipeline</h3>
+          <p class="text-secondary" style="margin-bottom: 24px;">Every message goes through four checks before delivery:</p>
+          <ol style="list-style: none; counter-reset: item;">
+            <li style="counter-increment: item; margin-bottom: 16px;">
+              <span style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background-color: var(--primary-color); border-radius: 50%; font-weight: 600; margin-right: 12px;">1</span>
+              <span>Is it really from you?</span>
+              <span style="color: var(--text-muted); font-size: 0.9rem;">(signed with your Ed25519 key)</span>
+            </li>
+            <li style="counter-increment: item; margin-bottom: 16px;">
+              <span style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background-color: var(--secondary-color); border-radius: 50%; font-weight: 600; margin-right: 12px;">2</span>
+              <span>Do I trust you?</span>
+              <span style="color: var(--text-muted); font-size: 0.9rem;">(trust tiers: blocked, public, referred, direct)</span>
+            </li>
+            <li style="counter-increment: item; margin-bottom: 16px;">
+              <span style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background-color: #22c55e; border-radius: 50%; font-weight: 600; margin-right: 12px;">3</span>
+              <span>Is this message allowed?</span>
+              <span style="color: var(--text-muted); font-size: 0.9rem;">(policy engine — what can this sender do?)</span>
+            </li>
+            <li style="counter-increment: item;">
+              <span style="display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; background-color: #f97316; border-radius: 50%; font-weight: 600; margin-right: 12px;">4</span>
+              <span>Has it been seen before?</span>
+              <span style="color: var(--text-muted); font-size: 0.9rem;">(no replays, no duplicates)</span>
+            </li>
+          </ol>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Security Section -->
+  <section class="security" id="security">
+    <div class="container">
+      <div class="section-header">
+        <h2>Security by Design</h2>
+        <p>Built with security as the first priority, not an afterthought.</p>
+      </div>
+      <div class="security-grid">
+        <div class="security-card">
+          <div class="feature-icon blue">🔑</div>
+          <h3>Self-Sovereign Identity</h3>
+          <p>No central account database. Your keys, your identity.</p>
+        </div>
+        <div class="security-card">
+          <div class="feature-icon green">🛡️</div>
+          <h3>Policy-Based Trust</h3>
+          <p>Granular trust tiers and per-document permissions.</p>
+        </div>
+        <div class="security-card">
+          <div class="feature-icon purple">📝</div>
+          <h3>End-to-End Audit</h3>
+          <p>Every operation logged with correlation IDs.</p>
+        </div>
+        <div class="security-card">
+          <div class="feature-icon cyan">🔒</div>
+          <h3>Semantic Firewall</h3>
+          <p>Pre-model filtering prevents prompt injection.</p>
+        </div>
+        <div class="security-card">
+          <div class="feature-icon orange">🚫</div>
+          <h3>Deny-by-Default</h3>
+          <p>Only approved data and capabilities accessible.</p>
+        </div>
+        <div class="security-card">
+          <div class="feature-icon pink">🔄</div>
+          <h3>Key Rotation</h3>
+          <p>Support for revocation and key rotation.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Getting Started -->
+  <section class="getting-started" id="getting-started">
+    <div class="container">
+      <h2>Get Started in Minutes</h2>
+      <p>Install EnvoyMesh on your desktop or mobile device and start building your private mesh network.</p>
+      <div class="code-block">
+        <code>git clone https://github.com/allenpeng0705/EnvoyMesh.git<br>cd EnvoyMesh<br>./scripts/setup.sh<br><br># Run<br>npm run node:dev      # Start the P2P node<br>npm run social:dev    # Open http://localhost:5173</code>
+      </div>
+      <div class="nav-actions" style="justify-content: center;">
+        <a href="https://github.com/allenpeng0705/EnvoyMesh" target="_blank" class="btn btn-primary">Download</a>
+        <a href="QuickStart.md" class="btn btn-secondary">Read Documentation</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container footer-content">
+      <div class="logo" style="font-size: 1rem;">
+        <img src="logo-32.png" alt="EnvoyMesh Logo" style="width: 28px; height: 28px;">
+        EnvoyMesh
+      </div>
+      <ul class="footer-links">
+        <li><a href="https://github.com/allenpeng0705/EnvoyMesh" target="_blank">GitHub</a></li>
+        <li><a href="security.html">Security</a></li>
+        <li><a href="high-level-design.html">Design</a></li>
+        <li><a href="knowledge-base.html">Knowledge</a></li>
+      </ul>
+      <div class="footer-contact">
+        Contact: <a href="mailto:shilei.peng@qq.com">shilei.peng@qq.com</a> | <a href="mailto:shileipeng@gmail.com">shileipeng@gmail.com</a>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    window.addEventListener('scroll', () => {
+      const header = document.querySelector('header');
+      if (header) {
+        header.classList.toggle('scrolled', window.scrollY > 20);
+      }
+    });
+  </script>
+</body>
+</html>

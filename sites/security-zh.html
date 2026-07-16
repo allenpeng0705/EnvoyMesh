@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EnvoyMesh - 安全模型</title>
+  <meta name="description" content="EnvoyMesh 去中心化 P2P 智能体网络的安全模型和威胁缓解措施。">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --primary-color: #6366f1;
+      --primary-dark: #4f46e5;
+      --primary-light: #818cf8;
+      --bg-dark: #0f172a;
+      --bg-card: #1e293b;
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --border-color: #334155;
+    }
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--bg-dark);
+      color: var(--text-primary);
+      line-height: 1.7;
+    }
+    header {
+      background-color: rgba(15, 23, 42, 0.9);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-color);
+      padding: 16px 0;
+    }
+    nav {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+    .logo img { width: 32px; height: 32px; border-radius: 8px; }
+    .nav-links { display: flex; gap: 24px; list-style: none; margin-left: auto; }
+    .nav-links a { color: var(--text-secondary); text-decoration: none; font-size: 0.9rem; transition: color 0.2s; }
+    .nav-links a:hover { color: var(--text-primary); }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 48px 24px;
+    }
+    h1 { font-size: 2.25rem; font-weight: 700; margin-bottom: 8px; }
+    .subtitle { color: var(--text-secondary); font-size: 1.1rem; margin-bottom: 32px; }
+    h2 { font-size: 1.5rem; font-weight: 600; margin-top: 32px; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border-color); }
+    h3 { font-size: 1.25rem; font-weight: 600; margin-top: 24px; margin-bottom: 12px; }
+    p { margin-bottom: 16px; color: var(--text-secondary); }
+    ul, ol { margin-bottom: 16px; padding-left: 24px; color: var(--text-secondary); }
+    li { margin-bottom: 8px; }
+    code {
+      background-color: var(--bg-card);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'Fira Code', monospace;
+      font-size: 0.9rem;
+      color: var(--primary-light);
+    }
+    footer {
+      border-top: 1px solid var(--border-color);
+      padding: 24px 0;
+      margin-top: 48px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+    .btn {
+      display: inline-block;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-weight: 500;
+      text-decoration: none;
+      transition: all 0.2s;
+      margin-bottom: 24px;
+    }
+    .btn-secondary {
+      background-color: transparent;
+      color: var(--text-secondary);
+      border: 1px solid var(--border-color);
+    }
+    .btn-secondary:hover { background-color: var(--bg-card); color: var(--text-primary); }
+  </style>
+</head>
+<body>
+  <header>
+    <nav>
+      <a href="index-zh.html" class="logo">
+        <img src="logo.png" alt="EnvoyMesh Logo">
+        EnvoyMesh
+      </a>
+      <ul class="nav-links">
+        <li><a href="index-zh.html#features">特性</a></li>
+        <li><a href="index-zh.html#architecture">架构</a></li>
+        <li><a href="index-zh.html#security">安全</a></li>
+        <li><a href="index-zh.html#getting-started">开始使用</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <div class="container">
+    <a href="index-zh.html" class="btn btn-secondary">← 返回主页</a>
+    <h1>安全模型</h1>
+    <p class="subtitle">EnvoyMesh 必须在帮助网络之前保护所有者。</p>
+
+    <p>最重要的规则是：Envoy 不允许浏览所有者的计算机。它只能访问明确批准的数据和能力。</p>
+
+    <h2>威胁</h2>
+
+    <h3>提示注入</h3>
+    <p>远程对等方可能发送恶意消息，试图说服智能体泄露隐私信息、忽略策略或调用未经授权的工具。</p>
+    <p><strong>缓解措施：</strong></p>
+    <ul>
+      <li>使用严格的模式验证所有入站消息。</li>
+      <li>在调用 LLM 之前评估信任策略。</li>
+      <li>将敏感操作保持在自由格式模型控制之外。</li>
+      <li>在发送给对等方之前编辑响应。</li>
+    </ul>
+
+    <h3>文件系统泄露</h3>
+    <p>错误或被入侵的智能体可能尝试读取共享保险箱外的私人文件。</p>
+    <p><strong>缓解措施：</strong></p>
+    <ul>
+      <li>在沙盒进程中运行文件读取逻辑。</li>
+      <li>仅挂载批准的保险箱路径。</li>
+      <li>使用默认拒绝权限。</li>
+      <li>将机密和密钥材料保存在智能体运行时之外。</li>
+    </ul>
+
+    <h3>身份欺骗</h3>
+    <p>攻击者可能冒充可信的朋友。</p>
+    <p><strong>缓解措施：</strong></p>
+    <ul>
+      <li>要求签名消息。</li>
+      <li>将对等身份绑定到公钥。</li>
+      <li>本地存储信任决策。</li>
+      <li>支持撤销和密钥轮换。</li>
+    </ul>
+
+    <h3>女巫攻击</h3>
+    <p>攻击者可能创建许多虚假对等方，以显得可信或使节点不堪重负。</p>
+    <p><strong>缓解措施：</strong></p>
+    <ul>
+      <li>对未知对等方进行速率限制。</li>
+      <li>要求陌生人进行挑战工作流。</li>
+      <li>优先选择直接信任和推荐，而非公共发现。</li>
+      <li>避免仅基于网络存在授予有意义的访问权限。</li>
+    </ul>
+
+    <h3>数据过度共享</h3>
+    <p>Envoy 可能在只需要摘要时共享原始文档。</p>
+    <p><strong>缓解措施：</strong></p>
+    <ul>
+      <li>为每个对等方和每个文档分配权限。</li>
+      <li>默认未知对等方只能访问元数据或无访问权限。</li>
+      <li>要求所有者批准原始文件传输。</li>
+      <li>保留出站披露的审计日志。</li>
+    </ul>
+
+    <h2>安全边界</h2>
+
+    <h3>外交官</h3>
+    <p>外交官是面向网络的组件。它处理 libp2p 连接、消息解析、对等身份和速率限制。</p>
+    <p>它不应直接访问私有文件系统或模型工具。</p>
+
+    <h3>绑定引擎</h3>
+    <p>绑定引擎做出授权决策。它将对等身份和请求意图转换为允许、拒绝、挑战或需要批准的决策。</p>
+    <p>它应该是确定性的且可测试的。</p>
+
+    <h3>大脑</h3>
+    <p>大脑执行本地推理、摘要和检索增强回答。</p>
+    <p>它应该只接收来自保险箱的批准上下文。它不应该能够进行任意出站网络调用。</p>
+
+    <h3>保险箱</h3>
+    <p>保险箱包含所有者批准的共享数据。</p>
+    <p>只有保险箱内的数据才能被索引或共享。对保险箱的访问仍应通过文档级策略进行调节。</p>
+
+    <h2>最小权限模型</h2>
+    <p>每个请求应使用以下内容进行评估：</p>
+    <ul>
+      <li>发送者身份。</li>
+      <li>发送者绑定等级。</li>
+      <li>意图类型。</li>
+      <li>目标资源。</li>
+      <li>请求的操作。</li>
+      <li>最大响应敏感度。</li>
+      <li>是否请求原始文件传输。</li>
+    </ul>
+
+    <p><strong>示例操作：</strong></p>
+    <ul>
+      <li><code>metadata.read</code></li>
+      <li><code>summary.read</code></li>
+      <li><code>snippet.read</code></li>
+      <li><code>file.read</code></li>
+      <li><code>task.submit</code></li>
+      <li><code>state.sync</code></li>
+    </ul>
+
+    <p><strong>示例敏感度级别：</strong></p>
+    <ul>
+      <li><code>public</code>（公开）</li>
+      <li><code>friends</code>（朋友）</li>
+      <li><code>trusted</code>（可信）</li>
+      <li><code>private</code>（私有）</li>
+    </ul>
+
+    <h2>推荐的首个版本规则</h2>
+    <p>对于第一个原型，使用保守规则：</p>
+    <ul>
+      <li>未知对等方只能请求绑定工作流。</li>
+      <li>可信对等方可以提出知识查询，但只接收摘要。</li>
+      <li>原始文件共享需要明确的所有者批准。</li>
+      <li>Envoy 只能从 <code>shared_vault/</code> 读取。</li>
+      <li>LLM 工作器无法访问网络。</li>
+      <li>所有入站和出站消息都在本地记录。</li>
+    </ul>
+
+    <h2>审计日志</h2>
+    <p>每一次有意义的交换都应该创建一个审计事件：</p>
+    <ul>
+      <li>时间戳。</li>
+      <li>对等方 ID。</li>
+      <li>已验证的公钥。</li>
+      <li>意图。</li>
+      <li>决策。</li>
+      <li>访问的资源。</li>
+      <li>数据敏感度。</li>
+      <li>响应类型。</li>
+    </ul>
+    <p>审计日志帮助所有者了解他们离线时 Envoy 做了什么。</p>
+  </div>
+
+  <footer>
+    <div class="container">
+      <p>联系：<a href="mailto:shilei.peng@qq.com">shilei.peng@qq.com</a> | <a href="mailto:shileipeng@gmail.com">shileipeng@gmail.com</a></p>
+    </div>
+  </footer>
+</body>
+</html>

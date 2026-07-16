@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EnvoyMesh - Security Model</title>
+  <meta name="description" content="Security model and threat mitigation for EnvoyMesh decentralized P2P agentic mesh.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --primary-color: #6366f1;
+      --primary-dark: #4f46e5;
+      --primary-light: #818cf8;
+      --bg-dark: #0f172a;
+      --bg-card: #1e293b;
+      --text-primary: #f8fafc;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --border-color: #334155;
+    }
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--bg-dark);
+      color: var(--text-primary);
+      line-height: 1.7;
+    }
+    header {
+      background-color: rgba(15, 23, 42, 0.9);
+      backdrop-filter: blur(12px);
+      border-bottom: 1px solid var(--border-color);
+      padding: 16px 0;
+    }
+    nav {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      color: var(--text-primary);
+      font-weight: 600;
+    }
+    .logo img { width: 32px; height: 32px; border-radius: 8px; }
+    .nav-links { display: flex; gap: 24px; list-style: none; margin-left: auto; }
+    .nav-links a { color: var(--text-secondary); text-decoration: none; font-size: 0.9rem; transition: color 0.2s; }
+    .nav-links a:hover { color: var(--text-primary); }
+    .container {
+      max-width: 800px;
+      margin: 0 auto;
+      padding: 48px 24px;
+    }
+    h1 { font-size: 2.25rem; font-weight: 700; margin-bottom: 8px; }
+    .subtitle { color: var(--text-secondary); font-size: 1.1rem; margin-bottom: 32px; }
+    h2 { font-size: 1.5rem; font-weight: 600; margin-top: 32px; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid var(--border-color); }
+    h3 { font-size: 1.25rem; font-weight: 600; margin-top: 24px; margin-bottom: 12px; }
+    p { margin-bottom: 16px; color: var(--text-secondary); }
+    ul, ol { margin-bottom: 16px; padding-left: 24px; color: var(--text-secondary); }
+    li { margin-bottom: 8px; }
+    code {
+      background-color: var(--bg-card);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-family: 'Fira Code', monospace;
+      font-size: 0.9rem;
+      color: var(--primary-light);
+    }
+    footer {
+      border-top: 1px solid var(--border-color);
+      padding: 24px 0;
+      margin-top: 48px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+    }
+    .btn {
+      display: inline-block;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-weight: 500;
+      text-decoration: none;
+      transition: all 0.2s;
+      margin-bottom: 24px;
+    }
+    .btn-secondary {
+      background-color: transparent;
+      color: var(--text-secondary);
+      border: 1px solid var(--border-color);
+    }
+    .btn-secondary:hover { background-color: var(--bg-card); color: var(--text-primary); }
+  </style>
+</head>
+<body>
+  <header>
+    <nav>
+      <a href="index.html" class="logo">
+        <img src="logo.png" alt="EnvoyMesh Logo">
+        EnvoyMesh
+      </a>
+      <ul class="nav-links">
+        <li><a href="index.html#features">Features</a></li>
+        <li><a href="index.html#architecture">Architecture</a></li>
+        <li><a href="index.html#security">Security</a></li>
+        <li><a href="index.html#getting-started">Get Started</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <div class="container">
+    <a href="index.html" class="btn btn-secondary">← Back to Home</a>
+    <h1>Security Model</h1>
+    <p class="subtitle">EnvoyMesh must protect the owner before it helps the network.</p>
+
+    <p>The most important rule is that an Envoy is not allowed to browse the owner's computer. It can only access explicitly approved data and capabilities.</p>
+
+    <h2>Threats</h2>
+
+    <h3>Prompt Injection</h3>
+    <p>A remote peer may send a malicious message that tries to convince the agent to reveal private information, ignore policy, or call unauthorized tools.</p>
+    <p><strong>Mitigation:</strong></p>
+    <ul>
+      <li>Validate all inbound messages with strict schemas.</li>
+      <li>Evaluate trust policy before invoking an LLM.</li>
+      <li>Keep sensitive operations outside free-form model control.</li>
+      <li>Redact responses before sending them to peers.</li>
+    </ul>
+
+    <h3>Filesystem Leakage</h3>
+    <p>A bug or compromised agent may try to read private files outside the shared vault.</p>
+    <p><strong>Mitigation:</strong></p>
+    <ul>
+      <li>Run file-reading logic in a sandboxed process.</li>
+      <li>Mount only approved vault paths.</li>
+      <li>Use deny-by-default permissions.</li>
+      <li>Keep secrets and key material outside the agent runtime.</li>
+    </ul>
+
+    <h3>Identity Spoofing</h3>
+    <p>An attacker may pretend to be a trusted friend.</p>
+    <p><strong>Mitigation:</strong></p>
+    <ul>
+      <li>Require signed messages.</li>
+      <li>Bind peer identity to public keys.</li>
+      <li>Store trust decisions locally.</li>
+      <li>Support revocation and key rotation.</li>
+    </ul>
+
+    <h3>Sybil Attacks</h3>
+    <p>An attacker may create many fake peers to appear trustworthy or overwhelm the node.</p>
+    <p><strong>Mitigation:</strong></p>
+    <ul>
+      <li>Rate-limit unknown peers.</li>
+      <li>Require challenge workflows for strangers.</li>
+      <li>Prefer direct trust and referrals over public discovery.</li>
+      <li>Avoid granting meaningful access based only on network presence.</li>
+    </ul>
+
+    <h3>Data Over-Sharing</h3>
+    <p>The Envoy may share a raw document when a summary would have been enough.</p>
+    <p><strong>Mitigation:</strong></p>
+    <ul>
+      <li>Assign permissions per peer and per document.</li>
+      <li>Default unknown peers to metadata-only or no access.</li>
+      <li>Require owner approval for raw file transfer.</li>
+      <li>Keep an audit log of outbound disclosures.</li>
+    </ul>
+
+    <h2>Security Boundaries</h2>
+
+    <h3>Diplomat</h3>
+    <p>The Diplomat is the network-facing component. It handles libp2p connections, message parsing, peer identity, and rate limiting.</p>
+    <p>It should not have direct access to the private filesystem or model tools.</p>
+
+    <h3>Bond Engine</h3>
+    <p>The Bond Engine makes authorization decisions. It converts a peer identity and request intent into an allow, deny, challenge, or approval-required decision.</p>
+    <p>It should be deterministic and testable.</p>
+
+    <h3>Brain</h3>
+    <p>The Brain performs local reasoning, summarization, and retrieval-augmented answering.</p>
+    <p>It should receive only approved context from the vault. It should not be able to make arbitrary outbound network calls.</p>
+
+    <h3>Vault</h3>
+    <p>The Vault contains owner-approved shared data.</p>
+    <p>Only data inside the vault can be indexed or shared. Access to the vault should still be mediated by document-level policy.</p>
+
+    <h2>Minimal Permission Model</h2>
+    <p>Each request should be evaluated with:</p>
+    <ul>
+      <li>Sender identity.</li>
+      <li>Sender bond level.</li>
+      <li>Intent type.</li>
+      <li>Target resource.</li>
+      <li>Requested operation.</li>
+      <li>Maximum response sensitivity.</li>
+      <li>Whether raw file transfer is requested.</li>
+    </ul>
+
+    <p><strong>Example operations:</strong></p>
+    <ul>
+      <li><code>metadata.read</code></li>
+      <li><code>summary.read</code></li>
+      <li><code>snippet.read</code></li>
+      <li><code>file.read</code></li>
+      <li><code>task.submit</code></li>
+      <li><code>state.sync</code></li>
+    </ul>
+
+    <p><strong>Example sensitivity levels:</strong></p>
+    <ul>
+      <li><code>public</code></li>
+      <li><code>friends</code></li>
+      <li><code>trusted</code></li>
+      <li><code>private</code></li>
+    </ul>
+
+    <h2>Recommended First Version Rules</h2>
+    <p>For the first prototype, use conservative rules:</p>
+    <ul>
+      <li>Unknown peers can only request a bond workflow.</li>
+      <li>Trusted peers can ask knowledge queries, but receive summaries only.</li>
+      <li>Raw file sharing requires explicit owner approval.</li>
+      <li>The Envoy can read only from <code>shared_vault/</code>.</li>
+      <li>The LLM worker cannot access the network.</li>
+      <li>All inbound and outbound messages are logged locally.</li>
+    </ul>
+
+    <h2>Audit Log</h2>
+    <p>Every meaningful exchange should create an audit event:</p>
+    <ul>
+      <li>Timestamp.</li>
+      <li>Peer ID.</li>
+      <li>Verified public key.</li>
+      <li>Intent.</li>
+      <li>Decision.</li>
+      <li>Resources accessed.</li>
+      <li>Data sensitivity.</li>
+      <li>Response type.</li>
+    </ul>
+    <p>The audit log helps the owner understand what the Envoy did while they were offline.</p>
+  </div>
+
+  <footer>
+    <div class="container">
+      <p>Contact: <a href="mailto:shilei.peng@qq.com">shilei.peng@qq.com</a> | <a href="mailto:shileipeng@gmail.com">shileipeng@gmail.com</a></p>
+    </div>
+  </footer>
+</body>
+</html>
