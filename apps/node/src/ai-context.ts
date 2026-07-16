@@ -4,10 +4,139 @@
 
 import type { AiKnowledgeBaseScope, AiKnowledgeBaseSettings, AiVaultQuery } from "@envoymesh/api";
 import { resolveAiKnowledgeBaseSettings, resolveKnowledgeBaseVaultPaths } from "@envoymesh/api";
-import type { ChatLogEnvelope, LocalChatLogStore } from "@envoymesh/local-store";
+import type { LocalChatLogStore } from "@envoymesh/local-store";
+import type { ChatLogEnvelope } from "@envoymesh/local-store";
 import { searchVault, type VaultIndex, type VaultSearchResult } from "@envoymesh/vault";
 
-export type KnowledgeAccessLevel = "public" | "professional" | "personal";
+// ---------------------------------------------------------------------------
+// Sensitivity levels (3-tier for knowledge base)
+// ---------------------------------------------------------------------------
+
+/**
+ * Knowledge-base sensitivity levels. Three tiers: `public`, `friends`, `private`.
+ *
+ * The protocol defines a fourth level `trusted` which maps to `friends` for KB
+ * purposes. The historical internal names `professional` and `personal` are
+ * normalized to `friends` and `private` respectively (Phase 44A1).
+ */
+export type KnowledgeAccessLevel = "public" | "friends" | "private";
+
+/** Ordered from most open (0) to most restrictive (2). */
+const SENSITIVITY_ORDER: readonly KnowledgeAccessLevel[] = ["public", "friends", "private"] as const;
+
+/**
+ * Map legacy sensitivity names to the 3-tier KB levels.
+ * - `professional` was between friends and private → maps to `friends`
+ * - `personal` was the most restrictive → maps to `private`
+ */
+function normalizeLegacySensitivity(
+  s: string,
+): KnowledgeAccessLevel {
+  if (s === "personal" || s === "private") return "private";
+  if (s === "professional" || s === "friends" || s === "trusted") return "friends";
+  return "public";
+}
+
+/**
+ * Resolve the effective sensitivity for a vault document.
+ *
+ * Resolution chain (first match wins):
+ * 1. Per-item override from `.envoy/sensitivity.json` (if provided)
+ * 2. Path heuristic from `inferDocumentSensitivity()`
+ *
+ * @param relativePath  Document path relative to vault root
+ * @param overrides     Per-item sensitivity overrides (from SensitivityOverrideStore), optional
+ */
+export function resolveDocumentSensitivity(
+  relativePath: string,
+  overrides?: Map<string, KnowledgeAccessLevel> | undefined,
+): KnowledgeAccessLevel {
+  // Per-item override would need documentId, not relativePath.
+  // Callers that have overrides should use the documentId-keyed version below.
+  // This signature is for callers that only have the path.
+  void overrides;
+  return inferDocumentSensitivity(relativePath);
+}
+
+/**
+ * Resolve effective sensitivity using documentId for override lookup.
+ *
+ * Resolution chain (first match wins):
+ * 1. Per-item override from `.envoy/sensitivity.json`
+ * 2. Path heuristic from `inferDocumentSensitivity()`
+ */
+export function resolveDocumentSensitivityById(
+  documentId: string,
+  relativePath: string,
+  overrides?: Map<string, KnowledgeAccessLevel> | undefined,
+): KnowledgeAccessLevel {
+  if (overrides) {
+    const override = overrides.get(documentId);
+    if (override) return override;
+  }
+  return inferDocumentSensitivity(relativePath);
+}
+
+// ---------------------------------------------------------------------------
+// Path-heuristic sensitivity (fallback when no override exists)
+// ---------------------------------------------------------------------------
+
+/**
+ * Infer document sensitivity from its relative path.
+ *
+ * This is the **fallback** when no per-item override exists in
+ * `.envoy/sensitivity.json`. Keywords in the path hint at the intended
+ * sensitivity level.
+ *
+ * Three tiers: `public`, `friends`, `private`.
+ */
+export function inferDocumentSensitivity(
+  relativePath: string,
+): KnowledgeAccessLevel {
+  const path = relativePath.toLowerCase();
+  if (path.includes("personal") || path.includes("private")) return "private";
+  if (path.includes("work") || path.includes("professional") || path.includes("office")) {
+    return "friends";
+  }
+  if (path.includes("friends") || path.includes("shared")) return "friends";
+  return "public";
+}
+
+// ---------------------------------------------------------------------------
+// Sensitivity filtering
+// ---------------------------------------------------------------------------
+
+/**
+ * Filter vault search results to only include documents whose sensitivity
+ * does not exceed the access ceiling.
+ *
+ * @param results        Vault search results to filter
+ * @param knowledgeAccess  Maximum sensitivity the caller can access
+ * @param maxSensitivity   Optional rule-level ceiling (from AiVaultQuery)
+ */
+export function filterVaultResultsBySensitivity(
+  results: VaultSearchResult[],
+  knowledgeAccess: KnowledgeAccessLevel,
+  maxSensitivity?: string,
+): VaultSearchResult[] {
+  const accessIdx = SENSITIVITY_ORDER.indexOf(knowledgeAccess);
+  // Normalize legacy sensitivity names from AiVaultQuery.maxSensitivity
+  const ruleLevel = maxSensitivity
+    ? normalizeLegacySensitivity(maxSensitivity)
+    : knowledgeAccess;
+  const ruleIdx = SENSITIVITY_ORDER.indexOf(ruleLevel);
+  const ceiling = Math.min(accessIdx, ruleIdx);
+  return results.filter((result) => {
+    const docIdx = SENSITIVITY_ORDER.indexOf(
+      inferDocumentSensitivity(result.document.relativePath),
+    );
+    return docIdx <= ceiling;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Chat history
+// ---------------------------------------------------------------------------
 
 export interface ThreadMessageView {
   messageId: string;
@@ -15,8 +144,6 @@ export interface ThreadMessageView {
   text: string;
   timestamp: string;
 }
-
-const SENSITIVITY_ORDER = ["public", "friends", "professional", "personal"] as const;
 
 function tokenizeQuery(text: string): string[] {
   return [...new Set(text.toLowerCase().match(/[\p{L}\p{N}]{2,}/gu) ?? [])];
@@ -87,31 +214,9 @@ export function searchChatHistoryRag(
     .map((row) => row.message);
 }
 
-export function inferDocumentSensitivity(
-  relativePath: string,
-): "public" | "friends" | "professional" | "personal" {
-  const path = relativePath.toLowerCase();
-  if (path.includes("personal") || path.includes("private")) return "personal";
-  if (path.includes("work") || path.includes("professional") || path.includes("office")) {
-    return "professional";
-  }
-  if (path.includes("friends") || path.includes("shared")) return "friends";
-  return "public";
-}
-
-export function filterVaultResultsBySensitivity(
-  results: VaultSearchResult[],
-  knowledgeAccess: KnowledgeAccessLevel,
-  maxSensitivity?: AiVaultQuery["maxSensitivity"],
-): VaultSearchResult[] {
-  const userIdx = SENSITIVITY_ORDER.indexOf(knowledgeAccess);
-  const ruleIdx = maxSensitivity ? SENSITIVITY_ORDER.indexOf(maxSensitivity) : userIdx;
-  const ceiling = Math.min(userIdx, ruleIdx);
-  return results.filter((result) => {
-    const docIdx = SENSITIVITY_ORDER.indexOf(inferDocumentSensitivity(result.document.relativePath));
-    return docIdx <= ceiling;
-  });
-}
+// ---------------------------------------------------------------------------
+// Vault knowledge search
+// ---------------------------------------------------------------------------
 
 function vaultPathMatches(relativePath: string, vaultPaths: string[]): boolean {
   if (vaultPaths.length === 0) return true;
@@ -130,6 +235,8 @@ export function searchVaultKnowledgeBase(input: {
   /** public = auto-reply / contact-facing; owner = Envoy AI + local self-query */
   knowledgeScope?: AiKnowledgeBaseScope;
   ruleVaultQuery?: AiVaultQuery;
+  /** Per-item sensitivity overrides from SensitivityOverrideStore (Phase 44A1). */
+  sensitivityOverrides?: Map<string, KnowledgeAccessLevel>;
 }): VaultSearchResult[] {
   const kb = resolveAiKnowledgeBaseSettings(input.knowledgeBase);
   const scope = input.knowledgeScope ?? "public";
@@ -162,13 +269,53 @@ export function searchVaultKnowledgeBase(input: {
     }
   }
 
-  const filtered = filterVaultResultsBySensitivity(
-    merged,
-    input.knowledgeAccess,
-    input.ruleVaultQuery?.maxSensitivity,
-  );
+  // Phase 44A1: if overrides are provided, use resolveDocumentSensitivityById
+  // instead of path-heuristic-only filtering
+  const filtered = input.sensitivityOverrides
+    ? filterVaultResultsBySensitivityWithOverrides(
+        merged,
+        input.knowledgeAccess,
+        input.ruleVaultQuery?.maxSensitivity,
+        input.sensitivityOverrides,
+      )
+    : filterVaultResultsBySensitivity(
+        merged,
+        input.knowledgeAccess,
+        input.ruleVaultQuery?.maxSensitivity,
+      );
   return filtered.slice(0, kb.vaultSnippetLimit);
 }
+
+/**
+ * Like `filterVaultResultsBySensitivity` but checks per-item overrides
+ * from `.envoy/sensitivity.json` before falling back to path heuristic.
+ */
+function filterVaultResultsBySensitivityWithOverrides(
+  results: VaultSearchResult[],
+  knowledgeAccess: KnowledgeAccessLevel,
+  maxSensitivity: string | undefined,
+  overrides: Map<string, KnowledgeAccessLevel>,
+): VaultSearchResult[] {
+  const accessIdx = SENSITIVITY_ORDER.indexOf(knowledgeAccess);
+  const ruleLevel = maxSensitivity
+    ? normalizeLegacySensitivity(maxSensitivity)
+    : knowledgeAccess;
+  const ruleIdx = SENSITIVITY_ORDER.indexOf(ruleLevel);
+  const ceiling = Math.min(accessIdx, ruleIdx);
+  return results.filter((result) => {
+    const sensitivity = resolveDocumentSensitivityById(
+      result.document.documentId,
+      result.document.relativePath,
+      overrides,
+    );
+    const docIdx = SENSITIVITY_ORDER.indexOf(sensitivity);
+    return docIdx <= ceiling;
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Formatting helpers
+// ---------------------------------------------------------------------------
 
 export function formatThreadMessagesSection(
   title: string,

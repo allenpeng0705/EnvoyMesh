@@ -116,14 +116,14 @@ export async function buildEnvoyMeshRetrievedContext(input: {
       ? await input.ragService.searchVaultKnowledgeBase({
           vaultIndex,
           query: input.message,
-          knowledgeAccess: "personal",
+          knowledgeAccess: "private",
           knowledgeBase: input.knowledgeBase,
           knowledgeScope: "owner",
         })
       : searchVaultKnowledgeBase({
           vaultIndex,
           query: input.message,
-          knowledgeAccess: "personal",
+          knowledgeAccess: "private",
           knowledgeBase: input.knowledgeBase,
           knowledgeScope: "owner",
         });

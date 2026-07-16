@@ -51,6 +51,9 @@ import type {
   VerifyLibraryItemIpfsGatewayResult,
   ImportToLibraryParams,
   ImportToLibraryResult,
+  CreateNoteParams,
+  CreateNoteResult,
+  DeleteVaultItemParams,
   IpfsEngineStatus,
   RagIndexStatus,
   SendChatParams,
@@ -448,6 +451,8 @@ export interface NodeServiceClient {
     params: VerifyLibraryItemIpfsGatewayParams,
   ): Promise<VerifyLibraryItemIpfsGatewayResult>;
   importToLibrary(params: ImportToLibraryParams): Promise<ImportToLibraryResult>;
+  createNote(params: CreateNoteParams): Promise<CreateNoteResult>;
+  deleteVaultItem(params: DeleteVaultItemParams): Promise<void>;
   resolveLibraryItemPath(relativePath: string): Promise<{ vaultRelativePath: string; absolutePath: string }>;
   openLibraryItem(relativePath: string): Promise<void>;
   revealLibraryItemInFileManager(relativePath: string): Promise<void>;
@@ -1390,6 +1395,14 @@ function createWsNodeServiceClient(
       return wsClient.rpc("importToLibrary", params as unknown as Record<string, unknown>) as Promise<
         ImportToLibraryResult
       >;
+    },
+    async createNote(params: CreateNoteParams) {
+      return wsClient.rpc("createNote", params as unknown as Record<string, unknown>) as Promise<
+        CreateNoteResult
+      >;
+    },
+    async deleteVaultItem(params: DeleteVaultItemParams) {
+      return wsClient.rpc("deleteVaultItem", params as unknown as Record<string, unknown>);
     },
     async resolveLibraryItemPath(relativePath: string) {
       return wsClient.rpc("resolveLibraryItemPath", { relativePath }) as Promise<{

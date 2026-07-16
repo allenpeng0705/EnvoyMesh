@@ -29,8 +29,8 @@ import {
 } from "@envoymesh/rag";
 import {
   chatLogRowsToViews,
-  filterVaultResultsBySensitivity,
   inferDocumentSensitivity,
+  resolveDocumentSensitivityById,
   searchChatHistoryRag as lexicalChatHistoryRag,
   searchVaultKnowledgeBase as lexicalVaultKnowledgeBase,
   type KnowledgeAccessLevel,
@@ -46,6 +46,8 @@ export interface RagService {
     vaultIndex: VaultIndex;
     knowledgeBase?: AiKnowledgeBaseSettings | null;
     force?: boolean;
+    /** Per-item sensitivity overrides (Phase 44A1). */
+    sensitivityOverrides?: Map<string, KnowledgeAccessLevel>;
   }): Promise<void>;
   getIndexStatus(): RagIndexStatus;
   searchChatHistoryRag(input: {
@@ -63,6 +65,8 @@ export interface RagService {
     knowledgeBase?: AiKnowledgeBaseSettings | null;
     knowledgeScope?: AiKnowledgeBaseScope;
     ruleVaultQuery?: AiVaultQuery;
+    /** Per-item sensitivity overrides (Phase 44A1). */
+    sensitivityOverrides?: Map<string, KnowledgeAccessLevel>;
   }): Promise<VaultSearchResult[]>;
   getExternalKnowledgeContext(input: {
     query: string;
@@ -308,7 +312,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
       return indexStatus;
     },
 
-    async reindexVault({ vaultIndex, knowledgeBase: kbOverride, force = false }) {
+    async reindexVault({ vaultIndex, knowledgeBase: kbOverride, force = false, sensitivityOverrides }) {
       const kb = resolveAiKnowledgeBaseSettings(kbOverride ?? knowledgeBase);
       if (!kb.enabled || kb.ragMode === "lexical") {
         reportProgress({ phase: "idle", processed: 0, total: 0, indexed: 0, skipped: 0, removed: 0 });
@@ -331,6 +335,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
           kb,
           manifest,
           force,
+          sensitivityOverrides,
           onProgress: (partial) => {
             reportProgress({ phase: "public", indexed, skipped, removed, ...partial });
           },
@@ -348,6 +353,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
           kb,
           manifest,
           force,
+          sensitivityOverrides,
           onProgress: (partial) => {
             reportProgress({ phase: "private", indexed, skipped, removed, ...partial });
           },
@@ -446,6 +452,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
       knowledgeBase: kbOverride,
       knowledgeScope = "public",
       ruleVaultQuery,
+      sensitivityOverrides,
     }) {
       const kb = resolveAiKnowledgeBaseSettings(kbOverride ?? knowledgeBase);
 
@@ -491,9 +498,12 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
           }
         }
 
-        const filtered = filterVaultResultsBySensitivity(merged, knowledgeAccess, ruleVaultQuery?.maxSensitivity);
-        if (filtered.length > 0) {
-          return filtered.slice(0, kb.vaultSnippetLimit);
+        // Phase 44A1: filter vector results with sensitivity overrides when available
+        const sensitivityFiltered = sensitivityOverrides
+          ? filterVectorResultsWithOverrides(merged, knowledgeAccess, ruleVaultQuery?.maxSensitivity, sensitivityOverrides)
+          : filterVectorResultsBySensitivity(merged, knowledgeAccess, ruleVaultQuery?.maxSensitivity);
+        if (sensitivityFiltered.length > 0) {
+          return sensitivityFiltered.slice(0, kb.vaultSnippetLimit);
         }
         if (kb.ragMode === "vector") {
           return lexicalVaultKnowledgeBase({
@@ -503,6 +513,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
             knowledgeBase: kbOverride ?? knowledgeBase,
             knowledgeScope,
             ruleVaultQuery,
+            sensitivityOverrides,
           });
         }
       } catch (error) {
@@ -519,6 +530,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
         knowledgeBase: kbOverride ?? knowledgeBase,
         knowledgeScope,
         ruleVaultQuery,
+        sensitivityOverrides,
       });
     },
 
@@ -563,9 +575,10 @@ async function indexVaultTier(input: {
   kb: ReturnType<typeof resolveAiKnowledgeBaseSettings>;
   manifest: RagVaultManifest;
   force: boolean;
+  sensitivityOverrides?: Map<string, KnowledgeAccessLevel>;
   onProgress: (partial: Pick<RagIndexProgress, "processed" | "total">) => void;
 }): Promise<{ indexed: number; skipped: number; removed: number }> {
-  const { embedder, store, vaultIndex, paths, tier, kb, manifest, force, onProgress } = input;
+  const { embedder, store, vaultIndex, paths, tier, kb, manifest, force, sensitivityOverrides, onProgress } = input;
   const collection = vaultCollectionId(tier);
   const documents = vaultDocumentsForPaths(vaultIndex, paths);
   const chunksByDocument = groupChunksByDocument(vaultIndex, documents);
@@ -628,7 +641,11 @@ async function indexVaultTier(input: {
             relativePath: doc.relativePath,
             title: doc.title,
             tier,
-            sensitivity: inferDocumentSensitivity(doc.relativePath),
+            sensitivity: resolveDocumentSensitivityById(
+              doc.documentId,
+              doc.relativePath,
+              sensitivityOverrides,
+            ),
           },
         }));
         await store.upsert(records);
@@ -681,6 +698,61 @@ function groupChunksByDocument(
     grouped.set(chunk.documentId, list);
   }
   return grouped;
+}
+
+/** Ordered from most open (0) to most restrictive (2). */
+const SENSITIVITY_ORDER_3: readonly KnowledgeAccessLevel[] = ["public", "friends", "private"] as const;
+
+/**
+ * Map legacy sensitivity names to the 3-tier KB levels.
+ */
+function normalizeLegacySensitivity(s: string): KnowledgeAccessLevel {
+  if (s === "personal" || s === "private") return "private";
+  if (s === "professional" || s === "friends" || s === "trusted") return "friends";
+  return "public";
+}
+
+/**
+ * Filter vault search results by sensitivity ceiling (path-heuristic only, no overrides).
+ */
+function filterVectorResultsBySensitivity(
+  results: VaultSearchResult[],
+  knowledgeAccess: KnowledgeAccessLevel,
+  maxSensitivity?: string,
+): VaultSearchResult[] {
+  const accessIdx = SENSITIVITY_ORDER_3.indexOf(knowledgeAccess);
+  const ruleLevel = maxSensitivity ? normalizeLegacySensitivity(maxSensitivity) : knowledgeAccess;
+  const ruleIdx = SENSITIVITY_ORDER_3.indexOf(ruleLevel);
+  const ceiling = Math.min(accessIdx, ruleIdx);
+  return results.filter((result) => {
+    const docIdx = SENSITIVITY_ORDER_3.indexOf(inferDocumentSensitivity(result.document.relativePath));
+    return docIdx <= ceiling;
+  });
+}
+
+/**
+ * Filter vault search results using per-item sensitivity overrides (Phase 44A1).
+ * Checks override first, falls back to path heuristic.
+ */
+function filterVectorResultsWithOverrides(
+  results: VaultSearchResult[],
+  knowledgeAccess: KnowledgeAccessLevel,
+  maxSensitivity: string | undefined,
+  overrides: Map<string, KnowledgeAccessLevel>,
+): VaultSearchResult[] {
+  const accessIdx = SENSITIVITY_ORDER_3.indexOf(knowledgeAccess);
+  const ruleLevel = maxSensitivity ? normalizeLegacySensitivity(maxSensitivity) : knowledgeAccess;
+  const ruleIdx = SENSITIVITY_ORDER_3.indexOf(ruleLevel);
+  const ceiling = Math.min(accessIdx, ruleIdx);
+  return results.filter((result) => {
+    const sensitivity = resolveDocumentSensitivityById(
+      result.document.documentId,
+      result.document.relativePath,
+      overrides,
+    );
+    const docIdx = SENSITIVITY_ORDER_3.indexOf(sensitivity);
+    return docIdx <= ceiling;
+  });
 }
 
 function debounce(fn: () => Promise<void>, ms: number): () => void {

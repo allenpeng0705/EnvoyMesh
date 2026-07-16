@@ -168,6 +168,8 @@ export type RpcMethods =
   | "listAgentShareProposals"
   | "dismissAgentShareProposal"
   | "submitAgentShareProposal"
+  | "createNote"
+  | "deleteVaultItem"
   // Connection Status
   | "getConnectionStatus"
   | "getPeerConnectionInfo"
@@ -879,8 +881,8 @@ export type AiRuleActionType = "draft" | "auto_send" | "gatekeep" | "defer";
 
 export interface AiVaultQuery {
   path: string;
-  /** Sensitivity ceiling for vault queries: public (anyone), friends (bonded), professional (work), personal (private) */
-  maxSensitivity: "public" | "friends" | "professional" | "personal";
+  /** Sensitivity ceiling for vault queries: public (anyone), friends (bonded), private (owner only) */
+  maxSensitivity: "public" | "friends" | "private";
 }
 
 export interface AiRuleAction {
@@ -912,7 +914,7 @@ export interface ContactAiPreferences {
   /** AI access level for this contact. Default: "none" */
   aiAccessLevel: "none" | "assistant_only" | "full";
   /** Knowledge access level for vault queries. Default: "public" */
-  knowledgeAccess: "public" | "professional" | "personal";
+  knowledgeAccess: "public" | "friends" | "private";
   /**
    * Phase 14B — optional per-contact inbound syndication cap (tighter than global ceiling).
    * Unset = use global `knowledgeSyndicationMaxSensitivity` only.

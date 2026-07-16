@@ -135,7 +135,7 @@ export const DEFAULT_AI_KNOWLEDGE_BASE: Required<
   recentMessageLimit: 20,
   ragMessageLimit: 5,
   vaultSnippetLimit: 5,
-  publicVaultPaths: ["knowledge/public/"],
+  publicVaultPaths: ["knowledge/public/", "notes/"],
   privateVaultPaths: ["knowledge/private/"],
   externalProvider: "none",
   maxFileBytes: DEFAULT_AI_KNOWLEDGE_BASE_MAX_FILE_BYTES,

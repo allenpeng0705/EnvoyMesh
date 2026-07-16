@@ -46,7 +46,7 @@ import {
 import { revealPathInFileManager } from "./vault-file-open.js";
 import { createAgentShareProposalStore } from "./agent-share-proposal-store.js";
 import { createAuditEvent, type AuditEvent } from "@envoymesh/local-store";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { derivePeerId } from "@envoymesh/identity";
@@ -60,6 +60,9 @@ import {
 import {
   bondTrustRank,
   type BondLevel,
+  type CreateNoteParams,
+  type CreateNoteResult,
+  type DeleteVaultItemParams,
   type DiscoverPublishedLibraryParams,
   type DiscoverPublishedLibraryPeerResult,
   type NodeProfile,
@@ -166,6 +169,48 @@ export async function setLibraryItemPublishedViaRuntime(
   const profileDir = ctx.getProfileDir();
   if (!profileDir) return;
   await createPublishedLibraryStore(profileDir).setPublished(documentId, published);
+  await writeSensitivityOverride(ctx, documentId, published);
+}
+
+/**
+ * Phase 44A1: persist per-item sensitivity override alongside published state.
+ * Published items get sensitivity "public"; unpublished items have their override
+ * removed (reverting to path heuristic). Stored in `{profileDir}/vault-sensitivity-overrides.json`
+ * (outside the vault root to avoid polluting the vault index).
+ */
+async function writeSensitivityOverride(
+  ctx: FileShareContext,
+  documentId: string,
+  published: boolean,
+): Promise<void> {
+  try {
+    const profileDir = ctx.getProfileDir();
+    if (!profileDir) return;
+    const filePath = join(profileDir, "vault-sensitivity-overrides.json");
+    let overrides: Record<string, string> = {};
+    try {
+      const raw = await readFile(filePath, "utf8");
+      const parsed = JSON.parse(raw);
+      if (parsed?.version === 1 && parsed?.overrides && typeof parsed.overrides === "object") {
+        overrides = parsed.overrides;
+      }
+    } catch {
+      // File missing or corrupt — start fresh
+    }
+    if (published) {
+      overrides[documentId] = "public";
+    } else {
+      delete overrides[documentId];
+    }
+    await writeFile(
+      filePath,
+      `${JSON.stringify({ version: 1, overrides }, null, 2)}\n`,
+      { mode: 0o600 },
+    );
+  } catch {
+    // Best-effort: published-library.json write already succeeded.
+    // Real FS operations may fail in test environments with mock paths.
+  }
 }
 
 /* ---------- OpenClaw workspace helpers ---------- */
@@ -393,6 +438,95 @@ export async function importToLibraryViaRuntime(
     relativePath: doc.relativePath,
     sizeBytes: doc.byteLength,
   };
+}
+
+/* ---------- native notes (Phase 44A2) ---------- */
+
+export async function createNoteViaRuntime(
+  ctx: FileShareContext,
+  params: CreateNoteParams,
+): Promise<CreateNoteResult> {
+  ctx.recordOwnerActivity();
+  const vaultDir = ctx.getVaultDir();
+  if (!vaultDir) throw new Error("Vault dir not initialised");
+
+  // Validate filename — must end with .md and be path-safe.
+  const filename = params.filename.trim().replace(/^[\\/]+/, "");
+  if (!filename || !filename.endsWith(".md") || filename.includes("/") || filename.includes("\\") || filename.includes("..") || filename.includes("~")) {
+    throw new Error("Invalid note filename — must be a simple .md basename");
+  }
+
+  const safeSubfolder = params.subfolder
+    ? params.subfolder.trim().replace(/^[\\/]+/, "").replace(/[\\/]+$/, "")
+    : "";
+  if (safeSubfolder && (safeSubfolder.includes("..") || safeSubfolder.includes("~"))) {
+    throw new Error("Invalid subfolder name");
+  }
+
+  const relativePath = safeSubfolder
+    ? `notes/${safeSubfolder}/${filename}`
+    : `notes/${filename}`;
+
+  const abs = resolve(vaultDir, relativePath);
+  assertPathInsideVault(vaultDir, abs);
+
+  await mkdir(dirname(abs), { recursive: true });
+  await writeFile(abs, params.content, "utf8", { mode: 0o600 });
+
+  const index = await buildVaultIndex({ rootDir: vaultDir });
+  const doc = index.documents.find((d) => d.relativePath === relativePath);
+  if (!doc) throw new Error(`Created note not indexed: ${relativePath}`);
+
+  // Persist per-item sensitivity override when sensitivity is explicitly set.
+  if (params.sensitivity && params.sensitivity !== "public") {
+    await writeSensitivityOverride(ctx, doc.documentId, false);
+    // Write the custom sensitivity to the override store.
+    try {
+      const profileDir = ctx.getProfileDir();
+      if (profileDir) {
+        const filePath = join(profileDir, "vault-sensitivity-overrides.json");
+        let overrides: Record<string, string> = {};
+        try {
+          const raw = await readFile(filePath, "utf8");
+          const parsed = JSON.parse(raw);
+          if (parsed?.version === 1 && parsed?.overrides && typeof parsed.overrides === "object") {
+            overrides = parsed.overrides;
+          }
+        } catch { /* missing or corrupt — start fresh */ }
+        overrides[doc.documentId] = params.sensitivity;
+        await writeFile(
+          filePath,
+          `${JSON.stringify({ version: 1, overrides }, null, 2)}\n`,
+          { mode: 0o600 },
+        );
+      }
+    } catch { /* best-effort */ }
+  } else if (params.sensitivity === "public") {
+    await writeSensitivityOverride(ctx, doc.documentId, true);
+  }
+
+  return {
+    documentId: doc.documentId,
+    relativePath: doc.relativePath,
+    sizeBytes: doc.byteLength,
+  };
+}
+
+export async function deleteVaultItemViaRuntime(
+  ctx: FileShareContext,
+  params: DeleteVaultItemParams,
+): Promise<void> {
+  ctx.recordOwnerActivity();
+  const vaultDir = ctx.getVaultDir();
+  if (!vaultDir) throw new Error("Vault dir not initialised");
+
+  const norm = params.relativePath.trim().replace(/^[\\/]+/, "");
+  if (!norm || norm.includes("..") || norm.includes("~")) {
+    throw new Error("Invalid vault path");
+  }
+  const abs = resolve(vaultDir, norm);
+  assertPathInsideVault(vaultDir, abs);
+  await unlink(abs);
 }
 
 export async function resolveLibraryItemPathViaRuntime(

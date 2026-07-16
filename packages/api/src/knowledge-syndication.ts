@@ -19,10 +19,8 @@ export function clampKnowledgeSyndicationSensitivity(
 /** Map syndication sensitivity to vault knowledge-access tier for inbound peer queries. */
 export function syndicationSensitivityToKnowledgeAccess(
   sensitivity: KnowledgeSyndicationSensitivity,
-): "public" | "professional" | "personal" {
-  if (sensitivity === "private") return "personal";
-  if (sensitivity === "friends") return "professional";
-  return "public";
+): "public" | "friends" | "private" {
+  return sensitivity;
 }
 
 /** Apply global then per-contact syndication ceilings to bond-allowed sensitivity. */

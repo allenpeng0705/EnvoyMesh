@@ -797,6 +797,39 @@ export interface ImportToLibraryResult {
   sizeBytes: number;
 }
 
+/**
+ * Create a new markdown note in the vault `notes/` folder (Phase 44A2).
+ *
+ * If `subfolder` is omitted the note is placed directly under `notes/`.
+ * If a note with the same relative path already exists it is overwritten.
+ */
+export interface CreateNoteParams {
+  /** File basename (e.g. `my-note.md`). Must end with `.md`. */
+  filename: string;
+  /** Markdown content (plain text — not base64). */
+  content: string;
+  /** Optional subfolder under `notes/` (e.g. `projects`). */
+  subfolder?: string;
+  /** Sensitivity for the note — written to per-item overrides (Phase 44A1). */
+  sensitivity?: "public" | "friends" | "private";
+}
+
+export interface CreateNoteResult {
+  documentId: string;
+  /** Vault-relative path (e.g. `notes/my-note.md`). */
+  relativePath: string;
+  sizeBytes: number;
+}
+
+/**
+ * Delete a vault item by its vault-relative path (Phase 44A2).
+ * The file is removed from the local vault directory.
+ */
+export interface DeleteVaultItemParams {
+  /** Vault-relative path of the item to delete. */
+  relativePath: string;
+}
+
 /** Max raw bytes for a chat attachment send (25 MiB). */
 export const MAX_CHAT_ATTACHMENT_BYTES = 25 * 1024 * 1024;
 
@@ -1720,6 +1753,16 @@ export interface NodeService {
    * Write bytes into the local shared vault at a relative path (import from file picker).
    */
   importToLibrary(params: ImportToLibraryParams): Promise<ImportToLibraryResult>;
+
+  /**
+   * Create or overwrite a markdown note in the vault `notes/` folder (Phase 44A2).
+   */
+  createNote(params: CreateNoteParams): Promise<CreateNoteResult>;
+
+  /**
+   * Delete a vault item by its vault-relative path (Phase 44A2).
+   */
+  deleteVaultItem(params: DeleteVaultItemParams): Promise<void>;
 
   /** Resolve a vault-relative path to an absolute path on this device (path safety enforced). */
   resolveLibraryItemPath(relativePath: string): Promise<{ vaultRelativePath: string; absolutePath: string }>;

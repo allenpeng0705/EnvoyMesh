@@ -76,7 +76,26 @@ vi.mock("../src/vault-file-open.js", () => ({
   openPathWithDefaultApp: vi.fn(async () => {}),
 }));
 
+// Mock node:fs/promises so createNote/deleteVaultItem don't hit real FS.
+const fsMocks = vi.hoisted(() => ({
+  mkdir: vi.fn(async () => {}),
+  writeFile: vi.fn(async () => {}),
+  readFile: vi.fn(async () => { throw new Error("ENOENT"); }),
+  stat: vi.fn(async () => ({ size: 0 })),
+  unlink: vi.fn(async () => {}),
+}));
+
+vi.mock("node:fs/promises", () => ({
+  mkdir: fsMocks.mkdir,
+  writeFile: fsMocks.writeFile,
+  readFile: fsMocks.readFile,
+  stat: fsMocks.stat,
+  unlink: fsMocks.unlink,
+}));
+
 import {
+  createNoteViaRuntime,
+  deleteVaultItemViaRuntime,
   listLibraryItemsViaRuntime,
   listOpenClawWorkspaceFilesViaRuntime,
   listAllLocalFilesViaRuntime,
@@ -96,6 +115,10 @@ function makeContext(
     getVaultDir: () => "/vault",
     getProfileDir: () => "/profile",
     getNodeConfig: async () => ({}),
+    getTaskStore: () => undefined,
+    getRagService: async () => null,
+    recordOwnerActivity: () => {},
+    emit: () => {},
     ...overrides,
   };
 }
@@ -105,6 +128,9 @@ beforeEach(() => {
   publishedStoreMocks.setPublished.mockClear();
   publishedStoreMocks.loadDocumentIds.mockReset();
   publishedStoreMocks.loadDocumentIds.mockResolvedValue(new Set());
+  fsMocks.mkdir.mockClear();
+  fsMocks.writeFile.mockClear();
+  fsMocks.unlink.mockClear();
 });
 
 afterEach(() => {
@@ -385,5 +411,135 @@ describe("readLocalFileContentViaRuntime", () => {
     );
     expect(listVault).not.toHaveBeenCalled();
     expect(readFromVault).toHaveBeenCalledWith({ relativePath: "docs/x.md", maxBytes: undefined });
+  });
+});
+
+describe("createNoteViaRuntime", () => {
+  it("throws if vault dir is missing", async () => {
+    await expect(
+      createNoteViaRuntime(makeContext({ getVaultDir: () => null }), {
+        filename: "test.md",
+        content: "hello",
+      }),
+    ).rejects.toThrow("Vault dir not initialised");
+  });
+
+  it("throws for invalid filename (no .md extension)", async () => {
+    await expect(
+      createNoteViaRuntime(makeContext(), {
+        filename: "test.txt",
+        content: "hello",
+      }),
+    ).rejects.toThrow("Invalid note filename");
+  });
+
+  it("throws for invalid filename (contains path separator)", async () => {
+    await expect(
+      createNoteViaRuntime(makeContext(), {
+        filename: "sub/test.md",
+        content: "hello",
+      }),
+    ).rejects.toThrow("Invalid note filename");
+  });
+
+  it("throws for invalid filename (contains ..)", async () => {
+    await expect(
+      createNoteViaRuntime(makeContext(), {
+        filename: "../test.md",
+        content: "hello",
+      }),
+    ).rejects.toThrow("Invalid note filename");
+  });
+
+  it("throws for invalid subfolder (contains ..)", async () => {
+    await expect(
+      createNoteViaRuntime(makeContext(), {
+        filename: "test.md",
+        content: "hello",
+        subfolder: "../etc",
+      }),
+    ).rejects.toThrow("Invalid subfolder name");
+  });
+
+  it("creates a note and returns the indexed result", async () => {
+    mocks.vaultIndex = {
+      documents: [
+        {
+          documentId: "note-abc",
+          relativePath: "notes/test.md",
+          title: "test",
+          extension: ".md",
+          byteLength: 5,
+          contentHash: "h1",
+          updatedAt: "2026-07-13T00:00:00Z",
+        },
+      ],
+    };
+    const result = await createNoteViaRuntime(makeContext(), {
+      filename: "test.md",
+      content: "hello",
+    });
+    expect(result).toEqual({
+      documentId: "note-abc",
+      relativePath: "notes/test.md",
+      sizeBytes: 5,
+    });
+  });
+
+  it("creates a note with subfolder", async () => {
+    mocks.vaultIndex = {
+      documents: [
+        {
+          documentId: "note-xyz",
+          relativePath: "notes/projects/plan.md",
+          title: "plan",
+          extension: ".md",
+          byteLength: 10,
+          contentHash: "h2",
+          updatedAt: "2026-07-13T00:00:00Z",
+        },
+      ],
+    };
+    const result = await createNoteViaRuntime(makeContext(), {
+      filename: "plan.md",
+      content: "content here",
+      subfolder: "projects",
+    });
+    expect(result.relativePath).toBe("notes/projects/plan.md");
+  });
+
+  it("throws when filename lacks .md extension", async () => {
+    await expect(
+      createNoteViaRuntime(makeContext(), {
+        filename: "memo",
+        content: "abc",
+      }),
+    ).rejects.toThrow("Invalid note filename");
+  });
+});
+
+describe("deleteVaultItemViaRuntime", () => {
+  it("throws if vault dir is missing", async () => {
+    await expect(
+      deleteVaultItemViaRuntime(makeContext({ getVaultDir: () => null }), {
+        relativePath: "notes/test.md",
+      }),
+    ).rejects.toThrow("Vault dir not initialised");
+  });
+
+  it("throws for invalid relative path (contains ..)", async () => {
+    await expect(
+      deleteVaultItemViaRuntime(makeContext(), {
+        relativePath: "../etc/passwd",
+      }),
+    ).rejects.toThrow("Invalid vault path");
+  });
+
+  it("throws for empty relative path", async () => {
+    await expect(
+      deleteVaultItemViaRuntime(makeContext(), {
+        relativePath: "  ",
+      }),
+    ).rejects.toThrow("Invalid vault path");
   });
 });

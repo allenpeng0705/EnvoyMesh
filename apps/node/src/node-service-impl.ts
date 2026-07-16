@@ -83,6 +83,9 @@ import type {
   VerifyLibraryItemIpfsGatewayResult,
   ImportToLibraryParams,
   ImportToLibraryResult,
+  CreateNoteParams,
+  CreateNoteResult,
+  DeleteVaultItemParams,
   RagIndexStatus,
   TransferStatus,
   SendChatParams,
@@ -600,6 +603,8 @@ import {
   type ClawHubContext,
 } from "./node-service-clawhub.js";
 import {
+  createNoteViaRuntime,
+  deleteVaultItemViaRuntime,
   listAllLocalFilesViaRuntime,
   listLibraryItemsViaRuntime,
   listOpenClawWorkspaceFilesViaRuntime,
@@ -3826,14 +3831,14 @@ class NodeServiceImpl implements NodeService {
           ? await rag.searchVaultKnowledgeBase({
               vaultIndex,
               query,
-              knowledgeAccess: "personal",
+              knowledgeAccess: "private",
               knowledgeBase: nodeConfig.aiSettings?.knowledgeBase,
               knowledgeScope: "owner",
             })
           : searchVaultKnowledgeBase({
               vaultIndex,
               query,
-              knowledgeAccess: "personal",
+              knowledgeAccess: "private",
               knowledgeBase: nodeConfig.aiSettings?.knowledgeBase,
               knowledgeScope: "owner",
             });
@@ -4776,6 +4781,14 @@ class NodeServiceImpl implements NodeService {
 
   async importToLibrary(params: ImportToLibraryParams): Promise<ImportToLibraryResult> {
     return importToLibraryViaRuntime(this._fileShareContext(), params);
+  }
+
+  async createNote(params: CreateNoteParams): Promise<CreateNoteResult> {
+    return createNoteViaRuntime(this._fileShareContext(), params);
+  }
+
+  async deleteVaultItem(params: DeleteVaultItemParams): Promise<void> {
+    return deleteVaultItemViaRuntime(this._fileShareContext(), params);
   }
 
   async resolveLibraryItemPath(relativePath: string): Promise<{ vaultRelativePath: string; absolutePath: string }> {

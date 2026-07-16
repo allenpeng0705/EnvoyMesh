@@ -491,6 +491,20 @@ export const libraryViewMessages = {
     "Export starts the IPFS engine automatically on first use when using the desktop app bundle.",
 } as const;
 
+export const noteEditorMessages = {
+  title: "Note Editor",
+  newNote: "New Note",
+  editNote: "Edit Note",
+  errorFilename: "Please enter a filename",
+  filenamePlaceholder: "note.md",
+  subfolderPlaceholder: "Subfolder (optional)",
+  sensitivityPublic: "Public",
+  sensitivityFriends: "Friends",
+  sensitivityPrivate: "Private",
+  contentPlaceholder: "Write your note in Markdown…",
+  saving: "Saving…",
+} as const;
+
 export const fileShareMessages = {
   dialogAria: "Share file",
   shareTitle: "Share “{title}”",

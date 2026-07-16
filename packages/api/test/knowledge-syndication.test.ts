@@ -14,8 +14,8 @@ describe("knowledge-syndication", () => {
 
   it("maps syndication sensitivity to knowledge access tier", () => {
     expect(syndicationSensitivityToKnowledgeAccess("public")).toBe("public");
-    expect(syndicationSensitivityToKnowledgeAccess("friends")).toBe("professional");
-    expect(syndicationSensitivityToKnowledgeAccess("private")).toBe("personal");
+    expect(syndicationSensitivityToKnowledgeAccess("friends")).toBe("friends");
+    expect(syndicationSensitivityToKnowledgeAccess("private")).toBe("private");
   });
 
   it("applies global then per-contact ceilings", () => {

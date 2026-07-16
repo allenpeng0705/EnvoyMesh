@@ -104,7 +104,7 @@ describe("searchVaultKnowledgeBase", () => {
     const publicScopeMissesPrivate = searchVaultKnowledgeBase({
       vaultIndex: index,
       query: "private diary health family",
-      knowledgeAccess: "personal",
+      knowledgeAccess: "friends",
       knowledgeScope: "public",
       knowledgeBase: {
         enabled: true,
@@ -117,7 +117,7 @@ describe("searchVaultKnowledgeBase", () => {
     const ownerHits = searchVaultKnowledgeBase({
       vaultIndex: index,
       query: "private diary health",
-      knowledgeAccess: "personal",
+      knowledgeAccess: "private",
       knowledgeScope: "owner",
       knowledgeBase: {
         enabled: true,

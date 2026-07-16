@@ -60,7 +60,7 @@ export async function generateChatDraft(input: {
   chatAssistEnabled: boolean;
   aiIdentity?: AiIdentity;
   contactAiAccessLevel?: "none" | "assistant_only" | "full";
-  knowledgeAccess?: "public" | "professional" | "personal";
+  knowledgeAccess?: "public" | "friends" | "private";
   rules?: AiRule[];
   vaultIndex?: VaultIndex | null;
   isOnline?: boolean;

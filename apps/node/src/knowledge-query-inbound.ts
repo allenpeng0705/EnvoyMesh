@@ -119,7 +119,7 @@ export async function handleInboundKnowledgeQuery(input: {
     humanProfileStore,
     agentIdentityStore = null,
     knowledgeBase,
-    knowledgeAccess = isLocalSelfQuery ? "personal" : "public",
+    knowledgeAccess = isLocalSelfQuery ? "private" : "public",
     ragService = null,
     knowledgeSyndicationMaxSensitivity,
     contactSyndicationMaxSensitivity,

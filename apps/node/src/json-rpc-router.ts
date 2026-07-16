@@ -373,6 +373,17 @@ export async function routeRpcMethod(
         contentBase64: params.contentBase64 as string,
         mimeType: params.mimeType as string | undefined,
       });
+    case "createNote":
+      return ns.createNote({
+        filename: params.filename as string,
+        content: params.content as string,
+        subfolder: params.subfolder as string | undefined,
+        sensitivity: params.sensitivity as "public" | "friends" | "private" | undefined,
+      });
+    case "deleteVaultItem":
+      return ns.deleteVaultItem({
+        relativePath: params.relativePath as string,
+      });
     case "resolveLibraryItemPath":
       return ns.resolveLibraryItemPath(params.relativePath as string);
     case "openLibraryItem":

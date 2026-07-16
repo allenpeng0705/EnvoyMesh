@@ -7,7 +7,9 @@ import { openLocalFile, revealVaultLibraryFile } from "../../lib/library-file-ac
 import { localFileRowKey, vaultLibraryItemFromLocalFile } from "../../lib/local-file-display.js";
 import { ShareFileDialog } from "../file-share/ShareFileDialog.js";
 import { FriendsFilesPanel } from "../discover/FriendsFilesPanel.js";
+import { NoteEditorView } from "./NoteEditorView.js";
 import type { LibraryItem, LocalFileItem } from "@envoymesh/api";
+import type { NoteEditorMode } from "./NoteEditorView.js";
 
 export function LibraryView() {
   const t = useT();
@@ -40,6 +42,16 @@ export function LibraryView() {
   const [ipfsErr, setIpfsErr] = useState<string | null>(null);
   const [ipfsOk, setIpfsOk] = useState<string | null>(null);
   const [fileActionBusy, setFileActionBusy] = useState<string | null>(null);
+
+  // Note editor state (Phase 44A2).
+  const [noteEditor, setNoteEditor] = useState<{
+    mode: NoteEditorMode;
+    relativePath?: string;
+  } | null>(null);
+
+  const openNoteEditor = (mode: NoteEditorMode, relativePath?: string) => {
+    setNoteEditor(mode === "edit" && relativePath ? { mode, relativePath } : { mode });
+  };
 
   const runLibraryFileAction = async (row: LocalFileItem, action: "open" | "reveal") => {
     const busyKey = `${action}:${localFileRowKey(row)}`;
@@ -130,6 +142,15 @@ export function LibraryView() {
       >
         {fileActionBusy === `open:${rowKey}` ? t("library.opening") : t("library.open")}
       </button>
+      {row.extension === ".md" ? (
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => openNoteEditor("edit", row.relativePath)}
+        >
+          {t("notes.editNote")}
+        </button>
+      ) : null}
       {!isMobileNode && row.source === "vault" ? (
         <button
           type="button"
@@ -306,6 +327,13 @@ export function LibraryView() {
         >
           {importBusy ? t("library.importing") : t("library.importFile")}
         </button>
+        <button
+          type="button"
+          className="secondary"
+          onClick={() => openNoteEditor("create")}
+        >
+          {t("notes.newNote")}
+        </button>
         <input
           ref={fileInputRef}
           type="file"
@@ -385,6 +413,17 @@ export function LibraryView() {
           libraryItem={shareFor}
           onClose={() => setShareFor(null)}
           onShared={() => setShareFor(null)}
+        />
+      )}
+      {noteEditor && (
+        <NoteEditorView
+          mode={noteEditor.mode}
+          relativePath={noteEditor.relativePath}
+          onSaved={(_path) => {
+            setNoteEditor(null);
+            void load();
+          }}
+          onClose={() => setNoteEditor(null)}
         />
       )}
     </div>

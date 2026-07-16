@@ -346,7 +346,7 @@ let currentContactAiPrefs: Map<
   string,
   {
     aiAccessLevel: "none" | "assistant_only" | "full";
-    knowledgeAccess: "public" | "professional" | "personal";
+    knowledgeAccess: "public" | "friends" | "private";
     priority: "high" | "low";
     syndicationMaxSensitivity?: "public" | "friends" | "private";
   }
