@@ -18,6 +18,19 @@ DEST="$ROOT/apps/tauri/src-tauri/resources/openclaw"
 if [ -f "$DEST/openclaw.mjs" ] && [ -f "$DEST/package.json" ] && [ -d "$DEST/node_modules" ] && [ "${STAGE_OPENCLAW_BUNDLE:-0}" != "1" ]; then
   echo "[stage-tauri-openclaw-bundle] Reusing staged OpenClaw at $DEST"
   echo "[stage-tauri-openclaw-bundle] Set STAGE_OPENCLAW_BUNDLE=1 to force re-stage."
+
+  # Always clean stale source-only dirs that should never be in resources/
+  # (even if cached from before the exclusions were added). Tauri scans
+  # ALL files under resources/ for cargo:rerun-if-changed, so 130K+ source
+  # files in src/ui/apps/test/docs etc. overwhelm the build.
+  STALE_DIRS="src apps docs qa test packages scripts ui config data deploy git-hooks"
+  for d in $STALE_DIRS; do
+    if [ -d "$DEST/$d" ]; then
+      echo "  Removing stale dir: $d/"
+      rm -rf "$DEST/$d"
+    fi
+  done
+
   exit 0
 fi
 
