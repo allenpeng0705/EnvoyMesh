@@ -202,7 +202,7 @@ describe("WebRtcCallTransport", () => {
       lastCreatedPC.ontrack?.({
         track: remoteTrack,
         streams: [],
-      } as RTCTrackEvent);
+      } as unknown as RTCTrackEvent);
 
       expect(onRemoteStream).toHaveBeenCalledTimes(1);
       const stream = onRemoteStream.mock.calls[0]?.[0] as MediaStream;
@@ -384,7 +384,7 @@ describe("WebRtcCallTransport", () => {
       lastCreatedPC.ontrack?.({
         track: remoteTrack,
         streams: [],
-      } as RTCTrackEvent);
+      } as unknown as RTCTrackEvent);
 
       expect(onRemoteStream).toHaveBeenCalledTimes(1);
       const stream = onRemoteStream.mock.calls[0]?.[0] as MediaStream;
