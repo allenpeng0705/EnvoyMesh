@@ -733,6 +733,20 @@ export class EnvoyMesh {
       ],
       idStr,
     );
+    // Do NOT overwrite the peer store with an empty list: in-process two-
+    // node tests listen on 127.0.0.1, which the outbound hint filter strips
+    // as "unroutable". Without this guard, the first `scrubPeerStoreDialHints`
+    // call empties the peer store and the next `dial(peerId)` (via libp2p's
+    // connection manager) fails with "no valid addresses" — even though the
+    // dial target was supplied as a `dialHint` on the call site.  Leaving the
+    // peer store untouched when the filter empties is safer: the existing
+    // addresses are still there, the dialer can resolve to them, and any
+    // truly-stale snapshot addrs (the original reason for the scrub) are
+    // harmless because `getConnections()` reuse short-circuits before the
+    // peer store lookup.
+    if (replacement.length === 0) {
+      return [];
+    }
     try {
       await this.requireNode().peerStore.patch(peerIdFromString(idStr), {
         multiaddrs: replacement.map((a) => ma(a)),
@@ -3514,6 +3528,26 @@ function parsePeerIdFromDialTarget(target: string): string | undefined {
   return id;
 }
 
+/**
+ * Module-level flag that disables the loopback/unroutable dial-hint filter.
+ * Intended for in-process multi-node E2E tests where every peer listens on
+ * 127.0.0.1 and there are no public addresses available.
+ *
+ * Production code must never call this — it would allow dialing loopback
+ * addresses learned from the DHT / peer store in a real network.
+ */
+let _allowLoopbackDialHints = false;
+
+/** @internal — exported for test harness setup only. */
+export function setAllowLoopbackDialHints(v: boolean): void {
+  _allowLoopbackDialHints = v;
+}
+
+/** @internal */
+export function allowsLoopbackDialHints(): boolean {
+  return _allowLoopbackDialHints;
+}
+
 export function isLoopbackOrUnspecifiedDialHint(addr: string): boolean {
   return (
     addr.includes("/ip4/127.") ||
@@ -3577,6 +3611,9 @@ export function hasDirectTcpDialHints(hints: readonly string[]): boolean {
 export function isPrivateOrUnroutableDialHint(addr: string): boolean {
   // Always keep circuit relay addresses — they work through relays regardless of NAT.
   if (addr.includes("/p2p-circuit/")) return false;
+  // When running in-process E2E tests, keep loopback addresses so two-node
+  // topologies on 127.0.0.1 can reach each other through the hint pipeline.
+  if (allowsLoopbackDialHints()) return false;
   // Filter private/reserved IP ranges.
   if (isLoopbackOrUnspecifiedDialHint(addr)) return true;
   if (isDockerBridgeGatewayDialHint(addr)) return true;
@@ -3709,7 +3746,7 @@ export function isUsableOutboundPeerDialHint(addr: string, targetPeerId?: string
   if (!a.startsWith("/")) {
     return false;
   }
-  if (isLoopbackOrUnspecifiedDialHint(a) || isDockerBridgeGatewayDialHint(a)) {
+  if (!allowsLoopbackDialHints() && (isLoopbackOrUnspecifiedDialHint(a) || isDockerBridgeGatewayDialHint(a))) {
     return false;
   }
   if (isPublicLibp2pBootstrapMultiaddr(a) || a.includes("bootstrap.libp2p.io")) {

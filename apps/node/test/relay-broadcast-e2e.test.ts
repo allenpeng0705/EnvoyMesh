@@ -34,7 +34,7 @@ import {
   parseBroadcastResponsePayload,
 } from "@envoymesh/protocol";
 import { afterEach, describe, expect, it, beforeEach } from "vitest";
-import { EnvoyMesh } from "@envoymesh/network";
+import { EnvoyMesh, setAllowLoopbackDialHints } from "@envoymesh/network";
 import type { NodeProfile } from "@envoymesh/local-store";
 import { handleInboundBroadcastRequest } from "../src/broadcast-inbound.js";
 import { createLocalTaskStore, createLocalTrustStore } from "@envoymesh/local-store";
@@ -63,6 +63,7 @@ describe.skipIf(!RELAY_ADDR)("E2E relay-assisted broadcast (live relay)", () => 
   afterEach(async () => {
     await Promise.all(meshes.splice(0).map((mesh) => mesh.stop()));
     await rm(profileDir, { recursive: true, force: true });
+    setAllowLoopbackDialHints(false);
   });
 
   itRelayed("broadcaster receives broadcast.response from matching peer via relay", async () => {
@@ -128,7 +129,11 @@ describe.skipIf(!RELAY_ADDR)("E2E relay-assisted broadcast (live relay)", () => 
           });
 
           const signedResponse = signUnsignedEnvelope(unsignedResponse, bobProfile.device.privateKeyPem);
-          await bob.send(alice.multiaddrs[0], signedResponse);
+          // Reply via relay circuit — Alice is behind NAT (loopback-only
+          // listen addr) and unreachable directly.  The circuit path routes
+          // through the relay to Alice's reservation.
+          const aliceCircuitAddr = RELAY_ADDR! + "/p2p-circuit/p2p/" + alice.peerId;
+          await bob.send(aliceCircuitAddr, signedResponse);
         }
       }
     });
@@ -236,7 +241,9 @@ describe.skipIf(!RELAY_ADDR)("E2E relay-assisted broadcast (live relay)", () => 
           });
 
           const signedResponse = signUnsignedEnvelope(unsignedResponse, bobProfile.device.privateKeyPem);
-          await bob.send(alice.multiaddrs[0], signedResponse);
+          // Reply via relay circuit — Alice is behind NAT.
+          const aliceCircuitAddr = RELAY_ADDR! + "/p2p-circuit/p2p/" + alice.peerId;
+          await bob.send(aliceCircuitAddr, signedResponse);
         }
       }
     });
@@ -302,6 +309,7 @@ describe.skipIf(!RELAY_ADDR)("E2E relay-assisted broadcast (live relay)", () => 
 });
 
 async function startMeshWithRelay(): Promise<EnvoyMesh> {
+  setAllowLoopbackDialHints(true);
   const mesh = new EnvoyMesh({
     listen: ["/ip4/127.0.0.1/tcp/0"],
     enableMdns: false,
@@ -315,6 +323,20 @@ async function startMeshWithRelay(): Promise<EnvoyMesh> {
 
   await mesh.start();
   meshes.push(mesh);
+
+  // Eagerly connect to the relay and request a circuit reservation so the
+  // relay's getConnectedRelayPeerIds() sees this node as a circuit-connected
+  // peer and includes it in broadcast fanout.
+  if (RELAY_ADDR) {
+    try {
+      await mesh.eagerConnectToRelays([RELAY_ADDR], { timeoutMs: 15_000 });
+      await mesh.requestRelayReservation([RELAY_ADDR]);
+    } catch {
+      // Reservation may fail on a slow relay — the 35s settle below gives
+      // the auto-connect another chance to complete.
+    }
+  }
+
   return mesh;
 }
 

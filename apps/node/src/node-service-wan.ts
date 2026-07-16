@@ -17,6 +17,7 @@ import {
   parseEnvoyJoinUri,
 } from "@envoymesh/api";
 import type { EnvoyMesh } from "@envoymesh/network";
+import { allowsLoopbackDialHints } from "@envoymesh/network";
 import type { AuditEvent, LocalTaskStore } from "@envoymesh/local-store";
 import type { DiscoverySeedStore } from "./discovery-seed-store.js";
 import type { PersistedNodeConfig } from "./node-config-store.js";
@@ -148,7 +149,7 @@ export function filterDialableMultiaddrs(
   for (const addr of addrs) {
     const trimmed = addr.trim();
     if (!trimmed) continue;
-    if (isLoopbackOrUnspec(trimmed)) continue;
+    if (!allowsLoopbackDialHints() && isLoopbackOrUnspec(trimmed)) continue;
     if (mode === "wan-public" && !isPublicRoutable(trimmed)) continue;
     out.push(trimmed);
   }

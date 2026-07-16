@@ -41,6 +41,13 @@ describe("E2E approval → sendAgentChat (Phase 13A)", () => {
       }
     });
 
+    // Open a direct connection in both directions. `probePeer` populates
+    // the local peer store with the remote's loopback multiaddr; the next
+    // `sendChat` then resolves the peer ID through the peer store instead
+    // of having to re-dial.  The network module's `scrubPeerStoreDialHints`
+    // would normally strip 127.0.0.1 as "unroutable" and empty the peer
+    // store, but the scrub now keeps the original addresses when the
+    // filtered result would be empty.
     await alice.mesh.probePeer(bob.mesh.multiaddrs[0]!);
     await bob.mesh.probePeer(alice.mesh.multiaddrs[0]!);
 

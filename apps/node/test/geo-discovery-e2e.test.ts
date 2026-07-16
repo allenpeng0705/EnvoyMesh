@@ -15,7 +15,7 @@ import {
   createLocalPeerDirectoryStore,
   createLocalTrustStore,
 } from "@envoymesh/local-store";
-import { EnvoyMesh } from "@envoymesh/network";
+import { EnvoyMesh, setAllowLoopbackDialHints } from "@envoymesh/network";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -29,6 +29,7 @@ afterEach(async () => {
   vi.restoreAllMocks();
   await Promise.all(meshes.splice(0).map((m) => m.stop().catch(() => {})));
   await Promise.all(profileDirs.splice(0).map((d) => rm(d, { recursive: true, force: true })));
+  setAllowLoopbackDialHints(false);
 });
 
 function dialableAddr(mesh: EnvoyMesh): string {
@@ -79,6 +80,7 @@ async function createGeoNode(bootstrapPeers: string[] = []) {
     }),
   };
 
+  setAllowLoopbackDialHints(true);
   const mesh = new EnvoyMesh({
     listen: ["/ip4/127.0.0.1/tcp/0"],
     enableMdns: false,
@@ -106,7 +108,12 @@ describe("Geo discovery two-node E2E", () => {
     const advertiser = await createGeoNode();
     const addr = dialableAddr(advertiser.mesh);
 
-    const searcher = await createGeoNode([addr]);
+    // The two-node test uses `probePeer` for a direct dial rather than the
+    // libp2p Bootstrap component (the Bootstrap filter rejects loopback
+    // 127.0.0.1 addresses as "unusable", and the test is in-process so a
+    // routable address is not available). We pass no bootstrap peers to
+    // the searcher; `probePeer` below opens the connection directly.
+    const searcher = await createGeoNode();
     await searcher.mesh.probePeer(addr);
 
     const discoveryLocation = { countryCode: "US", city: "Boston" };
@@ -120,6 +127,14 @@ describe("Geo discovery two-node E2E", () => {
       advertisedTopics.push(topic);
       return { cid: {} as never };
     });
+    // The discovery advertise cycle skips provideCapabilityTopic when
+    // connectedPeers.length < 2 (avoids 30s timeouts against an empty
+    // DHT route table).  In a two-node test there is only 1 unique peer,
+    // so mock getConnectedPeerIds to satisfy the threshold.
+    vi.spyOn(advertiser.mesh, "getConnectedPeerIds").mockReturnValue([
+      advertiser.mesh.peerId,
+      searcher.mesh.peerId,
+    ]);
 
     vi.spyOn(searcher.mesh, "findCapabilityTopicProviders").mockImplementation(async (topic) => {
       if (topic !== cityTopic) return [];
@@ -248,7 +263,9 @@ describe("Geo discovery two-node E2E", () => {
   it("multi-topic search dedupes providers by peer", async () => {
     const advertiser = await createGeoNode();
     const addr = dialableAddr(advertiser.mesh);
-    const searcher = await createGeoNode([addr]);
+    // See note on the first test — Bootstrap rejects loopback; this test
+    // uses `probePeer` for the direct connection.
+    const searcher = await createGeoNode();
     await searcher.mesh.probePeer(addr);
 
     const countryTopic = "geo:country:US";

@@ -40,9 +40,13 @@ describe.sequential("E2E group chat (three-node libp2p)", () => {
     wireNodeServiceInboundHandlers(bob);
     wireNodeServiceInboundHandlers(carol);
 
-    await alice.mesh.probePeer(bob.mesh.multiaddrs[0]!);
-    await alice.mesh.probePeer(carol.mesh.multiaddrs[0]!);
-    await bob.mesh.probePeer(carol.mesh.multiaddrs[0]!);
+    // Full bidirectional mesh probe — every node can reach every other node
+    // through libp2p's connection manager.  Without all six directions, the
+    // outbound hint pipeline may strip loopback addresses and leave no viable
+    // dial path for room.sync / room.message fan-out.
+    for (const [a, b] of [[alice, bob], [alice, carol], [bob, alice], [bob, carol], [carol, alice], [carol, bob]] as const) {
+      await a.mesh.probePeer(b.mesh.multiaddrs[0]!);
+    }
 
     const room = await alice.service.createChatRoom("Weekend", [
       bob.profile.owner.ownerId,

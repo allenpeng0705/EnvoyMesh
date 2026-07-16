@@ -29,7 +29,7 @@ import {
   type EnvoyEnvelope,
 } from "@envoymesh/protocol";
 import { ApprovalQueue, isA2ATaskIntent } from "@envoymesh/api";
-import { EnvoyMesh } from "@envoymesh/network";
+import { EnvoyMesh, setAllowLoopbackDialHints } from "@envoymesh/network";
 import type { ModelProviderConfig } from "@envoymesh/api";
 import { buildVaultIndex } from "@envoymesh/vault";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
@@ -60,6 +60,9 @@ export interface Phase13TestNode {
 }
 
 export async function startPhase13Mesh(): Promise<EnvoyMesh> {
+  // Every E2E test node listens on 127.0.0.1 — tell the dial-hint pipeline
+  // to keep loopback addresses so peers can reach each other.
+  setAllowLoopbackDialHints(true);
   const mesh = new EnvoyMesh({ listen: ["/ip4/127.0.0.1/tcp/0"], enableMdns: false });
   await mesh.start();
   phase13Meshes.push(mesh);
@@ -297,9 +300,10 @@ export async function deliverHumanChat(
   to: Phase13TestNode,
   text: string,
   messageId?: string,
+  sendOptions?: import("@envoymesh/network").MeshOutboundOptions,
 ): Promise<void> {
   const envelope = signedHumanChatEnvelope(from, to.mesh, text, messageId);
-  await from.mesh.sendChat(to.mesh.multiaddrs[0]!, envelope);
+  await from.mesh.sendChat(to.mesh.multiaddrs[0]!, envelope, sendOptions);
 }
 
 export async function deliverAgentChat(
@@ -444,6 +448,7 @@ export async function cleanupPhase13Harness(): Promise<void> {
   await Promise.all(
     phase13ProfileDirs.splice(0).map((d) => rm(d, { recursive: true, force: true }).catch(() => {})),
   );
+  setAllowLoopbackDialHints(false);
 }
 
 import { handleInboundSocialIntroIntent } from "../src/social-intro-inbound.js";
