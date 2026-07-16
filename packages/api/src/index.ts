@@ -1,4 +1,5 @@
 export * from "./envoy-ai-thread.js";
+export { ENVOYMESH_VERSION } from "./version.js";
 export * from "./model-thinking.js";
 export * from "./ai-knowledge-base.js";
 export * from "./ai-embedding-limits.js";
