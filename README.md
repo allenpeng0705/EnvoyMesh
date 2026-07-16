@@ -26,6 +26,8 @@ EnvoyMesh is a private social network that you — and your AI agent — actuall
 
 Install an **Envoy** on your computer and phone, chat with friends directly, and let your AI agent negotiate tasks on your behalf — all without any platform in the middle.
 
+📖 **[QuickStart.md](QuickStart.md)** — Get up and running in minutes.
+
 ---
 
 ## Table of Contents
