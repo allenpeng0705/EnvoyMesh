@@ -148,6 +148,12 @@ function evaluatePublicPolicy(intent: EnvoyIntent): PolicyDecision {
     return { action: "allow", maxSensitivity: "public" };
   }
 
+  // Phase 44B: allow public peers to query public knowledge items only.
+  // Rate limiting is enforced in the knowledge-query inbound handler.
+  if (intent === "knowledge.query") {
+    return { action: "allow", maxSensitivity: "public" };
+  }
+
   return { action: "deny", reason: "public peers cannot use this intent" };
 }
 
@@ -290,6 +296,43 @@ export function checkCapabilityTopicRateLimit(
   if (!entry || now - entry.windowStart >= windowMs) {
     // Start a new window
     queryRateLimiters.set(peerId, { count: 1, windowStart: now });
+    return { allowed: true, remaining: maxQueries - 1, resetAt: now + windowMs };
+  }
+
+  if (entry.count >= maxQueries) {
+    return { allowed: false, remaining: 0, resetAt: entry.windowStart + windowMs };
+  }
+
+  entry.count++;
+  return { allowed: true, remaining: maxQueries - entry.count, resetAt: entry.windowStart + windowMs };
+}
+
+// ============================================
+// Phase 44B: Rate limiter for public knowledge queries
+// ============================================
+
+/** In-memory sliding-window rate limit state for public knowledge queries, keyed by peerId. */
+const publicKnowledgeRateLimiters = new Map<string, RateLimitEntry>();
+
+/**
+ * Check (and update) the per-peer rate limit for public knowledge queries.
+ * Stricter than capability-topic queries: 5 per minute by default.
+ * Uses the same sliding-window pattern as {@link checkCapabilityTopicRateLimit}.
+ *
+ * @param peerId      - The peer making the knowledge query
+ * @param maxQueries   - Maximum queries allowed per window (default 5)
+ * @param windowMs     - Window size in ms (default 60_000 = 1 minute)
+ */
+export function checkPublicKnowledgeRateLimit(
+  peerId: string,
+  maxQueries: number = 5,
+  windowMs: number = 60_000,
+): RateLimitResult {
+  const now = Date.now();
+  const entry = publicKnowledgeRateLimiters.get(peerId);
+
+  if (!entry || now - entry.windowStart >= windowMs) {
+    publicKnowledgeRateLimiters.set(peerId, { count: 1, windowStart: now });
     return { allowed: true, remaining: maxQueries - 1, resetAt: now + windowMs };
   }
 

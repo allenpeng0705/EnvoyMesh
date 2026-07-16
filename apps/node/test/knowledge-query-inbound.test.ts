@@ -81,7 +81,7 @@ describe("handleInboundKnowledgeQuery", () => {
     }
   });
 
-  it("succeeds for valid payload from stranger (no trust record) — defaults to public", async () => {
+  it("succeeds for valid payload from stranger (no trust record) — defaults to public (Phase 44B)", async () => {
     const result = await handleInboundKnowledgeQuery({
       envelope: knowledgeEnvelope("peer-a", { query: "What is EnvoyMesh?" }),
       remotePeerId: "remote-libp2p",
@@ -96,11 +96,8 @@ describe("handleInboundKnowledgeQuery", () => {
     });
 
     // Stranger: not in peer directory → bond level = "public"
-    // Public peers are denied for knowledge.query (policy check returns deny)
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.reason).toContain("public");
-    }
+    // Phase 44B: public peers can now query knowledge at "public" sensitivity.
+    expect(result.ok).toBe(true);
   });
 
   it("succeeds for bonded direct peer with vault index", async () => {

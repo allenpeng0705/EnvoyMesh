@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createUnsignedMandate, type Mandate } from "@envoymesh/protocol";
 import {
   checkCapabilityTopicRateLimit,
+  checkPublicKnowledgeRateLimit,
   evaluateCapability,
   evaluateMandateAction,
   evaluatePolicy,
@@ -33,14 +34,27 @@ describe("bonds", () => {
     });
   });
 
-  it("denies public peers that query knowledge", () => {
+  it("allows public peers to query public knowledge (Phase 44B)", () => {
     expect(
       evaluatePolicy({
         peerId: "peer-a",
         bondLevel: "public",
         intent: "knowledge.query",
       }),
-    ).toEqual({ action: "deny", reason: "public peers cannot use this intent" });
+    ).toEqual({ action: "allow", maxSensitivity: "public" });
+  });
+
+  it("caps public knowledge queries at public sensitivity regardless of request (Phase 44B)", () => {
+    // The bonds layer allows the intent but caps sensitivity at "public".
+    // The knowledge-query handler enforces the cap when searching the vault.
+    expect(
+      evaluatePolicy({
+        peerId: "peer-a",
+        bondLevel: "public",
+        intent: "knowledge.query",
+        requestedSensitivity: "friends",
+      }),
+    ).toEqual({ action: "allow", maxSensitivity: "public" });
   });
 
   it("challenges public bond requests", () => {
@@ -329,6 +343,52 @@ describe("checkCapabilityTopicRateLimit", () => {
     const peer = "rate-test-defaults-peer";
     const r1 = checkCapabilityTopicRateLimit(peer);
     expect(r1.remaining).toBe(29);
+    expect(r1.allowed).toBe(true);
+  });
+});
+
+describe("checkPublicKnowledgeRateLimit", () => {
+  it("allows public knowledge queries within the rate limit window", () => {
+    const peer = "pub-kq-allow-peer";
+    const result = checkPublicKnowledgeRateLimit(peer, 5, 60_000);
+    expect(result.allowed).toBe(true);
+    expect(result.remaining).toBe(4);
+  });
+
+  it("tracks remaining count across multiple calls", () => {
+    const peer = "pub-kq-count-peer";
+    checkPublicKnowledgeRateLimit(peer, 3, 60_000);
+    checkPublicKnowledgeRateLimit(peer, 3, 60_000);
+    const result = checkPublicKnowledgeRateLimit(peer, 3, 60_000);
+    expect(result.allowed).toBe(true);
+    expect(result.remaining).toBe(0);
+  });
+
+  it("denies queries once the limit is exceeded", () => {
+    const peer = "pub-kq-deny-peer";
+    const limit = 2;
+    checkPublicKnowledgeRateLimit(peer, limit, 60_000);
+    checkPublicKnowledgeRateLimit(peer, limit, 60_000);
+    const result = checkPublicKnowledgeRateLimit(peer, limit, 60_000);
+    expect(result.allowed).toBe(false);
+    expect(result.remaining).toBe(0);
+  });
+
+  it("enforces independent limits per peer (no cross-contamination with capability limiter)", () => {
+    const peerA = "pub-kq-peer-a";
+    const peerB = "pub-kq-peer-b";
+    // Exhaust peer A's knowledge limit
+    checkPublicKnowledgeRateLimit(peerA, 1, 60_000);
+    const resultA = checkPublicKnowledgeRateLimit(peerA, 1, 60_000);
+    const resultB = checkPublicKnowledgeRateLimit(peerB, 1, 60_000);
+    expect(resultA.allowed).toBe(false);
+    expect(resultB.allowed).toBe(true);
+  });
+
+  it("defaults to 5 queries per 60 seconds", () => {
+    const peer = "pub-kq-defaults-peer";
+    const r1 = checkPublicKnowledgeRateLimit(peer);
+    expect(r1.remaining).toBe(4);
     expect(r1.allowed).toBe(true);
   });
 });

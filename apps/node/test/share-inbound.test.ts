@@ -115,14 +115,14 @@ describe("handleInboundShareRequest", () => {
     expect(result.reason).toContain("blocked");
   });
 
-  it("denies public stranger (no peer directory entry)", async () => {
+  it("allows public stranger knowledge share request at public sensitivity (Phase 44B)", async () => {
     const profile = testProfile();
     const taskStore = createLocalTaskStore(profileDir);
     const trustStore = createLocalTrustStore(profileDir);
     const peerDirectoryStore = createLocalPeerDirectoryStore(profileDir);
 
     // No peer directory entry → ownerId resolves to undefined → bond level = "public"
-    // Public peers are denied for knowledge.query intent
+    // Phase 44B: public knowledge queries (including knowledge-type share requests) are now allowed.
     const envelope = signedEnvelope(profile, "share.request", {
       requestType: "knowledge",
       query: "what is my name?",
@@ -143,8 +143,7 @@ describe("handleInboundShareRequest", () => {
       modelProviders: { mode: "mock" },
     });
 
-    expect(result.ok).toBe(false);
-    expect(result.reason).toContain("public");
+    expect(result.ok).toBe(true);
   });
 
   it("allows knowledge request from bonded contact and returns preview", async () => {

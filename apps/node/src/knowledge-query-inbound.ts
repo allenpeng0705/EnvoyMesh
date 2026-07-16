@@ -7,7 +7,7 @@ import {
   type EnvoyEnvelope,
   type KnowledgeResponsePayload,
 } from "@envoymesh/protocol";
-import { evaluatePolicy } from "@envoymesh/bonds";
+import { evaluatePolicy, checkPublicKnowledgeRateLimit } from "@envoymesh/bonds";
 import type { VaultIndex } from "@envoymesh/vault";
 import { buildModelProviders } from "@envoymesh/models";
 import { routeModelRequestWithCostTracking } from "./model-cost-tracking.js";
@@ -167,6 +167,30 @@ export async function handleInboundKnowledgeQuery(input: {
     bondLevel = senderOwnerId
       ? (await trustStore.getTrustRecord(senderOwnerId))?.level ?? "public"
       : "public";
+  }
+
+  // Phase 44B: rate-limit public (stranger) knowledge queries.
+  // Bonded peers (direct/referred) are not rate-limited — they have higher trust.
+  if (bondLevel === "public" && !isLocalSelfQuery) {
+    const rateResult = checkPublicKnowledgeRateLimit(remotePeerId);
+    if (!rateResult.allowed) {
+      await taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "policy.decided",
+          intent: "knowledge.query",
+          messageId: envelope.messageId,
+          correlationId,
+          remotePeerId,
+          direction: "inbound",
+          verificationStatus: "verified",
+          latencyMs: Date.now() - receivedAt,
+          outcome: "deny",
+          summary: `knowledge.query rate-limited: ${rateResult.remaining} remaining, resets at ${new Date(rateResult.resetAt).toISOString()}`,
+          createdAt: envelope.createdAt,
+        }),
+      );
+      return { ok: false, reason: "rate limited: too many knowledge queries" };
+    }
   }
 
   const policyDecision = evaluatePolicy({

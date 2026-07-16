@@ -155,9 +155,9 @@ describe("handleInboundKnowledgeQuery — error handling", () => {
   });
 });
 
-describe("handleInboundKnowledgeQuery — stranger denial", () => {
-  it("denies knowledge query from stranger (no trust record) with correct reason", async () => {
-    // No peer directory entry, no trust record → bondLevel = "public" → denied
+describe("handleInboundKnowledgeQuery — stranger (public) query", () => {
+  it("allows knowledge query from stranger (no trust record) at public sensitivity (Phase 44B)", async () => {
+    // No peer directory entry, no trust record → bondLevel = "public" → allowed at "public"
     const result = await handleInboundKnowledgeQuery({
       envelope: knowledgeEnvelope("peer-stranger", { query: "What is EnvoyMesh?" }),
       remotePeerId: "remote-libp2p",
@@ -171,16 +171,8 @@ describe("handleInboundKnowledgeQuery — stranger denial", () => {
       modelProviders: { mode: "mock" },
     });
 
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.reason).toContain("public");
-    }
-
-    // Verify policy.decided audit was written with deny outcome
-    const audits = await taskStore.readAuditEvents();
-    const policyDecided = audits.find((a) => a.type === "policy.decided");
-    expect(policyDecided).toBeDefined();
-    expect(policyDecided!.outcome).toBe("deny");
+    // Phase 44B: public knowledge queries are now allowed (maxSensitivity: "public").
+    expect(result.ok).toBe(true);
   });
 });
 

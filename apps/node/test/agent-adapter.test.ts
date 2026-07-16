@@ -353,7 +353,7 @@ describe("MESH_LIST_CONTACTS_TOOL", () => {
 // ─── Test: mesh_requestKnowledge — policy enforcement ──────────────────────────
 
 describe("MESH_REQUEST_KNOWLEDGE_TOOL", () => {
-  it("denies when no bond exists with target owner", async () => {
+  it("allows public knowledge query to stranger (Phase 44B)", async () => {
     const trustStore = createLocalTrustStore(profileDir);
     const taskStore = createLocalTaskStore(profileDir);
     const peerDirectoryStore = createLocalPeerDirectoryStore(profileDir);
@@ -381,10 +381,8 @@ describe("MESH_REQUEST_KNOWLEDGE_TOOL", () => {
       query: "What is the capital of France?",
     })) as Record<string, unknown>;
 
-    expect(result.denied).toBe(true);
-    expect(result.error).toBeDefined();
-    // mesh.send should NOT have been called
-    expect(mockMesh.send).not.toHaveBeenCalled();
+    // Phase 44B: public knowledge queries are now allowed for strangers.
+    expect(result.denied).toBeFalsy();
   });
 
   it("allows when direct bond exists with target owner", async () => {
@@ -656,7 +654,7 @@ describe("agent adapter tools via LocalToolRegistry", () => {
     expect((result.output as Record<string, unknown>).contacts).toBeDefined();
   });
 
-  it("mesh_requestKnowledge passes policy check but returns denied when no bond", async () => {
+  it("mesh_requestKnowledge allows public query to stranger via registry (Phase 44B)", async () => {
     const registry = new LocalToolRegistry();
     const trustStore = createLocalTrustStore(profileDir);
     const taskStore = createLocalTaskStore(profileDir);
@@ -683,13 +681,12 @@ describe("agent adapter tools via LocalToolRegistry", () => {
       false,
     );
 
-    // Policy allows the tool call (tool minSensitivity is public)
+    // Phase 44B: policy allows the tool call, and the outbound policy now
+    // allows knowledge.query to public peers (strangers).
     expect(result.policyDecision.action).toBe("allow");
-    // But the tool implementation returns denied (no bond)
-    expect(result.ok).toBe(true); // tool succeeded
-    expect((result.output as Record<string, unknown>).denied).toBe(true);
-    // EMP message should NOT have been sent
-    expect(mockMesh.sendExpectReply).not.toHaveBeenCalled();
+    expect(result.ok).toBe(true);
+    // The tool should NOT return denied for strangers anymore.
+    expect((result.output as Record<string, unknown>).denied).toBeFalsy();
   });
 
   it("mesh_sendChat passes policy check but returns error when no bond", async () => {
