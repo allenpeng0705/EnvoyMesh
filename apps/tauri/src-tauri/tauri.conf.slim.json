@@ -42,7 +42,19 @@
     "resources": [
       "resources/node/**/*",
       "resources/node-runtime/**/*",
-      "resources/openclaw/**/*"
+      "resources/openclaw/**/*",
+      "!resources/openclaw/src/**",
+      "!resources/openclaw/apps/**",
+      "!resources/openclaw/docs/**",
+      "!resources/openclaw/qa/**",
+      "!resources/openclaw/test/**",
+      "!resources/openclaw/packages/**",
+      "!resources/openclaw/scripts/**",
+      "!resources/openclaw/ui/**",
+      "!resources/openclaw/config/**",
+      "!resources/openclaw/data/**",
+      "!resources/openclaw/deploy/**",
+      "!resources/openclaw/git-hooks/**"
     ]
   },
   "plugins": {

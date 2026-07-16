@@ -439,6 +439,15 @@ export interface NodeServiceClient {
   sendToOpenClaw?(text: string): Promise<void>;
   getPairedDiagnostics?(): Promise<Record<string, unknown>>;
 
+  // OpenClaw extension/plugin management
+  listOpenClawExtensionPlugins?(): Promise<import("@envoymesh/api").OpenClawPluginInfo[]>;
+  inspectOpenClawExtensionPlugin?(id: string): Promise<import("@envoymesh/api").OpenClawPluginDetail | null>;
+  enableOpenClawExtensionPlugin?(id: string): Promise<{ ok: boolean; message: string }>;
+  disableOpenClawExtensionPlugin?(id: string): Promise<{ ok: boolean; message: string }>;
+  installOpenClawExtensionPlugin?(spec: string): Promise<{ ok: boolean; message: string }>;
+  uninstallOpenClawExtensionPlugin?(id: string): Promise<{ ok: boolean; message: string }>;
+  updateOpenClawExtensionPlugin?(id: string): Promise<{ ok: boolean; message: string }>;
+
   // Phase 9-style data wipe
   clearAllUserData(): Promise<void>;
 
@@ -1359,6 +1368,28 @@ function createWsNodeServiceClient(
     },
     async getPairedDiagnostics() {
       return wsClient.rpc("getPairedDiagnostics", {}) as Promise<Record<string, unknown>>;
+    },
+    // OpenClaw extension/plugin management
+    async listOpenClawExtensionPlugins() {
+      return wsClient.rpc("listOpenClawExtensionPlugins", {}) as Promise<import("@envoymesh/api").OpenClawPluginInfo[]>;
+    },
+    async inspectOpenClawExtensionPlugin(id: string) {
+      return wsClient.rpc("inspectOpenClawExtensionPlugin", { id }) as Promise<import("@envoymesh/api").OpenClawPluginDetail | null>;
+    },
+    async enableOpenClawExtensionPlugin(id: string) {
+      return wsClient.rpc("enableOpenClawExtensionPlugin", { id }) as Promise<{ ok: boolean; message: string }>;
+    },
+    async disableOpenClawExtensionPlugin(id: string) {
+      return wsClient.rpc("disableOpenClawExtensionPlugin", { id }) as Promise<{ ok: boolean; message: string }>;
+    },
+    async installOpenClawExtensionPlugin(spec: string) {
+      return wsClient.rpc("installOpenClawExtensionPlugin", { spec }) as Promise<{ ok: boolean; message: string }>;
+    },
+    async uninstallOpenClawExtensionPlugin(id: string) {
+      return wsClient.rpc("uninstallOpenClawExtensionPlugin", { id }) as Promise<{ ok: boolean; message: string }>;
+    },
+    async updateOpenClawExtensionPlugin(id: string) {
+      return wsClient.rpc("updateOpenClawExtensionPlugin", { id }) as Promise<{ ok: boolean; message: string }>;
     },
     async clearAllUserData() {
       await wsClient.rpc("clearAllUserData", {});

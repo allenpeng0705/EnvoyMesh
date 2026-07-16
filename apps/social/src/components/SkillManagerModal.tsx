@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useNodeService } from "../hooks/useNodeService.js";
 import { ModalPortal } from "./ModalPortal.js";
+import type { OpenClawPluginInfo, OpenClawPluginDetail } from "@envoymesh/api";
 
 interface Props {
   onClose: () => void;
@@ -8,7 +9,7 @@ interface Props {
 
 export function SkillManagerModal({ onClose }: Props) {
   const nodeService = useNodeService();
-  const [tab, setTab] = useState<"installed" | "trending" | "search">("installed");
+  const [tab, setTab] = useState<"installed" | "trending" | "search" | "extensions">("installed");
   const [trending, setTrending] = useState<string[]>([]);
   const [trendingLoading, setTrendingLoading] = useState(false);
   const [installed, setInstalled] = useState<string[]>([]);
@@ -25,6 +26,20 @@ export function SkillManagerModal({ onClose }: Props) {
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [installingSlug, setInstallingSlug] = useState<string | null>(null);
 
+  // Extension tab state
+  const [extensions, setExtensions] = useState<OpenClawPluginInfo[]>([]);
+  const [extensionsLoading, setExtensionsLoading] = useState(false);
+  const [expandedExt, setExpandedExt] = useState<string | null>(null);
+  const [extDetail, setExtDetail] = useState<Record<string, OpenClawPluginDetail>>({});
+  const [extDetailLoading, setExtDetailLoading] = useState<Record<string, boolean>>({});
+  const [extSpec, setExtSpec] = useState("");
+  const [extInstallLoading, setExtInstallLoading] = useState(false);
+  const [extInstallMsg, setExtInstallMsg] = useState("");
+  const [extInstallOk, setExtInstallOk] = useState<boolean | null>(null);
+  const [extActionLoading, setExtActionLoading] = useState<Record<string, string | null>>({});
+  const [extFilter, setExtFilter] = useState("");
+  const [extConfirm, setExtConfirm] = useState<{ action: "uninstall" | "update"; ext: OpenClawPluginInfo } | null>(null);
+
   useEffect(() => {
     nodeService.getOpenClawPlugins?.().then(setInstalled).catch(() => setInstalled([]));
     // Load saved API keys from bridge config
@@ -39,6 +54,95 @@ export function SkillManagerModal({ onClose }: Props) {
       }
     }).catch((e: any) => console.warn("[skills] load failed:", e.message));
   }, [nodeService]);
+
+  const loadExtensions = useCallback(async () => {
+    setExtensionsLoading(true);
+    try {
+      const list = await nodeService.listOpenClawExtensionPlugins?.() ?? [];
+      setExtensions(list);
+    } catch {
+      setExtensions([]);
+    }
+    setExtensionsLoading(false);
+  }, [nodeService]);
+
+  const handleInspectExt = useCallback(async (id: string) => {
+    if (expandedExt === id && extDetail[id]) {
+      setExpandedExt(null);
+      return;
+    }
+    setExpandedExt(id);
+    setExtDetailLoading((prev) => ({ ...prev, [id]: true }));
+    try {
+      const detail = await nodeService.inspectOpenClawExtensionPlugin?.(id);
+      if (detail) {
+        setExtDetail((prev) => ({ ...prev, [id]: detail }));
+      }
+    } catch { /* inspect failed, partial view still works */ }
+    setExtDetailLoading((prev) => ({ ...prev, [id]: false }));
+  }, [expandedExt, extDetail, nodeService]);
+
+  const handleToggleExt = useCallback(async (ext: OpenClawPluginInfo) => {
+    setExtActionLoading((prev) => ({ ...prev, [ext.id]: ext.enabled ? "disabling" : "enabling" }));
+    try {
+      if (ext.enabled) {
+        await nodeService.disableOpenClawExtensionPlugin?.(ext.id);
+      } else {
+        await nodeService.enableOpenClawExtensionPlugin?.(ext.id);
+      }
+      loadExtensions();
+    } catch { /* action failed, keep current state */ }
+    setExtActionLoading((prev) => ({ ...prev, [ext.id]: null }));
+  }, [nodeService, loadExtensions]);
+
+  const handleUninstallExt = useCallback(async (id: string) => {
+    const ext = extensions.find((e) => e.id === id);
+    if (ext) {
+      setExtConfirm({ action: "uninstall", ext });
+      return;
+    }
+  }, [extensions]);
+
+  const handleUpdateExt = useCallback(async (id: string) => {
+    const ext = extensions.find((e) => e.id === id);
+    if (ext) {
+      setExtConfirm({ action: "update", ext });
+      return;
+    }
+  }, [extensions]);
+
+  const confirmExtAction = useCallback(async () => {
+    if (!extConfirm) return;
+    const { action, ext } = extConfirm;
+    setExtConfirm(null);
+    setExtActionLoading((prev) => ({ ...prev, [ext.id]: action === "uninstall" ? "uninstalling" : "updating" }));
+    try {
+      if (action === "uninstall") {
+        await nodeService.uninstallOpenClawExtensionPlugin?.(ext.id);
+      } else {
+        await nodeService.updateOpenClawExtensionPlugin?.(ext.id);
+      }
+      loadExtensions();
+    } catch { /* action failed */ }
+    setExtActionLoading((prev) => ({ ...prev, [ext.id]: null }));
+  }, [extConfirm, nodeService, loadExtensions]);
+
+  const handleInstallExt = useCallback(async () => {
+    if (!extSpec.trim()) return;
+    setExtInstallLoading(true);
+    setExtInstallMsg("");
+    setExtInstallOk(null);
+    try {
+      const r = await nodeService.installOpenClawExtensionPlugin?.(extSpec.trim()) ?? { ok: false, message: "No response" };
+      setExtInstallMsg(r.message);
+      setExtInstallOk(r.ok);
+      if (r.ok) {
+        setExtSpec("");
+        loadExtensions();
+      }
+    } catch (e: any) { setExtInstallMsg(e.message || "Failed"); setExtInstallOk(false); }
+    setExtInstallLoading(false);
+  }, [extSpec, nodeService, loadExtensions]);
 
   const handleSearch = useCallback(async () => {
     if (!query.trim()) return;
@@ -144,6 +248,18 @@ export function SkillManagerModal({ onClose }: Props) {
                 const real = installed.filter(p => p !== "(no skills installed)" && !p.startsWith("Error:") && p !== "__clawhub_missing__");
                 return real.length > 0 ? <span className="skill-manager__badge">{real.length}</span> : null;
               })()}
+            </button>
+            <button
+              type="button"
+              className={`skill-manager__tab ${tab === "extensions" ? "active" : ""}`}
+              onClick={() => {
+                setTab("extensions");
+                if (extensions.length === 0 && !extensionsLoading) {
+                  loadExtensions();
+                }
+              }}
+            >
+              Extensions
             </button>
           </div>
 
@@ -393,7 +509,235 @@ export function SkillManagerModal({ onClose }: Props) {
                 </div>
               </div>
             )}
+
+            {tab === "extensions" && (
+              <div className="skill-manager__extensions">
+                {/* Filter bar */}
+                {extensions.length > 0 && (
+                  <div className="skill-manager__ext-filter">
+                    <input
+                      type="text"
+                      value={extFilter}
+                      onChange={(e) => setExtFilter(e.target.value)}
+                      placeholder="Filter extensions…"
+                    />
+                  </div>
+                )}
+
+                {/* Installed extensions list */}
+                <div className="skill-manager__ext-list">
+                  {extensionsLoading ? (
+                    <p className="skill-manager__hint">Loading extensions…</p>
+                  ) : extensions.length === 0 ? (
+                    <div className="skill-manager__empty">
+                      <div className="skill-manager__empty-icon">🔌</div>
+                      <p>No extensions installed</p>
+                      <p className="skill-manager__hint">
+                        Extensions add channels, tools, and capabilities to OpenClaw.
+                        Install from npm or a git URL below.
+                      </p>
+                    </div>
+                  ) : extFilter.trim() && !extensions.some((ext) => {
+                      const q = extFilter.toLowerCase()
+                      return ext.name.toLowerCase().includes(q) ||
+                        ext.id.toLowerCase().includes(q) ||
+                        (ext.description ?? "").toLowerCase().includes(q) ||
+                        ext.origin.includes(q)
+                    }) ? (
+                    <div className="skill-manager__empty">
+                      <div className="skill-manager__empty-icon">🔍</div>
+                      <p>No extensions match "{extFilter}"</p>
+                    </div>
+                  ) : (
+                    extensions
+                      .filter((ext) => {
+                        if (!extFilter.trim()) return true
+                        const q = extFilter.toLowerCase()
+                        return ext.name.toLowerCase().includes(q) ||
+                          ext.id.toLowerCase().includes(q) ||
+                          (ext.description ?? "").toLowerCase().includes(q) ||
+                          ext.origin.includes(q)
+                      })
+                      .map((ext) => {
+                      const isExpanded = expandedExt === ext.id;
+                      const detail = extDetail[ext.id];
+                      const action = extActionLoading[ext.id];
+                      const isBundled = ext.origin === "bundled";
+                      return (
+                        <div key={ext.id} className="skill-manager__ext-item">
+                          <div className="skill-manager__ext-row">
+                            <span className="skill-manager__item-icon">{ext.enabled ? "✅" : "⏸️"}</span>
+                            <div className="skill-manager__item-info">
+                              <span className="skill-manager__item-name" style={{ cursor: "pointer" }} onClick={() => handleInspectExt(ext.id)}>
+                                {ext.name}
+                                {ext.version && <span className="skill-manager__item-owner"> v{ext.version}</span>}
+                              </span>
+                              {ext.description && <span className="skill-manager__item-desc">{ext.description}</span>}
+                              <div className="skill-manager__ext-meta">
+                                <span className={`skill-manager__ext-origin skill-manager__ext-origin--${ext.origin}`}>
+                                  {ext.origin}
+                                </span>
+                                {ext.channels && ext.channels.length > 0 && (
+                                  <span className="skill-manager__ext-tag">{ext.channels.length} channels</span>
+                                )}
+                                {ext.tools && ext.tools.length > 0 && (
+                                  <span className="skill-manager__ext-tag">{ext.tools.length} tools</span>
+                                )}
+                              </div>
+                            </div>
+                            <div className="skill-manager__ext-actions">
+                              {/* Enable/disable toggle */}
+                              <button
+                                type="button"
+                                className="btn btn-secondary btn-sm"
+                                disabled={!!action}
+                                onClick={() => handleToggleExt(ext)}
+                                title={ext.enabled ? "Disable" : "Enable"}
+                              >
+                                {action === "enabling" ? "Enabling…" : action === "disabling" ? "Disabling…" : ext.enabled ? "Disable" : "Enable"}
+                              </button>
+                              {/* Uninstall — not available for bundled */}
+                              {!isBundled && (
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary btn-sm"
+                                  disabled={!!action}
+                                  style={{ color: "var(--color-error, #dc2626)", borderColor: "var(--color-error, #dc2626)" }}
+                                  onClick={() => handleUninstallExt(ext.id)}
+                                  title="Uninstall"
+                                >
+                                  {action === "uninstalling" ? "Removing…" : "Remove"}
+                                </button>
+                              )}
+                              {/* Update — for non-bundled extensions */}
+                              {!isBundled && (
+                                <button
+                                  type="button"
+                                  className="btn btn-secondary btn-sm"
+                                  disabled={!!action}
+                                  onClick={() => handleUpdateExt(ext.id)}
+                                  title="Update"
+                                >
+                                  {action === "updating" ? "Updating…" : "Update"}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+
+                          {/* Expanded detail */}
+                          {isExpanded && (
+                            <div className="skill-manager__ext-detail">
+                              {extDetailLoading[ext.id] ? (
+                                <p className="skill-manager__hint">Loading details…</p>
+                              ) : detail ? (
+                                <>
+                                  <div className="skill-manager__ext-detail-grid">
+                                    <div>
+                                      <span className="skill-manager__label">ID</span>
+                                      <code className="skill-manager__ext-code">{detail.id}</code>
+                                    </div>
+                                    {detail.installRecord && (
+                                      <div>
+                                        <span className="skill-manager__label">Source</span>
+                                        <code className="skill-manager__ext-code">
+                                          {detail.installRecord.source}: {detail.installRecord.spec}
+                                        </code>
+                                      </div>
+                                    )}
+                                    {detail.channels && detail.channels.length > 0 && (
+                                      <div>
+                                        <span className="skill-manager__label">Channels</span>
+                                        <div className="skill-manager__ext-tags">
+                                          {detail.channels.map((ch) => (
+                                            <span key={ch} className="skill-manager__ext-tag">{ch}</span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                    {detail.tools && detail.tools.length > 0 && (
+                                      <div>
+                                        <span className="skill-manager__label">Tools</span>
+                                        <div className="skill-manager__ext-tags">
+                                          {detail.tools.map((t) => (
+                                            <span key={t} className="skill-manager__ext-tag">{t}</span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    )}
+                                    {detail.contributions != null && (
+                                      <div>
+                                        <span className="skill-manager__label">Contributions</span>
+                                        <pre className="skill-manager__ext-json">{JSON.stringify(detail.contributions, null, 2)}</pre>
+                                      </div>
+                                    )}
+                                    {detail.configSchema != null && (
+                                      <div>
+                                        <span className="skill-manager__label">Config Schema</span>
+                                        <pre className="skill-manager__ext-json">{JSON.stringify(detail.configSchema, null, 2)}</pre>
+                                      </div>
+                                    )}
+                                  </div>
+                                </>
+                              ) : (
+                                <p className="skill-manager__hint">Details unavailable</p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+
+                {/* Install bar */}
+                <div className="skill-manager__install">
+                  <label className="skill-manager__label">Install extension</label>
+                  <div className="skill-manager__install-row">
+                    <input
+                      type="text"
+                      value={extSpec}
+                      onChange={(e) => setExtSpec(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && handleInstallExt()}
+                      placeholder="npm package or git URL…"
+                    />
+                    <button type="button" className="btn btn-primary btn-sm" onClick={handleInstallExt} disabled={extInstallLoading || !extSpec.trim()}>
+                      {extInstallLoading ? "Installing…" : "Install"}
+                    </button>
+                  </div>
+                  {extInstallMsg && (
+                    <p className={`skill-manager__msg ${extInstallOk === true ? "success" : extInstallOk === false ? "error" : ""}`}>
+                      {extInstallMsg}
+                    </p>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
+
+          {/* Confirmation dialog */}
+          {extConfirm && (
+            <div className="skill-manager__confirm-overlay">
+              <div className="skill-manager__confirm" role="alertdialog" aria-label="Confirm action">
+                <p className="skill-manager__confirm-text">
+                  {extConfirm.action === "uninstall"
+                    ? <>Are you sure you want to remove <strong>{extConfirm.ext.name}</strong>?</>
+                    : <>Are you sure you want to update <strong>{extConfirm.ext.name}</strong>?</>
+                  }
+                </p>
+                <div className="skill-manager__confirm-actions">
+                  <button type="button" className="btn btn-secondary btn-sm" onClick={() => setExtConfirm(null)}>Cancel</button>
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    onClick={confirmExtAction}
+                    style={extConfirm.action === "uninstall" ? { background: "var(--color-error, #dc2626)" } : undefined}
+                  >
+                    {extConfirm.action === "uninstall" ? "Remove" : "Update"}
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </div>
     </ModalPortal>

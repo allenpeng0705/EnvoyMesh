@@ -776,6 +776,21 @@ export async function routeRpcMethod(
       return ns.getPairedDiagnostics();
     case "saveSkillApiKeys":
       return ns.saveSkillApiKeys(params.keys as Record<string, string> ?? {});
+    // OpenClaw extension/plugin management
+    case "listOpenClawExtensionPlugins":
+      return ns.listOpenClawExtensionPlugins();
+    case "inspectOpenClawExtensionPlugin":
+      return ns.inspectOpenClawExtensionPlugin(String(params.id ?? ""));
+    case "enableOpenClawExtensionPlugin":
+      return ns.enableOpenClawExtensionPlugin(String(params.id ?? ""));
+    case "disableOpenClawExtensionPlugin":
+      return ns.disableOpenClawExtensionPlugin(String(params.id ?? ""));
+    case "installOpenClawExtensionPlugin":
+      return ns.installOpenClawExtensionPlugin(String(params.spec ?? ""));
+    case "uninstallOpenClawExtensionPlugin":
+      return ns.uninstallOpenClawExtensionPlugin(String(params.id ?? ""));
+    case "updateOpenClawExtensionPlugin":
+      return ns.updateOpenClawExtensionPlugin(String(params.id ?? ""));
     case "homeclawCoreProxy":
       return ns.homeclawCoreProxy(params as unknown as HomeClawCoreProxyParams);
     // HomeClaw Core WebSocket tunnel methods — only available via direct WebSocket.

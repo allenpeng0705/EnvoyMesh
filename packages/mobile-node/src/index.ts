@@ -1429,6 +1429,36 @@ export class MobileNode implements NodeService {
     return this._homeRemoteCall("uninstallOpenClawPlugin", { name });
   }
 
+  // --- OpenClaw extension/plugin management (proxied to home node) ---
+
+  async listOpenClawExtensionPlugins(): Promise<import("@envoymesh/api").OpenClawPluginInfo[]> {
+    return this._homeRemoteCall<import("@envoymesh/api").OpenClawPluginInfo[]>("listOpenClawExtensionPlugins", {});
+  }
+
+  async inspectOpenClawExtensionPlugin(id: string): Promise<import("@envoymesh/api").OpenClawPluginDetail | null> {
+    return this._homeRemoteCall<import("@envoymesh/api").OpenClawPluginDetail | null>("inspectOpenClawExtensionPlugin", { id });
+  }
+
+  async enableOpenClawExtensionPlugin(id: string): Promise<{ ok: boolean; message: string }> {
+    return this._homeRemoteCall("enableOpenClawExtensionPlugin", { id });
+  }
+
+  async disableOpenClawExtensionPlugin(id: string): Promise<{ ok: boolean; message: string }> {
+    return this._homeRemoteCall("disableOpenClawExtensionPlugin", { id });
+  }
+
+  async installOpenClawExtensionPlugin(spec: string): Promise<{ ok: boolean; message: string }> {
+    return this._homeRemoteCall("installOpenClawExtensionPlugin", { spec });
+  }
+
+  async uninstallOpenClawExtensionPlugin(id: string): Promise<{ ok: boolean; message: string }> {
+    return this._homeRemoteCall("uninstallOpenClawExtensionPlugin", { id });
+  }
+
+  async updateOpenClawExtensionPlugin(id: string): Promise<{ ok: boolean; message: string }> {
+    return this._homeRemoteCall("updateOpenClawExtensionPlugin", { id });
+  }
+
   saveClawhubToken(token: string): Promise<{ ok: boolean }> {
     return this._homeRemoteCall("saveClawhubToken", { token });
   }

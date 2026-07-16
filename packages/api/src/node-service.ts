@@ -1939,6 +1939,15 @@ export interface NodeService {
   saveSkillApiKeys(keys: Record<string, string>): Promise<{ ok: boolean }>;
   saveWebSearchEnabled(enabled: boolean): Promise<{ ok: boolean }>;
   sendToOpenClaw(text: string): Promise<void>;
+
+  // OpenClaw extension/plugin management
+  listOpenClawExtensionPlugins(): Promise<import("./openclaw-plugin.js").OpenClawPluginInfo[]>;
+  inspectOpenClawExtensionPlugin(id: string): Promise<import("./openclaw-plugin.js").OpenClawPluginDetail | null>;
+  enableOpenClawExtensionPlugin(id: string): Promise<{ ok: boolean; message: string }>;
+  disableOpenClawExtensionPlugin(id: string): Promise<{ ok: boolean; message: string }>;
+  installOpenClawExtensionPlugin(spec: string): Promise<{ ok: boolean; message: string }>;
+  uninstallOpenClawExtensionPlugin(id: string): Promise<{ ok: boolean; message: string }>;
+  updateOpenClawExtensionPlugin(id: string): Promise<{ ok: boolean; message: string }>;
   /** Send a message to the external HTTP bridge agent. */
   sendToBridge(text: string): Promise<void>;
   getPairedDiagnostics(): Promise<Record<string, unknown>>;

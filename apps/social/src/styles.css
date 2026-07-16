@@ -7407,9 +7407,172 @@ button.activity-row:hover,
 }
 .skill-manager__token-hint a { color: var(--color-primary); }
 
-/* ==========================================================================
-   Paired Status Bar (mobile thin-client)
-   ========================================================================== */
+/* Extensions tab */
+.skill-manager__extensions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.skill-manager__ext-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.skill-manager__ext-item {
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  transition: background var(--transition-fast);
+}
+.skill-manager__ext-item:hover { background: var(--color-border-subtle); }
+
+.skill-manager__ext-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3);
+}
+
+.skill-manager__ext-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.skill-manager__ext-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.skill-manager__ext-origin {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  line-height: 1.6;
+}
+.skill-manager__ext-origin--bundled  { background: color-mix(in srgb, var(--color-primary) 15%, transparent); color: var(--color-primary); }
+.skill-manager__ext-origin--global   { background: color-mix(in srgb, var(--color-success, #2e7d32) 15%, transparent); color: var(--color-success, #2e7d32); }
+.skill-manager__ext-origin--workspace { background: color-mix(in srgb, #f59e0b 15%, transparent); color: #b45309; }
+.skill-manager__ext-origin--config   { background: color-mix(in srgb, #8b5cf6 15%, transparent); color: #7c3aed; }
+
+.skill-manager__ext-tag {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-bg);
+  color: var(--color-text-muted);
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 1.6;
+}
+
+.skill-manager__ext-detail {
+  padding: var(--space-3) var(--space-3) var(--space-4);
+  border-top: 1px solid var(--color-border-subtle);
+  background: color-mix(in srgb, var(--color-bg) 50%, transparent);
+}
+
+.skill-manager__ext-detail-grid {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.skill-manager__ext-code {
+  display: block;
+  margin-top: 2px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 11px;
+  font-family: monospace;
+  word-break: break-all;
+}
+
+.skill-manager__ext-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.skill-manager__ext-json {
+  margin: 4px 0 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-family: monospace;
+  overflow-x: auto;
+  max-height: 160px;
+  line-height: 1.4;
+}
+
+/* Extension filter bar */
+.skill-manager__ext-filter {
+  margin-bottom: var(--space-2);
+}
+.skill-manager__ext-filter input {
+  width: 100%;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: var(--text-sm);
+  outline: none;
+  transition: border-color var(--transition-fast);
+}
+.skill-manager__ext-filter input:focus { border-color: var(--color-primary); }
+.skill-manager__ext-filter input::placeholder { color: var(--color-text-muted); }
+
+/* Confirmation dialog */
+.skill-manager__confirm-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--color-bg) 60%, transparent);
+  border-radius: var(--radius-xl);
+  z-index: 10;
+}
+
+.skill-manager__confirm {
+  padding: var(--space-5);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-lg);
+  max-width: 320px;
+  text-align: center;
+}
+
+.skill-manager__confirm-text {
+  margin: 0 0 var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--color-text);
+  line-height: 1.5;
+}
+.skill-manager__confirm-text strong {
+  color: var(--color-text);
+}
+
+.skill-manager__confirm-actions {
+  display: flex;
+  gap: var(--space-2);
+  justify-content: center;
+}
 .paired-status-bar {
   padding: var(--space-2) var(--space-4);
   min-height: 24px;

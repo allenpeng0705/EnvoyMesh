@@ -608,6 +608,17 @@ import {
   type ClawHubContext,
 } from "./node-service-clawhub.js";
 import {
+  buildOpenClawPluginContext,
+  type OpenClawPluginContext,
+  listOpenClawExtensionPluginsViaRuntime,
+  inspectOpenClawExtensionPluginViaRuntime,
+  enableOpenClawExtensionPluginViaRuntime,
+  disableOpenClawExtensionPluginViaRuntime,
+  installOpenClawExtensionPluginViaRuntime,
+  uninstallOpenClawExtensionPluginViaRuntime,
+  updateOpenClawExtensionPluginViaRuntime,
+} from "./node-service-openclaw-plugins.js";
+import {
   createNoteViaRuntime,
   deleteVaultItemViaRuntime,
   listAllLocalFilesViaRuntime,
@@ -3359,6 +3370,40 @@ class NodeServiceImpl implements NodeService {
 
   async saveClawhubToken(token: string): Promise<{ ok: boolean }> {
     return saveClawhubTokenViaRuntime(token);
+  }
+
+  private _openClawPluginContext(): OpenClawPluginContext {
+    return buildOpenClawPluginContext(this);
+  }
+
+  // --- OpenClaw extension/plugin management ---
+
+  async listOpenClawExtensionPlugins(): Promise<import("@envoymesh/api").OpenClawPluginInfo[]> {
+    return listOpenClawExtensionPluginsViaRuntime(this._openClawPluginContext());
+  }
+
+  async inspectOpenClawExtensionPlugin(id: string): Promise<import("@envoymesh/api").OpenClawPluginDetail | null> {
+    return inspectOpenClawExtensionPluginViaRuntime(this._openClawPluginContext(), id);
+  }
+
+  async enableOpenClawExtensionPlugin(id: string): Promise<{ ok: boolean; message: string }> {
+    return enableOpenClawExtensionPluginViaRuntime(this._openClawPluginContext(), id);
+  }
+
+  async disableOpenClawExtensionPlugin(id: string): Promise<{ ok: boolean; message: string }> {
+    return disableOpenClawExtensionPluginViaRuntime(this._openClawPluginContext(), id);
+  }
+
+  async installOpenClawExtensionPlugin(spec: string): Promise<{ ok: boolean; message: string }> {
+    return installOpenClawExtensionPluginViaRuntime(this._openClawPluginContext(), spec);
+  }
+
+  async uninstallOpenClawExtensionPlugin(id: string): Promise<{ ok: boolean; message: string }> {
+    return uninstallOpenClawExtensionPluginViaRuntime(this._openClawPluginContext(), id);
+  }
+
+  async updateOpenClawExtensionPlugin(id: string): Promise<{ ok: boolean; message: string }> {
+    return updateOpenClawExtensionPluginViaRuntime(this._openClawPluginContext(), id);
   }
 
   async stopOpenClaw(): Promise<void> {

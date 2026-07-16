@@ -609,7 +609,8 @@ export * from "../src/cli/run-main.ts";
         "config", "data", "deploy", "git-hooks",
         "docker-compose.yml", "Dockerfile", "fly.toml",
         ".env.example", "appcast.xml",
-        "tsconfig.json", "vitest.config.ts", "tsdown.config.ts"
+        "tsconfig.json", "vitest.config.ts", "tsdown.config.ts",
+        "pnpm-workspace.yaml"
     )
     Get-ChildItem -Path $openclawSrc -Force | Where-Object {
         -not ($exclude -contains $_.Name)
@@ -618,6 +619,51 @@ export * from "../src/cli/run-main.ts";
     }
     if (Test-Path (Join-Path $openclawSrc "node_modules")) {
         Copy-Item -Recurse -Force (Join-Path $openclawSrc "node_modules") (Join-Path $openclawDest "node_modules")
+    }
+
+    # Prune unused OpenClaw extensions — the full set is ~143 dirs with
+    # production node_modules deps totalling ~2.2 GB. EnvoyMesh only uses
+    # ~13 (envoymesh channel + web search providers). Keeping all of them
+    # pushes the NSIS installer past its 2 GB hard cap and the build fails.
+    $openclawExtensionsAllowlist = @(
+        "envoymesh",          # core channel plugin (always required)
+        "duckduckgo",         # default web search (no API key needed)
+        "brave", "exa", "firecrawl", "google", "xai",
+        "moonshot", "minimax", "ollama", "perplexity",
+        "searxng", "tavily"
+    )
+    $extDir = Join-Path $openclawDest "extensions"
+    if (Test-Path $extDir) {
+        $removedCount = 0
+        Get-ChildItem -Path $extDir -Directory | Where-Object {
+            -not ($openclawExtensionsAllowlist -contains $_.Name)
+        } | ForEach-Object {
+            Remove-Item -Recurse -Force $_.FullName
+            $removedCount++
+        }
+        if ($removedCount -gt 0) {
+            Write-Info "Pruned $removedCount unused OpenClaw extensions (kept $($openclawExtensionsAllowlist.Count) in allowlist)"
+        }
+    }
+
+    # Second pass: prune orphaned production deps from the staged tree.
+    # The first pnpm prune --prod ran in the SOURCE before extension
+    # pruning, so node_modules still contains deps for removed extensions.
+    # Running prune again here (without pnpm-workspace.yaml) tells pnpm to
+    # only keep deps needed by the remaining packages + extensions.
+    if (Test-Path (Join-Path $openclawDest "package.json")) {
+        Write-Info "Pruning orphaned extension deps from staged tree..."
+        Push-Location $openclawDest
+        try {
+            & pnpm prune --prod 2>&1 | Out-Null
+            if ($LASTEXITCODE -eq 0) {
+                Write-Ok "Pruned orphaned deps from staged tree"
+            } else {
+                Write-Warn "Staged tree prune failed (continuing — bundle may be larger)"
+            }
+        } finally {
+            Pop-Location
+        }
     }
     Write-Ok "OpenClaw staged at $openclawDest"
 }
@@ -779,12 +825,12 @@ try {
     }
     $resourceMb = [math]::Round($resourceBytes / 1MB, 1)
     Write-Info "Staged Tauri resources: $resourceMb MB"
-    if ($resourceBytes -gt 1.5GB) {
-        Write-Warn "Resources exceed 1.5 GB — NSIS (2 GB hard cap) is at risk. Consider WiX instead (-SkipMsi:`$false) or trim packages\openclaw\extensions\."
-    } elseif ($resourceBytes -gt 1.8GB) {
+    if ($resourceBytes -gt 1.8GB) {
         Write-Fail "Resources exceed 1.8 GB — NSIS will likely fail. Switch to WiX with -SkipMsi:`$false or shrink the staged tree."
         Pop-Location
         exit 1
+    } elseif ($resourceBytes -gt 1.5GB) {
+        Write-Warn "Resources exceed 1.5 GB — NSIS (2 GB hard cap) is at risk. Consider WiX instead (-SkipMsi:`$false) or trim packages\openclaw\extensions\."
     }
 
     # Stream the Tauri build live. Tauri/Cargo/makensis together emit a

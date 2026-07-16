@@ -67,7 +67,56 @@ STUB
     --exclude .git \
     --exclude .turbo \
     --exclude target \
+    --exclude node_modules \
+    --exclude src \
+    --exclude apps \
+    --exclude docs \
+    --exclude ui \
+    --exclude scripts \
+    --exclude qa \
+    --exclude test \
+    --exclude packages \
+    --exclude config \
+    --exclude data \
+    --exclude deploy \
+    --exclude git-hooks \
+    --exclude pnpm-workspace.yaml \
     "$SOURCE/" "$DEST/"
+
+  # Copy node_modules separately (needed at runtime).
+  if [ -d "$SOURCE/node_modules" ]; then
+    cp -R "$SOURCE/node_modules" "$DEST/node_modules"
+  fi
+
+  # Prune unused OpenClaw extensions — the full set is ~143 dirs with
+  # production node_modules deps totalling ~2.2 GB. EnvoyMesh only uses
+  # ~13 (envoymesh channel + web search providers). Keeping all of them
+  # pushes the NSIS installer past its 2 GB hard cap and the build fails.
+  OPENCLAW_EXTENSIONS_ALLOWLIST="envoymesh duckduckgo brave exa firecrawl google xai moonshot minimax ollama perplexity searxng tavily"
+  if [ -d "$DEST/extensions" ]; then
+    removed=0
+    for ext_dir in "$DEST/extensions"/*/; do
+      ext_name="$(basename "$ext_dir")"
+      # shellcheck disable=SC2086
+      if ! echo " $OPENCLAW_EXTENSIONS_ALLOWLIST " | grep -q " $ext_name "; then
+        rm -rf "$ext_dir"
+        removed=$((removed + 1))
+      fi
+    done
+    if [ "$removed" -gt 0 ]; then
+      kept_count=$(echo $OPENCLAW_EXTENSIONS_ALLOWLIST | wc -w | tr -d ' ')
+      echo "  Pruned $removed unused OpenClaw extensions (kept $kept_count in allowlist)"
+    fi
+  fi
+
+  # Prune devDependencies and orphaned extension deps from staged tree.
+  # Without pnpm-workspace.yaml, pnpm treats this as a plain package and
+  # only keeps deps referenced by the remaining package.json files.
+  if [ -f "$DEST/package.json" ]; then
+    echo "  Pruning devDependencies + orphaned deps (pnpm prune --prod)..."
+    (cd "$DEST" && pnpm prune --prod 2>/dev/null) || \
+      echo "  ⚠ pnpm prune --prod failed — staged tree will be larger"
+  fi
 
   if [ ! -f "$DEST/openclaw.mjs" ] && [ ! -f "$DEST/package.json" ]; then
     echo "  ✗ Staged tree missing openclaw.mjs/package.json" >&2
