@@ -42,8 +42,17 @@ copy_workspace_pkg() {
 }
 
 echo "  Staging @envoymesh workspace packages..."
-for pkg in protocol identity bonds network vault local-store api models rag ipfs-helia openclaw-runtime; do
-  copy_workspace_pkg "$pkg"
+# Dynamically discover all workspace packages that have a dist/ directory
+# instead of hardcoding a list (new packages were being missed).
+for pkg_dir in "$ROOT/packages"/*/; do
+  pkg="$(basename "$pkg_dir")"
+  # Skip vendored/unrelated packages
+  case "$pkg" in
+    openclaw) continue ;;
+  esac
+  if [ -d "$ROOT/packages/$pkg/dist" ]; then
+    copy_workspace_pkg "$pkg"
+  fi
 done
 
 echo "  Staging production npm dependencies..."
