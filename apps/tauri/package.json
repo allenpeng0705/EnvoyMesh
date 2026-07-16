@@ -13,9 +13,9 @@
     "build:slim": "bash ../../scripts/stage-tauri-node-bundle.sh && tauri build --config src-tauri/tauri.conf.slim.json",
     "build:mac": "bash ../../scripts/stage-tauri-node-bundle.sh && tauri build --target aarch64-apple-darwin",
     "build:mac:slim": "bash ../../scripts/stage-tauri-node-bundle.sh && tauri build --config src-tauri/tauri.conf.slim.json --target aarch64-apple-darwin",
-    "build:win": "bash ../../scripts/stage-tauri-node-bundle.sh && tauri build --config src-tauri/tauri.conf.slim.json --target x86_64-pc-windows-msvc",
-    "build:win:full": "bash ../../scripts/fetch-kubo-sidecar.sh && bash ../../scripts/stage-tauri-node-bundle.sh && tauri build --config src-tauri/tauri.conf.full.json --target x86_64-pc-windows-msvc",
-    "build:linux": "bash ../../scripts/stage-tauri-node-bundle.sh && tauri build --config src-tauri/tauri.conf.slim.json --target x86_64-unknown-linux-gnu"
+    "build:win": "bash ../../scripts/stage-tauri-node-bundle.sh && bash ../../scripts/prune-openclaw-extensions.sh && tauri build --config src-tauri/tauri.conf.slim.json --target x86_64-pc-windows-msvc",
+    "build:win:full": "bash ../../scripts/fetch-kubo-sidecar.sh && bash ../../scripts/stage-tauri-node-bundle.sh && bash ../../scripts/prune-openclaw-extensions.sh && tauri build --config src-tauri/tauri.conf.full.json --target x86_64-pc-windows-msvc",
+    "build:linux": "bash ../../scripts/stage-tauri-node-bundle.sh && bash ../../scripts/prune-openclaw-extensions.sh && tauri build --config src-tauri/tauri.conf.slim.json --target x86_64-unknown-linux-gnu"
   },
   "dependencies": {
     "@tauri-apps/cli": "^2.11.0"
