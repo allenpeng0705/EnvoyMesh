@@ -408,6 +408,43 @@ $openclawStaged = (Test-Path (Join-Path $openclawDest "openclaw.mjs")) -and `
                   (Test-Path (Join-Path $openclawDest "node_modules"))
 if ($openclawStaged -and -not $ForceOpenClaw) {
     Write-Info "Reusing staged OpenClaw at $openclawDest. Use -ForceOpenClaw to re-stage."
+
+    # Always prune unused extensions on reuse — the cache may predate the
+    # extension allowlist (3 GB of 143 extensions exceeds NSIS 2 GB cap).
+    $openclawExtensionsAllowlist = @(
+        "envoymesh",          # core channel plugin (always required)
+        "duckduckgo",         # default web search (no API key needed)
+        "brave", "exa", "firecrawl", "google", "xai",
+        "moonshot", "minimax", "ollama", "perplexity",
+        "searxng", "tavily"
+    )
+    $extDir = Join-Path $openclawDest "extensions"
+    if (Test-Path $extDir) {
+        $removedCount = 0
+        Get-ChildItem -Path $extDir -Directory | Where-Object {
+            -not ($openclawExtensionsAllowlist -contains $_.Name)
+        } | ForEach-Object {
+            Remove-Item -Recurse -Force $_.FullName
+            $removedCount++
+        }
+        if ($removedCount -gt 0) {
+            Write-Info "Pruned $removedCount unused extensions on reuse (kept $($openclawExtensionsAllowlist.Count) in allowlist)"
+            # Prune orphaned deps from the staged tree
+            if (-not $SkipOpenClawPrune -and (Test-Path (Join-Path $openclawDest "package.json"))) {
+                Push-Location $openclawDest
+                try {
+                    & pnpm prune --prod 2>&1 | Out-Null
+                    if ($LASTEXITCODE -eq 0) {
+                        Write-Ok "Pruned orphaned deps from staged tree"
+                    } else {
+                        Write-Warn "Staged tree prune failed (continuing — bundle may be larger)"
+                    }
+                } finally {
+                    Pop-Location
+                }
+            }
+        }
+    }
 } else {
     if (-not (Test-Path (Join-Path $openclawSrc "package.json")) -and `
         -not (Test-Path (Join-Path $openclawSrc "openclaw.mjs"))) {

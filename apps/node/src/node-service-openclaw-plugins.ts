@@ -75,6 +75,14 @@ async function resolveOpenClawBin(): Promise<string | null> {
     resolve("node_modules", ".bin", "openclaw"),
     resolve("..", "node_modules", ".bin", "openclaw"),
   ]
+  // Check Tauri resource dir (resources/openclaw/node_modules/.bin/openclaw)
+  const resourceDir = process.env.TAURI_RESOURCE_DIR?.trim() || process.env.TAURI_APP_RESOURCES_DIR?.trim()
+  if (resourceDir) {
+    candidates.push(
+      join(resourceDir, "openclaw", "node_modules", ".bin", "openclaw"),
+      join(resourceDir, "resources", "openclaw", "node_modules", ".bin", "openclaw"),
+    )
+  }
   // Also check common global install locations
   const home = process.env.HOME || process.env.USERPROFILE || ""
   if (home) {
@@ -89,8 +97,8 @@ async function resolveOpenClawBin(): Promise<string | null> {
   // Try which
   try {
     const { execFileSync } = await import("node:child_process")
-    const which = execFileSync("which", ["openclaw"], { encoding: "utf-8" }).trim()
-    if (which) return which
+    const whichResult = execFileSync("which", ["openclaw"], { encoding: "utf-8" }).trim()
+    if (whichResult) return whichResult
   } catch {
     // not found
   }
