@@ -4,6 +4,28 @@ This guide shows how to install, build, verify, run the node, use the CLI, valid
 
 Requirements narrative: [docs/UserStory.md](docs/UserStory.md). Scenario backlog: [docs/scenarios.md](docs/scenarios.md). Design vs code: [docs/alignment-review.md](docs/alignment-review.md).
 
+## Table of Contents
+
+- [Requirements](#requirements)
+- [Install](#install)
+- [Build And Verify](#build-and-verify)
+- [Local Data Layout](#local-data-layout)
+- [Knowledge Base (Obsidian, MCP)](#knowledge-base-phase-44)
+- [Run An Envoy Node](#run-an-envoy-node)
+- [AI Agent & External Agents](#ai-agent--external-agents)
+- [Agent Network Collaboration](#agent-network-collaboration-phase-40)
+- [Terminals](#terminals-phase-30)
+- [Voice, Video & Audio Messages](#voice-video--audio-messages)
+- [Use The Developer CLI](#use-the-developer-cli)
+- [Social Challenge Probe](#social-challenge-probe-untrusted-peer)
+- [Run The Social UI (Tauri or Browser)](#run-the-social-ui-tauri-or-browser)
+- [Mobile App (Capacitor)](#mobile-app-capacitor--ios--android)
+- [Cross-Network Relay Walkthrough](#cross-network-relay-walkthrough-mac-relay--two-windows)
+- [WAN Discovery Troubleshooting](#wan-discovery-troubleshooting-short)
+- [End-to-End Verification Checklist](#end-to-end-verification-checklist-line-by-line)
+- [Live Connectivity Smoke Tests](#live-connectivity-smoke-tests)
+- [Useful Commands](#useful-commands)
+
 ## Requirements
 
 - macOS, Linux, or Windows with a recent terminal.
@@ -170,7 +192,11 @@ The Social app's **Library** tab is the in-app KB UI:
   enables optional providers:
   - **`obsidian`** — frontmatter YAML, `[[wiki-links]]` graph, sensitivity auto-sync
     from `published: true/false`; sensitivity-aware link resolution so private
-    `[[links]]` are stripped from stranger responses.
+    `[[links]]` are stripped from stranger responses. The vault directory
+    (`~/.local/share/envoymesh/default/vault/`) can be opened directly in
+    Obsidian for rich editing while EnvoyMesh handles networking. EnvoyMesh
+    never modifies notes — all writes go through the Social UI or the
+    `createNote` RPC.
   - **`mcp`** — write-back: agent discoveries can be saved as vault notes with
     source attribution and `friends` sensitivity by default.
 
@@ -250,9 +276,22 @@ npm run node:dev -- --profile ./data/node-a --listen /ip4/0.0.0.0/tcp/0 --discov
 
 The relay stores short-lived `relay.checkin` rows, answers bounded `relay.lookup` requests, and can forward lookups across selected relay neighbors using summaries, `maxHops`, `maxFanout`, query IDs, and negative caching.
 
-## Bridge (P2P ↔ External Agent)
+## AI Agent & External Agents
 
-The bridge makes the node act as a message pipe between P2P chat and an external agent (OpenClaw, HomeClaw, Hermes, etc.). One node = one bridge = one configured agent.
+EnvoyMesh supports a **two-engine agent network** — a built-in AI (EnvoyAI/OpenClaw) and an optional external agent connected over HTTP.
+
+### Built-in Agent: EnvoyAI (OpenClaw)
+
+EnvoyAI ships with every EnvoyMesh node and starts automatically on port `:18789`:
+
+- Runs in-process inside the node runtime — no separate install or config needed.
+- Full mesh access — can search your vault, look up contacts, and send messages on your behalf.
+- Policy-controlled — follows your bond rules, sensitivity labels, and approval settings.
+- Toggled at startup via `node-config.json` (`openclawEnabled: true/false`).
+
+### External Agent Bridge
+
+The bridge makes the node act as a message pipe between P2P chat and an external agent (HomeClaw, Hermes, OpenHuman, or any HTTP endpoint). One node = one bridge = one configured agent.
 
 **Ext Agent (Phase 32 — first-class config).** The External Agent Bridge is configured
 in **Settings → AI → Agent Network**. Built-in OpenClaw remains the default engine
@@ -261,7 +300,7 @@ opt-in. Defaults: HomeClaw on `http://127.0.0.1:8010/message`, Hermes on `:8020`
 OpenHuman on `:8021`, or any custom HTTP endpoint. The mobile thin-client mirrors
 the same state under **Me → Agent Network** as read-only.
 
-### Configuration
+#### Configuration
 
 Create a `bridge-config.json` in your profile directory:
 
@@ -282,7 +321,7 @@ Fields:
 
 The bridge agent identity is automatically generated on first run and persisted as `bridge-identity.json` in the profile directory.
 
-### Agent Protocol
+#### Agent Protocol
 
 **P2P → Agent (forward):** When a `chat.message` arrives addressed to the bridge's agent peer ID, the bridge POSTs to the configured `agentUrl`:
 ```json
@@ -306,13 +345,39 @@ The bridge signs the reply as a `chat.message` EMP envelope with `senderRole: "a
 
 If `secret` is configured, both sides use `Authorization: Bearer <secret>`.
 
-### Supported Agents
+#### Supported Agents
 
-Any HTTP-speaking agent works. Examples:
-- **OpenClaw** — configure the bridge URL as one of OpenClaw's channels
-- **HomeClaw** — point `agentUrl` to your HomeClaw instance
-- **Hermes** — point `agentUrl` to your Hermes instance
-- **Custom agents** — any HTTP server that accepts the forward protocol
+Any HTTP-speaking agent works. All share the same `envoymesh-message` wire protocol and HTTP adapter. Only one external agent can be active at a time.
+
+| Agent | Default URL | Description |
+| --- | --- | --- |
+| **HomeClaw** | `http://127.0.0.1:8010/message` | The original external agent. Python/FastAPI-based. |
+| **Hermes** | `http://127.0.0.1:8020/message` | Alternative external agent with Obsidian-style knowledge tools. |
+| **OpenHuman** | `http://127.0.0.1:8021/message` | Community external agent. Disabled by default — enable in Settings. |
+| **Custom** | Your URL | Any HTTP server implementing the `envoymesh-message` wire contract. |
+
+#### AI Engine Modes
+
+The bridge supports four AI engine combinations (configured in **Settings → AI → AI Engine**):
+
+| Mode | Built-in (EnvoyAI) | External Agent | Use case |
+| --- | --- | --- | --- |
+| Built-in only | ✅ | ❌ | Default on fresh install |
+| Built-in + Ext | ✅ | ✅ | Both engines active; Ext handles overflow |
+| Ext only | ❌ | ✅ | Full control of external agent |
+| None | ❌ | ❌ | No AI; pure P2P chat |
+
+#### Mesh Tools Available to External Agents
+
+When the bridge is active, the external agent can call mesh tools through the bridge:
+
+- `mesh.findKnowledge` — search the owner's vault and public knowledge mesh
+- `mesh.findContact` — look up bonded contacts
+- `mesh.sendMessage` — send chat messages to peers
+- `mesh.listContacts` — list all bonded contacts
+- `mesh.getProfile` — read the owner's profile
+
+The external agent never holds Ed25519 identity keys — EnvoyMesh signs everything on the agent's behalf.
 
 The bridge is agent-agnostic — it just pipes messages. The agent decides what to do with them.
 
@@ -357,6 +422,98 @@ Emit libp2p connection/stream lifecycle telemetry into the local audit log as `p
 ```bash
 npm run node:dev -- --p2p-debug
 ```
+
+## Agent Network Collaboration (Phase 40)
+
+The Agent Network enables multi-agent task chains where your AI agent decomposes complex work and distributes it across bonded peers' agents.
+
+### Key Features
+
+- **Task trees** — explicit parent/child relationships for complex workflows (e.g., "translate → review → summarize").
+- **Multi-round negotiation** — workers bid, counter-propose, split, and merge tasks (3-round hard cap).
+- **Budget enforcement** — hard cost ceilings with per-subtask tracking via `ChainBudgetLedger`.
+- **Configurable cost rebalance** — three policies:
+  - `manual` — owner approves every rebid (full control).
+  - `auto` — automatically rebid when a worker stalls.
+  - `never` — no rebalancing; let the chain fail fast.
+- **Composite deliverables** — bundled weighted worker contributions with structured merge (`weighted_concat`, `concatenate`, `merge_structured`, `owner_review`).
+- **Cross-orchestrator handoff** — delegate sub-chains to peer orchestrators with re-signed sub-mandates.
+- **Cross-home relay** — route chain envelopes through any home node; relay nodes are content-agnostic.
+- **LLM-powered decomposition** — real LLM-driven task decomposer replaces keyword fallback.
+- **Chain reports** — rich multi-section reports with citations, cost breakdown per worker, downloadable composite artifact.
+- **End-to-end audit** — every chain action emits a typed `chain.*` audit event.
+- **Mobile** — EnvoyGo thin client shows a read-only "Recent chains" view under **Me → Agent Network**.
+
+### How It Works
+
+1. You send a task request to your AI agent via chat.
+2. Your agent (the **orchestrator**) decomposes the task into sub-tasks.
+3. Sub-tasks are broadcast to bonded peers' agents (**workers**) via the mesh.
+4. Workers bid on sub-tasks, negotiate terms, and execute.
+5. Results flow back to the orchestrator, which synthesizes the final deliverable.
+6. A chain report is generated with full cost and citation breakdown.
+
+Full design: [`docs/agent_network.md`](docs/agent_network.md).
+
+## Terminals (Phase 30)
+
+EnvoyMesh Terminals provide chat-integrated remote shell access to your home node from anywhere — including from the mobile app.
+
+### Architecture
+
+- **Browser-based terminals** use xterm.js connecting to the home node's PTY over WebSocket.
+- Dedicated WebSocket endpoint: `ws://127.0.0.1:3032/ws/terminal/{sessionId}` (separate from JSON-RPC).
+- Binary frame protocol: 1-byte version + 1-byte type (stdin/stdout/resize/exit) + payload.
+- Attachment flow: JSON-RPC `terminalAttach` → short-lived token (10 min) → WebSocket connection → buffered scrollback + live PTY output.
+- Loopback-only in v1; mobile remote tunnels frames via HomeRemote using base64-wrapped payloads.
+
+### Features
+
+- **Chat-integrated** — launch a terminal from the chat thread; it appears inline.
+- **Multiple sessions** — open multiple terminal sessions simultaneously.
+- **Scrollback** — full scrollback history preserved and replayed on attach.
+- **Agent mode** — AI agent can observe terminal output and execute commands (with approval).
+
+### External Multiplexer Support
+
+- **herdr** — optional external TUI multiplexer for local macOS/Linux power users (AGPL-3.0, not bundled).
+- **TmuxAI** — optional external tool for tmux users; EnvoyMesh natively implements equivalent patterns (`/observe`, `/confirm`, `/pin`).
+
+Terminal docs: [`docs/terminals-external-herdr.md`](docs/terminals-external-herdr.md), [`docs/terminals-wire-protocol.md`](docs/terminals-wire-protocol.md).
+
+## Voice, Video & Audio Messages
+
+### Voice & Video Calls (Phase 38)
+
+Real-time voice calls between two bonded peers using WebRTC:
+
+- **Dual-transport design:**
+  - **Path 1 (LAN/direct P2P):** WebRTC audio over an existing libp2p data channel — no STUN/TURN needed.
+  - **Path 2 (cross-NAT):** Standard ICE with STUN/TURN for peer-to-peer media when direct connection isn't possible.
+- **Signaling over the mesh** — call invite, accept, ICE candidates, and hangup ride the existing P2P envelope layer. No new ports or servers required.
+- **Peer-to-peer media** — Opus audio streams directly between peers. The home node handles signaling and trust only; it never touches media.
+- **Trust-enforced** — calls are only allowed between bonded contacts.
+
+Video calls, group calls, SFU, and in-call messaging are deferred to a future phase.
+
+### Audio Messages (Phase 37)
+
+Record-and-send voice notes that play inline in the chat thread:
+
+- Tap the microphone icon in chat to record a voice message.
+- Messages are delivered as P2P `chat.message` envelopes with audio payload.
+- Playback is inline — no external app needed.
+
+### Voice Calls on EnvoyGo (Phase 42)
+
+The Flutter thin client supports native WebRTC voice calls:
+
+- Bonded EnvoyGo users can place and receive real-time voice calls to other EnvoyGo phones or Social/desktop users.
+- Media is peer-to-peer; the home node does signaling only.
+- iOS: VoIP push notifications + CallKit integration for calls when the app is backgrounded.
+- TURN credentials for symmetric NAT traversal.
+
+Voice/video docs: [`docs/voice-video-call-support.md`](docs/voice-video-call-support.md), [`docs/voice-video-call-envoygo.md`](docs/voice-video-call-envoygo.md).
 
 ## Use The Developer CLI
 

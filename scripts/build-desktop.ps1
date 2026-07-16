@@ -264,7 +264,7 @@ Write-Host ""
 
 Write-Step "1/5  Staging sidecars..."
 
-Write-Step "1/5  Building workspace packages..."
+Write-Info "Building workspace packages..."
 
 $nodeDistEntry = Join-Path $RepoRoot "apps/node/dist/src/index.js"
 

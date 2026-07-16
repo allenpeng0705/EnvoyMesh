@@ -8,7 +8,6 @@
     "dev": "tauri dev",
     "build:all": "echo build:all is a no-op here; use npm run tauri:build:mac from repo root",
     "build:mac:assets": "npm run build -w @envoymesh/social --",
-    "build:mac:assets": "npm run build -w @envoymesh/social --",
     "build": "bash ../../scripts/stage-tauri-node-bundle.sh && tauri build",
     "build:full": "bash ../../scripts/fetch-kubo-sidecar.sh && bash ../../scripts/stage-tauri-node-bundle.sh && tauri build --config src-tauri/tauri.conf.full.json",
     "build:slim": "bash ../../scripts/stage-tauri-node-bundle.sh && tauri build --config src-tauri/tauri.conf.slim.json",

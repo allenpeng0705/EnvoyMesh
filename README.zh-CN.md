@@ -33,11 +33,10 @@ EnvoyMesh 是一个您和您的 AI 代理真正拥有的私有社交网络。与
 - [功能一览](#功能一览)
 - [快速开始](#快速开始)
 - [工作原理](#工作原理)
-- [团队入职](#团队入职)
-- [代理网络协作](#代理网络协作)
+- [AI 代理与外部代理](#ai-代理与外部代理)
+- [Agent Network](#agent-network)
+- [知识库](#知识库)
 - [移动选项](#移动选项)
-- [Obsidian 集成](#obsidian-集成)
-- [外部代理桥接](#外部代理桥接hermesopenhumanhomeclaw)
 - [项目结构](#项目结构)
 - [当前状态](#当前状态)
 - [更多阅读](#更多阅读)
@@ -54,33 +53,34 @@ EnvoyMesh 是一个您和您的 AI 代理真正拥有的私有社交网络。与
 - **文件共享** — 安全的、基于策略的 P2P 文件传输，支持内容寻址。
 - **基于信任的关系** — 定义信任层级（阻止、公开、推荐、直接），控制每个联系人的访问权限。
 
-### AI 驱动功能
-- **个人 AI 助手** — 在您的硬件上运行 AI，访问您的保险箱，遵循您的规则。
-- **双引擎代理网络** — 内置 OpenClaw（EnvoyAI）默认开启；**Ext Agent 桥接**至 HomeClaw、Hermes、OpenHuman 或自定义 HTTP 代理为可选功能，通过 Settings → AI → Agent Network 配置。选择适合您的引擎，或同时运行两者；移动轻客户端在"我的 → Agent Network"下以只读方式镜像两者状态。
-- **7 种语言界面** — Social 支持英语、简体中文、한국어、日本語、Français、Deutsch、Italiano — 随时在 Settings → General 中切换。
-- **原生知识库** — 应用内 Markdown 笔记创建，支持逐项敏感度（`public` / `friends` / `private`）、文件夹导航、保存时自动 RAG 重建索引、敏感度感知发现。
-- **插件式知识提供者** — 可选 `kb-obsidian` 插件：frontmatter 解析、wiki-link 图、`published: true/false` 自动同步到敏感度标签。MCP 回写可将代理发现保存为保险箱笔记。新提供者通过 `KnowledgeBasePlugin` 接口接入。
-- **公共知识网格** — 公共保险箱项可被所有节点查询（绑定节点或陌生人，按陌生人限速）；陌生人仅可见 wiki-link 的公共子图。
-- **代理间协作** — 让您的 AI 与朋友的 AI 协商任务（如日程协调）。
-- **绑定自主权** — 授予您的代理在安全规则内交友的权限（推荐验证、每日限额）。
-- **全网发现** — 在整个网络中搜索文档、能力和节点。
-- **联邦 RAG** — 将知识查询分发到绑定节点的库中并综合答案。
-- **代理市场** — 寻找能力提供者，协商任务，建立信誉评分。
-- **多代理任务链** — 将复杂任务（如"翻译 → 审核 → 总结"）分解到多个代理协作完成；工作者竞标、反提案，协调代理根据成本、信誉、ETA 授予任务。
-- **可配置的成本再平衡** — 三种策略（`manual` / `auto` / `never`），既可保持完全控制，也可在工作者停滞时选择自动重新竞标。
-- **跨协调代理与跨家庭节点委托** — 将子链移交给其他协调代理，或通过任意家庭节点路由，使用与中继无关的链信封。
-- **在移动端查看链报告** — EnvoyGo 的"最近链"页面镜像您的家庭节点已发布的内容（只读）。
+### AI 代理
+- **内置 AI（EnvoyAI / OpenClaw）** — 默认开启；随节点自动启动，端口 `:18789`。
+- **外部代理桥接** — 连接 HomeClaw、Hermes、OpenHuman 或任何 HTTP 代理作为第二引擎。通过 Settings → AI → Agent Network 可选启用。
+- **双引擎模式** — 仅内置、内置 + 外部、仅外部、无 AI。选择适合您的引擎。
+- **代理自主权** — 您的代理可以在安全规则内交友、搜索知识、执行任务。
+- **7 种语言界面** — English、简体中文、한국어、日本語、Français、Deutsch、Italiano。
 
-### 团队与企业入职
-- **公司邀请链接** — 发布一键邀请，适合小型团队。
-- **Fleet Manifest** — 通过签名的 JSON 名册预配置数百台设备。
-- **LAN 自动绑定** — 办公室网络中共享 fleet token 的节点自动绑定。
-- **配对服务亭** — 一键 HTTP 服务器，适合办公室访客的 AirDrop 风格入职。
+### 知识库
+- **内置笔记** — 应用内 Markdown 编辑器，支持逐项敏感度（`public` / `friends` / `private`）、文件夹导航、保存时自动 RAG 重建索引。
+- **Obsidian 插件** — 可选 `kb-obsidian` 提供者：frontmatter YAML 解析、`[[wiki-links]]` 图、`published: true/false` 自动同步到敏感度标签。在 Obsidian 中打开保险箱获得丰富编辑体验，EnvoyMesh 负责网络。
+- **MCP 回写** — AI 代理发现可保存为带有来源归属的保险箱笔记。
+- **公共知识网格** — 公共保险箱项可被所有节点查询（绑定节点或陌生人，按陌生人限速）；陌生人仅可见 wiki-link 的公共子图。
+- **联邦 RAG** — 将知识查询分发到绑定节点的库中并综合答案。
+- **插件式提供者** — 新的知识提供者通过 `KnowledgeBasePlugin` 接口接入。
+
+### Agent Network
+- **团队入职** — 通过公司邀请链接、Fleet Manifest、LAN 自动绑定或配对服务亭让团队上线。
+- **多代理任务链** — 将复杂任务（"翻译 → 审核 → 总结"）分解到多个代理协作完成；工作者竞标、反提案，协调代理根据成本、信誉、ETA 授予任务。
+- **可配置的成本再平衡** — 三种策略（`manual` / `auto` / `never`）。
+- **跨协调代理委托** — 将子链移交给其他协调代理或通过任意家庭节点路由。
+- **链报告** — 丰富的多节报告，附带引用、成本分解、可下载的复合产物。在移动端查看（只读）。
+- **代理市场** — 寻找能力提供者，协商任务，建立信誉评分。
+- **全网发现** — 在整个网络中搜索文档、能力和节点。
 
 ### 移动与远程访问
 - **完整移动节点** — Capacitor 应用，完全参与 P2P 网络。
-- **EnvoyGo 轻客户端** — Flutter 应用，用于远程访问家庭节点。
-- **终端** — 从任何地方远程访问您的家庭节点。
+- **EnvoyGo 轻客户端** — Flutter 应用，用于远程访问家庭节点，支持原生 WebRTC 语音通话。
+- **终端** — 聊天集成的远程 shell 访问，从任何地方连接家庭节点。
 - **多设备身份** — 所有设备共享同一 owner ID。
 
 ---
@@ -166,11 +166,249 @@ npm run social:dev    # 打开 http://localhost:5173
 
 您的 AI 代理不会直接讲 P2P 语言 — 那样太危险了。EnvoyMesh 运行一个安全的**桥接器**，在网络和代理之间进行翻译。代理永远不会持有您的身份密钥 — EnvoyMesh 对所有内容签名，应用您的策略，代理只需回答普通 HTTP 请求。
 
-→ **完整配置指南：** [外部代理桥接（Hermes、OpenHuman、HomeClaw）](#外部代理桥接hermesopenhumanhomeclaw)
+→ **完整指南：** [AI 代理与外部代理](#ai-代理与外部代理)
 
 ---
 
-## 团队入职
+## AI 代理与外部代理
+
+EnvoyMesh 支持**双引擎代理网络** — 内置 AI（EnvoyAI/OpenClaw）和可选的外部 HTTP 代理。两个引擎共享相同的 mesh 工具、聊天界面和策略控制。同时只能激活一个外部代理。
+
+### 内置代理：EnvoyAI（OpenClaw）
+
+EnvoyAI 是随每个 EnvoyMesh 节点一起发布的内置 AI 助手：
+
+- **自动启动** — 随节点启动，端口 `:18789`，无需单独安装或配置。
+- **进程内运行** — 在节点运行时内部运行，无子进程，无额外内存开销。
+- **完整 mesh 访问** — 可以搜索您的保险箱、查找联系人、代表您发送消息。
+- **策略控制** — 遵循您的绑定规则、敏感度标签和审批设置。
+- **启动时切换** — 在 `node-config.json` 中设置 `openclawEnabled: false` 即可禁用。
+
+OpenClaw 设置和扩展详情请见 [`docs/openclaw-extension.md`](docs/openclaw-extension.md)。
+
+### 外部代理桥接
+
+对于喜欢不同 AI 引擎的用户，EnvoyMesh 提供了安全的**桥接器** — 双向 HTTP 到 P2P 的网关。外部代理永远无法获得直接的 mesh 访问权限或您的身份密钥。
+
+内置三个外部代理预设：
+
+| 代理 | 默认 URL | 状态 | 描述 |
+|------|---------|------|------|
+| **HomeClaw** | `http://127.0.0.1:8010/message` | 已启用 | 原始外部代理，基于 Python/FastAPI。 |
+| **Hermes** | `http://127.0.0.1:8020/message` | 已启用 | 替代外部代理，提供迁移工具导入 OpenClaw。 |
+| **OpenHuman** | `http://127.0.0.1:8021/message` | 默认禁用 | 社区外部代理。 |
+
+三者使用相同的 `envoymesh-message` 适配器 — 相同的线路协议，相同的 HTTP 端点，EnvoyMesh 中无代理特定代码。
+
+```
+  朋友的 Envoy              您的 Envoy                    外部代理
+  ┌──────────┐            ┌──────────────┐            ┌──────────────┐
+  │  Mesh    │ ──chat.msg▶│   桥接器     │─POST /msg─▶│   HomeClaw   │
+  │  (P2P)   │◀─chat.msg─│  (HTTP:3031) │◀POST /send─│  / Hermes    │
+  │          │            │              │            │  / OpenHuman │
+  └──────────┘            └──────────────┘            └──────────────┘
+                                │
+                      代理永远不会持有您的身份密钥
+                      或直接进行 P2P 通信
+```
+
+**核心规则：**
+- 代理永远不会持有您的 Ed25519 密钥 — EnvoyMesh 对所有内容签名
+- 同一时间只能使用一个桥接 URL — 您选择路由到哪个外部代理
+- 代理的回复通过 `POST /bridge/send` 发回，而非同步 HTTP 响应
+- 所有 mesh 工具（知识搜索、联系人查找、文件共享）可通过桥接器供代理使用
+
+### 设置 Hermes
+
+**步骤 1：启动 Hermes**
+
+```bash
+hermes serve --port 8020
+```
+
+**步骤 2：配置 EnvoyMesh 桥接器**
+
+打开社交 UI → **Settings → AI → AI Engine**：
+
+1. 在 **Ext Agent** 区域选择 **Hermes**
+2. Webhook URL 自动填充为 `http://127.0.0.1:8020/message`
+3. 设置 **Listen Port**（默认 `3031`）
+4. 可选设置 **Secret** 进行 Bearer token 认证
+5. 勾选 **Enable** 并点击 **Save**
+
+或通过 WebSocket RPC：
+
+```json
+{
+  "method": "applyExtAgentSettings",
+  "params": {
+    "activeExtAgentId": "hermes",
+    "bridgeEnabled": true,
+    "bridgeListenPort": 3031,
+    "extAgents": [
+      {
+        "id": "hermes",
+        "name": "Hermes",
+        "adapter": "envoymesh-message",
+        "url": "http://127.0.0.1:8020/message",
+        "enabled": true
+      }
+    ]
+  }
+}
+```
+
+**步骤 3：配置 Hermes 的回复端点**
+
+在 Hermes 配置中，将回复端点指向 EnvoyMesh 桥接器：
+
+```json
+{
+  "bridgeUrl": "http://127.0.0.1:3031/bridge/send",
+  "bridgeSecret": "your-shared-secret"
+}
+```
+
+**步骤 4：验证**
+
+保存后，AI Engine 模式指示器应显示 **"Built-in + Ext"**（如果 EnvoyAI 正在运行）或 **"Ext only"**（如果 EnvoyAI 已禁用）。发送到您代理节点 ID 的消息将被转发到 Hermes，Hermes 的回复将出现在聊天中。
+
+### 设置 OpenHuman
+
+**步骤 1：启动 OpenHuman**
+
+```bash
+openhuman serve --port 8021
+```
+
+**步骤 2：在 EnvoyMesh 中启用 OpenHuman**
+
+打开社交 UI → **Settings → AI → AI Engine**：
+
+1. 在 **Ext Agent** 区域选择 **OpenHuman**
+2. Webhook URL 自动填充为 `http://127.0.0.1:8021/message`
+3. 设置 **Listen Port**（默认 `3031`）
+4. 可选设置 **Secret**
+5. 勾选 **Enable** 并点击 **Save**
+
+**步骤 3：配置 OpenHuman 的回复端点**
+
+```json
+{
+  "bridgeUrl": "http://127.0.0.1:3031/bridge/send",
+  "bridgeSecret": "your-shared-secret"
+}
+```
+
+### AI 引擎模式
+
+EnvoyMesh 支持四种引擎模式：
+
+| 模式 | EnvoyAI（内置） | 外部代理 | 用途 |
+|------|----------------|---------|------|
+| **仅内置** | ✅ 开 | ❌ 关 | 默认 — OpenClaw 进程内运行，无外部代理 |
+| **内置 + 外部** | ✅ 开 | ✅ 开 | 双引擎 — EnvoyAI 处理助手轮次，外部处理代理任务 |
+| **仅外部** | ❌ 关 | ✅ 开 | 完全用首选外部代理替代内置代理 |
+| **无** | ❌ 关 | ❌ 关 | 无 AI — 仅 P2P 消息传递 |
+
+**注意：** EnvoyAI（OpenClaw）在 Settings UI 中为只读 — 通过 `node-config.json`（`openclawEnabled: true/false`）在节点启动时切换。Ext Agent 桥接器可在运行时启用/禁用。
+
+### 桥接 HTTP 端点
+
+桥接器在 `127.0.0.1:<listenPort>` 上监听，为外部代理暴露以下端点：
+
+| 方法 | 路径 | 用途 | 认证 |
+|------|------|------|------|
+| `POST` | `/bridge/send` | 代理向 mesh 节点发送聊天回复 | Bearer token（如配置） |
+| `POST` | `/bridge/execute-tool` | 代理调用 mesh 工具 | Bearer token |
+| `POST` | `/bridge/agent-share-proposal` | 代理提议共享保险箱文件 | Bearer token |
+| `GET` | `/bridge/list-tools` | 列出可用的 mesh 工具 | Bearer token |
+
+### 线路协议
+
+**EnvoyMesh → 外部代理**（`POST agentUrl`）：
+
+```json
+{
+  "from": "envoy_abc123",
+  "fromOwnerId": "envoy:owner:def456",
+  "fromName": "Alice",
+  "text": "什么是 EnvoyMesh？",
+  "messageId": "msg-unique-id"
+}
+```
+
+**外部代理 → EnvoyMesh**（`POST /bridge/send`）：
+
+```json
+{
+  "to": "envoy_abc123",
+  "text": "EnvoyMesh 是一个去中心化的 P2P AI 代理网络。"
+}
+```
+
+### 外部代理可用的 Mesh 工具
+
+外部代理可通过桥接器调用 EnvoyMesh mesh 工具：
+
+| 工具 | 描述 |
+|------|------|
+| `mesh.findKnowledge` | 搜索本地保险箱知识库 |
+| `mesh.findContact` | 查找绑定联系人的资料 |
+| `mesh.sendMessage` | 向联系人发送聊天消息 |
+| `mesh.listContacts` | 列出所有绑定联系人 |
+| `mesh.getProfile` | 获取所有者资料 |
+
+### 从 Hermes 迁移到 OpenClaw
+
+如果您要从 Hermes 迁移到内置的 OpenClaw（EnvoyAI），可使用迁移插件：
+
+1. 从 `packages/openclaw/extensions/migrate-hermes/` 安装 **Hermes Migration** OpenClaw 扩展
+2. 该插件会导入您的 Hermes 配置、记忆、技能和凭据到 OpenClaw
+3. 迁移完成后，切换到"仅内置"模式并禁用 Hermes 桥接
+
+详情请见 [`docs/openclaw-extension.md`](docs/openclaw-extension.md)。
+
+### 添加自定义代理
+
+您可以注册任何实现 `envoymesh-message` 线路协议的 HTTP 代理：
+
+1. 打开 **Settings → AI → AI Engine → Ext Agent**
+2. 选择一个预设（HomeClaw/Hermes/OpenHuman）作为起点
+3. 编辑 **Webhook URL** 指向您的自定义代理
+4. 点击 **Save**
+
+或通过编程方式配置：
+
+```json
+{
+  "method": "applyExtAgentSettings",
+  "params": {
+    "activeExtAgentId": "my-custom-agent",
+    "bridgeEnabled": true,
+    "bridgeListenPort": 3031,
+    "extAgents": [
+      {
+        "id": "my-custom-agent",
+        "name": "My Agent",
+        "adapter": "envoymesh-message",
+        "url": "http://127.0.0.1:9090/webhook",
+        "enabled": true
+      }
+    ]
+  }
+}
+```
+
+桥接开发指南详见 [`docs/agent_bridge_guide.md`](docs/agent_bridge_guide.md)。OpenClaw 设置详见 [`docs/openclaw-extension.md`](docs/openclaw-extension.md)。
+
+---
+
+## Agent Network
+
+Agent Network 是 EnvoyMesh 的多设备团队和多代理协作系统 — 从让团队上线到跨 AI 代理分解复杂任务。
+
+### 团队与企业入职
 
 EnvoyMesh 提供四种团队上线路径，从简单的邀请链接到企业级清单：
 
@@ -183,9 +421,7 @@ EnvoyMesh 提供四种团队上线路径，从简单的邀请链接到企业级�
 
 所有路径均为可选、可审计且由所有者控制。详见 [`docs/fleet-onboarding.md`](docs/fleet-onboarding.md)。
 
----
-
-## 代理网络协作
+### 多代理任务链
 
 EnvoyMesh 支持多代理任务链，您的代理可以分解复杂工作并在节点间协调：
 
@@ -226,36 +462,44 @@ EnvoyMesh 支持多代理任务链，您的代理可以分解复杂工作并在�
 
 ---
 
-## 移动选项
+## 知识库
 
-EnvoyMesh 提供两种移动体验：
+EnvoyMesh 内置知识库，提供应用内笔记创建和可选的 Obsidian 风格富化插件及 MCP 回写功能。
 
-### 完整节点（Capacitor）
-Capacitor 应用是运行在您手机中的**完整 EnvoyMesh 节点**：
-- 完整参与 P2P 网络。
-- 拥有独立的签名密钥和设备身份。
-- 与桌面共享相同的 owner ID、联系人和聊天记录。
-- 在 WebView 中运行社交 UI。
-- SQLite + 文件系统存储。
+### 内置知识库
 
-### EnvoyGo（Flutter 轻客户端）
-轻量级 Flutter 应用，作为您家庭节点的**远程客户端**：
-- 通过 WebSocket 或 libp2p 电路中继连接。
-- 三个标签页：聊天、联系人、我的 — "我的"标签页还会展示"最近链"视图和 Agent Network（家庭节点两引擎状态的只读镜像）。
-- **原生 WebRTC 语音通话** — 绑定的 EnvoyGo 用户可以与其他 EnvoyGo 手机或 Social/桌面用户进行实时语音通话；媒体为点对点传输，家庭节点仅做信令。
-- 远程终端访问家庭节点。
-- 自动重连，多传输方式回退。
-- 安全会话令牌存储（iOS Keychain / Android EncryptedSharedPreferences）。
+社交应用的 **Library** 标签页是您的应用内知识库 UI：
 
-**配对：** 扫描桌面社交 UI 的二维码 → 即时连接。详见 [`docs/flutter-thin-client-design.md`](docs/flutter-thin-client-design.md)。
+- **原生笔记创建** — Markdown 编辑器，支持创建/编辑/预览/删除。笔记保存时自动被 RAG 管道索引（无需重启）。
+- **逐项敏感度** — 每篇笔记有 Published 开关（`public` / `friends` / `private`）。持久化到 `.envoy/sensitivity.json`，重启和重新索引后仍然有效。
+- **文件夹导航** — 将笔记组织到文件夹（research、tutorials、personal、work）。
+- **公共知识网格** — 公共笔记可通过 `knowledge.query` 被所有节点查询，不仅限于绑定联系人。陌生人限速（5次/分钟，50次/小时）。
+- **联邦 RAG** — 将知识查询分发到绑定节点的库中并综合答案。
 
----
+**保险箱布局**（首次运行时自动创建）：
 
-## Obsidian 集成
+```
+shared_vault/
+├── .envoy/                  ← 内部元数据（永不共享）
+│   ├── sensitivity.json     ← 逐项敏感度覆盖
+│   └── plugins/
+│       └── obsidian/        ← 链接图 + frontmatter 缓存
+├── notes/                   ← 用户创建的 Markdown 笔记
+│   ├── research/  tutorials/  personal/  work/
+├── documents/               ← 导入的文件（PDF、Word、图片等）
+├── inbox/                   ← 来自节点的接收文件
+└── temp/                    ← 导入暂存
+```
+
+编程访问：`NodeService` 上的 `createNote` / `listKbPlugins` / `enableKbPlugin` / `disableKbPlugin` JSON-RPC 方法。
+
+### Obsidian 集成
 
 EnvoyMesh 内置 **Obsidian 兼容知识库插件**（`@envoymesh/kb-obsidian`），可将您的保险箱变为 Obsidian 风格的第二大脑 — 支持 YAML frontmatter、`[[wiki-links]]`、双向反向链接和自动敏感度同步，无需任何外部 Obsidian 依赖。
 
-### Obsidian 插件的功能
+您的保险箱目录同时也可作为 Obsidian 保险箱。在 Obsidian 中打开同一文件夹获得丰富的编辑体验，EnvoyMesh 负责网络和敏感度处理。
+
+#### Obsidian 插件的功能
 
 激活后，插件会扫描保险箱中的每个 `.md` 文件并执行：
 
@@ -269,13 +513,12 @@ EnvoyMesh 内置 **Obsidian 兼容知识库插件**（`@envoymesh/kb-obsidian`�
 | **路径规范化** | `[[folder/Note]]` 解析为 `"Note"`（文件夹前缀被移除） |
 | **敏感度感知解析** | 陌生人仅可见 public wiki-links；私有链接变为纯文本 |
 
-### 设置 Obsidian 保险箱
-
-您的 EnvoyMesh 保险箱目录同时也可作为 Obsidian 保险箱。您可以在 Obsidian 中打开同一文件夹获得丰富的编辑体验，而 EnvoyMesh 负责 mesh 网络和敏感度处理。
+#### 设置 Obsidian 保险箱
 
 **步骤 1：找到保险箱目录**
 
 默认保险箱位于：
+
 ```
 ~/.local/share/envoymesh/default/vault/
 ```
@@ -311,7 +554,38 @@ published: true
 2. 在插件列表中找到 **Obsidian**
 3. 点击 **Activate**
 
-### 敏感度与 Wiki-Links
+或通过 WebSocket RPC：
+
+```json
+{
+  "method": "activateKbPlugin",
+  "params": {
+    "pluginId": "obsidian"
+  }
+}
+```
+
+激活后，插件会用元数据（tags、aliases、backlinks、outgoing links）丰富每个保险箱文档，显示在搜索结果和 Library 视图中。
+
+#### 写笔记
+
+您有两种选择：
+
+**选项 A：在 Obsidian 中创建，由 EnvoyMesh 索引**
+
+1. 在 Obsidian 中打开保险箱文件夹（`~/.local/share/envoymesh/default/vault/`）
+2. 创建或编辑带有 frontmatter 和 wiki-links 的 `.md` 文件
+3. EnvoyMesh 在下次保险箱重新索引时自动获取更改
+4. Library UI 中的 Published 开关与 frontmatter 中的 `published: true/false` 同步
+
+**选项 B：通过社交 UI Library 创建**
+
+1. 打开 **Library** → **Notes** → **New Note**
+2. 编写 Markdown 内容（frontmatter 可选）
+3. 设置敏感度（`public` / `friends` / `private`）
+4. 笔记保存到 `{vault}/notes/{filename}.md` 并立即索引
+
+#### 敏感度与 Wiki-Links
 
 每篇笔记的敏感度控制其在 mesh 中的可见性：
 
@@ -321,7 +595,38 @@ published: true
 | `friends` | 仅绑定联系人 — 陌生人看到纯文本 |
 | `private` | 仅您 — 其他人看到纯文本（别名或笔记名） |
 
-### MCP 回写到 Obsidian 笔记
+#### Frontmatter 参考
+
+| 字段 | 类型 | 描述 |
+|------|------|------|
+| `tags` | `[tag1, tag2]` 或多行列表 | 笔记标签 — 用于搜索和 Library 视图 |
+| `aliases` | `[alias1, alias2]` 或多行列表 | 笔记的替代名称 |
+| `date` | `"YYYY-MM-DD"` 或 `"YYYY-MM-DDTHH:mm:ss"` | 笔记日期 |
+| `category` | `string` | 笔记类别（如 `engineering`、`research`） |
+| `published` | `true` 或 `false` | **控制敏感度**：`true` → public，`false` → 恢复默认 |
+
+#### Wiki-Link 语法
+
+| 语法 | 描述 | 规范化目标 |
+|------|------|-----------|
+| `[[Note]]` | 基本链接 | `Note` |
+| `[[Note\|Display Text]]` | 带显示别名的链接 | `Note` |
+| `[[folder/Note]]` | 路径限定链接 | `Note` |
+| `[[Note#Section]]` | 标题链接 | `Note` |
+| `[[Note#^block-id]]` | 块引用链接 | `Note` |
+| `![[Image]]` | 嵌入（图片、文本等） | *从链接图中排除* |
+
+#### 使用现有 Obsidian 保险箱
+
+如果您已有 Obsidian 保险箱，可以让 EnvoyMesh 指向它：
+
+1. 打开社交 UI 的 **Settings → Knowledge Base**
+2. 将 **Vault Path** 设置为现有 Obsidian 保险箱目录
+3. 激活 Obsidian 插件
+
+**重要：** EnvoyMesh 永远不会修改您的笔记。它仅读取 frontmatter 和 wiki-links 进行富化。所有写入通过社交 UI 或 `createNote` RPC 进行。
+
+#### MCP 回写到 Obsidian 笔记
 
 当您的 AI 代理从外部 MCP 服务器发现知识时，可以将结果保存为保险箱笔记：
 
@@ -331,15 +636,26 @@ source: mcp
 mcp-server: "http://127.0.0.1:9999/mcp"
 mcp-tool: "memex_search"
 mcp-query: "部署指南"
+mcp-queried-at: "2026-07-13T10:30:00Z"
 published: false
 tags: [mcp, 知识]
 ---
 # MCP 部署指南
+
+> 来源于 memex_search 的 2026-07-13T10:30:00Z
+
+## 结果
+
+### 1. EnvoyMesh 部署指南
+部署笔记...
+
+### 2. 网络配置
+网络配置...
 ```
 
 MCP 来源的笔记默认为 `friends` 敏感度（非 public）。
 
-### 插件管理
+#### 插件管理
 
 所有知识库插件可通过社交 UI 或 RPC 管理：
 
@@ -351,77 +667,34 @@ MCP 来源的笔记默认为 `friends` 敏感度（非 public）。
 | 获取配置 | `getKbPluginConfig("obsidian")` | 读取插件设置 |
 | 更新配置 | `updateKbPluginConfig({ pluginId: "obsidian", config: { ... } })` | 更新设置 |
 
+插件状态值：`registered` → `active` → `disabled` / `error`
+
 完整设计详见 [`docs/knowledge-base-and-rag.md`](docs/knowledge-base-and-rag.md)。
 
 ---
 
-## 外部代理桥接（Hermes、OpenHuman、HomeClaw）
+## 移动选项
 
-EnvoyMesh 支持**双引擎代理网络** — 您可以在运行内置 AI（EnvoyAI/OpenClaw）的同时，通过 HTTP 连接外部代理。内置三个外部代理预设：
+EnvoyMesh 提供两种移动体验：
 
-| 代理 | 默认 URL | 状态 | 描述 |
-|------|---------|------|------|
-| **HomeClaw** | `http://127.0.0.1:8010/message` | 已启用 | 原始外部代理，基于 Python/FastAPI。 |
-| **Hermes** | `http://127.0.0.1:8020/message` | 已启用 | 替代外部代理，提供迁移工具导入 OpenClaw。 |
-| **OpenHuman** | `http://127.0.0.1:8021/message` | 默认禁用 | 社区外部代理。 |
+### 完整节点（Capacitor）
+Capacitor 应用是运行在您手机中的**完整 EnvoyMesh 节点**：
+- 完整参与 P2P 网络。
+- 拥有独立的签名密钥和设备身份。
+- 与桌面共享相同的 owner ID、联系人和聊天记录。
+- 在 WebView 中运行社交 UI。
+- SQLite + 文件系统存储。
 
-三者使用相同的 `envoymesh-message` 适配器 — 相同的线路协议，相同的 HTTP 端点，EnvoyMesh 中无代理特定代码。同时只能激活一个外部代理。
+### EnvoyGo（Flutter 轻客户端）
+轻量级 Flutter 应用，作为您家庭节点的**远程客户端**：
+- 通过 WebSocket 或 libp2p 电路中继连接。
+- 三个标签页：聊天、联系人、我的 — "我的"标签页还会展示"最近链"视图和 Agent Network（家庭节点两引擎状态的只读镜像）。
+- **原生 WebRTC 语音通话** — 绑定的 EnvoyGo 用户可以与其他 EnvoyGo 手机或 Social/桌面用户进行实时语音通话；媒体为点对点传输，家庭节点仅做信令。
+- 远程终端访问家庭节点。
+- 自动重连，多传输方式回退。
+- 安全会话令牌存储（iOS Keychain / Android EncryptedSharedPreferences）。
 
-### 桥接工作原理
-
-EnvoyMesh 永远不会将直接 mesh 访问权限授予外部代理。相反，它运行一个安全的**桥接器** — 双向 HTTP 到 P2P 的网关：
-
-```
-  朋友的 Envoy              您的 Envoy                    外部代理
-  ┌──────────┐            ┌──────────────┐            ┌──────────────┐
-  │  Mesh    │ ──chat.msg▶│   桥接器     │─POST /msg─▶│   HomeClaw   │
-  │  (P2P)   │◀─chat.msg─│  (HTTP:3031) │◀POST /send─│  / Hermes    │
-  │          │            │              │            │  / OpenHuman │
-  └──────────┘            └──────────────┘            └──────────────┘
-                                │
-                      代理永远不会持有您的身份密钥
-                      或直接进行 P2P 通信
-```
-
-**核心规则：**
-- 代理永远不会持有您的 Ed25519 密钥 — EnvoyMesh 对所有内容签名。
-- 同一时间只能使用一个桥接 URL — 您选择路由到哪个外部代理。
-- 代理的回复通过 `POST /bridge/send` 发回，而非同步 HTTP 响应。
-- 所有 mesh 工具（知识搜索、联系人查找、文件共享）可通过桥接器供代理使用。
-
-### AI 引擎模式
-
-EnvoyMesh 支持四种引擎模式：
-
-| 模式 | EnvoyAI（内置） | 外部代理 | 用途 |
-|------|----------------|---------|------|
-| **仅内置** | ✅ 开 | ❌ 关 | 默认 — OpenClaw 进程内运行，无外部代理 |
-| **内置 + 外部** | ✅ 开 | ✅ 开 | 双引擎 — EnvoyAI 处理助手轮次，外部处理代理任务 |
-| **仅外部** | ❌ 关 | ✅ 开 | 完全用首选外部代理替代内置代理 |
-| **无** | ❌ 关 | ❌ 关 | 无 AI — 仅 P2P 消息传递 |
-
-### 设置 Hermes
-
-1. 运行 Hermes 实例：`hermes serve --port 8020`
-2. 打开社交 UI → **Settings → AI → AI Engine**
-3. 在 **Ext Agent** 区域选择 **Hermes**
-4. Webhook URL 自动填充为 `http://127.0.0.1:8020/message`
-5. 设置 **Listen Port**（默认 `3031`）
-6. 勾选 **Enable** 并点击 **Save**
-7. 在 Hermes 配置中将回复端点指向 `http://127.0.0.1:3031/bridge/send`
-
-### 设置 OpenHuman
-
-步骤相同，选择 **OpenHuman**（URL 自动填充为 `http://127.0.0.1:8021/message`），在 OpenHuman 配置中将回复端点指向 `http://127.0.0.1:3031/bridge/send`。
-
-### 添加自定义代理
-
-您可以注册任何实现 `envoymesh-message` 线路协议的 HTTP 代理：
-1. 选择一个预设作为起点
-2. 编辑 **Webhook URL** 指向您的自定义代理
-3. 点击 **Save**
-
-桥接开发指南详见 [`docs/agent_bridge_guide.md`](docs/agent_bridge_guide.md)。OpenClaw 设置详见 [`docs/openclaw-extension.md`](docs/openclaw-extension.md)。
+**配对：** 扫描桌面社交 UI 的二维码 → 即时连接。详见 [`docs/flutter-thin-client-design.md`](docs/flutter-thin-client-design.md)。
 
 ---
 
@@ -437,7 +710,7 @@ EnvoyMesh/
 │   ├── social/      # 社交/聊天 UI（Vite + React）
 │   ├── mobile/      # Capacitor iOS/Android（完整节点）
 │   └── envoygo/     # Flutter 轻客户端（远程访问）
-├── packages/        # 构建模块：协议、身份、绑定、网络、保险箱、RAG、模型、kb-obsidian、local-store...
+├── packages/        # 构建模块：协议、身份、绑定、网络、保险箱、RAG、模型、kb-obsidian、local-store、openclaw-runtime、mobile-identity、mobile-node、mobile-storage、mobile-vault...
 ├── docs/            # 设计文档、安全模型、实施计划
 ├── OpenClawExtension/  # OpenClaw 集成
 ├── QuickStart.md    # 分步指南
@@ -464,10 +737,13 @@ EnvoyMesh/
 - **Phase 31** — Flutter 轻客户端（EnvoyGo）
 - **Phase 32** — Agent Network 成员（内置 OpenClaw + Ext Agent 在 Settings → AI 中的一等配置）
 - **Phase 33** — A2A 工具暴露（线路上的类型化 `Artifact` 联合：`text` / `file` / `structured`）
+- **Phase 34** — 渲染类型化 Artifacts + 在 Social/EnvoyGo 中缓存 AgentCard
 - **Phase 35** — 团队入职（公司邀请、LAN 自动绑定、配对服务亭、Fleet Manifest）
+- **Phase 36** — Agent Network 标签页整合
 - **Phase 37** — 语音消息（聊天中录制并发送语音便笺）
 - **Phase 38** — 实时语音/视频通话（WebRTC，信令在 mesh 上传输，无需新端口）
 - **Phase 40** — Agent Network 协作层（多代理任务链，多轮协商、可配置成本再平衡、跨协调代理移交、跨家庭节点中继、LLM 驱动的任务分解，以及 EnvoyGo "最近链"移动端镜像）
+- **Phase 41** — Agent Network 可用性与增强（自动发现、复合竞标排名、成本/范围透明度、CSV 导出）— 部分发布
 - **Phase 42** — EnvoyGo 原生 WebRTC 语音通话（点对点媒体、家庭节点信令、对称 NAT 的 TURN 凭证、iOS 后台通话 VoIP + PushKit + CallKit）
 - **Phase 43** — Agent Network 用户体验（聊天"Run as chain"、实时 `chain:state` 推送、成本范围、绑定健康徽章、敏感度审批门、保存的配方、双家庭 libp2p CI 冒烟测试）
 - **Phase 44** — 精炼 EnvoyMesh 知识库（原生 Markdown 笔记创建、逐项敏感度、面向所有节点的公共知识网格、插件架构、Obsidian + MCP 提供者）
@@ -480,10 +756,12 @@ EnvoyMesh/
 
 - **入门：** [**`QuickStart.md`**](QuickStart.md) — 安装、运行、移动、多机、桥接
 - **核心概念：** [架构参考](AGENTS.md) · [高级设计](docs/high-level-design.md) · [安全模型](docs/security.md)
-- **新功能：** [团队入职](docs/fleet-onboarding.md) · [代理网络](docs/agent_network.md) · [Agent Network 成员](docs/agent-network-config.md) · [语音消息](docs/audio-message-support.md) · [语音与视频通话（桌面）](docs/voice-video-call-support.md) · [EnvoyGo 原生 WebRTC（Phase 42）](docs/voice-video-call-envoygo.md) · [EnvoyGo 设计](docs/flutter-thin-client-design.md)
+- **AI 代理：** [桥接指南](docs/agent_bridge_guide.md) · [OpenClaw 设置](docs/openclaw-extension.md) · [Agent Network 成员](docs/agent-network-config.md)
+- **Agent Network：** [团队入职](docs/fleet-onboarding.md) · [多代理任务链](docs/agent_network.md)
 - **知识库：** [知识库 & RAG](docs/knowledge-base-and-rag.md) · [Obsidian 集成](#obsidian-集成)
+- **语音与视频：** [语音消息](docs/audio-message-support.md) · [语音与视频通话（桌面）](docs/voice-video-call-support.md) · [EnvoyGo 原生 WebRTC](docs/voice-video-call-envoygo.md)
+- **移动：** [EnvoyGo 设计](docs/flutter-thin-client-design.md)
 - **开发者：** [协议参考](docs/protocol-standard.md) · [路线图](docs/implementation-plan.md)
-- **代理开发者：** [桥接指南](docs/agent_bridge_guide.md) · [OpenClaw 设置](docs/openclaw-extension.md) · [Ext Agent 设置（Hermes、OpenHuman、HomeClaw）](#外部代理桥接hermesopenhumanhomeclaw)
 
 ---
 
