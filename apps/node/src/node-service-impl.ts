@@ -86,6 +86,11 @@ import type {
   CreateNoteParams,
   CreateNoteResult,
   DeleteVaultItemParams,
+  KbPluginInfo,
+  ListKbPluginsParams,
+  ActivateKbPluginParams,
+  DeactivateKbPluginParams,
+  UpdateKbPluginConfigParams,
   RagIndexStatus,
   TransferStatus,
   SendChatParams,
@@ -632,6 +637,13 @@ import {
   shareFileViaRuntime,
   requestShareFromLibraryViaRuntime,
 } from "./node-service-fileshare.js";
+import {
+  createPluginRegistry,
+  type PluginRegistry,
+} from "./kb-plugin-registry.js";
+import { createObsidianPlugin } from "@envoymesh/kb-obsidian";
+import { createSensitivityOverrideStore } from "@envoymesh/local-store";
+import { createMcpKnowledgePlugin } from "./mcp-knowledge-plugin.js";
 import {
   getCapabilityManifestViaRuntime,
   updateCapabilityManifestViaRuntime,
@@ -1267,6 +1279,7 @@ class NodeServiceImpl implements NodeService {
   private readonly _capabilityProviderJobStore: CapabilityProviderJobStore | null;
   private readonly _circleStore: AgentCircleStore | null;
   private _approvalQueue: ApprovalQueue | null = null;
+  private _pluginRegistry: import("./kb-plugin-registry.js").PluginRegistry | null = null;
 
   /** Best-effort last failure for {@link getConnectionStatus} (cleared on successful {@link startNode}). */
   private _lastNodeError?: string;
@@ -4789,6 +4802,79 @@ class NodeServiceImpl implements NodeService {
 
   async deleteVaultItem(params: DeleteVaultItemParams): Promise<void> {
     return deleteVaultItemViaRuntime(this._fileShareContext(), params);
+  }
+
+  // ----- Phase 44C — Knowledge Base Plugins -----
+
+  private _getOrCreatePluginRegistry(): PluginRegistry {
+    if (!this._pluginRegistry) {
+      const profileDir = this._serviceContextDeps().fileShare.getProfileDir();
+      if (!profileDir) throw new Error("plugin registry requires a profile directory");
+      const registry = createPluginRegistry(profileDir);
+
+      // Phase 44D — register built-in Obsidian plugin.
+      const vaultDir = this._serviceContextDeps().fileShare.getVaultDir();
+      if (vaultDir) {
+        const sensitivityStore = createSensitivityOverrideStore(profileDir);
+        const obsidian = createObsidianPlugin({
+          readVaultFile: async (relativePath: string) => {
+            try {
+              const absolutePath = join(vaultDir, relativePath);
+              // Guard: must stay inside vault dir.
+              const resolved = resolve(absolutePath);
+              if (!resolved.startsWith(resolve(vaultDir))) return undefined;
+              return await readFile(resolved, "utf8");
+            } catch {
+              return undefined;
+            }
+          },
+          onSensitivitySync: async (documentId: string, published: boolean) => {
+            if (published) {
+              await sensitivityStore.set(documentId, "public");
+            } else {
+              await sensitivityStore.delete(documentId);
+            }
+          },
+        });
+        registry.registerPlugin(obsidian);
+      }
+
+      // Phase 44E — register MCP knowledge plugin.
+      registry.registerPlugin(createMcpKnowledgePlugin());
+
+      this._pluginRegistry = registry;
+    }
+    return this._pluginRegistry;
+  }
+
+  async listKbPlugins(
+    params?: ListKbPluginsParams,
+  ): Promise<KbPluginInfo[]> {
+    return this._getOrCreatePluginRegistry().listPlugins(params?.activeOnly);
+  }
+
+  async activateKbPlugin(
+    params: ActivateKbPluginParams,
+  ): Promise<{ ok: boolean; reason?: string }> {
+    return this._getOrCreatePluginRegistry().activatePlugin(params.pluginId, params.config);
+  }
+
+  async deactivateKbPlugin(
+    params: DeactivateKbPluginParams,
+  ): Promise<{ ok: boolean; reason?: string }> {
+    return this._getOrCreatePluginRegistry().deactivatePlugin(params.pluginId);
+  }
+
+  async getKbPluginConfig(
+    pluginId: string,
+  ): Promise<Record<string, unknown>> {
+    return this._getOrCreatePluginRegistry().getPluginConfig(pluginId);
+  }
+
+  async updateKbPluginConfig(
+    params: UpdateKbPluginConfigParams,
+  ): Promise<{ ok: boolean; reason?: string }> {
+    return this._getOrCreatePluginRegistry().updatePluginConfig(params.pluginId, params.config);
   }
 
   async resolveLibraryItemPath(relativePath: string): Promise<{ vaultRelativePath: string; absolutePath: string }> {

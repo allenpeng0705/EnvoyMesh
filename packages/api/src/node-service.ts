@@ -22,6 +22,22 @@ import type {
 } from "./commerce-receipt.js";
 export type { ResolveDidImportResult, ResolvedDidImport };
 export type { CommerceReceiptRecord, ListCommerceReceiptsParams, RecordCommerceReceiptParams };
+import type {
+  KbPluginMetadataEntry,
+  KbPluginInfo,
+  ListKbPluginsParams,
+  ActivateKbPluginParams,
+  DeactivateKbPluginParams,
+  UpdateKbPluginConfigParams,
+} from "./kb-plugin.js";
+export type { KbPluginMetadataEntry };
+export type {
+  KbPluginInfo,
+  ListKbPluginsParams,
+  ActivateKbPluginParams,
+  DeactivateKbPluginParams,
+  UpdateKbPluginConfigParams,
+} from "./kb-plugin.js";
 import type { RagIndexProgress, RagIndexStatus } from "./rag-index-status.js";
 import type {
   ChainPlanParams,
@@ -633,6 +649,8 @@ export interface LibraryItem {
   published: boolean;
   /** Latest Kubo-aligned IPFS export for this document, when present. */
   publishedExternal?: PublishedExternalRecord;
+  /** Phase 44C — plugin-enriched metadata entries (e.g. frontmatter tags, wiki-links). */
+  pluginMetadata?: KbPluginMetadataEntry[];
 }
 
 /** Vault or OpenClaw workspace — unified local file entry for Library UI and agent tools. */
@@ -2471,6 +2489,33 @@ export interface NodeService {
 
   /** Phase 43H — delete a saved chain recipe. */
   chainDeleteRecipe(params: ChainDeleteRecipeParams): Promise<ChainDeleteRecipeResult>;
+
+  // ----- Phase 44C — Knowledge Base Plugins -----
+
+  /**
+   * List registered KB plugins. Optionally filter to active only.
+   */
+  listKbPlugins(params?: ListKbPluginsParams): Promise<KbPluginInfo[]>;
+
+  /**
+   * Activate a registered KB plugin (calls plugin.activate(), merges config).
+   */
+  activateKbPlugin(params: ActivateKbPluginParams): Promise<{ ok: boolean; reason?: string }>;
+
+  /**
+   * Deactivate an active KB plugin (calls plugin.deactivate()).
+   */
+  deactivateKbPlugin(params: DeactivateKbPluginParams): Promise<{ ok: boolean; reason?: string }>;
+
+  /**
+   * Read a plugin's persisted config.
+   */
+  getKbPluginConfig(pluginId: string): Promise<Record<string, unknown>>;
+
+  /**
+   * Merge partial config into a plugin's persisted config.
+   */
+  updateKbPluginConfig(params: UpdateKbPluginConfigParams): Promise<{ ok: boolean; reason?: string }>;
 }
 
 // --------------------------------------------------------------------------

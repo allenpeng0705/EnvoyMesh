@@ -888,6 +888,34 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.revealLibraryItemInFileManager(relativePath);
   }
 
+  async createNote(params: Parameters<NodeService["createNote"]>[0]) {
+    return this._ns.createNote(params);
+  }
+
+  async deleteVaultItem(params: Parameters<NodeService["deleteVaultItem"]>[0]) {
+    return this._ns.deleteVaultItem(params);
+  }
+
+  async listKbPlugins(params?: Parameters<NodeService["listKbPlugins"]>[0]) {
+    return this._ns.listKbPlugins(params);
+  }
+
+  async activateKbPlugin(params: Parameters<NodeService["activateKbPlugin"]>[0]) {
+    return this._ns.activateKbPlugin(params);
+  }
+
+  async deactivateKbPlugin(params: Parameters<NodeService["deactivateKbPlugin"]>[0]) {
+    return this._ns.deactivateKbPlugin(params);
+  }
+
+  async getKbPluginConfig(pluginId: string) {
+    return this._ns.getKbPluginConfig(pluginId);
+  }
+
+  async updateKbPluginConfig(params: Parameters<NodeService["updateKbPluginConfig"]>[0]) {
+    return this._ns.updateKbPluginConfig(params);
+  }
+
   async discoverPublishedLibrary(params?: Parameters<NodeService["discoverPublishedLibrary"]>[0]) {
     return this._ns.discoverPublishedLibrary(params);
   }

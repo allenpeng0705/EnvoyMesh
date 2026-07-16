@@ -45,7 +45,7 @@ import {
 } from "./ipfs-export-router.js";
 import { revealPathInFileManager } from "./vault-file-open.js";
 import { createAgentShareProposalStore } from "./agent-share-proposal-store.js";
-import { createAuditEvent, type AuditEvent } from "@envoymesh/local-store";
+import { createAuditEvent, type AuditEvent, createSensitivityOverrideStore, type VaultItemSensitivity } from "@envoymesh/local-store";
 import { mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -99,6 +99,8 @@ export interface FileShareContext {
   getTaskStore(): unknown;
   /** Get the RAG service (or null if not wired). */
   getRagService(): Promise<{ getIndexStatus(): import("@envoymesh/api").RagIndexStatus } | null>;
+  /** Phase 44C — get the plugin registry (or undefined if not wired). */
+  getPluginRegistry?(): import("./kb-plugin-registry.js").PluginRegistry | undefined;
   /** Record owner activity for the activity log. */
   recordOwnerActivity(): void;
   /** Append an audit event to the task store (no-op when absent). */
@@ -127,6 +129,26 @@ export async function listLibraryItemsViaRuntime(
         d.relativePath.toLowerCase().includes(q),
     );
   }
+
+  // Phase 44C — metadata bridge: collect plugin-enriched metadata.
+  let pluginMeta: Map<string, Array<{ pluginId: string; key: string; value: string }>> | undefined;
+  const registry = ctx.getPluginRegistry?.();
+  if (registry) {
+    try {
+      pluginMeta = await registry.runEnrichMetadata(
+        docs.map((d) => ({
+          documentId: d.documentId,
+          relativePath: d.relativePath,
+          title: d.title,
+          extension: d.extension,
+          byteLength: d.byteLength,
+        })),
+      );
+    } catch {
+      // Graceful degradation — proceed without plugin metadata.
+    }
+  }
+
   return docs.map((d) => ({
     documentId: d.documentId,
     relativePath: d.relativePath,
@@ -136,6 +158,9 @@ export async function listLibraryItemsViaRuntime(
     contentHash: d.contentHash,
     updatedAt: d.updatedAt,
     published: publishedIds.has(d.documentId),
+    ...(pluginMeta?.has(d.documentId)
+      ? { pluginMetadata: pluginMeta.get(d.documentId) }
+      : {}),
   }));
 }
 
@@ -169,44 +194,30 @@ export async function setLibraryItemPublishedViaRuntime(
   const profileDir = ctx.getProfileDir();
   if (!profileDir) return;
   await createPublishedLibraryStore(profileDir).setPublished(documentId, published);
-  await writeSensitivityOverride(ctx, documentId, published);
+  await writeSensitivityOverride(ctx, documentId, published ? "public" : false);
 }
 
 /**
  * Phase 44A1: persist per-item sensitivity override alongside published state.
  * Published items get sensitivity "public"; unpublished items have their override
- * removed (reverting to path heuristic). Stored in `{profileDir}/vault-sensitivity-overrides.json`
+ * removed (reverting to path heuristic). Uses SensitivityOverrideStore for
+ * atomic writes. Stored in `{profileDir}/vault-sensitivity-overrides.json`
  * (outside the vault root to avoid polluting the vault index).
  */
 async function writeSensitivityOverride(
   ctx: FileShareContext,
   documentId: string,
-  published: boolean,
+  sensitivity: VaultItemSensitivity | false,
 ): Promise<void> {
   try {
     const profileDir = ctx.getProfileDir();
     if (!profileDir) return;
-    const filePath = join(profileDir, "vault-sensitivity-overrides.json");
-    let overrides: Record<string, string> = {};
-    try {
-      const raw = await readFile(filePath, "utf8");
-      const parsed = JSON.parse(raw);
-      if (parsed?.version === 1 && parsed?.overrides && typeof parsed.overrides === "object") {
-        overrides = parsed.overrides;
-      }
-    } catch {
-      // File missing or corrupt — start fresh
-    }
-    if (published) {
-      overrides[documentId] = "public";
+    const store = createSensitivityOverrideStore(profileDir);
+    if (sensitivity === false) {
+      await store.delete(documentId);
     } else {
-      delete overrides[documentId];
+      await store.set(documentId, sensitivity);
     }
-    await writeFile(
-      filePath,
-      `${JSON.stringify({ version: 1, overrides }, null, 2)}\n`,
-      { mode: 0o600 },
-    );
   } catch {
     // Best-effort: published-library.json write already succeeded.
     // Real FS operations may fail in test environments with mock paths.
@@ -471,38 +482,15 @@ export async function createNoteViaRuntime(
   assertPathInsideVault(vaultDir, abs);
 
   await mkdir(dirname(abs), { recursive: true });
-  await writeFile(abs, params.content, "utf8", { mode: 0o600 });
+  await writeFile(abs, params.content, { encoding: "utf8", mode: 0o600 });
 
   const index = await buildVaultIndex({ rootDir: vaultDir });
   const doc = index.documents.find((d) => d.relativePath === relativePath);
   if (!doc) throw new Error(`Created note not indexed: ${relativePath}`);
 
   // Persist per-item sensitivity override when sensitivity is explicitly set.
-  if (params.sensitivity && params.sensitivity !== "public") {
-    await writeSensitivityOverride(ctx, doc.documentId, false);
-    // Write the custom sensitivity to the override store.
-    try {
-      const profileDir = ctx.getProfileDir();
-      if (profileDir) {
-        const filePath = join(profileDir, "vault-sensitivity-overrides.json");
-        let overrides: Record<string, string> = {};
-        try {
-          const raw = await readFile(filePath, "utf8");
-          const parsed = JSON.parse(raw);
-          if (parsed?.version === 1 && parsed?.overrides && typeof parsed.overrides === "object") {
-            overrides = parsed.overrides;
-          }
-        } catch { /* missing or corrupt — start fresh */ }
-        overrides[doc.documentId] = params.sensitivity;
-        await writeFile(
-          filePath,
-          `${JSON.stringify({ version: 1, overrides }, null, 2)}\n`,
-          { mode: 0o600 },
-        );
-      }
-    } catch { /* best-effort */ }
-  } else if (params.sensitivity === "public") {
-    await writeSensitivityOverride(ctx, doc.documentId, true);
+  if (params.sensitivity) {
+    await writeSensitivityOverride(ctx, doc.documentId, params.sensitivity);
   }
 
   return {

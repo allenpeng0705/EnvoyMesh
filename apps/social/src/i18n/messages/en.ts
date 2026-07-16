@@ -23,6 +23,7 @@ import {
   profilePhotosMessages,
   libraryViewMessages,
   noteEditorMessages,
+  kbPluginMessages,
   fileShareMessages,
   setupMessages,
   artifactRendererMessages,
@@ -566,6 +567,7 @@ export const en = {
   },
   library: libraryViewMessages,
   notes: noteEditorMessages,
+  kbPlugins: kbPluginMessages,
   chains: chainsMessages,
   workerCapability: {
     title: "Agent Workers",

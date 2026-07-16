@@ -8569,6 +8569,25 @@ You are the owner's personal AI assistant on EnvoyMesh.
   async chainListRecipes(_params?: any): Promise<any> { return { recipes: [] }; }
   async chainSaveRecipe(_params: any): Promise<any> { return { ok: false, reason: "validation_failed" }; }
   async chainDeleteRecipe(_params: any): Promise<any> { return { ok: false, deleted: false }; }
+
+  // ----- Phase 44A2 — Notes (mobile: stubs) -----
+
+  async createNote(_params: any): Promise<any> {
+    return { documentId: "", relativePath: "", sizeBytes: 0 };
+  }
+
+  async deleteVaultItem(_params: any): Promise<void> {
+    // Mobile vault is read-only for notes via this path.
+  }
+
+  // ----- Phase 44C — KB Plugins (mobile: stubs) -----
+
+  async listKbPlugins(_params?: any): Promise<any> { return []; }
+  async activateKbPlugin(_params: any): Promise<any> { return { ok: false, reason: "Not available on mobile" }; }
+  async deactivateKbPlugin(_params: any): Promise<any> { return { ok: true }; }
+  async getKbPluginConfig(_pluginId: string): Promise<any> { return {}; }
+  async updateKbPluginConfig(_params: any): Promise<any> { return { ok: false, reason: "Not available on mobile" }; }
+
   async chainPublishReport(_params: any): Promise<any> { return { published: false }; }
   async chainGetDefaults(): Promise<any> { return { maxChainBudgetUsd: 10, defaultStallPolicy: "auto_rebid", costEstimationEnabled: false }; }
   async chainSetDefaults(_params: any): Promise<any> { return { ok: true }; }

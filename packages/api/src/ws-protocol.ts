@@ -342,7 +342,13 @@ export type RpcMethods =
   | "chainExportCosts"
   | "chainListRecipes"
   | "chainSaveRecipe"
-  | "chainDeleteRecipe";
+  | "chainDeleteRecipe"
+  // Phase 44C — Knowledge Base Plugins
+  | "listKbPlugins"
+  | "activateKbPlugin"
+  | "deactivateKbPlugin"
+  | "getKbPluginConfig"
+  | "updateKbPluginConfig";
 
 // ============================================
 // Node Configuration Types

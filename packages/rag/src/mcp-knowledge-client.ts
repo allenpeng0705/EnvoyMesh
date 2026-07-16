@@ -124,3 +124,93 @@ export function formatExternalKnowledgeSection(snippets: ExternalKnowledgeSnippe
   const lines = snippets.map((s) => `- ${s.title} (${s.source}): "${s.text.replace(/"/g, "'")}"`);
   return `## External knowledge base\n${lines.join("\n")}`;
 }
+
+// ---------------------------------------------------------------------------
+// Phase 44E — MCP write-back: save results as a vault note
+// ---------------------------------------------------------------------------
+
+/**
+ * Metadata about the MCP query that produced the results.
+ */
+export interface McpQueryAttribution {
+  /** The MCP server URL (or display name). */
+  server: string;
+  /** The tool name used for the query. */
+  tool: string;
+  /** The search query string. */
+  query: string;
+  /** ISO 8601 timestamp when the query was executed. */
+  queriedAt: string;
+}
+
+/**
+ * Options for formatting MCP results as a vault note.
+ */
+export interface McpWriteBackOptions {
+  /** Attribution metadata to embed in frontmatter. */
+  attribution: McpQueryAttribution;
+  /** Sensitivity level for the created note (default: "friends"). */
+  sensitivity?: "public" | "friends" | "private";
+  /** Optional subfolder within `notes/` (e.g. "mcp"). */
+  subfolder?: string;
+  /** Optional note title override (used in filename). */
+  title?: string;
+}
+
+/**
+ * Format MCP search results as a Markdown note with YAML frontmatter attribution.
+ *
+ * The generated note has:
+ * - Frontmatter with `source: "mcp"`, `mcp-server`, `mcp-tool`, `mcp-query`,
+ *   `mcp-queried-at`, `published`, and `tags`
+ * - Body with a results section listing each snippet
+ *
+ * Returns `{ content, filename }` ready to pass to `createNote()`.
+ */
+export function formatMcpResultsAsNote(
+  snippets: ExternalKnowledgeSnippet[],
+  options: McpWriteBackOptions,
+): { content: string; filename: string; subfolder: string } {
+  const { attribution, sensitivity = "friends", subfolder = "mcp" } = options;
+  const published = sensitivity === "public";
+
+  // Sanitize title for use in filename.
+  const rawTitle = options.title || `MCP ${attribution.query.slice(0, 40)}`;
+  const safeTitle = rawTitle
+    .replace(/[^a-zA-Z0-9 _-]/g, "")
+    .replace(/\s+/g, "-")
+    .slice(0, 60)
+    .toLowerCase();
+  const filename = `${safeTitle}.md`;
+
+  const frontmatterLines = [
+    "---",
+    `source: mcp`,
+    `mcp-server: "${attribution.server.replace(/"/g, '\\"')}"`,
+    `mcp-tool: "${attribution.tool.replace(/"/g, '\\"')}"`,
+    `mcp-query: "${attribution.query.replace(/"/g, '\\"')}"`,
+    `mcp-queried-at: "${attribution.queriedAt}"`,
+    `published: ${published}`,
+    `tags: [mcp, knowledge]`,
+    `---`,
+    "",
+  ];
+
+  const bodyLines = [
+    `# ${options.title || rawTitle}`,
+    "",
+    `> Sourced from MCP server "${attribution.server}" via tool \`${attribution.tool}\` at ${attribution.queriedAt}.`,
+    "",
+    "## Results",
+    "",
+    ...snippets.map((s, i) =>
+      `### ${i + 1}. ${s.title}\n\n${s.text}\n\n*Source: ${s.source}*\n`,
+    ),
+  ];
+
+  return {
+    content: frontmatterLines.join("\n") + bodyLines.join("\n"),
+    filename,
+    subfolder,
+  };
+}

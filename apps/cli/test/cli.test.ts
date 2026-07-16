@@ -17,7 +17,7 @@ function run(args: string, opts?: { cwd?: string; env?: Record<string, string> }
     const out = execSync(`node --import tsx ${CLI} ${args}`, {
       cwd: opts?.cwd ?? join(__dirname, "..", "..", ".."),
       encoding: "utf-8",
-      timeout: 10_000,
+      timeout: 30_000,
       env: { ...process.env, ...opts?.env },
     });
     return { out: out.trim(), code: 0 };

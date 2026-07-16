@@ -54,6 +54,11 @@ import type {
   CreateNoteParams,
   CreateNoteResult,
   DeleteVaultItemParams,
+  KbPluginInfo,
+  ListKbPluginsParams,
+  ActivateKbPluginParams,
+  DeactivateKbPluginParams,
+  UpdateKbPluginConfigParams,
   IpfsEngineStatus,
   RagIndexStatus,
   SendChatParams,
@@ -453,6 +458,11 @@ export interface NodeServiceClient {
   importToLibrary(params: ImportToLibraryParams): Promise<ImportToLibraryResult>;
   createNote(params: CreateNoteParams): Promise<CreateNoteResult>;
   deleteVaultItem(params: DeleteVaultItemParams): Promise<void>;
+  listKbPlugins(params?: ListKbPluginsParams): Promise<KbPluginInfo[]>;
+  activateKbPlugin(params: ActivateKbPluginParams): Promise<{ ok: boolean; reason?: string }>;
+  deactivateKbPlugin(params: DeactivateKbPluginParams): Promise<{ ok: boolean; reason?: string }>;
+  getKbPluginConfig(pluginId: string): Promise<Record<string, unknown>>;
+  updateKbPluginConfig(params: UpdateKbPluginConfigParams): Promise<{ ok: boolean; reason?: string }>;
   resolveLibraryItemPath(relativePath: string): Promise<{ vaultRelativePath: string; absolutePath: string }>;
   openLibraryItem(relativePath: string): Promise<void>;
   revealLibraryItemInFileManager(relativePath: string): Promise<void>;
@@ -1403,6 +1413,32 @@ function createWsNodeServiceClient(
     },
     async deleteVaultItem(params: DeleteVaultItemParams) {
       return wsClient.rpc("deleteVaultItem", params as unknown as Record<string, unknown>);
+    },
+    async listKbPlugins(params?: ListKbPluginsParams) {
+      return wsClient.rpc("listKbPlugins", (params ?? {}) as unknown as Record<string, unknown>) as Promise<
+        KbPluginInfo[]
+      >;
+    },
+    async activateKbPlugin(params: ActivateKbPluginParams) {
+      return wsClient.rpc("activateKbPlugin", params as unknown as Record<string, unknown>) as Promise<{
+        ok: boolean;
+        reason?: string;
+      }>;
+    },
+    async deactivateKbPlugin(params: DeactivateKbPluginParams) {
+      return wsClient.rpc("deactivateKbPlugin", params as unknown as Record<string, unknown>) as Promise<{
+        ok: boolean;
+        reason?: string;
+      }>;
+    },
+    async getKbPluginConfig(pluginId: string) {
+      return wsClient.rpc("getKbPluginConfig", { pluginId }) as Promise<Record<string, unknown>>;
+    },
+    async updateKbPluginConfig(params: UpdateKbPluginConfigParams) {
+      return wsClient.rpc("updateKbPluginConfig", params as unknown as Record<string, unknown>) as Promise<{
+        ok: boolean;
+        reason?: string;
+      }>;
     },
     async resolveLibraryItemPath(relativePath: string) {
       return wsClient.rpc("resolveLibraryItemPath", { relativePath }) as Promise<{

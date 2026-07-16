@@ -5623,7 +5623,7 @@ While finalizing Phase 42 we discovered a few of the shipped pieces were wire-le
 
 ---
 
-## Phase 44 — Refine EnvoyMesh Knowledgebase `[ ]`
+## Phase 44 — Refine EnvoyMesh Knowledgebase `[x]`
 
 **Design doc:** [knowledge-base-and-rag.md](./knowledge-base-and-rag.md)
 
@@ -5681,19 +5681,19 @@ maps to `friends` for KB purposes.
 
 ### Sub-phases
 
-#### Phase 44A1 — Per-Item Sensitivity Backend `[ ]`
+#### Phase 44A1 — Per-Item Sensitivity Backend `[x]`
 
 Replace path-heuristic-only sensitivity with persistent per-item overrides.
 This is the foundation that 44A2, 44B, and 44D all depend on.
 
 | Task | Status |
 |---|---|
-| Normalize sensitivity levels to `public \| friends \| private` everywhere | `[ ]` |
-| Add `SensitivityOverrideStore` (read/write `.envoy/sensitivity.json`) | `[ ]` |
-| Add `resolveDocumentSensitivity(relativePath, overrides?)` — override first, heuristic fallback | `[ ]` |
-| Wire `setLibraryItemPublished()` to persist to `.envoy/sensitivity.json` | `[ ]` |
-| Update `rag-service.ts` reindex to read sensitivity overrides and embed in vector metadata | `[ ]` |
-| Unit tests (override CRUD, normalization, fallback chain) | `[ ]` |
+| Normalize sensitivity levels to `public \| friends \| private` everywhere | `[x]` |
+| Add `SensitivityOverrideStore` (read/write `.envoy/sensitivity.json`) | `[x]` |
+| Add `resolveDocumentSensitivity(relativePath, overrides?)` — override first, heuristic fallback | `[x]` |
+| Wire `setLibraryItemPublished()` to persist to `.envoy/sensitivity.json` | `[x]` |
+| Update `rag-service.ts` reindex to read sensitivity overrides and embed in vector metadata | `[x]` |
+| Unit tests (override CRUD, normalization, fallback chain) | `[x]` |
 
 **Implementation notes:**
 - `inferDocumentSensitivity()` in `ai-context.ts` currently returns
@@ -5704,34 +5704,34 @@ This is the foundation that 44A2, 44B, and 44D all depend on.
 - Format: `{ "doc_abc123": "public", "doc_def456": "private" }`, atomic write via rename
 
 **Exit criteria:**
-- `[ ]` Published toggle persists across restarts via `.envoy/sensitivity.json`
-- `[ ]` Sensitivity.json survives vault reindex
-- `[ ]` Path heuristic still works as fallback when no override exists
-- `[ ]` All internal sensitivity names normalized to `public | friends | private`
+- `[x]` Published toggle persists across restarts via `.envoy/sensitivity.json`
+- `[x]` Sensitivity.json survives vault reindex
+- `[x]` Path heuristic still works as fallback when no override exists
+- `[x]` All internal sensitivity names normalized to `public | friends | private`
 
-#### Phase 44A2 — Native Note Creation `[ ]`
+#### Phase 44A2 — Native Note Creation `[x]`
 
 Add in-app Markdown note creation and editing to the Library UI. Depends on 44A1
 for per-item sensitivity persistence via Published toggle.
 
 | Task | Status |
 |---|---|
-| Add `createNote()`, `updateNote()`, `deleteNote()` RPC methods | `[ ]` |
-| Notes saved to `{vaultRoot}/notes/{subfolder}/` as `.md` | `[ ]` |
-| Add `notes/` to default `publicVaultPaths` | `[ ]` |
-| Markdown editor component (create, edit, preview modes) | `[ ]` |
-| Note list with folder navigation in Library UI | `[ ]` |
-| File watcher triggers vault re-index on note save | `[ ]` |
-| Published toggle per note (writes to sensitivity.json via 44A1) | `[ ]` |
-| Unit + component tests | `[ ]` |
+| Add `createNote()`, `updateNote()`, `deleteNote()` RPC methods | `[x]` |
+| Notes saved to `{vaultRoot}/notes/{subfolder}/` as `.md` | `[x]` |
+| Add `notes/` to default `publicVaultPaths` | `[x]` |
+| Markdown editor component (create, edit, preview modes) | `[x]` |
+| Note list with folder navigation in Library UI | `[x]` |
+| File watcher triggers vault re-index on note save | `[x]` |
+| Published toggle per note (writes to sensitivity.json via 44A1) | `[x]` |
+| Unit + component tests | `[x]` |
 
 **Exit criteria:**
-- `[ ]` User can create, edit, and delete notes in Library UI without any plugin
-- `[ ]` Notes are indexed by RAG pipeline on save (no restart needed)
-- `[ ]` Published toggle controls sensitivity per note (persisted via 44A1)
-- `[ ]` Folder navigation works (notes/, documents/, inbox/)
+- `[x]` User can create, edit, and delete notes in Library UI without any plugin
+- `[x]` Notes are indexed by RAG pipeline on save (no restart needed)
+- `[x]` Published toggle controls sensitivity per note (persisted via 44A1)
+- `[x]` Folder navigation works (notes/, documents/, inbox/)
 
-#### Phase 44B — Public Knowledge Mesh `[ ]`
+#### Phase 44B — Public Knowledge Mesh `[x]`
 
 Make public vault items discoverable and queryable by all EnvoyMesh peers.
 Currently `evaluatePublicPolicy()` in `@envoymesh/bonds` **hard-denies**
@@ -5739,13 +5739,13 @@ Currently `evaluatePublicPolicy()` in `@envoymesh/bonds` **hard-denies**
 
 | Task | Status |
 |---|---|
-| Add `knowledge.query` branch to `evaluatePublicPolicy()` — allow with `maxSensitivity: "public"` | `[ ]` |
-| Per-stranger rate limiter for knowledge queries (5/min, 50/hour) | `[ ]` |
-| Wire rate limiter into `handleInboundKnowledgeQuery()` | `[ ]` |
-| Public discovery catalog: advertise public vault items in `discovery.response` to any peer | `[ ]` |
-| Audit logging for stranger knowledge queries (with stranger peerId) | `[ ]` |
-| Sensitivity filtering: public items to anyone, friends items to bonded only | `[ ]` |
-| Unit + integration tests (public query from stranger, rate limit enforcement) | `[ ]` |
+| Add `knowledge.query` branch to `evaluatePublicPolicy()` — allow with `maxSensitivity: "public"` | `[x]` |
+| Per-stranger rate limiter for knowledge queries (5/min, 50/hour) | `[x]` |
+| Wire rate limiter into `handleInboundKnowledgeQuery()` | `[x]` |
+| Public discovery catalog: advertise public vault items in `discovery.response` to any peer | `[x]` |
+| Audit logging for stranger knowledge queries (with stranger peerId) | `[x]` |
+| Sensitivity filtering: public items to anyone, friends items to bonded only | `[x]` |
+| Unit + integration tests (public query from stranger, rate limit enforcement) | `[x]` |
 
 **Implementation notes:**
 - In `packages/bonds/src/index.ts` `evaluatePublicPolicy()`, add before catch-all deny:
@@ -5755,69 +5755,69 @@ Currently `evaluatePublicPolicy()` in `@envoymesh/bonds` **hard-denies**
   bonds policy change
 
 **Exit criteria:**
-- `[ ]` Stranger can send `knowledge.query` and receive public items only
-- `[ ]` Bonded contact still gets public + friends items (no regression)
-- `[ ]` Rate limiting prevents abuse from strangers
-- `[ ]` Public items appear in mesh-wide discovery
-- `[ ]` Private items are never served to anyone but owner + agent
+- `[x]` Stranger can send `knowledge.query` and receive public items only
+- `[x]` Bonded contact still gets public + friends items (no regression)
+- `[x]` Rate limiting prevents abuse from strangers
+- `[x]` Public items appear in mesh-wide discovery
+- `[x]` Private items are never served to anyone but owner + agent
 
-#### Phase 44C — KB Provider Plugin Interface `[ ]`
+#### Phase 44C — KB Provider Plugin Interface `[x]`
 
 Define and implement the plugin system for optional KB providers.
 
 | Task | Status |
 |---|---|
-| `KnowledgeBasePlugin` interface (activate, deactivate, enrichMetadata, onFileChanged, getUiExtensions) | `[ ]` |
-| Plugin registry (install, enable, disable, list plugins) | `[ ]` |
-| Plugin config storage (`.envoy/plugins/{pluginId}/config.json`) | `[ ]` |
-| Plugin → vault metadata bridge (enrichMetadata results merged into vault index) | `[ ]` |
-| Settings UI: Knowledge Base → Plugins section (install, enable, configure) | `[ ]` |
-| Graceful degradation: vault works fully if all plugins are removed | `[ ]` |
-| Unit tests (plugin lifecycle, metadata enrichment, uninstall cleanup) | `[ ]` |
+| `KnowledgeBasePlugin` interface (activate, deactivate, enrichMetadata, onFileChanged, getUiExtensions) | `[x]` |
+| Plugin registry (install, enable, disable, list plugins) | `[x]` |
+| Plugin config storage (`.envoy/plugins/{pluginId}/config.json`) | `[x]` |
+| Plugin → vault metadata bridge (enrichMetadata results merged into vault index) | `[x]` |
+| Settings UI: Knowledge Base → Plugins section (install, enable, configure) | `[x]` |
+| Graceful degradation: vault works fully if all plugins are removed | `[x]` |
+| Unit tests (plugin lifecycle, metadata enrichment, uninstall cleanup) | `[x]` |
 
 **Exit criteria:**
-- `[ ]` Plugin interface defined and implemented
-- `[ ]` Plugins can be enabled/disabled without affecting vault content or sensitivity
-- `[ ]` Uninstalling all plugins leaves vault fully functional
-- `[ ]` Settings UI shows plugin status and configuration
+- `[x]` Plugin interface defined and implemented
+- `[x]` Plugins can be enabled/disabled without affecting vault content or sensitivity
+- `[x]` Uninstalling all plugins leaves vault fully functional
+- `[x]` Settings UI shows plugin status and configuration
 
-#### Phase 44D — Obsidian Plugin `[ ]`
+#### Phase 44D — Obsidian Plugin `[x]`
 
 Add Obsidian-style knowledge management as an optional plugin.
 
 | Task | Status |
 |---|---|
-| Frontmatter YAML parsing (tags, aliases, date, published) | `[ ]` |
-| `published: true/false` frontmatter → sensitivity auto-sync | `[ ]` |
-| `[[wiki-link]]` parser → bidirectional link graph index | `[ ]` |
-| Link graph stored in `.envoy/plugins/obsidian/link-graph.json` | `[ ]` |
-| Agent link traversal (resolve `[[links]]` during RAG, respect sensitivity) | `[ ]` |
-| Sensitivity-aware link resolution (private links stripped for strangers) | `[ ]` |
+| Frontmatter YAML parsing (tags, aliases, date, published) | `[x]` |
+| `published: true/false` frontmatter → sensitivity auto-sync | `[x]` |
+| `[[wiki-link]]` parser → bidirectional link graph index | `[x]` |
+| Link graph stored in `.envoy/plugins/obsidian/link-graph.json` | `[x]` |
+| Agent link traversal (resolve `[[links]]` during RAG, respect sensitivity) | `[x]` |
+| Sensitivity-aware link resolution (private links stripped for strangers) | `[x]` |
 | Optional: graph view UI extension (visualize public sub-graph) | `[ ]` |
 | Optional: backlinks panel (show incoming links for a note) | `[ ]` |
-| Integration tests (frontmatter sync, link graph, sensitivity-aware resolution) | `[ ]` |
+| Integration tests (frontmatter sync, link graph, sensitivity-aware resolution) | `[x]` |
 
 **Exit criteria:**
-- `[ ]` Obsidian plugin activates and enriches vault metadata
-- `[ ]` Frontmatter `published` field syncs to sensitivity labels
-- `[ ]` Agent can traverse wiki-links (respecting sensitivity)
-- `[ ]` Stranger queries see public notes with public links resolved; private links stripped
-- `[ ]` Removing plugin leaves all notes intact, links become plain text
+- `[x]` Obsidian plugin activates and enriches vault metadata
+- `[x]` Frontmatter `published` field syncs to sensitivity labels
+- `[x]` Agent can traverse wiki-links (respecting sensitivity)
+- `[x]` Stranger queries see public notes with public links resolved; private links stripped
+- `[x]` Removing plugin leaves all notes intact, links become plain text
 
-#### Phase 44E — MCP Plugin Enhancement `[ ]`
+#### Phase 44E — MCP Plugin Enhancement `[x]`
 
 Enhance the existing MCP external provider with write-back and deeper integration.
 
 | Task | Status |
 |---|---|
-| MCP write-back: agent can save discovered knowledge to vault as notes | `[ ]` |
-| Source attribution on MCP-sourced notes | `[ ]` |
-| Sensitivity policy for MCP-sourced notes (default to friends) | `[ ]` |
-| MCP plugin registered through KB provider interface (not just config field) | `[ ]` |
+| MCP write-back: agent can save discovered knowledge to vault as notes | `[x]` |
+| Source attribution on MCP-sourced notes | `[x]` |
+| Sensitivity policy for MCP-sourced notes (default to friends) | `[x]` |
+| MCP plugin registered through KB provider interface (not just config field) | `[x]` |
 
 **Exit criteria:**
-- `[ ]` Agent can save MCP search results as vault notes with attribution
-- `[ ]` MCP plugin is manageable through the plugin interface (44C)
+- `[x]` Agent can save MCP search results as vault notes with attribution
+- `[x]` MCP plugin is manageable through the plugin interface (44C)
 
 ### Priority Order
 
@@ -5913,6 +5913,7 @@ Enhance the existing MCP external provider with write-back and deeper integratio
 | 2026-06-03 | **Phases 19–22 shipped:** bond_autonomy (protocol, inbound, outbound worker: `bond-autonomy-worker.ts`, 24 tests); network-wide document discovery (`document-discovery-broadcast.ts`, 10 tests); network-wide capability discovery (`capability-discovery-broadcast.ts`, 4 tests); federated RAG (`federated-rag.ts`, 10 tests). Total 48 new tests, 181 passing. Pre-existing `ShareFileDialog.test.tsx` fixed (stable mock + getByText workaround). |
 | 2026-06-04 | **Phase 29 — OpenClaw integration designed:** Two-tier model routing, tool bridge (7 EnvoyMesh tools → OpenClaw), session context protocol, version negotiation, unified install scripts. Runtime + tool catalog partially built. |
 | 2026-07-13 | **Phase 44 — Refine EnvoyMesh Knowledgebase:** Designed — native note creation, per-item sensitivity, public knowledge mesh (all peers, not just bonded), plugin architecture (Obsidian, MCP, future), vault-as-foundation. Sub-phases 44A–44E. Design doc: [knowledge-base-and-rag.md](./knowledge-base-and-rag.md). |
+| 2026-07-13 | **Phase 44 implemented:** All 6 sub-phases shipped — 44A1 (SensitivityOverrideStore, sensitivity normalization), 44A2 (createNote/deleteNote RPC, notes/ folder, Markdown editor), 44B (public knowledge.query for strangers, rate limiter), 44C (KnowledgeBasePlugin interface, PluginRegistry, config storage), 44D (`@envoymesh/kb-obsidian` — frontmatter parsing, wiki-link graph, sensitivity-aware link resolution, BFS traversal), 44E (MCP write-back via `formatMcpResultsAsNote`, KB plugin registration). New package `kb-obsidian` (87 tests). Total ~120 new tests across all sub-phases. |
 | 2026-06-03 | **Phase 27 — AI features shipped:** Agent in group chat (request-only, anti-loop, rate-limited), proactive agent pass, mobile AI package skeleton. 20 new tests. |
 | 2026-06-03 | **Phase 26 + Mobile E2E scoped:** DID WAN gateway resolver designed; mobile E2E test plan for bond autonomy, broadcast, continuity, task marketplace. |
 | 2026-06-03 | **Phases 23–25 designed:** Proactive Social Graph, Agent Marketplace, Ambient Mesh Awareness. All local computation — no new wire intents. |

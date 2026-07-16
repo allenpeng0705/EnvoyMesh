@@ -142,7 +142,7 @@ export function LibraryView() {
       >
         {fileActionBusy === `open:${rowKey}` ? t("library.opening") : t("library.open")}
       </button>
-      {row.extension === ".md" ? (
+      {row.extension === ".md" && row.relativePath.startsWith("notes/") ? (
         <button
           type="button"
           className="secondary"

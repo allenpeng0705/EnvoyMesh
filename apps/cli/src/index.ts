@@ -32,7 +32,8 @@ function ok(label: string, pass: boolean, extra?: string) {
 }
 
 function curlCode(url: string): string {
-  return shOut("curl", ["-s", "-o", "/dev/null", "-w", "%{http_code}", url]);
+  return shOut("curl", ["-s", "-o", "/dev/null", "-w", "%{http_code}",
+    "--connect-timeout", "2", "--max-time", "5", url]);
 }
 
 // ---- commands ----
@@ -156,6 +157,7 @@ async function chat(args: string[]): Promise<void> {
   }
   const resp = shOut("curl", [
     "-s", "-X", "POST",
+    "--connect-timeout", "2", "--max-time", "5",
     "http://127.0.0.1:3031/bridge/send",
     "-H", "Content-Type: application/json",
     "-d", JSON.stringify({ to, text }),
@@ -214,6 +216,7 @@ async function discover(args: string[]): Promise<void> {
   console.log(`Discovering peers matching "${query}"...\n`);
   const resp = shOut("curl", [
     "-s", "-X", "POST",
+    "--connect-timeout", "2", "--max-time", "5",
     "http://127.0.0.1:3031/bridge/send",
     "-H", "Content-Type: application/json",
     "-d", JSON.stringify({ to: "envoymesh-discovery", text: `discovery.query: ${query}` }),
@@ -222,7 +225,8 @@ async function discover(args: string[]): Promise<void> {
 }
 
 async function peers(): Promise<void> {
-  const tools = shOut("curl", ["-s", "http://127.0.0.1:3031/bridge/list-tools"]);
+  const tools = shOut("curl", ["-s", "--connect-timeout", "2", "--max-time", "5",
+    "http://127.0.0.1:3031/bridge/list-tools"]);
   console.log(tools || "No response — is the node running?");
 }
 
@@ -338,7 +342,9 @@ async function send(args: string[]): Promise<void> {
   const text = args.slice(1).join(" ");
   if (!to || !text) { console.log("Usage: envoymesh send <ownerId> <message>"); return; }
   const resp = shOut("curl", [
-    "-s", "-X", "POST", "http://127.0.0.1:3031/bridge/send",
+    "-s", "-X", "POST",
+    "--connect-timeout", "2", "--max-time", "5",
+    "http://127.0.0.1:3031/bridge/send",
     "-H", "Content-Type: application/json",
     "-d", JSON.stringify({ to, text }),
   ]);
@@ -350,7 +356,9 @@ async function agent(args: string[]): Promise<void> {
   if (!prompt) { console.log("Usage: envoymesh agent <prompt>"); return; }
   console.log("Asking agent:", prompt.slice(0, 60) + (prompt.length > 60 ? "..." : ""));
   const resp = shOut("curl", [
-    "-s", "-X", "POST", "http://127.0.0.1:18789/webhook/envoymesh",
+    "-s", "-X", "POST",
+    "--connect-timeout", "2", "--max-time", "5",
+    "http://127.0.0.1:18789/webhook/envoymesh",
     "-H", "Content-Type: application/json",
     "-d", JSON.stringify({ fromOwnerId: "envoymesh-cli", text: prompt }),
   ]);
@@ -453,7 +461,7 @@ Examples:
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
-  const cmd = args[0];
+  const cmd = (args[0] ?? "").trim();
   const rest = args.slice(1);
 
   switch (cmd) {
@@ -513,6 +521,7 @@ async function main(): Promise<void> {
       await version(); break;
     case "help": case "--help": case "-h":
     case undefined:
+    case "":
       console.log(USAGE); break;
     default:
       console.log(`Unknown command: ${cmd}\n${USAGE}`);

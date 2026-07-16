@@ -28,6 +28,7 @@ import type {
   AgentInteractionMode,
   AgentNotifyMode,
   AutonomousDomain,
+  KbPluginInfo,
 } from "@envoymesh/api";
 import {
   DEFAULT_AI_KNOWLEDGE_BASE,
@@ -159,6 +160,123 @@ function RagIndexStatusPanel() {
         </p>
       </div>
     </div>
+  );
+}
+
+/**
+ * Phase 44C — Knowledge Base Plugin management panel.
+ * Lists registered plugins with activate/deactivate controls.
+ */
+function KbPluginSettings() {
+  const t = useT();
+  const nodeService = useNodeService();
+  const { showToast } = useToast();
+
+  const [plugins, setPlugins] = useState<KbPluginInfo[]>([]);
+  const [busy, setBusy] = useState<string | null>(null);
+
+  const loadPlugins = useCallback(async () => {
+    try {
+      const list = await nodeService.listKbPlugins();
+      setPlugins(list);
+    } catch {
+      // Best-effort — plugins may not be available (mobile).
+    }
+  }, [nodeService]);
+
+  useEffect(() => {
+    void loadPlugins();
+  }, [loadPlugins]);
+
+  const handleActivate = async (pluginId: string) => {
+    setBusy(pluginId);
+    try {
+      const result = await nodeService.activateKbPlugin({ pluginId });
+      if (!result.ok) {
+        showToast(t("kbPlugins.activateError") + (result.reason ? `: ${result.reason}` : ""), "error");
+      }
+      await loadPlugins();
+    } catch {
+      showToast(t("kbPlugins.activateError"), "error");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const handleDeactivate = async (pluginId: string) => {
+    setBusy(pluginId);
+    try {
+      const result = await nodeService.deactivateKbPlugin({ pluginId });
+      if (!result.ok) {
+        showToast(t("kbPlugins.deactivateError") + (result.reason ? `: ${result.reason}` : ""), "error");
+      }
+      await loadPlugins();
+    } catch {
+      showToast(t("kbPlugins.deactivateError"), "error");
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const statusLabel = (status: KbPluginInfo["status"]) => {
+    switch (status) {
+      case "active": return t("kbPlugins.statusActive");
+      case "disabled": return t("kbPlugins.statusDisabled");
+      case "error": return t("kbPlugins.statusError");
+      default: return t("kbPlugins.statusRegistered");
+    }
+  };
+
+  return (
+    <>
+      {plugins.length === 0 ? (
+        <p className="field-desc">{t("kbPlugins.empty")}</p>
+      ) : (
+        <div className="plugins-list">
+          {plugins.map((p) => (
+            <div key={p.pluginId} className="rule-item" style={{ marginBottom: "0.75rem" }}>
+              <div className="rule-item-header">
+                <span className="rule-item-name">{p.displayName}</span>
+                <span className="rule-item-category">{p.version}</span>
+              </div>
+              <div className="rule-item-triggers">
+                {p.description}
+              </div>
+              <div className="rule-item-triggers" style={{ opacity: 0.7 }}>
+                {t("kbPlugins.pluginStatus")}: {statusLabel(p.status)}
+                {p.activatedAt && ` · ${t("kbPlugins.activatedAt")}: ${new Date(p.activatedAt).toLocaleDateString()}`}
+              </div>
+              {p.errorMessage && (
+                <div className="rule-item-triggers" style={{ color: "var(--error, #e74c3c)" }}>
+                  {t("kbPlugins.errorLabel")}: {p.errorMessage}
+                </div>
+              )}
+              <div className="rule-item-controls">
+                {p.status !== "active" ? (
+                  <button
+                    type="button"
+                    className="settings-button"
+                    disabled={busy === p.pluginId}
+                    onClick={() => void handleActivate(p.pluginId)}
+                  >
+                    {busy === p.pluginId ? t("kbPlugins.activating") : t("kbPlugins.activate")}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    className="settings-button"
+                    disabled={busy === p.pluginId}
+                    onClick={() => void handleDeactivate(p.pluginId)}
+                  >
+                    {busy === p.pluginId ? t("kbPlugins.deactivating") : t("kbPlugins.deactivate")}
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -2150,6 +2268,12 @@ export function SettingsAITab() {
           }}
           modelProviders={nodeConfig?.modelProviders}
         />
+      </section>
+
+      <section className="settings-section">
+        <h4>{t("kbPlugins.heading")}</h4>
+        <p className="section-desc">{t("kbPlugins.sectionDesc")}</p>
+        <KbPluginSettings />
       </section>
 
       <section className="settings-section">

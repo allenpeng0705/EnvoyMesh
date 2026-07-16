@@ -10,6 +10,8 @@
     { "path": "./packages/local-store" },
     { "path": "./packages/api" },
     { "path": "./packages/ipfs-helia" },
+    { "path": "./packages/rag" },
+    { "path": "./packages/kb-obsidian" },
     { "path": "./apps/node" },
     { "path": "./apps/relay" },
     { "path": "./apps/social" },
@@ -17,7 +19,6 @@
     { "path": "./packages/mobile-storage" },
     { "path": "./packages/mobile-vault" },
     { "path": "./packages/mobile-node" },
-    { "path": "./packages/rag" },
     { "path": "./apps/mobile" }
   ]
 }

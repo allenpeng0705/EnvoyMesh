@@ -686,3 +686,32 @@ export const commonYesNoMessages = {
   yes: "Yes",
   no: "No",
 } as const;
+
+/** Phase 44C — Knowledge Base Plugin settings messages. */
+export const kbPluginMessages = {
+  heading: "Knowledge Base Plugins",
+  sectionDesc: "Extend your vault with plugins that enrich document metadata.",
+  empty: "No plugins registered.",
+  pluginName: "Plugin",
+  pluginVersion: "Version",
+  pluginStatus: "Status",
+  pluginDescription: "Description",
+  activate: "Activate",
+  deactivate: "Deactivate",
+  activating: "Activating…",
+  deactivating: "Deactivating…",
+  activatedAt: "Activated",
+  errorLabel: "Error",
+  configSection: "Configuration",
+  configDesc: "Plugin-specific settings (JSON). Changes are merged into the existing config.",
+  configPlaceholder: '{ "key": "value" }',
+  saveConfig: "Save Config",
+  configSaved: "Plugin config saved.",
+  configError: "Failed to save config.",
+  activateError: "Failed to activate plugin.",
+  deactivateError: "Failed to deactivate plugin.",
+  statusRegistered: "Registered",
+  statusActive: "Active",
+  statusDisabled: "Disabled",
+  statusError: "Error",
+} as const;

@@ -30,7 +30,9 @@ import {
 import {
   chatLogRowsToViews,
   inferDocumentSensitivity,
+  normalizeLegacySensitivity,
   resolveDocumentSensitivityById,
+  SENSITIVITY_ORDER,
   searchChatHistoryRag as lexicalChatHistoryRag,
   searchVaultKnowledgeBase as lexicalVaultKnowledgeBase,
   type KnowledgeAccessLevel,
@@ -467,6 +469,7 @@ export async function createRagService(input: CreateRagServiceInput): Promise<Ra
           knowledgeBase: kbOverride ?? knowledgeBase,
           knowledgeScope,
           ruleVaultQuery,
+          sensitivityOverrides,
         });
       }
 
@@ -700,18 +703,6 @@ function groupChunksByDocument(
   return grouped;
 }
 
-/** Ordered from most open (0) to most restrictive (2). */
-const SENSITIVITY_ORDER_3: readonly KnowledgeAccessLevel[] = ["public", "friends", "private"] as const;
-
-/**
- * Map legacy sensitivity names to the 3-tier KB levels.
- */
-function normalizeLegacySensitivity(s: string): KnowledgeAccessLevel {
-  if (s === "personal" || s === "private") return "private";
-  if (s === "professional" || s === "friends" || s === "trusted") return "friends";
-  return "public";
-}
-
 /**
  * Filter vault search results by sensitivity ceiling (path-heuristic only, no overrides).
  */
@@ -720,12 +711,12 @@ function filterVectorResultsBySensitivity(
   knowledgeAccess: KnowledgeAccessLevel,
   maxSensitivity?: string,
 ): VaultSearchResult[] {
-  const accessIdx = SENSITIVITY_ORDER_3.indexOf(knowledgeAccess);
+  const accessIdx = SENSITIVITY_ORDER.indexOf(knowledgeAccess);
   const ruleLevel = maxSensitivity ? normalizeLegacySensitivity(maxSensitivity) : knowledgeAccess;
-  const ruleIdx = SENSITIVITY_ORDER_3.indexOf(ruleLevel);
+  const ruleIdx = SENSITIVITY_ORDER.indexOf(ruleLevel);
   const ceiling = Math.min(accessIdx, ruleIdx);
   return results.filter((result) => {
-    const docIdx = SENSITIVITY_ORDER_3.indexOf(inferDocumentSensitivity(result.document.relativePath));
+    const docIdx = SENSITIVITY_ORDER.indexOf(inferDocumentSensitivity(result.document.relativePath));
     return docIdx <= ceiling;
   });
 }
@@ -740,9 +731,9 @@ function filterVectorResultsWithOverrides(
   maxSensitivity: string | undefined,
   overrides: Map<string, KnowledgeAccessLevel>,
 ): VaultSearchResult[] {
-  const accessIdx = SENSITIVITY_ORDER_3.indexOf(knowledgeAccess);
+  const accessIdx = SENSITIVITY_ORDER.indexOf(knowledgeAccess);
   const ruleLevel = maxSensitivity ? normalizeLegacySensitivity(maxSensitivity) : knowledgeAccess;
-  const ruleIdx = SENSITIVITY_ORDER_3.indexOf(ruleLevel);
+  const ruleIdx = SENSITIVITY_ORDER.indexOf(ruleLevel);
   const ceiling = Math.min(accessIdx, ruleIdx);
   return results.filter((result) => {
     const sensitivity = resolveDocumentSensitivityById(
@@ -750,7 +741,7 @@ function filterVectorResultsWithOverrides(
       result.document.relativePath,
       overrides,
     );
-    const docIdx = SENSITIVITY_ORDER_3.indexOf(sensitivity);
+    const docIdx = SENSITIVITY_ORDER.indexOf(sensitivity);
     return docIdx <= ceiling;
   });
 }

@@ -7,7 +7,7 @@ Requirements narrative: [docs/UserStory.md](docs/UserStory.md). Scenario backlog
 ## Requirements
 
 - macOS, Linux, or Windows with a recent terminal.
-- Node.js 22+ recommended.
+- Node.js **22.13+** required (matches the repo's `engines.node` pin in `package.json`).
 - npm, included with Node.js.
 
 ## Install
@@ -77,7 +77,7 @@ If you only need the OpenClaw (EnvoyAI) bootstrap without the full build:
 
 ### What the setup script does
 
-Six steps, in order:
+Seven steps (0–6), in order:
 
 0. **Clean stale artifacts** — drop an incomplete `packages/openclaw/dist`.
 1. **Toolchain check** — verify Node 22+; install pnpm if missing.
@@ -130,16 +130,53 @@ npm run tauri:build
 EnvoyMesh defaults to:
 
 - `./data/default` for local profile, audit, task, approval, and trust records.
-- `./shared_vault` for owner-approved files the Envoy may index.
+- `./shared_vault` for owner-approved notes, documents, and inbox items the Envoy
+  may index. **Phase 44 turned this into a pluggable knowledge base** — see the
+  next section.
 
-Create a shared vault:
+The Phase 44 vault layout (auto-created on first run; safe alongside the old
+`shared_vault/`):
 
-```bash
-mkdir -p shared_vault
-printf "EnvoyMesh is a local-first P2P agent network.\n" > shared_vault/notes.md
+```
+shared_vault/
+├── .envoy/                  ← Internal metadata (never shared)
+│   ├── sensitivity.json     ← Per-item sensitivity overrides (Published toggle)
+│   └── plugins/
+│       └── obsidian/        ← Link graph + frontmatter cache
+├── notes/                   ← User-created Markdown notes (edit in Library UI)
+│   ├── research/  tutorials/  personal/  work/
+├── documents/               ← Imported files (PDF, Word, images, etc.)
+├── inbox/                   ← Received files from peers
+└── temp/                    ← Staging for imports
 ```
 
-Supported vault files are `.txt`, `.md`, and `.json`.
+Supported file types: `.txt`, `.md`, `.json`, plus imported `.pdf` / `.docx` /
+`.png` / `.jpg`. Legacy files dropped at the vault root continue to work.
+
+### Knowledge base (Phase 44)
+
+The Social app's **Library** tab is the in-app KB UI:
+
+- **Native note creation** — Markdown editor with create / edit / preview / delete;
+  notes are auto-indexed by the RAG pipeline on save (no restart).
+- **Per-item sensitivity** — each note has a Published toggle (`public` / `friends`
+  / `private`). Persisted to `.envoy/sensitivity.json` so it survives restarts and
+  re-indexes. Sensitivity is per-item, not per-folder — the same folder can mix
+  public and private notes.
+- **Public knowledge mesh** — public notes are queryable by all peers via
+  `knowledge.query`, not just bonded contacts. Strangers are rate-limited
+  (5/min, 50/hour) and only see the public sub-graph of wiki-links.
+- **Plug-in providers** — Settings → AI → Knowledge Base → Plugins installs and
+  enables optional providers:
+  - **`obsidian`** — frontmatter YAML, `[[wiki-links]]` graph, sensitivity auto-sync
+    from `published: true/false`; sensitivity-aware link resolution so private
+    `[[links]]` are stripped from stranger responses.
+  - **`mcp`** — write-back: agent discoveries can be saved as vault notes with
+    source attribution and `friends` sensitivity by default.
+
+Full design: [`docs/knowledge-base-and-rag.md`](docs/knowledge-base-and-rag.md).
+Programmatic access: `createNote` / `listKbPlugins` / `enableKbPlugin` /
+`disableKbPlugin` JSON-RPC methods on `NodeService`.
 
 ## Run An Envoy Node
 
@@ -216,6 +253,13 @@ The relay stores short-lived `relay.checkin` rows, answers bounded `relay.lookup
 ## Bridge (P2P ↔ External Agent)
 
 The bridge makes the node act as a message pipe between P2P chat and an external agent (OpenClaw, HomeClaw, Hermes, etc.). One node = one bridge = one configured agent.
+
+**Ext Agent (Phase 32 — first-class config).** The External Agent Bridge is configured
+in **Settings → AI → Agent Network**. Built-in OpenClaw remains the default engine
+(`openclawEnabled: true` on fresh install); Ext Agent (`bridgeEnabled: true`) is
+opt-in. Defaults: HomeClaw on `http://127.0.0.1:8010/message`, Hermes on `:8020`,
+OpenHuman on `:8021`, or any custom HTTP endpoint. The mobile thin-client mirrors
+the same state under **Me → Agent Network** as read-only.
 
 ### Configuration
 
@@ -439,7 +483,7 @@ npm run social:dev
 
 If the repo root is ambiguous to tooling, set `ENVOYMESH_WORKSPACE=/path/to/EnvoyMesh` where supported.
 
-The **Social** app is the primary graphical surface (contacts, chat, discovery flows). Older Electron-only panels are not in this repo.
+The **Social** app (Vite + React, served by the node) and the Tauri desktop wrapper are the only graphical surfaces — there is no Electron panel.
 
 Use machine A as `primary`, machine B as `satellite`.
 
@@ -788,11 +832,34 @@ npm run poc:discovery -w @envoymesh/node -- --mode advanced --bootstrap "<bootst
 ## Useful Commands
 
 ```bash
+# Build / test
 npm run typecheck
 npm test
+npm run test:orchestrator -- dev     # Fast dev loop (~35s, no E2E)
+npm run test:orchestrator -- full    # All tests + libp2p E2E + smoke (~10 min)
+
+# Run
 npm run node:dev
 npm run social:dev
 npm run tauri:dev
+npm run setup                        # mac/Linux first-time bootstrap
+npm run setup:win                    # Windows first-time bootstrap
+
+# Native installers (per-platform shortcut)
+npm run tauri:build                  # auto-detect host
+npm run tauri:build:mac
+npm run tauri:build:win
+npm run tauri:build:linux
+bash scripts/bundle.sh               # portable bundle (mac/Linux .tar.gz)
+pwsh scripts/bundle.ps1              # portable bundle (Windows .zip)
+
+# CLI
 npm run cli -w @envoymesh/node -- --help
 npm run cli -w @envoymesh/node -- relay-status --profile ./data/relay
+
+# Global `envoymesh` binary (after `npm i -g .` from repo root)
+envoymesh start                      # start node + OpenClaw gateway
+envoymesh status                     # check node / bridge / gateway / ws health
+envoymesh doctor                     # self-diagnostic
+envoymesh stop                       # stop node + gateway
 ```

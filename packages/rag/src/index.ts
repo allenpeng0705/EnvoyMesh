@@ -22,7 +22,10 @@ export {
 export {
   formatExternalKnowledgeSection,
   searchExternalMcpKnowledge,
+  formatMcpResultsAsNote,
   type ExternalKnowledgeSnippet,
+  type McpQueryAttribution,
+  type McpWriteBackOptions,
 } from "./mcp-knowledge-client.js";
 export {
   chatCollectionId,

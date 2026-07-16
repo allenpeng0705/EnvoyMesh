@@ -40,6 +40,7 @@ export default defineConfig({
       "@envoymesh/mobile-node": resolve(rootDir, "packages/mobile-node/src/index.ts"),
       "@envoymesh/rag/embedding-resolver": resolve(rootDir, "packages/rag/src/embedding-resolver.ts"),
       "@envoymesh/rag": resolve(rootDir, "packages/rag/src/index.ts"),
+      "@envoymesh/kb-obsidian": resolve(rootDir, "packages/kb-obsidian/src/index.ts"),
     },
   },
   test: {

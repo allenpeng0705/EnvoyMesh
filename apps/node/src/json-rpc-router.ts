@@ -793,6 +793,27 @@ export async function routeRpcMethod(
     case "homeClawCoreWsClose":
     case "home_claw_core_ws_close":
       return { ok: true };
+    // Phase 44C — Knowledge Base Plugins
+    case "listKbPlugins":
+      return ns.listKbPlugins({
+        activeOnly: params.activeOnly as boolean | undefined,
+      });
+    case "activateKbPlugin":
+      return ns.activateKbPlugin({
+        pluginId: String(params.pluginId ?? ""),
+        config: params.config as Record<string, unknown> | undefined,
+      });
+    case "deactivateKbPlugin":
+      return ns.deactivateKbPlugin({
+        pluginId: String(params.pluginId ?? ""),
+      });
+    case "getKbPluginConfig":
+      return ns.getKbPluginConfig(String(params.pluginId ?? ""));
+    case "updateKbPluginConfig":
+      return ns.updateKbPluginConfig({
+        pluginId: String(params.pluginId ?? ""),
+        config: params.config as Record<string, unknown>,
+      });
     default:
       throw new Error(`Unknown method: ${method}`);
   }

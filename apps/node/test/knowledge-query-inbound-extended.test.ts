@@ -5,7 +5,7 @@
  * - approval_required policy outcome (referred bond, friends sensitivity)
  * - model provider disabled mode
  * - error handling (Zod parse failures)
- * - stranger (no trust record) denial
+ * - stranger (no trust record) allowed at public sensitivity (Phase 44B)
  */
 
 import { createLocalTaskStore, createLocalTrustStore, createLocalPeerDirectoryStore } from "@envoymesh/local-store";

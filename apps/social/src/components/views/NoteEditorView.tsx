@@ -42,6 +42,7 @@ export function NoteEditorView({
   const t = useT()
   const nodeService = useNodeService()
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const filenameInputRef = useRef<HTMLInputElement>(null)
 
   const [filename, setFilename] = useState("")
   const [subfolder, setSubfolder] = useState(defaultSubfolder ?? "")
@@ -73,8 +74,8 @@ export function NoteEditorView({
         })
     }
     if (mode === "create") {
-      // Auto-focus the filename field on mount.
-      requestAnimationFrame(() => textareaRef.current?.focus())
+      // Auto-focus the filename field so the user can type a name first.
+      requestAnimationFrame(() => filenameInputRef.current?.focus())
     }
   }, [mode, initialRelativePath, loaded, nodeService])
 
@@ -140,6 +141,7 @@ export function NoteEditorView({
         {mode === "create" && (
           <div className="note-editor-meta">
             <input
+              ref={filenameInputRef}
               type="text"
               className="note-editor-filename"
               placeholder={t("notes.filenamePlaceholder")}

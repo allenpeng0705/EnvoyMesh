@@ -23,7 +23,8 @@
       "@envoymesh/mobile-storage": ["./packages/mobile-storage/src/index.ts"],
       "@envoymesh/mobile-vault": ["./packages/mobile-vault/src/index.ts"],
       "@envoymesh/mobile-node": ["./packages/mobile-node/src/index.ts"],
-    "@envoymesh/rag": ["./packages/rag/src/index.ts"]
+    "@envoymesh/rag": ["./packages/rag/src/index.ts"],
+    "@envoymesh/kb-obsidian": ["./packages/kb-obsidian/src/index.ts"]
     },
     "strict": true,
     "declaration": true,

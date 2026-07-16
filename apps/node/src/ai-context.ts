@@ -22,14 +22,14 @@ import { searchVault, type VaultIndex, type VaultSearchResult } from "@envoymesh
 export type KnowledgeAccessLevel = "public" | "friends" | "private";
 
 /** Ordered from most open (0) to most restrictive (2). */
-const SENSITIVITY_ORDER: readonly KnowledgeAccessLevel[] = ["public", "friends", "private"] as const;
+export const SENSITIVITY_ORDER: readonly KnowledgeAccessLevel[] = ["public", "friends", "private"] as const;
 
 /**
  * Map legacy sensitivity names to the 3-tier KB levels.
  * - `professional` was between friends and private → maps to `friends`
  * - `personal` was the most restrictive → maps to `private`
  */
-function normalizeLegacySensitivity(
+export function normalizeLegacySensitivity(
   s: string,
 ): KnowledgeAccessLevel {
   if (s === "personal" || s === "private") return "private";
@@ -38,23 +38,14 @@ function normalizeLegacySensitivity(
 }
 
 /**
- * Resolve the effective sensitivity for a vault document.
- *
- * Resolution chain (first match wins):
- * 1. Per-item override from `.envoy/sensitivity.json` (if provided)
- * 2. Path heuristic from `inferDocumentSensitivity()`
+ * Resolve the effective sensitivity for a vault document by path heuristic only.
+ * Callers with per-item overrides should use {@link resolveDocumentSensitivityById} instead.
  *
  * @param relativePath  Document path relative to vault root
- * @param overrides     Per-item sensitivity overrides (from SensitivityOverrideStore), optional
  */
 export function resolveDocumentSensitivity(
   relativePath: string,
-  overrides?: Map<string, KnowledgeAccessLevel> | undefined,
 ): KnowledgeAccessLevel {
-  // Per-item override would need documentId, not relativePath.
-  // Callers that have overrides should use the documentId-keyed version below.
-  // This signature is for callers that only have the path.
-  void overrides;
   return inferDocumentSensitivity(relativePath);
 }
 
