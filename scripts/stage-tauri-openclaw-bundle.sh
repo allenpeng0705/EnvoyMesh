@@ -31,6 +31,14 @@ if [ -f "$DEST/openclaw.mjs" ] && [ -f "$DEST/package.json" ] && [ -d "$DEST/nod
     fi
   done
 
+  # Validate dist/entry.js is a proper build, not a broken stub that
+  # references src/ (which was just removed above).
+  if [ -f "$DEST/dist/entry.js" ] && grep -q "from.*src/cli/run-main" "$DEST/dist/entry.js" 2>/dev/null; then
+    echo "  ⚠ dist/entry.js is a broken stub (references src/) — forcing re-stage"
+    echo "  Set STAGE_OPENCLAW_BUNDLE=0 to skip this check."
+    exec "$0"  # re-run with STAGE_OPENCLAW_BUNDLE unset (falls through to stage_from_source)
+  fi
+
   exit 0
 fi
 

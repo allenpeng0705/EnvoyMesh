@@ -40,7 +40,13 @@ echo "Verifying Tauri bundle resources..."
 require_file "$RES/node-runtime/node" "Node.js sidecar (macOS/Linux)"
 require_file "$RES/node/dist/src/index.js" "compiled EnvoyMesh node"
 require_file "$RES/openclaw/openclaw.mjs" "OpenClaw gateway entry"
+require_file "$RES/openclaw/dist/entry.js" "OpenClaw compiled entry.js"
 require_dir_nonempty "$RES/openclaw/node_modules" "OpenClaw node_modules"
+
+# Reject broken stub entry.js that references src/ (won't exist in Tauri bundle).
+if grep -q "from.*src/cli/run-main" "$RES/openclaw/dist/entry.js" 2>/dev/null; then
+  fail "openclaw dist/entry.js is a stub that imports from src/ — rebuild OpenClaw or set STAGE_OPENCLAW_BUNDLE=1"
+fi
 require_file "$SOCIAL_DIST" "built Social UI (apps/social/src/dist)"
 
 node_mb="$(du -sm "$RES/node" 2>/dev/null | awk '{print $1}')"
