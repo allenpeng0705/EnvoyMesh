@@ -64,13 +64,24 @@ stage_from_source() {
     fi
     CI=true pnpm install --no-frozen-lockfile 2>&1 | tail -8
     CI=true pnpm exec tsx scripts/generate-bundled-channel-config-metadata.ts 2>&1 | tail -3 || true
-    CI=true pnpm run build 2>&1 | tail -8 || {
+    if CI=true pnpm run build 2>&1 | tail -8; then
+      : # build succeeded
+    else
       echo "  ⚠ Full build failed — writing dist/entry.js bootstrap"
       mkdir -p dist
-      cat > dist/entry.js << 'STUB'
+      # Prefer the already-compiled JS over the .ts source so the stub
+      # works even when src/ is excluded from the Tauri resource rsync.
+      if [ -f "$SOURCE/dist/cli/run-main.js" ]; then
+        cat > dist/entry.js << 'STUB'
+import { runCli } from "./cli/run-main.js";
+STUB
+      else
+        cat > dist/entry.js << 'STUB'
 export * from "../src/cli/run-main.ts";
 STUB
-    }
+        echo "  ⚠ WARNING: entry.js references src/ — ensure src/ is not excluded from rsync"
+      fi
+    fi
     cd "$ROOT"
   fi
 

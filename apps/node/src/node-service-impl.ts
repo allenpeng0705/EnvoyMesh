@@ -5582,6 +5582,15 @@ class NodeServiceImpl implements NodeService {
   /** Wire Phase 30 terminal manager (desktop home node only). */
   setTerminalManager(manager: import("./terminal-manager.js").TerminalManager): void {
     this._terminalManager = manager;
+    // Emit a fresh node:status so the frontend picks up terminalsAvailable=true.
+    // The earlier node:online event fires before setTerminalManager(), so the
+    // UI's initial connectionStatus snapshot may have terminalsAvailable=false.
+    if (this._nodeStatus === "running") {
+      this.emit("node:status", {
+        status: this._nodeStatus,
+        peerId: this._mesh?.peerId ?? this._externalMesh?.peerId ?? "",
+      });
+    }
   }
 
   /** Wire Phase 30I terminal agent assist (desktop home node only). */

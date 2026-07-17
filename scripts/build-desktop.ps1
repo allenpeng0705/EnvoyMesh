@@ -594,19 +594,27 @@ if ($openclawStaged -and -not $ForceOpenClaw) {
 
         if ($buildExit -ne 0) {
             # Match the bash twin's fallback: if the full build fails,
-            # write a stub dist/entry.js that re-exports from TS source.
-            # The runtime will then use `tsx` to execute the source on
-            # demand. Less ideal than a prebuilt dist but unblocks the
-            # Tauri bundle from being produced at all.
+            # write a stub dist/entry.js. Prefer the already-compiled JS
+            # over the .ts source so the stub works even when src/ is
+            # excluded from the Tauri resource copy.
             Write-Warn "OpenClaw build returned non-zero (exit $buildExit) — writing dist\entry.js bootstrap fallback"
             if (-not (Test-Path "dist")) {
                 New-Item -ItemType Directory -Force -Path "dist" | Out-Null
             }
-            $entryStub = @"
+            if (Test-Path "dist\cli\run-main.js") {
+                $entryStub = @"
+// EnvoyMesh bootstrap — fallback entry when full build failed.
+// Uses the pre-compiled JS chunk so src/ exclusion is safe.
+import { runCli } from "./cli/run-main.js";
+"@
+            } else {
+                $entryStub = @"
 // EnvoyMesh bootstrap — re-exports the gateway from TS source (runtime
 // uses tsx to execute this directly when the full build is unavailable).
+// WARNING: requires src/ to be present — will fail if src/ is excluded.
 export * from "../src/cli/run-main.ts";
 "@
+            }
             Set-Content -Path "dist/entry.js" -Value $entryStub -Encoding UTF8
         }
         if (-not (Test-Path "dist/entry.js")) {
