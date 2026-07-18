@@ -3562,8 +3562,21 @@ textarea::placeholder {
 }
 
 /* ----- Engine block (one per AI engine) ----- */
+/* AI Engine cards inside the AI settings section.
+ *
+ * Background: was previously `var(--color-surface, #ffffff)` which
+ * made the writable card visually disappear against the surrounding
+ * `.settings-section` (also surface = white) in light mode — the user
+ * reported "all white background, I cannot know what the text".
+ *
+ * Now: the writable block has no inner background (sits flush with the
+ * section like any other settings row) and is differentiated by a
+ * border + soft shadow. The read-only block keeps the slate-50 tint
+ * to preserve the "this is read-only state" visual cue. Both modes
+ * (light + dark) get the same shape — only the tokens vary.
+ */
 .agent-block {
-  background: var(--color-surface, #ffffff);
+  background: transparent;
   border: 1px solid var(--color-border, #e2e8f0);
   border-radius: var(--radius-xl, 1rem);
   padding: var(--space-5) var(--space-5);
@@ -3573,8 +3586,10 @@ textarea::placeholder {
   box-shadow: var(--shadow-xs, 0 1px 2px 0 rgb(15 23 42 / 0.05));
 }
 .agent-block--readonly {
-  /* the built-in engine is read-only — a softer border signals that */
-  background: var(--color-slate-50, #f8fafc);
+  /* the built-in engine is read-only — a softer fill signals that.
+     Use surface-elevated when available (dark mode picks up the
+     in-theme elevated tone) and fall back to slate-50 for light. */
+  background: var(--color-surface-elevated, var(--color-slate-50, #f8fafc));
 }
 .agent-block-header {
   display: flex;
