@@ -1117,6 +1117,45 @@ if ($scrubbedCount -gt 0) {
     Write-Ok "Scrubbed $scrubbedCount dev-only packages from node_modules (~$scrubbedMB MB)"
 }
 
+# Scrub orphaned heavy native packages left behind after extension pruning.
+# These packages are dependencies of extensions we already removed (copilot,
+# codex, anthropic-vertex, acpx, memory-lancedb, ollama, etc.) but pnpm's
+# hoisting leaves them in node_modules/ even after the extension dir is gone.
+# On Windows (where pnpm copies instead of symlinks), they total ~1.85 GB:
+#   @node-llama-cpp (711 MB), @github (422 MB), @openai (279 MB),
+#   @zed-industries (173 MB), @lancedb (158 MB), + smaller ones.
+# Verified safe by grepping dist/*.js — none are imported at runtime.
+# KEEP: @anthropic-ai/sdk (used by dist/anthropic-*.js), @larksuiteoapi
+# (used by dist/monitor.account-*.js and dist/client-*.js).
+$script:OpenClawOrphanedNativePkgs = @(
+    "@node-llama-cpp", "node-llama-cpp",
+    "@github",
+    "@openai",
+    "@zed-industries",
+    "@lancedb",
+    "@matrix-org",
+    "@azure",
+    "@opentelemetry"
+)
+$orphanCount = 0
+$orphanBytes = 0
+foreach ($pkg in $script:OpenClawOrphanedNativePkgs) {
+    $pkgPath = Join-Path $scrubbedNmDir $pkg
+    if (Test-Path $pkgPath) {
+        try {
+            $sz = (Get-ChildItem -Path $pkgPath -Recurse -File -ErrorAction SilentlyContinue |
+                   Measure-Object -Property Length -Sum).Sum
+            $orphanBytes += [int]$sz
+            Remove-Item -Recurse -Force $pkgPath -ErrorAction SilentlyContinue
+            $orphanCount++
+        } catch { }
+    }
+}
+if ($orphanCount -gt 0) {
+    $orphanMB = [math]::Round($orphanBytes / 1MB, 1)
+    Write-Ok "Scrubbed $orphanCount orphaned native packages (~$orphanMB MB)"
+}
+
 # Scrub stray build artefacts that leak in via the reuse path (the exclude
 # list above only filters the fresh copy; a cached tree from before these
 # entries were added still carries them).

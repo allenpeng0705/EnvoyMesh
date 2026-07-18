@@ -43,9 +43,17 @@ _openclaw_resolve_ext_allowlist() {
 # so it's kept). Saves ~250 MB on macOS, ~500-700 MB on Windows.
 _openclaw_dev_only_packages="typescript @typescript @oxlint @oxlint-tsgolint @shikijs vite @rolldown esbuild @esbuild vitest @vitest playwright-core playwright jsdom tree-sitter-bash tree-sitter @babel webpack rollup"
 
+# Orphaned heavy native packages left after extension pruning. These are
+# deps of extensions we removed (copilot, codex, anthropic-vertex, acpx,
+# memory-lancedb, ollama, etc.) but pnpm's hoisting keeps them in
+# node_modules/. On Windows (pnpm copies vs symlinks) they total ~1.85 GB.
+# Verified safe by grepping dist/*.js — none imported at runtime.
+# KEEP: @anthropic-ai/sdk (dist/anthropic-*.js), @larksuiteoapi (monitor/client).
+_openclaw_orphaned_native_pkgs="@node-llama-cpp node-llama-cpp @github @openai @zed-industries @lancedb @matrix-org @azure @opentelemetry"
+
 _openclaw_scrub_dev_tooling() {
   local removed=0
-  for pkg in $_openclaw_dev_only_packages; do
+  for pkg in $_openclaw_dev_only_packages $_openclaw_orphaned_native_pkgs; do
     if [ -d "$DEST/node_modules/$pkg" ]; then
       rm -rf "$DEST/node_modules/$pkg"
       removed=$((removed + 1))
@@ -67,7 +75,7 @@ _openclaw_scrub_dev_tooling() {
   [ -d "$DEST/dist/control-ui/assets" ] && \
     find "$DEST/dist/control-ui/assets" -name '*.map' -type f -delete 2>/dev/null
   if [ "$removed" -gt 0 ]; then
-    echo "  Scrubbed $removed dev-only packages from node_modules"
+    echo "  Scrubbed $removed dev/orphaned packages from node_modules"
   fi
 }
 
