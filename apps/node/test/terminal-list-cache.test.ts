@@ -29,6 +29,7 @@ import {
   createLocalPeerDirectoryStore,
   createLocalTrustStore,
 } from "@envoymesh/local-store";
+import { ApprovalQueue, createApprovalItem } from "@envoymesh/api";
 import { NodeServiceImpl } from "../src/node-service-impl.js";
 import { TerminalManager } from "../src/terminal-manager.js";
 
@@ -144,5 +145,79 @@ describe("NodeServiceImpl.listTerminalSessions TTL cache", () => {
     await new Promise((r) => setTimeout(r, 400));
     await nodeSvc.listTerminalSessions();
     expect(spy).toHaveBeenCalledTimes(2);
+  });
+});
+
+/**
+ * End-to-end pin that the ApprovalQueue.onChange sink wires into
+ * NodeServiceImpl's pending-approval-count cache via bindApprovalQueue.
+ * Pre-fix, the count could be up to 1s stale after an approval event
+ * (the cache TTL was the only freshness guarantee). Post-fix, any
+ * queue mutation triggers immediate cache invalidation.
+ */
+describe("NodeServiceImpl pending-approval count cache invalidation", () => {
+  let profileDir: string;
+  let manager: TerminalManager;
+  let nodeSvc: NodeServiceImpl;
+  let queue: ApprovalQueue;
+
+  beforeEach(async () => {
+    onDataHandlers.length = 0;
+    profileDir = await mkdtemp(join(tmpdir(), "envoy-count-cache-"));
+    const trustStore = createLocalTrustStore(profileDir);
+    const peerDirectory = createLocalPeerDirectoryStore(profileDir);
+    const human = createHumanProfileStore(profileDir);
+    manager = new TerminalManager({ profileDir });
+    nodeSvc = new NodeServiceImpl(
+      undefined,
+      trustStore,
+      peerDirectory,
+      human,
+      profileDir,
+    );
+    nodeSvc.setTerminalManager(manager);
+    queue = new ApprovalQueue();
+    nodeSvc.bindApprovalQueue(queue);
+    await manager.waitUntilReady();
+  });
+
+  afterEach(async () => {
+    await rm(profileDir, { recursive: true, force: true });
+  });
+
+  it("approval queue mutation invalidates the count cache immediately", async () => {
+    // Direct test of _getCachedPendingApprovalCount, bypassing the
+    // outer listTerminalSessions cache (Fix A). The count cache sits
+    // in front of listPendingApprovals; this test proves the sink
+    // bypasses the TTL on every queue event.
+    const listSpy = vi.spyOn(nodeSvc, "listPendingApprovals");
+    const countCache = (nodeSvc as unknown as {
+      _getCachedPendingApprovalCount: () => Promise<number>;
+    })._getCachedPendingApprovalCount.bind(nodeSvc);
+
+    // First read: cold — populates the cache with 0 pending.
+    await countCache();
+    expect(listSpy).toHaveBeenCalledTimes(1);
+
+    // Within TTL: cache hit, no second call.
+    await countCache();
+    expect(listSpy).toHaveBeenCalledTimes(1);
+
+    // Approval queue mutates — onChange should fire and clear the cache.
+    queue.add(createApprovalItem("send_chat", "t", "d", "x"));
+    await countCache();
+    expect(listSpy).toHaveBeenCalledTimes(2);
+
+    queue.add(createApprovalItem("share_knowledge", "t", "d", "x"));
+    await countCache();
+    expect(listSpy).toHaveBeenCalledTimes(3);
+
+    // Reject also fires onChange.
+    const idx = queue.listAll()[0].id;
+    queue.reject(idx);
+    await countCache();
+    expect(listSpy).toHaveBeenCalledTimes(4);
+
+    listSpy.mockRestore();
   });
 });

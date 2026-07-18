@@ -120,9 +120,48 @@ export function shouldEscalate(item: ApprovalItem): EscalationReason | null {
  */
 export class ApprovalQueue {
   private items: Map<string, ApprovalItem>;
+  /**
+   * Subscribers notified after any mutation that could change
+   * `pendingCount()`: add, update (covers approve/reject/escalate),
+   * remove, expireOldItems, clearResolved.
+   *
+   * Used by NodeServiceImpl to invalidate the pending-approval-count
+   * cache used by terminal activity enrichment when the count changes.
+   * The Set lets us add/remove subscribers without leaking listeners.
+   *
+   * Errors thrown inside subscribers are swallowed — a single bad
+   * subscriber must not poison the rest or break the mutation path.
+   */
+  private changeListeners: Set<() => void> = new Set();
 
   constructor() {
     this.items = new Map();
+  }
+
+  /**
+   * Register a callback fired after every mutating operation. Returns
+   * an unsubscribe function — the canonical pattern for cleanup in
+   * teardown paths.
+   */
+  onChange(callback: () => void): () => void {
+    this.changeListeners.add(callback);
+    return () => {
+      this.changeListeners.delete(callback);
+    };
+  }
+
+  private notifyChange(): void {
+    // Snapshot in case a callback unsubscribes during iteration.
+    const listeners = Array.from(this.changeListeners);
+    for (const cb of listeners) {
+      try {
+        cb();
+      } catch (err) {
+        // Defensive: one bad subscriber must not stop others from
+        // firing. Log to stderr so the failure is still diagnosable.
+        console.error("[approval-queue] onChange subscriber threw:", err);
+      }
+    }
   }
 
   /**
@@ -130,6 +169,7 @@ export class ApprovalQueue {
    */
   add(item: ApprovalItem): void {
     this.items.set(item.id, item);
+    this.notifyChange();
   }
 
   /**
@@ -143,7 +183,9 @@ export class ApprovalQueue {
    * Remove an item from the queue.
    */
   remove(id: string): boolean {
-    return this.items.delete(id);
+    const result = this.items.delete(id);
+    if (result) this.notifyChange();
+    return result;
   }
 
   /**
@@ -155,6 +197,7 @@ export class ApprovalQueue {
 
     const updated: ApprovalItem = { ...existing, ...updates };
     this.items.set(id, updated);
+    this.notifyChange();
     return updated;
   }
 
@@ -248,6 +291,11 @@ export class ApprovalQueue {
       if (item.status === "pending" && item.expiresAt) {
         const expiryDate = new Date(item.expiresAt);
         if (expiryDate < now) {
+          // update() already calls notifyChange(); we still notify at
+          // the end as a belt-and-suspenders so bulk operations get
+          // exactly one notification per call rather than N. The
+          // dedup is acceptable — subscribers should always check the
+          // current state rather than count invocations.
           this.update(item.id, { status: "expired" });
           expired.push(item.id);
         }
@@ -262,12 +310,15 @@ export class ApprovalQueue {
    */
   clearResolved(): number {
     let count = 0;
+    let mutated = false;
     for (const item of this.items.values()) {
       if (item.status === "rejected" || item.status === "expired") {
         this.items.delete(item.id);
         count++;
+        mutated = true;
       }
     }
+    if (mutated) this.notifyChange();
     return count;
   }
 

@@ -1580,6 +1580,14 @@ class NodeServiceImpl implements NodeService {
   /** Wire daemon approval queue (index.ts) for RPC + execute-on-approve. */
   bindApprovalQueue(queue: ApprovalQueue): void {
     this._approvalQueue = queue;
+    // Hard-invalidate the pending-approval-count cache whenever the
+    // queue mutates (add/approve/reject/remove/expireOldItems/
+    // clearResolved). This is the fast-fresh path for the count cache
+    // used by terminal activity enrichment — the 1s TTL becomes a
+    // pure back-stop rather than the primary freshness guarantee.
+    queue.onChange(() => {
+      this._pendingApprovalCountCache = null;
+    });
   }
 
   async listActiveTransfers(): Promise<TransferStatus[]> {
