@@ -524,6 +524,7 @@ if ($openclawStaged -and -not $ForceOpenClaw) {
 
         # Always prune unused extensions on reuse — the cache may predate the
         # extension allowlist (3 GB of 143 extensions exceeds NSIS 2 GB cap).
+        # Prune ALL extension directories, matching the fresh-stage logic below.
         $openclawExtensionsAllowlist = @(
             "envoymesh",          # core channel plugin (always required)
             "duckduckgo",         # default web search (no API key needed)
@@ -531,24 +532,30 @@ if ($openclawStaged -and -not $ForceOpenClaw) {
             "moonshot", "minimax", "ollama", "perplexity",
             "searxng", "tavily"
         )
-        $extDir = Join-Path $openclawDest "extensions"
-        if (Test-Path $extDir) {
-            $removedCount = 0
-            Get-ChildItem -Path $extDir -Directory | Where-Object {
-                -not ($openclawExtensionsAllowlist -contains $_.Name)
-            } | ForEach-Object {
-                Remove-Item -Recurse -Force $_.FullName
-                $removedCount++
-            }
-            if ($removedCount -gt 0) {
-                Write-Info "Pruned $removedCount unused extensions on reuse (kept $($openclawExtensionsAllowlist.Count) in allowlist)"
-                # NOTE: We do NOT run pnpm prune --prod in the staged tree here.
-                # The staged tree lacks pnpm-workspace.yaml and packages/, so
-                # pnpm would orphan most production deps (json5, chalk, express,
-                # ws, etc.) → ERR_MODULE_NOT_FOUND at runtime. The first prune in
-                # the source tree already removed devDeps correctly.
+        foreach ($extDir in @(
+            (Join-Path $openclawDest "dist\extensions"),
+            (Join-Path $openclawDest "dist-runtime\extensions"),
+            (Join-Path $openclawDest "extensions")
+        )) {
+            if (Test-Path $extDir) {
+                $removedCount = 0
+                Get-ChildItem -Path $extDir -Directory | Where-Object {
+                    -not ($openclawExtensionsAllowlist -contains $_.Name)
+                } | ForEach-Object {
+                    Remove-Item -Recurse -Force $_.FullName
+                    $removedCount++
+                }
+                if ($removedCount -gt 0) {
+                    $rel = $extDir.Substring($openclawDest.Length + 1)
+                    Write-Info "Pruned $removedCount unused extensions from $rel on reuse"
+                }
             }
         }
+        # NOTE: We do NOT run pnpm prune --prod in the staged tree here.
+        # The staged tree lacks pnpm-workspace.yaml and packages/, so
+        # pnpm would orphan most production deps (json5, chalk, express,
+        # ws, etc.) → ERR_MODULE_NOT_FOUND at runtime. The first prune in
+        # the source tree already removed devDeps correctly.
     } else {
         # dist/entry.js is missing or a broken stub — fall through to
         # the full re-stage logic below by clearing the staged flag.

@@ -113,6 +113,29 @@ elif [ "${STAGE_OPENCLAW_BUNDLE:-0}" != "1" ] \
         echo "  ⚠ Could not restore node_modules/openclaw/ — staged tree is missing package.json" >&2
       fi
     fi
+
+    # Prune unused extensions on reuse — the cache may predate the allowlist
+    # (3 GB of 143 extensions exceeds NSIS 2 GB cap).  Must cover all three
+    # discovery roots (dist/extensions, dist-runtime/extensions, extensions),
+    # matching the fresh-stage logic below.
+    OPENCLAW_EXTENSIONS_ALLOWLIST="envoymesh duckduckgo brave exa firecrawl google xai moonshot minimax ollama perplexity searxng tavily"
+    for ext_base in "$DEST/dist/extensions" "$DEST/dist-runtime/extensions" "$DEST/extensions"; do
+      [ -d "$ext_base" ] || continue
+      removed=0
+      for ext_dir in "$ext_base"/*/; do
+        ext_name="$(basename "$ext_dir")"
+        # shellcheck disable=SC2086
+        if ! echo " $OPENCLAW_EXTENSIONS_ALLOWLIST " | grep -q " $ext_name "; then
+          rm -rf "$ext_dir"
+          removed=$((removed + 1))
+        fi
+      done
+      if [ "$removed" -gt 0 ]; then
+        rel="${ext_base#$DEST/}"
+        echo "  Pruned $removed unused extensions from $rel on reuse"
+      fi
+    done
+
     exit 0
   fi
   # Fall through to stage_from_source below.
