@@ -536,6 +536,8 @@ export async function routeRpcMethod(
       return ns.getBridgeStatus();
     case "getOpenClawStatus":
       return ns.getOpenClawStatus();
+    case "restartOpenClaw":
+      return ns.restartOpenClaw();
     case "getPairingPayload":
       return ns.getPairingPayload();
     case "createWanJoinInvite":

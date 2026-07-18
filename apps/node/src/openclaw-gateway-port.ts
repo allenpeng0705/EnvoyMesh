@@ -1,5 +1,4 @@
 import { execFileSync } from "node:child_process";
-import { isOpenClawEnvoymeshWebhookReady } from "./openclaw-gateway-config.js";
 
 /** POST `{}` to the EnvoyMesh webhook; returns HTTP status or null when unreachable. */
 export async function probeEnvoymeshWebhookStatus(
@@ -50,16 +49,18 @@ export function stopProcesses(pids: readonly number[], excludePid?: number): num
 }
 
 /**
- * Stop a stale gateway listener when the webhook URL returns 404 (route missing).
- * Returns true when one or more processes were signalled.
+ * Stop a stale gateway listener when the port is held by a process that no
+ * longer responds to HTTP.  This protects against orphaned OpenClaw children
+ * left over from a parent crash / force-quit whose SIGTERM handler is deferred
+ * behind their server startup.
  *
- * Sends SIGTERM first, then escalates to SIGKILL for any PIDs that still hold
- * the port after a 1.5s grace. The escalation matters for orphan OpenClaw
- * children left over from a parent crash / force-quit: their SIGTERM handler
- * is deferred behind their (already-in-progress) `params.start({...})` server
- * startup, so a polite kill can hold the port for 60+ seconds while the model
- * warmup completes. SIGKILL after 1.5s forces the OS to reap the child and
- * release the port so the new gateway can bind and acquire the lock cleanly.
+ * **Safe-coexistence guard:** if the port responds to HTTP at *any* status (200,
+ * 404, 500, …), we consider it actively served and refuse to kill — another
+ * legitimate node or service may be using it.  We only reclaim when the port
+ * has a listener (`lsof` shows a PID) but produces *no* HTTP response at all
+ * (truly stuck / zombie).
+ *
+ * Returns true when one or more processes were signalled.
  */
 export async function reclaimAssistantGatewayPort(params: {
   port: number;
@@ -68,7 +69,9 @@ export async function reclaimAssistantGatewayPort(params: {
   log?: (message: string) => void;
 }): Promise<boolean> {
   const status = await probeEnvoymeshWebhookStatus(params.webhookUrl);
-  if (status != null && isOpenClawEnvoymeshWebhookReady(status)) {
+  if (status != null) {
+    // Port is actively served by an HTTP server (even 404 means a live
+    // server belonging to another node or service).  Don't kill it.
     return false;
   }
 
@@ -79,15 +82,10 @@ export async function reclaimAssistantGatewayPort(params: {
     return false;
   }
 
-  if (status === 404) {
-    params.log?.(
-      `[openclaw] Port ${params.port} is held by a gateway without the EnvoyMesh webhook — stopping stale process(es): ${initialListeners.join(", ")}`,
-    );
-  } else {
-    params.log?.(
-      `[openclaw] Port ${params.port} is in use — stopping stale listener(s): ${initialListeners.join(", ")}`,
-    );
-  }
+  // status is null here — port has a listener but no HTTP response (stuck/zombie).
+  params.log?.(
+    `[openclaw] Port ${params.port} has a listener but no HTTP response — stopping stale process(es): ${initialListeners.join(", ")}`,
+  );
 
   stopProcesses(initialListeners, params.excludePid);
   await new Promise((resolve) => setTimeout(resolve, 1500));

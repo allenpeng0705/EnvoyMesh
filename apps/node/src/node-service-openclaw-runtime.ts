@@ -48,6 +48,8 @@ export const OPEN_CLAW_REPLY_TIMEOUT_MS = 180_000;
 export const OPEN_CLAW_RETRIEVED_CONTEXT_TIMEOUT_MS = 25_000;
 export const OPEN_CLAW_STARTUP_PROBE_ATTEMPTS = 90; // 90 × 1s = 90 seconds for cold start
 export const OPEN_CLAW_WATCHDOG_INTERVAL_MS = 60_000; // 1 minute between watchdog checks
+export const OPEN_CLAW_MAX_RESTART_ATTEMPTS = 5; // stop watchdog after 5 consecutive failures
+export const OPEN_CLAW_RESTART_BACKOFF_BASE_MS = 10_000; // 10s after 1st failure, 20s after 2nd, … cap 60s
 
 export type OpenClawPendingReply = {
   resolve: (text: string) => void;
@@ -90,6 +92,20 @@ export interface OpenClawRuntimeState {
    * Reset to 0 on success. Lets the UI flag a watchdog that's in a fail loop.
    */
   consecutiveRestartFailures: number;
+  /**
+   * Set when the gateway exits immediately because its port is already in use
+   * by another running instance. The watchdog checks this flag and stops the
+   * restart loop to prevent an infinite EADDRINUSE cycle. Cleared on a
+   * successful start or when a user explicitly requests a restart.
+   */
+  watchdogPortConflict: boolean;
+  /**
+   * Ring buffer of the last N stderr lines from the gateway child process.
+   * Used in error diagnostics — when the startup probe times out or the
+   * gateway crashes, the error message includes the gateway's stderr output
+   * for immediate diagnosis instead of a generic "port may be in use".
+   */
+  lastGatewayStderr: string[];
 }
 
 /**
@@ -153,6 +169,8 @@ export function createOpenClawRuntimeState(): OpenClawRuntimeState {
     lastError: null,
     lastErrorAt: null,
     consecutiveRestartFailures: 0,
+    watchdogPortConflict: false,
+    lastGatewayStderr: [],
   };
 }
 
@@ -172,6 +190,55 @@ export function clearOpenClawError(state: OpenClawRuntimeState): void {
   state.lastError = null;
   state.lastErrorAt = null;
   state.consecutiveRestartFailures = 0;
+  state.watchdogPortConflict = false;
+  state.lastGatewayStderr = [];
+}
+
+/**
+ * Push stderr output into the ring buffer (last 10 lines).
+ * Called by the stderr listener on the gateway child process.
+ */
+const GATEWAY_STDERR_RING_SIZE = 10;
+export function pushGatewayStderr(state: OpenClawRuntimeState, text: string): void {
+  for (const line of text.split("\n")) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    state.lastGatewayStderr.push(trimmed);
+    if (state.lastGatewayStderr.length > GATEWAY_STDERR_RING_SIZE) {
+      state.lastGatewayStderr.shift();
+    }
+  }
+}
+
+/**
+ * Compute backoff delay before the next restart attempt.
+ * 10s after 1st failure, 20s after 2nd, … cap at 60s.
+ */
+export function restartBackoffMs(consecutiveFailures: number): number {
+  return Math.min(consecutiveFailures * OPEN_CLAW_RESTART_BACKOFF_BASE_MS, 60_000);
+}
+
+/**
+ * Classify a gateway exit/crash reason from stderr output into a
+ * human-readable diagnostic string.  Returns null if no specific
+ * classification is found.
+ */
+export function classifyGatewayError(stderrLines: string[]): string | null {
+  const joined = stderrLines.join("\n");
+  if (joined.includes("ERR_MODULE_NOT_FOUND")) {
+    const match = joined.match(/Cannot find package '([^']+)'/);
+    const pkg = match?.[1] ?? "unknown";
+    return `Missing package '${pkg}' — reinstall the app or rebuild the desktop bundle.`;
+  }
+  if (joined.includes("EADDRINUSE") || joined.includes("EACCES") || joined.includes("listen EADDRINUSE")) {
+    return `Port conflict — another process is using the gateway port. Set ENVOYMESH_PORT_OFFSET (e.g. 100) to shift all ports.`;
+  }
+  if (joined.includes("Cannot find module") && joined.includes("imported from")) {
+    const match = joined.match(/Cannot find module '([^']+)'/);
+    const mod = match?.[1] ?? "unknown";
+    return `Missing module '${mod}' — the OpenClaw bundle is incomplete. Reinstall the app.`;
+  }
+  return null; // no specific classification
 }
 
 /**
@@ -691,12 +758,17 @@ async function waitForOpenClawGatewayReady(state: OpenClawRuntimeState): Promise
     }
     await new Promise((r) => setTimeout(r, 1000));
   }
-  // The 90s probe budget elapsed without the webhook coming up. Most common
-  // cause: another OpenClaw instance is already on the webhook port, or the
-  // gateway crashed and stderr didn't surface a useful error.
+  // The probe budget elapsed without the webhook coming up.  Include the
+  // gateway's stderr output in the error for immediate diagnosis.
+  const classification = classifyGatewayError(state.lastGatewayStderr);
+  const stderrSummary =
+    state.lastGatewayStderr.length > 0
+      ? `\n  Last gateway output:\n    ${state.lastGatewayStderr.slice(-5).join("\n    ")}`
+      : "";
+  const diagnostic = classification ? ` ${classification}` : " — port may be in use or gateway failed to register";
   recordOpenClawError(
     state,
-    `Gateway webhook not reachable after ${OPEN_CLAW_STARTUP_PROBE_ATTEMPTS}s — port may be in use or gateway failed to register`,
+    `Gateway webhook not reachable after ${OPEN_CLAW_STARTUP_PROBE_ATTEMPTS}s${diagnostic}${stderrSummary}`,
   );
   return false;
 }
@@ -706,6 +778,29 @@ function startOpenClawWatchdog(state: OpenClawRuntimeState, deps: OpenClawRuntim
   state.watchdogRunning = true;
   const tick = async () => {
     if (!state.watchdogRunning) return;
+
+    // Restart cap: if we've failed too many times consecutively, stop the
+    // watchdog and surface a clear message. The user must fix the root cause
+    // (reinstall, check config, free the port) before the gateway will start.
+    if (state.consecutiveRestartFailures >= OPEN_CLAW_MAX_RESTART_ATTEMPTS) {
+      console.warn(
+        `[openclaw] Watchdog: ${OPEN_CLAW_MAX_RESTART_ATTEMPTS} consecutive failures — stopping watchdog.`,
+      );
+      if (state.lastError) {
+        console.warn(`[openclaw] Last error: ${state.lastError}`);
+      }
+      console.warn(
+        "[openclaw] Fix the issue and restart EnvoyMesh, or click 'Restart OpenClaw' in Settings.",
+      );
+      recordOpenClawError(
+        state,
+        `Gateway failed ${OPEN_CLAW_MAX_RESTART_ATTEMPTS} consecutive times — watchdog stopped. ` +
+          `Fix the issue and restart.`,
+      );
+      state.watchdogRunning = false;
+      stopOpenClawWatchdog(state);
+      return;
+    }
 
     // Case 1: Gateway process is alive but neither the stderr route-
     // registration signal nor the startup probe showed it ready → restart.
@@ -725,6 +820,12 @@ function startOpenClawWatchdog(state: OpenClawRuntimeState, deps: OpenClawRuntim
       !state.gatewayRouteRegistered &&
       !state.gatewayReady
     ) {
+      const backoff = restartBackoffMs(state.consecutiveRestartFailures);
+      if (backoff > 0) {
+        console.warn(`[openclaw] Watchdog: backing off ${backoff / 1000}s before restart (attempt ${state.consecutiveRestartFailures + 1}/${OPEN_CLAW_MAX_RESTART_ATTEMPTS})`);
+        await new Promise((r) => setTimeout(r, backoff));
+        if (!state.watchdogRunning) return; // cancelled during backoff
+      }
       console.warn("[openclaw] Watchdog: gateway process alive but route unregistered — restarting");
       recordOpenClawError(state, "Gateway process alive but HTTP route never registered — restarting");
       state.watchdogRunning = false;
@@ -739,6 +840,23 @@ function startOpenClawWatchdog(state: OpenClawRuntimeState, deps: OpenClawRuntim
 
     // Case 2: Gateway process died (crashed or was killed) → proactive restart.
     if (!state.gatewayChild || state.gatewayChild.killed) {
+      // If the death was caused by a port conflict, don't enter an
+      // infinite restart loop — the next spawn will fail identically.
+      if (state.watchdogPortConflict) {
+        console.warn(
+          "[openclaw] Watchdog: port conflict detected — stopping watchdog. " +
+            "Set ENVOYMESH_PORT_OFFSET to shift all ports (e.g. 100).",
+        );
+        state.watchdogRunning = false;
+        stopOpenClawWatchdog(state);
+        return;
+      }
+      const backoff = restartBackoffMs(state.consecutiveRestartFailures);
+      if (backoff > 0) {
+        console.warn(`[openclaw] Watchdog: backing off ${backoff / 1000}s before restart (attempt ${state.consecutiveRestartFailures + 1}/${OPEN_CLAW_MAX_RESTART_ATTEMPTS})`);
+        await new Promise((r) => setTimeout(r, backoff));
+        if (!state.watchdogRunning) return; // cancelled during backoff
+      }
       console.warn("[openclaw] Watchdog: gateway process died — restarting");
       recordOpenClawError(state, "Gateway process died — restarting");
       state.watchdogRunning = false;
@@ -1246,6 +1364,7 @@ async function startOpenClawInner(
   console.log(`[openclaw] Gateway process spawned (pid=${child.pid}), waiting for webhook at ${assistantUrl}...`);
   child.stderr?.on("data", (d: Buffer) => {
     const t = d.toString();
+    pushGatewayStderr(state, t);
     if (t.includes("Registered EnvoyMesh HTTP route")) {
       state.gatewayRouteRegistered = true;
     }
@@ -1290,15 +1409,17 @@ async function startOpenClawInner(
     gatewayReady = await waitForOpenClawGatewayReady(state);
   } else {
     const code = child.exitCode;
+    const portMsg =
+      `Port ${gatewayPort} is in use by another OpenClaw instance. ` +
+      `Set ENVOYMESH_PORT_OFFSET (e.g. 100) to shift all ports, or stop the other node first.`;
     console.warn(
-      `[openclaw] Gateway process exited before webhook was ready (code ${code}). ` +
-        `If port ${gatewayPort} is already in use by another OpenClaw instance, stop it first.`,
+      `[openclaw] Gateway process exited before webhook was ready (code ${code}). ${portMsg}`,
     );
     recordOpenClawError(
       state,
-      `Gateway exited before webhook was ready (code ${code}). ` +
-        `Port ${gatewayPort} may already be in use by another OpenClaw instance.`,
+      `Gateway exited before webhook was ready (code ${code}). ${portMsg}`,
     );
+    state.watchdogPortConflict = true;
   }
 
   if (gatewayReady) {
@@ -1430,6 +1551,8 @@ export async function restartOpenClawViaRuntime(
   deps: OpenClawRuntimeDeps,
 ): Promise<OpenClawStatusShape> {
   await stopOpenClawViaRuntime(state, deps);
+  // Clear port-conflict flag so the watchdog restart loop is reset.
+  state.watchdogPortConflict = false;
   // Brief settle so the OS releases the webhook port and any half-closed
   // sockets are reaped. 250ms is enough on Linux/macOS; shorter would risk
   // EADDRINUSE on the spawn immediately below.

@@ -44,6 +44,17 @@ export const aiSettingsMessages = {
     saving: "Saving…",
     saved: "Saved",
     cancel: "Cancel",
+    // ----- Block-header icons (kept short — single glyph, not emoji) -----
+    // These render as text inside a square icon tile. Using SVG-friendly
+    // names so we can swap to inline SVG later without i18n churn.
+    iconBuiltIn: "AI",
+    iconExtAgent: "EX",
+    // ----- Mode-summary banner (top of the AI Engine block) -----
+    modeLabel: "AI engine mode",
+    modeDescBoth: "Built-in OpenClaw + external agent bridge are both available.",
+    modeDescOpenclawOnly: "Only the built-in OpenClaw engine is active.",
+    modeDescExtOnly: "Only the external agent bridge is active.",
+    modeDescOff: "Both engines are off — chat assist is disabled.",
   },
   lanAutoBond: {
     heading: "LAN Auto-Bond",

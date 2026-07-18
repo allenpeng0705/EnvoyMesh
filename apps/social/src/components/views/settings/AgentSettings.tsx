@@ -84,6 +84,13 @@ const MODE_LABEL_KEY: Record<AiEngineMode, string> = {
   "off": "settings.ai.aiEngine.modeOff",
 };
 
+const MODE_DESC_KEY: Record<AiEngineMode, string> = {
+  "both": "settings.ai.aiEngine.modeDescBoth",
+  "openclaw-only": "settings.ai.aiEngine.modeDescOpenclawOnly",
+  "ext-only": "settings.ai.aiEngine.modeDescExtOnly",
+  "off": "settings.ai.aiEngine.modeDescOff",
+};
+
 function withMergedAgents(config: ExtAgentConfig): ExtAgentConfig {
   const extAgents = mergeExtAgentPresets(config.extAgents);
   const activeExtAgentId =
@@ -202,51 +209,65 @@ export function AgentSettings({ envoyAI, extAgent, onExtAgentSave, onRestartOpen
     "—";
 
   return (
-    <div className="settings-agent">
-      {/* ======== AI Engine Mode chip (derived from the two flags) ======== */}
-      <div className="settings-agent-mode" data-mode={mode}>
-        <span className={`status-badge status-${mode === "off" ? "off" : "on"}`}>
+    <div className="settings-agent" data-mode={mode}>
+      {/* ======== Top-of-section mode summary (one row, not a card) ========
+          Replaces the old "settings-agent-mode" card which added visual
+          weight to a derived status indicator. Now: a single quiet row
+          with the mode label + one-line description. No bordered box. */}
+      <div className="agent-mode-summary">
+        <span className="agent-mode-label">{t("settings.ai.aiEngine.modeLabel")}</span>
+        <span className={`agent-mode-chip agent-mode-chip--${mode}`}>
           {t(MODE_LABEL_KEY[mode])}
         </span>
-        <p className="settings-hint">{t("settings.ai.aiEngine.restartHint")}</p>
+        <span className="agent-mode-desc">{t(MODE_DESC_KEY[mode])}</span>
       </div>
 
-      {/* ======== EnvoyAI — Built-in (read-only) ======== */}
-      <div className="settings-section">
-        <div className="settings-section-header">
-          <span className="settings-section-title">
-            {t("settings.ai.aiEngine.envoyai")}
-            <span className="settings-section-subtitle"> — OpenClaw</span>
-          </span>
-          <span className={`status-badge ${envoyStatusClass}`}>
+      {/* ======== Built-in OpenClaw — read-only block ======== */}
+      <div className="agent-block agent-block--readonly">
+        <div className="agent-block-header">
+          <div className="agent-block-titlerow">
+            <span className="agent-block-icon agent-block-icon--ai">
+              {t("settings.ai.aiEngine.iconBuiltIn")}
+            </span>
+            <div className="agent-block-titlewrap">
+              <span className="agent-block-title">
+                {t("settings.ai.aiEngine.envoyai")}
+              </span>
+              <span className="agent-block-subtitle">OpenClaw</span>
+            </div>
+          </div>
+          <span className={`agent-block-status agent-block-status--${envoyStatusClass.replace("status-", "")}`}>
             {t(envoyStatusKey)}
           </span>
         </div>
-        <p className="settings-section-desc">{t("settings.ai.aiEngine.envoyaiDesc")}</p>
-        <div className="settings-field readonly">
-          <label>{t("settings.ai.aiEngine.provider")}</label>
-          <input type="text" value="OpenClaw" readOnly disabled />
-        </div>
-        <div className="settings-field readonly">
-          <label>{t("settings.ai.aiEngine.webhook")}</label>
-          <input type="text" value={envoyAI.url || "—"} readOnly disabled />
-        </div>
-        {envoyAI.childPid != null && (
-          <div className="settings-field readonly">
-            <label>{"PID"}</label>
-            <input type="text" value={String(envoyAI.childPid)} readOnly disabled />
+        <p className="agent-block-desc">{t("settings.ai.aiEngine.envoyaiDesc")}</p>
+        <dl className="agent-block-fields">
+          <div className="agent-field agent-field--readonly">
+            <dt>{t("settings.ai.aiEngine.provider")}</dt>
+            <dd>OpenClaw</dd>
           </div>
-        )}
+          <div className="agent-field agent-field--readonly">
+            <dt>{t("settings.ai.aiEngine.webhook")}</dt>
+            <dd className="agent-field-value--mono">{envoyAI.url || "—"}</dd>
+          </div>
+          {envoyAI.childPid != null && (
+            <div className="agent-field agent-field--readonly">
+              <dt>PID</dt>
+              <dd className="agent-field-value--mono">{envoyAI.childPid}</dd>
+            </div>
+          )}
+        </dl>
         {/*
           Surface "why is it stopped" alongside the status badge. Only shown
           when there's a recorded failure (lastError) — a clean stop with no
           cause isn't a problem worth a red banner for.
         */}
         {envoyAI.lastError && (
-          <div className="settings-field readonly openclaw-error">
-            <label>{t("settings.ai.aiEngine.lastError")}</label>
-            <div className="openclaw-error-body">
-              <div className="openclaw-error-message">{envoyAI.lastError}</div>
+          <div className="openclaw-error">
+            <div className="openclaw-error-header">
+              <span className="openclaw-error-label">
+                {t("settings.ai.aiEngine.lastError")}
+              </span>
               <div className="openclaw-error-meta">
                 {envoyAI.lastErrorAt && (
                   <span className="openclaw-error-time">
@@ -263,114 +284,156 @@ export function AgentSettings({ envoyAI, extAgent, onExtAgentSave, onRestartOpen
                   </span>
                 )}
               </div>
-              <div className="openclaw-error-hint">
-                {t("settings.ai.aiEngine.lastErrorHint")}
-              </div>
-              {onRestartOpenClaw && (
-                <div className="openclaw-error-actions">
-                  <button
-                    className="btn btn-primary"
-                    onClick={() => void handleRestart()}
-                    disabled={restartingOpenClaw}
-                  >
-                    {restartingOpenClaw
-                      ? t("settings.ai.aiEngine.restarting")
-                      : t("settings.ai.aiEngine.restartNow")}
-                  </button>
-                  {restartError && (
-                    <span className="openclaw-error-restart-fail">
-                      {restartError}
-                    </span>
-                  )}
-                </div>
-              )}
             </div>
+            <div className="openclaw-error-message">{envoyAI.lastError}</div>
+            <div className="openclaw-error-hint">
+              {t("settings.ai.aiEngine.lastErrorHint")}
+            </div>
+            {onRestartOpenClaw && (
+              <div className="openclaw-error-actions">
+                <button
+                  className="btn btn-primary"
+                  onClick={() => void handleRestart()}
+                  disabled={restartingOpenClaw}
+                >
+                  {restartingOpenClaw
+                    ? t("settings.ai.aiEngine.restarting")
+                    : t("settings.ai.aiEngine.restartNow")}
+                </button>
+                {restartError && (
+                  <span className="openclaw-error-restart-fail">{restartError}</span>
+                )}
+              </div>
+            )}
           </div>
         )}
       </div>
 
       {/* ======== Ext Agent — External Bridge (writable) ======== */}
-      <div className="settings-section">
-        <div className="settings-section-header">
-          <span className="settings-section-title">
-            {t("settings.ai.aiEngine.extAgent")}
-            {extAgent.configured && activeAgentLabel !== "—" ? (
-              <span className="settings-section-subtitle"> — {activeAgentLabel}</span>
-            ) : (
-              <span className="settings-section-subtitle dim"> — {t("settings.ai.aiEngine.notConfigured")}</span>
-            )}
-          </span>
+      <div className="agent-block">
+        <div className="agent-block-header">
+          <div className="agent-block-titlerow">
+            <span className="agent-block-icon agent-block-icon--ext">
+              {t("settings.ai.aiEngine.iconExtAgent")}
+            </span>
+            <div className="agent-block-titlewrap">
+              <span className="agent-block-title">
+                {t("settings.ai.aiEngine.extAgent")}
+              </span>
+              {extAgent.configured && activeAgentLabel !== "—" ? (
+                <span className="agent-block-subtitle">{activeAgentLabel}</span>
+              ) : (
+                <span className="agent-block-subtitle agent-block-subtitle--dim">
+                  {t("settings.ai.aiEngine.notConfigured")}
+                </span>
+              )}
+            </div>
+          </div>
           {extAgent.configured && (
-            <span className="status-badge status-on">{t("settings.ai.aiEngine.active")}</span>
+            <span className="agent-block-status agent-block-status--on">
+              {t("settings.ai.aiEngine.active")}
+            </span>
           )}
         </div>
-        <p className="settings-section-desc">{t("settings.ai.aiEngine.extAgentDesc")}</p>
+        <p className="agent-block-desc">{t("settings.ai.aiEngine.extAgentDesc")}</p>
 
         {!editing ? (
           <>
-            <div className="settings-field readonly">
-              <label>{t("settings.ai.aiEngine.selectAgent")}</label>
-              <input type="text" value={activeAgentLabel} readOnly disabled />
+            <dl className="agent-block-fields">
+              <div className="agent-field agent-field--readonly">
+                <dt>{t("settings.ai.aiEngine.selectAgent")}</dt>
+                <dd>{activeAgentLabel}</dd>
+              </div>
+              <div className="agent-field agent-field--readonly">
+                <dt>{t("settings.ai.aiEngine.webhookUrl")}</dt>
+                <dd className="agent-field-value--mono">{extAgent.url || "—"}</dd>
+              </div>
+              <div className="agent-field agent-field--readonly">
+                <dt>{t("settings.ai.aiEngine.listenPort")}</dt>
+                <dd className="agent-field-value--mono">{extAgent.listenPort ?? 3031}</dd>
+              </div>
+            </dl>
+            <div className="agent-block-actions">
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => { setDraft(withMergedAgents(extAgent)); setEditing(true); }}
+              >
+                {t("settings.ai.aiEngine.configure")}
+              </button>
             </div>
-            <div className="settings-field readonly">
-              <label>{t("settings.ai.aiEngine.webhookUrl")}</label>
-              <input type="text" value={extAgent.url || "—"} readOnly disabled />
-            </div>
-            <div className="settings-field readonly">
-              <label>{t("settings.ai.aiEngine.listenPort")}</label>
-              <input type="text" value={extAgent.listenPort?.toString() || "3031"} readOnly disabled />
-            </div>
-            <button className="btn btn-secondary" onClick={() => { setDraft(withMergedAgents(extAgent)); setEditing(true); }}>
-              {t("settings.ai.aiEngine.configure")}
-            </button>
           </>
         ) : (
           <>
-            <div className="settings-field">
-              <label>{t("settings.ai.aiEngine.selectAgent")}</label>
-              <select
-                value={draft.activeExtAgentId ?? ""}
-                onChange={(e) => selectAgent(e.target.value)}
-              >
-                {selectableAgents.map((agent) => (
-                  <option key={agent.id} value={agent.id}>
-                    {agent.name}
-                  </option>
-                ))}
-              </select>
+            <div className="agent-block-fields">
+              <div className="agent-field">
+                <label className="agent-field-label">
+                  {t("settings.ai.aiEngine.selectAgent")}
+                </label>
+                <select
+                  className="agent-field-input"
+                  value={draft.activeExtAgentId ?? ""}
+                  onChange={(e) => selectAgent(e.target.value)}
+                >
+                  {selectableAgents.map((agent) => (
+                    <option key={agent.id} value={agent.id}>
+                      {agent.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="agent-field">
+                <label className="agent-field-label">
+                  {t("settings.ai.aiEngine.webhookUrl")}
+                </label>
+                <input
+                  type="text"
+                  className="agent-field-input agent-field-input--mono"
+                  value={draft.url || ""}
+                  onChange={(e) => updateActiveAgentUrl(e.target.value)}
+                  placeholder="http://127.0.0.1:8010/message"
+                />
+              </div>
+              <div className="agent-field">
+                <label className="agent-field-label">
+                  {t("settings.ai.aiEngine.listenPort")}
+                </label>
+                <input
+                  type="number"
+                  className="agent-field-input agent-field-input--mono"
+                  value={draft.listenPort ?? 3031}
+                  onChange={(e) => setDraft({ ...draft, listenPort: parseInt(e.target.value, 10) || 3031 })}
+                />
+              </div>
             </div>
-            <div className="settings-field">
-              <label>{t("settings.ai.aiEngine.webhookUrl")}</label>
-              <input
-                type="text"
-                value={draft.url || ""}
-                onChange={(e) => updateActiveAgentUrl(e.target.value)}
-                placeholder="http://127.0.0.1:8010/message"
-              />
-            </div>
-            <div className="settings-field">
-              <label>{t("settings.ai.aiEngine.listenPort")}</label>
-              <input
-                type="number"
-                value={draft.listenPort ?? 3031}
-                onChange={(e) => setDraft({ ...draft, listenPort: parseInt(e.target.value, 10) || 3031 })}
-              />
-            </div>
-            <div className="settings-field checkbox">
-              <label>
+            <div className="agent-field agent-field--checkbox">
+              <label className="agent-field-label agent-field-label--inline">
                 <input
                   type="checkbox"
                   checked={draft.enabled}
                   onChange={(e) => setDraft({ ...draft, enabled: e.target.checked })}
                 />
-                {t("settings.ai.aiEngine.enableExtAgent")}
+                <span>{t("settings.ai.aiEngine.enableExtAgent")}</span>
               </label>
             </div>
-            <div className="settings-actions">
-              <button className="btn btn-primary" onClick={() => void handleExtSave()} disabled={saving}>
-                {saving ? t("settings.ai.aiEngine.saving") : saved ? t("settings.ai.aiEngine.saved") : t("settings.ai.aiEngine.save")}
+            <div className="agent-block-actions">
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => void handleExtSave()}
+                disabled={saving}
+              >
+                {saving
+                  ? t("settings.ai.aiEngine.saving")
+                  : saved
+                    ? t("settings.ai.aiEngine.saved")
+                    : t("settings.ai.aiEngine.save")}
               </button>
-              <button className="btn btn-secondary" onClick={() => setEditing(false)}>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setEditing(false)}
+              >
                 {t("settings.ai.aiEngine.cancel")}
               </button>
             </div>

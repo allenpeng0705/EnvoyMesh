@@ -179,6 +179,13 @@ export const jaAiSettingsMessages = {
     saving: "保存中…",
     saved: "保存しました",
     cancel: "キャンセル",
+    iconBuiltIn: "AI",
+    iconExtAgent: "EX",
+    modeLabel: "AI エンジンモード",
+    modeDescBoth: "内蔵 OpenClaw と外部エージェントブリッジの両方が利用可能です。",
+    modeDescOpenclawOnly: "内蔵 OpenClaw エンジンのみが有効です。",
+    modeDescExtOnly: "外部エージェントブリッジのみが有効です。",
+    modeDescOff: "両エンジンがオフ — チャットアシストは無効です。",
   },
   // ----- LAN Auto-Bond (Phase 35C) — also lives under settings.agentNetwork -----
   lanAutoBond: {

@@ -36,12 +36,12 @@ kept=$(echo $ALLOWLIST | wc -w | tr -d ' ')
 if [ "$removed" -gt 0 ]; then
   echo "[prune-openclaw-extensions] Removed $removed extensions (kept $kept in allowlist)"
 
-  # Prune orphaned extension deps from staged tree.
-  if [ -f "$ROOT/apps/tauri/src-tauri/resources/openclaw/package.json" ]; then
-    echo "[prune-openclaw-extensions] Running pnpm prune --prod to clean orphaned deps..."
-    (cd "$ROOT/apps/tauri/src-tauri/resources/openclaw" && pnpm prune --prod 2>/dev/null) || \
-      echo "[prune-openclaw-extensions] pnpm prune --prod failed — staged tree will be larger"
-  fi
+  # NOTE: We do NOT run `pnpm prune --prod` here. The staged tree is missing
+  # pnpm-workspace.yaml and packages/, so pnpm sees it as a plain single
+  # package. Without those workspace sub-packages, pnpm concludes most deps
+  # (json5, chalk, express, ws, etc.) are orphaned and moves them to
+  # node_modules/.ignored/. But the compiled dist/*.js files still import
+  # them at runtime → ERR_MODULE_NOT_FOUND crash.
 else
   echo "[prune-openclaw-extensions] Already pruned ($kept extensions in allowlist)"
 fi

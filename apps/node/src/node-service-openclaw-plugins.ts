@@ -1,21 +1,140 @@
 /**
  * OpenClaw extension/plugin management.
  *
- * Uses the `openclaw` CLI to list, inspect, enable, disable, install,
- * uninstall, and update extensions. The CLI handles config persistence
- * and gateway reload internally.
- *
- * Extracted pattern from node-service-clawhub.ts (which uses `clawhub`
- * CLI for skill management).
+ * Prefers the `openclaw` CLI for list/inspect/enable/disable/install/
+ * uninstall/update operations (handles config persistence and gateway
+ * reload internally).  When the CLI is unavailable — e.g. in Tauri
+ * bundles where `node` is not on the child-process PATH — falls back
+ * to scanning the bundled plugin discovery directories on disk for
+ * `openclaw.plugin.json` manifests.
  */
-import { join } from "node:path"
+import { join, resolve, dirname } from "node:path"
+import { existsSync, readFileSync, readdirSync } from "node:fs"
 import { execFile } from "node:child_process"
 import { promisify } from "node:util"
 
 const execFileAsync = promisify(execFile)
 
+// ---------------------------------------------------------------------------
+// Filesystem-based plugin discovery (fallback when CLI is unavailable)
+// ---------------------------------------------------------------------------
+
+interface PluginManifest {
+  id: string;
+  activation?: { onStartup?: boolean };
+  channels?: string[];
+  contracts?: { tools?: string[] };
+  configSchema?: Record<string, unknown>;
+}
+
+/**
+ * Read and parse an `openclaw.plugin.json` manifest from a directory.
+ * Returns null if the file doesn't exist or is invalid JSON.
+ */
+function readPluginManifest(dir: string): PluginManifest | null {
+  try {
+    const raw = readFileSync(join(dir, "openclaw.plugin.json"), "utf-8")
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed.id === "string" && parsed.id.length > 0) {
+      return parsed as PluginManifest
+    }
+  } catch {
+    // missing file, invalid JSON, etc.
+  }
+  return null
+}
+
+/**
+ * Discover plugin manifests by scanning the OpenClaw bundled plugin
+ * discovery directories (the same roots that the gateway uses):
+ *
+ *   1. dist-runtime/extensions/
+ *   2. dist/extensions/
+ *   3. extensions/
+ *   4. workspace .openclaw/extensions/
+ *   5. global ~/.openclaw/extensions/
+ *
+ * Returns deduplicated plugins keyed by id (later roots override earlier).
+ */
+function scanBundledPluginsFromDisk(ocDir: string, workspaceDir?: string): import("@envoymesh/api").OpenClawPluginInfo[] {
+  const resourceDir = process.env.TAURI_RESOURCE_DIR?.trim() || process.env.TAURI_APP_RESOURCES_DIR?.trim()
+
+  // Build candidate extension directories to scan (same priority order as
+  // OpenClaw's resolveBundledDirFromPackageRoot).
+  const scanRoots: string[] = []
+
+  if (ocDir) {
+    scanRoots.push(
+      join(ocDir, "dist-runtime", "extensions"),
+      join(ocDir, "dist", "extensions"),
+      join(ocDir, "extensions"),
+    )
+  }
+  if (resourceDir) {
+    scanRoots.push(
+      join(resourceDir, "resources", "openclaw", "dist-runtime", "extensions"),
+      join(resourceDir, "resources", "openclaw", "dist", "extensions"),
+      join(resourceDir, "resources", "openclaw", "extensions"),
+    )
+  }
+  // Workspace-local extensions
+  if (workspaceDir) {
+    scanRoots.push(join(workspaceDir, ".openclaw", "extensions"))
+  }
+  // Global extensions
+  const home = process.env.HOME || process.env.USERPROFILE || ""
+  if (home) {
+    scanRoots.push(join(home, ".openclaw", "extensions"))
+  }
+
+  const seen = new Map<string, import("@envoymesh/api").OpenClawPluginInfo>()
+
+  for (const root of scanRoots) {
+    if (!existsSync(root)) continue
+    let entries: string[]
+    try {
+      entries = readdirSync(root)
+    } catch {
+      continue
+    }
+    for (const name of entries) {
+      if (seen.has(name)) continue  // first-found wins
+      const dir = join(root, name)
+      const manifest = readPluginManifest(dir)
+      if (!manifest) continue
+      // Read optional version/description from package.json
+      let version: string | undefined
+      let description: string | undefined
+      try {
+        const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf-8"))
+        version = pkg.version
+        description = pkg.description
+      } catch {
+        // no package.json
+      }
+      seen.set(name, {
+        id: manifest.id,
+        name: manifest.id,
+        version,
+        description,
+        origin: "bundled",
+        enabled: true,
+        channels: manifest.channels ?? [],
+        tools: manifest.contracts?.tools ?? [],
+      })
+    }
+  }
+
+  return Array.from(seen.values())
+}
+
+// ---------------------------------------------------------------------------
+// Plugin context
+// ---------------------------------------------------------------------------
+
 export interface OpenClawPluginContext {
   resolveOpenClawWorkspaceDir(): string;
+  resolveOpenClawDir(): string | null;
   stopOpenClaw(): Promise<void>;
   startOpenClaw(): Promise<boolean>;
 }
@@ -23,9 +142,25 @@ export interface OpenClawPluginContext {
 export function buildOpenClawPluginContext(host: any): OpenClawPluginContext {
   return {
     resolveOpenClawWorkspaceDir: () => host._resolveOpenClawWorkspaceDir(),
+    resolveOpenClawDir: () => host._resolveOpenClawDir?.() ?? null,
     stopOpenClaw: () => host.stopOpenClaw(),
     startOpenClaw: () => host.startOpenClaw(),
   }
+}
+
+// ---------------------------------------------------------------------------
+// CLI helpers
+// ---------------------------------------------------------------------------
+
+/**
+ * Return the directory of the bundled Node binary (from Tauri's
+ * ENVOYMESH_NODE_EXE env var).  Used to prepend `node` to PATH for
+ * child processes so that `#!/usr/bin/env node` shebangs work.
+ */
+function nodeExeDir(): string | undefined {
+  const exe = process.env.ENVOYMESH_NODE_EXE?.trim()
+  if (!exe) return undefined
+  return dirname(exe)
 }
 
 /**
@@ -63,7 +198,14 @@ async function runOpenClawPluginsCommandInWorkspace(
     timeout: timeoutMs,
     maxBuffer: 10 * 1024 * 1024,
     cwd: workspaceDir,
-    env: { ...process.env, OPENCLAW_DISABLE_BUNDLED_PLUGINS: "" },
+    env: {
+      ...process.env,
+      OPENCLAW_DISABLE_BUNDLED_PLUGINS: "",
+      // Ensure `node` is on PATH for child processes (#!/usr/bin/env node)
+      PATH: nodeExeDir()
+        ? `${nodeExeDir()}${process.env.PATH ? ":" + process.env.PATH : ""}`
+        : process.env.PATH ?? "",
+    },
   })
   return stdout
 }
@@ -107,6 +249,11 @@ async function resolveOpenClawBin(): Promise<string | null> {
 
 /**
  * List installed OpenClaw extensions/plugins.
+ *
+ * Tries the CLI first (`openclaw plugins list --json`).  When the CLI
+ * is unavailable (e.g. Tauri bundles where `node` is not on the child-
+ * process PATH), falls back to scanning the bundled plugin directories
+ * on disk for `openclaw.plugin.json` manifests.
  */
 export async function listOpenClawExtensionPluginsViaRuntime(
   ctx: OpenClawPluginContext,
@@ -131,8 +278,10 @@ export async function listOpenClawExtensionPluginsViaRuntime(
       tools: p.tools ?? [],
     }))
   } catch (err) {
-    console.error("[openclaw-plugins] list failed:", err)
-    return []
+    console.error("[openclaw-plugins] CLI list failed, falling back to filesystem scan:", err)
+    const ocDir = ctx.resolveOpenClawDir()
+    const workspaceDir = ctx.resolveOpenClawWorkspaceDir()
+    return scanBundledPluginsFromDisk(ocDir ?? "", workspaceDir)
   }
 }
 

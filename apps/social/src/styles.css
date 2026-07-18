@@ -3492,85 +3492,338 @@ textarea::placeholder {
   border: 1px solid var(--color-border-subtle);
 }
 
-/* Phase 32 — Agent Network mode chip + section (Settings → AI) */
+/* Phase 32 + 44 — Agent Network mode + AI Engine blocks (Settings → AI).
+ *
+ * Layout philosophy: derived status lives on a single quiet row at the
+ * top (no bordered card), each engine gets a card with a colored icon
+ * tile + title + status badge, and read-only fields render as definition
+ * lists (label small + value, NOT a darkened disabled <input>). Editable
+ * fields use real inputs on a softer surface, with the label stacked
+ * above the control (no cramped side-by-side).
+ *
+ * Color palette uses semantic tokens (--color-primary, --color-success,
+ * etc.) — no pure black, no hardcoded hex.
+ */
 .settings-agent {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-}
-.settings-agent-mode {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
-  background: var(--color-surface-elevated, var(--color-surface));
-  border: 1px solid var(--color-border-subtle);
-  border-radius: var(--radius-lg, 0.75rem);
-}
-.settings-agent-mode .status-badge {
-  align-self: flex-start;
-  font-size: var(--text-sm, 0.875rem);
-  font-weight: var(--font-semibold, 600);
-  padding: 0.25rem 0.75rem;
-  border-radius: 999px;
-}
-.settings-agent-mode .status-badge.status-on {
-  background: var(--color-accent-subtle, rgba(99, 102, 241, 0.12));
-  color: var(--color-accent, #6366f1);
-}
-.settings-agent-mode .status-badge.status-off {
-  background: var(--color-danger-subtle, rgba(239, 68, 68, 0.12));
-  color: var(--color-danger, #ef4444);
-}
-.status-badge.status-warn {
-  background: var(--color-warning-subtle, rgba(245, 158, 11, 0.12));
-  color: var(--color-warning, #f59e0b);
+  gap: var(--space-5);
 }
 
-/* Built-in OpenClaw "why is it stopped" error block. Shown only when
-   the runtime has a recorded failure (port in use, spawn error, watchdog
-   restart loop). Kept compact — the runtime's own text already says the
-   *what*, the styling is just to make it visible. */
-.settings-field.openclaw-error {
-  border-left: 3px solid var(--color-danger, #ef4444);
-  background: var(--color-danger-subtle, rgba(239, 68, 68, 0.06));
-  padding-left: 0.75rem;
+/* ----- Top-of-section mode summary (one quiet row) ----- */
+.agent-mode-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  padding: 0;
+  /* no border, no card — just a status line */
 }
-.settings-field.openclaw-error .openclaw-error-body {
+.agent-mode-label {
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-text-muted, #64748b);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: var(--font-semibold, 600);
+}
+.agent-mode-chip {
+  font-size: var(--text-sm, 0.875rem);
+  font-weight: var(--font-semibold, 600);
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+.agent-mode-chip--both {
+  background: var(--color-primary-subtle, #e8f8ef);
+  color: var(--color-primary, #07c160);
+  border-color: var(--color-primary-subtle, #e8f8ef);
+}
+.agent-mode-chip--openclaw-only {
+  background: var(--color-secondary-subtle, #f0fdfa);
+  color: var(--color-secondary, #0d9488);
+  border-color: var(--color-secondary-subtle, #f0fdfa);
+}
+.agent-mode-chip--ext-only {
+  background: var(--color-info-subtle, #eff6ff);
+  color: var(--color-info, #2563eb);
+  border-color: var(--color-info-subtle, #eff6ff);
+}
+.agent-mode-chip--off {
+  background: var(--color-danger-subtle, #fef2f2);
+  color: var(--color-danger, #ef4444);
+  border-color: var(--color-danger-subtle, #fef2f2);
+}
+.agent-mode-desc {
+  flex: 1 1 100%;
+  margin: 0;
+  color: var(--color-text-muted, #64748b);
+  font-size: var(--text-xs, 0.8125rem);
+  line-height: var(--leading-relaxed, 1.5);
+}
+
+/* ----- Engine block (one per AI engine) ----- */
+.agent-block {
+  background: var(--color-surface, #ffffff);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: var(--radius-xl, 1rem);
+  padding: var(--space-5) var(--space-5);
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  padding: 0.25rem 0 0.25rem 0;
+  gap: var(--space-3);
+  box-shadow: var(--shadow-xs, 0 1px 2px 0 rgb(15 23 42 / 0.05));
 }
-.settings-field.openclaw-error .openclaw-error-message {
-  font-family: var(--font-mono, ui-monospace, "SF Mono", monospace);
+.agent-block--readonly {
+  /* the built-in engine is read-only — a softer border signals that */
+  background: var(--color-slate-50, #f8fafc);
+}
+.agent-block-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.agent-block-titlerow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+.agent-block-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: var(--radius-md, 0.5rem);
+  font-size: var(--text-sm, 0.8125rem);
+  font-weight: var(--font-bold, 700);
+  letter-spacing: 0.04em;
+  font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  /* The icon tile is a small accent block, not a chip — soft tint bg + bolder
+     text. Pairing colors (primary for built-in, info for ext) keep the two
+     blocks visually distinct. */
+}
+.agent-block-icon--ai {
+  background: var(--color-primary-subtle, #e8f8ef);
+  color: var(--color-primary, #07c160);
+}
+.agent-block-icon--ext {
+  background: var(--color-info-subtle, #eff6ff);
+  color: var(--color-info, #2563eb);
+}
+.agent-block-titlewrap {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.agent-block-title {
+  font-size: var(--text-base, 0.9375rem);
+  font-weight: var(--font-semibold, 600);
+  color: var(--color-text, #0f172a);
+  line-height: 1.3;
+}
+.agent-block-subtitle {
+  font-size: var(--text-xs, 0.8125rem);
+  color: var(--color-text-muted, #64748b);
+  line-height: 1.3;
+}
+.agent-block-subtitle--dim {
+  color: var(--color-text-subtle, #94a3b8);
+  font-style: italic;
+}
+.agent-block-status {
+  flex: 0 0 auto;
+  font-size: var(--text-xs, 0.75rem);
+  font-weight: var(--font-semibold, 600);
+  padding: 0.2rem 0.65rem;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.agent-block-status--on {
+  background: var(--color-success-subtle, #ecfdf5);
+  color: var(--color-success, #10b981);
+}
+.agent-block-status--off {
+  background: var(--color-slate-200, #e2e8f0);
+  color: var(--color-text-muted, #64748b);
+}
+.agent-block-status--warn {
+  background: var(--color-warning-subtle, #fffbeb);
+  color: var(--color-warning, #f59e0b);
+}
+.agent-block-desc {
+  margin: 0;
+  color: var(--color-text-muted, #64748b);
+  font-size: var(--text-sm, 0.8125rem);
+  line-height: var(--leading-relaxed, 1.5);
+}
+
+/* ----- Field list (read-only uses <dl>/<dt>/<dd>, editable uses label+input) ----- */
+.agent-block-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin: 0;
+  padding: 0;
+}
+/* In read-only mode, dt/dd sit on a single row with a small separator
+   below each pair. In editable mode, the same outer class wraps a
+   label + control stack. The .agent-field rules below handle both via
+   the modifier class. */
+.agent-field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1, 0.25rem);
+  padding: var(--space-2, 0.5rem) 0;
+  border-top: 1px solid var(--color-border-subtle, #f1f5f9);
+  min-width: 0;
+}
+.agent-block-fields .agent-field:first-child {
+  border-top: none;
+  padding-top: var(--space-3, 0.75rem);
+}
+.agent-field--readonly {
+  display: grid;
+  grid-template-columns: minmax(8rem, 12rem) 1fr;
+  align-items: baseline;
+  gap: var(--space-4, 1rem);
+  padding: var(--space-3, 0.75rem) 0;
+}
+.agent-field--readonly dt,
+.agent-field-label {
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-text-muted, #64748b);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: var(--font-semibold, 600);
+  margin: 0;
+}
+.agent-field--readonly dd {
   font-size: var(--text-sm, 0.875rem);
+  color: var(--color-text, #0f172a);
+  margin: 0;
+  word-break: break-word;
+  min-width: 0;
+}
+.agent-field-value--mono {
+  font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: var(--text-sm, 0.8125rem);
+  color: var(--color-text, #0f172a);
+  background: var(--color-slate-100, #f1f5f9);
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--radius-sm, 0.375rem);
+  display: inline-block;
+  word-break: break-all;
+}
+.agent-field-label--inline {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2, 0.5rem);
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: var(--font-medium, 500);
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--color-text, #0f172a);
+  cursor: pointer;
+}
+.agent-field--checkbox {
+  flex-direction: row;
+  align-items: center;
+  padding: var(--space-2, 0.5rem) 0;
+}
+.agent-field--checkbox .agent-field-label {
+  margin: 0;
+}
+.agent-field-input {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  font-size: var(--text-sm, 0.875rem);
+  color: var(--color-text, #0f172a);
+  background: var(--color-surface, #ffffff);
+  border: 1px solid var(--color-border, #e2e8f0);
+  border-radius: var(--radius-md, 0.5rem);
+  transition: border-color var(--transition-fast, 150ms ease), box-shadow var(--transition-fast, 150ms ease);
+  /* Soft surface (not the page bg, not black) — keeps the focus visible
+     without forcing a black-on-black look. */
+}
+.agent-field-input:focus-visible {
+  outline: none;
+  border-color: var(--color-primary, #07c160);
+  box-shadow: var(--shadow-ring, 0 0 0 3px var(--color-primary-subtle, #e8f8ef));
+}
+.agent-field-input--mono {
+  font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, monospace);
+}
+
+.agent-block-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 0.5rem);
+  margin-top: var(--space-1, 0.25rem);
+  flex-wrap: wrap;
+}
+
+/* ----- Built-in OpenClaw "why is it stopped" error block ----- */
+.agent-block .openclaw-error {
+  border: 1px solid var(--color-danger-subtle, #fef2f2);
+  background: var(--color-danger-subtle, #fef2f2);
+  border-left: 3px solid var(--color-danger, #ef4444);
+  border-radius: var(--radius-md, 0.5rem);
+  padding: var(--space-3, 0.75rem) var(--space-4, 1rem);
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  margin-top: var(--space-1, 0.25rem);
+}
+.openclaw-error-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2, 0.5rem);
+  flex-wrap: wrap;
+}
+.openclaw-error-label {
+  font-size: var(--text-xs, 0.75rem);
+  font-weight: var(--font-semibold, 600);
+  color: var(--color-danger, #ef4444);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.openclaw-error-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3, 0.75rem);
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-text-muted, #64748b);
+}
+.openclaw-error-meta span {
+  white-space: nowrap;
+}
+.openclaw-error-message {
+  font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, monospace);
+  font-size: var(--text-sm, 0.8125rem);
   color: var(--color-danger, #ef4444);
   word-break: break-word;
   white-space: pre-wrap;
+  background: var(--color-surface, #ffffff);
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--radius-sm, 0.375rem);
 }
-.settings-field.openclaw-error .openclaw-error-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.75rem;
-  font-size: var(--text-xs, 0.75rem);
-  color: var(--color-text-muted, #6b7280);
+.openclaw-error-hint {
+  font-size: var(--text-xs, 0.8125rem);
+  color: var(--color-text-muted, #64748b);
+  line-height: var(--leading-relaxed, 1.5);
 }
-.settings-field.openclaw-error .openclaw-error-meta span {
-  white-space: nowrap;
-}
-.settings-field.openclaw-error .openclaw-error-hint {
-  font-size: var(--text-xs, 0.75rem);
-  color: var(--color-text-muted, #6b7280);
-  font-style: italic;
-}
-.settings-field.openclaw-error .openclaw-error-actions {
+.openclaw-error-actions {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  margin-top: 0.25rem;
+  gap: var(--space-3, 0.75rem);
+  flex-wrap: wrap;
 }
-.settings-field.openclaw-error .openclaw-error-restart-fail {
+.openclaw-error-restart-fail {
   color: var(--color-danger, #ef4444);
   font-size: var(--text-xs, 0.75rem);
 }
@@ -3580,7 +3833,7 @@ textarea::placeholder {
    page's error styling so the user gets the same affordance in the place
    where the pain actually happens (they tried to chat, the AI is dead). */
 .openclaw-offline-banner {
-  background: var(--color-danger-subtle, rgba(239, 68, 68, 0.08));
+  background: var(--color-danger-subtle, #fef2f2);
   border-bottom: 1px solid var(--color-danger, #ef4444);
   padding: 0.75rem 1rem;
 }
@@ -3603,22 +3856,24 @@ textarea::placeholder {
 }
 .openclaw-offline-banner-desc {
   font-size: var(--text-xs, 0.75rem);
-  color: var(--color-text-muted, #6b7280);
+  color: var(--color-text-muted, #64748b);
   line-height: 1.4;
 }
 .openclaw-offline-banner-error {
   font-size: var(--text-xs, 0.75rem);
   color: var(--color-danger, #ef4444);
   margin-top: 0.25rem;
-  font-family: var(--font-mono, ui-monospace, "SF Mono", monospace);
+  font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, monospace);
 }
-.settings-agent-mode .settings-hint {
-  margin: 0;
-  color: var(--color-text-muted, #6b7280);
-  font-size: var(--text-xs, 0.75rem);
+
+/* Legacy aliases kept so any older test or component that still references
+   the old class names won't render broken. The new `.agent-*` rules
+   above are the canonical styles. */
+.settings-agent-mode {
+  display: none;
 }
 .settings-section-subtitle.dim {
-  color: var(--color-text-muted, #6b7280);
+  color: var(--color-text-muted, #64748b);
   font-weight: var(--font-normal, 400);
 }
 

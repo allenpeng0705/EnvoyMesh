@@ -177,6 +177,13 @@ export const koAiSettingsMessages = {
     saving: "저장 중…",
     saved: "저장됨",
     cancel: "취소",
+    iconBuiltIn: "AI",
+    iconExtAgent: "EX",
+    modeLabel: "AI 엔진 모드",
+    modeDescBoth: "내장 OpenClaw와 외부 에이전트 브리지를 모두 사용할 수 있습니다.",
+    modeDescOpenclawOnly: "내장 OpenClaw 엔진만 활성화되어 있습니다.",
+    modeDescExtOnly: "외부 에이전트 브지만 활성화되어 있습니다.",
+    modeDescOff: "두 엔진 모두 꺼져 있습니다 — 채팅 어시스턴트가 비활성화되었습니다.",
   },
   // ----- LAN Auto-Bond (Phase 35C) — also lives under settings.agentNetwork -----
   lanAutoBond: {

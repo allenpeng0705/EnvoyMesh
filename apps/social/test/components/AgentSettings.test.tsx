@@ -20,7 +20,8 @@ describe("AgentSettings — phase 32", () => {
         onExtAgentSave={noopAsync}
       />,
     );
-    const chip = document.querySelector(".settings-agent-mode .status-badge");
+    // Mode chip lives in the .agent-mode-summary row at the top of the panel.
+    const chip = document.querySelector(".agent-mode-summary .agent-mode-chip");
     expect(chip?.textContent).toMatch(/Built-in \+ Ext/i);
   });
 
@@ -32,7 +33,7 @@ describe("AgentSettings — phase 32", () => {
         onExtAgentSave={noopAsync}
       />,
     );
-    const chip = document.querySelector(".settings-agent-mode .status-badge");
+    const chip = document.querySelector(".agent-mode-summary .agent-mode-chip");
     expect(chip?.textContent).toMatch(/Built-in only/i);
   });
 
@@ -44,7 +45,7 @@ describe("AgentSettings — phase 32", () => {
         onExtAgentSave={noopAsync}
       />,
     );
-    const chip = document.querySelector(".settings-agent-mode .status-badge");
+    const chip = document.querySelector(".agent-mode-summary .agent-mode-chip");
     expect(chip?.textContent).toMatch(/Ext only/i);
   });
 
@@ -56,7 +57,7 @@ describe("AgentSettings — phase 32", () => {
         onExtAgentSave={noopAsync}
       />,
     );
-    const chip = document.querySelector(".settings-agent-mode .status-badge");
+    const chip = document.querySelector(".agent-mode-summary .agent-mode-chip");
     expect(chip?.textContent).toMatch(/^None$/i);
   });
 
@@ -71,7 +72,7 @@ describe("AgentSettings — phase 32", () => {
     // No checkbox with text "Enable built-in OpenClaw" should exist.
     expect(screen.queryByLabelText(/Enable built-in OpenClaw/i)).toBeNull();
     // The Built-in OpenClaw block's description mentions node-config.json.
-    const descriptions = Array.from(document.querySelectorAll(".settings-section-desc"));
+    const descriptions = Array.from(document.querySelectorAll(".agent-block-desc"));
     const hint = descriptions.find((el) => /node-config\.json/i.test(el.textContent ?? ""));
     expect(hint).toBeDefined();
   });
@@ -98,7 +99,7 @@ describe("AgentSettings — phase 32", () => {
     expect(callArg?.enabled).toBe(true);
   });
 
-  it("renders the built-in webhook URL as a read-only field", () => {
+  it("renders the built-in webhook URL as a read-only value (not an editable input)", () => {
     renderWithI18n(
       <AgentSettings
         envoyAI={{ enabled: true, running: true, url: "http://127.0.0.1:18789/webhook/envoymesh" }}
@@ -106,9 +107,14 @@ describe("AgentSettings — phase 32", () => {
         onExtAgentSave={noopAsync}
       />,
     );
-    const webhookInput = screen.getByDisplayValue("http://127.0.0.1:18789/webhook/envoymesh") as HTMLInputElement;
-    expect(webhookInput.readOnly).toBe(true);
-    expect(webhookInput.disabled).toBe(true);
+    // The webhook URL is rendered as plain text inside a <dd> (definition
+    // list), not as a disabled <input>. The user can't accidentally
+    // highlight / copy-fail on a grayed-out input — it just looks like
+    // a normal readable value.
+    const dl = document.querySelector(".agent-block .agent-block-fields");
+    expect(dl?.textContent).toContain("http://127.0.0.1:18789/webhook/envoymesh");
+    // No editable input with the webhook value.
+    expect(screen.queryByDisplayValue("http://127.0.0.1:18789/webhook/envoymesh")).toBeNull();
   });
 
   it("shows 3-state status badge: 'Running' when enabled + running", () => {
@@ -119,10 +125,10 @@ describe("AgentSettings — phase 32", () => {
         onExtAgentSave={noopAsync}
       />,
     );
-    const running = Array.from(document.querySelectorAll(".status-badge")).find(
-      (el) => /^Running$/i.test(el.textContent ?? ""),
-    );
-    expect(running).toBeDefined();
+    // The status badge lives inside .agent-block-status, not the generic
+    // .status-badge class.
+    const running = document.querySelector(".agent-block-status--on");
+    expect(running?.textContent).toMatch(/^Running$/i);
   });
 
   it("shows 3-state status badge: 'Stopped' when enabled but not running", () => {
@@ -133,10 +139,8 @@ describe("AgentSettings — phase 32", () => {
         onExtAgentSave={noopAsync}
       />,
     );
-    const stopped = Array.from(document.querySelectorAll(".status-badge")).find(
-      (el) => /^Stopped$/i.test(el.textContent ?? ""),
-    );
-    expect(stopped).toBeDefined();
+    const stopped = document.querySelector(".agent-block-status--warn");
+    expect(stopped?.textContent).toMatch(/^Stopped$/i);
   });
 
   it("shows 3-state status badge: 'Disabled' when not enabled", () => {
@@ -147,9 +151,7 @@ describe("AgentSettings — phase 32", () => {
         onExtAgentSave={noopAsync}
       />,
     );
-    const disabled = Array.from(document.querySelectorAll(".status-badge")).find(
-      (el) => /^Disabled$/i.test(el.textContent ?? ""),
-    );
-    expect(disabled).toBeDefined();
+    const disabled = document.querySelector(".agent-block-status--off");
+    expect(disabled?.textContent).toMatch(/^Disabled$/i);
   });
 });

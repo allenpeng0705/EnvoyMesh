@@ -34,3 +34,4 @@ shared_vault/
 /ci-artifacts
 .zcode/plans/plan-sess_84aaf6ff-51d0-4d0e-ab96-249260c63746.md
 apps/node/test/.DS_Store
+/apps/tauri/src-tauri/target

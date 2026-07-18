@@ -177,6 +177,13 @@ export const zhAiSettingsMessages = {
     saving: "保存中…",
     saved: "已保存",
     cancel: "取消",
+    iconBuiltIn: "AI",
+    iconExtAgent: "EX",
+    modeLabel: "AI 引擎模式",
+    modeDescBoth: "内置 OpenClaw 和外部代理桥接均可用。",
+    modeDescOpenclawOnly: "仅内置 OpenClaw 引擎处于活动状态。",
+    modeDescExtOnly: "仅外部代理桥接处于活动状态。",
+    modeDescOff: "两个引擎均已关闭 — 聊天助手已禁用。",
   },
   // ----- LAN Auto-Bond (Phase 35C) — also lives under settings.agentNetwork -----
   lanAutoBond: {

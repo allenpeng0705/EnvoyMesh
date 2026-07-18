@@ -3,7 +3,7 @@
  *
  * Extracted from `node-service-impl.ts` (ClawHub section + bridge-config helpers).
  */
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { ensureOpenClawWorkspace } from "./openclaw-workspace.js";
 import { resolveBundledSkillsDir } from "./bundled-paths.js";
 
@@ -79,10 +79,23 @@ async function clawhubBin(): Promise<string> {
   const { existsSync } = await import("node:fs");
   const { join } = await import("node:path");
   const { homedir } = await import("node:os");
-  const candidates = [
-    join(homedir(), ".npm-global", "bin", "clawhub"),
-    "/usr/local/bin/clawhub",
-  ];
+  const candidates: string[] = [];
+  // Tauri resource dir — clawhub installed into openclaw's node_modules
+  const resourceDir = process.env.TAURI_RESOURCE_DIR?.trim() || process.env.TAURI_APP_RESOURCES_DIR?.trim();
+  if (resourceDir) {
+    candidates.push(
+      join(resourceDir, "resources", "openclaw", "node_modules", ".bin", "clawhub"),
+      join(resourceDir, "openclaw", "node_modules", ".bin", "clawhub"),
+    );
+  }
+  // Global install locations
+  if (homedir()) {
+    candidates.push(
+      join(homedir(), ".npm-global", "bin", "clawhub"),
+      join(homedir(), ".local", "bin", "clawhub"),
+    );
+  }
+  candidates.push("/usr/local/bin/clawhub");
   const found = candidates.find((c) => existsSync(c));
   if (found) return found;
   try {
@@ -93,6 +106,24 @@ async function clawhubBin(): Promise<string> {
     /* not found */
   }
   return "clawhub";
+}
+
+/**
+ * Build an env object that ensures `node` is on PATH for child processes.
+ * In Tauri bundles, `node` lives inside the app bundle and isn't on the
+ * system PATH.  The Tauri launcher sets ENVOYMESH_NODE_EXE to the
+ * bundled Node binary — we prepend its directory to PATH.
+ */
+function childEnv(extra?: Record<string, string | undefined>): NodeJS.ProcessEnv {
+  const env = { ...process.env, ...extra };
+  const nodeExe = process.env.ENVOYMESH_NODE_EXE?.trim();
+  if (nodeExe) {
+    const nodeDir = dirname(nodeExe);
+    const currentPath = env.PATH ?? "";
+    // Prepend node dir to PATH so `#!/usr/bin/env node` shebangs work
+    env.PATH = nodeDir + (currentPath ? ":" + currentPath : "");
+  }
+  return env;
 }
 
 async function execClawhub(
@@ -107,11 +138,10 @@ async function execClawhub(
   return execFileSync(bin, [...args, "--workdir", workdir], {
     encoding: "utf-8",
     timeout: timeoutMs,
-    env: {
-      ...process.env,
+    env: childEnv({
       CLAWHUB_WORKDIR: workdir,
       ...(token ? { CLAWHUB_TOKEN: token } : {}),
-    },
+    }),
   }).trim();
 }
 
