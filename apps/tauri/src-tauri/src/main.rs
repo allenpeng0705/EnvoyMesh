@@ -273,6 +273,171 @@ fn resolve_bundled_ipfs_exe(resource_dir: Option<&Path>) -> Option<PathBuf> {
     None
 }
 
+/// Install-time probe + self-heal for the OpenClaw bundle's
+/// `node_modules/openclaw/` workspace self-reference.
+///
+/// The bundled tree is shipped with a self-reference created at build
+/// time (`scripts/stage-tauri-openclaw-bundle.sh` and the PowerShell twin
+/// `scripts/build-desktop.ps1`), but macOS Gatekeeper and Windows SmartScreen
+/// have been observed to strip the relative symlinks during .dmg / .msi
+/// install when they span what Gatekeeper considers "untrusted boundaries".
+/// Without `node_modules/openclaw/package.json` the home node refuses to
+/// start the gateway with `OpenClaw tree is incomplete (missing 1 item(s))`
+/// and EnvoyAI falls back to the native LLM path — silent capability loss.
+///
+/// Probes the staged tree; if the self-ref is missing or symlink-broken,
+/// the function re-creates the workspace self-reference using relative
+/// symlinks with a deep-copy fallback. Idempotent — safe to call on every
+/// launch (an existing healthy self-ref is left alone).
+///
+/// Returns `true` if the self-ref was missing and a heal was applied,
+/// `false` if it was already healthy or could not be healed. The caller
+/// logs the outcome; the heal itself never aborts app launch.
+fn ensure_openclaw_self_ref(resource_dir: &Path) -> bool {
+    let oc_dir = resource_dir.join("openclaw");
+    if !oc_dir.is_dir() {
+        // No bundled OpenClaw tree at all (e.g. sidecar-only build).
+        // Nothing to probe.
+        return false;
+    }
+    let self_ref_dir = oc_dir.join("node_modules").join("openclaw");
+    let self_ref_pkg = self_ref_dir.join("package.json");
+
+    // Healthy if `package.json` exists AND is readable as a real file
+    // (whether symlinked or not). `Path::is_file()` follows symlinks, so
+    // a dangling symlink is correctly reported as NOT a file — which is
+    // what we want here, because the `import "openclaw/..."` resolver in
+    // the plugin SDK behaves the same way. We do NOT use `symlink_metadata`
+    // alone here because it would mis-report a dangling link as healthy.
+    let healthy = self_ref_pkg.is_file();
+    if healthy {
+        return false;
+    }
+
+    warn!(
+        "OpenClaw node_modules/openclaw self-reference is missing or broken at {:?} — healing",
+        self_ref_pkg
+    );
+
+    // Ensure the parent directory exists. `create_dir_all` is a no-op if
+    // it already does (e.g. we have a broken file at package.json but no
+    // surrounding dir contents).
+    if let Err(e) = std::fs::create_dir_all(&self_ref_dir) {
+        warn!(
+            "Cannot create {:?} for self-reference heal: {}",
+            self_ref_dir, e
+        );
+        return false;
+    }
+
+    // If something is at package.json (regular file, broken symlink, etc.)
+    // and it's NOT a healthy symlink, remove it so the symlink creation
+    // doesn't fail on EEXIST.
+    if self_ref_pkg.exists() || self_ref_pkg.symlink_metadata().is_ok() {
+        let _ = std::fs::remove_file(&self_ref_pkg);
+    }
+
+    let root_pkg = oc_dir.join("package.json");
+    if !root_pkg.is_file() {
+        warn!(
+            "Cannot heal OpenClaw self-reference — staged tree is missing package.json at {:?}",
+            root_pkg
+        );
+        return false;
+    }
+
+    // Try relative symlink first (POSIX-style on macOS/Linux;
+    // `std::os::windows::fs::symlink_file` is used on Windows where
+    // unprivileged symlinks require Developer Mode). Fall back to a deep
+    // copy of package.json — sufficient because the plugin SDK only
+    // resolves `import "openclaw/..."` subpaths against the staged
+    // tree's `dist/`, `extensions/`, `skills/` dirs which are siblings,
+    // and at this point those siblings still exist even if downstream
+    // macOS Gatekeeper stripped *their* symlinks too — we copy those
+    // recursively below if they're missing.
+    #[cfg(unix)]
+    let symlink_ok = std::os::unix::fs::symlink("../../package.json", &self_ref_pkg).is_ok();
+    #[cfg(windows)]
+    let symlink_ok = std::os::windows::fs::symlink_file(
+        std::path::Path::new("../../package.json"),
+        &self_ref_pkg,
+    )
+    .is_ok();
+
+    if !symlink_ok {
+        if let Err(e) = std::fs::copy(&root_pkg, &self_ref_pkg) {
+            warn!(
+                "Failed to deep-copy {:?} → {:?}: {} — gateway may refuse to start",
+                root_pkg, self_ref_pkg, e
+            );
+            return false;
+        }
+        warn!(
+            "OpenClaw self-ref was a deep copy (symlink creation failed — likely missing \
+             developer mode / elevation). Some plugin SDK `openclaw/...` imports may not \
+             resolve to the staged tree root."
+        );
+    }
+
+    // Same heal for the sibling top-level entries that the plugin SDK reads.
+    for top in ["dist", "extensions", "skills"] {
+        let root_top = oc_dir.join(top);
+        let self_ref_top = self_ref_dir.join(top);
+        if !root_top.is_dir() {
+            continue; // optional — skip if the staged tree doesn't ship it
+        }
+        if self_ref_top.exists() || self_ref_top.symlink_metadata().is_ok() {
+            continue; // already healthy (e.g. real dir)
+        }
+        #[cfg(unix)]
+        {
+            let _ = std::os::unix::fs::symlink(format!("../../{top}"), &self_ref_top);
+        }
+        #[cfg(windows)]
+        {
+            let _ = std::os::windows::fs::symlink_dir(
+                std::path::Path::new(format!("../../{top}")),
+                &self_ref_top,
+            );
+        }
+        // If symlink failed on this platform (unprivileged, no dev mode),
+        // fall back to a deep copy — the plugin SDK treats the path the
+        // same way regardless of how the inode is realised.
+        if !self_ref_top.exists() && self_ref_top.symlink_metadata().is_err() {
+            if let Err(e) = deep_copy_dir(&root_top, &self_ref_top) {
+                warn!(
+                    "Failed to deep-copy {:?} → {:?}: {}",
+                    root_top, self_ref_top, e
+                );
+            }
+        }
+    }
+
+    info!(
+        "Restored node_modules/openclaw/ self-reference at {:?}",
+        self_ref_dir
+    );
+    true
+}
+
+/// Recursive deep copy of a directory. Used as a fallback when symlink
+/// creation fails on Windows (unprivileged, no Developer Mode). Best-effort
+/// — errors are surfaced to the caller for logging.
+fn deep_copy_dir(src: &Path, dst: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dst)?;
+    for entry in std::fs::read_dir(src)? {
+        let entry = entry?;
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            deep_copy_dir(&from, &to)?;
+        } else {
+            std::fs::copy(&from, &to)?;
+        }
+    }
+    Ok(())
+}
+
 fn is_port_in_use(port: u16) -> bool {
     std::net::TcpListener::bind(format!("127.0.0.1:{}", port)).is_err()
 }
@@ -564,6 +729,24 @@ fn main() {
                 info!("Resource directory: {:?}", dir);
             }
 
+            // Install-time probe + self-heal for OpenClaw's workspace
+            // self-reference. macOS Gatekeeper / Windows SmartScreen have
+            // been observed to strip the relative symlinks shipped in the
+            // bundled tree (`scripts/stage-tauri-openclaw-bundle.sh` /
+            // `scripts/build-desktop.ps1` create them at build time).
+            // Without this probe the home node would still refuse to start
+            // the gateway inside the user's `.app` even though the bundled
+            // DMG/NSIS looked complete. Runs idempotently on every launch.
+            if let Some(ref dir) = resource_dir {
+                let healed = ensure_openclaw_self_ref(dir);
+                if healed {
+                    info!(
+                        "OpenClaw self-reference was repaired at launch — \
+                         home node will start the gateway normally"
+                    );
+                }
+            }
+
             let bundled_ipfs = resolve_bundled_ipfs_exe(resource_dir.as_deref());
             if let Some(ref exe) = bundled_ipfs {
                 info!("Bundled Kubo sidecar: {:?}", exe);
@@ -651,4 +834,132 @@ fn main() {
                 stop_node_from_app(&app_handle);
             }
         });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use std::path::Path;
+
+    /// Walk up from `tests_root` until we find a writable temp dir. Each
+    /// test gets its own subdir so they don't collide on parallel runs.
+    fn make_fixture(tag: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "envoymesh-selfref-{}-{}",
+            tag,
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).expect("create fixture dir");
+        dir
+    }
+
+    /// Lay down a minimal `resource_dir/openclaw/...` tree so the probe
+    /// has something to work against. Returns the resource_dir.
+    fn seed_tree(resource_dir: &Path) {
+        let oc = resource_dir.join("openclaw");
+        fs::create_dir_all(&oc).unwrap();
+        fs::create_dir_all(oc.join("node_modules")).unwrap();
+        // package.json — bare minimum; the heal doesn't read its fields.
+        fs::write(
+            oc.join("package.json"),
+            r#"{"name":"openclaw","version":"0.0.0"}"#,
+        )
+        .unwrap();
+        fs::write(oc.join("openclaw.mjs"), "#!/usr/bin/env node\n").unwrap();
+    }
+
+    #[test]
+    fn heal_missing_package_json() {
+        let r = make_fixture("missing");
+        seed_tree(&r);
+        let self_ref = r.join("openclaw/node_modules/openclaw");
+        // Nothing at self_ref/pkg — fresh install scenario.
+        let healed = ensure_openclaw_self_ref(&r);
+        assert!(healed, "probe should report healing happened");
+        assert!(
+            self_ref.join("package.json").is_file(),
+            "package.json should now exist"
+        );
+        let _ = fs::remove_dir_all(&r);
+    }
+
+    #[test]
+    fn heal_dangling_symlink() {
+        // This is the macOS-Gatekeeper / Windows-SmartScreen scenario:
+        // the installed .dmg/.msi stripped our relative symlink to leave
+        // a dangling link. The probe must recognise this as broken and
+        // re-create the self-reference.
+        let r = make_fixture("dangling");
+        seed_tree(&r);
+        let self_ref = r.join("openclaw/node_modules/openclaw");
+        fs::create_dir_all(&self_ref).unwrap();
+        std::os::unix::fs::symlink("../../foo-broken", self_ref.join("package.json")).unwrap();
+
+        let healed = ensure_openclaw_self_ref(&r);
+        assert!(healed, "dangling symlink must be classified as broken");
+        assert!(
+            self_ref.join("package.json").is_file(),
+            "dangling symlink should be replaced with a readable self-reference"
+        );
+        let _ = fs::remove_dir_all(&r);
+    }
+
+    #[test]
+    fn no_op_when_already_healthy() {
+        // Healthy state: package.json is reachable via the self-reference
+        // symlink. The probe should leave it alone and return false.
+        let r = make_fixture("healthy");
+        seed_tree(&r);
+        let self_ref = r.join("openclaw/node_modules/openclaw");
+        fs::create_dir_all(&self_ref).unwrap();
+        std::os::unix::fs::symlink("../../package.json", self_ref.join("package.json")).unwrap();
+
+        // Capture pre-state by noting the inode/symlink target.
+        let target = fs::read_link(self_ref.join("package.json")).unwrap();
+
+        let healed = ensure_openclaw_self_ref(&r);
+        assert!(!healed, "healthy self-ref must not be touched");
+        assert_eq!(
+            fs::read_link(self_ref.join("package.json")).unwrap(),
+            target,
+            "symlink target must be unchanged"
+        );
+        let _ = fs::remove_dir_all(&r);
+    }
+
+    #[test]
+    fn no_op_when_openclaw_tree_absent() {
+        // Sidecar-only builds ship without an openclaw/ tree — probe
+        // should be a no-op (return false) without errors.
+        let r = make_fixture("no-oc");
+        fs::create_dir_all(&r).unwrap();
+
+        let healed = ensure_openclaw_self_ref(&r);
+        assert!(!healed, "missing openclaw/ must be a no-op, not a heal");
+        let _ = fs::remove_dir_all(&r);
+    }
+
+    #[test]
+    fn heal_is_idempotent() {
+        let r = make_fixture("idem");
+        seed_tree(&r);
+
+        let _ = ensure_openclaw_self_ref(&r);
+        // Second call must NOT re-trigger the heal path. We confirm by
+        // asserting the inode hasn't changed (the symlink would get a
+        // fresh inode if remove+create ran a second time).
+        use std::os::unix::fs::MetadataExt;
+        let self_ref = r.join("openclaw/node_modules/openclaw");
+        let pkg = self_ref.join("package.json");
+        let ino_first = fs::symlink_metadata(&pkg).unwrap().ino();
+        let _ = ensure_openclaw_self_ref(&r);
+        let ino_second = fs::symlink_metadata(&pkg).unwrap().ino();
+        assert_eq!(
+            ino_first, ino_second,
+            "second probe call must be a no-op (same inode)"
+        );
+        let _ = fs::remove_dir_all(&r);
+    }
 }
