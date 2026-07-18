@@ -3723,11 +3723,21 @@ textarea::placeholder {
   word-break: break-word;
   min-width: 0;
 }
+/* Inline mono chip used for read-only values like URLs and PIDs.
+ *
+ * Background was var(--color-slate-100, #f1f5f9) — a fixed light
+ * gray that doesn't have a dark-mode override. In dark mode this
+ * left a light chip on a dark page with light text inside, which
+ * hides the value. Use var(--color-bg) so the chip sits one tone
+ * below the parent (page bg) in either theme:
+ *   Light: #f1f5f9 (slate-100) on white section — distinct chip.
+ *   Dark:  #1e293b (slate-800) on #334155 section — distinct chip.
+ */
 .agent-field-value--mono {
   font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, monospace);
   font-size: var(--text-sm, 0.8125rem);
   color: var(--color-text, #0f172a);
-  background: var(--color-slate-100, #f1f5f9);
+  background: var(--color-bg, #f1f5f9);
   padding: 0.15rem 0.45rem;
   border-radius: var(--radius-sm, 0.375rem);
   display: inline-block;
