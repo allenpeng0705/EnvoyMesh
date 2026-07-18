@@ -6,12 +6,35 @@
 # Fallback: fetch-openclaw-sidecar.sh (standalone binary only — no envoymesh extension).
 #
 # Usage: bash scripts/stage-tauri-openclaw-bundle.sh
+#
+# Environment variables:
+#   STAGE_OPENCLAW_BUNDLE=1   Force re-stage (default: reuse cached tree)
+#   STAGE_OPENCLAW_BUNDLE=0   Skip gate entirely (debug escape hatch)
+#   OPENCLAW_EXTENSIONS=""     Default — keep ALL extensions (macOS DMG)
+#   OPENCLAW_EXTENSIONS=default  Use the built-in allowlist
+#   OPENCLAW_EXTENSIONS="ext1 ext2 ..."  Keep only the named extensions
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SOURCE="$ROOT/packages/openclaw"
 DEST="$ROOT/apps/tauri/src-tauri/resources/openclaw"
+
+# Built-in allowlist: envoy channel + web search providers.
+_OPENCLAW_DEFAULT_ALLOWLIST="envoymesh duckduckgo brave exa firecrawl google xai moonshot minimax ollama perplexity searxng tavily"
+
+# Resolve extension filter: empty = keep all, "default" = use allowlist,
+# otherwise treat as a space-separated list of extensions to keep.
+_openclaw_resolve_ext_allowlist() {
+  local val="${OPENCLAW_EXTENSIONS:-}"
+  if [ -z "$val" ]; then
+    echo ""   # keep all — caller should skip pruning entirely
+  elif [ "$val" = "default" ]; then
+    echo "$_OPENCLAW_DEFAULT_ALLOWLIST"
+  else
+    echo "$val"  # custom list
+  fi
+}
 
 # Reuse-path gate. Default behavior: reuse the staged tree at $DEST
 # and skip pnpm install (network) on rebuilds. STAGE_OPENCLAW_BUNDLE=1
@@ -114,27 +137,27 @@ elif [ "${STAGE_OPENCLAW_BUNDLE:-0}" != "1" ] \
       fi
     fi
 
-    # Prune unused extensions on reuse — the cache may predate the allowlist
-    # (3 GB of 143 extensions exceeds NSIS 2 GB cap).  Must cover all three
-    # discovery roots (dist/extensions, dist-runtime/extensions, extensions),
-    # matching the fresh-stage logic below.
-    OPENCLAW_EXTENSIONS_ALLOWLIST="envoymesh duckduckgo brave exa firecrawl google xai moonshot minimax ollama perplexity searxng tavily"
-    for ext_base in "$DEST/dist/extensions" "$DEST/dist-runtime/extensions" "$DEST/extensions"; do
-      [ -d "$ext_base" ] || continue
-      removed=0
-      for ext_dir in "$ext_base"/*/; do
-        ext_name="$(basename "$ext_dir")"
-        # shellcheck disable=SC2086
-        if ! echo " $OPENCLAW_EXTENSIONS_ALLOWLIST " | grep -q " $ext_name "; then
-          rm -rf "$ext_dir"
-          removed=$((removed + 1))
+    # Prune extensions on reuse — only when OPENCLAW_EXTENSIONS is set
+    # (macOS DMG keeps all by default; Windows sets it to "default").
+    _ext_allowlist="$(_openclaw_resolve_ext_allowlist)"
+    if [ -n "$_ext_allowlist" ]; then
+      for ext_base in "$DEST/dist/extensions" "$DEST/dist-runtime/extensions" "$DEST/extensions"; do
+        [ -d "$ext_base" ] || continue
+        removed=0
+        for ext_dir in "$ext_base"/*/; do
+          ext_name="$(basename "$ext_dir")"
+          # shellcheck disable=SC2086
+          if ! echo " $_ext_allowlist " | grep -q " $ext_name "; then
+            rm -rf "$ext_dir"
+            removed=$((removed + 1))
+          fi
+        done
+        if [ "$removed" -gt 0 ]; then
+          rel="${ext_base#$DEST/}"
+          echo "  Pruned $removed unused extensions from $rel on reuse"
         fi
       done
-      if [ "$removed" -gt 0 ]; then
-        rel="${ext_base#$DEST/}"
-        echo "  Pruned $removed unused extensions from $rel on reuse"
-      fi
-    done
+    fi
 
     exit 0
   fi
@@ -405,22 +428,27 @@ with open(p, 'w') as f: json.dump(d, f, indent=2); f.write('\n')
   # pushes the NSIS installer past its 2 GB hard cap and the build fails.
   # Prune ALL extension directories: dist/extensions/, dist-runtime/extensions/,
   # and extensions/.
-  OPENCLAW_EXTENSIONS_ALLOWLIST="envoymesh duckduckgo brave exa firecrawl google xai moonshot minimax ollama perplexity searxng tavily"
-  for ext_base in $OPENCLAW_BUNDLED_EXT_DIRS; do
-    [ -d "$ext_base" ] || continue
-    removed=0
-    for ext_dir in "$ext_base"/*/; do
-      ext_name="$(basename "$ext_dir")"
-      # shellcheck disable=SC2086
-      if ! echo " $OPENCLAW_EXTENSIONS_ALLOWLIST " | grep -q " $ext_name "; then
-        rm -rf "$ext_dir"
-        removed=$((removed + 1))
+  # Controlled by OPENCLAW_EXTENSIONS env var (see header).
+  _ext_allowlist="$(_openclaw_resolve_ext_allowlist)"
+  if [ -n "$_ext_allowlist" ]; then
+    for ext_base in $OPENCLAW_BUNDLED_EXT_DIRS; do
+      [ -d "$ext_base" ] || continue
+      removed=0
+      for ext_dir in "$ext_base"/*/; do
+        ext_name="$(basename "$ext_dir")"
+        # shellcheck disable=SC2086
+        if ! echo " $_ext_allowlist " | grep -q " $ext_name "; then
+          rm -rf "$ext_dir"
+          removed=$((removed + 1))
+        fi
+      done
+      if [ "$removed" -gt 0 ]; then
+        echo "  Pruned $removed unused extensions from $(basename "$(dirname "$ext_base")")/$(basename "$ext_base")/"
       fi
     done
-    if [ "$removed" -gt 0 ]; then
-      echo "  Pruned $removed unused extensions from $(basename "$(dirname "$ext_base")")/$(basename "$ext_base")/"
-    fi
-  done
+  else
+    echo "  Keeping all OpenClaw extensions (OPENCLAW_EXTENSIONS not set)"
+  fi
 
   # NOTE: We do NOT run `pnpm prune --prod` here in the staged tree.
   # The staged tree is missing pnpm-workspace.yaml and packages/, so pnpm

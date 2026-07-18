@@ -9,7 +9,8 @@
 # Usage (from the repo root, in PowerShell):
 #   .\scripts\build-desktop.ps1 [-Out <dir>] [-Version <ver>] [-ForceOpenClaw]
 #                                [-ForceNodeSidecar] [-SkipTypecheck]
-#                                [-SkipMsi[:$false]] [-?]
+#                                [-SkipMsi[:$false]] [-OpenClawExtensions <filter>]
+#                                [-?]
 #
 # Flags:
 #   -Out <dir>               Output directory (default: release\)
@@ -23,6 +24,9 @@
 #                             so the slow WiX .msi step is skipped (3 GB resource
 #                             tree takes 10-20 min for light.exe). Use -SkipMsi:$false
 #                             to build both NSIS and MSI.
+#   -OpenClawExtensions <val> Extension filter: "default" (built-in allowlist),
+#                             "all" (keep everything), or "ext1,ext2" (custom list).
+#                             Default: "default" (NSIS 2 GB cap)
 #   -?                        Print this message and exit
 #
 # Output (copied from Cargo target dir into the repo):
@@ -74,7 +78,15 @@ param(
     # the staged tree's devDependencies — required to stay under NSIS's 2 GB
     # installer limit). Use -SkipOpenClawPrune only if you've manually
     # curated the staged tree and know what you're doing.
-    [switch]$SkipOpenClawPrune
+    [switch]$SkipOpenClawPrune,
+
+    # Extension filter for OpenClaw. Controls which extensions are kept in
+    # the staged bundle — the rest are pruned (deleted) to save space.
+    #   "default"     Keep only the built-in allowlist (envoymesh + web search)
+    #   "all"         Keep every extension (no pruning)
+    #   "ext1,ext2"   Keep only the named extensions (comma-separated)
+    # Default: "default" (Windows NSIS has a 2 GB cap)
+    [string]$OpenClawExtensions = "default"
 )
 
 $ErrorActionPreference = "Stop"
@@ -107,6 +119,26 @@ function Write-Warn {
 function Write-Fail {
     param([string]$Message)
     Write-Host "  ✗ $Message" -ForegroundColor Red
+}
+
+# Built-in allowlist: envoy channel + web search providers.
+$script:OpenClawDefaultAllowlist = @(
+    "envoymesh", "duckduckgo", "brave", "exa", "firecrawl", "google", "xai",
+    "moonshot", "minimax", "ollama", "perplexity", "searxng", "tavily"
+)
+
+# Resolve the extension filter into an allowlist (array of extension names to
+# keep). Returns $null when all extensions should be kept (no pruning).
+function Resolve-OpenClawExtAllowlist {
+    param([string]$Filter)
+    switch ($Filter) {
+        "default" { return $script:OpenClawDefaultAllowlist }
+        "all"     { return $null }
+        default   {
+            # Treat as comma-separated list of extension names to keep
+            return ($Filter -split "," | ForEach-Object { $_.Trim() })
+        }
+    }
 }
 
 function Require-Command {
@@ -522,34 +554,32 @@ if ($openclawStaged -and -not $ForceOpenClaw) {
             }
         }
 
-        # Always prune unused extensions on reuse — the cache may predate the
-        # extension allowlist (3 GB of 143 extensions exceeds NSIS 2 GB cap).
-        # Prune ALL extension directories, matching the fresh-stage logic below.
-        $openclawExtensionsAllowlist = @(
-            "envoymesh",          # core channel plugin (always required)
-            "duckduckgo",         # default web search (no API key needed)
-            "brave", "exa", "firecrawl", "google", "xai",
-            "moonshot", "minimax", "ollama", "perplexity",
-            "searxng", "tavily"
-        )
-        foreach ($extDir in @(
-            (Join-Path $openclawDest "dist\extensions"),
-            (Join-Path $openclawDest "dist-runtime\extensions"),
-            (Join-Path $openclawDest "extensions")
-        )) {
-            if (Test-Path $extDir) {
-                $removedCount = 0
-                Get-ChildItem -Path $extDir -Directory | Where-Object {
-                    -not ($openclawExtensionsAllowlist -contains $_.Name)
-                } | ForEach-Object {
-                    Remove-Item -Recurse -Force $_.FullName
-                    $removedCount++
-                }
-                if ($removedCount -gt 0) {
-                    $rel = $extDir.Substring($openclawDest.Length + 1)
-                    Write-Info "Pruned $removedCount unused extensions from $rel on reuse"
+        # Prune unused extensions on reuse — the cache may predate the
+        # allowlist (3 GB of 143 extensions exceeds NSIS 2 GB cap).
+        # Controlled by -OpenClawExtensions (see param block).
+        $openclawExtAllowlist = Resolve-OpenClawExtAllowlist -Filter $OpenClawExtensions
+        if ($null -ne $openclawExtAllowlist) {
+            foreach ($extDir in @(
+                (Join-Path $openclawDest "dist\extensions"),
+                (Join-Path $openclawDest "dist-runtime\extensions"),
+                (Join-Path $openclawDest "extensions")
+            )) {
+                if (Test-Path $extDir) {
+                    $removedCount = 0
+                    Get-ChildItem -Path $extDir -Directory | Where-Object {
+                        -not ($openclawExtAllowlist -contains $_.Name)
+                    } | ForEach-Object {
+                        Remove-Item -Recurse -Force $_.FullName
+                        $removedCount++
+                    }
+                    if ($removedCount -gt 0) {
+                        $rel = $extDir.Substring($openclawDest.Length + 1)
+                        Write-Info "Pruned $removedCount unused extensions from $rel on reuse"
+                    }
                 }
             }
+        } else {
+            Write-Info "Keeping all OpenClaw extensions (-OpenClawExtensions all)"
         }
         # NOTE: We do NOT run pnpm prune --prod in the staged tree here.
         # The staged tree lacks pnpm-workspace.yaml and packages/, so
@@ -910,27 +940,25 @@ export * from "../src/cli/run-main.ts";
     # ~13 (envoymesh channel + web search providers). Keeping all of them
     # pushes the NSIS installer past its 2 GB hard cap and the build fails.
     # Prune ALL extension directories: dist/extensions/, dist-runtime/extensions/,
-    # and extensions/.
-    $openclawExtensionsAllowlist = @(
-        "envoymesh",          # core channel plugin (always required)
-        "duckduckgo",         # default web search (no API key needed)
-        "brave", "exa", "firecrawl", "google", "xai",
-        "moonshot", "minimax", "ollama", "perplexity",
-        "searxng", "tavily"
-    )
-    foreach ($extBase in $bundledExtDirs) {
-        if (Test-Path $extBase) {
-            $removedCount = 0
-            Get-ChildItem -Path $extBase -Directory | Where-Object {
-                -not ($openclawExtensionsAllowlist -contains $_.Name)
-            } | ForEach-Object {
-                Remove-Item -Recurse -Force $_.FullName
-                $removedCount++
-            }
-            if ($removedCount -gt 0) {
-                Write-Info "Pruned $removedCount unused extensions from $(Split-Path (Split-Path $extBase -Parent) -Leaf)\$(Split-Path $extBase -Leaf)\"
+    # and extensions/. Controlled by -OpenClawExtensions (see param block).
+    $openclawExtAllowlist = Resolve-OpenClawExtAllowlist -Filter $OpenClawExtensions
+    if ($null -ne $openclawExtAllowlist) {
+        foreach ($extBase in $bundledExtDirs) {
+            if (Test-Path $extBase) {
+                $removedCount = 0
+                Get-ChildItem -Path $extBase -Directory | Where-Object {
+                    -not ($openclawExtAllowlist -contains $_.Name)
+                } | ForEach-Object {
+                    Remove-Item -Recurse -Force $_.FullName
+                    $removedCount++
+                }
+                if ($removedCount -gt 0) {
+                    Write-Info "Pruned $removedCount unused extensions from $(Split-Path (Split-Path $extBase -Parent) -Leaf)\$(Split-Path $extBase -Leaf)\"
+                }
             }
         }
+    } else {
+        Write-Info "Keeping all OpenClaw extensions (-OpenClawExtensions all)"
     }
 
     # NOTE: We do NOT run `pnpm prune --prod` here in the staged tree.
