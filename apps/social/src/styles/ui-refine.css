@@ -240,6 +240,29 @@
   color: var(--color-warning);
 }
 
+/* OpenClaw self-reference heal chip. Renders on the splash only when the
+   install-time probe (apps/tauri/src-tauri/src/main.rs) reports an
+   actionable outcome — `healed` (info) or `heal-failed` (warning).
+   `healthy` and `no-bundle` are silent. */
+.envoy-splash__openclaw-chip {
+  margin: var(--space-3) 0 0;
+  font-size: var(--text-xs);
+  line-height: 1.4;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-sm, 6px);
+  text-align: left;
+}
+.envoy-splash__openclaw-chip--ok {
+  color: var(--color-success, #1f8a4c);
+  background: color-mix(in srgb, var(--color-success, #1f8a4c) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-success, #1f8a4c) 24%, transparent);
+}
+.envoy-splash__openclaw-chip--err {
+  color: var(--color-warning);
+  background: color-mix(in srgb, var(--color-warning) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-warning) 28%, transparent);
+}
+
 .envoy-splash__error {
   margin-top: var(--space-5);
   padding: var(--space-4);

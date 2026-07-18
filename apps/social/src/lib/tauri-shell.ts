@@ -66,3 +66,66 @@ export async function revealTauriLogDir(): Promise<boolean> {
     return false;
   }
 }
+
+/**
+ * Status of the install-time OpenClaw self-reference heal probe.
+ *
+ * "no-bundle"   - No bundled OpenClaw tree (sidecar-only build).
+ * "healthy"     - Self-reference was already in place at launch.
+ * "healed"      - Probe detected a broken/missing self-ref and repaired it.
+ *                 Common after a fresh .dmg/.msi install where Gatekeeper
+ *                 stripped the relative symlinks.
+ * "heal-failed" - Probe detected a broken self-ref but the heal did not
+ *                 complete (e.g. permission denied). Check node.log.
+ */
+export type OpenclawHealState =
+  | "no-bundle"
+  | "healthy"
+  | "healed"
+  | "heal-failed"
+  | "unknown";
+
+export type OpenclawHealStatus = {
+  state: OpenclawHealState;
+  openclawDir: string | null;
+  selfRefPkg: string | null;
+  message: string;
+};
+
+/**
+ * Returns the OpenClaw self-reference heal status captured at launch.
+ * Returns null when running outside the Tauri desktop shell.
+ */
+export async function getTauriOpenclawHealStatus(): Promise<OpenclawHealStatus | null> {
+  const invoke = readTauriInvoke();
+  if (!invoke) return null;
+  try {
+    const raw = (await invoke("get_openclaw_heal_status")) as {
+      state: string;
+      openclaw_dir?: string | null;
+      self_ref_pkg?: string | null;
+      message: string;
+    };
+    // Defensive normalisation — the Rust side already sends a known
+    // discriminator, but the IPC layer can sometimes drop fields.
+    const allowed: OpenclawHealState[] = [
+      "no-bundle",
+      "healthy",
+      "healed",
+      "heal-failed",
+    ];
+    const state: OpenclawHealState = allowed.includes(
+      raw.state as OpenclawHealState,
+    )
+      ? (raw.state as OpenclawHealState)
+      : "unknown";
+    return {
+      state,
+      openclawDir: raw.openclaw_dir ?? null,
+      selfRefPkg: raw.self_ref_pkg ?? null,
+      message: raw.message ?? "",
+    };
+  } catch {
+    return null;
+  }
+}

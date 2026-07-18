@@ -19,7 +19,12 @@ import { ChainsView } from "./components/views/ChainsView.js";
 import { AutoReplyPausedNotifier } from "./components/AutoReplyPausedNotifier.js";
 import { GettingStartedGuide } from "./components/GettingStartedGuide.js";
 import { CallSessionProvider } from "./context/CallSessionContext.js";
-import { isTauriShell, restartTauriNodeProcess } from "./lib/tauri-shell.js";
+import {
+  getTauriOpenclawHealStatus,
+  isTauriShell,
+  restartTauriNodeProcess,
+  type OpenclawHealStatus,
+} from "./lib/tauri-shell.js";
 import {
   isFirstRunSetupComplete,
   hasCompletedFirstRunSetup,
@@ -51,6 +56,61 @@ function useTauriBootstrapPhase(active: boolean): TauriBootstrapPhase {
     };
   }, [active]);
   return phase;
+}
+
+/**
+ * One-shot probe of the install-time OpenClaw self-reference heal
+ * status. Returns null when not running inside the Tauri shell, or
+ * when the IPC fails (caller renders nothing in that case — not a
+ * diagnostic we want to nag about). We deliberately do not retry on
+ * failure: the report is immutable for the lifetime of the app, so
+ * polling would only ever log the same answer.
+ */
+function useOpenclawHealStatus(active: boolean): OpenclawHealStatus | null {
+  const [status, setStatus] = useState<OpenclawHealStatus | null>(null);
+  useEffect(() => {
+    if (!active) {
+      setStatus(null);
+      return;
+    }
+    let cancelled = false;
+    void getTauriOpenclawHealStatus().then((s) => {
+      if (!cancelled) setStatus(s);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [active]);
+  return status;
+}
+
+/**
+ * Inline chip rendered in the splash when the OpenClaw self-reference
+ * probe ran and the outcome is actionable (`healed` or `heal-failed`).
+ * `healthy` and `no-bundle` are silent — those are normal operation.
+ */
+function OpenclawHealChip({
+  status,
+}: {
+  status: OpenclawHealStatus | null;
+}) {
+  if (!status) return null;
+  if (status.state === "healthy" || status.state === "no-bundle") return null;
+  if (status.state === "healed") {
+    return (
+      <p className="envoy-splash__openclaw-chip envoy-splash__openclaw-chip--ok">
+        ✓ OpenClaw gateway: self-reference was repaired at launch
+      </p>
+    );
+  }
+  if (status.state === "heal-failed") {
+    return (
+      <p className="envoy-splash__openclaw-chip envoy-splash__openclaw-chip--err">
+        ⚠ OpenClaw gateway may not start: {status.message}
+      </p>
+    );
+  }
+  return null;
 }
 
 function needsFirstRunSetup(
@@ -112,6 +172,7 @@ function ConnectingSplash({
 }) {
   const t = useT();
   const bootstrapPhase = useTauriBootstrapPhase(Boolean(tauriShell && nodeBootstrapping));
+  const openclawHeal = useOpenclawHealStatus(Boolean(tauriShell && nodeBootstrapping));
   const bootstrapDetail =
     bootstrapPhase === "slow"
       ? t("splash.startingNodeSlow")
@@ -137,6 +198,9 @@ function ConnectingSplash({
           </p>
           {tauriShell && nodeBootstrapping && reconnectAttempts === 0 ? (
             <p className="envoy-splash__hint">{t("splash.firstLaunchHint")}</p>
+          ) : null}
+          {tauriShell && nodeBootstrapping && reconnectAttempts === 0 ? (
+            <OpenclawHealChip status={openclawHeal} />
           ) : null}
           {isRelayUnreachable && (
             <p className="envoy-splash__relay-warn">{t("splash.relayWarn")}</p>

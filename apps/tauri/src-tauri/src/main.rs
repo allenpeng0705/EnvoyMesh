@@ -290,15 +290,16 @@ fn resolve_bundled_ipfs_exe(resource_dir: Option<&Path>) -> Option<PathBuf> {
 /// symlinks with a deep-copy fallback. Idempotent — safe to call on every
 /// launch (an existing healthy self-ref is left alone).
 ///
-/// Returns `true` if the self-ref was missing and a heal was applied,
-/// `false` if it was already healthy or could not be healed. The caller
-/// logs the outcome; the heal itself never aborts app launch.
-fn ensure_openclaw_self_ref(resource_dir: &Path) -> bool {
+/// Returns a `HealOutcome` describing the result. The heal itself never
+/// aborts app launch — even `HealFailed` is a reportable state, not an
+/// error. The caller logs the outcome and stores the report in Tauri
+/// state so the UI can surface it via `get_openclaw_heal_status`.
+fn ensure_openclaw_self_ref(resource_dir: &Path) -> HealOutcome {
     let oc_dir = resource_dir.join("openclaw");
     if !oc_dir.is_dir() {
         // No bundled OpenClaw tree at all (e.g. sidecar-only build).
         // Nothing to probe.
-        return false;
+        return HealOutcome::NoBundle;
     }
     let self_ref_dir = oc_dir.join("node_modules").join("openclaw");
     let self_ref_pkg = self_ref_dir.join("package.json");
@@ -311,7 +312,7 @@ fn ensure_openclaw_self_ref(resource_dir: &Path) -> bool {
     // alone here because it would mis-report a dangling link as healthy.
     let healthy = self_ref_pkg.is_file();
     if healthy {
-        return false;
+        return HealOutcome::Healthy;
     }
 
     warn!(
@@ -327,7 +328,9 @@ fn ensure_openclaw_self_ref(resource_dir: &Path) -> bool {
             "Cannot create {:?} for self-reference heal: {}",
             self_ref_dir, e
         );
-        return false;
+        return HealOutcome::HealFailed {
+            reason: format!("mkdir {:?}: {e}", self_ref_dir),
+        };
     }
 
     // If something is at package.json (regular file, broken symlink, etc.)
@@ -343,7 +346,9 @@ fn ensure_openclaw_self_ref(resource_dir: &Path) -> bool {
             "Cannot heal OpenClaw self-reference — staged tree is missing package.json at {:?}",
             root_pkg
         );
-        return false;
+        return HealOutcome::HealFailed {
+            reason: format!("staged tree missing package.json at {root_pkg:?}"),
+        };
     }
 
     // Try relative symlink first (POSIX-style on macOS/Linux;
@@ -370,7 +375,11 @@ fn ensure_openclaw_self_ref(resource_dir: &Path) -> bool {
                 "Failed to deep-copy {:?} → {:?}: {} — gateway may refuse to start",
                 root_pkg, self_ref_pkg, e
             );
-            return false;
+            return HealOutcome::HealFailed {
+                reason: format!(
+                    "copy {root_pkg:?} → {self_ref_pkg:?}: {e} (symlink failed too)"
+                ),
+            };
         }
         warn!(
             "OpenClaw self-ref was a deep copy (symlink creation failed — likely missing \
@@ -417,7 +426,71 @@ fn ensure_openclaw_self_ref(resource_dir: &Path) -> bool {
         "Restored node_modules/openclaw/ self-reference at {:?}",
         self_ref_dir
     );
-    true
+    HealOutcome::Healed
+}
+
+/// Reported by the Tauri `get_openclaw_heal_status` command. Serializes
+/// directly to JSON for the Social UI. The shape is intentionally stable —
+/// callers (UI diagnostics, doctor scripts, future agent tools) can rely on
+/// the `state` discriminator across versions.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct OpenclawHealReport {
+    /// "healthy"        — self-ref was already in place when the probe ran.
+    /// "healed"         — probe detected broken/missing self-ref and
+    ///                     successfully re-created it at launch.
+    /// "heal-failed"    — probe detected a broken self-ref but the heal did
+    ///                     not complete (e.g. permission denied, see logs).
+    /// "no-bundle"      — no `openclaw/` tree in resources at all
+    ///                     (sidecar-only build).
+    pub state: &'static str,
+    /// Absolute path to the staged OpenClaw tree, or None when no-bundle.
+    pub openclaw_dir: Option<String>,
+    /// Absolute path to the self-reference `package.json`, if relevant.
+    pub self_ref_pkg: Option<String>,
+    /// Human-readable summary suitable for log/UI display.
+    pub message: String,
+}
+
+/// Outcome of `ensure_openclaw_self_ref`. Used both internally and to
+/// produce the serializable `OpenclawHealReport` for the UI command.
+#[derive(Debug, Clone)]
+enum HealOutcome {
+    NoBundle,
+    Healthy,
+    Healed,
+    HealFailed { reason: String },
+}
+
+impl From<HealOutcome> for OpenclawHealReport {
+    fn from(o: HealOutcome) -> Self {
+        match o {
+            HealOutcome::NoBundle => OpenclawHealReport {
+                state: "no-bundle",
+                openclaw_dir: None,
+                self_ref_pkg: None,
+                message: "No bundled OpenClaw tree in resources/ (sidecar-only build)."
+                    .to_string(),
+            },
+            HealOutcome::Healthy => OpenclawHealReport {
+                state: "healthy",
+                openclaw_dir: None,
+                self_ref_pkg: None,
+                message: "OpenClaw self-reference is healthy.".to_string(),
+            },
+            HealOutcome::Healed => OpenclawHealReport {
+                state: "healed",
+                openclaw_dir: None,
+                self_ref_pkg: None,
+                message: "OpenClaw self-reference was repaired at launch.".to_string(),
+            },
+            HealOutcome::HealFailed { reason } => OpenclawHealReport {
+                state: "heal-failed",
+                openclaw_dir: None,
+                self_ref_pkg: None,
+                message: format!("OpenClaw self-reference is broken and could not be healed: {reason}"),
+            },
+        }
+    }
 }
 
 /// Recursive deep copy of a directory. Used as a fallback when symlink
@@ -682,6 +755,20 @@ fn restart_node_process(state: State<'_, NodeProcessState>) -> Result<(), String
     Ok(())
 }
 
+/// Returns the OpenClaw self-reference heal status captured at launch.
+///
+/// Used by the Social UI to render a doctor chip and by `envoymesh doctor`
+/// (when running inside the desktop shell) to surface what happened during
+/// the install-time probe. The report is computed once during `setup()` —
+/// it is immutable for the lifetime of the app, so we store it in a plain
+/// `Arc<OpenclawHealReport>` rather than a Mutex.
+#[tauri::command]
+fn get_openclaw_heal_status(
+    report: State<'_, std::sync::Arc<OpenclawHealReport>>,
+) -> OpenclawHealReport {
+    (**report).clone()
+}
+
 fn main() {
     let subscriber = FmtSubscriber::builder()
         .with_max_level(Level::INFO)
@@ -699,7 +786,8 @@ fn main() {
             restart_node_process,
             get_app_log_paths,
             append_social_log,
-            reveal_log_dir
+            reveal_log_dir,
+            get_openclaw_heal_status
         ])
         .setup(move |app| {
             info!("Tauri app setup starting");
@@ -737,15 +825,43 @@ fn main() {
             // Without this probe the home node would still refuse to start
             // the gateway inside the user's `.app` even though the bundled
             // DMG/NSIS looked complete. Runs idempotently on every launch.
+            let mut openclaw_heal_report = OpenclawHealReport {
+                state: "no-bundle",
+                openclaw_dir: None,
+                self_ref_pkg: None,
+                message: "Probe did not run — no resource_dir.".to_string(),
+            };
             if let Some(ref dir) = resource_dir {
-                let healed = ensure_openclaw_self_ref(dir);
-                if healed {
+                let outcome = ensure_openclaw_self_ref(dir);
+                let mut report: OpenclawHealReport = outcome.clone().into();
+                // Always populate the absolute paths so the UI doctor chip
+                // can deep-link to them.
+                let oc_dir = dir.join("openclaw");
+                if oc_dir.is_dir() {
+                    report.openclaw_dir = Some(oc_dir.display().to_string());
+                    let self_ref_pkg =
+                        oc_dir.join("node_modules").join("openclaw/package.json");
+                    report.self_ref_pkg = Some(self_ref_pkg.display().to_string());
+                }
+                if matches!(report.state, "healed") {
                     info!(
                         "OpenClaw self-reference was repaired at launch — \
                          home node will start the gateway normally"
                     );
+                } else if matches!(report.state, "heal-failed") {
+                    warn!(
+                        "OpenClaw self-reference could not be repaired: {} \
+                         — gateway may refuse to start",
+                        report.message
+                    );
                 }
+                openclaw_heal_report = report;
             }
+
+            // Expose the heal report to UI / doctor. Stored as plain Arc
+            // so the command can read it without managing a Mutex for
+            // something that never changes after setup().
+            app.manage(std::sync::Arc::new(openclaw_heal_report));
 
             let bundled_ipfs = resolve_bundled_ipfs_exe(resource_dir.as_deref());
             if let Some(ref exe) = bundled_ipfs {
@@ -876,8 +992,11 @@ mod tests {
         seed_tree(&r);
         let self_ref = r.join("openclaw/node_modules/openclaw");
         // Nothing at self_ref/pkg — fresh install scenario.
-        let healed = ensure_openclaw_self_ref(&r);
-        assert!(healed, "probe should report healing happened");
+        let outcome = ensure_openclaw_self_ref(&r);
+        assert!(
+            matches!(outcome, HealOutcome::Healed),
+            "expected HealOutcome::Healed, got {outcome:?}"
+        );
         assert!(
             self_ref.join("package.json").is_file(),
             "package.json should now exist"
@@ -897,8 +1016,11 @@ mod tests {
         fs::create_dir_all(&self_ref).unwrap();
         std::os::unix::fs::symlink("../../foo-broken", self_ref.join("package.json")).unwrap();
 
-        let healed = ensure_openclaw_self_ref(&r);
-        assert!(healed, "dangling symlink must be classified as broken");
+        let outcome = ensure_openclaw_self_ref(&r);
+        assert!(
+            matches!(outcome, HealOutcome::Healed),
+            "dangling symlink must be classified as broken → Healed, got {outcome:?}"
+        );
         assert!(
             self_ref.join("package.json").is_file(),
             "dangling symlink should be replaced with a readable self-reference"
@@ -909,18 +1031,19 @@ mod tests {
     #[test]
     fn no_op_when_already_healthy() {
         // Healthy state: package.json is reachable via the self-reference
-        // symlink. The probe should leave it alone and return false.
+        // symlink. The probe must leave it alone and return Healthy.
         let r = make_fixture("healthy");
         seed_tree(&r);
         let self_ref = r.join("openclaw/node_modules/openclaw");
         fs::create_dir_all(&self_ref).unwrap();
         std::os::unix::fs::symlink("../../package.json", self_ref.join("package.json")).unwrap();
 
-        // Capture pre-state by noting the inode/symlink target.
         let target = fs::read_link(self_ref.join("package.json")).unwrap();
-
-        let healed = ensure_openclaw_self_ref(&r);
-        assert!(!healed, "healthy self-ref must not be touched");
+        let outcome = ensure_openclaw_self_ref(&r);
+        assert!(
+            matches!(outcome, HealOutcome::Healthy),
+            "healthy self-ref must return Healthy, got {outcome:?}"
+        );
         assert_eq!(
             fs::read_link(self_ref.join("package.json")).unwrap(),
             target,
@@ -932,12 +1055,14 @@ mod tests {
     #[test]
     fn no_op_when_openclaw_tree_absent() {
         // Sidecar-only builds ship without an openclaw/ tree — probe
-        // should be a no-op (return false) without errors.
+        // must be a no-op (return NoBundle) without errors.
         let r = make_fixture("no-oc");
         fs::create_dir_all(&r).unwrap();
-
-        let healed = ensure_openclaw_self_ref(&r);
-        assert!(!healed, "missing openclaw/ must be a no-op, not a heal");
+        let outcome = ensure_openclaw_self_ref(&r);
+        assert!(
+            matches!(outcome, HealOutcome::NoBundle),
+            "missing openclaw/ must return NoBundle, got {outcome:?}"
+        );
         let _ = fs::remove_dir_all(&r);
     }
 
@@ -954,12 +1079,73 @@ mod tests {
         let self_ref = r.join("openclaw/node_modules/openclaw");
         let pkg = self_ref.join("package.json");
         let ino_first = fs::symlink_metadata(&pkg).unwrap().ino();
-        let _ = ensure_openclaw_self_ref(&r);
+        let outcome2 = ensure_openclaw_self_ref(&r);
         let ino_second = fs::symlink_metadata(&pkg).unwrap().ino();
+        assert!(
+            matches!(outcome2, HealOutcome::Healthy),
+            "second probe call must report Healthy, got {outcome2:?}"
+        );
         assert_eq!(
             ino_first, ino_second,
             "second probe call must be a no-op (same inode)"
         );
         let _ = fs::remove_dir_all(&r);
+    }
+
+    #[test]
+    fn heal_failed_when_root_package_json_missing() {
+        // The self_ref/package.json is missing AND the root openclaw
+        // package.json is also missing — there is nothing to symlink to.
+        // The probe must surface this as HealFailed (not panic, not
+        // return Healthy) so the UI can show a clear message.
+        let r = make_fixture("heal-fail");
+        let oc = r.join("openclaw");
+        fs::create_dir_all(oc.join("node_modules")).unwrap();
+        // Deliberately do not call seed_tree — missing root package.json.
+        let outcome = ensure_openclaw_self_ref(&r);
+        match outcome {
+            HealOutcome::HealFailed { reason } => {
+                assert!(
+                    reason.contains("package.json"),
+                    "reason should mention package.json (got {reason:?})"
+                );
+            }
+            other => panic!("expected HealFailed, got {other:?}"),
+        }
+        let _ = fs::remove_dir_all(&r);
+    }
+
+    #[test]
+    fn heal_report_carries_state_through_serialization() {
+        // The `OpenclawHealReport` struct is what crosses the Tauri IPC
+        // boundary (→ JS), so its `state` discriminator must round-trip
+        // via serde. Lock it down so a future refactor that renames the
+        // discriminator cannot silently break the Social UI doctor chip.
+        let cases = [
+            (HealOutcome::NoBundle, "no-bundle"),
+            (HealOutcome::Healthy, "healthy"),
+            (HealOutcome::Healed, "healed"),
+            (
+                HealOutcome::HealFailed {
+                    reason: "perm denied".into(),
+                },
+                "heal-failed",
+            ),
+        ];
+        for (outcome, expected_state) in cases {
+            let report: OpenclawHealReport = outcome.into();
+            assert_eq!(
+                report.state, expected_state,
+                "wrong serialized state for {report:?}"
+            );
+            // Also verify we can serialize to JSON without panicking —
+            // this is what Tauri's IPC actually does.
+            let json = serde_json::to_string(&report)
+                .expect("heal report must serialize to JSON");
+            assert!(
+                json.contains(&format!("\"state\":\"{expected_state}\"")),
+                "JSON missing state discriminator: {json}"
+            );
+        }
     }
 }
