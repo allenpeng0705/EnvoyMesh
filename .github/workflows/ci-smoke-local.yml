@@ -24,11 +24,30 @@ jobs:
       # e2e-fast (libp2p, ~60s) → e2e-playwright (chromium, auto-installs) → smoke.
       # Per-phase logs land in ci-artifacts/test/<phase>.log.
       # See docs/test-orchestrator.md and scripts/test.sh for the full contract.
-      - name: Run test orchestrator (full: typecheck + unit + E2E + smoke)
+      - name: "Run test orchestrator (full: typecheck + unit + E2E + smoke)"
         run: npm run test:full
 
       - name: Mobile Capacitor production build
         run: npm run build -w @envoymesh/mobile
+
+      # Lightweight structural check for the OpenClaw bundle self-reference
+      # bug class ("node_modules/openclaw missing → gateway refuses to start").
+      # The full spawn+probe smoke (scripts/smoke-openclaw-bundle.sh) is run
+      # by tauri-release.yml after scripts/stage-tauri-openclaw-bundle.sh;
+      # here we only verify the source tree has the runtime prerequisites so
+      # a regression lands as a fast cheap CI failure rather than waiting
+      # until a DMG is produced. See commit 66d4a2ea for context.
+      - name: OpenClaw bundle self-reference check (lightweight)
+        run: |
+          set -euo pipefail
+          src="$GITHUB_WORKSPACE/packages/openclaw"
+          test -f "$src/openclaw.mjs" || { echo "✗ missing $src/openclaw.mjs"; exit 1; }
+          test -f "$src/package.json" || { echo "✗ missing $src/package.json"; exit 1; }
+          test -f "$src/dist/entry.js" || { echo "✗ missing $src/dist/entry.js"; exit 1; }
+          test -f "$src/extensions/envoymesh/index.js" || \
+            test -f "$src/extensions/envoymesh/index.ts" || { echo "✗ missing envoymesh extension"; exit 1; }
+          test -f "$src/dist/config/config.js" || { echo "✗ missing $src/dist/config/config.js"; exit 1; }
+          echo "✓ OpenClaw bundle prerequisites present"
 
       - name: Generate smoke-checklist + pairing timeline artifacts
         run: |
