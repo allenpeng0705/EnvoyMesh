@@ -836,7 +836,10 @@ export * from "../src/cli/run-main.ts";
         "docker-compose.yml", "Dockerfile", "fly.toml",
         ".env.example", "appcast.xml",
         "tsconfig.json", "vitest.config.ts", "tsdown.config.ts",
-        "pnpm-workspace.yaml"
+        "pnpm-workspace.yaml",
+        # Release notes and lock files — not used at runtime, just bulk.
+        "CHANGELOG.md", "npm-shrinkwrap.json", "pnpm-lock.yaml",
+        "CONTRIBUTING.md", "SECURITY.md", "README.md"
     )
     Get-ChildItem -Path $openclawSrc -Force | Where-Object {
         -not ($exclude -contains $_.Name)
@@ -1062,6 +1065,88 @@ export * from "../src/cli/run-main.ts";
     }
 
     Write-Ok "OpenClaw staged at $openclawDest"
+}
+
+# 1c-bis. Scrub dev-only tooling from staged OpenClaw node_modules.
+# OpenClaw's package.json lists typescript/vite/esbuild/etc. as PRODUCTION
+# dependencies (not devDeps), so `pnpm prune --prod` cannot remove them.
+# These packages are verified unused by dist/*.js (grepped: 0 importers)
+# and together account for ~250 MB on Mac / ~500-700 MB on Windows (native
+# win32-x64 binaries are 2-3x larger). Scrubbing them is what brings the
+# bundle back under NSIS's 2 GB cap.
+# KEEP highlight.js (used by sessions-*.js for runtime syntax highlighting).
+$script:OpenClawDevOnlyPackages = @(
+    "typescript", "@typescript",
+    "@oxlint", "@oxlint-tsgolint",
+    "vite", "@rolldown",
+    "esbuild", "@esbuild",
+    "vitest", "@vitest",
+    "playwright-core", "playwright",
+    "jsdom",
+    "tree-sitter-bash", "tree-sitter",
+    "@shikijs",
+    "@babel",
+    "webpack", "rollup"
+)
+$scrubbedNmDir = Join-Path $openclawDest "node_modules"
+$scrubbedCount = 0
+$scrubbedBytes = 0
+foreach ($pkg in $script:OpenClawDevOnlyPackages) {
+    $pkgPath = Join-Path $scrubbedNmDir $pkg
+    if (Test-Path $pkgPath) {
+        try {
+            $sz = (Get-ChildItem -Path $pkgPath -Recurse -File -ErrorAction SilentlyContinue |
+                   Measure-Object -Property Length -Sum).Sum
+            $scrubbedBytes += [int]$sz
+            Remove-Item -Recurse -Force $pkgPath -ErrorAction SilentlyContinue
+            $scrubbedCount++
+        } catch { }
+    }
+}
+# Also clean dangling .bin/ entries left by the scrubbed packages.
+$binDir = Join-Path $scrubbedNmDir ".bin"
+if (Test-Path $binDir) {
+    Get-ChildItem -Path $binDir -Force | Where-Object {
+        $_.LinkType -ne $null -and -not (Test-Path $_.Target[0])
+    } | ForEach-Object {
+        Remove-Item -Force $_.FullName -ErrorAction SilentlyContinue
+    }
+}
+if ($scrubbedCount -gt 0) {
+    $scrubbedMB = [math]::Round($scrubbedBytes / 1MB, 1)
+    Write-Ok "Scrubbed $scrubbedCount dev-only packages from node_modules (~$scrubbedMB MB)"
+}
+
+# Scrub stray build artefacts that leak in via the reuse path (the exclude
+# list above only filters the fresh copy; a cached tree from before these
+# entries were added still carries them).
+$ArtefactsToScrub = @(
+    (Join-Path $openclawDest "CHANGELOG.md"),
+    (Join-Path $openclawDest "npm-shrinkwrap.json"),
+    (Join-Path $openclawDest "pnpm-lock.yaml"),
+    (Join-Path $openclawDest "CONTRIBUTING.md"),
+    (Join-Path $openclawDest "SECURITY.md"),
+    (Join-Path $openclawDest "README.md"),
+    (Join-Path $openclawDest "appcast.xml"),
+    (Join-Path $openclawDest ".artifacts")
+)
+foreach ($art in $ArtefactsToScrub) {
+    if (Test-Path $art) { Remove-Item -Recurse -Force $art -ErrorAction SilentlyContinue }
+}
+# Drop TypeScript incremental build caches and source maps (dev-only).
+$tsbuildCount = (Get-ChildItem -Path $openclawDest -Recurse -Filter "*.tsbuildinfo" -File -ErrorAction SilentlyContinue).Count
+if ($tsbuildCount -gt 0) {
+    Get-ChildItem -Path $openclawDest -Recurse -Filter "*.tsbuildinfo" -File |
+        ForEach-Object { Remove-Item -Force $_.FullName -ErrorAction SilentlyContinue }
+}
+# Source maps in control-ui — large, dev-only.
+$controlUiDir = Join-Path $openclawDest "dist/control-ui/assets"
+if (Test-Path $controlUiDir) {
+    $mapCount = (Get-ChildItem -Path $controlUiDir -Filter "*.map" -ErrorAction SilentlyContinue).Count
+    if ($mapCount -gt 0) {
+        Get-ChildItem -Path $controlUiDir -Filter "*.map" |
+            ForEach-Object { Remove-Item -Force $_.FullName -ErrorAction SilentlyContinue }
+    }
 }
 
 # 1d. Verify the staged tree (matches scripts/verify-tauri-resources.sh).

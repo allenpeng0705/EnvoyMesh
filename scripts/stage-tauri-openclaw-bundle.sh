@@ -36,6 +36,41 @@ _openclaw_resolve_ext_allowlist() {
   fi
 }
 
+# Scrub dev-only packages from the staged tree's node_modules. OpenClaw's
+# package.json marks typescript/vite/esbuild/etc. as PRODUCTION deps (not
+# devDeps), so `pnpm prune --prod` cannot remove them. Verified by grepping
+# dist/*.js — none of these are imported at runtime (highlight.js IS used,
+# so it's kept). Saves ~250 MB on macOS, ~500-700 MB on Windows.
+_openclaw_dev_only_packages="typescript @typescript @oxlint @oxlint-tsgolint @shikijs vite @rolldown esbuild @esbuild vitest @vitest playwright-core playwright jsdom tree-sitter-bash tree-sitter @babel webpack rollup"
+
+_openclaw_scrub_dev_tooling() {
+  local removed=0
+  for pkg in $_openclaw_dev_only_packages; do
+    if [ -d "$DEST/node_modules/$pkg" ]; then
+      rm -rf "$DEST/node_modules/$pkg"
+      removed=$((removed + 1))
+    fi
+  done
+  # Clean dangling .bin/ symlinks left by removed packages.
+  if [ -d "$DEST/node_modules/.bin" ]; then
+    for bin in "$DEST/node_modules/.bin/"*; do
+      [ -L "$bin" ] && [ ! -e "$bin" ] && rm -f "$bin"
+    done
+  fi
+  # Drop stray build artefacts that leak in via the reuse path.
+  for art in CHANGELOG.md npm-shrinkwrap.json pnpm-lock.yaml \
+             CONTRIBUTING.md SECURITY.md README.md appcast.xml .artifacts; do
+    [ -e "$DEST/$art" ] && rm -rf "$DEST/$art"
+  done
+  # TypeScript incremental build caches + source maps (dev-only, large).
+  find "$DEST" -name '*.tsbuildinfo' -type f -delete 2>/dev/null
+  [ -d "$DEST/dist/control-ui/assets" ] && \
+    find "$DEST/dist/control-ui/assets" -name '*.map' -type f -delete 2>/dev/null
+  if [ "$removed" -gt 0 ]; then
+    echo "  Scrubbed $removed dev-only packages from node_modules"
+  fi
+}
+
 # Reuse-path gate. Default behavior: reuse the staged tree at $DEST
 # and skip pnpm install (network) on rebuilds. STAGE_OPENCLAW_BUNDLE=1
 # forces a re-stage; =0 skips the gate entirely (debug escape hatch).
@@ -158,6 +193,10 @@ elif [ "${STAGE_OPENCLAW_BUNDLE:-0}" != "1" ] \
         fi
       done
     fi
+
+    # Scrub dev-only tooling (typescript/vite/esbuild/etc.) — verified
+    # unused by dist/*.js. Idempotent; safe on every reuse.
+    _openclaw_scrub_dev_tooling
 
     exit 0
   fi
@@ -284,6 +323,13 @@ STUB
     --exclude /deploy \
     --exclude /git-hooks \
     --exclude /pnpm-workspace.yaml \
+    --exclude /CHANGELOG.md \
+    --exclude /npm-shrinkwrap.json \
+    --exclude /pnpm-lock.yaml \
+    --exclude /CONTRIBUTING.md \
+    --exclude /SECURITY.md \
+    --exclude /README.md \
+    --exclude /appcast.xml \
     "$SOURCE/" "$DEST/"
 
   # Copy node_modules separately (needed at runtime).
@@ -449,6 +495,10 @@ with open(p, 'w') as f: json.dump(d, f, indent=2); f.write('\n')
   else
     echo "  Keeping all OpenClaw extensions (OPENCLAW_EXTENSIONS not set)"
   fi
+
+  # Scrub dev-only tooling (typescript/vite/esbuild/etc.) — verified
+  # unused by dist/*.js. Idempotent; safe on every stage.
+  _openclaw_scrub_dev_tooling
 
   # NOTE: We do NOT run `pnpm prune --prod` here in the staged tree.
   # The staged tree is missing pnpm-workspace.yaml and packages/, so pnpm
