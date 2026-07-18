@@ -405,47 +405,157 @@ if (-not $SkipOpenClawPrune -and `
 }
 $openclawStaged = (Test-Path (Join-Path $openclawDest "openclaw.mjs")) -and `
                   (Test-Path (Join-Path $openclawDest "package.json")) -and `
-                  (Test-Path (Join-Path $openclawDest "node_modules"))
+                  (Test-Path (Join-Path $openclawDest "node_modules")) -and `
+                  (Test-Path (Join-Path $openclawDest "node_modules/openclaw/package.json"))
+# Tightened reuse gate: also require node_modules/openclaw/package.json
+# (the runtime plugin-SDK self-reference). A missing self-ref makes the
+# gateway refuse to start with "OpenClaw tree is incomplete", so force
+# a fresh re-stage instead of silently reusing broken cached state.
+# Matches the gate in scripts/stage-tauri-openclaw-bundle.sh.
 if ($openclawStaged -and -not $ForceOpenClaw) {
     Write-Info "Reusing staged OpenClaw at $openclawDest. Use -ForceOpenClaw to re-stage."
 
-    # Always prune unused extensions on reuse — the cache may predate the
-    # extension allowlist (3 GB of 143 extensions exceeds NSIS 2 GB cap).
-    $openclawExtensionsAllowlist = @(
-        "envoymesh",          # core channel plugin (always required)
-        "duckduckgo",         # default web search (no API key needed)
-        "brave", "exa", "firecrawl", "google", "xai",
-        "moonshot", "minimax", "ollama", "perplexity",
-        "searxng", "tavily"
-    )
-    $extDir = Join-Path $openclawDest "extensions"
-    if (Test-Path $extDir) {
-        $removedCount = 0
-        Get-ChildItem -Path $extDir -Directory | Where-Object {
-            -not ($openclawExtensionsAllowlist -contains $_.Name)
-        } | ForEach-Object {
-            Remove-Item -Recurse -Force $_.FullName
-            $removedCount++
-        }
-        if ($removedCount -gt 0) {
-            Write-Info "Pruned $removedCount unused extensions on reuse (kept $($openclawExtensionsAllowlist.Count) in allowlist)"
-            # Prune orphaned deps from the staged tree
-            if (-not $SkipOpenClawPrune -and (Test-Path (Join-Path $openclawDest "package.json"))) {
-                Push-Location $openclawDest
-                try {
-                    & pnpm prune --prod 2>&1 | Out-Null
-                    if ($LASTEXITCODE -eq 0) {
-                        Write-Ok "Pruned orphaned deps from staged tree"
-                    } else {
-                        Write-Warn "Staged tree prune failed (continuing — bundle may be larger)"
-                    }
-                } finally {
-                    Pop-Location
-                }
-            }
+    # Validate dist/entry.js — if it's missing or a broken stub, force re-stage.
+    # EnvoyMesh writes bootstrap stubs at runtime that reference src/ (excluded
+    # from Tauri resources). The bash twin does the same check in
+    # stage-tauri-openclaw-bundle.sh.
+    $stagedEntry = Join-Path $openclawDest "dist/entry.js"
+    $needRestage = $false
+    if (-not (Test-Path $stagedEntry)) {
+        Write-Info "  dist/entry.js is missing — forcing re-stage"
+        $needRestage = $true
+    } else {
+        $entryContent = Get-Content $stagedEntry -Raw -ErrorAction SilentlyContinue
+        if ($entryContent -and ($entryContent -match "EnvoyMesh bootstrap" -or $entryContent -match "from.*src/cli/run-main")) {
+            Write-Info "  dist/entry.js is a broken stub — forcing re-stage"
+            $needRestage = $true
         }
     }
-} else {
+
+    if (-not $needRestage) {
+        # Self-heal: if a previous build's pnpm prune --prod ran in the staged
+        # tree (without pnpm-workspace.yaml), it moved production deps to
+        # node_modules/.ignored/. Restore them — the compiled dist/*.js files
+        # import these at runtime. Must handle scoped packages (@scope/name)
+        # by merging individual sub-packages, not the scope directory.
+        $ignoredDir = Join-Path $openclawDest "node_modules/.ignored"
+        $nmDir = Join-Path $openclawDest "node_modules"
+        if (Test-Path $ignoredDir) {
+            $restored = 0
+            foreach ($pkg in (Get-ChildItem -Path $ignoredDir -Directory -ErrorAction SilentlyContinue)) {
+                $destPkg = Join-Path $nmDir $pkg.Name
+                if (Test-Path $destPkg) {
+                    # Scope dir or package exists — merge sub-packages.
+                    foreach ($sub in (Get-ChildItem -Path $pkg.FullName -Directory -ErrorAction SilentlyContinue)) {
+                        $destSub = Join-Path $destPkg $sub.Name
+                        if (-not (Test-Path $destSub)) {
+                            Move-Item -Force $sub.FullName $destSub
+                            $restored++
+                        }
+                    }
+                } else {
+                    Move-Item -Force $pkg.FullName $destPkg
+                    $restored++
+                }
+            }
+            Remove-Item -Recurse -Force $ignoredDir -ErrorAction SilentlyContinue
+            if ($restored -gt 0) {
+                Write-Info "Restored $restored package(s) from node_modules\.ignored/ (prune artefact)"
+            }
+        }
+
+        # Self-heal: workspace staging doesn't create a node_modules/openclaw/
+        # self-reference. dist/*.js uses `import "openclaw/..."` for the
+        # plugin SDK, and a stray pnpm prune --prod can additionally remove
+        # the dir entirely. This is the missing piece the .ignored heal
+        # cannot restore (openclaw is the package being installed, not a
+        # dependency of it). Idempotent — safe to run on every reuse.
+        # Mirrors the heal in scripts/stage-tauri-openclaw-bundle.sh.
+        $selfRefPath = Join-Path $openclawDest "node_modules/openclaw/package.json"
+        if (-not (Test-Path $selfRefPath)) {
+            $selfRefDir = Split-Path $selfRefPath -Parent
+            New-Item -ItemType Directory -Force -Path $selfRefDir | Out-Null
+            $rootPkg = Join-Path $openclawDest "package.json"
+            if (Test-Path $rootPkg) {
+                # New-Item -ItemType SymbolicLink requires admin or developer-mode
+                # on Windows; use cmd /c mklink (works without elevation in dev mode)
+                # and fall back to a deep copy if symlink creation fails.
+                $symlinked = $false
+                try {
+                    & cmd.exe /c "mklink `"$selfRefPath`" `"..\..\package.json`"" 2>&1 | Out-Null
+                    if ($LASTEXITCODE -eq 0) { $symlinked = $true }
+                } catch { }
+                if (-not $symlinked) {
+                    Copy-Item -Force $rootPkg $selfRefPath
+                    Write-Warn "node_modules/openclaw self-ref was a deep copy (symlink creation failed — likely missing developer mode)"
+                }
+            }
+            $rootMjs = Join-Path $openclawDest "openclaw.mjs"
+            $selfRefMjs = Join-Path $selfRefDir "openclaw.mjs"
+            if (Test-Path $rootMjs) {
+                $created = $false
+                try {
+                    & cmd.exe /c "mklink `"$selfRefMjs`" `"..\..\openclaw.mjs`"" 2>&1 | Out-Null
+                    if ($LASTEXITCODE -eq 0) { $created = $true }
+                } catch { }
+                if (-not $created) { Copy-Item -Force $rootMjs $selfRefMjs }
+            }
+            foreach ($top in @("dist", "extensions", "skills")) {
+                $rootTop = Join-Path $openclawDest $top
+                $selfRefTop = Join-Path $selfRefDir $top
+                if (Test-Path $rootTop) {
+                    $created = $false
+                    try {
+                        & cmd.exe /c "mklink /D `"$selfRefTop`" `"..\..\$top`"" 2>&1 | Out-Null
+                        if ($LASTEXITCODE -eq 0) { $created = $true }
+                    } catch { }
+                    if (-not $created) {
+                        if (Test-Path $selfRefTop) { Remove-Item -Recurse -Force $selfRefTop }
+                        Copy-Item -Recurse -Force $rootTop $selfRefTop
+                    }
+                }
+            }
+            if (Test-Path $selfRefPath) {
+                Write-Info "Restored node_modules\openclaw\ self-reference (workspace staging fix)"
+            } else {
+                Write-Warn "Could not restore node_modules\openclaw\ — staged tree is missing package.json"
+            }
+        }
+
+        # Always prune unused extensions on reuse — the cache may predate the
+        # extension allowlist (3 GB of 143 extensions exceeds NSIS 2 GB cap).
+        $openclawExtensionsAllowlist = @(
+            "envoymesh",          # core channel plugin (always required)
+            "duckduckgo",         # default web search (no API key needed)
+            "brave", "exa", "firecrawl", "google", "xai",
+            "moonshot", "minimax", "ollama", "perplexity",
+            "searxng", "tavily"
+        )
+        $extDir = Join-Path $openclawDest "extensions"
+        if (Test-Path $extDir) {
+            $removedCount = 0
+            Get-ChildItem -Path $extDir -Directory | Where-Object {
+                -not ($openclawExtensionsAllowlist -contains $_.Name)
+            } | ForEach-Object {
+                Remove-Item -Recurse -Force $_.FullName
+                $removedCount++
+            }
+            if ($removedCount -gt 0) {
+                Write-Info "Pruned $removedCount unused extensions on reuse (kept $($openclawExtensionsAllowlist.Count) in allowlist)"
+                # NOTE: We do NOT run pnpm prune --prod in the staged tree here.
+                # The staged tree lacks pnpm-workspace.yaml and packages/, so
+                # pnpm would orphan most production deps (json5, chalk, express,
+                # ws, etc.) → ERR_MODULE_NOT_FOUND at runtime. The first prune in
+                # the source tree already removed devDeps correctly.
+            }
+        }
+    } else {
+        # dist/entry.js is missing or a broken stub — fall through to
+        # the full re-stage logic below by clearing the staged flag.
+        $openclawStaged = $false
+    }
+}
+if (-not $openclawStaged -or $ForceOpenClaw) {
     if (-not (Test-Path (Join-Path $openclawSrc "package.json")) -and `
         -not (Test-Path (Join-Path $openclawSrc "openclaw.mjs"))) {
         Write-Info "packages\openclaw missing — install-openclaw.ps1 will clone from GitHub..."
@@ -464,6 +574,36 @@ if ($openclawStaged -and -not $ForceOpenClaw) {
                 Remove-Item -Recurse -Force (Join-Path $extDst "node_modules")
             }
             Write-Ok "Copied envoymesh channel extension to packages\openclaw\extensions\envoymesh"
+
+            # Compile the extension's .ts sources to .js so the gateway can
+            # load them at runtime.  The openclaw build uses git ls-files to
+            # discover extensions — our copied extension is not git-tracked,
+            # so it won't be compiled by pnpm run build.  We use esbuild
+            # (already in openclaw's node_modules) for fast transpilation.
+            Write-Info "Compiling EnvoyMesh extension (.ts -> .js)..."
+            $compileError = $null
+            Push-Location $extDst
+            try {
+                & npx esbuild (Get-ChildItem -Path "." -Filter "*.ts").FullName `
+                    --bundle=false --format=esm --platform=node `
+                    --outdir=. --out-extension:.js=.js --allow-overwrite
+                if ($LASTEXITCODE -ne 0) { $compileError = "esbuild top-level failed (exit $LASTEXITCODE)" }
+                Get-ChildItem -Path "src" -Filter "*.ts" | ForEach-Object {
+                    if ($_.Name -match '\.test\.ts$') { return }
+                    & npx esbuild $_.FullName `
+                        --bundle=false --format=esm --platform=node `
+                        --outdir=src --out-extension:.js=.js --allow-overwrite
+                    if ($LASTEXITCODE -ne 0 -and -not $compileError) { $compileError = "esbuild src/$($_.Name) failed (exit $LASTEXITCODE)" }
+                }
+            } finally { Pop-Location }
+            if ($compileError) {
+                Write-Warn "Extension compilation issue: $compileError (extension may be incomplete)"
+            }
+            if (-not (Test-Path (Join-Path $extDst "index.js"))) {
+                Write-Fail "EnvoyMesh extension index.js not produced — aborting build"
+                exit 1
+            }
+            Write-Ok "EnvoyMesh extension compiled"
         } else {
             Write-Warn "packages\openclaw\extensions does not exist — skipping extension copy"
         }
@@ -666,10 +806,104 @@ export * from "../src/cli/run-main.ts";
         Copy-Item -Recurse -Force (Join-Path $openclawSrc "node_modules") (Join-Path $openclawDest "node_modules")
     }
 
+    # Install clawhub CLI into the staged tree so the "Installed" skills tab
+    # works in the Windows installer.  clawhub is a separate npm package
+    # (not part of openclaw's deps) — without it, `clawhub list` fails.
+    $clawhubBin = Join-Path $openclawDest "node_modules\.bin\clawhub"
+    if (-not (Test-Path $clawhubBin)) {
+        Write-Info "Installing clawhub CLI into staged node_modules..."
+        Push-Location $openclawDest
+        try {
+            & npm install --no-save clawhub 2>&1 | Select-Object -Last 3
+        } finally { Pop-Location }
+        if (Test-Path $clawhubBin) {
+            Write-Ok "clawhub CLI installed"
+        } else {
+            Write-Warn "clawhub install failed — 'Installed' skills tab will be unavailable"
+        }
+    }
+
+    # Self-heal: if the source tree had pnpm prune --prod run without
+    # pnpm-workspace.yaml (e.g. stray build), packages may be in .ignored/.
+    # Restore them so the staged tree has everything dist/*.js imports.
+    # Must handle scoped packages by merging individual sub-packages.
+    $ignoredDir = Join-Path $openclawDest "node_modules/.ignored"
+    $nmDir = Join-Path $openclawDest "node_modules"
+    if (Test-Path $ignoredDir) {
+        $restored = 0
+        foreach ($pkg in (Get-ChildItem -Path $ignoredDir -Directory -ErrorAction SilentlyContinue)) {
+            $destPkg = Join-Path $nmDir $pkg.Name
+            if (Test-Path $destPkg) {
+                foreach ($sub in (Get-ChildItem -Path $pkg.FullName -Directory -ErrorAction SilentlyContinue)) {
+                    $destSub = Join-Path $destPkg $sub.Name
+                    if (-not (Test-Path $destSub)) {
+                        Move-Item -Force $sub.FullName $destSub
+                        $restored++
+                    }
+                }
+            } else {
+                Move-Item -Force $pkg.FullName $destPkg
+                $restored++
+            }
+        }
+        Remove-Item -Recurse -Force $ignoredDir -ErrorAction SilentlyContinue
+        if ($restored -gt 0) {
+            Write-Info "Restored $restored package(s) from node_modules\.ignored/"
+        }
+    }
+
+    # Install the compiled envoymesh extension into the OpenClaw plugin discovery
+    # directories.  OpenClaw's resolveBundledDirFromPackageRoot() scans:
+    #   1. dist/extensions/          (source checkout with built tree)
+    #   2. dist-runtime/extensions/  (runtime tree — preferred in DMG bundles)
+    #   3. extensions/              (source tree fallback)
+    # In the DMG (not a source checkout), if BOTH dist/extensions/ AND
+    # dist-runtime/extensions/ exist, it picks dist-runtime/extensions/.
+    # Install into ALL of them so whichever root is chosen, envoymesh is found.
+    #
+    # Also fix package.json entry points: the source declares
+    #   "openclaw.extensions": ["./index.ts"]
+    # but in the DMG only .js files exist (no tsx/jiti). Rewrite to .js.
+    $envExtSrc = Join-Path $openclawDest "extensions\envoymesh"
+    $bundledExtDirs = @(
+        (Join-Path $openclawDest "dist\extensions"),
+        (Join-Path $openclawDest "dist-runtime\extensions"),
+        (Join-Path $openclawDest "extensions")
+    )
+    if (Test-Path $envExtSrc) {
+        foreach ($distExtDir in $bundledExtDirs) {
+            if (-not (Test-Path $distExtDir)) { continue }
+            $envExtDst = Join-Path $distExtDir "envoymesh"
+            if (Test-Path $envExtDst) { continue }  # already installed
+            Write-Info "Installing envoymesh into $(Split-Path (Split-Path $distExtDir -Parent) -Leaf)\$(Split-Path $distExtDir -Leaf)\..."
+            Copy-Item -Recurse -Force $envExtSrc $envExtDst
+            # Remove leftover .ts source files — only .js is needed at runtime
+            Get-ChildItem -Path $envExtDst -Filter "*.ts" -Recurse | Remove-Item -Force
+            # Fix package.json: replace .ts references with .js
+            $pkgJson = Join-Path $envExtDst "package.json"
+            if (Test-Path $pkgJson) {
+                $content = Get-Content -Path $pkgJson -Raw -Encoding UTF8
+                $content = $content -replace '"\.\/index\.ts"', '"./index.js"'
+                $content = $content -replace '"\.\/setup-entry\.ts"', '"./setup-entry.js"'
+                Set-Content -Path $pkgJson -Value $content -Encoding UTF8 -NoNewline
+            }
+            # Verify critical files
+            if (-not (Test-Path (Join-Path $envExtDst "index.js")) -or
+                -not (Test-Path (Join-Path $envExtDst "openclaw.plugin.json"))) {
+                Write-Fail "envoymesh plugin incomplete in $distExtDir — aborting"
+                exit 1
+            }
+        }
+        $jsCount = (Get-ChildItem -Path $envExtSrc -Filter "*.js" -Recurse).Count
+        Write-Ok "envoymesh installed in all plugin discovery roots ($jsCount .js files each)"
+    }
+
     # Prune unused OpenClaw extensions — the full set is ~143 dirs with
     # production node_modules deps totalling ~2.2 GB. EnvoyMesh only uses
     # ~13 (envoymesh channel + web search providers). Keeping all of them
     # pushes the NSIS installer past its 2 GB hard cap and the build fails.
+    # Prune ALL extension directories: dist/extensions/, dist-runtime/extensions/,
+    # and extensions/.
     $openclawExtensionsAllowlist = @(
         "envoymesh",          # core channel plugin (always required)
         "duckduckgo",         # default web search (no API key needed)
@@ -677,39 +911,117 @@ export * from "../src/cli/run-main.ts";
         "moonshot", "minimax", "ollama", "perplexity",
         "searxng", "tavily"
     )
-    $extDir = Join-Path $openclawDest "extensions"
-    if (Test-Path $extDir) {
-        $removedCount = 0
-        Get-ChildItem -Path $extDir -Directory | Where-Object {
-            -not ($openclawExtensionsAllowlist -contains $_.Name)
-        } | ForEach-Object {
-            Remove-Item -Recurse -Force $_.FullName
-            $removedCount++
-        }
-        if ($removedCount -gt 0) {
-            Write-Info "Pruned $removedCount unused OpenClaw extensions (kept $($openclawExtensionsAllowlist.Count) in allowlist)"
+    foreach ($extBase in $bundledExtDirs) {
+        if (Test-Path $extBase) {
+            $removedCount = 0
+            Get-ChildItem -Path $extBase -Directory | Where-Object {
+                -not ($openclawExtensionsAllowlist -contains $_.Name)
+            } | ForEach-Object {
+                Remove-Item -Recurse -Force $_.FullName
+                $removedCount++
+            }
+            if ($removedCount -gt 0) {
+                Write-Info "Pruned $removedCount unused extensions from $(Split-Path (Split-Path $extBase -Parent) -Leaf)\$(Split-Path $extBase -Leaf)\"
+            }
         }
     }
 
-    # Second pass: prune orphaned production deps from the staged tree.
-    # The first pnpm prune --prod ran in the SOURCE before extension
-    # pruning, so node_modules still contains deps for removed extensions.
-    # Running prune again here (without pnpm-workspace.yaml) tells pnpm to
-    # only keep deps needed by the remaining packages + extensions.
-    if (Test-Path (Join-Path $openclawDest "package.json")) {
-        Write-Info "Pruning orphaned extension deps from staged tree..."
-        Push-Location $openclawDest
-        try {
-            & pnpm prune --prod 2>&1 | Out-Null
-            if ($LASTEXITCODE -eq 0) {
-                Write-Ok "Pruned orphaned deps from staged tree"
-            } else {
-                Write-Warn "Staged tree prune failed (continuing — bundle may be larger)"
+    # NOTE: We do NOT run `pnpm prune --prod` here in the staged tree.
+    # The staged tree is missing pnpm-workspace.yaml and packages/, so pnpm
+    # sees it as a plain single package. The root package.json has hundreds
+    # of dependencies that pnpm resolves via workspace sub-packages — without
+    # those sub-packages, pnpm concludes most deps (json5, chalk, express,
+    # ws, etc.) are orphaned and moves them to node_modules/.ignored/. But the
+    # compiled dist/*.js files still import them at runtime →
+    # ERR_MODULE_NOT_FOUND crash. The first prune (in the source tree, above)
+    # already removed devDeps while the workspace structure was intact, so the
+    # copied node_modules is correct.
+
+    # Clean up dangling symlinks in node_modules/.bin/ left behind by prune.
+    # Tauri scans every file under resources/ and fails on missing targets.
+    # The bash twin does the same in stage-tauri-openclaw-bundle.sh.
+    $openclawBinDir = Join-Path $openclawDest "node_modules/.bin"
+    if (Test-Path $openclawBinDir) {
+        $cleaned = 0
+        Get-ChildItem -Path $openclawBinDir -Force | Where-Object {
+            # On Windows, junction points and symlinks both report IsTrue in
+            # Attributes. Check if the target exists.
+            $_.Attributes -band [System.IO.FileAttributes]::ReparsePoint
+        } | ForEach-Object {
+            $target = $_.FullName
+            # Use Resolve-Path with ErrorAction SilentlyContinue — if it
+            # resolves, the target exists. If not, it's dangling.
+            try {
+                $null = $_.ResolveLinkTarget($false)
+                # Re-check the actual file exists (ResolveLinkTarget succeeds
+                # on some dangling links on Windows). Test-Path is authoritative.
+                if (-not (Test-Path $target)) {
+                    Remove-Item -Force $target -ErrorAction SilentlyContinue
+                    $cleaned++
+                }
+            } catch {
+                # ResolveLinkTarget failed — link is dangling
+                Remove-Item -Force $target -ErrorAction SilentlyContinue
+                $cleaned++
             }
-        } finally {
-            Pop-Location
+        }
+        if ($cleaned -gt 0) {
+            Write-Info "Removed $cleaned dangling symlinks from node_modules\.bin/"
         }
     }
+
+    # Self-heal: workspace staging doesn't create node_modules/openclaw/
+    # self-reference. dist/*.js uses `import "openclaw/..."` for the
+    # plugin SDK, and a stray pnpm prune --prod can additionally remove
+    # the dir entirely. This is the missing piece the .ignored heal
+    # cannot restore (openclaw is the package being installed, not a
+    # dependency of it). Idempotent — also runs in the reuse path above.
+    # Mirrors the heal in scripts/stage-tauri-openclaw-bundle.sh.
+    $selfRefPath = Join-Path $openclawDest "node_modules/openclaw/package.json"
+    if (-not (Test-Path $selfRefPath)) {
+        $selfRefDir = Split-Path $selfRefPath -Parent
+        New-Item -ItemType Directory -Force -Path $selfRefDir | Out-Null
+        $rootPkg = Join-Path $openclawDest "package.json"
+        if (Test-Path $rootPkg) {
+            $symlinked = $false
+            try {
+                & cmd.exe /c "mklink `"$selfRefPath`" `"..\..\package.json`"" 2>&1 | Out-Null
+                if ($LASTEXITCODE -eq 0) { $symlinked = $true }
+            } catch { }
+            if (-not $symlinked) { Copy-Item -Force $rootPkg $selfRefPath }
+        }
+        $rootMjs = Join-Path $openclawDest "openclaw.mjs"
+        $selfRefMjs = Join-Path $selfRefDir "openclaw.mjs"
+        if (Test-Path $rootMjs) {
+            $created = $false
+            try {
+                & cmd.exe /c "mklink `"$selfRefMjs`" `"..\..\openclaw.mjs`"" 2>&1 | Out-Null
+                if ($LASTEXITCODE -eq 0) { $created = $true }
+            } catch { }
+            if (-not $created) { Copy-Item -Force $rootMjs $selfRefMjs }
+        }
+        foreach ($top in @("dist", "extensions", "skills")) {
+            $rootTop = Join-Path $openclawDest $top
+            $selfRefTop = Join-Path $selfRefDir $top
+            if (Test-Path $rootTop) {
+                $created = $false
+                try {
+                    & cmd.exe /c "mklink /D `"$selfRefTop`" `"..\..\$top`"" 2>&1 | Out-Null
+                    if ($LASTEXITCODE -eq 0) { $created = $true }
+                } catch { }
+                if (-not $created) {
+                    if (Test-Path $selfRefTop) { Remove-Item -Recurse -Force $selfRefTop }
+                    Copy-Item -Recurse -Force $rootTop $selfRefTop
+                }
+            }
+        }
+        if (Test-Path $selfRefPath) {
+            Write-Info "Restored node_modules\openclaw\ self-reference (workspace staging fix)"
+        } else {
+            Write-Warn "Could not restore node_modules\openclaw\ — staged tree is missing package.json"
+        }
+    }
+
     Write-Ok "OpenClaw staged at $openclawDest"
 }
 
@@ -720,6 +1032,7 @@ $reqFiles = @(
     @{ Path = $nodeExe; Label = "Node.js sidecar (node.exe)" },
     @{ Path = (Join-Path $TauriResources "node/dist/src/index.js"); Label = "compiled EnvoyMesh node" },
     @{ Path = (Join-Path $TauriResources "openclaw/openclaw.mjs"); Label = "OpenClaw gateway entry" },
+    @{ Path = (Join-Path $TauriResources "openclaw/dist/entry.js"); Label = "OpenClaw compiled entry.js" },
     @{ Path = $SocialDist; Label = "built Social UI" }
 )
 foreach ($r in $reqFiles) {
@@ -736,6 +1049,34 @@ if (-not (Test-Path $openclawNm) -or -not (Get-ChildItem $openclawNm -ErrorActio
     $verifyOk = $false
 } else {
     Write-Ok "OpenClaw node_modules"
+}
+# Required runtime plugin-SDK self-reference. Without this, the gateway
+# refuses to start with "OpenClaw tree is incomplete (missing 1 item(s)).
+# node_modules/openclaw (required for plugin-sdk imports)". Mirrors the
+# check in scripts/validateOpenClawTree() (apps/node/src/openclaw-gateway-spawn.ts).
+$selfRef = Join-Path $TauriResources "openclaw/node_modules/openclaw/package.json"
+if (-not (Test-Path $selfRef)) {
+    Write-Fail "OpenClaw node_modules\openclaw\package.json is missing — gateway will refuse to start"
+    Write-Info "  Re-run with -ForceOpenClaw to regenerate, or check that the heal above ran."
+    $verifyOk = $false
+} else {
+    Write-Ok "OpenClaw node_modules\openclaw\ self-reference"
+}
+}
+# Reject broken stub entry.js that was written by the dev node at runtime
+# or by a failed setup.ps1 build. These won't work in the Tauri bundle
+# where src/ is excluded. The bash twin does the same in
+# verify-tauri-resources.sh.
+$stagedEntryJs = Join-Path $TauriResources "openclaw/dist/entry.js"
+if (Test-Path $stagedEntryJs) {
+    $entryContent = Get-Content $stagedEntryJs -Raw -ErrorAction SilentlyContinue
+    if ($entryContent -and ($entryContent -match "EnvoyMesh bootstrap" -or $entryContent -match "from.*src/cli/run-main")) {
+        Write-Fail "OpenClaw dist/entry.js is a runtime stub — rebuild OpenClaw or use -ForceOpenClaw"
+        $verifyOk = $false
+    }
+} else {
+    Write-Fail "OpenClaw dist/entry.js missing"
+    $verifyOk = $false
 }
 if (-not $verifyOk) {
     Write-Fail "Tauri resources incomplete — see failures above."
