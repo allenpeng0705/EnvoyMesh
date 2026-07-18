@@ -179,6 +179,21 @@ async function doctor(): Promise<void> {
   checks.push(["OpenClaw source", existsSync(join(ocDir, "openclaw.mjs")), ocDir]);
   checks.push(["dist/entry.js", existsSync(join(ocDir, "dist", "entry.js")), ""]);
   checks.push(["Extension linked", existsSync(join(ocDir, "extensions", "envoymesh", "index.ts")), ""]);
+  // Workspace staging fix: node_modules/openclaw/ self-reference is
+  // required by the runtime plugin SDK (validateOpenClawTree in
+  // openclaw-gateway-spawn.ts). When running inside a Tauri bundle,
+  // check the staged copy at apps/tauri/.../resources/openclaw/ —
+  // the source tree ($ocDir) won't have it because pnpm's self-
+  // reference is generated at install time, while the bundle copy
+  // is what the user's `.app` actually loads. Detect both contexts.
+  const stagedDir = join(WS_ROOT, "apps", "tauri", "src-tauri", "resources", "openclaw");
+  const inTauri = !!process.env.TAURI_RESOURCE_DIR || !!process.env.TAURI_APP_RESOURCES_DIR;
+  const selfRefDir = inTauri ? stagedDir : ocDir;
+  checks.push([
+    "node_modules/openclaw self-ref",
+    existsSync(join(selfRefDir, "node_modules", "openclaw", "package.json")),
+    join(selfRefDir, "node_modules", "openclaw", "package.json"),
+  ]);
   checks.push(["Plugin onStartup", (() => {
     try {
       const p = join(ocDir, "extensions", "envoymesh", "openclaw.plugin.json");
