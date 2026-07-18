@@ -1242,6 +1242,32 @@ class NodeServiceImpl implements NodeService {
   private _relayPublicWsUrl: string | undefined;
   private _terminalManager: import("./terminal-manager.js").TerminalManager | null = null;
   private _terminalAgentAssist: import("./terminal-agent-assist.js").TerminalAgentAssist | null = null;
+  /**
+   * TTL cache for the enriched terminal session list. The Social UI
+   * triggers 3-4 parallel `listTerminalSessions()` calls when the user
+   * opens the Terminals tab (one each from TerminalSidebar + TerminalPanel
+   * effect dependencies), and each call walks every session's scrollback
+   * + reads the approval queue. The cache deduplicates those calls into a
+   * single underlying read, refreshed at most ~3 Hz.
+   *
+   * Invalidation: any terminal-manager `notifyChanged` event clears the
+   * cache, so subsequent reads immediately observe the new state. The
+   * TTL is a back-stop against missed invalidations from a future refactor.
+   */
+  private _terminalListCache:
+    | { at: number; result: Promise<import("@envoymesh/api").TerminalSessionSummary[]> }
+    | null = null;
+  private static readonly _TERMINAL_LIST_CACHE_TTL_MS = 350;
+  /**
+   * TTL cache for the pending-approval count used by terminal activity
+   * enrichment. The count is also re-read on every `listPendingApprovals`
+   * call inside `_enrichTerminalSessions`, and that IPC re-read 4× per
+   * tab open was a measurable cost. Caching the count for 1s cuts the
+   * total to one read per second regardless of how many list calls
+   * arrive, while staying invisible at human time scales.
+   */
+  private _pendingApprovalCountCache: { at: number; count: number } | null = null;
+  private static readonly _PENDING_APPROVAL_COUNT_CACHE_TTL_MS = 1000;
   /** Phase 35D — handle to the pairing-kiosk HTTP server (when enabled). */
   private _pairingKiosk: PairingKioskServerHandle | null = null;
   /** Phase 38 — per-node call session manager (voice/video calls). */
@@ -3374,6 +3400,16 @@ class NodeServiceImpl implements NodeService {
 
   private _openClawPluginContext(): OpenClawPluginContext {
     return buildOpenClawPluginContext(this);
+  }
+
+  /** Resolve the OpenClaw gateway tree directory (for plugin manifest scanning).
+   *  In Tauri bundles this uses TAURI_RESOURCE_DIR; in dev mode it walks up
+   *  from the node cwd to find packages/openclaw. */
+  _resolveOpenClawDir(): string | null {
+    const { resolveBundledOpenClawDir } = require("./bundled-paths.js") as typeof import("./bundled-paths.js");
+    // The function needs nodeCwd for monorepo dev resolution, but in Tauri
+    // bundles it only uses TAURI_RESOURCE_DIR. Use profileDir as a safe cwd.
+    return resolveBundledOpenClawDir(this._profileDir);
   }
 
   // --- OpenClaw extension/plugin management ---
@@ -5582,6 +5618,14 @@ class NodeServiceImpl implements NodeService {
   /** Wire Phase 30 terminal manager (desktop home node only). */
   setTerminalManager(manager: import("./terminal-manager.js").TerminalManager): void {
     this._terminalManager = manager;
+    // Hard-invalidate the TTL caches on every terminal-manager mutation
+    // (create/close/rename/respawn/exit) via the new setter. Even when
+    // the constructor wired an `onSessionsChanged`, we wrap it so any
+    // future subscriber chains automatically — both fire.
+    manager.setOnSessionsChanged(() => {
+      this._terminalListCache = null;
+      this._pendingApprovalCountCache = null;
+    });
     // Emit a fresh node:status so the frontend picks up terminalsAvailable=true.
     // The earlier node:online event fires before setTerminalManager(), so the
     // UI's initial connectionStatus snapshot may have terminalsAvailable=false.
@@ -5635,7 +5679,14 @@ class NodeServiceImpl implements NodeService {
     summaries: import("@envoymesh/api").TerminalSessionSummary[],
   ): Promise<import("@envoymesh/api").TerminalSessionSummary[]> {
     const { enrichTerminalSessionSummaries } = await import("./terminal-activity.js");
-    const pendingApprovalCount = (await this.listPendingApprovals()).length;
+    // Pending-approval count is read at most ~1 Hz. The 4× duplicate
+    // reads that previously hit on every listTerminalSessions are now
+    // coalesced — the activity-badge computation that uses this count
+    // is insensitive to sub-second freshness (it's used as a binary
+    // "is there work pending?" signal, not a precise tally). The
+    // terminal event hook in setTerminalManager clears the cache on
+    // every manager mutation for a faster-fresh path.
+    const pendingApprovalCount = await this._getCachedPendingApprovalCount();
     const manager = this._terminalManager!;
     return enrichTerminalSessionSummaries(
       summaries,
@@ -5645,6 +5696,29 @@ class NodeServiceImpl implements NodeService {
         openClawTurnInProgress: this._isOpenClawTurnInProgress(),
       },
     );
+  }
+
+  /**
+   * Read the pending-approval count with a 1s TTL cache. The count is
+   * used by terminal activity enrichment, and on the previous cold path
+   * `_enrichTerminalSessions` would re-call `listPendingApprovals` on
+   * every one of N parallel listTerminalSessions calls. Cache is
+   * cleared by the terminal-event hook in setTerminalManager as a fast
+   * path for terminal-mutation freshness.
+   */
+  private async _getCachedPendingApprovalCount(): Promise<number> {
+    const now = Date.now();
+    const cached = this._pendingApprovalCountCache;
+    if (
+      cached &&
+      now - cached.at < NodeServiceImpl._PENDING_APPROVAL_COUNT_CACHE_TTL_MS
+    ) {
+      return cached.count;
+    }
+    const items = await this.listPendingApprovals();
+    const count = items.length;
+    this._pendingApprovalCountCache = { at: now, count };
+    return count;
   }
 
   private _requireTerminalManager(): import("./terminal-manager.js").TerminalManager {
@@ -5662,8 +5736,18 @@ class NodeServiceImpl implements NodeService {
   }
 
   listTerminalSessions(): Promise<import("@envoymesh/api").TerminalSessionSummary[]> {
+    const now = Date.now();
+    const cached = this._terminalListCache;
+    if (
+      cached &&
+      now - cached.at < NodeServiceImpl._TERMINAL_LIST_CACHE_TTL_MS
+    ) {
+      return cached.result;
+    }
     const summaries = this._requireTerminalManager().listTerminalSessions();
-    return this._enrichTerminalSessions(summaries);
+    const result = this._enrichTerminalSessions(summaries);
+    this._terminalListCache = { at: now, result };
+    return result;
   }
 
   createTerminalSession(params?: import("@envoymesh/api").CreateTerminalSessionParams): Promise<import("@envoymesh/api").TerminalSessionSummary> {

@@ -89,8 +89,32 @@ export class TerminalManager {
   private readonly exitedSessions = new Map<string, TerminalSessionSummary>();
   private readonly sessionsFilePath: string;
   private readonly taskStore?: LocalTaskStore;
-  private readonly onSessionsChanged?: () => void;
+  /**
+   * The session-change callback fired after create/close/rename/etc.
+   * Mutable (not readonly) so `setOnSessionsChanged` can wire a
+   * TTL-cache invalidator after construction. Default no-op when the
+   * caller doesn't supply one via options.
+   */
+  private onSessionsChanged: () => void = () => {};
   private readonly onSessionActivity?: (sessionId: string) => void;
+
+  /**
+   * Replace (or wrap) the session-change callback at runtime. Used by
+   * NodeService to wire a TTL-cache invalidator after construction. If
+   * a previous callback was installed (e.g. by the constructor options
+   * or an earlier `setOnSessionsChanged` call), the new callback wraps
+   * the old one so both fire — preventing accidental loss of any
+   * subscriber. The returned function un-installs this installation.
+   */
+  setOnSessionsChanged(cb: () => void): () => void {
+    const prev = this.onSessionsChanged;
+    this.onSessionsChanged = () => {
+      try { prev(); } finally { cb(); }
+    };
+    return () => {
+      this.onSessionsChanged = prev;
+    };
+  }
   private readonly execPaneByParent = new Map<string, string>();
   private persistQueue: Promise<void> = Promise.resolve();
   private terminalWsPort = TERMINAL_WS_PORT;
@@ -102,7 +126,7 @@ export class TerminalManager {
   constructor(options: TerminalManagerOptions) {
     this.sessionsFilePath = join(options.profileDir, "terminals", "sessions.json");
     this.taskStore = options.taskStore;
-    this.onSessionsChanged = options.onSessionsChanged;
+    this.onSessionsChanged = options.onSessionsChanged ?? (() => {});
     this.onSessionActivity = options.onSessionActivity;
     this.ready = new Promise<void>((resolve) => {
       this.readyResolve = resolve;
