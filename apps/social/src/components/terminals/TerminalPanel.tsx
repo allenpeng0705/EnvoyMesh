@@ -194,7 +194,17 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
   }, [mode, session?.sessionId, xtermReady]);
 
   useEffect(() => {
+    // Lazy-create the exec-pane Terminal. Previously this ran on every
+    // mount and constructed a second xterm + FitAddon + DOM canvas
+    // even when execPaneEnabled was false (the default — the pane is
+    // hidden until the owner explicitly turns it on). Construction is
+    // non-trivial (DOM + WebGL probe + initial paint) so skipping it
+    // when not in use is a measurable win on Terminals-tab open. We
+    // still construct the underlying <div ref={execContainerRef}> so
+    // re-enabling later has a place to mount.
+    if (!execPaneEnabled) return;
     if (!execContainerRef.current) return;
+
     const term = new Terminal({
       cursorBlink: false,
       disableStdin: true,
@@ -219,7 +229,7 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
       execTermRef.current = null;
       execFitRef.current = null;
     };
-  }, []);
+  }, [execPaneEnabled]);
 
   useEffect(() => {
     void nodeService.getNodeConfig().then((cfg) => {
