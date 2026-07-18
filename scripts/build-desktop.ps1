@@ -1062,7 +1062,6 @@ if (-not (Test-Path $selfRef)) {
 } else {
     Write-Ok "OpenClaw node_modules\openclaw\ self-reference"
 }
-}
 # Reject broken stub entry.js that was written by the dev node at runtime
 # or by a failed setup.ps1 build. These won't work in the Tauri bundle
 # where src/ is excluded. The bash twin does the same in
