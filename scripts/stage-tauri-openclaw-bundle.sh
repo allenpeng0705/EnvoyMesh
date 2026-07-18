@@ -43,22 +43,63 @@ _openclaw_resolve_ext_allowlist() {
 # so it's kept). Saves ~250 MB on macOS, ~500-700 MB on Windows.
 _openclaw_dev_only_packages="typescript @typescript @oxlint @oxlint-tsgolint @shikijs vite @rolldown esbuild @esbuild vitest @vitest playwright-core playwright jsdom tree-sitter-bash tree-sitter @babel webpack rollup"
 
-# Orphaned heavy native packages left after extension pruning. These are
-# deps of extensions we removed (copilot, codex, anthropic-vertex, acpx,
-# memory-lancedb, ollama, etc.) but pnpm's hoisting keeps them in
-# node_modules/. On Windows (pnpm copies vs symlinks) they total ~1.85 GB.
+# Orphaned heavy native packages — deps of extensions that we typically
+# prune (copilot, codex, acpx, memory-lancedb, matrix, msteams, etc.).
+# When pnpm uses a hoisted node-linker (the default for openclaw), these
+# remain in node_modules/ even after the extension dir is deleted, so they
+# must be scrubbed explicitly. On Windows they total ~1.85 GB.
 # Verified safe by grepping dist/*.js — none imported at runtime.
 # KEEP: @anthropic-ai/sdk (dist/anthropic-*.js), @larksuiteoapi (monitor/client).
-_openclaw_orphaned_native_pkgs="@node-llama-cpp node-llama-cpp @github @openai @zed-industries @lancedb @matrix-org @azure @opentelemetry"
+#
+# CONDITIONAL: only scrub a package if NONE of its dependent extensions
+# are present in the staged tree. This makes the scrub safe whether the
+# caller kept all extensions (Mac DMG) or pruned to an allowlist (Windows).
+# Format: "pkg|ext1 ext2" — scrub pkg only when none of ext1/ext2 exist.
+_openclaw_orphaned_native_pkgs_with_deps="
+  @node-llama-cpp|
+  node-llama-cpp|
+  @github|copilot
+  @openai|codex
+  @zed-industries|acpx
+  @lancedb|memory-lancedb
+  @matrix-org|matrix
+  @azure|msteams azure-speech
+  @opentelemetry|diagnostics-otel diagnostics-prometheus
+"
+
+_openclaw_extension_is_kept() {
+  # Returns 0 (true) if any of the named extensions exist in the staged tree.
+  local exts="$1"
+  [ -z "$exts" ] && return 1  # no dep → safe to scrub
+  for ext in $exts; do
+    for base in "$DEST/extensions" "$DEST/dist/extensions" "$DEST/dist-runtime/extensions"; do
+      [ -d "$base/$ext" ] && return 0
+    done
+  done
+  return 1
+}
 
 _openclaw_scrub_dev_tooling() {
   local removed=0
-  for pkg in $_openclaw_dev_only_packages $_openclaw_orphaned_native_pkgs; do
+  for pkg in $_openclaw_dev_only_packages; do
     if [ -d "$DEST/node_modules/$pkg" ]; then
       rm -rf "$DEST/node_modules/$pkg"
       removed=$((removed + 1))
     fi
   done
+  # Orphaned natives — only scrub if dependent extensions are absent.
+  # Use process substitution < <(...) instead of a pipe so the while loop
+  # runs in the current shell and `removed` accumulates correctly.
+  while IFS='|' read -r pkg exts; do
+    pkg="${pkg%%#*}"  # strip inline comments
+    pkg="$(echo "$pkg" | xargs)"  # trim whitespace
+    [ -z "$pkg" ] && continue
+    if [ -d "$DEST/node_modules/$pkg" ] && ! _openclaw_extension_is_kept "$exts"; then
+      rm -rf "$DEST/node_modules/$pkg"
+      removed=$((removed + 1))
+      echo "    scrubbed $pkg (no dependent extension kept)"
+    fi
+  done < <(echo "$_openclaw_orphaned_native_pkgs_with_deps")
   # Clean dangling .bin/ symlinks left by removed packages.
   if [ -d "$DEST/node_modules/.bin" ]; then
     for bin in "$DEST/node_modules/.bin/"*; do

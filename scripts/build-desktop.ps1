@@ -1118,37 +1118,62 @@ if ($scrubbedCount -gt 0) {
 }
 
 # Scrub orphaned heavy native packages left behind after extension pruning.
-# These packages are dependencies of extensions we already removed (copilot,
-# codex, anthropic-vertex, acpx, memory-lancedb, ollama, etc.) but pnpm's
-# hoisting leaves them in node_modules/ even after the extension dir is gone.
+# These packages are dependencies of extensions we typically remove (copilot,
+# codex, acpx, memory-lancedb, matrix, msteams, etc.) but pnpm's hoisting
+# leaves them in node_modules/ even after the extension dir is gone.
 # On Windows (where pnpm copies instead of symlinks), they total ~1.85 GB:
 #   @node-llama-cpp (711 MB), @github (422 MB), @openai (279 MB),
 #   @zed-industries (173 MB), @lancedb (158 MB), + smaller ones.
 # Verified safe by grepping dist/*.js — none are imported at runtime.
 # KEEP: @anthropic-ai/sdk (used by dist/anthropic-*.js), @larksuiteoapi
 # (used by dist/monitor.account-*.js and dist/client-*.js).
-$script:OpenClawOrphanedNativePkgs = @(
-    "@node-llama-cpp", "node-llama-cpp",
-    "@github",
-    "@openai",
-    "@zed-industries",
-    "@lancedb",
-    "@matrix-org",
-    "@azure",
-    "@opentelemetry"
+#
+# CONDITIONAL: only scrub a package when NONE of its dependent extensions
+# are present in the staged tree. This makes the scrub safe whether the
+# caller kept all extensions (Mac DMG via -OpenClawExtensions all) or
+# pruned to an allowlist (Windows default).
+$script:OpenClawOrphanedNativesWithDeps = @(
+    # Format: @{ Pkg = "..."; Deps = @("ext1", "ext2") }
+    # Scrub Pkg only when none of Deps exist under extensions/roots.
+    @{ Pkg = "@node-llama-cpp";   Deps = @() },
+    @{ Pkg = "node-llama-cpp";    Deps = @() },
+    @{ Pkg = "@github";           Deps = @("copilot") },
+    @{ Pkg = "@openai";           Deps = @("codex") },
+    @{ Pkg = "@zed-industries";   Deps = @("acpx") },
+    @{ Pkg = "@lancedb";          Deps = @("memory-lancedb") },
+    @{ Pkg = "@matrix-org";       Deps = @("matrix") },
+    @{ Pkg = "@azure";            Deps = @("msteams", "azure-speech") },
+    @{ Pkg = "@opentelemetry";    Deps = @("diagnostics-otel", "diagnostics-prometheus") }
 )
+function Test-ExtensionKept {
+    param([string[]]$Exts, [string]$TreeRoot)
+    foreach ($ext in $Exts) {
+        foreach ($sub in @("extensions", "dist\extensions", "dist-runtime\extensions")) {
+            if (Test-Path (Join-Path $TreeRoot "$sub\$ext")) { return $true }
+        }
+    }
+    return $false
+}
 $orphanCount = 0
 $orphanBytes = 0
-foreach ($pkg in $script:OpenClawOrphanedNativePkgs) {
-    $pkgPath = Join-Path $scrubbedNmDir $pkg
+foreach ($entry in $script:OpenClawOrphanedNativesWithDeps) {
+    $pkgPath = Join-Path $scrubbedNmDir $entry.Pkg
     if (Test-Path $pkgPath) {
-        try {
-            $sz = (Get-ChildItem -Path $pkgPath -Recurse -File -ErrorAction SilentlyContinue |
-                   Measure-Object -Property Length -Sum).Sum
-            $orphanBytes += [int]$sz
-            Remove-Item -Recurse -Force $pkgPath -ErrorAction SilentlyContinue
-            $orphanCount++
-        } catch { }
+        $keep = $false
+        if ($entry.Deps.Count -gt 0) {
+            $keep = Test-ExtensionKept -Exts $entry.Deps -TreeRoot $openclawDest
+        }
+        if (-not $keep) {
+            try {
+                $sz = (Get-ChildItem -Path $pkgPath -Recurse -File -ErrorAction SilentlyContinue |
+                       Measure-Object -Property Length -Sum).Sum
+                $orphanBytes += [int]$sz
+                Remove-Item -Recurse -Force $pkgPath -ErrorAction SilentlyContinue
+                $orphanCount++
+            } catch { }
+        } else {
+            Write-Info "Kept $($entry.Pkg) — dependent extension present"
+        }
     }
 }
 if ($orphanCount -gt 0) {
