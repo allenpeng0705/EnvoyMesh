@@ -3752,17 +3752,27 @@ textarea::placeholder {
 .agent-field--checkbox .agent-field-label {
   margin: 0;
 }
+/* Agent-block form inputs.
+ *
+ * Background: previously var(--color-surface) which collapsed to the
+ * same white as the parent .settings-section, making the inputs
+ * invisible in light mode. Use var(--color-bg) (the page background)
+ * so inputs always sit one tone "below" their parent — distinct in
+ * light mode (page bg slate-100, section bg white) and dark mode (page
+ * bg slate-800, section bg slate-700).
+ *
+ * Border: was var(--color-border) at slate-200 (#e2e8f0) — too pale
+ * to read against the new bg. Switch to a more saturated token below.
+ */
 .agent-field-input {
   width: 100%;
   padding: 0.5rem 0.75rem;
   font-size: var(--text-sm, 0.875rem);
   color: var(--color-text, #0f172a);
-  background: var(--color-surface, #ffffff);
-  border: 1px solid var(--color-border, #e2e8f0);
+  background: var(--color-bg, #f1f5f9);
+  border: 1px solid var(--color-slate-300, #cbd5e1);
   border-radius: var(--radius-md, 0.5rem);
   transition: border-color var(--transition-fast, 150ms ease), box-shadow var(--transition-fast, 150ms ease);
-  /* Soft surface (not the page bg, not black) — keeps the focus visible
-     without forcing a black-on-black look. */
 }
 .agent-field-input:focus-visible {
   outline: none;
@@ -4076,12 +4086,12 @@ textarea::placeholder {
 .settings-select {
   width: 100%;
   padding: 0.75rem 1rem;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-slate-300, #cbd5e1);
   border-radius: var(--radius-lg);
   font-size: var(--text-base);
-  background: var(--color-surface);
+  background: var(--color-bg);
   color: var(--color-text);
-  transition: border-color var(--transition-fast), 
+  transition: border-color var(--transition-fast),
               box-shadow var(--transition-fast),
               background-color var(--transition-fast);
 }
@@ -4089,7 +4099,6 @@ textarea::placeholder {
 .settings-input:hover,
 .settings-select:hover {
   border-color: var(--color-text-muted);
-  background: var(--color-bg);
 }
 
 .settings-input:focus-visible,
@@ -4097,7 +4106,6 @@ textarea::placeholder {
   outline: none;
   border-color: var(--color-primary);
   box-shadow: var(--shadow-ring);
-  background: var(--color-bg);
 }
 
 .settings-select {
