@@ -21,7 +21,7 @@ SOURCE="$ROOT/packages/openclaw"
 DEST="$ROOT/apps/tauri/src-tauri/resources/openclaw"
 
 # Built-in allowlist: envoy channel + web search providers.
-_OPENCLAW_DEFAULT_ALLOWLIST="envoymesh duckduckgo brave exa firecrawl google xai moonshot minimax ollama perplexity searxng tavily"
+_OPENCLAW_DEFAULT_ALLOWLIST="envoymesh device-pair webhooks policy browser file-transfer openshell memory-wiki active-memory llm-task canvas diffs diffs-language-pack duckduckgo brave exa firecrawl google xai moonshot minimax ollama perplexity searxng tavily"
 
 # Resolve extension filter: empty = keep all, "default" = use allowlist,
 # otherwise treat as a space-separated list of extensions to keep.

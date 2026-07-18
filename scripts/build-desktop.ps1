@@ -123,7 +123,11 @@ function Write-Fail {
 
 # Built-in allowlist: envoy channel + web search providers.
 $script:OpenClawDefaultAllowlist = @(
-    "envoymesh", "duckduckgo", "brave", "exa", "firecrawl", "google", "xai",
+    "envoymesh", "device-pair", "webhooks", "policy",
+    "browser", "file-transfer", "openshell",
+    "memory-wiki", "active-memory", "llm-task", "canvas",
+    "diffs", "diffs-language-pack",
+    "duckduckgo", "brave", "exa", "firecrawl", "google", "xai",
     "moonshot", "minimax", "ollama", "perplexity", "searxng", "tavily"
 )
 
