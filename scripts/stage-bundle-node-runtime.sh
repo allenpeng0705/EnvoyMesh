@@ -81,35 +81,49 @@ while IFS= read -r mod_path; do
   cp -R "$mod_path" "$dest_mod"
 done < <(npm ls --omit=dev -w @envoymesh/node --all --parseable 2>/dev/null || true)
 
-# Safety net: scan every staged @envoymesh/* package's declared dependencies
-# and copy any that are missing from the staged node_modules. Catches
-# transitive deps that `npm ls` silently drops (peer-dep warnings,
-# workspace-resolution quirks). Without this, the bundle ships and the
-# node process crashes at startup with ERR_MODULE_NOT_FOUND.
-envoymesh_scope="$DEST/node_modules/@envoymesh"
+# Safety net: scan declared deps from THREE sources and copy any that are
+# missing from the staged node_modules. Catches transitive deps that
+# `npm ls` silently drops (peer-dep warnings, workspace-resolution quirks).
+# Without this, the bundle ships and the node process crashes at startup
+# with ERR_MODULE_NOT_FOUND.
+#
+# Sources:
+#   1. apps/node/package.json            (direct runtime deps like ws, yaml)
+#   2. staged @envoymesh/*/package.json  (workspace pkg deps like zod)
+#   3. packages/openclaw/package.json    (deps imported via @envoymesh/openclaw-runtime)
 root_node_modules="$ROOT/node_modules"
+envoymesh_scope="$DEST/node_modules/@envoymesh"
 safety_net_copied=0
+
+# Build the list of package.json files to scan.
+pkg_jsons_to_scan=()
+[ -f "$ROOT/apps/node/package.json" ] && pkg_jsons_to_scan+=("$ROOT/apps/node/package.json")
 if [ -d "$envoymesh_scope" ]; then
-  while IFS= read -r pkg_json; do
-    [ -f "$pkg_json" ] || continue
-    # Extract dep names from package.json (handles @scope/name correctly)
-    dep_names="$(node -e "
-      try { const p=require(process.argv[1]); const d=p.dependencies||{}; process.stdout.write(Object.keys(d).filter(k=>!k.startsWith('@envoymesh/')).join('\n')); }
-      catch(e) { /* skip */ }
-    " "$pkg_json" 2>/dev/null || true)"
-    [ -z "$dep_names" ] && continue
-    while IFS= read -r dep_name; do
-      [ -z "$dep_name" ] && continue
-      dest_dep="$DEST/node_modules/$dep_name"
-      [ -d "$dest_dep" ] && continue
-      src_dep="$root_node_modules/$dep_name"
-      [ -d "$src_dep" ] || continue
-      mkdir -p "$(dirname "$dest_dep")"
-      cp -R "$src_dep" "$dest_dep"
-      safety_net_copied=$((safety_net_copied + 1))
-    done <<< "$dep_names"
+  while IFS= read -r p; do
+    pkg_jsons_to_scan+=("$p")
   done < <(find "$envoymesh_scope" -name package.json -type f 2>/dev/null)
 fi
+[ -f "$ROOT/packages/openclaw/package.json" ] && pkg_jsons_to_scan+=("$ROOT/packages/openclaw/package.json")
+
+for pkg_json in "${pkg_jsons_to_scan[@]}"; do
+  [ -f "$pkg_json" ] || continue
+  # Extract dep names from package.json (handles @scope/name correctly)
+  dep_names="$(node -e "
+    try { const p=require(process.argv[1]); const d=p.dependencies||{}; process.stdout.write(Object.keys(d).filter(k=>!k.startsWith('@envoymesh/')).join('\n')); }
+    catch(e) { /* skip */ }
+  " "$pkg_json" 2>/dev/null || true)"
+  [ -z "$dep_names" ] && continue
+  while IFS= read -r dep_name; do
+    [ -z "$dep_name" ] && continue
+    dest_dep="$DEST/node_modules/$dep_name"
+    [ -d "$dest_dep" ] && continue
+    src_dep="$root_node_modules/$dep_name"
+    [ -d "$src_dep" ] || continue
+    mkdir -p "$(dirname "$dest_dep")"
+    cp -R "$src_dep" "$dest_dep"
+    safety_net_copied=$((safety_net_copied + 1))
+  done <<< "$dep_names"
+done
 if [ "$safety_net_copied" -gt 0 ]; then
   echo "  Safety net: copied $safety_net_copied missing deps from root node_modules (npm ls dropped them)"
 fi

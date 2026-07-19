@@ -98,30 +98,46 @@ foreach ($modPath in $npmLines) {
 #
 # Without this, the bundle builds successfully but fails at runtime with
 # errors like "Cannot find package 'zod' imported from .../protocol/index.js".
-$envoymeshScope = Join-Path $Dest "node_modules/@envoymesh"
+#
+# We scan THREE sources of declared deps to cover the full graph:
+#   1. apps/node/package.json            (direct runtime deps like ws, yaml)
+#   2. staged @envoymesh/*/package.json  (workspace pkg deps like zod)
+#   3. packages/openclaw/package.json    (deps the runtime imports via @envoymesh/openclaw-runtime)
 $rootNodeModules = Join-Path $Root "node_modules"
-$safetyNetCopied = 0
+
+# Helper: copy any declared dep from $Root/node_modules to $Dest/node_modules
+# if it's missing. Returns the count of packages copied.
+$pkgJsonsToScan = @()
+$appsNodePkg = Join-Path $Root "apps/node/package.json"
+if (Test-Path $appsNodePkg) { $pkgJsonsToScan += $appsNodePkg }
+$envoymeshScope = Join-Path $Dest "node_modules/@envoymesh"
 if (Test-Path $envoymeshScope) {
-    foreach ($pkgJsonPath in (Get-ChildItem -Path $envoymeshScope -Recurse -Filter "package.json" -ErrorAction SilentlyContinue)) {
-        try {
-            $pkgMeta = Get-Content $pkgJsonPath.FullName -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
-        } catch { continue }
-        $deps = $pkgMeta.dependencies
-        if (-not $deps) { continue }
-        foreach ($depName in $deps.PSObject.Properties.Name) {
-            # Skip workspace packages — they're staged separately above.
-            if ($depName -like "@envoymesh/*") { continue }
-            $destDep = Join-Path $Dest "node_modules/$depName"
-            if (Test-Path $destDep) { continue }
-            # Look for the dep in the root node_modules (npm workspace
-            # hoists most deps there). If absent, skip — we can't stage
-            # what we don't have.
-            $srcDep = Join-Path $rootNodeModules $depName
-            if (-not (Test-Path $srcDep)) { continue }
-            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destDep) | Out-Null
-            Copy-Item -Recurse -Force $srcDep $destDep
-            $safetyNetCopied++
-        }
+    $pkgJsonsToScan += (Get-ChildItem -Path $envoymeshScope -Recurse -Filter "package.json" -ErrorAction SilentlyContinue).FullName
+}
+$openclawPkg = Join-Path $Root "packages/openclaw/package.json"
+if (Test-Path $openclawPkg) { $pkgJsonsToScan += $openclawPkg }
+
+$safetyNetCopied = 0
+foreach ($pkgJsonPath in $pkgJsonsToScan) {
+    if (-not $pkgJsonPath) { continue }
+    try {
+        $pkgMeta = Get-Content $pkgJsonPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+    } catch { continue }
+    $deps = $pkgMeta.dependencies
+    if (-not $deps) { continue }
+    foreach ($depName in $deps.PSObject.Properties.Name) {
+        # Skip workspace packages — they're staged separately above.
+        if ($depName -like "@envoymesh/*") { continue }
+        $destDep = Join-Path $Dest "node_modules/$depName"
+        if (Test-Path $destDep) { continue }
+        # Look for the dep in the root node_modules (npm workspace
+        # hoists most deps there). If absent, skip — we can't stage
+        # what we don't have.
+        $srcDep = Join-Path $rootNodeModules $depName
+        if (-not (Test-Path $srcDep)) { continue }
+        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destDep) | Out-Null
+        Copy-Item -Recurse -Force $srcDep $destDep
+        $safetyNetCopied++
     }
 }
 if ($safetyNetCopied -gt 0) {
