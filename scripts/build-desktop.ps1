@@ -223,53 +223,52 @@ function Invoke-ExternalQuiet {
     $ErrorActionPreference = "SilentlyContinue"
     # Capture every byte (stdout + stderr) to a log so we can tail it on
     # failure. The log lives under the repo's scripts/build-logs/ dir (not
-    # $env:TEMP) because users repeatedly reported the TEMP log missing.
+    # $env:TEMP) — TEMP logs were hard to find and the path was getting
+    # lost across PowerShell sessions.
     #
-    # IMPORTANT: PowerShell pipeline capture (`2>&1 | ForEach-Object`,
-    # `*> $log`) is unreliable for native processes that emit progress
-    # bars / ANSI escapes / direct console writes (cargo, makensis, npx
-    # prompts). On PS 5.1 these produce empty logs even when the command
-    # prints volumes to the terminal. The only robust approach is
-    # Start-Process with -RedirectStandardOutput / -RedirectStandardError,
-    # which wires the child's stdout/stderr handles to the file directly
-    # at the OS level (bypassing PowerShell's object pipeline entirely).
+    # CAPTURE STRATEGY: PowerShell's call operator `&` correctly handles
+    # .cmd shims (npx, npm, tsc) which Start-Process cannot launch directly
+    # ("%1 is not a valid Win32 application"). So we always use `& $Exe`.
+    #
+    # For OUTPUT capture, the `*> $log` and `2>&1 | Tee-Object` forms silently
+    # drop output from native processes that write via direct console buffer
+    # I/O (cargo progress bars, makensis, ANSI escapes) on PowerShell 5.1.
+    # The only reliable cross-version capture is `cmd /c "..." > file 2>&1`,
+    # which delegates to cmd.exe's redirect (kernel-level file handles).
+    # We use cmd /c for the actual work and PowerShell's `&` only to launch
+    # cmd.exe itself.
     $logDir = Join-Path $PSScriptRoot "..\build-logs"
     if (-not (Test-Path $logDir)) {
         New-Item -ItemType Directory -Force -Path $logDir | Out-Null
     }
-    $logName = "envoymesh-build-$([guid]::NewGuid())"
-    $logPath = Join-Path $logDir "$logName.log"
-    $stdoutPath = Join-Path $logDir "$logName.stdout.log"
-    $stderrPath = Join-Path $logDir "$logName.stderr.log"
-    # Pre-create so the paths always exist even if the child writes nothing.
-    foreach ($p in @($logPath, $stdoutPath, $stderrPath)) {
-        New-Item -ItemType File -Path $p -Force | Out-Null
-    }
-    $logPath = (Resolve-Path -LiteralPath $logPath).Path
-    $stdoutPath = (Resolve-Path -LiteralPath $stdoutPath).Path
-    $stderrPath = (Resolve-Path -LiteralPath $stderrPath).Path
+    $logName = "envoymesh-build-$([guid]::NewGuid()).log"
+    $logPath = Join-Path $logDir $logName
+    # Pre-create the log so the path always exists even if the command
+    # writes zero bytes (helps with "missing log file" reports).
+    $logPath = (Resolve-Path -LiteralPath (New-Item -ItemType File -Path $logPath -Force).FullName).Path
     $exit = 0
     try {
-        # Resolve the exe to an absolute path — Start-Process needs this
-        # to reliably find commands like `npx`/`cargo` on PATH in PS 5.1.
-        $exePath = (Get-Command $Exe -ErrorAction SilentlyContinue).Source
-        if (-not $exePath) { $exePath = $Exe }
-        # Build the arg string. Start-Process takes args as a single string
-        # for native commands (the -ArgumentList array form re-quoting is
-        # broken on PS 5.1 — it splits on spaces inside quoted args).
-        $argString = ($ToolArgs | ForEach-Object {
+        # Build a cmd.exe invocation that runs $Exe with all args, redirecting
+        # both stdout and stderr to the log file. The inner quoting protects
+        # args containing spaces or special chars.
+        # Quote the exe path if it contains spaces (e.g. "C:\Program Files\...").
+        $exeForCmd = if ($Exe -match '\s') { "`"$Exe`"" } else { $Exe }
+        # Each arg: quote if it contains spaces. Pass through otherwise.
+        # We do NOT escape cmd metacharacters here — these are build-tool
+        # args (paths, flags) that don't contain & | < > etc.
+        $quotedArgs = ($ToolArgs | ForEach-Object {
             if ($_ -match '\s') { "`"$_`"" } else { "$_" }
         }) -join ' '
+        $cmdLine = "$exeForCmd $quotedArgs"
         if ($Stream) {
-            # Stream live: run with output going to console, but also
-            # tee to per-stream files via redirect. Start-Process -Wait
-            # -NoNewWindow keeps output on the current console while
-            # the redirected files capture everything byte-for-byte.
-            # We *don't* pass -RedirectStandard* here because they would
-            # suppress the live console output the user wants. Instead,
-            # we use the pipeline form for the streamed case and let the
-            # post-run fallback (below) handle truly silent failures.
-            & $exePath @ToolArgs 2>&1 | ForEach-Object {
+            # Stream live to console AND capture to file. We use cmd /c with
+            # the redirect, but first print the command being run so the
+            # user knows what's happening. cmd /c output goes to the file;
+            # we read the file periodically would be ideal but complex.
+            # Simpler: just run with `&` for the streaming case (user sees
+            # progress) and let the empty-log fallback (below) catch
+            # swallowed output.
+            & $Exe @ToolArgs 2>&1 | ForEach-Object {
                 $line = if ($_ -is [System.Management.Automation.ErrorRecord]) {
                     $_.Exception.Message
                 } else {
@@ -279,33 +278,19 @@ function Invoke-ExternalQuiet {
                 Add-Content -LiteralPath $logPath -Value $line -ErrorAction SilentlyContinue
             }
             $exit = $LASTEXITCODE
-            # Fallback: if the pipeline form produced an empty log AND the
-            # command failed, the child almost certainly used direct console
-            # writes. Re-run with Start-Process redirects to capture them.
+            # Fallback: if pipeline produced empty log AND command failed,
+            # the child used direct console writes. Re-run via cmd /c with
+            # kernel redirect to capture everything. cmd.exe is always a
+            # real .exe so Start-Process issues don't apply.
             if ($exit -ne 0 -and -not (Get-Content $logPath -ErrorAction SilentlyContinue)) {
-                Write-Host "    (output was swallowed by direct console writes — re-running with file redirects to capture)" -ForegroundColor DarkGray
-                $proc = Start-Process -FilePath $exePath `
-                    -ArgumentList $argString `
-                    -NoNewWindow -Wait -PassThru `
-                    -RedirectStandardOutput $stdoutPath `
-                    -RedirectStandardError $stderrPath
-                $exit = $proc.ExitCode
-                # Merge stdout+stderr into the combined log for tailing.
-                $merged = @()
-                $merged += Get-Content $stdoutPath -ErrorAction SilentlyContinue
-                $merged += Get-Content $stderrPath -ErrorAction SilentlyContinue
-                if ($merged.Count -gt 0) {
-                    $merged | Set-Content -LiteralPath $logPath -ErrorAction SilentlyContinue
-                }
+                Write-Host "    (first-pass capture was empty — re-running via cmd /c to capture direct console output)" -ForegroundColor DarkGray
+                & cmd.exe /c "$cmdLine > `"$logPath`" 2>&1"
+                $exit = $LASTEXITCODE
             }
         } else {
-            # Quiet: redirect both streams straight to files, no console output.
-            $proc = Start-Process -FilePath $exePath `
-                -ArgumentList $argString `
-                -NoNewWindow -Wait -PassThru `
-                -RedirectStandardOutput $logPath `
-                -RedirectStandardError $stderrPath
-            $exit = $proc.ExitCode
+            # Quiet: cmd /c with redirect only, no console output.
+            & cmd.exe /c "$cmdLine > `"$logPath`" 2>&1"
+            $exit = $LASTEXITCODE
         }
         if ($exit -ne 0) {
             $cmdDesc = if ($ToolArgs.Count -gt 0) { "$Exe $($ToolArgs -join ' ')" } else { $Exe }
@@ -331,13 +316,11 @@ function Invoke-ExternalQuiet {
         return $exit
     } finally {
         $ErrorActionPreference = $prevEap
-        # Only delete the logs on success. On failure, the operator needs the
+        # Only delete the log on success. On failure, the operator needs the
         # full log to diagnose — this is the single most useful thing we can
-        # leave behind. The next successful run gets fresh logs.
+        # leave behind. The next successful run gets a fresh log.
         if ($exit -eq 0) {
             Remove-Item $logPath -ErrorAction SilentlyContinue
-            Remove-Item $stdoutPath -ErrorAction SilentlyContinue
-            Remove-Item $stderrPath -ErrorAction SilentlyContinue
         }
     }
 }
