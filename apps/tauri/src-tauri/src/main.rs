@@ -404,8 +404,11 @@ fn ensure_openclaw_self_ref(resource_dir: &Path) -> HealOutcome {
         }
         #[cfg(windows)]
         {
+            // symlink_dir takes P: AsRef<Path>, so the String from format!
+            // is accepted directly — no need for Path::new (which would
+            // require a &str reference, not an owned String).
             let _ = std::os::windows::fs::symlink_dir(
-                std::path::Path::new(format!("../../{top}")),
+                format!("../../{top}"),
                 &self_ref_top,
             );
         }
