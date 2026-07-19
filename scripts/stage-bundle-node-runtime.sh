@@ -94,6 +94,14 @@ done < <(npm ls --omit=dev -w @envoymesh/node --all --parseable 2>/dev/null || t
 root_node_modules="$ROOT/node_modules"
 envoymesh_scope="$DEST/node_modules/@envoymesh"
 safety_net_copied=0
+# Possible sources for each dep, in priority order. npm workspaces
+# usually hoist to root, but on Windows some deps stay nested in a
+# workspace package's local node_modules. We search all known locations.
+dep_search_roots=(
+  "$ROOT/node_modules"
+  "$ROOT/apps/node/node_modules"
+  "$ROOT/packages/openclaw/node_modules"
+)
 
 # Build the list of package.json files to scan.
 pkg_jsons_to_scan=()
@@ -117,27 +125,46 @@ for pkg_json in "${pkg_jsons_to_scan[@]}"; do
     [ -z "$dep_name" ] && continue
     dest_dep="$DEST/node_modules/$dep_name"
     [ -d "$dest_dep" ] && continue
-    src_dep="$root_node_modules/$dep_name"
-    [ -d "$src_dep" ] || continue
+    # Search all known node_modules locations for this dep.
+    src_dep=""
+    for root in "${dep_search_roots[@]}"; do
+      if [ -d "$root/$dep_name" ]; then
+        src_dep="$root/$dep_name"
+        break
+      fi
+    done
+    [ -z "$src_dep" ] && continue
     mkdir -p "$(dirname "$dest_dep")"
     cp -R "$src_dep" "$dest_dep"
     safety_net_copied=$((safety_net_copied + 1))
   done <<< "$dep_names"
 done
 if [ "$safety_net_copied" -gt 0 ]; then
-  echo "  Safety net: copied $safety_net_copied missing deps from root node_modules (npm ls dropped them)"
+  echo "  Safety net: copied $safety_net_copied missing deps (npm ls dropped them)"
 fi
 
 # Sanity check: verify a handful of known-critical runtime deps are present.
 # If any are missing, fail loudly rather than shipping a broken bundle.
+missing=""
 for dep in zod ws yaml; do
   if [ ! -d "$DEST/node_modules/$dep" ]; then
-    echo "error: critical runtime dep '$dep' missing from staged tree" >&2
-    echo "       The node process will crash at startup with ERR_MODULE_NOT_FOUND." >&2
-    echo "       Check that 'npm install' succeeded in the repo root." >&2
-    exit 1
+    missing="$missing $dep"
   fi
 done
+if [ -n "$missing" ]; then
+  echo "" >&2
+  echo "  CRITICAL: missing runtime deps:$missing" >&2
+  echo "  These were declared in a package.json but not found in ANY of:" >&2
+  for root in "${dep_search_roots[@]}"; do echo "    - $root" >&2; done
+  echo "" >&2
+  echo "  Likely causes:" >&2
+  echo "    1. 'npm install' did not complete successfully in the repo root" >&2
+  echo "    2. The dep is nested deeper than the search roots (rare)" >&2
+  echo "    3. The dep was pruned by 'npm prune --production' but is needed at runtime" >&2
+  echo "" >&2
+  echo "  Diagnostic: npm ls <dep> to find where it actually lives" >&2
+  exit 1
+fi
 
 SKILLS_SRC="$ROOT/apps/node/skills"
 SKILLS_DEST="$DEST/skills"

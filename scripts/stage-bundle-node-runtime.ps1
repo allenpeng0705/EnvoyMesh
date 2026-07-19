@@ -118,6 +118,15 @@ $openclawPkg = Join-Path $Root "packages/openclaw/package.json"
 if (Test-Path $openclawPkg) { $pkgJsonsToScan += $openclawPkg }
 
 $safetyNetCopied = 0
+$declaredButMissing = @()
+# Possible sources for each dep, in priority order. npm workspaces
+# usually hoist to root, but on Windows some deps stay nested in a
+# workspace package's local node_modules. We search all known locations.
+$depSearchRoots = @(
+    (Join-Path $Root "node_modules"),
+    (Join-Path $Root "apps/node/node_modules"),
+    (Join-Path $Root "packages/openclaw/node_modules")
+)
 foreach ($pkgJsonPath in $pkgJsonsToScan) {
     if (-not $pkgJsonPath) { continue }
     try {
@@ -130,18 +139,26 @@ foreach ($pkgJsonPath in $pkgJsonsToScan) {
         if ($depName -like "@envoymesh/*") { continue }
         $destDep = Join-Path $Dest "node_modules/$depName"
         if (Test-Path $destDep) { continue }
-        # Look for the dep in the root node_modules (npm workspace
-        # hoists most deps there). If absent, skip — we can't stage
-        # what we don't have.
-        $srcDep = Join-Path $rootNodeModules $depName
-        if (-not (Test-Path $srcDep)) { continue }
+        # Search all known node_modules locations for this dep.
+        $srcDep = $null
+        foreach ($root in $depSearchRoots) {
+            $candidate = Join-Path $root $depName
+            if (Test-Path $candidate) { $srcDep = $candidate; break }
+        }
+        if (-not $srcDep) {
+            # Track declared deps we couldn't find anywhere — surfaced
+            # in the sanity check below so we never silently ship a
+            # broken bundle.
+            $declaredButMissing += $depName
+            continue
+        }
         New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destDep) | Out-Null
         Copy-Item -Recurse -Force $srcDep $destDep
         $safetyNetCopied++
     }
 }
 if ($safetyNetCopied -gt 0) {
-    Write-Host "  Safety net: copied $safetyNetCopied missing deps from root node_modules (npm ls dropped them)"
+    Write-Host "  Safety net: copied $safetyNetCopied missing deps (npm ls dropped them)"
 }
 
 # Sanity check: verify a handful of known-critical runtime deps are present.
@@ -154,7 +171,22 @@ foreach ($dep in $criticalDeps) {
     }
 }
 if ($missing.Count -gt 0) {
-    Write-Error "Critical runtime deps missing from staged tree: $($missing -join ', '). The node process will crash at startup with ERR_MODULE_NOT_FOUND. Check that 'npm install' succeeded in the repo root."
+    Write-Host ""
+    Write-Host "  CRITICAL: missing runtime deps: $($missing -join ', ')" -ForegroundColor Red
+    Write-Host "  These were declared in a package.json but not found in ANY of:" -ForegroundColor Red
+    foreach ($root in $depSearchRoots) { Write-Host "    - $root" -ForegroundColor Red }
+    Write-Host ""
+    Write-Host "  Likely causes:" -ForegroundColor Yellow
+    Write-Host "    1. 'npm install' did not complete successfully in the repo root" -ForegroundColor Yellow
+    Write-Host "    2. The dep is nested deeper than the search roots (rare; check with 'npm ls <dep>')" -ForegroundColor Yellow
+    Write-Host "    3. The dep was pruned by 'npm prune --production' but is actually needed at runtime" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "  Diagnostic commands:" -ForegroundColor Cyan
+    foreach ($dep in $missing) {
+        Write-Host "    npm ls $dep 2>&1 | head -20" -ForegroundColor Cyan
+        Write-Host "    Get-ChildItem -Recurse -Filter '$dep' -Path node_modules,apps\node\node_modules,packages\openclaw\node_modules -Directory -ErrorAction SilentlyContinue | Select -First 5" -ForegroundColor Cyan
+    }
+    Write-Error "Critical runtime deps missing from staged tree: $($missing -join ', '). See diagnostic output above."
     exit 1
 }
 
