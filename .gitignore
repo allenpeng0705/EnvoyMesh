@@ -38,3 +38,4 @@ apps/node/test/.DS_Store
 # Build failure logs emitted by scripts/build-desktop.ps1 (Invoke-ExternalQuiet)
 /scripts/build-logs/
 /apps/tauri/tauri-debug.log
+/apps/tauri/src-tauri/target
