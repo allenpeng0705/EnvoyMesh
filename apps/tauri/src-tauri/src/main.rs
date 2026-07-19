@@ -98,7 +98,11 @@ fn strip_verbatim_prefix(path: PathBuf) -> PathBuf {
     #[cfg(windows)]
     {
         use std::ffi::OsString;
-        use std::os::windows::ffi::OsStrExt;
+        // OsStrExt provides encode_wide() on &OsStr (reading).
+        // OsStringExt provides from_wide() on OsString (writing).
+        // Both live in std::os::windows::ffi — easy to grab one and forget
+        // the other, which is exactly the compile error we just fixed.
+        use std::os::windows::ffi::{OsStrExt, OsStringExt};
         let s = path.as_os_str();
         let chars: Vec<u16> = s.encode_wide().collect();
         // `\\?\` = [backslash, backslash, question, backslash]
