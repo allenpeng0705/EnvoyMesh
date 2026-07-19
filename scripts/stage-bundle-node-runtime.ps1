@@ -258,16 +258,37 @@ console.error("All " + mods.length + " critical imports resolved.");
 '@
 $probePath = Join-Path $Dest "__import_probe.mjs"
 Set-Content -Path $probePath -Value $probeScript -Encoding UTF8
+# IMPORTANT: the probe writes "All N imports resolved." to stderr by design
+# (Node's console.error). PowerShell's `2>&1` wraps stderr as ErrorRecord
+# objects, and under $ErrorActionPreference="Stop" these would trigger the
+# outer try/catch in build-desktop.ps1 as if the script had failed — even
+# though the probe succeeded. We explicitly unwrap each record to a string
+# via Write-Host, and read $LASTEXITCODE (not the pipeline) for the real
+# pass/fail signal.
+$prevEap = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
 try {
     Push-Location $Dest
-    & $nodeExe "__import_probe.mjs" 2>&1 | ForEach-Object { Write-Host "    $_" }
+    $probeOutput = & $nodeExe "__import_probe.mjs" 2>&1
     $probeExit = $LASTEXITCODE
     Pop-Location
+    # Render each line (whether string or ErrorRecord) to the host without
+    # letting ErrorRecords trigger terminating errors.
+    foreach ($line in $probeOutput) {
+        $text = if ($line -is [System.Management.Automation.ErrorRecord]) {
+            $line.Exception.Message
+        } else {
+            [string]$line
+        }
+        Write-Host "    $text"
+    }
     if ($probeExit -ne 0) {
-        Write-Error "End-to-end import probe failed. See the FAIL lines above. The node process would crash with ERR_MODULE_NOT_FOUND."
+        Write-Host "  ✗ End-to-end import probe failed — see FAIL lines above" -ForegroundColor Red
+        Write-Host "    The node process would crash with ERR_MODULE_NOT_FOUND." -ForegroundColor Red
         exit 1
     }
 } finally {
+    $ErrorActionPreference = $prevEap
     Remove-Item $probePath -ErrorAction SilentlyContinue
 }
 
