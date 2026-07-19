@@ -129,16 +129,19 @@ $openclawPkg = Join-Path $Root "packages/openclaw/package.json"
 if (Test-Path $openclawPkg) { $seedPkgs += $openclawPkg }
 
 $safetyNetCopied = 0
-$maxIterations = 10  # fixpoint convergence guard — 10 levels of nesting is plenty
+$maxIterations = 15  # fixpoint convergence guard; nested deps add depth
 for ($iter = 1; $iter -le $maxIterations; $iter++) {
-    # Collect package.json files to scan this iteration: seeds + every
-    # staged package's package.json (recursive, picks up newly-staged
-    # packages from the previous iteration).
+    # Collect package.json files to scan this iteration: seeds + EVERY
+    # staged package's package.json (recursive, including packages nested
+    # inside other packages' node_modules/). We must scan nested packages
+    # too — their declared deps need to be hoisted to the top of the
+    # staged tree so Node's resolver can find them. The fixpoint loop's
+    # idempotency check (skip if already staged) makes this safe.
     $scanList = @()
     $scanList += $seedPkgs
     if (Test-Path $stagedNodeModules) {
         $scanList += (Get-ChildItem -Path $stagedNodeModules -Recurse -Filter "package.json" -ErrorAction SilentlyContinue |
-                      Where-Object { $_.FullName -notmatch '\\node_modules\\[^\\]+\\node_modules\\' }).FullName
+                      Where-Object { $_.FullName -notmatch '\\node_modules\\.bin\\' }).FullName
     }
     $copiedThisIter = 0
     foreach ($pkgJsonPath in $scanList) {
@@ -182,7 +185,10 @@ $criticalDeps = @(
     # Deep transitive deps (proves fixpoint loop ran)
     "main-event", "@libp2p/interface",
     # Workspace packages (proves dynamic discovery ran)
-    "@envoymesh/kb-obsidian", "@envoymesh/openclaw-runtime"
+    "@envoymesh/kb-obsidian", "@envoymesh/openclaw-runtime",
+    # Nested-dep hoist: declared by tough-cookie which lives inside
+    # request/node_modules/. Proves the loop scans nested packages.
+    "psl"
 )
 $missing = @()
 foreach ($dep in $criticalDeps) {
@@ -208,6 +214,61 @@ if ($missing.Count -gt 0) {
     }
     Write-Error "Critical runtime deps missing from staged tree: $($missing -join ', '). See diagnostic output above."
     exit 1
+}
+
+# End-to-end import check: actually run Node's module resolver against
+# every module the runtime entry imports. This catches missing modules
+# that the file-existence sanity check above can't — e.g. transitive
+# deps of nested packages (psl, declared by tough-cookie which lives
+# inside request/node_modules/), optional native bindings, and broken
+# package.json "exports" maps. Failures here are converted from runtime
+# crashes (which only surface after the user installs the bundle) into
+# build-time errors with a clear list of what's missing.
+Write-Host "  End-to-end import check..."
+$nodeExe = if ($env:ENVOYMESH_NODE_EXE) { $env:ENVOYMESH_NODE_EXE } else { "node" }
+$probeScript = @'
+const mods = [
+  // Direct npm deps
+  "zod", "ws", "yaml", "psl", "nat-upnp",
+  // Deep transitive deps
+  "main-event", "@libp2p/interface", "@multiformats/multiaddr",
+  // Workspace packages
+  "@envoymesh/protocol", "@envoymesh/api", "@envoymesh/identity",
+  "@envoymesh/bonds", "@envoymesh/network", "@envoymesh/vault",
+  "@envoymesh/local-store", "@envoymesh/models", "@envoymesh/rag",
+  "@envoymesh/ipfs-helia", "@envoymesh/openclaw-runtime",
+  "@envoymesh/kb-obsidian"
+];
+let failed = 0;
+for (const m of mods) {
+  try {
+    await import(m);
+  } catch (e) {
+    if (e.code === "ERR_MODULE_NOT_FOUND" || e.code === "MODULE_NOT_FOUND") {
+      console.error("FAIL: " + m + " — " + e.message.split("\n")[0]);
+      failed++;
+    }
+  }
+}
+if (failed > 0) {
+  console.error("\n" + failed + " module(s) failed to resolve. The bundle will crash at startup.");
+  process.exit(1);
+}
+console.error("All " + mods.length + " critical imports resolved.");
+'@
+$probePath = Join-Path $Dest "__import_probe.mjs"
+Set-Content -Path $probePath -Value $probeScript -Encoding UTF8
+try {
+    Push-Location $Dest
+    & $nodeExe "__import_probe.mjs" 2>&1 | ForEach-Object { Write-Host "    $_" }
+    $probeExit = $LASTEXITCODE
+    Pop-Location
+    if ($probeExit -ne 0) {
+        Write-Error "End-to-end import probe failed. See the FAIL lines above. The node process would crash with ERR_MODULE_NOT_FOUND."
+        exit 1
+    }
+} finally {
+    Remove-Item $probePath -ErrorAction SilentlyContinue
 }
 
 $skillsSrc = Join-Path $Root "apps/node/skills"

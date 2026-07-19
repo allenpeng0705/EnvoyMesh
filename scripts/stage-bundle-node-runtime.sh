@@ -114,17 +114,21 @@ seed_pkgs=()
 [ -f "$ROOT/packages/openclaw/package.json" ] && seed_pkgs+=("$ROOT/packages/openclaw/package.json")
 
 safety_net_copied=0
-max_iterations=10  # fixpoint convergence guard
+max_iterations=15  # fixpoint convergence guard; nested deps add depth
 iter=0
 while [ "$iter" -lt "$max_iterations" ]; do
   iter=$((iter + 1))
-  # Build scan list: seeds + every staged package's package.json.
-  # Exclude deeply-nested node_modules (only top-level staged packages).
+  # Build scan list: seeds + EVERY staged package's package.json,
+  # INCLUDING packages nested inside other packages' node_modules/.
+  # We must scan nested packages too — their declared deps need to be
+  # hoisted to the top of the staged tree so Node's resolver can find
+  # them. The fixpoint loop's idempotency check ([ -d $dest_dep ])
+  # makes scanning nested package.json files safe.
   scan_list=("${seed_pkgs[@]}")
   if [ -d "$staged_node_modules" ]; then
     while IFS= read -r p; do
       scan_list+=("$p")
-    done < <(find "$staged_node_modules" -name package.json -type f 2>/dev/null | grep -v '/node_modules/[^/]*/node_modules/' || true)
+    done < <(find "$staged_node_modules" -name package.json -type f 2>/dev/null | grep -v '/node_modules/\.bin/' || true)
   fi
   copied_this_iter=0
   for pkg_json in "${scan_list[@]}"; do
@@ -163,7 +167,7 @@ fi
 # Sanity check: verify a handful of known-critical runtime deps are present.
 # If any are missing, fail loudly rather than shipping a broken bundle.
 missing=""
-for dep in zod ws yaml main-event; do
+for dep in zod ws yaml main-event "@libp2p/interface" "@envoymesh/kb-obsidian" "@envoymesh/openclaw-runtime" psl; do
   if [ ! -d "$DEST/node_modules/$dep" ]; then
     missing="$missing $dep"
   fi
@@ -180,6 +184,57 @@ if [ -n "$missing" ]; then
   echo "    3. The dep was pruned by 'npm prune --production' but is needed at runtime" >&2
   echo "" >&2
   echo "  Diagnostic: npm ls <dep> to find where it actually lives" >&2
+  exit 1
+fi
+
+# End-to-end import check: actually run Node's module resolver against
+# every module the runtime entry imports. This catches missing modules
+# that the file-existence check above can't — e.g. transitive deps of
+# nested packages, optional native bindings, and broken "exports" maps.
+# Failures here are converted from runtime crashes (which only surface
+# after the user installs the bundle) into build-time errors with a
+# clear list of what's missing.
+echo "  End-to-end import check..."
+NODE_BIN="${ENVOYMESH_NODE_EXE:-node}"
+cat > "$DEST/__import_probe.mjs" <<'PROBE'
+const mods = [
+  // Direct npm deps
+  "zod", "ws", "yaml", "psl", "nat-upnp",
+  // Deep transitive deps
+  "main-event", "@libp2p/interface", "@multiformats/multiaddr",
+  // Workspace packages
+  "@envoymesh/protocol", "@envoymesh/api", "@envoymesh/identity",
+  "@envoymesh/bonds", "@envoymesh/network", "@envoymesh/vault",
+  "@envoymesh/local-store", "@envoymesh/models", "@envoymesh/rag",
+  "@envoymesh/ipfs-helia", "@envoymesh/openclaw-runtime",
+  "@envoymesh/kb-obsidian"
+];
+let failed = 0;
+for (const m of mods) {
+  try {
+    await import(m);
+  } catch (e) {
+    if (e.code === "ERR_MODULE_NOT_FOUND" || e.code === "MODULE_NOT_FOUND") {
+      console.error("FAIL: " + m + " — " + e.message.split("\n")[0]);
+      failed++;
+    }
+  }
+}
+if (failed > 0) {
+  console.error("\n" + failed + " module(s) failed to resolve. The bundle will crash at startup.");
+  process.exit(1);
+}
+console.error("All " + mods.length + " critical imports resolved.");
+PROBE
+(
+  cd "$DEST" || exit 1
+  "$NODE_BIN" ./__import_probe.mjs
+)
+probe_exit=$?
+rm -f "$DEST/__import_probe.mjs"
+if [ "$probe_exit" -ne 0 ]; then
+  echo "error: end-to-end import probe failed. See FAIL lines above." >&2
+  echo "       The node process would crash with ERR_MODULE_NOT_FOUND." >&2
   exit 1
 fi
 
