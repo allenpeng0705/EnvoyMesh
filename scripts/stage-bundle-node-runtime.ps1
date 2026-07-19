@@ -307,4 +307,27 @@ if (Test-Path $exampleCfg) {
     Copy-Item -Force $exampleCfg (Join-Path $Dest "envoymesh.node.example.yaml")
 }
 
+# Bundled sponsor friend config. The setup wizard uses this to bootstrap
+# the user's first mesh contact ("zero-step first friend"). Without it,
+# the wizard shows "no sponsor configured" and auto-hello is disabled.
+# Mirrors the bash twin's logic (stage real file, or copy .example if
+# ENVOYMESH_COPY_SPONSOR_EXAMPLE=1 for testing).
+$sponsorSrc = Join-Path $Root "bundled-sponsor-friend.json"
+$sponsorExampleSrc = Join-Path $Root "bundled-sponsor-friend.json.example"
+$sponsorDest = Join-Path $Dest "bundled-sponsor-friend.json"
+if (Test-Path $sponsorSrc) {
+    Write-Host "  Staging bundled sponsor friend config..."
+    Copy-Item -Force $sponsorSrc $sponsorDest
+} elseif ((Test-Path $sponsorExampleSrc) -and $env:ENVOYMESH_COPY_SPONSOR_EXAMPLE -eq "1") {
+    Write-Host "  Staging sponsor friend example (ENVOYMESH_COPY_SPONSOR_EXAMPLE=1)..."
+    Copy-Item -Force $sponsorExampleSrc $sponsorDest
+}
+
+# Also stage node-config.json if present (mirrors bash twin).
+$nodeConfigSrc = Join-Path $Root "node-config.json"
+if (Test-Path $nodeConfigSrc) {
+    Write-Host "  Staging bundled node-config.json..."
+    Copy-Item -Force $nodeConfigSrc (Join-Path $Dest "node-config.json")
+}
+
 Write-Host "  ✓ Node runtime staged at $Dest"
