@@ -99,71 +99,79 @@ foreach ($modPath in $npmLines) {
 # Without this, the bundle builds successfully but fails at runtime with
 # errors like "Cannot find package 'zod' imported from .../protocol/index.js".
 #
-# We scan THREE sources of declared deps to cover the full graph:
-#   1. apps/node/package.json            (direct runtime deps like ws, yaml)
-#   2. staged @envoymesh/*/package.json  (workspace pkg deps like zod)
-#   3. packages/openclaw/package.json    (deps the runtime imports via @envoymesh/openclaw-runtime)
-$rootNodeModules = Join-Path $Root "node_modules"
-
-# Helper: copy any declared dep from $Root/node_modules to $Dest/node_modules
-# if it's missing. Returns the count of packages copied.
-$pkgJsonsToScan = @()
-$appsNodePkg = Join-Path $Root "apps/node/package.json"
-if (Test-Path $appsNodePkg) { $pkgJsonsToScan += $appsNodePkg }
-$envoymeshScope = Join-Path $Dest "node_modules/@envoymesh"
-if (Test-Path $envoymeshScope) {
-    $pkgJsonsToScan += (Get-ChildItem -Path $envoymeshScope -Recurse -Filter "package.json" -ErrorAction SilentlyContinue).FullName
-}
-$openclawPkg = Join-Path $Root "packages/openclaw/package.json"
-if (Test-Path $openclawPkg) { $pkgJsonsToScan += $openclawPkg }
-
-$safetyNetCopied = 0
-$declaredButMissing = @()
-# Possible sources for each dep, in priority order. npm workspaces
-# usually hoist to root, but on Windows some deps stay nested in a
-# workspace package's local node_modules. We search all known locations.
+# We use a FIXPOINT LOOP: repeatedly scan every package.json in the staged
+# tree (and the seed sources), copy any missing deps from the source roots,
+# until no new packages are added. This handles transitive deps of any
+# depth — e.g. main-event is declared by @libp2p/interface, which itself
+# is a transitive dep of @envoymesh/network. A single-pass scan misses
+# these because @libp2p/interface isn't in the initial scan list; the
+# fixpoint loop discovers it on the second pass after @libp2p/interface
+# is staged, then discovers main-event on the third pass.
+#
+# Seed sources (scanned on pass 1 to bootstrap the loop):
+#   - apps/node/package.json            (direct runtime deps)
+#   - packages/openclaw/package.json    (deps imported via openclaw-runtime)
+# And on every pass, every staged @envoymesh/* + non-workspace package.json.
 $depSearchRoots = @(
     (Join-Path $Root "node_modules"),
     (Join-Path $Root "apps/node/node_modules"),
     (Join-Path $Root "packages/openclaw/node_modules")
 )
-foreach ($pkgJsonPath in $pkgJsonsToScan) {
-    if (-not $pkgJsonPath) { continue }
-    try {
-        $pkgMeta = Get-Content $pkgJsonPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
-    } catch { continue }
-    $deps = $pkgMeta.dependencies
-    if (-not $deps) { continue }
-    foreach ($depName in $deps.PSObject.Properties.Name) {
-        # Skip workspace packages — they're staged separately above.
-        if ($depName -like "@envoymesh/*") { continue }
-        $destDep = Join-Path $Dest "node_modules/$depName"
-        if (Test-Path $destDep) { continue }
-        # Search all known node_modules locations for this dep.
-        $srcDep = $null
-        foreach ($root in $depSearchRoots) {
-            $candidate = Join-Path $root $depName
-            if (Test-Path $candidate) { $srcDep = $candidate; break }
-        }
-        if (-not $srcDep) {
-            # Track declared deps we couldn't find anywhere — surfaced
-            # in the sanity check below so we never silently ship a
-            # broken bundle.
-            $declaredButMissing += $depName
-            continue
-        }
-        New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destDep) | Out-Null
-        Copy-Item -Recurse -Force $srcDep $destDep
-        $safetyNetCopied++
+$stagedNodeModules = Join-Path $Dest "node_modules"
+$seedPkgs = @()
+$appsNodePkg = Join-Path $Root "apps/node/package.json"
+if (Test-Path $appsNodePkg) { $seedPkgs += $appsNodePkg }
+$openclawPkg = Join-Path $Root "packages/openclaw/package.json"
+if (Test-Path $openclawPkg) { $seedPkgs += $openclawPkg }
+
+$safetyNetCopied = 0
+$maxIterations = 10  # fixpoint convergence guard — 10 levels of nesting is plenty
+for ($iter = 1; $iter -le $maxIterations; $iter++) {
+    # Collect package.json files to scan this iteration: seeds + every
+    # staged package's package.json (recursive, picks up newly-staged
+    # packages from the previous iteration).
+    $scanList = @()
+    $scanList += $seedPkgs
+    if (Test-Path $stagedNodeModules) {
+        $scanList += (Get-ChildItem -Path $stagedNodeModules -Recurse -Filter "package.json" -ErrorAction SilentlyContinue |
+                      Where-Object { $_.FullName -notmatch '\\node_modules\\[^\\]+\\node_modules\\' }).FullName
     }
+    $copiedThisIter = 0
+    foreach ($pkgJsonPath in $scanList) {
+        if (-not $pkgJsonPath) { continue }
+        try {
+            $pkgMeta = Get-Content $pkgJsonPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        } catch { continue }
+        $deps = $pkgMeta.dependencies
+        if (-not $deps) { continue }
+        foreach ($depName in $deps.PSObject.Properties.Name) {
+            # Skip workspace packages — they're staged separately above.
+            if ($depName -like "@envoymesh/*") { continue }
+            $destDep = Join-Path $stagedNodeModules $depName
+            if (Test-Path $destDep) { continue }
+            # Search all known node_modules locations for this dep.
+            $srcDep = $null
+            foreach ($nmRoot in $depSearchRoots) {
+                $candidate = Join-Path $nmRoot $depName
+                if (Test-Path $candidate) { $srcDep = $candidate; break }
+            }
+            if (-not $srcDep) { continue }
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destDep) | Out-Null
+            Copy-Item -Recurse -Force $srcDep $destDep
+            $copiedThisIter++
+        }
+    }
+    $safetyNetCopied += $copiedThisIter
+    if ($copiedThisIter -eq 0) { break }  # fixpoint reached
 }
 if ($safetyNetCopied -gt 0) {
-    Write-Host "  Safety net: copied $safetyNetCopied missing deps (npm ls dropped them)"
+    Write-Host "  Safety net: copied $safetyNetCopied missing deps in $iter pass(es) (npm ls dropped them)"
 }
 
 # Sanity check: verify a handful of known-critical runtime deps are present.
 # If any are missing, fail loudly rather than shipping a broken bundle.
-$criticalDeps = @("zod", "ws", "yaml")
+# Each is at a different transitive depth — catches fixpoint-loop bugs.
+$criticalDeps = @("zod", "ws", "yaml", "main-event", "@libp2p/interface")
 $missing = @()
 foreach ($dep in $criticalDeps) {
     if (-not (Test-Path (Join-Path $Dest "node_modules/$dep"))) {

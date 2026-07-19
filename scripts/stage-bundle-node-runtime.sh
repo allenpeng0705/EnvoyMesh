@@ -91,62 +91,79 @@ done < <(npm ls --omit=dev -w @envoymesh/node --all --parseable 2>/dev/null || t
 #   1. apps/node/package.json            (direct runtime deps like ws, yaml)
 #   2. staged @envoymesh/*/package.json  (workspace pkg deps like zod)
 #   3. packages/openclaw/package.json    (deps imported via @envoymesh/openclaw-runtime)
-root_node_modules="$ROOT/node_modules"
+# Safety net: FIXPOINT LOOP that repeatedly scans every package.json in
+# the staged tree + seed sources, copies any missing deps from the source
+# roots, until no new packages are added (fixpoint reached). Handles
+# transitive deps of any depth — e.g. main-event is declared by
+# @libp2p/interface, which is itself a transitive dep of @envoymesh/network.
+# A single-pass scan misses these because @libp2p/interface isn't in the
+# initial scan list; the fixpoint loop discovers it on pass 2 (after
+# @libp2p/interface is staged), then main-event on pass 3.
+#
+# Without this, the bundle ships and the node process crashes at startup
+# with ERR_MODULE_NOT_FOUND for whatever transitive dep is deepest.
 envoymesh_scope="$DEST/node_modules/@envoymesh"
-safety_net_copied=0
-# Possible sources for each dep, in priority order. npm workspaces
-# usually hoist to root, but on Windows some deps stay nested in a
-# workspace package's local node_modules. We search all known locations.
+staged_node_modules="$DEST/node_modules"
 dep_search_roots=(
   "$ROOT/node_modules"
   "$ROOT/apps/node/node_modules"
   "$ROOT/packages/openclaw/node_modules"
 )
+seed_pkgs=()
+[ -f "$ROOT/apps/node/package.json" ] && seed_pkgs+=("$ROOT/apps/node/package.json")
+[ -f "$ROOT/packages/openclaw/package.json" ] && seed_pkgs+=("$ROOT/packages/openclaw/package.json")
 
-# Build the list of package.json files to scan.
-pkg_jsons_to_scan=()
-[ -f "$ROOT/apps/node/package.json" ] && pkg_jsons_to_scan+=("$ROOT/apps/node/package.json")
-if [ -d "$envoymesh_scope" ]; then
-  while IFS= read -r p; do
-    pkg_jsons_to_scan+=("$p")
-  done < <(find "$envoymesh_scope" -name package.json -type f 2>/dev/null)
-fi
-[ -f "$ROOT/packages/openclaw/package.json" ] && pkg_jsons_to_scan+=("$ROOT/packages/openclaw/package.json")
-
-for pkg_json in "${pkg_jsons_to_scan[@]}"; do
-  [ -f "$pkg_json" ] || continue
-  # Extract dep names from package.json (handles @scope/name correctly)
-  dep_names="$(node -e "
-    try { const p=require(process.argv[1]); const d=p.dependencies||{}; process.stdout.write(Object.keys(d).filter(k=>!k.startsWith('@envoymesh/')).join('\n')); }
-    catch(e) { /* skip */ }
-  " "$pkg_json" 2>/dev/null || true)"
-  [ -z "$dep_names" ] && continue
-  while IFS= read -r dep_name; do
-    [ -z "$dep_name" ] && continue
-    dest_dep="$DEST/node_modules/$dep_name"
-    [ -d "$dest_dep" ] && continue
-    # Search all known node_modules locations for this dep.
-    src_dep=""
-    for root in "${dep_search_roots[@]}"; do
-      if [ -d "$root/$dep_name" ]; then
-        src_dep="$root/$dep_name"
-        break
-      fi
-    done
-    [ -z "$src_dep" ] && continue
-    mkdir -p "$(dirname "$dest_dep")"
-    cp -R "$src_dep" "$dest_dep"
-    safety_net_copied=$((safety_net_copied + 1))
-  done <<< "$dep_names"
+safety_net_copied=0
+max_iterations=10  # fixpoint convergence guard
+iter=0
+while [ "$iter" -lt "$max_iterations" ]; do
+  iter=$((iter + 1))
+  # Build scan list: seeds + every staged package's package.json.
+  # Exclude deeply-nested node_modules (only top-level staged packages).
+  scan_list=("${seed_pkgs[@]}")
+  if [ -d "$staged_node_modules" ]; then
+    while IFS= read -r p; do
+      scan_list+=("$p")
+    done < <(find "$staged_node_modules" -name package.json -type f 2>/dev/null | grep -v '/node_modules/[^/]*/node_modules/' || true)
+  fi
+  copied_this_iter=0
+  for pkg_json in "${scan_list[@]}"; do
+    [ -f "$pkg_json" ] || continue
+    # Extract non-@envoymesh dep names from package.json.
+    dep_names="$(node -e "
+      try { const p=require(process.argv[1]); const d=p.dependencies||{}; process.stdout.write(Object.keys(d).filter(k=>!k.startsWith('@envoymesh/')).join('\n')); }
+      catch(e) { /* skip */ }
+    " "$pkg_json" 2>/dev/null || true)"
+    [ -z "$dep_names" ] && continue
+    while IFS= read -r dep_name; do
+      [ -z "$dep_name" ] && continue
+      dest_dep="$staged_node_modules/$dep_name"
+      [ -d "$dest_dep" ] && continue
+      # Search all known node_modules locations for this dep.
+      src_dep=""
+      for nm_root in "${dep_search_roots[@]}"; do
+        if [ -d "$nm_root/$dep_name" ]; then
+          src_dep="$nm_root/$dep_name"
+          break
+        fi
+      done
+      [ -z "$src_dep" ] && continue
+      mkdir -p "$(dirname "$dest_dep")"
+      cp -R "$src_dep" "$dest_dep"
+      copied_this_iter=$((copied_this_iter + 1))
+    done <<< "$dep_names"
+  done
+  safety_net_copied=$((safety_net_copied + copied_this_iter))
+  [ "$copied_this_iter" -eq 0 ] && break  # fixpoint reached
 done
 if [ "$safety_net_copied" -gt 0 ]; then
-  echo "  Safety net: copied $safety_net_copied missing deps (npm ls dropped them)"
+  echo "  Safety net: copied $safety_net_copied missing deps in $iter pass(es) (npm ls dropped them)"
 fi
 
 # Sanity check: verify a handful of known-critical runtime deps are present.
 # If any are missing, fail loudly rather than shipping a broken bundle.
 missing=""
-for dep in zod ws yaml; do
+for dep in zod ws yaml main-event; do
   if [ ! -d "$DEST/node_modules/$dep" ]; then
     missing="$missing $dep"
   fi
