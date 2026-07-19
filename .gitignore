@@ -35,3 +35,6 @@ shared_vault/
 .zcode/plans/plan-sess_84aaf6ff-51d0-4d0e-ab96-249260c63746.md
 apps/node/test/.DS_Store
 /apps/tauri/src-tauri/target
+# Build failure logs emitted by scripts/build-desktop.ps1 (Invoke-ExternalQuiet)
+/scripts/build-logs/
+/apps/tauri/tauri-debug.log

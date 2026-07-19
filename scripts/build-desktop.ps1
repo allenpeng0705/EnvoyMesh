@@ -222,15 +222,39 @@ function Invoke-ExternalQuiet {
     $prevEap = $ErrorActionPreference
     $ErrorActionPreference = "SilentlyContinue"
     # Capture every byte (stdout + stderr) to a temp log so we can tail it
-    # on failure. -Stream also pipes through Tee-Object so the operator
-    # sees progress live — important for builds that take >5 min and
-    # where a "silent" run looks like a hang.
-    $logPath = Join-Path $env:TEMP "envoymesh-build-$([guid]::NewGuid()).log"
+    # on failure. The log lives under the repo's scripts/ dir (not $env:TEMP)
+    # because users repeatedly reported the TEMP log missing — Windows
+    # PowerShell 5.1's Tee-Object silently drops ErrorRecord objects from
+    # native stderr, so the log was never written. We now write each line
+    # explicitly via a per-line Out-File append, which handles both string
+    # and ErrorRecord input correctly.
+    $logDir = Join-Path $PSScriptRoot "..\build-logs"
+    if (-not (Test-Path $logDir)) {
+        New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+    }
+    $logName = "envoymesh-build-$([guid]::NewGuid()).log"
+    $logPath = Join-Path $logDir $logName
+    # Resolve to absolute so the message we print is clickable.
+    $logPath = (Resolve-Path -LiteralPath (New-Item -ItemType File -Path $logPath -Force).FullName).Path
     $exit = 0
     try {
         if ($Stream) {
-            & $Exe @ToolArgs 2>&1 | Tee-Object -FilePath $logPath | Out-Host
+            # Stream live AND log. We can't use `2>&1 | Tee-Object` because
+            # ErrorRecord objects from native stderr crash Tee-Object on
+            # PowerShell 5.1, silently swallowing all output. Instead, merge
+            # stderr into the success stream with 2>&1, then process each
+            # record individually: write to console + append to log.
+            & $Exe @ToolArgs 2>&1 | ForEach-Object {
+                $line = if ($_ -is [System.Management.Automation.ErrorRecord]) {
+                    $_.Exception.Message
+                } else {
+                    [string]$_
+                }
+                Write-Host $line
+                Add-Content -LiteralPath $logPath -Value $line -ErrorAction SilentlyContinue
+            }
         } else {
+            # Quiet: redirect everything to the log, no console output.
             & $Exe @ToolArgs *> $logPath
         }
         $exit = $LASTEXITCODE
@@ -248,6 +272,8 @@ function Invoke-ExternalQuiet {
                 }
             } else {
                 Write-Host "    --- (no captured output — the command was silent, or its output went elsewhere) ---" -ForegroundColor DarkGray
+                Write-Host "    --- Try running it directly to see live output: ---" -ForegroundColor DarkGray
+                Write-Host "    ---   $cmdDesc ---" -ForegroundColor DarkGray
             }
             Write-Host "    --- Full log preserved at: $logPath ---" -ForegroundColor DarkGray
             Write-Host "    --- end ---" -ForegroundColor DarkGray
