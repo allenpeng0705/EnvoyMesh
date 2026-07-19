@@ -78,9 +78,59 @@ fn pipe_child_logs(
     }
 }
 
+/// Strip the Windows extended-length path prefix (`\\?\`) from a PathBuf.
+///
+/// `std::env::current_exe()`, `canonicalize()`, and Tauri's `resource_dir()`
+/// all return verbatim `\\?\C:\...` paths on Windows. Node.js's module
+/// resolver cannot handle this prefix — `realpathSync` fails with
+/// `EISDIR: illegal operation on a directory, lstat 'C:'` because the
+/// prefix is stripped incorrectly during path resolution, leaving just
+/// the bare drive letter.
+///
+/// On non-Windows platforms this is a no-op. On Windows, we strip:
+///   `\\?\C:\path`  →  `C:\path`
+///   `\\?\UNC\host\share`  →  `\\host\share`
+///
+/// Only strips when the path is safe to represent in the legacy form
+/// (under MAX_PATH). We don't bother checking length here because all
+/// our resource paths are well under the limit.
+fn strip_verbatim_prefix(path: PathBuf) -> PathBuf {
+    #[cfg(windows)]
+    {
+        use std::ffi::OsString;
+        use std::os::windows::ffi::OsStrExt;
+        let s = path.as_os_str();
+        let chars: Vec<u16> = s.encode_wide().collect();
+        // `\\?\` = [backslash, backslash, question, backslash]
+        if chars.len() >= 4 && chars[0] == b'\\' as u16 && chars[1] == b'\\' as u16
+            && chars[2] == b'?' as u16 && chars[3] == b'\\' as u16
+        {
+            // Check for `\\?\UNC\` (UNC path verbatim form).
+            // UNC verbatim: `\\?\UNC\server\share\...` → `\\server\share\...`
+            const UNC: &[u16] = &[b'U' as u16, b'N' as u16, b'C' as u16, b'\\' as u16];
+            if chars.len() >= 8 && chars[4..8] == *UNC {
+                // Replace `\\?\UNC\` with `\\` (single leading pair of backslashes).
+                let mut stripped: Vec<u16> = vec![b'\\' as u16, b'\\' as u16];
+                stripped.extend_from_slice(&chars[8..]);
+                return PathBuf::from(OsString::from_wide(&stripped));
+            }
+            // Plain verbatim: `\\?\C:\...` → `C:\...`
+            return PathBuf::from(OsString::from_wide(&chars[4..]));
+        }
+        path
+    }
+    #[cfg(not(windows))]
+    {
+        path
+    }
+}
+
 /// Compile-time manifest dir (dev builds) — only valid on the machine that built the binary.
 fn resource_dir_from_exe() -> Option<PathBuf> {
-    let exe = std::env::current_exe().ok()?;
+    // current_exe() returns `\\?\`-prefixed paths on Windows. We strip
+    // that here because the result flows into Node.js spawn args, where
+    // the verbatim prefix breaks Node's module resolver.
+    let exe = strip_verbatim_prefix(std::env::current_exe().ok()?);
     #[cfg(target_os = "macos")]
     {
         // .../EnvoyMesh.app/Contents/MacOS/envoymesh → .../Contents/Resources
@@ -115,10 +165,15 @@ fn resource_dir_from_exe() -> Option<PathBuf> {
 }
 
 fn resolve_resource_dir(app: &tauri::App) -> Option<PathBuf> {
-    app.path()
+    let dir = app
+        .path()
         .resource_dir()
         .ok()
-        .or_else(resource_dir_from_exe)
+        .or_else(resource_dir_from_exe)?;
+    // Strip the `\\?\` verbatim prefix on Windows — Node.js's module
+    // resolver can't handle it (EISDIR on lstat 'C:'). See
+    // strip_verbatim_prefix docs for details.
+    Some(strip_verbatim_prefix(dir))
 }
 
 fn dev_repo_root_from_manifest() -> Option<PathBuf> {
@@ -1150,5 +1205,74 @@ mod tests {
                 "JSON missing state discriminator: {json}"
             );
         }
+    }
+
+    #[test]
+    fn strip_verbatim_prefix_plain_drive_path() {
+        // `\\?\C:\foo\bar` → `C:\foo\bar`
+        // Build from wide chars so the test compiles cross-platform.
+        #[cfg(windows)]
+        {
+            use std::os::windows::ffi::OsStringExt;
+            let raw: Vec<u16> = [
+                b'\\' as u16, b'\\' as u16, b'?' as u16, b'\\' as u16,
+                b'C' as u16, b':' as u16, b'\\' as u16,
+                b'f' as u16, b'o' as u16, b'o' as u16,
+            ]
+            .to_vec();
+            let path = PathBuf::from(std::ffi::OsString::from_wide(&raw));
+            let stripped = strip_verbatim_prefix(path);
+            let s = stripped.to_string_lossy();
+            assert!(
+                !s.starts_with(r"\\?\"),
+                "verbatim prefix not stripped: {s}"
+            );
+            assert!(s.contains("foo"), "path content lost: {s}");
+        }
+        #[cfg(not(windows))]
+        {
+            // No-op on non-Windows; just exercise the function.
+            let path = PathBuf::from("/tmp/foo");
+            let stripped = strip_verbatim_prefix(path);
+            assert_eq!(stripped.to_string_lossy(), "/tmp/foo");
+        }
+    }
+
+    #[test]
+    fn strip_verbatim_prefix_unc_path() {
+        // `\\?\UNC\server\share` → `\\server\share`
+        #[cfg(windows)]
+        {
+            use std::os::windows::ffi::OsStringExt;
+            let raw: Vec<u16> = [
+                b'\\' as u16, b'\\' as u16, b'?' as u16, b'\\' as u16,
+                b'U' as u16, b'N' as u16, b'C' as u16, b'\\' as u16,
+                b's' as u16, b'v' as u16, b'r' as u16,
+            ]
+            .to_vec();
+            let path = PathBuf::from(std::ffi::OsString::from_wide(&raw));
+            let stripped = strip_verbatim_prefix(path);
+            let s = stripped.to_string_lossy();
+            assert!(
+                !s.starts_with(r"\\?\"),
+                "verbatim prefix not stripped on UNC: {s}"
+            );
+            assert!(s.contains("svr"), "UNC host lost: {s}");
+        }
+        #[cfg(not(windows))]
+        {
+            // No-op on non-Windows.
+            let path = PathBuf::from("/tmp/foo");
+            let stripped = strip_verbatim_prefix(path);
+            assert_eq!(stripped.to_string_lossy(), "/tmp/foo");
+        }
+    }
+
+    #[test]
+    fn strip_verbatim_prefix_already_plain_noop() {
+        // Non-verbatim paths must pass through unchanged.
+        let plain = PathBuf::from(if cfg!(windows) { r"C:\foo" } else { "/tmp/foo" });
+        let stripped = strip_verbatim_prefix(plain.clone());
+        assert_eq!(stripped, plain, "plain path was modified");
     }
 }
