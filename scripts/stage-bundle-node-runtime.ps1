@@ -32,22 +32,26 @@ Copy-Item -Recurse -Force "$Src/*" $distDest
 }
 '@ | Set-Content -Path (Join-Path $Dest "package.json") -Encoding UTF8
 
-$workspacePkgs = @(
-    "protocol", "identity", "bonds", "network", "vault",
-    "local-store", "api", "models", "rag", "ipfs-helia"
-)
-
+# Discover workspace packages dynamically. We used to hardcode a list, but
+# new packages (kb-obsidian, mobile-*, openclaw-runtime) kept getting missed
+# on Windows — npm ls silently dropped them and the hardcoded list didn't
+# include them. Mirror the bash twin's dynamic discovery instead.
 Write-Host "  Staging @envoymesh workspace packages..."
-foreach ($pkg in $workspacePkgs) {
-    $srcPkg = Join-Path $Root "packages/$pkg"
+$stagedWorkspacePkgs = 0
+foreach ($pkgDir in (Get-ChildItem -Path (Join-Path $Root "packages") -Directory -ErrorAction SilentlyContinue)) {
+    $pkg = $pkgDir.Name
+    # packages/openclaw is pnpm-managed separately and staged as a flat
+    # tree under resources/openclaw/, not as @envoymesh/openclaw.
+    if ($pkg -eq "openclaw") { continue }
+    $srcPkg = $pkgDir.FullName
+    if (-not (Test-Path (Join-Path $srcPkg "dist"))) { continue }
     $destPkg = Join-Path $Dest "node_modules/@envoymesh/$pkg"
-    if (-not (Test-Path (Join-Path $srcPkg "dist"))) {
-        Write-Error "Missing dist for @envoymesh/$pkg — run: npm run node:build"
-    }
     New-Item -ItemType Directory -Force -Path $destPkg | Out-Null
     Copy-Item -Force (Join-Path $srcPkg "package.json") $destPkg
     Copy-Item -Recurse -Force (Join-Path $srcPkg "dist") $destPkg
+    $stagedWorkspacePkgs++
 }
+Write-Host "  Staged $stagedWorkspacePkgs @envoymesh workspace packages"
 
 Write-Host "  Staging production npm dependencies..."
 $npmLines = @()
@@ -170,8 +174,16 @@ if ($safetyNetCopied -gt 0) {
 
 # Sanity check: verify a handful of known-critical runtime deps are present.
 # If any are missing, fail loudly rather than shipping a broken bundle.
-# Each is at a different transitive depth — catches fixpoint-loop bugs.
-$criticalDeps = @("zod", "ws", "yaml", "main-event", "@libp2p/interface")
+# Each is at a different transitive depth or workspace class — catches
+# fixpoint-loop bugs, dynamic-discovery bugs, and npm ls drops.
+$criticalDeps = @(
+    # Direct npm deps
+    "zod", "ws", "yaml",
+    # Deep transitive deps (proves fixpoint loop ran)
+    "main-event", "@libp2p/interface",
+    # Workspace packages (proves dynamic discovery ran)
+    "@envoymesh/kb-obsidian", "@envoymesh/openclaw-runtime"
+)
 $missing = @()
 foreach ($dep in $criticalDeps) {
     if (-not (Test-Path (Join-Path $Dest "node_modules/$dep"))) {
