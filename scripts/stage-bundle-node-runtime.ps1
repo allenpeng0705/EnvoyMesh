@@ -88,6 +88,60 @@ foreach ($modPath in $npmLines) {
     Copy-Item -Recurse -Force $modPath $destMod
 }
 
+# Safety net: scan every staged @envoymesh/* package's declared dependencies
+# and copy any that are missing from the staged node_modules. This catches
+# transitive deps that `npm ls --omit=dev -w @envoymesh/node` silently drops
+# on Windows when peer-dep or workspace-resolution warnings cause it to emit
+# partial output (PowerShell's try/catch can't distinguish partial from
+# complete — the missing packages ship and the node process crashes at
+# startup with ERR_MODULE_NOT_FOUND).
+#
+# Without this, the bundle builds successfully but fails at runtime with
+# errors like "Cannot find package 'zod' imported from .../protocol/index.js".
+$envoymeshScope = Join-Path $Dest "node_modules/@envoymesh"
+$rootNodeModules = Join-Path $Root "node_modules"
+$safetyNetCopied = 0
+if (Test-Path $envoymeshScope) {
+    foreach ($pkgJsonPath in (Get-ChildItem -Path $envoymeshScope -Recurse -Filter "package.json" -ErrorAction SilentlyContinue)) {
+        try {
+            $pkgMeta = Get-Content $pkgJsonPath.FullName -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        } catch { continue }
+        $deps = $pkgMeta.dependencies
+        if (-not $deps) { continue }
+        foreach ($depName in $deps.PSObject.Properties.Name) {
+            # Skip workspace packages — they're staged separately above.
+            if ($depName -like "@envoymesh/*") { continue }
+            $destDep = Join-Path $Dest "node_modules/$depName"
+            if (Test-Path $destDep) { continue }
+            # Look for the dep in the root node_modules (npm workspace
+            # hoists most deps there). If absent, skip — we can't stage
+            # what we don't have.
+            $srcDep = Join-Path $rootNodeModules $depName
+            if (-not (Test-Path $srcDep)) { continue }
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $destDep) | Out-Null
+            Copy-Item -Recurse -Force $srcDep $destDep
+            $safetyNetCopied++
+        }
+    }
+}
+if ($safetyNetCopied -gt 0) {
+    Write-Host "  Safety net: copied $safetyNetCopied missing deps from root node_modules (npm ls dropped them)"
+}
+
+# Sanity check: verify a handful of known-critical runtime deps are present.
+# If any are missing, fail loudly rather than shipping a broken bundle.
+$criticalDeps = @("zod", "ws", "yaml")
+$missing = @()
+foreach ($dep in $criticalDeps) {
+    if (-not (Test-Path (Join-Path $Dest "node_modules/$dep"))) {
+        $missing += $dep
+    }
+}
+if ($missing.Count -gt 0) {
+    Write-Error "Critical runtime deps missing from staged tree: $($missing -join ', '). The node process will crash at startup with ERR_MODULE_NOT_FOUND. Check that 'npm install' succeeded in the repo root."
+    exit 1
+}
+
 $skillsSrc = Join-Path $Root "apps/node/skills"
 $skillsDest = Join-Path $Dest "skills"
 if (Test-Path $skillsSrc) {
