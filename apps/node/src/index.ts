@@ -91,6 +91,7 @@ import {
   createSystemPingPayload,
   createSystemSignalPayload,
   createKnowledgeResponsePayload,
+  createLibraryReadResponsePayload,
   createAgentCardResponsePayload,
   createSharePreviewPayload,
   parseShareRequestPayload,
@@ -133,6 +134,7 @@ import { handleSyncStateViaRuntime } from "./cli-mesh-inbound-sync-state.js";
 import { handleShareAcceptViaRuntime } from "./cli-mesh-inbound-share-accept.js";
 import { handleShareRequestViaRuntime } from "./cli-mesh-inbound-share-request.js";
 import { handleKnowledgeQueryViaRuntime } from "./cli-mesh-inbound-knowledge-query.js";
+import { handleLibraryReadViaRuntime } from "./cli-mesh-inbound-library-read.js";
 import { handleCliSharePreviewViaRuntime } from "./cli-mesh-inbound-share-preview.js";
 import { handleSystemPingViaRuntime } from "./cli-mesh-inbound-system-ping.js";
 import { buildVaultIndex } from "@envoymesh/vault";
@@ -166,6 +168,7 @@ import { pushNotificationService } from "./push-notification.js";
 import { applyLanAutoBondAccept, evaluateLanAutoBondReceipt } from "./node-service-lan-auto-bond.js";
 import { handleInboundTaskFeedback, handleInboundOfficialCredential } from "./reputation-inbound.js";
 import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
+import { handleInboundLibraryRead } from "./library-read-inbound.js";
 import { handleDaemonAgentCardInbound } from "./daemon-agent-card-inbound.js";
 import { handleDaemonTaskInbound } from "./daemon-task-inbound.js";
 import { handleInboundShareRequest, handleInboundShareAccept, resolveSenderOwnerId } from "./share-inbound.js";
@@ -1224,6 +1227,37 @@ async function handleInboundMeshMessage({
             nodeService.recordInboundKnowledgeAnswered(input);
           }
         },
+        getProtocol: () => ENVOY_MESSAGE_PROTOCOL,
+      },
+      {
+        envelope,
+        remotePeerId,
+        receivedAt,
+        correlationId,
+      },
+    );
+    return;
+  }
+
+  if (envelope.intent === "library.read") {
+    // Phase 45 — Web Content Browsing. Pull-based content serving.
+    // See docs/web-content-browsing-design.md §4.4.
+    await handleLibraryReadViaRuntime(
+      {
+        handleInboundLibraryRead: (input: any) => handleInboundLibraryRead(input),
+        getTaskStore: () => taskStore,
+        getTrustStore: () => trustStore,
+        getPeerDirectoryStore: () => peerDirectoryStore,
+        getProfile: () => profile,
+        getProfileDir: () => args.profileDir,
+        appendAuditEvent: (event: any) => taskStore.appendAuditEvent(event),
+        derivePeerId,
+        createUnsignedEnvelope,
+        createLibraryReadResponsePayload,
+        signUnsignedEnvelope,
+        getMesh: () => mesh,
+        deliverOutboundEnvelope,
+        logWarn: (msg: any) => console.warn(msg),
         getProtocol: () => ENVOY_MESSAGE_PROTOCOL,
       },
       {

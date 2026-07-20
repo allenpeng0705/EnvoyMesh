@@ -60,6 +60,8 @@ import type {
   SubmitAgentShareProposalParams,
   DiscoverPublishedLibraryParams,
   DiscoverPublishedLibraryPeerResult,
+  LibraryReadParams,
+  LibraryReadResult,
   PublishedLibraryFileHit,
   ExportLibraryItemToIpfsResult,
   PinLibraryItemExternalResult,
@@ -645,6 +647,7 @@ import {
   type FileShareContext,
   type FileShareNetworkContext,
   discoverPublishedLibraryViaRuntime,
+  libraryReadViaRuntime,
   shareFileViaRuntime,
   requestShareFromLibraryViaRuntime,
 } from "./node-service-fileshare.js";
@@ -4982,6 +4985,10 @@ class NodeServiceImpl implements NodeService {
     params?: DiscoverPublishedLibraryParams,
   ): Promise<DiscoverPublishedLibraryPeerResult[]> {
     return discoverPublishedLibraryViaRuntime(this._fileShareNetworkContext(), params);
+  }
+
+  async libraryRead(params: LibraryReadParams): Promise<LibraryReadResult> {
+    return libraryReadViaRuntime(this._fileShareNetworkContext(), params);
   }
 
 

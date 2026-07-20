@@ -943,6 +943,46 @@ export interface DiscoverPublishedLibraryPeerResult {
   error?: string;
 }
 
+// Phase 45 — Web Content Browsing.
+
+export interface LibraryReadParams {
+  /** Owner ID of the serving node (the `envoy:owner:...` from the URL). */
+  targetOwnerId: string;
+  /** URL path (leading slash stripped, percent-decoded). */
+  path: string;
+  /** Optional byte range for large-file chunking. */
+  range?: { start: number; end: number };
+  /** Per-target timeout (default 30s). */
+  timeoutMs?: number;
+}
+
+export interface LibraryReadResult {
+  /** The serving node's owner ID. */
+  peerOwnerId: string;
+  /** libp2p peer ID we dialed. */
+  libp2pPeerId: string;
+  /** Wire status discriminator. */
+  status: "ok" | "not_found" | "forbidden" | "too_large";
+  /** Body when status === "ok" (UTF-8 text or base64 binary). */
+  body?: string;
+  /** MIME type detected by the serving node. */
+  contentType?: string;
+  /** sha256 of body — caller verifies. */
+  contentHash?: string;
+  /** Body byte length. */
+  byteLength?: number;
+  /** ETag (hash prefix) for cache revalidation. */
+  etag?: string;
+  /** Present when responding to a range request. */
+  range?: { start: number; end: number; total: number };
+  /** Alt path with public-tier content when forbidden. */
+  publicRedirection?: string;
+  /** Round-trip latency. */
+  latencyMs: number;
+  /** Set when the dial or reply failed (no peer error in `status`). */
+  error?: string;
+}
+
 // ----- Agent-assisted flows (FS-E) -----
 
 export interface AgentShareProposal {
@@ -1796,6 +1836,19 @@ export interface NodeService {
    * Peers are queried in trust order (direct first). Requires an online mesh route to each peer.
    */
   discoverPublishedLibrary(params?: DiscoverPublishedLibraryParams): Promise<DiscoverPublishedLibraryPeerResult[]>;
+
+  /**
+   * Phase 45 — Fetch raw content by URL path from a bonded contact's
+   * published web directory. Pull-based analog of `discoverPublishedLibrary`:
+   * discovery returns *what* a node has; `libraryRead` returns the *bytes*.
+   *
+   * The serving node enforces per-item visibility via the Bonds Engine.
+   * A stranger (non-bonded) reader gets `status: "forbidden"` or
+   * `status: "not_found"` depending on the item's visibility flag.
+   *
+   * Design: docs/web-content-browsing-design.md §4.4.
+   */
+  libraryRead(params: LibraryReadParams): Promise<LibraryReadResult>;
 
   // ----- Agent-assisted (FS-E placeholder) -----
 

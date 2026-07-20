@@ -53,9 +53,12 @@ import { derivePeerId } from "@envoymesh/identity";
 import { signUnsignedEnvelope } from "@envoymesh/identity";
 import {
   createDiscoveryRequestPayload,
+  createLibraryReadPayload,
   createShareRequestPayload,
   createUnsignedEnvelope,
   parseDiscoveryResponsePayload,
+  parseLibraryReadResponsePayload,
+  type LibraryReadResponsePayload,
 } from "@envoymesh/protocol";
 import {
   bondTrustRank,
@@ -65,6 +68,8 @@ import {
   type DeleteVaultItemParams,
   type DiscoverPublishedLibraryParams,
   type DiscoverPublishedLibraryPeerResult,
+  type LibraryReadParams,
+  type LibraryReadResult,
   type NodeProfile,
   type PublishedLibraryFileHit,
 } from "@envoymesh/api";
@@ -788,6 +793,99 @@ export async function discoverPublishedLibraryViaRuntime(
 }
 
 /**
+ * Phase 45 — `libraryRead` runtime (requester side).
+ *
+ * Sends a signed `library.read` envelope to a bonded contact and awaits
+ * the `library.read.response` reply. Mirrors `discoverPublishedLibraryViaRuntime`
+ * but for a single target + single reply (not a fanout).
+ *
+ * Design: docs/web-content-browsing-design.md §4.4, §4.6.
+ */
+export async function libraryReadViaRuntime(
+  ctx: FileShareNetworkContext,
+  params: LibraryReadParams,
+): Promise<LibraryReadResult> {
+  ctx.assertOnline();
+  ctx.recordOwnerActivity();
+  const mesh = ctx.requireMesh();
+  const profile = ctx.requireProfile();
+
+  const started = Date.now();
+  const timeoutMs = params.timeoutMs ?? 30_000;
+
+  try {
+    const { transportPeerId, recipientEnvelopePeerId, listenAddrs } =
+      await ctx.resolvePeerTransportForOwner(params.targetOwnerId);
+    const dialHints = await Promise.race([
+      ctx.dialHintsForChat(transportPeerId, listenAddrs),
+      new Promise<string[]>((r) => setTimeout(() => r([]), 30_000)),
+    ]);
+
+    const unsigned = createUnsignedEnvelope({
+      senderPeerId: derivePeerId(profile.device.publicKeyPem),
+      senderPublicKey: profile.device.publicKeyPem,
+      senderRole: "human",
+      recipientPeerId: recipientEnvelopePeerId,
+      recipientRole: "human",
+      intent: "library.read",
+      payload: createLibraryReadPayload({
+        requesterOwnerId: profile.owner.ownerId,
+        targetOwnerId: params.targetOwnerId,
+        path: params.path,
+        range: params.range,
+      }),
+      correlationId: randomUUID(),
+    });
+    const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem);
+    const reply = await sendExpectReplyWithRetry({
+      mesh: mesh as never,
+      transportPeerId,
+      envelope,
+      dialHints,
+      timeoutMs,
+    });
+    const latencyMs = Date.now() - started;
+
+    if ((reply as { intent?: string }).intent !== "library.read.response") {
+      return {
+        peerOwnerId: params.targetOwnerId,
+        libp2pPeerId: transportPeerId,
+        status: "not_found",
+        latencyMs,
+        error: `unexpected reply intent ${(reply as { intent?: string }).intent ?? "unknown"}`,
+      };
+    }
+
+    const resp: LibraryReadResponsePayload = parseLibraryReadResponsePayload(
+      (reply as { payload: unknown }).payload,
+    );
+
+    return {
+      peerOwnerId: params.targetOwnerId,
+      libp2pPeerId: transportPeerId,
+      status: resp.status,
+      body: resp.body,
+      contentType: resp.contentType,
+      contentHash: resp.contentHash,
+      byteLength: resp.byteLength,
+      etag: resp.etag,
+      range: resp.range,
+      publicRedirection: resp.publicRedirection,
+      latencyMs,
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return {
+      peerOwnerId: params.targetOwnerId,
+      libp2pPeerId: "",
+      status: "not_found",
+      latencyMs: Date.now() - started,
+      error: msg,
+    };
+  }
+}
+
+/**
  * `shareFile` runtime (sender side: local vault -> remote).
  *
  * Validates the vault path, resolves the peer transport, sends a
@@ -957,19 +1055,39 @@ export async function requestShareFromLibraryViaRuntime(
 const MIME_BY_EXT: Record<string, string> = {
   ".txt": "text/plain",
   ".md": "text/markdown",
+  ".markdown": "text/markdown",
   ".json": "application/json",
   ".html": "text/html",
+  ".htm": "text/html",
   ".css": "text/css",
   ".js": "application/javascript",
+  ".mjs": "application/javascript",
   ".ts": "application/typescript",
   ".pdf": "application/pdf",
   ".png": "image/png",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
   ".gif": "image/gif",
+  ".webp": "image/webp",
+  ".svg": "image/svg+xml",
+  ".bmp": "image/bmp",
+  ".doc": "application/msword",
+  ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ".ppt": "application/vnd.ms-powerpoint",
+  ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  ".xls": "application/vnd.ms-excel",
+  ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".mp3": "audio/mpeg",
+  ".mp4": "video/mp4",
+  ".wav": "audio/wav",
+  ".webm": "video/webm",
+  ".csv": "text/csv",
+  ".yaml": "text/yaml",
+  ".yml": "text/yaml",
+  ".zip": "application/zip",
 };
 
-function mimeTypeForFilename(filename: string): string {
+export function mimeTypeForFilename(filename: string): string {
   const dot = filename.lastIndexOf(".");
   if (dot < 0) return "application/octet-stream";
   const ext = filename.slice(dot);

@@ -281,7 +281,11 @@ export type AuditEventType =
   | "chain.report_received"
   | "chain.depth_exceeded"
   | "chain.budget_exceeded"
-  | "chain.bid_expired";
+  | "chain.bid_expired"
+  // Phase 45 — Web Content Browsing.
+  | "library.read"
+  | "library.read.served"
+  | "library.read.denied";
 
 export type AuditDirection = "inbound" | "outbound" | "local";
 

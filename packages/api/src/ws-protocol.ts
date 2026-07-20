@@ -165,6 +165,7 @@ export type RpcMethods =
   | "openLibraryItem"
   | "revealLibraryItemInFileManager"
   | "discoverPublishedLibrary"
+  | "libraryRead"
   | "listAgentShareProposals"
   | "dismissAgentShareProposal"
   | "submitAgentShareProposal"

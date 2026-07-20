@@ -5,6 +5,7 @@ import type {
   HomeClawCoreProxyParams,
   ListLibraryItemsParams,
   DiscoverPublishedLibraryParams,
+  LibraryReadParams,
   ChainPlanParams,
   ChainLaunchParams,
   ChainGetStateParams,
@@ -392,6 +393,8 @@ export async function routeRpcMethod(
       return ns.revealLibraryItemInFileManager(params.relativePath as string);
     case "discoverPublishedLibrary":
       return ns.discoverPublishedLibrary(params as DiscoverPublishedLibraryParams | undefined);
+    case "libraryRead":
+      return ns.libraryRead(params as unknown as LibraryReadParams);
     case "listAgentShareProposals":
       return ns.listAgentShareProposals();
     case "dismissAgentShareProposal":

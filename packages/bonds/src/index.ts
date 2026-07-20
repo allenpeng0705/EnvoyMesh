@@ -74,6 +74,11 @@ const capabilityRequirements: Partial<Record<EnvoyIntent, Capability[][]>> = {
   "chat.room.message": [["message.send"]],
   "knowledge.query": [["vault.retrieve"]],
   "knowledge.response": [["message.send"]],
+  // Phase 45 — Web Content Browsing. library.read serves raw content
+  // (files, images, PDFs) over the mesh; vault.retrieve is the closest
+  // existing capability. library.read.response just echoes the bytes back.
+  "library.read": [["vault.retrieve"]],
+  "library.read.response": [],
   "task.mandate": [["message.send"]],
   "task.propose": [["message.send"]],
   "task.negotiate": [["message.send"]],
@@ -151,6 +156,13 @@ function evaluatePublicPolicy(intent: EnvoyIntent): PolicyDecision {
   // Phase 44B: allow public peers to query public knowledge items only.
   // Rate limiting is enforced in the knowledge-query inbound handler.
   if (intent === "knowledge.query") {
+    return { action: "allow", maxSensitivity: "public" };
+  }
+
+  // Phase 45 — Web Content Browsing. Public-tier readers can fetch
+  // public-visibility items; the per-item visibility is checked in the
+  // inbound handler against this maxSensitivity.
+  if (intent === "library.read") {
     return { action: "allow", maxSensitivity: "public" };
   }
 
