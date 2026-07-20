@@ -80,6 +80,7 @@ Maintenance rule: keep this file as the source of truth for **done / left / next
 - [Phase 42 — Native WebRTC Voice Calls on EnvoyGo (shipped)](#phase-42--native-webrtc-voice-calls-on-envoygo-shipped)
 - [Phase 43 — Agent Network User Experience](#phase-43--agent-network-user-experience-planned)
 - [Phase 44 — Refine EnvoyMesh Knowledgebase](#phase-44--refine-envoymesh-knowledgebase-)
+- [Phase 45 — Web Content Browsing](#phase-45--web-content-browsing--future)
 
 EnvoyMesh is a TypeScript-first, owner-controlled, peer-to-peer agent network.
 
@@ -1160,6 +1161,7 @@ Milestone: **Phases 0–42 (42J deferred) shipped** — Core protocol through Ph
 7. **Parked until scoped:** Story E payment rail.
 8. **Phase 26 — DID WAN gateway resolver** — scoped below.
 9. **Chain template marketplace (future)** — share chain templates across the mesh via `discovery.request`. Parked until user demand materialises (4 built-in templates + AI chat creation cover current use cases).
+10. **Phase 45 — Web Content Browsing** — future. [web-content-browsing-design.md](./web-content-browsing-design.md) is the design doc; the Phase 45 section below is the implementation checklist. 45A (URL scheme + `library.read` intent + Browser view + all test layers) → 45B (browser polish + bookmarks) → 45C (EnvoyGo mobile browser) → 45D (authoring UX + templates + visibility) → 45E (Step 2: push notifications, topics, friend discovery). 45F (external HTTP gateway) is forward-referenced.
 
 ### Phase 9 Architecture Overview
 
@@ -5864,10 +5866,154 @@ Enhance the existing MCP external provider with write-back and deeper integratio
 
 ---
 
+## Phase 45 — Web Content Browsing **`[ ]` future**
+
+**Design doc:** [web-content-browsing-design.md](./web-content-browsing-design.md)
+
+### Motivation
+
+EnvoyMesh nodes can already reach each other through firewalls, exchange signed envelopes, and run trust-gated knowledge queries. What they cannot do is **serve URL-addressable content** — a blog, profile site, photo wall, knowledge base, or just individual Markdown/PDF files — in a way that feels like browsing a website. Phase 45 closes that gap in two steps (matching the owner's split):
+
+- **Step 1 (45A–45D):** The EnvoyMesh social app and EnvoyGo mobile app act as a "browser" for content served from any node over the mesh. Stable `envoy://` URLs. Per-item visibility. Templated sites (Profile / Blog / PhotoWall / Feeds) + freeform Markdown + raw file serving.
+- **Step 2 (45E):** Publish-subscribe: `feed.notify` push notifications, topic-based subscription, friend discovery via published topics.
+- **Step 3 (45F, future):** External HTTP gateway so non-mesh users with regular browsers can read content via `https://relay/<owner>/<path>`. Forward-referenced only.
+
+The full design — URL scheme spec, content model, visibility, the `library.read` intent, security model, threat model, test plan, alternatives considered, decision log — is in [web-content-browsing-design.md](./web-content-browsing-design.md). The sections below are the implementation checklist.
+
+### 45A — Thin vertical slice (architecture spike) `[ ]`
+
+Prove the architecture end-to-end with the smallest possible surface. Manual file drop only — no authoring UX, no templates, no bookmarks.
+
+- `[ ]` URL parser: `packages/api/src/envoy-url.ts` — `parseEnvoyUrl`, `buildEnvoyUrl`, `resolveEnvoyUrl` (owner-id form only; `@handle` form parses but throws `HandleRegistryNotImplemented`).
+- `[ ]` New intent pair in `packages/protocol/src/index.ts`: `"library.read"` / `"library.read.response"` + `LibraryReadPayloadSchema` + `LibraryReadResponsePayloadSchema` + capability requirement entry.
+- `[ ]` Extend `LibraryFileMatchSchema` with optional `kind` / `mimeType` / `summary` / `visibility` / `urlSlug` / `updatedAt` (additive, backward compatible).
+- `[ ]` Inbound handler `apps/node/src/library-read-inbound.ts` mirroring `knowledge-query-inbound.ts:69-416` — reuses `evaluatePolicy` + `assertPathInsideVault`; maps visibility to sensitivity (see design doc §4.3.2).
+- `[ ]` CLI dispatcher arm `apps/node/src/cli-mesh-inbound-library-read.ts` mirroring `cli-mesh-inbound-knowledge-query.ts:55-141`.
+- `[ ]` Web content store `apps/node/src/web-content-store.ts` — loads `web-content.json` manifest; lookups by path.
+- `[ ]` `NodeServiceImpl.libraryRead({ targetOwnerId, path, range })` + `libraryReadViaRuntime` helper in `node-service-fileshare.ts`.
+- `[ ]` Advertise `"envoymesh.web-content"` capability in `discovery-inbound.ts`; reprovide via `capability-discovery.ts`.
+- `[ ]` Extend `discovery-library-match.ts` matcher with `urlSlug` / `kind` / `tags`.
+- `[ ]` Register `libraryRead` RPC in `json-rpc-router.ts`; add to `NodeServiceClient` interface in `packages/api/src/node-service.ts`.
+- `[ ]` Mobile mirror: `MobileNodeService.libraryRead` in `packages/mobile-node/src/index.ts` (paired + standalone modes).
+- `[ ]` Social UI: `DirectCallClient.libraryRead` passthrough; new Browser view (`BrowserView.tsx`, `BrowserAddressBar.tsx`, `BrowserRenderArea.tsx`, minimal `BrowserBookmarkBar.tsx`).
+- `[ ]` App routing: add Browser tab to `App.tsx`; i18n strings (en + zh-CN).
+
+**Tests (all four layers per design doc §8):**
+
+- `[ ]` **Layer 1 — URL parser unit** (`packages/api/test/envoy-url.test.ts`, ~20 cases). Runs under `npm test`.
+- `[ ]` **Layer 2 — Handler trust tests** (`apps/node/test/library-read-inbound.test.ts`, ~12 cases). Runs under `npm test`.
+- `[ ]` **Layer 3 — Two-node vitest E2E** (`apps/node/test/library-read-multi-node-e2e.test.ts`, ~5 cases). Mirror `library-publish-export-multi-node-e2e.test.ts` scaffolding. Add to `apps/node/src/local-two-node-smoke.ts` smoke list. Runs under `npm run smoke:local`.
+- `[ ]` **Layer 4 — Playwright comprehensive matrix** (`apps/social/test/e2e/web-content-browse.smoke.ts`, 8 scenarios). Spawns real OS processes via `NodeSpawner`. Extend `SocialPage` with `browseToUrl` / `expectRenderedMarkdown` / `expectAccessDenied` / `goBack` / `bookmarkCurrent`. New `npm run smoke:web-content` script.
+
+**Exit criteria (45A):**
+
+- `[ ]` Phase 45A Scenario 1 (design doc §9.1) passes: write `~/EnvoyMesh/web/hello.md` on Node A; on Node B (bonded), open Browser, type `envoy://<A's owner>/hello.md`, see `<h1>Hello</h1>` rendered.
+- `[ ]` Playwright matrix (Layer 4) all 8 scenarios green.
+- `[ ]` Layer 1 + 2 + 3 tests green.
+- `[ ]` `npm run typecheck` clean across all touched packages.
+
+### 45B — Browser polish `[ ]`
+
+- `[ ]` Navigation history (back/forward/reload stack): `apps/social/src/lib/browser-history-store.ts`.
+- `[ ]` Bookmark persistence + UI: `apps/social/src/lib/browser-bookmark-store.ts`.
+- `[ ]` Address-bar autocomplete from history + bookmarks.
+- `[ ]` Range request support in `library-read-inbound.ts` for large files (PDFs, videos).
+- `[ ]` ETag-based cache revalidation on Reload.
+- `[ ]` Loading spinner + error states polished.
+
+**Exit criteria (45B):** Back/forward/reload/bookmarks all work; large PDF (>64 KiB) renders via range requests; reload revalidates against `etag`.
+
+### 45C — EnvoyGo mobile Browser `[ ]`
+
+- `[ ]` Browser screen in `apps/mobile/` (Flutter) mirroring Social desktop BrowserView.
+- `[ ]` `libraryRead` already added in 45A — wire to Flutter RPC.
+- `[ ]` Test mobile → home → mesh request path on real devices (paired mode).
+- `[ ]` Test mobile direct-mode (standalone) requires own bond with remote owner — document clearly.
+- `[ ]` Mobile bookmark sync via existing owner-device sync.
+
+**Exit criteria (45C):** Scenario 1 works on a real phone (both paired and standalone modes).
+
+### 45D — Authoring UX (full Step 1) `[ ]`
+
+- `[ ]` New-item dialog with template picker (Profile / Blog post / Photo / Note / File upload).
+- `[ ]` Markdown editor with live preview (`apps/social/src/components/MarkdownEditor.tsx`).
+- `[ ]` Per-item visibility selector (`apps/social/src/components/VisibilitySelector.tsx`).
+- `[ ]` Manifest auto-update on author actions (`web-content-store.ts` write path).
+- `[ ]` Templated site types: Blog listing (posts by `publishedAt` desc), PhotoWall grid.
+- `[ ]` Contact profile "Browse Site" button (visible when contact advertises `envoymesh.web-content`).
+- `[ ]` Optional `webContentRoot` field on `AgentCardSchema`.
+- `[ ]` `envoy init <template>` CLI scaffolding.
+
+**Tests:**
+
+- `[ ]` Second Playwright spec `web-content-author-browse.smoke.ts` for Phase 45D Scenario 2.
+
+**Exit criteria (45D):** Phase 45D Scenario 2 (design doc §9.2) passes — author → publish → browse end-to-end.
+
+### 45E — Step 2: push, topics, friend discovery `[ ]`
+
+Full design TBD at 45E start. Sketch (from design doc §7.5):
+
+- `[ ]` New intent `feed.notify` — push a small notification envelope to bonded contacts on publish. Rides existing `/envoymesh/message` stream using `tagContactForPersistentReachability`. **No GossipSub in v1 of 45E.**
+- `[ ]` Topic-based subscription — declare interests in profile; receive `feed.notify` only for matching topics.
+- `[ ]` Friend discovery via published topics — `discovery.request` extended with topic matching.
+- `[ ]` Evaluate whether notification-fanout suffices or whether true GossipSub is needed (decision point at end of 45E v1).
+
+### 45F — Step 3: external HTTP gateway (future, forward reference) `[ ]`
+
+Out of scope for this plan. Will be a separate design when ready. Sketch only: `--web-relay` node mode that starts an HTTP server translating `https://relay/<ownerId>/<path>` ↔ `library.read` over the mesh.
+
+### Exit Criteria (Phase 45 overall)
+
+- `[ ]` Phase 45A exit criteria met (the architecture spike ships green).
+- `[ ]` Phase 45B exit criteria met (browser polish complete).
+- `[ ]` Phase 45C exit criteria met (mobile browsing works on real devices).
+- `[ ]` Phase 45D exit criteria met (full author → publish → browse UX ships).
+- `[ ]` Phase 45E ships at least v1 (notification-fanout push + topic discovery).
+- `[ ]` All four test layers green and integrated into CI: `npm test` (Layers 1+2), `npm run smoke:local` (Layer 3), `npm run smoke:web-content` promoted to CI gate (Layer 4).
+
+### Files Summary (Phase 45)
+
+See the design doc §12 for the full file-by-file change map per sub-phase. Highlights:
+
+- **Protocol (45A):** `packages/protocol/src/index.ts` (new intents + schemas + `LibraryFileMatchSchema` extension).
+- **API (45A):** `packages/api/src/envoy-url.ts` (new), `packages/api/src/node-service.ts` (interface).
+- **Node (45A):** `apps/node/src/library-read-inbound.ts` (new), `apps/node/src/cli-mesh-inbound-library-read.ts` (new), `apps/node/src/web-content-store.ts` (new); extend `node-service-impl.ts`, `node-service-fileshare.ts`, `discovery-inbound.ts`, `discovery-library-match.ts`, `capability-discovery.ts`, `json-rpc-router.ts`.
+- **Mobile (45A interface, 45C Flutter UI):** `packages/mobile-node/src/index.ts`.
+- **Social UI (45A):** `apps/social/src/components/views/BrowserView.tsx` (new) + sub-components; `apps/social/src/lib/envoy-url.ts` (new).
+- **Tests (45A):** four new test files across `packages/api/test/`, `apps/node/test/`, `apps/social/test/e2e/`.
+- **45B:** `browser-history-store.ts`, `browser-bookmark-store.ts` (new).
+- **45C:** Flutter Browser screen in `apps/mobile/`.
+- **45D:** `BrowserAuthorView.tsx`, `MarkdownEditor.tsx`, `VisibilitySelector.tsx` (new); extend `ContactProfilePanel.tsx`, `AgentCardSchema`.
+
+### Test Plan (Phase 45)
+
+Four mandated layers for Phase 45A (mirrors the project's Phase 38H convention):
+
+| Layer | Mirror file | Run under |
+|---|---|---|
+| URL parser unit | `packages/api/test/` pattern | `npm test` |
+| Handler trust | `apps/node/test/knowledge-query-inbound.test.ts` | `npm test` |
+| Two-node vitest E2E | `apps/node/test/library-publish-export-multi-node-e2e.test.ts` | `npm run smoke:local` |
+| Playwright full-stack | `apps/social/test/e2e/webrtc-call.smoke.ts` + `helpers/node-spawner.ts` + `helpers/social-page.ts` | `npm run smoke:web-content` (manual initially, CI gate later) |
+
+The Playwright matrix (Layer 4) covers 8 scenarios: fetch markdown → render, fetch image → render, fetch PDF → render, stranger denied, bonded allowed, back button, malformed URL, bookmark. See design doc §8.4 for the full list and helper-extension plan.
+
+### Risks & Mitigations (Phase 45)
+
+See design doc §13. Top risks: URL scheme change after launch (mitigated by owner-id permanence), envelope size cap blocking large files (mitigated by range requests in 45B), malicious content (mitigated by `DOMPurify` sanitization already in `Markdown.tsx`), Playwright flakiness (mitigated by starting as manual trigger).
+
+### Open Questions (Phase 45)
+
+See design doc §11 for the full list of 10 open questions. None block Phase 45A start; several need resolution by 45D or 45E.
+
+---
+
 ## Changelog (this document)
 
 | Date | Change |
 |------|--------|
+| 2026-07-20 | **Phase 45 — Web Content Browsing designed.** Added Phase 45 section (45A–45F sub-phases, all `[ ]` future) covering URL-addressable content serving over the mesh: `envoy://` URL scheme, `library.read` intent, Browser view in Social UI + EnvoyGo, per-item visibility mapped to Bonds tiers, templated sites (Profile / Blog / PhotoWall / Feeds), Step 2 push notifications + topic discovery (45E), Step 3 external HTTP gateway (45F, forward reference). Full design in [web-content-browsing-design.md](./web-content-browsing-design.md). Four test layers mandated for 45A: URL parser unit, handler trust, two-node vitest E2E (mirror `library-publish-export-multi-node-e2e.test.ts`), Playwright comprehensive matrix (8 scenarios, real OS processes via `NodeSpawner`). Two verification scenarios staged across 45A and 45D. No code changes yet — design + roadmap only, pending owner review. |
 | 2026-06-20 | **Phase 43 — Agent Network User Experience planned.** Post-40F usability review consolidated into eight sub-phases (43A–43H): P0 = worker execution (`executeSubtask`), chat entry point + templates, smart defaults + composite bid ranking; P1 = live WebSocket UI, cost/trust transparency, single-home diagnostics; P2 = safety rails + power-user/mobile features. Phase 41 exit criteria corrected to reflect partial shipment. North star: "hire a temporary team" UX — hide chain/mandate IDs from default flow. |
 | 2026-06-20 | **Phase 40F — Production integration shipped.** Wired `dispatchChainEnvelope` in `index.ts`, real orchestrator/worker deps (agent identity, mesh send, audit, `recordChainReport`), corrected inbound capability gate, `chainPlan`/`chainLaunch`/report RPCs, `CapabilityIndex` discovery, `trackChain` scheduler. Added `chain-production.ts` + tests. |
 | 2026-06-19 | **Phase 42A–42F shipped (sub-phases 42A / 42B / 42C / 42D / 42E / 42F).** The mobile call path now works end-to-end on the Flutter side. 42A rewrites the home's `sendCallInvite` to resolve owner→device peer ID via `_resolvePeerTransportForOwner` (previously passing the owner ID — broke the libp2p dial), embeds the SDP offer (previously `""` — schema violation since `z.string().min(1)`), and injects `iceServers` from `node-config` (previously unread). Adds defensive `validateSdpString` (64 KB cap) and `validateIceCandidate` (RFC-5245 §15.1 grammar) validators in `call-inbound.ts` so a malformed SDP can't crash `setRemoteDescription`. 42B wires the four response envelopes — `acceptCallInvite` / `declineCallInvite` / `endCall` / `setCallMuted` — so the home actually sends `call.accept` / `call.reject` / `call.hangup` / `call.mute` back to the peer (previously the four stubs only mutated local `CallManager` state). 42C replaces the five `UnimplementedError` stubs in `apps/envoygo/lib/services/node_service_client.dart` with real JSON-RPC implementations matching the new `NodeService` interface. 42D ships `apps/envoygo/lib/webrtc_call_transport.dart` — the native `flutter_webrtc` transport mirroring `apps/social/src/lib/webrtc-call-transport.ts:57-251`, with `startOffer` / `startAnswer` / `addIceCandidate` / `setMute` / `close` and pluggable `peerConnectionFactory` + `getUserMedia` seams for testing. 42E rewires `CallProvider` to build the transport, generate SDP via `startOffer` / `startAnswer`, and pass it through the corresponding JSON-RPC. `CallState` gains `remoteStream` + `transport` fields. 42F wires the active-call screen (`VoiceCallScreen` now a `ConsumerWidget` bound to `callProvider` with peer name + duration timer + mute/end buttons + remote stream binding), mounts the `IncomingCallOverlay` into `home_screen.dart` as a Stack overlay, adds a Call action button to `chat_detail_screen.dart` for direct-message chats, declares iOS `NSMicrophoneUsageDescription` + Android `RECORD_AUDIO` / `MODIFY_AUDIO_SETTINGS` / `INTERNET` permissions, and adds an `AudioSessionHelper` + `envoygo/audio_session` method channel that configures iOS `AVAudioSession` (`playAndRecord` + `voiceChat` mode + `allowBluetooth` option) on `startCall` / `acceptCall` and resets on `endCall` / `declineCall` / dispose. The overlay's ring timer + pulse animation now only run when the overlay is actually visible (`state.isIncoming`), keeping it cheap when idle. **~25 new tests across 8 files** (4 home + 4 EnvoyGo): `call-send-invite.test.ts`, `call-sdp-validation.test.ts`, `call-response-envelopes.test.ts`, extensions to `node_service_client_test.dart` (4 new), `webrtc_call_transport_test.dart`, `call_provider_test.dart` (10 new + 5 audio-session integration), `audio_session_helper_test.dart` (5 new). `flutter analyze` + `tsc -b apps/node` + `tsc -b apps/social` clean. **42G (two-CallManager jsdom integration + Playwright re-validation) and 42H (TURN credentials editor) and 42I (iOS VoIP push) deferred** — same shape as 42F: ship each, review, add tests, then ship the next. |
