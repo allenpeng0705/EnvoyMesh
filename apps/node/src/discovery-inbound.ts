@@ -33,6 +33,8 @@ import type { HumanProfilePayload } from "@envoymesh/protocol";
 
 /** Requesting this capability (alone or with file/hash selectors) enables published-library metadata in the response. */
 export const PUBLISHED_LIB_CAPABILITY = "envoymesh.published-library";
+// Phase 45 — Web Content Browsing. See docs/web-content-browsing-design.md §4.5.
+export const WEB_CONTENT_CAPABILITY = "envoymesh.web-content";
 
 type DiscoveryMatchRow = {
   ownerId: string;
@@ -78,12 +80,13 @@ function allowsPublicPublishedLibraryQuery(
     return false;
   }
   for (const c of payload.requestedCapabilities) {
-    if (c !== PUBLISHED_LIB_CAPABILITY) {
+    if (c !== PUBLISHED_LIB_CAPABILITY && c !== WEB_CONTENT_CAPABILITY) {
       return false;
     }
   }
   return (
     payload.requestedCapabilities.includes(PUBLISHED_LIB_CAPABILITY) ||
+    payload.requestedCapabilities.includes(WEB_CONTENT_CAPABILITY) ||
     Boolean(payload.fileTitleQuery?.trim()) ||
     (payload.requestedContentHashPrefixes?.length ?? 0) > 0
   );

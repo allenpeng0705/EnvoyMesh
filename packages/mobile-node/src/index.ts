@@ -234,6 +234,9 @@ import type {
   DiscoverPublishedLibraryPeerResult,
   HelloProfile,
   HelloRequest,
+  // Phase 45 — Web Content Browsing.
+  LibraryReadParams,
+  LibraryReadResult,
   HelloResponse,
   HumanProfile,
   LibraryItem,
@@ -3593,6 +3596,34 @@ You are the owner's personal AI assistant on EnvoyMesh.
       }
     }
     return results;
+  }
+
+  // Phase 45 — Web Content Browsing. Pull-based content fetch from a
+  // bonded contact's published web directory. See
+  // docs/web-content-browsing-design.md §4.6.
+  //
+  // In paired mode (default): the home node owns the gateway to the
+  // target contact — the home holds the bond and the mesh route. Mobile
+  // proxies libraryRead via the home's HomeRemoteClient RPC.
+  //
+  // In standalone mode: mobile has its own peer identity and bond with
+  // the target contact — it sends the library.read envelope directly.
+  // For 45A the standalone-mode path is not yet wired; callers in
+  // standalone mode receive a clear "not supported" error.
+  async libraryRead(params: LibraryReadParams): Promise<LibraryReadResult> {
+    this._assertNodeRunning();
+    if (this._state?.device && !this._state?.homeNodePeerId) {
+      throw new Error(
+        "libraryRead: standalone-mode sender is not yet implemented in 45A; pair with a home node to browse content",
+      );
+    }
+    if (this._state?.homeNodePeerId?.trim()) {
+      // Paired mode — proxy via the home's HomeRemoteClient.
+      const home = this._ensureHomeRemote();
+      const result = (await home.call("libraryRead", params as unknown as Record<string, unknown>)) as LibraryReadResult;
+      return result;
+    }
+    throw new Error("libraryRead: no mesh route available (is the node initialized?)");
   }
 
   async listAgentShareProposals(): Promise<AgentShareProposal[]> {
