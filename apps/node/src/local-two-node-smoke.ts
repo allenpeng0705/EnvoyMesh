@@ -54,6 +54,10 @@ const relativeTests = [
   join("apps", "node", "test", "webrtc-call-e2e.test.ts"),
   join("apps", "node", "test", "social-ui-e2e.test.ts"),
   join("apps", "node", "test", "discovery-probe-e2e.test.ts"),
+  // Phase 45 — Web Content Browsing. Two-node E2E proves the
+  // library.read wire flow over real libp2p (markup, binary image,
+  // privacy tiers, re-reads).
+  join("apps", "node", "test", "library-read-multi-node-e2e.test.ts"),
 ];
 
 console.log("[smoke:local-two-node] Running integration tests via vitest…\n");
