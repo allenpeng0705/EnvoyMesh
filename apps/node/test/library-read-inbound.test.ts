@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { handleInboundLibraryRead } from "../src/library-read-inbound.js";
-import { createWebContentStore, type WebContentEntry } from "../src/web-content-store.js";
+import { createWebContentStore, type WebContentEntry, type WebContentVisibility } from "../src/web-content-store.js";
 import { deriveDeviceId } from "@envoymesh/identity";
 
 let profileDir: string;
@@ -71,14 +71,18 @@ async function writeWebFile(relPath: string, content: string): Promise<void> {
   await writeFile(fullPath, content, { mode: 0o600 });
 }
 
-/** Write a manifest entry that reflects the actual file size. */
+async function writeManifestEntry(entry: WebContentEntry): Promise<void> {
+  const store = createWebContentStore(join(profileDir, "web"));
+  await store.upsert(entry);
+}
+
 async function writePublishedFile(
   relPath: string,
   content: string,
-  opts: { visibility?: "public" | "bonded" | "contacts" | "private"; contactIds?: string[] } = {},
+  visibility: WebContentVisibility = "public",
+  contactIds?: string[],
 ): Promise<void> {
   await writeWebFile(relPath, content);
-  const visibility = opts.visibility ?? "public";
   await writeManifestEntry({
     path: relPath,
     contentHash: "any",
@@ -87,7 +91,7 @@ async function writePublishedFile(
     kind: "article",
     mimeType: "text/markdown",
     visibility,
-    contactIds: opts.contactIds,
+    contactIds,
     updatedAt: "2026-07-20T00:00:00Z",
   });
 }
@@ -117,23 +121,17 @@ async function registerPeer(peerId: string, ownerId: string, publicKeyPem: strin
     ),
     { mode: 0o600 },
   );
-  // Re-create the store so it picks up the file we just wrote.
   peerDirectoryStore = createLocalPeerDirectoryStore(profileDir);
-}
-
-async function writeManifestEntry(entry: WebContentEntry): Promise<void> {
-  const store = createWebContentStore(join(profileDir, "web"));
-  await store.upsert(entry);
 }
 
 async function call(
   senderPeerId: string,
   payload: unknown,
-  opts: { isLocalSelfRead?: boolean } = {},
+  opts: { isLocalSelfRead?: boolean; remotePeerId?: string } = {},
 ) {
   return handleInboundLibraryRead({
     envelope: libraryReadEnvelope(senderPeerId, payload),
-    remotePeerId: "remote-libp2p",
+    remotePeerId: opts.remotePeerId ?? `remote-${senderPeerId}-${Math.random().toString(36).slice(2, 8)}`,
     receivedAt: Date.now(),
     correlationId: "corr-lr-1",
     taskStore,
@@ -145,111 +143,60 @@ async function call(
   });
 }
 
-const VALID_PAYLOAD = {
-  requesterOwnerId: OWNER_CONTACT,
-  targetOwnerId: OWNER_SELF,
-  path: "hello.md",
-};
+function req(path: string) {
+  return {
+    requesterOwnerId: OWNER_CONTACT,
+    targetOwnerId: OWNER_SELF,
+    path,
+  };
+}
 
 describe("handleInboundLibraryRead", () => {
-  it("returns error for invalid payload (missing path)", async () => {
-    const result = await call("peer-a", {
-      requesterOwnerId: OWNER_CONTACT,
-      targetOwnerId: OWNER_SELF,
-      path: "",
-    });
+  it("returns error for invalid payload (empty path)", async () => {
+    const result = await call("peer-a", { ...req(""), path: "" });
     expect(result.ok).toBe(false);
   });
 
   it("serves public-visibility file to a stranger (public bond)", async () => {
-    await writeWebFile("hello.md", "# Hello");
-    await writeManifestEntry({
-      path: "hello.md",
-      contentHash: "any",
-      byteLength: 7,
-      title: "Hello",
-      kind: "article",
-      mimeType: "text/markdown",
-      visibility: "public",
-      updatedAt: "2026-07-20T00:00:00Z",
-    });
-    // No trust record → bond defaults to "public" (stranger).
-    const result = await call("peer-stranger", VALID_PAYLOAD);
+    const content = "# Hello";
+    await writePublishedFile("public.md", content, "public");
+    const result = await call("peer-stranger", req("public.md"));
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.responsePayload.status).toBe("ok");
-      expect(result.responsePayload.body).toBe("# Hello");
+      expect(result.responsePayload.body).toBe(content);
       expect(result.responsePayload.contentType).toBe("text/markdown");
+      expect(result.responsePayload.byteLength).toBe(Buffer.byteLength(content, "utf8"));
     }
   });
 
   it("denies bonded-visibility file to a stranger (returns not_found)", async () => {
-    await writeWebFile("secret.md", "secret");
-    await writeManifestEntry({
-      path: "secret.md",
-      contentHash: "any",
-      byteLength: 6,
-      title: "Secret",
-      kind: "note",
-      mimeType: "text/markdown",
-      visibility: "bonded",
-      updatedAt: "2026-07-20T00:00:00Z",
-    });
-    const result = await call("peer-stranger", {
-      ...VALID_PAYLOAD,
-      path: "secret.md",
-    });
+    await writePublishedFile("private-bonded.md", "secret", "bonded");
+    const result = await call("peer-stranger", req("private-bonded.md"));
     expect(result.ok).toBe(true);
     if (result.ok) {
-      // not_found rather than forbidden to avoid leaking existence.
       expect(result.responsePayload.status).toBe("not_found");
     }
   });
 
   it("serves bonded-visibility file to a direct bond", async () => {
-    await writeWebFile("friends.md", "# Friends only");
-    await writeManifestEntry({
-      path: "friends.md",
-      contentHash: "any",
-      byteLength: 14,
-      title: "Friends",
-      kind: "article",
-      mimeType: "text/markdown",
-      visibility: "bonded",
-      updatedAt: "2026-07-20T00:00:00Z",
-    });
+    const content = "# Friends only";
+    await writePublishedFile("for-friends.md", content, "bonded");
     await trustStore.setTrustRecord({ peerOwnerId: OWNER_CONTACT, level: "direct", displayName: "Contact" });
     await registerPeer("peer-contact", OWNER_CONTACT, "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----");
-    const result = await call("peer-contact", {
-      ...VALID_PAYLOAD,
-      path: "friends.md",
-    });
+    const result = await call("peer-contact", req("for-friends.md"));
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.responsePayload.status).toBe("ok");
-      expect(result.responsePayload.body).toBe("# Friends only");
+      expect(result.responsePayload.body).toBe(content);
     }
   });
 
   it("denies contacts-visibility file to a direct bond not in contactIds", async () => {
-    await writeWebFile("exclusive.md", "# exclusive");
-    await writeManifestEntry({
-      path: "exclusive.md",
-      contentHash: "any",
-      byteLength: 11,
-      title: "Exclusive",
-      kind: "note",
-      mimeType: "text/markdown",
-      visibility: "contacts",
-      contactIds: ["envoy:owner:someother"],
-      updatedAt: "2026-07-20T00:00:00Z",
-    });
+    await writePublishedFile("contacts.md", "# exclusive", "contacts", ["envoy:owner:someother"]);
     await trustStore.setTrustRecord({ peerOwnerId: OWNER_CONTACT, level: "direct", displayName: "Contact" });
     await registerPeer("peer-contact", OWNER_CONTACT, "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----");
-    const result = await call("peer-contact", {
-      ...VALID_PAYLOAD,
-      path: "exclusive.md",
-    });
+    const result = await call("peer-contact", req("contacts.md"));
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.responsePayload.status).toBe("forbidden");
@@ -257,24 +204,10 @@ describe("handleInboundLibraryRead", () => {
   });
 
   it("serves contacts-visibility file to a contact in contactIds", async () => {
-    await writeWebFile("exclusive.md", "# exclusive");
-    await writeManifestEntry({
-      path: "exclusive.md",
-      contentHash: "any",
-      byteLength: 11,
-      title: "Exclusive",
-      kind: "note",
-      mimeType: "text/markdown",
-      visibility: "contacts",
-      contactIds: [OWNER_CONTACT],
-      updatedAt: "2026-07-20T00:00:00Z",
-    });
+    await writePublishedFile("contacts2.md", "# exclusive", "contacts", [OWNER_CONTACT]);
     await trustStore.setTrustRecord({ peerOwnerId: OWNER_CONTACT, level: "direct", displayName: "Contact" });
     await registerPeer("peer-contact", OWNER_CONTACT, "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----");
-    const result = await call("peer-contact", {
-      ...VALID_PAYLOAD,
-      path: "exclusive.md",
-    });
+    const result = await call("peer-contact", req("contacts2.md"));
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.responsePayload.status).toBe("ok");
@@ -282,10 +215,7 @@ describe("handleInboundLibraryRead", () => {
   });
 
   it("returns not_found for missing file", async () => {
-    const result = await call("peer-stranger", {
-      ...VALID_PAYLOAD,
-      path: "nonexistent.md",
-    });
+    const result = await call("peer-stranger", req("does-not-exist.md"));
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.responsePayload.status).toBe("not_found");
@@ -294,10 +224,7 @@ describe("handleInboundLibraryRead", () => {
 
   it("returns not_found for path traversal attempt (no leakage)", async () => {
     await writeWebFile("hello.md", "# Hello");
-    const result = await call("peer-stranger", {
-      ...VALID_PAYLOAD,
-      path: "../../../etc/passwd",
-    });
+    const result = await call("peer-stranger", req("../../../etc/passwd"));
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.responsePayload.status).toBe("not_found");
@@ -305,18 +232,8 @@ describe("handleInboundLibraryRead", () => {
   });
 
   it("serves file to owner via local self-read (private visibility ok)", async () => {
-    await writeWebFile("private-notes.md", "# my private notes");
-    await writeManifestEntry({
-      path: "private-notes.md",
-      contentHash: "any",
-      byteLength: 19,
-      title: "Private",
-      kind: "note",
-      mimeType: "text/markdown",
-      visibility: "private",
-      updatedAt: "2026-07-20T00:00:00Z",
-    });
-    const result = await call("peer-self", { ...VALID_PAYLOAD, path: "private-notes.md" }, { isLocalSelfRead: true });
+    await writePublishedFile("owner-private.md", "# my private notes", "private");
+    const result = await call("peer-self", req("owner-private.md"), { isLocalSelfRead: true });
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.responsePayload.status).toBe("ok");
@@ -324,45 +241,23 @@ describe("handleInboundLibraryRead", () => {
   });
 
   it("includes contentHash and etag on successful reads", async () => {
-    await writeWebFile("hello.md", "# Hello");
-    await writeManifestEntry({
-      path: "hello.md",
-      contentHash: "any",
-      byteLength: 8,
-      title: "Hello",
-      kind: "article",
-      mimeType: "text/markdown",
-      visibility: "public",
-      updatedAt: "2026-07-20T00:00:00Z",
-    });
-    const result = await call("peer-stranger", VALID_PAYLOAD);
+    const content = "# Hello";
+    await writePublishedFile("etag.md", content, "public");
+    const result = await call("peer-stranger", req("etag.md"));
     expect(result.ok).toBe(true);
     if (result.ok && result.responsePayload.status === "ok") {
       expect(result.responsePayload.contentHash).toBeTruthy();
-      expect(result.responsePayload.contentHash).toHaveLength(64); // sha256 hex
+      expect(result.responsePayload.contentHash).toHaveLength(64);
       expect(result.responsePayload.etag).toBeTruthy();
-      expect(result.responsePayload.byteLength).toBe(7); // "# Hello" is 7 bytes
+      expect(result.responsePayload.byteLength).toBe(Buffer.byteLength(content, "utf8"));
     }
   });
 
   it("returns too_large for files over the cap without a range", async () => {
     // Write a file larger than 48 KiB.
     const big = "x".repeat(50 * 1024);
-    await writeWebFile("big.txt", big);
-    await writeManifestEntry({
-      path: "big.txt",
-      contentHash: "any",
-      byteLength: big.length,
-      title: "Big",
-      kind: "file",
-      mimeType: "text/plain",
-      visibility: "public",
-      updatedAt: "2026-07-20T00:00:00Z",
-    });
-    const result = await call("peer-stranger", {
-      ...VALID_PAYLOAD,
-      path: "big.txt",
-    });
+    await writePublishedFile("big.txt", big, "public");
+    const result = await call("peer-stranger", req("big.txt"));
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.responsePayload.status).toBe("too_large");
@@ -371,20 +266,9 @@ describe("handleInboundLibraryRead", () => {
 
   it("honors range requests for large files", async () => {
     const big = "0123456789".repeat(10_000); // 100_000 bytes
-    await writeWebFile("ranged.txt", big);
-    await writeManifestEntry({
-      path: "ranged.txt",
-      contentHash: "any",
-      byteLength: big.length,
-      title: "Ranged",
-      kind: "file",
-      mimeType: "text/plain",
-      visibility: "public",
-      updatedAt: "2026-07-20T00:00:00Z",
-    });
+    await writePublishedFile("ranged.txt", big, "public");
     const result = await call("peer-stranger", {
-      ...VALID_PAYLOAD,
-      path: "ranged.txt",
+      ...req("ranged.txt"),
       range: { start: 10, end: 19 },
     });
     expect(result.ok).toBe(true);
@@ -400,32 +284,20 @@ describe("handleInboundLibraryRead", () => {
 
   it("serves files with no manifest entry as private (default)", async () => {
     // No manifest entry — file defaults to private visibility.
-    // Use a unique path so this test's filesystem state doesn't collide
-    // with prior tests that wrote `hello.md` with a manifest entry.
     await writeWebFile("default-private.md", "# draft");
     // Stranger should NOT see it.
-    const r1 = await call("peer-stranger", { ...VALID_PAYLOAD, path: "default-private.md" });
+    const r1 = await call("peer-stranger", req("default-private.md"));
     expect(r1.ok).toBe(true);
     if (r1.ok) expect(r1.responsePayload.status).toBe("not_found");
     // Owner via self-read SHOULD see it.
-    const r2 = await call("peer-self", { ...VALID_PAYLOAD, path: "default-private.md" }, { isLocalSelfRead: true });
+    const r2 = await call("peer-self", req("default-private.md"), { isLocalSelfRead: true });
     expect(r2.ok).toBe(true);
     if (r2.ok) expect(r2.responsePayload.status).toBe("ok");
   });
 
   it("emits audit events for served reads", async () => {
-    await writeWebFile("hello.md", "# Hello");
-    await writeManifestEntry({
-      path: "hello.md",
-      contentHash: "any",
-      byteLength: 8,
-      title: "Hello",
-      kind: "article",
-      mimeType: "text/markdown",
-      visibility: "public",
-      updatedAt: "2026-07-20T00:00:00Z",
-    });
-    await call("peer-stranger", VALID_PAYLOAD);
+    await writePublishedFile("audit.md", "# Hello", "public");
+    await call("peer-stranger", req("audit.md"));
     const events = await taskStore.readAuditEvents({ limit: 100 });
     const types = events.map((e) => e.type);
     expect(types).toContain("message.verified");
