@@ -545,6 +545,7 @@ export const browserViewMessages = {
   statusAccessDenied: "Access denied",
   statusNotFound: "Not found",
   statusTooLarge: "File too large (over 48 KiB cap; use a range request)",
+  statusHashMismatch: "Content integrity check failed — refused to render",
   statusError: "Network error — {message}",
   statusRateLimited: "Rate limited — try again in a minute",
   invalidUrl: "Invalid envoy URL: {message}",

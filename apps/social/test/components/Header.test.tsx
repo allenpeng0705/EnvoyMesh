@@ -92,6 +92,13 @@ describe("Header", () => {
     expect(onNavigate).toHaveBeenCalledWith("chat");
   });
 
+  it("calls onNavigate when Browser is clicked", () => {
+    const onNavigate = vi.fn();
+    renderHeader({ ...baseProps, onNavigate });
+    fireEvent.click(screen.getByTestId("nav-browser"));
+    expect(onNavigate).toHaveBeenCalledWith("browser");
+  });
+
   it("shows inbox activity on Chat control", () => {
     const onNavigate = vi.fn();
     renderHeader({ ...baseProps, onNavigate, inboxActivityCount: 3 });

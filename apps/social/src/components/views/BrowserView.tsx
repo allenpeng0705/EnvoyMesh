@@ -30,11 +30,29 @@ function base64ToBytes(b64: string): Uint8Array {
   return out;
 }
 
-/** Encode Uint8Array to a base64 string (browser-safe). */
-function bytesToBase64(bytes: Uint8Array): string {
-  let bin = "";
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]!);
-  return btoa(bin);
+/** Hex-encode an ArrayBuffer (sha-256 digest). */
+function bufferToHex(buf: ArrayBuffer): string {
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+/**
+ * Verify contentHash (sha256 hex) against the response body.
+ * Text bodies are hashed as UTF-8; binary bodies are base64-decoded first.
+ */
+async function verifyContentHash(
+  body: string,
+  contentType: string,
+  expectedHash: string | undefined,
+): Promise<boolean> {
+  if (!expectedHash) return true;
+  if (typeof crypto === "undefined" || !crypto.subtle) return true;
+  const isText = contentType.startsWith("text/") || contentType === "application/json";
+  const bytes = isText ? new TextEncoder().encode(body) : base64ToBytes(body);
+  // Copy into a fresh ArrayBuffer for subtle.digest typing.
+  const ab = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(ab).set(bytes);
+  const digest = await crypto.subtle.digest("SHA-256", ab);
+  return bufferToHex(digest) === expectedHash.toLowerCase();
 }
 
 export function BrowserView() {
@@ -69,6 +87,11 @@ export function BrowserView() {
       const { targetOwnerId, path } = resolveEnvoyUrl(parsed);
       const result = await nodeService.libraryRead({ targetOwnerId, path });
       if (result.status === "ok" && result.body !== undefined && result.contentType) {
+        const ok = await verifyContentHash(result.body, result.contentType, result.contentHash);
+        if (!ok) {
+          setState({ kind: "error", message: t("browser.statusHashMismatch") });
+          return;
+        }
         setState({
           kind: "ok",
           url: target,

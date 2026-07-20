@@ -129,6 +129,15 @@ export function Header({
         </button>
         <button
           type="button"
+          className={currentView === "browser" ? "active" : ""}
+          onClick={() => onNavigate("browser")}
+          aria-current={currentView === "browser" ? "page" : undefined}
+          data-testid="nav-browser"
+        >
+          {t("nav.browser")}
+        </button>
+        <button
+          type="button"
           className={currentView === "chains" ? "active" : ""}
           onClick={() => onNavigate("chains")}
           aria-current={currentView === "chains" ? "page" : undefined}

@@ -101,7 +101,6 @@ describe("BrowserView", () => {
       libp2pPeerId: "12D3KooWTest",
       body: "# Hello from Alice",
       contentType: "text/markdown",
-      contentHash: "abc",
       byteLength: 18,
       latencyMs: 10,
     });
@@ -134,7 +133,6 @@ describe("BrowserView", () => {
       libp2pPeerId: "12D3KooWTest",
       body: "# x",
       contentType: "text/markdown",
-      contentHash: "abc",
       byteLength: 2,
       latencyMs: 5,
     });
@@ -228,7 +226,6 @@ describe("BrowserView", () => {
       // base64 of a 1x1 white PNG
       body: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=",
       contentType: "image/png",
-      contentHash: "abc",
       byteLength: 70,
       latencyMs: 5,
     });

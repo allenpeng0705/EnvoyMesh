@@ -41,6 +41,7 @@ export const en = {
     contacts: "Contacts ({count})",
     discover: "Discover",
     library: "Library",
+    browser: "Browser",
     chains: "Chains",
     activity: "Activity",
     settings: "Settings",

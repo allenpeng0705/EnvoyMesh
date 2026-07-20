@@ -140,4 +140,61 @@ export class SocialPage {
       return pc?.connectionState ?? "unknown";
     });
   }
+
+  // --------------------------------------------------------------------------
+  // Phase 45 — Web Content Browser helpers
+  // --------------------------------------------------------------------------
+
+  /** Open the Browser tab from the header nav. */
+  async openBrowser(): Promise<void> {
+    await this.page.getByTestId("nav-browser").click();
+    await this.page.getByTestId("browser-view").waitFor({ state: "visible", timeout: 10_000 });
+  }
+
+  /** Type an envoy:// URL into the address bar and submit. */
+  async browseToUrl(envoyUrl: string): Promise<void> {
+    const bar = this.page.getByTestId("browser-address-bar");
+    await bar.fill(envoyUrl);
+    await this.page.getByTestId("browser-go").click();
+  }
+
+  /** Assert rendered Markdown contains the expected text. */
+  async expectRenderedMarkdown(expectedText: string): Promise<void> {
+    const md = this.page.getByTestId("browser-markdown");
+    await md.waitFor({ state: "visible", timeout: 30_000 });
+    const text = await md.textContent();
+    if (!text?.includes(expectedText)) {
+      throw new Error(`Expected markdown to contain "${expectedText}" but got "${text}"`);
+    }
+  }
+
+  /** Assert an image was rendered with a blob: src. */
+  async expectImageRendered(): Promise<void> {
+    const img = this.page.getByTestId("browser-image");
+    await img.waitFor({ state: "visible", timeout: 30_000 });
+    const src = await img.getAttribute("src");
+    if (!src?.startsWith("blob:")) {
+      throw new Error(`Expected blob: image src, got "${src}"`);
+    }
+  }
+
+  /** Assert a PDF iframe was rendered with a blob: src. */
+  async expectPdfRendered(): Promise<void> {
+    const iframe = this.page.getByTestId("browser-pdf");
+    await iframe.waitFor({ state: "visible", timeout: 30_000 });
+    const src = await iframe.getAttribute("src");
+    if (!src?.startsWith("blob:")) {
+      throw new Error(`Expected blob: pdf src, got "${src}"`);
+    }
+  }
+
+  /** Assert the Browser error region is visible (access denied / not found / etc.). */
+  async expectAccessDenied(): Promise<void> {
+    await this.page.getByTestId("browser-error").waitFor({ state: "visible", timeout: 30_000 });
+  }
+
+  /** Assert the Not found / error status region is visible. */
+  async expectNotFound(): Promise<void> {
+    await this.page.getByTestId("browser-error").waitFor({ state: "visible", timeout: 30_000 });
+  }
 }

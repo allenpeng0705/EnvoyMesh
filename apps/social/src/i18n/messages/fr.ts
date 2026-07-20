@@ -40,6 +40,7 @@ export const fr = mergeMessages(en, {
     contacts: "Contacts ({count})",
     discover: "Découvrir",
     library: "Bibliothèque",
+    browser: "Navigateur",
     chains: "Chaînes",
     activity: "Activité",
     settings: "Paramètres",

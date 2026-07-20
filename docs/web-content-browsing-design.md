@@ -1,6 +1,6 @@
 # EnvoyMesh — Web Content Browsing (Phase 45)
 
-**Status:** Design — not yet implemented (2026-07-20)
+**Status:** Phase 45A implemented (2026-07-20) — Layers 1–3 green; Layer 4 Playwright wired (manual `npm run smoke:web-content`). 45B–45F still future.
 **Owner:** peng
 **Roadmap:** [Phase 45 in implementation-plan.md](./implementation-plan.md#phase-45--web-content-browsing--future)
 **Related:** [agent_network.md](./agent_network.md), [knowledge-base-and-rag.md](./knowledge-base-and-rag.md), [p2p-discovery.md](./p2p-discovery.md)
@@ -40,8 +40,8 @@ This document specifies Step 1 fully, sketches Step 2, and forward-references th
 
 ### Non-goals
 
-- **No external HTTP gateway in Step 1.** Outside non-mesh access is Step 3, forward-referenced in §8.6 but not designed here.
-- **No GossipSub / push-based pubsub in v1.** Push notifications and topic-based replication are Step 2 (§8.5). v1 is pull-on-demand.
+- **No external HTTP gateway in Step 1.** Outside non-mesh access is Step 3, forward-referenced in §7.6 but not designed here.
+- **No GossipSub / push-based pubsub in v1.** Push notifications and topic-based replication are Step 2 (§7.5). v1 is pull-on-demand.
 - **No handle registry.** URLs use permanent cryptographic owner IDs in v1. Pretty `@handle` URLs are reserved syntax (parser accepts, runtime rejects) for a future registry.
 - **No replacement of existing transports.** Mesh-native protocols remain the transport; we add one intent, not a parallel HTTP stack.
 - **No new auth model.** Visibility reuses Bonds sensitivity tiers; no URL tokens, no per-reader credentials.
@@ -354,10 +354,10 @@ The handler `library-read-inbound.ts` mirrors `knowledge-query-inbound.ts:69-416
 4. **Rate limit** for public-tier callers (reuse `checkPublicKnowledgeRateLimit` pattern at `knowledge-query-inbound.ts:175-194`).
 5. **Resolve visibility for the requested path** from the manifest. Default to `private` if no manifest entry exists.
 6. **Map visibility → sensitivity** (§4.3.2 table).
-7. **Policy gate** — `evaluatePolicy({ peerId, bondLevel, intent: "library.read", requestedSensitivity })`. `deny` → `{ status: "forbidden" }`; `approval_required` → `{ status: "forbidden" }` (no async approval path for v1 file reads); `allow` → proceed.
+7. **Policy gate** — `evaluatePolicy({ peerId, bondLevel, intent: "library.read", requestedSensitivity })`. `deny` / `approval_required` → `{ status: "not_found" }` for non-`contacts` visibility (anti-enumeration); `contacts` ACL misses → `{ status: "forbidden" }`; `allow` → proceed (then compare bond maxSensitivity vs file tier).
 8. **For `contacts` visibility** — additional `contactIds` ACL check.
 9. **Path safety** — `assertPathInsideVault(resolvedPath, webContentDir)`. Reject on traversal attempt.
-10. **Read file** from `<profileDir>/web/<path>`.
+10. **Read file** from `<profileDir>/web/<path>` (empty path / trailing slash resolves to `index.md`).
 11. **Range handling** — if `range` requested, slice; else full content subject to size cap.
 12. **Build response** with `contentType` (MIME sniffed from extension), `contentHash` (sha256), `byteLength`, `etag` (hash prefix).
 13. **Sign and deliver** the `library.read.response` envelope.
@@ -375,7 +375,7 @@ Add to `EnvoyIntentSchema` in `packages/protocol/src/index.ts:4-92`:
 Capability requirements (extend `capabilityRequirements` near the existing `knowledge.query` entry):
 
 ```typescript
-"library.read":          [["web.serve"]],   // responder must advertise web-content capability
+"library.read":          [["vault.retrieve"]],  // closest existing capability; no new `web.serve` token in 45A
 "library.read.response": [],
 ```
 
@@ -467,10 +467,12 @@ Phase 45A (the spike) skips authoring — content is created by manually droppin
 | Requester bond level | `public` visibility | `bonded` visibility | `contacts` visibility | `private` visibility |
 |---|---|---|---|---|
 | `self` (owner) | ✅ | ✅ | ✅ | ✅ |
-| `direct` | ✅ | ✅ | ✅ if in `contactIds[]` | ❌ forbidden |
-| `referred` | ✅ | ✅ | ❌ unless in `contactIds[]` | ❌ forbidden |
-| `public` (stranger) | ✅ (rate-limited) | ❌ forbidden | ❌ forbidden | ❌ forbidden |
-| `blocked` | ❌ forbidden | ❌ forbidden | ❌ forbidden | ❌ forbidden |
+| `direct` | ✅ | ✅ | ✅ if in `contactIds[]` | ❌ `not_found` |
+| `referred` | ✅ | ✅ | ❌ unless in `contactIds[]` | ❌ `not_found` |
+| `public` (stranger) | ✅ (rate-limited) | ❌ `not_found` | ❌ `not_found` | ❌ `not_found` |
+| `blocked` | ❌ `not_found` | ❌ `not_found` | ❌ `not_found` | ❌ `not_found` |
+
+**Anti-enumeration:** Denied reads return `status: "not_found"` (identical to a missing path) except when a bonded peer fails a `contacts` ACL check — that case returns `forbidden` so the contact knows to request access. Rate-limited strangers get no response envelope (`ok: false` on the handler) with a rate-limit audit.
 
 Rate limits (reuse existing): public-tier callers are capped at 5 reads/minute/peer (mirrors `checkPublicKnowledgeRateLimit` at `packages/bonds/src/index.ts:326`).
 
@@ -515,9 +517,9 @@ Every response carries a `contentHash` (sha256 of body). The Browser view verifi
 - Basic Browser view in Social desktop UI (`apps/social/src/components/views/BrowserView.tsx`).
 - `NodeServiceImpl.libraryRead(...)` method.
 - Discovery capability `"envoymesh.web-content"` advertised.
-- **All test layers** per §9.1–9.4 (URL parser unit, handler trust, two-node vitest E2E, Playwright comprehensive matrix).
+- **All test layers** per §8.1–§8.4 (URL parser unit, handler trust, two-node vitest E2E, Playwright comprehensive matrix).
 
-**Exit criterion:** Phase 45A Scenario (§10.1) passes — write `~/EnvoyMesh/web/hello.md` on Node A; on Node B (bonded), open Browser, type `envoy://<A's owner>/hello.md`, see `<h1>Hello</h1>` rendered. Plus the Playwright matrix (§9.4) all green.
+**Exit criterion:** Phase 45A Scenario (§9.1) passes — write `~/EnvoyMesh/web/hello.md` on Node A; on Node B (bonded), open Browser, type `envoy://<A's owner>/hello.md`, see `<h1>Hello</h1>` rendered. Plus the Playwright matrix (§8.4) scenarios 1–5 and 7 green (6 and 8 are 45B stubs).
 
 ### 7.2 Phase 45B — Browser polish
 
@@ -596,18 +598,19 @@ Test cases (~20):
 Test cases (~12):
 
 - Stranger (`public` bond) requests `public`-visibility item → `ok`, bytes returned.
-- Stranger requests `bonded`-visibility item → `forbidden`.
-- Stranger requests `private`-visibility item → `forbidden` (same response shape — no leakage).
+- Stranger requests `bonded`-visibility item → `not_found` (anti-enumeration; not `forbidden`).
+- Stranger requests `private`-visibility item → `not_found` (same response shape — no leakage).
 - `direct` bond requests `bonded`-visibility item → `ok`.
 - `direct` bond requests `contacts`-visibility item where they are in `contactIds[]` → `ok`.
 - `direct` bond requests `contacts`-visibility item where they are NOT in `contactIds[]` → `forbidden`.
 - `referred` bond requests `bonded`-visibility item → `ok`.
-- `blocked` peer requests anything → `forbidden`.
-- Rate limit exceeded (6th request in a minute from a stranger) → `forbidden` with rate-limit reason.
+- `blocked` peer requests anything → `not_found`.
+- Rate limit exceeded (6th request in a minute from a stranger) → handler `ok: false` with rate-limit reason.
 - Path traversal (`../../../etc/passwd`) → `not_found` (no leakage of path existence).
 - Path outside web dir (symlink escape) → `not_found`.
 - Oversized response (file > envelope cap without `range`) → `too_large`.
-- Audit events emitted correctly: `message.verified`, `library.read received`, `library.read served` / `library.read denied`.
+- Empty path resolves to `index.md`.
+- Audit events emitted correctly: `message.verified`, `library.read.served` / `policy.decided` deny.
 
 ### 8.3 Layer 3 — Two-node vitest E2E
 
@@ -619,9 +622,9 @@ Test cases (~5):
 
 - `LIBREAD-01`: Bonded A↔B; A has `web/hello.md`; B calls `libraryRead({ targetOwnerId: A, path: "hello.md" })`; assert `status: "ok"`, `body` matches file content, `contentType: "text/markdown"`.
 - `LIBREAD-02`: Bonded A↔B; A has `web/photos/cover.jpg`; B reads it; assert binary body round-trips (compare base64 + sha256).
-- `LIBREAD-03`: A and B NOT bonded; B attempts read; assert `status: "forbidden"`.
-- `LIBREAD-04`: Bonded A↔B; A has `web/private/secret.md` with `visibility: "private"`; B attempts read; assert `forbidden`.
-- `LIBREAD-05`: Bonded A↔B; A updates `web/hello.md` content; B reads with stale `etag`; assert response is full content (not 304).
+- `LIBREAD-03`: A and B NOT bonded; B attempts read of bonded-visibility item; assert `status: "not_found"`.
+- `LIBREAD-04`: Bonded A↔B; A has `web/owner-only.md` with `visibility: "private"`; B attempts read; assert `not_found`.
+- `LIBREAD-05`: Bonded A↔B; A updates `web/changelog.md` content; B re-reads; assert response is the updated full content (etag-based 304 caching is 45B).
 
 ### 8.4 Layer 4 — Playwright full-stack E2E (comprehensive matrix)
 
@@ -643,14 +646,14 @@ Test cases (~5):
 
 **Test cases (8 — the comprehensive matrix):**
 
-1. **Fetch markdown → render** — Alice has `web/hello.md` (`# Hello`); Bob opens Browser, types `envoy://<Alice's owner>/hello.md`, asserts `<h1>Hello</h1>` appears in render area.
-2. **Fetch image → render** — Alice has `web/cover.jpg`; Bob navigates to it; asserts `<img>` with the envoy URL as src and visible dimensions.
-3. **Fetch PDF → render** — Alice has `web/resume.pdf`; Bob navigates to it; asserts `<iframe>` with the envoy URL, PDF viewer loads (detect via `iframe` `load` event).
-4. **Stranger denied** — Carol (not bonded to Alice) attempts to read Alice's `web/hello.md` (bonded visibility); asserts "Access denied" status. (If the item is public-visibility, Carol succeeds — add a variant for that.)
+1. **Fetch markdown → render** — Alice has `web/hello.md` (`# Hello`); Bob opens Browser, types `envoy://<Alice's owner>/hello.md`, asserts heading text appears in render area.
+2. **Fetch image → render** — Alice has `web/cover.jpg`; Bob navigates to it; asserts `<img>` with a `blob:` src.
+3. **Fetch PDF → render** — Alice has `web/resume.pdf`; Bob navigates to it; asserts `<iframe>` with a `blob:` src.
+4. **Stranger denied** — Bob unbonded to Alice attempts to read Alice's `web/hello.md` (bonded visibility); asserts error region (anti-leakage `not_found`).
 5. **Bonded allowed** — Bob (bonded to Alice) reads the same item; asserts content renders.
-6. **Back button** — Bob visits URL A, then URL B; clicks Back; asserts URL A re-renders.
-7. **Malformed URL** — Bob types `envoy://not-a-valid-url`; asserts error message in status bar ("Invalid envoy URL: missing owner").
-8. **Bookmark** — Bob visits a URL, clicks bookmark star, names it "Alice's Hello"; opens bookmark list; clicks "Alice's Hello"; asserts the URL re-opens and renders.
+6. **Back button** — **Phase 45B** (skipped in 45A; history stack not shipped).
+7. **Malformed URL** — Bob types `envoy:///posts/hello`; asserts Go disabled + parse-error region.
+8. **Bookmark** — **Phase 45B persistence**; 45A only asserts the bookmark star affordance is present after a successful fetch.
 
 **Per-test timeouts:** 60s (Playwright config default), with `page.waitForTimeout` polling for async renders.
 
@@ -789,7 +792,7 @@ These are decisions that need the owner's input before or during implementation.
 | 4 | Content versioning strategy (preserve old `contentHash` history?) | No version history in v1; `etag` for cache revalidation only | Post-45D |
 | 5 | Image gallery specifics (thumbnail generation? EXIF? captions file format?) | Manual thumbnails in v1; auto-generation post-45D | 45D |
 | 6 | Mobile direct-mode bond requirements (must mobile have its own bond with every contact whose content it browses?) | Yes — same constraint as direct-mode discovery today | 45C |
-| 7 | Should `library.read` support directory listing (render `index.md` automatically on path `/`)? | Yes — `index.md` convention in 45A | 45A |
+| 7 | Should `library.read` support directory listing (render `index.md` automatically on path `/`)? | **Resolved 45A:** yes — empty path / trailing slash → `index.md` via `resolveWebContentPath` | 45A |
 | 8 | Streaming large files over `/envoymesh/data/0.1.0` instead of envelope chunking? | Range requests in 45B; streaming protocol variant post-45B | 45B+ |
 | 9 | Should the Browser view render remote `<form>` POSTs (interactive sites)? | No in v1 — read-only browsing; forms post-45E | Post-45E |
 | 10 | Content moderation / abuse reporting flow? | Reuse existing block/bond-revoke; reporting flow post-45E | Post-45E |
@@ -902,6 +905,9 @@ Explicitly NOT in this design (separate future work):
 | 2026-07-20 | Templated site types are conventions, not new schemas | Lets users add new types without protocol changes. See §4.2.3. |
 | 2026-07-20 | Four test layers in Phase 45A, including Playwright comprehensive matrix with real OS processes | Matches the project's strongest verification convention (Phase 38H). Catches integration bugs that unit tests miss. See §8. |
 | 2026-07-20 | GossipSub deferred to Phase 45E evaluation | v1 is pull-on-demand; push notifications can ride the existing message stream. See §7.5, §10.3. |
+| 2026-07-20 | Denied reads return `not_found` (not `forbidden`) except `contacts` ACL misses | Anti-enumeration; matches threat model. See §5.1. |
+| 2026-07-20 | Capability requirement is `vault.retrieve` (not a new `web.serve` token) | Reuses existing device capability; DHT still advertises `envoymesh.web-content`. |
+| 2026-07-20 | Empty path / trailing slash → `index.md` | Resolves open question #7 for 45A. |
 
 ## 16. References
 

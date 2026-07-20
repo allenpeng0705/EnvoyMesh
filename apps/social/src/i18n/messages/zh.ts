@@ -42,6 +42,7 @@ export const zh = mergeMessages(en, {
     contacts: "联系人 ({count})",
     discover: "发现",
     library: "资料库",
+    browser: "浏览器",
     chains: "代理链",
     activity: "动态",
     settings: "设置",

@@ -85,6 +85,18 @@ export function normalizeWebPath(path: string): string {
   return path.replace(/^\/+/, "").replace(/\/+/g, "/");
 }
 
+/**
+ * Resolve a URL path to a concrete file under `web/`.
+ * Empty path or a trailing slash maps to `index.md` (Phase 45A convention).
+ */
+export function resolveWebContentPath(path: string): string {
+  const normalized = normalizeWebPath(path);
+  if (!normalized || normalized.endsWith("/")) {
+    return `${normalized}index.md`;
+  }
+  return normalized;
+}
+
 export function createWebContentStore(webDir: string): WebContentStore {
   const manifestPath = join(webDir, "web-content.json");
   let cached: WebContentManifest | null = null;

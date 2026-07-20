@@ -23,7 +23,7 @@ import { join, normalize, resolve as resolvePath } from "node:path";
 import { createHash } from "node:crypto";
 import {
   createWebContentStore,
-  normalizeWebPath,
+  resolveWebContentPath,
   visibilityToSensitivity,
   DEFAULT_VISIBILITY,
   type WebContentStore,
@@ -175,9 +175,10 @@ export async function handleInboundLibraryRead(
   }
 
   // 5. Resolve the path's visibility from the manifest.
+  //    Empty path / trailing slash → index.md (Phase 45A directory index).
   const webDir = join(profileDir, "web");
   const store = webContentStore ?? createWebContentStore(webDir);
-  const normalizedPath = normalizeWebPath(payload.path);
+  const normalizedPath = resolveWebContentPath(payload.path);
   const entry = await store.findByPath(normalizedPath);
   const visibility = entry?.visibility ?? DEFAULT_VISIBILITY;
 

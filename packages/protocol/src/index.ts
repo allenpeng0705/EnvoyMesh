@@ -792,8 +792,12 @@ export const LibraryReadRangeSchema = z.object({
 export const LibraryReadPayloadSchema = z.object({
   requesterOwnerId: z.string().min(1),
   targetOwnerId: z.string().min(1),
-  /** URL path, leading slash stripped, percent-decoded by the requester. */
-  path: z.string().min(1).max(512),
+  /**
+   * URL path, leading slash stripped, percent-decoded by the requester.
+   * Empty string means the site root and resolves to `index.md` on the
+   * serving node (Phase 45A directory-index convention).
+   */
+  path: z.string().max(512),
   /** Optional sensitivity hint (the serving node applies its own ceiling). */
   requestedSensitivity: SensitivitySchema.optional(),
   /** Optional byte range, like HTTP Range. Enables large-file chunking. */

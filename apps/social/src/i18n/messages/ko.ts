@@ -40,6 +40,7 @@ export const ko = mergeMessages(en, {
     contacts: "연락처 ({count})",
     discover: "찾기",
     library: "라이브러리",
+    browser: "브라우저",
     chains: "체인",
     activity: "활동",
     settings: "설정",

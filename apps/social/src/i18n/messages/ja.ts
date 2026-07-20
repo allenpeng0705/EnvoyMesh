@@ -41,6 +41,7 @@ export const ja = mergeMessages(en, {
     contacts: "連絡先 ({count})",
     discover: "発見",
     library: "ライブラリ",
+    browser: "ブラウザ",
     chains: "チェーン",
     activity: "アクティビティ",
     settings: "設定",

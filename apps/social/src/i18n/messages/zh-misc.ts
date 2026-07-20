@@ -496,6 +496,7 @@ export const zhBrowserViewMessages = {
   statusAccessDenied: "访问被拒",
   statusNotFound: "未找到",
   statusTooLarge: "文件过大（超过 48 KiB 上限；请使用范围请求）",
+  statusHashMismatch: "内容完整性校验失败 — 已拒绝渲染",
   statusError: "网络错误 — {message}",
   statusRateLimited: "频率受限 — 请稍后再试",
   invalidUrl: "无效的 envoy URL：{message}",

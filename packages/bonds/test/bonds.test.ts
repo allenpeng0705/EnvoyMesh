@@ -105,6 +105,17 @@ describe("bonds", () => {
     }
   });
 
+  it("allows referred peers to library.read up to friends sensitivity", () => {
+    expect(
+      evaluatePolicy({
+        peerId: "peer-a",
+        bondLevel: "referred",
+        intent: "library.read",
+        requestedSensitivity: "friends",
+      }),
+    ).toEqual({ action: "allow", maxSensitivity: "friends" });
+  });
+
   it("denies blocked peers", () => {
     expect(
       evaluatePolicy({

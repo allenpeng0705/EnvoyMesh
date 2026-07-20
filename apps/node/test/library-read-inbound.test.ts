@@ -152,9 +152,12 @@ function req(path: string) {
 }
 
 describe("handleInboundLibraryRead", () => {
-  it("returns error for invalid payload (empty path)", async () => {
-    const result = await call("peer-a", { ...req(""), path: "" });
-    expect(result.ok).toBe(false);
+  it("returns not_found for empty path when index.md is missing", async () => {
+    const result = await call("peer-stranger", req(""));
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.responsePayload.status).toBe("not_found");
+    }
   });
 
   it("serves public-visibility file to a stranger (public bond)", async () => {
@@ -302,5 +305,81 @@ describe("handleInboundLibraryRead", () => {
     const types = events.map((e) => e.type);
     expect(types).toContain("message.verified");
     expect(types).toContain("library.read.served");
+  });
+
+  it("serves bonded-visibility file to a referred bond", async () => {
+    const content = "# Referred friends";
+    await writePublishedFile("referred.md", content, "bonded");
+    await trustStore.setTrustRecord({
+      peerOwnerId: OWNER_CONTACT,
+      level: "referred",
+      displayName: "Referred Contact",
+    });
+    await registerPeer(
+      "peer-referred",
+      OWNER_CONTACT,
+      "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----",
+    );
+    const result = await call("peer-referred", req("referred.md"));
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.responsePayload.status).toBe("ok");
+      expect(result.responsePayload.body).toBe(content);
+    }
+  });
+
+  it("denies blocked peer for any visibility (not_found, no leakage)", async () => {
+    await writePublishedFile("public-blocked.md", "# Hello", "public");
+    await trustStore.setTrustRecord({
+      peerOwnerId: OWNER_CONTACT,
+      level: "blocked",
+      displayName: "Blocked",
+    });
+    await registerPeer(
+      "peer-blocked",
+      OWNER_CONTACT,
+      "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----",
+    );
+    const result = await call("peer-blocked", req("public-blocked.md"));
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.responsePayload.status).toBe("not_found");
+    }
+  });
+
+  it("rate-limits the 6th public-tier request in a minute", async () => {
+    await writePublishedFile("rate.md", "# Hello", "public");
+    const peer = "peer-rate-limit";
+    for (let i = 0; i < 5; i++) {
+      const r = await call(peer, req("rate.md"), { remotePeerId: peer });
+      expect(r.ok).toBe(true);
+      if (r.ok) expect(r.responsePayload.status).toBe("ok");
+    }
+    const limited = await call(peer, req("rate.md"), { remotePeerId: peer });
+    expect(limited.ok).toBe(false);
+    if (!limited.ok) {
+      expect(limited.reason).toMatch(/rate limited/i);
+    }
+  });
+
+  it("resolves empty path to index.md", async () => {
+    const content = "# Site root";
+    await writePublishedFile("index.md", content, "public");
+    const result = await call("peer-stranger", req(""));
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.responsePayload.status).toBe("ok");
+      expect(result.responsePayload.body).toBe(content);
+    }
+  });
+
+  it("emits deny audit for stranger on bonded content", async () => {
+    await writePublishedFile("deny-audit.md", "secret", "bonded");
+    await call("peer-stranger", req("deny-audit.md"));
+    const events = await taskStore.readAuditEvents({ limit: 100 });
+    const deny = events.find(
+      (e) => e.type === "policy.decided" && e.outcome === "deny" && e.intent === "library.read",
+    );
+    expect(deny).toBeTruthy();
   });
 });

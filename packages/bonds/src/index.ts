@@ -174,6 +174,12 @@ function evaluateReferredPolicy(request: PolicyRequest): PolicyDecision {
     return limitSensitivity(request.requestedSensitivity, "public");
   }
 
+  // Phase 45 — referred peers may read up to bonded (friends) web content.
+  // Per-item visibility is still enforced by the inbound handler.
+  if (request.intent === "library.read") {
+    return limitSensitivity(request.requestedSensitivity, "friends");
+  }
+
   if (
     request.intent === "social.intro.sync" ||
     request.intent === "social.intro.propose" ||
