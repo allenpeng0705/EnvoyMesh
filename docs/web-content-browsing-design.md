@@ -1,6 +1,6 @@
 # EnvoyMesh — Web Content Browsing (Phase 45)
 
-**Status:** Phase 45A implemented (2026-07-20) — Layers 1–3 green; Layer 4 Playwright wired (manual `npm run smoke:web-content`). 45B–45F still future.
+**Status:** Phase 45A + 45B implemented (2026-07-20). Layers 1–3 green; Layer 4 Playwright wired (`npm run smoke:web-content`). 45C–45F still future.
 **Owner:** peng
 **Roadmap:** [Phase 45 in implementation-plan.md](./implementation-plan.md#phase-45--web-content-browsing--future)
 **Related:** [agent_network.md](./agent_network.md), [knowledge-base-and-rag.md](./knowledge-base-and-rag.md), [p2p-discovery.md](./p2p-discovery.md)
@@ -225,7 +225,7 @@ interface WebContentEntry {
 }
 ```
 
-Items without a manifest entry are served but not listed in directory indexes — the manifest is the *publishing* layer, the directory is the *storage* layer.
+Items without a manifest entry are **owner-only** (default `visibility: "private"`) — they can be previewed locally but are not served to remote peers and are not listed in discovery. The manifest is the *publishing* layer; the directory is the *storage* layer.
 
 #### 4.2.3 Templated site types
 
@@ -242,7 +242,9 @@ A CLI command `envoy init blog` (and the equivalent in-app action in Phase 45D) 
 
 #### 4.2.4 Manual Markdown support
 
-Users can author Markdown by hand and drop it into `~/EnvoyMesh/web/`. As long as the path is reachable from the directory root and the file extension is `.md`, it is served as `text/markdown` and rendered by the Browser view. No manifest entry required for serving; manifest entry required for listing.
+Users can author Markdown by hand and drop it into `~/EnvoyMesh/web/`. As long as the path is reachable from the directory root and the file extension is `.md`, the file is readable as `text/markdown` **by the owner** (local self-read / preview).
+
+**Remote reads require a manifest entry.** Files without a `web-content.json` entry default to `visibility: "private"` (§4.4.4 step 5) — bonded contacts and strangers receive `not_found`. To publish a dropped file, add a manifest entry with the desired visibility (`public` / `bonded` / `contacts`). Manifest entry is also required for discovery listings.
 
 #### 4.2.5 Raw file serving
 
@@ -311,7 +313,7 @@ The right move is one new intent pair that mirrors `discovery.request`'s shape b
 const LibraryReadPayloadSchema = z.object({
   requesterOwnerId: z.string().min(1),
   targetOwnerId: z.string().min(1),             // who we're asking
-  path: z.string().min(1).max(512),             // URL path, percent-decoded
+  path: z.string().max(512),                    // URL path, percent-decoded; empty → index.md
   requestedSensitivity: z.enum(["public", "friends", "private"]).optional(),
   range: z.object({                              // optional byte range, like HTTP Range
     start: z.number().int().nonnegative(),
@@ -321,7 +323,7 @@ const LibraryReadPayloadSchema = z.object({
 ```
 
 - `targetOwnerId` is the `envoy:owner:...` from the URL.
-- `path` is the URL path (leading slash stripped, percent-decoded).
+- `path` is the URL path (leading slash stripped, percent-decoded). Empty string means the site root and resolves to `index.md`.
 - `range` supports partial content requests for large files (PDFs, videos).
 
 #### 4.4.3 `LibraryReadResponsePayloadSchema` (response)
@@ -472,7 +474,7 @@ Phase 45A (the spike) skips authoring — content is created by manually droppin
 | `public` (stranger) | ✅ (rate-limited) | ❌ `not_found` | ❌ `not_found` | ❌ `not_found` |
 | `blocked` | ❌ `not_found` | ❌ `not_found` | ❌ `not_found` | ❌ `not_found` |
 
-**Anti-enumeration:** Denied reads return `status: "not_found"` (identical to a missing path) except when a bonded peer fails a `contacts` ACL check — that case returns `forbidden` so the contact knows to request access. Rate-limited strangers get no response envelope (`ok: false` on the handler) with a rate-limit audit.
+**Anti-enumeration:** Denied reads return `status: "not_found"` (identical to a missing path) on every policy deny — including blocked peers and strangers hitting `contacts`-visibility paths. The only case that returns `forbidden` is when a **bonded** peer (`direct` / `referred`) fails a `contacts` ACL check, so they know to request access. Rate-limited strangers get no response envelope (`ok: false` on the handler) with a rate-limit audit.
 
 Rate limits (reuse existing): public-tier callers are capped at 5 reads/minute/peer (mirrors `checkPublicKnowledgeRateLimit` at `packages/bonds/src/index.ts:326`).
 
@@ -482,7 +484,7 @@ All paths are resolved against `<profileDir>/web/` and validated via `assertPath
 
 ### 5.3 Abuse prevention
 
-- **Envelope size cap:** responses are capped at the existing envelope limit (64 KiB default; override possible). Larger files require `range` requests.
+- **Envelope size cap:** responses are capped at 48 KiB (`MAX_RESPONSE_BYTES` in `library-read-inbound.ts`). Larger files require `range` requests.
 - **Rate limiting:** public-tier callers rate-limited per peer.
 - **Replay protection:** existing envelope replay suppression in `apps/node/src/inbound-guard.ts` applies.
 - **Signature verification:** existing `verifyInboundEnvelope` from `@envoymesh/identity` applies — sender's public key must hash to claimed `senderPeerId`.
@@ -519,17 +521,19 @@ Every response carries a `contentHash` (sha256 of body). The Browser view verifi
 - Discovery capability `"envoymesh.web-content"` advertised.
 - **All test layers** per §8.1–§8.4 (URL parser unit, handler trust, two-node vitest E2E, Playwright comprehensive matrix).
 
-**Exit criterion:** Phase 45A Scenario (§9.1) passes — write `~/EnvoyMesh/web/hello.md` on Node A; on Node B (bonded), open Browser, type `envoy://<A's owner>/hello.md`, see `<h1>Hello</h1>` rendered. Plus the Playwright matrix (§8.4) scenarios 1–5 and 7 green (6 and 8 are 45B stubs).
+**Exit criterion:** Phase 45A Scenario (§9.1) passes — write `~/EnvoyMesh/web/hello.md` **and** a matching `web-content.json` entry on Node A; on Node B (bonded), open Browser, type `envoy://<A's owner>/hello.md`, see `<h1>Hello</h1>` rendered. Plus the Playwright matrix (§8.4) scenarios 1–5 and 7 green; scenario 6 skipped until 45B; scenario 8 asserts bookmark star affordance only (persistence in 45B).
 
-### 7.2 Phase 45B — Browser polish
+### 7.2 Phase 45B — Browser polish `[x]`
 
-**Scope:**
-- Back / Forward / Reload navigation history.
-- Bookmarks (local store + UI).
+**Scope (shipped 2026-07-20):**
+- Back / Forward / Reload navigation history (`browser-history-store.ts` — in-session stack + persisted recent for autocomplete).
+- Bookmarks (localStorage per owner + star toggle UI).
 - Address-bar autocomplete from history + bookmarks.
-- Range requests for large files (PDFs, videos) — chunked transfer.
-- ETag-based cache revalidation.
-- Loading spinner + error states polished.
+- Range requests for large files — server returns `byteLength` on `too_large`; client `fetchLibraryContent` auto-chunks; range bodies always base64.
+- ETag-based cache revalidation — request `ifNoneMatch` → response `not_modified`.
+- Loading spinner + idle/error states polished.
+
+**Exit criterion:** Back/forward/reload/bookmarks work; large files assemble via ranges; Reload revalidates against `etag`. Playwright scenarios 6 & 8 green.
 
 ### 7.3 Phase 45C — EnvoyGo mobile Browser
 
@@ -624,7 +628,7 @@ Test cases (~5):
 - `LIBREAD-02`: Bonded A↔B; A has `web/photos/cover.jpg`; B reads it; assert binary body round-trips (compare base64 + sha256).
 - `LIBREAD-03`: A and B NOT bonded; B attempts read of bonded-visibility item; assert `status: "not_found"`.
 - `LIBREAD-04`: Bonded A↔B; A has `web/owner-only.md` with `visibility: "private"`; B attempts read; assert `not_found`.
-- `LIBREAD-05`: Bonded A↔B; A updates `web/changelog.md` content; B re-reads; assert response is the updated full content (etag-based 304 caching is 45B).
+- `LIBREAD-05`: Bonded A↔B; A updates `web/changelog.md` content; B re-reads; assert response is the updated full content (Reload may send `ifNoneMatch` and receive `not_modified` when unchanged — 45B).
 
 ### 8.4 Layer 4 — Playwright full-stack E2E (comprehensive matrix)
 
@@ -651,9 +655,9 @@ Test cases (~5):
 3. **Fetch PDF → render** — Alice has `web/resume.pdf`; Bob navigates to it; asserts `<iframe>` with a `blob:` src.
 4. **Stranger denied** — Bob unbonded to Alice attempts to read Alice's `web/hello.md` (bonded visibility); asserts error region (anti-leakage `not_found`).
 5. **Bonded allowed** — Bob (bonded to Alice) reads the same item; asserts content renders.
-6. **Back button** — **Phase 45B** (skipped in 45A; history stack not shipped).
+6. **Back button** — navigates to previous page in history stack (45B).
 7. **Malformed URL** — Bob types `envoy:///posts/hello`; asserts Go disabled + parse-error region.
-8. **Bookmark** — **Phase 45B persistence**; 45A only asserts the bookmark star affordance is present after a successful fetch.
+8. **Bookmark** — star toggles and persists in localStorage (45B).
 
 **Per-test timeouts:** 60s (Playwright config default), with `page.waitForTimeout` polling for async renders.
 
@@ -683,9 +687,10 @@ These are the concrete demos that prove the architecture works. They double as t
 
    This is my first published page on EnvoyMesh.
    ```
-2. (Optional) On Alice's machine, add to `~/EnvoyMesh/web/web-content.json`:
+2. On Alice's machine, add to `~/EnvoyMesh/web/web-content.json` (required for remote reads — without a manifest entry the file defaults to `private` and bonded peers get `not_found`):
    ```json
    {
+     "version": "0.1",
      "entries": [
        {
          "path": "hello.md",
@@ -805,48 +810,48 @@ Per sub-phase. New files marked `(new)`; modified files show the nature of the c
 
 | File | Change |
 |---|---|
-| `packages/api/src/envoy-url.ts` (new) | URL parser: `parseEnvoyUrl(url)`, `buildEnvoyUrl(ownerId, path)`, `resolveEnvoyUrl(url)` (owner-id form only; handle form throws) |
+| `packages/api/src/envoy-url.ts` (new) | URL parser: `parseEnvoyUrl`, `buildEnvoyUrl`, `resolveEnvoyUrl`, `tryParseEnvoyUrl`, `isEnvoyContentUrl` |
 | `packages/api/src/index.ts` | Re-export envoy-url helpers |
 | `packages/api/test/envoy-url.test.ts` (new) | Layer 1 unit tests |
-| `packages/protocol/src/index.ts` | Add `"library.read"` / `"library.read.response"` to `EnvoyIntentSchema`; add `LibraryReadPayloadSchema`, `LibraryReadResponsePayloadSchema`; extend `LibraryFileMatchSchema` with optional `kind`/`mimeType`/`summary`/`visibility`/`urlSlug`/`updatedAt`; add capability requirement entry |
+| `packages/protocol/src/index.ts` | Add `"library.read"` / `"library.read.response"`; schemas; extend `LibraryFileMatchSchema`; capability requirement `vault.retrieve` |
 | `packages/protocol/test/library-read-payload.test.ts` (new) | Schema parse/build/round-trip tests |
-| `apps/node/src/library-read-inbound.ts` (new) | Inbound handler mirroring `knowledge-query-inbound.ts`; reuses `evaluatePolicy` + `assertPathInsideVault` |
-| `apps/node/src/cli-mesh-inbound-library-read.ts` (new) | CLI dispatcher arm (mirrors `cli-mesh-inbound-knowledge-query.ts`) |
-| `apps/node/src/web-content-store.ts` (new) | Loads `web-content.json` manifest; lookups by path |
-| `apps/node/src/node-service-impl.ts` | Add `libraryRead({ targetOwnerId, path, range })` method; wire mesh envelope send/expect-reply |
-| `apps/node/src/node-service-fileshare.ts` | Add `libraryReadViaRuntime` helper (mirrors `discoverPublishedLibraryViaRuntime`) |
-| `apps/node/src/discovery-inbound.ts` | Advertise `"envoymesh.web-content"` capability; merge web-content matches in `mergePublishedLibraryMatches` |
-| `apps/node/src/discovery-library-match.ts` | Extend matcher with `urlSlug`/`kind`/`tags` matching |
-| `apps/node/src/capability-discovery.ts` | Reprovide `envoymesh.web-content` topic when web content exists |
-| `apps/node/src/json-rpc-router.ts` | Register `libraryRead` RPC method |
+| `packages/bonds/src/index.ts` | Public-tier allow + referred-tier friends maxSensitivity for `library.read` |
+| `apps/node/src/library-read-inbound.ts` (new) | Inbound handler; anti-enumeration `not_found` on policy deny; `forbidden` only on contacts ACL miss |
+| `apps/node/src/cli-mesh-inbound-library-read.ts` (new) | CLI dispatcher arm |
+| `apps/node/src/web-content-store.ts` (new) | Loads `web-content.json`; `resolveWebContentPath`; default visibility `private` |
+| `apps/node/src/node-service-impl.ts` | `libraryRead` RPC; web-content DHT topic when manifest has entries |
+| `apps/node/src/node-service-fileshare.ts` | `libraryReadViaRuntime` helper |
+| `apps/node/src/node-service-capability-discovery.ts` | Reprovide `capability:envoymesh.web-content` when web content exists |
+| `apps/node/src/capability-discovery.ts` | `WEB_CONTENT_DHT_TOPIC` + `withWebContentDiscoveryTopic` |
+| `apps/node/src/discovery-inbound.ts` | `WEB_CONTENT_CAPABILITY`; merge web-content matches; stranger gate accepts capability |
+| `apps/node/src/discovery-library-match.ts` | `matchWebContentEntries` (title / path / urlSlug / kind / tags) |
+| `apps/node/src/json-rpc-router.ts` | Register `libraryRead` RPC |
 | `apps/node/test/library-read-inbound.test.ts` (new) | Layer 2 trust tests |
 | `apps/node/test/library-read-multi-node-e2e.test.ts` (new) | Layer 3 two-node vitest E2E |
-| `apps/node/src/local-two-node-smoke.ts` | Add the new test to the smoke list |
-| `packages/api/src/node-service.ts` | Add `libraryRead` to the `NodeServiceClient` interface |
-| `packages/mobile-node/src/index.ts` | Add `libraryRead` method (paired + standalone modes) |
-| `apps/social/src/lib/direct-call-client.ts` | Add `libraryRead` passthrough |
-| `apps/social/src/lib/envoy-url.ts` (new) | Client-side URL helpers (history, bookmarks store) |
-| `apps/social/src/components/views/BrowserView.tsx` (new) | The Browser view (address bar, render area, status bar) |
-| `apps/social/src/components/BrowserAddressBar.tsx` (new) | Address bar component |
-| `apps/social/src/components/BrowserRenderArea.tsx` (new) | Render area dispatching on `contentType` |
-| `apps/social/src/components/BrowserBookmarkBar.tsx` (new) | Bookmark star + dropdown (minimal in 45A; full UI in 45B) |
-| `apps/social/src/App.tsx` | Add Browser route/tab |
-| `apps/social/src/i18n/` | Add Browser strings (en + zh-CN) |
-| `apps/social/test/components/BrowserView.test.tsx` (new) | Component test (mock `useNodeService`) |
-| `apps/social/test/e2e/web-content-browse.smoke.ts` (new) | Layer 4 Playwright matrix (8 scenarios) |
-| `apps/social/test/e2e/helpers/social-page.ts` | Extend page object with browser helpers |
-| `package.json` (root) | Add `smoke:web-content` script |
-| `playwright.config.ts` | Confirm `*.smoke.ts` glob picks up the new file (no change expected) |
+| `apps/node/src/local-two-node-smoke.ts` | Add Layer 3 test to smoke list |
+| `packages/api/src/node-service.ts` | Add `libraryRead` to `NodeService` |
+| `packages/mobile-node/src/index.ts` | `libraryRead` (paired mode; standalone stubbed until 45C) |
+| `apps/social/src/lib/direct-call-client.ts` | `libraryRead` passthrough |
+| `apps/social/src/components/views/BrowserView.tsx` (new) | Browser view (address bar, render area, status, bookmark star affordance — inlined; no separate AddressBar/RenderArea components in 45A) |
+| `apps/social/src/App.tsx` + `Header.tsx` | Browser route/tab |
+| `apps/social/src/i18n/` | Browser strings (en + zh-CN) |
+| `apps/social/test/components/BrowserView.test.tsx` (new) | Component test |
+| `apps/social/test/e2e/web-content-browse.smoke.ts` (new) | Layer 4 Playwright matrix |
+| `apps/social/test/e2e/helpers/` | `NodeSpawner` + `SocialPage` browser helpers |
+| `package.json` (root) | `smoke:web-content` script |
 
-### Phase 45B
+Note: Social imports URL helpers from `@envoymesh/api` (no separate `apps/social/src/lib/envoy-url.ts`).
+
+### Phase 45B (shipped)
 
 | File | Change |
 |---|---|
-| `apps/social/src/lib/browser-history-store.ts` (new) | Navigation history (back/forward stack) |
-| `apps/social/src/lib/browser-bookmark-store.ts` (new) | Bookmark persistence |
-| `apps/social/src/components/views/BrowserView.tsx` | Wire history + bookmarks + autocomplete |
-| `apps/node/src/library-read-inbound.ts` | Range request support |
-| `apps/social/src/components/BrowserRenderArea.tsx` | ETag revalidation on reload |
+| `apps/social/src/lib/browser-history-store.ts` (new) | Nav stack + persisted recent for autocomplete |
+| `apps/social/src/lib/browser-bookmark-store.ts` (new) | Bookmark persistence (localStorage per owner) |
+| `apps/social/src/lib/library-read-fetch.ts` (new) | Range auto-chunk + `ifNoneMatch` client |
+| `apps/social/src/components/views/BrowserView.tsx` | History / bookmarks / autocomplete / reload |
+| `apps/node/src/library-read-inbound.ts` | `too_large` metadata, `not_modified`, range base64 |
+| `packages/protocol` + `packages/api` | `ifNoneMatch` request field; `not_modified` status |
 
 ### Phase 45C
 
@@ -874,7 +879,7 @@ Per sub-phase. New files marked `(new)`; modified files show the nature of the c
 | Risk | Likelihood | Impact | Mitigation |
 |---|---|---|---|
 | URL scheme needs to change after launch | Low | Catastrophic (breaks all shared links) | Owner-id form is permanent by design; handle form is additive only. See §4.1.5. |
-| Envelope size cap blocks large files | High | Medium | Range requests in 45B; streaming variant post-45B. Most blog posts / images fit in 64 KiB. |
+| Envelope size cap blocks large files | High | Medium | Range requests in 45B; streaming variant post-45B. Most blog posts / images fit in 48 KiB. |
 | Path enumeration leaks content existence | Medium | Low | Rate-limit strangers; return `not_found` identically for missing-vs-forbidden. |
 | Malicious content (XSS in served Markdown) | Medium | High | `DOMPurify` sanitization (existing in `Markdown.tsx`); HTML iframe-sandboxed; no script escapes render area. |
 | Mobile direct-mode bond requirement surprises users | Medium | Medium | Document clearly; mobile paired-mode (via home) is the default and requires no per-contact bond. |

@@ -80,7 +80,7 @@ Maintenance rule: keep this file as the source of truth for **done / left / next
 - [Phase 42 — Native WebRTC Voice Calls on EnvoyGo (shipped)](#phase-42--native-webrtc-voice-calls-on-envoygo-shipped)
 - [Phase 43 — Agent Network User Experience](#phase-43--agent-network-user-experience-planned)
 - [Phase 44 — Refine EnvoyMesh Knowledgebase](#phase-44--refine-envoymesh-knowledgebase-)
-- [Phase 45 — Web Content Browsing](#phase-45--web-content-browsing--45a-shipped-45b45f-future)
+- [Phase 45 — Web Content Browsing](#phase-45--web-content-browsing--45a45b-shipped-45c45f-future)
 
 EnvoyMesh is a TypeScript-first, owner-controlled, peer-to-peer agent network.
 
@@ -1161,7 +1161,7 @@ Milestone: **Phases 0–42 (42J deferred) shipped** — Core protocol through Ph
 7. **Parked until scoped:** Story E payment rail.
 8. **Phase 26 — DID WAN gateway resolver** — scoped below.
 9. **Chain template marketplace (future)** — share chain templates across the mesh via `discovery.request`. Parked until user demand materialises (4 built-in templates + AI chat creation cover current use cases).
-10. **Phase 45 — Web Content Browsing** — 45A shipped; 45B–45F future. [web-content-browsing-design.md](./web-content-browsing-design.md) is the design doc; the Phase 45 section below is the implementation checklist. 45A (URL scheme + `library.read` intent + Browser view + all test layers) → 45B (browser polish + bookmarks) → 45C (EnvoyGo mobile browser) → 45D (authoring UX + templates + visibility) → 45E (Step 2: push notifications, topics, friend discovery). 45F (external HTTP gateway) is forward-referenced.
+10. **Phase 45 — Web Content Browsing** — 45A+45B shipped; 45C–45F future. [web-content-browsing-design.md](./web-content-browsing-design.md) is the design doc; the Phase 45 section below is the implementation checklist. 45A (URL scheme + `library.read` intent + Browser view + all test layers) → 45B (browser polish + bookmarks) → 45C (EnvoyGo mobile browser) → 45D (authoring UX + templates + visibility) → 45E (Step 2: push notifications, topics, friend discovery). 45F (external HTTP gateway) is forward-referenced.
 
 ### Phase 9 Architecture Overview
 
@@ -5866,7 +5866,7 @@ Enhance the existing MCP external provider with write-back and deeper integratio
 
 ---
 
-## Phase 45 — Web Content Browsing **`[~]` 45A shipped; 45B–45F future**
+## Phase 45 — Web Content Browsing **`[~]` 45A+45B shipped; 45C–45F future**
 
 **Design doc:** [web-content-browsing-design.md](./web-content-browsing-design.md)
 
@@ -5903,27 +5903,32 @@ Prove the architecture end-to-end with the smallest possible surface. Manual fil
 - `[x]` **Layer 1 — URL parser unit** (`packages/api/test/envoy-url.test.ts`). Runs under `npm test`.
 - `[x]` **Layer 2 — Handler trust tests** (`apps/node/test/library-read-inbound.test.ts`) including referred / blocked / rate-limit / index.md. Runs under `npm test`.
 - `[x]` **Layer 3 — Two-node vitest E2E** (`apps/node/test/library-read-multi-node-e2e.test.ts`). Added to `apps/node/src/local-two-node-smoke.ts`. Runs under `npm run smoke:local`.
-- `[x]` **Layer 4 — Playwright matrix** (`apps/social/test/e2e/web-content-browse.smoke.ts`) with repaired `NodeSpawner` (profile dirs, owner IDs, live bond via WS status) + `SocialPage` browser helpers. Scenarios 1–5, 7–8 green; scenario 6 skipped until 45B. Script: `npm run smoke:web-content` (manual initially).
+- `[x]` **Layer 4 — Playwright matrix** (`apps/social/test/e2e/web-content-browse.smoke.ts`) with repaired `NodeSpawner` (profile dirs, owner IDs, live bond via WS status) + `SocialPage` browser helpers. Scenarios 1–8 green (6 & 8 enabled in 45B). Script: `npm run smoke:web-content` (manual initially).
 - `[x]` Protocol schema tests: `packages/protocol/test/library-read-payload.test.ts`.
 - `[x]` BrowserView component tests: `apps/social/test/components/BrowserView.test.tsx`.
 
 **Exit criteria (45A):**
 
 - `[x]` Phase 45A Scenario 1 (design doc §9.1) covered by Layer 3 LIBREAD-01 + Layer 4 scenario 1.
-- `[x]` Playwright matrix scenarios 1–5 and 7 green; 6 deferred to 45B; 8 asserts bookmark star affordance only.
+- `[x]` Playwright matrix scenarios 1–5 and 7 green (45A); 6 & 8 completed in 45B.
 - `[x]` Layer 1 + 2 + 3 tests green.
 - `[x]` `npm run typecheck` clean across all touched packages.
 
-### 45B — Browser polish `[ ]`
+### 45B — Browser polish `[x]`
 
-- `[ ]` Navigation history (back/forward/reload stack): `apps/social/src/lib/browser-history-store.ts`.
-- `[ ]` Bookmark persistence + UI: `apps/social/src/lib/browser-bookmark-store.ts`.
-- `[ ]` Address-bar autocomplete from history + bookmarks.
-- `[ ]` Range request support in `library-read-inbound.ts` for large files (PDFs, videos).
-- `[ ]` ETag-based cache revalidation on Reload.
-- `[ ]` Loading spinner + error states polished.
+- `[x]` Navigation history (back/forward/reload stack): `apps/social/src/lib/browser-history-store.ts`.
+- `[x]` Bookmark persistence + UI: `apps/social/src/lib/browser-bookmark-store.ts`.
+- `[x]` Address-bar autocomplete from history + bookmarks.
+- `[x]` Range request support — client auto-chunks on `too_large`; server returns `byteLength`/`etag`/`contentHash` on `too_large`; range bodies always base64; **range/binary span capped at 40 KiB** (base64 envelope budget under 64 KiB inbound guard).
+- `[x]` ETag-based cache revalidation on Reload (`ifNoneMatch` → `not_modified`).
+- `[x]` Loading spinner + error states polished.
+- `[x]` Review hardening: contacts visibility deny-by-default without `contactIds`; past-EOF ranges empty; navigate generation guard; recent URLs owner-scoped.
 
-**Exit criteria (45B):** Back/forward/reload/bookmarks all work; large PDF (>64 KiB) renders via range requests; reload revalidates against `etag`.
+**Exit criteria (45B):**
+
+- `[x]` Back/forward/reload/bookmarks work in BrowserView (+ Playwright scenarios 6 & 8).
+- `[x]` Large file (>48 KiB) fetch via range assembly (`fetchLibraryContent`).
+- `[x]` Reload revalidates against `etag` (`not_modified` keeps cached body).
 
 ### 45C — EnvoyGo mobile Browser `[ ]`
 
@@ -5968,7 +5973,7 @@ Out of scope for this plan. Will be a separate design when ready. Sketch only: `
 ### Exit Criteria (Phase 45 overall)
 
 - `[x]` Phase 45A exit criteria met (the architecture spike ships; Layer 4 manual smoke).
-- `[ ]` Phase 45B exit criteria met (browser polish complete).
+- `[x]` Phase 45B exit criteria met (browser polish complete).
 - `[ ]` Phase 45C exit criteria met (mobile browsing works on real devices).
 - `[ ]` Phase 45D exit criteria met (full author → publish → browse UX ships).
 - `[ ]` Phase 45E ships at least v1 (notification-fanout push + topic discovery).
@@ -5984,7 +5989,7 @@ See the design doc §12 for the full file-by-file change map per sub-phase. High
 - **Mobile (45A interface, 45C Flutter UI):** `packages/mobile-node/src/index.ts`.
 - **Social UI (45A):** `apps/social/src/components/views/BrowserView.tsx` (new) + sub-components; `apps/social/src/lib/envoy-url.ts` (new).
 - **Tests (45A):** four new test files across `packages/api/test/`, `apps/node/test/`, `apps/social/test/e2e/`.
-- **45B:** `browser-history-store.ts`, `browser-bookmark-store.ts` (new).
+- **45B:** `browser-history-store.ts`, `browser-bookmark-store.ts`, `library-read-fetch.ts` (new); `ifNoneMatch`/`not_modified` in protocol + api; range/`too_large` polish in `library-read-inbound.ts`.
 - **45C:** Flutter Browser screen in `apps/mobile/`.
 - **45D:** `BrowserAuthorView.tsx`, `MarkdownEditor.tsx`, `VisibilitySelector.tsx` (new); extend `ContactProfilePanel.tsx`, `AgentCardSchema`.
 
@@ -6015,6 +6020,8 @@ See design doc §11 for the full list of 10 open questions. None block Phase 45A
 
 | Date | Change |
 |------|--------|
+| 2026-07-20 | **Phase 45B shipped (+ review fixes).** Browser polish: back/forward/reload, per-owner bookmarks + recent autocomplete, range auto-chunk, `ifNoneMatch`/`not_modified`. Review fixes before commit: capped range/binary bodies at 40 KiB (base64 envelope budget), contacts visibility deny-by-default when `contactIds` missing, past-EOF ranges return empty (no phantom byte), navigate in-flight guard, owner-scoped recent history. Playwright scenarios 6 & 8 enabled. |
+| 2026-07-20 | **Phase 45A review fixes.** Anti-enumeration: policy deny always `not_found` (forbidden only on contacts ACL miss). Discovery: `wantsWebContent` merge + `matchWebContentEntries` + DHT `capability:envoymesh.web-content` when manifest has entries. Docs: manifest required for remote reads; file map trimmed to shipped surface; body cap 48 KiB. |
 | 2026-07-20 | **Phase 45A shipped + review fixes.** Vertical slice live: `envoy://` parser, `library.read` intent/handler, web content store, Browser view + Header nav, referred-bond policy, `index.md` root convention, contentHash verify in Browser, four test layers (Playwright `NodeSpawner` repaired). Docs aligned: `not_found` anti-enumeration, `vault.retrieve` capability, section cross-refs, checkboxes. |
 | 2026-07-20 | **Phase 45 — Web Content Browsing designed.** Added Phase 45 section (45A–45F sub-phases) covering URL-addressable content serving over the mesh. Full design in [web-content-browsing-design.md](./web-content-browsing-design.md). |
 | 2026-06-20 | **Phase 43 — Agent Network User Experience planned.** Post-40F usability review consolidated into eight sub-phases (43A–43H): P0 = worker execution (`executeSubtask`), chat entry point + templates, smart defaults + composite bid ranking; P1 = live WebSocket UI, cost/trust transparency, single-home diagnostics; P2 = safety rails + power-user/mobile features. Phase 41 exit criteria corrected to reflect partial shipment. North star: "hire a temporary team" UX — hide chain/mandate IDs from default flow. |

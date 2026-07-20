@@ -833,6 +833,7 @@ export async function libraryReadViaRuntime(
         targetOwnerId: params.targetOwnerId,
         path: params.path,
         range: params.range,
+        ifNoneMatch: params.ifNoneMatch,
       }),
       correlationId: randomUUID(),
     });

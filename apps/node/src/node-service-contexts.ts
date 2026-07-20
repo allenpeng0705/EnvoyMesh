@@ -212,6 +212,7 @@ export interface CapabilityDiscoveryContextDeps {
   syncPairingKioskFromConfig: CapabilityDiscoveryContext["syncPairingKioskFromConfig"];
   /** Load the owner's signed human profile (hobbies/knowledge/location). */
   loadHumanProfile: CapabilityDiscoveryContext["loadHumanProfile"];
+  getProfileDir: CapabilityDiscoveryContext["getProfileDir"];
 }
 
 export interface AgentSetupContextDeps {
@@ -742,6 +743,7 @@ export function buildCapabilityDiscoveryContext(deps: CapabilityDiscoveryContext
     },
     syncPairingKioskFromConfig: () => deps.syncPairingKioskFromConfig(),
     loadHumanProfile: () => deps.loadHumanProfile(),
+    getProfileDir: () => deps.getProfileDir(),
   };
 }
 

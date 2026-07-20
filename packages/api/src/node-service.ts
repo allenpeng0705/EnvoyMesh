@@ -952,6 +952,11 @@ export interface LibraryReadParams {
   path: string;
   /** Optional byte range for large-file chunking. */
   range?: { start: number; end: number };
+  /**
+   * Phase 45B — If-None-Match etag. When it matches, the server returns
+   * `status: "not_modified"` so the Browser can keep its cached body.
+   */
+  ifNoneMatch?: string;
   /** Per-target timeout (default 30s). */
   timeoutMs?: number;
 }
@@ -962,14 +967,14 @@ export interface LibraryReadResult {
   /** libp2p peer ID we dialed. */
   libp2pPeerId: string;
   /** Wire status discriminator. */
-  status: "ok" | "not_found" | "forbidden" | "too_large";
+  status: "ok" | "not_found" | "forbidden" | "too_large" | "not_modified";
   /** Body when status === "ok" (UTF-8 text or base64 binary). */
   body?: string;
   /** MIME type detected by the serving node. */
   contentType?: string;
-  /** sha256 of body — caller verifies. */
+  /** sha256 of the full resource (not just a range slice) — caller verifies. */
   contentHash?: string;
-  /** Body byte length. */
+  /** Body byte length (for `ok`: this chunk; for `too_large`: full file size). */
   byteLength?: number;
   /** ETag (hash prefix) for cache revalidation. */
   etag?: string;

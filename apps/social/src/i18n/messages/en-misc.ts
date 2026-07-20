@@ -541,10 +541,12 @@ export const browserViewMessages = {
   reload: "Reload",
   bookmark: "Bookmark this page",
   loading: "Loading…",
+  idleHint: "Enter an envoy:// URL to browse.",
   statusOk: "Loaded — {mimeType}, {byteLength} bytes",
+  statusCached: "Cached — {mimeType}, {byteLength} bytes",
   statusAccessDenied: "Access denied",
   statusNotFound: "Not found",
-  statusTooLarge: "File too large (over 48 KiB cap; use a range request)",
+  statusTooLarge: "File too large — fetching in chunks…",
   statusHashMismatch: "Content integrity check failed — refused to render",
   statusError: "Network error — {message}",
   statusRateLimited: "Rate limited — try again in a minute",
@@ -553,6 +555,8 @@ export const browserViewMessages = {
   openImage: "Open image",
   download: "Download {filename}",
   bytesLoaded: "{loaded} / {total} bytes",
+  suggestionBookmark: "Bookmark",
+  suggestionRecent: "Recent",
 } as const;
 
 export const privacySettingsMessages = {

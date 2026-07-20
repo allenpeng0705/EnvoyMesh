@@ -40,6 +40,12 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
   useIsInProcessMobileNode: () => false,
 }));
 
+vi.mock("../../src/context/NodeStateContext.js", () => ({
+  useNodeState: () => ({
+    humanProfile: { ownerId: "envoy:owner:self" },
+  }),
+}));
+
 vi.mock("../../src/hooks/useToast.js", () => ({
   useToast: () => ({ showToast, toasts: [] }),
   useToastOptional: () => ({ showToast }),

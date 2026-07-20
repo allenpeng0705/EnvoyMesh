@@ -492,10 +492,12 @@ export const zhBrowserViewMessages = {
   reload: "刷新",
   bookmark: "收藏此页",
   loading: "加载中…",
+  idleHint: "输入 envoy:// URL 开始浏览。",
   statusOk: "已加载 — {mimeType}，{byteLength} 字节",
+  statusCached: "缓存 — {mimeType}，{byteLength} 字节",
   statusAccessDenied: "访问被拒",
   statusNotFound: "未找到",
-  statusTooLarge: "文件过大（超过 48 KiB 上限；请使用范围请求）",
+  statusTooLarge: "文件过大 — 正在分块获取…",
   statusHashMismatch: "内容完整性校验失败 — 已拒绝渲染",
   statusError: "网络错误 — {message}",
   statusRateLimited: "频率受限 — 请稍后再试",
@@ -504,6 +506,8 @@ export const zhBrowserViewMessages = {
   openImage: "打开图片",
   download: "下载 {filename}",
   bytesLoaded: "{loaded} / {total} 字节",
+  suggestionBookmark: "收藏",
+  suggestionRecent: "最近",
 } as const;
 
 export const zhFileShareMessages = {

@@ -802,6 +802,12 @@ export const LibraryReadPayloadSchema = z.object({
   requestedSensitivity: SensitivitySchema.optional(),
   /** Optional byte range, like HTTP Range. Enables large-file chunking. */
   range: LibraryReadRangeSchema.optional(),
+  /**
+   * Phase 45B — If-None-Match style cache revalidation. When the current
+   * etag matches, the server responds with `status: "not_modified"` and
+   * no body so the Browser can keep its cached render.
+   */
+  ifNoneMatch: z.string().min(1).max(128).optional(),
 });
 
 /**
@@ -809,7 +815,9 @@ export const LibraryReadPayloadSchema = z.object({
  *
  * Status discriminator mirrors HTTP semantics: `ok` returns content,
  * `not_found` for missing paths, `forbidden` for trust-gate rejection,
- * `too_large` when the file exceeds the envelope cap without a `range`.
+ * `too_large` when the file exceeds the envelope cap without a `range`
+ * (includes `byteLength` so the client can issue range requests),
+ * `not_modified` when `ifNoneMatch` matched the current etag (45B).
  *
  * When `status === "forbidden"` and a public-tier version of the content
  * exists, `publicRedirection` carries the alt path so the Browser view
@@ -820,6 +828,7 @@ export const LibraryReadResponseStatusSchema = z.enum([
   "not_found",
   "forbidden",
   "too_large",
+  "not_modified",
 ]);
 
 export const LibraryReadResponsePayloadSchema = z.object({
@@ -829,7 +838,7 @@ export const LibraryReadResponsePayloadSchema = z.object({
   body: z.string().optional(),
   /** MIME type (e.g. "text/markdown", "image/jpeg", "application/pdf"). */
   contentType: z.string().optional(),
-  /** sha256 of body — Browser view verifies and refuses on mismatch. */
+  /** sha256 of the full resource bytes (not a range slice). Browser verifies assembled bodies. */
   contentHash: z.string().optional(),
   byteLength: z.number().int().nonnegative().optional(),
   /** Hash prefix for cache revalidation (ETag equivalent). */
@@ -2833,6 +2842,7 @@ export interface CreateLibraryReadPayloadInput {
   path: string;
   requestedSensitivity?: Sensitivity;
   range?: LibraryReadRange;
+  ifNoneMatch?: string;
 }
 
 export function createLibraryReadPayload(input: CreateLibraryReadPayloadInput): LibraryReadPayload {
@@ -2842,6 +2852,7 @@ export function createLibraryReadPayload(input: CreateLibraryReadPayloadInput): 
     path: input.path,
     requestedSensitivity: input.requestedSensitivity,
     range: input.range,
+    ifNoneMatch: input.ifNoneMatch,
   });
 }
 

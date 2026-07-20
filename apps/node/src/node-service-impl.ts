@@ -832,7 +832,8 @@ import {
   queryRelayLookupWithDeps,
   type RelayClientCycleDeps,
 } from "./relay-client-cycle.js";
-import { buildProfileDiscoveryTopics, runCapabilityDiscoveryCycle } from "./capability-discovery.js";
+import { buildProfileDiscoveryTopics, runCapabilityDiscoveryCycle, withWebContentDiscoveryTopic } from "./capability-discovery.js";
+import { createWebContentStore } from "./web-content-store.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
 import { startNodeStatsInterval } from "./node-stats-log.js";
 import { tryBondAutonomyInboundAutoAccept } from "./bond-autonomy-inbound.js";
@@ -5097,10 +5098,19 @@ class NodeServiceImpl implements NodeService {
       knowledge: humanProfile?.knowledge,
       geoTopics,
     });
+    let finalTopics = topics;
+    if (this._profileDir) {
+      const hasWeb = await createWebContentStore(join(this._profileDir, "web"))
+        .hasAnyPublished()
+        .catch(() => false);
+      if (hasWeb) {
+        finalTopics = withWebContentDiscoveryTopic(topics);
+      }
+    }
     await runCapabilityDiscoveryCycle({
       mesh,
       profile: discoveryProfile,
-      topics,
+      topics: finalTopics,
       taskStore: this._taskStore,
       discoverySeedStore: this._discoverySeedStore,
       enableDht: runtime.enableDht,

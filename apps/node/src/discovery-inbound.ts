@@ -19,9 +19,11 @@ import {
   type LibraryFileMatch,
   type RelayPeerInfo,
 } from "@envoymesh/protocol";
-import { matchPublishedLibraryDocuments } from "./discovery-library-match.js";
+import { matchPublishedLibraryDocuments, matchWebContentEntries } from "./discovery-library-match.js";
 import { createPublishedLibraryStore } from "./published-library-store.js";
 import { createPublishedExternalStore } from "./published-external-store.js";
+import { createWebContentStore, type WebContentVisibility } from "./web-content-store.js";
+import { join } from "node:path";
 import { responseHopDistance } from "@envoymesh/api";
 import { discoveryRequesterAuditLabel, isAnonymousDiscoveryOwnerId } from "@envoymesh/api";
 import { matchGeoDiscoveryTagHashes } from "@envoymesh/api";
@@ -106,46 +108,94 @@ async function mergePublishedLibraryMatches(input: {
   payload: ReturnType<typeof parseDiscoveryRequestPayload>;
   profile: NodeProfile;
   matches: DiscoveryMatchRow[];
+  /** Bond level of the requester — gates which web-content visibility tiers are listed. */
+  trustLevel?: "self" | "direct" | "referred" | "public" | "blocked";
+  /** Requester owner ID — used for contacts-visibility ACL listing. */
+  requesterOwnerId?: string;
 }): Promise<void> {
-  const { vaultDir, profileDir, loadPublishedDocumentIds, payload, profile, matches } = input;
-  if (!vaultDir) {
-    return;
-  }
+  const {
+    vaultDir,
+    profileDir,
+    loadPublishedDocumentIds,
+    payload,
+    profile,
+    matches,
+    trustLevel = "public",
+    requesterOwnerId,
+  } = input;
 
-  const wantsLib =
+  const wantsPublishedLib =
     payload.requestedCapabilities.includes(PUBLISHED_LIB_CAPABILITY) ||
     Boolean(payload.fileTitleQuery?.trim()) ||
     (payload.requestedContentHashPrefixes?.length ?? 0) > 0;
-  if (!wantsLib) {
+  const wantsWebContent =
+    payload.requestedCapabilities.includes(WEB_CONTENT_CAPABILITY) ||
+    Boolean(payload.fileTitleQuery?.trim()) ||
+    (payload.requestedContentHashPrefixes?.length ?? 0) > 0;
+
+  if (!wantsPublishedLib && !wantsWebContent) {
     return;
   }
 
-  let published: Set<string>;
-  if (loadPublishedDocumentIds) {
-    published = await loadPublishedDocumentIds();
-  } else if (profileDir) {
-    published = await createPublishedLibraryStore(profileDir).loadDocumentIds();
-  } else {
-    return;
-  }
-  if (published.size === 0) {
-    return;
+  const libraryMatches: LibraryFileMatch[] = [];
+
+  // ── Published vault library (existing path) ────────────────────────────
+  if (wantsPublishedLib && vaultDir) {
+    let published: Set<string>;
+    if (loadPublishedDocumentIds) {
+      published = await loadPublishedDocumentIds();
+    } else if (profileDir) {
+      published = await createPublishedLibraryStore(profileDir).loadDocumentIds();
+    } else {
+      published = new Set();
+    }
+    if (published.size > 0) {
+      const externalExports = profileDir
+        ? await createPublishedExternalStore(profileDir).loadAll()
+        : new Map();
+      const vaultMatches = await matchPublishedLibraryDocuments({
+        vaultDir,
+        publishedIds: published,
+        fileTitleQuery: payload.fileTitleQuery,
+        contentHashPrefixes: payload.requestedContentHashPrefixes,
+        maxResults: payload.maxResults,
+        externalExports,
+      });
+      libraryMatches.push(...vaultMatches);
+    }
   }
 
-  const externalExports = profileDir
-    ? await createPublishedExternalStore(profileDir).loadAll()
-    : new Map();
+  // ── Web content manifest (Phase 45) ────────────────────────────────────
+  if (wantsWebContent && profileDir) {
+    const webStore = createWebContentStore(join(profileDir, "web"));
+    const manifest = await webStore.load();
+    if (manifest.entries.length > 0) {
+      const allowedVisibility = webContentVisibilityForTrust(trustLevel);
+      const remaining = Math.max(0, payload.maxResults - libraryMatches.length);
+      if (remaining > 0) {
+        const webMatches = matchWebContentEntries({
+          entries: manifest.entries,
+          fileTitleQuery: payload.fileTitleQuery,
+          contentHashPrefixes: payload.requestedContentHashPrefixes,
+          maxResults: remaining,
+          allowedVisibility,
+          requesterOwnerId,
+        });
+        libraryMatches.push(...webMatches);
+      }
+    }
+  }
 
-  const libraryMatches = await matchPublishedLibraryDocuments({
-    vaultDir,
-    publishedIds: published,
-    fileTitleQuery: payload.fileTitleQuery,
-    contentHashPrefixes: payload.requestedContentHashPrefixes,
-    maxResults: payload.maxResults,
-    externalExports,
-  });
   if (libraryMatches.length === 0) {
     return;
+  }
+
+  const matchedCapabilities: string[] = [];
+  if (payload.requestedCapabilities.includes(PUBLISHED_LIB_CAPABILITY)) {
+    matchedCapabilities.push(PUBLISHED_LIB_CAPABILITY);
+  }
+  if (payload.requestedCapabilities.includes(WEB_CONTENT_CAPABILITY)) {
+    matchedCapabilities.push(WEB_CONTENT_CAPABILITY);
   }
 
   if (matches.length === 0) {
@@ -153,15 +203,36 @@ async function mergePublishedLibraryMatches(input: {
       ownerId: profile.owner.ownerId,
       peerId: derivePeerId(profile.device.publicKeyPem),
       matchedTagHashes: [],
-      matchedCapabilities: payload.requestedCapabilities.includes(PUBLISHED_LIB_CAPABILITY)
-        ? [PUBLISHED_LIB_CAPABILITY]
-        : [],
+      matchedCapabilities,
       libraryMatches,
     });
     return;
   }
 
-  matches[0]!.libraryMatches = libraryMatches;
+  const existing = matches[0]!;
+  existing.libraryMatches = [...(existing.libraryMatches ?? []), ...libraryMatches].slice(
+    0,
+    payload.maxResults,
+  );
+  for (const cap of matchedCapabilities) {
+    if (!existing.matchedCapabilities.includes(cap)) {
+      existing.matchedCapabilities.push(cap);
+    }
+  }
+}
+
+/** Which web-content visibility tiers a requester may see in discovery listings. */
+function webContentVisibilityForTrust(
+  trustLevel: "self" | "direct" | "referred" | "public" | "blocked",
+): WebContentVisibility[] {
+  if (trustLevel === "blocked") return [];
+  if (trustLevel === "self") return ["public", "bonded", "contacts", "private"];
+  if (trustLevel === "direct" || trustLevel === "referred") {
+    // contacts-tier filtered per-entry by requesterOwnerId inside matchWebContentEntries
+    return ["public", "bonded", "contacts"];
+  }
+  // public / stranger — public listings only
+  return ["public"];
 }
 
 export type DiscoveryInboundResult =
@@ -527,6 +598,8 @@ export async function handleInboundDiscoveryIntent(input: {
           payload,
           profile,
           matches,
+          trustLevel,
+          requesterOwnerId: trustOwnerId,
         });
 
         await auditDiscoveryMatch({
@@ -605,6 +678,8 @@ export async function handleInboundDiscoveryIntent(input: {
         payload,
         profile,
         matches,
+        trustLevel,
+        requesterOwnerId: trustOwnerId,
       });
 
       await auditDiscoveryMatch({

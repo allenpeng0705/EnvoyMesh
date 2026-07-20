@@ -18,6 +18,7 @@
 import {
   buildProfileDiscoveryTopics,
   runCapabilityDiscoveryCycle,
+  withWebContentDiscoveryTopic,
 } from "./capability-discovery.js";
 import {
   shouldRunPeriodicCapabilityFind,
@@ -31,6 +32,8 @@ import type {
   DiscoveryLocation,
   DiscoveryLocationPrecision,
 } from "@envoymesh/protocol";
+import { join } from "node:path";
+import { createWebContentStore } from "./web-content-store.js";
 
 export interface CapabilityDiscoveryContext {
   /** Live mesh instance (or undefined when stopped). */
@@ -51,6 +54,8 @@ export interface CapabilityDiscoveryContext {
   syncPairingKioskFromConfig(): Promise<void>;
   /** Load the owner's signed human profile (hobbies/knowledge/location), if any. */
   loadHumanProfile(): Promise<HumanProfileLite | undefined>;
+  /** Profile directory — used to detect published web content for DHT advertise. */
+  getProfileDir(): string | undefined;
 }
 
 /** Subset of `HumanProfilePayload` consumed by the discovery scheduler. */
@@ -89,10 +94,21 @@ export async function runCapabilityDiscoveryCycleViaRuntime(
     knowledge: humanProfile?.knowledge,
     geoTopics,
   });
+  // Phase 45 — advertise envoymesh.web-content when the manifest has entries.
+  let finalTopics = topics;
+  const profileDir = ctx.getProfileDir();
+  if (profileDir) {
+    const hasWeb = await createWebContentStore(join(profileDir, "web"))
+      .hasAnyPublished()
+      .catch(() => false);
+    if (hasWeb) {
+      finalTopics = withWebContentDiscoveryTopic(topics);
+    }
+  }
   await runCapabilityDiscoveryCycle({
     mesh: mesh as never,
     profile: config.discoveryProfile,
-    topics,
+    topics: finalTopics,
     taskStore: ctx.getTaskStore()!,
     discoverySeedStore: ctx.getDiscoverySeedStore()!,
     enableDht: connectivityRuntime.enableDht,

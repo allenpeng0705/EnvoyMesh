@@ -215,6 +215,7 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
             },
             syncPairingKioskFromConfig: () => host._syncPairingKioskFromConfig(),
             loadHumanProfile: () => host._humanProfileStore.loadHumanProfile(),
+            getProfileDir: () => host._profileDir,
           },
       agentSetup: {
             saveConfig: (config) => host._configStore.save(config),

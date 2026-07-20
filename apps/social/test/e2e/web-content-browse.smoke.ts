@@ -10,9 +10,9 @@
  *   3. Fetch PDF → renders in <iframe>
  *   4. Stranger denied (unbonded Bob) → error region
  *   5. Bonded allowed → content served
- *   6. Back button — deferred to 45B (skipped)
+ *   6. Back button navigates to previous page
  *   7. Malformed envoy:// URL → parse error
- *   8. Bookmark persistence — deferred to 45B (skipped; star affordance checked)
+ *   8. Bookmark star toggles persistence (★ / ☆)
  *
  * Prerequisites:
  *   - npm install
@@ -276,8 +276,67 @@ test.describe("Web Content Browsing E2E (Phase 45A)", () => {
     }
   });
 
-  test.skip("6. back button navigates to previous page (Phase 45B)", async () => {
-    // Full navigation history ships in Phase 45B.
+  test("6. back button navigates to previous page", async ({ page }) => {
+    const fx = await setupFixtures();
+    fx.social = new SocialPage(page, "bob");
+    try {
+      const aliceWebDir = join(fx.spawner.node1ProfileDir, "web");
+      await writeFile(
+        join(aliceWebDir, "page-a.md"),
+        "# Page A\n\nFirst page.",
+        { mode: 0o600 },
+      );
+      await writeFile(
+        join(aliceWebDir, "page-b.md"),
+        "# Page B\n\nSecond page.",
+        { mode: 0o600 },
+      );
+      await writeFile(
+        join(aliceWebDir, "web-content.json"),
+        JSON.stringify(
+          {
+            version: "0.1",
+            entries: [
+              {
+                path: "page-a.md",
+                contentHash: "any",
+                byteLength: 20,
+                title: "Page A",
+                kind: "article",
+                mimeType: "text/markdown",
+                visibility: "public",
+                updatedAt: new Date().toISOString(),
+              },
+              {
+                path: "page-b.md",
+                contentHash: "any",
+                byteLength: 20,
+                title: "Page B",
+                kind: "article",
+                mimeType: "text/markdown",
+                visibility: "public",
+                updatedAt: new Date().toISOString(),
+              },
+            ],
+          },
+          null,
+          2,
+        ),
+        { mode: 0o600 },
+      );
+      await prepareBrowserPage(page, fx);
+      const urlA = `envoy://${fx.aliceOwnerId}/page-a.md`;
+      const urlB = `envoy://${fx.aliceOwnerId}/page-b.md`;
+      await fx.social.browseToUrl(urlA);
+      await fx.social.expectRenderedMarkdown("Page A");
+      await fx.social.browseToUrl(urlB);
+      await fx.social.expectRenderedMarkdown("Page B");
+      await expect(page.getByTestId("browser-back")).toBeEnabled();
+      await page.getByTestId("browser-back").click();
+      await fx.social.expectRenderedMarkdown("Page A");
+    } finally {
+      await fx.cleanup();
+    }
   });
 
   test("7. malformed envoy:// URL → error message", async ({ page }) => {
@@ -293,14 +352,20 @@ test.describe("Web Content Browsing E2E (Phase 45A)", () => {
     }
   });
 
-  test("8. bookmark star affordance present (persistence in 45B)", async ({ page }) => {
+  test("8. bookmark star persists after toggle", async ({ page }) => {
     const fx = await setupFixtures();
     fx.social = new SocialPage(page, "bob");
     try {
       await prepareBrowserPage(page, fx);
       await fx.social.browseToUrl(fx.helloUrl());
       await fx.social.expectRenderedMarkdown("Hello from Alice");
-      await expect(page.getByTestId("browser-bookmark-star")).toBeVisible();
+      const star = page.getByTestId("browser-bookmark-star");
+      await expect(star).toBeVisible();
+      await expect(star).toBeEnabled();
+      await star.click();
+      await expect(star).toHaveText("★");
+      await star.click();
+      await expect(star).toHaveText("☆");
     } finally {
       await fx.cleanup();
     }

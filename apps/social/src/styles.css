@@ -9443,3 +9443,188 @@ button:disabled {
   color: var(--color-success, #10b981);
 }
 
+
+/* Phase 45 — Browser view */
+.browser-view {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  min-height: 0;
+  flex: 1;
+  padding: 1rem 1.25rem 1.5rem;
+}
+.browser-view__header h2 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+}
+.browser-view__toolbar {
+  display: flex;
+  align-items: stretch;
+  gap: 0.35rem;
+}
+.browser-view__nav-btn {
+  min-width: 2.25rem;
+  border: 1px solid var(--border-color, #d4d4d8);
+  background: var(--surface-raised, #fafafa);
+  border-radius: 0.375rem;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+}
+.browser-view__nav-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.browser-view__form {
+  display: flex;
+  flex: 1;
+  gap: 0.35rem;
+  min-width: 0;
+}
+.browser-view__address-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+.browser-view__address-bar {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border-color, #d4d4d8);
+  border-radius: 0.375rem;
+  background: var(--surface, #fff);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.875rem;
+}
+.browser-view__suggestions {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 2px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 0.25rem 0;
+  list-style: none;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border-color, #d4d4d8);
+  border-radius: 0.375rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+  max-height: 16rem;
+  overflow-y: auto;
+}
+.browser-view__suggestion {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.browser-view__suggestion:hover {
+  background: var(--surface-raised, #f4f4f5);
+}
+.browser-view__suggestion-url {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.8rem;
+  word-break: break-all;
+}
+.browser-view__suggestion-title {
+  font-size: 0.75rem;
+  color: var(--text-muted, #71717a);
+}
+.browser-view__suggestion-source {
+  font-size: 0.7rem;
+  color: var(--text-muted, #a1a1aa);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.browser-view__go,
+.browser-view__bookmark {
+  border: 1px solid var(--border-color, #d4d4d8);
+  background: var(--surface-raised, #fafafa);
+  border-radius: 0.375rem;
+  padding: 0 0.85rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.browser-view__go:disabled,
+.browser-view__bookmark:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.browser-view__bookmark--active {
+  color: #ca8a04;
+}
+.browser-view__parse-error,
+.browser-view__error {
+  color: var(--color-danger, #ef4444);
+  margin: 0;
+  font-size: 0.875rem;
+}
+.browser-view__render {
+  flex: 1;
+  min-height: 12rem;
+  overflow: auto;
+  border: 1px solid var(--border-color, #e4e4e7);
+  border-radius: 0.5rem;
+  background: var(--surface, #fff);
+  padding: 1rem;
+}
+.browser-view__loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  min-height: 8rem;
+  color: var(--text-muted, #71717a);
+}
+.browser-view__spinner {
+  width: 1.5rem;
+  height: 1.5rem;
+  border: 2px solid var(--border-color, #d4d4d8);
+  border-top-color: var(--accent, #2563eb);
+  border-radius: 50%;
+  animation: browser-spin 0.7s linear infinite;
+}
+@keyframes browser-spin {
+  to { transform: rotate(360deg); }
+}
+.browser-view__idle {
+  color: var(--text-muted, #71717a);
+  margin: 2rem auto;
+  text-align: center;
+}
+.browser-view__markdown {
+  max-width: 48rem;
+  margin: 0 auto;
+  line-height: 1.55;
+}
+.browser-view__html,
+.browser-view__pdf {
+  width: 100%;
+  min-height: 24rem;
+  border: 0;
+}
+.browser-view__image {
+  max-width: 100%;
+  height: auto;
+  display: block;
+  margin: 0 auto;
+}
+.browser-view__text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.85rem;
+}
+.browser-view__status {
+  margin: 0;
+  font-size: 0.75rem;
+  color: var(--text-muted, #71717a);
+}

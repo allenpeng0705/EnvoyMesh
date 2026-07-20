@@ -19,8 +19,9 @@ import { evaluatePolicy, checkPublicKnowledgeRateLimit } from "@envoymesh/bonds"
 import { assertPathInsideVault } from "@envoymesh/vault";
 import { ZodError } from "zod";
 import { readFile, stat } from "node:fs/promises";
-import { join, normalize, resolve as resolvePath } from "node:path";
+import { join, resolve as resolvePath } from "node:path";
 import { createHash } from "node:crypto";
+import { createReadStream } from "node:fs";
 import {
   createWebContentStore,
   resolveWebContentPath,
@@ -35,8 +36,29 @@ export type LibraryReadInboundResult =
   | { ok: true; responsePayload: LibraryReadResponsePayload; senderOwnerId?: string }
   | { ok: false; reason: string };
 
-/** Hard cap on a single response body (envelope size budget). 48 KiB. */
-const MAX_RESPONSE_BYTES = 48 * 1024;
+/**
+ * Hard cap on a single **text** response body (UTF-8, ~1:1 in the envelope).
+ * 48 KiB leaves headroom under the 64 KiB inbound envelope guard.
+ */
+export const MAX_LIBRARY_READ_RESPONSE_BYTES = 48 * 1024;
+/**
+ * Cap for **base64** bodies (binary full reads + all range slices).
+ * Base64 expands ~4/3, so 40 KiB raw ≈ 53 KiB body + framing stays under 64 KiB.
+ * Matches the Browser client chunk size (`LIBRARY_READ_CHUNK_BYTES`).
+ */
+export const MAX_LIBRARY_READ_BINARY_BYTES = 40 * 1024;
+const MAX_RESPONSE_BYTES = MAX_LIBRARY_READ_RESPONSE_BYTES;
+const MAX_BINARY_BYTES = MAX_LIBRARY_READ_BINARY_BYTES;
+
+/** Stream-hash a file so large resources don't need a full in-memory buffer. */
+async function hashFileSha256(absPath: string): Promise<string> {
+  const hash = createHash("sha256");
+  const stream = createReadStream(absPath);
+  for await (const chunk of stream) {
+    hash.update(chunk as Buffer);
+  }
+  return hash.digest("hex");
+}
 
 /**
  * Resolve the owner ID for a sender using the peer directory.
@@ -194,11 +216,9 @@ export async function handleInboundLibraryRead(
   });
 
   if (policyDecision.action === "deny" || policyDecision.action === "approval_required") {
-    // Return not_found rather than forbidden to avoid leaking path existence
-    // to non-bonded peers. Bonded peers who lack a specific contact-id ACL
-    // (for visibility: "contacts") get forbidden so they know to request access.
-    const isContact = visibility === "contacts";
-    const status: "not_found" | "forbidden" = isContact ? "forbidden" : "not_found";
+    // Always not_found here — including contacts-visibility paths — so blocked /
+    // stranger peers cannot distinguish ACL-gated paths from missing ones.
+    // `forbidden` is reserved for the contacts ACL miss below (bonded peers only).
     await taskStore.appendAuditEvent(
       createAuditEvent({
         type: "policy.decided",
@@ -210,7 +230,7 @@ export async function handleInboundLibraryRead(
         verificationStatus: "verified",
         latencyMs: Date.now() - receivedAt,
         outcome: "deny",
-        summary: `library.read ${status}: ${policyDecision.reason} (visibility=${visibility})`,
+        summary: `library.read not_found: ${policyDecision.reason} (visibility=${visibility})`,
         createdAt: envelope.createdAt,
       }),
     );
@@ -218,7 +238,7 @@ export async function handleInboundLibraryRead(
       ok: true,
       responsePayload: createLibraryReadResponsePayload({
         inReplyTo: envelope.messageId,
-        status,
+        status: "not_found",
       }),
       senderOwnerId,
     };
@@ -265,9 +285,11 @@ export async function handleInboundLibraryRead(
     };
   }
 
-  // 7. For `contacts` visibility: check the contactIds ACL.
-  if (visibility === "contacts" && entry?.contactIds && !isLocalSelfRead) {
-    if (!senderOwnerId || !entry.contactIds.includes(senderOwnerId)) {
+  // 7. For `contacts` visibility: ACL is deny-by-default.
+  //    Missing/empty contactIds must not fall open to every bonded peer.
+  if (visibility === "contacts" && !isLocalSelfRead) {
+    const allowed = entry?.contactIds;
+    if (!allowed?.length || !senderOwnerId || !allowed.includes(senderOwnerId)) {
       await taskStore.appendAuditEvent(
         createAuditEvent({
           type: "policy.decided",
@@ -326,8 +348,12 @@ export async function handleInboundLibraryRead(
   }
 
   // 9. Read the file (or a byte range if requested).
+  //    Full-file sha256 is always computed so etag/contentHash identify the
+  //    resource (not a range slice) — required for 45B cache revalidation
+  //    and client-side integrity of assembled range fetches.
   let fileBytes: Buffer;
   let totalBytes: number;
+  let fullContentHash: string;
   let rangeStart: number | undefined;
   let rangeEnd: number | undefined;
   try {
@@ -343,23 +369,97 @@ export async function handleInboundLibraryRead(
       };
     }
     totalBytes = stats.size;
+    fullContentHash = await hashFileSha256(resolvedAbs);
+    const etag = fullContentHash.slice(0, 16);
 
-    // Range handling.
+    // Phase 45B — If-None-Match: client already has this revision.
+    if (payload.ifNoneMatch && payload.ifNoneMatch === etag && !payload.range) {
+      await taskStore.appendAuditEvent(
+        createAuditEvent({
+          type: "library.read.served",
+          intent: envelope.intent,
+          messageId: envelope.messageId,
+          correlationId,
+          remotePeerId,
+          direction: "inbound",
+          verificationStatus: "verified",
+          latencyMs: Date.now() - receivedAt,
+          outcome: "allow",
+          summary: `library.read not_modified: etag=${etag} (${pathPreview})`,
+          createdAt: envelope.createdAt,
+        }),
+      );
+      return {
+        ok: true,
+        responsePayload: createLibraryReadResponsePayload({
+          inReplyTo: envelope.messageId,
+          status: "not_modified",
+          contentType: entry?.mimeType ?? mimeTypeForFilename(normalizedPath),
+          contentHash: fullContentHash,
+          byteLength: totalBytes,
+          etag,
+        }),
+        senderOwnerId,
+      };
+    }
+
+    const contentTypeEarly = entry?.mimeType ?? mimeTypeForFilename(normalizedPath);
+    const isTextMime =
+      contentTypeEarly.startsWith("text/") || contentTypeEarly === "application/json";
+
+    // Range handling — always base64 on the wire, so enforce the binary cap.
     if (payload.range) {
       rangeStart = Math.max(0, Math.min(payload.range.start, totalBytes));
-      rangeEnd = Math.max(rangeStart, Math.min(payload.range.end, totalBytes - 1));
-      const fd = await import("node:fs/promises").then((m) => m.open(resolvedAbs, "r"));
-      try {
+      if (totalBytes === 0 || rangeStart >= totalBytes) {
+        // Past-EOF / empty file: empty body, no fabricated zero-fill byte.
+        fileBytes = Buffer.alloc(0);
+        rangeEnd = rangeStart > 0 ? rangeStart - 1 : 0;
+      } else {
+        rangeEnd = Math.min(payload.range.end, totalBytes - 1);
+        if (rangeEnd < rangeStart) rangeEnd = rangeStart;
         const len = rangeEnd - rangeStart + 1;
-        const buf = Buffer.alloc(len);
-        await fd.read(buf, 0, len, rangeStart);
-        fileBytes = buf;
-      } finally {
-        await fd.close();
+        if (len > MAX_BINARY_BYTES) {
+          await taskStore.appendAuditEvent(
+            createAuditEvent({
+              type: "policy.decided",
+              intent: "library.read",
+              messageId: envelope.messageId,
+              correlationId,
+              remotePeerId,
+              direction: "inbound",
+              verificationStatus: "verified",
+              latencyMs: Date.now() - receivedAt,
+              outcome: "deny",
+              summary: `library.read too_large: range ${len} bytes > ${MAX_BINARY_BYTES} cap (${pathPreview})`,
+              createdAt: envelope.createdAt,
+            }),
+          );
+          return {
+            ok: true,
+            responsePayload: createLibraryReadResponsePayload({
+              inReplyTo: envelope.messageId,
+              status: "too_large",
+              contentType: contentTypeEarly,
+              contentHash: fullContentHash,
+              byteLength: totalBytes,
+              etag,
+            }),
+            senderOwnerId,
+          };
+        }
+        const fd = await import("node:fs/promises").then((m) => m.open(resolvedAbs, "r"));
+        try {
+          const buf = Buffer.alloc(len);
+          await fd.read(buf, 0, len, rangeStart);
+          fileBytes = buf;
+        } finally {
+          await fd.close();
+        }
       }
     } else {
-      // No range — check size cap.
-      if (totalBytes > MAX_RESPONSE_BYTES) {
+      // Full read: text uses 48 KiB; binary uses 40 KiB (base64 expansion).
+      const fullCap = isTextMime ? MAX_RESPONSE_BYTES : MAX_BINARY_BYTES;
+      if (totalBytes > fullCap) {
         await taskStore.appendAuditEvent(
           createAuditEvent({
             type: "policy.decided",
@@ -371,7 +471,7 @@ export async function handleInboundLibraryRead(
             verificationStatus: "verified",
             latencyMs: Date.now() - receivedAt,
             outcome: "deny",
-            summary: `library.read too_large: ${totalBytes} bytes > ${MAX_RESPONSE_BYTES} cap (${pathPreview})`,
+            summary: `library.read too_large: ${totalBytes} bytes > ${fullCap} cap (${pathPreview})`,
             createdAt: envelope.createdAt,
           }),
         );
@@ -380,6 +480,10 @@ export async function handleInboundLibraryRead(
           responsePayload: createLibraryReadResponsePayload({
             inReplyTo: envelope.messageId,
             status: "too_large",
+            contentType: contentTypeEarly,
+            contentHash: fullContentHash,
+            byteLength: totalBytes,
+            etag,
           }),
           senderOwnerId,
         };
@@ -400,11 +504,13 @@ export async function handleInboundLibraryRead(
 
   // 10. Build the response.
   const contentType = entry?.mimeType ?? mimeTypeForFilename(normalizedPath);
-  const contentHash = createHash("sha256").update(fileBytes).digest("hex");
-  const etag = contentHash.slice(0, 16);
+  const etag = fullContentHash.slice(0, 16);
 
-  // Body encoding: UTF-8 for text/*, base64 for binary.
-  const isText = contentType.startsWith("text/") || contentType === "application/json";
+  // Body encoding: full responses use UTF-8 for text/*; range slices are
+  // always base64 so multi-byte UTF-8 characters are never split mid-codepoint.
+  const isText =
+    !payload.range &&
+    (contentType.startsWith("text/") || contentType === "application/json");
   const body = isText ? fileBytes.toString("utf8") : fileBytes.toString("base64");
 
   const responsePayload = createLibraryReadResponsePayload({
@@ -412,7 +518,7 @@ export async function handleInboundLibraryRead(
     status: "ok",
     body,
     contentType,
-    contentHash,
+    contentHash: fullContentHash,
     byteLength: fileBytes.length,
     etag,
     range: payload.range

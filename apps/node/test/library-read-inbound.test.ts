@@ -206,6 +206,17 @@ describe("handleInboundLibraryRead", () => {
     }
   });
 
+  it("denies contacts-visibility with missing contactIds (deny-by-default)", async () => {
+    await writePublishedFile("contacts-open.md", "# exclusive", "contacts");
+    await trustStore.setTrustRecord({ peerOwnerId: OWNER_CONTACT, level: "direct", displayName: "Contact" });
+    await registerPeer("peer-contact", OWNER_CONTACT, "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----");
+    const result = await call("peer-contact", req("contacts-open.md"));
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.responsePayload.status).toBe("forbidden");
+    }
+  });
+
   it("serves contacts-visibility file to a contact in contactIds", async () => {
     await writePublishedFile("contacts2.md", "# exclusive", "contacts", [OWNER_CONTACT]);
     await trustStore.setTrustRecord({ peerOwnerId: OWNER_CONTACT, level: "direct", displayName: "Contact" });
@@ -276,12 +287,40 @@ describe("handleInboundLibraryRead", () => {
     });
     expect(result.ok).toBe(true);
     if (result.ok && result.responsePayload.status === "ok") {
-      expect(result.responsePayload.body).toBe("0123456789");
+      // Range slices are always base64 (avoids mid-UTF-8 splits).
+      expect(result.responsePayload.body).toBe(Buffer.from("0123456789").toString("base64"));
       expect(result.responsePayload.range).toEqual({
         start: 10,
         end: 19,
         total: 100_000,
       });
+    }
+  });
+
+  it("rejects oversized range requests (DoS guard)", async () => {
+    const big = "x".repeat(100 * 1024);
+    await writePublishedFile("huge.txt", big, "public");
+    const result = await call("peer-stranger", {
+      ...req("huge.txt"),
+      range: { start: 0, end: 90 * 1024 },
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.responsePayload.status).toBe("too_large");
+      expect(result.responsePayload.byteLength).toBe(big.length);
+    }
+  });
+
+  it("returns empty body for past-EOF range (no phantom byte)", async () => {
+    await writePublishedFile("small.txt", "hi", "public");
+    const result = await call("peer-stranger", {
+      ...req("small.txt"),
+      range: { start: 10, end: 20 },
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok && result.responsePayload.status === "ok") {
+      expect(result.responsePayload.body).toBe("");
+      expect(result.responsePayload.byteLength).toBe(0);
     }
   });
 
@@ -347,6 +386,27 @@ describe("handleInboundLibraryRead", () => {
     }
   });
 
+  it("denies blocked peer on contacts-visibility with not_found (no ACL leakage)", async () => {
+    // Regression: policy deny must not return forbidden for contacts visibility —
+    // that would leak that the path exists and is ACL-gated to a blocked peer.
+    await writePublishedFile("contacts-blocked.md", "# exclusive", "contacts", [OWNER_CONTACT]);
+    await trustStore.setTrustRecord({
+      peerOwnerId: OWNER_CONTACT,
+      level: "blocked",
+      displayName: "Blocked",
+    });
+    await registerPeer(
+      "peer-blocked-contacts",
+      OWNER_CONTACT,
+      "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----",
+    );
+    const result = await call("peer-blocked-contacts", req("contacts-blocked.md"));
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.responsePayload.status).toBe("not_found");
+    }
+  });
+
   it("rate-limits the 6th public-tier request in a minute", async () => {
     await writePublishedFile("rate.md", "# Hello", "public");
     const peer = "peer-rate-limit";
@@ -359,6 +419,41 @@ describe("handleInboundLibraryRead", () => {
     expect(limited.ok).toBe(false);
     if (!limited.ok) {
       expect(limited.reason).toMatch(/rate limited/i);
+    }
+  });
+
+  it("returns not_modified when ifNoneMatch matches current etag", async () => {
+    const content = "# Cached page";
+    await writePublishedFile("etag.md", content, "public");
+    const first = await call("peer-stranger", req("etag.md"));
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    expect(first.responsePayload.status).toBe("ok");
+    const etag = first.responsePayload.etag;
+    expect(etag).toBeTruthy();
+
+    const second = await call("peer-stranger", {
+      ...req("etag.md"),
+      ifNoneMatch: etag,
+    });
+    expect(second.ok).toBe(true);
+    if (second.ok) {
+      expect(second.responsePayload.status).toBe("not_modified");
+      expect(second.responsePayload.body).toBeUndefined();
+      expect(second.responsePayload.etag).toBe(etag);
+    }
+  });
+
+  it("too_large includes byteLength so clients can range-fetch", async () => {
+    const big = "x".repeat(60 * 1024);
+    await writePublishedFile("big.md", big, "public");
+    const result = await call("peer-stranger", req("big.md"));
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.responsePayload.status).toBe("too_large");
+      expect(result.responsePayload.byteLength).toBe(big.length);
+      expect(result.responsePayload.etag).toBeTruthy();
+      expect(result.responsePayload.contentHash).toBeTruthy();
     }
   });
 

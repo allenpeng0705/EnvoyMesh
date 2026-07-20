@@ -126,6 +126,19 @@ export function buildProfileDiscoveryTopics(input: {
   ];
 }
 
+/**
+ * Phase 45 — DHT topic for nodes that serve web content.
+ * Advertised when `web/web-content.json` has at least one entry.
+ * Searchers look up `capability:envoymesh.web-content` via provide/find.
+ */
+export const WEB_CONTENT_DHT_TOPIC = "capability:envoymesh.web-content";
+
+/** Append the web-content DHT topic if not already present. */
+export function withWebContentDiscoveryTopic(topics: readonly string[]): string[] {
+  if (topics.includes(WEB_CONTENT_DHT_TOPIC)) return [...topics];
+  return [...topics, WEB_CONTENT_DHT_TOPIC];
+}
+
 export interface CapabilityDiscoveryCycleOptions {
   source: "startup" | "periodic" | "on-demand";
   /** When false, skip DHT find (provide still runs if DHT enabled). */
