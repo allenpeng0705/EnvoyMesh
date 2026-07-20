@@ -71,6 +71,27 @@ async function writeWebFile(relPath: string, content: string): Promise<void> {
   await writeFile(fullPath, content, { mode: 0o600 });
 }
 
+/** Write a manifest entry that reflects the actual file size. */
+async function writePublishedFile(
+  relPath: string,
+  content: string,
+  opts: { visibility?: "public" | "bonded" | "contacts" | "private"; contactIds?: string[] } = {},
+): Promise<void> {
+  await writeWebFile(relPath, content);
+  const visibility = opts.visibility ?? "public";
+  await writeManifestEntry({
+    path: relPath,
+    contentHash: "any",
+    byteLength: Buffer.byteLength(content, "utf8"),
+    title: relPath,
+    kind: "article",
+    mimeType: "text/markdown",
+    visibility,
+    contactIds: opts.contactIds,
+    updatedAt: "2026-07-20T00:00:00Z",
+  });
+}
+
 /** Write a peer-directory entry for a known contact (used for direct-bond tests). */
 async function registerPeer(peerId: string, ownerId: string, publicKeyPem: string): Promise<void> {
   const deviceId = deriveDeviceId(publicKeyPem);
@@ -295,7 +316,7 @@ describe("handleInboundLibraryRead", () => {
       visibility: "private",
       updatedAt: "2026-07-20T00:00:00Z",
     });
-    const result = await call("peer-self", VALID_PAYLOAD, { isLocalSelfRead: true });
+    const result = await call("peer-self", { ...VALID_PAYLOAD, path: "private-notes.md" }, { isLocalSelfRead: true });
     expect(result.ok).toBe(true);
     if (result.ok) {
       expect(result.responsePayload.status).toBe("ok");
@@ -320,7 +341,7 @@ describe("handleInboundLibraryRead", () => {
       expect(result.responsePayload.contentHash).toBeTruthy();
       expect(result.responsePayload.contentHash).toHaveLength(64); // sha256 hex
       expect(result.responsePayload.etag).toBeTruthy();
-      expect(result.responsePayload.byteLength).toBe(8);
+      expect(result.responsePayload.byteLength).toBe(7); // "# Hello" is 7 bytes
     }
   });
 
@@ -379,13 +400,15 @@ describe("handleInboundLibraryRead", () => {
 
   it("serves files with no manifest entry as private (default)", async () => {
     // No manifest entry — file defaults to private visibility.
-    await writeWebFile("draft.md", "# draft");
+    // Use a unique path so this test's filesystem state doesn't collide
+    // with prior tests that wrote `hello.md` with a manifest entry.
+    await writeWebFile("default-private.md", "# draft");
     // Stranger should NOT see it.
-    const r1 = await call("peer-stranger", VALID_PAYLOAD);
+    const r1 = await call("peer-stranger", { ...VALID_PAYLOAD, path: "default-private.md" });
     expect(r1.ok).toBe(true);
     if (r1.ok) expect(r1.responsePayload.status).toBe("not_found");
     // Owner via self-read SHOULD see it.
-    const r2 = await call("peer-self", VALID_PAYLOAD, { isLocalSelfRead: true });
+    const r2 = await call("peer-self", { ...VALID_PAYLOAD, path: "default-private.md" }, { isLocalSelfRead: true });
     expect(r2.ok).toBe(true);
     if (r2.ok) expect(r2.responsePayload.status).toBe("ok");
   });
