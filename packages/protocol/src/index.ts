@@ -89,6 +89,10 @@ export const EnvoyIntentSchema = z.enum([
   "task.chain.delegate",
   "task.chain.relay",
   "task.chain.arbitration",
+  // Phase 45 — Web Content Browsing. Pull-based content serving over the mesh.
+  // See docs/web-content-browsing-design.md.
+  "library.read",
+  "library.read.response",
 ]);
 
 export const SensitivitySchema = z.enum(["public", "friends", "trusted", "private"]);
@@ -768,6 +772,77 @@ export const KnowledgeResponsePayloadSchema = z.object({
 });
 
 /**
+ * Phase 45 — `library.read` request payload.
+ *
+ * A peer asks the serving node for raw content by URL path. This is the
+ * pull-based analog of the published-library discovery metadata: discovery
+ * returns *what* a node has; `library.read` returns the *bytes*.
+ *
+ * Visibility is server-enforced (per-item flags in web-content.json mapped
+ * to Bonds sensitivity tiers) — there is intentionally NO token/credential
+ * field here. The requester's signed envelope is the credential.
+ *
+ * Design: docs/web-content-browsing-design.md §4.4.
+ */
+export const LibraryReadRangeSchema = z.object({
+  start: z.number().int().nonnegative(),
+  end: z.number().int().nonnegative(),
+});
+
+export const LibraryReadPayloadSchema = z.object({
+  requesterOwnerId: z.string().min(1),
+  targetOwnerId: z.string().min(1),
+  /** URL path, leading slash stripped, percent-decoded by the requester. */
+  path: z.string().min(1).max(512),
+  /** Optional sensitivity hint (the serving node applies its own ceiling). */
+  requestedSensitivity: SensitivitySchema.optional(),
+  /** Optional byte range, like HTTP Range. Enables large-file chunking. */
+  range: LibraryReadRangeSchema.optional(),
+});
+
+/**
+ * Phase 45 — `library.read.response` payload.
+ *
+ * Status discriminator mirrors HTTP semantics: `ok` returns content,
+ * `not_found` for missing paths, `forbidden` for trust-gate rejection,
+ * `too_large` when the file exceeds the envelope cap without a `range`.
+ *
+ * When `status === "forbidden"` and a public-tier version of the content
+ * exists, `publicRedirection` carries the alt path so the Browser view
+ * can offer "view public version".
+ */
+export const LibraryReadResponseStatusSchema = z.enum([
+  "ok",
+  "not_found",
+  "forbidden",
+  "too_large",
+]);
+
+export const LibraryReadResponsePayloadSchema = z.object({
+  inReplyTo: z.string().min(1),
+  status: LibraryReadResponseStatusSchema,
+  /** UTF-8 text for text content, base64 for binary. Present when `status === "ok"`. */
+  body: z.string().optional(),
+  /** MIME type (e.g. "text/markdown", "image/jpeg", "application/pdf"). */
+  contentType: z.string().optional(),
+  /** sha256 of body — Browser view verifies and refuses on mismatch. */
+  contentHash: z.string().optional(),
+  byteLength: z.number().int().nonnegative().optional(),
+  /** Hash prefix for cache revalidation (ETag equivalent). */
+  etag: z.string().optional(),
+  /** Present when responding to a `range` request. */
+  range: z
+    .object({
+      start: z.number().int().nonnegative(),
+      end: z.number().int().nonnegative(),
+      total: z.number().int().nonnegative(),
+    })
+    .optional(),
+  /** Alt path with public-tier content when access was forbidden but a public version exists. */
+  publicRedirection: z.string().optional(),
+});
+
+/**
  * `share.preview` — safe preview of content available for sharing.
  * Contains only a descriptive summary, not raw vault content.
  * The responder sends this after evaluating policy; the requester can then
@@ -1035,6 +1110,19 @@ export const LibraryFileMatchSchema = z.object({
   sensitivity: z.enum(["public", "friends", "private"]).optional(),
   /** Kubo `ipfs add` root CID when the responder has exported this revision (metadata only). */
   cid: z.string().min(1).max(LIBRARY_FILE_MATCH_CID_MAX_LENGTH).optional(),
+  // Phase 45 — Web Content Browsing extensions (additive, backward compatible).
+  /** Templated site type for UI rendering hints. */
+  kind: z.enum(["article", "note", "photo", "gallery", "file", "profile"]).optional(),
+  /** MIME type of the matched content (e.g. "text/markdown", "image/jpeg"). */
+  mimeType: z.string().optional(),
+  /** Short excerpt for listing displays. */
+  summary: z.string().optional(),
+  /** Per-item visibility flag from web-content.json manifest. */
+  visibility: z.enum(["public", "bonded", "contacts", "private"]).optional(),
+  /** Pretty URL slug (defaults to filename when not set in manifest). */
+  urlSlug: z.string().optional(),
+  /** ISO 8601 timestamp of the last content update. */
+  updatedAt: z.string().datetime().optional(),
 });
 
 export const DiscoveryMatchSchema = z.object({
@@ -1941,6 +2029,11 @@ export type AgentCardRequestPayload = z.infer<typeof AgentCardRequestPayloadSche
 export type AgentCardResponsePayload = z.infer<typeof AgentCardResponsePayloadSchema>;
 export type KnowledgeQueryPayload = z.infer<typeof KnowledgeQueryPayloadSchema>;
 export type KnowledgeResponsePayload = z.infer<typeof KnowledgeResponsePayloadSchema>;
+// Phase 45 — Web Content Browsing.
+export type LibraryReadRange = z.infer<typeof LibraryReadRangeSchema>;
+export type LibraryReadPayload = z.infer<typeof LibraryReadPayloadSchema>;
+export type LibraryReadResponseStatus = z.infer<typeof LibraryReadResponseStatusSchema>;
+export type LibraryReadResponsePayload = z.infer<typeof LibraryReadResponsePayloadSchema>;
 export type BondRequestedLevel = z.infer<typeof BondRequestedLevelSchema>;
 export type BondRequestPayload = z.infer<typeof BondRequestPayloadSchema>;
 export type BondChallengePayload = z.infer<typeof BondChallengePayloadSchema>;
@@ -2381,6 +2474,15 @@ export function parseKnowledgeResponsePayload(input: unknown): KnowledgeResponse
   return KnowledgeResponsePayloadSchema.parse(input);
 }
 
+// Phase 45 — Web Content Browsing parse helpers.
+export function parseLibraryReadPayload(input: unknown): LibraryReadPayload {
+  return LibraryReadPayloadSchema.parse(input);
+}
+
+export function parseLibraryReadResponsePayload(input: unknown): LibraryReadResponsePayload {
+  return LibraryReadResponsePayloadSchema.parse(input);
+}
+
 export function parseShareRequestPayload(input: unknown): ShareRequestPayload {
   return ShareRequestPayloadSchema.parse(input);
 }
@@ -2717,6 +2819,53 @@ export function createKnowledgeResponsePayload(input: CreateKnowledgeResponsePay
     suggestedRelativePath: input.suggestedRelativePath,
     refused: input.refused ?? false,
     refusalReason: input.refusalReason,
+  });
+}
+
+// Phase 45 — Web Content Browsing create helpers.
+export interface CreateLibraryReadPayloadInput {
+  requesterOwnerId: string;
+  targetOwnerId: string;
+  path: string;
+  requestedSensitivity?: Sensitivity;
+  range?: LibraryReadRange;
+}
+
+export function createLibraryReadPayload(input: CreateLibraryReadPayloadInput): LibraryReadPayload {
+  return LibraryReadPayloadSchema.parse({
+    requesterOwnerId: input.requesterOwnerId,
+    targetOwnerId: input.targetOwnerId,
+    path: input.path,
+    requestedSensitivity: input.requestedSensitivity,
+    range: input.range,
+  });
+}
+
+export interface CreateLibraryReadResponsePayloadInput {
+  inReplyTo: string;
+  status: LibraryReadResponseStatus;
+  body?: string;
+  contentType?: string;
+  contentHash?: string;
+  byteLength?: number;
+  etag?: string;
+  range?: { start: number; end: number; total: number };
+  publicRedirection?: string;
+}
+
+export function createLibraryReadResponsePayload(
+  input: CreateLibraryReadResponsePayloadInput,
+): LibraryReadResponsePayload {
+  return LibraryReadResponsePayloadSchema.parse({
+    inReplyTo: input.inReplyTo,
+    status: input.status,
+    body: input.body,
+    contentType: input.contentType,
+    contentHash: input.contentHash,
+    byteLength: input.byteLength,
+    etag: input.etag,
+    range: input.range,
+    publicRedirection: input.publicRedirection,
   });
 }
 

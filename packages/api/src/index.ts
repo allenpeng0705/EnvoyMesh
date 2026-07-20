@@ -17,6 +17,7 @@ export * from "./agent-circle.js";
 export * from "./envoy-pair-uri.js";
 export * from "./pairing-token.js";
 export * from "./envoy-contact-link.js";
+export * from "./envoy-url.js";
 export * from "./setup-sponsor-friend.js";
 export * from "./wan-join-invite-limits.js";
 export * from "./chat-device-auth.js";
