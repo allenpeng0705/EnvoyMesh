@@ -124,6 +124,16 @@ export function BrowserView() {
         >
           {t("browser.go")}
         </button>
+        {/* Phase 45B — bookmark star (placeholder; persists nothing in 45A). */}
+        <button
+          type="button"
+          className="browser-view__bookmark"
+          data-testid="browser-bookmark-star"
+          aria-label={t("browser.bookmark")}
+          title={t("browser.bookmark") + " (45B)"}
+        >
+          ☆
+        </button>
       </form>
       {parseError !== null && (
         <p className="browser-view__parse-error" data-testid="browser-parse-error">
