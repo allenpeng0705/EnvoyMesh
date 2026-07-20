@@ -93,6 +93,8 @@ export const EnvoyIntentSchema = z.enum([
   // See docs/web-content-browsing-design.md.
   "library.read",
   "library.read.response",
+  // Phase 45E — bonded fan-out notify on publish (no GossipSub).
+  "feed.notify",
 ]);
 
 export const SensitivitySchema = z.enum(["public", "friends", "trusted", "private"]);
@@ -505,6 +507,8 @@ export const AgentCardSchema = z.object({
   publicTopics: z.array(z.string().min(1)).default([]),
   trustPolicySummary: TrustPolicySummarySchema,
   supportedProtocolVersions: z.array(z.string().min(1)).min(1),
+  /** Phase 45D — canonical root URL for this owner's web content (envoy://…). */
+  webContentRoot: z.string().min(1).optional(),
 });
 
 export const AgentCardRequestPayloadSchema = z.object({
@@ -784,10 +788,12 @@ export const KnowledgeResponsePayloadSchema = z.object({
  *
  * Design: docs/web-content-browsing-design.md §4.4.
  */
-export const LibraryReadRangeSchema = z.object({
-  start: z.number().int().nonnegative(),
-  end: z.number().int().nonnegative(),
-});
+export const LibraryReadRangeSchema = z
+  .object({
+    start: z.number().int().nonnegative(),
+    end: z.number().int().nonnegative(),
+  })
+  .refine((r) => r.start <= r.end, { message: "range start must be <= end" });
 
 export const LibraryReadPayloadSchema = z.object({
   requesterOwnerId: z.string().min(1),
@@ -798,8 +804,12 @@ export const LibraryReadPayloadSchema = z.object({
    * serving node (Phase 45A directory-index convention).
    */
   path: z.string().max(512),
-  /** Optional sensitivity hint (the serving node applies its own ceiling). */
-  requestedSensitivity: SensitivitySchema.optional(),
+  /**
+   * Optional sensitivity hint (the serving node applies its own ceiling).
+   * Web content visibility only maps to public/friends/private (no
+   * "trusted" tier — see design doc §4.3.2).
+   */
+  requestedSensitivity: z.enum(["public", "friends", "private"]).optional(),
   /** Optional byte range, like HTTP Range. Enables large-file chunking. */
   range: LibraryReadRangeSchema.optional(),
   /**
@@ -829,6 +839,10 @@ export const LibraryReadResponseStatusSchema = z.enum([
   "forbidden",
   "too_large",
   "not_modified",
+  // Transport-level error (dial failure, timeout, unexpected reply).
+  // Distinct from not_found so the Browser can show "offline" vs
+  // "not found" — design §4.7.1.
+  "error",
 ]);
 
 export const LibraryReadResponsePayloadSchema = z.object({
@@ -853,6 +867,31 @@ export const LibraryReadResponsePayloadSchema = z.object({
     .optional(),
   /** Alt path with public-tier content when access was forbidden but a public version exists. */
   publicRedirection: z.string().optional(),
+});
+
+/**
+ * Phase 45E — `feed.notify` payload.
+ *
+ * Publisher pushes a small metadata envelope to eligible bonded contacts after
+ * a successful web-content publish. Recipients open via `library.read` on `url`.
+ * No body bytes — push is notify-only.
+ *
+ * Design: docs/web-content-browsing-design.md §7.5.
+ */
+export const FeedNotifyPayloadSchema = z.object({
+  publisherOwnerId: z.string().min(1),
+  publishedAt: z.string().min(1),
+  title: z.string().min(1).max(500),
+  /** Absolute envoy:// URL for the published item. */
+  url: z.string().min(1).max(2048),
+  kind: z.enum(["article", "note", "photo", "gallery", "file", "profile"]),
+  visibility: z.enum(["public", "bonded", "contacts", "private"]),
+  summary: z.string().max(2000).optional(),
+  /** Free-form tags; used for interest-overlap filtering (45E Slice B). */
+  tags: z.array(z.string().min(1).max(64)).max(32).optional(),
+  contentHash: z.string().min(1).max(128).optional(),
+  /** Optional listing/index URL (blog index, photo wall). */
+  listingUrl: z.string().min(1).max(2048).optional(),
 });
 
 /**
@@ -1091,6 +1130,11 @@ export const DiscoveryRequestPayloadSchema = z
     fileTitleQuery: z.string().max(200).optional(),
     /** FS-D: prefix match on content hash (base64url) for published documents. */
     requestedContentHashPrefixes: z.array(z.string().min(4).max(128)).max(8).optional(),
+    /**
+     * Phase 45E — match publishers by web-content tags.
+     * Accepts raw tags or canonical `publish:<slug>` topics; responder normalizes.
+     */
+    requestedPublishTopics: z.array(z.string().min(1).max(128)).max(16).optional(),
     /** Story D (US-MH1): max forward hops including originator tier. Default 1 = direct only. */
     maxHops: z.number().int().min(0).max(4).default(1),
     /** Story D (US-MH1): hops already traversed (0 at originator). */
@@ -1107,8 +1151,9 @@ export const DiscoveryRequestPayloadSchema = z
       value.requestedTagHashes.length > 0 ||
       value.requestedCapabilities.length > 0 ||
       Boolean(value.fileTitleQuery?.trim()) ||
-      (value.requestedContentHashPrefixes?.length ?? 0) > 0,
-    "discovery.request requires tag hashes, capabilities, a file title query, or content hash prefixes",
+      (value.requestedContentHashPrefixes?.length ?? 0) > 0 ||
+      (value.requestedPublishTopics?.length ?? 0) > 0,
+    "discovery.request requires tag hashes, capabilities, a file title query, content hash prefixes, or publish topics",
   );
 
 /** Max length for optional IPFS CID on published-library discovery matches (F3 inbound guard). */
@@ -2047,6 +2092,7 @@ export type LibraryReadRange = z.infer<typeof LibraryReadRangeSchema>;
 export type LibraryReadPayload = z.infer<typeof LibraryReadPayloadSchema>;
 export type LibraryReadResponseStatus = z.infer<typeof LibraryReadResponseStatusSchema>;
 export type LibraryReadResponsePayload = z.infer<typeof LibraryReadResponsePayloadSchema>;
+export type FeedNotifyPayload = z.infer<typeof FeedNotifyPayloadSchema>;
 export type BondRequestedLevel = z.infer<typeof BondRequestedLevelSchema>;
 export type BondRequestPayload = z.infer<typeof BondRequestPayloadSchema>;
 export type BondChallengePayload = z.infer<typeof BondChallengePayloadSchema>;
@@ -2496,6 +2542,10 @@ export function parseLibraryReadResponsePayload(input: unknown): LibraryReadResp
   return LibraryReadResponsePayloadSchema.parse(input);
 }
 
+export function parseFeedNotifyPayload(input: unknown): FeedNotifyPayload {
+  return FeedNotifyPayloadSchema.parse(input);
+}
+
 export function parseShareRequestPayload(input: unknown): ShareRequestPayload {
   return ShareRequestPayloadSchema.parse(input);
 }
@@ -2884,6 +2934,34 @@ export function createLibraryReadResponsePayload(
   });
 }
 
+export interface CreateFeedNotifyPayloadInput {
+  publisherOwnerId: string;
+  publishedAt: string;
+  title: string;
+  url: string;
+  kind: FeedNotifyPayload["kind"];
+  visibility: FeedNotifyPayload["visibility"];
+  summary?: string;
+  tags?: string[];
+  contentHash?: string;
+  listingUrl?: string;
+}
+
+export function createFeedNotifyPayload(input: CreateFeedNotifyPayloadInput): FeedNotifyPayload {
+  return FeedNotifyPayloadSchema.parse({
+    publisherOwnerId: input.publisherOwnerId,
+    publishedAt: input.publishedAt,
+    title: input.title,
+    url: input.url,
+    kind: input.kind,
+    visibility: input.visibility,
+    summary: input.summary,
+    tags: input.tags,
+    contentHash: input.contentHash,
+    listingUrl: input.listingUrl,
+  });
+}
+
 export interface CreateSharePreviewPayloadInput {
   inReplyTo: string;
   previewText: string;
@@ -3131,6 +3209,7 @@ export interface CreateDiscoveryRequestPayloadInput {
   requestedSensitivity?: "public" | "friends" | "private";
   fileTitleQuery?: string;
   requestedContentHashPrefixes?: string[];
+  requestedPublishTopics?: string[];
   maxHops?: number;
   currentHop?: number;
   forwardPrivacy?: "none" | "anonymous";
@@ -3149,6 +3228,7 @@ export function createDiscoveryRequestPayload(
     requestedSensitivity: input.requestedSensitivity,
     fileTitleQuery: input.fileTitleQuery,
     requestedContentHashPrefixes: input.requestedContentHashPrefixes,
+    requestedPublishTopics: input.requestedPublishTopics,
     maxHops: input.maxHops,
     currentHop: input.currentHop,
     forwardPrivacy: input.forwardPrivacy,
@@ -3558,6 +3638,8 @@ export interface CreateAgentCardInput {
   publicTopics?: string[];
   trustPolicySummary?: Partial<TrustPolicySummary>;
   supportedProtocolVersions?: string[];
+  /** Phase 45D — optional canonical web root URL. */
+  webContentRoot?: string;
 }
 
 export function createAgentCard(input: CreateAgentCardInput): AgentCard {
@@ -3575,6 +3657,7 @@ export function createAgentCard(input: CreateAgentCardInput): AgentCard {
       ...input.trustPolicySummary,
     },
     supportedProtocolVersions: input.supportedProtocolVersions ?? ["emp/0.1"],
+    ...(input.webContentRoot ? { webContentRoot: input.webContentRoot } : {}),
   });
 }
 

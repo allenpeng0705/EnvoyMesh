@@ -76,9 +76,12 @@ const capabilityRequirements: Partial<Record<EnvoyIntent, Capability[][]>> = {
   "knowledge.response": [["message.send"]],
   // Phase 45 — Web Content Browsing. library.read serves raw content
   // (files, images, PDFs) over the mesh; vault.retrieve is the closest
-  // existing capability. library.read.response just echoes the bytes back.
+  // existing capability. library.read.response intentionally has NO
+  // entry here — evaluateCapability returns "allow" for intents not in
+  // the table, which is correct (the response just echoes bytes back).
   "library.read": [["vault.retrieve"]],
-  "library.read.response": [],
+  // Phase 45E — bonded fan-out notify (messaging capability only).
+  "feed.notify": [["message.send"]],
   "task.mandate": [["message.send"]],
   "task.propose": [["message.send"]],
   "task.negotiate": [["message.send"]],
@@ -178,6 +181,11 @@ function evaluateReferredPolicy(request: PolicyRequest): PolicyDecision {
   // Per-item visibility is still enforced by the inbound handler.
   if (request.intent === "library.read") {
     return limitSensitivity(request.requestedSensitivity, "friends");
+  }
+
+  // Phase 45E — referred bonds may receive publish notify (metadata only).
+  if (request.intent === "feed.notify") {
+    return { action: "allow", maxSensitivity: "public" };
   }
 
   if (

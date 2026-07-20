@@ -465,6 +465,8 @@ export interface CachedAgentCardSummary {
     requiresHumanApprovalForRawFiles?: boolean;
   };
   supportedProtocolVersions?: string[];
+  /** Phase 45D — peer's web content root when advertised. */
+  webContentRoot?: string;
 }
 
 export interface AuditEventSummary {
@@ -967,7 +969,7 @@ export interface LibraryReadResult {
   /** libp2p peer ID we dialed. */
   libp2pPeerId: string;
   /** Wire status discriminator. */
-  status: "ok" | "not_found" | "forbidden" | "too_large" | "not_modified";
+  status: "ok" | "not_found" | "forbidden" | "too_large" | "not_modified" | "error";
   /** Body when status === "ok" (UTF-8 text or base64 binary). */
   body?: string;
   /** MIME type detected by the serving node. */
@@ -986,6 +988,65 @@ export interface LibraryReadResult {
   latencyMs: number;
   /** Set when the dial or reply failed (no peer error in `status`). */
   error?: string;
+}
+
+/** Phase 45D — templates supported by in-app authoring. */
+export type PublishWebContentTemplate =
+  | "blog-post"
+  | "note"
+  | "profile"
+  | "photo"
+  | "file";
+
+/** Phase 45D — visibility flags for published web items. */
+export type PublishWebContentVisibility = "public" | "bonded" | "contacts" | "private";
+
+export interface PublishWebContentParams {
+  template: PublishWebContentTemplate;
+  title: string;
+  /** Markdown body for text templates (H1 title is prepended by the server). */
+  body?: string;
+  visibility: PublishWebContentVisibility;
+  contactIds?: string[];
+  tags?: string[];
+  /** Base64 file bytes for photo / file templates. */
+  contentBase64?: string;
+  /** MIME type for photo / file. */
+  mimeType?: string;
+  /** Original filename hint (extension). */
+  fileName?: string;
+  /** PhotoWall gallery folder (default `wall`). */
+  gallery?: string;
+}
+
+export interface PublishWebContentResult {
+  path: string;
+  urlPath: string;
+  contentHash: string;
+  byteLength: number;
+  title: string;
+  visibility: PublishWebContentVisibility;
+  publishedAt: string;
+  url: string;
+  listingUrl?: string;
+}
+
+/** Phase 45E — inbound `feed.notify` inbox row (Social Inbox). */
+export interface FeedNotification {
+  id: string;
+  receivedAt: string;
+  messageId: string;
+  publisherOwnerId: string;
+  publishedAt: string;
+  title: string;
+  url: string;
+  kind: string;
+  visibility: string;
+  summary?: string;
+  tags?: string[];
+  contentHash?: string;
+  listingUrl?: string;
+  senderPeerId: string;
 }
 
 // ----- Agent-assisted flows (FS-E) -----
@@ -1238,6 +1299,8 @@ export interface NodeServiceEvents {
   "hello:response": HelloResponse;
   /** Agent-mediated intro propose surfaced to owner inbox (Trust mode). */
   "social.intro:propose": SocialIntroProposal;
+  /** Phase 45E — bonded peer published web content (open via library.read / Browser). */
+  "feed:notify": FeedNotification;
   "bond:established": { peerOwnerId: string; displayName?: string };
   "bond:revoked": { peerOwnerId: string };
   "bond:blocked": { peerOwnerId: string };
@@ -1854,6 +1917,22 @@ export interface NodeService {
    * Design: docs/web-content-browsing-design.md §4.4.
    */
   libraryRead(params: LibraryReadParams): Promise<LibraryReadResult>;
+
+  /**
+   * Phase 45D — Author and publish a web-content item under `web/`, upsert
+   * `web-content.json`, and (for blog posts) regenerate `blog/index.md`.
+   *
+   * Design: docs/web-content-browsing-design.md §4.8, §9.2.
+   */
+  publishWebContentEntry(params: PublishWebContentParams): Promise<PublishWebContentResult>;
+
+  /**
+   * Phase 45E — list persisted inbound `feed.notify` rows for the Social Inbox.
+   */
+  listFeedNotifications(): Promise<FeedNotification[]>;
+
+  /** Phase 45E — dismiss one feed notification by id. */
+  dismissFeedNotification(id: string): Promise<void>;
 
   // ----- Agent-assisted (FS-E placeholder) -----
 

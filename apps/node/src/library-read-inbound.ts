@@ -18,7 +18,7 @@ import {
 import { evaluatePolicy, checkPublicKnowledgeRateLimit } from "@envoymesh/bonds";
 import { assertPathInsideVault } from "@envoymesh/vault";
 import { ZodError } from "zod";
-import { readFile, stat } from "node:fs/promises";
+import { readFile, stat, realpath } from "node:fs/promises";
 import { join, resolve as resolvePath } from "node:path";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
@@ -90,7 +90,18 @@ export interface HandleInboundLibraryReadInput {
   profile: NodeProfile;
   /** Absolute path to the profile directory (web/ lives under here). */
   profileDir: string;
-  /** If true, this is a local self-read (owner preview). Bypasses public gating. */
+  /**
+   * If true, this is a local self-read (owner preview). Bypasses public
+   * gating and grants private-tier access.
+   *
+   * SECURITY NOTE: this flag is set ONLY by NodeServiceImpl when
+   * `params.targetOwnerId === profile.owner.ownerId` (the owner browsing
+   * their own content in-process). It is NOT set for remote peers,
+   * paired devices, or any other caller. A paired-but-revoked device
+   * with a stale NodeService reference could theoretically abuse this,
+   * but that requires in-process code execution on the owner's machine
+   * (at which point the attacker already has filesystem access).
+   */
   isLocalSelfRead?: boolean;
   /** Optional injected store (for tests). Falls back to createWebContentStore. */
   webContentStore?: WebContentStore;
@@ -318,9 +329,27 @@ export async function handleInboundLibraryRead(
 
   // 8. Path safety — resolve against the web/ root and verify inside.
   //    Path traversal attempts return not_found (no leakage).
+  //    Also resolve symlinks: a symlink inside web/ pointing outside
+  //    (e.g. to /etc/passwd) must be rejected (design §5.2, §6).
+  //    Note: both webDir and the resolved path must be realpath'd so
+  //    that OS-level symlink redirects (e.g. /var → /private/var on
+  //    macOS) don't cause false positives.
   const resolvedAbs = resolvePath(webDir, normalizedPath);
+  let safePath = resolvedAbs;
   try {
     assertPathInsideVault(webDir, resolvedAbs);
+    // Resolve symlinks for both the web root and the target file,
+    // then check the real target is still inside the real web root.
+    try {
+      const realWebDir = await realpath(webDir);
+      const real = await realpath(resolvedAbs);
+      assertPathInsideVault(realWebDir, real);
+      safePath = real;
+    } catch (err) {
+      // ENOENT is fine — file doesn't exist; stat() below will return not_found.
+      // Any other error (EACCES, etc.) from realpath is treated as not_found.
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    }
   } catch {
     await taskStore.appendAuditEvent(
       createAuditEvent({
@@ -357,7 +386,7 @@ export async function handleInboundLibraryRead(
   let rangeStart: number | undefined;
   let rangeEnd: number | undefined;
   try {
-    const stats = await stat(resolvedAbs);
+    const stats = await stat(safePath);
     if (!stats.isFile()) {
       return {
         ok: true,
@@ -369,14 +398,14 @@ export async function handleInboundLibraryRead(
       };
     }
     totalBytes = stats.size;
-    fullContentHash = await hashFileSha256(resolvedAbs);
+    fullContentHash = await hashFileSha256(safePath);
     const etag = fullContentHash.slice(0, 16);
 
     // Phase 45B — If-None-Match: client already has this revision.
     if (payload.ifNoneMatch && payload.ifNoneMatch === etag && !payload.range) {
       await taskStore.appendAuditEvent(
         createAuditEvent({
-          type: "library.read.served",
+          type: "policy.decided",
           intent: envelope.intent,
           messageId: envelope.messageId,
           correlationId,
@@ -447,7 +476,7 @@ export async function handleInboundLibraryRead(
             senderOwnerId,
           };
         }
-        const fd = await import("node:fs/promises").then((m) => m.open(resolvedAbs, "r"));
+        const fd = await import("node:fs/promises").then((m) => m.open(safePath, "r"));
         try {
           const buf = Buffer.alloc(len);
           await fd.read(buf, 0, len, rangeStart);
@@ -488,7 +517,7 @@ export async function handleInboundLibraryRead(
           senderOwnerId,
         };
       }
-      fileBytes = await readFile(resolvedAbs);
+      fileBytes = await readFile(safePath);
     }
   } catch {
     // File doesn't exist or unreadable — not_found.
@@ -519,6 +548,10 @@ export async function handleInboundLibraryRead(
     body,
     contentType,
     contentHash: fullContentHash,
+    // NOTE: byteLength is the *slice* length for range requests, not the
+    // total resource size. The total is in `range.total` when a range is
+    // present. For non-range reads, byteLength == total. Callers that
+    // need the total should check `range?.total ?? byteLength`.
     byteLength: fileBytes.length,
     etag,
     range: payload.range

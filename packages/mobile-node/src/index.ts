@@ -237,6 +237,8 @@ import type {
   // Phase 45 — Web Content Browsing.
   LibraryReadParams,
   LibraryReadResult,
+  PublishWebContentParams,
+  PublishWebContentResult,
   HelloResponse,
   HumanProfile,
   LibraryItem,
@@ -3613,9 +3615,16 @@ You are the owner's personal AI assistant on EnvoyMesh.
   async libraryRead(params: LibraryReadParams): Promise<LibraryReadResult> {
     this._assertNodeRunning();
     if (this._state?.device && !this._state?.homeNodePeerId) {
-      throw new Error(
-        "libraryRead: standalone-mode sender is not yet implemented in 45A; pair with a home node to browse content",
-      );
+      // Standalone mode is not yet implemented in 45A. Return a typed
+      // result (not throw) so callers get a consistent {status, error}
+      // response rather than an unhandled rejection.
+      return {
+        peerOwnerId: params.targetOwnerId,
+        libp2pPeerId: "",
+        status: "not_found",
+        latencyMs: 0,
+        error: "standalone-mode sender is not yet implemented; pair with a home node to browse content",
+      };
     }
     if (this._state?.homeNodePeerId?.trim()) {
       // Paired mode — proxy via the home's HomeRemoteClient.
@@ -3624,6 +3633,22 @@ You are the owner's personal AI assistant on EnvoyMesh.
       return result;
     }
     throw new Error("libraryRead: no mesh route available (is the node initialized?)");
+  }
+
+  async publishWebContentEntry(
+    params: PublishWebContentParams,
+  ): Promise<PublishWebContentResult> {
+    this._assertNodeRunning();
+    if (!this._state?.homeNodePeerId?.trim()) {
+      throw new Error(
+        "publishWebContentEntry: authoring requires a paired home node (EnvoyGo thin client)",
+      );
+    }
+    const home = this._ensureHomeRemote();
+    return (await home.call(
+      "publishWebContentEntry",
+      params as unknown as Record<string, unknown>,
+    )) as PublishWebContentResult;
   }
 
   async listAgentShareProposals(): Promise<AgentShareProposal[]> {

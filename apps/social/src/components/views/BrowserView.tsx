@@ -7,7 +7,7 @@
  *
  * Design: docs/web-content-browsing-design.md §4.7, §7.2.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent } from "react";
 import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
@@ -19,6 +19,7 @@ import {
   isEnvoyContentUrl,
 } from "@envoymesh/api";
 import { Markdown } from "../Markdown.js";
+import DOMPurify from "dompurify";
 import {
   canGoBack,
   canGoForward,
@@ -39,6 +40,9 @@ import {
   fetchLibraryContent,
   type BrowserFetchCacheEntry,
 } from "../../lib/library-read-fetch.js";
+import { BrowserAuthorView } from "./BrowserAuthorView.js";
+import type { PublishWebContentResult } from "@envoymesh/api";
+import { takePendingBrowserUrl } from "../../lib/browser-nav.js";
 
 type LoadState =
   | { kind: "idle" }
@@ -108,6 +112,7 @@ export function BrowserView() {
   const [nav, setNav] = useState<BrowserNavStack>(() => createEmptyNavStack());
   const [bookmarked, setBookmarked] = useState(false);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [authorOpen, setAuthorOpen] = useState(false);
   const cacheRef = useRef<Map<string, BrowserFetchCacheEntry>>(new Map());
 
   const parseError = useMemo(() => {
@@ -230,10 +235,16 @@ export function BrowserView() {
   );
 
   useEffect(() => {
+    const pending = takePendingBrowserUrl();
+    if (pending && isEnvoyContentUrl(pending)) {
+      void navigate(pending);
+      return;
+    }
     setState({ kind: "idle" });
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only
   }, []);
 
-  function onSubmit(e: React.FormEvent) {
+  function onSubmit(e: FormEvent) {
     e.preventDefault();
     if (isValid) void navigate(url);
   }
@@ -263,6 +274,23 @@ export function BrowserView() {
     const title = titleFromBody(state.mimeType, state.body, state.url);
     const result = toggleBrowserBookmark(ownerId, state.url, title);
     setBookmarked(result.bookmarked);
+  }
+
+  function onPublished(result: PublishWebContentResult) {
+    const target = result.listingUrl ?? result.url;
+    setUrl(target);
+    void navigate(target);
+  }
+
+  function onContentLinkClick(e: MouseEvent<HTMLElement>) {
+    const target = e.target;
+    if (!(target instanceof Element)) return;
+    const anchor = target.closest("a");
+    if (!anchor) return;
+    const href = anchor.getAttribute("href");
+    if (!href || !isEnvoyContentUrl(href)) return;
+    e.preventDefault();
+    void navigate(href);
   }
 
   const backEnabled = canGoBack(nav);
@@ -376,8 +404,32 @@ export function BrowserView() {
           >
             {bookmarked ? "★" : "☆"}
           </button>
+          <button
+            type="button"
+            className="browser-view__author-btn"
+            data-testid="browser-author-open"
+            disabled={!ownerId}
+            onClick={() => setAuthorOpen((v) => !v)}
+          >
+            {authorOpen
+              ? t("browser.author.close", "Close author")
+              : t("browser.author.open", "New…")}
+          </button>
         </form>
       </div>
+
+      {authorOpen && (
+        <div className="browser-view__author-panel" data-testid="browser-author-panel">
+          <BrowserAuthorView
+            onCancel={() => setAuthorOpen(false)}
+            onPublished={(result) => {
+              // Keep the panel open so the published confirmation (URL) is visible;
+              // Done / Cancel closes via onCancel. Still navigate to the new listing.
+              onPublished(result);
+            }}
+          />
+        </div>
+      )}
 
       {parseError !== null && (
         <p className="browser-view__parse-error" data-testid="browser-parse-error">
@@ -398,7 +450,7 @@ export function BrowserView() {
           </p>
         )}
         {state.kind === "ok" && state.isText && (
-          <RenderText mimeType={state.mimeType} body={state.body} />
+          <RenderText mimeType={state.mimeType} body={state.body} onLinkClick={onContentLinkClick} />
         )}
         {state.kind === "ok" && !state.isText && (
           <RenderBinary mimeType={state.mimeType} body={state.body} url={state.url} t={t} />
@@ -425,20 +477,37 @@ export function BrowserView() {
   );
 }
 
-function RenderText({ mimeType, body }: { mimeType: string; body: string }) {
+function RenderText({
+  mimeType,
+  body,
+  onLinkClick,
+}: {
+  mimeType: string;
+  body: string;
+  onLinkClick: (e: MouseEvent<HTMLElement>) => void;
+}) {
   if (mimeType === "text/markdown" || mimeType === "text/x-markdown") {
     return (
-      <article className="browser-view__markdown" data-testid="browser-markdown">
+      <article
+        className="browser-view__markdown"
+        data-testid="browser-markdown"
+        onClick={onLinkClick}
+      >
         <Markdown text={body} />
       </article>
     );
   }
   if (mimeType === "text/html") {
+    // Defense in depth: sanitize with DOMPurify AND sandbox the iframe.
+    // The sandbox="" attribute alone would prevent script execution,
+    // but DOMPurify strips event handlers and other injection vectors
+    // before the content reaches the iframe's parser. Design §6.
+    const sanitized = DOMPurify.sanitize(body, { FORBID_TAGS: ["script", "iframe", "object", "embed"] });
     return (
       <iframe
         className="browser-view__html"
         data-testid="browser-html"
-        srcDoc={body}
+        srcDoc={sanitized}
         sandbox=""
         title="rendered-html"
       />

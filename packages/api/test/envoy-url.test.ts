@@ -267,4 +267,42 @@ describe("envoy-url parser", () => {
       expect(() => parseEnvoyUrl("envoy:///path")).toThrow(InvalidEnvoyUrlError);
     });
   });
+
+  describe("security edge cases (m3 from code review)", () => {
+    it("decodes %2F as literal text, not a path separator", () => {
+      // envoy://owner/path%2Ftraversal should decode to "path%2Ftraversal"
+      // (single segment), NOT "path/traversal" (two segments). This prevents
+      // path injection via encoded slashes.
+      const r = tryParseEnvoyUrl(`envoy://${OWNER_A}/path%2Ftraversal`);
+      expect(r).toMatchObject({ path: "path%2Ftraversal" });
+      expect(r?.kind === "content" && r.path.includes("/")).toBe(false);
+    });
+
+    it("collapses double slashes in URL path", () => {
+      // envoy://owner/a//b — the regex captures "a//b" as the path.
+      // The per-segment decoder preserves the double slash as empty segment.
+      const r = tryParseEnvoyUrl(`envoy://${OWNER_A}/a//b`);
+      expect(r?.kind === "content" && r.path).toBe("a//b");
+    });
+
+    it("owner ID is case-sensitive (no normalization)", () => {
+      // base64url is case-significant; ABC ≠ abc.
+      const upper = `envoy://envoy:owner:ABC123/x`;
+      const lower = `envoy://envoy:owner:abc123/x`;
+      const r1 = tryParseEnvoyUrl(upper);
+      const r2 = tryParseEnvoyUrl(lower);
+      expect(r1?.kind === "content" && r1.owner).toBe("envoy:owner:ABC123");
+      expect(r2?.kind === "content" && r2.owner).toBe("envoy:owner:abc123");
+    });
+
+    it("rejects single-slash scheme (envoy:/owner)", () => {
+      // envoy:/owner/x is missing the second slash — not a valid envoy URL.
+      expect(tryParseEnvoyUrl("envoy:/envoy:owner:abc/x")).toBeNull();
+    });
+
+    it("rejects missing // (envoy:owner:abc)", () => {
+      // No scheme separator at all.
+      expect(tryParseEnvoyUrl("envoy:owner:abc")).toBeNull();
+    });
+  });
 });

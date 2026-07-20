@@ -61,14 +61,41 @@ export type ParsedEnvoyUrl =
       raw: string;
     };
 
-/** Percent-decode a path segment sequence (preserving `/`). */
+/**
+ * Percent-decode a path *segment by segment*, so that encoded slashes
+ * (`%2F`) do NOT become real path separators after decoding.
+ *
+ * Without per-segment decoding, `envoy://owner/path%2Ftraversal` would
+ * decode to `path/traversal` — creating a path-injection vector. By
+ * splitting on `/` first, then decoding each segment independently,
+ * `%2F` within a segment decodes to `/` but the segment boundary
+ * prevents it from being interpreted as a path separator by the file
+ * resolver (which operates on the joined path).
+ *
+ * However, since decodeURIComponent("%2F") = "/", we additionally
+ * double-encode %2F to %252F before decoding so it survives as a
+ * literal within the segment. This is the standard defense against
+ * path traversal via encoded separators.
+ *
+ * Malformed percent-encoding (e.g. `%ZZ`) in a segment returns that
+ * segment as-is rather than throwing — this is intentional leniency
+ * so `tryParseEnvoyUrl` never throws.
+ */
 function decodePath(path: string): string {
-  try {
-    return decodeURIComponent(path);
-  } catch {
-    // Malformed percent-encoding — return as-is rather than throw.
-    return path;
-  }
+  if (!path) return "";
+  return path
+    .split("/")
+    .map((segment) => {
+      // Double-encode %2F (and %2f) so decodeURIComponent doesn't turn
+      // it into a real slash. After decoding, %252F → %2F (literal).
+      const safe = segment.replace(/%2[fF]/g, "%252F");
+      try {
+        return decodeURIComponent(safe);
+      } catch {
+        return segment;
+      }
+    })
+    .join("/");
 }
 
 /** Discriminated parse result — never throws. */

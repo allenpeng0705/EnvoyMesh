@@ -851,7 +851,7 @@ export async function libraryReadViaRuntime(
       return {
         peerOwnerId: params.targetOwnerId,
         libp2pPeerId: transportPeerId,
-        status: "not_found",
+        status: "error" as const,
         latencyMs,
         error: `unexpected reply intent ${(reply as { intent?: string }).intent ?? "unknown"}`,
       };
@@ -879,7 +879,7 @@ export async function libraryReadViaRuntime(
     return {
       peerOwnerId: params.targetOwnerId,
       libp2pPeerId: "",
-      status: "not_found",
+      status: "error" as const,
       latencyMs: Date.now() - started,
       error: msg,
     };

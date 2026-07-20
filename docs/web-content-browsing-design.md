@@ -1,6 +1,6 @@
 # EnvoyMesh — Web Content Browsing (Phase 45)
 
-**Status:** Phase 45A + 45B shipped; 45C in progress on **EnvoyGo** (`apps/envoygo` — the product mobile app). Capacitor `apps/mobile` is backup/legacy and out of scope. Layers 1–3 green; Layer 4 Playwright wired (`npm run smoke:web-content`). 45D–45F still future.
+**Status:** Phase 45A + 45B shipped; 45C EnvoyGo Browser shipped (device signoff open); **45D authoring UX shipped** (blog / note / profile / photo / file + PhotoWall + Scenario 2 Playwright); **45E push + topics + friend discovery shipped** (no GossipSub). Capacitor `apps/mobile` is backup/legacy. Layers 1–3 green; Layer 4 Playwright wired (`npm run smoke:web-content`). 45F still future.
 **Owner:** peng
 **Roadmap:** [Phase 45 in implementation-plan.md](./implementation-plan.md#phase-45--web-content-browsing--future)
 **Related:** [agent_network.md](./agent_network.md), [knowledge-base-and-rag.md](./knowledge-base-and-rag.md), [p2p-discovery.md](./p2p-discovery.md)
@@ -117,12 +117,14 @@ This is the keystone decision. URLs appear in chat messages, Markdown links, sha
 #### 4.1.1 Grammar
 
 ```
-envoy-URL = "envoy://" owner "/" [ path ]
+envoy-URL = "envoy://" owner [ "/" [ path ] ]
 owner     = owner-id | handle
 owner-id  = "envoy:owner:" base64url    ; the permanent cryptographic owner ID
 handle    = "@" handle-char+             ; reserved in v1, parser accepts, runtime rejects
 path      = pct-encoded-segment *( "/" pct-encoded-segment )
 ```
+
+> **Note on trailing slash:** the `/` after `owner` is **optional at parse time** — `envoy://{owner}` and `envoy://{owner}/` are both accepted. `buildEnvoyUrl` always emits the trailing `/` (canonical form), but `parseEnvoyUrl` is lenient so users can type either form in the address bar. Encoded slashes (`%2F`) within a path segment are decoded per-segment and do NOT become real path separators (defense against path injection).
 
 `base64url` is the existing owner ID format used everywhere else in the system (e.g. `envoy:owner:diBymBI4fBdIe0V_bhwFXhEijf4FVd0uDvyIh_X1E9I`). Owner IDs are derived from `sha256(owner-public-key)` and never change.
 
@@ -547,25 +549,70 @@ Every response carries a `contentHash` (sha256 of body). The Browser view verifi
 
 **Exit criterion:** Browser reachable on phone; paired browse via home works; Scenario 1 on device.
 
-### 7.4 Phase 45D — Authoring UX (full Step 1)
+### 7.4 Phase 45D — Authoring UX (full Step 1) `[~]`
 
 **Scope:**
-- New-item dialog with template picker (Profile / Blog post / Photo / Note / File upload).
+- New-item dialog with template picker (Profile / Blog post / Note / Photo / File upload).
 - Markdown editor with live preview.
 - Per-item visibility selector.
-- Manifest auto-update on author actions.
-- Templated site types (Blog listing, PhotoWall grid).
-- Contact profile "Browse Site" button.
-- `envoy init <template>` CLI scaffolding.
-- **Exit criterion:** Phase 45D Scenario (§10.2) passes — author → publish → browse.
+- Manifest auto-update on author actions (`publishWebContentEntry`).
+- Blog listing regenerated at `blog/index.md`.
+- PhotoWall grid at `photos/<gallery>/index.md` (+ `photos/index.md` gallery list).
+- Contact profile "Browse Site" button + optional `webContentRoot` on Agent Card.
+- `envoymesh init blog|photos` CLI scaffolding.
+- Playwright Scenario 2 (`web-content-author-browse.smoke.ts`).
+- **Exit criterion:** Phase 45D Scenario (§9.2) passes — author → publish → browse.
 
 ### 7.5 Phase 45E — Step 2: push, topics, friend discovery
 
-**Scope (sketch — full design TBD at 45E start):**
-- New intent `feed.notify` — push a small notification envelope to bonded contacts on publish. Rides existing `/envoymesh/message` stream using `tagContactForPersistentReachability` (`packages/network/src/index.ts:789`). No GossipSub in v1 of 45E.
-- Topic-based subscription — declare interests in profile; receive `feed.notify` only for matching topics.
-- Friend discovery via published topics — `discovery.request` extended with topic matching; surfaces "people who publish about X".
-- **GossipSub decision deferred** — evaluate whether notification-fanout suffices or whether true pubsub is needed, after 45E v1 ships.
+**Status:** shipped (v1 — notification fan-out; **no GossipSub**).
+
+#### Wire format — `feed.notify`
+
+| Field | Required | Notes |
+|-------|----------|--------|
+| `publisherOwnerId` | yes | `envoy:owner:…` |
+| `publishedAt` | yes | ISO timestamp |
+| `title` | yes | listing title |
+| `url` | yes | absolute `envoy://…` for Browser / `library.read` |
+| `kind` | yes | `article` \| `note` \| `photo` \| `gallery` \| `file` \| `profile` |
+| `visibility` | yes | `public` \| `bonded` \| `contacts` \| `private` |
+| `summary` | no | short excerpt |
+| `tags[]` | no | free-form; used for interest overlap + DHT `publish:<slug>` |
+| `contentHash` | no | sha256 of bytes |
+| `listingUrl` | no | blog index / photo wall |
+
+Role policy: **human → human**. Bonds: allow `direct` / `referred`; deny `blocked` / `public` strangers (strangers still pull via DHT + `library.read`).
+
+#### Recipient selection (outbound)
+
+- `private` → no fan-out
+- `contacts` → intersection of `contactIds` and eligible bonds (`direct` \| `referred`)
+- `bonded` / `public` → all eligible bonds (not strangers)
+
+#### Interest overlap (subscription filter)
+
+- Publisher `tags` empty → notify all eligible bonds
+- Tags non-empty → notify when recipient hobbies/knowledge slug-overlap **or** recipient has no interests set (avoid silent drop for empty profiles)
+- Applied outbound (peer profile cache) and inbound (local profile)
+
+#### Topics + discovery
+
+- Canonical publish topic: `publish:<slug>` via `slugifyTopic` / `publishTopicFor`
+
+#### EnvoyGo Inbox (mobile mirror)
+
+Home persists `feed.notify` → EnvoyGo calls `listFeedNotifications` / `dismissFeedNotification` and listens for `feed:notify` WS push. Inbox row → **Open** launches `BrowserScreen(initialUrl:)`.
+
+**OS push (APNs / FCM):** when the thin client is backgrounded, the home also calls `dispatchFeedPush` (`tokenType: "alert"`) with `data.type=feed_notify` + `url` / `title` / `notificationId`. EnvoyGo registers an alert token after home connect (`PushNotificationService` → `registerPushToken`). Tap opens via `onNotificationTap` / `handleNotificationTap` (same Browser URL path as Inbox). Requires home `APNS_*` / `FCM_*` env vars — see [push-notification-config.md](./push-notification-config.md).
+- DHT advertise: existing `capability:envoymesh.web-content` plus top-N `publish:<slug>` from manifest tags
+- `discovery.request.requestedPublishTopics` matches web-content `tags[]` (visibility/trust gated)
+- Discover UI: “By published topic” searches DHT `publish:<slug>`
+- `AgentCard.publicTopics`: profile interests (`interest:…`) + published web tags (`publish:…`)
+
+#### GossipSub
+
+Still deferred. Re-evaluate only if bonded fan-out + DHT topics prove insufficient.
 
 ### 7.6 Phase 45F — Step 3: external HTTP gateway (future, forward reference)
 
@@ -633,6 +680,8 @@ Test cases (~5):
 - `LIBREAD-03`: A and B NOT bonded; B attempts read of bonded-visibility item; assert `status: "not_found"`.
 - `LIBREAD-04`: Bonded A↔B; A has `web/owner-only.md` with `visibility: "private"`; B attempts read; assert `not_found`.
 - `LIBREAD-05`: Bonded A↔B; A updates `web/changelog.md` content; B re-reads; assert response is the updated full content (Reload may send `ifNoneMatch` and receive `not_modified` when unchanged — 45B).
+- `LIBREAD-06`: Bonded A↔B; A has `contacts` visibility with Bob in `contactIds`; B reads → `ok`.
+- `LIBREAD-07`: Bonded A↔B; A has `contacts` visibility with Bob **not** in `contactIds`; B reads → `forbidden`.
 
 ### 8.4 Layer 4 — Playwright full-stack E2E (comprehensive matrix)
 
@@ -672,7 +721,7 @@ Test cases (~5):
 | URL parser unit | `npm test` (default vitest, no env var) | Every PR |
 | Handler trust unit | `npm test` | Every PR |
 | Two-node vitest E2E | `npm run smoke:local` | Every PR (the curated regression set) |
-| Playwright full-stack | `npm run smoke:web-content` | Manual trigger initially; promoted to CI gate after 45A ships green 3× |
+| Playwright full-stack | `npm run smoke:web-content` | CI gate via orchestrator `06c` (`test:full` / `ci-smoke-local`) + nightly |
 
 The Playwright matrix is initially opt-in (heavy — spawns 2-3 node processes + Chromium). Once it passes reliably on CI, it joins `ci-smoke-local.yml` like the WebRTC smoke.
 
@@ -876,11 +925,12 @@ Note: Social imports URL helpers from `@envoymesh/api` (no separate `apps/social
 | `apps/social/src/components/views/BrowserAuthorView.tsx` (new) | Authoring dialog |
 | `apps/social/src/components/MarkdownEditor.tsx` (new) | Textarea + live preview |
 | `apps/social/src/components/VisibilitySelector.tsx` (new) | Per-item visibility dropdown |
-| `apps/node/src/web-content-store.ts` | Manifest write on author actions |
-| `apps/node/src/node-service-impl.ts` | `publishWebContentEntry`, `updateWebContentEntry`, `unpublishWebContentEntry` |
-| `apps/cli/src/index.ts` | `envoy init <template>` scaffolding |
-| `apps/social/src/components/views/ContactProfilePanel.tsx` | "Browse Site" button |
-| `packages/api/src/agent-card.ts` (or protocol schema) | Optional `webContentRoot` field on AgentCard |
+| `apps/node/src/web-content-author.ts` (new) | Publish + blog index regen |
+| `apps/node/src/web-content-store.ts` | Manifest write via upsert (already present) |
+| `apps/node/src/node-service-impl.ts` | `publishWebContentEntry` |
+| `apps/cli/src/index.ts` | `envoymesh init blog` scaffolding |
+| `apps/social/src/components/AgentCardPanel.tsx` | "Browse Site" button |
+| `packages/protocol/src/index.ts` | Optional `webContentRoot` on `AgentCardSchema` |
 
 ## 13. Risks & mitigations
 

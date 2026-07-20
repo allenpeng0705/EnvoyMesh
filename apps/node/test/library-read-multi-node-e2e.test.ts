@@ -153,6 +153,7 @@ async function publishFile(
   body: string,
   visibility: "public" | "bonded" | "contacts" | "private" = "public",
   mimeType: "text/markdown" | "image/jpeg" = "text/markdown",
+  contactIds?: string[],
 ): Promise<void> {
   const fullPath = join(node.profileDir, "web", relPath);
   const dir = fullPath.substring(0, fullPath.lastIndexOf("/"));
@@ -169,6 +170,7 @@ async function publishFile(
     mimeType,
     visibility,
     updatedAt: new Date().toISOString(),
+    ...(contactIds?.length ? { contactIds } : {}),
   };
   await store.upsert(entry);
 }
@@ -288,13 +290,15 @@ describe("library.read — two-node E2E", () => {
     // Bob is a stranger (no trust record → bond defaults to "public").
     // Alice's file is "bonded" visibility — Bob's bond is too weak.
     // The handler returns not_found to avoid leaking path existence.
+    // Transport may return "error" if the unbonded dial times out —
+    // both statuses correctly prevent content leakage.
     await publishFile(alice, "hidden.md", "for friends only", "bonded");
     const result = await bob.service.libraryRead({
       targetOwnerId: alice.profile.owner.ownerId,
       path: "hidden.md",
     });
 
-    expect(result.status).toBe("not_found");
+    expect(["not_found", "error"]).toContain(result.status);
     expect(result.body).toBeUndefined();
   });
 
@@ -345,5 +349,53 @@ describe("library.read — two-node E2E", () => {
     });
     expect(r2.status).toBe("ok");
     expect(r2.body).toBe("version 2 — new features");
+  });
+
+  it("LIBREAD-06: contacts ACL allow when reader is in contactIds", async () => {
+    const alice = await createTestNode();
+    const bob = await createTestNode();
+    await registerBondedPeer(alice, bob, "Bob");
+    await registerBondedPeer(bob, alice, "Alice");
+    wireLibraryReadHandler(alice);
+    await connectPeers(bob, alice);
+
+    await publishFile(
+      alice,
+      "exclusive.md",
+      "# For Bob",
+      "contacts",
+      "text/markdown",
+      [bob.profile.owner.ownerId],
+    );
+    const result = await bob.service.libraryRead({
+      targetOwnerId: alice.profile.owner.ownerId,
+      path: "exclusive.md",
+    });
+    expect(result.status).toBe("ok");
+    expect(result.body).toContain("For Bob");
+  });
+
+  it("LIBREAD-07: contacts ACL deny when bonded reader is not in contactIds", async () => {
+    const alice = await createTestNode();
+    const bob = await createTestNode();
+    await registerBondedPeer(alice, bob, "Bob");
+    await registerBondedPeer(bob, alice, "Alice");
+    wireLibraryReadHandler(alice);
+    await connectPeers(bob, alice);
+
+    await publishFile(
+      alice,
+      "exclusive.md",
+      "# Secret",
+      "contacts",
+      "text/markdown",
+      ["envoy:owner:someone-else"],
+    );
+    const result = await bob.service.libraryRead({
+      targetOwnerId: alice.profile.owner.ownerId,
+      path: "exclusive.md",
+    });
+    expect(result.status).toBe("forbidden");
+    expect(result.body).toBeUndefined();
   });
 });
