@@ -47,7 +47,10 @@ export function BrowserView() {
     const trimmed = url.trim();
     if (!trimmed) return null;
     try {
-      parseEnvoyUrl(trimmed);
+      const parsed = parseEnvoyUrl(trimmed);
+      if (parsed.ownerForm === "handle") {
+        return "Handle URLs (envoy://@handle/...) are reserved for v2 — use envoy://envoy:owner:<base64>/...";
+      }
       return null;
     } catch (e) {
       if (e instanceof InvalidEnvoyUrlError) return e.message;
