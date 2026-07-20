@@ -84,8 +84,8 @@ Install an **Envoy** on your computer and phone, chat with friends directly, and
 - **Network-wide discovery** — search for documents, capabilities, and peers across the mesh.
 
 ### Mobile & Remote Access
-- **Full mobile node** — Capacitor app with complete mesh participation.
-- **EnvoyGo thin client** — Flutter app for lightweight remote access to home node, with native WebRTC voice calls.
+- **EnvoyGo (product mobile app)** — Flutter thin client for remote access to your home node, with native WebRTC voice calls.
+- **Capacitor (`apps/mobile/`)** — backup / legacy full-node experiment; not the product phone app.
 - **Terminals** — chat-integrated remote shell access to your home node from anywhere.
 - **Multi-device identity** — same owner ID across all your devices.
 
@@ -759,26 +759,23 @@ For the full design, see [`docs/knowledge-base-and-rag.md`](docs/knowledge-base-
 
 ## Mobile Options
 
-EnvoyMesh offers two mobile experiences:
+**Product mobile app: EnvoyGo** (`apps/envoygo/`) — Flutter thin client. Prefer this for all phone work.
 
-### Full Node (Capacitor)
-The Capacitor app is a **complete EnvoyMesh node** running inside your phone:
-- Full P2P mesh participation
-- Own signing keys and device identity
-- Same owner ID, contacts, and chat history as desktop
-- Runs the Social UI in a WebView
-- SQLite + Filesystem storage
+### EnvoyGo (Flutter) — use this
 
-### EnvoyGo (Flutter Thin Client)
 A lightweight Flutter app that acts as a **remote client** to your home node:
 - Connects via WebSocket or libp2p circuit relay
-- Three tabs: Chats, Contacts, Me — the Me tab also surfaces a Recent chains view of what your home node has published (read-only) and Agent Network (read-only mirror of the home's two-engine state)
+- Tabs: Chats, Inbox, Me — Me also surfaces Recent chains, Browser (Phase 45C), and settings
 - **Native WebRTC voice calls** — bonded EnvoyGo users can place and receive real-time voice calls to other EnvoyGo phones or Social/desktop users; media is peer-to-peer, the home node does signaling only
 - Terminal access to home node
 - Automatic reconnection with multi-transport fallback
 - Secure session token storage (iOS Keychain / Android EncryptedSharedPreferences)
 
 **Pairing:** Scan a QR code from your desktop's Social UI → instant connection. See [`docs/flutter-thin-client-design.md`](docs/flutter-thin-client-design.md) for details.
+
+### Capacitor (`apps/mobile/`) — backup only
+
+Phase 11 experiment: full node in a Capacitor WebView. **Not the product mobile app**; may be removed. Prefer EnvoyGo for all new mobile work.
 
 ---
 
@@ -791,10 +788,10 @@ EnvoyMesh/
 │   ├── node/        # The local Envoy runtime (CLI, mesh, WebSocket API)
 │   ├── relay/       # Relay node binary (lean: connectivity + lookup, no LLMs)
 │   ├── tauri/       # Native desktop window (Social + node)
-│   ├── social/      # Social/chat UI (Vite + React)
-│   ├── mobile/      # Capacitor iOS/Android (full node)
-│   └── envoygo/     # Flutter thin client (remote access)
-├── packages/        # Building blocks: protocol, identity, bonds, network, vault, rag, models, kb-obsidian, local-store, openclaw-runtime, mobile-identity, mobile-node, mobile-storage, mobile-vault...
+│   ├── social/      # Social/chat UI (Vite + React) — desktop
+│   ├── envoygo/     # ★ PRODUCT mobile app (Flutter thin client)
+│   └── mobile/      # BACKUP only — Capacitor experiment (may be removed)
+├── packages/        # Building blocks: protocol, identity, bonds, network, vault, rag, models, kb-obsidian, local-store, openclaw-runtime, mobile-* (Capacitor backup)...
 ├── docs/            # Design docs, security model, implementation plan
 ├── OpenClawExtension/  # OpenClaw integration
 ├── QuickStart.md    # Step-by-step guide

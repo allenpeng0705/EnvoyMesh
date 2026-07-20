@@ -1,6 +1,6 @@
 # EnvoyMesh — Web Content Browsing (Phase 45)
 
-**Status:** Phase 45A + 45B implemented (2026-07-20). Layers 1–3 green; Layer 4 Playwright wired (`npm run smoke:web-content`). 45C–45F still future.
+**Status:** Phase 45A + 45B shipped; 45C in progress on **EnvoyGo** (`apps/envoygo` — the product mobile app). Capacitor `apps/mobile` is backup/legacy and out of scope. Layers 1–3 green; Layer 4 Playwright wired (`npm run smoke:web-content`). 45D–45F still future.
 **Owner:** peng
 **Roadmap:** [Phase 45 in implementation-plan.md](./implementation-plan.md#phase-45--web-content-browsing--future)
 **Related:** [agent_network.md](./agent_network.md), [knowledge-base-and-rag.md](./knowledge-base-and-rag.md), [p2p-discovery.md](./p2p-discovery.md)
@@ -535,13 +535,17 @@ Every response carries a `contentHash` (sha256 of body). The Browser view verifi
 
 **Exit criterion:** Back/forward/reload/bookmarks work; large files assemble via ranges; Reload revalidates against `etag`. Playwright scenarios 6 & 8 green.
 
-### 7.3 Phase 45C — EnvoyGo mobile Browser
+### 7.3 Phase 45C — EnvoyGo mobile Browser `[~]`
 
-**Scope:**
-- Browser view in EnvoyGo Flutter app.
-- `MobileNodeService.libraryRead(...)` in both modes (paired/thin + standalone).
-- Mobile → home → mesh request path tested on real devices.
-- Mobile bookmark sync via existing owner-device sync.
+**Scope (Flutter thin client — `apps/envoygo`; not Capacitor):**
+- Browser screen with address bar + content render (markdown as selectable text; images from base64).
+- Me-tab entry → `BrowserScreen`.
+- `NodeServiceClient.libraryRead` proxies to home JSON-RPC; home dials the mesh using **home** bonds.
+- EnvoyGo remains a thin client: no standalone mesh `library.read` sender in 45C (parked full-node scope).
+- Review hardening: preserve trailing `/` (directory → `index.md`); navigate race guard; `contentHash` verify before render; `not_modified` restores cached body; tappable in-content `envoy://` links; range auto-chunk (40 KiB).
+- Real-device Scenario 1 signoff still open.
+
+**Exit criterion:** Browser reachable on phone; paired browse via home works; Scenario 1 on device.
 
 ### 7.4 Phase 45D — Authoring UX (full Step 1)
 
@@ -853,13 +857,17 @@ Note: Social imports URL helpers from `@envoymesh/api` (no separate `apps/social
 | `apps/node/src/library-read-inbound.ts` | `too_large` metadata, `not_modified`, range base64 |
 | `packages/protocol` + `packages/api` | `ifNoneMatch` request field; `not_modified` status |
 
-### Phase 45C
+### Phase 45C (EnvoyGo Flutter thin client)
 
 | File | Change |
 |---|---|
-| `apps/mobile/` (Flutter) | New Browser screen mirroring Social desktop BrowserView |
-| `packages/mobile-node/src/index.ts` | `libraryRead` already added in 45A — wire to Flutter RPC |
-| `apps/mobile/test/...` | Mobile browser smoke tests |
+| `apps/envoygo/lib/screens/browser/browser_screen.dart` (new) | Address bar + fetch + render + race/hash/links |
+| `apps/envoygo/lib/services/envoy_url.dart` (new) | `envoy://` parser (trailing `/` preserved) |
+| `apps/envoygo/lib/services/library_read_fetch.dart` (new) | Range auto-chunk + `not_modified` cache restore |
+| `apps/envoygo/lib/services/content_hash.dart` (new) | SHA-256 verify before render |
+| `apps/envoygo/lib/services/node_service_client.dart` | `libraryRead` JSON-RPC wrapper |
+| `apps/envoygo/lib/screens/me/me_screen.dart` | Browser entry row |
+| `apps/envoygo/test/...` | URL / fetch / RPC / Browser widget tests |
 
 ### Phase 45D
 

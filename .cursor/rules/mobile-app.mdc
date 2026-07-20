@@ -1,0 +1,15 @@
+---
+description: Mobile app is EnvoyGo (Flutter). Capacitor apps/mobile is backup only.
+alwaysApply: true
+---
+
+# Mobile app identity (do not confuse)
+
+**The product mobile app is EnvoyGo:** `apps/envoygo/` (Flutter thin client).
+
+When a task says "mobile", "phone", "iOS", "Android", or "EnvoyGo":
+- Work in **`apps/envoygo/`**
+- Pair to the home node via QR; call home JSON-RPC through `NodeServiceClient` / `HomeRemoteClient`
+- Do **not** implement features in `apps/mobile/` unless the user explicitly asks for the Capacitor backup
+
+**`apps/mobile/` (Capacitor) is a backup / legacy experiment** (Phase 11). It may be removed. Do not treat it as the primary mobile surface. Related packages (`mobile-node`, `mobile-identity`, `mobile-storage`, `mobile-vault`) support that backup path and browser-dev experiments — not the EnvoyGo product app.

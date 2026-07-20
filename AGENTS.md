@@ -26,7 +26,11 @@ EnvoyMesh is a **decentralized, peer-to-peer mesh for autonomous AI agents**. Ag
 - Semantic consistency — typed intents agents can reason about, not opaque bytes
 - Observability — JSONL audit with correlation IDs stitching multi-peer flows
 
-**Active milestone: Phase 11 complete** — Capacitor mobile app with in-process Social UI + Node runtime (11A-11E), multi-device shared identity, `@noble/curves` pure-JS crypto, mobile storage (SQLite) and vault (Filesystem). Phase 9 modules (agent identity, tools, memory, mode, sessions, style, triggers, approvals, external agents, digest, P2P bridge) all shipped. See `docs/implementation-plan.md` for full roadmap.
+**Mobile app (product):** **EnvoyGo** — Flutter thin client in `apps/envoygo/`. Pairs to a home node; UI + JSON-RPC over WebSocket/libp2p. This is what "mobile / phone / iOS / Android" means in this repo.
+
+**Backup only:** `apps/mobile/` (Capacitor + in-process `mobile-node`) is a Phase 11 experiment that may be removed. Do **not** treat it as the primary mobile app unless the user explicitly asks for the Capacitor path.
+
+**Active roadmap:** See `docs/implementation-plan.md`. Phase 45 (web content browsing) and later work target Social (desktop) + **EnvoyGo** (mobile).
 
 ---
 
@@ -37,12 +41,13 @@ EnvoyMesh/
 ├── apps/
 │   ├── node/          # Node.js runtime: CLI, mesh, WebSocket API for Social
 │   ├── relay/         # Relay node binary
-│   ├── social/        # Social/chat UI (Vite + React)
+│   ├── social/        # Social/chat UI (Vite + React) — desktop primary UI
 │   │   ├── src/components/  # Header, ErrorBoundary, views/ (Chat, Search, Profile, Settings, etc.)
 │   │   ├── src/context/     # NodeStateContext (shared state, event-driven)
 │   │   ├── src/lib/         # storage.ts, display.ts, direct-call-client.ts
 │   │   └── test/            # Component + context tests (vitest + testing-library)
-│   ├── mobile/        # Capacitor iOS/Android wrapper (Phase 11)
+│   ├── envoygo/       # ★ PRODUCT mobile app — Flutter thin client (pair to home)
+│   ├── mobile/        # BACKUP only — Capacitor experiment (Phase 11); may be removed
 │   └── tauri/         # End-user native wrapper: WebView loads Social web UI + spawns Node (no Electron)
 ├── packages/
 │   ├── protocol/      # Core protocol: Zod schemas, payload constructors, canonical JSON
@@ -52,10 +57,10 @@ EnvoyMesh/
 │   ├── vault/         # Local file vault: indexing, chunking, search, path safety
 │   ├── models/        # Model router: provider selection, semantic firewall, LiteLLM adapter
 │   ├── local-store/   # On-disk persistence: JSONL audit/journal, trust store, peer directory
-│   ├── mobile-identity/# Pure-JS Ed25519 identity with @noble/curves (Phase 11B)
-│   ├── mobile-storage/ # SQLite-backed peer directory, trust store (Phase 11E)
-│   ├── mobile-vault/   # Filesystem-backed vault (Phase 11E)
-│   ├── mobile-node/    # In-process NodeService, relay-only transport (Phase 11C)
+│   ├── mobile-identity/# Pure-JS Ed25519 (Capacitor backup / browser-dev — not EnvoyGo)
+│   ├── mobile-storage/ # SQLite stores (Capacitor backup path)
+│   ├── mobile-vault/   # Filesystem vault (Capacitor backup path)
+│   ├── mobile-node/    # In-process NodeService (Capacitor backup path)
 │   └── api/           # Shared TypeScript interfaces (NodeService, types)
 ├── docs/              # User stories, scenarios, security model, implementation plan
 ├── tsconfig.base.json # Shared TS configuration
@@ -69,19 +74,20 @@ EnvoyMesh/
 ```
 protocol  (Zod schemas, no deps beyond zod)
    ├── identity      (node:crypto Ed25519 — desktop)
-   ├── mobile-identity (@noble/curves Ed25519 — mobile/browser)
+   ├── mobile-identity (@noble/curves — Capacitor backup / browser-dev)
    ├── vault         (desktop file vault)
-   ├── mobile-vault  (Capacitor Filesystem vault)
+   ├── mobile-vault  (Capacitor backup vault)
    ├── models        (protocol deps only)
    ├── bonds         (protocol deps only)
    └── api           (shared TypeScript interfaces)
 local-store       (depends on bonds, identity, protocol)
-mobile-storage    (depends on protocol, api — SQLite-backed)
+mobile-storage    (Capacitor backup — SQLite)
 network           (depends on protocol + libp2p ecosystem)
-mobile-node       (depends on mobile-identity, mobile-storage, mobile-vault, api, protocol)
+mobile-node       (Capacitor backup — in-process NodeService)
 apps/node         (depends on everything desktop)
-apps/social       (depends on api — React SPA + DirectCallClient for mobile)
-apps/mobile       (Capacitor wrapper — loads apps/social + mobile-node in-process)
+apps/social       (React SPA — desktop Social UI)
+apps/envoygo      (★ PRODUCT mobile — Flutter thin client → home JSON-RPC)
+apps/mobile       (BACKUP Capacitor wrapper — do not prefer for new mobile work)
 ```
 
 ---
@@ -175,27 +181,26 @@ The **Diplomat → Bond Engine → Brain → Vault** pipeline:
 - Contains disallowed control characters (code < 32 except tab/newline/CR, or DEL) → reject
 - Collapses excessive newline runs (>50 consecutive) to prevent log spam
 
-### Mobile as a Full Network Node (Phase 11)
+### Product mobile: EnvoyGo (`apps/envoygo`)
 
-The mobile app is a **full EnvoyMesh node**, not a thin client. It participates in the P2P mesh directly:
+EnvoyGo is the **product mobile app** (Flutter). It is a **thin client** to the home node:
 
-- **In-process architecture**: Social UI (React) + `MobileNode` (NodeService) run in a single Capacitor WebView. `DirectCallClient` calls `NodeService` methods directly — no WebSocket, no JSON-RPC.
-- **Own peer identity**: generated from the owner's keys, distinct from the home node
-- **Multi-device shared identity**: `MobileNode.importOwnerIdentity()` imports home node's owner key — same `ownerId`, shared contacts/bonds, different `deviceId` per device
-- **Own signing key**: signs messages using `@noble/curves` Ed25519 (pure-JS, works in WebViews)
-- **Relay-only networking**: outbound WebSocket connections only; no TCP/QUIC/mDNS listeners
-- **Full intent support**: sends/receives any EnvoyMesh intent (chat, knowledge, discovery, share, etc.)
-
-**Pairing via QR code**: When mobile scans the home node's QR code (`envoy://pair?...` URI), they create a direct bond. The mobile app sees the home node and its AI agent as contacts in the peer list. Communication with the AI agent is standard `chat.message` to the agent's peer ID — no separate control channel.
+- Pairs via QR (`envoy://pair?...` / thin-client pairing)
+- Talks to home over WebSocket / libp2p circuit relay (`HomeRemoteClient` → JSON-RPC)
+- Does **not** run an in-process mesh node for product features
+- New mobile UX (chat, calls, terminals, Browser, …) lands here
 
 ```
-Mobile App (phone) ←P2P bond via QR→ Home Node (computer)
-  │                                        │
-  │  DirectCallClient ──► MobileNode       │  WsClient ──► NodeService (child process)
-  │  (in-process calls)                    │  (WebSocket to localhost)
-  │                                        │
-  └── relay WebSocket(s) ──────────────────┴── relay mesh
+EnvoyGo (phone) ── JSON-RPC / events ──► Home Node (computer)
+                                           │
+                                           └── mesh (bonds, library.read, chat, …)
 ```
+
+### Capacitor backup (Phase 11) — not the product mobile app
+
+`apps/mobile/` + `packages/mobile-*` are a **backup / legacy** full-node-in-WebView experiment. Prefer EnvoyGo for all new mobile work. Treat Capacitor as archival unless the user explicitly asks for it.
+
+Details (kept for historical Phase 11 context): Social UI + `MobileNode` in one Capacitor WebView, `DirectCallClient`, `@noble/curves`, SQLite/Filesystem — see Phase 11 in `docs/implementation-plan.md`.
 
 ### Agentic Topology (Phase 9)
 
@@ -227,14 +232,29 @@ npm install
 # TypeScript type-check (uses project references for all packages)
 npm run typecheck
 
-# Run all tests (vitest)
-npm test
+# ====== Test orchestrator (recommended) ======
+#
+# Unified entry point in scripts/test.sh / scripts/test.ps1
+# Phases: typecheck → unit → social-build → e2e-fast → e2e-playwright → smoke → bundle
+#
 
-# Run a single package's tests
-npx vitest run packages/identity/test/
+npm run test:orchestrator -- dev    # Fast dev loop (~35s, no E2E)
+npm run test:dev                    # same as above
+npm run test:full                   # All tests + libp2p E2E + smoke (~10min)
+npm run test:bundle                 # `full` + scripts/bundle.sh (pre-release gate)
+npm run test:ci                     # Same as `full` + bail + JUnit
 
-# Run tests in watch mode
-npx vitest
+# Or call directly (more flags available):
+bash scripts/test.sh dev --filter "nodeService-fleet-manifest" --watch
+bash scripts/test.sh full --no-typecheck --skip-playwright
+bash scripts/test.sh bundle --no-typecheck   # pre-release gate (skip tsc)
+
+# ====== Direct vitest (legacy back-compat) ======
+# (the orchestrator handles these; only use these for ad-hoc debugging)
+
+npm test                                  # All unit tests (no E2E)
+npx vitest run packages/identity/test/    # Single package
+npx vitest                                # Watch mode
 
 # Build a specific package
 npm exec -w @envoymesh/<package> -- tsc -p tsconfig.json
@@ -249,14 +269,70 @@ npm run smoke:local
 npm run cli -w @envoymesh/node -- --help
 ```
 
+### Test orchestrator (`scripts/test.sh` / `scripts/test.ps1`)
+
+A single entry point that runs the right tests for the right context. Six modes:
+
+| Mode     | typecheck | unit | social-build | e2e-fast | e2e-playwright | smoke | bundle.sh | bail |
+|----------|:---------:|:----:|:------------:|:--------:|:--------------:|:-----:|:---------:|:----:|
+| `dev`    |     ✓     |  ✓   |      –       |    –     |       –        |   –   |     –     |  –   |
+| `unit`   |     ✓     |  ✓   |      –       |    –     |       –        |   –   |     –     |  –   |
+| `e2e`    |     –     |  –   |      ✓       |    ✓     |       ✓        |   –   |     –     |  –   |
+| `full`   |     ✓     |  ✓   |      ✓       |    ✓     |       ✓        |   ✓   |     –     |  –   |
+| `ci`     |     ✓     |  ✓   |      ✓       |    ✓     |       ✓        |   ✓   |     –     |  ✓   |
+| `bundle` |     ✓     |  ✓   |      ✓       |    ✓     |       ✓        |   ✓   |     ✓     |  ✓   |
+
+Flags: `--filter PATTERN` `--bail` `--no-typecheck` `--no-build` `--watch`
+`--artifacts DIR` `--skip-playwright` `--quiet`.
+
+Each phase logs to `ci-artifacts/test/<phase>.log`. The CI workflow uploads
+this whole directory as an artifact on failure.
+
+Full reference: `docs/test-orchestrator.md`.
+
 ### Test conventions
 
 - Tests live in `packages/*/test/` and `apps/*/test/`
 - Filename matches: `<module>.test.ts` or `<module>.test.tsx`
 - React component tests use `@testing-library/react` with jsdom environment (`/** @vitest-environment jsdom */`)
+- E2E tests gate on `RUN_E2E=1` environment variable (the orchestrator handles this per phase)
 - Uses Vitest with `describe`/`it`/`expect`
 - Vitest config maps `@envoymesh/*` imports to source `.ts` files for direct testing without build
-- Tests are run with `npm test` (CI) or `npx vitest` (watch mode)
+- Tests are run via the orchestrator (`npm run test:*`) or directly via `npm test` / `npx vitest` (watch mode)
+
+### Testing relays
+
+**Community relay** — exported as `DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR`
+from `packages/api/src/default-bootstrap.ts:15`:
+`/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo`
+
+Use it as a TCP-reachable bootstrap peer for relay-E2E tests. Override with
+`TEST_RELAY_ADDR=/ip4/.../p2p/...` (exported env var) to point a test at a
+private relay instead.
+
+**What it serves:** rendezvous-based discovery + gossipsub pubsub. **What it
+does NOT serve:** circuit-relay-v2 reservation. Verified 2026-07-10: a fresh
+libp2p node can TCP-dial it in <100 ms, but `stream.newStream(
+['/ipfs/0.1.0/identify/1.0.0'])` rejects with "Protocol selection failed",
+the `relay:reservation` event never fires, and `relay:reservation:error`
+is also silent. The relay speaks a libp2p version whose protocol negotiation
+table is incompatible with ours (latest `@libp2p/circuit-relay-v2`) — a
+relay-side issue, not fixable from the client.
+
+| Test family | Use community relay? | Why |
+|---|---|---|
+| `relay-chat-e2e.test.ts`, `wan-relay-signoff-e2e.test.ts`, `agent-e2e-real.test.ts` | ✅ default | They need the relay as a TCP peer for bootstrap/discovery, not as a circuit-relay hop |
+| `relay-broadcast-e2e.test.ts` (broadcast fanout via relay) | ❌ hard-skipped by default | Needs a relay that supports our libp2p protocol version **and** the broadcast-fanout handler. Run with `TEST_RELAY_ADDR=<private>` |
+| `geo-discovery-wan-signoff.test.ts` (`geo:city:US-geo-signoff` topic) | ⚠️ gated on `GEO_WAN_DISABLE_GATE=0` | Live DHT is loaded with publishers from many concurrent test runs; `searchPeers` times out at 180 s. Pass ≈1 in 3 runs |
+
+Existing patterns:
+- `const RELAY_ADDR = process.env.TEST_RELAY_ADDR || DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR;`
+- `const itRelayed = RELAY_ADDR ? it : it.skip;`
+- `describe.skipIf(!RELAY_ADDR)` for the file-level gate
+
+This file-level gate is the right shape: missing relay = whole describe
+skipped (no per-test pollution); present relay = all `it`s in the describe
+run against the live relay, with each test re-deciding via `itRelayed`.
 
 ---
 

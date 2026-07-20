@@ -84,8 +84,8 @@ EnvoyMesh 是一个您和您的 AI 代理真正拥有的私有社交网络。与
 - **全网发现** — 在整个网络中搜索文档、能力和节点。
 
 ### 移动与远程访问
-- **完整移动节点** — Capacitor 应用，完全参与 P2P 网络。
-- **EnvoyGo 轻客户端** — Flutter 应用，用于远程访问家庭节点，支持原生 WebRTC 语音通话。
+- **EnvoyGo（产品移动应用）** — Flutter 轻客户端，远程访问家庭节点，支持原生 WebRTC 语音通话。
+- **Capacitor（`apps/mobile/`）** — 备份 / 遗留完整节点实验；不是产品手机应用。
 - **终端** — 聊天集成的远程 shell 访问，从任何地方连接家庭节点。
 - **多设备身份** — 所有设备共享同一 owner ID。
 
@@ -679,28 +679,25 @@ MCP 来源的笔记默认为 `friends` 敏感度（非 public）。
 
 ---
 
-## 移动选项
+## 移动端
 
-EnvoyMesh 提供两种移动体验：
+**产品移动应用：EnvoyGo**（`apps/envoygo/`）— Flutter 轻客户端。手机相关工作优先使用它。
 
-### 完整节点（Capacitor）
-Capacitor 应用是运行在您手机中的**完整 EnvoyMesh 节点**：
-- 完整参与 P2P 网络。
-- 拥有独立的签名密钥和设备身份。
-- 与桌面共享相同的 owner ID、联系人和聊天记录。
-- 在 WebView 中运行社交 UI。
-- SQLite + 文件系统存储。
+### EnvoyGo（Flutter）— 请用这个
 
-### EnvoyGo（Flutter 轻客户端）
 轻量级 Flutter 应用，作为您家庭节点的**远程客户端**：
 - 通过 WebSocket 或 libp2p 电路中继连接。
-- 三个标签页：聊天、联系人、我的 — "我的"标签页还会展示"最近链"视图和 Agent Network（家庭节点两引擎状态的只读镜像）。
+- 标签页：聊天、收件箱、我的 — "我的"还包含最近链、浏览器（Phase 45C）和设置。
 - **原生 WebRTC 语音通话** — 绑定的 EnvoyGo 用户可以与其他 EnvoyGo 手机或 Social/桌面用户进行实时语音通话；媒体为点对点传输，家庭节点仅做信令。
 - 远程终端访问家庭节点。
 - 自动重连，多传输方式回退。
 - 安全会话令牌存储（iOS Keychain / Android EncryptedSharedPreferences）。
 
 **配对：** 扫描桌面社交 UI 的二维码 → 即时连接。详见 [`docs/flutter-thin-client-design.md`](docs/flutter-thin-client-design.md)。
+
+### Capacitor（`apps/mobile/`）— 仅作备份
+
+Phase 11 实验：在 Capacitor WebView 中运行完整节点。**不是产品移动应用**，后续可能删除。新的移动功能请优先做 EnvoyGo。
 
 ---
 
@@ -713,10 +710,10 @@ EnvoyMesh/
 │   ├── node/        # 本地 Envoy 运行时（CLI、网络、WebSocket API）
 │   ├── relay/       # 中继节点二进制（轻量：连通性 + 查找，无 LLM）
 │   ├── tauri/       # 原生桌面窗口（社交应用 + 节点）
-│   ├── social/      # 社交/聊天 UI（Vite + React）
-│   ├── mobile/      # Capacitor iOS/Android（完整节点）
-│   └── envoygo/     # Flutter 轻客户端（远程访问）
-├── packages/        # 构建模块：协议、身份、绑定、网络、保险箱、RAG、模型、kb-obsidian、local-store、openclaw-runtime、mobile-identity、mobile-node、mobile-storage、mobile-vault...
+│   ├── social/      # 社交/聊天 UI（Vite + React）— 桌面
+│   ├── envoygo/     # ★ 产品移动应用（Flutter 轻客户端）
+│   └── mobile/      # 仅备份 — Capacitor 实验（可能移除）
+├── packages/        # 构建模块：…；mobile-* 属 Capacitor 备份路径
 ├── docs/            # 设计文档、安全模型、实施计划
 ├── OpenClawExtension/  # OpenClaw 集成
 ├── QuickStart.md    # 分步指南

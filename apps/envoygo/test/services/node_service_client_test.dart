@@ -537,4 +537,75 @@ void main() {
       await callFuture;
     });
   });
+
+  group('NodeServiceClient libraryRead (45C)', () {
+    test('sends libraryRead with targetOwnerId + path', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture = client.libraryRead(
+        targetOwnerId: 'envoy:owner:alice',
+        path: 'hello.md',
+      );
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'libraryRead');
+      expect(sent['params'], {
+        'targetOwnerId': 'envoy:owner:alice',
+        'path': 'hello.md',
+      });
+
+      mock.simulateMessage({
+        'id': sent['id'],
+        'result': {
+          'peerOwnerId': 'envoy:owner:alice',
+          'libp2pPeerId': '12D3KooAlice',
+          'status': 'ok',
+          'body': '# Hello',
+          'contentType': 'text/markdown',
+          'contentHash': 'abc',
+          'byteLength': 7,
+          'etag': 'abcdef0123456789',
+          'latencyMs': 42,
+        },
+      });
+
+      final result = await callFuture;
+      expect(result.status, 'ok');
+      expect(result.body, '# Hello');
+      expect(result.contentType, 'text/markdown');
+      expect(result.etag, 'abcdef0123456789');
+    });
+
+    test('forwards range and ifNoneMatch', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture = client.libraryRead(
+        targetOwnerId: 'envoy:owner:alice',
+        path: 'big.bin',
+        range: {'start': 0, 'end': 9},
+        ifNoneMatch: 'etag99',
+      );
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['params']['range'], {'start': 0, 'end': 9});
+      expect(sent['params']['ifNoneMatch'], 'etag99');
+
+      mock.simulateMessage({
+        'id': sent['id'],
+        'result': {
+          'peerOwnerId': 'envoy:owner:alice',
+          'libp2pPeerId': '12D3',
+          'status': 'ok',
+          'body': '',
+          'contentType': 'application/octet-stream',
+          'latencyMs': 1,
+        },
+      });
+      await callFuture;
+    });
+  });
 }

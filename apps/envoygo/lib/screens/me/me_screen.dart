@@ -2,15 +2,16 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../settings/ai_engine_settings_screen.dart';
-import '../settings/ai_model_settings_screen.dart';
 import '../../models/stored_node.dart';
 import '../../providers/node_provider.dart';
 import '../../widgets/ai_engine_section.dart';
 import '../../widgets/connection_indicator.dart';
-import '../chains/recent_chains_screen.dart';
+import '../browser/browser_screen.dart';
 import '../chains/active_chains_screen.dart';
+import '../chains/recent_chains_screen.dart';
 import '../pairing/pairing_scan_screen.dart';
+import '../settings/ai_engine_settings_screen.dart';
+import '../settings/ai_model_settings_screen.dart';
 import 'node_switcher_sheet.dart';
 
 /// Profile + node management screen.
@@ -219,6 +220,29 @@ class MeScreen extends ConsumerWidget {
           ),
         ],
         const SizedBox(height: 16),
+
+        // Browser (Phase 45C — mesh web content via home libraryRead).
+        if (nodeState.activeNode != null) ...[
+          const _SectionHeader(title: 'Browser'),
+          Card(
+            child: ListTile(
+              leading: const Icon(Icons.language),
+              title: const Text('Browser'),
+              subtitle: const Text(
+                'Open envoy:// pages served by bonded contacts (via home)',
+              ),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                Navigator.of(context).push(
+                  MaterialPageRoute(
+                    builder: (_) => const BrowserScreen(),
+                  ),
+                );
+              },
+            ),
+          ),
+          const SizedBox(height: 16),
+        ],
 
         // AI Engine (Phase 32 mirror + Phase EnvoyGo settings slice 2).
         // Tapping the section navigates to the AI Engine settings screen

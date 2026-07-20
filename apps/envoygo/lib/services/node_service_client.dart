@@ -1,10 +1,11 @@
 import 'dart:async';
 
-import '../models/chain_report.dart';
 import '../models/chain_active.dart';
+import '../models/chain_report.dart';
 import '../models/chat_message.dart';
 import '../models/chat_room.dart';
 import '../models/contact.dart';
+import '../models/library_read.dart';
 import '../models/terminal_session.dart';
 import 'home_remote_client.dart';
 
@@ -178,6 +179,29 @@ class NodeServiceClient {
     return await _client.call('readLibraryItemContent', {
       'relativePath': relativePath,
     }) as Map<String, dynamic>;
+  }
+
+  /// Phase 45C — browse mesh web content via home `libraryRead`.
+  ///
+  /// EnvoyGo is a thin client: the home node dials the target owner using
+  /// the home's bonds. The phone never sends `library.read` envelopes itself.
+  Future<LibraryReadResult> libraryRead({
+    required String targetOwnerId,
+    required String path,
+    Map<String, int>? range,
+    String? ifNoneMatch,
+    int? timeoutMs,
+  }) async {
+    final params = <String, dynamic>{
+      'targetOwnerId': targetOwnerId,
+      'path': path,
+      if (range != null) 'range': range,
+      if (ifNoneMatch != null) 'ifNoneMatch': ifNoneMatch,
+      if (timeoutMs != null) 'timeoutMs': timeoutMs,
+    };
+    final result =
+        await _client.call('libraryRead', params) as Map<String, dynamic>;
+    return LibraryReadResult.fromJson(result);
   }
 
   /// Upload a file attachment to the vault and return its metadata (Phase 37).

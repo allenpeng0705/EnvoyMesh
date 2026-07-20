@@ -1817,9 +1817,11 @@ Tasks:
 
 ---
 
-## Phase 11: Mobile Social App & Mobile Node (Capacitor)
+## Phase 11: Mobile Social App & Mobile Node (Capacitor) — **BACKUP / LEGACY**
 
-**Goal:** Create a mobile-native EnvoyMesh app (iOS + Android) using Capacitor.js. The Social UI (React/Vite SPA) and Node runtime run **in-process** within a single WebView — no child process, no WebSocket server, direct JS function calls between UI and node. **Transport:** outbound fleet-relay WebSocket (`/ws/client` on the relay binary) for framed envelopes, plus **optional** in-browser libp2p (WebSocket + DHT client + circuit relay) for mesh features — not TCP/QUIC listeners.
+> **Status (2026-07-20):** This Capacitor path (`apps/mobile/` + `packages/mobile-*`) is a **backup experiment**, not the product mobile app. **EnvoyGo** (`apps/envoygo/`, Phase 31+) is the product phone client. New mobile features (including Phase 45C Browser) go to EnvoyGo. Capacitor may be removed later; keep this section for historical reference only.
+
+**Original goal:** Create a mobile-native EnvoyMesh app (iOS + Android) using Capacitor.js. The Social UI (React/Vite SPA) and Node runtime run **in-process** within a single WebView — no child process, no WebSocket server, direct JS function calls between UI and node. **Transport:** outbound fleet-relay WebSocket (`/ws/client` on the relay binary) for framed envelopes, plus **optional** in-browser libp2p (WebSocket + DHT client + circuit relay) for mesh features — not TCP/QUIC listeners.
 
 ### Architecture
 
@@ -5930,15 +5932,21 @@ Prove the architecture end-to-end with the smallest possible surface. Manual fil
 - `[x]` Large file (>48 KiB) fetch via range assembly (`fetchLibraryContent`).
 - `[x]` Reload revalidates against `etag` (`not_modified` keeps cached body).
 
-### 45C — EnvoyGo mobile Browser `[ ]`
+### 45C — EnvoyGo mobile Browser `[~]`
 
-- `[ ]` Browser screen in `apps/mobile/` (Flutter) mirroring Social desktop BrowserView.
-- `[ ]` `libraryRead` already added in 45A — wire to Flutter RPC.
-- `[ ]` Test mobile → home → mesh request path on real devices (paired mode).
-- `[ ]` Test mobile direct-mode (standalone) requires own bond with remote owner — document clearly.
-- `[ ]` Mobile bookmark sync via existing owner-device sync.
+Flutter thin client (`apps/envoygo`). Browsing always goes through the paired home node (home holds bonds + mesh routes). Capacitor `apps/mobile` is out of scope for 45C.
 
-**Exit criteria (45C):** Scenario 1 works on a real phone (both paired and standalone modes).
+- `[x]` Browser screen in `apps/envoygo/` (address bar + render; Me-tab entry).
+- `[x]` `NodeServiceClient.libraryRead` → home JSON-RPC `libraryRead`.
+- `[x]` Unit tests for envoy URL parse + RPC wrapper + range fetch helper + Browser widget tests.
+- `[x]` Document: EnvoyGo is paired-only for browse; standalone full-node browse is parked.
+- `[x]` Review hardening: preserve trailing `/` for `index.md`; navigate race guard; `contentHash` verify; `not_modified` restores cached body; tappable in-content `envoy://` links.
+- `[ ]` Real-device signoff: Scenario 1 on phone (paired).
+
+**Exit criteria (45C):**
+
+- `[x]` Browser reachable from EnvoyGo Me tab; `libraryRead` via home wired + unit-tested.
+- `[ ]` Scenario 1 works on a real phone (paired mode).
 
 ### 45D — Authoring UX (full Step 1) `[ ]`
 
@@ -5990,7 +5998,7 @@ See the design doc §12 for the full file-by-file change map per sub-phase. High
 - **Social UI (45A):** `apps/social/src/components/views/BrowserView.tsx` (new) + sub-components; `apps/social/src/lib/envoy-url.ts` (new).
 - **Tests (45A):** four new test files across `packages/api/test/`, `apps/node/test/`, `apps/social/test/e2e/`.
 - **45B:** `browser-history-store.ts`, `browser-bookmark-store.ts`, `library-read-fetch.ts` (new); `ifNoneMatch`/`not_modified` in protocol + api; range/`too_large` polish in `library-read-inbound.ts`.
-- **45C:** Flutter Browser screen in `apps/mobile/`.
+- **45C:** EnvoyGo Flutter Browser screen + `NodeServiceClient.libraryRead` (thin client via home).
 - **45D:** `BrowserAuthorView.tsx`, `MarkdownEditor.tsx`, `VisibilitySelector.tsx` (new); extend `ContactProfilePanel.tsx`, `AgentCardSchema`.
 
 ### Test Plan (Phase 45)
@@ -6020,7 +6028,8 @@ See design doc §11 for the full list of 10 open questions. None block Phase 45A
 
 | Date | Change |
 |------|--------|
-| 2026-07-20 | **Phase 45B shipped (+ review fixes).** Browser polish: back/forward/reload, per-owner bookmarks + recent autocomplete, range auto-chunk, `ifNoneMatch`/`not_modified`. Review fixes before commit: capped range/binary bodies at 40 KiB (base64 envelope budget), contacts visibility deny-by-default when `contactIds` missing, past-EOF ranges return empty (no phantom byte), navigate in-flight guard, owner-scoped recent history. Playwright scenarios 6 & 8 enabled. |
+| 2026-07-20 | **Docs: EnvoyGo is the product mobile app; Capacitor `apps/mobile` is backup/legacy.** Updated CLAUDE.md / AGENTS.md, README, Phase 11 banner, `.cursor/rules/mobile-app.mdc`, and `apps/mobile/README.md` so agents stop treating Capacitor as the phone app. |
+| 2026-07-20 | **Phase 45B shipped (+ review fixes).** Browser polish: back/forward/reload, per-owner bookmarks + recent autocomplete, range auto-chunk, `ifNoneMatch`/`not_modified`. Review fixes before commit: capped range/binary bodies at 40 KiB (base64 envelope budget), contacts visibility deny-by-default when `contactIds` missing, past-EOF ranges empty, navigate in-flight guard, owner-scoped recent history. Playwright scenarios 6 & 8 enabled. |
 | 2026-07-20 | **Phase 45A review fixes.** Anti-enumeration: policy deny always `not_found` (forbidden only on contacts ACL miss). Discovery: `wantsWebContent` merge + `matchWebContentEntries` + DHT `capability:envoymesh.web-content` when manifest has entries. Docs: manifest required for remote reads; file map trimmed to shipped surface; body cap 48 KiB. |
 | 2026-07-20 | **Phase 45A shipped + review fixes.** Vertical slice live: `envoy://` parser, `library.read` intent/handler, web content store, Browser view + Header nav, referred-bond policy, `index.md` root convention, contentHash verify in Browser, four test layers (Playwright `NodeSpawner` repaired). Docs aligned: `not_found` anti-enumeration, `vault.retrieve` capability, section cross-refs, checkboxes. |
 | 2026-07-20 | **Phase 45 — Web Content Browsing designed.** Added Phase 45 section (45A–45F sub-phases) covering URL-addressable content serving over the mesh. Full design in [web-content-browsing-design.md](./web-content-browsing-design.md). |
