@@ -11,6 +11,7 @@ import { SwipeBack } from "./components/SwipeBack.js";
 import { SetupView } from "./components/views/SetupView.js";
 import { ChatView } from "./components/views/ChatView.js";
 import { DiscoverView } from "./components/views/DiscoverView.js";
+import { BrowserView } from "./components/views/BrowserView.js";
 import { ProfileView } from "./components/views/ProfileView.js";
 import { SettingsView, type SettingsTabId } from "./components/views/SettingsView.js";
 import { LibraryView } from "./components/views/LibraryView.js";
@@ -34,7 +35,7 @@ import {
 import { WS_LOOPBACK_URL } from "@envoymesh/api";
 import type { HumanProfile, NodeConfig, NodeStatus } from "@envoymesh/api";
 
-export type ViewName = "chat" | "assistant" | "discover" | "library" | "chains" | "profile" | "settings";
+export type ViewName = "chat" | "assistant" | "discover" | "library" | "browser" | "chains" | "profile" | "settings";
 
 export type ChatPanelMode = "threads" | "inbox" | "terminals";
 
@@ -507,6 +508,13 @@ export function App() {
             {currentView === "library" && (
               <SwipeBack onSwipeBack={() => navigateTo("chat")}>
                 <LibraryView />
+              </SwipeBack>
+            )}
+            {/* Phase 45 — Web Content Browsing. URL-addressable content
+                from bonded contacts. See docs/web-content-browsing-design.md §4.7. */}
+            {currentView === "browser" && (
+              <SwipeBack onSwipeBack={() => navigateTo("chat")}>
+                <BrowserView />
               </SwipeBack>
             )}
             {currentView === "chains" && (

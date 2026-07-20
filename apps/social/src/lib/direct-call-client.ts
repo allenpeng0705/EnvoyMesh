@@ -339,6 +339,13 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.readLibraryItemContent(params);
   }
 
+  // Phase 45 — Web Content Browsing. Pulls raw content by URL path from
+  // a bonded contact's published web directory. Used by the Browser view.
+  // See docs/web-content-browsing-design.md §4.6.
+  async libraryRead(params: Parameters<NodeService["libraryRead"]>[0]) {
+    return this._ns.libraryRead(params);
+  }
+
   async listChatHistory(peerOwnerId: string, limit?: number) {
     return this._ns.listChatHistory(peerOwnerId, limit);
   }

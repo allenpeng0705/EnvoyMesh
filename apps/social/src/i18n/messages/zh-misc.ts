@@ -439,8 +439,7 @@ export const zhProfilePhotosMessages = {
 
 export const zhLibraryViewMessages = {
   title: "资料库",
-  hint:
-    "共享资料库中的文件 — 发布元数据以供发现、导出到 IPFS，或提供 P2P 分享。仅 .md / .txt / .json 支持资料库 RAG 全文搜索。",
+  hint:    "共享资料库中的文件 — 发布元数据以供发现、导出到 IPFS，或提供 P2P 分享。仅 .md / .txt / .json 支持资料库 RAG 全文搜索。",
   filterPlaceholder: "按名称或路径筛选…",
   filterAria: "筛选资料库",
   importFile: "导入文件…",
@@ -481,6 +480,29 @@ export const zhLibraryViewMessages = {
   ipfsMobileHeliaOn: "导出使用本设备上的进程内 Helia。如需通过 HTTP 验证 CID，请在设置中添加网关白名单。",
   ipfsDesktopHelia: "导出使用进程内 Helia — 无需 Kubo 守护进程。如需使用打包的 sidecar，请在设置中切换回 Kubo。",
   ipfsDesktopKubo: "在使用桌面应用打包版本时，IPFS 引擎会在首次使用时自动启动。",
+} as const;
+
+// Phase 45 — Web Content Browsing. Browser view UI strings.
+export const zhBrowserViewMessages = {
+  title: "浏览器",
+  addressBarPlaceholder: "envoy://{owner}/…",
+  go: "前往",
+  back: "后退",
+  forward: "前进",
+  reload: "刷新",
+  bookmark: "收藏此页",
+  loading: "加载中…",
+  statusOk: "已加载 — {mimeType}，{byteLength} 字节",
+  statusAccessDenied: "访问被拒",
+  statusNotFound: "未找到",
+  statusTooLarge: "文件过大（超过 48 KiB 上限；请使用范围请求）",
+  statusError: "网络错误 — {message}",
+  statusRateLimited: "频率受限 — 请稍后再试",
+  invalidUrl: "无效的 envoy URL：{message}",
+  openLink: "打开链接",
+  openImage: "打开图片",
+  download: "下载 {filename}",
+  bytesLoaded: "{loaded} / {total} 字节",
 } as const;
 
 export const zhFileShareMessages = {

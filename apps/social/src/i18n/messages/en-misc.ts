@@ -530,6 +530,30 @@ export const fileShareMessages = {
   pathUnavailable: "File path unavailable for this attachment",
 } as const;
 
+// Phase 45 — Web Content Browsing. UI strings for the Browser view.
+// See docs/web-content-browsing-design.md §4.7.
+export const browserViewMessages = {
+  title: "Browser",
+  addressBarPlaceholder: "envoy://{owner}/…",
+  go: "Go",
+  back: "Back",
+  forward: "Forward",
+  reload: "Reload",
+  bookmark: "Bookmark this page",
+  loading: "Loading…",
+  statusOk: "Loaded — {mimeType}, {byteLength} bytes",
+  statusAccessDenied: "Access denied",
+  statusNotFound: "Not found",
+  statusTooLarge: "File too large (over 48 KiB cap; use a range request)",
+  statusError: "Network error — {message}",
+  statusRateLimited: "Rate limited — try again in a minute",
+  invalidUrl: "Invalid envoy URL: {message}",
+  openLink: "Open link",
+  openImage: "Open image",
+  download: "Download {filename}",
+  bytesLoaded: "{loaded} / {total} bytes",
+} as const;
+
 export const privacySettingsMessages = {
   autonomy: {
     title: "Autonomy Controls",

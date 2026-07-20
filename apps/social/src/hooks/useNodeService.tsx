@@ -34,6 +34,9 @@ import type {
   SendChatAttachmentResult,
   ReadLibraryItemContentParams,
   ReadLibraryItemContentResult,
+  // Phase 45 — Web Content Browsing.
+  LibraryReadParams,
+  LibraryReadResult,
   SendHelloOptions,
   ShareOffer,
   SocialIntroProposal,
@@ -187,6 +190,8 @@ export interface NodeServiceClient {
   sendAgentChat(targetOwnerId: string, text: string): Promise<SendChatResult>;
   sendChatAttachment(params: SendChatAttachmentParams): Promise<SendChatAttachmentResult>;
   readLibraryItemContent(params: ReadLibraryItemContentParams): Promise<ReadLibraryItemContentResult>;
+  // Phase 45 — Web Content Browsing. See docs/web-content-browsing-design.md §4.6.
+  libraryRead(params: LibraryReadParams): Promise<LibraryReadResult>;
   listChatHistory(peerOwnerId: string, limit?: number): Promise<ChatMessage[]>;
   listChatRooms(): Promise<ChatRoom[]>;
   createChatRoom(title: string, memberOwnerIds: string[]): Promise<ChatRoom>;
@@ -734,6 +739,12 @@ function createWsNodeServiceClient(
     async readLibraryItemContent(params: ReadLibraryItemContentParams) {
       return wsClient.rpc("readLibraryItemContent", params as unknown as Record<string, unknown>) as Promise<
         ReadLibraryItemContentResult
+      >;
+    },
+    // Phase 45 — Web Content Browsing. See docs/web-content-browsing-design.md §4.6.
+    async libraryRead(params: LibraryReadParams) {
+      return wsClient.rpc("libraryRead", params as unknown as Record<string, unknown>) as Promise<
+        LibraryReadResult
       >;
     },
     async listChatHistory(peerOwnerId: string, limit?: number) { return wsClient.rpc("listChatHistory", { peerOwnerId, limit }) as Promise<ChatMessage[]>; },

@@ -27,6 +27,7 @@ import {
   zhGazetteerMessages,
   zhProfilePhotosMessages,
   zhLibraryViewMessages,
+  zhBrowserViewMessages,
   zhFileShareMessages,
   zhAccountSettingsMessages,
   zhArtifactRendererMessages,
@@ -535,6 +536,7 @@ export const zh = mergeMessages(en, {
     },
   },
   library: zhLibraryViewMessages,
+  browser: zhBrowserViewMessages,
   chains: zhChainsMessages,
   workerCapability: {
     title: "代理工作方",
