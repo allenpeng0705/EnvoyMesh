@@ -485,6 +485,9 @@ export class PushNotificationService {
    *
    * Called by the chat delivery pipeline when the recipient's thin
    * client is not connected via WebSocket.
+   *
+   * Only `tokenType: "alert"` records are targeted — VoIP tokens use a
+   * different APNs topic and must not receive chat alerts.
    */
   async dispatchChatPush(params: {
     senderName: string;
@@ -497,7 +500,9 @@ export class PushNotificationService {
   }): Promise<void> {
     if (!this.initialized) return;
 
-    const tokens = this.store.listForOwner(params.targetOwnerId);
+    const tokens = this.store
+      .listForOwner(params.targetOwnerId)
+      .filter((r) => r.tokenType === "alert");
     if (tokens.length === 0) return;
 
     const title = params.senderName || "New message";
@@ -531,7 +536,9 @@ export class PushNotificationService {
   }): Promise<void> {
     if (!this.initialized) return;
 
-    const tokens = this.store.listForOwner(params.targetOwnerId);
+    const tokens = this.store
+      .listForOwner(params.targetOwnerId)
+      .filter((r) => r.tokenType === "alert");
     if (tokens.length === 0) return;
 
     for (const record of tokens) {
@@ -547,6 +554,51 @@ export class PushNotificationService {
           body: `${params.senderName} wants to connect`,
           data: { type: "bond_request" },
         });
+      }
+    }
+  }
+
+  /**
+   * Phase 45E — Dispatch an alert push for an inbound `feed.notify`.
+   *
+   * Targets `tokenType: "alert"` only. Payload carries `type: feed_notify`
+   * plus url/title so EnvoyGo can open Browser on tap.
+   */
+  async dispatchFeedPush(params: {
+    targetOwnerId: string;
+    title: string;
+    summary?: string;
+    url: string;
+    notificationId: string;
+    publisherOwnerId?: string;
+    kind?: string;
+  }): Promise<void> {
+    if (!this.initialized) return;
+
+    const tokens = this.store
+      .listForOwner(params.targetOwnerId)
+      .filter((r) => r.tokenType === "alert");
+    if (tokens.length === 0) return;
+
+    const title = params.title || "New published content";
+    const bodyRaw = params.summary?.trim() || params.url;
+    const body =
+      bodyRaw.length > 120 ? bodyRaw.substring(0, 117) + "..." : bodyRaw;
+
+    const data: Record<string, string> = {
+      type: "feed_notify",
+      url: params.url,
+      title: params.title,
+      notificationId: params.notificationId,
+    };
+    if (params.publisherOwnerId) data.publisherOwnerId = params.publisherOwnerId;
+    if (params.kind) data.kind = params.kind;
+
+    for (const record of tokens) {
+      if (record.platform === "ios") {
+        await sendApns(record.token, { title, body, data });
+      } else {
+        await sendFcm(record.token, { title, body, data });
       }
     }
   }

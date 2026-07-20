@@ -36,6 +36,7 @@ beforeEach(() => {
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: () => ({
     libraryRead,
+    publishWebContentEntry: vi.fn(),
   }),
   useIsInProcessMobileNode: () => false,
 }));

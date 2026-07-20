@@ -44,7 +44,7 @@ import {
   sendExpectReplyWithRetry,
 } from "./chat-outbound-deliver.js";
 import { deliverOutboundExpectReply } from "./mesh-outbound-helper.js";
-import { displayNameTopicFor, interestTopicFor } from "./capability-discovery.js";
+import { displayNameTopicFor, interestTopicFor, normalizeDiscoveryTopicQuery } from "./capability-discovery.js";
 import type { createNodeConfigStore } from "./node-config-store.js";
 import type { DiscoverySeedStore } from "./discovery-seed-store.js";
 import {
@@ -143,11 +143,17 @@ export class NodeDiscoveryRuntime {
         return this.searchByPeerId(query.peerId, maxResults);
       }
 
-      // 2. Explicit DHT capability topic(s) (Phase 15A / 17 geo)
+      // 2. Explicit DHT capability topic(s) (Phase 15A / 17 geo / 45E publish)
+      // Normalize free-text "By topic" queries: advertisers publish
+      // `interest:<slug>`; Social historically sent raw `music`. Accept both
+      // `music` and `interest:music` (and similarly for publish:/displayname:/…).
       const topicQueries = [
-        ...(query.topic?.trim() ? [query.topic.trim()] : []),
-        ...(query.topics ?? []).map((t) => t.trim()).filter(Boolean),
-      ];
+        ...(query.topic?.trim() ? [normalizeDiscoveryTopicQuery(query.topic.trim())] : []),
+        ...(query.topics ?? [])
+          .map((t) => t.trim())
+          .filter(Boolean)
+          .map((t) => normalizeDiscoveryTopicQuery(t)),
+      ].filter(Boolean);
       if (topicQueries.length > 0) {
         const results: PeerSearchResult[] = [];
         for (const topic of [...new Set(topicQueries)]) {

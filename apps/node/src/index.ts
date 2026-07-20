@@ -169,6 +169,7 @@ import { applyLanAutoBondAccept, evaluateLanAutoBondReceipt } from "./node-servi
 import { handleInboundTaskFeedback, handleInboundOfficialCredential } from "./reputation-inbound.js";
 import { handleInboundKnowledgeQuery } from "./knowledge-query-inbound.js";
 import { handleInboundLibraryRead } from "./library-read-inbound.js";
+import { handleInboundFeedNotify } from "./feed-notify-inbound.js";
 import { handleDaemonAgentCardInbound } from "./daemon-agent-card-inbound.js";
 import { handleDaemonTaskInbound } from "./daemon-task-inbound.js";
 import { handleInboundShareRequest, handleInboundShareAccept, resolveSenderOwnerId } from "./share-inbound.js";
@@ -1166,6 +1167,7 @@ async function handleInboundMeshMessage({
       {
         handleDaemonAgentCardInbound,
         getProfile: () => profile,
+        getProfileDir: () => args.profileDir,
         getTaskStore: () => taskStore,
         getTrustStore: () => trustStore,
         getAgentCardStore: () => agentCardStore,
@@ -1265,8 +1267,50 @@ async function handleInboundMeshMessage({
         remotePeerId,
         receivedAt,
         correlationId,
+        replyWithEnvelope: replyWithEnvelope as any,
       },
     );
+    return;
+  }
+
+  if (envelope.intent === "feed.notify") {
+    // Phase 45E — bonded publish notify (metadata only; open via library.read).
+    const human = await nodeService.getHumanProfile().catch(() => undefined);
+    const localInterests = [
+      ...(human?.hobbies ?? []),
+      ...(human?.knowledge ?? []),
+    ];
+    const result = await handleInboundFeedNotify({
+      envelope,
+      profileDir: args.profileDir,
+      remotePeerId,
+      trustStore,
+      peerDirectoryStore,
+      taskStore,
+      localInterests,
+      emit: (item) => {
+        if (nodeService instanceof NodeServiceImpl) {
+          nodeService.storeFeedNotification(item);
+        }
+      },
+    });
+    if (!result.ok && !result.skipped) {
+      console.warn(`[rejected feed.notify] ${result.reason}`);
+    }
+    if (result.ok) {
+      const localOwnerId = profile.owner.ownerId;
+      void pushNotificationService
+        .dispatchFeedPush({
+          targetOwnerId: localOwnerId,
+          title: result.item.title,
+          summary: result.item.summary,
+          url: result.item.url,
+          notificationId: result.item.id,
+          publisherOwnerId: result.item.publisherOwnerId,
+          kind: result.item.kind,
+        })
+        .catch(() => {});
+    }
     return;
   }
 
@@ -3277,6 +3321,7 @@ modeTransitionTimer = setInterval(() => {
 nodeService.on("hello:request", (data) => wsServer.emitEvent("hello:request", data));
 nodeService.on("hello:response", (data) => wsServer.emitEvent("hello:response", data));
 nodeService.on("social.intro:propose", (data) => wsServer.emitEvent("social.intro:propose", data));
+nodeService.on("feed:notify", (data) => wsServer.emitEvent("feed:notify", data));
 nodeService.on("share:offered", (data) => wsServer.emitEvent("share:offered", data));
 nodeService.on("share:accepted", (data) => wsServer.emitEvent("share:accepted", data));
 nodeService.on("share:declined", (data) => wsServer.emitEvent("share:declined", data));

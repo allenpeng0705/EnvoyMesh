@@ -16,6 +16,9 @@ import {
   type EnvoyEnvelope,
 } from "@envoymesh/protocol";
 import type { BridgeIdentity } from "./bridge/pipe.js";
+import { interestTopicFor, publishTopicFor } from "./capability-discovery.js";
+import { createWebContentStore } from "./web-content-store.js";
+import { join } from "node:path";
 
 export type AgentCardInboundResult =
   | { ok: true; action: "cached"; ownerId: string; card: AgentCard }
@@ -24,6 +27,36 @@ export type AgentCardInboundResult =
 
 function resolveSenderOwnerId(envelope: EnvoyEnvelope): string | undefined {
   return envelope.agentCredential?.ownerId;
+}
+
+async function buildPublicTopics(input: {
+  hobbies?: readonly string[] | null;
+  knowledge?: readonly string[] | null;
+  profileDir?: string;
+}): Promise<string[]> {
+  const topics: string[] = [];
+  const seen = new Set<string>();
+  const add = (t: string) => {
+    if (!t || seen.has(t)) return;
+    seen.add(t);
+    topics.push(t);
+  };
+  for (const raw of [...(input.hobbies ?? []), ...(input.knowledge ?? [])]) {
+    add(interestTopicFor(raw));
+  }
+  if (input.profileDir) {
+    try {
+      const manifest = await createWebContentStore(join(input.profileDir, "web")).load();
+      for (const entry of manifest.entries) {
+        for (const tag of entry.tags ?? []) {
+          add(publishTopicFor(tag));
+        }
+      }
+    } catch {
+      // ignore — card still works without web tags
+    }
+  }
+  return topics.slice(0, 32);
 }
 
 export async function handleInboundAgentCardIntent(input: {
@@ -37,6 +70,8 @@ export async function handleInboundAgentCardIntent(input: {
   agentCardStore: AgentCardStore;
   humanProfileStore: HumanProfileStore;
   bridgeIdentity: BridgeIdentity;
+  /** Optional profile dir — used to load published web tags for publicTopics (45E). */
+  profileDir?: string;
 }): Promise<AgentCardInboundResult> {
   const {
     envelope,
@@ -101,12 +136,19 @@ export async function handleInboundAgentCardIntent(input: {
   if (envelope.intent === "agent.card.request") {
     parseAgentCardRequestPayload(envelope.payload);
     const human = await humanProfileStore.loadHumanProfile().catch(() => null);
+    const ownerId = profile.owner.ownerId;
+    const publicTopics = await buildPublicTopics({
+      hobbies: human?.hobbies,
+      knowledge: human?.knowledge,
+      profileDir: input.profileDir,
+    });
     const card = createAgentCard({
-      ownerId: profile.owner.ownerId,
-      displayName: human?.displayName ?? profile.owner.ownerId,
+      ownerId,
+      displayName: human?.displayName ?? ownerId,
       nodeProfile: profile.deviceCertificate.deviceProfile,
       capabilities: profile.deviceCertificate.capabilities ?? ["message.send", "task.execute"],
-      publicTopics: [],
+      publicTopics,
+      webContentRoot: `envoy://${ownerId}/`,
     });
     return {
       ok: true,

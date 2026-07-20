@@ -18,7 +18,10 @@ final _envoyLinkRe = RegExp(
 );
 
 class BrowserScreen extends ConsumerStatefulWidget {
-  const BrowserScreen({super.key});
+  /// Optional deep-link URL (e.g. from Inbox `feed.notify` → Open in Browser).
+  final String? initialUrl;
+
+  const BrowserScreen({super.key, this.initialUrl});
 
   @override
   ConsumerState<BrowserScreen> createState() => _BrowserScreenState();
@@ -40,6 +43,19 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
   String? _statusHint;
   final _cache = <String, BrowserFetchCacheEntry>{};
   final _linkRecognizers = <TapGestureRecognizer>[];
+
+  @override
+  void initState() {
+    super.initState();
+    final initial = widget.initialUrl?.trim();
+    if (initial != null && initial.isNotEmpty) {
+      _urlController.text = initial;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _navigate(initial);
+      });
+    }
+  }
 
   @override
   void dispose() {

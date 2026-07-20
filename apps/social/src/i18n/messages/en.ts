@@ -515,8 +515,10 @@ export const en = {
         "Search by username or display name, interest or capability topic, or location. Set country and city in Profile → About for place search.",
       byName: "By name",
       byTopic: "By topic",
+      byPublish: "By published topic",
       namePlaceholder: "Name, username, interest, or peer ID",
       topicPlaceholder: "Interest or capability topic (e.g. music)",
+      publishPlaceholder: "What people publish about (e.g. photography)",
       tryTopic: "Try a topic",
       multihopTitle: "Search through friends",
       multihopLede: "Ask your bonded contacts to help find someone up to two hops away.",
@@ -534,6 +536,8 @@ export const en = {
       searchingFor: "Searching for \"{query}\"",
       widerTopicFallback:
         "Search the public mesh for peers advertising a topic. Requires wider network settings in Settings → Network.",
+      widerPublishFallback:
+        "Find people who publish web posts tagged with a topic (DHT publish:<slug>).",
       widerSearchTypeLabel: "Search type",
       byLocation: "By place",
       geoSameCountry: "Same country",

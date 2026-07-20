@@ -33,7 +33,18 @@ import {
 } from "@envoymesh/api";
 
 export type { DiscoverPath } from "../../lib/discover-default-path.js";
-type WiderSearchMode = "name" | "topic" | "place";
+type WiderSearchMode = "name" | "topic" | "publish" | "place";
+
+/** Normalize free text to a DHT `publish:<slug>` topic (Phase 45E). */
+function publishSearchTopic(raw: string): string {
+  const trimmed = raw.trim();
+  if (trimmed.startsWith("publish:")) return trimmed.toLowerCase();
+  const slug = trimmed
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return slug ? `publish:${slug}` : "";
+}
 type LookupPanelMode = "network" | "paste";
 
 export function SearchView({ embedded = false }: { embedded?: boolean }) {
@@ -413,7 +424,13 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
           results = await nodeService.searchPeers({ peerId: parsed.peerId });
         }
       } else if (widerMode === "topic") {
-        results = await nodeService.searchPeers({ topic: query.toLowerCase() });
+        // Node normalizes bare text → interest:<slug>; pass as-is.
+        results = await nodeService.searchPeers({ topic: query.trim() });
+      } else if (widerMode === "publish") {
+        const topic = publishSearchTopic(query);
+        results = topic
+          ? await nodeService.searchPeers({ topic, maxResults: 20 })
+          : [];
       } else if (looksLikePeerId(query)) {
         results = await nodeService.searchPeers({ peerId: query.trim() });
       } else {
@@ -585,6 +602,13 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
               </button>
               <button
                 type="button"
+                className={widerMode === "publish" ? "active" : ""}
+                onClick={() => setWiderMode("publish")}
+              >
+                {t("discover.search.byPublish")}
+              </button>
+              <button
+                type="button"
                 className={widerMode === "place" ? "active" : ""}
                 onClick={() => setWiderMode("place")}
               >
@@ -612,6 +636,11 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
                 {widerTopicHint({ ...emptyHintContext, path: "wider" }, t) ?? t("discover.search.widerTopicFallback")}
               </p>
             ) : null}
+            {widerMode === "publish" && !networkQuery ? (
+              <p className="discover-status discover-status--muted">
+                {t("discover.search.widerPublishFallback")}
+              </p>
+            ) : null}
           </>
         )}
 
@@ -625,7 +654,9 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
                   ? t("discover.paste.placeholder")
                   : widerMode === "topic"
                     ? t("discover.search.topicPlaceholder")
-                    : t("discover.search.namePlaceholder")
+                    : widerMode === "publish"
+                      ? t("discover.search.publishPlaceholder")
+                      : t("discover.search.namePlaceholder")
               }
               value={query}
               onChange={(e) => setQuery(e.target.value)}

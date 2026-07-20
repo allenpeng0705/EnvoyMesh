@@ -180,8 +180,40 @@ describe("backfillBundledSponsorPeerAddresses", () => {
     );
     expect(mockPeerDirectoryStore.mergeListenAddrsForPeerId).toHaveBeenCalledWith(
       SPONSOR_PEER_ID,
+      // WAN backfill strips RFC1918 — circuit only.
+      [SPONSOR_CIRCUIT_ADDR],
+    );
+  });
+
+  it("keeps LAN addrs when includePrivateLan is true (lan-fast fleet)", async () => {
+    const mockPeerDirectoryStore = {
+      mergeListenAddrsForPeerId: vi.fn().mockResolvedValue(undefined),
+    };
+    await backfillBundledSponsorPeerAddresses(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      mockPeerDirectoryStore as any,
+      tmpDir,
+      { includePrivateLan: true },
+    );
+    expect(mockPeerDirectoryStore.mergeListenAddrsForPeerId).toHaveBeenCalledWith(
+      SPONSOR_PEER_ID,
       [SPONSOR_LAN_ADDR, SPONSOR_CIRCUIT_ADDR],
     );
+  });
+
+  it("selectBundledSponsorBackfillAddrs drops private LAN by default", async () => {
+    const { selectBundledSponsorBackfillAddrs } = await import(
+      "../src/bundled-sponsor-friend-loader.js"
+    );
+    expect(
+      selectBundledSponsorBackfillAddrs(
+        [SPONSOR_CIRCUIT_ADDR],
+        [SPONSOR_LAN_ADDR, "/ip4/1.2.3.4/tcp/4001/p2p/12D3KooWRelay"],
+      ),
+    ).toEqual([
+      SPONSOR_CIRCUIT_ADDR,
+      "/ip4/1.2.3.4/tcp/4001/p2p/12D3KooWRelay",
+    ]);
   });
 
   it("is a no-op when the bundled config has no contactUri", async () => {

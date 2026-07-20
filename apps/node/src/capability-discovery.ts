@@ -127,6 +127,82 @@ export function buildProfileDiscoveryTopics(input: {
 }
 
 /**
+ * Canonical topic string for a published web-content tag: `publish:<slug>`.
+ * Returns "" if the slug is empty.
+ * Idempotent: already-normalized `publish:` topics pass through unchanged.
+ */
+export function publishTopicFor(rawTag: string): string {
+  const trimmed = rawTag.trim();
+  const withoutPrefix = trimmed.startsWith("publish:")
+    ? trimmed.slice("publish:".length)
+    : trimmed;
+  const slug = slugifyTopic(withoutPrefix);
+  return slug ? `publish:${slug}` : "";
+}
+
+/**
+ * Normalize a Discover "By topic" / explicit `topic` query to the on-wire
+ * DHT key. Known prefixes pass through (idempotent). Bare free text maps
+ * to `interest:<slug>` so UI searches match advertised interest topics.
+ */
+export function normalizeDiscoveryTopicQuery(raw: string): string {
+  const t = raw.trim();
+  if (!t) return "";
+  const lower = t.toLowerCase();
+  if (lower.startsWith("interest:")) {
+    return interestTopicFor(t.slice("interest:".length)) || t.toLowerCase();
+  }
+  if (lower.startsWith("displayname:")) {
+    return displayNameTopicFor(t.slice("displayname:".length)) || t.toLowerCase();
+  }
+  if (lower.startsWith("publish:")) {
+    return publishTopicFor(t);
+  }
+  if (
+    lower.startsWith("username:") ||
+    lower.startsWith("capability:") ||
+    lower.startsWith("geo:")
+  ) {
+    return t;
+  }
+  return interestTopicFor(t);
+}
+
+/**
+ * Build DHT publish topics from web-content entry tags (capped).
+ */
+export function buildPublishTopics(
+  tags: readonly string[] | undefined | null,
+  maxTopics = 16,
+): string[] {
+  if (!tags?.length) return [];
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const tag of tags) {
+    const topic = publishTopicFor(tag);
+    if (!topic || seen.has(topic)) continue;
+    seen.add(topic);
+    out.push(topic);
+    if (out.length >= maxTopics) break;
+  }
+  return out;
+}
+
+/**
+ * Aggregate unique publish topics from a web-content manifest (top N tags by first-seen order).
+ */
+export function buildPublishTopicsFromManifest(
+  entries: readonly { tags?: readonly string[] | null }[],
+  maxTopics = 16,
+): string[] {
+  const all: string[] = [];
+  for (const entry of entries) {
+    if (entry.tags?.length) all.push(...entry.tags);
+  }
+  return buildPublishTopics(all, maxTopics);
+}
+
+/**
  * Phase 45 — DHT topic for nodes that serve web content.
  * Advertised when `web/web-content.json` has at least one entry.
  * Searchers look up `capability:envoymesh.web-content` via provide/find.
@@ -137,6 +213,21 @@ export const WEB_CONTENT_DHT_TOPIC = "capability:envoymesh.web-content";
 export function withWebContentDiscoveryTopic(topics: readonly string[]): string[] {
   if (topics.includes(WEB_CONTENT_DHT_TOPIC)) return [...topics];
   return [...topics, WEB_CONTENT_DHT_TOPIC];
+}
+
+/** Append publish:<slug> topics (deduped). */
+export function withPublishDiscoveryTopics(
+  topics: readonly string[],
+  publishTopics: readonly string[],
+): string[] {
+  const out = [...topics];
+  const seen = new Set(topics);
+  for (const t of publishTopics) {
+    if (!t || seen.has(t)) continue;
+    seen.add(t);
+    out.push(t);
+  }
+  return out;
 }
 
 export interface CapabilityDiscoveryCycleOptions {

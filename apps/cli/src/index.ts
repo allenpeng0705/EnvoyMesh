@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { resolve, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -456,6 +456,7 @@ Workspace:
   clean              Clean build outputs
   social [args]      Run the Social web app
   tauri [args]       Run the Tauri desktop app
+  init blog|photos    Scaffold web/blog/ or web/photos/wall/ under the profile dir
 
 Node operations:
   identity / id      Show local identity
@@ -473,6 +474,48 @@ Examples:
   envoymesh doctor
   envoymesh chat envoy:owner:abc "hello"
 `;
+
+
+async function initTemplate(args: string[]): Promise<number> {
+  const template = (args[0] ?? "").trim();
+  if (template !== "blog" && template !== "photos") {
+    console.log("Usage: envoymesh init <template>");
+    console.log("  blog    — scaffold web/blog/ with index + posts/");
+    console.log("  photos  — scaffold web/photos/wall/ PhotoWall layout");
+    return 1;
+  }
+  const profileDir = process.env.ENVOYMESH_PROFILE_DIR?.trim()
+    || join(WS_ROOT, "data", "default");
+  const webDir = join(profileDir, "web");
+  const manifestPath = join(webDir, "web-content.json");
+  if (template === "blog") {
+    mkdirSync(join(webDir, "blog", "posts"), { recursive: true });
+    const indexPath = join(webDir, "blog", "index.md");
+    if (!existsSync(indexPath)) {
+      writeFileSync(indexPath, "# Blog\n\n_No posts yet. Use Social Browser → New Blog Post._\n", { mode: 0o600 });
+    }
+  } else {
+    mkdirSync(join(webDir, "photos", "wall"), { recursive: true });
+    const wallIndex = join(webDir, "photos", "wall", "index.md");
+    const rootIndex = join(webDir, "photos", "index.md");
+    if (!existsSync(wallIndex)) {
+      writeFileSync(wallIndex, "# PhotoWall — wall\n\n_No photos yet. Use Social Browser → New… → Photo._\n", { mode: 0o600 });
+    }
+    if (!existsSync(rootIndex)) {
+      writeFileSync(rootIndex, "# Photos\n\n- [wall](envoy://local/photos/wall/) (0 photos)\n", { mode: 0o600 });
+    }
+  }
+  if (!existsSync(manifestPath)) {
+    writeFileSync(
+      manifestPath,
+      JSON.stringify({ version: "0.1", entries: [] }, null, 2) + "\n",
+      { mode: 0o600 },
+    );
+  }
+  console.log(`Scaffolded ${template} template under ${webDir}`);
+  console.log("Publish from Social → Browser → New…");
+  return 0;
+}
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -532,6 +575,8 @@ async function main(): Promise<void> {
       await agent(rest); break;
     case "vault":
       await vault(rest); break;
+    case "init":
+      process.exit(await initTemplate(rest));
     case "version": case "--version": case "-v":
       await version(); break;
     case "help": case "--help": case "-h":

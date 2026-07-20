@@ -346,6 +346,18 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.libraryRead(params);
   }
 
+  async publishWebContentEntry(params: Parameters<NodeService["publishWebContentEntry"]>[0]) {
+    return this._ns.publishWebContentEntry(params);
+  }
+
+  async listFeedNotifications() {
+    return this._ns.listFeedNotifications();
+  }
+
+  async dismissFeedNotification(id: string) {
+    return this._ns.dismissFeedNotification(id);
+  }
+
   async listChatHistory(peerOwnerId: string, limit?: number) {
     return this._ns.listChatHistory(peerOwnerId, limit);
   }

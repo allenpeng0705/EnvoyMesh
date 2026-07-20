@@ -32,6 +32,7 @@ export async function handleDaemonAgentCardInbound(input: {
   bridgeIdentity: BridgeIdentity | null;
   mesh: EnvoyMesh;
   nodeService?: NodeServiceImpl | null;
+  profileDir?: string;
 }): Promise<DaemonAgentCardInboundResult> {
   const { envelope } = input;
   if (envelope.intent !== "agent.card.request" && envelope.intent !== "agent.card.response") {
@@ -54,6 +55,7 @@ export async function handleDaemonAgentCardInbound(input: {
     agentCardStore: input.agentCardStore,
     humanProfileStore: input.humanProfileStore,
     bridgeIdentity: input.bridgeIdentity,
+    profileDir: input.profileDir,
   });
 
   if (!cardResult.ok) {

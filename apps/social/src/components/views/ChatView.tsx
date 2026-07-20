@@ -128,6 +128,7 @@ export function ChatView({
           aria-pressed={panelMode === "inbox"}
           className={`${panelMode === "inbox" ? "active" : ""}${inboxActivityCount > 0 ? " has-inbox-tab" : ""}`}
           onClick={() => onPanelModeChange("inbox")}
+          data-testid="chat-tab-inbox"
         >
           {t("chat.inbox")}
           {inboxActivityCount > 0 ? (

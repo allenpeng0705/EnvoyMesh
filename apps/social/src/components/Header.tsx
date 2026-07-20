@@ -103,6 +103,7 @@ export function Header({
           onClick={() => onNavigate("chat")}
           aria-current={currentView === "chat" || currentView === "assistant" ? "page" : undefined}
           aria-label={chatAriaLabel}
+          data-testid="nav-chat"
         >
           {t("nav.chat")}
           {inboxActivityCount > 0 && (

@@ -376,6 +376,15 @@ export function App() {
     setCurrentView(view);
     if (view === "chat") setChatPanelMode("threads");
   };
+
+  useEffect(() => {
+    const onOpenBrowser = () => {
+      navigateTo("browser");
+    };
+    window.addEventListener("envoymesh:open-browser", onOpenBrowser);
+    return () => window.removeEventListener("envoymesh:open-browser", onOpenBrowser);
+  }, []);
+
   const [chatSelectedContact, setChatSelectedContact] = useState<string | null>(null);
   const [chatPanelMode, setChatPanelMode] = useState<ChatPanelMode>("threads");
   const [pairingOpen, setPairingOpen] = useState(false);

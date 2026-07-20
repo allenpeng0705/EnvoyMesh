@@ -8,6 +8,7 @@ import {
   parseSetupSponsorFriendConfig,
   type SetupSponsorFriendConfig,
 } from "@envoymesh/api";
+import { isPrivateLanTcpDialHint } from "@envoymesh/network";
 import type { LocalPeerDirectoryStore } from "@envoymesh/local-store";
 
 const BUNDLED_FILENAME = "bundled-sponsor-friend.json";
@@ -151,6 +152,35 @@ export async function loadBundledSponsorFriendParsed(
 }
 
 /**
+ * Addresses safe to merge into the peer directory for **WAN** installer
+ * packages. Keeps circuits + publicly routable TCP; drops RFC1918 /
+ * link-local / CGNAT so `pickAddressFilterForPeer` does not see stale
+ * home-LAN addrs and force `"all"` dial order on a remote network.
+ *
+ * Pass `includePrivateLan: true` only for explicit lan-fast / same-LAN
+ * fleet builds that intentionally ship LAN dial targets.
+ */
+export function selectBundledSponsorBackfillAddrs(
+  multiaddrs: readonly string[],
+  bootstrapPeers: readonly string[],
+  opts?: { includePrivateLan?: boolean },
+): string[] {
+  const includePrivateLan = opts?.includePrivateLan === true;
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const raw of [...multiaddrs, ...bootstrapPeers]) {
+    const addr = raw.trim();
+    if (!addr || seen.has(addr)) continue;
+    // Bare peer ids (no /ip4/…) are not dial hints — skip.
+    if (!addr.includes("/")) continue;
+    if (!includePrivateLan && isPrivateLanTcpDialHint(addr)) continue;
+    seen.add(addr);
+    out.push(addr);
+  }
+  return out;
+}
+
+/**
  * Backfill the bundled sponsor's known multiaddrs into the local peer
  * directory record. The bundled contactUri is the source of truth for
  * the sponsor's libp2p reachability, but on a fresh install the peer
@@ -165,20 +195,26 @@ export async function loadBundledSponsorFriendParsed(
  * identity read is safe. Best-effort: errors (peer dir not ready,
  * malformed bundled config) are silently caught so a missing bundled
  * config never breaks the surrounding search / auto-bond flow.
+ *
+ * By default RFC1918 bootstrap peers from the join token are **not**
+ * merged (WAN production packages). Set `includePrivateLan: true` for
+ * lan-fast fleet installs.
  */
 export async function backfillBundledSponsorPeerAddresses(
   peerDirectoryStore: LocalPeerDirectoryStore,
   nodeBundleDir?: string,
+  opts?: { includePrivateLan?: boolean },
 ): Promise<void> {
   const parsed = await loadBundledSponsorFriendParsed(nodeBundleDir);
   if (!parsed) return;
   const peerId = parsed.link.peerId;
   if (!peerId || (parsed.multiaddrs.length === 0 && parsed.bootstrapPeers.length === 0)) return;
-  // Merge both targetMultiaddrs and bootstrapPeers into the peer
-  // directory.  targetMultiaddrs has the sponsor's circuit/WAN addrs;
-  // bootstrapPeers has the sponsor's direct LAN/WAN addrs that were
-  // stripped by the wan-public filter at invite creation time.
-  const allAddrs = [...parsed.multiaddrs, ...parsed.bootstrapPeers];
+  const allAddrs = selectBundledSponsorBackfillAddrs(
+    parsed.multiaddrs,
+    parsed.bootstrapPeers,
+    opts,
+  );
+  if (allAddrs.length === 0) return;
   try {
     await peerDirectoryStore.mergeListenAddrsForPeerId(
       peerId,

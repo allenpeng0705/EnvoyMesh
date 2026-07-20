@@ -322,6 +322,7 @@ export class WsServer {
       "hello:request",
       "hello:response",
       "social.intro:propose",
+      "feed:notify",
       "share:agent-proposed",
       "chat:message",
       "chat:delivered",

@@ -116,6 +116,30 @@ describe("bonds", () => {
     ).toEqual({ action: "allow", maxSensitivity: "friends" });
   });
 
+  it("allows referred peers to feed.notify and denies public strangers", () => {
+    expect(
+      evaluatePolicy({
+        peerId: "peer-a",
+        bondLevel: "referred",
+        intent: "feed.notify",
+      }),
+    ).toEqual({ action: "allow", maxSensitivity: "public" });
+    expect(
+      evaluatePolicy({
+        peerId: "peer-a",
+        bondLevel: "direct",
+        intent: "feed.notify",
+      }),
+    ).toEqual({ action: "allow", maxSensitivity: "friends" });
+    expect(
+      evaluatePolicy({
+        peerId: "peer-a",
+        bondLevel: "public",
+        intent: "feed.notify",
+      }),
+    ).toEqual({ action: "deny", reason: "public peers cannot use this intent" });
+  });
+
   it("denies blocked peers", () => {
     expect(
       evaluatePolicy({

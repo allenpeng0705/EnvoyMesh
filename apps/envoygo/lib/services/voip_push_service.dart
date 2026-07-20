@@ -93,17 +93,22 @@ class VoipPushService {
   Future<void> registerWithHomeNode(
     Future<dynamic> Function(String method,
             [Map<String, dynamic>? params])
-        callRpc,
-  ) async {
+        callRpc, {
+    String? ownerId,
+  }) async {
     if (!isSupported) return;
     final token = _voipToken;
     if (token == null || token.isEmpty) return;
     try {
-      await callRpc('registerPushToken', {
+      final params = <String, dynamic>{
         'platform': 'ios',
         'token': token,
         'tokenType': 'voip',
-      });
+      };
+      if (ownerId != null && ownerId.isNotEmpty) {
+        params['ownerId'] = ownerId;
+      }
+      await callRpc('registerPushToken', params);
     } catch (_) {
       // Best-effort — push is optional. The token will be re-registered
       // on the next successful RPC round-trip.

@@ -47,6 +47,7 @@ export async function handleAgentCardViaRuntime(
     bridgeIdentity: ctx.getBridgeIdentity(),
     mesh: ctx.getMesh(),
     nodeService: ctx.getNodeService(),
+    profileDir: typeof ctx.getProfileDir === "function" ? ctx.getProfileDir() : undefined,
   });
   if (agentCard.handled) return;
   // Otherwise fall through (matches the original control flow).

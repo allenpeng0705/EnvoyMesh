@@ -608,4 +608,57 @@ void main() {
       await callFuture;
     });
   });
+
+  group('NodeServiceClient feed.notify Inbox (45E)', () {
+    test('listFeedNotifications parses rows', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture = client.listFeedNotifications();
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'listFeedNotifications');
+
+      mock.simulateMessage({
+        'id': sent['id'],
+        'result': [
+          {
+            'id': 'fn-1',
+            'receivedAt': '2026-07-20T12:00:00.000Z',
+            'messageId': 'msg-1',
+            'publisherOwnerId': 'envoy:owner:alice',
+            'publishedAt': '2026-07-20T11:59:00.000Z',
+            'title': 'Hello post',
+            'url': 'envoy://envoy:owner:alice/blog/posts/hello.md',
+            'kind': 'article',
+            'visibility': 'bonded',
+            'summary': 'A short summary',
+            'senderPeerId': '12D3KooAlice',
+          },
+        ],
+      });
+
+      final rows = await callFuture;
+      expect(rows, hasLength(1));
+      expect(rows.first.id, 'fn-1');
+      expect(rows.first.title, 'Hello post');
+      expect(rows.first.url, contains('hello.md'));
+    });
+
+    test('dismissFeedNotification sends id', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture = client.dismissFeedNotification('fn-1');
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'dismissFeedNotification');
+      expect(sent['params'], {'id': 'fn-1'});
+
+      mock.simulateMessage({'id': sent['id'], 'result': null});
+      await callFuture;
+    });
+  });
 }

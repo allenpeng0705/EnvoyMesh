@@ -13,7 +13,7 @@
  *   button[title="End call"] — end call button
  */
 
-import type { Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 
 export class SocialPage {
   constructor(
@@ -188,13 +188,90 @@ export class SocialPage {
     }
   }
 
-  /** Assert the Browser error region is visible (access denied / not found / etc.). */
+  /** Assert the Browser error region shows access denied (contacts ACL). */
   async expectAccessDenied(): Promise<void> {
-    await this.page.getByTestId("browser-error").waitFor({ state: "visible", timeout: 30_000 });
+    const err = this.page.getByTestId("browser-error");
+    await err.waitFor({ state: "visible", timeout: 30_000 });
+    await expect(err).toContainText(/Access denied|访问被拒/i);
   }
 
   /** Assert the Not found / error status region is visible. */
   async expectNotFound(): Promise<void> {
     await this.page.getByTestId("browser-error").waitFor({ state: "visible", timeout: 30_000 });
+  }
+
+  /** Phase 45D — open author panel and publish a blog post. */
+  async publishBlogPost(opts: {
+    title: string;
+    body: string;
+    visibility?: "public" | "bonded" | "contacts" | "private";
+  }): Promise<void> {
+    await this.page.getByTestId("browser-author-open").click();
+    await this.page.getByTestId("browser-author-panel").waitFor({ state: "visible" });
+    await this.page.getByTestId("browser-author-template-blog-post").click();
+    await this.page.getByTestId("browser-author-title").fill(opts.title);
+    await this.page.getByTestId("markdown-editor-textarea").fill(opts.body);
+    if (opts.visibility) {
+      await this.page.getByTestId("visibility-selector").selectOption(opts.visibility);
+    }
+    await this.page.getByTestId("browser-author-publish").click();
+    await this.page.getByTestId("browser-author-published").waitFor({
+      state: "visible",
+      timeout: 30_000,
+    });
+  }
+
+  /** Phase 45D — publish a photo to a PhotoWall gallery. */
+  async publishPhoto(opts: {
+    title: string;
+    filePath: string;
+    gallery?: string;
+    visibility?: "public" | "bonded" | "contacts" | "private";
+  }): Promise<void> {
+    await this.page.getByTestId("browser-author-open").click();
+    await this.page.getByTestId("browser-author-panel").waitFor({ state: "visible" });
+    await this.page.getByTestId("browser-author-template-photo").click();
+    await this.page.getByTestId("browser-author-title").fill(opts.title);
+    if (opts.gallery) {
+      await this.page.getByTestId("browser-author-gallery").fill(opts.gallery);
+    }
+    await this.page.getByTestId("browser-author-file").setInputFiles(opts.filePath);
+    if (opts.visibility) {
+      await this.page.getByTestId("visibility-selector").selectOption(opts.visibility);
+    }
+    await this.page.getByTestId("browser-author-publish").click();
+    await this.page.getByTestId("browser-author-published").waitFor({
+      state: "visible",
+      timeout: 30_000,
+    });
+  }
+
+  /** Open Chat → Inbox panel. */
+  async openInbox(): Promise<void> {
+    await this.page.getByTestId("nav-chat").click();
+    await this.page.getByTestId("chat-tab-inbox").click();
+    await this.page.getByTestId("chat-tab-inbox").waitFor({ state: "visible" });
+  }
+
+  /** Wait for a Phase 45E feed.notify inbox row (title optional). */
+  async waitForFeedNotify(title?: string, timeoutMs = 90_000): Promise<void> {
+    const row = this.page.getByTestId("feed-notify-row");
+    await row.first().waitFor({ state: "visible", timeout: timeoutMs });
+    if (title) {
+      await expect(row.first()).toContainText(title);
+    }
+  }
+
+  /** Open the first feed.notify row in Browser. */
+  async openFeedNotifyInBrowser(): Promise<void> {
+    await this.page.getByTestId("feed-notify-open-browser").first().click();
+    await this.page.getByTestId("browser-view").waitFor({ state: "visible", timeout: 15_000 });
+  }
+
+  /** Click an in-content markdown link whose visible text matches. */
+  async clickMarkdownLink(linkText: string): Promise<void> {
+    const md = this.page.getByTestId("browser-markdown");
+    await md.waitFor({ state: "visible", timeout: 30_000 });
+    await md.getByRole("link", { name: linkText }).click();
   }
 }

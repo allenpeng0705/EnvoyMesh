@@ -28,6 +28,8 @@ export interface LibraryReadParams {
   remotePeerId: string;
   receivedAt: number;
   correlationId: string | undefined;
+  /** Same-stream reply (preferred for sendExpectReply callers). */
+  replyWithEnvelope?: (envelope: unknown) => Promise<void>;
 }
 
 /**
@@ -50,7 +52,7 @@ export async function handleLibraryReadViaRuntime(
   ctx: any,
   params: LibraryReadParams,
 ): Promise<void> {
-  const { envelope, remotePeerId, receivedAt, correlationId: corrId } = params;
+  const { envelope, remotePeerId, receivedAt, correlationId: corrId, replyWithEnvelope } = params;
 
   // 1. Hand off to the core handler.
   const result = await ctx.handleInboundLibraryRead({
@@ -97,7 +99,20 @@ export async function handleLibraryReadViaRuntime(
     unsignedResponse,
     profile.device.privateKeyPem,
   );
-  await ctx.deliverOutboundEnvelope(ctx.getMesh(), remotePeerId, signedResponse);
+  // Prefer same-stream reply so sendExpectReply on the requester correlates.
+  if (replyWithEnvelope) {
+    try {
+      await replyWithEnvelope(signedResponse);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      ctx.logWarn(
+        `[library.read] same-stream reply failed (${detail}); falling back to mesh.send`,
+      );
+      await ctx.deliverOutboundEnvelope(ctx.getMesh(), remotePeerId, signedResponse);
+    }
+  } else {
+    await ctx.deliverOutboundEnvelope(ctx.getMesh(), remotePeerId, signedResponse);
+  }
   await ctx.appendAuditEvent({
     type: "message.sent",
     intent: signedResponse.intent,

@@ -104,22 +104,25 @@ export function pickAddressFilterForPeer(
     return "wan-public";
   }
 
-  // Inspect the peer's known multiaddrs. We only need to know whether
-  // any LAN addrs are present — "has any LAN" maps to "all", "no
-  // LAN" maps to "wan-public". Whether the peer also has WAN addrs
-  // doesn't change the answer.
   const hasLan = peerMultiaddrs.some((addr) =>
     isPrivateLanTcpDialHint(addr),
   );
+  const hasCircuit = peerMultiaddrs.some((addr) =>
+    addr.includes("/p2p-circuit/"),
+  );
 
-  // LAN addrs present: try LAN first. The dialer's "wan-public" mode
-  // would skip the LAN addrs entirely, so we need "all" to keep them
-  // in the candidate set. The dialer falls back to circuit (and
-  // eventually to relay) if the LAN paths are stale.
+  // Production wan-default / relay-only installs: when a circuit path
+  // exists (typical for a home Mac behind NAT + cloud relay), prefer
+  // wan-public so we do not burn 30s on baked-in RFC1918 addrs from
+  // installer join tokens (sponsor-friend WAN auto-bond). Same-LAN
+  // packages still work via the circuit hop when the sponsor holds a
+  // live reservation — or operators set discoveryProfile=lan-fast.
+  if (hasCircuit) return "wan-public";
+
+  // LAN addrs only (no circuit yet): try LAN — useful when the peer
+  // is nearby and the invite has not yet been refreshed with a circuit.
   if (hasLan) return "all";
 
-  // No LAN addrs: "wan-public" — this still allows circuit dials,
-  // so the all-circuit/loopback/unspecified edge case is covered.
   return "wan-public";
 }
 

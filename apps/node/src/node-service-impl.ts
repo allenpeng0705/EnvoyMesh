@@ -62,6 +62,9 @@ import type {
   DiscoverPublishedLibraryPeerResult,
   LibraryReadParams,
   LibraryReadResult,
+  PublishWebContentParams,
+  PublishWebContentResult,
+  FeedNotification,
   PublishedLibraryFileHit,
   ExportLibraryItemToIpfsResult,
   PinLibraryItemExternalResult,
@@ -252,6 +255,7 @@ import {
   createRendezvousQueryPayload,
   RendezvousResponsePayloadSchema,
   createKnowledgeQueryPayload,
+  createLibraryReadPayload,
   parseKnowledgeResponsePayload,
   createAgentCardRequestPayload,
   createHumanProfileFragmentPayload,
@@ -342,7 +346,7 @@ import { createDiscoverySeedStore, type DiscoverySeedStore } from "./discovery-s
 import { seedAddrsForDiscoveryProfile, peerDiscoverySourceFromMultiaddrs, shouldPersistPeerDiscoverySeeds } from "./peer-discovery-telemetry.js";
 import { resolveBootstrapAddresses, looksLikeDomain } from "./bootstrap-resolver.js";
 import { createInboundMessageGuard, type InboundMessageGuard } from "./inbound-guard.js";
-import { backfillBundledSponsorPeerAddresses, loadBundledSponsorFriendParsed } from "./bundled-sponsor-friend-loader.js";
+import { backfillBundledSponsorPeerAddresses, loadBundledSponsorFriendParsed, selectBundledSponsorBackfillAddrs } from "./bundled-sponsor-friend-loader.js";
 import { buildModelProviders, routeModelRequest } from "@envoymesh/models";
 import { bindDeviceAuthorizationStore } from "./chat-device-auth.js";
 import {
@@ -829,11 +833,19 @@ import {
   startRelayClientScheduler,
   runRelayClientCycle,
   setRelayClientAdvertisedTopics,
+  mergeRelayClientAdvertisedTopics,
   queryRelayLookupWithDeps,
   type RelayClientCycleDeps,
 } from "./relay-client-cycle.js";
 import { buildProfileDiscoveryTopics, runCapabilityDiscoveryCycle, withWebContentDiscoveryTopic } from "./capability-discovery.js";
 import { createWebContentStore } from "./web-content-store.js";
+import { publishWebContentEntry as publishWebContentEntryAuthor } from "./web-content-author.js";
+import { sendFeedNotifyToBonds } from "./feed-notify-outbound.js";
+import {
+  dismissFeedNotifyInboxItem,
+  loadFeedNotifyInbox,
+} from "./feed-notify-store.js";
+import { handleInboundLibraryRead } from "./library-read-inbound.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
 import { startNodeStatsInterval } from "./node-stats-log.js";
 import { tryBondAutonomyInboundAutoAccept } from "./bond-autonomy-inbound.js";
@@ -1161,6 +1173,7 @@ function summarizeAgentCard(row: {
     publicTopics?: string[];
     trustPolicySummary?: CachedAgentCardSummary["trustPolicySummary"];
     supportedProtocolVersions?: string[];
+    webContentRoot?: string;
   };
   cachedAt: string;
   sourceAgentPeerId?: string;
@@ -1177,6 +1190,9 @@ function summarizeAgentCard(row: {
   if (row.card.trustPolicySummary) summary.trustPolicySummary = row.card.trustPolicySummary;
   if (row.card.supportedProtocolVersions) {
     summary.supportedProtocolVersions = row.card.supportedProtocolVersions;
+  }
+  if (row.card.webContentRoot) {
+    summary.webContentRoot = row.card.webContentRoot;
   }
   return summary;
 }
@@ -2225,7 +2241,17 @@ class NodeServiceImpl implements NodeService {
    * making the topic discoverable via `relay.lookup` (cross-NAT fallback).
    */
   private async _notifyAdvertisedDiscoveryTopics(topics: string[]): Promise<void> {
-    setRelayClientAdvertisedTopics(topics);
+    // Empty list = clear (private profile). Non-empty = merge so capability
+    // publish topics and interest topics coexist on the relay roster.
+    if (topics.length === 0) {
+      setRelayClientAdvertisedTopics([]);
+    } else {
+      mergeRelayClientAdvertisedTopics(topics);
+    }
+  }
+
+  private _mergeAdvertisedDiscoveryTopics(topics: string[]): void {
+    mergeRelayClientAdvertisedTopics(topics);
   }
 
   private _serviceContextDeps(): ServiceContextDeps {
@@ -2259,40 +2285,43 @@ class NodeServiceImpl implements NodeService {
     // directory record so a future search/contact-list read has the
     // addresses even if the auto-bond never completes. The merge is
     // idempotent so a re-run is safe.
+    const config = await this._configStore.load().catch(() => undefined);
+    const includePrivateLan = config?.discoveryProfile === "lan-fast";
     await backfillBundledSponsorPeerAddresses(
       this._peerDirectoryStore,
       process.env.ENVOYMESH_NODE_BUNDLE_DIR,
+      { includePrivateLan },
     );
     const parsed = await loadBundledSponsorFriendParsed(
       process.env.ENVOYMESH_NODE_BUNDLE_DIR,
     );
     if (!parsed) return [];
-    // Merge targetMultiaddrs (circuit/WAN) with bootstrapPeers (direct
-    // LAN/WAN stripped by wan-public filter).  This lets the smart
-    // address-filter picker (`pickAddressFilterForPeer`) see LAN addrs
-    // and return `"all"` instead of `"wan-public"`, so direct LAN paths
-    // survive the dial hint filter for same-network sponsor/sponsoree.
-    const fromBundled = [...parsed.multiaddrs, ...(parsed.bootstrapPeers ?? [])];
+    // WAN packages: circuits + public only. lan-fast: keep RFC1918 too.
+    const fromBundled = selectBundledSponsorBackfillAddrs(
+      parsed.multiaddrs,
+      parsed.bootstrapPeers ?? [],
+      { includePrivateLan },
+    );
     if (fromBundled.length === 0) return fromBundled;
-    // If the bundled contactUri carries a peerId, also pull the
-    // peer-directory record so fresh discoveries count. Bundled
-    // wins for ties (it carries the authoritative addresses from
-    // the sponsor's QR code); we just dedupe.
     const peerId = parsed.link.peerId;
     if (!peerId) return fromBundled;
     let record;
     try {
       record = await this._peerDirectoryStore.getPeerByPeerId(peerId);
     } catch {
-      // Peer-directory lookup failed — fall back to bundled-only.
       return fromBundled;
     }
     if (!record?.listenAddrs || record.listenAddrs.length === 0) {
       return fromBundled;
     }
+    const fromDir = selectBundledSponsorBackfillAddrs(
+      record.listenAddrs,
+      [],
+      { includePrivateLan },
+    );
     const seen = new Set(fromBundled);
     const merged = [...fromBundled];
-    for (const addr of record.listenAddrs) {
+    for (const addr of fromDir) {
       if (!seen.has(addr)) {
         seen.add(addr);
         merged.push(addr);
@@ -2426,8 +2455,17 @@ class NodeServiceImpl implements NodeService {
     return buildOutboundMessagingContext(this._serviceContextDeps().outboundMessaging);
   }
 
-  private async _dialHintsForChat(recipientPeerId: string, peerListenAddrs: string[] | undefined): Promise<string[]> {
-    return dialHintsForChatViaRuntime(this._outboundMessagingContext(), recipientPeerId, peerListenAddrs);
+  private async _dialHintsForChat(
+    recipientPeerId: string,
+    peerListenAddrs: string[] | undefined,
+    addressFilter?: "lan-paired" | "wan-public" | "all",
+  ): Promise<string[]> {
+    return dialHintsForChatViaRuntime(
+      this._outboundMessagingContext(),
+      recipientPeerId,
+      peerListenAddrs,
+      addressFilter,
+    );
   }
 
   private async _rememberBondedPeerTransportFromInbound(
@@ -4989,9 +5027,183 @@ class NodeServiceImpl implements NodeService {
   }
 
   async libraryRead(params: LibraryReadParams): Promise<LibraryReadResult> {
+    const profile = this._profile;
+    const profileDir = this._profileDir;
+    // Owner preview / self-browse must not go through the mesh — remote policy
+    // treats the owner as a stranger (no self trust record) and returns not_found
+    // for bonded/private paths.
+    if (
+      profile &&
+      profileDir &&
+      profileDir !== "/tmp/unknown" &&
+      params.targetOwnerId.trim() === profile.owner.ownerId.trim()
+    ) {
+      const started = Date.now();
+      const senderPeerId = derivePeerId(profile.device.publicKeyPem);
+      const unsigned = createUnsignedEnvelope({
+        senderPeerId,
+        senderPublicKey: profile.device.publicKeyPem,
+        senderRole: "human",
+        recipientPeerId: senderPeerId,
+        recipientRole: "human",
+        intent: "library.read",
+        payload: createLibraryReadPayload({
+          requesterOwnerId: profile.owner.ownerId,
+          targetOwnerId: params.targetOwnerId,
+          path: params.path,
+          range: params.range,
+          ifNoneMatch: params.ifNoneMatch,
+        }),
+        correlationId: randomUUID(),
+      });
+      const envelope = signUnsignedEnvelope(unsigned, profile.device.privateKeyPem);
+      if (!this._taskStore) {
+        return {
+          peerOwnerId: params.targetOwnerId,
+          libp2pPeerId: "",
+          status: "not_found",
+          latencyMs: Date.now() - started,
+          error: "task store not initialized",
+        };
+      }
+      const result = await handleInboundLibraryRead({
+        envelope,
+        remotePeerId: senderPeerId,
+        receivedAt: started,
+        correlationId: envelope.correlationId,
+        taskStore: this._taskStore,
+        trustStore: this._trustStore,
+        peerDirectoryStore: this._peerDirectoryStore,
+        profile,
+        profileDir,
+        isLocalSelfRead: true,
+      });
+      const latencyMs = Date.now() - started;
+      if (!result.ok) {
+        return {
+          peerOwnerId: params.targetOwnerId,
+          libp2pPeerId: "",
+          status: "not_found",
+          latencyMs,
+          error: result.reason,
+        };
+      }
+      const resp = result.responsePayload;
+      return {
+        peerOwnerId: params.targetOwnerId,
+        libp2pPeerId: "",
+        status: resp.status,
+        body: resp.body,
+        contentType: resp.contentType,
+        contentHash: resp.contentHash,
+        byteLength: resp.byteLength,
+        etag: resp.etag,
+        range: resp.range,
+        publicRedirection: resp.publicRedirection,
+        latencyMs,
+      };
+    }
     return libraryReadViaRuntime(this._fileShareNetworkContext(), params);
   }
 
+  async publishWebContentEntry(
+    params: PublishWebContentParams,
+  ): Promise<PublishWebContentResult> {
+    if (this._profileDir === "/tmp/unknown") {
+      throw new Error("publishWebContentEntry: node profile not initialized");
+    }
+    const ownerId =
+      this._profile?.owner?.ownerId?.trim() ||
+      (await this.getHumanProfile())?.ownerId?.trim();
+    if (!ownerId) {
+      throw new Error("publishWebContentEntry: owner identity required");
+    }
+    const result = await publishWebContentEntryAuthor(this._profileDir, {
+      ...params,
+      ownerId,
+    });
+    void this._fanOutFeedNotifyAfterPublish(result, params).catch((err) =>
+      console.warn(
+        "[feed.notify] fan-out failed:",
+        err instanceof Error ? err.message : err,
+      ),
+    );
+    return result;
+  }
+
+  private async _fanOutFeedNotifyAfterPublish(
+    result: PublishWebContentResult,
+    params: PublishWebContentParams,
+  ): Promise<void> {
+    const mesh = this._reachableMesh();
+    const profile = this._profile;
+    if (!mesh || !profile) return;
+    if (result.visibility === "private") return;
+
+    const bonds = await this.getBonds();
+    const peerProfiles = await this.listPeerProfiles().catch(() => []);
+    const interestsByOwner = new Map<string, string[]>();
+    for (const peer of peerProfiles) {
+      const interests = [
+        ...(peer.profile?.hobbies ?? []),
+        ...(peer.profile?.knowledge ?? []),
+      ];
+      if (peer.ownerId) interestsByOwner.set(peer.ownerId, interests);
+    }
+
+    await sendFeedNotifyToBonds({
+      mesh,
+      profile,
+      meta: {
+        publisherOwnerId: profile.owner.ownerId,
+        publishedAt: result.publishedAt,
+        title: result.title,
+        url: result.url,
+        kind:
+          params.template === "blog-post"
+            ? "article"
+            : params.template === "note"
+              ? "note"
+              : params.template === "profile"
+                ? "profile"
+                : params.template === "photo"
+                  ? "photo"
+                  : "file",
+        visibility: result.visibility,
+        summary: params.body ? params.body.trim().slice(0, 280) : undefined,
+        tags: params.tags,
+        contentHash: result.contentHash,
+        listingUrl: result.listingUrl,
+        contactIds: params.contactIds,
+      },
+      bonds: bonds.map((b) => ({ peerOwnerId: b.peerOwnerId, level: b.level })),
+      recipientInterestsByOwnerId: interestsByOwner,
+      resolveLibp2pPeer: async (bondOwnerId) => {
+        const resolved = await this._resolveLibp2pPeerForBondOwner(bondOwnerId);
+        if (!resolved) return undefined;
+        return { peerId: resolved.transportPeerId, listenAddrs: resolved.listenAddrs };
+      },
+      dialHintsFor: (peerId, listenAddrs) => this._dialHintsForChat(peerId, listenAddrs),
+      tagReachability: (peerId) => {
+        void this._tagBondedContactReachability(peerId);
+      },
+    });
+  }
+
+  async listFeedNotifications(): Promise<FeedNotification[]> {
+    if (this._profileDir === "/tmp/unknown") return [];
+    return loadFeedNotifyInbox(this._profileDir);
+  }
+
+  async dismissFeedNotification(id: string): Promise<void> {
+    if (this._profileDir === "/tmp/unknown") return;
+    await dismissFeedNotifyInboxItem(this._profileDir, id);
+  }
+
+  /** Persist inbound feed.notify and emit WS/event (called from mesh inbound). */
+  storeFeedNotification(item: FeedNotification): void {
+    this.emit("feed:notify", item);
+  }
 
   async listAgentShareProposals(): Promise<AgentShareProposal[]> {
     return listAgentShareProposalsViaRuntime(this._fileShareContext());
@@ -7041,7 +7253,13 @@ class NodeServiceImpl implements NodeService {
   // ------------------------------------------------------------------
 
   registerPushToken(params: { platform: string; token: string; ownerId: string; deviceId?: string; tokenType?: "alert" | "voip" }): void {
-    pushNotificationService.registerPushToken(params);
+    // Thin clients often omit ownerId; tokens belong to this home node's owner.
+    const ownerId =
+      (params.ownerId && params.ownerId.trim()) ||
+      this._profile?.owner.ownerId ||
+      "";
+    if (!ownerId || !params.token) return;
+    pushNotificationService.registerPushToken({ ...params, ownerId });
   }
 
   unregisterPushToken(deviceId: string): boolean {

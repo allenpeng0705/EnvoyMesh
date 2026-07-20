@@ -4,7 +4,7 @@
  *
  * Spawns two EnvoyMesh node OS processes with distinct Social WS ports
  * via ENVOYMESH_PORT_OFFSET. After both report ready, optionally bonds
- * them by writing trust-store.json + peer-directory.json using live
+ * them by writing trust-records.json + peer-directory.json using live
  * connection status (libp2p peerId + multiaddrs) from each node.
  *
  * Usage:
@@ -85,6 +85,8 @@ export class NodeSpawner {
     if (this.started) return;
     const timeout = this.opts.startupTimeout ?? 45_000;
     const runId = this.opts.runId ?? `wc-${Date.now()}`;
+    // Prefer stable offsets unless the caller overrides — random offsets made
+    // failures harder to debug and still collided when stop() lagged.
     const offset1 = this.opts.offset1 ?? 100;
     const offset2 = this.opts.offset2 ?? 110;
 
@@ -99,6 +101,8 @@ export class NodeSpawner {
       fs.writeFileSync(
         path.join(dir, "node-config.json"),
         JSON.stringify({
+          version: "0.1",
+          profileDir: dir,
           autoStartChatAssistant: false,
           chatAssistEnabled: false,
           enableLocalDiscovery: true,
@@ -115,23 +119,20 @@ export class NodeSpawner {
     this._node1WsUrl = `ws://127.0.0.1:${3030 + offset1}/ws`;
     this._node2WsUrl = `ws://127.0.0.1:${3030 + offset2}/ws`;
 
-    this.node1 = spawn(tsxBin, [nodeEntry, "--profile-dir", this._node1ProfileDir], {
-      stdio: ["ignore", "pipe", "pipe"],
-      env: {
-        ...process.env,
-        ENVOYMESH_CONFIG_DIR: this._node1ProfileDir,
-        ENVOYMESH_PORT_OFFSET: String(offset1),
-      },
-    });
+    // detached so stop() can SIGTERM the whole process group (tsx + node children).
+    const spawnNode = (profileDir: string, portOffset: number) =>
+      spawn(tsxBin, [nodeEntry, "--profile", profileDir], {
+        stdio: ["ignore", "pipe", "pipe"],
+        detached: process.platform !== "win32",
+        env: {
+          ...process.env,
+          ENVOYMESH_PROFILE: profileDir,
+          ENVOYMESH_PORT_OFFSET: String(portOffset),
+        },
+      });
 
-    this.node2 = spawn(tsxBin, [nodeEntry, "--profile-dir", this._node2ProfileDir], {
-      stdio: ["ignore", "pipe", "pipe"],
-      env: {
-        ...process.env,
-        ENVOYMESH_CONFIG_DIR: this._node2ProfileDir,
-        ENVOYMESH_PORT_OFFSET: String(offset2),
-      },
-    });
+    this.node1 = spawnNode(this._node1ProfileDir, offset1);
+    this.node2 = spawnNode(this._node2ProfileDir, offset2);
 
     await Promise.all([
       this.waitForReady(this.node1, "alice", timeout),
@@ -169,11 +170,9 @@ export class NodeSpawner {
       const onData = (data: Buffer) => {
         const text = data.toString();
         buf += text;
-        if (
-          text.includes("Listening on ws://") ||
-          text.includes("Social WebSocket ready") ||
-          text.includes("[ws-server] Listening")
-        ) {
+        // Match Social WS only — do NOT match `[terminal-ws] Listening on ws://…`
+        // or libp2p "Listening on (libp2p…)" which fire earlier.
+        if (buf.includes("[ws-server] Listening on ws://")) {
           clearTimeout(timer);
           proc.stdout?.off("data", onData);
           proc.stderr?.off("data", onData);
@@ -292,8 +291,9 @@ export class NodeSpawner {
 
   private writeBond(localDir: string, remote: LiveNodeInfo, displayName: string): void {
     const now = new Date().toISOString();
+    // Must match @envoymesh/local-store TRUST_STORE_FILE / PEER_DIRECTORY_FILE.
     fs.writeFileSync(
-      path.join(localDir, "trust-store.json"),
+      path.join(localDir, "trust-records.json"),
       JSON.stringify(
         {
           version: "0.1",
@@ -338,15 +338,35 @@ export class NodeSpawner {
   }
 
   async stop(): Promise<void> {
-    if (this.node1) {
-      this.node1.kill("SIGTERM");
-      this.node1 = undefined;
+    for (const proc of [this.node1, this.node2]) {
+      if (!proc?.pid) continue;
+      try {
+        process.kill(-proc.pid, "SIGTERM");
+      } catch {
+        try {
+          proc.kill("SIGTERM");
+        } catch {
+          /* already gone */
+        }
+      }
     }
-    if (this.node2) {
-      this.node2.kill("SIGTERM");
-      this.node2 = undefined;
+    await delay(300);
+    for (const proc of [this.node1, this.node2]) {
+      if (!proc?.pid) continue;
+      try {
+        process.kill(-proc.pid, "SIGKILL");
+      } catch {
+        try {
+          proc.kill("SIGKILL");
+        } catch {
+          /* already gone */
+        }
+      }
     }
+    this.node1 = undefined;
+    this.node2 = undefined;
     this.started = false;
+    await delay(700);
     console.log("[node-spawner] Nodes stopped");
   }
 }

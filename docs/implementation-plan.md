@@ -1161,7 +1161,7 @@ Milestone: **Phases 0–42 (42J deferred) shipped** — Core protocol through Ph
 7. **Parked until scoped:** Story E payment rail.
 8. **Phase 26 — DID WAN gateway resolver** — scoped below.
 9. **Chain template marketplace (future)** — share chain templates across the mesh via `discovery.request`. Parked until user demand materialises (4 built-in templates + AI chat creation cover current use cases).
-10. **Phase 45 — Web Content Browsing** — 45A+45B shipped; 45C–45F future. [web-content-browsing-design.md](./web-content-browsing-design.md) is the design doc; the Phase 45 section below is the implementation checklist. 45A (URL scheme + `library.read` intent + Browser view + all test layers) → 45B (browser polish + bookmarks) → 45C (EnvoyGo mobile browser) → 45D (authoring UX + templates + visibility) → 45E (Step 2: push notifications, topics, friend discovery). 45F (external HTTP gateway) is forward-referenced.
+10. **Phase 45 — Web Content Browsing** — 45A–45E shipped; 45F future. [web-content-browsing-design.md](./web-content-browsing-design.md) is the design doc; the Phase 45 section below is the implementation checklist. 45A (URL scheme + `library.read` intent + Browser view + all test layers) → 45B (browser polish + bookmarks) → 45C (EnvoyGo mobile browser) → 45D (authoring UX + templates + visibility) → 45E (Step 2: push notifications, topics, friend discovery — no GossipSub). 45F (external HTTP gateway) is forward-referenced.
 
 ### Phase 9 Architecture Overview
 
@@ -5868,7 +5868,7 @@ Enhance the existing MCP external provider with write-back and deeper integratio
 
 ---
 
-## Phase 45 — Web Content Browsing **`[~]` 45A+45B shipped; 45C–45F future**
+## Phase 45 — Web Content Browsing **`[~]` 45A–45E shipped; 45F future**
 
 **Design doc:** [web-content-browsing-design.md](./web-content-browsing-design.md)
 
@@ -5948,31 +5948,39 @@ Flutter thin client (`apps/envoygo`). Browsing always goes through the paired ho
 - `[x]` Browser reachable from EnvoyGo Me tab; `libraryRead` via home wired + unit-tested.
 - `[ ]` Scenario 1 works on a real phone (paired mode).
 
-### 45D — Authoring UX (full Step 1) `[ ]`
+### 45D — Authoring UX (full Step 1) `[x]`
 
-- `[ ]` New-item dialog with template picker (Profile / Blog post / Photo / Note / File upload).
-- `[ ]` Markdown editor with live preview (`apps/social/src/components/MarkdownEditor.tsx`).
-- `[ ]` Per-item visibility selector (`apps/social/src/components/VisibilitySelector.tsx`).
-- `[ ]` Manifest auto-update on author actions (`web-content-store.ts` write path).
-- `[ ]` Templated site types: Blog listing (posts by `publishedAt` desc), PhotoWall grid.
-- `[ ]` Contact profile "Browse Site" button (visible when contact advertises `envoymesh.web-content`).
-- `[ ]` Optional `webContentRoot` field on `AgentCardSchema`.
-- `[ ]` `envoy init <template>` CLI scaffolding.
+- `[x]` New-item dialog with template picker (Profile / Blog post / Note / Photo / File upload).
+- `[x]` Markdown editor with live preview (`apps/social/src/components/MarkdownEditor.tsx`).
+- `[x]` Per-item visibility selector (`apps/social/src/components/VisibilitySelector.tsx`).
+- `[x]` Contact picker when visibility=`contacts` (passes `contactIds` to `publishWebContentEntry`).
+- `[x]` Manifest auto-update on author actions (`web-content-author.ts` → `web-content-store.upsert`).
+- `[x]` Templated Blog listing (`blog/index.md` regenerated on publish).
+- `[x]` PhotoWall grid (`photos/<gallery>/index.md` + `photos/index.md` regenerated on photo publish).
+- `[x]` Contact profile "Browse Site" button (`AgentCardPanel` via `webContentRoot`).
+- `[x]` Optional `webContentRoot` field on `AgentCardSchema`.
+- `[x]` `envoymesh init blog|photos` CLI scaffolding.
+- `[x]` Playwright `web-content-author-browse.smoke.ts` (Scenario 2).
+- `[x]` Playwright `web-content-author-photowall.smoke.ts` (Photo → gallery → image).
 
-**Tests:**
+**Exit criteria (45D):**
 
-- `[ ]` Second Playwright spec `web-content-author-browse.smoke.ts` for Phase 45D Scenario 2.
+- `[x]` Author → publish → browse path unit/component tested.
+- `[x]` Scenario 2 Playwright spec added (`npm run smoke:web-content`).
+- `[x]` Scenario 2 green on local two-node Playwright smoke (`npm run smoke:web-content`, including `web-content-author-browse.smoke.ts`).
+- `[x]` PhotoWall Playwright path green (`web-content-author-photowall.smoke.ts`).
 
-**Exit criteria (45D):** Phase 45D Scenario 2 (design doc §9.2) passes — author → publish → browse end-to-end.
+### 45E — Step 2: push, topics, friend discovery `[x]`
 
-### 45E — Step 2: push, topics, friend discovery `[ ]`
+Concrete wire format: design doc §7.5. **GossipSub still deferred** (re-evaluate after this ships).
 
-Full design TBD at 45E start. Sketch (from design doc §7.5):
-
-- `[ ]` New intent `feed.notify` — push a small notification envelope to bonded contacts on publish. Rides existing `/envoymesh/message` stream using `tagContactForPersistentReachability`. **No GossipSub in v1 of 45E.**
-- `[ ]` Topic-based subscription — declare interests in profile; receive `feed.notify` only for matching topics.
-- `[ ]` Friend discovery via published topics — `discovery.request` extended with topic matching.
-- `[ ]` Evaluate whether notification-fanout suffices or whether true GossipSub is needed (decision point at end of 45E v1).
+- `[x]` New intent `feed.notify` — push a small notification envelope to bonded contacts on publish. Rides existing `/envoymesh/message` stream using `tagContactForPersistentReachability`. **No GossipSub in v1 of 45E.**
+- `[x]` Topic-based subscription — interest overlap on hobbies/knowledge; empty publisher tags → broadcast within bonds; empty recipient interests → still notify.
+- `[x]` Friend discovery via published topics — `discovery.request.requestedPublishTopics` + DHT `publish:<slug>` + Discover “By published topic”.
+- `[x]` Evaluate GossipSub: **deferred** — notification-fanout + DHT topics ship first; revisit only if insufficient.
+- `[x]` Playwright full-stack: Alice publish → Bob Inbox `feed.notify` → Open in Browser (`web-content-feed-notify.smoke.ts`; included in `npm run smoke:web-content` — 11/11).
+- `[x]` Discover “By published topic” UI (mocked): `discover-publish-topic-e2e.test.tsx`.
+- `[x]` EnvoyGo in-app Inbox mirror: `listFeedNotifications` / `dismissFeedNotification` + `feed:notify` WS → Open in Browser (`BrowserScreen(initialUrl:)`). **OS push (APNs/FCM) for feed.notify deferred** (separate payload type from chat/VoIP).
 
 ### 45F — Step 3: external HTTP gateway (future, forward reference) `[ ]`
 
@@ -5983,9 +5991,9 @@ Out of scope for this plan. Will be a separate design when ready. Sketch only: `
 - `[x]` Phase 45A exit criteria met (the architecture spike ships; Layer 4 manual smoke).
 - `[x]` Phase 45B exit criteria met (browser polish complete).
 - `[ ]` Phase 45C exit criteria met (mobile browsing works on real devices).
-- `[ ]` Phase 45D exit criteria met (full author → publish → browse UX ships).
-- `[ ]` Phase 45E ships at least v1 (notification-fanout push + topic discovery).
-- `[ ]` All four test layers green and integrated into CI: `npm test` (Layers 1+2), `npm run smoke:local` (Layer 3), `npm run smoke:web-content` promoted to CI gate (Layer 4).
+- `[x]` Phase 45D exit criteria met (full author → publish → browse UX ships).
+- `[x]` Phase 45E ships at least v1 (notification-fanout push + topic discovery).
+- `[x]` All four test layers green and integrated into CI: `npm test` (Layers 1+2), `npm run smoke:local` (Layer 3), `npm run smoke:web-content` via orchestrator `06c` in `test:full` / `ci-smoke-local` + nightly.
 
 ### Files Summary (Phase 45)
 
@@ -6000,6 +6008,7 @@ See the design doc §12 for the full file-by-file change map per sub-phase. High
 - **45B:** `browser-history-store.ts`, `browser-bookmark-store.ts`, `library-read-fetch.ts` (new); `ifNoneMatch`/`not_modified` in protocol + api; range/`too_large` polish in `library-read-inbound.ts`.
 - **45C:** EnvoyGo Flutter Browser screen + `NodeServiceClient.libraryRead` (thin client via home).
 - **45D:** `BrowserAuthorView.tsx`, `MarkdownEditor.tsx`, `VisibilitySelector.tsx` (new); extend `ContactProfilePanel.tsx`, `AgentCardSchema`.
+- **45E:** `feed.notify` protocol + bonds; `feed-notify-*.ts`; Inbox + Discover publish-topic UI; `publish:<slug>` DHT; `requestedPublishTopics`; AgentCard `publicTopics`.
 
 ### Test Plan (Phase 45)
 
@@ -6010,9 +6019,9 @@ Four mandated layers for Phase 45A (mirrors the project's Phase 38H convention):
 | URL parser unit | `packages/api/test/` pattern | `npm test` |
 | Handler trust | `apps/node/test/knowledge-query-inbound.test.ts` | `npm test` |
 | Two-node vitest E2E | `apps/node/test/library-publish-export-multi-node-e2e.test.ts` | `npm run smoke:local` |
-| Playwright full-stack | `apps/social/test/e2e/webrtc-call.smoke.ts` + `helpers/node-spawner.ts` + `helpers/social-page.ts` | `npm run smoke:web-content` (manual initially, CI gate later) |
+| Playwright full-stack | `apps/social/test/e2e/webrtc-call.smoke.ts` + `helpers/node-spawner.ts` + `helpers/social-page.ts` | `npm run smoke:web-content` (orchestrator `06c` / CI gate) |
 
-The Playwright matrix (Layer 4) covers 8 scenarios: fetch markdown → render, fetch image → render, fetch PDF → render, stranger denied, bonded allowed, back button, malformed URL, bookmark. See design doc §8.4 for the full list and helper-extension plan.
+The Playwright matrix (Layer 4) covers browse scenarios 1–10 (incl. contacts ACL), Scenario 2 author→browse, PhotoWall author→browse, and 45E feed.notify → Inbox → Browser. Discover publish-topic UI is covered by mocked jsdom E2E. Run: `npm run smoke:web-content` (13 tests) or `npm run test:full` (includes `06c`).
 
 ### Risks & Mitigations (Phase 45)
 
@@ -6028,6 +6037,12 @@ See design doc §11 for the full list of 10 open questions. None block Phase 45A
 
 | Date | Change |
 |------|--------|
+| 2026-07-20 | **EnvoyGo feed.notify Inbox.** Thin-client mirror: list/dismiss RPCs + `feed:notify` live upsert + Open in Browser. OS push deferred. |
+| 2026-07-21 | **OS alert push complete (31I + feed).** EnvoyGo `PushNotificationService` obtains APNs (native MethodChannel) / FCM tokens and registers `tokenType: alert`. Home fills missing `ownerId` from profile; chat/bond/feed dispatch alert-only; `dispatchFeedPush` on inbound `feed.notify`. |
+| 2026-07-20 | **Phase 45D contact picker.** Author UI multi-select when visibility=`contacts`; requires ≥1 bond; passes `contactIds` to publish. |
+| 2026-07-20 | **Phase 45 P2 closed.** Contacts ACL Browser Playwright (scenarios 9–10) + Layer-3 LIBREAD-06/07; `smoke:web-content` wired into orchestrator `06c` (`test:full` / `ci-smoke-local`) and `ci-smoke-nightly`. |
+| 2026-07-20 | **Phase 45 P1 test gaps closed.** PhotoWall Playwright (`web-content-author-photowall.smoke.ts`) + Discover publish-topic mocked E2E (`discover-publish-topic-e2e.test.tsx`). `smoke:web-content` 11/11 green. |
+| 2026-07-20 | **Phase 45E Playwright P0 closed.** `web-content-feed-notify.smoke.ts` — Alice publish bonded blog → Bob Inbox `feed.notify` → Open in Browser → markdown. Wired into `smoke:web-content` (10/10 green). |
 | 2026-07-20 | **Docs: EnvoyGo is the product mobile app; Capacitor `apps/mobile` is backup/legacy.** Updated CLAUDE.md / AGENTS.md, README, Phase 11 banner, `.cursor/rules/mobile-app.mdc`, and `apps/mobile/README.md` so agents stop treating Capacitor as the phone app. |
 | 2026-07-20 | **Phase 45B shipped (+ review fixes).** Browser polish: back/forward/reload, per-owner bookmarks + recent autocomplete, range auto-chunk, `ifNoneMatch`/`not_modified`. Review fixes before commit: capped range/binary bodies at 40 KiB (base64 envelope budget), contacts visibility deny-by-default when `contactIds` missing, past-EOF ranges empty, navigate in-flight guard, owner-scoped recent history. Playwright scenarios 6 & 8 enabled. |
 | 2026-07-20 | **Phase 45A review fixes.** Anti-enumeration: policy deny always `not_found` (forbidden only on contacts ACL miss). Discovery: `wantsWebContent` merge + `matchWebContentEntries` + DHT `capability:envoymesh.web-content` when manifest has entries. Docs: manifest required for remote reads; file map trimmed to shipped surface; body cap 48 KiB. |

@@ -2,6 +2,7 @@ import { buildVaultIndex } from "@envoymesh/vault";
 import type { LibraryFileMatch } from "@envoymesh/protocol";
 import type { PublishedExternalRecord } from "./published-external-store.js";
 import type { WebContentEntry } from "./web-content-store.js";
+import { publishTopicFor, slugifyTopic } from "./capability-discovery.js";
 
 export async function matchPublishedLibraryDocuments(input: {
   vaultDir: string;
@@ -47,8 +48,9 @@ export async function matchPublishedLibraryDocuments(input: {
 /**
  * Phase 45 — match web-content.json manifest entries for discovery responses.
  *
- * Filters by title / path / urlSlug / kind / tags (substring) and optional
- * contentHash prefixes. Only entries whose visibility is in `allowedVisibility`
+ * Filters by title / path / urlSlug / kind / tags (substring), optional
+ * contentHash prefixes, and Phase 45E `requestedPublishTopics` (slug set
+ * intersection). Only entries whose visibility is in `allowedVisibility`
  * are returned (callers pass `["public"]` for strangers, or include `bonded`
  * for direct/referred peers).
  */
@@ -56,6 +58,8 @@ export function matchWebContentEntries(input: {
   entries: readonly WebContentEntry[];
   fileTitleQuery?: string;
   contentHashPrefixes?: string[];
+  /** Phase 45E — raw tags or `publish:<slug>` topics. */
+  requestedPublishTopics?: readonly string[];
   maxResults: number;
   /** Visibility values the requester is allowed to see in listings. */
   allowedVisibility: ReadonlyArray<WebContentEntry["visibility"]>;
@@ -71,6 +75,17 @@ export function matchWebContentEntries(input: {
     }
     return true;
   });
+
+  const publishSlugs = normalizePublishTopicSlugs(input.requestedPublishTopics);
+  if (publishSlugs.size > 0) {
+    entries = entries.filter((e) => {
+      if (!e.tags?.length) return false;
+      return e.tags.some((tag) => {
+        const slug = slugifyTopic(tag.startsWith("publish:") ? tag.slice("publish:".length) : tag);
+        return Boolean(slug && publishSlugs.has(slug));
+      });
+    });
+  }
 
   const tq = input.fileTitleQuery?.trim().toLowerCase();
   if (tq) {
@@ -111,4 +126,18 @@ export function matchWebContentEntries(input: {
     urlSlug: e.urlSlug,
     updatedAt: e.updatedAt,
   }));
+}
+
+/** Normalize requested publish topics to slug set (strips `publish:` prefix). */
+export function normalizePublishTopicSlugs(
+  topics: readonly string[] | undefined | null,
+): Set<string> {
+  const out = new Set<string>();
+  if (!topics?.length) return out;
+  for (const raw of topics) {
+    const topic = publishTopicFor(raw.trim());
+    if (!topic) continue;
+    out.add(topic.slice("publish:".length));
+  }
+  return out;
 }

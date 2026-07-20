@@ -213,6 +213,7 @@ export interface CapabilityDiscoveryContextDeps {
   /** Load the owner's signed human profile (hobbies/knowledge/location). */
   loadHumanProfile: CapabilityDiscoveryContext["loadHumanProfile"];
   getProfileDir: CapabilityDiscoveryContext["getProfileDir"];
+  mergeAdvertisedDiscoveryTopics?: CapabilityDiscoveryContext["mergeAdvertisedDiscoveryTopics"];
 }
 
 export interface AgentSetupContextDeps {
@@ -573,10 +574,10 @@ export function buildBondContext(deps: BondContextDeps): BondContext {
     sessionTokenStore: deps.sessionTokenStore,
     getPendingSocialIntroProposals: () => deps.getPendingSocialIntroProposals(),
     getPendingHelloRequests: () => deps.getPendingHelloRequests(),
-    dialHintsForChat: (recipientPeerId, peerListenAddrs) =>
-      deps.dialHintsForChat(recipientPeerId, peerListenAddrs),
-    deliverCallEnvelope: (transportPeerId, envelope, dialHints, listenAddrs) =>
-      deps.deliverCallEnvelope(transportPeerId, envelope, dialHints, listenAddrs),
+    dialHintsForChat: (recipientPeerId, peerListenAddrs, addressFilter) =>
+      deps.dialHintsForChat(recipientPeerId, peerListenAddrs, addressFilter),
+    deliverCallEnvelope: (transportPeerId, envelope, dialHints, listenAddrs, preferCircuitHints) =>
+      deps.deliverCallEnvelope(transportPeerId, envelope, dialHints, listenAddrs, preferCircuitHints),
     tagBondedContactReachability: (peerId) => {
       void deps.tagBondedContactReachability(peerId);
     },
@@ -744,6 +745,9 @@ export function buildCapabilityDiscoveryContext(deps: CapabilityDiscoveryContext
     syncPairingKioskFromConfig: () => deps.syncPairingKioskFromConfig(),
     loadHumanProfile: () => deps.loadHumanProfile(),
     getProfileDir: () => deps.getProfileDir(),
+    mergeAdvertisedDiscoveryTopics: deps.mergeAdvertisedDiscoveryTopics
+      ? (topics) => deps.mergeAdvertisedDiscoveryTopics!(topics)
+      : undefined,
   };
 }
 

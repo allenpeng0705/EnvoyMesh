@@ -107,11 +107,11 @@ describe("NodeServiceImpl WAN join invite", () => {
 
     const created = await lanSvc.createWanJoinInvite({ expiresInHours: 24 });
     const decoded = decodeWanJoinInviteV1(parseEnvoyJoinUri(created.uri));
-    // Default mode is wan-public — both LAN addresses should be stripped.
-    // The peerId is preserved so the invite still names the right node.
+    // Default mode is wan-public — LAN addresses stripped; synthetic circuit
+    // via community/configured relay is appended so WAN joiners have a dial target.
     expect(decoded.targetPeerId).toBe("12D3KooWHomeInvite");
-    // Decoder normalizes empty targetMultiaddrs to undefined.
-    expect(decoded.targetMultiaddrs).toBeUndefined();
+    expect(decoded.targetMultiaddrs?.every((a) => !a.includes("192.168."))).toBe(true);
+    expect(decoded.targetMultiaddrs?.some((a) => a.includes("/p2p-circuit/"))).toBe(true);
   });
 
   it("createWanJoinInvite with addressFilter='lan-paired' keeps RFC1918 addresses", async () => {
@@ -138,5 +138,43 @@ describe("NodeServiceImpl WAN join invite", () => {
     expect(decoded.targetMultiaddrs).toEqual([
       "/ip4/192.168.3.85/tcp/64589/p2p/12D3KooWHomeInvite",
     ]);
+  });
+
+  it("createWanJoinInvite appends synthetic circuit when LAN-only multiaddrs", async () => {
+    // Home Mac behind NAT with no live /p2p-circuit/ in mesh.multiaddrs yet.
+    const lanOnlyMesh = {
+      peerId: "12D3KooWHomeInvite",
+      multiaddrs: ["/ip4/192.168.3.85/tcp/64589/p2p/12D3KooWHomeInvite"],
+      hasRelayReservation: () => false,
+    } as unknown as EnvoyMesh;
+    const lanTrustStore = createLocalTrustStore(profileDir);
+    const lanPeerDirectory = createLocalPeerDirectoryStore(profileDir);
+    const lanHuman = createHumanProfileStore(profileDir);
+    const lanSvc = new NodeServiceImpl(
+      lanOnlyMesh,
+      lanTrustStore,
+      lanPeerDirectory,
+      lanHuman,
+      profileDir,
+    );
+    await lanSvc.updateNodeConfig({
+      bootstrapPresets: ["cn-relay"],
+      configuredRelays: [
+        {
+          addr: "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo",
+          enabled: true,
+        },
+      ],
+    });
+
+    const created = await lanSvc.createWanJoinInvite({ expiresInHours: 24 });
+    const decoded = decodeWanJoinInviteV1(parseEnvoyJoinUri(created.uri));
+    expect(decoded.targetPeerId).toBe("12D3KooWHomeInvite");
+    expect(decoded.targetMultiaddrs?.some((a) => a.includes("/p2p-circuit/"))).toBe(true);
+    expect(
+      decoded.targetMultiaddrs?.some((a) =>
+        a.includes("47.93.11.212") && a.includes("12D3KooWHomeInvite"),
+      ),
+    ).toBe(true);
   });
 });

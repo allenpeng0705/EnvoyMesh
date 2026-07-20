@@ -992,16 +992,19 @@ export async function _advertisePublicDiscoveryTopics(
   // through). This matches the user's 2026-07-10 symptom:
   // `[node-stats] totalPeers=1 relayRoster=1` produced 16 per-topic
   // timeouts every retry cycle against the community relay.
+  // Threshold: skip DHT provide only when *zero* peers are connected.
+  // Previously required 2+ (assuming 1 = community relay alone and DHT
+  // was useless). On a home Mac behind NAT with only the cloud relay
+  // connected, that skipped *all* provides forever — and topics never
+  // landed even for relay-roster fallback timing. With ≥1 peer we still
+  // attempt provide (may time out); relay-roster notify runs regardless.
   const connectedPeers = ctx.requireMesh().getConnectedPeerIds();
-  const skipPublishThisCycle = connectedPeers.length < 2;
+  const skipPublishThisCycle = connectedPeers.length < 1;
   if (skipPublishThisCycle) {
     console.warn(
-      `[node-service] Discovery advertise cycle: only ${connectedPeers.length} peer(s) connected ` +
-      `(${connectedPeers.slice(0, 2).map((p) => p.slice(0, 12) + "…").join(", ") || "none"}). ` +
-      `DHT route table is empty — skipping ${allTopics.length} topic publishes this cycle to avoid ` +
-      `30 s per-topic timeouts. Add a real bootstrap peer (libp2p public bootstrap like ` +
-      `"https://github.com/libp2p/notes/issues/6" worked examples, or any node you trust) to ` +
-      `bootstrapPeers if you want capability topics to land.`,
+      `[node-service] Discovery advertise cycle: no peers connected. ` +
+      `Skipping ${allTopics.length} DHT topic publishes this cycle. ` +
+      `Relay-roster advertisements are still updated so relay.lookup can work once a relay is dialable.`,
     );
   }
 

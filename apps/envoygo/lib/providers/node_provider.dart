@@ -8,6 +8,7 @@ import '../services/web_socket_like.dart';
 import 'call_provider.dart';
 import 'chat_provider.dart';
 import 'contact_provider.dart';
+import 'feed_notify_provider.dart';
 import 'terminal_provider.dart';
 import '../services/candidate_resolver.dart';
 import '../services/home_remote_client.dart';
@@ -19,6 +20,7 @@ import '../services/exceptions.dart';
 import '../services/reconnect_supervisor.dart';
 import '../services/connectivity_observer.dart';
 import '../services/voip_push_service.dart';
+import '../services/push_notification_service.dart';
 import '../services/libp2p_node.dart';
 import '../services/upnp.dart';
 import '../storage/local_database.dart';
@@ -606,6 +608,8 @@ class NodeNotifier extends StateNotifier<NodeState> {
     // Sync all terminal sessions (running and stopped) as chat threads.
     chatNotifier.syncTerminals();
     _syncInboxDirect(nodeService, chatNotifier);
+    // Phase 45E — pull persisted feed.notify Inbox rows from home.
+    _ref.read(feedNotifyProvider.notifier).refresh();
 
     // EnvoyAI (OpenClaw) — always create, built-in.
     chatNotifier.onBridgeStatus({
@@ -927,6 +931,11 @@ class NodeNotifier extends StateNotifier<NodeState> {
       await terminalNotifier.loadSessions();
       chatNotifier.syncTerminals();
     });
+    client.on('feed:notify', (data) {
+      if (data is Map<String, dynamic>) {
+        _ref.read(feedNotifyProvider.notifier).upsertFromEvent(data);
+      }
+    });
   }
 
   /// Connect to a stored node.
@@ -1059,6 +1068,10 @@ class NodeNotifier extends StateNotifier<NodeState> {
 
       // Trigger full data sync.
       _syncAllData();
+
+      // Phase 31I — register alert push token with home (APNs / FCM).
+      // Best-effort; skipped when OS push is unconfigured on device.
+      unawaited(_registerAlertPushToken());
     } catch (e) {
       // Only delete the session token when the home node explicitly
       // rejected the auth — a typed `UnauthorizedException` from the
@@ -1094,6 +1107,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
     _nodeService = null;
     _pairingService = null;
     _connectingFuture = null;
+    _ref.read(feedNotifyProvider.notifier).clear();
     state = state.copyWith(
       connectionState: NodeConnectionState.disconnected,
       activeTransport: null,
@@ -1203,6 +1217,18 @@ class NodeNotifier extends StateNotifier<NodeState> {
   String _generateNodeId() {
     return DateTime.now().microsecondsSinceEpoch.toRadixString(36);
   }
+
+  /// Phase 31I — obtain APNs/FCM alert token and register with home.
+  Future<void> _registerAlertPushToken() async {
+    final client = _client;
+    if (client == null) return;
+    final push = PushNotificationService();
+    await push.initialize();
+    await push.registerWithHomeNode(
+      (method, [params]) => client.call(method, params),
+      ownerId: state.ownerId ?? state.activeNode?.ownerId,
+    );
+  }
 }
 
 // --------------------------------------------------------------------------
@@ -1256,7 +1282,11 @@ final callProvider = ChangeNotifierProvider<CallProvider>((ref) {
   });
   // Register the VoIP token with the home (best-effort). The home needs
   // it to dispatch a VoIP push when the phone is offline.
-  voip.registerWithHomeNode((method, [params]) => client.call(method, params));
+  final ownerId = ref.read(nodeProvider).ownerId;
+  voip.registerWithHomeNode(
+    (method, [params]) => client.call(method, params),
+    ownerId: ownerId,
+  );
   ref.onDispose(() {
     incomingSub.cancel();
     acceptedSub.cancel();

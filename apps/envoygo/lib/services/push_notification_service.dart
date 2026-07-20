@@ -1,14 +1,25 @@
-import 'package:flutter/foundation.dart';
+import 'dart:async';
+import 'dart:io' show Platform;
 
-/// Push notification service for EnvoyGo.
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
+
+/// Alert (chat / bond / feed) push notifications for EnvoyGo — Phase 31I.
 ///
-/// On iOS: uses native APNs via `flutter_apns` or similar.
-/// On Android: uses Firebase Cloud Messaging (FCM).
-/// On web: push notifications are not supported.
+/// - **iOS:** native APNs via `envoygo/alert_push` MethodChannel
+///   (`AppDelegate.swift`). No Firebase — China-friendly; home
+///   `sendApns` expects a raw APNs hex token.
+/// - **Android:** Firebase Cloud Messaging when `google-services.json`
+///   is present; otherwise initialize is a silent no-op.
+/// - **Web / desktop:** unsupported.
 ///
-/// The home node sends push notifications when the companion app
-/// is closed or backgrounded and a new message arrives.
+/// Tokens are registered with the home node as `tokenType: "alert"`
+/// (distinct from VoIP tokens registered by VoipPushService).
 class PushNotificationService {
+  static const String _channelName = 'envoygo/alert_push';
+
   static PushNotificationService? _instance;
 
   factory PushNotificationService() {
@@ -18,70 +29,94 @@ class PushNotificationService {
 
   PushNotificationService._();
 
+  static const MethodChannel _channel = MethodChannel(_channelName);
+
   bool _initialized = false;
   String? _token;
+  String? _ownerId;
+  Future<dynamic> Function(String method, [Map<String, dynamic>? params])?
+      _homeRpc;
 
-  /// Whether push notifications are supported on this platform.
-  bool get isSupported => !kIsWeb;
-
-  /// The device push token (APNs token or FCM token).
-  String? get token => _token;
-
-  /// Initialize push notifications and obtain a device token.
-  ///
-  /// On iOS: requests notification permissions and obtains an APNs token.
-  /// On Android: initializes Firebase and obtains an FCM token.
-  /// On web: no-op.
-  Future<void> initialize() async {
-    if (_initialized) return;
-    if (!isSupported) return;
-
-    _initialized = true;
-
-    // TODO(31I): Platform-specific push setup.
-    //
-    // iOS:
-    //   final apns = FlutterApns();
-    //   await apns.requestPermission();
-    //   _token = await apns.token;
-    //
-    // Android:
-    //   await Firebase.initializeApp();
-    //   _token = await FirebaseMessaging.instance.getToken();
-    //
-    // After obtaining the token, register it with the home node:
-    //   if (connected) {
-    //     await nodeService.registerPushToken({
-    //       'platform': Platform.isIOS ? 'ios' : 'android',
-    //       'token': _token,
-    //     });
-    //   }
-  }
-
-  /// Register the push token with the connected home node.
-  Future<void> registerWithHomeNode(
-    Future<dynamic> Function(String method,
-            [Map<String, dynamic>? params])
-        callRpc,
-  ) async {
-    if (_token == null) return;
+  /// Whether alert pushes are supported on this platform.
+  bool get isSupported {
+    if (kIsWeb) return false;
     try {
-      await callRpc('registerPushToken', {
-        'platform': defaultTargetPlatform == TargetPlatform.iOS
-            ? 'ios'
-            : 'android',
-        'token': _token,
-      });
+      return Platform.isIOS || Platform.isAndroid;
     } catch (_) {
-      // Silently ignore — push is optional.
+      return false;
     }
   }
 
-  /// Handle an incoming push notification tap.
+  /// Cached APNs (hex) or FCM device token.
+  String? get token => _token;
+
+  /// Stream of notification-tap payloads from native / FCM.
+  Stream<Map<String, dynamic>> get onNotificationTap =>
+      _tapController.stream;
+  final _tapController = StreamController<Map<String, dynamic>>.broadcast();
+
+  /// Request permission, obtain a device token, and install listeners.
   ///
-  /// Returns the thread data to navigate to, or null.
-  Map<String, dynamic>? handleNotificationTap(
-      Map<String, dynamic> data) {
+  /// Safe to call multiple times. Does not throw when credentials /
+  /// Firebase are missing — push is optional.
+  Future<void> initialize() async {
+    if (_initialized) return;
+    if (!isSupported) {
+      _initialized = true;
+      return;
+    }
+    _initialized = true;
+
+    _channel.setMethodCallHandler(_handleNativeCall);
+
+    try {
+      if (Platform.isIOS) {
+        await _channel.invokeMethod<void>('requestPermissionAndRegister');
+      } else if (Platform.isAndroid) {
+        await _initAndroidFcm();
+      }
+    } catch (_) {
+      // Best-effort — missing entitlements / google-services.json.
+    }
+  }
+
+  /// Remember [ownerId] and register the token with the home node when ready.
+  Future<void> registerWithHomeNode(
+    Future<dynamic> Function(String method, [Map<String, dynamic>? params])
+        callRpc, {
+    String? ownerId,
+  }) async {
+    if (!isSupported) return;
+    _homeRpc = callRpc;
+    if (ownerId != null && ownerId.isNotEmpty) {
+      _ownerId = ownerId;
+    }
+    await _registerIfReady();
+  }
+
+  /// Drop cached token (e.g. on sign-out).
+  Future<void> clearToken() async {
+    _token = null;
+  }
+
+  /// Normalize a notification payload into navigation hints.
+  ///
+  /// Returns `null` when [data] is not a known EnvoyGo push type.
+  Map<String, dynamic>? handleNotificationTap(Map<String, dynamic> data) {
+    final type = data['type'] as String?;
+    if (type == 'feed_notify' || type == 'feed.notify') {
+      final url = data['url'] as String?;
+      if (url == null || url.isEmpty) return null;
+      return {
+        'type': 'feed_notify',
+        'url': url,
+        'title': data['title'],
+        'notificationId': data['notificationId'],
+      };
+    }
+    if (type == 'bond_request') {
+      return {'type': 'bond_request'};
+    }
     final threadType = data['threadType'] as String?;
     if (threadType == null) return null;
     return {
@@ -90,5 +125,76 @@ class PushNotificationService {
       'roomId': data['roomId'],
       'messageId': data['messageId'],
     };
+  }
+
+  Future<void> _initAndroidFcm() async {
+    try {
+      await Firebase.initializeApp();
+      final messaging = FirebaseMessaging.instance;
+      await messaging.requestPermission();
+      final token = await messaging.getToken();
+      if (token != null && token.isNotEmpty) {
+        _token = token;
+        await _registerIfReady();
+      }
+      messaging.onTokenRefresh.listen((t) async {
+        if (t.isEmpty) return;
+        _token = t;
+        await _registerIfReady();
+      });
+      FirebaseMessaging.onMessageOpenedApp.listen((message) {
+        final data = Map<String, dynamic>.from(message.data);
+        if (data.isNotEmpty) _tapController.add(data);
+      });
+    } catch (_) {
+      // No google-services.json / Firebase not configured.
+    }
+  }
+
+  Future<void> _registerIfReady() async {
+    final callRpc = _homeRpc;
+    final token = _token;
+    if (callRpc == null || token == null || token.isEmpty) return;
+    try {
+      final params = <String, dynamic>{
+        'platform': Platform.isIOS ? 'ios' : 'android',
+        'token': token,
+        'tokenType': 'alert',
+      };
+      final ownerId = _ownerId;
+      if (ownerId != null && ownerId.isNotEmpty) {
+        params['ownerId'] = ownerId;
+      }
+      await callRpc('registerPushToken', params);
+    } catch (_) {
+      // Best-effort — push is optional.
+    }
+  }
+
+  Future<dynamic> _handleNativeCall(MethodCall call) async {
+    switch (call.method) {
+      case 'onAlertToken':
+        final args = (call.arguments as Map?)?.cast<String, dynamic>() ?? {};
+        final token = args['token'] as String?;
+        if (token != null && token.isNotEmpty) {
+          _token = token;
+          await _registerIfReady();
+        }
+        return null;
+      case 'onNotificationTap':
+        final args = (call.arguments as Map?)?.cast<String, dynamic>() ?? {};
+        if (args.isNotEmpty) _tapController.add(args);
+        return null;
+      default:
+        return null;
+    }
+  }
+
+  /// Test seam — same dispatch path as the MethodChannel handler.
+  @visibleForTesting
+  Future<void> debugDispatch(String method, Map<String, dynamic> args) async {
+    await _handleNativeCall(MethodCall(method, args));
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
   }
 }

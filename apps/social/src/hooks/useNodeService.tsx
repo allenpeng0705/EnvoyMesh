@@ -192,6 +192,11 @@ export interface NodeServiceClient {
   readLibraryItemContent(params: ReadLibraryItemContentParams): Promise<ReadLibraryItemContentResult>;
   // Phase 45 — Web Content Browsing. See docs/web-content-browsing-design.md §4.6.
   libraryRead(params: LibraryReadParams): Promise<LibraryReadResult>;
+  publishWebContentEntry(
+    params: import("@envoymesh/api").PublishWebContentParams,
+  ): Promise<import("@envoymesh/api").PublishWebContentResult>;
+  listFeedNotifications(): Promise<import("@envoymesh/api").FeedNotification[]>;
+  dismissFeedNotification(id: string): Promise<void>;
   listChatHistory(peerOwnerId: string, limit?: number): Promise<ChatMessage[]>;
   listChatRooms(): Promise<ChatRoom[]>;
   createChatRoom(title: string, memberOwnerIds: string[]): Promise<ChatRoom>;
@@ -746,6 +751,18 @@ function createWsNodeServiceClient(
       return wsClient.rpc("libraryRead", params as unknown as Record<string, unknown>) as Promise<
         LibraryReadResult
       >;
+    },
+    async publishWebContentEntry(params: import("@envoymesh/api").PublishWebContentParams) {
+      return wsClient.rpc(
+        "publishWebContentEntry",
+        params as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").PublishWebContentResult>;
+    },
+    async listFeedNotifications() {
+      return wsClient.rpc("listFeedNotifications") as Promise<import("@envoymesh/api").FeedNotification[]>;
+    },
+    async dismissFeedNotification(id: string) {
+      return wsClient.rpc("dismissFeedNotification", { id });
     },
     async listChatHistory(peerOwnerId: string, limit?: number) { return wsClient.rpc("listChatHistory", { peerOwnerId, limit }) as Promise<ChatMessage[]>; },
     async listChatRooms() { return wsClient.rpc("listChatRooms", {}) as Promise<ChatRoom[]>; },
@@ -1909,6 +1926,34 @@ export function useSocialIntroProposals() {
   };
 
   return { proposals, approveCommitment, decline };
+}
+
+export function useFeedNotifications() {
+  const client = useNodeService();
+  const wsOpen = useTransportWsOpen();
+  const [items, setItems] = useState<import("@envoymesh/api").FeedNotification[]>([]);
+
+  useEffect(() => {
+    if (!wsOpen || !client.isConnected) return;
+
+    void client.listFeedNotifications().then(setItems).catch(console.error);
+
+    const unsub = client.on("feed:notify", (data) => {
+      setItems((prev) => {
+        if (prev.some((p) => p.messageId === data.messageId || p.id === data.id)) return prev;
+        return [data, ...prev];
+      });
+    });
+
+    return unsub;
+  }, [client, wsOpen]);
+
+  const dismiss = async (id: string) => {
+    await client.dismissFeedNotification(id);
+    setItems((prev) => prev.filter((p) => p.id !== id));
+  };
+
+  return { items, dismiss };
 }
 
 export function useHelloRequests() {

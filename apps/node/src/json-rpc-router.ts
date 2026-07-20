@@ -6,6 +6,7 @@ import type {
   ListLibraryItemsParams,
   DiscoverPublishedLibraryParams,
   LibraryReadParams,
+  PublishWebContentParams,
   ChainPlanParams,
   ChainLaunchParams,
   ChainGetStateParams,
@@ -395,6 +396,12 @@ export async function routeRpcMethod(
       return ns.discoverPublishedLibrary(params as DiscoverPublishedLibraryParams | undefined);
     case "libraryRead":
       return ns.libraryRead(params as unknown as LibraryReadParams);
+    case "publishWebContentEntry":
+      return ns.publishWebContentEntry(params as unknown as PublishWebContentParams);
+    case "listFeedNotifications":
+      return ns.listFeedNotifications();
+    case "dismissFeedNotification":
+      return ns.dismissFeedNotification(params.id as string);
     case "listAgentShareProposals":
       return ns.listAgentShareProposals();
     case "dismissAgentShareProposal":

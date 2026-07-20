@@ -385,10 +385,12 @@ export const inboxMessages = {
   title: "Inbox",
   empty: "No pending activity",
   emptyDesc:
-    "Hello requests, Trust-mode intro proposals, AI approval drafts, incoming file shares, agent share suggestions, and messages from people you haven't bonded with yet appear here.",
+    "Hello requests, Trust-mode intro proposals, published web posts from bonds, AI approval drafts, incoming file shares, agent share suggestions, and messages from people you haven't bonded with yet appear here.",
   clearStrangers: "Clear strangers",
   introApproved: "Intro approved — you can send hello.",
   introApproveFailed: "Approve failed",
+  feedNotifications: "Published posts ({count})",
+  openInBrowser: "Open in Browser",
   aiApprovals: "AI approvals ({count})",
   sending: "Sending…",
   approveSend: "Approve & send",

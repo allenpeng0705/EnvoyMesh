@@ -5,6 +5,7 @@ import '../models/chain_report.dart';
 import '../models/chat_message.dart';
 import '../models/chat_room.dart';
 import '../models/contact.dart';
+import '../models/feed_notification.dart';
 import '../models/library_read.dart';
 import '../models/terminal_session.dart';
 import 'home_remote_client.dart';
@@ -362,6 +363,19 @@ class NodeServiceClient {
     return (result as List<dynamic>)
         .map((e) => e as Map<String, dynamic>)
         .toList();
+  }
+
+  /// Phase 45E — list persisted inbound `feed.notify` rows from the home.
+  Future<List<FeedNotification>> listFeedNotifications() async {
+    final result = await _client.call('listFeedNotifications');
+    return (result as List<dynamic>)
+        .map((e) => FeedNotification.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Phase 45E — dismiss one inbox row by id.
+  Future<void> dismissFeedNotification(String id) async {
+    await _client.call('dismissFeedNotification', {'id': id});
   }
 
   // -- Terminal PTY I/O --

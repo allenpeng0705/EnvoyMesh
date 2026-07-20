@@ -286,6 +286,23 @@ if ($SMOKE -and -not $BAIL_OUT) {
     }
     if ($BAIL_OUT) { goto summary }
   }
+
+  # Phase 45 Layer 4 — Playwright web-content matrix
+  if (-not $BAIL_OUT -and -not $SkipPlaywright) {
+    $distIndex = Join-Path $Root "apps\social\src\dist\index.html"
+    if (-not (Test-Path $distIndex)) {
+      Run-Phase "06c-social-build-web-content" "Build Social UI for web-content smoke" {
+        npm run build -w @envoymesh/social -- --mode development
+      }
+      if ($BAIL_OUT) { goto summary }
+    }
+    Run-Phase "06c-smoke-web-content" "Phase 45 web-content Playwright smoke" {
+      npm run smoke:web-content
+    }
+    if ($BAIL_OUT) { goto summary }
+  } elseif ($SkipPlaywright) {
+    Skip-Phase "06c-smoke-web-content"
+  }
 }
 
 # ---- phase: bundle ---------------------------------------------------------

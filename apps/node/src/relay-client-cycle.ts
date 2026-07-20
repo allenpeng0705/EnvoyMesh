@@ -42,6 +42,16 @@ export function setRelayClientAdvertisedTopics(topics: string[]): void {
   currentAdvertisedTopics = cleaned;
 }
 
+/**
+ * Union-merge topics into the relay checkin advertisement set.
+ * Used by the capability/publish discovery cycle so `publish:` topics
+ * are not clobbered when identity later sets interest/displayname topics
+ * (and vice versa).
+ */
+export function mergeRelayClientAdvertisedTopics(topics: readonly string[]): void {
+  setRelayClientAdvertisedTopics([...currentAdvertisedTopics, ...topics]);
+}
+
 export function getRelayClientAdvertisedTopics(): string[] {
   return [...currentAdvertisedTopics];
 }

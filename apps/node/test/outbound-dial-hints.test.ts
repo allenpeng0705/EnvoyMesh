@@ -375,13 +375,23 @@ describe("pickAddressFilterForPeer", () => {
   // Helper: sponsor peer-id used only to make multiaddrs look real.
   const SPONSOR = "12D3KooWSponsor";
 
-  it("returns \"all\" when peer has LAN addresses (same-network dev)", async () => {
+  it("returns \"wan-public\" when peer has circuit + LAN (WAN packages prefer circuit)", async () => {
     const { pickAddressFilterForPeer } = await import("../src/outbound-dial-hints.js");
     const peerAddrs = [
       `/ip4/192.168.3.85/tcp/64589/p2p/${SPONSOR}`,
-      `/ip4/47.93.11.212/tcp/4001/p2p-circuit/p2p/${SPONSOR}`,
+      `/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${SPONSOR}`,
     ];
-    expect(pickAddressFilterForPeer(peerAddrs, undefined)).toBe("all");
+    // Production wan-default: do not burn 30s on baked-in home LAN.
+    expect(pickAddressFilterForPeer(peerAddrs, "wan-default")).toBe("wan-public");
+    expect(pickAddressFilterForPeer(peerAddrs, undefined)).toBe("wan-public");
+  });
+
+  it("returns \"all\" when peer has only private LAN (no circuit yet)", async () => {
+    const { pickAddressFilterForPeer } = await import("../src/outbound-dial-hints.js");
+    const peerAddrs = [
+      `/ip4/192.168.3.85/tcp/64589/p2p/${SPONSOR}`,
+    ];
+    expect(pickAddressFilterForPeer(peerAddrs, "wan-default")).toBe("all");
   });
 
   it("returns \"all\" when peer has only link-local addresses", async () => {
@@ -404,7 +414,7 @@ describe("pickAddressFilterForPeer", () => {
   it("returns \"wan-public\" when peer has only circuit-relay addresses", async () => {
     const { pickAddressFilterForPeer } = await import("../src/outbound-dial-hints.js");
     const peerAddrs = [
-      `/ip4/47.93.11.212/tcp/4001/p2p-circuit/p2p/${SPONSOR}`,
+      `/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${SPONSOR}`,
     ];
     expect(pickAddressFilterForPeer(peerAddrs, undefined)).toBe("wan-public");
   });
@@ -418,11 +428,9 @@ describe("pickAddressFilterForPeer", () => {
 
   it("returns \"all\" for any peer when local profile is lan-fast", async () => {
     const { pickAddressFilterForPeer } = await import("../src/outbound-dial-hints.js");
-    // lan-fast means the operator is on a home network and wants
-    // LAN-first dials; honor that even if the peer's known addrs
-    // look WAN-only — the LAN discovery may not have caught up yet.
     const peerAddrs = [
       `/ip4/47.93.11.212/tcp/4001/p2p/${SPONSOR}`,
+      `/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${SPONSOR}`,
     ];
     expect(pickAddressFilterForPeer(peerAddrs, "lan-fast")).toBe("all");
   });

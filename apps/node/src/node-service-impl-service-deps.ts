@@ -65,10 +65,10 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
             sessionTokenStore: host._sessionTokenStore ?? undefined,
             getPendingSocialIntroProposals: () => host._pendingSocialIntroProposals,
             getPendingHelloRequests: () => host._pendingHelloRequests,
-            dialHintsForChat: (recipientPeerId, peerListenAddrs) =>
-              host._dialHintsForChat(recipientPeerId, peerListenAddrs),
-            deliverCallEnvelope: (transportPeerId, envelope, dialHints, listenAddrs) =>
-              host._deliverCallEnvelope(transportPeerId, envelope, dialHints, listenAddrs),
+            dialHintsForChat: (recipientPeerId, peerListenAddrs, addressFilter) =>
+              host._dialHintsForChat(recipientPeerId, peerListenAddrs, addressFilter),
+            deliverCallEnvelope: (transportPeerId, envelope, dialHints, listenAddrs, preferCircuitHints) =>
+              host._deliverCallEnvelope(transportPeerId, envelope, dialHints, listenAddrs, preferCircuitHints),
             tagBondedContactReachability: (peerId) => {
               void host._tagBondedContactReachability(peerId);
             },
@@ -216,6 +216,8 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
             syncPairingKioskFromConfig: () => host._syncPairingKioskFromConfig(),
             loadHumanProfile: () => host._humanProfileStore.loadHumanProfile(),
             getProfileDir: () => host._profileDir,
+            mergeAdvertisedDiscoveryTopics: (topics) =>
+              host._mergeAdvertisedDiscoveryTopics(topics),
           },
       agentSetup: {
             saveConfig: (config) => host._configStore.save(config),

@@ -90,7 +90,8 @@ function allowsPublicPublishedLibraryQuery(
     payload.requestedCapabilities.includes(PUBLISHED_LIB_CAPABILITY) ||
     payload.requestedCapabilities.includes(WEB_CONTENT_CAPABILITY) ||
     Boolean(payload.fileTitleQuery?.trim()) ||
-    (payload.requestedContentHashPrefixes?.length ?? 0) > 0
+    (payload.requestedContentHashPrefixes?.length ?? 0) > 0 ||
+    (payload.requestedPublishTopics?.length ?? 0) > 0
   );
 }
 
@@ -131,7 +132,8 @@ async function mergePublishedLibraryMatches(input: {
   const wantsWebContent =
     payload.requestedCapabilities.includes(WEB_CONTENT_CAPABILITY) ||
     Boolean(payload.fileTitleQuery?.trim()) ||
-    (payload.requestedContentHashPrefixes?.length ?? 0) > 0;
+    (payload.requestedContentHashPrefixes?.length ?? 0) > 0 ||
+    (payload.requestedPublishTopics?.length ?? 0) > 0;
 
   if (!wantsPublishedLib && !wantsWebContent) {
     return;
@@ -177,6 +179,7 @@ async function mergePublishedLibraryMatches(input: {
           entries: manifest.entries,
           fileTitleQuery: payload.fileTitleQuery,
           contentHashPrefixes: payload.requestedContentHashPrefixes,
+          requestedPublishTopics: payload.requestedPublishTopics,
           maxResults: remaining,
           allowedVisibility,
           requesterOwnerId,

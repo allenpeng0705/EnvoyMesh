@@ -3,7 +3,7 @@ import type { TFunction } from "../context/I18nContext.js";
 
 export type DiscoverEmptyContext = {
   path: "nearby" | "code" | "wider";
-  widerMode?: "name" | "topic" | "place";
+  widerMode?: "name" | "topic" | "publish" | "place";
   nodeStatus: string;
   nodeConfig: NodeConfig | null;
   humanProfile: HumanProfile | null;

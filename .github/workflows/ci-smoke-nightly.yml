@@ -8,6 +8,7 @@ on:
 jobs:
   smoke-local-full:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -25,3 +26,12 @@ jobs:
 
       - name: Full local two-node smoke rehearsal
         run: npm run smoke:local
+
+      - name: Build Social UI (web-content Playwright)
+        run: npm run build -w @envoymesh/social -- --mode development
+
+      - name: Install Playwright Chromium
+        run: npx playwright install --with-deps chromium
+
+      - name: Phase 45 web-content Playwright smoke
+        run: npm run smoke:web-content

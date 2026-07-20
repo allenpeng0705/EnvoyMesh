@@ -365,4 +365,82 @@ describe("PushNotificationService — Phase 42I VoIP", () => {
       expect(skipCount).toBe(2);
     });
   });
+
+  describe("dispatchChatPush / dispatchFeedPush — alert-only selection", () => {
+    it("skips voip tokens for chat pushes", async () => {
+      const ownerId = "envoy:owner:jade";
+      service.registerPushToken({
+        platform: "ios",
+        token: "ios-voip-jade-1234567890",
+        ownerId,
+        tokenType: "voip",
+      });
+      const prevTopic = process.env.APNS_TOPIC;
+      delete process.env.APNS_TOPIC;
+      try {
+        await service.dispatchChatPush({
+          senderName: "Bob",
+          messagePreview: "hello",
+          targetOwnerId: ownerId,
+          messageId: "msg-1",
+        });
+      } finally {
+        if (prevTopic === undefined) delete process.env.APNS_TOPIC;
+        else process.env.APNS_TOPIC = prevTopic;
+      }
+      // No APNs warn — voip token was filtered before sendApns.
+      const apnsSkips = consoleWarn.mock.calls
+        .map((c) => String(c[0]))
+        .filter((m) => m.includes("[push] APNs"));
+      expect(apnsSkips).toHaveLength(0);
+    });
+
+    it("dispatches feed pushes to alert tokens only", async () => {
+      const ownerId = "envoy:owner:kai";
+      service.registerPushToken({
+        platform: "ios",
+        token: "ios-alert-kai-1234567890",
+        ownerId,
+        tokenType: "alert",
+      });
+      service.registerPushToken({
+        platform: "ios",
+        token: "ios-voip-kai-1234567890",
+        ownerId,
+        tokenType: "voip",
+      });
+      const prevTopic = process.env.APNS_TOPIC;
+      delete process.env.APNS_TOPIC;
+      try {
+        await service.dispatchFeedPush({
+          targetOwnerId: ownerId,
+          title: "Family album",
+          summary: "New photos",
+          url: "envoy://envoy_owner_kai/photos/",
+          notificationId: "notif-1",
+          publisherOwnerId: "envoy:owner:alice",
+          kind: "album",
+        });
+      } finally {
+        if (prevTopic === undefined) delete process.env.APNS_TOPIC;
+        else process.env.APNS_TOPIC = prevTopic;
+      }
+      // One alert attempt → one "APNs credentials not configured" warn;
+      // voip must not produce a second.
+      const apnsSkips = consoleWarn.mock.calls
+        .map((c) => String(c[0]))
+        .filter((m) => m.includes("APNs credentials not configured"));
+      expect(apnsSkips).toHaveLength(1);
+    });
+
+    it("short-circuits feed push when no alert token is registered", async () => {
+      await service.dispatchFeedPush({
+        targetOwnerId: "envoy:owner:nobody",
+        title: "x",
+        url: "envoy://x/",
+        notificationId: "n1",
+      });
+      expect(consoleWarn).not.toHaveBeenCalled();
+    });
+  });
 });

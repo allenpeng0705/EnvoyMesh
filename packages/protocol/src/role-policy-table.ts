@@ -97,6 +97,8 @@ const INTENT_ROLE_POLICIES: Record<string, readonly RolePair[]> = {
   "task.chain.delegate": AGENT_AGENT_ONLY,
   "task.chain.relay": AGENT_AGENT_ONLY,
   "task.chain.arbitration": AGENT_AGENT_ONLY,
+  // Phase 45E — bonded publish notify (human→human, same family as share metadata).
+  "feed.notify": HUMAN_HUMAN_ONLY,
 };
 
 /**

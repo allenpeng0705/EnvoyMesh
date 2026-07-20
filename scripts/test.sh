@@ -464,6 +464,28 @@ if [ "$SMOKE" = "1" ] && [ "$BAIL_OUT" != "1" ]; then
       bash -c "RUN_E2E=1 npx vitest run ${SMOKE_FILES[*]}$(junit_args 06b-smoke-chain-homes)"
     if [ "$FAIL_COUNT" -gt 0 ] && [ "$BAIL" = "1" ]; then BAIL_OUT=1; fi
   fi
+
+  # Phase 45 Layer 4 — Playwright web-content matrix (two real nodes + Chromium).
+  # Requires social dist (phase 03) + chromium (phase 05 or install below).
+  if [ "$BAIL_OUT" != "1" ] && [ "$SKIP_PLAYWRIGHT" != "1" ]; then
+    if [ ! -f "apps/social/src/dist/index.html" ]; then
+      run_phase "06c-social-build-web-content" "Build Social UI for web-content smoke" \
+        bash -c "npm run build -w @envoymesh/social -- --mode development"
+      if [ "$FAIL_COUNT" -gt 0 ] && [ "$BAIL" = "1" ]; then BAIL_OUT=1; fi
+    fi
+    if [ "$BAIL_OUT" != "1" ]; then
+      if ! ls "$HOME/Library/Caches/ms-playwright" >/dev/null 2>&1 \
+         && ! ls "$HOME/.cache/ms-playwright" >/dev/null 2>&1; then
+        echo "[06c-smoke-web-content] ⚠ no Playwright browser cache — installing chromium"
+        npx playwright install chromium >"$ARTIFACTS_DIR/06c-playwright-install.log" 2>&1 || true
+      fi
+      run_phase "06c-smoke-web-content" "Phase 45 web-content Playwright smoke" \
+        bash -c "npm run smoke:web-content"
+      if [ "$FAIL_COUNT" -gt 0 ] && [ "$BAIL" = "1" ]; then BAIL_OUT=1; fi
+    fi
+  elif [ "$SKIP_PLAYWRIGHT" = "1" ]; then
+    skip_phase "06c-smoke-web-content"
+  fi
 fi
 
 # ---- phase: bundle ---------------------------------------------------------

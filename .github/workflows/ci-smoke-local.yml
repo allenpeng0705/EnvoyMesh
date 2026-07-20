@@ -7,7 +7,7 @@ on:
 jobs:
   smoke-local:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -21,7 +21,8 @@ jobs:
         run: npm install
 
       # The orchestrator runs: typecheck → unit → social-build →
-      # e2e-fast (libp2p, ~60s) → e2e-playwright (chromium, auto-installs) → smoke.
+      # e2e-fast (libp2p, ~60s) → e2e-playwright (chromium, auto-installs) →
+      # smoke (incl. Phase 45 web-content Playwright via 06c).
       # Per-phase logs land in ci-artifacts/test/<phase>.log.
       # See docs/test-orchestrator.md and scripts/test.sh for the full contract.
       - name: "Run test orchestrator (full: typecheck + unit + E2E + smoke)"

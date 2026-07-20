@@ -11,6 +11,7 @@ import { useT } from "../context/I18nContext.js";
 import { useNodeState } from "../context/NodeStateContext.js";
 import { useAgentCards } from "../hooks/useNodeService.js";
 import type { CachedAgentCardSummary } from "@envoymesh/api";
+import { openBrowserAt } from "../lib/browser-nav.js";
 import { ChainBondHealthBadge } from "./ChainBondHealthBadge.js";
 
 export function AgentCardPanel(props: { ownerId: string }) {
@@ -50,6 +51,23 @@ export function AgentCardPanel(props: { ownerId: string }) {
               </li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {(card.webContentRoot ||
+        card.capabilities.includes("envoymesh.web-content")) && (
+        <div className="agent-card-section">
+          <button
+            type="button"
+            className="btn btn-primary"
+            data-testid="browse-site-button"
+            onClick={() => {
+              const url = card.webContentRoot ?? `envoy://${props.ownerId}/`;
+              openBrowserAt(url);
+            }}
+          >
+            {t("agentCard.browseSite", "Browse Site")}
+          </button>
         </div>
       )}
 

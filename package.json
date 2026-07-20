@@ -12,6 +12,7 @@
     "packages/bonds",
     "packages/identity",
     "packages/ipfs-helia",
+    "packages/kb-obsidian",
     "packages/local-store",
     "packages/mobile-identity",
     "packages/mobile-node",

@@ -15,9 +15,10 @@ import {
   assertWanJoinInviteNotExpired,
   mergeWanJoinInviteBootstrap,
   parseEnvoyJoinUri,
+  DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
 } from "@envoymesh/api";
 import type { EnvoyMesh } from "@envoymesh/network";
-import { allowsLoopbackDialHints } from "@envoymesh/network";
+import { allowsLoopbackDialHints, relayCircuitToPeer } from "@envoymesh/network";
 import type { AuditEvent, LocalTaskStore } from "@envoymesh/local-store";
 import type { DiscoverySeedStore } from "./discovery-seed-store.js";
 import type { PersistedNodeConfig } from "./node-config-store.js";
@@ -172,10 +173,62 @@ export async function createWanJoinInviteViaRuntime(
   // Callers that explicitly know the recipient is on the same LAN (e.g.
   // mobile pairing kiosk) can opt back in with `addressFilter: "lan-paired"`.
   const addressFilter: DialableAddrMode = params?.addressFilter ?? "wan-public";
-  const targetMultiaddrs = filterDialableMultiaddrs(
+  let targetMultiaddrs = filterDialableMultiaddrs(
     reachable?.multiaddrs ?? [],
     addressFilter,
   );
+
+  // Home Mac behind NAT: mesh.multiaddrs only contains /p2p-circuit/ after
+  // a live reservation. If the circuit is missing (reservation pending or
+  // invite minted too early), append synthetic circuits via configured /
+  // community relays so WAN joiners still have a dial target. Dial still
+  // fails with NO_RESERVATION until the sponsor holds a slot — but the
+  // invite is no longer empty after wan-public stripping.
+  const peerId = reachable?.peerId?.trim();
+  const hasCircuit = targetMultiaddrs.some((a) => a.includes("/p2p-circuit/"));
+  if (
+    addressFilter === "wan-public" &&
+    peerId &&
+    !hasCircuit
+  ) {
+    const relayBases: string[] = [];
+    for (const r of config.configuredRelays ?? []) {
+      if (r.enabled && r.addr?.trim()) relayBases.push(r.addr.trim());
+    }
+    for (const b of config.bootstrapPeers ?? []) {
+      if (b.includes("/p2p/") && !b.includes("/p2p-circuit/")) relayBases.push(b);
+    }
+    if (config.bootstrapPresets?.includes("cn-relay")) {
+      relayBases.push(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
+    }
+    if (relayBases.length === 0) {
+      relayBases.push(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
+    }
+    const synthetic: string[] = [];
+    for (const base of relayBases) {
+      const circuit = relayCircuitToPeer(base, peerId);
+      if (circuit && !synthetic.includes(circuit)) synthetic.push(circuit);
+      if (synthetic.length >= 3) break;
+    }
+    if (synthetic.length > 0) {
+      targetMultiaddrs = [...targetMultiaddrs, ...synthetic];
+      const reserved =
+        typeof reachable?.hasRelayReservation === "function"
+          ? reachable.hasRelayReservation()
+          : undefined;
+      if (reserved === false) {
+        console.warn(
+          `[wan-join] invite includes synthetic circuit(s) but local relay reservation is PENDING — ` +
+            `WAN joiners cannot reach this node until reservation succeeds (check Settings → Network / relay=RESERVED)`,
+        );
+      } else {
+        console.log(
+          `[wan-join] appended ${synthetic.length} synthetic circuit multiaddr(s) (no live circuit in mesh.multiaddrs yet)`,
+        );
+      }
+    }
+  }
+
   const compact = params?.compact === true;
   const invite = {
     v: 1 as const,

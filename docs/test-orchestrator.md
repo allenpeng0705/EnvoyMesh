@@ -38,7 +38,7 @@ A single entry point that runs the right tests for the right context.
 | 3 | `social-build`     | `vite build --mode development` (for chromium E2E)         | ~60s   |
 | 4 | `e2e-fast`         | `RUN_E2E=1 vitest run` excluding smoke + chromium          | ~60s   |
 | 5 | `e2e-playwright`   | `RUN_E2E=1 vitest run` on chromium tests                    | ~120s  |
-| 6 | `smoke`            | `smoke:phase13` + `chain-{two,three}-home-smoke`            | ~30s   |
+| 6 | `smoke`            | `smoke:phase13` + chain homes + `smoke:web-content` (06c)   | ~90s   |
 | 7 | `bundle`           | `scripts/bundle.sh` (only in `bundle` mode)                | ~5min  |
 
 Each phase logs to `ci-artifacts/test/<phase>.log` and is independent — failures in one don't block the others (unless `--bail` is set or the mode defaults to bail).

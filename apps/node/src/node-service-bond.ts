@@ -22,6 +22,7 @@ import type {
 import type { LocalPeerDirectoryStore, LocalTrustStore } from "@envoymesh/local-store";
 import type { EnvoyMesh } from "@envoymesh/network";
 import { pickBestLibp2pPeerDirectoryRecord } from "./peer-transport-resolve.js";
+import { shouldPreferCircuitDialHints } from "./outbound-dial-hints.js";
 
 export interface PendingHelloRequest {
   requesterOwnerId: string;
@@ -51,6 +52,7 @@ export interface BondContext {
     envelope: EnvoyEnvelope,
     dialHints: string[],
     listenAddrs: string[] | undefined,
+    preferCircuitHints?: boolean,
   ): Promise<unknown>;
   tagBondedContactReachability(peerId: string): void;
   untagReachabilityForOwner(ownerId: string): Promise<void>;
@@ -153,7 +155,18 @@ export async function sendHelloViaRuntime(
       options?.addressFilter,
     );
     console.log(`[node-service] sendHello dialHints count=${dialHints.length}: ${dialHints.map((h) => h.slice(0, 100)).join(" | ")}`);
-    await ctx.deliverCallEnvelope(targetPeerId, envelope, dialHints, matchedRecord?.listenAddrs);
+    const preferCircuitHints = shouldPreferCircuitDialHints(
+      matchedRecord?.listenAddrs,
+      dialHints,
+      targetPeerId,
+    );
+    await ctx.deliverCallEnvelope(
+      targetPeerId,
+      envelope,
+      dialHints,
+      matchedRecord?.listenAddrs,
+      preferCircuitHints,
+    );
     console.log(`[node-service] Hello sent successfully to ${targetPeerId}`);
 
     if (options?.introProposalMessageId) {

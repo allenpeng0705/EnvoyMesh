@@ -3,6 +3,7 @@ import CallKit
 import Flutter
 import PushKit
 import UIKit
+import UserNotifications
 
 @main
 @objc class AppDelegate: FlutterAppDelegate {
@@ -11,6 +12,12 @@ import UIKit
   // forwards the device token to the home node and surfaces incoming
   // call metadata to CallProvider.
   private let voipChannelName = "envoygo/voip_push"
+
+  // Phase 31I — alert (chat / bond / feed) APNs channel. Separate from
+  // VoIP: home `sendApns` needs the standard remote-notification token
+  // (hex), not the PushKit VoIP token.
+  private let alertChannelName = "envoygo/alert_push"
+  private var alertChannel: FlutterMethodChannel?
 
   // Phase 42I — CallKit provider + call controller. `cxProvider`
   // must exist for the lifetime of the app so we can report incoming
@@ -115,7 +122,83 @@ import UIKit
     }
     registerVoipPushRegistry(channel: voipChannel)
 
-    return super.application(application, didFinishLaunchingWithOptions: launchOptions)
+    // Phase 31I — alert APNs MethodChannel. Dart calls
+    // `requestPermissionAndRegister`; we forward the device token and
+    // notification-tap payloads back over the same channel.
+    let alertChannel = FlutterMethodChannel(
+      name: alertChannelName,
+      binaryMessenger: controller.binaryMessenger
+    )
+    self.alertChannel = alertChannel
+    alertChannel.setMethodCallHandler { [weak self] (call, result) in
+      switch call.method {
+      case "requestPermissionAndRegister":
+        self?.requestAlertPushPermissionAndRegister()
+        result(nil)
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
+    let launched = super.application(application, didFinishLaunchingWithOptions: launchOptions)
+    // FlutterAppDelegate may assign itself as the notification center
+    // delegate during `super.application`; re-assert so our tap
+    // override receives userNotificationCenter(_:didReceive:).
+    UNUserNotificationCenter.current().delegate = self
+    return launched
+  }
+
+  /// Phase 31I — ask the user for alert permission, then register with APNs.
+  private func requestAlertPushPermissionAndRegister() {
+    UNUserNotificationCenter.current().requestAuthorization(
+      options: [.alert, .badge, .sound]
+    ) { granted, _ in
+      guard granted else { return }
+      DispatchQueue.main.async {
+        UIApplication.shared.registerForRemoteNotifications()
+      }
+    }
+  }
+
+  /// Phase 31I — forward the standard APNs device token to Dart as hex.
+  override func application(
+    _ application: UIApplication,
+    didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+  ) {
+    let hex = deviceToken.map { String(format: "%02x", $0) }.joined()
+    alertChannel?.invokeMethod("onAlertToken", arguments: ["token": hex])
+    super.application(application, didRegisterForRemoteNotificationsWithDeviceToken: deviceToken)
+  }
+
+  override func application(
+    _ application: UIApplication,
+    didFailToRegisterForRemoteNotificationsWithError error: Error
+  ) {
+    // Best-effort — simulator / missing Push entitlement.
+    super.application(application, didFailToRegisterForRemoteNotificationsWithError: error)
+  }
+
+  /// Phase 31I — user tapped an alert notification (chat / bond / feed).
+  override func userNotificationCenter(
+    _ center: UNUserNotificationCenter,
+    didReceive response: UNNotificationResponse,
+    withCompletionHandler completionHandler: @escaping () -> Void
+  ) {
+    let userInfo = response.notification.request.content.userInfo
+    var payload: [String: Any] = [:]
+    if let data = userInfo["data"] as? [String: Any] {
+      payload = data
+    } else {
+      for (key, value) in userInfo {
+        if let key = key as? String, key != "aps" {
+          payload[key] = value
+        }
+      }
+    }
+    if !payload.isEmpty {
+      alertChannel?.invokeMethod("onNotificationTap", arguments: payload)
+    }
+    super.userNotificationCenter(center, didReceive: response, withCompletionHandler: completionHandler)
   }
 
   /// Phase 42I — set up the CXProvider with an audio-call configuration.

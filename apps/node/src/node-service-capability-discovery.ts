@@ -17,7 +17,9 @@
  */
 import {
   buildProfileDiscoveryTopics,
+  buildPublishTopicsFromManifest,
   runCapabilityDiscoveryCycle,
+  withPublishDiscoveryTopics,
   withWebContentDiscoveryTopic,
 } from "./capability-discovery.js";
 import {
@@ -56,6 +58,8 @@ export interface CapabilityDiscoveryContext {
   loadHumanProfile(): Promise<HumanProfileLite | undefined>;
   /** Profile directory — used to detect published web content for DHT advertise. */
   getProfileDir(): string | undefined;
+  /** Merge topics into relay.checkin advertisements (cross-NAT lookup). */
+  mergeAdvertisedDiscoveryTopics?(topics: string[]): void;
 }
 
 /** Subset of `HumanProfilePayload` consumed by the discovery scheduler. */
@@ -95,14 +99,22 @@ export async function runCapabilityDiscoveryCycleViaRuntime(
     geoTopics,
   });
   // Phase 45 — advertise envoymesh.web-content when the manifest has entries.
+  // Phase 45E — also advertise publish:<slug> for tagged entries.
   let finalTopics = topics;
   const profileDir = ctx.getProfileDir();
   if (profileDir) {
-    const hasWeb = await createWebContentStore(join(profileDir, "web"))
-      .hasAnyPublished()
-      .catch(() => false);
-    if (hasWeb) {
-      finalTopics = withWebContentDiscoveryTopic(topics);
+    try {
+      const store = createWebContentStore(join(profileDir, "web"));
+      const manifest = await store.load();
+      if (manifest.entries.length > 0) {
+        finalTopics = withWebContentDiscoveryTopic(finalTopics);
+        const publishTopics = buildPublishTopicsFromManifest(manifest.entries);
+        if (publishTopics.length > 0) {
+          finalTopics = withPublishDiscoveryTopics(finalTopics, publishTopics);
+        }
+      }
+    } catch {
+      // Non-fatal — capability discovery continues without web topics.
     }
   }
   await runCapabilityDiscoveryCycle({
@@ -121,6 +133,11 @@ export async function runCapabilityDiscoveryCycleViaRuntime(
           : shouldRunPeriodicCapabilityFind(connectivityRuntime)),
     },
   });
+  // Mirror capability + publish topics into relay checkin so NAT peers
+  // can resolve them via relay.lookup when DHT provide is empty/flaky.
+  if (finalTopics.length > 0) {
+    ctx.mergeAdvertisedDiscoveryTopics?.(finalTopics);
+  }
 }
 
 export function startCapabilityDiscoverySchedulerViaRuntime(

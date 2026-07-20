@@ -13,6 +13,8 @@
  *   6. Back button navigates to previous page
  *   7. Malformed envoy:// URL → parse error
  *   8. Bookmark star toggles persistence (★ / ☆)
+ *   9. Contacts ACL deny (bonded, not listed) → access denied
+ *  10. Contacts ACL allow (bonded + listed) → content served
  *
  * Prerequisites:
  *   - npm install
@@ -75,6 +77,8 @@ async function prepareBrowserPage(page: Page, fx: TestFixtures): Promise<void> {
         "envoymesh.setupComplete",
         JSON.stringify({ ownerId, completedAt: new Date().toISOString() }),
       );
+      // Suppress first-run getting-started modal so Browser nav is clickable.
+      localStorage.setItem(`envoymesh.guideSeen:${ownerId}`, "1");
     },
     { wsUrl: fx.spawner.node2WsUrl, ownerId: fx.spawner.node2OwnerId },
   );
@@ -366,6 +370,90 @@ test.describe("Web Content Browsing E2E (Phase 45A)", () => {
       await expect(star).toHaveText("★");
       await star.click();
       await expect(star).toHaveText("☆");
+    } finally {
+      await fx.cleanup();
+    }
+  });
+
+  test("9. contacts ACL deny (bonded but not listed) → access denied", async ({ page }) => {
+    const fx = await setupFixtures();
+    fx.social = new SocialPage(page, "bob");
+    try {
+      const aliceWebDir = join(fx.spawner.node1ProfileDir, "web");
+      await writeFile(
+        join(aliceWebDir, "exclusive.md"),
+        "# Exclusive\n\nOnly selected contacts.",
+        { mode: 0o600 },
+      );
+      await writeFile(
+        join(aliceWebDir, "web-content.json"),
+        JSON.stringify(
+          {
+            version: "0.1",
+            entries: [
+              {
+                path: "exclusive.md",
+                contentHash: "any",
+                byteLength: 40,
+                title: "Exclusive",
+                kind: "article",
+                mimeType: "text/markdown",
+                visibility: "contacts",
+                contactIds: ["envoy:owner:someone-else"],
+                updatedAt: new Date().toISOString(),
+              },
+            ],
+          },
+          null,
+          2,
+        ),
+        { mode: 0o600 },
+      );
+      await prepareBrowserPage(page, fx);
+      await fx.social.browseToUrl(`envoy://${fx.aliceOwnerId}/exclusive.md`);
+      await fx.social.expectAccessDenied();
+    } finally {
+      await fx.cleanup();
+    }
+  });
+
+  test("10. contacts ACL allow (bonded and listed) → content served", async ({ page }) => {
+    const fx = await setupFixtures();
+    fx.social = new SocialPage(page, "bob");
+    try {
+      const aliceWebDir = join(fx.spawner.node1ProfileDir, "web");
+      await writeFile(
+        join(aliceWebDir, "exclusive.md"),
+        "# For Bob\n\nYou are on the list.",
+        { mode: 0o600 },
+      );
+      await writeFile(
+        join(aliceWebDir, "web-content.json"),
+        JSON.stringify(
+          {
+            version: "0.1",
+            entries: [
+              {
+                path: "exclusive.md",
+                contentHash: "any",
+                byteLength: 40,
+                title: "For Bob",
+                kind: "article",
+                mimeType: "text/markdown",
+                visibility: "contacts",
+                contactIds: [fx.spawner.node2OwnerId],
+                updatedAt: new Date().toISOString(),
+              },
+            ],
+          },
+          null,
+          2,
+        ),
+        { mode: 0o600 },
+      );
+      await prepareBrowserPage(page, fx);
+      await fx.social.browseToUrl(`envoy://${fx.aliceOwnerId}/exclusive.md`);
+      await fx.social.expectRenderedMarkdown("You are on the list.");
     } finally {
       await fx.cleanup();
     }

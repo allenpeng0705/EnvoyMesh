@@ -11,9 +11,13 @@ import {
   buildAutoCapabilityTopics,
   buildInterestTopics,
   buildProfileDiscoveryTopics,
+  buildPublishTopicsFromManifest,
   displayNameTopicFor,
   interestTopicFor,
+  normalizeDiscoveryTopicQuery,
+  publishTopicFor,
   slugifyTopic,
+  withPublishDiscoveryTopics,
 } from "../src/capability-discovery.js";
 
 describe("buildInterestTopics", () => {
@@ -187,6 +191,51 @@ describe("displayname topic advertise/search contract", () => {
     );
     expect(displayNameTopicFor("displayname:allen-peng")).toBe(
       "displayname:allen-peng",
+    );
+  });
+});
+
+describe("publishTopicFor / buildPublishTopics (Phase 45E)", () => {
+  it("normalizes tags to publish:<slug>", () => {
+    expect(publishTopicFor("Machine Learning")).toBe("publish:machine-learning");
+    expect(publishTopicFor("publish:music")).toBe("publish:music");
+  });
+
+  it("caps and dedupes manifest tags", () => {
+    const topics = buildPublishTopicsFromManifest(
+      [
+        { tags: ["Music", "Travel"] },
+        { tags: ["music", "Food"] },
+      ],
+      2,
+    );
+    expect(topics).toEqual(["publish:music", "publish:travel"]);
+  });
+
+  it("withPublishDiscoveryTopics merges without dupes", () => {
+    expect(
+      withPublishDiscoveryTopics(["capability:x"], ["publish:music", "publish:music"]),
+    ).toEqual(["capability:x", "publish:music"]);
+  });
+});
+
+describe("normalizeDiscoveryTopicQuery", () => {
+  it("maps free-text By-topic queries to interest:<slug>", () => {
+    expect(normalizeDiscoveryTopicQuery("Music")).toBe("interest:music");
+    expect(normalizeDiscoveryTopicQuery("Machine Learning")).toBe(
+      "interest:machine-learning",
+    );
+  });
+
+  it("leaves known prefixes intact (idempotent)", () => {
+    expect(normalizeDiscoveryTopicQuery("interest:music")).toBe("interest:music");
+    expect(normalizeDiscoveryTopicQuery("publish:Travel")).toBe("publish:travel");
+    expect(normalizeDiscoveryTopicQuery("username:allen")).toBe("username:allen");
+    expect(normalizeDiscoveryTopicQuery("displayname:Allen Peng")).toBe(
+      "displayname:allen-peng",
+    );
+    expect(normalizeDiscoveryTopicQuery("geo:city:US-boston")).toBe(
+      "geo:city:US-boston",
     );
   });
 });

@@ -9628,3 +9628,115 @@ button:disabled {
   font-size: 0.75rem;
   color: var(--text-muted, #71717a);
 }
+.browser-view__author-btn {
+  flex-shrink: 0;
+  padding: 0.4rem 0.75rem;
+  border: 1px solid var(--border-color, #d4d4d8);
+  border-radius: 6px;
+  background: var(--surface, #fff);
+  cursor: pointer;
+}
+.browser-view__author-panel {
+  margin: 0.5rem 0 0;
+  padding: 1rem;
+  border: 1px solid var(--border-color, #d4d4d8);
+  border-radius: 8px;
+  background: var(--surface-2, #fafafa);
+}
+.browser-author h3 {
+  margin: 0 0 0.75rem;
+}
+.browser-author__templates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+.browser-author__title {
+  width: 100%;
+  margin-bottom: 0.75rem;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border-color, #d4d4d8);
+  border-radius: 6px;
+}
+.browser-author__actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 1rem;
+}
+.browser-author__error {
+  color: var(--danger, #b91c1c);
+  margin: 0.5rem 0 0;
+}
+.browser-author__contacts {
+  margin: 0.75rem 0 0;
+  padding: 0.75rem;
+  border: 1px solid var(--border-color, #d4d4d8);
+  border-radius: 6px;
+}
+.browser-author__contacts legend {
+  padding: 0 0.25rem;
+}
+.browser-author__contact-list {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  max-height: 12rem;
+  overflow-y: auto;
+}
+.browser-author__contact-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0;
+  cursor: pointer;
+}
+.browser-author__contact-row input {
+  flex-shrink: 0;
+}
+.markdown-editor {
+  border: 1px solid var(--border-color, #d4d4d8);
+  border-radius: 6px;
+  overflow: hidden;
+  margin-bottom: 0.75rem;
+}
+.markdown-editor__tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border-color, #d4d4d8);
+  background: var(--surface, #fff);
+}
+.markdown-editor__tabs button {
+  border: 0;
+  background: transparent;
+  padding: 0.4rem 0.85rem;
+  cursor: pointer;
+}
+.markdown-editor__tabs button.is-active {
+  font-weight: 600;
+  border-bottom: 2px solid var(--accent, #2563eb);
+}
+.markdown-editor__textarea {
+  width: 100%;
+  border: 0;
+  padding: 0.75rem;
+  resize: vertical;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.9rem;
+}
+.markdown-editor__preview {
+  padding: 0.75rem 1rem;
+  min-height: 8rem;
+}
+.visibility-selector {
+  display: block;
+  width: 100%;
+  max-width: 20rem;
+  padding: 0.45rem 0.65rem;
+  border: 1px solid var(--border-color, #d4d4d8);
+  border-radius: 6px;
+}
+.browser-view__markdown a {
+  color: var(--accent, #2563eb);
+}

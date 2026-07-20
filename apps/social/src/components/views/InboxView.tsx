@@ -1,10 +1,11 @@
 import { useState } from "react";
 import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
-import { useNodeService, useAgentShareProposals, useShareOffers, usePendingApprovals } from "../../hooks/useNodeService.js";
+import { useNodeService, useAgentShareProposals, useShareOffers, usePendingApprovals, useFeedNotifications } from "../../hooks/useNodeService.js";
 import { IncomingShareOffersSection } from "../file-share/IncomingShareOffersSection.js";
 import type { HelloProfile, HelloRequest, ChatMessage, SocialIntroProposal, PendingApprovalSummary } from "@envoymesh/api";
 import { peerDisplayLabel, shortOwnerId } from "../../lib/display.js";
+import { openBrowserAt } from "../../lib/browser-nav.js";
 
 export interface InboxViewProps {
   /** When nested under Chat → Inbox, omit duplicate page title */
@@ -30,6 +31,8 @@ export function InboxView({ embedded = false }: InboxViewProps) {
   const { proposals: agentShareProposals, dismiss: dismissAgentShare } = useAgentShareProposals();
   const { offers: pendingShareOffers } = useShareOffers();
   const { items: pendingApprovals, approve: approvePending, reject: rejectPending } = usePendingApprovals();
+  const { items: feedNotifications, dismiss: dismissFeed } = useFeedNotifications();
+  const [feedBusy, setFeedBusy] = useState<string | null>(null);
 
   const [introSaveStatus, setIntroSaveStatus] = useState<string | null>(null);
   const [agentShareBusy, setAgentShareBusy] = useState<string | null>(null);
@@ -162,7 +165,8 @@ export function InboxView({ embedded = false }: InboxViewProps) {
     pendingMessages.length === 0 &&
     agentShareProposals.length === 0 &&
     pendingShareOffers.length === 0 &&
-    pendingApprovals.length === 0;
+    pendingApprovals.length === 0 &&
+    feedNotifications.length === 0;
 
   if (empty) {
     return (
@@ -193,6 +197,54 @@ export function InboxView({ embedded = false }: InboxViewProps) {
 
       {introSaveStatus && (
         <p className="settings-hint" style={{ marginBottom: 8 }}>{introSaveStatus}</p>
+      )}
+
+      {feedNotifications.length > 0 && (
+        <>
+          <h3 className="inbox-section-title">
+            {t("inbox.feedNotifications", { count: feedNotifications.length })}
+          </h3>
+          <ul className="inbox-list">
+            {feedNotifications.map((item) => (
+              <li key={item.id} className="inbox-item" data-testid="feed-notify-row">
+                <div className="inbox-sender">
+                  <span className="avatar large">W</span>
+                  <div className="inbox-sender-info">
+                    <strong>{item.title}</strong>
+                    <span className="owner-id">{shortOwnerId(item.publisherOwnerId)}</span>
+                  </div>
+                </div>
+                {item.summary ? <p className="inbox-message">{item.summary}</p> : null}
+                <div className="inbox-actions">
+                  <button
+                    type="button"
+                    className="accept"
+                    data-testid="feed-notify-open-browser"
+                    disabled={feedBusy === item.id}
+                    onClick={() => {
+                      openBrowserAt(item.url);
+                      setFeedBusy(item.id);
+                      void dismissFeed(item.id).finally(() => setFeedBusy(null));
+                    }}
+                  >
+                    {t("inbox.openInBrowser")}
+                  </button>
+                  <button
+                    type="button"
+                    className="decline"
+                    disabled={feedBusy === item.id}
+                    onClick={() => {
+                      setFeedBusy(item.id);
+                      void dismissFeed(item.id).finally(() => setFeedBusy(null));
+                    }}
+                  >
+                    {t("inbox.dismiss")}
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
       )}
 
       {pendingApprovals.length > 0 && (
