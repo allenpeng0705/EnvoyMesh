@@ -53,6 +53,8 @@ export const koNetworkSettingsMessages = {
     stageDBadge: "Stage D 배지",
     bootstrap: "부트스트랩",
     relay: "릴레이",
+    circuitReservation: "Circuit reservation",
+    circuitReservationLive: "live slot held",
     holePunch: "홀 펀치 (DCUtR)",
     policyBlock: "정책 차단",
     quic: "QUIC",

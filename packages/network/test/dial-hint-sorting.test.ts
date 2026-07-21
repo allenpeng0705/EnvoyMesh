@@ -101,6 +101,17 @@ describe("dial hint sorting", () => {
       expect(out.some((h) => h.includes("192.168.1.50"))).toBe(true);
     });
 
+    it("preferCircuitHints puts circuit multiaddrs first", () => {
+      const peerId = "12D3KooWFilterDialHintsPeer";
+      const lan = `/ip4/192.168.1.50/tcp/4011/p2p/${peerId}`;
+      const circuit = `/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${peerId}`;
+      const out = filterDialHintsForOutboundSend([lan, circuit], peerId, {
+        preferCircuitHints: true,
+      });
+      expect(out[0]).toBe(circuit);
+      expect(out).toContain(lan);
+    });
+
     it("strips circuits when public direct TCP hints exist", () => {
       const peerId = "12D3KooWFilterDialHintsPeer";
       const hints = [

@@ -53,6 +53,8 @@ export const deNetworkSettingsMessages = {
     stageDBadge: "Stage-D-Abzeichen",
     bootstrap: "Bootstrap",
     relay: "Relay",
+    circuitReservation: "Circuit reservation",
+    circuitReservationLive: "live slot held",
     holePunch: "Hole Punch (DCUtR)",
     policyBlock: "Richtlinienblock",
     quic: "QUIC",

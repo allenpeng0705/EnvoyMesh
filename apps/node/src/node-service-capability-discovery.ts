@@ -58,7 +58,7 @@ export interface CapabilityDiscoveryContext {
   loadHumanProfile(): Promise<HumanProfileLite | undefined>;
   /** Profile directory — used to detect published web content for DHT advertise. */
   getProfileDir(): string | undefined;
-  /** Merge topics into relay.checkin advertisements (cross-NAT lookup). */
+  /** Replace capability/publish topics on relay.checkin advertisements (cross-NAT lookup). */
   mergeAdvertisedDiscoveryTopics?(topics: string[]): void;
 }
 
@@ -135,9 +135,8 @@ export async function runCapabilityDiscoveryCycleViaRuntime(
   });
   // Mirror capability + publish topics into relay checkin so NAT peers
   // can resolve them via relay.lookup when DHT provide is empty/flaky.
-  if (finalTopics.length > 0) {
-    ctx.mergeAdvertisedDiscoveryTopics?.(finalTopics);
-  }
+  // Always replace (including empty) so removed publish tags shrink the roster.
+  ctx.mergeAdvertisedDiscoveryTopics?.(finalTopics);
 }
 
 export function startCapabilityDiscoverySchedulerViaRuntime(

@@ -173,6 +173,22 @@ export async function createWanJoinInviteViaRuntime(
   // Callers that explicitly know the recipient is on the same LAN (e.g.
   // mobile pairing kiosk) can opt back in with `addressFilter: "lan-paired"`.
   const addressFilter: DialableAddrMode = params?.addressFilter ?? "wan-public";
+
+  // Hard-gate WAN minting when the mesh reports reservation is not live.
+  // Meshes without `hasRelayReservation` (tests / older builds) skip the gate.
+  if (addressFilter === "wan-public" && !params?.forceWithoutReservation) {
+    const reserved =
+      typeof reachable?.hasRelayReservation === "function"
+        ? reachable.hasRelayReservation()
+        : undefined;
+    if (reserved === false) {
+      throw new Error(
+        "Cannot mint WAN join invite: circuit-relay reservation is not active (relay≠RESERVED). " +
+          "Wait until Settings → Network shows a live reservation, or pass forceWithoutReservation: true.",
+      );
+    }
+  }
+
   let targetMultiaddrs = filterDialableMultiaddrs(
     reachable?.multiaddrs ?? [],
     addressFilter,
@@ -230,6 +246,11 @@ export async function createWanJoinInviteViaRuntime(
   }
 
   const compact = params?.compact === true;
+  // Same address class filter as targetMultiaddrs so joiners do not re-seed
+  // RFC1918 bootstrap peers from a WAN invite.
+  const bootstrapPeers = compact
+    ? []
+    : filterDialableMultiaddrs(config.bootstrapPeers ?? [], addressFilter);
   const invite = {
     v: 1 as const,
     createdAt: now.toISOString(),
@@ -237,7 +258,7 @@ export async function createWanJoinInviteViaRuntime(
     note: params?.note?.trim() || undefined,
     targetPeerId: reachable?.peerId,
     targetMultiaddrs: compact ? targetMultiaddrs.slice(0, 3) : targetMultiaddrs,
-    bootstrapPeers: compact ? [] : [...config.bootstrapPeers],
+    bootstrapPeers,
     bootstrapPresets: [...config.bootstrapPresets],
   };
   const token = encodeWanJoinInviteV1(invite);

@@ -29,31 +29,72 @@ const RELAY_CONTROL_TTL_MS = 300_000;
  * checkin uses these to publish `advertisements[]` with topicHash entries so
  * the relay server's roster (indexed by topicHash) can answer cross-NAT
  * `relay.lookup` queries when the local DHT routing table is empty.
+ *
+ * Maintained as two replaceable scopes so identity interests and
+ * capability/publish topics coexist without unbounded union growth:
+ * removing an interest or publish tag shrinks that scope on the next cycle.
  */
+export type RelayClientAdvertisementScope = "identity" | "capability";
+
+const advertisedByScope: Record<RelayClientAdvertisementScope, string[]> = {
+  identity: [],
+  capability: [],
+};
+
 let currentAdvertisedTopics: string[] = [];
 
-/** Called from the identity runtime when the advertised topic set changes. */
-export function setRelayClientAdvertisedTopics(topics: string[]): void {
-  const cleaned = dedupeTopics(topics);
-  if (cleaned.length === currentAdvertisedTopics.length &&
-      cleaned.every((t, i) => t === currentAdvertisedTopics[i])) {
+function rebuildAdvertisedTopics(): void {
+  const cleaned = dedupeTopics([
+    ...advertisedByScope.identity,
+    ...advertisedByScope.capability,
+  ]);
+  if (
+    cleaned.length === currentAdvertisedTopics.length &&
+    cleaned.every((t, i) => t === currentAdvertisedTopics[i])
+  ) {
     return;
   }
   currentAdvertisedTopics = cleaned;
 }
 
 /**
- * Union-merge topics into the relay checkin advertisement set.
- * Used by the capability/publish discovery cycle so `publish:` topics
- * are not clobbered when identity later sets interest/displayname topics
- * (and vice versa).
+ * Replace one advertisement scope and rebuild the flat checkin roster.
+ * Pass `[]` to clear that scope only (the other scope is preserved).
+ */
+export function replaceRelayClientAdvertisedTopics(
+  scope: RelayClientAdvertisementScope,
+  topics: readonly string[],
+): void {
+  advertisedByScope[scope] = dedupeTopics(topics);
+  rebuildAdvertisedTopics();
+}
+
+/**
+ * Full reset of both scopes. Empty list = private-profile clear.
+ * Non-empty = replace entire roster via the identity scope (test / legacy).
+ */
+export function setRelayClientAdvertisedTopics(topics: string[]): void {
+  advertisedByScope.identity = dedupeTopics(topics);
+  advertisedByScope.capability = [];
+  rebuildAdvertisedTopics();
+}
+
+/**
+ * Replace the capability/publish scope (identity interests preserved).
+ * Prefer `replaceRelayClientAdvertisedTopics("capability", …)` at new call sites.
  */
 export function mergeRelayClientAdvertisedTopics(topics: readonly string[]): void {
-  setRelayClientAdvertisedTopics([...currentAdvertisedTopics, ...topics]);
+  replaceRelayClientAdvertisedTopics("capability", topics);
 }
 
 export function getRelayClientAdvertisedTopics(): string[] {
   return [...currentAdvertisedTopics];
+}
+
+export function getRelayClientAdvertisedTopicsForScope(
+  scope: RelayClientAdvertisementScope,
+): string[] {
+  return [...advertisedByScope[scope]];
 }
 
 function dedupeTopics(topics: readonly string[]): string[] {

@@ -13,7 +13,8 @@
 
 import { createServer, type IncomingMessage, type ServerResponse } from "http";
 import { mkdirSync } from "fs";
-import { join } from "path";
+import { dirname, join } from "path";
+import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 import { WebSocketServer, WebSocket } from "ws";
 import { byteStream } from "@libp2p/utils";
@@ -49,6 +50,14 @@ import {
   buildRelayProtocolReport,
   setActiveCircuitRelayServerConfig,
 } from "./relay-version.js";
+import {
+  adminCredentialsConfigured,
+  checkBasicAuth,
+  isSensitiveRelayHttpPath,
+  sendUnauthorized,
+} from "./admin-auth.js";
+import { createRelayLogBuffer } from "./relay-log-buffer.js";
+import { handleAdminRequest, type AdminHttpDeps } from "./admin-http.js";
 
 // ============================================================================
 // CONSTANTS & CONFIGURATION
@@ -56,9 +65,19 @@ import {
 
 const args = parseRelayArgs(process.argv.slice(2));
 const startedAtMs = Date.now();
+const adminCreds = adminCredentialsConfigured(args);
 
 // Ensure profile directory exists
 mkdirSync(args.profileDir, { recursive: true });
+
+const logBuffer = createRelayLogBuffer({
+  maxLines: args.logMaxLines,
+  maxBytes: args.logMaxBytes,
+  retainDays: args.logRetainDays,
+  logDir: join(args.profileDir, "logs"),
+});
+
+const adminUiRoot = join(dirname(fileURLToPath(import.meta.url)), "..", "admin-ui");
 
 const libp2pPrivateKey = await loadOrCreateLibp2pPrivateKey(
   join(args.profileDir, "libp2p-private.key"),
@@ -132,6 +151,22 @@ if (args.advertiseAddrs.length > 0) {
 if (args.httpPort) {
     console.log(`[relay] HTTP info endpoint: enabled (port ${args.httpPort})`);
     console.log(`[relay] WebSocket endpoints: /ws (mobile client-proxy), /ws/home (home node tunnel), /ws/client (direct client)`);
+    if (adminCreds) {
+      const usingDefaults =
+        adminCreds.user === "admin" && adminCreds.password === "envoymesh123456";
+      console.log(
+        `[relay] Admin UI: http://0.0.0.0:${args.httpPort}/admin/ (Basic Auth required — put TLS in front for remote access)`,
+      );
+      if (usingDefaults) {
+        console.warn(
+          "[relay] WARNING: Using default admin credentials (admin / envoymesh123456). Set ENVOYMESH_RELAY_ADMIN_USER and ENVOYMESH_RELAY_ADMIN_PASSWORD (or --admin-user / --admin-password) before exposing this relay publicly.",
+        );
+      }
+    } else {
+      console.warn(
+        "[relay] WARNING: Admin credentials unset — /admin is disabled; /info, /version, /protocols, /reservations remain open without auth.",
+      );
+    }
     // Surface the resolved libp2p versions + node version at startup so
     // operators can verify a redeploy actually picked up the new code
     // without needing to curl /version. The two should always agree;
@@ -406,6 +441,7 @@ async function shutdown(): Promise<void> {
   if (started) {
     await mesh.stop();
   }
+  logBuffer.dispose();
   console.log("[relay] Stopped.");
   process.exit(0);
 }
@@ -519,86 +555,6 @@ try {
   }
 
   if (args.httpPort) {
-    httpServer = createServer((req: IncomingMessage, res: ServerResponse) => {
-      if (req.url === "/info") {
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(
-          JSON.stringify({
-            peerId: mesh.peerId,
-            addrs: mesh.multiaddrs,
-            rendezvous: args.enableRendezvous,
-            clientProxy: true,
-            rosterSize: relayRoster.size(),
-          }),
-        );
-      } else if (req.url === "/version") {
-        // Resolved libp2p + @envoymesh/* package versions + node + platform.
-        // Operators rely on this to verify a redeploy actually picked up
-        // the latest build — a stale package-lock.json can pin old versions
-        // even after `git pull && ./scripts/run-relay.sh`.
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(buildRelayVersionReport(new Date(startedAtMs).toISOString())));
-      } else if (req.url === "/protocols") {
-        // The protocol strings the relay accepts on inbound streams + uses
-        // when dialing outbound. Compare against what connecting peers
-        // expect — a missing entry here is the smoking gun for "Protocol
-        // selection failed" handshake errors.
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(buildRelayProtocolReport()));
-      } else if (req.url === "/health") {
-        const snapshot = relayHealthSnapshot ?? {
-          status: started ? "healthy" : "starting",
-          checkedAt: new Date().toISOString(),
-          uptimeMs: Date.now() - startedAtMs,
-          reasons: started ? [] : ["relay is starting"],
-        };
-        const statusCode =
-          snapshot.status === "critical" || snapshot.status === "unhealthy" || snapshot.status === "starting"
-            ? 503
-            : 200;
-        res.writeHead(statusCode, { "Content-Type": "application/json" });
-        res.end(JSON.stringify(snapshot));
-      } else if (req.url === "/reservations") {
-        // Live circuit-relay-v2 reservation store size. Operators rely on
-        // this to see "is the store filling up?" in real time without
-        // scraping the relay log. A persistently-near-cap count means
-        // the public-mode preset (or hand-tuned override) is too tight.
-        res.writeHead(200, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({
-          count: mesh.getCircuitRelayReservationCount(),
-          maxReservations: circuitRelayServerConfig.maxReservations ?? 15,
-          publicMode: args.relayPublicMode,
-          checkedAt: new Date().toISOString(),
-        }));
-      } else if (req.url === "/reservations/inspect") {
-        // Per-peer reservation snapshot. Operators use this to answer
-        // "who actually has a reservation on my relay?" without scraping
-        // libp2p internals. Crucial for debugging /p2p-circuit/ dial
-        // failures: if the target peer is not in this list, the relay
-        // will refuse STOP traffic to them with NO_RESERVATION, and the
-        // dialer's "peer closed stream" error is the symptom — the root
-        // cause is on the target side (stale addRelay, expired TTL,
-        // wrong relay, etc).
-        try {
-          const reservations = mesh.inspectCircuitRelayReservations();
-          res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({
-            count: reservations.length,
-            reservations,
-            checkedAt: new Date().toISOString(),
-          }));
-        } catch (inspectErr) {
-          res.writeHead(500, { "Content-Type": "application/json" });
-          res.end(JSON.stringify({
-            error: inspectErr instanceof Error ? inspectErr.message : String(inspectErr),
-          }));
-        }
-      } else {
-        res.writeHead(404);
-        res.end();
-      }
-    });
-
     // Direct client WebSocket connections (mobile → relay direct envelope routing)
     const directWss = new WebSocketServer({ noServer: true });
     const directClients = new Map<WebSocket, string>(); // ws → peerId
@@ -628,6 +584,171 @@ try {
       maxProxyConnections: MAX_PROXY_CONNECTIONS,
       maxHomeTunnelDataBytes: MAX_HOME_TUNNEL_DATA_BYTES,
       logPrefix: "[relay]",
+    });
+
+    const adminDeps: AdminHttpDeps = {
+      creds: adminCreds,
+      logBuffer,
+      adminUiRoot,
+      buildStatus: () => {
+        const conn = mesh.getConnectionStats();
+        const health = relayHealthSnapshot ?? {
+          status: started ? "healthy" : "starting",
+          checkedAt: new Date().toISOString(),
+          uptimeMs: Date.now() - startedAtMs,
+          reasons: started ? [] : ["relay is starting"],
+        };
+        const versions = buildRelayVersionReport(new Date(startedAtMs).toISOString());
+        const tunnelStats = homeTunnelProxy.stats();
+        return {
+          uptimeMs: Date.now() - startedAtMs,
+          health,
+          peerId: mesh.peerId,
+          listenAddrs: mesh.multiaddrs,
+          advertiseAddrs: args.advertiseAddrs,
+          publicMode: args.relayPublicMode,
+          reservationCount: mesh.getCircuitRelayReservationCount(),
+          maxReservations: circuitRelayServerConfig.maxReservations ?? 15,
+          rosterSize: relayRoster.size(),
+          connectionStats: conn,
+          wsProxyConnections: proxyConnTotal,
+          homeTunnels: tunnelStats.homeTunnels,
+          directClients: directClients.size,
+          versions,
+        };
+      },
+      buildReservations: () => {
+        const reservations = mesh.inspectCircuitRelayReservations();
+        return {
+          count: reservations.length,
+          reservations,
+          checkedAt: new Date().toISOString(),
+        };
+      },
+      buildPeers: () => {
+        const conn = mesh.getConnectionStats();
+        const tunnelStats = homeTunnelProxy.stats();
+        return {
+          connectedPeerIds: conn.connectedPeerIds,
+          connectedPeerCount: conn.connectedPeerIds.length,
+          circuitPeerIds: conn.circuitPeerIds,
+          circuitPeerCount: conn.circuitPeerIds.length,
+          totalConnections: conn.totalConnections,
+          rosterSize: relayRoster.size(),
+          wsProxyConnections: proxyConnTotal,
+          homeTunnels: tunnelStats.homeTunnels,
+          directClients: directClients.size,
+        };
+      },
+      restartLibp2p: (reason) => restartLibp2pForHealth(reason),
+      restartProcess: () => {
+        void shutdown();
+      },
+    };
+
+    httpServer = createServer((req: IncomingMessage, res: ServerResponse) => {
+      void (async () => {
+        const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
+        const pathname = url.pathname;
+
+        if (await handleAdminRequest(req, res, pathname, url, adminDeps)) {
+          return;
+        }
+
+        // When admin creds are configured, lock down sensitive JSON probes.
+        if (
+          adminCreds &&
+          isSensitiveRelayHttpPath(pathname) &&
+          !checkBasicAuth(req, adminCreds)
+        ) {
+          sendUnauthorized(res);
+          return;
+        }
+
+        if (pathname === "/info") {
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(
+            JSON.stringify({
+              peerId: mesh.peerId,
+              addrs: mesh.multiaddrs,
+              rendezvous: args.enableRendezvous,
+              clientProxy: true,
+              rosterSize: relayRoster.size(),
+            }),
+          );
+        } else if (pathname === "/version") {
+          // Resolved libp2p + @envoymesh/* package versions + node + platform.
+          // Operators rely on this to verify a redeploy actually picked up
+          // the latest build — a stale package-lock.json can pin old versions
+          // even after `git pull && ./scripts/run-relay.sh`.
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(buildRelayVersionReport(new Date(startedAtMs).toISOString())));
+        } else if (pathname === "/protocols") {
+          // The protocol strings the relay accepts on inbound streams + uses
+          // when dialing outbound. Compare against what connecting peers
+          // expect — a missing entry here is the smoking gun for "Protocol
+          // selection failed" handshake errors.
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(buildRelayProtocolReport()));
+        } else if (pathname === "/health") {
+          const snapshot = relayHealthSnapshot ?? {
+            status: started ? "healthy" : "starting",
+            checkedAt: new Date().toISOString(),
+            uptimeMs: Date.now() - startedAtMs,
+            reasons: started ? [] : ["relay is starting"],
+          };
+          const statusCode =
+            snapshot.status === "critical" || snapshot.status === "unhealthy" || snapshot.status === "starting"
+              ? 503
+              : 200;
+          res.writeHead(statusCode, { "Content-Type": "application/json" });
+          res.end(JSON.stringify(snapshot));
+        } else if (pathname === "/reservations") {
+          // Live circuit-relay-v2 reservation store size. Operators rely on
+          // this to see "is the store filling up?" in real time without
+          // scraping the relay log. A persistently-near-cap count means
+          // the public-mode preset (or hand-tuned override) is too tight.
+          res.writeHead(200, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({
+            count: mesh.getCircuitRelayReservationCount(),
+            maxReservations: circuitRelayServerConfig.maxReservations ?? 15,
+            publicMode: args.relayPublicMode,
+            checkedAt: new Date().toISOString(),
+          }));
+        } else if (pathname === "/reservations/inspect") {
+          // Per-peer reservation snapshot. Operators use this to answer
+          // "who actually has a reservation on my relay?" without scraping
+          // libp2p internals. Crucial for debugging /p2p-circuit/ dial
+          // failures: if the target peer is not in this list, the relay
+          // will refuse STOP traffic to them with NO_RESERVATION, and the
+          // dialer's "peer closed stream" error is the symptom — the root
+          // cause is on the target side (stale addRelay, expired TTL,
+          // wrong relay, etc).
+          try {
+            const reservations = mesh.inspectCircuitRelayReservations();
+            res.writeHead(200, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({
+              count: reservations.length,
+              reservations,
+              checkedAt: new Date().toISOString(),
+            }));
+          } catch (inspectErr) {
+            res.writeHead(500, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({
+              error: inspectErr instanceof Error ? inspectErr.message : String(inspectErr),
+            }));
+          }
+        } else {
+          res.writeHead(404);
+          res.end();
+        }
+      })().catch((err) => {
+        console.error("[relay] HTTP handler error:", err);
+        if (!res.headersSent) {
+          res.writeHead(500);
+          res.end();
+        }
+      });
     });
 
     httpServer.on("upgrade", (req, socket, head) => {

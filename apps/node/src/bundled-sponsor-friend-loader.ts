@@ -104,12 +104,11 @@ export type BundledSponsorFriendParsed = {
   /** Sponsor multiaddrs from the join token's `targetMultiaddrs`. */
   multiaddrs: string[];
   /** Sponsor bootstrap peers from the join token's `bootstrapPeers`.
-   *  These include the sponsor's direct LAN/WAN addrs that were stripped
-   *  from `targetMultiaddrs` by the `wan-public` filter at invite creation
-   *  time.  Passing them through lets the smart address-filter picker
-   *  (`pickAddressFilterForPeer`) see LAN addrs and return `"all"`
-   *  instead of `"wan-public"`, so direct LAN paths survive the dial
-   *  hint filter. */
+   *  WAN invites strip RFC1918 from this list at mint time. Older
+   *  bundles may still carry LAN addrs; the dial picker may see them
+   *  (via `_gatherSponsorMultiaddrs`) and select `"all"` with
+   *  circuit-first ordering so same-LAN can fall back without
+   *  poisoning wan-default dials. */
   bootstrapPeers: string[];
   /** Parsed `contactUri` — used to look up the peer directory by
    *  `peerId` without re-parsing. */

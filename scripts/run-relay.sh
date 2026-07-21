@@ -7,6 +7,14 @@
 # tsc -b is incremental (1-3 s on no-op), and stale binaries are the #1
 # source of "why isn't my fix live" relay bugs. If you really need to
 # skip a build, comment out the build block below.
+#
+# Admin Web UI: defaults to user admin / password envoymesh123456.
+# Override before exposing publicly:
+#   ENVOYMESH_RELAY_ADMIN_USER=ops
+#   ENVOYMESH_RELAY_ADMIN_PASSWORD=...
+# Put TLS (Caddy/nginx) in front for remote access — Basic Auth over plain HTTP
+# leaks credentials. For hard restart from the UI, run under systemd/Docker with
+# Restart=always (see docs/relay-supervisor-recipes.md).
 
 set -e
 
@@ -72,7 +80,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --profile <dir>    Profile directory (default: ./data/relay)"
             echo "  --port <port>      Listen port (default: 4001)"
             echo "  --advertise <IP>   Public IP for advertise address"
-            echo "  --http-port <port> HTTP port for /info endpoint (optional)"
+            echo "  --http-port <port> HTTP port for /info, /health, and /admin (optional)"
             echo "  --public-mode      Apply community-relay presets to circuit-relay-v2"
             echo "                     (1024 reservations, 30 min TTL, 4 MiB data, etc.)."
             echo "                     Default is private mode (libp2p embedded defaults,"
@@ -88,6 +96,9 @@ while [[ $# -gt 0 ]]; do
             echo "  ENVOYMESH_BOOTSTRAP        Bootstrap peers (comma-separated)"
             echo "  RELAY_PORT                 Default listen port"
             echo "  ENVOYMESH_RELAY_PUBLIC_MODE  Set to 1 to enable public mode (default: 0)"
+            echo "  ENVOYMESH_RELAY_ADMIN_USER / ENVOYMESH_RELAY_ADMIN_PASSWORD"
+            echo "                             Admin UI Basic Auth (default: admin / envoymesh123456)"
+            echo "                             Also locks /info, /version, /reservations"
             exit 0
             ;;
         *)
@@ -156,7 +167,9 @@ if [ -n "$ADVERTISE_ADDR" ]; then
     echo "  Advertise: /ip4/$ADVERTISE_ADDR/tcp/$LISTEN_PORT"
 fi
 if [ -n "$HTTP_PORT" ]; then
-    echo "  HTTP Info: port $HTTP_PORT (/info endpoint)"
+    echo "  HTTP:    port $HTTP_PORT (/health public; /info when admin unset)"
+    echo "  Admin UI: http://0.0.0.0:${HTTP_PORT}/admin/ (default auth: admin / envoymesh123456)"
+    echo "           Override with ENVOYMESH_RELAY_ADMIN_USER + _PASSWORD; put TLS in front."
 fi
 if [ "$PUBLIC_MODE" = "1" ]; then
     echo "  Mode:    PUBLIC (1024 reservations, 30 min TTL, 4 MiB data)"

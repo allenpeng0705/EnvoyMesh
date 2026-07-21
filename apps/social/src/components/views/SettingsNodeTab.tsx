@@ -1841,6 +1841,28 @@ export function SettingsNodeTab() {
                 {connectivityDiagnostics.axes.relayAvailability.state}:{" "}
                 {connectivityDiagnostics.axes.relayAvailability.explanation}
               </dd>
+              <dt>{t("settings.network.wanDiagnostics.circuitReservation")}</dt>
+              <dd>
+                <span
+                  style={{
+                    fontWeight: 600,
+                    color:
+                      connectivityDiagnostics.circuitReservation?.state === "reserved"
+                        ? "var(--ok, #1a7f37)"
+                        : connectivityDiagnostics.circuitReservation?.state === "failed"
+                          ? "var(--danger, #cf222e)"
+                          : undefined,
+                  }}
+                >
+                  {(connectivityDiagnostics.circuitReservation?.state ?? "off").toUpperCase()}
+                </span>
+                {connectivityDiagnostics.circuitReservation?.live
+                  ? ` — ${t("settings.network.wanDiagnostics.circuitReservationLive")}`
+                  : ""}
+                {connectivityDiagnostics.circuitReservation?.lastError
+                  ? ` — ${connectivityDiagnostics.circuitReservation.lastError}`
+                  : ""}
+              </dd>
               <dt>{t("settings.network.wanDiagnostics.holePunch")}</dt>
               <dd>
                 {connectivityDiagnostics.axes.holePunch.state}: {connectivityDiagnostics.axes.holePunch.explanation}

@@ -44,7 +44,7 @@ import {
   sendExpectReplyWithRetry,
 } from "./chat-outbound-deliver.js";
 import { deliverOutboundExpectReply } from "./mesh-outbound-helper.js";
-import { displayNameTopicFor, interestTopicFor, normalizeDiscoveryTopicQuery } from "./capability-discovery.js";
+import { displayNameTopicFor, interestTopicFor, expandDiscoveryTopicQueries } from "./capability-discovery.js";
 import type { createNodeConfigStore } from "./node-config-store.js";
 import type { DiscoverySeedStore } from "./discovery-seed-store.js";
 import {
@@ -147,12 +147,16 @@ export class NodeDiscoveryRuntime {
       // Normalize free-text "By topic" queries: advertisers publish
       // `interest:<slug>`; Social historically sent raw `music`. Accept both
       // `music` and `interest:music` (and similarly for publish:/displayname:/…).
+      // Bare text also expands to capability:<slug> / raw slug so profile
+      // capability tags are discoverable from the same search box.
       const topicQueries = [
-        ...(query.topic?.trim() ? [normalizeDiscoveryTopicQuery(query.topic.trim())] : []),
+        ...(query.topic?.trim()
+          ? expandDiscoveryTopicQueries(query.topic.trim())
+          : []),
         ...(query.topics ?? [])
           .map((t) => t.trim())
           .filter(Boolean)
-          .map((t) => normalizeDiscoveryTopicQuery(t)),
+          .flatMap((t) => expandDiscoveryTopicQueries(t)),
       ].filter(Boolean);
       if (topicQueries.length > 0) {
         const results: PeerSearchResult[] = [];
@@ -163,6 +167,28 @@ export class NodeDiscoveryRuntime {
               results.push(r);
             }
           }
+        }
+        // Merge local peer-directory matches (bonded / cached contacts whose
+        // hobbies or knowledge match the topic) — topic mode previously
+        // returned DHT/relay only and skipped LAN/bonded contacts.
+        try {
+          const localQuery: SearchQuery = {
+            interests: topicQueries.map((t) =>
+              t.startsWith("interest:") ? t.slice("interest:".length) : t,
+            ),
+            queryText: query.topic?.trim() || query.topics?.[0]?.trim(),
+          };
+          const localResults = await this.searchLocalPeers(localQuery, maxResults);
+          for (const r of localResults) {
+            if (!results.some((existing) => existing.nodeId === r.nodeId)) {
+              results.push(r);
+            }
+          }
+        } catch (err) {
+          console.warn(
+            "[searchPeers] local merge for topic search failed:",
+            err instanceof Error ? err.message : err,
+          );
         }
         const selfPeerId = this.deps.getMesh()?.peerId;
         const selfOwnerId = this.deps.getProfile()?.owner.ownerId;

@@ -312,12 +312,13 @@ export interface SetupSponsorFriendRuntimeDeps {
   /**
    * Optional: the sponsor's known multiaddrs (bundled config +
    * peer directory). Used by the smart address-filter picker to decide
-   * whether to try LAN first (`"all"`) or skip LAN entirely
-   * (`"wan-public"`). When omitted, the loop falls back to the local
-   * profile default — `defaultAddressFilterForProfile`-equivalent
-   * behavior, which is fine for the first-attempt dial.
+   * whether to try LAN+circuit (`"all"`) or skip LAN (`"wan-public"`).
+   * Prefer `getPeerMultiaddrs` so each retry can pick up mDNS/DHT updates.
+   * When both are omitted, the loop falls back to the local profile default.
    */
   peerMultiaddrs?: string[];
+  /** Optional: refresh sponsor multiaddrs each retry attempt. */
+  getPeerMultiaddrs?(): Promise<string[]>;
   /**
    * Optional: local node's `discoveryProfile` (e.g. `"lan-fast"`,
    * `"wan-default"`). The smart picker reads this to honor a local
@@ -620,27 +621,19 @@ async function runSetupSponsorFriendRetryLoop(
         await deps.applyWanJoinInvite(resolved.joinToken);
       }
 
-      // searchPeers is deferred until after sendHello so the DHT query
-      // runs with a live mesh and can actually resolve the peer ID.
-      // The search result is just a cache warm — the bond itself does not
-      // depend on it.
+      // Smart address-filter: refresh sponsor multiaddrs each attempt so
+      // late mDNS / DHT discoveries can flip LAN+circuit → "all" with
+      // circuit-first dials. Prefer getPeerMultiaddrs when wired.
+      const peerMultiaddrs = deps.getPeerMultiaddrs
+        ? await deps.getPeerMultiaddrs()
+        : deps.peerMultiaddrs;
+      // Circuit+LAN → "all" (circuit first on wan-default). Circuit-only →
+      // "wan-public". lan-fast → "all" with LAN-first. See pickAddressFilterForPeer.
       const hello = await deps.sendHello(ownerId, profile, resolved.helloMessage, {
         proofOfContext: resolved.proofOfContext,
         targetPeerId: resolved.peerId,
-        // Smart address-filter: inspect the peer's known multiaddrs and
-        // pick the right mode automatically. If the peer has LAN
-        // addresses (RFC1918 / link-local TCP), try LAN first via "all"
-        // (the dialer falls back to relay if LAN paths are stale). If
-        // the peer is known WAN-only, skip LAN entirely with
-        // "wan-public" (no point burning the LAN timeout). If we have
-        // no peer addrs at all, defer to the local profile default
-        // (wan-public for production, all for lan-fast). Read the
-        // local profile inside the loop so a profile change mid-loop
-        // (rare, but possible during a long retry cycle) takes effect
-        // on the next attempt. The picker lives in
-        // `outbound-dial-hints.ts` next to the local-profile default.
         addressFilter: pickAddressFilterForPeer(
-          deps.peerMultiaddrs,
+          peerMultiaddrs,
           deps.localDiscoveryProfile ?? (await deps.loadNodeConfig())?.discoveryProfile,
         ),
       });

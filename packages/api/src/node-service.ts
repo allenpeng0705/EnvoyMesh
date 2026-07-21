@@ -748,6 +748,12 @@ export interface CreateWanJoinInviteParams {
    * same network as the sender (e.g. mobile pairing kiosk).
    */
   addressFilter?: DialableAddrMode;
+  /**
+   * When `addressFilter` is `"wan-public"` (default) and the mesh reports
+   * `hasRelayReservation() === false`, minting throws unless this is true.
+   * Use only for packaging/tests when you knowingly mint before reservation.
+   */
+  forceWithoutReservation?: boolean;
 }
 
 export interface CreateWanJoinInviteResult {
@@ -1199,6 +1205,19 @@ export interface ConnectivityDiagnostics {
       dht?: boolean;
       quic?: boolean;
     };
+  };
+  /**
+   * Live circuit-relay-v2 client reservation chip (inbound /p2p-circuit/
+   * reachability). Distinct from axes.relayAvailability (checkin/lookup).
+   */
+  circuitReservation?: {
+    state: "off" | "pending" | "reserved" | "failed";
+    live: boolean;
+    everReserved: boolean;
+    relayPeerIds: string[];
+    lastError?: string;
+    lastReservedAt?: string;
+    checkedAt: string;
   };
   quicEnabled: boolean;
   hints: string[];

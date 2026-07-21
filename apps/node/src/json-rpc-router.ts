@@ -554,6 +554,13 @@ export async function routeRpcMethod(
       return ns.createWanJoinInvite({
         expiresInHours: params.expiresInHours as number | undefined,
         note: params.note as string | undefined,
+        compact: params.compact as boolean | undefined,
+        addressFilter: params.addressFilter as
+          | "lan-paired"
+          | "wan-public"
+          | "all"
+          | undefined,
+        forceWithoutReservation: params.forceWithoutReservation as boolean | undefined,
       });
     case "applyWanJoinInvite":
       return ns.applyWanJoinInvite(String(params.token ?? ""));

@@ -53,6 +53,8 @@ export const itNetworkSettingsMessages = {
     stageDBadge: "Badge Stage D",
     bootstrap: "Bootstrap",
     relay: "Relay",
+    circuitReservation: "Circuit reservation",
+    circuitReservationLive: "live slot held",
     holePunch: "Hole punch (DCUtR)",
     policyBlock: "Blocco policy",
     quic: "QUIC",

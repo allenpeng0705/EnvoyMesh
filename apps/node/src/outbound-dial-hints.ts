@@ -14,6 +14,7 @@ import {
   dedupeDialHintStrings,
   hasDirectTcpDialHints,
   filterDialHintsForOutboundSend,
+  prioritizeCircuitDialHints,
 } from "@envoymesh/network";
 import type { DialableAddrMode } from "@envoymesh/api";
 import { expandCircuitDialCandidates } from "./discovery-inbound.js";
@@ -71,25 +72,13 @@ function defaultAddressFilterForProfile(
 /**
  * Smart address-filter selection for outbound dials to a known peer.
  *
- * Inspects the peer's known multiaddrs (bundled config + peer directory)
- * and decides whether to try LAN first, WAN-only, or fall back to the
- * local profile's default. The goal is to avoid wasted dial timeouts:
- *
- * - Local node is on `discoveryProfile: "lan-fast"` → always `"all"`.
- *   Same-LAN home setups explicitly opt into RFC1918; honor that
- *   regardless of what we know about the peer's addresses (the LAN
- *   discovery may not have caught up yet).
- * - Otherwise, if the peer's known multiaddrs include any RFC1918 /
- *   link-local / CGNAT TCP path → `"all"`. The dialer tries LAN
- *   addrs first and falls back to the relay circuit if the LAN paths
- *   are stale. Right for same-Mac dev and same-LAN home setups.
- * - Otherwise, if the peer has any non-circuit WAN addrs (public IP
- *   or DNS) → `"wan-public"`. Skips the LAN attempt entirely; the
- *   LAN timeout would never succeed.
- * - Otherwise (peer has only circuit / loopback / unspecified addrs,
- *   or no addrs at all) → `"wan-public"`. The dialer's "wan-public"
- *   mode still allows circuit dials (they're the only viable path
- *   anyway).
+ * - `lan-fast` → `"all"` (LAN first; circuits kept as fallback).
+ * - Circuit + LAN → `"all"` so same-LAN can fall back after circuit.
+ *   On wan-default, `buildOutboundDialHints` prefers circuits first so
+ *   stale RFC1918 from installer tokens does not burn 30s before relay.
+ * - Circuit only → `"wan-public"`.
+ * - LAN only → `"all"`.
+ * - Empty / unknown → `"wan-public"`.
  */
 export function pickAddressFilterForPeer(
   peerMultiaddrs: readonly string[] | undefined,
@@ -111,16 +100,8 @@ export function pickAddressFilterForPeer(
     addr.includes("/p2p-circuit/"),
   );
 
-  // Production wan-default / relay-only installs: when a circuit path
-  // exists (typical for a home Mac behind NAT + cloud relay), prefer
-  // wan-public so we do not burn 30s on baked-in RFC1918 addrs from
-  // installer join tokens (sponsor-friend WAN auto-bond). Same-LAN
-  // packages still work via the circuit hop when the sponsor holds a
-  // live reservation — or operators set discoveryProfile=lan-fast.
+  if (hasCircuit && hasLan) return "all";
   if (hasCircuit) return "wan-public";
-
-  // LAN addrs only (no circuit yet): try LAN — useful when the peer
-  // is nearby and the invite has not yet been refreshed with a circuit.
   if (hasLan) return "all";
 
   return "wan-public";
@@ -251,8 +232,19 @@ export async function buildOutboundDialHints(input: {
   const addressFilter = input.addressFilter ?? defaultAddressFilterForProfile(input.config);
   const filtered = filterDialHintsByAddressFilter(ordered, addressFilter);
   const hasSurvivingDirect = hasDirectTcpDialHints(filtered);
-  return filterDialHintsForOutboundSend(filtered, recipientPeerId, {
-    preferCircuitHints: !hasSurvivingDirect,
+  const hasSurvivingCircuit = filtered.some((a) => a.includes("/p2p-circuit/"));
+  // wan-default (and other non-lan-fast profiles): when both circuit and
+  // LAN survive, prefer circuit first so installer RFC1918 does not burn
+  // 30s before relay. lan-fast keeps LAN-first via prioritizeDirectLanDialHints.
+  const lanFast = input.config?.discoveryProfile === "lan-fast";
+  const preferCircuitHints = lanFast
+    ? !hasSurvivingDirect
+    : hasSurvivingCircuit || !hasSurvivingDirect;
+  const forSend = preferCircuitHints
+    ? prioritizeCircuitDialHints(filtered)
+    : filtered;
+  return filterDialHintsForOutboundSend(forSend, recipientPeerId, {
+    preferCircuitHints,
   });
 }
 

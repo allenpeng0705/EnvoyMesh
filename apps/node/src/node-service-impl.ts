@@ -143,10 +143,6 @@ import {
   type CommerceReceiptRecord,
   type ListCommerceReceiptsParams,
   type RecordCommerceReceiptParams,
-  deriveLocationDiscoveryTopics,
-  profileCapabilityTags,
-  profileCapabilityDiscoveryTopics,
-  syncProfileTagsToManifestCapabilities,
   ensureDefaultAutonomousPoliciesForModel,
 } from "@envoymesh/api";
 import { resolveDidImportInput } from "@envoymesh/api/did-import";
@@ -833,12 +829,10 @@ import {
   startRelayClientScheduler,
   runRelayClientCycle,
   setRelayClientAdvertisedTopics,
-  mergeRelayClientAdvertisedTopics,
+  replaceRelayClientAdvertisedTopics,
   queryRelayLookupWithDeps,
   type RelayClientCycleDeps,
 } from "./relay-client-cycle.js";
-import { buildProfileDiscoveryTopics, runCapabilityDiscoveryCycle, withWebContentDiscoveryTopic } from "./capability-discovery.js";
-import { createWebContentStore } from "./web-content-store.js";
 import { publishWebContentEntry as publishWebContentEntryAuthor } from "./web-content-author.js";
 import { sendFeedNotifyToBonds } from "./feed-notify-outbound.js";
 import {
@@ -2241,17 +2235,28 @@ class NodeServiceImpl implements NodeService {
    * making the topic discoverable via `relay.lookup` (cross-NAT fallback).
    */
   private async _notifyAdvertisedDiscoveryTopics(topics: string[]): Promise<void> {
-    // Empty list = clear (private profile). Non-empty = merge so capability
-    // publish topics and interest topics coexist on the relay roster.
+    // Empty list = clear all scopes (private profile). Non-empty = replace
+    // the identity scope only so capability/publish topics are preserved
+    // and removed interests actually shrink the roster.
     if (topics.length === 0) {
       setRelayClientAdvertisedTopics([]);
     } else {
-      mergeRelayClientAdvertisedTopics(topics);
+      replaceRelayClientAdvertisedTopics("identity", topics);
+    }
+    // Kick an early relay.checkin so NAT peers don't wait up to ~30s for
+    // the periodic scheduler to publish the new topicHash roster.
+    const deps = this._relayClientCycleDeps;
+    if (deps) {
+      void runRelayClientCycle(deps).catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[relay-client] post-advertise checkin failed: ${msg}`);
+      });
     }
   }
 
   private _mergeAdvertisedDiscoveryTopics(topics: string[]): void {
-    mergeRelayClientAdvertisedTopics(topics);
+    // Capability/publish cycle: replace that scope (not unbounded union).
+    replaceRelayClientAdvertisedTopics("capability", topics);
   }
 
   private _serviceContextDeps(): ServiceContextDeps {
@@ -2286,21 +2291,24 @@ class NodeServiceImpl implements NodeService {
     // addresses even if the auto-bond never completes. The merge is
     // idempotent so a re-run is safe.
     const config = await this._configStore.load().catch(() => undefined);
-    const includePrivateLan = config?.discoveryProfile === "lan-fast";
+    const lanFast = config?.discoveryProfile === "lan-fast";
+    // Peer-directory backfill: strip RFC1918 on wan-default so other
+    // dial paths (chat, etc.) are not poisoned by home-LAN addrs.
     await backfillBundledSponsorPeerAddresses(
       this._peerDirectoryStore,
       process.env.ENVOYMESH_NODE_BUNDLE_DIR,
-      { includePrivateLan },
+      { includePrivateLan: lanFast },
     );
     const parsed = await loadBundledSponsorFriendParsed(
       process.env.ENVOYMESH_NODE_BUNDLE_DIR,
     );
     if (!parsed) return [];
-    // WAN packages: circuits + public only. lan-fast: keep RFC1918 too.
+    // Picker input: always include LAN when present so circuit+LAN can
+    // select "all" with circuit-first ordering (same-LAN fallback).
     const fromBundled = selectBundledSponsorBackfillAddrs(
       parsed.multiaddrs,
       parsed.bootstrapPeers ?? [],
-      { includePrivateLan },
+      { includePrivateLan: true },
     );
     if (fromBundled.length === 0) return fromBundled;
     const peerId = parsed.link.peerId;
@@ -2317,7 +2325,7 @@ class NodeServiceImpl implements NodeService {
     const fromDir = selectBundledSponsorBackfillAddrs(
       record.listenAddrs,
       [],
-      { includePrivateLan },
+      { includePrivateLan: true },
     );
     const seen = new Set(fromBundled);
     const merged = [...fromBundled];
@@ -4590,6 +4598,11 @@ class NodeServiceImpl implements NodeService {
           await backfillBundledSponsorPeerAddresses(
             this._peerDirectoryStore,
             process.env.ENVOYMESH_NODE_BUNDLE_DIR,
+            {
+              includePrivateLan:
+                (await this._configStore.load().catch(() => undefined))?.discoveryProfile ===
+                "lan-fast",
+            },
           );
           const parsed = await loadBundledSponsorFriendParsed(
             process.env.ENVOYMESH_NODE_BUNDLE_DIR,
@@ -5281,8 +5294,6 @@ class NodeServiceImpl implements NodeService {
 
   async runCapabilityDiscovery(params?: { find?: boolean }): Promise<void> {
     this._assertOnline();
-    const mesh = this._requireMesh();
-    const profile = this._requireProfile();
     const config = (await this._configStore.load())!;
     const discoveryProfile = config.discoveryProfile;
     const runtime = resolveConnectivityRuntime({
@@ -5296,41 +5307,17 @@ class NodeServiceImpl implements NodeService {
         idleTimerStretch: config.idleTimerStretch,
       },
     });
-    if (!this._taskStore || !this._discoverySeedStore) {
-      throw new Error("Node stores not initialized");
-    }
-    const humanProfile = await this._humanProfileStore.loadHumanProfile().catch(() => undefined);
-    const geoTopics = deriveLocationDiscoveryTopics({
-      location: humanProfile?.discoveryLocation ?? null,
-      precision: humanProfile?.discoveryLocationPrecision ?? null,
-    });
-    const topics = buildProfileDiscoveryTopics({
-      capabilities: profile.deviceCertificate.capabilities,
-      hobbies: humanProfile?.hobbies,
-      knowledge: humanProfile?.knowledge,
-      geoTopics,
-    });
-    let finalTopics = topics;
-    if (this._profileDir) {
-      const hasWeb = await createWebContentStore(join(this._profileDir, "web"))
-        .hasAnyPublished()
-        .catch(() => false);
-      if (hasWeb) {
-        finalTopics = withWebContentDiscoveryTopic(topics);
-      }
-    }
-    await runCapabilityDiscoveryCycle({
-      mesh,
-      profile: discoveryProfile,
-      topics: finalTopics,
-      taskStore: this._taskStore,
-      discoverySeedStore: this._discoverySeedStore,
-      enableDht: runtime.enableDht,
-      options: {
-        source: "on-demand",
+    // Delegate to the shared cycle so on-demand search also mirrors
+    // capability/publish topics into the relay roster (and picks up
+    // web-content publish tags the same way as the periodic scheduler).
+    await runCapabilityDiscoveryCycleViaRuntime(
+      this._capabilityDiscoveryContext(),
+      "on-demand",
+      {
+        connectivityRuntime: runtime,
         runFind: params?.find !== false,
       },
-    });
+    );
     recordMeshActivity();
   }
 
@@ -5396,7 +5383,7 @@ class NodeServiceImpl implements NodeService {
     });
     const state: import("@envoymesh/api").SetupSponsorFriendState = {
       completedAt: persisted?.setupSponsorFriendCompletedAt,
-      lastAttemptAt: persisted?.setupSponsorFriendCompletedAt,
+      lastAttemptAt: persisted?.setupSponsorFriendLastAttemptAt,
       lastError: persisted?.setupSponsorFriendLastError,
       lastErrorKind: persisted?.setupSponsorFriendLastErrorKind,
       attempts: persisted?.setupSponsorFriendAttempts,
@@ -5491,7 +5478,9 @@ class NodeServiceImpl implements NodeService {
         // try LAN first or skip it. Falls back to the local profile
         // default when the sponsor's addresses are unknown — no env
         // override needed; the runtime figures it out.
-        peerMultiaddrs: await this._gatherSponsorMultiaddrs(),
+        // Smart address-filter: refresh sponsor multiaddrs each attempt
+        // (mDNS / DHT may learn LAN after the first try).
+        getPeerMultiaddrs: () => this._gatherSponsorMultiaddrs(),
         localDiscoveryProfile: (await this._configStore.load())?.discoveryProfile,
         // Wait-for-bond.established: subscribe to the node service's
         // EventEmitter and resolve the promise when an event for the

@@ -55,11 +55,28 @@ export function buildConnectivityDiagnostics(
     );
   }
 
+  const circuitReservation =
+    typeof input.mesh?.getRelayReservationStatus === "function"
+      ? input.mesh.getRelayReservationStatus()
+      : undefined;
+  if (circuitReservation?.state === "failed") {
+    hints.unshift(
+      circuitReservation.lastError
+        ? `Circuit reservation: ${circuitReservation.lastError}`
+        : "Circuit reservation failed — this node is not inbound-reachable via /p2p-circuit/.",
+    );
+  } else if (circuitReservation?.state === "pending") {
+    hints.unshift(
+      "Circuit reservation still PENDING — wait for relay=RESERVED before minting WAN invites.",
+    );
+  }
+
   return {
     checkedAt: new Date().toISOString(),
     nodeOnline: input.nodeOnline,
     stageD,
     axes,
+    circuitReservation,
     quicEnabled: axes.features.quic ?? false,
     hints,
     signOffChecklist: [

@@ -191,7 +191,7 @@ If no advertise is set, the relay uses its detected local addresses, which work 
 | `--profile <dir>` | Profile directory for relay identity | `./data/relay` |
 | `--port <port>` | TCP listen port | `4001` |
 | `--advertise <IP>` | Public IP address for advertise | (none) |
-| `--http-port <port>` | HTTP port for `/info` and `/health` endpoints | `15432` |
+| `--http-port <port>` | HTTP port for `/info`, `/health`, and `/admin` | `15432` |
 | `--help`, `-h` | Show help message | - |
 
 ---
@@ -203,6 +203,22 @@ If no advertise is set, the relay uses its detected local addresses, which work 
 | `ENVOYMESH_PROFILE` | Profile directory | `./data/relay` |
 | `ENVOYMESH_BOOTSTRAP` | Comma-separated bootstrap peers | (none) |
 | `RELAY_PORT` | Default port | `4001` |
+| `ENVOYMESH_RELAY_ADMIN_USER` | Admin UI Basic Auth username | `admin` |
+| `ENVOYMESH_RELAY_ADMIN_PASSWORD` | Admin UI Basic Auth password | `envoymesh123456` |
+
+### Admin Web UI
+
+Open (defaults enabled out of the box):
+
+```
+http://<relay-host>:<http-port>/admin/
+```
+
+Default credentials: **admin** / **envoymesh123456**. Change them via env or `--admin-user` / `--admin-password` before exposing the relay publicly.
+
+The UI shows health, peers, circuit reservations, recent logs, and soft (libp2p) / hard (process exit) restart. Hard restart requires a supervisor with `Restart=always` (see `docs/relay-supervisor-recipes.md`).
+
+**Security:** put TLS (Caddy/nginx) in front for remote access — Basic Auth over plain HTTP leaks credentials on the wire. `/health` stays unauthenticated for probes; `/info`, `/version`, `/protocols`, and `/reservations` require the same Basic Auth when admin credentials are set (including the defaults).
 
 ---
 

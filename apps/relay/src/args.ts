@@ -34,6 +34,16 @@ export interface RelayArgs {
   relayHopTimeoutMs: number | null;
   /** Override `maxOutboundStopStreams` on the circuit-relay-v2 server. */
   relayMaxOutboundStopStreams: number | null;
+  /** Admin UI / sensitive HTTP Basic Auth username. Default: admin. */
+  adminUser: string;
+  /** Admin UI / sensitive HTTP Basic Auth password. Default: envoymesh123456. */
+  adminPassword: string;
+  /** In-memory log ring capacity. Default 2000. */
+  logMaxLines: number;
+  /** Rotate relay.log when it exceeds this many bytes. Default 10 MiB. */
+  logMaxBytes: number;
+  /** Delete rotated log files older than this many days. Default 7. */
+  logRetainDays: number;
 }
 
 /**
@@ -115,6 +125,11 @@ export function parseRelayArgs(argv: string[]): RelayArgs {
     relayDefaultDurationLimitMs: null,
     relayHopTimeoutMs: null,
     relayMaxOutboundStopStreams: null,
+    adminUser: "admin",
+    adminPassword: "envoymesh123456",
+    logMaxLines: 2000,
+    logMaxBytes: 10 * 1024 * 1024,
+    logRetainDays: 7,
   };
 
   // Apply environment variables FIRST. CLI args override them below.
@@ -180,6 +195,16 @@ export function parseRelayArgs(argv: string[]): RelayArgs {
         "--relay-max-outbound-stop-streams",
         getValue(argv, ++i, arg),
       );
+    } else if (arg === "--admin-user") {
+      args.adminUser = getValue(argv, ++i, arg);
+    } else if (arg === "--admin-password") {
+      args.adminPassword = getValue(argv, ++i, arg);
+    } else if (arg === "--log-max-lines") {
+      args.logMaxLines = parsePositiveInt("--log-max-lines", getValue(argv, ++i, arg)) ?? args.logMaxLines;
+    } else if (arg === "--log-max-bytes") {
+      args.logMaxBytes = parsePositiveInt("--log-max-bytes", getValue(argv, ++i, arg)) ?? args.logMaxBytes;
+    } else if (arg === "--log-retain-days") {
+      args.logRetainDays = parsePositiveInt("--log-retain-days", getValue(argv, ++i, arg)) ?? args.logRetainDays;
     } else if (arg === "--help" || arg === "-h") {
       printHelp();
       process.exit(0);
@@ -263,6 +288,30 @@ function applyEnvVars(args: RelayArgs): void {
       process.env.ENVOYMESH_RELAY_MAX_OUTBOUND_STOP_STREAMS,
     );
   }
+  const envAdminUser = process.env.ENVOYMESH_RELAY_ADMIN_USER?.trim();
+  if (envAdminUser) {
+    args.adminUser = envAdminUser;
+  }
+  if (process.env.ENVOYMESH_RELAY_ADMIN_PASSWORD !== undefined) {
+    args.adminPassword = process.env.ENVOYMESH_RELAY_ADMIN_PASSWORD;
+  }
+  if (process.env.ENVOYMESH_RELAY_LOG_MAX_LINES !== undefined) {
+    args.logMaxLines =
+      parsePositiveInt("ENVOYMESH_RELAY_LOG_MAX_LINES", process.env.ENVOYMESH_RELAY_LOG_MAX_LINES) ??
+      args.logMaxLines;
+  }
+  if (process.env.ENVOYMESH_RELAY_LOG_MAX_BYTES !== undefined) {
+    args.logMaxBytes =
+      parsePositiveInt("ENVOYMESH_RELAY_LOG_MAX_BYTES", process.env.ENVOYMESH_RELAY_LOG_MAX_BYTES) ??
+      args.logMaxBytes;
+  }
+  if (process.env.ENVOYMESH_RELAY_LOG_RETAIN_DAYS !== undefined) {
+    args.logRetainDays =
+      parsePositiveInt(
+        "ENVOYMESH_RELAY_LOG_RETAIN_DAYS",
+        process.env.ENVOYMESH_RELAY_LOG_RETAIN_DAYS,
+      ) ?? args.logRetainDays;
+  }
 }
 
 function getValue(argv: string[], index: number, flag: string): string {
@@ -316,9 +365,20 @@ Options:
                            Env: ENVOYMESH_WS_AUTH_TOKEN
   --http-port <port>    HTTP info endpoint port. Default: 15432 (optional).
                          Returns {peerId, addrs} at /info and OK at /health
+  --admin-user <name>   Basic Auth username for /admin UI + sensitive JSON.
+                         Default: admin. Env: ENVOYMESH_RELAY_ADMIN_USER
+  --admin-password <pw> Admin Basic Auth password.
+                         Default: envoymesh123456. Env: ENVOYMESH_RELAY_ADMIN_PASSWORD
+                         Change these in production.
+  --log-max-lines <n>   In-memory log ring size for /admin. Default: 2000
+                         Env: ENVOYMESH_RELAY_LOG_MAX_LINES
+  --log-max-bytes <n>   Rotate profileDir/logs/relay.log at this size. Default: 10MiB
+                         Env: ENVOYMESH_RELAY_LOG_MAX_BYTES
+  --log-retain-days <n> Delete rotated logs older than N days. Default: 7
+                         Env: ENVOYMESH_RELAY_LOG_RETAIN_DAYS
   --relay-public-mode   Apply community-relay presets to circuit-relay-v2
-                         server config (256 reservations, 1 MiB data, 30 min
-                         duration, 60 s hop timeout). The libp2p defaults
+                         server config (1024 reservations, 4 MiB data, 30 min
+                         TTL, 90 s hop timeout). The libp2p defaults
                          (15 reservations, 2 min TTL, 128 KiB data) target
                          an embedded use case — use this for public relays.
                          Env: ENVOYMESH_RELAY_PUBLIC_MODE (1/0)

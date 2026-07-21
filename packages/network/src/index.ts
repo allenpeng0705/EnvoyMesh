@@ -279,6 +279,21 @@ export interface CircuitRelayServerConfig {
   maxOutboundStopStreams?: number;
 }
 
+/** Client-side circuit-relay reservation chip for operators / Settings UI. */
+export type RelayReservationState = "off" | "pending" | "reserved" | "failed";
+
+export interface RelayReservationStatus {
+  state: RelayReservationState;
+  /** True when the local reservation store currently holds a slot. */
+  live: boolean;
+  /** True if a reservation succeeded at least once this process. */
+  everReserved: boolean;
+  relayPeerIds: string[];
+  lastError?: string;
+  lastReservedAt?: string;
+  checkedAt: string;
+}
+
 export interface EnvoyMeshOptions {
   listen?: string[];
   /**
@@ -427,6 +442,14 @@ export class EnvoyMesh {
   /** Track whether we've ever successfully reserved a relay slot. Used to log a startup summary. */
   private relayEverReserved = false;
   private relayEverAdvertised = false;
+  /** Peer IDs of relays that have granted us a reservation this process. */
+  private lastReservedRelayPeerIds: string[] = [];
+  private lastReservedAt: string | undefined;
+  private lastReservationError: string | undefined;
+  private reservationHealthTimer?: ReturnType<typeof setInterval>;
+  private reservationHealthDisconnectUnsub?: () => void;
+  private reservationHealthRunning = false;
+  private reservationHealthRelayAddrs: string[] = [];
   /**
    * The circuit-relay-v2 server config that was passed to {@link EnvoyMesh}.
    * Captured here so observability endpoints (`/version`, `/reservations`) can
@@ -678,10 +701,14 @@ export class EnvoyMesh {
     }
     this.detachRelayLogging();
     this.detachReachabilityObservability();
+    this.stopRelayReservationHealthLoop();
     await this.node.stop();
     this.node = undefined;
     this.relayEverReserved = false;
     this.relayEverAdvertised = false;
+    this.lastReservedRelayPeerIds = [];
+    this.lastReservedAt = undefined;
+    this.lastReservationError = undefined;
   }
 
   get peerId(): string {
@@ -894,26 +921,227 @@ export class EnvoyMesh {
   }
 
   /**
-   * Returns true when at least one circuit-relay-v2 reservation has ever
-   * landed on this node's local ReservationStore. Set by the
-   * `relay:created-reservation` event listener in `installRelayLogging()`.
+   * Returns true when the local circuit-relay-v2 client currently holds at
+   * least one live reservation (preferred), or — when the live store cannot
+   * be queried — when a reservation has ever succeeded this process.
    *
-   * Differs from `getConnectedRelayPeerIds()` — that requires an OPEN
-   * circuit connection (which only exists once a peer has actively
-   * relayed through us or vice versa). A reservation alone doesn't open
-   * a connection; it just gives us the ability to RECEIVE inbound
-   * relays. For the auto-bond probe (`probeMeshReady`) this is the
-   * right signal: the loop needs to be able to dial the sponsor
-   * THROUGH the relay, which only requires the local reservation to
-   * be in place — not an existing inbound connection.
+   * Prefer {@link hasLiveRelayReservation} / {@link getRelayReservationStatus}
+   * when you need to distinguish "ever" vs "still live".
    */
   hasRelayReservation(): boolean {
+    const live = this.hasLiveRelayReservation();
+    if (live) return true;
+    // If we can query the store and know which relays we reserved, a miss
+    // means the slot is gone — do not trust the sticky flag.
+    if (this.getClientHasReservationFn() && this.lastReservedRelayPeerIds.length > 0) {
+      return false;
+    }
     return this.relayEverReserved;
+  }
+
+  /**
+   * True only when libp2p's reservation store currently reports a slot for
+   * a known relay peer. Returns false when the store is unavailable or empty.
+   */
+  hasLiveRelayReservation(relayPeerIds?: readonly string[]): boolean {
+    const hasReservation = this.getClientHasReservationFn();
+    if (!hasReservation) return false;
+    const candidates = [
+      ...(relayPeerIds ?? []),
+      ...this.lastReservedRelayPeerIds,
+    ];
+    const seen = new Set<string>();
+    for (const id of candidates) {
+      const trimmed = id.trim();
+      if (!trimmed || seen.has(trimmed)) continue;
+      seen.add(trimmed);
+      try {
+        if (hasReservation(peerIdFromString(trimmed))) return true;
+      } catch {
+        /* ignore invalid peer ids */
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Operator / UI snapshot of circuit-relay reservation health.
+   * `state` is the chip value: off | pending | reserved | failed.
+   */
+  getRelayReservationStatus(): RelayReservationStatus {
+    const enableRelay = this.options.enableRelay === true || this.options.browserMode === true;
+    const enableServer = this.options.enableRelayServer === true;
+    if (!enableRelay && !enableServer) {
+      return {
+        state: "off",
+        live: false,
+        everReserved: false,
+        relayPeerIds: [],
+        checkedAt: new Date().toISOString(),
+      };
+    }
+    // Relay servers hold *other* peers' reservations; this status is for
+    // client-side inbound reachability via /p2p-circuit/.
+    if (enableServer && !enableRelay) {
+      return {
+        state: "off",
+        live: false,
+        everReserved: false,
+        relayPeerIds: [],
+        checkedAt: new Date().toISOString(),
+      };
+    }
+    const live = this.hasLiveRelayReservation();
+    const relayPeerIds = [...this.lastReservedRelayPeerIds];
+    if (live) {
+      return {
+        state: "reserved",
+        live: true,
+        everReserved: true,
+        relayPeerIds,
+        lastReservedAt: this.lastReservedAt,
+        checkedAt: new Date().toISOString(),
+      };
+    }
+    if (this.lastReservationError && !this.relayEverReserved) {
+      return {
+        state: "failed",
+        live: false,
+        everReserved: false,
+        relayPeerIds,
+        lastError: this.lastReservationError,
+        checkedAt: new Date().toISOString(),
+      };
+    }
+    if (this.relayEverReserved && !live) {
+      return {
+        state: "failed",
+        live: false,
+        everReserved: true,
+        relayPeerIds,
+        lastError:
+          this.lastReservationError ??
+          "Reservation was granted earlier but is no longer live in the local store — re-warming.",
+        lastReservedAt: this.lastReservedAt,
+        checkedAt: new Date().toISOString(),
+      };
+    }
+    return {
+      state: "pending",
+      live: false,
+      everReserved: this.relayEverReserved,
+      relayPeerIds,
+      lastError: this.lastReservationError,
+      checkedAt: new Date().toISOString(),
+    };
+  }
+
+  /**
+   * Periodically re-check live reservation and re-run
+   * eagerConnect + requestRelayReservation when the slot is gone.
+   * Also re-warms shortly after a configured relay peer disconnects.
+   */
+  startRelayReservationHealthLoop(
+    relayMultiaddrs: readonly string[],
+    options?: { intervalMs?: number },
+  ): () => void {
+    this.stopRelayReservationHealthLoop();
+    const addrs = [...new Set(relayMultiaddrs.map((a) => a.trim()).filter(Boolean))];
+    this.reservationHealthRelayAddrs = addrs;
+    if (addrs.length === 0) {
+      return () => undefined;
+    }
+    const intervalMs = options?.intervalMs ?? 5 * 60_000;
+    const relayPeerIds = addrs
+      .map((a) => {
+        const m = a.match(/\/p2p\/([^/]+)$/);
+        return m?.[1];
+      })
+      .filter((id): id is string => Boolean(id));
+
+    const tick = async (reason: string): Promise<void> => {
+      if (this.reservationHealthRunning || !this.node) return;
+      if (this.hasLiveRelayReservation(relayPeerIds)) return;
+      this.reservationHealthRunning = true;
+      try {
+        console.log(`[p2p] relay reservation health (${reason}): slot missing — re-warming`);
+        await this.eagerConnectToRelays(addrs, { timeoutMs: 30_000 });
+        const resv = await this.requestRelayReservation(addrs);
+        console.log(
+          `[p2p] relay reservation health (${reason}): reserved=${resv.reserved} failed=${resv.failed}` +
+            (resv.failures.length > 0 ? ` failures=${JSON.stringify(resv.failures)}` : ""),
+        );
+        if (resv.failed > 0 && resv.reserved === 0) {
+          this.lastReservationError = resv.failures[0] ?? "reservation health re-warm failed";
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.lastReservationError = msg;
+        console.warn(`[p2p] relay reservation health (${reason}) threw: ${msg}`);
+      } finally {
+        this.reservationHealthRunning = false;
+      }
+    };
+
+    // Caller is expected to warm first; this loop only recovers after
+    // expiry / relay restart / disconnect.
+    this.reservationHealthTimer = setInterval(() => {
+      void tick("periodic");
+    }, intervalMs);
+
+    this.reservationHealthDisconnectUnsub = this.onPeerDisconnect((peerId) => {
+      if (!relayPeerIds.includes(peerId)) return;
+      // Debounce: wait a few seconds for reconnect, then re-reserve if still missing.
+      setTimeout(() => {
+        void tick(`disconnect:${peerId.slice(0, 12)}`);
+      }, 5_000);
+    });
+
+    return () => this.stopRelayReservationHealthLoop();
+  }
+
+  stopRelayReservationHealthLoop(): void {
+    if (this.reservationHealthTimer) {
+      clearInterval(this.reservationHealthTimer);
+      this.reservationHealthTimer = undefined;
+    }
+    if (this.reservationHealthDisconnectUnsub) {
+      this.reservationHealthDisconnectUnsub();
+      this.reservationHealthDisconnectUnsub = undefined;
+    }
+    this.reservationHealthRelayAddrs = [];
   }
 
   /** Open libp2p remote peer ids from the connection manager (direct + relay). */
   getConnectedPeerIds(): string[] {
     return this.getConnectionStats().connectedPeerIds;
+  }
+
+  /**
+   * Locate the circuit-relay-v2 client reservationStore.hasReservation binder.
+   */
+  private getClientHasReservationFn():
+    | ((peerId: ReturnType<typeof peerIdFromString>) => boolean)
+    | undefined {
+    const node = this.node;
+    if (!node) return undefined;
+    const transportManager = (node as { components?: { transportManager?: { getTransports?: () => unknown[] } } })
+      .components?.transportManager;
+    const allTransports = transportManager?.getTransports?.() ?? [];
+    for (const t of allTransports as Array<{
+      reservationStore?: {
+        hasReservation?: (peerId: ReturnType<typeof peerIdFromString>) => boolean;
+      };
+      [Symbol.toStringTag]?: string;
+    }>) {
+      if (t[Symbol.toStringTag] === "@libp2p/circuit-relay-v2-transport") {
+        if (t.reservationStore?.hasReservation) {
+          return t.reservationStore.hasReservation.bind(t.reservationStore);
+        }
+        break;
+      }
+    }
+    return undefined;
   }
 
   /**
@@ -1287,6 +1515,14 @@ export class EnvoyMesh {
           // already counted in skipped + skipReasons above
         } else {
           reserved += 1;
+          const m = addr.match(/\/p2p\/([^/]+)$/);
+          const relayId = m?.[1];
+          if (relayId && !this.lastReservedRelayPeerIds.includes(relayId)) {
+            this.lastReservedRelayPeerIds.push(relayId);
+          }
+          this.relayEverReserved = true;
+          this.lastReservedAt = new Date().toISOString();
+          this.lastReservationError = undefined;
           if (this.options.enableP2pDebug) {
             console.log(`[p2p] relay reservation requested: ${addr}`);
           }
@@ -1295,6 +1531,7 @@ export class EnvoyMesh {
         failed += 1;
         const reason = r.reason instanceof Error ? r.reason.message : String(r.reason);
         failures.push(`${addr}: ${reason}`);
+        this.lastReservationError = reason;
         if (this.options.enableP2pDebug) {
           console.warn(`[p2p] relay reservation FAILED: ${addr} (${reason})`);
         }
@@ -2946,6 +3183,11 @@ export class EnvoyMesh {
         | undefined;
       const relayId = detail?.relayPeerId?.toString() ?? "?";
       this.relayEverReserved = true;
+      this.lastReservationError = undefined;
+      this.lastReservedAt = new Date().toISOString();
+      if (relayId !== "?" && !this.lastReservedRelayPeerIds.includes(relayId)) {
+        this.lastReservedRelayPeerIds.push(relayId);
+      }
       console.log(
         `[relay] RESERVED slot on relay=${relayId.slice(0, 12)}… ` +
         `(ttl=${detail?.ttl ?? "?"}s, limit=${detail?.limit?.data ?? "?"}B/${detail?.limit?.duration ?? "?"}s). ` +
@@ -2956,6 +3198,7 @@ export class EnvoyMesh {
     const reservationError = (event: unknown) => {
       const detail = (event as { detail?: unknown })?.detail;
       const msg = detail instanceof Error ? detail.message : String(detail ?? "");
+      this.lastReservationError = msg || "reservation failed (no detail)";
       console.warn(
         `[relay] reservation FAILED: ${msg || "(no detail)"} — ` +
         `this node cannot be reached inbound through a relay until this succeeds. ` +
@@ -3189,7 +3432,8 @@ export class EnvoyMesh {
   private logDiscoveryReadiness(): void {
     const lines: string[] = [];
     if (this.options.enableRelay || this.options.enableRelayServer) {
-      lines.push(`relay=${this.relayEverReserved ? "RESERVED" : "PENDING"}`);
+      const status = this.getRelayReservationStatus();
+      lines.push(`relay=${status.state.toUpperCase()}`);
     } else {
       lines.push("relay=OFF");
     }
@@ -3504,6 +3748,7 @@ export {
   prioritizeCircuitDialHints,
   relayCircuitToPeer,
 } from "./relay-circuit-hints.js";
+import { prioritizeCircuitDialHints } from "./relay-circuit-hints.js";
 export { CapabilityRegistry, type CapabilityRegistryOptions, type CapabilityRegistryVerbosity } from "./capability-registry.js";
 
 /**
@@ -3820,7 +4065,7 @@ export function filterDialHintsForOutboundSend(
 ): string[] {
   const filtered = filterUsableOutboundPeerDialHints([...hints], targetPeerId);
   if (opts?.preferCircuitHints === true) {
-    return filtered;
+    return prioritizeCircuitDialHints(filtered);
   }
   // Only strip circuits when we have at least one publicly routable direct
   // TCP hint.  Private-LAN-only direct hints (192.168.x, 10.x, 172.16-31,

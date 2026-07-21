@@ -820,8 +820,26 @@ export async function _applyProfileDiscoveryAdvertising(
       locationTopics: input.locationTopics,
       capabilityTopics: input.capabilityTopics,
     });
+    // Keep relay.checkin identity scope in sync with DHT (profile edits,
+    // interest removals, username/displayname changes). Without this,
+    // NAT peers using relay.lookup keep stale topicHashes until restart.
+    const interests = input.interests.map((s) => interestTopicFor(s)).filter(Boolean);
+    const username = input.username.toLowerCase().trim();
+    const usernameTopic = username ? `username:${username}` : "";
+    const displayNameTopic = input.displayName
+      ? displayNameTopicFor(input.displayName)
+      : undefined;
+    const allTopics = [
+      ...interests,
+      ...(usernameTopic ? [usernameTopic] : []),
+      ...(displayNameTopic ? [displayNameTopic] : []),
+      ...input.locationTopics,
+      ...input.capabilityTopics,
+    ];
+    void ctx.notifyAdvertisedDiscoveryTopics?.(allTopics);
   } else {
     await _cancelAutoAdvertisedDiscoveryTopics(ctx);
+    void ctx.notifyAdvertisedDiscoveryTopics?.([]);
   }
 }
 

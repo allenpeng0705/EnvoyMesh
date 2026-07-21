@@ -20,6 +20,11 @@ const VARS = [
   "ENVOYMESH_RELAY_DEFAULT_DURATION_LIMIT_MS",
   "ENVOYMESH_RELAY_HOP_TIMEOUT_MS",
   "ENVOYMESH_RELAY_MAX_OUTBOUND_STOP_STREAMS",
+  "ENVOYMESH_RELAY_ADMIN_USER",
+  "ENVOYMESH_RELAY_ADMIN_PASSWORD",
+  "ENVOYMESH_RELAY_LOG_MAX_LINES",
+  "ENVOYMESH_RELAY_LOG_MAX_BYTES",
+  "ENVOYMESH_RELAY_LOG_RETAIN_DAYS",
 ] as const;
 const SAVED_ENV: Record<string, string | undefined> = {};
 
@@ -48,6 +53,8 @@ describe("parseRelayArgs", () => {
     expect(args.enableDht).toBe(true);
     expect(args.dhtClientMode).toBe(true);
     expect(args.enableRendezvous).toBe(true);
+    expect(args.adminUser).toBe("admin");
+    expect(args.adminPassword).toBe("envoymesh123456");
   });
 
   it("returns libp2p-default v2 server config when no override is set", () => {
@@ -170,5 +177,33 @@ describe("parseRelayArgs", () => {
       "/ip4/5.6.7.8/tcp/4001",
       "/ip4/1.2.3.4/tcp/4001",
     ]);
+  });
+
+  it("parses admin credentials and log retention from CLI and env", () => {
+    const cli = parseRelayArgs([
+      "--admin-user",
+      "ops",
+      "--admin-password",
+      "pw",
+      "--log-max-lines",
+      "100",
+      "--log-max-bytes",
+      "1024",
+      "--log-retain-days",
+      "3",
+    ]);
+    expect(cli.adminUser).toBe("ops");
+    expect(cli.adminPassword).toBe("pw");
+    expect(cli.logMaxLines).toBe(100);
+    expect(cli.logMaxBytes).toBe(1024);
+    expect(cli.logRetainDays).toBe(3);
+
+    process.env.ENVOYMESH_RELAY_ADMIN_USER = "env-ops";
+    process.env.ENVOYMESH_RELAY_ADMIN_PASSWORD = "env-pw";
+    process.env.ENVOYMESH_RELAY_LOG_MAX_LINES = "50";
+    const env = parseRelayArgs([]);
+    expect(env.adminUser).toBe("env-ops");
+    expect(env.adminPassword).toBe("env-pw");
+    expect(env.logMaxLines).toBe(50);
   });
 });

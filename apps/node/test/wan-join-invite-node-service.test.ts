@@ -142,10 +142,12 @@ describe("NodeServiceImpl WAN join invite", () => {
 
   it("createWanJoinInvite appends synthetic circuit when LAN-only multiaddrs", async () => {
     // Home Mac behind NAT with no live /p2p-circuit/ in mesh.multiaddrs yet.
+    // Reservation already live (or unknown) — force is only needed when
+    // hasRelayReservation() explicitly returns false.
     const lanOnlyMesh = {
       peerId: "12D3KooWHomeInvite",
       multiaddrs: ["/ip4/192.168.3.85/tcp/64589/p2p/12D3KooWHomeInvite"],
-      hasRelayReservation: () => false,
+      hasRelayReservation: () => true,
     } as unknown as EnvoyMesh;
     const lanTrustStore = createLocalTrustStore(profileDir);
     const lanPeerDirectory = createLocalPeerDirectoryStore(profileDir);
@@ -176,5 +178,74 @@ describe("NodeServiceImpl WAN join invite", () => {
         a.includes("47.93.11.212") && a.includes("12D3KooWHomeInvite"),
       ),
     ).toBe(true);
+  });
+
+  it("createWanJoinInvite refuses WAN mint when reservation is not active", async () => {
+    const pendingMesh = {
+      peerId: "12D3KooWHomeInvite",
+      multiaddrs: ["/ip4/192.168.3.85/tcp/64589/p2p/12D3KooWHomeInvite"],
+      hasRelayReservation: () => false,
+    } as unknown as EnvoyMesh;
+    const pendingSvc = new NodeServiceImpl(
+      pendingMesh,
+      createLocalTrustStore(profileDir),
+      createLocalPeerDirectoryStore(profileDir),
+      createHumanProfileStore(profileDir),
+      profileDir,
+    );
+    await expect(pendingSvc.createWanJoinInvite({ expiresInHours: 24 })).rejects.toThrow(
+      /reservation is not active/,
+    );
+  });
+
+  it("createWanJoinInvite forceWithoutReservation allows mint while PENDING", async () => {
+    const pendingMesh = {
+      peerId: "12D3KooWHomeInvite",
+      multiaddrs: ["/ip4/192.168.3.85/tcp/64589/p2p/12D3KooWHomeInvite"],
+      hasRelayReservation: () => false,
+    } as unknown as EnvoyMesh;
+    const pendingSvc = new NodeServiceImpl(
+      pendingMesh,
+      createLocalTrustStore(profileDir),
+      createLocalPeerDirectoryStore(profileDir),
+      createHumanProfileStore(profileDir),
+      profileDir,
+    );
+    await pendingSvc.updateNodeConfig({ bootstrapPresets: ["cn-relay"] });
+    const created = await pendingSvc.createWanJoinInvite({
+      expiresInHours: 24,
+      forceWithoutReservation: true,
+    });
+    const decoded = decodeWanJoinInviteV1(parseEnvoyJoinUri(created.uri));
+    expect(decoded.targetMultiaddrs?.some((a) => a.includes("/p2p-circuit/"))).toBe(true);
+  });
+
+  it("createWanJoinInvite strips RFC1918 from bootstrapPeers on wan-public", async () => {
+    await svc.updateNodeConfig({
+      bootstrapPeers: [
+        "/ip4/192.168.3.85/tcp/4001/p2p/12D3KooWLanBootstrap",
+        "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo",
+      ],
+    });
+    const created = await svc.createWanJoinInvite({ expiresInHours: 24 });
+    const decoded = decodeWanJoinInviteV1(parseEnvoyJoinUri(created.uri));
+    expect(decoded.bootstrapPeers.every((a) => !a.includes("192.168."))).toBe(true);
+    expect(
+      decoded.bootstrapPeers.some((a) => a.includes("47.93.11.212")),
+    ).toBe(true);
+  });
+
+  it("createWanJoinInvite lan-paired keeps RFC1918 bootstrapPeers", async () => {
+    await svc.updateNodeConfig({
+      bootstrapPeers: ["/ip4/192.168.3.85/tcp/4001/p2p/12D3KooWLanBootstrap"],
+    });
+    const created = await svc.createWanJoinInvite({
+      expiresInHours: 24,
+      addressFilter: "lan-paired",
+    });
+    const decoded = decodeWanJoinInviteV1(parseEnvoyJoinUri(created.uri));
+    expect(decoded.bootstrapPeers).toContain(
+      "/ip4/192.168.3.85/tcp/4001/p2p/12D3KooWLanBootstrap",
+    );
   });
 });

@@ -54,8 +54,13 @@ export function slugifyTopic(value: string): string {
  * them.
  */
 export function interestTopicFor(rawInterest: string): string {
-  if (rawInterest.startsWith("interest:")) return rawInterest;
-  const slug = slugifyTopic(rawInterest);
+  const trimmed = rawInterest.trim();
+  if (trimmed.toLowerCase().startsWith("interest:")) {
+    const rest = trimmed.slice("interest:".length);
+    const slug = slugifyTopic(rest);
+    return slug ? `interest:${slug}` : "";
+  }
+  const slug = slugifyTopic(trimmed);
   return slug ? `interest:${slug}` : "";
 }
 
@@ -77,8 +82,13 @@ export function interestTopicFor(rawInterest: string): string {
  * Idempotent: passing an already-normalized topic returns it unchanged.
  */
 export function displayNameTopicFor(rawDisplayName: string): string {
-  if (rawDisplayName.startsWith("displayname:")) return rawDisplayName;
-  const slug = slugifyTopic(rawDisplayName);
+  const trimmed = rawDisplayName.trim();
+  if (trimmed.toLowerCase().startsWith("displayname:")) {
+    const rest = trimmed.slice("displayname:".length);
+    const slug = slugifyTopic(rest);
+    return slug ? `displayname:${slug}` : "";
+  }
+  const slug = slugifyTopic(trimmed);
   return slug ? `displayname:${slug}` : "";
 }
 
@@ -150,22 +160,52 @@ export function normalizeDiscoveryTopicQuery(raw: string): string {
   if (!t) return "";
   const lower = t.toLowerCase();
   if (lower.startsWith("interest:")) {
-    return interestTopicFor(t.slice("interest:".length)) || t.toLowerCase();
+    return interestTopicFor(t) || t.toLowerCase();
   }
   if (lower.startsWith("displayname:")) {
-    return displayNameTopicFor(t.slice("displayname:".length)) || t.toLowerCase();
+    return displayNameTopicFor(t) || t.toLowerCase();
   }
   if (lower.startsWith("publish:")) {
     return publishTopicFor(t);
   }
-  if (
-    lower.startsWith("username:") ||
-    lower.startsWith("capability:") ||
-    lower.startsWith("geo:")
-  ) {
+  if (lower.startsWith("username:")) {
+    const name = t.slice(lower.indexOf(":") + 1).trim().toLowerCase();
+    return name ? `username:${name}` : "";
+  }
+  if (lower.startsWith("capability:") || lower.startsWith("geo:")) {
     return t;
   }
   return interestTopicFor(t);
+}
+
+/**
+ * Expand a By-topic query into one or more DHT keys to try.
+ * Bare text → `interest:<slug>` plus `capability:<slug>` (and the raw
+ * slug tag) so profile capability tags advertised as `capability:coding-help`
+ * / `coding-help` are reachable from the same UI search box.
+ */
+export function expandDiscoveryTopicQueries(raw: string): string[] {
+  const primary = normalizeDiscoveryTopicQuery(raw);
+  if (!primary) return [];
+  const out: string[] = [primary];
+  const t = raw.trim();
+  const lower = t.toLowerCase();
+  const hasKnownPrefix =
+    lower.startsWith("interest:") ||
+    lower.startsWith("displayname:") ||
+    lower.startsWith("publish:") ||
+    lower.startsWith("username:") ||
+    lower.startsWith("capability:") ||
+    lower.startsWith("geo:");
+  if (!hasKnownPrefix) {
+    const slug = slugifyTopic(t);
+    if (slug) {
+      const cap = `capability:${slug}`;
+      if (!out.includes(cap)) out.push(cap);
+      if (!out.includes(slug)) out.push(slug);
+    }
+  }
+  return out;
 }
 
 /**

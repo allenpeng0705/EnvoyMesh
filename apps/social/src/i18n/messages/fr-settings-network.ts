@@ -53,6 +53,8 @@ export const frNetworkSettingsMessages = {
     stageDBadge: "Badge Stage D",
     bootstrap: "Bootstrap",
     relay: "Relais",
+    circuitReservation: "Circuit reservation",
+    circuitReservationLive: "live slot held",
     holePunch: "Hole punch (DCUtR)",
     policyBlock: "Blocage de politique",
     quic: "QUIC",

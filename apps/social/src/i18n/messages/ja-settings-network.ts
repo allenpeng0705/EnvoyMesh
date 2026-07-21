@@ -53,6 +53,8 @@ export const jaNetworkSettingsMessages = {
     stageDBadge: "Stage D バッジ",
     bootstrap: "ブートストラップ",
     relay: "リレー",
+    circuitReservation: "Circuit reservation",
+    circuitReservationLive: "live slot held",
     holePunch: "ホールパンチ (DCUtR)",
     policyBlock: "ポリシーブロック",
     quic: "QUIC",

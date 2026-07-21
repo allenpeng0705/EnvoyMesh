@@ -26,6 +26,7 @@ import { seedAddrsForDiscoveryProfile } from "./peer-discovery-telemetry.js";
 import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key-loader.js";
 import { runRelayClientCycle, startRelayClientScheduler, type RelayClientCycleDeps } from "./relay-client-cycle.js";
 import { startNodeStatsInterval } from "./node-stats-log.js";
+import { warmAndWatchRelayReservations } from "./relay-reservation-health.js";
 import { DEFAULT_RELAY_CLIENT_CYCLE_INTERVAL_MS } from "@envoymesh/api";
 import type { NodeProfile, NodeStatus, DiscoveryProfile } from "@envoymesh/api";
 import type { AgentSetupContext } from "./node-service-agent-setup.js";
@@ -69,8 +70,10 @@ export interface StartNodeContext {
     advertiseAddrs?: string[];
     bootstrapPeers?: string[];
     bootstrapPresets?: string[];
+    configuredRelays?: { enabled?: boolean; addr?: string }[];
     relayEnabled?: boolean;
     relayServerEnabled?: boolean;
+    relayReservationEnabled?: boolean;
   } | undefined>;
 
   /** Set bootstrap peer IDs so the reachability layer can filter them from discovery UI. */
@@ -261,6 +264,24 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
     await mesh.start();
     ctx.setLastNodeError(undefined);
     ctx.setLastNodeErrorAt(undefined);
+
+    // Circuit-relay reservation warmup (parity with CLI activateCliMesh).
+    // Without this, NodeService/Tauri hubs never call requestRelayReservation
+    // and stay unreachable inbound via /p2p-circuit/.
+    if (config.relayEnabled ?? true) {
+      try {
+        await warmAndWatchRelayReservations(mesh, {
+          configuredRelays: config.configuredRelays,
+          bootstrapPeers,
+          bootstrapPresets: config.bootstrapPresets,
+          relayEnabled: config.relayEnabled ?? true,
+          relayReservationEnabled: config.relayReservationEnabled ?? true,
+        });
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        console.warn(`[p2p] relay reservation warmup (node-service) threw (non-fatal): ${message}`);
+      }
+    }
 
     void ctx.resyncBondedContactReachabilityTags();
 

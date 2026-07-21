@@ -2819,71 +2819,15 @@ async function activateCliMesh(reloadDiscoveryFromConfig: boolean): Promise<void
       // operator can see "relays reached: 1/2" at startup.
       try {
         const initialConfig = await nodeConfigStore.load();
-        const configuredRelayAddrs = (initialConfig?.configuredRelays ?? [])
-          .filter((r: { enabled?: boolean; addr?: string }) => r.enabled && r.addr?.trim())
-          .map((r: { addr: string }) => r.addr.trim());
-        // Only include direct relay addresses in the warmup — circuit
-        // multiaddrs (containing /p2p-circuit/) are peer-to-peer paths
-        // THROUGH a relay, not relay server endpoints. Dialing them as
-        // relay servers is wrong and wastes 30s per attempt.
-        const bootstrapRelayAddrs = effectiveBootstrapPeers.filter(
-          (a: string) => !configuredRelayAddrs.includes(a) && !a.includes("/p2p-circuit/"),
-        );
-        const relaysToWarm = [...configuredRelayAddrs, ...bootstrapRelayAddrs].slice(0, 4);
-        if (relaysToWarm.length > 0) {
-          // Bumped from 10_000 to 30_000 (2026-07-12). The 10s ceiling was
-          // tight enough that the very first TCP+Noise+Yamux+IDENTIFY hop
-          // could race the reservation handshake on cross-region relays
-          // (community relay at 47.93.11.212 is the worst offender). With
-          // 30s the warmup has room to actually open the connection
-          // *and* let `requestRelayReservation` complete. libp2p dedupes
-          // pending dials to the same peer, so re-running the warmup is
-          // safe and cheap.
-          const result = await mesh.eagerConnectToRelays(relaysToWarm, { timeoutMs: 30_000 });
-          console.log(
-            `[p2p] eager relay warmup: attempted=${result.attempted} connected=${result.connected} failed=${result.failed}` +
-              (result.failures.length > 0 ? ` failures=${JSON.stringify(result.failures)}` : ""),
-          );
-        }
-
-        // Force a circuit-relay-v2 reservation on each known relay so
-        // /p2p-circuit/ dials to this node succeed. libp2p's default client
-        // is lazy and only reserves when it perceives an outbound dial need,
-        // so a hub node that just sits and waits for inbound bonds ends up
-        // with zero reservation and inbound /p2p-circuit/ dials get
-        // "NO_RESERVATION" from the relay.
-        //
-        // Source-of-truth for "what is a relay":
-        //   1. `configuredRelays[]` from node-config (operator-curated)
-        //   2. The cn-relay bootstrap preset (default-public community relay
-        //      at 47.93.11.212, which we know speaks circuit-relay-v2) IF
-        //      it ends up in the effective bootstrap peer list.
-        // We deliberately do NOT pass `relaysToWarm` (which includes
-        // bootstrap.libp2p.io, target circuit addresses, bare peer IDs)
-        // because libp2p's addRelay throws "Cannot read properties of
-        // undefined (reading 'peerId')" for non-relay direct dials.
-        // Bypassed by --no-relay-reservation / ENVOYMESH_RELAY_RESERVATION=0.
+        const { warmAndWatchRelayReservations } = await import("./relay-reservation-health.js");
         if (args.enableRelay && args.enableRelayReservation) {
-          const knownRelayAddrs = [...configuredRelayAddrs];
-          if (
-            !knownRelayAddrs.includes(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR) &&
-            effectiveBootstrapPeers.includes(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR)
-          ) {
-            knownRelayAddrs.push(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
-          }
-          if (knownRelayAddrs.length > 0) {
-            try {
-              const resv = await mesh.requestRelayReservation(knownRelayAddrs);
-              console.log(
-                `[p2p] relay reservation request: attempted=${resv.attempted} reserved=${resv.reserved} failed=${resv.failed} skipped=${resv.skipped}` +
-                  (resv.failures.length > 0 ? ` failures=${JSON.stringify(resv.failures)}` : "") +
-                  (resv.skipped > 0 ? ` skipReasons=${JSON.stringify(resv.skipReasons)}` : ""),
-              );
-            } catch (e) {
-              const message = e instanceof Error ? e.message : String(e);
-              console.warn(`[p2p] relay reservation request threw (non-fatal): ${message}`);
-            }
-          }
+          await warmAndWatchRelayReservations(mesh, {
+            configuredRelays: initialConfig?.configuredRelays,
+            bootstrapPeers: effectiveBootstrapPeers,
+            bootstrapPresets: initialConfig?.bootstrapPresets,
+            relayEnabled: args.enableRelay,
+            relayReservationEnabled: args.enableRelayReservation,
+          });
         }
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);

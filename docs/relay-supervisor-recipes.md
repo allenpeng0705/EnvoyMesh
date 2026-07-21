@@ -2,6 +2,8 @@
 
 Relay nodes should run under an external supervisor. EnvoyMesh performs local health checks and bounded repairs, then exits non-zero only when the process should be restarted by the host.
 
+The admin Web UI **Hard (process)** restart calls a graceful shutdown then `process.exit(0)`. That only comes back if the host restarts the process — use systemd `Restart=always`, Docker restart policies, or launchd `KeepAlive`. Soft restart from the UI only recycles libp2p and does not require a supervisor.
+
 The relay health loop emits local audit traces:
 
 - `relay.health.ok`

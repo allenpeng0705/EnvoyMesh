@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>EnvoyMesh Relay Admin</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="top">
+    <div>
+      <h1>EnvoyMesh Relay</h1>
+      <p class="sub">Operator console</p>
+    </div>
+    <div class="top-actions">
+      <span id="statusChip" class="chip chip-unknown">—</span>
+      <button type="button" id="btnRefresh" class="btn">Refresh</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="panel" id="statusPanel">
+      <h2>Status</h2>
+      <dl id="statusGrid" class="grid"></dl>
+    </section>
+
+    <section class="panel">
+      <h2>Peers &amp; connections</h2>
+      <dl id="peersGrid" class="grid"></dl>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Peer ID</th><th>Path</th></tr>
+          </thead>
+          <tbody id="peersBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <h2>Circuit reservations</h2>
+      <dl id="resGrid" class="grid"></dl>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Peer ID</th><th>Expiry</th></tr>
+          </thead>
+          <tbody id="resBody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="row-between">
+        <h2>Logs</h2>
+        <div class="row">
+          <label>
+            Level
+            <select id="logLevel">
+              <option value="all">all</option>
+              <option value="error">error</option>
+              <option value="warn">warn</option>
+              <option value="log">log</option>
+            </select>
+          </label>
+          <button type="button" id="btnClearLogs" class="btn btn-muted">Clear</button>
+        </div>
+      </div>
+      <pre id="logView" class="log-view" aria-live="polite"></pre>
+    </section>
+
+    <section class="panel danger">
+      <h2>Restart</h2>
+      <p class="hint">Soft restarts libp2p only. Hard exits the process — use systemd/Docker <code>Restart=always</code>.</p>
+      <div class="row">
+        <button type="button" id="btnSoft" class="btn">Soft (libp2p)</button>
+        <button type="button" id="btnHard" class="btn btn-danger">Hard (process)</button>
+      </div>
+      <p id="restartMsg" class="msg" hidden></p>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>

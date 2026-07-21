@@ -960,3 +960,141 @@ describe("runSetupSponsorFriendViaRuntime — skip observability audit events", 
     expect(result.reason).toBe("mesh-not-ready");
   });
 });
+
+describe("runSetupSponsorFriendViaRuntime — bond ack + multiaddr refresh", () => {
+  const enabledBase = {
+    setupSponsorFriendEnabled: true,
+    setupSponsorFriendOwnerId: "envoy:owner:test",
+    setupSponsorFriendPeerId: "12D3KooWTest",
+    setupSponsorFriendMaxAttempts: 1,
+    setupSponsorFriendRetryDelayMs: 0,
+    bootstrapPeers: [] as string[],
+    bootstrapPresets: [] as string[],
+    configuredRelays: [] as unknown[],
+    modelProviders: { mode: "disabled" as const },
+    chatAssistEnabled: false,
+    contactAiPreferences: [] as unknown[],
+    updatedAt: new Date().toISOString(),
+  };
+
+  it("persists sponsor-no-ack when waitForBondEstablished rejects after sendHello", async () => {
+    const saveNodeConfig = vi.fn(async () => {});
+    const sendHello = vi.fn(async () => ({ messageId: "msg-1" }));
+    const waitForBondEstablished = vi.fn(async () => {
+      throw new Error("bond:established for envoy:owner:test timed out after 30000ms");
+    });
+
+    const result = await runSetupSponsorFriendViaRuntime({
+      loadNodeConfig: async () => enabledBase as never,
+      saveNodeConfig,
+      getProfileDir: () => "/tmp/profile",
+      nodeBundleDir: "/tmp/bundle",
+      applyWanJoinInvite: vi.fn(async () => ({})),
+      searchPeers: vi.fn(async () => []),
+      sendHello,
+      loadHelloProfile: async () => ({
+        displayName: "New User",
+        bio: "",
+        interests: [],
+        whatShares: [],
+      }),
+      loadNodeProfile: async () => undefined,
+      assertOnline: () => {},
+      probeMeshReady: async () => true,
+      waitForBondEstablished,
+    });
+
+    expect(result.running).toBe(true);
+    await flushSponsorLoop();
+    expect(waitForBondEstablished).toHaveBeenCalled();
+    expect(saveNodeConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        setupSponsorFriendLastErrorKind: "sponsor-no-ack",
+      }),
+    );
+    expect(saveNodeConfig).not.toHaveBeenCalledWith(
+      expect.objectContaining({
+        setupSponsorFriendCompletedAt: expect.any(String),
+      }),
+    );
+  });
+
+  it("marks completed when waitForBondEstablished resolves", async () => {
+    const saveNodeConfig = vi.fn(async () => {});
+    const sendHello = vi.fn(async () => ({ messageId: "msg-1" }));
+    const waitForBondEstablished = vi.fn(async () => ({
+      peerOwnerId: "envoy:owner:test",
+      displayName: "Sponsor",
+    }));
+
+    const result = await runSetupSponsorFriendViaRuntime({
+      loadNodeConfig: async () => enabledBase as never,
+      saveNodeConfig,
+      getProfileDir: () => "/tmp/profile",
+      nodeBundleDir: "/tmp/bundle",
+      applyWanJoinInvite: vi.fn(async () => ({})),
+      searchPeers: vi.fn(async () => []),
+      sendHello,
+      loadHelloProfile: async () => ({
+        displayName: "New User",
+        bio: "",
+        interests: [],
+        whatShares: [],
+      }),
+      loadNodeProfile: async () => undefined,
+      assertOnline: () => {},
+      probeMeshReady: async () => true,
+      waitForBondEstablished,
+    });
+
+    expect(result.running).toBe(true);
+    await flushSponsorLoop();
+    expect(saveNodeConfig).toHaveBeenCalledWith(
+      expect.objectContaining({
+        setupSponsorFriendCompletedAt: expect.any(String),
+      }),
+    );
+  });
+
+  it("refreshes peer multiaddrs each attempt via getPeerMultiaddrs", async () => {
+    const getPeerMultiaddrs = vi
+      .fn()
+      .mockResolvedValueOnce([
+        "/ip4/192.168.1.10/tcp/4001/p2p/12D3KooWTest",
+      ])
+      .mockResolvedValueOnce([
+        "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWTest",
+      ]);
+    const sendHello = vi.fn(async () => {
+      throw new Error("Failed to send hello: No reachable path");
+    });
+    const saveNodeConfig = vi.fn(async () => {});
+
+    await runSetupSponsorFriendViaRuntime({
+      loadNodeConfig: async () =>
+        ({
+          ...enabledBase,
+          setupSponsorFriendMaxAttempts: 2,
+        }) as never,
+      saveNodeConfig,
+      getProfileDir: () => "/tmp/profile",
+      nodeBundleDir: "/tmp/bundle",
+      applyWanJoinInvite: vi.fn(async () => ({})),
+      searchPeers: vi.fn(async () => []),
+      sendHello,
+      loadHelloProfile: async () => ({
+        displayName: "New User",
+        bio: "",
+        interests: [],
+        whatShares: [],
+      }),
+      loadNodeProfile: async () => undefined,
+      assertOnline: () => {},
+      probeMeshReady: async () => true,
+      getPeerMultiaddrs,
+    });
+
+    await flushSponsorLoop();
+    expect(getPeerMultiaddrs.mock.calls.length).toBeGreaterThanOrEqual(2);
+  });
+});

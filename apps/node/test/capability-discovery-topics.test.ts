@@ -231,11 +231,32 @@ describe("normalizeDiscoveryTopicQuery", () => {
     expect(normalizeDiscoveryTopicQuery("interest:music")).toBe("interest:music");
     expect(normalizeDiscoveryTopicQuery("publish:Travel")).toBe("publish:travel");
     expect(normalizeDiscoveryTopicQuery("username:allen")).toBe("username:allen");
+    expect(normalizeDiscoveryTopicQuery("username:Allen")).toBe("username:allen");
+    expect(normalizeDiscoveryTopicQuery("Interest:Music")).toBe("interest:music");
     expect(normalizeDiscoveryTopicQuery("displayname:Allen Peng")).toBe(
       "displayname:allen-peng",
     );
     expect(normalizeDiscoveryTopicQuery("geo:city:US-boston")).toBe(
       "geo:city:US-boston",
     );
+  });
+});
+
+describe("expandDiscoveryTopicQueries", () => {
+  it("adds capability:<slug> and raw slug for bare text", async () => {
+    const { expandDiscoveryTopicQueries } = await import("../src/capability-discovery.js");
+    expect(expandDiscoveryTopicQueries("coding-help")).toEqual([
+      "interest:coding-help",
+      "capability:coding-help",
+      "coding-help",
+    ]);
+  });
+
+  it("does not expand when a known prefix is present", async () => {
+    const { expandDiscoveryTopicQueries } = await import("../src/capability-discovery.js");
+    expect(expandDiscoveryTopicQueries("interest:music")).toEqual(["interest:music"]);
+    expect(expandDiscoveryTopicQueries("capability:coding-help")).toEqual([
+      "capability:coding-help",
+    ]);
   });
 });
