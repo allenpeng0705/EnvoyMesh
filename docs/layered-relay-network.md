@@ -1,6 +1,10 @@
 # Layered Relay Network Design
 
+**Related:** [Operator relay fleet](./operator-relay-fleet.md) · [Relay server design — Phase 46 multi-relay](./relay-server-design.md) · [P2P discovery](./p2p-discovery.md) · [Implementation plan](./implementation-plan.md)
+
 This document proposes a scalable EnvoyMesh relay-node architecture for WAN discovery, NAT traversal, and peer-to-peer communication. It captures the working direction from local testing: normal nodes can reach a relay, but need relay-mediated address exchange to find and dial each other.
+
+**Near-term implementation** of multi-home clients, one-hop miss-forward, and sibling-list gossip is tracked as **Phase 46** and specified in [relay-server-design.md](./relay-server-design.md). This file remains the longer-horizon join / summary / multi-hop routing design.
 
 ## Goals
 

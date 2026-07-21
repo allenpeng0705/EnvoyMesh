@@ -2,7 +2,7 @@
 
 This document is the **product-facing baseline** for WAN connectivity defaults: which bootstrap **presets** ship in the node, what the **EnvoyMesh community relay** is, how **org-owned** bootstraps and relays fit, and how **key / multiaddr rotation** should be handled. Implementation sources: `packages/api/src/default-bootstrap.ts`, `apps/node/src/bootstrap-resolver.ts` (`KNOWN_PRESETS`), `apps/node/src/args.ts`.
 
-**Related:** [Live connectivity testing](./live-connectivity-testing.md) · [P2P discovery](./p2p-discovery.md) · [Implementation plan § Phase 4 WAN follow-on](./implementation-plan.md#phase-4-wan-follow-on-rendezvous-relay-and-nat-traversal)
+**Related:** [Operator relay fleet](./operator-relay-fleet.md) · [Layered relay network (long-term graph)](./layered-relay-network.md) · [Relay server design — Phase 46](./relay-server-design.md) · [P2P discovery](./p2p-discovery.md) · [Implementation plan Phase 4 WAN](./implementation-plan.md#phase-4-wan-follow-on-rendezvous-relay-and-nat-traversal)
 
 ---
 

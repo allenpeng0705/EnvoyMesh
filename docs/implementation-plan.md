@@ -2,7 +2,7 @@
 
 This is the living plan for EnvoyMesh. Update it whenever scope changes, decisions are made, or milestones are completed.
 
-**Related:** [EnvoyMesh scenarios](./scenarios.md) · [User stories](./UserStory.md) · [Alignment review](./alignment-review.md) · [Detailed design](./detailed-design.md) · **[EMP / EnvoyAI](./protocol-standard.md)** · [EnvoyAI design guide](./envoyai-protocol.md) · [QuickStart](../QuickStart.md) · [Agentic next step](./next-step.md) · [Discovery/connectivity POC](./poc-discovery-connectivity.md) · **[Live connectivity testing](./live-connectivity-testing.md)** · **[Operator relay fleet](./operator-relay-fleet.md)** · **[SQLite adoption](./sqlite-adoption.md)** · **[P2P file sharing (design plan)](./p2p-file-sharing-plan.md)** · **[AI Document Backbone (agent publish/find/share)](./ai-document-backbone-plan.md)** · **[Native owner agent (Assistant = Agent)](./native-owner-agent.md)** · **[IPFS / Helia integration](./helia-ipfs-integration-plan.md)** · **[External distribution via IPFS](./external-distribution-ipfs-plan.md)** · **[Kubo + Helia operator runbook](./envoymesh-with-kubo-helia.md)** · **[Trust mode & bilateral social mediation](./trust-mode-social-protocol.md)** · **[Trust mode implementation plan](./trust-mode-implementation-plan.md)** · **[A2A routing, actor disclosure & owner visibility](./a2a-actor-visibility-plan.md)** · **[Redesign strategy](./redesign-strategy.md)**
+**Related:** [EnvoyMesh scenarios](./scenarios.md) · [User stories](./UserStory.md) · [Alignment review](./alignment-review.md) · [Detailed design](./detailed-design.md) · **[EMP / EnvoyAI](./protocol-standard.md)** · [EnvoyAI design guide](./envoyai-protocol.md) · [QuickStart](../QuickStart.md) · [Agentic next step](./next-step.md) · [Discovery/connectivity POC](./poc-discovery-connectivity.md) · **[Live connectivity testing](./live-connectivity-testing.md)** · **[Operator relay fleet](./operator-relay-fleet.md)** · **[Relay server design (multi-relay fleet)](./relay-server-design.md)** · **[SQLite adoption](./sqlite-adoption.md)** · **[P2P file sharing (design plan)](./p2p-file-sharing-plan.md)** · **[AI Document Backbone (agent publish/find/share)](./ai-document-backbone-plan.md)** · **[Native owner agent (Assistant = Agent)](./native-owner-agent.md)** · **[IPFS / Helia integration](./helia-ipfs-integration-plan.md)** · **[External distribution via IPFS](./external-distribution-ipfs-plan.md)** · **[Kubo + Helia operator runbook](./envoymesh-with-kubo-helia.md)** · **[Trust mode & bilateral social mediation](./trust-mode-social-protocol.md)** · **[Trust mode implementation plan](./trust-mode-implementation-plan.md)** · **[A2A routing, actor disclosure & owner visibility](./a2a-actor-visibility-plan.md)** · **[Redesign strategy](./redesign-strategy.md)**
 
 ## Status Legend
 
@@ -81,6 +81,7 @@ Maintenance rule: keep this file as the source of truth for **done / left / next
 - [Phase 43 — Agent Network User Experience](#phase-43--agent-network-user-experience-planned)
 - [Phase 44 — Refine EnvoyMesh Knowledgebase](#phase-44--refine-envoymesh-knowledgebase-)
 - [Phase 45 — Web Content Browsing](#phase-45--web-content-browsing--45a45b-shipped-45c45f-future)
+- [Phase 46 — Multi-Relay Fleet Coordination](#phase-46--multi-relay-fleet-coordination-designed)
 
 EnvoyMesh is a TypeScript-first, owner-controlled, peer-to-peer agent network.
 
@@ -1162,6 +1163,7 @@ Milestone: **Phases 0–42 (42J deferred) shipped** — Core protocol through Ph
 8. **Phase 26 — DID WAN gateway resolver** — scoped below.
 9. **Chain template marketplace (future)** — share chain templates across the mesh via `discovery.request`. Parked until user demand materialises (4 built-in templates + AI chat creation cover current use cases).
 10. **Phase 45 — Web Content Browsing** — 45A–45E shipped; 45F future. [web-content-browsing-design.md](./web-content-browsing-design.md) is the design doc; the Phase 45 section below is the implementation checklist. 45A (URL scheme + `library.read` intent + Browser view + all test layers) → 45B (browser polish + bookmarks) → 45C (EnvoyGo mobile browser) → 45D (authoring UX + templates + visibility) → 45E (Step 2: push notifications, topics, friend discovery — no GossipSub). 45F (external HTTP gateway) is forward-referenced.
+11. **Phase 46 — Multi-Relay Fleet Coordination** — designed. Fix split checkin/reservation across regional relays via client multi-home, one-hop miss-forward, and sibling-list gossip. Design: [relay-server-design.md](./relay-server-design.md). Sub-phases 46A → 46B → 46C below.
 
 ### Phase 9 Architecture Overview
 
@@ -6033,10 +6035,74 @@ See design doc §11 for the full list of 10 open questions. None block Phase 45A
 
 ---
 
+## Phase 46 — Multi-Relay Fleet Coordination **`[ ]` designed**
+
+**Goal:** Make **multiple standalone relays** (same region or multi-region) work together so normal nodes that check in / reserve on different relays can still **discover** each other and obtain **dialable** `/p2p-circuit/` paths — without replicating full leaf rosters.
+
+**Design doc (source of truth):** [relay-server-design.md](./relay-server-design.md)  
+**Related:** [operator-relay-fleet.md](./operator-relay-fleet.md) · [layered-relay-network.md](./layered-relay-network.md) (longer-term join/summary graph) · [p2p-discovery.md](./p2p-discovery.md)
+
+**Problem:** Each `apps/relay` keeps a local checkin roster and local circuit-relay-v2 reservations. Lookup is hop-only (no live reservation ⇒ peer omitted). If Home uses Relay-CN only and Joiner uses Relay-EU only, discovery and relayed dials fail.
+
+**Approach (three sub-phases):**
+
+| Sub-phase | Name | What ships |
+|-----------|------|------------|
+| **46A** | Client multi-home | Shared `collectRelayControlTargets`; checkin + lookup + reserve on the full EnvoyMesh relay set (cap ~4); parallel/time-boxed cycles; org preset guidance (regional + hub) |
+| **46B** | One-hop miss-forward | Standalone relay forwards `relay.lookup` to verified siblings when local miss / under `maxResults`; client `maxHops: 1`; merge prefers hoppable candidates |
+| **46C** | Sibling-list gossip | Bounded relay book; periodic `relay.hints` exchange; verify before promote; leaf checkin hints = candidates only |
+
+**Does not ship in 46:** full roster sync, `relay.summary` topic blooms, automated `relay.join` hierarchy (remain in layered design).
+
+### 46A — Client multi-home `[ ]`
+
+- `[ ]` `collectRelayControlTargets({ bootstrapPeers, configuredRelays, bootstrapPresets })` — exclude public libp2p DHT bootstraps; dedupe; cap ~4
+- `[ ]` Wire into `runRelayClientCycle`, reservation warmup, and NodeService topic/peerId relay lookup
+- `[ ]` Parallel checkin/lookup (concurrency 2–3) + time-box
+- `[ ]` Docs: multi-relay preset pattern in [operator-relay-fleet.md](./operator-relay-fleet.md)
+- `[ ]` Unit tests for target collection + cycle wiring
+
+### 46B — One-hop miss-forward `[ ]`
+
+- `[ ]` `apps/relay` `relay.lookup`: on miss / underfill, forward to ≤2 verified siblings with `maxHops-1`
+- `[ ]` Merge with hoppability preference (reuse / share `preferRelayPeerCandidate`)
+- `[ ]` Client `queryRelayLookupWithDeps`: default `maxHops: 1`
+- `[ ]` Seed siblings via relay `--bootstrap` / env
+- `[ ]` Unit tests for forward merge + hop decrement / queryId dedupe
+
+### 46C — Sibling-list broadcast `[ ]`
+
+- `[ ]` Bounded standalone relay book (cap ~8–16, TTL ~25–35 min)
+- `[ ]` Periodic `relay.hints.request` / `response` among book members (60–120s)
+- `[ ]` Piggyback sibling sample on lookup responses (optional)
+- `[ ]` Promote only after verify; leaf `relayHints` untrusted as forward targets
+- `[ ]` Unit tests for book cap / TTL / verify gate
+- `[ ]` Optional two-relay integration smoke when feasible
+
+### Phase 46 exit criteria
+
+- `[ ]` Two nodes, shared multi-relay preset: both can reserve on overlapping relays; topic/peerId discovery + circuit dial succeed
+- `[ ]` Divergent client presets + seeded sibling relays: miss-forward returns foreign circuit (`maxHops: 1`)
+- `[ ]` Sibling gossip: relay learns a third verified peer via hints and can forward to it
+- `[ ]` Client multi-target cycle does not serialize to multi-minute hangs
+- `[ ]` Design doc + operator fleet docs updated to match shipped behavior
+
+### Risks & mitigations (Phase 46)
+
+| Risk | Mitigation |
+|------|------------|
+| Forward amplification | `maxFanout` ≤ 2, `maxHops` ≤ 1 for client; queryId dedupe |
+| Poisoned leaf hints | Forward only to verified book/seed siblings |
+| Reservation load (N relays × clients) | Cap targets ~4; public-mode reservation limits already tuned |
+| Stale sibling addrs | TTL + verify before promote |
+
+---
+
 ## Changelog (this document)
 
 | Date | Change |
 |------|--------|
+| 2026-07-21 | **Phase 46 — Multi-Relay Fleet Coordination designed.** Dedicated design doc [relay-server-design.md](./relay-server-design.md): client multi-home (46A), one-hop miss-forward (46B), sibling-list gossip via `relay.hints` (46C). No full roster replication. Added Phase 46 checklist + TOC/related links. |
 | 2026-07-20 | **EnvoyGo feed.notify Inbox.** Thin-client mirror: list/dismiss RPCs + `feed:notify` live upsert + Open in Browser. OS push deferred. |
 | 2026-07-21 | **OS alert push complete (31I + feed).** EnvoyGo `PushNotificationService` obtains APNs (native MethodChannel) / FCM tokens and registers `tokenType: alert`. Home fills missing `ownerId` from profile; chat/bond/feed dispatch alert-only; `dispatchFeedPush` on inbound `feed.notify`. |
 | 2026-07-21 | **WAN auto-bond + discovery hygiene (home Mac / no public IP).** Sponsor-friend: wan-default prefers circuit when `/p2p-circuit/` exists; installer backfill strips RFC1918; WAN invites append synthetic community-relay circuits; sendHello passes `preferCircuitHints` + addressFilter. Discovery: `normalizeDiscoveryTopicQuery` for By-topic; soften DHT advertise skip (`<1` peer); merge publish+interest into relay.checkin roster. Tests: `wan-discovery-autobond-hygiene.test.ts` + updated dial/invite/topic suites (90 green). |
