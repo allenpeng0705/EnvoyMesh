@@ -61,11 +61,6 @@ export default defineConfig({
       // Default: skip E2E tests in `npm test`. They need libp2p mesh,
       // a relay server, or Chromium — see vitest.setup.ts. Opt in with
       // RUN_E2E=1 (or use a `test:e2e:*` script in package.json).
-      //
-      // Note: relay-broadcast-e2e + geo-discovery-wan-signoff stay loadable under
-      // RUN_E2E=1 so opt-in scripts work; they hard-skip unless RUN_RELAY_BROADCAST_E2E=1
-      // / GEO_WAN_DISABLE_GATE=0. Orchestrator e2e-fast also --exclude's them so a
-      // `.env` TEST_RELAY_ADDR (community cn-relay) cannot burn CI time.
       if (process.env.RUN_E2E === "1") return always;
       return [
         ...always,

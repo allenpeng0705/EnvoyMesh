@@ -1527,9 +1527,15 @@ try {
         markMessageSeen(message.envelope.messageId);
 
         const payload = parseBroadcastRequestPayload(message.envelope.payload);
-        const connectedPeers = mesh.getConnectedRelayPeerIds();
-        const senderPeerId = message.envelope.senderPeerId;
-        const targets = connectedPeers.filter((pid) => pid !== senderPeerId);
+        // Fan out to all open libp2p connections (direct TCP clients + circuit).
+        // Do NOT use getConnectedRelayPeerIds() — that returns only /p2p-circuit
+        // remotes. Home/mobile clients dial the relay over direct TCP, so they
+        // appear in connectedPeerIds but not circuitPeerIds.
+        const connectedPeers = mesh.getConnectedPeerIds();
+        // Envelope senderPeerId is envoy_* (device); connection peers are
+        // libp2p 12D3Koo*. Exclude the inbound remote (the broadcaster's
+        // connection), not envelope.senderPeerId.
+        const targets = connectedPeers.filter((pid) => pid !== message.remotePeerId);
 
         // Guard: limit fan-out targets to prevent resource exhaustion
         if (targets.length > MAX_FANOUT_TARGETS) {
@@ -1544,21 +1550,15 @@ try {
           return;
         }
 
-        // Decrement TTL before forwarding
-        const nextTtl = payload.ttl - 1;
-        if (nextTtl < 0) {
+        // TTL gate only — do NOT mutate messageId/payload before forward.
+        // Those fields are covered by the sender signature; rewriting them
+        // makes verifyInboundEnvelope fail on every recipient.
+        if (payload.ttl < 1) {
           console.log(`[relay] broadcast.request queryId=${payload.queryId}: TTL expired, not forwarding`);
           return;
         }
 
-        const forwardEnvelope: EnvoyEnvelope = {
-          ...message.envelope,
-          messageId: randomUUID(),
-          recipientPeerId: undefined,
-          payload: { ...payload, ttl: nextTtl },
-        } as EnvoyEnvelope;
-
-        // Fan out with bounded concurrency
+        // Fan out with bounded concurrency (original signed envelope)
         let delivered = 0;
         const CONCURRENCY_LIMIT = 50;
         for (let i = 0; i < targets.length; i += CONCURRENCY_LIMIT) {
@@ -1566,7 +1566,7 @@ try {
           await Promise.allSettled(
             batch.map(async (targetPeer) => {
               try {
-                await mesh.send(targetPeer, forwardEnvelope);
+                await mesh.send(targetPeer, message.envelope);
                 delivered++;
               } catch (err) {
                 console.warn(`[relay] broadcast.request fanout to ${targetPeer}: ${err}`);
@@ -1575,7 +1575,7 @@ try {
           );
         }
         console.log(
-          `[relay] broadcast.request queryId=${payload.queryId} ttl=${payload.ttl}→${nextTtl}: delivered to ${delivered}/${targets.length} peers`,
+          `[relay] broadcast.request queryId=${payload.queryId} ttl=${payload.ttl}: delivered to ${delivered}/${targets.length} peers`,
         );
       } catch (error) {
         console.error("[relay] Failed to handle broadcast.request:", error);

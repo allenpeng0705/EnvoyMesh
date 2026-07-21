@@ -6,13 +6,12 @@
  * 2. Relay fans out to all connected peers
  * 3. Matching peers respond directly to broadcaster (P2P, not via relay)
  *
- * Requirements:
- * - Opt in with RUN_RELAY_BROADCAST_E2E=1 (hard-skipped otherwise — community
- *   cn-relay cannot serve circuit-relay-v2 / broadcast fanout; verified 2026-07-10).
- * - A private/compatible relay at TEST_RELAY_ADDR (do not use community cn-relay).
+ * Default relay: community cn-relay. Override with TEST_RELAY_ADDR for a
+ * private relay.
  *
  * Usage:
- *   RUN_RELAY_BROADCAST_E2E=1 TEST_RELAY_ADDR=/ip4/127.0.0.1/tcp/4001/p2p/... \
+ *   npx vitest run apps/node/test/relay-broadcast-e2e.test.ts
+ *   TEST_RELAY_ADDR=/ip4/127.0.0.1/tcp/4001/p2p/... \
  *     npx vitest run apps/node/test/relay-broadcast-e2e.test.ts
  */
 
@@ -40,18 +39,16 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR } from "@envoymesh/api";
 
-// Hard-skip unless explicitly opted in. Loading TEST_RELAY_ADDR from repo
-// `.env` (often community cn-relay) must not enable this suite in e2e-fast.
-const RELAY_ADDR = process.env.TEST_RELAY_ADDR?.trim() || null;
-const BROADCAST_E2E_ENABLED =
-  process.env.RUN_RELAY_BROADCAST_E2E === "1" && Boolean(RELAY_ADDR);
+// Default to community cn-relay (same pattern as relay-chat-e2e).
+const RELAY_ADDR = process.env.TEST_RELAY_ADDR || DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR;
 
 const meshes: EnvoyMesh[] = [];
 
-const itRelayed = BROADCAST_E2E_ENABLED ? it : it.skip;
+const itRelayed = RELAY_ADDR ? it : it.skip;
 
-describe.skipIf(!BROADCAST_E2E_ENABLED)("E2E relay-assisted broadcast (live relay)", () => {
+describe("E2E relay-assisted broadcast (live relay)", () => {
   let profileDir: string;
 
   beforeEach(async () => {
@@ -97,6 +94,13 @@ describe.skipIf(!BROADCAST_E2E_ENABLED)("E2E relay-assisted broadcast (live rela
         // Bob's task store and trust store
         const bobTaskStore = createLocalTaskStore(profileDir + "-bob");
         const bobTrustStore = createLocalTrustStore(profileDir + "-bob");
+        // Strangers default to public + anonymousDiscoveryMode=off → drop.
+        // Treat Alice as referred so this E2E exercises relay fanout, not
+        // anonymous-discovery settings.
+        await bobTrustStore.setTrustRecord({
+          peerOwnerId: aliceProfile.owner.ownerId,
+          level: "referred",
+        });
 
         // Bob matches the request (has task.execute capability)
         const result = await handleInboundBroadcastRequest({
@@ -114,8 +118,9 @@ describe.skipIf(!BROADCAST_E2E_ENABLED)("E2E relay-assisted broadcast (live rela
           const responsePayload = createBroadcastResponsePayload({
             queryId: payload.queryId,
             responderOwnerId: bobProfile.owner.ownerId,
+            responderPeerId: bob.peerId,
             matchedCapabilities: payload.requestedCapabilities,
-            matchedKeywords: payload.requestedTagHashes,
+            matchedTagHashes: payload.requestedTagHashes,
           });
 
           const unsignedResponse = createUnsignedEnvelope({
@@ -127,25 +132,19 @@ describe.skipIf(!BROADCAST_E2E_ENABLED)("E2E relay-assisted broadcast (live rela
           });
 
           const signedResponse = signUnsignedEnvelope(unsignedResponse, bobProfile.device.privateKeyPem);
-          // Reply via relay circuit — Alice is behind NAT (loopback-only
-          // listen addr) and unreachable directly.  The circuit path routes
-          // through the relay to Alice's reservation.
-          const aliceCircuitAddr = RELAY_ADDR! + "/p2p-circuit/p2p/" + alice.peerId;
-          await bob.send(aliceCircuitAddr, signedResponse);
+          // Respond directly to Alice (same-host E2E). Circuit-v2 connections
+          // are "limited" and cannot open /envoymesh/message streams
+          // ("Cannot open protocol stream on limited connection").
+          const aliceAddr = alice.multiaddrs[0];
+          if (!aliceAddr) throw new Error("alice has no listen multiaddr");
+          await bob.send(aliceAddr, signedResponse);
         }
       }
     });
 
-    // Give nodes time to connect via relay. With `enableRelay: true` the
-    // relay-reservation handshake is the long pole — the libp2p circuit
-    // v2 default is 5s, our override is 30s, and the community relay
-    // sometimes takes the full window to acknowledge the reservation.
-    // 35s is the observed practical floor for a fresh mesh to obtain
-    // a relay slot end-to-end. The broadcast RPC that follows also
-    // runs over the relay, so this same budget gives the responder's
-    // reply a chance to land.
-    const RELAY_CONNECT_SETTLE_MS = 35_000;
-    await new Promise((resolve) => setTimeout(resolve, RELAY_CONNECT_SETTLE_MS));
+    // Reservation is awaited inside startMeshWithRelay(); short settle for
+    // the relay connection manager to list both peers before fanout.
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
 
     // Alice sends broadcast.request to relay
     const queryId = randomUUID();
@@ -211,6 +210,10 @@ describe.skipIf(!BROADCAST_E2E_ENABLED)("E2E relay-assisted broadcast (live rela
         const payload = parseBroadcastRequestPayload(envelope.payload);
         const bobTaskStore = createLocalTaskStore(profileDir + "-bob");
         const bobTrustStore = createLocalTrustStore(profileDir + "-bob");
+        await bobTrustStore.setTrustRecord({
+          peerOwnerId: aliceProfile.owner.ownerId,
+          level: "referred",
+        });
 
         const result = await handleInboundBroadcastRequest({
           envelope,
@@ -226,8 +229,9 @@ describe.skipIf(!BROADCAST_E2E_ENABLED)("E2E relay-assisted broadcast (live rela
           const responsePayload = createBroadcastResponsePayload({
             queryId: payload.queryId,
             responderOwnerId: bobProfile.owner.ownerId,
+            responderPeerId: bob.peerId,
             matchedCapabilities: payload.requestedCapabilities,
-            matchedKeywords: payload.requestedTagHashes,
+            matchedTagHashes: payload.requestedTagHashes,
           });
 
           const unsignedResponse = createUnsignedEnvelope({
@@ -239,9 +243,10 @@ describe.skipIf(!BROADCAST_E2E_ENABLED)("E2E relay-assisted broadcast (live rela
           });
 
           const signedResponse = signUnsignedEnvelope(unsignedResponse, bobProfile.device.privateKeyPem);
-          // Reply via relay circuit — Alice is behind NAT.
-          const aliceCircuitAddr = RELAY_ADDR! + "/p2p-circuit/p2p/" + alice.peerId;
-          await bob.send(aliceCircuitAddr, signedResponse);
+          // Direct reply — see note in the first test (circuit = limited conn).
+          const aliceAddr = alice.multiaddrs[0];
+          if (!aliceAddr) throw new Error("alice has no listen multiaddr");
+          await bob.send(aliceAddr, signedResponse);
         }
       }
     });
@@ -253,6 +258,10 @@ describe.skipIf(!BROADCAST_E2E_ENABLED)("E2E relay-assisted broadcast (live rela
         const payload = parseBroadcastRequestPayload(envelope.payload);
         const carolTaskStore = createLocalTaskStore(profileDir + "-carol");
         const carolTrustStore = createLocalTrustStore(profileDir + "-carol");
+        await carolTrustStore.setTrustRecord({
+          peerOwnerId: aliceProfile.owner.ownerId,
+          level: "referred",
+        });
 
         const result = await handleInboundBroadcastRequest({
           envelope,
@@ -269,8 +278,8 @@ describe.skipIf(!BROADCAST_E2E_ENABLED)("E2E relay-assisted broadcast (live rela
       }
     });
 
-    // See note on RELAY_CONNECT_SETTLE_MS in the first test.
-    await new Promise((resolve) => setTimeout(resolve, 35_000));
+    // See note on settle in the first test.
+    await new Promise((resolve) => setTimeout(resolve, 2_000));
 
     const queryId = randomUUID();
     const requestPayload = createBroadcastRequestPayload({
@@ -322,17 +331,16 @@ async function startMeshWithRelay(): Promise<EnvoyMesh> {
   await mesh.start();
   meshes.push(mesh);
 
-  // Eagerly connect to the relay and request a circuit reservation so the
-  // relay's getConnectedRelayPeerIds() sees this node as a circuit-connected
-  // peer and includes it in broadcast fanout.
+  // Eagerly connect + reserve so the relay's getConnectedPeerIds() sees this
+  // node and Bob can reply via /p2p-circuit.
   if (RELAY_ADDR) {
     try {
       await mesh.eagerConnectToRelays([RELAY_ADDR], { timeoutMs: 15_000 });
       await mesh.requestRelayReservation([RELAY_ADDR]);
     } catch {
-      // Reservation may fail on a slow relay — the 35s settle below gives
-      // the auto-connect another chance to complete.
+      // Fall through to waitFor below.
     }
+    await waitFor(() => mesh.hasRelayReservation(), 35_000);
   }
 
   return mesh;

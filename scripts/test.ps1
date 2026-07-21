@@ -236,9 +236,6 @@ if ($E2E -and -not $BAIL_OUT) {
     "--exclude=apps/node/test/webrtc-call-e2e.test.ts"
     "--exclude=apps/node/test/social-ui-e2e.test.ts"
     "--exclude=apps/node/test/terminal-playwright-browser.test.ts"
-    # Private-relay / flaky-WAN — opt in via npm run test:e2e:relay:broadcast etc.
-    "--exclude=apps/node/test/relay-broadcast-e2e.test.ts"
-    "--exclude=apps/node/test/geo-discovery-wan-signoff.test.ts"
     "--exclude=apps/social/test/**"
   )
   Run-Phase "04-e2e-fast" "libp2p in-process E2E (RUN_E2E=1, no chromium)" {

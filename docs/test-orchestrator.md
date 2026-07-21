@@ -36,7 +36,7 @@ A single entry point that runs the right tests for the right context.
 | 1 | `typecheck`        | `tsc -b`                                                   | ~30s   |
 | 2 | `unit`             | `RUN_E2E= vitest run` (~4.4k tests; Capacitor `apps/mobile` + `packages/mobile-*` excluded — product mobile is EnvoyGo) | ~35s   |
 | 3 | `social-build`     | `vite build --mode development` (for chromium E2E)         | ~60s   |
-| 4 | `e2e-fast`         | `RUN_E2E=1 vitest run` excluding smoke + chromium + `relay-broadcast-e2e` / `geo-discovery-wan-signoff` (includes Phase 46 `multi-relay-fleet-e2e` + `multi-relay-fleet-process-e2e`; live dual-relay suite skips unless `TEST_RELAY_A`+`TEST_RELAY_B`) | ~60–180s |
+| 4 | `e2e-fast`         | `RUN_E2E=1 vitest run` excluding smoke + chromium (includes Phase 46 `multi-relay-fleet-e2e` + `multi-relay-fleet-process-e2e`; live dual-relay suite skips unless `TEST_RELAY_A`+`TEST_RELAY_B`) | ~60–180s |
 | 5 | `e2e-playwright`   | `RUN_E2E=1 vitest run` on chromium tests                    | ~120s  |
 | 6 | `smoke`            | `smoke:phase13` + chain homes + `smoke:web-content` (06c)   | ~90s   |
 | 7 | `bundle`           | `scripts/bundle.sh` (only in `bundle` mode)                | ~5min  |
