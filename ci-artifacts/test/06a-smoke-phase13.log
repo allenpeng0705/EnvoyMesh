@@ -9,26 +9,17 @@
 [smoke:phase13-two-node] Running Phase 13 integration tests via vitest…
 
 
-[1m[30m[46m RUN [49m[39m[22m [36mv4.1.5 [39m[90m/Users/shileipeng/Documents/mygithub/EnvoyMesh[39m
+ RUN  v4.1.5 /Users/shileipeng/Documents/mygithub/EnvoyMesh
 
- [32m✓[39m packages/api/test/agent-interaction.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 2[2mms[22m[39m
- [32m✓[39m apps/node/test/approval-executor.test.ts [2m([22m[2m4 tests[22m[2m)[22m[32m 3[2mms[22m[39m
-[90mstdout[2m | apps/node/test/daemon-agent-card-inbound.test.ts[2m > [22m[2mhandleDaemonAgentCardInbound[2m > [22m[2mcaches inbound agent.card.response and calls recordAgentCardCached hook
-[22m[39m[agent.card] cached card for envoy:owner:W11V4cIb7kVRO3fzq62Y-bz2O9PWdctgY2435M0AFXk
+(node:13573) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:13572) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:13574) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
 
- [32m✓[39m apps/node/test/daemon-agent-card-inbound.test.ts [2m([22m[2m3 tests[22m[2m)[22m[32m 22[2mms[22m[39m
-(node:39477) ExperimentalWarning: SQLite is an experimental feature and might change at any time
-(Use `node --trace-warnings ...` to show where the warning was created)
-(node:39478) ExperimentalWarning: SQLite is an experimental feature and might change at any time
-(Use `node --trace-warnings ...` to show where the warning was created)
-(node:39476) ExperimentalWarning: SQLite is an experimental feature and might change at any time
-(Use `node --trace-warnings ...` to show where the warning was created)
- [32m✓[39m apps/node/test/json-rpc-phase13.test.ts [2m([22m[2m10 tests[22m[2m)[22m[32m 26[2mms[22m[39m
- [32m✓[39m apps/node/test/agent-visibility-ws.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 36[2mms[22m[39m
- [32m✓[39m apps/node/test/a2a-chat-notifications.test.ts [2m([22m[2m2 tests[22m[2m)[22m[32m 95[2mms[22m[39m
-
-[2m Test Files [22m [1m[32m6 passed[39m[22m[90m (6)[39m
-[2m      Tests [22m [1m[32m25 passed[39m[22m[90m (25)[39m
-[2m   Start at [22m 13:43:01
-[2m   Duration [22m 1.51s[2m (transform 2.60s, setup 136ms, import 5.03s, tests 183ms, environment 0ms)[22m
+ Test Files  6 passed (6)
+      Tests  25 passed (25)
+   Start at  18:14:48
+   Duration  1.89s (transform 3.42s, setup 151ms, import 6.51s, tests 190ms, environment 0ms)
 

@@ -321,8 +321,8 @@ fleet relays.
 | Test family | Use community relay? | Why |
 |---|---|---|
 | `relay-chat-e2e.test.ts`, `wan-relay-signoff-e2e.test.ts`, `agent-e2e-real.test.ts` | ✅ default | TCP bootstrap + discovery; circuit hop when the live host is healthy |
-| `relay-broadcast-e2e.test.ts` (broadcast fanout via relay) | ❌ hard-skipped by default | Needs a relay that supports our libp2p protocol version **and** the broadcast-fanout handler. Run with `TEST_RELAY_ADDR=<private>` |
-| `geo-discovery-wan-signoff.test.ts` (`geo:city:US-geo-signoff` topic) | ⚠️ gated on `GEO_WAN_DISABLE_GATE=0` | Live DHT is loaded with publishers from many concurrent test runs; `searchPeers` times out at 180 s. Pass ≈1 in 3 runs |
+| `relay-broadcast-e2e.test.ts` (broadcast fanout via relay) | ❌ hard-skipped by default | Needs `RUN_RELAY_BROADCAST_E2E=1` **and** a private/compatible `TEST_RELAY_ADDR` (not community cn-relay). Use `npm run test:e2e:relay:broadcast`. Excluded from orchestrator `e2e-fast`. |
+| `geo-discovery-wan-signoff.test.ts` (`geo:city:US-geo-signoff` topic) | ⚠️ gated on `GEO_WAN_DISABLE_GATE=0` | Live DHT is loaded with publishers from many concurrent test runs; `searchPeers` times out at 180 s. Pass ≈1 in 3 runs. Excluded from orchestrator `e2e-fast`. |
 
 Existing patterns:
 - `const RELAY_ADDR = process.env.TEST_RELAY_ADDR || DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR;`

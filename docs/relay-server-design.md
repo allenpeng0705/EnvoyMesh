@@ -1,6 +1,6 @@
 # Relay Server Design
 
-**Status:** Part A shipped; **Part B (Phase 46) shipped** (unit-tested; optional two-relay live smoke deferred)  
+**Status:** Part A shipped; **Part B (Phase 46) shipped** (46A–46C + in-process/process E2E; live dual-relay signoff is operator-gated via `TEST_RELAY_A`/`TEST_RELAY_B`)  
 **Audience:** Operators running the relay binary and engineers extending discovery / circuit-relay  
 **Related:** [Operator relay fleet](./operator-relay-fleet.md) · [Layered relay network (long-term graph)](./layered-relay-network.md) · [P2P discovery](./p2p-discovery.md) · [Implementation plan Phase 46](./implementation-plan.md#phase-46--multi-relay-fleet-coordination) · [Run relay scripts](./run-relay-scripts.md)
 
@@ -10,9 +10,9 @@ This document is the **dedicated design for the standalone EnvoyMesh relay serve
 - **Part B** — Phase 46 multi-relay fleet coordination (multi-home clients, one-hop miss-forward, sibling-list gossip)
 - **Part C** — how this relates to other docs and the build checklist
 
-It does **not** replace [layered-relay-network.md](./layered-relay-network.md) (longer-horizon join / summary / multi-hop graph) or [operator-relay-fleet.md](./operator-relay-fleet.md) (presets, systemd, verification runbook).
+It does **not** replace [layered-relay-network.md](./layered-relay-network.md) (longer-horizon join / summary / multi-hop graph) or [operator-relay-fleet.md](./operator-relay-fleet.md) (presets, systemd, **add-Nth-relay runbook**, verification).
 
-**Implementation focus:** Phase 46 (Part B) is **shipped** in-tree (unit-tested). Longer-horizon join/summary remains in [layered-relay-network.md](./layered-relay-network.md).
+**Implementation focus:** Phase 46 (Part B) is **shipped** in-tree. Longer-horizon join/summary remains in [layered-relay-network.md](./layered-relay-network.md).
 
 ---
 
@@ -131,14 +131,24 @@ Exact `targetPeerId` / `targetOwnerId` visibility: public when public ad **or** 
 
 Default port **15432** (`--http-port`).
 
+Admin credentials default to `admin` / `envoymesh123456` (CLI + env). **When credentials are configured (including those defaults),** sensitive JSON paths require HTTP Basic Auth — same as Admin. Only `/health` stays open for probes. See [run-relay-scripts.md](./run-relay-scripts.md) Security note.
+
 | Path | Auth | Purpose |
 |------|------|---------|
 | `/health` | none | Liveness |
-| `/info`, `/version`, `/protocols` | none | Identity / build / protocol report (`relay-version.ts`; `/version` may include live metrics) |
-| `/reservations`, `/reservations/inspect` | (as implemented) | Reservation counts / inspect |
-| `/admin/`, `/admin/api/*` | Basic Auth | Status, peers, reservations, roster, metrics, logs, restart |
+| `/info`, `/version`, `/protocols` | Basic Auth when admin creds set | Identity / build / protocol report (`relay-version.ts`; `/version` may include live metrics) |
+| `/reservations`, `/reservations/inspect` | Basic Auth when admin creds set | Reservation counts / inspect |
+| `/admin/`, `/admin/api/*` | Basic Auth (required; fail-closed if creds unset) | Status, peers, reservations, roster, metrics, logs, restart |
 
 Admin routes ([`admin-http.ts`](../apps/relay/src/admin-http.ts)): `status`, `reservations`, `peers`, `roster`, `metrics`, `logs`, `logs/clear`, `restart`.
+
+Example peer-id discovery (needed when adding a sibling):
+
+```bash
+curl -sf -u "$ENVOYMESH_RELAY_ADMIN_USER:$ENVOYMESH_RELAY_ADMIN_PASSWORD" \
+  http://127.0.0.1:15432/info
+# → { "peerId": "12D3…", "addrs": ["/ip4/…/tcp/4001/p2p/12D3…", …] }
+```
 
 ---
 
@@ -190,7 +200,7 @@ Still deferred (see layered design / post-46):
 # Part B — Multi-Relay Fleet Coordination (Phase 46)
 
 **Roadmap checklist:** [Implementation plan Phase 46](./implementation-plan.md#phase-46--multi-relay-fleet-coordination)  
-**Status:** Shipped (46A–46C); optional two-relay live smoke deferred.
+**Status:** Shipped (46A–46C + E2E harness). Live dual-relay WAN proof is **operator-gated** (`TEST_RELAY_A` + `TEST_RELAY_B` / `npm run test:e2e:relay:live`) — see [operator-relay-fleet.md](./operator-relay-fleet.md) §8.
 
 ## B1. Problem: split checkin / split reservation
 
@@ -266,7 +276,7 @@ When local `relay.lookup` returns fewer peers than `maxResults` and `maxHops > 0
 3. Merge with hoppability preference ([`preferRelayPeerCandidate`](../apps/node/src/relay-lookup-merge.ts) or shared helper).
 4. Return circuit multiaddrs from the **owning** relay’s advertise bases (`viaRelayId` set).
 
-Client lookups set **`maxHops: 1`** (today often `0` in `queryRelayLookupWithDeps`).
+Client lookups set **`maxHops: 1`** in `queryRelayLookupWithDeps`.
 
 ```mermaid
 sequenceDiagram
@@ -284,8 +294,8 @@ sequenceDiagram
 
 Relays exchange **who other relays are** (dial hints), not leaf peer rosters.
 
-**Seed:** `--bootstrap` / `ENVOYMESH_BOOTSTRAP` on each relay.  
-**Grow:** Periodic `relay.hints.request` / `relay.hints.response`; optional piggyback on lookup responses.
+**Seed:** `--bootstrap` / `ENVOYMESH_BOOTSTRAP_PEERS` on each relay.  
+**Grow:** Periodic `relay.hints.request` / `relay.hints.response`; optional piggyback on lookup responses. For production Nth-relay cutovers prefer mutual `--bootstrap` ([operator §8](./operator-relay-fleet.md#8-adding-a-second-or-nth-relay)) over waiting ~90s gossip.
 
 | Field | Rule |
 |-------|------|
@@ -329,41 +339,43 @@ Schemas: `@envoymesh/protocol` (`RelayHintSchema`, etc.).
 
 ## B5. Operator model (multi-relay)
 
+**Full sequenced runbook** (peer id → mutual `--bootstrap` → client preset → miss-forward proof): [operator-relay-fleet.md §8](./operator-relay-fleet.md#8-adding-a-second-or-nth-relay).
+
 ### Same region (capacity / HA)
 
 - Run 2+ relays with public `--advertise-addr`.
-- Put **both** in client presets; seed each relay’s `--bootstrap` with the other.
+- Put **both** in client presets; seed each relay’s `--bootstrap` with the other (mutual seed preferred over waiting for gossip).
 
 ### Multi-region
 
 - One (or more) relays per region + optional global hub.
-- Client preset: `[regional, hub]` minimum.
+- Client preset: `[regional, hub]` minimum (cap **4** EnvoyMesh targets total — see B8).
 - Relays: bootstrap to hub and/or a small cross-region sibling set.
 
 ### Verification
 
-- `/version` → `publicMode: true`, live metrics.
+- `/version` → `publicMode: true`, live metrics (Basic Auth when admin creds set).
 - Admin: reservations, roster, topicHashes.
 - Home Settings: circuit chip **RESERVED** before WAN mint / auto-bond.
+- Dual-relay miss-forward: `npm run test:e2e:relay:live` with distinct `TEST_RELAY_A` / `TEST_RELAY_B`.
 
 ## B6. Implementation map (Phase 46 code)
 
 | Area | Primary paths |
 |------|----------------|
-| Standalone relay | `apps/relay/src/index.ts`, `relay-roster.ts`, new book/hints helper |
+| Standalone relay | `apps/relay/src/index.ts`, `relay-roster.ts` (book + hints), `relay-lookup-router.ts`, `relay-lookup-merge.ts`, `relay-lookup-response-merge.ts`, `standalone-relay-control.ts` |
 | Client cycle | `apps/node/src/relay-client-cycle.ts` |
-| Reservation | `apps/node/src/relay-reservation-health.ts` |
-| Merge preference | `apps/node/src/relay-lookup-merge.ts` (share or thin-copy into relay) |
-| Protocol | `@envoymesh/protocol` hints/lookup (reuse; bump only if needed) |
-| Ops docs | `docs/operator-relay-fleet.md` |
+| Reservation / targets | `apps/node/src/relay-reservation-health.ts` (`collectRelayControlTargets`; **serial** `addRelay` in `@envoymesh/network`) |
+| Protocol | `@envoymesh/protocol` hints/lookup (reuse) |
+| Ops docs | `docs/operator-relay-fleet.md` (§4 presets, §7 systemd, **§8 add Nth**) |
 
 ## B7. Success criteria (Phase 46)
 
-1. Two nodes with preset `[relay-a, relay-b]` both reserve on both (or shared hub); topic/peerId search + circuit dial succeed.
-2. Node with only relay-a, peer only on relay-b, relays seeded to each other: lookup with `maxHops: 1` returns b’s circuit.
-3. Two relays sharing one seed learn a third via verified hints and can forward to it.
-4. Client multi-target cycle does not serialize to multi-minute timeouts.
-5. Unit tests for target collection, miss-forward merge, book cap/TTL/verify; optional two-relay vitest.
+1. `[x]` Two nodes with preset `[relay-a, relay-b]` both reserve on both (or shared hub); topic/peerId search + circuit dial succeed (in-process + process E2E).
+2. `[x]` Node with only relay-a, peer only on relay-b, relays seeded to each other: lookup with `maxHops: 1` returns b’s circuit (E2E + gated live harness).
+3. `[~]` Two relays sharing one seed learn a **third** via verified hints and can forward to it — **manual / deferred** (no dedicated E2E yet; prefer mutual `--bootstrap` for production).
+4. `[x]` Client multi-target cycle time-boxed (concurrency 3); multi-relay `addRelay` is **serialized** (parallel RESERVE deadlocks).
+5. `[x]` Unit tests for target collection, miss-forward merge, book cap/TTL/verify; two-relay vitest (in-process + process-spawn).
 
 ## B8. Open questions (defaults for Phase 46)
 
@@ -371,13 +383,24 @@ Schemas: `@envoymesh/protocol` (`RelayHintSchema`, etc.).
 2. Miss-forward when local non-empty but under `maxResults`? → **yes (union underfill)**
 3. Cap of 4 client targets vs 2–3 active reservations? → **cap 4; reserve-all-reachable**
 
+## B9. Implementation risks (shipped mitigations)
+
+| Risk | Mitigation |
+|------|------------|
+| Forward amplification | `maxFanout` ≤ 2, client `maxHops` ≤ 1, queryId dedupe |
+| Poisoned leaf hints | Forward only to **verified** book/seed siblings; leaf checkin hints = candidates |
+| Parallel multi-relay `addRelay` deadlock | `@envoymesh/network` `requestRelayReservation` **serializes** RESERVE across targets |
+| Loopback `--bootstrap` + empty libp2p bootstrap list | Sibling book still seeded from CLI; libp2p Bootstrap service enabled only when filtered list is non-empty |
+| Stale sibling addrs | Book TTL (~35 min) + hints RTT verify before promote |
+| Scale beyond ~4 client targets | Cap ~4; larger fleets need layered join/summary (deferred) |
+
 ---
 
 # Part C — Relation to other docs
 
 | Doc | Role vs this design |
 |-----|---------------------|
-| [operator-relay-fleet.md](./operator-relay-fleet.md) | **How to run** — presets, systemd, verify checklist |
+| [operator-relay-fleet.md](./operator-relay-fleet.md) | **How to run** — presets, systemd, **§8 add Nth relay**, verify + live miss-forward |
 | [layered-relay-network.md](./layered-relay-network.md) | **After 46** — join, summary-guided multi-hop, root relays |
 | [p2p-discovery.md](./p2p-discovery.md) | Discovery model + dialable advertise bases |
 | [implementation-plan.md Phase 46](./implementation-plan.md#phase-46--multi-relay-fleet-coordination) | **Build checklist** for 46A–46C only |
@@ -397,6 +420,7 @@ Schemas: `@envoymesh/protocol` (`RelayHintSchema`, etc.).
 
 | Date | Change |
 |------|--------|
+| 2026-07-21 | **Doc hygiene after Phase 46 review.** Fixed stale “live smoke deferred” banners; A7 Basic Auth table; B6 paths; B7#3 demoted to manual; B9 risks (serial `addRelay`, empty bootstrap); link operator §8. |
 | 2026-07-21 | **Phase 46 implemented** (46A–46C): client multi-home, miss-forward, sibling hints gossip. |
 | 2026-07-21 | Expanded to full standalone relay design: Part A (shipped surface) + Part B (Phase 46) + Part C (doc map). |
 | 2026-07-21 | Initial multi-relay fleet draft (now Part B). |

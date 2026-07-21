@@ -35,6 +35,12 @@ const mockNodeService = {
   refreshHumanProfile,
   updateNodeConfig,
   clearAllUserData,
+  getCircuitReservationStatus: vi.fn().mockResolvedValue({
+    state: "none",
+    live: false,
+    everReserved: false,
+    relayPeerIds: [],
+  }),
 };
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({

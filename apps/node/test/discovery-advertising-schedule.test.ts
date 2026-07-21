@@ -387,20 +387,12 @@ describe("discovery topic advertising — timeout + adaptive retry", () => {
   });
 
   describe("DHT-route-table-empty gate (2026-07-10)", () => {
-    it("skips per-topic provides when fewer than 2 peers are connected, emits a single summary per cycle", async () => {
-      // User symptom: 16 topics × 30 s timeout per cycle, every 60 s, forever.
-      // Root cause: only the relay is connected — the community relay doesn't
-      // serve modern DHT routing — so every `contentRouting.provide()` call
-      // hangs without ever resolving. The gate at `_advertisePublicDiscoveryTopics`
-      // checks `mesh.getConnectedPeerIds()` and skips the fan-out entirely if
-      // fewer than 2 peers are connected, emitting one WARN instead.
+    it("skips per-topic provides when zero peers are connected, emits a single summary per cycle", async () => {
+      // Softened 2026-07: gate is `connectedPeers.length < 1` (not < 2).
+      // A single connected peer (e.g. community relay) still attempts provide.
 
       const mesh = createMockMesh(async () => ({ cid: {} as never }));
-      // Override the default 2-peer mock to simulate the symptom.
-      (mesh.getConnectedPeerIds as ReturnType<typeof vi.fn>).mockReturnValue([
-        // One peer — almost certainly the configured community relay.
-        "12D3KooWCommunityRelay",
-      ]);
+      (mesh.getConnectedPeerIds as ReturnType<typeof vi.fn>).mockReturnValue([]);
 
       const nodeService = new NodeServiceImpl(
         mesh as any,
@@ -412,8 +404,6 @@ describe("discovery topic advertising — timeout + adaptive retry", () => {
       setConfigStore(nodeService, createNullConfigStore());
       setExternalMesh(nodeService, mesh);
 
-      // Spy on console.warn so we can assert the gate's summary line is
-      // emitted exactly ONCE per cycle (not 16 times — that was the bug).
       const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
       const advertisePromise = _advertisePublicDiscoveryTopics(
@@ -429,31 +419,54 @@ describe("discovery topic advertising — timeout + adaptive retry", () => {
       await flushAsync();
       await advertisePromise;
 
-      // Critical assertion: provideCapabilityTopic must NOT have been called
-      // for any of the 7 topics — the gate skipped the fan-out entirely.
       expect(mesh.provideCapabilityTopic).not.toHaveBeenCalled();
 
-      // Exactly one WARN line per cycle summarizing the gate's reasoning.
-      // Filter to the gate's specific message; the schedule also emits other
-      // non-cycle warns we don't want to count.
       const gateWarnings = warnSpy.mock.calls.filter((args) => {
         const msg = args[0];
         return (
           typeof msg === "string" &&
           msg.includes("Discovery advertise cycle") &&
-          msg.includes("skipping")
+          (msg.includes("Skipping") || msg.includes("skipping") || msg.includes("no peers connected"))
         );
       });
       expect(gateWarnings).toHaveLength(1);
 
       const message = gateWarnings[0]![0] as string;
-      // Must mention the connected-peer count (so operators see the actual
-      // diagnostic at-a-glance), and the topics it would have published
-      // (so they can confirm they're not silently dropped forever).
-      expect(message).toMatch(/only 1 peer\(s\) connected/);
-      expect(message).toMatch(/skipping \d+ topic publishes this cycle/);
+      expect(message).toMatch(/no peers connected/i);
+      expect(message).toMatch(/Skipping \d+ DHT topic publishes/i);
 
       warnSpy.mockRestore();
+    });
+
+    it("still attempts provide when only one peer (e.g. community relay) is connected", async () => {
+      const mesh = createMockMesh(async () => ({ cid: {} as never }));
+      (mesh.getConnectedPeerIds as ReturnType<typeof vi.fn>).mockReturnValue([
+        "12D3KooWCommunityRelay",
+      ]);
+
+      const nodeService = new NodeServiceImpl(
+        mesh as any,
+        createMockTrustStore(),
+        createMockPeerDirectoryStore(),
+        createMockHumanProfileStore(),
+        "/tmp/test",
+      );
+      setConfigStore(nodeService, createNullConfigStore());
+      setExternalMesh(nodeService, mesh);
+
+      const advertisePromise = _advertisePublicDiscoveryTopics(
+        (nodeService as any)._identityContext(),
+        {
+          interests: ["music"],
+          username: "alice",
+          displayName: "",
+          locationTopics: [],
+        },
+      );
+      await flushAsync();
+      await advertisePromise;
+
+      expect(mesh.provideCapabilityTopic).toHaveBeenCalled();
     });
   });
 });

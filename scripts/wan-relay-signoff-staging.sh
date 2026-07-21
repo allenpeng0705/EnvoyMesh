@@ -18,7 +18,9 @@ echo "==> wan-relay-signoff e2e (TEST_RELAY_ADDR=$RELAY_ADDR)"
 TEST_RELAY_ADDR="$RELAY_ADDR" npx vitest run apps/node/test/wan-relay-signoff-e2e.test.ts
 
 echo "==> geo-discovery-wan-signoff (TEST_RELAY_ADDR=$RELAY_ADDR)"
-TEST_RELAY_ADDR="$RELAY_ADDR" npx vitest run apps/node/test/geo-discovery-wan-signoff.test.ts
+# GEO_WAN_DISABLE_GATE=0 opts into the flaky community-DHT suite (see file header).
+RUN_E2E=1 GEO_WAN_DISABLE_GATE=0 TEST_RELAY_ADDR="$RELAY_ADDR" \
+  npx vitest run apps/node/test/geo-discovery-wan-signoff.test.ts
 
 SHA="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
 echo ""

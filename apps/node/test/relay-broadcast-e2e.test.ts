@@ -7,15 +7,13 @@
  * 3. Matching peers respond directly to broadcaster (P2P, not via relay)
  *
  * Requirements:
- * - A running relay server accessible at TEST_RELAY_ADDR environment variable.
- *   The community relay at 47.93.11.212:4001 does NOT serve the circuit-relay-v2
- *   reservation protocol this test needs (verified 2026-07-10 — TCP reachable but
- *   modern protocol negotiation fails), so we cannot default the relay address
- *   like the other relay-E2E files do. Operators must run a private relay and
- *   export its multiaddr to run this test.
+ * - Opt in with RUN_RELAY_BROADCAST_E2E=1 (hard-skipped otherwise — community
+ *   cn-relay cannot serve circuit-relay-v2 / broadcast fanout; verified 2026-07-10).
+ * - A private/compatible relay at TEST_RELAY_ADDR (do not use community cn-relay).
  *
  * Usage:
- *   TEST_RELAY_ADDR=/ip4/127.0.0.1/tcp/4001/p2p/... npx vitest run apps/node/test/relay-broadcast-e2e.test.ts
+ *   RUN_RELAY_BROADCAST_E2E=1 TEST_RELAY_ADDR=/ip4/127.0.0.1/tcp/4001/p2p/... \
+ *     npx vitest run apps/node/test/relay-broadcast-e2e.test.ts
  */
 
 import {
@@ -43,17 +41,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 
-// The community relay at 47.93.11.212:4001 does not serve the
-// circuit-relay-v2 reservation protocol this test needs (verified
-// 2026-07-10). The test only runs when an operator provides a private
-// relay via TEST_RELAY_ADDR.
-const RELAY_ADDR = process.env.TEST_RELAY_ADDR || null;
+// Hard-skip unless explicitly opted in. Loading TEST_RELAY_ADDR from repo
+// `.env` (often community cn-relay) must not enable this suite in e2e-fast.
+const RELAY_ADDR = process.env.TEST_RELAY_ADDR?.trim() || null;
+const BROADCAST_E2E_ENABLED =
+  process.env.RUN_RELAY_BROADCAST_E2E === "1" && Boolean(RELAY_ADDR);
 
 const meshes: EnvoyMesh[] = [];
 
-const itRelayed = RELAY_ADDR ? it : it.skip;
+const itRelayed = BROADCAST_E2E_ENABLED ? it : it.skip;
 
-describe.skipIf(!RELAY_ADDR)("E2E relay-assisted broadcast (live relay)", () => {
+describe.skipIf(!BROADCAST_E2E_ENABLED)("E2E relay-assisted broadcast (live relay)", () => {
   let profileDir: string;
 
   beforeEach(async () => {

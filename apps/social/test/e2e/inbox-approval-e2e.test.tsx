@@ -39,6 +39,7 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     approve: approvePending,
     reject: rejectPending,
   }),
+  useFeedNotifications: () => ({ items: [], dismiss: vi.fn() }),
 }));
 
 function renderInbox() {

@@ -31,6 +31,12 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     removeProfileGalleryPhoto: vi.fn(),
     shareFile: vi.fn(),
     readLibraryItemContent: vi.fn(),
+    getCircuitReservationStatus: vi.fn().mockResolvedValue({
+      state: "none",
+      live: false,
+      everReserved: false,
+      relayPeerIds: [],
+    }),
   }),
   useIsInProcessMobileNode: () => false,
 }));

@@ -72,7 +72,9 @@ Clients check in, look up, and **reserve** on a shared EnvoyMesh target set (cap
 
 - Prefer **regional relay(s) + at least one shared hub** (community `cn-relay` or org hub) in the same preset / `configuredRelays` list.
 - Relays that should miss-forward to each other must list each other in `--bootstrap` / `ENVOYMESH_BOOTSTRAP_PEERS` so the sibling book is seeded (Phase 46B/C).
+- Example YAML: [`bootstrap-presets.example.yaml`](../bootstrap-presets.example.yaml) (`org-fleet` preset).
 - Design: [relay-server-design.md](./relay-server-design.md) Part B.
+- **Adding relay #2+:** follow [§8](#8-adding-a-second-or-nth-relay) (do not only update systemd on one host).
 
 ### Multi-relay fleet tests (Phase 46)
 
@@ -91,10 +93,12 @@ Do **not** set both live vars to the same community `cn-relay` — one peer cann
 ## 5. Minimal operator checklist
 
 - [ ] At least one **dialable** relay with **`--advertise-addr`** (auto public-mode) and a current `apps/relay` build for each region that must support **NAT ↔ NAT**.
-- [ ] Clients use **`--discovery-profile wan-default`**, **`--relay`**, and the **`cn-relay`** (or org) bootstrap preset to reach that relay.
+- [ ] Clients use **`--discovery-profile wan-default`**, **`--relay`**, and the **`cn-relay`** (or org multi-relay) bootstrap preset to reach that fleet (cap ~4 EnvoyMesh targets).
+- [ ] If running **2+ relays**, complete [§8](#8-adding-a-second-or-nth-relay) (mutual `--bootstrap` + client preset) before relying on miss-forward.
 - [ ] Confirm **circuit reservation** on a home node (`Settings → Network` → reserved) before minting WAN invites.
 - [ ] Run **`connectivity-status`** after deploy; confirm bootstrap probes and `relay.checkin.ok` / `relay.lookup.ok` in audit when validating a release.
 - [ ] Admin UI / `/reservations` shows non-zero count when clients are connected (see §7).
+- [ ] Dual-relay deploy: run live miss-forward signoff (`npm run test:e2e:relay:live`) once.
 
 ---
 
@@ -178,11 +182,79 @@ If you still see “libp2p defaults (15 reservations…)”, the process is not 
 | Home node Settings → Network | Circuit reservation chip = **reserved** |
 | Mint WAN join invite | Succeeds without `relay≠RESERVED` hard-gate error |
 | Auto-bond / chat over WAN | Dial uses `/p2p-circuit/` via this relay’s peer id |
+| Dual-relay miss-forward (fleet) | After [§8](#8-adding-a-second-or-nth-relay): `TEST_RELAY_A=… TEST_RELAY_B=… npm run test:e2e:relay:live` green |
 
-**New region:** copy the unit, change `--advertise-addr` (or `/dns4/…`), open TCP 4001 (+ 15432 if you want Admin remotely behind TLS), ship the new multiaddr in an org bootstrap preset or update `DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR` when rotating the primary `cn-relay`.
+**New region / second host:** follow [§8](#8-adding-a-second-or-nth-relay) (not only change `--advertise-addr`). Open TCP **4001** (+ **15432** only if Admin is exposed, preferably behind TLS). Ship both multiaddrs in an org bootstrap preset (see `org-fleet` in [`bootstrap-presets.example.yaml`](../bootstrap-presets.example.yaml)).
 
 **Security:** put Caddy/nginx TLS in front of `:15432` for remote Admin access; change the default admin password; keep `Restart=always` so Admin UI **Hard restart** comes back.
 
 ### Discovery privacy note (`relay.lookup` by peer id)
 
 Exact `targetPeerId` / `targetOwnerId` lookups are answered under `visibilityScope: "public"` when the peer checked in with a public advertisement **or** the `mesh.discovery` capability (which normal nodes always advertise). Tradeoff: anyone who already knows a peer id can learn whether that peer currently has a **live circuit hop** on this relay (lookup omits checkin-only peers with no reservation). Public lookups still omit `ownerId` for capability/public visibility.
+
+---
+
+## 8. Adding a second (or Nth) relay
+
+Use this when expanding beyond a single community/org hop. Phase 46 miss-forward only works when relays **seed each other** (or learn via verified `relay.hints` — slower / less reliable for production cutover). Prefer **mutual `--bootstrap`**.
+
+### Prerequisites
+
+- Relay A already running with public `--advertise-addr` and Basic Auth configured.
+- New host B with TCP **4001** reachable from A and from clients (and from A↔B for forward dials).
+- Current `npm run relay:build` on both hosts.
+
+### Sequenced steps
+
+1. **Start relay B** (no sibling seed yet) with its own profile dir and public advertise:
+
+   ```bash
+   ./scripts/run-relay.sh \
+     --profile ./data/relay-b \
+     --port 4001 \
+     --advertise <B_PUBLIC_IP> \
+     --http-port 15432 \
+     --public-mode
+   ```
+
+2. **Read B’s dialable multiaddr** (Basic Auth required when admin creds are set — including defaults):
+
+   ```bash
+   curl -sf -u "$ENVOYMESH_RELAY_ADMIN_USER:$ENVOYMESH_RELAY_ADMIN_PASSWORD" \
+     http://127.0.0.1:15432/info
+   # Pick an addr with /ip4/<public>/ or /dns4/… and /p2p/<peerId>
+   # → export RELAY_B=/ip4/<B_PUBLIC_IP>/tcp/4001/p2p/<B_PEER_ID>
+   ```
+
+3. **Read A’s multiaddr the same way** → `RELAY_A=…`.
+
+4. **Mutual seed (required for reliable miss-forward):**
+   - On **A**: add `--bootstrap $RELAY_B` (or `ENVOYMESH_BOOTSTRAP_PEERS`) and **restart** A.
+   - On **B**: add `--bootstrap $RELAY_A` and **restart** B.
+   - Startup log should include `Seeded N sibling(s) into relay book from --bootstrap`.
+
+   One-direction seed (only A→B) is enough for **A forwards to B**; bidirectional is required for **both** directions.
+
+5. **Optional gossip path:** if you seed only A→B and later add C, C can appear via periodic `relay.hints` (~90s) after verify. For production cutovers, still add explicit `--bootstrap` rather than waiting on gossip. (Learning a third relay **only** via gossip is manual/deferred — no dedicated E2E.)
+
+6. **Update clients** (cap ~4 EnvoyMesh targets):
+   - Org YAML preset listing both addrs (see `org-fleet` in [`bootstrap-presets.example.yaml`](../bootstrap-presets.example.yaml)), **or**
+   - Social **Settings → Network → configured relays** / `addRelay` for each, **or**
+   - CLI `--bootstrap $RELAY_A --bootstrap $RELAY_B` / `ENVOYMESH_BOOTSTRAP_PEERS`.
+   - Restart or re-apply node config so `collectRelayControlTargets` sees the full set.
+
+7. **Verify single-relay health** on A and B (§7 table: public mode line, `/health`, reservations after a home connects).
+
+8. **Prove miss-forward** (do **not** point both vars at the same `cn-relay`):
+
+   ```bash
+   TEST_RELAY_A="$RELAY_A" TEST_RELAY_B="$RELAY_B" npm run test:e2e:relay:live
+   # or: ./scripts/multi-relay-fleet-live-signoff.sh "$RELAY_A" "$RELAY_B"
+   ```
+
+### Cutover / replace a relay
+
+1. Stand up the replacement with a **new** profile only if you intend a new peer id (§3).
+2. Mutual-bootstrap with remaining fleet members (§8 steps 2–4).
+3. Ship updated preset to clients; drain old relay (stop advertising in presets) after clients reserve on the replacement.
+4. Do not delete the old `libp2p-private.key` until bookmarks/presets no longer reference its peer id.

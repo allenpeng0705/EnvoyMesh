@@ -16,6 +16,7 @@ vi.mock("../../src/context/NodeStateContext.js", () => ({
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useShareOffers: () => ({ offers: [{ shareId: "s1" }] }),
   useAgentShareProposals: () => ({ proposals: [{ proposalId: "p1" }, { proposalId: "p2" }] }),
+  useFeedNotifications: () => ({ items: [], dismiss: vi.fn() }),
 }));
 
 describe("useInboxActivityCount", () => {

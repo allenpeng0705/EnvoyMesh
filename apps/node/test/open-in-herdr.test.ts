@@ -10,6 +10,9 @@ const spawnMock = vi.fn();
 
 vi.mock("node:child_process", () => ({
   spawn: (...args: unknown[]) => spawnMock(...args),
+  execFile: vi.fn(),
+  execFileSync: vi.fn(),
+  execSync: vi.fn(),
 }));
 
 import {

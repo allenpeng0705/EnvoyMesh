@@ -6037,7 +6037,7 @@ See design doc §11 for the full list of 10 open questions. None block Phase 45A
 
 ## Phase 46 — Multi-Relay Fleet Coordination
 
-**Status:** `[x]` shipped (46A–46C unit-tested; optional two-relay live smoke deferred)  
+**Status:** `[x]` shipped (46A–46C + in-process/process E2E; live dual-relay signoff operator-gated via `TEST_RELAY_A`/`TEST_RELAY_B`)  
 **Goal:** Make **multiple standalone relays** (same region or multi-region) work together so normal nodes that check in / reserve on different relays can still **discover** each other and obtain **dialable** `/p2p-circuit/` paths — without replicating full leaf rosters.
 
 **Design doc (source of truth):** [relay-server-design.md](./relay-server-design.md) — Part A = shipped standalone relay; **Part B = this phase**.  
@@ -6108,6 +6108,7 @@ See design doc §11 for the full list of 10 open questions. None block Phase 45A
 
 | Date | Change |
 |------|--------|
+| 2026-07-21 | **Phase 46 doc hygiene.** Operator fleet §8 add-Nth-relay runbook; design A7 auth + B7#3 demoted + B9 risks; multi-relay preset example; cleared stale “live smoke deferred” banners. |
 | 2026-07-21 | **Phase 46 P2/P3 tests.** Gated live `TEST_RELAY_A`/`TEST_RELAY_B` E2E + signoff script; process-spawn `apps/relay` E2E; `npm run test:e2e:relay:fleet` / `:process` / `:live`; serialize multi-relay `addRelay` (parallel RESERVE deadlocks); skip empty libp2p bootstrap list after loopback filter. |
 | 2026-07-21 | **Phase 46 test gaps closed.** In-process E2E `multi-relay-fleet-e2e` (46A multi-home + 46B miss-forward); unit coverage for merge/negative-cache/hints promote/`maxHops:1` client payload; design matrix miss-forward marked shipped. |
 | 2026-07-21 | **Phase 46 shipped (46A–46C).** Client `collectRelayControlTargets` + parallel checkin/lookup; standalone miss-forward + sibling book/`relay.hints` gossip; client `maxHops: 1`. Unit tests in `relay-reservation-health` + `relay-miss-forward`. Optional two-relay live smoke deferred. |

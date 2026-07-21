@@ -8,6 +8,9 @@ import { describe, expect, it, vi, beforeEach } from "vitest";
 const mockExecSync = vi.fn();
 vi.mock("node:child_process", () => ({
   execSync: mockExecSync,
+  execFile: vi.fn(),
+  execFileSync: vi.fn(),
+  spawn: vi.fn(),
 }));
 
 // Mock filesystem

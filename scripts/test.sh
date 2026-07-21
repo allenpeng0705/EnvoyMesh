@@ -398,6 +398,8 @@ if [ "$E2E" = "1" ] && [ "$BAIL_OUT" != "1" ]; then
     --exclude='apps/node/test/webrtc-call-e2e.test.ts'
     --exclude='apps/node/test/social-ui-e2e.test.ts'
     --exclude='apps/node/test/terminal-playwright-browser.test.ts'
+    --exclude='apps/node/test/relay-broadcast-e2e.test.ts'
+    --exclude='apps/node/test/geo-discovery-wan-signoff.test.ts'
     --exclude='apps/social/test/**'
   )
   run_phase "04-e2e-fast" "libp2p in-process E2E (RUN_E2E=1, no chromium)" \

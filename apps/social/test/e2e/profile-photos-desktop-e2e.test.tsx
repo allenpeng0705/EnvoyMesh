@@ -59,6 +59,12 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     getNodeConfig: vi.fn().mockResolvedValue({}),
     advertiseTopic: vi.fn(),
     stopAdvertiseTopic: vi.fn(),
+    getCircuitReservationStatus: vi.fn().mockResolvedValue({
+      state: "none",
+      live: false,
+      everReserved: false,
+      relayPeerIds: [],
+    }),
   }),
   useIsInProcessMobileNode: () => false,
 }));

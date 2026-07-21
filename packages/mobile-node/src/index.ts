@@ -2509,6 +2509,16 @@ You are the owner's personal AI assistant on EnvoyMesh.
     return this._agentActivity.list(params);
   }
 
+  // Capacitor backup (apps/mobile) — feed.notify Inbox is desktop/EnvoyGo via home.
+  // Stub so NodeService stays implementable; product path is not this package.
+  async listFeedNotifications(): Promise<import("@envoymesh/api").FeedNotification[]> {
+    return [];
+  }
+
+  async dismissFeedNotification(_id: string): Promise<void> {
+    /* no-op */
+  }
+
   // Mobile-node NodeService stubs for features that require the desktop
   // vault store. The convention:
   //   - read methods (list*) return empty results so the UI degrades gracefully

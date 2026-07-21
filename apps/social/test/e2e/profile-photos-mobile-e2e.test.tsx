@@ -45,6 +45,12 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     shareFile: vi.fn(),
     syncProfileToBonds,
     readLibraryItemContent: vi.fn().mockResolvedValue({ contentBase64: "", mimeType: "image/png" }),
+    getCircuitReservationStatus: vi.fn().mockResolvedValue({
+      state: "none",
+      live: false,
+      everReserved: false,
+      relayPeerIds: [],
+    }),
   }),
   useIsInProcessMobileNode: () => isInProcessMobileNode,
 }));

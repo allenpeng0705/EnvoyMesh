@@ -11,6 +11,7 @@
 # Then reference preset names in bootstrapPresets / ENVOYMESH_BOOTSTRAP_PRESETS / --bootstrap-preset
 #
 # Full guide: docs/local-configuration.reference.md §4
+# Multi-relay fleet: docs/operator-relay-fleet.md §4 + §8
 
 # Preset name: [a-zA-Z0-9._-]{1,64}
 # Value: non-empty list of libp2p multiaddr strings (must include /p2p/<peerId>)
@@ -20,3 +21,17 @@ my-community-relay:
 
 my-backup-bootstrap:
   - /dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN
+
+# Phase 46A — org multi-relay fleet (regional + hub).
+# Clients expand this preset into collectRelayControlTargets (cap ~4 EnvoyMesh addrs).
+# Relays must also list each other in --bootstrap so miss-forward works
+# (see docs/operator-relay-fleet.md §8).
+org-fleet:
+  - /dns4/relay-eu.example.com/tcp/4001/p2p/12D3KooWExampleEuRelayPeerIdReplaceMe
+  - /dns4/relay-hub.example.com/tcp/4001/p2p/12D3KooWExampleHubRelayPeerIdReplaceMe
+
+# Optional: regional-only (still pair with hub in bootstrapPresets list, or
+# add a third addr here — keep total EnvoyMesh targets ≤ 4).
+org-fleet-us-east:
+  - /dns4/relay-use1.example.com/tcp/4001/p2p/12D3KooWExampleUsEastRelayPeerIdReplaceMe
+  - /dns4/relay-hub.example.com/tcp/4001/p2p/12D3KooWExampleHubRelayPeerIdReplaceMe
