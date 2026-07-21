@@ -32,13 +32,13 @@ function readFileAsBase64(file: File): Promise<string> {
     reader.onload = () => {
       const result = reader.result;
       if (typeof result !== "string") {
-        reject(new Error("Failed to read file"));
+        reject(new Error("file_read_failed"));
         return;
       }
       const comma = result.indexOf(",");
       resolve(comma >= 0 ? result.slice(comma + 1) : result);
     };
-    reader.onerror = () => reject(reader.error ?? new Error("Failed to read file"));
+    reader.onerror = () => reject(new Error("file_read_failed"));
     reader.readAsDataURL(file);
   });
 }
@@ -59,6 +59,8 @@ export function BrowserAuthorView({
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [gallery, setGallery] = useState("wall");
+  const [sectionSlug, setSectionSlug] = useState("");
+  const [advertiseTopic, setAdvertiseTopic] = useState(true);
   const [visibility, setVisibility] = useState<PublishWebContentVisibility>("bonded");
   const [contactIds, setContactIds] = useState<string[]>([]);
   const [file, setFile] = useState<File | null>(null);
@@ -68,6 +70,11 @@ export function BrowserAuthorView({
 
   const selectableBonds = eligibleBonds(bonds);
   const isBinary = template === "photo" || template === "file";
+  const isArticle =
+    template === "blog-post" ||
+    template === "note" ||
+    template === "profile" ||
+    template === "section";
   const contactsOk = visibility !== "contacts" || contactIds.length > 0;
   const canPublish =
     title.trim().length > 0 &&
@@ -102,8 +109,16 @@ export function BrowserAuthorView({
       if (visibility === "contacts") {
         params.contactIds = [...contactIds];
       }
-      if (template === "blog-post" || template === "note" || template === "profile") {
+      if (template === "blog-post" || template === "note" || template === "profile" || template === "section") {
         params.body = body;
+      }
+      if (template === "photo" && body.trim()) {
+        // Optional caption stored as note-style summary alongside the image title.
+        params.body = body.trim();
+      }
+      if (template === "section") {
+        if (sectionSlug.trim()) params.sectionSlug = sectionSlug.trim();
+        params.advertiseTopic = advertiseTopic;
       } else if (file) {
         params.contentBase64 = await readFileAsBase64(file);
         params.mimeType = file.type || (template === "photo" ? "image/png" : "application/octet-stream");
@@ -116,7 +131,11 @@ export function BrowserAuthorView({
       setPublished(result);
       onPublished?.(result);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      if (e instanceof Error && e.message === "file_read_failed") {
+        setError(t("browser.author.fileReadFailed", "Failed to read file"));
+      } else {
+        setError(e instanceof Error ? e.message : String(e));
+      }
     } finally {
       setBusy(false);
     }
@@ -128,6 +147,8 @@ export function BrowserAuthorView({
     setTitle("");
     setBody("");
     setGallery("wall");
+    setSectionSlug("");
+    setAdvertiseTopic(true);
     setVisibility("bonded");
     setContactIds([]);
     setFile(null);
@@ -135,11 +156,18 @@ export function BrowserAuthorView({
 
   if (published) {
     return (
-      <div className="browser-author" data-testid="browser-author-published">
+      <div className="browser-author browser-author__success" data-testid="browser-author-published">
+        <div className="browser-author__success-icon" aria-hidden="true">
+          <AuthorIconCheck />
+        </div>
         <h3>{t("browser.author.publishedTitle", "Published")}</h3>
-        <p data-testid="browser-author-published-url">{published.url}</p>
+        <p className="browser-author__success-url" data-testid="browser-author-published-url">
+          {published.url}
+        </p>
         {published.listingUrl ? (
-          <p data-testid="browser-author-listing-url">{published.listingUrl}</p>
+          <p className="browser-author__success-listing" data-testid="browser-author-listing-url">
+            {published.listingUrl}
+          </p>
         ) : null}
         <div className="browser-author__actions">
           <button
@@ -168,43 +196,81 @@ export function BrowserAuthorView({
         <div className="browser-author__templates">
           <button
             type="button"
-            className="btn btn-primary"
+            className="browser-author__template-card"
             data-testid="browser-author-template-blog-post"
             onClick={() => setTemplate("blog-post")}
           >
-            {t("browser.author.newBlogPost", "New Blog Post")}
+            <span className="browser-author__template-icon" aria-hidden="true">
+              <AuthorIconArticle />
+            </span>
+            <span className="browser-author__template-name">
+              {t("browser.author.newBlogPost", "New Blog Post")}
+            </span>
           </button>
           <button
             type="button"
-            className="btn"
+            className="browser-author__template-card"
             data-testid="browser-author-template-note"
             onClick={() => setTemplate("note")}
           >
-            {t("browser.author.newNote", "New Note")}
+            <span className="browser-author__template-icon" aria-hidden="true">
+              <AuthorIconNote />
+            </span>
+            <span className="browser-author__template-name">
+              {t("browser.author.newNote", "New Note")}
+            </span>
           </button>
           <button
             type="button"
-            className="btn"
+            className="browser-author__template-card"
             data-testid="browser-author-template-profile"
             onClick={() => setTemplate("profile")}
           >
-            {t("browser.author.newProfile", "Profile page")}
+            <span className="browser-author__template-icon" aria-hidden="true">
+              <AuthorIconProfile />
+            </span>
+            <span className="browser-author__template-name">
+              {t("browser.author.newProfile", "Profile page")}
+            </span>
           </button>
           <button
             type="button"
-            className="btn"
+            className="browser-author__template-card"
             data-testid="browser-author-template-photo"
             onClick={() => setTemplate("photo")}
           >
-            {t("browser.author.newPhoto", "Photo")}
+            <span className="browser-author__template-icon" aria-hidden="true">
+              <AuthorIconPhoto />
+            </span>
+            <span className="browser-author__template-name">
+              {t("browser.author.newPhoto", "Photo")}
+            </span>
           </button>
           <button
             type="button"
-            className="btn"
+            className="browser-author__template-card"
             data-testid="browser-author-template-file"
             onClick={() => setTemplate("file")}
           >
-            {t("browser.author.newFile", "File upload")}
+            <span className="browser-author__template-icon" aria-hidden="true">
+              <AuthorIconFile />
+            </span>
+            <span className="browser-author__template-name">
+              {t("browser.author.newFile", "File upload")}
+            </span>
+          </button>
+          <button
+            type="button"
+            className="browser-author__template-card"
+            data-testid="browser-author-template-section"
+            onClick={() => setTemplate("section")}
+          >
+            <span className="browser-author__template-icon" aria-hidden="true">
+              <AuthorIconSection />
+            </span>
+            <span className="browser-author__template-name">
+              {t("browser.author.newSection", "Custom section")}
+            </span>
           </button>
         </div>
         {onCancel ? (
@@ -225,18 +291,35 @@ export function BrowserAuthorView({
           ? t("browser.author.newProfile", "Profile page")
           : template === "photo"
             ? t("browser.author.newPhoto", "Photo")
-            : t("browser.author.newFile", "File upload");
+            : template === "section"
+              ? t("browser.author.newSection", "Custom section")
+              : t("browser.author.newFile", "File upload");
 
   return (
-    <div className="browser-author" data-testid="browser-author-form">
-      <h3>{heading}</h3>
+    <div
+      className={`browser-author${isArticle ? " browser-author--article" : ""}`}
+      data-testid="browser-author-form"
+    >
+      <header className="browser-author__header">
+        <h3>{heading}</h3>
+        <p className="browser-author__lede">
+          {isArticle
+            ? t(
+                "browser.author.articleLede",
+                "Write like an article — titles, headings, lists, links, and images. Preview anytime.",
+              )
+            : t("browser.author.binaryLede", "Add a file, set visibility, then publish to your mesh site.")}
+        </p>
+      </header>
 
       <label className="field-label" htmlFor="browser-author-title">
-        {t("browser.author.title", "Title")}
+        {isArticle
+          ? t("browser.author.articleTitle", "Headline")
+          : t("browser.author.title", "Title")}
       </label>
       <input
         id="browser-author-title"
-        className="browser-author__title"
+        className={`browser-author__title${isArticle ? " browser-author__title--headline" : ""}`}
         data-testid="browser-author-title"
         value={title}
         onChange={(e) => setTitle(e.target.value)}
@@ -244,9 +327,47 @@ export function BrowserAuthorView({
         placeholder={
           template === "photo"
             ? t("browser.author.photoTitlePlaceholder", "Sunset")
-            : t("browser.author.titlePlaceholder", "My First Post")
+            : template === "section"
+              ? t("browser.author.sectionTitlePlaceholder", "Market")
+              : t("browser.author.titlePlaceholder", "My First Post")
         }
       />
+
+      {template === "section" ? (
+        <>
+          <p className="field-desc">
+            {t(
+              "browser.author.sectionHint",
+              "Creates envoy://…/{slug}/ — share the link or discover via topic search.",
+            )}
+          </p>
+          <label className="field-label" htmlFor="browser-author-section-slug">
+            {t("browser.author.sectionSlug", "Path slug (optional)")}
+          </label>
+          <input
+            id="browser-author-section-slug"
+            className="browser-author__title"
+            data-testid="browser-author-section-slug"
+            value={sectionSlug}
+            onChange={(e) => setSectionSlug(e.target.value)}
+            disabled={busy}
+            placeholder={t("browser.author.sectionSlugPlaceholder", "market")}
+          />
+          <label className="browser-author__check">
+            <input
+              type="checkbox"
+              data-testid="browser-author-advertise-topic"
+              checked={advertiseTopic}
+              disabled={busy}
+              onChange={(e) => setAdvertiseTopic(e.target.checked)}
+            />
+            {t(
+              "browser.author.advertiseTopic",
+              "List in Discover / Bazaar topic search (publish:slug)",
+            )}
+          </label>
+        </>
+      ) : null}
 
       {template === "photo" ? (
         <>
@@ -260,7 +381,7 @@ export function BrowserAuthorView({
             value={gallery}
             onChange={(e) => setGallery(e.target.value)}
             disabled={busy}
-            placeholder="wall"
+            placeholder={t("browser.author.galleryPlaceholder", "wall")}
           />
         </>
       ) : null}
@@ -286,22 +407,42 @@ export function BrowserAuthorView({
           />
           {file ? (
             <p className="field-desc" data-testid="browser-author-file-name">
-              {file.name} ({Math.round(file.size / 1024)} KiB)
+              {file.name} ({Math.round(file.size / 1024)} {t("browser.author.fileSizeUnit", "KiB")})
             </p>
+          ) : null}
+          {template === "photo" ? (
+            <>
+              <label className="field-label" htmlFor="browser-author-caption">
+                {t("browser.author.caption", "Caption (optional)")}
+              </label>
+              <MarkdownEditor
+                value={body}
+                onChange={setBody}
+                disabled={busy}
+                rows={6}
+                articleMode
+                placeholder={t(
+                  "browser.author.captionPlaceholder",
+                  "A short story under the photo…",
+                )}
+              />
+            </>
           ) : null}
         </>
       ) : (
         <>
           <label className="field-label" htmlFor="browser-author-body">
-            {t("browser.author.body", "Body")}
+            {t("browser.author.story", "Story")}
           </label>
           <MarkdownEditor
             value={body}
             onChange={setBody}
             disabled={busy}
+            rows={16}
+            articleMode
             placeholder={t(
               "browser.author.bodyPlaceholder",
-              "Hello world! This is my first post on my EnvoyMesh blog.",
+              "Start writing… Use Title / Heading for structure, insert images and links as you go.",
             )}
           />
         </>
@@ -370,7 +511,7 @@ export function BrowserAuthorView({
       <div className="browser-author__actions">
         <button
           type="button"
-          className="btn"
+          className="btn browser-author__back-btn"
           disabled={busy}
           onClick={() => {
             if (initialTemplate) {
@@ -383,6 +524,7 @@ export function BrowserAuthorView({
           }}
           data-testid="browser-author-back"
         >
+          <AuthorIconBack />
           {t("browser.author.back", "Back")}
         </button>
         <button
@@ -398,5 +540,109 @@ export function BrowserAuthorView({
         </button>
       </div>
     </div>
+  );
+}
+
+function iconProps() {
+  return {
+    viewBox: "0 0 24 24",
+    width: 18,
+    height: 18,
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 2,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+    "aria-hidden": true as const,
+  };
+}
+
+function AuthorIconArticle() {
+  return (
+    <svg {...iconProps()}>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <line x1="8" y1="13" x2="16" y2="13" />
+      <line x1="8" y1="17" x2="14" y2="17" />
+    </svg>
+  );
+}
+
+function AuthorIconNote() {
+  return (
+    <svg {...iconProps()}>
+      <path d="M4 4a2 2 0 0 1 2-2h9l5 5v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2z" />
+      <path d="M15 2v5h5" />
+      <line x1="8" y1="12" x2="14" y2="12" />
+      <line x1="8" y1="16" x2="12" y2="16" />
+    </svg>
+  );
+}
+
+function AuthorIconProfile() {
+  return (
+    <svg {...iconProps()}>
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8" />
+    </svg>
+  );
+}
+
+function AuthorIconPhoto() {
+  return (
+    <svg {...iconProps()}>
+      <rect x="3" y="3" width="18" height="18" rx="2" />
+      <circle cx="9" cy="9" r="2" />
+      <path d="M21 15l-5-5L5 21" />
+    </svg>
+  );
+}
+
+function AuthorIconFile() {
+  return (
+    <svg {...iconProps()}>
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14 2 14 8 20 8" />
+      <path d="M12 18v-6" />
+      <path d="M9 15l3 3 3-3" />
+    </svg>
+  );
+}
+
+function AuthorIconSection() {
+  return (
+    <svg {...iconProps()}>
+      <rect x="3" y="3" width="7" height="7" rx="1" />
+      <rect x="14" y="3" width="7" height="7" rx="1" />
+      <rect x="3" y="14" width="7" height="7" rx="1" />
+      <rect x="14" y="14" width="7" height="7" rx="1" />
+    </svg>
+  );
+}
+
+function AuthorIconBack() {
+  return (
+    <svg {...iconProps()}>
+      <path d="M19 12H5" />
+      <path d="M12 19l-7-7 7-7" />
+    </svg>
+  );
+}
+
+function AuthorIconCheck() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="32"
+      height="32"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M20 6L9 17l-5-5" />
+    </svg>
   );
 }

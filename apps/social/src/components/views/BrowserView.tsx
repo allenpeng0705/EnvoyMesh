@@ -17,6 +17,7 @@ import {
   HandleRegistryNotImplementedError,
   InvalidEnvoyUrlError,
   isEnvoyContentUrl,
+  defaultWebSurfaceForPath,
 } from "@envoymesh/api";
 import { Markdown } from "../Markdown.js";
 import DOMPurify from "dompurify";
@@ -42,7 +43,17 @@ import {
 } from "../../lib/library-read-fetch.js";
 import { BrowserAuthorView } from "./BrowserAuthorView.js";
 import type { PublishWebContentResult } from "@envoymesh/api";
-import { takePendingBrowserUrl } from "../../lib/browser-nav.js";
+import {
+  takePendingBrowserUrl,
+  takePendingAuthorTemplate,
+  OPEN_BROWSER_EVENT,
+  notifyWebSectionsChanged,
+} from "../../lib/browser-nav.js";
+import { BrowserBazaarView } from "./BrowserBazaarView.js";
+import { MySitePanel } from "../MySitePanel.js";
+import type { AuthorTemplate } from "./BrowserAuthorView.js";
+
+type BrowserMode = "browse" | "bazaar";
 
 type LoadState =
   | { kind: "idle" }
@@ -58,7 +69,7 @@ type LoadState =
       contentHash?: string;
       fromCache?: boolean;
     }
-  | { kind: "error"; message: string };
+  | { kind: "error"; message: string; code?: "not_found" | "forbidden" | "other"; remote?: boolean };
 
 function base64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64);
@@ -113,6 +124,8 @@ export function BrowserView() {
   const [bookmarked, setBookmarked] = useState(false);
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [authorOpen, setAuthorOpen] = useState(false);
+  const [authorTemplate, setAuthorTemplate] = useState<AuthorTemplate | undefined>(undefined);
+  const [mode, setMode] = useState<BrowserMode>("browse");
   const cacheRef = useRef<Map<string, BrowserFetchCacheEntry>>(new Map());
 
   const parseError = useMemo(() => {
@@ -121,7 +134,10 @@ export function BrowserView() {
     try {
       const parsed = parseEnvoyUrl(trimmed);
       if (parsed.ownerForm === "handle") {
-        return "Handle URLs (envoy://@handle/...) are reserved for v2 — use envoy://envoy:owner:<base64>/...";
+        return t(
+          "browser.handleUrlReserved",
+          "Handle URLs (envoy://@handle/...) are reserved for v2 — use envoy://envoy:owner:<base64>/...",
+        );
       }
       return null;
     } catch (e) {
@@ -129,7 +145,7 @@ export function BrowserView() {
       if (e instanceof HandleRegistryNotImplementedError) return e.message;
       return e instanceof Error ? e.message : String(e);
     }
-  }, [url]);
+  }, [url, t]);
 
   const isValid = url.trim().length > 0 && parseError === null && isEnvoyContentUrl(url);
 
@@ -212,13 +228,32 @@ export function BrowserView() {
             fromCache: result.fromCache,
           });
         } else if (result.status === "not_found") {
-          setState({ kind: "error", message: t("browser.statusNotFound") });
+          const remote = Boolean(ownerId) && targetOwnerId !== ownerId;
+          const surface = defaultWebSurfaceForPath(path);
+          const message = remote
+            ? surface
+              ? t("browser.statusContactPageMissing", {
+                  surface:
+                    surface === "profile"
+                      ? t("agentCard.openProfile", "Profile")
+                      : surface === "blog"
+                        ? t("agentCard.openBlog", "Blog")
+                        : t("agentCard.openPhotoWall", "PhotoWall"),
+                })
+              : t("browser.statusContactContentMissing")
+            : t("browser.statusNotFound");
+          setState({ kind: "error", message, code: "not_found", remote });
         } else if (result.status === "forbidden") {
-          setState({ kind: "error", message: t("browser.statusAccessDenied") });
+          setState({
+            kind: "error",
+            message: t("browser.statusAccessDenied"),
+            code: "forbidden",
+          });
         } else {
           setState({
             kind: "error",
             message: t("browser.statusError", { message: result.error ?? result.status }),
+            code: "other",
           });
         }
       } catch (e) {
@@ -235,14 +270,58 @@ export function BrowserView() {
   );
 
   useEffect(() => {
+    if (!ownerId || !nodeService.ensureDefaultWebSite) return;
+    void nodeService.ensureDefaultWebSite().catch((err) => {
+      console.warn("[Browser] ensureDefaultWebSite failed:", err);
+    });
+  }, [ownerId, nodeService]);
+
+  useEffect(() => {
     const pending = takePendingBrowserUrl();
     if (pending && isEnvoyContentUrl(pending)) {
+      setMode("browse");
       void navigate(pending);
-      return;
+    } else {
+      setState({ kind: "idle" });
     }
-    setState({ kind: "idle" });
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only
+    const tmpl = takePendingAuthorTemplate();
+    if (tmpl) {
+      setMode("browse");
+      setAuthorTemplate(tmpl as AuthorTemplate);
+      setAuthorOpen(true);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- cold open only
   }, []);
+
+  useEffect(() => {
+    const onOpenBrowser = () => {
+      const pending = takePendingBrowserUrl();
+      if (pending && isEnvoyContentUrl(pending)) {
+        setMode("browse");
+        void navigate(pending);
+      }
+      const tmpl = takePendingAuthorTemplate();
+      if (tmpl) {
+        setMode("browse");
+        setAuthorTemplate(tmpl as AuthorTemplate);
+        setAuthorOpen(true);
+      }
+    };
+    window.addEventListener(OPEN_BROWSER_EVENT, onOpenBrowser);
+    return () => window.removeEventListener(OPEN_BROWSER_EVENT, onOpenBrowser);
+  }, [navigate]);
+
+  function openFromBazaar(target: string) {
+    setMode("browse");
+    void navigate(target);
+  }
+
+  function openAuthor(template?: AuthorTemplate) {
+    setMode("browse");
+    setAuthorTemplate(template);
+    setAuthorOpen(true);
+  }
+
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -277,6 +356,7 @@ export function BrowserView() {
   }
 
   function onPublished(result: PublishWebContentResult) {
+    notifyWebSectionsChanged();
     const target = result.listingUrl ?? result.url;
     setUrl(target);
     void navigate(target);
@@ -303,42 +383,74 @@ export function BrowserView() {
     <div className="browser-view" data-testid="browser-view">
       <header className="browser-view__header">
         <h2>{t("browser.title")}</h2>
+        <div className="browser-view__modes" role="tablist" aria-label={t("browser.modes", "Browser modes")}>
+          <button
+            type="button"
+            role="tab"
+            className={`browser-view__mode${mode === "browse" ? " is-active" : ""}`}
+            data-testid="browser-mode-browse"
+            aria-selected={mode === "browse"}
+            onClick={() => setMode("browse")}
+          >
+            {t("browser.modeBrowse", "Browse")}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            className={`browser-view__mode${mode === "bazaar" ? " is-active" : ""}`}
+            data-testid="browser-mode-bazaar"
+            aria-selected={mode === "bazaar"}
+            onClick={() => setMode("bazaar")}
+          >
+            {t("browser.modeBazaar", "Bazaar")}
+          </button>
+        </div>
       </header>
 
+      {mode === "bazaar" ? (
+        <BrowserBazaarView
+          onOpenUrl={openFromBazaar}
+          onCreate={(template) => openAuthor(template)}
+          ownerId={ownerId}
+        />
+      ) : (
+        <>
       <div className="browser-view__toolbar">
-        <button
-          type="button"
-          className="browser-view__nav-btn"
-          data-testid="browser-back"
-          aria-label={t("browser.back")}
-          title={t("browser.back")}
-          disabled={!backEnabled}
-          onClick={onBack}
-        >
-          ←
-        </button>
-        <button
-          type="button"
-          className="browser-view__nav-btn"
-          data-testid="browser-forward"
-          aria-label={t("browser.forward")}
-          title={t("browser.forward")}
-          disabled={!forwardEnabled}
-          onClick={onForward}
-        >
-          →
-        </button>
-        <button
-          type="button"
-          className="browser-view__nav-btn"
-          data-testid="browser-reload"
-          aria-label={t("browser.reload")}
-          title={t("browser.reload")}
-          disabled={!reloadEnabled}
-          onClick={onReload}
-        >
-          ↻
-        </button>
+        <div className="browser-view__nav-group" role="group" aria-label={t("browser.navGroup", "Navigation")}>
+          <button
+            type="button"
+            className="browser-view__nav-btn"
+            data-testid="browser-back"
+            aria-label={t("browser.back")}
+            title={t("browser.back")}
+            disabled={!backEnabled}
+            onClick={onBack}
+          >
+            <BrowserIconChevron dir="back" />
+          </button>
+          <button
+            type="button"
+            className="browser-view__nav-btn"
+            data-testid="browser-forward"
+            aria-label={t("browser.forward")}
+            title={t("browser.forward")}
+            disabled={!forwardEnabled}
+            onClick={onForward}
+          >
+            <BrowserIconChevron dir="forward" />
+          </button>
+          <button
+            type="button"
+            className="browser-view__nav-btn"
+            data-testid="browser-reload"
+            aria-label={t("browser.reload")}
+            title={t("browser.reload")}
+            disabled={!reloadEnabled}
+            onClick={onReload}
+          >
+            <BrowserIconReload />
+          </button>
+        </div>
 
         <form className="browser-view__form" onSubmit={onSubmit}>
           <div className="browser-view__address-wrap">
@@ -357,7 +469,7 @@ export function BrowserView() {
                 // Delay so suggestion clicks register.
                 window.setTimeout(() => setSuggestionsOpen(false), 150);
               }}
-              aria-label={t("browser.go")}
+              aria-label={t("browser.addressLabel", "Address")}
               autoComplete="off"
             />
             {suggestionsOpen && suggestions.length > 0 && (
@@ -399,17 +511,25 @@ export function BrowserView() {
             data-testid="browser-bookmark-star"
             aria-label={t("browser.bookmark")}
             title={t("browser.bookmark")}
+            aria-pressed={bookmarked}
             disabled={state.kind !== "ok" || !ownerId}
             onClick={onToggleBookmark}
           >
-            {bookmarked ? "★" : "☆"}
+            <BrowserIconStar filled={bookmarked} />
           </button>
           <button
             type="button"
             className="browser-view__author-btn"
             data-testid="browser-author-open"
             disabled={!ownerId}
-            onClick={() => setAuthorOpen((v) => !v)}
+            onClick={() => {
+              if (authorOpen) {
+                setAuthorOpen(false);
+                setAuthorTemplate(undefined);
+              } else {
+                openAuthor(undefined);
+              }
+            }}
           >
             {authorOpen
               ? t("browser.author.close", "Close author")
@@ -421,7 +541,12 @@ export function BrowserView() {
       {authorOpen && (
         <div className="browser-view__author-panel" data-testid="browser-author-panel">
           <BrowserAuthorView
-            onCancel={() => setAuthorOpen(false)}
+            key={authorTemplate ?? "picker"}
+            initialTemplate={authorTemplate}
+            onCancel={() => {
+              setAuthorOpen(false);
+              setAuthorTemplate(undefined);
+            }}
             onPublished={(result) => {
               // Keep the panel open so the published confirmation (URL) is visible;
               // Done / Cancel closes via onCancel. Still navigate to the new listing.
@@ -445,18 +570,56 @@ export function BrowserView() {
           </div>
         )}
         {state.kind === "error" && (
-          <p className="browser-view__error" data-testid="browser-error">
-            {state.message}
-          </p>
+          <div
+            className={`browser-view__empty${state.remote ? " browser-view__empty--remote" : ""}`}
+            data-testid="browser-error"
+          >
+            <p className="browser-view__empty-title">
+              {state.code === "not_found" && state.remote
+                ? t("browser.emptyContactTitle", "Not published yet")
+                : state.code === "forbidden"
+                  ? t("browser.emptyDeniedTitle", "Access denied")
+                  : t("browser.emptyErrorTitle", "Couldn’t open this page")}
+            </p>
+            <p className="browser-view__empty-body">{state.message}</p>
+            {state.code === "not_found" && state.remote ? (
+              <p className="browser-view__empty-hint">
+                {t(
+                  "browser.emptyContactHint",
+                  "Default Profile, Blog, and PhotoWall pages are created on each person’s own node. This contact hasn’t published that page yet.",
+                )}
+              </p>
+            ) : null}
+          </div>
         )}
         {state.kind === "ok" && state.isText && (
-          <RenderText mimeType={state.mimeType} body={state.body} onLinkClick={onContentLinkClick} />
+          <RenderText mimeType={state.mimeType} body={state.body} onLinkClick={onContentLinkClick} t={t} />
         )}
         {state.kind === "ok" && !state.isText && (
           <RenderBinary mimeType={state.mimeType} body={state.body} url={state.url} t={t} />
         )}
         {state.kind === "idle" && (
-          <p className="browser-view__idle">{t("browser.idleHint", "Enter an envoy:// URL to browse.")}</p>
+          <div className="browser-view__idle" data-testid="browser-idle">
+            <p className="browser-view__idle-title">
+              {t("browser.idleHint", "Open your site, or paste a shared envoy:// link.")}
+            </p>
+            {ownerId ? (
+              <MySitePanel
+                ownerId={ownerId}
+                onOpenUrl={(u) => void navigate(u)}
+                onCreate={(template) => openAuthor(template)}
+              />
+            ) : null}
+            <ul className="browser-view__idle-list">
+              <li>{t("browser.idleHintPaste", "Paste a link someone shared with you, then press Go.")}</li>
+              <li>
+                {t(
+                  "browser.idleHintContacts",
+                  "From a contact’s chat header, open Profile, Blog, or PhotoWall without typing a URL.",
+                )}
+              </li>
+            </ul>
+          </div>
         )}
       </div>
 
@@ -473,7 +636,64 @@ export function BrowserView() {
               })}
         </p>
       )}
+      </>
+      )}
     </div>
+  );
+}
+
+function BrowserIconChevron({ dir }: { dir: "back" | "forward" }) {
+  return (
+    <svg className="browser-view__icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+      {dir === "back" ? (
+        <path
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M15 6l-6 6 6 6"
+        />
+      ) : (
+        <path
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          d="M9 6l6 6-6 6"
+        />
+      )}
+    </svg>
+  );
+}
+
+function BrowserIconReload() {
+  return (
+    <svg className="browser-view__icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+      <path
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        d="M20 12a8 8 0 1 1-2.2-5.5M20 4v5h-5"
+      />
+    </svg>
+  );
+}
+
+function BrowserIconStar({ filled }: { filled: boolean }) {
+  return (
+    <svg className="browser-view__icon" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">
+      <path
+        d="M12 3.5l2.6 5.3 5.9.9-4.2 4.1 1 5.8L12 16.9 6.7 19.6l1-5.8L3.5 9.7l5.9-.9L12 3.5z"
+        fill={filled ? "currentColor" : "none"}
+        stroke="currentColor"
+        strokeWidth="1.75"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 
@@ -481,10 +701,12 @@ function RenderText({
   mimeType,
   body,
   onLinkClick,
+  t,
 }: {
   mimeType: string;
   body: string;
   onLinkClick: (e: MouseEvent<HTMLElement>) => void;
+  t: (key: string, fallback?: string, params?: Record<string, string | number>) => string;
 }) {
   if (mimeType === "text/markdown" || mimeType === "text/x-markdown") {
     return (
@@ -509,7 +731,7 @@ function RenderText({
         data-testid="browser-html"
         srcDoc={sanitized}
         sandbox=""
-        title="rendered-html"
+        title={t("browser.htmlFrame", "Rendered HTML content")}
       />
     );
   }
