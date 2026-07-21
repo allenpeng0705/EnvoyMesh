@@ -166,4 +166,4 @@ If you still see “libp2p defaults (15 reservations…)”, the process is not 
 
 ### Discovery privacy note (`relay.lookup` by peer id)
 
-Exact `targetPeerId` / `targetOwnerId` lookups are answered under `visibilityScope: "public"` when the peer checked in with a public advertisement **or** the `mesh.discovery` capability (which normal nodes always advertise). That lets NAT peers find each other by known peer id. Tradeoff: anyone who already knows a peer id can confirm that peer is currently on the roster (presence only — public lookups still omit `ownerId` for capability/public visibility).
+Exact `targetPeerId` / `targetOwnerId` lookups are answered under `visibilityScope: "public"` when the peer checked in with a public advertisement **or** the `mesh.discovery` capability (which normal nodes always advertise). Tradeoff: anyone who already knows a peer id can learn whether that peer currently has a **live circuit hop** on this relay (lookup omits checkin-only peers with no reservation). Public lookups still omit `ownerId` for capability/public visibility.

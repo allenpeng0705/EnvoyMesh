@@ -88,7 +88,7 @@ describe("relay roster — reservation hop slot (P1/P3)", () => {
     expect(entry.reservationFreshUntil).toBe(reservationExpireAtMs);
   });
 
-  it("marks hasHopSlot and sorts live reservations first", () => {
+  it("returns only live-hop peers and omits checkin-only (undialable) peers", () => {
     const now = Date.parse("2026-07-20T10:00:00.000Z");
     const roster = createRelayRoster({ now: () => now, rosterTtlMs: 35 * 60_000 });
     for (const peerId of ["peer-stale", "peer-live"]) {
@@ -119,14 +119,12 @@ describe("relay roster — reservation hop slot (P1/P3)", () => {
       },
     });
 
-    expect(result.peers.map((p) => p.peerId)).toEqual(["peer-live", "peer-stale"]);
+    expect(result.peers.map((p) => p.peerId)).toEqual(["peer-live"]);
     expect(result.peers[0]?.hasHopSlot).toBe(true);
     expect(result.peers[0]?.multiaddrs.length).toBeGreaterThan(0);
-    expect(result.peers[1]?.hasHopSlot).toBe(false);
-    expect(result.peers[1]?.multiaddrs).toEqual([]);
   });
 
-  it("keeps checkin-fresh peers after reservationFreshUntil lapses (hasHopSlot false)", () => {
+  it("omits peers after reservationFreshUntil lapses even if checkin is still fresh", () => {
     let now = Date.parse("2026-07-20T10:00:00.000Z");
     const roster = createRelayRoster({ now: () => now, rosterTtlMs: 35 * 60_000 });
     roster.checkin(
@@ -157,8 +155,6 @@ describe("relay roster — reservation hop slot (P1/P3)", () => {
         expiresAt: "2026-07-20T10:25:00.000Z",
       },
     });
-    expect(result.peers).toHaveLength(1);
-    expect(result.peers[0]?.hasHopSlot).toBe(false);
-    expect(result.peers[0]?.multiaddrs).toEqual([]);
+    expect(result.peers).toHaveLength(0);
   });
 });

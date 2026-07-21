@@ -233,6 +233,7 @@ import {
   noteRelayFailure,
   noteRelaySuccess,
 } from "./relay-roster.js";
+import { preferRelayPeerCandidate } from "./relay-lookup-merge.js";
 import { getRelayClientAdvertisedTopics } from "./relay-client-cycle.js";
 import { createRelayLookupRouter } from "./relay-lookup-router.js";
 import { logRelayReachableAddrsForCheckin, logRelayServerCheckinAccepted, logRelayServerLookupResponse, logClientRelayLookupResponse, describeMultiaddrReachability } from "./relay-checkin-log.js";
@@ -5185,8 +5186,11 @@ function mergeRelayLookupResponses(payload: RelayLookupPayload, responses: Relay
     truncated = truncated || response.truncated;
     for (const peer of response.peers) {
       const key = peer.peerId || peer.multiaddrs.join(",");
-      if (!peers.has(key)) {
+      const existing = peers.get(key);
+      if (!existing) {
         peers.set(key, peer);
+      } else {
+        peers.set(key, preferRelayPeerCandidate(existing, peer));
       }
     }
     for (const hint of response.relayHints) {
@@ -5210,7 +5214,12 @@ function mergeRelayLookupResponses(payload: RelayLookupPayload, responses: Relay
 }
 
 async function processRelayLookupResponse(payload: RelayLookupResponsePayload): Promise<void> {
-  const flat = dedupeAddrs(payload.peers.flatMap((peer) => peer.multiaddrs));
+  // Only cache hoppable circuit paths (hasHopSlot === false = not dialable).
+  const flat = dedupeAddrs(
+    payload.peers
+      .filter((peer) => peer.hasHopSlot !== false)
+      .flatMap((peer) => peer.multiaddrs),
+  );
   logClientRelayLookupResponse({
     queryId: payload.queryId,
     peerCount: payload.peers.length,

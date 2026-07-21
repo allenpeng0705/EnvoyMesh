@@ -184,21 +184,23 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
           typeof hasLiveReservation === "function"
             ? hasLiveReservation(entry.peerId)
             : entry.reservationFreshUntil > current;
+        // Omit checkin-only peers from lookup: presence without a live hop
+        // is not dialable and confuses discovery / auto-bond.
+        if (!liveHop) {
+          continue;
+        }
         candidates.push({
           peerId: entry.peerId,
           ownerId: visibility === "public" || visibility === "capability" ? undefined : entry.ownerId,
           displayName: entry.displayName,
-          multiaddrs: liveHop
-            ? buildRelayCircuitMultiaddrs(relayMultiaddrs, entry.peerId)
-            : [],
+          multiaddrs: buildRelayCircuitMultiaddrs(relayMultiaddrs, entry.peerId),
           viaRelayId: relayPeerId,
           capabilities: entry.capabilities,
           visibility,
           expiresAt: new Date(entry.expiresAt).toISOString(),
-          hasHopSlot: liveHop,
+          hasHopSlot: true,
         });
       }
-      candidates.sort((a, b) => Number(Boolean(b.hasHopSlot)) - Number(Boolean(a.hasHopSlot)));
       const capped = candidates.slice(0, payload.maxResults);
       return {
         queryId: payload.queryId,
@@ -342,8 +344,9 @@ function matchesLookup(entry: RelayRosterEntry, payload: RelayLookupPayload): bo
 
 /**
  * Exact peer/owner lookup is public when the peer advertised publicly or has
- * mesh.discovery. Intentional tradeoff: knowing a peerId lets you confirm they
- * are checked in on this relay (presence), not read private ads/ownerId.
+ * mesh.discovery. Lookup only returns peers with a live hop (see `lookup`);
+ * knowing a peerId therefore confirms hoppable presence on this relay, not
+ * mere checkin, and public hits still omit ownerId.
  */
 function visibilityFor(entry: RelayRosterEntry, payload: RelayLookupPayload): RelayVisibility {
   if (payload.targetPeerId || payload.targetOwnerId) {

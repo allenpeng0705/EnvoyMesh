@@ -4741,6 +4741,8 @@ class NodeServiceImpl implements NodeService {
     for (const response of responses) {
       for (const candidate of response.peers) {
         if (opts.peerIdFilter && candidate.peerId !== opts.peerIdFilter) continue;
+        // Skip undialable roster hits (legacy/partial responses).
+        if (candidate.hasHopSlot === false) continue;
         if (seen.has(candidate.peerId)) continue;
         seen.add(candidate.peerId);
         const trust = trustByPeerId.get(candidate.peerId);
