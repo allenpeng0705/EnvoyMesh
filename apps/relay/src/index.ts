@@ -67,6 +67,7 @@ import {
   adminCredentialsConfigured,
   checkBasicAuth,
   isSensitiveRelayHttpPath,
+  requiresAdminAuth,
   sendUnauthorized,
 } from "./admin-auth.js";
 import { createRelayLogBuffer } from "./relay-log-buffer.js";
@@ -705,12 +706,9 @@ try {
     },
     onLookup: (info) => {
       relayMetrics.recordLookup({
-        // metrics hook doesn't need topicHash/targetPeerId here —
-        // the lookup handler in standalone-relay-control already
-        // called roster.lookup which is the source of truth.
-        topicHash: undefined,
-        targetPeerId: undefined,
-        capability: undefined,
+        topicHash: info.topicHash,
+        targetPeerId: info.targetPeerId,
+        capability: info.capability,
         peersReturned: info.peersReturned,
       });
     },
@@ -850,6 +848,13 @@ try {
       }),
       restartLibp2p: (reason) => restartLibp2pForHealth(reason),
       restartProcess: () => {
+        // Guard against concurrent restart from health watchdog + admin API.
+        // relayRepairInProgress prevents double mesh.stop(); for process
+        // restart, we just ensure shutdown hasn't already started.
+        if (relayRepairInProgress) {
+          console.warn("[relay] restartProcess skipped — another restart in progress");
+          return;
+        }
         void shutdown();
       },
     };
@@ -863,10 +868,11 @@ try {
           return;
         }
 
-        // When admin creds are configured, lock down sensitive JSON probes.
+        // Use the shared requiresAdminAuth helper as the single source of
+        // truth for auth decisions (review n1 — was exported but unused).
         if (
           adminCreds &&
-          isSensitiveRelayHttpPath(pathname) &&
+          requiresAdminAuth(pathname, adminCreds) &&
           !checkBasicAuth(req, adminCreds)
         ) {
           sendUnauthorized(res);
@@ -1036,8 +1042,15 @@ try {
       ).trim();
 
       wss.handleUpgrade(req, socket, head, (ws) => {
-        // Prefer the home tunnel if registered. Falls back to libp2p dial
-        // automatically if the tunnel isn't there yet.
+        // SECURITY: /ws?target=<peerId> is unauthenticated at the relay
+        // level — the token is passed through to the home node's handshake.
+        // Anyone can open a connection and cause the relay to dial an
+        // arbitrary peerId via CLIENT_PROXY_PROTOCOL. Mitigations:
+        //   - MAX_PROXY_CONNECTIONS = 50 (total)
+        //   - MAX_PROXY_CONNS_PER_TARGET = 10
+        // Operators who want stricter control should set --ws-auth-token
+        // (which gates /ws/client but not /ws?target= today — a future
+        // hardening item is to extend the token gate to /ws?target=).
         homeTunnelProxy.attachMobileProxy(ws, targetPeerId, token, (fallbackWs) => {
           void handleProxyConnection(fallbackWs, targetPeerId, token);
         });
@@ -1254,8 +1267,13 @@ try {
 
           // ---- rendezvous.register — register capabilities ----
           if (intent === "rendezvous.register") {
-            if (!checkRegistrationRateLimit(senderPeerId)) {
-              console.warn(`[relay] direct-client: rendezvous.register rate limited for ${senderPeerId}`);
+            // Rate-limit on the WebSocket remote address, not the self-attested
+            // senderPeerId from the envelope. An attacker rotating peerIds per
+            // request bypasses a peerId-keyed limit; the socket address can't
+            // be spoofed (review m4).
+            const wsRemoteAddr = (ws as any)?.remoteAddress ?? (ws as any)?._socket?.remoteAddress ?? senderPeerId;
+            if (!checkRegistrationRateLimit(`ws:${wsRemoteAddr}`)) {
+              console.warn(`[relay] direct-client: rendezvous.register rate limited for ${wsRemoteAddr}`);
               return;
             }
             try {

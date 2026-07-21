@@ -48,6 +48,9 @@ export interface StandaloneRelayControlDeps {
     peersReturned: number;
     localCount: number;
     forwardTargetCount: number;
+    topicHash?: string;
+    targetPeerId?: string;
+    capability?: string;
   }) => void;
   /** Optional log function (defaults to console.log). */
   log?: (msg: string) => void;
@@ -165,6 +168,9 @@ async function forwardRelayLookup(
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
         deps.router.recordFailedForward();
+        // recordNegative uses the ORIGINAL payload (not the maxHops-decremented
+        // forwardedPayload) — this is correct because negativeKey reads
+        // payload.targetPeerId/capability/etc. which are identical in both.
         if (target.relayId) deps.router.recordNegative(payload, target.relayId);
         (deps.warn ?? console.warn)(`[relay] lookup forward failed target=${remote} error=${msg}`);
         return null;
@@ -181,7 +187,14 @@ async function forwardRelayLookup(
   deps.router.recordCollectedForwardResponse(out.length);
   for (const response of out) {
     if (response.payload.peers.length === 0) {
-      deps.router.recordNegative(payload, response.remotePeerId);
+      // Only cache negatives for targetPeerId lookups. For capability/topicHash
+      // queries, an empty result for one capability incorrectly suppresses ALL
+      // future capability queries to that sibling for the negative-cache TTL.
+      // The relay either has the peer's reservation or it doesn't (targetPeerId
+      // scope is correct); but capability results are ephemeral (review m2).
+      if (payload.targetPeerId) {
+        deps.router.recordNegative(payload, response.remotePeerId);
+      }
     }
   }
   return out;
@@ -301,6 +314,9 @@ export function attachStandaloneRelayControl(deps: StandaloneRelayControlDeps): 
           peersReturned: merged.peers.length,
           localCount: localResponse.peers.length,
           forwardTargetCount: routeDecision.forwardTargets.length,
+          topicHash: payload.topicHash,
+          targetPeerId: payload.targetPeerId,
+          capability: payload.capability,
         });
         log(
           `[relay] lookup query=${payload.queryId} peers=${merged.peers.length} local=${localResponse.peers.length} forwards=${routeDecision.forwardTargets.length} roster=${deps.roster.size()} hopLive=${[...livePeerIds].length}`,

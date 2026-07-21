@@ -1,5 +1,9 @@
 /**
  * Prefer dialable relay.lookup candidates when merging local + forwarded hits.
+ *
+ * NOTE: apps/relay/src/relay-lookup-merge.ts has a simpler version of the
+ * same function. Keep both files in sync when modifying. A future refactor
+ * should extract both into @envoymesh/protocol or a shared package (review n5).
  */
 import type { RelayPeerCandidate } from "@envoymesh/protocol";
 

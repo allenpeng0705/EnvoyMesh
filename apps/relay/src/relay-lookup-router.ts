@@ -121,7 +121,6 @@ export function createRelayLookupRouter(options: RelayLookupRouterOptions = {}) 
     recordNegative(payload: RelayLookupPayload, relayId: string): void {
       prune();
       negativeCache.set(negativeKey(payload, relayId), now() + negativeCacheTtlMs);
-      metrics.negativeCacheSize = negativeCache.size;
     },
 
     recordForwardedLookup(count = 1): void {
@@ -138,8 +137,10 @@ export function createRelayLookupRouter(options: RelayLookupRouterOptions = {}) 
 
     metrics(): RelayLookupRouterMetrics {
       prune();
-      metrics.negativeCacheSize = negativeCache.size;
-      return { ...metrics };
+      // Compute negativeCacheSize at read time rather than mutating the
+      // shared metrics object. The field was previously set inside
+      // recordNegative AND here, causing drift between updates.
+      return { ...metrics, negativeCacheSize: negativeCache.size };
     },
   };
 }

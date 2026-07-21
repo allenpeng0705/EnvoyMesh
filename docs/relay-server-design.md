@@ -297,11 +297,13 @@ Relays exchange **who other relays are** (dial hints), not leaf peer rosters.
 **Seed:** `--bootstrap` / `ENVOYMESH_BOOTSTRAP_PEERS` on each relay.  
 **Grow:** Periodic `relay.hints.request` / `relay.hints.response`; optional piggyback on lookup responses. For production Nth-relay cutovers prefer mutual `--bootstrap` ([operator §8](./operator-relay-fleet.md#8-adding-a-second-or-nth-relay)) over waiting ~90s gossip.
 
+> **Operator trust root:** `--bootstrap` entries are seeded directly as `state: "verified"` without a probe. This is an intentional operator-trust shortcut — operators configure mutual `--bootstrap` and need immediate forward capability without a gossip delay. Candidates learned from gossip are probed on every other tick and promoted to `verified` on successful RTT (Phase 46 review fix M3).
+
 | Field | Rule |
 |-------|------|
 | Cap | ~8–16 entries |
 | TTL | ~25–35 min |
-| Promote | Only after **verify** (successful hints RTT or dial/identify) |
+| Promote | Only after **verify** (successful hints RTT or dial/identify) — except `--bootstrap` seeds which are operator-pre-verified |
 | Forward targets | Verified siblings only |
 | Leaf checkin `relayHints` | Untrusted **candidates** only |
 
