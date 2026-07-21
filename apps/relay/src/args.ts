@@ -311,8 +311,11 @@ function applyEnvVars(args: RelayArgs): void {
   if (envAdminUser) {
     args.adminUser = envAdminUser;
   }
-  if (process.env.ENVOYMESH_RELAY_ADMIN_PASSWORD !== undefined) {
-    args.adminPassword = process.env.ENVOYMESH_RELAY_ADMIN_PASSWORD;
+  // Use .trim() + truthiness like the user env, so an empty env var
+  // (common in shell scripting) doesn't silently disable the admin UI.
+  const envAdminPassword = process.env.ENVOYMESH_RELAY_ADMIN_PASSWORD?.trim();
+  if (envAdminPassword) {
+    args.adminPassword = envAdminPassword;
   }
   if (process.env.ENVOYMESH_RELAY_LOG_MAX_LINES !== undefined) {
     args.logMaxLines =

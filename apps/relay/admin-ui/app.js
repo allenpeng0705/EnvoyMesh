@@ -147,12 +147,24 @@ async function refreshReservations() {
 async function refreshLogs() {
   const level = el.logLevel.value;
   const data = await api(`/admin/api/logs?limit=300&level=${encodeURIComponent(level)}`);
-  const lines = (data.entries || []).map((e) => {
-    const cls = `lvl-${e.level}`;
-    const msg = String(e.message || "").replace(/</g, "&lt;");
-    return `<span class="${cls}">${e.ts} [${e.level}] ${msg}</span>`;
-  });
-  el.logView.innerHTML = lines.join("\n") || "<span class=\"lvl-log\">(no log lines)</span>";
+  el.logView.innerHTML = "";
+  const entries = data.entries || [];
+  if (entries.length === 0) {
+    const span = document.createElement("span");
+    span.className = "lvl-log";
+    span.textContent = "(no log lines)";
+    el.logView.appendChild(span);
+  } else {
+    for (const e of entries) {
+      const span = document.createElement("span");
+      span.className = `lvl-${e.level}`;
+      // Use textContent (not innerHTML) to prevent XSS from attacker-influenced
+      // log messages (e.g. mobile-client JSON-RPC frames bridged through /ws).
+      span.textContent = `${e.ts} [${e.level}] ${e.message || ""}`;
+      el.logView.appendChild(span);
+      el.logView.appendChild(document.createTextNode("\n"));
+    }
+  }
   el.logView.scrollTop = el.logView.scrollHeight;
 }
 

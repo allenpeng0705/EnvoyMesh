@@ -71,7 +71,7 @@ import {
 } from "./admin-auth.js";
 import { createRelayLogBuffer } from "./relay-log-buffer.js";
 import { handleAdminRequest, type AdminHttpDeps } from "./admin-http.js";
-import { attachStandaloneRelayControl } from "./standalone-relay-control.js";
+import { attachStandaloneRelayControl, ingestSiblingHints } from "./standalone-relay-control.js";
 
 // ============================================================================
 // CONSTANTS & CONFIGURATION
@@ -318,13 +318,15 @@ function checkRegistrationRateLimit(peerId: string): boolean {
     return false;
   }
 
-  // Prevent memory exhaustion - evict oldest if at capacity
+  // Prevent memory exhaustion - evict oldest entry if at capacity.
+  // Unconditional LRU: evicts the single oldest entry by resetAt regardless
+  // of whether it's expired. Without unconditional eviction, a map full of
+  // valid entries (the attack scenario) would never shrink (review finding M4).
   if (peerRegistrationCount.size >= MAX_RATE_LIMIT_ENTRIES) {
-    const now = Date.now();
     let oldest: string | null = null;
     let oldestExpiry = Infinity;
     for (const [id, entry] of peerRegistrationCount) {
-      if (entry.resetAt < now && entry.resetAt < oldestExpiry) {
+      if (entry.resetAt < oldestExpiry) {
         oldest = id;
         oldestExpiry = entry.resetAt;
       }
@@ -377,20 +379,32 @@ function markMessageSeen(messageId: string): void {
     return;
   }
 
-  // Evict oldest and expired entries if we're at capacity
+  // Evict oldest entries if we're at capacity. Uses a simple sweep of
+  // expired entries first, then unconditional eviction of the oldest
+  // by timestamp. Avoids the O(n log n) sort-per-insert that was a
+  // CPU DoS vector under flood (review finding M4).
   if (seenMessageIds.size >= MAX_SEEN_MESSAGE_IDS) {
-    const targetSize = Math.floor(MAX_SEEN_MESSAGE_IDS * 0.1);
     const now = Date.now();
-    let removed = 0;
-    // Sort by timestamp ascending and evict the oldest expired ones first
-    const entries = Array.from(seenMessageIds.entries())
-      .sort(([, a], [, b]) => a - b);
-    for (const [id, ts] of entries) {
-      if (removed >= targetSize) break;
-      if (now - ts > SEEN_MESSAGE_ID_TTL_MS || removed < targetSize) {
+    // Phase 1: delete all expired entries (cheap pass, usually frees enough).
+    let anyExpired = false;
+    for (const [id, ts] of seenMessageIds) {
+      if (now - ts > SEEN_MESSAGE_ID_TTL_MS) {
         seenMessageIds.delete(id);
-        removed++;
+        anyExpired = true;
       }
+    }
+    // Phase 2: if still at capacity (all entries valid), evict the
+    // single oldest entry (unconditional LRU, one pass — O(n) not O(n log n)).
+    if (!anyExpired && seenMessageIds.size >= MAX_SEEN_MESSAGE_IDS) {
+      let oldest: string | null = null;
+      let oldestTs = Infinity;
+      for (const [id, ts] of seenMessageIds) {
+        if (ts < oldestTs) {
+          oldest = id;
+          oldestTs = ts;
+        }
+      }
+      if (oldest) seenMessageIds.delete(oldest);
     }
   }
   seenMessageIds.set(messageId, Date.now());
@@ -592,44 +606,15 @@ function seedRelayBookFromBootstrap(selfPeerId: string): void {
   }
 }
 
-function ingestSiblingHints(
-  hints: RelayHint[],
-  opts: { verified: boolean },
-): void {
-  const expiresAt = new Date(Date.now() + RELAY_BOOK_TTL_MS).toISOString();
-  for (const hint of hints) {
-    if (!hint.relayId || hint.multiaddrs.length === 0) continue;
-    if (hint.relayId === mesh.peerId) continue;
-    const existing = relayRoster.relayBook().find((e) => e.relayId === hint.relayId);
-    if (existing && (existing.state === "verified" || existing.state === "active" || existing.state === "seed")) {
-      // Refresh addrs / TTL for already-verified siblings
-      relayRoster.registerRelay({
-        relayId: hint.relayId,
-        addrs: hint.multiaddrs,
-        relation: existing.relation === "candidate" ? "sibling" : existing.relation,
-        state: existing.state,
-        level: hint.level ?? existing.level,
-        region: hint.region ?? existing.region,
-        expiresAt: hint.expiresAt ?? expiresAt,
-      });
-      continue;
-    }
-    relayRoster.registerRelay({
-      relayId: hint.relayId,
-      addrs: hint.multiaddrs,
-      relation: "sibling",
-      state: opts.verified ? "verified" : "candidate",
-      level: hint.level,
-      region: hint.region,
-      expiresAt: hint.expiresAt ?? expiresAt,
-    });
-  }
-}
+// ingestSiblingHints is now imported from standalone-relay-control.ts
+// (shared between production binary and E2E tests). The call sites below
+// use the wrapper that passes (relayRoster, mesh, hints, opts, TTL).
 
 function startSiblingHintsGossip(): void {
   if (hintsGossipTimer) return;
   const tick = async (): Promise<void> => {
-    const book = relayRoster
+    // Primary gossip: probe verified/active/seed siblings (refresh + learn new candidates).
+    const verifiedBook = relayRoster
       .relayBook()
       .filter(
         (e) =>
@@ -638,7 +623,20 @@ function startSiblingHintsGossip(): void {
           e.addrs.length > 0,
       )
       .slice(0, 4);
-    for (const entry of book) {
+
+    // Candidate probe: on every other tick, probe up to 2 candidates
+    // to promote them to verified. Without this, candidates learned from
+    // gossip can never earn a successful RTT and the book is permanently
+    // locked to the initial --bootstrap seed set (review finding M3).
+    const probeCandidates = Math.floor(Date.now() / RELAY_HINTS_INTERVAL_MS) % 2 === 0;
+    const candidateBook = probeCandidates
+      ? relayRoster
+          .relayBook()
+          .filter((e) => e.expiresAt > Date.now() && e.state === "candidate" && e.addrs.length > 0)
+          .slice(0, 2)
+      : [];
+
+    for (const entry of [...verifiedBook, ...candidateBook]) {
       const target = entry.addrs[0];
       if (!target) continue;
       try {
@@ -657,11 +655,12 @@ function startSiblingHintsGossip(): void {
         });
         if (reply.intent !== "relay.hints.response") continue;
         const response = parseRelayHintsResponsePayload(reply.payload);
-        // Successful RTT → promote this peer and ingest returned siblings as candidates
+        // Successful RTT → promote this peer and ingest returned siblings as candidates.
+        // For candidates this is the ONLY path to verified status (design B2.3).
         relayRoster.promoteRelay(entry.relayId, "verified");
-        ingestSiblingHints(response.relayHints, { verified: false });
+        ingestSiblingHints(relayRoster, mesh, response.relayHints, { verified: false }, RELAY_BOOK_TTL_MS);
         console.log(
-          `[relay] hints gossip ok target=${entry.relayId.slice(0, 12)}… got=${response.relayHints.length}`,
+          `[relay] hints gossip ok target=${entry.relayId.slice(0, 12)}… state=${entry.state}→verified got=${response.relayHints.length}`,
         );
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -1227,13 +1226,25 @@ try {
               peerId = senderPeerId;
               directClients.set(ws, peerId);
             }
-            // Also store in the relay roster so relay.lookup can find this peer
+            // Route through the same live-reservation lookup as the libp2p
+            // path (attachStandaloneRelayControl). Without this, direct-client
+            // checkins have no reservationFreshUntil and are omitted from
+            // lookup results — "found but can't dial" (review finding M1).
             try {
               const checkinPayload = parseRelayCheckinPayload(payload);
-              relayRoster.checkin(checkinPayload, senderPeerId);
+              const checkinPeerId = checkinPayload.peerId || senderPeerId;
+              const liveResv = mesh
+                .inspectCircuitRelayReservations()
+                .find((r) => r.peerId === checkinPeerId && r.expireAt > Date.now());
+              relayRoster.checkin(
+                checkinPayload,
+                senderPeerId,
+                liveResv ? { reservationExpireAtMs: liveResv.expireAt } : undefined,
+              );
+              relayMetrics.recordCheckin();
               const topicCount = checkinPayload.advertisements.filter((a) => a.topicHash).length;
               console.log(
-                `[relay] direct-client checkin peer=${checkinPayload.peerId} topics=${topicCount} roster=${relayRoster.size()}`,
+                `[relay] direct-client checkin peer=${checkinPayload.peerId} topics=${topicCount} roster=${relayRoster.size()} hop=${liveResv ? "live" : "none"}`,
               );
             } catch (err) {
               console.warn(`[relay] direct-client: failed to parse relay.checkin for roster:`, err);

@@ -80,7 +80,7 @@ function placeholderReply(
  * Ingest sibling hints into the relay book. Verified/active/seed siblings
  * get their addrs/TTL refreshed (not re-registered as candidates).
  */
-function ingestSiblingHints(
+export function ingestSiblingHints(
   roster: ReturnType<typeof createRelayRoster>,
   mesh: EnvoyMesh,
   hints: RelayHint[],
