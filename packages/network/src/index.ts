@@ -1445,8 +1445,16 @@ export class EnvoyMesh {
     const RESERVATION_VERIFY_SETTLE_MS = 1_000;
     // Backoff between verify-retry attempts.
     const RESERVATION_VERIFY_BACKOFF_MS = 2_000;
-    const results = await Promise.allSettled(
-      relayMultiaddrs.map(async (addr) => {
+    // Serialize addRelay across relays. Concurrent RESERVE against two
+    // distinct circuit-relay-v2 servers deadlocks in @libp2p/circuit-relay-v2
+    // (Promise.allSettled never settles). Sequential multi-home still
+    // completes in ~1s per hop and matches Phase 46 multi-relay warmup.
+    const results: Array<
+      | { status: "fulfilled"; value: { addr: string; ok: boolean; skipped?: boolean; attempts?: number } }
+      | { status: "rejected"; reason: unknown }
+    > = [];
+    for (const addr of relayMultiaddrs) {
+      try {
         let parsed: ReturnType<typeof ma>;
         try {
           parsed = ma(addr);
@@ -1462,14 +1470,16 @@ export class EnvoyMesh {
         if (addr.includes("/p2p-circuit/")) {
           skipped += 1;
           skipReasons.push(`${addr}: contains /p2p-circuit/ (target dial, not a relay)`);
-          return { addr, ok: false as const, skipped: true };
+          results.push({ status: "fulfilled", value: { addr, ok: false, skipped: true } });
+          continue;
         }
         const p2pComponent = parsed.getComponents().find((c) => c.code === 421);
         const peerIdStr = p2pComponent?.value as string | undefined;
         if (!peerIdStr) {
           skipped += 1;
           skipReasons.push(`${addr}: no /p2p/<relay> tail`);
-          return { addr, ok: false as const, skipped: true };
+          results.push({ status: "fulfilled", value: { addr, ok: false, skipped: true } });
+          continue;
         }
         const pid = peerIdFromString(peerIdStr);
         // 'configured' bypasses the lazy "no need" gate; libp2p will open the
@@ -1482,6 +1492,9 @@ export class EnvoyMesh {
         // corresponding RESERVE), retry with backoff. Without this, a
         // "successful" warmup left the peer with `relayRoster=0` and all
         // downstream /p2p-circuit/ dials fail with NO_RESERVATION.
+        let settled:
+          | { addr: string; ok: true; attempts: number }
+          | undefined;
         for (let attempt = 1; attempt <= RESERVATION_VERIFY_ATTEMPTS; attempt += 1) {
           try {
             await addRelay(pid, "configured");
@@ -1512,7 +1525,8 @@ export class EnvoyMesh {
                   `[p2p] relay reservation verified for ${pid.toString()} on attempt ${attempt}/${RESERVATION_VERIFY_ATTEMPTS}`,
                 );
               }
-              return { addr, ok: true as const, attempts: attempt };
+              settled = { addr, ok: true, attempts: attempt };
+              break;
             }
             // addRelay returned but reservation isn't in the local store.
             // Most likely the hop stream was closed mid-handshake (relay
@@ -1532,12 +1546,17 @@ export class EnvoyMesh {
               `addRelay(${pid.toString()}, configured) returned but reservation did not land after ${RESERVATION_VERIFY_ATTEMPTS} attempts (client/server state desync)`,
             );
           }
-          return { addr, ok: true as const, attempts: 1 };
+          settled = { addr, ok: true, attempts: 1 };
+          break;
         }
-        // Unreachable — the for-loop either returns or throws.
-        throw new Error(`addRelay(${pid.toString()}, configured): exhausted retries without throwing`);
-      }),
-    );
+        if (!settled) {
+          throw new Error(`addRelay(${pid.toString()}, configured): exhausted retries without throwing`);
+        }
+        results.push({ status: "fulfilled", value: settled });
+      } catch (reason) {
+        results.push({ status: "rejected", reason });
+      }
+    }
     for (let i = 0; i < results.length; i += 1) {
       const r = results[i];
       const addr = relayMultiaddrs[i];
@@ -3148,17 +3167,22 @@ export class EnvoyMesh {
   }
 
   private createPeerDiscoveryServices(): any[] {
+    // Filter before deciding whether to enable @libp2p/bootstrap. Loopback /
+    // docker-bridge / incomplete addrs are unusable for WAN bootstrap; if the
+    // filtered list is empty, enabling bootstrap with `list: []` throws
+    // "Bootstrap requires a list of peer addresses" (e.g. local dual-relay
+    // process E2E that still passes loopback peers for sibling-book seeding).
+    const bootstrapList = (this.options.bootstrapPeers ?? []).filter(
+      (a) => !isUnusableBootstrapMultiaddr(a),
+    );
     return [
       ...(this.options.enableMdns === false
         ? []
         : [mdns({ interval: this.options.mdnsIntervalMs ?? DEFAULT_MDNS_INTERVAL_MS })]),
-      ...(this.options.bootstrapPeers && this.options.bootstrapPeers.length > 0
+      ...(bootstrapList.length > 0
         ? [
             bootstrap({
-              // Filter out unusable addresses BEFORE passing to @libp2p/bootstrap.
-              // A corrupted peer ID (bad base58btc) crashes the bootstrap module
-              // and makes the node unrecoverable on startup.
-              list: this.options.bootstrapPeers.filter((a) => !isUnusableBootstrapMultiaddr(a)),
+              list: bootstrapList,
               timeout: this.options.bootstrapTimeoutMs ?? 15_000,
             }),
           ]

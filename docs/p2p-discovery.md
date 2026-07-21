@@ -6,7 +6,7 @@ This document explains how EnvoyMesh nodes discover each other on **native libp2
 
 **POC entry:** ordered proof sequence for transport discovery + connectivity (LAN → bootstrap/DHT → relay observation) lives in [poc-discovery-connectivity](./poc-discovery-connectivity.md).
 
-**Relay network design:** layered relay-node topology, address-switching behavior, summary-guided relay graph routing, multi-relay failover, relay manager surfaces, and growth controls live in [layered-relay-network](./layered-relay-network.md).
+**Relay network design:** standalone relay server (shipped surface + Phase 46 multi-relay fleet) lives in [relay-server-design](./relay-server-design.md). Longer-horizon layered topology, summary-guided routing, join graph, and relay manager surfaces live in [layered-relay-network](./layered-relay-network.md). Operator presets / systemd: [operator-relay-fleet](./operator-relay-fleet.md).
 
 ## Discovery Model At A Glance
 

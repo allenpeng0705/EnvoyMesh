@@ -833,6 +833,7 @@ import {
   setRelayClientAdvertisedTopics,
   replaceRelayClientAdvertisedTopics,
   queryRelayLookupWithDeps,
+  resolveRelayClientControlTargets,
   type RelayClientCycleDeps,
 } from "./relay-client-cycle.js";
 import { publishWebContentEntry as publishWebContentEntryAuthor } from "./web-content-author.js";
@@ -4658,8 +4659,7 @@ class NodeServiceImpl implements NodeService {
       console.warn(`[searchPeers] _queryRelayLookupByTopic: mesh not available`);
       return [];
     }
-    const { filterRelayControlTargets } = await import("@envoymesh/network");
-    const targets = filterRelayControlTargets(deps.bootstrapPeers);
+    const targets = resolveRelayClientControlTargets(deps);
     if (targets.length === 0) {
       console.warn(`[searchPeers] _queryRelayLookupByTopic: no relay control targets (bootstrapPeers=${deps.bootstrapPeers.length})`);
       return [];
@@ -4695,8 +4695,7 @@ class NodeServiceImpl implements NodeService {
     const deps = this._relayClientCycleDeps;
     const mesh = this._mesh ?? this._externalMesh;
     if (!deps || !mesh) return [];
-    const { filterRelayControlTargets } = await import("@envoymesh/network");
-    const targets = filterRelayControlTargets(deps.bootstrapPeers);
+    const targets = resolveRelayClientControlTargets(deps);
     if (targets.length === 0) return [];
     try {
       const responses = await queryRelayLookupWithDeps(deps, targets, {

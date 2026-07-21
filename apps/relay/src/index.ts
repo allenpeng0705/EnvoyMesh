@@ -39,12 +39,24 @@ import {
   parseTaskCancelPayload,
   parseRelayCheckinPayload,
   parseRelayLookupPayload,
+  parseRelayLookupResponsePayload,
+  createRelayLookupPayload,
   createRelayLookupResponsePayload,
+  createRelayHintsResponsePayload,
+  parseRelayHintsRequestPayload,
+  parseRelayHintsResponsePayload,
+  createRelayHintsRequestPayload,
   RENDEZVOUS_RESPONSE_PLACEHOLDER_PUBLIC_KEY,
   RENDEZVOUS_RESPONSE_PLACEHOLDER_SIGNATURE,
   type EnvoyEnvelope,
+  type RelayHint,
+  type RelayLookupPayload,
+  type RelayLookupResponsePayload,
 } from "@envoymesh/protocol";
 import { createRelayRoster } from "./relay-roster.js";
+import { createRelayLookupRouter } from "./relay-lookup-router.js";
+import { mergeRelayLookupResponses } from "./relay-lookup-response-merge.js";
+import { loadOrCreateRelayControlIdentity } from "./relay-control-identity.js";
 import { createRelayMetrics } from "./relay-metrics.js";
 import {
   buildRelayVersionReport,
@@ -59,6 +71,7 @@ import {
 } from "./admin-auth.js";
 import { createRelayLogBuffer } from "./relay-log-buffer.js";
 import { handleAdminRequest, type AdminHttpDeps } from "./admin-http.js";
+import { attachStandaloneRelayControl } from "./standalone-relay-control.js";
 
 // ============================================================================
 // CONSTANTS & CONFIGURATION
@@ -274,7 +287,13 @@ let started = false;
 let httpServer: ReturnType<typeof createServer> | null = null;
 let capabilityRegistry: CapabilityRegistry | undefined;
 const relayRoster = createRelayRoster();
+const relayLookupRouter = createRelayLookupRouter();
+const relayControlIdentity = await loadOrCreateRelayControlIdentity(args.profileDir);
 const relayMetrics = createRelayMetrics();
+const RELAY_FORWARD_LOOKUP_REPLY_MS = 12_000;
+const RELAY_BOOK_TTL_MS = 35 * 60_000;
+const RELAY_HINTS_INTERVAL_MS = 90_000;
+let hintsGossipTimer: ReturnType<typeof setInterval> | undefined;
 let rendezvousSweeper: ReturnType<typeof setInterval> | undefined;
 let statsInterval: ReturnType<typeof setInterval> | undefined;
 let rateLimitCleanupInterval: ReturnType<typeof setInterval> | undefined;
@@ -437,6 +456,10 @@ async function shutdown(): Promise<void> {
     clearInterval(eventLoopLagTimer);
     eventLoopLagTimer = undefined;
   }
+  if (hintsGossipTimer) {
+    clearInterval(hintsGossipTimer);
+    hintsGossipTimer = undefined;
+  }
   if (httpServer) {
     httpServer.close();
   }
@@ -536,6 +559,122 @@ async function exitForSupervisor(reason: string): Promise<void> {
   }
 }
 
+function relayCircuitBases(): string[] {
+  const bases = [
+    ...args.advertiseAddrs,
+    ...mesh.multiaddrs,
+  ]
+    .map((a) => a.trim())
+    .filter((a) => a.length > 0 && a.includes("/p2p/") && !a.includes("/p2p-circuit"));
+  return [...new Set(bases)];
+}
+
+function seedRelayBookFromBootstrap(selfPeerId: string): void {
+  const expiresAt = new Date(Date.now() + RELAY_BOOK_TTL_MS).toISOString();
+  let seeded = 0;
+  for (const addr of args.bootstrapPeers) {
+    const t = addr.trim();
+    if (!t || t.includes("/p2p-circuit/") || t.includes("bootstrap.libp2p.io")) continue;
+    const m = t.match(/\/p2p\/([^/]+)$/);
+    const relayId = m?.[1];
+    if (!relayId || relayId === selfPeerId) continue;
+    relayRoster.registerRelay({
+      relayId,
+      addrs: [t],
+      relation: "sibling",
+      state: "verified",
+      expiresAt,
+    });
+    seeded += 1;
+  }
+  if (seeded > 0) {
+    console.log(`[relay] Seeded ${seeded} sibling(s) into relay book from --bootstrap`);
+  }
+}
+
+function ingestSiblingHints(
+  hints: RelayHint[],
+  opts: { verified: boolean },
+): void {
+  const expiresAt = new Date(Date.now() + RELAY_BOOK_TTL_MS).toISOString();
+  for (const hint of hints) {
+    if (!hint.relayId || hint.multiaddrs.length === 0) continue;
+    if (hint.relayId === mesh.peerId) continue;
+    const existing = relayRoster.relayBook().find((e) => e.relayId === hint.relayId);
+    if (existing && (existing.state === "verified" || existing.state === "active" || existing.state === "seed")) {
+      // Refresh addrs / TTL for already-verified siblings
+      relayRoster.registerRelay({
+        relayId: hint.relayId,
+        addrs: hint.multiaddrs,
+        relation: existing.relation === "candidate" ? "sibling" : existing.relation,
+        state: existing.state,
+        level: hint.level ?? existing.level,
+        region: hint.region ?? existing.region,
+        expiresAt: hint.expiresAt ?? expiresAt,
+      });
+      continue;
+    }
+    relayRoster.registerRelay({
+      relayId: hint.relayId,
+      addrs: hint.multiaddrs,
+      relation: "sibling",
+      state: opts.verified ? "verified" : "candidate",
+      level: hint.level,
+      region: hint.region,
+      expiresAt: hint.expiresAt ?? expiresAt,
+    });
+  }
+}
+
+function startSiblingHintsGossip(): void {
+  if (hintsGossipTimer) return;
+  const tick = async (): Promise<void> => {
+    const book = relayRoster
+      .relayBook()
+      .filter(
+        (e) =>
+          e.expiresAt > Date.now() &&
+          (e.state === "verified" || e.state === "active" || e.state === "seed") &&
+          e.addrs.length > 0,
+      )
+      .slice(0, 4);
+    for (const entry of book) {
+      const target = entry.addrs[0];
+      if (!target) continue;
+      try {
+        const payload = createRelayHintsRequestPayload({
+          reason: "refresh",
+          maxResults: 8,
+          expiresAt: new Date(Date.now() + RELAY_BOOK_TTL_MS).toISOString(),
+        });
+        const envelope = relayControlIdentity.signControl({
+          intent: "relay.hints.request",
+          payload,
+          recipientPeerId: entry.relayId.startsWith("/") ? undefined : entry.relayId,
+        });
+        const reply = await mesh.sendExpectReply(target, envelope, {
+          timeoutMs: RELAY_FORWARD_LOOKUP_REPLY_MS,
+        });
+        if (reply.intent !== "relay.hints.response") continue;
+        const response = parseRelayHintsResponsePayload(reply.payload);
+        // Successful RTT → promote this peer and ingest returned siblings as candidates
+        relayRoster.promoteRelay(entry.relayId, "verified");
+        ingestSiblingHints(response.relayHints, { verified: false });
+        console.log(
+          `[relay] hints gossip ok target=${entry.relayId.slice(0, 12)}… got=${response.relayHints.length}`,
+        );
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[relay] hints gossip failed target=${entry.relayId.slice(0, 12)}… error=${msg}`);
+      }
+    }
+  };
+  void tick();
+  hintsGossipTimer = setInterval(() => {
+    void tick();
+  }, RELAY_HINTS_INTERVAL_MS);
+}
+
 try {
   await mesh.start();
   started = true;
@@ -544,7 +683,39 @@ try {
   console.log(`[relay] Relay server started.`);
   console.log(`[relay] Listen addresses: ${listenAddrs.join(", ")}`);
   console.log(`[relay] Peer ID: ${mesh.peerId}`);
+  console.log(`[relay] Control identity: ${relayControlIdentity.peerId}`);
   console.log(`[relay] Ready to accept relay connections.`);
+
+  seedRelayBookFromBootstrap(mesh.peerId);
+  startSiblingHintsGossip();
+
+  // Phase 46 — Attach the shared standalone relay control-plane handlers
+  // (checkin / lookup / miss-forward / hints). This replaces the inline
+  // duplicate that was previously in the mesh.onMessage handler below.
+  // Production binary and E2E tests now share the same implementation.
+  const detachRelayControl = attachStandaloneRelayControl({
+    mesh,
+    roster: relayRoster,
+    router: relayLookupRouter,
+    identity: relayControlIdentity,
+    circuitBases: relayCircuitBases,
+    forwardTimeoutMs: RELAY_FORWARD_LOOKUP_REPLY_MS,
+    bookTtlMs: RELAY_BOOK_TTL_MS,
+    onCheckin: (info) => {
+      relayMetrics.recordCheckin();
+    },
+    onLookup: (info) => {
+      relayMetrics.recordLookup({
+        // metrics hook doesn't need topicHash/targetPeerId here —
+        // the lookup handler in standalone-relay-control already
+        // called roster.lookup which is the source of truth.
+        topicHash: undefined,
+        targetPeerId: undefined,
+        capability: undefined,
+        peersReturned: info.peersReturned,
+      });
+    },
+  });
 
   if (args.enableRendezvous) {
     capabilityRegistry = new CapabilityRegistry({ verbosity: "full", logPrefix: "[registry]" });
@@ -1311,84 +1482,11 @@ try {
       return;
     }
 
-    // Handle relay.checkin — store peer in roster for relay.lookup
-    if (intent === "relay.checkin") {
-      try {
-        const payload = parseRelayCheckinPayload(message.envelope.payload);
-        const peerId = payload.peerId || message.envelope.senderPeerId;
-        const liveResv = mesh
-          .inspectCircuitRelayReservations()
-          .find((r) => r.peerId === peerId && r.expireAt > Date.now());
-        const { entry, addrChanged, reconnect } = relayRoster.checkin(
-          payload,
-          message.envelope.senderPeerId,
-          liveResv ? { reservationExpireAtMs: liveResv.expireAt } : undefined,
-        );
-        relayMetrics.recordCheckin();
-        const topicCount = entry.advertisements.filter((a) => a.topicHash).length;
-        const note =
-          addrChanged && reconnect
-            ? `addr_changed reconnect`
-            : addrChanged
-              ? `addr_changed`
-              : reconnect
-                ? "reconnect"
-                : "ok";
-        console.log(
-          `[relay] checkin peer=${payload.peerId} topics=${topicCount} cap=${entry.capabilities.length} roster=${relayRoster.size()} hop=${liveResv ? "live" : "none"} ${note}`,
-        );
-      } catch (error) {
-        console.error("[relay] Failed to handle relay.checkin:", error);
-      }
-      return;
-    }
-
-    // Handle relay.lookup — search roster and reply with matching peers
-    if (intent === "relay.lookup") {
-      try {
-        const payload = parseRelayLookupPayload(message.envelope.payload);
-        const livePeerIds = new Set(
-          mesh
-            .inspectCircuitRelayReservations()
-            .filter((r) => r.expireAt > Date.now())
-            .map((r) => r.peerId),
-        );
-        const response = relayRoster.lookup({
-          payload,
-          requesterPeerId: message.envelope.senderPeerId,
-          relayMultiaddrs: mesh.multiaddrs,
-          relayPeerId: mesh.peerId,
-          hasLiveReservation: (id) => livePeerIds.has(id),
-        });
-        relayMetrics.recordLookup({
-          topicHash: payload.topicHash,
-          targetPeerId: payload.targetPeerId,
-          capability: payload.capability,
-          peersReturned: response.peers.length,
-        });
-        console.log(
-          `[relay] lookup query=${payload.queryId} peers=${response.peers.length} roster=${relayRoster.size()} hopLive=${[...livePeerIds].length}`,
-        );
-        if (message.replyWithEnvelope) {
-          await message.replyWithEnvelope({
-            version: "0.1",
-            messageId: randomUUID(),
-            createdAt: new Date().toISOString(),
-            senderPeerId: mesh.peerId,
-            senderPublicKey: RENDEZVOUS_RESPONSE_PLACEHOLDER_PUBLIC_KEY,
-            senderRole: "agent",
-            recipientPeerId: message.envelope.senderPeerId,
-            recipientRole: "agent",
-            intent: "relay.lookup.response",
-            signature: RENDEZVOUS_RESPONSE_PLACEHOLDER_SIGNATURE,
-            payload: response,
-          } as EnvoyEnvelope);
-        }
-      } catch (error) {
-        console.error("[relay] Failed to handle relay.lookup:", error);
-      }
-      return;
-    }
+    // relay.checkin / relay.lookup / relay.hints.* are handled by
+    // attachStandaloneRelayControl() above (Phase 46 consolidation).
+    // Do NOT add inline handlers for these intents here — use the shared
+    // standalone-relay-control.ts module so production and E2E tests
+    // exercise the same code path.
 
     // Handle broadcast.request — fan out to all connected peers (except sender)
     if (intent === "broadcast.request") {

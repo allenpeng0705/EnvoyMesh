@@ -2,7 +2,7 @@
 
 This document is the **product-facing baseline** for WAN connectivity defaults: which bootstrap **presets** ship in the node, what the **EnvoyMesh community relay** is, how **org-owned** bootstraps and relays fit, and how **key / multiaddr rotation** should be handled. Implementation sources: `packages/api/src/default-bootstrap.ts`, `apps/node/src/bootstrap-resolver.ts` (`KNOWN_PRESETS`), `apps/node/src/args.ts`.
 
-**Related:** [Operator relay fleet](./operator-relay-fleet.md) · [Layered relay network (long-term graph)](./layered-relay-network.md) · [Relay server design — Phase 46](./relay-server-design.md) · [P2P discovery](./p2p-discovery.md) · [Implementation plan Phase 4 WAN](./implementation-plan.md#phase-4-wan-follow-on-rendezvous-relay-and-nat-traversal)
+**Related:** [Relay server design](./relay-server-design.md) · [Layered relay network (long-term graph)](./layered-relay-network.md) · [P2P discovery](./p2p-discovery.md) · [Live connectivity testing](./live-connectivity-testing.md) · [Implementation plan Phase 46](./implementation-plan.md#phase-46--multi-relay-fleet-coordination) · [Implementation plan Phase 4 WAN](./implementation-plan.md#phase-4-wan-follow-on-rendezvous-relay-and-nat-traversal)
 
 ---
 
@@ -66,6 +66,24 @@ Goals: avoid **implicit** dependence on random community infrastructure; keep a 
 
 **“Two to three regions” narrative:** operate **one bootstrap/relay pair per region** (or overlapping roles on the same host), each with **public or DNS multiaddrs**, and ship them through **org YAML presets** or documented env vars. No separate global “registry” product is required for a minimal viable org fleet.
 
+### Multi-relay client preset (Phase 46A)
+
+Clients check in, look up, and **reserve** on a shared EnvoyMesh target set (cap ~4), not only the first bootstrap peer:
+
+- Prefer **regional relay(s) + at least one shared hub** (community `cn-relay` or org hub) in the same preset / `configuredRelays` list.
+- Relays that should miss-forward to each other must list each other in `--bootstrap` / `ENVOYMESH_BOOTSTRAP_PEERS` so the sibling book is seeded (Phase 46B/C).
+- Design: [relay-server-design.md](./relay-server-design.md) Part B.
+
+### Multi-relay fleet tests (Phase 46)
+
+| Suite | When | How |
+|-------|------|-----|
+| In-process | Always under `RUN_E2E=1` / orchestrator `e2e-fast` | `multi-relay-fleet-e2e.test.ts` |
+| Process spawn | Always under `RUN_E2E=1` | `npm run test:e2e:relay:process` — two real `apps/relay` children |
+| Live WAN | Gated | `TEST_RELAY_A` + `TEST_RELAY_B` (distinct, mutually bootstrapped) → `npm run test:e2e:relay:live` or `./scripts/multi-relay-fleet-live-signoff.sh` |
+
+Do **not** set both live vars to the same community `cn-relay` — one peer cannot prove miss-forward.
+
 **Governed signed preset list** (future hardening): operators could publish a **signed JSON** list of allowed bootstrap peer ids; the node would verify signatures against configured trust anchors — **not shipped** as of this doc; track in implementation plan if product requires it.
 
 ---
@@ -113,6 +131,7 @@ ExecStart=/home/admin/mygithub/EnvoyMesh/node /home/admin/mygithub/EnvoyMesh/app
   --profile /home/admin/mygithub/EnvoyMesh/data/relay \
   --listen /ip4/0.0.0.0/tcp/4001 \
   --advertise-addr /ip4/47.93.11.212/tcp/4001 \
+  --bootstrap /ip4/<sibling-public-ip>/tcp/4001/p2p/<sibling-peer-id> \
   --http-port 15432
 Restart=always
 RestartSec=5

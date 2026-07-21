@@ -296,6 +296,8 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
         profile: ctx.getProfile()!,
         displayName: humanProfile?.displayName,
         bootstrapPeers,
+        configuredRelays: config.configuredRelays,
+        bootstrapPresets: config.bootstrapPresets,
         inboundGuard,
         discoverySeedStore,
       };

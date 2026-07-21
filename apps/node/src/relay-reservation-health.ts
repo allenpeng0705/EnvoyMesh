@@ -7,48 +7,76 @@
 import type { EnvoyMesh } from "@envoymesh/network";
 import { DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR } from "@envoymesh/api";
 
-export interface RelayReservationWarmupConfig {
+export interface RelayControlTargetConfig {
   configuredRelays?: readonly { enabled?: boolean; addr?: string }[];
   bootstrapPeers?: readonly string[];
   bootstrapPresets?: readonly string[];
+  /** Extra multiaddrs already known as active EnvoyMesh relays (e.g. CLI activeRelays). */
+  activeRelayAddrs?: readonly string[];
+  /** Cap after dedupe. Default 4. */
+  maxTargets?: number;
+}
+
+export interface RelayReservationWarmupConfig extends RelayControlTargetConfig {
   relayEnabled?: boolean;
   relayReservationEnabled?: boolean;
 }
 
-/** Direct relay multiaddrs suitable for eagerConnect + requestRelayReservation. */
-export function collectKnownRelayAddrs(config: RelayReservationWarmupConfig): string[] {
+const DEFAULT_MAX_RELAY_CONTROL_TARGETS = 4;
+
+/**
+ * Unified EnvoyMesh relay control targets for checkin, lookup, and reservation.
+ * Excludes public libp2p DHT bootstraps and circuit paths; dedupes; caps length.
+ */
+export function collectRelayControlTargets(config: RelayControlTargetConfig): string[] {
+  const maxTargets = config.maxTargets ?? DEFAULT_MAX_RELAY_CONTROL_TARGETS;
   const configured = (config.configuredRelays ?? [])
     .filter((r) => r.enabled !== false && r.addr?.trim())
     .map((r) => r.addr!.trim())
     .filter((a) => !a.includes("/p2p-circuit/"));
 
-  const out = [...configured];
+  const out: string[] = [];
+  const push = (addr: string): void => {
+    const t = addr.trim();
+    if (!t || t.includes("/p2p-circuit/") || out.includes(t)) return;
+    // Require embedded peer ID (/p2p/<peerId>). DNS-only entries without
+    // /p2p/ are silently dropped here — the dial path resolves them via
+    // /info, but the relay control path needs a peer ID for checkin/lookup.
+    // Operators using DNS-only addresses should configure them via the
+    // node's mesh dial path, not the relay control target list.
+    if (!t.includes("/p2p/")) return;
+    if (t.includes("bootstrap.libp2p.io")) return;
+    out.push(t);
+  };
+
+  for (const a of configured) push(a);
+
   const bootstrap = config.bootstrapPeers ?? [];
   const presets = config.bootstrapPresets ?? [];
   const wantCommunity =
     presets.includes("cn-relay") ||
     bootstrap.includes(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
 
-  if (
-    wantCommunity &&
-    !out.includes(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR)
-  ) {
-    out.push(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
+  if (wantCommunity) {
+    push(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
   }
 
-  // Also pick other non-circuit bootstrap peers that look like relay bases
-  // (have /p2p/ and are not already listed). Cap to avoid warming DHT bootstraps.
   for (const a of bootstrap) {
-    const t = a.trim();
-    if (!t || t.includes("/p2p-circuit/") || out.includes(t)) continue;
-    if (!t.includes("/p2p/")) continue;
-    // Skip well-known public libp2p DHT bootstraps — they are not circuit relays.
-    if (t.includes("bootstrap.libp2p.io")) continue;
-    out.push(t);
-    if (out.length >= 4) break;
+    if (out.length >= maxTargets) break;
+    push(a);
   }
 
-  return [...new Set(out)].slice(0, 4);
+  for (const a of config.activeRelayAddrs ?? []) {
+    if (out.length >= maxTargets) break;
+    push(a);
+  }
+
+  return out.slice(0, maxTargets);
+}
+
+/** @deprecated Prefer collectRelayControlTargets — alias for reserve warmup. */
+export function collectKnownRelayAddrs(config: RelayReservationWarmupConfig): string[] {
+  return collectRelayControlTargets(config);
 }
 
 export interface RelayReservationWarmupResult {
@@ -77,7 +105,7 @@ export async function warmAndWatchRelayReservations(
     return { warmed: false, addrs: [], skipped: true, reason: "reservation-disabled" };
   }
 
-  const addrs = collectKnownRelayAddrs(config);
+  const addrs = collectRelayControlTargets(config);
   if (addrs.length === 0) {
     return { warmed: false, addrs: [], skipped: true, reason: "no-relay-addrs" };
   }

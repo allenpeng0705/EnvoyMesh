@@ -1,9 +1,57 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import {
   collectKnownRelayAddrs,
+  collectRelayControlTargets,
   warmAndWatchRelayReservations,
 } from "../src/relay-reservation-health.js";
 import { DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR } from "@envoymesh/api";
+
+describe("collectRelayControlTargets", () => {
+  const RELAY_A =
+    "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo";
+  const RELAY_B =
+    "/ip4/1.2.3.4/tcp/4001/p2p/12D3KooWBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
+
+  it("merges configuredRelays, cn-relay preset, and bootstrap peers", () => {
+    const addrs = collectRelayControlTargets({
+      configuredRelays: [{ enabled: true, addr: RELAY_B }],
+      bootstrapPresets: ["cn-relay"],
+      bootstrapPeers: [RELAY_A],
+    });
+    expect(addrs).toContain(RELAY_B);
+    expect(addrs).toContain(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
+    expect(addrs.length).toBeLessThanOrEqual(4);
+  });
+
+  it("caps at 4 and skips DHT bootstraps / circuits", () => {
+    const addrs = collectRelayControlTargets({
+      configuredRelays: [
+        { enabled: true, addr: `${RELAY_A}/p2p-circuit/p2p/12D3KooWHome` },
+        { enabled: true, addr: RELAY_A },
+      ],
+      bootstrapPeers: [
+        "/dnsaddr/bootstrap.libp2p.io/p2p/12D3KooWBootstrap",
+        RELAY_B,
+        "/ip4/9.9.9.9/tcp/4001/p2p/12D3KooWCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
+        "/ip4/8.8.8.8/tcp/4001/p2p/12D3KooWDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD",
+        "/ip4/7.7.7.7/tcp/4001/p2p/12D3KooWEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE",
+      ],
+    });
+    expect(addrs.every((a) => !a.includes("/p2p-circuit/"))).toBe(true);
+    expect(addrs.every((a) => !a.includes("bootstrap.libp2p.io"))).toBe(true);
+    expect(addrs).toContain(RELAY_A);
+    expect(addrs.length).toBe(4);
+  });
+
+  it("is used by collectKnownRelayAddrs (reserve parity)", () => {
+    const config = {
+      configuredRelays: [{ enabled: true, addr: RELAY_A }],
+      bootstrapPresets: ["cn-relay"] as string[],
+      bootstrapPeers: [] as string[],
+    };
+    expect(collectKnownRelayAddrs(config)).toEqual(collectRelayControlTargets(config));
+  });
+});
 
 describe("collectKnownRelayAddrs", () => {
   const RELAY =
@@ -45,7 +93,6 @@ describe("collectKnownRelayAddrs", () => {
     expect(addrs).toContain(RELAY);
   });
 });
-
 describe("warmAndWatchRelayReservations", () => {
   afterEach(() => {
     vi.useRealTimers();

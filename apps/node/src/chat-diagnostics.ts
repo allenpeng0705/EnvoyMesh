@@ -1,11 +1,12 @@
 import type { ChatDiagnostics, PeerConnectionInfo } from "@envoymesh/api";
 import type { EnvoyMesh } from "@envoymesh/network";
-import { filterRelayControlTargets, isPublicLibp2pBootstrapMultiaddr } from "@envoymesh/network";
+import { isPublicLibp2pBootstrapMultiaddr } from "@envoymesh/network";
 import type { LocalPeerDirectoryStore } from "@envoymesh/local-store";
 import { buildOutboundDialHints } from "./outbound-dial-hints.js";
 import type { DiscoverySeedStore } from "./discovery-seed-store.js";
 import type { NodeConfigStore, PersistedNodeConfig } from "./node-config-store.js";
 import { getRelayDiagnosticsSnapshot } from "./relay-diagnostics-state.js";
+import { collectRelayControlTargets } from "./relay-reservation-health.js";
 
 const SAMPLE_HINT_LIMIT = 5;
 
@@ -88,10 +89,14 @@ function buildHints(input: {
 
 export async function buildChatDiagnostics(input: BuildChatDiagnosticsInput): Promise<ChatDiagnostics> {
   const relaySnapshot = getRelayDiagnosticsSnapshot();
-  const relayControlTargets = filterRelayControlTargets([
-    ...input.relayBootstrapPeers,
-    ...(input.config?.bootstrapPeers ?? []),
-  ]);
+  const relayControlTargets = collectRelayControlTargets({
+    bootstrapPeers: [
+      ...input.relayBootstrapPeers,
+      ...(input.config?.bootstrapPeers ?? []),
+    ],
+    configuredRelays: input.config?.configuredRelays,
+    bootstrapPresets: input.config?.bootstrapPresets,
+  });
 
   let discoverySeedCount = 0;
   let circuitSeedCount = 0;

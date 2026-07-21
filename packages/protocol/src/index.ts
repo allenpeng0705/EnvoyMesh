@@ -1325,6 +1325,8 @@ export const RelayLookupPayloadSchema = z
     capability: z.string().min(1).optional(),
     topicHash: z.string().min(1).optional(),
     maxResults: z.number().int().min(1).max(100).default(20),
+    // maxHops: schema allows up to 8 for future layered-relay work.
+    // Phase 46 hard-caps the client at maxHops: 1 (one-hop miss-forward).
     maxHops: z.number().int().min(0).max(8).default(0),
     maxFanout: z.number().int().min(1).max(8).default(2),
     visibilityScope: RelayVisibilitySchema.default("public"),

@@ -2,9 +2,8 @@
  * Relay roster for the standalone relay server.
  *
  * Stores peer checkin data (capabilities, topicHash advertisements) and
- * answers relay.lookup queries. Ported from apps/node/src/relay-roster.ts
- * with the relay-book / relay-summary / client-state code removed (those
- * are only needed by the full-node relay-server mode).
+ * answers relay.lookup queries. Phase 46 adds a bounded sibling relay book
+ * for miss-forward + hints (leaf checkin hints stay untrusted candidates).
  */
 
 import type {
@@ -14,17 +13,11 @@ import type {
   RelayLookupResponsePayload,
   RelayPeerCandidate,
   RelayVisibility,
+  RelayRelation,
+  RelayBookState,
 } from "@envoymesh/protocol";
+import type { RelayBookEntry } from "./relay-lookup-router.js";
 
-// ---------------------------------------------------------------------------
-// Circuit multiaddr builder
-// ---------------------------------------------------------------------------
-
-/**
- * Build `/p2p-circuit/p2p/<targetPeerId>` multiaddrs from the relay's own
- * listen/advertise bases. Copied from apps/node/src/discovery-inbound.ts
- * (pure string function, no external deps).
- */
 export function buildRelayCircuitMultiaddrs(relayMultiaddrs: string[], targetPeerId: string): string[] {
   const circuitAddrs = relayMultiaddrs
     .map((addr) => addr.trim())
@@ -35,20 +28,13 @@ export function buildRelayCircuitMultiaddrs(relayMultiaddrs: string[], targetPee
   return [...new Set(circuitAddrs)];
 }
 
-// ---------------------------------------------------------------------------
-// Types
-// ---------------------------------------------------------------------------
-
 export interface RelayRosterEntry {
   peerId: string;
   ownerId?: string;
   displayName?: string;
   relayReachableAddrs: string[];
-  /** Set when peer reconnects with a different address than previously stored. */
   addrChangedAt?: number;
-  /** Set when peer had no entry in the roster and is connecting for the first time. */
   firstSeenAt: number;
-  /** Set when peer returns after being offline (> 60s gap). */
   lastReconnectedAt?: number;
   capabilities: string[];
   advertisements: RelayCheckinPayload["advertisements"];
@@ -63,14 +49,10 @@ export interface RelayRosterOptions {
   rosterTtlMs?: number;
   maxRosterEntries?: number;
   maxRelayHints?: number;
+  maxRelayBookEntries?: number;
 }
 
 export interface RelayRosterCheckinOptions {
-  /**
-   * Live circuit-relay-v2 reservation expiry (ms epoch) for this peer, if any.
-   * Extends `reservationFreshUntil` so roster visibility tracks the hop slot,
-   * not only the short checkin TTL.
-   */
   reservationExpireAtMs?: number;
 }
 
@@ -79,44 +61,94 @@ export interface RelayRosterLookupInput {
   requesterPeerId: string;
   relayMultiaddrs: string[];
   relayPeerId: string;
-  /** True when this relay currently holds a live RESERVE for peerId. */
   hasLiveReservation?: (peerId: string) => boolean;
 }
 
-// ---------------------------------------------------------------------------
-// Factory
-// ---------------------------------------------------------------------------
+export type { RelayBookEntry };
 
-const DEFAULT_ROSTER_TTL_MS = 35 * 60_000; // outlast public circuit reservation TTL (30 min) with margin
+const DEFAULT_ROSTER_TTL_MS = 35 * 60_000;
 const DEFAULT_MAX_ROSTER_ENTRIES = 10_000;
 const DEFAULT_MAX_RELAY_HINTS = 50;
+// Book cap (16) > gossip request (8) intentionally: a full book is never
+// shared in one gossip round, so peers learn incrementally. Phase 46C.
+const DEFAULT_MAX_RELAY_BOOK_ENTRIES = 16;
 
 export function createRelayRoster(options: RelayRosterOptions = {}) {
   const now = options.now ?? Date.now;
   const rosterTtlMs = options.rosterTtlMs ?? DEFAULT_ROSTER_TTL_MS;
   const maxRosterEntries = options.maxRosterEntries ?? DEFAULT_MAX_ROSTER_ENTRIES;
   const maxRelayHints = options.maxRelayHints ?? DEFAULT_MAX_RELAY_HINTS;
+  const maxRelayBookEntries = options.maxRelayBookEntries ?? DEFAULT_MAX_RELAY_BOOK_ENTRIES;
   const entries = new Map<string, RelayRosterEntry>();
+  const relayBook = new Map<string, RelayBookEntry>();
 
   function pruneExpired(): void {
     const current = now();
     for (const [peerId, entry] of entries) {
-      if (entry.expiresAt <= current) {
-        entries.delete(peerId);
+      if (entry.expiresAt <= current) entries.delete(peerId);
+    }
+    for (const [relayId, entry] of relayBook) {
+      if (entry.expiresAt <= current) relayBook.delete(relayId);
+    }
+    if (entries.size > maxRosterEntries) {
+      const ordered = [...entries.values()].sort((left, right) => left.lastSeenAt - right.lastSeenAt);
+      for (const entry of ordered.slice(0, entries.size - maxRosterEntries)) {
+        entries.delete(entry.peerId);
       }
     }
-    if (entries.size <= maxRosterEntries) {
-      return;
-    }
-    const ordered = [...entries.values()].sort((left, right) => left.lastSeenAt - right.lastSeenAt);
-    for (const entry of ordered.slice(0, entries.size - maxRosterEntries)) {
-      entries.delete(entry.peerId);
+    if (relayBook.size > maxRelayBookEntries) {
+      const ordered = [...relayBook.values()].sort((a, b) => a.lastVerifiedAt - b.lastVerifiedAt);
+      for (const entry of ordered.slice(0, relayBook.size - maxRelayBookEntries)) {
+        relayBook.delete(entry.relayId);
+      }
     }
   }
 
   function collectRelayHints(limit = 10): RelayHint[] {
+    const fromBook = [...relayBook.values()]
+      .filter((e) => e.expiresAt > now() && e.state !== "removed" && e.state !== "stale")
+      .map<RelayHint>((entry) => ({
+        relayId: entry.relayId,
+        level: entry.level,
+        region: entry.region,
+        multiaddrs: entry.addrs,
+        expiresAt: new Date(entry.expiresAt).toISOString(),
+      }));
     const fromRoster = [...entries.values()].flatMap((entry) => entry.relayHints);
-    return dedupeHints(fromRoster).slice(0, limit);
+    return dedupeHints([...fromBook, ...fromRoster]).slice(0, limit);
+  }
+
+  function registerRelayInternal(input: {
+    relayId: string;
+    addrs: string[];
+    relation: RelayRelation;
+    state: RelayBookState;
+    level?: number;
+    region?: string;
+    expiresAt: string | number;
+  }): RelayBookEntry {
+    pruneExpired();
+    const current = now();
+    const expiresAt =
+      typeof input.expiresAt === "number" ? input.expiresAt : Date.parse(input.expiresAt);
+    const existing = relayBook.get(input.relayId);
+    const entry: RelayBookEntry = {
+      relayId: input.relayId,
+      level: input.level ?? existing?.level,
+      region: input.region ?? existing?.region,
+      addrs: dedupe(input.addrs.length > 0 ? input.addrs : existing?.addrs ?? []),
+      relation: input.relation,
+      state: input.state,
+      lastVerifiedAt:
+        input.state === "verified" || input.state === "active" || input.state === "seed"
+          ? current
+          : (existing?.lastVerifiedAt ?? 0),
+      expiresAt: Number.isFinite(expiresAt) ? expiresAt : current + rosterTtlMs,
+      failureCount: existing?.failureCount ?? 0,
+    };
+    relayBook.set(entry.relayId, entry);
+    pruneExpired();
+    return entry;
   }
 
   return {
@@ -160,6 +192,17 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
         reservationFreshUntil,
       };
       entries.set(peerId, entry);
+      for (const hint of payload.relayHints) {
+        if (!hint.relayId || hint.multiaddrs.length === 0) continue;
+        if (relayBook.has(hint.relayId)) continue;
+        registerRelayInternal({
+          relayId: hint.relayId,
+          addrs: hint.multiaddrs,
+          relation: "candidate",
+          state: "candidate",
+          expiresAt: hint.expiresAt ?? new Date(current + rosterTtlMs).toISOString(),
+        });
+      }
       pruneExpired();
       return { entry, addrChanged, reconnect };
     },
@@ -170,32 +213,16 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
       const current = now();
       const candidates: RelayPeerCandidate[] = [];
       for (const entry of entries.values()) {
-        if (entry.peerId === requesterPeerId) {
-          continue;
-        }
-        // Presence (expiresAt) is checkin-driven. Hop freshness uses
-        // reservationFreshUntil when set longer than checkin, but we no longer
-        // drop checkin-fresh peers solely because reservationFreshUntil lapsed —
-        // instead we mark hasHopSlot false so clients can prefer live hops.
-        if (entry.expiresAt <= current) {
-          continue;
-        }
-        if (!matchesLookup(entry, payload)) {
-          continue;
-        }
+        if (entry.peerId === requesterPeerId) continue;
+        if (entry.expiresAt <= current) continue;
+        if (!matchesLookup(entry, payload)) continue;
         const visibility = visibilityFor(entry, payload);
-        if (!isVisible(visibility, payload.visibilityScope)) {
-          continue;
-        }
+        if (!isVisible(visibility, payload.visibilityScope)) continue;
         const liveHop =
           typeof hasLiveReservation === "function"
             ? hasLiveReservation(entry.peerId)
             : entry.reservationFreshUntil > current;
-        // Omit checkin-only peers from lookup: presence without a live hop
-        // is not dialable and confuses discovery / auto-bond.
-        if (!liveHop) {
-          continue;
-        }
+        if (!liveHop) continue;
         candidates.push({
           peerId: entry.peerId,
           ownerId: visibility === "public" || visibility === "capability" ? undefined : entry.ownerId,
@@ -218,6 +245,56 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
           Math.min(Date.parse(payload.expiresAt), current + rosterTtlMs),
         ).toISOString(),
       };
+    },
+
+    registerRelay(input: {
+      relayId: string;
+      addrs: string[];
+      relation: RelayRelation;
+      state: RelayBookState;
+      level?: number;
+      region?: string;
+      expiresAt: string | number;
+    }): RelayBookEntry {
+      return registerRelayInternal(input);
+    },
+
+    promoteRelay(relayId: string, state: RelayBookState = "verified"): RelayBookEntry | undefined {
+      pruneExpired();
+      const existing = relayBook.get(relayId);
+      if (!existing) return undefined;
+      const entry: RelayBookEntry = {
+        ...existing,
+        state,
+        lastVerifiedAt: now(),
+        failureCount: 0,
+      };
+      relayBook.set(relayId, entry);
+      return entry;
+    },
+
+    relayBook(): RelayBookEntry[] {
+      pruneExpired();
+      return [...relayBook.values()];
+    },
+
+    verifiedRelayHints(limit = 10): RelayHint[] {
+      pruneExpired();
+      return [...relayBook.values()]
+        .filter(
+          (e) =>
+            e.expiresAt > now() &&
+            (e.state === "verified" || e.state === "active" || e.state === "seed") &&
+            e.addrs.length > 0,
+        )
+        .map((entry) => ({
+          relayId: entry.relayId,
+          level: entry.level,
+          region: entry.region,
+          multiaddrs: entry.addrs,
+          expiresAt: new Date(entry.expiresAt).toISOString(),
+        }))
+        .slice(0, limit);
     },
 
     entries(): RelayRosterEntry[] {
@@ -247,16 +324,6 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
   };
 }
 
-// ---------------------------------------------------------------------------
-// Internal helpers (exported for unit tests)
-// ---------------------------------------------------------------------------
-
-/**
- * Exact peer/owner lookup is public when the peer advertised publicly or has
- * mesh.discovery. Lookup only returns peers with a live hop (see `lookup`);
- * knowing a peerId therefore confirms hoppable presence on this relay, not
- * mere checkin, and public hits still omit ownerId.
- */
 export function visibilityFor(entry: RelayRosterEntry, payload: RelayLookupPayload): RelayVisibility {
   if (payload.targetPeerId || payload.targetOwnerId) {
     const publicAd = entry.advertisements.find((ad) => ad.visibility === "public");
@@ -268,9 +335,7 @@ export function visibilityFor(entry: RelayRosterEntry, payload: RelayLookupPaylo
       (payload.capability && ad.capability === payload.capability) ||
       (payload.topicHash && ad.topicHash === payload.topicHash),
   );
-  if (scoped) {
-    return scoped.visibility;
-  }
+  if (scoped) return scoped.visibility;
   if (payload.capability && entry.capabilities.includes(payload.capability)) {
     return payload.visibilityScope === "bonded" ? "bonded" : "public";
   }
@@ -278,12 +343,8 @@ export function visibilityFor(entry: RelayRosterEntry, payload: RelayLookupPaylo
 }
 
 export function isVisible(candidate: RelayVisibility, requested: RelayVisibility): boolean {
-  if (candidate === "private") {
-    return false;
-  }
-  if (candidate === "bonded") {
-    return requested === "bonded";
-  }
+  if (candidate === "private") return false;
+  if (candidate === "bonded") return requested === "bonded";
   if (candidate === "capability") {
     return requested === "capability" || requested === "bonded";
   }
@@ -291,15 +352,9 @@ export function isVisible(candidate: RelayVisibility, requested: RelayVisibility
 }
 
 function matchesLookup(entry: RelayRosterEntry, payload: RelayLookupPayload): boolean {
-  if (payload.targetPeerId && entry.peerId !== payload.targetPeerId) {
-    return false;
-  }
-  if (payload.targetOwnerId && entry.ownerId !== payload.targetOwnerId) {
-    return false;
-  }
-  if (payload.capability && !entry.capabilities.includes(payload.capability)) {
-    return false;
-  }
+  if (payload.targetPeerId && entry.peerId !== payload.targetPeerId) return false;
+  if (payload.targetOwnerId && entry.ownerId !== payload.targetOwnerId) return false;
+  if (payload.capability && !entry.capabilities.includes(payload.capability)) return false;
   if (payload.topicHash && !entry.advertisements.some((ad) => ad.topicHash === payload.topicHash)) {
     return false;
   }
@@ -315,10 +370,7 @@ function resolveReservationFreshUntil(
   if (typeof reservationExpireAtMs !== "number" || !Number.isFinite(reservationExpireAtMs)) {
     return checkinExpiresAt;
   }
-  if (reservationExpireAtMs <= current) {
-    return checkinExpiresAt;
-  }
-  // Cap extension to roster TTL window so a 30min hop doesn't leave a ghost forever.
+  if (reservationExpireAtMs <= current) return checkinExpiresAt;
   return Math.min(reservationExpireAtMs, current + rosterTtlMs, Math.max(checkinExpiresAt, reservationExpireAtMs));
 }
 
@@ -331,10 +383,7 @@ function dedupeHints(input: RelayHint[]): RelayHint[] {
   for (const hint of input) {
     const key = hint.relayId || hint.multiaddrs.join(",");
     if (key && !out.has(key)) {
-      out.set(key, {
-        ...hint,
-        multiaddrs: dedupe(hint.multiaddrs),
-      });
+      out.set(key, { ...hint, multiaddrs: dedupe(hint.multiaddrs) });
     }
   }
   return [...out.values()];

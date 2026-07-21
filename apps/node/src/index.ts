@@ -55,7 +55,6 @@ import {
   EnvoyMesh,
   type EnvoyMeshOptions,
   filterBootstrapMultiaddrs,
-  filterRelayControlTargets,
   filterUsableOutboundPeerDialHints,
   voucherJsonBytesFromObject,
   type P2pDebugEvent,
@@ -236,6 +235,7 @@ import {
 import { preferRelayPeerCandidate } from "./relay-lookup-merge.js";
 import { getRelayClientAdvertisedTopics } from "./relay-client-cycle.js";
 import { createRelayLookupRouter } from "./relay-lookup-router.js";
+import { collectRelayControlTargets } from "./relay-reservation-health.js";
 import { logRelayReachableAddrsForCheckin, logRelayServerCheckinAccepted, logRelayServerLookupResponse, logClientRelayLookupResponse, describeMultiaddrReachability } from "./relay-checkin-log.js";
 import {
   createInitialRelayHealthState,
@@ -4718,7 +4718,7 @@ async function runRelayLookupCycle(source: "startup" | "periodic"): Promise<void
       queryId: `relay_lookup_${randomUUID()}`,
       capability: "mesh.discovery",
       maxResults: 32,
-      maxHops: 0,
+      maxHops: 1,
       maxFanout: 2,
       visibilityScope: "public",
       expiresAt: expiresAtFromNow(RELAY_CONTROL_TTL_MS),
@@ -5495,12 +5495,12 @@ function relayDialMultiaddrsForCircuitRelay(mesh: EnvoyMesh, advertiseAddrs: str
 }
 
 function relayControlTargets(): string[] {
-  return filterRelayControlTargets(
-    dedupeAddrs([
-      ...relayClientState.activeRelays.flatMap((relay) => relay.multiaddrs),
-      ...effectiveBootstrapPeers,
-    ]),
-  );
+  return collectRelayControlTargets({
+    bootstrapPeers: effectiveBootstrapPeers,
+    configuredRelays: persistedNodeConfig?.configuredRelays,
+    bootstrapPresets: persistedNodeConfig?.bootstrapPresets,
+    activeRelayAddrs: relayClientState.activeRelays.flatMap((relay) => relay.multiaddrs),
+  });
 }
 
 function buildRelayManagerRuntimeState(): RelayManagerRuntimeState {

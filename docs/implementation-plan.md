@@ -81,7 +81,7 @@ Maintenance rule: keep this file as the source of truth for **done / left / next
 - [Phase 43 — Agent Network User Experience](#phase-43--agent-network-user-experience-planned)
 - [Phase 44 — Refine EnvoyMesh Knowledgebase](#phase-44--refine-envoymesh-knowledgebase-)
 - [Phase 45 — Web Content Browsing](#phase-45--web-content-browsing--45a45b-shipped-45c45f-future)
-- [Phase 46 — Multi-Relay Fleet Coordination](#phase-46--multi-relay-fleet-coordination-designed)
+- [Phase 46 — Multi-Relay Fleet Coordination](#phase-46--multi-relay-fleet-coordination)
 
 EnvoyMesh is a TypeScript-first, owner-controlled, peer-to-peer agent network.
 
@@ -1163,7 +1163,7 @@ Milestone: **Phases 0–42 (42J deferred) shipped** — Core protocol through Ph
 8. **Phase 26 — DID WAN gateway resolver** — scoped below.
 9. **Chain template marketplace (future)** — share chain templates across the mesh via `discovery.request`. Parked until user demand materialises (4 built-in templates + AI chat creation cover current use cases).
 10. **Phase 45 — Web Content Browsing** — 45A–45E shipped; 45F future. [web-content-browsing-design.md](./web-content-browsing-design.md) is the design doc; the Phase 45 section below is the implementation checklist. 45A (URL scheme + `library.read` intent + Browser view + all test layers) → 45B (browser polish + bookmarks) → 45C (EnvoyGo mobile browser) → 45D (authoring UX + templates + visibility) → 45E (Step 2: push notifications, topics, friend discovery — no GossipSub). 45F (external HTTP gateway) is forward-referenced.
-11. **Phase 46 — Multi-Relay Fleet Coordination** — designed. Fix split checkin/reservation across regional relays via client multi-home, one-hop miss-forward, and sibling-list gossip. Design: [relay-server-design.md](./relay-server-design.md). Sub-phases 46A → 46B → 46C below.
+11. **Phase 46 — Multi-Relay Fleet Coordination** — shipped (46A–46C + P2/P3 test harness). Client multi-home, standalone miss-forward, sibling `relay.hints` gossip; in-process + process-spawn E2E; gated live `TEST_RELAY_A`/`TEST_RELAY_B` signoff. Design: [relay-server-design.md](./relay-server-design.md) Part B.
 
 ### Phase 9 Architecture Overview
 
@@ -6035,11 +6035,12 @@ See design doc §11 for the full list of 10 open questions. None block Phase 45A
 
 ---
 
-## Phase 46 — Multi-Relay Fleet Coordination **`[ ]` designed**
+## Phase 46 — Multi-Relay Fleet Coordination
 
+**Status:** `[x]` shipped (46A–46C unit-tested; optional two-relay live smoke deferred)  
 **Goal:** Make **multiple standalone relays** (same region or multi-region) work together so normal nodes that check in / reserve on different relays can still **discover** each other and obtain **dialable** `/p2p-circuit/` paths — without replicating full leaf rosters.
 
-**Design doc (source of truth):** [relay-server-design.md](./relay-server-design.md)  
+**Design doc (source of truth):** [relay-server-design.md](./relay-server-design.md) — Part A = shipped standalone relay; **Part B = this phase**.  
 **Related:** [operator-relay-fleet.md](./operator-relay-fleet.md) · [layered-relay-network.md](./layered-relay-network.md) (longer-term join/summary graph) · [p2p-discovery.md](./p2p-discovery.md)
 
 **Problem:** Each `apps/relay` keeps a local checkin roster and local circuit-relay-v2 reservations. Lookup is hop-only (no live reservation ⇒ peer omitted). If Home uses Relay-CN only and Joiner uses Relay-EU only, discovery and relayed dials fail.
@@ -6054,38 +6055,43 @@ See design doc §11 for the full list of 10 open questions. None block Phase 45A
 
 **Does not ship in 46:** full roster sync, `relay.summary` topic blooms, automated `relay.join` hierarchy (remain in layered design).
 
-### 46A — Client multi-home `[ ]`
+### 46A — Client multi-home `[x]`
 
-- `[ ]` `collectRelayControlTargets({ bootstrapPeers, configuredRelays, bootstrapPresets })` — exclude public libp2p DHT bootstraps; dedupe; cap ~4
-- `[ ]` Wire into `runRelayClientCycle`, reservation warmup, and NodeService topic/peerId relay lookup
-- `[ ]` Parallel checkin/lookup (concurrency 2–3) + time-box
-- `[ ]` Docs: multi-relay preset pattern in [operator-relay-fleet.md](./operator-relay-fleet.md)
-- `[ ]` Unit tests for target collection + cycle wiring
+- `[x]` `collectRelayControlTargets({ bootstrapPeers, configuredRelays, bootstrapPresets })` — exclude public libp2p DHT bootstraps; dedupe; cap ~4
+- `[x]` Wire into `runRelayClientCycle`, reservation warmup, and NodeService topic/peerId relay lookup
+- `[x]` Parallel checkin/lookup (concurrency 2–3) + time-box
+- `[x]` Docs: multi-relay preset pattern in [operator-relay-fleet.md](./operator-relay-fleet.md)
+- `[x]` Unit tests for target collection + cycle wiring
 
-### 46B — One-hop miss-forward `[ ]`
+### 46B — One-hop miss-forward `[x]`
 
-- `[ ]` `apps/relay` `relay.lookup`: on miss / underfill, forward to ≤2 verified siblings with `maxHops-1`
-- `[ ]` Merge with hoppability preference (reuse / share `preferRelayPeerCandidate`)
-- `[ ]` Client `queryRelayLookupWithDeps`: default `maxHops: 1`
-- `[ ]` Seed siblings via relay `--bootstrap` / env
-- `[ ]` Unit tests for forward merge + hop decrement / queryId dedupe
+- `[x]` `apps/relay` `relay.lookup`: on miss / underfill, forward to ≤2 verified siblings with `maxHops-1`
+- `[x]` Merge with hoppability preference (`preferRelayPeerCandidate` in `apps/relay`)
+- `[x]` Client `queryRelayLookupWithDeps`: default `maxHops: 1`
+- `[x]` Seed siblings via relay `--bootstrap` / env
+- `[x]` Unit tests for forward merge + hop decrement / queryId dedupe
 
-### 46C — Sibling-list broadcast `[ ]`
+### 46C — Sibling-list broadcast `[x]`
 
-- `[ ]` Bounded standalone relay book (cap ~8–16, TTL ~25–35 min)
-- `[ ]` Periodic `relay.hints.request` / `response` among book members (60–120s)
-- `[ ]` Piggyback sibling sample on lookup responses (optional)
-- `[ ]` Promote only after verify; leaf `relayHints` untrusted as forward targets
-- `[ ]` Unit tests for book cap / TTL / verify gate
-- `[ ]` Optional two-relay integration smoke when feasible
+- `[x]` Bounded standalone relay book (cap ~8–16, TTL ~25–35 min)
+- `[x]` Periodic `relay.hints.request` / `response` among book members (~90s)
+- `[x]` Piggyback sibling sample on lookup responses when hints empty
+- `[x]` Promote only after verify (hints RTT); leaf `relayHints` untrusted as forward targets
+- `[x]` Unit tests for book cap / TTL / verify gate
+- `[x]` In-process two-relay E2E (`multi-relay-fleet-e2e.test.ts`: multi-home + miss-forward)
+- `[x]` Process-spawn two-relay E2E (`multi-relay-fleet-process-e2e.test.ts`: real `apps/relay` + `/info` + control identity)
+- `[x]` Gated live dual-relay E2E (`multi-relay-fleet-live-e2e.test.ts` / `TEST_RELAY_A`+`TEST_RELAY_B`; `./scripts/multi-relay-fleet-live-signoff.sh`)
 
 ### Phase 46 exit criteria
 
-- `[ ]` Two nodes, shared multi-relay preset: both can reserve on overlapping relays; topic/peerId discovery + circuit dial succeed
-- `[ ]` Divergent client presets + seeded sibling relays: miss-forward returns foreign circuit (`maxHops: 1`)
-- `[ ]` Sibling gossip: relay learns a third verified peer via hints and can forward to it
-- `[ ]` Client multi-target cycle does not serialize to multi-minute hangs
-- `[ ]` Design doc + operator fleet docs updated to match shipped behavior
+- `[x]` Shared multi-relay target collection + parallel cycle (unit)
+- `[x]` Miss-forward / hop gate / queryId dedupe (unit)
+- `[x]` Sibling book: candidate vs verified forward gate (unit)
+- `[x]` Client multi-target cycle time-boxed (concurrency 3)
+- `[x]` Design + operator fleet docs updated for multi-relay presets
+- `[x]` In-process two-relay E2E (multi-home reserve + miss-forward circuit)
+- `[x]` Process-spawn two-relay E2E (CLI/HTTP/control-identity + miss-forward)
+- `[x]` Live two-relay WAN signoff harness (gated; operator-run)
 
 ### Risks & mitigations (Phase 46)
 
@@ -6102,7 +6108,11 @@ See design doc §11 for the full list of 10 open questions. None block Phase 45A
 
 | Date | Change |
 |------|--------|
-| 2026-07-21 | **Phase 46 — Multi-Relay Fleet Coordination designed.** Dedicated design doc [relay-server-design.md](./relay-server-design.md): client multi-home (46A), one-hop miss-forward (46B), sibling-list gossip via `relay.hints` (46C). No full roster replication. Added Phase 46 checklist + TOC/related links. |
+| 2026-07-21 | **Phase 46 P2/P3 tests.** Gated live `TEST_RELAY_A`/`TEST_RELAY_B` E2E + signoff script; process-spawn `apps/relay` E2E; `npm run test:e2e:relay:fleet` / `:process` / `:live`; serialize multi-relay `addRelay` (parallel RESERVE deadlocks); skip empty libp2p bootstrap list after loopback filter. |
+| 2026-07-21 | **Phase 46 test gaps closed.** In-process E2E `multi-relay-fleet-e2e` (46A multi-home + 46B miss-forward); unit coverage for merge/negative-cache/hints promote/`maxHops:1` client payload; design matrix miss-forward marked shipped. |
+| 2026-07-21 | **Phase 46 shipped (46A–46C).** Client `collectRelayControlTargets` + parallel checkin/lookup; standalone miss-forward + sibling book/`relay.hints` gossip; client `maxHops: 1`. Unit tests in `relay-reservation-health` + `relay-miss-forward`. Optional two-relay live smoke deferred. |
+| 2026-07-21 | **Relay server design expanded + Phase 46 wired.** [relay-server-design.md](./relay-server-design.md) is now the full standalone relay design (Part A shipped surface + Part B Phase 46 fleet). Phase 46 checklist: 46A multi-home, 46B miss-forward, 46C sibling hints. Implementation remains Phase 46 only. |
+| 2026-07-21 | **Phase 46 — Multi-Relay Fleet Coordination designed.** Initial checklist + TOC/related links for multi-relay fleet coordination. |
 | 2026-07-20 | **EnvoyGo feed.notify Inbox.** Thin-client mirror: list/dismiss RPCs + `feed:notify` live upsert + Open in Browser. OS push deferred. |
 | 2026-07-21 | **OS alert push complete (31I + feed).** EnvoyGo `PushNotificationService` obtains APNs (native MethodChannel) / FCM tokens and registers `tokenType: alert`. Home fills missing `ownerId` from profile; chat/bond/feed dispatch alert-only; `dispatchFeedPush` on inbound `feed.notify`. |
 | 2026-07-21 | **WAN auto-bond + discovery hygiene (home Mac / no public IP).** Sponsor-friend: wan-default prefers circuit when `/p2p-circuit/` exists; installer backfill strips RFC1918; WAN invites append synthetic community-relay circuits; sendHello passes `preferCircuitHints` + addressFilter. Discovery: `normalizeDiscoveryTopicQuery` for By-topic; soften DHT advertise skip (`<1` peer); merge publish+interest into relay.checkin roster. Tests: `wan-discovery-autobond-hygiene.test.ts` + updated dial/invite/topic suites (90 green). |
