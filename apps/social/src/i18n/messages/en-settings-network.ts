@@ -280,6 +280,10 @@ export const networkSettingsMessages = {
     wanInviteTitle: "Invite to mesh (WAN)",
     wanInviteDesc:
       "Share bootstrap peers + this node's dial hints for first contact over the internet. Tokens are unsigned — treat like a join URL (up to 1 year for installer builds).",
+    circuitReservationLabel: "Circuit reservation",
+    wanInviteWaitReservation:
+      "Wait until circuit reservation is RESERVED before minting a WAN invite (NAT peers need a live relay slot). Use the advanced checkbox only for packaging/tests.",
+    wanInviteForceAdvanced: "Advanced: mint without live reservation (joiners may get NO_RESERVATION)",
     expiry: {
       label: "Invite expires",
       days7: "7 days (default)",

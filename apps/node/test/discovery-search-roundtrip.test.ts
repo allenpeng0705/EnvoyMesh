@@ -397,18 +397,17 @@ describe("Discovery — WAN mode (relay roster fallback)", () => {
 // ---------------------------------------------------------------------------
 // Tests — Part 2: LAN mode (DHT returns results, no relay fallback)
 //
-// In a real LAN, two nodes are on the same network, DHT routing tables are
-// populated, and `findCapabilityTopicProviders` returns results directly.
-// We simulate this by mocking the mesh to return DHT providers, testing
-// the code path where relay fallback is NOT triggered.
-// ---------------------------------------------------------------------------
+  // In a real LAN, two nodes are on the same network, DHT routing tables are
+  // populated, and `findCapabilityTopicProviders` returns results directly.
+  // Relay roster is still consulted (DHT ∪ roster), but DHT hits win on dedupe.
+  // ---------------------------------------------------------------------------
 
 describe("Discovery — LAN mode (DHT returns results)", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("DHT returns providers — relay fallback NOT called", async () => {
+  it("DHT returns providers — results come from DHT (relay may also be consulted)", async () => {
     const alicePeer = createSyntheticPeer("Alice Chen", ["food", "music"]);
     const bobPeer = createSyntheticPeer("Bob Smith", ["tech", "music"]);
 
@@ -427,9 +426,7 @@ describe("Discovery — LAN mode (DHT returns results)", () => {
       }),
       peerId: bobPeer.peerId,
     };
-    const fallback = vi.fn(async () => {
-      throw new Error("relay fallback should not be called in LAN mode");
-    });
+    const fallback = vi.fn(async () => []);
 
     const runtime = new NodeDiscoveryRuntime({
       getProfile: () => undefined,
@@ -470,7 +467,7 @@ describe("Discovery — LAN mode (DHT returns results)", () => {
     expect(foodResults).toHaveLength(1);
     expect(foodResults[0].nodeId).toBe(alicePeer.peerId);
     expect(foodResults[0].discoverySource).toBe("dht-capability-topic");
-    expect(fallback).not.toHaveBeenCalled();
+    expect(fallback).toHaveBeenCalled();
 
     // Bob searches for "music" — DHT returns Alice
     const musicResults = await runtime.searchPeers({ interests: ["music"], maxResults: 20 });
@@ -553,16 +550,23 @@ describe("Discovery — edge cases", () => {
     vi.clearAllMocks();
   });
 
-  it("DHT primary path — relay fallback NOT called when DHT has results", async () => {
+  it("DHT primary path — also unions relay-roster when wired", async () => {
     const mesh = {
       findCapabilityTopicProviders: vi.fn(async () => [
         { peerId: "12D3KooWDhtPeer1", multiaddrs: ["/ip4/1.2.3.4/tcp/4001"] },
       ]),
       peerId: "12D3KooWSearcher",
     };
-    const fallback = vi.fn(async () => {
-      throw new Error("fallback should not be called when DHT returns results");
-    });
+    const fallback = vi.fn(async () => [
+      {
+        nodeId: "12D3KooWRelayOnly",
+        ownerId: "envoy:owner:relay",
+        displayName: "Relay Only",
+        interests: ["music"],
+        profileVisibility: "public" as const,
+        discoverySource: "relay-roster-topic" as const,
+      },
+    ]);
 
     const runtime = new NodeDiscoveryRuntime({
       getProfile: () => undefined,
@@ -595,10 +599,9 @@ describe("Discovery — edge cases", () => {
     });
 
     const results = await runtime.searchPeers({ topic: "music", maxResults: 10 });
-    expect(results).toHaveLength(1);
-    expect(results[0].nodeId).toBe("12D3KooWDhtPeer1");
+    expect(fallback).toHaveBeenCalled();
+    expect(results.map((r) => r.nodeId)).toEqual(["12D3KooWDhtPeer1", "12D3KooWRelayOnly"]);
     expect(results[0].discoverySource).toBe("dht-capability-topic");
-    expect(fallback).not.toHaveBeenCalled();
   });
 
   it("DHT returns 0 — relay fallback IS called", async () => {
@@ -648,7 +651,7 @@ describe("Discovery — edge cases", () => {
     });
 
     const results = await runtime.searchPeers({ topic: "food", maxResults: 10 });
-    expect(fallback).toHaveBeenCalledTimes(1);
+    expect(fallback).toHaveBeenCalled();
     expect(results).toHaveLength(1);
     expect(results[0].discoverySource).toBe("relay-roster-topic");
   });

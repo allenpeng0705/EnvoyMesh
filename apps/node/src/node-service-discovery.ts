@@ -52,6 +52,81 @@ import {
   queueDiscoveryForwardApproval,
 } from "./discovery-forward.js";
 
+/** When DHT already has hits, do not stall topic search on a slow relay. */
+export const RELAY_TOPIC_UNION_WITH_DHT_MS = 2_500;
+/** When DHT is empty, allow a longer relay round-trip before giving up. */
+export const RELAY_TOPIC_UNION_EMPTY_DHT_MS = 12_000;
+
+/**
+ * Resolve `promise` or return `fallback` after `ms`. Late settlement is ignored.
+ */
+export function withTimeoutFallback<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      resolve(fallback);
+    }, ms);
+    promise.then(
+      (value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
+}
+
+/**
+ * Fair DHT ∪ relay merge. Reserves ~half of maxResults for relay when
+ * maxResults > 1. For maxResults === 1, prefers a DHT hit when present so a
+ * single-result LAN search is not stolen by a relay roster peer.
+ */
+export function mergeDhtAndRelayTopicResults(
+  dhtResults: PeerSearchResult[],
+  relayResults: PeerSearchResult[],
+  maxResults: number,
+): PeerSearchResult[] {
+  const seen = new Set<string>();
+  const merged: PeerSearchResult[] = [];
+  const relayBudget =
+    maxResults <= 1
+      ? dhtResults.length > 0
+        ? 0
+        : Math.min(1, relayResults.length)
+      : Math.max(1, Math.ceil(maxResults / 2));
+  const dhtBudget = Math.max(0, maxResults - Math.min(relayBudget, relayResults.length));
+  for (const hit of dhtResults) {
+    if (merged.length >= dhtBudget) break;
+    if (seen.has(hit.nodeId)) continue;
+    seen.add(hit.nodeId);
+    merged.push(hit);
+  }
+  for (const hit of relayResults) {
+    if (merged.length >= maxResults) break;
+    if (seen.has(hit.nodeId)) continue;
+    seen.add(hit.nodeId);
+    merged.push(hit);
+  }
+  if (merged.length < maxResults) {
+    for (const hit of dhtResults) {
+      if (merged.length >= maxResults) break;
+      if (seen.has(hit.nodeId)) continue;
+      seen.add(hit.nodeId);
+      merged.push(hit);
+    }
+  }
+  return merged.slice(0, maxResults);
+}
+
 export interface NodeDiscoveryRuntimeDeps {
   getProfile(): NodeProfile | undefined;
   requireProfile(): NodeProfile;
@@ -85,6 +160,14 @@ export interface NodeDiscoveryRuntimeDeps {
   queryRelayLookupByTopic?(params: {
     topic: string;
     topicHash: string;
+    maxResults: number;
+  }): Promise<PeerSearchResult[]>;
+  /**
+   * Cross-NAT fallback for `searchByPeerId`: ask bootstrap relays for an
+   * exact peer via `relay.lookup` `targetPeerId`.
+   */
+  queryRelayLookupByPeerId?(params: {
+    peerId: string;
     maxResults: number;
   }): Promise<PeerSearchResult[]>;
   /**
@@ -389,6 +472,7 @@ export class NodeDiscoveryRuntime {
             displayName: peer.id.toString().slice(0, 12) + "...",
             interests: [],
             profileVisibility: "public",
+            discoverySource: "dht-peer-routing",
           }];
         }
         // Direct dial attempt
@@ -402,9 +486,77 @@ export class NodeDiscoveryRuntime {
           profileVisibility: "public",
         }];
       } catch (err) {
-        console.log(`[searchPeers] Peer ${peerId} not found via DHT or direct dial:`, err instanceof Error ? err.message : err);
-        return [];
+        console.log(
+          `[searchPeers] Peer ${peerId} not found via DHT or direct dial:`,
+          err instanceof Error ? err.message : err,
+        );
       }
+
+      // Seed-store / peer-directory circuit hints (from prior relay.lookup / checkin)
+      const seedHit = await this.searchPeerIdFromLocalSeeds(peerId);
+      if (seedHit) return [seedHit].slice(0, maxResults);
+
+      if (this.deps.queryRelayLookupByPeerId) {
+        try {
+          console.log(`[searchPeers] trying relay.lookup targetPeerId=${peerId.slice(0, 16)}…`);
+          const fallback = await this.deps.queryRelayLookupByPeerId({ peerId, maxResults });
+          if (fallback.length > 0) {
+            console.log(`[searchPeers] relay-roster peer lookup returned ${fallback.length} hit(s)`);
+            return fallback.slice(0, maxResults);
+          }
+        } catch (err) {
+          console.log(
+            `[searchPeers] relay-roster peer lookup failed:`,
+            err instanceof Error ? err.message : err,
+          );
+        }
+      }
+
+      return [];
+    }
+
+    /** Match circuit/direct addrs already cached for this peer id. */
+    private async searchPeerIdFromLocalSeeds(peerId: string): Promise<PeerSearchResult | null> {
+      const needle = `/p2p/${peerId}`;
+      try {
+        if (this.deps.discoverySeedStore) {
+          const seeds = await this.deps.discoverySeedStore.listSeedAddrs();
+          const match = seeds.find((addr) => addr.includes(needle) || addr.endsWith(peerId));
+          if (match) {
+            console.log(`[searchPeers] found ${peerId.slice(0, 16)}… via discovery-seed`);
+            return {
+              nodeId: peerId,
+              ownerId: peerId,
+              displayName: peerId.slice(0, 12) + "...",
+              interests: [],
+              profileVisibility: "public",
+              discoverySource: "discovery-seed",
+            };
+          }
+        }
+        const peerRecords = await this.deps.peerDirectoryStore.listPeerRecords();
+        const record = peerRecords.find((p) => p.peerId === peerId);
+        const listen = record?.listenAddrs ?? [];
+        // Require the peer id in the addr — a bare /p2p-circuit/ hint for
+        // another target must not satisfy this lookup.
+        if (listen.some((a) => a.includes(needle))) {
+          console.log(`[searchPeers] found ${peerId.slice(0, 16)}… via peer-directory listenAddrs`);
+          return {
+            nodeId: peerId,
+            ownerId: record?.ownerId ?? peerId,
+            displayName: peerId.slice(0, 12) + "...",
+            interests: [],
+            profileVisibility: "public",
+            discoverySource: "discovery-seed",
+          };
+        }
+      } catch (err) {
+        console.warn(
+          `[searchPeers] local seed/directory peerId lookup failed:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+      return null;
     }
 
     private async searchByTopic(topic: string, maxResults: number): Promise<PeerSearchResult[]> {
@@ -464,41 +616,41 @@ export class NodeDiscoveryRuntime {
       // profiles were synced via profile.sync but not yet bonded).
       await enrichDisplayNames(dhtResults, this.deps.peerProfileCacheStore);
 
-      // Cross-NAT fallback: if local DHT returned no providers (often the case
-      // when the node is behind NAT and the local routing table is empty),
-      // ask the bootstrap relays for the topicHash via relay.lookup. The
-      // relay server's roster is populated by other clients' relay.checkin
-      // advertisements, so it works without a direct DHT connection.
-      if (dhtResults.length === 0) {
-        if (!this.deps.queryRelayLookupByTopic) {
-          console.log(`[searchPeers] DHT returned 0 for "${topic}" but queryRelayLookupByTopic dep is not wired — no relay fallback`);
-        } else {
-          console.log(`[searchPeers] DHT returned 0 for "${topic}" — trying relay-roster fallback`);
-          try {
-            const { cidForCapabilityTopic } = await import("@envoymesh/network");
-            const cid = await cidForCapabilityTopic(topic);
-            console.log(`[searchPeers] relay.lookup for "${topic}" topicHash=${cid.toString().slice(0, 20)}…`);
-            const fallback = await this.deps.queryRelayLookupByTopic({
-              topic,
-              topicHash: cid.toString(),
-              maxResults,
-            });
-            if (fallback.length > 0) {
-              console.log(
-                `[searchPeers] relay-roster fallback returned ${fallback.length} peers for topic "${topic}"`,
-              );
-            }
-            return fallback;
-          } catch (err) {
+      // Union DHT ∪ relay roster (not only when DHT is empty) so NAT-only
+      // peers that checked in at the relay still appear alongside DHT hits.
+      // When DHT already has hits, time-box the relay round-trip so LAN
+      // searches do not stall on a slow/unreachable bootstrap relay.
+      let relayResults: PeerSearchResult[] = [];
+      if (this.deps.queryRelayLookupByTopic) {
+        try {
+          const { cidForCapabilityTopic } = await import("@envoymesh/network");
+          const cid = await cidForCapabilityTopic(topic);
+          const budgetMs = dhtResults.length === 0 ? RELAY_TOPIC_UNION_EMPTY_DHT_MS : RELAY_TOPIC_UNION_WITH_DHT_MS;
+          console.log(
+            `[searchPeers] relay.lookup for "${topic}" topicHash=${cid.toString().slice(0, 20)}… (DHT=${dhtResults.length}, budgetMs=${budgetMs})`,
+          );
+          const lookupPromise = this.deps.queryRelayLookupByTopic({
+            topic,
+            topicHash: cid.toString(),
+            maxResults,
+          });
+          relayResults = await withTimeoutFallback(lookupPromise, budgetMs, []);
+          if (relayResults.length > 0) {
             console.log(
-              `[searchPeers] relay-roster fallback failed for "${topic}":`,
-              err instanceof Error ? err.message : err,
+              `[searchPeers] relay-roster returned ${relayResults.length} peers for topic "${topic}"`,
             );
           }
+        } catch (err) {
+          console.log(
+            `[searchPeers] relay-roster lookup failed for "${topic}":`,
+            err instanceof Error ? err.message : err,
+          );
         }
+      } else if (dhtResults.length === 0) {
+        console.log(`[searchPeers] DHT returned 0 for "${topic}" but queryRelayLookupByTopic dep is not wired — no relay union`);
       }
 
-      return dhtResults;
+      return mergeDhtAndRelayTopicResults(dhtResults, relayResults, maxResults);
     }
 
     async discoverCapabilityTopic(params: DiscoverCapabilityTopicParams): Promise<DiscoverCapabilityTopicResult> {

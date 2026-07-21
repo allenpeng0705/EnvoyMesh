@@ -45,6 +45,7 @@ import {
   type EnvoyEnvelope,
 } from "@envoymesh/protocol";
 import { createRelayRoster } from "./relay-roster.js";
+import { createRelayMetrics } from "./relay-metrics.js";
 import {
   buildRelayVersionReport,
   buildRelayProtocolReport,
@@ -266,13 +267,14 @@ if (Object.keys(circuitRelayServerConfig).length > 0) {
   }
   console.log(`[relay] circuit-relay-v2 server config: ${parts.join(" ")}${args.relayPublicMode ? " (public mode)" : ""}`);
 } else {
-  console.log(`[relay] circuit-relay-v2 server config: libp2p defaults (15 reservations, 2 min TTL, 128 KiB data) — pass --relay-public-mode for community-relay tuning`);
+  console.log(`[relay] circuit-relay-v2 server config: libp2p defaults (15 reservations, 2 min TTL, 128 KiB data) — pass --relay-public-mode or --advertise-addr for community-relay tuning`);
 }
 
 let started = false;
 let httpServer: ReturnType<typeof createServer> | null = null;
 let capabilityRegistry: CapabilityRegistry | undefined;
 const relayRoster = createRelayRoster();
+const relayMetrics = createRelayMetrics();
 let rendezvousSweeper: ReturnType<typeof setInterval> | undefined;
 let statsInterval: ReturnType<typeof setInterval> | undefined;
 let rateLimitCleanupInterval: ReturnType<typeof setInterval> | undefined;
@@ -600,6 +602,7 @@ try {
         };
         const versions = buildRelayVersionReport(new Date(startedAtMs).toISOString());
         const tunnelStats = homeTunnelProxy.stats();
+        const metrics = relayMetrics.snapshot();
         return {
           uptimeMs: Date.now() - startedAtMs,
           health,
@@ -615,6 +618,8 @@ try {
           homeTunnels: tunnelStats.homeTunnels,
           directClients: directClients.size,
           versions,
+          metrics,
+          topicHashes: relayRoster.topicHashSummary(32),
         };
       },
       buildReservations: () => {
@@ -640,6 +645,39 @@ try {
           directClients: directClients.size,
         };
       },
+      buildRoster: () => {
+        const live = new Set(
+          mesh
+            .inspectCircuitRelayReservations()
+            .filter((r) => r.expireAt > Date.now())
+            .map((r) => r.peerId),
+        );
+        const entries = relayRoster.entries().map((e) => ({
+          peerId: e.peerId,
+          ownerId: e.ownerId,
+          displayName: e.displayName,
+          capabilities: e.capabilities,
+          topicHashes: e.advertisements.map((a) => a.topicHash).filter(Boolean),
+          lastSeenAt: new Date(e.lastSeenAt).toISOString(),
+          expiresAt: new Date(e.expiresAt).toISOString(),
+          reservationFreshUntil: new Date(e.reservationFreshUntil).toISOString(),
+          hasHopSlot: live.has(e.peerId),
+        }));
+        return {
+          size: entries.length,
+          topicHashes: relayRoster.topicHashSummary(64),
+          entries,
+          checkedAt: new Date().toISOString(),
+        };
+      },
+      buildMetrics: () => ({
+        ...relayMetrics.snapshot(),
+        rosterSize: relayRoster.size(),
+        reservationCount: mesh.getCircuitRelayReservationCount(),
+        publicMode: args.relayPublicMode,
+        advertiseAddrs: args.advertiseAddrs,
+        checkedAt: new Date().toISOString(),
+      }),
       restartLibp2p: (reason) => restartLibp2pForHealth(reason),
       restartProcess: () => {
         void shutdown();
@@ -681,8 +719,23 @@ try {
           // Operators rely on this to verify a redeploy actually picked up
           // the latest build — a stale package-lock.json can pin old versions
           // even after `git pull && ./scripts/run-relay.sh`.
+          const report = buildRelayVersionReport(new Date(startedAtMs).toISOString());
           res.writeHead(200, { "Content-Type": "application/json" });
-          res.end(JSON.stringify(buildRelayVersionReport(new Date(startedAtMs).toISOString())));
+          res.end(
+            JSON.stringify({
+              ...report,
+              publicMode: args.relayPublicMode,
+              advertiseAddrs: args.advertiseAddrs,
+              live: {
+                rosterSize: relayRoster.size(),
+                reservationCount: mesh.getCircuitRelayReservationCount(),
+                maxReservations: circuitRelayServerConfig.maxReservations ?? 15,
+                metrics: relayMetrics.snapshot(),
+                topicHashes: relayRoster.topicHashSummary(16),
+                checkedAt: new Date().toISOString(),
+              },
+            }),
+          );
         } else if (pathname === "/protocols") {
           // The protocol strings the relay accepts on inbound streams + uses
           // when dialing outbound. Compare against what connecting peers
@@ -1262,10 +1315,16 @@ try {
     if (intent === "relay.checkin") {
       try {
         const payload = parseRelayCheckinPayload(message.envelope.payload);
+        const peerId = payload.peerId || message.envelope.senderPeerId;
+        const liveResv = mesh
+          .inspectCircuitRelayReservations()
+          .find((r) => r.peerId === peerId && r.expireAt > Date.now());
         const { entry, addrChanged, reconnect } = relayRoster.checkin(
           payload,
           message.envelope.senderPeerId,
+          liveResv ? { reservationExpireAtMs: liveResv.expireAt } : undefined,
         );
+        relayMetrics.recordCheckin();
         const topicCount = entry.advertisements.filter((a) => a.topicHash).length;
         const note =
           addrChanged && reconnect
@@ -1276,7 +1335,7 @@ try {
                 ? "reconnect"
                 : "ok";
         console.log(
-          `[relay] checkin peer=${payload.peerId} topics=${topicCount} cap=${entry.capabilities.length} roster=${relayRoster.size()} ${note}`,
+          `[relay] checkin peer=${payload.peerId} topics=${topicCount} cap=${entry.capabilities.length} roster=${relayRoster.size()} hop=${liveResv ? "live" : "none"} ${note}`,
         );
       } catch (error) {
         console.error("[relay] Failed to handle relay.checkin:", error);
@@ -1288,14 +1347,27 @@ try {
     if (intent === "relay.lookup") {
       try {
         const payload = parseRelayLookupPayload(message.envelope.payload);
+        const livePeerIds = new Set(
+          mesh
+            .inspectCircuitRelayReservations()
+            .filter((r) => r.expireAt > Date.now())
+            .map((r) => r.peerId),
+        );
         const response = relayRoster.lookup({
           payload,
           requesterPeerId: message.envelope.senderPeerId,
           relayMultiaddrs: mesh.multiaddrs,
           relayPeerId: mesh.peerId,
+          hasLiveReservation: (id) => livePeerIds.has(id),
+        });
+        relayMetrics.recordLookup({
+          topicHash: payload.topicHash,
+          targetPeerId: payload.targetPeerId,
+          capability: payload.capability,
+          peersReturned: response.peers.length,
         });
         console.log(
-          `[relay] lookup query=${payload.queryId} peers=${response.peers.length} roster=${relayRoster.size()}`,
+          `[relay] lookup query=${payload.queryId} peers=${response.peers.length} roster=${relayRoster.size()} hopLive=${[...livePeerIds].length}`,
         );
         if (message.replyWithEnvelope) {
           await message.replyWithEnvelope({

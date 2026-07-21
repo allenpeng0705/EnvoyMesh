@@ -96,7 +96,11 @@ describe("warmAndWatchRelayReservations", () => {
     expect(mesh.requestRelayReservation).toHaveBeenCalled();
     expect(mesh.startRelayReservationHealthLoop).toHaveBeenCalledWith(
       [addr],
-      expect.objectContaining({ intervalMs: expect.any(Number) }),
+      expect.objectContaining({
+        intervalMs: expect.any(Number),
+        pendingIntervalMs: expect.any(Number),
+        lostIntervalMs: 15_000,
+      }),
     );
   });
 });

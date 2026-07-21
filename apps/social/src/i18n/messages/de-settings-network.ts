@@ -267,6 +267,9 @@ export const deNetworkSettingsMessages = {
     wanInviteTitle: "Zum Mesh einladen (WAN)",
     wanInviteDesc:
       "Bootstrap-Peers + Dial-Hinweise dieses Knotens für Erstkontakt übers Internet teilen. Tokens sind unsigniert — wie Join-URL behandeln (kurzlebig, vertrauenswürdiger Kanal).",
+    circuitReservationLabel: "Circuit reservation",
+    wanInviteWaitReservation: "Wait until circuit reservation is RESERVED before minting a WAN invite (NAT peers need a live relay slot). Use the advanced checkbox only for packaging/tests.",
+    wanInviteForceAdvanced: "Advanced: mint without live reservation (joiners may get NO_RESERVATION)",
     showWanInviteQr: "WAN-Einladungs-QR anzeigen",
     wanInviteQrAlt: "WAN-Join-Einladungs-QR",
     copyLink: "Link kopieren",

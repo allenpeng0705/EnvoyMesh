@@ -9,6 +9,9 @@ const el = {
   peersBody: document.getElementById("peersBody"),
   resGrid: document.getElementById("resGrid"),
   resBody: document.getElementById("resBody"),
+  rosterGrid: document.getElementById("rosterGrid"),
+  rosterBody: document.getElementById("rosterBody"),
+  topicBody: document.getElementById("topicBody"),
   logView: document.getElementById("logView"),
   logLevel: document.getElementById("logLevel"),
   restartMsg: document.getElementById("restartMsg"),
@@ -81,6 +84,8 @@ async function refreshStatus() {
     ["Public mode", s.publicMode ? "yes" : "no"],
     ["Reservations", `${s.reservationCount ?? "—"} / ${s.maxReservations ?? "—"}`],
     ["Roster", s.rosterSize],
+    ["Lookups", s.metrics ? `${s.metrics.lookupHits}/${s.metrics.lookups} hit` : "—"],
+    ["Checkins", s.metrics ? s.metrics.checkins : "—"],
     ["Listen", (s.listenAddrs || []).join("\n") || "—"],
     ["Advertise", (s.advertiseAddrs || []).join("\n") || "—"],
     ["Network", s.versions && s.versions.network],
@@ -151,9 +156,52 @@ async function refreshLogs() {
   el.logView.scrollTop = el.logView.scrollHeight;
 }
 
+async function refreshRoster() {
+  if (!el.rosterGrid || !el.rosterBody || !el.topicBody) return;
+  const r = await api("/admin/api/roster");
+  fillDl(el.rosterGrid, [
+    ["Size", r.size],
+    ["Checked at", r.checkedAt],
+  ]);
+  el.rosterBody.innerHTML = "";
+  for (const item of r.entries || []) {
+    const tr = document.createElement("tr");
+    const tdId = document.createElement("td");
+    tdId.textContent = shortPeer(item.peerId);
+    tdId.title = item.peerId || "";
+    const tdHop = document.createElement("td");
+    tdHop.textContent = item.hasHopSlot ? "live" : "checkin";
+    const tdTopics = document.createElement("td");
+    const hashes = item.topicHashes || [];
+    tdTopics.textContent = hashes.length
+      ? hashes.map((h) => (h.length > 18 ? `${h.slice(0, 10)}…` : h)).join(", ")
+      : "—";
+    tdTopics.title = hashes.join("\n");
+    tr.append(tdId, tdHop, tdTopics);
+    el.rosterBody.append(tr);
+  }
+  el.topicBody.innerHTML = "";
+  for (const t of r.topicHashes || []) {
+    const tr = document.createElement("tr");
+    const tdH = document.createElement("td");
+    tdH.textContent = t.topicHash.length > 28 ? `${t.topicHash.slice(0, 16)}…` : t.topicHash;
+    tdH.title = t.topicHash;
+    const tdC = document.createElement("td");
+    tdC.textContent = String(t.peerCount);
+    tr.append(tdH, tdC);
+    el.topicBody.append(tr);
+  }
+}
+
 async function refreshAll() {
   try {
-    await Promise.all([refreshStatus(), refreshPeers(), refreshReservations(), refreshLogs()]);
+    await Promise.all([
+      refreshStatus(),
+      refreshPeers(),
+      refreshReservations(),
+      refreshRoster(),
+      refreshLogs(),
+    ]);
   } catch (err) {
     el.restartMsg.hidden = false;
     el.restartMsg.textContent = String(err.message || err);

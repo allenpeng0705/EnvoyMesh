@@ -267,6 +267,9 @@ export const koNetworkSettingsMessages = {
     wanInviteTitle: "mesh 초대 (WAN)",
     wanInviteDesc:
       "인터넷 첫 연락을 위해 bootstrap 피어 + 이 노드의 다이얼 힌트를 공유합니다. 토큰은 서명되지 않음 — 가입 URL처럼 취급 (단기, 신뢰 채널).",
+    circuitReservationLabel: "Circuit reservation",
+    wanInviteWaitReservation: "Wait until circuit reservation is RESERVED before minting a WAN invite (NAT peers need a live relay slot). Use the advanced checkbox only for packaging/tests.",
+    wanInviteForceAdvanced: "Advanced: mint without live reservation (joiners may get NO_RESERVATION)",
     showWanInviteQr: "WAN 초대 QR 표시",
     wanInviteQrAlt: "WAN 가입 초대 QR",
     copyLink: "링크 복사",

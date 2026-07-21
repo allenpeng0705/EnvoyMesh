@@ -87,6 +87,38 @@ describe("parseRelayArgs", () => {
     expect(args.relayPublicMode).toBe(true);
   });
 
+  it("auto-enables public mode when --advertise-addr is set", () => {
+    const args = parseRelayArgs([
+      "--advertise-addr",
+      "/ip4/47.93.11.212/tcp/4001",
+    ]);
+    expect(args.relayPublicMode).toBe(true);
+    expect(args.advertiseAddrs).toEqual(["/ip4/47.93.11.212/tcp/4001"]);
+  });
+
+  it("auto-enables public mode when ENVOYMESH_ADVERTISE_ADDRS is set", () => {
+    process.env.ENVOYMESH_ADVERTISE_ADDRS = "/ip4/1.2.3.4/tcp/4001";
+    const args = parseRelayArgs([]);
+    expect(args.advertiseAddrs).toEqual(["/ip4/1.2.3.4/tcp/4001"]);
+    expect(args.relayPublicMode).toBe(true);
+  });
+
+  it("keeps private mode when --relay-private-mode is set with advertise-addr", () => {
+    const args = parseRelayArgs([
+      "--advertise-addr",
+      "/ip4/1.2.3.4/tcp/4001",
+      "--relay-private-mode",
+    ]);
+    expect(args.relayPublicMode).toBe(false);
+  });
+
+  it("respects ENVOYMESH_RELAY_PUBLIC_MODE=0 over advertise auto-enable", () => {
+    process.env.ENVOYMESH_ADVERTISE_ADDRS = "/ip4/1.2.3.4/tcp/4001";
+    process.env.ENVOYMESH_RELAY_PUBLIC_MODE = "0";
+    const args = parseRelayArgs([]);
+    expect(args.relayPublicMode).toBe(false);
+  });
+
   it("parses individual --relay-* overrides", () => {
     const args = parseRelayArgs([
       "--relay-max-reservations", "512",

@@ -517,6 +517,10 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.getConnectivityDiagnostics();
   }
 
+  async getCircuitReservationStatus() {
+    return this._ns.getCircuitReservationStatus();
+  }
+
   async discoverCapabilityTopic(params: Parameters<NodeService["discoverCapabilityTopic"]>[0]) {
     return this._ns.discoverCapabilityTopic(params);
   }

@@ -289,6 +289,11 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
               host._advertiseInterestsStartupTimeout = undefined;
               return t;
             },
+            getAndClearEarlyRelayCheckinTimer: () => {
+              const t = host._earlyRelayCheckinTimer;
+              host._earlyRelayCheckinTimer = undefined;
+              return t;
+            },
             getDeviceId: () => host._profile?.device?.deviceId,
           },
       manifest: {

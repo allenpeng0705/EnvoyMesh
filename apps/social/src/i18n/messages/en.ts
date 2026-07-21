@@ -462,6 +462,10 @@ export const en = {
       },
       createLink: "Create link to share",
       generating: "Generating…",
+      circuitReservationLabel: "Circuit reservation",
+      waitReservation:
+        "Wait until circuit reservation is RESERVED so friends can reach you over the relay. Use the advanced checkbox only for packaging/tests.",
+      forceWithoutReservation: "Advanced: create link without live reservation",
       copyLink: "Copy link",
       hideQr: "Hide QR",
       showQrAgain: "Show QR & link again",

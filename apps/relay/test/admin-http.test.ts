@@ -191,6 +191,40 @@ describe("admin-http", () => {
     deps.logBuffer.dispose();
   });
 
+  it("serves /admin/api/roster and /admin/api/metrics when wired", async () => {
+    const deps = makeDeps({
+      buildRoster: () => ({
+        size: 1,
+        entries: [{ peerId: "12D3KooWPeer", hasHopSlot: true, topicHashes: ["bafytest"] }],
+        topicHashes: [{ topicHash: "bafytest", peerCount: 1 }],
+        checkedAt: "2026-07-20T10:00:00.000Z",
+      }),
+      buildMetrics: () => ({ checkins: 3, lookups: 5, lookupHits: 2 }),
+    });
+    await withServer(deps, async (base) => {
+      const auth = {
+        Authorization: `Basic ${Buffer.from("ops:s3cret").toString("base64")}`,
+      };
+      const rosterRes = await fetch(`${base}/admin/api/roster`, { headers: auth });
+      expect(rosterRes.status).toBe(200);
+      const roster = (await rosterRes.json()) as {
+        size: number;
+        entries: Array<{ hasHopSlot: boolean }>;
+        topicHashes: Array<{ topicHash: string }>;
+      };
+      expect(roster.size).toBe(1);
+      expect(roster.entries[0]?.hasHopSlot).toBe(true);
+      expect(roster.topicHashes[0]?.topicHash).toBe("bafytest");
+
+      const metricsRes = await fetch(`${base}/admin/api/metrics`, { headers: auth });
+      expect(metricsRes.status).toBe(200);
+      const metrics = (await metricsRes.json()) as { checkins: number; lookupHits: number };
+      expect(metrics.checkins).toBe(3);
+      expect(metrics.lookupHits).toBe(2);
+    });
+    deps.logBuffer.dispose();
+  });
+
   it("returns 404 for /admin when credentials are not configured", async () => {
     const deps = makeDeps({ creds: null });
     await withServer(deps, async (base) => {

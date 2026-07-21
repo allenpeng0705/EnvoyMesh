@@ -65,11 +65,29 @@ export interface RelayRosterOptions {
   maxRelayHints?: number;
 }
 
+export interface RelayRosterCheckinOptions {
+  /**
+   * Live circuit-relay-v2 reservation expiry (ms epoch) for this peer, if any.
+   * Extends `reservationFreshUntil` so roster visibility tracks the hop slot,
+   * not only the short checkin TTL.
+   */
+  reservationExpireAtMs?: number;
+}
+
+export interface RelayRosterLookupInput {
+  payload: RelayLookupPayload;
+  requesterPeerId: string;
+  relayMultiaddrs: string[];
+  relayPeerId: string;
+  /** True when this relay currently holds a live RESERVE for peerId. */
+  hasLiveReservation?: (peerId: string) => boolean;
+}
+
 // ---------------------------------------------------------------------------
 // Factory
 // ---------------------------------------------------------------------------
 
-const DEFAULT_ROSTER_TTL_MS = 600_000; // 10 minutes — must outlast checkin intervals (~30-60s) with margin
+const DEFAULT_ROSTER_TTL_MS = 35 * 60_000; // outlast public circuit reservation TTL (30 min) with margin
 const DEFAULT_MAX_ROSTER_ENTRIES = 10_000;
 const DEFAULT_MAX_RELAY_HINTS = 50;
 
@@ -83,7 +101,7 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
   function pruneExpired(): void {
     const current = now();
     for (const [peerId, entry] of entries) {
-      if (entry.expiresAt <= current || entry.reservationFreshUntil <= current) {
+      if (entry.expiresAt <= current) {
         entries.delete(peerId);
       }
     }
@@ -105,6 +123,7 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
     checkin(
       payload: RelayCheckinPayload,
       fallbackPeerId?: string,
+      checkinOpts?: RelayRosterCheckinOptions,
     ): { entry: RelayRosterEntry; addrChanged: boolean; reconnect: boolean } {
       pruneExpired();
       const peerId = payload.peerId || fallbackPeerId;
@@ -113,6 +132,12 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
       }
       const current = now();
       const expiresAt = Math.min(Date.parse(payload.expiresAt), current + rosterTtlMs);
+      const reservationFreshUntil = resolveReservationFreshUntil(
+        expiresAt,
+        checkinOpts?.reservationExpireAtMs,
+        current,
+        rosterTtlMs,
+      );
       const newAddrs = dedupe(payload.relayReachableAddrs);
       const existing = entries.get(peerId);
       const reconnect = existing !== undefined && existing.lastSeenAt < current - 60_000;
@@ -132,28 +157,27 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
         relayHints: payload.relayHints.slice(0, maxRelayHints),
         lastSeenAt: current,
         expiresAt,
-        reservationFreshUntil: expiresAt,
+        reservationFreshUntil,
       };
       entries.set(peerId, entry);
       pruneExpired();
       return { entry, addrChanged, reconnect };
     },
 
-    lookup(input: {
-      payload: RelayLookupPayload;
-      requesterPeerId: string;
-      relayMultiaddrs: string[];
-      relayPeerId: string;
-    }): RelayLookupResponsePayload {
+    lookup(input: RelayRosterLookupInput): RelayLookupResponsePayload {
       pruneExpired();
-      const { payload, requesterPeerId, relayMultiaddrs, relayPeerId } = input;
+      const { payload, requesterPeerId, relayMultiaddrs, relayPeerId, hasLiveReservation } = input;
       const current = now();
       const candidates: RelayPeerCandidate[] = [];
       for (const entry of entries.values()) {
         if (entry.peerId === requesterPeerId) {
           continue;
         }
-        if (entry.expiresAt <= current || entry.reservationFreshUntil <= current) {
+        // Presence (expiresAt) is checkin-driven. Hop freshness uses
+        // reservationFreshUntil when set longer than checkin, but we no longer
+        // drop checkin-fresh peers solely because reservationFreshUntil lapsed —
+        // instead we mark hasHopSlot false so clients can prefer live hops.
+        if (entry.expiresAt <= current) {
           continue;
         }
         if (!matchesLookup(entry, payload)) {
@@ -163,17 +187,28 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
         if (!isVisible(visibility, payload.visibilityScope)) {
           continue;
         }
+        const liveHop =
+          typeof hasLiveReservation === "function"
+            ? hasLiveReservation(entry.peerId)
+            : entry.reservationFreshUntil > current;
+        // Only advertise /p2p-circuit/ paths when this relay can hop the peer —
+        // otherwise clients cache dead circuit dials in discovery-seeds.
         candidates.push({
           peerId: entry.peerId,
           ownerId: visibility === "public" || visibility === "capability" ? undefined : entry.ownerId,
           displayName: entry.displayName,
-          multiaddrs: buildRelayCircuitMultiaddrs(relayMultiaddrs, entry.peerId),
+          multiaddrs: liveHop
+            ? buildRelayCircuitMultiaddrs(relayMultiaddrs, entry.peerId)
+            : [],
           viaRelayId: relayPeerId,
           capabilities: entry.capabilities,
           visibility,
           expiresAt: new Date(entry.expiresAt).toISOString(),
+          hasHopSlot: liveHop,
         });
       }
+      // Prefer peers with a live circuit reservation (dialable hops) first.
+      candidates.sort((a, b) => Number(Boolean(b.hasHopSlot)) - Number(Boolean(a.hasHopSlot)));
       const capped = candidates.slice(0, payload.maxResults);
       return {
         queryId: payload.queryId,
@@ -195,12 +230,65 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
       pruneExpired();
       return entries.size;
     },
+
+    topicHashSummary(limit = 64): Array<{ topicHash: string; peerCount: number }> {
+      pruneExpired();
+      const counts = new Map<string, number>();
+      for (const entry of entries.values()) {
+        for (const ad of entry.advertisements) {
+          if (!ad.topicHash) continue;
+          counts.set(ad.topicHash, (counts.get(ad.topicHash) ?? 0) + 1);
+        }
+      }
+      return [...counts.entries()]
+        .map(([topicHash, peerCount]) => ({ topicHash, peerCount }))
+        .sort((a, b) => b.peerCount - a.peerCount)
+        .slice(0, limit);
+    },
   };
 }
 
 // ---------------------------------------------------------------------------
-// Internal helpers
+// Internal helpers (exported for unit tests)
 // ---------------------------------------------------------------------------
+
+/**
+ * Exact peer/owner lookup is public when the peer advertised publicly or has
+ * mesh.discovery. Intentional tradeoff: knowing a peerId lets you confirm they
+ * are checked in on this relay (presence), not read private ads/ownerId.
+ */
+export function visibilityFor(entry: RelayRosterEntry, payload: RelayLookupPayload): RelayVisibility {
+  if (payload.targetPeerId || payload.targetOwnerId) {
+    const publicAd = entry.advertisements.find((ad) => ad.visibility === "public");
+    if (publicAd) return "public";
+    if (entry.capabilities.includes("mesh.discovery")) return "public";
+  }
+  const scoped = entry.advertisements.find(
+    (ad) =>
+      (payload.capability && ad.capability === payload.capability) ||
+      (payload.topicHash && ad.topicHash === payload.topicHash),
+  );
+  if (scoped) {
+    return scoped.visibility;
+  }
+  if (payload.capability && entry.capabilities.includes(payload.capability)) {
+    return payload.visibilityScope === "bonded" ? "bonded" : "public";
+  }
+  return "bonded";
+}
+
+export function isVisible(candidate: RelayVisibility, requested: RelayVisibility): boolean {
+  if (candidate === "private") {
+    return false;
+  }
+  if (candidate === "bonded") {
+    return requested === "bonded";
+  }
+  if (candidate === "capability") {
+    return requested === "capability" || requested === "bonded";
+  }
+  return true;
+}
 
 function matchesLookup(entry: RelayRosterEntry, payload: RelayLookupPayload): boolean {
   if (payload.targetPeerId && entry.peerId !== payload.targetPeerId) {
@@ -218,32 +306,20 @@ function matchesLookup(entry: RelayRosterEntry, payload: RelayLookupPayload): bo
   return true;
 }
 
-function visibilityFor(entry: RelayRosterEntry, payload: RelayLookupPayload): RelayVisibility {
-  const scoped = entry.advertisements.find(
-    (ad) =>
-      (payload.capability && ad.capability === payload.capability) ||
-      (payload.topicHash && ad.topicHash === payload.topicHash),
-  );
-  if (scoped) {
-    return scoped.visibility;
+function resolveReservationFreshUntil(
+  checkinExpiresAt: number,
+  reservationExpireAtMs: number | undefined,
+  current: number,
+  rosterTtlMs: number,
+): number {
+  if (typeof reservationExpireAtMs !== "number" || !Number.isFinite(reservationExpireAtMs)) {
+    return checkinExpiresAt;
   }
-  if (payload.capability && entry.capabilities.includes(payload.capability)) {
-    return payload.visibilityScope === "bonded" ? "bonded" : "public";
+  if (reservationExpireAtMs <= current) {
+    return checkinExpiresAt;
   }
-  return "bonded";
-}
-
-function isVisible(candidate: RelayVisibility, requested: RelayVisibility): boolean {
-  if (candidate === "private") {
-    return false;
-  }
-  if (candidate === "bonded") {
-    return requested === "bonded";
-  }
-  if (candidate === "capability") {
-    return requested === "capability" || requested === "bonded";
-  }
-  return true;
+  // Cap extension to roster TTL window so a 30min hop doesn't leave a ghost forever.
+  return Math.min(reservationExpireAtMs, current + rosterTtlMs, Math.max(checkinExpiresAt, reservationExpireAtMs));
 }
 
 function dedupe(input: string[]): string[] {

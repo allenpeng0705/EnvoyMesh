@@ -60,7 +60,7 @@ export interface RelayRosterOptions {
   persistedSummaries?: RelaySummaryEntry[];
 }
 
-const DEFAULT_ROSTER_TTL_MS = 120_000;
+const DEFAULT_ROSTER_TTL_MS = 35 * 60_000; // outlast public circuit reservation TTL (~30 min)
 const DEFAULT_MAX_ROSTER_ENTRIES = 10_000;
 const DEFAULT_MAX_RELAY_HINTS = 50;
 
@@ -80,7 +80,7 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
   function pruneExpired(): void {
     const current = now();
     for (const [peerId, entry] of entries) {
-      if (entry.expiresAt <= current || entry.reservationFreshUntil <= current) {
+      if (entry.expiresAt <= current) {
         entries.delete(peerId);
       }
     }
@@ -111,7 +111,11 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
   }
 
   return {
-    checkin(payload: RelayCheckinPayload, fallbackPeerId?: string): { entry: RelayRosterEntry; addrChanged: boolean; reconnect: boolean } {
+    checkin(
+      payload: RelayCheckinPayload,
+      fallbackPeerId?: string,
+      checkinOpts?: { reservationExpireAtMs?: number },
+    ): { entry: RelayRosterEntry; addrChanged: boolean; reconnect: boolean } {
       pruneExpired();
       const peerId = payload.peerId || fallbackPeerId;
       if (!peerId) {
@@ -119,6 +123,12 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
       }
       const current = now();
       const expiresAt = Math.min(Date.parse(payload.expiresAt), current + rosterTtlMs);
+      const reservationFreshUntil = resolveReservationFreshUntil(
+        expiresAt,
+        checkinOpts?.reservationExpireAtMs,
+        current,
+        rosterTtlMs,
+      );
       const newAddrs = dedupe(payload.relayReachableAddrs);
       const existing = entries.get(peerId);
       const reconnect = existing !== undefined && existing.lastSeenAt < current - 60_000;
@@ -138,7 +148,7 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
         relayHints: payload.relayHints.slice(0, maxRelayHints),
         lastSeenAt: current,
         expiresAt,
-        reservationFreshUntil: expiresAt,
+        reservationFreshUntil,
       };
       entries.set(peerId, entry);
       pruneExpired();
@@ -150,16 +160,17 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
       requesterPeerId: string;
       relayMultiaddrs: string[];
       relayPeerId: string;
+      hasLiveReservation?: (peerId: string) => boolean;
     }): RelayLookupResponsePayload {
       pruneExpired();
-      const { payload, requesterPeerId, relayMultiaddrs, relayPeerId } = input;
+      const { payload, requesterPeerId, relayMultiaddrs, relayPeerId, hasLiveReservation } = input;
       const current = now();
       const candidates: RelayPeerCandidate[] = [];
       for (const entry of entries.values()) {
         if (entry.peerId === requesterPeerId) {
           continue;
         }
-        if (entry.expiresAt <= current || entry.reservationFreshUntil <= current) {
+        if (entry.expiresAt <= current) {
           continue;
         }
         if (!matchesLookup(entry, payload)) {
@@ -169,17 +180,25 @@ export function createRelayRoster(options: RelayRosterOptions = {}) {
         if (!isVisible(visibility, payload.visibilityScope)) {
           continue;
         }
+        const liveHop =
+          typeof hasLiveReservation === "function"
+            ? hasLiveReservation(entry.peerId)
+            : entry.reservationFreshUntil > current;
         candidates.push({
           peerId: entry.peerId,
           ownerId: visibility === "public" || visibility === "capability" ? undefined : entry.ownerId,
           displayName: entry.displayName,
-          multiaddrs: buildRelayCircuitMultiaddrs(relayMultiaddrs, entry.peerId),
+          multiaddrs: liveHop
+            ? buildRelayCircuitMultiaddrs(relayMultiaddrs, entry.peerId)
+            : [],
           viaRelayId: relayPeerId,
           capabilities: entry.capabilities,
           visibility,
           expiresAt: new Date(entry.expiresAt).toISOString(),
+          hasHopSlot: liveHop,
         });
       }
+      candidates.sort((a, b) => Number(Boolean(b.hasHopSlot)) - Number(Boolean(a.hasHopSlot)));
       const capped = candidates.slice(0, payload.maxResults);
       return {
         queryId: payload.queryId,
@@ -321,7 +340,17 @@ function matchesLookup(entry: RelayRosterEntry, payload: RelayLookupPayload): bo
   return true;
 }
 
+/**
+ * Exact peer/owner lookup is public when the peer advertised publicly or has
+ * mesh.discovery. Intentional tradeoff: knowing a peerId lets you confirm they
+ * are checked in on this relay (presence), not read private ads/ownerId.
+ */
 function visibilityFor(entry: RelayRosterEntry, payload: RelayLookupPayload): RelayVisibility {
+  if (payload.targetPeerId || payload.targetOwnerId) {
+    const publicAd = entry.advertisements.find((ad) => ad.visibility === "public");
+    if (publicAd) return "public";
+    if (entry.capabilities.includes("mesh.discovery")) return "public";
+  }
   const scoped = entry.advertisements.find(
     (ad) =>
       (payload.capability && ad.capability === payload.capability) ||
@@ -335,6 +364,21 @@ function visibilityFor(entry: RelayRosterEntry, payload: RelayLookupPayload): Re
     return payload.visibilityScope === "bonded" ? "bonded" : "public";
   }
   return "bonded";
+}
+
+function resolveReservationFreshUntil(
+  checkinExpiresAt: number,
+  reservationExpireAtMs: number | undefined,
+  current: number,
+  rosterTtlMs: number,
+): number {
+  if (typeof reservationExpireAtMs !== "number" || !Number.isFinite(reservationExpireAtMs)) {
+    return checkinExpiresAt;
+  }
+  if (reservationExpireAtMs <= current) {
+    return checkinExpiresAt;
+  }
+  return Math.min(reservationExpireAtMs, current + rosterTtlMs, Math.max(checkinExpiresAt, reservationExpireAtMs));
 }
 
 function isVisible(candidate: RelayVisibility, requested: RelayVisibility): boolean {

@@ -432,6 +432,8 @@ export async function routeRpcMethod(
       return ns.getChatDiagnostics(params.peerOwnerId as string | undefined);
     case "getConnectivityDiagnostics":
       return ns.getConnectivityDiagnostics();
+    case "getCircuitReservationStatus":
+      return ns.getCircuitReservationStatus();
     case "getBootstrapPeers":
       return ns.getBootstrapPeers();
     case "runCapabilityDiscovery":

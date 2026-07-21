@@ -245,6 +245,7 @@ export interface StopNodeContextDeps {
   clearExternalMesh: StopNodeContext["clearExternalMesh"];
   getAndClearAdvertiseInterestsTimer: StopNodeContext["getAndClearAdvertiseInterestsTimer"];
   getAndClearAdvertiseInterestsStartupTimeout: StopNodeContext["getAndClearAdvertiseInterestsStartupTimeout"];
+  getAndClearEarlyRelayCheckinTimer: StopNodeContext["getAndClearEarlyRelayCheckinTimer"];
   getDeviceId: StopNodeContext["getDeviceId"];
 }
 
@@ -793,6 +794,7 @@ export function buildStopNodeContext(deps: StopNodeContextDeps): StopNodeContext
     },
     getAndClearAdvertiseInterestsTimer: () => deps.getAndClearAdvertiseInterestsTimer(),
     getAndClearAdvertiseInterestsStartupTimeout: () => deps.getAndClearAdvertiseInterestsStartupTimeout(),
+    getAndClearEarlyRelayCheckinTimer: () => deps.getAndClearEarlyRelayCheckinTimer(),
     getDeviceId: () => deps.getDeviceId(),
   };
 }

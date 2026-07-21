@@ -1299,6 +1299,11 @@ export const RelayPeerCandidateSchema = z.object({
   capabilities: z.array(z.string().min(1)).default([]),
   visibility: RelayVisibilitySchema.default("public"),
   expiresAt: z.string().datetime().optional(),
+  /**
+   * True when this relay currently holds a live circuit-relay-v2 reservation
+   * for the candidate (hoppable). Absent/false means checkin-only / unknown.
+   */
+  hasHopSlot: z.boolean().optional(),
 });
 
 export const RelayCheckinPayloadSchema = z.object({

@@ -142,11 +142,11 @@ describe("NodeServiceImpl WAN join invite", () => {
 
   it("createWanJoinInvite appends synthetic circuit when LAN-only multiaddrs", async () => {
     // Home Mac behind NAT with no live /p2p-circuit/ in mesh.multiaddrs yet.
-    // Reservation already live (or unknown) — force is only needed when
-    // hasRelayReservation() explicitly returns false.
+    // Reservation already live — force is only needed when live reservation is false.
     const lanOnlyMesh = {
       peerId: "12D3KooWHomeInvite",
       multiaddrs: ["/ip4/192.168.3.85/tcp/64589/p2p/12D3KooWHomeInvite"],
+      hasLiveRelayReservation: () => true,
       hasRelayReservation: () => true,
     } as unknown as EnvoyMesh;
     const lanTrustStore = createLocalTrustStore(profileDir);
@@ -184,7 +184,8 @@ describe("NodeServiceImpl WAN join invite", () => {
     const pendingMesh = {
       peerId: "12D3KooWHomeInvite",
       multiaddrs: ["/ip4/192.168.3.85/tcp/64589/p2p/12D3KooWHomeInvite"],
-      hasRelayReservation: () => false,
+      hasLiveRelayReservation: () => false,
+      hasRelayReservation: () => true, // sticky/ever — must not bypass live gate
     } as unknown as EnvoyMesh;
     const pendingSvc = new NodeServiceImpl(
       pendingMesh,
@@ -202,6 +203,7 @@ describe("NodeServiceImpl WAN join invite", () => {
     const pendingMesh = {
       peerId: "12D3KooWHomeInvite",
       multiaddrs: ["/ip4/192.168.3.85/tcp/64589/p2p/12D3KooWHomeInvite"],
+      hasLiveRelayReservation: () => false,
       hasRelayReservation: () => false,
     } as unknown as EnvoyMesh;
     const pendingSvc = new NodeServiceImpl(
@@ -218,6 +220,31 @@ describe("NodeServiceImpl WAN join invite", () => {
     });
     const decoded = decodeWanJoinInviteV1(parseEnvoyJoinUri(created.uri));
     expect(decoded.targetMultiaddrs?.some((a) => a.includes("/p2p-circuit/"))).toBe(true);
+  });
+
+  it("getCircuitReservationStatus is a thin live/pending chip (no audit)", async () => {
+    const mesh = {
+      peerId: "12D3KooWHomeInvite",
+      multiaddrs: [],
+      getRelayReservationStatus: () => ({
+        state: "pending" as const,
+        live: false,
+        everReserved: false,
+        relayPeerIds: [],
+        checkedAt: "2026-01-01T00:00:00.000Z",
+      }),
+    } as unknown as EnvoyMesh;
+    const thinSvc = new NodeServiceImpl(
+      mesh,
+      createLocalTrustStore(profileDir),
+      createLocalPeerDirectoryStore(profileDir),
+      createHumanProfileStore(profileDir),
+      profileDir,
+    );
+    const status = await thinSvc.getCircuitReservationStatus();
+    expect(status.state).toBe("pending");
+    expect(status.live).toBe(false);
+    expect(status.checkedAt).toBe("2026-01-01T00:00:00.000Z");
   });
 
   it("createWanJoinInvite strips RFC1918 from bootstrapPeers on wan-public", async () => {

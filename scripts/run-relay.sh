@@ -24,7 +24,9 @@ PROFILE_DIR="${ENVOYMESH_PROFILE:-./data/relay}"
 LISTEN_PORT="${RELAY_PORT:-4001}"
 ADVERTISE_ADDR=""
 HTTP_PORT=""
-PUBLIC_MODE="${ENVOYMESH_RELAY_PUBLIC_MODE:-0}"
+# Empty = auto: --advertise-addr alone enables public mode in the binary.
+# Set via --public-mode / --private-mode or ENVOYMESH_RELAY_PUBLIC_MODE=0|1.
+PUBLIC_MODE="${ENVOYMESH_RELAY_PUBLIC_MODE-}"
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -48,17 +50,14 @@ while [[ $# -gt 0 ]]; do
         --public-mode)
             # Apply community-relay presets to circuit-relay-v2: 1024
             # reservations, 30 min TTL, 4 MiB data, 60 min duration, 90 s
-            # hop timeout, 1024 outbound stop streams. Default (off) keeps
-            # libp2p's embedded-use defaults (15 reservations, 2 min TTL).
-            # Public mode is the only way a remote peer can reserve a slot
-            # on this relay when they're not on its allowlist.
+            # hop timeout, 1024 outbound stop streams.
+            # Prefer --advertise <IP> for community relays: the binary
+            # auto-enables public mode when --advertise-addr is set.
             PUBLIC_MODE=1
             shift
             ;;
         --private-mode)
-            # Explicit opt-out. Useful when the env var accidentally
-            # enabled public mode but the operator wants embedded defaults
-            # for this run.
+            # Explicit opt-out of advertise→public auto-enable.
             PUBLIC_MODE=0
             shift
             ;;
@@ -79,14 +78,12 @@ while [[ $# -gt 0 ]]; do
             echo "Options:"
             echo "  --profile <dir>    Profile directory (default: ./data/relay)"
             echo "  --port <port>      Listen port (default: 4001)"
-            echo "  --advertise <IP>   Public IP for advertise address"
+            echo "  --advertise <IP>   Public IP for advertise address (auto public-mode in binary)"
             echo "  --http-port <port> HTTP port for /info, /health, and /admin (optional)"
-            echo "  --public-mode      Apply community-relay presets to circuit-relay-v2"
+            echo "  --public-mode      Force community-relay circuit-relay-v2 presets"
             echo "                     (1024 reservations, 30 min TTL, 4 MiB data, etc.)."
-            echo "                     Default is private mode (libp2p embedded defaults,"
-            echo "                     15 reservations, 2 min TTL) which only serves peers"
-            echo "                     on the relay's allowlist. Public mode accepts any peer."
-            echo "  --private-mode     Force private mode for this run (overrides env var)."
+            echo "  --private-mode     Force private/embedded defaults (15 reservations, 2 min TTL)"
+            echo "                     even when --advertise is set."
             echo "  --rebuild          (legacy no-op — build is always on)"
             echo "  --no-rebuild       Skip the pre-launch build (escape hatch)"
             echo "  --help, -h         Show this help"
@@ -95,7 +92,7 @@ while [[ $# -gt 0 ]]; do
             echo "  ENVOYMESH_PROFILE          Profile directory"
             echo "  ENVOYMESH_BOOTSTRAP        Bootstrap peers (comma-separated)"
             echo "  RELAY_PORT                 Default listen port"
-            echo "  ENVOYMESH_RELAY_PUBLIC_MODE  Set to 1 to enable public mode (default: 0)"
+            echo "  ENVOYMESH_RELAY_PUBLIC_MODE  1=force public, 0=force private; unset=auto"
             echo "  ENVOYMESH_RELAY_ADMIN_USER / ENVOYMESH_RELAY_ADMIN_PASSWORD"
             echo "                             Admin UI Basic Auth (default: admin / envoymesh123456)"
             echo "                             Also locks /info, /version, /reservations"
@@ -146,9 +143,15 @@ if [ -n "$HTTP_PORT" ]; then
     CMD="$CMD --http-port $HTTP_PORT"
 fi
 
-# Add public-mode flag if requested
+# Public vs private circuit-relay-v2 presets.
+# Unset PUBLIC_MODE → do not pass a mode flag; the binary auto-enables public
+# mode when --advertise-addr is present. Only pass explicit flags when the
+# operator (or env) requested them — never force private merely because the
+# default env was empty/0.
 if [ "$PUBLIC_MODE" = "1" ]; then
     CMD="$CMD --relay-public-mode"
+elif [ "$PUBLIC_MODE" = "0" ]; then
+    CMD="$CMD --relay-private-mode"
 fi
 
 # Add bootstrap peers if set
@@ -171,11 +174,22 @@ if [ -n "$HTTP_PORT" ]; then
     echo "  Admin UI: http://0.0.0.0:${HTTP_PORT}/admin/ (default auth: admin / envoymesh123456)"
     echo "           Override with ENVOYMESH_RELAY_ADMIN_USER + _PASSWORD; put TLS in front."
 fi
-if [ "$PUBLIC_MODE" = "1" ]; then
+if [ -n "$ADVERTISE_ADDR" ] && [ "$PUBLIC_MODE" != "0" ]; then
+    # Advertise implies public mode in the relay binary (unless --private-mode).
+    EFFECTIVE_PUBLIC=1
+elif [ "$PUBLIC_MODE" = "1" ]; then
+    EFFECTIVE_PUBLIC=1
+else
+    EFFECTIVE_PUBLIC=0
+fi
+if [ "$EFFECTIVE_PUBLIC" = "1" ]; then
     echo "  Mode:    PUBLIC (1024 reservations, 30 min TTL, 4 MiB data)"
+    if [ "$PUBLIC_MODE" != "1" ] && [ -n "$ADVERTISE_ADDR" ]; then
+        echo "           (auto from --advertise; use --private-mode to opt out)"
+    fi
 else
     echo "  Mode:    PRIVATE (libp2p defaults: 15 reservations, 2 min TTL)"
-    echo "           Use --public-mode to accept reservations from non-allowlisted peers"
+    echo "           Use --public-mode (or --advertise) for community-relay presets"
 fi
 echo "=========================================="
 echo ""

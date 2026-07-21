@@ -140,6 +140,9 @@ export function parseRelayArgs(argv: string[]): RelayArgs {
   // both their .env and the systemd unit.
   applyEnvVars(args);
 
+  /** Set when CLI explicitly chose public vs private (blocks advertise auto). */
+  let publicModeFromCli: "public" | "private" | undefined;
+
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
 
@@ -164,7 +167,12 @@ export function parseRelayArgs(argv: string[]): RelayArgs {
       }
       args.httpPort = port;
     } else if (arg === "--relay-public-mode") {
+      publicModeFromCli = "public";
       args.relayPublicMode = true;
+    } else if (arg === "--relay-private-mode") {
+      // Opt out of advertise-addr → public-mode auto-enable (LAN / test relays).
+      publicModeFromCli = "private";
+      args.relayPublicMode = false;
     } else if (arg === "--relay-max-reservations") {
       args.relayMaxReservations = parsePositiveInt(
         "--relay-max-reservations",
@@ -211,6 +219,17 @@ export function parseRelayArgs(argv: string[]): RelayArgs {
     } else if (arg.startsWith("--")) {
       throw new Error(`Unknown argument: ${arg}`);
     }
+  }
+
+  // WAN relays always advertise a public dialable base. Auto-enable community
+  // circuit-relay-v2 presets so operators cannot forget --relay-public-mode
+  // (the #1 reason cn-relay looked "discovery-only"). Explicit CLI/env wins.
+  if (
+    publicModeFromCli === undefined &&
+    process.env.ENVOYMESH_RELAY_PUBLIC_MODE === undefined &&
+    args.advertiseAddrs.length > 0
+  ) {
+    args.relayPublicMode = true;
   }
 
   return args;
@@ -353,6 +372,8 @@ Options:
                          Env: ENVOYMESH_PROFILE
   --listen <multiaddr>  Listen multiaddr. Default: /ip4/0.0.0.0/tcp/0
   --advertise-addr <addr>  Public reachable address (required for WAN relays).
+                         Also auto-enables --relay-public-mode unless
+                         --relay-private-mode or ENVOYMESH_RELAY_PUBLIC_MODE=0.
                          Env: ENVOYMESH_ADVERTISE_ADDRS (comma-separated)
   --bootstrap <addr>    Bootstrap peer multiaddr or domain. Repeatable.
                          If domain (e.g., relay.example.com), will query /info
@@ -378,10 +399,10 @@ Options:
                          Env: ENVOYMESH_RELAY_LOG_RETAIN_DAYS
   --relay-public-mode   Apply community-relay presets to circuit-relay-v2
                          server config (1024 reservations, 4 MiB data, 30 min
-                         TTL, 90 s hop timeout). The libp2p defaults
-                         (15 reservations, 2 min TTL, 128 KiB data) target
-                         an embedded use case — use this for public relays.
-                         Env: ENVOYMESH_RELAY_PUBLIC_MODE (1/0)
+                         TTL, 90 s hop timeout). Auto-on when --advertise-addr
+                         is set. Env: ENVOYMESH_RELAY_PUBLIC_MODE (1/0)
+  --relay-private-mode  Keep libp2p embedded defaults even with --advertise-addr
+                         (15 reservations, 2 min TTL). For LAN/test relays.
   --relay-max-reservations <n>  Override max concurrent reservations.
                          Env: ENVOYMESH_RELAY_MAX_RESERVATIONS
   --relay-reservation-ttl-ms <ms>  Override reservation TTL in ms.

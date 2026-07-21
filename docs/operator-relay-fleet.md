@@ -25,12 +25,15 @@ When the node uses **`discoveryProfile: wan-default`** and no explicit `--bootst
 
 ## 2. EnvoyMesh community relay (`cn-relay`)
 
-The **`cn-relay`** preset expands to `DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR` (see `default-bootstrap.ts`). It serves as:
+The **`cn-relay`** preset expands to `DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR` (see `default-bootstrap.ts`). It is a **full EnvoyMesh relay hop**, not discovery-only:
 
-- A **dialable libp2p peer** for DHT/bootstrap alignment with other WAN-default nodes.
-- A **relay-capable** participant when paired with `--relay` and proper **`relay.checkin` / `relay.lookup`** flows (see [live-connectivity-testing §4](./live-connectivity-testing.md#4-prove-envoymesh-relay-address-switching)).
+- **Dialable libp2p peer** for DHT/bootstrap alignment with other WAN-default nodes.
+- **Circuit-relay-v2 server** so NAT clients can `addRelay` / reserve a slot and dial `/p2p-circuit/` paths (auto-bond, WAN join invites).
+- **EnvoyMesh discovery** via `relay.checkin` / `relay.lookup` (topic roster) when the relay process is current.
 
-**HTTP:** `DEFAULT_ENVOY_COMMUNITY_RELAY_HTTP_PORT` documents an optional **WebSocket client-proxy** port on that host (when the relay process exposes it). This is **not required** for pure libp2p bootstrap.
+**HTTP:** `DEFAULT_ENVOY_COMMUNITY_RELAY_HTTP_PORT` (15432) exposes `/health`, Admin UI `/admin/`, and WebSocket client-proxy when `--http-port` is set.
+
+**Operator requirement:** run the relay with a public `--advertise-addr` (auto-enables `--relay-public-mode`) and redeploy after pulling so client and server share the same `@libp2p/circuit-relay-v2` stack. See §7.
 
 ---
 
@@ -69,10 +72,11 @@ Goals: avoid **implicit** dependence on random community infrastructure; keep a 
 
 ## 5. Minimal operator checklist
 
-- [ ] At least one **dialable** relay with **`--relay-server`** and **`--advertise-addr`** (or equivalent YAML/env) for each region that must support **NAT ↔ NAT** via `relay.lookup`.
-- [ ] Clients use **`--discovery-profile wan-default`**, **`--relay`**, **`--bootstrap`** (or org preset file) to reach that relay.
-- [ ] Run **`connectivity-status`** and **`relay-status`** (on relay) after deploy; confirm bootstrap probes succeed (see [live-connectivity-testing](./live-connectivity-testing.md)).
-- [ ] Capture **audit `p2p.trace`** lines for `relay.checkin.ok`, `relay.lookup.ok`, and optional `relay lookup candidate dial ok` when validating a release.
+- [ ] At least one **dialable** relay with **`--advertise-addr`** (auto public-mode) and a current `apps/relay` build for each region that must support **NAT ↔ NAT**.
+- [ ] Clients use **`--discovery-profile wan-default`**, **`--relay`**, and the **`cn-relay`** (or org) bootstrap preset to reach that relay.
+- [ ] Confirm **circuit reservation** on a home node (`Settings → Network` → reserved) before minting WAN invites.
+- [ ] Run **`connectivity-status`** after deploy; confirm bootstrap probes and `relay.checkin.ok` / `relay.lookup.ok` in audit when validating a release.
+- [ ] Admin UI / `/reservations` shows non-zero count when clients are connected (see §7).
 
 ---
 
@@ -86,3 +90,80 @@ This table mirrors **`KNOWN_PRESETS`** expansion in `bootstrap-resolver.ts` at t
 | `public-libp2p-am6` | AM6 dnsaddr peer |
 | `public-libp2p-am7` | AM7 dnsaddr peer |
 | `cn-relay` | One TCP multiaddr: `DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR` |
+
+---
+
+## 7. systemd unit + reservation verification (community / regional relays)
+
+Every fleet relay uses the **same** `apps/relay` binary: discovery **and** circuit-relay-v2. Passing `--advertise-addr` auto-enables community public-mode presets (1024 reservations, 30 min TTL, …). Opt out with `--relay-private-mode` only for LAN/test.
+
+### Example unit (`/etc/systemd/system/envoymesh-relay.service`)
+
+Adjust paths, public IP, and admin password for each host:
+
+```ini
+[Unit]
+Description=EnvoyMesh Relay Server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/home/admin/mygithub/EnvoyMesh/node /home/admin/mygithub/EnvoyMesh/apps/relay/dist/index.js \
+  --profile /home/admin/mygithub/EnvoyMesh/data/relay \
+  --listen /ip4/0.0.0.0/tcp/4001 \
+  --advertise-addr /ip4/47.93.11.212/tcp/4001 \
+  --http-port 15432
+Restart=always
+RestartSec=5
+StartLimitIntervalSec=300
+StartLimitBurst=10
+User=admin
+Environment=NODE_ENV=production
+Environment=ENVOYMESH_RELAY_ADMIN_USER=admin
+Environment=ENVOYMESH_RELAY_ADMIN_PASSWORD=change-me-before-public
+# Optional explicit override (advertise-addr already implies public mode):
+# Environment=ENVOYMESH_RELAY_PUBLIC_MODE=1
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Deploy / refresh:
+
+```bash
+cd /home/admin/mygithub/EnvoyMesh
+git pull
+npm install
+npm run relay:build
+sudo systemctl daemon-reload
+sudo systemctl restart envoymesh-relay
+sudo journalctl -u envoymesh-relay -n 80 --no-pager
+```
+
+Startup must include a line like:
+
+`[relay] circuit-relay-v2 server config: maxReservations=1024 … (public mode)`
+
+If you still see “libp2p defaults (15 reservations…)”, the process is not seeing `--advertise-addr` / public mode — fix the unit and rebuild.
+
+### Verification checklist
+
+| Step | Expect |
+|------|--------|
+| `curl -u admin:… http://127.0.0.1:15432/health` | JSON status (not 401 for `/health`; auth unused on health) |
+| Admin UI `http://<public-ip>:15432/admin/` | Status + peers + reservations + discovery roster / topicHashes after Basic Auth |
+| `GET /admin/api/reservations` (authed) | `count` increases when a home node with `--relay` connects |
+| `GET /admin/api/roster` (authed) | Entries include `topicHashes` and `hasHopSlot` for live circuit reservations |
+| `GET /admin/api/metrics` or `/version` `live.metrics` | checkin/lookup counters; prefer peers with live hops |
+| Home node Settings → Network | Circuit reservation chip = **reserved** |
+| Mint WAN join invite | Succeeds without `relay≠RESERVED` hard-gate error |
+| Auto-bond / chat over WAN | Dial uses `/p2p-circuit/` via this relay’s peer id |
+
+**New region:** copy the unit, change `--advertise-addr` (or `/dns4/…`), open TCP 4001 (+ 15432 if you want Admin remotely behind TLS), ship the new multiaddr in an org bootstrap preset or update `DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR` when rotating the primary `cn-relay`.
+
+**Security:** put Caddy/nginx TLS in front of `:15432` for remote Admin access; change the default admin password; keep `Restart=always` so Admin UI **Hard restart** comes back.
+
+### Discovery privacy note (`relay.lookup` by peer id)
+
+Exact `targetPeerId` / `targetOwnerId` lookups are answered under `visibilityScope: "public"` when the peer checked in with a public advertisement **or** the `mesh.discovery` capability (which normal nodes always advertise). That lets NAT peers find each other by known peer id. Tradeoff: anyone who already knows a peer id can confirm that peer is currently on the roster (presence only — public lookups still omit `ownerId` for capability/public visibility).

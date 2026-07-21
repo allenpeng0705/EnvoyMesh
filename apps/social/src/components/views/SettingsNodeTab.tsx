@@ -9,6 +9,7 @@ import {
 } from "../../hooks/useNodeService.js";
 import QRCode from "qrcode";
 import { useOptimisticToggle } from "../../hooks/useOptimisticToggle.js";
+import { useCircuitReservationStatus } from "../../hooks/useCircuitReservationStatus.js";
 import { DEFAULT_APP_SETTINGS } from "../../lib/storage.js";
 import {
   DEFAULT_CLIENT_MAX_CONNECTIONS,
@@ -49,6 +50,7 @@ import {
   WanJoinInviteExpirySelect,
   expiresInHoursForPreset,
 } from "../common/WanJoinInviteExpirySelect.js";
+import { WanCircuitReservationSoftGate } from "../settings/WanCircuitReservationSoftGate.js";
 
 const WAN_TWO_NAT_CHECKLIST_STORAGE = "envoymesh:wan-two-nat-checklist:v1";
 
@@ -238,6 +240,11 @@ export function SettingsNodeTab() {
   const [wanInviteApplyMsg, setWanInviteApplyMsg] = useState<string | null>(null);
   const [wanInviteExpiryPreset, setWanInviteExpiryPreset] =
     useState<WanJoinInviteExpiryPresetId>("days7");
+  const [wanForceWithoutReservation, setWanForceWithoutReservation] = useState(false);
+  const { chip: circuitReservationChip, ready: reservationReady } = useCircuitReservationStatus({
+    enabled: nodeStatus === "running" && !isMobileNode,
+  });
+  const canMintWanInvite = reservationReady || wanForceWithoutReservation;
 
   const handleShowWanJoinInvite = useCallback(async () => {
     setWanJoinLoading(true);
@@ -245,6 +252,7 @@ export function SettingsNodeTab() {
     try {
       const result = await nodeService.createWanJoinInvite({
         expiresInHours: expiresInHoursForPreset(wanInviteExpiryPreset),
+        forceWithoutReservation: wanForceWithoutReservation || undefined,
       });
       setWanJoinUri(result.uri);
       const dataUrl = await QRCode.toDataURL(result.uri, { width: 256, margin: 1 });
@@ -255,7 +263,7 @@ export function SettingsNodeTab() {
     } finally {
       setWanJoinLoading(false);
     }
-  }, [nodeService, wanInviteExpiryPreset]);
+  }, [nodeService, wanInviteExpiryPreset, wanForceWithoutReservation]);
 
   const handleApplyWanJoinInvite = useCallback(async () => {
     setWanInviteApplyBusy(true);
@@ -1377,6 +1385,17 @@ export function SettingsNodeTab() {
             <p className="settings-hint" style={{ marginTop: 4 }}>
               {t("settings.network.agentBridge.wanInviteDesc")}
             </p>
+            <WanCircuitReservationSoftGate
+              chip={circuitReservationChip}
+              ready={reservationReady}
+              forceWithoutReservation={wanForceWithoutReservation}
+              onForceChange={setWanForceWithoutReservation}
+              showForceCheckbox={!wanJoinQr}
+              reservationLabel={t("settings.network.agentBridge.circuitReservationLabel")}
+              waitHint={t("settings.network.agentBridge.wanInviteWaitReservation")}
+              forceLabel={t("settings.network.agentBridge.wanInviteForceAdvanced")}
+              liveLabel={t("settings.network.wanDiagnostics.circuitReservationLive")}
+            />
             {!wanJoinQr ? (
               <>
                 <WanJoinInviteExpirySelect
@@ -1389,8 +1408,9 @@ export function SettingsNodeTab() {
                 <button
                   type="button"
                   className="settings-button"
+                  data-testid="show-wan-invite-qr"
                   onClick={() => { void handleShowWanJoinInvite(); }}
-                  disabled={wanJoinLoading}
+                  disabled={wanJoinLoading || !canMintWanInvite || nodeStatus !== "running"}
                 >
                   {wanJoinLoading ? t("settings.network.agentBridge.generating") : t("settings.network.agentBridge.showWanInviteQr")}
                 </button>

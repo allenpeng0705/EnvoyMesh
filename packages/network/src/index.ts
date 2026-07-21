@@ -446,10 +446,12 @@ export class EnvoyMesh {
   private lastReservedRelayPeerIds: string[] = [];
   private lastReservedAt: string | undefined;
   private lastReservationError: string | undefined;
-  private reservationHealthTimer?: ReturnType<typeof setInterval>;
+  private reservationHealthTimer?: ReturnType<typeof setTimeout>;
   private reservationHealthDisconnectUnsub?: () => void;
   private reservationHealthRunning = false;
   private reservationHealthRelayAddrs: string[] = [];
+  /** Bumped on stop so adaptive scheduleNext loops exit. */
+  private reservationHealthGeneration = 0;
   /**
    * The circuit-relay-v2 server config that was passed to {@link EnvoyMesh}.
    * Captured here so observability endpoints (`/version`, `/reservations`) can
@@ -1040,10 +1042,13 @@ export class EnvoyMesh {
    * Periodically re-check live reservation and re-run
    * eagerConnect + requestRelayReservation when the slot is gone.
    * Also re-warms shortly after a configured relay peer disconnects.
+   *
+   * Uses an adaptive interval: faster while pending/failed so cold-start
+   * NAT nodes recover quickly; slower once a live reservation is held.
    */
   startRelayReservationHealthLoop(
     relayMultiaddrs: readonly string[],
-    options?: { intervalMs?: number },
+    options?: { intervalMs?: number; pendingIntervalMs?: number; lostIntervalMs?: number },
   ): () => void {
     this.stopRelayReservationHealthLoop();
     const addrs = [...new Set(relayMultiaddrs.map((a) => a.trim()).filter(Boolean))];
@@ -1051,17 +1056,24 @@ export class EnvoyMesh {
     if (addrs.length === 0) {
       return () => undefined;
     }
-    const intervalMs = options?.intervalMs ?? 5 * 60_000;
+    const healthyMs = options?.intervalMs ?? 5 * 60_000;
+    const pendingMs = options?.pendingIntervalMs ?? 45_000;
+    const lostMs = options?.lostIntervalMs ?? 15_000;
+    const generation = ++this.reservationHealthGeneration;
     const relayPeerIds = addrs
       .map((a) => {
         const m = a.match(/\/p2p\/([^/]+)$/);
         return m?.[1];
       })
       .filter((id): id is string => Boolean(id));
+    let wasLive = this.hasLiveRelayReservation(relayPeerIds);
 
     const tick = async (reason: string): Promise<void> => {
       if (this.reservationHealthRunning || !this.node) return;
-      if (this.hasLiveRelayReservation(relayPeerIds)) return;
+      if (this.hasLiveRelayReservation(relayPeerIds)) {
+        wasLive = true;
+        return;
+      }
       this.reservationHealthRunning = true;
       try {
         console.log(`[p2p] relay reservation health (${reason}): slot missing — re-warming`);
@@ -1074,6 +1086,7 @@ export class EnvoyMesh {
         if (resv.failed > 0 && resv.reserved === 0) {
           this.lastReservationError = resv.failures[0] ?? "reservation health re-warm failed";
         }
+        wasLive = this.hasLiveRelayReservation(relayPeerIds);
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         this.lastReservationError = msg;
@@ -1083,16 +1096,33 @@ export class EnvoyMesh {
       }
     };
 
+    const scheduleNext = (): void => {
+      if (this.reservationHealthGeneration !== generation) return;
+      const live = this.hasLiveRelayReservation(relayPeerIds);
+      let delay = pendingMs;
+      if (live) {
+        delay = healthyMs;
+        wasLive = true;
+      } else if (wasLive) {
+        delay = lostMs;
+      }
+      this.reservationHealthTimer = setTimeout(() => {
+        void tick("adaptive").finally(() => {
+          scheduleNext();
+        });
+      }, delay);
+    };
+
     // Caller is expected to warm first; this loop only recovers after
     // expiry / relay restart / disconnect.
-    this.reservationHealthTimer = setInterval(() => {
-      void tick("periodic");
-    }, intervalMs);
+    scheduleNext();
 
     this.reservationHealthDisconnectUnsub = this.onPeerDisconnect((peerId) => {
       if (!relayPeerIds.includes(peerId)) return;
       // Debounce: wait a few seconds for reconnect, then re-reserve if still missing.
+      const disconnectGeneration = this.reservationHealthGeneration;
       setTimeout(() => {
+        if (this.reservationHealthGeneration !== disconnectGeneration) return;
         void tick(`disconnect:${peerId.slice(0, 12)}`);
       }, 5_000);
     });
@@ -1101,8 +1131,9 @@ export class EnvoyMesh {
   }
 
   stopRelayReservationHealthLoop(): void {
+    this.reservationHealthGeneration++;
     if (this.reservationHealthTimer) {
-      clearInterval(this.reservationHealthTimer);
+      clearTimeout(this.reservationHealthTimer);
       this.reservationHealthTimer = undefined;
     }
     if (this.reservationHealthDisconnectUnsub) {

@@ -267,6 +267,9 @@ export const zhNetworkSettingsMessages = {
     wanInviteTitle: "邀请加入 mesh（WAN）",
     wanInviteDesc:
       "分享 bootstrap 节点 + 本节点的拨号提示，用于互联网首次联系。令牌未签名 — 请像加入 URL 一样对待（短期、可信渠道）。",
+    circuitReservationLabel: "Circuit reservation",
+    wanInviteWaitReservation: "Wait until circuit reservation is RESERVED before minting a WAN invite (NAT peers need a live relay slot). Use the advanced checkbox only for packaging/tests.",
+    wanInviteForceAdvanced: "Advanced: mint without live reservation (joiners may get NO_RESERVATION)",
     showWanInviteQr: "显示 WAN 邀请 QR",
     wanInviteQrAlt: "WAN 加入邀请 QR",
     copyLink: "复制链接",

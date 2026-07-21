@@ -310,18 +310,17 @@ Use it as a TCP-reachable bootstrap peer for relay-E2E tests. Override with
 `TEST_RELAY_ADDR=/ip4/.../p2p/...` (exported env var) to point a test at a
 private relay instead.
 
-**What it serves:** rendezvous-based discovery + gossipsub pubsub. **What it
-does NOT serve:** circuit-relay-v2 reservation. Verified 2026-07-10: a fresh
-libp2p node can TCP-dial it in <100 ms, but `stream.newStream(
-['/ipfs/0.1.0/identify/1.0.0'])` rejects with "Protocol selection failed",
-the `relay:reservation` event never fires, and `relay:reservation:error`
-is also silent. The relay speaks a libp2p version whose protocol negotiation
-table is incompatible with ours (latest `@libp2p/circuit-relay-v2`) — a
-relay-side issue, not fixable from the client.
+**What it serves:** rendezvous / `relay.checkin`+`relay.lookup` discovery **and**
+circuit-relay-v2 reservations when the host runs a current `apps/relay` build
+with `--advertise-addr` (auto public-mode). Historically (2026-07-10) a stale
+deploy looked “discovery-only” (identify / reservation handshake failed); that
+was a **version skew / missing public-mode** ops issue, not product intent.
+Override the live target with `TEST_RELAY_ADDR=/ip4/.../p2p/...` for private
+fleet relays.
 
 | Test family | Use community relay? | Why |
 |---|---|---|
-| `relay-chat-e2e.test.ts`, `wan-relay-signoff-e2e.test.ts`, `agent-e2e-real.test.ts` | ✅ default | They need the relay as a TCP peer for bootstrap/discovery, not as a circuit-relay hop |
+| `relay-chat-e2e.test.ts`, `wan-relay-signoff-e2e.test.ts`, `agent-e2e-real.test.ts` | ✅ default | TCP bootstrap + discovery; circuit hop when the live host is healthy |
 | `relay-broadcast-e2e.test.ts` (broadcast fanout via relay) | ❌ hard-skipped by default | Needs a relay that supports our libp2p protocol version **and** the broadcast-fanout handler. Run with `TEST_RELAY_ADDR=<private>` |
 | `geo-discovery-wan-signoff.test.ts` (`geo:city:US-geo-signoff` topic) | ⚠️ gated on `GEO_WAN_DISABLE_GATE=0` | Live DHT is loaded with publishers from many concurrent test runs; `searchPeers` times out at 180 s. Pass ≈1 in 3 runs |
 

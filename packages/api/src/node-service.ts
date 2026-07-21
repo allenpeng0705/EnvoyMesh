@@ -559,10 +559,17 @@ export interface PeerSearchResult {
     | "rendezvous"
     | "did-lookup"
     | "relay-roster-topic"
+    | "relay-roster-peer"
+    | "discovery-seed"
     | "mdns"
     | "bootstrap";
   trustLevel?: string;
   signedRecordValid?: boolean;
+  /**
+   * From relay.lookup: true when the responding relay holds a live circuit
+   * reservation for this peer (hoppable). Absent when unknown / non-relay hit.
+   */
+  hasHopSlot?: boolean;
 }
 
 export interface SearchQuery {
@@ -750,7 +757,8 @@ export interface CreateWanJoinInviteParams {
   addressFilter?: DialableAddrMode;
   /**
    * When `addressFilter` is `"wan-public"` (default) and the mesh reports
-   * `hasRelayReservation() === false`, minting throws unless this is true.
+   * no *live* circuit-relay reservation (`hasLiveRelayReservation()` /
+   * `hasRelayReservation() === false`), minting throws unless this is true.
    * Use only for packaging/tests when you knowingly mint before reservation.
    */
   forceWithoutReservation?: boolean;
@@ -1210,19 +1218,26 @@ export interface ConnectivityDiagnostics {
    * Live circuit-relay-v2 client reservation chip (inbound /p2p-circuit/
    * reachability). Distinct from axes.relayAvailability (checkin/lookup).
    */
-  circuitReservation?: {
-    state: "off" | "pending" | "reserved" | "failed";
-    live: boolean;
-    everReserved: boolean;
-    relayPeerIds: string[];
-    lastError?: string;
-    lastReservedAt?: string;
-    checkedAt: string;
-  };
+  circuitReservation?: CircuitReservationStatus;
   quicEnabled: boolean;
   hints: string[];
   /** Operator steps for live multi-machine sign-off (Phase 15B). */
   signOffChecklist: string[];
+}
+
+/**
+ * Thin circuit-relay reservation status for Settings / Discover soft-gates.
+ * Prefer {@link NodeService.getCircuitReservationStatus} over polling full
+ * {@link getConnectivityDiagnostics} every few seconds.
+ */
+export interface CircuitReservationStatus {
+  state: "off" | "pending" | "reserved" | "failed";
+  live: boolean;
+  everReserved: boolean;
+  relayPeerIds: string[];
+  lastError?: string;
+  lastReservedAt?: string;
+  checkedAt: string;
 }
 
 export interface MorningReportEntry {
@@ -1784,6 +1799,13 @@ export interface NodeService {
    * WAN connectivity axis diagnostics (bootstrap / relay / punch / policy).
    */
   getConnectivityDiagnostics(): Promise<ConnectivityDiagnostics>;
+
+  /**
+   * Thin circuit-relay reservation chip (live/pending/failed). Prefer this
+   * for UI soft-gates that poll every few seconds — avoids re-reading audit
+   * tails and full WAN axis diagnostics.
+   */
+  getCircuitReservationStatus(): Promise<CircuitReservationStatus>;
 
   /**
    * Returns the full list of bootstrap peer addresses for DHT discovery and circuit relay.

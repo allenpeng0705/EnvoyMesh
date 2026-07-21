@@ -57,6 +57,7 @@ function makeCtx(overrides: Partial<StopNodeContext> = {}): {
     getAndClearBondWarmTimer: () => undefined,
     getAndClearProfileRefreshStartupTimer: () => undefined,
     getAndClearChatRoomSyncFlushTimer: () => null,
+    getAndClearEarlyRelayCheckinTimer: () => undefined,
     ...overrides,
   };
   return { ctx, spies };
@@ -122,6 +123,18 @@ describe("stopNodeViaRuntime", () => {
     await stopNodeViaRuntime(ctx);
     expect(spies.getAndClearAdvertiseInterestsTimer).toHaveBeenCalledTimes(1);
     expect(spies.getAndClearAdvertiseInterestsStartupTimeout).toHaveBeenCalledTimes(1);
+  });
+
+  it("clears early relay checkin timer when present", async () => {
+    const timer = setTimeout(() => {}, 60_000);
+    const clearSpy = vi.spyOn(globalThis, "clearTimeout");
+    const { ctx } = makeCtx({
+      getAndClearEarlyRelayCheckinTimer: () => timer,
+    });
+    await stopNodeViaRuntime(ctx);
+    expect(clearSpy).toHaveBeenCalledWith(timer);
+    clearTimeout(timer);
+    clearSpy.mockRestore();
   });
 
   it("swallows errors from stopPairingKiosk", async () => {

@@ -47,6 +47,8 @@ export interface StopNodeContext {
   getAndClearAdvertiseInterestsTimer(): NodeJS.Timeout | undefined;
   /** Get (and clear) the advertise-interests startup timeout. */
   getAndClearAdvertiseInterestsStartupTimeout(): NodeJS.Timeout | undefined;
+  /** Get (and clear) the debounced early relay.checkin timer. */
+  getAndClearEarlyRelayCheckinTimer(): ReturnType<typeof setTimeout> | undefined;
   /** Local device id (used in the node:offline event). */
   getDeviceId(): string | undefined;
 }
@@ -84,6 +86,8 @@ export async function stopNodeViaRuntime(ctx: StopNodeContext): Promise<void> {
     if (advertiseTimer) clearInterval(advertiseTimer);
     const advertiseTimeout = ctx.getAndClearAdvertiseInterestsStartupTimeout();
     if (advertiseTimeout) clearTimeout(advertiseTimeout);
+    const earlyCheckin = ctx.getAndClearEarlyRelayCheckinTimer();
+    if (earlyCheckin) clearTimeout(earlyCheckin);
   } catch (error) {
     console.error("[node-service] Error stopping mesh:", error);
   }

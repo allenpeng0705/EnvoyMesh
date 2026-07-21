@@ -4292,9 +4292,26 @@ You are the owner's personal AI assistant on EnvoyMesh.
         policyBlock: { state: "unknown" as const, explanation: "Audit tail not surfaced on mobile." },
         features: { relay: true, dcutr: false },
       },
+      circuitReservation: {
+        state: "off" as const,
+        live: false,
+        everReserved: false,
+        relayPeerIds: [],
+        checkedAt: new Date().toISOString(),
+      },
       quicEnabled: false,
       hints: ["Mobile uses relay WebSocket transport — WAN axis diagnostics are best-effort."],
       signOffChecklist: [],
+    };
+  }
+
+  async getCircuitReservationStatus() {
+    return {
+      state: "off" as const,
+      live: false,
+      everReserved: false,
+      relayPeerIds: [] as string[],
+      checkedAt: new Date().toISOString(),
     };
   }
 

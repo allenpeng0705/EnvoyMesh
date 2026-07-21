@@ -4,6 +4,7 @@ import { buildEnvoyContactQrUri, buildEnvoyContactUri } from "@envoymesh/api";
 import type { WanJoinInviteExpiryPresetId } from "@envoymesh/api";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useIsInProcessMobileNode, useNodeService } from "../../hooks/useNodeService.js";
+import { useCircuitReservationStatus } from "../../hooks/useCircuitReservationStatus.js";
 import { useT } from "../../context/I18nContext.js";
 import {
   WanJoinInviteExpirySelect,
@@ -46,11 +47,19 @@ export function ShareContactCard({ compact = false }: { compact?: boolean }) {
   const [copyMsg, setCopyMsg] = useState<string | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [expiryPreset, setExpiryPreset] = useState<WanJoinInviteExpiryPresetId>("days7");
+  const [forceWithoutReservation, setForceWithoutReservation] = useState(false);
+  const { chip: reservationChip, ready: reservationReady } = useCircuitReservationStatus({
+    enabled: nodeStatus === "running" && !isMobileNode,
+  });
+  const reservationState = reservationChip?.state ?? "…";
 
   const networkPeerId = peerId && !peerId.startsWith("envoy_") ? peerId : null;
   const expiryLabel = t(`discover.share.expiry.${expiryPreset}`);
   const canCreate =
-    nodeStatus === "running" && !isMobileNode && !contactLoading;
+    nodeStatus === "running" &&
+    !isMobileNode &&
+    !contactLoading &&
+    (reservationReady || forceWithoutReservation);
 
   const handleCreateContactLink = useCallback(async () => {
     setContactLoading(true);
@@ -60,6 +69,7 @@ export function ShareContactCard({ compact = false }: { compact?: boolean }) {
       const result = await nodeService.createWanJoinInvite({
         expiresInHours: expiresInHoursForPreset(expiryPreset),
         compact: true,
+        forceWithoutReservation: forceWithoutReservation || undefined,
       });
       const contactFields = {
         peerId: networkPeerId ?? result.invite.targetPeerId,
@@ -94,6 +104,7 @@ export function ShareContactCard({ compact = false }: { compact?: boolean }) {
   }, [
     compact,
     expiryPreset,
+    forceWithoutReservation,
     humanProfile?.displayName,
     humanProfile?.ownerId,
     networkPeerId,
@@ -132,15 +143,34 @@ export function ShareContactCard({ compact = false }: { compact?: boolean }) {
           <p className="discover-status discover-status--warn">{t("discover.share.mobileHomeNodeOnly")}</p>
         ) : (
           <div className="share-contact-card__invite">
+            <p className="discover-status" data-testid="share-circuit-reservation-chip">
+              {t("discover.share.circuitReservationLabel")}:{" "}
+              <strong>{reservationState.toUpperCase()}</strong>
+            </p>
+            {!reservationReady ? (
+              <p className="discover-status discover-status--warn" data-testid="share-wait-reservation">
+                {t("discover.share.waitReservation")}
+              </p>
+            ) : null}
             <WanJoinInviteExpirySelect
               id="share-contact-expiry"
               value={expiryPreset}
               onChange={setExpiryPreset}
               disabled={contactLoading}
             />
+            <label className="discover-status" style={{ display: "flex", gap: 6, alignItems: "center" }}>
+              <input
+                type="checkbox"
+                data-testid="share-force-without-reservation"
+                checked={forceWithoutReservation}
+                onChange={(e) => setForceWithoutReservation(e.target.checked)}
+              />
+              {t("discover.share.forceWithoutReservation")}
+            </label>
             <button
               type="button"
               className="discover-primary-btn share-contact-card__create-btn"
+              data-testid="share-create-contact-link"
               disabled={!canCreate}
               onClick={() => void handleCreateContactLink()}
             >

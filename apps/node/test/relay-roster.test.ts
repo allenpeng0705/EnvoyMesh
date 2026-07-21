@@ -83,8 +83,74 @@ describe("relay roster", () => {
     ]);
     expect(state.candidateRelays.map((item) => item.relayId)).toEqual(["relay-2"]);
 
-    noteRelaySuccess(state, state.candidateRelays[0]!);
+noteRelaySuccess(state, state.candidateRelays[0]!);
     expect(state.activeRelays.map((item) => item.relayId)).toEqual(["relay-2"]);
+  });
+
+  it("returns targetPeerId under public scope when peer has mesh.discovery (P0)", () => {
+    const now = Date.parse("2026-04-27T10:00:00.000Z");
+    const roster = createRelayRoster({ now: () => now, rosterTtlMs: 60_000 });
+    roster.checkin({
+      peerId: "peer-target",
+      ownerId: "envoy:owner:t",
+      relayReachableAddrs: [],
+      capabilities: ["mesh.discovery"],
+      advertisements: [],
+      relayHints: [],
+      expiresAt: "2026-04-27T10:01:00.000Z",
+    });
+    const response = roster.lookup({
+      requesterPeerId: "peer-seeker",
+      relayPeerId: "relay-1",
+      relayMultiaddrs: ["/ip4/127.0.0.1/tcp/4001/p2p/relay-1"],
+      payload: {
+        queryId: "by-id",
+        targetPeerId: "peer-target",
+        maxResults: 5,
+        maxHops: 0,
+        maxFanout: 2,
+        visibilityScope: "public",
+        expiresAt: "2026-04-27T10:01:00.000Z",
+      },
+    });
+    expect(response.peers).toHaveLength(1);
+    expect(response.peers[0]?.peerId).toBe("peer-target");
+    expect(response.peers[0]?.visibility).toBe("public");
+  });
+
+  it("prefers hasHopSlot peers from hasLiveReservation (P1/P3)", () => {
+    const now = Date.parse("2026-04-27T10:00:00.000Z");
+    const roster = createRelayRoster({ now: () => now, rosterTtlMs: 60_000 });
+    for (const peerId of ["peer-a", "peer-b"]) {
+      roster.checkin({
+        peerId,
+        relayReachableAddrs: [],
+        capabilities: ["mesh.discovery"],
+        advertisements: [{ capability: "mesh.discovery", visibility: "public" }],
+        relayHints: [],
+        expiresAt: "2026-04-27T10:01:00.000Z",
+      });
+    }
+    const response = roster.lookup({
+      requesterPeerId: "seeker",
+      relayPeerId: "relay-1",
+      relayMultiaddrs: ["/ip4/127.0.0.1/tcp/4001/p2p/relay-1"],
+      hasLiveReservation: (id) => id === "peer-b",
+      payload: {
+        queryId: "hop",
+        capability: "mesh.discovery",
+        maxResults: 10,
+        maxHops: 0,
+        maxFanout: 2,
+        visibilityScope: "public",
+        expiresAt: "2026-04-27T10:01:00.000Z",
+      },
+    });
+    expect(response.peers[0]?.peerId).toBe("peer-b");
+    expect(response.peers[0]?.hasHopSlot).toBe(true);
+    expect(response.peers[0]?.multiaddrs.length).toBeGreaterThan(0);
+    expect(response.peers[1]?.hasHopSlot).toBe(false);
+    expect(response.peers[1]?.multiaddrs).toEqual([]);
   });
 
   it("stores summaries and expires stale summary state", () => {

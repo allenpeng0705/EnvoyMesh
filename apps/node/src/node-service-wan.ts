@@ -1,5 +1,6 @@
 import type {
   ApplyWanJoinInviteResult,
+  CircuitReservationStatus,
   ConnectivityDiagnostics,
   CreateWanJoinInviteParams,
   CreateWanJoinInviteResult,
@@ -174,14 +175,18 @@ export async function createWanJoinInviteViaRuntime(
   // mobile pairing kiosk) can opt back in with `addressFilter: "lan-paired"`.
   const addressFilter: DialableAddrMode = params?.addressFilter ?? "wan-public";
 
-  // Hard-gate WAN minting when the mesh reports reservation is not live.
-  // Meshes without `hasRelayReservation` (tests / older builds) skip the gate.
+  // Hard-gate WAN minting on a *live* circuit-relay reservation.
+  // Prefer hasLiveRelayReservation (store currently holds a slot); fall back
+  // to hasRelayReservation for older meshes. Meshes with neither API skip
+  // the gate (unit fixtures). Pass forceWithoutReservation for packaging.
   if (addressFilter === "wan-public" && !params?.forceWithoutReservation) {
-    const reserved =
-      typeof reachable?.hasRelayReservation === "function"
-        ? reachable.hasRelayReservation()
-        : undefined;
-    if (reserved === false) {
+    let live: boolean | undefined;
+    if (typeof reachable?.hasLiveRelayReservation === "function") {
+      live = reachable.hasLiveRelayReservation();
+    } else if (typeof reachable?.hasRelayReservation === "function") {
+      live = reachable.hasRelayReservation();
+    }
+    if (live === false) {
       throw new Error(
         "Cannot mint WAN join invite: circuit-relay reservation is not active (relay≠RESERVED). " +
           "Wait until Settings → Network shows a live reservation, or pass forceWithoutReservation: true.",
@@ -229,9 +234,11 @@ export async function createWanJoinInviteViaRuntime(
     if (synthetic.length > 0) {
       targetMultiaddrs = [...targetMultiaddrs, ...synthetic];
       const reserved =
-        typeof reachable?.hasRelayReservation === "function"
-          ? reachable.hasRelayReservation()
-          : undefined;
+        typeof reachable?.hasLiveRelayReservation === "function"
+          ? reachable.hasLiveRelayReservation()
+          : typeof reachable?.hasRelayReservation === "function"
+            ? reachable.hasRelayReservation()
+            : undefined;
       if (reserved === false) {
         console.warn(
           `[wan-join] invite includes synthetic circuit(s) but local relay reservation is PENDING — ` +
@@ -323,4 +330,21 @@ export async function getConnectivityDiagnosticsViaRuntime(
     config,
     auditEvents,
   });
+}
+
+/** Thin reservation chip — no audit / WAN axis work. */
+export async function getCircuitReservationStatusViaRuntime(
+  deps: NodeWanRuntimeDeps,
+): Promise<CircuitReservationStatus> {
+  const mesh = deps.reachableMesh() ?? deps.getMesh() ?? deps.getExternalMesh();
+  if (typeof mesh?.getRelayReservationStatus === "function") {
+    return mesh.getRelayReservationStatus();
+  }
+  return {
+    state: "off",
+    live: false,
+    everReserved: false,
+    relayPeerIds: [],
+    checkedAt: new Date().toISOString(),
+  };
 }

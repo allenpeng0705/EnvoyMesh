@@ -22,7 +22,8 @@ import { recordRelayCheckinCycle, recordRelayLookupResult, type RelayCheckinAtte
 
 const RELAY_CLIENT_CYCLE_INTERVAL_MS = 30_000;
 const RELAY_LOOKUP_REPLY_TIMEOUT_MS = 30_000;
-const RELAY_CONTROL_TTL_MS = 300_000;
+const RELAY_CONTROL_TTL_MS = 25 * 60_000; // align with circuit reservation (~30 min public); roster caps further
+
 
 /**
  * Topics currently advertised via DHT (`provideCapabilityTopic`). The relay
@@ -229,7 +230,13 @@ async function applyRelayLookupResponse(
   deps: RelayClientCycleDeps,
 ): Promise<number> {
   const payload = parseRelayLookupResponsePayload(envelope.payload);
-  const flat = dedupeAddrs(payload.peers.flatMap((peer) => peer.multiaddrs));
+  // Only cache hoppable circuit paths. hasHopSlot === false means this relay
+  // cannot hop the peer right now; undefined means an older relay (keep addrs).
+  const flat = dedupeAddrs(
+    payload.peers
+      .filter((peer) => peer.hasHopSlot !== false)
+      .flatMap((peer) => peer.multiaddrs),
+  );
   logClientRelayLookupResponse({
     queryId: payload.queryId,
     peerCount: payload.peers.length,
@@ -247,6 +254,8 @@ export interface RelayLookupQuery {
   capability?: string;
   /** topicHash from a capability topic CID — used to match advertised topics */
   topicHash?: string;
+  /** Exact peer id lookup against the relay roster */
+  targetPeerId?: string;
   maxResults?: number;
   visibilityScope?: "public" | "capability" | "bonded" | "private";
 }
@@ -269,6 +278,7 @@ export async function queryRelayLookupWithDeps(
         queryId: `node_service_relay_lookup_${randomUUID()}`,
         ...(query.capability ? { capability: query.capability } : {}),
         ...(query.topicHash ? { topicHash: query.topicHash } : {}),
+        ...(query.targetPeerId ? { targetPeerId: query.targetPeerId } : {}),
         maxResults: query.maxResults ?? 32,
         maxHops: 0,
         maxFanout: 2,

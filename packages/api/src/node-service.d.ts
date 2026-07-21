@@ -262,9 +262,14 @@ export interface PeerSearchResult {
     /** Portable did:key when owner public key is known */
     did?: string;
     /** Where this hit came from (local bond, DHT topic, rendezvous, …) */
-    discoverySource?: "local" | "dht-capability-topic" | "dht-peer-routing" | "rendezvous" | "did-lookup" | "relay-roster-topic";
+    discoverySource?: "local" | "dht-capability-topic" | "dht-peer-routing" | "rendezvous" | "did-lookup" | "relay-roster-topic" | "relay-roster-peer" | "discovery-seed" | "mdns" | "bootstrap";
     trustLevel?: string;
     signedRecordValid?: boolean;
+    /**
+     * From relay.lookup: true when the responding relay holds a live circuit
+     * reservation for this peer (hoppable). Absent when unknown / non-relay hit.
+     */
+    hasHopSlot?: boolean;
 }
 export interface SearchQuery {
     /** Bonded-contact DID or envoy:owner id lookup */
@@ -640,10 +645,21 @@ export interface ConnectivityDiagnostics {
             quic?: boolean;
         };
     };
+    circuitReservation?: CircuitReservationStatus;
     quicEnabled: boolean;
     hints: string[];
     /** Operator steps for live multi-machine sign-off (Phase 15B). */
     signOffChecklist: string[];
+}
+/** Thin circuit-relay reservation status for Settings / Discover soft-gates. */
+export interface CircuitReservationStatus {
+    state: "off" | "pending" | "reserved" | "failed";
+    live: boolean;
+    everReserved: boolean;
+    relayPeerIds: string[];
+    lastError?: string;
+    lastReservedAt?: string;
+    checkedAt: string;
 }
 export interface MorningReportEntry {
     ownerId: string;
@@ -1095,6 +1111,10 @@ export interface NodeService {
      * WAN connectivity axis diagnostics (bootstrap / relay / punch / policy).
      */
     getConnectivityDiagnostics(): Promise<ConnectivityDiagnostics>;
+    /**
+     * Thin circuit-relay reservation chip for Settings/Discover soft-gates.
+     */
+    getCircuitReservationStatus(): Promise<CircuitReservationStatus>;
     /**
      * Advertise a topic on the DHT so other peers can discover you
      * @param topic The topic string to advertise (e.g., "music", "tech")

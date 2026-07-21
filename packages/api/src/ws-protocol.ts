@@ -180,6 +180,7 @@ export type RpcMethods =
   | "warmContactConnection"
   | "getChatDiagnostics"
   | "getConnectivityDiagnostics"
+  | "getCircuitReservationStatus"
   | "getBootstrapPeers"
   | "runCapabilityDiscovery"
   | "discoverCapabilityTopic"

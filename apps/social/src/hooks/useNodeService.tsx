@@ -15,6 +15,7 @@ import type {
   ConnectionStatus,
   ChatDiagnostics,
   ConnectivityDiagnostics,
+  CircuitReservationStatus,
   MorningReportEntry,
   DiscoverCapabilityTopicResult,
   CreateHumanProfileInput,
@@ -246,6 +247,7 @@ export interface NodeServiceClient {
   ): Promise<{ connected: boolean; direct: boolean; relayPeerId?: string }>;
   getChatDiagnostics(peerOwnerId?: string): Promise<ChatDiagnostics>;
   getConnectivityDiagnostics(): Promise<ConnectivityDiagnostics>;
+  getCircuitReservationStatus(): Promise<CircuitReservationStatus>;
 
   // Phase 40 — Agent Network Collaboration Layer
   chainPlan(params: ChainPlanParams): Promise<ChainPlanResult>;
@@ -882,6 +884,9 @@ function createWsNodeServiceClient(
     },
     async getConnectivityDiagnostics() {
       return wsClient.rpc("getConnectivityDiagnostics", {}) as Promise<ConnectivityDiagnostics>;
+    },
+    async getCircuitReservationStatus() {
+      return wsClient.rpc("getCircuitReservationStatus", {}) as Promise<CircuitReservationStatus>;
     },
     // Phase 40 — chain RPCs
     async chainPlan(params: ChainPlanParams) {

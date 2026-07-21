@@ -4818,7 +4818,15 @@ async function handleRelayControlEnvelope(input: {
   try {
     if (envelope.intent === "relay.checkin") {
       const payload = parseRelayCheckinPayload(envelope.payload);
-      const { entry, addrChanged, reconnect } = relayRoster.checkin(payload, remotePeerId);
+      const peerId = payload.peerId || remotePeerId;
+      const liveResv = mesh
+        .inspectCircuitRelayReservations()
+        .find((r) => r.peerId === peerId && r.expireAt > Date.now());
+      const { entry, addrChanged, reconnect } = relayRoster.checkin(
+        payload,
+        remotePeerId,
+        liveResv ? { reservationExpireAtMs: liveResv.expireAt } : undefined,
+      );
       const checkinNote =
         addrChanged && reconnect
           ? `relay.checkin accepted peer=${payload.peerId} addr_changed reconnect`
@@ -4875,11 +4883,18 @@ async function handleRelayControlEnvelope(input: {
         return;
       }
       const circuitBases = relayDialMultiaddrsForCircuitRelay(mesh, args.advertiseAddrs);
+      const livePeerIds = new Set(
+        mesh
+          .inspectCircuitRelayReservations()
+          .filter((r) => r.expireAt > Date.now())
+          .map((r) => r.peerId),
+      );
       const localResponse = relayRoster.lookup({
         payload,
         requesterPeerId: remotePeerId,
         relayMultiaddrs: circuitBases,
         relayPeerId: mesh.peerId,
+        hasLiveReservation: (id) => livePeerIds.has(id),
       });
       const routeDecision = relayLookupRouter.selectForwardTargets({
         payload,

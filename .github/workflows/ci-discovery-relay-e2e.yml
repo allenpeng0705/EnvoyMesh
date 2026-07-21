@@ -1,0 +1,64 @@
+name: ci-discovery-relay-e2e
+
+# Optional private in-process circuit-relay + WAN mint gate E2E.
+# Catches libp2p / reservation skew before fleet deploy without needing a live hop.
+on:
+  pull_request:
+    paths:
+      - "apps/node/src/**/*relay*"
+      - "apps/node/src/mesh-readiness.ts"
+      - "apps/node/src/node-service-wan.ts"
+      - "apps/node/src/node-service-discovery.ts"
+      - "apps/node/src/connectivity-diagnostics.ts"
+      - "apps/node/test/discovery-relay-robustness*"
+      - "packages/network/src/**"
+      - "packages/api/src/node-service.*"
+      - "packages/api/src/ws-protocol.*"
+      - ".github/workflows/ci-discovery-relay-e2e.yml"
+  workflow_dispatch:
+  schedule:
+    # Daily UTC — complements ci-smoke-connectivity (community hop).
+    - cron: "15 7 * * *"
+
+jobs:
+  private-relay-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Private in-process relay E2E (reservation + WAN mint gate)
+        run: RUN_E2E=1 npx vitest run apps/node/test/discovery-relay-robustness-e2e.test.ts
+
+  # Optional live fleet hop — does not fail the workflow if the community relay is flaky.
+  live-fleet-relay:
+    if: github.event_name == 'workflow_dispatch' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Live community / TEST_RELAY_ADDR reservation warmup
+        env:
+          RUN_E2E: "1"
+          RUN_E2E_RELAY_TESTS: "1"
+        run: npx vitest run apps/node/test/discovery-relay-robustness-e2e.test.ts

@@ -339,6 +339,7 @@ import { createNodeConfigStore, createStubNodeConfigStore, type PersistedNodeCon
 import { startPairingKioskServer, type PairingKioskServerHandle } from "./pairing-kiosk-server.js";
 import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key-loader.js";
 import { createDiscoverySeedStore, type DiscoverySeedStore } from "./discovery-seed-store.js";
+import { isMeshReadyForSponsorBond } from "./mesh-readiness.js";
 import { seedAddrsForDiscoveryProfile, peerDiscoverySourceFromMultiaddrs, shouldPersistPeerDiscoverySeeds } from "./peer-discovery-telemetry.js";
 import { resolveBootstrapAddresses, looksLikeDomain } from "./bootstrap-resolver.js";
 import { createInboundMessageGuard, type InboundMessageGuard } from "./inbound-guard.js";
@@ -480,6 +481,7 @@ import {
   buildCompanyInviteInviteContext,
   buildWanRuntimeDeps,
   createWanJoinInviteViaRuntime,
+  getCircuitReservationStatusViaRuntime,
   getConnectivityDiagnosticsViaRuntime,
   type NodeWanRuntimeDeps,
 } from "./node-service-wan.js";
@@ -2243,20 +2245,32 @@ class NodeServiceImpl implements NodeService {
     } else {
       replaceRelayClientAdvertisedTopics("identity", topics);
     }
-    // Kick an early relay.checkin so NAT peers don't wait up to ~30s for
-    // the periodic scheduler to publish the new topicHash roster.
-    const deps = this._relayClientCycleDeps;
-    if (deps) {
-      void runRelayClientCycle(deps).catch((err) => {
-        const msg = err instanceof Error ? err.message : String(err);
-        console.warn(`[relay-client] post-advertise checkin failed: ${msg}`);
-      });
-    }
+    this._kickEarlyRelayClientCheckin("identity-advertise");
   }
 
   private _mergeAdvertisedDiscoveryTopics(topics: string[]): void {
     // Capability/publish cycle: replace that scope (not unbounded union).
     replaceRelayClientAdvertisedTopics("capability", topics);
+    // Same early checkin as identity — otherwise publish/capability tags
+    // stay invisible to NAT peers until the ~30s periodic scheduler runs.
+    this._kickEarlyRelayClientCheckin("capability-advertise");
+  }
+
+  /** Debounced early `relay.checkin` so bursty advertise updates don't storm the relay. */
+  private _earlyRelayCheckinTimer: ReturnType<typeof setTimeout> | undefined;
+  private _kickEarlyRelayClientCheckin(_reason: string): void {
+    if (this._earlyRelayCheckinTimer) {
+      clearTimeout(this._earlyRelayCheckinTimer);
+    }
+    this._earlyRelayCheckinTimer = setTimeout(() => {
+      this._earlyRelayCheckinTimer = undefined;
+      const deps = this._relayClientCycleDeps;
+      if (!deps) return;
+      void runRelayClientCycle(deps).catch((err) => {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[relay-client] post-advertise checkin failed: ${msg}`);
+      });
+    }, 250);
   }
 
   private _serviceContextDeps(): ServiceContextDeps {
@@ -4582,6 +4596,7 @@ class NodeServiceImpl implements NodeService {
         },
         loadHumanProfile: () => this._humanProfileStore.loadHumanProfile(),
         queryRelayLookupByTopic: (params) => this._queryRelayLookupByTopic(params),
+        queryRelayLookupByPeerId: (params) => this._queryRelayLookupByPeerId(params),
         // Bundled sponsor identity (displayName + ownerId + peerId) from
         // the DMG-shipped `bundled-sponsor-friend.json`. Used by
         // `searchLocalPeers` as a fallback name source when the local
@@ -4657,47 +4672,10 @@ class NodeServiceImpl implements NodeService {
         visibilityScope: "public",
       });
       console.log(`[searchPeers] _queryRelayLookupByTopic: got ${responses.length} response(s), total peers=${responses.reduce((s, r) => s + r.peers.length, 0)}`);
-      const results: PeerSearchResult[] = [];
-      const trustRecords = await this._trustStore.listTrustRecords();
-      const peerRecords = await this._peerDirectoryStore.listPeerRecords();
-      const trustByPeerId = new Map<string, (typeof trustRecords)[number]>();
-      for (const record of trustRecords) {
-        const peer = peerRecords.find((p) => p.ownerId === record.peerOwnerId);
-        if (peer?.peerId) {
-          trustByPeerId.set(peer.peerId, record);
-        }
-      }
-      const seen = new Set<string>();
-      for (const response of responses) {
-        for (const candidate of response.peers) {
-          if (seen.has(candidate.peerId)) continue;
-          seen.add(candidate.peerId);
-          const trust = trustByPeerId.get(candidate.peerId);
-          const peerRecord = peerRecords.find((p) => p.peerId === candidate.peerId);
-          results.push({
-            nodeId: candidate.peerId,
-            ownerId: candidate.ownerId ?? peerRecord?.ownerId ?? candidate.peerId,
-            displayName: trust?.displayName ?? candidate.displayName ?? candidate.peerId.slice(0, 12) + "...",
-            interests: [params.topic],
-            profileVisibility: "public",
-            discoverySource: "relay-roster-topic",
-            trustLevel: trust?.level,
-          });
-        }
-      }
-      // Enrich any remaining truncated peer IDs from the profile cache.
-      if (this._peerProfileCacheStore) {
-        for (const result of results) {
-          if (!/^12[Dd]3\w{6,}\.\.\.$/.test(result.displayName) && result.displayName.length > 15) continue;
-          try {
-            const cached = await this._peerProfileCacheStore.get(result.ownerId);
-            if (cached?.profile?.displayName) {
-              result.displayName = cached.profile.displayName;
-            }
-          } catch { /* cache miss is fine */ }
-        }
-      }
-      return results;
+      return this._mapRelayLookupPeersToSearchResults(responses, {
+        interests: [params.topic],
+        discoverySource: "relay-roster-topic",
+      });
     } catch (err) {
       console.warn(
         `[searchPeers] queryRelayLookupByTopic failed:`,
@@ -4705,6 +4683,92 @@ class NodeServiceImpl implements NodeService {
       );
       return [];
     }
+  }
+
+  /**
+   * Exact peer lookup via `relay.lookup` `targetPeerId` against bootstrap relays.
+   */
+  private async _queryRelayLookupByPeerId(params: {
+    peerId: string;
+    maxResults: number;
+  }): Promise<PeerSearchResult[]> {
+    const deps = this._relayClientCycleDeps;
+    const mesh = this._mesh ?? this._externalMesh;
+    if (!deps || !mesh) return [];
+    const { filterRelayControlTargets } = await import("@envoymesh/network");
+    const targets = filterRelayControlTargets(deps.bootstrapPeers);
+    if (targets.length === 0) return [];
+    try {
+      const responses = await queryRelayLookupWithDeps(deps, targets, {
+        targetPeerId: params.peerId,
+        capability: "mesh.discovery",
+        maxResults: params.maxResults,
+        visibilityScope: "public",
+      });
+      return this._mapRelayLookupPeersToSearchResults(responses, {
+        interests: [],
+        discoverySource: "relay-roster-peer",
+        peerIdFilter: params.peerId,
+      });
+    } catch (err) {
+      console.warn(
+        `[searchPeers] queryRelayLookupByPeerId failed:`,
+        err instanceof Error ? err.message : err,
+      );
+      return [];
+    }
+  }
+
+  private async _mapRelayLookupPeersToSearchResults(
+    responses: Awaited<ReturnType<typeof queryRelayLookupWithDeps>>,
+    opts: {
+      interests: string[];
+      discoverySource: "relay-roster-topic" | "relay-roster-peer";
+      peerIdFilter?: string;
+    },
+  ): Promise<PeerSearchResult[]> {
+    const results: PeerSearchResult[] = [];
+    const trustRecords = await this._trustStore.listTrustRecords();
+    const peerRecords = await this._peerDirectoryStore.listPeerRecords();
+    const trustByPeerId = new Map<string, (typeof trustRecords)[number]>();
+    for (const record of trustRecords) {
+      const peer = peerRecords.find((p) => p.ownerId === record.peerOwnerId);
+      if (peer?.peerId) {
+        trustByPeerId.set(peer.peerId, record);
+      }
+    }
+    const seen = new Set<string>();
+    for (const response of responses) {
+      for (const candidate of response.peers) {
+        if (opts.peerIdFilter && candidate.peerId !== opts.peerIdFilter) continue;
+        if (seen.has(candidate.peerId)) continue;
+        seen.add(candidate.peerId);
+        const trust = trustByPeerId.get(candidate.peerId);
+        const peerRecord = peerRecords.find((p) => p.peerId === candidate.peerId);
+        results.push({
+          nodeId: candidate.peerId,
+          ownerId: candidate.ownerId ?? peerRecord?.ownerId ?? candidate.peerId,
+          displayName: trust?.displayName ?? candidate.displayName ?? candidate.peerId.slice(0, 12) + "...",
+          interests: opts.interests,
+          profileVisibility: "public",
+          discoverySource: opts.discoverySource,
+          trustLevel: trust?.level,
+          hasHopSlot: candidate.hasHopSlot,
+        });
+      }
+    }
+    if (this._peerProfileCacheStore) {
+      for (const result of results) {
+        if (!/^12[Dd]3\w{6,}\.\.\.$/.test(result.displayName) && result.displayName.length > 15) continue;
+        try {
+          const cached = await this._peerProfileCacheStore.get(result.ownerId);
+          if (cached?.profile?.displayName) {
+            result.displayName = cached.profile.displayName;
+          }
+        } catch { /* cache miss is fine */ }
+      }
+    }
+    return results;
   }
 
   async searchPeers(query: SearchQuery): Promise<PeerSearchResult[]> {
@@ -4778,6 +4842,10 @@ class NodeServiceImpl implements NodeService {
 
   async getConnectivityDiagnostics(): Promise<ConnectivityDiagnostics> {
     return getConnectivityDiagnosticsViaRuntime(this._wanRuntimeDeps());
+  }
+
+  async getCircuitReservationStatus(): Promise<import("@envoymesh/api").CircuitReservationStatus> {
+    return getCircuitReservationStatusViaRuntime(this._wanRuntimeDeps());
   }
 
   /**
@@ -5423,49 +5491,37 @@ class NodeServiceImpl implements NodeService {
         // route — burning all 12 attempts before the operator sees a
         // final state. The runtime uses the result to skip the spawn
         // entirely with a `mesh-not-ready` skip reason.
-        probeMeshReady: () => {
+        probeMeshReady: async () => {
           const mesh = this._mesh ?? this._externalMesh;
+          const config = await this._configStore.load().catch(() => undefined);
+          const ready = isMeshReadyForSponsorBond(mesh, {
+            discoveryProfile: config?.discoveryProfile,
+            relayEnabled: config?.relayEnabled,
+          });
           if (!mesh) {
             console.log(`[probeMeshReady] false — no mesh instance`);
-            return Promise.resolve(false);
-          }
-          // `mesh.multiaddrs` is the listen-address list populated by
-          // libp2p during `node.start()`. Empty list = the event loop
-          // hasn't fully started yet, regardless of what nodeStatus
-          // reports. (EnvoyMesh has no `isStarted()` method.)
-          if (mesh.multiaddrs.length === 0) {
+          } else if (mesh.multiaddrs.length === 0) {
             console.log(`[probeMeshReady] false — no listen addrs yet`);
-            return Promise.resolve(false);
-          }
-          // Relay reservation landed. This is the strongest "ready"
-          // signal: the loop's `sendHello` can route through the
-          // relay circuit even with no direct peers or open circuit
-          // connections. A reservation alone doesn't open a connection
-          // (that only happens on first traffic), so the
-          // `getConnectedRelayPeerIds()` check below would otherwise
-          // block forever. See `mesh.hasRelayReservation()` for the
-          // distinction between reservation and active connection.
-          if (typeof mesh.hasRelayReservation === "function" && mesh.hasRelayReservation()) {
-            console.log(`[probeMeshReady] true — relay reservation active, addrs=${mesh.multiaddrs.length}`);
-            return Promise.resolve(true);
-          }
-          // Fallback for older meshes without `hasRelayReservation`:
-          // require an active circuit connection OR a direct peer
-          // connection. This is the original "routing substrate is
-          // alive" check.
-          const relayPeers = mesh.getConnectedRelayPeerIds().length;
-          const directPeers = mesh.getConnectedPeerIds().length;
-          const ready = relayPeers > 0 || directPeers > 0;
-          if (!ready) {
-            console.log(
-              `[probeMeshReady] false — no relay reservation, no connected peers (relayPeers=${relayPeers}, directPeers=${directPeers}, addrs=${mesh.multiaddrs.length})`,
-            );
+          } else if (!ready) {
+            const lanFast = config?.discoveryProfile === "lan-fast";
+            const relayEnabled = config?.relayEnabled !== false;
+            if (relayEnabled && !lanFast) {
+              console.log(
+                `[probeMeshReady] false — waiting for live relay reservation (wan-default)`,
+              );
+            } else {
+              const relayPeers = mesh.getConnectedRelayPeerIds().length;
+              const directPeers = mesh.getConnectedPeerIds().length;
+              console.log(
+                `[probeMeshReady] false — no relay reservation, no connected peers (relayPeers=${relayPeers}, directPeers=${directPeers}, addrs=${mesh.multiaddrs.length})`,
+              );
+            }
           } else {
             console.log(
-              `[probeMeshReady] true — peers connected (relayPeers=${relayPeers}, directPeers=${directPeers})`,
+              `[probeMeshReady] true — mesh ready for sponsor bond, addrs=${mesh.multiaddrs.length}`,
             );
           }
-          return Promise.resolve(ready);
+          return ready;
         },
         // Smart address-filter: gather the sponsor's known multiaddrs
         // from the bundled config (the sponsor's QR-code contactUri

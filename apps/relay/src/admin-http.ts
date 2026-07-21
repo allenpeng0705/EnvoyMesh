@@ -27,6 +27,8 @@ export interface AdminHttpDeps {
   buildStatus: () => Record<string, unknown> | Promise<Record<string, unknown>>;
   buildReservations: () => Record<string, unknown>;
   buildPeers: () => Record<string, unknown>;
+  buildRoster?: () => Record<string, unknown>;
+  buildMetrics?: () => Record<string, unknown>;
   restartLibp2p: (reason: string) => Promise<void>;
   restartProcess: () => void;
 }
@@ -147,6 +149,28 @@ export async function handleAdminRequest(
   if (pathname === "/admin/api/peers" && req.method === "GET") {
     try {
       sendJson(res, 200, deps.buildPeers());
+    } catch (err) {
+      sendJson(res, 500, {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return true;
+  }
+
+  if (pathname === "/admin/api/roster" && req.method === "GET") {
+    try {
+      sendJson(res, 200, deps.buildRoster?.() ?? { size: 0, entries: [], topicHashes: [] });
+    } catch (err) {
+      sendJson(res, 500, {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    return true;
+  }
+
+  if (pathname === "/admin/api/metrics" && req.method === "GET") {
+    try {
+      sendJson(res, 200, deps.buildMetrics?.() ?? {});
     } catch (err) {
       sendJson(res, 500, {
         error: err instanceof Error ? err.message : String(err),

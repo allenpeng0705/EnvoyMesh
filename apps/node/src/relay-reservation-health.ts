@@ -68,7 +68,7 @@ export interface RelayReservationWarmupResult {
 export async function warmAndWatchRelayReservations(
   mesh: EnvoyMesh,
   config: RelayReservationWarmupConfig,
-  options?: { healthIntervalMs?: number },
+  options?: { healthIntervalMs?: number; pendingHealthIntervalMs?: number; lostHealthIntervalMs?: number },
 ): Promise<RelayReservationWarmupResult> {
   if (config.relayEnabled === false) {
     return { warmed: false, addrs: [], skipped: true, reason: "relay-disabled" };
@@ -107,6 +107,8 @@ export async function warmAndWatchRelayReservations(
 
   mesh.startRelayReservationHealthLoop(addrs, {
     intervalMs: options?.healthIntervalMs ?? 5 * 60_000,
+    pendingIntervalMs: options?.pendingHealthIntervalMs ?? 45_000,
+    lostIntervalMs: options?.lostHealthIntervalMs ?? 15_000,
   });
 
   return {

@@ -267,6 +267,9 @@ export const jaNetworkSettingsMessages = {
     wanInviteTitle: "メッシュに招待 (WAN)",
     wanInviteDesc:
       "インターネット経由の初回連絡用に bootstrap ピアとこのノードのダイヤルヒントを共有します。トークンは未署名 — 参加 URL と同様に扱ってください（短命、信頼できるチャネル）。",
+    circuitReservationLabel: "Circuit reservation",
+    wanInviteWaitReservation: "Wait until circuit reservation is RESERVED before minting a WAN invite (NAT peers need a live relay slot). Use the advanced checkbox only for packaging/tests.",
+    wanInviteForceAdvanced: "Advanced: mint without live reservation (joiners may get NO_RESERVATION)",
     showWanInviteQr: "WAN 招待 QR を表示",
     wanInviteQrAlt: "WAN 参加招待 QR",
     copyLink: "リンクをコピー",
