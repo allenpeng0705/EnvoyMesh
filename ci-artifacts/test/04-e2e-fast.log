@@ -2,207 +2,209 @@ npm warn Unknown env config "devdir". This will stop working in the next major v
 
  RUN  v4.1.5 /Users/shileipeng/Documents/mygithub/EnvoyMesh
 
-(node:87635) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(node:15814) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
 (Use `node --trace-deprecation ...` to show where the warning was created)
-(node:87637) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(node:15816) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
 (Use `node --trace-deprecation ...` to show where the warning was created)
-(node:87609) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:15794) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:87616) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16172) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:87779) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16190) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:87780) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16205) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:87811) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16236) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:87812) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16235) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:87830) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16251) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:87844) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16265) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:87846) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16282) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:87874) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16297) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:87890) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16298) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:87892) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16316) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:87909) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16331) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:87926) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16333) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:87928) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16347) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:87927) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16349) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:87930) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16364) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:87947) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16370) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:87962) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16372) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:87967) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16389) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:87972) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16390) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:87974) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16395) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:87988) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16414) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:87992) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16418) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:87994) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16420) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88013) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16422) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88015) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16423) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88016) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16424) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88017) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16425) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88019) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16426) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88025) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16441) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88035) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16443) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88037) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16444) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88054) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16446) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88055) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16447) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88070) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16462) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88176) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16465) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88179) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16464) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88183) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16482) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88189) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16483) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88204) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16484) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88205) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16486) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88276) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16487) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88317) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16583) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88365) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16620) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88370) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16622) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88374) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16623) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88373) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16624) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88375) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16645) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88391) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16648) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88393) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16649) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88440) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16652) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88439) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16656) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88441) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16673) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88442) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16675) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88443) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16678) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88482) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16682) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88507) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16696) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88508) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16724) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88738) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16705) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88739) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16708) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88769) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16725) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88889) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16728) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88841) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16730) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88863) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16731) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88940) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16733) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88943) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16734) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88969) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16753) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88970) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16756) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88976) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16771) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88990) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16775) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:88994) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16807) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:87639) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
-(Use `node --trace-deprecation ...` to show where the warning was created)
-npm warn Unknown env config "devdir". This will stop working in the next major version of npm.
-(node:89013) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16798) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:89044) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16809) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:89020) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16813) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:89021) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16818) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:89029) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16845) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:89069) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16930) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:89119) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:16913) ExperimentalWarning: SQLite is an experimental feature and might change at any time
 (Use `node --trace-warnings ...` to show where the warning was created)
-(node:89221) ExperimentalWarning: SQLite is an experimental feature and might change at any time
-(Use `node --trace-warnings ...` to show where the warning was created)
-(node:89616) ExperimentalWarning: SQLite is an experimental feature and might change at any time
-(Use `node --trace-warnings ...` to show where the warning was created)
-(node:89620) ExperimentalWarning: SQLite is an experimental feature and might change at any time
-(Use `node --trace-warnings ...` to show where the warning was created)
-(node:89622) ExperimentalWarning: SQLite is an experimental feature and might change at any time
-(Use `node --trace-warnings ...` to show where the warning was created)
-(node:89621) ExperimentalWarning: SQLite is an experimental feature and might change at any time
-(Use `node --trace-warnings ...` to show where the warning was created)
-(node:89623) ExperimentalWarning: SQLite is an experimental feature and might change at any time
-(Use `node --trace-warnings ...` to show where the warning was created)
-(node:89049) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(node:15818) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
 (Use `node --trace-deprecation ...` to show where the warning was created)
 npm warn Unknown env config "devdir". This will stop working in the next major version of npm.
-(node:90469) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(node:16927) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:17779) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:17780) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:17797) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:17798) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:17799) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:17800) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:17024) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
 (Use `node --trace-deprecation ...` to show where the warning was created)
-(node:90521) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+npm warn Unknown env config "devdir". This will stop working in the next major version of npm.
+(node:18476) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
 (Use `node --trace-deprecation ...` to show where the warning was created)
-(node:90528) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(node:18547) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
 (Use `node --trace-deprecation ...` to show where the warning was created)
-(node:90549) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(node:18765) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
 (Use `node --trace-deprecation ...` to show where the warning was created)
-(node:90552) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(node:18786) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
 (Use `node --trace-deprecation ...` to show where the warning was created)
-(node:90555) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(node:18788) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
 (Use `node --trace-deprecation ...` to show where the warning was created)
-(node:90610) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(node:18791) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
 (Use `node --trace-deprecation ...` to show where the warning was created)
-(node:90612) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(node:18847) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
 (Use `node --trace-deprecation ...` to show where the warning was created)
-(node:90614) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(node:18849) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+(node:18851) [DEP0190] DeprecationWarning: Passing args to a child process with shell option true can lead to security vulnerabilities, as the arguments are not escaped, only concatenated.
 (Use `node --trace-deprecation ...` to show where the warning was created)
 
- Test Files  518 passed | 10 skipped (528)
-      Tests  4497 passed | 50 skipped (4547)
-   Start at  19:01:29
-   Duration  224.43s (transform 13.50s, setup 5.70s, import 173.23s, tests 446.33s, environment 939ms)
+ Test Files  519 passed | 11 skipped (530)
+      Tests  4499 passed | 52 skipped (4551)
+   Start at  20:25:50
+   Duration  224.51s (transform 11.82s, setup 5.35s, import 153.38s, tests 449.91s, environment 853ms)
 
