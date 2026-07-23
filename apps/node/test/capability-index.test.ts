@@ -75,19 +75,17 @@ describe("CapabilityIndex — 41B", () => {
     expect(index.findWorkers("unknown")).toEqual([]);
   });
 
-  it("deduplicates capabilities when updating a worker", () => {
+  it("replaces capabilities when updating a worker (opt-out takes effect)", () => {
     // peer_a already has ["translation", "review"]
     index.indexWorker(worker("peer_a", ["translation", "summarize"]));
 
     const peers = index.findWorkers("translation");
     expect(peers).toContain("peer_a");
-    // peer_a should appear once, not twice
     expect(peers.filter((p) => p === "peer_a").length).toBe(1);
 
     const reviewer = index.getWorker("peer_a");
-    expect(reviewer?.capabilities).toContain("review"); // from first index
-    expect(reviewer?.capabilities).toContain("summarize"); // from second index
-    expect(reviewer?.capabilities).toContain("translation");
+    expect(reviewer?.capabilities).toEqual(["translation", "summarize"]);
+    expect(index.findWorkers("review")).not.toContain("peer_a");
   });
 
   it("sorts workers by lastSeenAt (most recent first)", () => {
@@ -166,14 +164,13 @@ describe("CapabilityIndex — 41B", () => {
     }
   });
 
-  it("updateWorker preserves old capabilities on re-index", () => {
+  it("re-index replaces the capability set from the latest card", () => {
     index.indexWorker(worker("peer_merge", ["search"]));
     index.indexWorker(worker("peer_merge", ["review"]));
 
     const entry = index.getWorker("peer_merge");
-    expect(entry?.capabilities).toContain("search");
-    expect(entry?.capabilities).toContain("review");
-    expect(index.findWorkers("search")).toContain("peer_merge");
+    expect(entry?.capabilities).toEqual(["review"]);
+    expect(index.findWorkers("search")).not.toContain("peer_merge");
     expect(index.findWorkers("review")).toContain("peer_merge");
   });
 });

@@ -1,8 +1,21 @@
-# EnvoyMesh — Agent Network Collaboration Layer
+# EnvoyMesh — Agent Network Collaboration Layer (Team jobs)
 
-> **Status:** Design proposal, **Phase 40 candidate**. Awaiting owner approval before implementation.
-> **Scope:** Multi-agent collaboration, multi-round negotiation, parent/child task lineage, structured chain reports, end-to-end observability.
-> **Prereqs already shipped:** Phase 24 (Agent Marketplace — single-shot A2A), Phase 33 (typed Artifacts), Phase 32 (AI Engine / Ext Agent selection), Phase 23–25 (capability routes, reputation anchors).
+> **Product name in the UI:** **Team jobs** (nav). Protocol and code still say
+> “chain” (`task.chain.*`, `ChainsView`, etc.).
+>
+> **Start here if you want the operator explanation** (who can join, bonds,
+> settings): [`agent-network-guide.md`](./agent-network-guide.md).
+>
+> **Status:** Phase 40 collaboration layer **shipped** (40A–40F). This file
+> remains the design / protocol reference. Some introductory paragraphs below
+> are historical (“proposal”); treat checklists in
+> [`implementation-plan.md`](./implementation-plan.md) as the shipping record.
+>
+> **Scope:** Multi-agent collaboration, multi-round negotiation, parent/child
+> task lineage, structured reports, end-to-end observability.
+> **Prereqs already shipped:** Phase 24 (single-shot A2A), Phase 33 (typed
+> Artifacts), Phase 32 (AI Engine / Ext Agent selection), Phase 23–25
+> (capability routes, reputation anchors), Phase 35–36 (fleet onboarding tab).
 
 ---
 

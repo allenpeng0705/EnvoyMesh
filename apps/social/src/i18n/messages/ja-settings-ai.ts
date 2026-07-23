@@ -57,7 +57,6 @@ export const jaAiSettingsMessages = {
     sectionDesc: "EMP 内の常時委任。ソーシャルプロキシには 設定 → 信頼 で信頼モードが必要です。",
     socialProxy: "ソーシャルプロキシ",
     documentAcquisition: "ドキュメント取得エージェント",
-    capabilityProvider: "ケーパビリティ提供エージェント",
   },
   agent: {
     operatingInstructionsHeading: "エージェント運用指示",

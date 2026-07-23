@@ -15,6 +15,12 @@ All four paths now live under a single tab — `Settings → Agent Network` —
 with a quick-reference intro that explains which path fits which team.
 `Settings → Devices` is now just the authorized-devices list.
 
+For the product-level explanation (Join Agent Network, Team jobs, bonds),
+see [`agent-network-guide.md`](./agent-network-guide.md). For a day-by-day
+company rollout, see [`agent-network-fleet.md`](./agent-network-fleet.md).
+For a declarative `fleet.yaml` + script apply path, see
+[`fleet-bootstrap.md`](./fleet-bootstrap.md).
+
 All four paths land in **Phase 35 (A → C → D → B)**. The first three were
 shipped in earlier commits; this doc also covers B, which is the most
 powerful and the most dangerous, so it lands last.

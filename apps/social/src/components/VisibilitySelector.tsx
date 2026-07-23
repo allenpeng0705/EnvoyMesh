@@ -2,6 +2,7 @@
  * Phase 45D — Per-item web content visibility selector.
  */
 import type { PublishWebContentVisibility } from "@envoymesh/api";
+import { useT } from "../context/I18nContext.js";
 
 export interface VisibilitySelectorProps {
   value: PublishWebContentVisibility;
@@ -11,11 +12,11 @@ export interface VisibilitySelectorProps {
   "data-testid"?: string;
 }
 
-const OPTIONS: { value: PublishWebContentVisibility; label: string }[] = [
-  { value: "public", label: "Public" },
-  { value: "bonded", label: "Bonded contacts" },
-  { value: "contacts", label: "Selected contacts" },
-  { value: "private", label: "Private (owner only)" },
+const OPTION_VALUES: PublishWebContentVisibility[] = [
+  "public",
+  "bonded",
+  "contacts",
+  "private",
 ];
 
 export function VisibilitySelector({
@@ -25,6 +26,14 @@ export function VisibilitySelector({
   id = "web-content-visibility",
   "data-testid": testId = "visibility-selector",
 }: VisibilitySelectorProps) {
+  const t = useT();
+  const labels: Record<PublishWebContentVisibility, string> = {
+    public: t("browser.author.visibilityPublic", "Public"),
+    bonded: t("browser.author.visibilityBonded", "Bonded contacts"),
+    contacts: t("browser.author.visibilityContacts", "Selected contacts"),
+    private: t("browser.author.visibilityPrivate", "Private (owner only)"),
+  };
+
   return (
     <select
       id={id}
@@ -34,9 +43,9 @@ export function VisibilitySelector({
       disabled={disabled}
       onChange={(e) => onChange(e.target.value as PublishWebContentVisibility)}
     >
-      {OPTIONS.map((opt) => (
-        <option key={opt.value} value={opt.value}>
-          {opt.label}
+      {OPTION_VALUES.map((opt) => (
+        <option key={opt} value={opt}>
+          {labels[opt]}
         </option>
       ))}
     </select>

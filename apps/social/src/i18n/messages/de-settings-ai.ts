@@ -107,7 +107,6 @@ export const deAiSettingsMessages = {
     sectionDesc: "Ständige Delegation innerhalb von EMP. Social-Proxy erfordert Trust-Modus unter Einstellungen → Vertrauen.",
     socialProxy: "Social-Proxy",
     documentAcquisition: "Dokumentenbeschaffungs-Agent",
-    capabilityProvider: "Fähigkeitsanbieter-Agent",
   },
   agent: {
     operatingInstructionsHeading: "Betriebsanweisungen für Agenten",

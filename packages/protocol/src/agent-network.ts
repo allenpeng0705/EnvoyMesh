@@ -201,6 +201,11 @@ export const ChainSubtaskSchema = z.object({
   costCeilingUsd: z.number().nonnegative().optional(),
   /** Per-subtask deadline. Defaults to mandate.deadlineAt if absent. */
   deadlineAt: z.string().datetime().optional(),
+  /**
+   * Preferred worker from plan+assign (Assigner LLM or sole-worker shortcut).
+   * When set, launch proposes to this peer first (direct dispatch).
+   */
+  preferredWorkerPeerId: z.string().min(1).max(128).optional(),
   createdAt: z.string().datetime(),
 });
 

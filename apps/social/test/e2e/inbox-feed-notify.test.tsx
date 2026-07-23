@@ -30,9 +30,13 @@ const sampleNotify: FeedNotification = {
 
 let feedItems: FeedNotification[] = [];
 
-vi.mock("../../src/lib/browser-nav.js", () => ({
-  openBrowserAt: (...args: unknown[]) => openBrowserAt(...args),
-}));
+vi.mock("../../src/lib/browser-nav.js", async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return {
+    ...actual,
+    openBrowserAt: (...args: unknown[]) => openBrowserAt(...args),
+  };
+});
 
 vi.mock("../../src/context/NodeStateContext.js", () => ({
   useNodeState: () => ({

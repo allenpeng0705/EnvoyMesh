@@ -4,18 +4,29 @@
 
 import type { ChainDefaultsConfig } from "@envoymesh/api";
 
-/** Production defaults: auto-rebalance, LLM decompose when available. */
+/** Production defaults: direct assign (no bidding/cost), LLM decompose when available. */
 export const DEFAULT_CHAIN_DEFAULTS: ChainDefaultsConfig = {
-  rebalancePolicy: "auto",
+  rebalancePolicy: "never",
   stallTimeoutMs: 120_000,
   lowConfidenceThreshold: 0.5,
   maxAutoRebalances: 2,
   autoRebalanceIncrementUsd: 5,
   allowLlmDecompose: true,
+  awardMode: "direct",
+  // showCostUi omitted — derived from awardMode in mergeChainDefaults
+  iterationMaxRounds: 1,
+  iterationJudgeMode: "llm",
+  iterationCarryMode: "summary",
+  extendMaxStepsPerRound: 2,
+  extendMaxDepth: 3,
+  extendOnlyAfterPartial: true,
 };
 
-/** Auto-evaluate bids after this delay when no manual award (43C). */
+/** Auto-evaluate bids after this delay when competitive mode (43C). */
 export const CHAIN_AUTO_EVALUATE_MS = 30_000;
+
+/** Direct mode: award as soon as the first worker responds. */
+export const CHAIN_DIRECT_AUTO_EVALUATE_MS = 0;
 
 export interface ChainGoalTemplate {
   id: string;
@@ -70,5 +81,26 @@ export function mergeChainDefaults(
   nodeDefaults?: ChainDefaultsConfig,
   mandateOverrides?: Partial<ChainDefaultsConfig>,
 ): ChainDefaultsConfig {
-  return { ...DEFAULT_CHAIN_DEFAULTS, ...nodeDefaults, ...mandateOverrides };
+  const explicitShowCost =
+    mandateOverrides?.showCostUi ?? nodeDefaults?.showCostUi;
+  const merged: ChainDefaultsConfig = {
+    ...DEFAULT_CHAIN_DEFAULTS,
+    ...nodeDefaults,
+    ...mandateOverrides,
+  };
+  merged.showCostUi =
+    explicitShowCost ?? (resolveAwardMode(merged) === "competitive");
+  return merged;
+}
+
+/** Resolve effective award mode (defaults to direct). */
+export function resolveAwardMode(
+  defaults?: ChainDefaultsConfig | null,
+): "direct" | "competitive" {
+  return defaults?.awardMode === "competitive" ? "competitive" : "direct";
+}
+
+export function resolveShowCostUi(defaults?: ChainDefaultsConfig | null): boolean {
+  if (defaults?.showCostUi !== undefined) return defaults.showCostUi;
+  return resolveAwardMode(defaults) === "competitive";
 }

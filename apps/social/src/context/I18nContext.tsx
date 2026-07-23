@@ -23,7 +23,8 @@ export function I18nProvider({ children }: { children: ReactNode }) {
   }, [locale]);
 
   const t = useCallback<TFunction>(
-    (key, params) => translate(MESSAGES[locale], key, params),
+    (key, fallbackOrParams, params) =>
+      translate(MESSAGES[locale], key, fallbackOrParams, params),
     [locale],
   );
 
@@ -54,7 +55,8 @@ export function I18nTestProvider({
   locale?: LocaleId;
 }) {
   const t = useCallback<TFunction>(
-    (key, params) => translate(MESSAGES[locale], key, params),
+    (key, fallbackOrParams, params) =>
+      translate(MESSAGES[locale], key, fallbackOrParams, params),
     [locale],
   );
   const value = useMemo(

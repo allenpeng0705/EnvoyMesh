@@ -7,6 +7,9 @@
  *   - sections with citations (click → jumps to a tree node)
  *   - composite artifact (delegated to CompositeArtifactRenderer)
  *
+ * Phase 47C — iteration draft sections (`Draft N` / `Final (round N)`) render
+ * as an accordion timeline; other sections stay expanded.
+ *
  * The `onCitationClick` callback lets a parent mount the report next to a
  * `ChainTreeView` and deep-link a citation to the corresponding subtask.
  */
@@ -49,6 +52,20 @@ function findComposite(report: ChainReport): CompositeArtifact | undefined {
   return undefined;
 }
 
+const DRAFT_HEADING_RE = /^(Draft\s+(\d+)|Final\s*\(round\s+(\d+)\))$/i;
+
+function parseIterationHeading(heading: string | undefined): {
+  kind: "draft" | "final";
+  round: number;
+} | null {
+  if (!heading) return null;
+  const m = DRAFT_HEADING_RE.exec(heading.trim());
+  if (!m) return null;
+  if (m[2]) return { kind: "draft", round: Number(m[2]) };
+  if (m[3]) return { kind: "final", round: Number(m[3]) };
+  return null;
+}
+
 export interface ChainReportRendererProps {
   report: ChainReport;
   className?: string;
@@ -76,6 +93,10 @@ export function ChainReportRenderer({
   const composite = findComposite(report);
   const totalCostUsd = computeTotalCostUsd(report);
   const durationMs = report.chainSummary?.durationMs ?? 0;
+  const sections = Array.isArray(report.sections) ? report.sections : [];
+  const draftSections = sections.filter((s) => parseIterationHeading(s.heading));
+  const bodySections = sections.filter((s) => !parseIterationHeading(s.heading));
+  const draftCount = draftSections.length;
 
   return (
     <article
@@ -122,9 +143,33 @@ export function ChainReportRenderer({
         </section>
       ) : null}
 
-      {Array.isArray(report.sections) && report.sections.length > 0 ? (
+      {draftCount > 1 ? (
+        <section className="chain-report-drafts" data-testid="chain-report-drafts">
+          {draftSections.map((section, idx) => {
+            const parsed = parseIterationHeading(section.heading)!;
+            const label =
+              parsed.kind === "final"
+                ? t("chains.iteration.finalRound", { round: parsed.round })
+                : t("chains.iteration.draftRound", { round: parsed.round });
+            const isLast = idx === draftCount - 1;
+            return (
+              <details
+                key={`draft-${idx}`}
+                className="chain-report-draft"
+                open={isLast}
+                data-testid={`chain-report-draft-${parsed.round}`}
+              >
+                <summary className="chain-report-draft-summary">{label}</summary>
+                <Markdown text={section.bodyMarkdown} className="message-text" />
+              </details>
+            );
+          })}
+        </section>
+      ) : null}
+
+      {(draftCount <= 1 ? sections : bodySections).length > 0 ? (
         <section className="chain-report-sections">
-          {report.sections.map((section, idx) => (
+          {(draftCount <= 1 ? sections : bodySections).map((section, idx) => (
             <div
               key={idx}
               className="chain-report-section"

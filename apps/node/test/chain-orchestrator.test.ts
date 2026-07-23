@@ -30,9 +30,11 @@ import {
   createChainState,
   evaluateBids,
   handleOrchestratorMerge,
+  handleOrchestratorPartial,
   launchChain,
   planChain,
   publishChainReport,
+  reassignStalledSubtask,
   sendChainAccept,
   sendChainPropose,
   synthesizeChain,
@@ -94,7 +96,7 @@ function makeDeps(
   return { ...deps, sentEnvelopes, auditEvents, storedReports };
 }
 
-function mandate(overrides: { maxChainCostUsd?: number } = {}) {
+function mandate(overrides: { maxChainCostUsd?: number; stallTimeoutMs?: number } = {}) {
   return {
     version: "0.1" as const,
     chainMandateId: "chainmandate_test-1",
@@ -109,6 +111,9 @@ function mandate(overrides: { maxChainCostUsd?: number } = {}) {
     deadlineAt: "2026-06-18T01:00:00.000Z",
     createdAt: NOW.toISOString(),
     signature: "stub",
+    ...(overrides.stallTimeoutMs !== undefined
+      ? { stallTimeoutMs: overrides.stallTimeoutMs }
+      : {}),
   };
 }
 
@@ -209,14 +214,15 @@ describe("planChain", () => {
     expect(llmDecompose).toHaveBeenCalledTimes(1);
   });
 
-  it("returns llm_decompose_failed when the LLM refuses", async () => {
+  it("falls back to a single keyword subtask when the LLM refuses", async () => {
     const llmDecompose = vi.fn().mockResolvedValue({ ok: false, reason: "rate-limited" });
     const deps = makeDeps({ llmDecompose });
     const state = createChainState(mandate());
     const r = await planChain(deps, state, "a really long goal that exceeds the threshold for the keyword fallback path", { allowLlm: true });
-    expect(r.ok).toBe(false);
-    if (r.ok) return;
-    expect(r.reason).toBe("llm_decompose_failed");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.subtasks.length).toBe(1);
+    expect(llmDecompose).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -254,6 +260,146 @@ describe("launchChain", () => {
     // 2 mandates + 2 proposes = 4 envelopes.
     expect(deps.sentEnvelopes.length).toBe(4);
     expect(deps.auditEvents.some((e) => e.type === "chain.launched")).toBe(true);
+  });
+
+  it("defers dependents until parents finish, then advances with parent context", async () => {
+    const deps = makeDeps();
+    const state = createChainState(mandate());
+    state.subtasks.set("subtask_a", {
+      version: "0.1",
+      subtaskId: "subtask_a",
+      chainId: "chain_test-1",
+      chainMandateId: "chainmandate_test-1",
+      depth: 1,
+      requiredCapability: "task.execute",
+      objective: "research",
+      requestedResult: "notes",
+      constraints: [],
+      dependsOn: [],
+      createdAt: NOW.toISOString(),
+    });
+    state.subtasks.set("subtask_b", {
+      version: "0.1",
+      subtaskId: "subtask_b",
+      chainId: "chain_test-1",
+      chainMandateId: "chainmandate_test-1",
+      depth: 1,
+      requiredCapability: "task.execute",
+      objective: "write",
+      requestedResult: "draft",
+      constraints: [],
+      dependsOn: ["subtask_a"],
+      createdAt: NOW.toISOString(),
+    });
+    const launch = await launchChain(deps, state, {
+      subtask_a: ["12D3KooW-w1"],
+      subtask_b: ["12D3KooW-w2"],
+    });
+    expect(launch.ok).toBe(true);
+    // 2 mandates + 1 propose (root only)
+    expect(deps.sentEnvelopes.filter((e) => e.envelope.intent === "task.chain.propose").length).toBe(1);
+    expect(state.proposedSubtasks.has("subtask_a")).toBe(true);
+    expect(state.proposedSubtasks.has("subtask_b")).toBe(false);
+
+    const partial = TaskChainPartialPayloadSchema.parse({
+      partial: ChainSubtaskPartialSchema.parse({
+        version: "0.1",
+        subtaskId: "subtask_a",
+        chainId: "chain_test-1",
+        workerPeerId: "12D3KooW-w1",
+        seq: 1,
+        isFinal: true,
+        note: "found X",
+        artifactFragment: { kind: "text", content: "research blob" },
+        createdAt: NOW.toISOString(),
+      }),
+    });
+    await handleOrchestratorPartial(
+      deps,
+      {
+        version: "0.1",
+        messageId: "m1",
+        createdAt: NOW.toISOString(),
+        senderPeerId: "12D3KooW-w1",
+        senderPublicKey: "pk",
+        senderRole: "agent",
+        recipientRole: "agent",
+        intent: "task.chain.partial",
+        payload: partial,
+        signature: "s",
+        correlationId: "chain_test-1",
+      },
+      partial,
+      state,
+    );
+    expect(state.proposedSubtasks.has("subtask_b")).toBe(true);
+    const bPropose = deps.sentEnvelopes.find(
+      (e) =>
+        e.envelope.intent === "task.chain.propose" &&
+        (e.payload as { subtask?: { subtaskId?: string } }).subtask?.subtaskId === "subtask_b",
+    );
+    expect(bPropose).toBeTruthy();
+    const constraints = (bPropose!.payload as { subtask: { constraints: string[] } }).subtask.constraints;
+    expect(constraints.some((c) => c.includes("prior[subtask_a]") && c.includes("research blob"))).toBe(true);
+  });
+});
+
+describe("reassignStalledSubtask", () => {
+  it("cancels the stalled worker and proposes to the next backup once", async () => {
+    const deps = makeDeps();
+    const state = createChainState(mandate());
+    state.subtasks.set("subtask_a", {
+      version: "0.1",
+      subtaskId: "subtask_a",
+      chainId: "chain_test-1",
+      chainMandateId: "chainmandate_test-1",
+      depth: 1,
+      requiredCapability: "task.execute",
+      objective: "x",
+      requestedResult: "r",
+      constraints: [],
+      dependsOn: [],
+      preferredWorkerPeerId: "12D3KooW-w1",
+      createdAt: NOW.toISOString(),
+    });
+    state.workersBySubtask.set("subtask_a", ["12D3KooW-w1", "12D3KooW-w2"]);
+    state.proposedSubtasks.add("subtask_a");
+    state.awards.set("subtask_a", {
+      version: "0.1",
+      subtaskId: "subtask_a",
+      chainId: "chain_test-1",
+      workerPeerId: "12D3KooW-w1",
+      acceptedCostUsd: 0,
+      negotiationRound: 1,
+      deadlineAt: "2026-06-18T01:00:00.000Z",
+      createdAt: NOW.toISOString(),
+    });
+    const first = await reassignStalledSubtask(deps, state, "subtask_a");
+    expect(first.ok).toBe(true);
+    if (!first.ok) return;
+    expect(first.nextWorkerPeerId).toBe("12D3KooW-w2");
+    expect(state.awards.has("subtask_a")).toBe(false);
+    expect(deps.sentEnvelopes.some((e) => e.envelope.intent === "task.chain.cancel")).toBe(true);
+    expect(
+      deps.sentEnvelopes.some(
+        (e) => e.envelope.intent === "task.chain.propose" && e.recipientPeerId === "12D3KooW-w2",
+      ),
+    ).toBe(true);
+
+    state.awards.set("subtask_a", {
+      version: "0.1",
+      subtaskId: "subtask_a",
+      chainId: "chain_test-1",
+      workerPeerId: "12D3KooW-w2",
+      acceptedCostUsd: 0,
+      negotiationRound: 1,
+      deadlineAt: "2026-06-18T01:00:00.000Z",
+      createdAt: NOW.toISOString(),
+    });
+    const second = await reassignStalledSubtask(deps, state, "subtask_a");
+    expect(second.ok).toBe(false);
+    if (second.ok) return;
+    expect(second.reason).toBe("reassign_cap");
   });
 });
 
@@ -442,6 +588,52 @@ describe("trackChain", () => {
     // Heartbeat envelopes: 2 awards × 1 tick = 2 envelopes
     const heartbeats = deps.sentEnvelopes.filter((e) => e.envelope.intent === "task.chain.heartbeat");
     expect(heartbeats.length).toBe(2);
+  });
+
+  it("Phase 47 — skips heartbeats and stall reassign for sealed subtask ids", async () => {
+    const deps = makeDeps({
+      now: () => new Date("2026-06-18T00:05:00.000Z"),
+    });
+    const state = createChainState({
+      ...mandate({ stallTimeoutMs: 1_000 }),
+    });
+    const { createIterationState } = await import("../src/chain-iteration.js");
+    state.iteration = createIterationState({
+      goal: "g",
+      maxRounds: 2,
+      openRoundSubtaskIds: ["subtask_open"],
+    });
+    state.iteration.sealedByRound[1] = ["subtask_sealed"];
+
+    for (const id of ["subtask_sealed", "subtask_open"] as const) {
+      state.awards.set(id, {
+        version: "0.1",
+        subtaskId: id,
+        chainId: "chain_test-1",
+        workerPeerId: id === "subtask_sealed" ? "12D3KooW-sealed" : "12D3KooW-open",
+        negotiationRound: 1,
+        acceptedCostUsd: 1,
+        deadlineAt: NOW.toISOString(),
+        createdAt: NOW.toISOString(),
+      });
+      // Age both awards past stall timeout; sealed must still be ignored.
+      state.awardedAt.set(id, "2026-06-18T00:00:00.000Z");
+      state.workersBySubtask.set(id, [
+        id === "subtask_sealed" ? "12D3KooW-sealed" : "12D3KooW-open",
+        "12D3KooW-backup",
+      ]);
+    }
+
+    const r = await trackChain(deps, state, { tickMs: 1, maxTicks: 1 });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    // Only the open (unsealed) award is in-flight / heartbeated.
+    expect(r.inFlight).toEqual(["subtask_open"]);
+    const heartbeats = deps.sentEnvelopes.filter((e) => e.envelope.intent === "task.chain.heartbeat");
+    expect(heartbeats).toHaveLength(1);
+    expect(heartbeats[0]!.recipientPeerId).toBe("12D3KooW-open");
+    // Sealed id must not be reassigned even though stalled.
+    expect(state.reassignCount.get("subtask_sealed") ?? 0).toBe(0);
   });
 });
 

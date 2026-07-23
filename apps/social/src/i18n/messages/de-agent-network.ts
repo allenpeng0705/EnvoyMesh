@@ -1,8 +1,8 @@
-// German translations for Settings → Agent Network (Devices & Fleet).
+// German translations for Settings → Agent Network (Agent Network).
 // Mirrors zh-agent-network.ts.
 
 export const deAgentNetworkSettingsMessages = {
-  title: "Geräte & Flotte",
+  title: "Agentennetzwerk",
   intro: "Konfigurieren Sie, wie sich dieser Knoten mit anderen Flottenmitgliedern verbindet. Vier Pfade sind verfügbar — wählen Sie den, der zu Ihrem Team passt. Alle vier sind **standardmäßig deaktiviert**, bis Sie sie aktivieren.",
   quickReferenceTitle: "Welchen Pfad verwenden?",
   groupAutoBondTitle: "Auto-Bond (Sponsor-Knoten + Installer)",
@@ -11,7 +11,32 @@ export const deAgentNetworkSettingsMessages = {
   groupInvitesDesc: "Erstellen Sie Links, die ein Kollege in seine Social-Oberfläche einfügen kann, um diesem Knoten beizutreten.",
   groupOperatorTitle: "Operator-Tools",
   groupOperatorDesc: "Vertrauen für viele Knoten auf einmal vorkonfigurieren oder alle im Büro-WLAN automatisch verbinden.",
+  officeLan: {
+    heading: "Büro-LAN",
+    desc: "Ein-Klick-Einrichtung im gleichen WLAN für Team-Jobs: Agentennetzwerk beitreten + LAN-Auto-Bond mit gemeinsamem Flotten-Token. Auf jedem Schreibtisch-Rechner ausführen und dasselbe Token verwenden.",
+    enableButton: "Büro-LAN-Team aktivieren",
+    enabling: "Wird aktiviert…",
+    enabled: "Büro-LAN-Team aktiviert",
+    copyToken: "Token kopieren",
+    tokenCopied: "Token kopiert",
+    shareHint: "Dieses Token mit den anderen Rechnern teilen und dort ebenfalls Büro-LAN-Team aktivieren (oder unten unter LAN-Auto-Bond einfügen).",
+    alreadyOn: "Beitritt und LAN-Auto-Bond sind bereits mit einem gemeinsamen Token aktiv.",
+  },
+  workersStatus: {
+    heading: "Worker-Status",
+    bonded: "Gebundene Peers: {count}",
+    joinOn: "Agentennetzwerk: an",
+    joinOff: "Agentennetzwerk: aus",
+    workersVisible: "Für Team-Jobs sichtbar: {count}",
+    refresh: "Worker aktualisieren",
+    refreshing: "Aktualisieren…",
+    refreshed: "Worker aktualisiert",
+    joinOffAfterLan:
+      "Im LAN gebunden, aber nicht rekrutierbar — Agentennetzwerk beitreten oder Büro-LAN-Preset nutzen.",
+  },
   quickReference: {
+    officeLan:
+      "Gleicher-LAN-Happy-Path: ein Button aktiviert Beitritt + LAN-Auto-Bond + gemeinsames Token auf jedem Rechner.",
     companyInvites: "Langlebige Träger-Links. Am besten, wenn Mitglieder remote sind oder LAN unzuverlässig. Jede Einladung ist einmalig.",
     lanAutoBond: "Null-Kontakt für Büros im gleichen WLAN. Beide Seiten aktivieren einen Schalter mit demselben Token. Standardmäßig deaktiviert.",
     pairingKiosk: "Browser-Button für Besucher-Laptops. Standardmäßig deaktiviert. Erfordert Loopback-Bindung, sofern Sie nicht LAN wählen.",

@@ -1,12 +1,21 @@
-# Phase 32 — Agent Network Membership (Built-in OpenClaw + Ext Agent)
+# Phase 32 — AI Engine Membership (Built-in OpenClaw + Ext Agent)
 
-**Status:** `[x]` designed (reframed 2026-06-16) — the original "kill the built-in OpenClaw" scope was reframed as "agent network membership." Code plumbing (config field, boot-time gate, status RPC, mode helper, mobile mirror) is shipped; the runtime `openclawEnabled` checkbox and D2A in-flight cancel were removed in the reframe.
+> **Naming note:** This document’s historical title was “Agent Network
+> Membership.” In the product UI today, **Agent Network** means the Settings
+> tab for **Join Agent Network** (worker opt-in) and fleet onboarding — see
+> [`agent-network-guide.md`](./agent-network-guide.md).
+>
+> What this file describes is **AI Engine** selection on a single home node:
+> EnvoyAI (built-in OpenClaw) and/or an Ext Agent bridge. That lives under
+> **Settings → AI → AI Engine**, not under Settings → Agent Network.
+
+**Status:** `[x]` designed (reframed 2026-06-16) — the original "kill the built-in OpenClaw" scope was reframed as "which AI engines are active on this home node." Code plumbing (config field, boot-time gate, status RPC, mode helper, mobile mirror) is shipped; the runtime `openclawEnabled` checkbox and D2A in-flight cancel were removed in the reframe.
 **Date:** 2026-06-16 (reframed post-review)
 **Author:** EnvoyMesh core team
 **Implements:** US-AN1, US-AN2, US-AN3
-**Related:** [implementation-plan.md#phase-32](./implementation-plan.md#phase-32--agent-network-membership-built-in-openclaw--ext-agent), Phase 29 (OpenClaw runtime), Phase 11 (mobile thin-client)
+**Related:** [implementation-plan.md#phase-32](./implementation-plan.md#phase-32--agent-network-membership-built-in-openclaw--ext-agent), Phase 29 (OpenClaw runtime), Phase 11 (mobile thin-client), [agent-network-guide.md](./agent-network-guide.md)
 
-> **Reframe (2026-06-16, post-review):** the original framing of this phase as "you can turn off the built-in OpenClaw" was a misread of the original ask. The original question was *"can the user configure **which agent is in the agent network**, or both?"* — that is a **membership / advertisement** question, not a "kill the engine" question. The built-in OpenClaw is the **primary** agent on every EnvoyMesh home node and is **not** something the user is expected to disable in normal use. This doc has been rewritten to reflect that. The runtime gate and status RPC are still useful — a user running a pure relay node, or an external-only deployment, can opt out of the built-in at config-write time — but the UI surfaces this as a **secondary** option, not a primary action. The default-mode chip and mobile mirror remain; the dramatic "in-flight cancel" machinery has been removed (the gate runs at boot, not on every chat).
+> **Reframe (2026-06-16, post-review):** the original framing of this phase as "you can turn off the built-in OpenClaw" was a misread of the original ask. The original question was *"can the user configure **which agent engines run on this home node**, or both?"* — that is a **local engine membership** question, not a "kill the engine" question. The built-in OpenClaw is the **primary** agent on every EnvoyMesh home node and is **not** something the user is expected to disable in normal use. This doc has been rewritten to reflect that. The runtime gate and status RPC are still useful — a user running a pure relay node, or an external-only deployment, can opt out of the built-in at config-write time — but the UI surfaces this as a **secondary** option, not a primary action. The default-mode chip and mobile mirror remain; the dramatic "in-flight cancel" machinery has been removed (the gate runs at boot, not on every chat).
 
 ---
 
@@ -26,7 +35,7 @@ That is a **network-membership** question. Today, the answer is partial: the Ext
 The fix is to:
 
 1. Make both flags first-class config (one each in `PersistedNodeConfig`), with sensible defaults: **built-in OpenClaw ships as the default**; **Ext Agent is opt-in**.
-2. Surface both in a single `Settings → AI → Agent Network` section, with a derived "network mode" chip ("Built-in + Ext" / "Built-in only" / "Ext only" / "None") that reflects the configured state.
+2. Surface both in a single `Settings → AI → AI Engine` section, with a derived "network mode" chip ("Built-in + Ext" / "Built-in only" / "Ext only" / "None") that reflects the configured state.
 3. Mirror the configuration on the paired EnvoyGo thin-client, read-only.
 4. Wire the existing orphaned `AgentSettings.tsx` so it is actually rendered.
 
@@ -41,7 +50,7 @@ This is a **config surfacing** change. It is **not** about routinely turning the
 - **G1.** Add `openclawEnabled?: boolean` to `PersistedNodeConfig`, symmetric to the existing `bridgeEnabled`.
 - **G2.** The home node respects both flags **at boot**. A flag set to `false` means the corresponding subsystem does not start (gateway child not spawned; bridge listener not bound). There is no runtime "hot toggle" — the node restarts to apply.
 - **G3.** A new `getOpenClawStatus()` RPC exposes the live state (`enabled`, `running`, webhook URL, child PID) — mirrors the existing `getBridgeStatus()`. The social UI and mobile thin-client use this to show the user what is actually running.
-- **G4.** A new `Settings → AI → Agent Network` section in the social UI surfaces the configured state, shows a derived "network mode" chip, and lets the owner configure the **Ext Agent** bridge (URL, port, name) + persist the `bridgeEnabled` flag. The built-in OpenClaw's status is shown read-only — its configuration is a *boot-time* concern handled via `node-config.json` and the home-node installer, not a settings-UI concern.
+- **G4.** A new `Settings → AI → AI Engine` section in the social UI surfaces the configured state, shows a derived "network mode" chip, and lets the owner configure the **Ext Agent** bridge (URL, port, name) + persist the `bridgeEnabled` flag. The built-in OpenClaw's status is shown read-only — its configuration is a *boot-time* concern handled via `node-config.json` and the home-node installer, not a settings-UI concern.
 - **G5.** Mobile thin-client (EnvoyGo) reads both flags via the home node's `getNodeConfig()` and displays a read-only mirror ("Built-in is present", "Ext Agent: configured / not configured") in `Me → Agent Network`.
 - **G6.** i18n parity across all 7 locales (English-only added; other locales fall back to English per existing `translate.ts` behavior).
 - **G7.** No wire-protocol change. A2A intents stay internal-only for now (one-way home→mobile).
@@ -189,7 +198,7 @@ The EnvoyGo Flutter thin client (Phase 31, shipped) mirrors the home-node state 
 
 1. Reads `getOpenClawStatus()` and `getBridgeStatus()` from `NodeServiceClient` (which calls through `MobileNode` to the home node via `HomeRemoteClient`).
 2. Renders a derived "Agent Network" chip ("Built-in + Ext" / "Built-in only" / "Ext only" / "None") and two rows: Built-in OpenClaw + External Agent Bridge. Each row shows the configured `enabled` flag plus the live `running` state via a 3-state badge (Disabled / Running / Stopped).
-3. **No mutations.** Both rows are `readOnly: true` — there are no checkboxes, no Save handler, no call to `updateNodeConfigPartial`. The home-node Settings → AI → Agent Network screen is the source of truth for any config change. To disable the built-in OpenClaw, the home-node owner edits `node-config.json` and restarts.
+3. **No mutations.** Both rows are `readOnly: true` — there are no checkboxes, no Save handler, no call to `updateNodeConfigPartial`. The home-node Settings → AI → AI Engine screen is the source of truth for any config change. To disable the built-in OpenClaw, the home-node owner edits `node-config.json` and restarts.
 
 No new Dart types are required beyond the two existing RPCs (`getOpenClawStatus`, `getBridgeStatus`). The home node is the source of truth; mobile just mirrors.
 
@@ -335,7 +344,7 @@ This is the **first half** of the A2A work the user mentioned in the previous tu
 
 **Smoke test (manual, to be run on live hardware before Phase 33 lands):**
 
-1. Start home node with **fresh config** (no `node-config.json`). Open Settings → AI → Agent Network. Verify the chip shows "Built-in only" and the Built-in OpenClaw block shows "Running" (D1C: OpenClaw defaults on, bridge defaults off).
+1. Start home node with **fresh config** (no `node-config.json`). Open Settings → AI → AI Engine. Verify the chip shows "Built-in only" and the Built-in OpenClaw block shows "Running" (D1C: OpenClaw defaults on, bridge defaults off).
 2. Click "Configure" on the Ext Agent block. Set name "HomeClaw" + URL + listen port. Save. Verify the chip flips to "Built-in + Ext" and the bridge listener starts (visible in the social UI status panel).
 3. Send a chat message from the social UI. Verify the message reaches OpenClaw (logs show the webhook traffic).
 4. Toggle the Ext Agent checkbox off. Verify the chip flips to "Built-in only" within ~1s. Verify the bridge listener stops.

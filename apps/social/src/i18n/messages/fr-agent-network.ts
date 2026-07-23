@@ -1,8 +1,8 @@
-// French translations for Settings → Agent Network (Devices & Fleet).
+// French translations for Settings → Agent Network (Agent Network).
 // Mirrors zh-agent-network.ts.
 
 export const frAgentNetworkSettingsMessages = {
-  title: "Appareils & flotte",
+  title: "Réseau d'agents",
   intro: "Configurez comment ce nœud se lie avec d'autres membres de la flotte. Quatre chemins sont disponibles — choisissez celui qui convient à votre équipe. Les quatre sont **désactivés par défaut** jusqu'à ce que vous les activiez.",
   quickReferenceTitle: "Quel chemin utiliser ?",
   groupAutoBondTitle: "Liaison automatique (nœud sponsor + installateur)",
@@ -11,7 +11,32 @@ export const frAgentNetworkSettingsMessages = {
   groupInvitesDesc: "Créez des liens qu'un collègue peut coller dans son interface Social pour rejoindre ce nœud.",
   groupOperatorTitle: "Outils opérateur",
   groupOperatorDesc: "Pré-configurez la confiance pour de nombreux nœuds à la fois, ou liez automatiquement tout le monde sur le Wi-Fi du bureau.",
+  officeLan: {
+    heading: "LAN de bureau",
+    desc: "Configuration Wi-Fi en un clic pour les jobs d'équipe : rejoindre le réseau d'agents + liaison LAN avec un jeton de flotte partagé. À activer sur chaque machine et avec le même jeton.",
+    enableButton: "Activer l'équipe LAN de bureau",
+    enabling: "Activation…",
+    enabled: "Équipe LAN de bureau activée",
+    copyToken: "Copier le jeton",
+    tokenCopied: "Jeton copié",
+    shareHint: "Partagez ce jeton avec les autres machines, puis activez l'équipe LAN de bureau sur chacune (ou collez-le sous Liaison automatique LAN).",
+    alreadyOn: "Adhésion et liaison LAN sont déjà actives avec un jeton partagé.",
+  },
+  workersStatus: {
+    heading: "État des workers",
+    bonded: "Pairs liés : {count}",
+    joinOn: "Réseau d'agents : activé",
+    joinOff: "Réseau d'agents : désactivé",
+    workersVisible: "Workers visibles pour les jobs d'équipe : {count}",
+    refresh: "Actualiser les workers",
+    refreshing: "Actualisation…",
+    refreshed: "Workers actualisés",
+    joinOffAfterLan:
+      "Lié en LAN mais non recrutable — rejoignez le réseau d'agents ou utilisez le préréglage LAN de bureau.",
+  },
   quickReference: {
+    officeLan:
+      "Chemin LAN local : un bouton active adhésion + liaison LAN + jeton partagé sur chaque machine.",
     companyInvites: "Liens porteurs de longue durée. Idéal quand les membres sont distants ou que le LAN est peu fiable. Chaque invitation est à usage unique.",
     lanAutoBond: "Zéro-contact pour les bureaux sur le même Wi-Fi. Les deux côtés activent un commutateur avec le même jeton. Désactivé par défaut.",
     pairingKiosk: "Bouton navigateur pour les ordinateurs portables de visite. Désactivé par défaut. Nécessite une liaison loopback sauf si vous choisissez le LAN.",

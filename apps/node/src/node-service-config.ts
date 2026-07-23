@@ -161,6 +161,7 @@ export async function getNodeConfigViaRuntime(
       documentAcquisitionMandateId: config.documentAcquisitionMandateId,
       capabilityProviderEnabled: config.capabilityProviderEnabled ?? false,
       capabilityProviderMandateId: config.capabilityProviderMandateId,
+      agentNetworkProfile: config.agentNetworkProfile,
       bondAutonomyEnabled: config.bondAutonomyEnabled ?? false,
       bondAutonomyMandateId: config.bondAutonomyMandateId,
       bondAutonomyMaxAutoBondsPerDay: config.bondAutonomyMaxAutoBondsPerDay,

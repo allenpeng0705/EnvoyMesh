@@ -1,18 +1,68 @@
-// Settings → Agent Network (a.k.a. Devices & Fleet) translations. Mirrors
+// Settings → Agent Network (a.k.a. Agent Network) translations. Mirrors
 // the en-agent-network.ts bundle so t("settings.agentNetwork.*") resolves
 // in Chinese mode.
 
 export const zhAgentNetworkSettingsMessages = {
-  title: "设备与节点群",
-  intro: "配置本节点与其他群成员建立绑定的方式。共有四种路径可选 — 请选择适合您团队的一种。默认全部**关闭**，需手动启用。",
-  quickReferenceTitle: "我应该用哪种路径？",
+  title: "智能体网络",
+  intro:
+    "先选择是否以链上工作节点加入智能体网络，再配置本节点与其他群成员的绑定方式。群上线路径默认全部**关闭**，需手动启用。",
+  quickReferenceTitle: "这里可以配置什么？",
   groupAutoBondTitle: "自动绑定（发起节点 + 安装包）",
   groupAutoBondDesc: "这两者配对工作：发起节点自动接受带有匹配证明 token 的打招呼请求，安装包则在首次启动时携带该 token。**两边设置相同的 token**。",
   groupInvitesTitle: "邀请",
   groupInvitesDesc: "生成链接，让同事可粘贴到他们的 Social UI 以加入本节点。",
   groupOperatorTitle: "运维工具",
   groupOperatorDesc: "一次性为多个节点预设信任，或自动绑定办公室 Wi-Fi 上的所有人。",
+  membership: {
+    heading: "加入智能体网络",
+    desc: "开启后，已绑定联系人可将你的本地智能体征用为链上工作节点。关闭时智能体保持私有。",
+    joinLabel: "加入智能体网络（能力提供）",
+    joinHint:
+      "默认关闭。开启后，对等节点可发现并对你的智能体打分以分配链步骤。无论是否开启，本地智能体仍可为你本人服务。",
+    profileDesc: "由你声明的特质，对等节点在选择工作节点时用于打分。仅在开启「加入智能体网络」后对外共享。",
+    enableFirst: "请先开启上方的「加入智能体网络」以编辑并发布此画像。",
+    freshness: "模型新鲜度（1–10）",
+    freshnessHint: "分数越高表示你使用的模型越新/越强。",
+    spendPosture: "Token / 计费姿态",
+    spendSubscription: "订阅（月付/年付池化）",
+    spendMetered: "按量预付",
+    spendUnknown: "未知",
+    spendHint: "长链多步任务更倾向订阅姿态。",
+    contextWindow: "上下文窗口",
+    throughput: "吞吐（tokens/秒，自报）",
+    throughputPlaceholder: "例如 80",
+    throughputHint: "由你声明的推理速度。协作任务打分时作为软性参考 — 目前尚非实测。",
+    strengths: "擅长领域",
+    strengthPlaceholder: "自定义标签后按回车",
+    save: "保存画像",
+    saving: "保存中…",
+    saved: "智能体网络画像已保存",
+  },
+  officeLan: {
+    heading: "办公局域网",
+    desc: "一键完成同 Wi-Fi 协作设置：加入智能体网络 + LAN 自动绑定 + 共享群 token。在每台办公电脑上启用，并使用相同 token。",
+    enableButton: "启用办公局域网团队",
+    enabling: "正在启用…",
+    enabled: "办公局域网团队已启用",
+    copyToken: "复制 token",
+    tokenCopied: "已复制 token",
+    shareHint: "将此 token 分享给其他机器，然后在每台机器上点击「启用办公局域网团队」（或粘贴到下方的 LAN 自动绑定）。",
+    alreadyOn: "加入智能体网络与 LAN 自动绑定已开启，且已配置共享 token。",
+  },
+  workersStatus: {
+    heading: "工作节点状态",
+    bonded: "已绑定对等节点：{count}",
+    joinOn: "加入智能体网络：开",
+    joinOff: "加入智能体网络：关",
+    workersVisible: "协作任务可见工作节点：{count}",
+    refresh: "刷新工作节点",
+    refreshing: "刷新中…",
+    refreshed: "工作节点已刷新",
+    joinOffAfterLan: "已在局域网绑定，但尚未可被征用 — 请加入智能体网络或使用办公局域网预设。",
+  },
   quickReference: {
+    membership: "选择作为链上工作节点加入，并设置对等节点可见的打分画像。默认关闭 — 本地智能体保持私有。",
+    officeLan: "同局域网快捷路径：一键在每台机器上启用「加入」+ LAN 自动绑定 + 共享 token。",
     companyInvites: "长期有效的携带者链接。适合远程成员或 LAN 不稳定时使用。每个邀请仅可使用一次。",
     lanAutoBond: "同一 Wi-Fi 上桌机的零接触方案。两边用相同 token 开启开关。默认关闭。",
     pairingKiosk: "适合外来笔记本的浏览器按钮。默认关闭。除非您主动选择 LAN 暴露，否则需要绑定 loopback。",
@@ -92,7 +142,7 @@ export const zhAgentNetworkSettingsMessages = {
       },
       engineer: {
         label: "工程师",
-        hint: "标准团队成员 — 可聊天、分享、参与代理链。trustLevel: direct。",
+        hint: "标准团队成员 — 可聊天、分享、参与协作任务。trustLevel: direct。",
       },
       contractor: {
         label: "合同工",

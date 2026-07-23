@@ -46,6 +46,19 @@ export interface CreateLlmDecomposerOptions {
   audit?: ChainAuditSink;
   /** Per-call timeout for the LLM roundtrip. Defaults to 30s. */
   timeoutMs?: number;
+  /**
+   * Optional roster for plan+assign. When non-empty, the prompt asks the LLM
+   * to both decompose and name preferredWorkerPeerId per step.
+   */
+  getRoster?: () => Promise<
+    import("./chain-plan-assign.js").PlanAssignRosterEntry[]
+  >;
+  /** Mandate/chain ids so plan+assign can mint valid ChainSubtask rows. */
+  chainContext?: {
+    chainId: string;
+    chainMandateId: string;
+    deadlineAt?: string;
+  };
 }
 
 export type LlmDecomposer = (goal: string) => Promise<DecomposerResult>;
@@ -63,16 +76,27 @@ export function createLlmDecomposer(opts: CreateLlmDecomposerOptions): LlmDecomp
     return async () => ({ ok: false, reason: "no_provider" });
   }
   const timeoutMs = opts.timeoutMs ?? 30_000;
+  void timeoutMs;
 
   return async (goal: string) => {
     if (!goal || goal.trim().length === 0) {
       return { ok: false, reason: "empty_goal" };
     }
 
-    const prompt = buildDecomposePrompt(goal, opts);
+    const roster = opts.getRoster ? await opts.getRoster() : [];
+    const usePlanAssign = roster.length > 0;
+
+    let prompt: string;
+    if (usePlanAssign) {
+      const { buildPlanAssignPrompt } = await import("./chain-plan-assign.js");
+      prompt = buildPlanAssignPrompt(goal, roster);
+    } else {
+      prompt = buildDecomposePrompt(goal, opts);
+    }
+
     const result = await routeModelRequest(
       {
-        taskType: "chain.decompose",
+        taskType: usePlanAssign ? "chain.plan_assign" : "chain.decompose",
         prompt,
         sensitivity: "public",
         ownerApproved: true,
@@ -81,10 +105,10 @@ export function createLlmDecomposer(opts: CreateLlmDecomposerOptions): LlmDecomp
     );
 
     opts.audit?.record({
-      type: "chain.decompose.llm",
+      type: usePlanAssign ? "chain.plan_assign.llm" : "chain.decompose.llm",
       outcome: result.decision.action === "allow" ? "allow" : "deny",
-      intent: "task.chain.decompose",
-      summary: `goal.length=${goal.length} action=${result.decision.action}`,
+      intent: usePlanAssign ? "task.chain.plan_assign" : "task.chain.decompose",
+      summary: `goal.length=${goal.length} roster=${roster.length} action=${result.decision.action}`,
     });
 
     if (result.decision.action !== "allow") {
@@ -95,6 +119,39 @@ export function createLlmDecomposer(opts: CreateLlmDecomposerOptions): LlmDecomp
     }
     if (!result.response) {
       return { ok: false, reason: "model_deny" };
+    }
+
+    if (usePlanAssign) {
+      const {
+        parsePlanAssignSteps,
+        materializePlanAssignSubtasks,
+        hasDependsOnCycle,
+      } = await import("./chain-plan-assign.js");
+      const drafts = parsePlanAssignSteps(result.response.text);
+      if (!drafts) return { ok: false, reason: "parse_failed" };
+      const chainId = opts.chainContext?.chainId ?? `chain_${randomUUID()}`;
+      const chainMandateId =
+        opts.chainContext?.chainMandateId ?? `chainmandate_${randomUUID()}`;
+      const subtasks = materializePlanAssignSubtasks({
+        goal,
+        chainId,
+        chainMandateId,
+        drafts,
+        roster,
+        createdAt: new Date().toISOString(),
+        deadlineAt: opts.chainContext?.deadlineAt,
+      });
+      if (hasDependsOnCycle(subtasks)) return { ok: false, reason: "parse_failed" };
+      if (subtasks.some((s) => s.depth < 1 || s.depth > 3)) {
+        return { ok: false, reason: "too_deep" };
+      }
+      return {
+        ok: true,
+        steps: subtasks,
+        modelUsed: result.response.modelName,
+        tokensIn: result.response.usage?.inputTokens ?? 0,
+        tokensOut: result.response.usage?.outputTokens ?? 0,
+      };
     }
 
     let rawSteps: unknown;
@@ -134,8 +191,12 @@ export function createLlmDecomposer(opts: CreateLlmDecomposerOptions): LlmDecomp
           typeof candidate.requestedResult === "string" && candidate.requestedResult.length > 0
             ? candidate.requestedResult
             : `result of: ${candidate.objective ?? goal}`,
-        constraints: Array.isArray(candidate.constraints) ? candidate.constraints.filter((c) => typeof c === "string") : [],
-        dependsOn: Array.isArray(candidate.dependsOn) ? candidate.dependsOn.filter((d) => typeof d === "string") : [],
+        constraints: Array.isArray(candidate.constraints)
+          ? candidate.constraints.filter((c) => typeof c === "string")
+          : [],
+        dependsOn: Array.isArray(candidate.dependsOn)
+          ? candidate.dependsOn.filter((d) => typeof d === "string")
+          : [],
         costCeilingUsd: typeof candidate.costCeilingUsd === "number" ? candidate.costCeilingUsd : undefined,
         deadlineAt: typeof candidate.deadlineAt === "string" ? candidate.deadlineAt : undefined,
         createdAt: baseCreatedAt,
@@ -189,9 +250,14 @@ export function buildDecomposePrompt(goal: string, opts: CreateLlmDecomposerOpti
  * Extract the first JSON object/array from an LLM response. Some models
  * wrap their answer in prose despite being told not to; this is a
  * best-effort salvage so a noisy model doesn't tank the whole flow.
+ *
+ * MiniMax (and similar reasoning models) often emit `<think>…</think>`
+ * before the answer; braces inside that monologue must not win over the
+ * real JSON that follows.
  */
 export function extractJson(text: string): string {
-  const trimmed = text.trim();
+  const withoutThink = text.replace(/<think\b[^>]*>[\s\S]*?<\/think>/gi, " ");
+  const trimmed = withoutThink.trim();
   if (trimmed.startsWith("[") || trimmed.startsWith("{")) {
     return trimmed;
   }

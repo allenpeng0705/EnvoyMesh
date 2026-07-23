@@ -1824,7 +1824,7 @@ export function SettingsAITab() {
       {/* Agent Network chain defaults — budget ceiling, stall policy, bid
           ranking weights. Moved here (from the orphaned panel) so all
           agent-behavior config lives together. The "Agent Network" tab is
-          now "Devices & Fleet" (device bonding), clearing the naming clash. */}
+          now "Agent Network" (membership + device bonding), clearing the naming clash. */}
       <section className="settings-section">
         <ChainDefaultsPanel />
       </section>
@@ -1970,19 +1970,6 @@ export function SettingsAITab() {
               }}
             />
             <span>{t("settings.ai.postures.documentAcquisition")}</span>
-          </label>
-        </div>
-        <div className="settings-field">
-          <label className="settings-checkbox-row">
-            <input
-              type="checkbox"
-              checked={nodeConfig?.capabilityProviderEnabled === true}
-              onChange={async (e) => {
-                await nodeService.updateNodeConfig({ capabilityProviderEnabled: e.target.checked });
-                await refreshNodeConfig();
-              }}
-            />
-            <span>{t("settings.ai.postures.capabilityProvider")}</span>
           </label>
         </div>
       </section>

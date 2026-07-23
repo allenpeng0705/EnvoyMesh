@@ -47,7 +47,9 @@ export function ProfilePhotosTab({ variant = "desktop" }: ProfilePhotosTabProps)
         mimeType: mime,
       });
       await refreshHumanProfile();
-      await nodeService.syncProfileToBonds();
+      void nodeService.syncProfileToBonds().catch((err) => {
+        console.warn("[profile.sync] broadcast to bonds failed:", err);
+      });
       showToast(t("profilePhotos.thumbnailUpdated"), "success");
     } catch (err) {
       showToast(err instanceof Error ? err.message : t("profilePhotos.uploadFailed"), "error");

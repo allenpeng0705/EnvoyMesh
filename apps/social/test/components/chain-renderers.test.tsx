@@ -134,10 +134,33 @@ describe("ChainReportRenderer", () => {
 
   it("computes total cost as sum of worker allocations + synthesis", () => {
     const report = makeReport();
-    render(wrap(<ChainReportRenderer report={report} />));
+    render(wrap(<ChainReportRenderer report={report} onCitationClick={() => undefined} />));
     // 2 + 3 + 0.5 = 5.50
     expect(screen.getByText("$5.50")).toBeDefined();
     expect(screen.getAllByText("$0.50").length).toBeGreaterThan(0);
+  });
+
+  it("renders Draft/Final sections as an accordion timeline", () => {
+    const report = makeReport({
+      sections: [
+        { heading: "Draft 1", bodyMarkdown: "First draft body", citations: [] },
+        { heading: "Final (round 2)", bodyMarkdown: "Final draft body", citations: [] },
+        {
+          heading: "Analyzed Q3",
+          bodyMarkdown: "## Q3",
+          citations: [{ subtaskId: "subtask_a", snippet: "snip" }],
+        },
+      ],
+    });
+    render(wrap(<ChainReportRenderer report={report} />));
+    expect(screen.getByTestId("chain-report-drafts")).toBeDefined();
+    expect(screen.getByTestId("chain-report-draft-1")).toBeDefined();
+    expect(screen.getByTestId("chain-report-draft-2")).toBeDefined();
+    expect(screen.getByText("Draft 1")).toBeDefined();
+    expect(screen.getByText("Final (round 2)")).toBeDefined();
+    expect(screen.getByText("Analyzed Q3")).toBeDefined();
+    // Final accordion starts open
+    expect(screen.getByText("Final draft body")).toBeDefined();
   });
 });
 

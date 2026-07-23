@@ -1,0 +1,72 @@
+# Example fleet bootstrap file for `npm run fleet:apply`.
+#
+# Copy to fleet.yaml, fill identities / wsUrls, export secrets, then:
+#   LAN_FLEET_TOKEN="$(openssl rand -hex 16)" \
+#   npm run fleet:apply -- --file fleet.yaml --dry-run
+#   npm run fleet:apply -- --file fleet.yaml
+#
+# Docs: docs/fleet-bootstrap.md
+
+version: "0.1"
+fleetId: acme-office
+
+shared:
+  # Join Agent Network on every listed node
+  membership:
+    capabilityProviderEnabled: true
+  # Same-Wi-Fi silent bonds (Path C)
+  lanAutoBond:
+    enabled: true
+    tokenRef: LAN_FLEET_TOKEN
+  # Optional: installer / hello auto-accept on the sponsor only
+  bondAutonomy:
+    enabled: true
+    sponsorProofTokenRef: SPONSOR_TOKEN
+    maxAutoBondsPerDay: 50
+
+bootstrap:
+  peers: []
+  # presets: ["acme-wan"]
+
+nodes:
+  - id: home
+    role: sponsor
+    rpc:
+      wsUrl: "ws://127.0.0.1:3030/ws"
+    # identity optional — apply will call getProfile when missing
+
+  - id: desk-alice
+    role: member
+    rpc:
+      wsUrl: "ws://192.168.1.21:3030/ws"
+    join:
+      method: lan          # office Wi-Fi + shared token
+      trustLevel: direct
+
+  - id: desk-bob
+    role: member
+    rpc:
+      wsUrl: "ws://192.168.1.22:3030/ws"
+    join:
+      method: manifest     # pre-stage via signed Fleet Manifest
+      trustLevel: direct
+      manifestRole: member
+    identity:
+      # Prefer filling these when known; otherwise fetchIfMissing: true (default)
+      fetchIfMissing: true
+
+  - id: remote-carol
+    role: member
+    rpc:
+      wsUrl: "ws://127.0.0.1:5030/ws"
+    join:
+      method: invite       # mint on sponsor, redeem on carol
+      trustLevel: direct
+
+apply:
+  # Default steps if omitted:
+  # ensureOnline → patchNodeConfig → createOrImportManifest →
+  # mintInvites → redeemInvites → refreshAgentNetworkWorkers → verifyRoster
+  dryRun: false
+  ensureOnlineTimeoutSec: 30
+  # inviteOutFile: ./fleet-invites-acme-office.json

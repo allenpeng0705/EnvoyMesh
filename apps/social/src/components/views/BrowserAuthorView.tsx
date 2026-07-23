@@ -3,7 +3,8 @@
  *
  * Design: docs/web-content-browsing-design.md §4.8, §9.2.
  */
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { buildProfileMarkdown } from "@envoymesh/api";
 import type {
   BondRecord,
   PublishWebContentParams,
@@ -54,19 +55,67 @@ export function BrowserAuthorView({
 }: BrowserAuthorViewProps) {
   const t = useT();
   const nodeService = useNodeService();
-  const { bonds } = useNodeState();
+  const { bonds, humanProfile } = useNodeState();
   const [template, setTemplate] = useState<AuthorTemplate | null>(initialTemplate ?? null);
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [gallery, setGallery] = useState("wall");
   const [sectionSlug, setSectionSlug] = useState("");
   const [advertiseTopic, setAdvertiseTopic] = useState(true);
-  const [visibility, setVisibility] = useState<PublishWebContentVisibility>("bonded");
+  const [visibility, setVisibility] = useState<PublishWebContentVisibility>(
+    template === "profile" ? "public" : "bonded",
+  );
   const [contactIds, setContactIds] = useState<string[]>([]);
   const [file, setFile] = useState<File | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [published, setPublished] = useState<PublishWebContentResult | null>(null);
+  const [profileAvatar, setProfileAvatar] = useState<File | null>(null);
+  const [profilePhotos, setProfilePhotos] = useState<File[]>([]);
+  const [profileDisplayName, setProfileDisplayName] = useState(humanProfile?.displayName ?? "");
+  const [profileBio, setProfileBio] = useState(humanProfile?.bio ?? "");
+  const MAX_PROFILE_PHOTOS = 5;
+
+  useEffect(() => {
+    if (humanProfile && template === "profile") {
+      setProfileDisplayName(humanProfile.displayName ?? "");
+      setTitle(humanProfile.username ?? "");
+      setProfileBio(humanProfile.bio ?? "");
+    }
+  }, [humanProfile, template]);
+
+  useEffect(() => {
+    if (template !== "profile" || !humanProfile?.publicThumbnail) {
+      return;
+    }
+    const thumbnail = humanProfile.publicThumbnail;
+    let cancelled = false;
+    void nodeService
+      .readLibraryItemContent({
+        relativePath: thumbnail.vaultRelativePath,
+        maxBytes: 512 * 1024,
+      })
+      .then((result) => {
+        if (cancelled) return;
+        const byteString = atob(result.contentBase64);
+        const mimeType = result.mimeType;
+        const ab = new ArrayBuffer(byteString.length);
+        const ia = new Uint8Array(ab);
+        for (let i = 0; i < byteString.length; i++) {
+          ia[i] = byteString.charCodeAt(i);
+        }
+        const blob = new Blob([ab], { type: mimeType });
+        const fileName = thumbnail.vaultRelativePath.split("/").pop() ?? "thumbnail";
+        const file = new File([blob], fileName, { type: mimeType });
+        setProfileAvatar(file);
+      })
+      .catch(() => {
+        if (!cancelled) setProfileAvatar(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [template, humanProfile?.publicThumbnail, nodeService]);
 
   const selectableBonds = eligibleBonds(bonds);
   const isBinary = template === "photo" || template === "file";
@@ -84,6 +133,7 @@ export function BrowserAuthorView({
     (!isBinary || file != null);
 
   function handleVisibilityChange(next: PublishWebContentVisibility) {
+    if (template === "profile") return;
     setVisibility(next);
     if (next !== "contacts") {
       setContactIds([]);
@@ -101,35 +151,78 @@ export function BrowserAuthorView({
     setBusy(true);
     setError(null);
     try {
-      const params: PublishWebContentParams = {
-        template,
-        title: title.trim(),
-        visibility,
-      };
-      if (visibility === "contacts") {
-        params.contactIds = [...contactIds];
-      }
-      if (template === "blog-post" || template === "note" || template === "profile" || template === "section") {
-        params.body = body;
-      }
-      if (template === "photo" && body.trim()) {
-        // Optional caption stored as note-style summary alongside the image title.
-        params.body = body.trim();
-      }
-      if (template === "section") {
-        if (sectionSlug.trim()) params.sectionSlug = sectionSlug.trim();
-        params.advertiseTopic = advertiseTopic;
-      } else if (file) {
-        params.contentBase64 = await readFileAsBase64(file);
-        params.mimeType = file.type || (template === "photo" ? "image/png" : "application/octet-stream");
-        params.fileName = file.name;
-        if (template === "photo") {
-          params.gallery = gallery.trim() || "wall";
+      if (template === "profile") {
+        if (profileAvatar) {
+          const avatarBase64 = await readFileAsBase64(profileAvatar);
+          await nodeService.setPublicProfileThumbnail({
+            contentBase64: avatarBase64,
+            mimeType: (profileAvatar.type || "image/png") as "image/jpeg" | "image/png" | "image/webp",
+          });
         }
+        for (const photo of profilePhotos) {
+          const photoBase64 = await readFileAsBase64(photo);
+          await nodeService.upsertProfileGalleryPhoto({
+            contentBase64: photoBase64,
+            mimeType: (photo.type || "image/png") as "image/jpeg" | "image/png" | "image/webp",
+            visibility: "public",
+            label: photo.name,
+          });
+        }
+        await nodeService.updateHumanProfile({
+          displayName: profileDisplayName.trim() || title.trim(),
+          username: title.trim(),
+          bio: profileBio,
+        });
+        void nodeService.syncProfileToBonds().catch((err) => {
+          console.warn("[profile.sync] broadcast to bonds failed:", err);
+        });
+        const profileBody = buildProfileMarkdown({
+          displayName: profileDisplayName.trim() || title.trim(),
+          username: title.trim(),
+          bio: profileBio,
+          hobbies: humanProfile?.hobbies ?? [],
+          knowledge: humanProfile?.knowledge ?? [],
+          capabilities: humanProfile?.capabilities ?? [],
+          ownerId: humanProfile?.ownerId ?? "",
+        });
+        const result = await nodeService.publishWebContentEntry({
+          template: "profile",
+          title: title.trim(),
+          visibility: "public",
+          body: profileBody,
+        });
+        setPublished(result);
+        onPublished?.(result);
+      } else {
+        const params: PublishWebContentParams = {
+          template,
+          title: title.trim(),
+          visibility,
+        };
+        if (visibility === "contacts") {
+          params.contactIds = [...contactIds];
+        }
+        if (template === "blog-post" || template === "note" || template === "section") {
+          params.body = body;
+        }
+        if (template === "photo" && body.trim()) {
+          params.body = body.trim();
+        }
+        if (template === "section") {
+          if (sectionSlug.trim()) params.sectionSlug = sectionSlug.trim();
+          params.advertiseTopic = advertiseTopic;
+        } else if (file) {
+          params.contentBase64 = await readFileAsBase64(file);
+          params.mimeType = file.type || (template === "photo" ? "image/png" : "application/octet-stream");
+          params.fileName = file.name;
+          if (template === "photo") {
+            params.gallery = gallery.trim() || "wall";
+          }
+        }
+        const result = await nodeService.publishWebContentEntry(params);
+        setPublished(result);
+        onPublished?.(result);
       }
-      const result = await nodeService.publishWebContentEntry(params);
-      setPublished(result);
-      onPublished?.(result);
     } catch (e) {
       if (e instanceof Error && e.message === "file_read_failed") {
         setError(t("browser.author.fileReadFailed", "Failed to read file"));
@@ -152,6 +245,10 @@ export function BrowserAuthorView({
     setVisibility("bonded");
     setContactIds([]);
     setFile(null);
+    setProfileAvatar(null);
+    setProfilePhotos([]);
+    setProfileDisplayName("");
+    setProfileBio("");
   }
 
   if (published) {
@@ -295,6 +392,202 @@ export function BrowserAuthorView({
               ? t("browser.author.newSection", "Custom section")
               : t("browser.author.newFile", "File upload");
 
+  const isProfile = template === "profile";
+
+  if (isProfile) {
+    return (
+      <div className="browser-author browser-author--profile" data-testid="browser-author-form">
+        <header className="browser-author__header">
+          <h3>{heading}</h3>
+          <p className="browser-author__lede">
+            {t(
+              "browser.author.profileLede",
+              "Create your profile page to share who you are with the mesh.",
+            )}
+          </p>
+        </header>
+
+        <div className="browser-author__profile-card">
+          <div className="browser-author__profile-avatar">
+            <input
+              id="browser-author-profile-avatar"
+              type="file"
+              className="browser-author__profile-avatar-input"
+              accept="image/*"
+              disabled={busy}
+              onChange={(e) => {
+                const next = e.target.files?.[0] ?? null;
+                setProfileAvatar(next);
+              }}
+            />
+            <label htmlFor="browser-author-profile-avatar" className="browser-author__profile-avatar-placeholder">
+              {profileAvatar ? (
+                <img
+                  src={URL.createObjectURL(profileAvatar)}
+                  alt={t("browser.author.profileAvatarAlt", "Profile avatar")}
+                />
+              ) : (
+                <AuthorIconProfilePlaceholder />
+              )}
+              <span className="browser-author__profile-avatar-overlay">
+                <AuthorIconCamera />
+              </span>
+            </label>
+            {profileAvatar && (
+              <button
+                type="button"
+                className="browser-author__profile-avatar-remove"
+                onClick={() => setProfileAvatar(null)}
+                disabled={busy}
+                aria-label={t("browser.author.removeAvatar", "Remove avatar")}
+              >
+                <AuthorIconX />
+              </button>
+            )}
+          </div>
+
+          <div className="browser-author__profile-photos">
+            <label className="field-label browser-author__profile-photos-label">
+              {t("browser.author.profilePhotos", "Photos")}
+              <span className="field-desc">
+                {t("browser.author.profilePhotosHint", `Add up to ${MAX_PROFILE_PHOTOS} photos to showcase your profile`)}
+              </span>
+            </label>
+            <div className="browser-author__profile-photos-grid">
+              {profilePhotos.map((photo, index) => (
+                <div key={index} className="browser-author__profile-photo-item">
+                  <img
+                    src={URL.createObjectURL(photo)}
+                    alt={t("browser.author.profilePhotoAlt", "Profile photo")}
+                    className="browser-author__profile-photo-img"
+                  />
+                  <button
+                    type="button"
+                    className="browser-author__profile-photo-remove"
+                    onClick={() => {
+                      setProfilePhotos((prev) => prev.filter((_, i) => i !== index));
+                    }}
+                    disabled={busy}
+                  >
+                    <AuthorIconX />
+                  </button>
+                </div>
+              ))}
+              {profilePhotos.length < MAX_PROFILE_PHOTOS && (
+                <div className="browser-author__profile-photos-add">
+                  <input
+                    id="browser-author-profile-photos"
+                    type="file"
+                    className="browser-author__profile-photos-input"
+                    accept="image/*"
+                    multiple
+                    disabled={busy}
+                    onChange={(e) => {
+                      const newFiles = Array.from(e.target.files ?? []);
+                      setProfilePhotos((prev) => [...prev, ...newFiles].slice(0, MAX_PROFILE_PHOTOS));
+                    }}
+                  />
+                  <label htmlFor="browser-author-profile-photos" className="browser-author__profile-photos-add-btn">
+                    <AuthorIconPlus />
+                  </label>
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="browser-author__profile-fields">
+            <label className="field-label" htmlFor="browser-author-profile-displayname">
+              {t("browser.author.profileDisplayName", "Display Name")}
+            </label>
+            <input
+              id="browser-author-profile-displayname"
+              className="browser-author__profile-input"
+              data-testid="browser-author-profile-displayname"
+              value={profileDisplayName}
+              onChange={(e) => setProfileDisplayName(e.target.value)}
+              disabled={busy}
+              placeholder={t("browser.author.profileDisplayNamePlaceholder", "Your name")}
+            />
+
+            <label className="field-label" htmlFor="browser-author-profile-title">
+              {t("browser.author.profileTitle", "Title")}
+            </label>
+            <input
+              id="browser-author-profile-title"
+              className="browser-author__profile-input"
+              data-testid="browser-author-profile-title"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              disabled={busy}
+              placeholder={t("browser.author.profileTitlePlaceholder", "e.g., AI Enthusiast")}
+            />
+
+            <label className="field-label" htmlFor="browser-author-profile-bio">
+              {t("browser.author.profileBio", "Bio")}
+            </label>
+            <textarea
+              id="browser-author-profile-bio"
+              className="browser-author__profile-textarea"
+              data-testid="browser-author-profile-bio"
+              value={profileBio}
+              onChange={(e) => setProfileBio(e.target.value)}
+              disabled={busy}
+              rows={4}
+              placeholder={t("browser.author.profileBioPlaceholder", "Tell us about yourself…")}
+            />
+          </div>
+        </div>
+
+        {template !== "profile" && (
+          <>
+            <label className="field-label" htmlFor="web-content-visibility">
+              {t("browser.author.visibility", "Visibility")}
+            </label>
+            <VisibilitySelector value={visibility} onChange={handleVisibilityChange} disabled={busy} />
+          </>
+        )}
+
+        {error ? (
+          <p className="browser-author__error" data-testid="browser-author-error" role="alert">
+            {error}
+          </p>
+        ) : null}
+
+        <div className="browser-author__actions">
+          <button
+            type="button"
+            className="btn browser-author__back-btn"
+            disabled={busy}
+            onClick={() => {
+              if (initialTemplate) {
+                onCancel?.();
+              } else {
+                setTemplate(null);
+                setFile(null);
+                setContactIds([]);
+              }
+            }}
+            data-testid="browser-author-back"
+          >
+            <AuthorIconBack />
+            {t("browser.author.back", "Back")}
+          </button>
+          <button
+            type="button"
+            className="btn btn-primary"
+            disabled={!((profileDisplayName.trim() || title.trim()) && !busy)}
+            onClick={() => void handlePublish()}
+            data-testid="browser-author-publish"
+          >
+            {busy
+              ? t("browser.author.publishing", "Publishing…")
+              : t("browser.author.publish", "Publish")}
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className={`browser-author${isArticle ? " browser-author--article" : ""}`}
@@ -391,25 +684,36 @@ export function BrowserAuthorView({
           <label className="field-label" htmlFor="browser-author-file">
             {t("browser.author.file", "File")}
           </label>
-          <input
-            id="browser-author-file"
-            type="file"
-            data-testid="browser-author-file"
-            accept={template === "photo" ? "image/*" : undefined}
-            disabled={busy}
-            onChange={(e) => {
-              const next = e.target.files?.[0] ?? null;
-              setFile(next);
-              if (next && !title.trim()) {
-                setTitle(next.name.replace(/\.[^.]+$/, "") || next.name);
-              }
-            }}
-          />
-          {file ? (
-            <p className="field-desc" data-testid="browser-author-file-name">
-              {file.name} ({Math.round(file.size / 1024)} {t("browser.author.fileSizeUnit", "KiB")})
-            </p>
-          ) : null}
+          <div className="browser-author__file-picker">
+            <input
+              id="browser-author-file"
+              type="file"
+              className="browser-author__file-input"
+              data-testid="browser-author-file"
+              accept={template === "photo" ? "image/*" : undefined}
+              disabled={busy}
+              onChange={(e) => {
+                const next = e.target.files?.[0] ?? null;
+                setFile(next);
+                if (next && !title.trim()) {
+                  setTitle(next.name.replace(/\.[^.]+$/, "") || next.name);
+                }
+              }}
+            />
+            <label htmlFor="browser-author-file" className="btn browser-author__file-btn">
+              <AuthorIconFile />
+              {t("browser.author.chooseFile", "Choose File")}
+            </label>
+            {file ? (
+              <span className="browser-author__file-name" data-testid="browser-author-file-name">
+                {file.name} ({Math.round(file.size / 1024)} {t("browser.author.fileSizeUnit", "KiB")})
+              </span>
+            ) : (
+              <span className="browser-author__file-name browser-author__file-name--empty">
+                {t("browser.author.noFileChosen", "No file chosen")}
+              </span>
+            )}
+          </div>
           {template === "photo" ? (
             <>
               <label className="field-label" htmlFor="browser-author-caption">
@@ -616,6 +920,68 @@ function AuthorIconSection() {
       <rect x="14" y="3" width="7" height="7" rx="1" />
       <rect x="3" y="14" width="7" height="7" rx="1" />
       <rect x="14" y="14" width="7" height="7" rx="1" />
+    </svg>
+  );
+}
+
+function AuthorIconProfilePlaceholder() {
+  return (
+    <svg
+      viewBox="0 0 48 48"
+      width="48"
+      height="48"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="24" cy="14" r="11" />
+      <path d="M42 40c0-6-8-12-18-12s-18 6-18 12" />
+      <circle cx="19" cy="12" r="2" />
+      <circle cx="29" cy="12" r="2" />
+      <path d="M20 20c2 2 4 2 6 0" />
+    </svg>
+  );
+}
+
+function AuthorIconCamera() {
+  return (
+    <svg {...iconProps()}>
+      <path d="M23 19h-2v-2h2v2z" />
+      <path d="M19 24h10v9H19z" />
+      <path d="M30 24l1.5-3a11.1 11.1 0 0 0-2.5-3l-2.5 2a11.1 11.1 0 0 0-3 0l-2.5-2a11.1 11.1 0 0 0-2.5 3L6 24" />
+      <path d="M4 20h4v4H4z" />
+      <path d="M40 20h4v4h-4z" />
+    </svg>
+  );
+}
+
+function AuthorIconPlus() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      width="24"
+      height="24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={1.5}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M12 5v14" />
+      <path d="M5 12h14" />
+    </svg>
+  );
+}
+
+function AuthorIconX() {
+  return (
+    <svg {...iconProps()}>
+      <path d="M18 6L6 18" />
+      <path d="M6 6l12 12" />
     </svg>
   );
 }

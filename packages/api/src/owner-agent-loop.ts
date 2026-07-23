@@ -117,12 +117,15 @@ export interface OwnerAgentTurnDeps {
     maxChainCostUsd?: number;
     costCeilingUsd?: number;
     allowLlm?: boolean;
+    assignerPeerId?: string;
   }) => Promise<{
     ok: boolean;
     chainId: string;
     chainMandateId: string;
     subtasks: Array<{ subtaskId: string; depth: number; requiredCapability: string; objective: string }>;
     error?: string;
+    assignerPeerId?: string;
+    handedOff?: boolean;
   }>;
 }
 

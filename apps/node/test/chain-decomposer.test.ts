@@ -202,4 +202,80 @@ describe("extractJson", () => {
   it("returns the trimmed input when no JSON-looking substring exists", () => {
     expect(extractJson('  nothing here  ')).toBe('nothing here');
   });
+  it("ignores braces inside MiniMax <think> monologue", () => {
+    const text = [
+      "<think>",
+      'Example shape: {"steps":[{"objective":"ignore me"}]}',
+      "</think>",
+      "",
+      '{"steps":[{"objective":"real","requiredCapability":"coding","depth":1,"dependsOn":[],"assignedPeerId":"envoy_agent_c","reason":"ok"}]}',
+    ].join("\n");
+    expect(extractJson(text)).toContain('"objective":"real"');
+    expect(extractJson(text)).not.toContain("ignore me");
+  });
+});
+describe("createLlmDecomposer — plan+assign with roster", () => {
+  it("materializes preferredWorkerPeerId and dependsOn from LLM JSON", async () => {
+    const provider = makeProvider(() =>
+      respondWith(
+        JSON.stringify({
+          steps: [
+            {
+              objective: "research",
+              requiredCapability: "research.web",
+              depth: 1,
+              dependsOn: [],
+              assignedPeerId: "envoy_agent_r",
+              reason: "research specialist",
+            },
+            {
+              objective: "write",
+              requiredCapability: "coding",
+              depth: 1,
+              dependsOn: [0],
+              assignedPeerId: "envoy_agent_c",
+              reason: "coder",
+            },
+          ],
+          aggregation: "concatenate",
+        }),
+      ),
+    );
+    const decomposer = createLlmDecomposer({
+      providers: [provider],
+      getRoster: async () => [
+        {
+          peerId: "envoy_agent_r",
+          capabilities: ["task.execute", "research.web"],
+          profile: {
+            strengths: ["research.web"],
+            modelFreshness: 8,
+            spendPosture: "metered",
+            contextWindow: "512k",
+          },
+        },
+        {
+          peerId: "envoy_agent_c",
+          capabilities: ["task.execute", "coding"],
+          profile: {
+            strengths: ["coding"],
+            modelFreshness: 9,
+            spendPosture: "subscription",
+            contextWindow: "1M+",
+          },
+        },
+      ],
+      chainContext: {
+        chainId: "chain_plan_assign_ut",
+        chainMandateId: "chainmandate_plan_assign_ut",
+      },
+    });
+    const r = await decomposer("research then write");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.steps).toHaveLength(2);
+    expect(r.steps[0]!.preferredWorkerPeerId).toBe("envoy_agent_r");
+    expect(r.steps[1]!.preferredWorkerPeerId).toBe("envoy_agent_c");
+    expect(r.steps[1]!.dependsOn).toEqual([r.steps[0]!.subtaskId]);
+  });
 });

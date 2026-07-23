@@ -1,8 +1,8 @@
 export const agentNetworkSettingsMessages = {
-  title: "Devices & Fleet",
+  title: "Agent Network",
   intro:
-    "Configure how this node bonds with other fleet members. Four paths are available — pick the one that fits your team. All four are **off by default** until you turn them on.",
-  quickReferenceTitle: "Which path should I use?",
+    "Join the Agent Network as a Chains worker, then configure how this node bonds with other fleet members. Fleet paths are **off by default** until you turn them on.",
+  quickReferenceTitle: "What can I configure here?",
   groupAutoBondTitle: "Auto-bond (sponsor node + installer)",
   groupAutoBondDesc:
     "These two work as a pair: the sponsor node auto-accepts hellos that carry a matching proof token, and installer builds send that token on first launch. Set the **same token** on both sides.",
@@ -12,7 +12,64 @@ export const agentNetworkSettingsMessages = {
   groupOperatorTitle: "Operator tools",
   groupOperatorDesc:
     "Pre-stage trust for many nodes at once, or auto-bond everyone on the office Wi-Fi.",
+  membership: {
+    heading: "Join Agent Network",
+    desc:
+      "Opt in so bonded contacts can recruit your local agent as a Chains worker. Your agent stays private until this is on.",
+    joinLabel: "Join Agent Network (Capability Provider)",
+    joinHint:
+      "Off by default. When on, peers can discover and score your agent for chain steps. Your agent still runs locally for you either way.",
+    profileDesc:
+      "Owner-attested traits peers use to score your agent when selecting workers. Only shared when Join Agent Network is on.",
+    enableFirst: "Enable Join Agent Network above to advertise and edit this profile.",
+    freshness: "Model freshness (1–10)",
+    freshnessHint: "Higher = newer / more capable models you run.",
+    spendPosture: "Token / spend posture",
+    spendSubscription: "Subscription (monthly/yearly pooled)",
+    spendMetered: "Metered / prepaid by usage",
+    spendUnknown: "Unknown",
+    spendHint: "Subscription is preferred for long multi-step chains.",
+    contextWindow: "Context window",
+    throughput: "Throughput (tokens/sec, attested)",
+    throughputPlaceholder: "e.g. 80",
+    throughputHint:
+      "Owner-attested inference speed. Used as a soft ranking hint for Team jobs — not a live measurement yet.",
+    strengths: "Strengths",
+    strengthPlaceholder: "Add custom strength + Enter",
+    save: "Save profile",
+    saving: "Saving…",
+    saved: "Agent Network profile saved",
+  },
+  officeLan: {
+    heading: "Office LAN",
+    desc:
+      "One-click same-Wi-Fi setup for Team jobs: Join Agent Network + LAN Auto-Bond with a shared fleet token. Run this on every desk machine and paste the same token.",
+    enableButton: "Enable office LAN team",
+    enabling: "Enabling…",
+    enabled: "Office LAN team enabled",
+    copyToken: "Copy token",
+    tokenCopied: "Token copied",
+    shareHint:
+      "Share this token with the other machines, then click Enable office LAN team on each (or paste into LAN Auto-Bond below).",
+    alreadyOn: "Join and LAN Auto-Bond are already on with a shared token.",
+  },
+  workersStatus: {
+    heading: "Workers status",
+    bonded: "Bonded peers: {count}",
+    joinOn: "Join Agent Network: on",
+    joinOff: "Join Agent Network: off",
+    workersVisible: "Workers visible to Team jobs: {count}",
+    refresh: "Refresh workers",
+    refreshing: "Refreshing…",
+    refreshed: "Workers refreshed",
+    joinOffAfterLan:
+      "Bonded on LAN but not recruitable — Join Agent Network or use Office LAN preset.",
+  },
   quickReference: {
+    membership:
+      "Opt in as a Chains worker and set the scoring profile peers see. Off by default — local agent stays private.",
+    officeLan:
+      "Same-LAN happy path: one button enables Join + LAN Auto-Bond + shared token on each machine.",
     companyInvites:
       "Long-lived bearer links. Best when members are remote or the LAN is unreliable. Each invite is single-use.",
     lanAutoBond:
@@ -104,7 +161,7 @@ export const agentNetworkSettingsMessages = {
       },
       engineer: {
         label: "Engineer",
-        hint: "Standard team member — chat, share, chains. trustLevel: direct.",
+        hint: "Standard team member — chat, share, team jobs. trustLevel: direct.",
       },
       contractor: {
         label: "Contractor",

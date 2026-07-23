@@ -138,7 +138,68 @@ describe("handleInboundAgentCardIntent", () => {
       if (result.action === "respond") {
         expect(result.responsePayload.card.ownerId).toBe(OWNER_ID);
         expect(result.responsePayload.card.capabilities).toContain("message.send");
+        // Private by default — not recruitable for Agent Network / Chains.
+        expect(result.responsePayload.card.capabilities).not.toContain("capability-provider");
       }
+    }
+  });
+
+  it("advertises capability-provider on agent card when Capability Provider is enabled", async () => {
+    const request = createAgentCardRequestPayload({
+      requesterOwnerId: PEER_OWNER_ID,
+      requesterDeviceId: "envoy:device:phone",
+    });
+    const result = await handleInboundAgentCardIntent({
+      envelope: agentEnvelope("agent.card.request", request),
+      profile: makeTestProfile(),
+      remotePeerId: REMOTE_PEER,
+      receivedAt: Date.now(),
+      correlationId: "corr-card-opt-in",
+      taskStore,
+      trustStore,
+      agentCardStore,
+      humanProfileStore,
+      bridgeIdentity,
+      capabilityProviderEnabled: true,
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok && result.action === "respond") {
+      expect(result.responsePayload.card.capabilities).toContain("capability-provider");
+      expect(result.responsePayload.card.capabilities).toContain("task.execute");
+    }
+  });
+
+  it("advertises agentNetworkProfile on card when Capability Provider is enabled", async () => {
+    const request = createAgentCardRequestPayload({
+      requesterOwnerId: PEER_OWNER_ID,
+      requesterDeviceId: "envoy:device:phone",
+    });
+    const result = await handleInboundAgentCardIntent({
+      envelope: agentEnvelope("agent.card.request", request),
+      profile: makeTestProfile(),
+      remotePeerId: REMOTE_PEER,
+      receivedAt: Date.now(),
+      correlationId: "corr-card-profile",
+      taskStore,
+      trustStore,
+      agentCardStore,
+      humanProfileStore,
+      bridgeIdentity,
+      capabilityProviderEnabled: true,
+      agentNetworkProfile: {
+        modelFreshness: 8,
+        spendPosture: "subscription",
+        contextWindow: "512k",
+        strengths: ["research"],
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    if (result.ok && result.action === "respond") {
+      expect(result.responsePayload.card.agentNetworkProfile?.modelFreshness).toBe(8);
+      expect(result.responsePayload.card.agentNetworkProfile?.contextWindow).toBe("512k");
+      expect(result.responsePayload.card.capabilities).toContain("capability-provider");
     }
   });
 

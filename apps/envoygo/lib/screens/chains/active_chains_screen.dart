@@ -61,7 +61,7 @@ class _ActiveChainsScreenState extends ConsumerState<ActiveChainsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Active chains'),
+        title: const Text('Active team jobs'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),

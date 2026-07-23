@@ -136,6 +136,12 @@ export class WsServer {
       nodeServiceImpl.on("home:config-updated", (data: unknown) =>
         this.emitEvent("home:config-updated", data),
       );
+      nodeServiceImpl.on("home:bonds-updated", (data: unknown) =>
+        this.emitEvent("home:bonds-updated", data),
+      );
+      nodeServiceImpl.on("home:agent-cards-updated", (data: unknown) =>
+        this.emitEvent("home:agent-cards-updated", data),
+      );
       nodeServiceImpl.on("p2p:envelope", (data: unknown) => this.emitEvent("p2p:envelope", data));
       nodeServiceImpl.on("crdt:sync", (data: unknown) => this.emitEvent("crdt:sync", data));
       nodeServiceImpl.on("discovery:multihop-update", (data: unknown) =>

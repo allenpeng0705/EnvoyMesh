@@ -11,10 +11,9 @@ import { SwipeBack } from "./components/SwipeBack.js";
 import { SetupView } from "./components/views/SetupView.js";
 import { ChatView } from "./components/views/ChatView.js";
 import { DiscoverView } from "./components/views/DiscoverView.js";
-import { BrowserView } from "./components/views/BrowserView.js";
 import { ProfileView } from "./components/views/ProfileView.js";
 import { SettingsView, type SettingsTabId } from "./components/views/SettingsView.js";
-import { LibraryView } from "./components/views/LibraryView.js";
+import { ContentView } from "./components/views/ContentView.js";
 import { H2AChannelView } from "./components/views/H2AChannelView.js";
 import { ChainsView } from "./components/views/ChainsView.js";
 import { AutoReplyPausedNotifier } from "./components/AutoReplyPausedNotifier.js";
@@ -35,7 +34,7 @@ import {
 import { WS_LOOPBACK_URL } from "@envoymesh/api";
 import type { HumanProfile, NodeConfig, NodeStatus } from "@envoymesh/api";
 
-export type ViewName = "chat" | "assistant" | "discover" | "library" | "browser" | "chains" | "profile" | "settings";
+export type ViewName = "chat" | "assistant" | "discover" | "content" | "chains" | "profile" | "settings";
 
 export type ChatPanelMode = "threads" | "inbox" | "terminals";
 
@@ -370,6 +369,8 @@ export function App() {
 
   const [currentView, setCurrentView] = useState<ViewName>("chat");
   const [settingsTab, setSettingsTab] = useState<SettingsTabId>("account");
+  const [chatSelectedContact, setChatSelectedContact] = useState<string | null>(null);
+  const [chatPanelMode, setChatPanelMode] = useState<ChatPanelMode>("threads");
 
   // Navigation handler.
   const navigateTo = (view: ViewName) => {
@@ -379,14 +380,20 @@ export function App() {
 
   useEffect(() => {
     const onOpenBrowser = () => {
-      navigateTo("browser");
+      navigateTo("content");
+    };
+    const onOpenInbox = () => {
+      setCurrentView("chat");
+      setChatPanelMode("inbox");
     };
     window.addEventListener("envoymesh:open-browser", onOpenBrowser);
-    return () => window.removeEventListener("envoymesh:open-browser", onOpenBrowser);
+    window.addEventListener("envoymesh:open-inbox", onOpenInbox);
+    return () => {
+      window.removeEventListener("envoymesh:open-browser", onOpenBrowser);
+      window.removeEventListener("envoymesh:open-inbox", onOpenInbox);
+    };
   }, []);
 
-  const [chatSelectedContact, setChatSelectedContact] = useState<string | null>(null);
-  const [chatPanelMode, setChatPanelMode] = useState<ChatPanelMode>("threads");
   const [pairingOpen, setPairingOpen] = useState(false);
   const [guideOpen, setGuideOpen] = useState(false);
 
@@ -506,6 +513,7 @@ export function App() {
                     setChatPanelMode("inbox");
                   }}
                   onOpenChains={() => navigateTo("chains")}
+                  onOpenDiscover={() => navigateTo("discover")}
                 />
               </SwipeBack>
             )}
@@ -514,21 +522,17 @@ export function App() {
                 <DiscoverView />
               </SwipeBack>
             )}
-            {currentView === "library" && (
+            {currentView === "content" && (
               <SwipeBack onSwipeBack={() => navigateTo("chat")}>
-                <LibraryView />
-              </SwipeBack>
-            )}
-            {/* Phase 45 — Web Content Browsing. URL-addressable content
-                from bonded contacts. See docs/web-content-browsing-design.md §4.7. */}
-            {currentView === "browser" && (
-              <SwipeBack onSwipeBack={() => navigateTo("chat")}>
-                <BrowserView />
+                <ContentView />
               </SwipeBack>
             )}
             {currentView === "chains" && (
               <SwipeBack onSwipeBack={() => navigateTo("chat")}>
-                <ChainsView onBack={() => navigateTo("chat")} />
+                <ChainsView
+                  onBack={() => navigateTo("chat")}
+                  onOpenDiscover={() => navigateTo("discover")}
+                />
               </SwipeBack>
             )}
             {currentView === "profile" && (

@@ -53,16 +53,29 @@ export function pushNav(stack: BrowserNavStack, url: string): BrowserNavStack {
   return { entries, index: entries.length - 1 };
 }
 
+/**
+ * True when Back should be enabled.
+ * Index 0 means "leave this first page and return to Browser home (idle)".
+ */
 export function canGoBack(stack: BrowserNavStack): boolean {
-  return stack.index > 0;
+  return stack.index >= 0;
 }
 
 export function canGoForward(stack: BrowserNavStack): boolean {
   return stack.index >= 0 && stack.index < stack.entries.length - 1;
 }
 
-export function goBack(stack: BrowserNavStack): { stack: BrowserNavStack; url: string } | null {
+/**
+ * Move back one entry. When already on the first entry, returns an empty
+ * stack and `url: null` so the Browser can show the idle / My site home.
+ */
+export function goBack(
+  stack: BrowserNavStack,
+): { stack: BrowserNavStack; url: string | null } | null {
   if (!canGoBack(stack)) return null;
+  if (stack.index === 0) {
+    return { stack: createEmptyNavStack(), url: null };
+  }
   const index = stack.index - 1;
   return { stack: { ...stack, index }, url: stack.entries[index]! };
 }

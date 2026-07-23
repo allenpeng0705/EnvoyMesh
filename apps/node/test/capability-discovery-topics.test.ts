@@ -199,6 +199,8 @@ describe("publishTopicFor / buildPublishTopics (Phase 45E)", () => {
   it("normalizes tags to publish:<slug>", () => {
     expect(publishTopicFor("Machine Learning")).toBe("publish:machine-learning");
     expect(publishTopicFor("publish:music")).toBe("publish:music");
+    expect(publishTopicFor("摄影")).toBe("publish:摄影");
+    expect(publishTopicFor("publish:烹饪")).toBe("publish:烹饪");
   });
 
   it("caps and dedupes manifest tags", () => {

@@ -1,10 +1,10 @@
 // Multi-agent chains UI translations (Italian). Mirrors en-chains.ts.
 export const itChainsMessages = {
-  nav: "Catene di agenti",
-  back: "Torna alle catene",
+  nav: "Lavori di squadra",
+  back: "Torna ai lavori di squadra",
   cancelled: "Catena annullata",
   cancelFailed: "Impossibile annullare la catena",
-  title: "Catene multi-agente",
+  title: "Lavori di squadra",
   loading: "Caricamento catene…",
   refresh: "Aggiorna",
   tabs: {
@@ -44,7 +44,7 @@ export const itChainsMessages = {
     title: "Report della catena",
     untitled: "Report della catena senza titolo",
     inlineTitle: "Catena completata",
-    openChains: "Apri catene",
+    openChains: "Apri lavori di squadra",
     viewFull: "Vedi report completo",
     chainId: "ID catena",
     totalCost: "Costo totale",
@@ -158,7 +158,7 @@ export const itChainsMessages = {
     runAsChain: "Esegui in catena",
     runAsChainHint: "Scomponi questo in una catena di attività multi-agente tra gli agenti dei tuoi contatti",
     exportCsv: "Esporta costi (CSV)",
-    newChain: "Nuova catena",
+    newChain: "Nuovo lavoro di squadra",
     composerLabel: "Cosa vuoi che i tuoi agenti realizzino?",
     composerPlaceholder: "Es: Cerca gli ultimi progressi degli LLM locali e riassumi i primi 3",
     preview: "Anteprima piano",

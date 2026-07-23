@@ -65,8 +65,22 @@ describe("Handoff request lifecycle", () => {
     expect(rec.subtaskIds).toEqual(["subtask_a", "subtask_b"]);
   });
 
-  it("buildHandoffRequest fails schema validation on missing subtaskIds", () => {
+  it("buildHandoffRequest fails schema validation on empty subtaskIds without goal", () => {
     expect(() => buildHandoffRequest({ ...makeHandoffInput(), subtaskIds: [] }, NOW)).toThrow();
+  });
+
+  it("buildHandoffRequest accepts Assigner goal handoff with empty subtaskIds", () => {
+    const rec = buildHandoffRequest(
+      {
+        ...makeHandoffInput(),
+        subtaskIds: [],
+        goal: "plan and merge the quarterly report",
+        rationale: "assigner_handoff",
+      },
+      NOW,
+    );
+    expect(rec.status).toBe("pending");
+    expect(rec.subtaskIds).toEqual([]);
   });
 
   it("parseHandoffRequest round-trips a payload", () => {

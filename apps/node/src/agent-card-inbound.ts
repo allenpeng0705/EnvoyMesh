@@ -15,6 +15,7 @@ import {
   type AgentCard,
   type EnvoyEnvelope,
 } from "@envoymesh/protocol";
+import { withAgentNetworkMembership } from "@envoymesh/api";
 import type { BridgeIdentity } from "./bridge/pipe.js";
 import { interestTopicFor, publishTopicFor } from "./capability-discovery.js";
 import { createWebContentStore } from "./web-content-store.js";
@@ -72,6 +73,13 @@ export async function handleInboundAgentCardIntent(input: {
   bridgeIdentity: BridgeIdentity;
   /** Optional profile dir — used to load published web tags for publicTopics (45E). */
   profileDir?: string;
+  /**
+   * When true, advertise Agent Network worker membership (`capability-provider`)
+   * on the local agent card. Default false — agents stay private for Chains.
+   */
+  capabilityProviderEnabled?: boolean;
+  /** Owner-attested Agent Network profile (advertised when capability provider is on). */
+  agentNetworkProfile?: import("@envoymesh/protocol").AgentNetworkProfile;
 }): Promise<AgentCardInboundResult> {
   const {
     envelope,
@@ -146,9 +154,15 @@ export async function handleInboundAgentCardIntent(input: {
       ownerId,
       displayName: human?.displayName ?? ownerId,
       nodeProfile: profile.deviceCertificate.deviceProfile,
-      capabilities: profile.deviceCertificate.capabilities ?? ["message.send", "task.execute"],
+      capabilities: withAgentNetworkMembership(
+        profile.deviceCertificate.capabilities ?? ["message.send", "task.execute"],
+        input.capabilityProviderEnabled === true,
+      ),
       publicTopics,
       webContentRoot: `envoy://${ownerId}/`,
+      ...(input.capabilityProviderEnabled === true && input.agentNetworkProfile
+        ? { agentNetworkProfile: input.agentNetworkProfile }
+        : {}),
     });
     return {
       ok: true,

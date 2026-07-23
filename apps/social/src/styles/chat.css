@@ -984,15 +984,24 @@
   flex-shrink: 0;
   z-index: var(--z-header);
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--space-3);
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
   padding: var(--space-3) var(--space-4);
   background: var(--color-surface);
   border-bottom: 1px solid var(--color-border-subtle);
   box-shadow: var(--shadow-xs);
   min-width: 0;
   overflow: visible;
+}
+
+/* Row 1: contact identity (left) + call/remove/clear (right) */
+.chat-header-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-width: 0;
 }
 
 .chat-header-left {
@@ -1004,14 +1013,101 @@
   overflow: hidden;
 }
 
-.chat-header-right {
+.chat-header-actions-row {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  margin-top: 2px;
+}
+
+/* Row 2: web links under the contact name (left) + AI switch (right) */
+.chat-header-secondary {
   display: flex;
   align-items: center;
-  gap: var(--space-2);
+  justify-content: space-between;
+  gap: var(--space-3);
+  /* Align under the contact label (avatar 40px + gap), not flush to the far right. */
+  padding-left: calc(40px + var(--space-3));
+  min-width: 0;
+}
+
+.chat-header-web-links {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.chat-header-web-links-spacer {
+  flex: 1 1 auto;
+}
+
+.chat-header-web-links .contact-web-content {
+  display: inline-flex;
+  margin: 0;
+}
+
+.chat-header-web-links .contact-web-content__actions--links {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0;
+}
+
+.chat-header-web-links .contact-web-content__link {
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  white-space: nowrap;
+  padding: 0.1rem 0.15rem;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+}
+
+.chat-header-web-links .contact-web-content__link:hover,
+.chat-header-web-links .contact-web-content__link:focus-visible {
+  color: var(--color-primary-hover, var(--color-primary));
+  background: var(--color-primary-subtle);
+  text-decoration-thickness: 2px;
+}
+
+.chat-header-web-links .contact-web-content__sep {
+  margin: 0 0.2rem;
+  color: var(--color-text-muted);
+}
+
+.chat-header-secondary .assistant-switch {
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+/* Legacy right column (group chat / older markup) */
+.chat-header-right {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-1);
   flex-shrink: 0;
-  max-width: min(48%, 16rem);
+  max-width: 100%;
   margin-top: 2px;
   overflow: visible;
+}
+
+.chat-header-ai-cluster {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  flex: 0 0 auto;
+  flex-wrap: nowrap;
+  min-width: 0;
 }
 
 .chat-header-avatar {
@@ -1694,16 +1790,23 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  /* Own scroll container so the sticky header (and the list itself) don't
-     depend on the outer <main> scroll. The parent grid row has a bounded
-     height (`.chat-view-threads-shell` is `minmax(0, 1fr)`), so this
-     `height: 100%` lands inside that box. */
+  /* Own scroll lives on the pull-to-refresh child so the sticky header /
+     list stay independent of <main> scroll, and portaled menus are not
+     clipped by this box. */
   height: 100%;
-  overflow-y: auto;
+  overflow: hidden;
   overflow-x: hidden;
   padding: var(--space-2);
   background: var(--color-surface);
   border-right: 1px solid var(--color-border-subtle);
+}
+
+.contact-list > .pull-to-refresh-container {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .contact-list > .thread-row,
@@ -2450,6 +2553,54 @@
 
 .context-menu {
   z-index: var(--z-modal);
+  max-height: min(70vh, 480px);
+  overflow-y: auto;
+}
+
+.context-menu-links {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+
+.context-menu-links__item {
+  display: inline-flex;
+  align-items: center;
+}
+
+.context-menu-links__sep {
+  margin: 0 0.3rem;
+  color: var(--color-text-muted);
+  user-select: none;
+}
+
+.context-menu-link {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0.1rem 0;
+  margin: 0;
+  min-height: 0;
+  width: auto;
+  font: inherit;
+  font-size: var(--text-xs);
+  font-weight: var(--font-medium);
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  line-height: 1.2;
+}
+
+.context-menu-link:hover {
+  color: var(--color-primary-hover, var(--color-primary));
+  background: var(--color-primary-subtle);
+  text-decoration: none;
 }
 
 .messages.ai-messages-pane {
@@ -2494,6 +2645,7 @@
     padding: var(--space-2) calc(var(--space-3) + var(--safe-left)) var(--space-2)
       calc(var(--space-3) + var(--safe-right));
     background: var(--color-surface);
+    overflow: hidden;
   }
 
   .contact-list button:not(.thread-row-remove-btn, .contact-list-section-add-btn) {

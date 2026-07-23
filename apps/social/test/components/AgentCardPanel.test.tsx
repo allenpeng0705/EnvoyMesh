@@ -54,6 +54,21 @@ describe("AgentCardPanel", () => {
     cleanup();
   });
 
+  it("renders published content shortcuts", () => {
+    render(<AgentCardPanel ownerId="envoy:owner:alice" />);
+    expect(screen.getByTestId("contact-web-content-shortcuts")).toBeDefined();
+    expect(screen.getByTestId("web-content-profile").textContent).toContain("Profile");
+    expect(screen.getByTestId("web-content-blog").textContent).toContain("Blog");
+    expect(screen.getByTestId("web-content-photowall").textContent).toContain("PhotoWall");
+    expect(screen.getByTestId("web-content-feeds").textContent).toContain("Feeds");
+  });
+
+  it("shows content shortcuts even when no card is cached", () => {
+    cards = [];
+    render(<AgentCardPanel ownerId="envoy:owner:alice" />);
+    expect(screen.getByTestId("contact-web-content-shortcuts")).toBeDefined();
+  });
+
   it("renders the empty placeholder when no card is cached", () => {
     cards = [];
     render(<AgentCardPanel ownerId="envoy:owner:alice" />);

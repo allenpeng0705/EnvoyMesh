@@ -33,6 +33,8 @@ export async function handleDaemonAgentCardInbound(input: {
   mesh: EnvoyMesh;
   nodeService?: NodeServiceImpl | null;
   profileDir?: string;
+  /** Override for tests; otherwise read from nodeService.getNodeConfig(). */
+  capabilityProviderEnabled?: boolean;
 }): Promise<DaemonAgentCardInboundResult> {
   const { envelope } = input;
   if (envelope.intent !== "agent.card.request" && envelope.intent !== "agent.card.response") {
@@ -42,6 +44,18 @@ export async function handleDaemonAgentCardInbound(input: {
   if (!input.bridgeIdentity) {
     console.warn(`[agent.card] ignored ${envelope.intent}: bridge identity unavailable`);
     return { handled: true, outcome: "denied" };
+  }
+
+  let capabilityProviderEnabled = input.capabilityProviderEnabled === true;
+  let agentNetworkProfile: import("@envoymesh/protocol").AgentNetworkProfile | undefined;
+  if (input.capabilityProviderEnabled === undefined && input.nodeService) {
+    try {
+      const cfg = await input.nodeService.getNodeConfig();
+      capabilityProviderEnabled = cfg.capabilityProviderEnabled === true;
+      agentNetworkProfile = cfg.agentNetworkProfile;
+    } catch {
+      capabilityProviderEnabled = false;
+    }
   }
 
   const cardResult = await handleInboundAgentCardIntent({
@@ -56,6 +70,8 @@ export async function handleDaemonAgentCardInbound(input: {
     humanProfileStore: input.humanProfileStore,
     bridgeIdentity: input.bridgeIdentity,
     profileDir: input.profileDir,
+    capabilityProviderEnabled,
+    agentNetworkProfile,
   });
 
   if (!cardResult.ok) {
@@ -104,6 +120,9 @@ export async function handleDaemonAgentCardInbound(input: {
     if (input.nodeService) {
       void input.nodeService.recordAgentCardCached(cardResult.ownerId, cardResult.card).catch((err) =>
         console.warn(`[agent.card] activity hook failed:`, err),
+      );
+      void input.nodeService.refreshCapabilityIndex().catch((err) =>
+        console.warn(`[agent.card] refreshCapabilityIndex failed:`, err),
       );
     }
     return { handled: true, outcome: "cached", ownerId: cardResult.ownerId };

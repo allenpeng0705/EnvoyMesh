@@ -20,15 +20,25 @@ interface ChainDefaultsState {
   maxAutoRebalances: number;
   autoRebalanceIncrementUsd: number;
   allowLlmDecompose: boolean;
+  awardMode: NonNullable<ChainDefaultsConfig["awardMode"]>;
+  showCostUi: boolean;
+  iterationMaxRounds: number;
+  extendMaxStepsPerRound: number;
+  iterationJudgeMode: NonNullable<ChainDefaultsConfig["iterationJudgeMode"]>;
 }
 
 const DEFAULTS: ChainDefaultsState = {
-  rebalancePolicy: "auto",
+  rebalancePolicy: "never",
   stallTimeoutMs: 60_000,
   lowConfidenceThreshold: 0.5,
   maxAutoRebalances: 2,
   autoRebalanceIncrementUsd: 5,
   allowLlmDecompose: false,
+  awardMode: "direct",
+  showCostUi: false,
+  iterationMaxRounds: 1,
+  extendMaxStepsPerRound: 2,
+  iterationJudgeMode: "llm",
 };
 
 export function ChainDefaultsPanel() {
@@ -52,6 +62,11 @@ export function ChainDefaultsPanel() {
             maxAutoRebalances: d.maxAutoRebalances ?? DEFAULTS.maxAutoRebalances,
             autoRebalanceIncrementUsd: d.autoRebalanceIncrementUsd ?? DEFAULTS.autoRebalanceIncrementUsd,
             allowLlmDecompose: d.allowLlmDecompose ?? DEFAULTS.allowLlmDecompose,
+            awardMode: d.awardMode ?? DEFAULTS.awardMode,
+            showCostUi: d.showCostUi ?? (d.awardMode === "competitive"),
+            iterationMaxRounds: d.iterationMaxRounds ?? DEFAULTS.iterationMaxRounds,
+            extendMaxStepsPerRound: d.extendMaxStepsPerRound ?? DEFAULTS.extendMaxStepsPerRound,
+            iterationJudgeMode: d.iterationJudgeMode ?? DEFAULTS.iterationJudgeMode,
           });
         }
       } catch {
@@ -79,6 +94,11 @@ export function ChainDefaultsPanel() {
           maxAutoRebalances: defaults.maxAutoRebalances,
           autoRebalanceIncrementUsd: defaults.autoRebalanceIncrementUsd,
           allowLlmDecompose: defaults.allowLlmDecompose,
+          awardMode: defaults.awardMode,
+          showCostUi: defaults.showCostUi,
+          iterationMaxRounds: defaults.iterationMaxRounds,
+          extendMaxStepsPerRound: defaults.extendMaxStepsPerRound,
+          iterationJudgeMode: defaults.iterationJudgeMode,
         },
       });
       setSaveState("saved");
@@ -94,6 +114,40 @@ export function ChainDefaultsPanel() {
       <p className="chain-defaults-description">
         {t("chainDefaults.description")}
       </p>
+
+      {/* Award mode — primary UX choice */}
+      <div className="chain-default-row">
+        <label htmlFor="chain-award-mode">
+          {t("chainDefaults.awardMode")}
+        </label>
+        <select
+          id="chain-award-mode"
+          value={defaults.awardMode}
+          onChange={(e) => {
+            const mode = e.target.value as ChainDefaultsState["awardMode"];
+            writeField("awardMode", mode);
+            if (mode === "direct") writeField("showCostUi", false);
+            if (mode === "competitive") writeField("showCostUi", true);
+          }}
+        >
+          <option value="direct">{t("chainDefaults.awardModeDirect")}</option>
+          <option value="competitive">{t("chainDefaults.awardModeCompetitive")}</option>
+        </select>
+        <small className="chain-default-hint">{t("chainDefaults.awardModeHint")}</small>
+      </div>
+
+      <div className="chain-default-row chain-default-row--toggle">
+        <label htmlFor="chain-show-cost-ui">
+          {t("chainDefaults.showCostUiLabel")}
+        </label>
+        <input
+          id="chain-show-cost-ui"
+          type="checkbox"
+          checked={defaults.showCostUi}
+          onChange={(e) => writeField("showCostUi", e.target.checked)}
+        />
+        <small className="chain-default-hint">{t("chainDefaults.showCostUiHint")}</small>
+      </div>
 
       {/* Rebalance policy */}
       <div className="chain-default-row">
@@ -200,6 +254,64 @@ export function ChainDefaultsPanel() {
           onChange={(e) => writeField("allowLlmDecompose", e.target.checked)}
         />
         <small className="chain-default-hint">{t("chainDefaults.allowLlmDecomposeHint")}</small>
+      </div>
+
+      <div className="chain-default-row">
+        <label htmlFor="chain-iteration-max-rounds">
+          {t("chainDefaults.iterationMaxRoundsLabel")}
+        </label>
+        <input
+          id="chain-iteration-max-rounds"
+          type="number"
+          min={1}
+          max={5}
+          value={defaults.iterationMaxRounds}
+          onChange={(e) =>
+            writeField("iterationMaxRounds", Math.max(1, Math.min(5, parseInt(e.target.value, 10) || 1)))
+          }
+        />
+        <small className="chain-default-hint">{t("chainDefaults.iterationMaxRoundsHint")}</small>
+      </div>
+
+      <div className="chain-default-row">
+        <label htmlFor="chain-extend-max-steps">
+          {t("chainDefaults.extendMaxStepsLabel")}
+        </label>
+        <input
+          id="chain-extend-max-steps"
+          type="number"
+          min={0}
+          max={5}
+          value={defaults.extendMaxStepsPerRound}
+          onChange={(e) =>
+            writeField(
+              "extendMaxStepsPerRound",
+              Math.max(0, Math.min(5, parseInt(e.target.value, 10) || 0)),
+            )
+          }
+        />
+        <small className="chain-default-hint">{t("chainDefaults.extendMaxStepsHint")}</small>
+      </div>
+
+      <div className="chain-default-row">
+        <label htmlFor="chain-iteration-judge">
+          {t("chainDefaults.iterationJudgeModeLabel")}
+        </label>
+        <select
+          id="chain-iteration-judge"
+          value={defaults.iterationJudgeMode}
+          onChange={(e) =>
+            writeField(
+              "iterationJudgeMode",
+              e.target.value as ChainDefaultsState["iterationJudgeMode"],
+            )
+          }
+        >
+          <option value="llm">{t("chainDefaults.iterationJudgeLlm")}</option>
+          <option value="owner">{t("chainDefaults.iterationJudgeOwner")}</option>
+          <option value="always_stop">{t("chainDefaults.iterationJudgeAlwaysStop")}</option>
+        </select>
+        <small className="chain-default-hint">{t("chainDefaults.iterationJudgeModeHint")}</small>
       </div>
 
       <button

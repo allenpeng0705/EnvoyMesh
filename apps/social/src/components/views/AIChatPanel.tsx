@@ -54,6 +54,7 @@ export interface AIChatPanelProps {
   onOpenInbox?: () => void;
   /** Navigate to the Chains tab (used by the inline chain-report card). */
   onOpenChains?: () => void;
+  onOpenDiscover?: () => void;
 }
 
 function domainLabel(domain: OwnerAgentDomain, t: TFunction): string {
@@ -209,7 +210,7 @@ function groupByDate(msgs: AiMessage[]): [string, AiMessage[]][] {
   return [...groups.entries()];
 }
 
-export function AIChatPanel({ onOpenActivity, onOpenInbox, onOpenChains }: AIChatPanelProps = {}) {
+export function AIChatPanel({ onOpenActivity, onOpenInbox, onOpenChains, onOpenDiscover }: AIChatPanelProps = {}) {
   const t = useT();
   const { locale } = useI18n();
   const nodeService = useNodeService();
@@ -814,7 +815,11 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox, onOpenChains }: AICha
         />
       ) : null}
       {chainGoal ? (
-        <ChainStartDialog goal={chainGoal} onClose={() => setChainGoal(null)} />
+        <ChainStartDialog
+          goal={chainGoal}
+          onClose={() => setChainGoal(null)}
+          onOpenDiscover={onOpenDiscover}
+        />
       ) : null}
     </>
   );

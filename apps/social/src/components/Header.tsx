@@ -122,20 +122,12 @@ export function Header({
         </button>
         <button
           type="button"
-          className={currentView === "library" ? "active" : ""}
-          onClick={() => onNavigate("library")}
-          aria-current={currentView === "library" ? "page" : undefined}
+          className={currentView === "content" ? "active" : ""}
+          onClick={() => onNavigate("content")}
+          aria-current={currentView === "content" ? "page" : undefined}
+          data-testid="nav-content"
         >
-          {t("nav.library")}
-        </button>
-        <button
-          type="button"
-          className={currentView === "browser" ? "active" : ""}
-          onClick={() => onNavigate("browser")}
-          aria-current={currentView === "browser" ? "page" : undefined}
-          data-testid="nav-browser"
-        >
-          {t("nav.browser")}
+          {t("nav.content")}
         </button>
         <button
           type="button"

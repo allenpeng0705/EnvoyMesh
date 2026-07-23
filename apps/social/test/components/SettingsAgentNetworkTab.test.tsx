@@ -19,6 +19,11 @@ const getPairingKioskStatus = vi.fn();
 const syncPairingKioskFromConfig = vi.fn();
 const updateNodeConfig = vi.fn();
 const listAuthorizedDevices = vi.fn();
+const getNodeConfig = vi.fn();
+const getBonds = vi.fn();
+const listAgentCards = vi.fn();
+const refreshAgentNetworkWorkers = vi.fn();
+const requestAgentCard = vi.fn();
 
 let nodeStatus: "offline" | "starting" | "running" | "stopping" = "running";
 let nodeConfig: Record<string, unknown> = { modelProviders: { mode: "mock", modelName: "test-model" } };
@@ -35,6 +40,12 @@ const mockNodeService = {
   syncPairingKioskFromConfig,
   updateNodeConfig,
   listAuthorizedDevices,
+  getNodeConfig,
+  getBonds,
+  listAgentCards,
+  refreshAgentNetworkWorkers,
+  requestAgentCard,
+  on: vi.fn(() => () => {}),
 };
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
@@ -117,6 +128,11 @@ beforeEach(() => {
   });
   syncPairingKioskFromConfig.mockResolvedValue(undefined);
   updateNodeConfig.mockResolvedValue(undefined);
+  getNodeConfig.mockResolvedValue({ ...nodeConfig });
+  getBonds.mockResolvedValue([]);
+  listAgentCards.mockResolvedValue([]);
+  refreshAgentNetworkWorkers.mockResolvedValue({ requested: 0, failed: 0 });
+  requestAgentCard.mockResolvedValue({ ok: true });
 });
 
 afterEach(() => {
@@ -125,12 +141,12 @@ afterEach(() => {
 });
 
 describe("SettingsAgentNetworkTab — landing", () => {
-  it("renders the Devices & Fleet title and quick-reference intro", async () => {
+  it("renders the Agent Network title and quick-reference intro", async () => {
     renderWithI18n(<SettingsAgentNetworkTab />);
     await waitFor(() => {
-      expect(screen.getByText("Devices & Fleet")).toBeDefined();
+      expect(screen.getByText("Agent Network")).toBeDefined();
     });
-    expect(screen.getByText("Which path should I use?")).toBeDefined();
+    expect(screen.getByText("What can I configure here?")).toBeDefined();
   });
 
   it("renders all four section headings", async () => {
@@ -141,6 +157,83 @@ describe("SettingsAgentNetworkTab — landing", () => {
     expect(screen.getAllByText("Company Invites").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Pairing Kiosk").length).toBeGreaterThan(0);
     expect(screen.getAllByText("Fleet Manifest").length).toBeGreaterThan(0);
+  });
+});
+
+describe("SettingsAgentNetworkTab — Office LAN preset", () => {
+  it("enables Join + LAN Auto-Bond + generates a fleet token", async () => {
+    nodeConfig = {
+      ...nodeConfig,
+      capabilityProviderEnabled: false,
+      lanAutoBondEnabled: false,
+      lanAutoBondFleetToken: "",
+    };
+    renderWithI18n(<SettingsAgentNetworkTab />);
+    const enable = await waitFor(() => screen.getByTestId("office-lan-enable"));
+    fireEvent.click(enable);
+    await waitFor(() => {
+      expect(updateNodeConfig).toHaveBeenCalled();
+    });
+    const call = updateNodeConfig.mock.calls[0]?.[0] as {
+      capabilityProviderEnabled?: boolean;
+      lanAutoBondEnabled?: boolean;
+      lanAutoBondFleetToken?: string;
+    };
+    expect(call.capabilityProviderEnabled).toBe(true);
+    expect(call.lanAutoBondEnabled).toBe(true);
+    expect(call.lanAutoBondFleetToken).toMatch(/^[A-Za-z0-9]{32}$/);
+    await waitFor(() => {
+      expect(refreshAgentNetworkWorkers).toHaveBeenCalled();
+    });
+  });
+
+  it("shows Join-off nudge when LAN Auto-Bond is on with bonded peers", async () => {
+    nodeConfig = {
+      ...nodeConfig,
+      capabilityProviderEnabled: false,
+      lanAutoBondEnabled: true,
+      lanAutoBondFleetToken: "fleet-token-12345678",
+    };
+    getBonds.mockResolvedValue([
+      {
+        peerOwnerId: "envoy:owner:lan-peer",
+        level: "direct",
+        note: "manual-bond",
+      },
+    ]);
+    renderWithI18n(<SettingsAgentNetworkTab />);
+    await waitFor(() => {
+      expect(screen.getByTestId("join-off-after-lan-nudge")).toBeDefined();
+    });
+  });
+
+  it("shows Join-off nudge for lan-auto bond note even if LAN toggle is off", async () => {
+    nodeConfig = {
+      ...nodeConfig,
+      capabilityProviderEnabled: false,
+      lanAutoBondEnabled: false,
+      lanAutoBondFleetToken: "",
+    };
+    getBonds.mockResolvedValue([
+      {
+        peerOwnerId: "envoy:owner:lan-peer",
+        level: "direct",
+        note: "lan-auto-bond",
+      },
+    ]);
+    renderWithI18n(<SettingsAgentNetworkTab />);
+    await waitFor(() => {
+      expect(screen.getByTestId("join-off-after-lan-nudge")).toBeDefined();
+    });
+  });
+
+  it("Refresh workers calls refreshAgentNetworkWorkers", async () => {
+    renderWithI18n(<SettingsAgentNetworkTab />);
+    const refresh = await waitFor(() => screen.getByTestId("refresh-workers"));
+    fireEvent.click(refresh);
+    await waitFor(() => {
+      expect(refreshAgentNetworkWorkers).toHaveBeenCalled();
+    });
   });
 });
 

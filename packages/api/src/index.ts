@@ -62,6 +62,8 @@ export * from "./knowledge-syndication.js";
 export * from "./kb-plugin.js";
 export * from "./envoy-disclosure.js";
 export * from "./emp-supported-capabilities.js";
+export * from "./agent-network-membership.js";
+export * from "./agent-network-score.js";
 export * from "./capability-intent-routing.js";
 export * from "./capability-provider.js";
 export * from "./capability-route-executor.js";
@@ -73,6 +75,7 @@ export * from "./wan-join-invite.js";
 export * from "./company-invite.js";
 export * from "./kiosk-status.js";
 export * from "./fleet-manifest.js";
+export * from "./fleet-bootstrap.js";
 export * from "./h2a-wire-semantics.js";
 export * from "./owner-did-presentation.js";
 /** Types only — runtime lives in `@envoymesh/api/did-import` (Node identity / crypto). */
@@ -130,6 +133,7 @@ export {
   syncProfileTagsToManifestCapabilities,
 } from "./profile-capabilities.js";
 export type { ProfileCapabilityEntry } from "./profile-capabilities.js";
+export * from "./web-content-default-templates.js";
 /** Explicit export: Social UI imports these; keep browser-safe (no node-only deps). */
 export {
   mergeGroupDeliveryAck,

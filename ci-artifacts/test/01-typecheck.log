@@ -2,5 +2,3 @@
 > envoy-mesh@0.1.0 typecheck
 > tsc -b
 
-packages/mobile-node/src/index.ts(503,14): error TS2420: Class 'MobileNode' incorrectly implements interface 'NodeService'.
-  Type 'MobileNode' is missing the following properties from type 'NodeService': listFeedNotifications, dismissFeedNotification

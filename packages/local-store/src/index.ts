@@ -282,6 +282,18 @@ export type AuditEventType =
   | "chain.depth_exceeded"
   | "chain.budget_exceeded"
   | "chain.bid_expired"
+  // Phase 40E / 47 — handoff + iteration observability
+  | "chain.handoff.request_received"
+  | "chain.handoff.delegate_received"
+  | "chain.handoff.delegated"
+  | "chain.relay.received"
+  | "chain.arbitration.converged"
+  | "chain.iteration.round_started"
+  | "chain.iteration.extend"
+  | "chain.iteration.sealed"
+  | "chain.iteration.judge"
+  | "chain.iteration.stopped"
+  | "chain.iteration.progress"
   // Phase 45 — Web Content Browsing.
   | "library.read"
   | "library.read.served"

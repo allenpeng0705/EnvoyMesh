@@ -42,6 +42,16 @@ describe("browser-history-store", () => {
     ]);
   });
 
+  it("back from the first page returns home (empty stack)", () => {
+    let stack = createEmptyNavStack();
+    stack = pushNav(stack, "envoy://envoy:owner:a/");
+    expect(canGoBack(stack)).toBe(true);
+    const back = goBack(stack)!;
+    expect(back.url).toBeNull();
+    expect(back.stack.index).toBe(-1);
+    expect(canGoBack(back.stack)).toBe(false);
+  });
+
   it("back and forward move the index", () => {
     let stack = createEmptyNavStack();
     stack = pushNav(stack, "a");

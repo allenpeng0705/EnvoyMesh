@@ -17,7 +17,7 @@ import { join } from "node:path";
 export type WebContentVisibility = "public" | "bonded" | "contacts" | "private";
 
 /** Content kind for UI rendering hints. */
-export type WebContentKind = "article" | "note" | "photo" | "gallery" | "file" | "profile";
+export type WebContentKind = "article" | "note" | "photo" | "gallery" | "file" | "profile" | "section";
 
 /** A single entry in the web-content.json manifest. */
 export interface WebContentEntry {

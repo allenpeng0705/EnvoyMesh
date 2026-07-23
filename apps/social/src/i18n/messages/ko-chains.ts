@@ -1,10 +1,10 @@
 // Multi-agent chains UI translations (Korean). Mirrors zh-chains.ts.
 export const koChainsMessages = {
-  nav: "에이전트 체인",
-  back: "체인으로 돌아가기",
+  nav: "팀 작업",
+  back: "팀 작업으로 돌아가기",
   cancelled: "체인이 취소되었습니다",
   cancelFailed: "체인 취소 실패",
-  title: "다중 에이전트 체인",
+  title: "팀 작업",
   loading: "체인 로딩 중…",
   refresh: "새로 고침",
   tabs: {
@@ -44,7 +44,7 @@ export const koChainsMessages = {
     title: "체인 보고서",
     untitled: "제목 없는 체인 보고서",
     inlineTitle: "체인 완료",
-    openChains: "체인 열기",
+    openChains: "팀 작업 열기",
     viewFull: "전체 보고서 보기",
     chainId: "체인 ID",
     totalCost: "총 비용",
@@ -158,7 +158,7 @@ export const koChainsMessages = {
     runAsChain: "체인으로 실행",
     runAsChainHint: "연락처의 에이전트에 걸쳐 다중 에이전트 작업 체인으로 분해",
     exportCsv: "비용 내보내기 (CSV)",
-    newChain: "새 체인",
+    newChain: "새 팀 작업",
     composerLabel: "에이전트가 무엇을 수행하길 원하시나요?",
     composerPlaceholder: "예: 최신 로컬 LLM 개발을 조사하고 상위 3개를 요약",
     preview: "계획 미리보기",

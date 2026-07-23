@@ -1,4 +1,5 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useLayoutEffect, useMemo, useRef } from "react";
+import { createPortal } from "react-dom";
 import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
@@ -19,6 +20,24 @@ import { RemoveContactConfirmModal } from "../RemoveContactConfirmModal.js";
 import { PullToRefresh } from "../PullToRefresh.js";
 import { loadOutboundHellos } from "../../lib/discover-peer-state.js";
 import type { BondRecord } from "@envoymesh/api";
+import { openBrowserAt, openChatInbox } from "../../lib/browser-nav.js";
+import { webContentUrl } from "../../lib/web-content-urls.js";
+
+const CONTEXT_MENU_PAD = 8;
+
+function clampMenuPosition(
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+): { x: number; y: number } {
+  const maxX = Math.max(CONTEXT_MENU_PAD, window.innerWidth - width - CONTEXT_MENU_PAD);
+  const maxY = Math.max(CONTEXT_MENU_PAD, window.innerHeight - height - CONTEXT_MENU_PAD);
+  return {
+    x: Math.min(Math.max(CONTEXT_MENU_PAD, x), maxX),
+    y: Math.min(Math.max(CONTEXT_MENU_PAD, y), maxY),
+  };
+}
 
 function sortByLatestMessage<T>(
   items: readonly T[],
@@ -58,6 +77,7 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
   } = useNodeState();
 
   const [contextMenu, setContextMenu] = useState<{ ownerId: string; x: number; y: number } | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement>(null);
   const [removeTarget, setRemoveTarget] = useState<{ ownerId: string; name: string } | null>(null);
   const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
@@ -79,12 +99,34 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
     }
   };
 
-  // Close context menu when clicking outside
+  // Close context menu when clicking outside / Escape
   useEffect(() => {
     if (!contextMenu) return;
     const handleClick = () => setContextMenu(null);
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setContextMenu(null);
+    };
     document.addEventListener("click", handleClick);
-    return () => document.removeEventListener("click", handleClick);
+    document.addEventListener("keydown", handleKey);
+    return () => {
+      document.removeEventListener("click", handleClick);
+      document.removeEventListener("keydown", handleKey);
+    };
+  }, [contextMenu]);
+
+  // Keep the portaled menu inside the viewport (avoids truncation near list edges).
+  useLayoutEffect(() => {
+    if (!contextMenu || !contextMenuRef.current) return;
+    const el = contextMenuRef.current;
+    const next = clampMenuPosition(
+      contextMenu.x,
+      contextMenu.y,
+      el.offsetWidth,
+      el.offsetHeight,
+    );
+    if (next.x !== contextMenu.x || next.y !== contextMenu.y) {
+      setContextMenu({ ...contextMenu, ...next });
+    }
   }, [contextMenu]);
 
   const getContactAiAccessLevel = (ownerId: string) =>
@@ -418,66 +460,121 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
 
       </PullToRefresh>
 
-      {/* Context menu for AI access level */}
-      {contextMenu && (
-        <div
-          className="context-menu"
-          style={{ position: "fixed", left: contextMenu.x, top: contextMenu.y, zIndex: 1000 }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="context-menu-header">{t("chat.aiAccessMenu")}</div>
-          {(["none", "assistant_only", "full"] as const).map((level) => {
-            const currentLevel = getContactAiAccessLevel(contextMenu.ownerId);
-            return (
-              <div
-                key={level}
-                className={`context-menu-item ${currentLevel === level ? "active" : ""}`}
-                onClick={() => {
-                  void updateContactAiAccessLevel(contextMenu.ownerId, level);
-                  setContextMenu(null);
-                }}
-              >
-                {level === "none" && t("chat.aiAccessNone")}
-                {level === "assistant_only" && <><ChatIcon size={14} /> {t("chat.aiAccessAssistant")}</>}
-                {level === "full" && <><BridgeIcon size={14} /> {t("chat.aiAccessFull")}</>}
-              </div>
-            );
-          })}
-          <div className="context-menu-divider" role="separator" />
-          {/* Trust tier: block / unblock. The bonds list refreshes via the
-              existing `bonds:updated` event listener after the RPC resolves. */}
-          {(() => {
-            const bond = bonds.find((b) => b.peerOwnerId === contextMenu.ownerId);
-            const isBlocked = bond?.level === "blocked";
-            return (
-              <div
-                className="context-menu-item context-menu-item--danger"
-                onClick={() => {
-                  const ownerId = contextMenu.ownerId;
-                  setContextMenu(null);
-                  void (isBlocked
-                    ? nodeService.unblockPeer(ownerId)
-                    : nodeService.blockPeer(ownerId)
-                  ).catch((err) => {
-                    console.error("[ChatSidebar] trust-tier change failed:", err);
-                  });
-                }}
-              >
-                {isBlocked ? t("contacts.unblock") : t("contacts.block")}
-              </div>
-            );
-          })()}
+      {/* Portaled so overflow on the contact list / pull-to-refresh cannot clip it. */}
+      {contextMenu &&
+        typeof document !== "undefined" &&
+        createPortal(
           <div
-            className="context-menu-item context-menu-item--danger"
-            onClick={() => {
-              const bond = bonds.find((b) => b.peerOwnerId === contextMenu.ownerId);
-              openRemoveContact(contextMenu.ownerId, contactLabel(bond ?? { peerOwnerId: contextMenu.ownerId }));
-            }}
+            ref={contextMenuRef}
+            className="context-menu"
+            style={{ position: "fixed", left: contextMenu.x, top: contextMenu.y }}
+            onClick={(e) => e.stopPropagation()}
+            data-testid="contact-context-menu"
+            role="menu"
           >
-            {t("contacts.removeContact")}
-          </div>
-        </div>
-      )}
+            <div className="context-menu-header context-menu-header--row">
+              <span className="context-menu-header__label">{t("chat.aiAccessMenu")}</span>
+              <div
+                className="context-menu-links"
+                role="group"
+                aria-label={t("agentCard.publishedContent", "Published content")}
+              >
+                {(
+                  [
+                    ["profile", "agentCard.openProfile", "Profile"],
+                    ["blog", "agentCard.openBlog", "Blog"],
+                    ["photowall", "agentCard.openPhotoWall", "PhotoWall"],
+                  ] as const
+                ).map(([surface, key, fallback], i) => (
+                  <span key={surface} className="context-menu-links__item">
+                    {i > 0 ? <span className="context-menu-links__sep" aria-hidden="true">·</span> : null}
+                    <button
+                      type="button"
+                      className="context-menu-link"
+                      role="menuitem"
+                      data-testid={`context-web-content-${surface}`}
+                      onClick={() => {
+                        const ownerId = contextMenu.ownerId;
+                        setContextMenu(null);
+                        openBrowserAt(webContentUrl(ownerId, surface));
+                      }}
+                    >
+                      {t(key, fallback)}
+                    </button>
+                  </span>
+                ))}
+                <span className="context-menu-links__item">
+                  <span className="context-menu-links__sep" aria-hidden="true">·</span>
+                  <button
+                    type="button"
+                    className="context-menu-link"
+                    role="menuitem"
+                    data-testid="context-web-content-feeds"
+                    onClick={() => {
+                      const ownerId = contextMenu.ownerId;
+                      setContextMenu(null);
+                      openChatInbox({ publisherOwnerId: ownerId });
+                    }}
+                  >
+                    {t("agentCard.openFeeds", "Feeds")}
+                  </button>
+                </span>
+              </div>
+            </div>
+            {(["none", "assistant_only", "full"] as const).map((level) => {
+              const currentLevel = getContactAiAccessLevel(contextMenu.ownerId);
+              return (
+                <div
+                  key={level}
+                  className={`context-menu-item ${currentLevel === level ? "active" : ""}`}
+                  role="menuitem"
+                  onClick={() => {
+                    void updateContactAiAccessLevel(contextMenu.ownerId, level);
+                    setContextMenu(null);
+                  }}
+                >
+                  {level === "none" && t("chat.aiAccessNone")}
+                  {level === "assistant_only" && <><ChatIcon size={14} /> {t("chat.aiAccessAssistant")}</>}
+                  {level === "full" && <><BridgeIcon size={14} /> {t("chat.aiAccessFull")}</>}
+                </div>
+              );
+            })}
+            <div className="context-menu-divider" role="separator" />
+            {(() => {
+              const bond = bonds.find((b) => b.peerOwnerId === contextMenu.ownerId);
+              const isBlocked = bond?.level === "blocked";
+              return (
+                <div
+                  className="context-menu-item context-menu-item--danger"
+                  role="menuitem"
+                  onClick={() => {
+                    const ownerId = contextMenu.ownerId;
+                    setContextMenu(null);
+                    void (isBlocked
+                      ? nodeService.unblockPeer(ownerId)
+                      : nodeService.blockPeer(ownerId)
+                    ).catch((err) => {
+                      console.error("[ChatSidebar] trust-tier change failed:", err);
+                    });
+                  }}
+                >
+                  {isBlocked ? t("contacts.unblock") : t("contacts.block")}
+                </div>
+              );
+            })()}
+            <div
+              className="context-menu-item context-menu-item--danger"
+              role="menuitem"
+              onClick={() => {
+                const bond = bonds.find((b) => b.peerOwnerId === contextMenu.ownerId);
+                openRemoveContact(contextMenu.ownerId, contactLabel(bond ?? { peerOwnerId: contextMenu.ownerId }));
+              }}
+            >
+              {t("contacts.removeContact")}
+            </div>
+          </div>,
+          document.body,
+        )}
 
       {showCreateGroup ? (
         <CreateGroupModal

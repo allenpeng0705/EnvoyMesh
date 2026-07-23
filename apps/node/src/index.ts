@@ -1992,6 +1992,23 @@ async function handleInboundMeshMessage({
             peerDirectory: peerDirectoryStore,
           },
         );
+        // Surface the new bond to Social (status strip, contacts) — LAN accept
+        // previously wrote trust without emitting bond:established.
+        nodeService.emit("bond:established", {
+          peerOwnerId: payload.requesterOwnerId,
+          displayName: "Fleet peer",
+        });
+        try {
+          const bonds = await nodeService.getBonds();
+          nodeService.emit("home:bonds-updated", { bonds });
+        } catch {
+          /* ignore */
+        }
+        // Pull the peer's agent card + rebuild soft pool so Team jobs can see
+        // them without a manual Settings → Refresh workers click.
+        void nodeService.refreshAgentNetworkWorkers().catch((err) => {
+          console.warn("[lan-auto-bond] refreshAgentNetworkWorkers failed:", err);
+        });
         return;
       }
       // If the envelope *did* carry a fleet token but we declined (disabled,
@@ -3279,16 +3296,12 @@ nodeService.on("chat:draft", (data) => wsServer.emitEvent("chat:draft", data));
 nodeService.on("agent:activity", (data) => wsServer.emitEvent("agent:activity", data));
 nodeService.on("chain:state", (data) => wsServer.emitEvent("chain:state", data));
 nodeService.on("chain:report", (data) => wsServer.emitEvent("chain:report", data));
+nodeService.on("chain:iteration", (data) => wsServer.emitEvent("chain:iteration", data));
 nodeService.on("peer:discovered", (data) => wsServer.emitEvent("peer:discovered", data));
 nodeService.on("peer:lost", (data) => wsServer.emitEvent("peer:lost", data));
 nodeService.on("bond:established", (data) => {
   console.log(`[index.ts] nodeService bond:established event fired, peerOwnerId=${data.peerOwnerId}`);
   wsServer.emitEvent("bond:established", data);
-  if (nodeService instanceof NodeServiceImpl) {
-    void nodeService.refreshBondPeerProfiles().catch((err) => {
-      console.warn("[profile] refreshBondPeerProfiles after bond:established failed:", err);
-    });
-  }
 });
 nodeService.on("config:updated", (data) => {
   console.log(`[index.ts] config:updated event fired`);

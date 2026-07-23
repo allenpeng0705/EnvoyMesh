@@ -43,8 +43,10 @@ describe("ChainsView", () => {
     chainListActive.mockResolvedValueOnce({ chains: [] });
     renderChainsView();
     await waitFor(() => {
-      // New empty state invites the user to click "New chain"
-      expect(screen.getByText(/No active chains yet/)).toBeDefined();
+      // New empty state invites the user to click "New team job"
+      expect(screen.getByText(/No active team jobs yet/)).toBeDefined();
+      expect(screen.getByText(/solo node cannot run multi-agent/i)).toBeDefined();
+      expect(screen.getByText(/Join Agent Network/i)).toBeDefined();
     });
   });
 
@@ -62,6 +64,8 @@ describe("ChainsView", () => {
           published: false,
           budgetSpentUsd: 1.5,
           budgetMaxUsd: 10,
+          showCostUi: true,
+          awardMode: "competitive",
         },
       ],
     });
@@ -69,6 +73,93 @@ describe("ChainsView", () => {
     await waitFor(() => {
       expect(screen.getByText(/\$1\.50/)).toBeDefined();
     });
+  });
+
+  it("shows iteration progress and awaiting-owner status", async () => {
+    chainListActive.mockResolvedValueOnce({
+      chains: [
+        {
+          chainId: "chain_iter_001",
+          chainMandateId: "mandate_001",
+          goal: "Iterate me",
+          subtaskCount: 2,
+          awardedCount: 2,
+          partialCount: 2,
+          cancelledCount: 0,
+          chainCancelled: false,
+          published: false,
+          budgetSpentUsd: 1,
+          budgetMaxUsd: 10,
+          showCostUi: false,
+          iteration: {
+            round: 1,
+            maxRounds: 2,
+            extendsInRound: 1,
+            maxExtendsInRound: 2,
+            waitingForOwner: true,
+            drafts: [{ round: 1, summary: "draft one" }],
+          },
+        },
+      ],
+    });
+    renderChainsView();
+    await waitFor(() => {
+      expect(screen.getByTestId("chain-iteration-progress")).toBeDefined();
+      expect(screen.getByText(/Round 1\/2/)).toBeDefined();
+      expect(screen.getByText(/Awaiting your decision/i)).toBeDefined();
+    });
+  });
+
+  it("hides budget spend in direct mode", async () => {
+    chainListActive.mockResolvedValueOnce({
+      chains: [
+        {
+          chainId: "chain_direct_001",
+          chainMandateId: "mandate_001",
+          subtaskCount: 2,
+          awardedCount: 1,
+          partialCount: 0,
+          cancelledCount: 0,
+          chainCancelled: false,
+          published: false,
+          budgetSpentUsd: 1.5,
+          budgetMaxUsd: 10,
+          awardMode: "direct",
+          showCostUi: false,
+        },
+      ],
+    });
+    renderChainsView();
+    await waitFor(() => {
+      expect(screen.getByText(/Assigning|Running/i)).toBeDefined();
+    });
+    expect(screen.queryByText(/\$1\.50/)).toBeNull();
+  });
+
+  it("shows Waiting for workers instead of Bidding when no awards and no bids", async () => {
+    chainListActive.mockResolvedValueOnce({
+      chains: [
+        {
+          chainId: "chain_solo_001",
+          chainMandateId: "mandate_001",
+          subtaskCount: 2,
+          awardedCount: 0,
+          partialCount: 0,
+          cancelledCount: 0,
+          chainCancelled: false,
+          published: false,
+          budgetSpentUsd: 0,
+          budgetMaxUsd: 10,
+          bidsBySubtask: [],
+          awardMode: "direct",
+        },
+      ],
+    });
+    renderChainsView();
+    await waitFor(() => {
+      expect(screen.getByText(/Waiting for workers/i)).toBeDefined();
+    });
+    expect(screen.queryByText(/^Bidding$/i)).toBeNull();
   });
 
   it("calls chainCancel when confirm dialog is accepted", async () => {
@@ -85,6 +176,8 @@ describe("ChainsView", () => {
           published: false,
           budgetSpentUsd: 0.5,
           budgetMaxUsd: 10,
+          awardMode: "direct",
+          showCostUi: false,
         },
       ],
     });
@@ -92,7 +185,7 @@ describe("ChainsView", () => {
     renderChainsView();
 
     await waitFor(() => {
-      expect(screen.getByText(/\$0\.50/)).toBeDefined();
+      expect(screen.getByText(/1\/1 of 2 subtasks|Assigning|Running/i)).toBeDefined();
     });
 
     // Click the Cancel button on the active chain card

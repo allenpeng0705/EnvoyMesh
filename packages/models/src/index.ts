@@ -9,6 +9,10 @@ import {
   type EgressSecretMatch,
 } from "./semantic-firewall.js";
 import { computeCallCost } from "./pricing-catalog.js";
+import {
+  PLAN_ASSIGN_FROM_ROSTER_TOKEN,
+  synthesizePlanAssignFromRosterPrompt,
+} from "./mock-plan-assign.js";
 
 function modelAuditRandomId(): string {
   const c = globalThis.crypto as Crypto | undefined;
@@ -216,13 +220,31 @@ export function createMockModelProvider(input: CreateMockModelProviderInput = {}
   return {
     policy,
     async complete(request) {
+      let text = responseText;
+      if (responseText === PLAN_ASSIGN_FROM_ROSTER_TOKEN) {
+        text =
+          synthesizePlanAssignFromRosterPrompt(request.prompt) ??
+          JSON.stringify({
+            steps: [
+              {
+                objective: request.prompt.slice(0, 80) || "goal",
+                requiredCapability: "task.execute",
+                depth: 1,
+                dependsOn: [],
+                assignedPeerId: "envoy_agent_fallback",
+                reason: "roster parse failed",
+              },
+            ],
+            aggregation: "concatenate",
+          });
+      }
       return {
         providerId: policy.providerId,
         modelName,
-        text: responseText,
+        text,
         usage: {
           inputTokens: request.prompt.length,
-          outputTokens: responseText.length,
+          outputTokens: text.length,
           estimatedCost: request.estimatedCost ?? 0,
           actualCostUsd: 0,
           pricingSource: "mock",
@@ -256,6 +278,7 @@ export function createLiteLlmProvider(input: CreateLiteLlmProviderInput): ModelP
         body: JSON.stringify({
           model: input.modelName,
           messages: [{ role: "user", content: request.prompt }],
+          max_tokens: 4096,
         }),
       });
 
@@ -346,6 +369,7 @@ export function createOpenAiProvider(input: CreateOpenAiProviderInput = {}): Mod
         body: JSON.stringify({
           model: modelName,
           messages: [{ role: "user", content: request.prompt }],
+          max_tokens: 4096,
         }),
       });
 
@@ -529,6 +553,7 @@ export function buildModelProviders(
           providerId: "local.mock",
           providerType: "local",
           modelName: effectiveConfig.modelName,
+          responseText: effectiveConfig.mockResponseText,
         }),
       ];
     case "ollama": {
@@ -853,6 +878,11 @@ export {
 export type { ParsedTerminalCommandProposal } from "./terminal-command-proposal.js";
 export { parseTerminalSuggestResponse, TerminalSuggestResponseSchema } from "./terminal-suggest-response.js";
 export type { ParsedTerminalSuggestResponse } from "./terminal-suggest-response.js";
+
+export {
+  PLAN_ASSIGN_FROM_ROSTER_TOKEN,
+  synthesizePlanAssignFromRosterPrompt,
+} from "./mock-plan-assign.js";
 
 // ─── Per-call cost tracking ────────────────────────────────────────────────────
 

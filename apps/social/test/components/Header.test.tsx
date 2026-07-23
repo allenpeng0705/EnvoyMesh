@@ -64,7 +64,7 @@ describe("Header", () => {
     expect(within(nav).queryByRole("button", { name: /^assistant$/i })).toBeNull();
     expect(within(nav).getByRole("button", { name: /^chat$/i })).toBeDefined();
     expect(within(nav).getByRole("button", { name: /^discover$/i })).toBeDefined();
-    expect(within(nav).getByRole("button", { name: /^library$/i })).toBeDefined();
+    expect(within(nav).getByRole("button", { name: /^content$/i })).toBeDefined();
     expect(within(nav).queryByRole("button", { name: /^activity$/i })).toBeNull();
     expect(within(nav).getByRole("button", { name: /^settings$/i })).toBeDefined();
     expect(within(nav).queryByRole("button", { name: /^profile$/i })).toBeNull();
@@ -92,11 +92,11 @@ describe("Header", () => {
     expect(onNavigate).toHaveBeenCalledWith("chat");
   });
 
-  it("calls onNavigate when Browser is clicked", () => {
+  it("calls onNavigate when Content is clicked", () => {
     const onNavigate = vi.fn();
     renderHeader({ ...baseProps, onNavigate });
-    fireEvent.click(screen.getByTestId("nav-browser"));
-    expect(onNavigate).toHaveBeenCalledWith("browser");
+    fireEvent.click(screen.getByTestId("nav-content"));
+    expect(onNavigate).toHaveBeenCalledWith("content");
   });
 
   it("shows inbox activity on Chat control", () => {

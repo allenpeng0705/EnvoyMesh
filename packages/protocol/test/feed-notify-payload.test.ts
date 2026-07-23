@@ -35,6 +35,20 @@ describe("feed.notify payload (Phase 45E)", () => {
     ).toThrow();
   });
 
+  it("allows kind section (custom site pages)", () => {
+    const created = createFeedNotifyPayload({
+      publisherOwnerId: "envoy:owner:alice",
+      publishedAt: "2026-07-20T12:00:00.000Z",
+      title: "Market",
+      url: "envoy://envoy:owner:alice/market/",
+      kind: "section",
+      visibility: "bonded",
+      tags: ["market"],
+      listingUrl: "envoy://envoy:owner:alice/market/",
+    });
+    expect(parseFeedNotifyPayload(created).kind).toBe("section");
+  });
+
   it("allows human→human and denies agent→human", () => {
     expect(evaluateEnvelopeRolePolicy("feed.notify", "human", "human")).toEqual({ ok: true });
     expect(evaluateEnvelopeRolePolicy("feed.notify", "agent", "human").ok).toBe(false);

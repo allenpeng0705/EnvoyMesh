@@ -540,6 +540,8 @@ export interface ChainContextDeps {
   pinChainReport: ChainContext["pinChainReport"];
   getChainGoal: ChainContext["getChainGoal"];
   getChainCostEstimate: ChainContext["getChainCostEstimate"];
+  getChainAwardMode: ChainContext["getChainAwardMode"];
+  getChainShowCostUi: ChainContext["getChainShowCostUi"];
   snapshotToResult: ChainContext["snapshotToResult"];
   bidsBySubtask: ChainContext["bidsBySubtask"];
   getNodeConfig: ChainContext["getNodeConfig"];
@@ -553,6 +555,7 @@ export interface ChainContextDeps {
   startChainTracking: ChainContext["startChainTracking"];
   placeholderMandate: ChainContext["placeholderMandate"];
   findCapabilityProviders: ChainContext["findCapabilityProviders"];
+  findCapabilityProvidersRanked: ChainContext["findCapabilityProvidersRanked"];
   chainDiagnosticsForSubtasks: ChainContext["chainDiagnosticsForSubtasks"];
   runChainGoal: ChainContext["runChainGoal"];
 }
@@ -1277,6 +1280,8 @@ export function buildChainContext(deps: ChainContextDeps): ChainContext {
       deps.pinChainReport(chainId, pinned),
     getChainGoal: (chainId) => deps.getChainGoal(chainId),
     getChainCostEstimate: (chainId) => deps.getChainCostEstimate(chainId),
+    getChainAwardMode: (chainId) => deps.getChainAwardMode?.(chainId),
+    getChainShowCostUi: (chainId) => deps.getChainShowCostUi?.(chainId),
     snapshotToResult: (snap) => deps.snapshotToResult(snap),
     bidsBySubtask: (state) => deps.bidsBySubtask(state),
     getNodeConfig: () => deps.getNodeConfig(),
@@ -1300,8 +1305,14 @@ export function buildChainContext(deps: ChainContextDeps): ChainContext {
       deps.placeholderMandate(chainId, chainMandateId) as never,
     findCapabilityProviders: (capability) =>
       deps.findCapabilityProviders(capability) as never,
-    chainDiagnosticsForSubtasks: (subtasks, workersBySubtask) =>
-      deps.chainDiagnosticsForSubtasks(subtasks as never, workersBySubtask as never) as never,
+    findCapabilityProvidersRanked: (capability) =>
+      deps.findCapabilityProvidersRanked?.(capability) as never,
+    chainDiagnosticsForSubtasks: (subtasks, workersBySubtask, rankedBySubtask) =>
+      deps.chainDiagnosticsForSubtasks(
+        subtasks as never,
+        workersBySubtask as never,
+        rankedBySubtask,
+      ) as never,
     runChainGoal: (params) => deps.runChainGoal(params) as never,
   };
 }

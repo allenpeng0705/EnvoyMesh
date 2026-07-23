@@ -23,8 +23,9 @@ import type {
   NodeServiceEvents,
 } from "@envoymesh/api";
 import type { ChainReport, ChainSubtask, ChainSubtaskBid, EnvoyEnvelope, EnvoyIntent } from "@envoymesh/protocol";
-import { createApprovalItem } from "@envoymesh/api";
-import type { EnvoyMesh } from "@envoymesh/network";
+import { ChainHandoffRequestPayloadSchema } from "@envoymesh/protocol";
+import { createApprovalItem, isAgentNetworkWorker, rankWorkersByScore, scoreAgentNetworkWorker } from "@envoymesh/api";
+import { hasDirectPrivateLanDialHints, type EnvoyMesh } from "@envoymesh/network";
 import {
   chainStateSnapshot,
   createChainState,
@@ -36,20 +37,27 @@ import {
   launchChain,
   planChain,
   sendChainAccept,
+  sendChainHandoff,
   trackChain,
   type ChainOrchestratorHandlerDeps,
   type ChainState,
 } from "./chain-orchestrator.js";
 import {
   chainBudgetWarningLevel,
+  iterationReplanGoal,
+  markIterationRoundOpened,
   subtasksAwaitingAward,
   tryCompleteChainIfReady,
 } from "./chain-auto-orchestrator.js";
+import { createIterationState } from "./chain-iteration.js";
 import {
   CHAIN_AUTO_EVALUATE_MS,
+  CHAIN_DIRECT_AUTO_EVALUATE_MS,
   DEFAULT_CHAIN_DEFAULTS,
   estimateChainCostRange,
   mergeChainDefaults,
+  resolveAwardMode,
+  resolveShowCostUi,
 } from "./chain-defaults.js";
 import { CapabilityIndex } from "./capability-index.js";
 import {
@@ -90,6 +98,21 @@ export interface ChainSideState {
   autoEvaluateTimers: Map<string, ReturnType<typeof setTimeout>>;
   goals: Map<string, string>;
   costEstimates: Map<string, { minUsd: number; maxUsd: number }>;
+  /** Per-chain award mode (defaults to direct when absent). */
+  awardModes: Map<string, "direct" | "competitive">;
+  /** Per-chain cost UI visibility. */
+  showCostUi: Map<string, boolean>;
+  /**
+   * Phase 47B — queued Assigner extend steps for the next idle open-round tick.
+   * Cleared after a successful append+launch (or rejected clear).
+   */
+  pendingExtendSteps: Map<string, import("./chain-iteration.js").ExtendStepInput[]>;
+  /**
+   * Phase 47D — peer that handed off this chain (trigger) and should observe
+   * iteration progress via local WS when connected to this Assigner, or via
+   * future wire observe. Stored for correlation / notify hooks.
+   */
+  iterationObservers: Map<string, string>;
 }
 
 /**
@@ -168,6 +191,8 @@ export function buildChainContext(deps: ChainOrchestrationContext): ChainContext
     pinChainReport: (chainId, pinned) => taskStore!.pinChainReport(chainId, pinned),
     getChainGoal: (chainId) => deps.getChainSideState().goals.get(chainId),
     getChainCostEstimate: (chainId) => deps.getChainSideState().costEstimates.get(chainId),
+    getChainAwardMode: (chainId) => deps.getChainSideState().awardModes.get(chainId),
+    getChainShowCostUi: (chainId) => deps.getChainSideState().showCostUi.get(chainId),
     snapshotToResult: (snap) => snapshotToResult(snap),
     bidsBySubtask: (state) => bidsBySubtask(state),
     getNodeConfig: () => deps.getNodeConfig(),
@@ -189,8 +214,10 @@ export function buildChainContext(deps: ChainOrchestrationContext): ChainContext
     placeholderMandate: (chainId, chainMandateId) =>
       placeholderMandate(chainId, chainMandateId) as never,
     findCapabilityProviders: (capability) => findCapabilityProviders(deps, capability) as never,
-    chainDiagnosticsForSubtasks: (subtasks, workersBySubtask) =>
-      _chainDiagnosticsForSubtasks(subtasks as never, workersBySubtask as never) as never,
+    findCapabilityProvidersRanked: (capability) =>
+      findCapabilityProvidersRanked(deps, capability) as never,
+    chainDiagnosticsForSubtasks: (subtasks, workersBySubtask, rankedBySubtask) =>
+      _chainDiagnosticsForSubtasks(subtasks as never, workersBySubtask as never, rankedBySubtask) as never,
     runChainGoal: (params) => _runChainGoal(deps, params) as never,
   };
 }
@@ -271,6 +298,27 @@ export function snapshotToResult(snap: ReturnType<typeof chainStateSnapshot>): C
   };
 }
 
+export function iterationSnapshotFromState(
+  state: ChainState,
+): NonNullable<ChainGetStateResult["iteration"]> | undefined {
+  const it = state.iteration;
+  if (!it) return undefined;
+  return {
+    round: it.round,
+    maxRounds: it.maxRounds,
+    extendsInRound: it.extendsInRound,
+    maxExtendsInRound: it.maxExtendsInRound,
+    waitingForOwner: it.waitingForOwner === true,
+    stopReason: it.stopReason,
+    drafts: it.drafts.map((d) => ({
+      round: d.round,
+      summary: d.summary,
+      judgeDecision: d.judge?.decision,
+      judgeReason: d.judge?.reason,
+    })),
+  };
+}
+
 export function bidsBySubtask(
   state: ChainState,
   now: Date = new Date(),
@@ -333,9 +381,16 @@ export async function refreshCapabilityIndex(deps: ChainOrchestrationContext): P
   }
   const cards = await deps.listAgentCards();
   const index = deps.getCapabilityIndex();
+  const seen = new Set<string>();
   for (const card of cards) {
     const peerId = card.sourceAgentPeerId;
     if (!peerId) continue;
+    // Private by default: only index peers that opted into Agent Network work.
+    if (!isAgentNetworkWorker(card.capabilities)) {
+      index.removeWorker(peerId);
+      continue;
+    }
+    seen.add(peerId);
     index.indexWorker({
       peerId,
       ownerId: card.ownerId,
@@ -343,6 +398,12 @@ export async function refreshCapabilityIndex(deps: ChainOrchestrationContext): P
       lastSeenAt: card.cachedAt,
       displayName: card.displayName,
     });
+  }
+  // Drop stale index rows whose cards no longer opt in (or were removed).
+  for (const worker of index.listWorkers()) {
+    if (!seen.has(worker.peerId)) {
+      index.removeWorker(worker.peerId);
+    }
   }
 }
 
@@ -428,11 +489,24 @@ export async function buildChainInboundDeps(deps: ChainOrchestrationContext): Pr
         _emitChainState(deps, state.chainId);
         const profile = deps.getProfile();
         if (profile) {
-          void tryCompleteChainIfReady(orchDeps, runtime.state, profile).then(async (done) => {
+          void tryCompleteChainIfReady(orchDeps, runtime.state, profile, {
+            onContinueRound: (s) => _continueIterationRound(deps, s),
+            onMaybeExtend: (s) => _maybeExtendIterationRound(deps, s),
+          }).then(async (done) => {
             if (done.published) {
               _emitChainState(deps, state.chainId);
+              _emitChainIteration(deps, state.chainId, "stopped");
               const row = await deps.getTaskStore()?.getChainReport(state.chainId);
               if (row?.report) _emitChainReport(deps, row.report);
+            } else if (done.awaitingOwner) {
+              _emitChainState(deps, state.chainId);
+              _emitChainIteration(deps, state.chainId, "awaiting_owner");
+            } else if (done.continued) {
+              _emitChainState(deps, state.chainId);
+              _emitChainIteration(deps, state.chainId, "continued");
+            } else if (done.extended) {
+              _emitChainState(deps, state.chainId);
+              _emitChainIteration(deps, state.chainId, "extend");
             }
           });
         }
@@ -487,8 +561,41 @@ export async function buildChainInboundDeps(deps: ChainOrchestrationContext): Pr
         intent: envelope.intent,
         remotePeerId: envelope.senderPeerId,
         correlationId: envelope.correlationId,
-        summary: `chainId=${payload.chainId} newOrchestrator=${payload.newOrchestratorPeerId} subtasks=${payload.subtaskIds.length}`,
+        summary: `chainId=${payload.chainId} newOrchestrator=${payload.newOrchestratorPeerId} subtasks=${payload.subtaskIds.length}${payload.goal ? " goal=yes" : ""}${payload.iterationMaxRounds ? ` iterationMaxRounds=${payload.iterationMaxRounds}` : ""}`,
       });
+      // Whole-job Assigner handoff: we become Assigner and run plan+assign+merge.
+      const goal = typeof payload.goal === "string" ? payload.goal.trim() : "";
+      if (goal) {
+        // Phase 47D — remember trigger so iteration progress events carry observerPeerId.
+        deps.getChainSideState().iterationObservers.set(payload.chainId, envelope.senderPeerId);
+        void _runChainGoal(deps, {
+          goal,
+          chainId: payload.chainId,
+          maxChainCostUsd: payload.maxChainCostUsd,
+          costCeilingUsd: payload.costCeilingUsd,
+          allowLlm: payload.allowLlm,
+          iterationMaxRounds: payload.iterationMaxRounds,
+          iterationJudgeMode: payload.iterationJudgeMode,
+          extendMaxStepsPerRound: payload.extendMaxStepsPerRound,
+          iterationWire: payload.iterationState,
+        }).then((result) => {
+          void orchDeps.audit.record({
+            type: result.ok ? "chain.launched" : "chain.mandate_broadcast",
+            outcome: result.ok ? "allow" : "deny",
+            intent: "task.chain.handoff",
+            remotePeerId: envelope.senderPeerId,
+            correlationId: payload.chainId,
+            summary: result.ok
+              ? `assigner_accepted chainId=${result.chainId} subtasks=${result.subtasks.length}`
+              : `assigner_run_failed chainId=${payload.chainId} error=${result.error ?? "unknown"}`,
+          });
+          if (result.ok) {
+            _emitChainIteration(deps, result.chainId, "round_started", {
+              summary: "assigner_handoff_accepted",
+            });
+          }
+        });
+      }
       return { ok: true };
     },
     handleDelegate: async (envelope, payload) => {
@@ -595,7 +702,35 @@ async function buildLlmDecomposerAsync(
   const decomposer = createLlmDecomposer({
     providers,
     audit: { record: () => undefined },
-    timeoutMs: 30_000,
+    timeoutMs: 90_000,
+    getRoster: async () => {
+      const ranked = await findCapabilityProvidersRanked(deps, "task.execute");
+      const cards = await deps.listAgentCards();
+      const byPeer = new Map(
+        cards.filter((c) => c.sourceAgentPeerId).map((c) => [c.sourceAgentPeerId!, c] as const),
+      );
+      let selfPeerId: string | undefined;
+      try {
+        const agent = await deps.ensureAgentIdentity();
+        selfPeerId = agent?.agentPeerId;
+      } catch {
+        /* ignore */
+      }
+      return ranked.map((r) => {
+        const card = byPeer.get(r.peerId);
+        const isSelf = selfPeerId !== undefined && r.peerId === selfPeerId;
+        return {
+          peerId: r.peerId,
+          displayName: card?.displayName,
+          ownerId: card?.ownerId,
+          capabilities: card?.capabilities ?? [],
+          profile: card?.agentNetworkProfile,
+          isSelf,
+          sameLan: r.sameLan === true || isSelf,
+          scoreSummary: r.summary,
+        };
+      });
+    },
   });
   return async (goal: string) => decomposer(goal);
 }
@@ -688,24 +823,115 @@ export async function buildChainOrchestratorDeps(
   };
 }
 
+/** True when peer directory listen addrs include a direct RFC1918 TCP path. */
+export function sameLanFromListenAddrs(listenAddrs: readonly string[] | undefined): boolean {
+  if (!listenAddrs?.length) return false;
+  return hasDirectPrivateLanDialHints(listenAddrs);
+}
+
+/** Resolve same-LAN soft signal per agent peer id (self always true). */
+export async function buildSameLanByPeerId(
+  deps: ChainOrchestrationContext,
+  peerIds: readonly string[],
+  cardsByPeer: Map<string, CachedAgentCardSummary | undefined>,
+): Promise<Map<string, boolean>> {
+  let selfPeerId: string | undefined;
+  try {
+    selfPeerId = (await deps.ensureAgentIdentity())?.agentPeerId;
+  } catch {
+    /* ignore */
+  }
+  let store: ReturnType<ChainOrchestrationContext["getPeerDirectoryStore"]> | undefined;
+  try {
+    store = deps.getPeerDirectoryStore?.();
+  } catch {
+    store = undefined;
+  }
+  const out = new Map<string, boolean>();
+  for (const peerId of peerIds) {
+    if (selfPeerId && peerId === selfPeerId) {
+      out.set(peerId, true);
+      continue;
+    }
+    const ownerId = cardsByPeer.get(peerId)?.ownerId;
+    if (!ownerId || !store) {
+      out.set(peerId, false);
+      continue;
+    }
+    try {
+      const peer = await store.getPeerByOwnerId(ownerId);
+      out.set(peerId, sameLanFromListenAddrs(peer?.listenAddrs));
+    } catch {
+      out.set(peerId, false);
+    }
+  }
+  return out;
+}
+
 export async function findCapabilityProviders(deps: ChainOrchestrationContext, capability: string): Promise<string[]> {
+  const ranked = await findCapabilityProvidersRanked(deps, capability);
+  return ranked.map((r) => r.peerId);
+}
+
+/** Ranked workers with human-readable score summaries for diagnostics / UI. */
+export async function findCapabilityProvidersRanked(
+  deps: ChainOrchestrationContext,
+  capability: string,
+): Promise<Array<{ peerId: string; score: number; summary: string; sameLan: boolean }>> {
   const ready = deps.getCapabilityIndexReady();
   if (ready) {
     await ready;
   }
-  const indexed = deps.getCapabilityIndex().findWorkers(capability);
-  if (indexed.length > 0) {
-    return indexed;
-  }
   const cards = await deps.listAgentCards();
-  const peers: string[] = [];
+  const byPeer = new Map<string, (typeof cards)[number]>();
+  for (const card of cards) {
+    if (card.sourceAgentPeerId) byPeer.set(card.sourceAgentPeerId, card);
+  }
+
+  // Soft pool: all Agent Network workers that can execute. Specialty tags only
+  // affect ranking — never exclude generalists when a specialty index has hits.
+  const peers = new Set<string>();
+  const index = deps.getCapabilityIndex();
+  for (const worker of index.listWorkers()) {
+    if (isAgentNetworkWorker(worker.capabilities)) peers.add(worker.peerId);
+  }
+  for (const peerId of index.findWorkers(capability)) {
+    const worker = index.getWorker(peerId);
+    if (worker && isAgentNetworkWorker(worker.capabilities)) peers.add(peerId);
+  }
+  for (const peerId of index.findWorkers("task.execute")) {
+    const worker = index.getWorker(peerId);
+    if (worker && isAgentNetworkWorker(worker.capabilities)) peers.add(peerId);
+  }
+
   for (const card of cards) {
     if (!card.sourceAgentPeerId) continue;
-    if (card.capabilities.includes(capability) || card.capabilities.includes("task.execute")) {
-      peers.push(card.sourceAgentPeerId);
+    if (!isAgentNetworkWorker(card.capabilities)) continue;
+    if (
+      card.capabilities.includes("task.execute") ||
+      card.capabilities.includes(capability) ||
+      card.capabilities.length > 0
+    ) {
+      peers.add(card.sourceAgentPeerId);
     }
   }
-  return peers;
+
+  if (peers.size === 0) return [];
+  const peerList = [...peers];
+  const sameLanByPeer = await buildSameLanByPeerId(deps, peerList, byPeer);
+  const scored = peerList.map((peerId) => {
+    const card = byPeer.get(peerId);
+    const sameLan = sameLanByPeer.get(peerId) === true;
+    const result = scoreAgentNetworkWorker({
+      requiredCapability: capability,
+      cardCapabilities: card?.capabilities ?? [],
+      profile: card?.agentNetworkProfile,
+      displayName: card?.displayName,
+      sameLan,
+    });
+    return { peerId, score: result.score, summary: result.summary, sameLan };
+  });
+  return rankWorkersByScore(scored);
 }
 
 /* ---------- tracking + state emission ---------- */
@@ -807,18 +1033,20 @@ export async function _evaluateAwardAndAccept(
   chainId: string,
   subtaskId: string,
   opts?: {
-    policy?: "composite" | "cheapest" | "fastest";
+    policy?: "first" | "composite" | "cheapest" | "fastest";
     pickWorkerPeerId?: string;
     skipSensitivityGate?: boolean;
   },
 ): Promise<Awaited<ReturnType<typeof evaluateBids>>> {
   const runtime = deps.getChainStore().getRuntime(chainId);
   if (!runtime) return { ok: false, reason: "no_bids" };
+  const awardMode = deps.getChainSideState().awardModes.get(chainId) ?? "direct";
   const orchDeps = await buildChainOrchestratorDeps(deps);
   const result = await evaluateBids(orchDeps, runtime.state, {
     subtaskId,
-    policy: opts?.policy ?? "composite",
+    policy: opts?.policy ?? (awardMode === "direct" ? "first" : "composite"),
     pickWorkerPeerId: opts?.pickWorkerPeerId,
+    reserveCostUsd: awardMode === "direct" ? 0 : undefined,
   });
   if (!result.ok) return result;
 
@@ -866,8 +1094,67 @@ export function _emitChainState(deps: ChainOrchestrationContext, chainId: string
   state.bidsBySubtask = bidsBySubtask(runtime.state);
   state.goal = chainSide.goals.get(chainId);
   state.estimatedCostRange = chainSide.costEstimates.get(chainId);
+  state.awardMode = chainSide.awardModes.get(chainId) ?? "direct";
+  state.showCostUi = chainSide.showCostUi.get(chainId) ?? false;
   state.budgetWarningLevel = chainBudgetWarningLevel(runtime.state);
+  const it = runtime.state.iteration;
+  if (it) {
+    state.iteration = {
+      round: it.round,
+      maxRounds: it.maxRounds,
+      extendsInRound: it.extendsInRound,
+      maxExtendsInRound: it.maxExtendsInRound,
+      waitingForOwner: it.waitingForOwner === true,
+      stopReason: it.stopReason,
+      drafts: it.drafts.map((d) => ({
+        round: d.round,
+        summary: d.summary,
+        judgeDecision: d.judge?.decision,
+        judgeReason: d.judge?.reason,
+      })),
+    };
+  }
   deps.emit("chain:state", state);
+}
+
+/** Phase 47D — focused iteration progress for Social / remote Assigner UIs. */
+export function _emitChainIteration(
+  deps: ChainOrchestrationContext,
+  chainId: string,
+  phase: import("@envoymesh/api").ChainIterationProgressEvent["phase"],
+  extra?: {
+    summary?: string;
+    judgeDecision?: string;
+    judgeReason?: string;
+  },
+): void {
+  const runtime = deps.getChainStore().getRuntime(chainId);
+  const it = runtime?.state.iteration;
+  if (!it) return;
+  const observerPeerId = deps.getChainSideState().iterationObservers.get(chainId);
+  const event: import("@envoymesh/api").ChainIterationProgressEvent = {
+    chainId,
+    phase,
+    round: it.round,
+    maxRounds: it.maxRounds,
+    extendsInRound: it.extendsInRound,
+    maxExtendsInRound: it.maxExtendsInRound,
+    waitingForOwner: it.waitingForOwner === true,
+    stopReason: it.stopReason,
+    judgeDecision: extra?.judgeDecision ?? it.drafts.at(-1)?.judge?.decision,
+    judgeReason: extra?.judgeReason ?? it.drafts.at(-1)?.judge?.reason,
+    observerPeerId,
+    summary: extra?.summary,
+  };
+  deps.emit("chain:iteration", event);
+  void _appendChainAudit(deps, {
+    type: "chain.iteration.progress",
+    outcome: "record",
+    intent: "task.chain.merge",
+    correlationId: chainId,
+    remotePeerId: observerPeerId,
+    summary: `phase=${phase} round=${it.round}/${it.maxRounds}${extra?.summary ? ` ${extra.summary}` : ""}`,
+  });
 }
 
 /* ---------- auto-evaluate + goal runner ---------- */
@@ -881,10 +1168,13 @@ export function _scheduleAutoEvaluate(
   const timers = deps.getChainSideState().autoEvaluateTimers;
   const existing = timers.get(key);
   if (existing) clearTimeout(existing);
+  const awardMode = deps.getChainSideState().awardModes.get(chainId) ?? "direct";
+  const delayMs =
+    awardMode === "direct" ? CHAIN_DIRECT_AUTO_EVALUATE_MS : CHAIN_AUTO_EVALUATE_MS;
   const timer = setTimeout(() => {
     timers.delete(key);
     void _autoEvaluateSubtask(deps, chainId, subtaskId);
-  }, CHAIN_AUTO_EVALUATE_MS);
+  }, delayMs);
   timers.set(key, timer);
 }
 
@@ -905,14 +1195,20 @@ export async function _autoEvaluateSubtask(
 export function _chainDiagnosticsForSubtasks(
   subtasks: Array<{ subtaskId: string; requiredCapability: string }>,
   workersBySubtask: Record<string, string[]>,
+  rankedBySubtask?: Record<string, Array<{ peerId: string; score: number; summary: string }>>,
 ): string[] {
   const diagnostics: string[] = [];
   for (const subtask of subtasks) {
     const workers = workersBySubtask[subtask.subtaskId] ?? [];
     if (workers.length === 0) {
       diagnostics.push(
-        `No workers for \`${subtask.requiredCapability}\` — ask a bonded contact to enable Capability Provider.`,
+        `No workers for \`${subtask.requiredCapability}\` — ask a bonded contact to enable Join Agent Network (Capability Provider) in Settings → AI.`,
       );
+      continue;
+    }
+    const ranked = rankedBySubtask?.[subtask.subtaskId];
+    if (ranked && ranked.length > 0) {
+      diagnostics.push(`Selected for \`${subtask.requiredCapability}\`: ${ranked[0]!.summary}`);
     }
   }
   return diagnostics;
@@ -926,14 +1222,50 @@ export async function _runChainGoal(
     maxChainCostUsd?: number;
     costCeilingUsd?: number;
     allowLlm?: boolean;
+    /** When set and not local, hand off Assigner role via `task.chain.handoff`. */
+    assignerPeerId?: string;
+    /** Phase 47 — override node `iterationMaxRounds`. */
+    iterationMaxRounds?: number;
+    /** Phase 47D — handoff / override judge mode. */
+    iterationJudgeMode?: NonNullable<ChainDefaultsConfig["iterationJudgeMode"]>;
+    extendMaxStepsPerRound?: number;
+    /** Phase 47D — rehydrate mid-job iteration after Assigner handoff. */
+    iterationWire?: import("./chain-iteration.js").IterationWireBlob;
   },
 ): Promise<{
   ok: boolean;
   chainId: string;
   chainMandateId: string;
-  subtasks: Array<{ subtaskId: string; depth: number; requiredCapability: string; objective: string }>;
+  subtasks: Array<{
+    subtaskId: string;
+    depth: number;
+    requiredCapability: string;
+    objective: string;
+    preferredWorkerPeerId?: string;
+  }>;
   error?: string;
+  assignerPeerId?: string;
+  handedOff?: boolean;
 }> {
+  const assignerPeerId = input.assignerPeerId?.trim();
+  if (assignerPeerId) {
+    const agent = await deps.ensureAgentIdentity();
+    if (agent && assignerPeerId !== agent.agentPeerId) {
+      return _handoffChainGoalToAssigner(deps, {
+        goal: input.goal,
+        chainId: input.chainId,
+        maxChainCostUsd: input.maxChainCostUsd,
+        costCeilingUsd: input.costCeilingUsd,
+        allowLlm: input.allowLlm,
+        assignerPeerId,
+        iterationMaxRounds: input.iterationMaxRounds,
+        iterationJudgeMode: input.iterationJudgeMode,
+        extendMaxStepsPerRound: input.extendMaxStepsPerRound,
+        iterationWire: input.iterationWire,
+      });
+    }
+  }
+
   const chainId = input.chainId ?? `chain_${randomUUID()}`;
   const chainMandateId = `chainmandate_${randomUUID()}`;
   const ownerProfile = deps.getProfile();
@@ -946,6 +1278,8 @@ export async function _runChainGoal(
   } catch {
     /* use production defaults */
   }
+  const awardMode = resolveAwardMode(nodeDefaults);
+  const showCostUi = resolveShowCostUi(nodeDefaults);
   const mandate = signChainMandate(
     {
       version: "0.1" as const,
@@ -955,12 +1289,12 @@ export async function _runChainGoal(
       orchestratorOwnerId,
       maxChainCostUsd: input.maxChainCostUsd ?? 10,
       costCeilingUsd: input.costCeilingUsd ?? 3,
-      maxWorkers: 3,
+      maxWorkers: awardMode === "direct" ? 1 : 3,
       allowDepth3: false,
       maxSensitivity: "public" as const,
       deadlineAt: new Date(Date.now() + 60 * 60 * 1000).toISOString(),
       createdAt: new Date().toISOString(),
-      rebalancePolicy: nodeDefaults.rebalancePolicy ?? "auto",
+      rebalancePolicy: awardMode === "direct" ? "never" : (nodeDefaults.rebalancePolicy ?? "never"),
       maxAutoRebalances: nodeDefaults.maxAutoRebalances ?? 2,
       autoRebalanceIncrementUsd: nodeDefaults.autoRebalanceIncrementUsd ?? 5,
     },
@@ -969,9 +1303,16 @@ export async function _runChainGoal(
   const state = createChainState(mandate);
   const chainSide = deps.getChainSideState();
   chainSide.goals.set(chainId, input.goal);
+  chainSide.awardModes.set(chainId, awardMode);
+  chainSide.showCostUi.set(chainId, showCostUi);
   deps.getChainStore().setRuntime(chainId, {
     state,
-    bidStrategy: { baseCostUsd: 1, capabilityLocalEtaMs: 60_000, reputationDiscount: 1, etaSlackMs: 60_000 },
+    bidStrategy: {
+      baseCostUsd: awardMode === "direct" ? 0 : 1,
+      capabilityLocalEtaMs: 60_000,
+      reputationDiscount: 1,
+      etaSlackMs: 60_000,
+    },
   });
 
   const plan = await planChain(await buildChainOrchestratorDeps(deps), state, input.goal, {
@@ -981,21 +1322,118 @@ export async function _runChainGoal(
     return { ok: false, chainId, chainMandateId, subtasks: [], error: `plan failed: ${(plan as { reason: string }).reason}` };
   }
 
-  const workersBySubtask: Record<string, string[]> = {};
-  let maxWorkers = 0;
-  for (const subtask of plan.subtasks) {
-    const candidates = await findCapabilityProviders(deps, subtask.requiredCapability);
-    workersBySubtask[subtask.subtaskId] = candidates.slice(0, 3);
-    maxWorkers = Math.max(maxWorkers, candidates.length);
-  }
-  chainSide.costEstimates.set(
-    chainId,
-    estimateChainCostRange({
-      subtaskCount: plan.subtasks.length,
-      workerCandidateCount: maxWorkers,
-      maxChainCostUsd: mandate.maxChainCostUsd,
-    }),
+  const maxRounds = Math.max(
+    1,
+    Math.floor(input.iterationMaxRounds ?? nodeDefaults.iterationMaxRounds ?? 1),
   );
+  const maxExtends = Math.max(
+    0,
+    Math.floor(input.extendMaxStepsPerRound ?? nodeDefaults.extendMaxStepsPerRound ?? 2),
+  );
+  if (input.iterationWire) {
+    const { fromIterationWireBlob } = await import("./chain-iteration.js");
+    state.iteration = fromIterationWireBlob(input.iterationWire);
+    // Prefer knobs from this handoff when present.
+    if (input.iterationMaxRounds != null) {
+      state.iteration.maxRounds = Math.max(1, Math.min(10, Math.floor(input.iterationMaxRounds)));
+    }
+    if (input.iterationJudgeMode) state.iteration.judgeMode = input.iterationJudgeMode;
+    if (input.extendMaxStepsPerRound != null) {
+      state.iteration.maxExtendsInRound = Math.max(0, Math.floor(input.extendMaxStepsPerRound));
+    }
+    // Open-round IDs from a fresh plan replace an empty wire list.
+    if (state.iteration.openRoundSubtaskIds.length === 0) {
+      state.iteration.openRoundSubtaskIds = plan.subtasks.map((s) => s.subtaskId);
+    }
+    void _appendChainAudit(deps, {
+      type: "chain.iteration.round_started",
+      outcome: "record",
+      intent: "task.chain.propose",
+      correlationId: chainId,
+      summary: `rehydrated round=${state.iteration.round}/${state.iteration.maxRounds}`,
+    });
+  } else if (maxRounds > 1 || maxExtends > 0) {
+    state.iteration = createIterationState({
+      goal: input.goal,
+      maxRounds,
+      openRoundSubtaskIds: plan.subtasks.map((s) => s.subtaskId),
+      maxExtendsInRound: maxExtends,
+      extendMaxDepth: nodeDefaults.extendMaxDepth ?? 3,
+      extendOnlyAfterPartial: nodeDefaults.extendOnlyAfterPartial !== false,
+      judgeMode: input.iterationJudgeMode ?? nodeDefaults.iterationJudgeMode ?? "llm",
+      carryMode: nodeDefaults.iterationCarryMode ?? "summary",
+    });
+    if (maxRounds > 1) {
+      void _appendChainAudit(deps, {
+        type: "chain.iteration.round_started",
+        outcome: "record",
+        intent: "task.chain.propose",
+        correlationId: chainId,
+        summary: `round=1/${maxRounds}`,
+      });
+    }
+  }
+
+  const workersBySubtask: Record<string, string[]> = {};
+  const rankedBySubtask: Record<string, Array<{ peerId: string; score: number; summary: string }>> = {};
+  let maxWorkers = 0;
+  let totalWorkers = 0;
+  const workerCap = awardMode === "direct" ? 1 : 3;
+  for (const subtask of plan.subtasks) {
+    const ranked = await findCapabilityProvidersRanked(deps, subtask.requiredCapability);
+    rankedBySubtask[subtask.subtaskId] = ranked;
+    const candidates = ranked.map((r) => r.peerId);
+    // Named assignee from plan+assign wins (direct dispatch). Keep up to 2
+    // backups in the worker list for stall re-assign (launch proposes primary only).
+    const preferred = subtask.preferredWorkerPeerId;
+    let chosen: string[];
+    if (preferred && candidates.includes(preferred)) {
+      chosen = [preferred, ...candidates.filter((c) => c !== preferred)].slice(0, Math.max(workerCap, 3));
+    } else if (preferred && candidates.length === 0) {
+      // Prefer still listed even if ranking missed (should be rare).
+      chosen = [preferred];
+    } else if (candidates.length === 1) {
+      chosen = candidates;
+    } else {
+      chosen = candidates.slice(0, workerCap);
+      // If preferred was invalid, still ensure every step gets someone.
+      if (chosen.length === 0 && ranked.length > 0) chosen = [ranked[0]!.peerId];
+    }
+    workersBySubtask[subtask.subtaskId] = chosen;
+    maxWorkers = Math.max(maxWorkers, candidates.length);
+    totalWorkers += chosen.length > 0 ? 1 : 0;
+  }
+  if (plan.subtasks.length > 0 && totalWorkers === 0) {
+    // Solo / no capability providers — do not create a zombie "Bidding…" chain.
+    deps.getChainStore().deleteRuntime(chainId);
+    chainSide.goals.delete(chainId);
+    chainSide.costEstimates.delete(chainId);
+    chainSide.awardModes.delete(chainId);
+    chainSide.showCostUi.delete(chainId);
+    return {
+      ok: false,
+      chainId,
+      chainMandateId,
+      subtasks: plan.subtasks.map((s) => ({
+        subtaskId: s.subtaskId,
+        depth: s.depth,
+        requiredCapability: s.requiredCapability,
+        objective: s.objective,
+        preferredWorkerPeerId: s.preferredWorkerPeerId,
+      })),
+      error: "no_workers",
+    };
+  }
+  if (showCostUi) {
+    chainSide.costEstimates.set(
+      chainId,
+      estimateChainCostRange({
+        subtaskCount: plan.subtasks.length,
+        workerCandidateCount: maxWorkers,
+        maxChainCostUsd: mandate.maxChainCostUsd,
+      }),
+    );
+  }
 
   const launch = await launchChain(await buildChainOrchestratorDeps(deps), state, workersBySubtask);
   if (!launch.ok) {
@@ -1008,6 +1446,7 @@ export async function _runChainGoal(
         depth: s.depth,
         requiredCapability: s.requiredCapability,
         objective: s.objective,
+        preferredWorkerPeerId: s.preferredWorkerPeerId,
       })),
       error: `launch failed: ${(launch as { reason: string }).reason}`,
     };
@@ -1025,7 +1464,300 @@ export async function _runChainGoal(
       depth: s.depth,
       requiredCapability: s.requiredCapability,
       objective: s.objective,
+      preferredWorkerPeerId: s.preferredWorkerPeerId,
     })),
+  };
+}
+
+/** Phase 47A — plan+launch the next outer iteration round on the same chainId. */
+export async function _continueIterationRound(
+  deps: ChainOrchestrationContext,
+  state: ChainState,
+): Promise<{ ok: boolean; error?: string }> {
+  const it = state.iteration;
+  if (!it) return { ok: false, error: "no_iteration" };
+
+  let nodeDefaults = DEFAULT_CHAIN_DEFAULTS;
+  try {
+    const cfg = await deps.getNodeConfig();
+    nodeDefaults = mergeChainDefaults((cfg as { chainDefaults?: ChainDefaultsConfig })?.chainDefaults);
+  } catch {
+    /* defaults */
+  }
+  const awardMode =
+    deps.getChainSideState().awardModes.get(state.chainId) ?? resolveAwardMode(nodeDefaults);
+  const workerCap = awardMode === "direct" ? 1 : 3;
+  const replanGoal = iterationReplanGoal(state);
+  const orchDeps = await buildChainOrchestratorDeps(deps);
+  const plan = await planChain(orchDeps, state, replanGoal, {
+    allowLlm: nodeDefaults.allowLlmDecompose ?? true,
+  });
+  if (!plan.ok || plan.subtasks.length === 0) {
+    return { ok: false, error: `replan failed: ${!plan.ok ? (plan as { reason: string }).reason : "empty"}` };
+  }
+
+  const workersBySubtask: Record<string, string[]> = {};
+  let totalWorkers = 0;
+  for (const subtask of plan.subtasks) {
+    const ranked = await findCapabilityProvidersRanked(deps, subtask.requiredCapability);
+    const candidates = ranked.map((r) => r.peerId);
+    const preferred = subtask.preferredWorkerPeerId;
+    let chosen: string[];
+    if (preferred && candidates.includes(preferred)) {
+      chosen = [preferred, ...candidates.filter((c) => c !== preferred)].slice(0, Math.max(workerCap, 3));
+    } else if (preferred && candidates.length === 0) {
+      chosen = [preferred];
+    } else {
+      chosen = candidates.slice(0, workerCap);
+      if (chosen.length === 0 && ranked.length > 0) chosen = [ranked[0]!.peerId];
+    }
+    workersBySubtask[subtask.subtaskId] = chosen;
+    totalWorkers += chosen.length > 0 ? 1 : 0;
+  }
+  if (totalWorkers === 0) {
+    return { ok: false, error: "no_workers" };
+  }
+
+  const launch = await launchChain(orchDeps, state, workersBySubtask);
+  if (!launch.ok) {
+    return { ok: false, error: `launch failed: ${(launch as { reason: string }).reason}` };
+  }
+
+  markIterationRoundOpened(
+    state,
+    plan.subtasks.map((s) => s.subtaskId),
+  );
+  _startChainTracking(deps, state.chainId);
+  return { ok: true };
+}
+
+/** Phase 47B — drain pending extend steps, or auto-suggest one local extend (47C). */
+export async function _maybeExtendIterationRound(
+  deps: ChainOrchestrationContext,
+  state: ChainState,
+): Promise<{ ok: boolean; extended: boolean; error?: string }> {
+  const side = deps.getChainSideState();
+  let pending = side.pendingExtendSteps.get(state.chainId);
+  if (!pending || pending.length === 0) {
+    const { suggestLocalExtendStep } = await import("./chain-iteration.js");
+    const suggestion = suggestLocalExtendStep(state);
+    if (!suggestion) return { ok: true, extended: false };
+    pending = [suggestion];
+  } else {
+    side.pendingExtendSteps.delete(state.chainId);
+  }
+  return _extendIterationRound(deps, state, pending);
+}
+
+/** Phase 47B — append capped dependent steps and launch them. */
+export async function _extendIterationRound(
+  deps: ChainOrchestrationContext,
+  state: ChainState,
+  steps: import("./chain-iteration.js").ExtendStepInput[],
+): Promise<{ ok: boolean; extended: boolean; error?: string }> {
+  const { appendExtendSteps } = await import("./chain-iteration.js");
+  const appended = appendExtendSteps(state, steps);
+  if (!appended.ok) {
+    return { ok: false, extended: false, error: appended.reason };
+  }
+
+  let nodeDefaults = DEFAULT_CHAIN_DEFAULTS;
+  try {
+    const cfg = await deps.getNodeConfig();
+    nodeDefaults = mergeChainDefaults((cfg as { chainDefaults?: ChainDefaultsConfig })?.chainDefaults);
+  } catch {
+    /* defaults */
+  }
+  const awardMode =
+    deps.getChainSideState().awardModes.get(state.chainId) ?? resolveAwardMode(nodeDefaults);
+  const workerCap = awardMode === "direct" ? 1 : 3;
+  const workersBySubtask: Record<string, string[]> = {};
+  let totalWorkers = 0;
+  for (const subtask of appended.subtasks) {
+    const ranked = await findCapabilityProvidersRanked(deps, subtask.requiredCapability);
+    const candidates = ranked.map((r) => r.peerId);
+    const preferred = subtask.preferredWorkerPeerId;
+    let chosen: string[];
+    if (preferred && candidates.includes(preferred)) {
+      chosen = [preferred, ...candidates.filter((c) => c !== preferred)].slice(0, Math.max(workerCap, 3));
+    } else if (preferred && candidates.length === 0) {
+      chosen = [preferred];
+    } else {
+      chosen = candidates.slice(0, workerCap);
+      if (chosen.length === 0 && ranked.length > 0) chosen = [ranked[0]!.peerId];
+    }
+    workersBySubtask[subtask.subtaskId] = chosen;
+    totalWorkers += chosen.length > 0 ? 1 : 0;
+  }
+  if (totalWorkers === 0) {
+    // Roll back appended IDs so the round can still synthesize.
+    for (const s of appended.subtasks) {
+      state.subtasks.delete(s.subtaskId);
+      const it = state.iteration;
+      if (it) {
+        it.openRoundSubtaskIds = it.openRoundSubtaskIds.filter((id) => id !== s.subtaskId);
+        it.extendsInRound = Math.max(0, it.extendsInRound - 1);
+      }
+    }
+    return { ok: false, extended: false, error: "no_workers" };
+  }
+
+  const orchDeps = await buildChainOrchestratorDeps(deps);
+  const launch = await launchChain(orchDeps, state, workersBySubtask);
+  if (!launch.ok) {
+    return { ok: false, extended: false, error: `launch failed: ${(launch as { reason: string }).reason}` };
+  }
+  _startChainTracking(deps, state.chainId);
+  return { ok: true, extended: true };
+}
+
+/** Phase 47C — owner resolves ask_owner hold. */
+export async function _resolveIterationOwner(
+  deps: ChainOrchestrationContext,
+  chainId: string,
+  decision: "stop" | "continue",
+): Promise<{ ok: boolean; published?: boolean; continued?: boolean; error?: string }> {
+  const runtime = deps.getChainStore().getRuntime(chainId);
+  if (!runtime) return { ok: false, error: "chain_not_found" };
+  const profile = deps.getProfile();
+  if (!profile) return { ok: false, error: "no_profile" };
+  const { resolveIterationOwnerDecision } = await import("./chain-auto-orchestrator.js");
+  const orchDeps = await buildChainOrchestratorDeps(deps);
+  const result = await resolveIterationOwnerDecision(orchDeps, runtime.state, profile, decision, {
+    onContinueRound: (s) => _continueIterationRound(deps, s),
+  });
+  _emitChainState(deps, chainId);
+  if (result.published) {
+    const row = await deps.getTaskStore()?.getChainReport(chainId);
+    if (row?.report) _emitChainReport(deps, row.report);
+  }
+  return result;
+}
+
+/** Hand whole-job Assigner role to a remote eligible peer via A2A handoff. */
+export async function _handoffChainGoalToAssigner(
+  deps: ChainOrchestrationContext,
+  input: {
+    goal: string;
+    chainId?: string;
+    maxChainCostUsd?: number;
+    costCeilingUsd?: number;
+    allowLlm?: boolean;
+    assignerPeerId: string;
+    iterationMaxRounds?: number;
+    iterationJudgeMode?: NonNullable<ChainDefaultsConfig["iterationJudgeMode"]>;
+    extendMaxStepsPerRound?: number;
+    iterationWire?: import("./chain-iteration.js").IterationWireBlob;
+  },
+): Promise<{
+  ok: boolean;
+  chainId: string;
+  chainMandateId: string;
+  subtasks: Array<{
+    subtaskId: string;
+    depth: number;
+    requiredCapability: string;
+    objective: string;
+    preferredWorkerPeerId?: string;
+  }>;
+  error?: string;
+  assignerPeerId?: string;
+  handedOff?: boolean;
+}> {
+  const chainId = input.chainId ?? `chain_${randomUUID()}`;
+  const eligible = await findCapabilityProviders(deps, "task.execute");
+  if (!eligible.includes(input.assignerPeerId)) {
+    return {
+      ok: false,
+      chainId,
+      chainMandateId: "",
+      subtasks: [],
+      error: "assigner_not_eligible",
+      assignerPeerId: input.assignerPeerId,
+    };
+  }
+  const cards = await deps.listAgentCards();
+  const card = cards.find((c) => c.sourceAgentPeerId === input.assignerPeerId);
+  if (!card?.ownerId) {
+    return {
+      ok: false,
+      chainId,
+      chainMandateId: "",
+      subtasks: [],
+      error: "assigner_unknown",
+      assignerPeerId: input.assignerPeerId,
+    };
+  }
+
+  let nodeDefaults = DEFAULT_CHAIN_DEFAULTS;
+  try {
+    const cfg = await deps.getNodeConfig();
+    nodeDefaults = mergeChainDefaults((cfg as { chainDefaults?: ChainDefaultsConfig })?.chainDefaults);
+  } catch {
+    /* defaults */
+  }
+  const iterationMaxRounds = Math.max(
+    1,
+    Math.floor(input.iterationMaxRounds ?? nodeDefaults.iterationMaxRounds ?? 1),
+  );
+  const extendMaxStepsPerRound = Math.max(
+    0,
+    Math.floor(input.extendMaxStepsPerRound ?? nodeDefaults.extendMaxStepsPerRound ?? 2),
+  );
+  const iterationJudgeMode =
+    input.iterationJudgeMode ?? nodeDefaults.iterationJudgeMode ?? "llm";
+
+  const now = new Date();
+  const payload = ChainHandoffRequestPayloadSchema.parse({
+    chainId,
+    subtaskIds: [],
+    newOrchestratorPeerId: input.assignerPeerId,
+    newOrchestratorOwnerId: card.ownerId,
+    goal: input.goal,
+    maxChainCostUsd: input.maxChainCostUsd,
+    costCeilingUsd: input.costCeilingUsd,
+    allowLlm: input.allowLlm,
+    rationale: "assigner_handoff",
+    expiresAt: new Date(now.getTime() + 10 * 60_000).toISOString(),
+    createdAt: now.toISOString(),
+    iterationMaxRounds,
+    iterationJudgeMode,
+    extendMaxStepsPerRound,
+    iterationState: input.iterationWire,
+  });
+
+  const orchDeps = await buildChainOrchestratorDeps(deps);
+  const sent = await sendChainHandoff(orchDeps, input.assignerPeerId, payload);
+  deps.getChainSideState().goals.set(chainId, input.goal);
+  orchDeps.audit.record({
+    type: sent ? "chain.handoff.request_received" : "chain.mandate_broadcast",
+    outcome: sent ? "allow" : "deny",
+    intent: "task.chain.handoff",
+    remotePeerId: input.assignerPeerId,
+    correlationId: chainId,
+    summary: sent
+      ? `assigner_handoff_sent to=${input.assignerPeerId} iterationMaxRounds=${iterationMaxRounds}`
+      : `assigner_handoff_send_failed to=${input.assignerPeerId}`,
+  });
+
+  if (!sent) {
+    return {
+      ok: false,
+      chainId,
+      chainMandateId: "",
+      subtasks: [],
+      error: "handoff_send_failed",
+      assignerPeerId: input.assignerPeerId,
+    };
+  }
+
+  return {
+    ok: true,
+    chainId,
+    chainMandateId: "",
+    subtasks: [],
+    assignerPeerId: input.assignerPeerId,
+    handedOff: true,
   };
 }
 

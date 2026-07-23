@@ -107,7 +107,6 @@ export const frAiSettingsMessages = {
     sectionDesc: "Délégation permanente dans l'EMP. Le proxy social nécessite le mode Confiance activé dans Paramètres → Confiance.",
     socialProxy: "Proxy social",
     documentAcquisition: "Agent d'acquisition de documents",
-    capabilityProvider: "Agent fournisseur de capacités",
   },
   agent: {
     operatingInstructionsHeading: "Instructions opérationnelles de l'agent",

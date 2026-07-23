@@ -98,4 +98,22 @@ describe("ChatSidebar — remove bonded contact", () => {
 
     expect(revokeBond).not.toHaveBeenCalled();
   });
+
+  it("opens a portaled context menu with compact web-content links", async () => {
+    renderWithI18n(<ChatSidebar selectedContact={null} onSelectContact={vi.fn()} />);
+    // The contact row and the "Remove Alice" × button both contain "Alice" —
+    // target only the contact row (excludes the remove button's aria-label).
+    const row = screen.getByRole("button", {
+      name: (accessibleName: string) =>
+        /Alice/i.test(accessibleName) && !/Remove/i.test(accessibleName),
+    });
+    fireEvent.contextMenu(row);
+    const menu = await screen.findByTestId("contact-context-menu");
+    expect(menu.parentElement).toBe(document.body);
+    expect(screen.getByTestId("context-web-content-profile").tagName).toBe("BUTTON");
+    expect(screen.getByTestId("context-web-content-feeds").textContent).toContain("Feeds");
+    const headerRow = menu.querySelector(".context-menu-header--row");
+    expect(headerRow).not.toBeNull();
+    expect(headerRow?.querySelector(".context-menu-links")).not.toBeNull();
+  });
 });

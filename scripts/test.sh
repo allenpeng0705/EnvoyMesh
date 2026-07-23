@@ -454,6 +454,10 @@ if [ "$SMOKE" = "1" ] && [ "$BAIL_OUT" != "1" ]; then
   SMOKE_FILES=(
     apps/node/test/chain-two-home-smoke.test.ts
     apps/node/test/chain-three-home-smoke.test.ts
+    apps/node/test/chain-plan-assign-three-home-e2e.test.ts
+    apps/node/test/chain-assigner-handoff-e2e.test.ts
+    apps/node/test/chain-stall-reassign-e2e.test.ts
+    apps/node/test/chain-iteration-e2e.test.ts
   )
   run_phase "06a-smoke-phase13" "Phase 13 curated PR-signal suite" \
     bash -c "${SMOKE_TARGETS[0]}"

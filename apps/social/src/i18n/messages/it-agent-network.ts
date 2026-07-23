@@ -1,8 +1,8 @@
-// Italian translations for Settings → Agent Network (Devices & Fleet).
+// Italian translations for Settings → Agent Network (Agent Network).
 // Mirrors fr-agent-network.ts.
 
 export const itAgentNetworkSettingsMessages = {
-  title: "Dispositivi e flotta",
+  title: "Rete agenti",
   intro: "Configura come questo nodo si collega con altri membri della flotta. Sono disponibili quattro percorsi — scegli quello adatto alla tua squadra. Tutti e quattro sono **disabilitati per impostazione predefinita** finché non li abiliti.",
   quickReferenceTitle: "Quale percorso usare?",
   groupAutoBondTitle: "Collegamento automatico (nodo sponsor + installer)",
@@ -11,7 +11,32 @@ export const itAgentNetworkSettingsMessages = {
   groupInvitesDesc: "Crea link che un collega può incollare nella propria UI Social per unirsi a questo nodo.",
   groupOperatorTitle: "Strumenti operatore",
   groupOperatorDesc: "Preconfigura la fiducia per molti nodi contemporaneamente, o collega automaticamente tutti sulla Wi-Fi dell'ufficio.",
+  officeLan: {
+    heading: "LAN ufficio",
+    desc: "Configurazione Wi-Fi con un clic per i job di team: unisciti alla rete agenti + collegamento LAN automatico con token di flotta condiviso. Abilitalo su ogni macchina con lo stesso token.",
+    enableButton: "Abilita team LAN ufficio",
+    enabling: "Abilitazione…",
+    enabled: "Team LAN ufficio abilitato",
+    copyToken: "Copia token",
+    tokenCopied: "Token copiato",
+    shareHint: "Condividi questo token con le altre macchine, poi abilita il team LAN ufficio su ciascuna (o incollalo sotto Collegamento automatico LAN).",
+    alreadyOn: "Adesione e collegamento LAN sono già attivi con un token condiviso.",
+  },
+  workersStatus: {
+    heading: "Stato worker",
+    bonded: "Peer collegati: {count}",
+    joinOn: "Rete agenti: attiva",
+    joinOff: "Rete agenti: disattiva",
+    workersVisible: "Worker visibili ai job di team: {count}",
+    refresh: "Aggiorna worker",
+    refreshing: "Aggiornamento…",
+    refreshed: "Worker aggiornati",
+    joinOffAfterLan:
+      "Collegato in LAN ma non reclutabile — unisciti alla rete agenti o usa il preset LAN ufficio.",
+  },
   quickReference: {
+    officeLan:
+      "Percorso LAN locale: un pulsante abilita adesione + collegamento LAN + token condiviso su ogni macchina.",
     companyInvites: "Link a lunga durata. Ideale quando i membri sono remoti o la LAN è inaffidabile. Ogni invito è monouso.",
     lanAutoBond: "Zero-touch per uffici sulla stessa Wi-Fi. Entrambi i lati abilitano un interruttore con lo stesso token. Disabilitato per impostazione predefinita.",
     pairingKiosk: "Pulsante browser per laptop di visitatori. Disabilitato per impostazione predefinita. Richiede collegamento loopback a meno che tu non scelga la LAN.",

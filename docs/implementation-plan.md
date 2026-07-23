@@ -2,7 +2,7 @@
 
 This is the living plan for EnvoyMesh. Update it whenever scope changes, decisions are made, or milestones are completed.
 
-**Related:** [EnvoyMesh scenarios](./scenarios.md) · [User stories](./UserStory.md) · [Alignment review](./alignment-review.md) · [Detailed design](./detailed-design.md) · **[EMP / EnvoyAI](./protocol-standard.md)** · [EnvoyAI design guide](./envoyai-protocol.md) · [QuickStart](../QuickStart.md) · [Agentic next step](./next-step.md) · [Discovery/connectivity POC](./poc-discovery-connectivity.md) · **[Live connectivity testing](./live-connectivity-testing.md)** · **[Operator relay fleet](./operator-relay-fleet.md)** · **[Relay server design (multi-relay fleet)](./relay-server-design.md)** · **[SQLite adoption](./sqlite-adoption.md)** · **[P2P file sharing (design plan)](./p2p-file-sharing-plan.md)** · **[AI Document Backbone (agent publish/find/share)](./ai-document-backbone-plan.md)** · **[Native owner agent (Assistant = Agent)](./native-owner-agent.md)** · **[IPFS / Helia integration](./helia-ipfs-integration-plan.md)** · **[External distribution via IPFS](./external-distribution-ipfs-plan.md)** · **[Kubo + Helia operator runbook](./envoymesh-with-kubo-helia.md)** · **[Trust mode & bilateral social mediation](./trust-mode-social-protocol.md)** · **[Trust mode implementation plan](./trust-mode-implementation-plan.md)** · **[A2A routing, actor disclosure & owner visibility](./a2a-actor-visibility-plan.md)** · **[Redesign strategy](./redesign-strategy.md)**
+**Related:** [EnvoyMesh scenarios](./scenarios.md) · [User stories](./UserStory.md) · [Alignment review](./alignment-review.md) · [Detailed design](./detailed-design.md) · **[EMP / EnvoyAI](./protocol-standard.md)** · [EnvoyAI design guide](./envoyai-protocol.md) · [QuickStart](../QuickStart.md) · [Agentic next step](./next-step.md) · [Discovery/connectivity POC](./poc-discovery-connectivity.md) · **[Live connectivity testing](./live-connectivity-testing.md)** · **[Operator relay fleet](./operator-relay-fleet.md)** · **[Relay server design (multi-relay fleet)](./relay-server-design.md)** · **[SQLite adoption](./sqlite-adoption.md)** · **[P2P file sharing (design plan)](./p2p-file-sharing-plan.md)** · **[AI Document Backbone (agent publish/find/share)](./ai-document-backbone-plan.md)** · **[Native owner agent (Assistant = Agent)](./native-owner-agent.md)** · **[IPFS / Helia integration](./helia-ipfs-integration-plan.md)** · **[External distribution via IPFS](./external-distribution-ipfs-plan.md)** · **[Kubo + Helia operator runbook](./envoymesh-with-kubo-helia.md)** · **[Trust mode & bilateral social mediation](./trust-mode-social-protocol.md)** · **[Trust mode implementation plan](./trust-mode-implementation-plan.md)** · **[A2A routing, actor disclosure & owner visibility](./a2a-actor-visibility-plan.md)** · **[Redesign strategy](./redesign-strategy.md)** · **[Team job iteration (A ∩ B)](./agent-network-iteration.md)** · **[Fleet bootstrap](./fleet-bootstrap.md)**
 
 ## Status Legend
 
@@ -82,6 +82,7 @@ Maintenance rule: keep this file as the source of truth for **done / left / next
 - [Phase 44 — Refine EnvoyMesh Knowledgebase](#phase-44--refine-envoymesh-knowledgebase-)
 - [Phase 45 — Web Content Browsing](#phase-45--web-content-browsing--45a45b-shipped-45c45f-future)
 - [Phase 46 — Multi-Relay Fleet Coordination](#phase-46--multi-relay-fleet-coordination)
+- [Phase 47 — Team job multi-round iteration (A ∩ B)](#phase-47--team-job-multi-round-iteration-a--b-shipped)
 
 EnvoyMesh is a TypeScript-first, owner-controlled, peer-to-peer agent network.
 
@@ -1164,6 +1165,7 @@ Milestone: **Phases 0–42 (42J deferred) shipped** — Core protocol through Ph
 9. **Chain template marketplace (future)** — share chain templates across the mesh via `discovery.request`. Parked until user demand materialises (4 built-in templates + AI chat creation cover current use cases).
 10. **Phase 45 — Web Content Browsing** — 45A–45E shipped; 45F future. [web-content-browsing-design.md](./web-content-browsing-design.md) is the design doc; the Phase 45 section below is the implementation checklist. 45A (URL scheme + `library.read` intent + Browser view + all test layers) → 45B (browser polish + bookmarks) → 45C (EnvoyGo mobile browser) → 45D (authoring UX + templates + visibility) → 45E (Step 2: push notifications, topics, friend discovery — no GossipSub). 45F (external HTTP gateway) is forward-referenced.
 11. **Phase 46 — Multi-Relay Fleet Coordination** — shipped (46A–46C + P2/P3 test harness). Client multi-home, standalone miss-forward, sibling `relay.hints` gossip; in-process + process-spawn E2E; gated live `TEST_RELAY_A`/`TEST_RELAY_B` signoff. Design: [relay-server-design.md](./relay-server-design.md) Part B.
+12. **Phase 47 — Team job multi-round iteration (A ∩ B)** — **47A–47D shipped**. Outer seal→draft→replan (B) + capped intra-round extend (A) + judge/UX + handoff knobs/`iterationState` + `chain:iteration`. Design: [agent-network-iteration.md](./agent-network-iteration.md).
 
 ### Phase 9 Architecture Overview
 
@@ -6104,10 +6106,106 @@ See design doc §11 for the full list of 10 open questions. None block Phase 45A
 
 ---
 
+## Phase 47 — Team job multi-round iteration (A ∩ B) (shipped)
+
+**Status:** `[x]` 47A–47D implemented
+**Goal:** Let Team jobs refine like an agent loop: seal a round into a **draft**, optionally **replan** with that draft as input (B), and optionally **append** a few dependent steps inside an open round (A) — without overloading bid/stall/rebalance “rounds.”
+
+**Design doc (source of truth):** [agent-network-iteration.md](./agent-network-iteration.md)  
+**Related:** [agent-network-plan-assign.md](./agent-network-plan-assign.md) · [agent-network-guide.md](./agent-network-guide.md) · [agent_network.md](./agent_network.md)
+
+**Problem:** Today plan+assign → DAG → merge is **one-shot**. Parent→child `prior[subtaskId]` context is not a whole-job refinement loop. Operators need drafts, judge stop/continue, and capped local extends.
+
+**Approach (hybrid A ∩ B):**
+
+| Layer | Name | Behavior |
+|-------|------|----------|
+| **B** | Outer iteration | Seal round → synthesize **draft** (no publish) → judge → optional full replan with prior draft |
+| **A** | Intra-round extend | Append capped dependent steps; finished steps immutable |
+
+**Defaults (compat):** `iterationMaxRounds=1`, `extendMaxStepsPerRound=2`. Same `chainId`. Assigner owns the loop. Product/code name: **`iterationRound`** (never overload `negotiationRound`).
+
+**Does not ship in 47:** rewriting sealed steps; using `task.chain.merge` as the outer loop; changing Join/bond/soft-pool rules; EnvoyGo iteration UI (desktop Team jobs first).
+
+### 47A — Outer loop (B only) `[x]`
+
+- `[x]` `iteration` side-state on Assigner `ChainState` (`round`, caps, `sealedByRound`, `openRoundSubtaskIds`, `drafts`, `stopReason`)
+- `[x]` `chainDefaults` / start-from-goal knobs: `iterationMaxRounds`, `iterationJudgeMode`, `iterationCarryMode` (default maxRounds=1)
+- `[x]` Outer loop controller around plan+assign → launch → track → **round-scoped** synthesize → judge → continue or terminal publish (`tryCompleteChainIfReady` + `_continueIterationRound`)
+- `[x]` Round-scoped `synthesizeChain` contributions (do not mix sealed + open rounds)
+- `[x]` Interim drafts **must not** call `publishChainReport` / `ledger.finalize`; single final publish on stop
+- `[x]` Plan+assign prompt carries goal₀ + prior draft + critique when `round > 1` (`buildIterationPlanGoal` / `buildPlanAssignPrompt` iteration block)
+- `[x]` Judge: `stop` \| `continue` \| `ask_owner` (+ budget/deadline/`maxRounds` gates); `ask_owner` holds for owner UI (47C)
+- `[x]` Audit: `chain.iteration.round_started` / `sealed` / `judge` / `stopped`
+- `[x]` Unit: seal, budget gate, scoped synthesize, publish-once; mock `maxRounds=2` continue→stop (`apps/node/test/chain-iteration.test.ts`)
+- `[x]` Regression: `iterationMaxRounds=1` ≡ one-shot publish path when extend declines
+
+### 47B — Intra-round extend (A) `[x]`
+
+- `[x]` Assigner-only append of dependent `ChainSubtask`s under open-round IDs (`appendExtendSteps`)
+- `[x]` Caps: `extendMaxStepsPerRound`, `extendMaxDepth`, `extendOnlyAfterPartial` (defaults on `chainDefaults`)
+- `[x]` Mini soft-roster assign + `launchChain` for new steps (`_extendIterationRound`); parent context via `enrichSubtaskWithParentContext` on propose
+- `[x]` Stall reassign remains for open IDs only; sealed IDs never re-awarded (47A)
+- `[x]` Local-only + audit `chain.iteration.extend` via `pendingExtendSteps` queue (no new wire intent in 47B)
+- `[x]` Unit: one append under cap; reject over-cap; sealed immutability / sealed dependsOn; extend-then-publish
+
+### 47C — Judge policy + Team jobs UX `[x]`
+
+- `[x]` Heuristics: local gap → prefer extend (if 47B live); global gap → continue round
+- `[x]` Team jobs progress: `Round N/M · extended +K · …`
+- `[x]` Report accordion: Draft 1 / Draft 2 / Final from `iteration.drafts`
+- `[x]` Start dialog + Settings defaults for max rounds / extend / judge mode
+- `[x]` Owner stop / `ask_owner` approval surface
+- `[x]` Component + i18n tests
+
+### 47D — Wire / handoff polish `[x]`
+
+- `[x]` Progress / judge observe events for remote UIs (`chain:iteration` WS + audit `chain.iteration.progress`; observer peer from handoff sender)
+- `[x]` Handoff carries or rehydrates `iteration` blob so remote Assigner keeps the loop (`iterationMaxRounds` / judge / extend knobs + `iterationState`)
+- `[x]` Handoff E2E: iterate knobs on Assigner after `assignerPeerId` handoff (`iterationMaxRounds=2`); mid-job `iterationState` rehydrate on live handoff
+- `[x]` Docs: guide + plan-assign “shipped” notes when 47A–D land
+
+### Phase 47 exit criteria
+
+- `[x]` `maxRounds=1` bit-identical to today’s one-shot Team job path (no iteration state; unit regression)
+- `[x]` `maxRounds=2` produces two drafts and **one** final `publishChainReport` (unit + libp2p E2E owner Continue)
+- `[x]` Mid-job `iterationState` rehydrates on live Assigner handoff (E2E)
+- `[x]` Extend (when enabled) respects caps; cannot mutate sealed step finals
+- `[x]` Bid `negotiationRound`, stall reassign, and budget rebalance unchanged in semantics (sealed IDs skipped in stall/heartbeat)
+- `[x]` Design + guide + plan-assign docs aligned with shipped surface (47A–47D)
+
+### Risks & mitigations (Phase 47)
+
+| Risk | Mitigation |
+|------|------------|
+| Cost explosion | Caps + budget preflight before continue/extend |
+| Spaghetti graph | A append-only; seal before B; no merge-as-replan |
+| Double publish / early ledger finalize | Drafts never publish; finalize only on terminal report |
+| Synthesize mixes rounds | Scope to open/sealed-round ID sets |
+| Stall wakes sealed work | Tracker ignores sealed IDs |
+| Naming confusion with bid rounds | `iterationRound` only |
+
+### Implementation order
+
+1. Design review locked in [agent-network-iteration.md](./agent-network-iteration.md) ← **done**  
+2. Implement **47A** → verify exit criteria for B-only ← **done**  
+3. Implement **47B** → extend E2E ← **done**  
+4. Implement **47C** → UX ← **done**  
+5. Implement **47D** as needed for handoff/observe ← **done**
+
+---
+
 ## Changelog (this document)
 
 | Date | Change |
 |------|--------|
+| 2026-07-23 | **Phase 47 E2E gaps closed.** Root cause: `ask_owner` was not remapped to `stop` when `canContinue=false` after final round (hung on second owner hold). Full 2-round mesh E2E (Continue → two drafts + one publish); mid-job `iterationState` live handoff rehydrate E2E; `chainStartFromGoal.iterationState` for handoff blob. |
+| 2026-07-23 | **Phase 47 test hardening.** Libp2p `chain-iteration-e2e` (always_stop + owner Accept/Continue); unit coverage for Draft/Final sections, sealed stall skip, owner continue, extend depth clamp; `publishChainReport` treats local store as success when owner mesh delivery fails; `chainStartFromGoal` accepts judge/extend overrides; wired into smoke `06b`. |
+| 2026-07-23 | **Phase 47D shipped (handoff + observe).** Handoff carries iteration knobs + optional `iterationState` wire blob; Assigner rehydrates; `chain:iteration` WS + audit progress; observer peer from handoff sender; E2E asserts `iterationMaxRounds` on remote Assigner; guide/plan-assign marked shipped. Phase 47 complete. |
+| 2026-07-23 | **Phase 47C shipped (judge heuristics + Team jobs UX).** Local→extend / global→continue heuristics; `ask_owner` hold + `chainResolveIteration`; iteration on chain state; Settings/Start knobs; progress line + draft accordion + owner Accept/Continue; i18n + component/unit tests. 47D remains open. |
+| 2026-07-23 | **Phase 47B shipped (intra-round extend A).** `appendExtendSteps` + caps; `pendingExtendSteps` → `_extendIterationRound` launch; `tryCompleteChainIfReady` extend-before-seal; unit coverage in `chain-iteration.test.ts`. 47C–47D remain open. |
+| 2026-07-23 | **Phase 47A shipped (outer iteration B).** `chain-iteration.ts` + `tryCompleteChainIfReady` seal→draft→judge→continue; round-scoped synthesize; single terminal publish; `iterationMaxRounds` defaults/knobs; `_continueIterationRound`; unit tests in `chain-iteration.test.ts`. 47B–47D remain open. |
+| 2026-07-23 | **Phase 47 designed (A ∩ B Team job iteration).** Design doc [agent-network-iteration.md](./agent-network-iteration.md) reviewed against orchestrator (round-scoped synthesize, no mid-loop publish/finalize, no `task.chain.merge` as outer loop, sealed IDs vs stall). Implementation-plan Phase 47 checklist: 47A outer loop → 47B extend → 47C UX → 47D handoff. Defaults `iterationMaxRounds=1`. **No code yet.** |
 | 2026-07-21 | **Phase 46 doc hygiene.** Operator fleet §8 add-Nth-relay runbook; design A7 auth + B7#3 demoted + B9 risks; multi-relay preset example; cleared stale “live smoke deferred” banners. |
 | 2026-07-21 | **Phase 46 P2/P3 tests.** Gated live `TEST_RELAY_A`/`TEST_RELAY_B` E2E + signoff script; process-spawn `apps/relay` E2E; `npm run test:e2e:relay:fleet` / `:process` / `:live`; serialize multi-relay `addRelay` (parallel RESERVE deadlocks); skip empty libp2p bootstrap list after loopback filter. |
 | 2026-07-21 | **Phase 46 test gaps closed.** In-process E2E `multi-relay-fleet-e2e` (46A multi-home + 46B miss-forward); unit coverage for merge/negative-cache/hints promote/`maxHops:1` client payload; design matrix miss-forward marked shipped. |

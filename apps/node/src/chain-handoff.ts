@@ -75,6 +75,11 @@ export interface DelegateRequestInput {
   newOrchestratorOwnerId: string;
   rationale?: string;
   expiresAt: string;
+  /** Whole-job Assigner handoff goal (allows empty subtaskIds). */
+  goal?: string;
+  maxChainCostUsd?: number;
+  costCeilingUsd?: number;
+  allowLlm?: boolean;
 }
 
 export interface DelegateRequestResult {
@@ -136,6 +141,10 @@ export function buildHandoffRequest(
     newOrchestratorOwnerId: input.newOrchestratorOwnerId,
     rationale: input.rationale,
     expiresAt: input.expiresAt,
+    goal: input.goal,
+    maxChainCostUsd: input.maxChainCostUsd,
+    costCeilingUsd: input.costCeilingUsd,
+    allowLlm: input.allowLlm,
     createdAt: now.toISOString(),
   });
   return {
@@ -163,7 +172,17 @@ export function parseHandoffRequest(input: unknown): ChainHandoffRequest {
     expiresAt: payload.expiresAt,
     createdAt: payload.createdAt,
   };
+  if (payload.goal !== undefined) out.goal = payload.goal;
+  if (payload.maxChainCostUsd !== undefined) out.maxChainCostUsd = payload.maxChainCostUsd;
+  if (payload.costCeilingUsd !== undefined) out.costCeilingUsd = payload.costCeilingUsd;
+  if (payload.allowLlm !== undefined) out.allowLlm = payload.allowLlm;
   if (payload.rationale !== undefined) out.rationale = payload.rationale;
+  if (payload.iterationMaxRounds !== undefined) out.iterationMaxRounds = payload.iterationMaxRounds;
+  if (payload.iterationJudgeMode !== undefined) out.iterationJudgeMode = payload.iterationJudgeMode;
+  if (payload.extendMaxStepsPerRound !== undefined) {
+    out.extendMaxStepsPerRound = payload.extendMaxStepsPerRound;
+  }
+  if (payload.iterationState !== undefined) out.iterationState = payload.iterationState;
   return out;
 }
 

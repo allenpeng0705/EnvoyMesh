@@ -12,6 +12,13 @@ import { access, mkdir, writeFile } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 
 import {
+  buildBlogIndexMarkdown as buildBlogIndexMarkdownShared,
+  buildDefaultProfileMarkdown,
+  buildPhotoWallMarkdown as buildPhotoWallMarkdownShared,
+  buildPhotosRootMarkdown as buildPhotosRootMarkdownShared,
+} from "@envoymesh/api";
+
+import {
   createWebContentStore,
   normalizeWebPath,
   type WebContentEntry,
@@ -24,7 +31,8 @@ export type PublishWebContentTemplate =
   | "note"
   | "profile"
   | "photo"
-  | "file";
+  | "file"
+  | "section";
 
 export interface PublishWebContentParams {
   template: PublishWebContentTemplate;
@@ -44,6 +52,33 @@ export interface PublishWebContentParams {
   fileName?: string;
   /** PhotoWall gallery folder (default `wall`). */
   gallery?: string;
+  /** Custom section path slug (defaults to slugified title). */
+  sectionSlug?: string;
+  /** Auto-tag section slug for `publish:<slug>` discovery (default true). */
+  advertiseTopic?: boolean;
+}
+
+/** Paths reserved for built-in site surfaces — custom sections cannot use these. */
+export const RESERVED_WEB_SECTION_SLUGS = new Set([
+  "blog",
+  "photos",
+  "notes",
+  "files",
+  "feeds",
+  "profile",
+  "index",
+  "section",
+]);
+
+/** Unicode-aware path slug for custom sections (e.g. Market, 市集). Returns "" if empty. */
+export function slugifySectionPath(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .normalize("NFKC")
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
 }
 
 export interface PublishWebContentResult {
@@ -56,6 +91,8 @@ export interface PublishWebContentResult {
   publishedAt: string;
   url: string;
   listingUrl?: string;
+  /** Effective tags written to the manifest (includes auto topic tags for sections). */
+  tags?: string[];
 }
 
 /** Soft cap for in-app uploads (local write; mesh reads still chunk via 45B). */
@@ -167,24 +204,7 @@ function decodeBase64Payload(b64: string): Buffer {
 }
 
 function buildBlogIndexMarkdown(ownerId: string, posts: WebContentEntry[]): string {
-  const sorted = [...posts].sort((a, b) => {
-    const ta = a.publishedAt ?? a.updatedAt;
-    const tb = b.publishedAt ?? b.updatedAt;
-    return tb.localeCompare(ta);
-  });
-  const lines = ["# Blog", ""];
-  if (sorted.length === 0) {
-    lines.push("_No posts yet._", "");
-    return lines.join("\n");
-  }
-  for (const post of sorted) {
-    const href = `envoy://${ownerId}/${post.path}`;
-    const date = (post.publishedAt ?? post.updatedAt).slice(0, 10);
-    const summary = post.summary?.trim() ? ` — ${post.summary.trim()}` : "";
-    lines.push(`- [${post.title}](${href}) (${date})${summary}`);
-  }
-  lines.push("");
-  return lines.join("\n");
+  return buildBlogIndexMarkdownShared(ownerId, posts);
 }
 
 /** Markdown PhotoWall grid — clickable thumbnails via envoy:// image links. */
@@ -193,41 +213,17 @@ function buildPhotoWallMarkdown(
   gallery: string,
   photos: WebContentEntry[],
 ): string {
-  const sorted = [...photos].sort((a, b) => {
-    const ta = a.publishedAt ?? a.updatedAt;
-    const tb = b.publishedAt ?? b.updatedAt;
-    return tb.localeCompare(ta);
-  });
-  const lines = [`# PhotoWall — ${gallery}`, ""];
-  if (sorted.length === 0) {
-    lines.push("_No photos yet._", "");
-    return lines.join("\n");
-  }
-  for (const photo of sorted) {
-    const href = `envoy://${ownerId}/${photo.path}`;
-    lines.push(`[![${photo.title}](${href})](${href})`);
-    lines.push("");
-    lines.push(`**[${photo.title}](${href})**`);
-    lines.push("");
-  }
-  return lines.join("\n");
+  return buildPhotoWallMarkdownShared(ownerId, gallery, photos);
 }
 
 function buildPhotosRootMarkdown(
   ownerId: string,
   galleries: { name: string; count: number; visibility: WebContentVisibility }[],
 ): string {
-  const lines = ["# Photos", ""];
-  if (galleries.length === 0) {
-    lines.push("_No galleries yet._", "");
-    return lines.join("\n");
-  }
-  for (const g of galleries) {
-    const href = `envoy://${ownerId}/photos/${g.name}/`;
-    lines.push(`- [${g.name}](${href}) (${g.count} photo${g.count === 1 ? "" : "s"})`);
-  }
-  lines.push("");
-  return lines.join("\n");
+  return buildPhotosRootMarkdownShared(
+    ownerId,
+    galleries.map((g) => ({ name: g.name, count: g.count })),
+  );
 }
 
 async function uniquePath(
@@ -408,7 +404,36 @@ export async function publishWebContentEntry(
   let summary: string;
   let listingUrl: string | undefined;
 
-  if (params.template === "blog-post" || params.template === "note" || params.template === "profile") {
+  let tags = params.tags ? [...params.tags] : [];
+  let sectionSlugOut: string | undefined;
+
+  if (params.template === "section") {
+    const body = params.body ?? "";
+    const markdown = `# ${title}\n\n${body.trim()}\n`;
+    const meta = sha256Utf8(markdown);
+    contentHash = meta.hash;
+    byteLength = meta.byteLength;
+    summary = summaryFromBody(body) || title;
+    mimeType = "text/markdown";
+    kind = "section";
+    const sectionSlug = slugifySectionPath(params.sectionSlug?.trim() || title);
+    if (!sectionSlug) {
+      throw new Error(
+        "publishWebContentEntry: section needs a title or path slug with letters/numbers",
+      );
+    }
+    if (RESERVED_WEB_SECTION_SLUGS.has(sectionSlug)) {
+      throw new Error(
+        `publishWebContentEntry: section slug "${sectionSlug}" is reserved for built-in site pages`,
+      );
+    }
+    sectionSlugOut = sectionSlug;
+    relativePath = `${sectionSlug}/index.md`;
+    if (params.advertiseTopic !== false && !tags.includes(sectionSlug)) {
+      tags = [...tags, sectionSlug];
+    }
+    await writeWebFile(webDir, relativePath, markdown);
+  } else if (params.template === "blog-post" || params.template === "note" || params.template === "profile") {
     const body = params.body ?? "";
     const markdown = `# ${title}\n\n${body.trim()}\n`;
     const meta = sha256Utf8(markdown);
@@ -437,7 +462,10 @@ export async function publishWebContentEntry(
     contentHash = meta.hash;
     byteLength = meta.byteLength;
     mimeType = (params.mimeType ?? "application/octet-stream").trim();
-    summary = title;
+    summary =
+      params.template === "photo" && params.body?.trim()
+        ? params.body.trim().slice(0, 280)
+        : title;
 
     if (params.template === "photo") {
       kind = "photo";
@@ -469,11 +497,11 @@ export async function publishWebContentEntry(
     visibility: params.visibility,
     updatedAt: now,
     publishedAt: now,
-    urlSlug: slug,
+    urlSlug: sectionSlugOut ?? slug,
     ...(params.visibility === "contacts" && params.contactIds?.length
       ? { contactIds: [...params.contactIds] }
       : {}),
-    ...(params.tags?.length ? { tags: [...params.tags] } : {}),
+    ...(tags.length ? { tags } : {}),
   };
   await store.upsert(entry);
 
@@ -482,6 +510,10 @@ export async function publishWebContentEntry(
   } else if (params.template === "photo") {
     const gallery = slugifyTitle(params.gallery?.trim() || "wall") || "wall";
     listingUrl = await regeneratePhotoWall(store, webDir, ownerId, gallery, params.visibility, now);
+  } else if (params.template === "section" && sectionSlugOut) {
+    listingUrl = `envoy://${ownerId}/${sectionSlugOut}/`;
+  } else if (params.template === "profile") {
+    listingUrl = `envoy://${ownerId}`;
   }
 
   return {
@@ -492,7 +524,166 @@ export async function publishWebContentEntry(
     title,
     visibility: params.visibility,
     publishedAt: now,
-    url: `envoy://${ownerId}/${relativePath}`,
+    url:
+      params.template === "section" && sectionSlugOut
+        ? `envoy://${ownerId}/${sectionSlugOut}/`
+        : params.template === "profile"
+          ? `envoy://${ownerId}`
+          : `envoy://${ownerId}/${relativePath}`,
     listingUrl,
+    ...(tags.length ? { tags } : {}),
   };
+}
+
+export interface EnsureDefaultWebSiteParams {
+  ownerId: string;
+  /** Used as the seeded Profile title / greeting. */
+  displayName?: string;
+  /** Default visibility for seeded shells (contacts can browse). */
+  visibility?: WebContentVisibility;
+}
+
+export interface EnsureDefaultWebSiteResult {
+  created: Array<"profile" | "blog" | "photowall">;
+  urls: {
+    profile: string;
+    blog: string;
+    photowall: string;
+  };
+}
+
+/**
+ * Idempotently seed a default mesh site: Profile page + empty Blog + empty PhotoWall.
+ * Never overwrites an existing manifest entry / path.
+ */
+export async function ensureDefaultWebSite(
+  profileDir: string,
+  params: EnsureDefaultWebSiteParams,
+): Promise<EnsureDefaultWebSiteResult> {
+  const ownerId = params.ownerId.trim();
+  if (!ownerId.startsWith("envoy:owner:")) {
+    throw new Error("ensureDefaultWebSite: ownerId must be envoy:owner:…");
+  }
+  const visibility = params.visibility ?? "bonded";
+  const displayName = params.displayName?.trim() || "Me";
+  const webDir = join(profileDir, "web");
+  await mkdir(webDir, { recursive: true });
+  const store = createWebContentStore(webDir);
+  await store.reload();
+  const now = new Date().toISOString();
+  const created: EnsureDefaultWebSiteResult["created"] = [];
+
+  if (!(await store.findByPath("index.md"))) {
+    const markdown = buildDefaultProfileMarkdown({ ownerId, displayName });
+    const meta = sha256Utf8(markdown);
+    await writeWebFile(webDir, "index.md", markdown);
+    await store.upsert({
+      path: "index.md",
+      contentHash: meta.hash,
+      byteLength: meta.byteLength,
+      title: displayName,
+      summary: "Default Profile page",
+      kind: "profile",
+      mimeType: "text/markdown",
+      visibility,
+      updatedAt: now,
+      publishedAt: now,
+      urlSlug: "profile",
+    });
+    created.push("profile");
+  }
+
+  if (!(await store.findByPath("blog/index.md"))) {
+    await upsertListing(
+      store,
+      webDir,
+      "blog/index.md",
+      "Blog",
+      buildBlogIndexMarkdown(ownerId, []),
+      visibility,
+      now,
+      "article",
+      "0 posts",
+    );
+    created.push("blog");
+  }
+
+  let photowallCreated = false;
+  if (!(await store.findByPath("photos/wall/index.md"))) {
+    await upsertListing(
+      store,
+      webDir,
+      "photos/wall/index.md",
+      "PhotoWall — wall",
+      buildPhotoWallMarkdown(ownerId, "wall", []),
+      visibility,
+      now,
+      "gallery",
+      "0 photos",
+    );
+    photowallCreated = true;
+  }
+  if (!(await store.findByPath("photos/index.md"))) {
+    await upsertListing(
+      store,
+      webDir,
+      "photos/index.md",
+      "Photos",
+      buildPhotosRootMarkdown(ownerId, [{ name: "wall", count: 0, visibility }]),
+      visibility,
+      now,
+      "gallery",
+      "1 gallery",
+    );
+    photowallCreated = true;
+  }
+  if (photowallCreated) created.push("photowall");
+
+  return {
+    created,
+    urls: {
+      profile: `envoy://${ownerId}/`,
+      blog: `envoy://${ownerId}/blog/`,
+      photowall: `envoy://${ownerId}/photos/`,
+    },
+  };
+}
+
+export interface WebContentSectionSummary {
+  title: string;
+  slug: string;
+  path: string;
+  url: string;
+  visibility: WebContentVisibility;
+  tags?: string[];
+  updatedAt: string;
+}
+
+/** List custom sections (kind `section`) for My site / shelves. */
+export async function listWebContentSections(
+  profileDir: string,
+  ownerId: string,
+): Promise<WebContentSectionSummary[]> {
+  const webDir = join(profileDir, "web");
+  const store = createWebContentStore(webDir);
+  await store.reload();
+  const entries = await store.list({ kind: "section" });
+  const out: WebContentSectionSummary[] = [];
+  for (const e of entries) {
+    const m = /^([^/]+)\/index\.md$/.exec(e.path);
+    if (!m) continue;
+    const slug = m[1]!;
+    if (RESERVED_WEB_SECTION_SLUGS.has(slug)) continue;
+    out.push({
+      title: e.title,
+      slug,
+      path: e.path,
+      url: `envoy://${ownerId}/${slug}/`,
+      visibility: e.visibility,
+      tags: e.tags,
+      updatedAt: e.updatedAt,
+    });
+  }
+  out.sort((a, b) => a.title.localeCompare(b.title));
+  return out;
 }

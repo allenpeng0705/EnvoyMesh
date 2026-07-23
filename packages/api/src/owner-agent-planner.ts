@@ -51,12 +51,15 @@ export interface OwnerAgentPlannerDeps {
     maxChainCostUsd?: number;
     costCeilingUsd?: number;
     allowLlm?: boolean;
+    assignerPeerId?: string;
   }) => Promise<{
     ok: boolean;
     chainId: string;
     chainMandateId: string;
     subtasks: Array<{ subtaskId: string; depth: number; requiredCapability: string; objective: string }>;
     error?: string;
+    assignerPeerId?: string;
+    handedOff?: boolean;
   }>;
   scanOutbound?: (text: string) => boolean;
   /** Phase 18B — audit each planner round (including job tools not routed via executeTool). */
@@ -433,12 +436,17 @@ async function executeOwnerAgentTool(
         typeof params.maxChainCostUsd === "number" ? params.maxChainCostUsd : undefined;
       const costCeilingUsd =
         typeof params.costCeilingUsd === "number" ? params.costCeilingUsd : undefined;
+      const assignerPeerId =
+        typeof params.assignerPeerId === "string" && params.assignerPeerId.trim()
+          ? params.assignerPeerId.trim()
+          : undefined;
       try {
         const started = await deps.runChain({
           goal,
           maxChainCostUsd,
           costCeilingUsd,
           allowLlm: false,
+          assignerPeerId,
         });
         toolsUsed.push(toolName);
         return {
@@ -447,7 +455,9 @@ async function executeOwnerAgentTool(
             toolName,
             ok: started.ok,
             summary: started.ok
-              ? `Chain ${started.chainId} started with ${started.subtasks.length} subtask(s)`
+              ? started.handedOff
+                ? `Chain ${started.chainId} handed off to Assigner ${started.assignerPeerId}`
+                : `Chain ${started.chainId} started with ${started.subtasks.length} subtask(s)`
               : `Chain start failed: ${started.error ?? "unknown error"}`,
           },
           jobId: started.ok ? started.chainId : undefined,

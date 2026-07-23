@@ -51,6 +51,8 @@ import type {
   ChainPreviewGoalResult,
   ChainStartFromGoalParams,
   ChainStartFromGoalResult,
+  ChainResolveIterationParams,
+  ChainResolveIterationResult,
   ChainListRecipesParams,
   ChainListRecipesResult,
   ChainSaveRecipeParams,
@@ -104,6 +106,12 @@ export class ChainStore {
   /** Overwrite the runtime entry for the given chainId. */
   setRuntime(chainId: string, entry: ChainRuntimeEntry): void {
     this.runtime.set(chainId, entry);
+  }
+
+  /** Drop a runtime entry (e.g. aborted before launch when no workers). */
+  deleteRuntime(chainId: string): void {
+    this.runtime.delete(chainId);
+    this.bidStrategies.delete(chainId);
   }
 
   /** Update the bid strategy for an existing runtime entry. */
@@ -184,6 +192,8 @@ export interface ChainContext {
   /** Class fields used to enrich the get-state result. */
   getChainGoal(chainId: string): unknown;
   getChainCostEstimate(chainId: string): unknown;
+  getChainAwardMode?(chainId: string): "direct" | "competitive" | undefined;
+  getChainShowCostUi?(chainId: string): boolean | undefined;
   /** Build the snapshot-to-result transform. */
   snapshotToResult(snap: ReturnType<typeof chainStateSnapshot>): ChainGetStateResult;
   /** Build the per-subtask bid map. */
@@ -208,12 +218,17 @@ export interface ChainContext {
   startChainTracking(chainId: string): void;
   /** Build a placeholder mandate for a new chain (chainPlan / chainPreviewGoal). */
   placeholderMandate(chainId: string, chainMandateId: string): unknown;
-  /** Find capability providers (peer ids) for a given capability. */
+  /** Find capability providers (peer ids) for a given capability, best score first. */
   findCapabilityProviders(capability: string): Promise<string[]>;
+  /** Ranked workers with score summaries (for diagnostics / UI). */
+  findCapabilityProvidersRanked?(
+    capability: string,
+  ): Promise<Array<{ peerId: string; score: number; summary: string }>>;
   /** Compute diagnostics for a set of subtasks + candidate workers. */
   chainDiagnosticsForSubtasks(
     subtasks: Array<{ subtaskId: string; requiredCapability: string }>,
     workersBySubtask: Record<string, string[]>,
+    rankedBySubtask?: Record<string, Array<{ peerId: string; score: number; summary: string }>>,
   ): unknown;
   /** Run a chain from a free-form goal. */
   runChainGoal(params: {
@@ -221,8 +236,47 @@ export interface ChainContext {
     maxChainCostUsd?: number;
     costCeilingUsd?: number;
     allowLlm?: boolean;
+    assignerPeerId?: string;
+    iterationMaxRounds?: number;
+    iterationJudgeMode?: "llm" | "always_stop" | "owner";
+    extendMaxStepsPerRound?: number;
+    /** Phase 47D mid-job rehydrate blob (same shape as handoff `iterationState`). */
+    iterationWire?: {
+      round: number;
+      maxRounds: number;
+      extendsInRound: number;
+      maxExtendsInRound: number;
+      extendMaxDepth: number;
+      extendOnlyAfterPartial: boolean;
+      sealedByRound: Record<string, string[]>;
+      openRoundSubtaskIds: string[];
+      drafts: Array<{
+        round: number;
+        summary: string;
+        judgeDecision?: string;
+        judgeReason?: string;
+      }>;
+      judgeMode: "llm" | "always_stop" | "owner";
+      carryMode: "summary" | "full_draft" | "structured";
+      goal: string;
+      waitingForOwner?: boolean;
+      stopReason?: string;
+    };
   }): Promise<
-    | { ok: true; chainId: string; chainMandateId: string; subtasks: Array<{ subtaskId: string }> }
+    | {
+        ok: true;
+        chainId: string;
+        chainMandateId: string;
+        subtasks: Array<{
+          subtaskId: string;
+          depth?: number;
+          requiredCapability?: string;
+          objective?: string;
+          preferredWorkerPeerId?: string;
+        }>;
+        assignerPeerId?: string;
+        handedOff?: boolean;
+      }
     | { ok: false; error: string }
   >;
   /** Recipe persistence (optional — the runtime returns the builtin list when absent).
@@ -267,7 +321,26 @@ export function chainGetStateViaRuntime(
   result.bidsBySubtask = ctx.bidsBySubtask(entry.state);
   result.goal = ctx.getChainGoal(params.chainId) as never;
   result.estimatedCostRange = ctx.getChainCostEstimate(params.chainId) as never;
+  result.awardMode = ctx.getChainAwardMode?.(params.chainId) ?? "direct";
+  result.showCostUi = ctx.getChainShowCostUi?.(params.chainId) ?? false;
   result.budgetWarningLevel = chainBudgetWarningLevel(entry.state);
+  const it = entry.state.iteration;
+  if (it) {
+    result.iteration = {
+      round: it.round,
+      maxRounds: it.maxRounds,
+      extendsInRound: it.extendsInRound,
+      maxExtendsInRound: it.maxExtendsInRound,
+      waitingForOwner: it.waitingForOwner === true,
+      stopReason: it.stopReason,
+      drafts: it.drafts.map((d) => ({
+        round: d.round,
+        summary: d.summary,
+        judgeDecision: d.judge?.decision,
+        judgeReason: d.judge?.reason,
+      })),
+    };
+  }
   return result;
 }
 
@@ -280,6 +353,29 @@ export function chainListActiveViaRuntime(
     chains: ctx.store.listActive().map((entry) => {
       const snap = ctx.snapshotToResult(chainStateSnapshot(entry.state));
       snap.bidsBySubtask = ctx.bidsBySubtask(entry.state);
+      const chainId = snap.chainId;
+      snap.goal = ctx.getChainGoal(chainId) as never;
+      snap.estimatedCostRange = ctx.getChainCostEstimate(chainId) as never;
+      snap.awardMode = ctx.getChainAwardMode?.(chainId) ?? "direct";
+      snap.showCostUi = ctx.getChainShowCostUi?.(chainId) ?? false;
+      snap.budgetWarningLevel = chainBudgetWarningLevel(entry.state);
+      const it = entry.state.iteration;
+      if (it) {
+        snap.iteration = {
+          round: it.round,
+          maxRounds: it.maxRounds,
+          extendsInRound: it.extendsInRound,
+          maxExtendsInRound: it.maxExtendsInRound,
+          waitingForOwner: it.waitingForOwner === true,
+          stopReason: it.stopReason,
+          drafts: it.drafts.map((d) => ({
+            round: d.round,
+            summary: d.summary,
+            judgeDecision: d.judge?.decision,
+            judgeReason: d.judge?.reason,
+          })),
+        };
+      }
       return snap;
     }),
   };
@@ -389,7 +485,8 @@ export async function chainSetDefaultsViaRuntime(
     (d.rebalancePolicy !== undefined &&
       d.rebalancePolicy !== "manual" &&
       d.rebalancePolicy !== "auto" &&
-      d.rebalancePolicy !== "never")
+      d.rebalancePolicy !== "never") ||
+    (d.awardMode !== undefined && d.awardMode !== "direct" && d.awardMode !== "competitive")
   ) {
     return { ok: false, defaults: d as never, reason: "validation_failed" };
   }
@@ -629,11 +726,19 @@ export async function chainPreviewGoalViaRuntime(
     return { ok: false, subtasks: [], reason: (plan as { reason: string }).reason };
   }
   const workersBySubtask: Record<string, string[]> = {};
+  const rankedBySubtask: Record<string, Array<{ peerId: string; score: number; summary: string }>> = {};
   let maxWorkers = 0;
   for (const subtask of plan.subtasks) {
-    const candidates = await ctx.findCapabilityProviders(subtask.requiredCapability);
-    workersBySubtask[subtask.subtaskId] = candidates;
-    maxWorkers = Math.max(maxWorkers, candidates.length);
+    const ranked = ctx.findCapabilityProvidersRanked
+      ? await ctx.findCapabilityProvidersRanked(subtask.requiredCapability)
+      : (await ctx.findCapabilityProviders(subtask.requiredCapability)).map((peerId) => ({
+          peerId,
+          score: 0,
+          summary: peerId,
+        }));
+    rankedBySubtask[subtask.subtaskId] = ranked;
+    workersBySubtask[subtask.subtaskId] = ranked.map((r) => r.peerId);
+    maxWorkers = Math.max(maxWorkers, ranked.length);
   }
   const estimatedCostRange = estimateChainCostRange({
     subtaskCount: plan.subtasks.length,
@@ -651,7 +756,11 @@ export async function chainPreviewGoalViaRuntime(
       workerCount: (workersBySubtask[s.subtaskId] ?? []).length,
     })),
     estimatedCostRange,
-    diagnostics: ctx.chainDiagnosticsForSubtasks(plan.subtasks, workersBySubtask) as never,
+    diagnostics: ctx.chainDiagnosticsForSubtasks(
+      plan.subtasks,
+      workersBySubtask,
+      rankedBySubtask,
+    ) as never,
   };
 }
 
@@ -665,6 +774,37 @@ export async function chainStartFromGoalViaRuntime(
   const goal = params.goal.trim() || template?.goal || "";
   if (!goal) {
     return { ok: false, error: "no_goal" };
+  }
+  const remoteAssigner = Boolean(params.assignerPeerId?.trim());
+  if (remoteAssigner) {
+    const result = await ctx.runChainGoal({
+      goal,
+      maxChainCostUsd: params.maxChainCostUsd ?? template?.maxChainCostUsd,
+      costCeilingUsd: params.costCeilingUsd ?? template?.costCeilingUsd,
+      allowLlm: params.allowLlm,
+      assignerPeerId: params.assignerPeerId!.trim(),
+      iterationMaxRounds: params.iterationMaxRounds,
+      iterationJudgeMode: params.iterationJudgeMode,
+      extendMaxStepsPerRound: params.extendMaxStepsPerRound,
+      iterationWire: params.iterationState,
+    });
+    if (!result.ok) {
+      return { ok: false, error: result.error };
+    }
+    return {
+      ok: true,
+      chainId: result.chainId,
+      chainMandateId: result.chainMandateId,
+      subtasks: result.subtasks.map((s) => ({
+        subtaskId: s.subtaskId,
+        depth: s.depth ?? 0,
+        requiredCapability: s.requiredCapability ?? "",
+        objective: s.objective ?? "",
+        preferredWorkerPeerId: s.preferredWorkerPeerId,
+      })),
+      assignerPeerId: (result as { assignerPeerId?: string }).assignerPeerId,
+      handedOff: (result as { handedOff?: boolean }).handedOff,
+    };
   }
   const preview = await chainPreviewGoalViaRuntime(ctx, {
     goal,
@@ -680,11 +820,24 @@ export async function chainStartFromGoalViaRuntime(
       diagnostics: preview.diagnostics,
     };
   }
+  const hasWorkers = preview.subtasks.some((s) => s.workerCount > 0);
+  if (!hasWorkers) {
+    return {
+      ok: false,
+      error: "no_workers",
+      diagnostics: preview.diagnostics,
+      estimatedCostRange: preview.estimatedCostRange,
+    };
+  }
   const result = await ctx.runChainGoal({
     goal,
     maxChainCostUsd: params.maxChainCostUsd ?? template?.maxChainCostUsd,
     costCeilingUsd: params.costCeilingUsd ?? template?.costCeilingUsd,
     allowLlm: params.allowLlm,
+    iterationMaxRounds: params.iterationMaxRounds,
+    iterationJudgeMode: params.iterationJudgeMode,
+    extendMaxStepsPerRound: params.extendMaxStepsPerRound,
+    iterationWire: params.iterationState,
   });
   if (!result.ok) {
     return { ok: false, error: result.error, diagnostics: preview.diagnostics };
@@ -694,10 +847,11 @@ export async function chainStartFromGoalViaRuntime(
     chainId: result.chainId,
     chainMandateId: result.chainMandateId,
     subtasks: result.subtasks.map((s) => ({
-      subtaskId: (s as { subtaskId: string }).subtaskId,
-      depth: 0,
-      requiredCapability: "",
-      objective: "",
+      subtaskId: s.subtaskId,
+      depth: s.depth ?? 0,
+      requiredCapability: s.requiredCapability ?? "",
+      objective: s.objective ?? "",
+      preferredWorkerPeerId: s.preferredWorkerPeerId,
     })),
     estimatedCostRange: preview.estimatedCostRange,
     diagnostics: preview.diagnostics,

@@ -279,6 +279,10 @@ if ($SMOKE -and -not $BAIL_OUT) {
     $SMOKE_FILES = @(
       "apps/node/test/chain-two-home-smoke.test.ts"
       "apps/node/test/chain-three-home-smoke.test.ts"
+      "apps/node/test/chain-plan-assign-three-home-e2e.test.ts"
+      "apps/node/test/chain-assigner-handoff-e2e.test.ts"
+      "apps/node/test/chain-stall-reassign-e2e.test.ts"
+      "apps/node/test/chain-iteration-e2e.test.ts"
     )
     Run-Phase "06b-smoke-chain-homes" "chain-{two,three}-home-smoke" {
       $env:RUN_E2E = "1"

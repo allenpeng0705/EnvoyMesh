@@ -6,17 +6,133 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
+  ensureDefaultWebSite,
+  listWebContentSections,
   publishWebContentEntry,
   slugifyTitle,
 } from "../src/web-content-author.js";
 import { createWebContentStore } from "../src/web-content-store.js";
 
-const PNG_1X1 =
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
-
 describe("slugifyTitle", () => {
   it("slugifies blog titles", () => {
     expect(slugifyTitle("My First Post")).toBe("my-first-post");
+  });
+});
+
+const PNG_1X1 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
+
+describe("publishWebContentEntry section", () => {
+  it("publishes a custom Market section with topic tag", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-web-section-"));
+    const ownerId = "envoy:owner:alice";
+    const result = await publishWebContentEntry(profileDir, {
+      template: "section",
+      title: "Market",
+      body: "Local goods and swaps.",
+      visibility: "bonded",
+      ownerId,
+    });
+    expect(result.path).toBe("market/index.md");
+    expect(result.url).toBe(`envoy://${ownerId}/market/`);
+    expect(result.listingUrl).toBe(`envoy://${ownerId}/market/`);
+
+    const body = await readFile(join(profileDir, "web", "market/index.md"), "utf8");
+    expect(body).toContain("# Market");
+    expect(body).toContain("Local goods");
+
+    const store = createWebContentStore(join(profileDir, "web"));
+    const entry = await store.findByPath("market/index.md");
+    expect(entry?.kind).toBe("section");
+    expect(entry?.tags).toContain("market");
+
+    const listed = await listWebContentSections(profileDir, ownerId);
+    expect(listed).toHaveLength(1);
+    expect(listed[0]?.slug).toBe("market");
+    expect(listed[0]?.url).toBe(`envoy://${ownerId}/market/`);
+    expect(result.tags).toContain("market");
+  });
+
+  it("rejects empty section slug (punctuation-only title)", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-web-section-empty-"));
+    await expect(
+      publishWebContentEntry(profileDir, {
+        template: "section",
+        title: "!!!",
+        body: "nope",
+        visibility: "public",
+        ownerId: "envoy:owner:alice",
+      }),
+    ).rejects.toThrow(/letters\/numbers/);
+  });
+
+  it("rejects reserved slug 'section'", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-web-section-reserved-"));
+    await expect(
+      publishWebContentEntry(profileDir, {
+        template: "section",
+        title: "Anything",
+        body: "nope",
+        visibility: "public",
+        ownerId: "envoy:owner:alice",
+        sectionSlug: "section",
+      }),
+    ).rejects.toThrow(/reserved/);
+  });
+
+  it("rejects reserved section slugs", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-web-section-bad-"));
+    await expect(
+      publishWebContentEntry(profileDir, {
+        template: "section",
+        title: "Blog",
+        body: "nope",
+        visibility: "public",
+        ownerId: "envoy:owner:alice",
+        sectionSlug: "blog",
+      }),
+    ).rejects.toThrow(/reserved/);
+  });
+});
+
+describe("ensureDefaultWebSite", () => {
+  it("seeds profile, empty blog, and empty photowall once", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-web-seed-"));
+    const ownerId = "envoy:owner:alice";
+    const first = await ensureDefaultWebSite(profileDir, {
+      ownerId,
+      displayName: "Alice",
+    });
+    expect(first.created).toEqual(["profile", "blog", "photowall"]);
+    expect(first.urls.profile).toBe(`envoy://${ownerId}/`);
+    expect(first.urls.blog).toBe(`envoy://${ownerId}/blog/`);
+    expect(first.urls.photowall).toBe(`envoy://${ownerId}/photos/`);
+
+    const profileBody = await readFile(join(profileDir, "web", "index.md"), "utf8");
+    expect(profileBody).toContain("# Alice");
+    expect(profileBody).toContain("Welcome to my EnvoyMesh site");
+
+    const blogBody = await readFile(join(profileDir, "web", "blog/index.md"), "utf8");
+    expect(blogBody).toContain("_No posts yet._");
+
+    const photosBody = await readFile(join(profileDir, "web", "photos/index.md"), "utf8");
+    expect(photosBody).toContain("wall");
+    const wallBody = await readFile(join(profileDir, "web", "photos/wall/index.md"), "utf8");
+    expect(wallBody).toContain("_No photos yet._");
+
+    const store = createWebContentStore(join(profileDir, "web"));
+    expect((await store.findByPath("index.md"))?.visibility).toBe("bonded");
+    expect((await store.findByPath("blog/index.md"))?.kind).toBe("article");
+    expect((await store.findByPath("photos/wall/index.md"))?.kind).toBe("gallery");
+
+    const second = await ensureDefaultWebSite(profileDir, {
+      ownerId,
+      displayName: "Alice Changed",
+    });
+    expect(second.created).toEqual([]);
+    const unchanged = await readFile(join(profileDir, "web", "index.md"), "utf8");
+    expect(unchanged).toContain("# Alice");
+    expect(unchanged).not.toContain("Alice Changed");
   });
 });
 

@@ -20,6 +20,7 @@ import {
 } from "../../lib/discover-empty-hints.js";
 import { extractGeoCitySummary } from "../../lib/discover-friend-suggestion.js";
 import { loadOutboundHellos, markOutboundHello, resolvePeerHelloState } from "../../lib/discover-peer-state.js";
+import { publishSearchTopic } from "../../lib/publish-topic.js";
 import { SearchIcon, CloseIcon } from "../../icons.js";
 import {
   type HelloProfile,
@@ -35,16 +36,6 @@ import {
 export type { DiscoverPath } from "../../lib/discover-default-path.js";
 type WiderSearchMode = "name" | "topic" | "publish" | "place";
 
-/** Normalize free text to a DHT `publish:<slug>` topic (Phase 45E). */
-function publishSearchTopic(raw: string): string {
-  const trimmed = raw.trim();
-  if (trimmed.startsWith("publish:")) return trimmed.toLowerCase();
-  const slug = trimmed
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-  return slug ? `publish:${slug}` : "";
-}
 type LookupPanelMode = "network" | "paste";
 
 export function SearchView({ embedded = false }: { embedded?: boolean }) {

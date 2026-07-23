@@ -41,34 +41,36 @@ export function PeerProfilePanel({ ownerId, fallbackDisplayName }: PeerProfilePa
   const knowledge = (profile?.knowledge ?? []).filter(Boolean);
 
   return (
-    <details className="peer-profile-panel">
-      <summary>{t("contactChat.contactProfileSummary", "Contact profile")}</summary>
-      <div className="peer-profile-panel__body">
-        <div className="peer-profile-panel__about">
-          <h4 className="peer-profile-panel__name">{displayName}</h4>
-          {username ? <p className="peer-profile-panel__username muted small">@{username}</p> : null}
-          {bio ? <p className="peer-profile-panel__bio">{bio}</p> : null}
-          {hobbies.length > 0 ? (
-            <p className="peer-profile-panel__meta muted small">
-              {t("profileAbout.hobbies", "Hobbies")}: {hobbies.join(", ")}
-            </p>
-          ) : null}
-          {knowledge.length > 0 ? (
-            <p className="peer-profile-panel__meta muted small">
-              {t("profileAbout.knowledge", "Knowledge")}: {knowledge.join(", ")}
-            </p>
-          ) : null}
-          {!bio && hobbies.length === 0 && knowledge.length === 0 ? (
-            <p className="field-desc">{t("contactChat.contactProfileEmpty", "No profile details synced yet.")}</p>
-          ) : null}
+    <div className="peer-profile-panel-wrap">
+      <details className="peer-profile-panel" data-testid="peer-profile-details">
+        <summary>{t("contactChat.contactProfileSummary", "Contact profile")}</summary>
+        <div className="peer-profile-panel__body">
+          <div className="peer-profile-panel__about">
+            <h4 className="peer-profile-panel__name">{displayName}</h4>
+            {username ? <p className="peer-profile-panel__username muted small">@{username}</p> : null}
+            {bio ? <p className="peer-profile-panel__bio">{bio}</p> : null}
+            {hobbies.length > 0 ? (
+              <p className="peer-profile-panel__meta muted small">
+                {t("profileAbout.hobbies", "Hobbies")}: {hobbies.join(", ")}
+              </p>
+            ) : null}
+            {knowledge.length > 0 ? (
+              <p className="peer-profile-panel__meta muted small">
+                {t("profileAbout.knowledge", "Knowledge")}: {knowledge.join(", ")}
+              </p>
+            ) : null}
+            {!bio && hobbies.length === 0 && knowledge.length === 0 ? (
+              <p className="field-desc">{t("contactChat.contactProfileEmpty", "No profile details synced yet.")}</p>
+            ) : null}
+          </div>
+          <section className="peer-profile-panel__agent" aria-labelledby={`agent-cap-${ownerId}`}>
+            <h5 className="peer-profile-panel__section-title" id={`agent-cap-${ownerId}`}>
+              {t("contactChat.agentCardSummary", "Agent capabilities")}
+            </h5>
+            <AgentCardPanel ownerId={ownerId} showWebContentShortcuts={false} />
+          </section>
         </div>
-        <section className="peer-profile-panel__agent" aria-labelledby={`agent-cap-${ownerId}`}>
-          <h5 className="peer-profile-panel__section-title" id={`agent-cap-${ownerId}`}>
-            {t("contactChat.agentCardSummary", "Agent capabilities")}
-          </h5>
-          <AgentCardPanel ownerId={ownerId} />
-        </section>
-      </div>
-    </details>
+      </details>
+    </div>
   );
 }

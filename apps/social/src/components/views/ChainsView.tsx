@@ -28,7 +28,7 @@ interface ChainSummary {
   chainId: string;
   chainMandateId: string;
   goal?: string;
-  status: "bidding" | "running" | "synthesizing" | "completed" | "cancelled";
+  status: "bidding" | "waitingWorkers" | "running" | "synthesizing" | "awaitingOwner" | "completed" | "cancelled";
   subtaskCount: number;
   awardedCount: number;
   completedCount: number;
@@ -36,8 +36,11 @@ interface ChainSummary {
   budgetMaxUsd: number;
   budgetWarningLevel?: ChainGetStateResult["budgetWarningLevel"];
   estimatedCostRange?: ChainGetStateResult["estimatedCostRange"];
+  awardMode?: "direct" | "competitive";
+  showCostUi?: boolean;
   published: boolean;
   chainCancelled: boolean;
+  iteration?: ChainGetStateResult["iteration"];
 }
 
 /** Derive a human-readable status from ChainGetStateResult fields. */
@@ -48,10 +51,15 @@ function deriveStatus(r: {
   subtaskCount: number;
   partialCount: number;
   cancelledCount: number;
+  bidsBySubtask?: ChainGetStateResult["bidsBySubtask"];
+  iteration?: ChainGetStateResult["iteration"];
 }): ChainSummary["status"] {
   if (r.chainCancelled || r.cancelledCount === r.subtaskCount) return "cancelled";
   if (r.published) return "completed";
+  if (r.iteration?.waitingForOwner) return "awaitingOwner";
   if (r.partialCount === r.subtaskCount && r.subtaskCount > 0) return "synthesizing";
+  const bidCount = (r.bidsBySubtask ?? []).reduce((n, row) => n + row.bids.length, 0);
+  if (r.awardedCount === 0 && bidCount === 0 && r.subtaskCount > 0) return "waitingWorkers";
   if (r.awardedCount < r.subtaskCount) return "bidding";
   if (r.awardedCount > 0) return "running";
   return "bidding";
@@ -71,9 +79,23 @@ function asChainSummary(r: ChainGetStateResult): ChainSummary {
     budgetMaxUsd: r.budgetMaxUsd,
     budgetWarningLevel: r.budgetWarningLevel,
     estimatedCostRange: r.estimatedCostRange,
+    awardMode: r.awardMode,
+    showCostUi: r.showCostUi,
     published: r.published,
     chainCancelled: r.chainCancelled,
+    iteration: r.iteration,
   };
+}
+
+function formatIterationProgress(
+  it: NonNullable<ChainGetStateResult["iteration"]>,
+  t: (key: string, vars?: Record<string, string | number>) => string,
+): string {
+  return t("chains.iteration.progress", {
+    round: it.round,
+    max: it.maxRounds,
+    extended: it.extendsInRound,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -82,9 +104,10 @@ function asChainSummary(r: ChainGetStateResult): ChainSummary {
 
 export interface ChainsViewProps {
   onBack?: () => void;
+  onOpenDiscover?: () => void;
 }
 
-export function ChainsView({ onBack }: ChainsViewProps = {}) {
+export function ChainsView({ onBack, onOpenDiscover }: ChainsViewProps = {}) {
   const t = useT();
   const nodeService = useNodeService();
   const { showToast } = useToast();
@@ -298,19 +321,33 @@ export function ChainsView({ onBack }: ChainsViewProps = {}) {
           goal={newChainGoal}
           onClose={() => setNewChainGoal(null)}
           onStarted={handleStarted}
+          onOpenDiscover={onOpenDiscover}
         />
       ) : null}
 
       {activeChains.length === 0 && !composing ? (
         <div className="chains-empty">
           <p>{t("chains.active.empty")}</p>
-          <button
-            type="button"
-            className="primary"
-            onClick={() => openComposer()}
-          >
-            {t("chains.start.newChain")}
-          </button>
+          <p className="chains-empty__hint">{t("chains.active.prerequisite")}</p>
+          <div className="chains-empty__actions">
+            {onOpenDiscover ? (
+              <button
+                type="button"
+                className="secondary"
+                data-testid="chains-open-discover"
+                onClick={onOpenDiscover}
+              >
+                {t("chains.start.openDiscover")}
+              </button>
+            ) : null}
+            <button
+              type="button"
+              className="primary"
+              onClick={() => openComposer()}
+            >
+              {t("chains.start.newChain")}
+            </button>
+          </div>
         </div>
       ) : (
         activeChains.map((chain) => (
@@ -333,15 +370,26 @@ export function ChainsView({ onBack }: ChainsViewProps = {}) {
                   ? "🔄"
                   : chain.status === "synthesizing"
                     ? "🧩"
-                    : "⏳"}
+                    : chain.status === "waitingWorkers"
+                      ? "📡"
+                      : chain.status === "awaitingOwner"
+                        ? "👤"
+                        : "⏳"}
                 {" "}
-                {t(`chains.status.${chain.status}`)}
+                {chain.status === "bidding" && chain.awardMode !== "competitive"
+                  ? t("chains.status.assigning")
+                  : t(`chains.status.${chain.status}`)}
               </span>
               <code className="chain-id">{chain.chainId.slice(0, 12)}…</code>
             </div>
 
             {chain.goal ? <p className="chain-card-goal">{chain.goal}</p> : null}
-            {chain.estimatedCostRange ? (
+            {chain.iteration && (chain.iteration.maxRounds > 1 || chain.iteration.extendsInRound > 0) ? (
+              <p className="chain-card-iteration" data-testid="chain-iteration-progress">
+                {formatIterationProgress(chain.iteration, t)}
+              </p>
+            ) : null}
+            {chain.showCostUi && chain.estimatedCostRange ? (
               <p className="chain-card-estimate">
                 {t("chains.start.costRange", {
                   min: chain.estimatedCostRange.minUsd.toFixed(2),
@@ -349,9 +397,9 @@ export function ChainsView({ onBack }: ChainsViewProps = {}) {
                 })}
               </p>
             ) : null}
-            {chain.budgetWarningLevel === "warn" ? (
+            {chain.showCostUi && chain.budgetWarningLevel === "warn" ? (
               <p className="chain-budget-warn">{t("chains.rebalance.warn", { percent: 80 })}</p>
-            ) : chain.budgetWarningLevel === "exceeded" ? (
+            ) : chain.showCostUi && chain.budgetWarningLevel === "exceeded" ? (
               <p className="chain-budget-exceeded">{t("chains.rebalance.exceeded")}</p>
             ) : null}
 
@@ -363,12 +411,14 @@ export function ChainsView({ onBack }: ChainsViewProps = {}) {
                   total: chain.subtaskCount,
                 })}
               </span>
-              <span>
-                {t("chains.rebalance.spent", {
-                  spent: chain.budgetSpentUsd.toFixed(2),
-                  max: chain.budgetMaxUsd.toFixed(2),
-                })}
-              </span>
+              {chain.showCostUi ? (
+                <span>
+                  {t("chains.rebalance.spent", {
+                    spent: chain.budgetSpentUsd.toFixed(2),
+                    max: chain.budgetMaxUsd.toFixed(2),
+                  })}
+                </span>
+              ) : null}
             </div>
 
             <div className="chain-card-actions">
@@ -382,16 +432,18 @@ export function ChainsView({ onBack }: ChainsViewProps = {}) {
               >
                 {t("chains.active.manage")}
               </button>
-              <button
-                type="button"
-                className="btn-sm"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  void handleExportCosts(chain.chainId);
-                }}
-              >
-                {t("chains.start.exportCsv")}
-              </button>
+              {chain.showCostUi ? (
+                <button
+                  type="button"
+                  className="btn-sm"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    void handleExportCosts(chain.chainId);
+                  }}
+                >
+                  {t("chains.start.exportCsv")}
+                </button>
+              ) : null}
               <button
                 className="btn-sm btn-danger"
                 onClick={(e) => {

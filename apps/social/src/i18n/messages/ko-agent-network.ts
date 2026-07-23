@@ -1,8 +1,8 @@
-// Korean translations for Settings → Agent Network (Devices & Fleet).
+// Korean translations for Settings → Agent Network (Agent Network).
 // Mirrors zh-agent-network.ts.
 
 export const koAgentNetworkSettingsMessages = {
-  title: "디바이스 및 플릿",
+  title: "에이전트 네트워크",
   intro: "이 노드가 다른 플릿 멤버와 바인딩하는 방식을 구성합니다. 네 가지 경로가 있습니다 — 팀에 맞는 것을 선택하세요. **모두 기본적으로 꺼져 있습니다** — 직접 켜야 합니다.",
   quickReferenceTitle: "어떤 경로를 사용해야 하나요?",
   groupAutoBondTitle: "자동 바인딩 (스폰서 노드 + 인스톨러)",
@@ -11,7 +11,32 @@ export const koAgentNetworkSettingsMessages = {
   groupInvitesDesc: "동료가 자신의 Social UI에 붙여넣어 이 노드에 참여할 수 있는 링크를 생성합니다.",
   groupOperatorTitle: "운영자 도구",
   groupOperatorDesc: "많은 노드의 신뢰를 한 번에 사전 설정하거나, 사무실 Wi-Fi의 모든 사람을 자동 바인딩합니다.",
+  officeLan: {
+    heading: "사무실 LAN",
+    desc: "같은 Wi-Fi용 원클릭 설정: 에이전트 네트워크 참가 + LAN 자동 바인딩 + 공유 플릿 토큰. 각 데스크 기기에서 활성화하고 동일한 토큰을 사용하세요.",
+    enableButton: "사무실 LAN 팀 활성화",
+    enabling: "활성화 중…",
+    enabled: "사무실 LAN 팀이 활성화됨",
+    copyToken: "토큰 복사",
+    tokenCopied: "토큰 복사됨",
+    shareHint: "이 토큰을 다른 기기와 공유한 뒤 각 기기에서 사무실 LAN 팀을 활성화하세요(또는 아래 LAN 자동 바인딩에 붙여넣기).",
+    alreadyOn: "참가와 LAN 자동 바인딩이 이미 공유 토큰과 함께 켜져 있습니다.",
+  },
+  workersStatus: {
+    heading: "워커 상태",
+    bonded: "바인딩된 피어: {count}",
+    joinOn: "에이전트 네트워크: 켜짐",
+    joinOff: "에이전트 네트워크: 꺼짐",
+    workersVisible: "팀 작업에 보이는 워커: {count}",
+    refresh: "워커 새로 고침",
+    refreshing: "새로 고치는 중…",
+    refreshed: "워커가 새로 고침됨",
+    joinOffAfterLan:
+      "LAN에서 바인딩되었지만 모집할 수 없습니다 — 에이전트 네트워크에 참가하거나 사무실 LAN 프리셋을 사용하세요.",
+  },
   quickReference: {
+    officeLan:
+      "동일 LAN 빠른 경로: 한 버튼으로 참가 + LAN 자동 바인딩 + 공유 토큰을 각 기기에서 켭니다.",
     companyInvites: "장기 사용 가능한 베어러 링크. 멤버가 원격이거나 LAN이 불안정할 때 가장 좋습니다. 각 초대는 일회용입니다.",
     lanAutoBond: "같은 Wi-Fi의 데스크탑을 위한 무터치. 양쪽이 동일한 토큰으로 토글을 켭니다. 기본적으로 꺼져 있습니다.",
     pairingKiosk: "방문 노트북을 위한 브라우저 버튼. 기본적으로 꺼져 있습니다. LAN 노출에 옵트인하지 않는 한 루프백 바인딩이 필요합니다.",

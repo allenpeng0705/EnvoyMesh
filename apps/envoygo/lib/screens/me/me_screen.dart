@@ -270,18 +270,18 @@ class MeScreen extends ConsumerWidget {
           const SizedBox(height: 16),
         ],
 
-        // Chains (Phase 40 — read-only mirror of the home node's
+        // Team jobs (Phase 40 — read-only mirror of the home node's
         // chain-reports store). Tap a row to see the executive summary,
         // sections, and per-worker cost. Authoring happens on the home
         // node's Social UI; mobile shows what was published.
         if (nodeState.activeNode != null) ...[
-          const _SectionHeader(title: 'Chains'),
+          const _SectionHeader(title: 'Team jobs'),
           Card(
             child: ListTile(
               leading: const Icon(Icons.analytics_outlined),
-              title: const Text('Recent chains'),
+              title: const Text('Recent team jobs'),
               subtitle: const Text(
-                'View chain reports published on the home node',
+                'View job reports published on the home node',
               ),
               trailing: const Icon(Icons.chevron_right),
               onTap: () {
@@ -296,9 +296,9 @@ class MeScreen extends ConsumerWidget {
           Card(
             child: ListTile(
               leading: const Icon(Icons.pending_actions_outlined),
-              title: const Text('Active chains'),
+              title: const Text('Active team jobs'),
               subtitle: const Text(
-                'Monitor in-progress chains on the home node',
+                'Monitor in-progress team jobs on the home node',
               ),
               trailing: const Icon(Icons.chevron_right),
               onTap: () {

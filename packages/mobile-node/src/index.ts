@@ -497,6 +497,8 @@ function summarizeCachedAgentCard(row: {
   if (card.supportedProtocolVersions) {
     summary.supportedProtocolVersions = card.supportedProtocolVersions;
   }
+  if (card.webContentRoot) summary.webContentRoot = card.webContentRoot;
+  if (card.agentNetworkProfile) summary.agentNetworkProfile = card.agentNetworkProfile;
   return summary;
 }
 
@@ -2785,6 +2787,14 @@ You are the owner's personal AI assistant on EnvoyMesh.
     }
   }
 
+  /**
+   * Desktop Agent Network refresh. Mobile Agent Network settings are unavailable;
+   * keep a no-op so MobileNode continues to satisfy NodeService.
+   */
+  async refreshAgentNetworkWorkers(): Promise<{ requested: number; failed: number }> {
+    return { requested: 0, failed: 0 };
+  }
+
   async sendChatAttachment(
     params: import("@envoymesh/api").SendChatAttachmentParams,
   ): Promise<import("@envoymesh/api").SendChatAttachmentResult> {
@@ -3659,6 +3669,28 @@ You are the owner's personal AI assistant on EnvoyMesh.
       "publishWebContentEntry",
       params as unknown as Record<string, unknown>,
     )) as PublishWebContentResult;
+  }
+
+  async ensureDefaultWebSite(): Promise<import("@envoymesh/api").EnsureDefaultWebSiteResult> {
+    this._assertNodeRunning();
+    if (!this._state?.homeNodePeerId?.trim()) {
+      throw new Error(
+        "ensureDefaultWebSite: requires a paired home node (EnvoyGo thin client)",
+      );
+    }
+    const home = this._ensureHomeRemote();
+    return (await home.call("ensureDefaultWebSite", {})) as import("@envoymesh/api").EnsureDefaultWebSiteResult;
+  }
+
+  async listWebContentSections(): Promise<import("@envoymesh/api").WebContentSectionSummary[]> {
+    this._assertNodeRunning();
+    if (!this._state?.homeNodePeerId?.trim()) {
+      throw new Error(
+        "listWebContentSections: requires a paired home node (EnvoyGo thin client)",
+      );
+    }
+    const home = this._ensureHomeRemote();
+    return (await home.call("listWebContentSections", {})) as import("@envoymesh/api").WebContentSectionSummary[];
   }
 
   async listAgentShareProposals(): Promise<AgentShareProposal[]> {
@@ -8679,6 +8711,9 @@ You are the owner's personal AI assistant on EnvoyMesh.
   async chainExportCosts(_params: any): Promise<any> { return { csv: "" }; }
   async chainPreviewGoal(_params: any): Promise<any> { return { ok: false, subtasks: [] }; }
   async chainStartFromGoal(_params: any): Promise<any> { return { ok: false, error: "Not available on mobile" }; }
+  async chainResolveIteration(_params: import("@envoymesh/api").ChainResolveIterationParams): Promise<import("@envoymesh/api").ChainResolveIterationResult> {
+    return { ok: false, error: "Not available on mobile" };
+  }
   async chainListRecipes(_params?: any): Promise<any> { return { recipes: [] }; }
   async chainSaveRecipe(_params: any): Promise<any> { return { ok: false, reason: "validation_failed" }; }
   async chainDeleteRecipe(_params: any): Promise<any> { return { ok: false, deleted: false }; }

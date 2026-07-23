@@ -292,10 +292,6 @@ export async function acceptPendingHelloViaRuntime(ctx: BondContext, messageId: 
 
   void ctx.flushPendingRoomSyncs();
   void ctx.flushPendingRoomMessages();
-
-  void ctx.refreshBondPeerProfiles().catch((err) => {
-    console.warn("[profile] refreshBondPeerProfiles after hello accept failed:", err);
-  });
   void ctx.tagBondedContactReachability(pending.remotePeerId);
 
   ctx.getPendingHelloRequests().delete(messageId);

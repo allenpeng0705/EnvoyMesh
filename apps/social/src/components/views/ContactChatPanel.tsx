@@ -39,6 +39,7 @@ import { useToast } from "../../hooks/useToast.js";
 import { PeerProfileAvatar } from "../PeerProfileAvatar.js";
 import { PeerProfileGalleryStrip } from "../PeerProfileGalleryStrip.js";
 import { PeerProfilePanel } from "../PeerProfilePanel.js";
+import { ContactWebContentShortcuts } from "../ContactWebContentShortcuts.js";
 import { RemoveContactConfirmModal } from "../RemoveContactConfirmModal.js";
 import { ConfirmDialog } from "../ConfirmDialog.js";
 import type { TFunction } from "../../context/I18nContext.js";
@@ -641,87 +642,98 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
   return (
     <>
       <header className="chat-header has-assistant-switch">
-        <div className="chat-header-left">
-          {threadKind === "agent" ? (
-            <span className={`chat-header-avatar kind-${threadKind}`} aria-hidden>
-              {headerInitial}
-            </span>
-          ) : (
-            <PeerProfileAvatar
-              ownerId={selectedContact}
-              fallbackLabel={displayName}
-              className={`chat-header-avatar kind-${threadKind}`}
-            />
-          )}
-          <div className="chat-header-titles">
-            <span className="chat-name">{displayName}</span>
-            <span className={`chat-header-kind kind-${threadKind}`}>{threadKindLabel(threadKind, t)}</span>
-            <span className={`contact-reachability ${reachabilityClass}`} title={t("contactChat.p2pPathTitle")}>
-              <span className="contact-reachability-dot" aria-hidden />
-              {isHomeBridgeThread && !contactReachable && !reachabilityChecking
-                ? t("contactChat.homeOffline")
-                : peerReachabilityLabel(peerReachability)}
-            </span>
-            {showPathUnverifiedHint ? (
-              <p className="contact-path-unverified-hint">{t("contactChat.pathUnverifiedHint")}</p>
-            ) : null}
+        <div className="chat-header-main">
+          <div className="chat-header-left">
+            {threadKind === "agent" ? (
+              <span className={`chat-header-avatar kind-${threadKind}`} aria-hidden>
+                {headerInitial}
+              </span>
+            ) : (
+              <PeerProfileAvatar
+                ownerId={selectedContact}
+                fallbackLabel={displayName}
+                className={`chat-header-avatar kind-${threadKind}`}
+              />
+            )}
+            <div className="chat-header-titles">
+              <span className="chat-name">{displayName}</span>
+              <span className={`chat-header-kind kind-${threadKind}`}>{threadKindLabel(threadKind, t)}</span>
+              <span className={`contact-reachability ${reachabilityClass}`} title={t("contactChat.p2pPathTitle")}>
+                <span className="contact-reachability-dot" aria-hidden />
+                {isHomeBridgeThread && !contactReachable && !reachabilityChecking
+                  ? t("contactChat.homeOffline")
+                  : peerReachabilityLabel(peerReachability)}
+              </span>
+              {showPathUnverifiedHint ? (
+                <p className="contact-path-unverified-hint">{t("contactChat.pathUnverifiedHint")}</p>
+              ) : null}
+            </div>
           </div>
-        </div>
-        <div className="chat-header-right">
-          {/* Phase 38 — voice call button (human contacts only) */}
-          {isBondedHumanContact ? (
-            <>
+          <div className="chat-header-actions-row">
+            {/* Phase 38 — voice/video call (human contacts only) */}
+            {isBondedHumanContact ? (
+              <>
+                <button
+                  type="button"
+                  className="chat-header-call-btn"
+                  title={
+                    !contactReachable && !reachabilityChecking
+                      ? t("call:offlineHint")
+                      : t("call:start", "Voice call")
+                  }
+                  aria-label={t("call:startAria", { name: displayName })}
+                  disabled={Boolean(activeCall) || Boolean(callingState)}
+                  onClick={() => void handleStartCall()}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                </button>
+                <button
+                  type="button"
+                  className="chat-header-call-btn chat-header-call-btn--video"
+                  title={
+                    !contactReachable && !reachabilityChecking
+                      ? t("call:offlineHint")
+                      : t("call:startVideo", "Video call")
+                  }
+                  aria-label={t("call:startVideoAria", { name: displayName })}
+                  disabled={Boolean(activeCall) || Boolean(callingState)}
+                  onClick={() => void handleStartVideoCall()}
+                >
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" /></svg>
+                </button>
+              </>
+            ) : null}
+            {isBondedHumanContact ? (
               <button
                 type="button"
-                className="chat-header-call-btn"
-                title={
-                  !contactReachable && !reachabilityChecking
-                    ? t("call:offlineHint")
-                    : t("call:start", "Voice call")
-                }
-                aria-label={t("call:startAria", { name: displayName })}
-                disabled={Boolean(activeCall) || Boolean(callingState)}
-                onClick={() => void handleStartCall()}
+                className="chat-header-remove-contact-btn"
+                title={t("contactChat.removeContactTitle")}
+                aria-label={t("contactChat.removeContactAria", { name: displayName })}
+                onClick={() => setRemoveContactOpen(true)}
               >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                {t("contacts.remove")}
               </button>
-              <button
-                type="button"
-                className="chat-header-call-btn chat-header-call-btn--video"
-                title={
-                  !contactReachable && !reachabilityChecking
-                    ? t("call:offlineHint")
-                    : t("call:startVideo", "Video call")
-                }
-                aria-label={t("call:startVideoAria", { name: displayName })}
-                disabled={Boolean(activeCall) || Boolean(callingState)}
-                onClick={() => void handleStartVideoCall()}
-              >
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polygon points="23 7 16 12 23 17 23 7" /><rect x="1" y="5" width="15" height="14" rx="2" ry="2" /></svg>
-              </button>
-            </>
-          ) : null}
-          {isBondedHumanContact ? (
+            ) : null}
             <button
               type="button"
-              className="chat-header-remove-contact-btn"
-              title={t("contactChat.removeContactTitle")}
-              aria-label={t("contactChat.removeContactAria", { name: displayName })}
-              onClick={() => setRemoveContactOpen(true)}
+              className="chat-header-clear-btn"
+              title={t("contactChat.clearAllTitle")}
+              aria-label={t("contactChat.clearAllAria")}
+              disabled={displayMessages.length === 0}
+              onClick={() => void handleClearChat()}
             >
-              {t("contacts.remove")}
+              <RemoveIcon size={16} />
             </button>
-          ) : null}
-          <button
-            type="button"
-            className="chat-header-clear-btn"
-            title={t("contactChat.clearAllTitle")}
-            aria-label={t("contactChat.clearAllAria")}
-            disabled={displayMessages.length === 0}
-            onClick={() => void handleClearChat()}
-          >
-            <RemoveIcon size={16} />
-          </button>
+          </div>
+        </div>
+        <div className="chat-header-secondary">
+          {threadKind !== "agent" && threadKind !== "ai" ? (
+            <div className="chat-header-web-links">
+              <ContactWebContentShortcuts ownerId={selectedContact} compact />
+            </div>
+          ) : (
+            <span className="chat-header-web-links-spacer" aria-hidden="true" />
+          )}
           <div className="assistant-switch" aria-label={t("contactChat.aiModeLabel", { mode: currentAiMode })}>
             <span className="assistant-switch-label">AI</span>
             <button

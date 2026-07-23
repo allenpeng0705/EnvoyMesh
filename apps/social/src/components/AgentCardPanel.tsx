@@ -11,20 +11,28 @@ import { useT } from "../context/I18nContext.js";
 import { useNodeState } from "../context/NodeStateContext.js";
 import { useAgentCards } from "../hooks/useNodeService.js";
 import type { CachedAgentCardSummary } from "@envoymesh/api";
-import { openBrowserAt } from "../lib/browser-nav.js";
 import { ChainBondHealthBadge } from "./ChainBondHealthBadge.js";
+import { ContactWebContentShortcuts } from "./ContactWebContentShortcuts.js";
 
-export function AgentCardPanel(props: { ownerId: string }) {
+export function AgentCardPanel(props: {
+  ownerId: string;
+  /** When false, omit Profile/Blog/… (e.g. PeerProfilePanel already shows them). Default true. */
+  showWebContentShortcuts?: boolean;
+}) {
   const t = useT();
   const { bonds } = useNodeState();
   const cards = useAgentCards();
   const card = cards.find((c) => c.ownerId === props.ownerId);
   const bond = bonds.find((b) => b.peerOwnerId === props.ownerId);
+  const showShortcuts = props.showWebContentShortcuts !== false;
 
   if (!card) {
     return (
       <div className="agent-card-panel agent-card-panel--empty">
         <p className="field-desc">{t("agentCard.empty", "No agent card cached yet.")}</p>
+        {showShortcuts ? (
+          <ContactWebContentShortcuts ownerId={props.ownerId} compact={false} />
+        ) : null}
       </div>
     );
   }
@@ -41,6 +49,12 @@ export function AgentCardPanel(props: { ownerId: string }) {
         )}
       </div>
 
+      {showShortcuts ? (
+        <div className="agent-card-section">
+          <ContactWebContentShortcuts ownerId={props.ownerId} compact={false} />
+        </div>
+      ) : null}
+
       {card.capabilities.length > 0 && (
         <div className="agent-card-section">
           <h5 className="agent-card-section-title">{t("agentCard.capabilities", "Capabilities")}</h5>
@@ -54,22 +68,30 @@ export function AgentCardPanel(props: { ownerId: string }) {
         </div>
       )}
 
-      {(card.webContentRoot ||
-        card.capabilities.includes("envoymesh.web-content")) && (
-        <div className="agent-card-section">
-          <button
-            type="button"
-            className="btn btn-primary"
-            data-testid="browse-site-button"
-            onClick={() => {
-              const url = card.webContentRoot ?? `envoy://${props.ownerId}/`;
-              openBrowserAt(url);
-            }}
-          >
-            {t("agentCard.browseSite", "Browse Site")}
-          </button>
+      {card.agentNetworkProfile ? (
+        <div className="agent-card-section" data-testid="agent-card-network-profile">
+          <h5 className="agent-card-section-title">
+            {t("agentCard.agentNetworkProfile", "Agent Network profile")}
+          </h5>
+          <ul className="agent-card-capability-list">
+            <li>
+              {t("agentCard.freshness", "Freshness")}: {card.agentNetworkProfile.modelFreshness}/10
+            </li>
+            <li>
+              {t("agentCard.contextWindow", "Context")}: {card.agentNetworkProfile.contextWindow}
+            </li>
+            <li>
+              {t("agentCard.spendPosture", "Spend")}: {card.agentNetworkProfile.spendPosture}
+            </li>
+            {card.agentNetworkProfile.strengths.length > 0 ? (
+              <li>
+                {t("agentCard.strengths", "Strengths")}:{" "}
+                {card.agentNetworkProfile.strengths.join(", ")}
+              </li>
+            ) : null}
+          </ul>
         </div>
-      )}
+      ) : null}
 
       {card.publicTopics && card.publicTopics.length > 0 && (
         <div className="agent-card-section">

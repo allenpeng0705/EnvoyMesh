@@ -1,10 +1,10 @@
 // Multi-agent chains UI translations (German). Mirrors en-chains.ts.
 export const deChainsMessages = {
-  nav: "Agent-Ketten",
-  back: "Zurück zu Ketten",
+  nav: "Team-Aufgaben",
+  back: "Zurück zu Team-Aufgaben",
   cancelled: "Kette abgebrochen",
   cancelFailed: "Kette konnte nicht abgebrochen werden",
-  title: "Multi-Agent-Ketten",
+  title: "Team-Aufgaben",
   loading: "Ketten werden geladen…",
   refresh: "Aktualisieren",
   tabs: {
@@ -44,7 +44,7 @@ export const deChainsMessages = {
     title: "Kettenbericht",
     untitled: "Unbenannter Kettenbericht",
     inlineTitle: "Kette abgeschlossen",
-    openChains: "Ketten öffnen",
+    openChains: "Team-Aufgaben öffnen",
     viewFull: "Vollen Bericht anzeigen",
     chainId: "Ketten-ID",
     totalCost: "Gesamtkosten",
@@ -158,7 +158,7 @@ export const deChainsMessages = {
     runAsChain: "Als Kette ausführen",
     runAsChainHint: "Dies in eine Multi-Agent-Aufgabenkette zwischen den Agenten Ihrer Kontakte aufteilen",
     exportCsv: "Kosten exportieren (CSV)",
-    newChain: "Neue Kette",
+    newChain: "Neue Team-Aufgabe",
     composerLabel: "Was sollen Ihre Agenten erledigen?",
     composerPlaceholder: "z. B. Aktuelle Durchbrüche bei lokalen LLMs recherchieren und die Top 3 zusammenfassen",
     preview: "Planvorschau",

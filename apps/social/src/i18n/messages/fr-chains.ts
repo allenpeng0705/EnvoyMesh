@@ -1,10 +1,10 @@
 // Multi-agent chains UI translations (French). Mirrors en-chains.ts.
 export const frChainsMessages = {
-  nav: "Chaînes d'agents",
-  back: "Retour aux chaînes",
+  nav: "Tâches d'équipe",
+  back: "Retour aux tâches d'équipe",
   cancelled: "Chaîne annulée",
   cancelFailed: "Échec de l'annulation de la chaîne",
-  title: "Chaînes multi-agents",
+  title: "Tâches d'équipe",
   loading: "Chargement des chaînes…",
   refresh: "Actualiser",
   tabs: {
@@ -44,7 +44,7 @@ export const frChainsMessages = {
     title: "Rapport de chaîne",
     untitled: "Rapport de chaîne sans titre",
     inlineTitle: "Chaîne terminée",
-    openChains: "Ouvrir les chaînes",
+    openChains: "Ouvrir les tâches d'équipe",
     viewFull: "Voir le rapport complet",
     chainId: "ID de chaîne",
     totalCost: "Coût total",
@@ -158,7 +158,7 @@ export const frChainsMessages = {
     runAsChain: "Exécuter en chaîne",
     runAsChainHint: "Décomposez cela en une chaîne de tâches multi-agents entre les agents de vos contacts",
     exportCsv: "Exporter les coûts (CSV)",
-    newChain: "Nouvelle chaîne",
+    newChain: "Nouvelle tâche d'équipe",
     composerLabel: "Que voulez-vous que vos agents accomplissent ?",
     composerPlaceholder: "Ex : Rechercher les dernières avancées des LLM locaux et résumer les 3 principales",
     preview: "Aperçu du plan",

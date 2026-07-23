@@ -1,8 +1,8 @@
-// Japanese translations for Settings → Agent Network (Devices & Fleet).
+// Japanese translations for Settings → Agent Network (Agent Network).
 // Mirrors zh-agent-network.ts.
 
 export const jaAgentNetworkSettingsMessages = {
-  title: "デバイスとフリート",
+  title: "エージェントネットワーク",
   intro: "このノードが他のフリートメンバーとバンディングする方法を構成します。4つのパスが利用可能 — チームに合うものを選んでください。すべて**デフォルトでオフ** — 自分でオンにする必要があります。",
   quickReferenceTitle: "どのパスを使うべきですか？",
   groupAutoBondTitle: "自動バンディング (スポンサーノード + インストーラー)",
@@ -11,7 +11,32 @@ export const jaAgentNetworkSettingsMessages = {
   groupInvitesDesc: "同僚が自分の Social UI に貼り付けてこのノードに参加できるリンクを生成します。",
   groupOperatorTitle: "オペレーターツール",
   groupOperatorDesc: "多くのノードの信頼を一度に事前設定するか、オフィス Wi-Fi の全員を自動バンディングします。",
+  officeLan: {
+    heading: "オフィス LAN",
+    desc: "同じ Wi-Fi 向けワンクリック設定：エージェントネットワーク参加 + LAN 自動バンディング + 共有フリートトークン。各デスクで有効化し、同じトークンを使います。",
+    enableButton: "オフィス LAN チームを有効化",
+    enabling: "有効化中…",
+    enabled: "オフィス LAN チームを有効化しました",
+    copyToken: "トークンをコピー",
+    tokenCopied: "トークンをコピーしました",
+    shareHint: "このトークンを他のマシンと共有し、それぞれでオフィス LAN チームを有効化してください（または下の LAN 自動バンディングに貼り付け）。",
+    alreadyOn: "参加と LAN 自動バンディングは共有トークン付きで既にオンです。",
+  },
+  workersStatus: {
+    heading: "ワーカー状態",
+    bonded: "バンディング済みピア: {count}",
+    joinOn: "エージェントネットワーク: オン",
+    joinOff: "エージェントネットワーク: オフ",
+    workersVisible: "チームジョブに見えるワーカー: {count}",
+    refresh: "ワーカーを更新",
+    refreshing: "更新中…",
+    refreshed: "ワーカーを更新しました",
+    joinOffAfterLan:
+      "LAN でバンディング済みですが募集不可です — エージェントネットワークに参加するかオフィス LAN プリセットを使ってください。",
+  },
   quickReference: {
+    officeLan:
+      "同一 LAN の最短経路：1 ボタンで参加 + LAN 自動バンディング + 共有トークンを各マシンで有効化。",
     companyInvites: "長期有効なベアラーリンク。メンバーがリモートの場合や LAN が不安定な場合に最適。各招待は1回限り。",
     lanAutoBond: "同じ Wi-Fi のデスクのゼロタッチ。両側が同じトークンでトグルをオン。デフォルトでオフ。",
     pairingKiosk: "ビジターノート用のブラウザーボタン。デフォルトでオフ。LAN 露出にオプトインしない限り、ループバックバインディングが必要。",

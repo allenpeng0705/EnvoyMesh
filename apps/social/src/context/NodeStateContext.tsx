@@ -526,7 +526,6 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     if (!wsTransportOpen) return;
     const unsub = nodeService.on("node:online", () => {
       if (nodeConfig?.nodeInitialized === false) return;
-      void nodeService.refreshBondPeerProfiles?.().catch(() => {});
     });
     return unsub;
   }, [nodeService, wsTransportOpen, nodeConfig?.nodeInitialized]);

@@ -134,7 +134,7 @@ class _RecentChainDetailScreenState
                   onPressed: () {
                     Navigator.of(context).pop();
                   },
-                  child: const Text('Back to Recent chains'),
+                  child: const Text('Back to Recent team jobs'),
                 ),
               ],
             ),

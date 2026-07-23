@@ -56,7 +56,6 @@ export const koAiSettingsMessages = {
     sectionDesc: "EMP 내 상시 위임. 소셜 프록시는 설정 → 신뢰에서 신뢰 모드가 필요합니다.",
     socialProxy: "소셜 프록시",
     documentAcquisition: "문서 수집 에이전트",
-    capabilityProvider: "기능 제공 에이전트",
   },
   agent: {
     operatingInstructionsHeading: "에이전트 운영 지침",

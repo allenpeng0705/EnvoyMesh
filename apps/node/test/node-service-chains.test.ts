@@ -115,6 +115,14 @@ describe("ChainStore", () => {
     expect(store.getBidStrategy("wasm").baseCostUsd).toBe(5);
   });
 
+  it("deleteRuntime drops the entry (no zombie Bidding chain)", () => {
+    const store = new ChainStore();
+    store.setRuntime("c-solo", { state: {} as never, bidStrategy: {} as never });
+    store.deleteRuntime("c-solo");
+    expect(store.getRuntime("c-solo")).toBeUndefined();
+    expect(store.listActive()).toEqual([]);
+  });
+
   it("listActive returns all runtime entries", () => {
     const store = new ChainStore();
     store.setRuntime("c-1", { state: {} as never, bidStrategy: {} as never });

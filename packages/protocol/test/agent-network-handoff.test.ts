@@ -194,6 +194,51 @@ describe("ChainHandoffRequestPayloadSchema", () => {
     expect(r.subtaskIds).toHaveLength(64);
   });
 
+  it("accepts whole-job Assigner handoff with goal and empty subtaskIds", () => {
+    const r = handoffRequest({
+      subtaskIds: [],
+      goal: "compute (5*6+7*8-4*2)/3 with team workers",
+      rationale: "assigner_handoff",
+    });
+    expect(r.goal).toContain("5*6");
+    expect(r.subtaskIds).toEqual([]);
+  });
+
+  it("accepts Phase 47D iteration knobs and iterationState blob", () => {
+    const r = ChainHandoffRequestPayloadSchema.parse({
+      chainId: createChainId(),
+      subtaskIds: [],
+      newOrchestratorPeerId: "p",
+      newOrchestratorOwnerId: "o",
+      goal: "refine a report across two rounds",
+      expiresAt: FUTURE,
+      createdAt: NOW.toISOString(),
+      iterationMaxRounds: 2,
+      iterationJudgeMode: "owner",
+      extendMaxStepsPerRound: 1,
+      iterationState: {
+        round: 1,
+        maxRounds: 2,
+        extendsInRound: 0,
+        maxExtendsInRound: 1,
+        sealedByRound: {},
+        openRoundSubtaskIds: [],
+        drafts: [{ round: 1, summary: "draft", judgeDecision: "continue" }],
+        judgeMode: "owner",
+        carryMode: "summary",
+        goal: "refine a report across two rounds",
+      },
+    });
+    expect(r.iterationMaxRounds).toBe(2);
+    expect(r.iterationJudgeMode).toBe("owner");
+    expect(r.extendMaxStepsPerRound).toBe(1);
+    expect(r.iterationState?.drafts[0]?.summary).toBe("draft");
+  });
+
+  it("rejects empty handoff with neither subtaskIds nor goal", () => {
+    expect(() => handoffRequest({ subtaskIds: [] })).toThrow();
+  });
+
   it("rejects empty newOrchestratorPeerId", () => {
     expect(() =>
       handoffRequest({ newOrchestratorPeerId: "" }),

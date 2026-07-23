@@ -55,23 +55,79 @@ export const ChainHandoffStatusSchema = z.enum([
 ]);
 export type ChainHandoffStatus = z.infer<typeof ChainHandoffStatusSchema>;
 
-export const ChainHandoffRequestPayloadSchema = z.object({
-  chainId: ChainIdSchema,
-  /** Subtask IDs the owner wants orchestrator B to take over. */
-  subtaskIds: z.array(ChainSubtaskIdSchema).min(1).max(64),
-  /**
-   * Orchestrator B's peer ID. Resolved by the owner from the public
-   * directory; the orchestrator validates ownership before forwarding.
-   */
-  newOrchestratorPeerId: z.string().min(1),
-  /** Owner's owner id (so the receiving orchestrator can verify mandate). */
-  newOrchestratorOwnerId: z.string().min(1),
-  /** Optional human-readable rationale. */
-  rationale: z.string().max(2000).optional(),
-  /** ISO datetime by which B must respond. */
-  expiresAt: z.string().datetime(),
-  createdAt: z.string().datetime(),
+/**
+ * Phase 47D — serializable Assigner iteration side-state for handoff rehydrate.
+ * Omits full `ChainReport` objects; drafts keep summary + judge metadata only.
+ */
+export const ChainIterationWireSchema = z.object({
+  round: z.number().int().min(1).max(10),
+  maxRounds: z.number().int().min(1).max(10),
+  extendsInRound: z.number().int().min(0).max(32).default(0),
+  maxExtendsInRound: z.number().int().min(0).max(32).default(2),
+  extendMaxDepth: z.number().int().min(1).max(3).default(3),
+  extendOnlyAfterPartial: z.boolean().default(true),
+  sealedByRound: z.record(z.string(), z.array(z.string().min(1))).default({}),
+  openRoundSubtaskIds: z.array(z.string().min(1)).max(64).default([]),
+  drafts: z
+    .array(
+      z.object({
+        round: z.number().int().min(1).max(10),
+        summary: z.string().max(50_000),
+        judgeDecision: z.string().max(32).optional(),
+        judgeReason: z.string().max(2000).optional(),
+      }),
+    )
+    .max(10)
+    .default([]),
+  judgeMode: z.enum(["llm", "always_stop", "owner"]).default("llm"),
+  carryMode: z.enum(["summary", "full_draft", "structured"]).default("summary"),
+  goal: z.string().min(1).max(8000),
+  waitingForOwner: z.boolean().optional(),
+  stopReason: z.string().max(64).optional(),
 });
+export type ChainIterationWire = z.infer<typeof ChainIterationWireSchema>;
+
+export const ChainHandoffRequestPayloadSchema = z
+  .object({
+    chainId: ChainIdSchema,
+    /**
+     * Subtask IDs to hand off. Empty when this is a whole-job Assigner
+     * handoff (`goal` set) — B then runs plan+assign+merge.
+     */
+    subtaskIds: z.array(ChainSubtaskIdSchema).max(64).default([]),
+    /**
+     * Orchestrator B's peer ID. Resolved by the owner from the public
+     * directory; the orchestrator validates ownership before forwarding.
+     */
+    newOrchestratorPeerId: z.string().min(1),
+    /** Owner's owner id (so the receiving orchestrator can verify mandate). */
+    newOrchestratorOwnerId: z.string().min(1),
+    /**
+     * Whole-job Assigner handoff: natural-language goal for B to plan+assign+merge.
+     * When set, `subtaskIds` may be empty.
+     */
+    goal: z.string().min(1).max(8000).optional(),
+    maxChainCostUsd: z.number().nonnegative().optional(),
+    costCeilingUsd: z.number().nonnegative().optional(),
+    allowLlm: z.boolean().optional(),
+    /** Optional human-readable rationale. */
+    rationale: z.string().max(2000).optional(),
+    /** ISO datetime by which B must respond. */
+    expiresAt: z.string().datetime(),
+    createdAt: z.string().datetime(),
+    /** Phase 47D — opt-in outer iteration rounds for Assigner after handoff. */
+    iterationMaxRounds: z.number().int().min(1).max(10).optional(),
+    iterationJudgeMode: z.enum(["llm", "always_stop", "owner"]).optional(),
+    extendMaxStepsPerRound: z.number().int().min(0).max(32).optional(),
+    /**
+     * Phase 47D — mid-job iteration blob so remote Assigner rehydrates the loop.
+     * Absent on start-of-job goal handoff (knobs alone suffice).
+     */
+    iterationState: ChainIterationWireSchema.optional(),
+  })
+  .refine((d) => d.subtaskIds.length >= 1 || (typeof d.goal === "string" && d.goal.trim().length > 0), {
+    message: "handoff requires subtaskIds or goal",
+  });
 export type ChainHandoffRequestPayload = z.infer<typeof ChainHandoffRequestPayloadSchema>;
 
 export interface ChainHandoffRequest {
@@ -79,9 +135,17 @@ export interface ChainHandoffRequest {
   subtaskIds: string[];
   newOrchestratorPeerId: string;
   newOrchestratorOwnerId: string;
+  goal?: string;
+  maxChainCostUsd?: number;
+  costCeilingUsd?: number;
+  allowLlm?: boolean;
   rationale?: string;
   expiresAt: string;
   createdAt: string;
+  iterationMaxRounds?: number;
+  iterationJudgeMode?: "llm" | "always_stop" | "owner";
+  extendMaxStepsPerRound?: number;
+  iterationState?: ChainIterationWire;
 }
 
 // ---------------------------------------------------------------------------

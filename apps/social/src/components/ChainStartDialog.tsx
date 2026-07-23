@@ -2,7 +2,7 @@
  * Phase 43B — Plan preview + one-click chain launch from chat.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { ChainPreviewGoalResult, ChainStartFromGoalResult } from "@envoymesh/api";
 
@@ -14,9 +14,16 @@ export interface ChainStartDialogProps {
   goal: string;
   onClose: () => void;
   onStarted?: (chainId: string) => void;
+  /** Optional — send the user to Discover when no workers are available. */
+  onOpenDiscover?: () => void;
 }
 
-export function ChainStartDialog({ goal, onClose, onStarted }: ChainStartDialogProps) {
+export function ChainStartDialog({
+  goal,
+  onClose,
+  onStarted,
+  onOpenDiscover,
+}: ChainStartDialogProps) {
   const t = useT();
   const nodeService = useNodeService();
   const { showToast } = useToast();
@@ -25,6 +32,26 @@ export function ChainStartDialog({ goal, onClose, onStarted }: ChainStartDialogP
   const [starting, setStarting] = useState(false);
   const [recipeLabel, setRecipeLabel] = useState("");
   const [savingRecipe, setSavingRecipe] = useState(false);
+  const [showCostUi, setShowCostUi] = useState(false);
+  const [iterationMaxRounds, setIterationMaxRounds] = useState(1);
+  const iterationTouchedRef = useRef(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void nodeService.chainGetDefaults({}).then((r) => {
+      if (cancelled) return;
+      setShowCostUi(r.defaults?.showCostUi === true);
+      // Don't clobber a choice the user already made while defaults were loading.
+      if (!iterationTouchedRef.current) {
+        setIterationMaxRounds(r.defaults?.iterationMaxRounds ?? 1);
+      }
+    }).catch(() => {
+      /* keep hidden */
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [nodeService]);
 
   useEffect(() => {
     let cancelled = false;
@@ -47,15 +74,31 @@ export function ChainStartDialog({ goal, onClose, onStarted }: ChainStartDialogP
     };
   }, [goal, nodeService]);
 
+  const hasWorkers = useMemo(
+    () => Boolean(preview?.ok && preview.subtasks.some((s) => s.workerCount > 0)),
+    [preview],
+  );
+  const noWorkers =
+    Boolean(preview?.ok && preview.subtasks.length > 0) && !hasWorkers;
+
   const handleStart = useCallback(async () => {
+    if (!hasWorkers) {
+      showToast(t("chains.start.noWorkersToast"), "error");
+      return;
+    }
     setStarting(true);
     try {
       const result: ChainStartFromGoalResult = await nodeService.chainStartFromGoal({
         goal,
         allowLlm: true,
+        iterationMaxRounds,
       });
       if (!result.ok) {
-        showToast(result.error ?? t("chains.start.failed"), "error");
+        const err =
+          result.error === "no_workers"
+            ? t("chains.start.noWorkersToast")
+            : (result.error ?? t("chains.start.failed"));
+        showToast(err, "error");
         return;
       }
       showToast(t("chains.start.started"), "success");
@@ -66,7 +109,7 @@ export function ChainStartDialog({ goal, onClose, onStarted }: ChainStartDialogP
     } finally {
       setStarting(false);
     }
-  }, [goal, nodeService, onClose, onStarted, showToast, t]);
+  }, [goal, hasWorkers, iterationMaxRounds, nodeService, onClose, onStarted, showToast, t]);
 
   const handleSaveRecipe = useCallback(async () => {
     setSavingRecipe(true);
@@ -106,7 +149,7 @@ export function ChainStartDialog({ goal, onClose, onStarted }: ChainStartDialogP
           <p className="chain-start-error">{preview.reason ?? t("chains.start.previewFailed")}</p>
         ) : preview ? (
           <>
-            {preview.estimatedCostRange ? (
+            {showCostUi && preview.estimatedCostRange ? (
               <p className="chain-start-cost">
                 {t("chains.start.costRange", {
                   min: preview.estimatedCostRange.minUsd.toFixed(2),
@@ -125,13 +168,51 @@ export function ChainStartDialog({ goal, onClose, onStarted }: ChainStartDialogP
                 </li>
               ))}
             </ul>
-            {(preview.diagnostics ?? []).length > 0 ? (
+            {noWorkers ? (
+              <div className="chain-start-no-workers" data-testid="chain-start-no-workers">
+                <p className="chain-start-no-workers__title">
+                  {t("chains.start.noWorkersTitle")}
+                </p>
+                <p className="chain-start-no-workers__desc">
+                  {t("chains.start.noWorkersDesc")}
+                </p>
+                {onOpenDiscover ? (
+                  <button
+                    type="button"
+                    className="secondary"
+                    data-testid="chain-start-open-discover"
+                    onClick={() => {
+                      onClose();
+                      onOpenDiscover();
+                    }}
+                  >
+                    {t("chains.start.openDiscover")}
+                  </button>
+                ) : null}
+              </div>
+            ) : (preview.diagnostics ?? []).length > 0 ? (
               <ul className="chain-start-diagnostics">
                 {preview.diagnostics!.map((d) => (
                   <li key={d}>{d}</li>
                 ))}
               </ul>
             ) : null}
+            <label className="chain-start-iteration-label">
+              <span>{t("chains.start.iterationMaxRounds")}</span>
+              <select
+                value={iterationMaxRounds}
+                onChange={(e) => {
+                  iterationTouchedRef.current = true;
+                  setIterationMaxRounds(Number(e.target.value));
+                }}
+                disabled={starting || savingRecipe}
+                data-testid="chain-start-iteration-rounds"
+              >
+                <option value={1}>{t("chains.start.iterationRounds1")}</option>
+                <option value={2}>{t("chains.start.iterationRounds2")}</option>
+                <option value={3}>{t("chains.start.iterationRounds3")}</option>
+              </select>
+            </label>
             <label className="chain-start-recipe-label">
               <span>{t("chains.recipes.labelPlaceholder")}</span>
               <input
@@ -162,8 +243,17 @@ export function ChainStartDialog({ goal, onClose, onStarted }: ChainStartDialogP
           <button
             type="button"
             className="primary"
+            data-testid="chain-start-confirm"
             onClick={() => void handleStart()}
-            disabled={loading || starting || savingRecipe || !preview?.ok || preview.subtasks.length === 0}
+            disabled={
+              loading ||
+              starting ||
+              savingRecipe ||
+              !preview?.ok ||
+              preview.subtasks.length === 0 ||
+              !hasWorkers
+            }
+            title={!hasWorkers ? t("chains.start.noWorkersTitle") : undefined}
           >
             {starting ? t("chains.start.starting") : t("chains.start.confirm")}
           </button>

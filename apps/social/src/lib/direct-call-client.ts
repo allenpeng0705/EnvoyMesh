@@ -306,6 +306,9 @@ export class DirectCallClient implements NodeServiceClient {
   chainStartFromGoal(params: Parameters<NodeService["chainStartFromGoal"]>[0]): ReturnType<NodeService["chainStartFromGoal"]> {
     return this._ns.chainStartFromGoal(params);
   }
+  chainResolveIteration(params: Parameters<NodeService["chainResolveIteration"]>[0]): ReturnType<NodeService["chainResolveIteration"]> {
+    return this._ns.chainResolveIteration(params);
+  }
   chainExportCosts(params: Parameters<NodeService["chainExportCosts"]>[0]): ReturnType<NodeService["chainExportCosts"]> {
     return this._ns.chainExportCosts(params);
   }
@@ -348,6 +351,14 @@ export class DirectCallClient implements NodeServiceClient {
 
   async publishWebContentEntry(params: Parameters<NodeService["publishWebContentEntry"]>[0]) {
     return this._ns.publishWebContentEntry(params);
+  }
+
+  async ensureDefaultWebSite() {
+    return this._ns.ensureDefaultWebSite();
+  }
+
+  async listWebContentSections() {
+    return this._ns.listWebContentSections();
   }
 
   async listFeedNotifications() {
@@ -436,6 +447,10 @@ export class DirectCallClient implements NodeServiceClient {
 
   async requestAgentCard(targetOwnerId: string) {
     return this._ns.requestAgentCard(targetOwnerId);
+  }
+
+  async refreshAgentNetworkWorkers() {
+    return this._ns.refreshAgentNetworkWorkers();
   }
 
   async getTaskResult(taskId: string) {

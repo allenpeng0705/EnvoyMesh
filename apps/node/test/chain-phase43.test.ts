@@ -50,9 +50,9 @@ function sampleState() {
 }
 
 describe("chain-defaults", () => {
-  it("mergeChainDefaults applies auto rebalance by default", () => {
+  it("mergeChainDefaults applies never rebalance by default (direct award mode)", () => {
     const d = mergeChainDefaults({});
-    expect(d.rebalancePolicy).toBe("auto");
+    expect(d.rebalancePolicy).toBe("never");
   });
 
   it("estimateChainCostRange returns min <= max", () => {

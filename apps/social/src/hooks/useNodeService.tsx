@@ -196,6 +196,8 @@ export interface NodeServiceClient {
   publishWebContentEntry(
     params: import("@envoymesh/api").PublishWebContentParams,
   ): Promise<import("@envoymesh/api").PublishWebContentResult>;
+  ensureDefaultWebSite(): Promise<import("@envoymesh/api").EnsureDefaultWebSiteResult>;
+  listWebContentSections(): Promise<import("@envoymesh/api").WebContentSectionSummary[]>;
   listFeedNotifications(): Promise<import("@envoymesh/api").FeedNotification[]>;
   dismissFeedNotification(id: string): Promise<void>;
   listChatHistory(peerOwnerId: string, limit?: number): Promise<ChatMessage[]>;
@@ -224,6 +226,7 @@ export interface NodeServiceClient {
   listAgentCards(): Promise<import("@envoymesh/api").CachedAgentCardSummary[]>;
   getAgentCard(ownerId: string): Promise<import("@envoymesh/api").CachedAgentCardSummary | undefined>;
   requestAgentCard(targetOwnerId: string): Promise<{ ok: boolean; error?: string }>;
+  refreshAgentNetworkWorkers(): Promise<{ requested: number; failed: number }>;
   getTaskResult(taskId: string): Promise<import("@envoymesh/api").TaskResultPayload | undefined>;
   listPendingApprovals(): Promise<import("@envoymesh/api").PendingApprovalSummary[]>;
   approvePendingApproval(itemId: string, notes?: string): Promise<import("@envoymesh/api").ApprovePendingApprovalResult>;
@@ -267,6 +270,7 @@ export interface NodeServiceClient {
   chainSetDefaults(params: ChainSetDefaultsParams): Promise<ChainSetDefaultsResult>;
   chainPreviewGoal(params: ChainPreviewGoalParams): Promise<ChainPreviewGoalResult>;
   chainStartFromGoal(params: ChainStartFromGoalParams): Promise<ChainStartFromGoalResult>;
+  chainResolveIteration(params: import("@envoymesh/api").ChainResolveIterationParams): Promise<import("@envoymesh/api").ChainResolveIterationResult>;
   chainExportCosts(params: ChainExportCostsParams): Promise<ChainExportCostsResult>;
   chainListRecipes(params?: ChainListRecipesParams): Promise<ChainListRecipesResult>;
   chainSaveRecipe(params: ChainSaveRecipeParams): Promise<ChainSaveRecipeResult>;
@@ -760,6 +764,16 @@ function createWsNodeServiceClient(
         params as unknown as Record<string, unknown>,
       ) as Promise<import("@envoymesh/api").PublishWebContentResult>;
     },
+    async ensureDefaultWebSite() {
+      return wsClient.rpc("ensureDefaultWebSite") as Promise<
+        import("@envoymesh/api").EnsureDefaultWebSiteResult
+      >;
+    },
+    async listWebContentSections() {
+      return wsClient.rpc("listWebContentSections") as Promise<
+        import("@envoymesh/api").WebContentSectionSummary[]
+      >;
+    },
     async listFeedNotifications() {
       return wsClient.rpc("listFeedNotifications") as Promise<import("@envoymesh/api").FeedNotification[]>;
     },
@@ -835,6 +849,9 @@ function createWsNodeServiceClient(
     },
     async requestAgentCard(targetOwnerId: string) {
       return wsClient.rpc("requestAgentCard", { targetOwnerId }) as Promise<{ ok: boolean; error?: string }>;
+    },
+    async refreshAgentNetworkWorkers() {
+      return wsClient.rpc("refreshAgentNetworkWorkers") as Promise<{ requested: number; failed: number }>;
     },
     async getTaskResult(taskId: string) {
       return wsClient.rpc("getTaskResult", { taskId }) as Promise<
@@ -939,6 +956,11 @@ function createWsNodeServiceClient(
     },
     async chainStartFromGoal(params: ChainStartFromGoalParams) {
       return wsClient.rpc("chainStartFromGoal", params as unknown as Record<string, unknown>) as unknown as Promise<ChainStartFromGoalResult>;
+    },
+    async chainResolveIteration(params: import("@envoymesh/api").ChainResolveIterationParams) {
+      return wsClient.rpc("chainResolveIteration", params as unknown as Record<string, unknown>) as unknown as Promise<
+        import("@envoymesh/api").ChainResolveIterationResult
+      >;
     },
     async chainExportCosts(params: ChainExportCostsParams) {
       return wsClient.rpc("chainExportCosts", params as unknown as Record<string, unknown>) as unknown as Promise<ChainExportCostsResult>;

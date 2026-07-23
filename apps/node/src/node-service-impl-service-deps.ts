@@ -25,6 +25,7 @@ import {
   buildChainOrchestratorDeps,
   bidsBySubtask,
   findCapabilityProviders,
+  findCapabilityProvidersRanked,
   placeholderMandate,
   snapshotToResult,
   _chainDiagnosticsForSubtasks,
@@ -694,6 +695,8 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
         pinChainReport: (chainId, pinned) => host._taskStore!.pinChainReport(chainId, pinned),
         getChainGoal: (chainId) => host._chainState.goals.get(chainId),
         getChainCostEstimate: (chainId) => host._chainState.costEstimates.get(chainId),
+        getChainAwardMode: (chainId) => host._chainState.awardModes.get(chainId),
+        getChainShowCostUi: (chainId) => host._chainState.showCostUi.get(chainId),
         snapshotToResult: (snap) => snapshotToResult(snap),
         bidsBySubtask: (state) => bidsBySubtask(state),
         getNodeConfig: () => host.getNodeConfig(),
@@ -716,8 +719,14 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
           placeholderMandate(chainId, chainMandateId) as never,
         findCapabilityProviders: (capability) =>
           findCapabilityProviders(host._chainOrchestrationContext(), capability) as never,
-        chainDiagnosticsForSubtasks: (subtasks, workersBySubtask) =>
-          _chainDiagnosticsForSubtasks(subtasks as never, workersBySubtask as never) as never,
+        findCapabilityProvidersRanked: (capability) =>
+          findCapabilityProvidersRanked(host._chainOrchestrationContext(), capability) as never,
+        chainDiagnosticsForSubtasks: (subtasks, workersBySubtask, rankedBySubtask) =>
+          _chainDiagnosticsForSubtasks(
+            subtasks as never,
+            workersBySubtask as never,
+            rankedBySubtask,
+          ) as never,
         runChainGoal: (params) => _runChainGoal(host._chainOrchestrationContext(), params) as never,
       },
       call: {

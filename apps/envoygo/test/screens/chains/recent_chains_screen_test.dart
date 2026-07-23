@@ -207,7 +207,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
 
-      expect(find.text('Recent chains'), findsOneWidget);
+      expect(find.text('Recent team jobs'), findsOneWidget);
       expect(find.text('No reports yet'), findsOneWidget);
       await teardown(tester, handle);
     });

@@ -1,4 +1,4 @@
-// Phase 40 mobile mirror — read-only "Recent chains" list.
+// Phase 40 mobile mirror — read-only "Recent team jobs" list.
 //
 // Mobile is a thin status mirror of the home node's chain-reports store.
 // This screen fetches the most recent N reports via `chainListReports`
@@ -71,7 +71,7 @@ class _RecentChainsScreenState extends ConsumerState<RecentChainsScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Recent chains'),
+        title: const Text('Recent team jobs'),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -142,7 +142,7 @@ class _RecentChainsScreenState extends ConsumerState<RecentChainsScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Chains you run on the home node will appear here.\nAuthor chains from the home node Social UI.',
+                  'Team jobs you run on the home node will appear here.\nAuthor team jobs from the home node Social UI.',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),

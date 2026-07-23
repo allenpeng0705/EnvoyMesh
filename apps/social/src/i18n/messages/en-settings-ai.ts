@@ -239,10 +239,10 @@ export const aiSettingsMessages = {
   },
   postures: {
     heading: "EnvoyAI postures",
-    sectionDesc: "Standing delegation within EMP. Social proxy requires Trust mode enabled in Settings → Trust.",
+    sectionDesc:
+      "Standing delegation within EMP. Social proxy requires Trust mode enabled in Settings → Trust. To join the Agent Network as a worker, use Settings → Agent Network.",
     socialProxy: "Social proxy",
     documentAcquisition: "Document acquisition agent",
-    capabilityProvider: "Capability provider agent",
   },
   agent: {
     operatingInstructionsHeading: "Agent Operating Instructions",

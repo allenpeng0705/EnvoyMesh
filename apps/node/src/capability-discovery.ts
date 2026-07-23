@@ -30,12 +30,14 @@ export function buildAutoCapabilityTopics(capabilities: readonly string[]): stri
  * `interest:<slug>` topic without reconstructing the whole list.
  */
 export function slugifyTopic(value: string): string {
-  const slug = value
+  // Keep Unicode letters/numbers (CJK etc.) so publish:/interest: topics match
+  // what authors tag and what Discover / Bazaar search for.
+  return value
     .trim()
     .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
+    .normalize("NFKC")
+    .replace(/[^\p{L}\p{N}]+/gu, "-")
     .replace(/^-+|-+$/g, "");
-  return slug;
 }
 
 /**

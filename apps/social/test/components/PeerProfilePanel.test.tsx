@@ -35,6 +35,8 @@ describe("PeerProfilePanel", () => {
     expect(screen.getByText("Contact profile")).toBeTruthy();
     expect(screen.getByText("Agent capabilities")).toBeTruthy();
     expect(screen.getByTestId("agent-card-panel")).toBeTruthy();
+    expect(screen.queryByTestId("contact-web-content-shortcuts")).toBeFalsy();
+    expect(screen.getByTestId("peer-profile-details").hasAttribute("open")).toBe(false);
   });
 
   it("shows synced bio when profile is cached", async () => {

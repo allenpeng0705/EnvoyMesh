@@ -1,10 +1,10 @@
 // Multi-agent chains UI translations (Japanese). Mirrors zh-chains.ts.
 export const jaChainsMessages = {
-  nav: "エージェントチェーン",
-  back: "チェーンに戻る",
+  nav: "チームの仕事",
+  back: "チームの仕事に戻る",
   cancelled: "チェーンがキャンセルされました",
   cancelFailed: "チェーンのキャンセルに失敗",
-  title: "マルチエージェントチェーン",
+  title: "チームの仕事",
   loading: "チェーンを読み込み中…",
   refresh: "更新",
   tabs: {
@@ -44,7 +44,7 @@ export const jaChainsMessages = {
     title: "チェーンレポート",
     untitled: "無題のチェーンレポート",
     inlineTitle: "チェーン完了",
-    openChains: "チェーンを開く",
+    openChains: "チームの仕事を開く",
     viewFull: "完全なレポートを表示",
     chainId: "チェーン ID",
     totalCost: "総コスト",
@@ -158,7 +158,7 @@ export const jaChainsMessages = {
     runAsChain: "チェーンとして実行",
     runAsChainHint: "連絡先のエージェント間でマルチエージェントタスクチェーンに分解",
     exportCsv: "コストをエクスポート (CSV)",
-    newChain: "新しいチェーン",
+    newChain: "新しいチームの仕事",
     composerLabel: "エージェントに何を達成してほしいですか？",
     composerPlaceholder: "例: ローカル LLM の最新動向を調査して上位3つを要約",
     preview: "プランをプレビュー",

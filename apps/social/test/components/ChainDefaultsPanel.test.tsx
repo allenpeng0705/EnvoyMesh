@@ -40,7 +40,7 @@ describe("ChainDefaultsPanel", () => {
   it("renders the panel with default state", async () => {
     renderPanel();
     await waitFor(() => {
-      expect(screen.getByText("Chain Defaults")).toBeDefined();
+      expect(screen.getByText("Team job defaults")).toBeDefined();
     });
     expect(screen.getByText(/Default settings for new agent chains/)).toBeDefined();
   });
@@ -77,7 +77,7 @@ describe("ChainDefaultsPanel", () => {
   it("save calls chainSetDefaults with all persistent fields", async () => {
     renderPanel();
     await waitFor(() => {
-      expect(screen.getByText("Chain Defaults")).toBeDefined();
+      expect(screen.getByText("Team job defaults")).toBeDefined();
     });
     const saveBtn = screen.getByRole("button", { name: /Save defaults/ });
     fireEvent.click(saveBtn);
@@ -94,7 +94,7 @@ describe("ChainDefaultsPanel", () => {
   it("reflects edited rebalancePolicy in the save call", async () => {
     renderPanel();
     await waitFor(() => {
-      expect(screen.getByText("Chain Defaults")).toBeDefined();
+      expect(screen.getByText("Team job defaults")).toBeDefined();
     });
     const select = screen.getByLabelText(/When a worker stalls/) as HTMLSelectElement;
     fireEvent.change(select, { target: { value: "never" } });
@@ -112,7 +112,7 @@ describe("ChainDefaultsPanel", () => {
   it("toggles allowLlmDecompose and persists it", async () => {
     renderPanel();
     await waitFor(() => {
-      expect(screen.getByText("Chain Defaults")).toBeDefined();
+      expect(screen.getByText("Team job defaults")).toBeDefined();
     });
     const llmToggle = screen.getByLabelText(/Allow LLM task decomposition/);
     fireEvent.click(llmToggle);
@@ -127,7 +127,7 @@ describe("ChainDefaultsPanel", () => {
   it("shows saved state after successful save", async () => {
     renderPanel();
     await waitFor(() => {
-      expect(screen.getByText("Chain Defaults")).toBeDefined();
+      expect(screen.getByText("Team job defaults")).toBeDefined();
     });
     const saveBtn = screen.getByRole("button", { name: /Save defaults/ });
     fireEvent.click(saveBtn);
@@ -141,7 +141,7 @@ describe("ChainDefaultsPanel", () => {
     const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     renderPanel();
     await waitFor(() => {
-      expect(screen.getByText("Chain Defaults")).toBeDefined();
+      expect(screen.getByText("Team job defaults")).toBeDefined();
     });
     const saveBtn = screen.getByRole("button", { name: /Save defaults/ });
     fireEvent.click(saveBtn);

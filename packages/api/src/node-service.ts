@@ -74,6 +74,8 @@ import type {
   ChainPreviewGoalResult,
   ChainStartFromGoalParams,
   ChainStartFromGoalResult,
+  ChainResolveIterationParams,
+  ChainResolveIterationResult,
   ChainExportCostsParams,
   ChainExportCostsResult,
   ChainListRecipesParams,
@@ -83,6 +85,7 @@ import type {
   ChainDeleteRecipeParams,
   ChainDeleteRecipeResult,
   ChainReportReceivedEvent,
+  ChainIterationProgressEvent,
 } from "./ws-protocol.js";
 import type { TransferStatus } from "./transfer-status.js";
 import type {
@@ -467,6 +470,8 @@ export interface CachedAgentCardSummary {
   supportedProtocolVersions?: string[];
   /** Phase 45D — peer's web content root when advertised. */
   webContentRoot?: string;
+  /** Agent Network worker profile when the peer opted in and advertised it. */
+  agentNetworkProfile?: import("@envoymesh/protocol").AgentNetworkProfile;
 }
 
 export interface AuditEventSummary {
@@ -1010,7 +1015,8 @@ export type PublishWebContentTemplate =
   | "note"
   | "profile"
   | "photo"
-  | "file";
+  | "file"
+  | "section";
 
 /** Phase 45D — visibility flags for published web items. */
 export type PublishWebContentVisibility = "public" | "bonded" | "contacts" | "private";
@@ -1031,6 +1037,16 @@ export interface PublishWebContentParams {
   fileName?: string;
   /** PhotoWall gallery folder (default `wall`). */
   gallery?: string;
+  /**
+   * Custom section path slug (template `section` only). Defaults to slugified title.
+   * Published at `{slug}/index.md` → `envoy://owner/{slug}/`.
+   */
+  sectionSlug?: string;
+  /**
+   * When true (default for `section`), add the section slug as a publish topic tag
+   * so Discover / Bazaar topic search can find it.
+   */
+  advertiseTopic?: boolean;
 }
 
 export interface PublishWebContentResult {
@@ -1043,6 +1059,29 @@ export interface PublishWebContentResult {
   publishedAt: string;
   url: string;
   listingUrl?: string;
+  /** Effective tags on the published item (includes auto section topic tags). */
+  tags?: string[];
+}
+
+/** Phase 45 — seed default Profile + empty Blog / PhotoWall shells (idempotent). */
+export interface EnsureDefaultWebSiteResult {
+  created: Array<"profile" | "blog" | "photowall">;
+  urls: {
+    profile: string;
+    blog: string;
+    photowall: string;
+  };
+}
+
+/** Phase 45 Step 3 — custom site section (e.g. Market). */
+export interface WebContentSectionSummary {
+  title: string;
+  slug: string;
+  path: string;
+  url: string;
+  visibility: PublishWebContentVisibility;
+  tags?: string[];
+  updatedAt: string;
 }
 
 /** Phase 45E — inbound `feed.notify` inbox row (Social Inbox). */
@@ -1437,6 +1476,9 @@ export interface NodeServiceEvents {
 
   /** Phase 43D — chain report ready for inline chat card. */
   "chain:report": ChainReportReceivedEvent;
+
+  /** Phase 47D — iteration progress (seal / judge / continue / ask_owner). */
+  "chain:iteration": ChainIterationProgressEvent;
 }
 
 export interface NodeService {
@@ -1717,6 +1759,13 @@ export interface NodeService {
   requestAgentCard(targetOwnerId: string): Promise<{ ok: boolean; error?: string }>;
 
   /**
+   * Re-request agent cards from bonded peers and rebuild the capability index
+   * used by Team jobs / Assigner. Safe to call after Join Agent Network or
+   * LAN Auto-Bond so workers show up without a manual restart.
+   */
+  refreshAgentNetworkWorkers(): Promise<{ requested: number; failed: number }>;
+
+  /**
    * Latest cached `task.result` payload (with typed Artifacts) for a taskId.
    * Returns `undefined` if the home node has not received a `task.result` for
    * that taskId. Phase 34 — used by the Activity drill-down to render typed
@@ -1966,6 +2015,15 @@ export interface NodeService {
    * Design: docs/web-content-browsing-design.md §4.8, §9.2.
    */
   publishWebContentEntry(params: PublishWebContentParams): Promise<PublishWebContentResult>;
+
+  /**
+   * Phase 45 — ensure default Profile + empty Blog / PhotoWall exist.
+   * Idempotent; safe to call on node start and when opening Browser.
+   */
+  ensureDefaultWebSite(): Promise<EnsureDefaultWebSiteResult>;
+
+  /** Phase 45 Step 3 — list custom sections (kind `section`). */
+  listWebContentSections(): Promise<WebContentSectionSummary[]>;
 
   /**
    * Phase 45E — list persisted inbound `feed.notify` rows for the Social Inbox.
@@ -2664,6 +2722,9 @@ export interface NodeService {
 
   /** Phase 43B — launch a chain from a natural-language goal with smart defaults. */
   chainStartFromGoal(params: ChainStartFromGoalParams): Promise<ChainStartFromGoalResult>;
+
+  /** Phase 47C — owner resolves iteration ask_owner hold (stop/publish or continue). */
+  chainResolveIteration(params: ChainResolveIterationParams): Promise<ChainResolveIterationResult>;
 
   /** Phase 43H — export chain cost breakdown as CSV. */
   chainExportCosts(params: ChainExportCostsParams): Promise<ChainExportCostsResult>;

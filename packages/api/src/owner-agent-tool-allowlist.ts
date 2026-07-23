@@ -122,12 +122,31 @@ export const OWNER_AGENT_TOOL_ALLOWLIST: OwnerAgentToolSpec[] = [
   // Phase 40 — multi-agent chain orchestrator. The LLM planner calls this
   // when the owner asks for a multi-step workflow (e.g. "analyze X, Y, and Z").
   {
+    name: "mesh.list_agent_network_workers",
+    kind: "mesh",
+    domain: "service",
+    description:
+      "List eligible Agent Network workers ranked for a capability (Assigner roster).",
+    paramHint: '{ "requiredCapability"?: string, "limit"?: number }',
+    requiresTrustMode: true,
+  },
+  {
+    name: "mesh.probe_peer",
+    kind: "mesh",
+    domain: "service",
+    description:
+      "Probe a peer Agent Card and return Assigner roster factors (strengths, freshness, throughput).",
+    paramHint: '{ "ownerId"?: string, "peerId"?: string, "refresh"?: boolean }',
+    requiresTrustMode: true,
+  },
+  {
     name: "mesh.chain.run",
     kind: "job",
     domain: "service",
     description:
       "Decompose a multi-step goal into subtasks, broadcast a chain mandate, and collect worker bids. Use when the owner requests a multi-step workflow that needs multiple agents.",
-    paramHint: '{ "goal": "string", "maxChainCostUsd"?: number, "costCeilingUsd"?: number }',
+    paramHint:
+      '{ "goal": "string", "maxChainCostUsd"?: number, "costCeilingUsd"?: number, "assignerPeerId"?: string }',
     requiresTrustMode: true,
   },
 ];

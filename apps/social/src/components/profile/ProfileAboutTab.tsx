@@ -12,6 +12,7 @@ import { ShareContactCard } from "../discover/ShareContactCard.js";
 import { LocationGazetteerFields } from "./LocationGazetteerFields.js";
 import { NearbyMapPicker } from "./NearbyMapPicker.js";
 import { formatLocalizedLocation } from "../../lib/gazetteer.js";
+import { MySitePanel } from "../MySitePanel.js";
 
 interface ProfileEditForm {
   displayName: string;
@@ -423,6 +424,12 @@ export function ProfileAboutTab({ variant = "desktop" }: ProfileAboutTabProps) {
         <span className="profile-chevron" aria-hidden="true">&#8250;</span>
       </div>
       <p className="profile-hint muted small">{t("profileAbout.hint")}</p>
+
+      {humanProfile?.ownerId ? (
+        <div className="profile-section">
+          <MySitePanel ownerId={humanProfile.ownerId} compact />
+        </div>
+      ) : null}
 
       {humanProfile?.bio && (
         <div className="profile-section">

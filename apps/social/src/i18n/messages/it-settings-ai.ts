@@ -107,7 +107,6 @@ export const itAiSettingsMessages = {
     sectionDesc: "Delega permanente nell'EMP. Il proxy social richiede la modalità Trust abilitata in Impostazioni → Fiducia.",
     socialProxy: "Proxy social",
     documentAcquisition: "Agente acquisizione documenti",
-    capabilityProvider: "Agente fornitore di capacità",
   },
   agent: {
     operatingInstructionsHeading: "Istruzioni operative agente",

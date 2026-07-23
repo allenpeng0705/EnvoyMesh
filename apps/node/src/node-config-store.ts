@@ -137,6 +137,10 @@ export interface PersistedNodeConfig {
   /** Phase 16D — capability provider (agent intent routing jobs). */
   capabilityProviderEnabled?: boolean;
   capabilityProviderMandateId?: string;
+  /**
+   * Owner-attested Agent Network profile (advertised when capability provider on).
+   */
+  agentNetworkProfile?: import("@envoymesh/protocol").AgentNetworkProfile;
   /** Phase 19 — bond autonomy posture (agent-driven bond acceptance). */
   bondAutonomyEnabled?: boolean;
   bondAutonomyMandateId?: string;

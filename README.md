@@ -61,7 +61,7 @@ Install an **Envoy** on your computer and phone, chat with friends directly, and
 
 ### AI Agent
 - **Built-in AI (EnvoyAI / OpenClaw)** — ships on by default; auto-starts with your node on port `:18789`.
-- **External Agent Bridge** — connect HomeClaw, Hermes, OpenHuman, or any HTTP agent as a second engine. Opt-in via Settings → AI → Agent Network.
+- **External Agent Bridge** — connect HomeClaw, Hermes, OpenHuman, or any HTTP agent as a second engine. Opt-in via Settings → AI → AI Engine.
 - **Two-engine modes** — run built-in only, built-in + external, external only, or none. Pick the engine that fits your stack.
 - **Agent autonomy** — your agent can make friends, search knowledge, and execute tasks within your safety rules.
 - **7-language UI** — English, 简体中文, 한국어, 日本語, Français, Deutsch, Italiano.
@@ -76,10 +76,10 @@ Install an **Envoy** on your computer and phone, chat with friends directly, and
 
 ### Agent Network
 - **Fleet onboarding** — bring teams online with company invite links, fleet manifests, LAN auto-bond, or a pairing kiosk.
-- **Multi-agent task chains** — decompose complex tasks ("translate → review → summarize") across multiple agents; workers bid, counter-propose, and the orchestrator awards based on cost, reputation, and ETA.
+- **Team jobs** — decompose complex tasks ("translate → review → summarize") across bonded, opted-in agents; direct-assign by default, or competitive bidding when enabled.
 - **Configurable cost rebalance** — three policies (`manual` / `auto` / `never`).
 - **Cross-orchestrator delegation** — hand sub-chains off to peer orchestrators or route through any home node.
-- **Chain reports** — rich multi-section reports with citations, cost breakdown, downloadable composite artifact. View on mobile (read-only).
+- **Team job reports** — rich multi-section reports with citations, optional cost breakdown, downloadable composite artifact. View on mobile (read-only).
 - **Agent marketplace** — find capability providers, negotiate tasks, build reputation scores.
 - **Network-wide discovery** — search for documents, capabilities, and peers across the mesh.
 
@@ -441,9 +441,11 @@ For the bridge developer guide, see [`docs/agent_bridge_guide.md`](docs/agent_br
 
 The Agent Network is EnvoyMesh's system for multi-device teams and multi-agent collaboration — from bringing a team online to decomposing complex tasks across AI agents.
 
+**Read first:** [`docs/agent-network-guide.md`](docs/agent-network-guide.md) — membership (opt-in + bonds), Team jobs, settings map, and FAQ.
+
 ### Fleet & Enterprise Onboarding
 
-EnvoyMesh ships four paths for bringing teams online, from simple invite links to enterprise-scale manifests:
+EnvoyMesh ships four paths for bringing teams online, from simple invite links to enterprise-scale manifests (all under **Settings → Agent Network**):
 
 | Path | Description | Best For |
 |------|-------------|----------|
@@ -452,11 +454,11 @@ EnvoyMesh ships four paths for bringing teams online, from simple invite links t
 | **LAN Auto-bond** | Auto-bond nodes sharing the same fleet token on LAN | Office networks |
 | **Pairing Kiosk** | One-button HTTP server for on-demand invites | Office visitors |
 
-All paths are opt-in, auditable, and owner-controlled. See [`docs/fleet-onboarding.md`](docs/fleet-onboarding.md) for details.
+All paths are opt-in, auditable, and owner-controlled. Bonds alone do not recruit an agent — each owner also enables **Join Agent Network** to accept Team jobs. See [`docs/fleet-onboarding.md`](docs/fleet-onboarding.md) and [`docs/agent-network-fleet.md`](docs/agent-network-fleet.md).
 
-### Multi-Agent Task Chains
+### Team jobs (multi-agent collaboration)
 
-EnvoyMesh supports multi-agent task chains where your agent decomposes complex work and orchestrates across peers:
+EnvoyMesh **Team jobs** (protocol name: chains) let your agent decompose complex work and orchestrate across **bonded, opted-in** peers:
 
 ```
 Owner asks: "Translate this document, then have someone review it"
@@ -467,31 +469,32 @@ Orchestrator agent decomposes into subtasks:
        └─ Review (Worker B)
        │
        ▼
-Multi-round negotiation:
-       ├─ Workers bid on subtasks
-       ├─ Counter-proposals exchanged (up to 3 rounds)
-       ├─ Orchestrator awards based on cost, reputation, ETA
+Worker selection (direct assign by default, or competitive bidding):
+       ├─ Workers must have Join Agent Network enabled
+       ├─ Optional multi-round bids (up to 3 rounds)
+       ├─ Orchestrator awards using score / cost / policy
        │
        ▼
 Partial results flow back, then merge into a composite deliverable
        │
        ▼
-Final chain report with citations, audit trail, and cost breakdown
+Final Team job report with citations, audit trail, and optional cost breakdown
 ```
 
 **Key features:**
 - **Task trees** — explicit parent/child lineage for complex workflows
-- **Multi-round negotiation** — workers bid, counter-propose, split, and merge (3-round hard cap)
-- **Budget enforcement** — hard cost ceilings with per-subtask tracking via `ChainBudgetLedger`
-- **Configurable cost rebalance** — three policies (`manual` / `auto` / `never`) so you can stay in full control or opt into auto-rebidding when a worker stalls
-- **Composite deliverables** — bundled weighted worker contributions with structured merge (`weighted_concat` / `concatenate` / `merge_structured` / `owner_review`)
-- **Cross-orchestrator handoff** — delegate sub-chains to peer orchestrators, with re-signed sub-mandates and a convergence ledger for arbitration
-- **Cross-home relay** — route chain envelopes through any home node; relay nodes are content-agnostic
-- **LLM-powered decomposition** — replaces keyword fallback with a real LLM-driven task decomposer
-- **Chain reports** — rich multi-section reports with citations, cost breakdown per worker, and a downloadable composite artifact
-- **End-to-end audit** — every chain action emits a typed `chain.*` audit event
+- **Private by default** — local agents are not recruitable until Join Agent Network is on
+- **Direct assign or bidding** — Team job defaults under Settings → AI
+- **Budget enforcement** — hard cost ceilings with per-subtask tracking via `ChainBudgetLedger` (when cost UI is enabled)
+- **Configurable cost rebalance** — three policies (`manual` / `auto` / `never`)
+- **Composite deliverables** — bundled weighted worker contributions with structured merge
+- **Cross-orchestrator handoff** — delegate sub-jobs to peer orchestrators
+- **Cross-home relay** — route envelopes through home nodes; relays stay content-agnostic
+- **LLM-powered decomposition** — real LLM-driven task decomposer when enabled
+- **Reports** — multi-section reports with citations and optional cost breakdown
+- **End-to-end audit** — typed `chain.*` audit events
 
-See [`docs/agent_network.md`](docs/agent_network.md) for the full design.
+See [`docs/agent_network.md`](docs/agent_network.md) for the protocol design.
 
 ---
 
@@ -837,8 +840,8 @@ See [`docs/implementation-plan.md`](docs/implementation-plan.md) for the full ro
 
 - **Start here:** [**`QuickStart.md`**](QuickStart.md) — install, run, mobile, multi-machine, bridge
 - **Core concepts:** [Architecture reference](AGENTS.md) · [High-level design](docs/high-level-design.md) · [Security model](docs/security.md)
-- **AI Agent:** [Bridge guide](docs/agent_bridge_guide.md) · [OpenClaw setup](docs/openclaw-extension.md) · [Agent Network membership](docs/agent-network-config.md)
-- **Agent Network:** [Fleet onboarding](docs/fleet-onboarding.md) · [Multi-agent task chains](docs/agent_network.md)
+- **AI Agent:** [Bridge guide](docs/agent_bridge_guide.md) · [OpenClaw setup](docs/openclaw-extension.md) · [AI Engine config](docs/agent-network-config.md)
+- **Agent Network:** [Operator guide](docs/agent-network-guide.md) · [Fleet onboarding](docs/fleet-onboarding.md) · [Team jobs protocol](docs/agent_network.md)
 - **Knowledge base:** [Knowledge base & RAG](docs/knowledge-base-and-rag.md) · [Obsidian integration](#obsidian-integration)
 - **Voice & video:** [Audio messages](docs/audio-message-support.md) · [Voice & video calls (desktop)](docs/voice-video-call-support.md) · [Native WebRTC on EnvoyGo](docs/voice-video-call-envoygo.md)
 - **Mobile:** [EnvoyGo design](docs/flutter-thin-client-design.md)

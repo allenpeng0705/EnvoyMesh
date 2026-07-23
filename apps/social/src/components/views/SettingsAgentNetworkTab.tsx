@@ -1,10 +1,10 @@
 /**
  * Settings → Agent Network tab.
  *
- * One tab for all four fleet onboarding paths. Kept distinct from the AI
- * settings so the operator can find LAN auto-bond / company invites /
- * pairing kiosk / fleet manifest without scrolling past model-provider
- * configuration.
+ * Worker membership (Join Agent Network + scoring profile) lives here first,
+ * then the four fleet onboarding paths. Kept distinct from AI settings so the
+ * operator can find membership / LAN auto-bond / company invites / pairing
+ * kiosk / fleet manifest without scrolling past model-provider configuration.
  *
  * Each section is a sub-component below so this file stays under ~700
  * lines and the wiring is obvious.
@@ -23,6 +23,7 @@ import type {
   PairingKioskStatus,
 } from "@envoymesh/api";
 import { FleetMemberSchema } from "@envoymesh/protocol";
+import { AgentNetworkProfilePanel } from "./settings/AgentNetworkProfilePanel.js";
 
 type InviteStatus = "active" | "used" | "revoked" | "expired";
 
@@ -65,6 +66,16 @@ function AgentNetworkIntro() {
       </h4>
       <ul style={{ marginTop: 4, paddingLeft: 18 }}>
         <li>
+          <strong>{t("settings.agentNetwork.officeLan.heading")}</strong>
+          {" — "}
+          {t("settings.agentNetwork.quickReference.officeLan")}
+        </li>
+        <li>
+          <strong>{t("settings.agentNetwork.membership.heading")}</strong>
+          {" — "}
+          {t("settings.agentNetwork.quickReference.membership")}
+        </li>
+        <li>
           <strong>{t("settings.agentNetwork.companyInvites.sectionTitle")}</strong>
           {" — "}
           {t("settings.agentNetwork.quickReference.companyInvites")}
@@ -85,6 +96,272 @@ function AgentNetworkIntro() {
           {t("settings.agentNetwork.quickReference.fleetManifest")}
         </li>
       </ul>
+    </section>
+  );
+}
+
+/**
+ * Same-LAN happy path: one action enables Join + LAN Auto-Bond + shared token.
+ * Does not auto-flip Join on every bond — operator stays explicit.
+ */
+function OfficeLanPresetSection() {
+  const t = useT();
+  const nodeService = useNodeService();
+  const { nodeConfig, refreshNodeConfig } = useNodeState();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+  const [justEnabled, setJustEnabled] = useState(false);
+
+  const joinOn = nodeConfig?.capabilityProviderEnabled === true;
+  const lanOn = nodeConfig?.lanAutoBondEnabled === true;
+  const token = (nodeConfig?.lanAutoBondFleetToken ?? "").trim();
+  const alreadyOn = joinOn && lanOn && token.length >= 8;
+
+  const handleEnable = useCallback(async () => {
+    setBusy(true);
+    setError(null);
+    setJustEnabled(false);
+    try {
+      const nextToken = token.length >= 8 ? token : generateRandomToken(32);
+      await nodeService.updateNodeConfig({
+        capabilityProviderEnabled: true,
+        lanAutoBondEnabled: true,
+        lanAutoBondFleetToken: nextToken,
+      } as Parameters<typeof nodeService.updateNodeConfig>[0]);
+      await refreshNodeConfig();
+      if (typeof nodeService.refreshAgentNetworkWorkers === "function") {
+        await nodeService.refreshAgentNetworkWorkers().catch(() => undefined);
+      }
+      setJustEnabled(true);
+      window.setTimeout(() => setJustEnabled(false), 4000);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }, [nodeService, refreshNodeConfig, token]);
+
+  const handleCopy = useCallback(async () => {
+    const value = (nodeConfig?.lanAutoBondFleetToken ?? "").trim();
+    if (!value) return;
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 2500);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    }
+  }, [nodeConfig?.lanAutoBondFleetToken]);
+
+  return (
+    <section className="settings-section" data-testid="agent-network-office-lan-section">
+      <h4>{t("settings.agentNetwork.officeLan.heading")}</h4>
+      <p className="section-desc">{t("settings.agentNetwork.officeLan.desc")}</p>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <button
+          type="button"
+          className="settings-button"
+          data-testid="office-lan-enable"
+          onClick={() => {
+            void handleEnable();
+          }}
+          disabled={busy || alreadyOn}
+        >
+          {busy
+            ? t("settings.agentNetwork.officeLan.enabling")
+            : t("settings.agentNetwork.officeLan.enableButton")}
+        </button>
+        {token.length >= 8 ? (
+          <button
+            type="button"
+            className="settings-button"
+            data-testid="office-lan-copy-token"
+            onClick={() => {
+              void handleCopy();
+            }}
+          >
+            {copied
+              ? t("settings.agentNetwork.officeLan.tokenCopied")
+              : t("settings.agentNetwork.officeLan.copyToken")}
+          </button>
+        ) : null}
+        {alreadyOn ? (
+          <span className="settings-hint">{t("settings.agentNetwork.officeLan.alreadyOn")}</span>
+        ) : null}
+        {justEnabled ? (
+          <span className="settings-hint">{t("settings.agentNetwork.officeLan.enabled")}</span>
+        ) : null}
+      </div>
+      {token.length >= 8 ? (
+        <p className="field-desc" style={{ marginTop: 8 }}>
+          {t("settings.agentNetwork.officeLan.shareHint")}
+        </p>
+      ) : null}
+      {error ? <p className="library-view-error">{error}</p> : null}
+    </section>
+  );
+}
+
+/**
+ * Compact worker pool status + refresh + soft nudge when LAN-bonded but Join off.
+ */
+function WorkersStatusSection() {
+  const t = useT();
+  const nodeService = useNodeService();
+  const { nodeConfig } = useNodeState();
+  const [bondedCount, setBondedCount] = useState(0);
+  const [workerCount, setWorkerCount] = useState(0);
+  const [lanBondWithoutJoin, setLanBondWithoutJoin] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshed, setRefreshed] = useState(false);
+
+  const joinOn = nodeConfig?.capabilityProviderEnabled === true;
+  const lanOn = nodeConfig?.lanAutoBondEnabled === true;
+
+  const loadStatus = useCallback(async () => {
+    try {
+      const [bonds, cards] = await Promise.all([
+        nodeService.getBonds(),
+        nodeService.listAgentCards(),
+      ]);
+      const trusted = bonds.filter((b) => b.level === "direct" || b.level === "referred");
+      setBondedCount(trusted.length);
+      const workers = cards.filter((c) =>
+        (c.capabilities ?? []).includes("capability-provider"),
+      );
+      setWorkerCount(workers.length);
+      const hasLanBondNote = trusted.some((b) => (b.note ?? "").includes("lan-auto"));
+      // Nudge when Join is off and either we have an explicit LAN-auto bond note,
+      // or LAN Auto-Bond is on with any trusted peer (office LAN happy path).
+      setLanBondWithoutJoin(
+        !joinOn && (hasLanBondNote || (lanOn && trusted.length > 0)),
+      );
+    } catch {
+      /* ignore — status is best-effort */
+    }
+  }, [joinOn, lanOn, nodeService]);
+
+  useEffect(() => {
+    void loadStatus();
+  }, [loadStatus, nodeConfig?.capabilityProviderEnabled, nodeConfig?.lanAutoBondEnabled]);
+
+  useEffect(() => {
+    const reload = () => {
+      void loadStatus();
+    };
+    const unsubs = [
+      nodeService.on("bond:established", reload),
+      nodeService.on("bond:revoked", reload),
+      nodeService.on("home:bonds-updated", reload),
+      nodeService.on("home:agent-cards-updated", reload),
+    ];
+    return () => {
+      for (const unsub of unsubs) unsub();
+    };
+  }, [loadStatus, nodeService]);
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    setRefreshed(false);
+    try {
+      if (typeof nodeService.refreshAgentNetworkWorkers === "function") {
+        await nodeService.refreshAgentNetworkWorkers();
+      } else {
+        const bonds = await nodeService.getBonds();
+        await Promise.allSettled(
+          bonds
+            .filter((b) => b.level === "direct" || b.level === "referred")
+            .map((b) => nodeService.requestAgentCard(b.peerOwnerId)),
+        );
+      }
+      await loadStatus();
+      // Card replies are async — poll again so the strip catches late arrivals
+      // without requiring a second click.
+      window.setTimeout(() => {
+        void loadStatus();
+      }, 2_800);
+      setRefreshed(true);
+      window.setTimeout(() => setRefreshed(false), 3000);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadStatus, nodeService]);
+
+  return (
+    <section className="settings-section" data-testid="agent-network-workers-status">
+      <h4>{t("settings.agentNetwork.workersStatus.heading")}</h4>
+      <p className="section-desc" data-testid="workers-status-strip">
+        {t("settings.agentNetwork.workersStatus.bonded", { count: String(bondedCount) })}
+        {" · "}
+        {joinOn
+          ? t("settings.agentNetwork.workersStatus.joinOn")
+          : t("settings.agentNetwork.workersStatus.joinOff")}
+        {" · "}
+        {t("settings.agentNetwork.workersStatus.workersVisible", {
+          count: String(workerCount),
+        })}
+      </p>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <button
+          type="button"
+          className="settings-button"
+          data-testid="refresh-workers"
+          onClick={() => {
+            void handleRefresh();
+          }}
+          disabled={refreshing}
+        >
+          {refreshing
+            ? t("settings.agentNetwork.workersStatus.refreshing")
+            : t("settings.agentNetwork.workersStatus.refresh")}
+        </button>
+        {refreshed ? (
+          <span className="settings-hint">{t("settings.agentNetwork.workersStatus.refreshed")}</span>
+        ) : null}
+      </div>
+      {lanBondWithoutJoin ? (
+        <p className="library-view-error" data-testid="join-off-after-lan-nudge" style={{ marginTop: 8 }}>
+          {t("settings.agentNetwork.workersStatus.joinOffAfterLan")}
+        </p>
+      ) : null}
+    </section>
+  );
+}
+
+/**
+ * Join Agent Network as a Chains worker + owner-attested scoring profile.
+ * Kept at the top of this tab — distinct from fleet onboarding paths below.
+ */
+function WorkerMembershipSection() {
+  const t = useT();
+  const nodeService = useNodeService();
+  const { nodeConfig, refreshNodeConfig } = useNodeState();
+  const enabled = nodeConfig?.capabilityProviderEnabled === true;
+
+  return (
+    <section className="settings-section" data-testid="agent-network-membership-section">
+      <h4>{t("settings.agentNetwork.membership.heading")}</h4>
+      <p className="section-desc">{t("settings.agentNetwork.membership.desc")}</p>
+      <div className="settings-field">
+        <label className="settings-checkbox-row">
+          <input
+            type="checkbox"
+            checked={enabled}
+            onChange={async (e) => {
+              await nodeService.updateNodeConfig({
+                capabilityProviderEnabled: e.target.checked,
+              });
+              await refreshNodeConfig();
+              // Node-side updateNodeConfig already triggers refreshAgentNetworkWorkers
+              // when Join is toggled — avoid a duplicate round-trip here.
+            }}
+          />
+          <span>{t("settings.agentNetwork.membership.joinLabel")}</span>
+        </label>
+        <p className="field-desc">{t("settings.agentNetwork.membership.joinHint")}</p>
+      </div>
+      <AgentNetworkProfilePanel enabled={enabled} />
     </section>
   );
 }
@@ -1462,6 +1739,10 @@ export function SettingsAgentNetworkTab() {
   return (
     <>
       <AgentNetworkIntro />
+
+      <OfficeLanPresetSection />
+      <WorkersStatusSection />
+      <WorkerMembershipSection />
 
       <section className="settings-section">
         <h4>{t("settings.agentNetwork.groupAutoBondTitle")}</h4>

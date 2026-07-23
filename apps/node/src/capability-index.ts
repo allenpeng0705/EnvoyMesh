@@ -61,27 +61,29 @@ export class CapabilityIndex {
    */
   indexWorker(entry: WorkerEntry): void {
     const existing = this.workers.get(entry.peerId);
+    // Replace capabilities from the latest agent card — do not merge forever.
+    // Opt-out of Agent Network (dropping `capability-provider`) must take effect.
+    const nextCaps = [...new Set(entry.capabilities)];
     if (existing) {
-      // Merge capabilities — keep both old and new
-      const merged = [...new Set([...existing.capabilities, ...entry.capabilities])];
-      existing.capabilities = merged;
+      for (const cap of existing.capabilities) {
+        const peers = this.byCapability.get(cap);
+        if (!peers) continue;
+        const idx = peers.indexOf(entry.peerId);
+        if (idx >= 0) peers.splice(idx, 1);
+        if (peers.length === 0) this.byCapability.delete(cap);
+      }
+      existing.capabilities = nextCaps;
       existing.lastSeenAt = entry.lastSeenAt;
+      existing.ownerId = entry.ownerId;
       if (entry.displayName) existing.displayName = entry.displayName;
       if (entry.agentCardId) existing.agentCardId = entry.agentCardId;
-
-      // Rebuild capability index for this peer
-      for (const cap of merged) {
-        const peers = this.byCapability.get(cap) ?? [];
-        if (!peers.includes(entry.peerId)) peers.push(entry.peerId);
-        this.byCapability.set(cap, peers);
-      }
     } else {
-      this.workers.set(entry.peerId, { ...entry });
-      for (const cap of entry.capabilities) {
-        const peers = this.byCapability.get(cap) ?? [];
-        if (!peers.includes(entry.peerId)) peers.push(entry.peerId);
-        this.byCapability.set(cap, peers);
-      }
+      this.workers.set(entry.peerId, { ...entry, capabilities: nextCaps });
+    }
+    for (const cap of nextCaps) {
+      const peers = this.byCapability.get(cap) ?? [];
+      if (!peers.includes(entry.peerId)) peers.push(entry.peerId);
+      this.byCapability.set(cap, peers);
     }
     void this.persist();
   }

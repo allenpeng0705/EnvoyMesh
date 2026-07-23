@@ -795,6 +795,47 @@ export class ToolRegistry {
     });
 
     this.register({
+      name: "mesh.list_agent_network_workers",
+      description:
+        "List eligible Agent Network workers (bonded + Join Agent Network), ranked for a capability. Soft specialty matching.",
+      paramSchema: {
+        type: "object",
+        properties: {
+          requiredCapability: {
+            type: "string",
+            description: "Capability tag to score against (default task.execute)",
+          },
+          limit: { type: "number", description: "Max workers to return (default 20)" },
+        },
+        required: [],
+      },
+      sensitivityCeiling: "friends",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.probe_peer",
+      description:
+        "Refresh a peer's Agent Card (optional request) and return Assigner roster factors: strengths, freshness, context, spend, throughputTokensPerSec.",
+      paramSchema: {
+        type: "object",
+        properties: {
+          ownerId: { type: "string", description: "Peer owner id (preferred)" },
+          peerId: { type: "string", description: "Agent peer id (alternative to ownerId)" },
+          refresh: {
+            type: "boolean",
+            description: "When true, send agent.card.request before reading cache (default true)",
+          },
+        },
+        required: [],
+      },
+      sensitivityCeiling: "friends",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
       name: "mesh.match_capability_route",
       description:
         "AI-only: rank EMP intent routes for a goal or capability ids (orchestration planner — not human discovery UI)",
@@ -1284,6 +1325,36 @@ export interface MeshToolContext {
   requestAgentCard?: (targetOwnerId: string) => Promise<{ ok: boolean; error?: string }>;
   getAgentCard?: (ownerId: string) => Promise<import("@envoymesh/api").CachedAgentCardSummary | undefined>;
   listAgentCards?: () => Promise<import("@envoymesh/api").CachedAgentCardSummary[]>;
+  /** Ranked Agent Network workers for Assigner roster / MCP. */
+  listAgentNetworkWorkers?: (params?: {
+    requiredCapability?: string;
+    limit?: number;
+  }) => Promise<
+    Array<{
+      peerId: string;
+      ownerId?: string;
+      displayName?: string;
+      score: number;
+      summary: string;
+      profile?: import("@envoymesh/protocol").AgentNetworkProfile;
+    }>
+  >;
+  /** Probe one peer's card + Assigner factors. */
+  probeAgentNetworkPeer?: (params: {
+    ownerId?: string;
+    peerId?: string;
+    refresh?: boolean;
+  }) => Promise<{
+    ok: boolean;
+    error?: string;
+    ownerId?: string;
+    peerId?: string;
+    displayName?: string;
+    capabilities?: string[];
+    profile?: import("@envoymesh/protocol").AgentNetworkProfile;
+    score?: number;
+    summary?: string;
+  }>;
   getLocalCapabilityManifest?: () => Promise<{ capabilities: string[]; keywords: string[] } | undefined>;
   listBondedAgentCapabilities?: () => Promise<Array<{ ownerId: string; capabilities: string[] }>>;
   startCapabilityProviderJob?: (params: {
@@ -1948,6 +2019,62 @@ export async function executeTool(
       return {
         ok: true,
         result: card ?? null,
+        toolName,
+        correlationId,
+        latencyMs: Date.now() - startTime,
+      };
+    } else if (toolName === "mesh.list_agent_network_workers") {
+      if (!context.listAgentNetworkWorkers) {
+        return {
+          ok: false,
+          error: "listAgentNetworkWorkers is not configured on this tool context",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const requiredCapability =
+        typeof params.requiredCapability === "string" && params.requiredCapability.trim()
+          ? params.requiredCapability.trim()
+          : undefined;
+      const limit = typeof params.limit === "number" ? params.limit : undefined;
+      const workers = await context.listAgentNetworkWorkers({ requiredCapability, limit });
+      return {
+        ok: true,
+        result: { workers, count: workers.length },
+        toolName,
+        correlationId,
+        latencyMs: Date.now() - startTime,
+      };
+    } else if (toolName === "mesh.probe_peer") {
+      if (!context.probeAgentNetworkPeer) {
+        return {
+          ok: false,
+          error: "probeAgentNetworkPeer is not configured on this tool context",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const ownerId =
+        typeof params.ownerId === "string" && params.ownerId.trim() ? params.ownerId.trim() : undefined;
+      const peerId =
+        typeof params.peerId === "string" && params.peerId.trim() ? params.peerId.trim() : undefined;
+      if (!ownerId && !peerId) {
+        return {
+          ok: false,
+          error: "ownerId or peerId is required",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const refresh = params.refresh === undefined ? true : Boolean(params.refresh);
+      const probed = await context.probeAgentNetworkPeer({ ownerId, peerId, refresh });
+      return {
+        ok: probed.ok,
+        result: probed,
+        error: probed.ok ? undefined : probed.error,
         toolName,
         correlationId,
         latencyMs: Date.now() - startTime,
@@ -2927,4 +3054,34 @@ async function executeVaultSearch(
 export function listAgentTools(opts?: { trustModeEnabled?: boolean }): ToolDefinition[] {
   const registry = new ToolRegistry(opts?.trustModeEnabled ?? false);
   return registry.listTools();
+}
+
+/** MCP tools/list-shaped descriptor (name + description + inputSchema). */
+export interface McpToolDescriptor {
+  name: string;
+  description: string;
+  inputSchema: Record<string, unknown>;
+}
+
+const AGENT_NETWORK_MCP_TOOL_NAMES = [
+  "mesh.list_agent_network_workers",
+  "mesh.probe_peer",
+  "mesh.agent_card.request",
+  "mesh.get_agent_card",
+] as const;
+
+/** Map mesh ToolDefinitions to MCP tools/list descriptors. */
+export function toMcpToolDescriptors(tools: ToolDefinition[]): McpToolDescriptor[] {
+  return tools.map((t) => ({
+    name: t.name,
+    description: t.description,
+    inputSchema: t.paramSchema,
+  }));
+}
+
+/** Assigner-facing MCP descriptors (roster / probe / cards / chain.run). */
+export function listAgentNetworkMcpTools(opts?: { trustModeEnabled?: boolean }): McpToolDescriptor[] {
+  const all = listAgentTools(opts);
+  const wanted = new Set<string>(AGENT_NETWORK_MCP_TOOL_NAMES);
+  return toMcpToolDescriptors(all.filter((t) => wanted.has(t.name)));
 }

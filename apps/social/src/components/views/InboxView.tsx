@@ -1,11 +1,16 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService, useAgentShareProposals, useShareOffers, usePendingApprovals, useFeedNotifications } from "../../hooks/useNodeService.js";
 import { IncomingShareOffersSection } from "../file-share/IncomingShareOffersSection.js";
 import type { HelloProfile, HelloRequest, ChatMessage, SocialIntroProposal, PendingApprovalSummary } from "@envoymesh/api";
 import { peerDisplayLabel, shortOwnerId } from "../../lib/display.js";
-import { openBrowserAt } from "../../lib/browser-nav.js";
+import {
+  OPEN_INBOX_EVENT,
+  clearInboxPublisherFilter,
+  getInboxPublisherFilter,
+  openBrowserAt,
+} from "../../lib/browser-nav.js";
 
 export interface InboxViewProps {
   /** When nested under Chat → Inbox, omit duplicate page title */
@@ -33,6 +38,20 @@ export function InboxView({ embedded = false }: InboxViewProps) {
   const { items: pendingApprovals, approve: approvePending, reject: rejectPending } = usePendingApprovals();
   const { items: feedNotifications, dismiss: dismissFeed } = useFeedNotifications();
   const [feedBusy, setFeedBusy] = useState<string | null>(null);
+  const [feedPublisherFilter, setFeedPublisherFilter] = useState<string | null>(
+    () => getInboxPublisherFilter(),
+  );
+
+  useEffect(() => {
+    const syncFilter = () => setFeedPublisherFilter(getInboxPublisherFilter());
+    syncFilter();
+    window.addEventListener(OPEN_INBOX_EVENT, syncFilter);
+    return () => window.removeEventListener(OPEN_INBOX_EVENT, syncFilter);
+  }, []);
+
+  const visibleFeedNotifications = feedPublisherFilter
+    ? feedNotifications.filter((item) => item.publisherOwnerId === feedPublisherFilter)
+    : feedNotifications;
 
   const [introSaveStatus, setIntroSaveStatus] = useState<string | null>(null);
   const [agentShareBusy, setAgentShareBusy] = useState<string | null>(null);
@@ -199,13 +218,39 @@ export function InboxView({ embedded = false }: InboxViewProps) {
         <p className="settings-hint" style={{ marginBottom: 8 }}>{introSaveStatus}</p>
       )}
 
-      {feedNotifications.length > 0 && (
+      {feedPublisherFilter ? (
+        <div className="inbox-feed-filter" data-testid="inbox-feed-filter">
+          <span>
+            {t("inbox.feedFilterByPublisher", "Showing feeds from {owner}", {
+              owner: shortOwnerId(feedPublisherFilter),
+            })}
+          </span>
+          <button
+            type="button"
+            className="linkish"
+            onClick={() => {
+              clearInboxPublisherFilter();
+              setFeedPublisherFilter(null);
+            }}
+          >
+            {t("inbox.feedFilterClear", "Show all")}
+          </button>
+        </div>
+      ) : null}
+
+      {feedPublisherFilter && visibleFeedNotifications.length === 0 ? (
+        <p className="field-desc" data-testid="inbox-feed-filter-empty">
+          {t("inbox.feedFilterEmpty", "No published posts from this contact yet.")}
+        </p>
+      ) : null}
+
+      {visibleFeedNotifications.length > 0 && (
         <>
           <h3 className="inbox-section-title">
-            {t("inbox.feedNotifications", { count: feedNotifications.length })}
+            {t("inbox.feedNotifications", { count: visibleFeedNotifications.length })}
           </h3>
           <ul className="inbox-list">
-            {feedNotifications.map((item) => (
+            {visibleFeedNotifications.map((item) => (
               <li key={item.id} className="inbox-item" data-testid="feed-notify-row">
                 <div className="inbox-sender">
                   <span className="avatar large">W</span>

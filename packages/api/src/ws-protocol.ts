@@ -27,7 +27,7 @@
  *    { event: "connected", data: { peerId: "...", multiaddrs: [...] } }
  */
 
-import type { DeviceProfile, DeviceRevocationReason, DeviceRevocationRecord, FriendMatchingPreferencesPayload } from "@envoymesh/protocol";
+import type { DeviceProfile, DeviceRevocationReason, DeviceRevocationRecord, FriendMatchingPreferencesPayload, ChainIterationWire } from "@envoymesh/protocol";
 import type { AgentVisibilityConfig, A2aChatNotificationMode } from "./agent-visibility.js";
 import type { ExtAgentDefinition } from "./ext-agent.js";
 export type { ExtAgentDefinition } from "./ext-agent.js";
@@ -129,6 +129,7 @@ export type RpcMethods =
   | "listAgentCards"
   | "getAgentCard"
   | "requestAgentCard"
+  | "refreshAgentNetworkWorkers"
   | "getTaskResult"
   | "listPendingApprovals"
   | "approvePendingApproval"
@@ -167,6 +168,8 @@ export type RpcMethods =
   | "discoverPublishedLibrary"
   | "libraryRead"
   | "publishWebContentEntry"
+  | "ensureDefaultWebSite"
+  | "listWebContentSections"
   | "listFeedNotifications"
   | "dismissFeedNotification"
   | "listAgentShareProposals"
@@ -352,6 +355,7 @@ export type RpcMethods =
   | "chainSetDefaults"
   | "chainPreviewGoal"
   | "chainStartFromGoal"
+  | "chainResolveIteration"
   | "chainExportCosts"
   | "chainListRecipes"
   | "chainSaveRecipe"
@@ -608,6 +612,12 @@ export interface NodeConfig {
   documentAcquisitionMandateId?: string;
   capabilityProviderEnabled?: boolean;
   capabilityProviderMandateId?: string;
+  /**
+   * Owner-attested Agent Network worker profile. Advertised on the agent card
+   * when {@link capabilityProviderEnabled} is true. Used by peers to score
+   * this node when selecting workers.
+   */
+  agentNetworkProfile?: import("@envoymesh/protocol").AgentNetworkProfile;
   /** Phase 19 — agent-driven inbound bond auto-accept. Default false. */
   bondAutonomyEnabled?: boolean;
   bondAutonomyMandateId?: string;
@@ -957,6 +967,11 @@ export interface ModelProviderConfig {
   apiKey?: string;
   /** If true, cloud providers require explicit owner approval per request. Default: true. */
   requireApprovalForCloud?: boolean;
+  /**
+   * Mock-mode only: fixed completion text, or `__plan_assign_from_roster__` to
+   * synthesize a Team-jobs plan+assign JSON from the Assigner prompt roster.
+   */
+  mockResponseText?: string;
 }
 
 /**
@@ -981,6 +996,36 @@ export interface ChainDefaultsConfig {
   autoRebalanceIncrementUsd?: number;
   /** Allow LLM-driven decomposition by default for plans > 12 words. */
   allowLlmDecompose?: boolean;
+  /**
+   * How workers are chosen for new chains.
+   * - `"direct"` (default): assign the first available bonded worker; skip
+   *   competitive bidding and cost ranking. Best for early collaboration.
+   * - `"competitive"`: collect bids, rank by cost/composite, optional counter-bids.
+   */
+  awardMode?: "direct" | "competitive";
+  /**
+   * When true, Social shows cost estimates, bid prices, and the rebalance bar.
+   * Defaults to false for `direct`, true for `competitive` when unset.
+   */
+  showCostUi?: boolean;
+  /**
+   * Phase 47 — outer Team job refinement rounds (B). `1` = today's one-shot
+   * plan→execute→publish. Cap is enforced in the Assigner loop.
+   */
+  iterationMaxRounds?: number;
+  /**
+   * Phase 47 — how the Assigner decides stop vs continue after a draft.
+   * `"always_stop"` keeps multi-round off even when maxRounds > 1 (tests).
+   */
+  iterationJudgeMode?: "llm" | "always_stop" | "owner";
+  /** Phase 47 — what prior-draft payload is fed into the next plan+assign. */
+  iterationCarryMode?: "summary" | "full_draft" | "structured";
+  /** Phase 47B — max appended steps per open round (A). Default 2. */
+  extendMaxStepsPerRound?: number;
+  /** Phase 47B — max depth for appended steps (1..3). Default 3. */
+  extendMaxDepth?: number;
+  /** Phase 47B — require at least one final partial in-round before extend. Default true. */
+  extendOnlyAfterPartial?: boolean;
 }
 
 export type DiscoveryProfile = "lan-fast" | "wan-default" | "relay-only" | "contacts-only";
@@ -1622,6 +1667,13 @@ export interface ChainGetStateResult {
   goal?: string;
   /** Phase 43 — estimated cost range shown before launch. */
   estimatedCostRange?: { minUsd: number; maxUsd: number };
+  /**
+   * Award mode for this chain (`direct` = first available worker, no cost race).
+   * Surfaced so the UI can hide bidding/cost chrome when appropriate.
+   */
+  awardMode?: "direct" | "competitive";
+  /** When false, Social hides cost estimates / bid prices for this chain. */
+  showCostUi?: boolean;
   /** Phase 43G — budget burn warning level. */
   budgetWarningLevel?: "ok" | "warn" | "exceeded";
   /**
@@ -1663,6 +1715,21 @@ export interface ChainGetStateResult {
       rationale?: string;
     }>;
   }>;
+  /** Phase 47 — live iteration progress for Team jobs UI. */
+  iteration?: {
+    round: number;
+    maxRounds: number;
+    extendsInRound: number;
+    maxExtendsInRound: number;
+    waitingForOwner?: boolean;
+    stopReason?: string;
+    drafts: Array<{
+      round: number;
+      summary: string;
+      judgeDecision?: string;
+      judgeReason?: string;
+    }>;
+  };
 }
 
 export interface ChainListActiveParams {
@@ -1870,6 +1937,32 @@ export interface ChainStartFromGoalParams {
   maxChainCostUsd?: number;
   costCeilingUsd?: number;
   allowLlm?: boolean;
+  /** Optional remote Assigner peer id (default = local agent). */
+  assignerPeerId?: string;
+  /** Phase 47 — override node default `iterationMaxRounds` for this job. */
+  iterationMaxRounds?: number;
+  /** Phase 47 — override node default judge mode for this job. */
+  iterationJudgeMode?: "llm" | "always_stop" | "owner";
+  /** Phase 47 — override extend cap for this job. */
+  extendMaxStepsPerRound?: number;
+  /**
+   * Phase 47D — mid-job iteration blob for Assigner handoff rehydrate.
+   * When set with `assignerPeerId`, carried on `task.chain.handoff.iterationState`.
+   */
+  iterationState?: ChainIterationWire;
+}
+
+export interface ChainResolveIterationParams {
+  chainId: string;
+  /** Owner choice after ask_owner hold. */
+  decision: "stop" | "continue";
+}
+
+export interface ChainResolveIterationResult {
+  ok: boolean;
+  published?: boolean;
+  continued?: boolean;
+  error?: string;
 }
 
 export interface ChainStartFromGoalResult {
@@ -1881,10 +1974,14 @@ export interface ChainStartFromGoalResult {
     depth: number;
     requiredCapability: string;
     objective: string;
+    preferredWorkerPeerId?: string;
   }>;
   estimatedCostRange?: { minUsd: number; maxUsd: number };
   diagnostics?: string[];
   error?: string;
+  /** Set when Assigner role was handed off via A2A. */
+  assignerPeerId?: string;
+  handedOff?: boolean;
 }
 
 /** Phase 43H — export chain cost breakdown as CSV. */
@@ -1946,4 +2043,28 @@ export interface ChainReportReceivedEvent {
   workerCount?: number;
   synthesisCostUsd?: number;
   createdAt?: string;
+}
+/** Phase 47D — focused iteration progress for Team jobs UIs (beyond chain:state). */
+export interface ChainIterationProgressEvent {
+  chainId: string;
+  phase:
+    | "round_started"
+    | "extend"
+    | "sealed"
+    | "judge"
+    | "awaiting_owner"
+    | "continued"
+    | "stopped"
+    | "progress";
+  round: number;
+  maxRounds: number;
+  extendsInRound: number;
+  maxExtendsInRound: number;
+  waitingForOwner?: boolean;
+  stopReason?: string;
+  judgeDecision?: string;
+  judgeReason?: string;
+  /** Peer that handed off this job (trigger), when known. */
+  observerPeerId?: string;
+  summary?: string;
 }

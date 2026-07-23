@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { AgentNetworkProfileSchema } from "./agent-network-profile.js";
 const randomUUID = () => crypto.randomUUID();
 
 export const EnvoyIntentSchema = z.enum([
@@ -509,6 +510,11 @@ export const AgentCardSchema = z.object({
   supportedProtocolVersions: z.array(z.string().min(1)).min(1),
   /** Phase 45D — canonical root URL for this owner's web content (envoy://…). */
   webContentRoot: z.string().min(1).optional(),
+  /**
+   * Agent Network worker profile (owner-attested). Advertised when the peer
+   * has opted into Capability Provider; used for scored worker selection.
+   */
+  agentNetworkProfile: AgentNetworkProfileSchema.optional(),
 });
 
 export const AgentCardRequestPayloadSchema = z.object({
@@ -884,7 +890,7 @@ export const FeedNotifyPayloadSchema = z.object({
   title: z.string().min(1).max(500),
   /** Absolute envoy:// URL for the published item. */
   url: z.string().min(1).max(2048),
-  kind: z.enum(["article", "note", "photo", "gallery", "file", "profile"]),
+  kind: z.enum(["article", "note", "photo", "gallery", "file", "profile", "section"]),
   visibility: z.enum(["public", "bonded", "contacts", "private"]),
   summary: z.string().max(2000).optional(),
   /** Free-form tags; used for interest-overlap filtering (45E Slice B). */
@@ -1170,7 +1176,7 @@ export const LibraryFileMatchSchema = z.object({
   cid: z.string().min(1).max(LIBRARY_FILE_MATCH_CID_MAX_LENGTH).optional(),
   // Phase 45 — Web Content Browsing extensions (additive, backward compatible).
   /** Templated site type for UI rendering hints. */
-  kind: z.enum(["article", "note", "photo", "gallery", "file", "profile"]).optional(),
+  kind: z.enum(["article", "note", "photo", "gallery", "file", "profile", "section"]).optional(),
   /** MIME type of the matched content (e.g. "text/markdown", "image/jpeg"). */
   mimeType: z.string().optional(),
   /** Short excerpt for listing displays. */
@@ -3647,6 +3653,8 @@ export interface CreateAgentCardInput {
   supportedProtocolVersions?: string[];
   /** Phase 45D — optional canonical web root URL. */
   webContentRoot?: string;
+  /** Agent Network worker profile (when opted into Capability Provider). */
+  agentNetworkProfile?: import("./agent-network-profile.js").AgentNetworkProfile;
 }
 
 export function createAgentCard(input: CreateAgentCardInput): AgentCard {
@@ -3665,6 +3673,9 @@ export function createAgentCard(input: CreateAgentCardInput): AgentCard {
     },
     supportedProtocolVersions: input.supportedProtocolVersions ?? ["emp/0.1"],
     ...(input.webContentRoot ? { webContentRoot: input.webContentRoot } : {}),
+    ...(input.agentNetworkProfile
+      ? { agentNetworkProfile: input.agentNetworkProfile }
+      : {}),
   });
 }
 
@@ -4146,6 +4157,7 @@ export {
   ChainHandoffRequestPayloadSchema,
   ChainHandoffDelegatePayloadSchema,
   ChainHandoffStatusSchema,
+  ChainIterationWireSchema,
   ChainRelayRouteSchema,
   ChainArbitrationEntrySchema,
   ChainArbitrationPayloadSchema,
@@ -4160,7 +4172,22 @@ export type {
   ChainHandoffRequestPayload,
   ChainHandoffDelegatePayload,
   ChainHandoffStatus,
+  ChainIterationWire,
   ChainRelayRoute,
   ChainArbitrationEntry,
   ChainArbitrationPayload,
 } from "./agent-network-handoff.js";
+
+export {
+  AgentNetworkProfileSchema,
+  AgentNetworkContextWindowSchema,
+  AgentNetworkSpendPostureSchema,
+  DEFAULT_AGENT_NETWORK_PROFILE,
+  parseAgentNetworkProfile,
+  createAgentNetworkProfile,
+} from "./agent-network-profile.js";
+export type {
+  AgentNetworkProfile,
+  AgentNetworkContextWindow,
+  AgentNetworkSpendPosture,
+} from "./agent-network-profile.js";

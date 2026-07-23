@@ -27,6 +27,7 @@
  */
 
 import {
+  ChainHandoffRequestPayloadSchema,
   ChainMandateSignedSchema,
   ChainSubtaskSchema,
   TaskChainAcceptPayloadSchema,
@@ -37,6 +38,7 @@ import {
   TaskChainProposePayloadSchema,
   TaskChainReportPayloadSchema,
   UnsignedChainMandateSchema,
+  type ChainHandoffRequestPayload,
   type ChainMandate,
   type ChainSubtask,
   type ChainSubtaskAward,
@@ -142,6 +144,15 @@ export interface ChainState {
    * to without the caller having to track this externally.
    */
   workersBySubtask: Map<string, string[]>;
+  /**
+   * Subtasks that have already been proposed on the wire. Dependents stay out
+   * until parents produce a final partial (dependency-aware schedule).
+   */
+  proposedSubtasks: Set<string>;
+  /**
+   * Stall re-assign attempts per subtask. Cap is 1 (one next-best peer).
+   */
+  reassignCount: Map<string, number>;
   /** True after a chain-wide cancel has been issued. */
   chainCancelled: boolean;
   /** Reports we've already published for this chain (only one is allowed). */
@@ -172,6 +183,11 @@ export interface ChainState {
    * Most-recent first.
    */
   autoRebalanceHistory: Array<{ at: string; reason: string; additionalBudgetUsd: number }>;
+  /**
+   * Phase 47 — Assigner-owned multi-round iteration (B). Absent or maxRounds≤1
+   * preserves one-shot synthesize→publish.
+   */
+  iteration?: import("./chain-iteration.js").ChainIterationState;
 }
 
 // ---------------------------------------------------------------------------
@@ -194,11 +210,59 @@ export function createChainState(chainMandate: ChainMandate): ChainState {
     published: false,
     awardedAt: new Map(),
     workersBySubtask: new Map(),
+    proposedSubtasks: new Set(),
+    reassignCount: new Map(),
     lastHeartbeatAt: new Map(),
     lastConfidence: new Map(),
     autoRebalanceCount: 0,
     autoRebalanceHistory: [],
   };
+}
+
+/** True when every dependsOn parent has a final partial (cancelled parents block). */
+export function subtaskDependenciesSatisfied(state: ChainState, subtask: ChainSubtask): boolean {
+  for (const dep of subtask.dependsOn) {
+    if (state.cancelledSubtasks.has(dep)) return false;
+    const partial = state.partials.get(dep);
+    if (!partial?.partial.isFinal) return false;
+  }
+  return true;
+}
+
+const PARENT_CONTEXT_MAX = 800;
+
+function artifactSnippet(artifact: unknown): string {
+  if (!artifact || typeof artifact !== "object") return "";
+  const a = artifact as { kind?: string; content?: string; data?: unknown; displayName?: string; vaultPath?: string };
+  if (a.kind === "text" && typeof a.content === "string") {
+    return a.content.slice(0, PARENT_CONTEXT_MAX);
+  }
+  if (a.kind === "structured" && a.data !== undefined) {
+    return JSON.stringify(a.data).slice(0, PARENT_CONTEXT_MAX);
+  }
+  if (a.kind === "file") {
+    return `[file ${a.displayName ?? a.vaultPath ?? "unknown"}]`;
+  }
+  return "";
+}
+
+/** Append prior-step notes/artifacts into constraints for a dependent propose. */
+export function enrichSubtaskWithParentContext(state: ChainState, subtask: ChainSubtask): ChainSubtask {
+  if (subtask.dependsOn.length === 0) return subtask;
+  const extras: string[] = [];
+  for (const dep of subtask.dependsOn) {
+    const payload = state.partials.get(dep);
+    if (!payload) continue;
+    const note = payload.partial.note?.trim();
+    const art = artifactSnippet(payload.partial.artifactFragment);
+    const body = [note, art].filter(Boolean).join(" | ") || "(no artifact text)";
+    extras.push(`prior[${dep}]: ${body}`.slice(0, PARENT_CONTEXT_MAX + 64));
+  }
+  if (extras.length === 0) return subtask;
+  const constraints = [...subtask.constraints, ...extras].slice(0, 32);
+  const enriched = { ...subtask, constraints };
+  state.subtasks.set(subtask.subtaskId, enriched);
+  return enriched;
 }
 
 /** Read-only view of the chain state, useful for the UI to render progress. */
@@ -270,18 +334,27 @@ export async function planChain(
     return { ok: false, reason: "no_goal" };
   }
 
-  // Decide whether to use the LLM decomposer.
-  const words = goal.split(/\s+/).length;
-  const useLlm = opts.allowLlm && words > 12 && deps.llmDecompose !== undefined;
+  // Prefer LLM plan+assign whenever available (short goals included).
+  // On LLM failure, fall through to the single-subtask keyword path.
+  const useLlm = opts.allowLlm !== false && deps.llmDecompose !== undefined;
 
   if (useLlm && deps.llmDecompose) {
     const r = await deps.llmDecompose(goal);
-    if (!r.ok) return { ok: false, reason: "llm_decompose_failed" };
-    if (r.steps.some((s) => s.depth < 1 || s.depth > 3)) {
-      return { ok: false, reason: "decompose_too_deep" };
+    if (r.ok) {
+      if (r.steps.some((s) => s.depth < 1 || s.depth > 3)) {
+        return { ok: false, reason: "decompose_too_deep" };
+      }
+      const steps = r.steps.map((s) =>
+        ChainSubtaskSchema.parse({
+          ...s,
+          chainId: state.chainId,
+          chainMandateId: state.chainMandate.chainMandateId,
+          deadlineAt: s.deadlineAt ?? state.chainMandate.deadlineAt,
+        }),
+      );
+      registerSubtasks(state, steps);
+      return { ok: true, subtasks: steps };
     }
-    registerSubtasks(state, r.steps);
-    return { ok: true, subtasks: r.steps };
   }
 
   // Keyword fallback — produces a single subtask by default.
@@ -345,25 +418,144 @@ export async function launchChain(
     summary: `workers=${allWorkerPeerIds.size}`,
   });
 
-  // Propose each subtask to the matching workers.
+  // Record the full worker map up front, but only propose dependency-ready
+  // roots. Dependents wait for parent final partials (`advanceReadySubtasks`).
+  // Named/direct assignees: propose to the primary only; extras are stall backups.
   let proposed = 0;
   for (const [subtaskId, workerIds] of Object.entries(workersBySubtask)) {
     const subtask = state.subtasks.get(subtaskId);
     if (!subtask) continue;
     state.workersBySubtask.set(subtaskId, [...workerIds]);
-    for (const workerPeerId of workerIds) {
-      const ok = await sendChainPropose(deps, workerPeerId, subtask, state.chainMandate);
+    if (!subtaskDependenciesSatisfied(state, subtask)) continue;
+    const toSend = enrichSubtaskWithParentContext(state, subtask);
+    const targets =
+      subtask.preferredWorkerPeerId && workerIds.includes(subtask.preferredWorkerPeerId)
+        ? [subtask.preferredWorkerPeerId]
+        : subtask.preferredWorkerPeerId
+          ? workerIds.slice(0, 1)
+          : workerIds;
+    for (const workerPeerId of targets) {
+      const ok = await sendChainPropose(deps, workerPeerId, toSend, state.chainMandate);
       if (ok) proposed++;
     }
+    state.proposedSubtasks.add(subtaskId);
   }
   deps.audit.record({
     type: "chain.launched",
     outcome: "allow",
     intent: "task.chain.propose",
     correlationId: state.chainId,
-    summary: `proposed=${proposed}`,
+    summary: `proposed=${proposed} deferred=${state.subtasks.size - state.proposedSubtasks.size}`,
   });
   return { ok: true, proposed, mandateBroadcastOk };
+}
+
+/**
+ * Propose any not-yet-proposed subtasks whose dependsOn parents all have
+ * final partials. Injects parent notes/artifacts into constraints.
+ */
+export async function advanceReadySubtasks(
+  deps: ChainOrchestratorHandlerDeps,
+  state: ChainState,
+): Promise<{ proposed: number; subtaskIds: string[] }> {
+  if (state.chainCancelled || state.published) {
+    return { proposed: 0, subtaskIds: [] };
+  }
+  let proposed = 0;
+  const subtaskIds: string[] = [];
+  for (const [subtaskId, subtask] of state.subtasks.entries()) {
+    if (state.cancelledSubtasks.has(subtaskId)) continue;
+    if (state.proposedSubtasks.has(subtaskId)) continue;
+    if (!subtaskDependenciesSatisfied(state, subtask)) continue;
+    const workers = state.workersBySubtask.get(subtaskId) ?? [];
+    if (workers.length === 0) continue;
+    const toSend = enrichSubtaskWithParentContext(state, subtask);
+    const targets =
+      subtask.preferredWorkerPeerId && workers.includes(subtask.preferredWorkerPeerId)
+        ? [subtask.preferredWorkerPeerId]
+        : subtask.preferredWorkerPeerId
+          ? workers.slice(0, 1)
+          : workers;
+    for (const workerPeerId of targets) {
+      const ok = await sendChainPropose(deps, workerPeerId, toSend, state.chainMandate);
+      if (ok) proposed++;
+    }
+    state.proposedSubtasks.add(subtaskId);
+    subtaskIds.push(subtaskId);
+  }
+  if (subtaskIds.length > 0) {
+    deps.audit.record({
+      type: "chain.launched",
+      outcome: "allow",
+      intent: "task.chain.propose",
+      correlationId: state.chainId,
+      summary: `advanced=${subtaskIds.join(",")} proposed=${proposed}`,
+    });
+  }
+  return { proposed, subtaskIds };
+}
+
+/**
+ * Stall recovery: cancel the current award and propose to the next listed
+ * worker. At most one re-assign per subtask.
+ */
+export async function reassignStalledSubtask(
+  deps: ChainOrchestratorHandlerDeps,
+  state: ChainState,
+  subtaskId: string,
+): Promise<
+  | { ok: true; nextWorkerPeerId: string }
+  | { ok: false; reason: "no_award" | "no_alternate" | "reassign_cap" | "cancelled" | "send_failed" }
+> {
+  if (state.chainCancelled || state.cancelledSubtasks.has(subtaskId)) {
+    return { ok: false, reason: "cancelled" };
+  }
+  if ((state.reassignCount.get(subtaskId) ?? 0) >= 1) {
+    return { ok: false, reason: "reassign_cap" };
+  }
+  const award = state.awards.get(subtaskId);
+  if (!award) return { ok: false, reason: "no_award" };
+  const workers = state.workersBySubtask.get(subtaskId) ?? [];
+  const next = workers.find((w) => w !== award.workerPeerId);
+  if (!next) return { ok: false, reason: "no_alternate" };
+
+  const nowIso = (deps.now ?? (() => new Date()))().toISOString();
+  await sendChainCancel(deps, award.workerPeerId, {
+    chainId: state.chainId,
+    subtaskId,
+    reason: "stall_reassign",
+    cancelledBy: "orchestrator",
+    notifyWorkerPeerIds: [award.workerPeerId],
+    createdAt: nowIso,
+  });
+  if (state.awards.has(subtaskId)) {
+    await state.ledger.release(subtaskId, "stall re-assign");
+  }
+  state.awards.delete(subtaskId);
+  state.awardedAt.delete(subtaskId);
+  state.partials.delete(subtaskId);
+  state.lastHeartbeatAt.delete(subtaskId);
+  state.lastConfidence.delete(subtaskId);
+  // Drop the stalled worker's bid so evaluate/direct paths prefer the next peer.
+  state.bids.delete(`${subtaskId}::${award.workerPeerId}`);
+
+  const subtask = state.subtasks.get(subtaskId);
+  if (!subtask) return { ok: false, reason: "send_failed" };
+  const toSend = enrichSubtaskWithParentContext(state, subtask);
+  const ok = await sendChainPropose(deps, next, toSend, state.chainMandate);
+  if (!ok) return { ok: false, reason: "send_failed" };
+
+  state.workersBySubtask.set(subtaskId, [next, ...workers.filter((w) => w !== next && w !== award.workerPeerId)]);
+  state.proposedSubtasks.add(subtaskId);
+  state.reassignCount.set(subtaskId, (state.reassignCount.get(subtaskId) ?? 0) + 1);
+  deps.audit.record({
+    type: "chain.launched",
+    outcome: "allow",
+    intent: "task.chain.propose",
+    correlationId: state.chainId,
+    summary: `stall_reassign subtask=${subtaskId} from=${award.workerPeerId} to=${next}`,
+  });
+  return { ok: true, nextWorkerPeerId: next };
 }
 
 // ---------------------------------------------------------------------------
@@ -372,16 +564,22 @@ export async function launchChain(
 
 export interface EvaluateBidsInput {
   subtaskId: string;
-  /** Bid-policy filter: composite rank (default), cost, ETA, or legacy confidence alias. */
-  policy?: "composite" | "cheapest" | "fastest" | "highest_confidence";
+  /** Bid-policy filter: first available, composite rank, cost, ETA, or legacy confidence alias. */
+  policy?: "first" | "composite" | "cheapest" | "fastest" | "highest_confidence";
   /** Maximum rounds. Default 3. */
   maxRounds?: number;
   /**
    * Owner-picked worker. When set, the orchestrator skips the policy sort
    * and tries to award the matching bid (subject to budget and bid TTL).
-   * The picked worker's `proposedCostUsd` is used for budget reservation.
+   * The picked worker's `proposedCostUsd` is used for budget reservation
+   * unless `reserveCostUsd` is set.
    */
   pickWorkerPeerId?: string;
+  /**
+   * When set, reserve this amount instead of the bid's proposed cost.
+   * Used by direct-assign mode so cost never blocks collaboration.
+   */
+  reserveCostUsd?: number;
 }
 
 /**
@@ -455,7 +653,10 @@ export async function evaluateBids(
     }
   } else {
     const policy = input.policy ?? "composite";
-    if (policy === "composite") {
+    if (policy === "first") {
+      // Arrival order already reflected in Map iteration / liveBids list order.
+      chosen = liveBids[0];
+    } else if (policy === "composite") {
       const { rankBids } = await import("./chain-bid-strategy.js");
       const ranked = rankBids(
         liveBids.map((bid) => ({ bid })),
@@ -478,18 +679,22 @@ export async function evaluateBids(
   }
   if (!chosen) return { ok: false, reason: "no_bids" };
 
-  // Re-evaluation of an already-awarded subtask: release the prior
-  // reservation first so the new bid can claim fresh budget. (The previous
-  // award is overwritten below.)
+  // Re-evaluation / concurrent auto-eval may leave an award and/or an orphaned
+  // ledger reservation. Always release before reserving again (release is
+  // idempotent when nothing is held).
   if (state.awards.has(input.subtaskId)) {
     await state.ledger.release(input.subtaskId, "re-evaluation for new bid");
+  } else {
+    await state.ledger.release(input.subtaskId, "orphaned reservation cleanup");
   }
 
-  // Reserve budget before sending accept.
+  // Reserve budget before sending accept. Direct mode may force $0.
+  const reserveAmount =
+    input.reserveCostUsd !== undefined ? input.reserveCostUsd : chosen.proposedCostUsd;
   const reserveResult = await state.ledger.reserve(
     input.subtaskId,
     chosen.workerPeerId,
-    chosen.proposedCostUsd,
+    reserveAmount,
   );
   if (!reserveResult.ok) return { ok: false, reason: "budget_exceeded" };
 
@@ -499,7 +704,7 @@ export async function evaluateBids(
     chainId: state.chainId,
     workerPeerId: chosen.workerPeerId,
     negotiationRound: round,
-    acceptedCostUsd: chosen.proposedCostUsd,
+    acceptedCostUsd: reserveAmount,
     deadlineAt: subtask.deadlineAt ?? state.chainMandate.deadlineAt,
     createdAt: (deps.now ?? (() => new Date()))().toISOString(),
   };
@@ -791,8 +996,42 @@ export async function trackChain(
     // arrives (handleOrchestratorHeartbeat) or a partial arrives.
     for (const [subtaskId, award] of state.awards.entries()) {
       if (state.cancelledSubtasks.has(subtaskId)) continue;
+      // Phase 47: sealed rounds are finished — do not heartbeat / stall them.
+      if (state.iteration) {
+        const sealed = Object.values(state.iteration.sealedByRound).some((ids) =>
+          ids.includes(subtaskId),
+        );
+        if (sealed) continue;
+      }
       await sendChainHeartbeat(deps, award.workerPeerId, state.chainId, subtaskId, "in-progress");
       inFlight.add(subtaskId);
+    }
+
+    // Stall → one re-assign to next-best peer (independent of budget rebalance).
+    // Clock starts at last worker heartbeat, else award time — never treat a
+    // brand-new award with no timestamps as already stalled.
+    {
+      const stalledForReassign: string[] = [];
+      for (const [subtaskId] of state.awards.entries()) {
+        if (state.cancelledSubtasks.has(subtaskId)) continue;
+        if (state.partials.has(subtaskId)) continue;
+        if (state.iteration) {
+          const sealed = Object.values(state.iteration.sealedByRound).some((ids) =>
+            ids.includes(subtaskId),
+          );
+          if (sealed) continue;
+        }
+        const lastHb = state.lastHeartbeatAt.get(subtaskId);
+        const awardedIso = state.awardedAt.get(subtaskId);
+        const startedAt =
+          lastHb ?? (awardedIso !== undefined ? Date.parse(awardedIso) : undefined);
+        if (startedAt !== undefined && now - startedAt > stallTimeoutMs) {
+          stalledForReassign.push(subtaskId);
+        }
+      }
+      for (const subtaskId of stalledForReassign) {
+        await reassignStalledSubtask(deps, state, subtaskId);
+      }
     }
 
     // Phase 40D — auto-rebalance trigger. Only fires when:
@@ -868,9 +1107,12 @@ export async function synthesizeChain(
   deps: ChainOrchestratorHandlerDeps,
   state: ChainState,
   kind: AggregationKind,
+  opts: { subtaskIds?: readonly string[] } = {},
 ): Promise<SynthesizeChainResult> {
+  const allow = opts.subtaskIds !== undefined ? new Set(opts.subtaskIds) : null;
   const contributions: WorkerContribution[] = [];
   for (const [subtaskId, award] of state.awards.entries()) {
+    if (allow && !allow.has(subtaskId)) continue;
     const partial = state.partials.get(subtaskId);
     if (!partial) continue;
     contributions.push({
@@ -945,7 +1187,10 @@ export async function publishChainReport(
     correlationId: state.chainId,
     summary: `costUsd=${report.chainSummary.synthesisCostUsd}`,
   });
-  return sent ? { ok: true } : { ok: false, reason: "handler_denied" };
+  // Local publish is complete once the ledger is finalized and the report is
+  // stored. Owner delivery may still fail (offline / self-dial); callers treat
+  // `state.published` / store as the source of truth for completion.
+  return { ok: true };
 }
 
 // ---------------------------------------------------------------------------
@@ -1030,6 +1275,9 @@ export async function handleOrchestratorPartial(
     correlationId: envelope.correlationId,
     summary: `subtask=${payload.partial.subtaskId} seq=${payload.partial.seq} isFinal=${payload.partial.isFinal}`,
   });
+  if (payload.partial.isFinal) {
+    await advanceReadySubtasks(deps, state);
+  }
   return { ok: true };
 }
 
@@ -1193,6 +1441,27 @@ async function sendChainHeartbeat(
   return deps.sendEnvelope(recipientPeerId, envelope, payload);
 }
 
+/** Send `task.chain.handoff` — whole-job Assigner handoff or subtask transfer request. */
+export async function sendChainHandoff(
+  deps: ChainOrchestratorSendDeps,
+  recipientPeerId: string,
+  handoff: ChainHandoffRequestPayload,
+): Promise<boolean> {
+  const payload = ChainHandoffRequestPayloadSchema.parse(handoff);
+  const envelope = buildChainEnvelope({
+    intent: "task.chain.handoff",
+    senderPeerId: deps.orchestratorPeerId,
+    senderPublicKey: deps.publicKeyPem,
+    recipientPeerId,
+    recipientRole: "agent",
+    payload,
+    createdAt: (deps.now ?? (() => new Date()))().toISOString(),
+    correlationId: payload.chainId,
+    signingKeyPem: deps.signingKeyPem,
+  });
+  return deps.sendEnvelope(recipientPeerId, envelope, payload);
+}
+
 // ---------------------------------------------------------------------------
 // Internal — envelope construction
 // ---------------------------------------------------------------------------
@@ -1205,7 +1474,9 @@ interface BuildChainEnvelopeInput {
     | "task.chain.cancel"
     | "task.chain.heartbeat"
     | "task.chain.merge"
-    | "task.chain.report";
+    | "task.chain.report"
+    | "task.chain.handoff"
+    | "task.chain.delegate";
   senderPeerId: string;
   senderPublicKey: string;
   recipientPeerId: string;

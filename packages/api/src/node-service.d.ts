@@ -1041,6 +1041,11 @@ export interface NodeService {
         ok: boolean;
         error?: string;
     }>;
+    /** Re-request bonded peer cards and rebuild the capability index for Team jobs. */
+    refreshAgentNetworkWorkers(): Promise<{
+        requested: number;
+        failed: number;
+    }>;
     /** Phase 34: latest cached `task.result` (typed Artifacts) for the taskId. */
     getTaskResult(taskId: string): Promise<TaskResultPayload | undefined>;
     /** Pending AI actions awaiting owner approval. */

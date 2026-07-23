@@ -208,6 +208,10 @@ export async function routeRpcMethod(
       return ns.chainPreviewGoal(params as unknown as ChainPreviewGoalParams);
     case "chainStartFromGoal":
       return ns.chainStartFromGoal(params as unknown as ChainStartFromGoalParams);
+    case "chainResolveIteration":
+      return ns.chainResolveIteration(
+        params as unknown as import("@envoymesh/api").ChainResolveIterationParams,
+      );
     case "chainExportCosts":
       return ns.chainExportCosts(params as unknown as ChainExportCostsParams);
     case "chainListRecipes":
@@ -310,6 +314,8 @@ export async function routeRpcMethod(
       return ns.getAgentCard(params.ownerId as string);
     case "requestAgentCard":
       return ns.requestAgentCard(params.targetOwnerId as string);
+    case "refreshAgentNetworkWorkers":
+      return ns.refreshAgentNetworkWorkers();
     case "getTaskResult":
       return ns.getTaskResult(params.taskId as string);
     case "listPendingApprovals":
@@ -398,6 +404,10 @@ export async function routeRpcMethod(
       return ns.libraryRead(params as unknown as LibraryReadParams);
     case "publishWebContentEntry":
       return ns.publishWebContentEntry(params as unknown as PublishWebContentParams);
+    case "ensureDefaultWebSite":
+      return ns.ensureDefaultWebSite();
+    case "listWebContentSections":
+      return ns.listWebContentSections();
     case "listFeedNotifications":
       return ns.listFeedNotifications();
     case "dismissFeedNotification":

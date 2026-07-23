@@ -144,6 +144,7 @@ import {
   type ListCommerceReceiptsParams,
   type RecordCommerceReceiptParams,
   ensureDefaultAutonomousPoliciesForModel,
+  scoreAgentNetworkWorker,
 } from "@envoymesh/api";
 import { resolveDidImportInput } from "@envoymesh/api/did-import";
 import type {
@@ -388,6 +389,7 @@ import {
   ENVOY_CHAT_PROTOCOL,
   ENVOY_DATA_PROTOCOL,
   hasDirectTcpDialHints,
+  hasDirectPrivateLanDialHints,
   isPrivateLanTcpDialHint,
   type EnvoyMeshOptions,
 } from "@envoymesh/network";
@@ -836,7 +838,7 @@ import {
   resolveRelayClientControlTargets,
   type RelayClientCycleDeps,
 } from "./relay-client-cycle.js";
-import { publishWebContentEntry as publishWebContentEntryAuthor } from "./web-content-author.js";
+import { publishWebContentEntry as publishWebContentEntryAuthor, ensureDefaultWebSite as ensureDefaultWebSiteAuthor, listWebContentSections as listWebContentSectionsAuthor } from "./web-content-author.js";
 import { sendFeedNotifyToBonds } from "./feed-notify-outbound.js";
 import {
   dismissFeedNotifyInboxItem,
@@ -906,6 +908,7 @@ import {
   ensureChainMandateLoaded,
   evaluateBidsAsync,
   findCapabilityProviders,
+  findCapabilityProvidersRanked,
   handleInboundChainEnvelope,
   placeholderMandate,
   refreshCapabilityIndex,
@@ -1171,6 +1174,7 @@ function summarizeAgentCard(row: {
     trustPolicySummary?: CachedAgentCardSummary["trustPolicySummary"];
     supportedProtocolVersions?: string[];
     webContentRoot?: string;
+    agentNetworkProfile?: CachedAgentCardSummary["agentNetworkProfile"];
   };
   cachedAt: string;
   sourceAgentPeerId?: string;
@@ -1190,6 +1194,9 @@ function summarizeAgentCard(row: {
   }
   if (row.card.webContentRoot) {
     summary.webContentRoot = row.card.webContentRoot;
+  }
+  if (row.card.agentNetworkProfile) {
+    summary.agentNetworkProfile = row.card.agentNetworkProfile;
   }
   return summary;
 }
@@ -1312,6 +1319,10 @@ class NodeServiceImpl implements NodeService {
     autoEvaluateTimers: new Map<string, ReturnType<typeof setTimeout>>(),
     goals: new Map<string, string>(),
     costEstimates: new Map<string, { minUsd: number; maxUsd: number }>(),
+    awardModes: new Map<string, "direct" | "competitive">(),
+    showCostUi: new Map<string, boolean>(),
+    pendingExtendSteps: new Map(),
+    iterationObservers: new Map<string, string>(),
   } as const;
 
   /** Latest QR / `getPairingPayload` token for optional companion auto-pair (short TTL). */
@@ -1869,7 +1880,6 @@ class NodeServiceImpl implements NodeService {
     this.emit("node:ready", { timestamp: Date.now() });
     void this.resyncBondedContactReachabilityTags();
     void this._scrubBondedContactDialState();
-    this._scheduleDeferredProfileRefresh("bindExternalMesh");
     this._startBondWarmInterval();
   }
 
@@ -1883,16 +1893,7 @@ class NodeServiceImpl implements NodeService {
     return typeof this._deferredExternalMeshStart === "function" && this._nodeStatus !== "running";
   }
 
-  private _scheduleDeferredProfileRefresh(source: string): void {
-    if (this._profileRefreshStartupTimer) {
-      clearTimeout(this._profileRefreshStartupTimer);
-    }
-    this._profileRefreshStartupTimer = setTimeout(() => {
-      this._profileRefreshStartupTimer = undefined;
-      void this.refreshBondPeerProfiles().catch((err) => {
-        console.warn(`[profile] refreshBondPeerProfiles after ${source} failed:`, err);
-      });
-    }, NodeServiceImpl.PROFILE_REFRESH_STARTUP_DELAY_MS);
+  private _scheduleDeferredProfileRefresh(): void {
   }
 
   /** True when {@link startNode} created an internal mesh with {@link _wireMeshEvents} inbound handlers. */
@@ -2116,6 +2117,11 @@ class NodeServiceImpl implements NodeService {
     );
     if (result.ok) {
       this._lanAutoBondLastFireAt.set(peerId, Date.now());
+      // Best-effort: once the peer accepts (or we already share a bond), pull
+      // cards so Assigner soft pool updates without a Settings refresh.
+      void this.refreshAgentNetworkWorkers().catch((err) => {
+        console.warn("[lan-auto-bond] refreshAgentNetworkWorkers after send failed:", err);
+      });
     }
   }
 
@@ -3033,19 +3039,86 @@ class NodeServiceImpl implements NodeService {
     return { ok: true };
   }
 
+  /**
+   * Fetch agent cards from bonded peers, then rebuild the capability index so
+   * Team jobs see freshly Join'd / LAN-bonded workers without a restart.
+   *
+   * Card replies are async: we refresh the index immediately (opt-out / local
+   * state) and again after a short delay so newly cached cards enter the soft
+   * pool without a second manual Refresh.
+   */
+  async refreshAgentNetworkWorkers(): Promise<{ requested: number; failed: number }> {
+    let requested = 0;
+    let failed = 0;
+    try {
+      const bonds = await this.getBonds();
+      for (const bond of bonds) {
+        if (bond.level !== "direct" && bond.level !== "referred") continue;
+        requested += 1;
+        try {
+          const result = await this.requestAgentCard(bond.peerOwnerId);
+          if (!result.ok) failed += 1;
+        } catch {
+          failed += 1;
+        }
+      }
+    } catch {
+      /* bonds unavailable — still refresh local index */
+    }
+    try {
+      await this.refreshCapabilityIndex();
+    } catch (err) {
+      console.warn("[agent-network] refreshCapabilityIndex failed:", err);
+    }
+    this._scheduleDeferredAgentNetworkIndexRefresh();
+    return { requested, failed };
+  }
+
+  private _agentNetworkIndexRefreshTimer?: ReturnType<typeof setTimeout>;
+
+  private _scheduleDeferredAgentNetworkIndexRefresh(): void {
+    if (this._agentNetworkIndexRefreshTimer) {
+      clearTimeout(this._agentNetworkIndexRefreshTimer);
+    }
+    this._agentNetworkIndexRefreshTimer = setTimeout(() => {
+      this._agentNetworkIndexRefreshTimer = undefined;
+      void this.refreshCapabilityIndex()
+        .then(async () => {
+          try {
+            const cards = await this.listAgentCards();
+            this.emit("home:agent-cards-updated", { cards });
+          } catch {
+            /* ignore */
+          }
+        })
+        .catch((err) => {
+          console.warn("[agent-network] deferred refreshCapabilityIndex failed:", err);
+        });
+    }, 2_500);
+  }
+
   async recordAgentCardCached(ownerId: string, card: import("@envoymesh/protocol").AgentCard): Promise<void> {
-    if (!this._agentActivityStore) return;
-    const record: AgentActivityRecord = {
-      activityId: randomUUID(),
-      domain: "research",
-      kind: "task_progress",
-      summary: `Learned agent card for ${card.displayName}`,
-      remoteOwnerId: ownerId,
-      remoteActorRole: "agent",
-      createdAt: new Date().toISOString(),
-    };
-    await this._agentActivityStore.append(record);
-    await this._publishAgentActivity(record, ownerId);
+    if (this._agentActivityStore) {
+      const record: AgentActivityRecord = {
+        activityId: randomUUID(),
+        domain: "research",
+        kind: "task_progress",
+        summary: `Learned agent card for ${card.displayName}`,
+        remoteOwnerId: ownerId,
+        remoteActorRole: "agent",
+        createdAt: new Date().toISOString(),
+      };
+      await this._agentActivityStore.append(record);
+      await this._publishAgentActivity(record, ownerId);
+    }
+    // Notify Social so Workers status / Team job UIs update when cards land
+    // after an async agent.card.response (not only after Refresh returns).
+    try {
+      const cards = await this.listAgentCards();
+      this.emit("home:agent-cards-updated", { cards });
+    } catch {
+      /* ignore */
+    }
   }
 
   async recordInboundKnowledgeAnswered(params: {
@@ -5200,6 +5273,13 @@ class NodeServiceImpl implements NodeService {
     if (!ownerId) {
       throw new Error("publishWebContentEntry: owner identity required");
     }
+    // Keep shells present so Blog / PhotoWall shortcuts never 404 after first publish.
+    await this.ensureDefaultWebSite().catch((err) => {
+      console.warn(
+        "[web] ensureDefaultWebSite before publish failed:",
+        err instanceof Error ? err.message : err,
+      );
+    });
     const result = await publishWebContentEntryAuthor(this._profileDir, {
       ...params,
       ownerId,
@@ -5211,6 +5291,32 @@ class NodeServiceImpl implements NodeService {
       ),
     );
     return result;
+  }
+
+  async ensureDefaultWebSite(): Promise<import("@envoymesh/api").EnsureDefaultWebSiteResult> {
+    if (this._profileDir === "/tmp/unknown") {
+      throw new Error("ensureDefaultWebSite: node profile not initialized");
+    }
+    const human = await this.getHumanProfile();
+    const ownerId =
+      this._profile?.owner?.ownerId?.trim() || human?.ownerId?.trim();
+    if (!ownerId) {
+      throw new Error("ensureDefaultWebSite: owner identity required");
+    }
+    return ensureDefaultWebSiteAuthor(this._profileDir, {
+      ownerId,
+      displayName: human?.displayName,
+      visibility: "bonded",
+    });
+  }
+
+  async listWebContentSections(): Promise<import("@envoymesh/api").WebContentSectionSummary[]> {
+    if (this._profileDir === "/tmp/unknown") return [];
+    const human = await this.getHumanProfile();
+    const ownerId =
+      this._profile?.owner?.ownerId?.trim() || human?.ownerId?.trim();
+    if (!ownerId) return [];
+    return listWebContentSectionsAuthor(this._profileDir, ownerId);
   }
 
   private async _fanOutFeedNotifyAfterPublish(
@@ -5250,10 +5356,12 @@ class NodeServiceImpl implements NodeService {
                 ? "profile"
                 : params.template === "photo"
                   ? "photo"
-                  : "file",
+                  : params.template === "section"
+                    ? "section"
+                    : "file",
         visibility: result.visibility,
         summary: params.body ? params.body.trim().slice(0, 280) : undefined,
-        tags: params.tags,
+        tags: result.tags ?? params.tags,
         contentHash: result.contentHash,
         listingUrl: result.listingUrl,
         contactIds: params.contactIds,
@@ -5402,7 +5510,15 @@ class NodeServiceImpl implements NodeService {
       this._refreshBridgeStatusFromConfig(bridgeCfg);
     }
     if (hasNodePatch) {
+      const joinToggled = Object.prototype.hasOwnProperty.call(nodePatch, "capabilityProviderEnabled");
       await updateNodeConfigViaRuntime(this._nodeConfigContext(), nodePatch as Partial<NodeConfig>);
+      // Join Agent Network changes what our card advertises; refresh the local
+      // index and re-fetch bonded peers so Team jobs see the soft pool promptly.
+      if (joinToggled) {
+        void this.refreshAgentNetworkWorkers().catch((err) => {
+          console.warn("[agent-network] refresh after Join toggle failed:", err);
+        });
+      }
     }
     // Sync the runtime relay-public-WS-URL with the persisted config so
     // the user's preference takes effect immediately. `setRelayPublicWsUrl`
@@ -5650,9 +5766,21 @@ class NodeServiceImpl implements NodeService {
       if (!this._mesh && !this._externalMesh) {
         throw new Error("Failed to start home node mesh after setup.");
       }
+      void this.ensureDefaultWebSite().catch((err) => {
+        console.warn(
+          "[web] ensureDefaultWebSite after deferred start failed:",
+          err instanceof Error ? err.message : err,
+        );
+      });
       return;
     }
-    return startNodeViaRuntime(this._startNodeContext());
+    await startNodeViaRuntime(this._startNodeContext());
+    void this.ensureDefaultWebSite().catch((err) => {
+      console.warn(
+        "[web] ensureDefaultWebSite after startNode failed:",
+        err instanceof Error ? err.message : err,
+      );
+    });
   }
 
   private _startNodeContext(): StartNodeContext {
@@ -5832,6 +5960,10 @@ class NodeServiceImpl implements NodeService {
   }
 
   async stopNode(): Promise<void> {
+    if (this._agentNetworkIndexRefreshTimer) {
+      clearTimeout(this._agentNetworkIndexRefreshTimer);
+      this._agentNetworkIndexRefreshTimer = undefined;
+    }
     return stopNodeViaRuntime(this._stopNodeContext());
   }
 
@@ -7201,6 +7333,75 @@ class NodeServiceImpl implements NodeService {
       requestAgentCard: (targetOwnerId) => this.requestAgentCard(targetOwnerId),
       getAgentCard: (ownerId) => this.getAgentCard(ownerId),
       listAgentCards: () => this.listAgentCards(),
+      listAgentNetworkWorkers: async (params) => {
+        const capability = params?.requiredCapability?.trim() || "task.execute";
+        const limit = Math.max(1, Math.min(50, params?.limit ?? 20));
+        const ranked = await findCapabilityProvidersRanked(
+          this._chainOrchestrationContext(),
+          capability,
+        );
+        const cards = await this.listAgentCards();
+        const byPeer = new Map(cards.map((c) => [c.sourceAgentPeerId, c] as const));
+        return ranked.slice(0, limit).map((r) => {
+          const card = byPeer.get(r.peerId);
+          return {
+            peerId: r.peerId,
+            ownerId: card?.ownerId,
+            displayName: card?.displayName,
+            score: r.score,
+            summary: r.summary,
+            profile: card?.agentNetworkProfile,
+          };
+        });
+      },
+      probeAgentNetworkPeer: async (params) => {
+        const cards = await this.listAgentCards();
+        let ownerId = params.ownerId?.trim();
+        let peerId = params.peerId?.trim();
+        if (!ownerId && peerId) {
+          ownerId = cards.find((c) => c.sourceAgentPeerId === peerId)?.ownerId;
+        }
+        if (!ownerId) {
+          return { ok: false, error: "ownerId or known peerId required" };
+        }
+        const refresh = params.refresh !== false;
+        if (refresh) {
+          const req = await this.requestAgentCard(ownerId);
+          if (!req.ok) {
+            return { ok: false, error: req.error ?? "agent.card.request failed", ownerId };
+          }
+        }
+        const card = await this.getAgentCard(ownerId);
+        if (!card) {
+          return { ok: false, error: "card_not_cached", ownerId };
+        }
+        peerId = card.sourceAgentPeerId;
+        let sameLan = false;
+        try {
+          const peer = await this._peerDirectoryStore.getPeerByOwnerId(card.ownerId);
+          sameLan = hasDirectPrivateLanDialHints(peer?.listenAddrs ?? []);
+        } catch {
+          /* ignore */
+        }
+        const scored = scoreAgentNetworkWorker({
+          requiredCapability: "task.execute",
+          cardCapabilities: card.capabilities ?? [],
+          profile: card.agentNetworkProfile,
+          displayName: card.displayName,
+          sameLan,
+        });
+        return {
+          ok: true,
+          ownerId: card.ownerId,
+          peerId,
+          displayName: card.displayName,
+          capabilities: card.capabilities,
+          profile: card.agentNetworkProfile,
+          score: scored.score,
+          summary: scored.summary,
+          sameLan,
+        };
+      },
       getLocalCapabilityManifest: async () => {
         const manifest = await this.getCapabilityManifest();
         if (!manifest) return undefined;
@@ -7510,8 +7711,9 @@ class NodeServiceImpl implements NodeService {
   private _chainDiagnosticsForSubtasks(
     subtasks: Array<{ subtaskId: string; requiredCapability: string }>,
     workersBySubtask: Record<string, string[]>,
+    rankedBySubtask?: Record<string, Array<{ peerId: string; score: number; summary: string }>>,
   ): string[] {
-    return _chainDiagnosticsForSubtasks(subtasks, workersBySubtask);
+    return _chainDiagnosticsForSubtasks(subtasks, workersBySubtask, rankedBySubtask);
   }
 
   private async _runChainGoal(input: {
@@ -7520,12 +7722,15 @@ class NodeServiceImpl implements NodeService {
     maxChainCostUsd?: number;
     costCeilingUsd?: number;
     allowLlm?: boolean;
+    assignerPeerId?: string;
   }): Promise<{
     ok: boolean;
     chainId: string;
     chainMandateId: string;
     subtasks: Array<{ subtaskId: string; depth: number; requiredCapability: string; objective: string }>;
     error?: string;
+    assignerPeerId?: string;
+    handedOff?: boolean;
   }> {
     return _runChainGoal(this._chainOrchestrationContext(), input);
   }
@@ -7555,6 +7760,13 @@ class NodeServiceImpl implements NodeService {
 
   async chainStartFromGoal(params: ChainStartFromGoalParams): Promise<ChainStartFromGoalResult> {
     return chainStartFromGoalViaRuntime(this._chainContext(), params);
+  }
+
+  async chainResolveIteration(
+    params: import("@envoymesh/api").ChainResolveIterationParams,
+  ): Promise<import("@envoymesh/api").ChainResolveIterationResult> {
+    const { _resolveIterationOwner } = await import("./node-service-chain-orchestration.js");
+    return _resolveIterationOwner(this._chainOrchestrationContext(), params.chainId, params.decision);
   }
 
   async chainExportCosts(params: ChainExportCostsParams): Promise<ChainExportCostsResult> {

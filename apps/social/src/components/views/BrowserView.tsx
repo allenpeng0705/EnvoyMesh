@@ -112,7 +112,7 @@ function titleFromBody(mimeType: string, body: string, url: string): string {
   return url;
 }
 
-export function BrowserView() {
+export function BrowserView({ initialMode }: { initialMode?: BrowserMode } = {}) {
   const t = useT();
   const nodeService = useNodeService();
   const { humanProfile } = useNodeState();
@@ -125,7 +125,17 @@ export function BrowserView() {
   const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [authorOpen, setAuthorOpen] = useState(false);
   const [authorTemplate, setAuthorTemplate] = useState<AuthorTemplate | undefined>(undefined);
-  const [mode, setMode] = useState<BrowserMode>("browse");
+  const authorPanelRef = useRef<HTMLDivElement>(null);
+
+  // Author panel becomes the page content while open — scroll it to the top
+  // of the (single) Browser scrollport so long forms stay reachable.
+  useEffect(() => {
+    if (authorOpen && authorPanelRef.current) {
+      authorPanelRef.current.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    }
+  }, [authorOpen]);
+
+  const [mode, setMode] = useState<BrowserMode>(initialMode ?? "browse");
   const cacheRef = useRef<Map<string, BrowserFetchCacheEntry>>(new Map());
 
   const parseError = useMemo(() => {
@@ -170,6 +180,17 @@ export function BrowserView() {
   }, [url, ownerId]);
 
   const navigateGenRef = useRef(0);
+  /** Max time to wait for library.read before showing an error (avoids infinite spinner). */
+  const LIBRARY_FETCH_TIMEOUT_MS = 45_000;
+
+  const goHome = useCallback(() => {
+    navigateGenRef.current += 1;
+    setNav(createEmptyNavStack());
+    setUrl("");
+    setBookmarked(false);
+    setSuggestionsOpen(false);
+    setState({ kind: "idle" });
+  }, []);
 
   const navigate = useCallback(
     async (target: string, opts?: { pushHistory?: boolean; revalidate?: boolean }) => {
@@ -178,16 +199,44 @@ export function BrowserView() {
       const gen = ++navigateGenRef.current;
       setUrl(target);
       setSuggestionsOpen(false);
+      // Push history immediately so Back works during loading / on error,
+      // and so the first page can return to Browser home (idle).
+      if (pushHistory) {
+        setNav((prev) => pushNav(prev, target));
+      }
       setState({ kind: "loading", url: target });
       try {
         const parsed = parseEnvoyUrl(target);
         const { targetOwnerId, path } = resolveEnvoyUrl(parsed);
+        // Own Profile/Blog/PhotoWall shells are seeded async; wait so the first
+        // open of an "empty" site does not race a missing index.md.
+        if (
+          ownerId &&
+          targetOwnerId === ownerId &&
+          typeof nodeService.ensureDefaultWebSite === "function"
+        ) {
+          await nodeService.ensureDefaultWebSite().catch((err) => {
+            console.warn("[Browser] ensureDefaultWebSite before navigate failed:", err);
+          });
+          if (gen !== navigateGenRef.current) return;
+        }
         const cache = cacheRef.current.get(target) ?? null;
-        const result = await fetchLibraryContent(nodeService.libraryRead.bind(nodeService), {
-          targetOwnerId,
-          path,
-          cache,
-          revalidate,
+        let timeoutId: number | undefined;
+        const result = await Promise.race([
+          fetchLibraryContent(nodeService.libraryRead.bind(nodeService), {
+            targetOwnerId,
+            path,
+            cache,
+            revalidate,
+          }),
+          new Promise<never>((_, reject) => {
+            timeoutId = window.setTimeout(
+              () => reject(new Error(`library.read timed out after ${LIBRARY_FETCH_TIMEOUT_MS}ms`)),
+              LIBRARY_FETCH_TIMEOUT_MS,
+            );
+          }),
+        ]).finally(() => {
+          if (timeoutId !== undefined) window.clearTimeout(timeoutId);
         });
         if (gen !== navigateGenRef.current) return;
 
@@ -212,9 +261,6 @@ export function BrowserView() {
           }
           const title = titleFromBody(result.contentType, result.body, target);
           if (ownerId) recordBrowserRecent(ownerId, target, title);
-          if (pushHistory) {
-            setNav((prev) => pushNav(prev, target));
-          }
           if (ownerId) setBookmarked(isBookmarked(ownerId, target));
           setState({
             kind: "ok",
@@ -263,6 +309,7 @@ export function BrowserView() {
           message: t("browser.statusError", {
             message: e instanceof Error ? e.message : String(e),
           }),
+          code: "other",
         });
       }
     },
@@ -330,8 +377,16 @@ export function BrowserView() {
 
   function onBack() {
     const next = goBack(nav);
-    if (!next) return;
+    if (!next) {
+      // Loading with no history yet (should be rare after early push) — still escape.
+      if (state.kind === "loading" || state.kind === "error") goHome();
+      return;
+    }
     setNav(next.stack);
+    if (next.url === null) {
+      goHome();
+      return;
+    }
     void navigate(next.url, { pushHistory: false });
   }
 
@@ -359,7 +414,7 @@ export function BrowserView() {
     notifyWebSectionsChanged();
     const target = result.listingUrl ?? result.url;
     setUrl(target);
-    void navigate(target);
+    void navigate(target, { revalidate: true });
   }
 
   function onContentLinkClick(e: MouseEvent<HTMLElement>) {
@@ -380,7 +435,10 @@ export function BrowserView() {
     (isValid && state.kind !== "loading");
 
   return (
-    <div className="browser-view" data-testid="browser-view">
+    <div
+      className={`browser-view${authorOpen ? " browser-view--authoring" : ""}`}
+      data-testid="browser-view"
+    >
       <header className="browser-view__header">
         <h2>{t("browser.title")}</h2>
         <div className="browser-view__modes" role="tablist" aria-label={t("browser.modes", "Browser modes")}>
@@ -532,29 +590,11 @@ export function BrowserView() {
             }}
           >
             {authorOpen
-              ? t("browser.author.close", "Close author")
+              ? t("browser.author.close", "Close editor")
               : t("browser.author.open", "New…")}
           </button>
         </form>
       </div>
-
-      {authorOpen && (
-        <div className="browser-view__author-panel" data-testid="browser-author-panel">
-          <BrowserAuthorView
-            key={authorTemplate ?? "picker"}
-            initialTemplate={authorTemplate}
-            onCancel={() => {
-              setAuthorOpen(false);
-              setAuthorTemplate(undefined);
-            }}
-            onPublished={(result) => {
-              // Keep the panel open so the published confirmation (URL) is visible;
-              // Done / Cancel closes via onCancel. Still navigate to the new listing.
-              onPublished(result);
-            }}
-          />
-        </div>
-      )}
 
       {parseError !== null && (
         <p className="browser-view__parse-error" data-testid="browser-parse-error">
@@ -562,6 +602,9 @@ export function BrowserView() {
         </p>
       )}
 
+      {/* While composing, hide browse/idle chrome so long pages cannot trap
+          the editor above a nested scroll region. Close author to return. */}
+      {!authorOpen ? (
       <div className="browser-view__render" data-testid="browser-render-area">
         {state.kind === "loading" && (
           <div className="browser-view__loading" data-testid="browser-loading">
@@ -622,8 +665,9 @@ export function BrowserView() {
           </div>
         )}
       </div>
+      ) : null}
 
-      {state.kind === "ok" && (
+      {state.kind === "ok" && !authorOpen && (
         <p className="browser-view__status" data-testid="browser-status">
           {state.fromCache
             ? t("browser.statusCached", "Cached — {mimeType}, {byteLength} bytes", {
@@ -635,6 +679,24 @@ export function BrowserView() {
                 byteLength: state.byteLength,
               })}
         </p>
+      )}
+
+      {authorOpen && (
+        <div className="browser-view__author-panel" data-testid="browser-author-panel" ref={authorPanelRef}>
+          <BrowserAuthorView
+            key={authorTemplate ?? "picker"}
+            initialTemplate={authorTemplate}
+            onCancel={() => {
+              setAuthorOpen(false);
+              setAuthorTemplate(undefined);
+            }}
+            onPublished={(result) => {
+              // Keep the panel open so the published confirmation (URL) is visible;
+              // Done / Cancel closes via onCancel. Still navigate to the new listing.
+              onPublished(result);
+            }}
+          />
+        </div>
       )}
       </>
       )}

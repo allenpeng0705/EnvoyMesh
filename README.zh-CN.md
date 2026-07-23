@@ -61,12 +61,81 @@ EnvoyMesh 是一个您和您的 AI 代理真正拥有的私有社交网络。与
 
 ### AI 代理
 - **内置 AI（EnvoyAI / OpenClaw）** — 默认开启；随节点自动启动，端口 `:18789`。
-- **外部代理桥接** — 连接 HomeClaw、Hermes、OpenHuman 或任何 HTTP 代理作为第二引擎。通过 Settings → AI → Agent Network 可选启用。
+- **外部代理桥接** — 连接 HomeClaw、Hermes、OpenHuman 或任何 HTTP 代理作为第二引擎。通过 Settings → AI → AI Engine 可选启用。
 - **双引擎模式** — 仅内置、内置 + 外部、仅外部、无 AI。选择适合您的引擎。
 - **代理自主权** — 您的代理可以在安全规则内交友、搜索知识、执行任务。
 - **7 种语言界面** — English、简体中文、한국어、日本語、Français、Deutsch、Italiano。
 
 ### 知识库
+- **内置笔记** — 应用内 Markdown 编辑器，支持逐项敏感度（`public` / `friends` / `private`）、文件夹导航、保存时自动 RAG 重建索引。
+- **Obsidian 插件** — 可选 `kb-obsidian` 提供者：frontmatter YAML 解析、`[[wiki-links]]` 图、`published: true/false` 自动同步到敏感度标签。在 Obsidian 中打开保险箱获得丰富编辑体验，EnvoyMesh 负责网络。
+- **MCP 回写** — AI 代理发现可保存为带有来源归属的保险箱笔记。
+- **公共知识网格** — 公共保险箱项可被所有节点查询（绑定节点或陌生人，按陌生人限速）；陌生人仅可见 wiki-link 的公共子图。
+- **联邦 RAG** — 将知识查询分发到绑定节点的库中并综合答案。
+- **插件式提供者** — 新的知识提供者通过 `KnowledgeBasePlugin` 接口接入。
+
+### Agent Network
+
+Agent Network 是 EnvoyMesh 的多设备团队和多代理协作系统 — 从让团队上线到跨 AI 代理分解复杂任务。
+
+**请先阅读：** [`docs/agent-network-guide.md`](docs/agent-network-guide.md) — 成员资格（加入 + 建联）、协作任务、设置地图与常见问题。
+
+### 团队与企业入职
+
+EnvoyMesh 提供四种团队上线路径（均在 **设置 → 智能体网络**）：
+
+| 路径 | 描述 | 最佳适用 |
+|------|------|----------|
+| **公司邀请** | 发布可分享链接；加入者在其 UI 中粘贴 | 小型团队 (1–20) |
+| **Fleet Manifest** | 导入签名的 JSON 名册；预配置信任记录 | 中大型团队 (20+) |
+| **LAN 自动绑定** | 局域网内共享 fleet token 的节点自动绑定 | 办公室网络 |
+| **配对服务亭** | 一键 HTTP 服务器，按需生成邀请 | 办公室访客 |
+
+所有路径均为可选、可审计且由所有者控制。仅建联不会征用对方代理 — 各方还需开启 **加入智能体网络** 才能参与协作任务。详见 [`docs/fleet-onboarding.md`](docs/fleet-onboarding.md) 与 [`docs/agent-network-fleet.md`](docs/agent-network-fleet.md)。
+
+### 协作任务（多智能体协作）
+
+EnvoyMesh **协作任务**（协议名：chains）让你的代理分解复杂工作，并在**已建联且已加入**的对等节点上协调：
+
+```
+用户请求："翻译这份文档，然后让别人审核"
+       │
+       ▼
+协调代理分解为子任务：
+       ├─ 翻译（工作者 A）
+       └─ 审核（工作者 B）
+       │
+       ▼
+工作节点选择（默认直接分配，或竞争性竞标）：
+       ├─ 工作者必须已开启「加入智能体网络」
+       ├─ 可选多轮竞标（最多 3 轮）
+       ├─ 协调代理按评分 / 费用 / 策略授予任务
+       │
+       ▼
+部分结果回流，合并成复合交付物
+       │
+       ▼
+最终协作任务报告，包含引用、审计轨迹和可选费用明细
+```
+
+**主要特性：**
+- **任务树** — 复杂工作流的显式父子关系。
+- **默认私有** — 本地智能体在开启「加入智能体网络」前不可被征用。
+- **直接分配或竞标** — 在 设置 → AI → 协作任务默认值 中配置。
+- **预算执行** — 硬成本上限（启用费用 UI 时）通过 `ChainBudgetLedger` 追踪。
+- **可配置的成本再平衡** — 三种策略（`manual` / `auto` / `never`）。
+- **复合交付物** — 打包加权的工作者贡献与结构化合并。
+- **跨协调代理移交** — 将子任务委托给其他协调代理。
+- **跨家庭节点中继** — 通过家庭节点路由信封；中继对内容不可见。
+- **LLM 驱动的任务分解** — 真正的 LLM 任务分解器（可启用）。
+- **报告** — 多节报告，附带引用与可选费用明细。
+- **端到端审计** — 类型化的 `chain.*` 审计事件。
+
+协议设计详见 [`docs/agent_network.md`](docs/agent_network.md)。
+
+---
+
+## 知识库
 - **内置笔记** — 应用内 Markdown 编辑器，支持逐项敏感度（`public` / `friends` / `private`）、文件夹导航、保存时自动 RAG 重建索引。
 - **Obsidian 插件** — 可选 `kb-obsidian` 提供者：frontmatter YAML 解析、`[[wiki-links]]` 图、`published: true/false` 自动同步到敏感度标签。在 Obsidian 中打开保险箱获得丰富编辑体验，EnvoyMesh 负责网络。
 - **MCP 回写** — AI 代理发现可保存为带有来源归属的保险箱笔记。
@@ -759,8 +828,8 @@ EnvoyMesh/
 
 - **入门：** [**`QuickStart.md`**](QuickStart.md) — 安装、运行、移动、多机、桥接
 - **核心概念：** [架构参考](AGENTS.md) · [高级设计](docs/high-level-design.md) · [安全模型](docs/security.md)
-- **AI 代理：** [桥接指南](docs/agent_bridge_guide.md) · [OpenClaw 设置](docs/openclaw-extension.md) · [Agent Network 成员](docs/agent-network-config.md)
-- **Agent Network：** [团队入职](docs/fleet-onboarding.md) · [多代理任务链](docs/agent_network.md)
+- **AI 代理：** [桥接指南](docs/agent_bridge_guide.md) · [OpenClaw 设置](docs/openclaw-extension.md) · [AI Engine 配置](docs/agent-network-config.md)
+- **Agent Network：** [操作指南](docs/agent-network-guide.md) · [团队入职](docs/fleet-onboarding.md) · [协作任务协议](docs/agent_network.md)
 - **知识库：** [知识库 & RAG](docs/knowledge-base-and-rag.md) · [Obsidian 集成](#obsidian-集成)
 - **语音与视频：** [语音消息](docs/audio-message-support.md) · [语音与视频通话（桌面）](docs/voice-video-call-support.md) · [EnvoyGo 原生 WebRTC](docs/voice-video-call-envoygo.md)
 - **移动：** [EnvoyGo 设计](docs/flutter-thin-client-design.md)
