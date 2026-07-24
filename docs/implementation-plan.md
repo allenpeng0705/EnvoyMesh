@@ -83,6 +83,7 @@ Maintenance rule: keep this file as the source of truth for **done / left / next
 - [Phase 45 — Web Content Browsing](#phase-45--web-content-browsing--45a45b-shipped-45c45f-future)
 - [Phase 46 — Multi-Relay Fleet Coordination](#phase-46--multi-relay-fleet-coordination)
 - [Phase 47 — Team job multi-round iteration (A ∩ B)](#phase-47--team-job-multi-round-iteration-a--b-shipped)
+- [Phase 48 — A2A + MCP Interop Bridges](#phase-48--a2a--mcp-interop-bridges--future)
 
 EnvoyMesh is a TypeScript-first, owner-controlled, peer-to-peer agent network.
 
@@ -1166,6 +1167,7 @@ Milestone: **Phases 0–42 (42J deferred) shipped** — Core protocol through Ph
 10. **Phase 45 — Web Content Browsing** — 45A–45E shipped; 45F future. [web-content-browsing-design.md](./web-content-browsing-design.md) is the design doc; the Phase 45 section below is the implementation checklist. 45A (URL scheme + `library.read` intent + Browser view + all test layers) → 45B (browser polish + bookmarks) → 45C (EnvoyGo mobile browser) → 45D (authoring UX + templates + visibility) → 45E (Step 2: push notifications, topics, friend discovery — no GossipSub). 45F (external HTTP gateway) is forward-referenced.
 11. **Phase 46 — Multi-Relay Fleet Coordination** — shipped (46A–46C + P2/P3 test harness). Client multi-home, standalone miss-forward, sibling `relay.hints` gossip; in-process + process-spawn E2E; gated live `TEST_RELAY_A`/`TEST_RELAY_B` signoff. Design: [relay-server-design.md](./relay-server-design.md) Part B.
 12. **Phase 47 — Team job multi-round iteration (A ∩ B)** — **47A–47D shipped**. Outer seal→draft→replan (B) + capped intra-round extend (A) + judge/UX + handoff knobs/`iterationState` + `chain:iteration`. Design: [agent-network-iteration.md](./agent-network-iteration.md).
+13. **Phase 48 — A2A + MCP Interop Bridges** — future. [a2a-mcp-interop-design.md](./a2a-mcp-interop-design.md) is the design doc. 48A (MCP tool consumer — agent calls external MCP servers) → 48B (MCP server adapter — Claude Desktop uses EnvoyMesh tools) → 48C (A2A Agent Card bridge — external A2A clients discover EnvoyMesh) → 48D (A2A Task bridge — external A2A agents delegate tasks). All bridges are opt-in; EnvoyMesh's P2P transport + signed envelopes remain the foundation.
 
 ### Phase 9 Architecture Overview
 
@@ -6195,6 +6197,95 @@ See design doc §11 for the full list of 10 open questions. None block Phase 45A
 
 ---
 
+## Phase 48 — A2A + MCP Interop Bridges **`[ ]` future**
+
+**Design doc:** [a2a-mcp-interop-design.md](./a2a-mcp-interop-design.md)
+
+### Motivation
+
+EnvoyMesh has a strong P2P transport and multi-agent protocol, but cannot interoperate with the broader agent ecosystem. Two industry standards address different layers:
+- **MCP** (Anthropic) — model-to-tool function calling (tools/list, tools/call).
+- **A2A** (Google) — agent-to-agent discovery (Agent Card) and task lifecycle.
+
+Neither replaces EnvoyMesh's unique value (P2P, identity, trust, mandates). They operate **above** the transport layer. Phase 48 adds bridges at the boundaries so EnvoyMesh agents can interop with external tools and agents without sacrificing decentralization.
+
+**Design principle:** Bridge, don't replace. EnvoyMesh keeps libp2p + signed envelopes + Bonds + mandates internally. A2A/MCP are translated at opt-in gateway endpoints.
+
+### 48A — MCP Tool Consumer `[ ]`
+
+The built-in OpenClaw agent can call any MCP-compatible tool server.
+
+- `[ ]` `mesh.mcp.list_tools` tool — calls `tools/list` on configured MCP servers
+- `[ ]` `mesh.mcp.call_tool` tool — calls `tools/call`, maps Content[] → EnvoyMesh artifacts
+- `[ ]` `node-config.json` → `mcpServers: [{ name, transport, command?, url?, env? }]`
+- `[ ]` Content mapping: TextContent/ImageContent/AudioContent/resource_link/structuredContent → artifacts
+- `[ ]` Unit tests for content mapping + tool descriptor generation
+- `[ ]` Integration test: launch a minimal MCP stdio server, call `mesh.mcp.call_tool`
+
+**Exit criteria:** Agent can call a real MCP server tool (e.g. filesystem `read_file`) and get a typed artifact back.
+
+### 48B — MCP Server Adapter `[ ]`
+
+Claude Desktop / Cursor can use EnvoyMesh tools.
+
+- `[ ]` `apps/node/src/mcp-server-adapter.ts` — JSON-RPC 2.0 server (initialize, tools/list, tools/call)
+- `[ ]` Extend `toMcpToolDescriptors` with `title`, `annotations`
+- `[ ]` Tool result mapping: EnvoyMesh artifacts → MCP Content[]
+- `[ ]` stdio transport (primary) + Streamable HTTP (optional)
+- `[ ]` Config: `node-config.json` → `mcpServer: { enabled, transport, port? }`
+- `[ ]` Unit tests for tool listing + call translation
+- `[ ]` Integration test: Claude Desktop config pointing at `npx envoymesh mcp-server`
+
+**Exit criteria:** Claude Desktop can list and call `mesh.knowledge_query`, `mesh.library_read`, `mesh.task.propose`.
+
+### 48C — A2A Agent Card Bridge `[ ]`
+
+External A2A clients can discover EnvoyMesh agents.
+
+- `[ ]` `apps/node/src/a2a-bridge.ts` — `toA2AAgentCard()` translator
+- `[ ]` HTTP endpoint `/.well-known/agent-card.json` on relay node
+- `[ ]` Config: `node-config.json` → `a2aBridge: { enabled, gatewayUrl }`
+- `[ ]` Optional Ed25519 signature on the published card
+- `[ ]` Unit tests for card translation + signature
+- `[ ]` Integration test: A2A Python SDK fetches card from a running relay
+
+**Exit criteria:** `curl http://relay:15432/.well-known/agent-card.json` returns a valid A2A card.
+
+### 48D — A2A Task Bridge `[ ]`
+
+External A2A agents can send tasks and get results.
+
+- `[ ]` A2A JSON-RPC handler: `message/send`, `message/stream`, `tasks/get`, `tasks/cancel`
+- `[ ]` Task state mapping (EnvoyMesh 12 states → A2A 9 states)
+- `[ ]` Artifact mapping (EnvoyMesh artifacts → A2A Parts)
+- `[ ]` SSE streaming for `message/stream`
+- `[ ]` Security: bearer token → owner resolution → Bond tier gate → mandate bounds
+- `[ ]` Unit tests for state/artifact mapping
+- `[ ]` Integration test: A2A Python SDK sends a task, receives artifacts
+
+**Exit criteria:** A LangChain agent can `tasks/send` to an EnvoyMesh agent and receive a typed artifact response.
+
+### Exit Criteria (Phase 48 overall)
+
+- `[ ]` MCP tool consumer works with at least one real MCP server (48A)
+- `[ ]` MCP server adapter works with Claude Desktop (48B)
+- `[ ]` A2A Agent Card discoverable by external A2A SDK (48C)
+- `[ ]` A2A task delegation end-to-end with typed artifacts (48D)
+- `[ ]` All bridges are opt-in (no HTTP server unless explicitly configured)
+- `[ ]` EnvoyMesh P2P transport + signed envelopes + Bonds + mandates unchanged
+
+### Risks & Mitigations (Phase 48)
+
+| Risk | Mitigation |
+|------|------------|
+| MCP server crash | Supervised start with exponential backoff restart |
+| A2A bridge leaks internal state | Only expose terminal states + artifact summaries |
+| Bundle size from MCP runtime | Reuse `packages/openclaw/src/agents/` (no new dependency) |
+| A2A spec changes | Pin to protocol version "1.0"; version negotiation in card |
+| Claude Desktop config complexity | Ship `npx envoymesh mcp-server` one-liner |
+
+---
+
 ## Changelog (this document)
 
 | Date | Change |
@@ -6204,6 +6295,7 @@ See design doc §11 for the full list of 10 open questions. None block Phase 45A
 | 2026-07-23 | **Phase 47D shipped (handoff + observe).** Handoff carries iteration knobs + optional `iterationState` wire blob; Assigner rehydrates; `chain:iteration` WS + audit progress; observer peer from handoff sender; E2E asserts `iterationMaxRounds` on remote Assigner; guide/plan-assign marked shipped. Phase 47 complete. |
 | 2026-07-23 | **Phase 47C shipped (judge heuristics + Team jobs UX).** Local→extend / global→continue heuristics; `ask_owner` hold + `chainResolveIteration`; iteration on chain state; Settings/Start knobs; progress line + draft accordion + owner Accept/Continue; i18n + component/unit tests. 47D remains open. |
 | 2026-07-23 | **Phase 47B shipped (intra-round extend A).** `appendExtendSteps` + caps; `pendingExtendSteps` → `_extendIterationRound` launch; `tryCompleteChainIfReady` extend-before-seal; unit coverage in `chain-iteration.test.ts`. 47C–47D remain open. |
+| 2026-07-24 | **Phase 48 — A2A + MCP Interop Bridges designed.** Added Phase 48 section (48A–48D sub-phases, all `[ ]` future) covering four interop bridges: 48A (MCP tool consumer — agent calls external MCP servers via `mesh.mcp.call_tool`), 48B (MCP server adapter — Claude Desktop/Cursor uses EnvoyMesh tools via stdio/HTTP), 48C (A2A Agent Card bridge — external A2A clients discover EnvoyMesh via `/.well-known/agent-card.json`), 48D (A2A Task bridge — external A2A agents delegate tasks via JSON-RPC `message/send`). Design principle: bridge, don't replace — EnvoyMesh keeps libp2p + signed envelopes + Bonds + mandates internally. Full design in [a2a-mcp-interop-design.md](./a2a-mcp-interop-design.md). No code changes — design + roadmap only. |
 | 2026-07-23 | **Phase 47A shipped (outer iteration B).** `chain-iteration.ts` + `tryCompleteChainIfReady` seal→draft→judge→continue; round-scoped synthesize; single terminal publish; `iterationMaxRounds` defaults/knobs; `_continueIterationRound`; unit tests in `chain-iteration.test.ts`. 47B–47D remain open. |
 | 2026-07-23 | **Phase 47 designed (A ∩ B Team job iteration).** Design doc [agent-network-iteration.md](./agent-network-iteration.md) reviewed against orchestrator (round-scoped synthesize, no mid-loop publish/finalize, no `task.chain.merge` as outer loop, sealed IDs vs stall). Implementation-plan Phase 47 checklist: 47A outer loop → 47B extend → 47C UX → 47D handoff. Defaults `iterationMaxRounds=1`. **No code yet.** |
 | 2026-07-21 | **Phase 46 doc hygiene.** Operator fleet §8 add-Nth-relay runbook; design A7 auth + B7#3 demoted + B9 risks; multi-relay preset example; cleared stale “live smoke deferred” banners. |
