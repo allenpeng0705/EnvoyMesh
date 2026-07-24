@@ -7454,9 +7454,26 @@ class NodeServiceImpl implements NodeService {
           path: params.vaultRelativePath,
           sensitivity: params.sensitivity,
         }),
-      // Phase 48A — MCP Tool Consumer. Create manager if consumers are configured.
+      // Phase 48A — MCP Tool Consumer. Wires the manager with an in-process
+      // executor so `mesh.mcp.call_tool` dispatches through the same
+      // ToolRegistry as every other mesh tool (no HTTP round-trip).
+      // The executor closes over `this` and uses the local executeTool
+      // helper, deliberately NOT calling _requireToolExecutionContext
+      // (which would recurse through mcpConsumerManager).
       mcpConsumerManager: config?.mcpConsumers?.length
-        ? createMcpConsumerManager(config.mcpConsumers)
+        ? createMcpConsumerManager(config.mcpConsumers, async (toolName, params) => {
+            // Build a context without the mcpConsumerManager field so
+            // dispatching into `mesh.mcp.call_tool` does not recurse.
+            const ctx: MeshToolContext = {
+              ...(await this._requireToolExecutionContext()),
+              mcpConsumerManager: undefined,
+            };
+            const result = await executeTool(toolName, params, ctx);
+            if (!result.ok) {
+              throw new Error(result.error ?? `Tool ${toolName} failed`);
+            }
+            return result.result;
+          })
         : undefined,
     };
   }
