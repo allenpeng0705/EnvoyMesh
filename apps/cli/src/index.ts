@@ -279,6 +279,20 @@ async function relay(): Promise<number> {
   return sh("npm", ["run", "relay:dev"]);
 }
 
+async function mcpServer(args: string[]): Promise<void> {
+  // Spawn the MCP server adapter as a subprocess — it needs clean stdio
+  // for the MCP JSON-RPC protocol (stdout must be protocol-only).
+  const { spawn } = await import("node:child_process");
+  const child = spawn("npx", ["tsx", "apps/node/src/mcp-server-adapter.ts", ...args], {
+    stdio: "inherit",
+    cwd: process.cwd(),
+    env: process.env,
+  });
+  child.on("exit", (code) => {
+    process.exit(code ?? 0);
+  });
+}
+
 async function smokeCmd(args: string[]): Promise<void> {
   const sub = args[0] || "local";
   switch (sub) {
@@ -440,6 +454,7 @@ Gateway:
 Plugins & Tools:
   openclaw <...>     Pass through to OpenClaw CLI (plugins, config, doctor, etc.)
   oc <...>           Short alias for openclaw
+  mcp-server         Start MCP Server Adapter (stdio) for Claude Desktop / Cursor
 
 Debug:
   doctor             Diagnose installation issues
@@ -559,6 +574,8 @@ async function main(): Promise<void> {
       await tauriCmd(rest); break;
     case "relay":
       process.exit(await relay());
+    case "mcp-server":
+      await mcpServer(rest); break;
     case "smoke":
       await smokeCmd(rest); break;
     case "clean":
