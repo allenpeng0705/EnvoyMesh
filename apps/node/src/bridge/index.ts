@@ -7,6 +7,7 @@ import {
 } from "@envoymesh/protocol";
 import type { SubmitAgentShareProposalParams } from "@envoymesh/api";
 import type { AiIdentity } from "@envoymesh/api";
+import type { A2ATaskBridge } from "../a2a-task-bridge.js";
 import type { ExternalAgentGateway } from "../external-agent-gateway.js";
 import type { ToolDefinition, ToolResult } from "../tool-registry.js";
 import type { BridgeConfig } from "./config.js";
@@ -66,6 +67,19 @@ export interface CreateBridgeOptions {
    * Required for built-in OpenClaw (EnvoyAI) sync replies via POST /bridge/send.
    */
   listenForOpenClaw?: boolean;
+  /**
+   * Phase 48D — A2A Task Bridge. When supplied, the bridge mounts a
+   * `POST` handler at `/a2a/jsonrpc` (or `a2aPath` if set) so external
+   * A2A clients can `message/send`, `tasks/get`, `tasks/cancel`.
+   * Bearer-token auth is performed inside the bridge against
+   * `a2aBridge.bearerTokens` from node config.
+   */
+  a2aBridge?: A2ATaskBridge;
+  /**
+   * Phase 48D — override the default A2A JSON-RPC mount path.
+   * Default `/a2a/jsonrpc` (matches `homeA2aPath` in node config).
+   */
+  a2aPath?: string;
 }
 
 /**
@@ -253,6 +267,35 @@ export function createBridge(options: CreateBridgeOptions): {
         const msg = err instanceof Error ? err.message : "Internal error";
         console.error(`[bridge] execute-tool failed:`, msg);
         res.writeHead(500).end(JSON.stringify({ ok: false, reason: msg }));
+      }
+      return;
+    }
+
+    // Phase 48D — A2A Task Bridge. Mounted at /a2a/jsonrpc by default;
+    // operators can override with options.a2aPath.
+    const a2aMountPath = options.a2aPath ?? "/a2a/jsonrpc";
+    if (path === a2aMountPath) {
+      if (!options.a2aBridge) {
+        res.writeHead(501, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, reason: "a2aBridge not configured" }));
+        return;
+      }
+      try {
+        const raw = await readBody(req, MAX_BRIDGE_BODY_BYTES);
+        const authHeader = req.headers["authorization"];
+        const auth = Array.isArray(authHeader) ? authHeader[0] : authHeader;
+        const jsonRpc = await options.a2aBridge.handleRequest(raw, auth);
+        res.writeHead(200, {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store",
+          "Access-Control-Allow-Origin": "*",
+        });
+        res.end(JSON.stringify(jsonRpc));
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Internal error";
+        console.error(`[bridge] a2a jsonrpc failed:`, msg);
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, reason: msg }));
       }
       return;
     }

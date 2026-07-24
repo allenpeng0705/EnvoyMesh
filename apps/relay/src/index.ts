@@ -58,6 +58,7 @@ import { createRelayLookupRouter } from "./relay-lookup-router.js";
 import { mergeRelayLookupResponses } from "./relay-lookup-response-merge.js";
 import { loadOrCreateRelayControlIdentity } from "./relay-control-identity.js";
 import { createRelayMetrics } from "./relay-metrics.js";
+import { handleA2AJsonRpcProxy, type A2ABearerTokenEntry } from "./a2a-jsonrpc-proxy.js";
 import {
   buildRelayVersionReport,
   buildRelayProtocolReport,
@@ -81,6 +82,37 @@ import { attachStandaloneRelayControl, ingestSiblingHints } from "./standalone-r
 const args = parseRelayArgs(process.argv.slice(2));
 const startedAtMs = Date.now();
 const adminCreds = adminCredentialsConfigured(args);
+
+// Phase 48D — A2A Task Bridge. Bearer tokens are operator-managed via
+// ENVOYMESH_A2A_BEARER_TOKENS env var (comma-separated `token:ownerId[:label]`).
+// Tokens minted by the home node are also synced through the home
+// tunnel handshake — this env var covers the no-home-tunnel case so a
+// standalone relay can still authenticate inbound A2A requests.
+const a2aBearerTokens: A2ABearerTokenEntry[] = parseA2ABearerTokensEnv(
+  process.env.ENVOYMESH_A2A_BEARER_TOKENS,
+);
+if (a2aBearerTokens.length > 0) {
+  console.log(`[relay] A2A bridge: loaded ${a2aBearerTokens.length} bearer token(s) from env`);
+}
+
+/**
+ * Parse `ENVOYMESH_A2A_BEARER_TOKENS` into a list of bearer tokens.
+ * Format: `token1:ownerId1[:label1],token2:ownerId2[:label2]`.
+ * Malformed entries are skipped (not fatal — operators running this
+ * for the first time may have a half-set value).
+ */
+function parseA2ABearerTokensEnv(raw: string | undefined): A2ABearerTokenEntry[] {
+  if (!raw || !raw.trim()) return [];
+  const out: A2ABearerTokenEntry[] = [];
+  for (const item of raw.split(",")) {
+    const parts = item.split(":");
+    if (parts.length < 2) continue;
+    const [token, ownerId, label] = parts;
+    if (!token.trim() || !ownerId.trim()) continue;
+    out.push({ token: token.trim(), ownerId: ownerId.trim(), label: label?.trim() });
+  }
+  return out;
+}
 
 // Ensure profile directory exists
 mkdirSync(args.profileDir, { recursive: true });
@@ -1014,6 +1046,37 @@ try {
             });
             res.end(JSON.stringify(a2aCard, null, 2));
           }
+        } else if (pathname === "/.well-known/a2a/jsonrpc") {
+          // Phase 48D — A2A Task Bridge. External A2A clients POST
+          // JSON-RPC 2.0 here. The relay validates the bearer token,
+          // looks up the home node, and forwards the body to the home
+          // node for execution.
+          //
+          // The `forwardToHome` hook is wired in 48D.5 — for 48D it
+          // returns 503 with an explanatory error when no home node is
+          // registered for the owner (the bridge endpoint, executor,
+          // and protocol shape are all live and tested on the node).
+          if (!args.a2aBridgeEnabled) {
+            res.writeHead(404);
+            res.end();
+            return;
+          }
+          await handleA2AJsonRpcProxy(req, res, {
+            bearerTokens: a2aBearerTokens,
+            // Phase 48D — for now we return null (no home) because the
+            // libp2p tunnel forwarding is wired in a follow-up. The
+            // node-side bridge endpoint is fully functional and tested;
+            // operators who want a working end-to-end deployment can
+            // expose the home node's `/a2a/jsonrpc` directly via their
+            // own reverse proxy until the libp2p forwarding lands.
+            lookupHomePeerId: () => null,
+            forwardToHome: async () => null,
+            observe: ({ outcome, ownerId, durationMs }) => {
+              console.log(
+                `[relay] a2a jsonrpc outcome=${outcome} owner=${ownerId ?? "?"} ms=${durationMs ?? 0}`,
+              );
+            },
+          });
         } else {
           res.writeHead(404);
           res.end();

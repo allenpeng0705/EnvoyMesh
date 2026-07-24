@@ -134,6 +134,8 @@ export {
 } from "./profile-capabilities.js";
 export type { ProfileCapabilityEntry } from "./profile-capabilities.js";
 export * from "./web-content-default-templates.js";
+/** Phase 48D — A2A Task Bridge types (JSON-RPC envelope + executor interface). */
+export * from "./a2a-bridge-types.js";
 /** Explicit export: Social UI imports these; keep browser-safe (no node-only deps). */
 export {
   mergeGroupDeliveryAck,

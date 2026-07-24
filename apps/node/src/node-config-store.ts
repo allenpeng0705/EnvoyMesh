@@ -262,12 +262,26 @@ export interface PersistedNodeConfig {
 
   /** Phase 48C — A2A Agent Card Bridge. When enabled, publishes the
    *  node's Agent Card at /.well-known/agent-card.json in A2A v1.0
-   *  format so external A2A clients can discover this agent. */
+   *  format so external A2A clients can discover this agent.
+   *  Phase 48D — also hosts the A2A JSON-RPC endpoint that lets
+   *  external clients `message/send`, `tasks/get`, `tasks/cancel`. */
   a2aBridge?: {
     enabled: boolean;
     /** Public gateway URL where the A2A JSON-RPC endpoint is reachable
      *  (e.g. "https://relay.example.com:15432"). */
     gatewayUrl?: string;
+    /** Bearer tokens → ownerId mappings. Each inbound A2A request
+     *  must carry `Authorization: Bearer <token>` and the token is
+     *  resolved to an EnvoyMesh ownerId. The owner's Bond tier +
+     *  mandates + audit all use this ownerId. */
+    bearerTokens?: Array<{
+      token: string;
+      ownerId: string;
+      label?: string;
+    }>;
+    /** HTTP path that the JSON-RPC endpoint is mounted at on this
+     *  node's local bridge HTTP server. Default `/a2a/jsonrpc`. */
+    homeA2aPath?: string;
   };
 }
 

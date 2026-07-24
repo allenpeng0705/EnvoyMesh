@@ -11,6 +11,15 @@
  * Design: docs/a2a-mcp-interop-design.md §4.4.
  */
 
+/**
+ * Phase 48D — well-known path where the A2A JSON-RPC endpoint is
+ * mounted (both on the relay HTTP server and on the node's local
+ * bridge HTTP server when behind a reverse proxy). Exported so the
+ * task-bridge module, the relay's HTTP route, and the Agent Card
+ * metadata all agree on the same constant.
+ */
+export const A2A_JSONRPC_PATH = "/.well-known/a2a/jsonrpc";
+
 /** A2A v1.0 Agent Card shape (subset — we produce this). */
 export interface A2AAgentCard {
   name: string;
