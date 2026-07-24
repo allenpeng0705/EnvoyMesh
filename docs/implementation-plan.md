@@ -6251,21 +6251,31 @@ External A2A clients can discover EnvoyMesh agents.
 
 **Exit criteria:** `curl http://relay:15432/.well-known/agent-card.json` returns a valid A2A card. — **17 unit tests pass; relay publishes A2A v1.0 card when enabled.**
 
-### 48D — A2A Task Bridge `[x]` shipped
+### 48D — A2A Task Bridge `[x]` shipped (protocol + auth scaffolding)
 
 External A2A agents can send tasks and get results.
 
-- `[x]` A2A JSON-RPC handler: `message/send`, `tasks/get`, `tasks/cancel` (`message/stream` deferred to 48D.5)
-- `[x]` Task state mapping (EnvoyMesh 12 states → A2A 9 states) — `apps/node/src/a2a-state-map.ts`
-- `[x]` Artifact mapping (EnvoyMesh artifacts → A2A Parts) — `apps/node/src/a2a-artifact-map.ts`. All 4 kinds; `CompositeArtifact` expands to N Parts preserving worker attribution in `metadata`; inbound reconstructs the bundle envelope.
-- `[ ]` SSE streaming for `message/stream` (deferred to 48D.5)
-- `[x]` Security: bearer-token → ownerId; token table built from `PersistedNodeConfig.a2aBridge.bearerTokens[]`; missing/mismatched token returns JSON-RPC `-32001` + 401
-- `[x]` Unit tests for state mapping (20 cases), artifact mapping (16 cases), JSON-RPC envelope + method dispatch (25 cases), relay proxy (12 cases) — **73 new unit tests, all passing**
-- `[x]` Relay exposes `POST /.well-known/a2a/jsonrpc` and proxies to the home node (DI'd `forwardToHome` hook; libp2p tunnel forwarding wired in 48D.5 follow-up — current stub returns 502/504 cleanly with no regressions)
-- `[x]` Node exposes `POST <a2aPath>` on the existing bridge HTTP server (default `/a2a/jsonrpc`); bearer auth, JSON-RPC parse, method dispatch, audit events, state + artifact translation
-- `[ ]` Integration test: A2A Python SDK sends a task, receives artifacts (deferred — manual `curl` smoke documented)
+**Scope shipped:**
+- `[x]` A2A JSON-RPC handler: `message/send`, `tasks/get`, `tasks/cancel`
+- `[x]` Task state mapping (12 → 9) — `apps/node/src/a2a-state-map.ts`
+- `[x]` Artifact mapping (all 4 kinds) — `apps/node/src/a2a-artifact-map.ts`
+- `[x]` Bearer-token auth → ownerId; token table built from `PersistedNodeConfig.a2aBridge.bearerTokens[]`
+- `[x]` Owner-scoping on `tasks/get` / `tasks/cancel` (executor API enforces)
+- `[x]` Inbound `parts[]` validation (kind / required fields / per-part size caps)
+- `[x]` Sanitized error responses (executor internals stay server-side)
+- `[x]` Body-cap alignment (relay 1 MiB ↔ node bridge 1 MiB)
+- `[x]` Composite-reconstruction discriminator (`metadata.envoyKind === "composite"`)
+- `[x]` Relay exposes `POST /.well-known/a2a/jsonrpc` with DI'd `forwardToHome` hook
+- `[x]` Node exposes `POST <a2aPath>` (default `/a2a/jsonrpc`) on the bridge HTTP server
+- `[x]` Unit tests: state mapping (20), artifact mapping (17), JSON-RPC + dispatch (35), relay proxy (12) — **84 unit tests, all passing**
 
-**Exit criteria:** External A2A clients can `message/send` to an EnvoyMesh agent, receive a Task with `state: completed` and `artifacts[]` containing mapped Parts, then poll with `tasks/get` and `tasks/cancel`. — **73/73 unit tests pass; protocol + executor + relay proxy all shipped.** E2E libp2p tunnel forwarding is the 48D.5 follow-up.
+**Deferred (48D.5):**
+- `[ ]` SSE streaming for `message/stream`
+- `[ ]` Production executor that mints mandates + dispatches via `TaskDispatcher`. The `A2ATaskBridgeExecutor` interface is stable; a real implementation is 48D.5.
+- `[ ]` E2E libp2p tunnel forwarding — the relay's `forwardToHome` is currently a stub returning 502/504.
+- `[ ]` Vault-serve HTTP endpoint backing `FileArtifact` URIs.
+
+**Why "scaffolding":** the JSON-RPC envelope, auth, translation, audit, and relay proxy are all live and tested. A2A clients can authenticate and the bridge will validate their requests, translate state/artifacts, emit audit events, and forward to the executor. The executor that mints a signed mandate and dispatches via `TaskDispatcher` is the missing piece — Phase 48D ships the contract, 48D.5 fills it in.
 
 ### Exit Criteria (Phase 48 overall)
 

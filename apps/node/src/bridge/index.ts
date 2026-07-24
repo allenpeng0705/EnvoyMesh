@@ -26,7 +26,7 @@ export { BridgeConfigSchema } from "./config.js";
 export { forwardToAgent, receiveFromAgent } from "./pipe.js";
 export { forwardAsyncMeshReply, resetBridgeAsyncReplyRateLimitForTests } from "./async-mesh-reply.js";
 
-const MAX_BRIDGE_BODY_BYTES = 64 * 1024;
+const MAX_BRIDGE_BODY_BYTES = 1 * 1024 * 1024; // 1 MiB — matches A2A relay cap (48D).
 
 export interface CreateBridgeOptions {
   config: Partial<BridgeConfig>;

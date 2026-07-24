@@ -351,3 +351,142 @@ describe("a2a-task-bridge: handleA2AHttpRequest", () => {
     expect(JSON.parse(res.body).jsonrpc).toBe("2.0");
   });
 });
+
+// ---------------------------------------------------------------------------
+// Security: owner-scoping (M1) + sanitized errors (M2) + Parts validation (M3)
+// ---------------------------------------------------------------------------
+
+describe("a2a-task-bridge: owner-scoping (security)", () => {
+  it("tasks/get passes ownerId to executor", async () => {
+    const executor = makeExecutor();
+    const bridge = createA2ATaskBridge({ bearerTokens: TOKENS, executor });
+    await bridge.handleRequest(jsonRpc("tasks/get", { id: "x" }), "Bearer tok-valid");
+    expect(executor.getTask).toHaveBeenCalledWith({ ownerId: "envoy:owner:abc", a2aTaskId: "x" });
+  });
+
+  it("tasks/cancel passes ownerId to executor", async () => {
+    const executor = makeExecutor();
+    const bridge = createA2ATaskBridge({ bearerTokens: TOKENS, executor });
+    await bridge.handleRequest(jsonRpc("tasks/cancel", { id: "x" }), "Bearer tok-valid");
+    expect(executor.cancelTask).toHaveBeenCalledWith({ ownerId: "envoy:owner:abc", a2aTaskId: "x" });
+  });
+
+  it("executor returning null for cross-owner task → 404", async () => {
+    const executor = makeExecutor({
+      // Executor enforces ownership: returns null because the task belongs
+      // to a different owner.
+      getTask: vi.fn(async () => null),
+    });
+    const bridge = createA2ATaskBridge({ bearerTokens: TOKENS, executor });
+    const res = await bridge.handleRequest(jsonRpc("tasks/get", { id: "x" }), "Bearer tok-valid");
+    expect(res.error?.code).toBe(A2A_JSONRPC_ERROR_CODES.TASK_NOT_FOUND);
+  });
+});
+
+describe("a2a-task-bridge: sanitized error messages (M2)", () => {
+  it("does NOT leak executor exception text to caller", async () => {
+    const executor = makeExecutor({
+      executeMessageSend: vi.fn(async () => {
+        throw new Error("internal path /secret/foo leaked to caller");
+      }),
+    });
+    const bridge = createA2ATaskBridge({ bearerTokens: TOKENS, executor });
+    const body = jsonRpc("message/send", {
+      message: { role: "user", parts: [{ kind: "text", text: "x" }] },
+    });
+    const res = await bridge.handleRequest(body, "Bearer tok-valid");
+    expect(res.error?.code).toBe(A2A_JSONRPC_ERROR_CODES.INTERNAL_ERROR);
+    expect(res.error?.message).toBe("Internal error");
+    expect(res.error?.message).not.toContain("/secret/foo");
+    expect(JSON.stringify(res)).not.toContain("/secret/foo");
+  });
+
+  it("does NOT leak file system paths in tasks/get errors", async () => {
+    const executor = makeExecutor({
+      getTask: vi.fn(async () => { throw new Error("ENOENT /home/owner/.envoymesh/secret"); }),
+    });
+    const bridge = createA2ATaskBridge({ bearerTokens: TOKENS, executor });
+    const res = await bridge.handleRequest(jsonRpc("tasks/get", { id: "x" }), "Bearer tok-valid");
+    expect(res.error?.message).not.toContain("/home/owner");
+    expect(res.error?.message).not.toContain(".envoymesh");
+  });
+});
+
+describe("a2a-task-bridge: inbound Parts validation (M3)", () => {
+  it("drops malformed parts and rejects empty result", async () => {
+    const executor = makeExecutor();
+    const bridge = createA2ATaskBridge({ bearerTokens: TOKENS, executor });
+    const body = jsonRpc("message/send", {
+      message: {
+        role: "user",
+        parts: [
+          { kind: "text" /* missing text field */ },
+          null,
+          { kind: "image" /* missing data + mimeType */ },
+        ],
+      },
+    });
+    const res = await bridge.handleRequest(body, "Bearer tok-valid");
+    expect(res.error?.code).toBe(A2A_JSONRPC_ERROR_CODES.INVALID_PARAMS);
+    expect(executor.executeMessageSend).not.toHaveBeenCalled();
+  });
+
+  it("rejects text part exceeding TEXT_MAX_CHARS", async () => {
+    const executor = makeExecutor();
+    const bridge = createA2ATaskBridge({ bearerTokens: TOKENS, executor });
+    const body = jsonRpc("message/send", {
+      message: {
+        role: "user",
+        parts: [{ kind: "text", text: "x".repeat(70_000) }],
+      },
+    });
+    const res = await bridge.handleRequest(body, "Bearer tok-valid");
+    expect(res.error?.code).toBe(A2A_JSONRPC_ERROR_CODES.INVALID_PARAMS);
+  });
+
+  it("rejects file part with both uri AND bytes", async () => {
+    const executor = makeExecutor();
+    const bridge = createA2ATaskBridge({ bearerTokens: TOKENS, executor });
+    const body = jsonRpc("message/send", {
+      message: {
+        role: "user",
+        parts: [{ kind: "file", file: { uri: "https://x.com/a", bytes: "abc" } }],
+      },
+    });
+    const res = await bridge.handleRequest(body, "Bearer tok-valid");
+    expect(res.error?.code).toBe(A2A_JSONRPC_ERROR_CODES.INVALID_PARAMS);
+  });
+
+  it("rejects file part with neither uri nor bytes", async () => {
+    const executor = makeExecutor();
+    const bridge = createA2ATaskBridge({ bearerTokens: TOKENS, executor });
+    const body = jsonRpc("message/send", {
+      message: {
+        role: "user",
+        parts: [{ kind: "file", file: { mimeType: "application/pdf" } }],
+      },
+    });
+    const res = await bridge.handleRequest(body, "Bearer tok-valid");
+    expect(res.error?.code).toBe(A2A_JSONRPC_ERROR_CODES.INVALID_PARAMS);
+  });
+
+  it("accepts a valid mixed parts list", async () => {
+    const executor = makeExecutor();
+    const bridge = createA2ATaskBridge({ bearerTokens: TOKENS, executor });
+    const body = jsonRpc("message/send", {
+      message: {
+        role: "user",
+        parts: [
+          { kind: "text", text: "hi" },
+          { kind: "data", data: { x: 1 } },
+          { kind: "file", file: { uri: "https://x.com/a.pdf", name: "a.pdf" } },
+        ],
+      },
+    });
+    const res = await bridge.handleRequest(body, "Bearer tok-valid");
+    expect(res.error).toBeUndefined();
+    expect(executor.executeMessageSend).toHaveBeenCalledTimes(1);
+    const call = (executor.executeMessageSend as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
+    expect(call.message.parts.length).toBe(3);
+  });
+});

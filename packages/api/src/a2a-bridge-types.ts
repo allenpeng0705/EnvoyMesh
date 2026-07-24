@@ -158,6 +158,18 @@ export interface A2AExecutorResult {
 }
 
 /**
+ * Inputs to owner-scoped task operations. The bridge always passes
+ * `{ ownerId, a2aTaskId }` so the executor can enforce task ownership
+ * (a valid bearer token only grants access to the bearer owner's tasks).
+ */
+export interface A2AOwnedTaskLookup {
+  /** Owner ID resolved from the bearer token. */
+  ownerId: string;
+  /** A2A Task ID. */
+  a2aTaskId: string;
+}
+
+/**
  * Pluggable executor that the host wires in. The bridge does not run
  * LLMs or talk to task stores itself — it delegates to the executor
  * for everything beyond JSON-RPC parsing, auth, and translation.
@@ -175,11 +187,21 @@ export interface A2ATaskBridgeExecutor {
    */
   executeMessageSend(input: A2AExecutorInput): Promise<A2AExecutorResult>;
 
-  /** Look up an existing task by its A2A ID. Returns null if unknown. */
-  getTask(a2aTaskId: string): Promise<A2AExecutorResult | null>;
+  /**
+   * Look up an existing task by its A2A ID. Returns null if unknown
+   * OR if the task belongs to a different owner. The executor MUST
+   * enforce task ownership — the bridge will surface a 404 to any
+   * caller asking for a task they don't own.
+   */
+  getTask(input: A2AOwnedTaskLookup): Promise<A2AExecutorResult | null>;
 
-  /** Cancel a task. Returns the final state. */
-  cancelTask(a2aTaskId: string): Promise<A2AExecutorResult>;
+  /**
+   * Cancel a task. Returns the final state. The executor MUST enforce
+   * task ownership; cancelling a task that belongs to a different
+   * owner should return `envoyState: "failed"` with a clear summary,
+   * NOT the cancelled state.
+   */
+  cancelTask(input: A2AOwnedTaskLookup): Promise<A2AExecutorResult>;
 }
 
 // ---------------------------------------------------------------------------

@@ -21,15 +21,16 @@ import type {
   A2AJsonRpcRequest,
   A2AJsonRpcResponse,
   A2AMethod,
+  A2AOwnedTaskLookup,
+  A2APart,
   A2ATask,
   A2ATaskBridgeExecutor,
   A2ATaskStatus,
 } from "@envoymesh/api";
 import type { AuditEvent } from "@envoymesh/local-store";
 import { A2A_JSONRPC_ERROR_CODES } from "@envoymesh/api";
-import { partsToEnvoyArtifacts } from "./a2a-artifact-map.js";
 import { artifactsToA2AParts } from "./a2a-artifact-map.js";
-import { fromA2AState, isA2ATerminal, toA2AState } from "./a2a-state-map.js";
+import { toA2AState } from "./a2a-state-map.js";
 
 // ---------------------------------------------------------------------------
 // Public options
@@ -186,6 +187,90 @@ export function createA2ATaskBridge(options: A2ATaskBridgeOptions): A2ATaskBridg
     };
   }
 
+  /**
+ * Validate an inbound A2A Part. Rejects malformed shapes before they
+ * reach the executor — the executor does not need to defend against
+ * `kind` typos or missing required fields.
+ *
+ * Per-part limits (TEXT_MAX_CHARS / DATA_MAX_BYTES / FILE_URI_MAX)
+ * prevent DoS via single huge payloads.
+ */
+const TEXT_MAX_CHARS = 64_000;
+const DATA_MAX_BYTES = 256 * 1024;
+const FILE_URI_MAX = 2048;
+
+function validatePart(part: unknown, index: number): A2APart | null {
+  if (!part || typeof part !== "object") return null;
+  const p = part as Record<string, unknown>;
+  const kind = p.kind;
+  if (kind === "text") {
+    if (typeof p.text !== "string" || p.text.length === 0) return null;
+    if (p.text.length > TEXT_MAX_CHARS) return null;
+    const out: A2APart = { kind: "text", text: p.text };
+    if (p.metadata && typeof p.metadata === "object" && !Array.isArray(p.metadata)) {
+      out.metadata = p.metadata as Record<string, unknown>;
+    }
+    return out;
+  }
+  if (kind === "data") {
+    if (!p.data || typeof p.data !== "object" || Array.isArray(p.data)) return null;
+    const dataStr = JSON.stringify(p.data);
+    if (dataStr.length > DATA_MAX_BYTES) return null;
+    const out: A2APart = { kind: "data", data: p.data as Record<string, unknown> };
+    if (p.metadata && typeof p.metadata === "object" && !Array.isArray(p.metadata)) {
+      out.metadata = p.metadata as Record<string, unknown>;
+    }
+    return out;
+  }
+  if (kind === "file") {
+    if (!p.file || typeof p.file !== "object") return null;
+    const f = p.file as Record<string, unknown>;
+    const file: { name?: string; mimeType?: string; uri?: string; bytes?: string } = {};
+    if (typeof f.name === "string") {
+      if (f.name.length > 256) return null;
+      file.name = f.name;
+    }
+    if (typeof f.mimeType === "string") {
+      if (f.mimeType.length > 256) return null;
+      file.mimeType = f.mimeType;
+    }
+    // A file part must have exactly one of uri or bytes.
+    const hasUri = typeof f.uri === "string" && f.uri.length > 0;
+    const hasBytes = typeof f.bytes === "string" && f.bytes.length > 0;
+    if (hasUri === hasBytes) return null; // both or neither
+    if (hasUri) {
+      const uri = f.uri as string;
+      if (uri.length > FILE_URI_MAX) return null;
+      file.uri = uri;
+    } else if (hasBytes) {
+      // Cap inline bytes — 4 MiB. Anything bigger should arrive via a
+      // URI, not inline base64.
+      const bytes = f.bytes as string;
+      if (bytes.length > 4 * 1024 * 1024) return null;
+      file.bytes = bytes;
+    }
+    const out: A2APart = { kind: "file", file };
+    if (p.metadata && typeof p.metadata === "object" && !Array.isArray(p.metadata)) {
+      out.metadata = p.metadata as Record<string, unknown>;
+    }
+    return out;
+  }
+  // Unknown kinds are silently dropped (forward-compat). Index is
+  // informational for future diagnostics.
+  void index;
+  return null;
+}
+
+/**
+ * Generic INTERNAL_ERROR response — does NOT leak executor exception
+ * text back to the caller. The detailed message is logged via the
+ * audit hook + stderr; the client sees a stable, generic error.
+ */
+function internalError(id: A2AJsonRpcRequest["id"], auditMsg: string): A2AJsonRpcResponse {
+  process.stderr.write(`[a2a-bridge] ${auditMsg}\n`);
+  return errorResponse(id, A2A_JSONRPC_ERROR_CODES.INTERNAL_ERROR, "Internal error");
+}
+
   async function dispatchMessageSend(
     req: A2AJsonRpcRequest,
     ownerId: string,
@@ -195,26 +280,30 @@ export function createA2ATaskBridge(options: A2ATaskBridgeOptions): A2ATaskBridg
     if (!message || typeof message !== "object" || !Array.isArray(message.parts)) {
       return errorResponse(req.id, A2A_JSONRPC_ERROR_CODES.INVALID_PARAMS, "params.message with parts[] is required");
     }
-    const parts = message.parts as Array<Record<string, unknown>>;
-    // Sanity-check parts shape — minimal guard; full validation is in the executor.
-    if (parts.length === 0) {
+    if (message.parts.length === 0) {
       return errorResponse(req.id, A2A_JSONRPC_ERROR_CODES.INVALID_PARAMS, "params.message.parts must be non-empty");
+    }
+    // Validate + filter each part. Malformed parts are dropped (forward-compat).
+    const validatedParts: A2APart[] = [];
+    for (let i = 0; i < message.parts.length; i++) {
+      const v = validatePart(message.parts[i], i);
+      if (v) validatedParts.push(v);
+    }
+    if (validatedParts.length === 0) {
+      return errorResponse(req.id, A2A_JSONRPC_ERROR_CODES.INVALID_PARAMS, "params.message.parts contained no valid parts");
     }
 
     const a2aTaskId = `a2a_${randomUUID()}`;
     const incomingMessage = {
       role: "user" as const,
-      parts: parts as unknown as A2ATask["history"] extends Array<infer H> ? H extends { parts: infer P } ? P : never : never,
+      parts: validatedParts,
       ...(typeof message.messageId === "string" ? { messageId: message.messageId } : {}),
       ...(typeof message.taskId === "string" ? { taskId: message.taskId } : {}),
       ...(typeof message.contextId === "string" ? { contextId: message.contextId } : {}),
-      ...(message.metadata && typeof message.metadata === "object" ? { metadata: message.metadata as Record<string, unknown> } : {}),
     };
-    const configuration = (params.configuration && typeof params.configuration === "object"
+    const configuration = (params.configuration && typeof params.configuration === "object" && !Array.isArray(params.configuration)
       ? (params.configuration as Record<string, unknown>)
       : undefined);
-
-    void partsToEnvoyArtifacts; // referenced for type completeness; executor does the mapping
 
     let execResult;
     try {
@@ -236,7 +325,7 @@ export function createA2ATaskBridge(options: A2ATaskBridgeOptions): A2ATaskBridg
         protocol: "a2a-v1.0",
         summary: `a2a bridge: message/send executor threw — ${msg}`,
       });
-      return errorResponse(req.id, A2A_JSONRPC_ERROR_CODES.INTERNAL_ERROR, `executor error: ${msg}`);
+      return internalError(req.id, `message/send executor threw for taskId=${a2aTaskId}: ${msg}`);
     }
 
     const task = buildTaskObject({
@@ -264,7 +353,10 @@ export function createA2ATaskBridge(options: A2ATaskBridgeOptions): A2ATaskBridg
     };
   }
 
-  async function dispatchTasksGet(req: A2AJsonRpcRequest): Promise<A2AJsonRpcResponse> {
+  async function dispatchTasksGet(
+    req: A2AJsonRpcRequest,
+    ownerId: string,
+  ): Promise<A2AJsonRpcResponse> {
     const params = req.params ?? {};
     const id = typeof params.id === "string" ? params.id : null;
     if (!id) {
@@ -272,10 +364,14 @@ export function createA2ATaskBridge(options: A2ATaskBridgeOptions): A2ATaskBridg
     }
     let result;
     try {
-      result = await executor.getTask(id);
+      // Owner-scoping: pass ownerId so the executor can refuse tasks
+      // belonging to other owners. A leaked taskId is useless without
+      // the matching bearer token + ownerId pair.
+      const lookup: A2AOwnedTaskLookup = { ownerId, a2aTaskId: id };
+      result = await executor.getTask(lookup);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      return errorResponse(req.id, A2A_JSONRPC_ERROR_CODES.INTERNAL_ERROR, `executor error: ${msg}`);
+      return internalError(req.id, `tasks/get executor threw for taskId=${id}: ${msg}`);
     }
     if (!result) {
       return errorResponse(req.id, A2A_JSONRPC_ERROR_CODES.TASK_NOT_FOUND, `task not found: ${id}`);
@@ -292,7 +388,10 @@ export function createA2ATaskBridge(options: A2ATaskBridgeOptions): A2ATaskBridg
     };
   }
 
-  async function dispatchTasksCancel(req: A2AJsonRpcRequest, ownerId: string): Promise<A2AJsonRpcResponse> {
+  async function dispatchTasksCancel(
+    req: A2AJsonRpcRequest,
+    ownerId: string,
+  ): Promise<A2AJsonRpcResponse> {
     const params = req.params ?? {};
     const id = typeof params.id === "string" ? params.id : null;
     if (!id) {
@@ -300,10 +399,11 @@ export function createA2ATaskBridge(options: A2ATaskBridgeOptions): A2ATaskBridg
     }
     let result;
     try {
-      result = await executor.cancelTask(id);
+      const lookup: A2AOwnedTaskLookup = { ownerId, a2aTaskId: id };
+      result = await executor.cancelTask(lookup);
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      return errorResponse(req.id, A2A_JSONRPC_ERROR_CODES.INTERNAL_ERROR, `executor error: ${msg}`);
+      return internalError(req.id, `tasks/cancel executor threw for taskId=${id}: ${msg}`);
     }
     await emitAudit({
       type: "task.handled",
@@ -354,7 +454,7 @@ export function createA2ATaskBridge(options: A2ATaskBridgeOptions): A2ATaskBridg
         case "message/send":
           return dispatchMessageSend(req, ownerId);
         case "tasks/get":
-          return dispatchTasksGet(req);
+          return dispatchTasksGet(req, ownerId);
         case "tasks/cancel":
           return dispatchTasksCancel(req, ownerId);
         default:
@@ -363,9 +463,8 @@ export function createA2ATaskBridge(options: A2ATaskBridgeOptions): A2ATaskBridg
     },
   };
 
-  // `fromA2AState` is referenced by the artifact-map; kept here as a
-  // no-op so module-shape analyzers see the import is used.
-  void fromA2AState;
+  // fromA2AState is intentionally not exported — the artifact map owns
+  // its own import surface.
 }
 
 // ---------------------------------------------------------------------------

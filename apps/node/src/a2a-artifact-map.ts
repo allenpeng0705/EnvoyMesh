@@ -202,9 +202,14 @@ export function a2aPartToEnvoyArtifact(part: A2APart): Artifact {
       };
     }
     case "data": {
-      // Detect the composite envelope we produce on outbound.
+      // Detect the composite envelope we produce on outbound. Use a
+      // strict discriminator on metadata so a third-party data part that
+      // happens to have `bundle`+`parts`+`aggregation` shape isn't
+      // misinterpreted as EnvoyMesh composite.
+      const envoyKind = readString(part.metadata, "envoyKind");
       const bundle = (part.data as Record<string, unknown>)?.bundle;
       if (
+        envoyKind === "composite" &&
         bundle && typeof bundle === "object" &&
         Array.isArray((bundle as Record<string, unknown>).parts) &&
         typeof (bundle as Record<string, unknown>).aggregation === "string"

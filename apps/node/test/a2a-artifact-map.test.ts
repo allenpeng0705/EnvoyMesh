@@ -241,7 +241,7 @@ describe("a2a-artifact-map: composite round-trip (outbound → inbound)", () => 
       ],
     };
 
-    // outbound — single DataPart with bundle envelope
+    // outbound — single DataPart with bundle envelope + envoyKind marker
     const outbound = envoyArtifactToPart(original, null);
     expect(outbound.kind).toBe("data");
 
@@ -253,6 +253,29 @@ describe("a2a-artifact-map: composite round-trip (outbound → inbound)", () => 
       expect(inbound.parts.length).toBe(1);
       expect(inbound.parts[0]?.subtaskId).toBe("s1");
       expect(inbound.parts[0]?.artifact.kind).toBe("text");
+    }
+  });
+
+  it("does NOT reconstruct composite from third-party data without envoyKind marker (M13)", () => {
+    // A third-party A2A client might happen to use a `bundle` key with
+    // `parts` + `aggregation`. Without the envoyKind discriminator this
+    // would be misinterpreted as an EnvoyMesh composite.
+    const hostilePart = {
+      kind: "data",
+      data: {
+        bundle: {
+          aggregation: "concatenate",
+          createdAt: "2026-01-01T00:00:00Z",
+          parts: [{ subtaskId: "x", workerPeerId: "p", workerOwnerId: "o", weight: 1, artifact: { kind: "text", content: "x" } }],
+        },
+      },
+      // NOTE: no `metadata.envoyKind === "composite"` marker
+    };
+    const inbound = a2aPartToEnvoyArtifact(hostilePart as unknown as Parameters<typeof a2aPartToEnvoyArtifact>[0]);
+    // Falls back to a structured artifact with default schemaRef.
+    expect(inbound.kind).toBe("structured");
+    if (inbound.kind === "structured") {
+      expect(inbound.schemaRef).toBe("a2a:data");
     }
   });
 });
