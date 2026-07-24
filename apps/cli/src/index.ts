@@ -282,10 +282,16 @@ async function relay(): Promise<number> {
 async function mcpServer(args: string[]): Promise<void> {
   // Spawn the MCP server adapter as a subprocess — it needs clean stdio
   // for the MCP JSON-RPC protocol (stdout must be protocol-only).
-  const { spawn } = await import("node:child_process");
+  //
+  // Args forwarded verbatim so callers can pass --bridge / --bridge-allow-remote.
+  // The adapter validates the URL on its own; we don't double-validate here.
   const child = spawn("npx", ["tsx", "apps/node/src/mcp-server-adapter.ts", ...args], {
-    stdio: "inherit",
-    cwd: process.cwd(),
+    // Pin cwd to the repo root so the relative `apps/node/src/...` path
+    // resolves regardless of where the user invoked `envoymesh mcp-server` from.
+    cwd: WS_ROOT,
+    // Pipe stderr to surface adapter logs; keep stdin/stdout direct so the
+    // MCP JSON-RPC stream is not interleaved with our own logging.
+    stdio: ["inherit", "inherit", "inherit"],
     env: process.env,
   });
   child.on("exit", (code) => {

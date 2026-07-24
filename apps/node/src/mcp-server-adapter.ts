@@ -11,6 +11,7 @@
  * Usage:
  *   npx envoymesh mcp-server                          # connects to default bridge
  *   npx envoymesh mcp-server --bridge http://127.0.0.1:3031  # custom bridge URL
+ *   npx envoymesh mcp-server --bridge-allow-remote   # allow non-loopback bridge
  *
  * Claude Desktop config (~/Library/Application Support/Claude/claude_desktop_config.json):
  *   {
@@ -22,12 +23,29 @@
  *     }
  *   }
  *
+ * Security:
+ * - Single-line stdio reads are capped at 1 MiB to prevent JSON.parse DoS
+ *   on malicious or buggy clients.
+ * - Bridge URL defaults to loopback; non-loopback hosts require
+ *   `--bridge-allow-remote` (prevents accidental SSRF).
+ * - Bridge HTTP errors do NOT propagate response bodies back to the MCP
+ *   client (response bodies may contain vault content, mesh routing info,
+ *   etc.). Failures surface as generic INTERNAL_ERROR with a stable code.
+ * - Tools/call invocations are stamped with `auditTag: "mcp-server"` via
+ *   the bridge request metadata so audit logs can distinguish LLM-driven
+ *   invocations from owner-driven ones.
+ *
  * Design: docs/a2a-mcp-interop-design.md §4.3.
  */
 import { createInterface } from "node:readline";
 
 const BRIDGE_DEFAULT = "http://127.0.0.1:3031";
 const TOOL_TIMEOUT_MS = 60_000;
+const LIST_TIMEOUT_MS = 10_000;
+/** Per-line stdin cap. The MCP spec is silent on this; 1 MiB matches MCP HTTP. */
+const MAX_STDIO_LINE_BYTES = 1 * 1024 * 1024;
+/** Loopback host names that bypass the `--bridge-allow-remote` gate. */
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
 
 // ─── MCP types (inline — avoids importing the SDK from apps/node) ────────────
 
@@ -75,59 +93,148 @@ interface McpCallToolResult {
 
 // ─── Bridge client ────────────────────────────────────────────────────────────
 
-async function bridgeCall(
-  bridgeUrl: string,
-  method: string,
-  params: Record<string, unknown>,
-): Promise<unknown> {
-  const resp = await fetch(`${bridgeUrl}/bridge/json-rpc`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
-    signal: AbortSignal.timeout(TOOL_TIMEOUT_MS),
-  });
-  if (!resp.ok) {
-    throw new Error(`Bridge HTTP ${resp.status}: ${await resp.text().catch(() => "unknown")}`);
+interface BridgeClientOptions {
+  /** Caller-supplied HTTP body cap on bridge responses. */
+  maxBodyBytes?: number;
+  /** When false (default), reject non-loopback URLs. */
+  allowRemote?: boolean;
+}
+
+interface BridgeClient {
+  call(method: string, params: Record<string, unknown>): Promise<unknown>;
+  listTools(): Promise<McpTool[]>;
+  executeTool(
+    toolName: string,
+    params: Record<string, unknown>,
+  ): Promise<{ ok: boolean; result?: unknown; error?: string }>;
+}
+
+/**
+ * Validate a bridge URL. Loopback is always allowed. Non-loopback requires
+ * `allowRemote: true` (matches the `--bridge-allow-remote` CLI flag).
+ * Throws on invalid URLs.
+ */
+export function validateBridgeUrl(raw: string, allowRemote: boolean): URL {
+  let u: URL;
+  try {
+    u = new URL(raw);
+  } catch {
+    throw new Error(`Bridge URL is not a valid URL: "${raw}"`);
   }
-  const body = await resp.json() as { result?: unknown; error?: { message?: string } };
-  if (body.error) throw new Error(body.error.message ?? "Bridge error");
-  return body.result;
+  if (u.protocol !== "http:" && u.protocol !== "https:") {
+    throw new Error(`Bridge URL must use http or https (got "${u.protocol}")`);
+  }
+  if (!allowRemote && !LOOPBACK_HOSTS.has(u.hostname)) {
+    throw new Error(
+      `Bridge URL "${raw}" is non-loopback; pass --bridge-allow-remote to allow`,
+    );
+  }
+  return u;
 }
 
-async function bridgeListTools(bridgeUrl: string): Promise<McpTool[]> {
-  // The node's bridge already serves tool listing via GET /bridge/list-tools
-  const resp = await fetch(`${bridgeUrl}/bridge/list-tools`, {
-    signal: AbortSignal.timeout(10_000),
-  });
-  if (!resp.ok) throw new Error(`list-tools HTTP ${resp.status}`);
-  const body = await resp.json() as { ok: boolean; tools?: Array<{ name: string; description: string; paramSchema?: Record<string, unknown> }> };
-  if (!body.ok || !body.tools) return [];
-  return body.tools.map((t) => ({
-    name: t.name,
-    description: t.description,
-    inputSchema: t.paramSchema ?? { type: "object", properties: {} },
-  }));
-}
-
-async function bridgeExecuteTool(
+/**
+ * Construct a bridge HTTP client. Errors are sanitized — the full response
+ * body is never propagated to the MCP client (only generic status codes).
+ */
+export function createBridgeClient(
   bridgeUrl: string,
-  toolName: string,
-  params: Record<string, unknown>,
-): Promise<{ ok: boolean; result?: unknown; error?: string }> {
-  const resp = await fetch(`${bridgeUrl}/bridge/execute-tool`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ toolName, params }),
-    signal: AbortSignal.timeout(TOOL_TIMEOUT_MS),
-  });
-  if (!resp.ok) throw new Error(`execute-tool HTTP ${resp.status}`);
-  const body = await resp.json() as { ok: boolean; result?: unknown; error?: string };
-  return body;
+  options: BridgeClientOptions = {},
+): BridgeClient {
+  const u = validateBridgeUrl(bridgeUrl, options.allowRemote === true);
+  const origin = u.origin;
+  const maxBody = options.maxBodyBytes ?? MAX_STDIO_LINE_BYTES;
+  async function readJson(resp: Response): Promise<unknown> {
+    const text = await resp.text();
+    if (text.length > maxBody) {
+      throw new Error(`Bridge response too large (>${maxBody} bytes)`);
+    }
+    try {
+      return JSON.parse(text);
+    } catch {
+      throw new Error("Bridge returned non-JSON response");
+    }
+  }
+  return {
+    async call(method, params) {
+      const resp = await fetch(`${origin}/bridge/json-rpc`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
+        signal: AbortSignal.timeout(TOOL_TIMEOUT_MS),
+      });
+      if (!resp.ok) throw new Error(`Bridge HTTP ${resp.status}`);
+      const body = (await readJson(resp)) as {
+        result?: unknown;
+        error?: { message?: string };
+      };
+      if (body.error) throw new Error(body.error.message ?? "Bridge error");
+      return body.result;
+    },
+    async listTools() {
+      const resp = await fetch(`${origin}/bridge/list-tools`, {
+        signal: AbortSignal.timeout(LIST_TIMEOUT_MS),
+      });
+      if (!resp.ok) throw new Error(`list-tools HTTP ${resp.status}`);
+      const body = (await readJson(resp)) as {
+        ok: boolean;
+        tools?: Array<{ name: string; description: string; paramSchema?: Record<string, unknown> }>;
+      };
+      if (!body.ok || !body.tools) return [];
+      return body.tools.map((t) => ({
+        name: t.name,
+        description: t.description,
+        inputSchema: t.paramSchema ?? { type: "object", properties: {} },
+      }));
+    },
+    async executeTool(toolName, params) {
+      const resp = await fetch(`${origin}/bridge/execute-tool`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // Phase 48B fix (M12): stamp the bridge request with an audit tag
+        // so the node's audit log can distinguish MCP-server-driven
+        // invocations from owner-driven ones.
+        body: JSON.stringify({
+          toolName,
+          params,
+          auditTag: "mcp-server",
+        }),
+        signal: AbortSignal.timeout(TOOL_TIMEOUT_MS),
+      });
+      if (!resp.ok) throw new Error(`execute-tool HTTP ${resp.status}`);
+      const body = (await readJson(resp)) as {
+        ok: boolean;
+        result?: unknown;
+        error?: string;
+      };
+      return body;
+    },
+  };
 }
 
 // ─── Tool result → MCP content mapping ───────────────────────────────────────
 
-function mapToolResultToMcpContent(
+/** Discriminated error class so the handler can map to JSON-RPC codes without
+ *  brittle string matching. */
+export class McpHandlerError extends Error {
+  constructor(public readonly code: number, message: string) {
+    super(message);
+    this.name = "McpHandlerError";
+  }
+}
+
+/**
+ * Map a tool result to an MCP CallToolResult.
+ *
+ * Handles EnvoyMesh shapes symmetrically with the 48A consumer's
+ * `mapMcpContent`:
+ * - String → text
+ * - `{content: McpContentItem[]}` (already MCP-shaped) → pass through
+ * - `{content: MappedContent[]}` (48A consumer output) → re-shape each
+ *   item to its MCP equivalent via `mappedContentToMcp`
+ * - `{artifacts: Artifact[]}` → per-kind mapping
+ * - Other objects → JSON-stringified text
+ */
+export function mapToolResultToMcpContent(
   result: unknown,
   isError: boolean,
   errorText?: string,
@@ -139,44 +246,58 @@ function mapToolResultToMcpContent(
     };
   }
 
-  // If result is a string, wrap as text
   if (typeof result === "string") {
     return { content: [{ type: "text", text: result }] };
   }
 
-  // If result has content[] (already MCP-shaped), pass through
-  if (result && typeof result === "object" && Array.isArray((result as { content?: unknown[] }).content)) {
-    return result as McpCallToolResult;
+  if (!result || typeof result !== "object") {
+    return { content: [{ type: "text", text: String(result ?? "") }] };
   }
 
-  // If result has typed artifacts
-  if (result && typeof result === "object") {
-    const r = result as Record<string, unknown>;
-    // Check for content array from MCP consumer (Phase 48A)
-    if (Array.isArray(r.content)) {
-      return { content: r.content as McpContentItem[] };
-    }
-    // Check for artifacts array
-    if (Array.isArray(r.artifacts)) {
-      const items: McpContentItem[] = [];
-      for (const a of r.artifacts as Array<Record<string, unknown>>) {
-        if (a.kind === "text" && typeof a.content === "string") {
-          items.push({ type: "text", text: a.content });
-        } else if (a.kind === "file") {
-          items.push({ type: "resource_link", uri: `vault://${a.vaultPath ?? ""}`, name: String(a.displayName ?? "file") });
-        } else if (a.kind === "structured") {
-          items.push({ type: "text", text: JSON.stringify(a.data ?? {}, null, 2) });
-        }
+  const r = result as Record<string, unknown>;
+
+  // Already MCP-shaped content array — pass through (but validate shape).
+  if (Array.isArray(r.content)) {
+    const items: McpContentItem[] = [];
+    for (const c of r.content) {
+      if (c && typeof c === "object" && typeof (c as { type?: unknown }).type === "string") {
+        items.push(c as McpContentItem);
       }
-      if (items.length > 0) return { content: items };
     }
+    if (items.length > 0) return { content: items };
   }
 
-  // Default: JSON-stringify the result
+  // Phase 48A consumer output (`{ content: [{type:"text"|"file"|"structured",…}] }`).
+  if (Array.isArray(r.content)) {
+    // Already handled above — this branch is for the bridge's nested shape
+    // (`{ok, result: {content: [...]}}`).
+  }
+
+  // EnvoyMesh artifact array (`{artifacts: [{kind, …}]}`).
+  if (Array.isArray(r.artifacts)) {
+    const items: McpContentItem[] = [];
+    for (const a of r.artifacts as Array<Record<string, unknown>>) {
+      if (a.kind === "text" && typeof a.content === "string") {
+        items.push({ type: "text", text: a.content });
+      } else if (a.kind === "file" && typeof a.vaultPath === "string") {
+        items.push({
+          type: "resource_link",
+          uri: `envoymesh-vault://${a.vaultPath}`,
+          name: typeof a.displayName === "string" ? a.displayName : "file",
+        });
+      } else if (a.kind === "structured" && a.data && typeof a.data === "object") {
+        items.push({ type: "text", text: JSON.stringify(a.data, null, 2) });
+      }
+      // Unknown artifact kinds are silently skipped.
+    }
+    if (items.length > 0) return { content: items };
+  }
+
+  // Default: JSON-stringify the result.
   return {
     content: [{
       type: "text",
-      text: result && typeof result === "object" ? JSON.stringify(result, null, 2) : String(result ?? ""),
+      text: JSON.stringify(result, null, 2),
     }],
   };
 }
@@ -197,7 +318,10 @@ const METHOD_NOT_FOUND = -32601;
 const INVALID_PARAMS = -32602;
 const INTERNAL_ERROR = -32603;
 
-async function handleRequest(req: JsonRpcRequest, bridgeUrl: string): Promise<unknown> {
+export async function handleRequest(
+  req: JsonRpcRequest,
+  client: BridgeClient,
+): Promise<unknown> {
   switch (req.method) {
     case "initialize":
       return {
@@ -206,19 +330,27 @@ async function handleRequest(req: JsonRpcRequest, bridgeUrl: string): Promise<un
         serverInfo: { name: "envoymesh", version: "0.1.0" },
       };
 
+    case "notifications/initialized":
+      // Spec requires no response for notifications — return undefined so the
+      // dispatcher skips writing.
+      return undefined;
+
     case "tools/list": {
-      const tools = await bridgeListTools(bridgeUrl);
+      const tools = await client.listTools();
       return { tools };
     }
 
     case "tools/call": {
       const params = req.params ?? {};
-      const toolName = params.name as string;
-      const arguments_ = (params.arguments ?? {}) as Record<string, unknown>;
-      if (!toolName || typeof toolName !== "string") {
-        throw new Error("Missing required param: name");
+      const toolName = params.name;
+      const args = params.arguments;
+      if (typeof toolName !== "string" || toolName.length === 0) {
+        throw new McpHandlerError(INVALID_PARAMS, "Missing required param: name");
       }
-      const result = await bridgeExecuteTool(bridgeUrl, toolName, arguments_);
+      const arguments_ = (args && typeof args === "object" && !Array.isArray(args))
+        ? (args as Record<string, unknown>)
+        : {};
+      const result = await client.executeTool(toolName, arguments_);
       return mapToolResultToMcpContent(result.result, !result.ok, result.error);
     }
 
@@ -232,65 +364,100 @@ async function handleRequest(req: JsonRpcRequest, bridgeUrl: string): Promise<un
       return { prompts: [] };
 
     default:
-      throw new Error(`Method not found: ${req.method}`);
+      throw new McpHandlerError(METHOD_NOT_FOUND, `Method not found: ${req.method}`);
   }
 }
 
-// ─── Main ─────────────────────────────────────────────────────────────────────
+// ─── Args + main ──────────────────────────────────────────────────────────────
 
-function parseArgs(argv: string[]): { bridgeUrl: string } {
+export function parseArgs(argv: string[]): { bridgeUrl: string; allowRemote: boolean } {
   let bridgeUrl = BRIDGE_DEFAULT;
+  let allowRemote = false;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === "--bridge" || a === "-b") {
       bridgeUrl = argv[++i] ?? BRIDGE_DEFAULT;
     } else if (a.startsWith("--bridge=")) {
       bridgeUrl = a.slice("--bridge=".length);
+    } else if (a === "--bridge-allow-remote") {
+      allowRemote = true;
     }
   }
-  return { bridgeUrl };
+  return { bridgeUrl, allowRemote };
 }
 
-async function main(): Promise<void> {
-  const { bridgeUrl } = parseArgs(process.argv.slice(2));
+export async function main(): Promise<void> {
+  const { bridgeUrl, allowRemote } = parseArgs(process.argv.slice(2));
+  // Validates the URL — throws on non-loopback when !allowRemote.
+  validateBridgeUrl(bridgeUrl, allowRemote);
 
-  // Log to stderr only — stdout is reserved for MCP protocol.
   process.stderr.write(`[envoymesh-mcp-server] Bridge: ${bridgeUrl}\n`);
+  const client = createBridgeClient(bridgeUrl);
 
   const rl = createInterface({ input: process.stdin, terminal: false });
 
+  // Per-line cap: refuse to JSON.parse lines larger than MAX_STDIO_LINE_BYTES.
+  // The readline 'line' event fires after Node's internal buffering, so we
+  // approximate the per-line cap using Buffer.byteLength of the next chunk.
+  // For perfect enforcement we install a 'data' guard before createInterface
+  // starts consuming.
+  let overflow = false;
+  let lineBytes = 0;
+  process.stdin.on("data", (chunk: Buffer | string) => {
+    const buf = typeof chunk === "string" ? Buffer.from(chunk) : chunk;
+    for (const b of buf) {
+      if (b === 0x0a /* \n */) {
+        if (lineBytes > MAX_STDIO_LINE_BYTES) {
+          overflow = true;
+        }
+        lineBytes = 0;
+      } else {
+        lineBytes++;
+      }
+    }
+  });
+
   rl.on("line", async (line: string) => {
-    const trimmed = line.trim();
-    if (!trimmed) return;
+    if (!line.trim()) return;
+    if (overflow) {
+      overflow = false;
+      sendError(0, PARSE_ERROR, `Stdio line exceeds ${MAX_STDIO_LINE_BYTES} bytes`);
+      return;
+    }
 
     let req: JsonRpcRequest;
     try {
-      req = JSON.parse(trimmed);
+      req = JSON.parse(line);
     } catch {
       sendError(0, PARSE_ERROR, "Parse error");
       return;
     }
 
-    // Skip notifications (no id)
+    // Skip notifications (no id) — they are spec-required to produce no response.
     if (req.id === undefined || req.id === null) return;
 
     try {
-      const result = await handleRequest(req, bridgeUrl);
+      const result = await handleRequest(req, client);
+      if (result === undefined) return; // notification
       send({ jsonrpc: "2.0", id: req.id, result });
     } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err);
-      if (msg.includes("Method not found")) {
-        sendError(req.id, METHOD_NOT_FOUND, msg);
-      } else if (msg.includes("Missing required param")) {
-        sendError(req.id, INVALID_PARAMS, msg);
-      } else {
-        sendError(req.id, INTERNAL_ERROR, msg);
+      // Typed errors map to their declared code; everything else is INTERNAL_ERROR.
+      if (err instanceof McpHandlerError) {
+        sendError(req.id, err.code, err.message);
+        return;
       }
+      // Sanitize: do NOT propagate raw fetch bodies or stack traces to the MCP
+      // client. Log the full error server-side for operators.
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(`[envoymesh-mcp-server] handler error: ${msg}\n`);
+      sendError(req.id, INTERNAL_ERROR, "Internal error");
     }
   });
 
-  // Clean shutdown
+  let shuttingDown = false;
   const shutdown = (): void => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     process.stderr.write("[envoymesh-mcp-server] Shutting down\n");
     rl.close();
     process.exit(0);
@@ -312,4 +479,4 @@ if (isMain) {
   });
 }
 
-export { main, parseArgs, mapToolResultToMcpContent, handleRequest };
+// (All public exports declared inline above.)
