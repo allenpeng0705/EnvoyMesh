@@ -51,6 +51,11 @@ import {
 } from "./chain-auto-orchestrator.js";
 import { createIterationState } from "./chain-iteration.js";
 import {
+  iterationSnapshotFromState,
+  populateIterationInState,
+  buildIterationProgressEvent,
+} from "./chain-iteration-orchestration.js";
+import {
   CHAIN_AUTO_EVALUATE_MS,
   CHAIN_DIRECT_AUTO_EVALUATE_MS,
   DEFAULT_CHAIN_DEFAULTS,
@@ -298,26 +303,7 @@ export function snapshotToResult(snap: ReturnType<typeof chainStateSnapshot>): C
   };
 }
 
-export function iterationSnapshotFromState(
-  state: ChainState,
-): NonNullable<ChainGetStateResult["iteration"]> | undefined {
-  const it = state.iteration;
-  if (!it) return undefined;
-  return {
-    round: it.round,
-    maxRounds: it.maxRounds,
-    extendsInRound: it.extendsInRound,
-    maxExtendsInRound: it.maxExtendsInRound,
-    waitingForOwner: it.waitingForOwner === true,
-    stopReason: it.stopReason,
-    drafts: it.drafts.map((d) => ({
-      round: d.round,
-      summary: d.summary,
-      judgeDecision: d.judge?.decision,
-      judgeReason: d.judge?.reason,
-    })),
-  };
-}
+// iterationSnapshotFromState is now imported from chain-iteration-orchestration.ts
 
 export function bidsBySubtask(
   state: ChainState,
@@ -1097,23 +1083,7 @@ export function _emitChainState(deps: ChainOrchestrationContext, chainId: string
   state.awardMode = chainSide.awardModes.get(chainId) ?? "direct";
   state.showCostUi = chainSide.showCostUi.get(chainId) ?? false;
   state.budgetWarningLevel = chainBudgetWarningLevel(runtime.state);
-  const it = runtime.state.iteration;
-  if (it) {
-    state.iteration = {
-      round: it.round,
-      maxRounds: it.maxRounds,
-      extendsInRound: it.extendsInRound,
-      maxExtendsInRound: it.maxExtendsInRound,
-      waitingForOwner: it.waitingForOwner === true,
-      stopReason: it.stopReason,
-      drafts: it.drafts.map((d) => ({
-        round: d.round,
-        summary: d.summary,
-        judgeDecision: d.judge?.decision,
-        judgeReason: d.judge?.reason,
-      })),
-    };
-  }
+  populateIterationInState(runtime, state);
   deps.emit("chain:state", state);
 }
 
@@ -1129,23 +1099,9 @@ export function _emitChainIteration(
   },
 ): void {
   const runtime = deps.getChainStore().getRuntime(chainId);
-  const it = runtime?.state.iteration;
-  if (!it) return;
   const observerPeerId = deps.getChainSideState().iterationObservers.get(chainId);
-  const event: import("@envoymesh/api").ChainIterationProgressEvent = {
-    chainId,
-    phase,
-    round: it.round,
-    maxRounds: it.maxRounds,
-    extendsInRound: it.extendsInRound,
-    maxExtendsInRound: it.maxExtendsInRound,
-    waitingForOwner: it.waitingForOwner === true,
-    stopReason: it.stopReason,
-    judgeDecision: extra?.judgeDecision ?? it.drafts.at(-1)?.judge?.decision,
-    judgeReason: extra?.judgeReason ?? it.drafts.at(-1)?.judge?.reason,
-    observerPeerId,
-    summary: extra?.summary,
-  };
+  const event = buildIterationProgressEvent(runtime, chainId, phase, observerPeerId, extra);
+  if (!event) return;
   deps.emit("chain:iteration", event);
   void _appendChainAudit(deps, {
     type: "chain.iteration.progress",
@@ -1153,7 +1109,7 @@ export function _emitChainIteration(
     intent: "task.chain.merge",
     correlationId: chainId,
     remotePeerId: observerPeerId,
-    summary: `phase=${phase} round=${it.round}/${it.maxRounds}${extra?.summary ? ` ${extra.summary}` : ""}`,
+    summary: `phase=${phase} round=${event.round}/${event.maxRounds}${extra?.summary ? ` ${extra.summary}` : ""}`,
   });
 }
 
