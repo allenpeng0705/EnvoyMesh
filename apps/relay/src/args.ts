@@ -44,6 +44,16 @@ export interface RelayArgs {
   logMaxBytes: number;
   /** Delete rotated log files older than this many days. Default 7. */
   logRetainDays: number;
+  /** Phase 48C — A2A Agent Card Bridge. When true, the relay publishes
+   *  an A2A v1.0 Agent Card at /.well-known/agent-card.json so external
+   *  A2A clients (LangChain, Salesforce, etc.) can discover the agent.
+   *  Default: false. */
+  a2aBridgeEnabled: boolean;
+  /** Public gateway URL where the A2A JSON-RPC endpoint is reachable
+   *  (e.g. "https://relay.example.com:15432"). Used as the URL field
+   *  in supportedInterfaces. If unset, falls back to the relay's
+   *  HTTP host:port. */
+  a2aBridgeGatewayUrl: string | null;
 }
 
 /**
@@ -130,6 +140,8 @@ export function parseRelayArgs(argv: string[]): RelayArgs {
     logMaxLines: 2000,
     logMaxBytes: 10 * 1024 * 1024,
     logRetainDays: 7,
+    a2aBridgeEnabled: false,
+    a2aBridgeGatewayUrl: null,
   };
 
   // Apply environment variables FIRST. CLI args override them below.
@@ -213,6 +225,10 @@ export function parseRelayArgs(argv: string[]): RelayArgs {
       args.logMaxBytes = parsePositiveInt("--log-max-bytes", getValue(argv, ++i, arg)) ?? args.logMaxBytes;
     } else if (arg === "--log-retain-days") {
       args.logRetainDays = parsePositiveInt("--log-retain-days", getValue(argv, ++i, arg)) ?? args.logRetainDays;
+    } else if (arg === "--a2a-bridge") {
+      args.a2aBridgeEnabled = true;
+    } else if (arg === "--a2a-gateway-url") {
+      args.a2aBridgeGatewayUrl = getValue(argv, ++i, arg);
     } else if (arg === "--help" || arg === "-h") {
       printHelp();
       process.exit(0);
@@ -334,6 +350,16 @@ function applyEnvVars(args: RelayArgs): void {
         process.env.ENVOYMESH_RELAY_LOG_RETAIN_DAYS,
       ) ?? args.logRetainDays;
   }
+  if (process.env.ENVOYMESH_A2A_BRIDGE !== undefined) {
+    args.a2aBridgeEnabled = parseBoolean(
+      "ENVOYMESH_A2A_BRIDGE",
+      process.env.ENVOYMESH_A2A_BRIDGE,
+    );
+  }
+  const envA2aGateway = process.env.ENVOYMESH_A2A_GATEWAY_URL?.trim();
+  if (envA2aGateway) {
+    args.a2aBridgeGatewayUrl = envA2aGateway;
+  }
 }
 
 function getValue(argv: string[], index: number, flag: string): string {
@@ -418,6 +444,14 @@ Options:
                          Env: ENVOYMESH_RELAY_HOP_TIMEOUT_MS
   --relay-max-outbound-stop-streams <n>  Override max simultaneous STOP streams.
                          Env: ENVOYMESH_RELAY_MAX_OUTBOUND_STOP_STREAMS
+  --a2a-bridge          Publish A2A v1.0 Agent Card at /.well-known/agent-card.json
+                         so external A2A clients (LangChain, Salesforce, etc.)
+                         can discover this relay. Default: off.
+                         Env: ENVOYMESH_A2A_BRIDGE (1/0)
+  --a2a-gateway-url <url>  Public URL where A2A JSON-RPC is reachable.
+                         Used as the supportedInterfaces[0].url field.
+                         If unset, falls back to http://<host>:<httpPort>.
+                         Env: ENVOYMESH_A2A_GATEWAY_URL
   --help, -h            Show this help.
 
 Example:

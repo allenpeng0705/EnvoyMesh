@@ -967,6 +967,53 @@ try {
               error: inspectErr instanceof Error ? inspectErr.message : String(inspectErr),
             }));
           }
+        } else if (pathname === "/.well-known/agent-card.json") {
+          // Phase 48C — A2A Agent Card Bridge. Publishes the relay's
+          // Agent Card in A2A v1.0 format so external A2A clients can
+          // discover this EnvoyMesh agent.
+          // Opt-in via --a2a-bridge flag or ENVOYMESH_A2A_BRIDGE=1.
+          if (!args.a2aBridgeEnabled) {
+            res.writeHead(404);
+            res.end();
+          } else {
+            const gatewayUrl = args.a2aBridgeGatewayUrl ??
+              `http://${req.headers.host ?? "localhost:" + args.httpPort}`;
+            const a2aCard = {
+              name: `EnvoyMesh Relay (${mesh.peerId.slice(0, 12)}…)`,
+              description: "EnvoyMesh circuit relay and discovery node. Provides connectivity for P2P agent mesh; does not run LLMs.",
+              version: "0.1.0",
+              supportedInterfaces: [{
+                protocolVersion: "1.0",
+                protocolBinding: "jsonrpc",
+                url: gatewayUrl,
+              }],
+              capabilities: { streaming: false, pushNotifications: false },
+              skills: [{
+                id: "circuit-relay",
+                name: "Circuit Relay",
+                description: "NAT traversal via libp2p circuit-relay-v2",
+                tags: ["relay", "connectivity", "libp2p"],
+              }],
+              defaultInputModes: ["application/json"],
+              defaultOutputModes: ["application/json"],
+              securitySchemes: {
+                bearer: { type: "http", scheme: "bearer" },
+              },
+              security: [{ bearer: [] }],
+              provider: { name: "EnvoyMesh" },
+              metadata: {
+                peerId: mesh.peerId,
+                multiaddrs: mesh.multiaddrs.map(String),
+                rosterSize: relayRoster.size(),
+              },
+            };
+            res.writeHead(200, {
+              "Content-Type": "application/json",
+              "Cache-Control": "public, max-age=300",
+              "Access-Control-Allow-Origin": "*",
+            });
+            res.end(JSON.stringify(a2aCard, null, 2));
+          }
         } else {
           res.writeHead(404);
           res.end();

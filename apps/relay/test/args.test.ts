@@ -238,4 +238,45 @@ describe("parseRelayArgs", () => {
     expect(env.adminPassword).toBe("env-pw");
     expect(env.logMaxLines).toBe(50);
   });
+
+  it("defaults a2aBridgeEnabled=false and a2aBridgeGatewayUrl=null", () => {
+    // The A2A Agent Card bridge is opt-in. The relay must NOT advertise
+    // an Agent Card by default — operators turn it on explicitly.
+    const args = parseRelayArgs([]);
+    expect(args.a2aBridgeEnabled).toBe(false);
+    expect(args.a2aBridgeGatewayUrl).toBeNull();
+  });
+
+  it("enables the A2A bridge via --a2a-bridge flag", () => {
+    const args = parseRelayArgs(["--a2a-bridge"]);
+    expect(args.a2aBridgeEnabled).toBe(true);
+  });
+
+  it("sets the gateway URL via --a2a-gateway-url flag", () => {
+    const args = parseRelayArgs([
+      "--a2a-bridge",
+      "--a2a-gateway-url",
+      "https://relay.example.com:15432",
+    ]);
+    expect(args.a2aBridgeEnabled).toBe(true);
+    expect(args.a2aBridgeGatewayUrl).toBe("https://relay.example.com:15432");
+  });
+
+  it("reads ENVOYMESH_A2A_BRIDGE=1 as enabling the bridge", () => {
+    process.env.ENVOYMESH_A2A_BRIDGE = "1";
+    const args = parseRelayArgs([]);
+    expect(args.a2aBridgeEnabled).toBe(true);
+  });
+
+  it("reads ENVOYMESH_A2A_BRIDGE=0 as keeping the bridge disabled", () => {
+    process.env.ENVOYMESH_A2A_BRIDGE = "0";
+    const args = parseRelayArgs([]);
+    expect(args.a2aBridgeEnabled).toBe(false);
+  });
+
+  it("reads ENVOYMESH_A2A_GATEWAY_URL as the gateway URL", () => {
+    process.env.ENVOYMESH_A2A_GATEWAY_URL = "https://env-var-relay.example.com";
+    const args = parseRelayArgs([]);
+    expect(args.a2aBridgeGatewayUrl).toBe("https://env-var-relay.example.com");
+  });
 });

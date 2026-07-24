@@ -259,6 +259,16 @@ export interface PersistedNodeConfig {
     env?: Record<string, string>;
     requestTimeoutMs?: number;
   }>;
+
+  /** Phase 48C — A2A Agent Card Bridge. When enabled, publishes the
+   *  node's Agent Card at /.well-known/agent-card.json in A2A v1.0
+   *  format so external A2A clients can discover this agent. */
+  a2aBridge?: {
+    enabled: boolean;
+    /** Public gateway URL where the A2A JSON-RPC endpoint is reachable
+     *  (e.g. "https://relay.example.com:15432"). */
+    gatewayUrl?: string;
+  };
 }
 
 export interface NodeConfigStore {
