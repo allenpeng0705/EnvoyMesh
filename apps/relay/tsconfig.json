@@ -11,6 +11,7 @@
     { "path": "../../packages/protocol" },
     { "path": "../../packages/identity" },
     { "path": "../../packages/bonds" },
-    { "path": "../../packages/network" }
+    { "path": "../../packages/network" },
+    { "path": "../../packages/api" }
   ]
 }

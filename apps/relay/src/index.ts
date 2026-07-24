@@ -59,6 +59,7 @@ import { mergeRelayLookupResponses } from "./relay-lookup-response-merge.js";
 import { loadOrCreateRelayControlIdentity } from "./relay-control-identity.js";
 import { createRelayMetrics } from "./relay-metrics.js";
 import { handleA2AJsonRpcProxy, type A2ABearerTokenEntry } from "./a2a-jsonrpc-proxy.js";
+import { handleA2ARelayAgentCardRequest } from "@envoymesh/api";
 import {
   buildRelayVersionReport,
   buildRelayProtocolReport,
@@ -1008,43 +1009,27 @@ try {
             res.writeHead(404);
             res.end();
           } else {
+            // SECURITY: do NOT fall back to req.headers.host for the
+            // gateway URL — a malicious Host header would otherwise
+            // cause the published card to point clients at attacker-
+            // controlled servers. Require --a2a-gateway-url (or
+            // ENVOYMESH_A2A_GATEWAY_URL) to be set; if unset, fall
+            // back to a safe loopback URL.
             const gatewayUrl = args.a2aBridgeGatewayUrl ??
-              `http://${req.headers.host ?? "localhost:" + args.httpPort}`;
-            const a2aCard = {
-              name: `EnvoyMesh Relay (${mesh.peerId.slice(0, 12)}…)`,
-              description: "EnvoyMesh circuit relay and discovery node. Provides connectivity for P2P agent mesh; does not run LLMs.",
-              version: "0.1.0",
-              supportedInterfaces: [{
-                protocolVersion: "1.0",
-                protocolBinding: "jsonrpc",
-                url: gatewayUrl,
-              }],
-              capabilities: { streaming: false, pushNotifications: false },
-              skills: [{
-                id: "circuit-relay",
-                name: "Circuit Relay",
-                description: "NAT traversal via libp2p circuit-relay-v2",
-                tags: ["relay", "connectivity", "libp2p"],
-              }],
-              defaultInputModes: ["application/json"],
-              defaultOutputModes: ["application/json"],
-              securitySchemes: {
-                bearer: { type: "http", scheme: "bearer" },
-              },
-              security: [{ bearer: [] }],
-              provider: { name: "EnvoyMesh" },
-              metadata: {
+              `http://127.0.0.1:${args.httpPort}`;
+            // Delegate to the shared builder so the card shape can't
+            // drift from the node-side builder.
+            handleA2ARelayAgentCardRequest(
+              req,
+              res,
+              {
                 peerId: mesh.peerId,
                 multiaddrs: mesh.multiaddrs.map(String),
                 rosterSize: relayRoster.size(),
               },
-            };
-            res.writeHead(200, {
-              "Content-Type": "application/json",
-              "Cache-Control": "public, max-age=300",
-              "Access-Control-Allow-Origin": "*",
-            });
-            res.end(JSON.stringify(a2aCard, null, 2));
+              gatewayUrl,
+              // exposeOperational defaults to false — see security comment.
+            );
           }
         } else if (pathname === "/.well-known/a2a/jsonrpc") {
           // Phase 48D — A2A Task Bridge. External A2A clients POST

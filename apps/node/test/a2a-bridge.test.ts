@@ -88,19 +88,20 @@ describe("a2a-bridge: toA2AAgentCard", () => {
     ]);
   });
 
-  it("emits bearer security scheme", () => {
+  it("emits Bearer security scheme (capitalized per RFC 9110)", () => {
     const card = toA2AAgentCard(BASE_ENVOY_CARD, "https://relay.example.com");
     expect(card.securitySchemes).toEqual({
-      bearer: { type: "http", scheme: "bearer" },
+      Bearer: { type: "http", scheme: "bearer" },
     });
-    expect(card.security).toEqual([{ bearer: [] }]);
+    expect(card.security).toEqual([{ Bearer: [] }]);
   });
 
-  it("includes ownerId + nodeProfile + agentNetworkProfile in metadata", () => {
+  it("includes x-envoymesh-* keys in metadata (no leaked plaintext ownerId)", () => {
     const card = toA2AAgentCard(BASE_ENVOY_CARD, "https://relay.example.com");
-    expect(card.metadata?.ownerId).toBe(BASE_ENVOY_CARD.ownerId);
-    expect(card.metadata?.nodeProfile).toBe("home-desktop");
-    expect((card.metadata?.agentNetworkProfile as Record<string, unknown> | undefined)?.strengths)
+    expect(card.metadata?.["x-envoymesh-nodeProfile"]).toBe("home-desktop");
+    expect(card.metadata?.["x-envoymesh-ownerId"]).toBe(BASE_ENVOY_CARD.ownerId);
+    expect(card.description).not.toContain(BASE_ENVOY_CARD.ownerId);
+    expect((card.metadata?.["x-envoymesh-agentNetworkProfile"] as Record<string, unknown> | undefined)?.strengths)
       .toEqual(["chat", "rust"]);
   });
 
@@ -123,11 +124,11 @@ describe("a2a-bridge: toA2AAgentCard", () => {
     expect(card.description).toBe("My custom description");
   });
 
-  it("falls back to default description with ownerId slice", () => {
+  it("falls back to default description (without ownerId leakage)", () => {
     const card = toA2AAgentCard(BASE_ENVOY_CARD, "https://relay.example.com");
     expect(card.description).toContain("EnvoyMesh agent node");
     expect(card.description).toContain("home-desktop");
-    expect(card.description).toContain(BASE_ENVOY_CARD.ownerId.slice(0, 20));
+    expect(card.description).not.toContain(BASE_ENVOY_CARD.ownerId);
   });
 
   it("handles agentNetworkProfile absent", () => {
@@ -182,8 +183,21 @@ describe("a2a-bridge: handleA2AAgentCardRequest", () => {
       "https://relay.example.com",
     );
     expect(res.status).toBe("405");
-    expect(res.headers["Allow"]).toBe("GET");
+    expect(res.headers["Allow"]).toBe("GET, OPTIONS");
     expect(JSON.parse(res.body).error).toMatch(/method/i);
+  });
+
+  it("returns 204 + CORS headers on OPTIONS preflight", async () => {
+    const res = mockRes();
+    await handleA2AAgentCardRequest(
+      { method: "OPTIONS", url: "/.well-known/agent-card.json" },
+      res,
+      BASE_ENVOY_CARD,
+      "https://relay.example.com",
+    );
+    expect(res.status).toBe("204");
+    expect(res.headers["Access-Control-Allow-Origin"]).toBe("*");
+    expect(res.headers["Access-Control-Allow-Methods"]).toBe("GET, OPTIONS");
   });
 
   it("returns 503 when envoyCard is null (node not initialized)", async () => {

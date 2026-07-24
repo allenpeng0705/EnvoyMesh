@@ -25,6 +25,8 @@ const VARS = [
   "ENVOYMESH_RELAY_LOG_MAX_LINES",
   "ENVOYMESH_RELAY_LOG_MAX_BYTES",
   "ENVOYMESH_RELAY_LOG_RETAIN_DAYS",
+  "ENVOYMESH_A2A_BRIDGE",
+  "ENVOYMESH_A2A_GATEWAY_URL",
 ] as const;
 const SAVED_ENV: Record<string, string | undefined> = {};
 

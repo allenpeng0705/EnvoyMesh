@@ -228,7 +228,19 @@ export function parseRelayArgs(argv: string[]): RelayArgs {
     } else if (arg === "--a2a-bridge") {
       args.a2aBridgeEnabled = true;
     } else if (arg === "--a2a-gateway-url") {
-      args.a2aBridgeGatewayUrl = getValue(argv, ++i, arg);
+      const rawUrl = getValue(argv, ++i, arg);
+      // Validate the URL — operators are warned (not rejected) on parse
+      // failure so a typo at startup doesn't crash a long-running relay.
+      try {
+        const u = new URL(rawUrl);
+        if (u.protocol !== "http:" && u.protocol !== "https:") {
+          throw new Error(`unsupported scheme "${u.protocol}"`);
+        }
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        console.warn(`[relay] --a2a-gateway-url is not a valid http(s) URL: ${msg}`);
+      }
+      args.a2aBridgeGatewayUrl = rawUrl;
     } else if (arg === "--help" || arg === "-h") {
       printHelp();
       process.exit(0);

@@ -136,6 +136,8 @@ export type { ProfileCapabilityEntry } from "./profile-capabilities.js";
 export * from "./web-content-default-templates.js";
 /** Phase 48D — A2A Task Bridge types (JSON-RPC envelope + executor interface). */
 export * from "./a2a-bridge-types.js";
+/** Phase 48C — Shared A2A v1.0 Agent Card types + builders (node + relay). */
+export * from "./a2a-agent-card.js";
 /** Explicit export: Social UI imports these; keep browser-safe (no node-only deps). */
 export {
   mergeGroupDeliveryAck,
