@@ -247,6 +247,18 @@ export interface PersistedNodeConfig {
   /** ISO timestamp of the last attempt start (whether it succeeded or
    *  failed). Useful for the UI to show "last tried X minutes ago". */
   setupSponsorFriendLastAttemptAt?: string;
+
+  /** Phase 48A — MCP Tool Consumer. Configures external MCP servers
+   *  whose tools become callable via mesh.mcp.call_tool. */
+  mcpConsumers?: Array<{
+    name: string;
+    transport: "stdio" | "http";
+    command?: string;
+    args?: string[];
+    url?: string;
+    env?: Record<string, string>;
+    requestTimeoutMs?: number;
+  }>;
 }
 
 export interface NodeConfigStore {

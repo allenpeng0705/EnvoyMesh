@@ -448,6 +448,7 @@ import { forwardToAgent, receiveFromAgent } from "./bridge/index.js";
 import type { BridgeIdentity } from "./bridge/pipe.js";
 
 import { executeTool, type MeshToolContext } from "./tool-registry.js";
+import { createMcpConsumerManager } from "./mcp-client-adapter.js";
 import {
   buildFriendAutopilotActivityRecord,
   runFriendAutopilotPass,
@@ -7453,6 +7454,10 @@ class NodeServiceImpl implements NodeService {
           path: params.vaultRelativePath,
           sensitivity: params.sensitivity,
         }),
+      // Phase 48A — MCP Tool Consumer. Create manager if consumers are configured.
+      mcpConsumerManager: config?.mcpConsumers?.length
+        ? createMcpConsumerManager(config.mcpConsumers)
+        : undefined,
     };
   }
 

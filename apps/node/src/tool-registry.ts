@@ -938,6 +938,42 @@ export class ToolRegistry {
       isMeshTool: false,
     });
 
+    // Phase 48A — MCP Tool Consumer.
+    this.register({
+      name: "mesh.mcp.list_tools",
+      description:
+        "List available tools from configured MCP (Model Context Protocol) servers. " +
+        "Pass serverName to filter to one server. Returns tool names and descriptions.",
+      paramSchema: {
+        type: "object",
+        properties: {
+          serverName: { type: "string", description: "Optional: filter to one MCP server by name" },
+        },
+      },
+      sensitivityCeiling: "public",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
+    this.register({
+      name: "mesh.mcp.call_tool",
+      description:
+        "Call a tool on a configured MCP server. Returns typed content items (text, file, structured). " +
+        "Use mesh.mcp.list_tools first to discover available tools.",
+      paramSchema: {
+        type: "object",
+        properties: {
+          serverName: { type: "string", description: "MCP server name from node-config mcpConsumers" },
+          toolName: { type: "string", description: "Tool name from mesh.mcp.list_tools" },
+          arguments: { type: "object", description: "Tool arguments as key-value pairs" },
+        },
+        required: ["serverName", "toolName"],
+      },
+      sensitivityCeiling: "public",
+      requiresApproval: false,
+      isMeshTool: false,
+    });
+
     this.register({
       name: "mesh.escalate",
       description: "Escalate a pending item with a reason (low confidence, emotional content, etc.)",
@@ -1387,6 +1423,8 @@ export interface MeshToolContext {
     vaultRelativePath: string;
     sensitivity: "public" | "friends" | "private";
   }) => Promise<void>;
+  /** Phase 48A — MCP Tool Consumer. Undefined if no consumers configured. */
+  mcpConsumerManager?: import("./mcp-client-adapter.js").McpConsumerManager;
 }
 
 /**
@@ -2380,6 +2418,63 @@ export async function executeTool(
           geoSearchTopics,
           geoTagHashes,
         },
+        toolName,
+        correlationId,
+        latencyMs: Date.now() - startTime,
+      };
+    } else if (toolName === "mesh.mcp.list_tools") {
+      // Phase 48A — MCP Tool Consumer: list tools from configured servers.
+      const serverName = typeof params.serverName === "string" ? params.serverName : undefined;
+      const mgr = context.mcpConsumerManager;
+      if (!mgr) {
+        return {
+          ok: false,
+          error: "No MCP consumers configured. Add 'mcpConsumers' to node-config.json.",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const result = await mgr.listMcpTools(serverName);
+      return {
+        ok: result.ok,
+        result: result.ok ? { tools: result.tools } : undefined,
+        error: result.error,
+        toolName,
+        correlationId,
+        latencyMs: Date.now() - startTime,
+      };
+    } else if (toolName === "mesh.mcp.call_tool") {
+      // Phase 48A — MCP Tool Consumer: call a tool on a configured server.
+      const serverName = typeof params.serverName === "string" ? params.serverName : "";
+      const mcpToolName = typeof params.toolName === "string" ? params.toolName : "";
+      const mcpArgs = (params.arguments && typeof params.arguments === "object" && !Array.isArray(params.arguments))
+        ? params.arguments as Record<string, unknown>
+        : {};
+      if (!serverName || !mcpToolName) {
+        return {
+          ok: false,
+          error: "Missing required params: serverName and toolName",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const mgr = context.mcpConsumerManager;
+      if (!mgr) {
+        return {
+          ok: false,
+          error: "No MCP consumers configured. Add 'mcpConsumers' to node-config.json.",
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+        };
+      }
+      const result = await mgr.callMcpTool(serverName, mcpToolName, mcpArgs);
+      return {
+        ok: result.ok,
+        result: result.ok ? { content: result.content, structuredContent: result.structuredContent } : undefined,
+        error: result.error,
         toolName,
         correlationId,
         latencyMs: Date.now() - startTime,
