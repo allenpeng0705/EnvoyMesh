@@ -1432,8 +1432,17 @@ export interface NodeServiceEvents {
   /** Mesh/libp2p is up — safe to warm contacts and send chat. */
   "node:ready": { timestamp: number };
 
-  // Config events
-  "config:updated": { autonomousKillSwitch: boolean; autonomousPolicies: readonly AutonomousPolicy[]; chatAssistEnabled: boolean; modelProviders: ModelProviderConfig; aiSettings?: AiSettings; contactAiPreferences: ContactAiPreferences[] };
+  // Config events — emitted after updateNodeConfig so index.ts runtime caches stay fresh
+  "config:updated": {
+    autonomousKillSwitch: boolean;
+    autonomousPolicies: readonly AutonomousPolicy[];
+    chatAssistEnabled: boolean;
+    modelProviders: ModelProviderConfig;
+    aiSettings?: AiSettings;
+    contactAiPreferences: ContactAiPreferences[];
+    trustModeEnabled?: boolean;
+    knowledgeSyndicationMaxSensitivity?: "public" | "friends" | "private";
+  };
 
   // Paired-mode bootstrap events (mobile only, but harmless for the desktop) —
   // emitted by the bootstrap that runs after a successful home pairing, refreshing

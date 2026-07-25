@@ -361,6 +361,49 @@ let currentContactAiPrefs: Map<
   }
 > = new Map();
 
+function applyRuntimeConfigCaches(input: {
+  autonomousKillSwitch?: boolean | null;
+  autonomousPolicies?: readonly AutonomousPolicy[] | null;
+  chatAssistEnabled?: boolean | null;
+  modelProviders: ModelProviderConfig;
+  aiSettings?: AiSettings;
+  contactAiPreferences?: readonly ContactAiPreferences[] | null;
+  trustModeEnabled?: boolean | null;
+  knowledgeSyndicationMaxSensitivity?:
+    | import("@envoymesh/api").KnowledgeSyndicationSensitivity
+    | null;
+}): void {
+  currentModelProviders = input.modelProviders;
+  currentChatAssistEnabled =
+    process.env.ENVOY_CHAT_ASSIST_ENABLED === "true"
+      ? true
+      : (input.chatAssistEnabled ?? false);
+  currentAutonomousKillSwitch = input.autonomousKillSwitch ?? false;
+  currentAutonomousPolicies = input.autonomousPolicies ?? [];
+  currentTrustModeEnabled = input.trustModeEnabled ?? false;
+  currentKnowledgeSyndicationMaxSensitivity =
+    input.knowledgeSyndicationMaxSensitivity ?? undefined;
+  currentAiSettings = input.aiSettings;
+  currentContactAiPrefs = new Map(
+    (input.contactAiPreferences ?? []).map((p: ContactAiPreferences) => [
+      p.peerOwnerId,
+      {
+        aiAccessLevel: p.aiAccessLevel,
+        knowledgeAccess: p.knowledgeAccess,
+        priority: p.priority,
+        syndicationMaxSensitivity: p.syndicationMaxSensitivity,
+      },
+    ]),
+  );
+}
+
+function logRuntimeConfigCaches(source: string): void {
+  console.log(`[config] ${source}: model=${currentModelProviders.mode} assist=${currentChatAssistEnabled} killSwitch=${currentAutonomousKillSwitch} policies=${currentAutonomousPolicies.length} trustMode=${currentTrustModeEnabled} contactPrefs=${currentContactAiPrefs.size}`);
+  if (currentAiSettings) {
+    console.log(`[ai] identity mode=${currentAiSettings.identity.mode}, onlineAssistant=${currentAiSettings.status.onlineAssistantEnabled}, offlineAgent=${currentAiSettings.status.offlineAgentEnabled}`);
+  }
+}
+
 // Start Social WS before bridge/vault/libp2p so the UI can connect immediately.
 let wsServerForEvents: WsServer | null = null;
 const approvalQueue = new ApprovalQueue();
@@ -396,33 +439,11 @@ if (nodeService instanceof NodeServiceImpl) {
   nodeService.bindCliTaskStore(taskStore);
   nodeService.bindApprovalQueue(approvalQueue);
   const nodeConfig = await nodeService.getNodeConfig();
-  currentModelProviders = nodeConfig.modelProviders;
   if (nodeConfig.relayPublicWsUrl) {
     nodeService.setRelayPublicWsUrl(nodeConfig.relayPublicWsUrl);
   }
-  currentChatAssistEnabled =
-    process.env.ENVOY_CHAT_ASSIST_ENABLED === "true" ? true : nodeConfig.chatAssistEnabled;
-  currentAutonomousKillSwitch = nodeConfig.autonomousKillSwitch ?? false;
-  currentAutonomousPolicies = nodeConfig.autonomousPolicies ?? [];
-  currentTrustModeEnabled = nodeConfig.trustModeEnabled ?? false;
-  currentKnowledgeSyndicationMaxSensitivity = nodeConfig.knowledgeSyndicationMaxSensitivity;
-  currentAiSettings = nodeConfig.aiSettings;
-  currentContactAiPrefs = new Map(
-    (nodeConfig.contactAiPreferences ?? []).map((p: ContactAiPreferences) => [
-      p.peerOwnerId,
-      {
-        aiAccessLevel: p.aiAccessLevel,
-        knowledgeAccess: p.knowledgeAccess,
-        priority: p.priority,
-        syndicationMaxSensitivity: p.syndicationMaxSensitivity,
-      },
-    ]),
-  );
-  console.log(`[model] provider mode=${currentModelProviders.mode}`);
-  console.log(`[chat] assist ${currentChatAssistEnabled ? "enabled" : "disabled"}`);
-  console.log(
-    `[autonomous] killSwitch=${currentAutonomousKillSwitch}, policies=${currentAutonomousPolicies.length}`,
-  );
+  applyRuntimeConfigCaches(nodeConfig);
+  logRuntimeConfigCaches("startup");
 }
 if (devServicePortsConfigured()) {
   console.log(
@@ -1865,15 +1886,15 @@ async function handleInboundMeshMessage({
         if (!chatText.trim() && hasAudioAttachment) {
           chatText = "[Audio message — no transcription available]";
         }
+        // Disk is authoritative for assist policy. In-memory caches are synced via
+        // config:updated / home:config-updated; do not overwrite disk with stale
+        // startup snapshots (that caused Inbox "Approve & send" after toggling auto-send).
         const mergedConfig = {
           ...storedConfig,
-          chatAssistEnabled: currentChatAssistEnabled,
-          autonomousKillSwitch: currentAutonomousKillSwitch,
-          autonomousPolicies: [...currentAutonomousPolicies],
-          aiSettings: currentAiSettings ?? storedConfig.aiSettings,
-          contactAiPreferences: Array.from(currentContactAiPrefs.entries()).map(
-            ([peerOwnerId, prefs]) => ({ peerOwnerId, ...prefs }),
-          ),
+          chatAssistEnabled:
+            process.env.ENVOY_CHAT_ASSIST_ENABLED === "true"
+              ? true
+              : storedConfig.chatAssistEnabled,
         };
         await runInboundChatAssist({
           envelope,
@@ -1883,7 +1904,7 @@ async function handleInboundMeshMessage({
           receivedAt,
           correlationId,
           config: mergedConfig,
-          modelProviders: currentModelProviders,
+          modelProviders: mergedConfig.modelProviders ?? currentModelProviders,
           profile,
           taskStore,
           trustStore,
@@ -3310,29 +3331,8 @@ nodeService.on("bond:established", (data) => {
 });
 nodeService.on("config:updated", (data) => {
   console.log(`[index.ts] config:updated event fired`);
-  currentAutonomousKillSwitch = data.autonomousKillSwitch;
-  currentAutonomousPolicies = data.autonomousPolicies;
-  currentChatAssistEnabled = data.chatAssistEnabled;
-  currentModelProviders = data.modelProviders;
-  currentAiSettings = data.aiSettings;
-  currentContactAiPrefs = new Map(
-    (data.contactAiPreferences ?? []).map((p: ContactAiPreferences) => [
-      p.peerOwnerId,
-      {
-        aiAccessLevel: p.aiAccessLevel,
-        knowledgeAccess: p.knowledgeAccess,
-        priority: p.priority,
-        syndicationMaxSensitivity: p.syndicationMaxSensitivity,
-      },
-    ]),
-  );
-  console.log(`[autonomous] killSwitch=${currentAutonomousKillSwitch}, policies=${currentAutonomousPolicies.length}`);
-  console.log(`[chat] assist ${currentChatAssistEnabled ? "enabled" : "disabled"}`);
-  console.log(`[model] provider mode=${currentModelProviders.mode}`);
-  if (currentAiSettings) {
-    console.log(`[ai] identity mode=${currentAiSettings.identity.mode}, onlineAssistant=${currentAiSettings.status.onlineAssistantEnabled}, offlineAgent=${currentAiSettings.status.offlineAgentEnabled}`);
-  }
-  console.log(`[ai] contact prefs: ${currentContactAiPrefs.size} contacts`);
+  applyRuntimeConfigCaches(data);
+  logRuntimeConfigCaches("config:updated");
   void refreshRagService();
 });
 

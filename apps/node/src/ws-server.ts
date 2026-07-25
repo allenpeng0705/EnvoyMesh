@@ -133,6 +133,9 @@ export class WsServer {
       nodeServiceImpl.on("node:ready", (data: unknown) => this.emitEvent("node:ready", data));
       nodeServiceImpl.on("node:offline", (data: unknown) => this.emitEvent("node:offline", data));
       nodeServiceImpl.on("bridge:status", (data: unknown) => this.emitEvent("bridge:status", data));
+      nodeServiceImpl.on("config:updated", (data: unknown) =>
+        this.emitEvent("config:updated", data),
+      );
       nodeServiceImpl.on("home:config-updated", (data: unknown) =>
         this.emitEvent("home:config-updated", data),
       );

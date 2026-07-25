@@ -824,6 +824,8 @@ export interface NodeServiceEvents {
         modelProviders: ModelProviderConfig;
         aiSettings?: AiSettings;
         contactAiPreferences: ContactAiPreferences[];
+        trustModeEnabled?: boolean;
+        knowledgeSyndicationMaxSensitivity?: "public" | "friends" | "private";
     };
     /** Paired-mode bootstrap events (mobile only, but harmless for the desktop) —
      * emitted by the bootstrap that runs after a successful home pairing, refreshing

@@ -5533,13 +5533,23 @@ class NodeServiceImpl implements NodeService {
     }
     // Bidirectional sync: notify subscribers (mobile, Social UI,
     // another EnvoyGo device) that the node config changed so they
-    // can re-render.
+    // can re-render. Also emit `config:updated` so apps/node/src/index.ts
+    // refreshes in-memory caches used by inbound chat-assist / knowledge.
     try {
-      this.emit("home:config-updated", {
-        config: await this.getNodeConfig(),
+      const full = await this.getNodeConfig();
+      this.emit("config:updated", {
+        autonomousKillSwitch: full.autonomousKillSwitch ?? false,
+        autonomousPolicies: full.autonomousPolicies ?? [],
+        chatAssistEnabled: full.chatAssistEnabled ?? false,
+        modelProviders: full.modelProviders,
+        aiSettings: full.aiSettings,
+        contactAiPreferences: full.contactAiPreferences ?? [],
+        trustModeEnabled: full.trustModeEnabled ?? false,
+        knowledgeSyndicationMaxSensitivity: full.knowledgeSyndicationMaxSensitivity,
       });
+      this.emit("home:config-updated", { config: full });
     } catch (err) {
-      console.warn("[node-service] home:config-updated emit failed:", err);
+      console.warn("[node-service] config update emit failed:", err);
     }
   }
 
