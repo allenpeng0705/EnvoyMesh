@@ -71,23 +71,25 @@ function pick(rows: RosterRow[], tag: string): string {
 export function synthesizePlanAssignFromRosterPrompt(prompt: string): string | null {
   const raw = extractRosterJson(prompt);
   if (!Array.isArray(raw) || raw.length === 0) return null;
-  const rows: RosterRow[] = raw
-    .map((r) => {
-      if (!r || typeof r !== "object") return null;
-      const o = r as Record<string, unknown>;
-      if (typeof o.peerId !== "string" || !o.peerId) return null;
-      return {
-        peerId: o.peerId,
-        strengths: Array.isArray(o.strengths) ? o.strengths.filter((x): x is string => typeof x === "string") : [],
-        capabilities: Array.isArray(o.capabilities)
-          ? o.capabilities.filter((x): x is string => typeof x === "string")
-          : [],
-        isSelf: o.isSelf === true,
-        throughputTokensPerSec: typeof o.throughputTokensPerSec === "number" ? o.throughputTokensPerSec : null,
-        modelFreshness: typeof o.modelFreshness === "number" ? o.modelFreshness : null,
-      } satisfies RosterRow;
-    })
-    .filter((x): x is RosterRow => x !== null);
+  const rows: RosterRow[] = [];
+  for (const r of raw) {
+    if (!r || typeof r !== "object") continue;
+    const o = r as Record<string, unknown>;
+    if (typeof o.peerId !== "string" || !o.peerId) continue;
+    rows.push({
+      peerId: o.peerId,
+      strengths: Array.isArray(o.strengths)
+        ? o.strengths.filter((x): x is string => typeof x === "string")
+        : [],
+      capabilities: Array.isArray(o.capabilities)
+        ? o.capabilities.filter((x): x is string => typeof x === "string")
+        : [],
+      isSelf: o.isSelf === true,
+      throughputTokensPerSec:
+        typeof o.throughputTokensPerSec === "number" ? o.throughputTokensPerSec : null,
+      modelFreshness: typeof o.modelFreshness === "number" ? o.modelFreshness : null,
+    });
+  }
   if (rows.length === 0) return null;
 
   const researchPeer = pick(rows, "research.web");

@@ -93,11 +93,8 @@ export function envoyArtifactToPart(
       const file: A2AFilePart["file"] = {};
       if (artifact.mimeType) file.mimeType = artifact.mimeType;
       if (artifact.displayName) file.name = artifact.displayName;
-      // If we have a vault URL, advertise the URI form (Phase 48D.5
-      // will add the actual vault-serve HTTP endpoint; for 48D the URI
-      // is informational and 404s if fetched). Otherwise fall back to
-      // a relative-path "uri" placeholder so the A2A client knows the
-      // file exists but can't fetch it.
+      // Prefer gateway HTTP URI (`GET /vault/<path>` on the home bridge).
+      // Without a vault URL, fall back to an opaque placeholder.
       if (baseUrl) {
         file.uri = `${baseUrl}/vault/${encodeURIComponent(artifact.vaultPath)}?hash=${encodeURIComponent(artifact.contentHash)}`;
       } else {

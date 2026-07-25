@@ -12,6 +12,7 @@ import { PassThrough } from "node:stream";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import {
   handleA2AJsonRpcProxy,
+  parseA2ABearerTokensEnv,
   type A2AProxyOptions,
 } from "../src/a2a-jsonrpc-proxy.js";
 
@@ -61,7 +62,10 @@ function makeOptions(overrides: Partial<A2AProxyOptions> = {}): A2AProxyOptions 
   return {
     bearerTokens: TOKENS,
     lookupHomePeerId: () => "home-peer-1",
-    forwardToHome: async (_peerId, body) => `{"jsonrpc":"2.0","id":"x","result":{"echo":${JSON.stringify(body)}}}`,
+    forwardToHome: async (_peerId, body) => ({
+      status: 200,
+      body: `{"jsonrpc":"2.0","id":"x","result":{"echo":${JSON.stringify(body)}}}`,
+    }),
     ...overrides,
   };
 }
@@ -127,14 +131,32 @@ describe("a2a-jsonrpc-proxy: home-node lookup", () => {
 });
 
 describe("a2a-jsonrpc-proxy: forwarding", () => {
-  it("forwards body verbatim and writes 200 + upstream response", async () => {
-    const forward = vi.fn(async (_peerId: string, body: string) => `{"jsonrpc":"2.0","id":"x","echo":${JSON.stringify(body)}}`);
+  it("forwards body verbatim and writes upstream status + response", async () => {
+    const forward = vi.fn(async (_peerId: string, body: string) => ({
+      status: 200,
+      body: `{"jsonrpc":"2.0","id":"x","echo":${JSON.stringify(body)}}`,
+    }));
     const req = makeReq('{"hello":1}', "POST", "Bearer tok-a");
     const { res, status, body } = makeRes();
     await handleA2AJsonRpcProxy(req, res, makeOptions({ forwardToHome: forward }));
     expect(status()).toBe(200);
-    expect(forward).toHaveBeenCalledWith("home-peer-1", '{"hello":1}');
+    expect(forward).toHaveBeenCalledWith("home-peer-1", '{"hello":1}', {
+      Authorization: "Bearer tok-a",
+    }, undefined);
     expect(body()).toContain('"echo":"{\\"hello\\":1}"');
+  });
+
+  it("preserves non-200 upstream status", async () => {
+    const req = makeReq("{}", "POST", "Bearer tok-a");
+    const { res, status, body } = makeRes();
+    await handleA2AJsonRpcProxy(req, res, makeOptions({
+      forwardToHome: async () => ({
+        status: 401,
+        body: JSON.stringify({ error: "unauthorized" }),
+      }),
+    }));
+    expect(status()).toBe(401);
+    expect(body()).toContain("unauthorized");
   });
 
   it("returns 504 when forwardToHome returns null (upstream timeout)", async () => {
@@ -190,5 +212,35 @@ describe("a2a-jsonrpc-proxy: forwarding", () => {
     expect(observe).toHaveBeenCalledWith(
       expect.objectContaining({ outcome: "upstream-timeout" }),
     );
+  });
+});
+describe("parseA2ABearerTokensEnv", () => {
+  it("preserves colonful ownerIds (envoy:owner:…)", () => {
+    const entries = parseA2ABearerTokensEnv("secret:envoy:owner:abc123");
+    expect(entries).toEqual([
+      { token: "secret", ownerId: "envoy:owner:abc123" },
+    ]);
+  });
+
+  it("parses optional #label", () => {
+    const entries = parseA2ABearerTokensEnv("tok:envoy:owner:abc#laptop");
+    expect(entries).toEqual([
+      { token: "tok", ownerId: "envoy:owner:abc", label: "laptop" },
+    ]);
+  });
+
+  it("parses comma-separated entries", () => {
+    const entries = parseA2ABearerTokensEnv(
+      "a:envoy:owner:1,b:envoy:owner:2#prod",
+    );
+    expect(entries).toHaveLength(2);
+    expect(entries[0]).toEqual({ token: "a", ownerId: "envoy:owner:1" });
+    expect(entries[1]).toEqual({ token: "b", ownerId: "envoy:owner:2", label: "prod" });
+  });
+
+  it("skips malformed entries", () => {
+    expect(parseA2ABearerTokensEnv("")).toEqual([]);
+    expect(parseA2ABearerTokensEnv(":noid")).toEqual([]);
+    expect(parseA2ABearerTokensEnv("notoken")).toEqual([]);
   });
 });

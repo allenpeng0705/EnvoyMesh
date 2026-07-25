@@ -41,6 +41,11 @@ export interface RelayTunnelClientOptions {
   homePeerId: string;
   /** Local ws-server URL to bridge mobile traffic to, e.g. `ws://127.0.0.1:3030/ws`. */
   localWsServerUrl: string;
+  /**
+   * Phase 48D.5 — base URL for A2A/bridge HTTP (e.g. `http://127.0.0.1:3031`).
+   * Used when the relay sends `{ type: "http-req" }` frames.
+   */
+  localHttpBaseUrl?: string;
   /** Optional token for /ws/home (used when relay requires it). */
   authToken?: string;
   /** Diagnostic log sink. */
@@ -195,7 +200,18 @@ export class RelayTunnelClient {
         : Array.isArray(raw)
           ? Buffer.concat(raw as Buffer[]).toString("utf-8")
           : new TextDecoder().decode(new Uint8Array(raw as ArrayBuffer));
-    let env: { type?: string; channelId?: string; data?: string; token?: string; targetPeerId?: string };
+    let env: {
+      type?: string;
+      channelId?: string;
+      data?: string;
+      token?: string;
+      targetPeerId?: string;
+      requestId?: string;
+      method?: string;
+      path?: string;
+      headers?: Record<string, string>;
+      body?: string;
+    };
     try {
       env = JSON.parse(text);
     } catch {
@@ -213,6 +229,11 @@ export class RelayTunnelClient {
       this._observedAddr = addr;
       this.opts.log?.(`[relay-tunnel] observed-addr from relay: ${addr}`);
       this.opts.onObservedAddr?.(addr);
+      return;
+    }
+
+    if (env.type === "http-req" && typeof env.requestId === "string") {
+      void this.handleHttpReq(env);
       return;
     }
 
@@ -246,6 +267,96 @@ export class RelayTunnelClient {
         this.channels.delete(env.channelId);
       }
       return;
+    }
+  }
+
+  private async handleHttpReq(env: {
+    requestId?: string;
+    method?: string;
+    path?: string;
+    headers?: Record<string, string>;
+    body?: string;
+  }): Promise<void> {
+    const requestId = env.requestId!;
+    const base = this.opts.localHttpBaseUrl?.replace(/\/$/, "");
+    if (!base) {
+      this.sendTunnelFrame({
+        type: "http-res",
+        requestId,
+        status: 503,
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: null,
+          error: { code: -32603, message: "localHttpBaseUrl not configured on home tunnel" },
+        }),
+      });
+      return;
+    }
+    const path = env.path?.startsWith("/") ? env.path : `/${env.path ?? "a2a/jsonrpc"}`;
+    const method = (env.method ?? "POST").toUpperCase();
+    try {
+      const resp = await fetch(`${base}${path}`, {
+        method,
+        headers: {
+          ...(method !== "GET" && method !== "HEAD"
+            ? { "Content-Type": "application/json" }
+            : {}),
+          ...(env.headers ?? {}),
+        },
+        ...(method !== "GET" && method !== "HEAD" ? { body: env.body ?? "" } : {}),
+        signal: AbortSignal.timeout(55_000),
+      });
+      const contentType = resp.headers.get("content-type") ?? undefined;
+      const wantsStream = (contentType ?? "").includes("text/event-stream") && resp.body != null;
+      if (wantsStream) {
+        this.sendTunnelFrame({
+          type: "http-res-start",
+          requestId,
+          status: resp.status,
+          ...(contentType ? { contentType } : {}),
+        });
+        const reader = resp.body.getReader();
+        const decoder = new TextDecoder();
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value && value.byteLength > 0) {
+            this.sendTunnelFrame({
+              type: "http-res-chunk",
+              requestId,
+              data: decoder.decode(value, { stream: true }),
+            });
+          }
+        }
+        const tail = decoder.decode();
+        if (tail) {
+          this.sendTunnelFrame({ type: "http-res-chunk", requestId, data: tail });
+        }
+        this.sendTunnelFrame({ type: "http-res-end", requestId });
+        return;
+      }
+      const text = await resp.text();
+      this.sendTunnelFrame({
+        type: "http-res",
+        requestId,
+        status: resp.status,
+        body: text,
+        ...(contentType ? { contentType } : {}),
+      });
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.opts.log?.(`[relay-tunnel] http-req failed: ${msg}`);
+      this.sendTunnelFrame({
+        type: "http-res",
+        requestId,
+        status: 502,
+        contentType: "application/json",
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: null,
+          error: { code: -32603, message: `home http forward failed: ${msg}` },
+        }),
+      });
     }
   }
 

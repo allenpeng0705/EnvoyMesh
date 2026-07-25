@@ -209,6 +209,9 @@ export default defineConfig({
       "@envoymesh/api/chat-room-service": resolve(repoRoot, "packages/api/src/chat-room-service.ts"),
       "@envoymesh/api": resolve(repoRoot, "packages/api/src/index.ts"),
       "@envoymesh/protocol": resolve(repoRoot, "packages/protocol/src/index.ts"),
+      // Browser-safe crypto — `@envoymesh/identity` uses node:crypto and breaks Vite.
+      // Same alias as apps/mobile (pure-JS Ed25519 via @noble/curves).
+      "@envoymesh/identity": resolve(repoRoot, "packages/mobile-identity/src/index.ts"),
       // Browser-safe subpath — does NOT pull in node:crypto / node:fs.
       // The full `@envoymesh/rag` root depends on Node builtins and is
       // intentionally not aliased here; the Social UI must import this

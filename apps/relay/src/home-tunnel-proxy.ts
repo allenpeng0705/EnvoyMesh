@@ -115,6 +115,27 @@ export interface HomeTunnelProxy {
   /** True iff a home tunnel is currently registered for `peerId`. */
   hasHomeTunnel(peerId: string): boolean;
 
+  /**
+   * Phase 48D.5 — forward an HTTP request to the home node via the home
+   * tunnel. Supports buffered `http-res` and streamed
+   * `http-res-start` / `http-res-chunk` / `http-res-end` (SSE).
+   */
+  requestHttpViaHomeTunnel(
+    peerId: string,
+    input: {
+      method: string;
+      path: string;
+      headers?: Record<string, string>;
+      body?: string;
+      timeoutMs?: number;
+      /** When set, chunks are delivered as they arrive (SSE path). */
+      onStream?: {
+        onHeaders: (status: number, contentType?: string) => void;
+        onChunk: (chunk: string) => void;
+      };
+    },
+  ): Promise<{ status: number; body: string; contentType?: string } | null>;
+
   /** Snapshot for monitoring / tests. */
   stats(): { homeTunnels: number; channels: number; orphans: number };
 
@@ -165,6 +186,17 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
   const proxyChannels = new Map<string, ProxyChannelState>();
   const proxyClaimResolvers = new Map<string, () => void>();
   const proxyConnByTarget = new Map<string, Set<WebSocket>>();
+  const pendingHttp = new Map<string, {
+    resolve: (result: { status: number; body: string; contentType?: string } | null) => void;
+    timer: ReturnType<typeof setTimeout>;
+    onStream?: {
+      onHeaders: (status: number, contentType?: string) => void;
+      onChunk: (chunk: string) => void;
+    };
+    status: number;
+    contentType?: string;
+    chunks: string[];
+  }>();
   let proxyConnTotal = 0;
   let stopped = false;
   let orphanSweeper: ReturnType<typeof setInterval> | undefined;
@@ -326,11 +358,63 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
           : Array.isArray(raw)
             ? Buffer.concat(raw).toString("utf-8")
             : new TextDecoder().decode(new Uint8Array(raw as ArrayBuffer));
-      let env: { type?: string; channelId?: string; data?: string };
+      let env: {
+        type?: string;
+        channelId?: string;
+        data?: string;
+        requestId?: string;
+        body?: string;
+        status?: number;
+        contentType?: string;
+      };
       try {
         env = JSON.parse(text) as typeof env;
       } catch (err) {
         warn(`home-tunnel: bad frame from ${peerId.slice(0, 12)}…: ${(err as Error).message}`);
+        return;
+      }
+
+      if (typeof env.requestId === "string" && env.type?.startsWith("http-res")) {
+        const pending = pendingHttp.get(env.requestId);
+        if (!pending) return;
+
+        if (env.type === "http-res-start") {
+          pending.status = typeof env.status === "number" ? env.status : 200;
+          pending.contentType = typeof env.contentType === "string" ? env.contentType : undefined;
+          pending.onStream?.onHeaders(pending.status, pending.contentType);
+          return;
+        }
+        if (env.type === "http-res-chunk" && typeof env.data === "string") {
+          pending.chunks.push(env.data);
+          pending.onStream?.onChunk(env.data);
+          return;
+        }
+        if (env.type === "http-res-end") {
+          clearTimeout(pending.timer);
+          pendingHttp.delete(env.requestId);
+          pending.resolve({
+            status: pending.status,
+            body: pending.chunks.join(""),
+            ...(pending.contentType ? { contentType: pending.contentType } : {}),
+          });
+          return;
+        }
+        if (env.type === "http-res") {
+          clearTimeout(pending.timer);
+          pendingHttp.delete(env.requestId);
+          const status = typeof env.status === "number" ? env.status : 200;
+          const contentType = typeof env.contentType === "string" ? env.contentType : undefined;
+          const body = typeof env.body === "string" ? env.body : "";
+          if (pending.onStream) {
+            pending.onStream.onHeaders(status, contentType);
+            if (body) pending.onStream.onChunk(body);
+          }
+          pending.resolve({
+            status,
+            body,
+            ...(contentType ? { contentType } : {}),
+          });
+        }
         return;
       }
 
@@ -640,6 +724,42 @@ export function createHomeTunnelProxy(opts: HomeTunnelProxyOptions): HomeTunnelP
     hasHomeTunnel(peerId) {
       const t = homeTunnels.get(peerId);
       return !!t && t.readyState === WebSocket.OPEN;
+    },
+
+    requestHttpViaHomeTunnel(peerId, input) {
+      const tunnel = homeTunnels.get(peerId);
+      if (!tunnel || tunnel.readyState !== WebSocket.OPEN) {
+        return Promise.resolve(null);
+      }
+      const requestId = `http_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+      const timeoutMs = input.timeoutMs ?? 55_000;
+      return new Promise((resolve) => {
+        const timer = setTimeout(() => {
+          pendingHttp.delete(requestId);
+          resolve(null);
+        }, timeoutMs);
+        pendingHttp.set(requestId, {
+          resolve,
+          timer,
+          onStream: input.onStream,
+          status: 200,
+          chunks: [],
+        });
+        try {
+          tunnel.send(JSON.stringify({
+            type: "http-req",
+            requestId,
+            method: input.method,
+            path: input.path,
+            headers: input.headers ?? {},
+            body: input.body ?? "",
+          }));
+        } catch {
+          clearTimeout(timer);
+          pendingHttp.delete(requestId);
+          resolve(null);
+        }
+      });
     },
 
     stats() {

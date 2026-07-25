@@ -34,6 +34,36 @@ export interface A2ABearerTokenEntry {
   label?: string;
 }
 
+/**
+ * Parse `ENVOYMESH_A2A_BEARER_TOKENS` into bearer token entries.
+ * Format: `token:ownerId[#label],token2:ownerId2[#label2]`.
+ *
+ * Split on the **first** `:` so ownerIds like `envoy:owner:abc` work.
+ * Optional label after `#` on the remainder.
+ */
+export function parseA2ABearerTokensEnv(raw: string | undefined): A2ABearerTokenEntry[] {
+  if (!raw || !raw.trim()) return [];
+  const out: A2ABearerTokenEntry[] = [];
+  for (const item of raw.split(",")) {
+    const trimmed = item.trim();
+    if (!trimmed) continue;
+    const colon = trimmed.indexOf(":");
+    if (colon <= 0) continue;
+    const token = trimmed.slice(0, colon).trim();
+    let rest = trimmed.slice(colon + 1).trim();
+    if (!token || !rest) continue;
+    let label: string | undefined;
+    const hash = rest.lastIndexOf("#");
+    if (hash > 0) {
+      label = rest.slice(hash + 1).trim() || undefined;
+      rest = rest.slice(0, hash).trim();
+    }
+    if (!rest) continue;
+    out.push({ token, ownerId: rest, ...(label ? { label } : {}) });
+  }
+  return out;
+}
+
 export interface A2AProxyOptions {
   /** Bearer tokens → ownerId mappings. */
   bearerTokens: A2ABearerTokenEntry[];
@@ -43,12 +73,22 @@ export interface A2AProxyOptions {
    */
   lookupHomePeerId: (ownerId: string) => string | null;
   /**
-   * Forward a JSON-RPC body to the home node and return its raw
-   * response body. Implementations handle the transport (libp2p
-   * tunnel, libp2p dial, etc.). Returning `null` signals
-   * upstream timeout; throwing signals transport failure.
+   * Forward a JSON-RPC body to the home node. Implementations handle
+   * the transport (home-tunnel HTTP, libp2p dial, etc.). Returning
+   * `null` signals upstream timeout; throwing signals transport failure.
+   *
+   * `headers` typically includes `Authorization` so the home bridge
+   * can re-authenticate the bearer token.
    */
-  forwardToHome: (homePeerId: string, body: string) => Promise<string | null>;
+  forwardToHome: (
+    homePeerId: string,
+    body: string,
+    headers?: Record<string, string>,
+    stream?: {
+      onHeaders: (status: number, contentType?: string) => void;
+      onChunk: (chunk: string) => void;
+    },
+  ) => Promise<{ status: number; body: string; contentType?: string } | null>;
   /** Maximum POST body size in bytes (default 1 MiB). */
   maxBodyBytes?: number;
   /** Upstream timeout in ms (default 60_000). */
@@ -143,10 +183,62 @@ export async function handleA2AJsonRpcProxy(
     return;
   }
 
-  // ---- 4. Forward with timeout ----
-  let responseBody: string | null;
+  // ---- 4. Forward with timeout (SSE streams chunk-by-chunk when requested) ----
+  let wantsStream = false;
   try {
-    responseBody = await withTimeout(options.forwardToHome(homePeerId, body), timeoutMs);
+    const peek = JSON.parse(body) as { method?: string };
+    wantsStream = peek.method === "message/stream";
+  } catch {
+    /* ignore */
+  }
+  const acceptHdr = req.headers["accept"];
+  const accept = Array.isArray(acceptHdr) ? acceptHdr[0] : acceptHdr;
+  if (typeof accept === "string" && accept.includes("text/event-stream")) {
+    wantsStream = true;
+  }
+
+  const forwardHeaders: Record<string, string> = {
+    ...(authStr ? { Authorization: authStr } : {}),
+    ...(wantsStream ? { Accept: "text/event-stream" } : {}),
+  };
+
+  let headersSent = false;
+  let upstream: { status: number; body: string; contentType?: string } | null;
+  try {
+    upstream = await withTimeout(
+      options.forwardToHome(
+        homePeerId,
+        body,
+        forwardHeaders,
+        wantsStream
+          ? {
+              onHeaders: (status, contentType) => {
+                if (headersSent || res.headersSent) return;
+                headersSent = true;
+                res.writeHead(status, {
+                  "Content-Type": contentType ?? "text/event-stream",
+                  "Cache-Control": "no-store",
+                  Connection: "keep-alive",
+                  "Access-Control-Allow-Origin": "*",
+                });
+              },
+              onChunk: (chunk) => {
+                if (!headersSent && !res.headersSent) {
+                  headersSent = true;
+                  res.writeHead(200, {
+                    "Content-Type": "text/event-stream",
+                    "Cache-Control": "no-store",
+                    Connection: "keep-alive",
+                    "Access-Control-Allow-Origin": "*",
+                  });
+                }
+                res.write(chunk);
+              },
+            }
+          : undefined,
+      ),
+      timeoutMs,
+    );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     options.observe?.({
@@ -154,41 +246,50 @@ export async function handleA2AJsonRpcProxy(
       ownerId: tokenEntry.ownerId,
       durationMs: Date.now() - start,
     });
-    const status = msg.includes("timed out") ? 504 : 502;
-    res.writeHead(status, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({
-      jsonrpc: "2.0",
-      id: null,
-      error: {
-        code: msg.includes("timed out") ? -32003 : -32603,
-        message: msg,
-      },
-    }));
+    if (!res.headersSent) {
+      const status = msg.includes("timed out") ? 504 : 502;
+      res.writeHead(status, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        jsonrpc: "2.0",
+        id: null,
+        error: {
+          code: msg.includes("timed out") ? -32003 : -32603,
+          message: msg,
+        },
+      }));
+    } else {
+      res.end();
+    }
     return;
   }
 
-  if (responseBody === null) {
+  if (upstream === null) {
     options.observe?.({ outcome: "upstream-timeout", ownerId: tokenEntry.ownerId, durationMs: Date.now() - start });
-    res.writeHead(504, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({
-      jsonrpc: "2.0",
-      id: null,
-      error: { code: -32003, message: "upstream timeout" },
-    }));
+    if (!res.headersSent) {
+      res.writeHead(504, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({
+        jsonrpc: "2.0",
+        id: null,
+        error: { code: -32003, message: "upstream timeout" },
+      }));
+    } else {
+      res.end();
+    }
     return;
   }
 
-  // ---- 5. Write response ----
-  // Forward the response body verbatim — the home node already shaped
-  // a valid JSON-RPC envelope (200, 4xx-aware via error.code). We add
-  // CORS + no-store so A2A clients polling see fresh state.
+  // ---- 5. Write response (buffered) or finish stream ----
   options.observe?.({ outcome: "ok", ownerId: tokenEntry.ownerId, durationMs: Date.now() - start });
-  res.writeHead(200, {
-    "Content-Type": "application/json",
+  if (headersSent || res.headersSent) {
+    res.end();
+    return;
+  }
+  res.writeHead(upstream.status, {
+    "Content-Type": upstream.contentType ?? "application/json",
     "Cache-Control": "no-store",
     "Access-Control-Allow-Origin": "*",
   });
-  res.end(responseBody);
+  res.end(upstream.body);
 }
 
 // ---------------------------------------------------------------------------

@@ -53,7 +53,7 @@ export interface A2AJsonRpcResponse {
 // A2A v1.0 shapes (subset the bridge produces / consumes)
 // ---------------------------------------------------------------------------
 
-export const A2A_METHODS = ["message/send", "tasks/get", "tasks/cancel"] as const;
+export const A2A_METHODS = ["message/send", "message/stream", "tasks/get", "tasks/cancel"] as const;
 export type A2AMethod = (typeof A2A_METHODS)[number];
 
 export const A2A_STATE_VALUES = [
@@ -150,7 +150,9 @@ export interface A2AExecutorResult {
     | "cancelled"
     | "running"
     | "waiting_for_owner"
-    | "waiting_for_peer";
+    | "waiting_for_peer"
+    /** Bonds / bearer authorization failed (maps to A2A `auth-required`). */
+    | "auth-required";
   /** Human-readable summary that ends up in the Task status message. */
   summary: string;
   /** Artifacts to attach to the Task. */

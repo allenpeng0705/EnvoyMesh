@@ -256,8 +256,10 @@ export interface PersistedNodeConfig {
     command?: string;
     args?: string[];
     url?: string;
+    bearerToken?: string;
     env?: Record<string, string>;
     requestTimeoutMs?: number;
+    allowRemoteHttp?: boolean;
   }>;
 
   /** Phase 48C — A2A Agent Card Bridge. When enabled, publishes the
@@ -282,6 +284,13 @@ export interface PersistedNodeConfig {
     /** HTTP path that the JSON-RPC endpoint is mounted at on this
      *  node's local bridge HTTP server. Default `/a2a/jsonrpc`. */
     homeA2aPath?: string;
+    /**
+     * When true, `message/send` auto-completes with a local TextArtifact
+     * if no task.result arrives within `waitForResultMs`. Default false.
+     */
+    autoCompleteLocal?: boolean;
+    /** Milliseconds to poll for an external task.result. Default 0. */
+    waitForResultMs?: number;
   };
 }
 

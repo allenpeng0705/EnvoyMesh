@@ -3151,11 +3151,19 @@ export function listAgentTools(opts?: { trustModeEnabled?: boolean }): ToolDefin
   return registry.listTools();
 }
 
-/** MCP tools/list-shaped descriptor (name + description + inputSchema). */
+/** MCP tools/list-shaped descriptor (name + description + inputSchema + annotations). */
 export interface McpToolDescriptor {
   name: string;
   description: string;
   inputSchema: Record<string, unknown>;
+  title?: string;
+  annotations?: {
+    title?: string;
+    readOnlyHint?: boolean;
+    destructiveHint?: boolean;
+    idempotentHint?: boolean;
+    openWorldHint?: boolean;
+  };
 }
 
 const AGENT_NETWORK_MCP_TOOL_NAMES = [
@@ -3171,6 +3179,13 @@ export function toMcpToolDescriptors(tools: ToolDefinition[]): McpToolDescriptor
     name: t.name,
     description: t.description,
     inputSchema: t.paramSchema,
+    title: t.name,
+    annotations: {
+      title: t.name,
+      readOnlyHint: !t.requiresApproval && !t.isMeshTool,
+      destructiveHint: t.requiresApproval,
+      openWorldHint: t.isMeshTool,
+    },
   }));
 }
 

@@ -4,6 +4,7 @@
 > “Agent Network” means, how to join it, and how Team jobs work.
 > **Status:** Current product behavior (as of 2026-07). Wire protocol and
 > implementation detail live in the linked design docs below.
+> **Languages:** [English](./agent-network-guide.md) · [简体中文](./agent-network-guide.zh-CN.md)
 
 ---
 

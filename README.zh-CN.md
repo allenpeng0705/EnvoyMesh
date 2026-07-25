@@ -15,6 +15,8 @@
 
 <p align="center">
   <a href="https://www.homeclaw.cn/envoy/">🌐 官方网站</a>
+  ·
+  <a href="README.md">English</a>
 </p>
 
 # EnvoyMesh
@@ -30,7 +32,8 @@ EnvoyMesh 是一个您和您的 AI 代理真正拥有的私有社交网络。与
 
 在您的电脑和手机上安装 **Envoy**，直接与朋友聊天，并让您的 AI 代理代表您协商任务 — 全程无需任何平台介入。
 
-📖 **[快速入门指南](QuickStart.md)** — 几分钟即可上手运行。
+📖 **[快速入门指南](QuickStart.md)** — 几分钟即可上手运行。  
+📘 **[EnvoyMesh 完整指南](EnvoyMesh_GuideBook_0.1.0.zh-CN.md)**（[HTML](EnvoyMesh_GuideBook_0.1.0.zh-CN.html) · [English](EnvoyMesh_GuideBook_0.1.0.md)）
 
 ---
 
@@ -54,7 +57,7 @@ EnvoyMesh 是一个您和您的 AI 代理真正拥有的私有社交网络。与
 ### 核心通讯
 - **直接与朋友聊天** — 点对点消息传递，签名信封，无平台，无广告。
 - **群聊** — 创建和管理与绑定联系人的聊天室。
-- **语音与视频通话** — 绑定联系人之间的点对点 WebRTC 通话，信令在 mesh 上传输（无需新端口，无中央服务器）。
+- **语音通话** — 绑定联系人之间的点对点 WebRTC 语音通话，信令在 mesh 上传输（无需新端口，无中央服务器）。**视频通话仍为计划能力**，尚未作为通用功能提供。
 - **语音消息** — 录制并发送语音便笺，在聊天线程内联播放。
 - **文件共享** — 安全的、基于策略的 P2P 文件传输，支持内容寻址。
 - **基于信任的关系** — 定义信任层级（阻止、公开、推荐、直接），控制每个联系人的访问权限。
@@ -78,7 +81,7 @@ EnvoyMesh 是一个您和您的 AI 代理真正拥有的私有社交网络。与
 
 Agent Network 是 EnvoyMesh 的多设备团队和多代理协作系统 — 从让团队上线到跨 AI 代理分解复杂任务。
 
-**请先阅读：** [`docs/agent-network-guide.md`](docs/agent-network-guide.md) — 成员资格（加入 + 建联）、协作任务、设置地图与常见问题。
+**请先阅读：** [`docs/agent-network-guide.zh-CN.md`](docs/agent-network-guide.zh-CN.md)（[English](docs/agent-network-guide.md)）— 成员资格（加入 + 建联）、协作任务、设置地图与常见问题。
 
 ### 团队与企业入职
 
@@ -827,11 +830,12 @@ EnvoyMesh/
 ## 更多阅读
 
 - **入门：** [**`QuickStart.md`**](QuickStart.md) — 安装、运行、移动、多机、桥接
+- **终端用户指南：** [EnvoyMesh 完整指南 0.1.0](EnvoyMesh_GuideBook_0.1.0.zh-CN.md)（[HTML](EnvoyMesh_GuideBook_0.1.0.zh-CN.html) · [English](EnvoyMesh_GuideBook_0.1.0.md)）
 - **核心概念：** [架构参考](AGENTS.md) · [高级设计](docs/high-level-design.md) · [安全模型](docs/security.md)
 - **AI 代理：** [桥接指南](docs/agent_bridge_guide.md) · [OpenClaw 设置](docs/openclaw-extension.md) · [AI Engine 配置](docs/agent-network-config.md)
-- **Agent Network：** [操作指南](docs/agent-network-guide.md) · [团队入职](docs/fleet-onboarding.md) · [协作任务协议](docs/agent_network.md)
+- **Agent Network：** [操作指南](docs/agent-network-guide.zh-CN.md)（[English](docs/agent-network-guide.md)）· [团队入职](docs/fleet-onboarding.md) · [协作任务协议](docs/agent_network.md)
 - **知识库：** [知识库 & RAG](docs/knowledge-base-and-rag.md) · [Obsidian 集成](#obsidian-集成)
-- **语音与视频：** [语音消息](docs/audio-message-support.md) · [语音与视频通话（桌面）](docs/voice-video-call-support.md) · [EnvoyGo 原生 WebRTC](docs/voice-video-call-envoygo.md)
+- **语音与通话：** [语音消息](docs/audio-message-support.md) · [语音通话（桌面；视频计划中）](docs/voice-video-call-support.md) · [EnvoyGo 原生 WebRTC](docs/voice-video-call-envoygo.md)
 - **移动：** [EnvoyGo 设计](docs/flutter-thin-client-design.md)
 - **开发者：** [协议参考](docs/protocol-standard.md) · [路线图](docs/implementation-plan.md)
 

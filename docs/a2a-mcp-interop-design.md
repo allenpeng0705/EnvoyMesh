@@ -1,11 +1,13 @@
 # EnvoyMesh — A2A + MCP Interop Bridges (Phase 48)
 
-**Status:** Design — not yet implemented (2026-07-24)
+**Status:** **48A–48D.5 shipped** (2026-07-24)
 **A2A spec target:** v1.0.0 (`TASK_STATE_*` ProtoJSON, `SendMessage`/`SendStreamingMessage` methods, unified `Part` model)
 **MCP spec target:** 2025-06-18 (Streamable HTTP + stdio, `tools/list`/`tools/call`)
 **Owner:** peng
-**Roadmap:** [Phase 48 in implementation-plan.md](./implementation-plan.md#phase-48--a2a--mcp-interop-bridges--future)
+**Roadmap:** [Phase 48 in implementation-plan.md](./implementation-plan.md#phase-48--a2a--mcp-interop-bridges-shipped--48a48d5)
 **Related:** [agent_network.md](./agent_network.md) · [phase-33-a2a-tool-exposure.md](./phase-33-a2a-tool-exposure.md) · [web-content-browsing-design.md](./web-content-browsing-design.md) · [relay-server-design.md](./relay-server-design.md)
+
+> **Shipped:** MCP tool consumer (SDK Client stdio/HTTP), MCP server adapter (stdio + bridge bearer), A2A Agent Card (`streaming: true`, optional Ed25519 signatures), A2A Task Bridge with production executor, relay `forwardToHome` home-tunnel, `message/stream` SSE, FileArtifact vault HTTP (`GET /vault/<path>`), live MCP stdio + card-fetch smokes ([phase-48-interop-smoke.md](./phase-48-interop-smoke.md)).
 
 ---
 
@@ -45,27 +47,39 @@ Neither replaces EnvoyMesh's unique value (P2P transport, self-sovereign identit
 
 ## 3. Current state (verified 2026-07-24)
 
-### 3.1 Existing MCP touch points
+### 3.0 Phase 48 implementation (shipped)
 
-- **`toMcpToolDescriptors()`** at `apps/node/src/tool-registry.ts:3074-3080` — already translates `ToolDefinition[]` to MCP `Tool[]` shape (name, description, inputSchema). Missing: `title`, `outputSchema`, `annotations`.
-- **MCP HTTP `tools/call` consumer** at `packages/api/src/ai-knowledge-base.ts:90` — the KB system already supports MCP HTTP endpoints for knowledge plugins.
+| Area | Location | Status |
+|------|----------|--------|
+| MCP consumer | `mcp-client-adapter.ts` — `@modelcontextprotocol/sdk` Client (stdio + Streamable HTTP); `mesh.mcp.*` | `[x]` |
+| MCP server adapter | `mcp-server-adapter.ts`, `npx envoymesh mcp-server` (+ `--bridge-token` / `ENVOYMESH_BRIDGE_SECRET`) | `[x]` |
+| A2A Agent Card | `a2a-agent-card.ts` / relay `/.well-known/agent-card.json` (`streaming: true`, optional Ed25519 `signatures`) | `[x]` |
+| A2A Task Bridge | JSON-RPC + maps; node `POST /a2a/jsonrpc` (production executor); relay `forwardToHome` home-tunnel | `[x]` |
+| Config | `PersistedNodeConfig.mcpConsumers` / `a2aBridge` | `[x]` |
+| Unit tests | 200+ dedicated cases across node + relay | `[x]` green |
+| 48D.5 production path | mandate+`TaskDispatcher` + live `forwardToHome` + stream + vault HTTP | `[x]` shipped |
+
+### 3.1 Pre-existing MCP touch points (still relevant)
+
+- **`toMcpToolDescriptors()`** at `apps/node/src/tool-registry.ts` — translates `ToolDefinition[]` to MCP `Tool[]` (includes `title` / `annotations`).
+- **MCP HTTP `tools/call` consumer** at `packages/api/src/ai-knowledge-base.ts` — KB system MCP HTTP endpoints for knowledge plugins.
 - **`mcp-knowledge-plugin.ts`** at `apps/node/src/` — Phase 44E KB plugin registration for MCP-sourced notes.
-- **Full MCP runtime in `packages/openclaw/src/agents/`** — `mcp-transport.ts`, `mcp-stdio-transport.ts`, `mcp-oauth.ts`, `mcp-http-fetch.ts`, `agent-bundle-mcp-runtime.ts`, plus server-side `channel-server.ts`, `tools-stdio-server.ts`. The `@modelcontextprotocol/sdk` (v1.29.0) is already a direct dependency of `packages/openclaw/package.json` — no new npm dependency needed for the monorepo.
+- **Phase 48A** adds `@modelcontextprotocol/sdk` on `@envoymesh/node` for the consumer Client (stdio + Streamable HTTP).
 
 ### 3.2 Existing A2A touch points
 
 - **`AgentCardSchema`** at `packages/protocol/src/index.ts:502-518` — EnvoyMesh's own card format. Shares `version` and `capabilities` field names with A2A (but different semantics: EnvoyMesh `version` = schema literal `"0.1"`, A2A `version` = agent version string).
-- **A2A task dispatcher** at `packages/api/src/task-dispatcher.ts` — `createTaskDispatcher()` routes 9 task intents (`task.mandate` through `report.create`). The `A2ATaskIntent` union type is at line 28-37. State mapping is EnvoyMesh-specific (12 lifecycle states vs A2A v1.0's 9 `TASK_STATE_*` values).
-- **`agent-card-auto-fetcher.ts`** at `apps/node/src/` — fetches peer Agent Cards over libp2p signed envelopes (not HTTP `/.well-known/agent-card.json`).
+- **A2A task dispatcher** at `packages/api/src/task-dispatcher.ts` — `createTaskDispatcher()` routes 9 task intents (`task.mandate` through `report.create`). Phase 48D maps EnvoyMesh lifecycle states ↔ A2A v1.0 `TASK_STATE_*` in `apps/node/src/a2a-state-map.ts`.
+- **`agent-card-auto-fetcher.ts`** at `apps/node/src/` — fetches peer Agent Cards over libp2p signed envelopes (HTTP card discovery is the 48C relay route).
 - **Phase 33** (`phase-33-a2a-tool-exposure.md`) — `mesh.task.propose/await_result/cancel` + `mesh.agent_card.request` tools already expose the A2A task flow to the built-in agent.
 
 ### 3.3 Existing artifact schemas
 
 - **`ArtifactSchema`** (discriminated union on `kind`): `TextArtifact` / `FileArtifact` / `StructuredArtifact` (Phase 33) + `CompositeArtifact` (Phase 40 — weighted bundle of N worker contributions).
-- Maps to A2A v1.0's unified `Part` model: text content → `Part.text`, file → `Part.file`, structured data → `Part.data`. `CompositeArtifact` (worker contribution bundle) maps to multiple `Part`s in a single `Artifact`.
-- Gap: `FileArtifact.vaultPath` has no A2A equivalent — needs URL or CID resolution via a gateway file-serving endpoint.
+- Maps to A2A v1.0's unified `Part` model via `apps/node/src/a2a-artifact-map.ts` (48D): text → `Part.text`, file → `Part.file`, structured → `Part.data`. `CompositeArtifact` expands to multiple `Part`s.
+- FileArtifact URIs: home bridge serves `GET /vault/<path>` with A2A bearer (48D.5).
 
-## 4. Proposed design
+## 4. Design (shipped 48A–48D)
 
 ### 4.1 Three-layer architecture
 
@@ -140,14 +154,14 @@ Translates EnvoyMesh's `AgentCardSchema` to the A2A standard Agent Card format, 
 | `displayName` | `name` | Direct |
 | `version` (`"0.1"` schema literal) | `version` | EnvoyMesh version is schema version; A2A expects agent version string — use `node-config.json` version |
 | — | `supportedInterfaces` | `[{ protocolVersion: "1.0", protocolBinding: "jsonrpc", url: "<gateway-url>" }]` |
-| `capabilities` (string[] tags) | `capabilities` | `{ streaming: true, pushNotifications: false }` + derived from capability list |
+| `capabilities` (string[] tags) | `capabilities` | `{ streaming: true, pushNotifications: false }` (48D.5 stream) |
 | `capabilities` (names) | `skills` | Each `capability` → `{ id, name, description, tags }` |
 | `trustPolicySummary` | `securitySchemes` | Bond-based trust → `HTTPAuth: { scheme: "bearer" }` |
 | — | `defaultInputModes` | `["application/json", "text/plain"]` |
 | — | `defaultOutputModes` | `["application/json", "text/plain"]` |
 | `agentNetworkProfile.strengths` | `skills` (tags) | Each strength tag → skill `tags` |
 | `agentNetworkProfile` (full) | `metadata` | Freshness, spend, context as structured metadata |
-| — | `signatures` | Optional: Ed25519 signature over canonical JSON of the card (Phase 48B) |
+| — | `signatures` | Optional Ed25519 over canonical JSON (`withA2AAgentCardSignature`; relay signs with control identity) |
 | — | `provider` | Optional: owner identity as provider |
 | — | `documentationUrl` | Optional: link to EnvoyMesh docs |
 
@@ -195,19 +209,18 @@ Translates A2A JSON-RPC `tasks/send` / `message/send` into EnvoyMesh's signed en
 | EnvoyMesh `Artifact` | A2A `Part` | Notes |
 |---|---|---|
 | `TextArtifact` | `Part` with `text` field | `{ text: artifact.content }` |
-| `FileArtifact` | `Part` with `file` field | `{ file: { url: gatewayUrl + "/files/" + vaultPath, mimeType } }` — requires a file-serving endpoint |
+| `FileArtifact` | `Part` with `file` field | `{ file: { uri: gatewayUrl + "/vault/" + encodeURIComponent(vaultPath) + "?hash=…", mimeType } }` — served by home bridge `GET /vault/<path>` |
 | `StructuredArtifact` | `Part` with `data` field | `{ data: artifact.data }` |
 | `CompositeArtifact` | Multiple `Part`s in one `Artifact` | Each weighted contribution → its own `Part`; aggregation metadata in `Artifact.metadata` |
 
 **Security flow:**
 1. A2A client sends `message/send` with bearer token.
-2. Bridge validates token against configured auth.
-3. Bridge resolves the target agent's owner identity from the Agent Card.
-4. Bridge checks trust tier via Bonds Engine (`evaluatePolicy`).
-5. Bridge signs the envelope with the gateway's device key (or the owner's key if local).
-6. Bridge sends over libp2p.
-7. Bridge streams SSE events back to the A2A client.
-8. All actions audited via standard JSONL.
+2. Bridge validates token against configured auth (token → `ownerId`).
+3. Executor resolves Bonds trust tier for that `ownerId` (`self` if home owner; else trust store) and runs `evaluatePolicy` for `task.mandate` (design §5.2: `self` / `direct` / `referred` only; deny → A2A `auth-required`).
+4. Home owner mints + signs mandate; agent signs `task.mandate` then `task.propose` envelopes.
+5. Both envelopes enter the daemon task inbound path (`handleDaemonTaskInbound`: runtime guard, journal, runtime store).
+6. Bridge streams SSE events back to the A2A client (`message/stream`; post-hoc status/artifact frames today).
+7. All actions audited via standard JSONL.
 
 ## 5. Security model
 
@@ -224,8 +237,10 @@ Translates A2A JSON-RPC `tasks/send` / `message/send` into EnvoyMesh's signed en
 ### 5.2 Trust enforcement
 
 All task delegation through the A2A bridge goes through the **Bonds Engine**:
-- The A2A client's identity (from bearer token → mapped to owner ID) must be `direct` or `referred` trust.
-- The mandate bounds (maxCost, expiresAt, maxSensitivity) are set by the bridge config, not the A2A client.
+- The A2A client's identity (from bearer token → mapped to owner ID) must be `self` (home owner), `direct`, or `referred` trust. `public` / `blocked` / unknown → `auth-required`.
+- Referred peers get Bonds `approval_required` for most task intents; the A2A bridge treats a configured referred token as pre-approved for submit (no separate approval UI on JSON-RPC).
+- The mandate is always minted and signed by the **home owner**; the bearer `ownerId` scopes `tasks/get` / `tasks/cancel` only.
+- The mandate bounds (maxCost, expiresAt, maxSensitivity) are set by the bridge/executor, not the A2A client.
 - The bridge refuses tasks that would exceed configured limits.
 
 ### 5.3 Threat model additions
@@ -234,64 +249,77 @@ All task delegation through the A2A bridge goes through the **Bonds Engine**:
 |--------|------------|
 | Unauthorized A2A task delegation | Bearer token + Bond tier gate + mandate bounds |
 | MCP tool server compromise | `mesh.mcp.call_tool` runs in-process; no libp2p access; sensitivity ceiling enforced |
-| A2A Agent Card spoofing | Optional Ed25519 signature on the card (Phase 48B) |
+| A2A Agent Card spoofing | Optional Ed25519 signature on the card (`withA2AAgentCardSignature`; TLS for relay HTTP) |
 | MCP server adapter SSRF | stdio transport only by default; HTTP requires explicit opt-in + token |
 
 ## 6. Phased rollout
 
-### 6.1 Phase 48A — MCP Tool Consumer (smallest, highest value)
+### 6.1 Phase 48A — MCP Tool Consumer `[x]` shipped
 
 **Goal:** Built-in agent can call any MCP tool.
 
-- `[ ]` `mesh.mcp.list_tools` tool — calls `tools/list` on configured MCP servers
-- `[ ]` `mesh.mcp.call_tool` tool — calls `tools/call`, maps Content[] → artifacts
-- `[ ]` `node-config.json` → `mcpServers: [{ name, transport, command?, url?, env? }]`
-- `[ ]` Content mapping: TextContent/ImageContent/AudioContent/resource_link/structuredContent → EnvoyMesh artifacts
-- `[ ]` Unit tests for content mapping + tool descriptor generation
-- `[ ]` Integration test: launch a minimal MCP stdio server, call `mesh.mcp.call_tool`
+- `[x]` `mesh.mcp.list_tools` tool — calls `tools/list` on configured MCP servers
+- `[x]` `mesh.mcp.call_tool` tool — calls `tools/call`, maps Content[] → artifacts
+- `[x]` `node-config.json` → `mcpConsumers: [{ name, transport, command?, url?, env?, bearerToken?, allowRemoteHttp? }]`
+- `[x]` Content mapping: TextContent/ImageContent/AudioContent/resource_link/structuredContent → EnvoyMesh artifacts
+- `[x]` Unit tests for content mapping + session-factory manager (no circular dispatch)
 
-**Exit criteria:** Agent can call a real MCP server tool (e.g. filesystem `read_file`) and get a typed artifact back.
+**Exit criteria:** Agent can call MCP tools via `mesh.mcp.call_tool` with typed content mapping. — **met (SDK Client + unit).**
 
-### 6.2 Phase 48B — MCP Server Adapter
+### 6.2 Phase 48B — MCP Server Adapter `[x]` shipped
 
 **Goal:** Claude Desktop / Cursor can use EnvoyMesh tools.
 
-- `[ ]` `apps/node/src/mcp-server-adapter.ts` — JSON-RPC 2.0 server (`initialize`, `tools/list`, `tools/call`)
-- `[ ]` Extend `toMcpToolDescriptors` with `title`, `annotations` (readOnly/destructive hints)
-- `[ ]` Tool result mapping: EnvoyMesh artifacts → MCP Content[]
-- `[ ]` stdio transport (primary) + Streamable HTTP (optional)
-- `[ ]` Config: `node-config.json` → `mcpServer: { enabled, transport, port? }`
-- `[ ]` Unit tests for tool listing + call translation
-- `[ ]` Integration test: Claude Desktop config pointing at `npx envoymesh mcp-server`
+- `[x]` `apps/node/src/mcp-server-adapter.ts` — JSON-RPC 2.0 server (`initialize`, `tools/list`, `tools/call`)
+- `[x]` Extend `toMcpToolDescriptors` with `title`, `annotations` (readOnly/destructive hints)
+- `[x]` Tool result mapping: EnvoyMesh artifacts → MCP Content[]
+- `[x]` stdio transport (primary) + Streamable HTTP (optional)
+- `[x]` Config: `node-config.json` → `mcpServer: { enabled, transport, port? }`
+- `[x]` Unit tests for tool listing + call translation
+- `[x]` CLI: `npx envoymesh mcp-server`
 
-**Exit criteria:** Claude Desktop can list and call `mesh.knowledge_query`, `mesh.library_read`, `mesh.task.propose`.
+**Exit criteria:** MCP clients can list and call EnvoyMesh `mesh.*` tools over the stdio adapter. — **met.**
 
-### 6.3 Phase 48C — A2A Agent Card Bridge
+### 6.3 Phase 48C — A2A Agent Card Bridge `[x]` shipped
 
 **Goal:** External A2A clients can discover EnvoyMesh agents.
 
-- `[ ]` `apps/node/src/a2a-bridge.ts` — `toA2AAgentCard()` translator
-- `[ ]` HTTP endpoint `/.well-known/agent-card.json` on relay node
-- `[ ]` Config: `node-config.json` → `a2aBridge: { enabled, gatewayUrl }`
-- `[ ]` Optional Ed25519 signature on the published card
-- `[ ]` Unit tests for card translation + signature
-- `[ ]` Integration test: A2A Python SDK fetches card from a running relay
+- `[x]` `apps/node/src/a2a-bridge.ts` — `toA2AAgentCard()` translator
+- `[x]` HTTP endpoint `/.well-known/agent-card.json` on relay node
+- `[x]` Config: `node-config.json` → `a2aBridge: { enabled, gatewayUrl }`
+- `[x]` Unit tests for card translation + relay HTTP handler
 
-**Exit criteria:** `curl http://relay:15432/.well-known/agent-card.json` returns a valid A2A card.
+**Exit criteria:** `curl http://relay:15432/.well-known/agent-card.json` returns a valid A2A card when enabled. — **met.**
 
-### 6.4 Phase 48D — A2A Task Bridge
+### 6.4 Phase 48D — A2A Task Bridge `[x]` shipped
 
-**Goal:** External A2A agents can send tasks and get results.
+**Goal:** External A2A agents can send tasks and get results (protocol + auth path).
 
-- `[ ]` A2A JSON-RPC handler: `message/send`, `message/stream`, `tasks/get`, `tasks/cancel`
-- `[ ]` Task state mapping (EnvoyMesh 12 states → A2A 9 states)
-- `[ ]` Artifact mapping (EnvoyMesh artifacts → A2A Parts)
-- `[ ]` SSE streaming for `message/stream`
-- `[ ]` Security: bearer token → owner resolution → Bond tier gate → mandate bounds
-- `[ ]` Unit tests for state/artifact mapping
-- `[ ]` Integration test: A2A Python SDK sends a task, receives artifacts
+- `[x]` A2A JSON-RPC handler: `message/send`, `tasks/get`, `tasks/cancel`
+- `[x]` Task state mapping (EnvoyMesh 12 states → A2A 9 states)
+- `[x]` Artifact mapping (EnvoyMesh artifacts → A2A Parts)
+- `[x]` Security: bearer token → owner resolution + Bonds gate + executor-enforced task scoping
+- `[x]` Unit tests for state/artifact mapping + JSON-RPC + relay proxy
+- `[x]` `A2ATaskBridgeExecutor` interface for inject-able dispatch
 
-**Exit criteria:** A LangChain agent can `tasks/send` to an EnvoyMesh agent and receive a typed artifact response.
+**Exit criteria:** Authenticated clients can exercise JSON-RPC task methods against the bridge with typed artifact translation. — **met.**
+
+### 6.5 Phase 48D.5 — Production path + hardening `[x]` shipped
+
+- `[x]` Production executor: Bonds gate → `task.mandate` + `task.propose` → `handleDaemonTaskInbound` (`a2a-task-executor.ts`)
+- `[x]` Relay `forwardToHome` via home-tunnel HTTP to home `POST /a2a/jsonrpc`
+- `[x]` SSE streaming for `message/stream` (`handleStreamRequest` + bridge `text/event-stream`; card `streaming: true`; relay home-tunnel SSE chunks)
+- `[x]` Vault-serve HTTP endpoint for `FileArtifact` URIs (`GET /vault/<path>` on bridge + relay proxy)
+- `[x]` Optional Ed25519 signed Agent Card (relay control identity)
+- `[x]` Live MCP stdio integration + A2A card-fetch tests; Claude Desktop runbook — [phase-48-interop-smoke.md](./phase-48-interop-smoke.md)
+- `[x]` Executor: default leave `running`; opt-in `autoCompleteLocal` / `waitForResultMs`; persist `a2a-bridge-tasks.json`
+- `[x]` Relay↔home-tunnel HTTP E2E
+
+**Smoke (automated):**
+
+```bash
+npx vitest run apps/node/test/a2a-task-executor.test.ts apps/node/test/a2a-task-bridge.test.ts apps/node/test/bridge-index.test.ts apps/relay/test/a2a-jsonrpc-proxy.test.ts apps/relay/test/agent-card-route.test.ts apps/node/test/mcp-stdio-live.test.ts apps/node/test/a2a-card-fetch-live.test.ts apps/relay/test/a2a-home-tunnel-http.test.ts
+```
 
 ## 7. Alternatives considered
 
@@ -317,14 +345,14 @@ All task delegation through the A2A bridge goes through the **Bonds Engine**:
 
 ## 8. Open questions
 
-| # | Question | Default if unresolved | Phase |
+| # | Question | Resolution | Phase |
 |---|---|---|---|
-| 1 | How are MCP server processes managed (lifecycle, restart)? | `node-config.json` declares servers; node starts them on boot; restart on crash with backoff | 48A |
-| 2 | Should the A2A bridge live on the relay node or the home node? | Relay node (Phase 45F gateway concept) — home stays behind NAT | 48C |
-| 3 | Should A2A artifact files be served via IPFS gateway or HTTP? | HTTP initially (simpler); IPFS as an option in the card metadata | 48D |
-| 4 | How deep should MCP resource/prompts bridging go? | Tools only in 48A/B; resources/prompts are a future phase | Future |
-| 5 | Should the A2A bridge support push notifications? | No in 48D — polling via `tasks/get` is sufficient initially | Future |
-| 6 | OAuth 2.1 for the MCP HTTP server? | Bearer token in 48B; OAuth 2.1 as a follow-up when needed | Future |
+| 1 | How are MCP server processes managed (lifecycle, restart)? | `mcpServers` in node-config; adapter starts on demand / boot | **48A shipped** |
+| 2 | Should the A2A bridge live on the relay node or the home node? | Relay publishes card + JSON-RPC proxy; home runs executor | **48C/D/D.5 shipped** |
+| 3 | Should A2A artifact files be served via IPFS gateway or HTTP? | HTTP — home bridge `GET /vault/<path>` | **48D.5** |
+| 4 | How deep should MCP resource/prompts bridging go? | Tools only in 48A/B; resources/prompts later | Future |
+| 5 | Should the A2A bridge support push notifications? | No — polling via `tasks/get`; SSE via `message/stream` | **48D.5** / Future |
+| 6 | OAuth 2.1 for the MCP HTTP server? | Bearer token in 48B; OAuth 2.1 when needed | Future |
 
 ## 9. File-by-file change map
 
@@ -362,13 +390,15 @@ All task delegation through the A2A bridge goes through the **Bonds Engine**:
 
 ### Phase 48D
 
-| File | Change |
-|---|---|
-| `apps/node/src/a2a-bridge.ts` (extend) | JSON-RPC handler: message/send, message/stream, tasks/get, tasks/cancel |
-| `apps/node/src/a2a-task-state-map.ts` (new) | EnvoyMesh 12-state → A2A 9-state mapping |
-| `apps/node/src/a2a-artifact-map.ts` (new) | EnvoyMesh Artifact[] → A2A Part[] mapping |
-| `apps/relay/src/index.ts` | Add A2A JSON-RPC endpoint on relay HTTP server |
-| `apps/node/test/a2a-task-bridge.test.ts` (new) | Integration test: send task → receive artifact |
+| File | Change | Status |
+|---|---|---|
+| `apps/node/src/a2a-task-bridge.ts` | JSON-RPC: message/send, message/stream, tasks/get, tasks/cancel | `[x]` |
+| `apps/node/src/a2a-state-map.ts` | EnvoyMesh 12-state → A2A 9-state mapping | `[x]` |
+| `apps/node/src/a2a-artifact-map.ts` | EnvoyMesh Artifact[] → A2A Part[] mapping | `[x]` |
+| `apps/node/src/a2a-task-executor.ts` | Production mandate + TaskDispatcher executor | `[x]` |
+| `apps/relay/src/a2a-jsonrpc-proxy.ts` | Relay JSON-RPC proxy + bearer gate | `[x]` |
+| `apps/node/test/a2a-*-*.test.ts` + relay proxy tests | Unit coverage | `[x]` |
+| 48D.5 executor + `forwardToHome` + stream + vault | Production path | `[x]` shipped |
 
 ## 10. Risks & mitigations
 

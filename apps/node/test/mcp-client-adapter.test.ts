@@ -2,12 +2,6 @@
  * @vitest-environment node
  *
  * Phase 48A — MCP Client Adapter unit tests.
- *
- * Tests:
- * - Content mapping (MCP SDK types → EnvoyMesh shapes) including edge cases
- * - Reverse mapping (EnvoyMesh → MCP) for the bridge round-trip
- * - Config validation (SSRF guards, stdio shape, transport values)
- * - Manager behavior (no-op, list, call, unknown server, executor throwing)
  */
 import { describe, it, expect, vi } from "vitest";
 import {
@@ -17,8 +11,9 @@ import {
   createMcpConsumerManager,
   validateMcpConsumerConfigs,
   type McpConsumerConfig,
-  type McpExecutor,
+  type McpServerSession,
 } from "../src/mcp-client-adapter.js";
+import { executeTool, type MeshToolContext } from "../src/tool-registry.js";
 
 describe("mapMcpContent", () => {
   it("maps TextContent", () => {
@@ -164,8 +159,13 @@ describe("validateMcpConsumerConfigs", () => {
     expect(r.ok).toBe(true);
   });
 
-  it("accepts a valid http entry with loopback URL", () => {
+  it("accepts a valid http entry with loopback https URL", () => {
     const r = validateMcpConsumerConfigs([{ name: "remote", transport: "http", url: "https://localhost:8080/mcp" }]);
+    expect(r.ok).toBe(true);
+  });
+
+  it("accepts loopback http URL", () => {
+    const r = validateMcpConsumerConfigs([{ name: "local", transport: "http", url: "http://127.0.0.1:8080/mcp" }]);
     expect(r.ok).toBe(true);
   });
 
@@ -182,12 +182,12 @@ describe("validateMcpConsumerConfigs", () => {
     expect(r.ok).toBe(true);
   });
 
-  it("rejects non-https URL", () => {
+  it("rejects remote http: even with allowRemoteHttp", () => {
     const r = validateMcpConsumerConfigs([
       { name: "x", transport: "http", url: "http://example.com/mcp", allowRemoteHttp: true },
     ]);
     expect(r.ok).toBe(false);
-    expect(r.errors[0]).toMatch(/unsupported scheme/);
+    expect(r.errors[0]).toMatch(/http: is only allowed for loopback/);
   });
 
   it("rejects missing name", () => {
@@ -247,27 +247,34 @@ describe("createNoOpMcpConsumerManager", () => {
   });
 });
 
-describe("createMcpConsumerManager", () => {
-  const noopExecutor: McpExecutor = async () => undefined;
+function fakeSession(overrides?: Partial<McpServerSession>): McpServerSession {
+  return {
+    listTools: vi.fn(async () => ({
+      tools: [{ name: "read_file", description: "Read a file" }],
+    })),
+    callTool: vi.fn(async () => ({
+      content: [
+        { type: "text", text: "result text" },
+        { type: "image", data: "img-base64", mimeType: "image/jpeg" },
+      ],
+      structuredContent: { confidence: 0.9 },
+    })),
+    close: vi.fn(async () => {}),
+    ...overrides,
+  };
+}
 
+describe("createMcpConsumerManager", () => {
   it("returns no-op manager for empty configs", async () => {
-    const mgr = createMcpConsumerManager([], noopExecutor);
+    const mgr = createMcpConsumerManager([]);
     const r = await mgr.listMcpTools();
     expect(r.ok).toBe(false);
     expect(r.error).toContain("No MCP consumers configured");
   });
 
-  it("throws when no executor is supplied", () => {
-    expect(() => createMcpConsumerManager(
-      [{ name: "x", transport: "stdio", command: "echo" }],
-      null as unknown as McpExecutor,
-    )).toThrow(/executor/);
-  });
-
   it("throws on invalid configs", () => {
     expect(() => createMcpConsumerManager(
       [{ transport: "stdio" }] as unknown as McpConsumerConfig[],
-      noopExecutor,
     )).toThrow(/Invalid mcpConsumers/);
   });
 
@@ -275,7 +282,9 @@ describe("createMcpConsumerManager", () => {
     const configs: McpConsumerConfig[] = [
       { name: "known-server", transport: "stdio", command: "echo" },
     ];
-    const mgr = createMcpConsumerManager(configs, noopExecutor);
+    const mgr = createMcpConsumerManager(configs, {
+      sessionFactory: async () => fakeSession(),
+    });
     const result = await mgr.callMcpTool("unknown-server", "tool", {});
     expect(result.ok).toBe(false);
     expect(result.error).toContain("Unknown MCP server: unknown-server");
@@ -286,75 +295,91 @@ describe("createMcpConsumerManager", () => {
     const configs: McpConsumerConfig[] = [
       { name: "known-server", transport: "stdio", command: "echo" },
     ];
-    const mgr = createMcpConsumerManager(configs, noopExecutor);
+    const mgr = createMcpConsumerManager(configs, {
+      sessionFactory: async () => fakeSession(),
+    });
     const result = await mgr.listMcpTools("unknown-server");
     expect(result.ok).toBe(false);
     expect(result.error).toContain("Unknown MCP server: unknown-server");
   });
 
-  it("listMcpTools invokes the executor and unwraps the result", async () => {
-    const executor = vi.fn(async () => ({
-      ok: true,
-      result: {
-        tools: [{ serverName: "fs", toolName: "read_file", description: "Read a file" }],
-      },
-    }));
+  it("listMcpTools uses session factory (no circular mesh.mcp dispatch)", async () => {
+    const session = fakeSession();
+    const factory = vi.fn(async () => session);
     const mgr = createMcpConsumerManager(
       [{ name: "fs", transport: "stdio", command: "echo" }],
-      executor,
+      { sessionFactory: factory },
     );
     const r = await mgr.listMcpTools();
     expect(r.ok).toBe(true);
-    expect(r.tools?.length).toBe(1);
-    expect(executor).toHaveBeenCalledWith("mesh.mcp.list_tools", { serverName: undefined });
+    expect(r.tools).toEqual([
+      { serverName: "fs", toolName: "read_file", description: "Read a file" },
+    ]);
+    expect(factory).toHaveBeenCalledOnce();
+    expect(session.listTools).toHaveBeenCalledOnce();
   });
 
-  it("callMcpTool maps executor result content back to EnvoyMesh shapes", async () => {
-    const executor = vi.fn(async () => ({
-      ok: true,
-      result: {
-        content: [
-          { type: "text", text: "result text" },
-          { type: "image", data: "img-base64", mimeType: "image/jpeg" },
-        ],
-        structuredContent: { confidence: 0.9 },
-      },
-    }));
+  it("callMcpTool maps session content to EnvoyMesh shapes", async () => {
+    const session = fakeSession();
     const mgr = createMcpConsumerManager(
       [{ name: "fs", transport: "stdio", command: "echo" }],
-      executor,
+      { sessionFactory: async () => session },
     );
     const r = await mgr.callMcpTool("fs", "read_file", { path: "/tmp/x" });
     expect(r.ok).toBe(true);
     expect(r.content?.[0]).toMatchObject({ type: "text", text: "result text" });
     expect(r.content?.[1]).toMatchObject({ type: "file", mimeType: "image/jpeg", base64: "img-base64" });
     expect(r.structuredContent).toEqual({ confidence: 0.9 });
-    expect(executor).toHaveBeenCalledWith("mesh.mcp.call_tool", {
-      serverName: "fs",
-      toolName: "read_file",
-      arguments: { path: "/tmp/x" },
-    });
+    expect(session.callTool).toHaveBeenCalledWith("read_file", { path: "/tmp/x" });
   });
 
-  it("callMcpTool surfaces executor errors without leaking internals", async () => {
-    const executor = vi.fn(async () => { throw new Error("internal path /secret/foo"); });
+  it("callMcpTool surfaces session errors", async () => {
     const mgr = createMcpConsumerManager(
       [{ name: "fs", transport: "stdio", command: "echo" }],
-      executor,
+      {
+        sessionFactory: async () => fakeSession({
+          callTool: async () => { throw new Error("internal path /secret/foo"); },
+        }),
+      },
     );
     const r = await mgr.callMcpTool("fs", "read_file", {});
     expect(r.ok).toBe(false);
     expect(r.error).toContain("MCP call_tool failed");
   });
 
-  it("callMcpTool returns ok=false when executor returns ok:false", async () => {
-    const executor = vi.fn(async () => ({ ok: false, error: "permission denied" }));
+  it("callMcpTool returns ok=false when session reports isError", async () => {
     const mgr = createMcpConsumerManager(
       [{ name: "fs", transport: "stdio", command: "echo" }],
-      executor,
+      {
+        sessionFactory: async () => fakeSession({
+          callTool: async () => ({
+            isError: true,
+            content: [{ type: "text", text: "permission denied" }],
+          }),
+        }),
+      },
     );
     const r = await mgr.callMcpTool("fs", "read_file", {});
     expect(r.ok).toBe(false);
     expect(r.error).toBe("permission denied");
+  });
+
+  it("executeTool mesh.mcp.list_tools works with manager (no circular failure)", async () => {
+    const mgr = createMcpConsumerManager(
+      [{ name: "fs", transport: "stdio", command: "echo" }],
+      { sessionFactory: async () => fakeSession() },
+    );
+    const ctx = {
+      mcpConsumerManager: mgr,
+      taskStore: { appendAuditEvent: vi.fn(async () => {}) },
+      trustStore: { getTrust: () => null },
+      localPeerId: "envoy_test",
+      correlationId: "test-corr",
+    } as unknown as MeshToolContext;
+    const result = await executeTool("mesh.mcp.list_tools", {}, ctx);
+    expect(result.ok).toBe(true);
+    expect(result.result).toEqual({
+      tools: [{ serverName: "fs", toolName: "read_file", description: "Read a file" }],
+    });
   });
 });

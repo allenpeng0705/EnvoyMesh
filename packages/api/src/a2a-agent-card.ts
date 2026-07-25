@@ -17,9 +17,25 @@
  *   targeting if leaked.
  * - `provider` uses the A2A v1.0 `{organization, url}` shape.
  * - `securitySchemes` key is `Bearer` (capitalized) per RFC 9110 examples.
+ * - Optional Ed25519 `signatures` (48D.5) over canonical JSON of the card
+ *   body (excluding `signatures` itself).
  *
  * Design: docs/a2a-mcp-interop-design.md §4.4.
  */
+
+import {
+  signCanonicalPayload,
+  verifyCanonicalPayload,
+} from "@envoymesh/identity";
+
+/** Optional EnvoyMesh Ed25519 signature on an A2A Agent Card (48D.5). */
+export interface A2AAgentCardSignature {
+  type: "envoymesh-ed25519";
+  keyId: string;
+  signature: string;
+  /** Included so clients can verify without a separate key fetch. */
+  publicKeyPem?: string;
+}
 
 /** A2A v1.0 Agent Card shape (subset — we produce this). */
 export interface A2AAgentCard {
@@ -54,6 +70,42 @@ export interface A2AAgentCard {
   };
   /** Non-standard extension; clients may silently drop. */
   metadata?: Record<string, unknown>;
+  /** Optional Ed25519 signatures over the card body (excluding this field). */
+  signatures?: A2AAgentCardSignature[];
+}
+
+/**
+ * Attach an Ed25519 signature over the canonical JSON of the card
+ * (with `signatures` stripped). Spec-strict clients may ignore this field.
+ */
+export function withA2AAgentCardSignature(
+  card: A2AAgentCard,
+  opts: { privateKeyPem: string; keyId: string; publicKeyPem?: string },
+): A2AAgentCard {
+  const { signatures: _omit, ...unsigned } = card;
+  const signature = signCanonicalPayload(unsigned, opts.privateKeyPem);
+  return {
+    ...unsigned,
+    signatures: [
+      {
+        type: "envoymesh-ed25519",
+        keyId: opts.keyId,
+        signature,
+        ...(opts.publicKeyPem ? { publicKeyPem: opts.publicKeyPem } : {}),
+      },
+    ],
+  };
+}
+
+/** Verify the first `envoymesh-ed25519` signature on a card, if present. */
+export function verifyA2AAgentCardSignature(
+  card: A2AAgentCard,
+  publicKeyPem: string,
+): boolean {
+  const entry = card.signatures?.find((s) => s.type === "envoymesh-ed25519");
+  if (!entry) return false;
+  const { signatures: _omit, ...unsigned } = card;
+  return verifyCanonicalPayload(unsigned, entry.signature, publicKeyPem);
 }
 
 /** EnvoyMesh Agent Card input shape (subset of AgentCardSchema). */
@@ -125,7 +177,7 @@ export function toA2AAgentCard(
       {
         protocolVersion: "1.0",
         protocolBinding: "jsonrpc",
-        url: gatewayUrl,
+        url: `${stripTrailingSlash(gatewayUrl)}/.well-known/a2a/jsonrpc`,
       },
     ],
     capabilities: {
@@ -157,6 +209,10 @@ export function toA2AAgentCard(
   };
 }
 
+function stripTrailingSlash(url: string): string {
+  return url.endsWith("/") ? url.slice(0, -1) : url;
+}
+
 /** Input for the relay-side card builder. */
 export interface RelayCardInfo {
   peerId: string;
@@ -186,7 +242,10 @@ export function handleA2AAgentCardRequest(
   res: A2ACardHttpResponse,
   envoyCard: EnvoyAgentCard | null,
   gatewayUrl: string,
-  options?: { nodeVersion?: string },
+  options?: {
+    nodeVersion?: string;
+    sign?: { privateKeyPem: string; keyId: string; publicKeyPem?: string };
+  },
 ): void {
   if (req.method === "OPTIONS") {
     res.writeHead(204, {
@@ -208,7 +267,10 @@ export function handleA2AAgentCardRequest(
     res.end(JSON.stringify({ error: "Agent card not available — node not initialized" }));
     return;
   }
-  const card = toA2AAgentCard(envoyCard, gatewayUrl, options);
+  let card = toA2AAgentCard(envoyCard, gatewayUrl, options);
+  if (options?.sign) {
+    card = withA2AAgentCardSignature(card, options.sign);
+  }
   res.writeHead(200, {
     "Content-Type": "application/json",
     "Cache-Control": "public, max-age=300",
@@ -227,7 +289,13 @@ export function handleA2ARelayAgentCardRequest(
   res: A2ACardHttpResponse,
   info: RelayCardInfo | null,
   gatewayUrl: string,
-  options?: { displayName?: string; nodeVersion?: string; exposeOperational?: boolean },
+  options?: {
+    displayName?: string;
+    nodeVersion?: string;
+    exposeOperational?: boolean;
+    taskBridgeStatus?: "scaffolding" | "available" | "disabled";
+    sign?: { privateKeyPem: string; keyId: string; publicKeyPem?: string };
+  },
 ): void {
   if (req.method === "OPTIONS") {
     res.writeHead(204, {
@@ -249,7 +317,10 @@ export function handleA2ARelayAgentCardRequest(
     res.end(JSON.stringify({ error: "Relay not initialized" }));
     return;
   }
-  const card = relayEnvoyAgentCard(info, gatewayUrl, options);
+  let card = relayEnvoyAgentCard(info, gatewayUrl, options);
+  if (options?.sign) {
+    card = withA2AAgentCardSignature(card, options.sign);
+  }
   res.writeHead(200, {
     "Content-Type": "application/json",
     "Cache-Control": "public, max-age=300",
@@ -264,10 +335,8 @@ export function handleA2ARelayAgentCardRequest(
  * `exposeOperational: true` to include them — useful for debugging
  * relay meshes but increases fingerprinting surface.
  *
- * Always sets `x-envoymesh-taskBridgeStatus` in metadata so external
- * A2A clients can detect that the JSON-RPC endpoint is not yet
- * end-to-end functional (Phase 48D ships the protocol + auth; the
- * executor that actually runs the task is 48D.5).
+ * Sets `x-envoymesh-taskBridgeStatus` so external A2A clients can detect
+ * whether the JSON-RPC path is production-ready (48D.5 → `"available"`).
  */
 export function relayEnvoyAgentCard(
   info: RelayCardInfo,
@@ -275,7 +344,7 @@ export function relayEnvoyAgentCard(
   options?: CommonCardOptions & {
     displayName?: string;
     exposeOperational?: boolean;
-    /** Override the published task-bridge status. Default: "scaffolding". */
+    /** Override the published task-bridge status. Default: "available". */
     taskBridgeStatus?: "scaffolding" | "available" | "disabled";
   },
 ): A2AAgentCard {
@@ -288,11 +357,11 @@ export function relayEnvoyAgentCard(
       {
         protocolVersion: "1.0",
         protocolBinding: "jsonrpc",
-        url: gatewayUrl,
+        url: `${stripTrailingSlash(gatewayUrl)}/.well-known/a2a/jsonrpc`,
       },
     ],
     capabilities: {
-      streaming: false,
+      streaming: true,
       pushNotifications: false,
     },
     skills: [
@@ -314,7 +383,7 @@ export function relayEnvoyAgentCard(
       url: gatewayUrl,
     },
     metadata: {
-      "x-envoymesh-taskBridgeStatus": options?.taskBridgeStatus ?? "scaffolding",
+      "x-envoymesh-taskBridgeStatus": options?.taskBridgeStatus ?? "available",
       ...(options?.exposeOperational === true ? {
         "x-envoymesh-peerId": info.peerId,
         "x-envoymesh-multiaddrs": info.multiaddrs,

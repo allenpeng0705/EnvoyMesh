@@ -1,38 +1,33 @@
 /**
  * Phase 48A — MCP Tool Consumer Adapter.
  *
- * Bridges EnvoyMesh's `mesh.mcp.*` tool system to external MCP (Model Context
- * Protocol) servers. The built-in OpenClaw agent can call any MCP-compatible
- * tool (filesystem, GitHub, databases, etc.) via `mesh.mcp.call_tool`.
+ * Bridges EnvoyMesh's `mesh.mcp.*` tools to external MCP servers via the
+ * official `@modelcontextprotocol/sdk` client (stdio + Streamable HTTP).
  *
- * The actual MCP transport is owned by the OpenClaw gateway's bridge HTTP
- * endpoint (`/bridge/execute-tool`). This module wraps the call:
- *
- *   mesh.mcp.call_tool(server, tool, args) → POST /bridge/execute-tool
- *     → OpenClaw gateway runs the MCP runtime in-process
- *     → returns CallToolResult → mapped back to EnvoyMesh shapes
+ *   mesh.mcp.list_tools / mesh.mcp.call_tool
+ *     → McpConsumerManager (lazy Client per server)
+ *     → SDK Client.listTools / callTool
+ *     → mapMcpContent → EnvoyMesh shapes
  *
  * Security:
- * - `gatewayBridgeUrl` is required (no silent no-op). Hosts that don't have
- *   an OpenClaw gateway configured must NOT construct this manager.
- * - `McpConsumerConfig.url` (http transport) is validated against an
- *   owner-controlled allowlist. Loopback by default; remote hosts must be
- *   explicitly opted-in via `allowRemoteHttp: true` on the consumer entry.
- * - `command`/`args` (stdio) are validated for shape only — stdio processes
- *   run with the owner's full user privileges by design. Hosts should not
- *   accept MCP consumer configs from untrusted sources.
- * - Per-request timeout is honored via AbortSignal.
+ * - `McpConsumerConfig.url` (http) is SSRF-gated: loopback by default;
+ *   remote hosts require `allowRemoteHttp: true`. Loopback may use `http:`;
+ *   remote requires `https:`.
+ * - `command`/`args` (stdio) are shape-validated only — subprocesses run with
+ *   the owner's privileges. Do not accept consumer configs from untrusted sources.
  *
  * Design: docs/a2a-mcp-interop-design.md §4.2.
  */
 
-/** Allowed HTTP schemes for `McpConsumerConfig.url`. https-only by default. */
-const ALLOWED_HTTP_SCHEMES = new Set(["https:"]);
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import {
+  StdioClientTransport,
+  getDefaultEnvironment,
+} from "@modelcontextprotocol/sdk/client/stdio.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+
 /** Loopback host names that bypass the `allowRemoteHttp` gate. */
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
-
-/** Maximum MCP gateway bridge body size in bytes. Matches node-side limit. */
-const MAX_GATEWAY_BODY_BYTES = 1 * 1024 * 1024;
 
 /** Configuration for a single MCP consumer server. */
 export interface McpConsumerConfig {
@@ -44,18 +39,17 @@ export interface McpConsumerConfig {
   command?: string;
   /** stdio only: arguments for the command. */
   args?: string[];
-  /** http only: server URL (e.g. "https://example.com/mcp"). */
+  /** http only: server URL (e.g. "https://example.com/mcp" or "http://127.0.0.1:8080/mcp"). */
   url?: string;
   /** http only: bearer token / API key sent in `Authorization` header. */
   bearerToken?: string;
-  /** Environment variables for the subprocess (stdio) or headers (http). */
+  /** Environment variables for the subprocess (stdio) or extra headers (http). */
   env?: Record<string, string>;
   /** Per-request timeout in milliseconds. Default: 30000, max: 300000. */
   requestTimeoutMs?: number;
   /**
    * http only: allow non-loopback remote hosts. Default `false` —
-   * only loopback + https-loopback URLs are accepted unless explicitly
-   * opted-in. This is the SSRF guard.
+   * only loopback URLs are accepted unless explicitly opted-in.
    */
   allowRemoteHttp?: boolean;
 }
@@ -82,39 +76,40 @@ export interface McpCallResult {
 }
 
 /**
- * Lazy MCP consumer manager. Wraps the OpenClaw session MCP runtime so
- * EnvoyMesh can call external MCP servers without coupling to the SDK directly.
- *
- * Construction requires a `gatewayBridgeUrl`; if the host has no
- * OpenClaw gateway, callers should NOT construct this manager at all.
- * The no-op manager (`createNoOpMcpConsumerManager`) is provided for
- * the empty-config case.
+ * Minimal session surface used by the manager. Production connects a real
+ * SDK Client; tests inject fakes via `createMcpConsumerManager` options.
  */
+export interface McpServerSession {
+  listTools(): Promise<{ tools: Array<{ name: string; description?: string }> }>;
+  callTool(
+    name: string,
+    args: Record<string, unknown>,
+  ): Promise<{
+    content?: Array<Record<string, unknown>>;
+    structuredContent?: Record<string, unknown>;
+    isError?: boolean;
+  }>;
+  close(): Promise<void>;
+}
+
+export type McpSessionFactory = (config: McpConsumerConfig) => Promise<McpServerSession>;
+
 export interface McpConsumerManager {
-  /** List available tools from configured MCP servers. */
   listMcpTools(serverName?: string): Promise<{ ok: boolean; tools?: McpToolListing[]; error?: string }>;
-  /** Call a tool on a configured MCP server. */
   callMcpTool(serverName: string, toolName: string, args?: Record<string, unknown>): Promise<McpCallResult>;
+  /** Close cached MCP clients (best-effort). */
+  dispose(): Promise<void>;
+}
+
+export interface CreateMcpConsumerManagerOptions {
+  /** Override session creation (tests). Default: SDK Client connect. */
+  sessionFactory?: McpSessionFactory;
 }
 
 // ---------------------------------------------------------------------------
-// Content-type mapping (Phase 48A → MCP server)
+// Content-type mapping
 // ---------------------------------------------------------------------------
 
-/**
- * Map an MCP SDK `CallToolResult` content array to EnvoyMesh `MappedContent[]`.
- *
- * MCP content types:
- * - `TextContent` → `{ type: "text", text }`
- * - `ImageContent` → `{ type: "file", mimeType, base64 }` (filename optional)
- * - `AudioContent` → `{ type: "file", mimeType, base64 }` (no filename in spec)
- * - `resource_link` → `{ type: "structured", data: { uri, name } }`
- * - `resource` (embedded) → `{ type: "structured", data: { uri, text? } }`
- *
- * Additionally, the top-level `structuredContent` field (if present) is
- * extracted separately — it's validated against the tool's `outputSchema`
- * by the SDK and contains typed JSON output.
- */
 export function mapMcpContent(
   rawContent: Array<Record<string, unknown>>,
 ): MappedContent[] {
@@ -138,14 +133,12 @@ export function mapMcpContent(
         base64: item.data,
       });
     } else if (type === "resource_link" && typeof item.uri === "string" && item.uri.length > 0) {
-      // Spec requires non-empty uri on resource_link — skip malformed entries.
       out.push({
         type: "structured",
         data: { uri: item.uri, name: typeof item.name === "string" ? item.name : "" },
       });
     } else if (type === "resource" && item.resource && typeof item.resource === "object") {
       const res = item.resource as Record<string, unknown>;
-      // Spec requires non-empty uri on embedded resource — skip malformed entries.
       if (typeof res.uri !== "string" || res.uri.length === 0) continue;
       out.push({
         type: "structured",
@@ -156,20 +149,10 @@ export function mapMcpContent(
         },
       });
     }
-    // Unknown content types are silently skipped (forward compatibility).
   }
   return out;
 }
 
-/**
- * Map an EnvoyMesh `MappedContent[]` back to MCP server-side content items.
- * Used when re-shaping a tool result before returning it to the MCP client
- * (Phase 48B's `mapToolResultToMcpContent` calls into a similar shape).
- *
- * Symmetric with `mapMcpContent` — text/text, file→image|audio by mimeType,
- * structured→text (JSON-encoded) since MCP has no native structured-data
- * content type.
- */
 export function mappedContentToMcp(
   items: MappedContent[],
 ): Array<Record<string, unknown>> {
@@ -178,7 +161,6 @@ export function mappedContentToMcp(
     if (item.type === "text") {
       out.push({ type: "text", text: item.text });
     } else if (item.type === "file") {
-      // image/* → image, audio/* → audio, else fall back to embedded resource.
       if (item.mimeType.startsWith("image/")) {
         out.push({
           type: "image",
@@ -199,7 +181,6 @@ export function mappedContentToMcp(
         });
       }
     } else if (item.type === "structured") {
-      // MCP has no native structured-data content type; encode as text JSON.
       out.push({ type: "text", text: JSON.stringify(item.data) });
     }
   }
@@ -215,12 +196,6 @@ export interface ConfigValidationResult {
   errors: string[];
 }
 
-/**
- * Validate a list of `McpConsumerConfig` entries before they are passed
- * to `createMcpConsumerManager`. Hosts should run this in their config
- * validator so malformed entries fail fast at startup rather than at the
- * first tool call.
- */
 export function validateMcpConsumerConfigs(configs: unknown): ConfigValidationResult {
   const errors: string[] = [];
   if (!Array.isArray(configs)) {
@@ -279,23 +254,94 @@ function validateHttpUrl(raw: string, allowRemote: boolean): string | null {
   } catch {
     return "not a valid URL";
   }
-  if (!ALLOWED_HTTP_SCHEMES.has(u.protocol)) {
-    return `unsupported scheme "${u.protocol}"; only https is allowed`;
+  const isLoopback = LOOPBACK_HOSTS.has(u.hostname);
+  if (u.protocol === "http:") {
+    if (!isLoopback) {
+      return `http: is only allowed for loopback hosts; use https: for remote`;
+    }
+  } else if (u.protocol !== "https:") {
+    return `unsupported scheme "${u.protocol}"; only http (loopback) or https is allowed`;
   }
-  if (!allowRemote && !LOOPBACK_HOSTS.has(u.hostname)) {
+  if (!allowRemote && !isLoopback) {
     return `remote host "${u.hostname}" requires allowRemoteHttp: true`;
   }
   return null;
 }
 
 // ---------------------------------------------------------------------------
+// Default SDK session factory
+// ---------------------------------------------------------------------------
+
+async function connectSdkSession(config: McpConsumerConfig): Promise<McpServerSession> {
+  const timeoutMs = config.requestTimeoutMs ?? 30_000;
+  const client = new Client({ name: "envoymesh-mcp-consumer", version: "0.1.0" });
+
+  if (config.transport === "stdio") {
+    const env = {
+      ...getDefaultEnvironment(),
+      ...(config.env ?? {}),
+    };
+    const transport = new StdioClientTransport({
+      command: config.command!,
+      args: config.args ?? [],
+      env,
+      stderr: "pipe",
+    });
+    await client.connect(transport);
+  } else {
+    const headers: Record<string, string> = { ...(config.env ?? {}) };
+    if (config.bearerToken) {
+      headers.Authorization = `Bearer ${config.bearerToken}`;
+    }
+    const transport = new StreamableHTTPClientTransport(new URL(config.url!), {
+      requestInit: { headers },
+    });
+    await client.connect(transport);
+  }
+
+  return {
+    async listTools() {
+      const result = await client.listTools(undefined, { timeout: timeoutMs });
+      return {
+        tools: (result.tools ?? []).map((t) => ({
+          name: t.name,
+          description: typeof t.description === "string" ? t.description : undefined,
+        })),
+      };
+    },
+    async callTool(name, args) {
+      const result = await client.callTool(
+        { name, arguments: args },
+        undefined,
+        { timeout: timeoutMs },
+      );
+      const content = Array.isArray(result.content)
+        ? (result.content as Array<Record<string, unknown>>)
+        : [];
+      const structured =
+        result.structuredContent && typeof result.structuredContent === "object"
+          ? (result.structuredContent as Record<string, unknown>)
+          : undefined;
+      return {
+        content,
+        ...(structured ? { structuredContent: structured } : {}),
+        ...(result.isError === true ? { isError: true } : {}),
+      };
+    },
+    async close() {
+      try {
+        await client.close();
+      } catch {
+        /* best-effort */
+      }
+    },
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Manager factories
 // ---------------------------------------------------------------------------
 
-/**
- * No-op manager. Returned by `createMcpConsumerManager([])` for the
- * empty-config case. Every call returns a clear, actionable error.
- */
 export function createNoOpMcpConsumerManager(): McpConsumerManager {
   const err = "No MCP consumers configured. Add 'mcpConsumers' to node-config.json to use MCP tools.";
   return {
@@ -305,28 +351,18 @@ export function createNoOpMcpConsumerManager(): McpConsumerManager {
     async callMcpTool() {
       return { ok: false, error: err };
     },
+    async dispose() {},
   };
 }
 
 /**
- * Executor the host wires in. Calls the local mesh tool registry in-process
- * — no HTTP round-trip, no gateway dependency at runtime.
- */
-export type McpExecutor = (toolName: string, params: Record<string, unknown>) => Promise<unknown>;
-
-/**
- * Create an MCP consumer manager. Requires an `executor` (the host's
- * local tool-dispatch function) so the consumer can drive the gateway
- * MCP runtime without an HTTP round-trip. Validates configs up-front
- * so misconfiguration fails fast.
+ * Create an MCP consumer manager that dials configured servers via the SDK.
+ * Pass `sessionFactory` in tests to avoid spawning real processes.
  */
 export function createMcpConsumerManager(
   configs: McpConsumerConfig[],
-  executor: McpExecutor,
+  options?: CreateMcpConsumerManagerOptions,
 ): McpConsumerManager {
-  if (typeof executor !== "function") {
-    throw new Error("createMcpConsumerManager requires an executor function");
-  }
   const validation = validateMcpConsumerConfigs(configs);
   if (!validation.ok) {
     throw new Error(`Invalid mcpConsumers config: ${validation.errors.join("; ")}`);
@@ -334,20 +370,46 @@ export function createMcpConsumerManager(
   if (configs.length === 0) {
     return createNoOpMcpConsumerManager();
   }
-  const knownServers = new Set(configs.map((c) => c.name));
+
+  const byName = new Map(configs.map((c) => [c.name, c]));
+  const sessions = new Map<string, Promise<McpServerSession>>();
+  const factory = options?.sessionFactory ?? connectSdkSession;
+
+  function getSession(name: string): Promise<McpServerSession> {
+    let pending = sessions.get(name);
+    if (!pending) {
+      const cfg = byName.get(name)!;
+      pending = factory(cfg).catch((err) => {
+        sessions.delete(name);
+        throw err;
+      });
+      sessions.set(name, pending);
+    }
+    return pending;
+  }
 
   return {
     async listMcpTools(serverName?: string) {
-      if (serverName && !knownServers.has(serverName)) {
-        return { ok: false, error: `Unknown MCP server: ${serverName}. Configured: ${[...knownServers].join(", ")}` };
+      if (serverName && !byName.has(serverName)) {
+        return {
+          ok: false,
+          error: `Unknown MCP server: ${serverName}. Configured: ${[...byName.keys()].join(", ")}`,
+        };
       }
+      const names = serverName ? [serverName] : [...byName.keys()];
       try {
-        const result = await executor("mesh.mcp.list_tools", { serverName });
-        // Accept two shapes for backward-compat with the bridge response
-        // envelope (`{ok:true, result:{tools:[...]}}`) and a flat
-        // `{tools:[...]}` direct return.
-        const obj = (result as { result?: unknown } | undefined)?.result ?? result;
-        const tools = (obj as { tools?: McpToolListing[] })?.tools ?? [];
+        const tools: McpToolListing[] = [];
+        for (const name of names) {
+          const session = await getSession(name);
+          const listed = await session.listTools();
+          for (const t of listed.tools) {
+            tools.push({
+              serverName: name,
+              toolName: t.name,
+              description: t.description ?? "",
+            });
+          }
+        }
         return { ok: true, tools };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
@@ -356,33 +418,44 @@ export function createMcpConsumerManager(
     },
 
     async callMcpTool(srvName, toolName, args) {
-      if (!knownServers.has(srvName)) {
-        return { ok: false, error: `Unknown MCP server: ${srvName}. Configured: ${[...knownServers].join(", ")}` };
+      if (!byName.has(srvName)) {
+        return {
+          ok: false,
+          error: `Unknown MCP server: ${srvName}. Configured: ${[...byName.keys()].join(", ")}`,
+        };
       }
       try {
-        const result = (await executor("mesh.mcp.call_tool", {
-          serverName: srvName,
-          toolName,
-          arguments: args ?? {},
-        })) as {
-          ok?: boolean;
-          result?: { content?: Array<Record<string, unknown>>; structuredContent?: Record<string, unknown> };
-          error?: string;
-        } | undefined;
-        if (!result || result.ok === false) {
-          return { ok: false, error: typeof result?.error === "string" ? result.error : "MCP call_tool returned error" };
+        const session = await getSession(srvName);
+        const result = await session.callTool(toolName, args ?? {});
+        if (result.isError) {
+          const text = (result.content ?? [])
+            .filter((c) => c.type === "text" && typeof c.text === "string")
+            .map((c) => c.text as string)
+            .join("\n");
+          return { ok: false, error: text || "MCP call_tool returned error" };
         }
-        const inner = result.result ?? {};
-        const mapped = mapMcpContent(inner.content ?? []);
         return {
           ok: true,
-          content: mapped,
-          ...(inner.structuredContent ? { structuredContent: inner.structuredContent } : {}),
+          content: mapMcpContent(result.content ?? []),
+          ...(result.structuredContent ? { structuredContent: result.structuredContent } : {}),
         };
       } catch (err) {
         const msg = err instanceof Error ? err.message : String(err);
         return { ok: false, error: `MCP call_tool failed: ${msg}` };
       }
+    },
+
+    async dispose() {
+      const closes = [...sessions.values()].map(async (p) => {
+        try {
+          const s = await p;
+          await s.close();
+        } catch {
+          /* ignore */
+        }
+      });
+      sessions.clear();
+      await Promise.all(closes);
     },
   };
 }

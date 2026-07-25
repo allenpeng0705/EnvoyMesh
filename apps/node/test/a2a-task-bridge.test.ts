@@ -139,9 +139,49 @@ describe("a2a-task-bridge: bearer auth", () => {
 describe("a2a-task-bridge: method dispatch", () => {
   it("returns -32601 (method not found) for unknown methods", async () => {
     const bridge = createA2ATaskBridge({ bearerTokens: TOKENS, executor: makeExecutor() });
-    const body = jsonRpc("message/stream", { message: { parts: [{ kind: "text", text: "x" }] } });
+    const body = jsonRpc("tasks/foobar", { id: "x" });
     const res = await bridge.handleRequest(body, "Bearer tok-valid");
     expect(res.error?.code).toBe(A2A_JSONRPC_ERROR_CODES.METHOD_NOT_FOUND);
+  });
+
+  it("message/stream (non-SSE) returns a final Task like message/send", async () => {
+    const executor = makeExecutor({
+      executeMessageSend: vi.fn(async () => ({
+        envoyState: "completed",
+        summary: "streamed",
+        artifacts: [{ kind: "text", content: "hi" }],
+      })),
+    });
+    const bridge = createA2ATaskBridge({ bearerTokens: TOKENS, executor });
+    const body = jsonRpc("message/stream", {
+      message: { parts: [{ kind: "text", text: "x" }] },
+    });
+    const res = await bridge.handleRequest(body, "Bearer tok-valid");
+    expect(res.error).toBeUndefined();
+    expect((res.result as { kind: string }).kind).toBe("task");
+    expect(executor.executeMessageSend).toHaveBeenCalledOnce();
+  });
+
+  it("handleStreamRequest yields working → artifacts → done", async () => {
+    const executor = makeExecutor({
+      executeMessageSend: vi.fn(async () => ({
+        envoyState: "completed",
+        summary: "done",
+        artifacts: [{ kind: "text", content: "answer" }],
+      })),
+    });
+    const bridge = createA2ATaskBridge({ bearerTokens: TOKENS, executor });
+    const body = jsonRpc("message/stream", {
+      message: { parts: [{ kind: "text", text: "q" }] },
+    });
+    const events: Array<{ event: string; data: unknown }> = [];
+    for await (const evt of bridge.handleStreamRequest(body, "Bearer tok-valid")) {
+      events.push(evt);
+    }
+    expect(events[0]?.event).toBe("status-update");
+    expect((events[0]?.data as { state: string }).state).toBe("working");
+    expect(events.some((e) => e.event === "artifact-update")).toBe(true);
+    expect(events.at(-1)?.event).toBe("done");
   });
 
   it("message/send happy path — invokes executor and returns a Task", async () => {

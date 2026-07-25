@@ -15,6 +15,8 @@
 
 <p align="center">
   <a href="https://www.homeclaw.cn/envoy/">🌐 Website</a>
+  ·
+  <a href="README.zh-CN.md">简体中文</a>
 </p>
 
 # EnvoyMesh
@@ -30,7 +32,8 @@ EnvoyMesh is a private social network that you — and your AI agent — actuall
 
 Install an **Envoy** on your computer and phone, chat with friends directly, and let your AI agent negotiate tasks on your behalf — all without any platform in the middle.
 
-📖 **[QuickStart.md](QuickStart.md)** — Get up and running in minutes.
+📖 **[QuickStart.md](QuickStart.md)** — Get up and running in minutes.  
+📘 **[EnvoyMesh Guidebook](EnvoyMesh_GuideBook_0.1.0.md)** ([HTML](EnvoyMesh_GuideBook_0.1.0.html) · [中文版](EnvoyMesh_GuideBook_0.1.0.zh-CN.md))
 
 ---
 
@@ -54,7 +57,7 @@ Install an **Envoy** on your computer and phone, chat with friends directly, and
 ### Core Communication
 - **Chat with friends directly** — peer-to-peer messaging with signed envelopes, no platform, no ads.
 - **Group conversations** — create and manage chat rooms with bonded contacts.
-- **Voice & video calls** — peer-to-peer WebRTC calls between bonded contacts, with signaling over the mesh (no new ports, no central server).
+- **Voice calls** — peer-to-peer WebRTC voice between bonded contacts, with signaling over the mesh (no new ports, no central server). **Video calls are planned**, not a general feature yet.
 - **Audio messages** — record-and-send voice notes that play inline in the chat thread.
 - **File sharing** — secure, policy-gated P2P file transfer with content-addressing.
 - **Trust-based relationships** — define trust tiers (blocked, public, referred, direct) and control what each contact can access.
@@ -441,7 +444,7 @@ For the bridge developer guide, see [`docs/agent_bridge_guide.md`](docs/agent_br
 
 The Agent Network is EnvoyMesh's system for multi-device teams and multi-agent collaboration — from bringing a team online to decomposing complex tasks across AI agents.
 
-**Read first:** [`docs/agent-network-guide.md`](docs/agent-network-guide.md) — membership (opt-in + bonds), Team jobs, settings map, and FAQ.
+**Read first:** [`docs/agent-network-guide.md`](docs/agent-network-guide.md) ([中文](docs/agent-network-guide.zh-CN.md)) — membership (opt-in + bonds), Team jobs, settings map, and FAQ.
 
 ### Fleet & Enterprise Onboarding
 
@@ -839,11 +842,12 @@ See [`docs/implementation-plan.md`](docs/implementation-plan.md) for the full ro
 ## Want to Read More?
 
 - **Start here:** [**`QuickStart.md`**](QuickStart.md) — install, run, mobile, multi-machine, bridge
+- **End-user guidebook:** [EnvoyMesh Guidebook 0.1.0](EnvoyMesh_GuideBook_0.1.0.md) ([HTML](EnvoyMesh_GuideBook_0.1.0.html) · [简体中文](EnvoyMesh_GuideBook_0.1.0.zh-CN.md))
 - **Core concepts:** [Architecture reference](AGENTS.md) · [High-level design](docs/high-level-design.md) · [Security model](docs/security.md)
 - **AI Agent:** [Bridge guide](docs/agent_bridge_guide.md) · [OpenClaw setup](docs/openclaw-extension.md) · [AI Engine config](docs/agent-network-config.md)
-- **Agent Network:** [Operator guide](docs/agent-network-guide.md) · [Fleet onboarding](docs/fleet-onboarding.md) · [Team jobs protocol](docs/agent_network.md)
+- **Agent Network:** [Operator guide](docs/agent-network-guide.md) ([中文](docs/agent-network-guide.zh-CN.md)) · [Fleet onboarding](docs/fleet-onboarding.md) · [Team jobs protocol](docs/agent_network.md)
 - **Knowledge base:** [Knowledge base & RAG](docs/knowledge-base-and-rag.md) · [Obsidian integration](#obsidian-integration)
-- **Voice & video:** [Audio messages](docs/audio-message-support.md) · [Voice & video calls (desktop)](docs/voice-video-call-support.md) · [Native WebRTC on EnvoyGo](docs/voice-video-call-envoygo.md)
+- **Voice & calls:** [Audio messages](docs/audio-message-support.md) · [Voice calls (desktop; video planned)](docs/voice-video-call-support.md) · [Native WebRTC on EnvoyGo](docs/voice-video-call-envoygo.md)
 - **Mobile:** [EnvoyGo design](docs/flutter-thin-client-design.md)
 - **For developers:** [Protocol reference](docs/protocol-standard.md) · [Roadmap](docs/implementation-plan.md)
 

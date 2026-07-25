@@ -12,6 +12,7 @@
  *   npx envoymesh mcp-server                          # connects to default bridge
  *   npx envoymesh mcp-server --bridge http://127.0.0.1:3031  # custom bridge URL
  *   npx envoymesh mcp-server --bridge-allow-remote   # allow non-loopback bridge
+ *   npx envoymesh mcp-server --bridge-token SECRET   # when node bridge.secret is set
  *
  * Claude Desktop config (~/Library/Application Support/Claude/claude_desktop_config.json):
  *   {
@@ -38,6 +39,7 @@
  * Design: docs/a2a-mcp-interop-design.md §4.3.
  */
 import { createInterface } from "node:readline";
+import { mappedContentToMcp, type MappedContent } from "./mcp-client-adapter.js";
 
 const BRIDGE_DEFAULT = "http://127.0.0.1:3031";
 const TOOL_TIMEOUT_MS = 60_000;
@@ -98,6 +100,8 @@ interface BridgeClientOptions {
   maxBodyBytes?: number;
   /** When false (default), reject non-loopback URLs. */
   allowRemote?: boolean;
+  /** Optional bearer matching the node's bridge `secret`. */
+  bearerToken?: string;
 }
 
 interface BridgeClient {
@@ -143,6 +147,10 @@ export function createBridgeClient(
   const u = validateBridgeUrl(bridgeUrl, options.allowRemote === true);
   const origin = u.origin;
   const maxBody = options.maxBodyBytes ?? MAX_STDIO_LINE_BYTES;
+  const authHeaders: Record<string, string> = {};
+  if (options.bearerToken) {
+    authHeaders.Authorization = `Bearer ${options.bearerToken}`;
+  }
   async function readJson(resp: Response): Promise<unknown> {
     const text = await resp.text();
     if (text.length > maxBody) {
@@ -158,7 +166,7 @@ export function createBridgeClient(
     async call(method, params) {
       const resp = await fetch(`${origin}/bridge/json-rpc`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify({ jsonrpc: "2.0", id: 1, method, params }),
         signal: AbortSignal.timeout(TOOL_TIMEOUT_MS),
       });
@@ -172,27 +180,37 @@ export function createBridgeClient(
     },
     async listTools() {
       const resp = await fetch(`${origin}/bridge/list-tools`, {
+        headers: { ...authHeaders },
         signal: AbortSignal.timeout(LIST_TIMEOUT_MS),
       });
       if (!resp.ok) throw new Error(`list-tools HTTP ${resp.status}`);
       const body = (await readJson(resp)) as {
         ok: boolean;
-        tools?: Array<{ name: string; description: string; paramSchema?: Record<string, unknown> }>;
+        tools?: Array<{
+          name: string;
+          description: string;
+          paramSchema?: Record<string, unknown>;
+          requiresApproval?: boolean;
+          isMeshTool?: boolean;
+        }>;
       };
       if (!body.ok || !body.tools) return [];
       return body.tools.map((t) => ({
         name: t.name,
         description: t.description,
         inputSchema: t.paramSchema ?? { type: "object", properties: {} },
+        annotations: {
+          title: t.name,
+          readOnlyHint: t.requiresApproval !== true && t.isMeshTool !== true,
+          destructiveHint: t.requiresApproval === true,
+          openWorldHint: t.isMeshTool === true,
+        },
       }));
     },
     async executeTool(toolName, params) {
       const resp = await fetch(`${origin}/bridge/execute-tool`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        // Phase 48B fix (M12): stamp the bridge request with an audit tag
-        // so the node's audit log can distinguish MCP-server-driven
-        // invocations from owner-driven ones.
+        headers: { "Content-Type": "application/json", ...authHeaders },
         body: JSON.stringify({
           toolName,
           params,
@@ -256,21 +274,31 @@ export function mapToolResultToMcpContent(
 
   const r = result as Record<string, unknown>;
 
-  // Already MCP-shaped content array — pass through (but validate shape).
-  if (Array.isArray(r.content)) {
+  // Already MCP-shaped content array — pass through when types are MCP-native.
+  // 48A MappedContent (`file`/`structured`) is reshaped via mappedContentToMcp.
+  if (Array.isArray(r.content) && r.content.length > 0) {
+    const hasMappedKinds = r.content.some((c) => {
+      if (!c || typeof c !== "object") return false;
+      const t = (c as { type?: unknown }).type;
+      return t === "file" || t === "structured";
+    });
+    if (hasMappedKinds) {
+      const mappedOnly = (r.content as Array<Record<string, unknown>>).filter(
+        (c) => c && typeof c === "object" && (c.type === "text" || c.type === "file" || c.type === "structured"),
+      ) as MappedContent[];
+      return { content: mappedContentToMcp(mappedOnly) as unknown as McpContentItem[] };
+    }
+
     const items: McpContentItem[] = [];
     for (const c of r.content) {
       if (c && typeof c === "object" && typeof (c as { type?: unknown }).type === "string") {
-        items.push(c as McpContentItem);
+        const t = (c as { type: string }).type;
+        if (t === "text" || t === "image" || t === "audio" || t === "resource_link" || t === "resource") {
+          items.push(c as McpContentItem);
+        }
       }
     }
     if (items.length > 0) return { content: items };
-  }
-
-  // Phase 48A consumer output (`{ content: [{type:"text"|"file"|"structured",…}] }`).
-  if (Array.isArray(r.content)) {
-    // Already handled above — this branch is for the bridge's nested shape
-    // (`{ok, result: {content: [...]}}`).
   }
 
   // EnvoyMesh artifact array (`{artifacts: [{kind, …}]}`).
@@ -288,7 +316,6 @@ export function mapToolResultToMcpContent(
       } else if (a.kind === "structured" && a.data && typeof a.data === "object") {
         items.push({ type: "text", text: JSON.stringify(a.data, null, 2) });
       }
-      // Unknown artifact kinds are silently skipped.
     }
     if (items.length > 0) return { content: items };
   }
@@ -370,9 +397,15 @@ export async function handleRequest(
 
 // ─── Args + main ──────────────────────────────────────────────────────────────
 
-export function parseArgs(argv: string[]): { bridgeUrl: string; allowRemote: boolean } {
+export function parseArgs(argv: string[]): {
+  bridgeUrl: string;
+  allowRemote: boolean;
+  bridgeToken?: string;
+} {
   let bridgeUrl = BRIDGE_DEFAULT;
   let allowRemote = false;
+  let bridgeToken: string | undefined =
+    process.env.ENVOYMESH_BRIDGE_SECRET?.trim() || undefined;
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a === "--bridge" || a === "-b") {
@@ -381,18 +414,25 @@ export function parseArgs(argv: string[]): { bridgeUrl: string; allowRemote: boo
       bridgeUrl = a.slice("--bridge=".length);
     } else if (a === "--bridge-allow-remote") {
       allowRemote = true;
+    } else if (a === "--bridge-token") {
+      bridgeToken = argv[++i] ?? bridgeToken;
+    } else if (a.startsWith("--bridge-token=")) {
+      bridgeToken = a.slice("--bridge-token=".length);
     }
   }
-  return { bridgeUrl, allowRemote };
+  return { bridgeUrl, allowRemote, ...(bridgeToken ? { bridgeToken } : {}) };
 }
 
 export async function main(): Promise<void> {
-  const { bridgeUrl, allowRemote } = parseArgs(process.argv.slice(2));
+  const { bridgeUrl, allowRemote, bridgeToken } = parseArgs(process.argv.slice(2));
   // Validates the URL — throws on non-loopback when !allowRemote.
   validateBridgeUrl(bridgeUrl, allowRemote);
 
   process.stderr.write(`[envoymesh-mcp-server] Bridge: ${bridgeUrl}\n`);
-  const client = createBridgeClient(bridgeUrl);
+  const client = createBridgeClient(bridgeUrl, {
+    allowRemote,
+    ...(bridgeToken ? { bearerToken: bridgeToken } : {}),
+  });
 
   const rl = createInterface({ input: process.stdin, terminal: false });
 

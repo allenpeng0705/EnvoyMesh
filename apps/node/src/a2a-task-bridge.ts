@@ -61,6 +61,36 @@ export interface A2ATaskBridgeOptions {
 export interface A2ATaskBridge {
   /** Process one inbound JSON-RPC 2.0 request and produce a response. */
   handleRequest(rawBody: string, authHeader: string | undefined): Promise<A2AJsonRpcResponse>;
+  /**
+   * Phase 48D.5 — `message/stream`: run message/send then emit SSE-friendly
+   * event objects (status-update / artifact-update). Callers serialize as
+   * `text/event-stream`.
+   */
+  handleStreamRequest(
+    rawBody: string,
+    authHeader: string | undefined,
+  ): AsyncGenerator<{ event: string; data: unknown }, void, unknown>;
+}
+
+/**
+ * Test/fallback executor. Prefer `createProductionA2ATaskExecutor` in
+ * production (48D.5). Authenticated `message/send` returns a failed task
+ * with a clear summary so clients do not hang on 404/502.
+ */
+export function createScaffoldingA2ATaskExecutor(): A2ATaskBridgeExecutor {
+  const deferred =
+    "A2A scaffolding executor — wire createProductionA2ATaskExecutor for Bonds + mandate/propose + daemon inbound";
+  return {
+    async executeMessageSend() {
+      return { envoyState: "failed", summary: deferred, artifacts: [] };
+    },
+    async getTask() {
+      return null;
+    },
+    async cancelTask() {
+      return { envoyState: "failed", summary: deferred, artifacts: [] };
+    },
+  };
 }
 
 /**
@@ -452,6 +482,8 @@ function internalError(id: A2AJsonRpcRequest["id"], auditMsg: string): A2AJsonRp
 
       switch (req.method as A2AMethod) {
         case "message/send":
+        case "message/stream":
+          // Non-SSE clients calling message/stream still get a final Task object.
           return dispatchMessageSend(req, ownerId);
         case "tasks/get":
           return dispatchTasksGet(req, ownerId);
@@ -460,6 +492,46 @@ function internalError(id: A2AJsonRpcRequest["id"], auditMsg: string): A2AJsonRp
         default:
           return errorResponse(req.id, A2A_JSONRPC_ERROR_CODES.METHOD_NOT_FOUND, `method not found: ${req.method}`);
       }
+    },
+
+    async *handleStreamRequest(rawBody, authHeader) {
+      const parsed = parseEnvelope(rawBody);
+      if (!parsed.ok) {
+        yield {
+          event: "error",
+          data: errorResponse(null, parsed.code, parsed.message),
+        };
+        return;
+      }
+      const req = { ...parsed.req, method: "message/send" };
+      const auth = resolveBearer(authHeader);
+      if (!auth.ok) {
+        yield {
+          event: "error",
+          data: errorResponse(req.id, A2A_JSONRPC_ERROR_CODES.AUTH_REQUIRED, "auth-required: missing or invalid bearer token"),
+        };
+        return;
+      }
+      yield {
+        event: "status-update",
+        data: { state: "working", timestamp: now().toISOString() },
+      };
+      const final = await dispatchMessageSend(req, auth.entry.ownerId);
+      if (final.error) {
+        yield { event: "error", data: final };
+        return;
+      }
+      const task = final.result as A2ATask | undefined;
+      if (task?.artifacts?.length) {
+        for (const art of task.artifacts) {
+          yield { event: "artifact-update", data: art };
+        }
+      }
+      yield {
+        event: "status-update",
+        data: task?.status ?? { state: "completed", timestamp: now().toISOString() },
+      };
+      yield { event: "done", data: task ?? final.result };
     },
   };
 

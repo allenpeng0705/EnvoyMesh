@@ -139,7 +139,7 @@ import { handleSystemPingViaRuntime } from "./cli-mesh-inbound-system-ping.js";
 import { buildVaultIndex } from "@envoymesh/vault";
 import { createHash, randomUUID } from "node:crypto";
 import { readFile, stat, unlink, writeFile } from "node:fs/promises";
-import { join } from "node:path";
+import { join, extname } from "node:path";
 import { parseNodeArgs, applyPersistedDiscoveryConfig, type NodeArgs } from "./args.js";
 import { buildOutboundCliEnvelopes } from "./cli-actions.js";
 import { deliverOutboundEnvelope, deliverOutboundExpectReply } from "./mesh-outbound-helper.js";
@@ -171,7 +171,7 @@ import { handleInboundLibraryRead } from "./library-read-inbound.js";
 import { handleInboundFeedNotify } from "./feed-notify-inbound.js";
 import { handleDaemonAgentCardInbound } from "./daemon-agent-card-inbound.js";
 import { handleDaemonTaskInbound } from "./daemon-task-inbound.js";
-import { handleInboundShareRequest, handleInboundShareAccept, resolveSenderOwnerId } from "./share-inbound.js";
+import { handleInboundShareRequest, handleInboundShareAccept, resolveSenderOwnerId, isSafeVaultPath } from "./share-inbound.js";
 import { runInboundChatAssist } from "./inbound-chat-assist.js";
 import { chatLogRowsToViews } from "./ai-context.js";
 import { createRagService, type RagService } from "./rag-service.js";
@@ -206,6 +206,10 @@ import {
   devServicePortsConfigured,
 } from "./service-ports.js";
 import { createBridge } from "./bridge/index.js";
+import {
+  createA2ATaskBridge,
+} from "./a2a-task-bridge.js";
+import { createProductionA2ATaskExecutor } from "./a2a-task-executor.js";
 import { executeTool as runRegistryTool, listAgentTools } from "./tool-registry.js";
 import { loadBridgeIdentity, saveBridgeIdentity } from "./bridge/identity-store.js";
 import type { BridgeConfig } from "./bridge/config.js";
@@ -2649,6 +2653,7 @@ async function startRelayTunnelIfConfigured(): Promise<void> {
         relayWsUrl,
         homePeerId: mesh.peerId,
         localWsServerUrl: socialWsLoopbackUrl(),
+        localHttpBaseUrl: `http://127.0.0.1:${bridgeConfig.listenPort}`,
         log: (msg) => console.log(msg),
         onObservedAddr: (addr) => {
           const ipMatch = addr.match(/^\/ip4\/([^\/]+)/);
@@ -3389,6 +3394,59 @@ async function getRecipientDialHints(recipientPeerId: string): Promise<string[] 
   }
 }
 
+const a2aBridgeCfg = persistedNodeConfig?.a2aBridge;
+const a2aTaskBridge =
+  a2aBridgeCfg?.enabled === true
+    ? createA2ATaskBridge({
+        bearerTokens: a2aBridgeCfg.bearerTokens ?? [],
+        executor: createProductionA2ATaskExecutor({
+          profile,
+          taskDispatcher,
+          taskStore,
+          taskRuntimeStore,
+          trustStore,
+          nodeService: nodeService as import("./a2a-task-executor.js").A2AExecutorNodeService,
+          agentPeerId: bridgeIdentity.agentPeerId,
+          agentPublicKeyPem: bridgeIdentity.agentPublicKeyPem,
+          agentPrivateKeyPem: bridgeIdentity.agentPrivateKeyPem,
+          agentCredential: bridgeIdentity.agentCredential,
+          autoCompleteLocal: a2aBridgeCfg.autoCompleteLocal === true,
+          waitForResultMs: a2aBridgeCfg.waitForResultMs ?? 0,
+          persistPath: join(args.profileDir, "a2a-bridge-tasks.json"),
+        }),
+        vaultUrl: a2aBridgeCfg.gatewayUrl ?? null,
+      })
+    : undefined;
+
+function guessA2AVaultMime(relativePath: string): string {
+  switch (extname(relativePath).toLowerCase()) {
+    case ".txt":
+      return "text/plain; charset=utf-8";
+    case ".md":
+      return "text/markdown; charset=utf-8";
+    case ".json":
+      return "application/json";
+    case ".html":
+    case ".htm":
+      return "text/html; charset=utf-8";
+    case ".png":
+      return "image/png";
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    case ".gif":
+      return "image/gif";
+    case ".webp":
+      return "image/webp";
+    case ".pdf":
+      return "application/pdf";
+    case ".csv":
+      return "text/csv; charset=utf-8";
+    default:
+      return "application/octet-stream";
+  }
+}
+
 const bridge = createBridge({
   config: bridgeConfig,
   listenForOpenClaw: bridgeListenForOpenClaw,
@@ -3422,6 +3480,24 @@ const bridge = createBridge({
     }
     return false;
   },
+  ...(a2aTaskBridge
+    ? {
+        a2aBridge: a2aTaskBridge,
+        a2aPath: a2aBridgeCfg?.homeA2aPath ?? "/a2a/jsonrpc",
+        a2aVaultBearerTokens: (a2aBridgeCfg?.bearerTokens ?? [])
+          .map((e) => e.token)
+          .filter((t): t is string => typeof t === "string" && t.length > 0),
+        readVaultFile: async (relativePath: string) => {
+          if (!isSafeVaultPath(vaultDirForNode, relativePath)) return null;
+          try {
+            const bytes = Buffer.from(await readFile(join(vaultDirForNode, relativePath)));
+            return { bytes, mimeType: guessA2AVaultMime(relativePath) };
+          } catch {
+            return null;
+          }
+        },
+      }
+    : {}),
   onSelfSendEnvelope: async (envelope, _remotePeerId) => {
     // Deliver bridge agent reply locally — emit chat:message + persist to log
     const payload = parseChatMessagePayload(envelope.payload);

@@ -283,7 +283,7 @@ async function mcpServer(args: string[]): Promise<void> {
   // Spawn the MCP server adapter as a subprocess — it needs clean stdio
   // for the MCP JSON-RPC protocol (stdout must be protocol-only).
   //
-  // Args forwarded verbatim so callers can pass --bridge / --bridge-allow-remote.
+  // Args forwarded verbatim so callers can pass --bridge / --bridge-allow-remote / --bridge-token.
   // The adapter validates the URL on its own; we don't double-validate here.
   const child = spawn("npx", ["tsx", "apps/node/src/mcp-server-adapter.ts", ...args], {
     // Pin cwd to the repo root so the relative `apps/node/src/...` path

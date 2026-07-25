@@ -1,4 +1,5 @@
 import * as http from "node:http";
+import { createHash } from "node:crypto";
 import type { EnvoyMesh } from "@envoymesh/network";
 import {
   parseChatMessagePayload,
@@ -70,9 +71,7 @@ export interface CreateBridgeOptions {
   /**
    * Phase 48D — A2A Task Bridge. When supplied, the bridge mounts a
    * `POST` handler at `/a2a/jsonrpc` (or `a2aPath` if set) so external
-   * A2A clients can `message/send`, `tasks/get`, `tasks/cancel`.
-   * Bearer-token auth is performed inside the bridge against
-   * `a2aBridge.bearerTokens` from node config.
+   * A2A clients can `message/send`, `message/stream`, `tasks/get`, `tasks/cancel`.
    */
   a2aBridge?: A2ATaskBridge;
   /**
@@ -80,6 +79,14 @@ export interface CreateBridgeOptions {
    * Default `/a2a/jsonrpc` (matches `homeA2aPath` in node config).
    */
   a2aPath?: string;
+  /**
+   * Phase 48D.5 — read a vault-relative file for `GET /vault/<path>`.
+   * Returns bytes + content-type, or null if missing/denied.
+   * URI shape matches `a2a-artifact-map` FileArtifact `file.uri`.
+   */
+  readVaultFile?: (relativePath: string) => Promise<{ bytes: Buffer; mimeType: string } | null>;
+  /** Bearer tokens that may fetch vault files via /vault/* (same as A2A bridge). */
+  a2aVaultBearerTokens?: string[];
 }
 
 /**
@@ -92,7 +99,11 @@ export function createBridge(options: CreateBridgeOptions): {
   _handleMessage: (envelope: any, remotePeerId: string) => Promise<void>;
 } {
   const config = BridgeConfigSchema.parse(options.config);
-  const shouldListen = config.enabled || options.listenForOpenClaw === true;
+  const shouldListen =
+    config.enabled ||
+    options.listenForOpenClaw === true ||
+    options.a2aBridge != null ||
+    options.readVaultFile != null;
   if (!shouldListen) {
     return { agentPeerId: options.identity.agentPeerId, stop: async () => {}, _handleMessage: async () => {} };
   }
@@ -166,6 +177,123 @@ export function createBridge(options: CreateBridgeOptions): {
       }
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ ok: true, tools: options.listTools() }));
+      return;
+    }
+
+    // Phase 48D.5 — vault file serve for FileArtifact URIs (`/vault/<path>`).
+    if (req.method === "GET" && path.startsWith("/vault/")) {
+      if (!options.readVaultFile) {
+        res.writeHead(501, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, reason: "vault serve not configured" }));
+        return;
+      }
+      const authHeader = req.headers["authorization"];
+      const auth = Array.isArray(authHeader) ? authHeader[0] : authHeader;
+      const token = auth?.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+      const allowed = options.a2aVaultBearerTokens ?? [];
+      if (!token || !allowed.includes(token)) {
+        res.writeHead(401, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, reason: "unauthorized" }));
+        return;
+      }
+      let rel = "";
+      try {
+        rel = decodeURIComponent(path.slice("/vault/".length)).replace(/\\/g, "/").trim();
+      } catch {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, reason: "invalid path encoding" }));
+        return;
+      }
+      if (!rel || rel.includes("..") || rel.startsWith("/") || rel.includes("\\")) {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, reason: "invalid path" }));
+        return;
+      }
+      const url = new URL(req.url ?? "", "http://127.0.0.1");
+      const expectedHash = url.searchParams.get("hash")?.trim() ?? "";
+      try {
+        const file = await options.readVaultFile(rel);
+        if (!file) {
+          res.writeHead(404, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ ok: false, reason: "not found" }));
+          return;
+        }
+        if (expectedHash) {
+          const hex = createHash("sha256").update(file.bytes).digest("hex");
+          const b64url = createHash("sha256").update(file.bytes).digest("base64url");
+          const normalized = expectedHash.replace(/^sha256:/i, "");
+          if (
+            normalized !== hex &&
+            normalized !== b64url &&
+            expectedHash !== hex &&
+            expectedHash !== b64url
+          ) {
+            res.writeHead(409, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ ok: false, reason: "content hash mismatch" }));
+            return;
+          }
+        }
+        res.writeHead(200, {
+          "Content-Type": file.mimeType,
+          "Cache-Control": "private, max-age=60",
+          "Content-Length": file.bytes.length,
+        });
+        res.end(file.bytes);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Internal error";
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, reason: msg }));
+      }
+      return;
+    }
+
+    // Phase 48D — A2A Task Bridge. Handled before the /bridge/* whitelist so
+    // the path is reachable and uses A2A bearer auth (not the bridge secret).
+    const a2aMountPath = options.a2aPath ?? "/a2a/jsonrpc";
+    if (req.method === "POST" && path === a2aMountPath) {
+      if (!options.a2aBridge) {
+        res.writeHead(501, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, reason: "a2aBridge not configured" }));
+        return;
+      }
+      try {
+        const raw = await readBody(req, MAX_BRIDGE_BODY_BYTES);
+        const authHeader = req.headers["authorization"];
+        const auth = Array.isArray(authHeader) ? authHeader[0] : authHeader;
+        let wantsStream = false;
+        try {
+          const peek = JSON.parse(raw) as { method?: string };
+          wantsStream = peek.method === "message/stream";
+        } catch {
+          /* fall through to normal handleRequest */
+        }
+        const accept = req.headers["accept"] ?? "";
+        if (wantsStream || (typeof accept === "string" && accept.includes("text/event-stream"))) {
+          res.writeHead(200, {
+            "Content-Type": "text/event-stream",
+            "Cache-Control": "no-store",
+            Connection: "keep-alive",
+            "Access-Control-Allow-Origin": "*",
+          });
+          for await (const evt of options.a2aBridge.handleStreamRequest(raw, auth)) {
+            res.write(`event: ${evt.event}\ndata: ${JSON.stringify(evt.data)}\n\n`);
+          }
+          res.end();
+          return;
+        }
+        const jsonRpc = await options.a2aBridge.handleRequest(raw, auth);
+        res.writeHead(200, {
+          "Content-Type": "application/json",
+          "Cache-Control": "no-store",
+          "Access-Control-Allow-Origin": "*",
+        });
+        res.end(JSON.stringify(jsonRpc));
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Internal error";
+        console.error(`[bridge] a2a jsonrpc failed:`, msg);
+        res.writeHead(500, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: false, reason: msg }));
+      }
       return;
     }
 
@@ -271,35 +399,6 @@ export function createBridge(options: CreateBridgeOptions): {
       return;
     }
 
-    // Phase 48D — A2A Task Bridge. Mounted at /a2a/jsonrpc by default;
-    // operators can override with options.a2aPath.
-    const a2aMountPath = options.a2aPath ?? "/a2a/jsonrpc";
-    if (path === a2aMountPath) {
-      if (!options.a2aBridge) {
-        res.writeHead(501, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: false, reason: "a2aBridge not configured" }));
-        return;
-      }
-      try {
-        const raw = await readBody(req, MAX_BRIDGE_BODY_BYTES);
-        const authHeader = req.headers["authorization"];
-        const auth = Array.isArray(authHeader) ? authHeader[0] : authHeader;
-        const jsonRpc = await options.a2aBridge.handleRequest(raw, auth);
-        res.writeHead(200, {
-          "Content-Type": "application/json",
-          "Cache-Control": "no-store",
-          "Access-Control-Allow-Origin": "*",
-        });
-        res.end(JSON.stringify(jsonRpc));
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : "Internal error";
-        console.error(`[bridge] a2a jsonrpc failed:`, msg);
-        res.writeHead(500, { "Content-Type": "application/json" });
-        res.end(JSON.stringify({ ok: false, reason: msg }));
-      }
-      return;
-    }
-
     try {
       const raw = await readBody(req, MAX_BRIDGE_BODY_BYTES);
       const body = JSON.parse(raw) as Record<string, unknown>;
@@ -347,9 +446,11 @@ export function createBridge(options: CreateBridgeOptions): {
   });
 
   server.listen(config.listenPort, "127.0.0.1", () => {
+    const a2aMountPath = options.a2aPath ?? "/a2a/jsonrpc";
+    const a2aNote = options.a2aBridge ? `, POST ${a2aMountPath}` : "";
     console.log(
       `[bridge] HTTP on http://127.0.0.1:${config.listenPort}/bridge/send, ` +
-        `/bridge/agent-share-proposal, /bridge/execute-tool, GET /bridge/list-tools`,
+        `/bridge/agent-share-proposal, /bridge/execute-tool, GET /bridge/list-tools${a2aNote}`,
     );
   });
 

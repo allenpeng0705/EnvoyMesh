@@ -45,7 +45,8 @@ describe("mapToolResultToMcpContent", () => {
     const result = mapToolResultToMcpContent(consumerResult, false);
     expect(result.content).toHaveLength(2);
     expect(result.content[0]!.type).toBe("text");
-    expect(result.content[1]!.type).toBe("file");
+    expect(result.content[1]!.type).toBe("image");
+    expect(result.content[1]!.data).toBe("iVBOR");
   });
 
   it("maps artifacts array (text kind)", () => {
@@ -215,6 +216,14 @@ describe("parseArgs", () => {
     });
   });
 
+  it("parses --bridge-token", () => {
+    expect(parseArgs(["--bridge-token", "s3cret"])).toEqual({
+      bridgeUrl: "http://127.0.0.1:3031",
+      allowRemote: false,
+      bridgeToken: "s3cret",
+    });
+  });
+
   it("defaults to loopback bridge", () => {
     expect(parseArgs([])).toEqual({
       bridgeUrl: "http://127.0.0.1:3031",
@@ -244,10 +253,6 @@ describe("createBridgeClient", () => {
 
 describe("mapToolResultToMcpContent (symmetric with 48A)", () => {
   it("re-shapes 48A consumer file output to MCP ImageContent/AudioContent", () => {
-    // 48A consumer returns {content: [{type: "file", mimeType: "image/png", base64: "x"}]}.
-    // The bridge receives this as a tool result and re-shapes — but the existing
-    // pass-through branch returns it as-is, which is wrong for MCP clients.
-    // This test pins the *desired* behavior: file→image/audio/resource.
     const result = mapToolResultToMcpContent({
       content: [
         { type: "file", mimeType: "image/png", base64: "abc" },
@@ -255,10 +260,9 @@ describe("mapToolResultToMcpContent (symmetric with 48A)", () => {
         { type: "structured", data: { x: 1 } },
       ],
     }, false);
-    // content[] is pass-through; the bridge layer that turns file→image lives
-    // in 48A's `mappedContentToMcp`. We just verify the bridge doesn't crash
-    // on these shapes.
-    expect(result.content.length).toBeGreaterThan(0);
+    expect(result.content[0]).toMatchObject({ type: "image", data: "abc", mimeType: "image/png" });
+    expect(result.content[1]).toMatchObject({ type: "audio", data: "def", mimeType: "audio/ogg" });
+    expect(result.content[2]).toMatchObject({ type: "text", text: JSON.stringify({ x: 1 }) });
   });
 
   it("handles null result safely", () => {

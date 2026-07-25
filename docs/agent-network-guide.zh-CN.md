@@ -1,481 +1,354 @@
-# EnvoyMesh Agent Network 完整指南
+# Agent Network — 运维指南
 
-**状态：** 已发布（Phase 40–47）
-**受众：** 运维人员、开发者、希望理解 Agent Network 工作原理的用户
-**相关文档：** [Agent Network 设计文档](./agent_network.md) · [Fleet 部署指南](./agent-network-fleet.md) · [LAN 测试场景](./agent-network-lan-scenarios.md) · [迭代设计](./agent-network-iteration.md)
-
----
-
-## 目录
-
-1. [什么是 Agent Network？](#1-什么是-agent-network)
-2. [三层架构](#2-三层架构)
-3. [核心规则：谁能参与 Team Job？](#3-核心规则谁能参与-team-job)
-4. [配置步骤](#4-配置步骤)
-5. [Worker 评分机制](#5-worker-评分机制)
-6. [Team Job 工作流程](#6-team-job-工作流程)
-7. [Fleet 局域网部署](#7-fleet-局域网部署)
-8. [声明式 fleet.yaml 部署](#8-声明式-fleetyaml-部署)
-9. [AI 引擎配置（EnvoyAI vs Ext Agent）](#9-ai-引擎配置envoyai-vs-ext-agent)
-10. [常见问题排查](#10-常见问题排查)
-11. [安全模型](#11-安全模型)
+> **英文版：** [`agent-network-guide.md`](./agent-network-guide.md)  
+> **受众：** 使用 EnvoyMesh、想了解 **Agent Network**（代理网络）含义、如何加入以及 **Team jobs**（团队任务）如何运作的任何人。  
+> **状态：** 当前产品行为（截至 2026-07）。线协议与实现细节见文末链接的设计文档。
 
 ---
 
-## 1. 什么是 Agent Network？
+## 1. 「Agent Network」指什么
 
-Agent Network 是 EnvoyMesh 让**已建联（bonded）的人**的本地 AI 代理协同工作的机制——**无需中央云服务器或账号系统**。
+**Agent Network** 是 EnvoyMesh 让**已建联（bonded）的人**各自在本地的 AI 代理协同工作的方式——**无需中央云或账号服务器**。
 
-**核心价值：**
-- 你的代理运行在**你的**硬件上，使用**你的**模型
-- 协作只在**你信任的人**之间进行
-- 所有消息都是 Ed25519 签名的，所有操作都有 JSONL 审计日志
-- 中继节点（Relay）只负责连通性——不运行 LLM、不读取任务内容
+人们常把下面三层混在一起：
 
-**不是什么：**
-- 不是公共市场——陌生人无法招募你的代理
-- 不是云服务——没有中央账号
-- 不是强制加入——默认私有，需要主动选择加入
+| 层级 | 是什么 | 在哪里配置 |
+|------|--------|------------|
+| **A. Bonds（信任关系）** | 所有者之间的加密信任（`direct` / `referred` / `public` / `blocked`） | 联系人、发现、Fleet 入网 |
+| **B. Worker 成员资格（主动加入）** | 「我的代理可被招募参与 Team jobs」 | **设置 → Agent Network → Join Agent Network** |
+| **C. Team jobs（协作任务）** | 把目标拆给多个代理，汇总成一份报告 | 导航 → **Team jobs** |
 
----
+**重要：** Agent Network **不是**公共市场。网格上的陌生人无法招募你的代理。协作只发生在**已建联**的人之间，且对方必须**主动加入**。
 
-## 2. 三层架构
-
-Agent Network 分为三层，每层可独立配置：
-
-| 层级 | 功能 | 配置位置 | 说明 |
-|------|------|----------|------|
-| **A. Bonds（信任关系）** | 人与人之间的加密信任 | 联系人、发现、Fleet 入网 | 信任层级：`direct`（直接）/ `referred`（介绍）/ `public`（公开）/ `blocked`（拉黑） |
-| **B. Worker membership（加入网络）** | "我的代理可以被招募参与 Team Job" | **设置 → Agent Network → Join Agent Network** | 单个开关切换"私有代理"↔"可招募 Worker" |
-| **C. Team jobs（团队任务）** | 将一个目标拆分给多个代理，汇总成一个报告 | 导航 → **Team jobs** | 代码中叫 `chain`；产品名叫 Team Job |
-
-**UI 名称对照：**
-
-| 产品名称 | 代码名称 | 说明 |
-|----------|----------|------|
-| Agent Network | — | 设置中的网络成员管理标签页 |
-| Join Agent Network | capability-provider | Worker 选择加入的开关 |
-| Team jobs | chain / multi-agent chain | 多代理协作任务 |
-| Team job defaults | chain defaults | 任务默认参数（分配模式等） |
+无论是否加入，本地代理始终为你服务。加入只影响**已建联的对等节点**能否在 Team jobs 中向你的代理求助。
 
 ---
 
-## 3. 核心规则：谁能参与 Team Job？
+## 2. 界面里会看到的名称
 
-要回答"Alice 的代理能参与我的 Team Job 吗？"——**以下四个条件必须全部满足：**
+| 界面标签 | 旧名 / 代码名 | 含义 |
+|----------|---------------|------|
+| **Agent Network**（设置页签） | 曾短暂叫「Devices & Fleet」 | 成员资格 + Fleet 入网 |
+| **Join Agent Network** | Capability Provider（能力提供者） | 主动加入，以便对等节点招募你的代理 |
+| **Team jobs** | 「Chains」/ 多代理链 | 面向所有者的协作视图 |
+| **Team job defaults**（团队任务默认值） | Chain Defaults | 分配模式、竞价、停滞策略（在 **设置 → AI** 下） |
+| **AI Engine**（AI 引擎） | 曾被误标为「Agent Network」 | *本机* Home Node 上跑哪种 AI（EnvoyAI / Ext Agent）——**与**加入 Agent Network **不是一回事** |
 
-1. ✅ 你和 Alice **已建联**（通常是 `direct` 或 `referred` 信任级别）
-2. ✅ Alice 开启了 **Join Agent Network**
-3. ✅ Alice 的 **Agent Card**（代理名片）已同步到你（建联时自动获取）
-4. ✅ 她的名片声明了有用的能力（如 `task.execute`）**以及** `capability-provider` 成员标签
-
-**如果 Alice 没有加入**——即使你们是朋友，她的代理仍然是**私有的**，不会被招募。
-
-### 信任层级与协作权限
-
-| 信任层级 | 协作权限 |
-|----------|----------|
-| `blocked` | ❌ 禁止一切协作 |
-| `public`（陌生人） | ❌ 不作为 Team Job Worker；Agent Card 不会自动获取 |
-| `referred`（介绍人） | ✅ 可以参与；编排器链路流量需要 `referred` 或更高级别 |
-| `direct`（直接信任） | ✅ 完整 Worker 路径（竞价 / 直接分配） |
-
-### "Join Agent Network" 开启后发生了什么？
-
-1. 节点配置设为 `capabilityProviderEnabled: true`
-2. Agent Card 广播 `capability-provider` 能力标签
-3. 已建联的节点同步你的名片，并可通过能力索引发现你
-4. 你可选的 Agent Network Profile（新鲜度、消费模式、上下文窗口、能力标签）会被分享用于**评分排序**
-
-关闭后：能力标签移除；本地聊天功能不受影响。
+协议与源码仍使用 `task.chain.*`、`ChainsView`、`capability-provider` 等名称；工程师看代码没问题，Social 界面则用上表标签。
 
 ---
 
-## 4. 配置步骤
+## 3. 成员资格模型（核心规则）
 
-### 步骤 1：建联（Bond）
+### 3.1 两个不同的问题
 
-两台机器之间需要先建立信任关系：
+**「我加入 Agent Network 了吗？」**  
+→ 是你**本节点**上的一项设置。开启时**不需要**已有建联。
 
-| 方式 | 适用场景 | 操作 |
-|------|----------|------|
-| **Office LAN** | 同一 Wi-Fi | 设置 → Agent Network → Office LAN → Enable（共享 token） |
-| **Company Invite** | 远程 | 分享 `envoy://invite?token=…` 链接 |
-| **Fleet Manifest** | 20+ 台有名单 | 签名的成员名单导入 |
-| **Pairing Kiosk** | 访客/临时 | 一键铸造邀请 |
+**「Alice 的代理能参与我的 Team job 吗？」**  
+→ 仅当**以下全部**成立：
 
-### 步骤 2：加入 Agent Network
+1. 你与 Alice **已建联**（通常为 `direct` 或 `referred` 信任）。
+2. Alice 在其节点上开启了 **Join Agent Network**。
+3. 她的 **agent card**（代理名片）已到达你这边（符合信任层级时建联后自动拉取）。
+4. 她的名片声明了有用能力（如 `task.execute` 或子任务所需能力）**以及**成员标签 `capability-provider`（能力提供者）。
 
-在**每台**机器上：**设置 → Agent Network → Join Agent Network**（开启）
+若 Alice 从未加入，她的代理保持**私有**。即使你们是朋友，也不会把她当作 Worker。
 
-### 步骤 3：填写 Profile（可选但推荐）
+### 3.2 信任层级（谁能协作）
 
-在 **设置 → Agent Network** 下，加入后可填写：
+| 信任 | 典型含义 | Agent Network / Team jobs |
+|------|----------|---------------------------|
+| **blocked** | 明确拒绝 | 不能协作 |
+| **public** | 陌生人 / 未建为朋友 | 不作为 Team jobs Worker；不自动拉取 agent card |
+| **referred** | 经介绍 / 有限信任 | 可在策略下参与；编排器侧链流量需 referred 或更高 |
+| **direct** | 朋友 / Fleet 对等节点 | 完整 Worker 路径（竞价 / 直接分配） |
 
-| 字段 | 用途 | 示例 |
-|------|------|------|
-| **Model freshness（1-10）** | 模型有多新/多强 | `9` |
-| **Spend posture** | 消费模式 | `subscription` / `metered` / `unknown` |
-| **Context window** | 上下文窗口大小 | `128k` / `256k` / `512k` / `1M+` |
-| **Strengths（能力标签）** | 擅长的领域 | `coding`, `research`, `summarization` |
+具体门控由 Bond Engine 与链入站处理器执行。产品层面的实用规则：**Team jobs = 已建联 + 已加入的对等节点。**
 
-### 步骤 4：配置 Team Job 默认值
+### 3.3 「Join Agent Network」在线上做了什么
 
-在 **设置 → AI → Team job defaults** 中：
+开启 **Join Agent Network** 时：
 
-- **分配模式**：`Direct assign`（默认，推荐）或 `Competitive bidding`（竞价）
-- **迭代轮数**：`iterationMaxRounds = 1`（默认单轮）
-- **成本 UI**：默认隐藏
+1. 节点配置设为 `capabilityProviderEnabled: true`。
+2. 你的 agent card（及相关广播）包含 `capability-provider` 能力。
+3. 同步你名片的已建联对等节点可通过能力索引发现你。
+4. 可选的 **Agent Network profile**（新鲜度、消费姿态、上下文窗口、特长）会被分享，并在他人发起 Team job 时用于**评分**。
 
-### 步骤 5：发起 Team Job
-
-打开 **Team jobs → New team job**，输入目标，预览，启动。
-
-### 快速检查清单
-
-```text
-□ 两台机器已建联（联系人中互相可见）
-□ 两台机器都开启了 Join Agent Network
-□ 点击了 Refresh workers（Workers 状态显示 ≥1 个已加入的节点）
-□ AI 引擎已配置（内置 OpenClaw 或外部 Agent）
-□ Team Job 默认值设为 Direct assign
-```
+关闭后，成员能力从名片中移除；对等节点不再把你当作可招募 Worker。与本机 AI 聊天不受影响。
 
 ---
 
-## 5. Worker 评分机制
+## 4. Agent Network profile（评分）
 
-当发起 Team Job 时，系统按**加权评分**选择最合适的 Worker。
+在 **设置 → Agent Network** 中，加入后可填写**由所有者自证**的 profile：
 
-### 评分权重
-
-| 维度 | 权重 | 映射 |
-|------|------|------|
-| **能力匹配** | **0.30** | 精确匹配→1.0；能力标签→0.7；有 `task.execute`→0.45；其他→0.2 |
-| **上下文窗口** | **0.20** | 128k→0.25, 256k→0.5, 512k→0.75, 1M+→1.0 |
-| **新鲜度** | **0.15** | `(modelFreshness - 1) / 9`，范围 0–1 |
-| **吞吐量** | **0.15** | tokens/sec，软上限约 200 tok/s；未定义→0.35 |
-| **消费模式** | **0.10** | subscription→1.0, metered→0.55, unknown→0.35 |
-| **同局域网** | **0.10** | 同 LAN→1.0, 否则→0.35 |
-
-**分配规则：**
-- 硬性前提：已加入 + 有执行能力（上游强制）
-- 这些是**软性排序信号**——只影响选择顺序
-- `assignWorkersToSteps` 保证有 Worker 可用时不会让任何步骤悬空
-- 唯一 Worker 获得所有步骤；否则按分数最高分配
-
-### 示例
-
-目标包含 `coding` 步骤：
-- Bob：strengths=`coding`，freshness=9，context=1M+ → 高分
-- Carol：strengths=`summarization`，freshness=7，context=512k → 较低分
-- 结果：coding 步骤分配给 **Bob**
-
----
-
-## 6. Team Job 工作流程
-
-### 基本流程
-
-```
-你输入目标（"研究X，然后总结"）
-        ↓
-你的 Home Node 代理【规划】子任务
-        ↓
-子任务分配给已建联 + 已加入的 Workers
-        ↓
-Workers 在【各自的】节点上运行
-（他们的模型、保险库、策略）
-        ↓
-结果返回 → 你的 Orchestrator【合并】成一个报告
-        ↓
-你在 Team jobs 面板查看报告
-```
-
-### 分配模式
-
-| 模式 | 行为 | 适用场景 | 成本 UI |
-|------|------|----------|--------|
-| **Direct assign**（默认） | 直接选最佳 Worker，立即分配 | 个人/小团队 | 默认隐藏 |
-| **Competitive bidding** | 收集竞价，排序后分配 | 需要成本控制 | 可选显示 |
-
-### 多轮迭代（Phase 47）
-
-| 设置 | 行为 |
+| 字段 | 用途 |
 |------|------|
-| `maxRounds=1`（默认） | 单轮——与之前完全一致（回归测试验证） |
-| `maxRounds=2` | 草稿1 → 判断（继续/停止/问用户）→ 草稿2 → 最终发布 |
+| **Model freshness**（模型新鲜度，1–10） | 你所跑模型的新旧 / 能力感受 |
+| **Spend posture**（消费姿态） | `subscription` / `metered` / `unknown` — 长任务更偏好 subscription |
+| **Context window**（上下文窗口） | `128k` / `256k` / `512k` / `1M+` |
+| **Strengths**（特长） | 如 research、coding、summarization 等标签 |
 
-**关键规则：**
-- 草稿**永不直接发布**——只有最终接受才发布一个报告
-- `maxRounds=1` 的行为与单次任务**位级一致**（有回归测试）
-- 判断模式：`always_stop`（总是停）、`llm`（AI 判断）、`owner`（用户决定）
+编排器寻找 Worker 时，EnvoyMesh 大致按以下优先级评分：
 
-### Plan + Assign 模式
+**能力匹配 ≫ 上下文窗口 ≫ 新鲜度 ≫ 消费姿态**
 
-Assigner（分配者）LLM 流程：
-1. 构建名单感知的提示词（提示词硬规则：每个步骤必须有 `assignedPeerId`，不发明 ID）
-2. 解析 JSON 响应为步骤列表
-3. 通过评分 API 分配 Worker
-4. 构建子任务（含 DFS 环检查）
-5. 第 2+ 轮时携带上一轮草稿作为上下文
+直接分配模式选得分最高的可用 Worker（无竞价界面）。竞争模式仍用竞价 / 成本，评分作辅助信号。
+
+这些属性均为**自声明**。对等节点信任它们，是因为来自**已建联的所有者**——而非中央评级机构。
 
 ---
 
-## 7. Fleet 局域网部署
+## 5. Team jobs（协作如何运作）
 
-### 场景：办公室多台电脑，同一 Wi-Fi
+### 5.1 Team job 是什么
 
-**这是最简单的部署路径——推荐。**
+**Team job** 是你发起的多代理工作流：
 
-#### 操作步骤
+1. 你陈述目标（如「研究 X，然后总结」）。
+2. Home Node 上的代理**规划**子任务。
+3. 子任务提供给**已建联且已加入**的 Worker。
+4. Worker 在*各自*节点上本地运行（各自的模型、保险库、策略）。
+5. 结果返回；你的编排器**合并**为一份报告。
 
-1. **每台机器**打开 **设置 → Agent Network → Office LAN → Enable office LAN team**
+在 **Team jobs** 导航项中查看进度（进行中列表 + 报告）。
 
-   这一键操作同时：
-   - ✅ 开启 **Join Agent Network**
-   - ✅ 开启 **LAN Auto-Bond**（同 Wi-Fi 自动建联）
-   - ✅ 生成/输入一个 **共享 fleet token**（最少 8 字符）
-   - ✅ 提供 **Copy token** 按钮
+### 5.2 点击「New team job」之前
 
-2. **共享同一个 token**：在每台机器上粘贴相同的 token
+你需要**至少一名**已建联联系人，且该联系人：
 
-3. 同一 Wi-Fi 下的节点会**自动以 `direct` 信任级别静默建联**
+- 已开启 **Join Agent Network**，且  
+- 对你可见的 agent card 是最新的。
 
-4. 点击 **Refresh workers** 确认 Worker 列表显示所有已加入的节点
+单节点**无法**独自完成多代理 Team job。界面会阻止启动并说明原因（`no_workers` / 「Waiting for workers」）。
 
-#### ⚠️ 重要提醒
+### 5.3 分配模式（设置 → AI → Team job defaults）
 
-> **建联不等于可招募！** 单纯建联只让对方出现在联系人里；必须同时开启 **Join Agent Network** 才能成为可用的 Worker。LAN 建联 + 未加入 = 信任但不可招募。
+| 模式 | 行为 | 成本 / 竞价界面 |
+|------|------|-----------------|
+| **Direct assign**（直接分配，默认） | 选首个 / 最佳可用 Worker，立即分配 | 默认隐藏 |
+| **Competitive bidding**（竞争性竞价） | 收集竞价、排序、分配 | 可选显示成本界面 |
 
-### 路径选择
+个人 / 小团队多数情况应使用 **direct assign**。
 
-| 场景 | 推荐路径 | 信任建立方式 |
-|------|----------|-------------|
-| 1-5 台远程机器 | Company Invite | 一次性令牌 |
-| 5-20 台大部分远程 | Company Invite + Bond Autonomy | 令牌 + 自动接受 |
-| **全部在办公室 Wi-Fi** | **LAN Auto-Bond（推荐）** | 共享 token + mDNS |
-| 20+ 台有名单 | Fleet Manifest | 运维签名的名单 |
-| 访客/临时人员 | Pairing Kiosk | Kiosk 铸造邀请 |
+### 5.4 端到端示意
 
-### Bond Autonomy（自动接受）
+```
+你（所有者）              你的 Home Node                 已建联对等节点（已加入）
+─────────────            ──────────────                 ─────────────────────
+输入目标 ──►  规划子任务
+             寻找 Worker（已建联 + capability-provider）
+             直接分配或竞价  ───────────────►  代理执行子任务
+             ◄────────────── 部分结果 / 最终结果
+             合成报告
+Team jobs 界面 ◄── 已发布报告
+```
 
-Sponsor（发起者）节点可以配置自动接受 Hello 请求：
-- **Sponsor proof token** — 自动接受携带匹配 `proofOfContext` 的 hello
-- **每日上限** — `maxAutoBondsPerDay` 限制每日自动接受数量
-- **安装器节点** — `setupSponsorFriendProofOfContext` 携带 token 发送 hello
-
-**两个值必须完全一致**，否则自动 hello 被拒绝。
+若使用 Relay，仅协助**连通**；不在 Relay 路径上运行 LLM，也不作为可信「大脑」读取 Team job 载荷。
 
 ---
 
-## 8. 声明式 fleet.yaml 部署
+## 6. 设置项地图
 
-对于批量、可重复的部署，使用 YAML 配置文件 + 命令行工具。
+### 设置 → Agent Network
 
-### fleet.yaml 示例
+网络成员资格与扩大已建联 Fleet 的主要入口：
+
+1. **Office LAN** — 同一 Wi-Fi 的快捷路径：Join + LAN Auto-Bond + 共享 token  
+2. **Workers status** — 已建联 / 已 Join / 可见 Worker + **Refresh workers**  
+3. **Join Agent Network** — Worker 主动加入 + profile 编辑  
+4. **Bond Autonomy / Setup Sponsor Friend** — 安装器自动 hello 配对  
+5. **Company Invites** — 可分享的 `envoy://invite?…` 链接  
+6. **LAN Auto-Bond** — 同一 Wi-Fi + 共享 token（默认关；进阶用户）  
+7. **Pairing Kiosk** — 一键铸造邀请（默认关）  
+8. **Fleet Manifest** — 较大团队导入签名名单  
+
+Fleet 路径建立的是 **bonds**。Bond 是基础；成员主动加入才让这些 bond 可用于 Team jobs。仅 LAN 建联而未 Join 时，对等节点受信任但不可招募——界面会给出温和提示。拨号提示显示直连私有 LAN 路径时，Assigner 会给该 Worker 更高软分（`sameLan`）。
+
+运维手册：[`agent-network-fleet.md`](./agent-network-fleet.md)  
+线级入网：[`fleet-onboarding.md`](./fleet-onboarding.md)  
+无头配置 + 脚本：[`fleet-bootstrap.md`](./fleet-bootstrap.md)（`npm run fleet:apply`）
+
+### 设置 → AI
+
+- **AI Engine** — *本机* EnvoyAI 与 Ext Agent 的选择  
+- **Team job defaults** — 直接分配 vs 竞争、停滞 / 再平衡策略  
+- 以及 social proxy、文档采集等姿态  
+
+AI Engine 是**本地引擎选择**，**不是**「Join Agent Network」。
+
+引擎详解：[`agent-network-config.md`](./agent-network-config.md)（历史 Phase 32 标题；内容为 AI Engine 配置）。
+
+### 导航 → Team jobs
+
+- 进行中的任务、报告、取消 / 管理  
+- 移动端（**EnvoyGo**，产品 thin client）以**只读**方式镜像 Home Node 上最近 / 进行中的任务  
+
+协议设计：[`agent_network.md`](./agent_network.md)
+
+---
+
+## 7. 常见问题
+
+### 只有已建联联系人才能在 Agent Network 里吗？
+
+- **主动加入：** 任何人都可以在自己的节点上开启 Join Agent Network。  
+- **协作：** 是的——只有**已建联**（符合信任层级）且**已加入**的联系人才会作为 Team jobs 的 Worker 出现。  
+- Fleet 入网是为了**安全地建立**这些 bond——不是为了开放匿名 Worker 池。
+
+### 加入后我的代理就公开了吗？
+
+不会。加入后仅向**已经信任你的对等节点**通过 bond 同步的 agent card 广播「可被招募」；不会公开你的保险库，也不会让陌生人成为你的 Worker。
+
+### 双方都要加入吗？
+
+要在**两人之间**跑 Team job：你招募的 **Worker** 必须已加入。你的节点作编排器；Worker 需要 `capability-provider`。若无人加入，会出现「no workers」。
+
+### 手机怎么办？
+
+**EnvoyGo** 是产品移动端 thin client：配对 Home Node 后，可**只读**查看 Home 上发布的 Team job 报告。Fleet 邀请 / 名单等管理界面面向**桌面 Social**。
+
+历史上 Phase 11 的 Capacitor 全节点实验（`apps/mobile/`）为**备份 / 旧路径**，不是当前产品移动端；新功能以 EnvoyGo 为准。
+
+### 为什么把 Chains / Devices & Fleet 改名了？
+
+「Chains」容易联想到区块链。「Devices & Fleet」像 MDM，又掩盖了成员资格含义。界面现称 **Team jobs** 与 **Agent Network**；代码里仍可能写 `chain`。
+
+---
+
+## 8. 安全概要
+
+- **无中央账号服务器** — 身份为 Ed25519 / DID。  
+- **Bond Engine** 按信任层级门控 intent。  
+- **主动加入成员资格** — 默认私有。  
+- **签名信封** — Worker 与编排器验证对等节点。  
+- **Mandate / 预算** — Team jobs 携带所有者授权边界。  
+- **Audit JSONL** — 协作可在本节点审计。  
+- **Relay 保持「哑」** — 仅连通；Relay 路径上不跑 LLM。
+
+---
+
+## 9. 相关文档
+
+| 文档 | 作用 |
+|------|------|
+| [agent-network-fleet.md](./agent-network-fleet.md) | 按日 Fleet 上线运维手册 |
+| [agent-network-lan-scenarios.md](./agent-network-lan-scenarios.md) | **同一 LAN 三台机器** — 由简到繁的真实测试场景 |
+| [fleet-onboarding.md](./fleet-onboarding.md) | Fleet 路径 schema 与威胁模型 |
+| [agent_network.md](./agent_network.md) | Team jobs / chain 协议与运行时设计 |
+| [agent-network-config.md](./agent-network-config.md) | AI Engine（EnvoyAI / Ext Agent）配置 — Phase 32 |
+| [implementation-plan.md](./implementation-plan.md) | Phase 清单（32、35–36、40–43、47） |
+| [agent-network-plan-assign.md](./agent-network-plan-assign.md) | Assigner plan+assign + merge（已交付） |
+| [agent-network-iteration.md](./agent-network-iteration.md) | 多轮 Team job 迭代 A ∩ B（Phase 47，已交付） |
+
+---
+
+## 10. 快速上手清单
+
+1. 同一办公室 Wi-Fi：两台机器均使用 **Office LAN → Enable office LAN team**（共享 token）。远程同事：通过邀请 / 名单建联后，各节点开启 **Join Agent Network**。  
+2. 可选填写 **profile**（特长、新鲜度、上下文）。  
+3. **Team job defaults** 保持 **direct assign**，除非需要竞价。  
+4. 打开 **Team jobs → New team job**，输入目标，预览，启动。  
+5. 合成完成后打开报告。  
+6. 若 Worker 列表为空，在 Agent Network 页签点击 **Refresh workers**。
+
+**同一 LAN 三台机器？** 见 [`agent-network-lan-scenarios.md`](./agent-network-lan-scenarios.md) 中的场景阶梯（建联 → 单次 Team job → 扇出 → 迭代 → 远程 Assigner → 停滞）。
+
+---
+
+## 相关：plan + assign 设计
+
+详见 [`agent-network-plan-assign.md`](./agent-network-plan-assign.md)：Assigner LLM 的 plan+assign 流程、软能力匹配、吞吐量评分、merge 作为最终结果、远程 `assignerPeerId` 交接，以及 MCP roster/probe 工具。
+
+多轮 refinement（草稿 → 评判 → replan /  capped extend）已在 **Phase 47 交付** — 见 [`agent-network-iteration.md`](./agent-network-iteration.md)。默认保持当前单次 Team jobs（`iterationMaxRounds=1`）；可在设置 / 启动对话框中开启。远程 Assigner 交接携带迭代参数（+ 可选 wire blob）；Assigner UI 会收到 `chain:iteration` 进度事件。
+
+---
+
+## 11. 扩展：Fleet 局域网部署
+
+办公室多台电脑、同一 Wi-Fi 时，**Office LAN** 是最简单的路径（详见 [`agent-network-fleet.md`](./agent-network-fleet.md)）。
+
+### 操作步骤
+
+1. **每台机器**：**设置 → Agent Network → Office LAN → Enable office LAN team**  
+   一键同时：开启 **Join Agent Network**、**LAN Auto-Bond**、设置共享 fleet token（至少 8 字符），并提供 **Copy token**。
+2. **每台机器粘贴相同 token**。
+3. 同一 Wi-Fi 下的节点会以 `direct` 信任**静默建联**。
+4. 点击 **Refresh workers**，确认 Worker 列表包含所有已加入节点。
+
+> **建联 ≠ 可招募。** 仅建联会让对方出现在联系人中；须同时 **Join Agent Network** 才能成为 Worker。LAN 建联但未 Join = 受信任但不可招募（界面会提示）。
+
+### 路径选择（摘要）
+
+| 场景 | 推荐路径 | 信任建立 |
+|------|----------|----------|
+| 1–5 台远程 | Company Invite | 一次性 token |
+| 5–20 台多数远程 | Company Invite + Bond Autonomy | token + 自动接受 |
+| **全在同一办公室 Wi-Fi** | **LAN Auto-Bond（推荐）** | 共享 token + mDNS |
+| 20+ 台有名单 | Fleet Manifest | 运维签名名单 |
+| 访客 / 临时 | Pairing Kiosk | Kiosk 铸造邀请 |
+
+**Bond Autonomy：** Sponsor 节点可配置自动接受 Hello（`proofOfContext` 匹配 sponsor proof token、`maxAutoBondsPerDay` 等）。两端 token **必须完全一致**，否则 auto-hello 会被拒。
+
+---
+
+## 12. 扩展：声明式 `fleet.yaml` 部署
+
+批量、可重复部署时使用 YAML + CLI（完整说明：[`fleet-bootstrap.md`](./fleet-bootstrap.md)）。
+
+### 示例与执行
 
 ```yaml
 version: "0.1"
 fleetId: acme-office
-
 shared:
   membership:
-    capabilityProviderEnabled: true    # 所有节点开启 Join
+    capabilityProviderEnabled: true
   lanAutoBond:
     enabled: true
-    tokenRef: LAN_FLEET_TOKEN          # 从环境变量读取 token
-  bondAutonomy:
-    enabled: true
-    sponsorProofTokenRef: SPONSOR_TOKEN
-    maxAutoBondsPerDay: 50
-
+    tokenRef: LAN_FLEET_TOKEN
 nodes:
   - id: home
-    role: sponsor                      # 发起者（只能有一个）
+    role: sponsor
     rpc:
       wsUrl: "ws://127.0.0.1:3030/ws"
-
   - id: desk-alice
     role: member
     rpc:
       wsUrl: "ws://192.168.1.21:3030/ws"
     join:
-      method: lan                      # 同 Wi-Fi + token
+      method: lan
       trustLevel: direct
-
-  - id: desk-bob
-    role: member
-    rpc:
-      wsUrl: "ws://192.168.1.22:3030/ws"
-    join:
-      method: manifest                 # 签名名单导入
-      trustLevel: direct
-      manifestRole: member
-
-  - id: remote-carol
-    role: member
-    rpc:
-      wsUrl: "ws://127.0.0.1:5030/ws"
-    join:
-      method: invite                   # 邀请链接
-      trustLevel: direct
-
 apply:
   dryRun: false
   ensureOnlineTimeoutSec: 30
 ```
 
-### 执行
-
 ```bash
-# 复制示例文件
 cp fleet.example.yaml fleet.yaml
-# 编辑 wsUrls / identities
+# 编辑 wsUrl / 身份等
 
-# 设置密钥（不要提交到代码库）
 export LAN_FLEET_TOKEN="$(openssl rand -hex 16)"
-export SPONSOR_TOKEN="$(openssl rand -hex 16)"   # 仅使用 bondAutonomy 时需要
 
-# 先 dry-run 预览（不执行实际 RPC）
 npm run fleet:apply -- --file fleet.yaml --dry-run
-
-# 正式执行
 npm run fleet:apply -- --file fleet.yaml
 ```
 
-### 加入方式说明
+### 加入方式
 
-| method | fleet-apply 做什么 |
+| method | `fleet:apply` 行为 |
 |--------|-------------------|
-| `lan` | 在节点上设置 `lanAutoBond*` 配置；依赖 mDNS + token 匹配自动建联 |
-| `manifest` | Sponsor 调用 `createFleetManifest`；每个成员（含 Sponsor）调用 `importFleetManifest` |
-| `invite` | Sponsor 调用 `createCompanyInvite`；成员调用 `redeemCompanyInvite`；URI 写入 JSON 文件 |
-| `none` | 只打配置补丁 |
+| `lan` | 设置 `lanAutoBond*`；依赖 mDNS + token 自动建联 |
+| `manifest` | Sponsor `createFleetManifest`；成员 `importFleetManifest` |
+| `invite` | Sponsor `createCompanyInvite`；成员 `redeemCompanyInvite` |
+| `none` | 仅打配置补丁 |
 
-### 7 步执行流程
+典型流程：`ensureOnline` → `patchNodeConfig` → `createOrImportManifest` / `mintInvites` / `redeemInvites` → `refreshAgentNetworkWorkers` → `verifyRoster`。可用 `--steps` 或 YAML 中 `apply.steps` 裁剪。
 
-```
-ensureOnline → patchNodeConfig → createOrImportManifest → mintInvites → redeemInvites → refreshAgentNetworkWorkers → verifyRoster
-```
+### 前提与限制
 
-| 步骤 | 作用 |
-|------|------|
-| `ensureOnline` | `getProfile` 确认每个节点在线（超时 30 秒） |
-| `patchNodeConfig` | 应用 Join / LAN / 自治 / 引导节点配置 |
-| `createOrImportManifest` | 为 manifest 成员创建/导入签名名单 |
-| `mintInvites` | 为 invite 成员铸造邀请 |
-| `redeemInvites` | 成员兑换邀请 |
-| `refreshAgentNetworkWorkers` | 刷新名片和能力索引 |
-| `verifyRoster` | 打印建联 / 名片 / Worker 统计数据 |
-
-可通过 `--steps patchNodeConfig,verifyRoster` 或 YAML 中 `apply.steps` 自定义步骤。
-
-### 前提条件
-
-- 每个列出的节点**已启动**且可通过 `rpc.wsUrl` 访问
-- 有且仅有**一个** `role: sponsor` 节点
-- 密钥通过环境变量（`tokenRef`）传入，不写在文件中
-- `manifest` 方式需要成员身份信息完整，或设 `fetchIfMissing: true`（默认）
-
-### 不做什么
-
-- ❌ 不会跳过建联——信任仍然来自 manifest / invite / LAN
-- ❌ 不会启动节点进程
-- ❌ Sponsor 必须有 owner 私钥可用（用于签名 manifest）
-
----
-
-## 9. AI 引擎配置（EnvoyAI vs Ext Agent）
-
-> 注意：这是**单台机器上**的 AI 引擎选择（设置 → AI → AI Engine），**不是** Agent Network 的 Worker 加入。
-
-### 两种 AI 引擎
-
-| 引擎 | 运行位置 | 配置 |
-|------|----------|------|
-| **内置 OpenClaw（EnvoyAI）** | 进程内子进程；webhook `http://127.0.0.1:18789/webhook/envoymesh` | 默认开启（`openclawEnabled: true`） |
-| **外部 Agent（Ext Agent）** | 独立进程，沙箱监听端口 3031 | 可选（`bridgeEnabled: false` 默认） |
-
-### 模式组合
-
-| openclawEnabled | bridgeEnabled | 模式 | 芯片标签 |
-|-----------------|---------------|------|----------|
-| true | true | `both` | 内置 + 外部 |
-| true | false | `openclaw-only` | 仅内置 |
-| false | true | `ext-only` | 仅外部 |
-| false | false | `off` | 无 |
-
-### 运行时行为
-
-- 门控在**启动时**运行一次（`startOpenClaw()`）
-- `_isOpenClawEnabled()` 每次调用都从 `node-config.json` 读取——**无内存缓存**
-- 一旦网关子进程启动，运行状态不会改变直到**重启节点**
-- **无运行时热切换 UI**——编辑 `node-config.json` 后重启
-
-### 设置位置
-
-**设置 → AI → AI Engine**：
-- **内置 OpenClaw 块**：只读——显示 `enabled` 标志 + 运行状态（3 态徽章）+ webhook URL + PID
-- **外部 Agent 块**：可写——`enabled` 复选框 + 编辑表单
-- **派生模式芯片**：从持久化标志计算
-
----
-
-## 10. 常见问题排查
-
-| 症状 | 可能原因 | 解决方案 |
-|------|----------|----------|
-| 联系人里看不到对方 | 没建联 / token 不一致 / 不在同一 Wi-Fi | 确认 Office LAN token 一致；检查 mDNS 可达性 |
-| 有联系人但没有 Worker | 对方没开 Join | 请对方开启 **Join Agent Network** |
-| Team Job 提示无 Worker | 有建联但无人加入 | 请对方开启 Join；点 **Refresh workers** |
-| 分配给了错误的 Worker | Profile 与预期不符 | 确认 Profile 填写正确；点 **Refresh workers** |
-| 草稿后卡住不动 | 需要用户判断（Accept/Continue） | 在 Team Job 详情中点击 Accept 或 Continue |
-| Auto-hello 被拒绝 | Sponsor token 不匹配 | 确认两端 token 字符串**完全一致** |
-| 邀请链接无效 | URI 格式错误或已过期 | 重新铸造；确保格式 `envoy://invite?token=…` |
-| LAN Auto-Bond 无反应 | token 不一致或不在同一 LAN | 验证 token 一致；检查 mDNS 可达性 |
-| 远程 Assigner 未收到 handoff | Alice↔Carol mesh 不通 / Assigner peer id 错误 | 检查 mesh 连接性；确认 Assigner peer id |
-
-### 分层诊断
-
-```
-没有联系人？        → 建联 / Office LAN token / Wi-Fi 层
-有联系人但没 Worker？ → Join / Agent Card 同步层
-Worker 分配错误？    → Profile / Refresh 层
-分配后卡住？         → Worker 离线 / 防火墙层
-草稿后卡住？         → Owner 判断层（点 Accept/Continue）
-Handoff 未到达？     → Mesh 连接 / Assigner peer id 层
-```
-
----
-
-## 11. 安全模型
-
-- **无中央账号服务器** — 身份基于 Ed25519 密钥 → DID
-- **Bond Engine** 按信任层级门控每个意图
-- **选择加入** — 默认私有，必须主动开启 Join
-- **签名信封** — Worker 和 Orchestrator 都验证对端
-- **Mandate / 预算** — Team Job 携带 owner 授权的范围
-- **JSONL 审计** — 协作过程在你的节点上可检查
-- **中继保持简单** — 只负责连通性；不运行 LLM，不读取任务内容
-- Owner 密钥是所有 Fleet 路径的权威来源
-- Token（邀请、fleet、kiosk 管理）是 bearer 密钥——通过带外渠道分发，撤销被泄露的
-
-### Agent Network Profile 的信任模型
-
-Profile 中的能力标签、新鲜度等是**自声明**的。对端信任它们因为来自已建联的 owner——不是来自中央评级机构。这是一个有意识的设计选择：保持去中心化，同时提供合理的排序信号。
-
----
-
-## 相关文档
-
-| 文档 | 内容 |
-|------|------|
-| [agent_network.md](./agent_network.md) | Agent Network 完整设计文档（Phase 40–47） |
-| [agent-network-iteration.md](./agent-network-iteration.md) | 多轮迭代设计（Phase 47） |
-| [agent-network-plan-assign.md](./agent-network-plan-assign.md) | Plan + Assign 实现说明 |
-| [agent-network-fleet.md](./agent-network-fleet.md) | Fleet 部署指南（presets、systemd、验证） |
-| [fleet-bootstrap.md](./fleet-bootstrap.md) | 声明式 fleet.yaml 文档 |
-| [agent-network-lan-scenarios.md](./agent-network-lan-scenarios.md) | LAN 测试场景手册（9 个场景） |
-| [agent-network-config.md](./agent-network-config.md) | AI 引擎配置（EnvoyAI vs Ext Agent） |
-| [implementation-plan.md](./implementation-plan.md) | 实施计划（Phase 40–47） |
+- 各节点**已启动**且 `rpc.wsUrl` 可达；**有且仅有一个** `role: sponsor`。  
+- token 经环境变量（`tokenRef`）传入，勿写入仓库。  
+- **不会**启动节点进程；**不会**跳过建联——信任仍来自 manifest / invite / LAN。  
+- Sponsor 需有 owner 私钥（用于签名 manifest）。

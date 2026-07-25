@@ -38,6 +38,7 @@
     "@envoymesh/rag": "0.1.0",
     "@envoymesh/vault": "0.1.0",
     "@libp2p/utils": "^7.0.0",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "nat-upnp": "^1.1.1",
     "node-pty": "^1.1.0",
     "ws": "^8.20.0",

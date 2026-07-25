@@ -41,7 +41,7 @@ describe("relayEnvoyAgentCard", () => {
     const card = relayEnvoyAgentCard(INFO, "https://relay.example.com");
     expect(card.name).toBe("EnvoyMesh Relay");
     expect(card.skills.map((s) => s.id)).toContain("circuit-relay");
-    expect(card.capabilities.streaming).toBe(false);
+    expect(card.capabilities.streaming).toBe(true);
     expect(card.capabilities.pushNotifications).toBe(false);
   });
 
@@ -80,9 +80,9 @@ describe("relayEnvoyAgentCard", () => {
     expect(card.metadata?.["x-envoymesh-rosterSize"]).toBe(INFO.rosterSize);
   });
 
-  it("advertises x-envoymesh-taskBridgeStatus = 'scaffolding' by default (M15)", () => {
+  it("advertises x-envoymesh-taskBridgeStatus = 'available' by default (48D.5)", () => {
     const card = relayEnvoyAgentCard(INFO, "https://relay.example.com");
-    expect(card.metadata?.["x-envoymesh-taskBridgeStatus"]).toBe("scaffolding");
+    expect(card.metadata?.["x-envoymesh-taskBridgeStatus"]).toBe("available");
   });
 
   it("honors taskBridgeStatus override", () => {
@@ -158,7 +158,7 @@ describe("handleA2ARelayAgentCardRequest", () => {
     expect(res.body).not.toContain(INFO.peerId);
     // Stub indicator is published
     const parsed = JSON.parse(res.body);
-    expect(parsed.metadata["x-envoymesh-taskBridgeStatus"]).toBe("scaffolding");
+    expect(parsed.metadata["x-envoymesh-taskBridgeStatus"]).toBe("available");
   });
 
   it("honors a custom displayName", () => {

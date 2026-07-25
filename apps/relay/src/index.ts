@@ -58,7 +58,7 @@ import { createRelayLookupRouter } from "./relay-lookup-router.js";
 import { mergeRelayLookupResponses } from "./relay-lookup-response-merge.js";
 import { loadOrCreateRelayControlIdentity } from "./relay-control-identity.js";
 import { createRelayMetrics } from "./relay-metrics.js";
-import { handleA2AJsonRpcProxy, type A2ABearerTokenEntry } from "./a2a-jsonrpc-proxy.js";
+import { handleA2AJsonRpcProxy, parseA2ABearerTokensEnv, type A2ABearerTokenEntry } from "./a2a-jsonrpc-proxy.js";
 import { handleA2ARelayAgentCardRequest } from "@envoymesh/api";
 import {
   buildRelayVersionReport,
@@ -85,34 +85,15 @@ const startedAtMs = Date.now();
 const adminCreds = adminCredentialsConfigured(args);
 
 // Phase 48D — A2A Task Bridge. Bearer tokens are operator-managed via
-// ENVOYMESH_A2A_BEARER_TOKENS env var (comma-separated `token:ownerId[:label]`).
-// Tokens minted by the home node are also synced through the home
-// tunnel handshake — this env var covers the no-home-tunnel case so a
-// standalone relay can still authenticate inbound A2A requests.
+// ENVOYMESH_A2A_BEARER_TOKENS. Tokens minted by the home node are also
+// synced through the home tunnel handshake — this env var covers the
+// no-home-tunnel case so a standalone relay can still authenticate
+// inbound A2A requests.
 const a2aBearerTokens: A2ABearerTokenEntry[] = parseA2ABearerTokensEnv(
   process.env.ENVOYMESH_A2A_BEARER_TOKENS,
 );
 if (a2aBearerTokens.length > 0) {
   console.log(`[relay] A2A bridge: loaded ${a2aBearerTokens.length} bearer token(s) from env`);
-}
-
-/**
- * Parse `ENVOYMESH_A2A_BEARER_TOKENS` into a list of bearer tokens.
- * Format: `token1:ownerId1[:label1],token2:ownerId2[:label2]`.
- * Malformed entries are skipped (not fatal — operators running this
- * for the first time may have a half-set value).
- */
-function parseA2ABearerTokensEnv(raw: string | undefined): A2ABearerTokenEntry[] {
-  if (!raw || !raw.trim()) return [];
-  const out: A2ABearerTokenEntry[] = [];
-  for (const item of raw.split(",")) {
-    const parts = item.split(":");
-    if (parts.length < 2) continue;
-    const [token, ownerId, label] = parts;
-    if (!token.trim() || !ownerId.trim()) continue;
-    out.push({ token: token.trim(), ownerId: ownerId.trim(), label: label?.trim() });
-  }
-  return out;
 }
 
 // Ensure profile directory exists
@@ -1028,7 +1009,14 @@ try {
                 rosterSize: relayRoster.size(),
               },
               gatewayUrl,
-              // exposeOperational defaults to false — see security comment.
+              {
+                // exposeOperational defaults to false — see security comment.
+                sign: {
+                  privateKeyPem: relayControlIdentity.privateKeyPem,
+                  publicKeyPem: relayControlIdentity.publicKeyPem,
+                  keyId: relayControlIdentity.peerId,
+                },
+              },
             );
           }
         } else if (pathname === "/.well-known/a2a/jsonrpc") {
@@ -1037,10 +1025,9 @@ try {
           // looks up the home node, and forwards the body to the home
           // node for execution.
           //
-          // The `forwardToHome` hook is wired in 48D.5 — for 48D it
-          // returns 503 with an explanatory error when no home node is
-          // registered for the owner (the bridge endpoint, executor,
-          // and protocol shape are all live and tested on the node).
+          // Phase 48D.5 — forward via home-tunnel HTTP to the home node's
+          // `/a2a/jsonrpc` (bearer preserved). Returns 502/504 when the
+          // home peer has no live tunnel.
           if (!args.a2aBridgeEnabled) {
             res.writeHead(404);
             res.end();
@@ -1048,20 +1035,81 @@ try {
           }
           await handleA2AJsonRpcProxy(req, res, {
             bearerTokens: a2aBearerTokens,
-            // Phase 48D — for now we return null (no home) because the
-            // libp2p tunnel forwarding is wired in a follow-up. The
-            // node-side bridge endpoint is fully functional and tested;
-            // operators who want a working end-to-end deployment can
-            // expose the home node's `/a2a/jsonrpc` directly via their
-            // own reverse proxy until the libp2p forwarding lands.
-            lookupHomePeerId: () => null,
-            forwardToHome: async () => null,
+            lookupHomePeerId: (ownerId) => {
+              const now = Date.now();
+              const matches = relayRoster
+                .entries()
+                .filter((e) => e.ownerId === ownerId && e.expiresAt > now);
+              if (matches.length === 0) return null;
+              const withTunnel = matches.find((e) => homeTunnelProxy.hasHomeTunnel(e.peerId));
+              return (withTunnel ?? matches[0])!.peerId;
+            },
+            forwardToHome: async (homePeerId, body, headers, stream) => {
+              const a2aPath =
+                process.env.ENVOYMESH_A2A_HOME_PATH?.trim() || "/a2a/jsonrpc";
+              return homeTunnelProxy.requestHttpViaHomeTunnel(homePeerId, {
+                method: "POST",
+                path: a2aPath,
+                headers: {
+                  "Content-Type": "application/json",
+                  ...(headers ?? {}),
+                },
+                body,
+                ...(stream ? { onStream: stream } : {}),
+              });
+            },
             observe: ({ outcome, ownerId, durationMs }) => {
               console.log(
                 `[relay] a2a jsonrpc outcome=${outcome} owner=${ownerId ?? "?"} ms=${durationMs ?? 0}`,
               );
             },
           });
+        } else if (pathname.startsWith("/vault/")) {
+          // Phase 48D.5 — proxy FileArtifact GETs to home via tunnel.
+          if (!args.a2aBridgeEnabled) {
+            res.writeHead(404);
+            res.end();
+            return;
+          }
+          const authHeader = req.headers["authorization"];
+          const auth = Array.isArray(authHeader) ? authHeader[0] : authHeader;
+          const token = auth?.startsWith("Bearer ") ? auth.slice(7).trim() : "";
+          const tokenEntry = token
+            ? a2aBearerTokens.find((t) => t.token === token)
+            : undefined;
+          if (!tokenEntry) {
+            res.writeHead(401, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ ok: false, reason: "unauthorized" }));
+            return;
+          }
+          const now = Date.now();
+          const matches = relayRoster
+            .entries()
+            .filter((e) => e.ownerId === tokenEntry.ownerId && e.expiresAt > now);
+          const withTunnel = matches.find((e) => homeTunnelProxy.hasHomeTunnel(e.peerId));
+          const homePeerId = (withTunnel ?? matches[0])?.peerId;
+          if (!homePeerId || !homeTunnelProxy.hasHomeTunnel(homePeerId)) {
+            res.writeHead(504, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ ok: false, reason: "home tunnel unavailable" }));
+            return;
+          }
+          const qs = url.search ?? "";
+          const upstream = await homeTunnelProxy.requestHttpViaHomeTunnel(homePeerId, {
+            method: "GET",
+            path: `${pathname}${qs}`,
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!upstream) {
+            res.writeHead(504, { "Content-Type": "application/json" });
+            res.end(JSON.stringify({ ok: false, reason: "upstream timeout" }));
+            return;
+          }
+          res.writeHead(upstream.status, {
+            "Content-Type": upstream.contentType ?? "application/octet-stream",
+            "Cache-Control": "private, max-age=60",
+            "Access-Control-Allow-Origin": "*",
+          });
+          res.end(upstream.body);
         } else {
           res.writeHead(404);
           res.end();

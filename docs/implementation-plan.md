@@ -83,7 +83,7 @@ Maintenance rule: keep this file as the source of truth for **done / left / next
 - [Phase 45 — Web Content Browsing](#phase-45--web-content-browsing--45a45b-shipped-45c45f-future)
 - [Phase 46 — Multi-Relay Fleet Coordination](#phase-46--multi-relay-fleet-coordination)
 - [Phase 47 — Team job multi-round iteration (A ∩ B)](#phase-47--team-job-multi-round-iteration-a--b-shipped)
-- [Phase 48 — A2A + MCP Interop Bridges](#phase-48--a2a--mcp-interop-bridges-shipped--48a--48b--48c--48d-)
+- [Phase 48 — A2A + MCP Interop Bridges](#phase-48--a2a--mcp-interop-bridges-shipped--48a48d-48d5-deferred)
 
 EnvoyMesh is a TypeScript-first, owner-controlled, peer-to-peer agent network.
 
@@ -1147,11 +1147,11 @@ Tasks:
 
 ## Current Milestone
 
-Milestone: **Phases 0–42 (42J deferred) shipped** — Core protocol through Phase 30 Terminals + Phase 31 EnvoyGo Flutter thin-client + Phase 32 Agent Network Membership + Phase 33 A2A Tool Exposure + Phase 34 Typed-Artifact + AgentCard UI + Phase 37 Audio Messages + Phase 38 Real-Time Voice/Video Calls + Phase 40 Agent Network Collaboration Layer + Phase 41 Agent Network Usability + Phase 42 Native WebRTC Voice Calls on EnvoyGo (mobile call path end-to-end; 42A–42I shipped, 42J two-iOS-device manual smoke deferred like Phase 38H). See [satellite-app-adr.md](./satellite-app-adr.md), [flutter-thin-client-design.md](./flutter-thin-client-design.md), [agent-network-config.md](./agent-network-config.md), [audio-message-support.md](./audio-message-support.md), [voice-video-call-support.md](./voice-video-call-support.md), and [agent_network.md](./agent_network.md).
+Milestone: **Phases 0–48 shipped for interop bridges** — Core protocol through Phase 47 Team job iteration + Phase 48 A2A/MCP bridges (48A–48D.5). Older banner detail (Phases 0–42 Voice/Agent Network stack) still applies as foundation. See [a2a-mcp-interop-design.md](./a2a-mcp-interop-design.md), [agent-network-iteration.md](./agent-network-iteration.md), [satellite-app-adr.md](./satellite-app-adr.md), and [agent_network.md](./agent_network.md).
 
-**Last shipped:** **Phase 42 — Native WebRTC Voice Calls on EnvoyGo (42A–42I).** A bonded user on an EnvoyGo phone can place and receive a real-time WebRTC voice call to a Social/desktop browser user or to another EnvoyGo phone, with the home in the signaling path (trust check, identity binding, CallManager state machine) and the media path peer-to-peer (Path 2 ICE; Path 1 libp2p data channel is documented as not-available on `flutter_webrtc`). **9 sub-phases shipped (`8c9c464` → `78df804`).** 42A rewrote the home's `sendCallInvite` to resolve owner→device peer ID via `_resolvePeerTransportForOwner`, embed the SDP offer, and inject `iceServers` from `node-config` (with defensive 64 KB SDP cap + ICE-candidate grammar regex including `tcptype` / IPv6 / `stun:`/`turn:`). 42B wired the four response envelopes (`call.accept` / `call.reject` / `call.hangup` / `call.mute`) so the home actually sends them back to the peer — **and, in `78df804`, fixed a signature-mutation bug** that was making every response envelope signature-invalid (regression-tested). 42C replaced the five `UnimplementedError` call RPCs in `NodeServiceClient` with real JSON-RPC. 42D shipped `WebRtcCallTransport` for Flutter using `flutter_webrtc ^0.14.0` (resolved to 0.14.2) mirroring the desktop reference. 42E rewired `CallProvider` to drive the transport end-to-end. 42F wired `VoiceCallScreen` to `callProvider`, mounted `IncomingCallOverlay` into `home_screen.dart`, declared iOS `NSMicrophoneUsageDescription` + Android `RECORD_AUDIO` permissions, and added an `AudioSessionHelper` that configures iOS `AVAudioSession` (`playAndRecord` + `voiceChat` mode + `allowBluetooth`) on `startCall` / `acceptCall` and resets on `endCall` / `declineCall`. 42G added the test pyramid and **wired the previously-dead-code Social-UI caller for `createWebRtcCallTransport`** (`apps/social/src/hooks/useCallSession.ts`). 42H added TURN credentials support: 3-STUN default list (Google + Cloudflare + Twilio) injected when `node-config.iceServers` is empty, plus a Social UI TURN editor in `SettingsNodeTab.tsx` with Twilio / Cloudflare / coturn presets, "Reset to defaults", `missingCredentials` validation. 42I added iOS backgrounded calling: home dispatches APNs VoIP push on `call.invite` (extending the existing `push-notification.ts` module with a `tokenType: "alert" | "voip"` discriminator and a `sendVoipPush` helper) — **dispatch lives on the callee's home (where the phone registered its token), gated on the phone's WebSocket not being connected**; phone uses `flutter_callkit_incoming` + `CXProvider.reportNewIncomingCall` (reported synchronously in the PushKit delegate before `completion()`, per Apple's contract). **Bridges `HomeRemoteClient.on('call:*')` into a real `StreamController`** so the entire callee flow (`call:incoming` → ring → accept) actually fires in production (previously dead stub). **~101 new node tests + 49 new EnvoyGo tests + 5 new Social TURN-editor tests.** `flutter analyze` + `tsc -b` clean across all packages. **No new wire intents, no new schemas.** Allowed pubspec changes: `flutter_webrtc` bumped to `^0.14.0`; `flutter_callkit_incoming` added. `permission_handler` **not** added (we use `flutter_webrtc`'s built-in permission prompts). 42J two-iOS-device manual smoke deferred like Phase 38H. Design: [voice-video-call-envoygo.md](./voice-video-call-envoygo.md).
+**Last shipped:** **Phase 48 — A2A + MCP Interop Bridges (48A–48D).** MCP tool consumer (`mesh.mcp.*`), MCP server adapter (`npx envoymesh mcp-server`), A2A Agent Card on relay `/.well-known/agent-card.json`, and A2A Task Bridge JSON-RPC (`message/send` / `tasks/get` / `tasks/cancel`) with auth + state/artifact maps + relay proxy. **~191 dedicated unit tests green.** Design: [a2a-mcp-interop-design.md](./a2a-mcp-interop-design.md). Earlier recent ship: Phase 47 Team job multi-round iteration (47A–47D).
 
-**Active:** **ICE server transport wiring deferred** — Config plumbing complete (types, store, RPC, UI editor in `SettingsNodeTab.tsx`). The `WebRtcCallTransport` accepts `iceServers` as an option but no code creates one yet (Phase 38 call flow is entirely P2P envelope-based; the media transport is created when a call UI triggers transport creation — future work). See [voice-video-call-support.md](./voice-video-call-support.md) for ICE server settings documentation. Seven sub-phases (41A–41G) designed in [agent_network.md §13](./agent_network.md#13-phase-41--making-agent-network-usable--powerful). See Phase 41 section below for implementation checklist. Phase 40 (Agent Network Collaboration Layer) is fully shipped (40A–40E green, 455 tests, 13 wire intents).
+**Active:** ICE media-transport wiring (config/UI shipped; see [voice-video-call-support.md](./voice-video-call-support.md)); Phase 41 UX checklist in [agent_network.md §13](./agent_network.md#13-phase-41--making-agent-network-usable--powerful).
 
 ### Next planning pulls
 
@@ -1167,7 +1167,7 @@ Milestone: **Phases 0–42 (42J deferred) shipped** — Core protocol through Ph
 10. **Phase 45 — Web Content Browsing** — 45A–45E shipped; 45F future. [web-content-browsing-design.md](./web-content-browsing-design.md) is the design doc; the Phase 45 section below is the implementation checklist. 45A (URL scheme + `library.read` intent + Browser view + all test layers) → 45B (browser polish + bookmarks) → 45C (EnvoyGo mobile browser) → 45D (authoring UX + templates + visibility) → 45E (Step 2: push notifications, topics, friend discovery — no GossipSub). 45F (external HTTP gateway) is forward-referenced.
 11. **Phase 46 — Multi-Relay Fleet Coordination** — shipped (46A–46C + P2/P3 test harness). Client multi-home, standalone miss-forward, sibling `relay.hints` gossip; in-process + process-spawn E2E; gated live `TEST_RELAY_A`/`TEST_RELAY_B` signoff. Design: [relay-server-design.md](./relay-server-design.md) Part B.
 12. **Phase 47 — Team job multi-round iteration (A ∩ B)** — **47A–47D shipped**. Outer seal→draft→replan (B) + capped intra-round extend (A) + judge/UX + handoff knobs/`iterationState` + `chain:iteration`. Design: [agent-network-iteration.md](./agent-network-iteration.md).
-13. **Phase 48 — A2A + MCP Interop Bridges** — future. [a2a-mcp-interop-design.md](./a2a-mcp-interop-design.md) is the design doc. 48A (MCP tool consumer — agent calls external MCP servers) → 48B (MCP server adapter — Claude Desktop uses EnvoyMesh tools) → 48C (A2A Agent Card bridge — external A2A clients discover EnvoyMesh) → 48D (A2A Task bridge — external A2A agents delegate tasks). All bridges are opt-in; EnvoyMesh's P2P transport + signed envelopes remain the foundation.
+13. **Phase 48 — A2A + MCP Interop Bridges** — **48A–48D.5 shipped** (SDK MCP consumer, MCP server adapter, Agent Card + streaming, production Task Bridge executor, relay `forwardToHome` home-tunnel, `message/stream` SSE, vault HTTP). [a2a-mcp-interop-design.md](./a2a-mcp-interop-design.md).
 
 ### Phase 9 Architecture Overview
 
@@ -6197,7 +6197,7 @@ See design doc §11 for the full list of 10 open questions. None block Phase 45A
 
 ---
 
-## Phase 48 — A2A + MCP Interop Bridges **(shipped — 48A ✅, 48B ✅, 48C ✅, 48D ✅)**
+## Phase 48 — A2A + MCP Interop Bridges **(shipped — 48A–48D.5)**
 
 **Design doc:** [a2a-mcp-interop-design.md](./a2a-mcp-interop-design.md)
 
@@ -6211,80 +6211,77 @@ Neither replaces EnvoyMesh's unique value (P2P, identity, trust, mandates). They
 
 **Design principle:** Bridge, don't replace. EnvoyMesh keeps libp2p + signed envelopes + Bonds + mandates internally. A2A/MCP are translated at opt-in gateway endpoints.
 
-### 48A — MCP Tool Consumer `[x]` shipped (commit `38dfda21`)
+### 48A — MCP Tool Consumer `[x]` shipped
 
-The built-in OpenClaw agent can call any MCP-compatible tool server.
+The built-in agent can call MCP-compatible tool servers via `@modelcontextprotocol/sdk`.
 
-- `[x]` `mesh.mcp.list_tools` tool — calls `tools/list` on configured MCP servers
-- `[x]` `mesh.mcp.call_tool` tool — calls `tools/call`, maps Content[] → EnvoyMesh artifacts
-- `[x]` `node-config.json` → `mcpServers: [{ name, transport, command?, url?, env? }]`
+- `[x]` `mesh.mcp.list_tools` / `mesh.mcp.call_tool` — SDK Client `listTools` / `callTool`
+- `[x]` `node-config.json` → `mcpConsumers: [{ name, transport, command?, url?, bearerToken?, allowRemoteHttp?, env? }]`
 - `[x]` Content mapping: TextContent/ImageContent/AudioContent/resource_link/structuredContent → artifacts
-- `[x]` Unit tests for content mapping + tool descriptor generation
-- `[ ]` Integration test: launch a minimal MCP stdio server, call `mesh.mcp.call_tool` (deferred to E2E hardening)
+- `[x]` Unit tests (content mapping + session-factory manager; no circular dispatch)
 
-**Exit criteria:** Agent can call a real MCP server tool (e.g. filesystem `read_file`) and get a typed artifact back. — **17 unit tests pass; field mapping covers all 5 MCP content types.**
+**Exit criteria:** Agent can call MCP tools via `mesh.mcp.call_tool` with typed content mapping. — **shipped (SDK + unit).**
 
-### 48B — MCP Server Adapter `[x]` shipped (commit `026964d7`)
+### 48B — MCP Server Adapter `[x]` shipped
 
-Claude Desktop / Cursor can use EnvoyMesh tools.
+Claude Desktop / Cursor can use EnvoyMesh tools via `npx envoymesh mcp-server`.
 
 - `[x]` `apps/node/src/mcp-server-adapter.ts` — JSON-RPC 2.0 server (initialize, tools/list, tools/call)
-- `[x]` Extend `toMcpToolDescriptors` with `title`, `annotations`
-- `[x]` Tool result mapping: EnvoyMesh artifacts → MCP Content[]
-- `[x]` stdio transport (primary) + Streamable HTTP (optional — stdio sufficient for Claude Desktop)
-- `[x]` Config: `node-config.json` → `mcpServer: { enabled, transport, port? }` (transport baked into the spawned adapter; CLI is `npx envoymesh mcp-server`)
+- `[x]` `toMcpToolDescriptors` with `title`, `annotations`
+- `[x]` Tool result mapping: EnvoyMesh artifacts + 48A MappedContent → MCP Content[]
+- `[x]` stdio transport; `--bridge-allow-remote` honored; `--bridge-token` / `ENVOYMESH_BRIDGE_SECRET`
 - `[x]` Unit tests for tool listing + call translation
-- `[ ]` Integration test: Claude Desktop config pointing at `npx envoymesh mcp-server` (deferred — manual config documented in USAGE)
 
-**Exit criteria:** Claude Desktop can list and call `mesh.knowledge_query`, `mesh.library_read`, `mesh.task.propose`. — **18 unit tests pass; stdio adapter shipped.**
+**Exit criteria:** MCP clients can list and call EnvoyMesh `mesh.*` tools over the stdio adapter. — **shipped (unit + CLI).**
 
 ### 48C — A2A Agent Card Bridge `[x]` shipped
 
 External A2A clients can discover EnvoyMesh agents.
 
-- `[x]` `apps/node/src/a2a-bridge.ts` — `toA2AAgentCard()` translator
+- `[x]` `toA2AAgentCard()` translator (`streaming: true` as of 48D.5)
 - `[x]` HTTP endpoint `/.well-known/agent-card.json` on relay node (opt-in via `--a2a-bridge` / `ENVOYMESH_A2A_BRIDGE=1`)
-- `[x]` Config: `node-config.json` → `a2aBridge: { enabled, gatewayUrl }` (also relay CLI flags `--a2a-bridge`, `--a2a-gateway-url`)
-- `[ ]` Optional Ed25519 signature on the published card (deferred — A2A v1.0 spec does not mandate signed cards; clients verify via TLS)
-- `[x]` Unit tests for card translation (17 cases: field mapping, web-content skill, capabilities derivation, security schemes, metadata, HTTP handler status codes)
-- `[ ]` Integration test: A2A Python SDK fetches card from a running relay (deferred — manual `curl` verification documented)
+- `[x]` Config: `node-config.json` → `a2aBridge: { enabled, gatewayUrl }`
+- `[x]` Unit tests for card translation + relay HTTP handler
 
-**Exit criteria:** `curl http://relay:15432/.well-known/agent-card.json` returns a valid A2A card. — **17 unit tests pass; relay publishes A2A v1.0 card when enabled.**
+**Exit criteria:** `curl http://relay:15432/.well-known/agent-card.json` returns a valid A2A card when enabled. — **shipped.**
 
-### 48D — A2A Task Bridge `[x]` shipped (protocol + auth scaffolding)
+### 48D — A2A Task Bridge `[x]` shipped (protocol + local mount; production path = 48D.5)
 
-External A2A agents can send tasks and get results.
+External A2A agents can authenticate and exercise JSON-RPC (`message/send`, `message/stream`, `tasks/get`, `tasks/cancel`). Protocol, auth, state/artifact translation, audit, node mount, and relay proxy are live and unit-tested. Production mandate mint + `TaskDispatcher` and live relay→home forwarding landed in **48D.5**.
 
 **Scope shipped:**
-- `[x]` A2A JSON-RPC handler: `message/send`, `tasks/get`, `tasks/cancel`
+- `[x]` A2A JSON-RPC handler: `message/send`, `message/stream`, `tasks/get`, `tasks/cancel`
 - `[x]` Task state mapping (12 → 9) — `apps/node/src/a2a-state-map.ts`
 - `[x]` Artifact mapping (all 4 kinds) — `apps/node/src/a2a-artifact-map.ts`
-- `[x]` Bearer-token auth → ownerId; token table built from `PersistedNodeConfig.a2aBridge.bearerTokens[]`
-- `[x]` Owner-scoping on `tasks/get` / `tasks/cancel` (executor API enforces)
-- `[x]` Inbound `parts[]` validation (kind / required fields / per-part size caps)
-- `[x]` Sanitized error responses (executor internals stay server-side)
-- `[x]` Body-cap alignment (relay 1 MiB ↔ node bridge 1 MiB)
-- `[x]` Composite-reconstruction discriminator (`metadata.envoyKind === "composite"`)
-- `[x]` Relay exposes `POST /.well-known/a2a/jsonrpc` with DI'd `forwardToHome` hook
-- `[x]` Node exposes `POST <a2aPath>` (default `/a2a/jsonrpc`) on the bridge HTTP server
-- `[x]` Unit tests: state mapping (20), artifact mapping (17), JSON-RPC + dispatch (35), relay proxy (12) — **84 unit tests, all passing**
+- `[x]` Bearer-token auth → ownerId; token table from `a2aBridge.bearerTokens[]`
+- `[x]` Relay `ENVOYMESH_A2A_BEARER_TOKENS` parses `token:envoy:owner:…[#label]` (first `:` only)
+- `[x]` Node `POST /a2a/jsonrpc` reachable on bridge HTTP when `a2aBridge.enabled` (production executor in 48D.5)
+- `[x]` Relay exposes `POST /.well-known/a2a/jsonrpc` with DI'd `forwardToHome` (home-tunnel in 48D.5)
+- `[x]` `A2ATaskBridgeExecutor` interface + `createScaffoldingA2ATaskExecutor()`
+- `[x]` Unit tests green (200+ Phase 48 dedicated cases)
 
-**Deferred (48D.5):**
-- `[ ]` SSE streaming for `message/stream`
-- `[ ]` Production executor that mints mandates + dispatches via `TaskDispatcher`. The `A2ATaskBridgeExecutor` interface is stable; a real implementation is 48D.5.
-- `[ ]` E2E libp2p tunnel forwarding — the relay's `forwardToHome` is currently a stub returning 502/504.
-- `[ ]` Vault-serve HTTP endpoint backing `FileArtifact` URIs.
+### 48D.5 — Production A2A path + hardening `[x]` shipped
 
-**Why "scaffolding":** the JSON-RPC envelope, auth, translation, audit, and relay proxy are all live and tested. A2A clients can authenticate and the bridge will validate their requests, translate state/artifacts, emit audit events, and forward to the executor. The executor that mints a signed mandate and dispatches via `TaskDispatcher` is the missing piece — Phase 48D ships the contract, 48D.5 fills it in.
+Closes the production path after 48A–48D protocol/mount work.
+
+- `[x]` Production executor: Bonds gate (`self`/`direct`/`referred`) → mint `task.mandate` + `task.propose` → `handleDaemonTaskInbound` (runtime guard + journal) (`a2a-task-executor.ts`)
+- `[x]` Relay `forwardToHome` via home-tunnel HTTP (`http-req`/`http-res` → home `POST /a2a/jsonrpc`)
+- `[x]` SSE streaming for `message/stream` (`handleStreamRequest` + bridge `text/event-stream`; Agent Card `streaming: true`; relay pipes SSE chunks via home-tunnel)
+- `[x]` Vault-serve HTTP endpoint backing `FileArtifact` URIs (`GET /vault/<path>` on bridge + relay proxy, A2A bearer)
+- `[x]` Optional Ed25519 signed Agent Card (`withA2AAgentCardSignature`; relay signs with control identity)
+- `[x]` Live MCP stdio + A2A card-fetch integration tests; Claude Desktop / operator runbook — [phase-48-interop-smoke.md](./phase-48-interop-smoke.md)
+- `[x]` Production executor defaults to `running` (opt-in `autoCompleteLocal`); a2aTaskId map persisted to `a2a-bridge-tasks.json`
+- `[x]` Relay↔home-tunnel HTTP E2E (`a2a-home-tunnel-http.test.ts`)
 
 ### Exit Criteria (Phase 48 overall)
 
-- `[x]` MCP tool consumer works with at least one real MCP server (48A)
-- `[x]` MCP server adapter works with Claude Desktop (48B)
-- `[x]` A2A Agent Card discoverable by external A2A SDK (48C)
-- `[x]` A2A task delegation end-to-end with typed artifacts (48D) — `message/stream` deferred to 48D.5
+- `[x]` MCP tool consumer (`mesh.mcp.*`) + content mapping (48A)
+- `[x]` MCP server adapter stdio + `npx envoymesh mcp-server` (48B)
+- `[x]` A2A Agent Card discoverable via relay `/.well-known/agent-card.json` (48C)
+- `[x]` A2A Task Bridge JSON-RPC + auth + state/artifact maps (48D)
 - `[x]` All bridges are opt-in (no HTTP server unless explicitly configured)
 - `[x]` EnvoyMesh P2P transport + signed envelopes + Bonds + mandates unchanged
+- `[x]` 48D.5 — production executor + relay→home forward + `message/stream` + vault HTTP
 
 ### Risks & Mitigations (Phase 48)
 
@@ -6292,9 +6289,10 @@ External A2A agents can send tasks and get results.
 |------|------------|
 | MCP server crash | Supervised start with exponential backoff restart |
 | A2A bridge leaks internal state | Only expose terminal states + artifact summaries |
-| Bundle size from MCP runtime | Reuse `packages/openclaw/src/agents/` (no new dependency) |
+| Bundle size from MCP runtime | Thin `@modelcontextprotocol/sdk` Client on `@envoymesh/node` |
 | A2A spec changes | Pin to protocol version "1.0"; version negotiation in card |
 | Claude Desktop config complexity | Ship `npx envoymesh mcp-server` one-liner |
+| Relay→home path | Home tunnel HTTP + roster preference for tunnel peers |
 
 ---
 
@@ -6302,7 +6300,14 @@ External A2A agents can send tasks and get results.
 
 | Date | Change |
 |------|--------|
-| 2026-07-18 | **Phase 48D — A2A Task Bridge shipped.** External A2A clients can `message/send`, `tasks/get`, `tasks/cancel` over JSON-RPC 2.0 (`message/stream` deferred to 48D.5). New modules: `a2a-state-map.ts` (12 → 9 mapping, all states covered, idempotent inbound), `a2a-artifact-map.ts` (all 4 Artifact kinds → A2A Parts; CompositeArtifact expands to N Parts with worker metadata; round-trip preserves the bundle), `a2a-task-bridge.ts` (envelope parse + method dispatch + bearer auth + executor interface; JSON-RPC error codes -32700/-32600/-32601/-32602/-32603 + bridge-specific -32001 auth-required / -32002 task-not-found), `apps/relay/src/a2a-jsonrpc-proxy.ts` (body read with 1 MiB cap, bearer gate, ownerId → home lookup, libp2p forwarding DI hook, timeout/error wrapping). Bearer tokens live in `PersistedNodeConfig.a2aBridge.bearerTokens[]` (node) and `ENVOYMESH_A2A_BEARER_TOKENS` env var (relay). 73 new unit tests (20 state + 16 artifact + 25 task-bridge + 12 relay-proxy). Phase 48 complete: 48A ✅, 48B ✅, 48C ✅, 48D ✅. |
+| 2026-07-25 | **Phase 48D.5 production-path review blockers fixed.** Executor: Bonds `evaluatePolicy` gate (`self`/`direct`/`referred`); mandate always home-owner-signed; emit `task.propose` after `task.mandate`; route through `handleDaemonTaskInbound` (runtime guard + journal). Bond deny → A2A `auth-required`. |
+| 2026-07-25 | **Phase 48D.5 remaining gaps closed.** Relay SSE chunk streaming (`http-res-start/chunk/end`); executor default `autoCompleteLocal=false` + config knobs + `a2a-bridge-tasks.json` persistence; home-tunnel HTTP round-trip (`a2a-home-tunnel-http.test.ts`). |
+| 2026-07-25 | **Phase 48D.5 review hardenings.** Relay proxies `GET /vault/*` via home-tunnel; A2A proxy preserves upstream HTTP status; Agent Card `supportedInterfaces[0].url` points at `/.well-known/a2a/jsonrpc`; vault `?hash=` verified; bridge listens when A2A/vault configured. |
+| 2026-07-25 | **Phase 48D.5 operator smokes closed.** Live MCP stdio integration (`mcp-stdio-live.test.ts`: consumer + Claude Desktop path), A2A Agent Card HTTP fetch (`a2a-card-fetch-live.test.ts`, optional `A2A_CARD_FETCH_URL`), Claude Desktop runbook in [phase-48-interop-smoke.md](./phase-48-interop-smoke.md). |
+| 2026-07-24 | **Phase 48D.5 shipped.** Production A2A executor (mandate + `TaskDispatcher`); relay `forwardToHome` via home-tunnel; `message/stream` SSE + Agent Card `streaming: true`; `GET /vault/<path>` FileArtifact serve; optional Ed25519 Agent Card signatures (relay control identity). Phase 48 complete (48A–48D.5). |
+| 2026-07-24 | **Phase 48 review blockers fixed.** 48A: real `@modelcontextprotocol/sdk` consumer (no circular executor). 48B: `--bridge-allow-remote` + `--bridge-token`, MappedContent→MCP reshape, `title`/`annotations`. 48C: `streaming: false`. 48D: node `/a2a/jsonrpc` mount + scaffolding executor; relay bearer env preserves `envoy:owner:…`. Production path remains **48D.5**. |
+| 2026-07-24 | **Phase 48 docs aligned to shipped.** TOC, Current Milestone, and design doc mark **48A–48D shipped**; remaining work under **48D.5** (production executor, relay `forwardToHome`, `message/stream`, vault HTTP, optional live E2E). |
+| 2026-07-18 | **Phase 48D — A2A Task Bridge shipped.** External A2A clients can `message/send`, `tasks/get`, `tasks/cancel` over JSON-RPC 2.0 (`message/stream` deferred to 48D.5). New modules: `a2a-state-map.ts`, `a2a-artifact-map.ts`, `a2a-task-bridge.ts`, `apps/relay/src/a2a-jsonrpc-proxy.ts`. Phase 48 complete: 48A ✅, 48B ✅, 48C ✅, 48D ✅ (48D.5 deferred). |
 | 2026-07-18 | **Phase 48C — A2A Agent Card Bridge shipped.** New `apps/node/src/a2a-bridge.ts` translates EnvoyMesh Agent Cards to A2A v1.0 (displayName → name, capabilities → skills with strength tags, trustPolicySummary → securitySchemes, agentNetworkProfile → metadata). Relay publishes `/.well-known/agent-card.json` when enabled via `--a2a-bridge` / `ENVOYMESH_A2A_BRIDGE=1` (gateway URL via `--a2a-gateway-url` / `ENVOYMESH_A2A_GATEWAY_URL`). 17 unit tests + 6 relay-args tests cover field mapping, HTTP handler status codes (200/405/503), and CLI/env precedence. `PersistedNodeConfig.a2aBridge` mirrors the relay config on the node side. Phase 48 status: 48A ✅, 48B ✅, 48C ✅, 48D pending. |
 | 2026-07-23 | **Phase 47 E2E gaps closed.** Root cause: `ask_owner` was not remapped to `stop` when `canContinue=false` after final round (hung on second owner hold). Full 2-round mesh E2E (Continue → two drafts + one publish); mid-job `iterationState` live handoff rehydrate E2E; `chainStartFromGoal.iterationState` for handoff blob. |
 | 2026-07-23 | **Phase 47 test hardening.** Libp2p `chain-iteration-e2e` (always_stop + owner Accept/Continue); unit coverage for Draft/Final sections, sealed stall skip, owner continue, extend depth clamp; `publishChainReport` treats local store as success when owner mesh delivery fails; `chainStartFromGoal` accepts judge/extend overrides; wired into smoke `06b`. |

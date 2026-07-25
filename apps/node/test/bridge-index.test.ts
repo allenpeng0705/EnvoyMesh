@@ -17,6 +17,125 @@ describe("bridge runtime", () => {
     await bridge.stop();
   });
 
+  it("POST /a2a/jsonrpc reaches the A2A task bridge (not 404)", async () => {
+    const port = await getFreePort();
+    const handleRequest = vi.fn(async () => ({
+      jsonrpc: "2.0" as const,
+      id: 1,
+      result: { ok: true },
+    }));
+    const handleStreamRequest = vi.fn(async function* () {
+      yield { event: "done", data: { ok: true } };
+    });
+    const bridge = createBridge({
+      config: { enabled: true, agentUrl: "http://localhost:8080/message", listenPort: port },
+      identity: makeBridgeIdentity(),
+      mesh: makeMesh(),
+      getRecipientPeerId: async () => null,
+      a2aBridge: { handleRequest, handleStreamRequest },
+    });
+    try {
+      // Wait briefly for listen
+      await new Promise((r) => setTimeout(r, 50));
+      const resp = await fetch(`http://127.0.0.1:${port}/a2a/jsonrpc`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: "Bearer test-token",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "tasks/get",
+          params: { id: "x" },
+        }),
+      });
+      expect(resp.status).toBe(200);
+      expect(handleRequest).toHaveBeenCalledOnce();
+      const [raw, auth] = handleRequest.mock.calls[0]!;
+      expect(raw).toContain("tasks/get");
+      expect(auth).toBe("Bearer test-token");
+    } finally {
+      await bridge.stop();
+    }
+  });
+
+  it("POST message/stream returns text/event-stream", async () => {
+    const port = await getFreePort();
+    const handleRequest = vi.fn(async () => ({
+      jsonrpc: "2.0" as const,
+      id: 1,
+      result: {},
+    }));
+    const handleStreamRequest = vi.fn(async function* () {
+      yield { event: "status-update", data: { state: "working" } };
+      yield { event: "done", data: { id: "t1" } };
+    });
+    const bridge = createBridge({
+      config: { enabled: true, agentUrl: "http://localhost:8080/message", listenPort: port },
+      identity: makeBridgeIdentity(),
+      mesh: makeMesh(),
+      getRecipientPeerId: async () => null,
+      a2aBridge: { handleRequest, handleStreamRequest },
+    });
+    try {
+      await new Promise((r) => setTimeout(r, 50));
+      const resp = await fetch(`http://127.0.0.1:${port}/a2a/jsonrpc`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "text/event-stream",
+          Authorization: "Bearer tok",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "message/stream",
+          params: { message: { parts: [{ kind: "text", text: "hi" }] } },
+        }),
+      });
+      expect(resp.status).toBe(200);
+      expect(resp.headers.get("content-type")).toContain("text/event-stream");
+      const text = await resp.text();
+      expect(text).toContain("event: status-update");
+      expect(text).toContain("event: done");
+      expect(handleStreamRequest).toHaveBeenCalledOnce();
+    } finally {
+      await bridge.stop();
+    }
+  });
+
+  it("GET /vault/<path> serves files with A2A bearer auth", async () => {
+    const port = await getFreePort();
+    const bridge = createBridge({
+      config: { enabled: true, agentUrl: "http://localhost:8080/message", listenPort: port },
+      identity: makeBridgeIdentity(),
+      mesh: makeMesh(),
+      getRecipientPeerId: async () => null,
+      a2aVaultBearerTokens: ["vault-tok"],
+      readVaultFile: async (rel) => {
+        if (rel !== "notes/hello.txt") return null;
+        return { bytes: Buffer.from("hello vault"), mimeType: "text/plain" };
+      },
+    });
+    try {
+      await new Promise((r) => setTimeout(r, 50));
+      const denied = await fetch(`http://127.0.0.1:${port}/vault/${encodeURIComponent("notes/hello.txt")}`);
+      expect(denied.status).toBe(401);
+      const ok = await fetch(`http://127.0.0.1:${port}/vault/${encodeURIComponent("notes/hello.txt")}`, {
+        headers: { Authorization: "Bearer vault-tok" },
+      });
+      expect(ok.status).toBe(200);
+      expect(await ok.text()).toBe("hello vault");
+      const missing = await fetch(`http://127.0.0.1:${port}/vault/${encodeURIComponent("nope.txt")}`, {
+        headers: { Authorization: "Bearer vault-tok" },
+      });
+      expect(missing.status).toBe(404);
+    } finally {
+      await bridge.stop();
+    }
+  });
+
   it("forwards addressed P2P chat to the agent", async () => {
     const port = await getFreePort();
     const identity = makeBridgeIdentity();

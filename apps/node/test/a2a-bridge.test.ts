@@ -7,9 +7,14 @@
  */
 
 import { describe, expect, it, vi } from "vitest";
+import { generateEd25519KeyPair } from "@envoymesh/identity";
+import {
+  toA2AAgentCard,
+  withA2AAgentCardSignature,
+  verifyA2AAgentCardSignature,
+} from "@envoymesh/api";
 import {
   handleA2AAgentCardRequest,
-  toA2AAgentCard,
   type EnvoyAgentCard,
 } from "../src/a2a-bridge.js";
 
@@ -71,19 +76,33 @@ describe("a2a-bridge: toA2AAgentCard", () => {
     expect(card.skills.find((s) => s.id === "web-content")).toBeUndefined();
   });
 
-  it("emits capabilities.streaming=true, pushNotifications=false", () => {
+  it("emits capabilities.streaming=true (48D.5 message/stream)", () => {
     const card = toA2AAgentCard(BASE_ENVOY_CARD, "https://relay.example.com");
     expect(card.capabilities.streaming).toBe(true);
     expect(card.capabilities.pushNotifications).toBe(false);
   });
 
-  it("emits supportedInterfaces with the gateway URL", () => {
+  it("withA2AAgentCardSignature / verify round-trip (48D.5)", () => {
+    const keys = generateEd25519KeyPair();
+    const card = toA2AAgentCard(BASE_ENVOY_CARD, "https://relay.example.com");
+    const signed = withA2AAgentCardSignature(card, {
+      privateKeyPem: keys.privateKeyPem,
+      publicKeyPem: keys.publicKeyPem,
+      keyId: "test-key",
+    });
+    expect(signed.signatures?.[0]?.type).toBe("envoymesh-ed25519");
+    expect(verifyA2AAgentCardSignature(signed, keys.publicKeyPem)).toBe(true);
+    const other = generateEd25519KeyPair();
+    expect(verifyA2AAgentCardSignature(signed, other.publicKeyPem)).toBe(false);
+  });
+
+  it("emits supportedInterfaces with the A2A JSON-RPC gateway path", () => {
     const card = toA2AAgentCard(BASE_ENVOY_CARD, "https://relay.example.com:15432");
     expect(card.supportedInterfaces).toEqual([
       {
         protocolVersion: "1.0",
         protocolBinding: "jsonrpc",
-        url: "https://relay.example.com:15432",
+        url: "https://relay.example.com:15432/.well-known/a2a/jsonrpc",
       },
     ]);
   });
@@ -171,7 +190,7 @@ describe("a2a-bridge: handleA2AAgentCardRequest", () => {
     expect(res.headers["Content-Type"]).toBe("application/json");
     const parsed = JSON.parse(res.body);
     expect(parsed.name).toBe("Atlas");
-    expect(parsed.supportedInterfaces[0].url).toBe("https://relay.example.com");
+    expect(parsed.supportedInterfaces[0].url).toBe("https://relay.example.com/.well-known/a2a/jsonrpc");
   });
 
   it("returns 405 on non-GET", async () => {
