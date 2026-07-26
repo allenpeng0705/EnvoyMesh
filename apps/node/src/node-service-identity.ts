@@ -151,6 +151,8 @@ export interface IdentityContext {
   getNearbyProfileProbeInflight(): Set<string>;
   /** Record a failed probe attempt (for non-EnvoyMesh suppression). */
   markNonEnvoyPeerFailed(peerId: string): void;
+  /** True when the peer has failed enough probes and is within suppression cooldown. */
+  isNonEnvoyPeerSuppressed(peerId: string): boolean;
   /** Reset fail count on successful probe. */
   resetNonEnvoyPeerFailCount(peerId: string): void;
   /** Attempt LAN auto-bond (fire-and-forget, gated by cooldown + config). */
@@ -206,6 +208,7 @@ export function buildIdentityContext(host: any): IdentityContext {
     getNearbyProfileProbeLastAt: () => host._nearbyProfileProbeLastAt,
     getNearbyProfileProbeInflight: () => host._nearbyProfileProbeInflight,
     markNonEnvoyPeerFailed: (peerId) => host._markNonEnvoyPeerFailed(peerId),
+    isNonEnvoyPeerSuppressed: (peerId) => host._isNonEnvoyPeerSuppressed(peerId),
     resetNonEnvoyPeerFailCount: (peerId) => host._resetNonEnvoyPeerFailCount(peerId),
     maybeFireLanAutoBond: (peerId) => host._maybeFireLanAutoBond(peerId),
     notifyAdvertisedDiscoveryTopics: (topics) =>
@@ -514,11 +517,7 @@ export async function _probeNearbyPeerProfileAfterDiscovery(
     });
     lastAtMap.set(peerId, Date.now());
     if (!enriched) {
-      // Probe returned null — peer is not an EnvoyMesh node (or
-      // unreachable).  Emit peer:lost to remove the placeholder that
-      // handleMeshPeerDiscoveredViaRuntime emitted earlier.
-      ctx.emit("peer:lost", { nodeId: peerId });
-      ctx.markNonEnvoyPeerFailed(peerId);
+      emitNearbyProfileProbeFailure(ctx, peerId);
       return;
     }
     ctx.resetNonEnvoyPeerFailCount(peerId);
@@ -534,19 +533,35 @@ export async function _probeNearbyPeerProfileAfterDiscovery(
       // Non-critical — the events below still reach the UI.
     }
     ctx.emit("profile:updated", { ownerId: enriched.ownerId });
-    ctx.emit("peer:discovered", enriched);
+    ctx.emit("peer:discovered", { ...enriched, profileStatus: "resolved" as const });
     // Probe succeeded and a connection is open — fire LAN auto-bond now
     // (gated by cooldown + config inside _maybeFireLanAutoBond).
     void ctx.maybeFireLanAutoBond(peerId);
   } catch (err) {
     console.warn(`[node-service] nearby profile probe failed for ${peerId}:`, err);
-    // Probe threw — clean up the placeholder that handleMeshPeerDiscovered
-    // emitted earlier so it doesn't linger in the UI.
-    ctx.emit("peer:lost", { nodeId: peerId });
-    ctx.markNonEnvoyPeerFailed(peerId);
+    emitNearbyProfileProbeFailure(ctx, peerId);
   } finally {
     inflight.delete(peerId);
   }
+}
+
+/** Keep unresolved LAN peers visible until suppression; then drop them. */
+function emitNearbyProfileProbeFailure(ctx: IdentityContext, peerId: string): void {
+  ctx.markNonEnvoyPeerFailed(peerId);
+  if (ctx.isNonEnvoyPeerSuppressed(peerId)) {
+    ctx.emit("peer:lost", { nodeId: peerId });
+    return;
+  }
+  // Still show in People nearby as "Someone nearby" with an unreachable hint.
+  ctx.emit("peer:discovered", {
+    nodeId: peerId,
+    ownerId: "",
+    displayName: "",
+    interests: [],
+    profileVisibility: "public" as const,
+    discoverySource: "mdns" as const,
+    profileStatus: "unreachable" as const,
+  });
 }
 
 export async function _broadcastProfileSyncToBonds(

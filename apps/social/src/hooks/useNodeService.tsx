@@ -1633,6 +1633,7 @@ function createWsNodeServiceClient(
       return wsClient.rpc(
         "discoverPublishedLibrary",
         (params ?? {}) as Record<string, unknown>,
+        { timeoutMs: 60_000 },
       ) as Promise<DiscoverPublishedLibraryPeerResult[]>;
     },
     async listAgentShareProposals() {

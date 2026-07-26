@@ -4,6 +4,28 @@ import { nearbyPeerLabel } from "../../lib/display.js";
 import { DiscoverPeerCard } from "./DiscoverPeerCard.js";
 import { resolvePeerHelloState } from "../../lib/discover-peer-state.js";
 
+function nearbyStatusNote(
+  peers: readonly PeerSearchResult[],
+  t: ReturnType<typeof useT>,
+): string | null {
+  const pending = peers.filter(
+    (p) => !p.ownerId?.trim() && p.profileStatus !== "unreachable",
+  ).length;
+  const unreachable = peers.filter((p) => p.profileStatus === "unreachable").length;
+  const resolved = peers.filter((p) => Boolean(p.ownerId?.trim())).length;
+
+  if (unreachable > 0 && resolved === 0) {
+    return t("discover.nearby.heardUnreachable", { count: String(unreachable) });
+  }
+  if (unreachable > 0) {
+    return t("discover.nearby.someUnreachable", { count: String(unreachable) });
+  }
+  if (pending > 0 && resolved === 0) {
+    return t("discover.nearby.identifying");
+  }
+  return null;
+}
+
 export function NearbyPeersPanel({
   discoveredPeers,
   bonds,
@@ -23,6 +45,7 @@ export function NearbyPeersPanel({
 }) {
   const t = useT();
   const hint = emptyHint ?? t("discover.nearby.empty");
+  const statusNote = nearbyStatusNote(discoveredPeers, t);
 
   return (
     <section className="discover-panel nearby-panel" aria-labelledby="nearby-peers-heading">
@@ -45,32 +68,55 @@ export function NearbyPeersPanel({
         </p>
       ) : null}
 
+      {statusNote ? (
+        <p
+          className={`discover-status ${
+            discoveredPeers.some((p) => p.profileStatus === "unreachable")
+              ? "discover-status--warn"
+              : "discover-status--ok"
+          }`}
+          role="status"
+          data-testid="nearby-status-note"
+        >
+          {statusNote}
+        </p>
+      ) : null}
+
       {discoveredPeers.length === 0 ? (
         <div className="discover-empty discover-empty--compact">
           <p className="discover-empty__desc">{hint}</p>
         </div>
       ) : (
-        <ul className="around-me-list">
-          {discoveredPeers
-            .filter((peer) => {
-              // Only show peers with a real profile (non-empty ownerId means
-              // the profile probe succeeded).  Skip "Someone nearby" placeholders.
-              if (!peer.ownerId) return false;
-              const label = nearbyPeerLabel(peer.displayName, peer.nodeId);
-              return label !== "Someone nearby";
-            })
-            .map((peer) => {
-              const targetId = peer.ownerId || peer.nodeId;
-              const helloState = resolvePeerHelloState(peer.ownerId, peer.nodeId, bonds, outboundHellos);
-              const label = nearbyPeerLabel(peer.displayName, peer.nodeId);
-              const displayLabel = label === "Someone nearby" ? t("discover.nearby.someoneNearby") : label;
+        <ul className="around-me-list" data-testid="nearby-peers-list">
+          {discoveredPeers.map((peer) => {
+            const hasOwner = Boolean(peer.ownerId?.trim());
+            const targetId = peer.ownerId?.trim() || peer.nodeId;
+            const helloState = resolvePeerHelloState(
+              peer.ownerId ?? "",
+              peer.nodeId,
+              bonds,
+              outboundHellos,
+            );
+            const label = nearbyPeerLabel(peer.displayName, peer.nodeId);
+            const displayLabel =
+              label === "Someone nearby" ? t("discover.nearby.someoneNearby") : label;
+            const subtitle =
+              peer.profileStatus === "unreachable"
+                ? t("discover.nearby.subtitleUnreachable")
+                : peer.profileStatus === "pending" || !hasOwner
+                  ? t("discover.nearby.subtitleIdentifying")
+                  : t("discover.nearby.subtitle");
             return (
               <DiscoverPeerCard
                 key={peer.nodeId}
                 peer={{ ...peer, displayName: displayLabel }}
                 helloState={helloState}
-                subtitle={t("discover.nearby.subtitle")}
-                onSayHello={helloState === "none" ? () => onSayHello(targetId) : undefined}
+                subtitle={subtitle}
+                onSayHello={
+                  hasOwner && helloState === "none" ? () => onSayHello(targetId) : undefined
+                }
+                identifying={!hasOwner && peer.profileStatus !== "unreachable"}
+                unreachable={peer.profileStatus === "unreachable"}
               />
             );
           })}

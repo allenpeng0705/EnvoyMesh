@@ -446,7 +446,8 @@ export const zhProfilePhotosMessages = {
 
 export const zhLibraryViewMessages = {
   title: "资料库",
-  hint:    "共享资料库中的文件 — 发布元数据以供发现、导出到 IPFS，或提供 P2P 分享。仅 .md / .txt / .json 支持资料库 RAG 全文搜索。",
+  hint:
+    "资料库文档 — 可导入、发布发现、导出 IPFS 或 P2P 分享。聊天附件与头像相册请在聊天 / 个人资料中管理。",
   filterPlaceholder: "按名称或路径筛选…",
   filterAria: "筛选资料库",
   importFile: "导入文件…",
@@ -458,6 +459,7 @@ export const zhLibraryViewMessages = {
   published: "已发布",
   private: "私密",
   share: "分享…",
+  moreActions: "更多操作",
   export: "导出",
   reExport: "重新导出",
   exporting: "导出中…",
@@ -465,7 +467,7 @@ export const zhLibraryViewMessages = {
   pinning: "固定中…",
   verifyGateway: "验证网关",
   verifying: "验证中…",
-  empty: "还没有文档。导入文件或向共享资料库文件夹添加文件。",
+  empty: "还没有文档。点「新建文件」撰写 Markdown，或导入已有文件。",
   emptyFilter: "没有符合筛选条件的条目。",
   ipfsDisabled: "IPFS 导出已在设置 → 网络中禁用。",
   heliaHint: "移动端在启用时使用进程内 Helia 进行 IPFS 导出。",
@@ -837,6 +839,22 @@ export const zhFileShareMessages = {
   acceptFailed: "接受失败",
   acceptedTransfer: "已接受 {filename} — 传输进行中",
   pathUnavailable: "此附件的文件路径不可用",
+} as const;
+
+export const zhNoteEditorMessages = {
+  title: "文件编辑器",
+  newNote: "新建文件",
+  editNote: "编辑文件",
+  lede: "在资料库中创建 Markdown 文件。可用工具栏排版，或切换到预览。",
+  errorFilename: "请输入文件名",
+  filenamePlaceholder: "我的文档",
+  filenameAria: "文件名（自动添加 .md）",
+  subfolderPlaceholder: "子文件夹（可选）",
+  sensitivityPublic: "公开",
+  sensitivityFriends: "好友",
+  sensitivityPrivate: "私密",
+  contentPlaceholder: "用 Markdown 撰写…",
+  saving: "保存中…",
 } as const;
 
 export const zhPrivacySettingsMessages = {

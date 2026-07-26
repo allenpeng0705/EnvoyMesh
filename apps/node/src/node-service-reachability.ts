@@ -197,7 +197,7 @@ export async function handleMeshPeerDiscoveredViaRuntime(
     // Emit an immediate placeholder so the peer appears in "People on this
     // network" right away.  The probe runs in the background — on success it
     // emits an updated peer:discovered with the real displayName; on failure
-    // it emits peer:lost to remove the placeholder.
+    // it keeps the card as unreachable until non-Envoy suppression removes it.
     // Only set discoverySource for values valid in PeerSearchResult.
     // "relay" is already blocked by isInfrastructure above; "unknown" has
     // no matching PeerSearchResult variant so we omit it.
@@ -210,6 +210,7 @@ export async function handleMeshPeerDiscoveredViaRuntime(
       displayName: "",
       interests: [],
       profileVisibility: "public" as const,
+      profileStatus: "pending" as const,
       ...(emitSource ? { discoverySource: emitSource } : {}),
     });
     void ctx.probeNearbyPeerProfileAfterDiscovery(peerId, multiaddrs);

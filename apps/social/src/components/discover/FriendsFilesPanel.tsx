@@ -13,10 +13,31 @@ export function FriendsFilesPanel() {
   const [libraryResults, setLibraryResults] = useState<DiscoverPublishedLibraryPeerResult[] | null>(null);
   const [librarySearching, setLibrarySearching] = useState(false);
   const [libraryErr, setLibraryErr] = useState<string | null>(null);
+  const [libraryStatusNote, setLibraryStatusNote] = useState<string | null>(null);
+
+  const formatDiscoverError = (raw: string): string => {
+    const msg = raw.trim();
+    if (!msg) return t("discover.friendsFiles.errorGeneric");
+    if (/not connected|Not connected to server/i.test(msg)) {
+      return t("discover.friendsFiles.errorOffline");
+    }
+    if (/timed out|timeout|not reached/i.test(msg)) {
+      return t("discover.friendsFiles.errorTimeout");
+    }
+    if (/assertOnline|node is offline|mesh is not/i.test(msg)) {
+      return t("discover.friendsFiles.errorOffline");
+    }
+    // Strip internal RPC framing: "Request discoverPublishedLibrary timed out after 30000ms"
+    if (/^Request\s+\w+\s+timed out/i.test(msg)) {
+      return t("discover.friendsFiles.errorTimeout");
+    }
+    return t("discover.friendsFiles.errorWithDetail", { detail: msg });
+  };
 
   const handleLibraryDiscover = async () => {
     setLibrarySearching(true);
     setLibraryErr(null);
+    setLibraryStatusNote(null);
     setLibraryResults(null);
     const startedAt = Date.now();
     try {
@@ -26,7 +47,8 @@ export function FriendsFilesPanel() {
         fileTitleQuery: q || undefined,
         contentHashPrefix: hp || undefined,
         maxResultsPerPeer: 8,
-        timeoutMsPerPeer: 18_000,
+        timeoutMsPerPeer: 10_000,
+        overallTimeoutMs: 50_000,
       });
       const sorted = [...results].sort((a, b) => {
         const ar = a.bondRank ?? bondTrustRank(a.bondLevel);
@@ -39,13 +61,28 @@ export function FriendsFilesPanel() {
         await new Promise((r) => setTimeout(r, 600 - elapsed));
       }
       setLibraryResults(sorted);
+      const unreachable = sorted.filter((r) => r.error && r.files.length === 0).length;
+      const withFiles = sorted.filter((r) => r.files.length > 0).length;
+      if (unreachable > 0 && withFiles === 0) {
+        setLibraryStatusNote(t("discover.friendsFiles.noteAllUnreachable"));
+      } else if (unreachable > 0) {
+        setLibraryStatusNote(
+          t("discover.friendsFiles.notePartial", { count: String(unreachable) }),
+        );
+      }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
-      setLibraryErr(msg);
+      setLibraryErr(formatDiscoverError(msg));
       setLibraryResults([]);
     } finally {
       setLibrarySearching(false);
     }
+  };
+
+  const bondLabel = (level: string) => {
+    if (level === "direct") return t("discover.friendsFiles.bondDirect", "Friend");
+    if (level === "referred") return t("discover.friendsFiles.bondReferred", "Introduced");
+    return level;
   };
 
   return (
@@ -55,39 +92,16 @@ export function FriendsFilesPanel() {
           {t("discover.friendsFiles.title")}
         </h3>
         <p className="discover-panel__lede">{t("discover.friendsFiles.lede")}</p>
+        <p className="friends-files-panel__howto">{t("discover.friendsFiles.howTo")}</p>
       </header>
-      <div className="search-bar" style={{ marginBottom: "0.5rem" }}>
-        <input
-          type="text"
-          placeholder={t("discover.friendsFiles.hashPlaceholder")}
-          value={libraryHashPrefix}
-          onChange={(e) => setLibraryHashPrefix(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              void handleLibraryDiscover();
-            }
-          }}
-        />
-      </div>
-      <div className="search-bar">
-        <input
-          type="text"
-          placeholder={t("discover.friendsFiles.titlePlaceholder")}
-          value={libraryQuery}
-          onChange={(e) => setLibraryQuery(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              void handleLibraryDiscover();
-            }
-          }}
-        />
+
+      <div className="friends-files-panel__actions">
         <button
           type="button"
+          className="primary friends-files-panel__primary"
           onClick={() => void handleLibraryDiscover()}
           disabled={librarySearching}
-          className="search-btn"
+          data-testid="friends-files-show"
         >
           {librarySearching ? (
             <>
@@ -99,9 +113,52 @@ export function FriendsFilesPanel() {
           )}
         </button>
       </div>
+
+      <details className="friends-files-panel__filter">
+        <summary>{t("discover.friendsFiles.filterSummary", "Filter results (optional)")}</summary>
+        <div className="search-bar friends-files-panel__filter-row">
+          <input
+            type="search"
+            placeholder={t("discover.friendsFiles.titlePlaceholder")}
+            value={libraryQuery}
+            aria-label={t("discover.friendsFiles.titlePlaceholder")}
+            onChange={(e) => setLibraryQuery(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                e.preventDefault();
+                void handleLibraryDiscover();
+              }
+            }}
+          />
+        </div>
+        <details className="friends-files-panel__advanced">
+          <summary>{t("discover.friendsFiles.advanced", "Advanced")}</summary>
+          <div className="search-bar friends-files-panel__filter-row">
+            <input
+              type="text"
+              placeholder={t("discover.friendsFiles.hashPlaceholder")}
+              value={libraryHashPrefix}
+              aria-label={t("discover.friendsFiles.hashPlaceholder")}
+              onChange={(e) => setLibraryHashPrefix(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                  void handleLibraryDiscover();
+                }
+              }}
+            />
+          </div>
+        </details>
+      </details>
+
       {libraryErr ? (
         <p className="library-view-error" role="alert">
           {libraryErr}
+        </p>
+      ) : null}
+      {libraryStatusNote && !libraryErr ? (
+        <p className="library-view-hint" role="status">
+          {libraryStatusNote}
         </p>
       ) : null}
       {librarySearching ? (
@@ -129,7 +186,7 @@ export function FriendsFilesPanel() {
                 <div className="result-info">
                   <strong>{row.displayName || row.peerOwnerId}</strong>
                   <span className="result-username">
-                    {row.bondLevel} · {row.latencyMs}ms
+                    {bondLabel(row.bondLevel)}
                     {row.error ? ` · ${row.error}` : ""}
                   </span>
                   {row.files.length === 0 && !row.error ? (

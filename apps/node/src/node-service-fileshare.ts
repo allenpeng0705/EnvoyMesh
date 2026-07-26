@@ -703,15 +703,28 @@ export async function discoverPublishedLibraryViaRuntime(
   const results: DiscoverPublishedLibraryPeerResult[] = [];
   const maxResults = params?.maxResultsPerPeer ?? 5;
   const timeoutMs = params?.timeoutMsPerPeer ?? 15_000;
+  const overallTimeoutMs = params?.overallTimeoutMs ?? 25_000;
+  const deadline = Date.now() + overallTimeoutMs;
+  let skippedForBudget = 0;
 
   for (const bond of targets) {
+    const remaining = deadline - Date.now();
+    if (remaining <= 0) {
+      skippedForBudget = targets.length - results.length;
+      break;
+    }
+    const peerTimeoutMs = Math.min(timeoutMs, remaining);
+    if (peerTimeoutMs < 50) {
+      skippedForBudget = targets.length - results.length;
+      break;
+    }
     const started = Date.now();
     try {
       const { transportPeerId, recipientEnvelopePeerId, listenAddrs } =
         await ctx.resolvePeerTransportForOwner(bond.peerOwnerId);
       const dialHints = await Promise.race([
         ctx.dialHintsForChat(transportPeerId, listenAddrs),
-        new Promise<string[]>((r) => setTimeout(() => r([]), 30_000)),
+        new Promise<string[]>((r) => setTimeout(() => r([]), Math.min(8_000, peerTimeoutMs))),
       ]);
       const unsigned = createUnsignedEnvelope({
         senderPeerId: derivePeerId(profile.device.publicKeyPem),
@@ -737,7 +750,7 @@ export async function discoverPublishedLibraryViaRuntime(
         transportPeerId,
         envelope,
         dialHints,
-        timeoutMs,
+        timeoutMs: peerTimeoutMs,
       });
       const latencyMs = Date.now() - started;
       if ((reply as { intent?: string }).intent !== "discovery.response") {
@@ -789,6 +802,13 @@ export async function discoverPublishedLibraryViaRuntime(
       });
     }
   }
+
+  if (skippedForBudget > 0 && results.length === 0) {
+    throw new Error(
+      `Timed out before any contact replied (${skippedForBudget} contact(s) not reached). They may be offline — try again when they are online.`,
+    );
+  }
+
   return results;
 }
 

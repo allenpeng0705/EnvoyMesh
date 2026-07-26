@@ -452,7 +452,7 @@ export const profilePhotosMessages = {
 export const libraryViewMessages = {
   title: "Library",
   hint:
-    "Your local files — vault documents and agent workspace files in one list. Publish vault metadata for discovery, export to IPFS, or share P2P. Only vault .md / .txt / .json are full-text searchable for RAG.",
+    "Your vault documents — import, publish for discovery, export to IPFS, or share P2P. Chat attachments and profile photos stay in chat / Profile.",
   filterPlaceholder: "Filter by name or path…",
   filterAria: "Filter library",
   importFile: "Import file…",
@@ -464,6 +464,7 @@ export const libraryViewMessages = {
   published: "Published",
   private: "Private",
   share: "Share…",
+  moreActions: "More actions",
   export: "Export",
   reExport: "Re-export",
   exporting: "Exporting…",
@@ -471,7 +472,7 @@ export const libraryViewMessages = {
   pinning: "Pinning…",
   verifyGateway: "Verify gateway",
   verifying: "Verifying…",
-  empty: "No documents yet. Import a file or add files to your shared vault folder.",
+  empty: "No documents yet. Use New File to write Markdown, or import an existing file.",
   emptyFilter: "No entries match your filter.",
   ipfsDisabled: "IPFS export is disabled in Settings → Network.",
   heliaHint: "Mobile uses in-process Helia for IPFS export when enabled.",
@@ -499,16 +500,18 @@ export const libraryViewMessages = {
 } as const;
 
 export const noteEditorMessages = {
-  title: "Note Editor",
-  newNote: "New Note",
-  editNote: "Edit Note",
+  title: "File Editor",
+  newNote: "New File",
+  editNote: "Edit File",
+  lede: "Create a Markdown file in your vault. Use the toolbar for formatting, or switch to Preview.",
   errorFilename: "Please enter a filename",
-  filenamePlaceholder: "note.md",
+  filenamePlaceholder: "My document",
+  filenameAria: "Filename (.md added automatically)",
   subfolderPlaceholder: "Subfolder (optional)",
   sensitivityPublic: "Public",
   sensitivityFriends: "Friends",
   sensitivityPrivate: "Private",
-  contentPlaceholder: "Write your note in Markdown…",
+  contentPlaceholder: "Write in Markdown…",
   saving: "Saving…",
 } as const;
 

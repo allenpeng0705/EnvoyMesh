@@ -392,18 +392,15 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     return unsub;
   }, [nodeService, wsTransportOpen]);
 
-  // peer:discovered + peer:lost — track nearby peers.  Placeholders (empty
-  // ownerId) are filtered at the source by the node-side suppression layer
-  // (30s probe cooldown + 5min non-EnvoyMesh suppression), so we only see
-  // enriched events with real profile data.
+  // peer:discovered + peer:lost — track nearby peers, including unresolved
+  // placeholders (empty ownerId / pending|unreachable profileStatus) so
+  // People on this network can show "Someone nearby" + diagnostics.
   useEffect(() => {
     if (!wsTransportOpen) return;
     const selfOwnerId = humanProfile?.ownerId?.trim() ?? "";
 
     const unsub1 = nodeService.on("peer:discovered", (data: any) => {
       if (selfOwnerId && data.ownerId === selfOwnerId) return;
-      // Skip placeholders with no ownerId — the UI won't show them anyway.
-      if (!data.ownerId) return;
       setDiscoveredPeers((prev) => {
         const existing = prev.find((p) => p.nodeId === data.nodeId);
         if (existing) {
@@ -423,15 +420,16 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     };
   }, [nodeService, wsTransportOpen, humanProfile?.ownerId]);
 
-  // Safety net: remove entries with empty/placeholder display names that
-  // weren't cleaned up by peer:lost (e.g. after a WebSocket reconnection).
-  // Runs every 30s.
+  // Safety net: drop only resolved peers that still carry a raw "Peer 12D3…"
+  // label. Keep pending/unreachable placeholders for diagnostics.
   useEffect(() => {
     if (!wsTransportOpen) return;
     const timer = setInterval(() => {
       setDiscoveredPeers((prev) => {
         if (prev.length === 0) return prev;
         const cleaned = prev.filter((p) => {
+          if (p.profileStatus === "pending" || p.profileStatus === "unreachable") return true;
+          if (!p.ownerId?.trim()) return true;
           const name = p.displayName?.trim() ?? "";
           return name.length > 0 && !/^Peer\s\w{8}$/.test(name);
         });

@@ -270,6 +270,13 @@ export interface PeerSearchResult {
      * reservation for this peer (hoppable). Absent when unknown / non-relay hit.
      */
     hasHopSlot?: boolean;
+    /**
+     * Nearby / mDNS pipeline status for People on this network.
+     * - pending: heard on LAN, profile probe in flight
+     * - resolved: Envoy profile identified (ownerId set)
+     * - unreachable: heard on LAN but profile probe failed (firewall / non-Envoy)
+     */
+    profileStatus?: "pending" | "resolved" | "unreachable";
 }
 export interface SearchQuery {
     /** Bonded-contact DID or envoy:owner id lookup */
@@ -502,7 +509,13 @@ export interface DiscoverPublishedLibraryParams {
     /** Prefix match on base64url content hash (optional). */
     contentHashPrefix?: string;
     maxResultsPerPeer?: number;
+    /** Per-contact discovery reply timeout (default 15s). */
     timeoutMsPerPeer?: number;
+    /**
+     * Wall-clock budget for the whole fan-out (default 25s).
+     * When reached, remaining contacts are skipped and partial results are returned.
+     */
+    overallTimeoutMs?: number;
     /** When set, only these bonded peers are queried. */
     targetOwnerIds?: string[];
 }

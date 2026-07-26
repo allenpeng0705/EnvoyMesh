@@ -66,21 +66,47 @@ function openFriendsFilesPanel() {
 }
 
 describe("E2E Library friends files", () => {
-  it("shows friends files panel and query controls", async () => {
+  it("shows a one-click primary action without requiring inputs", async () => {
     openFriendsFilesPanel();
 
     expect(await screen.findByRole("heading", { name: /friends' files/i })).toBeDefined();
-    expect(screen.getByPlaceholderText(/optional filter on title or path/i)).toBeDefined();
-    expect(screen.getByRole("button", { name: /^Query contacts$/i })).toBeDefined();
+    expect(screen.getByText(/tip: a contact must turn on published/i)).toBeDefined();
+    expect(screen.getByTestId("friends-files-show")).toBeDefined();
+    expect(screen.getByRole("button", { name: /Show published files/i })).toBeDefined();
   });
 
-  it("query contacts calls discoverPublishedLibrary and renders file metadata", async () => {
+  it("show published files calls discoverPublishedLibrary with no filters by default", async () => {
     openFriendsFilesPanel();
 
-    fireEvent.change(screen.getByPlaceholderText(/optional filter on title or path/i), {
+    fireEvent.click(screen.getByRole("button", { name: /Show published files/i }));
+
+    await waitFor(
+      () => {
+        expect(discoverPublishedLibrary).toHaveBeenCalledWith({
+          fileTitleQuery: undefined,
+          contentHashPrefix: undefined,
+          maxResultsPerPeer: 8,
+          timeoutMsPerPeer: 10_000,
+          overallTimeoutMs: 50_000,
+        });
+      },
+      { timeout: 3000 },
+    );
+
+    expect(await screen.findByText("Sam")).toBeDefined();
+    expect(screen.getByText(/^Friend$/i)).toBeDefined();
+    expect(screen.getByText("kubo-golden-checklist")).toBeDefined();
+    expect(screen.getByText("tests/kubo-golden.md")).toBeDefined();
+  });
+
+  it("optional filter passes title query when provided", async () => {
+    openFriendsFilesPanel();
+
+    fireEvent.click(screen.getByText(/Filter results \(optional\)/i));
+    fireEvent.change(screen.getByLabelText(/Filter by name or path/i), {
       target: { value: "kubo" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /^Query contacts$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Show published files/i }));
 
     await waitFor(
       () => {
@@ -88,25 +114,23 @@ describe("E2E Library friends files", () => {
           fileTitleQuery: "kubo",
           contentHashPrefix: undefined,
           maxResultsPerPeer: 8,
-          timeoutMsPerPeer: 18_000,
+          timeoutMsPerPeer: 10_000,
+          overallTimeoutMs: 50_000,
         });
       },
       { timeout: 3000 },
     );
-
-    expect(await screen.findByText("Sam")).toBeDefined();
-    expect(screen.getByText(/direct · 42ms/i)).toBeDefined();
-    expect(screen.getByText("kubo-golden-checklist")).toBeDefined();
-    expect(screen.getByText("tests/kubo-golden.md")).toBeDefined();
   });
 
-  it("passes content-hash prefix when provided", async () => {
+  it("passes content-hash prefix from Advanced when provided", async () => {
     openFriendsFilesPanel();
 
-    fireEvent.change(screen.getByPlaceholderText(/content-hash prefix/i), {
+    fireEvent.click(screen.getByText(/Filter results \(optional\)/i));
+    fireEvent.click(screen.getByText(/^Advanced$/i));
+    fireEvent.change(screen.getByPlaceholderText(/Content-hash prefix/i), {
       target: { value: "a1b2" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /^Query contacts$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Show published files/i }));
 
     await waitFor(
       () => {
@@ -122,19 +146,32 @@ describe("E2E Library friends files", () => {
     discoverPublishedLibrary.mockResolvedValue([]);
     openFriendsFilesPanel();
 
-    fireEvent.click(screen.getByRole("button", { name: /^Query contacts$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Show published files/i }));
 
-    expect(await screen.findByText(/no contacts returned results/i)).toBeDefined();
+    expect(await screen.findByText(/No published files found/i)).toBeDefined();
+  });
+
+  it("shows a friendly timeout message instead of raw RPC text", async () => {
+    discoverPublishedLibrary.mockRejectedValue(
+      new Error("Request discoverPublishedLibrary timed out after 30000ms"),
+    );
+    openFriendsFilesPanel();
+
+    fireEvent.click(screen.getByRole("button", { name: /Show published files/i }));
+
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toMatch(/couldn’t reach your contacts|offline|try again/i);
+    expect(alert.textContent).not.toMatch(/discoverPublishedLibrary/i);
   });
 
   it("shows error when discovery fails", async () => {
     discoverPublishedLibrary.mockRejectedValue(new Error("Relay unreachable"));
     openFriendsFilesPanel();
 
-    fireEvent.click(screen.getByRole("button", { name: /^Query contacts$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Show published files/i }));
 
     const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toContain("Relay unreachable");
+    expect(alert.textContent).toMatch(/Relay unreachable|Couldn’t look up/i);
   });
 
   it("shows per-contact no-match hint when peer responds with zero files", async () => {
@@ -150,9 +187,9 @@ describe("E2E Library friends files", () => {
     ]);
     openFriendsFilesPanel();
 
-    fireEvent.click(screen.getByRole("button", { name: /^Query contacts$/i }));
+    fireEvent.click(screen.getByRole("button", { name: /Show published files/i }));
 
     expect(await screen.findByText("Jordan")).toBeDefined();
-    expect(screen.getByText(/no published files matched/i)).toBeDefined();
+    expect(screen.getByText(/nothing published/i)).toBeDefined();
   });
 });

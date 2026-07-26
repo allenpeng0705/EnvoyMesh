@@ -59,7 +59,10 @@ vi.mock("@envoymesh/protocol", () => ({
 }));
 
 vi.mock("../src/chat-outbound-deliver.js", () => ({
-  sendExpectReplyWithRetry: async () => ({ intent: "discovery.response", payload: { matches: [] } }),
+  sendExpectReplyWithRetry: vi.fn(async () => ({
+    intent: "discovery.response",
+    payload: { matches: [] },
+  })),
 }));
 
 vi.mock("../src/discovery-inbound.js", () => ({
@@ -72,6 +75,7 @@ import {
   requestShareFromLibraryViaRuntime,
   type FileShareNetworkContext,
 } from "../src/node-service-fileshare.js";
+import { sendExpectReplyWithRetry } from "../src/chat-outbound-deliver.js";
 
 function makeContext(): FileShareNetworkContext {
   return {
@@ -121,6 +125,10 @@ beforeEach(() => {
   mocks.correlation.clear();
   mocks.transferStatus.length = 0;
   mocks.delivered.length = 0;
+  vi.mocked(sendExpectReplyWithRetry).mockImplementation(async () => ({
+    intent: "discovery.response",
+    payload: { matches: [] },
+  }));
 });
 
 afterEach(() => {
@@ -142,6 +150,25 @@ describe("discoverPublishedLibraryViaRuntime", () => {
     const results = await discoverPublishedLibraryViaRuntime(makeContext());
     expect(results).toHaveLength(1);
     expect(results[0]?.peerOwnerId).toBe("good-peer");
+  });
+
+  it("stops when overallTimeoutMs budget is exhausted and returns partial results", async () => {
+    mocks.bonds.push(
+      { peerOwnerId: "slow-1", level: "direct" },
+      { peerOwnerId: "slow-2", level: "direct" },
+      { peerOwnerId: "slow-3", level: "direct" },
+    );
+    vi.mocked(sendExpectReplyWithRetry).mockImplementation(async () => {
+      await new Promise((r) => setTimeout(r, 70));
+      return { intent: "discovery.response", payload: { matches: [] } };
+    });
+
+    const results = await discoverPublishedLibraryViaRuntime(makeContext(), {
+      timeoutMsPerPeer: 100,
+      overallTimeoutMs: 160,
+    });
+    expect(results.length).toBeGreaterThanOrEqual(1);
+    expect(results.length).toBeLessThan(3);
   });
 });
 

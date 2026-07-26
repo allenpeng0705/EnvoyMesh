@@ -100,6 +100,7 @@ function mockIdentityContext(overrides: Partial<IdentityContext> = {}): Identity
     getNearbyProfileProbeLastAt: () => lastAtMap,
     getNearbyProfileProbeInflight: () => inflight,
     markNonEnvoyPeerFailed: vi.fn(),
+    isNonEnvoyPeerSuppressed: vi.fn().mockReturnValue(false),
     resetNonEnvoyPeerFailCount: vi.fn(),
     maybeFireLanAutoBond: vi.fn().mockResolvedValue(undefined),
     ...overrides,
@@ -139,7 +140,7 @@ describe("_probeNearbyPeerProfileAfterDiscovery", () => {
     expect(emit.mock.calls[0][0]).toBe("profile:updated");
     expect(emit.mock.calls[0][1]).toEqual({ ownerId: "envoy:owner:alice" });
     expect(emit.mock.calls[1][0]).toBe("peer:discovered");
-    expect(emit.mock.calls[1][1]).toEqual(enriched);
+    expect(emit.mock.calls[1][1]).toEqual({ ...enriched, profileStatus: "resolved" });
     expect(ctx.resetNonEnvoyPeerFailCount).toHaveBeenCalledWith("12D3KooWPeerA");
     expect(ctx.markNonEnvoyPeerFailed).not.toHaveBeenCalled();
     // Verify the ownerId→peerId mapping is persisted for sendHello resolution.
@@ -153,7 +154,7 @@ describe("_probeNearbyPeerProfileAfterDiscovery", () => {
 
   // ---- Probe result: null (non-EnvoyMesh or unreachable) -----------------
 
-  it("emits peer:lost when probe returns null", async () => {
+  it("keeps peer visible as unreachable when probe returns null (before suppression)", async () => {
     mockedProbe.mockResolvedValue(null);
 
     const emit = vi.fn();
@@ -161,14 +162,34 @@ describe("_probeNearbyPeerProfileAfterDiscovery", () => {
     await _probeNearbyPeerProfileAfterDiscovery(ctx, "12D3KooWPeerA", LAN_MULTIADDRS);
 
     expect(emit).toHaveBeenCalledTimes(1);
-    expect(emit).toHaveBeenCalledWith("peer:lost", { nodeId: "12D3KooWPeerA" });
+    expect(emit).toHaveBeenCalledWith(
+      "peer:discovered",
+      expect.objectContaining({
+        nodeId: "12D3KooWPeerA",
+        ownerId: "",
+        profileStatus: "unreachable",
+      }),
+    );
     expect(ctx.markNonEnvoyPeerFailed).toHaveBeenCalledWith("12D3KooWPeerA");
     expect(ctx.resetNonEnvoyPeerFailCount).not.toHaveBeenCalled();
   });
 
+  it("emits peer:lost when probe returns null and peer is suppressed", async () => {
+    mockedProbe.mockResolvedValue(null);
+
+    const emit = vi.fn();
+    const ctx = mockIdentityContext({
+      emit,
+      isNonEnvoyPeerSuppressed: vi.fn().mockReturnValue(true),
+    });
+    await _probeNearbyPeerProfileAfterDiscovery(ctx, "12D3KooWPeerA", LAN_MULTIADDRS);
+
+    expect(emit).toHaveBeenCalledWith("peer:lost", { nodeId: "12D3KooWPeerA" });
+  });
+
   // ---- Probe throws exception -------------------------------------------
 
-  it("emits peer:lost when probe throws exception", async () => {
+  it("keeps peer visible as unreachable when probe throws (before suppression)", async () => {
     mockedProbe.mockRejectedValue(new Error("timeout"));
 
     const emit = vi.fn();
@@ -176,7 +197,13 @@ describe("_probeNearbyPeerProfileAfterDiscovery", () => {
     await _probeNearbyPeerProfileAfterDiscovery(ctx, "12D3KooWPeerA", LAN_MULTIADDRS);
 
     expect(emit).toHaveBeenCalledTimes(1);
-    expect(emit).toHaveBeenCalledWith("peer:lost", { nodeId: "12D3KooWPeerA" });
+    expect(emit).toHaveBeenCalledWith(
+      "peer:discovered",
+      expect.objectContaining({
+        nodeId: "12D3KooWPeerA",
+        profileStatus: "unreachable",
+      }),
+    );
     expect(ctx.markNonEnvoyPeerFailed).toHaveBeenCalledWith("12D3KooWPeerA");
   });
 

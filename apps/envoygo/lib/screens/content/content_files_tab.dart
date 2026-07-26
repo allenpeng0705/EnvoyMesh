@@ -10,6 +10,7 @@ import '../../models/web_content.dart';
 import '../../providers/contact_provider.dart';
 import '../../providers/node_provider.dart';
 import '../../services/library_read_cache.dart';
+import '../../services/chat_voice_note.dart';
 
 /// My Files — list / import / preview / share home vault files via thin client.
 class ContentFilesTab extends ConsumerStatefulWidget {
@@ -277,7 +278,9 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
     }
 
     final items = (_result?.items ?? const <LocalFileItem>[])
-        .where((i) => i.source == 'vault')
+        .where(
+          (i) => i.source == 'vault' && !isHiddenFromLibraryList(i.relativePath),
+        )
         .toList();
 
     return Column(
@@ -289,7 +292,7 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
               Expanded(
                 child: TextField(
                   decoration: const InputDecoration(
-                    hintText: 'Search files',
+                    hintText: 'Search library',
                     isDense: true,
                     prefixIcon: Icon(Icons.search),
                   ),
@@ -316,7 +319,7 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
             child: Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                '${_result!.vaultCount} vault · ${_result!.workspaceCount} workspace',
+                'Vault library — chat attachments and profile photos stay in chat / Profile',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
@@ -347,7 +350,7 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
                           ? ListView(
                               children: const [
                                 SizedBox(height: 80),
-                                Center(child: Text('No vault files yet.')),
+                                Center(child: Text('No library files yet.')),
                               ],
                             )
                           : ListView.builder(

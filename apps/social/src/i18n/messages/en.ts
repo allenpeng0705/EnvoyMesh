@@ -440,6 +440,15 @@ export const en = {
         "Shows other Envoy users on the same Wi‑Fi. Tap Say hello to send a friend request — they accept here or in Chat → Inbox.",
       offline: "Your connection is off. Open Settings → Network to connect, then try again.",
       subtitle: "Nearby on your network",
+      subtitleIdentifying: "Heard on this Wi‑Fi — identifying…",
+      subtitleUnreachable: "Heard on this Wi‑Fi — couldn't identify yet",
+      statusIdentifying: "Identifying…",
+      statusUnreachable: "Unreachable",
+      identifying: "Heard someone on this Wi‑Fi — identifying their Envoy profile…",
+      heardUnreachable:
+        "Heard {count} device(s) on this Wi‑Fi, but couldn't identify them as Envoy yet. Check firewall, VPN off, and Settings → Network → Same Wi‑Fi / home (local discovery on).",
+      someUnreachable:
+        "{count} nearby device(s) couldn't be identified yet (firewall or not Envoy).",
       empty: "No one nearby yet. Make sure you are on the same Wi‑Fi and both connected in Settings → Network.",
       someoneNearby: "Someone nearby",
     },
@@ -567,15 +576,32 @@ export const en = {
     },
     friendsFiles: {
       title: "Friends' files",
-      lede: "Search published library metadata from your contacts (titles and paths only — no file bytes).",
-      hashPlaceholder: "Optional content-hash prefix (base64url)",
-      titlePlaceholder: "Optional filter on title or path (leave empty for all published)",
-      query: "Query contacts",
-      querying: "Querying contacts…",
-      queryingDetail: "Querying each bond in trust order (direct first)…",
-      statusTitle: "Published library discovery",
-      empty: "No contacts returned results (or no matching published files).",
-      noFiles: "No published files matched.",
+      lede: "See documents your contacts marked as Published. You only see names and paths — not the file contents.",
+      howTo:
+        "Tip: a contact must turn on Published for a file in their Library first. Then tap the button below — you don’t need to type anything.",
+      filterSummary: "Filter results (optional)",
+      titlePlaceholder: "Filter by name or path…",
+      advanced: "Advanced",
+      hashPlaceholder: "Content-hash prefix (for exact file match)",
+      query: "Show published files",
+      querying: "Asking your contacts…",
+      queryingDetail: "Checking each bonded contact for published Library files…",
+      statusTitle: "Looking up friends’ files",
+      empty:
+        "No published files found. Ask a contact to mark a Library file as Published, then try again.",
+      noFiles: "This contact has nothing published (or nothing matched your filter).",
+      bondDirect: "Friend",
+      bondReferred: "Introduced",
+      errorTimeout:
+        "Couldn’t reach your contacts in time. They may be offline or the network is slow — try again when they are online.",
+      errorOffline:
+        "You’re not connected to your node. Open Settings → Network, connect, then try again.",
+      errorGeneric: "Couldn’t look up friends’ published files. Please try again.",
+      errorWithDetail: "Couldn’t look up friends’ published files: {detail}",
+      noteAllUnreachable:
+        "Contacts didn’t respond. They may be offline — published files only show when they are online.",
+      notePartial:
+        "{count} contact(s) didn’t respond (often offline). Showing results from contacts that replied.",
     },
   },
   library: libraryViewMessages,

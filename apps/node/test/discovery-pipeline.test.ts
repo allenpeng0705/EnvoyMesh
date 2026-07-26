@@ -82,6 +82,7 @@ describe("handleMeshPeerDiscoveredViaRuntime", () => {
         displayName: "",
         interests: [],
         profileVisibility: "public",
+        profileStatus: "pending",
       }),
     );
   });

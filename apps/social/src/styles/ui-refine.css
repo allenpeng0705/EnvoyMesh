@@ -1674,6 +1674,14 @@ button.secondary:not(.danger):disabled,
   color: var(--color-success);
 }
 
+.discover-peer-card__status--identifying {
+  color: var(--color-text-muted);
+}
+
+.discover-peer-card__status--unreachable {
+  color: var(--color-warning);
+}
+
 /* Holds the "Hello sent — waiting for them to accept" badge plus a small
    "Resend" affordance on the search-result card and friend-suggestion card.
    Keeps the badge and button stacked or side-by-side depending on width. */

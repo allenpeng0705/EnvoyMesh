@@ -2911,6 +2911,169 @@
   max-width: 28rem;
 }
 
+/* Library → New File / Edit File: large markdown editor popup */
+.note-editor-modal {
+  max-width: min(56rem, 100%);
+  max-height: min(92vh, 52rem);
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: var(--space-4) var(--space-5);
+}
+
+.note-editor-modal__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-shrink: 0;
+}
+
+.note-editor-modal__header h2 {
+  margin: 0;
+}
+
+.note-editor-modal__close {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  padding: 0.35rem 0.5rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.note-editor-modal__close:hover:not(:disabled) {
+  background: var(--color-primary-subtle, color-mix(in srgb, var(--color-primary) 12%, transparent));
+  color: var(--color-text);
+}
+
+.note-editor-modal__lede {
+  margin: var(--space-2) 0 var(--space-3);
+  flex-shrink: 0;
+}
+
+.note-editor-modal__meta {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  flex-shrink: 0;
+}
+
+.note-editor-modal__filename-wrap {
+  display: flex;
+  align-items: stretch;
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 0.375rem);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.note-editor-modal__filename-wrap:focus-within {
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-primary) 25%, transparent);
+}
+
+.note-editor-modal__filename-wrap .note-editor-modal__filename {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.note-editor-modal__filename-wrap .note-editor-modal__filename:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.note-editor-modal__ext {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 0.65rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  background: var(--color-surface-elevated, color-mix(in srgb, var(--color-surface) 88%, var(--color-border)));
+  border-left: 1px solid var(--color-border);
+  user-select: none;
+  flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  .note-editor-modal__meta {
+    grid-template-columns: 1fr;
+  }
+}
+
+.note-editor-modal__path {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: var(--text-sm);
+  color: var(--color-text-muted);
+  word-break: break-all;
+  align-self: center;
+}
+
+.note-editor-modal__sensitivity {
+  min-width: 7.5rem;
+}
+
+.note-editor-modal__editor {
+  flex: 1 1 auto;
+  min-height: 16rem;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.note-editor-modal__editor .markdown-editor {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin-bottom: 0;
+  height: 100%;
+}
+
+.note-editor-modal__editor .markdown-editor__chrome {
+  flex-shrink: 0;
+}
+
+.note-editor-modal__editor .markdown-editor__panes {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: auto;
+}
+
+.note-editor-modal__editor .markdown-editor__textarea,
+.note-editor-modal__editor .markdown-editor__preview {
+  min-height: 18rem;
+  height: 100%;
+  resize: none;
+}
+
+.note-editor-modal__error {
+  margin: var(--space-2) 0 0;
+  color: var(--color-danger);
+  font-size: var(--text-sm);
+  flex-shrink: 0;
+}
+
+.note-editor-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: var(--space-3);
+  padding-top: var(--space-3);
+  border-top: 1px solid var(--color-border-subtle);
+  flex-shrink: 0;
+}
+
 .confirm-dialog {
   max-width: 22rem;
 }

@@ -1,29 +1,31 @@
 /**
- * Inline note editor for creating and editing markdown notes in the vault.
+ * Modal markdown file editor for creating and editing vault notes under notes/.
  *
- * Used by LibraryView as a slide-in panel. Supports three modes:
- * - **create**: Start a new note (asks for filename on save)
- * - **edit**: Edit an existing vault .md file (saves in place)
+ * Used by LibraryView. Supports:
+ * - **create**: New markdown file (filename + optional subfolder)
+ * - **edit**: Existing vault .md file (saves in place)
  *
- * Phase 44A2 — Native Note Creation.
+ * Reuses MarkdownEditor (toolbar, write/preview/split) in a centered popup.
  */
 import { useCallback, useEffect, useRef, useState } from "react"
 import { useNodeService } from "../../hooks/useNodeService.js"
 import { useT } from "../../context/I18nContext.js"
+import { MarkdownEditor } from "../MarkdownEditor.js"
+import { ModalPortal } from "../ModalPortal.js"
 
 export type NoteEditorMode = "create" | "edit"
 
 export interface NoteEditorProps {
-  /** Whether we are creating a new note or editing an existing one. */
+  /** Whether we are creating a new file or editing an existing one. */
   mode: NoteEditorMode
   /**
-   * Vault-relative path of the note to edit.
+   * Vault-relative path of the file to edit.
    * Ignored when mode is "create".
    */
   relativePath?: string
-  /** Optional subfolder for new notes (e.g. "projects"). */
+  /** Optional subfolder for new files (e.g. "projects"). */
   defaultSubfolder?: string
-  /** Sensitivity for new notes. */
+  /** Sensitivity for new files. */
   defaultSensitivity?: "public" | "friends" | "private"
   /** Called after a successful save or create. */
   onSaved?: (relativePath: string) => void
@@ -41,7 +43,6 @@ export function NoteEditorView({
 }: NoteEditorProps) {
   const t = useT()
   const nodeService = useNodeService()
-  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const filenameInputRef = useRef<HTMLInputElement>(null)
 
   const [filename, setFilename] = useState("")
@@ -54,7 +55,6 @@ export function NoteEditorView({
   const [error, setError] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
 
-  // Load existing note content when editing.
   useEffect(() => {
     if (mode === "edit" && initialRelativePath && !loaded) {
       setBusy(true)
@@ -74,10 +74,17 @@ export function NoteEditorView({
         })
     }
     if (mode === "create") {
-      // Auto-focus the filename field so the user can type a name first.
       requestAnimationFrame(() => filenameInputRef.current?.focus())
     }
   }, [mode, initialRelativePath, loaded, nodeService])
+
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && !busy) onClose()
+    }
+    document.addEventListener("keydown", onKeyDown)
+    return () => document.removeEventListener("keydown", onKeyDown)
+  }, [busy, onClose])
 
   const handleSave = useCallback(async () => {
     if (mode === "create") {
@@ -86,7 +93,7 @@ export function NoteEditorView({
         setError(t("notes.errorFilename"))
         return
       }
-      const fn = name.endsWith(".md") ? name : `${name}.md`
+      const fn = /\.md$/i.test(name) ? name.replace(/\.md$/i, ".md") : `${name}.md`
       setBusy(true)
       setError(null)
       try {
@@ -103,8 +110,6 @@ export function NoteEditorView({
         setBusy(false)
       }
     } else if (mode === "edit" && initialRelativePath) {
-      // Save = createNote with the same relative path (overwrite).
-      // Extract filename and subfolder from the path.
       const parts = initialRelativePath.replace(/^notes\//, "").split("/")
       const fn = parts.pop() ?? ""
       const sf = parts.join("/") || undefined
@@ -127,99 +132,132 @@ export function NoteEditorView({
   }, [mode, filename, content, subfolder, sensitivity, initialRelativePath, nodeService, onSaved, t])
 
   const isEditingExistingNote = initialRelativePath?.startsWith("notes/")
+  const title = mode === "create" ? t("notes.newNote") : t("notes.editNote")
 
   return (
-    <div className="note-editor-overlay" role="dialog" aria-label={t("notes.title")}>
-      <div className="note-editor-panel">
-        <div className="note-editor-header">
-          <h3>{mode === "create" ? t("notes.newNote") : t("notes.editNote")}</h3>
-          <button type="button" className="note-editor-close" onClick={onClose} aria-label="Close">
-            ✕
-          </button>
-        </div>
-
-        {mode === "create" && (
-          <div className="note-editor-meta">
-            <input
-              ref={filenameInputRef}
-              type="text"
-              className="note-editor-filename"
-              placeholder={t("notes.filenamePlaceholder")}
-              value={filename}
-              onChange={(e) => setFilename(e.target.value)}
+    <ModalPortal>
+      <div
+        className="modal-overlay"
+        role="presentation"
+        onClick={() => {
+          if (!busy) onClose()
+        }}
+      >
+        <div
+          className="modal-panel note-editor-modal"
+          role="dialog"
+          aria-labelledby="note-editor-title"
+          data-testid="note-editor-modal"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="note-editor-modal__header">
+            <h2 id="note-editor-title">{title}</h2>
+            <button
+              type="button"
+              className="note-editor-modal__close"
+              onClick={onClose}
               disabled={busy}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  e.preventDefault()
-                  textareaRef.current?.focus()
-                }
-              }}
-            />
-            <input
-              type="text"
-              className="note-editor-subfolder"
-              placeholder={t("notes.subfolderPlaceholder")}
-              value={subfolder}
-              onChange={(e) => setSubfolder(e.target.value)}
-              disabled={busy}
-            />
-            <select
-              className="note-editor-sensitivity"
-              value={sensitivity}
-              onChange={(e) => setSensitivity(e.target.value as "public" | "friends" | "private")}
-              disabled={busy}
+              aria-label={t("common.cancel")}
             >
-              <option value="public">{t("notes.sensitivityPublic")}</option>
-              <option value="friends">{t("notes.sensitivityFriends")}</option>
-              <option value="private">{t("notes.sensitivityPrivate")}</option>
-            </select>
+              ✕
+            </button>
           </div>
-        )}
+          <p className="modal-desc note-editor-modal__lede">{t("notes.lede")}</p>
 
-        {mode === "edit" && (
-          <div className="note-editor-meta">
-            <span className="note-editor-path">{initialRelativePath}</span>
-            {isEditingExistingNote && (
+          {mode === "create" && (
+            <div className="note-editor-modal__meta">
+              <div className="note-editor-modal__filename-wrap">
+                <input
+                  ref={filenameInputRef}
+                  type="text"
+                  className="text-input note-editor-modal__filename"
+                  placeholder={t("notes.filenamePlaceholder")}
+                  value={filename}
+                  onChange={(e) => setFilename(e.target.value)}
+                  disabled={busy}
+                  aria-label={t("notes.filenameAria")}
+                  data-testid="note-editor-filename"
+                />
+                <span className="note-editor-modal__ext" aria-hidden="true">
+                  .md
+                </span>
+              </div>
+              <input
+                type="text"
+                className="text-input note-editor-modal__subfolder"
+                placeholder={t("notes.subfolderPlaceholder")}
+                value={subfolder}
+                onChange={(e) => setSubfolder(e.target.value)}
+                disabled={busy}
+                aria-label={t("notes.subfolderPlaceholder")}
+              />
               <select
-                className="note-editor-sensitivity"
+                className="text-input note-editor-modal__sensitivity"
                 value={sensitivity}
                 onChange={(e) => setSensitivity(e.target.value as "public" | "friends" | "private")}
                 disabled={busy}
+                aria-label={t("notes.sensitivityPublic")}
               >
                 <option value="public">{t("notes.sensitivityPublic")}</option>
                 <option value="friends">{t("notes.sensitivityFriends")}</option>
                 <option value="private">{t("notes.sensitivityPrivate")}</option>
               </select>
-            )}
+            </div>
+          )}
+
+          {mode === "edit" && (
+            <div className="note-editor-modal__meta">
+              <span className="note-editor-modal__path">{initialRelativePath}</span>
+              {isEditingExistingNote && (
+                <select
+                  className="text-input note-editor-modal__sensitivity"
+                  value={sensitivity}
+                  onChange={(e) =>
+                    setSensitivity(e.target.value as "public" | "friends" | "private")
+                  }
+                  disabled={busy}
+                >
+                  <option value="public">{t("notes.sensitivityPublic")}</option>
+                  <option value="friends">{t("notes.sensitivityFriends")}</option>
+                  <option value="private">{t("notes.sensitivityPrivate")}</option>
+                </select>
+              )}
+            </div>
+          )}
+
+          <div className="note-editor-modal__editor">
+            <MarkdownEditor
+              value={content}
+              onChange={setContent}
+              disabled={busy || (mode === "edit" && !loaded)}
+              placeholder={t("notes.contentPlaceholder")}
+              rows={18}
+              articleMode
+              data-testid="note-markdown-editor"
+            />
           </div>
-        )}
 
-        <textarea
-          ref={textareaRef}
-          className="note-editor-content"
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          disabled={busy}
-          placeholder={t("notes.contentPlaceholder")}
-          spellCheck
-        />
+          {error && (
+            <p className="note-editor-modal__error" role="alert">
+              {error}
+            </p>
+          )}
 
-        {error && <p className="note-editor-error" role="alert">{error}</p>}
-
-        <div className="note-editor-footer">
-          <button type="button" className="secondary" onClick={onClose} disabled={busy}>
-            {t("common.cancel")}
-          </button>
-          <button
-            type="button"
-            className="primary"
-            disabled={busy || (mode === "create" && !filename.trim())}
-            onClick={() => void handleSave()}
-          >
-            {busy ? t("notes.saving") : t("common.save")}
-          </button>
+          <div className="note-editor-modal__footer">
+            <button type="button" className="secondary" onClick={onClose} disabled={busy}>
+              {t("common.cancel")}
+            </button>
+            <button
+              type="button"
+              className="primary"
+              disabled={busy || (mode === "create" && !filename.trim())}
+              onClick={() => void handleSave()}
+            >
+              {busy ? t("notes.saving") : t("common.save")}
+            </button>
+          </div>
         </div>
       </div>
-    </div>
+    </ModalPortal>
   )
 }
