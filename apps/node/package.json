@@ -41,6 +41,7 @@
     "@modelcontextprotocol/sdk": "^1.29.0",
     "nat-upnp": "^1.1.1",
     "node-pty": "^1.1.0",
+    "sharp": "^0.35.3",
     "ws": "^8.20.0",
     "yaml": "^2.8.1"
   },

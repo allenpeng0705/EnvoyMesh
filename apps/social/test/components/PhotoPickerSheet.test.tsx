@@ -47,7 +47,7 @@ describe("PhotoPickerSheet", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /choose photo/i }));
+    fireEvent.click(screen.getByTestId("photo-picker-choose"));
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
     const file = new File([new Uint8Array([137, 80, 78, 71])], "photo.png", { type: "image/png" });
     fireEvent.change(input, { target: { files: [file] } });
@@ -64,5 +64,41 @@ describe("PhotoPickerSheet", () => {
     fireEvent.pointerMove(cropViewport!, { clientX: 130, clientY: 120, pointerId: 1 });
 
     expect(screen.queryByText(/something went wrong/i)).toBeNull();
+  });
+
+  it("gallery review collects optional caption and visibility", async () => {
+    const onConfirmGallery = vi.fn();
+    renderWithI18n(
+      <PhotoPickerSheet
+        open
+        purpose="gallery"
+        onClose={() => {}}
+        onConfirmThumbnail={() => {}}
+        onConfirmGallery={onConfirmGallery}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: /add photo/i })).toBeTruthy();
+    expect(screen.queryByText(/choose a photo,/i)).toBeNull();
+
+    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
+    fireEvent.change(input, {
+      target: { files: [new File([new Uint8Array([1, 2, 3])], "wall.png", { type: "image/png" })] },
+    });
+
+    expect(await screen.findByTestId("photo-picker-gallery-caption")).toBeTruthy();
+    fireEvent.change(screen.getByTestId("photo-picker-gallery-caption"), {
+      target: { value: "Sunset over the lake" },
+    });
+    fireEvent.change(screen.getByTestId("photo-picker-gallery-visibility"), {
+      target: { value: "direct" },
+    });
+    fireEvent.click(screen.getByTestId("photo-picker-gallery-confirm"));
+
+    expect(onConfirmGallery).toHaveBeenCalledWith(
+      expect.any(File),
+      "direct",
+      "Sunset over the lake",
+    );
   });
 });

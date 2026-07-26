@@ -17,7 +17,15 @@ import { join } from "node:path";
 export type WebContentVisibility = "public" | "bonded" | "contacts" | "private";
 
 /** Content kind for UI rendering hints. */
-export type WebContentKind = "article" | "note" | "photo" | "gallery" | "file" | "profile" | "section";
+export type WebContentKind =
+  | "article"
+  | "note"
+  | "photo"
+  | "gallery"
+  | "file"
+  | "profile"
+  | "section"
+  | "feed";
 
 /** A single entry in the web-content.json manifest. */
 export interface WebContentEntry {
@@ -86,15 +94,25 @@ export function normalizeWebPath(path: string): string {
 }
 
 /**
- * Resolve a URL path to a concrete file under `web/`.
- * Empty path or a trailing slash maps to `index.md` (Phase 45A convention).
+ * Resolve a URL path to concrete file candidate(s) under `web/`.
+ * Empty path or a trailing slash maps to directory indexes:
+ * prefer `index.html`, then `index.md`.
  */
-export function resolveWebContentPath(path: string): string {
+export function resolveWebContentIndexCandidates(path: string): string[] {
   const normalized = normalizeWebPath(path);
   if (!normalized || normalized.endsWith("/")) {
-    return `${normalized}index.md`;
+    return [`${normalized}index.html`, `${normalized}index.md`];
   }
-  return normalized;
+  return [normalized];
+}
+
+/**
+ * Resolve a URL path to a concrete file under `web/`.
+ * Directory indexes prefer `index.html` (callers that need existence should
+ * try {@link resolveWebContentIndexCandidates}).
+ */
+export function resolveWebContentPath(path: string): string {
+  return resolveWebContentIndexCandidates(path)[0]!;
 }
 
 export function createWebContentStore(webDir: string): WebContentStore {

@@ -19,9 +19,16 @@ export interface ProfileGalleryPhoto extends ProfilePhotoRef {
   visibility: ProfileGalleryPhotoVisibility;
 }
 
+/** Storage target after auto-resize (thumbnail). Oversized inputs are shrunk to fit. */
 export const MAX_PROFILE_THUMBNAIL_BYTES = 512 * 1024;
+/** Storage target after auto-resize (gallery). Oversized inputs are shrunk to fit. */
 export const MAX_PROFILE_GALLERY_PHOTO_BYTES = 5 * 1024 * 1024;
 export const MAX_PROFILE_GALLERY_PHOTOS = 12;
+/**
+ * Absolute ceiling before we refuse to decode (OOM guard). Not advertised as a
+ * user-facing “max photo size” — prefer auto-resize down to the storage targets.
+ */
+export const MAX_IMAGE_INPUT_BYTES = 40 * 1024 * 1024;
 
 const VISIBILITY_RANK: Record<ProfileGalleryPhotoVisibility, number> = {
   public: 0,

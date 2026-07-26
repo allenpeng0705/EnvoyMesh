@@ -2521,6 +2521,55 @@ You are the owner's personal AI assistant on EnvoyMesh.
     /* no-op */
   }
 
+  async dismissAllFeedNotifications(): Promise<void> {
+    /* no-op — mobile feed-notification store is not persisted in this package. */
+  }
+
+  // Content engagement badges — home/desktop owns the author inbox; mobile stubs.
+  async listContentEngageNotifications(): Promise<
+    import("@envoymesh/api").ContentEngageNotification[]
+  > {
+    return [];
+  }
+
+  async dismissContentEngageNotifications(
+    _params?: import("@envoymesh/api").DismissContentEngageNotificationsParams,
+  ): Promise<void> {
+    /* no-op */
+  }
+
+  async getContentEngagement(
+    params: import("@envoymesh/api").GetContentEngagementParams,
+  ): Promise<import("@envoymesh/api").ContentEngagementSummary> {
+    const url = params.url?.trim() ?? "";
+    return {
+      url,
+      starCount: 0,
+      starredByMe: false,
+      starOwnerIds: [],
+      commentCount: 0,
+      comments: [],
+    };
+  }
+
+  async toggleContentStar(
+    _params: import("@envoymesh/api").ToggleContentStarParams,
+  ): Promise<import("@envoymesh/api").ContentEngagementSummary> {
+    throw new Error("Content engagement requires desktop/home node");
+  }
+
+  async addContentComment(
+    _params: import("@envoymesh/api").AddContentCommentParams,
+  ): Promise<import("@envoymesh/api").ContentEngagementSummary> {
+    throw new Error("Content engagement requires desktop/home node");
+  }
+
+  async removeContentComment(
+    _params: import("@envoymesh/api").RemoveContentCommentParams,
+  ): Promise<import("@envoymesh/api").ContentEngagementSummary> {
+    throw new Error("Content engagement requires desktop/home node");
+  }
+
   // Mobile-node NodeService stubs for features that require the desktop
   // vault store. The convention:
   //   - read methods (list*) return empty results so the UI degrades gracefully
@@ -3693,6 +3742,44 @@ You are the owner's personal AI assistant on EnvoyMesh.
     return (await home.call("listWebContentSections", {})) as import("@envoymesh/api").WebContentSectionSummary[];
   }
 
+  async listFeedPosts(): Promise<import("@envoymesh/api").FeedPostSummary[]> {
+    this._assertNodeRunning();
+    if (!this._state?.homeNodePeerId?.trim()) {
+      throw new Error(
+        "listFeedPosts: requires a paired home node (EnvoyGo thin client)",
+      );
+    }
+    const home = this._ensureHomeRemote();
+    return (await home.call("listFeedPosts", {})) as import("@envoymesh/api").FeedPostSummary[];
+  }
+
+  async listBlogPosts(): Promise<import("@envoymesh/api").BlogPostSummary[]> {
+    this._assertNodeRunning();
+    if (!this._state?.homeNodePeerId?.trim()) {
+      throw new Error(
+        "listBlogPosts: requires a paired home node (EnvoyGo thin client)",
+      );
+    }
+    const home = this._ensureHomeRemote();
+    return (await home.call("listBlogPosts", {})) as import("@envoymesh/api").BlogPostSummary[];
+  }
+
+  async deleteWebContentEntry(
+    params: import("@envoymesh/api").DeleteWebContentParams,
+  ): Promise<import("@envoymesh/api").DeleteWebContentResult> {
+    this._assertNodeRunning();
+    if (!this._state?.homeNodePeerId?.trim()) {
+      throw new Error(
+        "deleteWebContentEntry: requires a paired home node (EnvoyGo thin client)",
+      );
+    }
+    const home = this._ensureHomeRemote();
+    return (await home.call(
+      "deleteWebContentEntry",
+      params as unknown as Record<string, unknown>,
+    )) as import("@envoymesh/api").DeleteWebContentResult;
+  }
+
   async listAgentShareProposals(): Promise<AgentShareProposal[]> {
     return listMobileAgentShareProposals();
   }
@@ -4758,6 +4845,72 @@ You are the owner's personal AI assistant on EnvoyMesh.
       requesterPeerId: peerId,
       modelProviders: cfg.modelProviders,
     });
+  }
+
+  async draftAuthorContent(
+    params: import("@envoymesh/api").DraftAuthorContentParams,
+  ): Promise<import("@envoymesh/api").DraftAuthorContentResult> {
+    if (!this._state) {
+      return { ok: false, reason: "node_not_initialized" };
+    }
+    const {
+      buildAuthorContentDraftPrompt,
+      sanitizeAuthorDraftOutput,
+    } = await import("@envoymesh/api");
+    const { buildModelProviders, routeModelRequest } = await import("@envoymesh/models");
+    if (params.mode !== "write" && !params.existingText?.trim()) {
+      return { ok: false, reason: "existing_text_required" };
+    }
+    const cfg = await this.getNodeConfig();
+    if (cfg.modelProviders.mode === "disabled") {
+      return { ok: false, reason: "no_model_providers" };
+    }
+    let profileContext = params.profileContext;
+    if (params.surface === "bio" && !profileContext) {
+      try {
+        const human = await this.getHumanProfile();
+        if (human) {
+          profileContext = {
+            displayName: human.displayName,
+            username: human.username,
+            hobbies: human.hobbies,
+            knowledge: human.knowledge,
+          };
+        }
+      } catch {
+        /* optional */
+      }
+    }
+    const providers = buildModelProviders(cfg.modelProviders, false, { trustedLocalAssist: true });
+    if (providers.length === 0) {
+      return { ok: false, reason: "no_model_providers" };
+    }
+    const peerId = (this._meshPeerId || "").trim() || this._state.agent.agentPeerId;
+    const modelResult = await routeModelRequest(
+      {
+        taskType: "author.draft",
+        prompt: buildAuthorContentDraftPrompt({ ...params, profileContext }),
+        sensitivity: "friends",
+        requesterPeerId: peerId,
+        ownerApproved: true,
+      },
+      providers,
+    );
+    if (modelResult.decision.action !== "allow") {
+      return {
+        ok: false,
+        reason:
+          modelResult.decision.action === "deny"
+            ? modelResult.decision.reason
+            : "model_approval_required",
+      };
+    }
+    const text = sanitizeAuthorDraftOutput((modelResult.response?.text ?? "").trim());
+    if (!text) return { ok: false, reason: "empty_model_response" };
+    if (params.surface === "bio" && text.length > 500) {
+      return { ok: true, text: text.slice(0, 500).trim() };
+    }
+    return { ok: true, text };
   }
 
   async getChatDrafts(threadPeerOwnerId?: string): Promise<ChatDraft[]> {

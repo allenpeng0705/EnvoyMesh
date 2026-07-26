@@ -12,7 +12,7 @@ import { ShareContactCard } from "../discover/ShareContactCard.js";
 import { LocationGazetteerFields } from "./LocationGazetteerFields.js";
 import { NearbyMapPicker } from "./NearbyMapPicker.js";
 import { formatLocalizedLocation } from "../../lib/gazetteer.js";
-import { MySitePanel } from "../MySitePanel.js";
+import { AuthorAiDraftField, applyAuthorDraft } from "../AuthorAiDraftField.js";
 
 interface ProfileEditForm {
   displayName: string;
@@ -185,13 +185,28 @@ export function ProfileAboutTab({ variant = "desktop" }: ProfileAboutTabProps) {
           <small>{t("profileAbout.usernameHint")}</small>
         </div>
         <div className="form-group">
-          <label>{t("profileAbout.introduction")}</label>
-          <textarea
+          <AuthorAiDraftField
+            surface="bio"
+            label={t("profileAbout.introduction")}
+            htmlFor="profile-about-bio"
             value={profileEditForm.bio}
-            onChange={(e) => setProfileEditForm({ ...profileEditForm, bio: e.target.value })}
-            placeholder={t("profileAbout.bioPlaceholder")}
-            rows={3}
-          />
+            disabled={isSavingProfile}
+            onApply={(text, action) =>
+              setProfileEditForm((prev) => ({
+                ...prev,
+                bio: applyAuthorDraft(prev.bio, text, action),
+              }))
+            }
+          >
+            <textarea
+              id="profile-about-bio"
+              value={profileEditForm.bio}
+              onChange={(e) => setProfileEditForm({ ...profileEditForm, bio: e.target.value })}
+              placeholder={t("profileAbout.bioPlaceholder")}
+              rows={3}
+              disabled={isSavingProfile}
+            />
+          </AuthorAiDraftField>
         </div>
         <div className="form-group">
           <label>{t("profileAbout.gender")}</label>
@@ -424,12 +439,6 @@ export function ProfileAboutTab({ variant = "desktop" }: ProfileAboutTabProps) {
         <span className="profile-chevron" aria-hidden="true">&#8250;</span>
       </div>
       <p className="profile-hint muted small">{t("profileAbout.hint")}</p>
-
-      {humanProfile?.ownerId ? (
-        <div className="profile-section">
-          <MySitePanel ownerId={humanProfile.ownerId} compact />
-        </div>
-      ) : null}
 
       {humanProfile?.bio && (
         <div className="profile-section">

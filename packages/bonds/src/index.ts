@@ -82,6 +82,7 @@ const capabilityRequirements: Partial<Record<EnvoyIntent, Capability[][]>> = {
   "library.read": [["vault.retrieve"]],
   // Phase 45E — bonded fan-out notify (messaging capability only).
   "feed.notify": [["message.send"]],
+  "feed.engage": [["message.send"]],
   "task.mandate": [["message.send"]],
   "task.propose": [["message.send"]],
   "task.negotiate": [["message.send"]],
@@ -184,7 +185,7 @@ function evaluateReferredPolicy(request: PolicyRequest): PolicyDecision {
   }
 
   // Phase 45E — referred bonds may receive publish notify (metadata only).
-  if (request.intent === "feed.notify") {
+  if (request.intent === "feed.notify" || request.intent === "feed.engage") {
     return { action: "allow", maxSensitivity: "public" };
   }
 

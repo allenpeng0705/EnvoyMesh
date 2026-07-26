@@ -65,6 +65,13 @@ import type {
   PublishWebContentParams,
   PublishWebContentResult,
   FeedNotification,
+  ContentEngageNotification,
+  DismissContentEngageNotificationsParams,
+  ContentEngagementSummary,
+  GetContentEngagementParams,
+  ToggleContentStarParams,
+  AddContentCommentParams,
+  RemoveContentCommentParams,
   PublishedLibraryFileHit,
   ExportLibraryItemToIpfsResult,
   PinLibraryItemExternalResult,
@@ -839,12 +846,26 @@ import {
   resolveRelayClientControlTargets,
   type RelayClientCycleDeps,
 } from "./relay-client-cycle.js";
-import { publishWebContentEntry as publishWebContentEntryAuthor, ensureDefaultWebSite as ensureDefaultWebSiteAuthor, listWebContentSections as listWebContentSectionsAuthor } from "./web-content-author.js";
+import { publishWebContentEntry as publishWebContentEntryAuthor, ensureDefaultWebSite as ensureDefaultWebSiteAuthor, listWebContentSections as listWebContentSectionsAuthor, listFeedPosts as listFeedPostsAuthor, listBlogPosts as listBlogPostsAuthor, deleteWebContentEntry as deleteWebContentEntryAuthor, galleryPhotoWallStablePath, removeGalleryPhotoWallMirror, updateGalleryPhotoWallVisibility, publishProfilePortal } from "./web-content-author.js";
 import { sendFeedNotifyToBonds } from "./feed-notify-outbound.js";
+import { sendFeedEngageToOwner } from "./content-engage-outbound.js";
+import {
+  addContentCommentInStore,
+  loadContentEngagement,
+  removeContentCommentInStore,
+  summarizeEngagement,
+  toggleContentStarInStore,
+} from "./content-engagement-store.js";
 import {
   dismissFeedNotifyInboxItem,
+  dismissAllFeedNotifyInboxItems,
   loadFeedNotifyInbox,
 } from "./feed-notify-store.js";
+import {
+  dismissContentEngageInbox,
+  loadContentEngageInbox,
+  surfaceForContentUrl,
+} from "./content-engage-inbox-store.js";
 import { handleInboundLibraryRead } from "./library-read-inbound.js";
 import { recordMeshActivity, resolveConnectivityRuntime, shouldRunPeriodicCapabilityFind, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
 import { startNodeStatsInterval } from "./node-stats-log.js";
@@ -2037,7 +2058,9 @@ class NodeServiceImpl implements NodeService {
   }
 
   async updateHumanProfile(input: CreateHumanProfileInput): Promise<HumanProfile> {
-    return updateHumanProfileViaRuntime(this._identityContext(), input);
+    const profile = await updateHumanProfileViaRuntime(this._identityContext(), input);
+    void this._republishProfilePortal(profile);
+    return profile;
   }
 
   async getPeerProfile(ownerId: string): Promise<PeerProfileView | undefined> {
@@ -2175,21 +2198,171 @@ class NodeServiceImpl implements NodeService {
   }
 
   async setPublicProfileThumbnail(params: SetPublicProfileThumbnailParams): Promise<HumanProfile> {
-    return setPublicProfileThumbnailViaRuntime(this._identityContext(), params);
+    const profile = await setPublicProfileThumbnailViaRuntime(this._identityContext(), params);
+    void this._republishProfilePortal(profile);
+    return profile;
   }
 
   async upsertProfileGalleryPhoto(params: UpsertProfileGalleryPhotoParams): Promise<HumanProfile> {
-    return upsertProfileGalleryPhotoViaRuntime(this._identityContext(), params);
+    const profile = await upsertProfileGalleryPhotoViaRuntime(this._identityContext(), params);
+    const entry = params.photoId
+      ? profile.galleryPhotos?.find((p) => p.photoId === params.photoId)
+      : profile.galleryPhotos?.[profile.galleryPhotos.length - 1];
+    if (entry) {
+      try {
+        await this._mirrorProfileGalleryPhotoToPhotoWall(entry);
+      } catch (err) {
+        console.warn(
+          "[photowall] mirror profile gallery photo failed:",
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+    void this._republishProfilePortal(profile);
+    return profile;
+  }
+
+  /** Copy a profile gallery vault photo onto PhotoWall (`web/photos/wall/gallery-{id}.*`). */
+  private async _mirrorProfileGalleryPhotoToPhotoWall(entry: {
+    photoId: string;
+    label?: string;
+    visibility: ProfileGalleryPhotoVisibility;
+    vaultRelativePath: string;
+    mimeType: string;
+  }): Promise<void> {
+    const abs = join(this._vaultDir, entry.vaultRelativePath);
+    const bytes = await readFile(abs);
+    const mapped = await this._mapGalleryVisibilityToWeb(entry.visibility);
+    const ext =
+      entry.mimeType === "image/png"
+        ? "png"
+        : entry.mimeType === "image/webp"
+          ? "webp"
+          : "jpg";
+    const caption = entry.label?.trim() || undefined;
+    await this.publishWebContentEntry({
+      template: "photo",
+      // Keep title generic so caption can appear as PhotoWall summary (must differ from title).
+      title: "Photo",
+      body: caption,
+      visibility: mapped.visibility,
+      contactIds: mapped.contactIds,
+      contentBase64: bytes.toString("base64"),
+      mimeType: entry.mimeType,
+      fileName: basename(entry.vaultRelativePath),
+      gallery: "wall",
+      stablePath: galleryPhotoWallStablePath(entry.photoId, ext),
+    });
+  }
+
+  private async _mapGalleryVisibilityToWeb(
+    visibility: ProfileGalleryPhotoVisibility,
+  ): Promise<{
+    visibility: "public" | "bonded" | "contacts" | "private";
+    contactIds?: string[];
+  }> {
+    if (visibility === "public") return { visibility: "public" };
+    if (visibility === "referred") return { visibility: "bonded" };
+    // Gallery "direct" = my contacts only → web contacts ACL of direct-bond owners.
+    const bonds = await this.getBonds();
+    const contactIds = bonds
+      .filter((b) => b.level === "direct" && b.peerOwnerId)
+      .map((b) => b.peerOwnerId!);
+    return { visibility: "contacts", contactIds };
   }
 
   async removeProfileGalleryPhoto(params: { vaultRelativePath: string }): Promise<HumanProfile> {
-    return removeProfileGalleryPhotoViaRuntime(this._identityContext(), params);
+    const before = await this.getHumanProfile();
+    const removed = before?.galleryPhotos?.find(
+      (p) => p.vaultRelativePath === params.vaultRelativePath.trim().replace(/^[\\/]+/, ""),
+    );
+    const profile = await removeProfileGalleryPhotoViaRuntime(this._identityContext(), params);
+    if (removed) {
+      try {
+        await removeGalleryPhotoWallMirror(this._profileDir, profile.ownerId, removed.photoId);
+      } catch (err) {
+        console.warn(
+          "[photowall] remove gallery mirror failed:",
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+    void this._republishProfilePortal(profile);
+    return profile;
   }
 
   async updateProfileGalleryPhotoVisibility(
     params: UpdateProfileGalleryPhotoVisibilityParams,
   ): Promise<HumanProfile> {
-    return updateProfileGalleryPhotoVisibilityViaRuntime(this._identityContext(), params);
+    const profile = await updateProfileGalleryPhotoVisibilityViaRuntime(
+      this._identityContext(),
+      params,
+    );
+    const entry = profile.galleryPhotos?.find(
+      (p) => p.vaultRelativePath === params.vaultRelativePath.trim().replace(/^[\\/]+/, ""),
+    );
+    if (entry) {
+      try {
+        const mapped = await this._mapGalleryVisibilityToWeb(entry.visibility);
+        const ok = await updateGalleryPhotoWallVisibility(
+          this._profileDir,
+          profile.ownerId,
+          entry.photoId,
+          mapped.visibility,
+          mapped.contactIds,
+        );
+        if (!ok) {
+          await this._mirrorProfileGalleryPhotoToPhotoWall(entry);
+        }
+      } catch (err) {
+        console.warn(
+          "[photowall] sync gallery visibility failed:",
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+    void this._republishProfilePortal(profile);
+    return profile;
+  }
+
+  /** Rebuild `web/index.html` portal from the current human profile (+ avatar bytes). */
+  private async _republishProfilePortal(profile: HumanProfile): Promise<void> {
+    try {
+      let avatarBase64: string | undefined;
+      let avatarMimeType: string | undefined;
+      if (profile.publicThumbnail?.vaultRelativePath) {
+        try {
+          const abs = join(this._vaultDir, profile.publicThumbnail.vaultRelativePath);
+          const bytes = await readFile(abs);
+          avatarBase64 = bytes.toString("base64");
+          avatarMimeType = profile.publicThumbnail.mimeType;
+        } catch {
+          /* avatar optional */
+        }
+      }
+      await publishProfilePortal(this._profileDir, {
+        ownerId: profile.ownerId,
+        displayName: profile.displayName,
+        username: profile.username,
+        bio: profile.bio,
+        hobbies: profile.hobbies,
+        knowledge: profile.knowledge,
+        capabilities: profile.capabilities,
+        photos: (profile.galleryPhotos ?? []).map((p) => ({
+          photoId: p.photoId,
+          title: p.label,
+          mimeType: p.mimeType,
+        })),
+        avatarBase64,
+        avatarMimeType,
+        visibility: profile.profileVisibility === "public" ? "public" : "bonded",
+      });
+    } catch (err) {
+      console.warn(
+        "[profile-portal] republish failed:",
+        err instanceof Error ? err.message : err,
+      );
+    }
   }
 
   async getAgentIdentity(): Promise<AgentIdentityDocument> {
@@ -5304,11 +5477,17 @@ class NodeServiceImpl implements NodeService {
     if (!ownerId) {
       throw new Error("ensureDefaultWebSite: owner identity required");
     }
-    return ensureDefaultWebSiteAuthor(this._profileDir, {
+    const result = await ensureDefaultWebSiteAuthor(this._profileDir, {
       ownerId,
       displayName: human?.displayName,
       visibility: "bonded",
     });
+    // Always refresh the HTML portal from the signed human profile so Profile
+    // editing (bio, gallery, avatar) shows up even when index.html was seeded empty.
+    if (human) {
+      await this._republishProfilePortal(human);
+    }
+    return result;
   }
 
   async listWebContentSections(): Promise<import("@envoymesh/api").WebContentSectionSummary[]> {
@@ -5318,6 +5497,41 @@ class NodeServiceImpl implements NodeService {
       this._profile?.owner?.ownerId?.trim() || human?.ownerId?.trim();
     if (!ownerId) return [];
     return listWebContentSectionsAuthor(this._profileDir, ownerId);
+  }
+
+  async listFeedPosts(): Promise<import("@envoymesh/api").FeedPostSummary[]> {
+    if (this._profileDir === "/tmp/unknown") return [];
+    const human = await this.getHumanProfile();
+    const ownerId =
+      this._profile?.owner?.ownerId?.trim() || human?.ownerId?.trim();
+    if (!ownerId) return [];
+    return listFeedPostsAuthor(this._profileDir, ownerId);
+  }
+
+  async listBlogPosts(): Promise<import("@envoymesh/api").BlogPostSummary[]> {
+    if (this._profileDir === "/tmp/unknown") return [];
+    const human = await this.getHumanProfile();
+    const ownerId =
+      this._profile?.owner?.ownerId?.trim() || human?.ownerId?.trim();
+    if (!ownerId) return [];
+    return listBlogPostsAuthor(this._profileDir, ownerId);
+  }
+
+  async deleteWebContentEntry(
+    params: import("@envoymesh/api").DeleteWebContentParams,
+  ): Promise<import("@envoymesh/api").DeleteWebContentResult> {
+    if (this._profileDir === "/tmp/unknown") {
+      throw new Error("deleteWebContentEntry: node profile not initialized");
+    }
+    const human = await this.getHumanProfile();
+    const ownerId =
+      params.ownerId?.trim() ||
+      this._profile?.owner?.ownerId?.trim() ||
+      human?.ownerId?.trim();
+    return deleteWebContentEntryAuthor(this._profileDir, {
+      ...params,
+      ...(ownerId ? { ownerId } : {}),
+    });
   }
 
   private async _fanOutFeedNotifyAfterPublish(
@@ -5359,10 +5573,13 @@ class NodeServiceImpl implements NodeService {
                   ? "photo"
                   : params.template === "section"
                     ? "section"
-                    : "file",
+                    : params.template === "feed-post"
+                      ? "feed"
+                      : "file",
         visibility: result.visibility,
-        summary: params.body ? params.body.trim().slice(0, 280) : undefined,
-        tags: result.tags ?? params.tags,
+        summary: params.body ? params.body.trim().slice(0, 280) : result.title,
+        // Feed posts deliberately omit tags so interest filtering never hides Moments.
+        tags: params.template === "feed-post" ? undefined : (result.tags ?? params.tags),
         contentHash: result.contentHash,
         listingUrl: result.listingUrl,
         contactIds: params.contactIds,
@@ -5391,9 +5608,221 @@ class NodeServiceImpl implements NodeService {
     await dismissFeedNotifyInboxItem(this._profileDir, id);
   }
 
+  async dismissAllFeedNotifications(): Promise<void> {
+    if (this._profileDir === "/tmp/unknown") return;
+    await dismissAllFeedNotifyInboxItems(this._profileDir);
+  }
+
+  /** Persist inbound content engagement and emit WS/event (called from mesh inbound). */
+  storeContentEngageNotification(item: ContentEngageNotification): void {
+    this.emit("content:engage", item);
+  }
+
+  /** Notify UIs that engagement for a URL changed (e.g. author snapshot applied). No badge. */
+  emitContentEngagementUpdated(url: string): void {
+    const trimmed = url.trim();
+    if (!trimmed) return;
+    const surface = surfaceForContentUrl(trimmed) ?? "feed";
+    this.emit("content:engage", {
+      id: `snap:${trimmed}:${Date.now()}`,
+      receivedAt: new Date().toISOString(),
+      messageId: `snap:${trimmed}:${Date.now()}`,
+      url: trimmed,
+      surface,
+      action: "snapshot",
+      actorOwnerId: "",
+      senderPeerId: "",
+    });
+  }
+
+  async listContentEngageNotifications(): Promise<ContentEngageNotification[]> {
+    if (this._profileDir === "/tmp/unknown") return [];
+    return loadContentEngageInbox(this._profileDir);
+  }
+
+  async dismissContentEngageNotifications(
+    params?: DismissContentEngageNotificationsParams,
+  ): Promise<void> {
+    if (this._profileDir === "/tmp/unknown") return;
+    const surface = params?.surface ?? "all";
+    await dismissContentEngageInbox(this._profileDir, surface);
+  }
+
   /** Persist inbound feed.notify and emit WS/event (called from mesh inbound). */
   storeFeedNotification(item: FeedNotification): void {
     this.emit("feed:notify", item);
+  }
+
+  private _contentOwnerIdFromUrl(url: string): string | undefined {
+    const m = /^envoy:\/\/(envoy:owner:[^/]+)\//.exec(url.trim());
+    return m?.[1];
+  }
+
+  private async _requireBondForRemoteEngage(ownerId: string): Promise<void> {
+    const trust = await this._trustStore.getTrustRecord(ownerId);
+    const level = trust?.level ?? "public";
+    if (level !== "direct" && level !== "referred") {
+      throw new Error("Like/comment requires a referred or direct bond with the post author");
+    }
+  }
+
+  private async _sendEngageToContentOwner(input: {
+    url: string;
+    action: "star" | "unstar" | "comment" | "uncomment" | "get";
+    text?: string;
+    commentId?: string;
+    correlationId?: string;
+  }): Promise<boolean> {
+    const targetOwnerId = this._contentOwnerIdFromUrl(input.url);
+    const profile = this._requireProfile();
+    const mesh = this._mesh;
+    if (!targetOwnerId || !mesh || targetOwnerId === profile.owner.ownerId) return false;
+    const result = await sendFeedEngageToOwner({
+      mesh,
+      profile,
+      action: input.action,
+      url: input.url,
+      text: input.text,
+      commentId: input.commentId,
+      actorOwnerId: profile.owner.ownerId,
+      targetOwnerId,
+      correlationId: input.correlationId,
+      resolveLibp2pPeer: async (bondOwnerId) => {
+        const resolved = await this._resolveLibp2pPeerForBondOwner(bondOwnerId);
+        if (!resolved) return undefined;
+        return { peerId: resolved.transportPeerId, listenAddrs: resolved.listenAddrs };
+      },
+      dialHintsFor: (peerId, listenAddrs) => this._dialHintsForChat(peerId, listenAddrs),
+      tagReachability: (peerId) => {
+        void this._tagBondedContactReachability(peerId);
+      },
+    });
+    return result.sent;
+  }
+
+  async getContentEngagement(params: GetContentEngagementParams): Promise<ContentEngagementSummary> {
+    const url = params.url?.trim() ?? "";
+    if (!url) throw new Error("getContentEngagement: url required");
+    if (this._profileDir === "/tmp/unknown") {
+      return {
+        url,
+        starCount: 0,
+        starredByMe: false,
+        starOwnerIds: [],
+        commentCount: 0,
+        comments: [],
+      };
+    }
+    const profile = this._requireProfile();
+    const ownerId = this._contentOwnerIdFromUrl(url);
+    if (ownerId && ownerId !== profile.owner.ownerId) {
+      // Best-effort pull; fall back to local mirror (UI also refreshes on snapshot).
+      await this._sendEngageToContentOwner({ url, action: "get" });
+    }
+    const record = await loadContentEngagement(this._profileDir, url);
+    return summarizeEngagement(record, profile.owner.ownerId);
+  }
+
+  async toggleContentStar(params: ToggleContentStarParams): Promise<ContentEngagementSummary> {
+    const url = params.url?.trim() ?? "";
+    if (!url) throw new Error("toggleContentStar: url required");
+    if (this._profileDir === "/tmp/unknown") {
+      throw new Error("toggleContentStar: profile directory not configured");
+    }
+    const profile = this._requireProfile();
+    const me = profile.owner.ownerId;
+    const ownerId = this._contentOwnerIdFromUrl(url);
+    if (ownerId && ownerId !== me) {
+      await this._requireBondForRemoteEngage(ownerId);
+    }
+    const record = await toggleContentStarInStore(this._profileDir, url, me);
+    const starred = record.stars.includes(me);
+    if (ownerId && ownerId !== me) {
+      const sent = await this._sendEngageToContentOwner({
+        url,
+        action: starred ? "star" : "unstar",
+      });
+      if (!sent) {
+        await toggleContentStarInStore(this._profileDir, url, me);
+        throw new Error("Could not reach the post author to sync your like");
+      }
+    }
+    return summarizeEngagement(await loadContentEngagement(this._profileDir, url), me);
+  }
+
+  async addContentComment(params: AddContentCommentParams): Promise<ContentEngagementSummary> {
+    const url = params.url?.trim() ?? "";
+    const text = params.text?.trim() ?? "";
+    if (!url) throw new Error("addContentComment: url required");
+    if (!text) throw new Error("addContentComment: text required");
+    if (this._profileDir === "/tmp/unknown") {
+      throw new Error("addContentComment: profile directory not configured");
+    }
+    const profile = this._requireProfile();
+    const me = profile.owner.ownerId;
+    const ownerId = this._contentOwnerIdFromUrl(url);
+    if (ownerId && ownerId !== me) {
+      await this._requireBondForRemoteEngage(ownerId);
+    }
+    const commentId = randomUUID();
+    const record = await addContentCommentInStore(this._profileDir, url, me, text, commentId);
+    if (ownerId && ownerId !== me) {
+      const sent = await this._sendEngageToContentOwner({
+        url,
+        action: "comment",
+        text,
+        commentId,
+      });
+      if (!sent) {
+        await removeContentCommentInStore(this._profileDir, url, me, commentId, ownerId);
+        throw new Error("Could not reach the post author to sync your comment");
+      }
+    }
+    return summarizeEngagement(record, me);
+  }
+
+  async removeContentComment(params: RemoveContentCommentParams): Promise<ContentEngagementSummary> {
+    const url = params.url?.trim() ?? "";
+    const commentId = params.commentId?.trim() ?? "";
+    if (!url) throw new Error("removeContentComment: url required");
+    if (!commentId) throw new Error("removeContentComment: commentId required");
+    if (this._profileDir === "/tmp/unknown") {
+      throw new Error("removeContentComment: profile directory not configured");
+    }
+    const profile = this._requireProfile();
+    const me = profile.owner.ownerId;
+    const postAuthorOwnerId = this._contentOwnerIdFromUrl(url);
+    if (!postAuthorOwnerId) {
+      throw new Error("removeContentComment: could not resolve post author from url");
+    }
+    const before = await loadContentEngagement(this._profileDir, url);
+    const removed = before.comments.find((c) => c.id === commentId);
+    // Enforce: comment author OR post author only (store checks both).
+    const record = await removeContentCommentInStore(
+      this._profileDir,
+      url,
+      me,
+      commentId,
+      postAuthorOwnerId,
+    );
+    if (postAuthorOwnerId !== me) {
+      await this._requireBondForRemoteEngage(postAuthorOwnerId);
+      const sent = await this._sendEngageToContentOwner({ url, action: "uncomment", commentId });
+      if (!sent) {
+        if (removed) {
+          await addContentCommentInStore(
+            this._profileDir,
+            url,
+            removed.authorOwnerId,
+            removed.text,
+            removed.id,
+          );
+          // Preserve original createdAt by rewriting if needed — store uses "now"; acceptable for rollback.
+        }
+        throw new Error("Could not reach the post author to sync comment removal");
+      }
+    }
+    return summarizeEngagement(record, me);
   }
 
   async listAgentShareProposals(): Promise<AgentShareProposal[]> {
@@ -7158,6 +7587,40 @@ class NodeServiceImpl implements NodeService {
     }
 
     return result.responsePayload.answer;
+  }
+
+  async draftAuthorContent(
+    params: import("@envoymesh/api").DraftAuthorContentParams,
+  ): Promise<import("@envoymesh/api").DraftAuthorContentResult> {
+    const mesh = this._reachableMesh();
+    const taskStore = this._taskStore;
+    if (!mesh || !taskStore) {
+      return { ok: false, reason: "node_not_initialized" };
+    }
+    const nodeConfig = await this.getNodeConfig();
+    let profileContext = params.profileContext;
+    if (params.surface === "bio" && !profileContext) {
+      try {
+        const human = await this.getHumanProfile();
+        if (human) {
+          profileContext = {
+            displayName: human.displayName,
+            username: human.username,
+            hobbies: human.hobbies,
+            knowledge: human.knowledge,
+          };
+        }
+      } catch {
+        /* optional */
+      }
+    }
+    const { generateAuthorContentDraft } = await import("./author-content-draft.js");
+    return generateAuthorContentDraft({
+      params: { ...params, profileContext },
+      modelProviders: nodeConfig.modelProviders,
+      taskStore,
+      requesterPeerId: mesh.peerId,
+    });
   }
 
   async runDocumentAgentTurn(message: string): Promise<DocumentAgentTurnResult> {

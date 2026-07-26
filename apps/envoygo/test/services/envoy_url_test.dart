@@ -44,4 +44,35 @@ void main() {
       expect(isEnvoyContentUrl('https://example.com'), isFalse);
     });
   });
+
+  group('buildEnvoyUrl / webContentUrl', () {
+    test('builds profile root', () {
+      expect(
+        buildEnvoyUrl('envoy:owner:abc'),
+        'envoy://envoy:owner:abc/',
+      );
+      expect(
+        webContentUrl('envoy:owner:abc', WebContentSurface.profile),
+        'envoy://envoy:owner:abc/',
+      );
+    });
+
+    test('builds blog and photos with trailing slash', () {
+      expect(
+        webContentUrl('envoy:owner:abc', WebContentSurface.blog),
+        'envoy://envoy:owner:abc/blog/',
+      );
+      expect(
+        webContentUrl('envoy:owner:abc', WebContentSurface.photos),
+        'envoy://envoy:owner:abc/photos/wall/',
+      );
+    });
+
+    test('builds section url', () {
+      expect(
+        webContentSectionUrl('envoy:owner:abc', 'market'),
+        'envoy://envoy:owner:abc/market/',
+      );
+    });
+  });
 }

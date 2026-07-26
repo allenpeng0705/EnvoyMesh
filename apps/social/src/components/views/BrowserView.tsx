@@ -19,8 +19,12 @@ import {
   isEnvoyContentUrl,
   defaultWebSurfaceForPath,
 } from "@envoymesh/api";
-import { Markdown } from "../Markdown.js";
-import DOMPurify from "dompurify";
+import { BrowserMarkdown } from "../BrowserMarkdown.js";
+import { BrowserPhotoGallery } from "../BrowserPhotoGallery.js";
+import { BrowserHtmlDocument } from "../BrowserHtmlDocument.js";
+import { BrowserProfilePortal } from "../BrowserProfilePortal.js";
+import { parsePhotoWallMarkdown } from "../../lib/parse-photo-wall-markdown.js";
+import { parseProfilePortalHtml } from "../../lib/parse-profile-portal-html.js";
 import {
   canGoBack,
   canGoForward,
@@ -40,6 +44,7 @@ import {
 import {
   fetchLibraryContent,
   type BrowserFetchCacheEntry,
+  type LibraryReadFn,
 } from "../../lib/library-read-fetch.js";
 import { BrowserAuthorView } from "./BrowserAuthorView.js";
 import type { PublishWebContentResult } from "@envoymesh/api";
@@ -50,7 +55,6 @@ import {
   notifyWebSectionsChanged,
 } from "../../lib/browser-nav.js";
 import { BrowserBazaarView } from "./BrowserBazaarView.js";
-import { MySitePanel } from "../MySitePanel.js";
 import type { AuthorTemplate } from "./BrowserAuthorView.js";
 
 type BrowserMode = "browse" | "bazaar";
@@ -135,8 +139,12 @@ export function BrowserView({ initialMode }: { initialMode?: BrowserMode } = {})
     }
   }, [authorOpen]);
 
-  const [mode, setMode] = useState<BrowserMode>(initialMode ?? "browse");
+  const [mode, setMode] = useState<BrowserMode>(initialMode ?? "bazaar");
   const cacheRef = useRef<Map<string, BrowserFetchCacheEntry>>(new Map());
+  const libraryRead = useCallback(
+    (params: Parameters<LibraryReadFn>[0]) => nodeService.libraryRead(params),
+    [nodeService],
+  );
 
   const parseError = useMemo(() => {
     const trimmed = url.trim();
@@ -223,7 +231,7 @@ export function BrowserView({ initialMode }: { initialMode?: BrowserMode } = {})
         const cache = cacheRef.current.get(target) ?? null;
         let timeoutId: number | undefined;
         const result = await Promise.race([
-          fetchLibraryContent(nodeService.libraryRead.bind(nodeService), {
+          fetchLibraryContent(libraryRead, {
             targetOwnerId,
             path,
             cache,
@@ -313,7 +321,7 @@ export function BrowserView({ initialMode }: { initialMode?: BrowserMode } = {})
         });
       }
     },
-    [nodeService, ownerId, t],
+    [nodeService, ownerId, t, libraryRead],
   );
 
   useEffect(() => {
@@ -362,13 +370,6 @@ export function BrowserView({ initialMode }: { initialMode?: BrowserMode } = {})
     setMode("browse");
     void navigate(target);
   }
-
-  function openAuthor(template?: AuthorTemplate) {
-    setMode("browse");
-    setAuthorTemplate(template);
-    setAuthorOpen(true);
-  }
-
 
   function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -441,36 +442,32 @@ export function BrowserView({ initialMode }: { initialMode?: BrowserMode } = {})
     >
       <header className="browser-view__header">
         <h2>{t("browser.title")}</h2>
-        <div className="browser-view__modes" role="tablist" aria-label={t("browser.modes", "Browser modes")}>
-          <button
-            type="button"
-            role="tab"
-            className={`browser-view__mode${mode === "browse" ? " is-active" : ""}`}
-            data-testid="browser-mode-browse"
-            aria-selected={mode === "browse"}
-            onClick={() => setMode("browse")}
-          >
-            {t("browser.modeBrowse", "Browse")}
-          </button>
+        <div className="browser-view__modes" role="tablist" aria-label={t("browser.modes", "Explore modes")}>
           <button
             type="button"
             role="tab"
             className={`browser-view__mode${mode === "bazaar" ? " is-active" : ""}`}
-            data-testid="browser-mode-bazaar"
+            data-testid="browser-mode-following"
             aria-selected={mode === "bazaar"}
             onClick={() => setMode("bazaar")}
           >
-            {t("browser.modeBazaar", "Bazaar")}
+            {t("browser.modeFollowing", "Following")}
+          </button>
+          <button
+            type="button"
+            role="tab"
+            className={`browser-view__mode${mode === "browse" ? " is-active" : ""}`}
+            data-testid="browser-mode-open"
+            aria-selected={mode === "browse"}
+            onClick={() => setMode("browse")}
+          >
+            {t("browser.modeOpen", "Open")}
           </button>
         </div>
       </header>
 
       {mode === "bazaar" ? (
-        <BrowserBazaarView
-          onOpenUrl={openFromBazaar}
-          onCreate={(template) => openAuthor(template)}
-          ownerId={ownerId}
-        />
+        <BrowserBazaarView onOpenUrl={openFromBazaar} />
       ) : (
         <>
       <div className="browser-view__toolbar">
@@ -575,24 +572,6 @@ export function BrowserView({ initialMode }: { initialMode?: BrowserMode } = {})
           >
             <BrowserIconStar filled={bookmarked} />
           </button>
-          <button
-            type="button"
-            className="browser-view__author-btn"
-            data-testid="browser-author-open"
-            disabled={!ownerId}
-            onClick={() => {
-              if (authorOpen) {
-                setAuthorOpen(false);
-                setAuthorTemplate(undefined);
-              } else {
-                openAuthor(undefined);
-              }
-            }}
-          >
-            {authorOpen
-              ? t("browser.author.close", "Close editor")
-              : t("browser.author.open", "New…")}
-          </button>
         </form>
       </div>
 
@@ -636,7 +615,13 @@ export function BrowserView({ initialMode }: { initialMode?: BrowserMode } = {})
           </div>
         )}
         {state.kind === "ok" && state.isText && (
-          <RenderText mimeType={state.mimeType} body={state.body} onLinkClick={onContentLinkClick} t={t} />
+          <RenderText
+            mimeType={state.mimeType}
+            body={state.body}
+            onLinkClick={onContentLinkClick}
+            libraryRead={libraryRead}
+            t={t}
+          />
         )}
         {state.kind === "ok" && !state.isText && (
           <RenderBinary mimeType={state.mimeType} body={state.body} url={state.url} t={t} />
@@ -644,21 +629,23 @@ export function BrowserView({ initialMode }: { initialMode?: BrowserMode } = {})
         {state.kind === "idle" && (
           <div className="browser-view__idle" data-testid="browser-idle">
             <p className="browser-view__idle-title">
-              {t("browser.idleHint", "Open your site, or paste a shared envoy:// link.")}
+              {t(
+                "browser.idleHint",
+                "Paste a shared envoy:// link, or switch to Following to browse contacts’ pages.",
+              )}
             </p>
-            {ownerId ? (
-              <MySitePanel
-                ownerId={ownerId}
-                onOpenUrl={(u) => void navigate(u)}
-                onCreate={(template) => openAuthor(template)}
-              />
-            ) : null}
             <ul className="browser-view__idle-list">
               <li>{t("browser.idleHintPaste", "Paste a link someone shared with you, then press Go.")}</li>
               <li>
                 {t(
                   "browser.idleHintContacts",
                   "From a contact’s chat header, open Profile, Blog, or PhotoWall without typing a URL.",
+                )}
+              </li>
+              <li>
+                {t(
+                  "browser.idleHintBlog",
+                  "Write your own posts under Content → Blog.",
                 )}
               </li>
             </ul>
@@ -763,13 +750,39 @@ function RenderText({
   mimeType,
   body,
   onLinkClick,
+  libraryRead,
   t,
 }: {
   mimeType: string;
   body: string;
   onLinkClick: (e: MouseEvent<HTMLElement>) => void;
+  libraryRead: LibraryReadFn;
   t: (key: string, fallback?: string, params?: Record<string, string | number>) => string;
 }) {
+  const gallery = useMemo(() => {
+    if (mimeType !== "text/markdown" && mimeType !== "text/x-markdown") return null;
+    return parsePhotoWallMarkdown(body);
+  }, [mimeType, body]);
+
+  const profilePortal = useMemo(() => {
+    if (mimeType !== "text/html") return null;
+    return parseProfilePortalHtml(body);
+  }, [mimeType, body]);
+
+  if (profilePortal) {
+    return <BrowserProfilePortal portal={profilePortal} libraryRead={libraryRead} />;
+  }
+
+  if (gallery) {
+    return (
+      <BrowserPhotoGallery
+        title={gallery.title}
+        photos={gallery.photos}
+        libraryRead={libraryRead}
+      />
+    );
+  }
+
   if (mimeType === "text/markdown" || mimeType === "text/x-markdown") {
     return (
       <article
@@ -777,23 +790,17 @@ function RenderText({
         data-testid="browser-markdown"
         onClick={onLinkClick}
       >
-        <Markdown text={body} />
+        <BrowserMarkdown text={body} libraryRead={libraryRead} />
       </article>
     );
   }
   if (mimeType === "text/html") {
-    // Defense in depth: sanitize with DOMPurify AND sandbox the iframe.
-    // The sandbox="" attribute alone would prevent script execution,
-    // but DOMPurify strips event handlers and other injection vectors
-    // before the content reaches the iframe's parser. Design §6.
-    const sanitized = DOMPurify.sanitize(body, { FORBID_TAGS: ["script", "iframe", "object", "embed"] });
     return (
-      <iframe
-        className="browser-view__html"
-        data-testid="browser-html"
-        srcDoc={sanitized}
-        sandbox=""
-        title={t("browser.htmlFrame", "Rendered HTML content")}
+      <BrowserHtmlDocument
+        html={body}
+        libraryRead={libraryRead}
+        onLinkClick={onLinkClick}
+        className="browser-view__html-doc"
       />
     );
   }

@@ -11,6 +11,16 @@ import { renderWithI18n } from "../helpers/render-with-i18n.js";
 import { BrowserAuthorView } from "../../src/components/views/BrowserAuthorView.js";
 
 const publishWebContentEntry = vi.fn();
+const readLibraryItemContent = vi.fn();
+const removeProfileGalleryPhoto = vi.fn();
+const upsertProfileGalleryPhoto = vi.fn();
+const setPublicProfileThumbnail = vi.fn();
+const updateHumanProfile = vi.fn();
+const getHumanProfile = vi.fn();
+const syncProfileToBonds = vi.fn();
+
+const MINIMAL_PNG_BASE64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 
 const bonds: BondRecord[] = [
   {
@@ -33,16 +43,40 @@ const bonds: BondRecord[] = [
   },
 ];
 
+const humanProfile = {
+  ownerId: "envoy:owner:alice",
+  displayName: "Alice",
+  username: "alice",
+  bio: "Hello",
+  galleryPhotos: [
+    {
+      photoId: "photo-1",
+      vaultRelativePath: "profile/gallery/photo-1.jpg",
+      contentSha256: "abc",
+      mimeType: "image/jpeg",
+      label: "Trip",
+      visibility: "public" as const,
+    },
+  ],
+};
+
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: () => ({
     publishWebContentEntry,
+    readLibraryItemContent,
+    removeProfileGalleryPhoto,
+    upsertProfileGalleryPhoto,
+    setPublicProfileThumbnail,
+    updateHumanProfile,
+    getHumanProfile,
+    syncProfileToBonds,
   }),
   useIsInProcessMobileNode: () => false,
 }));
 
 vi.mock("../../src/context/NodeStateContext.js", () => ({
   useNodeState: () => ({
-    humanProfile: { ownerId: "envoy:owner:alice" },
+    humanProfile,
     bonds,
   }),
 }));
@@ -50,6 +84,22 @@ vi.mock("../../src/context/NodeStateContext.js", () => ({
 describe("BrowserAuthorView", () => {
   beforeEach(() => {
     publishWebContentEntry.mockReset();
+    readLibraryItemContent.mockReset();
+    removeProfileGalleryPhoto.mockReset();
+    upsertProfileGalleryPhoto.mockReset();
+    setPublicProfileThumbnail.mockReset();
+    updateHumanProfile.mockReset();
+    getHumanProfile.mockReset();
+    syncProfileToBonds.mockReset();
+    readLibraryItemContent.mockResolvedValue({
+      contentBase64: MINIMAL_PNG_BASE64,
+      mimeType: "image/png",
+    });
+    removeProfileGalleryPhoto.mockResolvedValue(humanProfile);
+    upsertProfileGalleryPhoto.mockResolvedValue(humanProfile);
+    updateHumanProfile.mockResolvedValue(humanProfile);
+    getHumanProfile.mockResolvedValue(humanProfile);
+    syncProfileToBonds.mockResolvedValue(undefined);
     publishWebContentEntry.mockResolvedValue({
       path: "blog/posts/my-first-post.md",
       urlPath: "blog/posts/my-first-post.md",
@@ -116,9 +166,8 @@ describe("BrowserAuthorView", () => {
     );
     const file = new File([pngBytes], "sunset.png", { type: "image/png" });
 
-    renderWithI18n(<BrowserAuthorView />);
+    renderWithI18n(<BrowserAuthorView initialTemplate="photo" />);
 
-    fireEvent.click(screen.getByTestId("browser-author-template-photo"));
     fireEvent.change(screen.getByTestId("browser-author-title"), {
       target: { value: "Sunset" },
     });
@@ -217,5 +266,29 @@ describe("BrowserAuthorView", () => {
     });
 
     expect(await screen.findByTestId("browser-author-published")).toBeTruthy();
+  });
+
+  it("loads existing gallery photos when editing profile", async () => {
+    const createObjectURL = vi.fn(() => "blob:mock-gallery-photo");
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal("URL", {
+      ...URL,
+      createObjectURL,
+      revokeObjectURL,
+    });
+
+    renderWithI18n(<BrowserAuthorView initialTemplate="profile" />);
+
+    await waitFor(() => {
+      expect(readLibraryItemContent).toHaveBeenCalledWith({
+        relativePath: "profile/gallery/photo-1.jpg",
+        maxBytes: expect.any(Number),
+      });
+    });
+
+    expect(await screen.findByTestId("browser-author-existing-photo")).toBeTruthy();
+    expect(screen.getByAltText("Trip")).toBeTruthy();
+
+    vi.unstubAllGlobals();
   });
 });

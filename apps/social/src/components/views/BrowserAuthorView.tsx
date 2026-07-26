@@ -3,8 +3,8 @@
  *
  * Design: docs/web-content-browsing-design.md §4.8, §9.2.
  */
-import { useState, useEffect } from "react";
-import { buildProfileMarkdown } from "@envoymesh/api";
+import { useState, useEffect, useRef } from "react";
+import { buildProfilePortalHtml, MAX_PROFILE_GALLERY_PHOTOS, MAX_PROFILE_THUMBNAIL_BYTES, MAX_PROFILE_GALLERY_PHOTO_BYTES } from "@envoymesh/api";
 import type {
   BondRecord,
   PublishWebContentParams,
@@ -16,8 +16,10 @@ import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { contactLabel } from "../../lib/display.js";
+import { blobToBase64, fitImageFileToMaxBytes } from "../../lib/fit-image.js";
 import { MarkdownEditor } from "../MarkdownEditor.js";
 import { VisibilitySelector } from "../VisibilitySelector.js";
+import { AuthorAiDraftField, applyAuthorDraft } from "../AuthorAiDraftField.js";
 
 export type AuthorTemplate = PublishWebContentTemplate;
 
@@ -25,6 +27,16 @@ export interface BrowserAuthorViewProps {
   onPublished?: (result: PublishWebContentResult) => void;
   onCancel?: () => void;
   initialTemplate?: AuthorTemplate;
+}
+
+function base64ToBlob(contentBase64: string, mimeType: string): Blob {
+  const byteString = atob(contentBase64);
+  const ab = new ArrayBuffer(byteString.length);
+  const ia = new Uint8Array(ab);
+  for (let i = 0; i < byteString.length; i++) {
+    ia[i] = byteString.charCodeAt(i);
+  }
+  return new Blob([ab], { type: mimeType });
 }
 
 function readFileAsBase64(file: File): Promise<string> {
@@ -55,6 +67,8 @@ export function BrowserAuthorView({
 }: BrowserAuthorViewProps) {
   const t = useT();
   const nodeService = useNodeService();
+  const nodeServiceRef = useRef(nodeService);
+  nodeServiceRef.current = nodeService;
   const { bonds, humanProfile } = useNodeState();
   const [template, setTemplate] = useState<AuthorTemplate | null>(initialTemplate ?? null);
   const [title, setTitle] = useState("");
@@ -71,10 +85,22 @@ export function BrowserAuthorView({
   const [error, setError] = useState<string | null>(null);
   const [published, setPublished] = useState<PublishWebContentResult | null>(null);
   const [profileAvatar, setProfileAvatar] = useState<File | null>(null);
+  /** Newly picked gallery files (not yet on the profile). */
   const [profilePhotos, setProfilePhotos] = useState<File[]>([]);
+  /** Existing gallery photos loaded from the vault for edit preview. */
+  const [existingGalleryPhotos, setExistingGalleryPhotos] = useState<
+    Array<{ photoId: string; vaultRelativePath: string; previewUrl: string; label?: string }>
+  >([]);
+  const [removedGalleryPaths, setRemovedGalleryPaths] = useState<string[]>([]);
   const [profileDisplayName, setProfileDisplayName] = useState(humanProfile?.displayName ?? "");
   const [profileBio, setProfileBio] = useState(humanProfile?.bio ?? "");
-  const MAX_PROFILE_PHOTOS = 5;
+
+  const galleryFingerprint = (humanProfile?.galleryPhotos ?? [])
+    .map((p) => `${p.photoId}:${p.contentSha256}`)
+    .join("|");
+  const thumbnailKey = humanProfile?.publicThumbnail
+    ? `${humanProfile.publicThumbnail.vaultRelativePath}:${humanProfile.publicThumbnail.contentSha256}`
+    : "";
 
   useEffect(() => {
     if (humanProfile && template === "profile") {
@@ -90,24 +116,16 @@ export function BrowserAuthorView({
     }
     const thumbnail = humanProfile.publicThumbnail;
     let cancelled = false;
-    void nodeService
+    void nodeServiceRef.current
       .readLibraryItemContent({
         relativePath: thumbnail.vaultRelativePath,
-        maxBytes: 512 * 1024,
+        maxBytes: MAX_PROFILE_THUMBNAIL_BYTES,
       })
       .then((result) => {
         if (cancelled) return;
-        const byteString = atob(result.contentBase64);
-        const mimeType = result.mimeType;
-        const ab = new ArrayBuffer(byteString.length);
-        const ia = new Uint8Array(ab);
-        for (let i = 0; i < byteString.length; i++) {
-          ia[i] = byteString.charCodeAt(i);
-        }
-        const blob = new Blob([ab], { type: mimeType });
+        const blob = base64ToBlob(result.contentBase64, result.mimeType);
         const fileName = thumbnail.vaultRelativePath.split("/").pop() ?? "thumbnail";
-        const file = new File([blob], fileName, { type: mimeType });
-        setProfileAvatar(file);
+        setProfileAvatar(new File([blob], fileName, { type: result.mimeType }));
       })
       .catch(() => {
         if (!cancelled) setProfileAvatar(null);
@@ -115,7 +133,61 @@ export function BrowserAuthorView({
     return () => {
       cancelled = true;
     };
-  }, [template, humanProfile?.publicThumbnail, nodeService]);
+  }, [template, thumbnailKey, humanProfile?.publicThumbnail]);
+
+  useEffect(() => {
+    if (template !== "profile") {
+      setExistingGalleryPhotos((prev) => {
+        for (const p of prev) URL.revokeObjectURL(p.previewUrl);
+        return prev.length === 0 ? prev : [];
+      });
+      setRemovedGalleryPaths((prev) => (prev.length === 0 ? prev : []));
+      setProfilePhotos((prev) => (prev.length === 0 ? prev : []));
+      return;
+    }
+    const gallery = humanProfile?.galleryPhotos ?? [];
+    let cancelled = false;
+    const createdUrls: string[] = [];
+    setRemovedGalleryPaths([]);
+    setProfilePhotos([]);
+    void (async () => {
+      const loaded: Array<{
+        photoId: string;
+        vaultRelativePath: string;
+        previewUrl: string;
+        label?: string;
+      }> = [];
+      for (const photo of gallery) {
+        try {
+          const result = await nodeServiceRef.current.readLibraryItemContent({
+            relativePath: photo.vaultRelativePath,
+            maxBytes: MAX_PROFILE_GALLERY_PHOTO_BYTES,
+          });
+          const previewUrl = URL.createObjectURL(
+            base64ToBlob(result.contentBase64, result.mimeType),
+          );
+          if (cancelled) {
+            URL.revokeObjectURL(previewUrl);
+            return;
+          }
+          createdUrls.push(previewUrl);
+          loaded.push({
+            photoId: photo.photoId,
+            vaultRelativePath: photo.vaultRelativePath,
+            previewUrl,
+            label: photo.label,
+          });
+        } catch {
+          /* skip unreadables */
+        }
+      }
+      if (!cancelled) setExistingGalleryPhotos(loaded);
+    })();
+    return () => {
+      cancelled = true;
+      for (const url of createdUrls) URL.revokeObjectURL(url);
+    };
+  }, [template, galleryFingerprint, humanProfile?.galleryPhotos]);
 
   const selectableBonds = eligibleBonds(bonds);
   const isBinary = template === "photo" || template === "file";
@@ -153,17 +225,28 @@ export function BrowserAuthorView({
     try {
       if (template === "profile") {
         if (profileAvatar) {
-          const avatarBase64 = await readFileAsBase64(profileAvatar);
+          const fitted = await fitImageFileToMaxBytes(
+            profileAvatar,
+            MAX_PROFILE_THUMBNAIL_BYTES,
+            profileAvatar.type,
+          );
           await nodeService.setPublicProfileThumbnail({
-            contentBase64: avatarBase64,
-            mimeType: (profileAvatar.type || "image/png") as "image/jpeg" | "image/png" | "image/webp",
+            contentBase64: await blobToBase64(fitted.blob),
+            mimeType: fitted.mimeType as "image/jpeg" | "image/png" | "image/webp",
           });
         }
+        for (const path of removedGalleryPaths) {
+          await nodeService.removeProfileGalleryPhoto({ vaultRelativePath: path });
+        }
         for (const photo of profilePhotos) {
-          const photoBase64 = await readFileAsBase64(photo);
+          const fitted = await fitImageFileToMaxBytes(
+            photo,
+            MAX_PROFILE_GALLERY_PHOTO_BYTES,
+            photo.type,
+          );
           await nodeService.upsertProfileGalleryPhoto({
-            contentBase64: photoBase64,
-            mimeType: (photo.type || "image/png") as "image/jpeg" | "image/png" | "image/webp",
+            contentBase64: await blobToBase64(fitted.blob),
+            mimeType: fitted.mimeType as "image/jpeg" | "image/png" | "image/webp",
             visibility: "public",
             label: photo.name,
           });
@@ -176,14 +259,34 @@ export function BrowserAuthorView({
         void nodeService.syncProfileToBonds().catch((err) => {
           console.warn("[profile.sync] broadcast to bonds failed:", err);
         });
-        const profileBody = buildProfileMarkdown({
+        const refreshed = await nodeService.getHumanProfile();
+        const ownerId = refreshed?.ownerId ?? humanProfile?.ownerId ?? "";
+        const photos = (refreshed?.galleryPhotos ?? []).map((p) => {
+          const ext =
+            p.mimeType === "image/png" ? "png" : p.mimeType === "image/webp" ? "webp" : "jpg";
+          return {
+            title: p.label?.trim() || p.photoId,
+            url: `envoy://${ownerId}/photos/wall/gallery-${p.photoId}.${ext}`,
+          };
+        });
+        const avatarExt =
+          refreshed?.publicThumbnail?.mimeType === "image/png"
+            ? "png"
+            : refreshed?.publicThumbnail?.mimeType === "image/webp"
+              ? "webp"
+              : refreshed?.publicThumbnail
+                ? "jpg"
+                : undefined;
+        const profileBody = buildProfilePortalHtml({
           displayName: profileDisplayName.trim() || title.trim(),
           username: title.trim(),
           bio: profileBio,
-          hobbies: humanProfile?.hobbies ?? [],
-          knowledge: humanProfile?.knowledge ?? [],
-          capabilities: humanProfile?.capabilities ?? [],
-          ownerId: humanProfile?.ownerId ?? "",
+          hobbies: refreshed?.hobbies ?? humanProfile?.hobbies ?? [],
+          knowledge: refreshed?.knowledge ?? humanProfile?.knowledge ?? [],
+          capabilities: refreshed?.capabilities ?? humanProfile?.capabilities ?? [],
+          ownerId,
+          avatarUrl: avatarExt ? `envoy://${ownerId}/avatar.${avatarExt}` : undefined,
+          photos,
         });
         const result = await nodeService.publishWebContentEntry({
           template: "profile",
@@ -212,11 +315,16 @@ export function BrowserAuthorView({
           if (sectionSlug.trim()) params.sectionSlug = sectionSlug.trim();
           params.advertiseTopic = advertiseTopic;
         } else if (file) {
-          params.contentBase64 = await readFileAsBase64(file);
-          params.mimeType = file.type || (template === "photo" ? "image/png" : "application/octet-stream");
-          params.fileName = file.name;
           if (template === "photo") {
+            const fitted = await fitImageFileToMaxBytes(file, 2 * 1024 * 1024, file.type);
+            params.contentBase64 = await blobToBase64(fitted.blob);
+            params.mimeType = fitted.mimeType;
+            params.fileName = file.name.replace(/\.[^.]+$/, "") + (fitted.mimeType === "image/png" ? ".png" : fitted.mimeType === "image/webp" ? ".webp" : ".jpg");
             params.gallery = gallery.trim() || "wall";
+          } else {
+            params.contentBase64 = await readFileAsBase64(file);
+            params.mimeType = file.type || "application/octet-stream";
+            params.fileName = file.name;
           }
         }
         const result = await nodeService.publishWebContentEntry(params);
@@ -288,7 +396,10 @@ export function BrowserAuthorView({
       <div className="browser-author" data-testid="browser-author-picker">
         <h3>{t("browser.author.newItem", "New item")}</h3>
         <p className="field-desc">
-          {t("browser.author.pickerHint", "Choose a template to publish to your mesh site.")}
+          {t(
+            "browser.author.pickerHint",
+            "Choose a template. Profile and Photos are under your avatar (top right).",
+          )}
         </p>
         <div className="browser-author__templates">
           <button
@@ -320,32 +431,6 @@ export function BrowserAuthorView({
           <button
             type="button"
             className="browser-author__template-card"
-            data-testid="browser-author-template-profile"
-            onClick={() => setTemplate("profile")}
-          >
-            <span className="browser-author__template-icon" aria-hidden="true">
-              <AuthorIconProfile />
-            </span>
-            <span className="browser-author__template-name">
-              {t("browser.author.newProfile", "Profile page")}
-            </span>
-          </button>
-          <button
-            type="button"
-            className="browser-author__template-card"
-            data-testid="browser-author-template-photo"
-            onClick={() => setTemplate("photo")}
-          >
-            <span className="browser-author__template-icon" aria-hidden="true">
-              <AuthorIconPhoto />
-            </span>
-            <span className="browser-author__template-name">
-              {t("browser.author.newPhoto", "Photo")}
-            </span>
-          </button>
-          <button
-            type="button"
-            className="browser-author__template-card"
             data-testid="browser-author-template-file"
             onClick={() => setTemplate("file")}
           >
@@ -354,19 +439,6 @@ export function BrowserAuthorView({
             </span>
             <span className="browser-author__template-name">
               {t("browser.author.newFile", "File upload")}
-            </span>
-          </button>
-          <button
-            type="button"
-            className="browser-author__template-card"
-            data-testid="browser-author-template-section"
-            onClick={() => setTemplate("section")}
-          >
-            <span className="browser-author__template-icon" aria-hidden="true">
-              <AuthorIconSection />
-            </span>
-            <span className="browser-author__template-name">
-              {t("browser.author.newSection", "Custom section")}
             </span>
           </button>
         </div>
@@ -450,12 +522,47 @@ export function BrowserAuthorView({
             <label className="field-label browser-author__profile-photos-label">
               {t("browser.author.profilePhotos", "Photos")}
               <span className="field-desc">
-                {t("browser.author.profilePhotosHint", `Add up to ${MAX_PROFILE_PHOTOS} photos to showcase your profile`)}
+                {t(
+                  "browser.author.profilePhotosHint",
+                  `Add up to ${MAX_PROFILE_GALLERY_PHOTOS} photos to showcase your profile (also appears on PhotoWall)`,
+                )}
               </span>
             </label>
             <div className="browser-author__profile-photos-grid">
+              {existingGalleryPhotos.map((photo) => (
+                <div
+                  key={photo.photoId}
+                  className="browser-author__profile-photo-item"
+                  data-testid="browser-author-existing-photo"
+                >
+                  <img
+                    src={photo.previewUrl}
+                    alt={photo.label ?? t("browser.author.profilePhotoAlt", "Profile photo")}
+                    className="browser-author__profile-photo-img"
+                  />
+                  <button
+                    type="button"
+                    className="browser-author__profile-photo-remove"
+                    onClick={() => {
+                      URL.revokeObjectURL(photo.previewUrl);
+                      setExistingGalleryPhotos((prev) =>
+                        prev.filter((p) => p.photoId !== photo.photoId),
+                      );
+                      setRemovedGalleryPaths((prev) =>
+                        prev.includes(photo.vaultRelativePath)
+                          ? prev
+                          : [...prev, photo.vaultRelativePath],
+                      );
+                    }}
+                    disabled={busy}
+                    aria-label={t("browser.author.removePhoto", "Remove photo")}
+                  >
+                    <AuthorIconX />
+                  </button>
+                </div>
+              ))}
               {profilePhotos.map((photo, index) => (
-                <div key={index} className="browser-author__profile-photo-item">
+                <div key={`new-${index}-${photo.name}`} className="browser-author__profile-photo-item">
                   <img
                     src={URL.createObjectURL(photo)}
                     alt={t("browser.author.profilePhotoAlt", "Profile photo")}
@@ -473,7 +580,7 @@ export function BrowserAuthorView({
                   </button>
                 </div>
               ))}
-              {profilePhotos.length < MAX_PROFILE_PHOTOS && (
+              {existingGalleryPhotos.length + profilePhotos.length < MAX_PROFILE_GALLERY_PHOTOS && (
                 <div className="browser-author__profile-photos-add">
                   <input
                     id="browser-author-profile-photos"
@@ -483,8 +590,12 @@ export function BrowserAuthorView({
                     multiple
                     disabled={busy}
                     onChange={(e) => {
-                      const newFiles = Array.from(e.target.files ?? []);
-                      setProfilePhotos((prev) => [...prev, ...newFiles].slice(0, MAX_PROFILE_PHOTOS));
+                      const remaining =
+                        MAX_PROFILE_GALLERY_PHOTOS -
+                        existingGalleryPhotos.length -
+                        profilePhotos.length;
+                      const newFiles = Array.from(e.target.files ?? []).slice(0, Math.max(0, remaining));
+                      setProfilePhotos((prev) => [...prev, ...newFiles]);
                     }}
                   />
                   <label htmlFor="browser-author-profile-photos" className="browser-author__profile-photos-add-btn">
@@ -522,19 +633,26 @@ export function BrowserAuthorView({
               placeholder={t("browser.author.profileTitlePlaceholder", "e.g., AI Enthusiast")}
             />
 
-            <label className="field-label" htmlFor="browser-author-profile-bio">
-              {t("browser.author.profileBio", "Bio")}
-            </label>
-            <textarea
-              id="browser-author-profile-bio"
-              className="browser-author__profile-textarea"
-              data-testid="browser-author-profile-bio"
+            <AuthorAiDraftField
+              surface="bio"
+              label={t("browser.author.profileBio", "Bio")}
+              htmlFor="browser-author-profile-bio"
               value={profileBio}
-              onChange={(e) => setProfileBio(e.target.value)}
+              title={title}
               disabled={busy}
-              rows={4}
-              placeholder={t("browser.author.profileBioPlaceholder", "Tell us about yourself…")}
-            />
+              onApply={(text, action) => setProfileBio((prev) => applyAuthorDraft(prev, text, action))}
+            >
+              <textarea
+                id="browser-author-profile-bio"
+                className="browser-author__profile-textarea"
+                data-testid="browser-author-profile-bio"
+                value={profileBio}
+                onChange={(e) => setProfileBio(e.target.value)}
+                disabled={busy}
+                rows={4}
+                placeholder={t("browser.author.profileBioPlaceholder", "Tell us about yourself…")}
+              />
+            </AuthorAiDraftField>
           </div>
         </div>
 
@@ -715,24 +833,53 @@ export function BrowserAuthorView({
             )}
           </div>
           {template === "photo" ? (
-            <>
-              <label className="field-label" htmlFor="browser-author-caption">
-                {t("browser.author.caption", "Caption (optional)")}
-              </label>
+            <AuthorAiDraftField
+              surface="caption"
+              label={t("browser.author.caption", "Caption (optional)")}
+              htmlFor="browser-author-caption"
+              value={body}
+              title={title}
+              disabled={busy}
+              onApply={(text, action) => setBody((prev) => applyAuthorDraft(prev, text, action))}
+            >
               <MarkdownEditor
                 value={body}
                 onChange={setBody}
                 disabled={busy}
                 rows={6}
                 articleMode
+                data-testid="browser-author-caption"
                 placeholder={t(
                   "browser.author.captionPlaceholder",
                   "A short story under the photo…",
                 )}
               />
-            </>
+            </AuthorAiDraftField>
           ) : null}
         </>
+      ) : template === "blog-post" || template === "section" || template === "note" ? (
+        <AuthorAiDraftField
+          surface={template === "section" ? "section" : "blog"}
+          label={t("browser.author.story", "Story")}
+          htmlFor="browser-author-body"
+          value={body}
+          title={title}
+          disabled={busy}
+          onApply={(text, action) => setBody((prev) => applyAuthorDraft(prev, text, action))}
+        >
+          <MarkdownEditor
+            value={body}
+            onChange={setBody}
+            disabled={busy}
+            rows={16}
+            articleMode
+            data-testid="browser-author-body"
+            placeholder={t(
+              "browser.author.bodyPlaceholder",
+              "Start writing… Use Title / Heading for structure, insert images and links as you go.",
+            )}
+          />
+        </AuthorAiDraftField>
       ) : (
         <>
           <label className="field-label" htmlFor="browser-author-body">
@@ -883,25 +1030,6 @@ function AuthorIconNote() {
   );
 }
 
-function AuthorIconProfile() {
-  return (
-    <svg {...iconProps()}>
-      <circle cx="12" cy="8" r="4" />
-      <path d="M4 21c0-4.4 3.6-8 8-8s8 3.6 8 8" />
-    </svg>
-  );
-}
-
-function AuthorIconPhoto() {
-  return (
-    <svg {...iconProps()}>
-      <rect x="3" y="3" width="18" height="18" rx="2" />
-      <circle cx="9" cy="9" r="2" />
-      <path d="M21 15l-5-5L5 21" />
-    </svg>
-  );
-}
-
 function AuthorIconFile() {
   return (
     <svg {...iconProps()}>
@@ -909,17 +1037,6 @@ function AuthorIconFile() {
       <polyline points="14 2 14 8 20 8" />
       <path d="M12 18v-6" />
       <path d="M9 15l3 3 3-3" />
-    </svg>
-  );
-}
-
-function AuthorIconSection() {
-  return (
-    <svg {...iconProps()}>
-      <rect x="3" y="3" width="7" height="7" rx="1" />
-      <rect x="14" y="3" width="7" height="7" rx="1" />
-      <rect x="3" y="14" width="7" height="7" rx="1" />
-      <rect x="14" y="14" width="7" height="7" rx="1" />
     </svg>
   );
 }

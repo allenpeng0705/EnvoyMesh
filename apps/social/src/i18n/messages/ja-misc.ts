@@ -10,7 +10,7 @@ export const jaErrorBoundaryMessages = {
 export const jaProfileMessages = {
   sectionsLabel: "プロフィールセクション",
   photos: "写真",
-  about: "情報",
+  about: "プロフィール",
 } as const;
 
 export const jaDiscoverCardsMessages = {
@@ -324,7 +324,7 @@ export const jaProfilePhotosMessages = {
   thumbnailHint: "サムネイルは常に公開されます。アップロード時にドラッグしてクロップを調整してください。",
   gallery: "ギャラリー",
   addPhotoBtn: "写真を追加",
-  galleryHint: "ギャラリーのメタデータはバンディング済みの連絡先に同期されます (以下の可視性参照)。検索には公開サムネイルのみ表示 — 写真を共有して完全な画像バイトを送信。",
+  galleryHint: "ギャラリー写真は PhotoWall にも表示されます。ギャラリーのメタデータはバンディング済みの連絡先に同期されます (以下の可視性参照)。検索には公開サムネイルのみ表示 — 写真を共有して完全な画像バイトを送信。",
   visibilityEveryone: "メッシュ上の全員",
   visibilityReferred: "紹介された連絡先",
   visibilityDirect: "私の連絡先のみ",

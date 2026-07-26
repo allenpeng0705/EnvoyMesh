@@ -1,38 +1,33 @@
 /**
- * Phase 45 Pass 3 — Browser Bazaar: browse published mesh links without typing URLs.
+ * Explore → Following: browse published mesh links without typing URLs.
  *
- * Composes existing APIs only:
- * - listFeedNotifications (push from bonded publishers)
- * - bonds + agent cards (contact shelves / public topics)
- * - searchPeers({ topic: "publish:…" }) for topic discovery
+ * Feed-first: recent posts from bonded contacts, then people shelves,
+ * then quieter topic discovery.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FeedNotification, PeerSearchResult } from "@envoymesh/api";
-import { useT } from "../../context/I18nContext.js";
+import { useI18n, useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useAgentCards, useNodeService } from "../../hooks/useNodeService.js";
 import { contactLabel, shortOwnerId } from "../../lib/display.js";
+import { formatMomentsTime } from "../../lib/moments-time.js";
 import { publishSearchTopic } from "../../lib/publish-topic.js";
 import { webContentUrl } from "../../lib/web-content-urls.js";
 import { ContactWebContentShortcuts } from "../ContactWebContentShortcuts.js";
-import { MySitePanel } from "../MySitePanel.js";
-import type { AuthorTemplate } from "./BrowserAuthorView.js";
+import { PeerProfileAvatar } from "../PeerProfileAvatar.js";
 
 export { publishSearchTopic } from "../../lib/publish-topic.js";
 
 export interface BrowserBazaarViewProps {
-  /** Open a content URL in Browse mode. */
+  /** Open a content URL in Open (reader) mode. */
   onOpenUrl: (url: string) => void;
-  /** Open Browser author with a template. */
-  onCreate?: (template: AuthorTemplate) => void;
-  /** Local owner id for My site panel. */
-  ownerId?: string;
 }
 
 const AGENT_CARD_WARM_LIMIT = 8;
 
-export function BrowserBazaarView({ onOpenUrl, onCreate, ownerId }: BrowserBazaarViewProps) {
+export function BrowserBazaarView({ onOpenUrl }: BrowserBazaarViewProps) {
   const t = useT();
+  const { locale } = useI18n();
   const nodeService = useNodeService();
   const { bonds } = useNodeState();
   const cards = useAgentCards();
@@ -47,13 +42,19 @@ export function BrowserBazaarView({ onOpenUrl, onCreate, ownerId }: BrowserBazaa
   const [topicBusy, setTopicBusy] = useState(false);
   const [topicError, setTopicError] = useState<string | null>(null);
 
-  const bondedIds = useMemo(
-    () => new Set(bonds.map((b) => b.peerOwnerId)),
-    [bonds],
-  );
+  const bondByOwner = useMemo(() => {
+    const map = new Map(bonds.map((b) => [b.peerOwnerId, b]));
+    return map;
+  }, [bonds]);
+
+  const bondedIds = useMemo(() => new Set(bondByOwner.keys()), [bondByOwner]);
 
   const contactFeed = useMemo(
-    () => feedItems.filter((item) => bondedIds.has(item.publisherOwnerId)),
+    () =>
+      feedItems
+        .filter((item) => bondedIds.has(item.publisherOwnerId))
+        .slice()
+        .sort((a, b) => (a.publishedAt < b.publishedAt ? 1 : -1)),
     [feedItems, bondedIds],
   );
 
@@ -62,7 +63,6 @@ export function BrowserBazaarView({ onOpenUrl, onCreate, ownerId }: BrowserBazaa
     try {
       const rows = await nodeService.listFeedNotifications();
       setFeedItems(rows);
-      // Warm only missing agent cards (capped) so shelves show webContentRoot / topics.
       const cached = new Set(cardsRef.current.map((c) => c.ownerId));
       const toWarm = bonds
         .filter((b) => b.level !== "blocked")
@@ -74,7 +74,7 @@ export function BrowserBazaarView({ onOpenUrl, onCreate, ownerId }: BrowserBazaa
         await Promise.allSettled(toWarm.map((id) => nodeService.requestAgentCard(id)));
       }
     } catch (err) {
-      console.error("[BrowserBazaar] refresh feed failed:", err);
+      console.error("[BrowserFollowing] refresh feed failed:", err);
     } finally {
       setFeedBusy(false);
     }
@@ -110,7 +110,7 @@ export function BrowserBazaarView({ onOpenUrl, onCreate, ownerId }: BrowserBazaa
         setTopicError(t("browser.bazaar.topicNoResults", "No publishers found for this topic yet."));
       }
     } catch (err) {
-      console.error("[BrowserBazaar] topic search failed:", err);
+      console.error("[BrowserFollowing] topic search failed:", err);
       setTopicResults([]);
       setTopicError(
         t("browser.bazaar.topicError", {
@@ -122,111 +122,157 @@ export function BrowserBazaarView({ onOpenUrl, onCreate, ownerId }: BrowserBazaa
     }
   }, [nodeService, topicQuery, t]);
 
-  const bondRows = useMemo(() => {
-    return [...bonds]
+  const shelves = useMemo(() => {
+    return bonds
       .filter((b) => b.level !== "blocked")
-      .sort((a, b) => contactLabel(a).localeCompare(contactLabel(b)));
-  }, [bonds]);
+      .map((bond) => {
+        const card = cards.find((c) => c.ownerId === bond.peerOwnerId);
+        return { bond, card };
+      });
+  }, [bonds, cards]);
+
+  function publisherName(ownerId: string): string {
+    const bond = bondByOwner.get(ownerId);
+    return bond ? contactLabel(bond) : shortOwnerId(ownerId);
+  }
+
+  function kindLabel(kind: string): string | null {
+    const k = kind.trim().toLowerCase();
+    if (!k) return null;
+    if (k === "blog" || k === "blog-post") return t("browser.bazaar.kindBlog", "Blog");
+    if (k === "note" || k === "feed") return t("browser.bazaar.kindNote", "Note");
+    if (k === "photo" || k === "photowall") return t("browser.bazaar.kindPhoto", "Photo");
+    return null;
+  }
 
   return (
-    <div className="browser-bazaar" data-testid="browser-bazaar">
-      <div className="browser-bazaar__toolbar">
-        <p className="browser-bazaar__intro">
-          {t(
-            "browser.bazaar.intro",
-            "Published posts from contacts, their site shelves, and topic discovery — no long URLs required.",
-          )}
-        </p>
+    <div className="browser-bazaar" data-testid="browser-following">
+      <header className="browser-bazaar__toolbar">
+        <div className="browser-bazaar__lede">
+          <p className="browser-bazaar__intro">
+            {t("browser.bazaar.intro", "Posts and pages from people you follow.")}
+          </p>
+        </div>
         <button
           type="button"
           className="browser-bazaar__refresh"
           data-testid="bazaar-refresh"
           disabled={feedBusy}
+          aria-label={
+            feedBusy
+              ? t("browser.bazaar.refreshing", "Refreshing…")
+              : t("browser.bazaar.refresh", "Refresh")
+          }
+          title={t("browser.bazaar.refresh", "Refresh")}
           onClick={() => void refreshFeed()}
         >
           <BazaarIconRefresh spinning={feedBusy} />
-          {feedBusy
-            ? t("browser.bazaar.refreshing", "Refreshing…")
-            : t("browser.bazaar.refresh", "Refresh")}
         </button>
-      </div>
+      </header>
 
       <section className="browser-bazaar__section" aria-labelledby="bazaar-feed-heading">
-        <h3 id="bazaar-feed-heading" className="browser-bazaar__heading">
-          {t("browser.bazaar.feedHeading", "From your contacts")}
-        </h3>
+        <div className="browser-bazaar__section-head">
+          <h3 id="bazaar-feed-heading" className="browser-bazaar__heading">
+            {t("browser.bazaar.feedHeading", "Recent")}
+          </h3>
+          {contactFeed.length > 0 ? (
+            <span className="browser-bazaar__count">{contactFeed.length}</span>
+          ) : null}
+        </div>
         {contactFeed.length === 0 ? (
           <p className="browser-bazaar__empty" data-testid="bazaar-feed-empty">
             {t(
               "browser.bazaar.feedEmpty",
-              "No published posts yet. When bonded contacts publish, they show up here.",
+              "Nothing new yet. When contacts publish, their posts land here.",
             )}
           </p>
         ) : (
           <ul className="browser-bazaar__feed" data-testid="bazaar-feed-list">
-            {contactFeed.map((item) => (
-              <li key={item.id} className="browser-bazaar__feed-item">
-                <button
-                  type="button"
-                  className="browser-bazaar__feed-open"
-                  data-testid="bazaar-feed-open"
-                  onClick={() => onOpenUrl(item.url)}
+            {contactFeed.map((item, index) => {
+              const name = publisherName(item.publisherOwnerId);
+              const kind = kindLabel(item.kind);
+              return (
+                <li
+                  key={item.id}
+                  className="browser-bazaar__feed-item"
+                  style={{ animationDelay: `${Math.min(index, 8) * 40}ms` }}
                 >
-                  <span className="browser-bazaar__feed-title">{item.title}</span>
-                  <span className="browser-bazaar__feed-meta">
-                    {shortOwnerId(item.publisherOwnerId)}
-                    {" · "}
-                    {item.kind}
-                    {item.publishedAt
-                      ? ` · ${new Date(item.publishedAt).toLocaleString()}`
-                      : ""}
-                  </span>
-                  {item.summary ? (
-                    <span className="browser-bazaar__feed-summary">{item.summary}</span>
-                  ) : null}
-                  {item.tags && item.tags.length > 0 ? (
-                    <span className="browser-bazaar__feed-tags">{item.tags.join(" · ")}</span>
-                  ) : null}
-                </button>
-              </li>
-            ))}
+                  <button
+                    type="button"
+                    className="browser-bazaar__feed-open"
+                    data-testid="bazaar-feed-open"
+                    onClick={() => onOpenUrl(item.url)}
+                  >
+                    <PeerProfileAvatar
+                      ownerId={item.publisherOwnerId}
+                      fallbackLabel={name}
+                      className="browser-bazaar__avatar"
+                    />
+                    <span className="browser-bazaar__feed-body">
+                      <span className="browser-bazaar__feed-top">
+                        <span className="browser-bazaar__feed-who">{name}</span>
+                        <time
+                          className="browser-bazaar__feed-time"
+                          dateTime={item.publishedAt}
+                        >
+                          {formatMomentsTime(item.publishedAt, locale)}
+                        </time>
+                      </span>
+                      <span className="browser-bazaar__feed-title">{item.title}</span>
+                      {item.summary ? (
+                        <span className="browser-bazaar__feed-summary">{item.summary}</span>
+                      ) : null}
+                      {kind || (item.tags && item.tags.length > 0) ? (
+                        <span className="browser-bazaar__feed-tags">
+                          {kind ? <span className="browser-bazaar__chip">{kind}</span> : null}
+                          {(item.tags ?? []).slice(0, 3).map((tag) => (
+                            <span key={tag} className="browser-bazaar__chip">
+                              {tag}
+                            </span>
+                          ))}
+                        </span>
+                      ) : null}
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         )}
       </section>
 
       <section className="browser-bazaar__section" aria-labelledby="bazaar-shelves-heading">
-        <h3 id="bazaar-shelves-heading" className="browser-bazaar__heading">
-          {t("browser.bazaar.shelvesHeading", "Contact shelves")}
-        </h3>
-        {bondRows.length === 0 ? (
+        <div className="browser-bazaar__section-head">
+          <h3 id="bazaar-shelves-heading" className="browser-bazaar__heading">
+            {t("browser.bazaar.shelvesHeading", "People")}
+          </h3>
+        </div>
+        {shelves.length === 0 ? (
           <p className="browser-bazaar__empty">
-            {t("browser.bazaar.shelvesEmpty", "Bond with contacts to see their published sites here.")}
+            {t("browser.bazaar.shelvesEmpty", "Bond with contacts to browse their sites here.")}
           </p>
         ) : (
           <ul className="browser-bazaar__shelves" data-testid="bazaar-shelves">
-            {bondRows.map((bond) => {
-              const card = cards.find((c) => c.ownerId === bond.peerOwnerId);
-              const label = contactLabel(bond);
-              const topics = card?.publicTopics?.filter(Boolean) ?? [];
+            {shelves.map(({ bond }) => {
+              const name = contactLabel(bond);
               return (
                 <li key={bond.peerOwnerId} className="browser-bazaar__shelf">
                   <div className="browser-bazaar__shelf-head">
+                    <PeerProfileAvatar
+                      ownerId={bond.peerOwnerId}
+                      fallbackLabel={name}
+                      className="browser-bazaar__avatar browser-bazaar__avatar--sm"
+                    />
                     <button
                       type="button"
                       className="browser-bazaar__shelf-name"
-                      onClick={() =>
-                        onOpenUrl(card?.webContentRoot ?? webContentUrl(bond.peerOwnerId, "profile"))
-                      }
+                      onClick={() => onOpenUrl(webContentUrl(bond.peerOwnerId, "profile"))}
                     >
-                      {label}
+                      {name}
                     </button>
-                    {topics.length > 0 ? (
-                      <span className="browser-bazaar__shelf-topics">{topics.slice(0, 6).join(" · ")}</span>
-                    ) : null}
                   </div>
                   <ContactWebContentShortcuts
                     ownerId={bond.peerOwnerId}
-                    includeFeeds={false}
                     onOpenUrl={onOpenUrl}
                   />
                 </li>
@@ -236,10 +282,21 @@ export function BrowserBazaarView({ onOpenUrl, onCreate, ownerId }: BrowserBazaa
         )}
       </section>
 
-      <section className="browser-bazaar__section" aria-labelledby="bazaar-topic-heading">
-        <h3 id="bazaar-topic-heading" className="browser-bazaar__heading">
-          {t("browser.bazaar.topicHeading", "Discover by topic")}
-        </h3>
+      <section
+        className="browser-bazaar__section browser-bazaar__section--topic"
+        aria-labelledby="bazaar-topic-heading"
+      >
+        <div className="browser-bazaar__section-head">
+          <h3 id="bazaar-topic-heading" className="browser-bazaar__heading">
+            {t("browser.bazaar.topicHeading", "Find by topic")}
+          </h3>
+        </div>
+        <p className="browser-bazaar__topic-hint">
+          {t(
+            "browser.bazaar.topicHint",
+            "Search publishers who advertise a topic on the mesh.",
+          )}
+        </p>
         <form
           className="browser-bazaar__topic-form"
           onSubmit={(e) => {
@@ -251,9 +308,10 @@ export function BrowserBazaarView({ onOpenUrl, onCreate, ownerId }: BrowserBazaa
             type="search"
             className="browser-bazaar__topic-input"
             data-testid="bazaar-topic-input"
-            placeholder={t("browser.bazaar.topicPlaceholder", "photography, cooking, travel…")}
             value={topicQuery}
             onChange={(e) => setTopicQuery(e.target.value)}
+            placeholder={t("browser.bazaar.topicPlaceholder", "photography, cooking, travel…")}
+            aria-label={t("browser.bazaar.topicHeading", "Find by topic")}
           />
           <button
             type="submit"
@@ -261,53 +319,62 @@ export function BrowserBazaarView({ onOpenUrl, onCreate, ownerId }: BrowserBazaa
             data-testid="bazaar-topic-search"
             disabled={topicBusy}
           >
-            <BazaarIconSearch />
             {topicBusy
               ? t("browser.bazaar.topicSearching", "Searching…")
               : t("browser.bazaar.topicSearch", "Search")}
           </button>
         </form>
         {topicError ? (
-          <p className="browser-bazaar__topic-status" data-testid="bazaar-topic-status">
+          <p className="browser-bazaar__empty" data-testid="bazaar-topic-error">
             {topicError}
           </p>
         ) : null}
         {topicResults.length > 0 ? (
           <ul className="browser-bazaar__topic-results" data-testid="bazaar-topic-results">
-            {topicResults.map((peer) => (
-              <li key={`${peer.ownerId}-${peer.nodeId}`} className="browser-bazaar__topic-row">
-                <div className="browser-bazaar__topic-peer">
-                  <strong>{peer.displayName || shortOwnerId(peer.ownerId)}</strong>
-                  <span className="browser-bazaar__feed-meta">{shortOwnerId(peer.ownerId)}</span>
-                  {peer.interests?.length ? (
-                    <span className="browser-bazaar__shelf-topics">{peer.interests.slice(0, 6).join(" · ")}</span>
-                  ) : null}
-                </div>
-                <div className="browser-bazaar__topic-actions">
-                  <button
-                    type="button"
-                    className="contact-web-content__btn"
-                    onClick={() => onOpenUrl(webContentUrl(peer.ownerId, "profile"))}
-                  >
-                    {t("agentCard.openProfile", "Profile")}
-                  </button>
-                  <button
-                    type="button"
-                    className="contact-web-content__btn"
-                    onClick={() => onOpenUrl(webContentUrl(peer.ownerId, "blog"))}
-                  >
-                    {t("agentCard.openBlog", "Blog")}
-                  </button>
-                </div>
-              </li>
-            ))}
+            {topicResults.map((peer) => {
+              const name = peer.displayName?.trim() || shortOwnerId(peer.ownerId);
+              return (
+                <li key={peer.ownerId} className="browser-bazaar__topic-peer">
+                  <div className="browser-bazaar__topic-peer-main">
+                    <PeerProfileAvatar
+                      ownerId={peer.ownerId}
+                      fallbackLabel={name}
+                      className="browser-bazaar__avatar browser-bazaar__avatar--sm"
+                    />
+                    <div className="browser-bazaar__topic-peer-text">
+                      <strong>{name}</strong>
+                      {peer.interests?.length ? (
+                        <span className="browser-bazaar__shelf-topics">
+                          {peer.interests.slice(0, 6).join(" · ")}
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                  <div className="browser-bazaar__topic-actions">
+                    <button
+                      type="button"
+                      className="contact-web-content__link"
+                      onClick={() => onOpenUrl(webContentUrl(peer.ownerId, "profile"))}
+                    >
+                      {t("agentCard.openProfile", "Profile")}
+                    </button>
+                    <span className="contact-web-content__sep" aria-hidden="true">
+                      ·
+                    </span>
+                    <button
+                      type="button"
+                      className="contact-web-content__link"
+                      onClick={() => onOpenUrl(webContentUrl(peer.ownerId, "blog"))}
+                    >
+                      {t("agentCard.openBlog", "Blog")}
+                    </button>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         ) : null}
       </section>
-
-      {ownerId ? (
-        <MySitePanel ownerId={ownerId} onOpenUrl={onOpenUrl} onCreate={onCreate} />
-      ) : null}
     </div>
   );
 }
@@ -316,8 +383,8 @@ function BazaarIconRefresh({ spinning }: { spinning: boolean }) {
   return (
     <svg
       viewBox="0 0 24 24"
-      width="15"
-      height="15"
+      width="16"
+      height="16"
       fill="none"
       stroke="currentColor"
       strokeWidth={2}
@@ -327,25 +394,6 @@ function BazaarIconRefresh({ spinning }: { spinning: boolean }) {
       style={spinning ? { animation: "browser-spin 0.7s linear infinite" } : undefined}
     >
       <path d="M20 12a8 8 0 1 1-2.2-5.5M20 4v5h-5" />
-    </svg>
-  );
-}
-
-function BazaarIconSearch() {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      width="15"
-      height="15"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      <circle cx="11" cy="11" r="7" />
-      <path d="M21 21l-4.3-4.3" />
     </svg>
   );
 }

@@ -10,7 +10,7 @@ export const frErrorBoundaryMessages = {
 export const frProfileMessages = {
   sectionsLabel: "Sections du profil",
   photos: "Photos",
-  about: "À propos",
+  about: "Profil",
 } as const;
 
 export const frDiscoverCardsMessages = {
@@ -324,7 +324,7 @@ export const frProfilePhotosMessages = {
   thumbnailHint: "La miniature est toujours publique. Glissez pour ajuster le recadrage lors du téléversement.",
   gallery: "Galerie",
   addPhotoBtn: "Ajouter une photo",
-  galleryHint: "Les métadonnées de la galerie sont synchronisées avec les contacts liés (visibilité ci-dessous). Découvrir n'affiche que votre miniature publique — partagez une photo pour envoyer les octets complets.",
+  galleryHint: "Les photos de la galerie apparaissent aussi sur votre PhotoWall. Les métadonnées sont synchronisées avec les contacts liés (visibilité ci-dessous). Découvrir n'affiche que votre miniature publique — partagez une photo pour envoyer les octets complets.",
   visibilityEveryone: "Tout le monde sur le maillage",
   visibilityReferred: "Contacts présentés",
   visibilityDirect: "Mes contacts uniquement",

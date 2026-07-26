@@ -8,14 +8,31 @@ import { join } from "node:path";
 import {
   ensureDefaultWebSite,
   listWebContentSections,
+  listFeedPosts,
+  listBlogPosts,
+  deleteWebContentEntry,
   publishWebContentEntry,
+  publishProfilePortal,
   slugifyTitle,
 } from "../src/web-content-author.js";
-import { createWebContentStore } from "../src/web-content-store.js";
+import {
+  createWebContentStore,
+  resolveWebContentIndexCandidates,
+  resolveWebContentPath,
+} from "../src/web-content-store.js";
 
 describe("slugifyTitle", () => {
   it("slugifies blog titles", () => {
     expect(slugifyTitle("My First Post")).toBe("my-first-post");
+  });
+});
+
+describe("resolveWebContentPath", () => {
+  it("prefers index.html for directory indexes", () => {
+    expect(resolveWebContentPath("")).toBe("index.html");
+    expect(resolveWebContentPath("/")).toBe("index.html");
+    expect(resolveWebContentIndexCandidates("")).toEqual(["index.html", "index.md"]);
+    expect(resolveWebContentPath("blog/")).toBe("blog/index.html");
   });
 });
 
@@ -106,11 +123,12 @@ describe("ensureDefaultWebSite", () => {
     expect(first.created).toEqual(["profile", "blog", "photowall"]);
     expect(first.urls.profile).toBe(`envoy://${ownerId}/`);
     expect(first.urls.blog).toBe(`envoy://${ownerId}/blog/`);
-    expect(first.urls.photowall).toBe(`envoy://${ownerId}/photos/`);
+    expect(first.urls.photowall).toBe(`envoy://${ownerId}/photos/wall/`);
 
-    const profileBody = await readFile(join(profileDir, "web", "index.md"), "utf8");
-    expect(profileBody).toContain("# Alice");
-    expect(profileBody).toContain("Welcome to my EnvoyMesh site");
+    const profileBody = await readFile(join(profileDir, "web", "index.html"), "utf8");
+    expect(profileBody).toContain("em-profile-portal");
+    expect(profileBody).toContain("Alice");
+    expect(profileBody).not.toContain(">Blog<");
 
     const blogBody = await readFile(join(profileDir, "web", "blog/index.md"), "utf8");
     expect(blogBody).toContain("_No posts yet._");
@@ -121,7 +139,8 @@ describe("ensureDefaultWebSite", () => {
     expect(wallBody).toContain("_No photos yet._");
 
     const store = createWebContentStore(join(profileDir, "web"));
-    expect((await store.findByPath("index.md"))?.visibility).toBe("bonded");
+    expect((await store.findByPath("index.html"))?.visibility).toBe("bonded");
+    expect((await store.findByPath("index.html"))?.mimeType).toBe("text/html");
     expect((await store.findByPath("blog/index.md"))?.kind).toBe("article");
     expect((await store.findByPath("photos/wall/index.md"))?.kind).toBe("gallery");
 
@@ -130,9 +149,49 @@ describe("ensureDefaultWebSite", () => {
       displayName: "Alice Changed",
     });
     expect(second.created).toEqual([]);
-    const unchanged = await readFile(join(profileDir, "web", "index.md"), "utf8");
-    expect(unchanged).toContain("# Alice");
+    const unchanged = await readFile(join(profileDir, "web", "index.html"), "utf8");
+    expect(unchanged).toContain("Alice");
     expect(unchanged).not.toContain("Alice Changed");
+  });
+
+  it("publishProfilePortal writes index.html with photos and drops index.md", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-web-portal-"));
+    const ownerId = "envoy:owner:alice";
+    await ensureDefaultWebSite(profileDir, { ownerId, displayName: "Alice" });
+
+    await publishWebContentEntry(profileDir, {
+      template: "photo",
+      title: "Trip",
+      visibility: "public",
+      ownerId,
+      contentBase64: PNG_1X1,
+      mimeType: "image/png",
+      fileName: "trip.png",
+      gallery: "wall",
+      stablePath: "photos/wall/gallery-trip1.png",
+    });
+
+    const result = await publishProfilePortal(profileDir, {
+      ownerId,
+      displayName: "Alice",
+      username: "alice",
+      bio: "Hello",
+      photos: [{ photoId: "trip1", title: "Trip", mimeType: "image/png" }],
+      avatarBase64: PNG_1X1,
+      avatarMimeType: "image/png",
+      visibility: "public",
+    });
+
+    expect(result.path).toBe("index.html");
+    const html = await readFile(join(profileDir, "web", "index.html"), "utf8");
+    expect(html).toContain("em-profile-portal");
+    expect(html).toContain("Alice");
+    expect(html).toContain("envoy://envoy:owner:alice/photos/wall/gallery-trip1.png");
+    expect(html).toContain("envoy://envoy:owner:alice/avatar.png");
+
+    const store = createWebContentStore(join(profileDir, "web"));
+    expect(await store.findByPath("index.md")).toBeUndefined();
+    expect((await store.findByPath("index.html"))?.mimeType).toBe("text/html");
   });
 });
 
@@ -215,8 +274,9 @@ describe("publishWebContentEntry", () => {
       join(profileDir, "web", "photos/wall/index.md"),
       "utf8",
     );
-    expect(galleryIndex).toContain("PhotoWall — wall");
+    expect(galleryIndex).toContain("Photos");
     expect(galleryIndex).toContain(`envoy://${ownerId}/photos/wall/pixel.png`);
+    expect(galleryIndex).not.toContain("PhotoWall — wall");
 
     const rootIndex = await readFile(join(profileDir, "web", "photos/index.md"), "utf8");
     expect(rootIndex).toContain("[wall]");
@@ -225,6 +285,33 @@ describe("publishWebContentEntry", () => {
     const photo = await store.findByPath("photos/wall/pixel.png");
     expect(photo?.kind).toBe("photo");
     expect(photo?.mimeType).toBe("image/png");
+  });
+
+  it("strips JPEG EXIF metadata on photo publish", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-web-photo-exif-"));
+    const ownerId = "envoy:owner:alice";
+    const exifPayload = new Uint8Array([0x45, 0x78, 0x69, 0x66, 0x00, 0x00]);
+    const appLen = exifPayload.length + 2;
+    const jpegWithExif = new Uint8Array([
+      0xff, 0xd8,
+      0xff, 0xe1, (appLen >> 8) & 0xff, appLen & 0xff, ...exifPayload,
+      0xff, 0xd9,
+    ]);
+    const result = await publishWebContentEntry(profileDir, {
+      template: "photo",
+      title: "Stripped",
+      visibility: "public",
+      ownerId,
+      contentBase64: Buffer.from(jpegWithExif).toString("base64"),
+      mimeType: "image/jpeg",
+      fileName: "stripped.jpg",
+      gallery: "wall",
+    });
+    const onDisk = await readFile(join(profileDir, "web", result.path));
+    expect(onDisk[0]).toBe(0xff);
+    expect(onDisk[1]).toBe(0xd8);
+    expect(onDisk.equals(Buffer.from([0xff, 0xd8, 0xff, 0xd9]))).toBe(true);
+    expect(onDisk.byteLength).toBeLessThan(jpegWithExif.byteLength);
   });
 
   it("publishes a file under files/", async () => {
@@ -245,5 +332,150 @@ describe("publishWebContentEntry", () => {
     const entry = await store.findByPath("files/notes-pdf.pdf");
     expect(entry?.kind).toBe("file");
     expect(entry?.mimeType).toBe("application/pdf");
+  });
+});
+
+describe("publishWebContentEntry feed-post", () => {
+  it("publishes text + images under feeds/ with kind feed", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-web-feed-"));
+    const ownerId = "envoy:owner:alice";
+    const result = await publishWebContentEntry(profileDir, {
+      template: "feed-post",
+      title: "Hello circle",
+      body: "Dinner with bonded friends",
+      visibility: "bonded",
+      ownerId,
+      images: [
+        {
+          contentBase64: PNG_1X1,
+          mimeType: "image/png",
+          fileName: "a.png",
+        },
+      ],
+    });
+    expect(result.path.startsWith("feeds/")).toBe(true);
+    expect(result.path.endsWith(".md")).toBe(true);
+    expect(result.visibility).toBe("bonded");
+    expect(result.listingUrl).toBe(`envoy://${ownerId}/feeds/`);
+
+    const store = createWebContentStore(join(profileDir, "web"));
+    const entry = await store.findByPath(result.path);
+    expect(entry?.kind).toBe("feed");
+    expect(entry?.mimeType).toBe("text/markdown");
+
+    const md = await readFile(join(profileDir, "web", result.path), "utf8");
+    expect(md).toContain("Dinner with bonded friends");
+    expect(md).toContain(`envoy://${ownerId}/feeds/media/`);
+  });
+
+  it("rejects public visibility and more than 9 images", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-web-feed-bad-"));
+    const ownerId = "envoy:owner:alice";
+    await expect(
+      publishWebContentEntry(profileDir, {
+        template: "feed-post",
+        title: "Nope",
+        body: "x",
+        visibility: "public",
+        ownerId,
+      }),
+    ).rejects.toThrow(/cannot be public/);
+
+    const images = Array.from({ length: 10 }, () => ({
+      contentBase64: PNG_1X1,
+      mimeType: "image/png",
+      fileName: "x.png",
+    }));
+    await expect(
+      publishWebContentEntry(profileDir, {
+        template: "feed-post",
+        title: "Too many",
+        body: "x",
+        visibility: "bonded",
+        ownerId,
+        images,
+      }),
+    ).rejects.toThrow(/at most 9/);
+  });
+
+  it("listBlogPosts returns newest first", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-web-blog-list-"));
+    const ownerId = "envoy:owner:alice";
+    const a = await publishWebContentEntry(profileDir, {
+      template: "blog-post",
+      title: `Alpha-${Date.now()}`,
+      body: "one",
+      visibility: "bonded",
+      ownerId,
+    });
+    await new Promise((r) => setTimeout(r, 5));
+    const b = await publishWebContentEntry(profileDir, {
+      template: "blog-post",
+      title: `Beta-${Date.now()}`,
+      body: "two",
+      visibility: "bonded",
+      ownerId,
+    });
+    const posts = await listBlogPosts(profileDir, ownerId);
+    const mine = posts.filter((p) => p.path === a.path || p.path === b.path);
+    expect(mine.map((p) => p.path)).toEqual([b.path, a.path]);
+  });
+
+  it("listFeedPosts returns newest first", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-web-feed-list-"));
+    const ownerId = "envoy:owner:alice";
+    const a = await publishWebContentEntry(profileDir, {
+      template: "feed-post",
+      title: `Alpha-${Date.now()}`,
+      body: "one",
+      visibility: "bonded",
+      ownerId,
+    });
+    await new Promise((r) => setTimeout(r, 5));
+    const b = await publishWebContentEntry(profileDir, {
+      template: "feed-post",
+      title: `Beta-${Date.now()}`,
+      body: "two",
+      visibility: "bonded",
+      ownerId,
+    });
+    const posts = await listFeedPosts(profileDir, ownerId);
+    const mine = posts.filter((p) => p.path === a.path || p.path === b.path);
+    expect(mine.map((p) => p.path)).toEqual([b.path, a.path]);
+  });
+
+  it("deleteWebContentEntry removes feed post markdown and media", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-web-feed-del-"));
+    const ownerId = "envoy:owner:alice";
+    const result = await publishWebContentEntry(profileDir, {
+      template: "feed-post",
+      title: "Temp",
+      body: "delete me",
+      visibility: "bonded",
+      ownerId,
+      images: [{ contentBase64: PNG_1X1, mimeType: "image/png", fileName: "a.png" }],
+    });
+    const del = await deleteWebContentEntry(profileDir, { path: result.path });
+    expect(del.deleted).toBe(true);
+    const store = createWebContentStore(join(profileDir, "web"));
+    expect(await store.findByPath(result.path)).toBeUndefined();
+    const posts = await listFeedPosts(profileDir, ownerId);
+    expect(posts.some((p) => p.path === result.path)).toBe(false);
+  });
+
+  it("stores contactIds when visibility is contacts", async () => {
+    const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-web-feed-acl-"));
+    const ownerId = "envoy:owner:alice";
+    const result = await publishWebContentEntry(profileDir, {
+      template: "feed-post",
+      title: "Private circle",
+      body: "only bob",
+      visibility: "contacts",
+      contactIds: ["envoy:owner:bob"],
+      ownerId,
+    });
+    const store = createWebContentStore(join(profileDir, "web"));
+    const entry = await store.findByPath(result.path);
+    expect(entry?.contactIds).toEqual(["envoy:owner:bob"]);
   });
 });

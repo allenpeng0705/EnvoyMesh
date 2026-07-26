@@ -9,6 +9,7 @@ import '../../widgets/connection_indicator.dart';
 import '../browser/browser_screen.dart';
 import '../chains/active_chains_screen.dart';
 import '../chains/recent_chains_screen.dart';
+import '../content/content_author_screen.dart';
 import '../pairing/pairing_scan_screen.dart';
 import '../settings/ai_engine_settings_screen.dart';
 import '../settings/ai_model_settings_screen.dart';
@@ -48,7 +49,50 @@ class MeScreen extends ConsumerWidget {
             textAlign: TextAlign.center,
           ),
         ],
-        const SizedBox(height: 32),
+        const SizedBox(height: 24),
+        const _SectionHeader(title: 'Profile'),
+        Card(
+          child: Column(
+            children: [
+              ListTile(
+                leading: const Icon(Icons.badge_outlined),
+                title: const Text('Edit profile'),
+                subtitle: const Text('Name, bio (AI draft), discovery'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: nodeState.activeNode == null
+                    ? null
+                    : () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const ContentAuthorScreen(
+                              initialTemplate: 'profile',
+                            ),
+                          ),
+                        );
+                      },
+              ),
+              const Divider(height: 1),
+              ListTile(
+                leading: const Icon(Icons.photo_library_outlined),
+                title: const Text('Photos'),
+                subtitle: const Text('Add a PhotoWall photo'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: nodeState.activeNode == null
+                    ? null
+                    : () {
+                        Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => const ContentAuthorScreen(
+                              initialTemplate: 'photo',
+                            ),
+                          ),
+                        );
+                      },
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 24),
 
         // Connected node
         const _SectionHeader(title: 'Connected Node'),
@@ -221,7 +265,7 @@ class MeScreen extends ConsumerWidget {
         ],
         const SizedBox(height: 16),
 
-        // Browser (Phase 45C — mesh web content via home libraryRead).
+        // Browser (Phase 45C — also available under Content tab).
         if (nodeState.activeNode != null) ...[
           const _SectionHeader(title: 'Browser'),
           Card(
@@ -229,7 +273,7 @@ class MeScreen extends ConsumerWidget {
               leading: const Icon(Icons.language),
               title: const Text('Browser'),
               subtitle: const Text(
-                'Open envoy:// pages served by bonded contacts (via home)',
+                'Open envoy:// pages — or use the Content tab for My Site',
               ),
               trailing: const Icon(Icons.chevron_right),
               onTap: () {

@@ -96,6 +96,8 @@ export const EnvoyIntentSchema = z.enum([
   "library.read.response",
   // Phase 45E — bonded fan-out notify on publish (no GossipSub).
   "feed.notify",
+  // Feed/Blog star + comments (bonded human↔human).
+  "feed.engage",
 ]);
 
 export const SensitivitySchema = z.enum(["public", "friends", "trusted", "private"]);
@@ -890,7 +892,7 @@ export const FeedNotifyPayloadSchema = z.object({
   title: z.string().min(1).max(500),
   /** Absolute envoy:// URL for the published item. */
   url: z.string().min(1).max(2048),
-  kind: z.enum(["article", "note", "photo", "gallery", "file", "profile", "section"]),
+  kind: z.enum(["article", "note", "photo", "gallery", "file", "profile", "section", "feed"]),
   visibility: z.enum(["public", "bonded", "contacts", "private"]),
   summary: z.string().max(2000).optional(),
   /** Free-form tags; used for interest-overlap filtering (45E Slice B). */
@@ -898,6 +900,34 @@ export const FeedNotifyPayloadSchema = z.object({
   contentHash: z.string().min(1).max(128).optional(),
   /** Optional listing/index URL (blog index, photo wall). */
   listingUrl: z.string().min(1).max(2048).optional(),
+});
+
+/**
+ * Feed/Blog engagement — star toggle, comment, or snapshot pull.
+ * Author node is source of truth; readers pull via action `get`.
+ */
+export const FeedEngagePayloadSchema = z.object({
+  url: z.string().min(1).max(2048),
+  action: z.enum(["star", "unstar", "comment", "uncomment", "get", "snapshot"]),
+  /** Required for action `comment`. */
+  text: z.string().min(1).max(280).optional(),
+  /** Required for action `uncomment`. */
+  commentId: z.string().min(1).max(128).optional(),
+  /** Actor owner id (must match verified sender for mutating actions). */
+  actorOwnerId: z.string().min(1).optional(),
+  /** Snapshot fields (action `snapshot`). */
+  starOwnerIds: z.array(z.string().min(1)).max(500).optional(),
+  comments: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        authorOwnerId: z.string().min(1),
+        text: z.string().min(1).max(280),
+        createdAt: z.string().min(1),
+      }),
+    )
+    .max(100)
+    .optional(),
 });
 
 /**
@@ -1176,7 +1206,7 @@ export const LibraryFileMatchSchema = z.object({
   cid: z.string().min(1).max(LIBRARY_FILE_MATCH_CID_MAX_LENGTH).optional(),
   // Phase 45 — Web Content Browsing extensions (additive, backward compatible).
   /** Templated site type for UI rendering hints. */
-  kind: z.enum(["article", "note", "photo", "gallery", "file", "profile", "section"]).optional(),
+  kind: z.enum(["article", "note", "photo", "gallery", "file", "profile", "section", "feed"]).optional(),
   /** MIME type of the matched content (e.g. "text/markdown", "image/jpeg"). */
   mimeType: z.string().optional(),
   /** Short excerpt for listing displays. */
@@ -2106,6 +2136,7 @@ export type LibraryReadPayload = z.infer<typeof LibraryReadPayloadSchema>;
 export type LibraryReadResponseStatus = z.infer<typeof LibraryReadResponseStatusSchema>;
 export type LibraryReadResponsePayload = z.infer<typeof LibraryReadResponsePayloadSchema>;
 export type FeedNotifyPayload = z.infer<typeof FeedNotifyPayloadSchema>;
+export type FeedEngagePayload = z.infer<typeof FeedEngagePayloadSchema>;
 export type BondRequestedLevel = z.infer<typeof BondRequestedLevelSchema>;
 export type BondRequestPayload = z.infer<typeof BondRequestPayloadSchema>;
 export type BondChallengePayload = z.infer<typeof BondChallengePayloadSchema>;
@@ -2559,6 +2590,10 @@ export function parseFeedNotifyPayload(input: unknown): FeedNotifyPayload {
   return FeedNotifyPayloadSchema.parse(input);
 }
 
+export function parseFeedEngagePayload(input: unknown): FeedEngagePayload {
+  return FeedEngagePayloadSchema.parse(input);
+}
+
 export function parseShareRequestPayload(input: unknown): ShareRequestPayload {
   return ShareRequestPayloadSchema.parse(input);
 }
@@ -2972,6 +3007,28 @@ export function createFeedNotifyPayload(input: CreateFeedNotifyPayloadInput): Fe
     tags: input.tags,
     contentHash: input.contentHash,
     listingUrl: input.listingUrl,
+  });
+}
+
+export interface CreateFeedEngagePayloadInput {
+  url: string;
+  action: FeedEngagePayload["action"];
+  text?: string;
+  commentId?: string;
+  actorOwnerId?: string;
+  starOwnerIds?: string[];
+  comments?: FeedEngagePayload["comments"];
+}
+
+export function createFeedEngagePayload(input: CreateFeedEngagePayloadInput): FeedEngagePayload {
+  return FeedEngagePayloadSchema.parse({
+    url: input.url,
+    action: input.action,
+    text: input.text,
+    commentId: input.commentId,
+    actorOwnerId: input.actorOwnerId,
+    starOwnerIds: input.starOwnerIds,
+    comments: input.comments,
   });
 }
 

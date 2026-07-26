@@ -18,13 +18,13 @@ import {
 import { evaluatePolicy, checkPublicKnowledgeRateLimit } from "@envoymesh/bonds";
 import { assertPathInsideVault } from "@envoymesh/vault";
 import { ZodError } from "zod";
-import { readFile, stat, realpath } from "node:fs/promises";
+import { readFile, stat, realpath, access } from "node:fs/promises";
 import { join, resolve as resolvePath } from "node:path";
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
 import {
   createWebContentStore,
-  resolveWebContentPath,
+  resolveWebContentIndexCandidates,
   visibilityToSensitivity,
   DEFAULT_VISIBILITY,
   type WebContentStore,
@@ -208,11 +208,34 @@ export async function handleInboundLibraryRead(
   }
 
   // 5. Resolve the path's visibility from the manifest.
-  //    Empty path / trailing slash → index.md (Phase 45A directory index).
+  //    Empty path / trailing slash → index.html, then index.md.
   const webDir = join(profileDir, "web");
   const store = webContentStore ?? createWebContentStore(webDir);
-  const normalizedPath = resolveWebContentPath(payload.path);
-  const entry = await store.findByPath(normalizedPath);
+  const candidates = resolveWebContentIndexCandidates(payload.path);
+  let normalizedPath = candidates[0]!;
+  let entry = await store.findByPath(normalizedPath);
+  for (const candidate of candidates) {
+    const found = await store.findByPath(candidate);
+    if (found) {
+      normalizedPath = candidate;
+      entry = found;
+      break;
+    }
+  }
+  // Prefer on-disk index.html when the manifest still points at a stale index.md.
+  if (candidates.length > 1) {
+    for (const candidate of candidates) {
+      try {
+        await access(join(webDir, candidate));
+        const found = await store.findByPath(candidate);
+        normalizedPath = candidate;
+        if (found) entry = found;
+        break;
+      } catch {
+        /* try next */
+      }
+    }
+  }
   const visibility = entry?.visibility ?? DEFAULT_VISIBILITY;
 
   // 6. Map visibility to sensitivity and evaluate bond policy.

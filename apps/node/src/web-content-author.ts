@@ -8,16 +8,25 @@
  */
 
 import { createHash } from "node:crypto";
-import { access, mkdir, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, rm, unlink, writeFile } from "node:fs/promises";
 import { dirname, extname, join } from "node:path";
 
 import {
   buildBlogIndexMarkdown as buildBlogIndexMarkdownShared,
-  buildDefaultProfileMarkdown,
   buildPhotoWallMarkdown as buildPhotoWallMarkdownShared,
   buildPhotosRootMarkdown as buildPhotosRootMarkdownShared,
+  buildProfilePortalHtml,
+  DEFAULT_PHOTO_GALLERY,
+  MAX_IMAGE_INPUT_BYTES,
+  photoWallCanonicalPath,
+  photoWallPageTitle,
+  PROFILE_PHOTO_MIME_TYPES,
+  stripImageMetadata,
+  type ProfilePhotoMime,
+  type ProfilePortalPhoto,
 } from "@envoymesh/api";
 
+import { fitImageToMaxBytes } from "./image-fit.js";
 import {
   createWebContentStore,
   normalizeWebPath,
@@ -32,7 +41,14 @@ export type PublishWebContentTemplate =
   | "profile"
   | "photo"
   | "file"
-  | "section";
+  | "section"
+  | "feed-post";
+
+export interface PublishWebContentImage {
+  contentBase64: string;
+  mimeType: string;
+  fileName?: string;
+}
 
 export interface PublishWebContentParams {
   template: PublishWebContentTemplate;
@@ -52,11 +68,21 @@ export interface PublishWebContentParams {
   fileName?: string;
   /** PhotoWall gallery folder (default `wall`). */
   gallery?: string;
+  /**
+   * When set, write/overwrite this relative path under `web/` instead of
+   * allocating a unique slug (profile gallery → PhotoWall mirror).
+   */
+  stablePath?: string;
   /** Custom section path slug (defaults to slugified title). */
   sectionSlug?: string;
   /** Auto-tag section slug for `publish:<slug>` discovery (default true). */
   advertiseTopic?: boolean;
+  /** Feed posts — up to MAX_FEED_POST_IMAGES images. */
+  images?: PublishWebContentImage[];
 }
+
+/** Max images per Feed post (WeChat Moments-style). */
+export const MAX_FEED_POST_IMAGES = 9;
 
 /** Paths reserved for built-in site surfaces — custom sections cannot use these. */
 export const RESERVED_WEB_SECTION_SLUGS = new Set([
@@ -95,8 +121,15 @@ export interface PublishWebContentResult {
   tags?: string[];
 }
 
-/** Soft cap for in-app uploads (local write; mesh reads still chunk via 45B). */
+/** Soft storage target for published photos/files after auto-resize. */
 export const MAX_AUTHOR_UPLOAD_BYTES = 2 * 1024 * 1024;
+
+/** Stable PhotoWall path for a mirrored profile gallery photo. */
+export function galleryPhotoWallStablePath(photoId: string, ext: string): string {
+  const id = photoId.trim().replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64) || "photo";
+  const cleanExt = ext.replace(/^\./, "").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
+  return normalizeWebPath(`photos/wall/gallery-${id}.${cleanExt}`);
+}
 
 const VISIBILITY_RANK: Record<WebContentVisibility, number> = {
   private: 0,
@@ -188,17 +221,15 @@ function extensionFor(params: {
   return params.fallback;
 }
 
-function decodeBase64Payload(b64: string): Buffer {
+function decodeBase64Payload(b64: string, maxBytes = MAX_IMAGE_INPUT_BYTES): Buffer {
   const trimmed = b64.trim();
   if (!trimmed) throw new Error("publishWebContentEntry: contentBase64 is empty");
   const buf = Buffer.from(trimmed, "base64");
   if (buf.byteLength === 0) {
     throw new Error("publishWebContentEntry: contentBase64 decoded to empty");
   }
-  if (buf.byteLength > MAX_AUTHOR_UPLOAD_BYTES) {
-    throw new Error(
-      `publishWebContentEntry: upload exceeds ${MAX_AUTHOR_UPLOAD_BYTES} bytes`,
-    );
+  if (buf.byteLength > maxBytes) {
+    throw new Error("publishWebContentEntry: upload could not be processed");
   }
   return buf;
 }
@@ -321,7 +352,7 @@ async function regeneratePhotoWall(
     store,
     webDir,
     `${prefix}index.md`,
-    `PhotoWall — ${gallery}`,
+    photoWallPageTitle(gallery),
     galleryMd,
     galleryVisibility,
     now,
@@ -403,6 +434,7 @@ export async function publishWebContentEntry(
   let byteLength: number;
   let summary: string;
   let listingUrl: string | undefined;
+  let publishedAt = now;
 
   let tags = params.tags ? [...params.tags] : [];
   let sectionSlugOut: string | undefined;
@@ -433,7 +465,7 @@ export async function publishWebContentEntry(
       tags = [...tags, sectionSlug];
     }
     await writeWebFile(webDir, relativePath, markdown);
-  } else if (params.template === "blog-post" || params.template === "note" || params.template === "profile") {
+  } else if (params.template === "blog-post" || params.template === "note") {
     const body = params.body ?? "";
     const markdown = `# ${title}\n\n${body.trim()}\n`;
     const meta = sha256Utf8(markdown);
@@ -445,22 +477,104 @@ export async function publishWebContentEntry(
     if (params.template === "blog-post") {
       kind = "article";
       relativePath = await uniquePath(webDir, store, "blog/posts", slug, "md");
-    } else if (params.template === "note") {
+    } else {
       kind = "note";
       relativePath = await uniquePath(webDir, store, "notes", slug, "md");
-    } else {
-      kind = "profile";
-      relativePath = "index.md";
     }
     await writeWebFile(webDir, relativePath, markdown);
+  } else if (params.template === "feed-post") {
+    // Feed / Friend Circle: bonded-by-default Moments-style text + images.
+    // Never public — coerce accidental public to bonded.
+    if (params.visibility === "public") {
+      throw new Error("publishWebContentEntry: feed-post visibility cannot be public (use bonded)");
+    }
+    const body = (params.body ?? "").trim();
+    const images = params.images ?? [];
+    if (images.length > MAX_FEED_POST_IMAGES) {
+      throw new Error(
+        `publishWebContentEntry: feed-post allows at most ${MAX_FEED_POST_IMAGES} images`,
+      );
+    }
+    if (!body && images.length === 0) {
+      throw new Error("publishWebContentEntry: feed-post needs text or at least one image");
+    }
+    // No interest tags — all bonded recipients should see Moments posts.
+    tags = [];
+    kind = "feed";
+    mimeType = "text/markdown";
+    relativePath = await uniquePath(webDir, store, "feeds", slug || `post-${Date.now()}`, "md");
+    const postSlug = relativePath.replace(/^feeds\//, "").replace(/\.md$/, "");
+    const imageLines: string[] = [];
+    const imageUrls: string[] = [];
+    for (let i = 0; i < images.length; i++) {
+      const img = images[i]!;
+      let bytes = decodeBase64Payload(img.contentBase64);
+      let imgMime = (img.mimeType ?? "image/jpeg").trim();
+      if (!imgMime.startsWith("image/")) {
+        throw new Error("publishWebContentEntry: feed-post image mimeType must be image/*");
+      }
+      const fitted = await fitImageToMaxBytes(bytes, imgMime, MAX_AUTHOR_UPLOAD_BYTES);
+      bytes = fitted.bytes;
+      imgMime = fitted.mimeType;
+      const mimeLower = imgMime.toLowerCase();
+      if ((PROFILE_PHOTO_MIME_TYPES as readonly string[]).includes(mimeLower)) {
+        bytes = Buffer.from(
+          stripImageMetadata(new Uint8Array(bytes), mimeLower as ProfilePhotoMime),
+        );
+        if (bytes.byteLength > MAX_AUTHOR_UPLOAD_BYTES) {
+          const again = await fitImageToMaxBytes(bytes, mimeLower, MAX_AUTHOR_UPLOAD_BYTES);
+          bytes = again.bytes;
+          imgMime = again.mimeType;
+        }
+      }
+      const ext = extensionFor({
+        mimeType: imgMime,
+        fileName: img.fileName,
+        fallback: "jpg",
+      });
+      const mediaPath = normalizeWebPath(`feeds/media/${postSlug}/${i}.${ext}`);
+      await writeWebFile(webDir, mediaPath, bytes);
+      const abs = `envoy://${ownerId}/${mediaPath}`;
+      imageUrls.push(abs);
+      imageLines.push(`![photo](${abs})`);
+    }
+    const markdownParts = [`# ${title}`];
+    if (body) markdownParts.push("", body);
+    if (imageLines.length) markdownParts.push("", ...imageLines);
+    markdownParts.push("");
+    const markdown = markdownParts.join("\n");
+    const meta = sha256Utf8(markdown);
+    contentHash = meta.hash;
+    byteLength = meta.byteLength;
+    summary = summaryFromBody(body) || (imageUrls.length ? `${imageUrls.length} photo(s)` : title);
+    await writeWebFile(webDir, relativePath, markdown);
+    listingUrl = `envoy://${ownerId}/feeds/`;
+  } else if (params.template === "profile") {
+    const body = (params.body ?? "").trim();
+    const html =
+      body.includes("em-profile-portal") ||
+      /^<!DOCTYPE\s+html/i.test(body) ||
+      /^<html[\s>]/i.test(body)
+        ? body
+        : buildProfilePortalHtml({
+            displayName: title,
+            ownerId,
+            bio: body || undefined,
+          });
+    const meta = sha256Utf8(html);
+    contentHash = meta.hash;
+    byteLength = meta.byteLength;
+    summary = summaryFromBody(body.replace(/<[^>]+>/g, " ")) || title;
+    mimeType = "text/html";
+    kind = "profile";
+    relativePath = "index.html";
+    await writeWebFile(webDir, relativePath, html);
+    await removeStaleProfileMarkdown(store, webDir);
   } else if (params.template === "photo" || params.template === "file") {
     if (!params.contentBase64) {
       throw new Error(`publishWebContentEntry: contentBase64 required for ${params.template}`);
     }
-    const bytes = decodeBase64Payload(params.contentBase64);
-    const meta = sha256Bytes(bytes);
-    contentHash = meta.hash;
-    byteLength = meta.byteLength;
+    let bytes = decodeBase64Payload(params.contentBase64);
     mimeType = (params.mimeType ?? "application/octet-stream").trim();
     summary =
       params.template === "photo" && params.body?.trim()
@@ -472,11 +586,52 @@ export async function publishWebContentEntry(
       if (!mimeType.startsWith("image/")) {
         throw new Error("publishWebContentEntry: photo mimeType must be image/*");
       }
+      const fitted = await fitImageToMaxBytes(bytes, mimeType, MAX_AUTHOR_UPLOAD_BYTES);
+      bytes = fitted.bytes;
+      mimeType = fitted.mimeType;
+      const mimeLower = mimeType.toLowerCase();
+      if ((PROFILE_PHOTO_MIME_TYPES as readonly string[]).includes(mimeLower)) {
+        bytes = Buffer.from(
+          stripImageMetadata(new Uint8Array(bytes), mimeLower as ProfilePhotoMime),
+        );
+        if (bytes.byteLength > MAX_AUTHOR_UPLOAD_BYTES) {
+          const again = await fitImageToMaxBytes(bytes, mimeLower, MAX_AUTHOR_UPLOAD_BYTES);
+          bytes = again.bytes;
+          mimeType = again.mimeType;
+        }
+      }
+      const meta = sha256Bytes(bytes);
+      contentHash = meta.hash;
+      byteLength = meta.byteLength;
       const gallery = slugifyTitle(params.gallery?.trim() || "wall") || "wall";
       const ext = extensionFor({ mimeType, fileName: params.fileName, fallback: "jpg" });
-      relativePath = await uniquePath(webDir, store, `photos/${gallery}`, slug, ext);
+      if (params.stablePath?.trim()) {
+        relativePath = normalizeWebPath(params.stablePath.trim());
+        if (!relativePath.startsWith("photos/")) {
+          throw new Error("publishWebContentEntry: stablePath must be under photos/");
+        }
+        const existing = await store.findByPath(relativePath);
+        if (existing?.publishedAt) publishedAt = existing.publishedAt;
+        // Drop sibling extensions for the same gallery-* stem (mime may change).
+        const stem = relativePath.replace(/\.[^.]+$/, "");
+        for (const e of await store.list({ kind: "photo" })) {
+          if (e.path === relativePath) continue;
+          if (e.path.replace(/\.[^.]+$/, "") === stem) {
+            await store.remove(e.path);
+            await unlink(join(webDir, e.path)).catch(() => undefined);
+          }
+        }
+      } else {
+        relativePath = await uniquePath(webDir, store, `photos/${gallery}`, slug, ext);
+      }
       await writeWebFile(webDir, relativePath, bytes);
     } else {
+      if (bytes.byteLength > MAX_AUTHOR_UPLOAD_BYTES) {
+        throw new Error("publishWebContentEntry: upload could not be processed");
+      }
+      const meta = sha256Bytes(bytes);
+      contentHash = meta.hash;
+      byteLength = meta.byteLength;
       kind = "file";
       const ext = extensionFor({ mimeType, fileName: params.fileName, fallback: "bin" });
       relativePath = await uniquePath(webDir, store, "files", slug, ext);
@@ -496,7 +651,7 @@ export async function publishWebContentEntry(
     mimeType,
     visibility: params.visibility,
     updatedAt: now,
-    publishedAt: now,
+    publishedAt,
     urlSlug: sectionSlugOut ?? slug,
     ...(params.visibility === "contacts" && params.contactIds?.length
       ? { contactIds: [...params.contactIds] }
@@ -514,6 +669,8 @@ export async function publishWebContentEntry(
     listingUrl = `envoy://${ownerId}/${sectionSlugOut}/`;
   } else if (params.template === "profile") {
     listingUrl = `envoy://${ownerId}`;
+  } else if (params.template === "feed-post") {
+    listingUrl = listingUrl ?? `envoy://${ownerId}/feeds/`;
   }
 
   return {
@@ -523,7 +680,7 @@ export async function publishWebContentEntry(
     byteLength,
     title,
     visibility: params.visibility,
-    publishedAt: now,
+    publishedAt,
     url:
       params.template === "section" && sectionSlugOut
         ? `envoy://${ownerId}/${sectionSlugOut}/`
@@ -552,6 +709,145 @@ export interface EnsureDefaultWebSiteResult {
   };
 }
 
+async function removeStaleProfileMarkdown(
+  store: ReturnType<typeof createWebContentStore>,
+  webDir: string,
+): Promise<void> {
+  await store.remove("index.md");
+  await unlink(join(webDir, "index.md")).catch(() => undefined);
+}
+
+export interface PublishProfilePortalParams {
+  ownerId: string;
+  displayName: string;
+  username?: string;
+  bio?: string;
+  hobbies?: string[];
+  knowledge?: string[];
+  capabilities?: Array<{ tag?: string; type?: string; descriptor?: string }>;
+  /** Gallery photos already mirrored (or about to be) on PhotoWall. */
+  photos?: Array<{ photoId: string; title?: string; mimeType: string }>;
+  avatarBase64?: string;
+  avatarMimeType?: string;
+  visibility?: WebContentVisibility;
+}
+
+/**
+ * Write `web/index.html` portal (+ optional `avatar.*`) from the signed human profile.
+ * Removes stale `index.md` so `/` serves the HTML portal.
+ */
+export async function publishProfilePortal(
+  profileDir: string,
+  params: PublishProfilePortalParams,
+): Promise<PublishWebContentResult> {
+  const ownerId = params.ownerId.trim();
+  if (!ownerId.startsWith("envoy:owner:")) {
+    throw new Error("publishProfilePortal: ownerId must be envoy:owner:…");
+  }
+  const visibility = params.visibility ?? "bonded";
+  const displayName = params.displayName.trim() || "Me";
+  const webDir = join(profileDir, "web");
+  await mkdir(webDir, { recursive: true });
+  const store = createWebContentStore(webDir);
+  await store.reload();
+  const now = new Date().toISOString();
+
+  let avatarUrl: string | undefined;
+  if (params.avatarBase64?.trim()) {
+    let bytes = decodeBase64Payload(params.avatarBase64);
+    let mimeType = (params.avatarMimeType ?? "image/jpeg").trim().toLowerCase();
+    if (!(PROFILE_PHOTO_MIME_TYPES as readonly string[]).includes(mimeType)) {
+      mimeType = "image/jpeg";
+    }
+    const fitted = await fitImageToMaxBytes(bytes, mimeType, MAX_AUTHOR_UPLOAD_BYTES);
+    bytes = fitted.bytes;
+    mimeType = fitted.mimeType;
+    if ((PROFILE_PHOTO_MIME_TYPES as readonly string[]).includes(mimeType.toLowerCase())) {
+      bytes = Buffer.from(
+        stripImageMetadata(new Uint8Array(bytes), mimeType.toLowerCase() as ProfilePhotoMime),
+      );
+    }
+    const ext =
+      mimeType === "image/png" ? "png" : mimeType === "image/webp" ? "webp" : "jpg";
+    const avatarPath = `avatar.${ext}`;
+    // Drop sibling avatar extensions.
+    for (const sibling of ["avatar.jpg", "avatar.jpeg", "avatar.png", "avatar.webp"]) {
+      if (sibling === avatarPath) continue;
+      await store.remove(sibling);
+      await unlink(join(webDir, sibling)).catch(() => undefined);
+    }
+    const meta = sha256Bytes(bytes);
+    await writeWebFile(webDir, avatarPath, bytes);
+    await store.upsert({
+      path: avatarPath,
+      contentHash: meta.hash,
+      byteLength: meta.byteLength,
+      title: "Avatar",
+      summary: "Profile avatar",
+      kind: "photo",
+      mimeType,
+      visibility: "public",
+      updatedAt: now,
+      publishedAt: now,
+    });
+    avatarUrl = `envoy://${ownerId}/${avatarPath}`;
+  } else {
+    for (const candidate of ["avatar.jpg", "avatar.jpeg", "avatar.png", "avatar.webp"]) {
+      if (await store.findByPath(candidate)) {
+        avatarUrl = `envoy://${ownerId}/${candidate}`;
+        break;
+      }
+    }
+  }
+
+  const photos: ProfilePortalPhoto[] = (params.photos ?? []).map((p) => {
+    const ext =
+      p.mimeType === "image/png" ? "png" : p.mimeType === "image/webp" ? "webp" : "jpg";
+    const path = galleryPhotoWallStablePath(p.photoId, ext);
+    return {
+      title: p.title?.trim() || p.photoId,
+      url: `envoy://${ownerId}/${path}`,
+    };
+  });
+
+  // If the caller omitted photos (e.g. seed / stale republish), use PhotoWall mirrors.
+  if (photos.length === 0) {
+    const wall = (await store.list({ kind: "photo" })).filter(
+      (e) =>
+        e.path.startsWith("photos/wall/") &&
+        !e.path.endsWith("/index.md") &&
+        e.path !== "photos/wall/index.md" &&
+        /\/gallery-/.test(e.path),
+    );
+    for (const e of wall) {
+      photos.push({
+        title: e.title || e.path.split("/").pop() || "Photo",
+        url: `envoy://${ownerId}/${e.path}`,
+      });
+    }
+  }
+
+  const html = buildProfilePortalHtml({
+    ownerId,
+    displayName,
+    username: params.username,
+    bio: params.bio,
+    hobbies: params.hobbies,
+    knowledge: params.knowledge,
+    capabilities: params.capabilities,
+    avatarUrl,
+    photos,
+  });
+
+  return publishWebContentEntry(profileDir, {
+    template: "profile",
+    title: displayName,
+    visibility,
+    ownerId,
+    body: html,
+  });
+}
+
 /**
  * Idempotently seed a default mesh site: Profile page + empty Blog + empty PhotoWall.
  * Never overwrites an existing manifest entry / path.
@@ -573,23 +869,26 @@ export async function ensureDefaultWebSite(
   const now = new Date().toISOString();
   const created: EnsureDefaultWebSiteResult["created"] = [];
 
-  if (!(await store.findByPath("index.md"))) {
-    const markdown = buildDefaultProfileMarkdown({ ownerId, displayName });
-    const meta = sha256Utf8(markdown);
-    await writeWebFile(webDir, "index.md", markdown);
+  const hasHtml = await store.findByPath("index.html");
+  const hasMd = await store.findByPath("index.md");
+  if (!hasHtml) {
+    const html = buildProfilePortalHtml({ ownerId, displayName });
+    const meta = sha256Utf8(html);
+    await writeWebFile(webDir, "index.html", html);
     await store.upsert({
-      path: "index.md",
+      path: "index.html",
       contentHash: meta.hash,
       byteLength: meta.byteLength,
       title: displayName,
       summary: "Default Profile page",
       kind: "profile",
-      mimeType: "text/markdown",
+      mimeType: "text/html",
       visibility,
       updatedAt: now,
       publishedAt: now,
       urlSlug: "profile",
     });
+    if (hasMd) await removeStaleProfileMarkdown(store, webDir);
     created.push("profile");
   }
 
@@ -614,8 +913,8 @@ export async function ensureDefaultWebSite(
       store,
       webDir,
       "photos/wall/index.md",
-      "PhotoWall — wall",
-      buildPhotoWallMarkdown(ownerId, "wall", []),
+      photoWallPageTitle(DEFAULT_PHOTO_GALLERY),
+      buildPhotoWallMarkdown(ownerId, DEFAULT_PHOTO_GALLERY, []),
       visibility,
       now,
       "gallery",
@@ -629,7 +928,7 @@ export async function ensureDefaultWebSite(
       webDir,
       "photos/index.md",
       "Photos",
-      buildPhotosRootMarkdown(ownerId, [{ name: "wall", count: 0, visibility }]),
+      buildPhotosRootMarkdown(ownerId, [{ name: DEFAULT_PHOTO_GALLERY, count: 0, visibility }]),
       visibility,
       now,
       "gallery",
@@ -644,7 +943,7 @@ export async function ensureDefaultWebSite(
     urls: {
       profile: `envoy://${ownerId}/`,
       blog: `envoy://${ownerId}/blog/`,
-      photowall: `envoy://${ownerId}/photos/`,
+      photowall: `envoy://${ownerId}/${photoWallCanonicalPath()}`,
     },
   };
 }
@@ -686,4 +985,261 @@ export async function listWebContentSections(
   }
   out.sort((a, b) => a.title.localeCompare(b.title));
   return out;
+}
+
+export interface FeedPostSummary {
+  path: string;
+  url: string;
+  title: string;
+  summary?: string;
+  bodyPreview?: string;
+  publishedAt: string;
+  visibility: WebContentVisibility;
+  imageUrls: string[];
+  publisherOwnerId: string;
+}
+
+/** Extract envoy:// image URLs from Feed markdown. */
+export function extractFeedImageUrls(markdown: string): string[] {
+  const urls: string[] = [];
+  const re = /!\[[^\]]*\]\((envoy:\/\/[^)\s]+)\)/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(markdown)) !== null) {
+    const u = m[1]?.trim();
+    if (u) urls.push(u);
+  }
+  return urls;
+}
+
+export interface DeleteWebContentParams {
+  path: string;
+  /** Required to rebuild `blog/index.md` envoy:// links when deleting a blog post. */
+  ownerId?: string;
+}
+
+export interface DeleteWebContentResult {
+  path: string;
+  deleted: boolean;
+}
+
+/**
+ * Delete a web-content item: remove manifest entry + file.
+ * Feed posts also remove the sidecar media directory `feeds/media/{slug}/`.
+ */
+export async function deleteWebContentEntry(
+  profileDir: string,
+  params: DeleteWebContentParams,
+): Promise<DeleteWebContentResult> {
+  const relativePath = normalizeWebPath(params.path ?? "");
+  if (!relativePath || relativePath.includes("..")) {
+    throw new Error("deleteWebContentEntry: invalid path");
+  }
+  // Refuse deleting site shells / listings by accident.
+  if (
+    relativePath === "index.html" ||
+    relativePath === "index.md" ||
+    relativePath === "blog/index.md" ||
+    relativePath.endsWith("/index.md") ||
+    relativePath.endsWith("/index.html")
+  ) {
+    throw new Error("deleteWebContentEntry: listing/index paths cannot be deleted this way");
+  }
+
+  const webDir = join(profileDir, "web");
+  const store = createWebContentStore(webDir);
+  await store.reload();
+  const existing = await store.findByPath(relativePath);
+  await store.remove(relativePath);
+  await unlink(join(webDir, relativePath)).catch(() => undefined);
+
+  // Feed Moments media lives beside the post markdown.
+  if (
+    (existing?.kind === "feed" || relativePath.startsWith("feeds/")) &&
+    relativePath.endsWith(".md") &&
+    !relativePath.includes("/media/")
+  ) {
+    const postSlug = relativePath.replace(/^feeds\//, "").replace(/\.md$/, "");
+    if (postSlug && !postSlug.includes("/")) {
+      const mediaDir = join(webDir, "feeds", "media", postSlug);
+      await rm(mediaDir, { recursive: true, force: true }).catch(() => undefined);
+      // Drop any accidental media manifest rows under that prefix.
+      const mediaEntries = (await store.list()).filter((e) =>
+        e.path.startsWith(`feeds/media/${postSlug}/`),
+      );
+      for (const e of mediaEntries) {
+        await store.remove(e.path);
+        await unlink(join(webDir, e.path)).catch(() => undefined);
+      }
+    }
+  }
+
+  // Keep blog/index.md in sync when a post is removed.
+  const listingOwner = params.ownerId?.trim();
+  if (
+    listingOwner &&
+    relativePath.startsWith("blog/posts/") &&
+    relativePath.endsWith(".md")
+  ) {
+    await regenerateBlogListing(
+      store,
+      webDir,
+      listingOwner,
+      existing?.visibility ?? "bonded",
+      new Date().toISOString(),
+    );
+  }
+
+  return { path: relativePath, deleted: Boolean(existing) };
+}
+
+/** List own Feed posts (kind `feed`), newest first. */
+export async function listFeedPosts(
+  profileDir: string,
+  ownerId: string,
+): Promise<FeedPostSummary[]> {
+  const webDir = join(profileDir, "web");
+  const store = createWebContentStore(webDir);
+  await store.reload();
+  const entries = await store.list({ kind: "feed" });
+  const out: FeedPostSummary[] = [];
+  for (const e of entries) {
+    if (!e.path.startsWith("feeds/") || !e.path.endsWith(".md")) continue;
+    if (e.path.includes("/media/")) continue;
+    let imageUrls: string[] = [];
+    let bodyPreview = e.summary;
+    try {
+      const raw = await readFile(join(webDir, e.path), "utf8");
+      imageUrls = extractFeedImageUrls(raw);
+      const withoutHeading = raw.replace(/^#\s+[^\n]+\n*/, "").trim();
+      const withoutImages = withoutHeading.replace(/!\[[^\]]*\]\([^)]+\)/g, "").trim();
+      if (withoutImages) bodyPreview = withoutImages.slice(0, 280);
+    } catch {
+      /* listing still useful without body parse */
+    }
+    out.push({
+      path: e.path,
+      url: `envoy://${ownerId}/${e.path}`,
+      title: e.title,
+      summary: e.summary,
+      bodyPreview,
+      publishedAt: e.publishedAt ?? e.updatedAt,
+      visibility: e.visibility,
+      imageUrls,
+      publisherOwnerId: ownerId,
+    });
+  }
+  out.sort((a, b) => b.publishedAt.localeCompare(a.publishedAt));
+  return out;
+}
+
+export interface BlogPostSummary {
+  path: string;
+  url: string;
+  title: string;
+  summary?: string;
+  bodyPreview?: string;
+  publishedAt: string;
+  visibility: WebContentVisibility;
+  publisherOwnerId: string;
+}
+
+/** List own Blog posts (kind `article` under `blog/posts/`), newest first. */
+export async function listBlogPosts(
+  profileDir: string,
+  ownerId: string,
+): Promise<BlogPostSummary[]> {
+  const webDir = join(profileDir, "web");
+  const store = createWebContentStore(webDir);
+  await store.reload();
+  const entries = await store.list({ kind: "article" });
+  const out: BlogPostSummary[] = [];
+  for (const e of entries) {
+    if (!e.path.startsWith("blog/posts/") || !e.path.endsWith(".md")) continue;
+    let bodyPreview = e.summary;
+    try {
+      const raw = await readFile(join(webDir, e.path), "utf8");
+      const withoutHeading = raw.replace(/^#\s+[^\n]+\n*/, "").trim();
+      const withoutImages = withoutHeading.replace(/!\[[^\]]*\]\([^)]+\)/g, "").trim();
+      if (withoutImages) bodyPreview = withoutImages.slice(0, 280);
+    } catch {
+      /* listing still useful without body parse */
+    }
+    out.push({
+      path: e.path,
+      url: `envoy://${ownerId}/${e.path}`,
+      title: e.title,
+      summary: e.summary,
+      bodyPreview,
+      publishedAt: e.publishedAt ?? e.updatedAt,
+      visibility: e.visibility,
+      publisherOwnerId: ownerId,
+    });
+  }
+  out.sort((a, b) => b.publishedAt.localeCompare(a.publishedAt));
+  return out;
+}
+
+/** Find PhotoWall entries mirrored from a profile gallery photoId (`gallery-{id}.*`). */
+export async function findGalleryPhotoWallEntries(
+  profileDir: string,
+  photoId: string,
+): Promise<WebContentEntry[]> {
+  const id = photoId.trim().replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 64);
+  if (!id) return [];
+  const prefix = `photos/wall/gallery-${id}.`;
+  const store = createWebContentStore(join(profileDir, "web"));
+  await store.reload();
+  return (await store.list({ kind: "photo" })).filter((e) => e.path.startsWith(prefix));
+}
+
+/** Remove mirrored PhotoWall file(s) for a gallery photoId and regenerate listings. */
+export async function removeGalleryPhotoWallMirror(
+  profileDir: string,
+  ownerId: string,
+  photoId: string,
+): Promise<number> {
+  const webDir = join(profileDir, "web");
+  const store = createWebContentStore(webDir);
+  await store.reload();
+  const entries = await findGalleryPhotoWallEntries(profileDir, photoId);
+  for (const e of entries) {
+    await store.remove(e.path);
+    await unlink(join(webDir, e.path)).catch(() => undefined);
+  }
+  if (entries.length > 0) {
+    await regeneratePhotoWall(store, webDir, ownerId, "wall", "bonded", new Date().toISOString());
+  }
+  return entries.length;
+}
+
+/** Update visibility (and optional contact ACL) on a mirrored gallery PhotoWall entry. */
+export async function updateGalleryPhotoWallVisibility(
+  profileDir: string,
+  ownerId: string,
+  photoId: string,
+  visibility: WebContentVisibility,
+  contactIds?: string[],
+): Promise<boolean> {
+  const webDir = join(profileDir, "web");
+  const store = createWebContentStore(webDir);
+  await store.reload();
+  const entries = await findGalleryPhotoWallEntries(profileDir, photoId);
+  if (entries.length === 0) return false;
+  const now = new Date().toISOString();
+  for (const e of entries) {
+    const next: WebContentEntry = {
+      ...e,
+      visibility,
+      updatedAt: now,
+      ...(visibility === "contacts" && contactIds?.length
+        ? { contactIds: [...contactIds] }
+        : { contactIds: undefined }),
+    };
+    if (visibility !== "contacts") {
+      delete next.contactIds;
+    }
+    await store.upsert(next);
+  }
+  await regeneratePhotoWall(store, webDir, ownerId, "wall", visibility, now);
+  return true;
 }

@@ -145,10 +145,16 @@ export class SocialPage {
   // Phase 45 — Web Content Browser helpers
   // --------------------------------------------------------------------------
 
-  /** Open the Browser tab from the header nav. */
+  /** Open Content → Explore (browser). */
   async openBrowser(): Promise<void> {
-    await this.page.getByTestId("nav-browser").click();
+    await this.page.getByTestId("nav-content").click();
+    await this.page.getByTestId("content-tab-explore").click();
     await this.page.getByTestId("browser-view").waitFor({ state: "visible", timeout: 10_000 });
+    // Address bar lives under Open mode.
+    const openMode = this.page.getByTestId("browser-mode-open");
+    if (await openMode.count()) {
+      await openMode.click();
+    }
   }
 
   /** Type an envoy:// URL into the address bar and submit. */
@@ -200,35 +206,43 @@ export class SocialPage {
     await this.page.getByTestId("browser-error").waitFor({ state: "visible", timeout: 30_000 });
   }
 
-  /** Phase 45D — open author panel and publish a blog post. */
+  /** Content → Blog — compose and publish a blog post. */
   async publishBlogPost(opts: {
     title: string;
     body: string;
     visibility?: "public" | "bonded" | "contacts" | "private";
   }): Promise<void> {
-    await this.page.getByTestId("browser-author-open").click();
-    await this.page.getByTestId("browser-author-panel").waitFor({ state: "visible" });
-    await this.page.getByTestId("browser-author-template-blog-post").click();
-    await this.page.getByTestId("browser-author-title").fill(opts.title);
-    await this.page.getByTestId("markdown-editor-textarea").fill(opts.body);
+    await this.page.getByTestId("content-tab-blog").click();
+    await this.page.getByTestId("blog-view").waitFor({ state: "visible" });
+    await this.page.getByTestId("blog-compose-open").click();
+    await this.page.getByTestId("blog-composer").waitFor({ state: "visible" });
+    await this.page.getByTestId("blog-compose-title").fill(opts.title);
+    await this.page.getByTestId("blog-compose-body").locator('[data-testid="markdown-editor-textarea"]').fill(opts.body);
     if (opts.visibility) {
       await this.page.getByTestId("visibility-selector").selectOption(opts.visibility);
     }
-    await this.page.getByTestId("browser-author-publish").click();
-    await this.page.getByTestId("browser-author-published").waitFor({
-      state: "visible",
-      timeout: 30_000,
-    });
+    await this.page.getByTestId("blog-compose-publish").click();
+    await this.page.getByTestId("blog-list").waitFor({ state: "visible", timeout: 30_000 });
   }
 
-  /** Phase 45D — publish a photo to a PhotoWall gallery. */
+  /** Phase 45D — publish a photo to a PhotoWall gallery (Explore author panel via event). */
   async publishPhoto(opts: {
     title: string;
     filePath: string;
     gallery?: string;
     visibility?: "public" | "bonded" | "contacts" | "private";
   }): Promise<void> {
-    await this.page.getByTestId("browser-author-open").click();
+    await this.page.evaluate(() => {
+      try {
+        sessionStorage.setItem("envoymesh:browser-pending-author-template", "photo");
+      } catch {
+        /* ignore */
+      }
+      window.dispatchEvent(
+        new CustomEvent("envoymesh:open-browser", { detail: { authorTemplate: "photo" } }),
+      );
+    });
+    await this.page.getByTestId("content-tab-explore").waitFor({ state: "visible", timeout: 15_000 });
     await this.page.getByTestId("browser-author-panel").waitFor({ state: "visible" });
     await this.page.getByTestId("browser-author-template-photo").click();
     await this.page.getByTestId("browser-author-title").fill(opts.title);

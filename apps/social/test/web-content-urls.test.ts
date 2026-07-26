@@ -13,7 +13,7 @@ describe("webContentUrl", () => {
   });
 
   it("builds photowall listing URL", () => {
-    expect(webContentUrl(OWNER, "photowall")).toBe(`envoy://${OWNER}/photos/`);
+    expect(webContentUrl(OWNER, "photowall")).toBe(`envoy://${OWNER}/photos/wall/`);
   });
 
   it("builds notes listing URL", () => {

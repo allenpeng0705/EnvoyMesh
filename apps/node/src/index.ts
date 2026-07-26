@@ -1340,6 +1340,29 @@ async function handleInboundMeshMessage({
     return;
   }
 
+  if (envelope.intent === "feed.engage") {
+    const { handleInboundFeedEngage } = await import("./content-engage-inbound.js");
+    const result = await handleInboundFeedEngage({
+      envelope,
+      profileDir: args.profileDir,
+      profile,
+      remotePeerId,
+      trustStore,
+      peerDirectoryStore,
+      taskStore,
+      replyWithEnvelope: replyWithEnvelope as ((e: import("@envoymesh/protocol").EnvoyEnvelope) => Promise<void>) | undefined,
+    });
+    if (!result.ok) {
+      console.warn(`[rejected feed.engage] ${result.reason}`);
+    } else if (result.notification && nodeService instanceof NodeServiceImpl) {
+      nodeService.storeContentEngageNotification(result.notification);
+    } else if (result.snapshotApplied && result.summary?.url && nodeService instanceof NodeServiceImpl) {
+      // Notify UI to refresh Moments bars for this URL (no badge).
+      nodeService.emitContentEngagementUpdated(result.summary.url);
+    }
+    return;
+  }
+
   // ── share.preview (requester links preview id to outbound push send) ─────
   if (envelope.intent === "share.preview") {
     await handleCliSharePreviewViaRuntime(
@@ -3310,6 +3333,7 @@ nodeService.on("hello:request", (data) => wsServer.emitEvent("hello:request", da
 nodeService.on("hello:response", (data) => wsServer.emitEvent("hello:response", data));
 nodeService.on("social.intro:propose", (data) => wsServer.emitEvent("social.intro:propose", data));
 nodeService.on("feed:notify", (data) => wsServer.emitEvent("feed:notify", data));
+nodeService.on("content:engage", (data) => wsServer.emitEvent("content:engage", data));
 nodeService.on("share:offered", (data) => wsServer.emitEvent("share:offered", data));
 nodeService.on("share:accepted", (data) => wsServer.emitEvent("share:accepted", data));
 nodeService.on("share:declined", (data) => wsServer.emitEvent("share:declined", data));

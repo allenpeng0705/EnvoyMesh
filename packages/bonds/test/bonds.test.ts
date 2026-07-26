@@ -116,12 +116,19 @@ describe("bonds", () => {
     ).toEqual({ action: "allow", maxSensitivity: "friends" });
   });
 
-  it("allows referred peers to feed.notify and denies public strangers", () => {
+  it("allows referred peers to feed.notify / feed.engage and denies public strangers", () => {
     expect(
       evaluatePolicy({
         peerId: "peer-a",
         bondLevel: "referred",
         intent: "feed.notify",
+      }),
+    ).toEqual({ action: "allow", maxSensitivity: "public" });
+    expect(
+      evaluatePolicy({
+        peerId: "peer-a",
+        bondLevel: "referred",
+        intent: "feed.engage",
       }),
     ).toEqual({ action: "allow", maxSensitivity: "public" });
     expect(
@@ -136,6 +143,13 @@ describe("bonds", () => {
         peerId: "peer-a",
         bondLevel: "public",
         intent: "feed.notify",
+      }),
+    ).toEqual({ action: "deny", reason: "public peers cannot use this intent" });
+    expect(
+      evaluatePolicy({
+        peerId: "peer-a",
+        bondLevel: "public",
+        intent: "feed.engage",
       }),
     ).toEqual({ action: "deny", reason: "public peers cannot use this intent" });
   });

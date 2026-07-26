@@ -2,7 +2,7 @@
  * Phase 45 Pass 2 — named mesh-content shortcuts so users never type
  * `envoy://envoy:owner:…` by hand for common published surfaces.
  */
-import { buildEnvoyUrl } from "@envoymesh/api";
+import { buildEnvoyUrl, photoWallCanonicalPath } from "@envoymesh/api";
 
 export type WebContentSurface = "profile" | "blog" | "photowall" | "notes";
 
@@ -14,7 +14,8 @@ export function webContentUrl(ownerId: string, surface: WebContentSurface): stri
     case "blog":
       return buildEnvoyUrl(ownerId, "blog/");
     case "photowall":
-      return buildEnvoyUrl(ownerId, "photos/");
+      // Open the default gallery directly — skip the multi-gallery listing.
+      return buildEnvoyUrl(ownerId, photoWallCanonicalPath());
     case "notes":
       return buildEnvoyUrl(ownerId, "notes/");
   }

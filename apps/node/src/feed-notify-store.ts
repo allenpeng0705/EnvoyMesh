@@ -82,3 +82,19 @@ export async function dismissFeedNotifyInboxItem(
   await writeFeedNotifyInbox(profileDir, next);
   return next;
 }
+
+/**
+ * Bulk-clear every feed.notify inbox row. Used by the "open Inbox → clear
+ * badge" UX so the unread feed-notification count drops to zero in one action
+ * (matches the conventional folder-open behavior of email/messaging apps).
+ * Actionable requests (approvals, share offers, intros, hellos) are NOT
+ * affected — they live in separate stores with their own accept/decline flows.
+ */
+export async function dismissAllFeedNotifyInboxItems(
+  profileDir: string,
+): Promise<FeedNotifyInboxItem[]> {
+  const existing = await loadFeedNotifyInbox(profileDir);
+  if (existing.length === 0) return existing;
+  await writeFeedNotifyInbox(profileDir, []);
+  return [];
+}

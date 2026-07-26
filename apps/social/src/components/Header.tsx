@@ -17,6 +17,8 @@ interface HeaderProps {
   onNavigate: (view: ViewName) => void;
   /** Hello requests + stranger chat pings — badge on Chat */
   inboxActivityCount: number;
+  /** Unread stars/comments on own Feed/Blog — badge on Content */
+  contentEngageCount: number;
   isPublicNetwork: boolean;
   connectionStatus: ConnectionStatus | null;
   nodeStatus: NodeStatus;
@@ -33,6 +35,7 @@ export function Header({
   currentView,
   onNavigate,
   inboxActivityCount,
+  contentEngageCount,
   isPublicNetwork,
   connectionStatus,
   nodeStatus,
@@ -90,6 +93,17 @@ export function Header({
         : t("nav.chatInboxMany", { count: inboxActivityCount })
       : t("nav.chat");
 
+  const contentAriaLabel =
+    contentEngageCount > 0
+      ? contentEngageCount === 1
+        ? t("nav.contentEngageOne", "Content, 1 new engagement", {
+            count: contentEngageCount,
+          })
+        : t("nav.contentEngageMany", "Content, {count} new engagements", {
+            count: contentEngageCount,
+          })
+      : t("nav.content");
+
   return (
     <header className="header app-header">
       <div className="header-left">
@@ -114,20 +128,26 @@ export function Header({
         </button>
         <button
           type="button"
+          className={`${currentView === "content" ? "active" : ""} ${contentEngageCount > 0 ? "has-inbox" : ""}`}
+          onClick={() => onNavigate("content")}
+          aria-current={currentView === "content" ? "page" : undefined}
+          aria-label={contentAriaLabel}
+          data-testid="nav-content"
+        >
+          {t("nav.content")}
+          {contentEngageCount > 0 && (
+            <span className="inbox-badge" aria-hidden>
+              {contentEngageCount > 99 ? "99+" : contentEngageCount}
+            </span>
+          )}
+        </button>
+        <button
+          type="button"
           className={currentView === "discover" ? "active" : ""}
           onClick={() => onNavigate("discover")}
           aria-current={currentView === "discover" ? "page" : undefined}
         >
           {t("nav.discover")}
-        </button>
-        <button
-          type="button"
-          className={currentView === "content" ? "active" : ""}
-          onClick={() => onNavigate("content")}
-          aria-current={currentView === "content" ? "page" : undefined}
-          data-testid="nav-content"
-        >
-          {t("nav.content")}
         </button>
         <button
           type="button"

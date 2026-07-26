@@ -6,6 +6,7 @@
  */
 import { useCallback, useRef, useState } from "react";
 import { useT } from "../context/I18nContext.js";
+import { fitImageFileToMaxBytes } from "../lib/fit-image.js";
 import { Markdown } from "./Markdown.js";
 
 export interface MarkdownEditorProps {
@@ -64,23 +65,19 @@ function prefixLines(
   };
 }
 
-function readImageAsDataUrl(file: File): Promise<string> {
+function readImageAsDataUrl(file: Blob, mimeType: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    if (!file.type.startsWith("image/")) {
-      reject(new Error("only_images"));
-      return;
-    }
-    if (file.size > MAX_INLINE_IMAGE_BYTES) {
-      reject(new Error("too_large"));
-      return;
-    }
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result !== "string") {
         reject(new Error("read_failed"));
         return;
       }
-      resolve(reader.result);
+      let dataUrl = reader.result;
+      if (mimeType && dataUrl.startsWith("data:")) {
+        dataUrl = dataUrl.replace(/^data:[^;]+/, `data:${mimeType}`);
+      }
+      resolve(dataUrl);
     };
     reader.onerror = () => reject(new Error("read_failed"));
     reader.readAsDataURL(file);
@@ -148,7 +145,11 @@ export function MarkdownEditor({
     if (!file) return;
     setToolError(null);
     try {
-      const dataUrl = await readImageAsDataUrl(file);
+      if (!file.type.startsWith("image/")) {
+        throw new Error("only_images");
+      }
+      const fitted = await fitImageFileToMaxBytes(file, MAX_INLINE_IMAGE_BYTES, file.type);
+      const dataUrl = await readImageAsDataUrl(fitted.blob, fitted.mimeType);
       const alt =
         file.name.replace(/\.[^.]+$/, "") ||
         t("browser.author.editor.imageAltDefault", "image");
@@ -162,14 +163,6 @@ export function MarkdownEditor({
       const code = e instanceof Error ? e.message : "";
       if (code === "only_images") {
         setToolError(t("browser.author.editor.onlyImages", "Only image files can be inserted"));
-      } else if (code === "too_large") {
-        setToolError(
-          t(
-            "browser.author.editor.imageTooLarge",
-            "Image is too large (max {maxKiB} KiB). Use Photo publish for large galleries.",
-            { maxKiB: Math.round(MAX_INLINE_IMAGE_BYTES / 1024) },
-          ),
-        );
       } else {
         setToolError(t("browser.author.editor.imageReadFailed", "Failed to read image"));
       }

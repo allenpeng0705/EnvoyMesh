@@ -361,12 +361,54 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.listWebContentSections();
   }
 
+  async listFeedPosts() {
+    return this._ns.listFeedPosts();
+  }
+
+  async listBlogPosts() {
+    return this._ns.listBlogPosts();
+  }
+
+  async deleteWebContentEntry(params: Parameters<NodeService["deleteWebContentEntry"]>[0]) {
+    return this._ns.deleteWebContentEntry(params);
+  }
+
   async listFeedNotifications() {
     return this._ns.listFeedNotifications();
   }
 
   async dismissFeedNotification(id: string) {
     return this._ns.dismissFeedNotification(id);
+  }
+
+  async dismissAllFeedNotifications() {
+    return this._ns.dismissAllFeedNotifications();
+  }
+
+  async listContentEngageNotifications() {
+    return this._ns.listContentEngageNotifications();
+  }
+
+  async dismissContentEngageNotifications(
+    params?: Parameters<NodeService["dismissContentEngageNotifications"]>[0],
+  ) {
+    return this._ns.dismissContentEngageNotifications(params);
+  }
+
+  async getContentEngagement(params: Parameters<NodeService["getContentEngagement"]>[0]) {
+    return this._ns.getContentEngagement(params);
+  }
+
+  async toggleContentStar(params: Parameters<NodeService["toggleContentStar"]>[0]) {
+    return this._ns.toggleContentStar(params);
+  }
+
+  async addContentComment(params: Parameters<NodeService["addContentComment"]>[0]) {
+    return this._ns.addContentComment(params);
+  }
+
+  async removeContentComment(params: Parameters<NodeService["removeContentComment"]>[0]) {
+    return this._ns.removeContentComment(params);
   }
 
   async listChatHistory(peerOwnerId: string, limit?: number) {
@@ -823,6 +865,10 @@ export class DirectCallClient implements NodeServiceClient {
 
   async knowledgeQuery(question: string) {
     return this._ns.knowledgeQuery(question);
+  }
+
+  async draftAuthorContent(params: Parameters<NodeService["draftAuthorContent"]>[0]) {
+    return this._ns.draftAuthorContent(params);
   }
 
   async runDocumentAgentTurn(message: string) {

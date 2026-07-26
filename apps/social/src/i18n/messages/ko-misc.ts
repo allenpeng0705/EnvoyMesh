@@ -10,7 +10,7 @@ export const koErrorBoundaryMessages = {
 export const koProfileMessages = {
   sectionsLabel: "프로필 섹션",
   photos: "사진",
-  about: "정보",
+  about: "프로필",
 } as const;
 
 export const koDiscoverCardsMessages = {
@@ -336,7 +336,7 @@ export const koProfilePhotosMessages = {
   gallery: "갤러리",
   addPhotoBtn: "사진 추가",
   galleryHint:
-    "갤러리 메타데이터는 바인딩된 연락처에 동기화됩니다 (아래 가시성 참조). 찾기는 공개 썸네일만 표시 — 사진을 공유하여 전체 이미지 바이트를 보내세요.",
+    "갤러리 사진은 PhotoWall에도 표시됩니다. 갤러리 메타데이터는 바인딩된 연락처에 동기화됩니다 (아래 가시성 참조). 찾기는 공개 썸네일만 표시 — 사진을 공유하여 전체 이미지 바이트를 보내세요.",
   visibilityEveryone: "메시의 모든 사람",
   visibilityReferred: "소개된 연락처",
   visibilityDirect: "내 연락처만",

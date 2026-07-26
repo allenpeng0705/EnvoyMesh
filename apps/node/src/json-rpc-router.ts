@@ -7,6 +7,7 @@ import type {
   DiscoverPublishedLibraryParams,
   LibraryReadParams,
   PublishWebContentParams,
+  DeleteWebContentParams,
   ChainPlanParams,
   ChainLaunchParams,
   ChainGetStateParams,
@@ -408,10 +409,41 @@ export async function routeRpcMethod(
       return ns.ensureDefaultWebSite();
     case "listWebContentSections":
       return ns.listWebContentSections();
+    case "listFeedPosts":
+      return ns.listFeedPosts();
+    case "listBlogPosts":
+      return ns.listBlogPosts();
+    case "deleteWebContentEntry":
+      return ns.deleteWebContentEntry(params as unknown as DeleteWebContentParams);
     case "listFeedNotifications":
       return ns.listFeedNotifications();
     case "dismissFeedNotification":
       return ns.dismissFeedNotification(params.id as string);
+    case "dismissAllFeedNotifications":
+      return ns.dismissAllFeedNotifications();
+    case "listContentEngageNotifications":
+      return ns.listContentEngageNotifications();
+    case "dismissContentEngageNotifications":
+      return ns.dismissContentEngageNotifications({
+        surface:
+          params.surface === "feed" || params.surface === "blog" || params.surface === "all"
+            ? params.surface
+            : "all",
+      });
+    case "getContentEngagement":
+      return ns.getContentEngagement({ url: String(params.url ?? "") });
+    case "toggleContentStar":
+      return ns.toggleContentStar({ url: String(params.url ?? "") });
+    case "addContentComment":
+      return ns.addContentComment({
+        url: String(params.url ?? ""),
+        text: String(params.text ?? ""),
+      });
+    case "removeContentComment":
+      return ns.removeContentComment({
+        url: String(params.url ?? ""),
+        commentId: String(params.commentId ?? ""),
+      });
     case "listAgentShareProposals":
       return ns.listAgentShareProposals();
     case "dismissAgentShareProposal":
@@ -496,6 +528,10 @@ export async function routeRpcMethod(
       return { success: true };
     case "knowledgeQuery":
       return ns.knowledgeQuery(params.question as string);
+    case "draftAuthorContent":
+      return ns.draftAuthorContent(
+        params as unknown as import("@envoymesh/api").DraftAuthorContentParams,
+      );
     case "runDocumentAgentTurn":
       return ns.runDocumentAgentTurn(params.message as string);
     case "runOwnerAgentTurn":

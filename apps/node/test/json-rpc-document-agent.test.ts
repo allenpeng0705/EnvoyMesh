@@ -18,6 +18,23 @@ import { routeRpcMethod } from "../src/json-rpc-router.js";
 import { NodeServiceImpl } from "../src/node-service-impl.js";
 
 describe("routeRpcMethod — document agent + transfer RPC (ADB-D)", () => {
+  it("routes draftAuthorContent with params object", async () => {
+    const draft = { ok: true as const, text: "A short bio." };
+    const draftAuthorContent = vi.fn().mockResolvedValue(draft);
+    const ns = { draftAuthorContent } as unknown as NodeService;
+
+    const params = {
+      surface: "bio",
+      mode: "write",
+      tone: "casual",
+      hint: "music",
+    };
+    const result = await routeRpcMethod(ns, "draftAuthorContent", params);
+
+    expect(draftAuthorContent).toHaveBeenCalledWith(params);
+    expect(result).toEqual(draft);
+  });
+
   it("routes runDocumentAgentTurn with message param", async () => {
     const turn: DocumentAgentTurnResult = {
       answer: "Found 2 file(s) in your library.",

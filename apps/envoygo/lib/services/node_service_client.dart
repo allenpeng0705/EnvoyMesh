@@ -5,9 +5,11 @@ import '../models/chain_report.dart';
 import '../models/chat_message.dart';
 import '../models/chat_room.dart';
 import '../models/contact.dart';
+import '../models/content_engage_notification.dart';
 import '../models/feed_notification.dart';
 import '../models/library_read.dart';
 import '../models/terminal_session.dart';
+import '../models/web_content.dart';
 import 'home_remote_client.dart';
 
 /// Typed wrappers around the home node's JSON-RPC methods.
@@ -378,6 +380,19 @@ class NodeServiceClient {
     await _client.call('dismissFeedNotification', {'id': id});
   }
 
+  /// Unread stars/comments on the owner's Feed/Blog (Content badges).
+  Future<List<ContentEngageNotification>> listContentEngageNotifications() async {
+    final result = await _client.call('listContentEngageNotifications');
+    return (result as List<dynamic>)
+        .map((e) => ContentEngageNotification.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Clear Content engagement badges for a surface or all.
+  Future<void> dismissContentEngageNotifications({String surface = 'all'}) async {
+    await _client.call('dismissContentEngageNotifications', {'surface': surface});
+  }
+
   // -- Terminal PTY I/O --
 
   /// Execute a command in a terminal session and return output.
@@ -449,6 +464,239 @@ class NodeServiceClient {
   Future<Map<String, dynamic>> getHumanProfile() async {
     return await _client.call('getHumanProfile')
         as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> updateHumanProfile(
+      Map<String, dynamic> patch) async {
+    return await _client.call('updateHumanProfile', patch)
+        as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> setPublicProfileThumbnail({
+    required String contentBase64,
+    required String mimeType,
+  }) async {
+    return await _client.call('setPublicProfileThumbnail', {
+      'contentBase64': contentBase64,
+      'mimeType': mimeType,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> upsertProfileGalleryPhoto({
+    required String contentBase64,
+    required String mimeType,
+    String visibility = 'public',
+    String? label,
+    String? photoId,
+  }) async {
+    return await _client.call('upsertProfileGalleryPhoto', {
+      'contentBase64': contentBase64,
+      'mimeType': mimeType,
+      'visibility': visibility,
+      if (label != null) 'label': label,
+      if (photoId != null) 'photoId': photoId,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> removeProfileGalleryPhoto({
+    required String vaultRelativePath,
+  }) async {
+    return await _client.call('removeProfileGalleryPhoto', {
+      'vaultRelativePath': vaultRelativePath,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> updateProfileGalleryPhotoVisibility({
+    required String vaultRelativePath,
+    required String visibility,
+  }) async {
+    return await _client.call('updateProfileGalleryPhotoVisibility', {
+      'vaultRelativePath': vaultRelativePath,
+      'visibility': visibility,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<void> syncProfileToBonds() async {
+    await _client.call('syncProfileToBonds');
+  }
+
+  // -- Web content (Phase 45 Content tab) --
+
+  Future<EnsureDefaultWebSiteResult> ensureDefaultWebSite() async {
+    final result =
+        await _client.call('ensureDefaultWebSite') as Map<String, dynamic>;
+    return EnsureDefaultWebSiteResult.fromJson(result);
+  }
+
+  Future<List<WebContentSectionSummary>> listWebContentSections() async {
+    final result = await _client.call('listWebContentSections');
+    final list = result as List<dynamic>;
+    return list
+        .map((e) =>
+            WebContentSectionSummary.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<List<FeedPostSummary>> listFeedPosts() async {
+    final result = await _client.call('listFeedPosts');
+    final list = (result as List<dynamic>?) ?? const [];
+    return list
+        .map((e) => FeedPostSummary.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<List<BlogPostSummary>> listBlogPosts() async {
+    final result = await _client.call('listBlogPosts');
+    final list = (result as List<dynamic>?) ?? const [];
+    return list
+        .map((e) => BlogPostSummary.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  Future<ContentEngagementSummary> getContentEngagement({
+    required String url,
+  }) async {
+    final result = await _client.call('getContentEngagement', {'url': url})
+        as Map<String, dynamic>;
+    return ContentEngagementSummary.fromJson(result);
+  }
+
+  Future<ContentEngagementSummary> toggleContentStar({
+    required String url,
+  }) async {
+    final result = await _client.call('toggleContentStar', {'url': url})
+        as Map<String, dynamic>;
+    return ContentEngagementSummary.fromJson(result);
+  }
+
+  Future<ContentEngagementSummary> addContentComment({
+    required String url,
+    required String text,
+  }) async {
+    final result = await _client.call('addContentComment', {
+      'url': url,
+      'text': text,
+    }) as Map<String, dynamic>;
+    return ContentEngagementSummary.fromJson(result);
+  }
+
+  Future<ContentEngagementSummary> removeContentComment({
+    required String url,
+    required String commentId,
+  }) async {
+    final result = await _client.call('removeContentComment', {
+      'url': url,
+      'commentId': commentId,
+    }) as Map<String, dynamic>;
+    return ContentEngagementSummary.fromJson(result);
+  }
+
+  Future<Map<String, dynamic>> deleteWebContentEntry({
+    required String path,
+    String? ownerId,
+  }) async {
+    final result = await _client.call('deleteWebContentEntry', {
+      'path': path,
+      if (ownerId != null) 'ownerId': ownerId,
+    }) as Map<String, dynamic>;
+    return result;
+  }
+
+  /// Draft site/Feed content via home AI (`draftAuthorContent`).
+  /// Returns `{ ok: true, text }` or `{ ok: false, reason }`.
+  Future<Map<String, dynamic>> draftAuthorContent({
+    required String surface,
+    required String mode,
+    required String tone,
+    String? hint,
+    String? title,
+    String? existingText,
+    String? locale,
+    Map<String, dynamic>? profileContext,
+  }) async {
+    return await _client.call('draftAuthorContent', {
+      'surface': surface,
+      'mode': mode,
+      'tone': tone,
+      if (hint != null && hint.isNotEmpty) 'hint': hint,
+      if (title != null && title.isNotEmpty) 'title': title,
+      if (existingText != null && existingText.isNotEmpty)
+        'existingText': existingText,
+      if (locale != null && locale.isNotEmpty) 'locale': locale,
+      if (profileContext != null) 'profileContext': profileContext,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<PublishWebContentResult> publishWebContentEntry({
+    required String template,
+    required String title,
+    required String visibility,
+    String? body,
+    List<String>? contactIds,
+    List<String>? tags,
+    String? contentBase64,
+    String? mimeType,
+    String? fileName,
+    String? gallery,
+    String? stablePath,
+    String? sectionSlug,
+    bool? advertiseTopic,
+    List<Map<String, String>>? images,
+  }) async {
+    final result = await _client.call('publishWebContentEntry', {
+      'template': template,
+      'title': title,
+      'visibility': visibility,
+      if (body != null) 'body': body,
+      if (contactIds != null) 'contactIds': contactIds,
+      if (tags != null) 'tags': tags,
+      if (contentBase64 != null) 'contentBase64': contentBase64,
+      if (mimeType != null) 'mimeType': mimeType,
+      if (fileName != null) 'fileName': fileName,
+      if (gallery != null) 'gallery': gallery,
+      if (stablePath != null) 'stablePath': stablePath,
+      if (sectionSlug != null) 'sectionSlug': sectionSlug,
+      if (advertiseTopic != null) 'advertiseTopic': advertiseTopic,
+      if (images != null) 'images': images,
+    }) as Map<String, dynamic>;
+    return PublishWebContentResult.fromJson(result);
+  }
+
+  // -- My Files (home vault via thin client) --
+
+  Future<ListAllLocalFilesResult> listAllLocalFiles({String? query}) async {
+    final result = await _client.call('listAllLocalFiles', {
+      if (query != null && query.isNotEmpty) 'query': query,
+    }) as Map<String, dynamic>;
+    return ListAllLocalFilesResult.fromJson(result);
+  }
+
+  Future<Map<String, dynamic>> importToLibrary({
+    required String relativePath,
+    required String contentBase64,
+    String? mimeType,
+  }) async {
+    return await _client.call('importToLibrary', {
+      'relativePath': relativePath,
+      'contentBase64': contentBase64,
+      if (mimeType != null) 'mimeType': mimeType,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<void> shareFile({
+    required String targetOwnerId,
+    required String path,
+    String sensitivity = 'friends',
+    String? deliveryChannel,
+  }) async {
+    await _client.call('shareFile', {
+      'targetOwnerId': targetOwnerId,
+      'file': {
+        'path': path,
+        'sensitivity': sensitivity,
+        if (deliveryChannel != null) 'deliveryChannel': deliveryChannel,
+      },
+    });
   }
 
   // -- Chains (Phase 40 — read-only mobile mirror) --

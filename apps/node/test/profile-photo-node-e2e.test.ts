@@ -138,6 +138,32 @@ describe("E2E NodeServiceImpl profile photos", () => {
     expect(updated.galleryPhotos![0]!.label).toBe("Trip");
   });
 
+  it("upsertProfileGalleryPhoto mirrors the photo onto PhotoWall", async () => {
+    const { svc, human, profile, profileDir: dir } = createService();
+    await seedProfile(human, profile, "Alice", "alice01");
+
+    const updated = await svc.upsertProfileGalleryPhoto({
+      contentBase64: MINIMAL_PNG_BASE64,
+      mimeType: "image/png",
+      visibility: "public",
+      label: "Trip",
+    });
+    const photoId = updated.galleryPhotos![0]!.photoId;
+
+    const { readdir } = await import("node:fs/promises");
+    const wallDir = join(dir, "web", "photos", "wall");
+    const wallFiles = await readdir(wallDir);
+    expect(wallFiles.some((f) => f.includes(`gallery-${photoId}`))).toBe(true);
+    const wallIndex = await readFile(join(wallDir, "index.md"), "utf8");
+    expect(wallIndex).toContain("Trip");
+
+    await svc.removeProfileGalleryPhoto({
+      vaultRelativePath: updated.galleryPhotos![0]!.vaultRelativePath,
+    });
+    const after = await readdir(wallDir);
+    expect(after.some((f) => f.includes(`gallery-${photoId}`))).toBe(false);
+  });
+
   it("accepts profile.sync when ownerPublicKeyPem is included in payload", async () => {
     const { svc, profile } = createService();
     const unsignedProfile = signHumanProfile(

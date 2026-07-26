@@ -66,7 +66,7 @@ async function openSocialAs(
     { wsUrl, ownerId },
   );
   await page.goto("/");
-  await page.getByTestId("nav-browser").waitFor({ state: "visible", timeout: 60_000 });
+  await page.getByTestId("nav-content").waitFor({ state: "visible", timeout: 60_000 });
   return new SocialPage(page, label);
 }
 

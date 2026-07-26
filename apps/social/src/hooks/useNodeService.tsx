@@ -198,8 +198,32 @@ export interface NodeServiceClient {
   ): Promise<import("@envoymesh/api").PublishWebContentResult>;
   ensureDefaultWebSite(): Promise<import("@envoymesh/api").EnsureDefaultWebSiteResult>;
   listWebContentSections(): Promise<import("@envoymesh/api").WebContentSectionSummary[]>;
+  listFeedPosts(): Promise<import("@envoymesh/api").FeedPostSummary[]>;
+  listBlogPosts(): Promise<import("@envoymesh/api").BlogPostSummary[]>;
+  deleteWebContentEntry(
+    params: import("@envoymesh/api").DeleteWebContentParams,
+  ): Promise<import("@envoymesh/api").DeleteWebContentResult>;
   listFeedNotifications(): Promise<import("@envoymesh/api").FeedNotification[]>;
   dismissFeedNotification(id: string): Promise<void>;
+  dismissAllFeedNotifications(): Promise<void>;
+  listContentEngageNotifications(): Promise<import("@envoymesh/api").ContentEngageNotification[]>;
+  dismissContentEngageNotifications(
+    params?: import("@envoymesh/api").DismissContentEngageNotificationsParams,
+  ): Promise<void>;
+  getContentEngagement(params: {
+    url: string;
+  }): Promise<import("@envoymesh/api").ContentEngagementSummary>;
+  toggleContentStar(params: {
+    url: string;
+  }): Promise<import("@envoymesh/api").ContentEngagementSummary>;
+  addContentComment(params: {
+    url: string;
+    text: string;
+  }): Promise<import("@envoymesh/api").ContentEngagementSummary>;
+  removeContentComment(params: {
+    url: string;
+    commentId: string;
+  }): Promise<import("@envoymesh/api").ContentEngagementSummary>;
   listChatHistory(peerOwnerId: string, limit?: number): Promise<ChatMessage[]>;
   listChatRooms(): Promise<ChatRoom[]>;
   createChatRoom(title: string, memberOwnerIds: string[]): Promise<ChatRoom>;
@@ -420,6 +444,9 @@ export interface NodeServiceClient {
 
   // AI / Knowledge Query
   knowledgeQuery(question: string): Promise<string>;
+  draftAuthorContent(
+    params: import("@envoymesh/api").DraftAuthorContentParams,
+  ): Promise<import("@envoymesh/api").DraftAuthorContentResult>;
   runDocumentAgentTurn(message: string): Promise<import("@envoymesh/api").DocumentAgentTurnResult>;
   runOwnerAgentTurn(
     message: string,
@@ -774,11 +801,61 @@ function createWsNodeServiceClient(
         import("@envoymesh/api").WebContentSectionSummary[]
       >;
     },
+    async listFeedPosts() {
+      return wsClient.rpc("listFeedPosts") as Promise<import("@envoymesh/api").FeedPostSummary[]>;
+    },
+    async listBlogPosts() {
+      return wsClient.rpc("listBlogPosts") as Promise<import("@envoymesh/api").BlogPostSummary[]>;
+    },
+    async deleteWebContentEntry(params: import("@envoymesh/api").DeleteWebContentParams) {
+      return wsClient.rpc(
+        "deleteWebContentEntry",
+        params as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").DeleteWebContentResult>;
+    },
     async listFeedNotifications() {
       return wsClient.rpc("listFeedNotifications") as Promise<import("@envoymesh/api").FeedNotification[]>;
     },
     async dismissFeedNotification(id: string) {
       return wsClient.rpc("dismissFeedNotification", { id });
+    },
+    async dismissAllFeedNotifications() {
+      return wsClient.rpc("dismissAllFeedNotifications", {});
+    },
+    async listContentEngageNotifications() {
+      return wsClient.rpc("listContentEngageNotifications") as Promise<
+        import("@envoymesh/api").ContentEngageNotification[]
+      >;
+    },
+    async dismissContentEngageNotifications(params) {
+      return wsClient.rpc(
+        "dismissContentEngageNotifications",
+        (params ?? {}) as Record<string, unknown>,
+      );
+    },
+    async getContentEngagement(params) {
+      return wsClient.rpc(
+        "getContentEngagement",
+        params as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").ContentEngagementSummary>;
+    },
+    async toggleContentStar(params) {
+      return wsClient.rpc(
+        "toggleContentStar",
+        params as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").ContentEngagementSummary>;
+    },
+    async addContentComment(params) {
+      return wsClient.rpc(
+        "addContentComment",
+        params as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").ContentEngagementSummary>;
+    },
+    async removeContentComment(params) {
+      return wsClient.rpc(
+        "removeContentComment",
+        params as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").ContentEngagementSummary>;
     },
     async listChatHistory(peerOwnerId: string, limit?: number) { return wsClient.rpc("listChatHistory", { peerOwnerId, limit }) as Promise<ChatMessage[]>; },
     async listChatRooms() { return wsClient.rpc("listChatRooms", {}) as Promise<ChatRoom[]>; },
@@ -1359,6 +1436,11 @@ function createWsNodeServiceClient(
       >;
     },
     async knowledgeQuery(question: string) { return wsClient.rpc("knowledgeQuery", { question }) as Promise<string>; },
+    async draftAuthorContent(params) {
+      return wsClient.rpc("draftAuthorContent", params as unknown as Record<string, unknown>) as Promise<
+        import("@envoymesh/api").DraftAuthorContentResult
+      >;
+    },
     async runDocumentAgentTurn(message: string) {
       return wsClient.rpc("runDocumentAgentTurn", { message }) as Promise<import("@envoymesh/api").DocumentAgentTurnResult>;
     },
@@ -1980,7 +2062,67 @@ export function useFeedNotifications() {
     setItems((prev) => prev.filter((p) => p.id !== id));
   };
 
-  return { items, dismiss };
+  /**
+   * Bulk-clear every feed notification. Called when the Inbox opens so the
+   * unread badge drops to zero in one action — matches the conventional
+   * folder-open behavior of email/messaging apps. Actionable requests
+   * (approvals, offers, intros, hellos) are NOT affected.
+   */
+  const dismissAll = async () => {
+    await client.dismissAllFeedNotifications();
+    setItems([]);
+  };
+
+  return { items, dismiss, dismissAll };
+}
+
+/**
+ * Unread stars/comments on the owner's Feed/Blog posts.
+ * Powers Content / Feed / Blog nav badges; clear when those surfaces open.
+ */
+export function useContentEngageNotifications() {
+  const client = useNodeService();
+  const wsOpen = useTransportWsOpen();
+  const [items, setItems] = useState<import("@envoymesh/api").ContentEngageNotification[]>([]);
+  const loadGen = useRef(0);
+
+  useEffect(() => {
+    if (!wsOpen || !client.isConnected) return;
+
+    const gen = ++loadGen.current;
+    void client.listContentEngageNotifications()
+      .then((rows) => {
+        if (gen !== loadGen.current) return;
+        setItems(rows);
+      })
+      .catch(console.error);
+
+    const unsub = client.on("content:engage", (data) => {
+      // Snapshot updates refresh Moments bars only — not Content badges.
+      if (data.action === "snapshot") return;
+      setItems((prev) => {
+        if (prev.some((p) => p.messageId === data.messageId || p.id === data.id)) return prev;
+        return [data, ...prev];
+      });
+    });
+
+    return unsub;
+  }, [client, wsOpen]);
+
+  const dismiss = useCallback(
+    async (surface: import("@envoymesh/api").ContentEngageSurface | "all" = "all") => {
+      // Invalidate any in-flight list so it cannot restore cleared badges.
+      loadGen.current += 1;
+      await client.dismissContentEngageNotifications({ surface });
+      setItems((prev) => (surface === "all" ? [] : prev.filter((p) => p.surface !== surface)));
+    },
+    [client],
+  );
+
+  const feedCount = items.filter((i) => i.surface === "feed").length;
+  const blogCount = items.filter((i) => i.surface === "blog").length;
+
+  return { items, feedCount, blogCount, totalCount: items.length, dismiss };
 }
 
 export function useHelloRequests() {

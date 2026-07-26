@@ -5,6 +5,7 @@ export type {
   OpenClawPluginDetail,
 } from "./openclaw-plugin.js";
 export * from "./model-thinking.js";
+export * from "./author-content-draft.js";
 export * from "./ai-knowledge-base.js";
 export * from "./ai-embedding-limits.js";
 export * from "./rag-index-status.js";

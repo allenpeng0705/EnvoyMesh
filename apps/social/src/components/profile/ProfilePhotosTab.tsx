@@ -1,28 +1,59 @@
-import { useState } from "react";
+/**
+ * System Profile → Photos: avatar + PhotoWall gallery.
+ * Visibility is set when adding a photo, or when opening it in the lightbox.
+ */
+import { useCallback, useMemo, useState } from "react";
 import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { useToast } from "../../hooks/useToast.js";
-import { ConfirmDialog } from "../ConfirmDialog.js";
-import {
-  galleryPhotoShareSensitivity,
-  type ProfileGalleryPhotoVisibility,
-  type ProfilePhotoMime,
+import type {
+  ProfileGalleryPhoto,
+  ProfileGalleryPhotoVisibility,
+  ProfilePhotoMime,
 } from "@envoymesh/api";
 import { ProfilePhotoAvatar } from "../ProfilePhotoAvatar.js";
 import { PhotoPickerSheet } from "../PhotoPickerSheet.js";
-import { fileToBase64, mimeFromFile } from "../../lib/profile-photo-upload.js";
-import type { TFunction } from "../../context/I18nContext.js";
+import {
+  BrowserPhotoGallery,
+  type BrowserPhotoGalleryOwnerMeta,
+} from "../BrowserPhotoGallery.js";
+import { fileToBase64 } from "../../lib/profile-photo-upload.js";
+import type { PhotoWallItem } from "../../lib/parse-photo-wall-markdown.js";
 
-function visibilityLabel(t: TFunction, visibility: ProfileGalleryPhotoVisibility): string {
-  switch (visibility) {
-    case "public":
-      return t("profilePhotos.visibilityEveryone");
-    case "referred":
-      return t("profilePhotos.visibilityReferred");
-    case "direct":
-      return t("profilePhotos.visibilityDirect");
+function mimeToExt(mime: string): string {
+  if (mime.includes("png")) return "png";
+  if (mime.includes("webp")) return "webp";
+  if (mime.includes("gif")) return "gif";
+  return "jpg";
+}
+
+/** User-written description only — never filenames or gallery ids. */
+function photoDescription(label?: string): string | undefined {
+  const text = label?.trim();
+  if (!text) return undefined;
+  if (/\.(jpe?g|png|webp|gif|heic|heif)$/i.test(text)) return undefined;
+  if (/^gallery-[a-z0-9_-]+$/i.test(text)) return undefined;
+  return text;
+}
+
+function galleryPhotosToWallItems(
+  ownerId: string,
+  photos: readonly ProfileGalleryPhoto[],
+): { items: PhotoWallItem[]; ownerByUrl: Record<string, BrowserPhotoGalleryOwnerMeta> } {
+  const items: PhotoWallItem[] = [];
+  const ownerByUrl: Record<string, BrowserPhotoGalleryOwnerMeta> = {};
+  for (const p of photos) {
+    const ext = mimeToExt(p.mimeType);
+    const url = `envoy://${ownerId}/photos/wall/gallery-${p.photoId}.${ext}`;
+    const caption = photoDescription(p.label);
+    items.push(caption ? { title: "Photo", url, caption } : { title: "Photo", url });
+    ownerByUrl[url] = {
+      vaultRelativePath: p.vaultRelativePath,
+      visibility: p.visibility,
+    };
   }
+  return { items, ownerByUrl };
 }
 
 export interface ProfilePhotosTabProps {
@@ -32,12 +63,23 @@ export interface ProfilePhotosTabProps {
 export function ProfilePhotosTab({ variant = "desktop" }: ProfilePhotosTabProps) {
   const t = useT();
   const nodeService = useNodeService();
-  const { humanProfile, refreshHumanProfile, bonds } = useNodeState();
+  const { humanProfile, refreshHumanProfile } = useNodeState();
   const { showToast } = useToast();
   const [busy, setBusy] = useState(false);
   const [picker, setPicker] = useState<"thumbnail" | "gallery" | null>(null);
-  const [shareTarget, setShareTarget] = useState<{ vaultRelativePath: string; label: string } | null>(null);
-  const [confirm, setConfirm] = useState<{ title: string; message?: string; variant?: "default" | "destructive"; onConfirm: () => void } | null>(null);
+
+  const ownerId = humanProfile?.ownerId?.trim() ?? "";
+  const gallery = humanProfile?.galleryPhotos ?? [];
+
+  const { items: wallPhotos, ownerByUrl } = useMemo(
+    () => (ownerId ? galleryPhotosToWallItems(ownerId, gallery) : { items: [], ownerByUrl: {} }),
+    [ownerId, gallery],
+  );
+
+  const libraryRead = useCallback(
+    (params: Parameters<typeof nodeService.libraryRead>[0]) => nodeService.libraryRead(params),
+    [nodeService],
+  );
 
   const uploadThumbnail = async (_file: File, blob: Blob, mime: ProfilePhotoMime) => {
     setBusy(true);
@@ -58,14 +100,23 @@ export function ProfilePhotosTab({ variant = "desktop" }: ProfilePhotosTabProps)
     }
   };
 
-  const uploadGallery = async (file: File) => {
+  const uploadGallery = async (
+    file: File,
+    visibility: ProfileGalleryPhotoVisibility,
+    caption?: string,
+  ) => {
     setBusy(true);
     try {
+      await nodeService.ensureDefaultWebSite?.().catch(() => undefined);
+      const { fitImageFileToMaxBytes, blobToBase64 } = await import("../../lib/fit-image.js");
+      const { MAX_PROFILE_GALLERY_PHOTO_BYTES } = await import("@envoymesh/api");
+      const fitted = await fitImageFileToMaxBytes(file, MAX_PROFILE_GALLERY_PHOTO_BYTES, file.type);
+      const label = caption?.trim() || undefined;
       await nodeService.upsertProfileGalleryPhoto({
-        contentBase64: await fileToBase64(file),
-        mimeType: mimeFromFile(file),
-        visibility: "public",
-        label: file.name,
+        contentBase64: await blobToBase64(fitted.blob),
+        mimeType: fitted.mimeType as ProfilePhotoMime,
+        visibility,
+        ...(label ? { label } : {}),
       });
       await refreshHumanProfile();
       showToast(t("profilePhotos.galleryPhotoAdded"), "success");
@@ -76,20 +127,33 @@ export function ProfilePhotosTab({ variant = "desktop" }: ProfilePhotosTabProps)
     }
   };
 
-  const shareGalleryPhoto = async (ownerId: string) => {
-    if (!shareTarget) return;
-    const photo = humanProfile?.galleryPhotos?.find((p) => p.vaultRelativePath === shareTarget.vaultRelativePath);
-    if (!photo) return;
+  const changeVisibility = async (
+    vaultRelativePath: string,
+    visibility: ProfileGalleryPhotoVisibility,
+  ) => {
     setBusy(true);
     try {
-      await nodeService.shareFile(ownerId, {
-        path: photo.vaultRelativePath,
-        sensitivity: galleryPhotoShareSensitivity(photo.visibility),
+      await nodeService.updateProfileGalleryPhotoVisibility({
+        vaultRelativePath,
+        visibility,
       });
-      showToast(t("profilePhotos.shareSent"), "success");
-      setShareTarget(null);
+      await refreshHumanProfile();
+      showToast(t("profilePhotos.visibilityUpdated", "Visibility updated"), "success");
     } catch (err) {
-      showToast(err instanceof Error ? err.message : t("profilePhotos.shareFailed"), "error");
+      showToast(err instanceof Error ? err.message : t("profilePhotos.updateFailed"), "error");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removePhoto = async (vaultRelativePath: string) => {
+    setBusy(true);
+    try {
+      await nodeService.removeProfileGalleryPhoto({ vaultRelativePath });
+      await refreshHumanProfile();
+      showToast(t("profilePhotos.galleryPhotoRemoved", "Photo removed"), "success");
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : t("profilePhotos.removeFailed"), "error");
     } finally {
       setBusy(false);
     }
@@ -98,7 +162,7 @@ export function ProfilePhotosTab({ variant = "desktop" }: ProfilePhotosTabProps)
   const rootClass = variant === "mobile" ? "profile-photos-tab mv-profile-photos" : "profile-photos-tab";
 
   return (
-    <div className={rootClass}>
+    <div className={rootClass} data-testid="profile-photos-tab">
       {!humanProfile?.publicThumbnail && (
         <div className="profile-photo-suggest" role="status">
           <strong>{t("profilePhotos.suggestTitle")}</strong>
@@ -106,135 +170,39 @@ export function ProfilePhotosTab({ variant = "desktop" }: ProfilePhotosTabProps)
         </div>
       )}
 
-      <section className="profile-photos-hero">
+      <div className="profile-photos-toolbar">
         <button
           type="button"
-          className="profile-photos-hero-btn"
+          className="profile-photos-avatar-btn"
           onClick={() => setPicker("thumbnail")}
           disabled={busy}
           aria-label={t("profilePhotos.changeThumbnailAria")}
         >
           <ProfilePhotoAvatar
-            large
             photo={humanProfile?.publicThumbnail}
             fallbackLabel={humanProfile?.displayName ?? humanProfile?.username ?? "?"}
+            className="profile-photos-avatar"
           />
-          <span className="profile-photos-hero-label">
-            {humanProfile?.publicThumbnail ? t("profilePhotos.changePhoto") : t("profilePhotos.addPhoto")}
+          <span className="profile-photos-avatar-hint">
+            {humanProfile?.publicThumbnail
+              ? t("profilePhotos.changePhoto")
+              : t("profilePhotos.addPhoto")}
           </span>
         </button>
-        <p className="muted small">{t("profilePhotos.thumbnailHint")}</p>
-      </section>
+      </div>
 
-      <section className="profile-section profile-gallery-section">
-        <div className="profile-gallery-header">
-          <h3>{t("profilePhotos.gallery")}</h3>
-          <button
-            type="button"
-            className="btn-secondary btn-small"
-            disabled={busy}
-            onClick={() => setPicker("gallery")}
-          >
-            {t("profilePhotos.addPhotoBtn")}
-          </button>
-        </div>
-        <p className="muted small">{t("profilePhotos.galleryHint")}</p>
-        <div className="profile-gallery-grid">
-          {(humanProfile?.galleryPhotos ?? []).map((photo) => (
-            <div key={photo.photoId} className="profile-gallery-card">
-              <ProfilePhotoAvatar photo={photo} fallbackLabel={photo.label ?? photo.photoId} large />
-              <span className="profile-gallery-vis-label">{visibilityLabel(t, photo.visibility)}</span>
-              <label className="profile-gallery-visibility">
-                {t("profilePhotos.visibilityLabel")}
-                <select
-                  value={photo.visibility}
-                  disabled={busy}
-                  onChange={(e) => {
-                    void nodeService
-                      .updateProfileGalleryPhotoVisibility({
-                        vaultRelativePath: photo.vaultRelativePath,
-                        visibility: e.target.value as ProfileGalleryPhotoVisibility,
-                      })
-                      .then(() => refreshHumanProfile())
-                      .catch((err) =>
-                        showToast(err instanceof Error ? err.message : t("profilePhotos.updateFailed"), "error"),
-                      );
-                  }}
-                >
-                  <option value="public">{t("profilePhotos.visibilityEveryone")}</option>
-                  <option value="referred">{t("profilePhotos.visibilityReferred")}</option>
-                  <option value="direct">{t("profilePhotos.visibilityDirect")}</option>
-                </select>
-              </label>
-              <div className="profile-gallery-card-actions">
-                <button
-                  type="button"
-                  className="btn-secondary btn-small"
-                  disabled={busy || bonds.length === 0}
-                  onClick={() =>
-                    setShareTarget({
-                      vaultRelativePath: photo.vaultRelativePath,
-                      label: photo.label ?? t("profilePhotos.defaultPhotoLabel"),
-                    })
-                  }
-                >
-                  {t("profilePhotos.shareBtn")}
-                </button>
-                <button
-                  type="button"
-                  className="btn-secondary btn-small"
-                  disabled={busy}
-                  onClick={() => {
-                    setConfirm({
-                      title: t("profilePhotos.removeConfirm"),
-                      message: t("profilePhotos.removeConfirmMessage"),
-                      variant: "destructive",
-                      onConfirm: () => {
-                        setConfirm(null);
-                        void nodeService
-                          .removeProfileGalleryPhoto({ vaultRelativePath: photo.vaultRelativePath })
-                          .then(() => refreshHumanProfile())
-                          .catch((err) =>
-                            showToast(err instanceof Error ? err.message : t("profilePhotos.removeFailed"), "error"),
-                          );
-                      },
-                    });
-                  }}
-                >
-                  {t("profilePhotos.removeBtn")}
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
+      <section className="profile-photowall" aria-label={t("profilePhotos.gallery", "PhotoWall")}>
+        <BrowserPhotoGallery
+          photos={wallPhotos}
+          libraryRead={libraryRead}
+          ownerByUrl={ownerByUrl}
+          ownerBusy={busy}
+          addDisabled={busy}
+          onAddPhoto={() => setPicker("gallery")}
+          onOwnerVisibilityChange={(path, visibility) => void changeVisibility(path, visibility)}
+          onOwnerDelete={(path) => void removePhoto(path)}
+        />
       </section>
-
-      {shareTarget && (
-        <div className="photo-picker-backdrop" role="presentation" onClick={() => setShareTarget(null)}>
-          <div className="photo-picker-sheet photo-share-sheet" role="dialog" onClick={(e) => e.stopPropagation()}>
-            <h3 className="photo-picker-title">{t("profilePhotos.shareTitle", { label: shareTarget.label })}</h3>
-            <p className="muted small">{t("profilePhotos.sharePickContact")}</p>
-            <ul className="photo-share-contact-list">
-              {bonds.map((b) => (
-                <li key={b.peerOwnerId}>
-                  <button
-                    type="button"
-                    className="photo-share-contact-btn"
-                    disabled={busy}
-                    onClick={() => void shareGalleryPhoto(b.peerOwnerId)}
-                  >
-                    {b.displayName ?? b.peerOwnerId.slice(0, 16)}
-                  </button>
-                </li>
-              ))}
-            </ul>
-            {bonds.length === 0 && <p className="muted small">{t("profilePhotos.addContactFirst")}</p>}
-            <button type="button" className="btn-secondary" onClick={() => setShareTarget(null)}>
-              {t("common.cancel")}
-            </button>
-          </div>
-        </div>
-      )}
 
       <PhotoPickerSheet
         open={picker !== null}
@@ -242,17 +210,10 @@ export function ProfilePhotosTab({ variant = "desktop" }: ProfilePhotosTabProps)
         busy={busy}
         onClose={() => setPicker(null)}
         onConfirmThumbnail={(file, blob, mime) => void uploadThumbnail(file, blob, mime)}
-        onConfirmGallery={(file) => void uploadGallery(file)}
+        onConfirmGallery={(file, visibility, caption) =>
+          void uploadGallery(file, visibility, caption)
+        }
       />
-      {confirm ? (
-        <ConfirmDialog
-          title={confirm.title}
-          message={confirm.message}
-          variant={confirm.variant}
-          onConfirm={confirm.onConfirm}
-          onCancel={() => setConfirm(null)}
-        />
-      ) : null}
     </div>
   );
 }

@@ -10,7 +10,7 @@ export const deErrorBoundaryMessages = {
 export const deProfileMessages = {
   sectionsLabel: "Profilbereiche",
   photos: "Fotos",
-  about: "Über",
+  about: "Profil",
 } as const;
 
 export const deDiscoverCardsMessages = {
@@ -324,7 +324,7 @@ export const deProfilePhotosMessages = {
   thumbnailHint: "Miniatur ist immer öffentlich. Beim Hochladen ziehen, um den Zuschnitt anzupassen.",
   gallery: "Galerie",
   addPhotoBtn: "Foto hinzufügen",
-  galleryHint: "Galerie-Metadaten werden mit verbundenen Kontakten synchronisiert (Sichtbarkeit unten). Entdecken zeigt nur Ihre öffentliche Miniatur — teilen Sie ein Foto, um die vollständigen Bytes zu senden.",
+  galleryHint: "Galerie-Fotos erscheinen auch auf Ihrer PhotoWall. Metadaten werden mit verbundenen Kontakten synchronisiert (Sichtbarkeit unten). Entdecken zeigt nur Ihre öffentliche Miniatur — teilen Sie ein Foto, um die vollständigen Bytes zu senden.",
   visibilityEveryone: "Alle im Mesh",
   visibilityReferred: "Empfohlene Kontakte",
   visibilityDirect: "Nur meine Kontakte",

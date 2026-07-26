@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService, useAgentShareProposals, useShareOffers, usePendingApprovals, useFeedNotifications } from "../../hooks/useNodeService.js";
@@ -36,7 +36,22 @@ export function InboxView({ embedded = false }: InboxViewProps) {
   const { proposals: agentShareProposals, dismiss: dismissAgentShare } = useAgentShareProposals();
   const { offers: pendingShareOffers } = useShareOffers();
   const { items: pendingApprovals, approve: approvePending, reject: rejectPending } = usePendingApprovals();
-  const { items: feedNotifications, dismiss: dismissFeed } = useFeedNotifications();
+  const { items: feedNotifications, dismiss: dismissFeed, dismissAll: dismissAllFeed } = useFeedNotifications();
+
+  // Open-Inbox → clear badge: when the Inbox mounts, bulk-dismiss all feed
+  // notifications so the unread badge drops to zero. This matches the
+  // conventional folder-open behavior of email/messaging apps. Actionable
+  // requests (approvals, offers, intros, hellos) are NOT cleared — they live
+  // in separate stores with their own accept/decline flows.
+  // The ref guard ensures the clear fires only once per mount, not on every
+  // re-render, so in-session per-row dismiss buttons still work normally.
+  const clearedFeedOnMountRef = useRef(false);
+  useEffect(() => {
+    if (clearedFeedOnMountRef.current) return;
+    if (feedNotifications.length === 0) return;
+    clearedFeedOnMountRef.current = true;
+    void dismissAllFeed().catch(console.error);
+  }, [feedNotifications.length, dismissAllFeed]);
   const [feedBusy, setFeedBusy] = useState<string | null>(null);
   const [feedPublisherFilter, setFeedPublisherFilter] = useState<string | null>(
     () => getInboxPublisherFilter(),

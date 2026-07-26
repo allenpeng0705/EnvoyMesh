@@ -13,6 +13,7 @@ import '../../services/node_service_client.dart';
 import '../../widgets/chat_bubble.dart';
 import '../../widgets/chat_audio_player.dart';
 import '../call/voice_call_screen.dart';
+import '../content/published_content_sheet.dart';
 
 /// Chat detail view — message list with compose bar.
 ///
@@ -227,6 +228,16 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
               icon: const Icon(Icons.call),
               tooltip: 'Voice call',
               onPressed: _startCall,
+            ),
+          if (!_isAgent && !_isRoom && widget.contactOwnerId != null)
+            IconButton(
+              icon: const Icon(Icons.language),
+              tooltip: 'Published content',
+              onPressed: () => showPublishedContentSheet(
+                context,
+                ownerId: widget.contactOwnerId!,
+                displayName: widget.displayName,
+              ),
             ),
           IconButton(
             icon: const Icon(Icons.delete_outline),

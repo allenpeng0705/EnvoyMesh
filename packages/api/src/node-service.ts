@@ -1016,10 +1016,20 @@ export type PublishWebContentTemplate =
   | "profile"
   | "photo"
   | "file"
-  | "section";
+  | "section"
+  | "feed-post";
 
 /** Phase 45D — visibility flags for published web items. */
 export type PublishWebContentVisibility = "public" | "bonded" | "contacts" | "private";
+
+/** Max images per Feed (Moments-style) post. */
+export const MAX_FEED_POST_IMAGES = 9;
+
+export interface PublishWebContentImage {
+  contentBase64: string;
+  mimeType: string;
+  fileName?: string;
+}
 
 export interface PublishWebContentParams {
   template: PublishWebContentTemplate;
@@ -1038,6 +1048,11 @@ export interface PublishWebContentParams {
   /** PhotoWall gallery folder (default `wall`). */
   gallery?: string;
   /**
+   * When set, write/overwrite this path under `web/` instead of allocating a unique
+   * slug path (used to mirror profile gallery photos onto PhotoWall).
+   */
+  stablePath?: string;
+  /**
    * Custom section path slug (template `section` only). Defaults to slugified title.
    * Published at `{slug}/index.md` → `envoy://owner/{slug}/`.
    */
@@ -1047,6 +1062,49 @@ export interface PublishWebContentParams {
    * so Discover / Bazaar topic search can find it.
    */
   advertiseTopic?: boolean;
+  /**
+   * Feed posts only — up to {@link MAX_FEED_POST_IMAGES} images embedded in the post.
+   */
+  images?: PublishWebContentImage[];
+}
+
+/** Own Feed (Friend Circle) post for the Content → Feed timeline. */
+export interface FeedPostSummary {
+  path: string;
+  url: string;
+  title: string;
+  summary?: string;
+  bodyPreview?: string;
+  publishedAt: string;
+  visibility: PublishWebContentVisibility;
+  imageUrls: string[];
+  publisherOwnerId: string;
+}
+
+/** Own Blog post for the Content → Blog list (`web/blog/posts/`). */
+export interface BlogPostSummary {
+  path: string;
+  url: string;
+  title: string;
+  summary?: string;
+  bodyPreview?: string;
+  publishedAt: string;
+  visibility: PublishWebContentVisibility;
+  publisherOwnerId: string;
+}
+
+/** Delete a published web-content path under `web/` (manifest + files). */
+export interface DeleteWebContentParams {
+  /** Relative path under `web/` (e.g. `feeds/hello.md`). */
+  path: string;
+  /** When deleting a blog post, used to rebuild `blog/index.md` links. */
+  ownerId?: string;
+}
+
+export interface DeleteWebContentResult {
+  path: string;
+  /** False when the path was already absent. */
+  deleted: boolean;
 }
 
 export interface PublishWebContentResult {
@@ -1100,6 +1158,62 @@ export interface FeedNotification {
   contentHash?: string;
   listingUrl?: string;
   senderPeerId: string;
+}
+
+/** Inbound star/comment on the owner's Feed or Blog post (Content nav badge). */
+export type ContentEngageSurface = "feed" | "blog";
+
+export interface ContentEngageNotification {
+  id: string;
+  receivedAt: string;
+  messageId: string;
+  url: string;
+  surface: ContentEngageSurface;
+  action: "star" | "comment" | "snapshot";
+  actorOwnerId: string;
+  text?: string;
+  senderPeerId: string;
+}
+
+export interface DismissContentEngageNotificationsParams {
+  /** Clear one surface, or all Content engagement badges. Default: all. */
+  surface?: ContentEngageSurface | "all";
+}
+
+/** Feed/Blog star + comments summary for a content URL. */
+export interface ContentEngagementComment {
+  id: string;
+  authorOwnerId: string;
+  text: string;
+  createdAt: string;
+}
+
+export interface ContentEngagementSummary {
+  url: string;
+  starCount: number;
+  starredByMe: boolean;
+  /** Owner IDs who starred, oldest-first (WeChat Moments-style name list). */
+  starOwnerIds: string[];
+  commentCount: number;
+  comments: ContentEngagementComment[];
+}
+
+export interface GetContentEngagementParams {
+  url: string;
+}
+
+export interface ToggleContentStarParams {
+  url: string;
+}
+
+export interface AddContentCommentParams {
+  url: string;
+  text: string;
+}
+
+export interface RemoveContentCommentParams {
+  url: string;
+  commentId: string;
 }
 
 // ----- Agent-assisted flows (FS-E) -----
@@ -1374,6 +1488,8 @@ export interface NodeServiceEvents {
   "social.intro:propose": SocialIntroProposal;
   /** Phase 45E — bonded peer published web content (open via library.read / Browser). */
   "feed:notify": FeedNotification;
+  /** Inbound star/comment on the owner's Feed or Blog (Content nav badge). */
+  "content:engage": ContentEngageNotification;
   "bond:established": { peerOwnerId: string; displayName?: string };
   "bond:revoked": { peerOwnerId: string };
   "bond:blocked": { peerOwnerId: string };
@@ -2034,6 +2150,18 @@ export interface NodeService {
   /** Phase 45 Step 3 — list custom sections (kind `section`). */
   listWebContentSections(): Promise<WebContentSectionSummary[]>;
 
+  /** Own Feed (Friend Circle) posts under `web/feeds/`, newest first. */
+  listFeedPosts(): Promise<FeedPostSummary[]>;
+
+  /** Own Blog posts under `web/blog/posts/`, newest first. */
+  listBlogPosts(): Promise<BlogPostSummary[]>;
+
+  /**
+   * Delete a published web-content item (manifest entry + file).
+   * Feed posts also remove `feeds/media/{slug}/`.
+   */
+  deleteWebContentEntry(params: DeleteWebContentParams): Promise<DeleteWebContentResult>;
+
   /**
    * Phase 45E — list persisted inbound `feed.notify` rows for the Social Inbox.
    */
@@ -2041,6 +2169,37 @@ export interface NodeService {
 
   /** Phase 45E — dismiss one feed notification by id. */
   dismissFeedNotification(id: string): Promise<void>;
+
+  /**
+   * Bulk-clear every feed notification. Used by the "open Inbox → clear badge"
+   * UX so the unread feed-notification count drops to zero in one action.
+   * Actionable requests (approvals, share offers, intros, hellos) are NOT
+   * affected — they live in separate stores with their own accept/decline flows.
+   */
+  dismissAllFeedNotifications(): Promise<void>;
+
+  /** Unread stars/comments on the owner's Feed/Blog posts (Content badges). */
+  listContentEngageNotifications(): Promise<ContentEngageNotification[]>;
+
+  /**
+   * Clear Content engagement badges for a surface (`feed` / `blog`) or all.
+   * Called when the user opens Content / Feed / Blog.
+   */
+  dismissContentEngageNotifications(
+    params?: DismissContentEngageNotificationsParams,
+  ): Promise<void>;
+
+  /** Star/comment summary for a Feed or Blog content URL. */
+  getContentEngagement(params: GetContentEngagementParams): Promise<ContentEngagementSummary>;
+
+  /** Toggle the current owner's star on a Feed/Blog URL. */
+  toggleContentStar(params: ToggleContentStarParams): Promise<ContentEngagementSummary>;
+
+  /** Add a comment on a Feed/Blog URL. */
+  addContentComment(params: AddContentCommentParams): Promise<ContentEngagementSummary>;
+
+  /** Remove a comment (author or content owner). */
+  removeContentComment(params: RemoveContentCommentParams): Promise<ContentEngagementSummary>;
 
   // ----- Agent-assisted (FS-E placeholder) -----
 
@@ -2499,6 +2658,14 @@ export interface NodeService {
    * Returns the AI's response text.
    */
   knowledgeQuery(question: string): Promise<string>;
+
+  /**
+   * Draft site/Feed content (bio / blog / section / caption / feed) for owner review.
+   * Does not publish and does not write into AI Chat history.
+   */
+  draftAuthorContent(
+    params: import("./author-content-draft.js").DraftAuthorContentParams,
+  ): Promise<import("./author-content-draft.js").DraftAuthorContentResult>;
 
   /**
    * Native Envoy AI document turn (heuristic tool routing).

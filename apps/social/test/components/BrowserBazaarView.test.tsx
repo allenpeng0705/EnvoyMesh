@@ -42,6 +42,8 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     searchPeers,
     runCapabilityDiscovery,
     listAgentCards,
+    getPeerProfile: vi.fn(async () => null),
+    requestPeerProfile: vi.fn(async () => undefined),
     on,
     isConnected: true,
   }),
@@ -130,7 +132,7 @@ describe("BrowserBazaarView", () => {
     expect(screen.getByTestId("bazaar-feed-list")).toBeTruthy();
     expect(screen.getByText("Sunset notes")).toBeTruthy();
     expect(screen.getByTestId("bazaar-shelves")).toBeTruthy();
-    expect(screen.getByText("Alice")).toBeTruthy();
+    expect(screen.getAllByText("Alice").length).toBeGreaterThan(0);
 
     fireEvent.click(screen.getByTestId("bazaar-feed-open"));
     expect(onOpenUrl).toHaveBeenCalledWith("envoy://envoy:owner:alice/blog/posts/sunset.md");
@@ -178,8 +180,8 @@ describe("BrowserBazaarView", () => {
   });
 });
 
-describe("BrowserView Bazaar mode", () => {
-  it("switches Browse | Bazaar and opens feed items back into Browse", async () => {
+describe("BrowserView Explore modes", () => {
+  it("defaults to Following and opens feed items into Open", async () => {
     listFeedNotifications.mockResolvedValue([
       {
         id: "n1",
@@ -196,13 +198,8 @@ describe("BrowserView Bazaar mode", () => {
     ]);
 
     renderWithI18n(<BrowserView />);
-    expect(screen.getByTestId("browser-mode-browse")).toBeTruthy();
-    expect(screen.getByTestId("browser-address-bar")).toBeTruthy();
-
-    fireEvent.click(screen.getByTestId("browser-mode-bazaar"));
-    await waitFor(() => {
-      expect(screen.getByTestId("browser-bazaar")).toBeTruthy();
-    });
+    expect(screen.getByTestId("browser-mode-following")).toBeTruthy();
+    expect(screen.getByTestId("browser-following")).toBeTruthy();
     expect(screen.queryByTestId("browser-address-bar")).toBeNull();
 
     await waitFor(() => {

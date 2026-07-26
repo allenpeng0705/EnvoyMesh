@@ -84,3 +84,46 @@ bool isEnvoyContentUrl(String input) {
     return false;
   }
 }
+
+/// Build `envoy://{ownerId}/{path}` (mirrors `buildEnvoyUrl` in `@envoymesh/api`).
+String buildEnvoyUrl(String ownerId, [String? path]) {
+  final id = ownerId.trim();
+  if (id.isEmpty) {
+    throw ArgumentError('ownerId is required');
+  }
+  if (!id.startsWith('envoy:owner:') && !id.startsWith('@')) {
+    throw ArgumentError('ownerId must start with envoy:owner: or @');
+  }
+  final trimmedPath = (path ?? '').trim();
+  if (trimmedPath.isEmpty) {
+    return 'envoy://$id/';
+  }
+  final encoded = trimmedPath
+      .split('/')
+      .map(Uri.encodeComponent)
+      .join('/');
+  return 'envoy://$id/$encoded';
+}
+
+enum WebContentSurface { profile, blog, photos, notes }
+
+/// Canonical published-surface URLs (mirrors Social `webContentUrl`).
+String webContentUrl(String ownerId, WebContentSurface surface) {
+  switch (surface) {
+    case WebContentSurface.profile:
+      return buildEnvoyUrl(ownerId);
+    case WebContentSurface.blog:
+      return buildEnvoyUrl(ownerId, 'blog/');
+    case WebContentSurface.photos:
+      // Open the default gallery directly — skip the multi-gallery listing.
+      return buildEnvoyUrl(ownerId, 'photos/wall/');
+    case WebContentSurface.notes:
+      return buildEnvoyUrl(ownerId, 'notes/');
+  }
+}
+
+/// Custom section URL (`envoy://owner/{slug}/`).
+String webContentSectionUrl(String ownerId, String slug) {
+  final clean = slug.trim().replaceAll(RegExp(r'^/+|/+$'), '');
+  return buildEnvoyUrl(ownerId, '$clean/');
+}

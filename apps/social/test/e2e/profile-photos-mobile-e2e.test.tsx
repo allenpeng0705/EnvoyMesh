@@ -45,6 +45,16 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     shareFile: vi.fn(),
     syncProfileToBonds,
     readLibraryItemContent: vi.fn().mockResolvedValue({ contentBase64: "", mimeType: "image/png" }),
+    libraryRead: vi.fn().mockResolvedValue({
+      status: "ok",
+      peerOwnerId: "envoy:owner:mobile",
+      libp2pPeerId: "",
+      body: "",
+      contentType: "image/png",
+      byteLength: 0,
+      latencyMs: 0,
+    }),
+    ensureDefaultWebSite: vi.fn().mockResolvedValue({ created: [], urls: {} }),
     getCircuitReservationStatus: vi.fn().mockResolvedValue({
       state: "none",
       live: false,
@@ -110,14 +120,19 @@ describe("E2E Profile photos (mobile tab)", () => {
   it("gallery pick uploads with public visibility", async () => {
     renderWithI18n(<ProfilePhotosTab variant="mobile" />);
 
-    fireEvent.click(screen.getByRole("button", { name: /^add photo$/i }));
+    fireEvent.click(screen.getByTestId("browser-photo-add"));
 
     const input = document.querySelector('input[type="file"]') as HTMLInputElement;
     fireEvent.change(input, { target: { files: [minimalPngFile("selfie.png")] } });
 
+    fireEvent.change(await screen.findByTestId("photo-picker-gallery-caption"), {
+      target: { value: "Beach day" },
+    });
+    fireEvent.click(screen.getByTestId("photo-picker-gallery-confirm"));
+
     await waitFor(() => {
       expect(upsertProfileGalleryPhoto).toHaveBeenCalledWith(
-        expect.objectContaining({ visibility: "public" }),
+        expect.objectContaining({ visibility: "public", label: "Beach day" }),
       );
     });
   });

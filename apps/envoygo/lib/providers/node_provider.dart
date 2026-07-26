@@ -9,6 +9,7 @@ import 'call_provider.dart';
 import 'chat_provider.dart';
 import 'contact_provider.dart';
 import 'feed_notify_provider.dart';
+import 'content_engage_provider.dart';
 import 'terminal_provider.dart';
 import '../services/candidate_resolver.dart';
 import '../services/home_remote_client.dart';
@@ -610,6 +611,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
     _syncInboxDirect(nodeService, chatNotifier);
     // Phase 45E — pull persisted feed.notify Inbox rows from home.
     _ref.read(feedNotifyProvider.notifier).refresh();
+    _ref.read(contentEngageProvider.notifier).refresh();
 
     // EnvoyAI (OpenClaw) — always create, built-in.
     chatNotifier.onBridgeStatus({
@@ -936,6 +938,11 @@ class NodeNotifier extends StateNotifier<NodeState> {
         _ref.read(feedNotifyProvider.notifier).upsertFromEvent(data);
       }
     });
+    client.on('content:engage', (data) {
+      if (data is Map<String, dynamic>) {
+        _ref.read(contentEngageProvider.notifier).upsertFromEvent(data);
+      }
+    });
   }
 
   /// Connect to a stored node.
@@ -1108,6 +1115,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
     _pairingService = null;
     _connectingFuture = null;
     _ref.read(feedNotifyProvider.notifier).clear();
+    _ref.read(contentEngageProvider.notifier).clear();
     state = state.copyWith(
       connectionState: NodeConnectionState.disconnected,
       activeTransport: null,

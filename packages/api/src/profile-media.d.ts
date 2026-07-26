@@ -17,6 +17,8 @@ export interface ProfileGalleryPhoto extends ProfilePhotoRef {
 export declare const MAX_PROFILE_THUMBNAIL_BYTES: number;
 export declare const MAX_PROFILE_GALLERY_PHOTO_BYTES: number;
 export declare const MAX_PROFILE_GALLERY_PHOTOS = 12;
+/** Absolute ceiling before refuse-to-decode (OOM guard). Prefer auto-resize to storage targets. */
+export declare const MAX_IMAGE_INPUT_BYTES: number;
 export interface ProfileMediaPolicy {
     /** Agent may share gallery photos (never applies to the always-public thumbnail metadata). */
     allowAgentShareGalleryPhotos: boolean;

@@ -46,6 +46,7 @@ describe("Header", () => {
     currentView: "chat" as ViewName,
     onNavigate: vi.fn(),
     inboxActivityCount: 0,
+    contentEngageCount: 0,
     isPublicNetwork: false,
     connectionStatus: null,
     nodeStatus: "running" as const,

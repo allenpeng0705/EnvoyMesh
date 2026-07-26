@@ -38,6 +38,18 @@ export function takePendingBrowserUrl(): string | null {
   }
 }
 
+/** True when a URL or author template is waiting for Explore to mount. */
+export function hasPendingBrowserOpen(): boolean {
+  try {
+    return Boolean(
+      sessionStorage.getItem(PENDING_URL_KEY) ||
+        sessionStorage.getItem(PENDING_AUTHOR_TEMPLATE_KEY),
+    );
+  } catch {
+    return false;
+  }
+}
+
 /** Ask App to switch to Browser and load `url`. */
 export function openBrowserAt(url: string): void {
   setPendingBrowserUrl(url);

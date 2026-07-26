@@ -17,12 +17,12 @@ const ensureDefaultWebSite = vi.fn(async () => ({
   urls: {
     profile: "envoy://envoy:owner:self/",
     blog: "envoy://envoy:owner:self/blog/",
-    photowall: "envoy://envoy:owner:self/photos/",
+    photowall: "envoy://envoy:owner:self/photos/wall/",
   },
 }));
 const showToast = vi.fn();
 
-let libraryReadMock: () => Promise<unknown> = async () => ({
+let libraryReadMock: (params?: { path?: string }) => Promise<unknown> = async () => ({
   status: "not_found",
   peerOwnerId: "envoy:owner:test",
   libp2pPeerId: "12D3KooWTest",
@@ -38,14 +38,16 @@ beforeEach(() => {
     latencyMs: 0,
     error: "no peer resolved",
   });
-  libraryRead.mockImplementation(() => libraryReadMock());
+  libraryRead.mockImplementation((params: unknown) =>
+    libraryReadMock(params as { path?: string }),
+  );
   ensureDefaultWebSite.mockClear();
   ensureDefaultWebSite.mockImplementation(async () => ({
     created: [],
     urls: {
       profile: "envoy://envoy:owner:self/",
       blog: "envoy://envoy:owner:self/blog/",
-      photowall: "envoy://envoy:owner:self/photos/",
+      photowall: "envoy://envoy:owner:self/photos/wall/",
     },
   }));
 });
@@ -90,18 +92,26 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+
+function openReader() {
+  fireEvent.click(screen.getByTestId("browser-mode-open"));
+}
+
 describe("BrowserView", () => {
-  it("renders Browse|Bazaar mode tabs and My site on idle", () => {
+  it("defaults to Following; Open shows the address bar", () => {
     renderWithI18n(<BrowserView />);
-    expect(screen.getByTestId("browser-mode-browse")).toBeTruthy();
-    expect(screen.getByTestId("browser-mode-bazaar")).toBeTruthy();
+    expect(screen.getByTestId("browser-mode-following")).toBeTruthy();
+    expect(screen.getByTestId("browser-mode-open")).toBeTruthy();
+    expect(screen.getByTestId("browser-following")).toBeTruthy();
+    expect(screen.queryByTestId("browser-address-bar")).toBeNull();
+    openReader();
     expect(screen.getByTestId("browser-address-bar")).toBeTruthy();
-    expect(screen.getByTestId("my-site-panel")).toBeTruthy();
-    expect(screen.getByTestId("my-site-open-profile")).toBeTruthy();
+    expect(screen.getByTestId("browser-idle")).toBeTruthy();
   });
 
   it("renders the address bar with placeholder and disabled Go button", () => {
     renderWithI18n(<BrowserView />);
+    openReader();
     const addressBar = screen.getByTestId("browser-address-bar");
     expect(addressBar).toBeTruthy();
     const goButton = screen.getByTestId("browser-go");
@@ -110,6 +120,7 @@ describe("BrowserView", () => {
 
   it("shows parse error for malformed URLs and keeps Go disabled", () => {
     renderWithI18n(<BrowserView />);
+    openReader();
     const addressBar = screen.getByTestId("browser-address-bar");
     fireEvent.change(addressBar, { target: { value: "not-a-valid-url" } });
     const goButton = screen.getByTestId("browser-go");
@@ -118,6 +129,7 @@ describe("BrowserView", () => {
 
   it("enables Go for a valid owner-id URL", () => {
     renderWithI18n(<BrowserView />);
+    openReader();
     const addressBar = screen.getByTestId("browser-address-bar");
     fireEvent.change(addressBar, {
       target: { value: "envoy://envoy:owner:abc123/posts/hello" },
@@ -128,6 +140,7 @@ describe("BrowserView", () => {
 
   it("disables Go for @handle URL (reserved for v2)", () => {
     renderWithI18n(<BrowserView />);
+    openReader();
     const addressBar = screen.getByTestId("browser-address-bar");
     fireEvent.change(addressBar, { target: { value: "envoy://@allen/posts/hello" } });
     const goButton = screen.getByTestId("browser-go");
@@ -149,6 +162,7 @@ describe("BrowserView", () => {
     libraryRead.mockImplementation(libraryReadMock);
 
     renderWithI18n(<BrowserView />);
+    openReader();
     const addressBar = screen.getByTestId("browser-address-bar");
     fireEvent.change(addressBar, {
       target: { value: "envoy://envoy:owner:abc123/posts/hello" },
@@ -168,6 +182,79 @@ describe("BrowserView", () => {
     });
   });
 
+  it("renders PhotoWall markdown as a photo gallery grid", async () => {
+    const pngBase64 =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    libraryReadMock = async (params?: { path?: string }) => {
+      if (params?.path?.endsWith(".png") || params?.path?.endsWith(".jpg")) {
+        return {
+          status: "ok",
+          peerOwnerId: "envoy:owner:abc123",
+          libp2pPeerId: "12D3KooWTest",
+          body: pngBase64,
+          contentType: "image/png",
+          byteLength: 68,
+          latencyMs: 5,
+        };
+      }
+      return {
+        status: "ok",
+        peerOwnerId: "envoy:owner:abc123",
+        libp2pPeerId: "12D3KooWTest",
+        body: [
+          "# Photos",
+          "",
+          "[![Trip](envoy://envoy:owner:abc123/photos/wall/a.png)](envoy://envoy:owner:abc123/photos/wall/a.png)",
+          "",
+        ].join("\n"),
+        contentType: "text/markdown",
+        byteLength: 120,
+        latencyMs: 5,
+      };
+    };
+    libraryRead.mockImplementation((params: unknown) =>
+      libraryReadMock(params as { path?: string }),
+    );
+
+    renderWithI18n(<BrowserView />);
+    openReader();
+    fireEvent.change(screen.getByTestId("browser-address-bar"), {
+      target: { value: "envoy://envoy:owner:abc123/photos/wall/" },
+    });
+    fireEvent.click(screen.getByTestId("browser-go"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("browser-photo-gallery")).toBeTruthy();
+      expect(screen.getAllByTestId("browser-photo-tile")).toHaveLength(1);
+    });
+  });
+
+  it("keeps PhotoWall listing links clickable (envoy:// href not stripped)", async () => {
+    libraryReadMock = async () => ({
+      status: "ok",
+      peerOwnerId: "envoy:owner:abc123",
+      libp2pPeerId: "12D3KooWTest",
+      body: "# Photos\n\n- [wall](envoy://envoy:owner:abc123/photos/wall/) (5 photos)\n",
+      contentType: "text/markdown",
+      byteLength: 80,
+      latencyMs: 5,
+    });
+    libraryRead.mockImplementation(libraryReadMock);
+
+    renderWithI18n(<BrowserView />);
+    openReader();
+    fireEvent.change(screen.getByTestId("browser-address-bar"), {
+      target: { value: "envoy://envoy:owner:abc123/photos/" },
+    });
+    fireEvent.click(screen.getByTestId("browser-go"));
+
+    await waitFor(() => {
+      const link = screen.getByTestId("browser-markdown").querySelector("a");
+      expect(link?.getAttribute("href")).toBe("envoy://envoy:owner:abc123/photos/wall/");
+      expect(link?.textContent).toBe("wall");
+    });
+  });
+
   it("shows a friendly empty state when a contact page is missing", async () => {
     libraryReadMock = async () => ({
       status: "not_found",
@@ -179,6 +266,7 @@ describe("BrowserView", () => {
     libraryRead.mockImplementation(libraryReadMock);
 
     renderWithI18n(<BrowserView />);
+    openReader();
     fireEvent.change(screen.getByTestId("browser-address-bar"), {
       target: { value: "envoy://envoy:owner:bob/blog/" },
     });
@@ -205,6 +293,7 @@ describe("BrowserView", () => {
     libraryRead.mockImplementation(libraryReadMock);
 
     renderWithI18n(<BrowserView />);
+    openReader();
     const addressBar = screen.getByTestId("browser-address-bar");
     fireEvent.change(addressBar, {
       target: { value: "envoy://envoy:owner:abc123/x" },
@@ -228,6 +317,7 @@ describe("BrowserView", () => {
     libraryRead.mockImplementation(libraryReadMock);
 
     renderWithI18n(<BrowserView />);
+    openReader();
     const addressBar = screen.getByTestId("browser-address-bar");
     fireEvent.change(addressBar, {
       target: { value: "envoy://envoy:owner:abc123/missing" },
@@ -250,6 +340,7 @@ describe("BrowserView", () => {
     libraryRead.mockImplementation(libraryReadMock);
 
     renderWithI18n(<BrowserView />);
+    openReader();
     const addressBar = screen.getByTestId("browser-address-bar");
     fireEvent.change(addressBar, {
       target: { value: "envoy://envoy:owner:abc123/secret" },
@@ -272,6 +363,7 @@ describe("BrowserView", () => {
     libraryRead.mockImplementation(libraryReadMock);
 
     renderWithI18n(<BrowserView />);
+    openReader();
     const addressBar = screen.getByTestId("browser-address-bar");
     fireEvent.change(addressBar, {
       target: { value: "envoy://envoy:owner:abc123/big" },
@@ -298,6 +390,7 @@ describe("BrowserView", () => {
     libraryRead.mockImplementation(libraryReadMock);
 
     renderWithI18n(<BrowserView />);
+    openReader();
     const addressBar = screen.getByTestId("browser-address-bar");
     fireEvent.change(addressBar, {
       target: { value: "envoy://envoy:owner:abc123/pixel.png" },
@@ -311,7 +404,7 @@ describe("BrowserView", () => {
     });
   });
 
-  it("enables Back on the first page and returns to My site idle", async () => {
+  it("enables Back on the first page and returns to Open idle", async () => {
     libraryReadMock = async () => ({
       status: "ok",
       peerOwnerId: "envoy:owner:self",
@@ -324,7 +417,11 @@ describe("BrowserView", () => {
     libraryRead.mockImplementation(libraryReadMock);
 
     renderWithI18n(<BrowserView />);
-    fireEvent.click(screen.getByTestId("my-site-open-profile"));
+    openReader();
+    fireEvent.change(screen.getByTestId("browser-address-bar"), {
+      target: { value: "envoy://envoy:owner:self/blog/" },
+    });
+    fireEvent.click(screen.getByTestId("browser-go"));
 
     await waitFor(() => {
       expect(screen.getByTestId("browser-markdown").textContent).toContain("Welcome");
@@ -336,7 +433,6 @@ describe("BrowserView", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("browser-idle")).toBeTruthy();
-      expect(screen.getByTestId("my-site-panel")).toBeTruthy();
     });
   });
 
@@ -345,7 +441,11 @@ describe("BrowserView", () => {
     libraryRead.mockImplementation(libraryReadMock);
 
     renderWithI18n(<BrowserView />);
-    fireEvent.click(screen.getByTestId("my-site-open-blog"));
+    openReader();
+    fireEvent.change(screen.getByTestId("browser-address-bar"), {
+      target: { value: "envoy://envoy:owner:self/blog/" },
+    });
+    fireEvent.click(screen.getByTestId("browser-go"));
 
     await waitFor(() => {
       expect(screen.getByTestId("browser-loading")).toBeTruthy();
@@ -361,7 +461,7 @@ describe("BrowserView", () => {
     });
   });
 
-  it("seeds default site before opening own Profile", async () => {
+  it("seeds default site before opening own Blog URL", async () => {
     libraryReadMock = async () => ({
       status: "ok",
       peerOwnerId: "envoy:owner:self",
@@ -374,14 +474,17 @@ describe("BrowserView", () => {
     libraryRead.mockImplementation(libraryReadMock);
 
     renderWithI18n(<BrowserView />);
-    fireEvent.click(screen.getByTestId("my-site-open-profile"));
+    openReader();
+    fireEvent.change(screen.getByTestId("browser-address-bar"), {
+      target: { value: "envoy://envoy:owner:self/blog/" },
+    });
+    fireEvent.click(screen.getByTestId("browser-go"));
 
     await waitFor(() => {
       expect(ensureDefaultWebSite).toHaveBeenCalled();
       expect(libraryRead).toHaveBeenCalled();
       expect(screen.getByTestId("browser-markdown").textContent).toContain("Seeded");
     });
-    // Seed must complete before the first library.read for this navigation.
     const ensureOrder = ensureDefaultWebSite.mock.invocationCallOrder[0] ?? 0;
     const readOrder = libraryRead.mock.invocationCallOrder[0] ?? 0;
     expect(ensureOrder).toBeLessThan(readOrder);

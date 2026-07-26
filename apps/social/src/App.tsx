@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNodeState } from "./context/NodeStateContext.js";
 import { useT } from "./context/I18nContext.js";
-import { useNodeService } from "./hooks/useNodeService.js";
+import { useContentEngageNotifications, useNodeService } from "./hooks/useNodeService.js";
 import { useInboxActivityCount } from "./hooks/useInboxActivityCount.js";
 import { ToastProvider } from "./hooks/useToast.js";
 import { ErrorBoundary } from "./components/ErrorBoundary.js";
@@ -284,6 +284,7 @@ export function App() {
   } = useNodeState();
 
   const inboxActivityCount = useInboxActivityCount();
+  const contentEngage = useContentEngageNotifications();
 
   const nodeService = useNodeService();
   const reconnectAttempts = nodeService.reconnectAttempts;
@@ -475,6 +476,7 @@ export function App() {
             currentView={currentView}
             onNavigate={navigateTo}
             inboxActivityCount={inboxActivityCount}
+            contentEngageCount={contentEngage.totalCount}
             isPublicNetwork={isPublicNetwork}
             connectionStatus={connectionStatus}
             nodeStatus={nodeStatus}
@@ -524,7 +526,11 @@ export function App() {
             )}
             {currentView === "content" && (
               <SwipeBack onSwipeBack={() => navigateTo("chat")}>
-                <ContentView />
+                <ContentView
+                  feedEngageCount={contentEngage.feedCount}
+                  blogEngageCount={contentEngage.blogCount}
+                  onDismissEngage={contentEngage.dismiss}
+                />
               </SwipeBack>
             )}
             {currentView === "chains" && (

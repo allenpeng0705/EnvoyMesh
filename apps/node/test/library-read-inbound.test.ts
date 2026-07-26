@@ -152,7 +152,7 @@ function req(path: string) {
 }
 
 describe("handleInboundLibraryRead", () => {
-  it("returns not_found for empty path when index.md is missing", async () => {
+  it("returns not_found for empty path when index.html and index.md are missing", async () => {
     const result = await call("peer-stranger", req(""));
     expect(result.ok).toBe(true);
     if (result.ok) {
@@ -457,7 +457,7 @@ describe("handleInboundLibraryRead", () => {
     }
   });
 
-  it("resolves empty path to index.md", async () => {
+  it("resolves empty path to index.md when only markdown exists", async () => {
     const content = "# Site root";
     await writePublishedFile("index.md", content, "public");
     const result = await call("peer-stranger", req(""));
@@ -465,6 +465,19 @@ describe("handleInboundLibraryRead", () => {
     if (result.ok) {
       expect(result.responsePayload.status).toBe("ok");
       expect(result.responsePayload.body).toBe(content);
+    }
+  });
+
+  it("prefers index.html over index.md for empty path", async () => {
+    await writePublishedFile("index.md", "# Markdown root", "public");
+    const html = "<!DOCTYPE html><html><body class=\"em-profile-portal\">HTML root</body></html>";
+    await writePublishedFile("index.html", html, "public");
+    const result = await call("peer-stranger", req(""));
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.responsePayload.status).toBe("ok");
+      expect(result.responsePayload.body).toBe(html);
+      expect(result.responsePayload.contentType).toMatch(/html/);
     }
   });
 

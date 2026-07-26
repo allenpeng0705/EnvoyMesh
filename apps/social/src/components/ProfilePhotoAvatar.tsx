@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { MAX_PROFILE_GALLERY_PHOTO_BYTES } from "@envoymesh/api";
 import { useNodeService } from "../hooks/useNodeService.js";
 import type { ProfilePhotoRef } from "@envoymesh/api";
 
@@ -21,7 +22,11 @@ export function ProfilePhotoAvatar({ photo, fallbackLabel, className = "", large
     let cancelled = false;
     let objectUrl: string | null = null;
     void nodeService
-      .readLibraryItemContent({ relativePath: photo.vaultRelativePath, maxBytes: 512 * 1024 })
+      .readLibraryItemContent({
+        relativePath: photo.vaultRelativePath,
+        // Gallery photos may be up to MAX_PROFILE_GALLERY_PHOTO_BYTES; thumbnails are smaller.
+        maxBytes: MAX_PROFILE_GALLERY_PHOTO_BYTES,
+      })
       .then((result) => {
         if (cancelled) return;
         objectUrl = `data:${result.mimeType};base64,${result.contentBase64}`;

@@ -238,7 +238,7 @@ Templates are conventions on directory layout + `kind` values — not new protoc
 | **Profile** | `profile/index.md` | Rendered at the root URL | Static, single page |
 | **Blog** | `blog/posts/*.md` | `blog/index.md` lists posts by `publishedAt` desc | Clickable list of posts |
 | **PhotoWall** | `photos/<gallery>/` | Gallery cover image + thumbnails | Grid of images |
-| **Feeds** | `feeds/*.md` (or RSS/JSON imports) | Reverse-chronological list | Subscribe-able in Step 2 |
+| **Feeds** (Friend Circle) | `feeds/*.md` + `feeds/media/{slug}/` | Reverse-chronological Moments-style posts (text + up to 9 images) | Content → Feed on Social + EnvoyGo; default visibility **bonded** (no public); `feed.notify` kind `feed` |
 
 A CLI command `envoy init blog` (and the equivalent in-app action in Phase 45D) scaffolds the template. Templates are user-editable — drop new files, edit the manifest, republish.
 
