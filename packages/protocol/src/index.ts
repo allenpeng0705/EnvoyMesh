@@ -900,6 +900,8 @@ export const FeedNotifyPayloadSchema = z.object({
   contentHash: z.string().min(1).max(128).optional(),
   /** Optional listing/index URL (blog index, photo wall). */
   listingUrl: z.string().min(1).max(2048).optional(),
+  /** Feed Moments image URLs (`envoy://…/feeds/media/…`) — notify-only, no bytes. */
+  imageUrls: z.array(z.string().min(1).max(2048)).max(9).optional(),
 });
 
 /**
@@ -2993,6 +2995,7 @@ export interface CreateFeedNotifyPayloadInput {
   tags?: string[];
   contentHash?: string;
   listingUrl?: string;
+  imageUrls?: string[];
 }
 
 export function createFeedNotifyPayload(input: CreateFeedNotifyPayloadInput): FeedNotifyPayload {
@@ -3007,6 +3010,7 @@ export function createFeedNotifyPayload(input: CreateFeedNotifyPayloadInput): Fe
     tags: input.tags,
     contentHash: input.contentHash,
     listingUrl: input.listingUrl,
+    imageUrls: input.imageUrls,
   });
 }
 

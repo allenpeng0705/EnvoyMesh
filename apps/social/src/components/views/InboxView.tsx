@@ -1,16 +1,10 @@
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
 import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
-import { useNodeService, useAgentShareProposals, useShareOffers, usePendingApprovals, useFeedNotifications } from "../../hooks/useNodeService.js";
+import { useNodeService, useAgentShareProposals, useShareOffers, usePendingApprovals } from "../../hooks/useNodeService.js";
 import { IncomingShareOffersSection } from "../file-share/IncomingShareOffersSection.js";
 import type { HelloProfile, HelloRequest, ChatMessage, SocialIntroProposal, PendingApprovalSummary } from "@envoymesh/api";
 import { peerDisplayLabel, shortOwnerId } from "../../lib/display.js";
-import {
-  OPEN_INBOX_EVENT,
-  clearInboxPublisherFilter,
-  getInboxPublisherFilter,
-  openBrowserAt,
-} from "../../lib/browser-nav.js";
 
 export interface InboxViewProps {
   /** When nested under Chat → Inbox, omit duplicate page title */
@@ -36,33 +30,6 @@ export function InboxView({ embedded = false }: InboxViewProps) {
   const { proposals: agentShareProposals, dismiss: dismissAgentShare } = useAgentShareProposals();
   const { offers: pendingShareOffers } = useShareOffers();
   const { items: pendingApprovals, approve: approvePending, reject: rejectPending } = usePendingApprovals();
-  const { unread: feedUnread, dismiss: dismissFeed, dismissAll: dismissAllFeed } =
-    useFeedNotifications();
-
-  // Open-Inbox → clear badge: mark feed notifications read (do not delete —
-  // Content → Feed reuses the same store for peer posts).
-  const clearedFeedOnMountRef = useRef(false);
-  useEffect(() => {
-    if (clearedFeedOnMountRef.current) return;
-    if (feedUnread.length === 0) return;
-    clearedFeedOnMountRef.current = true;
-    void dismissAllFeed().catch(console.error);
-  }, [feedUnread.length, dismissAllFeed]);
-  const [feedBusy, setFeedBusy] = useState<string | null>(null);
-  const [feedPublisherFilter, setFeedPublisherFilter] = useState<string | null>(
-    () => getInboxPublisherFilter(),
-  );
-
-  useEffect(() => {
-    const syncFilter = () => setFeedPublisherFilter(getInboxPublisherFilter());
-    syncFilter();
-    window.addEventListener(OPEN_INBOX_EVENT, syncFilter);
-    return () => window.removeEventListener(OPEN_INBOX_EVENT, syncFilter);
-  }, []);
-
-  const visibleFeedNotifications = feedPublisherFilter
-    ? feedUnread.filter((item) => item.publisherOwnerId === feedPublisherFilter)
-    : feedUnread;
 
   const [introSaveStatus, setIntroSaveStatus] = useState<string | null>(null);
   const [agentShareBusy, setAgentShareBusy] = useState<string | null>(null);
@@ -195,8 +162,7 @@ export function InboxView({ embedded = false }: InboxViewProps) {
     pendingMessages.length === 0 &&
     agentShareProposals.length === 0 &&
     pendingShareOffers.length === 0 &&
-    pendingApprovals.length === 0 &&
-    feedUnread.length === 0;
+    pendingApprovals.length === 0;
 
   if (empty) {
     return (
@@ -227,80 +193,6 @@ export function InboxView({ embedded = false }: InboxViewProps) {
 
       {introSaveStatus && (
         <p className="settings-hint" style={{ marginBottom: 8 }}>{introSaveStatus}</p>
-      )}
-
-      {feedPublisherFilter ? (
-        <div className="inbox-feed-filter" data-testid="inbox-feed-filter">
-          <span>
-            {t("inbox.feedFilterByPublisher", "Showing feeds from {owner}", {
-              owner: shortOwnerId(feedPublisherFilter),
-            })}
-          </span>
-          <button
-            type="button"
-            className="linkish"
-            onClick={() => {
-              clearInboxPublisherFilter();
-              setFeedPublisherFilter(null);
-            }}
-          >
-            {t("inbox.feedFilterClear", "Show all")}
-          </button>
-        </div>
-      ) : null}
-
-      {feedPublisherFilter && visibleFeedNotifications.length === 0 ? (
-        <p className="field-desc" data-testid="inbox-feed-filter-empty">
-          {t("inbox.feedFilterEmpty", "No published posts from this contact yet.")}
-        </p>
-      ) : null}
-
-      {visibleFeedNotifications.length > 0 && (
-        <>
-          <h3 className="inbox-section-title">
-            {t("inbox.feedNotifications", { count: visibleFeedNotifications.length })}
-          </h3>
-          <ul className="inbox-list">
-            {visibleFeedNotifications.map((item) => (
-              <li key={item.id} className="inbox-item" data-testid="feed-notify-row">
-                <div className="inbox-sender">
-                  <span className="avatar large">W</span>
-                  <div className="inbox-sender-info">
-                    <strong>{item.title}</strong>
-                    <span className="owner-id">{shortOwnerId(item.publisherOwnerId)}</span>
-                  </div>
-                </div>
-                {item.summary ? <p className="inbox-message">{item.summary}</p> : null}
-                <div className="inbox-actions">
-                  <button
-                    type="button"
-                    className="accept"
-                    data-testid="feed-notify-open-browser"
-                    disabled={feedBusy === item.id}
-                    onClick={() => {
-                      openBrowserAt(item.url);
-                      setFeedBusy(item.id);
-                      void dismissFeed(item.id).finally(() => setFeedBusy(null));
-                    }}
-                  >
-                    {t("inbox.openInBrowser")}
-                  </button>
-                  <button
-                    type="button"
-                    className="decline"
-                    disabled={feedBusy === item.id}
-                    onClick={() => {
-                      setFeedBusy(item.id);
-                      void dismissFeed(item.id).finally(() => setFeedBusy(null));
-                    }}
-                  >
-                    {t("inbox.dismiss")}
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </>
       )}
 
       {pendingApprovals.length > 0 && (

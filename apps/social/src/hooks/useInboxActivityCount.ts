@@ -1,18 +1,18 @@
 import { useNodeState } from "../context/NodeStateContext.js";
-import { useAgentShareProposals, useShareOffers, useFeedNotifications } from "./useNodeService.js";
+import { useAgentShareProposals, useShareOffers } from "./useNodeService.js";
 
-/** Pending inbox items: hellos, intros, stranger chat, file shares, agent share suggestions, feed notifies. */
+/** Pending Chat → Inbox items: hellos, intros, stranger chat, file shares, agent suggestions.
+ * Feed notifies badge Content → Feed, not Inbox.
+ */
 export function useInboxActivityCount(): number {
   const { pendingHellOs, pendingIntroProposals, pendingMessages } = useNodeState();
   const { offers } = useShareOffers();
   const { proposals } = useAgentShareProposals();
-  const { unread: feedUnread } = useFeedNotifications();
   return (
     pendingHellOs.length +
     pendingIntroProposals.length +
     pendingMessages.length +
     offers.length +
-    proposals.length +
-    feedUnread.length
+    proposals.length
   );
 }

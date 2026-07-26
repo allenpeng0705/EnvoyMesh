@@ -137,4 +137,40 @@ describe("handleInboundFeedNotify", () => {
     const inbox = await loadFeedNotifyInbox(profileDir);
     expect(inbox).toHaveLength(1);
   });
+
+  it("stores and emits imageUrls for feed posts", async () => {
+    const imageUrls = ["envoy://envoy:owner:publisher01/feeds/media/x/0.jpg"];
+    const envelope = {
+      ...createUnsignedEnvelope({
+        senderPeerId: "envoy_senderpeer",
+        senderPublicKey: "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----",
+        senderRole: "human",
+        recipientRole: "human",
+        intent: "feed.notify",
+        payload: {
+          publisherOwnerId: PUBLISHER,
+          publishedAt: "2026-07-20T12:00:00.000Z",
+          title: "With photo",
+          url: `envoy://${PUBLISHER}/feeds/x.md`,
+          kind: "feed",
+          visibility: "bonded",
+          imageUrls,
+        },
+      }),
+      signature: "signature",
+    };
+    const result = await handleInboundFeedNotify({
+      envelope,
+      profileDir,
+      remotePeerId: "12D3KooWtestpeer",
+      trustStore,
+      peerDirectoryStore,
+      taskStore,
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.item.imageUrls).toEqual(imageUrls);
+    const inbox = await loadFeedNotifyInbox(profileDir);
+    expect(inbox[0]?.imageUrls).toEqual(imageUrls);
+  });
 });

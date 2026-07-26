@@ -25,6 +25,8 @@ export interface FeedNotifyInboxItem {
   contentHash?: string;
   listingUrl?: string;
   senderPeerId: string;
+  /** Feed Moments image URLs (notify metadata; bytes via library.read). */
+  imageUrls?: string[];
   /** Set when the owner opens Inbox / dismisses — badge only; Feed still lists. */
   readAt?: string;
 }

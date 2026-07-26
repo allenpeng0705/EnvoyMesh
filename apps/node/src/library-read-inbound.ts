@@ -264,9 +264,24 @@ export async function handleInboundLibraryRead(
       }
     }
   }
-  const visibility =
+  let visibility =
     entry?.visibility ??
     (diskIndexWithoutManifest ? (priorEntry?.visibility ?? "bonded") : DEFAULT_VISIBILITY);
+
+  // Feed Moments sidecar images may predate manifesto rows — inherit the post's ACL.
+  let aclEntry = entry ?? (diskIndexWithoutManifest ? priorEntry : undefined);
+  if (!entry && normalizedPath.startsWith("feeds/media/")) {
+    const slug = normalizedPath.split("/")[2]?.trim();
+    if (slug && !slug.includes("..")) {
+      const postEntry = await store.findByPath(`feeds/${slug}.md`);
+      if (postEntry) {
+        visibility = postEntry.visibility;
+        aclEntry = postEntry;
+      } else {
+        visibility = "bonded";
+      }
+    }
+  }
 
   // 6. Map visibility to sensitivity and evaluate bond policy.
   const requestedSensitivity = visibilityToSensitivity(visibility);
@@ -352,7 +367,7 @@ export async function handleInboundLibraryRead(
   // 7. For `contacts` visibility: ACL is deny-by-default.
   //    Missing/empty contactIds must not fall open to every bonded peer.
   if (visibility === "contacts" && !isLocalSelfRead) {
-    const allowed = entry?.contactIds ?? (diskIndexWithoutManifest ? priorEntry?.contactIds : undefined);
+    const allowed = aclEntry?.contactIds;
     if (!allowed?.length || !senderOwnerId || !allowed.includes(senderOwnerId)) {
       await taskStore.appendAuditEvent(
         createAuditEvent({

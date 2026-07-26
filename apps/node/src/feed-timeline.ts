@@ -82,7 +82,7 @@ function peerToItem(n: FeedNotifyInboxItem): FeedTimelineItem | null {
     body: n.summary,
     url: n.url,
     publishedAt: n.publishedAt || n.receivedAt,
-    imageUrls: [],
+    imageUrls: n.imageUrls?.length ? [...n.imageUrls] : [],
     visibility: n.visibility,
   };
 }

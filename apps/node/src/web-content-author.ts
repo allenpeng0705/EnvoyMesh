@@ -120,6 +120,8 @@ export interface PublishWebContentResult {
   listingUrl?: string;
   /** Effective tags written to the manifest (includes auto topic tags for sections). */
   tags?: string[];
+  /** Feed Moments — absolute envoy:// image URLs written beside the post. */
+  imageUrls?: string[];
 }
 
 /** Soft storage target for published photos/files after auto-resize. */
@@ -470,6 +472,7 @@ export async function publishWebContentEntry(
   let byteLength: number;
   let summary: string;
   let listingUrl: string | undefined;
+  let feedImageUrls: string[] | undefined;
   let publishedAt = now;
 
   let tags = params.tags ? [...params.tags] : [];
@@ -542,6 +545,10 @@ export async function publishWebContentEntry(
     const postSlug = relativePath.replace(/^feeds\//, "").replace(/\.md$/, "");
     const imageLines: string[] = [];
     const imageUrls: string[] = [];
+    const contactIdsForMedia =
+      params.visibility === "contacts" && params.contactIds?.length
+        ? [...params.contactIds]
+        : undefined;
     for (let i = 0; i < images.length; i++) {
       const img = images[i]!;
       let bytes = decodeBase64Payload(img.contentBase64);
@@ -570,10 +577,25 @@ export async function publishWebContentEntry(
       });
       const mediaPath = normalizeWebPath(`feeds/media/${postSlug}/${i}.${ext}`);
       await writeWebFile(webDir, mediaPath, bytes);
+      const mediaMeta = sha256Bytes(bytes);
+      // Manifest row so bonded peers can library.read images (default private otherwise).
+      await store.upsert({
+        path: mediaPath,
+        contentHash: mediaMeta.hash,
+        byteLength: mediaMeta.byteLength,
+        title: `${title} (${i + 1})`,
+        kind: "photo",
+        mimeType: imgMime,
+        visibility: params.visibility,
+        updatedAt: now,
+        publishedAt,
+        ...(contactIdsForMedia ? { contactIds: contactIdsForMedia } : {}),
+      });
       const abs = `envoy://${ownerId}/${mediaPath}`;
       imageUrls.push(abs);
       imageLines.push(`![photo](${abs})`);
     }
+    feedImageUrls = imageUrls.length ? imageUrls : undefined;
     const markdownParts = [`# ${title}`];
     if (body) markdownParts.push("", body);
     if (imageLines.length) markdownParts.push("", ...imageLines);
@@ -724,6 +746,7 @@ export async function publishWebContentEntry(
           : `envoy://${ownerId}/${relativePath}`,
     listingUrl,
     ...(tags.length ? { tags } : {}),
+    ...(feedImageUrls?.length ? { imageUrls: feedImageUrls } : {}),
   };
 }
 

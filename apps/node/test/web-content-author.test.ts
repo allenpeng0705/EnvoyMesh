@@ -376,6 +376,14 @@ describe("publishWebContentEntry feed-post", () => {
     const md = await readFile(join(profileDir, "web", result.path), "utf8");
     expect(md).toContain("Dinner with bonded friends");
     expect(md).toContain(`envoy://${ownerId}/feeds/media/`);
+    expect(result.imageUrls?.length).toBe(1);
+    expect(result.imageUrls?.[0]).toMatch(/\/feeds\/media\//);
+
+    const mediaPath = result.imageUrls![0]!.replace(`envoy://${ownerId}/`, "");
+    const mediaEntry = await store.findByPath(mediaPath);
+    expect(mediaEntry?.kind).toBe("photo");
+    expect(mediaEntry?.visibility).toBe("bonded");
+    expect(mediaEntry?.mimeType).toMatch(/^image\//);
   });
 
   it("rejects public visibility and more than 9 images", async () => {

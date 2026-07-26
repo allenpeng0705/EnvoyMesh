@@ -17,7 +17,7 @@ interface HeaderProps {
   onNavigate: (view: ViewName) => void;
   /** Hello requests + stranger chat pings — badge on Chat */
   inboxActivityCount: number;
-  /** Unread stars/comments on own Feed/Blog — badge on Content */
+  /** Unread stars/comments on own Feed/Blog + new peer Feed posts — badge on Content */
   contentEngageCount: number;
   isPublicNetwork: boolean;
   connectionStatus: ConnectionStatus | null;

@@ -1119,6 +1119,8 @@ export interface PublishWebContentResult {
   listingUrl?: string;
   /** Effective tags on the published item (includes auto section topic tags). */
   tags?: string[];
+  /** Feed Moments — absolute envoy:// image URLs. */
+  imageUrls?: string[];
 }
 
 /** Phase 45 — seed default Profile + empty Blog / PhotoWall / Feeds shells (idempotent). */
@@ -1143,7 +1145,7 @@ export interface WebContentSectionSummary {
   updatedAt: string;
 }
 
-/** Phase 45E — inbound `feed.notify` inbox row (Social Inbox). */
+/** Phase 45E — inbound `feed.notify` row (Content → Feed badge + timeline). */
 export interface FeedNotification {
   id: string;
   receivedAt: string;
@@ -1159,7 +1161,9 @@ export interface FeedNotification {
   contentHash?: string;
   listingUrl?: string;
   senderPeerId: string;
-  /** Present after Inbox open/dismiss — clears badge; Feed timeline still lists. */
+  /** Feed Moments image URLs (metadata only). */
+  imageUrls?: string[];
+  /** Present after Content/Feed open/dismiss — clears badge; timeline still lists. */
   readAt?: string;
 }
 

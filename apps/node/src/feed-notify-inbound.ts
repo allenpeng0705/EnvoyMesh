@@ -119,6 +119,7 @@ export async function handleInboundFeedNotify(input: {
     tags: payload.tags,
     contentHash: payload.contentHash,
     listingUrl: payload.listingUrl,
+    imageUrls: payload.imageUrls,
     senderPeerId: envelope.senderPeerId,
   };
 

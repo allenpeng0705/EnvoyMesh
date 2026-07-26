@@ -38,6 +38,7 @@ export interface FeedNotifyPublishMeta {
   contentHash?: string;
   listingUrl?: string;
   contactIds?: string[];
+  imageUrls?: string[];
 }
 
 export async function buildSignedFeedNotifyEnvelope(input: {
@@ -56,6 +57,7 @@ export async function buildSignedFeedNotifyEnvelope(input: {
     tags: input.meta.tags,
     contentHash: input.meta.contentHash,
     listingUrl: input.meta.listingUrl,
+    imageUrls: input.meta.imageUrls,
   });
   const unsigned = createUnsignedEnvelope({
     senderPeerId: derivePeerId(input.profile.device.publicKeyPem),

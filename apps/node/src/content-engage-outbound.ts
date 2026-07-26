@@ -55,17 +55,20 @@ export async function sendFeedEngageToOwner(input: {
   ) => Promise<{ peerId: string; listenAddrs?: string[] } | undefined>;
   dialHintsFor: (peerId: string, listenAddrs?: string[]) => Promise<string[]>;
   tagReachability?: (peerId: string) => void;
-}): Promise<{ sent: boolean }> {
+}): Promise<{ sent: boolean; reason?: string }> {
   const resolved = await input.resolveLibp2pPeer(input.targetOwnerId);
   if (!resolved?.peerId || !isLibp2pPeerId(resolved.peerId)) {
-    return { sent: false };
+    return { sent: false, reason: "no libp2p peer id" };
   }
 
   let dialHints: string[];
   try {
     dialHints = await input.dialHintsFor(resolved.peerId, resolved.listenAddrs);
-  } catch {
-    return { sent: false };
+  } catch (err) {
+    return {
+      sent: false,
+      reason: err instanceof Error ? err.message : "dial hints failed",
+    };
   }
 
   if (typeof input.mesh.mergePeerStoreDialHints === "function") {
@@ -102,10 +105,8 @@ export async function sendFeedEngageToOwner(input: {
     });
     return { sent: true };
   } catch (err) {
-    console.warn(
-      "[feed.engage] send failed:",
-      err instanceof Error ? err.message : err,
-    );
-    return { sent: false };
+    const reason = err instanceof Error ? err.message : "send failed";
+    console.warn(`[feed.engage] send failed:`, reason);
+    return { sent: false, reason };
   }
 }

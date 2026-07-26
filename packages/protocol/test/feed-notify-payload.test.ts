@@ -49,6 +49,21 @@ describe("feed.notify payload (Phase 45E)", () => {
     expect(parseFeedNotifyPayload(created).kind).toBe("section");
   });
 
+  it("round-trips imageUrls for Feed Moments", () => {
+    const created = createFeedNotifyPayload({
+      publisherOwnerId: "envoy:owner:alice",
+      publishedAt: "2026-07-20T12:00:00.000Z",
+      title: "With photo",
+      url: "envoy://envoy:owner:alice/feeds/hi.md",
+      kind: "feed",
+      visibility: "bonded",
+      imageUrls: ["envoy://envoy:owner:alice/feeds/media/hi/0.jpg"],
+    });
+    expect(parseFeedNotifyPayload(created).imageUrls).toEqual([
+      "envoy://envoy:owner:alice/feeds/media/hi/0.jpg",
+    ]);
+  });
+
   it("allows human→human and denies agent→human", () => {
     expect(evaluateEnvelopeRolePolicy("feed.notify", "human", "human")).toEqual({ ok: true });
     expect(evaluateEnvelopeRolePolicy("feed.notify", "agent", "human").ok).toBe(false);

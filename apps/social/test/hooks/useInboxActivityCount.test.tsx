@@ -16,11 +16,10 @@ vi.mock("../../src/context/NodeStateContext.js", () => ({
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useShareOffers: () => ({ offers: [{ shareId: "s1" }] }),
   useAgentShareProposals: () => ({ proposals: [{ proposalId: "p1" }, { proposalId: "p2" }] }),
-  useFeedNotifications: () => ({ items: [], dismiss: vi.fn() }),
 }));
 
 describe("useInboxActivityCount", () => {
-  it("sums hellos, intros, strangers, share offers, and agent proposals", () => {
+  it("sums hellos, intros, strangers, share offers, and agent proposals (not feed)", () => {
     const { result } = renderHook(() => useInboxActivityCount());
     expect(result.current).toBe(6);
   });

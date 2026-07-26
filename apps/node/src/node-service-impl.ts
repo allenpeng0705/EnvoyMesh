@@ -853,7 +853,15 @@ import {
   listFeedNotifyOutboxForRecipient,
   loadFeedNotifyOutbox,
   removeFeedNotifyOutboxItem,
+  compactFeedNotifyOutbox,
 } from "./feed-notify-outbox.js";
+import {
+  enqueueFeedEngageOutboxItem,
+  listFeedEngageOutboxForRecipient,
+  loadFeedEngageOutbox,
+  removeFeedEngageOutboxItem,
+  compactFeedEngageOutbox,
+} from "./feed-engage-outbox.js";
 import { listFeedTimeline as listFeedTimelineMerged } from "./feed-timeline.js";
 import { sendFeedEngageToOwner } from "./content-engage-outbound.js";
 import {
@@ -5610,6 +5618,7 @@ class NodeServiceImpl implements NodeService {
       contentHash: result.contentHash,
       listingUrl: result.listingUrl,
       contactIds: params.contactIds,
+      imageUrls: result.imageUrls,
     };
 
     const deliver = await sendFeedNotifyToBonds({
@@ -5698,6 +5707,7 @@ class NodeServiceImpl implements NodeService {
   /** Best-effort: deliver all pending outbox rows (peer may still be offline). */
   private async _flushFeedNotifyOutbox(): Promise<void> {
     if (this._profileDir === "/tmp/unknown") return;
+    await compactFeedNotifyOutbox(this._profileDir);
     const rows = await loadFeedNotifyOutbox(this._profileDir);
     if (rows.length === 0) return;
     const owners = [...new Set(rows.map((r) => r.recipientOwnerId))];
@@ -5784,7 +5794,8 @@ class NodeServiceImpl implements NodeService {
   }): Promise<boolean> {
     const targetOwnerId = this._contentOwnerIdFromUrl(input.url);
     const profile = this._requireProfile();
-    const mesh = this._mesh;
+    // Tauri/Social binds the mesh via _externalMesh — same as chat / feed.notify.
+    const mesh = this._reachableMesh();
     if (!targetOwnerId || !mesh || targetOwnerId === profile.owner.ownerId) return false;
     const result = await sendFeedEngageToOwner({
       mesh,
@@ -5807,6 +5818,85 @@ class NodeServiceImpl implements NodeService {
       },
     });
     return result.sent;
+  }
+
+  /** Persist + retry later when author is unreachable (like feed.notify outbox). */
+  private async _enqueueEngageOutbox(input: {
+    targetOwnerId: string;
+    url: string;
+    action: "star" | "unstar" | "comment" | "uncomment";
+    text?: string;
+    commentId?: string;
+  }): Promise<void> {
+    const profile = this._profile;
+    if (!profile || this._profileDir === "/tmp/unknown") return;
+    try {
+      await enqueueFeedEngageOutboxItem(this._profileDir, {
+        targetOwnerId: input.targetOwnerId,
+        url: input.url,
+        action: input.action,
+        actorOwnerId: profile.owner.ownerId,
+        text: input.text,
+        commentId: input.commentId,
+      });
+    } catch (err) {
+      console.warn(
+        "[feed.engage] outbox enqueue failed:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+
+  private async _flushFeedEngageOutboxForOwner(ownerId: string): Promise<void> {
+    if (this._profileDir === "/tmp/unknown") return;
+    const mesh = this._reachableMesh();
+    const profile = this._profile;
+    if (!mesh || !profile) return;
+    const trimmed = ownerId.trim();
+    if (!trimmed) return;
+
+    const pending = await listFeedEngageOutboxForRecipient(this._profileDir, trimmed);
+    if (pending.length === 0) return;
+
+    for (const row of pending) {
+      const result = await sendFeedEngageToOwner({
+        mesh,
+        profile,
+        action: row.action,
+        url: row.url,
+        text: row.text,
+        commentId: row.commentId,
+        actorOwnerId: row.actorOwnerId,
+        targetOwnerId: trimmed,
+        resolveLibp2pPeer: async (bondOwnerId) => {
+          const resolved = await this._resolveLibp2pPeerForBondOwner(bondOwnerId);
+          if (!resolved) return undefined;
+          return { peerId: resolved.transportPeerId, listenAddrs: resolved.listenAddrs };
+        },
+        dialHintsFor: (peerId, listenAddrs) => this._dialHintsForChat(peerId, listenAddrs),
+        tagReachability: (peerId) => {
+          void this._tagBondedContactReachability(peerId);
+        },
+      });
+      if (result.sent) {
+        await removeFeedEngageOutboxItem(this._profileDir, row);
+      } else {
+        console.warn(
+          `[feed.engage] outbox flush miss ${trimmed.slice(0, 16)}… ${row.action} ${row.url.slice(0, 40)}`,
+        );
+      }
+    }
+  }
+
+  private async _flushFeedEngageOutbox(): Promise<void> {
+    if (this._profileDir === "/tmp/unknown") return;
+    await compactFeedEngageOutbox(this._profileDir);
+    const rows = await loadFeedEngageOutbox(this._profileDir);
+    if (rows.length === 0) return;
+    const owners = [...new Set(rows.map((r) => r.targetOwnerId))];
+    for (const ownerId of owners) {
+      await this._flushFeedEngageOutboxForOwner(ownerId);
+    }
   }
 
   async getContentEngagement(params: GetContentEngagementParams): Promise<ContentEngagementSummary> {
@@ -5852,8 +5942,12 @@ class NodeServiceImpl implements NodeService {
         action: starred ? "star" : "unstar",
       });
       if (!sent) {
-        await toggleContentStarInStore(this._profileDir, url, me);
-        throw new Error("Could not reach the post author to sync your like");
+        // Keep local optimism; retry when the author is reachable again.
+        await this._enqueueEngageOutbox({
+          targetOwnerId: ownerId,
+          url,
+          action: starred ? "star" : "unstar",
+        });
       }
     }
     return summarizeEngagement(await loadContentEngagement(this._profileDir, url), me);
@@ -5883,8 +5977,13 @@ class NodeServiceImpl implements NodeService {
         commentId,
       });
       if (!sent) {
-        await removeContentCommentInStore(this._profileDir, url, me, commentId, ownerId);
-        throw new Error("Could not reach the post author to sync your comment");
+        await this._enqueueEngageOutbox({
+          targetOwnerId: ownerId,
+          url,
+          action: "comment",
+          text,
+          commentId,
+        });
       }
     }
     return summarizeEngagement(record, me);
@@ -5904,8 +6003,6 @@ class NodeServiceImpl implements NodeService {
     if (!postAuthorOwnerId) {
       throw new Error("removeContentComment: could not resolve post author from url");
     }
-    const before = await loadContentEngagement(this._profileDir, url);
-    const removed = before.comments.find((c) => c.id === commentId);
     // Enforce: comment author OR post author only (store checks both).
     const record = await removeContentCommentInStore(
       this._profileDir,
@@ -5918,17 +6015,12 @@ class NodeServiceImpl implements NodeService {
       await this._requireBondForRemoteEngage(postAuthorOwnerId);
       const sent = await this._sendEngageToContentOwner({ url, action: "uncomment", commentId });
       if (!sent) {
-        if (removed) {
-          await addContentCommentInStore(
-            this._profileDir,
-            url,
-            removed.authorOwnerId,
-            removed.text,
-            removed.id,
-          );
-          // Preserve original createdAt by rewriting if needed — store uses "now"; acceptable for rollback.
-        }
-        throw new Error("Could not reach the post author to sync comment removal");
+        await this._enqueueEngageOutbox({
+          targetOwnerId: postAuthorOwnerId,
+          url,
+          action: "uncomment",
+          commentId,
+        });
       }
     }
     return summarizeEngagement(record, me);
@@ -7625,6 +7717,12 @@ class NodeServiceImpl implements NodeService {
     void this._flushFeedNotifyOutbox().catch((err) =>
       console.warn(
         "[feed.notify] outbox flush on online failed:",
+        err instanceof Error ? err.message : err,
+      ),
+    );
+    void this._flushFeedEngageOutbox().catch((err) =>
+      console.warn(
+        "[feed.engage] outbox flush on online failed:",
         err instanceof Error ? err.message : err,
       ),
     );

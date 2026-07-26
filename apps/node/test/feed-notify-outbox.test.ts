@@ -1,5 +1,5 @@
 /**
- * Publisher feed.notify outbox — enqueue / dedup / cap / remove.
+ * Publisher feed.notify outbox — enqueue / dedup / cap / remove / TTL prune.
  */
 import { describe, expect, it, vi, beforeEach } from "vitest";
 
@@ -8,6 +8,7 @@ const mockFs = {
   writeFile: vi.fn(),
   rename: vi.fn(),
   mkdir: vi.fn(),
+  unlink: vi.fn(),
 };
 vi.mock("node:fs/promises", () => mockFs);
 
@@ -17,6 +18,8 @@ const {
   listFeedNotifyOutboxForRecipient,
   loadFeedNotifyOutbox,
   MAX_OUTBOX_ITEMS,
+  MAX_OUTBOX_AGE_MS,
+  pruneFeedNotifyOutboxItems,
 } = await import("../src/feed-notify-outbox.js");
 
 function meta(url: string) {
@@ -30,15 +33,21 @@ function meta(url: string) {
   };
 }
 
+function recentIso(offsetSec = 0): string {
+  return new Date(Date.now() - offsetSec * 1000).toISOString();
+}
+
 describe("feed-notify-outbox", () => {
   beforeEach(() => {
     mockFs.readFile.mockReset();
     mockFs.writeFile.mockReset();
     mockFs.rename.mockReset();
     mockFs.mkdir.mockReset();
+    mockFs.unlink.mockReset();
     mockFs.mkdir.mockResolvedValue(undefined as never);
     mockFs.writeFile.mockResolvedValue(undefined as never);
     mockFs.rename.mockResolvedValue(undefined as never);
+    mockFs.unlink.mockResolvedValue(undefined as never);
   });
 
   it("returns [] when outbox file is missing", async () => {
@@ -72,7 +81,7 @@ describe("feed-notify-outbox", () => {
       recipientOwnerId: "envoy:owner:win",
       url: `envoy://mac/feeds/${i}.md`,
       meta: meta(`envoy://mac/feeds/${i}.md`),
-      enqueuedAt: `2026-07-01T00:00:${String(i).padStart(2, "0")}.000Z`,
+      enqueuedAt: recentIso(MAX_OUTBOX_ITEMS - i),
     }));
     mockFs.readFile.mockResolvedValueOnce(JSON.stringify(seeded) as never);
     await enqueueFeedNotifyOutboxItem("/tmp/p", {
@@ -91,13 +100,13 @@ describe("feed-notify-outbox", () => {
         recipientOwnerId: "envoy:owner:win",
         url: "envoy://mac/feeds/a.md",
         meta: meta("envoy://mac/feeds/a.md"),
-        enqueuedAt: "2026-07-01T00:00:00.000Z",
+        enqueuedAt: recentIso(2),
       },
       {
         recipientOwnerId: "envoy:owner:other",
         url: "envoy://mac/feeds/b.md",
         meta: meta("envoy://mac/feeds/b.md"),
-        enqueuedAt: "2026-07-01T00:00:00.000Z",
+        enqueuedAt: recentIso(1),
       },
     ];
     mockFs.readFile.mockResolvedValueOnce(JSON.stringify(seeded) as never);
@@ -109,5 +118,45 @@ describe("feed-notify-outbox", () => {
     const written = JSON.parse(mockFs.writeFile.mock.calls[0]![1] as string);
     expect(written).toHaveLength(1);
     expect(written[0].recipientOwnerId).toBe("envoy:owner:other");
+  });
+
+  it("prune drops rows older than MAX_OUTBOX_AGE_MS", () => {
+    const now = Date.parse("2026-07-20T00:00:00.000Z");
+    const staleAt = new Date(now - MAX_OUTBOX_AGE_MS - 60_000).toISOString();
+    const freshAt = new Date(now - 60_000).toISOString();
+    const pruned = pruneFeedNotifyOutboxItems(
+      [
+        {
+          recipientOwnerId: "envoy:owner:win",
+          url: "envoy://mac/feeds/old.md",
+          meta: meta("envoy://mac/feeds/old.md"),
+          enqueuedAt: staleAt,
+        },
+        {
+          recipientOwnerId: "envoy:owner:win",
+          url: "envoy://mac/feeds/new.md",
+          meta: meta("envoy://mac/feeds/new.md"),
+          enqueuedAt: freshAt,
+        },
+      ],
+      now,
+    );
+    expect(pruned).toHaveLength(1);
+    expect(pruned[0]!.url).toContain("new.md");
+  });
+
+  it("deletes the file when the last row is removed", async () => {
+    const seeded = [
+      {
+        recipientOwnerId: "envoy:owner:win",
+        url: "envoy://mac/feeds/a.md",
+        meta: meta("envoy://mac/feeds/a.md"),
+        enqueuedAt: recentIso(),
+      },
+    ];
+    mockFs.readFile.mockResolvedValueOnce(JSON.stringify(seeded) as never);
+    await removeFeedNotifyOutboxItem("/tmp/p", "envoy:owner:win", "envoy://mac/feeds/a.md");
+    expect(mockFs.unlink).toHaveBeenCalled();
+    expect(mockFs.writeFile).not.toHaveBeenCalled();
   });
 });

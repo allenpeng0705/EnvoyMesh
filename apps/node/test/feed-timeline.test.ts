@@ -79,6 +79,7 @@ describe("listFeedTimeline", () => {
       summary: "From Bob",
       visibility: "bonded",
       senderPeerId: "12D3KooW",
+      imageUrls: ["envoy://envoy:owner:bob/feeds/media/bob/0.jpg"],
     });
 
     const bonds = [{ peerOwnerId: "envoy:owner:bob", level: "direct" as const }];
@@ -93,6 +94,9 @@ describe("listFeedTimeline", () => {
     expect(page1.items[0]!.source).toBe("own");
     expect(page1.items[0]!.path).toBe("feeds/own-new.md");
     expect(page1.items[1]!.source).toBe("peer");
+    expect(page1.items[1]!.imageUrls).toEqual([
+      "envoy://envoy:owner:bob/feeds/media/bob/0.jpg",
+    ]);
 
     const page2 = await listFeedTimeline({
       profileDir,

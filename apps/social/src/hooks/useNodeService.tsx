@@ -2075,8 +2075,8 @@ export function useFeedNotifications() {
   };
 
   /**
-   * Mark all feed notifications read when Inbox opens — clears the badge
-   * without deleting rows that Content → Feed / Explore still need.
+   * Mark all feed notifications read when Content → Feed opens — clears the badge
+   * without deleting rows that the Feed timeline still needs.
    */
   const dismissAll = async () => {
     await client.dismissAllFeedNotifications();

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useNodeState } from "./context/NodeStateContext.js";
 import { useT } from "./context/I18nContext.js";
-import { useContentEngageNotifications, useNodeService } from "./hooks/useNodeService.js";
+import { useContentEngageNotifications, useFeedNotifications, useNodeService } from "./hooks/useNodeService.js";
 import { useInboxActivityCount } from "./hooks/useInboxActivityCount.js";
 import { ToastProvider } from "./hooks/useToast.js";
 import { ErrorBoundary } from "./components/ErrorBoundary.js";
@@ -285,6 +285,9 @@ export function App() {
 
   const inboxActivityCount = useInboxActivityCount();
   const contentEngage = useContentEngageNotifications();
+  const feedNotify = useFeedNotifications();
+  const contentBadgeCount = contentEngage.totalCount + feedNotify.unread.length;
+  const feedTabBadgeCount = contentEngage.feedCount + feedNotify.unread.length;
 
   const nodeService = useNodeService();
   const reconnectAttempts = nodeService.reconnectAttempts;
@@ -476,7 +479,7 @@ export function App() {
             currentView={currentView}
             onNavigate={navigateTo}
             inboxActivityCount={inboxActivityCount}
-            contentEngageCount={contentEngage.totalCount}
+            contentEngageCount={contentBadgeCount}
             isPublicNetwork={isPublicNetwork}
             connectionStatus={connectionStatus}
             nodeStatus={nodeStatus}
@@ -527,9 +530,14 @@ export function App() {
             {currentView === "content" && (
               <SwipeBack onSwipeBack={() => navigateTo("chat")}>
                 <ContentView
-                  feedEngageCount={contentEngage.feedCount}
+                  feedEngageCount={feedTabBadgeCount}
                   blogEngageCount={contentEngage.blogCount}
-                  onDismissEngage={contentEngage.dismiss}
+                  onDismissEngage={async (surface) => {
+                    await contentEngage.dismiss(surface);
+                    if (surface === "all" || surface === "feed") {
+                      await feedNotify.dismissAll();
+                    }
+                  }}
                 />
               </SwipeBack>
             )}
