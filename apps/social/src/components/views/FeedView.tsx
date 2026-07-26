@@ -101,6 +101,7 @@ export function FeedView() {
       setOwnPosts(posts);
       setNotifications(notes);
     } catch (err) {
+      // Keep prior timeline on RPC / store flake (reconnect, mid-write JSON).
       setError(err instanceof Error ? err.message : t("feed.loadFailed", "Could not load Feed"));
     } finally {
       setBusy(false);

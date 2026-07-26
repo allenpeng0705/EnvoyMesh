@@ -10,7 +10,7 @@
  * Design: docs/web-content-browsing-design.md §4.2.
  */
 
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 /** Visibility flag carried by each manifest entry. Maps to Bonds tiers. */
@@ -118,27 +118,51 @@ export function resolveWebContentPath(path: string): string {
 export function createWebContentStore(webDir: string): WebContentStore {
   const manifestPath = join(webDir, "web-content.json");
   let cached: WebContentManifest | null = null;
+  /** Serialize upsert/remove so concurrent publishes cannot interleave writes. */
+  let writeChain: Promise<void> = Promise.resolve();
 
   async function readFromDisk(): Promise<WebContentManifest> {
+    let raw: string;
     try {
-      const raw = await readFile(manifestPath, "utf8");
+      raw = await readFile(manifestPath, "utf8");
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException)?.code === "ENOENT") {
+        return EMPTY_MANIFEST;
+      }
+      throw err;
+    }
+    try {
       const parsed = JSON.parse(raw) as Partial<WebContentManifest>;
       if (parsed && parsed.version === "0.1" && Array.isArray(parsed.entries)) {
         return { version: "0.1", entries: parsed.entries };
       }
+      // Corrupt shape but file exists — keep prior cache if any; else empty.
+      console.warn("[web-content] manifest shape invalid; refusing to treat as empty overwrite of cache");
+      if (cached) return cached;
       return EMPTY_MANIFEST;
-    } catch {
-      // Missing file or invalid JSON — treat as empty.
-      return EMPTY_MANIFEST;
+    } catch (err) {
+      // Mid-write / truncated JSON is common with non-atomic writers. Prefer
+      // last good cache over poisoning the UI with a successful empty list.
+      console.warn("[web-content] failed to parse manifest:", err);
+      if (cached) return cached;
+      throw new Error(
+        `web-content.json unreadable (${err instanceof Error ? err.message : String(err)})`,
+      );
     }
   }
 
   async function persist(manifest: WebContentManifest): Promise<void> {
-    // Atomic write via temp+rename would be ideal; for the manifest we use
-    // direct write with 0o600 to mirror published-library-store.ts.
     const json = `${JSON.stringify(manifest, null, 2)}\n`;
-    await writeFile(manifestPath, json, { mode: 0o600 });
+    const tmp = `${manifestPath}.tmp`;
+    await writeFile(tmp, json, { mode: 0o600 });
+    await rename(tmp, manifestPath);
     cached = manifest;
+  }
+
+  function enqueueWrite(fn: () => Promise<void>): Promise<void> {
+    const next = writeChain.then(fn, fn);
+    writeChain = next.catch(() => undefined);
+    return next;
   }
 
   return {
@@ -149,7 +173,16 @@ export function createWebContentStore(webDir: string): WebContentStore {
     },
 
     async reload(): Promise<WebContentManifest> {
-      cached = await readFromDisk();
+      try {
+        cached = await readFromDisk();
+      } catch (err) {
+        // Keep last good cache so listFeedPosts cannot return [] after a flake.
+        if (cached) {
+          console.warn("[web-content] reload failed; keeping cached manifest:", err);
+          return cached;
+        }
+        throw err;
+      }
       return cached;
     },
 
@@ -177,25 +210,29 @@ export function createWebContentStore(webDir: string): WebContentStore {
     },
 
     async upsert(entry: WebContentEntry): Promise<void> {
-      const m = await this.load();
-      const normalizedPath = normalizeWebPath(entry.path);
-      const idx = m.entries.findIndex((e) => normalizeWebPath(e.path) === normalizedPath);
-      const cleaned: WebContentEntry = { ...entry, path: normalizedPath };
-      if (idx >= 0) {
-        m.entries[idx] = cleaned;
-      } else {
-        m.entries.push(cleaned);
-      }
-      m.entries.sort((a, b) => a.path.localeCompare(b.path));
-      await persist(m);
+      await enqueueWrite(async () => {
+        const m = await this.load();
+        const normalizedPath = normalizeWebPath(entry.path);
+        const idx = m.entries.findIndex((e) => normalizeWebPath(e.path) === normalizedPath);
+        const cleaned: WebContentEntry = { ...entry, path: normalizedPath };
+        if (idx >= 0) {
+          m.entries[idx] = cleaned;
+        } else {
+          m.entries.push(cleaned);
+        }
+        m.entries.sort((a, b) => a.path.localeCompare(b.path));
+        await persist(m);
+      });
     },
 
     async remove(path: string): Promise<void> {
-      const m = await this.load();
-      const normalized = normalizeWebPath(path);
-      const next = m.entries.filter((e) => normalizeWebPath(e.path) !== normalized);
-      if (next.length === m.entries.length) return; // not found — no-op
-      await persist({ version: "0.1", entries: next });
+      await enqueueWrite(async () => {
+        const m = await this.load();
+        const normalized = normalizeWebPath(path);
+        const next = m.entries.filter((e) => normalizeWebPath(e.path) !== normalized);
+        if (next.length === m.entries.length) return; // not found — no-op
+        await persist({ version: "0.1", entries: next });
+      });
     },
   };
 }

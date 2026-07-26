@@ -9,6 +9,7 @@ import 'package:envoygo/providers/contact_provider.dart'
 class _FakeNodeService extends Fake implements NodeServiceClient {
   List<FeedNotification> rows = [];
   final dismissed = <String>[];
+  int dismissAllCalls = 0;
 
   @override
   Future<List<FeedNotification>> listFeedNotifications() async => rows;
@@ -16,7 +17,19 @@ class _FakeNodeService extends Fake implements NodeServiceClient {
   @override
   Future<void> dismissFeedNotification(String id) async {
     dismissed.add(id);
-    rows = rows.where((r) => r.id != id).toList();
+    final readAt = DateTime.now().toUtc().toIso8601String();
+    rows = rows
+        .map((r) => r.id == id ? r.copyWith(readAt: readAt) : r)
+        .toList();
+  }
+
+  @override
+  Future<void> dismissAllFeedNotifications() async {
+    dismissAllCalls += 1;
+    final readAt = DateTime.now().toUtc().toIso8601String();
+    rows = rows
+        .map((r) => r.isUnread ? r.copyWith(readAt: readAt) : r)
+        .toList();
   }
 }
 
@@ -66,7 +79,7 @@ void main() {
     expect(items.first.title, 'Updated');
   });
 
-  test('dismiss removes locally after RPC', () async {
+  test('dismiss marks read locally after RPC (keeps Feed timeline row)', () async {
     final fake = _FakeNodeService()..rows = [_row('a'), _row('b')];
     final container = ProviderContainer(
       overrides: [nodeServiceProvider.overrideWithValue(fake)],
@@ -78,6 +91,8 @@ void main() {
     await notifier.dismiss('a');
 
     expect(fake.dismissed, ['a']);
-    expect(container.read(feedNotifyProvider).items.map((e) => e.id), ['b']);
+    final state = container.read(feedNotifyProvider);
+    expect(state.items.map((e) => e.id), ['a', 'b']);
+    expect(state.unread.map((e) => e.id), ['b']);
   });
 }

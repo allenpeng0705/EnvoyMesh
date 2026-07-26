@@ -380,6 +380,10 @@ class NodeServiceClient {
     await _client.call('dismissFeedNotification', {'id': id});
   }
 
+  Future<void> dismissAllFeedNotifications() async {
+    await _client.call('dismissAllFeedNotifications', {});
+  }
+
   /// Unread stars/comments on the owner's Feed/Blog (Content badges).
   Future<List<ContentEngageNotification>> listContentEngageNotifications() async {
     final result = await _client.call('listContentEngageNotifications');

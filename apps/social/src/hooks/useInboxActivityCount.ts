@@ -6,13 +6,13 @@ export function useInboxActivityCount(): number {
   const { pendingHellOs, pendingIntroProposals, pendingMessages } = useNodeState();
   const { offers } = useShareOffers();
   const { proposals } = useAgentShareProposals();
-  const { items: feedNotifications } = useFeedNotifications();
+  const { unread: feedUnread } = useFeedNotifications();
   return (
     pendingHellOs.length +
     pendingIntroProposals.length +
     pendingMessages.length +
     offers.length +
     proposals.length +
-    feedNotifications.length
+    feedUnread.length
   );
 }

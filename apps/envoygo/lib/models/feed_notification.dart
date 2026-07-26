@@ -14,6 +14,7 @@ class FeedNotification {
   final String? contentHash;
   final String? listingUrl;
   final String senderPeerId;
+  final String? readAt;
 
   const FeedNotification({
     required this.id,
@@ -30,6 +31,7 @@ class FeedNotification {
     this.contentHash,
     this.listingUrl,
     required this.senderPeerId,
+    this.readAt,
   });
 
   factory FeedNotification.fromJson(Map<String, dynamic> json) {
@@ -65,6 +67,7 @@ class FeedNotification {
       contentHash: json['contentHash'] as String?,
       listingUrl: json['listingUrl'] as String?,
       senderPeerId: (json['senderPeerId'] as String?) ?? '',
+      readAt: json['readAt'] as String?,
     );
   }
 
@@ -83,5 +86,28 @@ class FeedNotification {
         if (contentHash != null) 'contentHash': contentHash,
         if (listingUrl != null) 'listingUrl': listingUrl,
         'senderPeerId': senderPeerId,
+        if (readAt != null) 'readAt': readAt,
       };
+
+  bool get isUnread => readAt == null || readAt!.trim().isEmpty;
+
+  FeedNotification copyWith({String? readAt}) {
+    return FeedNotification(
+      id: id,
+      receivedAt: receivedAt,
+      messageId: messageId,
+      publisherOwnerId: publisherOwnerId,
+      publishedAt: publishedAt,
+      title: title,
+      url: url,
+      kind: kind,
+      visibility: visibility,
+      summary: summary,
+      tags: tags,
+      contentHash: contentHash,
+      listingUrl: listingUrl,
+      senderPeerId: senderPeerId,
+      readAt: readAt ?? this.readAt,
+    );
+  }
 }

@@ -2057,23 +2057,25 @@ export function useFeedNotifications() {
     return unsub;
   }, [client, wsOpen]);
 
+  const unread = items.filter((p) => !p.readAt?.trim());
+
   const dismiss = async (id: string) => {
     await client.dismissFeedNotification(id);
-    setItems((prev) => prev.filter((p) => p.id !== id));
+    const readAt = new Date().toISOString();
+    setItems((prev) => prev.map((p) => (p.id === id ? { ...p, readAt } : p)));
   };
 
   /**
-   * Bulk-clear every feed notification. Called when the Inbox opens so the
-   * unread badge drops to zero in one action — matches the conventional
-   * folder-open behavior of email/messaging apps. Actionable requests
-   * (approvals, offers, intros, hellos) are NOT affected.
+   * Mark all feed notifications read when Inbox opens — clears the badge
+   * without deleting rows that Content → Feed / Explore still need.
    */
   const dismissAll = async () => {
     await client.dismissAllFeedNotifications();
-    setItems([]);
+    const readAt = new Date().toISOString();
+    setItems((prev) => prev.map((p) => (p.readAt ? p : { ...p, readAt })));
   };
 
-  return { items, dismiss, dismissAll };
+  return { items, unread, dismiss, dismissAll };
 }
 
 /**

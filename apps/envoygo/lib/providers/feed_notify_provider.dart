@@ -15,6 +15,10 @@ class FeedNotifyState {
     this.error,
   });
 
+  /// Unread rows for Inbox badge / publish-alerts list.
+  List<FeedNotification> get unread =>
+      items.where((i) => i.isUnread).toList(growable: false);
+
   FeedNotifyState copyWith({
     List<FeedNotification>? items,
     bool? isLoading,
@@ -66,14 +70,35 @@ class FeedNotifyNotifier extends StateNotifier<FeedNotifyState> {
     state = state.copyWith(items: [next, ...without], clearError: true);
   }
 
-  /// Dismiss on home then remove locally.
+  /// Mark read on home; keep the row for Content → Feed timeline.
   Future<void> dismiss(String id) async {
     final client = _ref.read(nodeServiceProvider);
     if (client == null) return;
     try {
       await client.dismissFeedNotification(id);
+      final readAt = DateTime.now().toUtc().toIso8601String();
       state = state.copyWith(
-        items: state.items.where((i) => i.id != id).toList(),
+        items: state.items
+            .map((i) => i.id == id ? i.copyWith(readAt: readAt) : i)
+            .toList(),
+        clearError: true,
+      );
+    } catch (e) {
+      state = state.copyWith(error: e.toString());
+    }
+  }
+
+  /// Mark all read (Inbox open) without dropping Feed timeline rows.
+  Future<void> dismissAll() async {
+    final client = _ref.read(nodeServiceProvider);
+    if (client == null) return;
+    try {
+      await client.dismissAllFeedNotifications();
+      final readAt = DateTime.now().toUtc().toIso8601String();
+      state = state.copyWith(
+        items: state.items
+            .map((i) => i.isUnread ? i.copyWith(readAt: readAt) : i)
+            .toList(),
         clearError: true,
       );
     } catch (e) {

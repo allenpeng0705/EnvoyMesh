@@ -36,22 +36,18 @@ export function InboxView({ embedded = false }: InboxViewProps) {
   const { proposals: agentShareProposals, dismiss: dismissAgentShare } = useAgentShareProposals();
   const { offers: pendingShareOffers } = useShareOffers();
   const { items: pendingApprovals, approve: approvePending, reject: rejectPending } = usePendingApprovals();
-  const { items: feedNotifications, dismiss: dismissFeed, dismissAll: dismissAllFeed } = useFeedNotifications();
+  const { unread: feedUnread, dismiss: dismissFeed, dismissAll: dismissAllFeed } =
+    useFeedNotifications();
 
-  // Open-Inbox → clear badge: when the Inbox mounts, bulk-dismiss all feed
-  // notifications so the unread badge drops to zero. This matches the
-  // conventional folder-open behavior of email/messaging apps. Actionable
-  // requests (approvals, offers, intros, hellos) are NOT cleared — they live
-  // in separate stores with their own accept/decline flows.
-  // The ref guard ensures the clear fires only once per mount, not on every
-  // re-render, so in-session per-row dismiss buttons still work normally.
+  // Open-Inbox → clear badge: mark feed notifications read (do not delete —
+  // Content → Feed reuses the same store for peer posts).
   const clearedFeedOnMountRef = useRef(false);
   useEffect(() => {
     if (clearedFeedOnMountRef.current) return;
-    if (feedNotifications.length === 0) return;
+    if (feedUnread.length === 0) return;
     clearedFeedOnMountRef.current = true;
     void dismissAllFeed().catch(console.error);
-  }, [feedNotifications.length, dismissAllFeed]);
+  }, [feedUnread.length, dismissAllFeed]);
   const [feedBusy, setFeedBusy] = useState<string | null>(null);
   const [feedPublisherFilter, setFeedPublisherFilter] = useState<string | null>(
     () => getInboxPublisherFilter(),
@@ -65,8 +61,8 @@ export function InboxView({ embedded = false }: InboxViewProps) {
   }, []);
 
   const visibleFeedNotifications = feedPublisherFilter
-    ? feedNotifications.filter((item) => item.publisherOwnerId === feedPublisherFilter)
-    : feedNotifications;
+    ? feedUnread.filter((item) => item.publisherOwnerId === feedPublisherFilter)
+    : feedUnread;
 
   const [introSaveStatus, setIntroSaveStatus] = useState<string | null>(null);
   const [agentShareBusy, setAgentShareBusy] = useState<string | null>(null);
@@ -200,7 +196,7 @@ export function InboxView({ embedded = false }: InboxViewProps) {
     agentShareProposals.length === 0 &&
     pendingShareOffers.length === 0 &&
     pendingApprovals.length === 0 &&
-    feedNotifications.length === 0;
+    feedUnread.length === 0;
 
   if (empty) {
     return (

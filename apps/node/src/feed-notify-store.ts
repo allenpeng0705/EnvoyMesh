@@ -1,6 +1,11 @@
 /**
  * Phase 45E — persisted inbox rows for inbound `feed.notify`.
  * Small JSON list under the profile directory (atomic write).
+ *
+ * Rows are the durable peer-Feed timeline source AND the Inbox badge source.
+ * Opening Inbox marks rows read (clears badge) without deleting them — otherwise
+ * Content → Feed / Explore → Following would lose peer posts until restart
+ * (or forever).
  */
 
 import { readFile, rename, writeFile, mkdir } from "node:fs/promises";
@@ -21,12 +26,18 @@ export interface FeedNotifyInboxItem {
   contentHash?: string;
   listingUrl?: string;
   senderPeerId: string;
+  /** Set when the owner opens Inbox / dismisses — badge only; Feed still lists. */
+  readAt?: string;
 }
 
 const MAX_INBOX_ITEMS = 200;
 
 function inboxPath(profileDir: string): string {
   return join(profileDir, "feed-notify-inbox.json");
+}
+
+export function isFeedNotifyUnread(item: FeedNotifyInboxItem): boolean {
+  return !item.readAt?.trim();
 }
 
 export async function loadFeedNotifyInbox(profileDir: string): Promise<FeedNotifyInboxItem[]> {
@@ -44,7 +55,7 @@ export async function loadFeedNotifyInbox(profileDir: string): Promise<FeedNotif
   } catch (err) {
     if ((err as NodeJS.ErrnoException)?.code === "ENOENT") return [];
     console.warn("[feed.notify] failed to load inbox:", err);
-    return [];
+    throw err;
   }
 }
 
@@ -72,29 +83,41 @@ export async function appendFeedNotifyInboxItem(
   return next;
 }
 
+/** Mark one row read (Inbox dismiss). Keeps the row for Feed / Following. */
 export async function dismissFeedNotifyInboxItem(
   profileDir: string,
   id: string,
 ): Promise<FeedNotifyInboxItem[]> {
   const existing = await loadFeedNotifyInbox(profileDir);
-  const next = existing.filter((row) => row.id !== id);
-  if (next.length === existing.length) return existing;
+  const now = new Date().toISOString();
+  let changed = false;
+  const next = existing.map((row) => {
+    if (row.id !== id || row.readAt) return row;
+    changed = true;
+    return { ...row, readAt: now };
+  });
+  if (!changed) return existing;
   await writeFeedNotifyInbox(profileDir, next);
   return next;
 }
 
 /**
- * Bulk-clear every feed.notify inbox row. Used by the "open Inbox → clear
- * badge" UX so the unread feed-notification count drops to zero in one action
- * (matches the conventional folder-open behavior of email/messaging apps).
- * Actionable requests (approvals, share offers, intros, hellos) are NOT
- * affected — they live in separate stores with their own accept/decline flows.
+ * Mark every feed.notify row read so the Inbox unread badge drops to zero.
+ * Does NOT delete rows — Content → Feed and Explore → Following still list them.
  */
 export async function dismissAllFeedNotifyInboxItems(
   profileDir: string,
 ): Promise<FeedNotifyInboxItem[]> {
   const existing = await loadFeedNotifyInbox(profileDir);
   if (existing.length === 0) return existing;
-  await writeFeedNotifyInbox(profileDir, []);
-  return [];
+  const now = new Date().toISOString();
+  let changed = false;
+  const next = existing.map((row) => {
+    if (row.readAt) return row;
+    changed = true;
+    return { ...row, readAt: now };
+  });
+  if (!changed) return existing;
+  await writeFeedNotifyInbox(profileDir, next);
+  return next;
 }

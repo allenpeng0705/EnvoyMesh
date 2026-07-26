@@ -1158,6 +1158,8 @@ export interface FeedNotification {
   contentHash?: string;
   listingUrl?: string;
   senderPeerId: string;
+  /** Present after Inbox open/dismiss — clears badge; Feed timeline still lists. */
+  readAt?: string;
 }
 
 /** Inbound star/comment on the owner's Feed or Blog post (Content nav badge). */

@@ -41,7 +41,7 @@ class InboxScreen extends ConsumerWidget {
                 style: TextStyle(color: theme.colorScheme.error),
               ),
             )
-          else if (feedState.items.isEmpty)
+          else if (feedState.unread.isEmpty)
             const Padding(
               padding: EdgeInsets.fromLTRB(16, 8, 16, 24),
               child: Text(
@@ -51,7 +51,7 @@ class InboxScreen extends ConsumerWidget {
               ),
             )
           else
-            ...feedState.items.map(
+            ...feedState.unread.map(
               (item) => _FeedNotifyTile(
                 item: item,
                 onOpen: () {

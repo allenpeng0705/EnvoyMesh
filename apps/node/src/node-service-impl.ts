@@ -5504,7 +5504,9 @@ class NodeServiceImpl implements NodeService {
     const human = await this.getHumanProfile();
     const ownerId =
       this._profile?.owner?.ownerId?.trim() || human?.ownerId?.trim();
-    if (!ownerId) return [];
+    if (!ownerId) {
+      throw new Error("listFeedPosts: owner identity not ready");
+    }
     return listFeedPostsAuthor(this._profileDir, ownerId);
   }
 
