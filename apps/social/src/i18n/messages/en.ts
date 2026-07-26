@@ -451,6 +451,7 @@ export const en = {
         "{count} nearby device(s) couldn't be identified yet (firewall or not Envoy).",
       empty: "No one nearby yet. Make sure you are on the same Wi‑Fi and both connected in Settings → Network.",
       someoneNearby: "Someone nearby",
+      identifyingMore: "Still identifying {count} other device(s) on this Wi‑Fi…",
     },
     troubleshooter: {
       summary: "Not seeing anyone?",

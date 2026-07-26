@@ -431,6 +431,7 @@ export const zh = mergeMessages(en, {
       someUnreachable: "有 {count} 台附近设备暂无法识别（防火墙或非 Envoy）。",
       empty: "附近还没有人。请确保在同一 Wi‑Fi 且双方已在设置 → 网络中连接。",
       someoneNearby: "附近的人",
+      identifyingMore: "仍在识别此 Wi‑Fi 上的另外 {count} 台设备…",
     },
     troubleshooter: {
       summary: "看不到任何人？",

@@ -9,17 +9,11 @@ export function DiscoverPeerCard({
   helloState,
   subtitle,
   onSayHello,
-  identifying,
-  unreachable,
 }: {
   peer: PeerSearchResult;
   helloState: PeerHelloUiState;
   subtitle?: string;
   onSayHello?: () => void;
-  /** Profile probe still running — no Say hello yet. */
-  identifying?: boolean;
-  /** Heard on LAN but profile probe failed. */
-  unreachable?: boolean;
 }) {
   const t = useT();
   const label = nearbyPeerLabel(peer.displayName, peer.nodeId);
@@ -45,20 +39,6 @@ export function DiscoverPeerCard({
         <button type="button" className="say-hello-btn" onClick={onSayHello}>
           {t("common.sayHello")}
         </button>
-      ) : unreachable ? (
-        <span
-          className="discover-peer-card__status discover-peer-card__status--unreachable"
-          role="status"
-        >
-          {t("discover.nearby.statusUnreachable")}
-        </span>
-      ) : identifying ? (
-        <span
-          className="discover-peer-card__status discover-peer-card__status--identifying"
-          role="status"
-        >
-          {t("discover.nearby.statusIdentifying")}
-        </span>
       ) : null}
     </li>
   );

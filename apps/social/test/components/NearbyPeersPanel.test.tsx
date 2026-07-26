@@ -13,11 +13,8 @@ vi.mock("../../src/context/I18nContext.js", () => ({
       "discover.nearby.empty": "No one nearby yet.",
       "discover.nearby.someoneNearby": "Someone nearby",
       "discover.nearby.subtitle": "Nearby on your network",
-      "discover.nearby.subtitleIdentifying": "Heard on this Wi‑Fi — identifying…",
-      "discover.nearby.subtitleUnreachable": "Heard on this Wi‑Fi — couldn't identify yet",
-      "discover.nearby.statusIdentifying": "Identifying…",
-      "discover.nearby.statusUnreachable": "Unreachable",
       "discover.nearby.identifying": "Heard someone on this Wi‑Fi — identifying…",
+      "discover.nearby.identifyingMore": `Still identifying ${params?.count ?? "?"}…`,
       "discover.nearby.heardUnreachable": `Heard ${params?.count ?? "?"} device(s) — couldn't identify`,
       "discover.nearby.someUnreachable": `${params?.count ?? "?"} unreachable`,
       "common.sayHello": "Say hello",
@@ -29,7 +26,9 @@ vi.mock("../../src/context/I18nContext.js", () => ({
 }));
 
 vi.mock("../../src/components/PeerProfileAvatar.js", () => ({
-  PeerProfileAvatar: () => <div data-testid="avatar" />,
+  PeerProfileAvatar: ({ fallbackLabel }: { fallbackLabel?: string }) => (
+    <div data-testid="avatar">{fallbackLabel}</div>
+  ),
 }));
 
 function peer(partial: Partial<PeerSearchResult> & Pick<PeerSearchResult, "nodeId">): PeerSearchResult {
@@ -45,23 +44,24 @@ function peer(partial: Partial<PeerSearchResult> & Pick<PeerSearchResult, "nodeI
 describe("NearbyPeersPanel", () => {
   afterEach(() => cleanup());
 
-  it("shows unresolved peers as Someone nearby with Identifying status", () => {
+  it("does not list nameless pending peers as cards — only a status note", () => {
     render(
       <NearbyPeersPanel
-        discoveredPeers={[peer({ nodeId: "12D3KooWPending", profileStatus: "pending" })]}
+        discoveredPeers={[
+          peer({ nodeId: "12D3KooWPending1", profileStatus: "pending" }),
+          peer({ nodeId: "12D3KooWPending2", profileStatus: "pending" }),
+        ]}
         bonds={[]}
         outboundHellos={new Set()}
         nodeStatus="running"
         onSayHello={() => {}}
       />,
     );
-    expect(screen.getByTestId("nearby-peers-list").textContent).toContain("Someone nearby");
-    expect(screen.getByText("Identifying…")).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Say hello" })).toBeNull();
+    expect(screen.queryByTestId("nearby-peers-list")).toBeNull();
     expect(screen.getByTestId("nearby-status-note").textContent).toMatch(/identifying/i);
   });
 
-  it("shows diagnostic when mDNS heard peers but profile probe failed", () => {
+  it("folds unreachable probes into one diagnostic, not N empty cards", () => {
     render(
       <NearbyPeersPanel
         discoveredPeers={[
@@ -74,15 +74,16 @@ describe("NearbyPeersPanel", () => {
         onSayHello={() => {}}
       />,
     );
+    expect(screen.queryByTestId("nearby-peers-list")).toBeNull();
     expect(screen.getByTestId("nearby-status-note").textContent).toContain("Heard 2");
-    expect(screen.getAllByText("Unreachable")).toHaveLength(2);
   });
 
-  it("enables Say hello only after ownerId is known", () => {
+  it("lists only identifiable people with Say hello", () => {
     const onSayHello = vi.fn();
     render(
       <NearbyPeersPanel
         discoveredPeers={[
+          peer({ nodeId: "12D3KooWNoise", profileStatus: "unreachable" }),
           peer({
             nodeId: "12D3KooWAlice",
             ownerId: "envoy:owner:alice",
@@ -96,7 +97,10 @@ describe("NearbyPeersPanel", () => {
         onSayHello={onSayHello}
       />,
     );
+    const list = screen.getByTestId("nearby-peers-list");
+    expect(list.textContent).toContain("Alice");
+    expect(list.textContent).not.toContain("Someone nearby");
     expect(screen.getByRole("button", { name: "Say hello" })).toBeTruthy();
-    expect(screen.queryByTestId("nearby-status-note")).toBeNull();
+    expect(screen.getByTestId("nearby-status-note").textContent).toContain("1 unreachable");
   });
 });

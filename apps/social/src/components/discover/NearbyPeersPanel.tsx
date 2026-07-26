@@ -4,24 +4,33 @@ import { nearbyPeerLabel } from "../../lib/display.js";
 import { DiscoverPeerCard } from "./DiscoverPeerCard.js";
 import { resolvePeerHelloState } from "../../lib/discover-peer-state.js";
 
+/** Only show people we can actually recognize (name + owner). */
+export function isIdentifiableNearbyPeer(peer: PeerSearchResult): boolean {
+  if (!peer.ownerId?.trim()) return false;
+  return nearbyPeerLabel(peer.displayName, peer.nodeId) !== "Someone nearby";
+}
+
 function nearbyStatusNote(
   peers: readonly PeerSearchResult[],
+  identifiableCount: number,
   t: ReturnType<typeof useT>,
 ): string | null {
   const pending = peers.filter(
     (p) => !p.ownerId?.trim() && p.profileStatus !== "unreachable",
   ).length;
   const unreachable = peers.filter((p) => p.profileStatus === "unreachable").length;
-  const resolved = peers.filter((p) => Boolean(p.ownerId?.trim())).length;
 
-  if (unreachable > 0 && resolved === 0) {
+  if (unreachable > 0 && identifiableCount === 0) {
     return t("discover.nearby.heardUnreachable", { count: String(unreachable) });
   }
   if (unreachable > 0) {
     return t("discover.nearby.someUnreachable", { count: String(unreachable) });
   }
-  if (pending > 0 && resolved === 0) {
+  if (pending > 0 && identifiableCount === 0) {
     return t("discover.nearby.identifying");
+  }
+  if (pending > 0) {
+    return t("discover.nearby.identifyingMore", { count: String(pending) });
   }
   return null;
 }
@@ -45,7 +54,9 @@ export function NearbyPeersPanel({
 }) {
   const t = useT();
   const hint = emptyHint ?? t("discover.nearby.empty");
-  const statusNote = nearbyStatusNote(discoveredPeers, t);
+  const identifiable = discoveredPeers.filter(isIdentifiableNearbyPeer);
+  const statusNote = nearbyStatusNote(discoveredPeers, identifiable.length, t);
+  const showEmpty = identifiable.length === 0 && !statusNote;
 
   return (
     <section className="discover-panel nearby-panel" aria-labelledby="nearby-peers-heading">
@@ -82,46 +93,34 @@ export function NearbyPeersPanel({
         </p>
       ) : null}
 
-      {discoveredPeers.length === 0 ? (
+      {showEmpty ? (
         <div className="discover-empty discover-empty--compact">
           <p className="discover-empty__desc">{hint}</p>
         </div>
-      ) : (
+      ) : null}
+
+      {identifiable.length > 0 ? (
         <ul className="around-me-list" data-testid="nearby-peers-list">
-          {discoveredPeers.map((peer) => {
-            const hasOwner = Boolean(peer.ownerId?.trim());
-            const targetId = peer.ownerId?.trim() || peer.nodeId;
+          {identifiable.map((peer) => {
+            const targetId = peer.ownerId.trim();
             const helloState = resolvePeerHelloState(
-              peer.ownerId ?? "",
+              peer.ownerId,
               peer.nodeId,
               bonds,
               outboundHellos,
             );
-            const label = nearbyPeerLabel(peer.displayName, peer.nodeId);
-            const displayLabel =
-              label === "Someone nearby" ? t("discover.nearby.someoneNearby") : label;
-            const subtitle =
-              peer.profileStatus === "unreachable"
-                ? t("discover.nearby.subtitleUnreachable")
-                : peer.profileStatus === "pending" || !hasOwner
-                  ? t("discover.nearby.subtitleIdentifying")
-                  : t("discover.nearby.subtitle");
             return (
               <DiscoverPeerCard
                 key={peer.nodeId}
-                peer={{ ...peer, displayName: displayLabel }}
+                peer={peer}
                 helloState={helloState}
-                subtitle={subtitle}
-                onSayHello={
-                  hasOwner && helloState === "none" ? () => onSayHello(targetId) : undefined
-                }
-                identifying={!hasOwner && peer.profileStatus !== "unreachable"}
-                unreachable={peer.profileStatus === "unreachable"}
+                subtitle={t("discover.nearby.subtitle")}
+                onSayHello={helloState === "none" ? () => onSayHello(targetId) : undefined}
               />
             );
           })}
         </ul>
-      )}
+      ) : null}
     </section>
   );
 }
