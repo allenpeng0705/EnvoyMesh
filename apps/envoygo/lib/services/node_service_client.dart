@@ -8,6 +8,7 @@ import '../models/contact.dart';
 import '../models/content_engage_notification.dart';
 import '../models/feed_notification.dart';
 import '../models/library_read.dart';
+import '../models/peer_search_result.dart';
 import '../models/terminal_session.dart';
 import '../models/web_content.dart';
 import 'home_remote_client.dart';
@@ -522,6 +523,46 @@ class NodeServiceClient {
 
   Future<void> syncProfileToBonds() async {
     await _client.call('syncProfileToBonds');
+  }
+
+  // -- Discovery / People (Explore) --
+
+  /// DHT / mesh peer search (topic, interests, geo topics).
+  Future<List<PeerSearchResult>> searchPeers({
+    String? topic,
+    List<String>? topics,
+    List<String>? interests,
+    int maxResults = 20,
+  }) async {
+    final params = <String, dynamic>{
+      'maxResults': maxResults,
+      if (topic != null) 'topic': topic,
+      if (topics != null) 'topics': topics,
+      if (interests != null) 'interests': interests,
+    };
+    final result = await _client.call('searchPeers', params);
+    final list = (result as List<dynamic>?) ?? const [];
+    return list
+        .map((e) => PeerSearchResult.fromJson(e as Map<String, dynamic>))
+        .toList();
+  }
+
+  /// Kick capability discovery so `searchPeers` has fresher publishers.
+  Future<void> runCapabilityDiscovery({bool find = true}) async {
+    await _client.call('runCapabilityDiscovery', {'find': find});
+  }
+
+  /// Send a Say Hello (bond request) to [targetOwnerId].
+  Future<Map<String, dynamic>> sendHello({
+    required String targetOwnerId,
+    required Map<String, dynamic> profile,
+    required String message,
+  }) async {
+    return await _client.call('sendHello', {
+      'targetOwnerId': targetOwnerId,
+      'profile': profile,
+      'message': message,
+    }) as Map<String, dynamic>;
   }
 
   // -- Web content (Phase 45 Content tab) --

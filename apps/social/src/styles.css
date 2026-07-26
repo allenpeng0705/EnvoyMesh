@@ -10778,13 +10778,35 @@ button:disabled {
   font-size: 0.75rem;
   color: var(--color-text-subtle);
 }
+.browser-view__hello-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+  border-top: 1px solid var(--color-border);
+}
+.browser-view__hello-hint {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--color-text-subtle);
+}
+.browser-view__hello-btn {
+  flex-shrink: 0;
+  font-size: 0.8125rem;
+}
+.browser-view__hello-status {
+  margin: 0;
+  font-size: 0.8125rem;
+  color: var(--color-text-subtle);
+}
 .browser-view__author-btn {
   flex-shrink: 0;
   padding: 0.4rem 0.75rem;
   white-space: nowrap;
   font-size: 0.875rem;
 }
-/* Phase 45 Pass 3 — Explore → Following */
+/* Phase 45 Pass 3 — Explore → People */
 .browser-bazaar {
   display: flex;
   flex-direction: column;
@@ -10883,6 +10905,30 @@ button:disabled {
   margin: 0;
   font-size: 0.875rem;
   line-height: 1.45;
+  color: var(--color-text-muted);
+}
+.browser-bazaar__mode-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0.5rem 0 0.65rem;
+}
+.browser-bazaar__mode-chip {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-elevated);
+  color: var(--color-text-muted);
+  border-radius: 999px;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+.browser-bazaar__mode-chip.is-active {
+  border-color: var(--color-primary);
+  color: var(--color-text);
+  background: var(--color-surface);
+}
+.browser-bazaar__hello-status {
+  font-size: 0.8rem;
   color: var(--color-text-muted);
 }
 .browser-bazaar__feed,

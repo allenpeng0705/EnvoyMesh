@@ -1,19 +1,23 @@
 /**
- * Explore → Following: browse published mesh links without typing URLs.
- *
- * Feed-first: recent posts from bonded contacts, then people shelves,
- * then quieter topic discovery.
+ * Explore → People: discover non-bonded peers (topic / interest / place),
+ * or sample the mesh for public profiles & blogs. Say Hello to bond.
+ * Bonded Moments stay on Content → Feed — not duplicated here.
  */
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { FeedNotification, PeerSearchResult } from "@envoymesh/api";
-import { useI18n, useT } from "../../context/I18nContext.js";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { HelloProfile, PeerSearchResult } from "@envoymesh/api";
+import { locationSearchTopics } from "@envoymesh/api";
+import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
-import { useAgentCards, useNodeService } from "../../hooks/useNodeService.js";
-import { contactLabel, shortOwnerId } from "../../lib/display.js";
-import { formatMomentsTime } from "../../lib/moments-time.js";
+import { useNodeService } from "../../hooks/useNodeService.js";
+import { useToastOptional } from "../../hooks/useToast.js";
+import { SUGGESTED_TOPICS, shortOwnerId } from "../../lib/display.js";
+import {
+  loadOutboundHellos,
+  markOutboundHello,
+  resolvePeerHelloState,
+} from "../../lib/discover-peer-state.js";
 import { publishSearchTopic } from "../../lib/publish-topic.js";
 import { webContentUrl } from "../../lib/web-content-urls.js";
-import { ContactWebContentShortcuts } from "../ContactWebContentShortcuts.js";
 import { PeerProfileAvatar } from "../PeerProfileAvatar.js";
 
 export { publishSearchTopic } from "../../lib/publish-topic.js";
@@ -23,318 +27,430 @@ export interface BrowserBazaarViewProps {
   onOpenUrl: (url: string) => void;
 }
 
-const AGENT_CARD_WARM_LIMIT = 8;
+type PeopleSearchMode = "topic" | "interest" | "place";
+
+const SAMPLE_CAP = 20;
+const WEB_CONTENT_CAPABILITY_TOPIC = "capability:envoymesh.web-content";
+
+function shuffleInPlace<T>(arr: T[]): T[] {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = arr[i]!;
+    arr[i] = arr[j]!;
+    arr[j] = tmp;
+  }
+  return arr;
+}
+
+function mergePeers(
+  into: PeerSearchResult[],
+  rows: PeerSearchResult[],
+  exclude: ReadonlySet<string>,
+): void {
+  for (const r of rows) {
+    const owner = r.ownerId?.trim();
+    if (!owner || exclude.has(owner)) continue;
+    if (into.some((e) => e.ownerId === owner || e.nodeId === r.nodeId)) continue;
+    into.push(r);
+  }
+}
 
 export function BrowserBazaarView({ onOpenUrl }: BrowserBazaarViewProps) {
   const t = useT();
-  const { locale } = useI18n();
   const nodeService = useNodeService();
-  const { bonds } = useNodeState();
-  const cards = useAgentCards();
-  const warmedCardsRef = useRef(new Set<string>());
-  const cardsRef = useRef(cards);
-  cardsRef.current = cards;
+  const { bonds, humanProfile, discoveredPeers, sendHello } = useNodeState();
+  const { showToast } = useToastOptional() ?? { showToast: undefined };
 
-  const [feedItems, setFeedItems] = useState<FeedNotification[]>([]);
-  const [feedBusy, setFeedBusy] = useState(false);
-  const [topicQuery, setTopicQuery] = useState("");
-  const [topicResults, setTopicResults] = useState<PeerSearchResult[]>([]);
-  const [topicBusy, setTopicBusy] = useState(false);
-  const [topicError, setTopicError] = useState<string | null>(null);
+  const [searchMode, setSearchMode] = useState<PeopleSearchMode>("topic");
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState<PeerSearchResult[]>([]);
+  const [resultSource, setResultSource] = useState<"search" | "sample">("sample");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [outboundHellos, setOutboundHellos] = useState(() => loadOutboundHellos());
+  const [helloBusyId, setHelloBusyId] = useState<string | null>(null);
 
-  const bondByOwner = useMemo(() => {
-    const map = new Map(bonds.map((b) => [b.peerOwnerId, b]));
-    return map;
-  }, [bonds]);
+  const excludeIds = useMemo(() => {
+    const s = new Set<string>();
+    const self = humanProfile?.ownerId?.trim();
+    if (self) s.add(self);
+    for (const b of bonds) {
+      if (b.peerOwnerId) s.add(b.peerOwnerId);
+      if (b.libp2pPeerId) s.add(b.libp2pPeerId);
+    }
+    return s;
+  }, [bonds, humanProfile?.ownerId]);
 
-  const bondedIds = useMemo(() => new Set(bondByOwner.keys()), [bondByOwner]);
-
-  const contactFeed = useMemo(
-    () =>
-      feedItems
-        .filter((item) => bondedIds.has(item.publisherOwnerId))
-        .slice()
-        .sort((a, b) => (a.publishedAt < b.publishedAt ? 1 : -1)),
-    [feedItems, bondedIds],
+  const filterNonBonded = useCallback(
+    (rows: PeerSearchResult[]) =>
+      rows.filter((r) => {
+        const owner = r.ownerId?.trim();
+        if (!owner || excludeIds.has(owner)) return false;
+        if (r.nodeId && excludeIds.has(r.nodeId)) return false;
+        // Hide already-bonded trust levels if present
+        if (r.trustLevel === "direct" || r.trustLevel === "referred") return false;
+        return true;
+      }),
+    [excludeIds],
   );
 
-  const refreshFeed = useCallback(async () => {
-    setFeedBusy(true);
-    try {
-      const rows = await nodeService.listFeedNotifications();
-      setFeedItems(rows);
-      const cached = new Set(cardsRef.current.map((c) => c.ownerId));
-      const toWarm = bonds
-        .filter((b) => b.level !== "blocked")
-        .map((b) => b.peerOwnerId)
-        .filter((id) => !cached.has(id) && !warmedCardsRef.current.has(id))
-        .slice(0, AGENT_CARD_WARM_LIMIT);
-      for (const id of toWarm) warmedCardsRef.current.add(id);
-      if (toWarm.length > 0) {
-        await Promise.allSettled(toWarm.map((id) => nodeService.requestAgentCard(id)));
-      }
-    } catch (err) {
-      console.error("[BrowserFollowing] refresh feed failed:", err);
-    } finally {
-      setFeedBusy(false);
-    }
-  }, [nodeService, bonds]);
+  const { searchPeers, runCapabilityDiscovery } = nodeService;
 
-  useEffect(() => {
-    void refreshFeed();
-    const unsub = nodeService.on?.("feed:notify", (data: FeedNotification) => {
-      setFeedItems((prev) => {
-        if (prev.some((p) => p.messageId === data.messageId || p.id === data.id)) return prev;
-        return [data, ...prev];
+  const sampleMesh = useCallback(async (): Promise<PeerSearchResult[]> => {
+    const out: PeerSearchResult[] = [];
+    await runCapabilityDiscovery?.({ find: true }).catch(() => undefined);
+
+    try {
+      const web = await searchPeers({
+        topic: WEB_CONTENT_CAPABILITY_TOPIC,
+        maxResults: SAMPLE_CAP,
       });
-    });
-    return () => {
-      unsub?.();
-    };
-  }, [nodeService, refreshFeed]);
-
-  const runTopicSearch = useCallback(async () => {
-    const topic = publishSearchTopic(topicQuery);
-    if (!topic) {
-      setTopicResults([]);
-      setTopicError(t("browser.bazaar.topicEmpty", "Enter a topic to search (e.g. photography)."));
-      return;
+      mergePeers(out, filterNonBonded(web), excludeIds);
+    } catch {
+      /* best-effort */
     }
-    setTopicBusy(true);
-    setTopicError(null);
+
+    const topics = shuffleInPlace([...SUGGESTED_TOPICS]).slice(0, 4);
+    const profileHints = [
+      ...(humanProfile?.hobbies ?? []),
+      ...(humanProfile?.knowledge ?? []),
+    ]
+      .map((h) => h.trim().toLowerCase())
+      .filter(Boolean)
+      .slice(0, 3);
+    for (const slug of [...profileHints, ...topics]) {
+      if (out.length >= SAMPLE_CAP) break;
+      try {
+        const hits = await searchPeers({
+          interests: [slug],
+          maxResults: 8,
+        });
+        mergePeers(out, filterNonBonded(hits), excludeIds);
+      } catch {
+        /* continue */
+      }
+    }
+
+    const loc = humanProfile?.discoveryLocation;
+    const locPrecision = humanProfile?.discoveryLocationPrecision;
+    if (loc && locPrecision && locPrecision !== "hidden" && out.length < SAMPLE_CAP) {
+      try {
+        const geoTopics = locationSearchTopics({ location: loc, scope: "city" });
+        if (geoTopics.length > 0) {
+          const geo = await searchPeers({
+            topics: geoTopics,
+            maxResults: 12,
+          });
+          mergePeers(out, filterNonBonded(geo), excludeIds);
+        }
+      } catch {
+        /* best-effort */
+      }
+    }
+
+    mergePeers(out, filterNonBonded(discoveredPeers ?? []), excludeIds);
+    return shuffleInPlace(out).slice(0, SAMPLE_CAP);
+  }, [
+    searchPeers,
+    runCapabilityDiscovery,
+    filterNonBonded,
+    excludeIds,
+    humanProfile?.hobbies,
+    humanProfile?.knowledge,
+    humanProfile?.discoveryLocation,
+    humanProfile?.discoveryLocationPrecision,
+    discoveredPeers,
+  ]);
+
+  const refreshSample = useCallback(async () => {
+    setBusy(true);
+    setError(null);
     try {
-      await nodeService.runCapabilityDiscovery?.({ find: true }).catch(() => undefined);
-      const results = await nodeService.searchPeers({ topic, maxResults: 20 });
-      setTopicResults(results);
-      if (results.length === 0) {
-        setTopicError(t("browser.bazaar.topicNoResults", "No publishers found for this topic yet."));
+      const rows = await sampleMesh();
+      setResults(rows);
+      setResultSource("sample");
+      if (rows.length === 0) {
+        setError(
+          t(
+            "browser.bazaar.sampleEmpty",
+            "No public people found on the mesh yet. Try a topic search, or check back when more nodes are online.",
+          ),
+        );
       }
     } catch (err) {
-      console.error("[BrowserFollowing] topic search failed:", err);
-      setTopicResults([]);
-      setTopicError(
+      console.error("[BrowserPeople] sample failed:", err);
+      setResults([]);
+      setError(
         t("browser.bazaar.topicError", {
           message: err instanceof Error ? err.message : String(err),
         }),
       );
     } finally {
-      setTopicBusy(false);
+      setBusy(false);
     }
-  }, [nodeService, topicQuery, t]);
+  }, [sampleMesh, t]);
 
-  const shelves = useMemo(() => {
-    return bonds
-      .filter((b) => b.level !== "blocked")
-      .map((bond) => {
-        const card = cards.find((c) => c.ownerId === bond.peerOwnerId);
-        return { bond, card };
-      });
-  }, [bonds, cards]);
+  // Initial mesh sample only — Refresh / Search re-run explicitly.
+  // Avoid depending on refreshSample: mocks often return new [] / client each render.
+  useEffect(() => {
+    void refreshSample();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only
+  }, []);
 
-  function publisherName(ownerId: string): string {
-    const bond = bondByOwner.get(ownerId);
-    return bond ? contactLabel(bond) : shortOwnerId(ownerId);
-  }
+  const runSearch = useCallback(async () => {
+    const q = query.trim();
+    if (searchMode !== "place" && !q) {
+      setError(t("browser.bazaar.topicEmpty", "Enter a topic to search (e.g. photography)."));
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await runCapabilityDiscovery?.({ find: true }).catch(() => undefined);
+      let rows: PeerSearchResult[] = [];
 
-  function kindLabel(kind: string): string | null {
-    const k = kind.trim().toLowerCase();
-    if (!k) return null;
-    if (k === "blog" || k === "blog-post") return t("browser.bazaar.kindBlog", "Blog");
-    if (k === "note" || k === "feed") return t("browser.bazaar.kindNote", "Note");
-    if (k === "photo" || k === "photowall") return t("browser.bazaar.kindPhoto", "Photo");
-    return null;
-  }
+      if (searchMode === "topic") {
+        const topic = publishSearchTopic(q);
+        if (!topic) {
+          setError(t("browser.bazaar.topicEmpty", "Enter a topic to search (e.g. photography)."));
+          setBusy(false);
+          return;
+        }
+        rows = await searchPeers({ topic, maxResults: 20 });
+      } else if (searchMode === "interest") {
+        rows = await searchPeers({ interests: [q], maxResults: 20 });
+      } else {
+        const loc = humanProfile?.discoveryLocation;
+        const locPrecision = humanProfile?.discoveryLocationPrecision;
+        if (!loc || !locPrecision || locPrecision === "hidden") {
+          setError(
+            t(
+              "browser.bazaar.placeNeedsLocation",
+              "Set a discovery location in your profile to search by place.",
+            ),
+          );
+          setBusy(false);
+          return;
+        }
+        const topics = locationSearchTopics({ location: loc, scope: "city" });
+        rows = topics.length
+          ? await searchPeers({ topics, maxResults: 20 })
+          : [];
+      }
+
+      const filtered = filterNonBonded(rows);
+      if (filtered.length === 0) {
+        // Fallback: random-ish mesh sample
+        const sample = await sampleMesh();
+        setResults(sample);
+        setResultSource("sample");
+        setError(
+          sample.length > 0
+            ? t(
+                "browser.bazaar.fallbackSample",
+                "No matches for that search — showing other people on the mesh with public pages.",
+              )
+            : t(
+                "browser.bazaar.topicNoResults",
+                "No publishers found for this topic yet.",
+              ),
+        );
+      } else {
+        setResults(filtered);
+        setResultSource("search");
+      }
+    } catch (err) {
+      console.error("[BrowserPeople] search failed:", err);
+      setResults([]);
+      setError(
+        t("browser.bazaar.topicError", {
+          message: err instanceof Error ? err.message : String(err),
+        }),
+      );
+    } finally {
+      setBusy(false);
+    }
+  }, [
+    query,
+    searchMode,
+    searchPeers,
+    runCapabilityDiscovery,
+    humanProfile?.discoveryLocation,
+    humanProfile?.discoveryLocationPrecision,
+    filterNonBonded,
+    sampleMesh,
+    t,
+  ]);
+
+  const handleSayHello = async (ownerId: string) => {
+    if (!ownerId || helloBusyId) return;
+    setHelloBusyId(ownerId);
+    try {
+      const profile: HelloProfile = {
+        displayName: humanProfile?.displayName ?? "Envoy User",
+        bio: humanProfile?.bio ?? "",
+        interests: [...(humanProfile?.hobbies ?? []), ...(humanProfile?.knowledge ?? [])],
+        whatShares: [],
+      };
+      await sendHello(ownerId, profile, t("inbox.defaultHello", "Hi — I'd like to connect on Envoy."));
+      markOutboundHello(ownerId);
+      setOutboundHellos(loadOutboundHellos());
+      showToast?.(t("discover.hello.sentToast", "Hello sent"), "success");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      showToast?.(message, "error");
+    } finally {
+      setHelloBusyId(null);
+    }
+  };
 
   return (
-    <div className="browser-bazaar" data-testid="browser-following">
+    <div className="browser-bazaar" data-testid="browser-people">
       <header className="browser-bazaar__toolbar">
         <div className="browser-bazaar__lede">
           <p className="browser-bazaar__intro">
-            {t("browser.bazaar.intro", "Posts and pages from people you follow.")}
+            {t(
+              "browser.bazaar.intro",
+              "Find people you haven’t bonded with — open their public profile or blog, then say hello.",
+            )}
           </p>
         </div>
         <button
           type="button"
           className="browser-bazaar__refresh"
-          data-testid="bazaar-refresh"
-          disabled={feedBusy}
+          data-testid="people-refresh"
+          disabled={busy}
           aria-label={
-            feedBusy
+            busy
               ? t("browser.bazaar.refreshing", "Refreshing…")
               : t("browser.bazaar.refresh", "Refresh")
           }
           title={t("browser.bazaar.refresh", "Refresh")}
-          onClick={() => void refreshFeed()}
+          onClick={() => void refreshSample()}
         >
-          <BazaarIconRefresh spinning={feedBusy} />
+          <PeopleIconRefresh spinning={busy} />
         </button>
       </header>
 
-      <section className="browser-bazaar__section" aria-labelledby="bazaar-feed-heading">
-        <div className="browser-bazaar__section-head">
-          <h3 id="bazaar-feed-heading" className="browser-bazaar__heading">
-            {t("browser.bazaar.feedHeading", "Recent")}
-          </h3>
-          {contactFeed.length > 0 ? (
-            <span className="browser-bazaar__count">{contactFeed.length}</span>
-          ) : null}
-        </div>
-        {contactFeed.length === 0 ? (
-          <p className="browser-bazaar__empty" data-testid="bazaar-feed-empty">
-            {t(
-              "browser.bazaar.feedEmpty",
-              "Nothing new yet. When contacts publish, their posts land here.",
-            )}
-          </p>
-        ) : (
-          <ul className="browser-bazaar__feed" data-testid="bazaar-feed-list">
-            {contactFeed.map((item, index) => {
-              const name = publisherName(item.publisherOwnerId);
-              const kind = kindLabel(item.kind);
-              return (
-                <li
-                  key={item.id}
-                  className="browser-bazaar__feed-item"
-                  style={{ animationDelay: `${Math.min(index, 8) * 40}ms` }}
-                >
-                  <button
-                    type="button"
-                    className="browser-bazaar__feed-open"
-                    data-testid="bazaar-feed-open"
-                    onClick={() => onOpenUrl(item.url)}
-                  >
-                    <PeerProfileAvatar
-                      ownerId={item.publisherOwnerId}
-                      fallbackLabel={name}
-                      className="browser-bazaar__avatar"
-                    />
-                    <span className="browser-bazaar__feed-body">
-                      <span className="browser-bazaar__feed-top">
-                        <span className="browser-bazaar__feed-who">{name}</span>
-                        <time
-                          className="browser-bazaar__feed-time"
-                          dateTime={item.publishedAt}
-                        >
-                          {formatMomentsTime(item.publishedAt, locale)}
-                        </time>
-                      </span>
-                      <span className="browser-bazaar__feed-title">{item.title}</span>
-                      {item.summary ? (
-                        <span className="browser-bazaar__feed-summary">{item.summary}</span>
-                      ) : null}
-                      {kind || (item.tags && item.tags.length > 0) ? (
-                        <span className="browser-bazaar__feed-tags">
-                          {kind ? <span className="browser-bazaar__chip">{kind}</span> : null}
-                          {(item.tags ?? []).slice(0, 3).map((tag) => (
-                            <span key={tag} className="browser-bazaar__chip">
-                              {tag}
-                            </span>
-                          ))}
-                        </span>
-                      ) : null}
-                    </span>
-                  </button>
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
-
-      <section className="browser-bazaar__section" aria-labelledby="bazaar-shelves-heading">
-        <div className="browser-bazaar__section-head">
-          <h3 id="bazaar-shelves-heading" className="browser-bazaar__heading">
-            {t("browser.bazaar.shelvesHeading", "People")}
-          </h3>
-        </div>
-        {shelves.length === 0 ? (
-          <p className="browser-bazaar__empty">
-            {t("browser.bazaar.shelvesEmpty", "Bond with contacts to browse their sites here.")}
-          </p>
-        ) : (
-          <ul className="browser-bazaar__shelves" data-testid="bazaar-shelves">
-            {shelves.map(({ bond }) => {
-              const name = contactLabel(bond);
-              return (
-                <li key={bond.peerOwnerId} className="browser-bazaar__shelf">
-                  <div className="browser-bazaar__shelf-head">
-                    <PeerProfileAvatar
-                      ownerId={bond.peerOwnerId}
-                      fallbackLabel={name}
-                      className="browser-bazaar__avatar browser-bazaar__avatar--sm"
-                    />
-                    <button
-                      type="button"
-                      className="browser-bazaar__shelf-name"
-                      onClick={() => onOpenUrl(webContentUrl(bond.peerOwnerId, "profile"))}
-                    >
-                      {name}
-                    </button>
-                  </div>
-                  <ContactWebContentShortcuts
-                    ownerId={bond.peerOwnerId}
-                    onOpenUrl={onOpenUrl}
-                  />
-                </li>
-              );
-            })}
-          </ul>
-        )}
-      </section>
-
       <section
         className="browser-bazaar__section browser-bazaar__section--topic"
-        aria-labelledby="bazaar-topic-heading"
+        aria-labelledby="people-search-heading"
       >
         <div className="browser-bazaar__section-head">
-          <h3 id="bazaar-topic-heading" className="browser-bazaar__heading">
-            {t("browser.bazaar.topicHeading", "Find by topic")}
+          <h3 id="people-search-heading" className="browser-bazaar__heading">
+            {t("browser.bazaar.searchHeading", "Search")}
           </h3>
         </div>
+        <div className="browser-bazaar__mode-row" role="tablist" aria-label={t("browser.bazaar.searchModes", "Search by")}>
+          {(
+            [
+              ["topic", t("browser.bazaar.modeTopic", "Topic")],
+              ["interest", t("browser.bazaar.modeInterest", "Interest")],
+              ["place", t("browser.bazaar.modePlace", "Place")],
+            ] as const
+          ).map(([id, label]) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              className={`browser-bazaar__mode-chip${searchMode === id ? " is-active" : ""}`}
+              aria-selected={searchMode === id}
+              data-testid={`people-mode-${id}`}
+              onClick={() => setSearchMode(id)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <p className="browser-bazaar__topic-hint">
-          {t(
-            "browser.bazaar.topicHint",
-            "Search publishers who advertise a topic on the mesh.",
-          )}
+          {searchMode === "place"
+            ? t(
+                "browser.bazaar.placeHint",
+                "Uses your profile discovery location to find people nearby on the mesh.",
+              )
+            : searchMode === "interest"
+              ? t(
+                  "browser.bazaar.interestHint",
+                  "Match people who share an interest.",
+                )
+              : t(
+                  "browser.bazaar.topicHint",
+                  "Search publishers who advertise a topic on the mesh.",
+                )}
         </p>
         <form
           className="browser-bazaar__topic-form"
           onSubmit={(e) => {
             e.preventDefault();
-            void runTopicSearch();
+            void runSearch();
           }}
         >
-          <input
-            type="search"
-            className="browser-bazaar__topic-input"
-            data-testid="bazaar-topic-input"
-            value={topicQuery}
-            onChange={(e) => setTopicQuery(e.target.value)}
-            placeholder={t("browser.bazaar.topicPlaceholder", "photography, cooking, travel…")}
-            aria-label={t("browser.bazaar.topicHeading", "Find by topic")}
-          />
+          {searchMode !== "place" ? (
+            <input
+              type="search"
+              className="browser-bazaar__topic-input"
+              data-testid="people-search-input"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              placeholder={
+                searchMode === "interest"
+                  ? t("browser.bazaar.interestPlaceholder", "music, coding, travel…")
+                  : t("browser.bazaar.topicPlaceholder", "photography, cooking, travel…")
+              }
+              aria-label={t("browser.bazaar.searchHeading", "Search")}
+            />
+          ) : null}
           <button
             type="submit"
             className="browser-bazaar__topic-go"
-            data-testid="bazaar-topic-search"
-            disabled={topicBusy}
+            data-testid="people-search-go"
+            disabled={busy}
           >
-            {topicBusy
+            {busy
               ? t("browser.bazaar.topicSearching", "Searching…")
-              : t("browser.bazaar.topicSearch", "Search")}
+              : searchMode === "place"
+                ? t("browser.bazaar.searchPlace", "Find nearby")
+                : t("browser.bazaar.topicSearch", "Search")}
           </button>
         </form>
-        {topicError ? (
-          <p className="browser-bazaar__empty" data-testid="bazaar-topic-error">
-            {topicError}
+      </section>
+
+      <section className="browser-bazaar__section" aria-labelledby="people-results-heading">
+        <div className="browser-bazaar__section-head">
+          <h3 id="people-results-heading" className="browser-bazaar__heading">
+            {resultSource === "sample"
+              ? t("browser.bazaar.sampleHeading", "People on the mesh")
+              : t("browser.bazaar.resultsHeading", "Results")}
+          </h3>
+          {results.length > 0 ? (
+            <span className="browser-bazaar__count">{results.length}</span>
+          ) : null}
+        </div>
+        {error ? (
+          <p className="browser-bazaar__empty" data-testid="people-status">
+            {error}
           </p>
         ) : null}
-        {topicResults.length > 0 ? (
-          <ul className="browser-bazaar__topic-results" data-testid="bazaar-topic-results">
-            {topicResults.map((peer) => {
+        {results.length === 0 && !busy && !error ? (
+          <p className="browser-bazaar__empty" data-testid="people-empty">
+            {t(
+              "browser.bazaar.sampleEmpty",
+              "No public people found on the mesh yet. Try a topic search, or check back when more nodes are online.",
+            )}
+          </p>
+        ) : null}
+        {results.length > 0 ? (
+          <ul className="browser-bazaar__topic-results" data-testid="people-results">
+            {results.map((peer) => {
               const name = peer.displayName?.trim() || shortOwnerId(peer.ownerId);
+              const helloState = resolvePeerHelloState(
+                peer.ownerId,
+                peer.nodeId,
+                bonds,
+                outboundHellos,
+              );
               return (
-                <li key={peer.ownerId} className="browser-bazaar__topic-peer">
+                <li key={peer.ownerId || peer.nodeId} className="browser-bazaar__topic-peer">
                   <div className="browser-bazaar__topic-peer-main">
                     <PeerProfileAvatar
                       ownerId={peer.ownerId}
@@ -354,6 +470,7 @@ export function BrowserBazaarView({ onOpenUrl }: BrowserBazaarViewProps) {
                     <button
                       type="button"
                       className="contact-web-content__link"
+                      data-testid="people-open-profile"
                       onClick={() => onOpenUrl(webContentUrl(peer.ownerId, "profile"))}
                     >
                       {t("agentCard.openProfile", "Profile")}
@@ -364,10 +481,33 @@ export function BrowserBazaarView({ onOpenUrl }: BrowserBazaarViewProps) {
                     <button
                       type="button"
                       className="contact-web-content__link"
+                      data-testid="people-open-blog"
                       onClick={() => onOpenUrl(webContentUrl(peer.ownerId, "blog"))}
                     >
                       {t("agentCard.openBlog", "Blog")}
                     </button>
+                    <span className="contact-web-content__sep" aria-hidden="true">
+                      ·
+                    </span>
+                    {helloState === "connected" ? (
+                      <span className="browser-bazaar__hello-status">
+                        {t("common.connected", "Connected")}
+                      </span>
+                    ) : helloState === "sent" ? (
+                      <span className="browser-bazaar__hello-status">
+                        {t("common.helloSentWaiting", "Hello sent")}
+                      </span>
+                    ) : (
+                      <button
+                        type="button"
+                        className="contact-web-content__link"
+                        data-testid="people-say-hello"
+                        disabled={helloBusyId === peer.ownerId}
+                        onClick={() => void handleSayHello(peer.ownerId)}
+                      >
+                        {t("common.sayHello", "Say Hello")}
+                      </button>
+                    )}
                   </div>
                 </li>
               );
@@ -379,7 +519,7 @@ export function BrowserBazaarView({ onOpenUrl }: BrowserBazaarViewProps) {
   );
 }
 
-function BazaarIconRefresh({ spinning }: { spinning: boolean }) {
+function PeopleIconRefresh({ spinning }: { spinning: boolean }) {
   return (
     <svg
       viewBox="0 0 24 24"

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +9,7 @@ import '../../models/contact.dart';
 import '../../models/web_content.dart';
 import '../../providers/contact_provider.dart';
 import '../../providers/node_provider.dart';
+import '../../services/library_read_cache.dart';
 
 /// My Files — list / import / preview / share home vault files via thin client.
 class ContentFilesTab extends ConsumerStatefulWidget {
@@ -82,6 +84,10 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
         contentBase64: base64Encode(bytes),
         mimeType: mime,
       );
+      final homeId = ref.read(nodeProvider).activeNode?.id;
+      if (homeId != null) {
+        await LibraryReadCache.instance.invalidateBlob(vaultCacheKey(homeId, path));
+      }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Imported $name')),
@@ -97,27 +103,57 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
 
   Future<void> _preview(LocalFileItem item) async {
     final client = ref.read(nodeServiceProvider);
-    if (client == null) return;
+    final homeId = ref.read(nodeProvider).activeNode?.id;
+    if (client == null || homeId == null) return;
     try {
-      final result = await client.readLibraryItemContent(
-        relativePath: item.relativePath,
-      );
-      final b64 = result['contentBase64'] as String?;
-      final mime = (result['mimeType'] as String?) ?? '';
-      if (b64 == null || !mounted) return;
-      final bytes = base64Decode(b64);
+      final cacheKey = vaultCacheKey(homeId, item.relativePath);
+      final cached = await LibraryReadCache.instance.peekBlobEntry(cacheKey);
+      final now = DateTime.now().toUtc();
+      Uint8List? bytes;
+      var mime = _mimeGuess(item);
+      if (cached != null &&
+          now.difference(cached.cachedAt.toUtc()) < vaultCacheFreshTtl) {
+        bytes = cached.bytes;
+        if (bytes == null) {
+          try {
+            bytes = base64Decode(cached.body);
+          } catch (_) {
+            bytes = null;
+          }
+        }
+        if (cached.contentType.isNotEmpty &&
+            cached.contentType != 'application/octet-stream') {
+          mime = cached.contentType;
+        }
+      }
+      if (bytes == null) {
+        final result = await client.readLibraryItemContent(
+          relativePath: item.relativePath,
+        );
+        final b64 = result['contentBase64'] as String?;
+        final remoteMime = (result['mimeType'] as String?) ?? '';
+        if (remoteMime.isNotEmpty) mime = remoteMime;
+        if (b64 == null || !mounted) return;
+        bytes = base64Decode(b64);
+        await LibraryReadCache.instance.putBlob(
+          cacheKey,
+          bytes,
+          contentType: mime.isNotEmpty ? mime : 'application/octet-stream',
+        );
+      }
+      if (!mounted) return;
       await showDialog<void>(
         context: context,
         builder: (ctx) {
           Widget body;
           if (mime.startsWith('image/')) {
-            body = InteractiveViewer(child: Image.memory(bytes));
+            body = InteractiveViewer(child: Image.memory(bytes!));
           } else if (mime.startsWith('text/') ||
               mime == 'application/json' ||
               item.extension == 'md') {
             body = SingleChildScrollView(
               padding: const EdgeInsets.all(12),
-              child: SelectableText(utf8.decode(bytes, allowMalformed: true)),
+              child: SelectableText(utf8.decode(bytes!, allowMalformed: true)),
             );
           } else {
             body = Padding(
@@ -149,6 +185,27 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Preview failed: $e')),
       );
+    }
+  }
+
+  String _mimeGuess(LocalFileItem item) {
+    switch (item.extension.toLowerCase()) {
+      case 'jpg':
+      case 'jpeg':
+        return 'image/jpeg';
+      case 'png':
+        return 'image/png';
+      case 'gif':
+        return 'image/gif';
+      case 'webp':
+        return 'image/webp';
+      case 'md':
+      case 'txt':
+        return 'text/plain';
+      case 'json':
+        return 'application/json';
+      default:
+        return '';
     }
   }
 

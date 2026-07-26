@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../providers/chat_provider.dart';
 import '../providers/content_engage_provider.dart';
+import '../providers/feed_notify_provider.dart';
 import '../providers/node_provider.dart';
 import '../widgets/connection_indicator.dart';
 import '../widgets/incoming_call_overlay.dart';
@@ -19,8 +20,19 @@ class HomeScreen extends ConsumerWidget {
     final chatState = ref.watch(chatProvider);
     final callProviderRef = ref.watch(callProvider);
     final engage = ref.watch(contentEngageProvider);
+    final feedNotify = ref.watch(feedNotifyProvider);
+    final contentSurface = ref.watch(contentSurfaceProvider);
     final tab = chatState.selectedTab.clamp(0, 3);
-    final contentBadge = engage.totalCount;
+    final viewingContent = tab == 2;
+    final viewingFeed = viewingContent && contentSurface == 0;
+    // While Content → Feed/Blog is open, don't badge Like/Comment for that surface.
+    // While on Feed, also hide peer feed.notify (don't auto-mark them read).
+    final engageBadge = engage.visibleTotalCount(
+      viewingContent: viewingContent,
+      surfaceIndex: contentSurface,
+    );
+    final feedNotifyBadge = viewingFeed ? 0 : feedNotify.unread.length;
+    final contentBadge = engageBadge + feedNotifyBadge;
 
     return Scaffold(
       appBar: AppBar(
@@ -50,9 +62,10 @@ class HomeScreen extends ConsumerWidget {
         selectedIndex: tab,
         onDestinationSelected: (index) {
           ref.read(chatProvider.notifier).selectTab(index);
-          // Opening Content clears all engagement badges.
+          // Opening Content clears engagement + feed.notify (folder-open).
           if (index == 2) {
             ref.read(contentEngageProvider.notifier).dismiss(surface: 'all');
+            ref.read(feedNotifyProvider.notifier).dismissAll();
           }
         },
         destinations: [

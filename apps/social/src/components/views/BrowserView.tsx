@@ -8,9 +8,11 @@
  * Design: docs/web-content-browsing-design.md §4.7, §7.2.
  */
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent } from "react";
+import type { HelloProfile } from "@envoymesh/api";
 import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
+import { useToastOptional } from "../../hooks/useToast.js";
 import {
   parseEnvoyUrl,
   resolveEnvoyUrl,
@@ -46,6 +48,11 @@ import {
   type BrowserFetchCacheEntry,
   type LibraryReadFn,
 } from "../../lib/library-read-fetch.js";
+import {
+  loadOutboundHellos,
+  markOutboundHello,
+  resolvePeerHelloState,
+} from "../../lib/discover-peer-state.js";
 import { BrowserAuthorView } from "./BrowserAuthorView.js";
 import type { PublishWebContentResult } from "@envoymesh/api";
 import {
@@ -119,7 +126,8 @@ function titleFromBody(mimeType: string, body: string, url: string): string {
 export function BrowserView({ initialMode }: { initialMode?: BrowserMode } = {}) {
   const t = useT();
   const nodeService = useNodeService();
-  const { humanProfile } = useNodeState();
+  const { humanProfile, bonds, sendHello } = useNodeState();
+  const { showToast } = useToastOptional() ?? { showToast: undefined };
   const ownerId = humanProfile?.ownerId?.trim() ?? "";
 
   const [url, setUrl] = useState("");
@@ -130,6 +138,8 @@ export function BrowserView({ initialMode }: { initialMode?: BrowserMode } = {})
   const [authorOpen, setAuthorOpen] = useState(false);
   const [authorTemplate, setAuthorTemplate] = useState<AuthorTemplate | undefined>(undefined);
   const authorPanelRef = useRef<HTMLDivElement>(null);
+  const [outboundHellos, setOutboundHellos] = useState(() => loadOutboundHellos());
+  const [helloBusy, setHelloBusy] = useState(false);
 
   // Author panel becomes the page content while open — scroll it to the top
   // of the (single) Browser scrollport so long forms stay reachable.
@@ -429,6 +439,46 @@ export function BrowserView({ initialMode }: { initialMode?: BrowserMode } = {})
     void navigate(href);
   }
 
+  const pageOwnerId = useMemo(() => {
+    if (state.kind !== "ok") return null;
+    try {
+      return resolveEnvoyUrl(parseEnvoyUrl(state.url)).targetOwnerId.trim() || null;
+    } catch {
+      return null;
+    }
+  }, [state]);
+
+  const pageHelloState = useMemo(() => {
+    if (!pageOwnerId || !ownerId || pageOwnerId === ownerId) return null;
+    return resolvePeerHelloState(pageOwnerId, pageOwnerId, bonds ?? [], outboundHellos);
+  }, [pageOwnerId, ownerId, bonds, outboundHellos]);
+
+  async function onSayHelloToPageOwner() {
+    if (!pageOwnerId || helloBusy || pageHelloState !== "none") return;
+    setHelloBusy(true);
+    try {
+      const profile: HelloProfile = {
+        displayName: humanProfile?.displayName ?? "Envoy User",
+        bio: humanProfile?.bio ?? "",
+        interests: [...(humanProfile?.hobbies ?? []), ...(humanProfile?.knowledge ?? [])],
+        whatShares: [],
+      };
+      await sendHello(
+        pageOwnerId,
+        profile,
+        t("inbox.defaultHello", "Hi — I'd like to connect on Envoy."),
+      );
+      markOutboundHello(pageOwnerId);
+      setOutboundHellos(loadOutboundHellos());
+      showToast?.(t("discover.hello.sentToast", "Hello sent"), "success");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      showToast?.(message, "error");
+    } finally {
+      setHelloBusy(false);
+    }
+  }
+
   const backEnabled = canGoBack(nav);
   const forwardEnabled = canGoForward(nav);
   const reloadEnabled =
@@ -447,11 +497,11 @@ export function BrowserView({ initialMode }: { initialMode?: BrowserMode } = {})
             type="button"
             role="tab"
             className={`browser-view__mode${mode === "bazaar" ? " is-active" : ""}`}
-            data-testid="browser-mode-following"
+            data-testid="browser-mode-people"
             aria-selected={mode === "bazaar"}
             onClick={() => setMode("bazaar")}
           >
-            {t("browser.modeFollowing", "Following")}
+            {t("browser.modePeople", "People")}
           </button>
           <button
             type="button"
@@ -631,7 +681,7 @@ export function BrowserView({ initialMode }: { initialMode?: BrowserMode } = {})
             <p className="browser-view__idle-title">
               {t(
                 "browser.idleHint",
-                "Paste a shared envoy:// link, or switch to Following to browse contacts’ pages.",
+                "Paste a shared envoy:// link, or switch to People to discover public pages.",
               )}
             </p>
             <ul className="browser-view__idle-list">
@@ -653,6 +703,31 @@ export function BrowserView({ initialMode }: { initialMode?: BrowserMode } = {})
         )}
       </div>
       ) : null}
+
+      {state.kind === "ok" && !authorOpen && pageHelloState === "none" && (
+        <div className="browser-view__hello-bar" data-testid="browser-open-hello">
+          <p className="browser-view__hello-hint">
+            {t(
+              "browser.openHelloHint",
+              "Not bonded yet — say hello to connect with this person.",
+            )}
+          </p>
+          <button
+            type="button"
+            className="browser-view__hello-btn"
+            data-testid="browser-open-say-hello"
+            disabled={helloBusy}
+            onClick={() => void onSayHelloToPageOwner()}
+          >
+            {t("common.sayHello", "Say Hello")}
+          </button>
+        </div>
+      )}
+      {state.kind === "ok" && !authorOpen && pageHelloState === "sent" && (
+        <p className="browser-view__hello-status" data-testid="browser-open-hello-sent">
+          {t("common.helloSentWaiting", "Hello sent")}
+        </p>
+      )}
 
       {state.kind === "ok" && !authorOpen && (
         <p className="browser-view__status" data-testid="browser-status">

@@ -21,6 +21,7 @@ const ensureDefaultWebSite = vi.fn(async () => ({
   },
 }));
 const showToast = vi.fn();
+const sendHello = vi.fn(async () => undefined);
 
 let libraryReadMock: (params?: { path?: string }) => Promise<unknown> = async () => ({
   status: "not_found",
@@ -75,6 +76,8 @@ vi.mock("../../src/context/NodeStateContext.js", () => ({
   useNodeState: () => ({
     humanProfile: { ownerId: "envoy:owner:self", displayName: "Self" },
     bonds: [],
+    discoveredPeers: [],
+    sendHello,
     nodeConfig: {},
   }),
 }));
@@ -98,11 +101,11 @@ function openReader() {
 }
 
 describe("BrowserView", () => {
-  it("defaults to Following; Open shows the address bar", () => {
+  it("defaults to People; Open shows the address bar", () => {
     renderWithI18n(<BrowserView />);
-    expect(screen.getByTestId("browser-mode-following")).toBeTruthy();
+    expect(screen.getByTestId("browser-mode-people")).toBeTruthy();
     expect(screen.getByTestId("browser-mode-open")).toBeTruthy();
-    expect(screen.getByTestId("browser-following")).toBeTruthy();
+    expect(screen.getByTestId("browser-people")).toBeTruthy();
     expect(screen.queryByTestId("browser-address-bar")).toBeNull();
     openReader();
     expect(screen.getByTestId("browser-address-bar")).toBeTruthy();
@@ -180,6 +183,36 @@ describe("BrowserView", () => {
       const markdown = screen.getByTestId("browser-markdown");
       expect(markdown.textContent).toContain("Hello from Alice");
     });
+  });
+
+  it("shows Say Hello in Open mode for a non-bonded page owner", async () => {
+    libraryReadMock = async () => ({
+      status: "ok",
+      peerOwnerId: "envoy:owner:abc123",
+      libp2pPeerId: "12D3KooWTest",
+      body: "# Hello from Alice",
+      contentType: "text/markdown",
+      byteLength: 18,
+      latencyMs: 10,
+    });
+    libraryRead.mockImplementation(libraryReadMock);
+    sendHello.mockClear();
+
+    renderWithI18n(<BrowserView />);
+    openReader();
+    fireEvent.change(screen.getByTestId("browser-address-bar"), {
+      target: { value: "envoy://envoy:owner:abc123/posts/hello" },
+    });
+    fireEvent.click(screen.getByTestId("browser-go"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("browser-open-hello")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByTestId("browser-open-say-hello"));
+    await waitFor(() => {
+      expect(sendHello).toHaveBeenCalled();
+    });
+    expect(sendHello.mock.calls[0]?.[0]).toBe("envoy:owner:abc123");
   });
 
   it("renders PhotoWall markdown as a photo gallery grid", async () => {

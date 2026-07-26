@@ -41,7 +41,7 @@ export type AppendFeedNotifyResult = {
 
 /** Soft ceiling so a pathological peer flood cannot unbounded-grow disk/RAM. */
 export const MAX_PEER_TIMELINE_ITEMS = 5_000;
-/** Following / Inbox list surfaces — newest slice (full history via listFeedTimeline). */
+/** Feed / Inbox list surfaces — newest slice (full history via listFeedTimeline). */
 export const FEED_NOTIFY_LIST_LIMIT = 200;
 
 const LEGACY_INBOX = "feed-notify-inbox.json";
@@ -250,7 +250,7 @@ export async function loadFeedNotifyInbox(profileDir: string): Promise<FeedNotif
 }
 
 /**
- * Newest slice for Inbox / Following UI (not the full history).
+ * Newest slice for Inbox / Feed UI (not the full history).
  * Own Feed should use `listFeedTimeline` for paging.
  */
 export async function listFeedNotifyRecent(
@@ -319,7 +319,7 @@ export async function appendFeedNotifyInboxItem(
   });
 }
 
-/** Mark one row read (Inbox dismiss). Keeps the row for Feed / Following. */
+/** Mark one row read (Inbox dismiss). Keeps the row for Feed. */
 export async function dismissFeedNotifyInboxItem(
   profileDir: string,
   id: string,
@@ -337,7 +337,7 @@ export async function dismissFeedNotifyInboxItem(
 
 /**
  * Mark every feed.notify row read so the Inbox unread badge drops to zero.
- * Does NOT delete rows — Content → Feed and Explore → Following still list them.
+ * Does NOT delete rows — Content → Feed still lists them.
  */
 export async function dismissAllFeedNotifyInboxItems(
   profileDir: string,

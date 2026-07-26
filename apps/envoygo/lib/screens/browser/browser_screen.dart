@@ -11,6 +11,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../providers/contact_provider.dart' show nodeServiceProvider;
 import '../../services/content_hash.dart';
 import '../../services/envoy_url.dart';
+import '../../services/library_read_cache.dart';
 import '../../services/library_read_fetch.dart';
 
 /// Matches bare `envoy://…` URLs and markdown `[label](envoy://…)` links.
@@ -977,7 +978,16 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
       return null;
     }
     try {
-      final result = await fetchLibraryContent(
+      final peek = await LibraryReadCache.instance
+          .peekBytes(parsed.targetOwnerId, parsed.path);
+      if (peek != null) {
+        if (mounted) {
+          setState(() => _imageBytes[url] = peek);
+        } else {
+          _imageBytes[url] = peek;
+        }
+      }
+      final result = await LibraryReadCache.instance.fetch(
         ({
           required String targetOwnerId,
           required String path,
@@ -996,9 +1006,13 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
         path: parsed.path,
       );
       if (result.status == 'ok' &&
-          result.body != null &&
           (result.contentType?.startsWith('image/') ?? false)) {
-        final bytes = base64Decode(result.body!);
+        final bytes = result.bytes ??
+            (result.body != null ? base64Decode(result.body!) : null);
+        if (bytes == null) {
+          _imageFailed.add(url);
+          return null;
+        }
         if (mounted) {
           setState(() => _imageBytes[url] = bytes);
         } else {

@@ -1,6 +1,6 @@
 /**
  * Regression: opening Inbox must clear the unread badge without wiping the
- * peer-Feed timeline (same store powers Content → Feed / Explore → Following).
+ * peer-Feed timeline (same store powers Content → Feed).
  */
 import { mkdtemp, writeFile, mkdir } from "node:fs/promises";
 import { tmpdir } from "node:os";

@@ -13,7 +13,7 @@ import { ChatView } from "./components/views/ChatView.js";
 import { DiscoverView } from "./components/views/DiscoverView.js";
 import { ProfileView } from "./components/views/ProfileView.js";
 import { SettingsView, type SettingsTabId } from "./components/views/SettingsView.js";
-import { ContentView } from "./components/views/ContentView.js";
+import { ContentView, type ContentTab } from "./components/views/ContentView.js";
 import { H2AChannelView } from "./components/views/H2AChannelView.js";
 import { ChainsView } from "./components/views/ChainsView.js";
 import { AutoReplyPausedNotifier } from "./components/AutoReplyPausedNotifier.js";
@@ -286,8 +286,20 @@ export function App() {
   const inboxActivityCount = useInboxActivityCount();
   const contentEngage = useContentEngageNotifications();
   const feedNotify = useFeedNotifications();
-  const contentBadgeCount = contentEngage.totalCount + feedNotify.unread.length;
-  const feedTabBadgeCount = contentEngage.feedCount + feedNotify.unread.length;
+  const [currentView, setCurrentView] = useState<ViewName>("chat");
+  // While Content → Feed/Blog is open, don't badge Like/Comment for that surface.
+  const [contentSurface, setContentSurface] = useState<ContentTab>("feed");
+  const viewingContentFeed = currentView === "content" && contentSurface === "feed";
+  const viewingContentBlog = currentView === "content" && contentSurface === "blog";
+  const visibleEngageCount =
+    contentEngage.totalCount -
+    (viewingContentFeed ? contentEngage.feedCount : 0) -
+    (viewingContentBlog ? contentEngage.blogCount : 0);
+  // While on Feed, hide peer-post notify badges too (don't auto-mark them read).
+  const visibleFeedNotifyCount = viewingContentFeed ? 0 : feedNotify.unread.length;
+  const contentBadgeCount = visibleEngageCount + visibleFeedNotifyCount;
+  // Engage count only for auto-dismiss while viewing (must not include feed.notify).
+  const feedTabEngageCount = contentEngage.feedCount;
 
   const nodeService = useNodeService();
   const reconnectAttempts = nodeService.reconnectAttempts;
@@ -371,7 +383,6 @@ export function App() {
     }
   };
 
-  const [currentView, setCurrentView] = useState<ViewName>("chat");
   const [settingsTab, setSettingsTab] = useState<SettingsTabId>("account");
   const [chatSelectedContact, setChatSelectedContact] = useState<string | null>(null);
   const [chatPanelMode, setChatPanelMode] = useState<ChatPanelMode>("threads");
@@ -530,11 +541,16 @@ export function App() {
             {currentView === "content" && (
               <SwipeBack onSwipeBack={() => navigateTo("chat")}>
                 <ContentView
-                  feedEngageCount={feedTabBadgeCount}
+                  feedEngageCount={feedTabEngageCount}
+                  feedNotifyCount={visibleFeedNotifyCount}
                   blogEngageCount={contentEngage.blogCount}
-                  onDismissEngage={async (surface) => {
+                  onActiveSurfaceChange={setContentSurface}
+                  onDismissEngage={async (surface, options) => {
                     await contentEngage.dismiss(surface);
-                    if (surface === "all" || surface === "feed") {
+                    if (
+                      options?.feedNotify &&
+                      (surface === "all" || surface === "feed")
+                    ) {
                       await feedNotify.dismissAll();
                     }
                   }}

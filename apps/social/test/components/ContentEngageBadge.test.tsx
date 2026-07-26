@@ -8,6 +8,8 @@ import React from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { ContentView } from "../../src/components/views/ContentView.js";
+import { I18nTestProvider } from "../../src/context/I18nContext.js";
+import { ToastProvider } from "../../src/hooks/useToast.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
 
 vi.mock("../../src/components/views/FeedView.js", () => ({
@@ -36,7 +38,7 @@ describe("ContentView engagement badges", () => {
       />,
     );
     await waitFor(() => {
-      expect(onDismissEngage).toHaveBeenCalledWith("all");
+      expect(onDismissEngage).toHaveBeenCalledWith("all", { feedNotify: true });
     });
   });
 
@@ -49,7 +51,9 @@ describe("ContentView engagement badges", () => {
         onDismissEngage={onDismissEngage}
       />,
     );
-    await waitFor(() => expect(onDismissEngage).toHaveBeenCalledWith("all"));
+    await waitFor(() =>
+      expect(onDismissEngage).toHaveBeenCalledWith("all", { feedNotify: true }),
+    );
     onDismissEngage.mockClear();
 
     fireEvent.click(screen.getByTestId("content-tab-blog"));
@@ -59,18 +63,69 @@ describe("ContentView engagement badges", () => {
 
     fireEvent.click(screen.getByTestId("content-tab-feed"));
     await waitFor(() => {
-      expect(onDismissEngage).toHaveBeenCalledWith("feed");
+      expect(onDismissEngage).toHaveBeenCalledWith("feed", { feedNotify: true });
     });
   });
 
-  it("shows badge counts on Feed and Blog tabs", () => {
-    renderWithI18n(
-      <ContentView feedEngageCount={2} blogEngageCount={4} onDismissEngage={async () => {}} />,
+  it("auto-dismisses feed engage without clearing feed.notify", async () => {
+    const onDismissEngage = vi.fn(async () => {});
+    const view = renderWithI18n(
+      <ContentView
+        feedEngageCount={0}
+        blogEngageCount={0}
+        onDismissEngage={onDismissEngage}
+      />,
     );
-    const feedTab = screen.getByTestId("content-tab-feed");
+    await waitFor(() =>
+      expect(onDismissEngage).toHaveBeenCalledWith("all", { feedNotify: true }),
+    );
+    onDismissEngage.mockClear();
+
+    view.rerender(
+      <I18nTestProvider>
+        <ToastProvider>
+          <ContentView
+            feedEngageCount={2}
+            blogEngageCount={0}
+            onDismissEngage={onDismissEngage}
+          />
+        </ToastProvider>
+      </I18nTestProvider>,
+    );
+    await waitFor(() => {
+      expect(onDismissEngage).toHaveBeenCalledWith("feed");
+    });
+    expect(onDismissEngage.mock.calls.some((c) => c[1]?.feedNotify === true)).toBe(false);
+  });
+
+  it("shows blog badge when Feed is active (Feed badge hidden)", () => {
+    renderWithI18n(
+      <ContentView
+        feedEngageCount={2}
+        feedNotifyCount={3}
+        blogEngageCount={4}
+        onDismissEngage={async () => {}}
+      />,
+    );
     const blogTab = screen.getByTestId("content-tab-blog");
-    expect(feedTab.textContent).toMatch(/2/);
     expect(blogTab.textContent).toMatch(/4/);
+  });
+
+  it("shows combined engage+notify on Feed when viewing another tab", async () => {
+    const onDismissEngage = vi.fn(async () => {});
+    renderWithI18n(
+      <ContentView
+        feedEngageCount={2}
+        feedNotifyCount={3}
+        blogEngageCount={0}
+        onDismissEngage={onDismissEngage}
+      />,
+    );
+    await waitFor(() => expect(onDismissEngage).toHaveBeenCalled());
+    fireEvent.click(screen.getByTestId("content-tab-blog"));
+    await waitFor(() => {
+      expect(screen.getByTestId("content-tab-feed").textContent).toMatch(/5/);
+    });
   });
 
   it("switches to Explore when open-browser fires with a pending URL", async () => {

@@ -58,4 +58,40 @@ describe("content-engage-inbox-store", () => {
     items = await loadContentEngageInbox(dir);
     expect(items).toHaveLength(0);
   });
+
+  it("prune drops rows older than TTL", async () => {
+    const { pruneContentEngageInboxItems, MAX_INBOX_AGE_MS } = await import(
+      "../src/content-engage-inbox-store.js"
+    );
+    const now = Date.parse("2026-07-20T00:00:00.000Z");
+    const staleAt = new Date(now - MAX_INBOX_AGE_MS - 60_000).toISOString();
+    const freshAt = new Date(now - 60_000).toISOString();
+    const pruned = pruneContentEngageInboxItems(
+      [
+        {
+          id: "1",
+          receivedAt: staleAt,
+          messageId: "m-old",
+          url: "envoy://envoy:owner:a/feeds/old.md",
+          surface: "feed",
+          action: "star",
+          actorOwnerId: "envoy:owner:bob",
+          senderPeerId: "x",
+        },
+        {
+          id: "2",
+          receivedAt: freshAt,
+          messageId: "m-new",
+          url: "envoy://envoy:owner:a/feeds/new.md",
+          surface: "feed",
+          action: "star",
+          actorOwnerId: "envoy:owner:bob",
+          senderPeerId: "x",
+        },
+      ],
+      now,
+    );
+    expect(pruned).toHaveLength(1);
+    expect(pruned[0]!.messageId).toBe("m-new");
+  });
 });

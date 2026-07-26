@@ -18,6 +18,7 @@ import '../services/pairing_service.dart';
 import '../services/client_proxy_transport.dart';
 import '../services/platform_web_socket.dart';
 import '../services/exceptions.dart';
+import '../services/library_read_cache.dart';
 import '../services/reconnect_supervisor.dart';
 import '../services/connectivity_observer.dart';
 import '../services/voip_push_service.dart';
@@ -1116,6 +1117,8 @@ class NodeNotifier extends StateNotifier<NodeState> {
     _connectingFuture = null;
     _ref.read(feedNotifyProvider.notifier).clear();
     _ref.read(contentEngageProvider.notifier).clear();
+    // Keep disk media cache across reconnects; only drop in-memory rows that
+    // may reference a different home. Full wipe happens on unpair.
     state = state.copyWith(
       connectionState: NodeConnectionState.disconnected,
       activeTransport: null,
@@ -1156,6 +1159,8 @@ class NodeNotifier extends StateNotifier<NodeState> {
         state.pairedNodes.where((n) => n.id == nodeId).firstOrNull;
     if (node == null) return;
     await disconnect();
+    // Avoid serving the previous home's vault/media under the same paths.
+    await LibraryReadCache.instance.clear();
     await connectToNode(node);
     // Retarget the supervisor to the new node. If the prior
     // supervisor was for a different node, stop it and start
@@ -1212,6 +1217,8 @@ class NodeNotifier extends StateNotifier<NodeState> {
       pairedNodes: remaining,
       ownerId: null,
     );
+    // Drop cached photos/files tied to this home when unpaired.
+    await LibraryReadCache.instance.clear();
     // If this was the last paired node, tear down the connectivity
     // subscription too. (When the user re-pairs, _ensureConnectivityObserver
     // is a no-op because the sub already exists; loadPairedNodes

@@ -661,4 +661,86 @@ void main() {
       await callFuture;
     });
   });
+
+  group('NodeServiceClient People discovery', () {
+    test('searchPeers sends topic + maxResults', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture = client.searchPeers(
+        topic: 'publish:photography',
+        maxResults: 20,
+      );
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'searchPeers');
+      expect(sent['params'], {
+        'maxResults': 20,
+        'topic': 'publish:photography',
+      });
+
+      mock.simulateMessage({
+        'id': sent['id'],
+        'result': [
+          {
+            'nodeId': '12D3KooWBob',
+            'ownerId': 'envoy:owner:bob',
+            'displayName': 'Bob',
+            'interests': ['photography'],
+            'profileVisibility': 'public',
+          },
+        ],
+      });
+
+      final rows = await callFuture;
+      expect(rows, hasLength(1));
+      expect(rows.first.ownerId, 'envoy:owner:bob');
+      expect(rows.first.displayName, 'Bob');
+    });
+
+    test('sendHello sends targetOwnerId + profile + message', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture = client.sendHello(
+        targetOwnerId: 'envoy:owner:bob',
+        profile: {
+          'displayName': 'Self',
+          'bio': '',
+          'interests': ['music'],
+          'whatShares': <String>[],
+        },
+        message: 'Hi',
+      );
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'sendHello');
+      expect(sent['params']['targetOwnerId'], 'envoy:owner:bob');
+      expect(sent['params']['message'], 'Hi');
+      expect(sent['params']['profile']['displayName'], 'Self');
+
+      mock.simulateMessage({
+        'id': sent['id'],
+        'result': {'decision': 'pending'},
+      });
+      await callFuture;
+    });
+
+    test('runCapabilityDiscovery sends find flag', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture = client.runCapabilityDiscovery(find: true);
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'runCapabilityDiscovery');
+      expect(sent['params'], {'find': true});
+
+      mock.simulateMessage({'id': sent['id'], 'result': null});
+      await callFuture;
+    });
+  });
 }

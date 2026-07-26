@@ -1,7 +1,7 @@
 /**
  * @vitest-environment jsdom
  *
- * Phase 45 Pass 3 — Browser Bazaar tab.
+ * Explore → People (non-bonded discovery + mesh sample).
  */
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -14,6 +14,7 @@ const requestAgentCard = vi.fn();
 const searchPeers = vi.fn();
 const runCapabilityDiscovery = vi.fn();
 const listAgentCards = vi.fn();
+const sendHello = vi.fn();
 const on = vi.fn(() => () => undefined);
 
 beforeEach(() => {
@@ -22,6 +23,7 @@ beforeEach(() => {
   searchPeers.mockResolvedValue([]);
   runCapabilityDiscovery.mockResolvedValue(undefined);
   listAgentCards.mockResolvedValue([]);
+  sendHello.mockResolvedValue(undefined);
   on.mockReturnValue(() => undefined);
   libraryRead.mockResolvedValue({
     status: "ok",
@@ -47,16 +49,12 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     on,
     isConnected: true,
   }),
-  useAgentCards: () => [
-    {
-      ownerId: "envoy:owner:alice",
-      publicTopics: ["publish:photography"],
-      webContentRoot: "envoy://envoy:owner:alice/profile",
-    },
-  ],
+  useAgentCards: () => [],
   useIsInProcessMobileNode: () => false,
   useTransportWsOpen: () => true,
 }));
+
+const EMPTY_DISCOVERED: never[] = [];
 
 vi.mock("../../src/context/NodeStateContext.js", () => ({
   useNodeState: () => ({
@@ -67,7 +65,14 @@ vi.mock("../../src/context/NodeStateContext.js", () => ({
         level: "direct",
       },
     ],
-    humanProfile: { ownerId: "envoy:owner:self" },
+    humanProfile: {
+      ownerId: "envoy:owner:self",
+      displayName: "Self",
+      hobbies: ["music"],
+      knowledge: [],
+    },
+    discoveredPeers: EMPTY_DISCOVERED,
+    sendHello,
   }),
 }));
 
@@ -104,49 +109,40 @@ describe("publishSearchTopic", () => {
   });
 });
 
-describe("BrowserBazaarView", () => {
-  it("loads contact feed and shelves on mount", async () => {
-    listFeedNotifications.mockResolvedValue([
-      {
-        id: "n1",
-        receivedAt: "2026-07-01T00:00:00.000Z",
-        messageId: "m1",
-        publisherOwnerId: "envoy:owner:alice",
-        publishedAt: "2026-07-01T00:00:00.000Z",
-        title: "Sunset notes",
-        url: "envoy://envoy:owner:alice/blog/posts/sunset.md",
-        listingUrl: "envoy://envoy:owner:alice/blog/",
-        kind: "blog",
-        visibility: "bonded",
-        senderPeerId: "12D3KooWAlice",
-      },
-    ]);
-
-    const onOpenUrl = vi.fn();
-    renderWithI18n(<BrowserBazaarView onOpenUrl={onOpenUrl} />);
-
-    await waitFor(() => {
-      expect(listFeedNotifications).toHaveBeenCalled();
+describe("BrowserBazaarView People", () => {
+  it("samples the mesh on mount and excludes bonded contacts", async () => {
+    searchPeers.mockImplementation(async (q: { topic?: string; interests?: string[] }) => {
+      if (q.topic === "capability:envoymesh.web-content") {
+        return [
+          {
+            nodeId: "12D3KooWAlice",
+            ownerId: "envoy:owner:alice",
+            displayName: "Alice",
+            interests: [],
+            profileVisibility: "public",
+          },
+          {
+            nodeId: "12D3KooWBob",
+            ownerId: "envoy:owner:bob",
+            displayName: "Bob",
+            interests: ["photography"],
+            profileVisibility: "public",
+          },
+        ];
+      }
+      return [];
     });
 
-    expect(screen.getByTestId("bazaar-feed-list")).toBeTruthy();
-    expect(screen.getByText("Sunset notes")).toBeTruthy();
-    expect(screen.getByTestId("bazaar-shelves")).toBeTruthy();
-    expect(screen.getAllByText("Alice").length).toBeGreaterThan(0);
-
-    fireEvent.click(screen.getByTestId("bazaar-feed-open"));
-    expect(onOpenUrl).toHaveBeenCalledWith("envoy://envoy:owner:alice/blog/posts/sunset.md");
-    expect(onOpenUrl).not.toHaveBeenCalledWith("envoy://envoy:owner:alice/blog/");
-  });
-
-  it("shows empty feed copy when bonded contacts have no posts", async () => {
     renderWithI18n(<BrowserBazaarView onOpenUrl={vi.fn()} />);
+
     await waitFor(() => {
-      expect(screen.getByTestId("bazaar-feed-empty")).toBeTruthy();
+      expect(screen.getByTestId("people-results")).toBeTruthy();
     });
+    expect(screen.getByText("Bob")).toBeTruthy();
+    expect(screen.queryByText("Alice")).toBeNull();
   });
 
-  it("searches publish topics and opens profile shortcuts", async () => {
+  it("searches publish topics and opens profile / blog / hello", async () => {
     searchPeers.mockResolvedValue([
       {
         nodeId: "12D3KooWBob",
@@ -160,10 +156,12 @@ describe("BrowserBazaarView", () => {
     const onOpenUrl = vi.fn();
     renderWithI18n(<BrowserBazaarView onOpenUrl={onOpenUrl} />);
 
-    fireEvent.change(screen.getByTestId("bazaar-topic-input"), {
+    await waitFor(() => expect(searchPeers).toHaveBeenCalled());
+
+    fireEvent.change(screen.getByTestId("people-search-input"), {
       target: { value: "photography" },
     });
-    fireEvent.click(screen.getByTestId("bazaar-topic-search"));
+    fireEvent.click(screen.getByTestId("people-search-go"));
 
     await waitFor(() => {
       expect(searchPeers).toHaveBeenCalledWith({
@@ -172,46 +170,55 @@ describe("BrowserBazaarView", () => {
       });
     });
 
-    expect(screen.getByTestId("bazaar-topic-results")).toBeTruthy();
-    fireEvent.click(
-      screen.getByTestId("bazaar-topic-results").querySelector("button")!,
-    );
+    expect(screen.getByTestId("people-results")).toBeTruthy();
+    fireEvent.click(screen.getByTestId("people-open-profile"));
     expect(onOpenUrl).toHaveBeenCalledWith(webContentUrl("envoy:owner:bob", "profile"));
+    fireEvent.click(screen.getByTestId("people-open-blog"));
+    expect(onOpenUrl).toHaveBeenCalledWith(webContentUrl("envoy:owner:bob", "blog"));
+    fireEvent.click(screen.getByTestId("people-say-hello"));
+    await waitFor(() => {
+      expect(sendHello).toHaveBeenCalled();
+    });
+  });
+
+  it("falls back to mesh sample when topic search is empty", async () => {
+    searchPeers.mockImplementation(async (q: { topic?: string }) => {
+      if (q.topic === "publish:empty-topic") return [];
+      if (q.topic === "capability:envoymesh.web-content") {
+        return [
+          {
+            nodeId: "12D3KooWCarol",
+            ownerId: "envoy:owner:carol",
+            displayName: "Carol",
+            interests: [],
+            profileVisibility: "public",
+          },
+        ];
+      }
+      return [];
+    });
+
+    renderWithI18n(<BrowserBazaarView onOpenUrl={vi.fn()} />);
+    await waitFor(() => expect(searchPeers).toHaveBeenCalled());
+
+    fireEvent.change(screen.getByTestId("people-search-input"), {
+      target: { value: "empty-topic" },
+    });
+    fireEvent.click(screen.getByTestId("people-search-go"));
+
+    await waitFor(() => {
+      expect(screen.getByText("Carol")).toBeTruthy();
+      expect(screen.getByTestId("people-status").textContent).toMatch(/No matches|showing other/i);
+    });
   });
 });
 
 describe("BrowserView Explore modes", () => {
-  it("defaults to Following and opens feed items into Open", async () => {
-    listFeedNotifications.mockResolvedValue([
-      {
-        id: "n1",
-        receivedAt: "2026-07-01T00:00:00.000Z",
-        messageId: "m1",
-        publisherOwnerId: "envoy:owner:alice",
-        publishedAt: "2026-07-01T00:00:00.000Z",
-        title: "Hello mesh",
-        url: "envoy://envoy:owner:alice/blog/hello",
-        kind: "blog",
-        visibility: "bonded",
-        senderPeerId: "12D3KooWAlice",
-      },
-    ]);
-
+  it("defaults to People mode", async () => {
+    searchPeers.mockResolvedValue([]);
     renderWithI18n(<BrowserView />);
-    expect(screen.getByTestId("browser-mode-following")).toBeTruthy();
-    expect(screen.getByTestId("browser-following")).toBeTruthy();
+    expect(screen.getByTestId("browser-mode-people")).toBeTruthy();
+    expect(screen.getByTestId("browser-people")).toBeTruthy();
     expect(screen.queryByTestId("browser-address-bar")).toBeNull();
-
-    await waitFor(() => {
-      expect(screen.getByText("Hello mesh")).toBeTruthy();
-    });
-
-    fireEvent.click(screen.getByTestId("bazaar-feed-open"));
-    await waitFor(() => {
-      expect(screen.getByTestId("browser-address-bar")).toBeTruthy();
-      expect((screen.getByTestId("browser-address-bar") as HTMLInputElement).value).toBe(
-        "envoy://envoy:owner:alice/blog/hello",
-      );
-    });
   });
 });

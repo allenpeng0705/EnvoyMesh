@@ -6,7 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/contact_provider.dart';
 import '../services/envoy_url.dart';
-import '../services/library_read_fetch.dart';
+import '../services/library_read_cache.dart';
 
 const maxFeedPostImages = 9;
 
@@ -50,18 +50,25 @@ class _FeedMediaGridState extends ConsumerState<FeedMediaGrid> {
       _loading.add(url);
       try {
         final parsed = parseEnvoyContentUrl(url);
-        final result = await fetchLibraryContent(
+        // Instant paint from shared disk/memory cache when available.
+        final peek = await LibraryReadCache.instance
+            .peekBytes(parsed.targetOwnerId, parsed.path);
+        if (peek != null && mounted) {
+          setState(() => _bytes[url] = peek);
+        }
+        final result = await LibraryReadCache.instance.fetch(
           client.libraryRead,
           targetOwnerId: parsed.targetOwnerId,
           path: parsed.path,
         );
         if (!mounted) return;
         if (result.status == 'ok' &&
-            result.body != null &&
             (result.contentType?.startsWith('image/') ?? false)) {
-          setState(() {
-            _bytes[url] = base64Decode(result.body!);
-          });
+          final bytes = result.bytes ??
+              (result.body != null ? base64Decode(result.body!) : null);
+          if (bytes != null) {
+            setState(() => _bytes[url] = bytes);
+          }
         }
       } catch (_) {
         /* leave tile empty */

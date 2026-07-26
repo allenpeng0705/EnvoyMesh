@@ -9,6 +9,7 @@ import '../../models/chat_message.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/contact_provider.dart';
 import '../../providers/node_provider.dart';
+import '../../services/library_read_cache.dart';
 import '../../services/node_service_client.dart';
 import '../../widgets/chat_bubble.dart';
 import '../../widgets/chat_audio_player.dart';
@@ -200,12 +201,24 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
 
   Future<String?> _loadAudioForAttachment(String vaultRelativePath) async {
     final nodeService = ref.read(nodeServiceProvider);
-    if (nodeService == null) return null;
+    final homeId = ref.read(nodeProvider).activeNode?.id;
+    if (nodeService == null || homeId == null) return null;
     try {
-      final result = await nodeService.readLibraryItemContent(
-        relativePath: vaultRelativePath,
+      final key = vaultCacheKey(homeId, vaultRelativePath);
+      final bytes = await LibraryReadCache.instance.getOrFetchBlob(
+        key,
+        () async {
+          final result = await nodeService.readLibraryItemContent(
+            relativePath: vaultRelativePath,
+          );
+          final b64 = result['contentBase64'] as String?;
+          if (b64 == null || b64.isEmpty) return null;
+          return base64Decode(b64);
+        },
+        contentType: 'audio/mp4',
+        maxAge: vaultCacheFreshTtl,
       );
-      return result['contentBase64'] as String?;
+      return bytes != null ? base64Encode(bytes) : null;
     } catch (_) {
       return null;
     }

@@ -9,6 +9,7 @@ import '../models/contact.dart';
 import '../models/web_content.dart';
 import '../providers/contact_provider.dart' show contactProvider, nodeServiceProvider;
 import '../providers/node_provider.dart';
+import '../services/library_read_cache.dart';
 
 /// WeChat Moments–style stars + comments for Feed/Blog (parity with Social).
 class ContentEngagementBar extends ConsumerStatefulWidget {
@@ -103,6 +104,12 @@ class _ContentEngagementBarState extends ConsumerState<ContentEngagementBar> {
 
   Future<void> _ensureThumb(String ownerId) async {
     if (_thumbCache.containsKey(ownerId)) return;
+    final fromDisk = await LibraryReadCache.instance.peekBlob(peerThumbCacheKey(ownerId));
+    if (fromDisk != null) {
+      _thumbCache[ownerId] = fromDisk;
+      if (mounted) setState(() {});
+      return;
+    }
     final client = ref.read(nodeServiceProvider);
     if (client == null) {
       _thumbCache[ownerId] = null;
@@ -114,7 +121,13 @@ class _ContentEngagementBarState extends ConsumerState<ContentEngagementBar> {
       if (b64 == null || b64.isEmpty) {
         _thumbCache[ownerId] = null;
       } else {
-        _thumbCache[ownerId] = base64Decode(b64);
+        final bytes = base64Decode(b64);
+        _thumbCache[ownerId] = bytes;
+        await LibraryReadCache.instance.putBlob(
+          peerThumbCacheKey(ownerId),
+          bytes,
+          contentType: 'image/jpeg',
+        );
       }
     } catch (_) {
       _thumbCache[ownerId] = null;

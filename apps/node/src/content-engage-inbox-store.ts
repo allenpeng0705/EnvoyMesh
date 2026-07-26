@@ -1,10 +1,12 @@
 /**
  * Unread inbox for inbound stars/comments on the owner's Feed/Blog posts.
  * Powers Content / Feed / Blog nav badges (cleared when those surfaces open).
+ *
+ * Bounded: hard cap + age TTL. Empty inbox deletes the file.
  */
 
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, writeFile, unlink } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 export type ContentEngageSurface = "feed" | "blog";
@@ -22,7 +24,10 @@ export interface ContentEngageNotification {
   senderPeerId: string;
 }
 
-const MAX_INBOX_ITEMS = 200;
+/** Keep the badge queue small and easy to reason about. */
+export const MAX_INBOX_ITEMS = 64;
+/** Drop unread rows older than this (user never opened Content). */
+export const MAX_INBOX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 
 function inboxPath(profileDir: string): string {
   return join(profileDir, "content-engage-inbox.json");
@@ -36,6 +41,32 @@ export function surfaceForContentUrl(url: string): ContentEngageSurface | undefi
   return undefined;
 }
 
+function isValidItem(row: unknown): row is ContentEngageNotification {
+  return (
+    Boolean(row) &&
+    typeof row === "object" &&
+    typeof (row as ContentEngageNotification).id === "string" &&
+    typeof (row as ContentEngageNotification).url === "string" &&
+    typeof (row as ContentEngageNotification).receivedAt === "string" &&
+    ((row as ContentEngageNotification).surface === "feed" ||
+      (row as ContentEngageNotification).surface === "blog")
+  );
+}
+
+/** Drop expired rows, then keep newest ≤ MAX_INBOX_ITEMS. */
+export function pruneContentEngageInboxItems(
+  items: ContentEngageNotification[],
+  nowMs: number = Date.now(),
+): ContentEngageNotification[] {
+  const cutoff = nowMs - MAX_INBOX_AGE_MS;
+  const fresh = items.filter((row) => {
+    const t = Date.parse(row.receivedAt);
+    if (!Number.isFinite(t)) return false;
+    return t >= cutoff;
+  });
+  return fresh.slice(0, MAX_INBOX_ITEMS);
+}
+
 export async function loadContentEngageInbox(
   profileDir: string,
 ): Promise<ContentEngageNotification[]> {
@@ -43,15 +74,7 @@ export async function loadContentEngageInbox(
     const raw = await readFile(inboxPath(profileDir), "utf8");
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (row): row is ContentEngageNotification =>
-        Boolean(row) &&
-        typeof row === "object" &&
-        typeof (row as ContentEngageNotification).id === "string" &&
-        typeof (row as ContentEngageNotification).url === "string" &&
-        ((row as ContentEngageNotification).surface === "feed" ||
-          (row as ContentEngageNotification).surface === "blog"),
-    );
+    return pruneContentEngageInboxItems(parsed.filter(isValidItem));
   } catch (err) {
     if ((err as NodeJS.ErrnoException)?.code === "ENOENT") return [];
     console.warn("[content.engage] failed to load inbox:", err);
@@ -64,9 +87,16 @@ async function writeContentEngageInbox(
   items: ContentEngageNotification[],
 ): Promise<void> {
   const path = inboxPath(profileDir);
+  const pruned = pruneContentEngageInboxItems(items);
+  if (pruned.length === 0) {
+    await unlink(path).catch((err) => {
+      if ((err as NodeJS.ErrnoException)?.code !== "ENOENT") throw err;
+    });
+    return;
+  }
   await mkdir(dirname(path), { recursive: true });
   const tmp = `${path}.tmp`;
-  await writeFile(tmp, JSON.stringify(items, null, 2), { mode: 0o600 });
+  await writeFile(tmp, `${JSON.stringify(pruned)}\n`, { mode: 0o600 });
   await rename(tmp, path);
 }
 
@@ -92,7 +122,7 @@ export async function appendContentEngageInboxItem(
     text: item.text,
     senderPeerId: item.senderPeerId,
   };
-  const next = [nextItem, ...existing].slice(0, MAX_INBOX_ITEMS);
+  const next = pruneContentEngageInboxItems([nextItem, ...existing]);
   await writeContentEngageInbox(profileDir, next);
   return nextItem;
 }

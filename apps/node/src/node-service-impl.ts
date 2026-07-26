@@ -5718,7 +5718,7 @@ class NodeServiceImpl implements NodeService {
 
   async listFeedNotifications(): Promise<FeedNotification[]> {
     if (this._profileDir === "/tmp/unknown") return [];
-    // Newest slice for Inbox / Following; full history is listFeedTimeline.
+    // Newest slice for Inbox / Feed; full history is listFeedTimeline.
     return listFeedNotifyRecent(this._profileDir);
   }
 
