@@ -89,10 +89,12 @@ vi.mock("../../src/hooks/useToast.js", () => ({
 }));
 
 import { BrowserView } from "../../src/components/views/BrowserView.js";
+import { clearPeopleSessionCache } from "../../src/lib/people-session-cache.js";
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  clearPeopleSessionCache();
 });
 
 
@@ -288,7 +290,7 @@ describe("BrowserView", () => {
     });
   });
 
-  it("shows a friendly empty state when a contact page is missing", async () => {
+  it("shows a placeholder page when a remote Profile/Blog is missing", async () => {
     libraryReadMock = async () => ({
       status: "not_found",
       peerOwnerId: "envoy:owner:bob",
@@ -306,11 +308,11 @@ describe("BrowserView", () => {
     fireEvent.click(screen.getByTestId("browser-go"));
 
     await waitFor(() => {
-      const err = screen.getByTestId("browser-error");
-      expect(err.textContent).toMatch(/Not published yet/i);
-      expect(err.textContent).toMatch(/hasn’t published/i);
-      expect(err.className).toContain("browser-view__empty--remote");
+      expect(screen.queryByTestId("browser-error")).toBeNull();
+      const md = screen.getByTestId("browser-markdown");
+      expect(md.textContent).toMatch(/hasn’t published any blog posts/i);
     });
+    expect(screen.getByTestId("browser-status").textContent).toMatch(/placeholder|Not published/i);
   });
 
   it("renders status text on ok response", async () => {

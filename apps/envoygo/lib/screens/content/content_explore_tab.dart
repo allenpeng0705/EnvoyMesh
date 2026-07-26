@@ -8,6 +8,8 @@ import '../../providers/contact_provider.dart';
 import '../../providers/node_provider.dart';
 import '../../services/envoy_url.dart';
 import '../../services/node_service_client.dart';
+import '../../services/parse_public_blog_index.dart';
+import '../../services/people_session_cache.dart';
 import '../browser/browser_screen.dart';
 
 const _sampleCap = 20;
@@ -41,7 +43,8 @@ class ContentExploreTab extends ConsumerStatefulWidget {
 
 enum _PeopleSearchMode { topic, interest }
 
-class _ContentExploreTabState extends ConsumerState<ContentExploreTab> {
+class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
+    with AutomaticKeepAliveClientMixin {
   _PeopleSearchMode _mode = _PeopleSearchMode.topic;
   final _queryCtrl = TextEditingController();
   List<PeerSearchResult> _results = const [];
@@ -52,11 +55,35 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab> {
   String? _helloBusyId;
   final Set<String> _outboundHellos = {};
   Set<String> _excludeIds = {};
+  /// ownerId → public blog post titles/urls from blog/index.md
+  Map<String, List<PublicBlogPostLink>> _blogPreviews = {};
+  bool _hadCacheOnMount = false;
+
+  @override
+  bool get wantKeepAlive => true;
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _refreshSample());
+    if (PeopleSessionCache.hasResults) {
+      _hadCacheOnMount = true;
+      _mode = PeopleSessionCache.mode == PeopleSearchModeCache.interest
+          ? _PeopleSearchMode.interest
+          : _PeopleSearchMode.topic;
+      _queryCtrl.text = PeopleSessionCache.query;
+      _results = PeopleSessionCache.results;
+      _fromSample = PeopleSessionCache.fromSample;
+      _error = PeopleSessionCache.error;
+      _blogPreviews = Map.of(PeopleSessionCache.blogPreviews);
+      _loading = false;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_hadCacheOnMount) {
+        _refreshSample(keepExisting: true);
+      } else {
+        _refreshSample();
+      }
+    });
   }
 
   @override
@@ -149,7 +176,7 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab> {
     return out.take(_sampleCap).toList();
   }
 
-  Future<void> _refreshSample() async {
+  Future<void> _refreshSample({bool keepExisting = false}) async {
     final client = ref.read(nodeServiceProvider);
     if (client == null) {
       setState(() {
@@ -159,8 +186,12 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab> {
       return;
     }
     setState(() {
-      _loading = true;
-      _error = null;
+      if (!keepExisting) {
+        _loading = true;
+        _error = null;
+      } else {
+        _searching = true;
+      }
     });
     try {
       await _refreshExclude();
@@ -170,19 +201,40 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab> {
         _results = rows;
         _fromSample = true;
         _loading = false;
+        _searching = false;
         if (rows.isEmpty) {
           _error =
               'No public people found on the mesh yet. Try a topic search, or check back when more nodes are online.';
+        } else if (keepExisting) {
+          _error = null;
         }
       });
+      _persistSession();
+      await _loadBlogPreviews(client, rows);
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _loading = false;
-        _results = const [];
-        _error = e.toString();
+        _searching = false;
+        if (!keepExisting) {
+          _results = const [];
+          _error = e.toString();
+        }
       });
     }
+  }
+
+  void _persistSession() {
+    PeopleSessionCache.save(
+      mode: _mode == _PeopleSearchMode.interest
+          ? PeopleSearchModeCache.interest
+          : PeopleSearchModeCache.topic,
+      query: _queryCtrl.text,
+      results: _results,
+      fromSample: _fromSample,
+      error: _error,
+      blogPreviews: _blogPreviews,
+    );
   }
 
   Future<void> _runSearch() async {
@@ -235,6 +287,8 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab> {
         _searching = false;
         _error = status;
       });
+      _persistSession();
+      await _loadBlogPreviews(client, filtered);
     } catch (e) {
       if (!mounted) return;
       setState(() {
@@ -286,6 +340,39 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab> {
     }
   }
 
+  Future<void> _loadBlogPreviews(
+    NodeServiceClient client,
+    List<PeerSearchResult> rows,
+  ) async {
+    final next = <String, List<PublicBlogPostLink>>{};
+    final owners = rows
+        .map((r) => r.ownerId.trim())
+        .where((id) => id.isNotEmpty)
+        .take(_sampleCap)
+        .toList();
+    for (var i = 0; i < owners.length; i += 4) {
+      if (!mounted) return;
+      final batch = owners.sublist(i, min(i + 4, owners.length));
+      await Future.wait(batch.map((ownerId) async {
+        try {
+          final res = await client.libraryRead(
+            targetOwnerId: ownerId,
+            path: 'blog/index.md',
+            timeoutMs: 12000,
+          );
+          if (res.status != 'ok' || res.body == null || res.body!.isEmpty) {
+            return;
+          }
+          final posts = parsePublicBlogIndex(res.body!).take(5).toList();
+          if (posts.isNotEmpty) next[ownerId] = posts;
+        } catch (_) {}
+      }));
+    }
+    if (!mounted) return;
+    setState(() => _blogPreviews = next);
+    _persistSession();
+  }
+
   void _openUrl(String url) {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => BrowserScreen(initialUrl: url)),
@@ -294,6 +381,7 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     final nodeState = ref.watch(nodeProvider);
     if (nodeState.activeNode == null) {
       return const Center(
@@ -473,6 +561,23 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab> {
                           ),
                       ],
                     ),
+                    if (_blogPreviews[peer.ownerId]?.isNotEmpty == true) ...[
+                      const SizedBox(height: 4),
+                      ..._blogPreviews[peer.ownerId]!.map(
+                        (post) => Padding(
+                          padding: const EdgeInsets.only(left: 48, top: 2),
+                          child: TextButton(
+                            style: TextButton.styleFrom(
+                              padding: EdgeInsets.zero,
+                              alignment: Alignment.centerLeft,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            ),
+                            onPressed: () => _openUrl(post.url),
+                            child: Text(post.title),
+                          ),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               );

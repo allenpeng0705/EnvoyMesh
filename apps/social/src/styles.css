@@ -10931,6 +10931,31 @@ button:disabled {
   font-size: 0.8rem;
   color: var(--color-text-muted);
 }
+.browser-bazaar__blog-preview {
+  list-style: none;
+  margin: 0.35rem 0 0;
+  padding: 0 0 0 2.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.browser-bazaar__blog-post {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+  font: inherit;
+  font-size: 0.875rem;
+  color: var(--color-primary);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.browser-bazaar__blog-post:hover {
+  opacity: 0.85;
+}
 .browser-bazaar__feed,
 .browser-bazaar__shelves,
 .browser-bazaar__topic-results {

@@ -8,11 +8,14 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import '../../providers/contact_provider.dart' show nodeServiceProvider;
+import '../../providers/contact_provider.dart'
+    show contactProvider, nodeServiceProvider;
+import '../../providers/node_provider.dart' show nodeProvider;
 import '../../services/content_hash.dart';
 import '../../services/envoy_url.dart';
 import '../../services/library_read_cache.dart';
 import '../../services/library_read_fetch.dart';
+import '../../services/visitor_placeholder.dart';
 
 /// Matches bare `envoy://…` URLs and markdown `[label](envoy://…)` links.
 final _envoyLinkRe = RegExp(
@@ -210,12 +213,49 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
           if (pushHistory) _pushHistory(parsed.raw);
         });
       } else if (result.status == 'not_found') {
-        setState(() {
-          _loading = false;
-          _error = 'Not found';
-          _body = null;
-          _statusHint = null;
-        });
+        final selfOwnerId = ref.read(nodeProvider).ownerId?.trim() ?? '';
+        final targetOwnerId = parsed.targetOwnerId.trim();
+        // Empty self = treat as visitor (identity may not be hydrated yet).
+        final remote =
+            selfOwnerId.isEmpty || targetOwnerId != selfOwnerId;
+        final surface = defaultWebSurfaceForPath(parsed.path);
+        if (remote && surface != null) {
+          String? displayName;
+          for (final c in ref.read(contactProvider).bonds) {
+            final name = c.displayName?.trim() ?? '';
+            if (c.ownerId == targetOwnerId && name.isNotEmpty) {
+              displayName = name;
+              break;
+            }
+          }
+          final body = buildVisitorPlaceholderMarkdown(
+            surface: surface,
+            ownerId: targetOwnerId,
+            displayName: displayName,
+          );
+          setState(() {
+            _loading = false;
+            _error = null;
+            _body = body;
+            _mimeType = 'text/markdown';
+            _isText = true;
+            _etag = null;
+            _statusHint =
+                'Not published yet — showing a local placeholder page';
+            if (pushHistory) _pushHistory(parsed.raw);
+          });
+        } else {
+          setState(() {
+            _loading = false;
+            _error = remote
+                ? (surface != null
+                    ? 'Not published yet'
+                    : 'Content not found')
+                : 'Not found';
+            _body = null;
+            _statusHint = null;
+          });
+        }
       } else if (result.status == 'forbidden') {
         setState(() {
           _loading = false;

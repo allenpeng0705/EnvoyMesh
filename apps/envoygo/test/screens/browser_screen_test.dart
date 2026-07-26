@@ -203,6 +203,53 @@ void main() {
     expect(find.textContaining('Tampered'), findsNothing);
   });
 
+  testWidgets('BrowserScreen shows placeholder when remote blog is missing',
+      (tester) async {
+    final mock = _MockWs();
+    late NodeServiceClient nodeClient;
+    await tester.runAsync(() async {
+      nodeClient = await _connectClient(mock);
+    });
+
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          nodeServiceProvider.overrideWith((ref) => nodeClient),
+        ],
+        child: const MaterialApp(home: BrowserScreen()),
+      ),
+    );
+    await tester.pump();
+
+    await tester.enterText(
+      find.byType(TextField),
+      'envoy://envoy:owner:bob/blog/',
+    );
+    await tester.pump();
+    await tester.tap(find.text('Go'));
+    await tester.pump();
+
+    await tester.runAsync(() async {
+      await Future<void>.delayed(Duration.zero);
+      final sent = jsonDecode(mock.sentMessages.last) as Map<String, dynamic>;
+      mock.simulateMessage({
+        'id': sent['id'],
+        'result': {
+          'peerOwnerId': 'envoy:owner:bob',
+          'libp2pPeerId': '12D3',
+          'status': 'not_found',
+          'error': 'not found',
+          'latencyMs': 5,
+        },
+      });
+      await Future<void>.delayed(Duration.zero);
+    });
+    await tester.pump();
+
+    expect(find.textContaining('hasn’t published any blog posts'), findsWidgets);
+    expect(find.textContaining('placeholder page'), findsOneWidget);
+  });
+
   test('LibraryReadResult.fromJson rejects missing status', () {
     expect(
       () => LibraryReadResult.fromJson({'peerOwnerId': 'x'}),

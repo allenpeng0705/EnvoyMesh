@@ -24,16 +24,13 @@ beforeEach(() => {
   runCapabilityDiscovery.mockResolvedValue(undefined);
   listAgentCards.mockResolvedValue([]);
   sendHello.mockResolvedValue(undefined);
-  on.mockReturnValue(() => undefined);
   libraryRead.mockResolvedValue({
-    status: "ok",
-    peerOwnerId: "envoy:owner:alice",
-    libp2pPeerId: "12D3KooWAlice",
-    body: "# Hello",
-    contentType: "text/markdown",
-    byteLength: 7,
+    status: "not_found",
+    peerOwnerId: "envoy:owner:x",
+    libp2pPeerId: "12D3",
     latencyMs: 1,
   });
+  on.mockReturnValue(() => undefined);
 });
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
@@ -88,10 +85,12 @@ import {
 } from "../../src/components/views/BrowserBazaarView.js";
 import { BrowserView } from "../../src/components/views/BrowserView.js";
 import { webContentUrl } from "../../src/lib/web-content-urls.js";
+import { clearPeopleSessionCache, savePeopleSessionCache } from "../../src/lib/people-session-cache.js";
 
 afterEach(() => {
   cleanup();
   vi.clearAllMocks();
+  clearPeopleSessionCache();
 });
 
 describe("publishSearchTopic", () => {
@@ -211,6 +210,50 @@ describe("BrowserBazaarView People", () => {
       expect(screen.getByTestId("people-status").textContent).toMatch(/No matches|showing other/i);
     });
   });
+
+  it("loads public blog posts and opens them from the People card", async () => {
+    searchPeers.mockImplementation(async (q: { topic?: string }) => {
+      if (q.topic === "capability:envoymesh.web-content") {
+        return [
+          {
+            nodeId: "12D3KooWBob",
+            ownerId: "envoy:owner:bob",
+            displayName: "Bob",
+            interests: ["photography"],
+            profileVisibility: "public",
+          },
+        ];
+      }
+      return [];
+    });
+    libraryRead.mockResolvedValue({
+      status: "ok",
+      peerOwnerId: "envoy:owner:bob",
+      libp2pPeerId: "12D3KooWBob",
+      body: `# Blog
+
+- [Street Light](envoy://envoy:owner:bob/blog/posts/street.md) (2026-07-20) — dusk
+`,
+      contentType: "text/markdown",
+      byteLength: 80,
+      latencyMs: 1,
+    });
+
+    const onOpenUrl = vi.fn();
+    renderWithI18n(<BrowserBazaarView onOpenUrl={onOpenUrl} />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("people-blog-preview")).toBeTruthy();
+    });
+    expect(libraryRead).toHaveBeenCalledWith(
+      expect.objectContaining({
+        targetOwnerId: "envoy:owner:bob",
+        path: "blog/index.md",
+      }),
+    );
+    fireEvent.click(screen.getByTestId("people-blog-post"));
+    expect(onOpenUrl).toHaveBeenCalledWith("envoy://envoy:owner:bob/blog/posts/street.md");
+  });
 });
 
 describe("BrowserView Explore modes", () => {
@@ -220,5 +263,70 @@ describe("BrowserView Explore modes", () => {
     expect(screen.getByTestId("browser-mode-people")).toBeTruthy();
     expect(screen.getByTestId("browser-people")).toBeTruthy();
     expect(screen.queryByTestId("browser-address-bar")).toBeNull();
+  });
+
+  it("keeps People results when switching Open → People", async () => {
+    searchPeers.mockImplementation(async (q: { topic?: string }) => {
+      if (q.topic === "capability:envoymesh.web-content") {
+        return [
+          {
+            nodeId: "12D3KooWBob",
+            ownerId: "envoy:owner:bob",
+            displayName: "Bob",
+            interests: [],
+            profileVisibility: "public",
+          },
+        ];
+      }
+      return [];
+    });
+
+    renderWithI18n(<BrowserView />);
+    await waitFor(() => {
+      expect(screen.getByText("Bob")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByTestId("browser-mode-open"));
+    expect(screen.getByTestId("browser-address-bar")).toBeTruthy();
+    // People pane stays mounted (hidden) so results survive tab switches.
+    expect(screen.getByTestId("browser-people-pane").hidden).toBe(true);
+
+    fireEvent.click(screen.getByTestId("browser-mode-people"));
+    expect(screen.getByTestId("browser-people-pane").hidden).toBe(false);
+    expect(screen.getByText("Bob")).toBeTruthy();
+  });
+
+  it("restores cached People results on remount then refreshes", async () => {
+    savePeopleSessionCache({
+      searchMode: "topic",
+      query: "",
+      results: [
+        {
+          nodeId: "12D3KooWCached",
+          ownerId: "envoy:owner:cached",
+          displayName: "Cached Peer",
+          interests: [],
+          profileVisibility: "public",
+        },
+      ],
+      resultSource: "sample",
+      error: null,
+      blogPreviews: {},
+    });
+    searchPeers.mockImplementation(async () => [
+      {
+        nodeId: "12D3KooWFresh",
+        ownerId: "envoy:owner:fresh",
+        displayName: "Fresh Peer",
+        interests: [],
+        profileVisibility: "public",
+      },
+    ]);
+
+    renderWithI18n(<BrowserBazaarView onOpenUrl={vi.fn()} />);
+    expect(screen.getByText("Cached Peer")).toBeTruthy();
+    await waitFor(() => {
+      expect(screen.getByText("Fresh Peer")).toBeTruthy();
+    });
   });
 });

@@ -122,6 +122,11 @@ async function registerBondedPeer(
     level: "direct",
     displayName,
   });
+  await seedPeerDirectory(local, remote);
+}
+
+/** Peer directory only — dialable stranger (no trust / bond). */
+async function seedPeerDirectory(local: TestNode, remote: TestNode): Promise<void> {
   await writeFile(
     join(local.profileDir, "peer-directory.json"),
     JSON.stringify(
@@ -397,5 +402,38 @@ describe("library.read — two-node E2E", () => {
     });
     expect(result.status).toBe("forbidden");
     expect(result.body).toBeUndefined();
+  });
+
+  it("LIBREAD-08: unbonded stranger can libraryRead a public blog post", async () => {
+    const alice = await createTestNode();
+    const bob = await createTestNode();
+    // Directory only — no bond. People discovery uses the same path.
+    await seedPeerDirectory(bob, alice);
+    wireLibraryReadHandler(alice);
+    await connectPeers(bob, alice);
+
+    const body = "# Public Photo Essay\n\nVisible to strangers on the mesh.";
+    await publishFile(alice, "blog/posts/photo-essay.md", body, "public");
+    await publishFile(
+      alice,
+      "blog/index.md",
+      `# Blog\n\n- [Public Photo Essay](envoy://${alice.profile.owner.ownerId}/blog/posts/photo-essay.md) (2026-07-20)\n`,
+      "public",
+    );
+
+    const post = await bob.service.libraryRead({
+      targetOwnerId: alice.profile.owner.ownerId,
+      path: "blog/posts/photo-essay.md",
+    });
+    expect(post.status).toBe("ok");
+    expect(post.body).toBe(body);
+
+    const index = await bob.service.libraryRead({
+      targetOwnerId: alice.profile.owner.ownerId,
+      path: "blog/index.md",
+    });
+    expect(index.status).toBe("ok");
+    expect(index.body).toContain("Public Photo Essay");
+    expect(index.body).toContain("blog/posts/photo-essay.md");
   });
 });

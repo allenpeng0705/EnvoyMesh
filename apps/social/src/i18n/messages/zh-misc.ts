@@ -523,6 +523,7 @@ export const zhBrowserViewMessages = {
   modePeople: "发现",
   modeOpen: "打开",
   openHelloHint: "尚未建联——打个招呼，和对方连接。",
+  statusPlaceholder: "对方尚未发布——正在显示本地占位页",
   idleHintBlog: "写文章请到「内容 → 博客」。",
   bazaar: {
     intro: "发现尚未建联的人——打开他们的公开主页或博客，然后打招呼。",

@@ -20,6 +20,7 @@ import {
   InvalidEnvoyUrlError,
   isEnvoyContentUrl,
   defaultWebSurfaceForPath,
+  buildVisitorPlaceholderMarkdown,
 } from "@envoymesh/api";
 import { BrowserMarkdown } from "../BrowserMarkdown.js";
 import { BrowserPhotoGallery } from "../BrowserPhotoGallery.js";
@@ -61,6 +62,9 @@ import {
   OPEN_BROWSER_EVENT,
   notifyWebSectionsChanged,
 } from "../../lib/browser-nav.js";
+import {
+  loadPeopleSessionCache,
+} from "../../lib/people-session-cache.js";
 import { BrowserBazaarView } from "./BrowserBazaarView.js";
 import type { AuthorTemplate } from "./BrowserAuthorView.js";
 
@@ -79,6 +83,8 @@ type LoadState =
       etag?: string;
       contentHash?: string;
       fromCache?: boolean;
+      /** Synthetic local page when remote surface was not published. */
+      placeholder?: boolean;
     }
   | { kind: "error"; message: string; code?: "not_found" | "forbidden" | "other"; remote?: boolean };
 
@@ -126,7 +132,7 @@ function titleFromBody(mimeType: string, body: string, url: string): string {
 export function BrowserView({ initialMode }: { initialMode?: BrowserMode } = {}) {
   const t = useT();
   const nodeService = useNodeService();
-  const { humanProfile, bonds, sendHello } = useNodeState();
+  const { humanProfile, bonds, discoveredPeers, sendHello } = useNodeState();
   const { showToast } = useToastOptional() ?? { showToast: undefined };
   const ownerId = humanProfile?.ownerId?.trim() ?? "";
 
@@ -294,19 +300,43 @@ export function BrowserView({ initialMode }: { initialMode?: BrowserMode } = {})
         } else if (result.status === "not_found") {
           const remote = Boolean(ownerId) && targetOwnerId !== ownerId;
           const surface = defaultWebSurfaceForPath(path);
-          const message = remote
-            ? surface
-              ? t("browser.statusContactPageMissing", {
-                  surface:
-                    surface === "profile"
-                      ? t("agentCard.openProfile", "Profile")
-                      : surface === "blog"
-                        ? t("agentCard.openBlog", "Blog")
-                        : t("agentCard.openPhotoWall", "PhotoWall"),
-                })
-              : t("browser.statusContactContentMissing")
-            : t("browser.statusNotFound");
-          setState({ kind: "error", message, code: "not_found", remote });
+          if (remote && surface) {
+            const displayName = resolveRemoteDisplayName(
+              targetOwnerId,
+              bonds,
+              discoveredPeers,
+            );
+            const body = buildVisitorPlaceholderMarkdown({
+              surface,
+              ownerId: targetOwnerId,
+              displayName,
+            });
+            if (ownerId) recordBrowserRecent(ownerId, target, displayName || targetOwnerId);
+            if (ownerId) setBookmarked(isBookmarked(ownerId, target));
+            setState({
+              kind: "ok",
+              url: target,
+              mimeType: "text/markdown",
+              body,
+              byteLength: new TextEncoder().encode(body).length,
+              isText: true,
+              placeholder: true,
+            });
+          } else {
+            const message = remote
+              ? surface
+                ? t("browser.statusContactPageMissing", {
+                    surface:
+                      surface === "profile"
+                        ? t("agentCard.openProfile", "Profile")
+                        : surface === "blog"
+                          ? t("agentCard.openBlog", "Blog")
+                          : t("agentCard.openPhotoWall", "PhotoWall"),
+                  })
+                : t("browser.statusContactContentMissing")
+              : t("browser.statusNotFound");
+            setState({ kind: "error", message, code: "not_found", remote });
+          }
         } else if (result.status === "forbidden") {
           setState({
             kind: "error",
@@ -331,7 +361,7 @@ export function BrowserView({ initialMode }: { initialMode?: BrowserMode } = {})
         });
       }
     },
-    [nodeService, ownerId, t, libraryRead],
+    [nodeService, ownerId, t, libraryRead, bonds, discoveredPeers],
   );
 
   useEffect(() => {
@@ -516,9 +546,14 @@ export function BrowserView({ initialMode }: { initialMode?: BrowserMode } = {})
         </div>
       </header>
 
-      {mode === "bazaar" ? (
+      <div
+        className="browser-view__people-pane"
+        hidden={mode !== "bazaar"}
+        data-testid="browser-people-pane"
+      >
         <BrowserBazaarView onOpenUrl={openFromBazaar} />
-      ) : (
+      </div>
+      {mode === "browse" ? (
         <>
       <div className="browser-view__toolbar">
         <div className="browser-view__nav-group" role="group" aria-label={t("browser.navGroup", "Navigation")}>
@@ -731,15 +766,20 @@ export function BrowserView({ initialMode }: { initialMode?: BrowserMode } = {})
 
       {state.kind === "ok" && !authorOpen && (
         <p className="browser-view__status" data-testid="browser-status">
-          {state.fromCache
-            ? t("browser.statusCached", "Cached — {mimeType}, {byteLength} bytes", {
-                mimeType: state.mimeType,
-                byteLength: state.byteLength,
-              })
-            : t("browser.statusOk", {
-                mimeType: state.mimeType,
-                byteLength: state.byteLength,
-              })}
+          {state.placeholder
+            ? t(
+                "browser.statusPlaceholder",
+                "Not published yet — showing a local placeholder page",
+              )
+            : state.fromCache
+              ? t("browser.statusCached", "Cached — {mimeType}, {byteLength} bytes", {
+                  mimeType: state.mimeType,
+                  byteLength: state.byteLength,
+                })
+              : t("browser.statusOk", {
+                  mimeType: state.mimeType,
+                  byteLength: state.byteLength,
+                })}
         </p>
       )}
 
@@ -761,9 +801,28 @@ export function BrowserView({ initialMode }: { initialMode?: BrowserMode } = {})
         </div>
       )}
       </>
-      )}
+      ) : null}
     </div>
   );
+}
+
+function resolveRemoteDisplayName(
+  targetOwnerId: string,
+  bonds: readonly { peerOwnerId?: string; displayName?: string | null }[],
+  discoveredPeers: readonly { ownerId?: string; displayName?: string | null }[] | undefined,
+): string | undefined {
+  const id = targetOwnerId.trim();
+  if (!id) return undefined;
+  for (const b of bonds) {
+    if (b.peerOwnerId === id && b.displayName?.trim()) return b.displayName.trim();
+  }
+  for (const p of discoveredPeers ?? []) {
+    if (p.ownerId === id && p.displayName?.trim()) return p.displayName.trim();
+  }
+  const cached = loadPeopleSessionCache();
+  const fromPeople = cached?.results.find((r) => r.ownerId === id);
+  if (fromPeople?.displayName?.trim()) return fromPeople.displayName.trim();
+  return undefined;
 }
 
 function BrowserIconChevron({ dir }: { dir: "back" | "forward" }) {

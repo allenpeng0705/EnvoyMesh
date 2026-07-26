@@ -17,7 +17,16 @@ import {
   resolvePeerHelloState,
 } from "../../lib/discover-peer-state.js";
 import { publishSearchTopic } from "../../lib/publish-topic.js";
+import {
+  parsePublicBlogIndexMarkdown,
+  type PublicBlogPostLink,
+} from "../../lib/parse-public-blog-index.js";
 import { webContentUrl } from "../../lib/web-content-urls.js";
+import {
+  loadPeopleSessionCache,
+  savePeopleSessionCache,
+  type PeopleSearchMode,
+} from "../../lib/people-session-cache.js";
 import { PeerProfileAvatar } from "../PeerProfileAvatar.js";
 
 export { publishSearchTopic } from "../../lib/publish-topic.js";
@@ -26,8 +35,6 @@ export interface BrowserBazaarViewProps {
   /** Open a content URL in Open (reader) mode. */
   onOpenUrl: (url: string) => void;
 }
-
-type PeopleSearchMode = "topic" | "interest" | "place";
 
 const SAMPLE_CAP = 20;
 const WEB_CONTENT_CAPABILITY_TOPIC = "capability:envoymesh.web-content";
@@ -61,14 +68,26 @@ export function BrowserBazaarView({ onOpenUrl }: BrowserBazaarViewProps) {
   const { bonds, humanProfile, discoveredPeers, sendHello } = useNodeState();
   const { showToast } = useToastOptional() ?? { showToast: undefined };
 
-  const [searchMode, setSearchMode] = useState<PeopleSearchMode>("topic");
-  const [query, setQuery] = useState("");
-  const [results, setResults] = useState<PeerSearchResult[]>([]);
-  const [resultSource, setResultSource] = useState<"search" | "sample">("sample");
+  const cached = loadPeopleSessionCache();
+  const [searchMode, setSearchMode] = useState<PeopleSearchMode>(
+    () => cached?.searchMode ?? "topic",
+  );
+  const [query, setQuery] = useState(() => cached?.query ?? "");
+  const [results, setResults] = useState<PeerSearchResult[]>(
+    () => cached?.results ?? [],
+  );
+  const [resultSource, setResultSource] = useState<"search" | "sample">(
+    () => cached?.resultSource ?? "sample",
+  );
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(() => cached?.error ?? null);
   const [outboundHellos, setOutboundHellos] = useState(() => loadOutboundHellos());
   const [helloBusyId, setHelloBusyId] = useState<string | null>(null);
+  /** Public blog posts keyed by ownerId — filled via libraryRead of blog/index.md. */
+  const [blogPreviews, setBlogPreviews] = useState<Record<string, PublicBlogPostLink[]>>(
+    () => cached?.blogPreviews ?? {},
+  );
+  const hadCacheOnMount = Boolean(cached && cached.results.length > 0);
 
   const excludeIds = useMemo(() => {
     const s = new Set<string>();
@@ -94,7 +113,7 @@ export function BrowserBazaarView({ onOpenUrl }: BrowserBazaarViewProps) {
     [excludeIds],
   );
 
-  const { searchPeers, runCapabilityDiscovery } = nodeService;
+  const { searchPeers, runCapabilityDiscovery, libraryRead } = nodeService;
 
   const sampleMesh = useCallback(async (): Promise<PeerSearchResult[]> => {
     const out: PeerSearchResult[] = [];
@@ -162,9 +181,10 @@ export function BrowserBazaarView({ onOpenUrl }: BrowserBazaarViewProps) {
     discoveredPeers,
   ]);
 
-  const refreshSample = useCallback(async () => {
+  const refreshSample = useCallback(async (opts?: { keepExisting?: boolean }) => {
+    const keepExisting = opts?.keepExisting === true;
     setBusy(true);
-    setError(null);
+    if (!keepExisting) setError(null);
     try {
       const rows = await sampleMesh();
       setResults(rows);
@@ -176,24 +196,51 @@ export function BrowserBazaarView({ onOpenUrl }: BrowserBazaarViewProps) {
             "No public people found on the mesh yet. Try a topic search, or check back when more nodes are online.",
           ),
         );
+      } else if (keepExisting) {
+        setError(null);
       }
     } catch (err) {
       console.error("[BrowserPeople] sample failed:", err);
-      setResults([]);
-      setError(
-        t("browser.bazaar.topicError", {
-          message: err instanceof Error ? err.message : String(err),
-        }),
-      );
+      if (!keepExisting) {
+        setResults([]);
+        setError(
+          t("browser.bazaar.topicError", {
+            message: err instanceof Error ? err.message : String(err),
+          }),
+        );
+      }
     } finally {
       setBusy(false);
     }
   }, [sampleMesh, t]);
 
-  // Initial mesh sample only — Refresh / Search re-run explicitly.
-  // Avoid depending on refreshSample: mocks often return new [] / client each render.
+  // Persist session so Open ↔ People / leaving Content does not wipe results.
   useEffect(() => {
-    void refreshSample();
+    savePeopleSessionCache({
+      searchMode,
+      query,
+      results,
+      resultSource,
+      error,
+      blogPreviews,
+    });
+  }, [searchMode, query, results, resultSource, error, blogPreviews]);
+
+  // Drop peers that became bonded while we were away.
+  useEffect(() => {
+    setResults((prev) => {
+      const next = filterNonBonded(prev);
+      return next.length === prev.length ? prev : next;
+    });
+  }, [filterNonBonded]);
+
+  // Mount: show cache immediately; background-refresh sample (or cold sample if empty).
+  useEffect(() => {
+    if (hadCacheOnMount) {
+      void refreshSample({ keepExisting: true });
+    } else {
+      void refreshSample();
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- mount-only
   }, []);
 
@@ -303,6 +350,52 @@ export function BrowserBazaarView({ onOpenUrl }: BrowserBazaarViewProps) {
       setHelloBusyId(null);
     }
   };
+
+  // For each discovered peer, try to load their public blog listing and show posts inline.
+  useEffect(() => {
+    if (!libraryRead || results.length === 0) {
+      setBlogPreviews({});
+      return;
+    }
+    let cancelled = false;
+    const owners = results
+      .map((r) => r.ownerId?.trim())
+      .filter((id): id is string => Boolean(id))
+      .slice(0, SAMPLE_CAP);
+
+    void (async () => {
+      const next: Record<string, PublicBlogPostLink[]> = {};
+      // Sequential-ish batches of 4 to avoid dial storms on mobile/thin clients.
+      for (let i = 0; i < owners.length; i += 4) {
+        if (cancelled) return;
+        const batch = owners.slice(i, i + 4);
+        await Promise.all(
+          batch.map(async (ownerId) => {
+            try {
+              const res = await libraryRead({
+                targetOwnerId: ownerId,
+                path: "blog/index.md",
+                timeoutMs: 12_000,
+              });
+              if (cancelled) return;
+              if (res.status !== "ok" || !res.body) return;
+              const mime = res.contentType ?? "";
+              if (mime && !mime.startsWith("text/") && mime !== "application/json") return;
+              const posts = parsePublicBlogIndexMarkdown(res.body).slice(0, 5);
+              if (posts.length > 0) next[ownerId] = posts;
+            } catch {
+              /* best-effort — peer may be offline or have no public blog */
+            }
+          }),
+        );
+      }
+      if (!cancelled) setBlogPreviews(next);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [results, libraryRead]);
 
   return (
     <div className="browser-bazaar" data-testid="browser-people">
@@ -509,6 +602,25 @@ export function BrowserBazaarView({ onOpenUrl }: BrowserBazaarViewProps) {
                       </button>
                     )}
                   </div>
+                  {blogPreviews[peer.ownerId]?.length ? (
+                    <ul
+                      className="browser-bazaar__blog-preview"
+                      data-testid="people-blog-preview"
+                    >
+                      {blogPreviews[peer.ownerId]!.map((post) => (
+                        <li key={post.url}>
+                          <button
+                            type="button"
+                            className="browser-bazaar__blog-post"
+                            data-testid="people-blog-post"
+                            onClick={() => onOpenUrl(post.url)}
+                          >
+                            {post.title}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
                 </li>
               );
             })}

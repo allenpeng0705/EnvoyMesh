@@ -575,6 +575,7 @@ export const browserViewMessages = {
   modePeople: "People",
   modeOpen: "Open",
   openHelloHint: "Not bonded yet — say hello to connect with this person.",
+  statusPlaceholder: "Not published yet — showing a local placeholder page",
   idleHintBlog: "Write your own posts under Content → Blog.",
   bazaar: {
     intro: "Find people you haven’t bonded with — open their public profile or blog, then say hello.",

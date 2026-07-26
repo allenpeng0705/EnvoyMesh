@@ -6,6 +6,7 @@ import {
   buildPhotoWallMarkdown,
   buildPhotosRootMarkdown,
   buildProfilePortalHtml,
+  buildVisitorPlaceholderMarkdown,
   defaultWebSurfaceForPath,
 } from "../src/web-content-default-templates.js";
 
@@ -110,5 +111,24 @@ describe("web-content-default-templates", () => {
     expect(defaultWebSurfaceForPath("blog/posts/a.md")).toBe("blog");
     expect(defaultWebSurfaceForPath("photos/wall/index.md")).toBe("photowall");
     expect(defaultWebSurfaceForPath("market/index.md")).toBeNull();
+  });
+
+  it("builds visitor placeholders for unpublished remote surfaces", () => {
+    const profile = buildVisitorPlaceholderMarkdown({
+      surface: "profile",
+      ownerId: "envoy:owner:bob",
+      displayName: "Bob",
+    });
+    expect(profile).toContain("# Bob");
+    expect(profile).toContain("hasn’t published a Profile");
+    expect(profile).toContain("envoy://envoy:owner:bob/blog/");
+
+    const blog = buildVisitorPlaceholderMarkdown({
+      surface: "blog",
+      ownerId: "envoy:owner:bob",
+      displayName: "Bob",
+    });
+    expect(blog).toContain("# Blog");
+    expect(blog).toContain("hasn’t published any blog posts");
   });
 });

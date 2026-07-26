@@ -425,3 +425,58 @@ export function defaultWebSurfaceForPath(path: string): DefaultWebSiteSurface | 
   if (p === "photos" || p.startsWith("photos/")) return "photowall";
   return null;
 }
+
+/**
+ * Local markdown shown when a remote peer has not published a default surface.
+ * Used by Social / EnvoyGo readers so "review" still shows a friendly page
+ * instead of a bare not-found error.
+ */
+export function buildVisitorPlaceholderMarkdown(input: {
+  surface: DefaultWebSiteSurface;
+  ownerId: string;
+  displayName?: string;
+}): string {
+  const ownerId = input.ownerId.trim();
+  const name = input.displayName?.trim() || shortOwnerLabel(ownerId);
+  if (input.surface === "profile") {
+    return [
+      `# ${name}`,
+      "",
+      `_${name} hasn’t published a Profile page on EnvoyMesh yet._`,
+      "",
+      "You can still say hello from Explore → People, or check back later.",
+      "",
+      `- [Blog](envoy://${ownerId}/blog/)`,
+      `- [PhotoWall](envoy://${ownerId}/${photoWallCanonicalPath()})`,
+      "",
+    ].join("\n");
+  }
+  if (input.surface === "blog") {
+    return [
+      "# Blog",
+      "",
+      `_${name} hasn’t published any blog posts yet._`,
+      "",
+      `- [Profile](envoy://${ownerId}/)`,
+      `- [PhotoWall](envoy://${ownerId}/${photoWallCanonicalPath()})`,
+      "",
+    ].join("\n");
+  }
+  return [
+    `# ${photoWallPageTitle(DEFAULT_PHOTO_GALLERY)}`,
+    "",
+    `_${name} hasn’t published a PhotoWall yet._`,
+    "",
+    `- [Profile](envoy://${ownerId}/)`,
+    `- [Blog](envoy://${ownerId}/blog/)`,
+    "",
+  ].join("\n");
+}
+
+function shortOwnerLabel(ownerId: string): string {
+  const id = ownerId.trim();
+  if (!id) return "This person";
+  const bare = id.replace(/^envoy:owner:/i, "");
+  if (bare.length <= 10) return bare || "This person";
+  return `${bare.slice(0, 6)}…${bare.slice(-4)}`;
+}
