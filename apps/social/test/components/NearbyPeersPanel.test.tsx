@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
-import type { PeerSearchResult } from "@envoymesh/api";
+import type { BondRecord, PeerSearchResult } from "@envoymesh/api";
 import { NearbyPeersPanel } from "../../src/components/discover/NearbyPeersPanel.js";
 
 vi.mock("../../src/context/I18nContext.js", () => ({
@@ -59,6 +59,30 @@ describe("NearbyPeersPanel", () => {
     );
     expect(screen.queryByTestId("nearby-peers-list")).toBeNull();
     expect(screen.getByTestId("nearby-status-note").textContent).toMatch(/identifying/i);
+  });
+
+  it("shows bonded contact by name instead of stuck identifying when mDNS peer matches bond", () => {
+    const bonds: BondRecord[] = [
+      {
+        peerOwnerId: "envoy:owner:alice",
+        displayName: "Alice",
+        libp2pPeerId: "12D3KooWAliceNode",
+        level: "direct",
+        createdAt: new Date().toISOString(),
+      },
+    ];
+    render(
+      <NearbyPeersPanel
+        discoveredPeers={[peer({ nodeId: "12D3KooWAliceNode", profileStatus: "pending" })]}
+        bonds={bonds}
+        outboundHellos={new Set()}
+        nodeStatus="running"
+        onSayHello={() => {}}
+      />,
+    );
+    expect(screen.getByTestId("nearby-peers-list").textContent).toContain("Alice");
+    expect(screen.getByText("Connected")).toBeTruthy();
+    expect(screen.queryByTestId("nearby-status-note")).toBeNull();
   });
 
   it("folds unreachable probes into one diagnostic, not N empty cards", () => {

@@ -39,6 +39,7 @@ function mockIdentityContext(overrides: Partial<IdentityContext> = {}): Identity
   const inflight = new Set<string>();
   const peerDirStore = {
     ensurePeerFromInboundChat: vi.fn().mockResolvedValue(undefined),
+    getPeerByPeerId: vi.fn().mockResolvedValue(undefined),
   };
   return {
     getProfile: () =>
@@ -117,6 +118,42 @@ describe("_probeNearbyPeerProfileAfterDiscovery", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mockedProbe.mockReset();
+  });
+
+  it("emits resolved from bond/directory without profile.request", async () => {
+    const emit = vi.fn();
+    const ctx = mockIdentityContext({
+      emit,
+      getBonds: vi.fn().mockResolvedValue([
+        {
+          peerOwnerId: "envoy:owner:alice",
+          displayName: "Alice",
+          libp2pPeerId: "12D3KooWPeerA",
+          level: "direct",
+          createdAt: new Date().toISOString(),
+        },
+      ]),
+      getPeerDirectoryStore: () =>
+        ({
+          ensurePeerFromInboundChat: vi.fn(),
+          getPeerByPeerId: vi.fn().mockResolvedValue({
+            ownerId: "envoy:owner:alice",
+            peerId: "12D3KooWPeerA",
+          }),
+        }) as any,
+    });
+    await _probeNearbyPeerProfileAfterDiscovery(ctx, "12D3KooWPeerA", LAN_MULTIADDRS);
+
+    expect(mockedProbe).not.toHaveBeenCalled();
+    expect(emit).toHaveBeenCalledWith(
+      "peer:discovered",
+      expect.objectContaining({
+        nodeId: "12D3KooWPeerA",
+        ownerId: "envoy:owner:alice",
+        displayName: "Alice",
+        profileStatus: "resolved",
+      }),
+    );
   });
 
   // ---- Probe result: success (non-null) --------------------------------
@@ -209,7 +246,7 @@ describe("_probeNearbyPeerProfileAfterDiscovery", () => {
 
   // ---- Early returns (guards) -------------------------------------------
 
-  it("skips when mesh is not available", async () => {
+  it("clears placeholder with peer:lost when mesh is not available", async () => {
     const emit = vi.fn();
     const ctx = mockIdentityContext({
       getMesh: () => null,
@@ -217,7 +254,7 @@ describe("_probeNearbyPeerProfileAfterDiscovery", () => {
     });
     await _probeNearbyPeerProfileAfterDiscovery(ctx, "12D3KooWPeerA", LAN_MULTIADDRS);
 
-    expect(emit).not.toHaveBeenCalled();
+    expect(emit).toHaveBeenCalledWith("peer:lost", { nodeId: "12D3KooWPeerA" });
     expect(mockedProbe).not.toHaveBeenCalled();
   });
 
@@ -226,7 +263,7 @@ describe("_probeNearbyPeerProfileAfterDiscovery", () => {
     const ctx = mockIdentityContext({ emit });
     await _probeNearbyPeerProfileAfterDiscovery(ctx, "12D3KooWSelf", LAN_MULTIADDRS);
 
-    expect(emit).not.toHaveBeenCalled();
+    expect(emit).toHaveBeenCalledWith("peer:lost", { nodeId: "12D3KooWSelf" });
     expect(mockedProbe).not.toHaveBeenCalled();
   });
 
@@ -238,7 +275,7 @@ describe("_probeNearbyPeerProfileAfterDiscovery", () => {
     });
     await _probeNearbyPeerProfileAfterDiscovery(ctx, "12D3KooWPeerA", LAN_MULTIADDRS);
 
-    expect(emit).not.toHaveBeenCalled();
+    expect(emit).toHaveBeenCalledWith("peer:lost", { nodeId: "12D3KooWPeerA" });
     expect(mockedProbe).not.toHaveBeenCalled();
   });
 
@@ -250,7 +287,7 @@ describe("_probeNearbyPeerProfileAfterDiscovery", () => {
     });
     await _probeNearbyPeerProfileAfterDiscovery(ctx, "12D3KooWPeerA", LAN_MULTIADDRS);
 
-    expect(emit).not.toHaveBeenCalled();
+    expect(emit).toHaveBeenCalledWith("peer:lost", { nodeId: "12D3KooWPeerA" });
     expect(mockedProbe).not.toHaveBeenCalled();
   });
 
@@ -262,7 +299,7 @@ describe("_probeNearbyPeerProfileAfterDiscovery", () => {
     });
     await _probeNearbyPeerProfileAfterDiscovery(ctx, "12D3KooWPeerA", LAN_MULTIADDRS);
 
-    expect(emit).not.toHaveBeenCalled();
+    expect(emit).toHaveBeenCalledWith("peer:lost", { nodeId: "12D3KooWPeerA" });
     expect(mockedProbe).not.toHaveBeenCalled();
   });
 

@@ -466,9 +466,13 @@ export async function _probeNearbyPeerProfileAfterDiscovery(
   const contactOwnerKeyStore = ctx.getContactOwnerKeyStore();
   const peerProfileCacheStore = ctx.getPeerProfileCacheStore();
   if (!mesh || !profile || !contactOwnerKeyStore || !peerProfileCacheStore) {
+    // Placeholder may already be in the UI — clear it so Discover isn't stuck
+    // on "identifying…" forever when the node isn't ready to probe.
+    ctx.emit("peer:lost", { nodeId: peerId });
     return;
   }
   if (peerId === mesh.peerId) {
+    ctx.emit("peer:lost", { nodeId: peerId });
     return;
   }
   const lastAtMap = ctx.getNearbyProfileProbeLastAt();
@@ -482,6 +486,17 @@ export async function _probeNearbyPeerProfileAfterDiscovery(
   }
   inflight.add(peerId);
   try {
+    // Fast path: already a bonded / directory-known Envoy contact. Skip
+    // profile.request (can hang across Win↔Mac even when chat is online-direct).
+    const known = await resolveKnownNearbyPeer(ctx, peerId, profile.owner.ownerId);
+    if (known) {
+      lastAtMap.set(peerId, Date.now());
+      ctx.resetNonEnvoyPeerFailCount(peerId);
+      ctx.emit("peer:discovered", { ...known, profileStatus: "resolved" as const });
+      void ctx.maybeFireLanAutoBond(peerId);
+      return;
+    }
+
     // Newly discovered peers may not have an open connection yet.  The
     // profile expect-reply path (chat protocol) requires a live connection
     // and throws immediately when one is absent — so dial first.
@@ -497,7 +512,12 @@ export async function _probeNearbyPeerProfileAfterDiscovery(
           a.includes("/tcp/") && !a.includes("/ws/") && !a.includes("/wss/"),
         );
         const dialTarget = tcpAddr ?? `/p2p/${peerId}`;
-        await mesh.dial(dialTarget);
+        await Promise.race([
+          mesh.dial(dialTarget),
+          new Promise<never>((_, reject) => {
+            setTimeout(() => reject(new Error("nearby dial timeout")), 5_000);
+          }),
+        ]);
       } catch {
         // Dial failed — still attempt the probe (relay or another path
         // may succeed for WAN peers).
@@ -545,6 +565,65 @@ export async function _probeNearbyPeerProfileAfterDiscovery(
   }
 }
 
+/**
+ * When mDNS rediscovers a peer we already know (bond + peer directory),
+ * build a People-nearby card without waiting on profile.request.
+ */
+async function resolveKnownNearbyPeer(
+  ctx: IdentityContext,
+  peerId: string,
+  selfOwnerId: string,
+): Promise<{
+  nodeId: string;
+  ownerId: string;
+  displayName: string;
+  username?: string;
+  bio?: string;
+  interests: string[];
+  profileVisibility: "public" | "contacts" | "private";
+  discoverySource: "mdns";
+} | null> {
+  let ownerId: string | undefined;
+  try {
+    const row = await ctx.getPeerDirectoryStore().getPeerByPeerId(peerId);
+    ownerId = row?.ownerId?.trim() || undefined;
+  } catch {
+    ownerId = undefined;
+  }
+  const bonds = await ctx.getBonds();
+  const bond =
+    bonds.find((b) => b.libp2pPeerId === peerId) ??
+    (ownerId ? bonds.find((b) => b.peerOwnerId === ownerId) : undefined);
+  if (bond?.peerOwnerId?.trim()) {
+    ownerId = bond.peerOwnerId.trim();
+  }
+  if (!ownerId || ownerId === selfOwnerId) {
+    return null;
+  }
+  // Require a bond or a cached profile — directory-only strangers still probe.
+  const cache = ctx.getPeerProfileCacheStore();
+  const cached = cache ? await cache.get(ownerId).catch(() => undefined) : undefined;
+  if (!bond && !cached?.profile) {
+    return null;
+  }
+  const hp = cached?.profile;
+  const displayName =
+    hp?.displayName?.trim() ||
+    bond?.displayName?.trim() ||
+    ownerId.replace(/^envoy:owner:/, "").slice(0, 8) ||
+    "Contact";
+  return {
+    nodeId: peerId,
+    ownerId,
+    displayName,
+    username: hp?.username,
+    bio: hp?.bio,
+    interests: [...(hp?.hobbies ?? []), ...(hp?.knowledge ?? [])],
+    profileVisibility: hp?.profileVisibility ?? "public",
+    discoverySource: "mdns",
+  };
+}
+
 /** Keep unresolved LAN peers visible until suppression; then drop them. */
 function emitNearbyProfileProbeFailure(ctx: IdentityContext, peerId: string): void {
   ctx.markNonEnvoyPeerFailed(peerId);
@@ -552,7 +631,6 @@ function emitNearbyProfileProbeFailure(ctx: IdentityContext, peerId: string): vo
     ctx.emit("peer:lost", { nodeId: peerId });
     return;
   }
-  // Still show in People nearby as "Someone nearby" with an unreachable hint.
   ctx.emit("peer:discovered", {
     nodeId: peerId,
     ownerId: "",

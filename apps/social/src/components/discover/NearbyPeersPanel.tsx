@@ -1,4 +1,5 @@
 import type { BondRecord, PeerSearchResult } from "@envoymesh/api";
+import { useMemo } from "react";
 import { useT } from "../../context/I18nContext.js";
 import { nearbyPeerLabel } from "../../lib/display.js";
 import { DiscoverPeerCard } from "./DiscoverPeerCard.js";
@@ -10,15 +11,78 @@ export function isIdentifiableNearbyPeer(peer: PeerSearchResult): boolean {
   return nearbyPeerLabel(peer.displayName, peer.nodeId) !== "Someone nearby";
 }
 
+/**
+ * Prefer bonded contact identity when mDNS only gave a bare peer id.
+ * Fixes empty People-nearby while Contacts already shows online-direct.
+ */
+export function enrichNearbyPeersWithBonds(
+  peers: readonly PeerSearchResult[],
+  bonds: readonly BondRecord[],
+): PeerSearchResult[] {
+  const activeBonds = bonds.filter((b) => b.level !== "blocked");
+  const out: PeerSearchResult[] = [];
+  const seen = new Set<string>();
+
+  for (const peer of peers) {
+    const bond =
+      activeBonds.find((b) => b.libp2pPeerId && b.libp2pPeerId === peer.nodeId) ??
+      (peer.ownerId
+        ? activeBonds.find((b) => b.peerOwnerId === peer.ownerId)
+        : undefined);
+
+    if (bond) {
+      const displayName =
+        peer.displayName?.trim() ||
+        bond.displayName?.trim() ||
+        bond.peerOwnerId.replace(/^envoy:owner:/, "").slice(0, 8) ||
+        "Contact";
+      const enriched: PeerSearchResult = {
+        ...peer,
+        ownerId: peer.ownerId?.trim() || bond.peerOwnerId,
+        displayName,
+        profileStatus: "resolved",
+      };
+      if (isIdentifiableNearbyPeer(enriched)) {
+        out.push(enriched);
+        seen.add(peer.nodeId);
+      }
+      continue;
+    }
+
+    if (isIdentifiableNearbyPeer(peer)) {
+      out.push(peer);
+      seen.add(peer.nodeId);
+    }
+  }
+
+  return out;
+}
+
+function isBondMatchedNoise(
+  peer: PeerSearchResult,
+  bonds: readonly BondRecord[],
+): boolean {
+  return bonds.some(
+    (b) =>
+      b.level !== "blocked" &&
+      ((b.libp2pPeerId && b.libp2pPeerId === peer.nodeId) ||
+        (peer.ownerId && b.peerOwnerId === peer.ownerId)),
+  );
+}
+
 function nearbyStatusNote(
   peers: readonly PeerSearchResult[],
+  bonds: readonly BondRecord[],
   identifiableCount: number,
   t: ReturnType<typeof useT>,
 ): string | null {
-  const pending = peers.filter(
+  // Ignore pending/unreachable for peers we already know as bonds — those
+  // are shown as contacts above, not "still identifying".
+  const noise = peers.filter((p) => !isBondMatchedNoise(p, bonds));
+  const pending = noise.filter(
     (p) => !p.ownerId?.trim() && p.profileStatus !== "unreachable",
   ).length;
-  const unreachable = peers.filter((p) => p.profileStatus === "unreachable").length;
+  const unreachable = noise.filter((p) => p.profileStatus === "unreachable").length;
 
   if (unreachable > 0 && identifiableCount === 0) {
     return t("discover.nearby.heardUnreachable", { count: String(unreachable) });
@@ -54,8 +118,11 @@ export function NearbyPeersPanel({
 }) {
   const t = useT();
   const hint = emptyHint ?? t("discover.nearby.empty");
-  const identifiable = discoveredPeers.filter(isIdentifiableNearbyPeer);
-  const statusNote = nearbyStatusNote(discoveredPeers, identifiable.length, t);
+  const identifiable = useMemo(
+    () => enrichNearbyPeersWithBonds(discoveredPeers, bonds),
+    [discoveredPeers, bonds],
+  );
+  const statusNote = nearbyStatusNote(discoveredPeers, bonds, identifiable.length, t);
   const showEmpty = identifiable.length === 0 && !statusNote;
 
   return (
@@ -82,7 +149,9 @@ export function NearbyPeersPanel({
       {statusNote ? (
         <p
           className={`discover-status ${
-            discoveredPeers.some((p) => p.profileStatus === "unreachable")
+            discoveredPeers.some(
+              (p) => p.profileStatus === "unreachable" && !isBondMatchedNoise(p, bonds),
+            )
               ? "discover-status--warn"
               : "discover-status--ok"
           }`}
