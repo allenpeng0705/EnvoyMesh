@@ -31,6 +31,13 @@ import {
 } from "./web-content-store.js";
 import { mimeTypeForFilename } from "./node-service-fileshare.js";
 
+/** Prefer path extension over a stale/wrong manifest mimeType (e.g. index.html stored as text/markdown). */
+function resolveContentType(normalizedPath: string, entryMimeType?: string): string {
+  const fromName = mimeTypeForFilename(normalizedPath);
+  if (fromName !== "application/octet-stream") return fromName;
+  return entryMimeType ?? fromName;
+}
+
 /** Result of the inbound handler. */
 export type LibraryReadInboundResult =
   | { ok: true; responsePayload: LibraryReadResponsePayload; senderOwnerId?: string }
@@ -185,6 +192,7 @@ export async function handleInboundLibraryRead(
   }
 
   // 4. Rate-limit public (stranger) readers — mirrors knowledge.query.
+  //    Always reply (never silent-drop) so expect-reply callers don't hang.
   if (bondLevel === "public" && !isLocalSelfRead) {
     const rateResult = checkPublicKnowledgeRateLimit(remotePeerId);
     if (!rateResult.allowed) {
@@ -203,7 +211,14 @@ export async function handleInboundLibraryRead(
           createdAt: envelope.createdAt,
         }),
       );
-      return { ok: false, reason: "rate limited: too many library.read requests" };
+      return {
+        ok: true,
+        responsePayload: createLibraryReadResponsePayload({
+          inReplyTo: envelope.messageId,
+          status: "not_found",
+        }),
+        senderOwnerId,
+      };
     }
   }
 
@@ -223,20 +238,35 @@ export async function handleInboundLibraryRead(
     }
   }
   // Prefer on-disk index.html when the manifest still points at a stale index.md.
+  // Keep prior manifest visibility when the preferred file exists on disk but
+  // has no manifest row yet (e.g. portal HTML rewritten without upsert) —
+  // falling back to private would 404 bonded peers on a published site.
+  const priorEntry = entry;
+  let diskIndexWithoutManifest = false;
   if (candidates.length > 1) {
     for (const candidate of candidates) {
       try {
         await access(join(webDir, candidate));
         const found = await store.findByPath(candidate);
         normalizedPath = candidate;
-        if (found) entry = found;
+        if (found) {
+          entry = found;
+          diskIndexWithoutManifest = false;
+        } else {
+          // Serve on-disk bytes; mime comes from path. Visibility from prior
+          // index.md / bonded default — not private.
+          entry = undefined;
+          diskIndexWithoutManifest = true;
+        }
         break;
       } catch {
         /* try next */
       }
     }
   }
-  const visibility = entry?.visibility ?? DEFAULT_VISIBILITY;
+  const visibility =
+    entry?.visibility ??
+    (diskIndexWithoutManifest ? (priorEntry?.visibility ?? "bonded") : DEFAULT_VISIBILITY);
 
   // 6. Map visibility to sensitivity and evaluate bond policy.
   const requestedSensitivity = visibilityToSensitivity(visibility);
@@ -322,7 +352,7 @@ export async function handleInboundLibraryRead(
   // 7. For `contacts` visibility: ACL is deny-by-default.
   //    Missing/empty contactIds must not fall open to every bonded peer.
   if (visibility === "contacts" && !isLocalSelfRead) {
-    const allowed = entry?.contactIds;
+    const allowed = entry?.contactIds ?? (diskIndexWithoutManifest ? priorEntry?.contactIds : undefined);
     if (!allowed?.length || !senderOwnerId || !allowed.includes(senderOwnerId)) {
       await taskStore.appendAuditEvent(
         createAuditEvent({
@@ -446,7 +476,7 @@ export async function handleInboundLibraryRead(
         responsePayload: createLibraryReadResponsePayload({
           inReplyTo: envelope.messageId,
           status: "not_modified",
-          contentType: entry?.mimeType ?? mimeTypeForFilename(normalizedPath),
+          contentType: resolveContentType(normalizedPath, entry?.mimeType),
           contentHash: fullContentHash,
           byteLength: totalBytes,
           etag,
@@ -455,7 +485,7 @@ export async function handleInboundLibraryRead(
       };
     }
 
-    const contentTypeEarly = entry?.mimeType ?? mimeTypeForFilename(normalizedPath);
+    const contentTypeEarly = resolveContentType(normalizedPath, entry?.mimeType);
     const isTextMime =
       contentTypeEarly.startsWith("text/") || contentTypeEarly === "application/json";
 
@@ -555,7 +585,7 @@ export async function handleInboundLibraryRead(
   }
 
   // 10. Build the response.
-  const contentType = entry?.mimeType ?? mimeTypeForFilename(normalizedPath);
+  const contentType = resolveContentType(normalizedPath, entry?.mimeType);
   const etag = fullContentHash.slice(0, 16);
 
   // Body encoding: full responses use UTF-8 for text/*; range slices are

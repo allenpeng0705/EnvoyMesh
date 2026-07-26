@@ -847,7 +847,14 @@ import {
   type RelayClientCycleDeps,
 } from "./relay-client-cycle.js";
 import { publishWebContentEntry as publishWebContentEntryAuthor, ensureDefaultWebSite as ensureDefaultWebSiteAuthor, listWebContentSections as listWebContentSectionsAuthor, listFeedPosts as listFeedPostsAuthor, listBlogPosts as listBlogPostsAuthor, deleteWebContentEntry as deleteWebContentEntryAuthor, galleryPhotoWallStablePath, removeGalleryPhotoWallMirror, updateGalleryPhotoWallVisibility, publishProfilePortal } from "./web-content-author.js";
-import { sendFeedNotifyToBonds } from "./feed-notify-outbound.js";
+import { sendFeedNotifyToBonds, sendFeedNotifyToOwner, type FeedNotifyPublishMeta } from "./feed-notify-outbound.js";
+import {
+  enqueueFeedNotifyOutboxItem,
+  listFeedNotifyOutboxForRecipient,
+  loadFeedNotifyOutbox,
+  removeFeedNotifyOutboxItem,
+} from "./feed-notify-outbox.js";
+import { listFeedTimeline as listFeedTimelineMerged } from "./feed-timeline.js";
 import { sendFeedEngageToOwner } from "./content-engage-outbound.js";
 import {
   addContentCommentInStore,
@@ -859,7 +866,7 @@ import {
 import {
   dismissFeedNotifyInboxItem,
   dismissAllFeedNotifyInboxItems,
-  loadFeedNotifyInbox,
+  listFeedNotifyRecent,
 } from "./feed-notify-store.js";
 import {
   dismissContentEngageInbox,
@@ -5510,6 +5517,27 @@ class NodeServiceImpl implements NodeService {
     return listFeedPostsAuthor(this._profileDir, ownerId);
   }
 
+  async listFeedTimeline(
+    params?: import("@envoymesh/api").ListFeedTimelineParams,
+  ): Promise<import("@envoymesh/api").ListFeedTimelineResult> {
+    if (this._profileDir === "/tmp/unknown") {
+      return { items: [], hasMore: false };
+    }
+    const human = await this.getHumanProfile();
+    const ownerId =
+      this._profile?.owner?.ownerId?.trim() || human?.ownerId?.trim();
+    if (!ownerId) {
+      throw new Error("listFeedTimeline: owner identity not ready");
+    }
+    const bonds = await this.getBonds();
+    return listFeedTimelineMerged({
+      profileDir: this._profileDir,
+      ownerId,
+      bonds,
+      params,
+    });
+  }
+
   async listBlogPosts(): Promise<import("@envoymesh/api").BlogPostSummary[]> {
     if (this._profileDir === "/tmp/unknown") return [];
     const human = await this.getHumanProfile();
@@ -5556,36 +5584,38 @@ class NodeServiceImpl implements NodeService {
       if (peer.ownerId) interestsByOwner.set(peer.ownerId, interests);
     }
 
-    await sendFeedNotifyToBonds({
+    const meta: FeedNotifyPublishMeta = {
+      publisherOwnerId: profile.owner.ownerId,
+      publishedAt: result.publishedAt,
+      title: result.title,
+      url: result.url,
+      kind:
+        params.template === "blog-post"
+          ? "article"
+          : params.template === "note"
+            ? "note"
+            : params.template === "profile"
+              ? "profile"
+              : params.template === "photo"
+                ? "photo"
+                : params.template === "section"
+                  ? "section"
+                  : params.template === "feed-post"
+                    ? "feed"
+                    : "file",
+      visibility: result.visibility,
+      summary: params.body ? params.body.trim().slice(0, 280) : result.title,
+      // Feed posts deliberately omit tags so interest filtering never hides Moments.
+      tags: params.template === "feed-post" ? undefined : (result.tags ?? params.tags),
+      contentHash: result.contentHash,
+      listingUrl: result.listingUrl,
+      contactIds: params.contactIds,
+    };
+
+    const deliver = await sendFeedNotifyToBonds({
       mesh,
       profile,
-      meta: {
-        publisherOwnerId: profile.owner.ownerId,
-        publishedAt: result.publishedAt,
-        title: result.title,
-        url: result.url,
-        kind:
-          params.template === "blog-post"
-            ? "article"
-            : params.template === "note"
-              ? "note"
-              : params.template === "profile"
-                ? "profile"
-                : params.template === "photo"
-                  ? "photo"
-                  : params.template === "section"
-                    ? "section"
-                    : params.template === "feed-post"
-                      ? "feed"
-                      : "file",
-        visibility: result.visibility,
-        summary: params.body ? params.body.trim().slice(0, 280) : result.title,
-        // Feed posts deliberately omit tags so interest filtering never hides Moments.
-        tags: params.template === "feed-post" ? undefined : (result.tags ?? params.tags),
-        contentHash: result.contentHash,
-        listingUrl: result.listingUrl,
-        contactIds: params.contactIds,
-      },
+      meta,
       bonds: bonds.map((b) => ({ peerOwnerId: b.peerOwnerId, level: b.level })),
       recipientInterestsByOwnerId: interestsByOwner,
       resolveLibp2pPeer: async (bondOwnerId) => {
@@ -5598,11 +5628,88 @@ class NodeServiceImpl implements NodeService {
         void this._tagBondedContactReachability(peerId);
       },
     });
+
+    // Clear prior outbox rows that succeeded this round (avoids warm flush re-send).
+    for (const ownerId of deliver.sentOwnerIds) {
+      try {
+        await removeFeedNotifyOutboxItem(this._profileDir, ownerId, meta.url);
+      } catch (err) {
+        console.warn(
+          `[feed.notify] outbox clear failed for ${ownerId.slice(0, 16)}…:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+
+    for (const ownerId of deliver.missedOwnerIds) {
+      try {
+        await enqueueFeedNotifyOutboxItem(this._profileDir, {
+          recipientOwnerId: ownerId,
+          url: meta.url,
+          meta,
+        });
+      } catch (err) {
+        console.warn(
+          `[feed.notify] outbox enqueue failed for ${ownerId.slice(0, 16)}…:`,
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+  }
+
+  /** Retry undelivered feed.notify for one bond (used by warm / online flush). */
+  private async _flushFeedNotifyOutboxForOwner(ownerId: string): Promise<void> {
+    if (this._profileDir === "/tmp/unknown") return;
+    const mesh = this._reachableMesh();
+    const profile = this._profile;
+    if (!mesh || !profile) return;
+    const trimmed = ownerId.trim();
+    if (!trimmed) return;
+
+    const pending = await listFeedNotifyOutboxForRecipient(this._profileDir, trimmed);
+    if (pending.length === 0) return;
+
+    for (const row of pending) {
+      const result = await sendFeedNotifyToOwner({
+        mesh,
+        profile,
+        meta: row.meta,
+        recipientOwnerId: trimmed,
+        resolveLibp2pPeer: async (bondOwnerId) => {
+          const resolved = await this._resolveLibp2pPeerForBondOwner(bondOwnerId);
+          if (!resolved) return undefined;
+          return { peerId: resolved.transportPeerId, listenAddrs: resolved.listenAddrs };
+        },
+        dialHintsFor: (peerId, listenAddrs) => this._dialHintsForChat(peerId, listenAddrs),
+        tagReachability: (peerId) => {
+          void this._tagBondedContactReachability(peerId);
+        },
+      });
+      if (result.ok) {
+        await removeFeedNotifyOutboxItem(this._profileDir, trimmed, row.url);
+      } else {
+        console.warn(
+          `[feed.notify] outbox flush miss ${trimmed.slice(0, 16)}… ${row.url.slice(0, 40)}: ${result.reason}`,
+        );
+      }
+    }
+  }
+
+  /** Best-effort: deliver all pending outbox rows (peer may still be offline). */
+  private async _flushFeedNotifyOutbox(): Promise<void> {
+    if (this._profileDir === "/tmp/unknown") return;
+    const rows = await loadFeedNotifyOutbox(this._profileDir);
+    if (rows.length === 0) return;
+    const owners = [...new Set(rows.map((r) => r.recipientOwnerId))];
+    for (const ownerId of owners) {
+      await this._flushFeedNotifyOutboxForOwner(ownerId);
+    }
   }
 
   async listFeedNotifications(): Promise<FeedNotification[]> {
     if (this._profileDir === "/tmp/unknown") return [];
-    return loadFeedNotifyInbox(this._profileDir);
+    // Newest slice for Inbox / Following; full history is listFeedTimeline.
+    return listFeedNotifyRecent(this._profileDir);
   }
 
   async dismissFeedNotification(id: string): Promise<void> {
@@ -7514,6 +7621,13 @@ class NodeServiceImpl implements NodeService {
 
   private _startBondWarmInterval(): void {
     startBondWarmIntervalViaRuntime(this._reachabilityContext());
+    // Don't wait for the 45s first warm tick — catch up as soon as we go online.
+    void this._flushFeedNotifyOutbox().catch((err) =>
+      console.warn(
+        "[feed.notify] outbox flush on online failed:",
+        err instanceof Error ? err.message : err,
+      ),
+    );
   }
 
   async getChatDiagnostics(peerOwnerId?: string): Promise<ChatDiagnostics> {

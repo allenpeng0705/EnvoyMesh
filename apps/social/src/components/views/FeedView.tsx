@@ -1,9 +1,9 @@
 /**
  * Content → Feed (Friend Circle): Moments-style text + images for you and bonded contacts.
- * Default visibility: bonded. Compose + timeline; tap photos for fullscreen.
+ * Default visibility: bonded. Compose + paged timeline; tap photos for fullscreen.
  */
-import { useCallback, useEffect, useMemo, useState } from "react";
-import type { BondRecord, FeedNotification, FeedPostSummary } from "@envoymesh/api";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { BondRecord, FeedNotification, FeedTimelineItem } from "@envoymesh/api";
 import { MAX_FEED_POST_IMAGES } from "@envoymesh/api";
 import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
@@ -18,19 +18,7 @@ import { formatMomentsTime } from "../../lib/moments-time.js";
 
 type FeedVisibility = "bonded" | "contacts" | "private";
 
-type TimelineItem = {
-  key: string;
-  source: "own" | "peer";
-  publisherOwnerId: string;
-  title: string;
-  body?: string;
-  url: string;
-  /** Own post path under web/ — required for delete. */
-  path?: string;
-  publishedAt: string;
-  imageUrls: string[];
-  visibility?: string;
-};
+const FEED_PAGE_SIZE = 20;
 
 function eligibleBonds(bonds: BondRecord[]): BondRecord[] {
   return bonds.filter((b) => b.level !== "blocked" && Boolean(b.peerOwnerId));
@@ -53,15 +41,34 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
+function notifyToTimelineItem(n: FeedNotification): FeedTimelineItem {
+  return {
+    source: "peer",
+    key: `peer:${n.id}`,
+    publisherOwnerId: n.publisherOwnerId,
+    title: n.title,
+    body: n.summary,
+    url: n.url,
+    publishedAt: n.publishedAt || n.receivedAt,
+    imageUrls: [],
+    visibility: n.visibility,
+  };
+}
+
 export function FeedView() {
   const t = useT();
   const nodeService = useNodeService();
   const { bonds, humanProfile } = useNodeState();
   const locale = typeof navigator !== "undefined" ? navigator.language : "en";
+  /** Bumps on each full refresh so overlapping refresh results stay ordered. */
+  const loadEpochRef = useRef(0);
 
-  const [ownPosts, setOwnPosts] = useState<FeedPostSummary[]>([]);
-  const [notifications, setNotifications] = useState<FeedNotification[]>([]);
+  const [timeline, setTimeline] = useState<FeedTimelineItem[]>([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextBefore, setNextBefore] = useState<string | undefined>();
+  const [nextBeforeUrl, setNextBeforeUrl] = useState<string | undefined>();
   const [busy, setBusy] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [composeOpen, setComposeOpen] = useState(false);
@@ -80,6 +87,16 @@ export function FeedView() {
   const selfName = humanProfile?.displayName?.trim() || t("feed.you", "You");
   const selfPhoto = humanProfile?.publicThumbnail;
 
+  const bondedIds = useMemo(
+    () =>
+      new Set(
+        bonds
+          .filter((b) => b.level === "direct" || b.level === "referred")
+          .map((b) => b.peerOwnerId),
+      ),
+    [bonds],
+  );
+
   const nameFor = useCallback(
     (ownerId: string) => {
       if (ownerId && ownerId === selfOwnerId) return selfName;
@@ -91,86 +108,87 @@ export function FeedView() {
   );
 
   const refresh = useCallback(async () => {
+    const epoch = ++loadEpochRef.current;
     setBusy(true);
     setError(null);
     try {
-      const [posts, notes] = await Promise.all([
-        nodeService.listFeedPosts(),
-        nodeService.listFeedNotifications(),
-      ]);
-      setOwnPosts(posts);
-      setNotifications(notes);
+      const page = await nodeService.listFeedTimeline({ limit: FEED_PAGE_SIZE });
+      if (epoch !== loadEpochRef.current) return;
+      setTimeline(page.items);
+      setHasMore(page.hasMore);
+      setNextBefore(page.nextBefore);
+      setNextBeforeUrl(page.nextBeforeUrl);
     } catch (err) {
-      // Keep prior timeline on RPC / store flake (reconnect, mid-write JSON).
+      if (epoch !== loadEpochRef.current) return;
       setError(err instanceof Error ? err.message : t("feed.loadFailed", "Could not load Feed"));
     } finally {
       setBusy(false);
     }
   }, [nodeService, t]);
 
+  const loadMore = useCallback(async () => {
+    if (!hasMore || loadingMore || busy || !nextBefore) return;
+    const cursorBefore = nextBefore;
+    const cursorUrl = nextBeforeUrl;
+    setLoadingMore(true);
+    setError(null);
+    try {
+      const page = await nodeService.listFeedTimeline({
+        before: cursorBefore,
+        beforeUrl: cursorUrl,
+        limit: FEED_PAGE_SIZE,
+      });
+      setTimeline((prev) => {
+        const seen = new Set(prev.map((p) => p.key));
+        const added = page.items.filter((item) => !seen.has(item.key));
+        return [...prev, ...added];
+      });
+      setHasMore(page.hasMore);
+      setNextBefore(page.nextBefore);
+      setNextBeforeUrl(page.nextBeforeUrl);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : t("feed.loadMoreFailed", "Could not load older posts"),
+      );
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [hasMore, loadingMore, busy, nextBefore, nextBeforeUrl, nodeService, t]);
+
   useEffect(() => {
     void refresh();
-  }, [refresh]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- only when node client changes
+  }, [nodeService]);
 
   useEffect(() => {
     const unsub = nodeService.on?.("feed:notify", (data: FeedNotification) => {
-      setNotifications((prev) => {
-        if (prev.some((p) => p.id === data.id || p.messageId === data.messageId)) return prev;
-        return [data, ...prev];
+      if (
+        data.kind !== "feed" &&
+        data.kind !== "note" &&
+        data.kind !== "photo" &&
+        data.kind !== "article"
+      ) {
+        return;
+      }
+      if (data.kind !== "feed" && !data.url.includes("/feeds/")) return;
+      if (selfOwnerId && data.publisherOwnerId === selfOwnerId) return;
+      if (!bondedIds.has(data.publisherOwnerId)) return;
+      const item = notifyToTimelineItem(data);
+      setTimeline((prev) => {
+        if (prev.some((p) => p.key === item.key || p.url === item.url)) return prev;
+        return [item, ...prev];
       });
     });
     return () => {
       unsub?.();
     };
-  }, [nodeService]);
+  }, [nodeService, bondedIds, selfOwnerId]);
 
   useEffect(() => {
     return () => {
       for (const url of imagePreviews) URL.revokeObjectURL(url);
     };
   }, [imagePreviews]);
-
-  const bondedIds = useMemo(
-    () => new Set(bonds.filter((b) => b.level === "direct" || b.level === "referred").map((b) => b.peerOwnerId)),
-    [bonds],
-  );
-
-  const timeline = useMemo((): TimelineItem[] => {
-    const items: TimelineItem[] = [];
-    for (const p of ownPosts) {
-      items.push({
-        key: `own:${p.path}`,
-        source: "own",
-        publisherOwnerId: p.publisherOwnerId,
-        title: p.title,
-        body: p.bodyPreview ?? p.summary,
-        url: p.url,
-        path: p.path,
-        publishedAt: p.publishedAt,
-        imageUrls: p.imageUrls ?? [],
-        visibility: p.visibility,
-      });
-    }
-    for (const n of notifications) {
-      if (n.kind !== "feed" && n.kind !== "note" && n.kind !== "photo" && n.kind !== "article") continue;
-      if (n.kind !== "feed" && !n.url.includes("/feeds/")) continue;
-      if (selfOwnerId && n.publisherOwnerId === selfOwnerId) continue;
-      if (!bondedIds.has(n.publisherOwnerId)) continue;
-      items.push({
-        key: `peer:${n.id}`,
-        source: "peer",
-        publisherOwnerId: n.publisherOwnerId,
-        title: n.title,
-        body: n.summary,
-        url: n.url,
-        publishedAt: n.publishedAt || n.receivedAt,
-        imageUrls: [],
-        visibility: n.visibility,
-      });
-    }
-    items.sort((a, b) => b.publishedAt.localeCompare(a.publishedAt));
-    return items;
-  }, [ownPosts, notifications, bondedIds, selfOwnerId]);
 
   function onPickImages(files: FileList | null) {
     if (!files?.length) return;
@@ -275,7 +293,7 @@ export function FeedView() {
           type="button"
           className="feed-view__icon-btn"
           onClick={() => void refresh()}
-          disabled={busy || publishing}
+          disabled={busy || publishing || loadingMore}
           title={busy ? t("feed.refreshing", "Refreshing…") : t("feed.refresh", "Refresh")}
           aria-label={t("feed.refresh", "Refresh")}
         >
@@ -485,95 +503,108 @@ export function FeedView() {
           <div className="feed-view__empty-orb" aria-hidden />
           <h3>{t("feed.emptyTitle", "Your circle is quiet")}</h3>
           <p>{t("feed.empty", "No posts yet. Share an update with your bonded contacts.")}</p>
-          <button
-            type="button"
-            className="primary"
-            onClick={() => setComposeOpen(true)}
-          >
+          <button type="button" className="primary" onClick={() => setComposeOpen(true)}>
             {t("feed.compose", "New post")}
           </button>
         </div>
       ) : (
-        <ul className="feed-view__list" data-testid="feed-timeline">
-          {timeline.map((item, index) => {
-            const name = nameFor(item.publisherOwnerId);
-            return (
-              <li
-                key={item.key}
-                className="feed-view__card"
-                style={{ animationDelay: `${Math.min(index, 8) * 40}ms` }}
-              >
-                <div className="feed-view__card-head">
-                  {item.source === "own" ? (
-                    <ProfilePhotoAvatar
-                      photo={selfPhoto}
-                      fallbackLabel={name}
-                      className="feed-view__card-avatar"
-                    />
-                  ) : (
-                    <PeerProfileAvatar
-                      ownerId={item.publisherOwnerId}
-                      fallbackLabel={name}
-                      className="feed-view__card-avatar"
-                    />
-                  )}
-                  <div className="feed-view__card-meta">
-                    <strong>{name}</strong>
-                  </div>
-                </div>
-                <div className="feed-view__card-content">
-                  {item.body ? <p className="feed-view__card-body">{item.body}</p> : null}
-                  {item.imageUrls.length > 0 ? (
-                    <div className="feed-view__card-media">
-                      <FeedMediaGrid
-                        urls={item.imageUrls}
-                        libraryRead={(params) => nodeService.libraryRead(params)}
+        <>
+          <ul className="feed-view__list" data-testid="feed-timeline">
+            {timeline.map((item, index) => {
+              const name = nameFor(item.publisherOwnerId);
+              return (
+                <li
+                  key={item.key}
+                  className="feed-view__card"
+                  style={{ animationDelay: `${Math.min(index, 8) * 40}ms` }}
+                >
+                  <div className="feed-view__card-head">
+                    {item.source === "own" ? (
+                      <ProfilePhotoAvatar
+                        photo={selfPhoto}
+                        fallbackLabel={name}
+                        className="feed-view__card-avatar"
                       />
+                    ) : (
+                      <PeerProfileAvatar
+                        ownerId={item.publisherOwnerId}
+                        fallbackLabel={name}
+                        className="feed-view__card-avatar"
+                      />
+                    )}
+                    <div className="feed-view__card-meta">
+                      <strong>{name}</strong>
                     </div>
-                  ) : null}
-                  <ContentEngagementBar
-                    url={item.url}
-                    className="feed-view__engagement"
-                    meta={
-                      <time className="content-engagement__time" dateTime={item.publishedAt}>
-                        {formatMomentsTime(item.publishedAt, locale)}
-                      </time>
-                    }
-                    leading={
-                      item.source === "own" && item.path ? (
-                        <button
-                          type="button"
-                          className="feed-view__delete-btn"
-                          data-testid="feed-delete"
-                          disabled={deletingPath === item.path || publishing}
-                          title={t("feed.delete", "Delete")}
-                          aria-label={t("feed.delete", "Delete")}
-                          onClick={() => void deleteOwnPost(item.path!)}
-                        >
-                          {deletingPath === item.path ? (
-                            <span className="feed-view__delete-busy" aria-hidden>
-                              …
-                            </span>
-                          ) : (
-                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
-                              <path
-                                d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"
-                                stroke="currentColor"
-                                strokeWidth="1.75"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                              />
-                            </svg>
-                          )}
-                        </button>
-                      ) : null
-                    }
-                  />
-                </div>
-              </li>
-            );
-          })}
-        </ul>
+                  </div>
+                  <div className="feed-view__card-content">
+                    {item.body ? <p className="feed-view__card-body">{item.body}</p> : null}
+                    {item.imageUrls.length > 0 ? (
+                      <div className="feed-view__card-media">
+                        <FeedMediaGrid
+                          urls={item.imageUrls}
+                          libraryRead={(params) => nodeService.libraryRead(params)}
+                        />
+                      </div>
+                    ) : null}
+                    <ContentEngagementBar
+                      url={item.url}
+                      className="feed-view__engagement"
+                      meta={
+                        <time className="content-engagement__time" dateTime={item.publishedAt}>
+                          {formatMomentsTime(item.publishedAt, locale)}
+                        </time>
+                      }
+                      leading={
+                        item.source === "own" && item.path ? (
+                          <button
+                            type="button"
+                            className="feed-view__delete-btn"
+                            data-testid="feed-delete"
+                            disabled={deletingPath === item.path || publishing}
+                            title={t("feed.delete", "Delete")}
+                            aria-label={t("feed.delete", "Delete")}
+                            onClick={() => void deleteOwnPost(item.path!)}
+                          >
+                            {deletingPath === item.path ? (
+                              <span className="feed-view__delete-busy" aria-hidden>
+                                …
+                              </span>
+                            ) : (
+                              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden>
+                                <path
+                                  d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"
+                                  stroke="currentColor"
+                                  strokeWidth="1.75"
+                                  strokeLinecap="round"
+                                  strokeLinejoin="round"
+                                />
+                              </svg>
+                            )}
+                          </button>
+                        ) : null
+                      }
+                    />
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+          {hasMore ? (
+            <div className="feed-view__more">
+              <button
+                type="button"
+                className="feed-view__more-btn"
+                data-testid="feed-load-more"
+                disabled={loadingMore || busy}
+                onClick={() => void loadMore()}
+              >
+                {loadingMore
+                  ? t("feed.loadingMore", "Loading…")
+                  : t("feed.loadMore", "Load older posts")}
+              </button>
+            </div>
+          ) : null}
+        </>
       )}
     </div>
   );

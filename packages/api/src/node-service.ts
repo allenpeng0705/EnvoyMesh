@@ -1121,13 +1121,14 @@ export interface PublishWebContentResult {
   tags?: string[];
 }
 
-/** Phase 45 — seed default Profile + empty Blog / PhotoWall shells (idempotent). */
+/** Phase 45 — seed default Profile + empty Blog / PhotoWall / Feeds shells (idempotent). */
 export interface EnsureDefaultWebSiteResult {
-  created: Array<"profile" | "blog" | "photowall">;
+  created: Array<"profile" | "blog" | "photowall" | "feeds">;
   urls: {
     profile: string;
     blog: string;
     photowall: string;
+    feeds: string;
   };
 }
 
@@ -1160,6 +1161,37 @@ export interface FeedNotification {
   senderPeerId: string;
   /** Present after Inbox open/dismiss — clears badge; Feed timeline still lists. */
   readAt?: string;
+}
+
+/** Own Feed (Friend Circle) merged timeline row. */
+export type FeedTimelineSource = "own" | "peer";
+
+export interface FeedTimelineItem {
+  source: FeedTimelineSource;
+  key: string;
+  publisherOwnerId: string;
+  title: string;
+  body?: string;
+  url: string;
+  path?: string;
+  publishedAt: string;
+  imageUrls: string[];
+  visibility?: string;
+}
+
+export interface ListFeedTimelineParams {
+  /** Exclusive cursor timestamp (ISO). Pair with beforeUrl when timestamps collide. */
+  before?: string;
+  beforeUrl?: string;
+  /** Page size (default 20, max 50). */
+  limit?: number;
+}
+
+export interface ListFeedTimelineResult {
+  items: FeedTimelineItem[];
+  hasMore: boolean;
+  nextBefore?: string;
+  nextBeforeUrl?: string;
 }
 
 /** Inbound star/comment on the owner's Feed or Blog post (Content nav badge). */
@@ -2154,6 +2186,12 @@ export interface NodeService {
 
   /** Own Feed (Friend Circle) posts under `web/feeds/`, newest first. */
   listFeedPosts(): Promise<FeedPostSummary[]>;
+
+  /**
+   * Own Feed merged timeline (own posts + bonded peer notifies), newest first, paged.
+   * Prefer this over merging `listFeedPosts` + `listFeedNotifications` in the UI.
+   */
+  listFeedTimeline(params?: ListFeedTimelineParams): Promise<ListFeedTimelineResult>;
 
   /** Own Blog posts under `web/blog/posts/`, newest first. */
   listBlogPosts(): Promise<BlogPostSummary[]>;

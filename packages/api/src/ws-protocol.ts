@@ -171,6 +171,7 @@ export type RpcMethods =
   | "ensureDefaultWebSite"
   | "listWebContentSections"
   | "listFeedPosts"
+  | "listFeedTimeline"
   | "listBlogPosts"
   | "deleteWebContentEntry"
   | "listFeedNotifications"

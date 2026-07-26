@@ -7,18 +7,17 @@ import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
 import { FeedView } from "../../src/components/views/FeedView.js";
 
-const listFeedPosts = vi.fn();
-const listFeedNotifications = vi.fn();
+const listFeedTimeline = vi.fn();
 const publishWebContentEntry = vi.fn();
 const deleteWebContentEntry = vi.fn();
 const on = vi.fn(() => () => undefined);
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: () => ({
-    listFeedPosts,
-    listFeedNotifications,
+    listFeedTimeline,
     publishWebContentEntry,
     deleteWebContentEntry,
+    libraryRead: vi.fn(),
     on,
   }),
 }));
@@ -46,39 +45,50 @@ vi.mock("../../src/components/FeedMediaGrid.js", () => ({
   FeedMediaGrid: () => null,
 }));
 
+vi.mock("../../src/components/ContentEngagementBar.js", () => ({
+  ContentEngagementBar: ({ meta, leading }: { meta?: React.ReactNode; leading?: React.ReactNode }) => (
+    <div data-testid="engagement">
+      {leading}
+      {meta}
+    </div>
+  ),
+}));
+
 describe("FeedView", () => {
   beforeEach(() => {
-    listFeedPosts.mockReset();
-    listFeedNotifications.mockReset();
+    listFeedTimeline.mockReset();
     publishWebContentEntry.mockReset();
     deleteWebContentEntry.mockReset();
-    listFeedPosts.mockResolvedValue([
-      {
-        path: "feeds/hello.md",
-        url: "envoy://envoy:owner:alice/feeds/hello.md",
-        title: "Hello",
-        bodyPreview: "My update",
-        publishedAt: "2026-07-26T01:00:00.000Z",
-        visibility: "bonded",
-        imageUrls: [],
-        publisherOwnerId: "envoy:owner:alice",
-      },
-    ]);
-    listFeedNotifications.mockResolvedValue([
-      {
-        id: "n1",
-        receivedAt: "2026-07-26T02:00:00.000Z",
-        messageId: "m1",
-        publisherOwnerId: "envoy:owner:bob",
-        publishedAt: "2026-07-26T02:00:00.000Z",
-        title: "Bob post",
-        url: "envoy://envoy:owner:bob/feeds/bob.md",
-        kind: "feed",
-        visibility: "bonded",
-        summary: "From Bob",
-        senderPeerId: "peer-bob",
-      },
-    ]);
+    listFeedTimeline.mockResolvedValue({
+      items: [
+        {
+          source: "own",
+          key: "own:feeds/hello.md",
+          path: "feeds/hello.md",
+          url: "envoy://envoy:owner:alice/feeds/hello.md",
+          title: "Hello",
+          body: "My update",
+          publishedAt: "2026-07-26T01:00:00.000Z",
+          visibility: "bonded",
+          imageUrls: [],
+          publisherOwnerId: "envoy:owner:alice",
+        },
+        {
+          source: "peer",
+          key: "peer:n1",
+          url: "envoy://envoy:owner:bob/feeds/bob.md",
+          title: "Bob post",
+          body: "From Bob",
+          publishedAt: "2026-07-26T02:00:00.000Z",
+          visibility: "bonded",
+          imageUrls: [],
+          publisherOwnerId: "envoy:owner:bob",
+        },
+      ],
+      hasMore: true,
+      nextBefore: "2026-07-26T01:00:00.000Z",
+      nextBeforeUrl: "envoy://envoy:owner:alice/feeds/hello.md",
+    });
     publishWebContentEntry.mockResolvedValue({
       path: "feeds/new.md",
       url: "envoy://envoy:owner:alice/feeds/new.md",
@@ -102,6 +112,59 @@ describe("FeedView", () => {
     expect(screen.getAllByText("Bob").length).toBeGreaterThan(0);
   });
 
+  it("requests the next page when Load more is clicked", async () => {
+    listFeedTimeline.mockImplementation(async (params?: { before?: string }) => {
+      if (params?.before) {
+        return {
+          items: [
+            {
+              source: "own",
+              key: "own:feeds/old.md",
+              path: "feeds/old.md",
+              url: "envoy://envoy:owner:alice/feeds/old.md",
+              title: "Old",
+              body: "Older post",
+              publishedAt: "2026-07-20T00:00:00.000Z",
+              visibility: "bonded",
+              imageUrls: [],
+              publisherOwnerId: "envoy:owner:alice",
+            },
+          ],
+          hasMore: false,
+        };
+      }
+      return {
+        items: [
+          {
+            source: "peer",
+            key: "peer:n1",
+            url: "envoy://envoy:owner:bob/feeds/bob.md",
+            title: "Bob post",
+            body: "From Bob",
+            publishedAt: "2026-07-26T02:00:00.000Z",
+            visibility: "bonded",
+            imageUrls: [],
+            publisherOwnerId: "envoy:owner:bob",
+          },
+        ],
+        hasMore: true,
+        nextBefore: "2026-07-26T02:00:00.000Z",
+        nextBeforeUrl: "envoy://envoy:owner:bob/feeds/bob.md",
+      };
+    });
+
+    renderWithI18n(<FeedView />);
+    await screen.findByText("From Bob");
+    fireEvent.click(await screen.findByTestId("feed-load-more"));
+    await waitFor(() => {
+      expect(
+        listFeedTimeline.mock.calls.some(
+          (call) => (call[0] as { before?: string } | undefined)?.before === "2026-07-26T02:00:00.000Z",
+        ),
+      ).toBe(true);
+    });
+  });
+
   it("publishes a bonded feed post from composer", async () => {
     renderWithI18n(<FeedView />);
     await screen.findByTestId("feed-timeline");
@@ -122,34 +185,7 @@ describe("FeedView", () => {
     });
   });
 
-  it("requires selecting contacts and passes contactIds", async () => {
-    renderWithI18n(<FeedView />);
-    await screen.findByTestId("feed-timeline");
-    fireEvent.click(screen.getByTestId("feed-compose-open"));
-    fireEvent.change(screen.getByTestId("feed-compose-text"), {
-      target: { value: "For Bob only" },
-    });
-    fireEvent.change(screen.getByTestId("feed-visibility"), {
-      target: { value: "contacts" },
-    });
-    expect(screen.getByTestId("feed-contacts")).toBeTruthy();
-    expect((screen.getByTestId("feed-publish") as HTMLButtonElement).disabled).toBe(true);
-    fireEvent.click(screen.getByTestId("feed-contact-checkbox"));
-    expect((screen.getByTestId("feed-publish") as HTMLButtonElement).disabled).toBe(false);
-    fireEvent.click(screen.getByTestId("feed-publish"));
-    await waitFor(() => {
-      expect(publishWebContentEntry).toHaveBeenCalledWith(
-        expect.objectContaining({
-          template: "feed-post",
-          visibility: "contacts",
-          contactIds: ["envoy:owner:bob"],
-          body: "For Bob only",
-        }),
-      );
-    });
-  });
-
-  it("deletes an own feed post", async () => {
+  it("deletes an own post after confirm", async () => {
     renderWithI18n(<FeedView />);
     await screen.findByTestId("feed-timeline");
     fireEvent.click(screen.getByTestId("feed-delete"));

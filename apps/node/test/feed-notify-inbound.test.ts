@@ -104,4 +104,37 @@ describe("handleInboundFeedNotify", () => {
     if (result.ok) return;
     expect(result.skipped).toBe(true);
   });
+
+  it("does not emit feed:notify when url is already stored (dedupe)", async () => {
+    const emitted: unknown[] = [];
+    const first = await handleInboundFeedNotify({
+      envelope: makeEnvelope(),
+      profileDir,
+      remotePeerId: "12D3KooWtestpeer",
+      trustStore,
+      peerDirectoryStore,
+      taskStore,
+      emit: (item) => emitted.push(item),
+    });
+    expect(first.ok).toBe(true);
+    expect(emitted).toHaveLength(1);
+
+    const dupEnvelope = {
+      ...makeEnvelope(),
+      messageId: "different-message-id-for-same-url",
+    };
+    const second = await handleInboundFeedNotify({
+      envelope: dupEnvelope,
+      profileDir,
+      remotePeerId: "12D3KooWtestpeer",
+      trustStore,
+      peerDirectoryStore,
+      taskStore,
+      emit: (item) => emitted.push(item),
+    });
+    expect(second.ok).toBe(true);
+    expect(emitted).toHaveLength(1);
+    const inbox = await loadFeedNotifyInbox(profileDir);
+    expect(inbox).toHaveLength(1);
+  });
 });

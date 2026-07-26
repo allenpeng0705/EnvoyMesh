@@ -411,6 +411,16 @@ export async function routeRpcMethod(
       return ns.listWebContentSections();
     case "listFeedPosts":
       return ns.listFeedPosts();
+    case "listFeedTimeline":
+      return ns.listFeedTimeline(
+        params && typeof params === "object"
+          ? {
+              before: typeof params.before === "string" ? params.before : undefined,
+              beforeUrl: typeof params.beforeUrl === "string" ? params.beforeUrl : undefined,
+              limit: typeof params.limit === "number" ? params.limit : undefined,
+            }
+          : undefined,
+      );
     case "listBlogPosts":
       return ns.listBlogPosts();
     case "deleteWebContentEntry":

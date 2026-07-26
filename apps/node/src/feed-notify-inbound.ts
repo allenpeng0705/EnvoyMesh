@@ -122,11 +122,13 @@ export async function handleInboundFeedNotify(input: {
     senderPeerId: envelope.senderPeerId,
   };
 
-  const inbox = await appendFeedNotifyInboxItem(profileDir, item);
-  const stored = inbox.find((row) => row.messageId === item.messageId) ?? item;
-  input.emit?.(stored);
+  const { inserted, item: stored } = await appendFeedNotifyInboxItem(profileDir, item);
+  // URL/messageId dedupe must not emit a fresh unread feed:notify to the UI.
+  if (inserted) {
+    input.emit?.(stored);
+  }
 
-  if (taskStore) {
+  if (taskStore && inserted) {
     await taskStore.appendAuditEvent(
       createAuditEvent({
         type: "message.verified",

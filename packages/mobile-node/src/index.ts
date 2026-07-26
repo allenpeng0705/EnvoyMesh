@@ -3753,6 +3753,22 @@ You are the owner's personal AI assistant on EnvoyMesh.
     return (await home.call("listFeedPosts", {})) as import("@envoymesh/api").FeedPostSummary[];
   }
 
+  async listFeedTimeline(
+    params?: import("@envoymesh/api").ListFeedTimelineParams,
+  ): Promise<import("@envoymesh/api").ListFeedTimelineResult> {
+    this._assertNodeRunning();
+    if (!this._state?.homeNodePeerId?.trim()) {
+      throw new Error(
+        "listFeedTimeline: requires a paired home node (EnvoyGo thin client)",
+      );
+    }
+    const home = this._ensureHomeRemote();
+    return (await home.call(
+      "listFeedTimeline",
+      (params ?? {}) as Record<string, unknown>,
+    )) as import("@envoymesh/api").ListFeedTimelineResult;
+  }
+
   async listBlogPosts(): Promise<import("@envoymesh/api").BlogPostSummary[]> {
     this._assertNodeRunning();
     if (!this._state?.homeNodePeerId?.trim()) {

@@ -13,6 +13,7 @@ import { dirname, extname, join } from "node:path";
 
 import {
   buildBlogIndexMarkdown as buildBlogIndexMarkdownShared,
+  buildFeedIndexMarkdown as buildFeedIndexMarkdownShared,
   buildPhotoWallMarkdown as buildPhotoWallMarkdownShared,
   buildPhotosRootMarkdown as buildPhotosRootMarkdownShared,
   buildProfilePortalHtml,
@@ -238,6 +239,10 @@ function buildBlogIndexMarkdown(ownerId: string, posts: WebContentEntry[]): stri
   return buildBlogIndexMarkdownShared(ownerId, posts);
 }
 
+function buildFeedIndexMarkdown(ownerId: string, posts: WebContentEntry[]): string {
+  return buildFeedIndexMarkdownShared(ownerId, posts);
+}
+
 /** Markdown PhotoWall grid — clickable thumbnails via envoy:// image links. */
 function buildPhotoWallMarkdown(
   ownerId: string,
@@ -332,6 +337,37 @@ async function regenerateBlogListing(
     `${articles.length} post${articles.length === 1 ? "" : "s"}`,
   );
   return `envoy://${ownerId}/blog/`;
+}
+
+/** Rebuild `feeds/index.md` so contacts can library.read Allen's Feed archive. */
+async function regenerateFeedListing(
+  store: ReturnType<typeof createWebContentStore>,
+  webDir: string,
+  ownerId: string,
+  visibilityFallback: WebContentVisibility,
+  now: string,
+): Promise<string> {
+  const posts = (await store.list({ kind: "feed" })).filter(
+    (e) =>
+      e.path.startsWith("feeds/") &&
+      e.path.endsWith(".md") &&
+      e.path !== "feeds/index.md" &&
+      !e.path.includes("/media/"),
+  );
+  const indexMd = buildFeedIndexMarkdown(ownerId, posts);
+  const indexVisibility = mostOpenVisibility(posts, visibilityFallback);
+  await upsertListing(
+    store,
+    webDir,
+    "feeds/index.md",
+    "Feed",
+    indexMd,
+    indexVisibility,
+    now,
+    "feed",
+    `${posts.length} post${posts.length === 1 ? "" : "s"}`,
+  );
+  return `envoy://${ownerId}/feeds/`;
 }
 
 async function regeneratePhotoWall(
@@ -548,7 +584,6 @@ export async function publishWebContentEntry(
     byteLength = meta.byteLength;
     summary = summaryFromBody(body) || (imageUrls.length ? `${imageUrls.length} photo(s)` : title);
     await writeWebFile(webDir, relativePath, markdown);
-    listingUrl = `envoy://${ownerId}/feeds/`;
   } else if (params.template === "profile") {
     const body = (params.body ?? "").trim();
     const html =
@@ -670,7 +705,7 @@ export async function publishWebContentEntry(
   } else if (params.template === "profile") {
     listingUrl = `envoy://${ownerId}`;
   } else if (params.template === "feed-post") {
-    listingUrl = listingUrl ?? `envoy://${ownerId}/feeds/`;
+    listingUrl = await regenerateFeedListing(store, webDir, ownerId, params.visibility, now);
   }
 
   return {
@@ -701,11 +736,12 @@ export interface EnsureDefaultWebSiteParams {
 }
 
 export interface EnsureDefaultWebSiteResult {
-  created: Array<"profile" | "blog" | "photowall">;
+  created: Array<"profile" | "blog" | "photowall" | "feeds">;
   urls: {
     profile: string;
     blog: string;
     photowall: string;
+    feeds: string;
   };
 }
 
@@ -938,12 +974,18 @@ export async function ensureDefaultWebSite(
   }
   if (photowallCreated) created.push("photowall");
 
+  if (!(await store.findByPath("feeds/index.md"))) {
+    await regenerateFeedListing(store, webDir, ownerId, visibility, now);
+    created.push("feeds");
+  }
+
   return {
     created,
     urls: {
       profile: `envoy://${ownerId}/`,
       blog: `envoy://${ownerId}/blog/`,
       photowall: `envoy://${ownerId}/${photoWallCanonicalPath()}`,
+      feeds: `envoy://${ownerId}/feeds/`,
     },
   };
 }
@@ -1073,7 +1115,7 @@ export async function deleteWebContentEntry(
     }
   }
 
-  // Keep blog/index.md in sync when a post is removed.
+  // Keep blog/index.md / feeds/index.md in sync when a post is removed.
   const listingOwner = params.ownerId?.trim();
   if (
     listingOwner &&
@@ -1081,6 +1123,21 @@ export async function deleteWebContentEntry(
     relativePath.endsWith(".md")
   ) {
     await regenerateBlogListing(
+      store,
+      webDir,
+      listingOwner,
+      existing?.visibility ?? "bonded",
+      new Date().toISOString(),
+    );
+  }
+  if (
+    listingOwner &&
+    relativePath.startsWith("feeds/") &&
+    relativePath.endsWith(".md") &&
+    relativePath !== "feeds/index.md" &&
+    !relativePath.includes("/media/")
+  ) {
+    await regenerateFeedListing(
       store,
       webDir,
       listingOwner,
@@ -1104,6 +1161,7 @@ export async function listFeedPosts(
   const out: FeedPostSummary[] = [];
   for (const e of entries) {
     if (!e.path.startsWith("feeds/") || !e.path.endsWith(".md")) continue;
+    if (e.path === "feeds/index.md") continue;
     if (e.path.includes("/media/")) continue;
     let imageUrls: string[] = [];
     let bodyPreview = e.summary;

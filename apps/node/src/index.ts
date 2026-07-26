@@ -2585,7 +2585,13 @@ mesh.onMessage(async (params) => {
     inboundEnvelope.intent === "share.preview" ||
     inboundEnvelope.intent === "share.request" ||
     inboundEnvelope.intent === "share.accept" ||
-    inboundEnvelope.intent === "chat.delivered";
+    inboundEnvelope.intent === "chat.delivered" ||
+    // PhotoWall / Explore chunked reads can exceed 30 msg/min easily (40 KiB
+    // ranges). Silent drop leaves the viewer spinner hung until expect-reply
+    // timeout — exempt content reads; public strangers still hit the bonds
+    // checkPublicKnowledgeRateLimit inside library-read-inbound.
+    inboundEnvelope.intent === "library.read" ||
+    inboundEnvelope.intent === "library.read.response";
   if (!isRateLimitExemptIntent && !checkInboundRateLimit(remotePeerId)) {
     return;
   }

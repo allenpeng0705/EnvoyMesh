@@ -6,16 +6,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { MAX_FEED_POST_IMAGES, isEnvoyContentUrl, parseEnvoyUrl, resolveEnvoyUrl } from "@envoymesh/api";
 import { useT } from "../context/I18nContext.js";
-import { fetchLibraryContent, type LibraryReadFn } from "../lib/library-read-fetch.js";
-
-function base64ToBlobUrl(body: string, mimeType: string): string {
-  const bin = atob(body);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  const ab = new ArrayBuffer(out.byteLength);
-  new Uint8Array(ab).set(out);
-  return URL.createObjectURL(new Blob([ab], { type: mimeType }));
-}
+import {
+  fetchLibraryContentCached,
+  peekLibraryReadBlobUrl,
+} from "../lib/library-read-blob-cache.js";
+import type { LibraryReadFn } from "../lib/library-read-fetch.js";
 
 /** Moments layout class for 1–9 photos. */
 export function feedMediaGridClass(count: number): string {
@@ -45,32 +40,54 @@ export function FeedMediaGrid({
     const wanted = new Set(key ? key.split("\0").filter(Boolean) : []);
     for (const url of Object.keys(blobsRef.current)) {
       if (!wanted.has(url)) {
-        URL.revokeObjectURL(blobsRef.current[url]!);
         delete blobsRef.current[url];
       }
     }
     setBlobs({ ...blobsRef.current });
 
-    for (const url of wanted) {
-      if (blobsRef.current[url]) continue;
-      if (!isEnvoyContentUrl(url)) continue;
-      void (async () => {
-        try {
-          const { targetOwnerId, path } = resolveEnvoyUrl(parseEnvoyUrl(url));
-          const result = await fetchLibraryContent(libraryReadRef.current, {
-            targetOwnerId,
-            path,
-          });
-          if (cancelled || result.status !== "ok" || !result.body) return;
-          if (!result.contentType?.startsWith("image/")) return;
-          const blobUrl = base64ToBlobUrl(result.body, result.contentType);
-          blobsRef.current[url] = blobUrl;
-          setBlobs((prev) => ({ ...prev, [url]: blobUrl }));
-        } catch {
-          /* leave tile empty */
+    const toLoad = [...wanted].filter((url) => {
+      if (blobsRef.current[url] || !isEnvoyContentUrl(url)) return false;
+      try {
+        const { targetOwnerId, path } = resolveEnvoyUrl(parseEnvoyUrl(url));
+        const peek = peekLibraryReadBlobUrl(targetOwnerId, path);
+        if (peek) {
+          blobsRef.current[url] = peek;
+          setBlobs((prev) => ({ ...prev, [url]: peek }));
+          return false;
         }
-      })();
-    }
+      } catch {
+        /* network load */
+      }
+      return true;
+    });
+
+    void (async () => {
+      const queue = [...toLoad];
+      const workers = Array.from({ length: Math.min(2, queue.length || 1) }, async () => {
+        while (queue.length > 0 && !cancelled) {
+          const url = queue.shift();
+          if (!url) return;
+          try {
+            const { targetOwnerId, path } = resolveEnvoyUrl(parseEnvoyUrl(url));
+            const result = await fetchLibraryContentCached(libraryReadRef.current, {
+              targetOwnerId,
+              path,
+            });
+            if (cancelled || result.status !== "ok" || !result.contentType?.startsWith("image/")) {
+              continue;
+            }
+            const blobUrl =
+              result.blobUrl ?? peekLibraryReadBlobUrl(targetOwnerId, path);
+            if (!blobUrl) continue;
+            blobsRef.current[url] = blobUrl;
+            setBlobs((prev) => ({ ...prev, [url]: blobUrl }));
+          } catch {
+            /* leave tile empty */
+          }
+        }
+      });
+      await Promise.all(workers);
+    })();
 
     return () => {
       cancelled = true;
@@ -79,7 +96,6 @@ export function FeedMediaGrid({
 
   useEffect(() => {
     return () => {
-      for (const url of Object.values(blobsRef.current)) URL.revokeObjectURL(url);
       blobsRef.current = {};
     };
   }, []);

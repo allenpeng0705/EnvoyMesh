@@ -8,25 +8,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { isEnvoyContentUrl, parseEnvoyUrl, resolveEnvoyUrl } from "@envoymesh/api";
 import type { ProfileGalleryPhotoVisibility } from "@envoymesh/api";
 import {
-  fetchLibraryContent,
-  type LibraryReadFn,
-} from "../lib/library-read-fetch.js";
+  fetchLibraryContentCached,
+  peekLibraryReadBlobUrl,
+} from "../lib/library-read-blob-cache.js";
+import type { LibraryReadFn } from "../lib/library-read-fetch.js";
 import type { PhotoWallItem } from "../lib/parse-photo-wall-markdown.js";
 import { useT } from "../context/I18nContext.js";
-
-function base64ToBytes(b64: string): Uint8Array {
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
-}
-
-function base64ToBlobUrl(body: string, mimeType: string): string {
-  const bytes = base64ToBytes(body);
-  const ab = new ArrayBuffer(bytes.byteLength);
-  new Uint8Array(ab).set(bytes);
-  return URL.createObjectURL(new Blob([ab], { type: mimeType }));
-}
 
 export interface BrowserPhotoGalleryOwnerMeta {
   vaultRelativePath: string;
@@ -49,6 +36,27 @@ export interface BrowserPhotoGalleryProps {
   addDisabled?: boolean;
   /** Owner-only: delete the photo open in the lightbox. */
   onOwnerDelete?: (vaultRelativePath: string) => void;
+}
+
+const PHOTO_LOAD_CONCURRENCY = 2;
+
+/** Run async work over items with a fixed concurrency cap. */
+async function mapPool<T>(
+  items: readonly T[],
+  concurrency: number,
+  worker: (item: T) => Promise<void>,
+): Promise<void> {
+  const queue = [...items];
+  const n = Math.max(1, Math.min(concurrency, queue.length || 1));
+  await Promise.all(
+    Array.from({ length: n }, async () => {
+      while (queue.length > 0) {
+        const item = queue.shift();
+        if (item === undefined) return;
+        await worker(item);
+      }
+    }),
+  );
 }
 
 export function BrowserPhotoGallery({
@@ -81,7 +89,7 @@ export function BrowserPhotoGallery({
 
     for (const url of Object.keys(blobByUrlRef.current)) {
       if (!wanted.has(url)) {
-        URL.revokeObjectURL(blobByUrlRef.current[url]!);
+        // Blob URLs live in the shared library-read cache — do not revoke here.
         delete blobByUrlRef.current[url];
       }
     }
@@ -97,46 +105,83 @@ export function BrowserPhotoGallery({
       if (!wanted.has(url)) failedRef.current.delete(url);
     }
 
-    for (const photo of photos) {
+    const toLoad = photos.filter((photo) => {
       const { url } = photo;
       if (blobByUrlRef.current[url] || inFlightRef.current.has(url) || failedRef.current.has(url)) {
-        continue;
+        return false;
       }
       if (!isEnvoyContentUrl(url)) {
         failedRef.current.add(url);
         setFailed((prev) => ({ ...prev, [url]: true }));
-        continue;
+        return false;
       }
-      inFlightRef.current.add(url);
-      void (async () => {
-        try {
-          const { targetOwnerId, path } = resolveEnvoyUrl(parseEnvoyUrl(url));
-          const result = await fetchLibraryContent(libraryReadRef.current, {
-            targetOwnerId,
-            path,
-          });
-          if (cancelled) return;
-          if (result.status !== "ok" || !result.body || !result.contentType?.startsWith("image/")) {
-            failedRef.current.add(url);
-            setFailed((prev) => ({ ...prev, [url]: true }));
-            return;
-          }
-          const blobUrl = base64ToBlobUrl(result.body, result.contentType);
-          blobByUrlRef.current[url] = blobUrl;
-          setBlobByUrl((prev) => ({ ...prev, [url]: blobUrl }));
-        } catch {
+      // Instant paint from session cache when available.
+      try {
+        const { targetOwnerId, path } = resolveEnvoyUrl(parseEnvoyUrl(url));
+        const peek = peekLibraryReadBlobUrl(targetOwnerId, path);
+        if (peek) {
+          blobByUrlRef.current[url] = peek;
+          setBlobByUrl((prev) => ({ ...prev, [url]: peek }));
+          return false;
+        }
+      } catch {
+        /* fall through to network load */
+      }
+      return true;
+    });
+
+    const thisFlight = new Set<string>();
+    for (const photo of toLoad) {
+      inFlightRef.current.add(photo.url);
+      thisFlight.add(photo.url);
+    }
+
+    void mapPool(toLoad, PHOTO_LOAD_CONCURRENCY, async (photo) => {
+      const { url } = photo;
+      try {
+        const { targetOwnerId, path } = resolveEnvoyUrl(parseEnvoyUrl(url));
+        const result = await fetchLibraryContentCached(libraryReadRef.current, {
+          targetOwnerId,
+          path,
+        });
+        if (result.status !== "ok" || !result.contentType?.startsWith("image/")) {
           if (!cancelled) {
             failedRef.current.add(url);
             setFailed((prev) => ({ ...prev, [url]: true }));
           }
-        } finally {
-          inFlightRef.current.delete(url);
+          return;
         }
-      })();
-    }
+        const blobUrl =
+          result.blobUrl ?? peekLibraryReadBlobUrl(targetOwnerId, path);
+        if (!blobUrl) {
+          if (!cancelled) {
+            failedRef.current.add(url);
+            setFailed((prev) => ({ ...prev, [url]: true }));
+          }
+          return;
+        }
+        // Stash even if this effect was cancelled so a remount can peek locally.
+        blobByUrlRef.current[url] = blobUrl;
+        if (!cancelled) {
+          setBlobByUrl((prev) => ({ ...prev, [url]: blobUrl }));
+        }
+      } catch {
+        if (!cancelled) {
+          failedRef.current.add(url);
+          setFailed((prev) => ({ ...prev, [url]: true }));
+        }
+      } finally {
+        inFlightRef.current.delete(url);
+      }
+    });
 
     return () => {
       cancelled = true;
+      // Release in-flight markers immediately so remount is not blocked by a
+      // cancelled load that has not finished yet (stuck skeletons).
+      for (const url of thisFlight) {
+        inFlightRef.current.delete(url);
+      }
     };
     // photos listed via photoKey; photos array used only for titles/order in render
     // eslint-disable-next-line react-hooks/exhaustive-deps -- photoKey is the stable identity
@@ -144,9 +189,7 @@ export function BrowserPhotoGallery({
 
   useEffect(() => {
     return () => {
-      for (const url of Object.values(blobByUrlRef.current)) {
-        URL.revokeObjectURL(url);
-      }
+      // Shared cache owns blob URLs — clear local refs only.
       blobByUrlRef.current = {};
     };
   }, []);

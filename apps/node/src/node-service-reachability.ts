@@ -74,6 +74,8 @@ export interface ReachabilityContext {
   markNonEnvoyPeerFailed(peerId: string): void;
   /** Reset fail count (called on successful probe). */
   resetNonEnvoyPeerFailCount(peerId: string): void;
+  /** Retry undelivered feed.notify outbox (peer was offline at publish). */
+  flushFeedNotifyOutbox(): Promise<void>;
 }
 
 export function buildReachabilityContext(host: any): ReachabilityContext {
@@ -106,6 +108,7 @@ export function buildReachabilityContext(host: any): ReachabilityContext {
     isNonEnvoyPeerSuppressed: (peerId) => host._isNonEnvoyPeerSuppressed(peerId),
     markNonEnvoyPeerFailed: (peerId) => host._markNonEnvoyPeerFailed(peerId),
     resetNonEnvoyPeerFailCount: (peerId) => host._resetNonEnvoyPeerFailCount(peerId),
+    flushFeedNotifyOutbox: () => host._flushFeedNotifyOutbox(),
   };
 }
 
@@ -295,6 +298,18 @@ export function startBondWarmIntervalViaRuntime(ctx: ReachabilityContext): void 
 
 export async function warmAllBondedContactsViaRuntime(ctx: ReachabilityContext): Promise<void> {
   if (ctx.getNodeStatus() !== "running") return;
+
+  // Offline catch-up: retry feed.notify that failed while the peer was down.
+  // Run even when only an external mesh is bound (CLI path has no _mesh).
+  try {
+    await ctx.flushFeedNotifyOutbox();
+  } catch (err) {
+    console.warn(
+      "[feed.notify] outbox flush during bond warm failed:",
+      err instanceof Error ? err.message : err,
+    );
+  }
+
   const mesh = ctx.getInternalMesh();
   if (!mesh) return;
 

@@ -20,6 +20,10 @@ describe("webContentUrl", () => {
     expect(webContentUrl(OWNER, "notes")).toBe(`envoy://${OWNER}/notes/`);
   });
 
+  it("builds feeds listing URL", () => {
+    expect(webContentUrl(OWNER, "feeds")).toBe(`envoy://${OWNER}/feeds/`);
+  });
+
   it("builds custom section URL", () => {
     expect(sectionContentUrl(OWNER, "market")).toBe(`envoy://${OWNER}/market/`);
     expect(sectionContentUrl(OWNER, "/market/")).toBe(`envoy://${OWNER}/market/`);

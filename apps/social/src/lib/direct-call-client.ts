@@ -365,6 +365,10 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.listFeedPosts();
   }
 
+  async listFeedTimeline(params?: Parameters<NodeService["listFeedTimeline"]>[0]) {
+    return this._ns.listFeedTimeline(params);
+  }
+
   async listBlogPosts() {
     return this._ns.listBlogPosts();
   }

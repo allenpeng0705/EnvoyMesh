@@ -20,7 +20,7 @@ import { RemoveContactConfirmModal } from "../RemoveContactConfirmModal.js";
 import { PullToRefresh } from "../PullToRefresh.js";
 import { loadOutboundHellos } from "../../lib/discover-peer-state.js";
 import type { BondRecord } from "@envoymesh/api";
-import { openBrowserAt, openChatInbox } from "../../lib/browser-nav.js";
+import { openBrowserAt } from "../../lib/browser-nav.js";
 import { webContentUrl } from "../../lib/web-content-urls.js";
 
 const CONTEXT_MENU_PAD = 8;
@@ -513,7 +513,7 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
                     onClick={() => {
                       const ownerId = contextMenu.ownerId;
                       setContextMenu(null);
-                      openChatInbox({ publisherOwnerId: ownerId });
+                      openBrowserAt(webContentUrl(ownerId, "feeds"));
                     }}
                   >
                     {t("agentCard.openFeeds", "Feeds")}

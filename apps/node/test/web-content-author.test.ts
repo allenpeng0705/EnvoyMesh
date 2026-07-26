@@ -113,17 +113,18 @@ describe("publishWebContentEntry section", () => {
 });
 
 describe("ensureDefaultWebSite", () => {
-  it("seeds profile, empty blog, and empty photowall once", async () => {
+  it("seeds profile, empty blog, photowall, and feeds once", async () => {
     const profileDir = await mkdtemp(join(tmpdir(), "envoymesh-web-seed-"));
     const ownerId = "envoy:owner:alice";
     const first = await ensureDefaultWebSite(profileDir, {
       ownerId,
       displayName: "Alice",
     });
-    expect(first.created).toEqual(["profile", "blog", "photowall"]);
+    expect(first.created).toEqual(["profile", "blog", "photowall", "feeds"]);
     expect(first.urls.profile).toBe(`envoy://${ownerId}/`);
     expect(first.urls.blog).toBe(`envoy://${ownerId}/blog/`);
     expect(first.urls.photowall).toBe(`envoy://${ownerId}/photos/wall/`);
+    expect(first.urls.feeds).toBe(`envoy://${ownerId}/feeds/`);
 
     const profileBody = await readFile(join(profileDir, "web", "index.html"), "utf8");
     expect(profileBody).toContain("em-profile-portal");
@@ -138,11 +139,15 @@ describe("ensureDefaultWebSite", () => {
     const wallBody = await readFile(join(profileDir, "web", "photos/wall/index.md"), "utf8");
     expect(wallBody).toContain("_No photos yet._");
 
+    const feedsBody = await readFile(join(profileDir, "web", "feeds/index.md"), "utf8");
+    expect(feedsBody).toContain("_No posts yet._");
+
     const store = createWebContentStore(join(profileDir, "web"));
     expect((await store.findByPath("index.html"))?.visibility).toBe("bonded");
     expect((await store.findByPath("index.html"))?.mimeType).toBe("text/html");
     expect((await store.findByPath("blog/index.md"))?.kind).toBe("article");
     expect((await store.findByPath("photos/wall/index.md"))?.kind).toBe("gallery");
+    expect((await store.findByPath("feeds/index.md"))?.kind).toBe("feed");
 
     const second = await ensureDefaultWebSite(profileDir, {
       ownerId,
@@ -362,6 +367,11 @@ describe("publishWebContentEntry feed-post", () => {
     const entry = await store.findByPath(result.path);
     expect(entry?.kind).toBe("feed");
     expect(entry?.mimeType).toBe("text/markdown");
+
+    const index = await readFile(join(profileDir, "web", "feeds/index.md"), "utf8");
+    expect(index).toContain("# Feed");
+    expect(index).toContain(result.path);
+    expect(index).toContain("Dinner with bonded friends");
 
     const md = await readFile(join(profileDir, "web", result.path), "utf8");
     expect(md).toContain("Dinner with bonded friends");

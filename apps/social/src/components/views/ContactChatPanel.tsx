@@ -37,7 +37,6 @@ import { VoiceNoteRecorderBar } from "../VoiceNoteRecorderBar.js";
 import { useVoiceNoteRecorder } from "../../hooks/useVoiceNoteRecorder.js";
 import { useToast } from "../../hooks/useToast.js";
 import { PeerProfileAvatar } from "../PeerProfileAvatar.js";
-import { PeerProfileGalleryStrip } from "../PeerProfileGalleryStrip.js";
 import { PeerProfilePanel } from "../PeerProfilePanel.js";
 import { ContactWebContentShortcuts } from "../ContactWebContentShortcuts.js";
 import { RemoveContactConfirmModal } from "../RemoveContactConfirmModal.js";
@@ -598,8 +597,6 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
     await startCall(selectedContact, displayName, "video");
   }, [selectedContact, isBondedHumanContact, startCall, displayName]);
 
-  const contactBond = bonds.find((c) => c.peerOwnerId === selectedContact);
-
   useEffect(() => {
     if (threadKind === "agent" || threadKind === "ai") return;
     const pullProfile = () => {
@@ -621,7 +618,6 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
       unsubDelivered?.();
     };
   }, [nodeService, selectedContact, threadKind]);
-  const contactBondLevel = contactBond?.level ?? "public";
 
   const reachabilityClass = contactReachable
     ? peerReachability?.direct
@@ -764,10 +760,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
         </div>
       </header>
       {threadKind !== "agent" && (
-        <>
-          <PeerProfileGalleryStrip ownerId={selectedContact} bondLevel={contactBondLevel} />
-          <PeerProfilePanel ownerId={selectedContact} fallbackDisplayName={displayName} />
-        </>
+        <PeerProfilePanel ownerId={selectedContact} fallbackDisplayName={displayName} />
       )}
       <div className="messages">
         {displayMessages.length === 0 ? (

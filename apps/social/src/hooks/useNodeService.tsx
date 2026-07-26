@@ -199,6 +199,9 @@ export interface NodeServiceClient {
   ensureDefaultWebSite(): Promise<import("@envoymesh/api").EnsureDefaultWebSiteResult>;
   listWebContentSections(): Promise<import("@envoymesh/api").WebContentSectionSummary[]>;
   listFeedPosts(): Promise<import("@envoymesh/api").FeedPostSummary[]>;
+  listFeedTimeline(
+    params?: import("@envoymesh/api").ListFeedTimelineParams,
+  ): Promise<import("@envoymesh/api").ListFeedTimelineResult>;
   listBlogPosts(): Promise<import("@envoymesh/api").BlogPostSummary[]>;
   deleteWebContentEntry(
     params: import("@envoymesh/api").DeleteWebContentParams,
@@ -803,6 +806,12 @@ function createWsNodeServiceClient(
     },
     async listFeedPosts() {
       return wsClient.rpc("listFeedPosts") as Promise<import("@envoymesh/api").FeedPostSummary[]>;
+    },
+    async listFeedTimeline(params?: import("@envoymesh/api").ListFeedTimelineParams) {
+      return wsClient.rpc(
+        "listFeedTimeline",
+        (params ?? {}) as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").ListFeedTimelineResult>;
     },
     async listBlogPosts() {
       return wsClient.rpc("listBlogPosts") as Promise<import("@envoymesh/api").BlogPostSummary[]>;

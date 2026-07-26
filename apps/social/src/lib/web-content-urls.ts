@@ -4,7 +4,7 @@
  */
 import { buildEnvoyUrl, photoWallCanonicalPath } from "@envoymesh/api";
 
-export type WebContentSurface = "profile" | "blog" | "photowall" | "notes";
+export type WebContentSurface = "profile" | "blog" | "photowall" | "notes" | "feeds";
 
 /** Canonical listing / root paths published by `publishWebContentEntry`. */
 export function webContentUrl(ownerId: string, surface: WebContentSurface): string {
@@ -18,6 +18,8 @@ export function webContentUrl(ownerId: string, surface: WebContentSurface): stri
       return buildEnvoyUrl(ownerId, photoWallCanonicalPath());
     case "notes":
       return buildEnvoyUrl(ownerId, "notes/");
+    case "feeds":
+      return buildEnvoyUrl(ownerId, "feeds/");
   }
 }
 

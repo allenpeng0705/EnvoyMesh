@@ -69,9 +69,37 @@ describe("sendFeedNotifyToBonds", () => {
     });
     expect(result.attempted).toBe(1);
     expect(result.sent).toBe(1);
+    expect(result.sentOwnerIds).toEqual(["envoy:owner:bob"]);
+    expect(result.missedOwnerIds).toEqual([]);
     expect(sendEnvelopeWithRetry).toHaveBeenCalledTimes(1);
     expect(tagReachability).toHaveBeenCalled();
     expect(mesh.tagContactForPersistentReachability).toHaveBeenCalled();
+  });
+
+  it("reports missedOwnerIds when peer cannot be resolved", async () => {
+    const profile = makeProfile();
+    const result = await sendFeedNotifyToBonds({
+      mesh: {
+        sendEnvelope: vi.fn(),
+        mergePeerStoreDialHints: vi.fn(),
+        tagContactForPersistentReachability: vi.fn(),
+      } as never,
+      profile,
+      meta: {
+        publisherOwnerId: profile.owner.ownerId,
+        publishedAt: new Date().toISOString(),
+        title: "Post",
+        url: `envoy://${profile.owner.ownerId}/a.md`,
+        kind: "feed",
+        visibility: "bonded",
+      },
+      bonds: [{ peerOwnerId: "envoy:owner:offline", level: "direct" }],
+      resolveLibp2pPeer: async () => undefined,
+      dialHintsFor: async () => [],
+    });
+    expect(result.attempted).toBe(1);
+    expect(result.sent).toBe(0);
+    expect(result.missedOwnerIds).toEqual(["envoy:owner:offline"]);
   });
 
   it("skips private posts", async () => {
@@ -95,6 +123,6 @@ describe("sendFeedNotifyToBonds", () => {
       resolveLibp2pPeer: async () => ({ peerId: "12D3KooWbob" }),
       dialHintsFor: async () => [],
     });
-    expect(result).toEqual({ attempted: 0, sent: 0 });
+    expect(result).toEqual({ attempted: 0, sent: 0, sentOwnerIds: [], missedOwnerIds: [] });
   });
 });

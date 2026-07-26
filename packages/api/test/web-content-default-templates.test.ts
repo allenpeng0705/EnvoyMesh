@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildBlogIndexMarkdown,
+  buildFeedIndexMarkdown,
   buildDefaultProfileMarkdown,
   buildPhotoWallMarkdown,
   buildPhotosRootMarkdown,
@@ -57,6 +58,22 @@ describe("web-content-default-templates", () => {
     ]);
     expect(withPost).toContain("[Hello](envoy://envoy:owner:alice/blog/posts/hello.md)");
     expect(withPost).toContain("First");
+  });
+
+  it("builds empty and populated feed indexes", () => {
+    expect(buildFeedIndexMarkdown("envoy:owner:alice", [])).toContain("_No posts yet._");
+    const withPost = buildFeedIndexMarkdown("envoy:owner:alice", [
+      {
+        path: "feeds/hello.md",
+        title: "Hello",
+        updatedAt: "2026-07-20T00:00:00.000Z",
+        publishedAt: "2026-07-20T00:00:00.000Z",
+        summary: "Moments",
+      },
+    ]);
+    expect(withPost).toContain("# Feed");
+    expect(withPost).toContain("[Hello](envoy://envoy:owner:alice/feeds/hello.md)");
+    expect(withPost).toContain("Moments");
   });
 
   it("includes photo captions in PhotoWall markdown when summary differs from title", () => {

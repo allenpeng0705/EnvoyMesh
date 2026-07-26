@@ -50,6 +50,7 @@ function mockContext(overrides: Partial<ReachabilityContext> = {}): Reachability
     isNonEnvoyPeerSuppressed: () => false,
     markNonEnvoyPeerFailed: vi.fn(),
     resetNonEnvoyPeerFailCount: vi.fn(),
+    flushFeedNotifyOutbox: vi.fn().mockResolvedValue(undefined),
     ...overrides,
   };
 }

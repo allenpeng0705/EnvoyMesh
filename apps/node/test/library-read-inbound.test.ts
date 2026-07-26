@@ -89,7 +89,11 @@ async function writePublishedFile(
     byteLength: Buffer.byteLength(content, "utf8"),
     title: relPath,
     kind: "article",
-    mimeType: "text/markdown",
+    mimeType: relPath.endsWith(".html")
+      ? "text/html"
+      : relPath.endsWith(".txt")
+        ? "text/plain"
+        : "text/markdown",
     visibility,
     contactIds,
     updatedAt: "2026-07-20T00:00:00Z",
@@ -416,9 +420,10 @@ describe("handleInboundLibraryRead", () => {
       if (r.ok) expect(r.responsePayload.status).toBe("ok");
     }
     const limited = await call(peer, req("rate.md"), { remotePeerId: peer });
-    expect(limited.ok).toBe(false);
-    if (!limited.ok) {
-      expect(limited.reason).toMatch(/rate limited/i);
+    // Still replies (expect-reply must not hang); body withheld as not_found.
+    expect(limited.ok).toBe(true);
+    if (limited.ok) {
+      expect(limited.responsePayload.status).toBe("not_found");
     }
   });
 
@@ -478,6 +483,29 @@ describe("handleInboundLibraryRead", () => {
       expect(result.responsePayload.status).toBe("ok");
       expect(result.responsePayload.body).toBe(html);
       expect(result.responsePayload.contentType).toMatch(/html/);
+    }
+  });
+
+  it("serves on-disk index.html without manifest using bonded visibility", async () => {
+    await writePublishedFile("index.md", "# Markdown root", "bonded");
+    const html = "<!DOCTYPE html><html><body>portal</body></html>";
+    // HTML on disk but not in the manifest (portal rewrite without upsert).
+    await writeWebFile("index.html", html);
+    await trustStore.setTrustRecord({
+      peerOwnerId: OWNER_CONTACT,
+      level: "direct",
+      displayName: "Contact",
+    });
+    await registerPeer(
+      "peer-contact",
+      OWNER_CONTACT,
+      "-----BEGIN PUBLIC KEY-----\ntest\n-----END PUBLIC KEY-----",
+    );
+    const result = await call("peer-contact", req(""));
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.responsePayload.status).toBe("ok");
+      expect(result.responsePayload.body).toBe(html);
     }
   });
 

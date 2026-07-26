@@ -334,6 +334,34 @@ export function buildBlogIndexMarkdown(
   return lines.join("\n");
 }
 
+/**
+ * Feed / Friend Circle listing (`feeds/index.md`) — reverse-chron posts for
+ * contact archive browse (Emily → Allen's Feed via library.read).
+ */
+export function buildFeedIndexMarkdown(
+  ownerId: string,
+  posts: readonly WebContentListingItem[],
+): string {
+  const sorted = [...posts].sort((a, b) => {
+    const ta = a.publishedAt ?? a.updatedAt;
+    const tb = b.publishedAt ?? b.updatedAt;
+    return tb.localeCompare(ta);
+  });
+  const lines = ["# Feed", ""];
+  if (sorted.length === 0) {
+    lines.push("_No posts yet._", "");
+    return lines.join("\n");
+  }
+  for (const post of sorted) {
+    const href = `envoy://${ownerId}/${post.path}`;
+    const date = (post.publishedAt ?? post.updatedAt).slice(0, 10);
+    const summary = post.summary?.trim() ? ` — ${post.summary.trim()}` : "";
+    lines.push(`- [${post.title}](${href}) (${date})${summary}`);
+  }
+  lines.push("");
+  return lines.join("\n");
+}
+
 /** PhotoWall gallery page (`photos/{gallery}/index.md`). */
 export function buildPhotoWallMarkdown(
   ownerId: string,
