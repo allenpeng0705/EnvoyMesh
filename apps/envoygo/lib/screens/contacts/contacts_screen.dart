@@ -4,6 +4,7 @@ import '../../providers/contact_provider.dart';
 import '../../providers/node_provider.dart';
 import '../../widgets/contact_tile.dart';
 import '../chat/chat_detail_screen.dart';
+import '../profile/profile_screen.dart';
 
 /// Bonded contacts list.
 class ContactsScreen extends ConsumerWidget {
@@ -68,6 +69,13 @@ class ContactsScreen extends ConsumerWidget {
               final contact = bonds[index];
               return ContactTile(
                 contact: contact,
+                onTap: () {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => ProfileScreen(ownerId: contact.ownerId),
+                    ),
+                  );
+                },
                 onChat: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(

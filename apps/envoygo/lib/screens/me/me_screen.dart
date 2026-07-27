@@ -3,93 +3,149 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/stored_node.dart';
+import '../../providers/contact_provider.dart' show nodeServiceProvider;
 import '../../providers/node_provider.dart';
 import '../../widgets/ai_engine_section.dart';
 import '../../widgets/connection_indicator.dart';
+import '../../widgets/profile_avatar.dart';
 import '../browser/browser_screen.dart';
 import '../chains/active_chains_screen.dart';
 import '../chains/recent_chains_screen.dart';
-import '../content/content_author_screen.dart';
 import '../pairing/pairing_scan_screen.dart';
+import '../profile/profile_screen.dart';
 import '../settings/ai_engine_settings_screen.dart';
 import '../settings/ai_model_settings_screen.dart';
 import 'node_switcher_sheet.dart';
 
 /// Profile + node management screen.
-class MeScreen extends ConsumerWidget {
+class MeScreen extends ConsumerStatefulWidget {
   const MeScreen({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<MeScreen> createState() => _MeScreenState();
+}
+
+class _MeScreenState extends ConsumerState<MeScreen> {
+  String? _displayName;
+  String? _username;
+  String? _bio;
+  int _profileEpoch = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadProfile());
+  }
+
+  Future<void> _loadProfile() async {
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    try {
+      final profile = await client.getHumanProfile();
+      if (!mounted) return;
+      setState(() {
+        _displayName = (profile['displayName'] as String?)?.trim();
+        _username = (profile['username'] as String?)?.trim();
+        _bio = (profile['bio'] as String?)?.trim();
+        _profileEpoch++;
+      });
+    } catch (_) {
+      /* best-effort */
+    }
+  }
+
+  Future<void> _openProfile({bool edit = false}) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ProfileScreen(startInEditMode: edit),
+      ),
+    );
+    if (mounted) await _loadProfile();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final nodeState = ref.watch(nodeProvider);
     final notifier = ref.read(nodeProvider.notifier);
+    final scheme = Theme.of(context).colorScheme;
+    final name = (_displayName != null && _displayName!.isNotEmpty)
+        ? _displayName!
+        : (nodeState.activeNode?.name.trim().isNotEmpty == true
+            ? nodeState.activeNode!.name
+            : 'EnvoyGo');
+    final subtitle = (_username != null && _username!.isNotEmpty)
+        ? '@$_username'
+        : ((_bio != null && _bio!.isNotEmpty) ? _bio! : null);
 
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
-        // Profile section
-        const SizedBox(height: 24),
-        const CircleAvatar(
-          radius: 40,
-          child: Icon(Icons.person, size: 40),
-        ),
-        const SizedBox(height: 12),
-        Text(
-          'EnvoyGo',
-          style: Theme.of(context).textTheme.headlineSmall,
-          textAlign: TextAlign.center,
-        ),
-        if (nodeState.ownerId != null) ...[
-          const SizedBox(height: 4),
-          Text(
-            nodeState.ownerId!.length > 24
-                ? '${nodeState.ownerId!.substring(0, 12)}...${nodeState.ownerId!.substring(nodeState.ownerId!.length - 12)}'
-                : nodeState.ownerId!,
-            style: Theme.of(context).textTheme.bodySmall,
-            textAlign: TextAlign.center,
-          ),
-        ],
-        const SizedBox(height: 24),
-        const _SectionHeader(title: 'Profile'),
-        Card(
-          child: Column(
-            children: [
-              ListTile(
-                leading: const Icon(Icons.badge_outlined),
-                title: const Text('Edit profile'),
-                subtitle: const Text('Name, bio (AI draft), discovery'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: nodeState.activeNode == null
-                    ? null
-                    : () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const ContentAuthorScreen(
-                              initialTemplate: 'profile',
-                            ),
-                          ),
-                        );
-                      },
+        const SizedBox(height: 8),
+        Material(
+          color: Colors.transparent,
+          child: InkWell(
+            borderRadius: BorderRadius.circular(20),
+            onTap: nodeState.activeNode == null ? null : () => _openProfile(),
+            child: Ink(
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(20),
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    scheme.primary.withValues(alpha: 0.14),
+                    scheme.tertiary.withValues(alpha: 0.10),
+                    scheme.surfaceContainerHighest.withValues(alpha: 0.55),
+                  ],
+                ),
+                border: Border.all(
+                  color: scheme.outlineVariant.withValues(alpha: 0.45),
+                ),
               ),
-              const Divider(height: 1),
-              ListTile(
-                leading: const Icon(Icons.photo_library_outlined),
-                title: const Text('Photos'),
-                subtitle: const Text('Add a PhotoWall photo'),
-                trailing: const Icon(Icons.chevron_right),
-                onTap: nodeState.activeNode == null
-                    ? null
-                    : () {
-                        Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => const ContentAuthorScreen(
-                              initialTemplate: 'photo',
-                            ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
+                child: Column(
+                  children: [
+                    ProfileAvatar(
+                      key: ValueKey('me-avatar-$_profileEpoch'),
+                      ownerId: nodeState.ownerId,
+                      displayName: name,
+                      radius: 44,
+                      isSelf: true,
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      name,
+                      style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.3,
                           ),
-                        );
-                      },
+                      textAlign: TextAlign.center,
+                    ),
+                    if (subtitle != null) ...[
+                      const SizedBox(height: 4),
+                      Text(
+                        subtitle,
+                        style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                        textAlign: TextAlign.center,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                    if (nodeState.activeNode != null) ...[
+                      const SizedBox(height: 14),
+                      FilledButton.tonalIcon(
+                        onPressed: () => _openProfile(edit: true),
+                        icon: const Icon(Icons.edit_outlined, size: 18),
+                        label: const Text('View & edit profile'),
+                      ),
+                    ],
+                  ],
+                ),
               ),
-            ],
+            ),
           ),
         ),
         const SizedBox(height: 24),

@@ -5,9 +5,12 @@ import '../../models/feed_notification.dart';
 import '../../models/web_content.dart';
 import '../../providers/contact_provider.dart';
 import '../../providers/feed_notify_provider.dart';
-import '../../widgets/feed_media_grid.dart';
-import '../../widgets/content_engagement_bar.dart';
+import '../../providers/node_provider.dart';
 import '../../utils/moments_time.dart';
+import '../../widgets/content_engagement_bar.dart';
+import '../../widgets/feed_media_grid.dart';
+import '../../widgets/profile_avatar.dart';
+import '../profile/profile_screen.dart';
 import 'feed_compose_screen.dart';
 
 class _TimelineItem {
@@ -46,6 +49,7 @@ class _ContentFeedTabState extends ConsumerState<ContentFeedTab> {
   List<FeedPostSummary> _own = const [];
   bool _loading = false;
   String? _error;
+  String? _selfDisplayName;
 
   @override
   void initState() {
@@ -53,7 +57,23 @@ class _ContentFeedTabState extends ConsumerState<ContentFeedTab> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _refresh();
       ref.read(feedNotifyProvider.notifier).refresh();
+      _loadSelfProfile();
     });
+  }
+
+  Future<void> _loadSelfProfile() async {
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    try {
+      final profile = await client.getHumanProfile();
+      final name = (profile['displayName'] as String?)?.trim();
+      if (!mounted) return;
+      if (name != null && name.isNotEmpty) {
+        setState(() => _selfDisplayName = name);
+      }
+    } catch (_) {
+      /* best-effort */
+    }
   }
 
   Future<void> _refresh() async {
@@ -79,7 +99,13 @@ class _ContentFeedTabState extends ConsumerState<ContentFeedTab> {
     }
   }
 
-  String _nameFor(String ownerId) {
+  String _nameFor(String ownerId, {bool isOwn = false}) {
+    final selfId = ref.read(nodeProvider).ownerId?.trim();
+    if (isOwn || (selfId != null && ownerId == selfId)) {
+      final name = _selfDisplayName?.trim();
+      if (name != null && name.isNotEmpty) return name;
+      return 'You';
+    }
     final contacts = ref.read(contactProvider).bonds;
     for (final c in contacts) {
       if (c.ownerId == ownerId) {
@@ -87,14 +113,9 @@ class _ContentFeedTabState extends ConsumerState<ContentFeedTab> {
         if (name != null && name.isNotEmpty) return name;
       }
     }
-    if (ownerId.length <= 16) return ownerId;
-    return '${ownerId.substring(0, 16)}…';
-  }
-
-  String _initialFor(String name) {
-    final trimmed = name.trim();
-    if (trimmed.isEmpty) return '?';
-    return trimmed.substring(0, 1).toUpperCase();
+    final short = ownerId.replaceFirst('envoy:owner:', '');
+    if (short.length <= 16) return short;
+    return '${short.substring(0, 16)}…';
   }
 
   List<_TimelineItem> _buildTimeline(List<FeedNotification> notes) {
@@ -167,15 +188,25 @@ class _ContentFeedTabState extends ConsumerState<ContentFeedTab> {
     }
   }
 
-  Widget _avatar(BuildContext context, String name) {
-    final scheme = Theme.of(context).colorScheme;
-    return CircleAvatar(
-      radius: 22,
-      backgroundColor: scheme.primaryContainer,
-      foregroundColor: scheme.onPrimaryContainer,
-      child: Text(
-        _initialFor(name),
-        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+  Widget _avatar(BuildContext context, _TimelineItem item, String name) {
+    final selfId = ref.read(nodeProvider).ownerId?.trim();
+    final isSelf = item.isOwn ||
+        (selfId != null && item.publisherOwnerId == selfId);
+    return GestureDetector(
+      onTap: () {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => ProfileScreen(
+              ownerId: isSelf ? null : item.publisherOwnerId,
+            ),
+          ),
+        );
+      },
+      child: ProfileAvatar(
+        ownerId: item.publisherOwnerId,
+        displayName: name,
+        radius: 22,
+        isSelf: isSelf,
       ),
     );
   }
@@ -236,7 +267,7 @@ class _ContentFeedTabState extends ConsumerState<ContentFeedTab> {
 
   Widget _feedCard(BuildContext context, _TimelineItem item) {
     final scheme = Theme.of(context).colorScheme;
-    final name = _nameFor(item.publisherOwnerId);
+    final name = _nameFor(item.publisherOwnerId, isOwn: item.isOwn);
     final body = item.body?.trim();
 
     return Material(
@@ -254,14 +285,28 @@ class _ContentFeedTabState extends ConsumerState<ContentFeedTab> {
           children: [
             Row(
               children: [
-                _avatar(context, name),
+                _avatar(context, item, name),
                 const SizedBox(width: 12),
                 Expanded(
-                  child: Text(
-                    name,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
+                  child: GestureDetector(
+                    onTap: () {
+                      final selfId = ref.read(nodeProvider).ownerId?.trim();
+                      final isSelf = item.isOwn ||
+                          (selfId != null && item.publisherOwnerId == selfId);
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => ProfileScreen(
+                            ownerId: isSelf ? null : item.publisherOwnerId,
+                          ),
+                        ),
+                      );
+                    },
+                    child: Text(
+                      name,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.w700,
+                        fontSize: 15,
+                      ),
                     ),
                   ),
                 ),

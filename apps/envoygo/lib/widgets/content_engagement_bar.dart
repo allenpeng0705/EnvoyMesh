@@ -32,7 +32,6 @@ class ContentEngagementBar extends ConsumerStatefulWidget {
 class _ContentEngagementBarState extends ConsumerState<ContentEngagementBar> {
   ContentEngagementSummary? _summary;
   bool _busy = false;
-  bool _menuOpen = false;
   bool _composeOpen = false;
   final _draft = TextEditingController();
   final _composeFocus = FocusNode();
@@ -41,11 +40,14 @@ class _ContentEngagementBarState extends ConsumerState<ContentEngagementBar> {
 
   static const _momentsBlue = Color(0xFF3D547D);
   static const _momentsBlueDark = Color(0xFF9DB0DC);
-  static const _popoverBg = Color(0xFF4C4C4C);
 
   @override
   void initState() {
     super.initState();
+    // Rebuild Send button enablement as the user types.
+    _draft.addListener(() {
+      if (mounted) setState(() {});
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _refresh();
       Future<void>.delayed(const Duration(milliseconds: 1800), _refresh);
@@ -156,10 +158,7 @@ class _ContentEngagementBarState extends ConsumerState<ContentEngagementBar> {
   Future<void> _toggleStar() async {
     final client = ref.read(nodeServiceProvider);
     if (client == null || _busy) return;
-    setState(() {
-      _busy = true;
-      _menuOpen = false;
-    });
+    setState(() => _busy = true);
     try {
       final next = await client.toggleContentStar(url: widget.url);
       if (!mounted) return;
@@ -178,13 +177,65 @@ class _ContentEngagementBarState extends ConsumerState<ContentEngagementBar> {
   }
 
   void _openCompose() {
-    setState(() {
-      _menuOpen = false;
-      _composeOpen = true;
-    });
+    setState(() => _composeOpen = true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _composeFocus.requestFocus();
     });
+  }
+
+  /// Use [showMenu] (not a Stack popover). Positioned children outside a
+  /// Stack's layout bounds paint with `clipBehavior: Clip.none` but do **not**
+  /// receive taps — which made Like / Comment appear broken on mobile.
+  Future<void> _openActionMenu(BuildContext buttonContext) async {
+    if (_busy) return;
+    final box = buttonContext.findRenderObject() as RenderBox?;
+    final overlay =
+        Overlay.of(buttonContext).context.findRenderObject() as RenderBox?;
+    if (box == null || overlay == null) return;
+    final topLeft = box.localToGlobal(Offset.zero, ancestor: overlay);
+    final bottomRight =
+        box.localToGlobal(box.size.bottomRight(Offset.zero), ancestor: overlay);
+    final position = RelativeRect.fromRect(
+      Rect.fromPoints(topLeft, bottomRight),
+      Offset.zero & overlay.size,
+    );
+    final starred = _summary?.starredByMe ?? false;
+    final choice = await showMenu<String>(
+      context: buttonContext,
+      position: position,
+      items: [
+        PopupMenuItem(
+          value: 'like',
+          child: Row(
+            children: [
+              Icon(
+                Icons.favorite_border_rounded,
+                size: 18,
+                color: starred ? const Color(0xFFE86A6A) : null,
+              ),
+              const SizedBox(width: 10),
+              Text(starred ? 'Unlike' : 'Like'),
+            ],
+          ),
+        ),
+        const PopupMenuItem(
+          value: 'comment',
+          child: Row(
+            children: [
+              Icon(Icons.chat_bubble_outline_rounded, size: 17),
+              SizedBox(width: 10),
+              Text('Comment'),
+            ],
+          ),
+        ),
+      ],
+    );
+    if (!mounted || choice == null) return;
+    if (choice == 'like') {
+      await _toggleStar();
+    } else if (choice == 'comment') {
+      _openCompose();
+    }
   }
 
   Future<void> _sendComment() async {
@@ -300,75 +351,24 @@ class _ContentEngagementBarState extends ConsumerState<ContentEngagementBar> {
               widget.leading!,
             ],
             const Spacer(),
-            Stack(
-              clipBehavior: Clip.none,
-              alignment: Alignment.centerRight,
-              children: [
-                if (_menuOpen)
-                  Positioned(
-                    right: 40,
-                    child: Material(
-                      color: _popoverBg,
-                      borderRadius: BorderRadius.circular(4),
-                      elevation: 4,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          TextButton.icon(
-                            onPressed: _busy ? null : _toggleStar,
-                            icon: Icon(
-                              Icons.favorite_border_rounded,
-                              size: 18,
-                              color: starred ? const Color(0xFFE86A6A) : Colors.white,
-                            ),
-                            label: Text(
-                              starred ? 'Unlike' : 'Like',
-                              style: TextStyle(
-                                color: starred ? const Color(0xFFE86A6A) : Colors.white,
-                                fontSize: 13,
-                              ),
-                            ),
-                            style: TextButton.styleFrom(
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 10),
-                              minimumSize: const Size(0, 36),
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              iconColor: starred ? const Color(0xFFE86A6A) : Colors.white,
-                            ),
-                          ),
-                          Container(width: 1, height: 18, color: Colors.white24),
-                          TextButton.icon(
-                            onPressed: _busy ? null : _openCompose,
-                            icon: const Icon(Icons.chat_bubble_outline_rounded, size: 17, color: Colors.white),
-                            label: const Text('Comment', style: TextStyle(color: Colors.white, fontSize: 13)),
-                            style: TextButton.styleFrom(
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(horizontal: 10),
-                              minimumSize: const Size(0, 36),
-                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              iconColor: Colors.white,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                Material(
-                  color: scheme.onSurface.withValues(alpha: 0.12),
+            Builder(
+              builder: (btnContext) => Material(
+                color: scheme.onSurface.withValues(alpha: 0.12),
+                borderRadius: BorderRadius.circular(3),
+                child: InkWell(
                   borderRadius: BorderRadius.circular(3),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(3),
-                    onTap: _busy
-                        ? null
-                        : () => setState(() => _menuOpen = !_menuOpen),
-                    child: const SizedBox(
-                      width: 32,
-                      height: 24,
-                      child: Icon(Icons.more_horiz, size: 18),
+                  onTap: _busy ? null : () => _openActionMenu(btnContext),
+                  child: SizedBox(
+                    width: 44,
+                    height: 36,
+                    child: Icon(
+                      Icons.more_horiz,
+                      size: 20,
+                      color: starred ? const Color(0xFFE86A6A) : null,
                     ),
                   ),
                 ),
-              ],
+              ),
             ),
           ],
         ),
