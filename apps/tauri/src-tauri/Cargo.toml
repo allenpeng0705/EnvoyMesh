@@ -1,6 +1,6 @@
 [package]
 name = "envoymesh"
-version = "0.2.0"
+version = "0.2.1"
 description = "EnvoyMesh - P2P Social Network"
 authors = ["EnvoyMesh"]
 edition = "2021"
