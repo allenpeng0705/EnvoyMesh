@@ -392,31 +392,69 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     return unsub;
   }, [nodeService, wsTransportOpen]);
 
-  // peer:discovered + peer:lost — track nearby peers, including unresolved
-  // placeholders (empty ownerId / pending|unreachable profileStatus) so
-  // People on this network can show "Someone nearby" + diagnostics.
+  // peer:discovered + peer:lost — track nearby peers. Debounce removals so
+  // brief disconnect / probe churn does not flash the Discover page.
   useEffect(() => {
     if (!wsTransportOpen) return;
     const selfOwnerId = humanProfile?.ownerId?.trim() ?? "";
+    const pendingLost = new Map<string, ReturnType<typeof setTimeout>>();
+
+    const cancelPendingLost = (nodeId: string) => {
+      const timer = pendingLost.get(nodeId);
+      if (timer) {
+        clearTimeout(timer);
+        pendingLost.delete(nodeId);
+      }
+    };
 
     const unsub1 = nodeService.on("peer:discovered", (data: any) => {
       if (selfOwnerId && data.ownerId === selfOwnerId) return;
+      const nodeId = typeof data?.nodeId === "string" ? data.nodeId : "";
+      if (!nodeId) return;
+      cancelPendingLost(nodeId);
       setDiscoveredPeers((prev) => {
-        const existing = prev.find((p) => p.nodeId === data.nodeId);
+        const existing = prev.find((p) => p.nodeId === nodeId);
         if (existing) {
-          return prev.map((p) => (p.nodeId === data.nodeId ? { ...p, ...data } : p));
+          if (
+            existing.ownerId === (data.ownerId ?? "") &&
+            existing.displayName === (data.displayName ?? "") &&
+            existing.profileStatus === data.profileStatus &&
+            existing.username === data.username &&
+            existing.discoverySource === data.discoverySource
+          ) {
+            return prev;
+          }
+          return prev.map((p) => (p.nodeId === nodeId ? { ...p, ...data } : p));
+        }
+        // Ignore pending-only placeholders if any older node still emits them.
+        if (!data.ownerId?.trim() && data.profileStatus === "pending") {
+          return prev;
         }
         return [...prev, data];
       });
     });
 
     const unsub2 = nodeService.on("peer:lost", (data: any) => {
-      setDiscoveredPeers((prev) => prev.filter((p) => p.nodeId !== data.nodeId));
+      const nodeId = typeof data?.nodeId === "string" ? data.nodeId : "";
+      if (!nodeId) return;
+      cancelPendingLost(nodeId);
+      pendingLost.set(
+        nodeId,
+        setTimeout(() => {
+          pendingLost.delete(nodeId);
+          setDiscoveredPeers((prev) => {
+            if (!prev.some((p) => p.nodeId === nodeId)) return prev;
+            return prev.filter((p) => p.nodeId !== nodeId);
+          });
+        }, 2_500),
+      );
     });
 
     return () => {
       unsub1();
       unsub2();
+      for (const timer of pendingLost.values()) clearTimeout(timer);
+      pendingLost.clear();
     };
   }, [nodeService, wsTransportOpen, humanProfile?.ownerId]);
 

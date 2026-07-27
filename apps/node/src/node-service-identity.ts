@@ -466,13 +466,10 @@ export async function _probeNearbyPeerProfileAfterDiscovery(
   const contactOwnerKeyStore = ctx.getContactOwnerKeyStore();
   const peerProfileCacheStore = ctx.getPeerProfileCacheStore();
   if (!mesh || !profile || !contactOwnerKeyStore || !peerProfileCacheStore) {
-    // Placeholder may already be in the UI — clear it so Discover isn't stuck
-    // on "identifying…" forever when the node isn't ready to probe.
-    ctx.emit("peer:lost", { nodeId: peerId });
+    // No pending placeholder was emitted — nothing to clear.
     return;
   }
   if (peerId === mesh.peerId) {
-    ctx.emit("peer:lost", { nodeId: peerId });
     return;
   }
   const lastAtMap = ctx.getNearbyProfileProbeLastAt();

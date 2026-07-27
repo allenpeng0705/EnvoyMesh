@@ -246,7 +246,7 @@ describe("_probeNearbyPeerProfileAfterDiscovery", () => {
 
   // ---- Early returns (guards) -------------------------------------------
 
-  it("clears placeholder with peer:lost when mesh is not available", async () => {
+  it("skips when mesh is not available", async () => {
     const emit = vi.fn();
     const ctx = mockIdentityContext({
       getMesh: () => null,
@@ -254,7 +254,7 @@ describe("_probeNearbyPeerProfileAfterDiscovery", () => {
     });
     await _probeNearbyPeerProfileAfterDiscovery(ctx, "12D3KooWPeerA", LAN_MULTIADDRS);
 
-    expect(emit).toHaveBeenCalledWith("peer:lost", { nodeId: "12D3KooWPeerA" });
+    expect(emit).not.toHaveBeenCalled();
     expect(mockedProbe).not.toHaveBeenCalled();
   });
 
@@ -263,7 +263,7 @@ describe("_probeNearbyPeerProfileAfterDiscovery", () => {
     const ctx = mockIdentityContext({ emit });
     await _probeNearbyPeerProfileAfterDiscovery(ctx, "12D3KooWSelf", LAN_MULTIADDRS);
 
-    expect(emit).toHaveBeenCalledWith("peer:lost", { nodeId: "12D3KooWSelf" });
+    expect(emit).not.toHaveBeenCalled();
     expect(mockedProbe).not.toHaveBeenCalled();
   });
 
@@ -275,7 +275,7 @@ describe("_probeNearbyPeerProfileAfterDiscovery", () => {
     });
     await _probeNearbyPeerProfileAfterDiscovery(ctx, "12D3KooWPeerA", LAN_MULTIADDRS);
 
-    expect(emit).toHaveBeenCalledWith("peer:lost", { nodeId: "12D3KooWPeerA" });
+    expect(emit).not.toHaveBeenCalled();
     expect(mockedProbe).not.toHaveBeenCalled();
   });
 
@@ -287,7 +287,7 @@ describe("_probeNearbyPeerProfileAfterDiscovery", () => {
     });
     await _probeNearbyPeerProfileAfterDiscovery(ctx, "12D3KooWPeerA", LAN_MULTIADDRS);
 
-    expect(emit).toHaveBeenCalledWith("peer:lost", { nodeId: "12D3KooWPeerA" });
+    expect(emit).not.toHaveBeenCalled();
     expect(mockedProbe).not.toHaveBeenCalled();
   });
 
@@ -299,7 +299,7 @@ describe("_probeNearbyPeerProfileAfterDiscovery", () => {
     });
     await _probeNearbyPeerProfileAfterDiscovery(ctx, "12D3KooWPeerA", LAN_MULTIADDRS);
 
-    expect(emit).toHaveBeenCalledWith("peer:lost", { nodeId: "12D3KooWPeerA" });
+    expect(emit).not.toHaveBeenCalled();
     expect(mockedProbe).not.toHaveBeenCalled();
   });
 

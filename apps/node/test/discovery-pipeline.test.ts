@@ -3,7 +3,7 @@
  * runs when a peer is discovered via libp2p (mDNS, DHT, bootstrap).
  *
  * Validates:
- * - Immediate peer:discovered placeholder emission
+ * - No pending peer:discovered placeholder (avoids Discover UI flash)
  * - Infrastructure filtering (bootstrap / relay peers excluded from UI)
  * - Self-peer exclusion
  * - Background bookkeeping (seed store, peer directory, dial hints)
@@ -67,45 +67,24 @@ const LOOPBACK_MULTIADDRS = ["/ip4/127.0.0.1/tcp/4001/p2p/12D3KooWSelf"];
 // ---------------------------------------------------------------------------
 
 describe("handleMeshPeerDiscoveredViaRuntime", () => {
-  // ---- Immediate placeholder emission ------------------------------------
+  // ---- No pending placeholder (avoids Discover page flash) ----------------
 
-  it("emits peer:discovered placeholder immediately for non-infrastructure peer", async () => {
+  it("does not emit a pending peer:discovered placeholder", async () => {
     const ctx = mockContext();
     await handleMeshPeerDiscoveredViaRuntime(ctx, "12D3KooWPeerA", LAN_MULTIADDRS);
 
-    expect(ctx.emit).toHaveBeenCalledTimes(1);
-    expect(ctx.emit).toHaveBeenCalledWith(
-      "peer:discovered",
-      expect.objectContaining({
-        nodeId: "12D3KooWPeerA",
-        ownerId: "",
-        displayName: "",
-        interests: [],
-        profileVisibility: "public",
-        profileStatus: "pending",
-      }),
+    expect(ctx.emit).not.toHaveBeenCalled();
+    expect(ctx.probeNearbyPeerProfileAfterDiscovery).toHaveBeenCalledWith(
+      "12D3KooWPeerA",
+      LAN_MULTIADDRS,
     );
   });
 
-  it("emits with discoverySource 'mdns' for LAN multiaddrs", async () => {
-    const ctx = mockContext();
+  it("still dispatches probe for LAN peers (result emitted by probe)", async () => {
+    const probe = vi.fn().mockResolvedValue(undefined);
+    const ctx = mockContext({ probeNearbyPeerProfileAfterDiscovery: probe });
     await handleMeshPeerDiscoveredViaRuntime(ctx, "12D3KooWPeerA", LAN_MULTIADDRS);
-
-    expect(ctx.emit).toHaveBeenCalledWith(
-      "peer:discovered",
-      expect.objectContaining({ discoverySource: "mdns" }),
-    );
-  });
-
-  it("omits discoverySource for public/WAN multiaddrs (unknown source)", async () => {
-    const ctx = mockContext();
-    await handleMeshPeerDiscoveredViaRuntime(ctx, "12D3KooWPeerB", PUBLIC_MULTIADDRS);
-
-    const payload = (ctx.emit as ReturnType<typeof vi.fn>).mock.calls[0][1] as Record<
-      string,
-      unknown
-    >;
-    expect(payload.discoverySource).toBeUndefined();
+    expect(probe).toHaveBeenCalledTimes(1);
   });
 
   // ---- Infrastructure filtering -------------------------------------------
@@ -208,37 +187,46 @@ describe("handleMeshPeerDiscoveredViaRuntime", () => {
     expect(autoBond).not.toHaveBeenCalled();
   });
 
-  // ---- Placeholder suppression --------------------------------------------
+  // ---- Probe suppression --------------------------------------------
 
-  it("skips placeholder when peer was recently probed (within cooldown)", async () => {
+  it("skips probe when peer was recently probed (within cooldown)", async () => {
     const probeLastAt = new Map<string, number>();
     probeLastAt.set("12D3KooWPeerA", Date.now() - 5000); // 5s ago
-    const ctx = mockContext({ getNearbyProfileProbeLastAt: () => probeLastAt });
+    const probe = vi.fn().mockResolvedValue(undefined);
+    const ctx = mockContext({
+      getNearbyProfileProbeLastAt: () => probeLastAt,
+      probeNearbyPeerProfileAfterDiscovery: probe,
+    });
 
     await handleMeshPeerDiscoveredViaRuntime(ctx, "12D3KooWPeerA", LAN_MULTIADDRS);
 
     expect(ctx.emit).not.toHaveBeenCalled();
+    expect(probe).not.toHaveBeenCalled();
   });
 
-  it("allows placeholder after probe cooldown expires", async () => {
+  it("allows probe after probe cooldown expires", async () => {
     const probeLastAt = new Map<string, number>();
     probeLastAt.set("12D3KooWPeerA", Date.now() - 40_000); // 40s ago (> 30s cooldown)
-    const ctx = mockContext({ getNearbyProfileProbeLastAt: () => probeLastAt });
+    const probe = vi.fn().mockResolvedValue(undefined);
+    const ctx = mockContext({
+      getNearbyProfileProbeLastAt: () => probeLastAt,
+      probeNearbyPeerProfileAfterDiscovery: probe,
+    });
 
     await handleMeshPeerDiscoveredViaRuntime(ctx, "12D3KooWPeerA", LAN_MULTIADDRS);
 
-    expect(ctx.emit).toHaveBeenCalledWith(
-      "peer:discovered",
-      expect.objectContaining({ nodeId: "12D3KooWPeerA" }),
-    );
+    expect(ctx.emit).not.toHaveBeenCalled();
+    expect(probe).toHaveBeenCalledWith("12D3KooWPeerA", LAN_MULTIADDRS);
   });
 
-  it("skips placeholder for suppressed non-Envoy peer (3+ failures, within suppress cooldown)", async () => {
+  it("skips probe for suppressed non-Envoy peer (3+ failures, within suppress cooldown)", async () => {
     const failCount = new Map<string, number>();
     failCount.set("12D3KooWPeerA", NON_ENVOY_PEER_SUPPRESS_AFTER_FAILURES);
     const lastFailed = new Map<string, number>();
     lastFailed.set("12D3KooWPeerA", Date.now() - 10_000); // 10s ago (< 5min)
+    const probe = vi.fn().mockResolvedValue(undefined);
     const ctx = mockContext({
+      probeNearbyPeerProfileAfterDiscovery: probe,
       isNonEnvoyPeerSuppressed: (peerId) => {
         const count = failCount.get(peerId) ?? 0;
         if (count < NON_ENVOY_PEER_SUPPRESS_AFTER_FAILURES) return false;
@@ -250,14 +238,17 @@ describe("handleMeshPeerDiscoveredViaRuntime", () => {
     await handleMeshPeerDiscoveredViaRuntime(ctx, "12D3KooWPeerA", LAN_MULTIADDRS);
 
     expect(ctx.emit).not.toHaveBeenCalled();
+    expect(probe).not.toHaveBeenCalled();
   });
 
-  it("allows placeholder for suppressed peer after suppress cooldown expires", async () => {
+  it("allows probe for suppressed peer after suppress cooldown expires", async () => {
     const failCount = new Map<string, number>();
     failCount.set("12D3KooWPeerA", NON_ENVOY_PEER_SUPPRESS_AFTER_FAILURES);
     const lastFailed = new Map<string, number>();
     lastFailed.set("12D3KooWPeerA", Date.now() - 400_000); // 400s ago (> 5min)
+    const probe = vi.fn().mockResolvedValue(undefined);
     const ctx = mockContext({
+      probeNearbyPeerProfileAfterDiscovery: probe,
       isNonEnvoyPeerSuppressed: (peerId) => {
         const count = failCount.get(peerId) ?? 0;
         if (count < NON_ENVOY_PEER_SUPPRESS_AFTER_FAILURES) return false;
@@ -268,10 +259,8 @@ describe("handleMeshPeerDiscoveredViaRuntime", () => {
 
     await handleMeshPeerDiscoveredViaRuntime(ctx, "12D3KooWPeerA", LAN_MULTIADDRS);
 
-    expect(ctx.emit).toHaveBeenCalledWith(
-      "peer:discovered",
-      expect.objectContaining({ nodeId: "12D3KooWPeerA" }),
-    );
+    expect(ctx.emit).not.toHaveBeenCalled();
+    expect(probe).toHaveBeenCalledWith("12D3KooWPeerA", LAN_MULTIADDRS);
   });
 
   it("still does bookkeeping even when peer is suppressed", async () => {

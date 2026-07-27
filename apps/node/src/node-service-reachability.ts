@@ -177,11 +177,8 @@ export async function handleMeshPeerDiscoveredViaRuntime(
       return;
     }
     // --- Discovery placeholder suppression ---
-    // Skip placeholder emission for peers whose profile probe recently
-    // ran (success or failure).  The nearby-profile probe cooldown already
-    // prevents redundant probes; this guard also prevents the useless
-    // placeholder flicker in the UI for non-EnvoyMesh LAN devices that
-    // mDNS re-discovers every few seconds.
+    // Skip probe dispatch for peers whose profile probe recently ran
+    // (success or failure). Prevents UI flicker from mDNS re-discovery.
     const probeLastAt = ctx.getNearbyProfileProbeLastAt();
     const lastProbeAt = probeLastAt.get(peerId) ?? 0;
     const probeCooldownMs = ctx.getNearbyProfileProbeCooldownMs();
@@ -189,30 +186,13 @@ export async function handleMeshPeerDiscoveredViaRuntime(
       return;
     }
     // Peers that have failed ≥ N consecutive probes are known non-EnvoyMesh
-    // devices (printers, TVs, etc.).  Suppress them for a longer cooldown
-    // so they don't cycle in "People on this network".
+    // devices (printers, TVs, etc.).  Suppress them for a longer cooldown.
     if (ctx.isNonEnvoyPeerSuppressed(peerId)) {
       return;
     }
-    // Emit an immediate placeholder so the peer appears in "People on this
-    // network" right away.  The probe runs in the background — on success it
-    // emits an updated peer:discovered with the real displayName; on failure
-    // it keeps the card as unreachable until non-Envoy suppression removes it.
-    // Only set discoverySource for values valid in PeerSearchResult.
-    // "relay" is already blocked by isInfrastructure above; "unknown" has
-    // no matching PeerSearchResult variant so we omit it.
-    const emitSource = source === "mdns" || source === "bootstrap"
-      ? source
-      : undefined;
-    ctx.emit("peer:discovered", {
-      nodeId: peerId,
-      ownerId: "",
-      displayName: "",
-      interests: [],
-      profileVisibility: "public" as const,
-      profileStatus: "pending" as const,
-      ...(emitSource ? { discoverySource: emitSource } : {}),
-    });
+    // Do NOT emit a pending placeholder here — pending→lost→rediscover
+    // cycles flash the Discover page after restart. The probe emits a
+    // single resolved or unreachable result when it finishes.
     void ctx.probeNearbyPeerProfileAfterDiscovery(peerId, multiaddrs);
     // Auto-bond is fired inside probeNearbyPeerProfileAfterDiscovery on
     // probe success — the peer must be connected (probe dials first) and
