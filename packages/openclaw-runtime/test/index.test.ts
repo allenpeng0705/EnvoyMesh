@@ -167,7 +167,7 @@ describe("version negotiation", () => {
     const hello = {
       type: "hello",
       protocol: "envoy-openclaw/1.0",
-      envoyVersion: "0.1.0",
+      envoyVersion: "0.2.0",
       tools: "ENVOY_TOOL_CATALOG",
       modelConfig: null,
     };
