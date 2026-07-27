@@ -27,7 +27,7 @@ Running `node scripts/sync-version.mjs` updates **32 files**:
 
 | Target | Field Updated |
 |--------|--------------|
-| Root + 23 workspace `package.json` files | `"version"` |
+| Root + 23 workspace `package.json` files | `"version"` + `@envoymesh/*` dependency pins |
 | `apps/tauri/src-tauri/tauri.conf.json` | `"version"` |
 | `apps/tauri/src-tauri/tauri.conf.slim.json` | `"version"` |
 | `apps/tauri/src-tauri/tauri.conf.full.json` | `"version"` |

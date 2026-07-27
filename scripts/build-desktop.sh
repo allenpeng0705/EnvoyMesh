@@ -35,6 +35,12 @@ echo "  Version: ${VERSION}"
 echo "============================================"
 echo ""
 
+# Keep @envoymesh/* dependency pins in lockstep with VERSION. Stale pins
+# make npm fetch the public registry and 404 on private workspace packages.
+echo "Syncing workspace package versions..."
+node "${PROJECT_DIR}/scripts/sync-version.mjs"
+echo ""
+
 file_mtime() {
   local f="$1"
   if stat -f '%m' "$f" >/dev/null 2>&1; then
@@ -183,15 +189,20 @@ npx vitest run apps/node/test/discovery-search-roundtrip.test.ts || {
 echo ""
 
 # Step 3: Build Social UI (Tauri frontendDist → apps/social/src/dist)
+# Use the workspace script from repo root — never `cd apps/social && npm install`.
+# Nested install re-resolves @envoymesh/* against the public registry and 404s
+# (those packages are private workspace links only).
 echo "[3/6] Building Social UI..."
-cd "${PROJECT_DIR}/apps/social"
-npm install
-npm run build
-if [ ! -f "src/dist/index.html" ]; then
+cd "${PROJECT_DIR}"
+if [ ! -d "node_modules/@envoymesh/api" ]; then
+  echo "  Installing workspace dependencies (root)..."
+  npm install
+fi
+npm run social:build
+if [ ! -f "apps/social/src/dist/index.html" ]; then
   echo "error: Social UI build did not produce apps/social/src/dist/index.html" >&2
   exit 1
 fi
-cd "${PROJECT_DIR}"
 echo ""
 
 # Step 4: Build Tauri
@@ -206,8 +217,14 @@ install_tauri_cli() {
 
 run_tauri_build() {
     local extra_args=("$@")
+    # Install from repo root via workspace — never plain `npm install` inside
+    # apps/tauri (that re-resolves private @envoymesh/* against the registry).
+    cd "${PROJECT_DIR}"
+    if [ ! -d "node_modules/@tauri-apps/cli" ] && [ ! -d "apps/tauri/node_modules/@tauri-apps/cli" ]; then
+      echo "  Installing @envoymesh/tauri dependencies (workspace)..."
+      npm install -w @envoymesh/tauri
+    fi
     cd "${PROJECT_DIR}/apps/tauri"
-    npm install
     if command -v cargo-tauri &> /dev/null; then
         cargo tauri build "${extra_args[@]}"
     else

@@ -10,8 +10,8 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "@envoymesh/network": "0.1.0",
-    "@envoymesh/identity": "0.1.0",
+    "@envoymesh/network": "0.2.1",
+    "@envoymesh/identity": "0.2.1",
     "@libp2p/utils": "^7.0.0",
     "ws": "^8.20.0"
   },

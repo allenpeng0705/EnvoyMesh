@@ -332,6 +332,16 @@ function Invoke-ExternalQuiet {
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Set-Location $RepoRoot
 
+# Keep @envoymesh/* dependency pins in lockstep with VERSION. Stale pins
+# (e.g. "0.1.0" while packages are 0.2.1) make npm fetch the public registry
+# and fail with E404 on private workspace packages.
+Write-Info "Syncing workspace package versions..."
+node (Join-Path $RepoRoot "scripts\sync-version.mjs")
+if ($LASTEXITCODE -ne 0) {
+    Write-Fail "scripts/sync-version.mjs failed"
+    exit 1
+}
+
 $TauriAppDir = Join-Path $RepoRoot "apps/tauri"
 $TauriSrcDir = Join-Path $TauriAppDir "src-tauri"
 $TauriResources = Join-Path $TauriSrcDir "resources"
@@ -1337,7 +1347,10 @@ Write-Host ""
 # -----------------------------------------------------------------------------
 
 Write-Step "2/5  Building Social UI..."
-if (-not (Test-Path "node_modules")) {
+# Build via workspace from repo root — never `cd apps/social; npm install`.
+# Nested install re-resolves @envoymesh/* against the public registry and 404s
+# (those packages are private workspace links only).
+if (-not (Test-Path (Join-Path $RepoRoot "node_modules\@envoymesh\api"))) {
     Write-Info "Installing root dependencies..."
     npm install
     if ($LASTEXITCODE -ne 0) {
@@ -1345,26 +1358,11 @@ if (-not (Test-Path "node_modules")) {
         exit 1
     }
 }
-Push-Location (Join-Path $RepoRoot "apps/social")
-try {
-    if (-not (Test-Path "node_modules")) {
-        Write-Info "Installing Social UI dependencies..."
-        npm install
-        if ($LASTEXITCODE -ne 0) {
-            Write-Fail "Social UI npm install failed"
-            Pop-Location
-            exit 1
-        }
-    }
-    Write-Info "Vite build..."
-    $socialExit = Invoke-ExternalQuiet npm run build
-    if ($socialExit -ne 0) {
-        Write-Fail "Social UI build failed"
-        Pop-Location
-        exit 1
-    }
-} finally {
-    Pop-Location
+Write-Info "Vite build (npm run social:build)..."
+$socialExit = Invoke-ExternalQuiet npm run social:build
+if ($socialExit -ne 0) {
+    Write-Fail "Social UI build failed"
+    exit 1
 }
 if (-not (Test-Path $SocialDist)) {
     Write-Fail "Social UI build did not produce $SocialDist"
@@ -1433,13 +1431,26 @@ if ($SkipMsi) {
 
 Push-Location $TauriAppDir
 try {
-    if (-not (Test-Path "node_modules")) {
-        Write-Info "Installing @envoymesh/tauri dependencies..."
-        $niExit = Invoke-ExternalQuiet npm install -Stream
-        if ($niExit -ne 0) {
-            Write-Fail "npm install failed in apps\tauri"
+    # Install from repo root via workspace — never plain `npm install` here.
+    # Nested install walks the whole monorepo and tries to fetch private
+    # @envoymesh/* packages from the public registry (E404).
+    $tauriCli = @(
+        (Join-Path $RepoRoot "node_modules\@tauri-apps\cli"),
+        (Join-Path $TauriAppDir "node_modules\@tauri-apps\cli")
+    ) | Where-Object { Test-Path $_ } | Select-Object -First 1
+    if (-not $tauriCli) {
+        Write-Info "Installing @envoymesh/tauri dependencies (workspace from repo root)..."
+        Push-Location $RepoRoot
+        try {
+            $niExit = Invoke-ExternalQuiet npm install -w "@envoymesh/tauri" -Stream
+            if ($niExit -ne 0) {
+                Write-Fail "npm install -w @envoymesh/tauri failed"
+                Pop-Location
+                Pop-Location
+                exit 1
+            }
+        } finally {
             Pop-Location
-            exit 1
         }
     }
 

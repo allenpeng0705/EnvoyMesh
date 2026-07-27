@@ -57,6 +57,32 @@ function updateJsonVersion(filePath, versionField = "version") {
   changed++
 }
 
+/** Keep workspace @envoymesh/* dependency pins in lockstep with VERSION.
+ *  Stale pins (e.g. "0.1.0" while packages are 0.2.1) make npm fetch the
+ *  registry and 404 on private workspace packages. */
+function updateWorkspaceDepPins(filePath) {
+  const raw = readFileSync(filePath, "utf8")
+  const pkg = JSON.parse(raw)
+  let touched = false
+  for (const field of ["dependencies", "devDependencies", "peerDependencies", "optionalDependencies"]) {
+    const deps = pkg[field]
+    if (!deps || typeof deps !== "object") continue
+    for (const [name, range] of Object.entries(deps)) {
+      if (!name.startsWith("@envoymesh/")) continue
+      // Only rewrite exact versions / simple ranges we own — leave path/git specs alone.
+      if (typeof range !== "string") continue
+      if (/^(file:|link:|git[+:]|https?:|workspace:)/.test(range)) continue
+      if (range === version) continue
+      deps[name] = version
+      touched = true
+    }
+  }
+  if (!touched) return
+  writeFileSync(filePath, JSON.stringify(pkg, null, 2) + "\n")
+  console.log(`  ✏️  @envoymesh/* deps in ${filePath.replace(ROOT + "/", "")}`)
+  changed++
+}
+
 function updateCargoVersion(filePath) {
   const raw = readFileSync(filePath, "utf8")
   const updated = raw.replace(
@@ -129,7 +155,10 @@ for (const p of allPkgJsons) {
   // Skip tauri resources/node/package.json — that's the bundled node, versioned separately
   if (p.includes(join("resources", "node"))) continue
   updateJsonVersion(p)
+  updateWorkspaceDepPins(p)
 }
+// Root may also list workspace deps in future — keep pins consistent.
+updateWorkspaceDepPins(join(ROOT, "package.json"))
 
 // ---- 3. Tauri conf files ----
 const tauriDir = join(ROOT, "apps", "tauri", "src-tauri")

@@ -11,8 +11,8 @@
     }
   },
   "dependencies": {
-    "@envoymesh/api": "0.1.0",
-    "@envoymesh/protocol": "0.1.0",
+    "@envoymesh/api": "0.2.1",
+    "@envoymesh/protocol": "0.2.1",
     "zod": "^4.3.6"
   }
 }

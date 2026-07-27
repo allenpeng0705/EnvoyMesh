@@ -15,7 +15,7 @@
     }
   },
   "dependencies": {
-    "@envoymesh/api": "0.1.0",
+    "@envoymesh/api": "0.2.1",
     "hnswlib-node": "^3.0.0"
   }
 }

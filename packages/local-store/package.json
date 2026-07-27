@@ -7,8 +7,8 @@
     ".": "./dist/src/index.js"
   },
   "dependencies": {
-    "@envoymesh/bonds": "0.1.0",
-    "@envoymesh/identity": "0.1.0",
-    "@envoymesh/protocol": "0.1.0"
+    "@envoymesh/bonds": "0.2.1",
+    "@envoymesh/identity": "0.2.1",
+    "@envoymesh/protocol": "0.2.1"
   }
 }
