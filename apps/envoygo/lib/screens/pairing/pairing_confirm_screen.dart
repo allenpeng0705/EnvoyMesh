@@ -174,8 +174,14 @@ class _PairingConfirmScreenState
       );
       CandidateResolver.setCommunityHomePeerId(widget.data.homeNodePeerId);
       final resolver = CandidateResolver();
-      candidates = resolver.resolve(tempNode,
-          sessionToken: widget.data.token);
+      // Cellular-safe order during pair (relay first). Wi‑Fi still works —
+      // LAN is tried after relay and usually wins when both are reachable.
+      final isOnWifi = ref.read(nodeProvider.notifier).isOnWifi;
+      candidates = resolver.resolve(
+        tempNode,
+        sessionToken: widget.data.token,
+        isOnWifi: isOnWifi,
+      );
 
       final notifier = ref.read(nodeProvider.notifier);
       await notifier.pairWithNode(

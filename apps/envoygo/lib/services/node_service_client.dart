@@ -177,11 +177,19 @@ class NodeServiceClient {
   }
 
   /// Read vault file bytes for inline previews (images/audio in chat). (Phase 37)
+  ///
+  /// Pass [offset] + [maxBytes] to fetch a slice (relay home-tunnel safe).
+  /// When [offset] is set, [sizeBytes] in the result is the full file size and
+  /// [truncated] is true when more bytes remain.
   Future<Map<String, dynamic>> readLibraryItemContent({
     required String relativePath,
+    int? maxBytes,
+    int? offset,
   }) async {
     return await _client.call('readLibraryItemContent', {
       'relativePath': relativePath,
+      if (maxBytes != null) 'maxBytes': maxBytes,
+      if (offset != null) 'offset': offset,
     }) as Map<String, dynamic>;
   }
 

@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { access, readdir, readFile, stat } from "node:fs/promises";
+import { access, open, readdir, readFile, stat } from "node:fs/promises";
 import { basename, extname, join, relative, resolve, sep } from "node:path";
 import { MAX_LIBRARY_ITEM_PREVIEW_BYTES } from "@envoymesh/api";
 
@@ -57,7 +57,7 @@ export async function listOpenClawWorkspaceFilesFromDir(
 
 export async function readOpenClawWorkspaceFileFromDir(
   workspaceDir: string,
-  params: { relativePath: string; maxBytes?: number },
+  params: { relativePath: string; maxBytes?: number; offset?: number },
 ): Promise<WorkspaceFileContent> {
   const maxBytes = Math.min(
     params.maxBytes ?? MAX_LIBRARY_ITEM_PREVIEW_BYTES,
@@ -68,16 +68,44 @@ export async function readOpenClawWorkspaceFileFromDir(
   if (!st.isFile()) {
     throw new Error("Path is not a file");
   }
-  if (st.size > maxBytes) {
-    throw new Error(`File too large for preview (${st.size} bytes, max ${maxBytes})`);
+  const mimeType = mimeTypeForFilename(basename(absolutePath));
+  const rangeMode = params.offset !== undefined && params.offset !== null;
+  const offset = rangeMode ? Math.max(0, Math.floor(Number(params.offset) || 0)) : 0;
+  if (!rangeMode) {
+    if (st.size > maxBytes) {
+      throw new Error(`File too large for preview (${st.size} bytes, max ${maxBytes})`);
+    }
+    const content = await readFile(absolutePath);
+    return {
+      contentBase64: content.toString("base64"),
+      mimeType,
+      sizeBytes: st.size,
+      truncated: false,
+    };
   }
-  const content = await readFile(absolutePath);
-  return {
-    contentBase64: content.toString("base64"),
-    mimeType: mimeTypeForFilename(basename(absolutePath)),
-    sizeBytes: st.size,
-    truncated: false,
-  };
+  if (offset >= st.size) {
+    return {
+      contentBase64: "",
+      mimeType,
+      sizeBytes: st.size,
+      truncated: false,
+    };
+  }
+  const length = Math.min(maxBytes, st.size - offset);
+  const fh = await open(absolutePath, "r");
+  try {
+    const buf = Buffer.alloc(length);
+    const { bytesRead } = await fh.read(buf, 0, length, offset);
+    const slice = buf.subarray(0, bytesRead);
+    return {
+      contentBase64: slice.toString("base64"),
+      mimeType,
+      sizeBytes: st.size,
+      truncated: offset + bytesRead < st.size,
+    };
+  } finally {
+    await fh.close();
+  }
 }
 
 async function walkWorkspaceFiles(rootDir: string, currentDir: string): Promise<WorkspaceFileItem[]> {

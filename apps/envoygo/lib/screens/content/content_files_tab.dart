@@ -1,5 +1,4 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -10,6 +9,7 @@ import '../../models/web_content.dart';
 import '../../providers/contact_provider.dart';
 import '../../providers/node_provider.dart';
 import '../../services/library_read_cache.dart';
+import '../../services/vault_content_fetch.dart';
 import '../../services/chat_voice_note.dart';
 
 /// My Files — list / import / preview / share home vault files via thin client.
@@ -85,9 +85,10 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
         contentBase64: base64Encode(bytes),
         mimeType: mime,
       );
-      final homeId = ref.read(nodeProvider).activeNode?.id;
-      if (homeId != null) {
-        await LibraryReadCache.instance.invalidateBlob(vaultCacheKey(homeId, path));
+      final homePeerId = ref.read(nodeProvider).activeNode?.homePeerId.trim();
+      if (homePeerId != null && homePeerId.isNotEmpty) {
+        await LibraryReadCache.instance
+            .invalidateBlob(vaultCacheKey(homePeerId, path));
       }
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -104,43 +105,24 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
 
   Future<void> _preview(LocalFileItem item) async {
     final client = ref.read(nodeServiceProvider);
-    final homeId = ref.read(nodeProvider).activeNode?.id;
-    if (client == null || homeId == null) return;
+    final homePeerId = ref.read(nodeProvider).activeNode?.homePeerId.trim();
+    if (client == null || homePeerId == null || homePeerId.isEmpty) return;
     try {
-      final cacheKey = vaultCacheKey(homeId, item.relativePath);
-      final cached = await LibraryReadCache.instance.peekBlobEntry(cacheKey);
-      final now = DateTime.now().toUtc();
-      Uint8List? bytes;
-      var mime = _mimeGuess(item);
-      if (cached != null &&
-          now.difference(cached.cachedAt.toUtc()) < vaultCacheFreshTtl) {
-        bytes = cached.bytes;
-        if (bytes == null) {
-          try {
-            bytes = base64Decode(cached.body);
-          } catch (_) {
-            bytes = null;
-          }
-        }
-        if (cached.contentType.isNotEmpty &&
-            cached.contentType != 'application/octet-stream') {
-          mime = cached.contentType;
-        }
-      }
-      if (bytes == null) {
-        final result = await client.readLibraryItemContent(
-          relativePath: item.relativePath,
-        );
-        final b64 = result['contentBase64'] as String?;
-        final remoteMime = (result['mimeType'] as String?) ?? '';
-        if (remoteMime.isNotEmpty) mime = remoteMime;
-        if (b64 == null || !mounted) return;
-        bytes = base64Decode(b64);
-        await LibraryReadCache.instance.putBlob(
-          cacheKey,
-          bytes,
-          contentType: mime.isNotEmpty ? mime : 'application/octet-stream',
-        );
+      final fetched = await getOrFetchVaultContent(
+        ({required relativePath, int? maxBytes, int? offset}) =>
+            client.readLibraryItemContent(
+          relativePath: relativePath,
+          maxBytes: maxBytes,
+          offset: offset,
+        ),
+        homePeerId: homePeerId,
+        relativePath: item.relativePath,
+      );
+      if (fetched.bytes.isEmpty || !mounted) return;
+      final bytes = fetched.bytes;
+      var mime = fetched.mimeType;
+      if (mime.isEmpty || mime == 'application/octet-stream') {
+        mime = _mimeGuess(item);
       }
       if (!mounted) return;
       await showDialog<void>(
@@ -148,13 +130,13 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
         builder: (ctx) {
           Widget body;
           if (mime.startsWith('image/')) {
-            body = InteractiveViewer(child: Image.memory(bytes!));
+            body = InteractiveViewer(child: Image.memory(bytes));
           } else if (mime.startsWith('text/') ||
               mime == 'application/json' ||
               item.extension == 'md') {
             body = SingleChildScrollView(
               padding: const EdgeInsets.all(12),
-              child: SelectableText(utf8.decode(bytes!, allowMalformed: true)),
+              child: SelectableText(utf8.decode(bytes, allowMalformed: true)),
             );
           } else {
             body = Padding(

@@ -177,6 +177,12 @@ class NodeNotifier extends StateNotifier<NodeState> {
   /// and in [dispose].
   StreamSubscription<void>? _connectivitySub;
 
+  /// Subscription for Wi‑Fi ↔ cellular flips while staying online.
+  StreamSubscription<void>? _networkTypeSub;
+
+  /// Current Wi‑Fi flag from the observer (`null` if unknown / not started).
+  bool? get isOnWifi => _connectivityObserver?.isOnWifi;
+
   /// Periodic timer that refreshes the UPnP port mapping before the
   /// lease expires. Started after a successful UPnP discovery; cancelled
   /// in [dispose].
@@ -354,6 +360,23 @@ class NodeNotifier extends StateNotifier<NodeState> {
     _connectivitySub = observer.onBecameOnline.listen((_) {
       kickReconnect();
     });
+    _networkTypeSub = observer.onNetworkTypeChanged.listen((_) {
+      _log('[connectivity] Wi‑Fi↔cellular — force reconnect with fresh candidates');
+      unawaited(_reconnectForNetworkTypeChange());
+    });
+  }
+
+  /// Drop a (possibly stuck) LAN session and reconnect with relay-first order.
+  Future<void> _reconnectForNetworkTypeChange() async {
+    final node = state.activeNode ??
+        state.pairedNodes.where((n) => n.id == _supervisorTargetNodeId).firstOrNull;
+    if (node == null) return;
+    try {
+      await disconnect();
+    } catch (_) {
+      /* best-effort */
+    }
+    kickReconnect();
   }
 
   /// Construct a fresh [ReconnectSupervisor] targeting the given
@@ -438,6 +461,8 @@ class NodeNotifier extends StateNotifier<NodeState> {
     _upnpRefreshTimer = null;
     _connectivitySub?.cancel();
     _connectivitySub = null;
+    _networkTypeSub?.cancel();
+    _networkTypeSub = null;
     _connectivityObserver?.dispose();
     _connectivityObserver = null;
     _client?.dispose();
@@ -576,6 +601,14 @@ class NodeNotifier extends StateNotifier<NodeState> {
     // (with backoff) until either the home comes back online or
     // the user unpairs.
     _startSupervisorFor(node.id);
+
+    // Unpair of the last node cancels Wi‑Fi↔cellular listeners; restore them
+    // so re-pair without app restart still forces relay-first on 5G.
+    try {
+      await _ensureConnectivityObserver();
+    } catch (e) {
+      _log('[pairWithNode] _ensureConnectivityObserver failed (non-fatal): $e');
+    }
 
     return result;
   }
@@ -781,11 +814,17 @@ class NodeNotifier extends StateNotifier<NodeState> {
         candidate.libp2pRelayAddr!.isNotEmpty) {
       _log('[_createTransportForCandidate] libp2p-circuit-relay: ${candidate.name} — ${candidate.url}');
       try {
-        return await _createLibp2pTransport(candidate);
+        // Bound libp2p setup — DHT start alone waits 10s; without a cap,
+        // each p2p candidate can hang far longer than perCandidateTimeoutMs.
+        return await _createLibp2pTransport(candidate).timeout(
+          const Duration(seconds: 12),
+          onTimeout: () {
+            throw TimeoutException(
+              'libp2p transport timed out for ${candidate.name}',
+            );
+          },
+        );
       } catch (e) {
-        // Circuit relay failed (sync error from connect(), or DHT fallback
-        // exhausted). Return a failed Future so the caller records this
-        // failure and moves to the next candidate.
         return Future.error(e);
       }
     }
@@ -997,9 +1036,18 @@ class NodeNotifier extends StateNotifier<NodeState> {
     // candidate includes it (enables circuit-relay dialing through the
     // community relay even when the user's private relay is down).
     CandidateResolver.setCommunityHomePeerId(node.homePeerId);
-    final isOnWifi = _connectivityObserver?.isOnWifi ?? true;
-    final candidates =
-        resolver.resolve(node, sessionToken: sessionToken, isOnWifi: isOnWifi);
+    // Default false: treat unknown as cellular-safe (relay-first).
+    final isOnWifi = _connectivityObserver?.isOnWifi ?? false;
+    _log('[_connectToNodeImpl] isOnWifi=$isOnWifi');
+    List<HomeRemoteCandidate> resolveNow() {
+      return resolver.resolve(
+        node,
+        sessionToken: sessionToken,
+        isOnWifi: _connectivityObserver?.isOnWifi ?? false,
+      );
+    }
+
+    final candidates = resolveNow();
     _log('[_connectToNodeImpl] candidates: ${candidates.map((c) => "${c.name}(${c.url})").toList()}');
     if (candidates.isEmpty) {
       // No transport candidates (LAN, public, libp2p, relay). The
@@ -1018,7 +1066,9 @@ class NodeNotifier extends StateNotifier<NodeState> {
     }
 
     final opts = HomeRemoteClientOptions(
-      resolveCandidates: () async => candidates,
+      // Re-resolve on each reconnect so Wi‑Fi↔5G picks a fresh order
+      // (do not freeze the LAN-first list from a previous Wi‑Fi session).
+      resolveCandidates: () async => resolveNow(),
       createTransport: (c) => _createTransportForCandidate(c),
       onHomeOnlineChange: (online) {
         state = state.copyWith(
@@ -1117,8 +1167,9 @@ class NodeNotifier extends StateNotifier<NodeState> {
     _connectingFuture = null;
     _ref.read(feedNotifyProvider.notifier).clear();
     _ref.read(contentEngageProvider.notifier).clear();
-    // Keep disk media cache across reconnects; only drop in-memory rows that
-    // may reference a different home. Full wipe happens on unpair.
+    // Keep media cache across reconnects. Full wipe only when switching to a
+    // different home (paths collide). Unpair clears vault for that homePeerId
+    // only so re-pair of the same home can reuse disk cache.
     state = state.copyWith(
       connectionState: NodeConnectionState.disconnected,
       activeTransport: null,
@@ -1217,8 +1268,9 @@ class NodeNotifier extends StateNotifier<NodeState> {
       pairedNodes: remaining,
       ownerId: null,
     );
-    // Drop cached photos/files tied to this home when unpaired.
-    await LibraryReadCache.instance.clear();
+    // Keep disk media cache (vault + library-read + peer thumbs) so re-pairing
+    // the same homePeerId does not re-download via relay. Wipe only on
+    // switchToNode (different home). LRU prune caps disk use.
     // If this was the last paired node, tear down the connectivity
     // subscription too. (When the user re-pairs, _ensureConnectivityObserver
     // is a no-op because the sub already exists; loadPairedNodes
@@ -1226,6 +1278,8 @@ class NodeNotifier extends StateNotifier<NodeState> {
     if (remaining.isEmpty) {
       await _connectivitySub?.cancel();
       _connectivitySub = null;
+      await _networkTypeSub?.cancel();
+      _networkTypeSub = null;
     }
   }
 

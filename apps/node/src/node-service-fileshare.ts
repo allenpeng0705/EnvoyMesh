@@ -46,7 +46,7 @@ import {
 import { revealPathInFileManager } from "./vault-file-open.js";
 import { createAgentShareProposalStore } from "./agent-share-proposal-store.js";
 import { createAuditEvent, type AuditEvent, createSensitivityOverrideStore, type VaultItemSensitivity } from "@envoymesh/local-store";
-import { mkdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, stat, unlink, writeFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { derivePeerId } from "@envoymesh/identity";
@@ -293,6 +293,7 @@ export async function readLocalFileContentViaRuntime(
     return readFromWorkspace({
       relativePath: params.relativePath,
       maxBytes: params.maxBytes,
+      offset: params.offset,
     });
   }
   let relativePath = params.relativePath.trim().replace(/^[\\/]+/, "");
@@ -302,7 +303,11 @@ export async function readLocalFileContentViaRuntime(
     if (!match) throw new Error(`Document not found: ${params.documentId}`);
     relativePath = match.relativePath;
   }
-  return readFromVault({ relativePath, maxBytes: params.maxBytes });
+  return readFromVault({
+    relativePath,
+    maxBytes: params.maxBytes,
+    offset: params.offset,
+  });
 }
 
 /* ---------- IPFS engine status + RAG index status ---------- */
@@ -546,22 +551,50 @@ export async function readLibraryItemContentViaRuntime(
     params.maxBytes ?? MAX_LIBRARY_ITEM_PREVIEW_BYTES,
     MAX_LIBRARY_ITEM_PREVIEW_BYTES,
   );
+  const rangeMode = params.offset !== undefined && params.offset !== null;
+  const offset = rangeMode ? Math.max(0, Math.floor(Number(params.offset) || 0)) : 0;
   const { absolutePath, vaultRelativePath } = await resolveLibraryItemPathViaRuntime(
     ctx,
     params.relativePath,
   );
   const st = await stat(absolutePath);
-  if (st.size > maxBytes) {
-    throw new Error(`File too large for preview (${st.size} bytes, max ${maxBytes})`);
-  }
-  const content = await readFile(absolutePath);
   const ext = basename(vaultRelativePath).toLowerCase();
-  return {
-    contentBase64: content.toString("base64"),
-    mimeType: mimeTypeForFilename(ext),
-    sizeBytes: st.size,
-    truncated: false,
-  };
+  const mimeType = mimeTypeForFilename(ext);
+  if (!rangeMode) {
+    if (st.size > maxBytes) {
+      throw new Error(`File too large for preview (${st.size} bytes, max ${maxBytes})`);
+    }
+    const content = await readFile(absolutePath);
+    return {
+      contentBase64: content.toString("base64"),
+      mimeType,
+      sizeBytes: st.size,
+      truncated: false,
+    };
+  }
+  if (offset >= st.size) {
+    return {
+      contentBase64: "",
+      mimeType,
+      sizeBytes: st.size,
+      truncated: false,
+    };
+  }
+  const length = Math.min(maxBytes, st.size - offset);
+  const fh = await open(absolutePath, "r");
+  try {
+    const buf = Buffer.alloc(length);
+    const { bytesRead } = await fh.read(buf, 0, length, offset);
+    const slice = buf.subarray(0, bytesRead);
+    return {
+      contentBase64: slice.toString("base64"),
+      mimeType,
+      sizeBytes: st.size,
+      truncated: offset + bytesRead < st.size,
+    };
+  } finally {
+    await fh.close();
+  }
 }
 
 export async function openLibraryItemViaRuntime(

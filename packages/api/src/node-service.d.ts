@@ -376,6 +376,7 @@ export interface ReadLocalFileContentParams {
     relativePath: string;
     documentId?: string;
     maxBytes?: number;
+    offset?: number;
 }
 export interface OpenLocalFileParams {
     source: LocalFileSource;
@@ -496,10 +497,18 @@ export interface SendChatAttachmentResult {
 export interface ReadLibraryItemContentParams {
     relativePath: string;
     maxBytes?: number;
+    /**
+     * Byte offset into the file. When set (including `0`), the home returns at most
+     * `maxBytes` starting at this offset and sets `truncated` when more remains.
+     * Required for relay home-tunnel paths where a single JSON-RPC frame must stay
+     * under ~128–768 KiB (base64 expands ~4/3).
+     */
+    offset?: number;
 }
 export interface ReadLibraryItemContentResult {
     contentBase64: string;
     mimeType: string;
+    /** Total file size in bytes (not the chunk length). */
     sizeBytes: number;
     truncated: boolean;
 }

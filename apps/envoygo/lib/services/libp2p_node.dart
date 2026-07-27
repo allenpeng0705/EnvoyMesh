@@ -148,10 +148,9 @@ class Libp2pNode {
     }
     debugPrint('[Libp2pNode] Bootstrap: $connectedCount/${bootstrapAddrs.length} peers connected');
 
-    // Give the DHT a moment to establish connections with bootstrap peers
-    // before we try to query. Without this, findPeer() immediately after start()
-    // may return null because the routing table hasn't converged yet.
-    await Future<void>.delayed(const Duration(milliseconds: 10_000));
+    // Short settle — full 10s made every libp2p candidate painfully slow on
+    // cellular reconnect. Callers wrap create in a 12s timeout.
+    await Future<void>.delayed(const Duration(milliseconds: 2_500));
     // ignore: dart SDK print — debug only
     try {
       final rtSize = await _dht!.routingTable.size();

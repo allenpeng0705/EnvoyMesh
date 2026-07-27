@@ -1007,13 +1007,30 @@ export async function sendChatViaRuntime(
 
   const wireText = stripModelThinking(text);
 
+  // Local Ext Agent threads use targetOwnerId === bridge agentPeerId (envoy_agent_*).
+  // resolveRecipientEnvelopePeerId intentionally returns undefined without a device
+  // key — fine for human peers (no misaddress filter) but the bridge requires an
+  // exact recipientPeerId match before POST /message to Hermes/HomeClaw.
+  const bridgeAgentPeerId = ctx.getBridgeAgentPeerId()?.trim();
+  const addressingLocalBridge =
+    Boolean(bridgeAgentPeerId) &&
+    targetOwnerId === bridgeAgentPeerId &&
+    transportPeerId === mesh.peerId;
+  const envelopeRecipientPeerId = addressingLocalBridge
+    ? bridgeAgentPeerId
+    : recipientEnvelopePeerId;
+  const envelopeRecipientRole =
+    addressingLocalBridge || targetOwnerId.startsWith("envoy_agent_")
+      ? ("agent" as const)
+      : ("human" as const);
+
   const envelope = signUnsignedEnvelope(
     createUnsignedEnvelope({
       senderPeerId: derivePeerId(selfProfile.device.publicKeyPem),
       senderPublicKey: selfProfile.device.publicKeyPem,
       senderRole: "human",
-      recipientPeerId: recipientEnvelopePeerId,
-      recipientRole: "human",
+      recipientPeerId: envelopeRecipientPeerId,
+      recipientRole: envelopeRecipientRole,
       intent: "chat.message",
       payload: createChatMessagePayload({
         senderOwnerId: selfProfile.owner.ownerId,

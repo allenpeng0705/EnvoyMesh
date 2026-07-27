@@ -23,9 +23,10 @@ const maxLibraryReadDiskBytes = 80 * 1024 * 1024;
 String libraryReadCacheKey(String ownerId, String path) =>
     '${ownerId.trim()}\u0000${path.replaceFirst(RegExp(r'^/+'), '').trim()}';
 
-/// Vault blobs are home-scoped — same relative path on two paired homes must not collide.
-String vaultCacheKey(String homeNodeId, String relativePath) =>
-    'vault\u0000${homeNodeId.trim()}\u0000${relativePath.replaceFirst(RegExp(r'^/+'), '').trim()}';
+/// Vault blobs are home-scoped by stable libp2p peer id — survives local
+/// node-row id changes on re-pair of the same home.
+String vaultCacheKey(String homePeerId, String relativePath) =>
+    'vault\u0000${homePeerId.trim()}\u0000${relativePath.replaceFirst(RegExp(r'^/+'), '').trim()}';
 
 String peerThumbCacheKey(String ownerId) => 'thumb\u0000${ownerId.trim()}';
 
@@ -517,6 +518,29 @@ class LibraryReadCache {
         } catch (_) {
           /* best-effort */
         }
+      }
+    }
+  }
+
+  /// Drop only vault blobs for one home peer (keep library-read + peer thumbs).
+  Future<void> clearVaultForHome(String homePeerId) async {
+    final prefix = 'vault\u0000${homePeerId.trim()}\u0000';
+    final doomed = _mem.keys.where((k) => k.startsWith(prefix)).toList();
+    for (final k in doomed) {
+      await invalidateBlob(k);
+    }
+    final dir = await _ensureDir();
+    if (!await dir.exists()) return;
+    await for (final ent in dir.list()) {
+      if (ent is! File || !ent.path.endsWith('.json')) continue;
+      try {
+        final map = jsonDecode(await ent.readAsString()) as Map<String, dynamic>;
+        final key = map['key'] as String? ?? '';
+        if (key.startsWith(prefix)) {
+          await invalidateBlob(key);
+        }
+      } catch (_) {
+        /* skip corrupt */
       }
     }
   }

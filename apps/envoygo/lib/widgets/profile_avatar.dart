@@ -5,7 +5,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../providers/contact_provider.dart' show nodeServiceProvider;
+import '../providers/node_provider.dart';
 import '../services/library_read_cache.dart';
+import '../services/vault_content_fetch.dart';
 
 /// Circle avatar for self (vault thumbnail) or a peer (`getPeerProfile`).
 class ProfileAvatar extends ConsumerStatefulWidget {
@@ -46,7 +48,10 @@ class _ProfileAvatarState extends ConsumerState<ProfileAvatar> {
     }
   }
 
-  Future<void> _load() async {
+  /// Reload after the user changes their thumbnail.
+  void reload({bool bypassCache = false}) => _load(bypassCache: bypassCache);
+
+  Future<void> _load({bool bypassCache = false}) async {
     final client = ref.read(nodeServiceProvider);
     if (client == null || _loading) return;
     setState(() => _loading = true);
@@ -57,21 +62,51 @@ class _ProfileAvatarState extends ConsumerState<ProfileAvatar> {
         final path = thumb is Map
             ? (thumb['vaultRelativePath'] as String?)?.trim()
             : null;
+        final ownerId = (profile['ownerId'] as String?)?.trim();
+        if (!bypassCache && ownerId != null && ownerId.isNotEmpty) {
+          final cached =
+              await LibraryReadCache.instance.peekBlob(peerThumbCacheKey(ownerId));
+          if (cached != null && mounted) {
+            setState(() => _bytes = cached);
+          }
+        }
         if (path != null && path.isNotEmpty) {
-          final row = await client.readLibraryItemContent(relativePath: path);
-          final b64 = row['contentBase64'] as String?;
-          if (b64 != null && b64.isNotEmpty) {
-            final bytes = base64Decode(b64);
-            final ownerId = (profile['ownerId'] as String?)?.trim();
+          final homePeerId =
+              ref.read(nodeProvider).activeNode?.homePeerId.trim() ?? '';
+          late final VaultContentResult fetched;
+          if (homePeerId.isNotEmpty) {
+            fetched = await getOrFetchVaultContent(
+              ({required relativePath, int? maxBytes, int? offset}) =>
+                  client.readLibraryItemContent(
+                relativePath: relativePath,
+                maxBytes: maxBytes,
+                offset: offset,
+              ),
+              homePeerId: homePeerId,
+              relativePath: path,
+              bypassCache: bypassCache,
+            );
+          } else {
+            fetched = await fetchVaultContent(
+              ({required relativePath, int? maxBytes, int? offset}) =>
+                  client.readLibraryItemContent(
+                relativePath: relativePath,
+                maxBytes: maxBytes,
+                offset: offset,
+              ),
+              relativePath: path,
+            );
+          }
+          if (fetched.bytes.isNotEmpty) {
             if (ownerId != null && ownerId.isNotEmpty) {
               await LibraryReadCache.instance.putBlob(
                 peerThumbCacheKey(ownerId),
-                bytes,
+                fetched.bytes,
                 contentType: (thumb is Map ? thumb['mimeType'] as String? : null) ??
-                    'image/jpeg',
+                    fetched.mimeType,
               );
             }
-            if (mounted) setState(() => _bytes = bytes);
+            if (mounted) setState(() => _bytes = fetched.bytes);
             return;
           }
         }
@@ -104,9 +139,6 @@ class _ProfileAvatarState extends ConsumerState<ProfileAvatar> {
       if (mounted) setState(() => _loading = false);
     }
   }
-
-  /// Reload after the user changes their thumbnail.
-  void reload() => _load();
 
   String get _initial {
     final name = widget.displayName?.trim();

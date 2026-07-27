@@ -300,4 +300,33 @@ describe("sendChatViaRuntime", () => {
     const result = await sendChatViaRuntime(ctx, OWNER_ID, "hello");
     expect(result.deliveryReceipt).toBe("sent");
   });
+
+  it("sets recipientPeerId to local Ext Agent so the bridge forwards to Hermes", async () => {
+    const agentPeerId = "envoy_agent_hkHNrLl0NRsqn5qz3I0TovVYaQnfmOtXn8l9Hs6Y-zo";
+    const selfMeshId = "12D3KooWSelfUnitTest";
+    const seen: { recipientPeerId?: string; recipientRole?: string }[] = [];
+    const bridgeHandler = vi.fn(async (envelope: { recipientPeerId?: string; recipientRole?: string }) => {
+      seen.push({
+        recipientPeerId: envelope.recipientPeerId,
+        recipientRole: envelope.recipientRole,
+      });
+    });
+    const ctx = makeCtx({
+      getBridgeAgentPeerId: () => agentPeerId,
+      getBridgeChatHandler: () => bridgeHandler as never,
+      resolvePeerTransportForOwner: async () => ({
+        transportPeerId: selfMeshId,
+        recipientEnvelopePeerId: undefined,
+        listenAddrs: undefined,
+      }),
+    });
+    (ctx.requireMesh() as { peerId: string }).peerId = selfMeshId;
+
+    const result = await sendChatViaRuntime(ctx, agentPeerId, "hi hermes");
+
+    expect(result.deliveryReceipt).toBe("delivered");
+    expect(bridgeHandler).toHaveBeenCalledOnce();
+    expect(seen[0]?.recipientPeerId).toBe(agentPeerId);
+    expect(seen[0]?.recipientRole).toBe("agent");
+  });
 });

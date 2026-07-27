@@ -129,7 +129,10 @@ const MAX_PROXY_CONNS_PER_TARGET = 10;
 // The home now chunks PTY output into ~64KB pieces; base64 inflates
 // by ~33% so a 128KB cap gives ample headroom while still bounding
 // memory + WebSocket text-frame size on the relay hop.
-const MAX_HOME_TUNNEL_DATA_BYTES = 128 * 1024;
+// Profile thumbnails may be up to 512 KiB raw (~683 KiB base64). Keep headroom
+// for JSON-RPC wrapping so a single thumb RPC can traverse the home tunnel.
+// Larger gallery / vault files must still be fetched in chunks (≤40 KiB body).
+const MAX_HOME_TUNNEL_DATA_BYTES = 768 * 1024;
 
 // Maximum concurrent deliveries per fan-out batch
 const CONCURRENCY_LIMIT = 50;

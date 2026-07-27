@@ -4,19 +4,14 @@ import 'home_remote_client.dart';
 
 /// Builds transport candidate URLs from stored pairing data.
 ///
-/// When on WiFi:          LAN → public IP → p2p → relay
-/// When on mobile/unknown: relay (p2p + WS) → public IP → LAN
+/// **Wi‑Fi:** relay WS → LAN → public → (optional) libp2p last.
+/// **Cellular / unknown:** relay WS → public → skip LAN → libp2p last (capped).
 ///
-/// The reordering when not on WiFi avoids the 8-second-per-candidate
-/// timeout penalty of trying unreachable LAN candidates first.
-///
-/// **Option B (DHT bootstrap):** The community relay
-/// (`_communityRelayWsUrl` / `_communityRelayHost`) is always
-/// appended as a final fallback. The community relay runs a DHT
-/// server, so once the home node has connected to it, its address
-/// is advertised in the DHT. The mobile can use the community relay
-/// as a libp2p bootstrap peer to query DHT for the home node's
-/// address even when the user's private relay is down.
+/// Relay WebSocket (`/ws?target=<homePeerId>`) is the path that works behind
+/// NAT / on 5G when the home keeps its outbound `/ws/home` tunnel. Libp2p
+/// DHT + circuit dials are slow (10s+ DHT settle, unbounded findPeer) and
+/// must not block the relay path — especially after a LAN pairing when the
+/// user later opens the app on cellular.
 class CandidateResolver {
   /// Resolve bootstrap preset names to full libp2p multiaddr strings.
   ///
@@ -61,23 +56,9 @@ class CandidateResolver {
   ///
   /// Called on every (re)connect so the resolver can return up-to-date URLs.
   ///
-  /// Candidate order (WiFi):
-  ///   1. Libp2p P2P candidates (DHT + direct) — try direct P2P first
-  ///   2. LAN WebSocket — fast local access when on same network
-  ///   3. Public IP WebSocket — direct WAN access
-  ///   4. Relay WebSocket (user relay + community relay) — fallback
-  ///   5. Bootstrap peer WebSocket URLs — last resort
-  ///
-  /// Candidate order (mobile data / unknown):
-  ///   1. Libp2p P2P candidates (DHT + circuit relay) — P2P first
-  ///   2. Relay WebSocket (user relay + community relay) — fallback
-  ///   3. LAN WebSocket (will fail fast on mobile)
-  ///   4. Public IP WebSocket
-  ///   5. Bootstrap peer WebSocket URLs
-  ///
-  /// This ordering minimizes relay server workload by prioritizing DHT-based
-  /// peer discovery. The relay WebSocket is used as a fallback when DHT
-  /// lookup fails to return a usable address.
+  /// [isOnWifi]: `true` = Wi‑Fi; `false` = cellular/other; `null` defaults to
+  /// **cellular-safe** order (relay first) so cold start on 5G does not hang
+  /// on LAN / unbounded libp2p before trying the relay.
   List<HomeRemoteCandidate> resolve(StoredNode node,
       {String? sessionToken, bool? isOnWifi}) {
     // Build each category in separate lists so we can reorder.
@@ -85,29 +66,45 @@ class CandidateResolver {
     final relayWsCandidates = _buildRelayWsCandidates(node, sessionToken);
     final lanCandidates = _buildLanCandidates(node, sessionToken);
     final publicCandidates = _buildPublicCandidates(node, sessionToken);
-    final bootstrapCandidates = _buildBootstrapPeerCandidates(node, sessionToken);
+    final bootstrapCandidates =
+        _buildBootstrapPeerCandidates(node, sessionToken);
 
-    final onWifi = isOnWifi ?? true;
+    // Default false: mobile-first. Unknown connectivity must not prefer LAN.
+    final onWifi = isOnWifi ?? false;
     if (onWifi) {
-      // WiFi: P2P first, then LAN, then public, then relay, then bootstrap.
+      // Wi‑Fi: try relay + LAN quickly (LAN wins when home is local).
+      // Keep libp2p last — DHT settle is expensive and often unnecessary
+      // when LAN or relay already works.
       return [
-        ...p2pCandidates,
-        ...lanCandidates,
-        ...publicCandidates,
-        ...relayWsCandidates,
-        ...bootstrapCandidates,
-      ];
-    } else {
-      // Mobile data: P2P first, then relay WebSocket (works everywhere),
-      // then LAN (fails fast), then public, then bootstrap.
-      return [
-        ...p2pCandidates,
         ...relayWsCandidates,
         ...lanCandidates,
         ...publicCandidates,
         ...bootstrapCandidates,
+        ..._limitLibp2p(p2pCandidates, max: 2),
       ];
     }
+    // Cellular: relay first (works when home has /ws/home tunnel).
+    // Skip LAN entirely — private RFC1918 IPs hang 0.5–8s on 5G.
+    // Libp2p last and capped so we do not burn minutes on DHT.
+    return [
+      ...relayWsCandidates,
+      ...publicCandidates,
+      ...bootstrapCandidates,
+      ..._limitLibp2p(p2pCandidates, max: 1),
+    ];
+  }
+
+  /// Cap expensive libp2p candidates (prefer cn-relay / community when present).
+  List<HomeRemoteCandidate> _limitLibp2p(
+    List<HomeRemoteCandidate> all, {
+    required int max,
+  }) {
+    if (all.length <= max) return all;
+    final preferred = all.where((c) => c.name.contains('cn-relay')).toList();
+    if (preferred.isNotEmpty) {
+      return preferred.take(max).toList();
+    }
+    return all.take(max).toList();
   }
 
   /// Build LAN WebSocket candidates.

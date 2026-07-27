@@ -38,6 +38,45 @@ describe("openclaw-workspace-files", () => {
     }
   });
 
+  it("supports offset ranges for tunnel-safe chunked reads", async () => {
+    const root = await mkdtemp(join(tmpdir(), "envoymesh-ws-range-"));
+    try {
+      const bytes = Buffer.alloc(100, 0xab);
+      bytes[50] = 0xcd;
+      await writeFile(join(root, "big.bin"), bytes);
+      await expect(
+        readOpenClawWorkspaceFileFromDir(root, { relativePath: "big.bin", maxBytes: 40 }),
+      ).rejects.toThrow(/too large/i);
+
+      const first = await readOpenClawWorkspaceFileFromDir(root, {
+        relativePath: "big.bin",
+        maxBytes: 40,
+        offset: 0,
+      });
+      expect(first.sizeBytes).toBe(100);
+      expect(first.truncated).toBe(true);
+      expect(Buffer.from(first.contentBase64, "base64").byteLength).toBe(40);
+
+      const second = await readOpenClawWorkspaceFileFromDir(root, {
+        relativePath: "big.bin",
+        maxBytes: 40,
+        offset: 40,
+      });
+      expect(second.truncated).toBe(true);
+      expect(Buffer.from(second.contentBase64, "base64")[10]).toBe(0xcd);
+
+      const last = await readOpenClawWorkspaceFileFromDir(root, {
+        relativePath: "big.bin",
+        maxBytes: 40,
+        offset: 80,
+      });
+      expect(last.truncated).toBe(false);
+      expect(Buffer.from(last.contentBase64, "base64").byteLength).toBe(20);
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
+
   it("rejects paths outside the workspace", async () => {
     const root = await mkdtemp(join(tmpdir(), "envoymesh-ws-safe-"));
     try {

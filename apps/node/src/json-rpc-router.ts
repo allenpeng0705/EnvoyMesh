@@ -236,6 +236,7 @@ export async function routeRpcMethod(
       return ns.readLibraryItemContent({
         relativePath: params.relativePath as string,
         maxBytes: params.maxBytes as number | undefined,
+        offset: params.offset as number | undefined,
       });
     case "listChatHistory":
       return ns.listChatHistory(params.peerOwnerId as string, params.limit as number | undefined);
@@ -355,6 +356,7 @@ export async function routeRpcMethod(
         relativePath: params.relativePath as string,
         documentId: params.documentId as string | undefined,
         maxBytes: params.maxBytes as number | undefined,
+        offset: params.offset as number | undefined,
       });
     case "openLocalFile":
       return ns.openLocalFile({

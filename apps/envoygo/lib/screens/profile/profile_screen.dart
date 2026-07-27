@@ -9,6 +9,7 @@ import '../../providers/contact_provider.dart'
     show contactProvider, nodeServiceProvider;
 import '../../providers/node_provider.dart';
 import '../../services/library_read_cache.dart';
+import '../../services/vault_content_fetch.dart';
 
 /// Unified profile view / edit — same UX for Me and bonded contacts.
 ///
@@ -71,7 +72,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     super.dispose();
   }
 
-  Future<void> _load() async {
+  Future<void> _load({bool bypassVaultCache = false}) async {
     final client = ref.read(nodeServiceProvider);
     if (client == null) {
       setState(() {
@@ -91,26 +92,54 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
         final displayName = (profile['displayName'] as String?)?.trim() ?? '';
         final username = (profile['username'] as String?)?.trim() ?? '';
         final bio = (profile['bio'] as String?)?.trim() ?? '';
+        final homePeerId =
+            ref.read(nodeProvider).activeNode?.homePeerId.trim() ?? '';
         Uint8List? thumb;
+        if (!bypassVaultCache && ownerId.isNotEmpty) {
+          thumb = await LibraryReadCache.instance
+              .peekBlob(peerThumbCacheKey(ownerId));
+        }
         final pub = profile['publicThumbnail'];
         final path = pub is Map
             ? (pub['vaultRelativePath'] as String?)?.trim()
             : null;
         if (path != null && path.isNotEmpty) {
-          final row =
-              await client.readLibraryItemContent(relativePath: path);
-          final b64 = row['contentBase64'] as String?;
-          if (b64 != null && b64.isNotEmpty) {
-            thumb = base64Decode(b64);
-            if (ownerId.isNotEmpty) {
-              await LibraryReadCache.instance.putBlob(
-                peerThumbCacheKey(ownerId),
-                thumb,
-                contentType:
-                    (pub is Map ? pub['mimeType'] as String? : null) ??
-                        'image/jpeg',
-              );
+          try {
+            final fetched = homePeerId.isNotEmpty
+                ? await getOrFetchVaultContent(
+                    ({required relativePath, int? maxBytes, int? offset}) =>
+                        client.readLibraryItemContent(
+                      relativePath: relativePath,
+                      maxBytes: maxBytes,
+                      offset: offset,
+                    ),
+                    homePeerId: homePeerId,
+                    relativePath: path,
+                    bypassCache: bypassVaultCache,
+                  )
+                : await fetchVaultContent(
+                    ({required relativePath, int? maxBytes, int? offset}) =>
+                        client.readLibraryItemContent(
+                      relativePath: relativePath,
+                      maxBytes: maxBytes,
+                      offset: offset,
+                    ),
+                    relativePath: path,
+                  );
+            if (fetched.bytes.isNotEmpty) {
+              thumb = fetched.bytes;
+              if (ownerId.isNotEmpty) {
+                await LibraryReadCache.instance.putBlob(
+                  peerThumbCacheKey(ownerId),
+                  thumb,
+                  contentType:
+                      (pub is Map ? pub['mimeType'] as String? : null) ??
+                          fetched.mimeType,
+                );
+              }
             }
+          } catch (_) {
+            /* keep cache / empty */
           }
         }
         final gallery = <_GalleryItem>[];
@@ -121,14 +150,31 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             final gPath = (g['vaultRelativePath'] as String?)?.trim();
             if (gPath == null || gPath.isEmpty) continue;
             try {
-              final row =
-                  await client.readLibraryItemContent(relativePath: gPath);
-              final b64 = row['contentBase64'] as String?;
-              if (b64 == null || b64.isEmpty) continue;
+              final fetched = homePeerId.isNotEmpty
+                  ? await getOrFetchVaultContent(
+                      ({required relativePath, int? maxBytes, int? offset}) =>
+                          client.readLibraryItemContent(
+                        relativePath: relativePath,
+                        maxBytes: maxBytes,
+                        offset: offset,
+                      ),
+                      homePeerId: homePeerId,
+                      relativePath: gPath,
+                    )
+                  : await fetchVaultContent(
+                      ({required relativePath, int? maxBytes, int? offset}) =>
+                          client.readLibraryItemContent(
+                        relativePath: relativePath,
+                        maxBytes: maxBytes,
+                        offset: offset,
+                      ),
+                      relativePath: gPath,
+                    );
+              if (fetched.bytes.isEmpty) continue;
               gallery.add(_GalleryItem(
                 photoId: (g['photoId'] as String?) ?? gPath,
                 path: gPath,
-                bytes: base64Decode(b64),
+                bytes: fetched.bytes,
                 label: (g['label'] as String?)?.trim(),
               ));
             } catch (_) {
@@ -201,9 +247,10 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
         _loading = false;
+        _error = e.toString();
       });
+      return;
     }
   }
 
@@ -273,6 +320,12 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     setState(() => _saving = true);
     try {
       await client.removeProfileGalleryPhoto(vaultRelativePath: item.path);
+      final homePeerId =
+          ref.read(nodeProvider).activeNode?.homePeerId.trim() ?? '';
+      if (homePeerId.isNotEmpty) {
+        await LibraryReadCache.instance
+            .invalidateBlob(vaultCacheKey(homePeerId, item.path));
+      }
       await _load();
     } catch (e) {
       if (!mounted) return;
@@ -312,12 +365,34 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       _error = null;
     });
     try {
+      String? avatarVaultPath;
       if (_pendingAvatar != null) {
         final bytes = await _pendingAvatar!.readAsBytes();
         await client.setPublicProfileThumbnail(
           contentBase64: base64Encode(bytes),
           mimeType: _mimeFor(_pendingAvatar!),
         );
+        // Same vault path is reused — drop stale disk/memory thumb.
+        final homePeerId =
+            ref.read(nodeProvider).activeNode?.homePeerId.trim() ?? '';
+        final ownerId = _ownerId?.trim() ??
+            ref.read(nodeProvider).ownerId?.trim() ??
+            '';
+        final profile = await client.getHumanProfile();
+        final pub = profile['publicThumbnail'];
+        avatarVaultPath = pub is Map
+            ? (pub['vaultRelativePath'] as String?)?.trim()
+            : null;
+        if (homePeerId.isNotEmpty &&
+            avatarVaultPath != null &&
+            avatarVaultPath.isNotEmpty) {
+          await LibraryReadCache.instance
+              .invalidateBlob(vaultCacheKey(homePeerId, avatarVaultPath));
+        }
+        if (ownerId.isNotEmpty) {
+          await LibraryReadCache.instance
+              .invalidateBlob(peerThumbCacheKey(ownerId));
+        }
       }
       await client.updateHumanProfile({
         if (displayName.isNotEmpty) 'displayName': displayName,
@@ -328,7 +403,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       _pendingAvatar = null;
       if (!mounted) return;
       setState(() => _editing = false);
-      await _load();
+      await _load(bypassVaultCache: avatarVaultPath != null);
       _avatarKey.currentState?.reload();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

@@ -9,7 +9,7 @@ import '../../models/chat_message.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/contact_provider.dart';
 import '../../providers/node_provider.dart';
-import '../../services/library_read_cache.dart';
+import '../../services/vault_content_fetch.dart';
 import '../../services/node_service_client.dart';
 import '../../widgets/chat_bubble.dart';
 import '../../widgets/chat_audio_player.dart';
@@ -201,24 +201,23 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
 
   Future<String?> _loadAudioForAttachment(String vaultRelativePath) async {
     final nodeService = ref.read(nodeServiceProvider);
-    final homeId = ref.read(nodeProvider).activeNode?.id;
-    if (nodeService == null || homeId == null) return null;
+    final homePeerId = ref.read(nodeProvider).activeNode?.homePeerId.trim();
+    if (nodeService == null || homePeerId == null || homePeerId.isEmpty) {
+      return null;
+    }
     try {
-      final key = vaultCacheKey(homeId, vaultRelativePath);
-      final bytes = await LibraryReadCache.instance.getOrFetchBlob(
-        key,
-        () async {
-          final result = await nodeService.readLibraryItemContent(
-            relativePath: vaultRelativePath,
-          );
-          final b64 = result['contentBase64'] as String?;
-          if (b64 == null || b64.isEmpty) return null;
-          return base64Decode(b64);
-        },
-        contentType: 'audio/mp4',
-        maxAge: vaultCacheFreshTtl,
+      final fetched = await getOrFetchVaultContent(
+        ({required relativePath, int? maxBytes, int? offset}) =>
+            nodeService.readLibraryItemContent(
+          relativePath: relativePath,
+          maxBytes: maxBytes,
+          offset: offset,
+        ),
+        homePeerId: homePeerId,
+        relativePath: vaultRelativePath,
       );
-      return bytes != null ? base64Encode(bytes) : null;
+      if (fetched.bytes.isEmpty) return null;
+      return base64Encode(fetched.bytes);
     } catch (_) {
       return null;
     }

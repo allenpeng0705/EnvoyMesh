@@ -3,26 +3,25 @@ import 'dart:async';
 import 'package:connectivity_plus/connectivity_plus.dart';
 
 /// Wraps `connectivity_plus` so the rest of the app does not need
-/// to know which platform channel to call. Exposes a single
-/// `onBecameOnline` stream that fires **only on the offline →
-/// online edge**, ignoring noisy transitions like WiFi ↔ 5G that
-/// the inner [HomeRemoteClient] reconnect loop already handles.
+/// to know which platform channel to call.
 ///
-/// The observer is constructed once at app start and disposed
-/// when the last paired node is unpaired. The
-/// [ReconnectSupervisor] subscribes to it and calls its own
-/// `kick()` on each emission.
+/// - [onBecameOnline] fires on offline → online.
+/// - [onNetworkTypeChanged] fires when Wi‑Fi ↔ cellular flips while online
+///   (needed so reconnect reorders candidates instead of sticking to LAN).
 abstract class ConnectivityObserver {
   /// Fires once per offline → online transition.
   Stream<void> get onBecameOnline;
 
-  /// Begin observing. Must be called before [onBecameOnline] is
-  /// listened to (the stream will not emit anything if the device
-  /// is already online at startup — that case is handled
-  /// separately by the initial `loadPairedNodes` connect).
+  /// Fires when [isOnWifi] changes while the device stays online.
+  Stream<void> get onNetworkTypeChanged;
+
+  /// Begin observing. Must be called before streams are listened to
+  /// (the streams will not emit anything if the device is already
+  /// online at startup — that case is handled separately by the
+  /// initial `loadPairedNodes` connect).
   Future<void> start();
 
-  /// Cancel the underlying subscription and close the stream.
+  /// Cancel the underlying subscription and close the streams.
   /// Idempotent.
   Future<void> dispose();
 
@@ -36,7 +35,9 @@ abstract class ConnectivityObserver {
 /// Production implementation backed by `connectivity_plus`.
 class RealConnectivityObserver implements ConnectivityObserver {
   final Connectivity _connectivity;
-  final StreamController<void> _controller =
+  final StreamController<void> _onlineController =
+      StreamController<void>.broadcast();
+  final StreamController<void> _typeController =
       StreamController<void>.broadcast();
   StreamSubscription<List<ConnectivityResult>>? _sub;
   bool _wasOnline = false;
@@ -50,7 +51,10 @@ class RealConnectivityObserver implements ConnectivityObserver {
       : _connectivity = connectivity ?? Connectivity();
 
   @override
-  Stream<void> get onBecameOnline => _controller.stream;
+  Stream<void> get onBecameOnline => _onlineController.stream;
+
+  @override
+  Stream<void> get onNetworkTypeChanged => _typeController.stream;
 
   @override
   bool? get isOnWifi => _isOnWifi;
@@ -75,18 +79,28 @@ class RealConnectivityObserver implements ConnectivityObserver {
   Future<void> dispose() async {
     await _sub?.cancel();
     _sub = null;
-    if (!_controller.isClosed) {
-      await _controller.close();
+    if (!_onlineController.isClosed) {
+      await _onlineController.close();
+    }
+    if (!_typeController.isClosed) {
+      await _typeController.close();
     }
   }
 
   void _onChange(List<ConnectivityResult> results) {
     final online = _isOnline(results);
     if (online && !_wasOnline) {
-      if (!_controller.isClosed) _controller.add(null);
+      if (!_onlineController.isClosed) _onlineController.add(null);
+    }
+    final nextWifi = _checkIsOnWifi(results);
+    if (online &&
+        _wasOnline &&
+        _isOnWifi != null &&
+        nextWifi != _isOnWifi) {
+      if (!_typeController.isClosed) _typeController.add(null);
     }
     _wasOnline = online;
-    _isOnWifi = _checkIsOnWifi(results);
+    _isOnWifi = nextWifi;
   }
 
   static bool _isOnline(List<ConnectivityResult> results) {

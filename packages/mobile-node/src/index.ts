@@ -2910,16 +2910,12 @@ You are the owner's personal AI assistant on EnvoyMesh.
   ): Promise<import("@envoymesh/api").ReadLibraryItemContentResult> {
     const { MAX_LIBRARY_ITEM_PREVIEW_BYTES } = await import("@envoymesh/api");
     const maxBytes = Math.min(params.maxBytes ?? MAX_LIBRARY_ITEM_PREVIEW_BYTES, MAX_LIBRARY_ITEM_PREVIEW_BYTES);
+    const rangeMode = params.offset !== undefined && params.offset !== null;
+    const offset = rangeMode ? Math.max(0, Math.floor(Number(params.offset) || 0)) : 0;
     const norm = params.relativePath.trim().replace(/^[\\/]+/, "");
     this._validateRelativeVaultPathForShare(norm);
     const vaultPath = norm.startsWith("/") ? norm : `/${norm}`;
     const entry = await this._vault.readFile(vaultPath);
-    if (entry.sizeBytes > maxBytes) {
-      throw new Error(`File too large for preview (${entry.sizeBytes} bytes, max ${maxBytes})`);
-    }
-    const bytes = entry.content;
-    let binary = "";
-    for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]!);
     const ext = norm.includes(".") ? norm.slice(norm.lastIndexOf(".") + 1).toLowerCase() : "";
     const mimeType =
       entry.mimeType ??
@@ -2932,11 +2928,37 @@ You are the owner's personal AI assistant on EnvoyMesh.
             : ext === "webp"
               ? "image/webp"
               : "application/octet-stream");
+    const toB64 = (bytes: Uint8Array) => {
+      let binary = "";
+      for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]!);
+      return btoa(binary);
+    };
+    if (!rangeMode) {
+      if (entry.sizeBytes > maxBytes) {
+        throw new Error(`File too large for preview (${entry.sizeBytes} bytes, max ${maxBytes})`);
+      }
+      return {
+        contentBase64: toB64(entry.content),
+        mimeType,
+        sizeBytes: entry.sizeBytes,
+        truncated: false,
+      };
+    }
+    if (offset >= entry.sizeBytes) {
+      return {
+        contentBase64: "",
+        mimeType,
+        sizeBytes: entry.sizeBytes,
+        truncated: false,
+      };
+    }
+    const end = Math.min(offset + maxBytes, entry.sizeBytes);
+    const slice = entry.content.subarray(offset, end);
     return {
-      contentBase64: btoa(binary),
+      contentBase64: toB64(slice),
       mimeType,
       sizeBytes: entry.sizeBytes,
-      truncated: false,
+      truncated: end < entry.sizeBytes,
     };
   }
 

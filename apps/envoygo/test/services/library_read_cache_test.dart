@@ -184,6 +184,25 @@ void main() {
     expect(again, Uint8List.fromList([1]));
   });
 
+  test('clearVaultForHome keeps peer thumbs and other homes', () async {
+    await cache.putBlob(
+      vaultCacheKey('peer-a', 'profile/t.jpg'),
+      Uint8List.fromList([1]),
+    );
+    await cache.putBlob(
+      vaultCacheKey('peer-b', 'profile/t.jpg'),
+      Uint8List.fromList([2]),
+    );
+    await cache.putBlob(
+      peerThumbCacheKey('envoy:owner:me'),
+      Uint8List.fromList([3]),
+    );
+    await cache.clearVaultForHome('peer-a');
+    expect(await cache.peekBlob(vaultCacheKey('peer-a', 'profile/t.jpg')), isNull);
+    expect(await cache.peekBlob(vaultCacheKey('peer-b', 'profile/t.jpg')), isNotNull);
+    expect(await cache.peekBlob(peerThumbCacheKey('envoy:owner:me')), isNotNull);
+  });
+
   test('getOrFetchBlob respects maxAge', () async {
     var fetches = 0;
     await cache.getOrFetchBlob(
