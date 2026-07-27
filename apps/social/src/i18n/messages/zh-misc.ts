@@ -20,6 +20,7 @@ export const zhDiscoverCardsMessages = {
   hopsAria: "{count} 跳",
   referredVia: "经介绍",
   sayHello: "打招呼",
+  openProfile: "打开主页",
   signed: "已签名",
   unsigned: "未签名",
   morningReportTitle: "晨报",

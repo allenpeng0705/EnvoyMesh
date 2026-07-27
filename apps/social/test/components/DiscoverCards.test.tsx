@@ -17,6 +17,7 @@ import { I18nTestProvider } from "../../src/context/I18nContext.js";
 const mockGetPeerProfile = vi.fn();
 const mockRequestPeerProfile = vi.fn();
 const mockOn = vi.fn(() => () => {});
+const mockOpenBrowserAt = vi.fn();
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: () => ({
@@ -24,6 +25,10 @@ vi.mock("../../src/hooks/useNodeService.js", () => ({
     requestPeerProfile: mockRequestPeerProfile,
     on: mockOn,
   }),
+}));
+
+vi.mock("../../src/lib/browser-nav.js", () => ({
+  openBrowserAt: (...args: unknown[]) => mockOpenBrowserAt(...args),
 }));
 
 afterEach(() => {
@@ -34,6 +39,7 @@ afterEach(() => {
 beforeEach(() => {
   mockGetPeerProfile.mockResolvedValue(undefined);
   mockRequestPeerProfile.mockResolvedValue({ ok: true });
+  mockOpenBrowserAt.mockReset();
 });
 
 const baseResult = {
@@ -49,6 +55,16 @@ const baseResult = {
 };
 
 describe("PeerResultCard — sent state UX", () => {
+  it("opens the peer profile in Browser when the card identity is clicked", () => {
+    render(
+      <I18nTestProvider>
+        <PeerResultCard result={baseResult} index={0} helloState="none" onSayHello={() => {}} />
+      </I18nTestProvider>,
+    );
+    fireEvent.click(screen.getByTestId("discover-open-profile"));
+    expect(mockOpenBrowserAt).toHaveBeenCalledWith("envoy://envoy:owner:bob/");
+  });
+
   it("renders the resend button alongside the waiting badge when helloState='sent'", () => {
     render(
       <I18nTestProvider>

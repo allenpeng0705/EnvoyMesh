@@ -16,6 +16,7 @@ export const discoverCardsMessages = {
   hopsAria: "{count} hops",
   referredVia: "Referred via",
   sayHello: "Say Hello",
+  openProfile: "Open profile",
   signed: "signed",
   unsigned: "unsigned",
   morningReportTitle: "Morning report",

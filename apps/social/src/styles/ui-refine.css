@@ -564,6 +564,44 @@
   animation-delay: calc(var(--discover-i, 0) * 50ms);
 }
 
+.peer-result-card__open-profile {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+  min-width: 0;
+}
+
+.peer-result-card__open-profile:hover strong,
+.peer-result-card__open-profile:focus-visible strong {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.peer-result-card__open-profile:focus-visible {
+  outline: 2px solid var(--color-primary, #6366f1);
+  outline-offset: 2px;
+  border-radius: var(--radius-sm, 0.375rem);
+}
+
+.peer-result-card__main,
+.discover-peer-card__main,
+.friend-suggestion-card__main {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  flex: 1;
+  min-width: 0;
+}
+
+.discover-peer-card__main {
+  align-items: center;
+}
+
 @keyframes discover-card-in {
   from {
     opacity: 0;

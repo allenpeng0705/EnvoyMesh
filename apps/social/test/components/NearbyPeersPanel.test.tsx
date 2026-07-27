@@ -83,6 +83,7 @@ describe("NearbyPeersPanel", () => {
     expect(screen.getByTestId("nearby-peers-list").textContent).toContain("Alice");
     expect(screen.getByText("Connected")).toBeTruthy();
     expect(screen.queryByTestId("nearby-status-note")).toBeNull();
+    expect(screen.getByTestId("discover-open-profile")).toBeTruthy();
   });
 
   it("folds unreachable probes into one diagnostic, not N empty cards", () => {

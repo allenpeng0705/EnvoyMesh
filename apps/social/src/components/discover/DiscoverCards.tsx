@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type {
   MorningReportEntry,
   MultiHopDiscoveryMatch,
@@ -12,7 +13,39 @@ import {
   friendSuggestionDisplayName,
 } from "../../lib/discover-friend-suggestion.js";
 import { resolvePeerHelloState } from "../../lib/discover-peer-state.js";
+import { openPeerProfile } from "../../lib/open-peer-profile.js";
 import { PeerProfileAvatar } from "../PeerProfileAvatar.js";
+
+function ProfileOpenButton({
+  ownerId,
+  label,
+  className,
+  children,
+  testId,
+}: {
+  ownerId: string;
+  label: string;
+  className?: string;
+  children: ReactNode;
+  testId?: string;
+}) {
+  const canOpen = ownerId.trim().startsWith("envoy:owner:");
+  if (!canOpen) {
+    return <div className={className}>{children}</div>;
+  }
+  return (
+    <button
+      type="button"
+      className={`peer-result-card__open-profile${className ? ` ${className}` : ""}`}
+      data-testid={testId}
+      aria-label={label}
+      title={label}
+      onClick={() => openPeerProfile(ownerId)}
+    >
+      {children}
+    </button>
+  );
+}
 
 export function TrustPathTrail({ path }: { path: string }) {
   const t = useT();
@@ -48,6 +81,7 @@ export function MultiHopResultCard({
     row.hopDistance === 1
       ? t("discoverCards.hopAria", { count: row.hopDistance })
       : t("discoverCards.hopsAria", { count: row.hopDistance });
+  const openLabel = t("discoverCards.openProfile", "Open profile");
   return (
     <li
       className="multihop-result search-result peer-result-card"
@@ -59,20 +93,27 @@ export function MultiHopResultCard({
       >
         {row.hopDistance}
       </span>
-      <PeerProfileAvatar
+      <ProfileOpenButton
         ownerId={row.ownerId}
-        fallbackLabel={via ?? row.ownerId}
-        className="peer-result-card__avatar multihop-result__avatar"
-      />
-      <div className="result-info multihop-result__body">
-        <strong title={row.ownerId}>{shortOwnerId(row.ownerId, 22)}</strong>
-        {via && (
-          <span className="multihop-result__via">
-            {t("discoverCards.referredVia")} <em>{via}</em>
-          </span>
-        )}
-        {row.trustPath && <TrustPathTrail path={row.trustPath} />}
-      </div>
+        label={openLabel}
+        className="peer-result-card__main"
+        testId="discover-open-profile"
+      >
+        <PeerProfileAvatar
+          ownerId={row.ownerId}
+          fallbackLabel={via ?? row.ownerId}
+          className="peer-result-card__avatar multihop-result__avatar"
+        />
+        <div className="result-info multihop-result__body">
+          <strong title={row.ownerId}>{shortOwnerId(row.ownerId, 22)}</strong>
+          {via && (
+            <span className="multihop-result__via">
+              {t("discoverCards.referredVia")} <em>{via}</em>
+            </span>
+          )}
+          {row.trustPath && <TrustPathTrail path={row.trustPath} />}
+        </div>
+      </ProfileOpenButton>
       <button type="button" className="peer-result-card__action" onClick={() => void onSayHello(row.ownerId)}>
         {t("discoverCards.sayHello")}
       </button>
@@ -97,39 +138,47 @@ export function PeerResultCard({
   if (result.trustLevel) trustBits.push(result.trustLevel);
   if (result.signedRecordValid === true) trustBits.push(t("discoverCards.signed"));
   else if (result.signedRecordValid === false) trustBits.push(t("discoverCards.unsigned"));
+  const openLabel = t("discoverCards.openProfile", "Open profile");
 
   return (
     <li
       className="search-result peer-result-card"
       style={{ ["--discover-i" as string]: String(index) }}
     >
-      <PeerProfileAvatar
+      <ProfileOpenButton
         ownerId={result.ownerId}
-        fallbackLabel={result.displayName || result.ownerId}
-        className="peer-result-card__avatar"
-      />
-      <div className="result-info peer-result-card__body">
-        <strong>{result.displayName || shortOwnerId(result.nodeId, 20)}</strong>
-        {result.username && <span className="result-username">@{result.username}</span>}
-        {result.did && (
-          <span className="result-username peer-result-card__did" title={result.did}>
-            {result.did.slice(0, 24)}…
-          </span>
-        )}
-        {trustBits.length > 0 && (
-          <div className="peer-result-card__tags">
-            {trustBits.map((bit) => (
-              <span key={bit} className="peer-result-card__tag">
-                {bit}
-              </span>
-            ))}
-          </div>
-        )}
-        {result.bio && <p className="peer-result-card__bio">{result.bio}</p>}
-        {result.interests.length > 0 && (
-          <span className="interests peer-result-card__interests">{result.interests.join(", ")}</span>
-        )}
-      </div>
+        label={openLabel}
+        className="peer-result-card__main"
+        testId="discover-open-profile"
+      >
+        <PeerProfileAvatar
+          ownerId={result.ownerId}
+          fallbackLabel={result.displayName || result.ownerId}
+          className="peer-result-card__avatar"
+        />
+        <div className="result-info peer-result-card__body">
+          <strong>{result.displayName || shortOwnerId(result.nodeId, 20)}</strong>
+          {result.username && <span className="result-username">@{result.username}</span>}
+          {result.did && (
+            <span className="result-username peer-result-card__did" title={result.did}>
+              {result.did.slice(0, 24)}…
+            </span>
+          )}
+          {trustBits.length > 0 && (
+            <div className="peer-result-card__tags">
+              {trustBits.map((bit) => (
+                <span key={bit} className="peer-result-card__tag">
+                  {bit}
+                </span>
+              ))}
+            </div>
+          )}
+          {result.bio && <p className="peer-result-card__bio">{result.bio}</p>}
+          {result.interests.length > 0 && (
+            <span className="interests peer-result-card__interests">{result.interests.join(", ")}</span>
+          )}
+        </div>
+      </ProfileOpenButton>
       {helloState === "connected" ? (
         <span className="discover-peer-card__status discover-peer-card__status--connected" role="status">
           {t("common.connected")}
@@ -175,6 +224,7 @@ export function FriendSuggestionsPanel({
 }) {
   const t = useT();
   const visible = filterFriendSuggestions(entries, bonds);
+  const openLabel = t("discoverCards.openProfile", "Open profile");
   if (visible.length === 0) return null;
   return (
     <section className="discover-panel friend-suggestions-panel" aria-labelledby="friend-suggestions-heading">
@@ -199,15 +249,22 @@ export function FriendSuggestionsPanel({
               className="friend-suggestion-card"
               style={{ ["--discover-i" as string]: String(index) }}
             >
-              <PeerProfileAvatar
+              <ProfileOpenButton
                 ownerId={entry.ownerId}
-                fallbackLabel={label}
-                className="friend-suggestion-card__avatar"
-              />
-              <div className="friend-suggestion-card__body">
-                <strong>{label}</strong>
-                <p className="friend-suggestion-card__reason">{formatFriendSuggestionReason(entry, t)}</p>
-              </div>
+                label={openLabel}
+                className="friend-suggestion-card__main"
+                testId="discover-open-profile"
+              >
+                <PeerProfileAvatar
+                  ownerId={entry.ownerId}
+                  fallbackLabel={label}
+                  className="friend-suggestion-card__avatar"
+                />
+                <div className="friend-suggestion-card__body">
+                  <strong>{label}</strong>
+                  <p className="friend-suggestion-card__reason">{formatFriendSuggestionReason(entry, t)}</p>
+                </div>
+              </ProfileOpenButton>
               <div className="friend-suggestion-card__actions">
                 {helloState === "sent" ? (
                   <>
