@@ -6,6 +6,15 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 DEST="${1:?usage: stage-bundle-node-runtime.sh <dest-dir>}"
 
+# Project version comes from the VERSION file at repo root (same source of
+# truth as scripts/sync-version.mjs). Reading it here keeps the bundled
+# node's synthetic package.json in sync without manual edits on every bump.
+BUNDLE_VERSION="$(cat "${ROOT}/VERSION" 2>/dev/null | tr -d '[:space:]' || echo "0.0.0")"
+if ! printf '%s' "$BUNDLE_VERSION" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+'; then
+  echo "error: invalid VERSION '${BUNDLE_VERSION}' in ${ROOT}/VERSION" >&2
+  exit 1
+fi
+
 SRC="$ROOT/apps/node/dist"
 if [ ! -f "$SRC/src/index.js" ]; then
   echo "error: $SRC/src/index.js not found — run: npm run node:build" >&2
@@ -19,10 +28,10 @@ echo "  Copying compiled node entrypoints..."
 mkdir -p "$DEST/dist"
 cp -R "$SRC/." "$DEST/dist/"
 
-cat > "$DEST/package.json" <<'EOF'
+cat > "$DEST/package.json" <<EOF
 {
   "name": "@envoymesh/node-bundle",
-  "version": "0.1.0",
+  "version": "${BUNDLE_VERSION}",
   "type": "module",
   "private": true
 }

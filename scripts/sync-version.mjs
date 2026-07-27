@@ -5,13 +5,39 @@
 
 import { readFileSync, writeFileSync, readdirSync, statSync } from "node:fs"
 import { resolve, join, dirname, basename } from "node:path"
+import { execSync } from "node:child_process"
 import { fileURLToPath } from "node:url"
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 const ROOT = resolve(__dirname, "..")
 
-// ---- Read source of truth ----
-const version = readFileSync(join(ROOT, "VERSION"), "utf8").trim()
+// ---- Resolve source of truth ----
+// Two ways this script gets invoked:
+//   1. Manually / via CI:  `echo 0.3.0 > VERSION && node sync-version.mjs`
+//      → VERSION file is the source of truth.
+//   2. As the npm "version" lifecycle hook:  `npm version 0.3.0`
+//      → npm bumps package.json BEFORE running this hook, so package.json's
+//        version is newer than VERSION. Trust package.json here and write it
+//        back to VERSION, otherwise we'd overwrite npm's bump back to the old
+//        value and leave the repo in an inconsistent state.
+// `npm_command` distinguishes the two: "version" for `npm version`,
+// "run-script" for `npm run version`, undefined for plain `node sync-version.mjs`.
+const VERSION_FILE = join(ROOT, "VERSION")
+const ROOT_PKG = join(ROOT, "package.json")
+const fileVersion = readFileSync(VERSION_FILE, "utf8").trim()
+const pkgVersion = JSON.parse(readFileSync(ROOT_PKG, "utf8")).version
+const isNpmVersionLifecycle = process.env.npm_command === "version"
+
+let version
+if (isNpmVersionLifecycle && pkgVersion !== fileVersion) {
+  // npm version just bumped package.json — adopt it as the new source of truth.
+  version = pkgVersion
+  writeFileSync(VERSION_FILE, version + "\n")
+  console.log(`📥 Adopted version from package.json (npm version lifecycle): ${version} → VERSION`)
+} else {
+  version = fileVersion
+}
+
 if (!/^\d+\.\d+\.\d+/.test(version)) {
   console.error(`❌ Invalid VERSION: "${version}" — must be semver (e.g. 0.1.0)`)
   process.exit(1)
@@ -157,4 +183,18 @@ if (changed === 0) {
   console.log(`  ✅ Everything already at ${version} — no changes needed.`)
 } else {
   console.log(`  ✅ Updated ${changed} file${changed > 1 ? "s" : ""} to ${version}`)
+}
+
+// When invoked as the npm "version" lifecycle hook, npm will create its own
+// git commit + tag immediately after this script returns — but only with
+// whatever is staged at that point. Stage all our sync writes so they land in
+// npm's version commit alongside package.json, instead of being left in the
+// working tree and forgotten.
+if (isNpmVersionLifecycle) {
+  try {
+    execSync("git add -A", { stdio: "ignore", cwd: ROOT })
+    console.log(`  📦 Staged all changes for npm version commit`)
+  } catch {
+    // Not a git repo, or git unavailable — non-fatal; user can `git add` manually.
+  }
 }

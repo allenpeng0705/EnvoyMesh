@@ -9,6 +9,18 @@ $ErrorActionPreference = "Stop"
 $Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $Src = Join-Path $Root "apps/node/dist"
 
+# Project version comes from the VERSION file at repo root (same source of
+# truth as scripts/sync-version.mjs). Reading it here keeps the bundled
+# node's synthetic package.json in sync without manual edits on every bump.
+$versionFile = Join-Path $Root "VERSION"
+$BundleVersion = "0.0.0"
+if (Test-Path $versionFile) {
+    $BundleVersion = (Get-Content $versionFile -Raw -ErrorAction Stop).Trim()
+}
+if (-not ($BundleVersion -match '^\d+\.\d+\.\d+')) {
+    Write-Error "Invalid VERSION '$BundleVersion' in $versionFile"
+}
+
 if (-not (Test-Path (Join-Path $Src "src/index.js"))) {
     Write-Error "Missing $Src/src/index.js — run: npm run node:build"
 }
@@ -23,14 +35,14 @@ $distDest = Join-Path $Dest "dist"
 New-Item -ItemType Directory -Force -Path $distDest | Out-Null
 Copy-Item -Recurse -Force "$Src/*" $distDest
 
-@'
+@"
 {
   "name": "@envoymesh/node-bundle",
-  "version": "0.1.0",
+  "version": "$BundleVersion",
   "type": "module",
   "private": true
 }
-'@ | Set-Content -Path (Join-Path $Dest "package.json") -Encoding UTF8
+"@ | Set-Content -Path (Join-Path $Dest "package.json") -Encoding UTF8
 
 # Discover workspace packages dynamically. We used to hardcode a list, but
 # new packages (kb-obsidian, mobile-*, openclaw-runtime) kept getting missed
