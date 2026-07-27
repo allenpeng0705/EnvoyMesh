@@ -159,6 +159,15 @@ export const contactChatMessages = {
   // contact chat.
   threadKindDirect: "Direct message",
   threadKindAgent: "Agent chat",
+  // ----- Peer reachability pill (chat header) -----
+  // Used by `peerReachabilityLabel` in lib/peer-reachability-label.ts.
+  // Kept under contactChat (not chat.*) so the human-contact path stays
+  // in one place and doesn't collide with the AI chat's online/offline
+  // labels in the future.
+  reachabilityChecking: "Checking…",
+  reachabilityOffline: "Offline",
+  reachabilityOnlineDirect: "Online · Direct",
+  reachabilityOnlineRelay: "Online · Relay",
 } as const;
 
 export const aiChatMessages = {
@@ -465,4 +474,14 @@ export const inboxMessages = {
   "call:remoteMuted": "They are muted",
   "call:offlineHint": "Contact may be offline — call will still attempt to connect",
   "call:unknownPeer": "Contact",
+} as const;
+
+// ----- Desktop browser notifications for inbound chat -----
+// Used by useChatNotifications. Body and title fallbacks when no
+// display name is available.
+export const chatNotifications = {
+  sentAFile: "Sent a file",
+  newMessage: "New chat message",
+  contactFallback: "Contact",
+  strangerFallback: "Stranger",
 } as const;

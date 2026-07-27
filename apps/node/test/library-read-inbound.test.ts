@@ -199,6 +199,24 @@ describe("handleInboundLibraryRead", () => {
     }
   });
 
+  it("serves bonded profile when directory peerId is stale but device PEM matches sender", async () => {
+    const { generateEd25519KeyPair, derivePeerId } = await import("@envoymesh/identity");
+    const keys = generateEd25519KeyPair();
+    const realPeerId = derivePeerId(keys.publicKeyPem);
+    const content = "<html><body>portal</body></html>";
+    await writePublishedFile("index.html", content, "bonded");
+    await trustStore.setTrustRecord({ peerOwnerId: OWNER_CONTACT, level: "direct", displayName: "Contact" });
+    // Stale/wrong peerId in directory (common after reconnect) — PEM still identifies the contact.
+    await registerPeer("12D3KooWStalePeerIdXXXX", OWNER_CONTACT, keys.publicKeyPem);
+    const result = await call(realPeerId, req(""));
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.responsePayload.status).toBe("ok");
+      expect(result.responsePayload.body).toContain("portal");
+      expect(result.responsePayload.contentType).toBe("text/html");
+    }
+  });
+
   it("denies contacts-visibility file to a direct bond not in contactIds", async () => {
     await writePublishedFile("contacts.md", "# exclusive", "contacts", ["envoy:owner:someother"]);
     await trustStore.setTrustRecord({ peerOwnerId: OWNER_CONTACT, level: "direct", displayName: "Contact" });

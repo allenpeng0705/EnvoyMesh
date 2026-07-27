@@ -97,6 +97,12 @@ export const jaNetworkSettingsMessages = {
   resourceTuning: {
     title: "リソース調整",
     desc: "WAN 接続を維持しつつ CPU とメモリを削減します。ノード再起動後に反映されます。",
+    mode: "Mode",
+    modeNormal: "Normal — most responsive (legacy defaults)",
+    modeOptimized: "Optimized — balanced (recommended)",
+    modeSmart: "Smart — slower when idle; warm on chat",
+    modeAggressive: "Aggressive — lowest CPU/network",
+    restartHint: "Restart the node (or fully quit and reopen the app) for mesh timers and DHT/mDNS options to apply.",
     maxConnections: "最大接続数",
     capabilityCycle: "ケイパビリティサイクル（秒）",
     lazyDhtFind: "Lazy DHT 検索",

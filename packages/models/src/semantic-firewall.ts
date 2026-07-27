@@ -33,6 +33,8 @@ export interface EgressSecretMatch {
 /**
  * Deterministic, non-LLM checks on text before it is passed to any model provider.
  * Intended as a first line of defense against trivial injection and malformed input.
+ *
+ * For model *output* tool-call arguments, see `evaluateToolCallFirewall` in `tool-call-firewall.ts`.
  */
 export function evaluateSemanticFirewall(input: { text: string }): SemanticFirewallResult {
   const text = input.text;

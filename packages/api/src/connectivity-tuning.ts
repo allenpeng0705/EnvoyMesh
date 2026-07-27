@@ -17,22 +17,227 @@ export const DEFAULT_CAPABILITY_DISCOVERY_JITTER_MS = 20_000;
 export const DEFAULT_RELAY_CLIENT_CYCLE_INTERVAL_MS = 30_000;
 export const DEFAULT_BOOTSTRAP_REPROBE_INTERVAL_MS = 60_000;
 
+export const DEFAULT_CONNECTION_MONITOR_PING_INTERVAL_MS = 45_000;
+export const DEFAULT_BOND_WARM_INTERVAL_MS = 300_000;
+export const DEFAULT_BOND_WARM_PER_CONTACT_COOLDOWN_MS = 300_000;
+
 /** When idle timer stretch is on, multiply background intervals by this factor. */
 export const IDLE_TIMER_STRETCH_MULTIPLIER = 4;
 /** No chat/owner activity within this window counts as idle for timer stretch. */
 export const IDLE_MESH_ACTIVITY_THRESHOLD_MS = 5 * 60 * 1000;
 
+/**
+ * Resource / connectivity duty-cycle mode.
+ * - normal: today's historical defaults (most chatty)
+ * - optimized: Phase 1 balanced savings (default)
+ * - smart: Phase 2 idle/event-driven
+ * - aggressive: Phase 3 minimum background mesh
+ */
+export type ConnectivityMode = "normal" | "optimized" | "smart" | "aggressive";
+
+export const CONNECTIVITY_MODES: readonly ConnectivityMode[] = [
+  "normal",
+  "optimized",
+  "smart",
+  "aggressive",
+] as const;
+
+/** Default for new nodes and unset config. */
+export const DEFAULT_CONNECTIVITY_MODE: ConnectivityMode = "optimized";
+
 export interface ConnectivityTuning {
+  /** Resource mode preset. When set, drives defaults for the fields below. */
+  connectivityMode?: ConnectivityMode;
   /** Max libp2p connections (client nodes). Omitted from mesh options when unset (uses network default). */
   maxConnections?: number;
   /** mDNS query interval in ms. Default 10_000. */
   mdnsIntervalMs?: number;
   /** Background capability provide/find cycle interval in ms. Default 90_000. */
   capabilityDiscoveryIntervalMs?: number;
-  /** When true, skip periodic DHT capability find (Search/Discover triggers on-demand find). Default true for wan-default. */
+  /** When true, skip periodic DHT capability find (Search/Discover triggers on-demand find). */
   lazyCapabilityDiscovery?: boolean;
-  /** When true, stretch relay/capability/bootstrap timers while idle. Default true for WAN profiles. */
+  /** When true, stretch relay/capability/bootstrap timers while idle. */
   idleTimerStretch?: boolean;
+  /** libp2p connectionMonitor ping interval. */
+  connectionMonitorPingIntervalMs?: number;
+  /** Background bonded-contact warm cycle interval. */
+  bondWarmIntervalMs?: number;
+  /** Per-contact cooldown inside bond warm. */
+  bondWarmPerContactCooldownMs?: number;
+  /**
+   * When true, skip warm for contacts that are already connected and recently
+   * path-verified (rely on chat-open / send-path warm).
+   */
+  bondWarmEventDriven?: boolean;
+  /** Base relay client cycle interval (checkin/lookup scheduling). */
+  relayCycleBaseMs?: number;
+  /** When true, force DHT off regardless of discovery profile. */
+  forceDisableDht?: boolean;
+  /**
+   * mDNS policy from the preset:
+   * - on: follow enableMdns / profile default
+   * - lan-only: enable only for lan-fast
+   * - off: disable mDNS
+   */
+  mdnsPolicy?: "on" | "lan-only" | "off";
+}
+
+/** Fully resolved preset values (no optionals). */
+export interface ConnectivityPreset {
+  mode: ConnectivityMode;
+  maxConnections: number;
+  mdnsIntervalMs: number;
+  mdnsPolicy: "on" | "lan-only" | "off";
+  capabilityDiscoveryIntervalMs: number;
+  lazyCapabilityDiscovery: boolean;
+  idleTimerStretch: boolean;
+  connectionMonitorPingIntervalMs: number;
+  bondWarmIntervalMs: number;
+  bondWarmPerContactCooldownMs: number;
+  bondWarmEventDriven: boolean;
+  relayCycleBaseMs: number;
+  forceDisableDht: boolean;
+  /** Cap on idle stretch for relay cycles (TTL safety). */
+  relayIdleStretchMaxMultiplier: number;
+}
+
+const PRESETS: Record<ConnectivityMode, Omit<ConnectivityPreset, "mode">> = {
+  normal: {
+    maxConnections: DEFAULT_CLIENT_MAX_CONNECTIONS,
+    mdnsIntervalMs: DEFAULT_MDNS_INTERVAL_MS,
+    mdnsPolicy: "on",
+    capabilityDiscoveryIntervalMs: DEFAULT_CAPABILITY_DISCOVERY_INTERVAL_MS,
+    lazyCapabilityDiscovery: false,
+    idleTimerStretch: false,
+    connectionMonitorPingIntervalMs: DEFAULT_CONNECTION_MONITOR_PING_INTERVAL_MS,
+    bondWarmIntervalMs: DEFAULT_BOND_WARM_INTERVAL_MS,
+    bondWarmPerContactCooldownMs: DEFAULT_BOND_WARM_PER_CONTACT_COOLDOWN_MS,
+    bondWarmEventDriven: false,
+    relayCycleBaseMs: DEFAULT_RELAY_CLIENT_CYCLE_INTERVAL_MS,
+    forceDisableDht: false,
+    relayIdleStretchMaxMultiplier: 2,
+  },
+  optimized: {
+    maxConnections: 80,
+    mdnsIntervalMs: 45_000,
+    mdnsPolicy: "on",
+    capabilityDiscoveryIntervalMs: 120_000,
+    lazyCapabilityDiscovery: true,
+    idleTimerStretch: true,
+    connectionMonitorPingIntervalMs: 90_000,
+    bondWarmIntervalMs: DEFAULT_BOND_WARM_INTERVAL_MS,
+    bondWarmPerContactCooldownMs: DEFAULT_BOND_WARM_PER_CONTACT_COOLDOWN_MS,
+    bondWarmEventDriven: false,
+    relayCycleBaseMs: 45_000,
+    forceDisableDht: false,
+    relayIdleStretchMaxMultiplier: 2,
+  },
+  smart: {
+    maxConnections: 64,
+    mdnsIntervalMs: 60_000,
+    mdnsPolicy: "on",
+    capabilityDiscoveryIntervalMs: 180_000,
+    lazyCapabilityDiscovery: true,
+    idleTimerStretch: true,
+    connectionMonitorPingIntervalMs: 120_000,
+    bondWarmIntervalMs: 600_000,
+    bondWarmPerContactCooldownMs: 600_000,
+    bondWarmEventDriven: true,
+    relayCycleBaseMs: 60_000,
+    forceDisableDht: false,
+    relayIdleStretchMaxMultiplier: 2,
+  },
+  aggressive: {
+    maxConnections: 32,
+    mdnsIntervalMs: 120_000,
+    mdnsPolicy: "lan-only",
+    capabilityDiscoveryIntervalMs: 300_000,
+    lazyCapabilityDiscovery: true,
+    idleTimerStretch: true,
+    connectionMonitorPingIntervalMs: 180_000,
+    bondWarmIntervalMs: 900_000,
+    bondWarmPerContactCooldownMs: 900_000,
+    bondWarmEventDriven: true,
+    relayCycleBaseMs: 90_000,
+    forceDisableDht: true,
+    relayIdleStretchMaxMultiplier: 2,
+  },
+};
+
+export function isConnectivityMode(value: unknown): value is ConnectivityMode {
+  return (
+    value === "normal" ||
+    value === "optimized" ||
+    value === "smart" ||
+    value === "aggressive"
+  );
+}
+
+export function resolveConnectivityMode(raw?: ConnectivityMode | string | null): ConnectivityMode {
+  if (isConnectivityMode(raw)) return raw;
+  return DEFAULT_CONNECTIVITY_MODE;
+}
+
+export function resolveConnectivityPreset(mode?: ConnectivityMode | string | null): ConnectivityPreset {
+  const resolved = resolveConnectivityMode(mode);
+  return { mode: resolved, ...PRESETS[resolved] };
+}
+
+/** Build ConnectivityTuning fields from a mode preset (for runtime merge). */
+export function connectivityTuningFromPreset(preset: ConnectivityPreset): ConnectivityTuning {
+  return {
+    connectivityMode: preset.mode,
+    maxConnections: preset.maxConnections,
+    mdnsIntervalMs: preset.mdnsIntervalMs,
+    capabilityDiscoveryIntervalMs: preset.capabilityDiscoveryIntervalMs,
+    lazyCapabilityDiscovery: preset.lazyCapabilityDiscovery,
+    idleTimerStretch: preset.idleTimerStretch,
+    connectionMonitorPingIntervalMs: preset.connectionMonitorPingIntervalMs,
+    bondWarmIntervalMs: preset.bondWarmIntervalMs,
+    bondWarmPerContactCooldownMs: preset.bondWarmPerContactCooldownMs,
+    bondWarmEventDriven: preset.bondWarmEventDriven,
+    relayCycleBaseMs: preset.relayCycleBaseMs,
+    forceDisableDht: preset.forceDisableDht,
+    mdnsPolicy: preset.mdnsPolicy,
+  };
+}
+
+/**
+ * Resolve effective tuning: mode preset as base, then optional explicit field overrides.
+ * Prefer setting `connectivityMode`; fine-grained fields override the preset when present.
+ */
+export function resolveConnectivityTuning(input?: {
+  connectivityMode?: ConnectivityMode | string | null;
+  maxConnections?: number;
+  mdnsIntervalMs?: number;
+  capabilityDiscoveryIntervalMs?: number;
+  lazyCapabilityDiscovery?: boolean;
+  idleTimerStretch?: boolean;
+  connectionMonitorPingIntervalMs?: number;
+  bondWarmIntervalMs?: number;
+  bondWarmPerContactCooldownMs?: number;
+  bondWarmEventDriven?: boolean;
+  relayCycleBaseMs?: number;
+  forceDisableDht?: boolean;
+  mdnsPolicy?: "on" | "lan-only" | "off";
+}): ConnectivityTuning {
+  const preset = resolveConnectivityPreset(input?.connectivityMode);
+  const base = connectivityTuningFromPreset(preset);
+  const overrides = clampConnectivityTuningInput({
+    maxConnections: input?.maxConnections,
+    mdnsIntervalMs: input?.mdnsIntervalMs,
+    capabilityDiscoveryIntervalMs: input?.capabilityDiscoveryIntervalMs,
+    lazyCapabilityDiscovery: input?.lazyCapabilityDiscovery,
+    idleTimerStretch: input?.idleTimerStretch,
+    connectionMonitorPingIntervalMs: input?.connectionMonitorPingIntervalMs,
+    bondWarmIntervalMs: input?.bondWarmIntervalMs,
+    bondWarmPerContactCooldownMs: input?.bondWarmPerContactCooldownMs,
+    bondWarmEventDriven: input?.bondWarmEventDriven,
+    relayCycleBaseMs: input?.relayCycleBaseMs,
+    forceDisableDht: input?.forceDisableDht,
+    mdnsPolicy: input?.mdnsPolicy,
+  });
+  return { ...base, ...overrides, connectivityMode: preset.mode };
 }
 
 export function discoveryProfileUsesDht(profile: DiscoveryProfile): boolean {
@@ -98,10 +303,63 @@ export function resolveIdleTimerStretch(
   return defaultIdleTimerStretch(profile);
 }
 
+export function resolveConnectionMonitorPingIntervalMs(tuning?: ConnectivityTuning): number {
+  const raw = tuning?.connectionMonitorPingIntervalMs;
+  if (typeof raw === "number" && Number.isFinite(raw) && raw >= 15_000) {
+    return Math.min(300_000, Math.round(raw));
+  }
+  return DEFAULT_CONNECTION_MONITOR_PING_INTERVAL_MS;
+}
+
+export function resolveBondWarmIntervalMs(tuning?: ConnectivityTuning): number {
+  const raw = tuning?.bondWarmIntervalMs;
+  if (typeof raw === "number" && Number.isFinite(raw) && raw >= 60_000) {
+    return Math.min(3_600_000, Math.round(raw));
+  }
+  return DEFAULT_BOND_WARM_INTERVAL_MS;
+}
+
+export function resolveBondWarmPerContactCooldownMs(tuning?: ConnectivityTuning): number {
+  const raw = tuning?.bondWarmPerContactCooldownMs;
+  if (typeof raw === "number" && Number.isFinite(raw) && raw >= 60_000) {
+    return Math.min(3_600_000, Math.round(raw));
+  }
+  return DEFAULT_BOND_WARM_PER_CONTACT_COOLDOWN_MS;
+}
+
+export function resolveBondWarmEventDriven(tuning?: ConnectivityTuning): boolean {
+  return tuning?.bondWarmEventDriven === true;
+}
+
+export function resolveRelayCycleBaseMs(tuning?: ConnectivityTuning): number {
+  const raw = tuning?.relayCycleBaseMs;
+  if (typeof raw === "number" && Number.isFinite(raw) && raw >= 15_000) {
+    return Math.min(120_000, Math.round(raw));
+  }
+  return DEFAULT_RELAY_CLIENT_CYCLE_INTERVAL_MS;
+}
+
+export function resolveForceDisableDht(tuning?: ConnectivityTuning): boolean {
+  return tuning?.forceDisableDht === true;
+}
+
+export function resolveMdnsPolicy(tuning?: ConnectivityTuning): "on" | "lan-only" | "off" {
+  if (tuning?.mdnsPolicy === "lan-only" || tuning?.mdnsPolicy === "off" || tuning?.mdnsPolicy === "on") {
+    return tuning.mdnsPolicy;
+  }
+  return "on";
+}
+
 export function resolveEnableMdns(
   profile: DiscoveryProfile,
   explicit?: boolean,
+  tuning?: ConnectivityTuning,
 ): boolean {
+  const policy = resolveMdnsPolicy(tuning);
+  if (policy === "off") return false;
+  if (policy === "lan-only") {
+    if (profile !== "lan-fast") return false;
+  }
   if (typeof explicit === "boolean") {
     return explicit;
   }
@@ -125,6 +383,9 @@ export function stretchTimerIntervalMs(
 
 export function clampConnectivityTuningInput(input: Partial<ConnectivityTuning>): ConnectivityTuning {
   const out: ConnectivityTuning = {};
+  if (input.connectivityMode !== undefined && isConnectivityMode(input.connectivityMode)) {
+    out.connectivityMode = input.connectivityMode;
+  }
   if (input.maxConnections !== undefined) {
     out.maxConnections = resolveMaxConnections({ maxConnections: input.maxConnections });
   }
@@ -142,5 +403,52 @@ export function clampConnectivityTuningInput(input: Partial<ConnectivityTuning>)
   if (typeof input.idleTimerStretch === "boolean") {
     out.idleTimerStretch = input.idleTimerStretch;
   }
+  if (input.connectionMonitorPingIntervalMs !== undefined) {
+    out.connectionMonitorPingIntervalMs = resolveConnectionMonitorPingIntervalMs({
+      connectionMonitorPingIntervalMs: input.connectionMonitorPingIntervalMs,
+    });
+  }
+  if (input.bondWarmIntervalMs !== undefined) {
+    out.bondWarmIntervalMs = resolveBondWarmIntervalMs({
+      bondWarmIntervalMs: input.bondWarmIntervalMs,
+    });
+  }
+  if (input.bondWarmPerContactCooldownMs !== undefined) {
+    out.bondWarmPerContactCooldownMs = resolveBondWarmPerContactCooldownMs({
+      bondWarmPerContactCooldownMs: input.bondWarmPerContactCooldownMs,
+    });
+  }
+  if (typeof input.bondWarmEventDriven === "boolean") {
+    out.bondWarmEventDriven = input.bondWarmEventDriven;
+  }
+  if (input.relayCycleBaseMs !== undefined) {
+    out.relayCycleBaseMs = resolveRelayCycleBaseMs({ relayCycleBaseMs: input.relayCycleBaseMs });
+  }
+  if (typeof input.forceDisableDht === "boolean") {
+    out.forceDisableDht = input.forceDisableDht;
+  }
+  if (input.mdnsPolicy === "on" || input.mdnsPolicy === "lan-only" || input.mdnsPolicy === "off") {
+    out.mdnsPolicy = input.mdnsPolicy;
+  }
   return out;
+}
+
+/** One-line summary for Settings UI. */
+export function formatConnectivityPresetSummary(preset: ConnectivityPreset): string {
+  const mdns =
+    preset.mdnsPolicy === "off"
+      ? "mDNS off"
+      : preset.mdnsPolicy === "lan-only"
+        ? `mDNS lan-only ${Math.round(preset.mdnsIntervalMs / 1000)}s`
+        : `mDNS ${Math.round(preset.mdnsIntervalMs / 1000)}s`;
+  return [
+    mdns,
+    `relay ${Math.round(preset.relayCycleBaseMs / 1000)}s`,
+    `ping ${Math.round(preset.connectionMonitorPingIntervalMs / 1000)}s`,
+    preset.lazyCapabilityDiscovery ? "lazy DHT" : "DHT find on",
+    `maxConn ${preset.maxConnections}`,
+    preset.forceDisableDht ? "DHT off" : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
 }

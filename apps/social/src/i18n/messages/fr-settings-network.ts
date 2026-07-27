@@ -97,6 +97,12 @@ export const frNetworkSettingsMessages = {
   resourceTuning: {
     title: "Réglage des ressources",
     desc: "Réduire CPU et mémoire tout en restant sur WAN. Prend effet après redémarrage du nœud.",
+    mode: "Mode",
+    modeNormal: "Normal — most responsive (legacy defaults)",
+    modeOptimized: "Optimized — balanced (recommended)",
+    modeSmart: "Smart — slower when idle; warm on chat",
+    modeAggressive: "Aggressive — lowest CPU/network",
+    restartHint: "Restart the node (or fully quit and reopen the app) for mesh timers and DHT/mDNS options to apply.",
     maxConnections: "Connexions max.",
     capabilityCycle: "Cycle de capacité (secondes)",
     lazyDhtFind: "Lazy DHT find",

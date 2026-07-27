@@ -249,7 +249,11 @@ export async function deliverChatEnvelopeWithRetry(input: {
   );
   const canExpectAck =
     input.expectDeliveryAck !== false && typeof input.mesh.sendChatExpectReply === "function";
-  const ackTimeoutMs = resolveChatDeliveryAckTimeoutMs(hints);
+  // Connected direct peers often dial with empty hints; still use the short LAN ack budget.
+  const ackTimeoutMs =
+    input.mesh.getPeerConnectionInfo(input.transportPeerId).direct === true
+      ? DIRECT_CHAT_DELIVERY_ACK_TIMEOUT_MS
+      : resolveChatDeliveryAckTimeoutMs(hints);
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (attempt > 0) {

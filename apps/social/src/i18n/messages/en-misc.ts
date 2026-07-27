@@ -1066,3 +1066,18 @@ export const kbPluginMessages = {
   statusDisabled: "Disabled",
   statusError: "Error",
 } as const;
+
+// ----- Generic display helpers (bond level, mDNS fallback name) -----
+// Used by lib/display.ts (`bondLevelLabel`, `nearbyPeerLabel`). The
+// strings here are not chat-specific, so they live under `display.*`
+// rather than `contactChat.*` / `discover.*`.
+export const displayMessages = {
+  bondLevel: {
+    direct: "Friend",
+    referred: "Introduced",
+    public: "New contact",
+    blocked: "Blocked",
+    unknown: "Contact",
+  },
+  nearbyPeerFallback: "Someone nearby",
+} as const;

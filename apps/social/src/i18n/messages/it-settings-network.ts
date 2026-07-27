@@ -97,6 +97,12 @@ export const itNetworkSettingsMessages = {
   resourceTuning: {
     title: "Ottimizzazione risorse",
     desc: "Riduci CPU e memoria restando su WAN. Effetto dopo riavvio del nodo.",
+    mode: "Mode",
+    modeNormal: "Normal — most responsive (legacy defaults)",
+    modeOptimized: "Optimized — balanced (recommended)",
+    modeSmart: "Smart — slower when idle; warm on chat",
+    modeAggressive: "Aggressive — lowest CPU/network",
+    restartHint: "Restart the node (or fully quit and reopen the app) for mesh timers and DHT/mDNS options to apply.",
     maxConnections: "Connessioni max",
     capabilityCycle: "Ciclo capability (secondi)",
     lazyDhtFind: "Lazy DHT find",

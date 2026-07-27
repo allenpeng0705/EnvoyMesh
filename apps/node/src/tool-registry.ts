@@ -52,6 +52,7 @@ import {
   matchAgentCapabilityRoutes,
   resolveAgentCapabilityRouteById,
 } from "@envoymesh/api";
+import { evaluateToolCallFirewall } from "@envoymesh/models";
 
 /**
  * Sensitivity ceiling for a tool.
@@ -76,6 +77,10 @@ export interface ToolResult {
   toolName: string;
   correlationId: string;
   latencyMs: number;
+  /** True when the call was held for owner approval instead of executing. */
+  approvalRequired?: boolean;
+  /** Inbox / approval-queue item id when approvalRequired. */
+  approvalItemId?: string;
 }
 
 /**
@@ -1423,6 +1428,21 @@ export interface MeshToolContext {
     vaultRelativePath: string;
     sensitivity: "public" | "friends" | "private";
   }) => Promise<void>;
+  /**
+   * When true, tools with `requiresApproval` may run (owner-trusted surfaces:
+   * posture workers, execute-after-approve). When false/undefined, those tools
+   * are blocked or enqueued via {@link enqueueToolApproval}.
+   */
+  approvalGranted?: boolean;
+  /**
+   * Queue a tool call for owner approval. Used when the firewall returns
+   * `approval_required` and an approval queue is available.
+   */
+  enqueueToolApproval?: (input: {
+    toolName: string;
+    params: Record<string, unknown>;
+    reason: string;
+  }) => Promise<{ ok: true; itemId: string } | { ok: false; error: string }>;
   /** Phase 48A — MCP Tool Consumer. Undefined if no consumers configured. */
   mcpConsumerManager?: import("./mcp-client-adapter.js").McpConsumerManager;
 }
@@ -1432,7 +1452,7 @@ export interface MeshToolContext {
  */
 export async function executeTool(
   toolName: string,
-  params: ToolParams,
+  rawParams: ToolParams,
   context: MeshToolContext,
   vaultSearchFn?: (query: string, limit?: number) => Promise<unknown>,
 ): Promise<ToolResult> {
@@ -1452,6 +1472,103 @@ export async function executeTool(
   const correlationId = randomUUID();
   const startTime = Date.now();
 
+  const firewall = evaluateToolCallFirewall({
+    tool: {
+      name: tool.name,
+      paramSchema: tool.paramSchema,
+      sensitivityCeiling: tool.sensitivityCeiling,
+      requiresApproval: tool.requiresApproval,
+    },
+    params: rawParams,
+    approvalGranted: context.approvalGranted === true,
+  });
+  if (!firewall.ok) {
+    if (firewall.action === "approval_required") {
+      if (context.enqueueToolApproval) {
+        const queued = await context.enqueueToolApproval({
+          toolName,
+          params: firewall.params,
+          reason: firewall.reason,
+        });
+        if (queued.ok) {
+          await context.taskStore.appendAuditEvent(
+            createAuditEvent({
+              type: "tool.called",
+              intent: tool.intent,
+              messageId: correlationId,
+              remotePeerId:
+                typeof firewall.params.targetOwnerId === "string"
+                  ? firewall.params.targetOwnerId
+                  : "local",
+              direction: tool.isMeshTool ? "outbound" : "local",
+              verificationStatus: "verified",
+              latencyMs: Date.now() - startTime,
+              outcome: "record",
+              summary: `tool call queued for approval: ${toolName} (${queued.itemId})`,
+              createdAt: new Date().toISOString(),
+            }),
+          );
+          return {
+            ok: false,
+            error: firewall.reason,
+            toolName,
+            correlationId,
+            latencyMs: Date.now() - startTime,
+            approvalRequired: true,
+            approvalItemId: queued.itemId,
+          };
+        }
+        await context.taskStore.appendAuditEvent(
+          createAuditEvent({
+            type: "tool.called",
+            intent: tool.intent,
+            messageId: correlationId,
+            remotePeerId:
+              typeof rawParams.targetOwnerId === "string" ? rawParams.targetOwnerId : "local",
+            direction: tool.isMeshTool ? "outbound" : "local",
+            verificationStatus: "verified",
+            latencyMs: Date.now() - startTime,
+            outcome: "deny",
+            summary: `tool call approval enqueue failed: ${toolName}: ${queued.error}`,
+            createdAt: new Date().toISOString(),
+          }),
+        );
+        return {
+          ok: false,
+          error: `tool_arg_approval: ${toolName} requires owner approval (enqueue failed: ${queued.error})`,
+          toolName,
+          correlationId,
+          latencyMs: Date.now() - startTime,
+          approvalRequired: true,
+        };
+      }
+    }
+    await context.taskStore.appendAuditEvent(
+      createAuditEvent({
+        type: "tool.called",
+        intent: tool.intent,
+        messageId: correlationId,
+        remotePeerId:
+          typeof rawParams.targetOwnerId === "string" ? rawParams.targetOwnerId : "local",
+        direction: tool.isMeshTool ? "outbound" : "local",
+        verificationStatus: "verified",
+        latencyMs: 0,
+        outcome: "deny",
+        summary: `tool call blocked: ${toolName}: ${firewall.reason}`,
+        createdAt: new Date().toISOString(),
+      }),
+    );
+    return {
+      ok: false,
+      error: firewall.reason,
+      toolName,
+      correlationId,
+      latencyMs: Date.now() - startTime,
+      approvalRequired: firewall.action === "approval_required" ? true : undefined,
+    };
+  }
+  const params = firewall.params;
+
   // Audit the tool call
   await context.taskStore.appendAuditEvent(
     createAuditEvent({
@@ -1463,7 +1580,10 @@ export async function executeTool(
       verificationStatus: "verified",
       latencyMs: 0,
       outcome: "record",
-      summary: `tool call: ${toolName}`,
+      summary:
+        firewall.rewrites.length > 0
+          ? `tool call: ${toolName} (${firewall.rewrites.join("; ")})`
+          : `tool call: ${toolName}`,
       createdAt: new Date().toISOString(),
     }),
   );
@@ -2371,7 +2491,7 @@ export async function executeTool(
           maxResponses,
           ttl: 1,
         },
-        context,
+        { ...context, approvalGranted: true },
         vaultSearchFn,
       );
       if (context.recordFriendAutopilotPass) {

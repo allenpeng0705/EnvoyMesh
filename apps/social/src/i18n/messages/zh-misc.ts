@@ -1010,3 +1010,16 @@ export const zhCommonYesNoMessages = {
   yes: "是",
   no: "否",
 } as const;
+
+// ----- 通用展示文案（绑定等级、mDNS 兜底名） -----
+// 由 lib/display.ts 的 bondLevelLabel / nearbyPeerLabel 使用。
+export const zhDisplayMessages = {
+  bondLevel: {
+    direct: "好友",
+    referred: "已介绍",
+    public: "新联系人",
+    blocked: "已屏蔽",
+    unknown: "联系人",
+  },
+  nearbyPeerFallback: "附近的某个人",
+} as const;

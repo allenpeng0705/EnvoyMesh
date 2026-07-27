@@ -114,7 +114,7 @@ export async function advanceSocialProxySession(
             introCorrelationId: session.correlationId,
             interest: "explore",
           },
-          ctx,
+          { ...ctx, approvalGranted: true },
         );
         syncOk = sync.ok;
       }
@@ -310,7 +310,10 @@ export async function runSocialProxyPass(deps: SocialProxyOrchestratorDeps): Pro
     context?.trustIntro?.trustModeEnabled &&
     !session.candidateOwnerId
   ) {
-    const sync = await executeTool("mesh.intro.matching_context", {}, context);
+    const sync = await executeTool("mesh.intro.matching_context", {}, {
+      ...context,
+      approvalGranted: true,
+    });
     if (sync.ok) {
       await runPassTransition("SYNC_OK");
     } else {

@@ -270,6 +270,7 @@ import {
   shouldRunPeriodicCapabilityFind,
   type ResolvedConnectivityRuntime,
 } from "./connectivity-runtime.js";
+import { configureBondWarmFromConnectivity } from "./node-service-reachability.js";
 
 const args = parseNodeArgs(process.argv.slice(2));
 const profile = await loadOrCreateNodeProfile(args.profileDir);
@@ -742,11 +743,17 @@ const connectivityRuntime: ResolvedConnectivityRuntime = resolveConnectivityRunt
 });
 args.enableMdns = connectivityRuntime.enableMdns;
 args.enableDht = connectivityRuntime.enableDht;
+configureBondWarmFromConnectivity({
+  intervalMs: connectivityRuntime.bondWarmIntervalMs,
+  perContactCooldownMs: connectivityRuntime.bondWarmPerContactCooldownMs,
+  eventDriven: connectivityRuntime.bondWarmEventDriven,
+});
 const mesh = new EnvoyMesh({
   listen: args.listen,
   advertiseAddrs: args.advertiseAddrs,
   enableMdns: connectivityRuntime.enableMdns,
   mdnsIntervalMs: connectivityRuntime.mdnsIntervalMs,
+  connectionMonitorPingIntervalMs: connectivityRuntime.connectionMonitorPingIntervalMs,
   enableDht: connectivityRuntime.enableDht,
   dhtClientMode: args.dhtClientMode ?? true,
   bootstrapPeers: effectiveBootstrapPeers,
@@ -2770,12 +2777,19 @@ async function activateCliMesh(reloadDiscoveryFromConfig: boolean): Promise<void
         meshOpts.bootstrapPeers = effectivePeers;
         meshOpts.enableMdns = connectivityRuntime.enableMdns;
         meshOpts.mdnsIntervalMs = connectivityRuntime.mdnsIntervalMs;
+        meshOpts.connectionMonitorPingIntervalMs =
+          connectivityRuntime.connectionMonitorPingIntervalMs;
         meshOpts.enableDht = connectivityRuntime.enableDht;
         meshOpts.enableRelay = args.enableRelay;
         meshOpts.enableRelayServer = args.enableRelayServer;
         if (connectivityRuntime.maxConnections != null) {
           meshOpts.maxConnections = connectivityRuntime.maxConnections;
         }
+        configureBondWarmFromConnectivity({
+          intervalMs: connectivityRuntime.bondWarmIntervalMs,
+          perContactCooldownMs: connectivityRuntime.bondWarmPerContactCooldownMs,
+          eventDriven: connectivityRuntime.bondWarmEventDriven,
+        });
       }
 
       await mesh.start();

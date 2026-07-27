@@ -562,6 +562,9 @@ export function applyPersistedDiscoveryConfig(
     args.enableMdns = config.enableMdns;
     args.enableMdnsExplicit = true;
   }
+  if (config.connectivityMode !== undefined) {
+    args.connectivityTuning.connectivityMode = config.connectivityMode;
+  }
   if (config.maxConnections !== undefined) {
     args.connectivityTuning.maxConnections = config.maxConnections;
   }

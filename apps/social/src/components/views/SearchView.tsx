@@ -34,7 +34,20 @@ import {
 } from "@envoymesh/api";
 
 export type { DiscoverPath } from "../../lib/discover-default-path.js";
-type WiderSearchMode = "name" | "topic" | "publish" | "place";
+type WiderSearchMode = "name" | "topic" | "place";
+
+/** Deduplicate peer hits from interest + publish topic searches. */
+function mergePeerSearchResults(...lists: PeerSearchResult[][]): PeerSearchResult[] {
+  const byKey = new Map<string, PeerSearchResult>();
+  for (const list of lists) {
+    for (const peer of list) {
+      const key = peer.ownerId?.trim() || peer.nodeId?.trim();
+      if (!key || byKey.has(key)) continue;
+      byKey.set(key, peer);
+    }
+  }
+  return [...byKey.values()];
+}
 
 type LookupPanelMode = "network" | "paste";
 
@@ -415,13 +428,17 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
           results = await nodeService.searchPeers({ peerId: parsed.peerId });
         }
       } else if (widerMode === "topic") {
-        // Node normalizes bare text → interest:<slug>; pass as-is.
-        results = await nodeService.searchPeers({ topic: query.trim() });
-      } else if (widerMode === "publish") {
-        const topic = publishSearchTopic(query);
-        results = topic
-          ? await nodeService.searchPeers({ topic, maxResults: 20 })
-          : [];
+        // Interest/capability topics (node normalizes bare text → interest:<slug>)
+        // plus published web tags (DHT publish:<slug>) — one "By topic" search.
+        const q = query.trim();
+        const publishTopic = publishSearchTopic(q);
+        const [interestHits, publishHits] = await Promise.all([
+          nodeService.searchPeers({ topic: q }),
+          publishTopic
+            ? nodeService.searchPeers({ topic: publishTopic, maxResults: 20 })
+            : Promise.resolve([] as PeerSearchResult[]),
+        ]);
+        results = mergePeerSearchResults(interestHits, publishHits);
       } else if (looksLikePeerId(query)) {
         results = await nodeService.searchPeers({ peerId: query.trim() });
       } else {
@@ -550,8 +567,8 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
     // nearby") — placeholders are useless since "Say hello" can't work.
     const realPeers = discoveredPeers.filter((p) => {
       if (!p.ownerId) return false;
-      const label = nearbyPeerLabel(p.displayName, p.nodeId);
-      return label !== "Someone nearby";
+      const label = nearbyPeerLabel(t, p.displayName, p.nodeId);
+      return label !== t("display.nearbyPeerFallback", "Someone nearby");
     });
     return (
       <section className="discover-panel discover-lookup-panel">
@@ -593,13 +610,6 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
               </button>
               <button
                 type="button"
-                className={widerMode === "publish" ? "active" : ""}
-                onClick={() => setWiderMode("publish")}
-              >
-                {t("discover.search.byPublish")}
-              </button>
-              <button
-                type="button"
                 className={widerMode === "place" ? "active" : ""}
                 onClick={() => setWiderMode("place")}
               >
@@ -627,11 +637,6 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
                 {widerTopicHint({ ...emptyHintContext, path: "wider" }, t) ?? t("discover.search.widerTopicFallback")}
               </p>
             ) : null}
-            {widerMode === "publish" && !networkQuery ? (
-              <p className="discover-status discover-status--muted">
-                {t("discover.search.widerPublishFallback")}
-              </p>
-            ) : null}
           </>
         )}
 
@@ -645,9 +650,7 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
                   ? t("discover.paste.placeholder")
                   : widerMode === "topic"
                     ? t("discover.search.topicPlaceholder")
-                    : widerMode === "publish"
-                      ? t("discover.search.publishPlaceholder")
-                      : t("discover.search.namePlaceholder")
+                    : t("discover.search.namePlaceholder")
               }
               value={query}
               onChange={(e) => setQuery(e.target.value)}
@@ -864,7 +867,7 @@ export function SearchView({ embedded = false }: { embedded?: boolean }) {
                 const fakeResult = {
                   nodeId: peer.nodeId,
                   ownerId: peer.ownerId,
-                  displayName: nearbyPeerLabel(peer.displayName, peer.nodeId),
+                  displayName: nearbyPeerLabel(t, peer.displayName, peer.nodeId),
                   username: undefined,
                   bio: undefined,
                   interests: peer.interests ?? [],

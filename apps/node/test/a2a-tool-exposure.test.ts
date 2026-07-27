@@ -98,13 +98,31 @@ describe("A2A tool entries (registry metadata)", () => {
 });
 
 describe("executeTool — mesh.task.cancel dispatch", () => {
+  it("blocks cancel without approvalGranted", async () => {
+    const store = await tempStore();
+    try {
+      const sendTaskCancel = vi.fn();
+      const result = await executeTool(
+        "mesh.task.cancel",
+        { targetOwnerId: "x", taskId: "t" },
+        { sendTaskCancel, taskStore: store.taskStore },
+      );
+      expect(result.ok).toBe(false);
+      expect(result.approvalRequired).toBe(true);
+      expect(result.error).toMatch(/requires owner approval/);
+      expect(sendTaskCancel).not.toHaveBeenCalled();
+    } finally {
+      await store.cleanup();
+    }
+  });
+
   it("returns ok:false when context lacks sendTaskCancel", async () => {
     const store = await tempStore();
     try {
       const result = await executeTool(
         "mesh.task.cancel",
         { targetOwnerId: "x", taskId: "t" },
-        { taskStore: store.taskStore },
+        { taskStore: store.taskStore, approvalGranted: true },
       );
       expect(result.ok).toBe(false);
       expect(result.error).toMatch(/sendTaskCancel/);
@@ -120,14 +138,14 @@ describe("executeTool — mesh.task.cancel dispatch", () => {
       const r1 = await executeTool(
         "mesh.task.cancel",
         { taskId: "t" },
-        { sendTaskCancel, taskStore: store.taskStore },
+        { sendTaskCancel, taskStore: store.taskStore, approvalGranted: true },
       );
       expect(r1.ok).toBe(false);
       expect(sendTaskCancel).not.toHaveBeenCalled();
       const r2 = await executeTool(
         "mesh.task.cancel",
         { targetOwnerId: "x" },
-        { sendTaskCancel, taskStore: store.taskStore },
+        { sendTaskCancel, taskStore: store.taskStore, approvalGranted: true },
       );
       expect(r2.ok).toBe(false);
     } finally {
@@ -142,7 +160,7 @@ describe("executeTool — mesh.task.cancel dispatch", () => {
       const r = await executeTool(
         "mesh.task.cancel",
         { targetOwnerId: "peer-1", taskId: "task-1", reason: "owner requested" },
-        { sendTaskCancel, taskStore: store.taskStore },
+        { sendTaskCancel, taskStore: store.taskStore, approvalGranted: true },
       );
       expect(r.ok).toBe(true);
       expect(sendTaskCancel).toHaveBeenCalledWith(
@@ -164,7 +182,7 @@ describe("executeTool — mesh.task.cancel dispatch", () => {
       const r = await executeTool(
         "mesh.task.cancel",
         { targetOwnerId: "p", taskId: "t" },
-        { sendTaskCancel, taskStore: store.taskStore },
+        { sendTaskCancel, taskStore: store.taskStore, approvalGranted: true },
       );
       expect(r.ok).toBe(false);
       expect(r.error).toBe("transport down");

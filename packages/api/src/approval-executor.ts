@@ -24,11 +24,21 @@ export interface ChainAwardApprovalPayload {
   acceptedCostUsd: number;
 }
 
+export interface ToolCallApprovalPayload {
+  toolName: string;
+  params: Record<string, unknown>;
+}
+
 export interface ApprovalExecutorDeps {
   sendAgentChat: (targetOwnerId: string, text: string) => Promise<SendChatResult>;
   forwardDiscovery?: (payload: DiscoveryForwardApprovalPayload) => Promise<{ ok: boolean; error?: string }>;
   /** Phase 43G — award a chain worker after owner approval. */
   awardChainWorker?: (payload: ChainAwardApprovalPayload) => Promise<{ ok: boolean; error?: string }>;
+  /** Re-run a tool after owner approval (must pass approvalGranted into executeTool). */
+  executeToolCall?: (
+    toolName: string,
+    params: Record<string, unknown>,
+  ) => Promise<{ ok: boolean; error?: string; messageId?: string }>;
 }
 
 /** Run an approved queue item (Phase 13 — send_chat uses honest agent role). */
@@ -80,6 +90,39 @@ export async function executeApprovedAction(
         return { ok: false, reason: result.error ?? "chain award failed" };
       }
       return { ok: true, actionType: "chain_award" };
+    }
+    case "tool_call": {
+      if (!deps.executeToolCall) {
+        return { ok: false, reason: "tool_call executor not configured" };
+      }
+      let parsed: ToolCallApprovalPayload;
+      try {
+        parsed = JSON.parse(item.draftContent) as ToolCallApprovalPayload;
+      } catch {
+        const meta = item.context.metadata;
+        if (meta && typeof meta === "object" && typeof meta.toolName === "string") {
+          const params =
+            meta.params && typeof meta.params === "object" && !Array.isArray(meta.params)
+              ? (meta.params as Record<string, unknown>)
+              : {};
+          parsed = { toolName: meta.toolName, params };
+        } else {
+          return { ok: false, reason: "tool_call approval has invalid draftContent JSON" };
+        }
+      }
+      if (!parsed.toolName?.trim()) {
+        return { ok: false, reason: "tool_call approval missing toolName" };
+      }
+      const result = await deps.executeToolCall(
+        parsed.toolName.trim(),
+        parsed.params && typeof parsed.params === "object" && !Array.isArray(parsed.params)
+          ? parsed.params
+          : {},
+      );
+      if (!result.ok) {
+        return { ok: false, reason: result.error ?? "tool execution failed" };
+      }
+      return { ok: true, actionType: "tool_call", messageId: result.messageId };
     }
     default:
       return {

@@ -106,6 +106,11 @@ export interface PersistedNodeConfig {
   friendMatchingPreferencesSigned?: FriendMatchingPreferencesPayload;
   /** External distribution policy (IPFS export gate). */
   externalPublish?: ExternalPublishConfig;
+  /**
+   * Resource / connectivity duty-cycle mode.
+   * Default: optimized. Takes effect after node restart for mesh options.
+   */
+  connectivityMode?: import("@envoymesh/api").ConnectivityMode;
   /** libp2p connection cap (client nodes). Omitted uses network default (150). */
   maxConnections?: number;
   /** mDNS interval in ms. Default 10_000. */
@@ -316,6 +321,7 @@ export function createDefaultPersistedNodeConfig(profileDir: string): PersistedN
     modelProviders: { mode: "disabled" },
     chatAssistEnabled: false,
     contactAiPreferences: [],
+    connectivityMode: "optimized",
     updatedAt: new Date().toISOString(),
   };
 }

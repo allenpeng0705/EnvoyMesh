@@ -584,3 +584,16 @@ export const koCommonYesNoMessages = {
   yes: "예",
   no: "아니오",
 } as const;
+
+// ----- 일반 표시 헬퍼(연결 등급, mDNS 폴백 이름) -----
+// lib/display.ts(bondLevelLabel, nearbyPeerLabel)에서 사용.
+export const koDisplayMessages = {
+  bondLevel: {
+    direct: "친구",
+    referred: "소개됨",
+    public: "새 연락처",
+    blocked: "차단됨",
+    unknown: "연락처",
+  },
+  nearbyPeerFallback: "주변의 누군가",
+} as const;

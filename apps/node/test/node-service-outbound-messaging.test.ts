@@ -271,4 +271,33 @@ describe("sendChatViaRuntime", () => {
     expect(result.deliveryReceipt).toBe("sent");
     expect(ctx.getTransportCache().has(OWNER_ID)).toBe(false);
   });
+
+  it("requires delivery ack on Online-Direct until the path is recently verified", async () => {
+    const { resetOutboundPeerFreshnessForTests } = await import(
+      "../src/outbound-peer-freshness.js"
+    );
+    resetOutboundPeerFreshnessForTests();
+    const deliverChatEnvelope = vi.fn(async (_peer, _env, _hints, _addrs, options) => {
+      expect(options?.expectDeliveryAck).toBeUndefined();
+      return { delivered: true, deliveredAt: "2026-06-20T12:00:01.000Z" };
+    });
+    const ctx = makeCtx({ deliverChatEnvelope });
+    await sendChatViaRuntime(ctx, OWNER_ID, "hello");
+    expect(deliverChatEnvelope).toHaveBeenCalled();
+  });
+
+  it("skips delivery ack on Online-Direct after recent path verify", async () => {
+    const { markOutboundPeerVerified, resetOutboundPeerFreshnessForTests } = await import(
+      "../src/outbound-peer-freshness.js"
+    );
+    resetOutboundPeerFreshnessForTests();
+    markOutboundPeerVerified(TRANSPORT_ID);
+    const deliverChatEnvelope = vi.fn(async (_peer, _env, _hints, _addrs, options) => {
+      expect(options).toEqual({ expectDeliveryAck: false });
+      return { delivered: false };
+    });
+    const ctx = makeCtx({ deliverChatEnvelope });
+    const result = await sendChatViaRuntime(ctx, OWNER_ID, "hello");
+    expect(result.deliveryReceipt).toBe("sent");
+  });
 });

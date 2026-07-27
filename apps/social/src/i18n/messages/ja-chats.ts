@@ -161,6 +161,12 @@ export const jaContactChatMessages = {
   // 向けに human/agent/ai の3変種を一箇所にまとめる。
   threadKindDirect: "ダイレクトメッセージ",
   threadKindAgent: "エージェントチャット",
+  // ----- チャット相手の到達可能性ラベル -----
+  // lib/peer-reachability-label.ts から参照。一箇所にまとめて各国語化します。
+  reachabilityChecking: "確認中…",
+  reachabilityOffline: "オフライン",
+  reachabilityOnlineDirect: "オンライン · ダイレクト",
+  reachabilityOnlineRelay: "オンライン · リレー",
 } as const;
 
 export const jaAiChatMessages = {
@@ -321,4 +327,13 @@ export const jaInboxMessages = {
   defaultHello: "こんにちは！",
   audioMessage: jaInboxAudioMessages,
   ...jaInboxCallMessages,
+} as const;
+
+// ----- デスクトップのブラウザ通知(受信チャット用) -----
+// useChatNotifications で使用。表示名がない場合のフォールバック。
+export const jaChatNotifications = {
+  sentAFile: "ファイルを送信しました",
+  newMessage: "新しいチャットメッセージ",
+  contactFallback: "連絡先",
+  strangerFallback: "知らない人",
 } as const;

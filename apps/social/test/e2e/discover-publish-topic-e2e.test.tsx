@@ -1,6 +1,6 @@
 /**
  * @vitest-environment jsdom
- * E2E (UI integration): Discover → By published topic (Phase 45E).
+ * E2E (UI integration): Discover → By topic (interest + publish:<slug> in parallel).
  *
  * Mocks searchPeers — avoids live DHT flake.
  */
@@ -81,24 +81,28 @@ beforeEach(() => {
   searchPeers.mockResolvedValue([]);
 });
 
-function openPublishPanel() {
+function openTopicPanel() {
   renderWithI18n(<SearchView embedded />);
   const subTabs = screen.getByRole("tablist", { name: /Search type/i });
-  fireEvent.click(within(subTabs).getByRole("button", { name: /By published topic/i }));
+  fireEvent.click(within(subTabs).getByRole("button", { name: /^By topic$/i }));
 }
 
-describe("E2E Discover publish topic", () => {
-  it("normalizes free text to publish:<slug> and calls searchPeers", async () => {
-    openPublishPanel();
+describe("E2E Discover By topic (interest + publish)", () => {
+  it("searches interest and publish:<slug> in parallel", async () => {
+    openTopicPanel();
 
-    expect(screen.getByText(/publish web posts tagged with a topic/i)).toBeDefined();
+    expect(
+      screen.getByText(/interest\/capability or publishing web posts/i),
+    ).toBeDefined();
+    expect(screen.queryByRole("button", { name: /By published topic/i })).toBeNull();
 
-    const input = screen.getByPlaceholderText(/What people publish about/i);
+    const input = screen.getByPlaceholderText(/Interest, capability, or published topic/i);
     fireEvent.change(input, { target: { value: "Photography Tips" } });
     fireEvent.click(screen.getByRole("button", { name: /^Search$/i }));
 
     await waitFor(
       () => {
+        expect(searchPeers).toHaveBeenCalledWith({ topic: "Photography Tips" });
         expect(searchPeers).toHaveBeenCalledWith({
           topic: "publish:photography-tips",
           maxResults: 20,
@@ -108,16 +112,18 @@ describe("E2E Discover publish topic", () => {
     );
   });
 
-  it("passes through an already-prefixed publish: topic", async () => {
-    openPublishPanel();
+  it("passes through an already-prefixed publish: topic on the publish leg", async () => {
+    openTopicPanel();
 
-    fireEvent.change(screen.getByPlaceholderText(/What people publish about/i), {
-      target: { value: "publish:Cooking" },
-    });
+    fireEvent.change(
+      screen.getByPlaceholderText(/Interest, capability, or published topic/i),
+      { target: { value: "publish:Cooking" } },
+    );
     fireEvent.click(screen.getByRole("button", { name: /^Search$/i }));
 
     await waitFor(
       () => {
+        expect(searchPeers).toHaveBeenCalledWith({ topic: "publish:Cooking" });
         expect(searchPeers).toHaveBeenCalledWith({
           topic: "publish:cooking",
           maxResults: 20,
@@ -127,42 +133,71 @@ describe("E2E Discover publish topic", () => {
     );
   });
 
-  it("does not call searchPeers for empty slug after normalize", async () => {
-    openPublishPanel();
+  it("skips publish search when slug normalizes empty; still searches interest", async () => {
+    openTopicPanel();
 
-    fireEvent.change(screen.getByPlaceholderText(/What people publish about/i), {
-      target: { value: "!!!" },
-    });
+    fireEvent.change(
+      screen.getByPlaceholderText(/Interest, capability, or published topic/i),
+      { target: { value: "!!!" } },
+    );
     fireEvent.click(screen.getByRole("button", { name: /^Search$/i }));
 
     await waitFor(
       () => {
-        // handleSearch still runs (spinner delay); empty topic → [] without searchPeers
-        expect(searchPeers).not.toHaveBeenCalled();
+        expect(searchPeers).toHaveBeenCalledWith({ topic: "!!!" });
+        expect(searchPeers).not.toHaveBeenCalledWith(
+          expect.objectContaining({ topic: expect.stringMatching(/^publish:/) }),
+        );
       },
       { timeout: 3000 },
     );
   });
 
-  it("renders peer results from publish-topic search", async () => {
-    const peer: PeerSearchResult = {
-      nodeId: "12D3KooWPeer",
+  it("merges and dedupes peer results from both legs", async () => {
+    const interestPeer: PeerSearchResult = {
+      nodeId: "12D3KooWInterest",
       ownerId: "envoy:owner:alice",
-      displayName: "Photo Alice",
-      username: "photoalice",
+      displayName: "Interest Alice",
+      username: "alice",
+      interests: ["photography"],
+      bio: "",
+      trustLevel: "unknown",
+      discoverySource: "dht-capability-topic",
+    };
+    const publishPeer: PeerSearchResult = {
+      nodeId: "12D3KooWPublish",
+      ownerId: "envoy:owner:alice",
+      displayName: "Publish Alice",
+      username: "alice",
       interests: [],
       bio: "",
       trustLevel: "unknown",
       discoverySource: "dht-capability-topic",
     };
-    searchPeers.mockResolvedValue([peer]);
-
-    openPublishPanel();
-    fireEvent.change(screen.getByPlaceholderText(/What people publish about/i), {
-      target: { value: "photography" },
+    const otherPeer: PeerSearchResult = {
+      nodeId: "12D3KooWBob",
+      ownerId: "envoy:owner:bob",
+      displayName: "Photo Bob",
+      username: "photobob",
+      interests: [],
+      bio: "",
+      trustLevel: "unknown",
+      discoverySource: "dht-capability-topic",
+    };
+    searchPeers.mockImplementation(async (opts: { topic?: string }) => {
+      if (opts.topic?.startsWith("publish:")) return [publishPeer, otherPeer];
+      return [interestPeer];
     });
+
+    openTopicPanel();
+    fireEvent.change(
+      screen.getByPlaceholderText(/Interest, capability, or published topic/i),
+      { target: { value: "photography" } },
+    );
     fireEvent.click(screen.getByRole("button", { name: /^Search$/i }));
 
-    expect(await screen.findByText("Photo Alice")).toBeDefined();
+    expect(await screen.findByText("Interest Alice")).toBeDefined();
+    expect(await screen.findByText("Photo Bob")).toBeDefined();
+    expect(screen.queryByText("Publish Alice")).toBeNull();
   });
 });

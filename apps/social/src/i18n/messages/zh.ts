@@ -9,6 +9,7 @@ import {
   zhContactChatMessages,
   zhAiChatMessages,
   zhGroupChatMessages,
+  zhChatNotifications,
   zhH2aMessages,
   zhMessageBubbleMessages,
   zhInboxMessages,
@@ -37,6 +38,7 @@ import {
   zhAccountSettingsMessages,
   zhArtifactRendererMessages,
   zhAgentCardMessages,
+  zhDisplayMessages,
 } from "./zh-misc.js";
 
 export const zh = mergeMessages(en, {
@@ -236,6 +238,7 @@ export const zh = mergeMessages(en, {
   terminals: zhTerminalMessages,
   contactChat: zhContactChatMessages,
   groupChat: zhGroupChatMessages,
+  chatNotifications: zhChatNotifications,
   aiChat: zhAiChatMessages,
   h2a: zhH2aMessages,
   messageBubble: zhMessageBubbleMessages,
@@ -501,7 +504,7 @@ export const zh = mergeMessages(en, {
       byName: "按名称",
       byTopic: "按话题",
       namePlaceholder: "名称、用户名、兴趣或节点 ID",
-      topicPlaceholder: "兴趣或能力话题（如 music）",
+      topicPlaceholder: "兴趣、能力或发布话题（如 music）",
       tryTopic: "试试话题",
       multihopTitle: "通过好友搜索",
       multihopLede: "请已绑定联系人帮忙查找最多两跳以外的人。",
@@ -516,7 +519,8 @@ export const zh = mergeMessages(en, {
       queryingDht: "正在查询 DHT 话题提供者…",
       searchingName: "正在按用户名或名称搜索…",
       searchingFor: "正在搜索「{query}」",
-      widerTopicFallback: "在公共网络中搜索宣传该话题的节点。需要在设置 → 网络中启用更广的网络。",
+      widerTopicFallback:
+        "在公共网络中搜索宣传兴趣/能力话题或发布相关网页内容的节点。需要在设置 → 网络中启用更广的网络。",
       widerSearchTypeLabel: "搜索类型",
       byLocation: "按位置",
       geoSameCountry: "同一国家",
@@ -569,6 +573,7 @@ export const zh = mergeMessages(en, {
   blog: zhBlogViewMessages,
   feed: zhFeedViewMessages,
   engagement: zhEngagementMessages,
+  display: zhDisplayMessages,
   chains: zhChainsMessages,
   workerCapability: {
     title: "代理工作方",

@@ -583,6 +583,11 @@ export interface NodeConfig {
   friendMatchingPreferencesSigned?: FriendMatchingPreferencesPayload;
   /** Optional external distribution policy (IPFS export gate). Default: IPFS export disabled. */
   externalPublish?: ExternalPublishConfig;
+  /**
+   * Resource / connectivity duty-cycle mode (normal | optimized | smart | aggressive).
+   * Default: optimized. Mesh-level options apply after node restart.
+   */
+  connectivityMode?: import("./connectivity-tuning.js").ConnectivityMode;
   /** libp2p connection cap (client nodes). Default 50. */
   maxConnections?: number;
   /** mDNS interval in ms. Default 10_000. */
@@ -1460,6 +1465,8 @@ export interface UpdateNodeConfigParams {
   /** Owner-signed preferences (validated server-side). When set, overrides plain text from signature payload. */
   friendMatchingPreferencesSigned?: FriendMatchingPreferencesPayload;
   maxConnections?: number;
+  /** Resource / connectivity duty-cycle mode. */
+  connectivityMode?: import("./connectivity-tuning.js").ConnectivityMode;
   /** Optional model name for terminal assist LLM calls. */
   terminalAssistModelName?: string;
   terminalCommandAllowPatterns?: readonly string[];

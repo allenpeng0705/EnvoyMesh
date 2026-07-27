@@ -21,6 +21,28 @@ export const BOND_WARM_PER_CONTACT_COOLDOWN_MS = 300_000;
 const BOND_WARM_INITIAL_DELAY_MS = 45_000;
 const BOND_WARM_INTERVAL_MS = 300_000;
 
+/** Runtime-overridable bond-warm timers (from connectivity mode preset). */
+let configuredBondWarmIntervalMs = BOND_WARM_INTERVAL_MS;
+let configuredBondWarmCooldownMs = BOND_WARM_PER_CONTACT_COOLDOWN_MS;
+let configuredBondWarmEventDriven = false;
+
+export function configureBondWarmFromConnectivity(input: {
+  intervalMs: number;
+  perContactCooldownMs: number;
+  eventDriven: boolean;
+}): void {
+  configuredBondWarmIntervalMs = input.intervalMs;
+  configuredBondWarmCooldownMs = input.perContactCooldownMs;
+  configuredBondWarmEventDriven = input.eventDriven;
+}
+
+/** Test helper */
+export function resetBondWarmConnectivityConfigForTests(): void {
+  configuredBondWarmIntervalMs = BOND_WARM_INTERVAL_MS;
+  configuredBondWarmCooldownMs = BOND_WARM_PER_CONTACT_COOLDOWN_MS;
+  configuredBondWarmEventDriven = false;
+}
+
 /**
  * After this many consecutive failed profile probes a peer is considered a
  * non-EnvoyMesh device (printer, TV, etc.) and suppressed from the discovery
@@ -277,7 +299,7 @@ export function startBondWarmIntervalViaRuntime(ctx: ReachabilityContext): void 
     void warmAllBondedContactsViaRuntime(ctx);
   };
   setTimeout(runWarm, BOND_WARM_INITIAL_DELAY_MS);
-  ctx.setBondWarmTimer(setInterval(runWarm, BOND_WARM_INTERVAL_MS));
+  ctx.setBondWarmTimer(setInterval(runWarm, configuredBondWarmIntervalMs));
 }
 
 export async function warmAllBondedContactsViaRuntime(ctx: ReachabilityContext): Promise<void> {
@@ -332,10 +354,10 @@ export async function warmAllBondedContactsViaRuntime(ctx: ReachabilityContext):
     if (bond.level !== "direct" && bond.level !== "referred") continue;
 
     const lastWarm = lastBondWarmAt.get(bond.peerOwnerId);
-    if (lastWarm && now - lastWarm < BOND_WARM_PER_CONTACT_COOLDOWN_MS) continue;
+    if (lastWarm && now - lastWarm < configuredBondWarmCooldownMs) continue;
 
     // Per-iteration cap check — see comment above. Bail out of the cycle
-    // (without breaking the cooldown) so the next 5-min cycle can re-
+    // (without breaking the cooldown) so the next cycle can re-
     // evaluate when the cap headroom grows.
     if (mesh.getConnectionStats().totalConnections >= BOND_WARM_MAX_CONNECTIONS) {
       console.warn(
@@ -349,7 +371,12 @@ export async function warmAllBondedContactsViaRuntime(ctx: ReachabilityContext):
       if (info.connected) {
         try {
           const { transportPeerId } = await ctx.resolvePeerTransportForOwner(bond.peerOwnerId);
-          if (isOutboundPeerRecentlyVerified(transportPeerId)) {
+          // Optimized+ always skips recently verified; Smart/Aggressive also treat
+          // any connected path as warm enough for background (event-driven warm).
+          if (
+            isOutboundPeerRecentlyVerified(transportPeerId) ||
+            (configuredBondWarmEventDriven && info.connected)
+          ) {
             lastBondWarmAt.set(bond.peerOwnerId, now);
             continue;
           }

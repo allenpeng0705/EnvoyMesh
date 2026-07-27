@@ -25,4 +25,26 @@ describe("WsClient connection prefs", () => {
     client.setAutoReconnectEnabled(false);
     expect(() => client.setAutoReconnectEnabled(true)).not.toThrow();
   });
+
+  it("rejects in-flight RPCs immediately on disconnect", async () => {
+    const sent: string[] = [];
+    const fakeWs = {
+      readyState: 1,
+      send: (data: string) => {
+        sent.push(data);
+      },
+      close: () => {},
+      onclose: null as null | (() => void),
+      onerror: null as null | (() => void),
+      onopen: null as null | (() => void),
+      onmessage: null as null | ((ev: { data: string }) => void),
+    };
+    (client as unknown as { ws: typeof fakeWs }).ws = fakeWs;
+
+    const rpcPromise = client.rpc("sendChat", { targetOwnerId: "x", text: "hi" }, { timeoutMs: 60_000 });
+    expect(sent).toHaveLength(1);
+
+    client.closeConnection();
+    await expect(rpcPromise).rejects.toThrow(/WebSocket disconnected/);
+  });
 });

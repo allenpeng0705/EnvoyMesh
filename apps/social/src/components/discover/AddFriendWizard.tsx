@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { useMemo } from "react";
 import type { BondRecord, HelloRequest, PeerSearchResult } from "@envoymesh/api";
 import type { NodeConfig } from "@envoymesh/api";
+import { useT } from "../../context/I18nContext.js";
 import { NearbyPeersPanel, enrichNearbyPeersWithBonds } from "./NearbyPeersPanel.js";
 import { PendingHellosPanel } from "./PendingHellosPanel.js";
 import { DiscoveryTroubleshooter } from "./DiscoveryTroubleshooter.js";
@@ -35,10 +36,11 @@ export function DiscoverSections({
   networkPanel: ReactNode;
   pastePanel: ReactNode;
 }) {
+  const t = useT();
   // Troubleshooter should track people we can show, not probe noise.
   const identifiableCount = useMemo(
-    () => enrichNearbyPeersWithBonds(discoveredPeers, bonds).length,
-    [discoveredPeers, bonds],
+    () => enrichNearbyPeersWithBonds(t, discoveredPeers, bonds).length,
+    [discoveredPeers, bonds, t],
   );
 
   return (

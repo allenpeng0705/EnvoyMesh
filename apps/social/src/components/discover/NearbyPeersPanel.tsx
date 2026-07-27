@@ -6,9 +6,12 @@ import { DiscoverPeerCard } from "./DiscoverPeerCard.js";
 import { resolvePeerHelloState } from "../../lib/discover-peer-state.js";
 
 /** Only show people we can actually recognize (name + owner). */
-export function isIdentifiableNearbyPeer(peer: PeerSearchResult): boolean {
+export function isIdentifiableNearbyPeer(
+  t: ReturnType<typeof useT>,
+  peer: PeerSearchResult,
+): boolean {
   if (!peer.ownerId?.trim()) return false;
-  return nearbyPeerLabel(peer.displayName, peer.nodeId) !== "Someone nearby";
+  return nearbyPeerLabel(t, peer.displayName, peer.nodeId) !== t("display.nearbyPeerFallback", "Someone nearby");
 }
 
 /**
@@ -16,12 +19,14 @@ export function isIdentifiableNearbyPeer(peer: PeerSearchResult): boolean {
  * Fixes empty People-nearby while Contacts already shows online-direct.
  */
 export function enrichNearbyPeersWithBonds(
+  t: ReturnType<typeof useT>,
   peers: readonly PeerSearchResult[],
   bonds: readonly BondRecord[],
 ): PeerSearchResult[] {
   const activeBonds = bonds.filter((b) => b.level !== "blocked");
   const out: PeerSearchResult[] = [];
   const seen = new Set<string>();
+  const contactFallback = t("display.nearbyPeerFallback", "Someone nearby");
 
   for (const peer of peers) {
     const bond =
@@ -35,21 +40,21 @@ export function enrichNearbyPeersWithBonds(
         peer.displayName?.trim() ||
         bond.displayName?.trim() ||
         bond.peerOwnerId.replace(/^envoy:owner:/, "").slice(0, 8) ||
-        "Contact";
+        contactFallback;
       const enriched: PeerSearchResult = {
         ...peer,
         ownerId: peer.ownerId?.trim() || bond.peerOwnerId,
         displayName,
         profileStatus: "resolved",
       };
-      if (isIdentifiableNearbyPeer(enriched)) {
+      if (isIdentifiableNearbyPeer(t, enriched)) {
         out.push(enriched);
         seen.add(peer.nodeId);
       }
       continue;
     }
 
-    if (isIdentifiableNearbyPeer(peer)) {
+    if (isIdentifiableNearbyPeer(t, peer)) {
       out.push(peer);
       seen.add(peer.nodeId);
     }
@@ -119,8 +124,8 @@ export function NearbyPeersPanel({
   const t = useT();
   const hint = emptyHint ?? t("discover.nearby.empty");
   const identifiable = useMemo(
-    () => enrichNearbyPeersWithBonds(discoveredPeers, bonds),
-    [discoveredPeers, bonds],
+    () => enrichNearbyPeersWithBonds(t, discoveredPeers, bonds),
+    [discoveredPeers, bonds, t],
   );
   const statusNote = nearbyStatusNote(discoveredPeers, bonds, identifiable.length, t);
   const showEmpty = identifiable.length === 0 && !statusNote;

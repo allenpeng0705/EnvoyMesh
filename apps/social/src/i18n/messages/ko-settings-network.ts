@@ -97,6 +97,12 @@ export const koNetworkSettingsMessages = {
   resourceTuning: {
     title: "리소스 튜닝",
     desc: "WAN 연결을 유지하면서 CPU 및 메모리 사용을 줄입니다. 노드 재시작 후 적용됩니다.",
+    mode: "Mode",
+    modeNormal: "Normal — most responsive (legacy defaults)",
+    modeOptimized: "Optimized — balanced (recommended)",
+    modeSmart: "Smart — slower when idle; warm on chat",
+    modeAggressive: "Aggressive — lowest CPU/network",
+    restartHint: "Restart the node (or fully quit and reopen the app) for mesh timers and DHT/mDNS options to apply.",
     maxConnections: "최대 연결 수",
     capabilityCycle: "기능 주기 (초)",
     lazyDhtFind: "Lazy DHT 찾기",

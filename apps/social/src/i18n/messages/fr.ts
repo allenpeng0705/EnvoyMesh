@@ -9,6 +9,7 @@ import {
   frContactChatMessages,
   frAiChatMessages,
   frGroupChatMessages,
+  frChatNotifications,
   frH2aMessages,
   frMessageBubbleMessages,
   frInboxMessages,
@@ -30,6 +31,7 @@ import {
   frAccountSettingsMessages,
   frArtifactRendererMessages,
   frAgentCardMessages,
+  frDisplayMessages,
 } from "./fr-misc.js";
 
 export const fr = mergeMessages(en, {
@@ -228,6 +230,7 @@ export const fr = mergeMessages(en, {
   terminals: frTerminalMessages,
   contactChat: frContactChatMessages,
   groupChat: frGroupChatMessages,
+  chatNotifications: frChatNotifications,
   aiChat: frAiChatMessages,
   h2a: frH2aMessages,
   messageBubble: frMessageBubbleMessages,
@@ -246,6 +249,7 @@ export const fr = mergeMessages(en, {
   fileShare: frFileShareMessages,
   artifactRenderer: frArtifactRendererMessages,
   agentCard: frAgentCardMessages,
+  display: frDisplayMessages,
   contacts: {
     tabsLabel: "Contacts ou découvrir",
     myContacts: "Mes contacts ({count})",
@@ -481,7 +485,7 @@ export const fr = mergeMessages(en, {
       byName: "Par nom",
       byTopic: "Par sujet",
       namePlaceholder: "Nom, nom d'utilisateur, intérêt ou ID pair",
-      topicPlaceholder: "Sujet ou topic de capacité (ex : music)",
+      topicPlaceholder: "Sujet, capacité ou topic publié (ex : music)",
       tryTopic: "Essayer un sujet",
       multihopTitle: "Rechercher via des amis",
       multihopLede: "Demandez à vos contacts liés de vous aider à trouver quelqu'un jusqu'à deux sauts.",
@@ -496,7 +500,8 @@ export const fr = mergeMessages(en, {
       queryingDht: "Interrogation des fournisseurs de sujet DHT…",
       searchingName: "Recherche par nom d'utilisateur ou nom…",
       searchingFor: "Recherche de « {query} »",
-      widerTopicFallback: "Recherche sur le maillage public des pairs annonçant un sujet. Nécessite des paramètres réseau élargis dans Paramètres → Réseau.",
+      widerTopicFallback:
+        "Recherche sur le maillage public des pairs annonçant un intérêt/une capacité ou publiant des pages web sur un sujet. Nécessite des paramètres réseau élargis dans Paramètres → Réseau.",
       widerSearchTypeLabel: "Type de recherche",
       byLocation: "Par lieu",
       geoSameCountry: "Même pays",

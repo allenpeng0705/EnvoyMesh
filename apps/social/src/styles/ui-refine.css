@@ -1093,7 +1093,7 @@ button.primary,
   border: none;
   border-radius: var(--radius-md);
   background: var(--color-primary);
-  color: var(--color-primary-on);
+  color: var(--color-on-primary-text);
   font-size: var(--text-sm);
   font-weight: var(--font-medium);
   cursor: pointer;

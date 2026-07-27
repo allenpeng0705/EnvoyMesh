@@ -97,6 +97,12 @@ export const deNetworkSettingsMessages = {
   resourceTuning: {
     title: "Ressourcenoptimierung",
     desc: "CPU und Speicher reduzieren bei WAN-Verbindung. Wirksam nach Knotenneustart.",
+    mode: "Mode",
+    modeNormal: "Normal — most responsive (legacy defaults)",
+    modeOptimized: "Optimized — balanced (recommended)",
+    modeSmart: "Smart — slower when idle; warm on chat",
+    modeAggressive: "Aggressive — lowest CPU/network",
+    restartHint: "Restart the node (or fully quit and reopen the app) for mesh timers and DHT/mDNS options to apply.",
     maxConnections: "Max. Verbindungen",
     capabilityCycle: "Capability-Zyklus (Sekunden)",
     lazyDhtFind: "Lazy DHT Find",

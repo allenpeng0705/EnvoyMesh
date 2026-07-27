@@ -35,8 +35,32 @@ const ZH_LABELS: MomentsTimeLabels = {
   daysAgo: (n) => `${n}天前`,
 };
 
+const KO_LABELS: MomentsTimeLabels = {
+  justNow: "방금 전",
+  minutesAgo: (n) => `${n}분 전`,
+  hoursAgo: (n) => `${n}시간 전`,
+  yesterday: (hm) => `어제 ${hm}`,
+  daysAgo: (n) => `${n}일 전`,
+};
+
+const JA_LABELS: MomentsTimeLabels = {
+  justNow: "たった今",
+  minutesAgo: (n) => `${n}分前`,
+  hoursAgo: (n) => `${n}時間前`,
+  yesterday: (hm) => `昨日 ${hm}`,
+  daysAgo: (n) => `${n}日前`,
+};
+
 function isZhLocale(locale: string): boolean {
   return /^zh\b/i.test(locale.trim());
+}
+
+function isKoLocale(locale: string): boolean {
+  return /^ko\b/i.test(locale.trim());
+}
+
+function isJaLocale(locale: string): boolean {
+  return /^ja\b/i.test(locale.trim());
 }
 
 function startOfLocalDay(d: Date): Date {
@@ -62,7 +86,10 @@ function formatFullDate(d: Date, zh: boolean, locale: string): string {
 }
 
 export function momentsTimeLabelsForLocale(locale: string): MomentsTimeLabels {
-  return isZhLocale(locale) ? ZH_LABELS : EN_LABELS;
+  if (isZhLocale(locale)) return ZH_LABELS;
+  if (isKoLocale(locale)) return KO_LABELS;
+  if (isJaLocale(locale)) return JA_LABELS;
+  return EN_LABELS;
 }
 
 export function formatMomentsTime(

@@ -162,6 +162,12 @@ export const deContactChatMessages = {
   // um die Varianten human/agent/ai an einer Stelle zu zentralisieren.
   threadKindDirect: "Direktnachricht",
   threadKindAgent: "Agent-Chat",
+  // ----- Erreichbarkeitsanzeige des Kontakts (Chat-Header) -----
+  // Wird von lib/peer-reachability-label.ts verwendet. Hier zentral lokalisiert.
+  reachabilityChecking: "Prüfe…",
+  reachabilityOffline: "Offline",
+  reachabilityOnlineDirect: "Online · Direkt",
+  reachabilityOnlineRelay: "Online · Relais",
 } as const;
 
 export const deAiChatMessages = {
@@ -322,4 +328,13 @@ export const deInboxMessages = {
   defaultHello: "Hallo!",
   audioMessage: deInboxAudioMessages,
   ...deInboxCallMessages,
+} as const;
+
+// ----- Desktop-Browser-Benachrichtigungen (eingehender Chat) -----
+// Wird von useChatNotifications verwendet. Titel-Fallback, wenn kein Name verfügbar.
+export const deChatNotifications = {
+  sentAFile: "Hat eine Datei gesendet",
+  newMessage: "Neue Chat-Nachricht",
+  contactFallback: "Kontakt",
+  strangerFallback: "Unbekannt",
 } as const;

@@ -1199,7 +1199,7 @@ textarea::placeholder {
 
 .message.outgoing {
   background: linear-gradient(135deg, var(--color-primary) 0%, color-mix(in srgb, var(--color-primary) 90%, var(--color-secondary)) 100%);
-  color: var(--color-primary-on);
+  color: var(--color-on-primary-text);
   box-shadow: var(--shadow-sm), 0 2px 8px color-mix(in srgb, var(--color-primary) 25%, transparent);
 }
 
@@ -1280,7 +1280,7 @@ textarea::placeholder {
 
 .message.outgoing .message-text,
 .mv-message.outgoing .message-text {
-  color: var(--color-primary-on);
+  color: var(--color-on-primary-text);
 }
 
 /* ── Markdown styles inside chat messages ──────────────────────────────── */
@@ -1431,7 +1431,7 @@ textarea::placeholder {
 }
 
 .message.outgoing .message-time {
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--message-outgoing-time);
 }
 
 .chat-input {
@@ -1461,7 +1461,7 @@ textarea::placeholder {
 .chat-input button {
   padding: 0.625rem 1.125rem;
   background: var(--color-primary);
-  color: var(--color-primary-on);
+  color: var(--color-on-primary-text);
   border: none;
   border-radius: var(--radius-full);
   cursor: pointer;
@@ -1668,7 +1668,7 @@ textarea::placeholder {
 
 .around-me-btn.active {
   background: var(--color-primary);
-  color: var(--color-primary-on);
+  color: var(--color-on-primary-text);
   border-color: var(--color-primary);
 }
 
@@ -1763,7 +1763,7 @@ textarea::placeholder {
 .around-me-item .say-hello-btn {
   padding: 0.375rem 0.875rem;
   background: var(--color-primary);
-  color: var(--color-primary-on);
+  color: var(--color-on-primary-text);
   border: none;
   border-radius: var(--radius-md);
   font-size: var(--text-xs);
@@ -2606,7 +2606,7 @@ textarea::placeholder {
 .search-bar button {
   padding: 0.75rem 1.5rem;
   background: var(--color-primary);
-  color: var(--color-primary-on);
+  color: var(--color-on-primary-text);
   border: none;
   border-radius: 0.5rem;
   cursor: pointer;
@@ -2699,7 +2699,7 @@ textarea::placeholder {
 .search-result > button {
   padding: 0.5rem 1rem;
   background: var(--color-primary);
-  color: var(--color-primary-on);
+  color: var(--color-on-primary-text);
   border: none;
   border-radius: 0.375rem;
   cursor: pointer;
@@ -2983,7 +2983,7 @@ textarea::placeholder {
 
 .ai-suggestions button:hover {
   background: var(--color-primary);
-  color: var(--color-primary-on);
+  color: var(--color-on-primary-text);
 }
 
 /* "Run as chain" — subtle action under task-like user messages */
@@ -3067,7 +3067,7 @@ textarea::placeholder {
 
 .ai-message.user .ai-message-text {
   background: var(--color-primary);
-  color: var(--color-primary-on);
+  color: var(--color-on-primary-text);
 }
 
 .ai-message.ai .ai-message-text {
@@ -3157,7 +3157,7 @@ textarea::placeholder {
 .ai-send {
   padding: 0.75rem 1.5rem;
   background: var(--color-primary);
-  color: var(--color-primary-on);
+  color: var(--color-on-primary-text);
   border: none;
   border-radius: var(--radius-md);
   font-size: var(--text-sm);
@@ -3317,7 +3317,7 @@ textarea::placeholder {
 
 .inbox-actions .accept {
   background: var(--color-success);
-  color: var(--color-primary-on);
+  color: var(--color-on-primary-text);
 }
 
 .inbox-actions .accept:hover {
@@ -3459,7 +3459,7 @@ textarea::placeholder {
   width: 100%;
   padding: 0.75rem 1rem;
   background: var(--color-primary);
-  color: var(--color-primary-on);
+  color: var(--color-on-primary-text);
   border: none;
   border-radius: 0.375rem;
   font-weight: 500;
@@ -4400,7 +4400,7 @@ textarea::placeholder {
 .settings-save-btn {
   padding: 0.625rem 1.25rem;
   background: var(--color-primary);
-  color: var(--color-primary-on);
+  color: var(--color-on-primary-text);
   border: none;
   border-radius: var(--radius-md);
   cursor: pointer;
@@ -4886,7 +4886,7 @@ textarea::placeholder {
   display: inline-block;
   padding: 0.25rem 0.75rem;
   background: var(--color-primary-subtle);
-  color: var(--color-primary);
+  color: var(--color-on-primary-subtle);
   border-radius: var(--radius-full);
   font-size: var(--text-sm);
   font-weight: var(--font-medium);
@@ -5062,7 +5062,7 @@ textarea::placeholder {
 
 .interest-chip:hover {
   background: var(--color-primary);
-  color: var(--color-primary-on);
+  color: var(--color-on-primary-text);
 }
 
 /* Removable Interest Tags */
@@ -5089,7 +5089,7 @@ textarea::placeholder {
   gap: 0.25rem;
   padding: 0.25rem 0.5rem;
   background: var(--color-primary-subtle);
-  color: var(--color-primary);
+  color: var(--color-on-primary-subtle);
   border-radius: var(--radius-full);
   font-size: var(--text-sm);
   font-weight: 500;
@@ -5166,7 +5166,7 @@ textarea::placeholder {
 
 .capability-chip.selected {
   background: var(--color-primary);
-  color: var(--color-primary-on);
+  color: var(--color-on-primary-text);
   border-color: var(--color-primary);
 }
 
@@ -5340,7 +5340,7 @@ textarea::placeholder {
 .btn-primary {
   padding: 0.625rem 1.25rem;
   background: var(--color-primary);
-  color: var(--color-primary-on);
+  color: var(--color-on-primary-text);
   border: none;
   border-radius: var(--radius-md);
   font-weight: 600;
@@ -5912,7 +5912,7 @@ button:disabled {
 .topic-input-row button {
   padding: 0.5rem 1rem;
   background: var(--color-primary);
-  color: var(--color-primary-on);
+  color: var(--color-on-primary-text);
   border: none;
   border-radius: 0.375rem;
   font-size: var(--text-sm);
@@ -5999,7 +5999,7 @@ button:disabled {
 
 .topic-chip:hover {
   background: var(--color-primary);
-  color: var(--color-primary-on);
+  color: var(--color-on-primary-text);
   border-color: var(--color-primary);
 }
 
@@ -6013,13 +6013,13 @@ button:disabled {
  */
 .topic-chip--active {
   background: var(--color-primary);
-  color: var(--color-primary-on);
+  color: var(--color-on-primary-text);
   border-color: var(--color-primary);
 }
 
 .topic-chip--active:hover {
   background: var(--color-primary);
-  color: var(--color-primary-on);
+  color: var(--color-on-primary-text);
   border-color: var(--color-primary);
 }
 
@@ -6318,7 +6318,7 @@ button:disabled {
 
 .assistant-switch-btn.active {
   background: var(--color-primary);
-  color: var(--color-primary-on);
+  color: var(--color-on-primary-text);
   box-shadow: var(--shadow-sm);
 }
 
@@ -10400,12 +10400,12 @@ button:disabled {
   white-space: nowrap;
   background: var(--color-primary);
   border-color: var(--color-primary);
-  color: var(--color-primary-on);
+  color: var(--color-on-primary-text);
 }
 .browser-view__go:hover:not(:disabled) {
   background: var(--color-primary-hover);
   border-color: var(--color-primary-hover);
-  color: var(--color-primary-on);
+  color: var(--color-on-primary-text);
 }
 .browser-view__bookmark {
   width: 2.25rem;
@@ -12504,7 +12504,7 @@ button:disabled {
   padding: 0.4rem 0.85rem;
   border-radius: var(--radius-full);
   background: var(--color-primary);
-  color: var(--color-primary-on);
+  color: var(--color-on-primary-text);
   font-size: var(--text-sm);
   font-weight: var(--font-semibold);
 }

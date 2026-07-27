@@ -9,6 +9,7 @@ import {
   deContactChatMessages,
   deAiChatMessages,
   deGroupChatMessages,
+  deChatNotifications,
   deH2aMessages,
   deMessageBubbleMessages,
   deInboxMessages,
@@ -30,6 +31,7 @@ import {
   deAccountSettingsMessages,
   deArtifactRendererMessages,
   deAgentCardMessages,
+  deDisplayMessages,
 } from "./de-misc.js";
 
 export const de = mergeMessages(en, {
@@ -228,6 +230,7 @@ export const de = mergeMessages(en, {
   terminals: deTerminalMessages,
   contactChat: deContactChatMessages,
   groupChat: deGroupChatMessages,
+  chatNotifications: deChatNotifications,
   aiChat: deAiChatMessages,
   h2a: deH2aMessages,
   messageBubble: deMessageBubbleMessages,
@@ -246,6 +249,7 @@ export const de = mergeMessages(en, {
   fileShare: deFileShareMessages,
   artifactRenderer: deArtifactRendererMessages,
   agentCard: deAgentCardMessages,
+  display: deDisplayMessages,
   contacts: {
     tabsLabel: "Kontakte oder Entdecken",
     myContacts: "Meine Kontakte ({count})",
@@ -481,7 +485,7 @@ export const de = mergeMessages(en, {
       byName: "Nach Name",
       byTopic: "Nach Thema",
       namePlaceholder: "Name, Benutzername, Interesse oder Peer-ID",
-      topicPlaceholder: "Thema oder Capability-Topic (z. B. music)",
+      topicPlaceholder: "Thema, Capability oder veröffentlichtes Topic (z. B. music)",
       tryTopic: "Ein Thema versuchen",
       multihopTitle: "Über Freunde suchen",
       multihopLede: "Bitten Sie Ihre verbundenen Kontakte, jemanden bis zu zwei Hops entfernt zu finden.",
@@ -496,7 +500,8 @@ export const de = mergeMessages(en, {
       queryingDht: "DHT-Themenanbieter werden abgefragt…",
       searchingName: "Suche nach Benutzername oder Name…",
       searchingFor: 'Suche nach „{query}"',
-      widerTopicFallback: "Suche im öffentlichen Mesh nach Peers, die dieses Thema ankündigen. Erfordert erweiterte Netzwerkeinstellungen unter Einstellungen → Netzwerk.",
+      widerTopicFallback:
+        "Suche im öffentlichen Mesh nach Peers, die ein Interesse/eine Capability ankündigen oder Web-Beiträge zu einem Thema veröffentlichen. Erfordert erweiterte Netzwerkeinstellungen unter Einstellungen → Netzwerk.",
       widerSearchTypeLabel: "Suchtyp",
       byLocation: "Nach Standort",
       geoSameCountry: "Gleiches Land",

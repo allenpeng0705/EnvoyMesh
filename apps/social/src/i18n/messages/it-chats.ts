@@ -162,6 +162,12 @@ export const itContactChatMessages = {
   // per centralizzare le varianti umano/agente/IA nello stesso posto.
   threadKindDirect: "Messaggio diretto",
   threadKindAgent: "Chat agente",
+  // ----- Indicatore di raggiungibilità del contatto (intestazione chat) -----
+  // Usato da lib/peer-reachability-label.ts. Centralizzato qui per la localizzazione.
+  reachabilityChecking: "Verifica…",
+  reachabilityOffline: "Offline",
+  reachabilityOnlineDirect: "Online · Diretto",
+  reachabilityOnlineRelay: "Online · Relay",
 } as const;
 
 export const itAiChatMessages = {
@@ -322,4 +328,13 @@ export const itInboxMessages = {
   defaultHello: "Ciao!",
   audioMessage: itInboxAudioMessages,
   ...itInboxCallMessages,
+} as const;
+
+// ----- Notifiche browser desktop (chat in arrivo) -----
+// Usato da useChatNotifications. Fallback del titolo quando il nome non è disponibile.
+export const itChatNotifications = {
+  sentAFile: "Ha inviato un file",
+  newMessage: "Nuovo messaggio in chat",
+  contactFallback: "Contatto",
+  strangerFallback: "Sconosciuto",
 } as const;

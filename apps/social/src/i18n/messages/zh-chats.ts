@@ -171,6 +171,12 @@ export const zhContactChatMessages = {
   // 的联系人聊天场景中集中维护 human/agent/ai 三个变体。
   threadKindDirect: "私信",
   threadKindAgent: "代理聊天",
+  // ----- 联系人可达性状态条（聊天页头） -----
+  // 由 lib/peer-reachability-label.ts 调用，集中在此以便本地化。
+  reachabilityChecking: "检测中…",
+  reachabilityOffline: "离线",
+  reachabilityOnlineDirect: "在线 · 直连",
+  reachabilityOnlineRelay: "在线 · 中继",
 } as const;
 
 export const zhAiChatMessages = {
@@ -340,4 +346,13 @@ export const zhInboxMessages = {
   audioMessage: inboxAudioMessages,
   // Phase 38 — Voice/Video Calls
   ...inboxCallMessages,
+} as const;
+
+// ----- 桌面浏览器通知（聊天消息到达时） -----
+// 由 useChatNotifications 使用。当消息无 displayName 时，回退标题用。
+export const zhChatNotifications = {
+  sentAFile: "发送了一个文件",
+  newMessage: "新聊天消息",
+  contactFallback: "联系人",
+  strangerFallback: "陌生人",
 } as const;

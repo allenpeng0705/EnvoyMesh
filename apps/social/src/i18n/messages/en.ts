@@ -4,6 +4,7 @@ import {
   aiChatMessages,
   contactChatMessages,
   chatMessages,
+  chatNotifications,
   groupChatMessages,
   h2aMessages,
   inboxMessages,
@@ -29,6 +30,7 @@ import {
   engagementMessages,
   noteEditorMessages,
   kbPluginMessages,
+  displayMessages,
   fileShareMessages,
   setupMessages,
   artifactRendererMessages,
@@ -238,6 +240,7 @@ export const en = {
   aiChat: aiChatMessages,
   h2a: h2aMessages,
   messageBubble: messageBubbleMessages,
+  chatNotifications,
   errorBoundary: errorBoundaryMessages,
   profile: profileMessages,
   profileAbout: profileAboutMessages,
@@ -529,13 +532,11 @@ export const en = {
     search: {
       panelTitle: "Search the network",
       panelLede:
-        "Search by username or display name, interest or capability topic, or location. Set country and city in Profile → About for place search.",
+        "Search by username or display name, topic (interests, capabilities, or published posts), or location. Set country and city in Profile → About for place search.",
       byName: "By name",
       byTopic: "By topic",
-      byPublish: "By published topic",
       namePlaceholder: "Name, username, interest, or peer ID",
-      topicPlaceholder: "Interest or capability topic (e.g. music)",
-      publishPlaceholder: "What people publish about (e.g. photography)",
+      topicPlaceholder: "Interest, capability, or published topic (e.g. music)",
       tryTopic: "Try a topic",
       multihopTitle: "Search through friends",
       multihopLede: "Ask your bonded contacts to help find someone up to two hops away.",
@@ -552,9 +553,7 @@ export const en = {
       searchingName: "Searching by username or name…",
       searchingFor: "Searching for \"{query}\"",
       widerTopicFallback:
-        "Search the public mesh for peers advertising a topic. Requires wider network settings in Settings → Network.",
-      widerPublishFallback:
-        "Find people who publish web posts tagged with a topic (DHT publish:<slug>).",
+        "Search the public mesh for peers advertising an interest/capability or publishing web posts on a topic. Requires wider network settings in Settings → Network.",
       widerSearchTypeLabel: "Search type",
       byLocation: "By place",
       geoSameCountry: "Same country",
@@ -613,6 +612,7 @@ export const en = {
   engagement: engagementMessages,
   notes: noteEditorMessages,
   kbPlugins: kbPluginMessages,
+  display: displayMessages,
   chains: chainsMessages,
   workerCapability: {
     title: "Agent Workers",

@@ -571,3 +571,16 @@ export const jaCommonYesNoMessages = {
   yes: "はい",
   no: "いいえ",
 } as const;
+
+// ----- 汎用表示ヘルパー(信頼レベル、mDNSフォールバック名) -----
+// lib/display.ts の bondLevelLabel / nearbyPeerLabel で使用。
+export const jaDisplayMessages = {
+  bondLevel: {
+    direct: "フレンド",
+    referred: "紹介済み",
+    public: "新しい連絡先",
+    blocked: "ブロック済み",
+    unknown: "連絡先",
+  },
+  nearbyPeerFallback: "近くにいる誰か",
+} as const;

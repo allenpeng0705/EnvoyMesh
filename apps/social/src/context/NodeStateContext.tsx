@@ -147,6 +147,7 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     wsOpen: wsTransportOpen,
     bonds,
     peerId,
+    locale: appSettings.locale,
   });
 
   // --- Agent bridge ---

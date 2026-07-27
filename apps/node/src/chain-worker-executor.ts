@@ -74,7 +74,7 @@ export async function executeAcceptedSubtask(
   const result = await executeTool(
     toolName,
     { query: subtask.objective, objective: subtask.objective },
-    context,
+    { ...context, approvalGranted: true },
   );
   if (!result.ok) {
     await emit(`Failed: ${result.error ?? "execution error"}`, true, 0.1);

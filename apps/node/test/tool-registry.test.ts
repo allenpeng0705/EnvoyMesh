@@ -81,8 +81,8 @@ describe("ToolRegistry", () => {
       });
 
       const tools = registry.listTools();
-      // 57 default tools + 2 additional = 59
-      expect(tools).toHaveLength(59);
+      // 61 default tools + 2 additional = 63
+      expect(tools).toHaveLength(63);
       expect(tools.map((t) => t.name).sort()).toEqual(
         [
           "bond.send_hello", "chat.send", "discovery.search", "knowledge.query",
@@ -96,7 +96,9 @@ describe("ToolRegistry", () => {
           "mesh.list-all-approvals",
           "mesh.list-external-agent-actions",
           "mesh.list-external-sessions", "mesh.list-pending", "mesh.list-sessions",
-          "mesh.list-triggers", "mesh.match_capability_route",
+          "mesh.list-triggers", "mesh.list_agent_network_workers", "mesh.match_capability_route",
+          "mesh.mcp.call_tool", "mesh.mcp.list_tools",
+          "mesh.probe_peer",
           "mesh.reject", "mesh.reject-all", "mesh.remove-trigger",
           "mesh.revoke-external-agent", "mesh.session-summary", "mesh.set-contact-disclosure",
           "mesh.set-contact-mode", "mesh.set-digest-schedule", "mesh.set-mode",
@@ -112,8 +114,8 @@ describe("ToolRegistry", () => {
     it("default tools are pre-registered", () => {
       const registry = new ToolRegistry();
       const tools = registry.listTools();
-      // Default tools: 57 (Phase 33 added mesh.task.cancel + mesh.task.await_result)
-      expect(tools.length).toBe(57);
+      // Default tools: 61 (includes MCP consumer + agent-network probe tools)
+      expect(tools.length).toBe(61);
     });
   });
 
@@ -412,6 +414,7 @@ describe("executeTool — IPFS library hooks", () => {
           agentIdentity: {} as never,
           ownerIdentity: { ownerId: "envoy:owner:test" },
           agentCredential: {} as never,
+          approvalGranted: true,
           exportLibraryItemToIpfs: async (documentId) => ({
             documentId,
             cid: "bafyfromtool",
@@ -440,11 +443,12 @@ describe("executeTool — IPFS library hooks", () => {
           agentIdentity: {} as never,
           ownerIdentity: { ownerId: "envoy:owner:test" },
           agentCredential: {} as never,
+          approvalGranted: true,
           exportLibraryItemToIpfs: async () => ({ cid: "bafy" }),
         },
       );
       expect(result.ok).toBe(false);
-      expect(result.error).toMatch(/documentId is required/i);
+      expect(result.error).toMatch(/documentId/i);
     } finally {
       await rm(profileDir, { recursive: true, force: true });
     }
@@ -639,5 +643,59 @@ describe("ToolDefinition interface", () => {
     expect(retrieved).toBeDefined();
     expect(retrieved?.intent).toBeUndefined();
     expect(retrieved?.isMeshTool).toBe(false);
+  });
+});
+
+describe("executeTool — tool-call firewall", () => {
+  const baseContext = {
+    trustStore: {} as never,
+    peerDirectoryStore: {} as never,
+    taskStore: { appendAuditEvent: async () => {} } as never,
+    agentIdentity: {} as never,
+    ownerIdentity: { ownerId: "envoy:owner:test" },
+    agentCredential: {} as never,
+  };
+
+  it("blocks requiresApproval tools without approvalGranted", async () => {
+    const result = await executeTool(
+      "chat.send",
+      { targetOwnerId: "envoy:owner:peer", text: "hi" },
+      baseContext,
+    );
+    expect(result.ok).toBe(false);
+    expect(result.approvalRequired).toBe(true);
+    expect(result.error).toMatch(/requires owner approval/);
+  });
+
+  it("enqueues requiresApproval tools when enqueueToolApproval is set", async () => {
+    const enqueueToolApproval = async () => ({ ok: true as const, itemId: "appr-1" });
+    const result = await executeTool(
+      "chat.send",
+      { targetOwnerId: "envoy:owner:peer", text: "hi" },
+      { ...baseContext, enqueueToolApproval },
+    );
+    expect(result.ok).toBe(false);
+    expect(result.approvalRequired).toBe(true);
+    expect(result.approvalItemId).toBe("appr-1");
+  });
+
+  it("blocks invalid schema before side effects", async () => {
+    const result = await executeTool(
+      "chat.send",
+      { targetOwnerId: "envoy:owner:peer" },
+      { ...baseContext, approvalGranted: true },
+    );
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/missing required parameter: text/);
+  });
+
+  it("blocks path traversal in share.send", async () => {
+    const result = await executeTool(
+      "share.send",
+      { targetOwnerId: "envoy:owner:peer", path: "../secret.txt" },
+      { ...baseContext, approvalGranted: true },
+    );
+    expect(result.ok).toBe(false);
+    expect(result.error).toMatch(/path traversal/);
   });
 });

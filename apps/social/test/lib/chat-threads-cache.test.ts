@@ -8,6 +8,8 @@ import {
   snapshotChatThreadsCache,
 } from "../../src/lib/chat-threads-cache.js";
 import {
+  markPendingOutboundFailed,
+  markStalePendingOutboundFailed,
   readPendingOutboundCache,
   writePendingOutboundCache,
 } from "../../src/lib/chat-pending-outbound-cache.js";
@@ -54,5 +56,39 @@ describe("chat-pending-outbound-cache", () => {
     expect(readPendingOutboundCache("envoy:owner:peer")).toHaveLength(1);
     writePendingOutboundCache("envoy:owner:peer", []);
     expect(readPendingOutboundCache("envoy:owner:peer")).toHaveLength(0);
+  });
+
+  it("marks all pending rows failed", () => {
+    const pending: ChatMessage = {
+      ...sampleMsg("pending-1"),
+      metadata: { timestamp: new Date().toISOString(), deliveryReceipt: "pending" },
+    };
+    const sent: ChatMessage = {
+      ...sampleMsg("sent-1"),
+      metadata: { timestamp: new Date().toISOString(), deliveryReceipt: "sent" },
+    };
+    const next = markPendingOutboundFailed([pending, sent]);
+    expect(next[0]?.metadata.deliveryReceipt).toBe("failed");
+    expect(next[1]?.metadata.deliveryReceipt).toBe("sent");
+  });
+
+  it("ages out only stale pending rows", () => {
+    const stale: ChatMessage = {
+      ...sampleMsg("pending-old"),
+      metadata: {
+        timestamp: new Date(Date.now() - 120_000).toISOString(),
+        deliveryReceipt: "pending",
+      },
+    };
+    const fresh: ChatMessage = {
+      ...sampleMsg("pending-new"),
+      metadata: {
+        timestamp: new Date().toISOString(),
+        deliveryReceipt: "pending",
+      },
+    };
+    const next = markStalePendingOutboundFailed([stale, fresh], Date.now(), 90_000);
+    expect(next[0]?.metadata.deliveryReceipt).toBe("failed");
+    expect(next[1]?.metadata.deliveryReceipt).toBe("pending");
   });
 });

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNodeState } from "../context/NodeStateContext.js";
+import { useI18n, useT } from "../context/I18nContext.js";
 import { useNodeService } from "./useNodeService.js";
 import type { ChatMessage, ChatRoomMessageEvent } from "@envoymesh/api";
 import { isChatRoomThreadKey } from "@envoymesh/api";
@@ -45,17 +46,21 @@ function previewThreadKey(msg: ChatMessage, selfOwnerId: string | undefined): st
   return threadPeerOwnerId(msg, selfOwnerId);
 }
 
-function formatThreadTime(iso: string): string {
+function formatThreadTime(
+  t: ReturnType<typeof useT>,
+  iso: string,
+  locale: string,
+): string {
   const d = new Date(iso);
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const day = new Date(d.getFullYear(), d.getMonth(), d.getDate());
   const diff = (today.getTime() - day.getTime()) / 86400000;
   if (diff === 0) {
-    return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+    return d.toLocaleTimeString(locale, { hour: "2-digit", minute: "2-digit" });
   }
-  if (diff === 1) return "Yesterday";
-  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  if (diff === 1) return t("contactChat.dateYesterday", "Yesterday");
+  return d.toLocaleDateString(locale, { month: "short", day: "numeric" });
 }
 
 /**
@@ -64,6 +69,8 @@ function formatThreadTime(iso: string): string {
 export function useChatThreadPreviews(peerOwnerIds: readonly string[]): Record<string, ThreadPreview> {
   const nodeService = useNodeService();
   const { humanProfile } = useNodeState();
+  const t = useT();
+  const { locale } = useI18n();
   const selfOwnerId = humanProfile?.ownerId;
 
   /** Stable string key — avoids re-fetch / re-subscribe when parent passes a new array with same ids. */
@@ -92,7 +99,7 @@ export function useChatThreadPreviews(peerOwnerIds: readonly string[]): Record<s
             if (!last) return;
             next[pid] = {
               text: formatPreview(last.content?.text ?? ""),
-              timeLabel: formatThreadTime(last.metadata.timestamp),
+              timeLabel: formatThreadTime(t, last.metadata.timestamp, locale),
               timestampMs: new Date(last.metadata.timestamp).getTime(),
             };
           } catch {
@@ -105,7 +112,7 @@ export function useChatThreadPreviews(peerOwnerIds: readonly string[]): Record<s
     return () => {
       cancelled = true;
     };
-  }, [nodeService, peerIdsKey]);
+  }, [nodeService, peerIdsKey, t, locale]);
 
   useEffect(() => {
     const applyPreview = (msg: ChatMessage) => {
@@ -115,7 +122,7 @@ export function useChatThreadPreviews(peerOwnerIds: readonly string[]): Record<s
         ...prev,
         [peer]: {
           text: formatPreview(msg.content?.text ?? ""),
-          timeLabel: formatThreadTime(msg.metadata.timestamp),
+          timeLabel: formatThreadTime(t, msg.metadata.timestamp, locale),
           timestampMs: new Date(msg.metadata.timestamp).getTime(),
         },
       }));
@@ -128,7 +135,7 @@ export function useChatThreadPreviews(peerOwnerIds: readonly string[]): Record<s
       unsub();
       unsubRoom();
     };
-  }, [nodeService, selfOwnerId, peerIdsKey, peerIdSet]);
+  }, [nodeService, selfOwnerId, peerIdsKey, peerIdSet, t, locale]);
 
   return previews;
 }

@@ -59,4 +59,26 @@ describe("executeApprovedAction", () => {
     });
     expect(result.ok).toBe(false);
   });
+
+  it("tool_call re-executes via executeToolCall", async () => {
+    const executeToolCall = vi.fn(async () => ({ ok: true, messageId: "m-tool" }));
+    const item = createApprovalItem(
+      "tool_call",
+      "Tool: chat.send",
+      "needs approval",
+      JSON.stringify({
+        toolName: "chat.send",
+        params: { targetOwnerId: "envoy:owner:peer", text: "hi" },
+      }),
+    );
+    const result = await executeApprovedAction(item, {
+      sendAgentChat: vi.fn(),
+      executeToolCall,
+    });
+    expect(result).toEqual({ ok: true, actionType: "tool_call", messageId: "m-tool" });
+    expect(executeToolCall).toHaveBeenCalledWith("chat.send", {
+      targetOwnerId: "envoy:owner:peer",
+      text: "hi",
+    });
+  });
 });

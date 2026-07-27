@@ -3895,6 +3895,13 @@ class NodeServiceImpl implements NodeService {
     const { executeTool } = await import("./tool-registry.js");
     const result = await executeTool(toolName, params, context);
     if (!result.ok) {
+      if (result.approvalRequired) {
+        throw new Error(
+          result.approvalItemId
+            ? `Tool ${toolName} requires owner approval (queued as ${result.approvalItemId})`
+            : result.error ?? `Tool ${toolName} requires owner approval`,
+        );
+      }
       throw new Error(result.error ?? `Tool ${toolName} failed`);
     }
     return result.result;
@@ -4395,6 +4402,28 @@ class NodeServiceImpl implements NodeService {
       sendAgentChat: (targetOwnerId, text) => this.sendAgentChat(targetOwnerId, text),
       forwardDiscovery: (payload) => this._discoveryRuntime().executeDiscoveryForward(payload),
       awardChainWorker: (payload) => this._executeApprovedChainAward(payload),
+      executeToolCall: async (toolName, params) => {
+        const context = await this.getToolExecutionContext();
+        if (!context) {
+          return { ok: false, error: "tool execution context unavailable" };
+        }
+        const { executeTool } = await import("./tool-registry.js");
+        const result = await executeTool(toolName, params, {
+          ...context,
+          approvalGranted: true,
+        });
+        if (!result.ok) {
+          return { ok: false, error: result.error ?? `Tool ${toolName} failed` };
+        }
+        const messageId =
+          result.result &&
+          typeof result.result === "object" &&
+          "messageId" in result.result &&
+          typeof (result.result as { messageId?: unknown }).messageId === "string"
+            ? (result.result as { messageId: string }).messageId
+            : undefined;
+        return { ok: true, messageId };
+      },
     });
     if (!executed.ok) {
       return { ok: false, error: executed.reason };
@@ -6108,6 +6137,7 @@ class NodeServiceImpl implements NodeService {
       profile: discoveryProfile,
       enableMdns: config.enableMdns,
       tuning: {
+        connectivityMode: config.connectivityMode,
         maxConnections: config.maxConnections,
         mdnsIntervalMs: config.mdnsIntervalMs,
         capabilityDiscoveryIntervalMs: config.capabilityDiscoveryIntervalMs,
@@ -8018,6 +8048,25 @@ class NodeServiceImpl implements NodeService {
       listPendingApprovals: () => this.listPendingApprovals(),
       approvePendingApproval: (itemId, notes) => this.approvePendingApproval(itemId, notes),
       rejectPendingApproval: (itemId, notes) => this.rejectPendingApproval(itemId, notes),
+      enqueueToolApproval: async ({ toolName, params, reason }) => {
+        if (!this._approvalQueue) {
+          return { ok: false as const, error: "approval queue not available" };
+        }
+        const item = createApprovalItem(
+          "tool_call",
+          `Tool: ${toolName}`,
+          reason,
+          JSON.stringify({ toolName, params }),
+          {
+            contactOwnerId:
+              typeof params.targetOwnerId === "string" ? params.targetOwnerId : undefined,
+            metadata: { toolName, params },
+          },
+          "high",
+        );
+        this._approvalQueue.add(item);
+        return { ok: true as const, itemId: item.id };
+      },
       requestAgentCard: (targetOwnerId) => this.requestAgentCard(targetOwnerId),
       getAgentCard: (ownerId) => this.getAgentCard(ownerId),
       listAgentCards: () => this.listAgentCards(),

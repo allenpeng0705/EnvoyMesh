@@ -30,6 +30,7 @@ import {
   type WebContentStore,
 } from "./web-content-store.js";
 import { mimeTypeForFilename } from "./node-service-fileshare.js";
+import { resolveSenderOwnerId as resolveOwnerFromPeerDirectory } from "./share-inbound.js";
 
 /** Prefer path extension over a stale/wrong manifest mimeType (e.g. index.html stored as text/markdown). */
 function resolveContentType(normalizedPath: string, entryMimeType?: string): string {
@@ -69,7 +70,9 @@ async function hashFileSha256(absPath: string): Promise<string> {
 
 /**
  * Resolve the owner ID for a sender using the peer directory.
- * Returns undefined if the sender is not a known contact.
+ * Uses the same PEM→peerId fallback as share/chat so a stale libp2p peerId
+ * on the contact row does not demote a bonded peer to stranger (which would
+ * return not_found for bonded profile portals).
  */
 async function resolveSenderOwnerId(
   envelope: EnvoyEnvelope,
@@ -79,11 +82,7 @@ async function resolveSenderOwnerId(
   if (envelope.agentCredential?.ownerId) {
     return envelope.agentCredential.ownerId;
   }
-  const records = await peerDirectoryStore.listPeerRecords();
-  const match =
-    records.find((r) => r.peerId === envelope.senderPeerId) ??
-    records.find((r) => r.peerId === remotePeerId);
-  return match?.ownerId;
+  return resolveOwnerFromPeerDirectory(envelope.senderPeerId, remotePeerId, peerDirectoryStore);
 }
 
 export interface HandleInboundLibraryReadInput {

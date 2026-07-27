@@ -1,4 +1,5 @@
 import type { BondRecord } from "@envoymesh/api";
+import type { TFunction } from "../context/i18n-context.js";
 
 /** Display label for a bond contact. */
 export function contactLabel(contact: Partial<BondRecord> & { peerOwnerId: string }): string {
@@ -59,26 +60,30 @@ export const INTEREST_CATEGORIES: readonly InterestCategory[] = [
 ] as const;
 
 /** Plain-language bond level for contact lists. */
-export function bondLevelLabel(level: string | undefined): string {
+export function bondLevelLabel(t: TFunction, level: string | undefined): string {
   switch (level) {
     case "direct":
-      return "Friend";
+      return t("display.bondLevel.direct", "Friend");
     case "referred":
-      return "Introduced";
+      return t("display.bondLevel.referred", "Introduced");
     case "public":
-      return "New contact";
+      return t("display.bondLevel.public", "New contact");
     case "blocked":
-      return "Blocked";
+      return t("display.bondLevel.blocked", "Blocked");
     default:
-      return level ?? "Contact";
+      return level ?? t("display.bondLevel.unknown", "Contact");
   }
 }
 
 /** mDNS discovery often lacks real names — show a friendly label instead of "Peer 12D3…". */
-export function nearbyPeerLabel(displayName: string | undefined, nodeId: string): string {
+export function nearbyPeerLabel(
+  t: TFunction,
+  displayName: string | undefined,
+  nodeId: string,
+): string {
   const name = displayName?.trim();
   if (!name || /^Peer [A-Za-z0-9]{6,}/.test(name)) {
-    return "Someone nearby";
+    return t("display.nearbyPeerFallback", "Someone nearby");
   }
   return name;
 }

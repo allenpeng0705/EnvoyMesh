@@ -16,6 +16,10 @@
  */
 
 import type { Sensitivity } from "@envoymesh/protocol";
+import {
+  evaluateToolCallFirewall,
+  paramDescriptorsToJsonSchema,
+} from "./tool-call-firewall.js";
 
 function toolAuditRandomId(): string {
   const c = globalThis.crypto as Crypto | undefined;
@@ -260,8 +264,36 @@ export class LocalToolRegistry {
       };
     }
 
+    const firewall = evaluateToolCallFirewall({
+      tool: {
+        name: tool.name,
+        paramSchema: paramDescriptorsToJsonSchema(tool.parameters),
+        // Local tools use evaluateToolPolicy for caller sensitivity; arg ceiling is open.
+        sensitivityCeiling: "private",
+        // Approval already decided by evaluateToolPolicy above.
+        requiresApproval: false,
+      },
+      params: request.parameters,
+      approvalGranted: true,
+    });
+    if (!firewall.ok) {
+      const denyEvent: ToolCallAuditEvent = {
+        ...auditEvent,
+        outcome: "deny",
+        reason: firewall.reason,
+        parameters: request.parameters,
+      };
+      return {
+        ok: false,
+        toolName: tool.name,
+        error: firewall.reason,
+        policyDecision: { action: "deny", reason: firewall.reason },
+        auditEvent: denyEvent,
+      };
+    }
+
     try {
-      const output = await tool.execute(request.parameters);
+      const output = await tool.execute(firewall.params);
       return {
         ok: true,
         toolName: tool.name,

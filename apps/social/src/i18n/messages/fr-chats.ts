@@ -162,6 +162,12 @@ export const frContactChatMessages = {
   // pour centraliser les variantes human/agent/ai au même endroit.
   threadKindDirect: "Message direct",
   threadKindAgent: "Chat d'agent",
+  // ----- Indicateur de joignabilité du contact (en-tête de chat) -----
+  // Utilisé par lib/peer-reachability-label.ts. Centralisé ici pour la localisation.
+  reachabilityChecking: "Vérification…",
+  reachabilityOffline: "Hors ligne",
+  reachabilityOnlineDirect: "En ligne · Direct",
+  reachabilityOnlineRelay: "En ligne · Relais",
 } as const;
 
 export const frAiChatMessages = {
@@ -322,4 +328,13 @@ export const frInboxMessages = {
   defaultHello: "Bonjour !",
   audioMessage: frInboxAudioMessages,
   ...frInboxCallMessages,
+} as const;
+
+// ----- Notifications navigateur bureau (chat entrant) -----
+// Utilisé par useChatNotifications. Repli de titre quand aucun nom n'est disponible.
+export const frChatNotifications = {
+  sentAFile: "A envoyé un fichier",
+  newMessage: "Nouveau message de chat",
+  contactFallback: "Contact",
+  strangerFallback: "Inconnu",
 } as const;

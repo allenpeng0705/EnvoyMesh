@@ -29,6 +29,19 @@ export {
   type EgressSecretMatch,
 };
 
+export {
+  evaluateToolCallFirewall,
+  isApprovalMetaTool,
+  paramDescriptorsToJsonSchema,
+  MAX_TOOL_ARG_STRING_CHARS,
+  MAX_TOOL_ARG_ARRAY_ITEMS,
+  type ToolCallFirewallResult,
+  type ToolCallFirewallTool,
+  type ToolCallFirewallAction,
+  type ToolParamJsonSchema,
+  type EvaluateToolCallFirewallInput,
+} from "./tool-call-firewall.js";
+
 export type ModelProviderType = "local" | "cloud" | "peer";
 export type ModelRouteDecision =
   | { action: "allow"; provider: ModelProviderPolicy }

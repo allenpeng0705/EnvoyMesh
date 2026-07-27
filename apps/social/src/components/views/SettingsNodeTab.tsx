@@ -12,11 +12,12 @@ import { useOptimisticToggle } from "../../hooks/useOptimisticToggle.js";
 import { useCircuitReservationStatus } from "../../hooks/useCircuitReservationStatus.js";
 import { DEFAULT_APP_SETTINGS } from "../../lib/storage.js";
 import {
-  DEFAULT_CLIENT_MAX_CONNECTIONS,
   DEFAULT_PUBLIC_LIBP2P_BOOTSTRAP_PRESETS,
   defaultBootstrapPresetsForDiscoveryProfile,
+  formatConnectivityPresetSummary,
   formatWanSignOffEvidenceReport,
   formatWanTwoNatOperatorChecklist,
+  resolveConnectivityPreset,
   WAN_TWO_NAT_CHECKLIST_STEPS,
 } from "@envoymesh/api";
 import {
@@ -1504,73 +1505,32 @@ export function SettingsNodeTab() {
           {t("settings.network.resourceTuning.desc")}
         </p>
         <label className="settings-field">
-          <span className="settings-field-label">{t("settings.network.resourceTuning.maxConnections")}</span>
-          <input
-            type="number"
-            min={10}
-            max={500}
-            className="settings-input-narrow"
-            defaultValue={nodeConfig?.maxConnections ?? DEFAULT_CLIENT_MAX_CONNECTIONS}
-            key={`maxConn-${nodeConfig?.maxConnections ?? DEFAULT_CLIENT_MAX_CONNECTIONS}`}
-            onBlur={async (e) => {
-              const v = Number(e.target.value);
-              if (!Number.isFinite(v)) return;
-              await nodeService.updateNodeConfig({ maxConnections: v });
+          <span className="settings-field-label">{t("settings.network.resourceTuning.mode")}</span>
+          <select
+            className="settings-input"
+            value={nodeConfig?.connectivityMode ?? "optimized"}
+            onChange={async (e) => {
+              const mode = e.target.value as
+                | "normal"
+                | "optimized"
+                | "smart"
+                | "aggressive";
+              await nodeService.updateNodeConfig({ connectivityMode: mode });
               await refreshNodeConfig();
             }}
-          />
+          >
+            <option value="normal">{t("settings.network.resourceTuning.modeNormal")}</option>
+            <option value="optimized">{t("settings.network.resourceTuning.modeOptimized")}</option>
+            <option value="smart">{t("settings.network.resourceTuning.modeSmart")}</option>
+            <option value="aggressive">{t("settings.network.resourceTuning.modeAggressive")}</option>
+          </select>
         </label>
-        <label className="settings-field">
-          <span className="settings-field-label">{t("settings.network.resourceTuning.capabilityCycle")}</span>
-          <input
-            type="number"
-            min={30}
-            max={600}
-            className="settings-input-narrow"
-            defaultValue={Math.round((nodeConfig?.capabilityDiscoveryIntervalMs ?? 90_000) / 1000)}
-            key={`capInt-${nodeConfig?.capabilityDiscoveryIntervalMs ?? 90_000}`}
-            onBlur={async (e) => {
-              const sec = Number(e.target.value);
-              if (!Number.isFinite(sec)) return;
-              await nodeService.updateNodeConfig({ capabilityDiscoveryIntervalMs: sec * 1000 });
-              await refreshNodeConfig();
-            }}
-          />
-        </label>
-        <div className="settings-toggle-row">
-          <div className="toggle-info">
-            <strong>{t("settings.network.resourceTuning.lazyDhtFind")}</strong>
-            <span className="toggle-desc">{t("settings.network.resourceTuning.lazyDhtFindDesc")}</span>
-          </div>
-          <label className="toggle-switch">
-            <input
-              type="checkbox"
-              checked={nodeConfig?.lazyCapabilityDiscovery ?? discoveryProfile === "wan-default"}
-              onChange={async (e) => {
-                await nodeService.updateNodeConfig({ lazyCapabilityDiscovery: e.target.checked });
-                await refreshNodeConfig();
-              }}
-            />
-            <span className="slider" />
-          </label>
-        </div>
-        <div className="settings-toggle-row">
-          <div className="toggle-info">
-            <strong>{t("settings.network.resourceTuning.idleTimerStretch")}</strong>
-            <span className="toggle-desc">{t("settings.network.resourceTuning.idleTimerStretchDesc")}</span>
-          </div>
-          <label className="toggle-switch">
-            <input
-              type="checkbox"
-              checked={nodeConfig?.idleTimerStretch ?? true}
-              onChange={async (e) => {
-                await nodeService.updateNodeConfig({ idleTimerStretch: e.target.checked });
-                await refreshNodeConfig();
-              }}
-            />
-            <span className="slider" />
-          </label>
-        </div>
+        <p className="section-desc" data-testid="connectivity-mode-summary">
+          {formatConnectivityPresetSummary(
+            resolveConnectivityPreset(nodeConfig?.connectivityMode ?? "optimized"),
+          )}
+        </p>
+        <p className="section-desc">{t("settings.network.resourceTuning.restartHint")}</p>
       </section>
 
       <section className="settings-section">

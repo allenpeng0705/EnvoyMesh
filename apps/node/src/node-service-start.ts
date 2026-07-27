@@ -20,6 +20,7 @@ import { createDiscoverySeedStore } from "./discovery-seed-store.js";
 import { createInboundMessageGuard } from "./inbound-guard.js";
 import { createTaskDispatcher } from "./task-dispatcher.js";
 import { resolveConnectivityRuntime, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
+import { configureBondWarmFromConnectivity } from "./node-service-reachability.js";
 import { resolveBootstrapAddresses } from "./bootstrap-resolver.js";
 import { EnvoyMesh, filterBootstrapMultiaddrs, type EnvoyMeshOptions } from "@envoymesh/network";
 import { seedAddrsForDiscoveryProfile } from "./peer-discovery-telemetry.js";
@@ -27,7 +28,6 @@ import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key-loader.js";
 import { runRelayClientCycle, startRelayClientScheduler, type RelayClientCycleDeps } from "./relay-client-cycle.js";
 import { startNodeStatsInterval } from "./node-stats-log.js";
 import { warmAndWatchRelayReservations } from "./relay-reservation-health.js";
-import { DEFAULT_RELAY_CLIENT_CYCLE_INTERVAL_MS } from "@envoymesh/api";
 import type { NodeProfile, NodeStatus, DiscoveryProfile } from "@envoymesh/api";
 import type { AgentSetupContext } from "./node-service-agent-setup.js";
 import type { CapabilityDiscoveryContext } from "./node-service-capability-discovery.js";
@@ -62,6 +62,7 @@ export interface StartNodeContext {
     profileDir: string;
     discoveryProfile: DiscoveryProfile;
     enableMdns?: boolean;
+    connectivityMode?: import("@envoymesh/api").ConnectivityMode;
     maxConnections?: number;
     mdnsIntervalMs?: number;
     capabilityDiscoveryIntervalMs?: number;
@@ -223,6 +224,7 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
       profile: config.discoveryProfile,
       enableMdns: config.enableMdns ?? true,
       tuning: {
+        connectivityMode: config.connectivityMode,
         maxConnections: config.maxConnections,
         mdnsIntervalMs: config.mdnsIntervalMs,
         capabilityDiscoveryIntervalMs: config.capabilityDiscoveryIntervalMs,
@@ -231,14 +233,21 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
       },
     });
     console.log(
-      `[node-service] Creating EnvoyMesh with enableDht=${connectivityRuntime.enableDht}`,
+      `[node-service] Creating EnvoyMesh mode=${connectivityRuntime.connectivityMode} enableDht=${connectivityRuntime.enableDht}`,
     );
+
+    configureBondWarmFromConnectivity({
+      intervalMs: connectivityRuntime.bondWarmIntervalMs,
+      perContactCooldownMs: connectivityRuntime.bondWarmPerContactCooldownMs,
+      eventDriven: connectivityRuntime.bondWarmEventDriven,
+    });
 
     const meshOptions: EnvoyMeshOptions = {
       listen: ["/ip4/0.0.0.0/tcp/0"],
       advertiseAddrs: config.advertiseAddrs ?? [],
       enableMdns: connectivityRuntime.enableMdns,
       mdnsIntervalMs: connectivityRuntime.mdnsIntervalMs,
+      connectionMonitorPingIntervalMs: connectivityRuntime.connectionMonitorPingIntervalMs,
       enableDht: connectivityRuntime.enableDht,
       dhtClientMode: true,
       bootstrapPeers,
@@ -305,7 +314,7 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
       await runRelayClientCycle(relayDeps as never);
       const stopFn = startRelayClientScheduler({
         ...relayDeps,
-        intervalMs: DEFAULT_RELAY_CLIENT_CYCLE_INTERVAL_MS,
+        intervalMs: connectivityRuntime.relayCycleBaseMs,
       } as never);
       ctx.setStopRelayClientScheduler(() => stopFn);
     }

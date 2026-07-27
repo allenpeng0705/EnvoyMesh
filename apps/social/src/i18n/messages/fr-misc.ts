@@ -571,3 +571,16 @@ export const frCommonYesNoMessages = {
   yes: "Oui",
   no: "Non",
 } as const;
+
+// ----- Helpers d'affichage génériques (niveau de lien, repli mDNS) -----
+// Utilisés par lib/display.ts (bondLevelLabel, nearbyPeerLabel).
+export const frDisplayMessages = {
+  bondLevel: {
+    direct: "Ami",
+    referred: "Présenté",
+    public: "Nouveau contact",
+    blocked: "Bloqué",
+    unknown: "Contact",
+  },
+  nearbyPeerFallback: "Quelqu'un à proximité",
+} as const;

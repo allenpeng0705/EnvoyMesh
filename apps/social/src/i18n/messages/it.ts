@@ -9,6 +9,7 @@ import {
   itContactChatMessages,
   itAiChatMessages,
   itGroupChatMessages,
+  itChatNotifications,
   itH2aMessages,
   itMessageBubbleMessages,
   itInboxMessages,
@@ -30,6 +31,7 @@ import {
   itAccountSettingsMessages,
   itArtifactRendererMessages,
   itAgentCardMessages,
+  itDisplayMessages,
 } from "./it-misc.js";
 
 export const it = mergeMessages(en, {
@@ -228,6 +230,7 @@ export const it = mergeMessages(en, {
   terminals: itTerminalMessages,
   contactChat: itContactChatMessages,
   groupChat: itGroupChatMessages,
+  chatNotifications: itChatNotifications,
   aiChat: itAiChatMessages,
   h2a: itH2aMessages,
   messageBubble: itMessageBubbleMessages,
@@ -246,6 +249,7 @@ export const it = mergeMessages(en, {
   fileShare: itFileShareMessages,
   artifactRenderer: itArtifactRendererMessages,
   agentCard: itAgentCardMessages,
+  display: itDisplayMessages,
   contacts: {
     tabsLabel: "Contatti o scopri",
     myContacts: "I miei contatti ({count})",
@@ -481,7 +485,7 @@ export const it = mergeMessages(en, {
       byName: "Per nome",
       byTopic: "Per argomento",
       namePlaceholder: "Nome, nome utente, interesse o ID peer",
-      topicPlaceholder: "Argomento o topic di capacità (es. music)",
+      topicPlaceholder: "Interesse, capacità o argomento pubblicato (es. music)",
       tryTopic: "Prova un argomento",
       multihopTitle: "Cerca tramite amici",
       multihopLede: "Chiedi ai tuoi contatti collegati di aiutarti a trovare qualcuno fino a due salti.",
@@ -496,7 +500,8 @@ export const it = mergeMessages(en, {
       queryingDht: "Interrogazione provider di argomenti DHT…",
       searchingName: "Ricerca per nome utente o nome…",
       searchingFor: "Ricerca di «{query}»",
-      widerTopicFallback: "Cerca sulla mesh pubblica per peer che annunciano un argomento. Richiede impostazioni di rete più ampie in Impostazioni → Rete.",
+      widerTopicFallback:
+        "Cerca sulla mesh pubblica peer che annunciano un interesse/una capacità o pubblicano pagine web su un argomento. Richiede impostazioni di rete più ampie in Impostazioni → Rete.",
       widerSearchTypeLabel: "Tipo di ricerca",
       byLocation: "Per luogo",
       geoSameCountry: "Stesso paese",

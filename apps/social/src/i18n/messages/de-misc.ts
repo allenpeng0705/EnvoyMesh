@@ -571,3 +571,16 @@ export const deCommonYesNoMessages = {
   yes: "Ja",
   no: "Nein",
 } as const;
+
+// ----- Generische Anzeige-Helfer (Bond-Level, mDNS-Fallback-Name) -----
+// Verwendet von lib/display.ts (bondLevelLabel, nearbyPeerLabel).
+export const deDisplayMessages = {
+  bondLevel: {
+    direct: "Freund",
+    referred: "Vorgestellt",
+    public: "Neuer Kontakt",
+    blocked: "Blockiert",
+    unknown: "Kontakt",
+  },
+  nearbyPeerFallback: "Jemand in der Nähe",
+} as const;

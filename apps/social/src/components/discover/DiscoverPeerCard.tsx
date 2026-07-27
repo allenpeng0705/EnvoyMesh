@@ -17,7 +17,7 @@ export function DiscoverPeerCard({
   onSayHello?: () => void;
 }) {
   const t = useT();
-  const label = nearbyPeerLabel(peer.displayName, peer.nodeId);
+  const label = nearbyPeerLabel(t, peer.displayName, peer.nodeId);
   const ownerId = peer.ownerId?.trim() || "";
   const canOpenProfile = ownerId.startsWith("envoy:owner:");
   const openLabel = t("discoverCards.openProfile", "Open profile");

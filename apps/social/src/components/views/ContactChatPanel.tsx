@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo, type ReactNode } from "react";
 import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
-import { useNodeService, useChatMessages } from "../../hooks/useNodeService.js";
+import { useNodeService, useChatMessages, useTransportWsOpen } from "../../hooks/useNodeService.js";
 import { useChatDrafts } from "../../hooks/useChatDrafts.js";
 import { usePeerReachability, peerReachabilityLabel } from "../../hooks/usePeerReachability.js";
 import { useCallSessionContext } from "../../context/CallSessionContext.js";
@@ -43,6 +43,8 @@ import { RemoveContactConfirmModal } from "../RemoveContactConfirmModal.js";
 import { ConfirmDialog } from "../ConfirmDialog.js";
 import type { TFunction } from "../../context/I18nContext.js";
 import {
+  markPendingOutboundFailed,
+  markStalePendingOutboundFailed,
   readPendingOutboundCache,
   writePendingOutboundCache,
 } from "../../lib/chat-pending-outbound-cache.js";
@@ -82,6 +84,7 @@ function isPendingOutgoing(msg: ChatMessage): boolean {
 export function ContactChatPanel({ selectedContact, onSelectContact }: ContactChatPanelProps) {
   const t = useT();
   const nodeService = useNodeService();
+  const wsTransportOpen = useTransportWsOpen();
   const { showToast } = useToast();
   const {
     bonds,
@@ -110,8 +113,27 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
     [selectedContact],
   );
   useEffect(() => {
-    setPendingOutboundState(readPendingOutboundCache(selectedContact));
+    setPendingOutboundState(
+      markStalePendingOutboundFailed(readPendingOutboundCache(selectedContact)),
+    );
   }, [selectedContact]);
+
+  // Age out stuck "Sending…" bubbles (half-open Direct path / hung RPC).
+  useEffect(() => {
+    const tick = () => {
+      setPendingOutbound((prev) => markStalePendingOutboundFailed(prev));
+    };
+    tick();
+    const iv = window.setInterval(tick, 15_000);
+    return () => window.clearInterval(iv);
+  }, [selectedContact, setPendingOutbound]);
+
+  // Node restart / WS drop: fail in-flight bubbles immediately (RPC also rejects).
+  useEffect(() => {
+    if (wsTransportOpen) return;
+    setPendingOutbound((prev) => markPendingOutboundFailed(prev));
+  }, [wsTransportOpen, setPendingOutbound]);
+
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   const [chatInput, setChatInput] = useState("");
@@ -658,7 +680,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
                 <span className="contact-reachability-dot" aria-hidden />
                 {isHomeBridgeThread && !contactReachable && !reachabilityChecking
                   ? t("contactChat.homeOffline")
-                  : peerReachabilityLabel(peerReachability)}
+                  : peerReachabilityLabel(t, peerReachability)}
               </span>
               {showPathUnverifiedHint ? (
                 <p className="contact-path-unverified-hint">{t("contactChat.pathUnverifiedHint")}</p>

@@ -668,12 +668,14 @@ Tasks:
 - `[x]` Add model/provider cost and sensitivity budgets.
 - `[x]` Add approval thresholds for high-risk actions.
 - `[x]` Add prompt-injection regression tests around vault/tool access.
+- `[x]` **Tool-call argument firewall** (`evaluateToolCallFirewall` in `@envoymesh/models`): validate LLM tool args against JSON Schema `paramSchema`, recursive arg hygiene (control chars / length / path traversal including URL-encoding), strip undeclared properties, sensitivity ceiling, and unified `requiresApproval` gate. OpenClaw/bridge do **not** blanket-grant approval; sensitive tools enqueue Inbox `tool_call` items and re-run after owner approve. Also applied in `LocalToolRegistry.callTool`. Distinct from the semantic firewall (prompts → model).
 
 Exit criteria:
 
 - `[x]` Prompt injection cannot read outside allowed vault/tool paths in tests.
 - `[x]` Private-key-like output is blocked before egress.
 - `[x]` High-risk action creates an approval request instead of executing.
+- `[x]` Malformed or over-ceiling tool-call arguments are denied before mesh/vault side effects.
 
 ### 8I: Anonymous discovery toggle and fast path
 
@@ -6300,6 +6302,7 @@ Closes the production path after 48A–48D protocol/mount work.
 
 | Date | Change |
 |------|--------|
+| 2026-07-27 | **Tool-call argument firewall (hardened).** `evaluateToolCallFirewall` validates LLM tool args (JSON Schema, recursive hygiene, empty-required reject, URL-decoded path traversal, strip undeclared props, sensitivity ceiling). `requiresApproval` tools are **enqueued** as Inbox `tool_call` items (not blanket-granted on OpenClaw/bridge); approve re-runs with `approvalGranted`. Also gates `LocalToolRegistry.callTool`. Tests: `tool-call-firewall.test.ts` + executeTool / approval-executor coverage. |
 | 2026-07-25 | **Phase 48D.5 production-path review blockers fixed.** Executor: Bonds `evaluatePolicy` gate (`self`/`direct`/`referred`); mandate always home-owner-signed; emit `task.propose` after `task.mandate`; route through `handleDaemonTaskInbound` (runtime guard + journal). Bond deny → A2A `auth-required`. |
 | 2026-07-25 | **Phase 48D.5 remaining gaps closed.** Relay SSE chunk streaming (`http-res-start/chunk/end`); executor default `autoCompleteLocal=false` + config knobs + `a2a-bridge-tasks.json` persistence; home-tunnel HTTP round-trip (`a2a-home-tunnel-http.test.ts`). |
 | 2026-07-25 | **Phase 48D.5 review hardenings.** Relay proxies `GET /vault/*` via home-tunnel; A2A proxy preserves upstream HTTP status; Agent Card `supportedInterfaces[0].url` points at `/.well-known/a2a/jsonrpc`; vault `?hash=` verified; bridge listens when A2A/vault configured. |

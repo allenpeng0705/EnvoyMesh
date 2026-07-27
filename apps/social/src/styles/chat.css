@@ -1522,7 +1522,7 @@
 .message-bubble.outgoing .message-bubble-body ::selection,
 .message-bubble.ai-outgoing .message-bubble-body ::selection {
   background: rgb(255 255 255 / 0.35);
-  color: var(--color-primary-on);
+  color: var(--color-on-primary-text);
 }
 
 .message-bubble.incoming-peer .message-bubble-body ::selection,
@@ -1635,14 +1635,14 @@
 .message-bubble.ai-outgoing,
 .message-bubble.outgoing-agent {
   background: linear-gradient(145deg, var(--color-primary) 0%, var(--color-primary-hover) 100%);
-  color: var(--color-primary-on);
+  color: var(--color-on-primary-text);
   border: 1px solid var(--message-outgoing-code-border);
 }
 
 .message-bubble.outgoing .message-bubble-badge,
 .message-bubble.ai-outgoing .message-bubble-badge,
 .message-bubble.outgoing-agent .message-bubble-badge {
-  color: var(--message-outgoing-time);
+  color: var(--message-outgoing-meta);
 }
 
 .message-bubble.outgoing .message-bubble-time,
@@ -1652,7 +1652,59 @@
 }
 
 .message-bubble.outgoing-agent .message-bubble-badge {
-  color: color-mix(in srgb, var(--color-primary-on) 85%, var(--color-role-agent));
+  color: var(--message-outgoing-meta);
+}
+
+/* Delivery status + action icons must not use page muted/white — those wash out on green. */
+.message-bubble.outgoing .message-delivery-status,
+.message-bubble.outgoing-agent .message-delivery-status,
+.message-bubble.ai-outgoing .message-delivery-status,
+.message-bubble.outgoing .message-delivery-status.status-pending,
+.message-bubble.outgoing-agent .message-delivery-status.status-pending,
+.message-bubble.ai-outgoing .message-delivery-status.status-pending,
+.message-bubble.outgoing .message-delivery-status.status-sent,
+.message-bubble.outgoing-agent .message-delivery-status.status-sent,
+.message-bubble.ai-outgoing .message-delivery-status.status-sent,
+.message-bubble.outgoing .message-delivery-status.status-sent .delivery-checkmarks,
+.message-bubble.outgoing-agent .message-delivery-status.status-sent .delivery-checkmarks,
+.message-bubble.ai-outgoing .message-delivery-status.status-sent .delivery-checkmarks,
+.message-bubble.outgoing .message-delivery-status.status-delivered,
+.message-bubble.outgoing-agent .message-delivery-status.status-delivered,
+.message-bubble.ai-outgoing .message-delivery-status.status-delivered,
+.message-bubble.outgoing .message-delivery-status.status-delivered .delivery-checkmarks,
+.message-bubble.outgoing-agent .message-delivery-status.status-delivered .delivery-checkmarks,
+.message-bubble.ai-outgoing .message-delivery-status.status-delivered .delivery-checkmarks {
+  color: var(--message-outgoing-meta);
+}
+
+.message-bubble.outgoing .message-delivery-status.status-read,
+.message-bubble.outgoing-agent .message-delivery-status.status-read,
+.message-bubble.ai-outgoing .message-delivery-status.status-read,
+.message-bubble.outgoing .message-delivery-status.status-read .delivery-checkmarks,
+.message-bubble.outgoing-agent .message-delivery-status.status-read .delivery-checkmarks,
+.message-bubble.ai-outgoing .message-delivery-status.status-read .delivery-checkmarks {
+  color: var(--message-outgoing-status-ok);
+}
+
+.message-bubble.outgoing .message-delivery-status.status-failed,
+.message-bubble.outgoing-agent .message-delivery-status.status-failed,
+.message-bubble.ai-outgoing .message-delivery-status.status-failed {
+  color: var(--message-outgoing-status-fail);
+}
+
+.message-bubble.outgoing .message-copy-btn,
+.message-bubble.outgoing-agent .message-copy-btn,
+.message-bubble.ai-outgoing .message-copy-btn,
+.message-bubble.outgoing .message-delete-btn,
+.message-bubble.outgoing-agent .message-delete-btn,
+.message-bubble.ai-outgoing .message-delete-btn {
+  color: var(--color-on-primary-text);
+}
+
+.message-bubble.outgoing .message-delete-btn:hover,
+.message-bubble.outgoing-agent .message-delete-btn:hover,
+.message-bubble.ai-outgoing .message-delete-btn:hover {
+  color: var(--message-outgoing-status-fail);
 }
 
 .message-bubble.incoming-peer {
@@ -2885,7 +2937,7 @@
 .modal-actions .primary {
   border: none;
   background: var(--color-primary);
-  color: var(--color-primary-on);
+  color: var(--color-on-primary-text);
 }
 
 .modal-actions .primary:hover:not(:disabled) {

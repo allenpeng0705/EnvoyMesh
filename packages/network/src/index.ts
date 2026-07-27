@@ -304,6 +304,11 @@ export interface EnvoyMeshOptions {
   advertiseAddrs?: string[];
   enableMdns?: boolean;
   mdnsIntervalMs?: number;
+  /**
+   * libp2p connectionMonitor ping interval (ms). Defaults to 45_000.
+   * Longer intervals reduce CPU/network; half-open detection becomes slower.
+   */
+  connectionMonitorPingIntervalMs?: number;
   enableDht?: boolean;
   dhtClientMode?: boolean;
   dhtProtocol?: string;
@@ -517,7 +522,7 @@ export class EnvoyMesh {
     this.node = await createLibp2p({
       ...(libp2pPrivateKey != null ? { privateKey: libp2pPrivateKey } : {}),
       connectionMonitor: {
-        pingInterval: 45_000,
+        pingInterval: this.options.connectionMonitorPingIntervalMs ?? 45_000,
         abortConnectionOnPingFailure: false,
       },
       connectionManager: {

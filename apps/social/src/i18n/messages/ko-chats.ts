@@ -167,6 +167,12 @@ export const koContactChatMessages = {
   // human/agent/ai 세 변형을 한 곳에 모읍니다.
   threadKindDirect: "1:1 메시지",
   threadKindAgent: "에이전트 채팅",
+  // ----- 채팅 상대 도달 가능성 표시줄 -----
+  // lib/peer-reachability-label.ts에서 사용. 한 곳에 모아 다국어로 제공합니다.
+  reachabilityChecking: "확인 중…",
+  reachabilityOffline: "오프라인",
+  reachabilityOnlineDirect: "온라인 · 다이렉트",
+  reachabilityOnlineRelay: "온라인 · 릴레이",
 } as const;
 
 export const koAiChatMessages = {
@@ -329,4 +335,13 @@ export const koInboxMessages = {
   defaultHello: "안녕하세요!",
   audioMessage: koInboxAudioMessages,
   ...koInboxCallMessages,
+} as const;
+
+// ----- 데스크톱 브라우저 알림(들어오는 채팅용) -----
+// useChatNotifications 에서 사용. 발신자 이름이 없을 때 폴백 제목.
+export const koChatNotifications = {
+  sentAFile: "파일을 보냈습니다",
+  newMessage: "새 채팅 메시지",
+  contactFallback: "연락처",
+  strangerFallback: "모르는 사람",
 } as const;

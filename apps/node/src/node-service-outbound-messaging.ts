@@ -1043,7 +1043,13 @@ export async function sendChatViaRuntime(
       await bridgeHandler(envelope, mesh.peerId);
       deliverResult = { delivered: true, deliveredAt: new Date().toISOString() };
     } else {
-      const skipAck = conn.connected && conn.direct;
+      // Online-Direct can be half-open (common after Windows sleep / asymmetric LAN).
+      // Only skip the delivery ack when this peer was recently path-verified; otherwise
+      // wait for chat.delivered so hung streams fail fast and retry.
+      const skipAck =
+        conn.connected &&
+        conn.direct &&
+        isOutboundPeerRecentlyVerified(transportPeerId);
       deliverResult = await ctx.deliverChatEnvelope(
         transportPeerId,
         envelope,

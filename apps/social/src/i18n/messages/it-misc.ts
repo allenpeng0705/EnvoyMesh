@@ -571,3 +571,16 @@ export const itCommonYesNoMessages = {
   yes: "Sì",
   no: "No",
 } as const;
+
+// ----- Helper di visualizzazione generici (livello di legame, fallback mDNS) -----
+// Usati da lib/display.ts (bondLevelLabel, nearbyPeerLabel).
+export const itDisplayMessages = {
+  bondLevel: {
+    direct: "Amico",
+    referred: "Presentato",
+    public: "Nuovo contatto",
+    blocked: "Bloccato",
+    unknown: "Contatto",
+  },
+  nearbyPeerFallback: "Qualcuno nelle vicinanze",
+} as const;

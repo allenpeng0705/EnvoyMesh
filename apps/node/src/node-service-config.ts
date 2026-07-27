@@ -15,9 +15,13 @@ import type { PersistedNodeConfig } from "./node-config-store.js";
 import { createDefaultPersistedNodeConfig } from "./node-config-store.js";
 import {
   ensureDefaultAutonomousPoliciesForModel,
+  isConnectivityMode,
+  resolveConnectivityPreset,
+  resolveConnectivityTuning,
   resolveEnableMdns,
   resolveIdleTimerStretch,
   resolveLazyCapabilityDiscovery,
+  type ConnectivityMode,
 } from "@envoymesh/api";
 import { normalizeIpfsExportEngineSelection } from "./ipfs-export-router.js";
 import type {
@@ -79,11 +83,19 @@ export async function getNodeConfigViaRuntime(
   const extAgentSettings = await ctx.loadBridgeExtAgentSettings();
 
   if (config) {
+    const tuning = resolveConnectivityTuning({
+      connectivityMode: config.connectivityMode,
+      maxConnections: config.maxConnections,
+      mdnsIntervalMs: config.mdnsIntervalMs,
+      capabilityDiscoveryIntervalMs: config.capabilityDiscoveryIntervalMs,
+      lazyCapabilityDiscovery: config.lazyCapabilityDiscovery,
+      idleTimerStretch: config.idleTimerStretch,
+    });
     return {
       profileDir: config.profileDir,
       nodeInitialized: true,
       discoveryProfile: config.discoveryProfile,
-      enableMdns: resolveEnableMdns(config.discoveryProfile, config.enableMdns),
+      enableMdns: resolveEnableMdns(config.discoveryProfile, config.enableMdns, tuning),
       relayEnabled: config.relayEnabled,
       relayServerEnabled: config.relayServerEnabled,
       configuredRelays: config.configuredRelays,
@@ -137,15 +149,12 @@ export async function getNodeConfigViaRuntime(
             pinningProvider: config.externalPublish.pinningProvider ?? "pinata",
           }
         : { allowIpfs: false },
-      maxConnections: config.maxConnections,
-      mdnsIntervalMs: config.mdnsIntervalMs,
-      capabilityDiscoveryIntervalMs: config.capabilityDiscoveryIntervalMs,
-      lazyCapabilityDiscovery: resolveLazyCapabilityDiscovery(config.discoveryProfile, {
-        lazyCapabilityDiscovery: config.lazyCapabilityDiscovery,
-      }),
-      idleTimerStretch: resolveIdleTimerStretch(config.discoveryProfile, {
-        idleTimerStretch: config.idleTimerStretch,
-      }),
+      connectivityMode: (tuning.connectivityMode ?? "optimized") as ConnectivityMode,
+      maxConnections: tuning.maxConnections,
+      mdnsIntervalMs: tuning.mdnsIntervalMs,
+      capabilityDiscoveryIntervalMs: tuning.capabilityDiscoveryIntervalMs,
+      lazyCapabilityDiscovery: resolveLazyCapabilityDiscovery(config.discoveryProfile, tuning),
+      idleTimerStretch: resolveIdleTimerStretch(config.discoveryProfile, tuning),
       agentVisibility: config.agentVisibility,
       a2aChatNotifications: config.a2aChatNotifications ?? "off",
       agentInteractionMode: config.agentInteractionMode ?? "structured_preferred",
@@ -218,8 +227,12 @@ export async function getNodeConfigViaRuntime(
     trustModeEnabled: false,
     friendMatchingPreferencesText: undefined,
     externalPublish: { allowIpfs: false },
-    lazyCapabilityDiscovery: false,
-    idleTimerStretch: false,
+    connectivityMode: "optimized",
+    maxConnections: 80,
+    mdnsIntervalMs: 45_000,
+    capabilityDiscoveryIntervalMs: 120_000,
+    lazyCapabilityDiscovery: true,
+    idleTimerStretch: true,
     a2aChatNotifications: "off",
     agentInteractionMode: "structured_preferred",
     friendAutopilotEnabled: false,
@@ -268,6 +281,19 @@ export async function updateNodeConfigViaRuntime(
     webSearchEnabled: _webSearchEnabled,
     ...persistedPatch
   } = config;
+
+  // When the resource mode changes, materialize preset knobs so restart picks them up
+  // even if older override fields were previously saved.
+  if (isConnectivityMode(persistedPatch.connectivityMode)) {
+    const preset = resolveConnectivityPreset(persistedPatch.connectivityMode);
+    Object.assign(persistedPatch, {
+      maxConnections: preset.maxConnections,
+      mdnsIntervalMs: preset.mdnsIntervalMs,
+      capabilityDiscoveryIntervalMs: preset.capabilityDiscoveryIntervalMs,
+      lazyCapabilityDiscovery: preset.lazyCapabilityDiscovery,
+      idleTimerStretch: preset.idleTimerStretch,
+    });
+  }
 
   await ctx.saveNodeConfig({
     ...base,

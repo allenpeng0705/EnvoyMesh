@@ -36,7 +36,7 @@ export async function runFriendAutopilotPass(input: {
       maxResponses,
       ttl: 1,
     },
-    context,
+    { ...context, approvalGranted: true },
     input.vaultSearchFn,
   );
 

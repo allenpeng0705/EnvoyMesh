@@ -9,6 +9,7 @@ import {
   koContactChatMessages,
   koAiChatMessages,
   koGroupChatMessages,
+  koChatNotifications,
   koH2aMessages,
   koMessageBubbleMessages,
   koInboxMessages,
@@ -30,6 +31,7 @@ import {
   koAccountSettingsMessages,
   koArtifactRendererMessages,
   koAgentCardMessages,
+  koDisplayMessages,
 } from "./ko-misc.js";
 
 export const ko = mergeMessages(en, {
@@ -229,6 +231,7 @@ export const ko = mergeMessages(en, {
   terminals: koTerminalMessages,
   contactChat: koContactChatMessages,
   groupChat: koGroupChatMessages,
+  chatNotifications: koChatNotifications,
   aiChat: koAiChatMessages,
   h2a: koH2aMessages,
   messageBubble: koMessageBubbleMessages,
@@ -247,6 +250,7 @@ export const ko = mergeMessages(en, {
   fileShare: koFileShareMessages,
   artifactRenderer: koArtifactRendererMessages,
   agentCard: koAgentCardMessages,
+  display: koDisplayMessages,
   contacts: {
     tabsLabel: "연락처 또는 찾기",
     myContacts: "내 연락처 ({count})",
@@ -526,7 +530,7 @@ export const ko = mergeMessages(en, {
       byName: "이름",
       byTopic: "주제",
       namePlaceholder: "이름, 사용자명, 관심사 또는 피어 ID",
-      topicPlaceholder: "관심사 또는 능력 주제 (예: music)",
+      topicPlaceholder: "관심사·능력·게시 주제 (예: music)",
       tryTopic: "주제 시도",
       multihopTitle: "친구를 통해 검색",
       multihopLede: "최대 2홉 떨어진 사람을 찾도록 바인딩된 연락처에 요청합니다.",
@@ -541,7 +545,8 @@ export const ko = mergeMessages(en, {
       queryingDht: "DHT 능력 주제 제공자 조회 중…",
       searchingName: "사용자명 또는 이름으로 검색 중…",
       searchingFor: "「{query}」 검색 중",
-      widerTopicFallback: "공개 메시에서 주제를 알리는 피어를 검색합니다. 설정 → 네트워크에서 더 넓은 네트워크가 필요합니다.",
+      widerTopicFallback:
+        "공개 메시에서 관심사/능력 주제를 알리거나 해당 주제로 웹 게시물을 공개한 피어를 검색합니다. 설정 → 네트워크에서 더 넓은 네트워크가 필요합니다.",
       widerSearchTypeLabel: "검색 유형",
       byLocation: "장소",
       geoSameCountry: "같은 국가",

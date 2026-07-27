@@ -9,6 +9,7 @@ import {
   jaContactChatMessages,
   jaAiChatMessages,
   jaGroupChatMessages,
+  jaChatNotifications,
   jaH2aMessages,
   jaMessageBubbleMessages,
   jaInboxMessages,
@@ -31,6 +32,7 @@ import {
   jaAccountSettingsMessages,
   jaArtifactRendererMessages,
   jaAgentCardMessages,
+  jaDisplayMessages,
 } from "./ja-misc.js";
 
 export const ja = mergeMessages(en, {
@@ -228,6 +230,7 @@ export const ja = mergeMessages(en, {
   terminals: jaTerminalMessages,
   contactChat: jaContactChatMessages,
   groupChat: jaGroupChatMessages,
+  chatNotifications: jaChatNotifications,
   aiChat: jaAiChatMessages,
   h2a: jaH2aMessages,
   messageBubble: jaMessageBubbleMessages,
@@ -246,6 +249,7 @@ export const ja = mergeMessages(en, {
   fileShare: jaFileShareMessages,
   artifactRenderer: jaArtifactRendererMessages,
   agentCard: jaAgentCardMessages,
+  display: jaDisplayMessages,
   contacts: {
     tabsLabel: "連絡先または発見",
     myContacts: "マイ連絡先 ({count})",
@@ -481,7 +485,7 @@ export const ja = mergeMessages(en, {
       byName: "名前",
       byTopic: "トピック",
       namePlaceholder: "名前、ユーザー名、興味、ピア ID",
-      topicPlaceholder: "興味または能力トピック (例: music)",
+      topicPlaceholder: "興味・能力・公開トピック (例: music)",
       tryTopic: "トピックを試す",
       multihopTitle: "友達を通じて検索",
       multihopLede: "バンディング済みの連絡先に最大2ホップ先の検索を依頼します。",
@@ -496,7 +500,8 @@ export const ja = mergeMessages(en, {
       queryingDht: "DHT 能力トピック提供者を問い合わせ中…",
       searchingName: "ユーザー名または名前で検索中…",
       searchingFor: "「{query}」を検索中",
-      widerTopicFallback: "公開メッシュでトピックを告知しているピアを検索します。設定 → ネットワークでより広いネットワークが必要です。",
+      widerTopicFallback:
+        "公開メッシュで興味・能力トピックを告知しているピア、またはそのトピックでウェブ投稿を公開しているピアを検索します。設定 → ネットワークでより広いネットワークが必要です。",
       widerSearchTypeLabel: "検索タイプ",
       byLocation: "場所",
       geoSameCountry: "同じ国",

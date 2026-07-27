@@ -1,16 +1,37 @@
 import { useEffect } from "react";
 import type { BondRecord, ChatMessage } from "@envoymesh/api";
 import type { NodeServiceClient } from "./useNodeService.js";
+import { MESSAGES } from "../i18n/messages/index.js";
+import { translate, type TranslateParams } from "../i18n/translate.js";
+import { normalizeLocale, type LocaleId } from "../i18n/types.js";
 
-function chatMessagePreview(msg: ChatMessage): string {
+/**
+ * Localized chat message preview for the desktop / browser notification
+ * body. Locale is passed in (not via useI18n / useNodeState) because this
+ * hook runs inside NodeStateProvider — above I18nProvider and before the
+ * NodeState context value is published to consumers.
+ */
+function chatMessagePreview(
+  localeKey: LocaleId,
+  msg: ChatMessage,
+): string {
   const text = msg.content?.text;
   if (typeof text === "string" && text.trim()) {
     return text.trim().slice(0, 200);
   }
   if (msg.content?.attachments?.length) {
-    return "Sent a file";
+    return translate(MESSAGES[localeKey], "chatNotifications.sentAFile", "Sent a file");
   }
-  return "New chat message";
+  return translate(MESSAGES[localeKey], "chatNotifications.newMessage", "New chat message");
+}
+
+function tr(
+  localeKey: LocaleId,
+  key: string,
+  fallback: string,
+  params?: TranslateParams,
+): string {
+  return translate(MESSAGES[localeKey], key, fallback, params);
 }
 
 /** Desktop/browser notifications for inbound chat when the tab is in the background. */
@@ -20,8 +41,11 @@ export function useChatNotifications(opts: {
   wsOpen: boolean;
   bonds: BondRecord[];
   peerId: string;
+  /** App locale (from NodeStateProvider appSettings — do not use useNodeState here). */
+  locale?: string;
 }) {
   const { enabled, nodeService, wsOpen, bonds, peerId } = opts;
+  const localeKey: LocaleId = normalizeLocale(opts.locale);
 
   useEffect(() => {
     if (!enabled || !wsOpen) return;
@@ -40,11 +64,11 @@ export function useChatNotifications(opts: {
           (b.displayName && b.displayName === msg.sender.displayName),
       );
       const title = isBonded
-        ? (msg.sender.displayName ?? "Contact")
-        : (msg.sender.displayName ?? "Stranger");
+        ? (msg.sender.displayName ?? tr(localeKey, "chatNotifications.contactFallback", "Contact"))
+        : (msg.sender.displayName ?? tr(localeKey, "chatNotifications.strangerFallback", "Stranger"));
       try {
         new Notification(title, {
-          body: chatMessagePreview(msg),
+          body: chatMessagePreview(localeKey, msg),
           tag: msg.messageId,
         });
       } catch {
@@ -53,5 +77,5 @@ export function useChatNotifications(opts: {
     });
 
     return unsub;
-  }, [enabled, wsOpen, nodeService, bonds, peerId]);
+  }, [enabled, wsOpen, nodeService, bonds, peerId, localeKey]);
 }

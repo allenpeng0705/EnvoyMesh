@@ -124,6 +124,7 @@ export class WsClient {
             clearTimeout(this._connectTimeout);
             this._connectTimeout = null;
           }
+          this.rejectPendingRequests("WebSocket disconnected");
           this._statusCallbacks.forEach((cb) => cb("disconnected"));
           if (!resolved) {
             resolved = true;
@@ -162,6 +163,7 @@ export class WsClient {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
     }
+    this.rejectPendingRequests("WebSocket disconnected");
     const socket = this.ws;
     this.ws = null;
     if (socket) {
@@ -295,6 +297,16 @@ export class WsClient {
   isHeartbeatHealthy(): boolean {
     if (this.lastPong === 0) return true; // No ping expected yet
     return Date.now() - this.lastPong < 60000; // 60 second timeout
+  }
+
+  /** Fail in-flight RPCs immediately so UI pending bubbles do not wait for the full timeout. */
+  private rejectPendingRequests(reason: string): void {
+    if (this.pendingRequests.size === 0) return;
+    const pending = [...this.pendingRequests.entries()];
+    this.pendingRequests.clear();
+    for (const [, handlers] of pending) {
+      handlers.reject(new Error(reason));
+    }
   }
 
   private handleMessage(data: string): void {
