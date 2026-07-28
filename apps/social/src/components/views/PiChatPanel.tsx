@@ -241,7 +241,13 @@ export function PiChatPanel({ onBackToChats }: PiChatPanelProps) {
             </p>
           </div>
           {status ? (
-            <span className={stateBadgeClass(status.state)} title={status.error ?? undefined}>
+            <span
+              className={stateBadgeClass(status.state)}
+              title={status.error ?? undefined}
+              // Announce state transitions to assistive tech — "Ready",
+              // "Error", etc. should be spoken when the poll resolves.
+              aria-live="polite"
+            >
               {t(stateLabelKey(status.state), status.state)}
             </span>
           ) : null}
@@ -252,7 +258,14 @@ export function PiChatPanel({ onBackToChats }: PiChatPanelProps) {
               {status.modelSpec}
             </span>
           ) : null}
-          {status && status.state !== "ready" && status.state !== "disabled" ? (
+          {/* Restart only when the runtime is in a state a restart can fix.
+              Hide for "ready" (nothing to fix), "disabled" (config flag,
+              not a runtime crash), and "not-installed" (sidecar missing —
+              restart can't conjure the binary). */}
+          {status &&
+          (status.state === "starting" ||
+            status.state === "stopped" ||
+            status.state === "error") ? (
             <button
               type="button"
               className="pi-chat-restart-btn"

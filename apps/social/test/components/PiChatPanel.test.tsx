@@ -134,6 +134,27 @@ describe("PiChatPanel", () => {
     expect(await screen.findByText(/failed to reach pi/i)).toBeDefined()
   })
 
+  it("surfaces an info message when sendToPi returns an empty response", async () => {
+    sendToPi.mockResolvedValue("")
+    renderWithI18n(<PiChatPanel />)
+    await screen.findByText("Ready")
+
+    const input = screen.getByPlaceholderText(/ask pi/i)
+    fireEvent.change(input, { target: { value: "hello" } })
+    fireEvent.submit(input.closest("form")!)
+
+    expect(await screen.findByText(/empty response/i)).toBeDefined()
+  })
+
+  it("does not show a restart button when state is not-installed", async () => {
+    // Restart can't conjure a missing sidecar — hide the button.
+    getPiStatus.mockResolvedValue(status({ state: "not-installed" }))
+    renderWithI18n(<PiChatPanel />)
+    await screen.findByText("Not installed")
+    const restartButtons = screen.queryAllByRole("button", { name: /^restart$/i })
+    expect(restartButtons.length).toBe(0)
+  })
+
   it("restart button calls restartPi() and refreshes status to ready", async () => {
     // Start in error so the restart button renders.
     getPiStatus.mockResolvedValue(status({ state: "error" }))

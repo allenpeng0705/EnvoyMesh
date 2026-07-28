@@ -4345,3 +4345,27 @@
   color: var(--color-text-muted, #94a3b8);
   border-color: var(--color-border, rgba(255, 255, 255, 0.12));
 }
+
+/* Dark-theme status badges. The light-theme colors (#ecfdf5, #fef2f2, …)
+ * are too bright on a dark surface; switch to translucent overlays that
+ * preserve the hue but adapt to the dark canvas. */
+:root[data-theme="dark"] .pi-state-badge--ready {
+  color: #6ee7b7;
+  background: rgba(16, 185, 129, 0.15);
+}
+:root[data-theme="dark"] .pi-state-badge--starting {
+  color: #fcd34d;
+  background: rgba(245, 158, 11, 0.15);
+}
+:root[data-theme="dark"] .pi-state-badge--error {
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.15);
+}
+:root[data-theme="dark"] .pi-state-badge--stopped {
+  color: var(--color-text-muted, #94a3b8);
+  background: rgba(148, 163, 184, 0.12);
+}
+:root[data-theme="dark"] .pi-state-badge--muted {
+  color: var(--color-text-subtle, #64748b);
+  background: transparent;
+}
