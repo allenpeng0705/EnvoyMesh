@@ -1,13 +1,15 @@
-# Push Notification Configuration — Phase 31I / 42I / 45E
+# Push Notification Configuration — Phase 31I / 42I / 45E / 50
 
 Complete operator and developer reference for EnvoyGo push notifications
-(iOS + Android). Covers **alert** pushes (chat, bond, feed) and **VoIP**
-pushes (backgrounded calls).
+(iOS + Android). Covers **alert** pushes (chat, bond, feed, approval, Pi)
+and **VoIP** pushes (backgrounded calls).
 
 **Implementation:**
-- Home: `apps/node/src/push-notification.ts`
+- Home: `apps/node/src/push-notification.ts` + unified listener in `apps/node/src/node-service-impl.ts` (constructor)
 - EnvoyGo alert: `apps/envoygo/lib/services/push_notification_service.dart` + `ios/Runner/AppDelegate.swift` (`envoygo/alert_push`)
 - EnvoyGo VoIP: `apps/envoygo/lib/services/voip_push_service.dart` + `AppDelegate.swift` (`envoygo/voip_push`)
+- EnvoyGo deep-link navigation: `apps/envoygo/lib/main.dart` (`_routeNotificationTap`)
+- EnvoyGo push toggle: `apps/envoygo/lib/services/push_preferences.dart` + `apps/envoygo/lib/screens/me/me_screen.dart`
 
 Both APNs and FCM backends are **env-var gated**. When credentials are
 absent, the home node logs a warning and skips the push silently. No
@@ -38,17 +40,27 @@ extra npm packages are required on the home node (native `node:http2` /
 ```
 Publisher / peer ──mesh──► Home node (apps/node)
                               │
-                              ├─ store / emit WS event (if EnvoyGo online)
+                              ├─ store / emit WS event
                               │
-                              └─ PushNotificationService
-                                    ├─ alert tokens → APNs (iOS) / FCM (Android)
-                                    │     chat · bond · feed.notify
-                                    └─ voip tokens  → APNs VoIP topic (iOS)
-                                          call invite (Android uses FCM alert token + type=call)
+                              └─ Phase 50 unified push listener (NodeServiceImpl constructor)
+                                    │  one this.on("chat:message") subscriber catches ALL chat sources:
+                                    │    direct chat · group chat · EnvoyAI reply · Ext Agent reply · Pi response
+                                    │
+                                    ├─ this.on("pi:proposal") → Pi tool-action request
+                                    │
+                                    └─ PushNotificationService
+                                          ├─ alert tokens → APNs (iOS) / FCM (Android)
+                                          │     chat · bond · feed.notify · approval · Pi proposal
+                                          └─ voip tokens  → APNs VoIP topic (iOS)
+                                                call invite (Android uses FCM alert token + type=call)
 
 EnvoyGo (thin client)
   ├─ PushNotificationService  → registerPushToken(tokenType: "alert")
-  └─ VoipPushService (iOS)    → registerPushToken(tokenType: "voip")
+  │     ├─ initialize() in main() before runApp (cold-start safe)
+  │     ├─ getInitialMessage() for Android cold-start tap
+  │     └─ onNotificationTap → _routeNotificationTap (deep-link nav)
+  ├─ VoipPushService (iOS)    → registerPushToken(tokenType: "voip")
+  └─ PushPreferences          → in-app toggle (Me → Preferences)
 ```
 
 | Platform | Alert channel | Call channel |
@@ -63,21 +75,45 @@ PushKit VoIP. Chat / bond / feed stay on the alert path.
 **China note:** iOS alert + VoIP use native APNs only (no Firebase on
 iOS). Android still needs Firebase/FCM.
 
+**Phase 50 — Skip-if-online gate.** All push dispatch paths now check
+`isOwnerOnline()` before sending. If EnvoyGo has an active WebSocket
+session (the user is in the app), the push is skipped — the in-app WS
+event already reached the device. No double-notification. This gate
+covers chat, bond, feed, approval, and Pi proposal pushes. Call pushes
+already had this gate (Phase 42I).
+
 ---
 
 ## 2. What triggers a push
 
-| Event | Home API | Token type targeted | When |
-|-------|----------|---------------------|------|
-| Inbound `chat.message` | `dispatchChatPush` | `alert` | After chat is stored / `chat:message` WS emit (`apps/node/src/index.ts`) |
-| Bond / contact request | `dispatchBondPush` | `alert` | When the bond-request path invokes it |
-| Inbound `feed.notify` | `dispatchFeedPush` | `alert` | After feed inbox persist succeeds |
-| Inbound call invite (callee offline) | `dispatchCallPush` | iOS `voip`; Android any platform token used as FCM | Call path when thin client has no live WS |
+Phase 50 replaced per-source hooks with a **unified `chat:message` listener**
+on `NodeServiceImpl` that catches ALL chat sources in one place. Bond,
+feed, call, approval, and Pi-proposal pushes use separate listeners but
+the same skip-if-online gate.
+
+| Event | Dispatch method | Listener / hook | Token type | Skip-if-online? |
+|-------|-----------------|-----------------|------------|-----------------|
+| Direct chat (inbound) | `dispatchChatPush` | Unified `chat:message` listener (NodeServiceImpl constructor) | `alert` | ✅ Yes |
+| Group chat (`chat.room.message`) | `dispatchChatPush` | Unified `chat:message` listener | `alert` | ✅ Yes |
+| EnvoyAI / OpenClaw reply | `dispatchChatPush` | Unified `chat:message` listener | `alert` | ✅ Yes |
+| Ext Agent reply (HomeClaw/Hermes/OpenHuman/Pi) | `dispatchChatPush` | Unified `chat:message` listener | `alert` | ✅ Yes |
+| Pi `sendToPi` response | `dispatchChatPush` | `sendToPi` emits `chat:message` → unified listener | `alert` | ✅ Yes |
+| Pi tool-action request | `dispatchChatPush` | `pi:proposal` listener (NodeServiceImpl constructor) | `alert` | ✅ Yes |
+| Bond / contact request | `dispatchBondPush` | `hello:request` callback (`index.ts`) | `alert` | ✅ Yes |
+| Inbound `feed.notify` | `dispatchFeedPush` | `index.ts:1339` (skip-if-online gated) | `alert` | ✅ Yes |
+| Approval-queue item (new pending) | `dispatchApprovalPush` | `approvalQueue.onChange` diff (`bindApprovalQueue`) | `alert` | ✅ Yes |
+| Inbound call invite | `dispatchCallPush` | `call.invite` → `call-inbound.ts` | iOS `voip`; Android FCM | ✅ Yes (Phase 42I) |
 
 Pushes are best-effort. Missing credentials or tokens → log + skip.
-A connected WebSocket does **not** currently suppress chat/feed pushes
-(EnvoyGo may get both WS event and OS notification); call pushes check
-online state via `hasClientForOwner` before dispatching.
+**Phase 50:** all paths apply the skip-if-online gate via `isOwnerOnline()`
+(checks `wsServerForEvents.hasClientForOwner`). If EnvoyGo has an active
+WebSocket, the push is skipped — the WS event already reached the device.
+
+**Token cleanup (Phase 50B):** `sendAndCleanup()` wraps every
+`sendApns`/`sendFcm` call. If APNs returns 410 (Unregistered), 400
+(BadDeviceToken), or 403 (BadCertificate), or FCM returns 404/400
+(UNREGISTERED), the token is automatically unregistered from
+`push-tokens.json`. Stale tokens no longer accumulate.
 
 ---
 
@@ -458,6 +494,7 @@ All string values in `data` (APNs custom `data` object / FCM `data` map).
 | Title | `"New contact request"` |
 | Body | `"{senderName} wants to connect"` |
 | `data.type` | `"bond_request"` |
+| `data.senderOwnerId` | Optional (Phase 50 — for deep-link routing to the contact) |
 
 ### 7.3 Feed publish — `dispatchFeedPush` (`feed.notify`)
 
@@ -475,6 +512,31 @@ All string values in `data` (APNs custom `data` object / FCM `data` map).
 EnvoyGo `handleNotificationTap` maps `feed_notify` → Browser URL (same
 as Inbox **Open**). In-app Inbox still works via WS `feed:notify` /
 `listFeedNotifications` when the app is foregrounded.
+
+### 7.4 Approval — `dispatchApprovalPush` (Phase 50)
+
+| Field | Value |
+|-------|--------|
+| Title | `"Approval needed"` |
+| Body | `"{contactDisplayName}: {itemTitle}"` (truncated ~120) |
+| `data.type` | `"approval"` |
+| `data.itemId` | Approval-queue item id (for deep-link routing) |
+
+EnvoyGo `handleNotificationTap` maps `approval` → Inbox tab (index 1).
+
+### 7.5 Pi tool-action request (Phase 50)
+
+Uses `dispatchChatPush` with special sender values:
+
+| Field | Value |
+|-------|--------|
+| Title | `"Pi"` |
+| Body | `"{title}: {message}"` (truncated ~120) |
+| `data.messageId` | `"pi-proposal-{uiRequestId}"` |
+| `data.senderOwnerId` | `"envoy:pi"` |
+
+EnvoyGo `handleNotificationTap` maps `senderOwnerId == "envoy:pi"` →
+Chats tab (index 0) where the Pi thread lives.
 
 ### 7.4 Call — `dispatchCallPush`
 
@@ -516,10 +578,15 @@ Headers: `apns-push-type: voip`, topic = `APNS_VOIP_TOPIC` or `${APNS_TOPIC}.voi
 
 | Method | iOS alert token | iOS voip token | Android token |
 |--------|-----------------|----------------|---------------|
-| `dispatchChatPush` | ✅ APNs alert | ❌ skipped | ✅ FCM |
-| `dispatchBondPush` | ✅ APNs alert | ❌ skipped | ✅ FCM |
-| `dispatchFeedPush` | ✅ APNs alert | ❌ skipped | ✅ FCM |
-| `dispatchCallPush` | ❌ skipped | ✅ APNs voip | ✅ FCM (`type=call`) |
+| `dispatchChatPush` | ✅ APNs alert (via `sendAndCleanup`) | ❌ skipped | ✅ FCM (via `sendAndCleanup`) |
+| `dispatchBondPush` | ✅ APNs alert (via `sendAndCleanup`) | ❌ skipped | ✅ FCM (via `sendAndCleanup`) |
+| `dispatchFeedPush` | ✅ APNs alert (via `sendAndCleanup`) | ❌ skipped | ✅ FCM (via `sendAndCleanup`) |
+| `dispatchApprovalPush` | ✅ APNs alert (via `sendAndCleanup`) | ❌ skipped | ✅ FCM (via `sendAndCleanup`) |
+| `dispatchCallPush` | ❌ skipped | ✅ APNs voip (`sendVoipPush`) | ✅ FCM (via `sendAndCleanup`, `priority=high`) |
+
+All dispatch methods (except the iOS VoIP call path) now go through
+`sendAndCleanup()` which automatically unregisters tokens that return
+410/400/403/404 from APNs/FCM.
 
 If no matching tokens for `targetOwnerId` → no-op (no warning).
 If credentials missing → warning per attempted platform send, then skip.
@@ -530,27 +597,77 @@ If credentials missing → warning per attempted platform send, then skip.
 
 ### 9.1 When tokens register
 
-1. User pairs / connects to home (`NodeNotifier._connectToNodeImpl`)
-2. On success → `_registerAlertPushToken()`:
-   - `PushNotificationService.initialize()`
-   - `registerWithHomeNode(..., ownerId: state.ownerId)`
-3. `callProvider` initializes `VoipPushService` (iOS) and registers voip
+1. **Phase 50:** `PushNotificationService().initialize()` runs in `main()`
+   BEFORE `runApp()` — this ensures `getInitialMessage()` (Android cold-start)
+   resolves before `_EnvoyGoRootState.initState()` drains the buffer.
+   `initialize()` is idempotent + error-swallowing (safe for missing
+   `google-services.json`).
+2. User pairs / connects to home (`NodeNotifier._connectToNodeImpl`)
+3. On success → `registerPushToken()`:
+   - Checks `PushPreferences.isEnabled()` first — if the user turned push
+     off in Me → Preferences, skips registration entirely.
+   - If enabled: `PushNotificationService.registerWithHomeNode(...)`
+4. `callProvider` initializes `VoipPushService` (iOS) and registers voip
    token with the same home client
 
 If the OS returns the token **after** connect, alert service re-registers
 when `onAlertToken` / FCM `onTokenRefresh` fires (home RPC handle kept).
 
-### 9.2 Source files
+### 9.2 Phase 50 — In-app push toggle
+
+Users can turn push notifications on/off in **Me → Preferences** (not the
+OS system settings). Implemented via `PushPreferences` (SharedPreferences):
+
+- **Toggle ON:** saves `push_notifications_enabled = true`, calls
+  `registerPushToken()` to re-register with the home node.
+- **Toggle OFF:** saves `push_notifications_enabled = false`. On the next
+  reconnect, `registerPushToken()` checks the preference and skips
+  registration. The home node's existing token naturally expires via
+  APNs/FCM 410 token cleanup.
+
+The home node needs no awareness of this toggle — it simply has no token
+to push to when push is disabled.
+
+### 9.3 Phase 50 — Deep-link navigation
+
+When the user taps a notification, `_routeNotificationTap` in `main.dart`
+maps the payload to a target screen via `EnvoyGoApp.navigatorKey`:
+
+| Payload type | Tap opens |
+|---|---|
+| Chat (direct) | ChatDetailScreen with threadId = `nodeId:senderOwnerId` |
+| Chat (room) | ChatDetailScreen with threadId = `nodeId:roomId` |
+| `feed_notify` | BrowserScreen at the published URL |
+| `bond_request` | Inbox tab (index 1) |
+| `approval` | Inbox tab (index 1) |
+| `pi_proposal` | Chats tab (index 0) |
+
+**Cold-start handling:**
+- `initialize()` runs in `main()` before `runApp()` so `getInitialMessage()`
+  (Android) resolves early. The buffer is drained via
+  `consumePendingInitialTap()` in `initState()`.
+- If `activeNode` is null on cold-start (nodes load async), the tap is
+  buffered in `_pendingColdStartTap` and replayed after `loadPairedNodes()`
+  completes.
+- The `onNotificationTap` subscription is stored and cancelled in
+  `dispose()` (no listener leak).
+
+### 9.4 Source files
 
 | Piece | Path |
 |-------|------|
 | Alert Dart | `apps/envoygo/lib/services/push_notification_service.dart` |
 | VoIP Dart | `apps/envoygo/lib/services/voip_push_service.dart` |
+| Push toggle | `apps/envoygo/lib/services/push_preferences.dart` |
+| Deep-link router | `apps/envoygo/lib/main.dart` (`_routeNotificationTap`) |
 | Native iOS | `apps/envoygo/ios/Runner/AppDelegate.swift` |
-| Connect hook | `apps/envoygo/lib/providers/node_provider.dart` |
+| Connect hook | `apps/envoygo/lib/providers/node_provider.dart` (`registerPushToken`) |
+| Toggle UI | `apps/envoygo/lib/screens/me/me_screen.dart` |
 | Home dispatch | `apps/node/src/push-notification.ts` |
+| Unified chat listener | `apps/node/src/node-service-impl.ts` (constructor) |
+| Bond hook | `apps/node/src/index.ts` (`hello:request` → `dispatchBondPush`) |
 | Feed hook | `apps/node/src/index.ts` (`feed.notify` → `dispatchFeedPush`) |
-| Chat hook | `apps/node/src/index.ts` (`dispatchChatPush`) |
+| Approval hook | `apps/node/src/node-service-impl.ts` (`bindApprovalQueue`) |
 | RPC | `apps/node/src/json-rpc-router.ts` → `NodeServiceImpl.registerPushToken` |
 
 ### 9.3 Unit tests

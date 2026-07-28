@@ -1,8 +1,10 @@
 # Push Notification Coverage — Design Doc
 
-**Status:** Designed (2026-07-28) · Highest-priority fixes shipped; broader coverage planned as Phase 50.
+**Status:** Shipped (2026-07-28) · Server-side complete + EnvoyGo deep-link + in-app toggle.
 
 This document maps the home-node → EnvoyGo push notification system: what's there today, what's broken, and what should be added. It is the authoritative reference for Phase 50.
+
+For operator setup (APNs/FCM credentials, env vars, testing), see [push-notification-config.md](./push-notification-config.md).
 
 ---
 
@@ -126,10 +128,14 @@ this.on("chat:message", (msg) => {
 
 ### Remaining work (post-Phase-50)
 
-- **Slice G — Approval-queue push.** Subscribe to `approvalQueue.onChange`; capture the approver (home owner) at the subscription layer (items carry `contactOwnerId`, not home owner). New `dispatchApprovalPush`.
-- **Slice H — Token cleanup.** `dispatchApnsHttp2` should unregister tokens APNs reports as 410/400. Mirror the OpenClaw path's `shouldClearStoredApnsRegistration`.
-- **Feed push skip-if-online.** `index.ts:1339` (feed push) doesn't gate on `isOwnerOnline`. Wrap with the same gate.
-- **Deep-link navigation** (client-side, separate workstream — see §5).
+All server-side work and EnvoyGo deep-link navigation are **shipped**. Remaining items are UX polish:
+
+- **Notification channels (Android) / interruption levels (iOS)** — distinguish direct message (active) from feed update (passive). Not yet implemented.
+- **Badge count management** — server sends static `badge: 1`; app doesn't clear on foreground. Needs server-side unread-count tracking + app-side clear.
+- **Per-contact mute / global quiet-hours / DND** — no per-thread suppression exists. Would be checked on the dispatch path.
+- **`pi.runtime.crashed` audit event** — watchdog logs via `console.warn`; promoting to audit is a small follow-up.
+- **Foreground push handling (in-app banner)** — no `FirebaseMessaging.onMessage` listener on Android; iOS foreground pushes are silently dropped. Add a foreground listener that shows an in-app banner.
+- **Test coverage for the deep-link flow** — `consumePendingInitialTap`, `_routeNotificationTap`, and the cold-start race fix are not covered by unit tests (the existing 8 push tests cover `handleNotificationTap` + token registration but not the routing/navigation flow).
 
 ---
 
@@ -146,17 +152,16 @@ this.on("chat:message", (msg) => {
 
 ### What's missing on the client
 
-1. **Subscribe to `onNotificationTap` in the app router.** In `node_provider.dart` (where `PushNotificationService` is instantiated) or in `main.dart`/`app.dart`, subscribe to the tap stream and route via a `GlobalKey<NavigatorState>`. Map payload → screen:
-   - `{threadType, senderOwnerId}` → contact chat thread
-   - `{type: "feed_notify", url}` → Browser
-   - `{type: "bond_request"}` → Discover
-   - `{type: "call", callId}` → Call screen (already handled by CallKit on iOS)
+All deep-link navigation is **shipped** (Phase 50). The client now:
+- Subscribes to `onNotificationTap` in `main.dart` (`_routeNotificationTap`)
+- Routes payloads to screens via `EnvoyGoApp.navigatorKey`
+- Handles Android cold-start via `getInitialMessage()` + buffer replay
+- Handles the activeNode race (buffers tap until nodes load)
+- Has an in-app push toggle in Me → Preferences (`PushPreferences`)
 
-2. **Add `getInitialMessage()` handling for Android cold-launch.** `onMessageOpenedApp` doesn't fire on cold-launch; `FirebaseMessaging.instance.getInitialMessage()` retrieves the tap intent. Currently never called.
-
-3. **Foreground push handling.** No `FirebaseMessaging.onMessage` listener, no native foreground presenter, no in-app banner. Foreground pushes are silently dropped on Android; iOS shows them only if the system default changed. Add a foreground listener that shows an in-app SnackBar/banner.
-
-4. **Optionally register `envoy://` as a system-openable scheme** (universal links / app links) so pushes can carry a URL the OS routes natively. Currently `envoy://` is in-app only (`Info.plist` has no `CFBundleURLTypes`; `AndroidManifest.xml` has no VIEW intent-filter).
+Remaining client gaps:
+1. **Foreground push banner** — no `FirebaseMessaging.onMessage` listener for foreground alerts. Pushes arriving while the app is open are silently dropped (the WS event still reaches the app, so this is cosmetic, not a data-loss issue).
+2. **`envoy://` as a system-openable scheme** — not registered in `Info.plist` or `AndroidManifest.xml`. Currently deep-link routing is notification-tap-only, not universal-link-based.
 
 ### Payload additions needed for full deep-linking
 
@@ -173,7 +178,7 @@ this.on("chat:message", (msg) => {
 | Interruption levels (iOS) | None — all alerts equal priority | `interruption-level: "active"` for direct messages; `"passive"` for feed updates |
 | Badge count | Static `1` from server, never cleared | Server tracks unread count per thread; app clears badge on foreground |
 | Contact avatar / rich media | None — no `mutable-content` | Add `mutable-content: 1` + a Notification Service Extension that fetches the sender's avatar |
-| Per-thread / per-contact mute / DND | None anywhere | Add per-contact mute + global quiet-hours; check on the dispatch path |
+| Per-thread / per-contact mute / DND | In-app toggle exists (Phase 50 — on/off); per-thread mute not yet | Add per-contact mute + global quiet-hours; check on the dispatch path |
 | `pi.runtime.crashed` audit | Watchdog logs via `console.warn` only | Promote to audit event for observability |
 
 ---
