@@ -1907,13 +1907,18 @@ async function handleInboundMeshMessage({
           });
         }
         wsServerForEvents.emitEvent("chat:message", emitMsg);
-        void pushNotificationService.dispatchChatPush({
-          senderName: emitMsg.sender.displayName ?? payload.senderOwnerId,
-          messagePreview: payload.text.slice(0, 120),
-          targetOwnerId: emitMsg.recipient.ownerId,
-          messageId: envelope.messageId,
-          senderOwnerId: payload.senderOwnerId,
-        }).catch(() => {});
+        // Phase 50 — skip-if-online gate matches the unified chat:message
+        // listener on NodeServiceImpl. Prevents double-notification when a
+        // client has an active WebSocket (the WS event already reached it).
+        if (typeof isOwnerOnline === "function" && !isOwnerOnline()) {
+          void pushNotificationService.dispatchChatPush({
+            senderName: emitMsg.sender.displayName ?? payload.senderOwnerId,
+            messagePreview: payload.text.slice(0, 120),
+            targetOwnerId: emitMsg.recipient.ownerId,
+            messageId: envelope.messageId,
+            senderOwnerId: payload.senderOwnerId,
+          }).catch(() => {});
+        }
       })();
 
       void (async () => {

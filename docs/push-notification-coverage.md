@@ -14,17 +14,18 @@ For operator setup (APNs/FCM credentials, env vars, testing), see [push-notifica
 
 | Path | What it's for | Status |
 |---|---|---|
-| **Home node → EnvoyGo** (`apps/node/src/push-notification.ts`) | The mobile app | **Partially broken** — fixed in Phase 50 Slice A |
+| **Home node → EnvoyGo** (`apps/node/src/push-notification.ts`) | The mobile app | ✅ **Shipped (Phase 50)** — all sources covered |
 | OpenClaw gateway → OpenClaw operator iOS app (`packages/openclaw/src/gateway/exec-approval-ios-push.ts`) | A separate operator-app flow | Out of scope |
 
 **Pipeline:**
 
-1. **Token registration.** EnvoyGo calls JSON-RPC `registerPushToken({ platform, token, tokenType: "alert"|"voip", ownerId })`. Stored in `<profileDir>/push-tokens.json`, bound to the home owner identity. Re-registered on every reconnect + token refresh.
+1. **Token registration.** EnvoyGo calls JSON-RPC `registerPushToken({ platform, token, tokenType: "alert"|"voip", ownerId })`. Stored in `<profileDir>/push-tokens.json`, bound to the home owner identity. Re-registered on every reconnect + token refresh. Gated on the in-app push toggle (`PushPreferences`).
 
-2. **Dispatch.** `PushNotificationService` (singleton, `apps/node/src/push-notification.ts`) has four event-specific methods:
-   - `dispatchChatPush` — direct/room chat messages
+2. **Dispatch.** `PushNotificationService` (singleton, `apps/node/src/push-notification.ts`) has five event-specific methods:
+   - `dispatchChatPush` — chat messages (direct, group, EnvoyAI, Ext Agent, Pi)
    - `dispatchBondPush` — contact requests
    - `dispatchFeedPush` — Phase 45E inbox items
+   - `dispatchApprovalPush` — Phase 50 approval-queue items
    - `dispatchCallPush` — incoming calls (iOS VoIP + Android high-priority FCM)
 
    All hand-rolled — **no `node-apn`/`firebase-admin` library**. Raw APNs HTTP/2 with ES256 JWT from a `.p8` key (env vars `APNS_KEY_ID`/`APNS_TEAM_ID`/`APNS_KEY_PATH`/`APNS_TOPIC`); FCM HTTP v1 with OAuth2 service-account JWT (env vars `FCM_PROJECT_ID`/`FCM_SERVICE_ACCOUNT_JSON`).
@@ -33,58 +34,47 @@ For operator setup (APNs/FCM credentials, env vars, testing), see [push-notifica
 
 ---
 
-## 2. Coverage map — what pushes today (post Slice A fix)
+## 2. Coverage map — what pushes today (post-Phase-50)
 
-| # | Source | Hook file:line | Pushes? | Skip-if-online? | Notes |
-|---|---|---|---|---|---|
-| 1 | Direct chat (mobile path) | `node-service-handlers-chat-message.ts:146` | ✅ **Fixed Slice A** | ✅ Yes | Was broken — `dispatchChatPush` was wired only on the legacy Path B (desktop), bypassed by the production internal-mesh handler |
-| 2 | Direct chat (desktop path) | `index.ts:1904` | ✅ Works | ❌ No | The legacy path; should also gain skip-if-online |
-| 3 | Group chat (`chat.room.message`) | `packages/api/src/chat-room-service.ts:1316` | ❌ **No** | n/a | Needs `dispatchChatPush` with `threadType: "room"` + `roomId` — payload shape already supports it |
-| 4 | EnvoyAI / OpenClaw reply | `node-service-openclaw-runtime.ts:339` (`recordEnvoyAiChatMessageViaRuntime`) | ❌ **No** | n/a | Hook point is the persist+emit; recipient = home owner. Useful for long-running turns |
-| 5 | Ext Agent reply (HomeClaw/Hermes/OpenHuman) | `index.ts:3586` (bridge receiveFromAgent → emit) | ❌ **No** | n/a | Desktop-only today (bridge instantiated in index.ts). Recipient = home owner |
-| 6 | Pi `sendToPi` response | `node-service-impl.ts:sendToPi` (RPC return, no persist/emit) | ❌ **No** | n/a | **Hardest case** — pure synchronous RPC, no hook point. Needs `sendToPi`/`askPiViaRuntime` to emit on completion |
-| 7 | Pi tool-action request (`extension_ui_request`) | `node-service-pi.ts:130` (`onProposal`) → `pi:proposal` WS event | ❌ **No** | n/a | User wants to know Pi is asking for approval while backgrounded |
-| 8 | Bond request (`bond.request`) | `index.ts:2314` (hello:request callback) | ✅ **Fixed Slice A** | ✅ Yes | `dispatchBondPush` was implemented but had zero callers (dead code) |
-| 9 | Approval item (task proposal, tool_call) | `packages/api/src/approval-queue.ts:171` (ApprovalQueue.add) | ❌ **No** | n/a | Multiple creation sites; `contactOwnerId` not home owner — capture approver at NodeServiceImpl subscription layer |
-| 10 | Feed notify (`feed.notify`) | `index.ts:1339` | ✅ Works | ❌ No | Should gain skip-if-online |
-| 11 | Incoming call (`call.invite`) | `index.ts:1633` (gated by `hasClientForOwner`) | ✅ Works | ✅ Yes | The only fully-correct push path; model for the others |
+All sources push. All apply the skip-if-online gate.
 
----
-
-## 3. Slice A — Highest-priority fixes (SHIPPED 2026-07-28)
-
-### A.1 Direct chat push in production path
-
-**Root cause:** `chat.message` has two inbound paths gated by `usesInternalMeshInboundHandlers()` (= `this._mesh != null`, `node-service-impl.ts:1972`):
-- **Path A** (mobile/embedded, internal mesh): the production default. The handler at `node-service-handlers-chat-message.ts:146` emits `chat:message` but never called `dispatchChatPush`.
-- **Path B** (desktop/CLI, external mesh): the legacy path. Has `dispatchChatPush` at `index.ts:1904`.
-
-EnvoyGo's home node always runs Path A, so chat push never fired.
-
-**Fix:** Added `dispatchChatPushIfOffline(params)` to the `ChatMessageContext` interface; wired from `node-service-impl-service-deps.ts` to call `pushNotificationService.dispatchChatPush` after checking `host.isOwnerOnline()`; called at line 146 after the emit. The "skip if online" gate prevents the double-notification (WS in-app + system push) when EnvoyGo has an active WebSocket.
-
-### A.2 Bond request push (dead code wired)
-
-`dispatchBondPush` was fully implemented (`push-notification.ts:533`) but had **zero call sites** anywhere. Wired it into the `hello:request` callback at `index.ts:2314` with the same skip-if-online gate. Bond requests now push to EnvoyGo when the user is backgrounded.
+| # | Source | Dispatch method | Listener / hook | Skip-if-online? |
+|---|---|---|---|---|
+| 1 | Direct chat (production Path A) | `dispatchChatPush` | Unified `chat:message` listener (`NodeServiceImpl` constructor) | ✅ Yes |
+| 2 | Direct chat (legacy Path B) | `dispatchChatPush` | `index.ts` after `wsServerForEvents.emitEvent` | ✅ Yes (Phase 50) |
+| 3 | Group chat | `dispatchChatPush` | Unified `chat:message` listener | ✅ Yes |
+| 4 | EnvoyAI / OpenClaw reply | `dispatchChatPush` | Unified `chat:message` listener | ✅ Yes |
+| 5 | Ext Agent reply (HomeClaw/Hermes/OpenHuman/Pi) | `dispatchChatPush` | Unified `chat:message` listener | ✅ Yes |
+| 6 | Pi `sendToPi` response | `dispatchChatPush` | `sendToPi` emits `chat:message` → unified listener | ✅ Yes |
+| 7 | Pi tool-action request | `dispatchChatPush` | `pi:proposal` listener (`NodeServiceImpl` constructor) | ✅ Yes |
+| 8 | Bond request | `dispatchBondPush` | `hello:request` callback (`index.ts`) | ✅ Yes |
+| 9 | Approval item | `dispatchApprovalPush` | `approvalQueue.onChange` diff (`bindApprovalQueue`) | ✅ Yes |
+| 10 | Feed notify | `dispatchFeedPush` | `index.ts` (`feed.notify` handler) | ✅ Yes |
+| 11 | Incoming call | `dispatchCallPush` | `call.invite` → `call-inbound.ts` | ✅ Yes |
 
 ---
 
-## 4. Phase 50 — Unified push coverage (SHIPPED)
+## 3. How it was built (history)
 
-**Design pivot (2026-07-28):** the original plan had 8 per-source slices (B through H), each hooking a different message source. The user proposed a much cleaner model: **ONE unified listener** that catches all new messages from any source, checks whether paired devices are connected, and pushes if they aren't. This collapsed slices B, C, D, E, F into a single ~40-line change.
+Phase 50 evolved through three iterations:
+
+1. **Slice A (initial fix):** Added per-source `dispatchChatPushIfOffline` to the chat-message handler context. Fixed direct chat (broken in production) and wired dead-code `dispatchBondPush`.
+
+2. **Unified listener (design pivot):** The user proposed a cleaner model — ONE `chat:message` subscriber on `NodeServiceImpl` catches all chat sources. This replaced the per-source hook and collapsed the planned slices B–F into one change.
+
+3. **Slice B (completion):** Added approval-queue push (`dispatchApprovalPush` + `onChange` diff), token cleanup (`sendAndCleanup` on 410/400/403/404), feed push skip-if-online gate, bond push `senderOwnerId` for deep-link routing. Also gated legacy Path B chat push on `isOwnerOnline()`.
 
 ### The unified listener
 
-Added to the `NodeServiceImpl` constructor:
+Added to the `NodeServiceImpl` constructor — catches `chat:message` events from ALL sources:
 
 ```typescript
-// ONE subscriber catches chat:message from EVERY source:
-this.on("chat:message", (msg) => {
-  // Only push messages addressed to this home's owner
-  if (msg.recipient.ownerId !== this._profile?.owner?.ownerId) return
-  // Don't push the user's own outgoing echoes
-  if (msg.sender.ownerId === targetOwnerId) return
-  // Skip if the owner has an active WebSocket (already got it in-app)
+this.on("chat:message", (msg: ChatMessage) => {
+  const homeOwnerId = this._profile?.owner?.ownerId
+  if (!homeOwnerId) return
+  // Don't push the user's own outgoing echoes.
+  if (msg.sender.ownerId && msg.sender.ownerId === homeOwnerId) return
+  // Skip if the owner has an active WebSocket (already got it in-app).
   void this.isOwnerOnline().then((online) => {
     if (online) return
     void pushNotificationService.dispatchChatPush({ ... }).catch(() => {})
@@ -92,12 +82,9 @@ this.on("chat:message", (msg) => {
 })
 ```
 
-**What this catches automatically** (because they all emit `chat:message` via `NodeServiceImpl.emit`):
+**Why the `recipient.ownerId` guard was removed:** EnvoyAI assistant replies use `recipient.ownerId = ENVOY_AI_THREAD_KEY` (a synthetic thread key, NOT the home owner). The original guard rejected them. The fix: push target is always the home owner (every message on this node is for the owner); we only skip the user's own outgoing echoes.
 
-| Source | How it emits | Caught? |
-|---|---|---|
-| Direct chat (production Path A) | `node-service-handlers-chat-message.ts:146` → `ctx.emit("chat:message")` | ✅ |
-| Group chat | `chat-room-service.ts:1317` → emit | ✅ |
+**Sources caught automatically** (they all emit `chat:message` via `NodeServiceImpl.emit`):
 | EnvoyAI / OpenClaw reply | `node-service-openclaw-runtime.ts:341` → `ctx.emitChatMessage(msg)` → `host.emit("chat:message")` | ✅ |
 | Ext Agent reply (HomeClaw/Hermes/OpenHuman/Pi) | Bridge receiveFromAgent → emit | ✅ |
 | Pi `sendToPi` response | `node-service-impl.ts:sendToPi` now emits `chat:message` on completion | ✅ (Phase 50 added this emit) |
@@ -115,16 +102,18 @@ this.on("chat:message", (msg) => {
 
 ### What this replaces
 
-| Original Phase 50 slice | Status |
+All original Phase 50 slices shipped:
+
+| Original slice | Status |
 |---|---|
-| 50B (skip-if-online for feed/legacy chat) | ✅ Unified listener always checks; legacy Path B keeps its own dispatch |
+| 50B (skip-if-online for feed/legacy chat) | ✅ All paths now gate on `isOwnerOnline()` |
 | 50C (group chat push) | ✅ Automatic — group chat emits `chat:message` |
 | 50D (EnvoyAI reply push) | ✅ Automatic — EnvoyAI emits `chat:message` |
 | 50E (Ext Agent reply push) | ✅ Automatic — Ext Agent emits `chat:message` |
 | 50F.1 (Pi tool-action push) | ✅ Separate `pi:proposal` listener |
 | 50F.2 (Pi sendToPi push) | ✅ `sendToPi` now emits `chat:message` on completion |
-| 50G (approval-queue push) | 🔲 Still needed — different event type (approval queue, not chat:message) |
-| 50H (token cleanup) | 🔲 Still needed — APNs 410/400 token pruning |
+| 50G (approval-queue push) | ✅ `approvalQueue.onChange` diff + `dispatchApprovalPush` |
+| 50H (token cleanup) | ✅ `sendAndCleanup()` on all dispatch paths (410/400/403/404) |
 
 ### Remaining work (post-Phase-50)
 
@@ -139,38 +128,40 @@ All server-side work and EnvoyGo deep-link navigation are **shipped**. Remaining
 
 ---
 
-## 5. Deep-link navigation (PLANNED — Phase 50 separate workstream)
+## 5. Deep-link navigation (SHIPPED)
 
-### Current state: routing fields are sent, parsed, and dropped
+Tapping a push notification navigates to the relevant screen. The full pipeline works end-to-end:
 
-- **Server sends routing** in the `data` block: `{ threadType, messageId, senderOwnerId, roomId }` for chat; `{ type: "feed_notify", url, notificationId }` for feed; `{ type: "bond_request" }` for bond; `{ type: "call", callId, callerOwnerId }` for calls.
-- **iOS native forwards taps** correctly: `AppDelegate.swift:182-202` reads `userInfo["data"]` and invokes `onNotificationTap` on the `envoygo/alert_push` channel.
-- **Android forwards taps** via `FirebaseMessaging.onMessageOpenedApp` (`push_notification_service.dart:145-148`).
-- **`PushNotificationService.handleNotificationTap()` parses** the payload into nav hints.
-- **`PushNotificationService.onNotificationTap` stream exposes the tap.**
-- **🔴 NOTHING SUBSCRIBES.** Zero consumers in production code. Tapping any push opens the app to the default view.
+- **Server sends routing** in the `data` block: `{ threadType, messageId, senderOwnerId, roomId }` for chat; `{ type: "feed_notify", url, notificationId }` for feed; `{ type: "bond_request", senderOwnerId }` for bond; `{ type: "approval", itemId }` for approvals; `{ type: "call", callId, callerOwnerId }` for calls.
+- **iOS native forwards taps** via `AppDelegate.swift` → `envoygo/alert_push` MethodChannel → `onNotificationTap` stream.
+- **Android forwards taps** via `FirebaseMessaging.onMessageOpenedApp` + `getInitialMessage()` (cold-start).
+- **`PushNotificationService.handleNotificationTap()` parses** the payload into nav hints (recognizes chat, feed_notify, bond_request, approval, pi_proposal).
+- **`main.dart` `_routeNotificationTap()` subscribes** to the tap stream and navigates via `EnvoyGoApp.navigatorKey`:
 
-### What's missing on the client
+| Payload type | Tap opens |
+|---|---|
+| Chat (direct) | ChatDetailScreen (threadId = nodeId:senderOwnerId) |
+| Chat (room) | ChatDetailScreen (threadId = nodeId:roomId) |
+| `feed_notify` | BrowserScreen at the published URL |
+| `bond_request` | Inbox tab (index 1) |
+| `approval` | Inbox tab (index 1) |
+| `pi_proposal` | Chats tab (index 0) |
 
-All deep-link navigation is **shipped** (Phase 50). The client now:
-- Subscribes to `onNotificationTap` in `main.dart` (`_routeNotificationTap`)
-- Routes payloads to screens via `EnvoyGoApp.navigatorKey`
-- Handles Android cold-start via `getInitialMessage()` + buffer replay
-- Handles the activeNode race (buffers tap until nodes load)
-- Has an in-app push toggle in Me → Preferences (`PushPreferences`)
+**Cold-start handling:**
+- `PushNotificationService().initialize()` runs in `main()` before `runApp()` so `getInitialMessage()` (Android) resolves before `initState` drains the buffer.
+- If `activeNode` is null on cold-start (nodes load async), the tap is buffered in `_pendingColdStartTap` and replayed after `loadPairedNodes()` completes.
+- The `onNotificationTap` subscription is stored and cancelled in `dispose()` (no listener leak).
 
-Remaining client gaps:
-1. **Foreground push banner** — no `FirebaseMessaging.onMessage` listener for foreground alerts. Pushes arriving while the app is open are silently dropped (the WS event still reaches the app, so this is cosmetic, not a data-loss issue).
-2. **`envoy://` as a system-openable scheme** — not registered in `Info.plist` or `AndroidManifest.xml`. Currently deep-link routing is notification-tap-only, not universal-link-based.
+### Remaining client gaps
 
-### Payload additions needed for full deep-linking
+All deep-link navigation is **shipped** (Phase 50). The client subscribes to `onNotificationTap`, routes payloads to screens, handles Android cold-start, buffers taps until nodes load, and has an in-app push toggle.
 
-- **Bond push** (`dispatchBondPush`): currently only `{ type: "bond_request" }` — no requester id. Add `senderOwnerId` so the tap can route to the contact/discover view pre-populated.
-- **Approval push** (Slice G): include the approval item id so the tap can open the approval card directly.
+Remaining (cosmetic, not data-loss):
+1. **Foreground push banner** — no `FirebaseMessaging.onMessage` listener for foreground alerts. Pushes arriving while the app is open are silently dropped (the WS event still reaches the app via the active WebSocket, so this is cosmetic).
 
 ---
 
-## 6. Notification UX polish (PLANNED — Phase 50 low-priority)
+## 6. Notification UX polish (future)
 
 | Item | Current | Target |
 |---|---|---|
@@ -198,13 +189,28 @@ This invariant simplifies every dispatch — there's no "find all recipients for
 
 ## 8. References
 
-- Server dispatch core: `apps/node/src/push-notification.ts`
-- Inbound routing + call sites: `apps/node/src/index.ts` (lines 1339, 1632-1644, 1904, 2299-2316)
-- Production chat handler (Slice A fix): `apps/node/src/node-service-handlers-chat-message.ts:146`
-- Chat ctx wiring: `apps/node/src/node-service-contexts.ts:1195`, `apps/node/src/node-service-impl-service-deps.ts:636`
-- Call push gating (the model): `apps/node/src/call-inbound.ts:256-289`
-- WS online tracking: `apps/node/src/ws-server.ts:241` (`hasClientForOwner`)
-- RPC routers: `apps/node/src/json-rpc-router.ts:166-177`
-- Client token register + tap parse: `apps/envoygo/lib/services/push_notification_service.dart`, `apps/envoygo/lib/services/voip_push_service.dart`
-- Client wiring (singleton create, no tap subscription — the gap): `apps/envoygo/lib/providers/node_provider.dart:1289-1299`
-- iOS native bridge: `apps/envoygo/ios/Runner/AppDelegate.swift:151-202`
+All references use file paths + symbol names (not line numbers, which drift).
+
+### Server (home node)
+
+- Push dispatch core: `apps/node/src/push-notification.ts` — `PushNotificationService`, `sendAndCleanup`, `dispatchChatPush`, `dispatchBondPush`, `dispatchFeedPush`, `dispatchApprovalPush`, `dispatchCallPush`
+- Unified chat + Pi listeners: `apps/node/src/node-service-impl.ts` constructor — `this.on("chat:message")`, `this.on("pi:proposal")`
+- Pi `sendToPi` emits `chat:message`: `apps/node/src/node-service-impl.ts` — `sendToPi()`
+- Approval-queue push: `apps/node/src/node-service-impl.ts` — `bindApprovalQueue()`
+- Skip-if-online check: `apps/node/src/node-service-impl.ts` — `isOwnerOnline()`
+- Bond hook: `apps/node/src/index.ts` — `hello:request` callback → `dispatchBondPush`
+- Feed hook: `apps/node/src/index.ts` — `feed.notify` handler → `dispatchFeedPush`
+- Call push gating (the model): `apps/node/src/call-inbound.ts` — `dispatchIncomingCallPushIfOffline`
+- WS online tracking: `apps/node/src/ws-server.ts` — `hasClientForOwner`
+- RPC routers: `apps/node/src/json-rpc-router.ts` — `registerPushToken`, `unregisterPushToken`
+
+### Client (EnvoyGo)
+
+- Alert service: `apps/envoygo/lib/services/push_notification_service.dart` — `PushNotificationService`, `handleNotificationTap`, `onNotificationTap`, `consumePendingInitialTap`
+- VoIP service: `apps/envoygo/lib/services/voip_push_service.dart` — `VoipPushService`
+- Push toggle: `apps/envoygo/lib/services/push_preferences.dart` — `PushPreferences`
+- Deep-link router: `apps/envoygo/lib/main.dart` — `_routeNotificationTap`, `_subscribeToPushTaps`
+- Navigator key: `apps/envoygo/lib/app.dart` — `EnvoyGoApp.navigatorKey`
+- Token registration hook: `apps/envoygo/lib/providers/node_provider.dart` — `registerPushToken`
+- Toggle UI: `apps/envoygo/lib/screens/me/me_screen.dart` — `_togglePushNotifications`
+- iOS native bridge: `apps/envoygo/ios/Runner/AppDelegate.swift` — `envoygo/alert_push`, `envoygo/voip_push`

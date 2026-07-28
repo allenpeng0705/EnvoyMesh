@@ -538,7 +538,7 @@ Uses `dispatchChatPush` with special sender values:
 EnvoyGo `handleNotificationTap` maps `senderOwnerId == "envoy:pi"` →
 Chats tab (index 0) where the Pi thread lives.
 
-### 7.4 Call — `dispatchCallPush`
+### 7.6 Call — `dispatchCallPush`
 
 **iOS VoIP body:**
 
@@ -559,7 +559,7 @@ Headers: `apns-push-type: voip`, topic = `APNS_VOIP_TOPIC` or `${APNS_TOPIC}.voi
 **Android FCM:** normal notification + `data.type=call`, `callId`,
 `callerOwnerId`, `priority=high`.
 
-### 7.5 APNs alert envelope (chat / bond / feed)
+### 7.7 APNs alert envelope (chat / bond / feed / approval / Pi)
 
 ```json
 {
@@ -670,7 +670,7 @@ maps the payload to a target screen via `EnvoyGoApp.navigatorKey`:
 | Approval hook | `apps/node/src/node-service-impl.ts` (`bindApprovalQueue`) |
 | RPC | `apps/node/src/json-rpc-router.ts` → `NodeServiceImpl.registerPushToken` |
 
-### 9.3 Unit tests
+### 9.5 Unit tests
 
 ```bash
 # Home selection / persistence
