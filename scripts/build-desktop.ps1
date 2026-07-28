@@ -34,6 +34,21 @@
 #   release\envoymesh-desktop-{version}-windows-x64.msi   WiX MSI (only if -SkipMsi:$false)
 #   release\envoymesh-desktop-{version}-windows-x64\       Folder with both
 #
+# Slim / Full / default presets (Phase 49 — Pi optional on Windows):
+#   default       Uses tauri.conf.json           — includes Pi + OpenClaw + Kubo.
+#   -Full         Uses tauri.conf.full.json      — explicit "all sidecars" preset.
+#                 Same as default; useful when paired with -SkipPi to force a
+#                 known config without runtime guessing.
+#   -SkipPi       Switches to tauri.conf.slim.json — omits resources/pi/**/* AND
+#                 resources/kubo/**/* to stay well under NSIS's 2 GB cap.
+#                 The Pi chat panel will be auto-disabled at runtime by the
+#                 defensive isPiEnabledViaRuntime() check.
+#
+#   The presets map 1:1 onto scripts in apps/tauri/package.json:
+#     build:win        → tauri.conf.slim.json   (mirrors -SkipPi)
+#     build:win:full   → tauri.conf.full.json   (mirrors -Full)
+#     build            → tauri.conf.json        (default)
+#
 # Prerequisites (Windows):
 #   * Node.js 22+ (https://nodejs.org)
 #   * Rust stable (rustup)
@@ -67,11 +82,34 @@ param(
     # Pi is a built-in sidecar alongside OpenClaw; see Phase 49.
     [switch]$ForcePi,
 
-    # Skip Pi sidecar staging entirely. Use for Windows slim builds where
-    # the ~12 MB Pi bundle is omitted (tauri.conf.slim.json omits the
-    # resources/pi/**/* entry). The Pi chat panel will be disabled at
-    # runtime via piEnabled (default false on slim builds).
+    # Skip Pi sidecar staging entirely AND switch the active Tauri config
+    # to tauri.conf.slim.json (which omits resources/pi/**/*). Used for
+    # Windows slim builds that need to stay under NSIS's 2 GB cap.
+    #
+    # Without the config switch the bundle would ship with an empty
+    # resources/pi/ directory (staging skipped, tauri.conf.json still
+    # references it) and the Social UI would show the Pi panel enabled
+    # while the runtime silently no-ops. -SkipPi wires both ends together.
+    #
+    # Runtime safety net: apps/node/src/node-service-pi.ts now defensively
+    # calls discoverPiCli() inside isPiEnabledViaRuntime() — even if the
+    # slim/full config switch is bypassed, Pi is auto-disabled when the
+    # sidecar is missing.
     [switch]$SkipPi,
+
+    # Skip the Pi sidecar prune pass. Default: $false (always prune source
+    # maps, TypeScript sources, test files, and cross-platform native
+    # prebuilds to keep the Windows installer small). Mirrors the bash
+    # twin scripts/stage-tauri-pi-bundle.sh which always prunes.
+    # Use -SkipPiPrune only if you've manually curated the staged tree
+    # and know what you're doing.
+    [switch]$SkipPiPrune,
+
+    # Force the "full" Tauri config preset (tauri.conf.full.json). Same
+    # resource set as the default but explicit. Useful when -SkipPi is
+    # NOT set and you want to be sure no slim config is silently picked
+    # up by the environment.
+    [switch]$Full,
 
     # Re-download Node sidecar even if already staged
     [switch]$ForceNodeSidecar,
@@ -1297,7 +1335,7 @@ if (Test-Path $controlUiDir) {
 #     Pi is a Node.js package, not a prebuilt binary, so staging = npm-install
 #     the pinned upstream CLI + its transitive deps into resources/pi/.
 #     Mirrors the OpenClaw reuse-vs-force pattern. -SkipPi is the slim-build
-#     escape hatch (Pi is omitted from tauri.conf.slim.json).
+#     escape hatch (Pi is omitted from tauri.conf.slim.json — picked at step 3).
 if (-not $SkipPi) {
     Write-Info "Staging Pi agent (local coding sidecar)..."
     $piDest = Join-Path $TauriResources "pi"
@@ -1307,21 +1345,191 @@ if (-not $SkipPi) {
         $piVer = (Get-Content (Join-Path $piDest ".pi-version") -Raw).Trim()
         Write-Info "Reusing staged Pi $piVer at $($piDest.Replace($RepoRoot + '\', '')). Use -ForcePi to re-stage."
     } else {
-        # Delegate to fetch-pi-sidecar.ps1 — npm-installs Pi + transitive deps,
-        # prunes non-runtime files, verifies the CLI entry. Idempotent.
+        # Delegate to fetch-pi-sidecar.ps1 — npm-installs Pi + transitive deps.
+        # Idempotent. The prune pass below trims the staged tree to runtime
+        # essentials (source maps, .ts sources, test files, cross-platform
+        # native prebuilds). Mirrors the bash twin scripts/stage-tauri-pi-bundle.sh.
         $fetchPs1 = Join-Path $PSScriptRoot "fetch-pi-sidecar.ps1"
         if (-not (Test-Path $fetchPs1)) {
             Write-Fail "fetch-pi-sidecar.ps1 not found at $fetchPs1"
             exit 1
         }
-        & $fetchPs1 -Force:$ForcePi
+        # ENVOYMESH_PI_VERSION: single source of truth for the Pi pin.
+        # Both fetch-pi-sidecar.{sh,ps1} and stage-tauri-pi-bundle.sh honour
+        # it. Empty string → the script's own default (0.82.1) is used.
+        if ($env:ENVOYMESH_PI_VERSION) {
+            Write-Info "Using ENVOYMESH_PI_VERSION=$env:ENVOYMESH_PI_VERSION"
+            & $fetchPs1 -Version $env:ENVOYMESH_PI_VERSION -Force:$ForcePi
+        } else {
+            & $fetchPs1 -Force:$ForcePi
+        }
         if ($LASTEXITCODE -ne 0) {
             Write-Fail "Pi sidecar staging failed — aborting build. Use -SkipPi to omit Pi from this bundle."
             exit 1
         }
     }
+
+    # Prune pass — mirrors scripts/stage-tauri-pi-bundle.sh (the bash twin
+    # delegates to this from build-desktop.sh). Skipped when -SkipPiPrune
+    # is set; safe to leave on for every reuse (idempotent).
+    if (-not $SkipPiPrune) {
+        Write-Info "Pruning non-runtime files from Pi bundle..."
+        $pruned = 0
+        $pruneBytes = 0L
+        # Source maps — large, never needed at runtime.
+        $mapFiles = @(Get-ChildItem -Path $piDest -Recurse -Filter "*.map" -File -ErrorAction SilentlyContinue)
+        foreach ($f in $mapFiles) {
+            $pruneBytes += [int]$f.Length
+            Remove-Item -Force $f.FullName -ErrorAction SilentlyContinue
+        }
+        $pruned += $mapFiles.Count
+        # TypeScript sources — runtime only needs the compiled .js in dist/.
+        $tsFiles = @(Get-ChildItem -Path $piDest -Recurse -Include "*.ts" -File -ErrorAction SilentlyContinue |
+                    Where-Object { $_.Name -notlike "*.d.ts" })
+        foreach ($f in $tsFiles) {
+            $pruneBytes += [int]$f.Length
+            Remove-Item -Force $f.FullName -ErrorAction SilentlyContinue
+        }
+        $pruned += $tsFiles.Count
+        # Test files — *.test.js / *.spec.js / *.test.d.ts
+        $testFiles = @(Get-ChildItem -Path $piDest -Recurse -File -ErrorAction SilentlyContinue |
+                      Where-Object { $_.Name -match '\.test\.(js|d\.ts|ts)$' -or $_.Name -match '\.spec\.(js|d\.ts|ts)$' })
+        foreach ($f in $testFiles) {
+            $pruneBytes += [int]$f.Length
+            Remove-Item -Force $f.FullName -ErrorAction SilentlyContinue
+        }
+        $pruned += $testFiles.Count
+        # Test scaffolding dirs.
+        foreach ($dirName in @("__tests__", "__mocks__", "test", "tests")) {
+            Get-ChildItem -Path $piDest -Recurse -Directory -Filter $dirName -ErrorAction SilentlyContinue |
+                Where-Object { $_.FullName -notmatch '[\\/]\.bin[\\/]' } |
+                ForEach-Object {
+                    $sz = (Get-ChildItem -Path $_.FullName -Recurse -File -ErrorAction SilentlyContinue |
+                           Measure-Object -Property Length -Sum).Sum
+                    $pruneBytes += [int]$sz
+                    Remove-Item -Recurse -Force $_.FullName -ErrorAction SilentlyContinue
+                }
+        }
+        # CI / IDE metadata — never imported at runtime.
+        foreach ($dirName in @(".github", ".husky", ".vscode", ".pi")) {
+            Get-ChildItem -Path $piDest -Recurse -Directory -Filter $dirName -ErrorAction SilentlyContinue |
+                ForEach-Object {
+                    $sz = (Get-ChildItem -Path $_.FullName -Recurse -File -ErrorAction SilentlyContinue |
+                           Measure-Object -Property Length -Sum).Sum
+                    $pruneBytes += [int]$sz
+                    Remove-Item -Recurse -Force $_.FullName -ErrorAction SilentlyContinue
+                }
+        }
+        # Cross-platform native prebuilds — Pi's native deps ship prebuilt
+        # bindings for every OS/arch combo. Drop everything except the
+        # host's. The Windows binary itself (x86_64-pc-windows-msvc) is
+        # the only combo we ship on Windows.
+        $hostOs = "win32"
+        $hostArch = switch ($env:PROCESSOR_ARCHITECTURE) {
+            "AMD64" { "x64" }
+            "ARM64" { "arm64" }
+            default { "x64" }
+        }
+        $prebuildDirs = @(Get-ChildItem -Path $piDest -Recurse -Directory -Filter "prebuilds" -ErrorAction SilentlyContinue)
+        $nativePruned = 0
+        foreach ($pbDir in $prebuildDirs) {
+            $parent = $pbDir.Parent.FullName
+            foreach ($sibling in @(Get-ChildItem -Path $parent -Directory -ErrorAction SilentlyContinue)) {
+                $name = $sibling.Name
+                # Keep host platform+arch and a few universal fallbacks.
+                if ($name -eq "${hostOs}-${hostArch}" -or
+                    $name -eq $hostOs -or
+                    $name -eq $hostArch -or
+                    $name -eq "node-v127" -or
+                    $name -eq "release" -or
+                    $name -eq "debug") {
+                    continue
+                }
+                # Drop everything that looks like another OS/arch combo.
+                if ($name -match '^(darwin|linux|win32|freebsd|openbsd)-' -or
+                    $name -match '^armv7l$|^ia32$|^universal$' -or
+                    $name -match '-(x64|arm64|armv7l|ia32|universal)$') {
+                    $sz = (Get-ChildItem -Path $sibling.FullName -Recurse -File -ErrorAction SilentlyContinue |
+                           Measure-Object -Property Length -Sum).Sum
+                    $pruneBytes += [int]$sz
+                    Remove-Item -Recurse -Force $sibling.FullName -ErrorAction SilentlyContinue
+                    $nativePruned++
+                }
+            }
+        }
+        # Empty directories left by pruning.
+        Get-ChildItem -Path $piDest -Recurse -Directory -ErrorAction SilentlyContinue |
+            Where-Object { -not (Get-ChildItem -Path $_.FullName -Recurse -ErrorAction SilentlyContinue) } |
+            ForEach-Object { Remove-Item -Recurse -Force $_.FullName -ErrorAction SilentlyContinue }
+        if ($pruned -gt 0 -or $nativePruned -gt 0) {
+            $pruneMb = [math]::Round($pruneBytes / 1MB, 1)
+            Write-Ok "Pruned $pruned non-runtime files + $nativePruned cross-platform native prebuild dirs (~${pruneMb} MB)"
+        } else {
+            Write-Info "No prune targets found (already clean)"
+        }
+    } else {
+        Write-Info "-SkipPiPrune: skipping Pi prune pass (-SkipPiPrune)"
+    }
+
+    # Post-stage smoke — mirrors scripts/smoke-pi-bundle.sh (bash twin runs
+    # this inside stage-tauri-pi-bundle.sh). Catches "tree looks fine but
+    # CLI crashes on import" before the NSIS link step.
+    if ($env:SMOKE_PI -ne "0") {
+        Write-Info "Running Pi post-stage smoke (set SMOKE_PI=0 to skip)..."
+        $smokeNode = $null
+        if (Test-Path $nodeExe) {
+            $smokeNode = $nodeExe
+        } elseif (Get-Command "node" -ErrorAction SilentlyContinue) {
+            $smokeNode = (Get-Command "node").Source
+        }
+        if (-not $smokeNode) {
+            Write-Fail "No Node binary available for Pi smoke"
+            exit 1
+        }
+        $smokeLog = Join-Path ([System.IO.Path]::GetTempPath()) ("envoymesh-pi-smoke-" + [guid]::NewGuid().ToString("N") + ".log")
+        $smokeOk = $false
+        try {
+            Push-Location $piDest
+            try {
+                $combined = & $smokeNode $piCli --help 2>&1 | Out-String
+                $smokeExit = $LASTEXITCODE
+            } finally {
+                Pop-Location
+            }
+            Set-Content -LiteralPath $smokeLog -Value $combined -ErrorAction SilentlyContinue
+            $bannerOk = $combined -match '(?i)pi[- ]coding[- ]agent|Usage:|\bpi\b'
+            if ($smokeExit -ne 0) {
+                Write-Host $combined
+                Write-Fail "Pi smoke failed — CLI exited $smokeExit. Log: $smokeLog"
+                exit 1
+            }
+            if (-not $bannerOk) {
+                Write-Host $combined
+                Write-Fail "Pi smoke failed — no recognisable --help banner. Log: $smokeLog"
+                exit 1
+            }
+            $smokeOk = $true
+            Write-Ok "Pi CLI smoke passed (exit 0, banner recognised)"
+        } catch {
+            Write-Fail "Pi smoke failed: $($_.Exception.Message)"
+            exit 1
+        } finally {
+            if ($smokeOk) {
+                Remove-Item -LiteralPath $smokeLog -ErrorAction SilentlyContinue
+            }
+        }
+    } else {
+        Write-Info "SMOKE_PI=0 — skipping Pi post-stage smoke"
+    }
 } else {
-    Write-Info "Skipping Pi sidecar (-SkipPi). The bundle will NOT contain Pi; ensure tauri.conf.slim.json omits the resources/pi/**/* entry."
+    Write-Info "Skipping Pi sidecar (-SkipPi). The bundle will NOT contain Pi; tauri.conf.slim.json (selected below) omits the resources/pi/**/* entry."
+    # Clear a leftover Pi tree so a later full-config build cannot silently
+    # pick up a half-staged copy from a previous run without re-verify.
+    $piDestCleanup = Join-Path $TauriResources "pi"
+    if (Test-Path $piDestCleanup) {
+        Write-Info "Removing leftover resources\pi\ (slim build)."
+        Remove-Item -Recurse -Force $piDestCleanup -ErrorAction SilentlyContinue
+    }
 }
 
 # 1e. Verify the staged tree (matches scripts/verify-tauri-resources.sh).
@@ -1338,7 +1546,11 @@ $reqFiles = @(
 # supposed to be staged; mirrors the resources/pi/**/* entry in the
 # active tauri.conf.json.
 if (-not $SkipPi) {
-    $reqFiles += @{ Path = (Join-Path $TauriResources "pi/node_modules/@earendil-works/pi-coding-agent/dist/cli.js"); Label = "Pi CLI entry" }
+    $reqFiles += @(
+        @{ Path = (Join-Path $TauriResources "pi/node_modules/@earendil-works/pi-coding-agent/dist/cli.js"); Label = "Pi CLI entry" },
+        @{ Path = (Join-Path $TauriResources "pi/node_modules/@earendil-works/pi-coding-agent/dist/index.js"); Label = "Pi SDK entry" },
+        @{ Path = (Join-Path $TauriResources "pi/node_modules/@earendil-works/pi-coding-agent/package.json"); Label = "Pi package.json" }
+    )
 }
 foreach ($r in $reqFiles) {
     if (Test-Path $r.Path) {
@@ -1471,9 +1683,40 @@ if (Get-Command "cargo-tauri" -ErrorAction SilentlyContinue) {
 # Build the tauri args. -SkipMsi (default $true) restricts tauri to the NSIS
 # bundle, dodging the slow light.exe link step on the 3 GB resource tree.
 # Use -SkipMsi:$false to also produce a WiX .msi (for enterprise deployment).
+#
+# Slim / Full / default config selection (mirrors apps/tauri/package.json's
+# build:win / build:win:full / build scripts):
+#   -SkipPi   → --config src-tauri/tauri.conf.slim.json  (Pi + Kubo omitted)
+#   -Full     → --config src-tauri/tauri.conf.full.json  (explicit full preset)
+#   default   → no --config flag                         (uses tauri.conf.json)
+#
+# Refuse nonsensical combinations rather than silently picking one.
+if ($SkipPi -and $Full) {
+    Write-Fail "-SkipPi and -Full are mutually exclusive (-SkipPi picks the slim config)."
+    exit 1
+}
 $tauriArgs = @("tauri", "build")
 if ($SkipMsi) {
     $tauriArgs += @("--bundles", "nsis")
+}
+if ($SkipPi) {
+    $slimConf = Join-Path $TauriSrcDir "tauri.conf.slim.json"
+    if (-not (Test-Path $slimConf)) {
+        Write-Fail "slim config not found at $slimConf (cannot honor -SkipPi)"
+        exit 1
+    }
+    Write-Info "Slim config: tauri.conf.slim.json (Pi + Kubo omitted)"
+    $tauriArgs += @("--config", $slimConf)
+} elseif ($Full) {
+    $fullConf = Join-Path $TauriSrcDir "tauri.conf.full.json"
+    if (-not (Test-Path $fullConf)) {
+        Write-Fail "full config not found at $fullConf (cannot honor -Full)"
+        exit 1
+    }
+    Write-Info "Full config: tauri.conf.full.json (all sidecars explicit)"
+    $tauriArgs += @("--config", $fullConf)
+} else {
+    Write-Info "Default config: tauri.conf.json (Pi + OpenClaw + Kubo)"
 }
 
 Push-Location $TauriAppDir

@@ -69,6 +69,7 @@ PI_DIR="$RES/pi"
 PI_CLI="$PI_DIR/node_modules/@earendil-works/pi-coding-agent/dist/cli.js"
 if [ -d "$PI_DIR" ]; then
   require_file "$PI_CLI" "Pi CLI entry (node_modules/@earendil-works/pi-coding-agent/dist/cli.js)"
+  require_file "$PI_DIR/node_modules/@earendil-works/pi-coding-agent/dist/index.js" "Pi SDK entry (node_modules/@earendil-works/pi-coding-agent/dist/index.js)"
   require_file "$PI_DIR/node_modules/@earendil-works/pi-coding-agent/package.json" "Pi package.json"
   require_dir_nonempty "$PI_DIR/node_modules/@earendil-works" "Pi @earendil-works packages (pi-ai, pi-agent-core, pi-tui)"
   pi_version_file="$PI_DIR/.pi-version"

@@ -5,6 +5,9 @@ import '../../providers/contact_provider.dart' show nodeServiceProvider;
 import '../../services/node_service_client.dart';
 
 /// Pi agent settings — enable/disable + model override (mirrors Social UI).
+///
+/// `piSettings` is shallow-replaced on the home node — always merge with the
+/// current object before save (same as SettingsAITab).
 class PiSettingsScreen extends ConsumerStatefulWidget {
   const PiSettingsScreen({super.key});
 
@@ -24,10 +27,29 @@ class _PiSettingsScreenState extends ConsumerState<PiSettingsScreen> {
   late TextEditingController _apiKeyCtl;
   bool _obscureApiKey = true;
   Map<String, dynamic>? _status;
+  Map<String, dynamic> _existingPiSettings = const {};
+  bool _hasSavedApiKey = false;
   ProviderSubscription<NodeServiceClient?>? _clientSub;
   void Function()? _configUnsub;
 
   PiNativeProvider? get _providerInfo => getPiNativeProvider(_provider);
+
+  List<DropdownMenuItem<String>> get _providerItems {
+    final items = piNativeProviders
+        .map(
+          (p) => DropdownMenuItem(value: p.id, child: Text(p.label)),
+        )
+        .toList();
+    // Unknown provider from desktop (e.g. groq) — keep selectable so the
+    // dropdown does not assert.
+    if (getPiNativeProvider(_provider) == null && _provider.isNotEmpty) {
+      items.insert(
+        0,
+        DropdownMenuItem(value: _provider, child: Text('$_provider (custom)')),
+      );
+    }
+    return items;
+  }
 
   @override
   void initState() {
@@ -72,22 +94,28 @@ class _PiSettingsScreenState extends ConsumerState<PiSettingsScreen> {
       final cfg = results[0] as Map<String, dynamic>;
       final status = results[1] as Map<String, dynamic>;
       final settings =
-          (cfg['piSettings'] as Map?)?.cast<String, dynamic>() ?? {};
+          (cfg['piSettings'] as Map?)?.cast<String, dynamic>() ??
+              <String, dynamic>{};
       final override =
-          (settings['modelOverride'] as Map?)?.cast<String, dynamic>() ?? {};
-      final provider = (override['provider'] as String?)?.trim().isNotEmpty == true
-          ? override['provider'] as String
-          : piProviderFromEnvoyMode(
-              override['mode'] as String?,
-              override['endpoint'] as String?,
-            );
+          (settings['modelOverride'] as Map?)?.cast<String, dynamic>() ??
+              <String, dynamic>{};
+      final rawProvider =
+          (override['provider'] as String?)?.trim().isNotEmpty == true
+              ? override['provider'] as String
+              : piProviderFromEnvoyMode(
+                  override['mode'] as String?,
+                  override['endpoint'] as String?,
+                );
       if (!mounted) return;
       setState(() {
         _piEnabled = cfg['piEnabled'] != false;
-        _provider = provider;
+        _existingPiSettings = Map<String, dynamic>.from(settings);
+        _provider = rawProvider;
         _modelCtl.text = (override['model'] as String?) ?? '';
         _endpointCtl.text = (override['endpoint'] as String?) ?? '';
-        _apiKeyCtl.text = (override['apiKey'] as String?) ?? '';
+        _apiKeyCtl.clear();
+        _hasSavedApiKey =
+            (override['apiKey'] as String?)?.trim().isNotEmpty == true;
         _status = status;
         _loading = false;
       });
@@ -140,14 +168,31 @@ class _PiSettingsScreenState extends ConsumerState<PiSettingsScreen> {
         'model': model,
         if (_endpointCtl.text.trim().isNotEmpty)
           'endpoint': _endpointCtl.text.trim(),
-        if (_apiKeyCtl.text.isNotEmpty) 'apiKey': _apiKeyCtl.text,
       };
-      await client.updatePiConfig(piSettings: {
+      if (_apiKeyCtl.text.isNotEmpty) {
+        override['apiKey'] = _apiKeyCtl.text;
+      } else if (_hasSavedApiKey) {
+        // Preserve existing key when the field is left blank.
+        final prev = (_existingPiSettings['modelOverride'] as Map?)
+            ?.cast<String, dynamic>();
+        final prevKey = prev?['apiKey'] as String?;
+        if (prevKey != null && prevKey.isNotEmpty) {
+          override['apiKey'] = prevKey;
+        }
+      }
+      final nextSettings = <String, dynamic>{
+        ..._existingPiSettings,
         'modelOverride': override,
-      });
+      };
+      await client.updatePiConfig(piSettings: nextSettings);
       final s = await client.restartPi();
       if (!mounted) return;
-      setState(() => _status = s);
+      setState(() {
+        _status = s;
+        _existingPiSettings = nextSettings;
+        _hasSavedApiKey = override['apiKey'] != null;
+        _apiKeyCtl.clear();
+      });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Pi model saved')),
       );
@@ -166,16 +211,19 @@ class _PiSettingsScreenState extends ConsumerState<PiSettingsScreen> {
     if (client == null) return;
     setState(() => _saving = true);
     try {
-      await client.updatePiConfig(piSettings: {
-        'modelOverride': null,
-      });
+      final nextSettings = Map<String, dynamic>.from(_existingPiSettings)
+        ..remove('modelOverride');
+      await client.updatePiConfig(piSettings: nextSettings);
       final s = await client.restartPi();
       if (!mounted) return;
       setState(() {
         _status = s;
+        _existingPiSettings = nextSettings;
         _modelCtl.clear();
         _endpointCtl.clear();
         _apiKeyCtl.clear();
+        _hasSavedApiKey = false;
+        _provider = 'minimax-cn';
       });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Pi inherits EnvoyMesh model settings')),
@@ -273,14 +321,7 @@ class _PiSettingsScreenState extends ConsumerState<PiSettingsScreen> {
                         labelText: 'Provider',
                         border: OutlineInputBorder(),
                       ),
-                      items: piNativeProviders
-                          .map(
-                            (p) => DropdownMenuItem(
-                              value: p.id,
-                              child: Text(p.label),
-                            ),
-                          )
-                          .toList(),
+                      items: _providerItems,
                       onChanged: !_piEnabled
                           ? null
                           : (v) {
@@ -291,7 +332,8 @@ class _PiSettingsScreenState extends ConsumerState<PiSettingsScreen> {
                                 if (models != null &&
                                     models.isNotEmpty &&
                                     (_modelCtl.text.trim().isEmpty ||
-                                        !models.contains(_modelCtl.text.trim()))) {
+                                        !models
+                                            .contains(_modelCtl.text.trim()))) {
                                   _modelCtl.text = models.first;
                                 }
                               });
@@ -353,6 +395,9 @@ class _PiSettingsScreenState extends ConsumerState<PiSettingsScreen> {
                       obscureText: _obscureApiKey,
                       decoration: InputDecoration(
                         labelText: 'API key',
+                        helperText: _hasSavedApiKey
+                            ? 'Leave blank to keep the saved key'
+                            : null,
                         border: const OutlineInputBorder(),
                         suffixIcon: IconButton(
                           icon: Icon(
@@ -380,7 +425,8 @@ class _PiSettingsScreenState extends ConsumerState<PiSettingsScreen> {
                     ),
                     const SizedBox(height: 8),
                     TextButton(
-                      onPressed: (!_piEnabled || _saving) ? null : _clearOverride,
+                      onPressed:
+                          (!_piEnabled || _saving) ? null : _clearOverride,
                       child: const Text('Clear override (inherit AI Model)'),
                     ),
                   ],

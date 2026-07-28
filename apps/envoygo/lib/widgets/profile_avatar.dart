@@ -15,6 +15,8 @@ class ProfileAvatar extends ConsumerStatefulWidget {
   final String? displayName;
   final double radius;
   final bool isSelf;
+  /// When set and no thumbnail is available, show this icon instead of initials.
+  final IconData? fallbackIcon;
 
   const ProfileAvatar({
     super.key,
@@ -22,6 +24,7 @@ class ProfileAvatar extends ConsumerStatefulWidget {
     this.displayName,
     this.radius = 40,
     this.isSelf = false,
+    this.fallbackIcon,
   });
 
   @override
@@ -154,20 +157,29 @@ class _ProfileAvatarState extends ConsumerState<ProfileAvatar> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    Widget? child;
+    if (_bytes == null) {
+      if (widget.fallbackIcon != null) {
+        child = Icon(
+          widget.fallbackIcon,
+          size: widget.radius * 1.1,
+        );
+      } else {
+        child = Text(
+          _initial,
+          style: TextStyle(
+            fontWeight: FontWeight.w700,
+            fontSize: widget.radius * 0.7,
+          ),
+        );
+      }
+    }
     return CircleAvatar(
       radius: widget.radius,
       backgroundColor: scheme.primaryContainer,
       foregroundColor: scheme.onPrimaryContainer,
       backgroundImage: _bytes != null ? MemoryImage(_bytes!) : null,
-      child: _bytes == null
-          ? Text(
-              _initial,
-              style: TextStyle(
-                fontWeight: FontWeight.w700,
-                fontSize: widget.radius * 0.7,
-              ),
-            )
-          : null,
+      child: child,
     );
   }
 }

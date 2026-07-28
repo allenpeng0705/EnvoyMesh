@@ -136,9 +136,26 @@ export function buildPiRuntimeDeps(host: any): PiRuntimeDeps {
 // Lifecycle: start / stop / restart / ensureReady
 // ---------------------------------------------------------------------------
 
-/** True when Pi is enabled in config. Default: true (full builds). */
+/**
+ * True when Pi is enabled in config AND the bundled sidecar is discoverable
+ * on disk. Default: true when the sidecar exists (full builds); false
+ * otherwise (slim builds, missing staging, dev with no Pi on disk).
+ *
+ * Slim-build defence (Phase 49): on Windows slim builds the staged tree
+ * has no resources/pi/ (tauri.conf.slim.json omits it to stay under the
+ * NSIS 2 GB cap). The runtime now treats that as "Pi disabled" rather
+ * than letting the Social UI render the Pi panel while the underlying
+ * runtime silently no-ops with "sidecar not found".
+ *
+ * Order matters: explicit `piEnabled: false` short-circuits BEFORE the
+ * filesystem probe so users who turned Pi off in Settings → AI aren't
+ * surprised by a long discovery walk on every ensureReady() call.
+ */
 export async function isPiEnabledViaRuntime(deps: PiRuntimeDeps): Promise<boolean> {
   const cfg = await deps.loadConfig()
+  if (cfg?.piEnabled === false) return false
+  const discovered = discoverPiCli(deps.getRepoRoot?.())
+  if (!discovered) return false
   return cfg?.piEnabled ?? true
 }
 

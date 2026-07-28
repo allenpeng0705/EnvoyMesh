@@ -16,16 +16,31 @@
 # Usage: bash scripts/stage-tauri-pi-bundle.sh
 #
 # Environment variables:
-#   STAGE_PI_BUNDLE=1   Force re-fetch + re-stage (default: reuse cached tree)
-#   STAGE_PI_BUNDLE=0   Skip entirely (debug escape hatch — bundle will not
-#                       contain Pi; the Pi chat panel will be disabled at
-#                       runtime via piEnabled)
-#   PI_VERSION=0.82.1   Override the pinned Pi version (testing newer releases)
+#   STAGE_PI_BUNDLE=1     Force re-fetch + re-stage (default: reuse cached tree)
+#   STAGE_PI_BUNDLE=0     Skip entirely (debug escape hatch — bundle will not
+#                         contain Pi; the Pi chat panel will be disabled at
+#                         runtime via piEnabled)
+#   ENVOYMESH_PI_VERSION  Override the pinned Pi version. Single source of
+#                         truth across build-desktop.{sh,ps1} +
+#                         fetch-pi-sidecar.{sh,ps1} + this script.
+#                         Default: 0.82.1.
+#   PI_VERSION=0.82.1     (legacy) Override the pinned Pi version; takes
+#                         precedence over ENVOYMESH_PI_VERSION for
+#                         backwards compatibility.
+#   SMOKE_PI=0            Skip the post-stage smoke (default: 1)
+#   SMOKE_TIMEOUT=60      Smoke timeout in seconds (default: 60)
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-PI_VERSION="${PI_VERSION:-0.82.1}"
+# Precedence: PI_VERSION (legacy) → ENVOYMESH_PI_VERSION → default pin.
+if [ -n "${PI_VERSION:-}" ]; then
+  : # legacy env var wins
+elif [ -n "${ENVOYMESH_PI_VERSION:-}" ]; then
+  PI_VERSION="${ENVOYMESH_PI_VERSION}"
+else
+  PI_VERSION="0.82.1"
+fi
 DEST="${ROOT}/apps/tauri/src-tauri/resources/pi"
 
 # Escape hatch: skip Pi staging entirely.
@@ -52,7 +67,10 @@ fi
 
 if [ "${NEED_FETCH}" = "1" ]; then
   echo "  Staging Pi ${PI_VERSION}..."
-  bash "${ROOT}/scripts/fetch-pi-sidecar.sh" "${PI_VERSION}"
+  # Pass PI_VERSION explicitly as $1 — fetch-pi-sidecar.sh also honours
+  # ENVOYMESH_PI_VERSION on its own, but the explicit positional form
+  # wins precedence and keeps the call self-documenting in build logs.
+  PI_VERSION="${PI_VERSION}" bash "${ROOT}/scripts/fetch-pi-sidecar.sh" "${PI_VERSION}"
 else
   echo "  ✓ Pi ${PI_VERSION} already staged — reusing (set STAGE_PI_BUNDLE=1 to force)."
 fi
@@ -182,3 +200,20 @@ done
 echo "  ✓ Pi ${PI_VERSION} staged at ${DEST/$ROOT\//} (${FINAL_SIZE})"
 echo "    CLI entry: node_modules/@earendil-works/pi-coding-agent/dist/cli.js"
 echo "    SDK entry: node_modules/@earendil-works/pi-coding-agent/dist/index.js"
+
+# Post-stage smoke: spawn the Pi CLI on a known-good invocation and
+# assert it loads cleanly. Catches "staged tree looks fine but the CLI
+# crashes on import" class of defects that escape the file-existence
+# verify above. Mirrors scripts/smoke-openclaw-bundle.sh.
+# Disable with SMOKE_PI=0.
+if [ "${SMOKE_PI:-1}" = "1" ]; then
+    echo
+    echo "[stage-tauri-pi-bundle] Running post-stage smoke (set SMOKE_PI=0 to skip)..."
+    if ! SMOKE_TIMEOUT="${SMOKE_TIMEOUT:-30}" \
+         PI_DIR="$DEST" \
+         bash "$ROOT/scripts/smoke-pi-bundle.sh"; then
+        echo "  ✗ Post-stage smoke FAILED — Pi CLI could not load cleanly" >&2
+        echo "  Re-run with SMOKE_PI=0 to bypass (NOT recommended for release builds)" >&2
+        exit 1
+    fi
+fi

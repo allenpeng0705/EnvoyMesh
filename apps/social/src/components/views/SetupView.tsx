@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
-import { useNodeService } from "../../hooks/useNodeService.js";
+import { useNodeService, useIsInProcessMobileNode, useModelProviderUiScope } from "../../hooks/useNodeService.js";
 import { useToastOptional } from "../../hooks/useToast.js";
 import { networkPresetById, type NetworkPresetId } from "../../lib/network-presets.js";
 import { markFirstRunSetupComplete } from "../../lib/storage.js";
@@ -10,16 +10,23 @@ import { SUGGESTED_TOPICS, INTEREST_CATEGORIES } from "../../lib/display.js";
 import { getCurrentPosition } from "../../lib/geolocation-adapter.js";
 import type {
   ModelProviderConfig,
-  ModelProviderMode,
   DiscoveryLocation,
 } from "@envoymesh/api";
-import { encodeGeohash, NEARBY_GEOHASH_PRECISION } from "@envoymesh/api";
+import {
+  encodeGeohash,
+  NEARBY_GEOHASH_PRECISION,
+  getModelProviderPreset,
+  listModelProviderPresets,
+} from "@envoymesh/api";
 
 type WizardStep = "profile" | "interests" | "ai";
 type AiChoice = "skip" | "configure";
 type LocationChoice = "auto" | "skip";
 
 const MIN_INTERESTS = 3;
+
+/** First-run default — matches Settings → AI CN-first ordering. */
+const DEFAULT_SETUP_PRESET_ID = "minimax-cn";
 
 const DEFAULT_SETUP_NETWORK_PRESET: NetworkPresetId = "explore-public";
 
@@ -51,31 +58,37 @@ function detectCountryFromLocale(): string | null {
   return null;
 }
 
+/**
+ * Validate first-run model fields against a Settings → AI preset.
+ * Utility presets (mock/disabled) are not offered in the configure path.
+ */
 function validateModelSetup(
-  mode: ModelProviderMode,
+  presetId: string,
   endpoint: string,
   modelName: string,
   apiKey: string,
 ): "endpoint" | "modelName" | "apiKey" | null {
-  const endpointTrimmed = endpoint.trim();
+  const preset = getModelProviderPreset(presetId);
+  if (!preset || preset.utility) return "endpoint";
+
+  const endpointTrimmed = endpoint.trim() || preset.defaultEndpoint?.trim() || "";
   const modelNameTrimmed = modelName.trim();
   const apiKeyTrimmed = apiKey.trim();
+  const showEndpoint = preset.endpointEditable !== false;
 
-  if (mode === "ollama") {
+  if (preset.mode === "ollama") {
     return modelNameTrimmed ? null : "modelName";
   }
-  if (mode === "litellm") {
+  if (preset.mode === "litellm") {
     if (!endpointTrimmed) return "endpoint";
     if (!modelNameTrimmed) return "modelName";
     return null;
   }
-  if (mode === "openai-compatible" || mode === "anthropic-compatible") {
-    if (!endpointTrimmed) return "endpoint";
-    if (!modelNameTrimmed) return "modelName";
-    if (!apiKeyTrimmed) return "apiKey";
-    return null;
-  }
-  return "endpoint";
+  // Cloud / custom OpenAI- or Anthropic-compatible presets.
+  if (showEndpoint && !endpointTrimmed) return "endpoint";
+  if (!modelNameTrimmed) return "modelName";
+  if (!apiKeyTrimmed) return "apiKey";
+  return null;
 }
 
 export function SetupView({ waitingForNode = false }: { waitingForNode?: boolean }) {
@@ -84,6 +97,9 @@ export function SetupView({ waitingForNode = false }: { waitingForNode?: boolean
   const { showToast } = useToastOptional();
   const { isConnected, nodeConfig, refreshNodeConfig, refreshHumanProfile } = useNodeState();
   const tauriShell = isTauriShell();
+  const modelProviderUiScope = useModelProviderUiScope();
+  const isMobileNode = useIsInProcessMobileNode();
+  const includeLocal = modelProviderUiScope !== "cloud-only" && !isMobileNode;
   const wanPreset = useMemo(() => networkPresetById(DEFAULT_SETUP_NETWORK_PRESET), []);
 
   // Waiting-for-node state: elapsed timer + restart recovery.
@@ -123,9 +139,10 @@ export function SetupView({ waitingForNode = false }: { waitingForNode?: boolean
   const [displayName, setDisplayName] = useState("");
   const [username, setUsername] = useState("");
   const [aiChoice, setAiChoice] = useState<AiChoice>("skip");
-  const [modelMode, setModelMode] = useState<ModelProviderMode>("openai-compatible");
-  const [modelEndpoint, setModelEndpoint] = useState("");
-  const [modelName, setModelName] = useState("");
+  const defaultPreset = getModelProviderPreset(DEFAULT_SETUP_PRESET_ID);
+  const [presetId, setPresetId] = useState(DEFAULT_SETUP_PRESET_ID);
+  const [modelEndpoint, setModelEndpoint] = useState(defaultPreset?.defaultEndpoint ?? "");
+  const [modelName, setModelName] = useState(defaultPreset?.models[0] ?? "");
   const [modelApiKey, setModelApiKey] = useState("");
   const [isInitializing, setIsInitializing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -199,38 +216,40 @@ export function SetupView({ waitingForNode = false }: { waitingForNode?: boolean
     if (dir) setSetupProfileDir(dir);
   }, [nodeConfig?.profileDir]);
 
-  const modelProviderHints = useMemo(() => {
-    switch (modelMode) {
-      case "ollama":
-        return {
-          endpointPlaceholder: t("settings.ai.model.endpointPlaceholderOllama"),
-          hint: t("settings.ai.model.endpointHintOllama"),
-          apiKeyHint: t("settings.ai.model.apiKeyHintOllama"),
-        };
-      case "litellm":
-        return {
-          endpointPlaceholder: t("settings.ai.model.endpointPlaceholderLitellm"),
-          hint: t("settings.ai.model.endpointHintLitellm"),
-          apiKeyHint: t("settings.ai.model.apiKeyHintLitellm"),
-        };
-      case "anthropic-compatible":
-        return {
-          endpointPlaceholder: t("settings.ai.model.endpointPlaceholderAnthropic"),
-          hint: t("settings.ai.model.endpointHintAnthropic"),
-          apiKeyHint: t("settings.ai.model.apiKeyHintAnthropic"),
-        };
-      default:
-        return {
-          endpointPlaceholder: t("settings.ai.model.endpointPlaceholderOpenAi"),
-          hint: t("settings.ai.model.endpointHintOpenAi"),
-          apiKeyHint: t("settings.ai.model.apiKeyHintOpenAi"),
-        };
+  // Same provider catalog as Settings → AI (cloud presets + optional local).
+  // Skip utility presets (mock/disabled) — the "skip AI" card covers that.
+  const presets = useMemo(
+    () => listModelProviderPresets({ includeLocal }).filter((p) => !p.utility),
+    [includeLocal],
+  );
+  const activePreset =
+    getModelProviderPreset(presetId) ??
+    getModelProviderPreset(DEFAULT_SETUP_PRESET_ID) ??
+    presets[0];
+  const showEndpoint =
+    Boolean(activePreset) &&
+    activePreset!.endpointEditable !== false &&
+    activePreset!.mode !== "mock" &&
+    activePreset!.mode !== "disabled";
+  const showModelAndKey =
+    Boolean(activePreset) &&
+    activePreset!.mode !== "mock" &&
+    activePreset!.mode !== "disabled";
+
+  const applyPreset = (nextId: string) => {
+    setPresetId(nextId);
+    const info = getModelProviderPreset(nextId);
+    if (!info) return;
+    if (info.defaultEndpoint) setModelEndpoint(info.defaultEndpoint);
+    else if (info.endpointEditable === false) setModelEndpoint("");
+    if (info.models.length && (!modelName || !info.models.includes(modelName))) {
+      setModelName(info.models[0] ?? "");
     }
-  }, [modelMode, t]);
+  };
 
   const modelValidationError =
     aiChoice === "configure"
-      ? validateModelSetup(modelMode, modelEndpoint, modelName, modelApiKey)
+      ? validateModelSetup(presetId, modelEndpoint, modelName, modelApiKey)
       : null;
 
   const handleFinish = async () => {
@@ -243,7 +262,7 @@ export function SetupView({ waitingForNode = false }: { waitingForNode?: boolean
       return;
     }
     if (aiChoice === "configure") {
-      const modelError = validateModelSetup(modelMode, modelEndpoint, modelName, modelApiKey);
+      const modelError = validateModelSetup(presetId, modelEndpoint, modelName, modelApiKey);
       if (modelError) {
         setError(t(`setup.modelError.${modelError}`));
         setStep("ai");
@@ -253,14 +272,18 @@ export function SetupView({ waitingForNode = false }: { waitingForNode?: boolean
     setIsInitializing(true);
     setError(null);
     try {
+      const preset = getModelProviderPreset(presetId) ?? activePreset;
       const modelProviders: ModelProviderConfig =
         aiChoice === "skip"
           ? { mode: "disabled" }
           : {
-              mode: modelMode,
-              endpoint: modelEndpoint.trim() || undefined,
-              modelName: modelName.trim() || undefined,
-              apiKey: modelApiKey.trim() || undefined,
+              presetId: preset!.id,
+              mode: preset!.mode,
+              endpoint: showEndpoint
+                ? modelEndpoint.trim() || preset!.defaultEndpoint || undefined
+                : undefined,
+              modelName: showModelAndKey ? modelName.trim() || undefined : undefined,
+              apiKey: showModelAndKey ? modelApiKey.trim() || undefined : undefined,
             };
 
       // Write initial node-config.json (skip initNode — profile keys already exist from node startup).
@@ -651,56 +674,98 @@ export function SetupView({ waitingForNode = false }: { waitingForNode?: boolean
                   </button>
                 </div>
               </div>
-              {aiChoice === "configure" && (
+              {aiChoice === "configure" && activePreset && (
                 <>
                   <div className="form-group">
-                    <label htmlFor="setup-model-mode">{t("settings.ai.model.providerLabel")}</label>
+                    <label htmlFor="setup-model-preset">{t("settings.ai.model.providerLabel")}</label>
                     <select
-                      id="setup-model-mode"
+                      id="setup-model-preset"
                       className="settings-select"
-                      value={modelMode}
-                      onChange={(e) => setModelMode(e.target.value as ModelProviderMode)}
+                      value={presetId}
+                      onChange={(e) => applyPreset(e.target.value)}
                     >
-                      <option value="openai-compatible">{t("settings.ai.model.modeOpenAiCompatible")}</option>
-                      <option value="anthropic-compatible">{t("settings.ai.model.modeAnthropicCompatible")}</option>
-                      <option value="ollama">{t("settings.ai.model.modeOllama")}</option>
-                      <option value="litellm">{t("settings.ai.model.modeLitellm")}</option>
+                      {presets.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.label}
+                        </option>
+                      ))}
                     </select>
+                    <small>{t("settings.ai.model.presetHint")}</small>
                   </div>
-                  <div className="form-group">
-                    <label htmlFor="setup-model-endpoint">{t("settings.ai.model.endpointUrl")}</label>
-                    <input
-                      id="setup-model-endpoint"
-                      type="text"
-                      value={modelEndpoint}
-                      onChange={(e) => setModelEndpoint(e.target.value)}
-                      placeholder={
-                        modelProviderHints.endpointPlaceholder || t("settings.ai.model.endpointPlaceholderDefault")
-                      }
-                    />
-                    {modelProviderHints.hint ? <small>{modelProviderHints.hint}</small> : null}
-                  </div>
-                  <div className="form-group">
-                    <label htmlFor="setup-model-name">{t("settings.ai.model.modelName")}</label>
-                    <input
-                      id="setup-model-name"
-                      type="text"
-                      value={modelName}
-                      onChange={(e) => setModelName(e.target.value)}
-                      placeholder={t("settings.ai.model.modelNamePlaceholder")}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label htmlFor="setup-model-api-key">{t("settings.ai.model.apiKey")}</label>
-                    <input
-                      id="setup-model-api-key"
-                      type="password"
-                      value={modelApiKey}
-                      onChange={(e) => setModelApiKey(e.target.value)}
-                      placeholder={t("settings.ai.model.apiKeyPlaceholder")}
-                    />
-                    {modelProviderHints.apiKeyHint ? <small>{modelProviderHints.apiKeyHint}</small> : null}
-                  </div>
+                  {showEndpoint ? (
+                    <div className="form-group">
+                      <label htmlFor="setup-model-endpoint">{t("settings.ai.model.endpointUrl")}</label>
+                      <input
+                        id="setup-model-endpoint"
+                        type="text"
+                        value={modelEndpoint}
+                        onChange={(e) => setModelEndpoint(e.target.value)}
+                        placeholder={
+                          activePreset.endpointPlaceholder ||
+                          t("settings.ai.model.endpointPlaceholderDefault")
+                        }
+                      />
+                    </div>
+                  ) : null}
+                  {showModelAndKey ? (
+                    <>
+                      <div className="form-group">
+                        <label htmlFor="setup-model-name">{t("settings.ai.model.modelName")}</label>
+                        {activePreset.models.length > 0 ? (
+                          <select
+                            id="setup-model-name"
+                            className="settings-select"
+                            value={
+                              activePreset.models.includes(modelName)
+                                ? modelName
+                                : "__custom__"
+                            }
+                            onChange={(e) => {
+                              if (e.target.value === "__custom__") {
+                                setModelName("");
+                                return;
+                              }
+                              setModelName(e.target.value);
+                            }}
+                          >
+                            {activePreset.models.map((m) => (
+                              <option key={m} value={m}>
+                                {m}
+                              </option>
+                            ))}
+                            <option value="__custom__">
+                              {t("settings.ai.model.modelCustomId")}
+                            </option>
+                          </select>
+                        ) : null}
+                        {!activePreset.models.length ||
+                        !activePreset.models.includes(modelName) ? (
+                          <input
+                            type="text"
+                            value={modelName}
+                            onChange={(e) => setModelName(e.target.value)}
+                            placeholder={
+                              activePreset.models[0] ||
+                              t("settings.ai.model.modelNamePlaceholder")
+                            }
+                            style={{
+                              marginTop: activePreset.models.length ? "6px" : undefined,
+                            }}
+                          />
+                        ) : null}
+                      </div>
+                      <div className="form-group">
+                        <label htmlFor="setup-model-api-key">{t("settings.ai.model.apiKey")}</label>
+                        <input
+                          id="setup-model-api-key"
+                          type="password"
+                          value={modelApiKey}
+                          onChange={(e) => setModelApiKey(e.target.value)}
+                          placeholder={t("settings.ai.model.apiKeyPlaceholder")}
+                        />
+                      </div>
+                    </>
+                  ) : null}
                 </>
               )}
               <div className="setup-wizard-nav">

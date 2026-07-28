@@ -29,11 +29,28 @@
 # -Force, or by removing $OutputDir.
 
 param(
-    [string]$Version = "0.82.1",
+    [string]$Version = "",
     [switch]$Force
 )
 
 $ErrorActionPreference = "Stop"
+
+# Pin by default — supply-chain hygiene, see design doc §4. Pass -Version
+# to test a newer Pi (never use "latest" in CI).
+#
+# Override precedence (highest first):
+#   1. -Version parameter                (this script)
+#   2. ENVOYMESH_PI_VERSION env var      (single source of truth across
+#                                        build-desktop.{sh,ps1},
+#                                        fetch-pi-sidecar.{sh,ps1},
+#                                        stage-tauri-pi-bundle.sh)
+#   3. Pinned default (0.82.1)
+if (-not $Version -and $env:ENVOYMESH_PI_VERSION) {
+    $Version = $env:ENVOYMESH_PI_VERSION
+}
+if (-not $Version) {
+    $Version = "0.82.1"
+}
 
 $RepoRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $OutputDir = Join-Path $RepoRoot "apps\tauri\src-tauri\resources\pi"
@@ -60,16 +77,26 @@ New-Item -ItemType Directory -Force -Path $OutputDir | Out-Null
 # Install Pi + all transitive deps into this dir's node_modules. We need
 # a minimal package.json so npm treats this dir as the project root and
 # hoists deps here (not to the repo root).
-$pkgJson = @{
-    name    = "@envoymesh/pi-bundle"
-    version = $Version
-    private = $true
-    type    = "module"
-    dependencies = @{
-        "@earendil-works/pi-coding-agent" = $Version
-    }
-} | ConvertTo-Json -Depth 5
-Set-Content -Path (Join-Path $OutputDir "package.json") -Value $pkgJson -Encoding UTF8
+#
+# IMPORTANT: write UTF-8 *without BOM*. PowerShell 5.1's
+# `Set-Content -Encoding UTF8` emits a BOM that breaks some npm parsers.
+$pkgJson = @"
+{
+  "name": "@envoymesh/pi-bundle",
+  "version": "$Version",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@earendil-works/pi-coding-agent": "$Version"
+  }
+}
+"@
+$utf8NoBom = New-Object System.Text.UTF8Encoding $false
+[System.IO.File]::WriteAllText(
+    (Join-Path $OutputDir "package.json"),
+    $pkgJson.Trim() + "`n",
+    $utf8NoBom
+)
 
 Write-Host "  Installing @earendil-works/pi-coding-agent@$Version + transitive deps..."
 Push-Location $OutputDir
@@ -83,14 +110,20 @@ try {
     Pop-Location
 }
 
-# Verify the CLI entry point landed where we expect it.
-if (-not (Test-Path $PiCli)) {
-    Write-Error "Pi CLI entry point missing at node_modules\@earendil-works\pi-coding-agent\dist\cli.js"
+# Verify the CLI + SDK entry points landed where we expect them.
+$PiSdk = Join-Path $OutputDir "node_modules\@earendil-works\pi-coding-agent\dist\index.js"
+$PiPkg = Join-Path $OutputDir "node_modules\@earendil-works\pi-coding-agent\package.json"
+$missing = @()
+if (-not (Test-Path $PiCli)) { $missing += "dist/cli.js" }
+if (-not (Test-Path $PiSdk)) { $missing += "dist/index.js" }
+if (-not (Test-Path $PiPkg)) { $missing += "package.json" }
+if ($missing.Count -gt 0) {
+    Write-Error "Pi package incomplete after npm install — missing: $($missing -join ', ')"
     exit 1
 }
 
 # Record the staged version so subsequent runs skip re-installing.
-Set-Content -Path $StagedVersionFile -Value $Version -Encoding UTF8 -NoNewline
+[System.IO.File]::WriteAllText($StagedVersionFile, $Version, $utf8NoBom)
 
 # Report what we got.
 $stagedSize = (Get-ChildItem -Path $OutputDir -Recurse -ErrorAction SilentlyContinue |
@@ -102,3 +135,4 @@ $piDeps = if (Test-Path $envoymeshScope) {
 Write-Host ("  ✓ Pi $Version staged at $($OutputDir.Replace($RepoRoot + '\', '')) ({0:N1} MB)" -f $stagedSize)
 Write-Host "    @earendil-works packages: $piDeps"
 Write-Host "    CLI entry: node_modules\@earendil-works\pi-coding-agent\dist\cli.js"
+Write-Host "    SDK entry: node_modules\@earendil-works\pi-coding-agent\dist\index.js"

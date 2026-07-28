@@ -16,6 +16,32 @@
 #   release/envoymesh-desktop-{version}-linux-{arch}.AppImage
 #   release/envoymesh-desktop-{version}-{platform}-{arch}/   (folder with all of the above)
 #
+# Slim / Full / default presets (Phase 49 — Pi optional on Windows):
+#   default     Uses tauri.conf.json           — includes Pi + OpenClaw + Kubo.
+#               Linux DMG/Deb/AppImage are always full builds in this script
+#               (slim is a Windows-specific escape hatch for the NSIS 2 GB cap).
+#
+#   STAGE_PI_BUNDLE=0
+#               Skip Pi staging only (Node/OpenClaw/EnvoyMesh node still stage),
+#               then build with tauri.conf.slim.json. Mirrors
+#               build-desktop.ps1 -SkipPi. Never use this to skip OpenClaw.
+#
+#   STAGE_PI_BUNDLE=1
+#               Force re-fetch of Pi even when a matching version is cached
+#               (passed through to stage-tauri-pi-bundle.sh).
+#
+#   Slim/full entry points for Windows live in apps/tauri/package.json:
+#     npm run build:win        → tauri.conf.slim.json   (mirrors PS -SkipPi)
+#     npm run build:win:full   → tauri.conf.full.json
+#     npm run build            → tauri.conf.json        (default)
+#
+#   This script (mac/linux) defaults to the full preset. Set STAGE_PI_BUNDLE=0
+#   for a slim build, or use the package.json slim scripts directly.
+#
+# Pi pin override (advanced): export ENVOYMESH_PI_VERSION=<version> to
+#   override the pinned 0.82.1 default. fetch-pi-sidecar.sh,
+#   stage-tauri-pi-bundle.sh, and the PowerShell twin all honour it.
+#
 # Prerequisites:
 #   macOS: Xcode Command Line Tools
 #   Linux: libwebkit2gtk-4.1-dev, libgtk-3-dev, etc.
@@ -173,9 +199,37 @@ cd "${PROJECT_DIR}"
 npx tsc -b
 echo ""
 echo "[1/6] continued — Staging sidecars (Node.js, OpenClaw, Pi, EnvoyMesh node)..."
+# Always stage Node + OpenClaw + EnvoyMesh node. Pi is optional:
+#   STAGE_PI_BUNDLE=0  → skip Pi AND use tauri.conf.slim.json (mirrors
+#                        build-desktop.ps1 -SkipPi). Do NOT wrap the other
+#                        sidecars in this gate — that previously left
+#                        installers without OpenClaw/Node when Pi was skipped.
+#   STAGE_PI_BUNDLE=1  → force re-fetch Pi (passed through to stage-tauri-pi-bundle.sh)
+#   unset              → include Pi, reuse staged tree when version matches
+SKIP_PI=0
+if [ "${STAGE_PI_BUNDLE:-1}" = "0" ]; then
+  SKIP_PI=1
+  echo "  ⚠ STAGE_PI_BUNDLE=0 — skipping Pi sidecar staging."
+  echo "    Tauri build will use tauri.conf.slim.json (omits resources/pi/**/*)."
+else
+  # Ensure a previous slim run did not leave us without a Pi tree expectation;
+  # staging is idempotent.
+  :
+fi
+
 bash scripts/fetch-node-sidecar.sh
 bash scripts/stage-tauri-openclaw-bundle.sh
-bash scripts/stage-tauri-pi-bundle.sh
+if [ "${SKIP_PI}" = "0" ]; then
+  bash scripts/stage-tauri-pi-bundle.sh
+else
+  # Avoid packaging a stale Pi tree if someone later builds with the
+  # default config by mistake. Slim config omits the glob; clearing the
+  # dir keeps verify + accidental full-config builds honest.
+  if [ -d "${PROJECT_DIR}/apps/tauri/src-tauri/resources/pi" ]; then
+    echo "  Removing staged resources/pi/ (slim build — will not be bundled)."
+    rm -rf "${PROJECT_DIR}/apps/tauri/src-tauri/resources/pi"
+  fi
+fi
 bash scripts/stage-tauri-node-bundle.sh
 bash scripts/verify-tauri-resources.sh
 echo ""
@@ -226,10 +280,24 @@ run_tauri_build() {
       npm install -w @envoymesh/tauri
     fi
     cd "${PROJECT_DIR}/apps/tauri"
-    if command -v cargo-tauri &> /dev/null; then
-        cargo tauri build "${extra_args[@]}"
+    # Slim config when Pi was skipped — must match PowerShell -SkipPi so the
+    # installer does not reference a missing resources/pi/**/* glob.
+    local config_args=()
+    if [ "${SKIP_PI:-0}" = "1" ]; then
+      local slim_conf="src-tauri/tauri.conf.slim.json"
+      if [ ! -f "${slim_conf}" ]; then
+        echo "error: slim config missing at apps/tauri/${slim_conf} (required for STAGE_PI_BUNDLE=0)" >&2
+        exit 1
+      fi
+      echo "  Using slim config: ${slim_conf} (Pi omitted)"
+      config_args=(--config "${slim_conf}")
     else
-        npx tauri build "${extra_args[@]}"
+      echo "  Using default config: tauri.conf.json (Pi + OpenClaw + Kubo)"
+    fi
+    if command -v cargo-tauri &> /dev/null; then
+        cargo tauri build "${config_args[@]}" "${extra_args[@]}"
+    else
+        npx tauri build "${config_args[@]}" "${extra_args[@]}"
     fi
 }
 

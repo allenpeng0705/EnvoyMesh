@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../ext_agent/ext_agent_presets.dart';
 import '../providers/contact_provider.dart' show nodeServiceProvider;
+import '../services/node_service_client.dart';
 
 /// Banner when the active non-built-in Ext Agent is unreachable.
 class ExtAgentOfflineBanner extends ConsumerStatefulWidget {
@@ -23,14 +24,15 @@ class _ExtAgentOfflineBannerState
   bool _bridgeEnabled = false;
   String _activeId = 'pi';
   Timer? _poll;
-  ProviderSubscription? _clientSub;
+  int _probeEpoch = 0;
+  ProviderSubscription<NodeServiceClient?>? _clientSub;
   void Function()? _bridgeUnsub;
   void Function()? _configUnsub;
 
   @override
   void initState() {
     super.initState();
-    _clientSub = ref.listenManual(
+    _clientSub = ref.listenManual<NodeServiceClient?>(
       nodeServiceProvider,
       (prev, next) {
         _bridgeUnsub?.call();
@@ -48,6 +50,8 @@ class _ExtAgentOfflineBannerState
       },
       fireImmediately: true,
     );
+    // fireImmediately already triggers when client is non-null; still probe
+    // once in case the client was already set before listenManual.
     _refreshBridgeThenProbe();
   }
 
@@ -59,10 +63,8 @@ class _ExtAgentOfflineBannerState
       if (!mounted) return;
       setState(() {
         _bridgeEnabled = bridge['enabled'] == true;
-        _activeId =
-            (bridge['activeExtAgentId'] as String?)?.trim().isNotEmpty == true
-                ? bridge['activeExtAgentId'] as String
-                : 'pi';
+        final raw = (bridge['activeExtAgentId'] as String?)?.trim() ?? '';
+        _activeId = raw.isNotEmpty ? raw : 'pi';
       });
     } catch (_) {
       // keep last-known
@@ -71,42 +73,50 @@ class _ExtAgentOfflineBannerState
   }
 
   Future<void> _probe() async {
+    if (_checking) return;
     final client = ref.read(nodeServiceProvider);
     if (client == null || !_bridgeEnabled) {
-      _poll?.cancel();
-      _poll = null;
+      _stopPoll();
       if (mounted) setState(() => _status = null);
       return;
     }
+    final epoch = ++_probeEpoch;
     setState(() => _checking = true);
     try {
       final next = await client.probeExtAgent(agentId: _activeId);
-      if (!mounted) return;
+      if (!mounted || epoch != _probeEpoch) return;
       setState(() => _status = next);
-      _schedulePoll(next);
+      _syncPoll(next);
     } catch (_) {
-      // keep last-known
+      // keep last-known; leave poll running if already offline
     } finally {
-      if (mounted) setState(() => _checking = false);
+      if (mounted && epoch == _probeEpoch) {
+        setState(() => _checking = false);
+      }
     }
   }
 
-  void _schedulePoll(Map<String, dynamic> status) {
-    _poll?.cancel();
+  void _syncPoll(Map<String, dynamic> status) {
     final builtIn = status['builtIn'] == true;
     final reachable = status['reachable'] == true;
     if (builtIn || reachable) {
-      _poll = null;
+      _stopPoll();
       return;
     }
-    _poll = Timer.periodic(const Duration(milliseconds: _pollMs), (_) {
+    _poll ??= Timer.periodic(const Duration(milliseconds: _pollMs), (_) {
       _probe();
     });
   }
 
+  void _stopPoll() {
+    _poll?.cancel();
+    _poll = null;
+  }
+
   @override
   void dispose() {
-    _poll?.cancel();
+    _probeEpoch++;
+    _stopPoll();
     _bridgeUnsub?.call();
     _configUnsub?.call();
     _clientSub?.close();

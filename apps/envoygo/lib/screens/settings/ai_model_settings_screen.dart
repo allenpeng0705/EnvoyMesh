@@ -76,7 +76,6 @@ class _AiModelSettingsScreenState
       final mode = (mp['mode'] as String?) ?? 'mock';
       final endpoint = (mp['endpoint'] as String?) ?? '';
       final modelName = (mp['modelName'] as String?) ?? '';
-      final apiKey = (mp['apiKey'] as String?) ?? '';
       final presetId = (mp['presetId'] as String?) ?? '';
       final localOnly = _isLocalMode(mode);
       final inferred = localOnly
@@ -95,14 +94,15 @@ class _AiModelSettingsScreenState
           _presetId = 'mock';
           _endpointCtl.text = endpoint;
           _modelNameCtl.text = modelName;
-          _apiKeyCtl.text = apiKey;
+          // Never echo the API key into the field.
+          _apiKeyCtl.clear();
         } else {
           _presetId = inferred!.id;
           _endpointCtl.text = endpoint.isNotEmpty
               ? endpoint
               : (inferred.defaultEndpoint ?? '');
           _modelNameCtl.text = modelName;
-          _apiKeyCtl.text = apiKey;
+          _apiKeyCtl.clear();
         }
         _loaded = true;
       });

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/chat_thread.dart';
+import 'profile_avatar.dart';
 
 /// Thread tile for the unified chat list.
 class ThreadTile extends StatelessWidget {
@@ -14,12 +15,14 @@ class ThreadTile extends StatelessWidget {
     this.trailingAction,
   });
 
+  static const double _avatarRadius = 20;
+
   @override
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
 
     return ListTile(
-      leading: _threadIcon(thread.type),
+      leading: _threadLeading(thread),
       title: Row(
         children: [
           Expanded(
@@ -69,20 +72,45 @@ class ThreadTile extends StatelessWidget {
     );
   }
 
-  Widget _threadIcon(ChatThreadType type) {
-    switch (type) {
-      case ChatThreadType.direct:
-        return const CircleAvatar(child: Icon(Icons.person));
-      case ChatThreadType.group:
-        return const CircleAvatar(child: Icon(Icons.group));
+  Widget _threadLeading(ChatThread thread) {
+    switch (thread.type) {
       case ChatThreadType.envoyai:
-        return const CircleAvatar(child: Icon(Icons.psychology));
+        return ClipOval(
+          child: Image.asset(
+            'assets/logo.png',
+            width: _avatarRadius * 2,
+            height: _avatarRadius * 2,
+            fit: BoxFit.cover,
+            filterQuality: FilterQuality.medium,
+          ),
+        );
+      case ChatThreadType.direct:
+        return ProfileAvatar(
+          ownerId: thread.contactOwnerId,
+          displayName: thread.displayName,
+          radius: _avatarRadius,
+          fallbackIcon: Icons.person,
+        );
+      case ChatThreadType.group:
+        return const CircleAvatar(
+          radius: _avatarRadius,
+          child: Icon(Icons.group),
+        );
       case ChatThreadType.externalAgent:
-        return const CircleAvatar(child: Icon(Icons.smart_toy));
+        return const CircleAvatar(
+          radius: _avatarRadius,
+          child: Icon(Icons.smart_toy),
+        );
       case ChatThreadType.pi:
-        return const CircleAvatar(child: Icon(Icons.code));
+        return const CircleAvatar(
+          radius: _avatarRadius,
+          child: Icon(Icons.code),
+        );
       case ChatThreadType.terminal:
-        return const CircleAvatar(child: Icon(Icons.terminal));
+        return const CircleAvatar(
+          radius: _avatarRadius,
+          child: Icon(Icons.terminal),
+        );
     }
   }
 

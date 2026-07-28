@@ -418,6 +418,20 @@ class NodeServiceClient {
     return true;
   }
 
+  /// Start (or reuse) a Pi interactive TUI terminal for [projectPath] on the
+  /// home node. Same RPC as Social “π Pi” / “Start Pi coding terminal”.
+  Future<Map<String, dynamic>> ensurePiTerminalSession({
+    required String projectPath,
+    String? sessionId,
+    bool forceRestart = false,
+  }) async {
+    return await _client.call('ensurePiTerminalSession', {
+      'projectPath': projectPath,
+      if (sessionId != null) 'sessionId': sessionId,
+      'forceRestart': forceRestart,
+    }) as Map<String, dynamic>;
+  }
+
   // -- Terminals --
 
   Future<List<TerminalSession>> listTerminalSessions() async {

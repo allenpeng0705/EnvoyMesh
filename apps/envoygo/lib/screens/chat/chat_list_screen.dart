@@ -7,11 +7,21 @@ import '../../widgets/ext_agent_switcher.dart';
 import '../../widgets/thread_tile.dart';
 import '../terminals/terminal_detail_screen.dart';
 import 'chat_detail_screen.dart';
-import 'pi_chat_screen.dart';
 
 /// Unified thread list — direct chats, group chats, AI chats, and terminals.
 class ChatListScreen extends ConsumerWidget {
   const ChatListScreen({super.key});
+
+  static String _terminalSessionTitle(String displayName) {
+    var name = displayName;
+    if (name.startsWith('Terminal: ')) {
+      name = name.substring('Terminal: '.length);
+    }
+    if (name.startsWith('π ')) {
+      name = name.substring(2);
+    }
+    return name;
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -58,8 +68,7 @@ class ChatListScreen extends ConsumerWidget {
     final ai = threads
         .where((t) =>
             t.type == ChatThreadType.envoyai ||
-            t.type == ChatThreadType.externalAgent ||
-            t.type == ChatThreadType.pi)
+            t.type == ChatThreadType.externalAgent)
         .toList();
     final contacts = threads
         .where((t) => t.type == ChatThreadType.direct)
@@ -153,28 +162,73 @@ class ChatListScreen extends ConsumerWidget {
             ),
           ],
         ),
-        // FABs for creating group chats and terminals.
+        // Single compose FAB → popup with New Pi / Terminal / Group.
         Positioned(
           right: 16,
           bottom: 16,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              FloatingActionButton.small(
-                heroTag: 'terminal',
-                onPressed: () => _createTerminal(context, ref),
-                child: const Icon(Icons.terminal),
-              ),
-              const SizedBox(height: 12),
-              FloatingActionButton(
-                heroTag: 'group',
-                onPressed: () => _showCreateRoomDialog(context, ref),
-                child: const Icon(Icons.group_add),
-              ),
-            ],
+          child: FloatingActionButton(
+            heroTag: 'compose',
+            tooltip: 'New',
+            onPressed: () => _showNewActions(context, ref),
+            child: const Icon(Icons.add),
           ),
         ),
       ],
+    );
+  }
+
+  void _showNewActions(BuildContext context, WidgetRef ref) {
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (sheetContext) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const SizedBox(
+                  width: 24,
+                  child: Center(
+                    child: Text(
+                      'π',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+                title: const Text('New Pi'),
+                subtitle: const Text('Start a Pi coding terminal'),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _createPi(context, ref);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.terminal),
+                title: const Text('New Terminal'),
+                subtitle: const Text('Open a shell on the home node'),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _createTerminal(context, ref);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.group_add),
+                title: const Text('New Group Chat'),
+                subtitle: const Text('Create a group conversation'),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _showCreateRoomDialog(context, ref);
+                },
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -189,16 +243,10 @@ class ChatListScreen extends ConsumerWidget {
               final sessionId = parts.length > 1 ? parts[1] : '';
               return TerminalDetailScreen(
                 sessionId: sessionId,
-                sessionName:
-                    thread.displayName.replaceFirst('Terminal: ', ''),
+                sessionName: _terminalSessionTitle(thread.displayName),
               );
             },
           ),
-        );
-        return;
-      case ChatThreadType.pi:
-        Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const PiChatScreen()),
         );
         return;
       case ChatThreadType.envoyai:
@@ -212,6 +260,9 @@ class ChatListScreen extends ConsumerWidget {
             ),
           ),
         );
+        return;
+      case ChatThreadType.pi:
+        // Legacy type — Pi lives under Terminals now.
         return;
       default:
         break;
@@ -281,6 +332,140 @@ class ChatListScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  /// Start a Pi coding TUI on the home node (project folder required).
+  void _createPi(BuildContext context, WidgetRef ref) {
+    final pathController = TextEditingController();
+    var starting = false;
+
+    // Prefill last project path from piSettings.allowedPaths when available.
+    () async {
+      final client = ref.read(nodeServiceProvider);
+      if (client == null) return;
+      try {
+        final cfg = await client.getNodeConfig();
+        final settings = (cfg['piSettings'] as Map?)?.cast<String, dynamic>();
+        final paths = settings?['allowedPaths'];
+        if (paths is List && paths.isNotEmpty) {
+          final first = paths.first?.toString().trim() ?? '';
+          if (first.isNotEmpty && pathController.text.isEmpty) {
+            pathController.text = first;
+          }
+        }
+      } catch (_) {}
+    }();
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setLocal) {
+            return AlertDialog(
+              title: const Text('New Pi'),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Choose a project folder on the home computer to open the Pi coding terminal.',
+                    style: TextStyle(fontSize: 13),
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: pathController,
+                    enabled: !starting,
+                    autofocus: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Project folder',
+                      hintText: '/Users/you/project',
+                      border: OutlineInputBorder(),
+                    ),
+                    onSubmitted: starting
+                        ? null
+                        : (_) => _submitNewPi(
+                              context,
+                              ctx,
+                              ref,
+                              pathController,
+                              starting,
+                              (v) => setLocal(() => starting = v),
+                            ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: starting ? null : () => Navigator.of(ctx).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: starting
+                      ? null
+                      : () => _submitNewPi(
+                            context,
+                            ctx,
+                            ref,
+                            pathController,
+                            starting,
+                            (v) => setLocal(() => starting = v),
+                          ),
+                  child: starting
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        )
+                      : const Text('Start Pi'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Future<void> _submitNewPi(
+    BuildContext listContext,
+    BuildContext dialogContext,
+    WidgetRef ref,
+    TextEditingController pathController,
+    bool starting,
+    void Function(bool) setStarting,
+  ) async {
+    if (starting) return;
+    final path = pathController.text.trim();
+    if (path.isEmpty) {
+      ScaffoldMessenger.of(listContext).showSnackBar(
+        const SnackBar(content: Text('Enter a project folder path.')),
+      );
+      return;
+    }
+    setStarting(true);
+    try {
+      final sessionId = await ref
+          .read(chatProvider.notifier)
+          .createPiTerminal(projectPath: path);
+      if (dialogContext.mounted) Navigator.of(dialogContext).pop();
+      if (!listContext.mounted) return;
+      final title = path.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).last;
+      await Navigator.of(listContext).push(
+        MaterialPageRoute(
+          builder: (_) => TerminalDetailScreen(
+            sessionId: sessionId,
+            sessionName: title.isNotEmpty ? 'π Pi · $title' : 'π Pi',
+          ),
+        ),
+      );
+    } catch (e) {
+      setStarting(false);
+      if (!listContext.mounted) return;
+      ScaffoldMessenger.of(listContext).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Bad state: ', ''))),
+      );
+    }
   }
 
   void _showCreateRoomDialog(BuildContext context, WidgetRef ref) {

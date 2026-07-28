@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../ext_agent/ext_agent_presets.dart';
 import '../models/chat_message.dart';
 import '../models/chat_room.dart';
 import '../models/chat_thread.dart';
@@ -88,11 +89,42 @@ class ChatNotifier extends StateNotifier<ChatState> {
   Future<void> loadThreads(String nodeId) async {
     final rows = await _localDb.getThreads(nodeId);
     final selfOwnerId = _ref.read(nodeProvider).ownerId;
-    final threads = rows
-        .map((r) => ChatThread.fromJson(r))
-        .where((t) => !isSelfThreadPeer(t.contactOwnerId, selfOwnerId))
-        .toList();
+    final threads = <ChatThread>[];
+    for (final row in rows) {
+      final t = _stripLegacyAgentStatusSuffix(ChatThread.fromJson(row));
+      if (isSelfThreadPeer(t.contactOwnerId, selfOwnerId)) continue;
+      // Pi is a terminal session now — drop legacy AI-section Pi chat rows.
+      if (t.type == ChatThreadType.pi) {
+        await _localDb.deleteThread(t.id);
+        continue;
+      }
+      threads.add(t);
+    }
     state = state.copyWith(threads: threads);
+  }
+
+  /// Clear legacy " (Bridge Offline)" suffixes from Ext Agent display names.
+  ChatThread _stripLegacyAgentStatusSuffix(ChatThread t) {
+    if (t.type == ChatThreadType.externalAgent) {
+      final cleaned = t.displayName
+          .replaceFirst(RegExp(r'\s*\(Bridge (Online|Offline)\)$'), '')
+          .trim();
+      if (cleaned.isNotEmpty && cleaned != t.displayName) {
+        return ChatThread(
+          id: t.id,
+          nodeId: t.nodeId,
+          type: t.type,
+          displayName: cleaned,
+          contactOwnerId: t.contactOwnerId,
+          chatRoomId: t.chatRoomId,
+          agentType: t.agentType,
+          lastMessageText: t.lastMessageText,
+          lastMessageAt: t.lastMessageAt,
+          unreadCount: t.unreadCount,
+        );
+      }
+    }
+    return t;
   }
 
   /// Sync threads from the home node on initial connect.
@@ -869,31 +901,49 @@ class ChatNotifier extends StateNotifier<ChatState> {
     }
   }
 
+  /// Resolve Ext Agent display name from bridge status (active preset name).
+  /// Matches Social: show the current agent name, never Online/Offline suffixes.
+  static String resolveExtAgentDisplayName(Map<String, dynamic> data) {
+    final activeId = (data['activeExtAgentId'] as String?)?.trim();
+    final extAgents = data['extAgents'];
+    if (activeId != null && activeId.isNotEmpty && extAgents is List) {
+      for (final raw in extAgents) {
+        if (raw is! Map) continue;
+        if (raw['id']?.toString() != activeId) continue;
+        final n = (raw['name'] as String?)?.trim();
+        if (n != null && n.isNotEmpty) return n;
+        break;
+      }
+    }
+    final rawName = (data['agentName'] as String?)?.trim() ?? '';
+    if (rawName.isNotEmpty) return rawName;
+    if (activeId != null && activeId.isNotEmpty) {
+      for (final preset in defaultExtAgents) {
+        if (preset.id == activeId) return preset.name;
+      }
+    }
+    return 'Ext Agent';
+  }
+
   /// Handle a bridge:status push event.
   void onBridgeStatus(Map<String, dynamic> data) {
     final nodeState = _ref.read(nodeProvider);
     if (nodeState.activeNode == null) return;
 
-    final enabled = data['enabled'] as bool? ?? false;
-    // Always create the thread — "Bridge Offline" is shown when disabled.
-
     // Use explicit agentType from BridgeStatus if present.
     // Fall back to name-based heuristic only when the node hasn't yet
     // sent agentType (backward compat with older nodes).
     final explicitType = data['agentType'] as String?;
-    final rawName = data['agentName'] as String? ?? '';
-    final nameIsExternal = rawName.toLowerCase().contains('claw') ||
-        rawName.toLowerCase().contains('open') ||
-        rawName.toLowerCase().contains('external');
+    final displayName = resolveExtAgentDisplayName(data);
+    final nameIsExternal = displayName.toLowerCase().contains('claw') ||
+        displayName.toLowerCase().contains('open') ||
+        displayName.toLowerCase().contains('external') ||
+        displayName.toLowerCase() == 'pi' ||
+        displayName.toLowerCase() == 'hermes' ||
+        (data['activeExtAgentId'] as String?)?.isNotEmpty == true;
     final agentType = explicitType ??
         (nameIsExternal ? 'external' : 'envoyai');
-    final agentName = rawName.isNotEmpty ? rawName : 'EnvoyAI';
     final threadId = '${nodeState.activeNode!.id}:$agentType';
-
-    // Append bridge status to the display name for external agents.
-    final displayName = agentType == 'external'
-        ? '$agentName ${enabled ? '(Bridge Online)' : '(Bridge Offline)'}'
-        : agentName;
 
     _upsertThread(
       threadId: threadId,
@@ -901,32 +951,10 @@ class ChatNotifier extends StateNotifier<ChatState> {
       type: agentType == 'external'
           ? ChatThreadType.externalAgent
           : ChatThreadType.envoyai,
-      displayName: displayName,
+      // Ext Agent row: current agent name only (offline is the chat banner).
+      displayName: agentType == 'external' ? displayName : (displayName.isNotEmpty ? displayName : 'EnvoyAI'),
       agentType: agentType,
     );
-  }
-
-  /// Ensure a Pi chat thread exists in the AI section.
-  void ensurePiThread({String? statusLabel}) {
-    final nodeState = _ref.read(nodeProvider);
-    if (nodeState.activeNode == null) return;
-    final threadId = '${nodeState.activeNode!.id}:pi';
-    final suffix = statusLabel != null && statusLabel.isNotEmpty
-        ? ' ($statusLabel)'
-        : '';
-    _upsertThread(
-      threadId: threadId,
-      nodeId: nodeState.activeNode!.id,
-      type: ChatThreadType.pi,
-      displayName: 'Pi$suffix',
-      agentType: 'pi',
-    );
-  }
-
-  /// Update Pi thread subtitle from `getPiStatus` / status push.
-  void onPiStatus(Map<String, dynamic> data) {
-    final state = data['state']?.toString();
-    ensurePiThread(statusLabel: state);
   }
 
   /// Sync terminal sessions from the home node as threads.
@@ -941,13 +969,16 @@ class ChatNotifier extends StateNotifier<ChatState> {
     for (final session in termState.sessions) {
       final threadId =
           '${nodeState.activeNode!.id}:term:${session.id}';
+      final displayName = session.isPi
+          ? (session.name.startsWith('π') ? session.name : 'π ${session.name}')
+          : 'Terminal: ${session.name}';
       _upsertThread(
         threadId: threadId,
         nodeId: nodeState.activeNode!.id,
         type: ChatThreadType.terminal,
-        displayName: 'Terminal: ${session.name}',
+        displayName: displayName,
         lastMessageText:
-            '${session.runningProcess ?? 'shell'} — ${session.cwd ?? '~'}',
+            '${session.runningProcess ?? (session.isPi ? 'pi' : 'shell')} — ${session.cwd ?? '~'}',
       );
     }
   }
@@ -973,6 +1004,64 @@ class ChatNotifier extends StateNotifier<ChatState> {
       displayName: 'Terminal: $name',
       lastMessageAt: DateTime.now(),
     );
+  }
+
+  /// Start a Pi coding TUI on the home node (same as Social “π Pi”).
+  ///
+  /// Returns `sessionId` on success, or throws with the home-node reason.
+  Future<String> createPiTerminal({required String projectPath}) async {
+    final nodeService = _ref.read(nodeServiceProvider);
+    final nodeState = _ref.read(nodeProvider);
+    if (nodeService == null || nodeState.activeNode == null) {
+      throw StateError('Not connected to home node');
+    }
+
+    final path = projectPath.trim();
+    if (path.isEmpty) {
+      throw ArgumentError('Choose a project folder to open Pi.');
+    }
+
+    final result = await nodeService.ensurePiTerminalSession(
+      projectPath: path,
+    );
+    if (result['ok'] != true) {
+      throw StateError(
+        (result['reason'] as String?)?.trim().isNotEmpty == true
+            ? result['reason'] as String
+            : 'Failed to start Pi',
+      );
+    }
+
+    final session = result['session'];
+    Map<String, dynamic>? sessionMap;
+    if (session is Map<String, dynamic>) {
+      sessionMap = session;
+    } else if (session is Map) {
+      sessionMap = session.cast<String, dynamic>();
+    }
+    final sessionId = sessionMap?['sessionId'] as String?;
+    if (sessionId == null || sessionId.isEmpty) {
+      throw StateError('Pi started but session id was missing');
+    }
+
+    final title = (sessionMap?['title'] as String?)?.trim();
+    final displayName = (title != null && title.isNotEmpty)
+        ? (title.startsWith('π') ? title : 'π $title')
+        : 'π Pi';
+
+    final threadId = '${nodeState.activeNode!.id}:term:$sessionId';
+    _upsertThread(
+      threadId: threadId,
+      nodeId: nodeState.activeNode!.id,
+      type: ChatThreadType.terminal,
+      displayName: displayName,
+      lastMessageText: path,
+      lastMessageAt: DateTime.now(),
+    );
+
+    // Refresh full terminal list so role/cwd stay in sync.
+    await syncTerminals();
+    return sessionId;
   }
 
   /// Delete a single message from a thread.
@@ -1099,18 +1188,20 @@ class ChatNotifier extends StateNotifier<ChatState> {
   /// on direct threads (where the name should be static).
   String _resolveThreadName(ChatThreadType type, String newName, String? existingName) {
     if (newName.isEmpty) return existingName ?? '';
-    // For all threads except unknown, keep the existing name once set.
-    // This prevents incoming messages from renaming threads.
-    // Direct/group threads already preserved raw owner IDs here.
-    // Agent threads (envoyai, externalAgent) also preserve — their name
-    // is set at creation time and must not change with each message.
+    // Direct/group: keep a human display name once resolved (avoid raw owner IDs
+    // bouncing back in). Ext Agent titles update when bridge status changes
+    // (e.g. HomeClaw → Hermes) or to clear legacy " (Bridge Offline)".
     if (existingName != null && existingName.isNotEmpty) {
       if (type == ChatThreadType.direct || type == ChatThreadType.group) {
         if (!existingName.startsWith('envoy:owner:') && existingName != 'Group') {
           return existingName;
         }
+      } else if (type == ChatThreadType.envoyai) {
+        // Built-in assistant name is stable.
+        return existingName;
+      } else if (type == ChatThreadType.externalAgent) {
+        return newName;
       } else {
-        // envoyai and externalAgent: name is set at creation, never changes
         return existingName;
       }
     }
@@ -1149,8 +1240,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       // overwritten by a misclassified incoming message.
       type: existing != null &&
              (existing.type == ChatThreadType.envoyai ||
-              existing.type == ChatThreadType.externalAgent ||
-              existing.type == ChatThreadType.pi)
+              existing.type == ChatThreadType.externalAgent)
           ? existing.type
           : type,
       displayName: _resolveThreadName(

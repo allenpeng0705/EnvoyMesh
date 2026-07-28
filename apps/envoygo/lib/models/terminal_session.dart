@@ -15,13 +15,19 @@ class TerminalSession {
   /// Session creation timestamp.
   final DateTime? createdAt;
 
+  /// `interactive` (default), `exec`, or `pi` (Pi coding TUI).
+  final String? role;
+
   const TerminalSession({
     required this.id,
     required this.name,
     this.cwd,
     this.runningProcess,
     this.createdAt,
+    this.role,
   });
+
+  bool get isPi => role == 'pi';
 
   factory TerminalSession.fromJson(Map<String, dynamic> json) {
     // Home node returns 'sessionId' and 'title'; we also accept 'id' and
@@ -36,6 +42,7 @@ class TerminalSession {
           ? DateTime.parse(
               (json['createdAt'] ?? json['created_at']) as String)
           : null,
+      role: json['role'] as String?,
     );
   }
 
@@ -45,5 +52,6 @@ class TerminalSession {
         if (cwd != null) 'cwd': cwd,
         if (runningProcess != null) 'running_process': runningProcess,
         if (createdAt != null) 'created_at': createdAt!.toIso8601String(),
+        if (role != null) 'role': role,
       };
 }

@@ -33,7 +33,21 @@ set -euo pipefail
 
 # Pin by default — supply-chain hygiene, see design doc §4. Pass a
 # different version as $1 to test a newer Pi (never use "latest" in CI).
-PI_VERSION="${1:-0.82.1}"
+#
+# Override precedence (highest first):
+#   1. $1 positional argument           (this script)
+#   2. ENVOYMESH_PI_VERSION env var    (single source of truth across
+#                                      build-desktop.{sh,ps1},
+#                                      fetch-pi-sidecar.{sh,ps1},
+#                                      stage-tauri-pi-bundle.sh)
+#   3. Pinned default (0.82.1)
+if [ -n "${1:-}" ]; then
+  PI_VERSION="$1"
+elif [ -n "${ENVOYMESH_PI_VERSION:-}" ]; then
+  PI_VERSION="${ENVOYMESH_PI_VERSION}"
+else
+  PI_VERSION="0.82.1"
+fi
 PI_PACKAGE="@earendil-works/pi-coding-agent@${PI_VERSION}"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -77,11 +91,17 @@ echo "  Installing ${PI_PACKAGE} + transitive deps..."
 # --loglevel=error  → only surface failures
 ( cd "${OUTPUT_DIR}" && npm install --omit=dev --no-audit --no-fund --loglevel=error )
 
-# Verify the CLI entry point landed where we expect it.
+# Verify the CLI + SDK entry points landed where we expect them.
 PI_CLI="${OUTPUT_DIR}/node_modules/@earendil-works/pi-coding-agent/dist/cli.js"
-if [ ! -f "${PI_CLI}" ]; then
-  echo "  ✗ Pi CLI entry point missing at node_modules/@earendil-works/pi-coding-agent/dist/cli.js" >&2
-  echo "    Expected after npm install of ${PI_PACKAGE}." >&2
+PI_SDK="${OUTPUT_DIR}/node_modules/@earendil-works/pi-coding-agent/dist/index.js"
+PI_PKG="${OUTPUT_DIR}/node_modules/@earendil-works/pi-coding-agent/package.json"
+missing=()
+[ -f "${PI_CLI}" ] || missing+=("dist/cli.js")
+[ -f "${PI_SDK}" ] || missing+=("dist/index.js")
+[ -f "${PI_PKG}" ] || missing+=("package.json")
+if [ "${#missing[@]}" -gt 0 ]; then
+  echo "  ✗ Pi package incomplete after npm install — missing: ${missing[*]}" >&2
+  echo "    Expected under node_modules/@earendil-works/pi-coding-agent/." >&2
   exit 1
 fi
 
@@ -94,3 +114,4 @@ PI_DEPS=$(ls "${OUTPUT_DIR}/node_modules/@earendil-works/" 2>/dev/null | tr '\n'
 echo "  ✓ Pi ${PI_VERSION} staged at ${OUTPUT_DIR/$ROOT\//} (${CLI_SIZE})"
 echo "    @earendil-works packages: ${PI_DEPS}"
 echo "    CLI entry: node_modules/@earendil-works/pi-coding-agent/dist/cli.js"
+echo "    SDK entry: node_modules/@earendil-works/pi-coding-agent/dist/index.js"

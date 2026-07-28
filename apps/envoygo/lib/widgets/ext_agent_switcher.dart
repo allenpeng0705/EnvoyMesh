@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../ext_agent/ext_agent_presets.dart';
+import '../providers/chat_provider.dart';
 import '../providers/contact_provider.dart' show nodeServiceProvider;
+import '../services/node_service_client.dart';
 
 /// Icon-button switcher for the active Ext Agent (Pi / HomeClaw / …).
 ///
@@ -22,14 +24,14 @@ class _ExtAgentSwitcherState extends ConsumerState<ExtAgentSwitcher> {
   String _activeId = 'pi';
   bool _bridgeEnabled = false;
   List<Map<String, dynamic>> _agents = mergeExtAgentPresets(null);
-  ProviderSubscription? _clientSub;
+  ProviderSubscription<NodeServiceClient?>? _clientSub;
   void Function()? _bridgeUnsub;
   void Function()? _configUnsub;
 
   @override
   void initState() {
     super.initState();
-    _clientSub = ref.listenManual(
+    _clientSub = ref.listenManual<NodeServiceClient?>(
       nodeServiceProvider,
       (prev, next) {
         _bridgeUnsub?.call();
@@ -37,8 +39,12 @@ class _ExtAgentSwitcherState extends ConsumerState<ExtAgentSwitcher> {
         _bridgeUnsub = null;
         _configUnsub = null;
         if (next != null) {
-          _bridgeUnsub = next.on('bridge:status', (_) => _reload());
-          _configUnsub = next.on('home:config-updated', (_) => _reload());
+          _bridgeUnsub = next.on('bridge:status', (_) {
+            if (mounted) _reload();
+          });
+          _configUnsub = next.on('home:config-updated', (_) {
+            if (mounted) _reload();
+          });
         }
       },
       fireImmediately: true,
@@ -53,10 +59,8 @@ class _ExtAgentSwitcherState extends ConsumerState<ExtAgentSwitcher> {
       final bridge = await client.getBridgeStatus();
       if (!mounted) return;
       final agents = mergeExtAgentPresets(bridge['extAgents'] as List?);
-      final active =
-          (bridge['activeExtAgentId'] as String?)?.trim().isNotEmpty == true
-              ? bridge['activeExtAgentId'] as String
-              : 'pi';
+      final raw = (bridge['activeExtAgentId'] as String?)?.trim() ?? '';
+      final active = raw.isNotEmpty ? raw : 'pi';
       setState(() {
         _bridgeEnabled = bridge['enabled'] == true;
         _agents = agents;
@@ -125,26 +129,29 @@ class _ExtAgentSwitcherState extends ConsumerState<ExtAgentSwitcher> {
   Future<void> _select(String nextId) async {
     final client = ref.read(nodeServiceProvider);
     if (client == null || _busy) return;
+    final trimmed = nextId.trim();
+    if (trimmed.isEmpty || trimmed == _displayId) return;
     setState(() {
       _busy = true;
-      _pendingId = nextId;
+      _pendingId = trimmed;
     });
     try {
-      await client.setActiveExtAgentId(nextId);
+      await client.setActiveExtAgentId(trimmed);
       try {
         final bridge = await client.getBridgeStatus();
-        if (bridge['activeExtAgentId'] == nextId && mounted) {
+        ref.read(chatProvider.notifier).onBridgeStatus(bridge);
+        if (bridge['activeExtAgentId'] == trimmed && mounted) {
           setState(() => _pendingId = null);
         }
       } catch (_) {}
       try {
-        final reach = await client.probeExtAgent(agentId: nextId);
+        final reach = await client.probeExtAgent(agentId: trimmed);
         if (!mounted) return;
         if (reach['builtIn'] != true && reach['reachable'] != true) {
           final name =
               (reach['agentName'] as String?)?.trim().isNotEmpty == true
                   ? reach['agentName'] as String
-                  : nextId;
+                  : trimmed;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
               content: Text('$name is not running — start it before chatting.'),

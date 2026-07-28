@@ -111,8 +111,7 @@ class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
         ref.read(chatProvider.notifier).selectTab(1);
         break;
       case 'pi_proposal':
-        // Pi tool-action request → switch to the Chats tab where the Pi
-        // thread lives. The confirm dialog appears when the user opens Pi.
+        // Pi tool-action request → Chats tab (Pi TUI is under Terminals).
         ref.read(chatProvider.notifier).selectTab(0);
         break;
       default:

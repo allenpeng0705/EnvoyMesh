@@ -33,16 +33,37 @@ npm run tauri:dev          # Development (native window)
 
 **How to build (production installer):**
 ```bash
+# Full (Pi + OpenClaw) — mac/linux
+./scripts/build-desktop.sh macos
+
+# Slim (no Pi)
+STAGE_PI_BUNDLE=0 ./scripts/build-desktop.sh macos
+```
+
+Or step-by-step without the orchestrator:
+```bash
 npm run social:build
 npm run node:build
 npm run build -w @envoymesh/tauri
-# or: ./scripts/build-desktop.sh macos
+```
+
+Windows (PowerShell twin):
+```powershell
+# Full (Pi + OpenClaw)
+.\scripts\build-desktop.ps1
+
+# Slim (no Pi) — also switches to tauri.conf.slim.json
+.\scripts\build-desktop.ps1 -SkipPi
 ```
 
 The build pipeline runs, in order:
 1. `scripts/fetch-node-sidecar.sh` — bundled Node.js binary
 2. `scripts/stage-tauri-openclaw-bundle.sh` — OpenClaw gateway + envoymesh extension
-3. `scripts/stage-tauri-node-bundle.sh` — compiled node + deps + **bundled skills**
+3. `scripts/stage-tauri-pi-bundle.sh` — Pi coding agent (skipped when `STAGE_PI_BUNDLE=0` / `-SkipPi`)
+4. `scripts/stage-tauri-node-bundle.sh` — compiled node + deps + **bundled skills**
+5. `scripts/verify-tauri-resources.sh` — preflight check before `tauri build`
+
+Slim builds omit Pi and use `tauri.conf.slim.json` (same effect as `-SkipPi` on Windows). Override the Pi pin with `ENVOYMESH_PI_VERSION` if needed.
 
 CI release: tag `tauri-v*` or `desktop-v*` (see `.github/workflows/tauri-release.yml`).
 
@@ -386,18 +407,20 @@ npm run build -w @envoymesh/tauri   # Desktop installer (stages OpenClaw + skill
 |--------|--------|
 | `scripts/fetch-node-sidecar.sh` | `apps/tauri/src-tauri/resources/node-runtime/` |
 | `scripts/stage-tauri-openclaw-bundle.sh` | `apps/tauri/src-tauri/resources/openclaw/` |
+| `scripts/stage-tauri-pi-bundle.sh` / `fetch-pi-sidecar.sh` | `apps/tauri/src-tauri/resources/pi/` (full builds) |
 | `scripts/stage-tauri-node-bundle.sh` | `apps/tauri/src-tauri/resources/node/` (+ `skills/`) |
 | `scripts/fetch-kubo-sidecar.sh` | `resources/kubo/` (full build only) |
 | `scripts/install-bundled-skill.sh` | `apps/node/skills/<slug>/` |
-| `scripts/build-desktop.sh` | Runs sidecar + staging + `tauri build` |
+| `scripts/build-desktop.sh` | Runs sidecar + staging + `tauri build` (mac/linux) |
+| `scripts/build-desktop.ps1` | Windows twin (`-SkipPi` for slim) |
 
 **Tauri config variants:**
 
-| Config | Kubo IPFS | OpenClaw | Skills |
-|--------|-----------|----------|--------|
-| `tauri.conf.json` | optional | ✓ | ✓ |
-| `tauri.conf.full.json` | ✓ | ✓ | ✓ |
-| `tauri.conf.slim.json` | ✗ (Helia only) | ✓ | ✓ |
+| Config | Kubo IPFS | OpenClaw | Pi | Skills |
+|--------|-----------|----------|----|--------|
+| `tauri.conf.json` | optional | ✓ | ✓ | ✓ |
+| `tauri.conf.full.json` | ✓ | ✓ | ✓ | ✓ |
+| `tauri.conf.slim.json` | ✗ (Helia only) | ✓ | ✗ | ✓ |
 
 ---
 

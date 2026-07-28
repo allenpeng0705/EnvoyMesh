@@ -655,9 +655,8 @@ class NodeNotifier extends StateNotifier<NodeState> {
       'agentType': 'envoyai',
     });
 
-    // Ext Agent (HomeClaw / others) — always create the thread, then
-    // update its status from the bridge. Shows "Bridge Online" or
-    // "Bridge Offline" matching the Social app behaviour.
+    // Ext Agent (HomeClaw / Pi / Hermes / …) — create the thread, then
+    // refresh name from bridge status (current agent name, no Online/Offline).
     chatNotifier.onBridgeStatus({
       'enabled': false,
       'agentName': 'Ext Agent',
@@ -669,13 +668,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
       _log('getBridgeStatus failed: $e');
     });
 
-    // Pi — built-in local coding agent (separate chat surface).
-    chatNotifier.ensurePiThread();
-    nodeService.getPiStatus().then((status) {
-      chatNotifier.onPiStatus(status);
-    }).catchError((e) {
-      _log('getPiStatus failed: $e');
-    });
+    // Pi coding TUI lives under Terminals (New Pi), not as an AI chat row.
   }
 
   Future<void> _syncBondsDirect(
