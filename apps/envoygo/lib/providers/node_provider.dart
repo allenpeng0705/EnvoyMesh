@@ -23,6 +23,7 @@ import '../services/reconnect_supervisor.dart';
 import '../services/connectivity_observer.dart';
 import '../services/voip_push_service.dart';
 import '../services/push_notification_service.dart';
+import '../services/push_preferences.dart';
 import '../services/libp2p_node.dart';
 import '../services/upnp.dart';
 import '../storage/local_database.dart';
@@ -1128,7 +1129,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
 
       // Phase 31I — register alert push token with home (APNs / FCM).
       // Best-effort; skipped when OS push is unconfigured on device.
-      unawaited(_registerAlertPushToken());
+      unawaited(registerPushToken());
     } catch (e) {
       // Only delete the session token when the home node explicitly
       // rejected the auth — a typed `UnauthorizedException` from the
@@ -1287,9 +1288,14 @@ class NodeNotifier extends StateNotifier<NodeState> {
   }
 
   /// Phase 31I — obtain APNs/FCM alert token and register with home.
-  Future<void> _registerAlertPushToken() async {
+  /// Phase 50 — gated on the in-app push toggle (PushPreferences).
+  /// Public so the Me screen can call it when the user re-enables push.
+  Future<void> registerPushToken() async {
     final client = _client;
     if (client == null) return;
+    // If the user disabled push in the app settings, skip registration
+    // entirely. The home node has no token → no push.
+    if (!await PushPreferences.isEnabled()) return;
     final push = PushNotificationService();
     await push.initialize();
     await push.registerWithHomeNode(

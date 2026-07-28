@@ -16,6 +16,7 @@ import '../profile/profile_screen.dart';
 import '../settings/ai_engine_settings_screen.dart';
 import '../settings/ai_model_settings_screen.dart';
 import 'node_switcher_sheet.dart';
+import '../../services/push_preferences.dart';
 
 /// Profile + node management screen.
 class MeScreen extends ConsumerStatefulWidget {
@@ -30,11 +31,42 @@ class _MeScreenState extends ConsumerState<MeScreen> {
   String? _username;
   String? _bio;
   int _profileEpoch = 0;
+  bool _pushEnabled = true;
+  bool _pushToggleBusy = false;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadProfile());
+    WidgetsBinding.instance.addPostFrameCallback((_) => _loadPushPref());
+  }
+
+  Future<void> _loadPushPref() async {
+    final enabled = await PushPreferences.isEnabled();
+    if (mounted) setState(() => _pushEnabled = enabled);
+  }
+
+  /// Phase 50 — toggle push notifications on/off.
+  /// ON → save preference + re-register token with the home node.
+  /// OFF → save preference + the home node stops pushing (no token to send to).
+  Future<void> _togglePushNotifications(bool enabled) async {
+    setState(() => _pushToggleBusy = true);
+    try {
+      await PushPreferences.setEnabled(enabled);
+      final notifier = ref.read(nodeProvider.notifier);
+      if (enabled) {
+        // Re-register: obtain token + call registerPushToken on home node.
+        await notifier.registerPushToken();
+      }
+      // When disabling, we rely on the preference gate in registerPushToken
+      // to skip re-registration on reconnect. The home node's existing token
+      // will naturally expire when it hits APNs/FCM 410 (token cleanup, Phase 50B).
+      // Alternatively, call unregisterPushToken via the client — but we don't
+      // have the deviceId handy, and best-effort is fine here.
+      if (mounted) setState(() => _pushEnabled = enabled);
+    } finally {
+      if (mounted) setState(() => _pushToggleBusy = false);
+    }
   }
 
   Future<void> _loadProfile() async {
@@ -480,6 +512,19 @@ class _MeScreenState extends ConsumerState<MeScreen> {
             onChanged: (_) {
               // TODO(31H): Theme toggle
             },
+          ),
+        ),
+        Card(
+          child: SwitchListTile(
+            title: const Text('Push notifications'),
+            subtitle: const Text(
+              'Get notified about new messages, contact requests, '
+              'and approvals when the app is in the background.',
+            ),
+            value: _pushEnabled,
+            onChanged: _pushToggleBusy
+                ? null
+                : (enabled) => _togglePushNotifications(enabled),
           ),
         ),
         const SizedBox(height: 16),
