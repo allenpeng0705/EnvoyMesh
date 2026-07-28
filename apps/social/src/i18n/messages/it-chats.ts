@@ -299,6 +299,8 @@ export const itMessageBubbleMessages = {
   copyMessage: "Copia messaggio",
   copied: "Copiato",
   deleteMessage: "Elimina messaggio",
+  retrySend: "Riprova invio",
+  retryNeedsText: "Impossibile riprovare — il messaggio non ha testo",
 } as const;
 
 export const itInboxMessages = {

@@ -1,0 +1,41 @@
+/**
+ * In-process Ext Agent sidecars for third-party agents (Hermes, OpenHuman).
+ *
+ * HomeClaw ships its own `:8010/message` channel. Hermes / OpenHuman do not —
+ * EnvoyMesh runs a local HTTP adapter that speaks the bridge contract and
+ * forwards to each product's public API (no forks of those codebases).
+ */
+export type ExtAgentSidecarKind = "hermes" | "openhuman";
+
+export const EXT_AGENT_SIDECAR_KINDS: readonly ExtAgentSidecarKind[] = [
+  "hermes",
+  "openhuman",
+];
+
+export function isExtAgentSidecarKind(id: string | undefined): id is ExtAgentSidecarKind {
+  return id === "hermes" || id === "openhuman";
+}
+
+export interface ExtAgentInboundMessage {
+  from: string;
+  fromOwnerId: string;
+  fromName?: string;
+  text: string;
+  messageId?: string;
+}
+
+export interface ExtAgentBackend {
+  readonly kind: ExtAgentSidecarKind;
+  /** Human-readable label for logs /status. */
+  readonly label: string;
+  ask(text: string, sessionKey: string): Promise<string>;
+  /** Optional readiness probe (non-fatal if it fails — ask will surface errors). */
+  probe?(): Promise<boolean>;
+}
+
+export interface ExtAgentSidecarListenConfig {
+  host: string;
+  port: number;
+  bridgeSendUrl: string;
+  bridgeSecret?: string;
+}

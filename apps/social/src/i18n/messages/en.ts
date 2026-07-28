@@ -169,7 +169,7 @@ export const en = {
     notConnected: "Not connected to the node backend.",
     unableConnect: "Unable to connect. Is the node running?",
     tauriHint: "The home node starts automatically. Use Restart node if this persists.",
-    devHint: "Desktop dev: run npm run node:dev in another terminal (WebSocket port 3030).",
+    devHint: "Desktop dev: run npm run node:dev (WebSocket :3030). Social auto-detects :3030/:4030 if the saved URL is stale.",
     retryConnection: "Retry connection",
     notDesktopApp: "Not running in desktop app.",
     syncingTitle: "Syncing node",

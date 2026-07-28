@@ -299,6 +299,8 @@ export const deMessageBubbleMessages = {
   copyMessage: "Nachricht kopieren",
   copied: "Kopiert",
   deleteMessage: "Nachricht löschen",
+  retrySend: "Erneut senden",
+  retryNeedsText: "Kein erneutes Senden möglich — keine Textnachricht",
 } as const;
 
 export const deInboxMessages = {

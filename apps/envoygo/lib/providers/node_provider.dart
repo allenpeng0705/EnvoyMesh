@@ -693,24 +693,10 @@ class NodeNotifier extends StateNotifier<NodeState> {
 
   void _syncRoomsDirect(
       NodeServiceClient nodeService, ChatNotifier chatNotifier) {
-    nodeService.listChatRooms().then((rooms) {
-      final nodeState = state;
-      if (nodeState.activeNode == null) return;
-      final localDb = LocalDatabase();
-      localDb.upsertRooms(
-        nodeState.activeNode!.id,
-        rooms.map((r) => r.toJson()).toList(),
-      );
-      for (final room in rooms) {
-        chatNotifier.onRoomMessage({
-          'roomId': room.id,
-          'roomName': room.name,
-          'senderOwnerId': '',
-          'text': room.lastMessageText ?? '',
-          'createdAt': room.lastMessageAt?.toIso8601String(),
-        });
-      }
-    }).catchError((e) {
+    // Use ChatNotifier.syncRooms() — creates group threads for every room
+    // (including quiet ones). Do NOT funnel through onRoomMessage (that
+    // path drops empty text and was hiding rooms after listChatRooms).
+    chatNotifier.syncRooms(client: nodeService).catchError((Object e) {
       _log('_syncRoomsDirect failed: $e');
     });
   }
@@ -946,6 +932,19 @@ class NodeNotifier extends StateNotifier<NodeState> {
     client.on('chat:room-message', (data) {
       if (data is Map<String, dynamic>) {
         chatNotifier.onRoomMessage(data);
+      }
+    });
+    client.on('chat:room-updated', (data) {
+      if (data is Map<String, dynamic>) {
+        chatNotifier.onRoomUpdated(data);
+      }
+    });
+    client.on('chat:room-removed', (data) {
+      if (data is Map<String, dynamic>) {
+        final roomId = data['roomId'] as String?;
+        if (roomId != null && roomId.isNotEmpty) {
+          chatNotifier.onRoomRemoved(roomId);
+        }
       }
     });
     client.on('bond:established', (_) {

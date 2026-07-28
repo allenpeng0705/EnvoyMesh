@@ -235,18 +235,36 @@ class NodeServiceClient {
         as Map<String, dynamic>;
   }
 
-  Future<List<ChatMessage>> listChatHistory(String targetOwnerId,
-      {String? before, int? limit}) async {
+  Future<List<ChatMessage>> listChatHistory(
+    String peerOwnerId, {
+    String? before,
+    int? limit,
+    String? threadId,
+    String? selfOwnerId,
+  }) async {
     final params = <String, dynamic>{
-      'targetOwnerId': targetOwnerId,
+      // Router historically used peerOwnerId; thin-client docs use targetOwnerId.
+      'peerOwnerId': peerOwnerId,
+      'targetOwnerId': peerOwnerId,
       if (before != null) 'before': before,
       if (limit != null) 'limit': limit,
     };
     final result = await _client.call('listChatHistory', params);
     final list = result as List<dynamic>;
-    return list
-        .map((e) => ChatMessage.fromJson(e as Map<String, dynamic>))
-        .toList();
+    final tid = threadId ?? peerOwnerId;
+    return list.map((e) {
+      final map = e as Map<String, dynamic>;
+      // Local-DB shaped rows use snake_case id/thread_id; RPC uses nested ChatMessage.
+      if (map.containsKey('thread_id') ||
+          (map.containsKey('id') && map['sender'] == null)) {
+        try {
+          return ChatMessage.fromJson(map);
+        } catch (_) {
+          /* fall through to RPC parse */
+        }
+      }
+      return ChatMessage.fromRpcJson(map, threadId: tid, selfOwnerId: selfOwnerId);
+    }).toList();
   }
 
   Future<void> markRead(String targetOwnerId) async {
@@ -271,16 +289,21 @@ class NodeServiceClient {
     }) as Map<String, dynamic>;
   }
 
-  Future<Map<String, dynamic>> createChatRoom(String name) async {
-    return await _client.call('createChatRoom', {'title': name})
-        as Map<String, dynamic>;
+  Future<Map<String, dynamic>> createChatRoom(
+    String name, {
+    List<String> memberOwnerIds = const [],
+  }) async {
+    return await _client.call('createChatRoom', {
+      'title': name,
+      'memberOwnerIds': memberOwnerIds,
+    }) as Map<String, dynamic>;
   }
 
   Future<Map<String, dynamic>> inviteToChatRoom(
       String roomId, String ownerId) async {
     return await _client.call('inviteToChatRoom', {
       'roomId': roomId,
-      'ownerId': ownerId,
+      'memberOwnerIds': [ownerId],
     }) as Map<String, dynamic>;
   }
 
@@ -291,7 +314,7 @@ class NodeServiceClient {
   Future<void> renameChatRoom(String roomId, String name) async {
     await _client.call('renameChatRoom', {
       'roomId': roomId,
-      'name': name,
+      'title': name,
     });
   }
 

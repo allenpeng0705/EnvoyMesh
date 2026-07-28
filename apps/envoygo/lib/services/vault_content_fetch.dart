@@ -133,6 +133,9 @@ Future<VaultContentResult> fetchVaultContent(
 ///
 /// Pass [maxAge] as [Duration.zero] (or null with a fresh put after mutation)
 /// after profile/gallery writes so the UI does not keep a stale thumb.
+///
+/// [cache] defaults to the process singleton; tests may pass an isolated
+/// [LibraryReadCache] rooted at a temp directory.
 Future<VaultContentResult> getOrFetchVaultContent(
   VaultReadChunkFn read, {
   required String homePeerId,
@@ -140,10 +143,12 @@ Future<VaultContentResult> getOrFetchVaultContent(
   Duration? maxAge = vaultCacheFreshTtl,
   int chunkBytes = vaultReadChunkBytes,
   bool bypassCache = false,
+  LibraryReadCache? cache,
 }) async {
+  final store = cache ?? LibraryReadCache.instance;
   final key = vaultCacheKey(homePeerId, relativePath);
   if (!bypassCache) {
-    final cached = await LibraryReadCache.instance.peekBlobEntry(key);
+    final cached = await store.peekBlobEntry(key);
     if (cached != null) {
       final age = DateTime.now().toUtc().difference(cached.cachedAt.toUtc());
       final fresh = maxAge == null || age < maxAge;
@@ -166,7 +171,7 @@ Future<VaultContentResult> getOrFetchVaultContent(
       }
     }
   } else {
-    await LibraryReadCache.instance.invalidateBlob(key);
+    await store.invalidateBlob(key);
   }
 
   final fetched = await fetchVaultContent(
@@ -175,7 +180,7 @@ Future<VaultContentResult> getOrFetchVaultContent(
     chunkBytes: chunkBytes,
   );
   if (fetched.bytes.isNotEmpty) {
-    await LibraryReadCache.instance.putBlob(
+    await store.putBlob(
       key,
       fetched.bytes,
       contentType: fetched.mimeType,

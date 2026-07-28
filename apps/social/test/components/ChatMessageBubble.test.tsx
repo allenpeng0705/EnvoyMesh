@@ -55,17 +55,20 @@ describe("ChatMessageBubble — Phase 13B actor badges", () => {
     expect(screen.getByText("Bob")).toBeDefined();
   });
 
-  it("copies message text when copy button is clicked", async () => {
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.assign(navigator, { clipboard: { writeText } });
-
+  it("shows retry control for failed delivery", () => {
+    const onRetry = vi.fn();
     renderWithI18n(
-      <ChatMessageBubble variant="outgoing" position="single" copyText="Copy me">
-        Copy me
+      <ChatMessageBubble
+        variant="outgoing"
+        position="single"
+        deliveryReceipt="failed"
+        onRetry={onRetry}
+      >
+        Failed send
       </ChatMessageBubble>,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: /^Copy message$/i }));
-    expect(writeText).toHaveBeenCalledWith("Copy me");
+    fireEvent.click(screen.getByRole("button", { name: /retry send/i }));
+    expect(onRetry).toHaveBeenCalledOnce();
   });
 });

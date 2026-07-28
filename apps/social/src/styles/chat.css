@@ -1493,8 +1493,15 @@
   pointer-events: auto;
 }
 
+.message-bubble.is-failed .message-bubble-actions {
+  max-width: 6rem;
+  opacity: 1;
+  pointer-events: auto;
+}
+
 .message-copy-btn,
-.message-delete-btn {
+.message-delete-btn,
+.message-retry-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1511,8 +1518,13 @@
 
 .message-copy-btn:hover,
 .message-copy-btn.is-copied,
-.message-delete-btn:hover {
+.message-delete-btn:hover,
+.message-retry-btn:hover {
   background: color-mix(in srgb, currentColor 18%, transparent);
+}
+
+.message-retry-btn:hover {
+  color: var(--color-primary, #2563eb);
 }
 
 .message-delete-btn:hover {
@@ -1697,7 +1709,10 @@
 .message-bubble.ai-outgoing .message-copy-btn,
 .message-bubble.outgoing .message-delete-btn,
 .message-bubble.outgoing-agent .message-delete-btn,
-.message-bubble.ai-outgoing .message-delete-btn {
+.message-bubble.ai-outgoing .message-delete-btn,
+.message-bubble.outgoing .message-retry-btn,
+.message-bubble.outgoing-agent .message-retry-btn,
+.message-bubble.ai-outgoing .message-retry-btn {
   color: var(--color-on-primary-text);
 }
 

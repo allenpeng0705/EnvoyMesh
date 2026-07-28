@@ -4,6 +4,7 @@ EnvoyMesh **Phase 9K** lets a home node pipe P2P `chat.message` traffic to an ex
 
 **Related docs:**
 
+- [Ext_Agent_guide.md](./Ext_Agent_guide.md) — configure & run HomeClaw / Hermes / OpenHuman Ext Agents
 - [profile-photos.md](./profile-photos.md) — thumbnails, gallery, `profile.sync`, sharing
 - [openclaw-agent-bridge-adr.md](./openclaw-agent-bridge-adr.md) — wire contract, security, CI smokes
 - [openclaw-extension.md](./openclaw-extension.md) — OpenClaw install and config (detailed)
@@ -243,9 +244,12 @@ HomeClaw integration predates OpenClaw and remains the **default** in EnvoyMesh 
 
 ### 1. HomeClaw side (HomeClaw repo)
 
-- Enable **`channels/envoymesh`** (`HomeClaw/channels/envoymesh/`).
-- HomeClaw Core exposes the inbound endpoint the bridge calls (typically **`http://localhost:8010/message`**).
-- The channel posts replies to EnvoyMesh **`/bridge/send`** after Core responds (same async pattern as OpenClaw).
+- The EnvoyMesh channel is **built into HomeClaw** (`HomeClaw/channels/envoymesh/`).
+  Starting HomeClaw brings up `:8010/message` — no separate `channels.run` process.
+- HomeClaw exposes the inbound endpoint the bridge calls (typically
+  **`http://localhost:8010/message`**).
+- The channel posts replies to EnvoyMesh **`/bridge/send`** after Core responds
+  (same async pattern as OpenClaw).
 
 Configure allowlists, secrets, and channel options in **HomeClaw** config — not in `OpenClawExtension/`.
 
@@ -264,7 +268,7 @@ Use the default bridge config (or equivalent in your profile):
 
 Sample path: `apps/node/data/default/bridge-config.json` → `~/.envoymesh/<profile>/bridge-config.json`.
 
-Start **HomeClaw** (with envoymesh channel) and the **EnvoyMesh node** with the bridge enabled.
+Start **HomeClaw** and the **EnvoyMesh node** with the bridge enabled (HomeClaw selected).
 
 ### 3. Chat on the mesh
 

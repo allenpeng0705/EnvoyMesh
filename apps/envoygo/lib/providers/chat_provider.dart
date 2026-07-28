@@ -1,7 +1,9 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../models/chat_message.dart';
+import '../models/chat_room.dart';
 import '../models/chat_thread.dart';
+import '../services/node_service_client.dart';
 import '../storage/local_database.dart';
 import 'contact_provider.dart';
 import 'node_provider.dart';
@@ -173,18 +175,30 @@ class ChatNotifier extends StateNotifier<ChatState> {
   }
 
   /// Load chat history for a thread from the home node (remote).
-  Future<void> loadHistory(String threadId,
-      {String? contactOwnerId}) async {
-    if (contactOwnerId == null) return;
+  ///
+  /// Direct chats use [contactOwnerId]. Group chats use [chatRoomId]
+  /// (history is stored under thread key `room:{roomId}`).
+  Future<void> loadHistory(
+    String threadId, {
+    String? contactOwnerId,
+    String? chatRoomId,
+  }) async {
+    final peerKey = chatRoomId != null && chatRoomId.isNotEmpty
+        ? 'room:$chatRoomId'
+        : contactOwnerId;
+    if (peerKey == null || peerKey.isEmpty) return;
 
     final nodeService = _ref.read(nodeServiceProvider);
     if (nodeService == null) return;
+    final selfOwnerId = _ref.read(nodeProvider).ownerId;
 
     // lastOrNull on a newest-first list = the chronologically oldest message.
     final earliestCached = state.messages[threadId]?.lastOrNull;
     final messages = await nodeService.listChatHistory(
-      contactOwnerId,
+      peerKey,
       before: earliestCached?.createdAt,
+      threadId: threadId,
+      selfOwnerId: selfOwnerId,
     );
 
     if (messages.isEmpty) return;
@@ -599,26 +613,38 @@ class ChatNotifier extends StateNotifier<ChatState> {
   // -- Room operations --
 
   /// Sync chat rooms from the home node.
-  Future<void> syncRooms() async {
-    final nodeService = _ref.read(nodeServiceProvider);
+  Future<void> syncRooms({NodeServiceClient? client}) async {
+    final nodeService = client ?? _ref.read(nodeServiceProvider);
     final nodeState = _ref.read(nodeProvider);
     if (nodeService == null || nodeState.activeNode == null) return;
 
     try {
       final rooms = await nodeService.listChatRooms();
+      final nodeId = nodeState.activeNode!.id;
       await _localDb.upsertRooms(
-        nodeState.activeNode!.id,
-        rooms.map((r) => r.toJson()).toList(),
+        nodeId,
+        rooms
+            .map(
+              (r) => ChatRoom(
+                id: r.id,
+                nodeId: nodeId,
+                name: r.name,
+                memberCount: r.memberCount,
+                lastMessageText: r.lastMessageText,
+                lastMessageAt: r.lastMessageAt,
+              ).toJson(),
+            )
+            .toList(),
       );
 
       // Create threads for rooms.
       for (final room in rooms) {
-        final threadId = '${nodeState.activeNode!.id}:room:${room.id}';
+        final threadId = '$nodeId:room:${room.id}';
         _upsertThread(
           threadId: threadId,
-          nodeId: nodeState.activeNode!.id,
+          nodeId: nodeId,
           type: ChatThreadType.group,
-          displayName: room.name,
+          displayName: room.name.isNotEmpty ? room.name : 'Group',
           chatRoomId: room.id,
           lastMessageText: room.lastMessageText,
           lastMessageAt: room.lastMessageAt,
@@ -685,15 +711,18 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final metadata = inner['metadata'] as Map<String, dynamic>?;
     final recipient = inner['recipient'] as Map<String, dynamic>?;
 
-    final roomId = (data['roomId'] ?? recipient?['ownerId']) as String?;
+    var roomId = (data['roomId'] ?? recipient?['ownerId']) as String?;
+    if (roomId != null && roomId.startsWith('room:')) {
+      roomId = roomId.substring('room:'.length);
+    }
     final senderOwnerId = ((inner['senderOwnerId'] ?? sender?['ownerId']) as String?)?.trim();
     final text = (inner['text'] ?? content?['text']) as String?;
     final messageId = inner['messageId'] as String?;
     final createdAt = (inner['createdAt'] ?? metadata?['timestamp']) as String?;
-    final roomName = (data['roomName'] ?? data['roomName'] ?? recipient?['displayName']) as String?;
+    final roomName = (data['roomName'] ?? data['title'] ?? recipient?['displayName']) as String?;
     final senderDisplayName = (inner['senderDisplayName'] ?? sender?['displayName']) as String?;
 
-    if (roomId == null) return;
+    if (roomId == null || roomId.isEmpty) return;
 
     // Skip messages with no text — they would render as empty bubbles.
     if (text == null || text.isEmpty) return;
@@ -736,6 +765,40 @@ class ChatNotifier extends StateNotifier<ChatState> {
         threadId: [msg, ...existing],
       },
     );
+  }
+
+  /// Handle a chat:room-updated push (invite / rename / membership).
+  void onRoomUpdated(Map<String, dynamic> data) {
+    final nodeState = _ref.read(nodeProvider);
+    if (nodeState.activeNode == null) return;
+    final room = ChatRoom.fromJson({
+      ...data,
+      'nodeId': nodeState.activeNode!.id,
+    });
+    if (room.id.isEmpty) return;
+    final threadId = '${nodeState.activeNode!.id}:room:${room.id}';
+    _upsertThread(
+      threadId: threadId,
+      nodeId: nodeState.activeNode!.id,
+      type: ChatThreadType.group,
+      displayName: room.name.isNotEmpty ? room.name : 'Group',
+      chatRoomId: room.id,
+      lastMessageText: room.lastMessageText,
+      lastMessageAt: room.lastMessageAt,
+    );
+    _localDb.upsertRooms(nodeState.activeNode!.id, [room.toJson()]).catchError((_) {});
+  }
+
+  /// Handle a chat:room-removed push (leave / dismiss).
+  void onRoomRemoved(String roomId) {
+    final nodeState = _ref.read(nodeProvider);
+    if (nodeState.activeNode == null || roomId.isEmpty) return;
+    final threadId = '${nodeState.activeNode!.id}:room:$roomId';
+    final threads = state.threads.where((t) => t.id != threadId).toList();
+    final messages = Map<String, List<ChatMessage>>.from(state.messages)
+      ..remove(threadId);
+    state = state.copyWith(threads: threads, messages: messages);
+    _localDb.deleteThread(threadId).catchError((_) {});
   }
 
   /// Create a new chat room.

@@ -305,6 +305,8 @@ export const koMessageBubbleMessages = {
   copyMessage: "메시지 복사",
   copied: "복사됨",
   deleteMessage: "메시지 삭제",
+  retrySend: "다시 보내기",
+  retryNeedsText: "다시 보낼 수 없음 — 텍스트가 없습니다",
 } as const;
 
 export const koInboxMessages = {

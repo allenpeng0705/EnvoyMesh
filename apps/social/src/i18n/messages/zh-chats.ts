@@ -309,6 +309,8 @@ export const zhMessageBubbleMessages = {
   copyMessage: "复制消息",
   copied: "已复制",
   deleteMessage: "删除消息",
+  retrySend: "重新发送",
+  retryNeedsText: "无法重试 — 该消息没有可重发的文本",
 } as const;
 
 export const zhInboxMessages = {

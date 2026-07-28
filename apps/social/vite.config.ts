@@ -89,6 +89,58 @@ function nodeDevSidecarPlugin(): Plugin {
     name: "envoymesh-node-dev-sidecar",
     apply: "serve",
     configureServer(server) {
+      // Always register: Social splash can heal a stale localStorage wsUrl (4030 vs 3030).
+      server.middlewares.use("/__envoymesh/discover-node", (req, res, next) => {
+        if (req.method !== "GET") {
+          next();
+          return;
+        }
+        void (async () => {
+          try {
+            const url = new URL(req.url ?? "/", "http://127.0.0.1");
+            const preferRaw = url.searchParams.get("prefer");
+            const preferPort = preferRaw ? Number(preferRaw) : NaN;
+            const candidates: number[] = [];
+            const push = (p: number) => {
+              if (Number.isFinite(p) && p > 0 && !candidates.includes(p)) candidates.push(p);
+            };
+            if (Number.isFinite(preferPort)) push(preferPort);
+            push(3030);
+            push(4030);
+
+            const openPorts: number[] = [];
+            for (const port of candidates) {
+              if (await isLoopbackPortOpen(port)) openPorts.push(port);
+            }
+            const preferredOpen =
+              Number.isFinite(preferPort) && openPorts.includes(preferPort);
+            const port = preferredOpen ? preferPort : (openPorts[0] ?? null);
+            res.statusCode = 200;
+            res.setHeader("Content-Type", "application/json");
+            res.end(
+              JSON.stringify({
+                ok: port != null,
+                wsUrl: port != null ? `ws://127.0.0.1:${port}/ws` : null,
+                port,
+                preferredPort: Number.isFinite(preferPort) ? preferPort : null,
+                preferredOpen,
+                openPorts,
+                candidates,
+              }),
+            );
+          } catch (err) {
+            res.statusCode = 500;
+            res.setHeader("Content-Type", "application/json");
+            res.end(
+              JSON.stringify({
+                ok: false,
+                error: err instanceof Error ? err.message : String(err),
+              }),
+            );
+          }
+        })();
+      });
+
       if (process.env.ENVOYMESH_AUTO_NODE !== "1") {
         return;
       }

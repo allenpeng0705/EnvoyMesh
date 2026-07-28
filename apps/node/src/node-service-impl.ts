@@ -448,6 +448,8 @@ import { loadBridgeIdentity, saveBridgeIdentity } from "./bridge/identity-store.
 import {
   applyExtAgentSettingsPatch,
   extractExtAgentSettingsPatch,
+  loadBridgeConfigFromProfile,
+  shouldRebindAgentBridge,
 } from "./bridge/bridge-config-store.js";
 import { bridgeConfigToStatusFields } from "./bridge/config.js";
 import type { BridgeConfig } from "./bridge/config.js";
@@ -1296,6 +1298,21 @@ class NodeServiceImpl implements NodeService {
   private _nodeStatus: NodeStatus = "offline";
   private _bridgeStatus: BridgeStatus | null = null;
   private _bridgeChatHandler: ((envelope: EnvoyEnvelope, remotePeerId: string) => Promise<void>) | null = null;
+  /** Hot-apply Ext Agent URL without restarting the bridge HTTP server. */
+  private _bridgeUpdateLiveConfig:
+    | ((next: BridgeConfig | Partial<BridgeConfig>) => BridgeConfig)
+    | null = null;
+  /** Stop/recreate bridge HTTP when enable / listen port / secret change. */
+  private _bridgeRebindHandler: ((reason: string) => Promise<void>) | null = null;
+  /** Start/stop Hermes/OpenHuman local `/message` sidecars when Ext Agent changes. */
+  private _extAgentSidecarSyncer:
+    | ((cfg: {
+        bridgeEnabled: boolean;
+        activeExtAgentId?: string;
+        bridgeListenPort: number;
+        bridgeSecret?: string;
+      }) => Promise<void>)
+    | null = null;
   private _relayBookProvider: (() => Array<{ relayId: string; region?: string; addrs: string[] }>) | null = null;
   private _styleAdapter: import("./style-adapter.js").StyleAdapter | null = null;
   private _wsPort: number = 3030;
@@ -6165,10 +6182,31 @@ class NodeServiceImpl implements NodeService {
     );
     const hasExtPatch = Object.keys(extPatch).length > 0;
     const hasNodePatch = Object.keys(nodePatch).length > 0;
+    // Compare against live/disk state so Social/EnvoyGo resending listenPort
+    // (unchanged) on Ext Agent switch does not force a full HTTP rebind.
+    const snap = this.getBridgeStatusSnapshot();
+    const diskBridge =
+      hasExtPatch ||
+      Object.prototype.hasOwnProperty.call(nodePatch, "bridgeEnabled")
+        ? await loadBridgeConfigFromProfile(this._profileDir)
+        : null;
+    const rebindDecision = shouldRebindAgentBridge({
+      nodePatch,
+      extPatch,
+      previous: {
+        bridgeEnabled: snap?.enabled === true,
+        listenPort: snap?.listenPort ?? diskBridge?.listenPort ?? 3031,
+        secret: diskBridge?.secret,
+      },
+    });
+    const needsBridgeRebind = rebindDecision.needed;
 
     if (hasExtPatch) {
       const bridgeCfg = await applyExtAgentSettingsPatch(this._profileDir, extPatch);
-      this._refreshBridgeStatusFromConfig(bridgeCfg);
+      if (!needsBridgeRebind) {
+        // Ext Agent URL/name only — hot-swap without rebinding HTTP.
+        this._refreshBridgeStatusFromConfig(bridgeCfg);
+      }
     }
     if (hasNodePatch) {
       const joinToggled = Object.prototype.hasOwnProperty.call(nodePatch, "capabilityProviderEnabled");
@@ -6179,6 +6217,16 @@ class NodeServiceImpl implements NodeService {
         void this.refreshAgentNetworkWorkers().catch((err) => {
           console.warn("[agent-network] refresh after Join toggle failed:", err);
         });
+      }
+    }
+    if (needsBridgeRebind) {
+      try {
+        await this._bridgeRebindHandler?.(rebindDecision.reasons.join("+") || "bridge");
+      } catch (err) {
+        console.warn(
+          "[bridge] rebind failed:",
+          err instanceof Error ? err.message : err,
+        );
       }
     }
     // Sync the runtime relay-public-WS-URL with the persisted config so
@@ -6349,6 +6397,16 @@ class NodeServiceImpl implements NodeService {
     const fields = bridgeConfigToStatusFields(bridgeCfg);
     const current = this._bridgeStatus;
     if (!current) return;
+    // Push agentUrl/name into the running bridge so chat forwards immediately
+    // (no node restart). Listen port / enabled / secret use in-process rebind.
+    try {
+      this._bridgeUpdateLiveConfig?.(bridgeCfg);
+    } catch (err) {
+      console.warn(
+        "[bridge] live Ext Agent update failed:",
+        err instanceof Error ? err.message : err,
+      );
+    }
     this.setBridgeStatus({
       ...current,
       agentUrl: fields.agentUrl,
@@ -6356,6 +6414,25 @@ class NodeServiceImpl implements NodeService {
       listenPort: fields.listenPort,
       activeExtAgentId: fields.activeExtAgentId,
       extAgents: fields.extAgents,
+    });
+    void this._syncExtAgentSidecarFromStatus(bridgeCfg);
+  }
+
+  private _syncExtAgentSidecarFromStatus(bridgeCfg?: BridgeConfig): void {
+    const snap = this._bridgeStatus;
+    if (!this._extAgentSidecarSyncer) return;
+    void this._extAgentSidecarSyncer({
+      bridgeEnabled: snap?.enabled === true,
+      activeExtAgentId: bridgeCfg
+        ? bridgeConfigToStatusFields(bridgeCfg).activeExtAgentId
+        : snap?.activeExtAgentId,
+      bridgeListenPort: snap?.listenPort ?? bridgeCfg?.listenPort ?? 3031,
+      bridgeSecret: bridgeCfg?.secret,
+    }).catch((err) => {
+      console.warn(
+        "[ext-agent] sidecar sync failed:",
+        err instanceof Error ? err.message : err,
+      );
     });
   }
 
@@ -6677,6 +6754,35 @@ class NodeServiceImpl implements NodeService {
 
   setBridgeChatHandler(handler: (envelope: EnvoyEnvelope, remotePeerId: string) => Promise<void>): void {
     this._bridgeChatHandler = handler;
+  }
+
+  /** Wire hot Ext Agent switching into the running bridge (no node restart). */
+  setBridgeLiveConfigUpdater(
+    updater: (next: BridgeConfig | Partial<BridgeConfig>) => BridgeConfig,
+  ): void {
+    this._bridgeUpdateLiveConfig = updater;
+  }
+
+  /** Wire in-process bridge HTTP rebind (enable / listen port / secret). */
+  setBridgeRebindHandler(handler: (reason: string) => Promise<void>): void {
+    this._bridgeRebindHandler = handler;
+  }
+
+  /** Wire Hermes/OpenHuman local `/message` sidecar auto-start. */
+  setExtAgentSidecarSyncer(
+    syncer: (cfg: {
+      bridgeEnabled: boolean;
+      activeExtAgentId?: string;
+      bridgeListenPort: number;
+      bridgeSecret?: string;
+    }) => Promise<void>,
+  ): void {
+    this._extAgentSidecarSyncer = syncer;
+  }
+
+  /** Snapshot for rebind status merge (avoids wiping agentPeerId). */
+  getBridgeStatusSnapshot(): BridgeStatus | null {
+    return this._bridgeStatus;
   }
 
   /**

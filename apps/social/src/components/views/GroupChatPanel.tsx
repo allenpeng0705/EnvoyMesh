@@ -4,6 +4,7 @@ import type { TFunction } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService, useChatMessages } from "../../hooks/useNodeService.js";
 import { useChatDrafts } from "../../hooks/useChatDrafts.js";
+import { useChatStickToBottom } from "../../hooks/useChatStickToBottom.js";
 import type { ChatMessage, ChatRoom, ContactAiPreferences } from "@envoymesh/api";
 import {
   chatMessageTextForDisplay,
@@ -94,7 +95,6 @@ export function GroupChatPanel({
   const [showInvite, setShowInvite] = useState(false);
   const [showManage, setShowManage] = useState(false);
   const [leaveBusy, setLeaveBusy] = useState(false);
-  const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const lastSendRef = useRef<{ at: number; text: string } | null>(null);
   const [attachBusy, setAttachBusy] = useState(false);
@@ -182,9 +182,12 @@ export function GroupChatPanel({
 
   const messageGroups = useMemo(() => groupMessagesByDate(displayMessages), [displayMessages]);
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [displayMessages.length]);
+  const scrollRevision = useMemo(() => {
+    const last = displayMessages[displayMessages.length - 1];
+    return `${displayMessages.length}:${last?.messageId ?? ""}:${last?.content.text?.length ?? 0}`;
+  }, [displayMessages]);
+  const { containerRef: messagesRef, onScroll: onMessagesScroll, pinToBottom } =
+    useChatStickToBottom(threadKey, scrollRevision);
 
   useEffect(() => {
     setPendingOutbound((prev) =>
@@ -246,6 +249,7 @@ export function GroupChatPanel({
       );
       return;
     }
+    pinToBottom();
     setAttachBusy(true);
     setSendError(null);
     try {
@@ -274,6 +278,7 @@ export function GroupChatPanel({
 
   const handleSendVoiceNote = useCallback(async () => {
     if (voiceRecorder.phase === "sending" || !roomId) return;
+    pinToBottom();
     voiceRecorder.setSending();
     const capture = await voiceRecorder.finalizeCapture();
     if (!capture) {
@@ -301,11 +306,13 @@ export function GroupChatPanel({
     } finally {
       voiceRecorder.setIdle();
     }
-  }, [voiceRecorder, roomId, nodeService, t]);
+  }, [voiceRecorder, roomId, nodeService, t, pinToBottom]);
 
   const handleSend = () => {
     const text = stripModelThinking(chatInput).trim();
     if (!text || !roomId) return;
+
+    pinToBottom();
 
     if (!nodeMeshOnline) {
       setSendError(t("contactChat.nodeOffline"));
@@ -370,6 +377,80 @@ export function GroupChatPanel({
       }
     })();
   };
+
+  const handleRetryMessage = useCallback(
+    (msg: ChatMessage) => {
+      const text = stripModelThinking(msg.content.text).trim();
+      if (!text || !roomId) {
+        showToast(t("messageBubble.retryNeedsText"), "error");
+        return;
+      }
+      if (!nodeMeshOnline) {
+        setSendError(t("contactChat.nodeOffline"));
+        setTimeout(() => setSendError(null), 5000);
+        return;
+      }
+
+      pinToBottom();
+      setSendError(null);
+
+      const trackId = msg.messageId.startsWith("pending-")
+        ? msg.messageId
+        : `pending-${crypto.randomUUID()}`;
+
+      setPendingOutbound((prev) => {
+        const without = prev.filter((m) => m.messageId !== msg.messageId);
+        return [
+          ...without,
+          {
+            ...msg,
+            messageId: trackId,
+            metadata: {
+              ...msg.metadata,
+              timestamp: new Date().toISOString(),
+              deliveryReceipt: "pending" as const,
+            },
+          },
+        ];
+      });
+
+      void (async () => {
+        try {
+          const result = await nodeService.sendChatRoomMessage(roomId, text);
+          setPendingOutbound((prev) =>
+            prev.map((m) =>
+              m.messageId === trackId
+                ? {
+                    ...m,
+                    messageId: result.messageId,
+                    metadata: {
+                      ...m.metadata,
+                      deliveryReceipt:
+                        result.deliveryReceipt === "delivered"
+                          ? ("delivered" as const)
+                          : ("sent" as const),
+                      pendingRecipientOwnerIds: result.pendingRecipientOwnerIds,
+                    },
+                  }
+                : m,
+            ),
+          );
+        } catch (error) {
+          const errMsg = error instanceof Error ? error.message : t("groupChat.sendFailed");
+          setPendingOutbound((prev) =>
+            prev.map((m) =>
+              m.messageId === trackId
+                ? { ...m, metadata: { ...m.metadata, deliveryReceipt: "failed" as const } }
+                : m,
+            ),
+          );
+          setSendError(errMsg);
+          setTimeout(() => setSendError(null), 8000);
+        }
+      })();
+    },
+    [nodeMeshOnline, nodeService, pinToBottom, roomId, showToast, t],
+  );
 
   const handleLeave = async () => {
     if (!roomId || !confirm(t("groupChat.leaveConfirm"))) return;
@@ -455,7 +536,7 @@ export function GroupChatPanel({
         </div>
       </header>
 
-      <div className="messages">
+      <div className="messages" ref={messagesRef} onScroll={onMessagesScroll}>
         {displayMessages.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">
@@ -530,6 +611,8 @@ export function GroupChatPanel({
                             : outgoing
                               ? msg.metadata.deliveryReceipt
                               : undefined;
+                        const showReceipt =
+                          msg.metadata.deliveryReceipt === "failed" || index === stack.length - 1;
                         return (
                           <ChatMessageBubble
                             key={msg.messageId}
@@ -541,8 +624,15 @@ export function GroupChatPanel({
                               hour: "2-digit",
                               minute: "2-digit",
                             })}
-                            deliveryReceipt={index === stack.length - 1 ? msgReceipt : undefined}
-                            deliveryDetail={index === stack.length - 1 ? msgDeliveryDetail : undefined}
+                            deliveryReceipt={showReceipt ? msgReceipt : undefined}
+                            deliveryDetail={
+                              showReceipt && index === stack.length - 1 ? msgDeliveryDetail : undefined
+                            }
+                            onRetry={
+                              outgoing && msg.metadata.deliveryReceipt === "failed"
+                                ? () => handleRetryMessage(msg)
+                                : undefined
+                            }
                           >
                             {msg.content.attachments?.map((attachment) => {
                               const isAudio = attachment.mimeType?.split(";")[0]?.startsWith("audio/") === true;
@@ -569,7 +659,6 @@ export function GroupChatPanel({
             </div>
           ))
         )}
-        <div ref={messagesEndRef} className="messages-scroll-anchor" aria-hidden />
       </div>
 
       <div className="chat-composer">

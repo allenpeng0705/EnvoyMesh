@@ -13,6 +13,8 @@ export interface ExtAgentSettingsPatch {
   activeExtAgentId?: string;
   extAgents?: ExtAgentDefinition[];
   bridgeListenPort?: number;
+  /** Optional Bearer secret for POST /bridge/send — changing this rebinds the HTTP server. */
+  secret?: string;
 }
 
 export function bridgeConfigPathForProfile(profileDir: string): string {
@@ -72,6 +74,10 @@ export async function applyExtAgentSettingsPatch(
   if (patch.bridgeListenPort !== undefined) {
     bridgePatch.listenPort = patch.bridgeListenPort;
   }
+  if (patch.secret !== undefined) {
+    const trimmed = patch.secret.trim();
+    bridgePatch.secret = trimmed.length > 0 ? trimmed : undefined;
+  }
   if (Object.keys(bridgePatch).length === 0) {
     return loadBridgeConfigFromProfile(profileDir);
   }
@@ -104,6 +110,51 @@ export function extractExtAgentSettingsPatch(
         : undefined;
     delete nodePatch.bridgeListenPort;
   }
+  if ("bridgeSecret" in nodePatch || "secret" in nodePatch) {
+    const raw = nodePatch.bridgeSecret ?? nodePatch.secret;
+    extPatch.secret = typeof raw === "string" ? raw : undefined;
+    delete nodePatch.bridgeSecret;
+    delete nodePatch.secret;
+  }
 
   return { nodePatch, extPatch };
+}
+
+export interface BridgeRebindPreviousState {
+  bridgeEnabled: boolean;
+  listenPort: number;
+  secret?: string;
+}
+
+/**
+ * Decide whether Ext Agent / bridge settings require stopping and recreating
+ * the HTTP listener. Social and EnvoyGo often resend `bridgeEnabled` +
+ * `bridgeListenPort` on every Ext Agent save; only true deltas should rebind
+ * so `activeExtAgentId` switches stay on the hot `updateLiveConfig` path.
+ */
+export function shouldRebindAgentBridge(params: {
+  nodePatch: Record<string, unknown>;
+  extPatch: ExtAgentSettingsPatch;
+  previous: BridgeRebindPreviousState;
+}): { needed: boolean; reasons: string[] } {
+  const reasons: string[] = [];
+  if (Object.prototype.hasOwnProperty.call(params.nodePatch, "bridgeEnabled")) {
+    const nextEnabled = params.nodePatch.bridgeEnabled === true;
+    if (nextEnabled !== params.previous.bridgeEnabled) {
+      reasons.push("bridgeEnabled");
+    }
+  }
+  if (params.extPatch.bridgeListenPort !== undefined) {
+    if (params.extPatch.bridgeListenPort !== params.previous.listenPort) {
+      reasons.push("listenPort");
+    }
+  }
+  if (params.extPatch.secret !== undefined) {
+    const nextSecret = params.extPatch.secret.trim() || undefined;
+    const prevSecret = params.previous.secret?.trim() || undefined;
+    if (nextSecret !== prevSecret) {
+      reasons.push("secret");
+    }
+  }
+  return { needed: reasons.length > 0, reasons };
 }

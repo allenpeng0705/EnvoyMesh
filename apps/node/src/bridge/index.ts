@@ -12,7 +12,7 @@ import type { A2ATaskBridge } from "../a2a-task-bridge.js";
 import type { ExternalAgentGateway } from "../external-agent-gateway.js";
 import type { ToolDefinition, ToolResult } from "../tool-registry.js";
 import type { BridgeConfig } from "./config.js";
-import { BridgeConfigSchema } from "./config.js";
+import { applyActiveExtAgent, BridgeConfigSchema } from "./config.js";
 import { forwardAsyncMeshReply } from "./async-mesh-reply.js";
 import {
   forwardToAgent,
@@ -92,27 +92,57 @@ export interface CreateBridgeOptions {
 /**
  * Start the bridge: HTTP server (agent callback) + P2P handler (forward to agent).
  * Returns a `stop()` function for graceful shutdown.
+ *
+ * Ext Agent switches (`activeExtAgent` / `agentUrl`) apply via {@link updateLiveConfig}
+ * without restarting the node or the bridge HTTP listener.
  */
 export function createBridge(options: CreateBridgeOptions): {
   agentPeerId: string;
   stop: () => Promise<void>;
   _handleMessage: (envelope: any, remotePeerId: string) => Promise<void>;
+  /** Hot-apply Ext Agent URL/name (and related fields) without restarting the node. */
+  updateLiveConfig: (next: BridgeConfig | Partial<BridgeConfig>) => BridgeConfig;
+  getLiveConfig: () => BridgeConfig;
 } {
-  const config = BridgeConfigSchema.parse(options.config);
+  let liveConfig = applyActiveExtAgent(BridgeConfigSchema.parse(options.config));
+  const updateLiveConfig = (next: BridgeConfig | Partial<BridgeConfig>): BridgeConfig => {
+    liveConfig = applyActiveExtAgent(
+      BridgeConfigSchema.parse({
+        ...liveConfig,
+        ...next,
+        extAgents: next.extAgents ?? liveConfig.extAgents,
+      }),
+    );
+    console.log(
+      `[bridge] live Ext Agent → ${liveConfig.activeExtAgent ?? liveConfig.agentName} (${liveConfig.agentUrl})`,
+    );
+    return liveConfig;
+  };
+  const getLiveConfig = () => liveConfig;
+
   const shouldListen =
-    config.enabled ||
+    liveConfig.enabled ||
     options.listenForOpenClaw === true ||
     options.a2aBridge != null ||
     options.readVaultFile != null;
   if (!shouldListen) {
-    return { agentPeerId: options.identity.agentPeerId, stop: async () => {}, _handleMessage: async () => {} };
+    return {
+      agentPeerId: options.identity.agentPeerId,
+      stop: async () => {},
+      _handleMessage: async () => {},
+      updateLiveConfig,
+      getLiveConfig,
+    };
   }
-  const secretTrimmed = config.secret?.trim() ?? "";
+  // Auth secret is fixed at listen start (rare to change; restart if needed).
+  const secretTrimmed = liveConfig.secret?.trim() ?? "";
 
   const agentId = options.identity.agentCredential.agentId;
 
   const deps: BridgeDeps = {
-    config,
+    get config() {
+      return liveConfig;
+    },
     identity: options.identity,
     sendChat: async (peerId, envelope, options2) => {
       if (peerId === options.mesh.peerId && options.onSelfSendEnvelope) {
@@ -445,11 +475,11 @@ export function createBridge(options: CreateBridgeOptions): {
     }
   });
 
-  server.listen(config.listenPort, "127.0.0.1", () => {
+  server.listen(liveConfig.listenPort, "127.0.0.1", () => {
     const a2aMountPath = options.a2aPath ?? "/a2a/jsonrpc";
     const a2aNote = options.a2aBridge ? `, POST ${a2aMountPath}` : "";
     console.log(
-      `[bridge] HTTP on http://127.0.0.1:${config.listenPort}/bridge/send, ` +
+      `[bridge] HTTP on http://127.0.0.1:${liveConfig.listenPort}/bridge/send, ` +
         `/bridge/agent-share-proposal, /bridge/execute-tool, GET /bridge/list-tools${a2aNote}`,
     );
   });
@@ -470,7 +500,7 @@ export function createBridge(options: CreateBridgeOptions): {
             envelope.intent === "discovery.response"
               ? parseDiscoveryResponsePayload(envelope.payload)
               : parseKnowledgeResponsePayload(envelope.payload);
-          await forwardAsyncMeshReply(config, {
+          await forwardAsyncMeshReply(getLiveConfig(), {
             intent: envelope.intent,
             correlationId: envelope.correlationId,
             senderPeerId: envelope.senderPeerId,
@@ -523,7 +553,7 @@ export function createBridge(options: CreateBridgeOptions): {
     const fwdPromise = (async () => {
       try {
         const fwdStartTime = Date.now();
-        await forwardToAgent(config, {
+        await forwardToAgent(getLiveConfig(), {
           senderPeerId: remotePeerId,
           senderOwnerId: payload.senderOwnerId,
           text: payload.text,
@@ -562,6 +592,8 @@ export function createBridge(options: CreateBridgeOptions): {
     },
     // Exposed for the onMessage callback in index.ts
     _handleMessage: bridgeHandler,
+    updateLiveConfig,
+    getLiveConfig,
   };
 }
 

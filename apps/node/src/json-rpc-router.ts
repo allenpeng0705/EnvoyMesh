@@ -238,8 +238,15 @@ export async function routeRpcMethod(
         maxBytes: params.maxBytes as number | undefined,
         offset: params.offset as number | undefined,
       });
-    case "listChatHistory":
-      return ns.listChatHistory(params.peerOwnerId as string, params.limit as number | undefined);
+    case "listChatHistory": {
+      const peerOwnerId =
+        (typeof params.peerOwnerId === "string" && params.peerOwnerId.trim()
+          ? params.peerOwnerId
+          : typeof params.targetOwnerId === "string"
+            ? params.targetOwnerId
+            : "") as string;
+      return ns.listChatHistory(peerOwnerId, params.limit as number | undefined);
+    }
     case "listChatRooms":
       return ns.listChatRooms();
     case "createChatRoom":

@@ -30,7 +30,9 @@ import {
   hasCompletedFirstRunSetup,
   hasSeenGettingStartedGuide,
   markGettingStartedGuideSeen,
+  normalizeLoopbackWsUrl,
 } from "./lib/storage.js";
+import { resolveDevLoopbackWsUrlHeal } from "./lib/discover-local-node.js";
 import { WS_LOOPBACK_URL } from "@envoymesh/api";
 import type { HumanProfile, NodeConfig, NodeStatus } from "@envoymesh/api";
 
@@ -280,6 +282,7 @@ export function App() {
     humanProfile,
     connectionStatus,
     appSettings,
+    setAppSettings,
     bonds,
   } = useNodeState();
 
@@ -358,7 +361,50 @@ export function App() {
         lastError?.includes("WebSocket connection closed") ||
         false));
 
+  // Vite DEV: if localStorage still points at a dead alt port (e.g. 4030) but
+  // `npm run node:dev` is on 3030, auto-switch so the splash is not bricked.
+  useEffect(() => {
+    if (!import.meta.env.DEV || isConnected || !isLocalWs || tauriShell) return;
+    let cancelled = false;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        const healed = await resolveDevLoopbackWsUrlHeal(appSettings.wsUrl);
+        if (cancelled || !healed) return;
+        const next = normalizeLoopbackWsUrl(healed);
+        if (next === normalizeLoopbackWsUrl(appSettings.wsUrl)) return;
+        console.info(`[App] Dev node discover: switching wsUrl ${appSettings.wsUrl} → ${next}`);
+        setAppSettings({ ...appSettings, wsUrl: next });
+      })();
+    }, 800);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [
+    appSettings,
+    isConnected,
+    isLocalWs,
+    setAppSettings,
+    tauriShell,
+    reconnectAttempts,
+    lastError,
+  ]);
+
   const handleRetryConnect = () => {
+    if (import.meta.env.DEV && isLocalWs && !tauriShell) {
+      void (async () => {
+        const healed = await resolveDevLoopbackWsUrlHeal(appSettings.wsUrl);
+        if (healed) {
+          const next = normalizeLoopbackWsUrl(healed);
+          if (next !== normalizeLoopbackWsUrl(appSettings.wsUrl)) {
+            setAppSettings({ ...appSettings, wsUrl: next });
+            return;
+          }
+        }
+        void nodeService.reconnect();
+      })();
+      return;
+    }
     void nodeService.reconnect();
   };
 

@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { useT } from "../context/I18nContext.js";
-import { CopyIcon, RemoveIcon, CheckIcon } from "../icons.js";
+import { CopyIcon, RemoveIcon, CheckIcon, RefreshCwIcon } from "../icons.js";
 import type { MessageStackPosition } from "../lib/chat-message-stack.js";
 import { stackPositionClass } from "../lib/chat-message-stack.js";
 import type { MessageVisualVariant } from "../lib/chat-thread-kind.js";
@@ -17,6 +17,8 @@ interface ChatMessageBubbleProps {
   deliveryDetail?: string;
   copyText?: string;
   onDelete?: () => void;
+  /** Shown when delivery failed — resend without retyping. */
+  onRetry?: () => void;
   children: ReactNode;
 }
 
@@ -31,6 +33,7 @@ export function ChatMessageBubble({
   deliveryDetail,
   copyText,
   onDelete,
+  onRetry,
   children,
 }: ChatMessageBubbleProps) {
   const t = useT();
@@ -71,6 +74,8 @@ export function ChatMessageBubble({
   const showMetaRow = showMeta && (badge || timeLabel != null);
   const showDelivery = deliveryReceipt != null;
   const trimmedCopyText = copyText?.trim() ?? "";
+  const canRetry = Boolean(onRetry);
+  const showActions = Boolean(trimmedCopyText || onDelete || canRetry);
 
   async function handleCopy() {
     if (!trimmedCopyText) return;
@@ -84,7 +89,9 @@ export function ChatMessageBubble({
   }
 
   return (
-    <div className={`message-bubble ${variant} ${stackPositionClass(position)}`}>
+    <div
+      className={`message-bubble ${variant} ${stackPositionClass(position)}${canRetry ? " is-failed" : ""}`}
+    >
       {showMetaRow ? (
         <div className="message-bubble-meta">
           {badge ? <span className="message-bubble-badge">{badge}</span> : null}
@@ -94,7 +101,7 @@ export function ChatMessageBubble({
         </div>
       ) : null}
       <div className="message-bubble-body">{children}</div>
-      {showDelivery || trimmedCopyText || onDelete ? (
+      {showDelivery || showActions ? (
         <div className="message-bubble-footer">
           {showDelivery ? (
             <span className={`message-delivery-status status-${deliveryReceipt}`}>
@@ -118,8 +125,19 @@ export function ChatMessageBubble({
               <span className="delivery-label">{deliveryLabel}</span>
             </span>
           ) : null}
-          {trimmedCopyText || onDelete ? (
+          {showActions ? (
             <div className="message-bubble-actions">
+              {canRetry ? (
+                <button
+                  type="button"
+                  className="message-retry-btn"
+                  aria-label={t("messageBubble.retrySend")}
+                  title={t("messageBubble.retrySend")}
+                  onClick={onRetry}
+                >
+                  <RefreshCwIcon size={14} />
+                </button>
+              ) : null}
               {trimmedCopyText ? (
                 <button
                   type="button"

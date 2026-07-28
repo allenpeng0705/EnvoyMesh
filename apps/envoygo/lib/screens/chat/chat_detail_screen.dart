@@ -68,6 +68,11 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
         if (_isAgent) {
           // EnvoyAI thread — load history using the agent's owner ID.
           notifier.loadAgentHistory(widget.threadId);
+        } else if (_isRoom) {
+          notifier.loadHistory(
+            widget.threadId,
+            chatRoomId: widget.chatRoomId,
+          );
         } else {
           notifier.loadHistory(
             widget.threadId,

@@ -4,6 +4,7 @@ import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService, useChatMessages, useTransportWsOpen } from "../../hooks/useNodeService.js";
 import { useChatDrafts } from "../../hooks/useChatDrafts.js";
 import { usePeerReachability, peerReachabilityLabel } from "../../hooks/usePeerReachability.js";
+import { useChatStickToBottom } from "../../hooks/useChatStickToBottom.js";
 import { useCallSessionContext } from "../../context/CallSessionContext.js";
 import type { ChatMessage, ContactAiPreferences } from "@envoymesh/api";
 import {
@@ -134,8 +135,6 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
     setPendingOutbound((prev) => markPendingOutboundFailed(prev));
   }, [wsTransportOpen, setPendingOutbound]);
 
-  const messagesEndRef = useRef<HTMLDivElement | null>(null);
-
   const [chatInput, setChatInput] = useState("");
   const [notesOpen, setNotesOpen] = useState(false);
   const [confirm, setConfirm] = useState<{ title: string; message?: ReactNode; variant?: "default" | "destructive"; confirmLabel?: string; cancelLabel?: string; onConfirm: () => void } | null>(null);
@@ -249,9 +248,12 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
     [isOutgoing],
   );
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  const scrollRevision = useMemo(() => {
+    const last = displayMessages[displayMessages.length - 1];
+    return `${displayMessages.length}:${last?.messageId ?? ""}:${last?.content.text?.length ?? 0}`;
   }, [displayMessages]);
+  const { containerRef: messagesRef, onScroll: onMessagesScroll, pinToBottom } =
+    useChatStickToBottom(selectedContact, scrollRevision);
 
   useEffect(() => {
     setPendingOutbound((prev) => {
@@ -328,6 +330,8 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
   const handleSendMessage = () => {
     const text = chatInput.trim();
     if (!text) return;
+
+    pinToBottom();
 
     if (!nodeMeshOnline) {
       setSendError(t("contactChat.nodeOffline"));
@@ -456,6 +460,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
     if (voiceRecorder.phase === "sending") {
       return;
     }
+    pinToBottom();
     voiceRecorder.setSending();
     const capture = await voiceRecorder.finalizeCapture();
     if (!capture) {
@@ -485,6 +490,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
     }
   }, [
     nodeService,
+    pinToBottom,
     scheduleClearSendError,
     selectedContact,
     t,
@@ -507,6 +513,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
       );
       return;
     }
+    pinToBottom();
     setAttachBusy(true);
     setSendError(null);
     try {
@@ -555,6 +562,88 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
       },
     });
   };
+
+  const handleRetryMessage = useCallback(
+    (msg: ChatMessage) => {
+      const text = msg.content.text?.trim() ?? "";
+      if (!text) {
+        showToast(t("messageBubble.retryNeedsText"), "error");
+        return;
+      }
+      if (!nodeMeshOnline) {
+        setSendError(t("contactChat.nodeOffline"));
+        scheduleClearSendError(5000);
+        return;
+      }
+
+      pinToBottom();
+      setSendError(null);
+
+      const trackId = msg.messageId.startsWith("pending-")
+        ? msg.messageId
+        : `pending-${crypto.randomUUID()}`;
+
+      setPendingOutbound((prev) => {
+        const without = prev.filter((m) => m.messageId !== msg.messageId);
+        return [
+          ...without,
+          {
+            ...msg,
+            messageId: trackId,
+            metadata: {
+              ...msg.metadata,
+              timestamp: new Date().toISOString(),
+              deliveryReceipt: "pending" as const,
+            },
+          },
+        ];
+      });
+
+      void (async () => {
+        try {
+          const result = await nodeService.sendChat(selectedContact, text);
+          setPendingOutbound((prev) =>
+            prev.map((m) =>
+              m.messageId === trackId
+                ? {
+                    ...m,
+                    messageId: result.messageId,
+                    metadata: {
+                      ...m.metadata,
+                      deliveryReceipt:
+                        result.deliveryReceipt === "delivered"
+                          ? ("delivered" as const)
+                          : ("sent" as const),
+                    },
+                  }
+                : m,
+            ),
+          );
+        } catch (error) {
+          const errMsg = error instanceof Error ? error.message : t("contactChat.sendFailed");
+          console.error("[ContactChatPanel] retry sendChat failed:", error);
+          setPendingOutbound((prev) =>
+            prev.map((m) =>
+              m.messageId === trackId
+                ? { ...m, metadata: { ...m.metadata, deliveryReceipt: "failed" as const } }
+                : m,
+            ),
+          );
+          setSendError(errMsg);
+          scheduleClearSendError(8000);
+        }
+      })();
+    },
+    [
+      nodeMeshOnline,
+      nodeService,
+      pinToBottom,
+      scheduleClearSendError,
+      selectedContact,
+      showToast,
+      t,
+    ],
+  );
 
   // Phase 38 — voice call (global UI in CallSessionProvider)
   const { startCall, callingState, activeCall } = useCallSessionContext();
@@ -784,7 +873,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
       {threadKind !== "agent" && (
         <PeerProfilePanel ownerId={selectedContact} fallbackDisplayName={displayName} />
       )}
-      <div className="messages">
+      <div className="messages" ref={messagesRef} onScroll={onMessagesScroll}>
         {displayMessages.length === 0 ? (
           <div className="empty-state">
             <div className="empty-state-icon">
@@ -848,6 +937,11 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
                             aiIdentity,
                           )}
                           onDelete={() => void handleDeleteMessage(msg.messageId)}
+                          onRetry={
+                            outgoing && msg.metadata.deliveryReceipt === "failed"
+                              ? () => handleRetryMessage(msg)
+                              : undefined
+                          }
                         >
                           <ChatMessageText text={msg.content.text} identity={aiIdentity} />
                           {msg.content.attachments?.map((attachment) => {
@@ -867,7 +961,6 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
             </div>
           ))
         )}
-        <div ref={messagesEndRef} className="messages-scroll-anchor" aria-hidden />
       </div>
       <ContactPrivateNotesPanel
         ownerId={ownerId}

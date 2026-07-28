@@ -52,6 +52,40 @@ class ChatMessage {
     );
   }
 
+  /// Parse a ChatMessage RPC / push payload (nested sender/content/metadata).
+  factory ChatMessage.fromRpcJson(
+    Map<String, dynamic> json, {
+    required String threadId,
+    String? selfOwnerId,
+  }) {
+    final sender = json['sender'] as Map<String, dynamic>?;
+    final content = json['content'] as Map<String, dynamic>?;
+    final metadata = json['metadata'] as Map<String, dynamic>?;
+    final senderOwnerId =
+        (json['senderOwnerId'] ?? sender?['ownerId']) as String?;
+    final text = (json['text'] ?? content?['text']) as String?;
+    final createdAt =
+        (json['createdAt'] ?? metadata?['timestamp']) as String?;
+    final messageId = (json['messageId'] ?? json['id']) as String?;
+    final attRaw = content?['attachments'] as List<dynamic>?;
+    final isOutbound = selfOwnerId != null &&
+        senderOwnerId != null &&
+        senderOwnerId == selfOwnerId;
+    return ChatMessage(
+      id: messageId ?? 'msg_${DateTime.now().microsecondsSinceEpoch}',
+      threadId: threadId,
+      senderOwnerId: senderOwnerId,
+      senderDisplayName:
+          (json['senderDisplayName'] ?? sender?['displayName']) as String?,
+      text: text,
+      createdAt: createdAt,
+      isOutbound: isOutbound,
+      attachments: attRaw
+          ?.map((a) => ChatAttachment.fromJson(a as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'thread_id': threadId,

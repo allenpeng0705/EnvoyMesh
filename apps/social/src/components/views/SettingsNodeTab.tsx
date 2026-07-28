@@ -1361,7 +1361,7 @@ export function SettingsNodeTab() {
           )
         )}
 
-        {/* Bridge enable/disable toggle — takes effect on next node restart */}
+        {/* Bridge enable/disable toggle — rebinds bridge HTTP in-process */}
         <div className="settings-toggle-row" style={{ marginTop: "12px" }}>
           <div className="toggle-info">
             <strong>{t("settings.network.agentBridge.enableBridge")}</strong>

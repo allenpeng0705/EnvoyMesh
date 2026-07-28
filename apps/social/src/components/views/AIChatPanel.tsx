@@ -3,6 +3,7 @@ import { useT, useI18n } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService, useIsInProcessMobileNode } from "../../hooks/useNodeService.js";
 import { useToast } from "../../hooks/useToast.js";
+import { useChatStickToBottom } from "../../hooks/useChatStickToBottom.js";
 import { ChainStartDialog } from "../ChainStartDialog.js";
 import { ChainReportInlineCard } from "../ChainReportInlineCard.js";
 import { ConfirmDialog } from "../ConfirmDialog.js";
@@ -238,7 +239,6 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox, onOpenChains, onOpenD
   const [approvalBusyId, setApprovalBusyId] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<{ title: string; message?: string; variant?: "default" | "destructive"; onConfirm: () => void } | null>(null);
   const [chainGoal, setChainGoal] = useState<string | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const draftRef = useRef<ReturnType<typeof createAssistantDraftCrdt> | null>(null);
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reloadSeqRef = useRef(0);
@@ -443,12 +443,17 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox, onOpenChains, onOpenD
     return unsub;
   }, [nodeService]);
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  const scrollRevision = useMemo(() => {
+    const last = aiMessages[aiMessages.length - 1];
+    return `${aiMessages.length}:${last?.id ?? ""}:${last?.text?.length ?? 0}:${isAiLoading ? 1 : 0}`;
   }, [aiMessages, isAiLoading]);
+  const { containerRef: messagesRef, onScroll: onMessagesScroll, pinToBottom } =
+    useChatStickToBottom(ENVOY_AI_THREAD_KEY, scrollRevision);
 
   const sendAiMessage = async (question: string) => {
     if (!question.trim() || isAiLoading) return;
+
+    pinToBottom();
 
     if (!assistantReady) {
       setAiMessages((prev) => [
@@ -621,7 +626,7 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox, onOpenChains, onOpenD
           </span>
         </div>
       </header>
-      <div className="messages ai-messages-pane">
+      <div className="messages ai-messages-pane" ref={messagesRef} onScroll={onMessagesScroll}>
         {!assistantReady && (
           <p className="chat-reachability-hint ai-assistant-hint" role="status">
             {assistantBlockedHint}
@@ -772,7 +777,6 @@ export function AIChatPanel({ onOpenActivity, onOpenInbox, onOpenChains, onOpenD
             </div>
           </div>
         )}
-        <div ref={messagesEndRef} className="messages-scroll-anchor" aria-hidden />
       </div>
       {linkedTerminalSessionId ? (
         <div className="ai-linked-terminal-banner" role="status">

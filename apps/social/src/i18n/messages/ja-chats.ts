@@ -298,6 +298,8 @@ export const jaMessageBubbleMessages = {
   copyMessage: "メッセージをコピー",
   copied: "コピーしました",
   deleteMessage: "メッセージを削除",
+  retrySend: "再送信",
+  retryNeedsText: "再送信できません — テキストがありません",
 } as const;
 
 export const jaInboxMessages = {

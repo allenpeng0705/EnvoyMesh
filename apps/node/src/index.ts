@@ -214,6 +214,9 @@ import { executeTool as runRegistryTool, listAgentTools } from "./tool-registry.
 import { loadBridgeIdentity, saveBridgeIdentity } from "./bridge/identity-store.js";
 import type { BridgeConfig } from "./bridge/config.js";
 import { BridgeConfigSchema, resolveAssistantAgentUrl, applyActiveExtAgent, bridgeConfigToStatusFields } from "./bridge/config.js";
+import { loadBridgeConfigFromProfile } from "./bridge/bridge-config-store.js";
+import { createCoalescedRunner } from "./bridge/coalesced-runner.js";
+import { syncExtAgentSidecar, stopExtAgentSidecar } from "./ext-agent-adapter/index.js";
 import {
   ExternalAgentGateway,
   createExternalAgentSession,
@@ -3491,10 +3494,16 @@ function guessA2AVaultMime(relativePath: string): string {
   }
 }
 
-const bridge = createBridge({
-  config: bridgeConfig,
-  listenForOpenClaw: bridgeListenForOpenClaw,
-  identity: bridgeIdentity,
+function createAgentBridgeInstance(cfg: BridgeConfig) {
+  if (!bridgeIdentity) {
+    throw new Error("[bridge] agent identity not initialized");
+  }
+  const identity = bridgeIdentity;
+  const listenForOpenClaw = openclawEnabledForBridge === true;
+  return createBridge({
+  config: cfg,
+  listenForOpenClaw,
+  identity,
   mesh,
   getRecipientPeerId,
   getRecipientDialHints,
@@ -3552,11 +3561,11 @@ const bridge = createBridge({
     const chatMsg = {
       messageId: envelope.messageId,
       sender: {
-        nodeId: bridgeIdentity.agentPeerId,
-        ownerId: bridgeIdentity.agentPeerId,
+        nodeId: identity.agentPeerId,
+        ownerId: identity.agentPeerId,
         displayName: bridgeConfig.agentName ?? "EnvoyAI",
         actorRole: "agent" as const,
-        agentId: bridgeIdentity.agentCredential.agentId,
+        agentId: identity.agentCredential.agentId,
         agentVerified: true,
       },
       recipient: {
@@ -3573,7 +3582,7 @@ const bridge = createBridge({
       },
       signature: envelope.signature,
     };
-    void chatLogStore.append(bridgeIdentity.agentPeerId, chatMsg).catch((err) =>
+    void chatLogStore.append(identity.agentPeerId, chatMsg).catch((err) =>
       console.warn(`[bridge] chat log append failed:`, err),
     );
     if (nodeService instanceof NodeServiceImpl) {
@@ -3583,11 +3592,99 @@ const bridge = createBridge({
     }
   },
 });
+}
+
+let bridge = createAgentBridgeInstance(bridgeConfig);
 bridgeHandleMessage = bridge._handleMessage;
+
+function wireBridgeIntoNodeService(): void {
+  if (!(nodeService instanceof NodeServiceImpl)) return;
+  nodeService.setBridgeChatHandler(bridge._handleMessage);
+  nodeService.setBridgeLiveConfigUpdater(bridge.updateLiveConfig);
+  const fields = bridgeConfigToStatusFields(bridgeConfig);
+  const prev = nodeService.getBridgeStatusSnapshot() ?? {
+    enabled: false,
+    agentPeerId: bridge.agentPeerId,
+    agentUrl: "",
+    listenPort: fields.listenPort,
+    agentName: "",
+  };
+  const assistantUrl = resolveAssistantAgentUrl(bridgeConfig);
+  const agentType: "envoyai" | "external" =
+    assistantUrl.includes("/webhook/envoymesh") ? "envoyai" : "external";
+  nodeService.setBridgeStatus({
+    ...prev,
+    enabled: bridgeConfig.enabled,
+    agentPeerId: bridge.agentPeerId,
+    agentUrl: fields.agentUrl,
+    listenPort: fields.listenPort,
+    agentName: fields.agentName,
+    agentPublicKeyPem: bridgeIdentity!.agentPublicKeyPem,
+    agentType,
+    activeExtAgentId: fields.activeExtAgentId,
+    extAgents: fields.extAgents,
+  });
+  void syncExtAgentSidecar({
+    bridgeEnabled: bridgeConfig.enabled,
+    activeExtAgentId: fields.activeExtAgentId,
+    bridgeListenPort: bridgeConfig.listenPort,
+    bridgeSecret: bridgeConfig.secret,
+  });
+}
+
+async function performAgentBridgeRebind(reason: string): Promise<void> {
+  console.log(`[bridge] rebind starting (${reason})`);
+  const previousConfig = bridgeConfig;
+  const fromDisk = await loadBridgeConfigFromProfile(args.profileDir);
+  let persisted: Awaited<ReturnType<typeof nodeConfigStore.load>> | null = null;
+  try {
+    persisted = await nodeConfigStore.load();
+  } catch {
+    persisted = null;
+  }
+  openclawEnabledForBridge = persisted?.openclawEnabled ?? true;
+  const uiEnabled = persisted?.bridgeEnabled ?? false;
+  let next: BridgeConfig = applyActiveExtAgent({
+    ...fromDisk,
+    enabled: uiEnabled === true,
+    assistantAgentUrl: openClawGatewayWebhookUrl(),
+  });
+  // Env override wins (multi-instance port offset); otherwise honor saved listenPort.
+  if (process.env.ENVOYMESH_BRIDGE_PORT?.trim() || process.env.ENVOYMESH_PORT_OFFSET?.trim()) {
+    next = { ...next, listenPort: BRIDGE_HTTP_PORT };
+  }
+
+  await bridge.stop();
+  try {
+    bridgeConfig = next;
+    bridge = createAgentBridgeInstance(bridgeConfig);
+    bridgeHandleMessage = bridge._handleMessage;
+    wireBridgeIntoNodeService();
+  } catch (err) {
+    console.error(
+      "[bridge] rebind recreate failed; restoring previous listener:",
+      err instanceof Error ? err.message : err,
+    );
+    bridgeConfig = previousConfig;
+    bridge = createAgentBridgeInstance(previousConfig);
+    bridgeHandleMessage = bridge._handleMessage;
+    wireBridgeIntoNodeService();
+    throw err;
+  }
+  console.log(
+    `[bridge] rebound: enabled=${bridgeConfig.enabled} port=${bridgeConfig.listenPort} agent=${bridgeConfig.activeExtAgent ?? bridgeConfig.agentName}`,
+  );
+}
+
+/** In-process bridge HTTP rebind (enable / listenPort / secret). */
+const rebindAgentBridge = createCoalescedRunner(performAgentBridgeRebind);
 
 // Wire bridge chat handler into NodeServiceImpl so sendChat can short-circuit self-dial
 if (nodeService instanceof NodeServiceImpl) {
   nodeService.setBridgeChatHandler(bridge._handleMessage);
+  nodeService.setBridgeLiveConfigUpdater(bridge.updateLiveConfig);
+  nodeService.setBridgeRebindHandler(rebindAgentBridge);
+  nodeService.setExtAgentSidecarSyncer(syncExtAgentSidecar);
   nodeService.setStyleAdapter(styleAdapter);
 }
 
@@ -3634,6 +3731,12 @@ if (nodeService instanceof NodeServiceImpl && bridgeAgentLifecycleReady) {
     agentType,
     activeExtAgentId: bridgeFields.activeExtAgentId,
     extAgents: bridgeFields.extAgents,
+  });
+  void syncExtAgentSidecar({
+    bridgeEnabled: bridgeHttpReady,
+    activeExtAgentId: bridgeFields.activeExtAgentId,
+    bridgeListenPort: bridgeConfig.listenPort,
+    bridgeSecret: bridgeConfig.secret,
   });
   if (meshStarted) {
   // Register bridge agent as a virtual peer so sendChat can resolve it.
@@ -4101,6 +4204,11 @@ async function shutdown(): Promise<void> {
   shutdownInProgress = true;
   try {
     await bridge.stop();
+    try {
+      await stopExtAgentSidecar();
+    } catch {
+      /* ok */
+    }
     if (nodeService instanceof NodeServiceImpl) {
       try {
         await nodeService.stopOpenClaw?.();

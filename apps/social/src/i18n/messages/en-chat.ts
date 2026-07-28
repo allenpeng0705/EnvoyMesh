@@ -388,6 +388,8 @@ export const messageBubbleMessages = {
   copyMessage: "Copy message",
   copied: "Copied",
   deleteMessage: "Delete message",
+  retrySend: "Retry send",
+  retryNeedsText: "Can't retry — this message has no text to resend",
 } as const;
 
 export const inboxMessages = {

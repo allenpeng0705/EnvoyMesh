@@ -183,6 +183,89 @@ describe("bridge runtime", () => {
     }
   });
 
+  it("updateLiveConfig hot-switches Ext Agent URL without restart", async () => {
+    const port = await getFreePort();
+    const identity = makeBridgeIdentity();
+    const agentFetch = vi.fn().mockResolvedValue({
+      ok: true,
+      json: () => Promise.resolve({ text: null }),
+    });
+    vi.stubGlobal("fetch", agentFetch);
+
+    const bridge = createBridge({
+      config: {
+        enabled: true,
+        agentUrl: "http://127.0.0.1:8010/message",
+        listenPort: port,
+        activeExtAgent: "homeclaw",
+        extAgents: [
+          {
+            id: "homeclaw",
+            name: "HomeClaw",
+            adapter: "envoymesh-message",
+            url: "http://127.0.0.1:8010/message",
+            enabled: true,
+          },
+          {
+            id: "hermes",
+            name: "Hermes",
+            adapter: "envoymesh-message",
+            url: "http://127.0.0.1:8020/message",
+            enabled: true,
+          },
+        ],
+      },
+      identity,
+      mesh: makeMesh(),
+      getRecipientPeerId: async () => null,
+    });
+
+    try {
+      await bridge._handleMessage(
+        {
+          intent: "chat.message",
+          recipientPeerId: identity.agentPeerId,
+          payload: createChatMessagePayload({
+            senderOwnerId: "envoy:owner:sender",
+            text: "to homeclaw",
+          }),
+        },
+        "12D3Sender",
+      );
+      expect(agentFetch).toHaveBeenCalledTimes(1);
+      expect(String(agentFetch.mock.calls[0]![0])).toContain(":8010/message");
+
+      // Fire-and-forget forward — wait for the POST to land.
+      await vi.waitFor(() => expect(agentFetch).toHaveBeenCalledTimes(1));
+
+      bridge.updateLiveConfig({
+        activeExtAgent: "hermes",
+      });
+      expect(bridge.getLiveConfig().activeExtAgent).toBe("hermes");
+      expect(bridge.getLiveConfig().agentUrl).toContain(":8020/message");
+      // listenPort stays live-config only after rebind — updateLiveConfig may
+      // mirror fields but HTTP still listens on the original port.
+      expect(bridge.getLiveConfig().listenPort).toBe(port);
+
+      await bridge._handleMessage(
+        {
+          intent: "chat.message",
+          recipientPeerId: identity.agentPeerId,
+          payload: createChatMessagePayload({
+            senderOwnerId: "envoy:owner:sender",
+            text: "to hermes",
+          }),
+        },
+        "12D3Sender",
+      );
+      await vi.waitFor(() => expect(agentFetch).toHaveBeenCalledTimes(2));
+      expect(String(agentFetch.mock.calls[1]![0])).toContain(":8020/message");
+    } finally {
+      await bridge.stop();
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("ignores sync HTTP text from agentUrl on chat.message (no duplicate P2P)", async () => {
     const port = await getFreePort();
     const identity = makeBridgeIdentity();

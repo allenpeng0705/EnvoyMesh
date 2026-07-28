@@ -171,7 +171,7 @@ export const zh = mergeMessages(en, {
     notConnected: "未连接到节点后端。",
     unableConnect: "无法连接。节点是否正在运行？",
     tauriHint: "若重启节点无效，请退出并重新打开应用。",
-    devHint: "桌面开发：运行 npm run node:dev（WebSocket 端口 3030）。",
+    devHint: "桌面开发：运行 npm run node:dev（WebSocket :3030）。若保存的地址过期，Social 会自动探测 :3030/:4030。",
     retryConnection: "重试连接",
     notDesktopApp: "未在桌面应用中运行。",
     syncingTitle: "同步节点",
