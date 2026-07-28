@@ -297,7 +297,14 @@ export type AuditEventType =
   // Phase 45 — Web Content Browsing.
   | "library.read"
   | "library.read.served"
-  | "library.read.denied";
+  | "library.read.denied"
+  // Phase 49D — Pi (built-in local coding agent) tool-action audit.
+  // Pi executes its own tools; these events record the request + the user's
+  // confirm/deny decision (NOT execution — EnvoyMesh doesn't run Pi's tools).
+  | "pi.tool.proposed"
+  | "pi.tool.executed"
+  | "pi.tool.denied"
+  | "pi.tool.failed";
 
 export type AuditDirection = "inbound" | "outbound" | "local";
 

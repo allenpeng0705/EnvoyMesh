@@ -640,6 +640,10 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.sendToPi(text);
   }
 
+  async piRespondToProposal(params: { uiRequestId: string; confirmed: boolean }) {
+    return this._ns.piRespondToProposal(params);
+  }
+
   async getOpenClawPlugins() { return this._ns.getOpenClawPlugins(); }
   async searchOpenClawPlugins(query: string) { return this._ns.searchOpenClawPlugins(query); }
   async getTrendingOpenClawPlugins() { return this._ns.getTrendingOpenClawPlugins(); }

@@ -1654,6 +1654,9 @@ export interface NodeServiceEvents {
   /** EnvoyAI replied with a terminal command proposal for a correlated session (Phase 31D). */
   "terminal:assistant-proposal": import("./terminal-agent.js").TerminalAssistantProposalEvent;
 
+  /** Phase 49D — Pi wants to perform an action and is waiting for user confirmation. */
+  "pi:proposal": import("./pi-agent.js").PiProposalEvent;
+
   /** Home terminal PTY tunnel bytes (Phase 30E — mobile HomeRemote). */
   "homeTerminalWs:rx": import("./home-remote.js").HomeTerminalWsRxEvent;
   "homeTerminalWs:closed": import("./home-remote.js").HomeTerminalWsClosedEvent;
@@ -2410,6 +2413,14 @@ export interface NodeService {
   restartPi(): Promise<PiStatus>;
   /** One-shot prompt — used by the sendToPi JSON-RPC method. Returns the text. */
   sendToPi(text: string): Promise<string>;
+  /**
+   * Phase 49D — deliver the user's confirm/deny decision on a Pi tool-action
+   * request. Pi executes its own tools; this only unblocks the agent.
+   */
+  piRespondToProposal(params: {
+    uiRequestId: string
+    confirmed: boolean
+  }): Promise<{ uiRequestId: string; delivered: boolean }>;
 
   // ClawHub skill marketplace
   getOpenClawPlugins(): Promise<string[]>;

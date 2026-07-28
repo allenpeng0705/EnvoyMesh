@@ -4858,6 +4858,24 @@ You are the owner's personal AI assistant on EnvoyMesh.
     return "";
   }
 
+  /** Phase 49D — confirm/deny a Pi tool-action request on the home node. */
+  async piRespondToProposal(params: {
+    uiRequestId: string
+    confirmed: boolean
+  }): Promise<{ uiRequestId: string; delivered: boolean }> {
+    if (this._isHomeRemotePaired() && this._homeRemoteOnline) {
+      try {
+        return await this._homeRemoteCall<{ uiRequestId: string; delivered: boolean }>(
+          "piRespondToProposal",
+          params,
+        );
+      } catch {
+        // fall through to offline default
+      }
+    }
+    return { uiRequestId: params.uiRequestId, delivered: false };
+  }
+
   async getPairingPayload() {
     return {
       wsUrl: this._relayUrls[0] ?? "",

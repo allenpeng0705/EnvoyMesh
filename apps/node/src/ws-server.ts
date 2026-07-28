@@ -163,6 +163,10 @@ export class WsServer {
       nodeServiceImpl.on("terminal:assistant-proposal", (data: unknown) =>
         this.emitEvent("terminal:assistant-proposal", data),
       );
+      // Phase 49D — Pi tool-action confirm dialog.
+      nodeServiceImpl.on("pi:proposal", (data: unknown) =>
+        this.emitEvent("pi:proposal", data),
+      );
       // Phase 25C — Digest ready notification
       // digest:ready not in NodeServiceEvents type — emit directly
       // Phase 38 — Voice/Video Call events
@@ -363,6 +367,8 @@ export class WsServer {
       "terminal:session-updated",
       "terminal:watch-ready",
       "terminal:assistant-proposal",
+      // Phase 49D — Pi tool-action confirm dialog
+      "pi:proposal",
       // Phase 38 — voice/video call events
       "call:incoming",
       "call:reinvite",

@@ -6347,12 +6347,15 @@ Closes the production path after 48A–48D protocol/mount work.
 
 ### 49D — Tool Calling + Permission Flow
 
-- `[ ]` `apps/node/src/pi-tool-bridge.ts` — Pi tool calls → `TerminalCommandProposal` with `riskTier` per the design doc §7 mapping (read/ls/grep → `safe`; write/edit/mkdir → `moderate`; bash with destructive patterns → `destructive`).
-- `[ ]` Risk classification reuses `resolveProposalRisk()` from `packages/models/src/terminal-command-proposal.ts:170`.
-- `[ ]` Confirm UI in `PiChatPanel.tsx` — reuses Phase 30 `terminal-proposal-${riskTier}` patterns (risk badge + Run/Edit/Cancel buttons).
-- `[ ]` Server-side enforcement mirrors `terminal-agent-assist.ts:716` (`requiresConfirmation` check → `pi.tool.confirmRequired`).
-- `[ ]` Egress-content scan (`evaluateEgressContent`) before any file write / shell exec.
-- `[ ]` `autoRunPolicy` selector (`off` / `safe-only` / `always-confirm`); default `always-confirm`; trust mode opt-in.
+**Critical design note (verified Slice 49D research):** Pi executes its own tools internally — EnvoyMesh only approves via the `extension_ui_request`/`extension_ui_response` stdin/stdout sub-protocol. This is NOT the Phase 30 terminal agent model (which writes commands to a PTY). Do NOT route through `terminal-agent-assist.ts:executeProposal` — see design §7 "Why NOT to reuse."
+
+- `[ ]` `apps/node/src/pi-tool-bridge.ts` — `extension_ui_request { id, title, message, timeout }` → `PiToolProposal` (the confirm-dialog payload). Egress-content scan (`evaluateEgressContent`) on `title`/`message` before audit (redacts secrets; does NOT block the dialog).
+- `[ ]` `packages/api/src/pi-agent.ts` — add `PiToolProposal`, `PiProposalEvent` (WS push payload), `PiRespondToProposalParams` types.
+- `[ ]` Wire `PiRuntime.on("ui_request")` → `NodeServiceImpl.emit("pi:proposal", event)` → `ws-server` bridge + event allow-list.
+- `[ ]` Add `piRespondToProposal` JSON-RPC method + `NodeService.piRespondToProposal({ uiRequestId, confirmed })` → calls `PiRuntime.respondToUiRequest(id, confirmed)`.
+- `[ ]` Confirm UI in `PiChatPanel.tsx` — docked card with title/message + Allow/Deny buttons (NO risk badge; NO edit-in-terminal — Pi's tool, not ours).
+- `[ ]` Audit events: `pi.tool.proposed` / `pi.tool.executed` / `pi.tool.denied` / `pi.tool.failed` via `createSerialJsonlAppender`. Redacted title/message.
+- `[ ]` `autoRunPolicy: "off"` (trust mode) → auto-respond `confirmed: true` without surfacing the dialog. Opt-in only; default surfaces every request.
 
 ### 49E — Terminal Agent Mode Integration
 

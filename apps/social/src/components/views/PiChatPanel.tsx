@@ -16,7 +16,7 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from "react"
 import { useT } from "../../context/I18nContext.js"
 import { useNodeService } from "../../hooks/useNodeService.js"
-import type { PiStatus, PiRuntimeState } from "@envoymesh/api"
+import type { PiStatus, PiRuntimeState, PiToolProposal } from "@envoymesh/api"
 
 // ---------------------------------------------------------------------------
 // Local turn model (mirrors TerminalAgentBar's AgentTurn)
@@ -94,6 +94,8 @@ export function PiChatPanel({ onBackToChats }: PiChatPanelProps) {
   const [turns, setTurns] = useState<PiTurn[]>([])
   const [status, setStatus] = useState<PiStatus | null>(null)
   const [restarting, setRestarting] = useState(false)
+  /** Phase 49D — pending tool-action confirm dialog (Pi is blocked waiting). */
+  const [pendingProposal, setPendingProposal] = useState<PiToolProposal | null>(null)
 
   // ---- Status refresh (initial probe + poll while not ready) ----
   const refresh = useCallback(async () => {
@@ -199,6 +201,43 @@ export function PiChatPanel({ onBackToChats }: PiChatPanelProps) {
       setRestarting(false)
     }
   }, [nodeService, setSystem, t, restarting])
+
+  // ---- Phase 49D — tool-action confirm dialog ----
+  // Subscribe to server-pushed pi:proposal events. Pi BLOCKS until we send
+  // back confirmed:true|false via piRespondToProposal; if we don't respond
+  // within req.timeoutMs, Pi auto-skips (treated as deny).
+  useEffect(() => {
+    return nodeService.on("pi:proposal", (event) => {
+      if (event?.proposal) {
+        setPendingProposal(event.proposal)
+      }
+    })
+  }, [nodeService])
+
+  const respondToProposal = useCallback(
+    async (proposal: PiToolProposal, confirmed: boolean) => {
+      // Clear the dialog immediately so the user sees their click registered
+      // even if the RPC is slow (Pi unblocks only once it gets the response).
+      setPendingProposal(null)
+      setSystem(
+        confirmed
+          ? t("pi.proposalAllowed", `Allowed: ${proposal.title}`)
+          : t("pi.proposalDenied", `Denied: ${proposal.title}`),
+        confirmed ? "info" : "error",
+      )
+      try {
+        await nodeService.piRespondToProposal({
+          uiRequestId: proposal.uiRequestId,
+          confirmed,
+        })
+      } catch (err: unknown) {
+        // The response didn't reach Pi (likely timed out + child exited).
+        const msg = err instanceof Error ? err.message : String(err)
+        setSystem(t("pi.proposalRespondFailed", `Failed to deliver response: ${msg}`), "error")
+      }
+    },
+    [nodeService, setSystem, t],
+  )
 
   // ---- Auto-scroll the thread to bottom on new turns ----
   useEffect(() => {
@@ -322,6 +361,38 @@ export function PiChatPanel({ onBackToChats }: PiChatPanelProps) {
           </div>
         ) : null}
       </div>
+
+      {pendingProposal ? (
+        <div
+          className="pi-proposal-dock"
+          role="alertdialog"
+          aria-label={pendingProposal.title}
+          aria-live="assertive"
+        >
+          <div className="pi-proposal-dock-title">
+            {t("pi.proposalTitle", "Pi wants to:")} <strong>{pendingProposal.title}</strong>
+          </div>
+          {pendingProposal.message ? (
+            <pre className="pi-proposal-dock-message">{pendingProposal.message}</pre>
+          ) : null}
+          <div className="pi-proposal-dock-actions">
+            <button
+              type="button"
+              className="pi-proposal-allow-btn"
+              onClick={() => void respondToProposal(pendingProposal, true)}
+            >
+              {t("pi.allow", "Allow")}
+            </button>
+            <button
+              type="button"
+              className="pi-proposal-deny-btn"
+              onClick={() => void respondToProposal(pendingProposal, false)}
+            >
+              {t("pi.deny", "Deny")}
+            </button>
+          </div>
+        </div>
+      ) : null}
 
       <form
         className="pi-chat-composer"

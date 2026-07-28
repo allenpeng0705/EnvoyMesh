@@ -1075,6 +1075,7 @@ import {
   getPiStatusViaRuntime,
   isPiEnabledViaRuntime,
   isPiReadyViaRuntime,
+  respondToUiRequestViaRuntime,
   type PiRuntimeStateMutable,
   type PiRuntimeDeps,
 } from "./node-service-pi.js";
@@ -3753,6 +3754,24 @@ class NodeServiceImpl implements NodeService {
   async sendToPi(text: string): Promise<string> {
     const result = await askPiViaRuntime(this._piState, this._piRuntimeDeps(), text)
     return result.text
+  }
+
+  /**
+   * Phase 49D — deliver the user's confirm/deny decision on a Pi tool-action
+   * request back to the Pi child process. Emits the matching pi.tool.*
+   * audit event. Used by the piRespondToProposal JSON-RPC method.
+   */
+  async piRespondToProposal(params: {
+    uiRequestId: string
+    confirmed: boolean
+  }): Promise<{ uiRequestId: string; delivered: boolean }> {
+    const result = await respondToUiRequestViaRuntime(
+      this._piState,
+      this._piRuntimeDeps(),
+      params.uiRequestId,
+      params.confirmed,
+    )
+    return { uiRequestId: params.uiRequestId, delivered: result.delivered }
   }
 
   private _resolveOpenClawWorkspaceDir(): string {

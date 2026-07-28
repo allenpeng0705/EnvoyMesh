@@ -39,12 +39,17 @@ export type {
   PiRuntimeState,
   PiPromptResult,
   PiModelOverride,
+  PiSettings,
   GetPiStatusParams,
   GetPiStatusResult,
   RestartPiParams,
   RestartPiResult,
   SendToPiParams,
   SendToPiResult,
+  PiToolProposal,
+  PiProposalEvent,
+  PiRespondToProposalParams,
+  PiRespondToProposalResult,
 } from "./pi-agent.js";
 
 // ============================================
@@ -256,6 +261,7 @@ export type RpcMethods =
     | "saveWebSearchEnabled"
     | "sendToOpenClaw"
     | "sendToPi"
+    | "piRespondToProposal"
     | "sendToBridge"
     | "getPairedDiagnostics"
     | "saveSkillApiKeys"

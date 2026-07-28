@@ -383,65 +383,86 @@ Unlike the Built-in OpenClaw block (which is read-only in the UI per Phase 32), 
 
 ---
 
-## 7. Permission Model (Locked: Confirm-Destructive + Opt-In Trust)
+## 7. Permission Model (Locked: Confirm-Dialog + Opt-In Trust)
 
-Pi tool calls (file read/write, bash, edit) go through the **existing Phase 30 terminal-agent confirm flow** — no new mandate/Bond-Engine machinery.
+Pi tool calls are surfaced to the user via a **confirm dialog**. EnvoyMesh does NOT execute Pi's tools — Pi executes them internally once we send `confirmed: true` via the `extension_ui_response` stdin message. This is the critical difference from the Phase 30 terminal agent (which writes commands to a PTY itself).
 
-### Reused types and functions
+### How Pi's approval protocol works (verified against upstream)
 
-From `packages/api/src/terminal-agent.ts:1-17`:
+When Pi is about to perform an action it deems worth confirming, it emits:
 
 ```typescript
-export type TerminalCommandRiskTier = "safe" | "moderate" | "destructive";
-export type TerminalAutoRunPolicy = "off" | "safe-only" | "always-confirm";
-
-export interface TerminalCommandProposal {
-  proposalId: string;
-  sessionId: string;
-  command: string;
-  riskTier: TerminalCommandRiskTier;
-  rationale?: string;
-  requiresConfirmation: boolean;
-  createdAt: string;
+// From packages/api/src/pi-agent.ts
+interface PiExtensionUiRequest {
+  type: "extension_ui_request"
+  id: string             // unique per request; correlates the response
+  method: "confirm"
+  title: string          // short heading, e.g. "Clear session?"
+  message: string        // supporting context, e.g. "All messages will be lost."
+  timeout: number        // ms; Pi auto-resolves (usually skip) on expiry
 }
 ```
 
-Risk classification reuses `resolveProposalRisk()` from `packages/models/src/terminal-command-proposal.ts:170`:
-- Deterministic pattern matching (`DESTRUCTIVE_PATTERNS` / `MODERATE_PATTERNS`).
-- Model-hint upgrade (the model can only **raise** risk, never lower it past the deterministic floor).
-- Owner-configured allow/deny patterns can override.
-- `requiresConfirmation = requiresConfirmationForRisk(riskTier, autoRunPolicy)`.
+Pi **BLOCKS** until the host sends back:
 
-### Pi tool → risk-tier mapping
+```typescript
+interface PiExtensionUiResponse {
+  type: "extension_ui_response"
+  id: string             // matches the request id
+  confirmed: boolean     // true = Pi proceeds; false = Pi skips the action
+}
+```
 
-| Pi tool | Risk tier | Rationale |
-|---|---|---|
-| `read`, `ls`, `grep`, `glob` | `safe` | Read-only, no side effects |
-| `write`, `edit`, `mkdir`, `touch` | `moderate` | Mutates filesystem, recoverable |
-| `bash` matching destructive patterns (`rm`, `mv`, `sudo`, `>`, `chmod`, `dd`, `mkfs`) | `destructive` | Unrecoverable / system-level |
-| `bash` (other) | `moderate` | Default for shell execution |
-| `bash` matching owner deny patterns | `destructive` (hard block) | Owner policy |
+**Key facts (verified from Pi's RPC docs + source):**
+- The `extension_ui_request` fires from inside the tool's logic (extensions call `ctx.ui.confirm(...)`), AFTER `tool_execution_start` and BEFORE `tool_execution_end`.
+- Pi has **already classified the risk** itself — that's why it's asking. EnvoyMesh does not need to re-classify.
+- On `timeout` expiry with no response, Pi auto-resolves (usually skip / `confirmed: false`). No retry.
+- The `id` is a unique correlation key, separate from any `toolCallId`. Multiple requests can be in flight at once (parallel tool calls).
+- The `title` and `message` are human-readable descriptions of the action — NOT raw command strings.
 
-This mapping lives in a new `apps/node/src/pi-tool-bridge.ts`. The output is always a `TerminalCommandProposal` — the confirm UI in `PiChatPanel.tsx` and the terminal agent mode is identical to the existing Phase 30 UI.
+### Why NOT to reuse TerminalCommandProposal's execution path
+
+The original design (§7 v1) proposed mapping Pi tool calls into `TerminalCommandProposal` and reusing `terminal-agent-assist.ts:executeProposal`. **This does not work** — `executeProposal` writes the command to a PTY via `this.manager.writeStdin(sessionId, ...)`. Pi doesn't expect EnvoyMesh to execute anything; it executes its own tools after we approve. Routing Pi through the PTY path would be wrong (no real command string) and dangerous (would execute arbitrary text in a shell).
+
+We DO reuse the proposal **shape** for UI consistency (risk badges, dock styling), but the confirm/deny flow is dedicated: it calls `PiRuntime.respondendToUiRequest(id, confirmed)` instead of writing to a PTY.
+
+### Confirm-dialog UI
+
+When a `pi:proposal` event arrives, the Pi chat panel renders a docked card with:
+
+```
+┌─ Pi wants to: {title} ───────────────────────┐
+│  {message}                                    │
+│                              [Allow] [Deny]   │
+└──────────────────────────────────────────────┘
+```
+
+- **Allow** → `nodeService.piRespondToProposal({ uiRequestId, confirmed: true })`
+- **Deny** → `nodeService.piRespondToProposal({ uiRequestId, confirmed: false })`
+
+Both unblock Pi immediately. No edit-in-terminal escape hatch (Pi's tool, not ours). No risk-tier badge (Pi already classified it).
 
 ### Default policy + opt-in escape hatch
 
-- **Default:** `autoRunPolicy: "always-confirm"`. Every Pi tool call surfaces as a confirmable proposal. Matches user expectations for a chat panel (cf. Claude Code, Cursor, Aider all confirm destructive ops).
-- **Opt-in:** `autoRunPolicy: "off"` (trust mode). Power users who want raw CLI Pi feel can disable confirms. Available in Settings → AI → Pi block. **Not the default.**
-- **`safe-only`:** read-only tools auto-run; moderate/destructive still confirm. A middle ground for users who trust Pi to explore but not mutate without asking.
+- **Default:** every `extension_ui_request` surfaces the confirm dialog. Matches user expectations (cf. Claude Code, Cursor, Aider all confirm destructive ops).
+- **Opt-in trust mode:** `piSettings.autoRunPolicy: "off"` → auto-respond `confirmed: true` to every request without surfacing the dialog. Power users who want raw CLI Pi feel. Available in Settings → AI → Pi block (Slice 49F). **Not the default.**
 
-### Server-side enforcement
+### Audit events
 
-Mirrors `apps/node/src/terminal-agent-assist.ts:716`:
+Every `extension_ui_request` and the user's response are audited (see §8 for the JSONL schema):
 
-```typescript
-if (proposal.requiresConfirmation && params.confirmed !== true) {
-  void this.audit("pi.tool.denied", `confirm required for ${proposalId}`, sessionId);
-  throw new Error("pi.tool.confirmRequired");
-}
-```
+| Event | When |
+|---|---|
+| `pi.tool.proposed` | EnvoyMesh receives `extension_ui_request` and surfaces the dialog |
+| `pi.tool.executed` | User clicks Allow (`confirmed: true`) |
+| `pi.tool.denied` | User clicks Deny, or auto-deny on timeout |
+| `pi.tool.failed` | `respondToUiRequest` throws (child exited, stdin closed) |
 
-Plus an egress-content scan (`evaluateEgressContent` from `@envoymesh/models`) before any file write or shell exec — blocks PEM keys, AWS credentials, JWT tokens, connection strings from leaking through Pi.
+The audit captures: `title`, `message` (truncated + redacted of secrets via `evaluateEgressContent`), the `uiRequestId`, and the outcome. No raw command text (there isn't one).
+
+### Egress-content scan
+
+Although EnvoyMesh doesn't execute the tool, the `title` and `message` may contain sensitive data the user wouldn't want logged. Before writing audit events, run `evaluateEgressContent({ text: title + " " + message })` — if it detects PEM keys, AWS credentials, JWT tokens, or connection strings, redact the relevant portions before logging. The scan does NOT block the confirm dialog (the user needs to see the prompt to decide); it only affects what gets persisted to the audit log.
 
 ---
 
@@ -507,7 +528,7 @@ packages/api/src/
 
 apps/node/src/
   pi-runtime.ts                    (new — spawn + manage Pi subprocess, model handoff per §5)
-  pi-tool-bridge.ts                (new — Pi tool calls → TerminalCommandProposal per §7)
+  pi-tool-bridge.ts                (new — Pi extension_ui_request → PiToolProposal + audit)
   node-service-pi.ts               (new — JSON-RPC handlers for Pi chat / terminal)
   node-config-store.ts             (edited — add piEnabled + piSettings to PersistedNodeConfig)
 
@@ -554,7 +575,7 @@ Implementation is sequenced into six slices. Each slice is independently verifia
 
 ### Slice 4 — Tool Calling + Permission Flow
 
-- `apps/node/src/pi-tool-bridge.ts` — Pi tool calls → `TerminalCommandProposal`
+- `apps/node/src/pi-tool-bridge.ts` — Pi `extension_ui_request` → `PiToolProposal` (the confirm-dialog payload) + audit-event helpers. Does NOT map to `TerminalCommandProposal` — see §7 ("Why NOT to reuse").
 - Risk-tier classification per §7
 - Confirm UI in `PiChatPanel.tsx` (reuse Phase 30 patterns)
 - Server-side enforcement + egress scan
@@ -599,7 +620,7 @@ Reuses the existing test orchestrator (`scripts/test.sh` / `npm run test:dev`).
 | Area | File | Coverage |
 |---|---|---|
 | Model-config mapping | `apps/node/test/pi-runtime.test.ts` | `buildPiEnv()` for each `ModelProviderMode`; override logic; env-var scoping (key not in parent env) |
-| Tool → risk classification | `apps/node/test/pi-tool-bridge.test.ts` | Each Pi tool maps to expected `riskTier`; destructive bash patterns; owner allow/deny patterns |
+| Tool-request mapping | `apps/node/test/pi-tool-bridge.test.ts` | `extension_ui_request` → `PiToolProposal`; egress scan redacts secrets in title/message before audit |
 | Audit event shape | `apps/node/test/pi-audit.test.ts` | Event types; field redaction; JSONL append serialization |
 | `AiEngineMode` extension | `packages/api/test/agent-network-mode.test.ts` | `computeAiEngineMode` with `piEnabled` for all 8 combinations |
 

@@ -267,3 +267,51 @@ export interface SendToPiResult {
   /** Echoed back text response (for simple sync RPC callers). */
   text: string
 }
+
+// ---------------------------------------------------------------------------
+// Phase 49D — Tool-call approval (confirm-dialog flow)
+// ---------------------------------------------------------------------------
+// Pi executes its own tools internally; EnvoyMesh only approves via the
+// extension_ui_request / extension_ui_response stdin/stdout sub-protocol.
+// See design §7. These types model the host-side confirm payload + RPC.
+
+/**
+ * A Pi tool-action confirmation request, surfaced to the user as a dialog.
+ * Produced from a PiExtensionUiRequest by pi-tool-bridge.ts.
+ *
+ * NOTE: this is deliberately NOT a TerminalCommandProposal. Pi executes
+ * its own tools — there's no command string for EnvoyMesh to write to a
+ * PTY. The reuse is visual only (docked card + buttons).
+ */
+export interface PiToolProposal {
+  /** The Pi extension_ui_request id — used to correlate the response. */
+  uiRequestId: string
+  /** Human-readable short heading, e.g. "Run bash command?". */
+  title: string
+  /** Supporting context, e.g. "rm -rf node_modules". */
+  message: string
+  /** Pi's requested timeout in ms; the UI may auto-dismiss after this. */
+  timeoutMs: number
+  /** ISO timestamp when EnvoyMesh received the request. */
+  receivedAt: string
+}
+
+/** WebSocket push payload for the `pi:proposal` event. */
+export interface PiProposalEvent {
+  proposal: PiToolProposal
+}
+
+/** Params for the piRespondToProposal JSON-RPC method. */
+export interface PiRespondToProposalParams {
+  /** Matches PiToolProposal.uiRequestId. */
+  uiRequestId: string
+  /** true = allow the action (Pi proceeds); false = deny (Pi skips). */
+  confirmed: boolean
+}
+
+export interface PiRespondToProposalResult {
+  /** Echo of the request id, for client-side correlation. */
+  uiRequestId: string
+  /** Whether the response was delivered to Pi before its timeout elapsed. */
+  delivered: boolean
+}

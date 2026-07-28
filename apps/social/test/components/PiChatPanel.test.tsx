@@ -26,14 +26,23 @@ import { renderWithI18n } from "../helpers/render-with-i18n.js"
 const getPiStatus = vi.fn()
 const sendToPi = vi.fn()
 const restartPi = vi.fn()
+const piRespondToProposal = vi.fn()
+// Capture the latest pi:proposal handler registered by the component, so
+// tests can emit events via it. Reset per-test in beforeEach.
+let piProposalHandler: ((event: { proposal: unknown }) => void) | null = null
+const onMock = vi.fn((event: string, handler: (event: unknown) => void) => {
+  if (event === "pi:proposal") piProposalHandler = handler as (e: { proposal: unknown }) => void
+  return () => {}
+})
 
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: () => ({
     getPiStatus,
     sendToPi,
     restartPi,
+    piRespondToProposal,
     isConnected: true,
-    on: vi.fn(() => () => {}),
+    on: onMock,
   }),
 }))
 
@@ -52,6 +61,10 @@ beforeEach(() => {
   getPiStatus.mockReset()
   sendToPi.mockReset()
   restartPi.mockReset()
+  piRespondToProposal.mockReset()
+  piRespondToProposal.mockResolvedValue({ uiRequestId: "", delivered: true })
+  onMock.mockClear()
+  piProposalHandler = null
   // Default: Pi is ready.
   getPiStatus.mockResolvedValue(status())
 })
@@ -182,4 +195,82 @@ describe("PiChatPanel", () => {
     const restartButtons = screen.queryAllByRole("button", { name: /^restart$/i })
     expect(restartButtons.length).toBe(0)
   })
+
+  // ---- Phase 49D — tool-action confirm dialog ----
+
+  it("renders the proposal dialog when a pi:proposal event arrives", async () => {
+    renderWithI18n(<PiChatPanel />)
+    await screen.findByText("Ready")
+
+    // Emit a pi:proposal event through the mocked nodeService.on() subscription.
+    emitPiProposalEvent({
+      uiRequestId: "req-1",
+      title: "Run bash command?",
+      message: "rm -rf node_modules",
+      timeoutMs: 5000,
+      receivedAt: new Date().toISOString(),
+    })
+
+    expect(await screen.findByText(/Run bash command/i)).toBeDefined()
+    expect(screen.getByRole("button", { name: /allow/i })).toBeDefined()
+    expect(screen.getByRole("button", { name: /deny/i })).toBeDefined()
+  })
+
+  it("Allow button calls piRespondToProposal(confirmed:true)", async () => {
+    renderWithI18n(<PiChatPanel />)
+    await screen.findByText("Ready")
+
+    emitPiProposalEvent({
+      uiRequestId: "req-2",
+      title: "Save file",
+      message: "src/index.ts",
+      timeoutMs: 5000,
+      receivedAt: new Date().toISOString(),
+    })
+
+    await screen.findByText(/Save file/i)
+    fireEvent.click(screen.getByRole("button", { name: /allow/i }))
+
+    await waitFor(() => {
+      expect(piRespondToProposal).toHaveBeenCalledWith({
+        uiRequestId: "req-2",
+        confirmed: true,
+      })
+    })
+  })
+
+  it("Deny button calls piRespondToProposal(confirmed:false)", async () => {
+    renderWithI18n(<PiChatPanel />)
+    await screen.findByText("Ready")
+
+    emitPiProposalEvent({
+      uiRequestId: "req-3",
+      title: "Run bash",
+      message: "rm -rf /",
+      timeoutMs: 5000,
+      receivedAt: new Date().toISOString(),
+    })
+
+    await screen.findByText(/Run bash/i)
+    fireEvent.click(screen.getByRole("button", { name: /deny/i }))
+
+    await waitFor(() => {
+      expect(piRespondToProposal).toHaveBeenCalledWith({
+        uiRequestId: "req-3",
+        confirmed: false,
+      })
+    })
+  })
 })
+
+// --- Helper: emit a pi:proposal event through the captured handler ---
+function emitPiProposalEvent(proposal: {
+  uiRequestId: string
+  title: string
+  message: string
+  timeoutMs: number
+  receivedAt: string
+}): void {
+  if (!piProposalHandler) throw new Error("no pi:proposal handler registered")
+  piProposalHandler({ proposal })
+}

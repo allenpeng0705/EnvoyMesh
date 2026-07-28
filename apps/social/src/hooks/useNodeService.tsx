@@ -331,6 +331,11 @@ export interface NodeServiceClient {
   restartPi(): Promise<import("@envoymesh/api").PiStatus>;
   /** One-shot prompt — collects streamed text into a single response. */
   sendToPi(text: string): Promise<string>;
+  /** Phase 49D — confirm/deny a Pi tool-action request. */
+  piRespondToProposal(params: {
+    uiRequestId: string
+    confirmed: boolean
+  }): Promise<{ uiRequestId: string; delivered: boolean }>;
   getPairingPayload(): Promise<PairingPayload>;
   createWanJoinInvite(
     params?: import("@envoymesh/api").CreateWanJoinInviteParams,
@@ -1198,6 +1203,12 @@ function createWsNodeServiceClient(
       // One Pi turn = LLM round-trip + any tool calls. Match the terminal
       // assist budget (120s) since a coding task can be long-running.
       return wsClient.rpc("sendToPi", { text }, { timeoutMs: 120_000 }) as Promise<string>;
+    },
+    async piRespondToProposal(params: { uiRequestId: string; confirmed: boolean }) {
+      return wsClient.rpc("piRespondToProposal", params) as Promise<{
+        uiRequestId: string;
+        delivered: boolean;
+      }>;
     },
     async getPairingPayload() { return wsClient.rpc("getPairingPayload"); },
     async createWanJoinInvite(params?: import("@envoymesh/api").CreateWanJoinInviteParams) {

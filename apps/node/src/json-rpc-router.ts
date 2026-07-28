@@ -862,6 +862,11 @@ export async function routeRpcMethod(
       return ns.sendToOpenClaw(String(params.text ?? ""));
     case "sendToPi":
       return ns.sendToPi(String(params.text ?? ""));
+    case "piRespondToProposal":
+      return ns.piRespondToProposal({
+        uiRequestId: String(params.uiRequestId ?? ""),
+        confirmed: Boolean(params.confirmed),
+      });
     case "sendToBridge":
       return ns.sendToBridge(String(params.text ?? ""));
     case "getPairedDiagnostics":

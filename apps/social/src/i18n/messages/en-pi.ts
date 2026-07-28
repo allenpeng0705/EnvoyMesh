@@ -45,6 +45,14 @@ export const piMessages = {
     restartReady: "Pi is ready.",
     restartFailed: "Restart failed.",
 
+    // Phase 49D — tool-action confirm dialog.
+    proposalTitle: "Pi wants to:",
+    allow: "Allow",
+    deny: "Deny",
+    proposalAllowed: "Allowed",
+    proposalDenied: "Denied",
+    proposalRespondFailed: "Failed to deliver response",
+
     // Submit-blocked hints (when the runtime isn't ready).
     startingHint: "Pi is starting — try again in a moment.",
     errorHint: "Pi is not ready.",
