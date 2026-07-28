@@ -155,7 +155,7 @@ function signApnsJwt(): string | null {
 async function sendApns(
   token: string,
   payload: PushNotificationPayload,
-): Promise<void> {
+): Promise<number | undefined> {
   const jwt = signApnsJwt();
   const topic = process.env.APNS_TOPIC;
   if (!jwt || !topic) {
@@ -172,7 +172,7 @@ async function sendApns(
     ...(payload.data ? { data: payload.data } : {}),
   });
 
-  await dispatchApnsHttp2({
+  return dispatchApnsHttp2({
     token,
     topic,
     pushType: "alert",
@@ -243,7 +243,7 @@ async function dispatchApnsHttp2(args: {
   jwt: string;
   body: string;
   logTag: string;
-}): Promise<void> {
+}): Promise<number | undefined> {
   const isProd = !process.env.APNS_SANDBOX;
   const host = isProd ? "api.push.apple.com" : "api.sandbox.push.apple.com";
 
@@ -251,7 +251,7 @@ async function dispatchApnsHttp2(args: {
     const client: ClientHttp2Session = http2Connect(`https://${host}`);
     client.on("error", (err: Error) => {
       console.warn(`[push] ${args.logTag} error: ${err.message}`);
-      resolve();
+      resolve(undefined);
     });
 
     const req = client.request({
@@ -270,12 +270,12 @@ async function dispatchApnsHttp2(args: {
       if (status !== "200") {
         console.warn(`[push] ${args.logTag} rejected: status=${String(status)}`);
       }
-      resolve();
+      resolve(typeof status === "number" ? status : undefined);
     });
 
     req.on("error", (err: Error) => {
       console.warn(`[push] ${args.logTag} request error: ${err.message}`);
-      resolve();
+      resolve(undefined);
     });
 
     req.end(args.body);
@@ -365,7 +365,7 @@ async function signFcmAccessToken(): Promise<string | null> {
 async function sendFcm(
   token: string,
   payload: PushNotificationPayload,
-): Promise<void> {
+): Promise<number | undefined> {
   const projectId = process.env.FCM_PROJECT_ID;
   const accessToken = await signFcmAccessToken();
   if (!projectId || !accessToken) {
@@ -404,13 +404,13 @@ async function sendFcm(
           if (res.statusCode !== 200) {
             console.warn(`[push] FCM rejected: status=${res.statusCode}`);
           }
-          resolve();
+          resolve(res.statusCode);
         });
       },
     );
     req.on("error", (err) => {
       console.warn(`[push] FCM request error: ${err.message}`);
-      resolve();
+      resolve(undefined);
     });
     req.end(body);
   });
@@ -481,6 +481,38 @@ export class PushNotificationService {
   }
 
   /**
+   * Phase 50 — send to one token, then clean up if the push service
+   * reports the token as invalid (APNs 410 Unregistered / 400 BadDeviceToken;
+   * FCM 404 / 400 with UNREGISTERED error).
+   *
+   * Stale tokens otherwise accumulate in push-tokens.json indefinitely,
+   * wasting a round-trip per dispatch. The OpenClaw gateway push path
+   * already has this cleanup (`shouldClearStoredApnsRegistration`); this
+   * mirrors it for the home-node → EnvoyGo path.
+   */
+  private async sendAndCleanup(
+    record: PushTokenRecord,
+    payload: PushNotificationPayload,
+  ): Promise<void> {
+    const status = record.platform === "ios"
+      ? await sendApns(record.token, payload)
+      : await sendFcm(record.token, payload);
+    // APNs: 410 = Unregistered (device uninstalled app or switched off);
+    //       400 = BadDeviceToken (corrupted token). 403 = BadCertificate.
+    // FCM:  404 = registration-token-not-found / UNREGISTERED;
+    //       400 = INVALID_ARGUMENT (bad token format).
+    if (
+      status === 410 || status === 400 ||
+      status === 403 || status === 404
+    ) {
+      console.log(
+        `[push] token ${record.deviceId} returned status=${status} — unregistering`,
+      );
+      this.store.unregister(record.deviceId);
+    }
+  }
+
+  /**
    * Dispatch a push notification for an incoming chat message.
    *
    * Called by the chat delivery pipeline when the recipient's thin
@@ -519,11 +551,7 @@ export class PushNotificationService {
     if (params.roomId) data.roomId = params.roomId;
 
     for (const record of tokens) {
-      if (record.platform === "ios") {
-        await sendApns(record.token, { title, body, data });
-      } else {
-        await sendFcm(record.token, { title, body, data });
-      }
+      await this.sendAndCleanup(record, { title, body, data });
     }
   }
 
@@ -533,6 +561,8 @@ export class PushNotificationService {
   async dispatchBondPush(params: {
     senderName: string;
     targetOwnerId: string;
+    /** Phase 50 — requester ownerId for deep-link routing (optional). */
+    senderOwnerId?: string;
   }): Promise<void> {
     if (!this.initialized) return;
 
@@ -542,19 +572,45 @@ export class PushNotificationService {
     if (tokens.length === 0) return;
 
     for (const record of tokens) {
-      if (record.platform === "ios") {
-        await sendApns(record.token, {
-          title: "New contact request",
-          body: `${params.senderName} wants to connect`,
-          data: { type: "bond_request" },
-        });
-      } else {
-        await sendFcm(record.token, {
-          title: "New contact request",
-          body: `${params.senderName} wants to connect`,
-          data: { type: "bond_request" },
-        });
-      }
+      await this.sendAndCleanup(record, {
+        title: "New contact request",
+        body: `${params.senderName} wants to connect`,
+        data: {
+          type: "bond_request",
+          ...(params.senderOwnerId ? { senderOwnerId: params.senderOwnerId } : {}),
+        },
+      });
+    }
+  }
+
+  /**
+   * Phase 50 — Dispatch an alert push for a new approval-queue item.
+   *
+   * Targets `tokenType: "alert"` only. Payload carries `type: approval`
+   * plus the item id + title so EnvoyGo can open the approval card on tap.
+   */
+  async dispatchApprovalPush(params: {
+    targetOwnerId: string;
+    title: string;
+    body: string;
+    /** Approval item id for deep-link routing. */
+    itemId?: string;
+  }): Promise<void> {
+    if (!this.initialized) return;
+
+    const tokens = this.store
+      .listForOwner(params.targetOwnerId)
+      .filter((r) => r.tokenType === "alert");
+    if (tokens.length === 0) return;
+
+    for (const record of tokens) {
+      const data: Record<string, string> = { type: "approval" };
+      if (params.itemId) data.itemId = params.itemId;
+      await this.sendAndCleanup(record, {
+        title: params.title,
+        body: params.body,
+        data,
+      });
     }
   }
 
@@ -595,11 +651,7 @@ export class PushNotificationService {
     if (params.kind) data.kind = params.kind;
 
     for (const record of tokens) {
-      if (record.platform === "ios") {
-        await sendApns(record.token, { title, body, data });
-      } else {
-        await sendFcm(record.token, { title, body, data });
-      }
+      await this.sendAndCleanup(record, { title, body, data });
     }
   }
 
@@ -652,7 +704,7 @@ export class PushNotificationService {
         // high-priority hint so the system surfaces a full-screen
         // intent. The `type: call` marker lets EnvoyGo start the
         // in-app call flow when the user taps through.
-        await sendFcm(record.token, {
+        await this.sendAndCleanup(record, {
           title,
           body,
           data: { ...data, priority: "high" },

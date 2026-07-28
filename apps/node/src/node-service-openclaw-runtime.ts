@@ -33,6 +33,7 @@ import { BRIDGE_HTTP_PORT, OPENCLAW_GATEWAY_PORT, openClawGatewayWebhookUrl } fr
 import { buildEnvoyMeshRetrievedContext } from "./openclaw-turn-context.js";
 import {
   buildOpenClawGatewayAgentSection,
+  buildOpenClawGatewayModelSection,
   buildOpenClawGatewaySearchEnv,
   buildOpenClawGatewaySkillEntries,
   isOpenClawEnvoymeshWebhookReady,
@@ -1269,16 +1270,11 @@ async function startOpenClawInner(
   const gwStateDirAbs = resolve(gwStateDir);
   const gwConfigPathAbs = resolve(gwConfigPath);
 
-  let modelProvider: Record<string, unknown> = {};
+  let modelProviderCfg: import("@envoymesh/api").ModelProviderConfig | undefined
   try {
     const nodeCfg = await deps.getNodeConfig();
     if (nodeCfg?.modelProviders?.mode && nodeCfg.modelProviders.mode !== "disabled") {
-      modelProvider = {
-        provider: nodeCfg.modelProviders.mode,
-        ...(nodeCfg.modelProviders.endpoint ? { baseUrl: nodeCfg.modelProviders.endpoint } : {}),
-        ...(nodeCfg.modelProviders.apiKey ? { apiKey: nodeCfg.modelProviders.apiKey } : {}),
-        ...(nodeCfg.modelProviders.modelName ? { model: nodeCfg.modelProviders.modelName } : {}),
-      };
+      modelProviderCfg = nodeCfg.modelProviders
     }
   } catch { /* use defaults */ }
 
@@ -1298,6 +1294,7 @@ async function startOpenClawInner(
   const skillEntries = buildOpenClawGatewaySkillEntries(skillApiKeys);
   const agentSection = buildOpenClawGatewayAgentSection({ webSearchEnabled, skillApiKeys });
   const gatewaySearchEnv = buildOpenClawGatewaySearchEnv(skillApiKeys);
+  const modelSection = buildOpenClawGatewayModelSection(modelProviderCfg);
 
   writeFileSync(gwConfigPathAbs, JSON.stringify({
     gateway: { auth: { mode: "none" } },
@@ -1305,9 +1302,7 @@ async function startOpenClawInner(
       defaults: {
         skipBootstrap: true,
         workspace: workspaceDir,
-        ...(modelProvider.provider && modelProvider.model
-          ? { model: `${modelProvider.provider as string}/${modelProvider.model as string}` }
-          : {}),
+        ...(modelSection.defaultsModel ? { model: modelSection.defaultsModel } : {}),
       },
     },
     channels: {
@@ -1324,18 +1319,7 @@ async function startOpenClawInner(
     } : {}),
     tools: agentSection.tools,
     plugins: agentSection.plugins,
-    ...(modelProvider.provider ? {
-      models: {
-        providers: {
-          [modelProvider.provider as string]: {
-            api: "openai-completions",
-            ...(modelProvider.baseUrl ? { baseUrl: modelProvider.baseUrl } : {}),
-            ...(modelProvider.apiKey ? { apiKey: modelProvider.apiKey } : {}),
-            ...(modelProvider.model ? { models: [{ id: modelProvider.model, name: modelProvider.model, api: "openai-completions" }] } : {}),
-          },
-        },
-      },
-    } : {}),
+    ...(modelSection.models ? { models: modelSection.models } : {}),
   }, null, 2), "utf-8");
 
   const gatewayPort = assistantGatewayPort(state);
@@ -1453,8 +1437,8 @@ async function startOpenClawInner(
 
   console.log("[openclaw] Built-in OpenClaw gateway at", assistantUrl);
   console.log("[openclaw] Gateway config:", gwConfigPathAbs);
-  if (modelProvider.provider) {
-    console.log("[openclaw] Model config:", JSON.stringify(modelProvider));
+  if (modelProviderCfg && modelProviderCfg.mode && modelProviderCfg.mode !== "disabled") {
+    console.log("[openclaw] Model config:", JSON.stringify(modelProviderCfg));
   }
   return gatewayReady;
 }

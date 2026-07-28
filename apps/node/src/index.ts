@@ -1336,6 +1336,12 @@ async function handleInboundMeshMessage({
     }
     if (result.ok) {
       const localOwnerId = profile.owner.ownerId;
+      // Phase 50 — skip the system push when EnvoyGo has an active WS
+      // (the in-app feed.notify event already reached it). Matches the
+      // unified chat:message listener's skip-if-online gate.
+      if (typeof isOwnerOnline === "function" && isOwnerOnline()) {
+        return;
+      }
       void pushNotificationService
         .dispatchFeedPush({
           targetOwnerId: localOwnerId,
@@ -2322,6 +2328,7 @@ async function handleInboundMeshMessage({
             .dispatchBondPush({
               senderName: helloData.sender.displayName || helloData.sender.ownerId,
               targetOwnerId: profile.owner.ownerId,
+              senderOwnerId: helloData.sender.ownerId,
             })
             .catch(() => {});
         }

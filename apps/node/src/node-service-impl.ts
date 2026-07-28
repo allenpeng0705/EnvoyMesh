@@ -1679,13 +1679,52 @@ class NodeServiceImpl implements NodeService {
   /** Wire daemon approval queue (index.ts) for RPC + execute-on-approve. */
   bindApprovalQueue(queue: ApprovalQueue): void {
     this._approvalQueue = queue;
+    // Track previously-seen pending item IDs so we can diff for NEW items
+    // on each onChange — only push for items the user hasn't seen yet.
+    const seenPendingIds = new Set<string>()
+    // Seed with the current pending set so we don't push for items that
+    // were already pending when the queue was bound (e.g. node restart).
+    for (const item of queue.listPending()) {
+      seenPendingIds.add(item.id)
+    }
     // Hard-invalidate the pending-approval-count cache whenever the
     // queue mutates (add/approve/reject/remove/expireOldItems/
     // clearResolved). This is the fast-fresh path for the count cache
     // used by terminal activity enrichment — the 1s TTL becomes a
     // pure back-stop rather than the primary freshness guarantee.
+    // Also: Phase 50 — push to EnvoyGo for newly-added pending items.
     queue.onChange(() => {
       this._pendingApprovalCountCache = null;
+      // Diff for new pending items → push if owner is offline.
+      const currentPending = queue.listPending()
+      const targetOwnerId = this._profile?.owner?.ownerId
+      if (!targetOwnerId) return
+      for (const item of currentPending) {
+        if (seenPendingIds.has(item.id)) continue
+        seenPendingIds.add(item.id)
+        // Skip items older than 60s — they were likely added during startup
+        // or replay, not a real-time event the user needs a push for.
+        const ageMs = Date.now() - new Date(item.requestedAt).getTime()
+        if (ageMs > 60_000) continue
+        // Best-effort push; skip-if-online matches the chat listener pattern.
+        void this.isOwnerOnline().then((online: boolean) => {
+          if (online) return
+          const senderName = item.context?.contactDisplayName ?? "Unknown contact"
+          void pushNotificationService
+            .dispatchApprovalPush({
+              targetOwnerId,
+              title: "Approval needed",
+              body: `${senderName}: ${item.title}`.slice(0, 120),
+              itemId: item.id,
+            })
+            .catch(() => {})
+        })
+      }
+      // Prune seen set for items no longer pending (approved/rejected/expired).
+      const currentIds = new Set(currentPending.map((i) => i.id))
+      for (const id of seenPendingIds) {
+        if (!currentIds.has(id)) seenPendingIds.delete(id)
+      }
     });
   }
 
