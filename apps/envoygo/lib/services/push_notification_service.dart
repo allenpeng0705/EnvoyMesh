@@ -117,6 +117,18 @@ class PushNotificationService {
     if (type == 'bond_request') {
       return {'type': 'bond_request'};
     }
+    if (type == 'approval') {
+      return {
+        'type': 'approval',
+        'itemId': data['itemId'],
+      };
+    }
+    // Phase 50 — Pi tool-action push (senderName: "Pi", no threadType).
+    // Route to the Pi chat panel. EnvoyGo's main.dart handles this by
+    // switching to the Chats tab (the Pi thread appears there).
+    if (type == 'pi_proposal' || data['senderOwnerId'] == 'envoy:pi') {
+      return {'type': 'pi_proposal'};
+    }
     final threadType = data['threadType'] as String?;
     if (threadType == null) return null;
     return {

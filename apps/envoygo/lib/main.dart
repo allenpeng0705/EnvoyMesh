@@ -89,6 +89,11 @@ class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
         // Approval-queue item → switch to the Inbox tab where approvals live.
         ref.read(chatProvider.notifier).selectTab(1);
         break;
+      case 'pi_proposal':
+        // Pi tool-action request → switch to the Chats tab where the Pi
+        // thread lives. The confirm dialog appears when the user opens Pi.
+        ref.read(chatProvider.notifier).selectTab(0);
+        break;
       default:
         // Chat thread (direct or room). The payload carries senderOwnerId
         // (for direct chat) or roomId (for group chat). We assemble the

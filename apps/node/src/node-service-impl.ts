@@ -1967,13 +1967,18 @@ class NodeServiceImpl implements NodeService {
     // The "skip if online" gate (isOwnerOnline) prevents the
     // double-notification when EnvoyGo has an active WebSocket.
     this.on("chat:message", (msg: ChatMessage) => {
-      // Only push messages addressed to this home's owner (skip echo / sent).
-      const targetOwnerId = msg.recipient.ownerId ?? this._profile?.owner?.ownerId
-      if (!targetOwnerId || targetOwnerId !== (this._profile?.owner?.ownerId ?? targetOwnerId)) {
-        return
-      }
+      // Push target is always the home owner — every message on this node
+      // is ultimately for the owner (direct chat, group, EnvoyAI assistant
+      // reply, Ext Agent reply, Pi response). We DON'T gate on
+      // msg.recipient.ownerId matching the home owner because some message
+      // types use synthetic thread keys (e.g. EnvoyAI uses
+      // recipient.ownerId = ENVOY_AI_THREAD_KEY, not the owner id).
+      // Instead we skip the user's own outgoing echoes and let everything
+      // else through to the skip-if-online + push gate.
+      const homeOwnerId = this._profile?.owner?.ownerId
+      if (!homeOwnerId) return
       // Don't push the user's OWN outgoing messages (some flows echo them).
-      if (msg.sender.ownerId && msg.sender.ownerId === targetOwnerId) {
+      if (msg.sender.ownerId && msg.sender.ownerId === homeOwnerId) {
         return
       }
       void this.isOwnerOnline().then((online: boolean) => {
@@ -1982,7 +1987,7 @@ class NodeServiceImpl implements NodeService {
           .dispatchChatPush({
             senderName: msg.sender.displayName ?? msg.sender.ownerId ?? "New message",
             messagePreview: (msg.content?.text ?? "").slice(0, 120),
-            targetOwnerId,
+            targetOwnerId: homeOwnerId,
             messageId: msg.messageId,
             senderOwnerId: msg.sender.ownerId ?? "",
           })
