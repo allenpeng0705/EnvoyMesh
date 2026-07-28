@@ -343,14 +343,15 @@ export class PiRuntime {
 
 **New nav entry** alongside the existing EnvoyAI thread in the sidebar.
 
-### (b) Terminal agent mode — Pi as a backend option
+### (b) Terminal agent mode — DROPPED (2026-07-28)
 
-The existing Phase 30 terminal agent mode (`apps/social/src/components/terminals/TerminalAgentBar.tsx`) currently uses EnvoyMesh's LLM router to generate `TerminalCommandProposal`s. Add **"Pi" as an agent-mode option** in the toolbar:
+**Original plan (v1):** add "Agent (Pi)" as a backend option in the existing Phase 30 terminal agent mode (`TerminalAgentBar.tsx`), with Pi producing `TerminalCommandProposal`s that the existing confirm/run UI would render unchanged.
 
-- Current toggle: `Manual` / `Agent`
-- New toggle: `Manual` / `Agent (EnvoyAI)` / `Agent (Pi)`
+**Why dropped:** Slice 49D's research against the real Pi binary proved this model doesn't fit. Pi executes its own tools (file edits, bash) **inside its own sandbox** — it doesn't produce commands for EnvoyMesh to write to a terminal PTY. The Phase 30 terminal agent's whole model is "LLM proposes a command → user confirms → we write it to the PTY." Pi doesn't fit that — and forcing it would create two unrelated execution surfaces (the terminal PTY and Pi's sandbox) in one UI, which is confusing.
 
-When "Agent (Pi)" is selected, natural-language inputs route to the Pi runtime instead of the EnvoyMesh LLM router. Pi proposals use the **existing `TerminalCommandProposal` shape unchanged** — the confirm UI, risk badges, and run/edit/cancel buttons all work as-is.
+**The PiChatPanel (Slice 49C) is the sole surface for Pi.** It already handles prompt/response and the `extension_ui_request` confirm-dialog flow (Slice 49D). The terminal remains EnvoyAI-only.
+
+**If a future "Pi-driven terminal" becomes valuable**, the right shape would be a Pi-side config that restricts Pi to "terminal-echo only" mode (no file tools, just propose commands the user runs in the actual PTY). That's a separate, larger workstream — not Phase 49.
 
 ### (c) Settings → AI — new Pi block
 
