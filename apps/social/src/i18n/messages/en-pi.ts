@@ -52,6 +52,7 @@ export const piMessages = {
     proposalAllowed: "Allowed",
     proposalDenied: "Denied",
     proposalRespondFailed: "Failed to deliver response",
+    proposalTimedOut: "Tool request timed out (Pi skipped it).",
 
     // Submit-blocked hints (when the runtime isn't ready).
     startingHint: "Pi is starting — try again in a moment.",

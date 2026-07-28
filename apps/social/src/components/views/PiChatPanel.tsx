@@ -214,6 +214,19 @@ export function PiChatPanel({ onBackToChats }: PiChatPanelProps) {
     })
   }, [nodeService])
 
+  // Auto-dismiss the dock when the request's timeout elapses. The server
+  // emits pi.tool.denied on its own timeout (Issue #9), but the client also
+  // needs to clear the dock so the user isn't looking at a stale prompt.
+  useEffect(() => {
+    if (!pendingProposal) return
+    const graceMs = 500 // small grace so a last-second click lands first
+    const id = window.setTimeout(() => {
+      setPendingProposal(null)
+      setSystem(t("pi.proposalTimedOut", "Tool request timed out (Pi skipped it)."), "info")
+    }, pendingProposal.timeoutMs + graceMs)
+    return () => window.clearTimeout(id)
+  }, [pendingProposal, setSystem, t])
+
   const respondToProposal = useCallback(
     async (proposal: PiToolProposal, confirmed: boolean) => {
       // Clear the dialog immediately so the user sees their click registered

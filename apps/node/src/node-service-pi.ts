@@ -29,6 +29,21 @@ import type { ModelProviderConfig } from "@envoymesh/api"
 // State + deps (mirror OpenClawRuntimeState / buildOpenClawRuntimeDeps)
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Phase 49D — tool-call approval (confirm-dialog flow)
+// ---------------------------------------------------------------------------
+
+/**
+ * Tracks an in-flight tool proposal so the audit event on response can be
+ * correlated with the original title/message (which the respond RPC doesn't
+ * re-send). Stored per-PiRuntimeState, keyed by uiRequestId.
+ */
+interface InFlightProposal {
+  title: string
+  message: string
+  receivedAt: number
+}
+
 export interface PiRuntimeStateMutable {
   /** The PiRuntime instance once spawned; null until start succeeds. */
   runtime: PiRuntime | null
@@ -48,6 +63,20 @@ export interface PiRuntimeStateMutable {
   watchdogTimer: ReturnType<typeof setTimeout> | null
   /** Whether the watchdog is currently armed. */
   watchdogRunning: boolean
+  /**
+   * Phase 49D — in-flight tool-approval proposals, keyed by uiRequestId.
+   * Per-state (NOT module-level) so multiple NodeService instances don't
+   * cross-pollinate. Each entry is removed when the user responds OR when
+   * the per-request timeout fires (auto-deny).
+   */
+  inFlightProposals: Map<string, InFlightProposal>
+  /**
+   * Per-request timeout timers (one per uiRequestId). When `req.timeout`
+   * elapses with no user response, we emit pi.tool.denied and auto-respond
+   * to Pi with confirmed:false (mirrors Pi's own auto-skip behavior, but
+   * makes the audit trail complete).
+   */
+  proposalTimeouts: Map<string, ReturnType<typeof setTimeout>>
 }
 
 export function createPiRuntimeState(): PiRuntimeStateMutable {
@@ -61,6 +90,8 @@ export function createPiRuntimeState(): PiRuntimeStateMutable {
     consecutiveRestartFailures: 0,
     watchdogTimer: null,
     watchdogRunning: false,
+    inFlightProposals: new Map(),
+    proposalTimeouts: new Map(),
   }
 }
 
@@ -182,7 +213,7 @@ async function startPiInner(state: PiRuntimeStateMutable, deps: PiRuntimeDeps): 
         return
       }
       log("info", `tool approval requested: "${proposal.title}" (id=${proposal.uiRequestId})`)
-      trackInFlightProposal(proposal.uiRequestId, proposal.title, proposal.message)
+      trackInFlightProposal(state, deps, proposal.uiRequestId, proposal.title, proposal.message, proposal.timeoutMs)
       void auditPiTool(deps.taskStore, "pi.tool.proposed", {
         uiRequestId: proposal.uiRequestId,
         title: proposal.title,
@@ -249,6 +280,12 @@ export async function stopPiViaRuntime(state: PiRuntimeStateMutable): Promise<vo
     state.watchdogTimer = null
     state.watchdogRunning = false
   }
+  // Cancel any pending tool-approval timeouts so they don't fire after stop.
+  for (const timer of state.proposalTimeouts.values()) {
+    clearTimeout(timer)
+  }
+  state.proposalTimeouts.clear()
+  state.inFlightProposals.clear()
   if (state.startPromise) {
     // Let the in-flight start finish before stopping.
     await state.startPromise.catch(() => {})
@@ -256,6 +293,9 @@ export async function stopPiViaRuntime(state: PiRuntimeStateMutable): Promise<vo
   const runtime = state.runtime
   if (runtime) {
     state.runtime = null
+    // Remove all host-side listeners so a failed/restarting runtime doesn't
+    // leak handlers across spawn cycles (EventEmitter doesn't auto-clean).
+    runtime.removeAllListeners()
     await runtime.stop()
   }
 }
@@ -300,36 +340,79 @@ export async function askPiViaRuntime(
 // ---------------------------------------------------------------------------
 // Phase 49D — tool-call approval (confirm-dialog flow)
 // ---------------------------------------------------------------------------
+// (InFlightProposal type + per-state Maps declared alongside PiRuntimeStateMutable above.)
 
 /**
- * Tracks in-flight tool proposals so the audit event on response can be
- * correlated with the original title/message (which the respond RPC doesn't
- * re-send). Keyed by uiRequestId.
+ * Record a proposal as in-flight + arm its timeout. Called from the
+ * ui_request subscription in startPiInner.
+ *
+ * The timeout fires pi.tool.denied (reason: user did not respond) and sends
+ * confirmed:false to Pi — this mirrors Pi's own auto-skip behavior, but
+ * makes the audit trail complete (Issue #9 from Slice 49D review).
  */
-interface InFlightProposal {
-  title: string
-  message: string
-  receivedAt: number
+export function trackInFlightProposal(
+  state: PiRuntimeStateMutable,
+  deps: PiRuntimeDeps,
+  uiRequestId: string,
+  title: string,
+  message: string,
+  timeoutMs: number,
+): void {
+  state.inFlightProposals.set(uiRequestId, { title, message, receivedAt: Date.now() })
+  // Cap memory: drop entries older than 5 minutes (well past any sane timeout).
+  if (state.inFlightProposals.size > 50) {
+    const cutoff = Date.now() - 5 * 60 * 1000
+    for (const [id, p] of state.inFlightProposals) {
+      if (p.receivedAt < cutoff) {
+        clearProposalTimeout(state, id)
+        state.inFlightProposals.delete(id)
+      }
+    }
+  }
+  // Arm the timeout. Add a small grace (500ms) so a last-millisecond user
+  // click has time to land before we auto-deny.
+  const timer = setTimeout(() => {
+    if (!state.inFlightProposals.has(uiRequestId)) return // already responded
+    const entry = state.inFlightProposals.get(uiRequestId)
+    state.inFlightProposals.delete(uiRequestId)
+    state.proposalTimeouts.delete(uiRequestId)
+    if (entry) {
+      void auditPiTool(deps.taskStore, "pi.tool.denied", {
+        uiRequestId,
+        title: entry.title,
+        message: entry.message,
+      })
+      deps.log?.("warn", `tool request ${uiRequestId} auto-denied (user did not respond in ${timeoutMs}ms)`)
+    }
+    // Pi auto-resolves on its own timeout; sending confirmed:false is a
+    // belt-and-suspenders no-op if Pi already moved on.
+    const runtime = state.runtime
+    if (runtime?.isReady) {
+      void runtime.respondToUiRequest(uiRequestId, false).catch(() => {})
+    }
+  }, timeoutMs + 500)
+  state.proposalTimeouts.set(uiRequestId, timer)
 }
 
-const inFlightProposals = new Map<string, InFlightProposal>()
-
-/** Record a proposal as in-flight (called from the ui_request subscription). */
-export function trackInFlightProposal(uiRequestId: string, title: string, message: string): void {
-  inFlightProposals.set(uiRequestId, { title, message, receivedAt: Date.now() })
-  // Cap memory: drop entries older than 5 minutes (well past Pi's max timeout).
-  if (inFlightProposals.size > 50) {
-    const cutoff = Date.now() - 5 * 60 * 1000
-    for (const [id, p] of inFlightProposals) {
-      if (p.receivedAt < cutoff) inFlightProposals.delete(id)
-    }
+/** Clear a proposal's timeout timer (helper). */
+function clearProposalTimeout(state: PiRuntimeStateMutable, uiRequestId: string): void {
+  const timer = state.proposalTimeouts.get(uiRequestId)
+  if (timer) {
+    clearTimeout(timer)
+    state.proposalTimeouts.delete(uiRequestId)
   }
 }
 
-/** Forget a proposal (called after the response is delivered). */
-export function untrackInFlightProposal(uiRequestId: string): InFlightProposal | undefined {
-  const entry = inFlightProposals.get(uiRequestId)
-  if (entry) inFlightProposals.delete(uiRequestId)
+/**
+ * Forget a proposal + cancel its timeout. Returns the entry for audit use.
+ */
+export function untrackInFlightProposal(
+  state: PiRuntimeStateMutable,
+  uiRequestId: string,
+): InFlightProposal | undefined {
+  clearProposalTimeout(state, uiRequestId)
+  const entry = state.inFlightProposals.get(uiRequestId)
+  if (entry) state.inFlightProposals.delete(uiRequestId)
   return entry
 }
 
@@ -347,7 +430,7 @@ export async function respondToUiRequestViaRuntime(
   confirmed: boolean,
 ): Promise<{ delivered: boolean }> {
   const runtime = state.runtime
-  const entry = untrackInFlightProposal(uiRequestId)
+  const entry = untrackInFlightProposal(state, uiRequestId)
   if (!runtime || !runtime.isReady) {
     // Pi already moved on (timeout). Record the late decision for audit.
     if (entry) {

@@ -71,15 +71,22 @@ export type PiToolAuditType =
  * offending portions with `[redacted]`. The user sees the full prompt in the
  * dialog; only the persisted audit record is redacted.
  *
- * Returns the safe-to-log summary string.
+ * IMPORTANT: do NOT pre-truncate before scanning — truncation can split a
+ * secret in half and cause the scanner to miss it (e.g. a PEM key cut at char
+ * 500 leaves the first half in the log). evaluateEgressContent has its own
+ * 16K scan ceiling; we truncate the OUTPUT only, after the redaction decision.
  */
 export function redactPiRequestForAudit(title: string, message: string): string {
-  const combined = `${title}: ${message}`.slice(0, 500) // bound the log line
+  const combined = `${title}: ${message}`
   const scan = evaluateEgressContent({ text: combined })
-  if (scan.ok) return combined
+  if (scan.ok) {
+    // Bound the audit line length, but only AFTER deciding it's clean.
+    return combined.length > 1000 ? combined.slice(0, 1000) + "…[truncated]" : combined
+  }
   // The scanner detected a secret pattern. Rather than try to surgically
   // redact just the secret (scanner doesn't return offsets), fall back to
   // a generic summary that preserves context without leaking the secret.
+  // Keep the title (likely short and clean) and redact only the body.
   return `${title}: [redacted — secret pattern detected in prompt]`
 }
 

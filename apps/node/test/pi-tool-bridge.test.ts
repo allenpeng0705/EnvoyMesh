@@ -90,10 +90,29 @@ describe("redactPiRequestForAudit", () => {
     expect(result).not.toContain("wJalrXUtnFEMI")
   })
 
-  it("truncates very long prompts before scanning", () => {
+  it("truncates very long CLEAN prompts to bound the log line", () => {
     const long = "x".repeat(2000)
     const result = redactPiRequestForAudit("title", long)
     expect(result.length).toBeLessThan(2000)
+    expect(result).toContain("[truncated]")
+  })
+
+  it("regression: detects a secret positioned AFTER the old 500-char truncation point", () => {
+    // Slice 49D review Issue #1: the old code sliced to 500 chars BEFORE
+    // scanning, which could split a secret in half and miss it. Construct
+    // a prompt where the PEM key starts near char 600 — old code missed
+    // it, new code must catch it.
+    const padding = "x".repeat(600)
+    const pem = "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADAN\n-----END PRIVATE KEY-----"
+    const result = redactPiRequestForAudit("title", `${padding}${pem}`)
+    expect(result).toContain("[redacted")
+    expect(result).not.toContain("MIIEvQIBADAN")
+  })
+
+  it("preserves the title (likely clean) when only the message has the secret", () => {
+    const result = redactPiRequestForAudit("Run bash command?", "key=-----BEGIN PRIVATE KEY-----\nABC\n-----END PRIVATE KEY-----")
+    expect(result).toContain("Run bash command?")
+    expect(result).toContain("[redacted")
   })
 })
 
