@@ -63,6 +63,16 @@ param(
     # Re-stage OpenClaw even if already populated
     [switch]$ForceOpenClaw,
 
+    # Re-stage Pi (local coding agent) even if already populated.
+    # Pi is a built-in sidecar alongside OpenClaw; see Phase 49.
+    [switch]$ForcePi,
+
+    # Skip Pi sidecar staging entirely. Use for Windows slim builds where
+    # the ~12 MB Pi bundle is omitted (tauri.conf.slim.json omits the
+    # resources/pi/**/* entry). The Pi chat panel will be disabled at
+    # runtime via piEnabled (default false on slim builds).
+    [switch]$SkipPi,
+
     # Re-download Node sidecar even if already staged
     [switch]$ForceNodeSidecar,
 
@@ -1283,7 +1293,38 @@ if (Test-Path $controlUiDir) {
     }
 }
 
-# 1d. Verify the staged tree (matches scripts/verify-tauri-resources.sh).
+# 1d. Pi agent (local coding sidecar).
+#     Pi is a Node.js package, not a prebuilt binary, so staging = npm-install
+#     the pinned upstream CLI + its transitive deps into resources/pi/.
+#     Mirrors the OpenClaw reuse-vs-force pattern. -SkipPi is the slim-build
+#     escape hatch (Pi is omitted from tauri.conf.slim.json).
+if (-not $SkipPi) {
+    Write-Info "Staging Pi agent (local coding sidecar)..."
+    $piDest = Join-Path $TauriResources "pi"
+    $piCli = Join-Path $piDest "node_modules\@earendil-works\pi-coding-agent\dist\cli.js"
+    $piStaged = (Test-Path $piCli) -and (Test-Path (Join-Path $piDest ".pi-version"))
+    if ($piStaged -and -not $ForcePi) {
+        $piVer = (Get-Content (Join-Path $piDest ".pi-version") -Raw).Trim()
+        Write-Info "Reusing staged Pi $piVer at $($piDest.Replace($RepoRoot + '\', '')). Use -ForcePi to re-stage."
+    } else {
+        # Delegate to fetch-pi-sidecar.ps1 — npm-installs Pi + transitive deps,
+        # prunes non-runtime files, verifies the CLI entry. Idempotent.
+        $fetchPs1 = Join-Path $PSScriptRoot "fetch-pi-sidecar.ps1"
+        if (-not (Test-Path $fetchPs1)) {
+            Write-Fail "fetch-pi-sidecar.ps1 not found at $fetchPs1"
+            exit 1
+        }
+        & $fetchPs1 -Force:$ForcePi
+        if ($LASTEXITCODE -ne 0) {
+            Write-Fail "Pi sidecar staging failed — aborting build. Use -SkipPi to omit Pi from this bundle."
+            exit 1
+        }
+    }
+} else {
+    Write-Info "Skipping Pi sidecar (-SkipPi). The bundle will NOT contain Pi; ensure tauri.conf.slim.json omits the resources/pi/**/* entry."
+}
+
+# 1e. Verify the staged tree (matches scripts/verify-tauri-resources.sh).
 Write-Info "Verifying Tauri bundle resources..."
 $verifyOk = $true
 $reqFiles = @(
@@ -1293,6 +1334,12 @@ $reqFiles = @(
     @{ Path = (Join-Path $TauriResources "openclaw/dist/entry.js"); Label = "OpenClaw compiled entry.js" },
     @{ Path = $SocialDist; Label = "built Social UI" }
 )
+# Pi is optional on slim builds (-SkipPi). Only require it when it was
+# supposed to be staged; mirrors the resources/pi/**/* entry in the
+# active tauri.conf.json.
+if (-not $SkipPi) {
+    $reqFiles += @{ Path = (Join-Path $TauriResources "pi/node_modules/@earendil-works/pi-coding-agent/dist/cli.js"); Label = "Pi CLI entry" }
+}
 foreach ($r in $reqFiles) {
     if (Test-Path $r.Path) {
         Write-Ok $r.Label

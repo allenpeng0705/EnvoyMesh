@@ -60,21 +60,46 @@ fi
 if grep -qE "EnvoyMesh bootstrap|from.*src/cli/run-main" "$RES/openclaw/dist/entry.js" 2>/dev/null; then
   fail "openclaw dist/entry.js is a runtime stub — rebuild OpenClaw or set STAGE_OPENCLAW_BUNDLE=1"
 fi
+
+# Pi agent sidecar (Phase 49). Optional on slim builds — tauri.conf.slim.json
+# omits resources/pi/**/* and the build is invoked with STAGE_PI_BUNDLE=0 or
+# build-desktop.ps1 -SkipPi. So only require Pi when the resources/pi/ dir
+# actually exists; if it's absent, the Pi chat panel is disabled at runtime.
+PI_DIR="$RES/pi"
+PI_CLI="$PI_DIR/node_modules/@earendil-works/pi-coding-agent/dist/cli.js"
+if [ -d "$PI_DIR" ]; then
+  require_file "$PI_CLI" "Pi CLI entry (node_modules/@earendil-works/pi-coding-agent/dist/cli.js)"
+  require_file "$PI_DIR/node_modules/@earendil-works/pi-coding-agent/package.json" "Pi package.json"
+  require_dir_nonempty "$PI_DIR/node_modules/@earendil-works" "Pi @earendil-works packages (pi-ai, pi-agent-core, pi-tui)"
+  pi_version_file="$PI_DIR/.pi-version"
+  if [ -f "$pi_version_file" ]; then
+    echo "  Pi version:    $(cat "$pi_version_file")"
+  fi
+else
+  # Slim build (no Pi bundled) — acceptable. The runtime disables the Pi panel.
+  warn "Pi sidecar not bundled (slim build) — Pi chat panel will be disabled at runtime"
+fi
+
 require_file "$SOCIAL_DIST" "built Social UI (apps/social/src/dist)"
 
 node_mb="$(du -sm "$RES/node" 2>/dev/null | awk '{print $1}')"
 openclaw_mb="$(du -sm "$RES/openclaw" 2>/dev/null | awk '{print $1}')"
 runtime_mb="$(du -sm "$RES/node-runtime" 2>/dev/null | awk '{print $1}')"
+pi_mb="$(du -sm "$RES/pi" 2>/dev/null | awk '{print $1}')"
 
 echo "  node-runtime:  ${runtime_mb:-?} MB"
 echo "  node:          ${node_mb:-?} MB"
 echo "  openclaw:      ${openclaw_mb:-?} MB"
+echo "  pi:            ${pi_mb:-(not bundled)} MB"
 
 if [ "${node_mb:-0}" -lt 20 ]; then
   warn "node bundle looks too small (${node_mb} MB) — production deps may be missing"
 fi
 if [ "${openclaw_mb:-0}" -lt 50 ]; then
   warn "openclaw tree looks too small (${openclaw_mb} MB) — run scripts/stage-tauri-openclaw-bundle.sh"
+fi
+if [ -d "$PI_DIR" ] && [ "${pi_mb:-0}" -lt 5 ]; then
+  warn "pi tree looks too small (${pi_mb} MB) — run scripts/stage-tauri-pi-bundle.sh"
 fi
 
 echo "  ✓ Tauri resources look complete"

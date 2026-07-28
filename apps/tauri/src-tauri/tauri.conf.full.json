@@ -68,7 +68,8 @@
       "resources/openclaw/extensions/perplexity/**/*",
       "resources/openclaw/extensions/searxng/**/*",
       "resources/openclaw/extensions/tavily/**/*",
-      "resources/openclaw/node_modules/**/*"
+      "resources/openclaw/node_modules/**/*",
+      "resources/pi/**/*"
     ]
   },
   "plugins": {

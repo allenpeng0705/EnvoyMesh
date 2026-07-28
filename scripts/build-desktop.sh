@@ -172,9 +172,10 @@ echo "[1/6] Building workspace packages + Node runtime..."
 cd "${PROJECT_DIR}"
 npx tsc -b
 echo ""
-echo "[1/6] continued — Staging sidecars (Node.js, OpenClaw, EnvoyMesh node)..."
+echo "[1/6] continued — Staging sidecars (Node.js, OpenClaw, Pi, EnvoyMesh node)..."
 bash scripts/fetch-node-sidecar.sh
 bash scripts/stage-tauri-openclaw-bundle.sh
+bash scripts/stage-tauri-pi-bundle.sh
 bash scripts/stage-tauri-node-bundle.sh
 bash scripts/verify-tauri-resources.sh
 echo ""

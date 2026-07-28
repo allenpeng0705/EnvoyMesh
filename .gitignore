@@ -11,6 +11,8 @@ apps/tauri/src-tauri/resources/node/
 apps/tauri/src-tauri/resources/node-runtime/
 apps/tauri/src-tauri/resources/openclaw/*
 !apps/tauri/src-tauri/resources/openclaw/.keep
+apps/tauri/src-tauri/resources/pi/*
+!apps/tauri/src-tauri/resources/pi/.keep
 .bundled-skills-staging/
 *.tsbuildinfo
 .env

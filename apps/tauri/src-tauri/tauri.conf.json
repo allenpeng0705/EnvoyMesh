@@ -43,7 +43,8 @@
     "resources": [
       "resources/node/**/*",
       "resources/node-runtime/**/*",
-      "resources/openclaw/**/*"
+      "resources/openclaw/**/*",
+      "resources/pi/**/*"
     ]
   },
   "plugins": {

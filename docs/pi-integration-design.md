@@ -166,6 +166,44 @@ require_dir_nonempty "$RES/pi" "Pi agent sidecar"
 require_file "$RES/pi/dist/cli.js" "Pi CLI entry"
 ```
 
+### Build-script integration (macOS + Windows)
+
+The desktop build scripts must stage the Pi sidecar alongside Node and OpenClaw. Both scripts already have a "Step 1: stage sidecars" block; Pi is added as a new sub-step.
+
+**`scripts/build-desktop.sh`** — add Pi between the OpenClaw and Node bundle staging calls (currently lines 175-179):
+
+```bash
+echo "[1/6] continued — Staging sidecars (Node.js, OpenClaw, Pi, EnvoyMesh node)..."
+bash scripts/fetch-node-sidecar.sh
+bash scripts/stage-tauri-openclaw-bundle.sh
+bash scripts/stage-tauri-pi-bundle.sh        # ← new
+bash scripts/stage-tauri-node-bundle.sh
+bash scripts/verify-tauri-resources.sh
+```
+
+**`scripts/build-desktop.ps1`** — add a new `# 1d. Pi agent` block between the OpenClaw block (ends ~line 1285) and the existing `# 1d. Verify` step (renumber Verify to `1e`). Pattern mirrors the OpenClaw block: stage from source if available, else fall back to `fetch-pi-sidecar.ps1`, with a `-ForcePi` switch and a reuse gate.
+
+```powershell
+# 1d. Pi agent (local coding sidecar).
+Write-Info "Staging Pi agent..."
+$piSrc = Join-Path $RepoRoot "packages/pi"           # if we vendor Pi source later
+$piDest = Join-Path $TauriResources "pi"
+$piStaged = (Test-Path (Join-Path $piDest "dist")) -and `
+            (Test-Path (Join-Path $piDest "package.json"))
+if ($piStaged -and -not $ForcePi) {
+    Write-Info "Reusing staged Pi at $piDest. Use -ForcePi to re-stage."
+} else {
+    # Fall back to fetch-pi-sidecar.ps1 (downloads pinned upstream Pi CLI).
+    & (Join-Path $PSScriptRoot "fetch-pi-sidecar.ps1")
+    if ($LASTEXITCODE -ne 0) {
+        Write-Fail "Pi sidecar staging failed — aborting build."
+        exit 1
+    }
+}
+```
+
+A new `-ForcePi` switch is added to the `param()` block, mirroring `-ForceOpenClaw`. On Windows slim builds (`tauri.conf.slim.json`), Pi staging is skipped entirely via a `-SkipPi` switch (default `$false`; the slim build invocation sets it `$true`).
+
 ### Version pinning (supply-chain hygiene)
 
 Pi version is **pinned** in `fetch-pi-sidecar.sh`, matching OpenClaw's pinned-deps approach:
@@ -178,15 +216,42 @@ A pre-commit hook (mirroring OpenClaw's lockfile blocks) prevents accidental dri
 
 ### Bundle size budget
 
-- Pi adds **~12 MB unpacked** across all platforms.
-- ~1 MB of `pi-tui` overlaps with OpenClaw's existing dep, but at version `0.78.0` vs Pi's `0.82.1` — sharing is unsafe, duplication is accepted.
-- **Windows slim-build toggle:** per the project memory note ("for Windows, we just package the useful extension for bundle size limitation"), Pi may be optional on Windows slim builds. The `tauri.conf.slim.json` may omit the Pi resource entry; `piEnabled` config defaults to `false` on slim builds. Flagged for Slice 1 verification.
+**Measured actual (Slice 1 smoke test, v0.82.1):** Pi adds **~170 MB unpacked** across all platforms. This is much larger than the npm tarball size (~12 MB) suggested, because `@earendil-works/pi-ai` declares the 5 major cloud SDKs as hard `dependencies`:
+
+| Cloud SDK | Size | Used at runtime when... |
+|---|---|---|
+| `openai` | ~13 MB | `mode: "openai-compatible"` |
+| `@google/genai` | ~14 MB | Google / Vertex provider |
+| `@mistralai/mistralai` | ~24 MB | Mistral provider |
+| `@aws-sdk/client-bedrock-runtime` (+ `@smithy/*`, `@aws-crypto/*`) | ~40 MB | AWS Bedrock provider |
+| `@anthropic-ai/sdk` | ~6 MB | `mode: "anthropic-compatible"` |
+| `@opentelemetry/*` | ~14 MB | Always (telemetry) |
+| Other transitive (`typebox`, `web-streams-polyfill`, etc.) | ~30 MB | Always |
+| `@earendil-works/{pi-ai,pi-agent-core,pi-tui}` | ~9 MB | Always |
+| `@mariozechner/clipboard-*` (cross-platform native prebuilds) | ~7 MB → pruned to ~2 MB | Clipboard ops |
+
+**Critical constraint:** all 5 cloud SDKs are **statically imported** at the top level of `pi-ai/dist/api/*.js` (e.g. `import Anthropic from "@anthropic-ai/sdk"`). They cannot be pruned at install time without crashing Pi on startup. Pruning is limited to:
+- Source maps, TypeScript sources, test files (saves ~3 MB)
+- Cross-platform native prebuilds — keep only the host OS+arch (saves ~5 MB)
+
+**Implication for slim builds:** Pi is **omitted entirely** from `tauri.conf.slim.json` (Windows). The slim build's `-SkipPi` flag and the runtime `piEnabled: false` default disable the feature cleanly. Full builds (macOS DMG, Linux deb) include Pi.
+
+**Future size-reduction path (out of Phase 49 scope):** if 170 MB ever proves unacceptable for full builds, the options are (a) fork `pi-ai` to convert the cloud SDK imports to dynamic `import()` (significant upstream-divergence cost), (b) ship only the SDK matching the user's configured provider (requires a post-install provider-detection step), or (c) accept the size and rely on installer compression (NSIS/DMG typically achieve ~3:1, so ~170 MB unpacked → ~55 MB in the installer).
+
+**Decision (2026-07-28): accept ~170 MB unpacked.** EnvoyMesh targets home machines (desktop/laptop), where the size is a non-issue — comparable to OpenClaw's existing footprint. Installer compression brings the in-DMG size to ~55 MB. Forking `pi-ai` to dynamic imports is **not** worth the upstream-divergence cost. Windows slim builds still omit Pi (different constraint — NSIS installer cap).
 
 ### What does NOT change
 
 - `scripts/stage-bundle-node-runtime.sh` / `.ps1` — Pi is its own bundle, not part of the node runtime.
 - `scripts/sync-version.mjs` — Pi has its own version (pinned upstream), not tracked by the project VERSION file.
 - OpenClaw's stage/fetch scripts — untouched.
+
+### What DOES change (build orchestration)
+
+- `scripts/build-desktop.sh` — adds `bash scripts/stage-tauri-pi-bundle.sh` to the sidecar-staging step.
+- `scripts/build-desktop.ps1` — adds a `# 1d. Pi agent` staging block + `-ForcePi` / `-SkipPi` switches.
+- `scripts/verify-tauri-resources.sh` — adds Pi presence check (see above).
+- `apps/tauri/src-tauri/tauri.conf.{json,full.json,slim.json}` — adds Pi resource entry (slim omits).
 
 ---
 
@@ -422,8 +487,11 @@ This matches Pi's native "no permission popups" philosophy being adapted for UI 
 ```
 scripts/
   fetch-pi-sidecar.sh              (new — mirrors fetch-openclaw-sidecar.sh)
+  fetch-pi-sidecar.ps1             (new — Windows twin, mirrors fetch-openclaw pattern)
   stage-tauri-pi-bundle.sh         (new — mirrors stage-tauri-openclaw-bundle.sh)
   verify-tauri-resources.sh        (edited — add Pi presence check)
+  build-desktop.sh                 (edited — add stage-tauri-pi-bundle.sh to sidecar step)
+  build-desktop.ps1                (edited — add # 1d. Pi agent block + -ForcePi/-SkipPi switches)
 
 apps/tauri/src-tauri/
   tauri.conf.json                  (edited — add "resources/pi/**/*")
