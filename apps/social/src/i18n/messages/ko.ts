@@ -16,6 +16,7 @@ import {
 } from "./ko-chats.js";
 import { koTerminalMessages } from "./ko-terminals.js";
 import { koChainsMessages } from "./ko-chains.js";
+import { koPiMessages } from "./ko-pi.js";
 import {
   koErrorBoundaryMessages,
   koProfileMessages,
@@ -667,4 +668,5 @@ export const ko = mergeMessages(en, {
     },
   },
   ...{ gazetteer: koGazetteerLocale.gazetteer },
+  ...koPiMessages,
 });

@@ -3823,6 +3823,14 @@ textarea::placeholder {
   background: var(--color-info-subtle, #eff6ff);
   color: var(--color-info, #2563eb);
 }
+/* Phase 49 — Pi icon. Uses the same indigo→teal accent as the chat panel
+ * avatar so the engine is visually consistent across surfaces. */
+.agent-block-icon--pi {
+  background: #eef2ff;
+  color: #6366f1;
+  font-style: italic;
+  font-weight: 700;
+}
 .agent-block-titlewrap {
   display: flex;
   flex-direction: column;
@@ -4057,6 +4065,16 @@ textarea::placeholder {
 .openclaw-error-restart-fail {
   color: var(--color-danger, #ef4444);
   font-size: var(--text-xs, 0.75rem);
+}
+
+/* Phase 49 — Pi error hint (Settings → AI). Mirrors the danger tint used by
+ * .openclaw-error but lighter — this is a single inline hint line, not a
+ * full error banner with a restart button (the restart button lives in
+ * .agent-block-actions). */
+.pi-error {
+  color: var(--color-danger, #ef4444);
+  font-size: var(--text-xs, 0.8125rem);
+  margin: 0.25rem 0;
 }
 
 /* Chat-view banner — shown at the top of ChatView when the built-in

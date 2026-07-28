@@ -49,6 +49,35 @@ export const aiSettingsMessages = {
     // names so we can swap to inline SVG later without i18n churn.
     iconBuiltIn: "AI",
     iconExtAgent: "EX",
+    iconPi: "π",
+    // ----- Phase 49 — Pi (built-in local coding agent) -----
+    // Pi is a separate engine alongside Built-in OpenClaw. It's a local
+    // coding agent (filesystem + shell) with NO mesh access; tool actions
+    // surface as confirm dialogs. See docs/pi-integration-design.md.
+    piAgent: "Pi (Local Coding Agent)",
+    piAgentDesc:
+      "Built-in coding agent that runs on this machine. Ask Pi to write code, refactor files, or run shell commands. It does NOT access your mesh contacts or knowledge — that's Built-in OpenClaw's job.",
+    piAgentNotInstalled:
+      "Pi sidecar not bundled (slim build). Use a full build to enable Pi.",
+    piStatusReady: "Ready",
+    piStatusStarting: "Starting…",
+    piStatusStopped: "Stopped",
+    piStatusDisabled: "Disabled",
+    piStatusNotInstalled: "Not installed",
+    piStatusError: "Error",
+    enablePi: "Enable Pi",
+    piAutoRunPolicy: "Auto-run policy",
+    piAutoRunAlwaysConfirm: "Always confirm (recommended)",
+    piAutoRunAlwaysConfirmDesc: "Every tool action surfaces as a confirm dialog.",
+    piAutoRunSafeOnly: "Confirm destructive only",
+    piAutoRunSafeOnlyDesc: "(future) Auto-allow safe operations; confirm the rest.",
+    piAutoRunTrust: "Trust (no confirms)",
+    piAutoRunTrustDesc:
+      "Pi runs freely with no confirmation. Power-user mode — Pi can edit files and run shell without asking.",
+    piModelError: "Pi is not ready: {error}",
+    piRestartToApply: "Restart Pi to apply changes",
+    piEnableHint:
+      "Disabling Pi stops the runtime immediately. Re-enabling starts it on the next save.",
     // ----- Mode-summary banner (top of the AI Engine block) -----
     modeLabel: "AI engine mode",
     modeDescBoth: "Built-in OpenClaw + external agent bridge are both available.",

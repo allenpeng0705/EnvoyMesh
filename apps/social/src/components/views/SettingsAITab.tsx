@@ -21,6 +21,7 @@ import type {
   CostSummary,
   DocumentAutonomyPolicy,
   ModelProviderMode,
+  PiStatus,
   RagIndexStatus,
   AutonomousPolicy,
   A2aChatNotificationMode,
@@ -29,6 +30,7 @@ import type {
   AgentNotifyMode,
   AutonomousDomain,
   KbPluginInfo,
+  TerminalAutoRunPolicy,
 } from "@envoymesh/api";
 import {
   DEFAULT_AI_KNOWLEDGE_BASE,
@@ -1725,6 +1727,81 @@ export function SettingsAITab() {
     [nodeConfig?.openclawEnabled, openClawStatus],
   );
 
+  // ---- Phase 49 — Pi (built-in local coding agent) ----
+  // Mirrors the OpenClaw status pattern above. Pi is writable in the UI
+  // (unlike OpenClaw which is read-only), so toggling piEnabled also calls
+  // restartPi() to apply the change immediately.
+  const [piStatus, setPiStatus] = useState<PiStatus | null>(null);
+  const [restartingPi, setRestartingPi] = useState(false);
+
+  const refreshPiStatus = useCallback(async () => {
+    try {
+      setPiStatus(await nodeService.getPiStatus());
+    } catch (e) {
+      console.warn("[SettingsAITab] failed to fetch Pi status", e);
+    }
+  }, [nodeService]);
+
+  useEffect(() => { void refreshPiStatus(); }, [refreshPiStatus]);
+
+  // Poll while Pi isn't ready — same rationale as OpenClaw.
+  useEffect(() => {
+    if (!piStatus || piStatus.state === "ready" || piStatus.state === "disabled") return;
+    const id = window.setInterval(() => { void refreshPiStatus(); }, 5_000);
+    return () => window.clearInterval(id);
+  }, [piStatus?.state, piStatus != null, refreshPiStatus]);
+
+  const handleRestartPi = useCallback(async () => {
+    setRestartingPi(true);
+    try {
+      const s = await nodeService.restartPi();
+      setPiStatus(s);
+      await refreshPiStatus();
+    } finally {
+      setRestartingPi(false);
+    }
+  }, [nodeService, refreshPiStatus]);
+
+  // Refetch Pi status when piEnabled changes in nodeConfig.
+  const lastPiFlagRef = useRef<string>("");
+  useEffect(() => {
+    const key = `piEnabled=${nodeConfig?.piEnabled ?? true}`;
+    if (lastPiFlagRef.current === key) return;
+    lastPiFlagRef.current = key;
+    void refreshPiStatus();
+  }, [nodeConfig?.piEnabled, refreshPiStatus]);
+
+  /**
+   * Toggle Pi on/off. Persists the flag AND calls restartPi() so the change
+   * takes effect immediately — updateNodeConfig alone does NOT restart the
+   * runtime (see Phase 49D review notes).
+   */
+  const handleTogglePi = useCallback(async (enabled: boolean) => {
+    try {
+      await updateNodeConfigPartial({ piEnabled: enabled });
+      // restartPi() reads the now-current config and either starts or stops.
+      const s = await nodeService.restartPi();
+      setPiStatus(s);
+    } catch (e) {
+      console.warn("[SettingsAITab] failed to toggle Pi", e);
+    }
+  }, [nodeService, updateNodeConfigPartial]);
+
+  /**
+   * Update piSettings.autoRunPolicy (the permission policy for Pi tool calls).
+   * Persists only — no restart needed (the next tool-call request reads the
+   * fresh policy at request time).
+   */
+  const handleChangePiAutoRunPolicy = useCallback(async (policy: TerminalAutoRunPolicy) => {
+    try {
+      await updateNodeConfigPartial({
+        piSettings: { ...(nodeConfig?.piSettings ?? {}), autoRunPolicy: policy },
+      });
+    } catch (e) {
+      console.warn("[SettingsAITab] failed to update Pi auto-run policy", e);
+    }
+  }, [nodeService, updateNodeConfigPartial, nodeConfig?.piSettings]);
+
   const extAgentConfig = useMemo(
     () => ({
       enabled: nodeConfig?.bridgeEnabled ?? false,
@@ -1819,6 +1896,118 @@ export function SettingsAITab() {
         ) : (
           <p className="settings-hint">{t("settings.ai.aiEngine.loading")}</p>
         )}
+      </section>
+
+      {/* Phase 49 — Pi (built-in local coding agent).
+          A separate engine alongside Built-in OpenClaw. Writable in the UI
+          (toggle + auto-run policy); restart-on-toggle applies immediately.
+          See docs/pi-integration-design.md. */}
+      <section className="settings-section">
+        <h4>{t("settings.ai.aiEngine.piAgent")}</h4>
+        <p className="section-desc">{t("settings.ai.aiEngine.piAgentDesc")}</p>
+
+        <div className={`agent-block${piStatus?.state === "disabled" ? " agent-block--readonly" : ""}`}>
+          <div className="agent-block-header">
+            <div className="agent-block-titlerow">
+              <span className="agent-block-icon agent-block-icon--pi">
+                {t("settings.ai.aiEngine.iconPi")}
+              </span>
+              <div className="agent-block-titlewrap">
+                <span className="agent-block-title">{t("settings.ai.aiEngine.piAgent")}</span>
+                {piStatus?.piVersion ? (
+                  <span className="agent-block-subtitle">v{piStatus.piVersion}</span>
+                ) : null}
+              </div>
+            </div>
+            {piStatus ? (
+              <span
+                className={`agent-block-status agent-block-status--${
+                  piStatus.state === "ready" ? "on"
+                  : piStatus.state === "disabled" || piStatus.state === "not-installed" ? "off"
+                  : "warn"
+                }`}
+              >
+                {t(`settings.ai.aiEngine.piStatus${piStatus.state === "not-installed" ? "NotInstalled" : piStatus.state.charAt(0).toUpperCase() + piStatus.state.slice(1)}`)}
+              </span>
+            ) : null}
+          </div>
+
+          {piStatus?.state === "not-installed" ? (
+            <p className="settings-hint">{t("settings.ai.aiEngine.piAgentNotInstalled")}</p>
+          ) : null}
+
+          {piStatus?.error ? (
+            <p className="settings-hint pi-error">
+              {t("settings.ai.aiEngine.piModelError", { error: piStatus.error })}
+            </p>
+          ) : null}
+
+          <div className="agent-block-fields">
+            <div className="agent-field agent-field--checkbox">
+              <label className="agent-field-label agent-field-label--inline">
+                <input
+                  type="checkbox"
+                  checked={nodeConfig?.piEnabled ?? true}
+                  disabled={restartingPi}
+                  onChange={(e) => { void handleTogglePi(e.target.checked); }}
+                />
+                <span>{t("settings.ai.aiEngine.enablePi")}</span>
+              </label>
+            </div>
+
+            <div className="agent-field">
+              <label className="agent-field-label">
+                {t("settings.ai.aiEngine.piAutoRunPolicy")}
+              </label>
+              <select
+                className="agent-field-input"
+                value={nodeConfig?.piSettings?.autoRunPolicy ?? "always-confirm"}
+                disabled={restartingPi || !(nodeConfig?.piEnabled ?? true)}
+                onChange={(e) => {
+                  void handleChangePiAutoRunPolicy(e.target.value as TerminalAutoRunPolicy);
+                }}
+              >
+                <option value="always-confirm">
+                  {t("settings.ai.aiEngine.piAutoRunAlwaysConfirm")}
+                </option>
+                <option value="safe-only">
+                  {t("settings.ai.aiEngine.piAutoRunSafeOnly")}
+                </option>
+                <option value="off">
+                  {t("settings.ai.aiEngine.piAutoRunTrust")}
+                </option>
+              </select>
+              <p className="agent-field-hint">
+                {(nodeConfig?.piSettings?.autoRunPolicy ?? "always-confirm") === "always-confirm"
+                  ? t("settings.ai.aiEngine.piAutoRunAlwaysConfirmDesc")
+                  : (nodeConfig?.piSettings?.autoRunPolicy) === "safe-only"
+                    ? t("settings.ai.aiEngine.piAutoRunSafeOnlyDesc")
+                    : t("settings.ai.aiEngine.piAutoRunTrustDesc")}
+              </p>
+            </div>
+
+            {piStatus?.modelSpec ? (
+              <div className="agent-field agent-field--readonly">
+                <span className="agent-field-label">{t("settings.ai.aiEngine.model")}</span>
+                <span className="agent-field-value">{piStatus.modelSpec}</span>
+              </div>
+            ) : null}
+          </div>
+
+          {/* Restart button — shown when Pi is in a state restart can fix. */}
+          {piStatus && (piStatus.state === "error" || piStatus.state === "stopped" || piStatus.state === "starting") ? (
+            <div className="agent-block-actions">
+              <button
+                type="button"
+                className="settings-action-btn"
+                onClick={() => { void handleRestartPi(); }}
+                disabled={restartingPi}
+              >
+                {restartingPi ? t("settings.ai.aiEngine.restarting") : t("settings.ai.aiEngine.restartNow")}
+              </button>
+            </div>
+          ) : null}
+        </div>
       </section>
 
       {/* Agent Network chain defaults — budget ceiling, stall policy, bid

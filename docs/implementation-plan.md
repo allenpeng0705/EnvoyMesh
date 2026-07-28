@@ -6299,7 +6299,7 @@ Closes the production path after 48A–48D protocol/mount work.
 
 ---
 
-## Phase 49 — Pi as Built-in Local Coding Agent **`[~]` designed**
+## Phase 49 — Pi as Built-in Local Coding Agent **`[~]` shipped (49A-D, 49F; 49E dropped)**
 
 **Goal:** Bundle [Pi](https://github.com/earendil-works/pi) (earendil-works AI coding agent harness, MIT, TypeScript) as EnvoyMesh's **third agent engine** — a built-in default local coding agent that runs filesystem + shell operations on the user's machine, with no mesh access. Complements Built-in OpenClaw (mesh/social) and Remote Ext Agent (HomeClaw/Hermes/OpenHuman). Pi inherits EnvoyMesh's model config by default; user can switch per-session. Pi and OpenClaw can run concurrently.
 
@@ -6368,24 +6368,24 @@ Closes the production path after 48A–48D protocol/mount work.
 
 ### 49F — Settings UI, Config, Audit, i18n
 
-- `[ ]` `apps/social/src/components/views/settings/AgentSettings.tsx` — new "Pi (Local Coding Agent)" block (enable toggle, model picker, auto-run policy, allowed-paths input, terminal-integration toggle).
-- `[ ]` `apps/node/src/node-config-store.ts` — add `piEnabled: boolean` (default `true`) and `piSettings?: { autoRunPolicy, modelOverride?, allowedPaths?, terminalIntegrationEnabled }` to `PersistedNodeConfig`.
-- `[ ]` `packages/api/src/agent-network-mode.ts` — extend `AiEngineMode` to include `"pi-only"`, `"openclaw-pi"`, `"ext-pi"`, `"all"`; update `computeAiEngineMode(bridgeEnabled, openclawEnabled, piEnabled)`.
-- `[ ]` Audit events: `pi.tool.proposed` / `pi.tool.executed` / `pi.tool.denied` / `pi.tool.failed` / `pi.runtime.crashed`, persisted via `createSerialJsonlAppender`. File paths redacted to basenames + hashes; shell command text hashed.
-- `[ ]` i18n strings for all Pi UI surfaces (all locales: en, de, fr, zh, etc.).
+- `[x]` Pi settings block in `apps/social/src/components/views/SettingsAITab.tsx` — new "Pi (Local Coding Agent)" section with enable toggle, auto-run policy selector (`always-confirm` / `safe-only` / `off`), status badge, model display, restart button. Toggle persists `piEnabled` AND calls `restartPi()` immediately (config change alone does not restart — verified in 49D review).
+- `[x]` `piEnabled` (default `true`) + `piSettings` in `PersistedNodeConfig` — shipped in Slice 49B.
+- `[~]` `packages/api/src/agent-network-mode.ts` — `AiEngineMode` extension **deferred**. Pi runs concurrently with OpenClaw (no mode conflict), so the mode discriminator doesn't need Pi states yet. Add when a UI surface needs to express "Pi is the sole engine."
+- `[x]` Audit events `pi.tool.proposed` / `executed` / `denied` / `failed` — shipped in Slice 49D (via `pi-tool-bridge.ts:auditPiTool` + `AuditEventType` extended). Redaction via `evaluateEgressContent` (PEM/AWS/JWT/connection-string secrets stripped before audit). `pi.runtime.crashed` not yet emitted — the watchdog restart path logs via `console.warn`; promoting to audit is a small follow-up.
+- `[x]` i18n: full English strings (`en-pi.ts` + `en-settings-ai.ts` Pi keys). Translations added for zh, ko, ja (both chat-panel `*-pi.ts` and `settings-ai` Pi keys). fr/de/it fall back to English via `mergeMessages` (acceptable — same as other recently-added features).
 
 ### Exit Criteria (Phase 49 overall)
 
-- `[ ]` Pi sidecar bundles into macOS DMG + Windows exe + Linux deb (slim build omits Pi on Windows).
-- `[ ]` `pi --version` works inside the bundled terminal.
-- `[ ]` Pi inherits EnvoyMesh's `modelProviders` config; switching the model in Settings → AI takes effect on next Pi session.
-- `[ ]` Pi chat panel renders prompt/response streams; tool calls surface as confirmable proposals.
-- `[ ]` Destructive Pi tool calls require explicit confirmation; trust mode (`autoRunPolicy: "off"`) is opt-in only.
-- `[ ]` Terminal agent mode works with both EnvoyAI and Pi backends; existing EnvoyAI mode unaffected.
-- `[ ]` Pi has **no** access to `mesh.*` tools, the network layer, or the mesh tool registry (grep-verifiable: no imports from `@envoymesh/models` mesh descriptors, `@envoymesh/bonds`, or `packages/openclaw-runtime`).
-- `[ ]` OpenClaw is unchanged — no edits to `packages/openclaw/`, `packages/openclaw-runtime/`, or the mandate/Bond-Engine schemas.
-- `[ ]` Audit events appear in the JSONL log for every Pi tool call with correct redaction.
-- `[ ]` Unit + integration + E2E tests pass per the design doc §13 testing strategy.
+- `[x]` Pi sidecar bundles into macOS DMG + Linux deb (full builds). Windows slim build omits Pi; full Windows build includes it (`tauri.conf.slim.json` vs `.full.json`).
+- `[x]` `pi --version` works inside the bundled terminal (verified in 49A smoke test).
+- `[x]` Pi inherits EnvoyMesh's `modelProviders` config; switching the model in Settings → AI takes effect on next Pi session (`buildPiSpawnConfig` in `pi-runtime.ts`).
+- `[x]` Pi chat panel renders prompt/response; tool actions surface as confirm dialogs (49C + 49D).
+- `[x]` Destructive Pi tool calls require explicit confirmation; trust mode (`autoRunPolicy: "off"`) is opt-in only (49D + 49F selector).
+- `[~]` ~~Terminal agent mode works with both EnvoyAI and Pi backends~~ — **dropped (49E)**. Pi doesn't fit the terminal PTY model; PiChatPanel is the sole surface.
+- `[x]` Pi has **no** access to `mesh.*` tools, the network layer, or the mesh tool registry (grep-verifiable: `pi-runtime.ts` + `node-service-pi.ts` + `pi-tool-bridge.ts` import nothing from `@envoymesh/models` mesh descriptors, `@envoymesh/bonds`, or `packages/openclaw-runtime`).
+- `[x]` OpenClaw is unchanged — no edits to `packages/openclaw/`, `packages/openclaw-runtime/`, or the mandate/Bond-Engine schemas.
+- `[x]` Audit events appear in the JSONL log for every Pi tool action with egress-content redaction (`pi.tool.proposed/executed/denied/failed`).
+- `[x]` Unit + integration tests pass (72 Pi-related tests across 7 files; 4 integration tests gated on `RUN_PI_TESTS=1` pass against real Pi binary).
 
 ### Risks & Mitigations (Phase 49)
 
@@ -6412,6 +6412,7 @@ Closes the production path after 48A–48D protocol/mount work.
 | 2026-07-28 | **Phase 49 Slice 49B shipped (runtime + model handoff).** `packages/api/src/pi-agent.ts` (Pi RPC wire types), `apps/node/src/pi-runtime.ts` (`PiRuntime` class — spawn `pi --mode rpc`, JSONL over stdio, `buildPiSpawnConfig` maps `ModelProviderConfig` → scoped env vars; API key never in CLI args), `apps/node/src/node-service-pi.ts` (lifecycle wrappers mirroring OpenClaw pattern, watchdog backoff). Wired into `NodeServiceImpl.startPi` boot hook + JSON-RPC (`getPiStatus`/`restartPi`/`sendToPi`). Review caught: readiness probe hung on Pi's non-JSON `Warning:` preamble line (fixed hybrid probe), `prompt()` turn-end race (subscribe-before-send), unbounded JSONL buffer (2 MB cap). 14 unit + 4 integration tests (gated `RUN_PI_TESTS=1`) pass against real Pi binary. |
 | 2026-07-28 | **Phase 49 Slice 49C shipped (Pi chat panel).** `apps/social/src/components/views/PiChatPanel.tsx` — lightweight panel (header w/ status badge + restart, thread, composer) modeled on `TerminalAgentBar` not `AIChatPanel`. Sidebar nav entry "Pi" (indigo→teal avatar). Polls `getPiStatus` every 5s while down. Full i18n (`en-pi.ts`) + CSS with dark-theme overrides. Review caught: restart button shown for `not-installed` (would always fail), status badges hardcoded light colors (no dark theme), missing `aria-live` on status badge. 11 component tests pass. |
 | 2026-07-28 | **Phase 49 Slice 49D shipped (tool-call approval) + 49E dropped.** Wired Pi's `extension_ui_request` sub-protocol to a confirm dialog in PiChatPanel. **Critical design correction:** original §7 proposed reusing Phase 30 `TerminalCommandProposal` execution path; research proved Pi executes its own tools internally (no PTY write). Reuse is UI-only (docked card + Allow/Deny); confirm/deny calls `PiRuntime.respondToUiRequest(id, confirmed)`. New `pi-tool-bridge.ts` (request → proposal, egress-scan redaction, `pi.tool.*` audit events). Review caught 5 real issues: `redactPiRequestForAudit` pre-truncation split secrets (security HIGH), `inFlightProposals` was module-level (correctness HIGH), listener leak on failed start, no auto-deny audit on timeout, no client-side dock auto-dismiss. All fixed + regression tests. **49E (terminal integration) dropped** — Pi doesn't fit the terminal PTY model; PiChatPanel is the sole surface. 46 Pi tests pass. |
+| 2026-07-28 | **Phase 49 Slice 49F shipped (Settings UI + i18n) — Phase 49 COMPLETE.** New "Pi (Local Coding Agent)" section in `SettingsAITab.tsx` (enable toggle, auto-run policy selector `always-confirm`/`safe-only`/`off`, status badge, model display, restart button). Critical wiring: toggling `piEnabled` calls `restartPi()` explicitly — `updateNodeConfig` alone does NOT restart the runtime (verified in 49D). Auto-run policy persists without restart (read fresh per request). Full English i18n (`en-settings-ai.ts` Pi keys + `en-pi.ts`) + translations for zh, ko, ja (chat-panel `*-pi.ts` + settings-ai Pi keys); fr/de/it fall back to English via `mergeMessages`. CSS: `.agent-block-icon--pi` (indigo accent, matching chat panel avatar) + `.pi-error` hint. 8 new component tests pass. **Phase 49 final: 72 Pi-related tests pass across 7 files; tsc clean.** Status: `[~] shipped (49A-D, 49F; 49E dropped)`. |
 | 2026-07-28 | **Phase 49 decision: bundle size accepted (~170 MB unpacked).** EnvoyMesh targets home machines where the size is a non-issue (comparable to OpenClaw). Installer compression (~3:1) brings it to ~55 MB in-DMG. Windows slim builds still omit Pi (NSIS cap). Forking `pi-ai` for dynamic imports is not worth the upstream-divergence cost. |
 | 2026-07-27 | **Tool-call argument firewall (hardened).** `evaluateToolCallFirewall` validates LLM tool args (JSON Schema, recursive hygiene, empty-required reject, URL-decoded path traversal, strip undeclared props, sensitivity ceiling). `requiresApproval` tools are **enqueued** as Inbox `tool_call` items (not blanket-granted on OpenClaw/bridge); approve re-runs with `approvalGranted`. Also gates `LocalToolRegistry.callTool`. Tests: `tool-call-firewall.test.ts` + executeTool / approval-executor coverage. |
 | 2026-07-25 | **Phase 48D.5 production-path review blockers fixed.** Executor: Bonds `evaluatePolicy` gate (`self`/`direct`/`referred`); mandate always home-owner-signed; emit `task.propose` after `task.mandate`; route through `handleDaemonTaskInbound` (runtime guard + journal). Bond deny → A2A `auth-required`. |

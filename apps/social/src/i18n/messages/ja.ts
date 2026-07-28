@@ -16,6 +16,7 @@ import {
 } from "./ja-chats.js";
 import { jaTerminalMessages } from "./ja-terminals.js";
 import { jaChainsMessages } from "./ja-chains.js";
+import { jaPiMessages } from "./ja-pi.js";
 import {
   jaErrorBoundaryMessages,
   jaProfileMessages,
@@ -664,4 +665,5 @@ export const ja = mergeMessages(en, {
     },
   },
   ...{ gazetteer: jaGazetteerLocale.gazetteer },
+  ...jaPiMessages,
 });
