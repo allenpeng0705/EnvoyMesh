@@ -15,6 +15,7 @@ import '../pairing/pairing_scan_screen.dart';
 import '../profile/profile_screen.dart';
 import '../settings/ai_engine_settings_screen.dart';
 import '../settings/ai_model_settings_screen.dart';
+import '../settings/pi_settings_screen.dart';
 import 'node_switcher_sheet.dart';
 import '../../services/push_preferences.dart';
 
@@ -493,6 +494,20 @@ class _MeScreenState extends ConsumerState<MeScreen> {
                   onTap: () => Navigator.of(context).push(
                     MaterialPageRoute(
                       builder: (_) => const AiModelSettingsScreen(),
+                    ),
+                  ),
+                ),
+                const Divider(height: 1),
+                ListTile(
+                  leading: const Icon(Icons.code),
+                  title: const Text('Pi Agent'),
+                  subtitle: const Text(
+                    'Built-in local coding agent on the home node',
+                  ),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const PiSettingsScreen(),
                     ),
                   ),
                 ),

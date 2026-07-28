@@ -416,8 +416,13 @@ class HomeRemoteClient {
   // -- RPC --
 
   /// Send a JSON-RPC call and wait for the response.
-  Future<dynamic> call(String method,
-      [Map<String, dynamic>? params]) async {
+  ///
+  /// Optional [timeout] defaults to 30s (use a longer value for `sendToPi`).
+  Future<dynamic> call(
+    String method, [
+    Map<String, dynamic>? params,
+    Duration? timeout,
+  ]) async {
     await ensureConnected();
     final ws = _ws;
     if (ws == null || ws.readyState != wsOpen) {
@@ -426,7 +431,7 @@ class HomeRemoteClient {
 
     final id = _generateId();
     final completer = Completer<dynamic>();
-    final timer = Timer(const Duration(seconds: 30), () {
+    final timer = Timer(timeout ?? const Duration(seconds: 30), () {
       _pending.remove(id);
       if (!completer.isCompleted) {
         completer.completeError(

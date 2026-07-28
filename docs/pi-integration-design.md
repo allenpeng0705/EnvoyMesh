@@ -13,8 +13,8 @@ Pi becomes EnvoyMesh's **third agent engine**, complementing the two existing en
 | Engine | Domain | Touches | Network access |
 |---|---|---|---|
 | **Built-in OpenClaw** (EnvoyAI, existing) | Mesh/social agent — knowledge, contacts, mandates, A2A | Network, peers, vault | ✅ Full mesh via `packages/openclaw-runtime/` |
-| **Remote Ext Agent** (HomeClaw/Hermes/OpenHuman, existing) | Remote conversational agent | Remote HTTP endpoint only | ❌ None local; one HTTP pipe to mesh |
-| **Pi** (new) | **Local coding agent** | User's filesystem + shell | ❌ **No mesh access** (Option B) |
+| **Remote Ext Agent** (HomeClaw/Hermes/OpenHuman/Pi preset, existing) | Conversational agent over HTTP | HTTP pipe to mesh | ❌ None local beyond the bridge |
+| **Pi** (coding TUI + Ext Agent RPC) | **Local coding agent** (TUI) + optional Ext Agent chat (RPC) | User's filesystem + shell (TUI); conversational only on Ext Agent path | ❌ **No `mesh.*` tools** |
 
 **Pi's job:** the user's local coding brain — read/write files, run shell commands, refactor, debug. Pi is the **built-in default** for local coding work; it ships in the bundle, requires no configuration beyond what the user already configured for EnvoyMesh's model.
 
@@ -62,9 +62,15 @@ OpenClaw is a **mesh/social agent** — its value is the network bridge (`mesh.f
 
 ## 3. The Three-Engine Model
 
-### Why Pi is a sibling engine, not a 4th Ext Agent entry
+### Why Pi is a sibling engine (and also the default Ext Agent preset)
 
-The existing **Ext Agent** abstraction (`packages/api/src/ext-agent.ts`) is shaped for **remote HTTP** agents:
+**Hybrid (shipped):** Pi remains a **third engine** with a dedicated Pi Chat panel for
+local coding (filesystem/shell + tool approvals). Separately, EnvoyMesh also exposes
+Pi as the **default Ext Agent** preset (`id: "pi"`, `:8022/message` sidecar) so Ext
+Agent chat works out of the box after install — same Pi runtime and model settings,
+but **tools are auto-denied** on that path (coding stays in Pi Chat).
+
+The existing **Ext Agent** abstraction (`packages/api/src/ext-agent.ts`) is shaped for **HTTP** agents:
 
 ```typescript
 export interface ExtAgentDefinition {
@@ -343,15 +349,21 @@ export class PiRuntime {
 
 **New nav entry** alongside the existing EnvoyAI thread in the sidebar.
 
-### (b) Terminal agent mode — DROPPED (2026-07-28)
+### (b) Terminal agent mode — DROPPED; Pi TUI is primary coding surface
 
 **Original plan (v1):** add "Agent (Pi)" as a backend option in the existing Phase 30 terminal agent mode (`TerminalAgentBar.tsx`), with Pi producing `TerminalCommandProposal`s that the existing confirm/run UI would render unchanged.
 
 **Why dropped:** Slice 49D's research against the real Pi binary proved this model doesn't fit. Pi executes its own tools (file edits, bash) **inside its own sandbox** — it doesn't produce commands for EnvoyMesh to write to a terminal PTY. The Phase 30 terminal agent's whole model is "LLM proposes a command → user confirms → we write it to the PTY." Pi doesn't fit that — and forcing it would create two unrelated execution surfaces (the terminal PTY and Pi's sandbox) in one UI, which is confusing.
 
-**The PiChatPanel (Slice 49C) is the sole surface for Pi.** It already handles prompt/response and the `extension_ui_request` confirm-dialog flow (Slice 49D). The terminal remains EnvoyAI-only.
+**Shipped (Option A):** the primary coding surface is an **always-on Pi interactive TUI** hosted in a reserved EnvoyMesh terminal session (`role: "pi"`). Spawn uses upstream default mode (no `--mode rpc`) under `node-pty`, with model env from `buildPiSpawnConfig()`. Sidebar **Pi** opens Terminals and selects that session. EnvoyAI Agent mode is disabled on Pi sessions.
 
-**If a future "Pi-driven terminal" becomes valuable**, the right shape would be a Pi-side config that restricts Pi to "terminal-echo only" mode (no file tools, just propose commands the user runs in the actual PTY). That's a separate, larger workstream — not Phase 49.
+**Dual process:**
+- **Pi TUI PTY** — coding (filesystem/shell + native Pi confirms).
+- **PiRuntime RPC** (`--mode rpc`) — Ext Agent `:8022/message` conversational path (tools auto-denied).
+
+**PiChatPanel** is demoted (legacy chat UI kept in-tree for tests; primary nav no longer routes to it).
+
+**Do not** revive Phase 30 “Pi proposes → writeStdin” agent-bar integration.
 
 ### (c) Settings → AI — new Pi block
 

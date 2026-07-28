@@ -42,6 +42,7 @@ import { PeerProfilePanel } from "../PeerProfilePanel.js";
 import { ContactWebContentShortcuts } from "../ContactWebContentShortcuts.js";
 import { RemoveContactConfirmModal } from "../RemoveContactConfirmModal.js";
 import { ConfirmDialog } from "../ConfirmDialog.js";
+import { ExtAgentOfflineBanner } from "./ExtAgentOfflineBanner.js";
 import type { TFunction } from "../../context/I18nContext.js";
 import {
   markPendingOutboundFailed,
@@ -870,6 +871,7 @@ export function ContactChatPanel({ selectedContact, onSelectContact }: ContactCh
           </div>
         </div>
       </header>
+      {isHomeBridgeThread ? <ExtAgentOfflineBanner /> : null}
       {threadKind !== "agent" && (
         <PeerProfilePanel ownerId={selectedContact} fallbackDisplayName={displayName} />
       )}

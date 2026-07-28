@@ -84,6 +84,11 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
   const tokenRefreshTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [xtermReady, setXtermReady] = useState(false);
   const sessionReady = Boolean(session && session.state === "running" && !homeOffline);
+  const isPiSession = session?.role === "pi";
+
+  useEffect(() => {
+    if (isPiSession && mode !== "manual") setMode("manual");
+  }, [isPiSession, mode]);
 
   useEffect(() => {
     modeRef.current = mode;
@@ -687,7 +692,7 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
     <div className="terminal-panel">
       <div className="terminal-panel-toolbar">
         <span className="terminal-panel-title">{session?.title ?? t("terminals.selectSession")}</span>
-        {sessionReady ? (
+        {sessionReady && !isPiSession ? (
           <div className="terminal-mode-toggle" role="tablist" aria-label={t("terminals.agent.modeLabel")}>
             <button
               type="button"
@@ -705,6 +710,7 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
             </button>
           </div>
         ) : null}
+        {isPiSession ? <span className="terminal-panel-badge">{t("pi.title", "Pi")}</span> : null}
         {useHomeRemote ? <span className="terminal-panel-badge">{t("terminals.runningOnHome")}</span> : null}
         {status ? <span className="terminal-panel-status">{status}</span> : null}
       </div>
@@ -741,7 +747,7 @@ export function TerminalPanel({ session, onOpenAssistant, active = true }: Termi
           </div>
         ) : null}
       </div>
-      {sessionReady ? (
+      {sessionReady && !isPiSession ? (
         <TerminalAgentBar
           ref={agentBarRef}
           sessionId={session!.sessionId}

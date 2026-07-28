@@ -25,7 +25,7 @@ describe("AgentSettings — phase 32", () => {
     expect(chip?.textContent).toMatch(/Built-in \+ Ext/i);
   });
 
-  it("shows the 'Built-in only' chip when only the built-in is enabled (D1C default)", () => {
+  it("shows the 'Built-in only' chip when only the built-in is enabled", () => {
     renderWithI18n(
       <AgentSettings
         envoyAI={{ enabled: true, running: true, url: "http://127.0.0.1:18789/webhook/envoymesh" }}
@@ -143,15 +143,35 @@ describe("AgentSettings — phase 32", () => {
     expect(stopped?.textContent).toMatch(/^Stopped$/i);
   });
 
-  it("shows 3-state status badge: 'Disabled' when not enabled", () => {
+  it("shows install hint + website link when configuring an external agent", async () => {
     renderWithI18n(
       <AgentSettings
-        envoyAI={{ enabled: false, running: false, url: "" }}
-        extAgent={{ enabled: false, configured: false }}
+        envoyAI={{ enabled: true, running: true, url: "http://x" }}
+        extAgent={{
+          enabled: true,
+          configured: true,
+          name: "Pi",
+          url: "http://127.0.0.1:8022/message",
+          listenPort: 3031,
+          activeExtAgentId: "pi",
+        }}
         onExtAgentSave={noopAsync}
       />,
     );
-    const disabled = document.querySelector(".agent-block-status--off");
-    expect(disabled?.textContent).toMatch(/^Disabled$/i);
+    // Read-only view shows Pi install hint.
+    expect(screen.getByTestId("ext-agent-install-hint").textContent).toMatch(/built into/i);
+    expect(screen.getByRole("link", { name: /Pi on GitHub/i })).toBeTruthy();
+
+    fireEvent.click(screen.getByText(/^Configure$/));
+    const select = document.querySelector(
+      ".agent-block .agent-field-input",
+    ) as HTMLSelectElement | null;
+    expect(select).toBeTruthy();
+    fireEvent.change(select!, { target: { value: "hermes" } });
+    await waitFor(() => {
+      expect(screen.getByTestId("ext-agent-install-hint").textContent).toMatch(/hermes gateway/i);
+    });
+    const hermesLink = screen.getByRole("link", { name: /Hermes docs/i }) as HTMLAnchorElement;
+    expect(hermesLink.href).toContain("hermes-agent.nousresearch.com");
   });
 });

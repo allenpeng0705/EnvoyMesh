@@ -12,7 +12,7 @@ class ChatThread {
   /// For group chats: the chat room ID.
   final String? chatRoomId;
 
-  /// For AI chats: 'envoyai' or 'external'.
+  /// For AI chats: 'envoyai', 'external', or 'pi'.
   final String? agentType;
 
   /// Thread type discriminator.
@@ -81,5 +81,6 @@ enum ChatThreadType {
   group,
   envoyai,
   externalAgent,
+  pi,
   terminal,
 }

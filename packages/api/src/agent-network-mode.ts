@@ -15,8 +15,9 @@
  * onboarding other nodes — pairing, fleet manifest, company invites —
  * not the AI engine on this home node.)
  *
- * **D1C defaults:** when both flags are absent (fresh install), the mode is
- * `"openclaw-only"` — built-in OpenClaw ships on, the Ext Agent bridge is opt-in.
+ * **D1C defaults (revised):** when both flags are absent (fresh install), the
+ * mode is `"both"` — built-in OpenClaw and the Ext Agent bridge ship on
+ * (Ext Agent defaults to built-in Pi). Explicit `bridgeEnabled: false` stays off.
  */
 
 export type AiEngineMode = "off" | "openclaw-only" | "ext-only" | "both";
@@ -24,7 +25,7 @@ export type AiEngineMode = "off" | "openclaw-only" | "ext-only" | "both";
 /**
  * Compute the current AI engine mode from the two boolean flags.
  *
- * - `bridgeEnabled === undefined` is treated as `false` (D1C: opt-in).
+ * - `bridgeEnabled === undefined` is treated as `true` (D1C: ships on).
  * - `openclawEnabled === undefined` is treated as `true` (D1C: ships on).
  *
  * Callers that need to display the *configured* state should pass the
@@ -36,7 +37,7 @@ export function computeAiEngineMode(
   bridgeEnabled: boolean | undefined,
   openclawEnabled: boolean | undefined,
 ): AiEngineMode {
-  const bridge = bridgeEnabled === true;
+  const bridge = bridgeEnabled !== false; // default true when absent
   const openclaw = openclawEnabled !== false; // default true when absent
   if (bridge && openclaw) return "both";
   if (openclaw) return "openclaw-only";

@@ -322,6 +322,10 @@ export interface NodeServiceClient {
   // Agent Bridge
   getBridgeStatus(): Promise<BridgeStatus>;
   getOpenClawStatus(): Promise<import("@envoymesh/api").OpenClawStatus>;
+  /** Soft-probe Ext Agent reachability (never blocks switching). */
+  probeExtAgent(
+    params?: import("@envoymesh/api").ProbeExtAgentParams,
+  ): Promise<import("@envoymesh/api").ExtAgentReachability>;
   /** Force-restart the built-in OpenClaw gateway. */
   restartOpenClaw(): Promise<import("@envoymesh/api").OpenClawStatus>;
   // Phase 49 — Pi (built-in local coding agent). Local-only; no mesh.* tools.
@@ -331,6 +335,10 @@ export interface NodeServiceClient {
   restartPi(): Promise<import("@envoymesh/api").PiStatus>;
   /** One-shot prompt — collects streamed text into a single response. */
   sendToPi(text: string): Promise<string>;
+  /** Ensure Pi interactive TUI for a project folder (lazy; may return needs_project). */
+  ensurePiTerminalSession(
+    params?: import("@envoymesh/api").EnsurePiTerminalParams,
+  ): Promise<import("@envoymesh/api").EnsurePiTerminalResult>;
   /** Phase 49D — confirm/deny a Pi tool-action request. */
   piRespondToProposal(params: {
     uiRequestId: string
@@ -1183,6 +1191,13 @@ function createWsNodeServiceClient(
     async getOpenClawStatus() {
       return wsClient.rpc("getOpenClawStatus") as Promise<import("@envoymesh/api").OpenClawStatus>;
     },
+    async probeExtAgent(params?: import("@envoymesh/api").ProbeExtAgentParams) {
+      return wsClient.rpc(
+        "probeExtAgent",
+        (params ?? {}) as Record<string, unknown>,
+        { timeoutMs: 5_000 },
+      ) as Promise<import("@envoymesh/api").ExtAgentReachability>;
+    },
     async restartOpenClaw() {
       // Force-restart is potentially slow (kill child + 250ms port-release
       // wait + 90s startup probe budget). Use the long-form RPC variant
@@ -1203,6 +1218,15 @@ function createWsNodeServiceClient(
       // One Pi turn = LLM round-trip + any tool calls. Match the terminal
       // assist budget (120s) since a coding task can be long-running.
       return wsClient.rpc("sendToPi", { text }, { timeoutMs: 120_000 }) as Promise<string>;
+    },
+    async ensurePiTerminalSession(
+      params?: import("@envoymesh/api").EnsurePiTerminalParams,
+    ) {
+      return wsClient.rpc(
+        "ensurePiTerminalSession",
+        (params ?? {}) as Record<string, unknown>,
+        { timeoutMs: 30_000 },
+      ) as Promise<import("@envoymesh/api").EnsurePiTerminalResult>;
     },
     async piRespondToProposal(params: { uiRequestId: string; confirmed: boolean }) {
       return wsClient.rpc("piRespondToProposal", params) as Promise<{

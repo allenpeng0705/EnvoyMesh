@@ -14,6 +14,19 @@ export const chatMessages = {
   assistant: "EnvoyAI",
   assistantSubtitle: "OpenClaw",
   myAgent: "Ext Agent",
+  extAgentDefaultName: "Ext Agent",
+  extAgentSwitchLabel: "Ext Agent",
+  extAgentSwitchTitle: "Switch Ext Agent",
+  extAgentOfflineTitle: "{name} is not running",
+  extAgentOfflineHintHomeClaw:
+    "Start HomeClaw, then confirm http://127.0.0.1:8010/status responds.",
+  extAgentOfflineHintHermes:
+    "Run `hermes gateway run` with API_SERVER_ENABLED=true (API on :8642).",
+  extAgentOfflineHintOpenHuman:
+    "Start OpenHuman.app or the OpenHuman CLI core (health on :7788).",
+  extAgentOfflineRecheck: "Check again",
+  extAgentOfflineChecking: "Checking…",
+  extAgentOfflineSwitcherHint: "{name} is not running — start it before chatting.",
   homeclawBridge: "HomeClaw bridge",
   requests: "Requests ({count})",
   tapAcceptHello: "Tap to accept hello",
@@ -224,11 +237,14 @@ export const aiChatMessages = {
 
 export const terminalMessages = {
   sessions: "Sessions",
-  new: "New terminal",
+  new: "Terminal",
   empty: "No terminals yet",
   running: "Running",
   exited: "Exited",
   close: "Close session",
+  closeConfirmTitle: "Close terminal?",
+  closeConfirmMessage: "This ends the shell session. Any running commands will be stopped.",
+  closeConfirmAction: "Close",
   runningCount: "{count} / {max} running",
   selectSession: "Select a terminal",
   selectSessionDesc: "Choose a session from the sidebar or create a new terminal.",

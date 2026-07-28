@@ -27,7 +27,8 @@ import type { TerminalAutoRunPolicy } from "./terminal-agent.js"
 export type PiCommandType =
   | "prompt" // send a user message
   | "set_model" // switch model mid-session
-  | "cancel"; // interrupt the current turn
+  | "cancel" // interrupt the current turn (legacy alias)
+  | "abort"; // interrupt the current turn (Pi RPC name)
 
 /** A command EnvoyMesh sends to Pi. `id` correlates the acceptance response. */
 export interface PiCommand {
@@ -37,6 +38,12 @@ export interface PiCommand {
   message?: string
   /** Present for "prompt" with images — base64-encoded attachments. */
   images?: PiImageAttachment[]
+  /**
+   * Present for "prompt" while Pi is already streaming — queue as steer
+   * (interrupt) or followUp (run after current turn). Required by Pi when
+   * `isStreaming` is true; omit when idle.
+   */
+  streamingBehavior?: "steer" | "followUp"
   /** Present for "set_model" — provider/model spec, e.g. "anthropic/claude-...". */
   model?: string
 }
@@ -90,21 +97,30 @@ export type PiEvent =
 
 interface PiAgentEvent {
   type: "agent_start" | "agent_end" | "agent_settled" | "turn_start" | "turn_end"
+  /** Present on agent_end — full turn messages (fallback when text_delta is missing). */
+  messages?: unknown[]
+  /** Present on turn_end — the assistant message for that turn. */
+  message?: unknown
 }
 
 interface PiMessageEvent {
   type: "message_start" | "message_update" | "message_end"
+  /** Present on message_start / message_update / message_end. */
+  message?: unknown
   /** Present on message_update — incremental deltas (text, tool calls, etc.). */
   assistantMessageEvent?: PiAssistantMessageEvent
 }
 
 /** Sub-event inside a message_update. Only the shapes we care about are typed. */
 export type PiAssistantMessageEvent =
-  | { type: "text_delta"; contentIndex: number; delta: string }
+  | { type: "text_delta"; contentIndex: number; delta: string; partial?: unknown }
+  | { type: "text_end"; contentIndex: number; content?: string; partial?: unknown }
   | { type: "tool_use_start"; contentIndex: number; toolName: string; input?: unknown }
+  | { type: "toolcall_start"; contentIndex: number; partial?: unknown }
   | { type: "tool_use_end"; contentIndex: number }
   | { type: "thinking_delta"; delta: string }
-  | { type: "error"; message: string }
+  | { type: "done"; message?: unknown }
+  | { type: "error"; message?: string; error?: unknown }
 
 interface PiToolExecutionEvent {
   type: "tool_execution_start" | "tool_execution_update" | "tool_execution_end"
@@ -203,9 +219,25 @@ export interface PiPromptResult {
   cancelled: boolean
 }
 
-/** Per-session model override (clear = inherit EnvoyMesh config). */
+/** EnvoyMesh-style modes allowed for a Pi-only model override. */
+export type PiModelOverrideMode =
+  | "openai-compatible"
+  | "anthropic-compatible"
+  | "ollama"
+  | "litellm"
+
+/**
+ * Pi-only model override (clear = inherit EnvoyMesh Settings → AI).
+ * Prefer Pi-native `provider` (e.g. minimax-cn). `mode` is legacy
+ * EnvoyMesh-style and still resolved at spawn for older configs.
+ */
 export interface PiModelOverride {
-  provider: string
+  /** Pi CLI `--provider` id (preferred). */
+  provider?: string
+  /**
+   * @deprecated Prefer `provider`. Kept so older node-config still loads.
+   */
+  mode?: PiModelOverrideMode
   model: string
   endpoint?: string
   apiKey?: string
@@ -224,8 +256,8 @@ export interface PiSettings {
    */
   autoRunPolicy?: TerminalAutoRunPolicy
   /**
-   * Per-session model override. When unset, Pi inherits EnvoyMesh's
-   * ModelProviderConfig (the same provider/key/endpoint OpenClaw uses).
+   * Pi-only model override. When unset, Pi inherits EnvoyMesh's
+   * ModelProviderConfig. Does not affect OpenClaw / Hermes / OpenHuman.
    */
   modelOverride?: PiModelOverride
   /**
@@ -315,3 +347,43 @@ export interface PiRespondToProposalResult {
   /** Whether the response was delivered to Pi before its timeout elapsed. */
   delivered: boolean
 }
+
+/** Max concurrent interactive Pi TUI sessions (one per project folder). */
+export const MAX_PI_TERMINAL_SESSIONS = 5
+
+/** Params for starting / restarting a Pi interactive TUI terminal. */
+export interface EnsurePiTerminalParams {
+  /**
+   * Absolute (or cwd-relative) project directory. Required to start a Pi TUI —
+   * there is no boot auto-start from saved paths. Persisted into
+   * `piSettings.allowedPaths` (MRU, capped) after a successful start.
+   */
+  projectPath?: string
+  /**
+   * When set with `forceRestart`, close this Pi session before starting the
+   * new project folder (change-project for a specific TUI).
+   */
+  sessionId?: string
+  /**
+   * Kill the targeted Pi session (`sessionId`, or a session already on
+   * `projectPath`) and start fresh. Default false — reuses a running Pi
+   * for the same project folder.
+   */
+  forceRestart?: boolean
+}
+
+/** Result of ensuring a Pi interactive TUI terminal session. */
+export type EnsurePiTerminalFailureCode =
+  | "no_manager"
+  | "disabled"
+  | "no_config"
+  | "no_model"
+  | "no_sidecar"
+  | "needs_project"
+  | "invalid_project"
+  | "pi_limit_reached"
+  | "spawn_failed"
+
+export type EnsurePiTerminalResult =
+  | { ok: true; session: import("./terminal.js").TerminalSessionSummary }
+  | { ok: false; code: EnsurePiTerminalFailureCode; reason: string }

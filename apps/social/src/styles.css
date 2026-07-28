@@ -3880,6 +3880,36 @@ textarea::placeholder {
   line-height: var(--leading-relaxed, 1.5);
 }
 
+.agent-install-hint {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  margin: 0.15rem 0 0.35rem;
+  padding: 0.55rem 0.65rem;
+  border-radius: var(--radius-sm, 6px);
+  background: var(--color-bg, #f8fafc);
+  border: 1px solid var(--color-border-subtle, #e2e8f0);
+}
+
+.agent-install-hint-text {
+  margin: 0;
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-text-muted, #64748b);
+  line-height: 1.45;
+}
+
+.agent-install-hint-link {
+  font-size: var(--text-xs, 0.75rem);
+  font-weight: var(--font-medium, 500);
+  color: var(--color-primary, #07c160);
+  text-decoration: none;
+}
+
+.agent-install-hint-link:hover {
+  text-decoration: underline;
+}
+
 /* ----- Field list (read-only uses <dl>/<dt>/<dd>, editable uses label+input) ----- */
 .agent-block-fields {
   display: flex;
@@ -4113,6 +4143,35 @@ textarea::placeholder {
   color: var(--color-danger, #ef4444);
   margin-top: 0.25rem;
   font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, monospace);
+}
+
+/* Ext Agent chat — soft guide when HomeClaw/Hermes/OpenHuman is down */
+.ext-agent-offline-banner {
+  background: var(--color-warning-subtle, #fffbeb);
+  border-bottom: 1px solid var(--color-warning, #f59e0b);
+  padding: 0.65rem 1rem;
+}
+.ext-agent-offline-banner-body {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  max-width: 100%;
+}
+.ext-agent-offline-banner-text {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.ext-agent-offline-banner-title {
+  font-weight: var(--font-semibold, 600);
+  color: var(--color-warning-text, #b45309);
+  font-size: var(--text-sm, 0.875rem);
+  margin-bottom: 0.15rem;
+}
+.ext-agent-offline-banner-desc {
+  font-size: var(--text-xs, 0.75rem);
+  color: var(--color-text-muted, #64748b);
+  line-height: 1.4;
 }
 
 /* Legacy aliases kept so any older test or component that still references

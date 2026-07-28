@@ -16,6 +16,7 @@ import {
   extractAssistantTextFromPiMessage,
   extractTextFromAssistantMessageEvent,
   materializePiSpawnEnv,
+  cleanupPiSpawnEnv,
   PiRuntime,
   resolveMiniMaxPiProvider,
   withPiToolPath,
@@ -132,6 +133,46 @@ describe("buildPiSpawnConfig", () => {
       expect(result.modelSpec).toBe("minimax/MiniMax-M3")
       expect(result.env.MINIMAX_API_KEY).toBe("sk-mm")
       expect(result.env.OPENAI_API_KEY).toBeUndefined()
+    })
+
+    it("maps xAI / DeepSeek / GLM hosts to native Pi providers", () => {
+      expect(
+        buildPiSpawnConfig({
+          mode: "openai-compatible",
+          apiKey: "k",
+          endpoint: "https://api.x.ai/v1",
+          modelName: "grok-3",
+        })!.provider,
+      ).toBe("xai")
+      expect(
+        buildPiSpawnConfig({
+          mode: "openai-compatible",
+          apiKey: "k",
+          endpoint: "https://api.deepseek.com/v1",
+          modelName: "deepseek-chat",
+        })!.provider,
+      ).toBe("deepseek")
+      expect(
+        buildPiSpawnConfig({
+          mode: "openai-compatible",
+          apiKey: "k",
+          endpoint: "https://open.bigmodel.cn/api/paas/v4",
+          modelName: "glm-4.5",
+        })!.provider,
+      ).toBe("zai-coding-cn")
+    })
+
+    it("keeps DashScope / Qwen on openai + baseUrl override (no Pi-native id)", () => {
+      const result = buildPiSpawnConfig({
+        mode: "openai-compatible",
+        apiKey: "k",
+        endpoint: "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        modelName: "qwen-max",
+      })!
+      expect(result.provider).toBe("openai")
+      expect(result.openaiBaseUrlOverride).toBe(
+        "https://dashscope.aliyuncs.com/compatible-mode/v1",
+      )
     })
 
     it("sets openaiBaseUrlOverride for non-OpenAI compatible endpoints", () => {
@@ -280,6 +321,33 @@ describe("buildPiSpawnConfig", () => {
       expect(result.provider).toBe("minimax-cn")
       expect(result.inherited).toBe(false)
     })
+
+    it("override without apiKey reuses Settings → AI key", () => {
+      const result = buildPiSpawnConfig(
+        {
+          mode: "openai-compatible",
+          modelName: "gpt-4o",
+          apiKey: "sk-shared",
+          endpoint: "https://api.minimaxi.com/v1",
+        },
+        {
+          provider: "minimax-cn",
+          model: "MiniMax-M3",
+        },
+      )!
+      expect(result.provider).toBe("minimax-cn")
+      expect(result.model).toBe("MiniMax-M3")
+      expect(result.env.MINIMAX_CN_API_KEY).toBe("sk-shared")
+      expect(result.inherited).toBe(false)
+    })
+
+    it("override apiKey wins over Settings → AI key", () => {
+      const result = buildPiSpawnConfig(
+        { mode: "anthropic-compatible", modelName: "claude-x", apiKey: "sk-shared" },
+        { provider: "anthropic", model: "claude-sonnet-4-6", apiKey: "sk-pi-only" },
+      )!
+      expect(result.env.ANTHROPIC_API_KEY).toBe("sk-pi-only")
+    })
   })
 
   describe("security: API key never leaks into CLI-arg-shaped fields", () => {
@@ -323,6 +391,8 @@ describe("materializePiSpawnEnv", () => {
     expect(existsSync(modelsPath)).toBe(true)
     const models = JSON.parse(readFileSync(modelsPath, "utf8"))
     expect(models.providers.openai.baseUrl).toBe("http://127.0.0.1:9000/v1")
+    cleanupPiSpawnEnv(env)
+    expect(existsSync(env.PI_CODING_AGENT_DIR!)).toBe(false)
   })
 })
 

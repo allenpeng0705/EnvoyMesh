@@ -393,6 +393,12 @@
           "markdownDescription": "Read/write desktop app diagnostic log files."
         },
         {
+          "description": "Open a native folder picker for Pi project selection (macOS/Linux/Windows).",
+          "type": "string",
+          "const": "allow-pick-directory",
+          "markdownDescription": "Open a native folder picker for Pi project selection (macOS/Linux/Windows)."
+        },
+        {
           "description": "Restart the EnvoyMesh node child process from Social UI.",
           "type": "string",
           "const": "allow-restart-node-process",

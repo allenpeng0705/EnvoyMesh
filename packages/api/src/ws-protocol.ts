@@ -30,7 +30,8 @@
 import type { DeviceProfile, DeviceRevocationReason, DeviceRevocationRecord, FriendMatchingPreferencesPayload, ChainIterationWire } from "@envoymesh/protocol";
 import type { AgentVisibilityConfig, A2aChatNotificationMode } from "./agent-visibility.js";
 import type { ExtAgentDefinition } from "./ext-agent.js";
-export type { ExtAgentDefinition } from "./ext-agent.js";
+export type { ExtAgentDefinition, ExtAgentReachability } from "./ext-agent.js";
+export { defaultExtAgentStartHint } from "./ext-agent.js";
 import type { PiSettings } from "./pi-agent.js";
 // Re-export so ws-protocol consumers (e.g. node-service.ts) can import PiStatus
 // from here, matching how OpenClawStatus is co-located in this file.
@@ -248,9 +249,11 @@ export type RpcMethods =
    | "getBridgeStatus"
    | "getOpenClawStatus"
    | "restartOpenClaw"
+   | "probeExtAgent"
    // Phase 49 — Pi (built-in local coding agent)
    | "getPiStatus"
    | "restartPi"
+   | "ensurePiTerminalSession"
    // ClawHub skills
    | "getOpenClawPlugins"
     | "searchOpenClawPlugins"
@@ -525,9 +528,8 @@ export interface NodeConfig {
   webSearchEnabled?: boolean;
   /**
    * Whether the agent bridge is enabled (toggle in Settings UI).
-   * When true, the bridge is active on next node start. Default: false (Phase 32, D1C).
-   * Note: pre-Phase-32 installs may have this set to `true` by default; the persisted
-   * value is the source of truth — this comment describes the *new* default.
+   * When true, the bridge is active on next node start. Default: true (D1C revised — Ext Agent ships on with Pi).
+   * Explicit `false` in persisted config stays off.
    */
   bridgeEnabled?: boolean;
   /** Active external agent id — persisted in bridge-config.json. */
@@ -1009,6 +1011,11 @@ export type ModelProviderMode = "mock" | "ollama" | "litellm" | "openai-compatib
 export interface ModelProviderConfig {
   /** Provider mode. When "disabled", no model calls are made. Default: "mock". */
   mode: ModelProviderMode;
+  /**
+   * Optional curated preset id (e.g. "minimax-cn", "anthropic").
+   * UI/OpenClaw metadata — transport still uses {@link mode}.
+   */
+  presetId?: string;
   /** Base URL for OpenAI-compatible `/chat/completions` (include `/v1`): Ollama `http://127.0.0.1:11434/v1`, LiteLLM `http://127.0.0.1:4000/v1`. Bare host roots are normalized at runtime. Anthropic mode uses API host without `/v1` (e.g. `https://api.anthropic.com`). */
   endpoint?: string;
   /** Model name for ollama (e.g. "llama3.1") or litellm (e.g. "gpt-4o-mini"). */
@@ -1313,6 +1320,12 @@ export interface GetOpenClawStatusResult {
   status: OpenClawStatus;
 }
 
+/** Soft-probe Ext Agent backend reachability (does not block switching). */
+export interface ProbeExtAgentParams {
+  /** When omitted, probes the currently active Ext Agent. */
+  agentId?: string;
+}
+
 export interface GetPairingPayloadParams {}
 
 export interface PairDeviceParams {
@@ -1479,7 +1492,7 @@ export interface UpdateNodeConfigParams {
   companionPairingAutoAcceptWithToken?: boolean;
   /** Public WebSocket URL of the relay node for mobile pairing through relay proxy. */
   relayPublicWsUrl?: string;
-  /** Enable/disable the agent bridge (takes effect on next node start). Default: false (Phase 32, D1C). */
+  /** Enable/disable the agent bridge (takes effect on next node start). Default: true (D1C revised). */
   bridgeEnabled?: boolean;
   /** Enable/disable the built-in OpenClaw agent (EnvoyAI). Default: true (Phase 32, D1C). */
   openclawEnabled?: boolean;

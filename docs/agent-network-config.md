@@ -74,7 +74,7 @@ This is a **config surfacing** change. It is **not** about routinely turning the
 | OpenClaw gate helper | `apps/node/src/node-service-impl.ts:4201-4204` (`_isOpenClawEnabled`) | `await this._configStore.load()` → `cfg?.openclawEnabled ?? true`. No in-memory cache. |
 | OpenClaw readiness | `apps/node/src/node-service-impl.ts` (`isOpenClawReady`) | In-memory; child process + webhook alive |
 | OpenClaw watchdog | `apps/node/src/node-service-impl.ts` (`_startOpenClawWatchdog`) | Respawns gateway if it dies; gated by `startOpenClaw()` |
-| Ext Agent bridge toggle | `apps/node/src/node-config-store.ts:89` (`bridgeEnabled`) | Persisted; fresh-install fallback at `node-service-impl.ts:7595` sets `false` (D1C: external bridge is opt-in). Existing installs with `bridgeEnabled: true` in their `node-config.json` are not rewritten (the per-load merge at line 7531 keeps `undefined → true`). |
+| Ext Agent bridge toggle | `apps/node/src/node-config-store.ts` (`bridgeEnabled`) | Persisted; fresh-install default **`true`** (D1C revised — Ext Agent ships on with Pi). Explicit `false` stays off. |
 | Bridge UI override | `apps/node/src/index.ts:313-323` | UI flag wins over JSON when UI = true (unchanged) |
 | Bridge status | `packages/api/src/node-service.ts` (`getBridgeStatus`) | Exposed via RPC `getBridgeStatus` in `ws-protocol.ts` |
 | Orphaned UI component | `apps/social/src/components/views/settings/AgentSettings.tsx` | Defined, has Built-in + Ext Agent sections, **never imported** → **Phase 32 wires it** into `SettingsAITab.tsx` |
@@ -107,7 +107,7 @@ openclawEnabled?: boolean;
 
 **Defaults (D1C — revised):**
 - **`openclawEnabled: true`** — built-in OpenClaw is the default AI on every EnvoyMesh home node.
-- **`bridgeEnabled: false`** (fresh install only) — the Ext Agent bridge is opt-in. **Existing installs with `bridgeEnabled: true` persisted in their `node-config.json` are not retroactively rewritten** — they keep the `true` they have today. Only the default for *new* installs changes.
+- **`bridgeEnabled: true`** (fresh install) — Ext Agent ships on (default preset: built-in Pi). Explicit `bridgeEnabled: false` in persisted config stays off.
 
 The `openclawEnabled` field is new, so its default is purely a code-level decision.
 

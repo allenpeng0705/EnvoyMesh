@@ -15,7 +15,6 @@ import { ProfileView } from "./components/views/ProfileView.js";
 import { SettingsView, type SettingsTabId } from "./components/views/SettingsView.js";
 import { ContentView, type ContentTab } from "./components/views/ContentView.js";
 import { H2AChannelView } from "./components/views/H2AChannelView.js";
-import { PiChatPanel } from "./components/views/PiChatPanel.js";
 import { ChainsView } from "./components/views/ChainsView.js";
 import { AutoReplyPausedNotifier } from "./components/AutoReplyPausedNotifier.js";
 import { GettingStartedGuide } from "./components/GettingStartedGuide.js";
@@ -434,8 +433,13 @@ export function App() {
   const [chatSelectedContact, setChatSelectedContact] = useState<string | null>(null);
   const [chatPanelMode, setChatPanelMode] = useState<ChatPanelMode>("threads");
 
-  // Navigation handler.
+  // Navigation handler. Legacy "pi" view → Terminals (Pi TUI).
   const navigateTo = (view: ViewName) => {
+    if (view === "pi") {
+      setCurrentView("chat");
+      setChatPanelMode("terminals");
+      return;
+    }
     setCurrentView(view);
     if (view === "chat") setChatPanelMode("threads");
   };
@@ -560,7 +564,6 @@ export function App() {
                 onPanelModeChange={setChatPanelMode}
                 inboxActivityCount={inboxActivityCount}
                 onOpenAssistant={() => navigateTo("assistant")}
-                onOpenPi={() => navigateTo("pi")}
                 onOpenDiscover={() => navigateTo("discover")}
               />
             )}
@@ -579,11 +582,6 @@ export function App() {
                   onOpenChains={() => navigateTo("chains")}
                   onOpenDiscover={() => navigateTo("discover")}
                 />
-              </SwipeBack>
-            )}
-            {currentView === "pi" && (
-              <SwipeBack onSwipeBack={() => navigateTo("chat")}>
-                <PiChatPanel onBackToChats={() => navigateTo("chat")} />
               </SwipeBack>
             )}
             {currentView === "discover" && (

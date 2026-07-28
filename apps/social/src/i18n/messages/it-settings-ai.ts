@@ -7,6 +7,7 @@ export const itAiSettingsMessages = {
     sectionDescDefault:
       "Scegli come Envoy chiama un LLM per assistenza chat, risposte di conoscenza e la scheda Assistente.",
     providerLabel: "Provider",
+    presetHint: "Presets fill endpoint and model suggestions. OpenClaw, chat drafts, and Pi (when not overridden) all use this setting.",
     modeMock: "Mock (solo test)",
     modeOpenAiCompatible: "Compatibile OpenAI (MiniMax, DeepSeek, …)",
     modeAnthropicCompatible: "Compatibile Anthropic",
@@ -29,6 +30,7 @@ export const itAiSettingsMessages = {
     apiKeyHintAnthropic: "Chiave API Anthropic.",
     modelName: "Nome modello",
     modelNamePlaceholder: "MiniMax-M2.7",
+    modelCustomId: "Custom model id…",
     apiKey: "Chiave API",
     apiKeyPlaceholder: "sk-…",
     saving: "Salvataggio…",

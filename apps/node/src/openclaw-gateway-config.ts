@@ -6,6 +6,9 @@
  * - ClawHub skills → skills.entries (env vars are also set for scripts)
  */
 
+import type { ModelProviderConfig } from "@envoymesh/api"
+import { resolveOpenClawModelConfig } from "@envoymesh/api"
+
 const WEB_SEARCH_PROVIDER_SLUGS = new Set([
   "brave",
   "duckduckgo",
@@ -184,4 +187,43 @@ export function buildOpenClawGatewaySearchEnv(
     }
   }
   return env;
+}
+
+/**
+ * Map EnvoyMesh Settings → AI into OpenClaw `agents.defaults.model` +
+ * `models.providers` fragments. Uses curated presets so Anthropic gets
+ * `anthropic-messages` and MiniMax gets a clean provider id (not
+ * `openai-compatible/...`).
+ */
+export function buildOpenClawGatewayModelSection(
+  modelProviders: ModelProviderConfig | null | undefined,
+): {
+  defaultsModel?: string
+  models?: {
+    providers: Record<
+      string,
+      {
+        api: string
+        baseUrl?: string
+        apiKey?: string
+        models?: Array<{ id: string; name: string; api: string }>
+      }
+    >
+  }
+} {
+  const resolved = resolveOpenClawModelConfig(modelProviders ?? undefined)
+  if (!resolved) return {}
+  return {
+    defaultsModel: `${resolved.providerId}/${resolved.model}`,
+    models: {
+      providers: {
+        [resolved.providerId]: {
+          api: resolved.api,
+          ...(resolved.baseUrl ? { baseUrl: resolved.baseUrl } : {}),
+          ...(resolved.apiKey ? { apiKey: resolved.apiKey } : {}),
+          models: [{ id: resolved.model, name: resolved.model, api: resolved.api }],
+        },
+      },
+    },
+  }
 }

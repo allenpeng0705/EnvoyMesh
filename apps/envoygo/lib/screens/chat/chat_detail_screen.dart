@@ -13,6 +13,8 @@ import '../../services/vault_content_fetch.dart';
 import '../../services/node_service_client.dart';
 import '../../widgets/chat_bubble.dart';
 import '../../widgets/chat_audio_player.dart';
+import '../../widgets/ext_agent_offline_banner.dart';
+import '../../widgets/ext_agent_switcher.dart';
 import '../call/voice_call_screen.dart';
 import '../content/published_content_sheet.dart';
 
@@ -55,6 +57,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
 
   bool get _isRoom => widget.chatRoomId != null;
   bool get _isAgent => widget.agentType != null;
+  bool get _isExtAgent => widget.agentType == 'external';
 
   @override
   void initState() {
@@ -237,6 +240,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
       appBar: AppBar(
         title: Text(widget.displayName),
         actions: [
+          if (_isExtAgent) const ExtAgentSwitcher(iconOnly: true),
           // Phase 42F — voice call action for direct-message chats
           // (not rooms / agents). Routes through CallProvider.startCall
           // which generates the SDP and posts sendCallInvite.
@@ -271,6 +275,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
       ),
       body: Column(
         children: [
+          if (_isExtAgent) const ExtAgentOfflineBanner(),
           Expanded(
             child: messages.isEmpty
                 ? const Center(

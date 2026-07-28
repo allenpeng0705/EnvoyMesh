@@ -7,6 +7,7 @@ export const frAiSettingsMessages = {
     sectionDescDefault:
       "Choisissez comment Envoy appelle un LLM pour l'assistance chat, les réponses de connaissances et l'onglet Assistant.",
     providerLabel: "Fournisseur",
+    presetHint: "Presets fill endpoint and model suggestions. OpenClaw, chat drafts, and Pi (when not overridden) all use this setting.",
     modeMock: "Mock (tests uniquement)",
     modeOpenAiCompatible: "Compatible OpenAI (MiniMax, DeepSeek, …)",
     modeAnthropicCompatible: "Compatible Anthropic",
@@ -29,6 +30,7 @@ export const frAiSettingsMessages = {
     apiKeyHintAnthropic: "Clé API Anthropic.",
     modelName: "Nom du modèle",
     modelNamePlaceholder: "MiniMax-M2.7",
+    modelCustomId: "Custom model id…",
     apiKey: "Clé API",
     apiKeyPlaceholder: "sk-…",
     saving: "Enregistrement…",

@@ -16,14 +16,15 @@ import { PiRuntime, discoverPiCli, buildPiSpawnConfig } from "./pi-runtime.js"
 import { piRequestToProposal, auditPiTool } from "./pi-tool-bridge.js"
 import type { LocalTaskStore } from "@envoymesh/local-store"
 import type {
+  ModelProviderConfig,
   PiExtensionUiRequest,
   PiPromptResult,
   PiProposalEvent,
   PiRuntimeState,
+  PiSettings,
   PiStatus,
   PiToolProposal,
 } from "@envoymesh/api"
-import type { ModelProviderConfig } from "@envoymesh/api"
 
 // ---------------------------------------------------------------------------
 // State + deps (mirror OpenClawRuntimeState / buildOpenClawRuntimeDeps)
@@ -77,6 +78,11 @@ export interface PiRuntimeStateMutable {
    * makes the audit trail complete).
    */
   proposalTimeouts: Map<string, ReturnType<typeof setTimeout>>
+  /**
+   * Depth of in-flight Ext Agent asks. When > 0, tool-approval UI requests
+   * are auto-denied so Ext Agent chat does not block waiting for Pi Chat.
+   */
+  extAgentAskDepth: number
 }
 
 export function createPiRuntimeState(): PiRuntimeStateMutable {
@@ -92,12 +98,17 @@ export function createPiRuntimeState(): PiRuntimeStateMutable {
     watchdogRunning: false,
     inFlightProposals: new Map(),
     proposalTimeouts: new Map(),
+    extAgentAskDepth: 0,
   }
 }
 
 export interface PiRuntimeDeps {
   /** Reads PersistedNodeConfig — used to check piEnabled + modelProviders. */
-  loadConfig: () => Promise<{ piEnabled?: boolean; piSettings?: unknown; modelProviders: ModelProviderConfig } | null>
+  loadConfig: () => Promise<{
+    piEnabled?: boolean
+    piSettings?: PiSettings
+    modelProviders: ModelProviderConfig
+  } | null>
   /** Repo root — used by discoverPiCli to find the bundled sidecar. */
   getRepoRoot?: () => string
   /** Logger sink. */
@@ -173,15 +184,22 @@ async function startPiInner(state: PiRuntimeStateMutable, deps: PiRuntimeDeps): 
     log("info", `discovered Pi ${discovered.version} at ${discovered.cliPath}`)
   }
 
-  // 2. Resolve model config from EnvoyMesh settings.
+  // 2. Resolve model config: Pi override wins; else EnvoyMesh Settings → AI.
+  //    Override is Pi-only — OpenClaw / Hermes / OpenHuman are unaffected.
   const cfg = await deps.loadConfig()
   if (!cfg?.modelProviders) {
     recordError(state, "model provider config missing — configure a model in Settings → AI")
     return false
   }
-  const spawnConfig = buildPiSpawnConfig(cfg.modelProviders)
+  const spawnConfig = buildPiSpawnConfig(cfg.modelProviders, cfg.piSettings?.modelOverride)
   if (!spawnConfig) {
-    recordError(state, `model mode "${cfg.modelProviders.mode}" is not usable by Pi — configure a real provider`)
+    const viaOverride = Boolean(cfg.piSettings?.modelOverride)
+    recordError(
+      state,
+      viaOverride
+        ? "Pi custom model is incomplete or unusable — fix Settings → AI → Pi, or clear the override"
+        : `model mode "${cfg.modelProviders.mode}" is not usable by Pi — configure a real provider`,
+    )
     return false
   }
 
@@ -209,6 +227,15 @@ async function startPiInner(state: PiRuntimeStateMutable, deps: PiRuntimeDeps): 
       if (!proposal) {
         log("warn", `ignoring malformed extension_ui_request (id=${req.id})`)
         // Auto-deny so Pi doesn't block forever on a malformed request.
+        void runtime.respondToUiRequest(req.id, false).catch(() => {})
+        return
+      }
+      // Ext Agent chat path: keep conversational — deny tools (coding stays in Pi Chat).
+      if (state.extAgentAskDepth > 0) {
+        log(
+          "info",
+          `auto-deny tool during Ext Agent ask: "${proposal.title}" (id=${proposal.uiRequestId})`,
+        )
         void runtime.respondToUiRequest(req.id, false).catch(() => {})
         return
       }
@@ -335,6 +362,24 @@ export async function askPiViaRuntime(
 ): Promise<PiPromptResult> {
   const runtime = await ensurePiReadyViaRuntime(state, deps)
   return runtime.prompt(prompt)
+}
+
+/**
+ * Ext Agent bridge path: same Pi runtime as Pi Chat, but tool approvals are
+ * auto-denied for the duration of the ask (see extAgentAskDepth).
+ */
+export async function askPiForExtAgentViaRuntime(
+  state: PiRuntimeStateMutable,
+  deps: PiRuntimeDeps,
+  prompt: string,
+): Promise<string> {
+  state.extAgentAskDepth += 1
+  try {
+    const result = await askPiViaRuntime(state, deps, prompt)
+    return result.text
+  } finally {
+    state.extAgentAskDepth = Math.max(0, state.extAgentAskDepth - 1)
+  }
 }
 
 // ---------------------------------------------------------------------------

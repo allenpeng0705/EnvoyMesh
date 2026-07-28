@@ -9,6 +9,7 @@ import {
   getRunningExtAgentSidecar,
   _resetExtAgentSidecarForTests,
   isExtAgentSidecarKind,
+  setPiExtAgentAsk,
 } from "../src/ext-agent-adapter/index.js";
 
 describe("ext-agent-adapter backends", () => {
@@ -175,6 +176,7 @@ describe("ext-agent HTTP sidecar", () => {
   afterEach(async () => {
     await stopExtAgentSidecar();
     _resetExtAgentSidecarForTests();
+    setPiExtAgentAsk(null);
     vi.unstubAllGlobals();
   });
 
@@ -252,6 +254,37 @@ describe("ext-agent HTTP sidecar", () => {
     });
     expect(getRunningExtAgentSidecar()).toBeNull();
     delete process.env.ENVOYMESH_HERMES_PORT;
+  });
+
+  it("syncExtAgentSidecar starts pi sidecar", async () => {
+    process.env.ENVOYMESH_PI_EXT_PORT = String(await getFreePort());
+    expect(isExtAgentSidecarKind("pi")).toBe(true);
+
+    await syncExtAgentSidecar({
+      bridgeEnabled: true,
+      activeExtAgentId: "pi",
+      bridgeListenPort: 3031,
+    });
+    const running = getRunningExtAgentSidecar();
+    expect(running?.kind).toBe("pi");
+    expect(running?.port).toBe(Number(process.env.ENVOYMESH_PI_EXT_PORT));
+
+    await stopExtAgentSidecar();
+    expect(getRunningExtAgentSidecar()).toBeNull();
+    delete process.env.ENVOYMESH_PI_EXT_PORT;
+  });
+
+  it("createPiBackend uses registered ask", async () => {
+    setPiExtAgentAsk(async (text) => `echo:${text}`);
+    try {
+      const { createPiBackend } = await import("../src/ext-agent-adapter/index.js");
+      const backend = createPiBackend();
+      expect(backend.kind).toBe("pi");
+      expect(await backend.ask("hi", "sess")).toBe("echo:hi");
+      expect(await backend.probe?.()).toBe(true);
+    } finally {
+      setPiExtAgentAsk(null);
+    }
   });
 });
 

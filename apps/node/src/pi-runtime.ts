@@ -19,8 +19,10 @@
  */
 
 import { spawn, type ChildProcess } from "node:child_process"
-import { existsSync, readFileSync } from "node:fs"
-import { join, resolve } from "node:path"
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { homedir, tmpdir } from "node:os"
+import { delimiter, dirname, join, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
 import { createRequire } from "node:module"
 import { randomUUID } from "node:crypto"
 import { EventEmitter } from "node:events"
@@ -44,12 +46,11 @@ const require = createRequire(import.meta.url)
 // ---------------------------------------------------------------------------
 
 /**
- * Locate the Pi CLI entry point. Search order mirrors OpenClaw's
- * discoverOpenClaw():
+ * Locate the Pi CLI entry point. Search order:
  *   1. ENVOYMESH_PI_CLI env var (operator override / dev mode)
- *   2. Bundled sidecar: <repoRoot>/apps/tauri/src-tauri/resources/pi/...
- *   3. Globally-installed `pi` on PATH (dev convenience)
- *   4. Upstream package from node_modules (dev/test only)
+ *   2. Tauri / desktop bundle resources (TAURI_RESOURCE_DIR)
+ *   3. Monorepo staging path under each candidate root
+ *   4. Upstream package from node_modules (dev/test)
  *
  * Returns null when not found (slim build with -SkipPi, or fetch failed).
  */
@@ -59,20 +60,54 @@ export function discoverPiCli(repoRoot?: string): { cliPath: string; version: st
     return { cliPath: process.env.ENVOYMESH_PI_CLI, version: readPiVersion(process.env.ENVOYMESH_PI_CLI) }
   }
 
-  // 2. Bundled sidecar. Two candidate layouts:
-  //    a. Production: <root>/apps/tauri/src-tauri/resources/pi/node_modules/@earendil-works/pi-coding-agent/dist/cli.js
-  //    b. Test/dev:   resolve from this module's location upward.
-  const root = repoRoot ?? inferRepoRoot()
-  const bundledCandidates = [
-    join(root, "apps/tauri/src-tauri/resources/pi/node_modules/@earendil-works/pi-coding-agent/dist/cli.js"),
-  ]
-  for (const candidate of bundledCandidates) {
+  const cliSuffix = join(
+    "pi",
+    "node_modules",
+    "@earendil-works",
+    "pi-coding-agent",
+    "dist",
+    "cli.js",
+  )
+  const candidates: string[] = []
+
+  // 2. Tauri / desktop bundle resources.
+  const resourceDir =
+    process.env.TAURI_RESOURCE_DIR?.trim() || process.env.TAURI_APP_RESOURCES_DIR?.trim()
+  if (resourceDir) {
+    candidates.push(join(resourceDir, cliSuffix))
+    candidates.push(join(resourceDir, "resources", cliSuffix))
+    candidates.push(join(resourceDir, "apps", "tauri", "src-tauri", "resources", cliSuffix))
+  }
+
+  // 3. Monorepo staging — try every plausible root. Callers sometimes pass a
+  // profile-derived path that is NOT the repo root; never let that be the
+  // only candidate (that caused "sidecar not found" with Pi already staged).
+  const roots = new Set<string>()
+  if (repoRoot?.trim()) roots.add(resolve(repoRoot.trim()))
+  roots.add(inferRepoRoot())
+  roots.add(resolve(process.cwd()))
+  // Walk up from cwd a few levels in case node is started from apps/node.
+  let walk = resolve(process.cwd())
+  for (let i = 0; i < 5; i++) {
+    roots.add(walk)
+    const parent = resolve(walk, "..")
+    if (parent === walk) break
+    walk = parent
+  }
+
+  for (const root of roots) {
+    candidates.push(join(root, "apps", "tauri", "src-tauri", "resources", cliSuffix))
+    candidates.push(join(root, "src-tauri", "resources", cliSuffix))
+    candidates.push(join(root, "resources", cliSuffix))
+  }
+
+  for (const candidate of candidates) {
     if (existsSync(candidate)) {
       return { cliPath: candidate, version: readPiVersion(candidate) }
     }
   }
 
-  // 3. Try resolving the upstream package from node_modules (dev/test).
+  // 4. Upstream package from node_modules (dev/test).
   try {
     const resolved = require.resolve("@earendil-works/pi-coding-agent/dist/cli.js")
     return { cliPath: resolved, version: readPiVersion(resolved) }
@@ -85,7 +120,8 @@ export function discoverPiCli(repoRoot?: string): { cliPath: string; version: st
 
 function inferRepoRoot(): string {
   // apps/node/src/pi-runtime.ts → apps/node/src → apps/node → apps → <root>
-  const here = resolve(__dirname)
+  // (or apps/node/dist/... when compiled)
+  const here = dirname(fileURLToPath(import.meta.url))
   const segments = here.split(/[/\\]/)
   const appsIdx = segments.lastIndexOf("apps")
   if (appsIdx > 0) return segments.slice(0, appsIdx).join("/") || "/"
@@ -116,7 +152,7 @@ function readPiVersion(cliPath: string): string {
  * bundled Tauri app this is the resources/node-runtime/node sidecar; in
  * dev it's the ambient `node` on PATH. Override via ENVOYMESH_NODE_EXE.
  */
-function getNodeRuntime(): string {
+export function resolvePiNodeRuntime(): string {
   return process.env.ENVOYMESH_NODE_EXE ?? process.execPath
 }
 
@@ -132,6 +168,151 @@ export interface PiSpawnConfig {
   env: Record<string, string>
   /** Whether the model came from EnvoyMesh's config vs a per-session override. */
   inherited: boolean
+  /**
+   * Custom OpenAI-compatible base URL that must be applied via Pi's models.json.
+   * Pi's built-in `openai` provider ignores `OPENAI_BASE_URL` and dials
+   * `model.baseUrl` (default `api.openai.com`) — unreachable in many regions.
+   */
+  openaiBaseUrlOverride?: string
+}
+
+/**
+ * Hostname → Pi's native MiniMax provider.
+ * Pi ships `minimax` (api.minimax.io/anthropic) and `minimax-cn`
+ * (api.minimaxi.com/anthropic). Mapping openai-compatible MiniMax endpoints
+ * onto these avoids the openai provider's default api.openai.com base URL.
+ */
+export function resolveMiniMaxPiProvider(
+  endpoint: string | undefined,
+): { provider: "minimax-cn" | "minimax"; apiKeyEnv: "MINIMAX_CN_API_KEY" | "MINIMAX_API_KEY" } | null {
+  const native = resolveNativePiProviderFromEndpoint(endpoint)
+  if (native?.provider === "minimax-cn" || native?.provider === "minimax") {
+    return {
+      provider: native.provider,
+      apiKeyEnv: native.provider === "minimax-cn" ? "MINIMAX_CN_API_KEY" : "MINIMAX_API_KEY",
+    }
+  }
+  return null
+}
+
+/**
+ * Map a known OpenAI-compatible endpoint host → Pi's built-in `--provider`.
+ * Unknown hosts return null so callers use openai + openaiBaseUrlOverride.
+ */
+export function resolveNativePiProviderFromEndpoint(
+  endpoint: string | undefined,
+): { provider: string } | null {
+  const raw = endpoint?.trim()
+  if (!raw) return null
+  let host: string
+  try {
+    host = new URL(raw).hostname.toLowerCase()
+  } catch {
+    return null
+  }
+  if (host === "api.minimaxi.com" || host === "www.minimaxi.com" || host.endsWith(".minimaxi.com")) {
+    return { provider: "minimax-cn" }
+  }
+  if (host === "api.minimax.io" || host.endsWith(".minimax.io")) {
+    return { provider: "minimax" }
+  }
+  if (host.includes("deepseek.com")) return { provider: "deepseek" }
+  if (host.includes("moonshot.cn")) return { provider: "moonshotai-cn" }
+  if (host.includes("moonshot.ai")) return { provider: "moonshotai" }
+  if (host === "api.x.ai" || host.endsWith(".x.ai")) return { provider: "xai" }
+  if (host.includes("bigmodel.cn") || host === "api.z.ai" || host.endsWith(".z.ai")) {
+    return { provider: "zai-coding-cn" }
+  }
+  if (host.includes("openrouter.ai")) return { provider: "openrouter" }
+  return null
+}
+
+function isOpenAiOfficialEndpoint(endpoint: string | undefined): boolean {
+  const raw = endpoint?.trim()
+  if (!raw) return true
+  try {
+    const host = new URL(raw).hostname.toLowerCase()
+    return host === "api.openai.com" || host.endsWith(".openai.com")
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Materialize spawn env for the Pi child (writes a private agent dir when
+ * {@link PiSpawnConfig.openaiBaseUrlOverride} is set).
+ * Caller must eventually {@link cleanupPiSpawnEnv} the returned env (or the
+ * `PI_CODING_AGENT_DIR` it may contain) to avoid leaking temp dirs — unless
+ * `opts.agentDir` is a stable reusable path (Pi TUI per-project).
+ */
+export function materializePiSpawnEnv(
+  spawnConfig: PiSpawnConfig,
+  opts?: { agentDir?: string },
+): Record<string, string> {
+  const env = { ...spawnConfig.env }
+  const baseUrl = spawnConfig.openaiBaseUrlOverride?.trim()
+  if (!baseUrl) return env
+  const dir = opts?.agentDir?.trim()
+    ? opts.agentDir.trim()
+    : mkdtempSync(join(tmpdir(), "envoymesh-pi-"))
+  if (opts?.agentDir?.trim()) {
+    mkdirSync(dir, { recursive: true })
+  }
+  writeFileSync(
+    join(dir, "models.json"),
+    `${JSON.stringify(
+      {
+        providers: {
+          openai: { baseUrl },
+        },
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  )
+  env.PI_CODING_AGENT_DIR = dir
+  return env
+}
+
+/** Best-effort remove of a temp agent dir created by {@link materializePiSpawnEnv}. */
+export function cleanupPiSpawnEnv(env: Record<string, string> | undefined): void {
+  const dir = env?.PI_CODING_AGENT_DIR?.trim()
+  if (!dir || !dir.includes("envoymesh-pi-")) return
+  try {
+    rmSync(dir, { recursive: true, force: true })
+  } catch {
+    /* ignore — temp dir may already be gone */
+  }
+}
+
+/**
+ * Normalize a persisted Pi model override. Returns undefined when incomplete
+ * so callers fall back to EnvoyMesh Settings → AI.
+ */
+export function normalizePiModelOverride(raw: unknown): PiModelOverride | undefined {
+  if (!raw || typeof raw !== "object") return undefined
+  const o = raw as Partial<PiModelOverride>
+  const model = typeof o.model === "string" ? o.model.trim() : ""
+  if (!model) return undefined
+  const mode = o.mode
+  const provider = typeof o.provider === "string" ? o.provider.trim() : ""
+  const validMode =
+    mode === "openai-compatible" ||
+    mode === "anthropic-compatible" ||
+    mode === "ollama" ||
+    mode === "litellm"
+  // Prefer Pi-native provider; keep legacy mode-only overrides.
+  if (!provider && !validMode) return undefined
+  return {
+    ...(provider ? { provider } : {}),
+    ...(validMode ? { mode } : {}),
+    model,
+    ...(typeof o.endpoint === "string" && o.endpoint.trim()
+      ? { endpoint: o.endpoint.trim() }
+      : {}),
+    ...(typeof o.apiKey === "string" && o.apiKey.trim() ? { apiKey: o.apiKey.trim() } : {}),
+  }
 }
 
 /**
@@ -145,67 +326,219 @@ export interface PiSpawnConfig {
  * Returns null when the model is not configured (mode "disabled" or "mock"
  * without a real provider). The caller surfaces this as PiStatus.state =
  * "error" with a "configure a model first" hint.
+ *
+ * When `override` is set (from piSettings.modelOverride), it wins and
+ * `inherited` is false — OpenClaw/Hermes/OpenHuman are unaffected.
  */
 export function buildPiSpawnConfig(
   modelProviders: ModelProviderConfig,
   override?: PiModelOverride,
 ): PiSpawnConfig | null {
-  // Per-session override wins.
-  if (override) {
-    return {
-      modelSpec: `${override.provider}/${override.model}`,
-      provider: override.provider,
-      model: override.model,
-      env: buildProviderEnv(override.provider, override.apiKey, override.endpoint),
-      inherited: false,
+  const normalized = normalizePiModelOverride(override)
+  if (normalized) {
+    // Prefer Pi-native provider when both are present.
+    // Empty override.apiKey → reuse Settings → AI key (provider/model still override).
+    const apiKey = normalized.apiKey?.trim() || modelProviders.apiKey
+    if (normalized.provider?.trim()) {
+      return resolvePiSpawnFromDirectProvider({ ...normalized, apiKey })
     }
+    if (normalized.mode) {
+      const resolved = resolvePiSpawnFromEnvoyMode({
+        mode: normalized.mode,
+        modelName: normalized.model,
+        endpoint: normalized.endpoint,
+        apiKey,
+      })
+      if (!resolved) return null
+      return { ...resolved, inherited: false }
+    }
+    return null
   }
 
   const mode = modelProviders.mode
   if (mode === "disabled" || mode === "mock") return null
+  if (!modelProviders.modelName) return null
 
-  const apiKey = modelProviders.apiKey
-  const endpoint = modelProviders.endpoint
-  const modelName = modelProviders.modelName
-  if (!modelName) return null
+  const resolved = resolvePiSpawnFromEnvoyMode({
+    mode,
+    modelName: modelProviders.modelName,
+    endpoint: modelProviders.endpoint,
+    apiKey: modelProviders.apiKey,
+  })
+  if (!resolved) return null
+  return { ...resolved, inherited: true }
+}
 
-  // Map EnvoyMesh's mode → Pi provider name + env var layout.
+function resolvePiSpawnFromEnvoyMode(input: {
+  mode: string
+  modelName: string
+  endpoint?: string
+  apiKey?: string
+}): Omit<PiSpawnConfig, "inherited"> | null {
+  const { mode, modelName, endpoint, apiKey } = input
   switch (mode) {
     case "anthropic-compatible":
       return {
         modelSpec: `anthropic/${modelName}`,
         provider: "anthropic",
         model: modelName,
-        env: buildProviderEnv("anthropic", apiKey, endpoint),
-        inherited: true,
+        env: withPiToolPath(buildProviderEnv("anthropic", apiKey, endpoint)),
       }
-    case "openai-compatible":
-      return {
+    case "openai-compatible": {
+      // Prefer Pi-native providers when the endpoint host is unambiguous.
+      // Falls back to openai + models.json baseUrl override (Pi ignores OPENAI_BASE_URL).
+      const native = resolveNativePiProviderFromEndpoint(endpoint)
+      if (native) {
+        return {
+          modelSpec: `${native.provider}/${modelName}`,
+          provider: native.provider,
+          model: modelName,
+          env: withPiToolPath(buildProviderEnv(native.provider, apiKey, endpoint)),
+        }
+      }
+      const cfg: Omit<PiSpawnConfig, "inherited"> = {
         modelSpec: `openai/${modelName}`,
         provider: "openai",
         model: modelName,
-        env: buildProviderEnv("openai", apiKey, endpoint),
-        inherited: true,
+        env: withPiToolPath(buildProviderEnv("openai", apiKey, endpoint)),
       }
+      if (endpoint?.trim() && !isOpenAiOfficialEndpoint(endpoint)) {
+        cfg.openaiBaseUrlOverride = endpoint.trim()
+      }
+      return cfg
+    }
     case "ollama":
       return {
         modelSpec: `ollama/${modelName}`,
         provider: "ollama",
         model: modelName,
-        env: buildProviderEnv("ollama", apiKey, endpoint ?? "http://localhost:11434"),
-        inherited: true,
+        env: withPiToolPath(buildProviderEnv("ollama", apiKey, endpoint ?? "http://localhost:11434")),
       }
     case "litellm":
       return {
         modelSpec: `litellm/${modelName}`,
         provider: "litellm",
         model: modelName,
-        env: buildProviderEnv("litellm", apiKey, endpoint),
-        inherited: true,
+        env: withPiToolPath(buildProviderEnv("litellm", apiKey, endpoint)),
       }
     default:
       return null
   }
+}
+
+function resolvePiSpawnFromDirectProvider(
+  override: PiModelOverride,
+): PiSpawnConfig | null {
+  const model = override.model.trim()
+  let provider = (override.provider ?? "").trim()
+  if (!model || !provider) return null
+
+  // openai + known native endpoint → remaps like the inherit path.
+  if (provider === "openai") {
+    const native = resolveNativePiProviderFromEndpoint(override.endpoint)
+    if (native) provider = native.provider
+  }
+
+  const cfg: PiSpawnConfig = {
+    modelSpec: `${provider}/${model}`,
+    provider,
+    model,
+    env: withPiToolPath(buildProviderEnv(provider, override.apiKey, override.endpoint)),
+    inherited: false,
+  }
+  if (
+    provider === "openai" &&
+    override.endpoint?.trim() &&
+    !isOpenAiOfficialEndpoint(override.endpoint)
+  ) {
+    cfg.openaiBaseUrlOverride = override.endpoint.trim()
+  }
+  return cfg
+}
+
+/**
+ * Ensure Pi can find `fd` / `rg` without GitHub auto-download.
+ *
+ * GUI/Tauri launches often have a stripped PATH (no Homebrew). Pi then prints
+ * "fd not found. Downloading..." and can hang on a truncated archive. Prepend
+ * common tool dirs so a system install is visible to the child.
+ */
+export function withPiToolPath(env: Record<string, string>): Record<string, string> {
+  const extras: string[] = []
+  for (const dir of ["/opt/homebrew/bin", "/usr/local/bin"]) {
+    if (existsSync(dir)) extras.push(dir)
+  }
+  const piAgentBin = join(homedir(), ".pi", "agent", "bin")
+  if (existsSync(piAgentBin)) extras.push(piAgentBin)
+  const nodeExe = process.env.ENVOYMESH_NODE_EXE?.trim()
+  if (nodeExe) extras.push(dirname(nodeExe))
+
+  const current = process.env.PATH ?? ""
+  const currentParts = new Set(current.split(delimiter).filter(Boolean))
+  const prefix = extras.filter((d) => !currentParts.has(d)).join(delimiter)
+  if (!prefix) return env
+  return { ...env, PATH: prefix + (current ? delimiter + current : "") }
+}
+
+/**
+ * Pull assistant plain text from a Pi AgentMessage (string or content parts).
+ * Used when providers skip text_delta streaming but still attach a final message.
+ */
+export function extractAssistantTextFromPiMessage(message: unknown): string {
+  if (!message || typeof message !== "object") return ""
+  const msg = message as {
+    role?: string
+    content?: unknown
+    errorMessage?: string
+    stopReason?: string
+  }
+  if (msg.role && msg.role !== "assistant") return ""
+  const content = msg.content
+  let out = ""
+  if (typeof content === "string") {
+    out = content
+  } else if (Array.isArray(content)) {
+    for (const part of content) {
+      if (!part || typeof part !== "object") continue
+      const p = part as { type?: string; text?: string }
+      // Pi text parts are `type: "text"`. Accept bare `{ text }` defensively.
+      if (typeof p.text === "string" && (p.type === "text" || p.type === undefined)) {
+        out += p.text
+      }
+    }
+  }
+  if (out.trim()) return out
+  // Surface model/provider failures instead of pretending silence.
+  if (typeof msg.errorMessage === "string" && msg.errorMessage.trim()) {
+    return `⚠️ ${msg.errorMessage.trim()}`
+  }
+  return ""
+}
+
+/**
+ * Extract text from a Pi message_update's assistantMessageEvent.
+ * Official event shapes include text_delta, text_end, done, error (+ partial snapshots).
+ */
+export function extractTextFromAssistantMessageEvent(ame: unknown): string {
+  if (!ame || typeof ame !== "object") return ""
+  const ev = ame as {
+    type?: string
+    delta?: string
+    content?: string
+    partial?: unknown
+    message?: unknown
+    error?: unknown
+  }
+  if (ev.type === "done") return extractAssistantTextFromPiMessage(ev.message)
+  if (ev.type === "error") return extractAssistantTextFromPiMessage(ev.error)
+  // Prefer cumulative partial snapshot when present (avoids double-counting deltas).
+  if (ev.partial) {
+    const fromPartial = extractAssistantTextFromPiMessage(ev.partial)
+    if (fromPartial) return fromPartial
+  }
+  if (ev.type === "text_end" && typeof ev.content === "string") return ev.content
+  if (ev.type === "text_delta" && typeof ev.delta === "string") return ev.delta
+  return ""
 }
 
 /**
@@ -219,22 +552,33 @@ function buildProviderEnv(
   endpoint: string | undefined,
 ): Record<string, string> {
   const env: Record<string, string> = {}
-  switch (provider) {
-    case "anthropic":
-      if (apiKey) env.ANTHROPIC_API_KEY = apiKey
-      break
-    case "openai":
-      if (apiKey) env.OPENAI_API_KEY = apiKey
-      if (endpoint) env.OPENAI_BASE_URL = endpoint
-      break
-    case "ollama":
-      if (endpoint) env.OLLAMA_BASE_URL = endpoint
-      break
-    case "litellm":
-      if (apiKey) env.LITELLM_API_KEY = apiKey
-      if (endpoint) env.LITELLM_BASE_URL = endpoint
-      break
+  // Map Pi-native provider → env var(s) Pi's pi-ai package reads.
+  const keyEnvByProvider: Record<string, string> = {
+    anthropic: "ANTHROPIC_API_KEY",
+    openai: "OPENAI_API_KEY",
+    "minimax-cn": "MINIMAX_CN_API_KEY",
+    minimax: "MINIMAX_API_KEY",
+    deepseek: "DEEPSEEK_API_KEY",
+    google: "GEMINI_API_KEY",
+    groq: "GROQ_API_KEY",
+    mistral: "MISTRAL_API_KEY",
+    openrouter: "OPENROUTER_API_KEY",
+    moonshotai: "MOONSHOT_API_KEY",
+    "moonshotai-cn": "MOONSHOT_API_KEY",
+    xai: "XAI_API_KEY",
+    zai: "ZAI_API_KEY",
+    "zai-coding-cn": "ZAI_API_KEY",
+    litellm: "LITELLM_API_KEY",
   }
+  const keyEnv = keyEnvByProvider[provider]
+  if (apiKey && keyEnv) env[keyEnv] = apiKey
+  // MiniMax CN also accepts the international env name in some Pi builds.
+  if (apiKey && provider === "minimax-cn") env.MINIMAX_API_KEY = apiKey
+
+  if (provider === "openai" && endpoint) env.OPENAI_BASE_URL = endpoint
+  if (provider === "ollama" && endpoint) env.OLLAMA_BASE_URL = endpoint
+  if (provider === "litellm" && endpoint) env.LITELLM_BASE_URL = endpoint
+  if (provider === "openrouter" && endpoint) env.OPENAI_BASE_URL = endpoint
   return env
 }
 
@@ -280,8 +624,14 @@ export class PiRuntime extends EventEmitter {
   /** Cap the line buffer at 1 MB to defend against a runaway child OOMing the host. */
   private static readonly MAX_LINE_BYTES = 1024 * 1024
   private ready = false
+  /** True between agent_start and agent_settled — Pi rejects overlapping prompts. */
+  private agentBusy = false
+  /** Serialize prompts — Pi rejects overlapping prompts without streamingBehavior. */
+  private promptChain: Promise<unknown> = Promise.resolve()
   private readonly opts: PiRuntimeOptions
   private readonly log: (level: "info" | "warn" | "error", msg: string) => void
+  /** Temp env from materializePiSpawnEnv — cleaned in stop(). */
+  private materializedEnv: Record<string, string> | null = null
 
   constructor(opts: PiRuntimeOptions) {
     super()
@@ -313,13 +663,15 @@ export class PiRuntime extends EventEmitter {
     if (this.child) throw new Error("PiRuntime already started")
 
     const { cliPath, spawnConfig, cwd } = this.opts
-    const nodeExe = getNodeRuntime()
+    const nodeExe = resolvePiNodeRuntime()
     const args = ["--mode", "rpc", "--provider", spawnConfig.provider, "--model", spawnConfig.model]
 
     this.log("info", `spawning: ${nodeExe} ${cliPath} ${args.join(" ")}`)
     // IMPORTANT: spread spawnConfig.env INTO process.env, not replace it.
     // Pi needs PATH, HOME, etc. We only ADD the provider key + endpoint.
-    const childEnv = { ...process.env, ...spawnConfig.env } as NodeJS.ProcessEnv
+    const spawnEnv = materializePiSpawnEnv(spawnConfig)
+    this.materializedEnv = spawnEnv
+    const childEnv = { ...process.env, ...spawnEnv } as NodeJS.ProcessEnv
 
     this.child = spawn(nodeExe, [cliPath, ...args], {
       cwd: cwd ?? process.cwd(),
@@ -428,6 +780,7 @@ export class PiRuntime extends EventEmitter {
     child.on("exit", (code, signal) => {
       const wasReady = this.ready
       this.ready = false
+      this.agentBusy = false
       this.log(code === 0 ? "info" : "warn", `child exited (code=${code} signal=${signal})`)
       // Reject any in-flight commands.
       for (const { reject } of this.pendingCommands.values()) {
@@ -477,11 +830,32 @@ export class PiRuntime extends EventEmitter {
 
     // Event → forward to subscribers as a typed PiEvent.
     const event = msg as PiEvent
+    if (event.type === "agent_start") this.agentBusy = true
+    if (event.type === "agent_settled") this.agentBusy = false
     this.emit("event", event)
+    // Also emit by `type` so `prompt()` can `once("agent_end"|"agent_settled")`.
+    // Without this, ask hangs forever after the model finishes (Ext Agent never replies).
+    this.emit(event.type, event)
     // Typed convenience emitter for the UI-request sub-protocol.
     if (event.type === "extension_ui_request") {
       this.emit("ui_request", event as PiExtensionUiRequest)
     }
+  }
+
+  /** Wait until Pi is idle (`agent_settled`), or resolve immediately if already idle. */
+  private waitUntilIdle(timeoutMs: number): Promise<void> {
+    if (!this.agentBusy) return Promise.resolve()
+    return new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.off("agent_settled", onSettled)
+        reject(new Error(`Pi still busy after ${timeoutMs}ms`))
+      }, timeoutMs)
+      const onSettled = () => {
+        clearTimeout(timer)
+        resolve()
+      }
+      this.once("agent_settled", onSettled)
+    })
   }
 
   /**
@@ -507,24 +881,67 @@ export class PiRuntime extends EventEmitter {
   /**
    * Convenience: send a prompt, collect the streamed text into a single result.
    * Subscribers still see every event (text deltas, tool calls) in real time.
+   *
+   * Prompts are serialized — Pi rejects overlapping prompts without
+   * streamingBehavior; Ext Agent must not race asks on one runtime.
    */
   async prompt(text: string): Promise<PiPromptResult> {
+    const resultPromise = this.promptChain.then(
+      () => this.promptUnlocked(text),
+      () => this.promptUnlocked(text),
+    )
+    this.promptChain = resultPromise.then(
+      () => undefined,
+      () => undefined,
+    )
+    return resultPromise
+  }
+
+  private async promptUnlocked(text: string): Promise<PiPromptResult> {
     let collected = ""
     let toolCallCount = 0
     let model: string | undefined
     let cancelled = false
 
+    const absorbAssistantText = (message: unknown) => {
+      const full = extractAssistantTextFromPiMessage(message)
+      if (full && full.length >= collected.length) collected = full
+    }
+
     const onEvent = (event: PiEvent) => {
       if (event.type === "message_update" && event.assistantMessageEvent) {
         const ame = event.assistantMessageEvent as PiAssistantMessageEvent
-        if (ame.type === "text_delta") collected += ame.delta
-        else if (ame.type === "tool_use_start") toolCallCount += 1
-      } else if (event.type === "tool_execution_start") {
-        // Count tool executions too (some tools don't emit tool_use messages).
+        if (ame.type === "text_delta" && typeof ame.delta === "string") {
+          if (ame.partial) absorbAssistantText(ame.partial)
+          else collected += ame.delta
+        } else if (ame.type === "text_end") {
+          if (ame.partial) absorbAssistantText(ame.partial)
+        } else if (ame.type === "done") {
+          absorbAssistantText(ame.message)
+        } else if (ame.type === "error") {
+          absorbAssistantText(ame.error)
+          if (!collected.trim() && typeof ame.message === "string" && ame.message.trim()) {
+            collected = `⚠️ ${ame.message.trim()}`
+          }
+        } else if (ame.type === "tool_use_start" || ame.type === "toolcall_start") {
+          toolCallCount += 1
+        }
+      } else if (event.type === "message_end") {
+        absorbAssistantText((event as { message?: unknown }).message)
+      } else if (event.type === "turn_end") {
+        absorbAssistantText((event as { message?: unknown }).message)
       } else if (event.type === "agent_end") {
-        // Agent metadata may carry the model used; capture if present.
-        const raw = event as unknown as { model?: string }
+        const raw = event as unknown as { model?: string; messages?: unknown[] }
         if (raw.model) model = raw.model
+        if (Array.isArray(raw.messages)) {
+          for (let i = raw.messages.length - 1; i >= 0; i--) {
+            const full = extractAssistantTextFromPiMessage(raw.messages[i])
+            if (full) {
+              if (full.length >= collected.length) collected = full
+              break
+            }
+          }
+        }
       }
     }
     const onCancel = () => {
@@ -533,30 +950,91 @@ export class PiRuntime extends EventEmitter {
     this.on("event", onEvent)
     this.once("__cancelled", onCancel)
 
-    // Subscribe to turn-completion BEFORE sending the prompt — otherwise a
-    // fast turn could fire agent_end/turn_end between send() returning and
-    // the wait Promise being constructed, and we'd miss it (hang forever).
-    let turnDone: () => void
-    const turnComplete = new Promise<void>((resolve) => {
-      turnDone = resolve
-      this.once("agent_end", turnDone)
-      this.once("turn_end", turnDone)
-    })
+    const promptTimeoutMs = 180_000
+
+    const waitSettled = (): Promise<void> =>
+      new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => {
+          this.off("agent_settled", onSettled)
+          reject(new Error(`Pi prompt timed out after ${promptTimeoutMs}ms`))
+        }, promptTimeoutMs)
+        const onSettled = () => {
+          clearTimeout(timer)
+          resolve()
+        }
+        this.once("agent_settled", onSettled)
+      })
 
     try {
-      const resp = await this.send({ type: "prompt", message: text })
+      // Ensure previous turn is fully idle before prompting.
+      try {
+        await this.waitUntilIdle(promptTimeoutMs)
+      } catch (err) {
+        this.log(
+          "warn",
+          `waitUntilIdle before prompt: ${err instanceof Error ? err.message : String(err)}`,
+        )
+        // Last resort: abort the stuck turn so we can proceed.
+        try {
+          await this.send({ type: "abort" })
+        } catch {
+          /* ignore */
+        }
+        this.agentBusy = false
+      }
+
+      let resp = await this.send({ type: "prompt", message: text })
+      if (!resp.success && /already processing/i.test(resp.error ?? "")) {
+        this.log("warn", "prompt rejected (busy) — waiting for idle then retrying")
+        this.agentBusy = true
+        try {
+          await this.waitUntilIdle(promptTimeoutMs)
+        } catch {
+          try {
+            await this.send({ type: "abort" })
+          } catch {
+            /* ignore */
+          }
+          this.agentBusy = false
+        }
+        resp = await this.send({ type: "prompt", message: text })
+      }
+      if (!resp.success && /already processing/i.test(resp.error ?? "")) {
+        // Queue behind the in-flight turn rather than failing the Ext Agent ask.
+        this.log("warn", "prompt still busy — sending with streamingBehavior=followUp")
+        this.agentBusy = true
+        resp = await this.send({
+          type: "prompt",
+          message: text,
+          streamingBehavior: "followUp",
+        })
+      }
       if (!resp.success) {
         throw new Error(resp.error ?? "Pi rejected the prompt")
       }
-      // Wait for the agent_end / turn_end event that closes this turn.
-      await turnComplete
+
+      // Register settle waiter only AFTER prompt was accepted (avoids resolving
+      // on a stale agent_settled from the previous turn).
+      await waitSettled()
+
+      if (!collected.trim()) {
+        this.log(
+          "warn",
+          "prompt finished with empty assistant text (check model output / stopReason)",
+        )
+      }
       return { text: collected, model, toolCallCount, cancelled }
+    } catch (err) {
+      try {
+        await this.send({ type: "abort" })
+      } catch {
+        /* ignore */
+      }
+      this.agentBusy = false
+      throw err
     } finally {
       this.off("event", onEvent)
       this.off("__cancelled", onCancel)
-      // Clean up turn-end listeners if still attached (e.g. on early throw).
-      this.off("agent_end", turnDone!)
-      this.off("turn_end", turnDone!)
     }
   }
 
@@ -568,9 +1046,11 @@ export class PiRuntime extends EventEmitter {
 
   /** Cancel the current turn (interrupt the agent). */
   async cancel(): Promise<void> {
-    const resp = await this.send({ type: "cancel" })
+    // Pi RPC uses "abort"; keep "cancel" as a soft alias for older callers.
+    const resp = await this.send({ type: "abort" })
     this.emit("__cancelled")
-    if (!resp.success) throw new Error(resp.error ?? "Pi rejected cancel")
+    this.agentBusy = false
+    if (!resp.success) throw new Error(resp.error ?? "Pi rejected abort")
   }
 
   /**
@@ -591,31 +1071,34 @@ export class PiRuntime extends EventEmitter {
   /** Stop the child process gracefully (SIGTERM, then SIGKILL after 5s). */
   async stop(): Promise<void> {
     const child = this.child
-    if (!child) return
     this.ready = false
     if (this.stdin) {
       this.stdin.destroy()
       this.stdin = null
     }
-    await new Promise<void>((resolveStop) => {
-      const killTimer = setTimeout(() => {
+    if (child) {
+      await new Promise<void>((resolveStop) => {
+        const killTimer = setTimeout(() => {
+          try {
+            child.kill("SIGKILL")
+          } catch {
+            /* already dead */
+          }
+        }, 5_000)
+        child.once("exit", () => {
+          clearTimeout(killTimer)
+          resolveStop()
+        })
         try {
-          child.kill("SIGKILL")
+          child.kill("SIGTERM")
         } catch {
-          /* already dead */
+          clearTimeout(killTimer)
+          resolveStop()
         }
-      }, 5_000)
-      child.once("exit", () => {
-        clearTimeout(killTimer)
-        resolveStop()
       })
-      try {
-        child.kill("SIGTERM")
-      } catch {
-        clearTimeout(killTimer)
-        resolveStop()
-      }
-    })
+    }
     this.child = null
+    cleanupPiSpawnEnv(this.materializedEnv ?? undefined)
+    this.materializedEnv = null
   }
 }

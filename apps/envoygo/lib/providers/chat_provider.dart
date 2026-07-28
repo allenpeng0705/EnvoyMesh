@@ -906,6 +906,29 @@ class ChatNotifier extends StateNotifier<ChatState> {
     );
   }
 
+  /// Ensure a Pi chat thread exists in the AI section.
+  void ensurePiThread({String? statusLabel}) {
+    final nodeState = _ref.read(nodeProvider);
+    if (nodeState.activeNode == null) return;
+    final threadId = '${nodeState.activeNode!.id}:pi';
+    final suffix = statusLabel != null && statusLabel.isNotEmpty
+        ? ' ($statusLabel)'
+        : '';
+    _upsertThread(
+      threadId: threadId,
+      nodeId: nodeState.activeNode!.id,
+      type: ChatThreadType.pi,
+      displayName: 'Pi$suffix',
+      agentType: 'pi',
+    );
+  }
+
+  /// Update Pi thread subtitle from `getPiStatus` / status push.
+  void onPiStatus(Map<String, dynamic> data) {
+    final state = data['state']?.toString();
+    ensurePiThread(statusLabel: state);
+  }
+
   /// Sync terminal sessions from the home node as threads.
   Future<void> syncTerminals() async {
     final termNotifier = _ref.read(terminalProvider.notifier);
@@ -1126,7 +1149,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
       // overwritten by a misclassified incoming message.
       type: existing != null &&
              (existing.type == ChatThreadType.envoyai ||
-              existing.type == ChatThreadType.externalAgent)
+              existing.type == ChatThreadType.externalAgent ||
+              existing.type == ChatThreadType.pi)
           ? existing.type
           : type,
       displayName: _resolveThreadName(

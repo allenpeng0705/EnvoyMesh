@@ -27,6 +27,7 @@ import {
   computeAiEngineMode,
   DEFAULT_EXT_AGENTS,
   mergeExtAgentPresets,
+  getExtAgentInstallInfo,
   type AiEngineMode,
   type ExtAgentDefinition,
 } from "@envoymesh/api";
@@ -208,6 +209,11 @@ export function AgentSettings({ envoyAI, extAgent, onExtAgentSave, onRestartOpen
     extAgent.name ||
     "—";
 
+  const draftAgentId = draft.activeExtAgentId ?? selectableAgents[0]?.id ?? "pi";
+  const viewAgentId = extAgent.activeExtAgentId ?? draftAgentId;
+  const draftInstall = getExtAgentInstallInfo(draftAgentId);
+  const viewInstall = getExtAgentInstallInfo(viewAgentId);
+
   return (
     <div className="settings-agent" data-mode={mode}>
       {/* ======== Top-of-section mode summary (one row, not a card) ========
@@ -344,6 +350,22 @@ export function AgentSettings({ envoyAI, extAgent, onExtAgentSave, onRestartOpen
                 <dt>{t("settings.ai.aiEngine.selectAgent")}</dt>
                 <dd>{activeAgentLabel}</dd>
               </div>
+              <div
+                className="agent-install-hint"
+                data-testid="ext-agent-install-hint"
+              >
+                <p className="agent-install-hint-text">{viewInstall.startHint}</p>
+                {viewInstall.homepageUrl ? (
+                  <a
+                    className="agent-install-hint-link"
+                    href={viewInstall.homepageUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {viewInstall.homepageLabel}
+                  </a>
+                ) : null}
+              </div>
               <div className="agent-field agent-field--readonly">
                 <dt>{t("settings.ai.aiEngine.webhookUrl")}</dt>
                 <dd className="agent-field-value--mono">{extAgent.url || "—"}</dd>
@@ -381,6 +403,22 @@ export function AgentSettings({ envoyAI, extAgent, onExtAgentSave, onRestartOpen
                     </option>
                   ))}
                 </select>
+                <div
+                  className="agent-install-hint"
+                  data-testid="ext-agent-install-hint"
+                >
+                  <p className="agent-install-hint-text">{draftInstall.startHint}</p>
+                  {draftInstall.homepageUrl ? (
+                    <a
+                      className="agent-install-hint-link"
+                      href={draftInstall.homepageUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {draftInstall.homepageLabel}
+                    </a>
+                  ) : null}
+                </div>
               </div>
               <div className="agent-field">
                 <label className="agent-field-label">

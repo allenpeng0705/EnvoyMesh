@@ -209,4 +209,68 @@ describe("TerminalManager", () => {
     await manager.disableExecPane(parent.sessionId);
     expect(manager.isExecPaneEnabled(parent.sessionId)).toBe(false);
   });
+
+  it("spawns custom command/args for role=pi and persists recipe without env", async () => {
+    const created = await manager.createTerminalSession({
+      title: "Pi",
+      role: "pi",
+      command: "/usr/bin/env",
+      args: ["node", "--version"],
+      env: { SECRET_KEY: "should-not-persist" },
+    });
+    expect(created.role).toBe("pi");
+    expect(created.command).toBe("/usr/bin/env");
+    expect(created.args).toEqual(["node", "--version"]);
+    expect(manager.findPiSession()?.sessionId).toBe(created.sessionId);
+
+    expect(spawn).toHaveBeenCalledWith(
+      "/usr/bin/env",
+      ["node", "--version"],
+      expect.objectContaining({
+        env: expect.objectContaining({ SECRET_KEY: "should-not-persist" }),
+      }),
+    );
+
+    await new Promise((r) => setTimeout(r, 20));
+    const raw = await readFile(join(profileDir, "terminals", "sessions.json"), "utf8");
+    expect(raw).not.toContain("SECRET_KEY");
+    const parsed = JSON.parse(raw) as {
+      sessions: Array<{ role?: string; command?: string; args?: string[] }>;
+    };
+    const row = parsed.sessions.find((s) => s.role === "pi");
+    expect(row?.command).toBe("/usr/bin/env");
+    expect(row?.args).toEqual(["node", "--version"]);
+  });
+
+  it("does not auto-respawn role=pi sessions (ensurePi supplies fresh env)", async () => {
+    const sessionId = "pi-session-id";
+    const now = new Date().toISOString();
+    await mkdir(join(profileDir, "terminals"), { recursive: true });
+    await writeFile(
+      join(profileDir, "terminals", "sessions.json"),
+      JSON.stringify({
+        version: 1,
+        sessions: [
+          {
+            sessionId,
+            title: "Pi",
+            cwd: profileDir,
+            shell: "/usr/bin/env",
+            command: "/usr/bin/env",
+            args: ["node", "--version"],
+            createdAt: now,
+            state: "running",
+            lastActivityAt: now,
+            role: "pi",
+          },
+        ],
+      }),
+      { mode: 0o600 },
+    );
+
+    const restarted = new TerminalManager({ profileDir });
+    await restarted.waitUntilReady();
+    expect(restarted.findPiSession()).toBeUndefined();
+    expect(restarted.listTerminalSessions().some((s) => s.sessionId === sessionId)).toBe(false);
+  });
 });

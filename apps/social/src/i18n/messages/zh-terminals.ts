@@ -4,11 +4,14 @@
 
 export const zhTerminalMessages = {
   sessions: "会话",
-  new: "新建终端",
+  new: "终端",
   empty: "还没有终端",
   running: "运行中",
   exited: "已退出",
   close: "关闭会话",
+  closeConfirmTitle: "关闭终端？",
+  closeConfirmMessage: "这将结束该 shell 会话，正在运行的命令会被停止。",
+  closeConfirmAction: "关闭",
   runningCount: "{count} / {max} 运行中",
   selectSession: "选择终端",
   selectSessionDesc: "从侧边栏选择一个会话或新建终端。",

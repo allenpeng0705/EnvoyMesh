@@ -1,11 +1,14 @@
 // Terminal UI strings (German). Mirrors en-chat.ts terminalMessages.
 export const deTerminalMessages = {
   sessions: "Sitzungen",
-  new: "Neues Terminal",
+  new: "Terminal",
   empty: "Noch keine Terminals",
   running: "Läuft",
   exited: "Beendet",
   close: "Sitzung schließen",
+  closeConfirmTitle: "Terminal schließen?",
+  closeConfirmMessage: "Die Shell-Sitzung wird beendet. Laufende Befehle werden gestoppt.",
+  closeConfirmAction: "Schließen",
   runningCount: "{count} / {max} laufen",
   selectSession: "Terminal auswählen",
   selectSessionDesc: "Wählen Sie eine Sitzung in der Seitenleiste oder erstellen Sie ein neues Terminal.",

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { access, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 import type {
   CloseTerminalSessionParams,
@@ -31,9 +31,13 @@ interface PersistedTerminalRecord {
   state: "running" | "exited";
   exitCode?: number;
   lastActivityAt: string;
-  role?: "interactive" | "exec";
+  role?: "interactive" | "exec" | "pi";
   parentSessionId?: string;
   execSessionId?: string;
+  /** Custom spawn binary (Pi TUI = node). */
+  command?: string;
+  /** Custom spawn argv (no secrets). */
+  args?: string[];
 }
 
 interface PersistedTerminalSessionsFile {
@@ -180,27 +184,62 @@ export class TerminalManager {
       throw new Error(`terminal.maxSessions (${MAX_SESSIONS})`);
     }
 
-    const shell = process.env.SHELL || (process.platform === "win32" ? "powershell.exe" : "/bin/bash");
+    const defaultShell = process.env.SHELL || (process.platform === "win32" ? "powershell.exe" : "/bin/bash");
+    const command = params.command?.trim() || defaultShell;
+    const args = params.args ?? [];
     const cwd = params.cwd?.trim() || process.cwd() || homedir();
     const cols = params.cols ?? DEFAULT_COLS;
     const rows = params.rows ?? DEFAULT_ROWS;
     const sessionId = randomUUID();
     const now = new Date().toISOString();
-    const title = params.title?.trim() || `Terminal ${runningCount + 1}`;
+    const role = params.role ?? "interactive";
+    const title =
+      params.title?.trim() ||
+      (role === "pi" ? "Pi" : `Terminal ${runningCount + 1}`);
 
     const summary = await this.spawnLiveSession({
       sessionId,
       title,
       cwd,
-      shell,
+      shell: command,
+      command,
+      args,
+      env: params.env,
       cols,
       rows,
       createdAt: now,
+      role,
     });
     await this.persistSessions();
     void this.audit("terminal.session.created", `session ${sessionId} title=${title}`, sessionId);
     this.notifyChanged();
     return { ...summary };
+  }
+
+  /** Running reserved Pi TUI sessions (newest activity first). */
+  listPiSessions(): TerminalSessionSummary[] {
+    return [...this.sessions.values()]
+      .map((s) => s.summary)
+      .filter((s) => s.role === "pi" && s.state === "running")
+      .map((s) => ({ ...s }))
+      .sort(
+        (a, b) => new Date(b.lastActivityAt).getTime() - new Date(a.lastActivityAt).getTime(),
+      );
+  }
+
+  /** First running Pi TUI session, if any (legacy helper). */
+  findPiSession(): TerminalSessionSummary | undefined {
+    return this.listPiSessions()[0];
+  }
+
+  /** Running Pi TUI for this project folder (path-normalized), if any. */
+  findPiSessionByCwd(cwd: string): TerminalSessionSummary | undefined {
+    const target = resolve(cwd.trim());
+    for (const live of this.sessions.values()) {
+      if (live.summary.role !== "pi" || live.summary.state !== "running") continue;
+      if (resolve(live.summary.cwd) === target) return { ...live.summary };
+    }
+    return undefined;
   }
 
   private async spawnLiveSession(params: {
@@ -211,18 +250,28 @@ export class TerminalManager {
     cols: number;
     rows: number;
     createdAt: string;
-    role?: "interactive" | "exec";
+    role?: "interactive" | "exec" | "pi";
     parentSessionId?: string;
+    command?: string;
+    args?: string[];
+    env?: Record<string, string>;
   }): Promise<TerminalSessionSummary> {
     const ptyModule = await import("node-pty");
+    const command = params.command?.trim() || params.shell;
+    const args = params.args ?? [];
+    const childEnv = {
+      ...(process.env as Record<string, string>),
+      ...(params.env ?? {}),
+      TERM: process.env.TERM || "xterm-256color",
+    };
     let ptyProcess;
     try {
-      ptyProcess = ptyModule.spawn(params.shell, [], {
-        name: "xterm-color",
+      ptyProcess = ptyModule.spawn(command, args, {
+        name: "xterm-256color",
         cols: params.cols,
         rows: params.rows,
         cwd: params.cwd,
-        env: process.env as Record<string, string>,
+        env: childEnv,
       });
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -238,12 +287,14 @@ export class TerminalManager {
       sessionId: params.sessionId,
       title: params.title,
       cwd: params.cwd,
-      shell: params.shell,
+      shell: command,
       state: "running",
       createdAt: params.createdAt,
       lastActivityAt: params.createdAt,
       role: params.role ?? "interactive",
       ...(params.parentSessionId ? { parentSessionId: params.parentSessionId } : {}),
+      ...(params.command ? { command: params.command } : {}),
+      ...(args.length > 0 ? { args } : {}),
     };
 
     const live: LiveSession = {
@@ -515,6 +566,9 @@ export class TerminalManager {
       for (const row of toRespawn) {
         if (this.sessions.size >= MAX_SESSIONS) break;
         if (this.sessions.has(row.sessionId) || this.exitedSessions.has(row.sessionId)) continue;
+        // Pi TUI sessions are started on demand after the user picks a project
+        // folder (API keys must not be stored in sessions.json).
+        if (row.role === "pi") continue;
         const cwd = await this.resolveRespawnCwd(row.cwd);
         try {
           await this.spawnLiveSession({
@@ -522,9 +576,13 @@ export class TerminalManager {
             title: row.title,
             cwd,
             shell: row.shell,
+            command: row.command,
+            args: row.args,
             cols: DEFAULT_COLS,
             rows: DEFAULT_ROWS,
             createdAt: row.createdAt,
+            role: row.role,
+            parentSessionId: row.parentSessionId,
           });
         } catch (err) {
           console.warn(`[terminal-manager] failed to respawn session ${row.sessionId}:`, err);
@@ -556,6 +614,8 @@ export class TerminalManager {
         role: s.role,
         parentSessionId: s.parentSessionId,
         execSessionId: s.execSessionId,
+        command: s.command,
+        args: s.args,
       }));
       for (const live of this.sessions.values()) {
         if (live.summary.role !== "exec") continue;
@@ -570,6 +630,8 @@ export class TerminalManager {
           lastActivityAt: live.summary.lastActivityAt,
           role: live.summary.role,
           parentSessionId: live.summary.parentSessionId,
+          command: live.summary.command,
+          args: live.summary.args,
         });
       }
       const payload: PersistedTerminalSessionsFile = { version: 1, sessions: records };

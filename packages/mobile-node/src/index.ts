@@ -4801,6 +4801,30 @@ You are the owner's personal AI assistant on EnvoyMesh.
     return { enabled: false, running: false, url: "" };
   }
 
+  async probeExtAgent(
+    params?: import("@envoymesh/api").ProbeExtAgentParams,
+  ): Promise<import("@envoymesh/api").ExtAgentReachability> {
+    if (this._isHomeRemotePaired() && this._homeRemoteOnline) {
+      try {
+        return await this._homeRemoteCall<import("@envoymesh/api").ExtAgentReachability>(
+          "probeExtAgent",
+          (params ?? {}) as Record<string, unknown>,
+        );
+      } catch {
+        // fall through
+      }
+    }
+    const agentId = params?.agentId?.trim() || "pi";
+    return {
+      agentId,
+      agentName: agentId,
+      builtIn: agentId === "pi",
+      reachable: false,
+      hint: "Home node is offline — Ext Agent reachability can only be checked on the home node.",
+      checkedAt: new Date().toISOString(),
+    };
+  }
+
   /**
    * Restart the built-in OpenClaw gateway. Mobile forwards to the home
    * node when paired; otherwise no-op (the gateway only lives on the home).

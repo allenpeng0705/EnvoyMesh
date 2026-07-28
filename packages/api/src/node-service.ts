@@ -122,6 +122,8 @@ import type {
   PairSharedIdentityResult,
   PairWithHomeNodeParams,
   PairWithHomeNodeResult,
+  ExtAgentReachability,
+  ProbeExtAgentParams,
   PairThinClientParams,
   PairThinClientResult,
   UpdateMyListenAddrsParams,
@@ -2395,6 +2397,12 @@ export interface NodeService {
   getOpenClawStatus(): Promise<OpenClawStatus>;
 
   /**
+   * Soft-probe whether the active (or requested) Ext Agent backend is reachable.
+   * Does not block switching — used for in-chat banners and post-switch hints.
+   */
+  probeExtAgent(params?: ProbeExtAgentParams): Promise<ExtAgentReachability>;
+
+  /**
    * Force-restart the built-in OpenClaw gateway (kills the child, waits for
    * the webhook port to be released, spawns a fresh gateway). Returns the
    * resulting status so the caller can refresh its UI without a follow-up
@@ -2413,6 +2421,14 @@ export interface NodeService {
   restartPi(): Promise<PiStatus>;
   /** One-shot prompt — used by the sendToPi JSON-RPC method. Returns the text. */
   sendToPi(text: string): Promise<string>;
+  /**
+   * Start or focus a Pi interactive TUI for an explicitly chosen project folder.
+   * Requires `projectPath` to spawn — no boot auto-start. Up to
+   * {@link MAX_PI_TERMINAL_SESSIONS} concurrent Pi sessions (one per folder).
+   */
+  ensurePiTerminalSession(
+    params?: import("./pi-agent.js").EnsurePiTerminalParams,
+  ): Promise<import("./pi-agent.js").EnsurePiTerminalResult>;
   /**
    * Phase 49D — deliver the user's confirm/deny decision on a Pi tool-action
    * request. Pi executes its own tools; this only unblocks the agent.

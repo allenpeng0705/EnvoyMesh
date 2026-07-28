@@ -13,6 +13,7 @@ import { resolveContactAiAccessLevel } from "@envoymesh/api";
 import { contactLabel, peerDisplayLabel } from "../../lib/display.js";
 import { PeerProfileAvatar } from "../PeerProfileAvatar.js";
 import { ChatIcon, BridgeIcon, AddIcon } from "../../icons.js";
+import { ExtAgentSwitcher } from "../ExtAgentSwitcher.js";
 import { useChatThreadPreviews } from "../../hooks/useChatThreadPreviews.js";
 import { useBondConnectionPreload } from "../../hooks/useBondConnectionPreload.js";
 import { CreateGroupModal } from "./CreateGroupModal.js";
@@ -262,6 +263,27 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
             </button>
           ) : null}
 
+          {bridgeStatus?.enabled ? (
+            <div className="thread-row-with-actions thread-row-with-actions--ext-agent">
+              <button
+                type="button"
+                className={`thread-row thread-row--agent ${selectedContact === bridgeStatus.agentPeerId ? "active" : ""}`}
+                onClick={() => onSelectContact(bridgeStatus.agentPeerId)}
+              >
+                <span className="thread-avatar" aria-hidden>AG</span>
+                <span className="thread-meta">
+                  <span className="thread-title-row">
+                    <span className="thread-title">{t("chat.myAgent")}</span>
+                  </span>
+                  <span className="thread-subtitle">
+                    {bridgeStatus.agentName || t("chat.extAgentDefaultName", "Ext Agent")}
+                  </span>
+                </span>
+              </button>
+              <ExtAgentSwitcher stopRowClick iconOnly />
+            </div>
+          ) : null}
+
           {onOpenPi ? (
             <button
               type="button"
@@ -274,22 +296,6 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
                   <span className="thread-title">{t("pi.title", "Pi")}</span>
                 </span>
                 <span className="thread-subtitle">{t("pi.subtitle", "Local coding agent")}</span>
-              </span>
-            </button>
-          ) : null}
-
-          {bridgeStatus?.enabled ? (
-            <button
-              type="button"
-              className={`thread-row thread-row--agent ${selectedContact === bridgeStatus.agentPeerId ? "active" : ""}`}
-              onClick={() => onSelectContact(bridgeStatus.agentPeerId)}
-            >
-              <span className="thread-avatar" aria-hidden>AG</span>
-              <span className="thread-meta">
-                <span className="thread-title-row">
-                  <span className="thread-title">{t("chat.myAgent")}</span>
-                </span>
-                <span className="thread-subtitle">{bridgeStatus.agentName || ""}</span>
               </span>
             </button>
           ) : null}

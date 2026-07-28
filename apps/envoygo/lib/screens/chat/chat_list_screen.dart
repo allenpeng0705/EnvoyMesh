@@ -3,9 +3,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/chat_thread.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/contact_provider.dart';
+import '../../widgets/ext_agent_switcher.dart';
 import '../../widgets/thread_tile.dart';
 import '../terminals/terminal_detail_screen.dart';
 import 'chat_detail_screen.dart';
+import 'pi_chat_screen.dart';
 
 /// Unified thread list — direct chats, group chats, AI chats, and terminals.
 class ChatListScreen extends ConsumerWidget {
@@ -56,7 +58,8 @@ class ChatListScreen extends ConsumerWidget {
     final ai = threads
         .where((t) =>
             t.type == ChatThreadType.envoyai ||
-            t.type == ChatThreadType.externalAgent)
+            t.type == ChatThreadType.externalAgent ||
+            t.type == ChatThreadType.pi)
         .toList();
     final contacts = threads
         .where((t) => t.type == ChatThreadType.direct)
@@ -134,6 +137,10 @@ class ChatListScreen extends ConsumerWidget {
                         },
                         child: ThreadTile(
                           thread: thread,
+                          trailingAction:
+                              thread.type == ChatThreadType.externalAgent
+                                  ? const ExtAgentSwitcher(iconOnly: true)
+                                  : null,
                           onTap: () => _openThread(context, thread),
                         ),
                       );
@@ -187,6 +194,11 @@ class ChatListScreen extends ConsumerWidget {
               );
             },
           ),
+        );
+        return;
+      case ChatThreadType.pi:
+        Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const PiChatScreen()),
         );
         return;
       case ChatThreadType.envoyai:

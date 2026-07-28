@@ -10,10 +10,11 @@ import { useNodeState } from "../../context/NodeStateContext.js";
 import type { ChatPanelMode } from "../../App.js";
 import { isChatRoomThreadKey, parseChatRoomThreadKey } from "@envoymesh/api";
 import type { TerminalSessionSummary } from "@envoymesh/api";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useIsInProcessMobileNode, useNodeService } from "../../hooks/useNodeService.js";
 import type { ChatRoom } from "@envoymesh/api";
 import { loadTerminalSelectedSessionId, saveTerminalSelectedSessionId } from "../../lib/storage.js";
+import { isTauriShell, pickTauriDirectory } from "../../lib/tauri-shell.js";
 import { OpenClawOfflineBanner } from "./OpenClawOfflineBanner.js";
 
 /**
@@ -28,7 +29,7 @@ export interface ChatViewProps {
   inboxActivityCount: number;
   onOpenAssistant?: () => void;
   onOpenDiscover?: () => void;
-  /** Phase 49 — open the Pi chat panel. */
+  /** Open Pi coding TUI (switches to Terminals + selects Pi session). */
   onOpenPi?: () => void;
 }
 
@@ -40,7 +41,7 @@ export function ChatView({
   inboxActivityCount,
   onOpenAssistant,
   onOpenDiscover,
-  onOpenPi,
+  onOpenPi: onOpenPiProp,
 }: ChatViewProps) {
   const t = useT();
   const nodeService = useNodeService();
@@ -49,6 +50,180 @@ export function ChatView({
   const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
   const [terminalSessions, setTerminalSessions] = useState<TerminalSessionSummary[]>([]);
   const [selectedTerminalId, setSelectedTerminalId] = useState<string | null>(() => loadTerminalSelectedSessionId());
+  const [piEnsureError, setPiEnsureError] = useState<string | null>(null);
+  const [piEnsureBusy, setPiEnsureBusy] = useState(false);
+  const [piProjectModalOpen, setPiProjectModalOpen] = useState(false);
+  const [piProjectDraft, setPiProjectDraft] = useState("");
+  const [piProjectForceRestart, setPiProjectForceRestart] = useState(false);
+  const [piRestartSessionId, setPiRestartSessionId] = useState<string | null>(null);
+  /** When true, auto-select prefers the dedicated Pi session over other terminals. */
+  const preferPiSessionRef = useRef(false);
+  /** Prefer this session id after a successful start (multi-Pi). */
+  const preferPiSessionIdRef = useRef<string | null>(null);
+
+  const savedPiProjects = nodeConfig?.piSettings?.allowedPaths ?? [];
+  const savedPiProject = savedPiProjects[0]?.trim() ?? "";
+
+  const applyPiSession = async (session: TerminalSessionSummary) => {
+    preferPiSessionIdRef.current = session.sessionId;
+    setSelectedTerminalId(session.sessionId);
+    setTerminalSessions((prev) => {
+      const without = prev.filter((s) => s.sessionId !== session.sessionId);
+      return [session, ...without];
+    });
+    try {
+      const list = await nodeService.listTerminalSessions();
+      setTerminalSessions(list);
+      const match = list.find((s) => s.sessionId === session.sessionId && s.state === "running");
+      if (match) setSelectedTerminalId(match.sessionId);
+    } catch {
+      /* keep optimistic session */
+    }
+  };
+
+  const startPiWithPath = async (
+    projectPath: string,
+    opts: { forceRestart: boolean; sessionId?: string | null },
+  ) => {
+    preferPiSessionRef.current = true;
+    setPiEnsureError(null);
+    setPiEnsureBusy(true);
+    onPanelModeChange("terminals");
+    try {
+      const result = await nodeService.ensurePiTerminalSession({
+        projectPath,
+        forceRestart: opts.forceRestart,
+        sessionId: opts.sessionId ?? undefined,
+      });
+      if (result.ok) {
+        setPiProjectModalOpen(false);
+        setPiRestartSessionId(null);
+        await applyPiSession(result.session);
+      } else {
+        setPiEnsureError(result.reason);
+        // Surface the path dialog so the user can retry (desktop + browser).
+        setPiProjectModalOpen(true);
+      }
+    } catch (e: unknown) {
+      setPiEnsureError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setPiEnsureBusy(false);
+    }
+  };
+
+  /**
+   * Open Pi terminals.
+   * - Default (chat π): focus first running Pi if any; else pick a project and start.
+   * - `startNew`: always pick a project (header “π Pi” / empty CTA).
+   * - `changeProject` + `sessionId`: change that Pi’s folder.
+   */
+  const openPiTerminal = async (opts?: {
+    changeProject?: boolean;
+    sessionId?: string;
+    startNew?: boolean;
+  }) => {
+    preferPiSessionRef.current = true;
+    setPiEnsureError(null);
+    onPanelModeChange("terminals");
+    onOpenPiProp?.();
+
+    let sessions = terminalSessions;
+    try {
+      sessions = await nodeService.listTerminalSessions();
+      setTerminalSessions(sessions);
+    } catch {
+      /* use cached list */
+    }
+
+    if (opts?.changeProject) {
+      const target =
+        (opts.sessionId
+          ? sessions.find((s) => s.sessionId === opts.sessionId && s.role === "pi")
+          : undefined) ??
+        sessions.find((s) => s.sessionId === selectedTerminalId && s.role === "pi") ??
+        sessions.find((s) => s.role === "pi" && s.state === "running");
+      if (!target) {
+        setPiEnsureError(t("pi.noPiToChange", "Start a Pi session first, then change its project."));
+        return;
+      }
+      setPiProjectForceRestart(true);
+      setPiRestartSessionId(target.sessionId);
+      setPiProjectDraft(target.cwd || savedPiProject);
+      if (isTauriShell()) {
+        const picked = await pickTauriDirectory({
+          title: t("pi.changeProjectTitle", "Change Pi project folder"),
+          defaultPath: target.cwd || savedPiProject || undefined,
+        });
+        if (!picked) return;
+        setPiProjectDraft(picked);
+        void startPiWithPath(picked, {
+          forceRestart: true,
+          sessionId: target.sessionId,
+        });
+        return;
+      }
+      setPiProjectModalOpen(true);
+      return;
+    }
+
+    // Chat π: if a Pi is already running, just show it.
+    if (!opts?.startNew) {
+      const firstPi = sessions.find((s) => s.role === "pi" && s.state === "running");
+      if (firstPi) {
+        preferPiSessionIdRef.current = firstPi.sessionId;
+        setSelectedTerminalId(firstPi.sessionId);
+        return;
+      }
+    }
+
+    // Start (or start another): pick a project folder.
+    setPiProjectForceRestart(false);
+    setPiRestartSessionId(null);
+    setPiProjectDraft(savedPiProject);
+    if (isTauriShell()) {
+      const picked = await pickTauriDirectory({
+        title: t("pi.chooseProjectTitle", "Choose Pi project folder"),
+        defaultPath: savedPiProject || undefined,
+      });
+      if (!picked) return;
+      setPiProjectDraft(picked);
+      void startPiWithPath(picked, { forceRestart: false, sessionId: null });
+      return;
+    }
+    setPiProjectModalOpen(true);
+  };
+
+  const submitPiProject = () => {
+    const path = piProjectDraft.trim();
+    if (!path) {
+      setPiEnsureError(t("pi.projectPathRequired", "Enter a project folder path."));
+      return;
+    }
+    void startPiWithPath(path, {
+      forceRestart: piProjectForceRestart,
+      sessionId: piRestartSessionId,
+    });
+  };
+
+  const browsePiProject = async () => {
+    setPiEnsureError(null);
+    const picked = await pickTauriDirectory({
+      title: piProjectForceRestart
+        ? t("pi.changeProjectTitle", "Change Pi project folder")
+        : t("pi.chooseProjectTitle", "Choose Pi project folder"),
+      defaultPath: piProjectDraft.trim() || savedPiProject || undefined,
+    });
+    if (!picked) return; // cancelled
+    setPiProjectDraft(picked);
+    // OS dialog already confirmed the folder — start immediately.
+    void startPiWithPath(picked, {
+      forceRestart: piProjectForceRestart,
+      sessionId: piRestartSessionId,
+    });
+  };
+
+  const tauriShell = isTauriShell();
+
   const homeRemote = connectionStatus?.homeRemote;
   const terminalsAvailable =
     connectionStatus?.terminalsAvailable === true || homeRemote?.terminalsAvailable === true;
@@ -63,6 +238,13 @@ export function ChatView({
   const selectedRoom = isChatRoomThreadKey(selectedContact ?? "")
     ? chatRooms.find((r) => r.roomId === parseChatRoomThreadKey(selectedContact!))
     : undefined;
+
+  useEffect(() => {
+    if (panelMode !== "terminals") {
+      setPiEnsureError(null);
+      setPiEnsureBusy(false);
+    }
+  }, [panelMode]);
 
   useEffect(() => {
     if (!showTerminalsTab && panelMode === "terminals") {
@@ -80,7 +262,22 @@ export function ChatView({
       if (selectedTerminalId) setSelectedTerminalId(null);
       return;
     }
-    if (selectedTerminalId && running.some((s) => s.sessionId === selectedTerminalId)) return;
+    if (selectedTerminalId && running.some((s) => s.sessionId === selectedTerminalId)) {
+      preferPiSessionRef.current = false;
+      return;
+    }
+    if (preferPiSessionRef.current) {
+      const preferId = preferPiSessionIdRef.current;
+      const pi = preferId
+        ? running.find((s) => s.sessionId === preferId)
+        : running.find((s) => s.role === "pi");
+      if (pi) {
+        setSelectedTerminalId(pi.sessionId);
+        preferPiSessionRef.current = false;
+        preferPiSessionIdRef.current = null;
+        return;
+      }
+    }
     setSelectedTerminalId(running[0]?.sessionId ?? null);
   }, [selectedTerminalId, terminalSessions]);
 
@@ -164,14 +361,41 @@ export function ChatView({
           </div>
         ) : (
           <div className="chat-view-terminals-shell">
-            <TerminalSidebar
-              selectedSessionId={selectedTerminalId}
-              onSelectSession={(id) => setSelectedTerminalId(id || null)}
-              onSessionsChange={setTerminalSessions}
-              disabled={!terminalsAvailable}
-              onOpenAssistant={onOpenAssistant}
-            />
-            <TerminalPanel session={selectedTerminal} onOpenAssistant={onOpenAssistant} active={panelMode === "terminals"} />
+            {piEnsureError || piEnsureBusy ? (
+              <div
+                className={`terminal-pi-ensure-banner${piEnsureError ? " terminal-pi-ensure-banner--error" : ""}`}
+                role="status"
+              >
+                {piEnsureBusy ? (
+                  <p>{t("pi.ensuringTerminal", "Starting Pi coding terminal…")}</p>
+                ) : (
+                  <>
+                    <p>{piEnsureError}</p>
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() => void openPiTerminal()}
+                    >
+                      {t("pi.retryStart", "Retry Start Pi")}
+                    </button>
+                  </>
+                )}
+              </div>
+            ) : null}
+            <div className="chat-view-terminals-body">
+              <TerminalSidebar
+                selectedSessionId={selectedTerminalId}
+                onSelectSession={(id) => setSelectedTerminalId(id || null)}
+                onSessionsChange={setTerminalSessions}
+                disabled={!terminalsAvailable}
+                onOpenAssistant={onOpenAssistant}
+                onStartPi={() => void openPiTerminal({ startNew: true })}
+                onChangePiProject={(sessionId) =>
+                  void openPiTerminal({ changeProject: true, sessionId })
+                }
+              />
+              <TerminalPanel session={selectedTerminal} onOpenAssistant={onOpenAssistant} active={panelMode === "terminals"} />
+            </div>
           </div>
         )
       ) : (
@@ -181,7 +405,7 @@ export function ChatView({
             onSelectContact={onSelectedContactChange}
             onOpenAssistant={onOpenAssistant}
             onOpenDiscover={onOpenDiscover}
-            onOpenPi={onOpenPi}
+            onOpenPi={() => void openPiTerminal()}
           />
           <section className="chat-area">
             {selectedContact ? (
@@ -234,6 +458,115 @@ export function ChatView({
           </section>
         </div>
       )}
+
+      {piProjectModalOpen ? (
+        <div
+          className="modal-overlay"
+          role="presentation"
+          onClick={() => {
+            if (!piEnsureBusy) setPiProjectModalOpen(false);
+          }}
+        >
+          <div
+            className="modal-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="pi-project-modal-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 id="pi-project-modal-title">
+              {piProjectForceRestart
+                ? t("pi.changeProjectTitle", "Change Pi project folder")
+                : t("pi.chooseProjectTitle", "Choose Pi project folder")}
+            </h2>
+            <p className="modal-desc">
+              {tauriShell
+                ? t(
+                    "pi.chooseProjectDescBrowse",
+                    "Pi runs in this folder (reads AGENTS.md, edits files, runs shell). Use Browse to pick a folder.",
+                  )
+                : t(
+                    "pi.chooseProjectDesc",
+                    "Pi runs in this folder (reads AGENTS.md, edits files, runs shell). Use an absolute path. You can run up to 5 Pi terminals on different projects.",
+                  )}
+            </p>
+            {tauriShell ? (
+              <div className="modal-field">
+                <span>{t("pi.projectPathLabel", "Project folder")}</span>
+                <div className="modal-field-row">
+                  <input
+                    type="text"
+                    value={piProjectDraft}
+                    readOnly
+                    placeholder={t("pi.projectPathBrowsePlaceholder", "No folder selected yet")}
+                    disabled={piEnsureBusy}
+                    aria-label={t("pi.projectPathLabel", "Project folder")}
+                  />
+                  <button
+                    type="button"
+                    className="secondary"
+                    disabled={piEnsureBusy}
+                    onClick={() => void browsePiProject()}
+                  >
+                    {t("pi.browseFolder", "Browse…")}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <label className="modal-field">
+                <span>{t("pi.projectPathLabel", "Project folder")}</span>
+                <input
+                  type="text"
+                  value={piProjectDraft}
+                  onChange={(e) => setPiProjectDraft(e.target.value)}
+                  placeholder={t("pi.projectPathPlaceholder", "/path/to/your/repo")}
+                  disabled={piEnsureBusy}
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") submitPiProject();
+                  }}
+                />
+              </label>
+            )}
+            {piEnsureError ? <p className="modal-error">{piEnsureError}</p> : null}
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="secondary"
+                disabled={piEnsureBusy}
+                onClick={() => setPiProjectModalOpen(false)}
+              >
+                {t("common.cancel", "Cancel")}
+              </button>
+              {tauriShell ? (
+                <button
+                  type="button"
+                  className="primary"
+                  disabled={piEnsureBusy}
+                  onClick={() => void browsePiProject()}
+                >
+                  {piEnsureBusy
+                    ? t("pi.ensuringTerminal", "Starting Pi coding terminal…")
+                    : t("pi.browseFolder", "Browse…")}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="primary"
+                  disabled={piEnsureBusy || !piProjectDraft.trim()}
+                  onClick={submitPiProject}
+                >
+                  {piEnsureBusy
+                    ? t("pi.ensuringTerminal", "Starting Pi coding terminal…")
+                    : piProjectForceRestart
+                      ? t("pi.restartWithProject", "Restart Pi here")
+                      : t("pi.startWithProject", "Start Pi")}
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

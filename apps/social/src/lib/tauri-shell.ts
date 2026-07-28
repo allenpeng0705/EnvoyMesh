@@ -68,6 +68,28 @@ export async function revealTauriLogDir(): Promise<boolean> {
 }
 
 /**
+ * Native OS folder picker (macOS / Linux / Windows) via Tauri.
+ * Returns the absolute path, or null if cancelled / not in the desktop shell.
+ */
+export async function pickTauriDirectory(opts?: {
+  title?: string;
+  defaultPath?: string;
+}): Promise<string | null> {
+  const invoke = readTauriInvoke();
+  if (!invoke) return null;
+  try {
+    const picked = (await invoke("pick_directory", {
+      title: opts?.title,
+      defaultPath: opts?.defaultPath,
+    })) as string | null;
+    const trimmed = typeof picked === "string" ? picked.trim() : "";
+    return trimmed || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Status of the install-time OpenClaw self-reference heal probe.
  *
  * "no-bundle"   - No bundled OpenClaw tree (sidecar-only build).

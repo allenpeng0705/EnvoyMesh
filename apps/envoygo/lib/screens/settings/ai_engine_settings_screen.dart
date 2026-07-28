@@ -1,13 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../ext_agent/ext_agent_presets.dart';
 import '../../providers/contact_provider.dart' show nodeServiceProvider;
 import '../../services/node_service_client.dart';
+import '../../utils/open_external_url.dart';
 
 /// AI Engine settings — Ext Agent selection with bidirectional sync.
 ///
-/// Mirrors the Social UI's Settings → AI → AI Engine section. Changes
-/// from either surface persist on the home node and propagate via
-/// `home:config-updated`.
+/// Mirrors Social UI Settings → AI → AI Engine. Includes Pi + install hints.
 class AiEngineSettingsScreen extends ConsumerStatefulWidget {
   const AiEngineSettingsScreen({super.key});
 
@@ -18,38 +18,14 @@ class AiEngineSettingsScreen extends ConsumerStatefulWidget {
 
 class _AiEngineSettingsScreenState
     extends ConsumerState<AiEngineSettingsScreen> {
-  static const _defaultAgents = <Map<String, dynamic>>[
-    {
-      'id': 'homeclaw',
-      'name': 'HomeClaw',
-      'adapter': 'envoymesh-message',
-      'url': 'http://127.0.0.1:8010/message',
-      'enabled': true,
-    },
-    {
-      'id': 'hermes',
-      'name': 'Hermes',
-      'adapter': 'envoymesh-message',
-      'url': 'http://127.0.0.1:8020/message',
-      'enabled': true,
-    },
-    {
-      'id': 'openhuman',
-      'name': 'OpenHuman',
-      'adapter': 'envoymesh-message',
-      'url': 'http://127.0.0.1:8021/message',
-      'enabled': false,
-    },
-  ];
-
   bool _loading = true;
   String? _error;
   Map<String, dynamic>? _openClawStatus;
   Map<String, dynamic>? _bridgeStatus;
   bool _bridgeEnabled = false;
   bool _openclawEnabled = true;
-  String _activeExtAgentId = 'homeclaw';
-  List<Map<String, dynamic>> _extAgents = List.from(_defaultAgents);
+  String _activeExtAgentId = 'pi';
+  List<Map<String, dynamic>> _extAgents = mergeExtAgentPresets(null);
   int _bridgeListenPort = 3031;
   bool _saving = false;
   ProviderSubscription<NodeServiceClient?>? _clientSub;
@@ -72,23 +48,6 @@ class _AiEngineSettingsScreenState
       fireImmediately: true,
     );
     _load();
-  }
-
-  List<Map<String, dynamic>> _mergeAgents(List<dynamic>? configured) {
-    final byId = <String, Map<String, dynamic>>{
-      for (final agent in _defaultAgents)
-        agent['id'] as String: Map<String, dynamic>.from(agent),
-    };
-    for (final raw in configured ?? const []) {
-      if (raw is! Map) continue;
-      final id = raw['id']?.toString().trim();
-      if (id == null || id.isEmpty) continue;
-      final preset = byId[id];
-      byId[id] = preset == null
-          ? Map<String, dynamic>.from(raw)
-          : {...preset, ...Map<String, dynamic>.from(raw), 'id': id};
-    }
-    return byId.values.toList();
   }
 
   Future<void> _load() async {
@@ -114,11 +73,13 @@ class _AiEngineSettingsScreenState
       final openClaw = results[0] as Map<String, dynamic>?;
       final bridge = results[1] as Map<String, dynamic>;
       final cfg = results[2] as Map<String, dynamic>;
-      final extAgents = _mergeAgents(
-        (bridge['extAgents'] as List<dynamic>?) ?? (cfg['extAgents'] as List<dynamic>?),
+      final extAgents = mergeExtAgentPresets(
+        (bridge['extAgents'] as List<dynamic>?) ??
+            (cfg['extAgents'] as List<dynamic>?),
       );
-      final activeId = (bridge['activeExtAgentId'] ?? cfg['activeExtAgentId'] ?? 'homeclaw')
-          .toString();
+      final activeId =
+          (bridge['activeExtAgentId'] ?? cfg['activeExtAgentId'] ?? 'pi')
+              .toString();
       if (!mounted) return;
       setState(() {
         _openClawStatus = openClaw;
@@ -129,7 +90,7 @@ class _AiEngineSettingsScreenState
         _extAgents = extAgents;
         _activeExtAgentId = extAgents.any((a) => a['id'] == activeId)
             ? activeId
-            : (extAgents.first['id'] as String? ?? 'homeclaw');
+            : (extAgents.first['id'] as String? ?? 'pi');
         _bridgeListenPort = (bridge['listenPort'] as num?)?.toInt() ??
             (cfg['bridgeListenPort'] as num?)?.toInt() ??
             3031;
@@ -181,6 +142,7 @@ class _AiEngineSettingsScreenState
   @override
   Widget build(BuildContext context) {
     final active = _activeAgent;
+    final install = getExtAgentInstallInfo(_activeExtAgentId);
     return Scaffold(
       appBar: AppBar(
         title: const Text('AI Engine'),
@@ -227,7 +189,10 @@ class _AiEngineSettingsScreenState
                                   .map(
                                     (agent) => DropdownMenuItem<String>(
                                       value: agent['id'] as String,
-                                      child: Text(agent['name']?.toString() ?? agent['id'] as String),
+                                      child: Text(
+                                        agent['name']?.toString() ??
+                                            agent['id'] as String,
+                                      ),
                                     ),
                                   )
                                   .toList(),
@@ -247,6 +212,30 @@ class _AiEngineSettingsScreenState
                               ),
                             ),
                           ListTile(
+                            title: const Text('How to start'),
+                            subtitle: Text(install.startHint),
+                          ),
+                          if (install.homepageUrl != null)
+                            ListTile(
+                              title: Text(install.homepageLabel),
+                              subtitle: Text(
+                                install.homepageUrl!,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              trailing: const Icon(Icons.open_in_new, size: 18),
+                              onTap: () =>
+                                  openExternalUrl(install.homepageUrl!),
+                            ),
+                          if (install.builtIn)
+                            const ListTile(
+                              leading: Icon(Icons.check_circle_outline),
+                              title: Text('Built into the home node'),
+                              subtitle: Text(
+                                'No separate Ext Agent process required.',
+                              ),
+                            ),
+                          ListTile(
                             title: const Text('Bridge listen port'),
                             subtitle: Text('$_bridgeListenPort'),
                           ),
@@ -256,7 +245,8 @@ class _AiEngineSettingsScreenState
                               'Forward assistant turns to the selected external agent.',
                             ),
                             value: _bridgeEnabled,
-                            onChanged: (v) => setState(() => _bridgeEnabled = v),
+                            onChanged: (v) =>
+                                setState(() => _bridgeEnabled = v),
                           ),
                           const Divider(height: 1),
                           SwitchListTile(
@@ -265,7 +255,8 @@ class _AiEngineSettingsScreenState
                               'Built-in OpenClaw gateway (EnvoyAI) on next node start.',
                             ),
                             value: _openclawEnabled,
-                            onChanged: (v) => setState(() => _openclawEnabled = v),
+                            onChanged: (v) =>
+                                setState(() => _openclawEnabled = v),
                           ),
                         ],
                       ),
@@ -304,10 +295,10 @@ class _StatusCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (status == null) {
-      return Card(
+      return const Card(
         child: ListTile(
-          leading: const Icon(Icons.info_outline),
-          title: const Text('OpenClaw status unavailable'),
+          leading: Icon(Icons.info_outline),
+          title: Text('OpenClaw status unavailable'),
         ),
       );
     }
@@ -324,7 +315,9 @@ class _StatusCard extends StatelessWidget {
           'OpenClaw ${enabled ? "enabled" : "disabled"}'
           '${running ? " · running" : (enabled ? " · not running" : "")}',
         ),
-        subtitle: url.isNotEmpty ? Text('URL: $url', maxLines: 2, overflow: TextOverflow.ellipsis) : null,
+        subtitle: url.isNotEmpty
+            ? Text(url, maxLines: 2, overflow: TextOverflow.ellipsis)
+            : null,
       ),
     );
   }
@@ -349,7 +342,9 @@ class _BridgeStatusCard extends StatelessWidget {
           'Ext Agent ${enabled ? "enabled" : "disabled"}'
           '${activeName != null ? " · $activeName" : ""}',
         ),
-        subtitle: url.isNotEmpty ? Text(url, maxLines: 2, overflow: TextOverflow.ellipsis) : null,
+        subtitle: url.isNotEmpty
+            ? Text(url, maxLines: 2, overflow: TextOverflow.ellipsis)
+            : null,
       ),
     );
   }

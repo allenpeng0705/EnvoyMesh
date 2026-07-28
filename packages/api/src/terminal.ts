@@ -11,8 +11,11 @@ export interface TerminalSessionSummary {
   createdAt: string;
   lastActivityAt: string;
   exitCode?: number;
-  /** interactive (default) or hidden exec pane for agent inject. */
-  role?: "interactive" | "exec";
+  /**
+   * interactive (default), hidden exec pane for agent inject, or reserved
+   * Pi interactive TUI session (coding surface).
+   */
+  role?: "interactive" | "exec" | "pi";
   /** Exec pane session id (interactive sessions only). */
   execSessionId?: string;
   /** Parent interactive session (exec sessions only). */
@@ -21,6 +24,10 @@ export interface TerminalSessionSummary {
   activityBadge?: TerminalActivityBadge;
   /** Last-seen foreground process hint from scrollback tail. */
   foregroundHint?: string;
+  /** Binary for custom spawns (e.g. Node for Pi TUI). Defaults to shell. */
+  command?: string;
+  /** Argv for custom spawns (empty = login shell). */
+  args?: string[];
 }
 
 export interface OpenInHerdrParams {
@@ -46,6 +53,17 @@ export interface CreateTerminalSessionParams {
   cwd?: string;
   cols?: number;
   rows?: number;
+  /** Reserved session role (e.g. `"pi"` for the coding TUI). */
+  role?: "interactive" | "pi";
+  /** Override spawn binary (default: user shell). */
+  command?: string;
+  /** Argv for `command` (default: empty = interactive shell). */
+  args?: string[];
+  /**
+   * Extra env merged into the child (API keys for Pi, etc.).
+   * Not persisted to sessions.json — re-supplied on ensure/respawn.
+   */
+  env?: Record<string, string>;
 }
 
 export interface RenameTerminalSessionParams {

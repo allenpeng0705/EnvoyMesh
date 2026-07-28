@@ -40,7 +40,7 @@ describe("getNodeConfigViaRuntime", () => {
     expect(out.relayEnabled).toBe(true);
     expect(out.relayServerEnabled).toBe(false);
     expect(out.configuredRelays).toEqual([]);
-    expect(out.bridgeEnabled).toBe(false);
+    expect(out.bridgeEnabled).toBe(true);
     expect(out.openclawEnabled).toBe(true);
     expect(out.trustModeEnabled).toBe(false);
     expect(out.anonymousDiscoveryMode).toBe("off");

@@ -220,7 +220,7 @@ export async function getNodeConfigViaRuntime(
     bridgeStatus: ctx.getBridgeStatus() ?? undefined,
     companionPairingAutoAcceptWithToken: false,
       relayPublicWsUrl: ctx.getRelayPublicWsUrl() ?? undefined,
-    bridgeEnabled: false,
+    bridgeEnabled: true,
     openclawEnabled: true,
     piEnabled: true,
     piSettings: undefined,

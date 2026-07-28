@@ -16,21 +16,22 @@ export const ExtAgentDefinitionSchema = z.object({
 });
 
 export const BridgeConfigSchema = z.object({
-  enabled: z.boolean().default(false),
+  /** Ext Agent bridge HTTP. Default true (D1C revised — ships on with Pi). */
+  enabled: z.boolean().default(true),
   /** Ext Agent URL (HomeClaw, etc.) — P2P bridge async path only. */
-  agentUrl: z.string().url().default("http://127.0.0.1:18789/webhook/envoymesh"),
+  agentUrl: z.string().url().default("http://127.0.0.1:8022/message"),
   /** Built-in OpenClaw webhook for EnvoyAI / H2A. Defaults to local gateway. */
   assistantAgentUrl: z.string().url().optional(),
   listenPort: z.number().int().min(1024).max(65535).default(3031),
   /** Optional. When set, `POST /bridge/send` requires `Authorization: Bearer <secret>`. Omit for local-only use (bridge binds to 127.0.0.1). */
   secret: z.string().optional(),
-  agentName: z.string().default(""),
+  agentName: z.string().default("Pi"),
   /** ClawHub API token for skill marketplace access. */
   clawhubToken: z.string().optional(),
   /** API keys for installed ClawHub skills, keyed by skill slug. */
   skillApiKeys: z.record(z.string(), z.string()).optional(),
-  /** Selected external agent id (homeclaw, hermes, openhuman, …). */
-  activeExtAgent: z.string().optional(),
+  /** Selected external agent id (pi, homeclaw, hermes, openhuman, …). */
+  activeExtAgent: z.string().optional().default("pi"),
   /** External agent definitions. Merged with built-in presets on read. */
   extAgents: z.array(ExtAgentDefinitionSchema).optional(),
 });
@@ -38,12 +39,12 @@ export const BridgeConfigSchema = z.object({
 export type BridgeConfig = z.infer<typeof BridgeConfigSchema>;
 
 export const DEFAULT_BRIDGE_CONFIG: BridgeConfig = {
-  enabled: false,
-  agentUrl: "http://127.0.0.1:8010/message",
+  enabled: true,
+  agentUrl: "http://127.0.0.1:8022/message",
   assistantAgentUrl: "http://127.0.0.1:18789/webhook/envoymesh",
   listenPort: 3031,
-  agentName: "HomeClaw",
-  activeExtAgent: "homeclaw",
+  agentName: "Pi",
+  activeExtAgent: "pi",
   extAgents: DEFAULT_EXT_AGENTS,
 };
 

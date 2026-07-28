@@ -10,15 +10,12 @@ describe("computeAiEngineMode", () => {
     expect(computeAiEngineMode(true, true)).toBe("both");
   });
 
-  it("returns 'openclaw-only' when only built-in is enabled (D1C: opt-in bridge, ships-on openclaw)", () => {
+  it("returns 'openclaw-only' when only built-in is enabled", () => {
     expect(computeAiEngineMode(false, true)).toBe("openclaw-only");
   });
 
-  it("returns 'openclaw-only' when bridge is undefined and openclaw is true", () => {
-    // D1C: a fresh install where bridgeEnabled has never been written —
-    // the absent field is treated as opt-out (false), while openclawEnabled
-    // absent is treated as opt-in (true).
-    expect(computeAiEngineMode(undefined, true)).toBe("openclaw-only");
+  it("returns 'both' when bridge is undefined and openclaw is true (D1C: both ship on)", () => {
+    expect(computeAiEngineMode(undefined, true)).toBe("both");
   });
 
   it("returns 'ext-only' when only the bridge is enabled", () => {
@@ -29,10 +26,8 @@ describe("computeAiEngineMode", () => {
     expect(computeAiEngineMode(false, false)).toBe("off");
   });
 
-  it("returns 'off' when both flags are undefined (no UI, no persisted config) — degenerate case", () => {
-    // Both absent: openclaw default = true, bridge default = false → 'openclaw-only'.
-    // The 'off' branch is only reachable when both are explicitly false.
-    expect(computeAiEngineMode(undefined, undefined)).toBe("openclaw-only");
+  it("returns 'both' when both flags are undefined (fresh install)", () => {
+    expect(computeAiEngineMode(undefined, undefined)).toBe("both");
   });
 });
 

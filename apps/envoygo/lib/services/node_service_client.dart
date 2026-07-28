@@ -112,19 +112,18 @@ class NodeServiceClient {
     return await _client.call('getNodeConfig') as Map<String, dynamic>;
   }
 
-  /// AI model settings (Phase EnvoyGo settings) — push a partial
-  /// `modelProviders` update to the home node. The home node accepts
-  /// any `Partial<NodeConfig>` shape; the partial-update contract
-  /// means callers can ship only the fields they want to change and
-  /// leave everything else untouched.
+  /// AI model settings (Phase EnvoyGo settings) — push a `modelProviders`
+  /// update to the home node. Caller should send a **full** merged
+  /// `ModelProviderConfig` object (shallow replace on the server).
   ///
   /// Returns `true` on success. Throws on transport / RPC error.
+  /// Note: `updateNodeConfig` returns void — do not expect `{ok:true}`.
   Future<bool> updateModelProviders(
-      Map<String, dynamic> modelProvidersPatch) async {
-    final result = await _client.call('updateNodeConfig', {
-      'modelProviders': modelProvidersPatch,
-    }) as Map<String, dynamic>;
-    return result['ok'] == true;
+      Map<String, dynamic> modelProviders) async {
+    await _client.call('updateNodeConfig', {
+      'modelProviders': modelProviders,
+    });
+    return true;
   }
 
   /// Fetch the full pairing payload from the home node, including
@@ -359,6 +358,61 @@ class NodeServiceClient {
     }
     if (extAgents != null) patch['extAgents'] = extAgents;
     if (bridgeListenPort != null) patch['bridgeListenPort'] = bridgeListenPort;
+    if (patch.isEmpty) return true;
+    await _client.call('updateNodeConfig', patch);
+    return true;
+  }
+
+  /// Soft probe of Ext Agent reachability (does not block switching).
+  Future<Map<String, dynamic>> probeExtAgent({String? agentId}) async {
+    return await _client.call('probeExtAgent', {
+      if (agentId != null && agentId.trim().isNotEmpty) 'agentId': agentId.trim(),
+    }) as Map<String, dynamic>;
+  }
+
+  /// Switch the active Ext Agent id only (existing agent URLs preserved).
+  Future<bool> setActiveExtAgentId(String agentId) async {
+    await _client.call('updateNodeConfig', {
+      'activeExtAgentId': agentId.trim(),
+    });
+    return true;
+  }
+
+  // -- Pi (built-in coding agent) --
+
+  Future<Map<String, dynamic>> getPiStatus() async {
+    return await _client.call('getPiStatus') as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> restartPi() async {
+    return await _client.call('restartPi') as Map<String, dynamic>;
+  }
+
+  /// One-shot Pi prompt. May take up to ~2 minutes for long tool turns.
+  Future<String> sendToPi(String text) async {
+    final result = await _client.call(
+      'sendToPi',
+      {'text': text},
+      const Duration(seconds: 120),
+    );
+    if (result is String) return result;
+    if (result is Map && result['text'] is String) {
+      return result['text'] as String;
+    }
+    return result?.toString() ?? '';
+  }
+
+  /// Persist Pi enable flag and/or full `piSettings` on the home node.
+  ///
+  /// [piSettings] replaces the persisted object (same as Social UI) — callers
+  /// must merge with the current `piSettings` before sending.
+  Future<bool> updatePiConfig({
+    bool? piEnabled,
+    Map<String, dynamic>? piSettings,
+  }) async {
+    final patch = <String, dynamic>{};
+    if (piEnabled != null) patch['piEnabled'] = piEnabled;
+    if (piSettings != null) patch['piSettings'] = piSettings;
     if (patch.isEmpty) return true;
     await _client.call('updateNodeConfig', patch);
     return true;

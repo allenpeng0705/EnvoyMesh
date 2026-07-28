@@ -9,6 +9,8 @@ export {
 } from "./manager.js";
 export {
   createBackend,
+  createPiBackend,
+  setPiExtAgentAsk,
   hermesApiBase,
   hermesApiKey,
   hermesEnvCandidatePaths,
@@ -26,3 +28,7 @@ export {
   _test as _backendTest,
 } from "./backends.js";
 export { startExtAgentHttpServer } from "./http-server.js";
+export {
+  probeExtAgentReachability,
+  extAgentStatusUrlFromMessageUrl,
+} from "./probe.js";

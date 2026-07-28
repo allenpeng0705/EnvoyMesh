@@ -1,11 +1,14 @@
 // Terminal UI strings (French). Mirrors en-chat.ts terminalMessages.
 export const frTerminalMessages = {
   sessions: "Sessions",
-  new: "Nouveau terminal",
+  new: "Terminal",
   empty: "Pas encore de terminaux",
   running: "En cours",
   exited: "Quitté",
   close: "Fermer la session",
+  closeConfirmTitle: "Fermer le terminal ?",
+  closeConfirmMessage: "Cela termine la session shell. Les commandes en cours seront arrêtées.",
+  closeConfirmAction: "Fermer",
   runningCount: "{count} / {max} en cours",
   selectSession: "Sélectionner un terminal",
   selectSessionDesc: "Choisissez une session dans la barre latérale ou créez un nouveau terminal.",

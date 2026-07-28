@@ -1,11 +1,14 @@
 // Terminal UI strings (Japanese). Mirrors zh-terminals.ts and en-chat.ts terminalMessages.
 export const jaTerminalMessages = {
   sessions: "セッション",
-  new: "新規ターミナル",
+  new: "ターミナル",
   empty: "まだターミナルがありません",
   running: "実行中",
   exited: "終了",
   close: "セッションを閉じる",
+  closeConfirmTitle: "ターミナルを閉じますか？",
+  closeConfirmMessage: "シェルセッションを終了します。実行中のコマンドは停止します。",
+  closeConfirmAction: "閉じる",
   runningCount: "{count} / {max} 実行中",
   selectSession: "ターミナルを選択",
   selectSessionDesc: "サイドバーからセッションを選択するか、新規ターミナルを作成してください。",

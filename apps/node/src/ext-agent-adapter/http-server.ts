@@ -101,10 +101,16 @@ export function startExtAgentHttpServer(
     if (inflight.has(dedupKey)) return;
     inflight.add(dedupKey);
     try {
-      const reply = await backend.ask(text, ownerId || from);
-      await replyToBridge(from, reply);
+      const replyRaw = await backend.ask(text, ownerId || from);
+      const reply =
+        typeof replyRaw === "string" ? replyRaw.trim() : String(replyRaw ?? "").trim();
+      // Bridge /bridge/send rejects empty text — never POST blank replies.
+      const outbound =
+        reply ||
+        `(${backend.kind} returned an empty reply — try again, or check Settings → AI → model.)`;
+      await replyToBridge(from, outbound);
       console.log(
-        `[ext-agent:${backend.kind}] reply sent to ${from.slice(0, 24)}… (${reply.length} chars)`,
+        `[ext-agent:${backend.kind}] reply sent to ${from.slice(0, 24)}… (${outbound.length} chars)`,
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);

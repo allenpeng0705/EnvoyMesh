@@ -817,6 +817,183 @@ fn restart_node_process(state: State<'_, NodeProcessState>) -> Result<(), String
     Ok(())
 }
 
+/// Native folder picker for Pi project selection (macOS / Linux / Windows).
+///
+/// Returns `Ok(Some(path))` when the user picks a folder, `Ok(None)` when they
+/// cancel. Uses each OS's built-in dialog (no extra crates) so Social never
+/// needs a typed path in the desktop shell.
+#[tauri::command]
+fn pick_directory(
+    title: Option<String>,
+    default_path: Option<String>,
+) -> Result<Option<String>, String> {
+    let title = title
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .unwrap_or("Choose project folder");
+    let default_path = default_path
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+
+    #[cfg(target_os = "macos")]
+    {
+        fn applescript_escape(s: &str) -> String {
+            s.replace('\\', "\\\\").replace('"', "\\\"")
+        }
+        let mut script = format!(
+            "POSIX path of (choose folder with prompt \"{}\"",
+            applescript_escape(title)
+        );
+        if let Some(raw) = default_path {
+            let path = std::path::PathBuf::from(raw);
+            let start = if path.is_dir() {
+                path
+            } else {
+                path.parent()
+                    .filter(|p| p.is_dir())
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or(path)
+            };
+            script.push_str(&format!(
+                " default location (POSIX file \"{}\")",
+                applescript_escape(&start.to_string_lossy())
+            ));
+        }
+        script.push(')');
+        let output = Command::new("osascript")
+            .arg("-e")
+            .arg(&script)
+            .output()
+            .map_err(|e| e.to_string())?;
+        if !output.status.success() {
+            // User cancel → non-zero status from osascript.
+            return Ok(None);
+        }
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        // AppleScript often returns a trailing slash.
+        let path = path.trim_end_matches('/').to_string();
+        return Ok(if path.is_empty() { None } else { Some(path) });
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        fn ps_escape(s: &str) -> String {
+            s.replace('\'', "''")
+        }
+        let mut script = String::from(
+            "Add-Type -AssemblyName System.Windows.Forms; \
+             $d = New-Object System.Windows.Forms.FolderBrowserDialog; \
+             $d.Description = '",
+        );
+        script.push_str(&ps_escape(title));
+        script.push_str("'; $d.ShowNewFolderButton = $true; ");
+        if let Some(raw) = default_path {
+            let path = std::path::PathBuf::from(raw);
+            let start = if path.is_dir() {
+                path
+            } else {
+                path.parent()
+                    .filter(|p| p.is_dir())
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or(path)
+            };
+            script.push_str(&format!(
+                "$d.SelectedPath = '{}'; ",
+                ps_escape(&start.to_string_lossy())
+            ));
+        }
+        script.push_str(
+            "if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { \
+               Write-Output $d.SelectedPath \
+             }",
+        );
+        let output = Command::new("powershell")
+            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+            .output()
+            .map_err(|e| e.to_string())?;
+        if !output.status.success() {
+            return Ok(None);
+        }
+        let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        return Ok(if path.is_empty() { None } else { Some(path) });
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        // Prefer zenity (GNOME), then kdialog (KDE).
+        let mut tried = Vec::new();
+        {
+            let mut cmd = Command::new("zenity");
+            cmd.args(["--file-selection", "--directory", "--title", title]);
+            if let Some(raw) = default_path {
+                let path = std::path::PathBuf::from(raw);
+                let start = if path.is_dir() {
+                    path
+                } else {
+                    path.parent()
+                        .filter(|p| p.is_dir())
+                        .map(|p| p.to_path_buf())
+                        .unwrap_or(path)
+                };
+                cmd.arg(format!("--filename={}", start.display()));
+            }
+            match cmd.output() {
+                Ok(output) if output.status.success() => {
+                    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    return Ok(if path.is_empty() { None } else { Some(path) });
+                }
+                Ok(output) if output.status.code() == Some(1) => {
+                    // zenity cancel
+                    return Ok(None);
+                }
+                Ok(_) | Err(_) => tried.push("zenity"),
+            }
+        }
+        {
+            let mut args = vec![
+                "--getexistingdirectory".to_string(),
+                title.to_string(),
+            ];
+            if let Some(raw) = default_path {
+                let path = std::path::PathBuf::from(raw);
+                let start = if path.is_dir() {
+                    path
+                } else {
+                    path.parent()
+                        .filter(|p| p.is_dir())
+                        .map(|p| p.to_path_buf())
+                        .unwrap_or(path)
+                };
+                args.push(start.to_string_lossy().into_owned());
+            }
+            match Command::new("kdialog").args(&args).output() {
+                Ok(output) if output.status.success() => {
+                    let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+                    return Ok(if path.is_empty() { None } else { Some(path) });
+                }
+                Ok(output) if output.status.code() == Some(1) => return Ok(None),
+                Ok(_) | Err(_) => tried.push("kdialog"),
+            }
+        }
+        return Err(format!(
+            "No folder dialog available (tried {}). Install zenity or kdialog.",
+            tried.join(", ")
+        ));
+    }
+
+    #[cfg(not(any(
+        target_os = "macos",
+        target_os = "windows",
+        all(unix, not(target_os = "macos"))
+    )))]
+    {
+        let _ = (title, default_path);
+        Err("Folder picker is not supported on this platform".into())
+    }
+}
+
 /// Returns the OpenClaw self-reference heal status captured at launch.
 ///
 /// Used by the Social UI to render a doctor chip and by `envoymesh doctor`
@@ -849,7 +1026,8 @@ fn main() {
             get_app_log_paths,
             append_social_log,
             reveal_log_dir,
-            get_openclaw_heal_status
+            get_openclaw_heal_status,
+            pick_directory
         ])
         .setup(move |app| {
             info!("Tauri app setup starting");

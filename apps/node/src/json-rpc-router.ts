@@ -613,6 +613,10 @@ export async function routeRpcMethod(
       return ns.getBridgeStatus();
     case "getOpenClawStatus":
       return ns.getOpenClawStatus();
+    case "probeExtAgent":
+      return ns.probeExtAgent({
+        agentId: params.agentId as string | undefined,
+      });
     case "restartOpenClaw":
       return ns.restartOpenClaw();
     case "getPiStatus":
@@ -862,6 +866,13 @@ export async function routeRpcMethod(
       return ns.sendToOpenClaw(String(params.text ?? ""));
     case "sendToPi":
       return ns.sendToPi(String(params.text ?? ""));
+    case "ensurePiTerminalSession":
+      return ns.ensurePiTerminalSession({
+        projectPath:
+          typeof params.projectPath === "string" ? params.projectPath : undefined,
+        sessionId: typeof params.sessionId === "string" ? params.sessionId : undefined,
+        forceRestart: Boolean(params.forceRestart),
+      });
     case "piRespondToProposal":
       return ns.piRespondToProposal({
         uiRequestId: String(params.uiRequestId ?? ""),

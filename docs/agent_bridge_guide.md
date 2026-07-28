@@ -5,7 +5,7 @@ There are **two operator paths**:
 
 | Path | Where you configure it | Typical `agentUrl` | Doc |
 |------|------------------------|--------------------|-----|
-| **Ext Agent presets** (HomeClaw / Hermes / OpenHuman) | **Settings → AI → Ext Agent** | `:8010` / `:8020` / `:8021` `/message` | **[Ext_Agent_guide.md](./Ext_Agent_guide.md)** (full setup) |
+| **Ext Agent presets** (Pi / HomeClaw / Hermes / OpenHuman) | **Settings → AI → Ext Agent** | `:8022` / `:8010` / `:8020` / `:8021` `/message` | **[Ext_Agent_guide.md](./Ext_Agent_guide.md)** (full setup) |
 | **OpenClaw plugin** (EnvoyAI / Gateway webhook) | `bridge-config.json` + OpenClaw `channels.envoymesh` | `:18789/webhook/envoymesh` | This guide + [openclaw-extension.md](./openclaw-extension.md) |
 
 **One bridge = one `agentUrl`.** Do not point the same bridge at two agents at once.
@@ -13,7 +13,7 @@ Use separate EnvoyMesh profiles to A/B test.
 
 **Related docs:**
 
-- [Ext_Agent_guide.md](./Ext_Agent_guide.md) — HomeClaw / Hermes / OpenHuman (recommended starting point for Ext Agent UI)
+- [Ext_Agent_guide.md](./Ext_Agent_guide.md) — Pi / HomeClaw / Hermes / OpenHuman (recommended starting point for Ext Agent UI)
 - [profile-photos.md](./profile-photos.md) — thumbnails, gallery, `profile.sync`, sharing
 - [openclaw-agent-bridge-adr.md](./openclaw-agent-bridge-adr.md) — wire contract, security, CI smokes
 - [openclaw-extension.md](./openclaw-extension.md) — OpenClaw install and config (detailed)
@@ -28,6 +28,7 @@ Full steps, env vars, ports, and checklists: **[Ext_Agent_guide.md](./Ext_Agent_
 
 | Agent | Who owns `/message`? | Default URL | Auth / notes |
 |-------|----------------------|-------------|--------------|
+| **Pi (built-in)** | EnvoyMesh sidecar `:8022` | `http://127.0.0.1:8022/message` | **Default preset; bridge on by default.** Same bundled Pi as the coding TUI (separate RPC process); conversational only (tools auto-denied). |
 | **HomeClaw** | HomeClaw built-in channel | `http://127.0.0.1:8010/message` | Start HomeClaw only; no EnvoyMesh sidecar. Match `ENVOYMESH_BRIDGE_URL` to bridge port. |
 | **Hermes** | EnvoyMesh sidecar `:8020` | `http://127.0.0.1:8020/message` | Hermes API `:8642` needs `API_SERVER_ENABLED` + `API_SERVER_KEY`; set `HERMES_API_KEY` on the node. |
 | **OpenHuman** | EnvoyMesh sidecar `:8021` | `http://127.0.0.1:8021/message` | Prefer `/v1` auto-key with OpenHuman.app (desktop `/rpc` token is in-memory). CLI uses `core.token` / `OPENHUMAN_CORE_TOKEN`. |
@@ -35,13 +36,13 @@ Full steps, env vars, ports, and checklists: **[Ext_Agent_guide.md](./Ext_Agent_
 ```
 You → Ext Agent chat → home Node bridge
                          ↓ POST agentUrl
-            HomeClaw :8010  |  Hermes sidecar :8020  |  OpenHuman sidecar :8021
+   Pi :8022  |  HomeClaw :8010  |  Hermes :8020  |  OpenHuman :8021
                          ↓ POST /bridge/send
                     Reply in chat
 ```
 
 Select the agent in **Settings → AI → Ext Agent**, enable the bridge, and save.
-Hermes / OpenHuman sidecars start and stop automatically with that selection
+Pi / Hermes / OpenHuman sidecars start and stop automatically with that selection
 (`apps/node/src/ext-agent-adapter/`).
 
 ---
@@ -118,16 +119,16 @@ shape with a `correlationId` matching the original ask. The bridge returns:
 
 ## Operator cheat sheet
 
-| | **HomeClaw** | **Hermes** | **OpenHuman** | **OpenClaw** |
-|---|--------------|------------|---------------|--------------|
-| **UI preset** | Ext Agent → HomeClaw | Ext Agent → Hermes | Ext Agent → OpenHuman | Not an Ext Agent preset (EnvoyAI / webhook) |
-| **Channel / adapter** | HomeClaw `channels/envoymesh` | EnvoyMesh sidecar `:8020` | EnvoyMesh sidecar `:8021` | `OpenClawExtension/` → `openclaw/extensions/envoymesh/` |
-| **Typical `agentUrl`** | `http://127.0.0.1:8010/message` | `http://127.0.0.1:8020/message` | `http://127.0.0.1:8021/message` | `http://127.0.0.1:18789/webhook/envoymesh` |
-| **Backend** | HomeClaw Core | Hermes API `:8642` | OpenHuman `:7788` | OpenClaw Gateway |
-| **Auth** | Optional bridge secret | `API_SERVER_KEY` ↔ `HERMES_API_KEY` | `/v1` auto-key or `/rpc` token | `bridgeSecret` / `inboundSecret` |
-| **Both at once?** | **No** — one `agentUrl` per bridge | | | |
+| | **Pi (built-in)** | **HomeClaw** | **Hermes** | **OpenHuman** | **OpenClaw** |
+|---|--------------|--------------|------------|---------------|--------------|
+| **UI preset** | Ext Agent → Pi (default) | Ext Agent → HomeClaw | Ext Agent → Hermes | Ext Agent → OpenHuman | Not an Ext Agent preset (EnvoyAI / webhook) |
+| **Channel / adapter** | EnvoyMesh sidecar `:8022` | HomeClaw `channels/envoymesh` | EnvoyMesh sidecar `:8020` | EnvoyMesh sidecar `:8021` | `OpenClawExtension/` → `openclaw/extensions/envoymesh/` |
+| **Typical `agentUrl`** | `http://127.0.0.1:8022/message` | `http://127.0.0.1:8010/message` | `http://127.0.0.1:8020/message` | `http://127.0.0.1:8021/message` | `http://127.0.0.1:18789/webhook/envoymesh` |
+| **Backend** | Bundled Pi runtime | HomeClaw Core | Hermes API `:8642` | OpenHuman `:7788` | OpenClaw Gateway |
+| **Auth** | None (local) | Optional bridge secret | `API_SERVER_KEY` ↔ `HERMES_API_KEY` | `/v1` auto-key or `/rpc` token | `bridgeSecret` / `inboundSecret` |
+| **Both at once?** | **No** — one `agentUrl` per bridge | | | | |
 
-**Switching Ext Agents:** use **Settings → AI → Ext Agent** (sidecar start/stop is automatic for Hermes / OpenHuman).
+**Switching Ext Agents:** use **Settings → AI → Ext Agent** (sidecar start/stop is automatic for Pi / Hermes / OpenHuman).
 
 **Switching to OpenClaw webhook:** change `bridge-config.json` `agentUrl` (and `secret` if used). Leave unused products installed but unused.
 

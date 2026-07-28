@@ -1,11 +1,14 @@
 // Terminal UI strings (Korean). Mirrors zh-terminals.ts and en-chat.ts terminalMessages.
 export const koTerminalMessages = {
   sessions: "세션",
-  new: "새 터미널",
+  new: "터미널",
   empty: "아직 터미널 없음",
   running: "실행 중",
   exited: "종료됨",
   close: "세션 닫기",
+  closeConfirmTitle: "터미널을 닫을까요?",
+  closeConfirmMessage: "셸 세션이 종료됩니다. 실행 중인 명령이 중지됩니다.",
+  closeConfirmAction: "닫기",
   runningCount: "{count} / {max} 실행 중",
   selectSession: "터미널 선택",
   selectSessionDesc: "사이드바에서 세션을 선택하거나 새 터미널을 만드세요.",

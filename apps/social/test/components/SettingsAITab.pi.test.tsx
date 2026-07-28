@@ -191,8 +191,49 @@ describe("SettingsAITab — Pi block (Phase 49F)", () => {
     })
   })
 
-  it("shows the model spec when status includes it", async () => {
+  it("saving a Pi custom model persists override and restarts Pi", async () => {
     renderWithI18n(<SettingsAITab />)
-    expect(await screen.findByText(/claude-sonnet-4/i)).toBeDefined()
+    const piBlock = await findPiBlock()
+
+    const customCheckbox = Array.from(piBlock.querySelectorAll('input[type="checkbox"]')).find(
+      (el) => (el as HTMLInputElement).parentElement?.textContent?.includes("Custom model for Pi"),
+    ) as HTMLInputElement | undefined
+    expect(customCheckbox).toBeDefined()
+    fireEvent.click(customCheckbox!)
+
+    // Provider + model are selects (Pi-native catalog). Default is MiniMax CN / MiniMax-M3.
+    const selects = Array.from(piBlock.querySelectorAll("select"))
+    expect(selects.length).toBeGreaterThanOrEqual(2)
+    const providerSelect = selects.find((s) =>
+      Array.from(s.options).some((o) => o.value === "minimax-cn"),
+    ) as HTMLSelectElement
+    expect(providerSelect).toBeDefined()
+    fireEvent.change(providerSelect, { target: { value: "minimax-cn" } })
+
+    const modelSelect = selects.find((s) =>
+      Array.from(s.options).some((o) => o.value === "MiniMax-M3"),
+    ) as HTMLSelectElement
+    expect(modelSelect).toBeDefined()
+    fireEvent.change(modelSelect, { target: { value: "MiniMax-M3" } })
+
+    const saveBtn = Array.from(piBlock.querySelectorAll("button")).find(
+      (b) => /save model/i.test(b.textContent?.trim() ?? ""),
+    )
+    expect(saveBtn).toBeDefined()
+    fireEvent.click(saveBtn!)
+
+    await waitFor(() => {
+      expect(updateNodeConfig).toHaveBeenCalledWith(
+        expect.objectContaining({
+          piSettings: expect.objectContaining({
+            modelOverride: expect.objectContaining({
+              provider: "minimax-cn",
+              model: "MiniMax-M3",
+            }),
+          }),
+        }),
+      )
+      expect(restartPi).toHaveBeenCalledTimes(1)
+    })
   })
 })

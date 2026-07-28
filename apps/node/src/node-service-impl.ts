@@ -132,6 +132,8 @@ import type {
   PeerProfileView,
   CallSession,
   CallEvent,
+  ExtAgentReachability,
+  ProbeExtAgentParams,
 } from "@envoymesh/api";
 import type { DocumentAgentTurnResult, OwnerAgentTurnResult, CapabilityProviderJob, DocumentAcquisitionCandidate, DocumentAcquisitionJob, SocialProxySession } from "@envoymesh/api";
 import {
@@ -153,6 +155,8 @@ import {
   type RecordCommerceReceiptParams,
   ensureDefaultAutonomousPoliciesForModel,
   scoreAgentNetworkWorker,
+  mergeExtAgentPresets,
+  resolveActiveExtAgent,
 } from "@envoymesh/api";
 import { resolveDidImportInput } from "@envoymesh/api/did-import";
 import type {
@@ -453,6 +457,7 @@ import {
   shouldRebindAgentBridge,
 } from "./bridge/bridge-config-store.js";
 import { bridgeConfigToStatusFields } from "./bridge/config.js";
+import { probeExtAgentReachability } from "./ext-agent-adapter/probe.js";
 import type { BridgeConfig } from "./bridge/config.js";
 import { forwardToAgent, receiveFromAgent } from "./bridge/index.js";
 import type { BridgeIdentity } from "./bridge/pipe.js";
@@ -7506,6 +7511,26 @@ class NodeServiceImpl implements NodeService {
         consecutiveRestartFailures: this._openClawState.consecutiveRestartFailures,
       }),
     });
+  }
+
+  /**
+   * Soft-probe Ext Agent backend reachability. Never blocks switching —
+   * used by Social for post-switch hints and the Ext Agent chat banner.
+   */
+  async probeExtAgent(params?: ProbeExtAgentParams): Promise<ExtAgentReachability> {
+    const status = this.getBridgeStatusSnapshot() ?? (await this.getBridgeStatus());
+    const agents = mergeExtAgentPresets(status.extAgents);
+    const requested = params?.agentId?.trim();
+    const active =
+      (requested
+        ? agents.find((a) => a.id === requested)
+        : undefined) ??
+      resolveActiveExtAgent(agents, status.activeExtAgentId) ??
+      agents[0];
+    const agentId = active?.id ?? requested ?? "pi";
+    const agentName = active?.name ?? agentId;
+    const agentUrl = active?.url ?? status.agentUrl ?? "";
+    return probeExtAgentReachability({ agentId, agentName, agentUrl });
   }
 
   /**

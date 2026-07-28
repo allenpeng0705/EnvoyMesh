@@ -623,6 +623,10 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.getOpenClawStatus();
   }
 
+  async probeExtAgent(params?: import("@envoymesh/api").ProbeExtAgentParams) {
+    return this._ns.probeExtAgent(params);
+  }
+
   async restartOpenClaw() {
     return this._ns.restartOpenClaw();
   }
@@ -638,6 +642,12 @@ export class DirectCallClient implements NodeServiceClient {
 
   async sendToPi(text: string) {
     return this._ns.sendToPi(text);
+  }
+
+  async ensurePiTerminalSession(
+    params?: import("@envoymesh/api").EnsurePiTerminalParams,
+  ) {
+    return this._ns.ensurePiTerminalSession(params);
   }
 
   async piRespondToProposal(params: { uiRequestId: string; confirmed: boolean }) {

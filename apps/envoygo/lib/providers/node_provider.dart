@@ -668,6 +668,14 @@ class NodeNotifier extends StateNotifier<NodeState> {
     }).catchError((e) {
       _log('getBridgeStatus failed: $e');
     });
+
+    // Pi — built-in local coding agent (separate chat surface).
+    chatNotifier.ensurePiThread();
+    nodeService.getPiStatus().then((status) {
+      chatNotifier.onPiStatus(status);
+    }).catchError((e) {
+      _log('getPiStatus failed: $e');
+    });
   }
 
   Future<void> _syncBondsDirect(

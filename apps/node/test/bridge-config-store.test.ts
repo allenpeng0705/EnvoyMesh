@@ -51,7 +51,8 @@ describe("bridge-config-store", () => {
     const profileDir = await mkdtemp(join(tmpdir(), "envoy-bridge-"));
     try {
       const cfg = await loadBridgeConfigFromProfile(profileDir);
-      expect(cfg.activeExtAgent).toBe("homeclaw");
+      expect(cfg.activeExtAgent).toBe("pi");
+      expect(cfg.extAgents?.some((a) => a.id === "pi")).toBe(true);
       expect(cfg.extAgents?.some((a) => a.id === "openhuman")).toBe(true);
     } finally {
       await rm(profileDir, { recursive: true, force: true });

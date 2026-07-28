@@ -431,6 +431,11 @@ export type ModelProviderMode = "mock" | "ollama" | "litellm" | "openai-compatib
 export interface ModelProviderConfig {
     /** Provider mode. When "disabled", no model calls are made. Default: "mock". */
     mode: ModelProviderMode;
+    /**
+     * Optional curated preset id (e.g. "minimax-cn", "anthropic").
+     * UI/OpenClaw metadata — transport still uses {@link mode}.
+     */
+    presetId?: string;
     /** Base URL for OpenAI-compatible `/chat/completions` (include `/v1`): Ollama `http://127.0.0.1:11434/v1`, LiteLLM `http://127.0.0.1:4000/v1`. Bare host roots are normalized at runtime. Anthropic mode uses API host without `/v1` (e.g. `https://api.anthropic.com`). */
     endpoint?: string;
     /** Model name for ollama (e.g. "llama3.1") or litellm (e.g. "gpt-4o-mini"). */

@@ -39,6 +39,9 @@ import {
   PI_NATIVE_PROVIDERS,
   getPiNativeProvider,
   piProviderFromEnvoyMode,
+  listModelProviderPresets,
+  getModelProviderPreset,
+  inferModelProviderPreset,
 } from "@envoymesh/api";
 import {
   DEFAULT_AI_KNOWLEDGE_BASE,
@@ -925,7 +928,10 @@ function ModelProviderSettings({
   const modelProviderUiScope = useModelProviderUiScope();
   const cloudOnlyMobile = modelProviderUiScope === "cloud-only";
   const isMobileNode = useIsInProcessMobileNode();
+  const includeLocal = !cloudOnlyMobile && !isMobileNode;
 
+  const inferredPreset = inferModelProviderPreset(nodeConfig?.modelProviders);
+  const [presetId, setPresetId] = useState(inferredPreset.id);
   const [modelEndpoint, setModelEndpoint] = useState(nodeConfig?.modelProviders?.endpoint ?? "");
   const [modelName, setModelName] = useState(nodeConfig?.modelProviders?.modelName ?? "");
   const [modelApiKey, setModelApiKey] = useState(nodeConfig?.modelProviders?.apiKey ?? "");
@@ -936,42 +942,28 @@ function ModelProviderSettings({
     if (settingsSaveStatus === "saving" || modelProviderFieldsDirtyRef.current) return;
     const mp = nodeConfig?.modelProviders;
     if (!mp) return;
+    setPresetId(inferModelProviderPreset(mp).id);
     setModelEndpoint(mp.endpoint ?? "");
     setModelName(mp.modelName ?? "");
     setModelApiKey(mp.apiKey ?? "");
   }, [nodeConfig?.modelProviders, settingsSaveStatus]);
 
-  const modelMode = nodeConfig?.modelProviders?.mode ?? "mock";
-  const modelProviderHints = useMemo(() => {
-    switch (modelMode) {
-      case "ollama":
-        return {
-          endpointPlaceholder: t("settings.ai.model.endpointPlaceholderOllama"),
-          hint: t("settings.ai.model.endpointHintOllama"),
-          apiKeyHint: t("settings.ai.model.apiKeyHintOllama"),
-        };
-      case "litellm":
-        return {
-          endpointPlaceholder: t("settings.ai.model.endpointPlaceholderLitellm"),
-          hint: t("settings.ai.model.endpointHintLitellm"),
-          apiKeyHint: t("settings.ai.model.apiKeyHintLitellm"),
-        };
-      case "openai-compatible":
-        return {
-          endpointPlaceholder: t("settings.ai.model.endpointPlaceholderOpenAi"),
-          hint: t("settings.ai.model.endpointHintOpenAi"),
-          apiKeyHint: t("settings.ai.model.apiKeyHintOpenAi"),
-        };
-      case "anthropic-compatible":
-        return {
-          endpointPlaceholder: t("settings.ai.model.endpointPlaceholderAnthropic"),
-          hint: t("settings.ai.model.endpointHintAnthropic"),
-          apiKeyHint: t("settings.ai.model.apiKeyHintAnthropic"),
-        };
-      default:
-        return { endpointPlaceholder: "", hint: "", apiKeyHint: "" };
+  const presets = useMemo(() => {
+    const listed = listModelProviderPresets({ includeLocal });
+    // Keep the currently saved local preset visible even on cloud-only scopes.
+    if (!listed.some((p) => p.id === presetId)) {
+      const current = getModelProviderPreset(presetId);
+      if (current) return [...listed, current];
     }
-  }, [modelMode, t]);
+    return listed;
+  }, [includeLocal, presetId]);
+  const activePreset = getModelProviderPreset(presetId) ?? inferredPreset;
+  const showEndpoint =
+    activePreset.endpointEditable !== false &&
+    activePreset.mode !== "mock" &&
+    activePreset.mode !== "disabled";
+  const showModelAndKey =
+    activePreset.mode !== "mock" && activePreset.mode !== "disabled";
 
   const updateNodeConfig = async (partial: Partial<import("@envoymesh/api").NodeConfig>) => {
     await nodeService.updateNodeConfig(partial);
@@ -991,75 +983,112 @@ function ModelProviderSettings({
         <dd>
           <select
             className="settings-select"
-            value={nodeConfig?.modelProviders?.mode ?? "mock"}
-            onChange={async (e) => {
-              const mode = e.target.value as ModelProviderMode;
-              await updateNodeConfig({
-                modelProviders: { ...nodeConfig?.modelProviders, mode },
-              });
+            value={presetId}
+            disabled={settingsSaveStatus === "saving"}
+            onChange={(e) => {
+              modelProviderFieldsDirtyRef.current = true;
+              const next = e.target.value;
+              setPresetId(next);
+              const info = getModelProviderPreset(next);
+              if (!info) return;
+              if (info.defaultEndpoint) setModelEndpoint(info.defaultEndpoint);
+              else if (info.endpointEditable === false) setModelEndpoint("");
+              if (info.models.length && (!modelName || !info.models.includes(modelName))) {
+                setModelName(info.models[0] ?? "");
+              }
+              if (info.mode === "mock" || info.mode === "disabled") {
+                setModelName("");
+                setModelEndpoint("");
+              }
             }}
           >
-            <option value="mock">{t("settings.ai.model.modeMock")}</option>
-            <option value="openai-compatible">{t("settings.ai.model.modeOpenAiCompatible")}</option>
-            <option value="anthropic-compatible">{t("settings.ai.model.modeAnthropicCompatible")}</option>
-            {!cloudOnlyMobile && !isMobileNode && (
-              <>
-                <option value="ollama">{t("settings.ai.model.modeOllama")}</option>
-                <option value="litellm">{t("settings.ai.model.modeLitellm")}</option>
-              </>
-            )}
-            <option value="disabled">{t("settings.ai.model.modeDisabled")}</option>
+            {presets.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.label}
+              </option>
+            ))}
           </select>
+          <p className="settings-hint" style={{ marginTop: "6px" }}>
+            {t("settings.ai.model.presetHint")}
+          </p>
         </dd>
-        <dt>{t("settings.ai.model.endpointUrl")}</dt>
-        <dd>
-          <input
-            type="text"
-            className="settings-input"
-            placeholder={modelProviderHints.endpointPlaceholder || t("settings.ai.model.endpointPlaceholderDefault")}
-            value={modelEndpoint}
-            onChange={(e) => {
-              modelProviderFieldsDirtyRef.current = true;
-              setModelEndpoint(e.target.value);
-            }}
-          />
-          {modelProviderHints.hint ? (
-            <p className="settings-hint" style={{ marginTop: "6px" }}>
-              {modelProviderHints.hint}
-            </p>
-          ) : null}
-        </dd>
-        <dt>{t("settings.ai.model.modelName")}</dt>
-        <dd>
-          <input
-            type="text"
-            className="settings-input"
-            placeholder={t("settings.ai.model.modelNamePlaceholder")}
-            value={modelName}
-            onChange={(e) => {
-              modelProviderFieldsDirtyRef.current = true;
-              setModelName(e.target.value);
-            }}
-          />
-        </dd>
-        <dt>{t("settings.ai.model.apiKey")}</dt>
-        <dd>
-          <input
-            type="password"
-            className="settings-input"
-            placeholder={t("settings.ai.model.apiKeyPlaceholder")}
-            value={modelApiKey}
-            onChange={(e) => {
-              modelProviderFieldsDirtyRef.current = true;
-              setModelApiKey(e.target.value);
-            }}
-          />
-          {modelProviderHints.apiKeyHint ? (
-            <p className="settings-hint" style={{ marginTop: "6px" }}>
-              {modelProviderHints.apiKeyHint}
-            </p>
-          ) : null}
-        </dd>
+        {showEndpoint ? (
+          <>
+            <dt>{t("settings.ai.model.endpointUrl")}</dt>
+            <dd>
+              <input
+                type="text"
+                className="settings-input"
+                placeholder={
+                  activePreset.endpointPlaceholder ||
+                  t("settings.ai.model.endpointPlaceholderDefault")
+                }
+                value={modelEndpoint}
+                onChange={(e) => {
+                  modelProviderFieldsDirtyRef.current = true;
+                  setModelEndpoint(e.target.value);
+                }}
+              />
+            </dd>
+          </>
+        ) : null}
+        {showModelAndKey ? (
+          <>
+            <dt>{t("settings.ai.model.modelName")}</dt>
+            <dd>
+              {activePreset.models.length > 0 ? (
+                <select
+                  className="settings-select"
+                  value={activePreset.models.includes(modelName) ? modelName : "__custom__"}
+                  disabled={settingsSaveStatus === "saving"}
+                  onChange={(e) => {
+                    modelProviderFieldsDirtyRef.current = true;
+                    if (e.target.value === "__custom__") {
+                      setModelName("");
+                      return;
+                    }
+                    setModelName(e.target.value);
+                  }}
+                >
+                  {activePreset.models.map((m) => (
+                    <option key={m} value={m}>
+                      {m}
+                    </option>
+                  ))}
+                  <option value="__custom__">{t("settings.ai.model.modelCustomId")}</option>
+                </select>
+              ) : null}
+              {(!activePreset.models.length || !activePreset.models.includes(modelName)) && (
+                <input
+                  type="text"
+                  className="settings-input"
+                  style={{ marginTop: activePreset.models.length ? "6px" : undefined }}
+                  placeholder={
+                    activePreset.models[0] || t("settings.ai.model.modelNamePlaceholder")
+                  }
+                  value={modelName}
+                  onChange={(e) => {
+                    modelProviderFieldsDirtyRef.current = true;
+                    setModelName(e.target.value);
+                  }}
+                />
+              )}
+            </dd>
+            <dt>{t("settings.ai.model.apiKey")}</dt>
+            <dd>
+              <input
+                type="password"
+                className="settings-input"
+                placeholder={t("settings.ai.model.apiKeyPlaceholder")}
+                value={modelApiKey}
+                onChange={(e) => {
+                  modelProviderFieldsDirtyRef.current = true;
+                  setModelApiKey(e.target.value);
+                }}
+              />
+            </dd>
+          </>
+        ) : null}
       </dl>
       <div className="settings-buttons">
         <button
@@ -1069,14 +1098,22 @@ function ModelProviderSettings({
           onClick={async () => {
             setSettingsSaveStatus("saving");
             try {
-              await updateNodeConfig({
-                modelProviders: {
-                  ...(nodeConfig?.modelProviders ?? { mode: "mock" as ModelProviderMode }),
-                  endpoint: modelEndpoint,
-                  modelName,
-                  apiKey: modelApiKey,
-                },
-              });
+              const preset = getModelProviderPreset(presetId) ?? activePreset;
+  // When clearing mock/disabled, drop leftover endpoint/key so they cannot
+  // resurrect via a later shallow merge or confuse OpenClaw inference.
+  await updateNodeConfig({
+    modelProviders: {
+      ...(nodeConfig?.modelProviders ?? { mode: "mock" as ModelProviderMode }),
+      presetId: preset.id,
+      mode: preset.mode,
+      endpoint: showEndpoint ? modelEndpoint : undefined,
+      modelName: showModelAndKey ? modelName : undefined,
+      apiKey: showModelAndKey ? modelApiKey : undefined,
+      ...(preset.mode === "mock" || preset.mode === "disabled"
+        ? { endpoint: undefined, modelName: undefined, apiKey: undefined }
+        : {}),
+    },
+  });
               modelProviderFieldsDirtyRef.current = false;
               setSettingsSaveStatus("saved");
               setTimeout(() => setSettingsSaveStatus("idle"), 2000);
@@ -1097,9 +1134,11 @@ function ModelProviderSettings({
           className="settings-cancel-btn"
           onClick={() => {
             modelProviderFieldsDirtyRef.current = false;
-            setModelEndpoint(nodeConfig?.modelProviders?.endpoint ?? "");
-            setModelName(nodeConfig?.modelProviders?.modelName ?? "");
-            setModelApiKey(nodeConfig?.modelProviders?.apiKey ?? "");
+            const mp = nodeConfig?.modelProviders;
+            setPresetId(inferModelProviderPreset(mp).id);
+            setModelEndpoint(mp?.endpoint ?? "");
+            setModelName(mp?.modelName ?? "");
+            setModelApiKey(mp?.apiKey ?? "");
             setSettingsSaveStatus("idle");
           }}
         >
@@ -2068,11 +2107,27 @@ export function SettingsAITab() {
                   disabled={restartingPi || !(nodeConfig?.piEnabled ?? true) || piModelSaveStatus === "saving"}
                   onChange={(e) => {
                     piModelDirtyRef.current = true;
-                    setPiUseCustomModel(e.target.checked);
+                    const on = e.target.checked;
+                    setPiUseCustomModel(on);
+                    // First enable with empty form → seed from Settings → AI
+                    // so Pi starts from the shared model and the user only
+                    // tweaks what differs.
+                    if (on && !piOverride && !piModelName.trim()) {
+                      const mp = nodeConfig?.modelProviders;
+                      const seededProvider = piProviderFromEnvoyMode(mp?.mode, mp?.endpoint);
+                      const info = getPiNativeProvider(seededProvider);
+                      setPiProvider(seededProvider);
+                      setPiModelName(
+                        mp?.modelName?.trim() || info?.models[0] || "",
+                      );
+                      setPiModelEndpoint(mp?.endpoint ?? "");
+                      setPiModelApiKey(mp?.apiKey ?? "");
+                    }
                   }}
                 />
                 <span>{t("settings.ai.aiEngine.piCustomModel")}</span>
               </label>
+              <p className="agent-field-hint">{t("settings.ai.aiEngine.piCustomModelDesc")}</p>
             </div>
 
             {piUseCustomModel ? (
@@ -2091,6 +2146,7 @@ export function SettingsAITab() {
                       if (info?.models.length && !info.models.includes(piModelName)) {
                         setPiModelName(info.models[0] ?? "");
                       }
+                      if (!info?.supportsEndpoint) setPiModelEndpoint("");
                     }}
                   >
                     {PI_NATIVE_PROVIDERS.map((p) => (
@@ -2174,36 +2230,57 @@ export function SettingsAITab() {
                       setPiModelApiKey(e.target.value);
                     }}
                   />
+                  <p className="agent-field-hint">{t("settings.ai.aiEngine.piModelApiKeyHint")}</p>
                 </div>
-                <div className="agent-block-actions">
+                <div className="settings-buttons">
                   <button
                     type="button"
-                    className="settings-action-btn"
+                    className="settings-save-btn"
                     onClick={() => { void handleSavePiModelOverride(); }}
                     disabled={restartingPi || piModelSaveStatus === "saving"}
                   >
                     {piModelSaveStatus === "saving"
                       ? t("settings.ai.aiEngine.piModelSaving")
-                      : t("settings.ai.aiEngine.piModelSave")}
+                      : piModelSaveStatus === "saved"
+                        ? t("settings.ai.aiEngine.piModelSaved")
+                        : t("settings.ai.aiEngine.piModelSave")}
                   </button>
-                  {piModelSaveStatus === "saved" ? (
-                    <span className="settings-hint">{t("settings.ai.aiEngine.piModelSaved")}</span>
-                  ) : null}
+                  <button
+                    type="button"
+                    className="settings-cancel-btn"
+                    disabled={restartingPi || piModelSaveStatus === "saving"}
+                    onClick={() => {
+                      piModelDirtyRef.current = false;
+                      const o = nodeConfig?.piSettings?.modelOverride;
+                      setPiUseCustomModel(Boolean(o));
+                      setPiProvider(
+                        o?.provider?.trim() || piProviderFromEnvoyMode(o?.mode, o?.endpoint),
+                      );
+                      setPiModelEndpoint(o?.endpoint ?? "");
+                      setPiModelName(o?.model ?? "");
+                      setPiModelApiKey(o?.apiKey ?? "");
+                      setPiModelSaveStatus("idle");
+                    }}
+                  >
+                    {t("settings.ai.aiEngine.piModelReset")}
+                  </button>
                   {piModelSaveStatus === "error" ? (
-                    <span className="settings-hint pi-error">{t("settings.ai.aiEngine.piModelSaveError")}</span>
+                    <span className="settings-save-error">{t("settings.ai.aiEngine.piModelSaveError")}</span>
                   ) : null}
                 </div>
               </>
             ) : (
-              <div className="agent-block-actions">
+              <div className="settings-buttons">
                 {Boolean(nodeConfig?.piSettings?.modelOverride) ? (
                   <button
                     type="button"
-                    className="settings-action-btn"
+                    className="settings-save-btn"
                     onClick={() => { void handleSavePiModelOverride(); }}
                     disabled={restartingPi || piModelSaveStatus === "saving"}
                   >
-                    {t("settings.ai.aiEngine.piModelClearOverride")}
+                    {piModelSaveStatus === "saving"
+                      ? t("settings.ai.aiEngine.piModelSaving")
+                      : t("settings.ai.aiEngine.piModelClearOverride")}
                   </button>
                 ) : null}
               </div>
@@ -2224,10 +2301,10 @@ export function SettingsAITab() {
 
           {/* Restart button — shown when Pi is in a state restart can fix. */}
           {piStatus && (piStatus.state === "error" || piStatus.state === "stopped" || piStatus.state === "starting") ? (
-            <div className="agent-block-actions">
+            <div className="settings-buttons">
               <button
                 type="button"
-                className="settings-action-btn"
+                className="settings-save-btn"
                 onClick={() => { void handleRestartPi(); }}
                 disabled={restartingPi}
               >

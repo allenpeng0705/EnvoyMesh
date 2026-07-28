@@ -362,6 +362,17 @@ export const RefreshCwIcon = mkIcon(
   "RefreshCwIcon",
 );
 
+/** Two horizontal arrows — switch / swap. */
+export const SwapIcon = mkIcon(
+  <>
+    <path d="M16 3l4 4-4 4" />
+    <path d="M20 7H4" />
+    <path d="M8 21l-4-4 4-4" />
+    <path d="M4 17h16" />
+  </>,
+  "SwapIcon",
+);
+
 export const ChevronDownIcon = mkIcon(
   <polyline points="6 9 12 15 18 9" />,
   "ChevronDownIcon",
@@ -457,5 +468,6 @@ export const ICON_MAP: Record<IconName, React.FC<IconProps>> = {
   decline: DeclineIcon,
   pending: PendingIcon,
   refreshCw: RefreshCwIcon,
+  swap: SwapIcon,
   chevronDown: ChevronDownIcon,
 };

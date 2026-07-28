@@ -26,11 +26,12 @@ void main() {
     });
 
     test('ChatThreadType enum has all expected values', () {
-      expect(ChatThreadType.values.length, 5);
+      expect(ChatThreadType.values.length, 6);
       expect(ChatThreadType.values, contains(ChatThreadType.direct));
       expect(ChatThreadType.values, contains(ChatThreadType.group));
       expect(ChatThreadType.values, contains(ChatThreadType.envoyai));
       expect(ChatThreadType.values, contains(ChatThreadType.externalAgent));
+      expect(ChatThreadType.values, contains(ChatThreadType.pi));
       expect(ChatThreadType.values, contains(ChatThreadType.terminal));
     });
   });

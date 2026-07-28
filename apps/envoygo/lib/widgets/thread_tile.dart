@@ -5,11 +5,13 @@ import '../models/chat_thread.dart';
 class ThreadTile extends StatelessWidget {
   final ChatThread thread;
   final VoidCallback? onTap;
+  final Widget? trailingAction;
 
   const ThreadTile({
     super.key,
     required this.thread,
     this.onTap,
+    this.trailingAction,
   });
 
   @override
@@ -41,12 +43,28 @@ class ThreadTile extends StatelessWidget {
               overflow: TextOverflow.ellipsis,
             )
           : null,
-      trailing: thread.unreadCount > 0
-          ? Badge(
+      trailing: (() {
+        final hasAction = trailingAction != null;
+        final hasUnread = thread.unreadCount > 0;
+        if (!hasAction && !hasUnread) return null;
+        if (hasAction && !hasUnread) return trailingAction;
+        if (!hasAction && hasUnread) {
+          return Badge(
+            label: Text('${thread.unreadCount}'),
+            backgroundColor: colorScheme.primary,
+          );
+        }
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            trailingAction!,
+            Badge(
               label: Text('${thread.unreadCount}'),
               backgroundColor: colorScheme.primary,
-            )
-          : null,
+            ),
+          ],
+        );
+      })(),
       onTap: onTap,
     );
   }
@@ -61,6 +79,8 @@ class ThreadTile extends StatelessWidget {
         return const CircleAvatar(child: Icon(Icons.psychology));
       case ChatThreadType.externalAgent:
         return const CircleAvatar(child: Icon(Icons.smart_toy));
+      case ChatThreadType.pi:
+        return const CircleAvatar(child: Icon(Icons.code));
       case ChatThreadType.terminal:
         return const CircleAvatar(child: Icon(Icons.terminal));
     }

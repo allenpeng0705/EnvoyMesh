@@ -1,39 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../ai/model_provider_presets.dart';
 import '../../providers/contact_provider.dart' show nodeServiceProvider;
 import '../../services/node_service_client.dart';
 
-/// AI Model settings — Phase EnvoyGo settings (slice 1).
+/// AI Model settings — cloud provider presets (EnvoyGo).
 ///
-/// Lets the user configure the model provider that the home node
-/// uses to run the assistant. The home node already accepts a
-/// `Partial<NodeConfig>` update with a `modelProviders` block; this
-/// screen is a thin mobile wrapper that:
-///   1. reads the current `modelProviders` from `getNodeConfig()`
-///   2. lets the user edit mode / endpoint / modelName / apiKey /
-///      requireApprovalForCloud
-///   3. pushes a partial `updateNodeConfig({modelProviders: ...})`
-///
-/// Phase 2 (External Agents) is in `external_agents_settings_screen.dart`.
-///
-/// Mode options — must mirror the server-side `ModelProviderMode`
-/// in `packages/api/src/ws-protocol.d.ts`. Keep in sync if the server
-/// grows new modes.
-const _modeOptions = <_ModeOption>[
-  _ModeOption('disabled', 'Disabled (no AI calls)'),
-  _ModeOption('mock', 'Mock (no external calls)'),
-  _ModeOption('ollama', 'Ollama (local)'),
-  _ModeOption('litellm', 'LiteLLM (local/cloud)'),
-  _ModeOption('openai-compatible', 'OpenAI-compatible'),
-  _ModeOption('anthropic-compatible', 'Anthropic-compatible'),
-];
-
-class _ModeOption {
-  final String value;
-  final String label;
-  const _ModeOption(this.value, this.label);
-}
-
+/// Local-only modes (ollama / litellm) are shown read-only here; edit those
+/// on the home-node Social UI. Cloud saves merge into the existing
+/// `modelProviders` object (server shallow-replaces the whole block).
 class AiModelSettingsScreen extends ConsumerStatefulWidget {
   const AiModelSettingsScreen({super.key});
 
@@ -48,18 +23,23 @@ class _AiModelSettingsScreenState
   late TextEditingController _endpointCtl;
   late TextEditingController _modelNameCtl;
   late TextEditingController _apiKeyCtl;
-  String _mode = 'mock';
+  String _presetId = 'mock';
+  /// Full modelProviders map from home — merged on save so we do not wipe
+  /// fields like requireApprovalForCloud / mockResponseText.
+  Map<String, dynamic> _existingMp = const {};
+  bool _localOnly = false;
+  String _localModeLabel = '';
   bool _obscureApiKey = true;
   bool _saving = false;
   bool _loaded = false;
-  // Bidirectional sync — handles the subscription so we can tear it
-  // down on dispose. The Riverpod Provider is a synchronous lookup
-  // (no Future/Stream), so we use listenManual to react to client
-  // changes (e.g. user pairs/disconnects while the screen is open).
-  // ignore: unused_field
   ProviderSubscription<NodeServiceClient?>? _clientSub;
-  // ignore: unused_field
   void Function()? _configUnsub;
+
+  ModelProviderPreset get _preset =>
+      getModelProviderPreset(_presetId) ?? getModelProviderPreset('mock')!;
+
+  static bool _isLocalMode(String mode) =>
+      mode == 'ollama' || mode == 'litellm';
 
   @override
   void initState() {
@@ -67,10 +47,6 @@ class _AiModelSettingsScreenState
     _endpointCtl = TextEditingController();
     _modelNameCtl = TextEditingController();
     _apiKeyCtl = TextEditingController();
-    // Bidirectional sync: re-load when the home node's config changes
-    // (e.g. via the Social UI or another mobile device). We use
-    // ref.listenManual to react to client changes (not a Future),
-    // and we tear down the listener in dispose() to avoid leaks.
     _clientSub = ref.listenManual<NodeServiceClient?>(
       nodeServiceProvider,
       (prev, next) {
@@ -96,22 +72,62 @@ class _AiModelSettingsScreenState
     try {
       final cfg = await client.getNodeConfig();
       final mp = (cfg['modelProviders'] as Map?)?.cast<String, dynamic>() ??
-          const <String, dynamic>{};
+          <String, dynamic>{};
       final mode = (mp['mode'] as String?) ?? 'mock';
       final endpoint = (mp['endpoint'] as String?) ?? '';
       final modelName = (mp['modelName'] as String?) ?? '';
       final apiKey = (mp['apiKey'] as String?) ?? '';
+      final presetId = (mp['presetId'] as String?) ?? '';
+      final localOnly = _isLocalMode(mode);
+      final inferred = localOnly
+          ? null
+          : inferModelProviderPreset(
+              mode: mode,
+              endpoint: endpoint,
+              presetId: presetId.isNotEmpty ? presetId : null,
+            );
       if (!mounted) return;
       setState(() {
-        _mode = mode;
-        _endpointCtl.text = endpoint;
-        _modelNameCtl.text = modelName;
-        _apiKeyCtl.text = apiKey;
+        _existingMp = Map<String, dynamic>.from(mp);
+        _localOnly = localOnly;
+        _localModeLabel = mode;
+        if (localOnly) {
+          _presetId = 'mock';
+          _endpointCtl.text = endpoint;
+          _modelNameCtl.text = modelName;
+          _apiKeyCtl.text = apiKey;
+        } else {
+          _presetId = inferred!.id;
+          _endpointCtl.text = endpoint.isNotEmpty
+              ? endpoint
+              : (inferred.defaultEndpoint ?? '');
+          _modelNameCtl.text = modelName;
+          _apiKeyCtl.text = apiKey;
+        }
         _loaded = true;
       });
     } catch (_) {
       if (mounted) setState(() => _loaded = true);
     }
+  }
+
+  void _onPresetChanged(String? id) {
+    if (id == null || _localOnly) return;
+    final preset = getModelProviderPreset(id);
+    if (preset == null) return;
+    setState(() {
+      _presetId = id;
+      if (preset.defaultEndpoint != null) {
+        _endpointCtl.text = preset.defaultEndpoint!;
+      } else if (!preset.endpointEditable) {
+        _endpointCtl.clear();
+      }
+      if (preset.models.isNotEmpty &&
+          (_modelNameCtl.text.trim().isEmpty ||
+              !preset.models.contains(_modelNameCtl.text.trim()))) {
+        _modelNameCtl.text = preset.models.first;
+      }
+    });
   }
 
   @override
@@ -127,23 +143,52 @@ class _AiModelSettingsScreenState
   }
 
   Future<void> _save() async {
+    if (_localOnly) return;
     if (!(_formKey.currentState?.validate() ?? false)) return;
     final client = ref.read(nodeServiceProvider);
     if (client == null) return;
+    final preset = _preset;
+    final showEndpoint = preset.endpointEditable;
+    final showModel = preset.mode != 'disabled' && preset.mode != 'mock';
     setState(() => _saving = true);
     try {
-      final patch = <String, dynamic>{
-        'mode': _mode,
-        if (_endpointCtl.text.trim().isNotEmpty)
-          'endpoint': _endpointCtl.text.trim(),
-        if (_modelNameCtl.text.trim().isNotEmpty)
-          'modelName': _modelNameCtl.text.trim(),
-        if (_apiKeyCtl.text.isNotEmpty) 'apiKey': _apiKeyCtl.text,
+      // Merge like Social UI — server shallow-replaces modelProviders.
+      final next = <String, dynamic>{
+        ..._existingMp,
+        'presetId': preset.id,
+        'mode': preset.mode,
       };
-      final ok = await client.updateModelProviders(patch);
+      if (preset.mode == 'mock' || preset.mode == 'disabled') {
+        next.remove('endpoint');
+        next.remove('modelName');
+        next.remove('apiKey');
+      } else {
+        if (showEndpoint) {
+          final ep = _endpointCtl.text.trim();
+          if (ep.isNotEmpty) {
+            next['endpoint'] = ep;
+          } else {
+            next.remove('endpoint');
+          }
+        }
+        if (showModel) {
+          final model = _modelNameCtl.text.trim();
+          if (model.isNotEmpty) {
+            next['modelName'] = model;
+          } else {
+            next.remove('modelName');
+          }
+          // Keep existing key if the field is left blank (do not wipe).
+          if (_apiKeyCtl.text.isNotEmpty) {
+            next['apiKey'] = _apiKeyCtl.text;
+          }
+        }
+      }
+      await client.updateModelProviders(next);
       if (!mounted) return;
+      setState(() => _existingMp = next);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(ok ? 'AI model saved' : 'Save failed')),
+        const SnackBar(content: Text('AI model saved')),
       );
     } catch (e) {
       if (!mounted) return;
@@ -157,6 +202,12 @@ class _AiModelSettingsScreenState
 
   @override
   Widget build(BuildContext context) {
+    final preset = _preset;
+    final showEndpoint = !_localOnly && preset.endpointEditable;
+    final showModel =
+        !_localOnly && preset.mode != 'disabled' && preset.mode != 'mock';
+    final showApiKey = showModel;
+
     return Scaffold(
       appBar: AppBar(title: const Text('AI Model')),
       body: !_loaded
@@ -167,84 +218,138 @@ class _AiModelSettingsScreenState
                 padding: const EdgeInsets.all(16),
                 children: [
                   Text(
-                    'Configure the model provider the home node uses '
-                    'to run the assistant. Changes apply on the next '
-                    'assistant turn.',
+                    'Cloud model provider for the home-node assistant. '
+                    'Local Ollama/LiteLLM stay on the desktop Social UI.',
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
-                  const SizedBox(height: 16),
-                  DropdownButtonFormField<String>(
-                    initialValue: _mode,
-                    decoration: const InputDecoration(
-                      labelText: 'Provider mode',
-                      border: OutlineInputBorder(),
-                    ),
-                    items: _modeOptions
-                        .map(
-                          (o) => DropdownMenuItem<String>(
-                            value: o.value,
-                            child: Text(o.label),
-                          ),
-                        )
-                        .toList(),
-                    onChanged: (v) {
-                      if (v != null) setState(() => _mode = v);
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _endpointCtl,
-                    decoration: const InputDecoration(
-                      labelText: 'Endpoint URL',
-                      helperText:
-                          'Ollama: http://127.0.0.1:11434/v1  ·  '
-                          'LiteLLM: http://127.0.0.1:4000/v1  ·  '
-                          'OpenAI/Anthropic: provider host (no /v1)',
-                      border: OutlineInputBorder(),
-                    ),
-                    keyboardType: TextInputType.url,
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _modelNameCtl,
-                    decoration: const InputDecoration(
-                      labelText: 'Model name',
-                      helperText: 'e.g. llama3.1, gpt-4o-mini, claude-3-5-sonnet',
-                      border: OutlineInputBorder(),
-                    ),
-                  ),
-                  const SizedBox(height: 16),
-                  TextFormField(
-                    controller: _apiKeyCtl,
-                    obscureText: _obscureApiKey,
-                    decoration: InputDecoration(
-                      labelText: 'API key',
-                      helperText: 'Required for LiteLLM, OpenAI, Anthropic',
-                      border: const OutlineInputBorder(),
-                      suffixIcon: IconButton(
-                        icon: Icon(
-                          _obscureApiKey
-                              ? Icons.visibility
-                              : Icons.visibility_off,
+                  if (_localOnly) ...[
+                    const SizedBox(height: 16),
+                    Card(
+                      color: Theme.of(context).colorScheme.secondaryContainer,
+                      child: ListTile(
+                        leading: const Icon(Icons.computer),
+                        title: Text('Home uses $_localModeLabel'),
+                        subtitle: Text(
+                          'Endpoint: ${_endpointCtl.text.isEmpty ? "(default)" : _endpointCtl.text}\n'
+                          'Model: ${_modelNameCtl.text.isEmpty ? "(unset)" : _modelNameCtl.text}\n'
+                          'Edit this provider on the home-node Social UI so '
+                          'EnvoyGo does not overwrite your local setup.',
                         ),
-                        onPressed: () => setState(
-                          () => _obscureApiKey = !_obscureApiKey,
-                        ),
+                        isThreeLine: true,
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 24),
-                  FilledButton.icon(
-                    onPressed: _saving ? null : _save,
-                    icon: _saving
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
+                  ] else ...[
+                    const SizedBox(height: 16),
+                    DropdownButtonFormField<String>(
+                      value: _presetId,
+                      decoration: const InputDecoration(
+                        labelText: 'Provider',
+                        border: OutlineInputBorder(),
+                      ),
+                      items: cloudModelProviderPresets
+                          .map(
+                            (p) => DropdownMenuItem<String>(
+                              value: p.id,
+                              child: Text(p.label),
+                            ),
                           )
-                        : const Icon(Icons.save),
-                    label: const Text('Save'),
-                  ),
+                          .toList(),
+                      onChanged: _onPresetChanged,
+                    ),
+                    if (showEndpoint) ...[
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _endpointCtl,
+                        decoration: InputDecoration(
+                          labelText: 'Endpoint URL',
+                          hintText: preset.endpointPlaceholder,
+                          border: const OutlineInputBorder(),
+                        ),
+                        keyboardType: TextInputType.url,
+                      ),
+                    ],
+                    if (showModel) ...[
+                      const SizedBox(height: 16),
+                      if (preset.models.isNotEmpty)
+                        DropdownButtonFormField<String>(
+                          value:
+                              preset.models.contains(_modelNameCtl.text.trim())
+                                  ? _modelNameCtl.text.trim()
+                                  : null,
+                          decoration: const InputDecoration(
+                            labelText: 'Model',
+                            border: OutlineInputBorder(),
+                          ),
+                          items: [
+                            ...preset.models.map(
+                              (m) =>
+                                  DropdownMenuItem(value: m, child: Text(m)),
+                            ),
+                          ],
+                          onChanged: (v) {
+                            if (v != null) {
+                              setState(() => _modelNameCtl.text = v);
+                            }
+                          },
+                        ),
+                      if (preset.models.isEmpty ||
+                          !preset.models
+                              .contains(_modelNameCtl.text.trim())) ...[
+                        SizedBox(height: preset.models.isEmpty ? 0 : 12),
+                        TextFormField(
+                          controller: _modelNameCtl,
+                          decoration: InputDecoration(
+                            labelText: preset.models.isEmpty
+                                ? 'Model name'
+                                : 'Custom model name',
+                            hintText: preset.models.isNotEmpty
+                                ? preset.models.first
+                                : 'model-id',
+                            border: const OutlineInputBorder(),
+                          ),
+                        ),
+                      ],
+                    ],
+                    if (showApiKey) ...[
+                      const SizedBox(height: 16),
+                      TextFormField(
+                        controller: _apiKeyCtl,
+                        obscureText: _obscureApiKey,
+                        decoration: InputDecoration(
+                          labelText: 'API key',
+                          helperText: _apiKeyCtl.text.isEmpty &&
+                                  (_existingMp['apiKey'] as String?)
+                                          ?.isNotEmpty ==
+                                      true
+                              ? 'A key is already saved on the home node'
+                              : null,
+                          border: const OutlineInputBorder(),
+                          suffixIcon: IconButton(
+                            icon: Icon(
+                              _obscureApiKey
+                                  ? Icons.visibility
+                                  : Icons.visibility_off,
+                            ),
+                            onPressed: () => setState(
+                              () => _obscureApiKey = !_obscureApiKey,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                    const SizedBox(height: 24),
+                    FilledButton.icon(
+                      onPressed: _saving ? null : _save,
+                      icon: _saving
+                          ? const SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            )
+                          : const Icon(Icons.save),
+                      label: const Text('Save'),
+                    ),
+                  ],
                 ],
               ),
             ),

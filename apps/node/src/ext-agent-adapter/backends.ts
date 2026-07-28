@@ -854,7 +854,42 @@ export function createOpenHumanBackend(): ExtAgentBackend {
   };
 }
 
+/**
+ * Built-in Pi Ext Agent — asks the NodeService Pi runtime (RPC, lazy-started
+ * on first message). Wired via {@link setPiExtAgentAsk} at boot; tools are
+ * auto-denied on this path so Ext Agent chat stays conversational (coding
+ * stays in the Pi TUI).
+ */
+let piExtAgentAsk:
+  | ((text: string, sessionKey: string) => Promise<string>)
+  | null = null;
+
+export function setPiExtAgentAsk(
+  ask: ((text: string, sessionKey: string) => Promise<string>) | null,
+): void {
+  piExtAgentAsk = ask;
+}
+
+export function createPiBackend(): ExtAgentBackend {
+  return {
+    kind: "pi",
+    label: "Pi",
+    async ask(text, sessionKey) {
+      if (!piExtAgentAsk) {
+        throw new Error(
+          "Pi Ext Agent is not ready — home node Pi runtime is not wired yet",
+        );
+      }
+      return piExtAgentAsk(text, sessionKey);
+    },
+    async probe() {
+      return piExtAgentAsk != null;
+    },
+  };
+}
+
 export function createBackend(kind: ExtAgentSidecarKind): ExtAgentBackend {
+  if (kind === "pi") return createPiBackend();
   return kind === "hermes" ? createHermesBackend() : createOpenHumanBackend();
 }
 
