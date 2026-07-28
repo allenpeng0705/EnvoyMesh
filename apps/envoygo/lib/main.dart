@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:developer' as developer;
 
 import 'package:flutter/material.dart';
@@ -11,6 +12,15 @@ import 'services/push_notification_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
+  // Phase 50 — initialize push BEFORE runApp so getInitialMessage()
+  // (Android cold-start) resolves before _EnvoyGoRootState.initState()
+  // drains the pending-tap buffer. initialize() is idempotent + swallows
+  // errors for missing google-services.json, so this is safe to call
+  // unconditionally. The pushEnabled preference is NOT checked here —
+  // that's checked at registerPushToken() time. initialize() just
+  // acquires the token + sets up listeners; it doesn't register.
+  // ignore: unawaited_futures
+  PushNotificationService().initialize();
   runApp(
     const ProviderScope(
       child: _EnvoyGoRoot(),
@@ -28,6 +38,10 @@ class _EnvoyGoRoot extends ConsumerStatefulWidget {
 
 class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
     with WidgetsBindingObserver {
+  StreamSubscription<Map<String, dynamic>>? _pushTapSub;
+  /// Buffered cold-start tap waiting for the active node to load.
+  Map<String, dynamic>? _pendingColdStartTap;
+
   @override
   void initState() {
     super.initState();
@@ -39,20 +53,27 @@ class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
       } catch (e) {
         developer.log('[main] loadPairedNodes threw: $e', name: 'EnvoyGo');
       }
+      // Phase 50 — after nodes load, retry any buffered cold-start tap
+      // that couldn't route because activeNode was null.
+      if (_pendingColdStartTap != null) {
+        final tap = _pendingColdStartTap;
+        _pendingColdStartTap = null;
+        _routeNotificationTap(tap!);
+      }
     });
     // Phase 50 — subscribe to push-notification taps for deep-link navigation.
-    // Tapping a chat notification opens the chat thread; a feed notification
-    // opens the Browser; a bond request switches to the Inbox tab.
     _subscribeToPushTaps();
   }
 
   void _subscribeToPushTaps() {
     final push = PushNotificationService();
-    push.onNotificationTap.listen((raw) {
+    _pushTapSub = push.onNotificationTap.listen((raw) {
       _routeNotificationTap(raw);
     });
     // Replay any cold-start tap that arrived before the subscriber attached
     // (Android: getInitialMessage buffered during _initAndroidFcm).
+    // Because initialize() now runs in main() before runApp, the buffer
+    // is populated by the time initState runs.
     final pending = push.consumePendingInitialTap();
     if (pending != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -103,7 +124,12 @@ class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
         final roomId = hint['roomId'] as String?;
         if (senderOwnerId == null && roomId == null) return;
         final nodeId = ref.read(nodeProvider).activeNode?.id;
-        if (nodeId == null) return;
+        if (nodeId == null) {
+          // Cold-start: active node not loaded yet. Buffer and retry
+          // after loadPairedNodes completes (in initState's microtask).
+          _pendingColdStartTap = raw;
+          return;
+        }
         // Switch to Chats tab (index 0) so the back stack makes sense.
         ref.read(chatProvider.notifier).selectTab(0);
         final threadId = roomId != null ? '$nodeId:$roomId' : '$nodeId:$senderOwnerId';
@@ -121,6 +147,7 @@ class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
 
   @override
   void dispose() {
+    _pushTapSub?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
