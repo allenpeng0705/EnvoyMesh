@@ -1,10 +1,19 @@
-# External agent bridge guide (HomeClaw & OpenClaw)
+# External agent bridge guide
 
-EnvoyMesh **Phase 9K** lets a home node pipe P2P `chat.message` traffic to an external agent over HTTP. **HomeClaw** and **OpenClaw** share the same wire contract; you pick one agent per bridge via `bridge-config.json` `agentUrl`.
+EnvoyMesh pipes P2P `chat.message` traffic to an external agent over HTTP.
+There are **two operator paths**:
+
+| Path | Where you configure it | Typical `agentUrl` | Doc |
+|------|------------------------|--------------------|-----|
+| **Ext Agent presets** (HomeClaw / Hermes / OpenHuman) | **Settings → AI → Ext Agent** | `:8010` / `:8020` / `:8021` `/message` | **[Ext_Agent_guide.md](./Ext_Agent_guide.md)** (full setup) |
+| **OpenClaw plugin** (EnvoyAI / Gateway webhook) | `bridge-config.json` + OpenClaw `channels.envoymesh` | `:18789/webhook/envoymesh` | This guide + [openclaw-extension.md](./openclaw-extension.md) |
+
+**One bridge = one `agentUrl`.** Do not point the same bridge at two agents at once.
+Use separate EnvoyMesh profiles to A/B test.
 
 **Related docs:**
 
-- [Ext_Agent_guide.md](./Ext_Agent_guide.md) — configure & run HomeClaw / Hermes / OpenHuman Ext Agents
+- [Ext_Agent_guide.md](./Ext_Agent_guide.md) — HomeClaw / Hermes / OpenHuman (recommended starting point for Ext Agent UI)
 - [profile-photos.md](./profile-photos.md) — thumbnails, gallery, `profile.sync`, sharing
 - [openclaw-agent-bridge-adr.md](./openclaw-agent-bridge-adr.md) — wire contract, security, CI smokes
 - [openclaw-extension.md](./openclaw-extension.md) — OpenClaw install and config (detailed)
@@ -13,7 +22,31 @@ EnvoyMesh **Phase 9K** lets a home node pipe P2P `chat.message` traffic to an ex
 
 ---
 
-## Architecture (shared by both)
+## Ext Agent presets (summary)
+
+Full steps, env vars, ports, and checklists: **[Ext_Agent_guide.md](./Ext_Agent_guide.md)**.
+
+| Agent | Who owns `/message`? | Default URL | Auth / notes |
+|-------|----------------------|-------------|--------------|
+| **HomeClaw** | HomeClaw built-in channel | `http://127.0.0.1:8010/message` | Start HomeClaw only; no EnvoyMesh sidecar. Match `ENVOYMESH_BRIDGE_URL` to bridge port. |
+| **Hermes** | EnvoyMesh sidecar `:8020` | `http://127.0.0.1:8020/message` | Hermes API `:8642` needs `API_SERVER_ENABLED` + `API_SERVER_KEY`; set `HERMES_API_KEY` on the node. |
+| **OpenHuman** | EnvoyMesh sidecar `:8021` | `http://127.0.0.1:8021/message` | Prefer `/v1` auto-key with OpenHuman.app (desktop `/rpc` token is in-memory). CLI uses `core.token` / `OPENHUMAN_CORE_TOKEN`. |
+
+```
+You → Ext Agent chat → home Node bridge
+                         ↓ POST agentUrl
+            HomeClaw :8010  |  Hermes sidecar :8020  |  OpenHuman sidecar :8021
+                         ↓ POST /bridge/send
+                    Reply in chat
+```
+
+Select the agent in **Settings → AI → Ext Agent**, enable the bridge, and save.
+Hermes / OpenHuman sidecars start and stop automatically with that selection
+(`apps/node/src/ext-agent-adapter/`).
+
+---
+
+## Architecture (shared wire contract)
 
 The bridge (`apps/node/src/bridge/`) is a **message pipe only**:
 
@@ -27,7 +60,7 @@ The bridge (`apps/node/src/bridge/`) is a **message pipe only**:
 sequenceDiagram
   participant Peer as Mesh peer
   participant Node as EnvoyMesh node (bridge)
-  participant Agent as HomeClaw or OpenClaw
+  participant Agent as Ext Agent or OpenClaw
 
   Peer->>Node: chat.message
   Node->>Agent: POST agentUrl {from, fromOwnerId, fromName, text}
@@ -37,8 +70,7 @@ sequenceDiagram
 
 **Rules:**
 
-- **One bridge = one `agentUrl`.** Do not point the same bridge at HomeClaw and OpenClaw at once. Use separate EnvoyMesh profiles to A/B test.
-- **OpenClaw / HomeClaw never hold libp2p keys** — only the EnvoyMesh node speaks P2P.
+- **OpenClaw / HomeClaw / Hermes / OpenHuman never hold libp2p keys** — only the EnvoyMesh node speaks P2P.
 - **Reply routing:** `to` on `/bridge/send` must be the mesh **peer id** from inbound `from` (`envoy_…`), not `envoy:owner:…`.
 
 ### Wire contract (summary)
@@ -55,13 +87,11 @@ sequenceDiagram
 }
 ```
 
-`messageId` is the unique id of the inbound P2P envelope (carried through from
-`EnvoyEnvelope.messageId`). The agent should treat repeated `messageId`s as
-duplicate deliveries and not re-process them — this is how retries of a
-flaky webhook are absorbed. The OpenClaw plugin dedups on `messageId` with a
-10-second content-hash fallback for legacy bridges that don't send one.
+`messageId` is the unique id of the inbound P2P envelope. Agents should treat
+repeated `messageId`s as duplicates. The OpenClaw plugin dedups on `messageId`
+with a 10-second content-hash fallback for legacy bridges that omit it.
 
-Optional: `Authorization: Bearer <secret>` when `bridge-config.json` sets `secret`.
+Optional: `Authorization: Bearer <secret>` when `bridge-config.json` / UI sets `secret`.
 
 **Agent → bridge** (`POST http://127.0.0.1:3031/bridge/send`):
 
@@ -73,36 +103,93 @@ Optional: `Authorization: Bearer <secret>` when `bridge-config.json` sets `secre
 }
 ```
 
-`to` must be the mesh peer id from inbound `from` (not owner id). Optional same
-Bearer secret.
-
 **Sync H2A ask replies (built-in EnvoyAI path):** the bridge also supports a
 sync-reply mode used by the runtime's `ask()` — the agent POSTs the same body
 shape with a `correlationId` matching the original ask. The bridge returns:
 
-- `200` + `{"ok": true, "mode": "sync-reply"}` when a matching ask is in
-  flight — the reply resolves the pending Promise and is consumed
-  in-process, not forwarded to the mesh.
-- `410` + `{"ok": false, "mode": "unknown-correlation"}` when no matching ask
-  exists (typically because the node restarted between the ask and the reply).
-  The OpenClaw side can re-issue the ask with a fresh `correlationId` instead
-  of silently dropping the answer.
+- `200` + `{"ok": true, "mode": "sync-reply"}` when a matching ask is in flight
+- `410` + `{"ok": false, "mode": "unknown-correlation"}` when no matching ask exists
+  (typically after a node restart between ask and reply)
 
-**Async mesh (OpenClaw plugin):** `POST agentUrl` with `type: "mesh.async_reply"` for `discovery.response` / `knowledge.response`. See [openclaw-agent-bridge-adr.md](./openclaw-agent-bridge-adr.md).
+**Async mesh (OpenClaw plugin):** `POST agentUrl` with `type: "mesh.async_reply"` for
+`discovery.response` / `knowledge.response`. See [openclaw-agent-bridge-adr.md](./openclaw-agent-bridge-adr.md).
 
 ---
 
-## What changed in EnvoyMesh (OpenClaw support)
+## Operator cheat sheet
 
-### Unchanged on purpose
+| | **HomeClaw** | **Hermes** | **OpenHuman** | **OpenClaw** |
+|---|--------------|------------|---------------|--------------|
+| **UI preset** | Ext Agent → HomeClaw | Ext Agent → Hermes | Ext Agent → OpenHuman | Not an Ext Agent preset (EnvoyAI / webhook) |
+| **Channel / adapter** | HomeClaw `channels/envoymesh` | EnvoyMesh sidecar `:8020` | EnvoyMesh sidecar `:8021` | `OpenClawExtension/` → `openclaw/extensions/envoymesh/` |
+| **Typical `agentUrl`** | `http://127.0.0.1:8010/message` | `http://127.0.0.1:8020/message` | `http://127.0.0.1:8021/message` | `http://127.0.0.1:18789/webhook/envoymesh` |
+| **Backend** | HomeClaw Core | Hermes API `:8642` | OpenHuman `:7788` | OpenClaw Gateway |
+| **Auth** | Optional bridge secret | `API_SERVER_KEY` ↔ `HERMES_API_KEY` | `/v1` auto-key or `/rpc` token | `bridgeSecret` / `inboundSecret` |
+| **Both at once?** | **No** — one `agentUrl` per bridge | | | |
+
+**Switching Ext Agents:** use **Settings → AI → Ext Agent** (sidecar start/stop is automatic for Hermes / OpenHuman).
+
+**Switching to OpenClaw webhook:** change `bridge-config.json` `agentUrl` (and `secret` if used). Leave unused products installed but unused.
+
+---
+
+## How to use HomeClaw
+
+See **[Ext_Agent_guide.md § HomeClaw](./Ext_Agent_guide.md#homeclaw)** for the full checklist.
+
+Short version:
+
+1. EnvoyMesh: Ext Agent = **HomeClaw**, bridge enabled → `agentUrl` `http://127.0.0.1:8010/message`.
+2. Start HomeClaw (built-in channel; **no** `channels.run envoymesh`).
+3. Align `ENVOYMESH_BRIDGE_URL` with the EnvoyMesh bridge port (`3031` / `4031`).
+4. Bonded peer → Ext Agent contact → reply via `/bridge/send`.
+
+Default sample: `apps/node/data/default/bridge-config.json` → `~/.envoymesh/<profile>/bridge-config.json`.
+
+---
+
+## How to use Hermes
+
+See **[Ext_Agent_guide.md § Hermes](./Ext_Agent_guide.md#hermes)**.
+
+Short version:
+
+1. Hermes `.env`: `API_SERVER_ENABLED=true` + `API_SERVER_KEY=…`
+2. EnvoyMesh node: `HERMES_API_KEY=<same secret>` (or `HERMES_ENV_FILE` / `HERMES_HOME`)
+3. `hermes gateway run` → `:8642` healthy
+4. Ext Agent = **Hermes** → sidecar `:8020` auto-starts
+
+---
+
+## How to use OpenHuman
+
+See **[Ext_Agent_guide.md § OpenHuman](./Ext_Agent_guide.md#openhuman)**.
+
+Short version:
+
+1. Keep **OpenHuman.app** on `:7788` (Path A) **or** quit the app and run CLI core (Path B).
+2. Ext Agent = **OpenHuman** → sidecar `:8021` auto-starts.
+3. Path A uses `/v1` with **auto-provisioned** API key (no manual `export` by default).
+   Set `OPENHUMAN_AUTO_PROVISION_API_KEY=0` if you do not want EnvoyMesh writing into OpenHuman’s credential store.
+4. If first `/v1` call 401s after auto-provision, restart OpenHuman.app once.
+
+---
+
+## How to use OpenClaw
+
+OpenClaw uses the Gateway **webhook** path (not the Ext Agent Hermes/OpenHuman sidecars).
+
+### What changed in EnvoyMesh (OpenClaw support)
+
+#### Unchanged on purpose
 
 | Item | Notes |
 |------|--------|
-| `apps/node/src/bridge/` | Same module for both agents |
+| `apps/node/src/bridge/` | Same module for all agents |
 | `apps/node/data/default/bridge-config.json` | Default `agentUrl` → HomeClaw `http://localhost:8010/message` |
 | HomeClaw `channels/envoymesh` | Lives in the **HomeClaw** repo; not modified in EnvoyMesh |
 
-### OpenClaw-specific additions
+#### OpenClaw-specific additions
 
 | Area | Purpose |
 |------|---------|
@@ -112,7 +199,7 @@ shape with a `correlationId` matching the original ask. The bridge returns:
 | Docs | [openclaw-extension.md](./openclaw-extension.md), [openclaw-agent-bridge-adr.md](./openclaw-agent-bridge-adr.md), [openclaw-bridge-e2e-checklist.md](./openclaw-bridge-e2e-checklist.md) |
 | Tests & smoke | `apps/node/test/bridge-openclaw-agent-mock.test.ts`, `apps/node/src/openclaw-bridge-smoke/` |
 
-### OpenClaw plugin capabilities
+#### OpenClaw plugin capabilities
 
 | Phase | Feature |
 |-------|---------|
@@ -123,16 +210,12 @@ shape with a `correlationId` matching the original ask. The bridge returns:
 
 **CI-only:** `ENVOYMESH_SMOKE_ECHO=1` echoes webhook → `/bridge/send` without the LLM (live smoke). Not for production.
 
-### CI smokes
+#### CI smokes
 
 | Script | CI | What it proves |
 |--------|-----|----------------|
 | `npm run smoke:openclaw-bridge` | `ci-smoke-local` (PR) | Mock webhook + real bridge round-trip |
 | `npm run smoke:openclaw-bridge:live` | `ci-smoke-openclaw-live` (nightly) | Built OpenClaw Gateway + extension + bridge |
-
----
-
-## How to use OpenClaw
 
 ### 1. Install the plugin
 
@@ -183,7 +266,7 @@ Merge fragment: `OpenClawExtension/examples/openclaw-channels.envoymesh.json5`.
 
 ### 3. Configure EnvoyMesh
 
-Do **not** overwrite a working HomeClaw `bridge-config.json` unless switching:
+Do **not** overwrite a working HomeClaw / Ext Agent `bridge-config.json` unless switching:
 
 ```bash
 cp apps/node/data/default/bridge-config.openclaw.example.json \
@@ -236,67 +319,6 @@ node scripts/run-vitest.mjs run extensions/envoymesh/src
 
 Manual: [openclaw-bridge-e2e-checklist.md](./openclaw-bridge-e2e-checklist.md).
 
----
-
-## How to use HomeClaw
-
-HomeClaw integration predates OpenClaw and remains the **default** in EnvoyMesh sample config.
-
-### 1. HomeClaw side (HomeClaw repo)
-
-- The EnvoyMesh channel is **built into HomeClaw** (`HomeClaw/channels/envoymesh/`).
-  Starting HomeClaw brings up `:8010/message` — no separate `channels.run` process.
-- HomeClaw exposes the inbound endpoint the bridge calls (typically
-  **`http://localhost:8010/message`**).
-- The channel posts replies to EnvoyMesh **`/bridge/send`** after Core responds
-  (same async pattern as OpenClaw).
-
-Configure allowlists, secrets, and channel options in **HomeClaw** config — not in `OpenClawExtension/`.
-
-### 2. EnvoyMesh side
-
-Use the default bridge config (or equivalent in your profile):
-
-```json
-{
-  "enabled": true,
-  "agentUrl": "http://localhost:8010/message",
-  "listenPort": 3031,
-  "agentName": "My Agent"
-}
-```
-
-Sample path: `apps/node/data/default/bridge-config.json` → `~/.envoymesh/<profile>/bridge-config.json`.
-
-Start **HomeClaw** and the **EnvoyMesh node** with the bridge enabled (HomeClaw selected).
-
-### 3. Chat on the mesh
-
-1. Bonded peer → `chat.message` → bridge agent peer id.
-2. Bridge → `POST` HomeClaw `agentUrl`.
-3. HomeClaw → `POST /bridge/send` with `to` = sender peer id.
-4. Mesh peer receives the agent reply.
-
-### 4. Verify HomeClaw
-
-- HomeClaw + bridge round-trip per HomeClaw repo docs.
-- EnvoyMesh: `agentUrl` is `8010/message`, bridge listens on **3031**, one bonded peer chat works.
-
----
-
-## HomeClaw vs OpenClaw (operator cheat sheet)
-
-| | **HomeClaw** | **OpenClaw** |
-|---|--------------|--------------|
-| **Channel code** | `HomeClaw/channels/envoymesh/` | `EnvoyMesh/OpenClawExtension/` → `openclaw/extensions/envoymesh/` |
-| **Typical `agentUrl`** | `http://localhost:8010/message` | `http://127.0.0.1:<gateway-port>/webhook/envoymesh` |
-| **Agent runtime** | FastAPI → Core `/inbound` | Gateway webhook → `channel.inbound.run` |
-| **EnvoyMesh example config** | `bridge-config.json` (default) | `bridge-config.openclaw.example.json` |
-| **Mesh tools from agent** | HomeClaw integration | `envoymesh_*` OpenClaw tools → bridge |
-| **Both at once?** | **No** — one `agentUrl` per bridge |
-
-**Switching agents:** change only `bridge-config.json` `agentUrl` (and `secret` if used). Leave the other product installed but unused.
-
 ### Configuration mapping (OpenClaw)
 
 | EnvoyMesh `bridge-config.json` | OpenClaw `channels.envoymesh` |
@@ -311,14 +333,17 @@ Start **HomeClaw** and the **EnvoyMesh node** with the bridge enabled (HomeClaw 
 
 | Symptom | What to check |
 |---------|----------------|
-| **401 on webhook** | `inboundSecret` vs bridge `Authorization: Bearer` |
-| **401 on `/bridge/send`** | `bridgeSecret` vs `bridge-config.json` `secret` |
+| **Ext Agent: no reply (HomeClaw / Hermes / OpenHuman)** | See [Ext_Agent_guide.md § Troubleshooting](./Ext_Agent_guide.md#troubleshooting-all-agents) |
+| **401 on webhook** (OpenClaw) | `inboundSecret` vs bridge `Authorization: Bearer` |
+| **401 on `/bridge/send`** | `bridgeSecret` vs bridge `secret` |
 | **403 sender not allowed** (OpenClaw) | Add peer `fromOwnerId` to `allowedOwnerIds` |
-| **410 on `/bridge/send` (sync-reply path)** | `mode: "unknown-correlation"` — the node restarted between the ask and the reply. The OpenClaw side can re-issue the ask with a fresh `correlationId`. |
+| **410 on `/bridge/send` (sync-reply path)** | `mode: "unknown-correlation"` — node restarted between ask and reply; re-issue ask with a fresh `correlationId` |
 | **Reply routing error** | Inbound must include `from`; `to` must be peer id `envoy_…` |
 | **Duplicate messages** | Do not return chat text in webhook HTTP body; use `/bridge/send` only |
 | **No EnvoyMesh route** (OpenClaw) | Restart Gateway; `channels.envoymesh.enabled` |
-| **Wrong agent** | Confirm single `agentUrl`; not mixing HomeClaw and OpenClaw |
+| **Wrong agent** | Confirm single `agentUrl`; Ext Agent UI selection matches the process you started |
+| **Hermes / OpenHuman sidecar not listening** | Bridge enabled + correct Ext Agent selected; check `[ext-agent:…] listening` logs |
+| **OpenHuman `/rpc` 401 with desktop app** | Expected — use `/v1` auto-key (see Ext Agent guide) |
 
 ---
 
@@ -327,6 +352,8 @@ Start **HomeClaw** and the **EnvoyMesh node** with the bridge enabled (HomeClaw 
 | Resource | Location |
 |----------|----------|
 | Bridge implementation | `apps/node/src/bridge/` |
+| Ext Agent sidecars (Hermes / OpenHuman) | `apps/node/src/ext-agent-adapter/` |
+| Ext Agent operator guide | [Ext_Agent_guide.md](./Ext_Agent_guide.md) |
 | OpenClaw plugin source | `OpenClawExtension/` |
 | HomeClaw channel | `HomeClaw/channels/envoymesh/` (separate repo) |
 | ADR | [openclaw-agent-bridge-adr.md](./openclaw-agent-bridge-adr.md) |

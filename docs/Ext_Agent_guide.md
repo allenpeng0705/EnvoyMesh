@@ -12,15 +12,29 @@ You → Ext Agent chat → home Node bridge
                     Reply in chat
 ```
 
-| Agent | Who owns `/message`? | Default `agentUrl` |
-|-------|----------------------|--------------------|
-| **HomeClaw** | HomeClaw built-in channel (starts with HomeClaw) | `http://127.0.0.1:8010/message` |
-| **Hermes** | EnvoyMesh **auto-started** TypeScript sidecar | `http://127.0.0.1:8020/message` |
-| **OpenHuman** | EnvoyMesh **auto-started** TypeScript sidecar | `http://127.0.0.1:8021/message` |
+| Agent | Who owns `/message`? | Default `agentUrl` | Backend the sidecar / channel talks to |
+|-------|----------------------|--------------------|----------------------------------------|
+| **HomeClaw** | HomeClaw built-in channel | `http://127.0.0.1:8010/message` | HomeClaw Core (no EnvoyMesh sidecar) |
+| **Hermes** | EnvoyMesh **auto-started** TypeScript sidecar | `http://127.0.0.1:8020/message` | Hermes OpenAI API `:8642` |
+| **OpenHuman** | EnvoyMesh **auto-started** TypeScript sidecar | `http://127.0.0.1:8021/message` | OpenHuman core `:7788` (`/v1` or `/rpc`) |
 
 Select the agent in **Settings → AI → Ext Agent**, enable the bridge, and save.
 No full node restart is required for switching agents (port / secret / enable
 still rebind the bridge HTTP listener in-process).
+
+**Not covered here:** built-in **EnvoyAI / OpenClaw** (`/webhook/envoymesh`) — see
+[agent_bridge_guide.md](./agent_bridge_guide.md) and [openclaw-extension.md](./openclaw-extension.md).
+
+---
+
+## Quick comparison
+
+| | HomeClaw | Hermes | OpenHuman |
+|---|----------|--------|-----------|
+| Start with product | Start HomeClaw | `hermes gateway run` | OpenHuman.app **or** CLI core |
+| EnvoyMesh sidecar | No | Yes `:8020` | Yes `:8021` |
+| Auth | Optional bridge secret | Hermes `API_SERVER_KEY` ↔ `HERMES_API_KEY` | `/v1` API key (auto) or `/rpc` `core.token` |
+| Typical failure | HomeClaw down / wrong `ENVOYMESH_BRIDGE_URL` | API not enabled / key mismatch | Desktop `/rpc` 401 → use `/v1` auto-key |
 
 ---
 
@@ -31,10 +45,12 @@ still rebind the bridge HTTP listener in-process).
 3. **Settings → AI → Ext Agent**:
    - Enable Ext Agent / bridge
    - Choose HomeClaw, Hermes, or OpenHuman
-   - Listen port usually `3031` (or your offset port)
+   - Listen port usually `3031` (or your offset port, e.g. `4031`)
 4. Chat with the **Ext Agent** contact (`envoy_agent_…`).
 
-Wire contract (inbound to agent):
+### Wire contract
+
+Inbound to agent:
 
 ```json
 POST <agentUrl>
@@ -47,12 +63,23 @@ POST <agentUrl>
 }
 ```
 
-Reply (async):
+Reply (async — do **not** put the chat reply in the `/message` HTTP body):
 
 ```json
 POST http://127.0.0.1:<bridgePort>/bridge/send
 { "to": "<from peer id>", "text": "…" }
 ```
+
+`to` must be the mesh **peer id** from inbound `from` (`envoy_…`), not `envoy:owner:…`.
+
+Optional: `Authorization: Bearer <secret>` when the bridge config sets `secret`.
+
+### Shared EnvoyMesh env
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `ENVOYMESH_BRIDGE_PORT` | `3031` (+ offset) | Bridge HTTP listen port (`/bridge/send`) |
+| Bridge `secret` (config) | unset | Shared Bearer for `/message` and `/bridge/send` |
 
 ---
 
@@ -69,6 +96,13 @@ Ext Agent chat
   → POST http://127.0.0.1:<bridgePort>/bridge/send
   → reply in chat
 ```
+
+### Ports
+
+| Process | Port | Role |
+|---------|------|------|
+| EnvoyMesh bridge | `3031` (or `4031` with offset) | `POST /bridge/send` replies |
+| HomeClaw EnvoyMesh channel | `8010` | Inbound `/message` |
 
 ### Run
 
@@ -89,9 +123,13 @@ export ENVOYMESH_PORT=8010
 Channel options may also live in HomeClaw config (e.g. `channels/envoymesh`
 `port`, `bridge_url`, `user_id`) — see the HomeClaw repo.
 
-### Verify
+### EnvoyMesh settings
 
-With HomeClaw running:
+- Active Ext Agent: **HomeClaw**
+- URL: `http://127.0.0.1:8010/message`
+- Bridge listen port: `3031` (or your offset)
+
+### Verify
 
 ```bash
 curl -sS http://127.0.0.1:8010/status
@@ -100,10 +138,12 @@ curl -sS -X POST http://127.0.0.1:8010/message \
   -d '{"from":"12D3Test","fromOwnerId":"envoy:owner:test","fromName":"Test","text":"ping","messageId":"1"}'
 ```
 
-### EnvoyMesh settings
+### Minimal checklist
 
-- Active Ext Agent: **HomeClaw**
-- URL: `http://127.0.0.1:8010/message`
+- [ ] EnvoyMesh Ext Agent = HomeClaw, bridge enabled
+- [ ] HomeClaw running; `curl http://127.0.0.1:8010/status` works
+- [ ] `ENVOYMESH_BRIDGE_URL` matches EnvoyMesh bridge port (`3031` / `4031`)
+- [ ] Chat Ext Agent contact
 
 ---
 
@@ -220,14 +260,6 @@ If discovery misses your install (common with custom/`HERMES_HOME` split-brain),
 set `HERMES_API_KEY` or `HERMES_ENV_FILE` explicitly. Wrong/missing key → Hermes
 `401` after the API is listening.
 
-| EnvoyMesh env | Meaning |
-|---------------|---------|
-| `HERMES_API_KEY` | Bearer key (same as Hermes `API_SERVER_KEY`) |
-| `API_SERVER_KEY` | Alias for the above |
-| `HERMES_ENV_FILE` | Absolute path to Hermes’s `.env` (skip guessing) |
-| `HERMES_HOME` | Hermes data dir; sidecar tries `$HERMES_HOME/.env` |
-| `HERMES_API_BASE` | Override API URL (default `http://127.0.0.1:8642`) |
-
 ### `GATEWAY_ALLOW_ALL_USERS` — do you need it?
 
 **No, not for EnvoyMesh.**
@@ -252,10 +284,10 @@ WARNING gateway.run: No messaging platforms enabled.
 
 | Warning / error | Cause | For EnvoyMesh |
 |---------|--------|----------------|
-| No user allowlists | No `*_ALLOWED_USERS` / no `GATEWAY_ALLOW_ALL_USERS` | **Safe to ignore** if you only use the local API. Set allowlists only if you enable Telegram/etc. |
+| No user allowlists | No `*_ALLOWED_USERS` / no `GATEWAY_ALLOW_ALL_USERS` | **Safe to ignore** if you only use the local API |
 | No messaging platforms enabled | `API_SERVER_ENABLED` is not `true` | **Fix**: set `API_SERVER_ENABLED=true`, restart gateway |
-| `API_SERVER_KEY is required… including loopback` | Key missing in Hermes `.env` | **Fix**: set `API_SERVER_KEY=…` in the file from `hermes config env-path`, restart gateway |
-| `api_server failed to connect` / queued for retry | API server did not start (usually missing key) | Fix key / enabled flags, then confirm `curl :8642/v1/models` with Bearer auth |
+| `API_SERVER_KEY is required… including loopback` | Key missing in Hermes `.env` | **Fix**: set `API_SERVER_KEY=…` (`hermes config env-path`), restart gateway |
+| `api_server failed to connect` / queued for retry | API server did not start (usually missing key) | Fix key / enabled flags; confirm `curl :8642/v1/models` with Bearer |
 | Ext Agent: `fetch failed` | Nothing listening on `:8642` | Same as above — API server never started |
 | Ext Agent: `401` / Invalid API key | Sidecar key ≠ Hermes key | Set `HERMES_API_KEY` on the node (or `HERMES_ENV_FILE` / `HERMES_HOME`) |
 
@@ -263,7 +295,7 @@ After a correct setup, the “No messaging platforms enabled” warning should d
 
 ### EnvoyMesh side (Hermes)
 
-1. Restart / run the home node with the TypeScript sidecar code.
+1. Run the home node with the TypeScript sidecar code.
 2. **Settings → AI → Ext Agent** → select **Hermes**, enable bridge, save.
 3. Node log should show:
 
@@ -325,8 +357,25 @@ local OpenHuman core on `:7788`.
 
 **Important:** OpenHuman.app’s per-launch `/rpc` bearer is **in-memory only**.
 EnvoyMesh cannot discover it. With the desktop app, use the **stable `/v1`
-OpenAI-compatible API key** (below). Use `/rpc` + `core.token` only with a CLI
-core.
+OpenAI-compatible API** (Path A, default). Use `/rpc` + `core.token` only with a
+CLI / headless core (Path B).
+
+```
+Ext Agent chat
+  → EnvoyMesh bridge
+  → POST http://127.0.0.1:8021/message     (EnvoyMesh sidecar, auto-started)
+  → OpenHuman :7788  (/v1/chat/completions  or  /rpc agent.chat)
+  → POST http://127.0.0.1:<bridgePort>/bridge/send
+  → reply in chat
+```
+
+### Ports
+
+| Process | Port | Role |
+|---------|------|------|
+| EnvoyMesh bridge | `3031` (or `4031` with offset) | `POST /bridge/send` replies |
+| EnvoyMesh OpenHuman sidecar | `8021` | EnvoyMesh `/message` contract |
+| OpenHuman core | `7788` | `/health`, `/v1/*`, `/rpc` |
 
 ### Path A — OpenHuman.app (automatic key; recommended)
 
@@ -341,7 +390,12 @@ EnvoyMesh **auto-loads** a `/v1` API key (no shell `export` needed), in order:
 5. **Auto-provision** (default): generate a key, write it into OpenHuman’s
    credential store + EnvoyMesh cache
 
-Disable auto-provision with `OPENHUMAN_AUTO_PROVISION_API_KEY=0`.
+#### What `OPENHUMAN_AUTO_PROVISION_API_KEY` means
+
+| Value | Behavior |
+|-------|----------|
+| unset / `1` / `true` (default) | If no key is found, EnvoyMesh **creates** one and writes it into OpenHuman’s local credentials so `/v1` works without manual paste |
+| `0` / `false` / `off` | EnvoyMesh **only reads** an existing key; it will **not** modify OpenHuman’s store. You must supply a key yourself |
 
 Then select **OpenHuman** + enable bridge. Sidecar log should show
 `OpenHuman /v1 http://127.0.0.1:7788` (and may log
@@ -356,6 +410,7 @@ Optional overrides:
 export OPENHUMAN_API_KEY_FILE="$HOME/.envoymesh/openhuman.api-key"
 export OPENHUMAN_API_MODEL=openhuman
 export OPENHUMAN_TRANSPORT=v1
+# export OPENHUMAN_AUTO_PROVISION_API_KEY=0   # opt out of writing into OpenHuman
 ```
 
 ### Path B — CLI / headless core (`/rpc`)
@@ -384,7 +439,7 @@ keychain/`dev-keychain.json` → auto-provision (unless
 
 **Transport:** `OPENHUMAN_TRANSPORT=rpc|v1`, or auto (RPC if bearer found, else V1)
 
-Workspace / data roots probed (platform-aware):
+### Workspace / data roots (platform-aware)
 
 | Platform | Typical roots |
 |----------|----------------|
@@ -395,66 +450,72 @@ Workspace / data roots probed (platform-aware):
 
 Home is resolved via `os.homedir()` plus `HOME` / `USERPROFILE`.
 
-Optional host/port:
+### EnvoyMesh env (OpenHuman)
+
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `OPENHUMAN_CORE_RPC_URL` | `http://127.0.0.1:7788/rpc` | Explicit RPC URL (also derives HTTP base for `/v1` / `/health`) |
+| `OPENHUMAN_CORE_HOST` / `OPENHUMAN_CORE_PORT` | `127.0.0.1` / `7788` | Used when RPC URL unset |
+| `OPENHUMAN_TRANSPORT` | auto | Force `v1` or `rpc` |
+| `OPENHUMAN_API_KEY` | unset | Stable `/v1` Bearer (usually auto) |
+| `OPENHUMAN_API_KEY_FILE` | unset | Raw key file override |
+| `OPENHUMAN_AUTO_PROVISION_API_KEY` | `1` | `0` = never write into OpenHuman’s store |
+| `OPENHUMAN_API_MODEL` | `openhuman` | Model id for `/v1/chat/completions` |
+| `OPENHUMAN_RPC_TOKEN` / `OPENHUMAN_CORE_TOKEN` | unset | `/rpc` bearer (CLI path) |
+| `OPENHUMAN_TOKEN_FILE` | unset | Raw `/rpc` token file |
+| `OPENHUMAN_ENV_FILE` / `OPENHUMAN_WORKSPACE` / `OPENHUMAN_HOME` | unset | Discovery roots |
+| `OPENHUMAN_APP_ENV` | unset | `staging` probes `~/.openhuman-staging` first |
+| `ENVOYMESH_OPENHUMAN_PORT` | `8021` | Sidecar `/message` listen port |
+
+### Verify
 
 ```bash
-export OPENHUMAN_CORE_PORT=7788
-export OPENHUMAN_CORE_HOST=127.0.0.1
-```
-
-Health check (public, no token):
-
-```bash
+# Health (public)
 curl -sS http://127.0.0.1:7788/health
-```
 
-### EnvoyMesh side
-
-1. Enable the OpenHuman preset if needed (`extAgents` / Settings).
-2. Select **OpenHuman**, enable bridge.
-3. Node log: `[ext-agent:openhuman] listening http://127.0.0.1:8021/message → …`
-4. Env overrides:
-   - `OPENHUMAN_CORE_RPC_URL` (default `http://127.0.0.1:7788/rpc`)
-   - `OPENHUMAN_API_KEY` / `OPENHUMAN_API_KEY_FILE` (desktop `/v1`; usually auto)
-   - `OPENHUMAN_AUTO_PROVISION_API_KEY=0` to disable writing into OpenHuman’s store
-   - `OPENHUMAN_RPC_TOKEN` / `OPENHUMAN_CORE_TOKEN` / `OPENHUMAN_TOKEN_FILE` (CLI `/rpc`)
-   - `OPENHUMAN_ENV_FILE` / `OPENHUMAN_WORKSPACE` / `OPENHUMAN_HOME`
-   - `OPENHUMAN_TRANSPORT=v1|rpc`
-   - `OPENHUMAN_APP_ENV=staging` (probes `~/.openhuman-staging` first)
-   - `ENVOYMESH_OPENHUMAN_PORT` (default `8021`)
-
-### Verify sidecar
-
-```bash
+# Sidecar (after OpenHuman selected + bridge on)
 curl -sS http://127.0.0.1:8021/status
+
+# /v1 (after auto-key or OPENHUMAN_API_KEY)
+KEY="$(cat ~/.envoymesh/openhuman.api-key 2>/dev/null)"
+curl -sS http://127.0.0.1:7788/v1/models \
+  -H "Authorization: Bearer $KEY"
 ```
+
+### Minimal checklist
+
+- [ ] OpenHuman.app running **or** CLI core on `:7788`
+- [ ] EnvoyMesh Ext Agent = OpenHuman, bridge enabled
+- [ ] Log: `[ext-agent:openhuman] listening …:8021/message` (label shows `/v1` or `RPC`)
+- [ ] If 401 after first auto-provision: restart OpenHuman.app once
+- [ ] Chat Ext Agent contact
 
 ---
 
-## Troubleshooting
+## Troubleshooting (all agents)
 
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
+| Delivered, no reply (HomeClaw) | HomeClaw not running / wrong bridge URL | Start HomeClaw; confirm `:8010/status`; match `ENVOYMESH_BRIDGE_URL` to bridge port |
 | Delivered, no reply (Hermes) | Hermes API down | `API_SERVER_ENABLED=true` + `API_SERVER_KEY` + `hermes gateway run` |
 | Hermes: `API_SERVER_KEY is required… including loopback` | Key missing | Set `API_SERVER_KEY` in Hermes `.env` (`hermes config env-path`), restart gateway |
 | Hermes: `api_server failed to connect` | API server did not start | Fix key/enabled; confirm `:8642` listens |
-| Ext Agent: `fetch failed` | Nothing on `:8642` | Same as above |
-| Ext Agent: `401` / Invalid API key | Key mismatch | Set `HERMES_API_KEY` on node = Hermes `API_SERVER_KEY` (or `HERMES_ENV_FILE`) |
+| Ext Agent: `fetch failed` (Hermes) | Nothing on `:8642` | Same as above |
+| Ext Agent: `401` / Invalid API key (Hermes) | Key mismatch | Set `HERMES_API_KEY` on node = Hermes `API_SERVER_KEY` (or `HERMES_ENV_FILE`) |
 | Hermes: `No messaging platforms enabled` | API server not enabled | Set `API_SERVER_ENABLED=true` in Hermes `.env`, restart gateway |
-| Hermes: `No user allowlists configured` | No Telegram/etc. allowlists | **Ignore for EnvoyMesh**; only needed for messaging bots. Optional: `GATEWAY_ALLOW_ALL_USERS=true` |
-| Delivered, no reply (HomeClaw) | HomeClaw not running / wrong bridge URL | Start HomeClaw; confirm `:8010/status`; match `ENVOYMESH_BRIDGE_URL` to bridge port |
-| Delivered, no reply (OpenHuman) | Core not running / auth | OpenHuman.app + `OPENHUMAN_API_KEY`, or CLI + `core.token` |
-| OpenHuman: `401` / missing bearer | Desktop in-memory RPC token / stale creds | Prefer `/v1` auto-key; restart OpenHuman.app after auto-provision; or set `OPENHUMAN_API_KEY` |
-| `bridge unreachable` in sidecar log | Wrong bridge port | Match `ENVOYMESH_BRIDGE_PORT` (e.g. 4031) |
+| Hermes: `No user allowlists configured` | No Telegram/etc. allowlists | **Ignore for EnvoyMesh**; only needed for messaging bots |
+| Delivered, no reply (OpenHuman) | Core not running / auth | OpenHuman.app + `/v1` auto-key, or CLI + `core.token` |
+| OpenHuman: `401` / missing bearer | Desktop in-memory `/rpc` token / stale creds | Prefer `/v1` auto-key; restart OpenHuman.app after auto-provision |
+| `bridge unreachable` in sidecar log | Wrong bridge port | Match `ENVOYMESH_BRIDGE_PORT` (e.g. `4031`) |
 | Sidecar not listening | Bridge off or wrong agent | Enable bridge; select Hermes/OpenHuman |
-| Port in use | Another process on 8020/8021 | Stop old adapter / set `ENVOYMESH_*_PORT` |
+| Port in use | Another process on `8010`/`8020`/`8021` | Stop old process / set `ENVOYMESH_*_PORT` |
 | Hermes API works but sidecar errors | Node not restarted / wrong `HERMES_API_BASE` | Restart home node; check env |
 
 Node log markers:
 
 - `[sendChat] self-send … routing via bridge handler`
-- `[bridge] forwardToAgent: POST http://127.0.0.1:8020/message …`
-- `[ext-agent:hermes] reply sent to …`
+- `[bridge] forwardToAgent: POST http://127.0.0.1:8020/message …` (or `8010` / `8021`)
+- `[ext-agent:hermes] reply sent to …` / `[ext-agent:openhuman] …`
 
 ---
 
@@ -466,4 +527,4 @@ Node log markers:
   `apps/node/src/ext-agent-adapter/`, started/stopped when the Ext Agent selection
   or bridge enablement changes.
 - Built-in **EnvoyAI / OpenClaw** is separate (`/webhook/envoymesh`); it is not
-  an Ext Agent preset.
+  an Ext Agent preset — see [agent_bridge_guide.md](./agent_bridge_guide.md).

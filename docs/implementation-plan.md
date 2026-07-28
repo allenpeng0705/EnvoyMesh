@@ -84,6 +84,7 @@ Maintenance rule: keep this file as the source of truth for **done / left / next
 - [Phase 46 — Multi-Relay Fleet Coordination](#phase-46--multi-relay-fleet-coordination)
 - [Phase 47 — Team job multi-round iteration (A ∩ B)](#phase-47--team-job-multi-round-iteration-a--b-shipped)
 - [Phase 48 — A2A + MCP Interop Bridges](#phase-48--a2a--mcp-interop-bridges-shipped--48a48d-48d5-deferred)
+- [Phase 49 — Pi as Built-in Local Coding Agent](#phase-49--pi-as-built-in-local-coding-agent-designed)
 
 EnvoyMesh is a TypeScript-first, owner-controlled, peer-to-peer agent network.
 
@@ -6298,10 +6299,107 @@ Closes the production path after 48A–48D protocol/mount work.
 
 ---
 
+## Phase 49 — Pi as Built-in Local Coding Agent **`[~]` designed**
+
+**Goal:** Bundle [Pi](https://github.com/earendil-works/pi) (earendil-works AI coding agent harness, MIT, TypeScript) as EnvoyMesh's **third agent engine** — a built-in default local coding agent that runs filesystem + shell operations on the user's machine, with no mesh access. Complements Built-in OpenClaw (mesh/social) and Remote Ext Agent (HomeClaw/Hermes/OpenHuman). Pi inherits EnvoyMesh's model config by default; user can switch per-session. Pi and OpenClaw can run concurrently.
+
+**Authoritative design:** [pi-integration-design.md](./pi-integration-design.md)
+
+**Design decisions (2026-07-28):**
+
+| Decision | Rationale |
+|---|---|
+| Pi is its own lane, not wired into OpenClaw | Two independent engines; survives OpenClaw upstream churn; no fork-sync tax. Pi doesn't bet on OpenClaw's Pi ancestry. |
+| Pi is local-only — no `mesh.*` tools (Option B) | OpenClaw stays the sole network boundary (`AGENTS.md:213`). If a coding task needs mesh context, the user uses OpenClaw. |
+| Pi is a third `AiEngineMode` engine, not a 4th Ext Agent entry | The `ExtAgentDefinition` slot is shaped for remote HTTP agents; Pi is local (filesystem + shell + terminal). A sibling engine models the difference cleanly. |
+| Model handoff via scoped subprocess env vars | Pi-idiomatic (`$ENV_VAR` interpolation by design); same security property as OpenClaw's config-file approach (no key in CLI args). |
+| Reuse the Phase 30 `TerminalCommandProposal` confirm flow | No new mandate/Bond-Engine machinery for local actions. Pi tool calls map to `riskTier: safe/moderate/destructive`; `autoRunPolicy: always-confirm` default, trust mode opt-in. |
+| Built & packaged as a separate sidecar | Mirrors `fetch-openclaw-sidecar.sh` / `stage-tauri-openclaw-bundle.sh` pattern. Pinned upstream version (no `"latest"`). ~12 MB added. |
+| Pi runs as the human user, no mandate | Local coding tool, not an autonomous mesh agent. No new peer identity, no owner-signed mandate. Audit events tagged `source: "pi"`. |
+
+### 49A — Bundle & Sidecar Staging
+
+- `[ ]` `scripts/fetch-pi-sidecar.sh` — downloads pinned `@earendil-works/pi-coding-agent@0.82.x` (+ 3 transitive deps) into `apps/tauri/src-tauri/resources/pi/`. Mirrors `fetch-openclaw-sidecar.sh`.
+- `[ ]` `scripts/stage-tauri-pi-bundle.sh` — stages Pi CLI + node_modules into the resources tree. Mirrors `stage-tauri-openclaw-bundle.sh`.
+- `[ ]` `apps/tauri/src-tauri/tauri.conf.json` + `tauri.conf.full.json` — add `"resources/pi/**/*"` to the resources array (currently lines 43-46).
+- `[ ]` `apps/tauri/src-tauri/tauri.conf.slim.json` — Pi optional on Windows slim builds (omit resource entry; `piEnabled` defaults `false`). Document in `build-desktop.ps1`.
+- `[ ]` `scripts/verify-tauri-resources.sh` — add Pi presence check (`require_dir_nonempty "$RES/pi"`, `require_file "$RES/pi/dist/cli.js"`).
+
+### 49B — Pi Runtime & Model Handoff
+
+- `[ ]` `apps/node/src/pi-runtime.ts` — `PiRuntime` class: spawn + manage Pi subprocess, readiness check, request/response multiplexing, supervised restart with backoff.
+- `[ ]` `buildPiEnv(config)` — maps `ModelProviderConfig` → scoped subprocess env vars per the design doc §5 table (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY`+`OPENAI_BASE_URL` / `OLLAMA_BASE_URL` / etc.). Never puts the key in CLI args.
+- `[ ]` Per-session model override + restart logic (`restartWithModel(override?)`).
+- `[ ]` Wire `PiRuntime.start()` into NodeServiceImpl startup, gated on `piEnabled`.
+- `[ ]` `packages/api/src/pi-agent.ts` — `PiAgentSession`, `PiEvent`, `PiResponse` types (mirroring `terminal-agent.ts` shape).
+
+### 49C — Pi Chat Panel (lightweight)
+
+- `[ ]` `apps/social/src/components/views/PiChatPanel.tsx` — lightweight panel copying `TerminalAgentBar.tsx`'s pattern (`turns: PiTurn[]`, `busy`, single-RPC-per-submit). Drops AIChatPanel's approval/chain/CRDT/structured-answer machinery.
+- `[ ]` `apps/node/src/node-service-pi.ts` — JSON-RPC handlers (`pi.prompt`, `pi.cancel`, `pi.history`).
+- `[ ]` `packages/api/src/ws-protocol.ts` — Pi RPC methods + events (`pi:event` push).
+- `[ ]` `packages/api/src/node-service.ts` — add Pi methods to `NodeService` interface.
+- `[ ]` New sidebar nav entry for the Pi chat panel.
+- `[ ]` Model picker in the panel (defaults to EnvoyMesh's configured model).
+
+### 49D — Tool Calling + Permission Flow
+
+- `[ ]` `apps/node/src/pi-tool-bridge.ts` — Pi tool calls → `TerminalCommandProposal` with `riskTier` per the design doc §7 mapping (read/ls/grep → `safe`; write/edit/mkdir → `moderate`; bash with destructive patterns → `destructive`).
+- `[ ]` Risk classification reuses `resolveProposalRisk()` from `packages/models/src/terminal-command-proposal.ts:170`.
+- `[ ]` Confirm UI in `PiChatPanel.tsx` — reuses Phase 30 `terminal-proposal-${riskTier}` patterns (risk badge + Run/Edit/Cancel buttons).
+- `[ ]` Server-side enforcement mirrors `terminal-agent-assist.ts:716` (`requiresConfirmation` check → `pi.tool.confirmRequired`).
+- `[ ]` Egress-content scan (`evaluateEgressContent`) before any file write / shell exec.
+- `[ ]` `autoRunPolicy` selector (`off` / `safe-only` / `always-confirm`); default `always-confirm`; trust mode opt-in.
+
+### 49E — Terminal Agent Mode Integration
+
+- `[ ]` `apps/social/src/components/terminals/TerminalAgentBar.tsx` — add "Agent (Pi)" mode alongside the existing EnvoyAI mode (toolbar toggle: `Manual` / `Agent (EnvoyAI)` / `Agent (Pi)`).
+- `[ ]` Route natural-language input to Pi runtime when "Agent (Pi)" is selected.
+- `[ ]` Pi proposals use existing `TerminalCommandProposal` shape unchanged — confirm UI works as-is.
+- `[ ]` Verify existing EnvoyAI terminal mode is unaffected.
+
+### 49F — Settings UI, Config, Audit, i18n
+
+- `[ ]` `apps/social/src/components/views/settings/AgentSettings.tsx` — new "Pi (Local Coding Agent)" block (enable toggle, model picker, auto-run policy, allowed-paths input, terminal-integration toggle).
+- `[ ]` `apps/node/src/node-config-store.ts` — add `piEnabled: boolean` (default `true`) and `piSettings?: { autoRunPolicy, modelOverride?, allowedPaths?, terminalIntegrationEnabled }` to `PersistedNodeConfig`.
+- `[ ]` `packages/api/src/agent-network-mode.ts` — extend `AiEngineMode` to include `"pi-only"`, `"openclaw-pi"`, `"ext-pi"`, `"all"`; update `computeAiEngineMode(bridgeEnabled, openclawEnabled, piEnabled)`.
+- `[ ]` Audit events: `pi.tool.proposed` / `pi.tool.executed` / `pi.tool.denied` / `pi.tool.failed` / `pi.runtime.crashed`, persisted via `createSerialJsonlAppender`. File paths redacted to basenames + hashes; shell command text hashed.
+- `[ ]` i18n strings for all Pi UI surfaces (all locales: en, de, fr, zh, etc.).
+
+### Exit Criteria (Phase 49 overall)
+
+- `[ ]` Pi sidecar bundles into macOS DMG + Windows exe + Linux deb (slim build omits Pi on Windows).
+- `[ ]` `pi --version` works inside the bundled terminal.
+- `[ ]` Pi inherits EnvoyMesh's `modelProviders` config; switching the model in Settings → AI takes effect on next Pi session.
+- `[ ]` Pi chat panel renders prompt/response streams; tool calls surface as confirmable proposals.
+- `[ ]` Destructive Pi tool calls require explicit confirmation; trust mode (`autoRunPolicy: "off"`) is opt-in only.
+- `[ ]` Terminal agent mode works with both EnvoyAI and Pi backends; existing EnvoyAI mode unaffected.
+- `[ ]` Pi has **no** access to `mesh.*` tools, the network layer, or the mesh tool registry (grep-verifiable: no imports from `@envoymesh/models` mesh descriptors, `@envoymesh/bonds`, or `packages/openclaw-runtime`).
+- `[ ]` OpenClaw is unchanged — no edits to `packages/openclaw/`, `packages/openclaw-runtime/`, or the mandate/Bond-Engine schemas.
+- `[ ]` Audit events appear in the JSONL log for every Pi tool call with correct redaction.
+- `[ ]` Unit + integration + E2E tests pass per the design doc §13 testing strategy.
+
+### Risks & Mitigations (Phase 49)
+
+| Risk | Mitigation |
+|---|---|
+| Pi subprocess transport choice (RPC vs SDK vs webhook) | Recommend RPC for process-isolation parity with OpenClaw; defer final decision to Slice 1 spike. |
+| Bundle size on Windows slim builds | Make Pi optional in `tauri.conf.slim.json`; default `piEnabled: false` on slim builds. |
+| Pi version drift / supply chain | Pin to specific `0.82.x` in `fetch-pi-sidecar.sh`; bump deliberately; never `"latest"`. |
+| Pi subprocess crash / hang | Supervised start with exponential backoff restart; `pi.runtime.crashed` audit event. |
+| Concurrent Pi sessions memory pressure | Start per-session (simpler); optimize to shared subprocess in a follow-up if needed. |
+| Pi tool-call frequency floods audit log | Redact aggressively (hashes, not raw content); consider separate `pi-actions.jsonl` if main log grows. |
+| Pi "no permission popups" philosophy unsafe in UI | Default `always-confirm`; trust mode is opt-in only; egress scan blocks secret leakage. |
+
+**Ordering rule:** Pi is local-only and lower-risk than mesh operations, so it slots ahead of any future "Pi + mesh" hybrid in the ordering. OpenClaw remains the sole mesh boundary; Pi never crosses it.
+
+---
+
 ## Changelog (this document)
 
 | Date | Change |
 |------|--------|
+| 2026-07-28 | **Phase 49 — Pi as Built-in Local Coding Agent designed.** New phase adding [Pi](https://github.com/earendil-works/pi) (earendil-works coding agent harness) as a third agent engine alongside Built-in OpenClaw + Remote Ext Agent. Pi is local-only (filesystem + shell, **no `mesh.*` tools** — OpenClaw stays the sole network boundary per `AGENTS.md:213`), inherits EnvoyMesh's model config by default, reuses the Phase 30 `TerminalCommandProposal` permission flow (default `always-confirm`, trust mode opt-in), and ships as a separate ~12 MB sidecar mirroring the OpenClaw bundle pattern. Slices 49A–49F cover bundle/runtime/chat-panel/permissions/terminal/settings. Authoritative design: [pi-integration-design.md](./pi-integration-design.md). |
 | 2026-07-27 | **Tool-call argument firewall (hardened).** `evaluateToolCallFirewall` validates LLM tool args (JSON Schema, recursive hygiene, empty-required reject, URL-decoded path traversal, strip undeclared props, sensitivity ceiling). `requiresApproval` tools are **enqueued** as Inbox `tool_call` items (not blanket-granted on OpenClaw/bridge); approve re-runs with `approvalGranted`. Also gates `LocalToolRegistry.callTool`. Tests: `tool-call-firewall.test.ts` + executeTool / approval-executor coverage. |
 | 2026-07-25 | **Phase 48D.5 production-path review blockers fixed.** Executor: Bonds `evaluatePolicy` gate (`self`/`direct`/`referred`); mandate always home-owner-signed; emit `task.propose` after `task.mandate`; route through `handleDaemonTaskInbound` (runtime guard + journal). Bond deny → A2A `auth-required`. |
 | 2026-07-25 | **Phase 48D.5 remaining gaps closed.** Relay SSE chunk streaming (`http-res-start/chunk/end`); executor default `autoCompleteLocal=false` + config knobs + `a2a-bridge-tasks.json` persistence; home-tunnel HTTP round-trip (`a2a-home-tunnel-http.test.ts`). |
