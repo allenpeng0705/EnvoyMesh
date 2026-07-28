@@ -3,7 +3,11 @@ import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app.dart';
+import 'providers/chat_provider.dart';
 import 'providers/node_provider.dart';
+import 'screens/browser/browser_screen.dart';
+import 'screens/chat/chat_detail_screen.dart';
+import 'services/push_notification_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -36,6 +40,78 @@ class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
         developer.log('[main] loadPairedNodes threw: $e', name: 'EnvoyGo');
       }
     });
+    // Phase 50 — subscribe to push-notification taps for deep-link navigation.
+    // Tapping a chat notification opens the chat thread; a feed notification
+    // opens the Browser; a bond request switches to the Inbox tab.
+    _subscribeToPushTaps();
+  }
+
+  void _subscribeToPushTaps() {
+    final push = PushNotificationService();
+    push.onNotificationTap.listen((raw) {
+      _routeNotificationTap(raw);
+    });
+    // Replay any cold-start tap that arrived before the subscriber attached
+    // (Android: getInitialMessage buffered during _initAndroidFcm).
+    final pending = push.consumePendingInitialTap();
+    if (pending != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _routeNotificationTap(pending);
+      });
+    }
+  }
+
+  /// Map a push-notification payload to the target screen and navigate.
+  void _routeNotificationTap(Map<String, dynamic> raw) {
+    final nav = EnvoyGoApp.navigatorKey.currentState;
+    if (nav == null) return; // navigator not ready yet
+    final hint = PushNotificationService().handleNotificationTap(raw);
+    if (hint == null) return;
+
+    final type = hint['type'];
+    switch (type) {
+      case 'feed_notify':
+        // Feed notification → open Browser at the published URL.
+        final url = hint['url'] as String?;
+        if (url != null && url.isNotEmpty) {
+          nav.push(MaterialPageRoute(
+            builder: (_) => BrowserScreen(initialUrl: url),
+          ));
+        }
+        break;
+      case 'bond_request':
+        // Contact request → switch to the Inbox tab (index 1) so the
+        // user can review and approve. Bond request payloads don't yet
+        // carry a target id for deeper routing.
+        ref.read(chatProvider.notifier).selectTab(1);
+        break;
+      case 'approval':
+        // Approval-queue item → switch to the Inbox tab where approvals live.
+        ref.read(chatProvider.notifier).selectTab(1);
+        break;
+      default:
+        // Chat thread (direct or room). The payload carries senderOwnerId
+        // (for direct chat) or roomId (for group chat). We assemble the
+        // threadId as "<nodeId>:<ownerId>" or "<nodeId>:<roomId>" to match
+        // the existing ChatDetailScreen navigation pattern.
+        final senderOwnerId = hint['senderOwnerId'] as String?;
+        final roomId = hint['roomId'] as String?;
+        if (senderOwnerId == null && roomId == null) return;
+        final nodeId = ref.read(nodeProvider).activeNode?.id;
+        if (nodeId == null) return;
+        // Switch to Chats tab (index 0) so the back stack makes sense.
+        ref.read(chatProvider.notifier).selectTab(0);
+        final threadId = roomId != null ? '$nodeId:$roomId' : '$nodeId:$senderOwnerId';
+        nav.push(MaterialPageRoute(
+          builder: (_) => ChatDetailScreen(
+            threadId: threadId,
+            displayName: senderOwnerId ?? roomId ?? '',
+            contactOwnerId: senderOwnerId,
+            chatRoomId: roomId,
+          ),
+        ));
+        break;
+    }
   }
 
   @override
@@ -58,6 +134,6 @@ class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
 
   @override
   Widget build(BuildContext context) {
-    return const EnvoyGoApp();
+    return EnvoyGoApp();
   }
 }

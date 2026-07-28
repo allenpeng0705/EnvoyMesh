@@ -146,9 +146,31 @@ class PushNotificationService {
         final data = Map<String, dynamic>.from(message.data);
         if (data.isNotEmpty) _tapController.add(data);
       });
+      // Phase 50 — cold-start tap handling. onMessageOpenedApp only fires
+      // for warm taps (app in background). When the user taps a notification
+      // that launched the app from terminated state, the initial message
+      // must be retrieved explicitly. Because the tap subscriber may not
+      // be registered yet at this point (it's set up in main.dart after
+      // the first frame), we buffer it as the "pending initial tap" so the
+      // subscriber can replay it once it attaches.
+      final initial = await messaging.getInitialMessage();
+      if (initial != null && initial.data.isNotEmpty) {
+        _pendingInitialTap = Map<String, dynamic>.from(initial.data);
+      }
     } catch (_) {
       // No google-services.json / Firebase not configured.
     }
+  }
+
+  /// Buffered cold-start tap (Android). The deep-link subscriber in
+  /// main.dart calls [consumePendingInitialTap] after attaching to
+  /// [onNotificationTap] to replay any cold-start tap that arrived
+  /// before the subscriber was ready.
+  Map<String, dynamic>? _pendingInitialTap;
+  Map<String, dynamic>? consumePendingInitialTap() {
+    final tap = _pendingInitialTap;
+    _pendingInitialTap = null;
+    return tap;
   }
 
   Future<void> _registerIfReady() async {
