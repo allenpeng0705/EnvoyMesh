@@ -3,6 +3,7 @@ import type {
   BondRecord,
   BridgeStatus,
   OpenClawStatus,
+  PiStatus,
   PairingPayload,
   ChatMessage,
   ChatAttachment,
@@ -1063,6 +1064,20 @@ import {
   buildOpenClawRuntimeDeps,
   type OpenClawRuntimeDeps,
 } from "./node-service-openclaw-runtime.js";
+import {
+  createPiRuntimeState,
+  buildPiRuntimeDeps,
+  startPiViaRuntime,
+  stopPiViaRuntime,
+  restartPiViaRuntime,
+  ensurePiReadyViaRuntime,
+  askPiViaRuntime,
+  getPiStatusViaRuntime,
+  isPiEnabledViaRuntime,
+  isPiReadyViaRuntime,
+  type PiRuntimeStateMutable,
+  type PiRuntimeDeps,
+} from "./node-service-pi.js";
 import {
   acceptShareViaRuntime,
   buildTransferInboundContext,
@@ -3661,6 +3676,9 @@ class NodeServiceImpl implements NodeService {
   // Phase 29 — OpenClaw Runtime
   private readonly _openClawState = createOpenClawRuntimeState();
 
+  // Phase 49 — Pi Runtime (local coding agent; local-only, no mesh.* tools)
+  private readonly _piState = createPiRuntimeState();
+
   private _bindOpenClawPersistence(): void {
     if (this._profileDir === "/tmp/unknown") {
       return;
@@ -3705,6 +3723,36 @@ class NodeServiceImpl implements NodeService {
 
   async startOpenClaw(): Promise<boolean> {
     return startOpenClawViaRuntime(this._openClawState, this._openClawRuntimeDeps());
+  }
+
+  // --- Phase 49: Pi (built-in local coding agent) ---
+
+  private _piRuntimeDeps(): PiRuntimeDeps {
+    return buildPiRuntimeDeps(this)
+  }
+
+  /** Boot hook (duck-typed from index.ts, mirrors startOpenClaw). */
+  async startPi(): Promise<boolean> {
+    return startPiViaRuntime(this._piState, this._piRuntimeDeps())
+  }
+
+  async stopPi(): Promise<void> {
+    return stopPiViaRuntime(this._piState)
+  }
+
+  async restartPi(): Promise<PiStatus> {
+    await restartPiViaRuntime(this._piState, this._piRuntimeDeps())
+    return this.getPiStatus()
+  }
+
+  async getPiStatus(): Promise<PiStatus> {
+    return getPiStatusViaRuntime(this._piState, this._piRuntimeDeps())
+  }
+
+  /** One-shot prompt — used by the sendToPi JSON-RPC method. */
+  async sendToPi(text: string): Promise<string> {
+    const result = await askPiViaRuntime(this._piState, this._piRuntimeDeps(), text)
+    return result.text
   }
 
   private _resolveOpenClawWorkspaceDir(): string {

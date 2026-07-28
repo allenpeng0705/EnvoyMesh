@@ -92,6 +92,7 @@ export * from "./sync-state.js";
 export * from "./ws-protocol.js";
 export * from "./terminal.js";
 export * from "./terminal-agent.js";
+export * from "./pi-agent.js";
 export * from "./terminal-wire.js";
 export * from "./home-remote.js";
 /** Explicit export: Vite pre-bundle can skip `bondTrustRank` when re-exported only via star from `node-service`. */

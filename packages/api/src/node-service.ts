@@ -100,6 +100,7 @@ import type {
 import type {
   BridgeStatus,
   OpenClawStatus,
+  PiStatus,
   NodeConfig,
   RelayConfig,
   NodeStatus,
@@ -2399,6 +2400,16 @@ export interface NodeService {
    * "Stopped" state without bouncing the whole home node.
    */
   restartOpenClaw(): Promise<OpenClawStatus>;
+
+  // --- Phase 49: Pi (built-in local coding agent) ---
+  // Local-only; no mesh.* tool access. Reuses the existing TerminalCommandProposal
+  // confirm flow for file/bash tool calls (Phase 30). See docs/pi-integration-design.md.
+  /** Returns Pi runtime status (enabled, state, pid, model, lastError). */
+  getPiStatus(): Promise<PiStatus>;
+  /** Stop + start the Pi child process. Returns the new status. */
+  restartPi(): Promise<PiStatus>;
+  /** One-shot prompt — used by the sendToPi JSON-RPC method. Returns the text. */
+  sendToPi(text: string): Promise<string>;
 
   // ClawHub skill marketplace
   getOpenClawPlugins(): Promise<string[]>;

@@ -31,6 +31,21 @@ import type { DeviceProfile, DeviceRevocationReason, DeviceRevocationRecord, Fri
 import type { AgentVisibilityConfig, A2aChatNotificationMode } from "./agent-visibility.js";
 import type { ExtAgentDefinition } from "./ext-agent.js";
 export type { ExtAgentDefinition } from "./ext-agent.js";
+import type { PiSettings } from "./pi-agent.js";
+// Re-export so ws-protocol consumers (e.g. node-service.ts) can import PiStatus
+// from here, matching how OpenClawStatus is co-located in this file.
+export type {
+  PiStatus,
+  PiRuntimeState,
+  PiPromptResult,
+  PiModelOverride,
+  GetPiStatusParams,
+  GetPiStatusResult,
+  RestartPiParams,
+  RestartPiResult,
+  SendToPiParams,
+  SendToPiResult,
+} from "./pi-agent.js";
 
 // ============================================
 // Message Types
@@ -228,6 +243,9 @@ export type RpcMethods =
    | "getBridgeStatus"
    | "getOpenClawStatus"
    | "restartOpenClaw"
+   // Phase 49 — Pi (built-in local coding agent)
+   | "getPiStatus"
+   | "restartPi"
    // ClawHub skills
    | "getOpenClawPlugins"
     | "searchOpenClawPlugins"
@@ -237,6 +255,7 @@ export type RpcMethods =
     | "saveClawhubToken"
     | "saveWebSearchEnabled"
     | "sendToOpenClaw"
+    | "sendToPi"
     | "sendToBridge"
     | "getPairedDiagnostics"
     | "saveSkillApiKeys"
@@ -517,6 +536,14 @@ export interface NodeConfig {
    * gateway is stopped at config-changed time. Default: true (Phase 32, D1C).
    */
   openclawEnabled?: boolean;
+  /**
+   * Phase 49 — whether the built-in Pi local coding agent is enabled.
+   * Default: true on full builds; false on Windows slim builds (where the
+   * Pi sidecar is omitted). Pi is local-only — no mesh.* tool access.
+   */
+  piEnabled?: boolean;
+  /** Phase 49 — Pi agent settings (model override, permission policy, allowlist). */
+  piSettings?: PiSettings;
   /**
    * Phase 33 — max age (in ms) of a cached agent card before the auto-fetcher re-issues a
    * request. Default 24h.
@@ -1450,6 +1477,10 @@ export interface UpdateNodeConfigParams {
   bridgeEnabled?: boolean;
   /** Enable/disable the built-in OpenClaw agent (EnvoyAI). Default: true (Phase 32, D1C). */
   openclawEnabled?: boolean;
+  /** Phase 49 — enable/disable the built-in Pi local coding agent. */
+  piEnabled?: boolean;
+  /** Phase 49 — Pi agent settings (model override, permission policy, allowlist). */
+  piSettings?: PiSettings;
   /** Phase 33 — max age (in ms) of a cached agent card before the auto-fetcher re-issues a request. Default 24h. */
   agentCardAutoFetchMaxAgeMs?: number;
   /** Enable Trust-mode intros (`social.intro.*` gate). Default false. */

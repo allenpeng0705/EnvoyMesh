@@ -3710,6 +3710,26 @@ if (typeof openClawCapable.startOpenClaw === "function") {
   });
 }
 
+// Start the Pi runtime (Phase 49, built-in local coding agent). Same
+// duck-typed pattern as OpenClaw. Pi is local-only; if the sidecar is
+// missing (slim build) or no model is configured, startPi returns false
+// and we log a hint. The Pi chat panel surfaces the runtime state.
+const piCapable = nodeService as unknown as {
+  startPi?: () => Promise<boolean>;
+};
+if (typeof piCapable.startPi === "function") {
+  console.log("[pi] Starting Pi runtime...");
+  void piCapable.startPi().then((started) => {
+    if (started) {
+      console.log("[pi] Built-in local coding agent ready");
+    } else {
+      console.log("[pi] Not started — disabled by config, sidecar missing (slim build), or no model configured");
+    }
+  }).catch((err) => {
+    console.warn("[pi] Init failed:", err instanceof Error ? err.message : String(err));
+  });
+}
+
 // Register built-in bridge agent for OpenClaw sync replies + optional Ext Agent UI.
 // `bridgeAgentLifecycleReady`: gateway auth + agent peer id (Tauri OpenClaw-only OR dev full bridge).
 // `bridgeHttpReady`: Ext Agent bridge toggle / Settings UI only.

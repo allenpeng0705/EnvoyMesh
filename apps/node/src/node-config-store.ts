@@ -16,6 +16,7 @@ import type {
   DiscoveryProfile,
   ExternalPublishConfig,
   ModelProviderConfig,
+  PiSettings,
   RelayConfig,
 } from "@envoymesh/api";
 import type { FriendMatchingPreferencesPayload } from "@envoymesh/protocol";
@@ -166,6 +167,15 @@ export interface PersistedNodeConfig {
   prefetchMaxResults?: number;
   /** Phase 32 — whether the built-in OpenClaw agent (EnvoyAI) is enabled. */
   openclawEnabled?: boolean;
+  /**
+   * Phase 49 — whether the built-in Pi local coding agent is enabled.
+   * Default: true on full builds (macOS/Linux); false on Windows slim
+   * builds where the Pi sidecar is omitted (see tauri.conf.slim.json).
+   * Pi is local-only — it has no access to mesh.* tools.
+   */
+  piEnabled?: boolean;
+  /** Phase 49 — Pi agent settings (model override, permission policy, allowlist). */
+  piSettings?: PiSettings;
   /** Phase 33 — max age of a cached agent card before the auto-fetcher re-issues a request. Default 24h. */
   agentCardAutoFetchMaxAgeMs?: number;
   /**

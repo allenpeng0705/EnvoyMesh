@@ -266,6 +266,7 @@ import type {
   SocialIntroProposal,
   BridgeStatus,
   OpenClawStatus,
+  PiStatus,
   PeerConnectionInfo,
   ListAgentActivityParams,
   AgentActivityRecord,
@@ -4815,6 +4816,46 @@ You are the owner's personal AI assistant on EnvoyMesh.
       }
     }
     return { enabled: false, running: false, url: "" };
+  }
+
+  /**
+   * Phase 49 — Pi (built-in local coding agent) status. Mobile forwards to
+   * the home node when paired; otherwise returns a disabled stub. Pi only
+   * runs on the home node (it needs the local filesystem for coding work).
+   */
+  async getPiStatus(): Promise<PiStatus> {
+    if (this._isHomeRemotePaired() && this._homeRemoteOnline) {
+      try {
+        return await this._homeRemoteCall<PiStatus>("getPiStatus", {});
+      } catch {
+        // fall through to offline default
+      }
+    }
+    return { enabled: false, state: "disabled", modelInherited: true };
+  }
+
+  /** Phase 49 — restart Pi on the home node. No-op when not paired. */
+  async restartPi(): Promise<PiStatus> {
+    if (this._isHomeRemotePaired() && this._homeRemoteOnline) {
+      try {
+        return await this._homeRemoteCall<PiStatus>("restartPi", {});
+      } catch {
+        // fall through to offline default
+      }
+    }
+    return { enabled: false, state: "disabled", modelInherited: true };
+  }
+
+  /** Phase 49 — one-shot prompt to Pi on the home node. Returns empty when offline. */
+  async sendToPi(text: string): Promise<string> {
+    if (this._isHomeRemotePaired() && this._homeRemoteOnline) {
+      try {
+        return await this._homeRemoteCall<string>("sendToPi", { text });
+      } catch {
+        // fall through to offline default
+      }
+    }
+    return "";
   }
 
   async getPairingPayload() {

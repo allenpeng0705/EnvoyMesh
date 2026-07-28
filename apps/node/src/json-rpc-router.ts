@@ -615,6 +615,10 @@ export async function routeRpcMethod(
       return ns.getOpenClawStatus();
     case "restartOpenClaw":
       return ns.restartOpenClaw();
+    case "getPiStatus":
+      return ns.getPiStatus();
+    case "restartPi":
+      return ns.restartPi();
     case "getPairingPayload":
       return ns.getPairingPayload();
     case "createWanJoinInvite":
@@ -856,6 +860,8 @@ export async function routeRpcMethod(
       return ns.saveWebSearchEnabled(Boolean(params.enabled));
     case "sendToOpenClaw":
       return ns.sendToOpenClaw(String(params.text ?? ""));
+    case "sendToPi":
+      return ns.sendToPi(String(params.text ?? ""));
     case "sendToBridge":
       return ns.sendToBridge(String(params.text ?? ""));
     case "getPairedDiagnostics":
