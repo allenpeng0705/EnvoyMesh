@@ -56,9 +56,11 @@ interface ChatSidebarProps {
   onSelectContact: (id: string | null) => void;
   onOpenAssistant?: () => void;
   onOpenDiscover?: () => void;
+  /** Phase 49 — open the Pi chat panel. */
+  onOpenPi?: () => void;
 }
 
-export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant, onOpenDiscover }: ChatSidebarProps) {
+export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant, onOpenDiscover, onOpenPi }: ChatSidebarProps) {
   const t = useT();
   const nodeService = useNodeService();
   const {
@@ -202,7 +204,7 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
     [bonds, threadPreviews],
   );
 
-  const showAiSection = Boolean(onOpenAssistant) || bridgeStatus?.enabled;
+  const showAiSection = Boolean(onOpenAssistant || onOpenPi) || bridgeStatus?.enabled;
 
   useEffect(() => {
     if (!nodeService.isConnected) return;
@@ -256,6 +258,22 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
                   <span className="thread-title">{t("chat.assistant")}</span>
                 </span>
                 <span className="thread-subtitle">{t("chat.assistantSubtitle")}</span>
+              </span>
+            </button>
+          ) : null}
+
+          {onOpenPi ? (
+            <button
+              type="button"
+              className="thread-row thread-row--ai thread-row--pi"
+              onClick={onOpenPi}
+            >
+              <span className="thread-avatar thread-avatar--pi" aria-hidden>π</span>
+              <span className="thread-meta">
+                <span className="thread-title-row">
+                  <span className="thread-title">{t("pi.title", "Pi")}</span>
+                </span>
+                <span className="thread-subtitle">{t("pi.subtitle", "Local coding agent")}</span>
               </span>
             </button>
           ) : null}

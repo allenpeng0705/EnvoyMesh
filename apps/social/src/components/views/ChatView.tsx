@@ -28,6 +28,8 @@ export interface ChatViewProps {
   inboxActivityCount: number;
   onOpenAssistant?: () => void;
   onOpenDiscover?: () => void;
+  /** Phase 49 — open the Pi chat panel. */
+  onOpenPi?: () => void;
 }
 
 export function ChatView({
@@ -38,6 +40,7 @@ export function ChatView({
   inboxActivityCount,
   onOpenAssistant,
   onOpenDiscover,
+  onOpenPi,
 }: ChatViewProps) {
   const t = useT();
   const nodeService = useNodeService();
@@ -178,6 +181,7 @@ export function ChatView({
             onSelectContact={onSelectedContactChange}
             onOpenAssistant={onOpenAssistant}
             onOpenDiscover={onOpenDiscover}
+            onOpenPi={onOpenPi}
           />
           <section className="chat-area">
             {selectedContact ? (

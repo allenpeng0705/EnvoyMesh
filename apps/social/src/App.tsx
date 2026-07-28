@@ -15,6 +15,7 @@ import { ProfileView } from "./components/views/ProfileView.js";
 import { SettingsView, type SettingsTabId } from "./components/views/SettingsView.js";
 import { ContentView, type ContentTab } from "./components/views/ContentView.js";
 import { H2AChannelView } from "./components/views/H2AChannelView.js";
+import { PiChatPanel } from "./components/views/PiChatPanel.js";
 import { ChainsView } from "./components/views/ChainsView.js";
 import { AutoReplyPausedNotifier } from "./components/AutoReplyPausedNotifier.js";
 import { GettingStartedGuide } from "./components/GettingStartedGuide.js";
@@ -36,7 +37,7 @@ import { resolveDevLoopbackWsUrlHeal } from "./lib/discover-local-node.js";
 import { WS_LOOPBACK_URL } from "@envoymesh/api";
 import type { HumanProfile, NodeConfig, NodeStatus } from "@envoymesh/api";
 
-export type ViewName = "chat" | "assistant" | "discover" | "content" | "chains" | "profile" | "settings";
+export type ViewName = "chat" | "assistant" | "pi" | "discover" | "content" | "chains" | "profile" | "settings";
 
 export type ChatPanelMode = "threads" | "inbox" | "terminals";
 
@@ -559,6 +560,7 @@ export function App() {
                 onPanelModeChange={setChatPanelMode}
                 inboxActivityCount={inboxActivityCount}
                 onOpenAssistant={() => navigateTo("assistant")}
+                onOpenPi={() => navigateTo("pi")}
                 onOpenDiscover={() => navigateTo("discover")}
               />
             )}
@@ -577,6 +579,11 @@ export function App() {
                   onOpenChains={() => navigateTo("chains")}
                   onOpenDiscover={() => navigateTo("discover")}
                 />
+              </SwipeBack>
+            )}
+            {currentView === "pi" && (
+              <SwipeBack onSwipeBack={() => navigateTo("chat")}>
+                <PiChatPanel onBackToChats={() => navigateTo("chat")} />
               </SwipeBack>
             )}
             {currentView === "discover" && (

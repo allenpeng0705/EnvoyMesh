@@ -627,6 +627,19 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.restartOpenClaw();
   }
 
+  // Phase 49 — Pi (built-in local coding agent). Mobile proxies to home node.
+  async getPiStatus() {
+    return this._ns.getPiStatus();
+  }
+
+  async restartPi() {
+    return this._ns.restartPi();
+  }
+
+  async sendToPi(text: string) {
+    return this._ns.sendToPi(text);
+  }
+
   async getOpenClawPlugins() { return this._ns.getOpenClawPlugins(); }
   async searchOpenClawPlugins(query: string) { return this._ns.searchOpenClawPlugins(query); }
   async getTrendingOpenClawPlugins() { return this._ns.getTrendingOpenClawPlugins(); }

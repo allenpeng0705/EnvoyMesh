@@ -324,6 +324,13 @@ export interface NodeServiceClient {
   getOpenClawStatus(): Promise<import("@envoymesh/api").OpenClawStatus>;
   /** Force-restart the built-in OpenClaw gateway. */
   restartOpenClaw(): Promise<import("@envoymesh/api").OpenClawStatus>;
+  // Phase 49 — Pi (built-in local coding agent). Local-only; no mesh.* tools.
+  /** Returns Pi runtime status (enabled, state, pid, model, lastError). */
+  getPiStatus(): Promise<import("@envoymesh/api").PiStatus>;
+  /** Stop + start the Pi child process. May take up to ~15s (readiness probe). */
+  restartPi(): Promise<import("@envoymesh/api").PiStatus>;
+  /** One-shot prompt — collects streamed text into a single response. */
+  sendToPi(text: string): Promise<string>;
   getPairingPayload(): Promise<PairingPayload>;
   createWanJoinInvite(
     params?: import("@envoymesh/api").CreateWanJoinInviteParams,
@@ -1177,6 +1184,20 @@ function createWsNodeServiceClient(
       // with a 120s timeout so the button doesn't time out at the default
       // 30s while the gateway is still trying to come up.
       return wsClient.rpc("restartOpenClaw", {}, { timeoutMs: 120_000 }) as Promise<import("@envoymesh/api").OpenClawStatus>;
+    },
+    async getPiStatus() {
+      return wsClient.rpc("getPiStatus") as Promise<import("@envoymesh/api").PiStatus>;
+    },
+    async restartPi() {
+      // Restart = stop + spawn + readiness probe. Budget 30s (longer than
+      // the 15s readiness deadline, shorter than OpenClaw's 120s since Pi
+      // has no port-conflict machinery).
+      return wsClient.rpc("restartPi", {}, { timeoutMs: 30_000 }) as Promise<import("@envoymesh/api").PiStatus>;
+    },
+    async sendToPi(text: string) {
+      // One Pi turn = LLM round-trip + any tool calls. Match the terminal
+      // assist budget (120s) since a coding task can be long-running.
+      return wsClient.rpc("sendToPi", { text }, { timeoutMs: 120_000 }) as Promise<string>;
     },
     async getPairingPayload() { return wsClient.rpc("getPairingPayload"); },
     async createWanJoinInvite(params?: import("@envoymesh/api").CreateWanJoinInviteParams) {
