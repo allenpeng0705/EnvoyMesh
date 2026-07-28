@@ -16,6 +16,10 @@ export interface SyncExtAgentSidecarParams {
 }
 
 const DEFAULT_PORTS: Record<ExtAgentSidecarKind, number> = {
+  // Pi is a built-in local agent; it doesn't actually bind a port (the
+  // adapter routes to the in-process PiRuntime). The 0 placeholder keeps
+  // the Record exhaustive for the sidecar kind enum. See pi-runtime.ts.
+  pi: 0,
   hermes: 8020,
   openhuman: 8021,
 };

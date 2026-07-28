@@ -1079,6 +1079,7 @@ import {
   type PiRuntimeStateMutable,
   type PiRuntimeDeps,
 } from "./node-service-pi.js";
+import { ensurePiTerminalSession } from "./pi-terminal-session.js";
 import {
   acceptShareViaRuntime,
   buildTransferInboundContext,
@@ -3754,6 +3755,58 @@ class NodeServiceImpl implements NodeService {
   async sendToPi(text: string): Promise<string> {
     const result = await askPiViaRuntime(this._piState, this._piRuntimeDeps(), text)
     return result.text
+  }
+
+  /**
+   * Phase 49 (in-flight) — alias for sendToPi used by the Ext Agent sidecar
+   * adapter (apps/node/src/ext-agent-adapter). The adapter routes inbound
+   * Ext Agent chat to the built-in Pi runtime when 'pi' is the active Ext
+   * Agent. Delegates to sendToPi; kept as a distinct method name so the
+   * adapter call site reads cleanly and so a future fork can diverge
+   * (e.g. add session scoping) without touching the JSON-RPC path.
+   */
+  async sendToPiForExtAgent(text: string): Promise<string> {
+    return this.sendToPi(text)
+  }
+
+  /**
+   * Pi interactive TUI for an explicitly chosen project folder.
+   * Separate from the RPC PiRuntime used by Ext Agent chat (lazy-started).
+   * Does not auto-start — callers must pass `projectPath`.
+   */
+  async ensurePiTerminalSession(
+    params?: import("@envoymesh/api").EnsurePiTerminalParams,
+  ): Promise<import("@envoymesh/api").EnsurePiTerminalResult> {
+    const manager = this._terminalManager
+    if (!manager) {
+      return {
+        ok: false,
+        code: "no_manager",
+        reason: "Terminals are not available on this node.",
+      }
+    }
+    return ensurePiTerminalSession(
+      manager,
+      {
+        loadConfig: async () => {
+          const cfg = await this._configStore.load()
+          return cfg ?? null
+        },
+        saveProjectPath: async (absolutePath: string) => {
+          const cfg = await this._configStore.load()
+          if (!cfg) return
+          const prev = cfg.piSettings?.allowedPaths ?? []
+          const next = [
+            absolutePath,
+            ...prev.filter((p) => p !== absolutePath),
+          ].slice(0, 5)
+          await this.updateNodeConfig({
+            piSettings: { ...(cfg.piSettings ?? {}), allowedPaths: next },
+          })
+        },
+      },
+      params ?? {},
+    )
   }
 
   /**

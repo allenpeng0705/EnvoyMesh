@@ -32,6 +32,14 @@ import type {
   KbPluginInfo,
   TerminalAutoRunPolicy,
 } from "@envoymesh/api";
+// Phase 49 (in-flight) — value imports for the Pi provider picker. These are
+// real runtime values (a const array + two functions), so they can't be in
+// the `import type` block above.
+import {
+  PI_NATIVE_PROVIDERS,
+  getPiNativeProvider,
+  piProviderFromEnvoyMode,
+} from "@envoymesh/api";
 import {
   DEFAULT_AI_KNOWLEDGE_BASE,
   DEFAULT_AI_KNOWLEDGE_BASE_MAX_FILE_BYTES,
@@ -1703,7 +1711,7 @@ export function SettingsAITab() {
   // Refetch OpenClaw live status when persisted AI-engine flags change.
   const lastEngineFlagsRef = useRef<string>("");
   useEffect(() => {
-    const key = `${nodeConfig?.bridgeEnabled ?? false}:${nodeConfig?.openclawEnabled ?? true}:${nodeConfig?.activeExtAgentId ?? ""}`;
+    const key = `${nodeConfig?.bridgeEnabled !== false}:${nodeConfig?.openclawEnabled ?? true}:${nodeConfig?.activeExtAgentId ?? ""}`;
     if (lastEngineFlagsRef.current === key) return;
     lastEngineFlagsRef.current = key;
     void refreshOpenClawStatus();
@@ -1802,9 +1810,75 @@ export function SettingsAITab() {
     }
   }, [nodeService, updateNodeConfigPartial, nodeConfig?.piSettings]);
 
+  // Pi-only model override (does not affect OpenClaw / Hermes / OpenHuman).
+  const piOverride = nodeConfig?.piSettings?.modelOverride;
+  const [piUseCustomModel, setPiUseCustomModel] = useState(Boolean(piOverride));
+  const initialPiProvider =
+    piOverride?.provider?.trim() ||
+    piProviderFromEnvoyMode(piOverride?.mode, piOverride?.endpoint);
+  const [piProvider, setPiProvider] = useState(initialPiProvider);
+  const [piModelEndpoint, setPiModelEndpoint] = useState(piOverride?.endpoint ?? "");
+  const [piModelName, setPiModelName] = useState(piOverride?.model ?? "");
+  const [piModelApiKey, setPiModelApiKey] = useState(piOverride?.apiKey ?? "");
+  const [piModelSaveStatus, setPiModelSaveStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  const piModelDirtyRef = useRef(false);
+  const piProviderInfo = useMemo(() => getPiNativeProvider(piProvider), [piProvider]);
+
+  useEffect(() => {
+    if (piModelSaveStatus === "saving" || piModelDirtyRef.current) return;
+    const o = nodeConfig?.piSettings?.modelOverride;
+    setPiUseCustomModel(Boolean(o));
+    setPiProvider(o?.provider?.trim() || piProviderFromEnvoyMode(o?.mode, o?.endpoint));
+    setPiModelEndpoint(o?.endpoint ?? "");
+    setPiModelName(o?.model ?? "");
+    setPiModelApiKey(o?.apiKey ?? "");
+  }, [nodeConfig?.piSettings?.modelOverride, piModelSaveStatus]);
+
+  const handleSavePiModelOverride = useCallback(async () => {
+    setPiModelSaveStatus("saving");
+    try {
+      const nextSettings = { ...(nodeConfig?.piSettings ?? {}) };
+      if (piUseCustomModel) {
+        if (!piModelName.trim() || !piProvider.trim()) {
+          setPiModelSaveStatus("error");
+          return;
+        }
+        nextSettings.modelOverride = {
+          provider: piProvider.trim(),
+          model: piModelName.trim(),
+          ...(piModelEndpoint.trim() ? { endpoint: piModelEndpoint.trim() } : {}),
+          ...(piModelApiKey.trim() ? { apiKey: piModelApiKey.trim() } : {}),
+        };
+      } else {
+        delete nextSettings.modelOverride;
+      }
+      await updateNodeConfigPartial({
+        piSettings: nextSettings,
+      });
+      piModelDirtyRef.current = false;
+      // Restart so Ext Agent RPC + next TUI spawn pick up the model.
+      const s = await nodeService.restartPi();
+      setPiStatus(s);
+      setPiModelSaveStatus("saved");
+      window.setTimeout(() => setPiModelSaveStatus("idle"), 2_000);
+    } catch (e) {
+      console.warn("[SettingsAITab] failed to save Pi model override", e);
+      setPiModelSaveStatus("error");
+    }
+  }, [
+    nodeService,
+    updateNodeConfigPartial,
+    nodeConfig?.piSettings,
+    piUseCustomModel,
+    piProvider,
+    piModelName,
+    piModelEndpoint,
+    piModelApiKey,
+  ]);
+
   const extAgentConfig = useMemo(
     () => ({
-      enabled: nodeConfig?.bridgeEnabled ?? false,
+      enabled: nodeConfig?.bridgeEnabled !== false,
       configured: Boolean(bridgeStatus?.agentPeerId),
       name: bridgeStatus?.agentName ?? "",
       url: bridgeStatus?.agentUrl ?? "",
@@ -1986,10 +2060,164 @@ export function SettingsAITab() {
               </p>
             </div>
 
+            <div className="agent-field agent-field--checkbox">
+              <label className="agent-field-label agent-field-label--inline">
+                <input
+                  type="checkbox"
+                  checked={piUseCustomModel}
+                  disabled={restartingPi || !(nodeConfig?.piEnabled ?? true) || piModelSaveStatus === "saving"}
+                  onChange={(e) => {
+                    piModelDirtyRef.current = true;
+                    setPiUseCustomModel(e.target.checked);
+                  }}
+                />
+                <span>{t("settings.ai.aiEngine.piCustomModel")}</span>
+              </label>
+            </div>
+
+            {piUseCustomModel ? (
+              <>
+                <div className="agent-field">
+                  <label className="agent-field-label">{t("settings.ai.aiEngine.piProvider")}</label>
+                  <select
+                    className="agent-field-input"
+                    value={piProvider}
+                    disabled={restartingPi || piModelSaveStatus === "saving"}
+                    onChange={(e) => {
+                      piModelDirtyRef.current = true;
+                      const next = e.target.value;
+                      setPiProvider(next);
+                      const info = getPiNativeProvider(next);
+                      if (info?.models.length && !info.models.includes(piModelName)) {
+                        setPiModelName(info.models[0] ?? "");
+                      }
+                    }}
+                  >
+                    {PI_NATIVE_PROVIDERS.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="agent-field">
+                  <label className="agent-field-label">{t("settings.ai.model.modelName")}</label>
+                  {piProviderInfo && piProviderInfo.models.length > 0 ? (
+                    <select
+                      className="agent-field-input"
+                      value={
+                        piProviderInfo.models.includes(piModelName)
+                          ? piModelName
+                          : "__custom__"
+                      }
+                      disabled={restartingPi || piModelSaveStatus === "saving"}
+                      onChange={(e) => {
+                        piModelDirtyRef.current = true;
+                        if (e.target.value === "__custom__") {
+                          setPiModelName("");
+                          return;
+                        }
+                        setPiModelName(e.target.value);
+                      }}
+                    >
+                      {piProviderInfo.models.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                      <option value="__custom__">{t("settings.ai.aiEngine.piModelCustomId")}</option>
+                    </select>
+                  ) : null}
+                  {(!piProviderInfo?.models.length ||
+                    !piProviderInfo.models.includes(piModelName)) && (
+                    <input
+                      type="text"
+                      className="agent-field-input"
+                      style={{ marginTop: piProviderInfo?.models.length ? "6px" : undefined }}
+                      value={piModelName}
+                      placeholder={piProviderInfo?.models[0] ?? "model-id"}
+                      disabled={restartingPi || piModelSaveStatus === "saving"}
+                      onChange={(e) => {
+                        piModelDirtyRef.current = true;
+                        setPiModelName(e.target.value);
+                      }}
+                    />
+                  )}
+                </div>
+                {piProviderInfo?.supportsEndpoint ? (
+                  <div className="agent-field">
+                    <label className="agent-field-label">{t("settings.ai.model.endpointUrl")}</label>
+                    <input
+                      type="text"
+                      className="agent-field-input"
+                      value={piModelEndpoint}
+                      placeholder={piProviderInfo.endpointPlaceholder}
+                      disabled={restartingPi || piModelSaveStatus === "saving"}
+                      onChange={(e) => {
+                        piModelDirtyRef.current = true;
+                        setPiModelEndpoint(e.target.value);
+                      }}
+                    />
+                  </div>
+                ) : null}
+                <div className="agent-field">
+                  <label className="agent-field-label">{t("settings.ai.model.apiKey")}</label>
+                  <input
+                    type="password"
+                    className="agent-field-input"
+                    value={piModelApiKey}
+                    autoComplete="off"
+                    placeholder={piProviderInfo?.apiKeyEnv}
+                    disabled={restartingPi || piModelSaveStatus === "saving"}
+                    onChange={(e) => {
+                      piModelDirtyRef.current = true;
+                      setPiModelApiKey(e.target.value);
+                    }}
+                  />
+                </div>
+                <div className="agent-block-actions">
+                  <button
+                    type="button"
+                    className="settings-action-btn"
+                    onClick={() => { void handleSavePiModelOverride(); }}
+                    disabled={restartingPi || piModelSaveStatus === "saving"}
+                  >
+                    {piModelSaveStatus === "saving"
+                      ? t("settings.ai.aiEngine.piModelSaving")
+                      : t("settings.ai.aiEngine.piModelSave")}
+                  </button>
+                  {piModelSaveStatus === "saved" ? (
+                    <span className="settings-hint">{t("settings.ai.aiEngine.piModelSaved")}</span>
+                  ) : null}
+                  {piModelSaveStatus === "error" ? (
+                    <span className="settings-hint pi-error">{t("settings.ai.aiEngine.piModelSaveError")}</span>
+                  ) : null}
+                </div>
+              </>
+            ) : (
+              <div className="agent-block-actions">
+                {Boolean(nodeConfig?.piSettings?.modelOverride) ? (
+                  <button
+                    type="button"
+                    className="settings-action-btn"
+                    onClick={() => { void handleSavePiModelOverride(); }}
+                    disabled={restartingPi || piModelSaveStatus === "saving"}
+                  >
+                    {t("settings.ai.aiEngine.piModelClearOverride")}
+                  </button>
+                ) : null}
+              </div>
+            )}
+
             {piStatus?.modelSpec ? (
               <div className="agent-field agent-field--readonly">
                 <span className="agent-field-label">{t("settings.ai.aiEngine.model")}</span>
-                <span className="agent-field-value">{piStatus.modelSpec}</span>
+                <span className="agent-field-value">
+                  {piStatus.modelSpec}
+                  {piStatus.modelInherited === false
+                    ? ` (${t("settings.ai.aiEngine.piModelOverrideBadge")})`
+                    : ` (${t("settings.ai.aiEngine.piModelInheritedBadge")})`}
+                </span>
               </div>
             ) : null}
           </div>

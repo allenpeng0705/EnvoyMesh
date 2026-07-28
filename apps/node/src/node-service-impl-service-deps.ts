@@ -39,6 +39,7 @@ import {
   recordEnvoyAiHumanOutgoingViaRuntime,
 } from "./node-service-openclaw-runtime.js";
 import { upsertTransferStatusViaRuntime } from "./node-service-transfer-inbound.js";
+import { pushNotificationService } from "./push-notification.js";
 import {
   handleInboundMessageViaRuntime,
   handlePeerDiscoveredViaRuntime,
@@ -634,6 +635,15 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
             tagBondedContactReachability: (remotePeerId) =>
               host._tagBondedContactReachability(remotePeerId),
             isOwnerOnline: () => host.isOwnerOnline(),
+            dispatchChatPushIfOffline: (params) => {
+              // Phase 50 — skip the system push when EnvoyGo has an active
+              // WebSocket (the in-app chat:message event already reached it).
+              // Best-effort; failures never break inbound chat delivery.
+              void host.isOwnerOnline().then((online: boolean) => {
+                if (online) return
+                void pushNotificationService.dispatchChatPush(params).catch(() => {})
+              })
+            },
           },
       requestPeerProfile: {
             requireMesh: () => host._requireMesh() as never,

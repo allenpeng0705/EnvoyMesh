@@ -4858,6 +4858,32 @@ You are the owner's personal AI assistant on EnvoyMesh.
     return "";
   }
 
+  /**
+   * Phase 49 (in-flight) — Pi interactive TUI terminal session. Mobile proxies
+   * to the home node when paired; otherwise returns the not-yet-implemented
+   * stub. Pi terminals only run on the home (they need a real PTY + the
+   * bundled pi sidecar).
+   */
+  async ensurePiTerminalSession(
+    params?: import("@envoymesh/api").EnsurePiTerminalParams,
+  ): Promise<import("@envoymesh/api").EnsurePiTerminalResult> {
+    if (this._isHomeRemotePaired() && this._homeRemoteOnline) {
+      try {
+        return await this._homeRemoteCall<import("@envoymesh/api").EnsurePiTerminalResult>(
+          "ensurePiTerminalSession",
+          (params ?? {}) as Record<string, unknown>,
+        );
+      } catch {
+        // fall through to offline default
+      }
+    }
+    return {
+      ok: false,
+      code: "no_manager",
+      reason: "Pi terminal requires a paired home node.",
+    };
+  }
+
   /** Phase 49D — confirm/deny a Pi tool-action request on the home node. */
   async piRespondToProposal(params: {
     uiRequestId: string

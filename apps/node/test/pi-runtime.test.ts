@@ -10,8 +10,33 @@
  * tested separately (gated on RUN_PI_TESTS=1 since it needs the real Pi binary).
  */
 import { describe, it, expect } from "vitest"
-import { buildPiSpawnConfig } from "../src/pi-runtime.js"
+import {
+  buildPiSpawnConfig,
+  discoverPiCli,
+  extractAssistantTextFromPiMessage,
+  extractTextFromAssistantMessageEvent,
+  materializePiSpawnEnv,
+  PiRuntime,
+  resolveMiniMaxPiProvider,
+  withPiToolPath,
+} from "../src/pi-runtime.js"
 import type { ModelProviderConfig, PiModelOverride } from "@envoymesh/api"
+import { existsSync, readFileSync } from "node:fs"
+import { join } from "node:path"
+
+describe("discoverPiCli", () => {
+  it("finds the staged Tauri resources Pi even when given a bad root hint", () => {
+    const staged = join(
+      process.cwd(),
+      "apps/tauri/src-tauri/resources/pi/node_modules/@earendil-works/pi-coding-agent/dist/cli.js",
+    );
+    if (!existsSync(staged)) return; // skip when sidecar not fetched
+    const found = discoverPiCli("/tmp/not-the-repo-root");
+    expect(found).not.toBeNull();
+    expect(found!.cliPath).toContain("pi-coding-agent");
+    expect(existsSync(found!.cliPath)).toBe(true);
+  });
+});
 
 describe("buildPiSpawnConfig", () => {
   describe("anthropic-compatible mode", () => {
@@ -66,6 +91,7 @@ describe("buildPiSpawnConfig", () => {
       expect(result.modelSpec).toBe("openai/gpt-4o-mini")
       expect(result.env.OPENAI_API_KEY).toBe("sk-test-key")
       expect(result.env.OPENAI_BASE_URL).toBe("https://api.openai.com/v1")
+      expect(result.openaiBaseUrlOverride).toBeUndefined()
     })
 
     it("omits OPENAI_BASE_URL when endpoint is unset (defaults to OpenAI's)", () => {
@@ -76,6 +102,49 @@ describe("buildPiSpawnConfig", () => {
       }
       const result = buildPiSpawnConfig(cfg)!
       expect(result.env.OPENAI_BASE_URL).toBeUndefined()
+    })
+
+    it("maps MiniMax CN endpoints to Pi's native minimax-cn provider", () => {
+      const cfg: ModelProviderConfig = {
+        mode: "openai-compatible",
+        apiKey: "sk-mm",
+        endpoint: "https://api.minimaxi.com/v1",
+        modelName: "MiniMax-M3",
+      }
+      const result = buildPiSpawnConfig(cfg)!
+      expect(result.provider).toBe("minimax-cn")
+      expect(result.modelSpec).toBe("minimax-cn/MiniMax-M3")
+      expect(result.env.MINIMAX_CN_API_KEY).toBe("sk-mm")
+      expect(result.env.MINIMAX_API_KEY).toBe("sk-mm")
+      expect(result.env.OPENAI_API_KEY).toBeUndefined()
+      expect(result.openaiBaseUrlOverride).toBeUndefined()
+    })
+
+    it("maps MiniMax international endpoints to Pi's native minimax provider", () => {
+      const cfg: ModelProviderConfig = {
+        mode: "openai-compatible",
+        apiKey: "sk-mm",
+        endpoint: "https://api.minimax.io/v1",
+        modelName: "MiniMax-M3",
+      }
+      const result = buildPiSpawnConfig(cfg)!
+      expect(result.provider).toBe("minimax")
+      expect(result.modelSpec).toBe("minimax/MiniMax-M3")
+      expect(result.env.MINIMAX_API_KEY).toBe("sk-mm")
+      expect(result.env.OPENAI_API_KEY).toBeUndefined()
+    })
+
+    it("sets openaiBaseUrlOverride for non-OpenAI compatible endpoints", () => {
+      const cfg: ModelProviderConfig = {
+        mode: "openai-compatible",
+        apiKey: "sk-local",
+        endpoint: "http://127.0.0.1:8080/v1",
+        modelName: "local-model",
+      }
+      const result = buildPiSpawnConfig(cfg)!
+      expect(result.provider).toBe("openai")
+      expect(result.openaiBaseUrlOverride).toBe("http://127.0.0.1:8080/v1")
+      expect(result.env.OPENAI_BASE_URL).toBe("http://127.0.0.1:8080/v1")
     })
   })
 
@@ -144,13 +213,14 @@ describe("buildPiSpawnConfig", () => {
         provider: "openai",
         model: "gpt-4o",
         apiKey: "override-key",
-        endpoint: "https://custom.openai.com/v1",
+        endpoint: "https://api.example.com/v1",
       }
       const result = buildPiSpawnConfig(cfg, override)!
       expect(result.provider).toBe("openai")
       expect(result.model).toBe("gpt-4o")
       expect(result.env.OPENAI_API_KEY).toBe("override-key")
-      expect(result.env.OPENAI_BASE_URL).toBe("https://custom.openai.com/v1")
+      expect(result.env.OPENAI_BASE_URL).toBe("https://api.example.com/v1")
+      expect(result.openaiBaseUrlOverride).toBe("https://api.example.com/v1")
       // CRITICAL: override key must NOT pollute the inherited provider's env var.
       expect(result.env.ANTHROPIC_API_KEY).toBeUndefined()
       expect(result.inherited).toBe(false)
@@ -164,6 +234,51 @@ describe("buildPiSpawnConfig", () => {
       })!
       expect(result.provider).toBe("anthropic")
       expect(result.env.ANTHROPIC_API_KEY).toBe("k")
+      expect(result.inherited).toBe(false)
+    })
+
+    it("mode-based override maps MiniMax like Settings → AI", () => {
+      const result = buildPiSpawnConfig(
+        { mode: "disabled" },
+        {
+          mode: "openai-compatible",
+          model: "MiniMax-M3",
+          endpoint: "https://api.minimaxi.com/v1",
+          apiKey: "sk-mm",
+        },
+      )!
+      expect(result.provider).toBe("minimax-cn")
+      expect(result.env.MINIMAX_CN_API_KEY).toBe("sk-mm")
+      expect(result.inherited).toBe(false)
+    })
+
+    it("Pi-native provider override wins over legacy mode", () => {
+      const result = buildPiSpawnConfig(
+        { mode: "openai-compatible", modelName: "gpt-4o", apiKey: "x" },
+        {
+          provider: "minimax-cn",
+          mode: "openai-compatible",
+          model: "MiniMax-M3",
+          apiKey: "sk-mm",
+        },
+      )!
+      expect(result.provider).toBe("minimax-cn")
+      expect(result.model).toBe("MiniMax-M3")
+      expect(result.env.MINIMAX_CN_API_KEY).toBe("sk-mm")
+    })
+
+    it("direct openai provider + MiniMax endpoint remaps to minimax-cn", () => {
+      const result = buildPiSpawnConfig(
+        { mode: "mock" },
+        {
+          provider: "openai",
+          model: "MiniMax-M3",
+          endpoint: "https://api.minimaxi.com/v1",
+          apiKey: "sk-mm",
+        },
+      )!
+      expect(result.provider).toBe("minimax-cn")
+      expect(result.inherited).toBe(false)
     })
   })
 
@@ -182,5 +297,156 @@ describe("buildPiSpawnConfig", () => {
       expect(allCliFields).not.toContain("sk-super-secret-key")
       expect(result.env.OPENAI_API_KEY).toBe("sk-super-secret-key")
     })
+  })
+})
+
+describe("resolveMiniMaxPiProvider", () => {
+  it("detects CN and international hosts", () => {
+    expect(resolveMiniMaxPiProvider("https://api.minimaxi.com/v1")?.provider).toBe("minimax-cn")
+    expect(resolveMiniMaxPiProvider("https://api.minimax.io/anthropic")?.provider).toBe("minimax")
+    expect(resolveMiniMaxPiProvider("https://api.openai.com/v1")).toBeNull()
+  })
+})
+
+describe("materializePiSpawnEnv", () => {
+  it("writes PI_CODING_AGENT_DIR models.json for openaiBaseUrlOverride", () => {
+    const env = materializePiSpawnEnv({
+      modelSpec: "openai/local",
+      provider: "openai",
+      model: "local",
+      env: { OPENAI_API_KEY: "k" },
+      inherited: true,
+      openaiBaseUrlOverride: "http://127.0.0.1:9000/v1",
+    })
+    expect(env.PI_CODING_AGENT_DIR).toBeTruthy()
+    const modelsPath = join(env.PI_CODING_AGENT_DIR!, "models.json")
+    expect(existsSync(modelsPath)).toBe(true)
+    const models = JSON.parse(readFileSync(modelsPath, "utf8"))
+    expect(models.providers.openai.baseUrl).toBe("http://127.0.0.1:9000/v1")
+  })
+})
+
+describe("withPiToolPath", () => {
+  it("preserves provider env and may add PATH for tool discovery", () => {
+    const out = withPiToolPath({ OPENAI_API_KEY: "k" })
+    expect(out.OPENAI_API_KEY).toBe("k")
+    if (existsSync("/opt/homebrew/bin") || existsSync("/usr/local/bin")) {
+      expect(out.PATH).toBeTruthy()
+      expect(out.PATH).toMatch(/homebrew|\/usr\/local\/bin/)
+    }
+  })
+
+  it("includes PATH on openai-compatible spawn config when brew dirs exist", () => {
+    const cfg: ModelProviderConfig = {
+      mode: "openai-compatible",
+      apiKey: "k",
+      modelName: "gpt-4o-mini",
+      endpoint: "https://api.openai.com/v1",
+    }
+    const result = buildPiSpawnConfig(cfg)!
+    expect(result.env.OPENAI_API_KEY).toBe("k")
+    if (existsSync("/opt/homebrew/bin")) {
+      expect(result.env.PATH).toContain("/opt/homebrew/bin")
+    }
+  })
+})
+
+describe("extractAssistantTextFromPiMessage", () => {
+  it("reads string content", () => {
+    expect(extractAssistantTextFromPiMessage({ role: "assistant", content: "hi" })).toBe("hi")
+  })
+
+  it("joins text parts", () => {
+    expect(
+      extractAssistantTextFromPiMessage({
+        role: "assistant",
+        content: [
+          { type: "text", text: "hello " },
+          { type: "text", text: "world" },
+        ],
+      }),
+    ).toBe("hello world")
+  })
+
+  it("ignores non-assistant roles", () => {
+    expect(extractAssistantTextFromPiMessage({ role: "user", content: "nope" })).toBe("")
+  })
+
+  it("surfaces errorMessage when content is empty", () => {
+    expect(
+      extractAssistantTextFromPiMessage({
+        role: "assistant",
+        content: [],
+        errorMessage: "rate limited",
+      }),
+    ).toBe("⚠️ rate limited")
+  })
+})
+
+describe("extractTextFromAssistantMessageEvent", () => {
+  it("prefers partial snapshot over raw delta", () => {
+    expect(
+      extractTextFromAssistantMessageEvent({
+        type: "text_delta",
+        delta: "x",
+        partial: { role: "assistant", content: [{ type: "text", text: "hello" }] },
+      }),
+    ).toBe("hello")
+  })
+
+  it("reads done.message", () => {
+    expect(
+      extractTextFromAssistantMessageEvent({
+        type: "done",
+        message: { role: "assistant", content: [{ type: "text", text: "done" }] },
+      }),
+    ).toBe("done")
+  })
+})
+
+describe("PiRuntime event fan-out", () => {
+  /** Minimal runtime — we only exercise handleLine emit paths (no spawn). */
+  function bareRuntime(): PiRuntime {
+    return new PiRuntime({
+      cliPath: "/dev/null",
+      version: "test",
+      spawnConfig: {
+        provider: "openai",
+        model: "test",
+        modelSpec: "openai/test",
+        env: {},
+        inherited: true,
+      },
+    })
+  }
+
+  it("emits agent_end by type so prompt() once() listeners can complete", () => {
+    const rt = bareRuntime()
+    let named = false
+    let viaEvent = false
+    rt.once("agent_end", () => {
+      named = true
+    })
+    rt.once("event", (ev: { type?: string }) => {
+      if (ev.type === "agent_end") viaEvent = true
+    })
+    // Private handleLine — same path as stdout JSONL from Pi.
+    ;(rt as unknown as { handleLine: (line: string) => void }).handleLine(
+      JSON.stringify({ type: "agent_end" }),
+    )
+    expect(viaEvent).toBe(true)
+    expect(named).toBe(true)
+  })
+
+  it("emits turn_end by type", () => {
+    const rt = bareRuntime()
+    let named = false
+    rt.once("turn_end", () => {
+      named = true
+    })
+    ;(rt as unknown as { handleLine: (line: string) => void }).handleLine(
+      JSON.stringify({ type: "turn_end" }),
+    )
+    expect(named).toBe(true)
   })
 })

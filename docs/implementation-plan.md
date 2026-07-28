@@ -85,6 +85,7 @@ Maintenance rule: keep this file as the source of truth for **done / left / next
 - [Phase 47 — Team job multi-round iteration (A ∩ B)](#phase-47--team-job-multi-round-iteration-a--b-shipped)
 - [Phase 48 — A2A + MCP Interop Bridges](#phase-48--a2a--mcp-interop-bridges-shipped--48a48d-48d5-deferred)
 - [Phase 49 — Pi as Built-in Local Coding Agent](#phase-49--pi-as-built-in-local-coding-agent-designed)
+- [Phase 50 — Push Notification Coverage (home node → EnvoyGo)](#phase-50--push-notification-coverage-home-node--envoygo--slice-a-shipped-b-h-planned)
 
 EnvoyMesh is a TypeScript-first, owner-controlled, peer-to-peer agent network.
 
@@ -6403,10 +6404,91 @@ Closes the production path after 48A–48D protocol/mount work.
 
 ---
 
+## Phase 50 — Push Notification Coverage (home node → EnvoyGo) **`[~]` Slice A shipped; B-H planned**
+
+**Goal:** Every message the user cares about — direct chat, group chat, EnvoyAI replies, Ext Agent replies, Pi responses + tool requests, bond requests, approval items — should trigger a push notification to EnvoyGo when the user is backgrounded. Today only 3 of 10 sources push, and the most important one (direct chat) was broken in production.
+
+**Authoritative design:** [push-notification-coverage.md](./push-notification-coverage.md)
+
+**Design decisions (2026-07-28):**
+
+| Decision | Rationale |
+|---|---|
+| Pushes fire only when EnvoyGo has no active WS (skip-if-online) | Matches the call path; prevents double-notification (WS in-app + system push). Uses `wsServerForEvents.hasClientForOwner`. |
+| All pushes target one ownerId (the home owner) | EnvoyGo pairs to one home; no fan-out. Each member's home handles its own owner. |
+| Reuse `dispatchChatPush` payload shape where possible | The `data` block already carries `threadType`/`messageId`/`senderOwnerId`/`roomId` — enough for deep-link routing without schema changes. |
+| Deep-link routing is a separate workstream | Server already sends routing fields; the client-side subscriber is the gap. Phase 50 covers the server; deep-link wiring is its own slice. |
+
+### 50A — Highest-priority fixes **`[x]` shipped 2026-07-28**
+
+- `[x]` **Direct chat push broken in production.** Root cause: `dispatchChatPush` was wired only on the legacy Path B (`index.ts:1904`), bypassed by the production internal-mesh handler (`usesInternalMeshInboundHandlers()` short-circuit at `index.ts:1682`). EnvoyGo's home node always runs Path A, where the handler at `node-service-handlers-chat-message.ts:146` emits `chat:message` but never pushed. Fix: added `dispatchChatPushIfOffline` to `ChatMessageContext`, wired from `node-service-impl-service-deps.ts` with skip-if-online gate, called after the emit.
+- `[x]` **Bond request dead code.** `dispatchBondPush` was fully implemented but had zero call sites. Wired into the `hello:request` callback at `index.ts:2314` with skip-if-online gate.
+
+### 50B — Skip-if-online for remaining dispatch paths `[ ]`
+
+- `[ ]` Feed push (`index.ts:1339`) — wrap with `if (!isOwnerOnline())` gate.
+- `[ ]` Legacy desktop chat push (`index.ts:1904`) — same gate.
+- `[ ]` Verify EnvoyGo authenticates with a session token (so `hasClientForOwner` tracks it).
+
+### 50C — Group chat push `[ ]`
+
+- `[ ]` Hook: `packages/api/src/chat-room-service.ts:1316` (after persist + emit).
+- `[ ]` Extend `ChatRoomServiceDeps` with a push callback (mirrors Slice A pattern).
+- `[ ]` Recipient: `selfOwnerId` (the home owner, if a room member). No fan-out.
+
+### 50D — EnvoyAI / OpenClaw reply push `[ ]`
+
+- `[ ]` Hook: `node-service-openclaw-runtime.ts:339` (`recordEnvoyAiChatMessageViaRuntime`).
+- `[ ]` Reuse `dispatchChatPush` with `senderName: "EnvoyAI"` + `senderOwnerId: "envoy:assistant"`.
+- `[ ]` Skip-if-online. Useful for long-running turns the user backgrounded during.
+
+### 50E — Ext Agent reply push `[ ]`
+
+- `[ ]` Hook: `index.ts:3586/3590` (bridge `receiveFromAgent`).
+- `[ ]` **Verify first:** the bridge is desktop-only today. If EnvoyGo never hits this path, defer.
+
+### 50F — Pi push coverage `[ ]`
+
+- `[ ]` **F.1 (easy):** Pi tool-action request — hook `node-service-pi.ts:130` (`onProposal`), add `dispatchPiProposalPush` or reuse `dispatchChatPush` with `senderName: "Pi"`.
+- `[ ]` **F.2 (hard):** Pi `sendToPi` response — currently a pure synchronous RPC with no event. Needs `sendToPi`/`askPiViaRuntime` to emit on completion (`pi:response` WS event), then hook the push there. Lower priority — user is usually in the Pi panel when sending.
+
+### 50G — Approval-queue push `[ ]`
+
+- `[ ]` Subscribe `approvalQueue.onChange` at NodeServiceImpl; diff for new pending items.
+- `[ ]` Capture the approver (home owner) at the subscription layer — items carry `contactOwnerId`, not the home owner.
+- `[ ]` New `dispatchApprovalPush({ title: "Approval needed", body, targetOwnerId })`.
+
+### 50H — Token cleanup + UX polish `[ ]`
+
+- `[ ]` `dispatchApnsHttp2` should unregister tokens APNs reports as 410/400 (stale-token cleanup). Mirror the OpenClaw path's `shouldClearStoredApnsRegistration`.
+- `[ ]` Notification channels (Android) / interruption levels (iOS) — distinguish direct message (active) from feed update (passive).
+- `[ ]` Badge count management — server tracks unread per thread; app clears badge on foreground.
+- `[ ]` Per-contact mute / global quiet-hours / DND.
+
+### Deep-link navigation (separate workstream, client-side) `[ ]`
+
+- `[ ]` EnvoyGo: subscribe to `PushNotificationService.onNotificationTap`; route via `GlobalKey<NavigatorState>`.
+- `[ ]` Map payload → screen: `{threadType, senderOwnerId}` → chat thread; `{type: "feed_notify", url}` → Browser; `{type: "bond_request"}` → Discover.
+- `[ ]` Add `getInitialMessage()` for Android cold-launch.
+- `[ ]` Add foreground push handling (`FirebaseMessaging.onMessage` listener → in-app banner).
+- `[ ]` Optionally register `envoy://` as a system-openable scheme (universal links / app links).
+- `[ ]` Server: add `senderOwnerId` to `dispatchBondPush` payload for routing.
+
+### Exit Criteria (Phase 50 overall)
+
+- `[ ]` Direct chat, group chat, bond request, EnvoyAI reply, Ext Agent reply, Pi tool-action, approval item all push when EnvoyGo is backgrounded.
+- `[ ]` No push fires when EnvoyGo has an active WebSocket (skip-if-online for all paths).
+- `[ ]` Stale tokens are cleaned up on APNs 410/400.
+- `[ ]` Tapping a push navigates to the relevant screen (deep link).
+- `[ ]` Per-thread / per-contact mute + global DND available.
+
+---
+
 ## Changelog (this document)
 
 | Date | Change |
 |------|--------|
+| 2026-07-28 | **Phase 50 Slice A shipped (push-notification highest-priority fixes).** Two bugs fixed: (1) Direct chat push was broken in production — `dispatchChatPush` was wired only on the legacy Path B (`index.ts:1904`), bypassed by the production internal-mesh handler (`usesInternalMeshInboundHandlers()` short-circuit). EnvoyGo's home node always runs Path A, where the handler at `node-service-handlers-chat-message.ts:146` emitted `chat:message` but never pushed. Fix: added `dispatchChatPushIfOffline` to `ChatMessageContext`, wired from `node-service-impl-service-deps.ts` with skip-if-online gate, called after the emit. (2) `dispatchBondPush` was fully implemented but had zero call sites (dead code); wired into the `hello:request` callback at `index.ts:2314`. Also unblocked the in-flight Pi-as-Ext-Agent build (added `'pi'` port placeholder in `ext-agent-adapter/manager.ts`, `sendToPiForExtAgent` alias on NodeServiceImpl, `pi-terminal-session.ts` stub, MobileNode `ensurePiTerminalSession` proxy, fixed value-vs-type imports). Full Phase 50 design + slices B-H planned in [push-notification-coverage.md](./push-notification-coverage.md). |
 | 2026-07-28 | **Phase 49 — Pi as Built-in Local Coding Agent designed.** New phase adding [Pi](https://github.com/earendil-works/pi) (earendil-works coding agent harness) as a third agent engine alongside Built-in OpenClaw + Remote Ext Agent. Pi is local-only (filesystem + shell, **no `mesh.*` tools** — OpenClaw stays the sole network boundary per `AGENTS.md:213`), inherits EnvoyMesh's model config by default, reuses the Phase 30 `TerminalCommandProposal` permission flow (default `always-confirm`, trust mode opt-in), and ships as a separate sidecar mirroring the OpenClaw bundle pattern. Slices 49A–49F cover bundle/runtime/chat-panel/permissions/terminal/settings. Authoritative design: [pi-integration-design.md](./pi-integration-design.md). |
 | 2026-07-28 | **Phase 49 Slice 49A shipped (bundle + sidecar staging).** New scripts: `fetch-pi-sidecar.sh` / `.ps1` (npm-install pinned `@earendil-works/pi-coding-agent@0.82.x` + transitive deps into `resources/pi/`), `stage-tauri-pi-bundle.sh` (prune source maps / TS sources / tests / cross-platform native prebuilds, verify CLI + SDK entries). `build-desktop.sh` + `.ps1` updated to stage Pi alongside Node/OpenClaw (new `-ForcePi` / `-SkipPi` switches on Windows; `# 1d. Pi agent` block, verify step renumbered `1e`). `tauri.conf.json` + `tauri.conf.full.json` add `resources/pi/**/*`; `tauri.conf.slim.json` intentionally omits Pi (Windows slim builds). `verify-tauri-resources.sh` adds conditional Pi presence check. **Smoke-tested:** Pi installs (140 packages), stages, prunes, and passes verify. **Measured bundle size: ~170 MB unpacked** (5 cloud SDKs statically imported by `pi-ai` — cannot prune); installer compression (~3:1) brings it to ~55 MB in-DMG. Windows slim builds omit Pi entirely. |
 | 2026-07-28 | **Phase 49 Slice 49B shipped (runtime + model handoff).** `packages/api/src/pi-agent.ts` (Pi RPC wire types), `apps/node/src/pi-runtime.ts` (`PiRuntime` class — spawn `pi --mode rpc`, JSONL over stdio, `buildPiSpawnConfig` maps `ModelProviderConfig` → scoped env vars; API key never in CLI args), `apps/node/src/node-service-pi.ts` (lifecycle wrappers mirroring OpenClaw pattern, watchdog backoff). Wired into `NodeServiceImpl.startPi` boot hook + JSON-RPC (`getPiStatus`/`restartPi`/`sendToPi`). Review caught: readiness probe hung on Pi's non-JSON `Warning:` preamble line (fixed hybrid probe), `prompt()` turn-end race (subscribe-before-send), unbounded JSONL buffer (2 MB cap). 14 unit + 4 integration tests (gated `RUN_PI_TESTS=1`) pass against real Pi binary. |

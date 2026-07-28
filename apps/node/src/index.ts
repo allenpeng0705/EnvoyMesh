@@ -213,10 +213,10 @@ import { createProductionA2ATaskExecutor } from "./a2a-task-executor.js";
 import { executeTool as runRegistryTool, listAgentTools } from "./tool-registry.js";
 import { loadBridgeIdentity, saveBridgeIdentity } from "./bridge/identity-store.js";
 import type { BridgeConfig } from "./bridge/config.js";
-import { BridgeConfigSchema, resolveAssistantAgentUrl, applyActiveExtAgent, bridgeConfigToStatusFields } from "./bridge/config.js";
+import { BridgeConfigSchema, resolveAssistantAgentUrl, applyActiveExtAgent, bridgeConfigToStatusFields, DEFAULT_BRIDGE_CONFIG } from "./bridge/config.js";
 import { loadBridgeConfigFromProfile } from "./bridge/bridge-config-store.js";
 import { createCoalescedRunner } from "./bridge/coalesced-runner.js";
-import { syncExtAgentSidecar, stopExtAgentSidecar } from "./ext-agent-adapter/index.js";
+import { syncExtAgentSidecar, stopExtAgentSidecar, setPiExtAgentAsk } from "./ext-agent-adapter/index.js";
 import {
   ExternalAgentGateway,
   createExternalAgentSession,
@@ -517,31 +517,32 @@ if (!bridgeIdentity) {
 // Bridge config — loaded from profile dir, defaults to disabled.
 // The UI toggle in persisted config (bridgeEnabled) overrides bridge-config.json's enabled field,
 // so users can turn the bridge on/off without editing the JSON file.
-let bridgeConfig: BridgeConfig = BridgeConfigSchema.parse({});
+let bridgeConfig: BridgeConfig = BridgeConfigSchema.parse(DEFAULT_BRIDGE_CONFIG);
 try {
   const raw = await readFile(join(args.profileDir, "bridge-config.json"), "utf-8");
   bridgeConfig = applyActiveExtAgent(BridgeConfigSchema.parse(JSON.parse(raw)));
   console.log(`[bridge] loaded config: enabled=${bridgeConfig.enabled}, agent=${bridgeConfig.activeExtAgent ?? bridgeConfig.agentName}`);
 } catch {
-  bridgeConfig = applyActiveExtAgent(BridgeConfigSchema.parse({}));
+  bridgeConfig = applyActiveExtAgent(BridgeConfigSchema.parse(DEFAULT_BRIDGE_CONFIG));
 }
 bridgeConfig = {
   ...bridgeConfig,
   listenPort: BRIDGE_HTTP_PORT,
   assistantAgentUrl: openClawGatewayWebhookUrl(),
 };
-// Merge UI toggle from persisted config — bridgeEnabled: true overrides bridge-config.json.
-// Default to false when no persisted config exists (D1C: built-in OpenClaw is the default agent;
-// the Ext Agent bridge is opt-in).
+// Merge UI toggle from persisted node-config — source of truth for Ext Agent on/off.
+// Default true when unset (D1C revised). Explicit false stays off.
 let openclawEnabledForBridge = true;
 {
   try {
     const persistedCfg = await nodeConfigStore.load();
     openclawEnabledForBridge = persistedCfg?.openclawEnabled ?? true;
-    const uiEnabled = persistedCfg?.bridgeEnabled ?? false;
-    if (uiEnabled && !bridgeConfig.enabled) {
-      bridgeConfig = { ...bridgeConfig, enabled: true };
-      console.log(`[bridge] UI toggle overrides: enabled=true (persisted=${persistedCfg?.bridgeEnabled ?? "none"})`);
+    const uiEnabled = persistedCfg?.bridgeEnabled !== false;
+    bridgeConfig = { ...bridgeConfig, enabled: uiEnabled };
+    if (uiEnabled) {
+      console.log(`[bridge] Ext Agent enabled (persisted bridgeEnabled=${persistedCfg?.bridgeEnabled ?? "default-on"})`);
+    } else {
+      console.log(`[bridge] Ext Agent disabled (persisted bridgeEnabled=false)`);
     }
   } catch { /* ignore — persisted config may not exist yet */ }
 }
@@ -2312,6 +2313,18 @@ async function handleInboundMeshMessage({
         if (wsServerForEvents) {
           wsServerForEvents.emitEvent("hello:request", helloData);
         }
+        // Phase 50 — push the bond request to EnvoyGo if the owner has no
+        // active WebSocket. Best-effort; skip-if-online matches the chat path.
+        // (dispatchBondPush was previously dead code — fully implemented but
+        // never called. This wires it into the production bond-request path.)
+        if (typeof isOwnerOnline === "function" && !isOwnerOnline()) {
+          void pushNotificationService
+            .dispatchBondPush({
+              senderName: helloData.sender.displayName || helloData.sender.ownerId,
+              targetOwnerId: profile.owner.ownerId,
+            })
+            .catch(() => {});
+        }
       },
       async (bondData) => {
         // Emit bond:established via wsServer if available
@@ -3643,10 +3656,10 @@ async function performAgentBridgeRebind(reason: string): Promise<void> {
     persisted = null;
   }
   openclawEnabledForBridge = persisted?.openclawEnabled ?? true;
-  const uiEnabled = persisted?.bridgeEnabled ?? false;
+  const uiEnabled = persisted?.bridgeEnabled !== false;
   let next: BridgeConfig = applyActiveExtAgent({
     ...fromDisk,
-    enabled: uiEnabled === true,
+    enabled: uiEnabled,
     assistantAgentUrl: openClawGatewayWebhookUrl(),
   });
   // Env override wins (multi-instance port offset); otherwise honor saved listenPort.
@@ -3685,6 +3698,7 @@ if (nodeService instanceof NodeServiceImpl) {
   nodeService.setBridgeLiveConfigUpdater(bridge.updateLiveConfig);
   nodeService.setBridgeRebindHandler(rebindAgentBridge);
   nodeService.setExtAgentSidecarSyncer(syncExtAgentSidecar);
+  setPiExtAgentAsk(async (text) => nodeService.sendToPiForExtAgent(text));
   nodeService.setStyleAdapter(styleAdapter);
 }
 
@@ -3710,25 +3724,10 @@ if (typeof openClawCapable.startOpenClaw === "function") {
   });
 }
 
-// Start the Pi runtime (Phase 49, built-in local coding agent). Same
-// duck-typed pattern as OpenClaw. Pi is local-only; if the sidecar is
-// missing (slim build) or no model is configured, startPi returns false
-// and we log a hint. The Pi chat panel surfaces the runtime state.
-const piCapable = nodeService as unknown as {
-  startPi?: () => Promise<boolean>;
-};
-if (typeof piCapable.startPi === "function") {
-  console.log("[pi] Starting Pi runtime...");
-  void piCapable.startPi().then((started) => {
-    if (started) {
-      console.log("[pi] Built-in local coding agent ready");
-    } else {
-      console.log("[pi] Not started — disabled by config, sidecar missing (slim build), or no model configured");
-    }
-  }).catch((err) => {
-    console.warn("[pi] Init failed:", err instanceof Error ? err.message : String(err));
-  });
-}
+// Pi Ext Agent RPC: lazy-start on first Ext Agent message (askPi → ensurePiReady).
+// Pi TUI: never auto-start — user picks a project folder, then starts.
+console.log("[pi] Ext Agent Pi RPC will lazy-start on first message");
+console.log("[pi-tui] On-demand — open π and choose a project folder to start");
 
 // Register built-in bridge agent for OpenClaw sync replies + optional Ext Agent UI.
 // `bridgeAgentLifecycleReady`: gateway auth + agent peer id (Tauri OpenClaw-only OR dev full bridge).

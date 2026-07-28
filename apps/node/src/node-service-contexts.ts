@@ -478,6 +478,8 @@ export interface ChatMessageContextDeps {
   sendAgentChat: ChatMessageContext["sendAgentChat"];
   tagBondedContactReachability: ChatMessageContext["tagBondedContactReachability"];
   isOwnerOnline: ChatMessageContext["isOwnerOnline"];
+  /** Phase 50 — push dispatch hook for inbound direct chat (skip-if-online). */
+  dispatchChatPushIfOffline: ChatMessageContext["dispatchChatPushIfOffline"];
 }
 
 export interface RequestPeerProfileContextDeps {
@@ -1193,6 +1195,7 @@ export function buildChatMessageContext(deps: ChatMessageContextDeps): ChatMessa
     tagBondedContactReachability: (remotePeerId) =>
       deps.tagBondedContactReachability(remotePeerId),
     isOwnerOnline: () => deps.isOwnerOnline(),
+    dispatchChatPushIfOffline: (params) => deps.dispatchChatPushIfOffline(params),
   };
 }
 
