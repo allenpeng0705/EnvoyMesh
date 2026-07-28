@@ -67,69 +67,69 @@ EnvoyGo's home node always runs Path A, so chat push never fired.
 
 ---
 
-## 4. Phase 50 — Broader push coverage (PLANNED)
+## 4. Phase 50 — Unified push coverage (SHIPPED)
 
-Each slice below is independently shippable.
+**Design pivot (2026-07-28):** the original plan had 8 per-source slices (B through H), each hooking a different message source. The user proposed a much cleaner model: **ONE unified listener** that catches all new messages from any source, checks whether paired devices are connected, and pushes if they aren't. This collapsed slices B, C, D, E, F into a single ~40-line change.
 
-### Slice B — Skip-if-online for the remaining dispatch paths
+### The unified listener
 
-**Goal:** eliminate the double-notification (WS in-app + system push) for feed pushes and the legacy desktop chat path.
+Added to the `NodeServiceImpl` constructor:
 
-- `index.ts:1339` (feed push) — wrap with `if (!isOwnerOnline())` gate
-- `index.ts:1904` (legacy Path B chat push) — same gate
-- Verify EnvoyGo authenticates with a session token (so `hasClientForOwner` tracks it; legacy/no-token clients are not tracked and the gate fails open)
+```typescript
+// ONE subscriber catches chat:message from EVERY source:
+this.on("chat:message", (msg) => {
+  // Only push messages addressed to this home's owner
+  if (msg.recipient.ownerId !== this._profile?.owner?.ownerId) return
+  // Don't push the user's own outgoing echoes
+  if (msg.sender.ownerId === targetOwnerId) return
+  // Skip if the owner has an active WebSocket (already got it in-app)
+  void this.isOwnerOnline().then((online) => {
+    if (online) return
+    void pushNotificationService.dispatchChatPush({ ... }).catch(() => {})
+  })
+})
+```
 
-**Risk:** if EnvoyGo connects without a session token, the gate fails open (sends push even when foregrounded). Verify the auth mode.
+**What this catches automatically** (because they all emit `chat:message` via `NodeServiceImpl.emit`):
 
-### Slice C — Group chat push
+| Source | How it emits | Caught? |
+|---|---|---|
+| Direct chat (production Path A) | `node-service-handlers-chat-message.ts:146` → `ctx.emit("chat:message")` | ✅ |
+| Group chat | `chat-room-service.ts:1317` → emit | ✅ |
+| EnvoyAI / OpenClaw reply | `node-service-openclaw-runtime.ts:341` → `ctx.emitChatMessage(msg)` → `host.emit("chat:message")` | ✅ |
+| Ext Agent reply (HomeClaw/Hermes/OpenHuman/Pi) | Bridge receiveFromAgent → emit | ✅ |
+| Pi `sendToPi` response | `node-service-impl.ts:sendToPi` now emits `chat:message` on completion | ✅ (Phase 50 added this emit) |
 
-**Hook:** `packages/api/src/chat-room-service.ts:1316-1317` (after persist + emit).
+**Separate listeners** (different event types, same skip-if-online pattern):
 
-`dispatchChatPush` already supports the payload shape (`threadType: "room"` + `roomId`). Extend `ChatRoomServiceDeps` with a push callback (mirroring the chat-message ctx pattern from Slice A).
+| Event | Source | Listener |
+|---|---|---|
+| `hello:request` | Bond request | `index.ts:2314` (Slice A) |
+| `pi:proposal` | Pi tool-action request | NodeServiceImpl constructor (Phase 50) |
+| `feed.notify` | Phase 45E inbox | `index.ts:1339` (pre-existing) |
+| `call.invite` | Incoming call | `index.ts:1633` (pre-existing, skip-if-online) |
 
-**Recipient:** `selfOwnerId` = `deps.getProfile().owner.ownerId` (line 1265). The impl already gates on `room.memberOwnerIds.includes(selfOwnerId)` (line 1267) so we only push for rooms the home owner is in. No fan-out needed — each member's home node processes its own inbound copy.
+**Legacy Path B** (desktop, `usesInternalMeshInboundHandlers() === false`): emits via `wsServerForEvents.emitEvent`, not `NodeServiceImpl.emit`, so the unified listener doesn't catch it. The per-source `dispatchChatPush` at `index.ts:1904` stays for that path. (Production EnvoyGo runs Path A, so this is desktop-only.)
 
-### Slice D — EnvoyAI / OpenClaw reply push
+### What this replaces
 
-**Hook:** `apps/node/src/node-service-openclaw-runtime.ts:339-341` (`recordEnvoyAiChatMessageViaRuntime`: persist + emit).
+| Original Phase 50 slice | Status |
+|---|---|
+| 50B (skip-if-online for feed/legacy chat) | ✅ Unified listener always checks; legacy Path B keeps its own dispatch |
+| 50C (group chat push) | ✅ Automatic — group chat emits `chat:message` |
+| 50D (EnvoyAI reply push) | ✅ Automatic — EnvoyAI emits `chat:message` |
+| 50E (Ext Agent reply push) | ✅ Automatic — Ext Agent emits `chat:message` |
+| 50F.1 (Pi tool-action push) | ✅ Separate `pi:proposal` listener |
+| 50F.2 (Pi sendToPi push) | ✅ `sendToPi` now emits `chat:message` on completion |
+| 50G (approval-queue push) | 🔲 Still needed — different event type (approval queue, not chat:message) |
+| 50H (token cleanup) | 🔲 Still needed — APNs 410/400 token pruning |
 
-**Why:** when the assistant finishes a long-running turn (multi-step task, knowledge query), the user may have backgrounded the app. A push brings them back.
+### Remaining work (post-Phase-50)
 
-**Recipient:** home owner (line 450). Skip-if-online applies.
-
-**New dispatch:** reuse `dispatchChatPush` with `senderName: "EnvoyAI"` (or the configured assistant name) + `threadType: "direct"` + a special `senderOwnerId` like `envoy:assistant` so the client can route to the EnvoyAI thread.
-
-### Slice E — Ext Agent reply push
-
-**Hook:** `index.ts:3586/3590` (bridge `receiveFromAgent` → persist + emit).
-
-**Caveat:** the bridge is desktop-only today (instantiated in index.ts, not in the mobile path). If EnvoyGo never hits this path, this slice is desktop-only benefit. Verify before prioritizing.
-
-### Slice F — Pi push coverage
-
-Two sub-cases, with different difficulty:
-
-**F.1 Pi tool-action request push (easy):**
-- Hook: `apps/node/src/node-service-pi.ts:130` (`onProposal` → `pi:proposal` WS event)
-- Add a new `dispatchPiProposalPush` (or reuse `dispatchChatPush` with `senderName: "Pi"`) when the proposal is emitted, gated on skip-if-online
-- The user wants to know Pi is asking for approval while they're backgrounded
-
-**F.2 Pi `sendToPi` response push (hard):**
-- Hook: `node-service-impl.ts:sendToPi` — currently a pure synchronous RPC with no persistence and no event emitted
-- Needs architectural work: `sendToPi`/`askPiViaRuntime` must emit on completion (e.g. a `pi:response` event the WS server bridges), and the push dispatch hooks that event
-- Lower priority — the user is usually in the Pi panel when they send a prompt; the push is only useful if they background mid-turn
-
-### Slice G — Approval-queue push
-
-**Hook:** subscribe to `approvalQueue.onChange` at NodeServiceImpl, diff for new pending items.
-
-**Gotcha:** approval items carry `contactOwnerId` (the peer who proposed the task), not the home owner. The push recipient (the approver = home owner) must be captured at the NodeServiceImpl subscription layer, not on the item itself.
-
-**New dispatch:** `dispatchApprovalPush({ title, body, targetOwnerId })` — new method on `PushNotificationService`. Title: "Approval needed"; body: peer name + action summary.
-
-### Slice H — Token cleanup
-
-`dispatchApnsHttp2` (`push-notification.ts:268-274`) logs a warning on non-200 but does not unregister tokens APNs reports as invalid (410/400). Stale EnvoyGo tokens accumulate in `push-tokens.json` indefinitely. Add a `410` → `unregisterPushToken` cleanup. The OpenClaw path has this (`shouldClearStoredApnsRegistration`); mirror it.
+- **Slice G — Approval-queue push.** Subscribe to `approvalQueue.onChange`; capture the approver (home owner) at the subscription layer (items carry `contactOwnerId`, not home owner). New `dispatchApprovalPush`.
+- **Slice H — Token cleanup.** `dispatchApnsHttp2` should unregister tokens APNs reports as 410/400. Mirror the OpenClaw path's `shouldClearStoredApnsRegistration`.
+- **Feed push skip-if-online.** `index.ts:1339` (feed push) doesn't gate on `isOwnerOnline`. Wrap with the same gate.
+- **Deep-link navigation** (client-side, separate workstream — see §5).
 
 ---
 

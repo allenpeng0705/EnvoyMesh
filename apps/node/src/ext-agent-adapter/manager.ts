@@ -16,10 +16,9 @@ export interface SyncExtAgentSidecarParams {
 }
 
 const DEFAULT_PORTS: Record<ExtAgentSidecarKind, number> = {
-  // Pi is a built-in local agent; it doesn't actually bind a port (the
-  // adapter routes to the in-process PiRuntime). The 0 placeholder keeps
-  // the Record exhaustive for the sidecar kind enum. See pi-runtime.ts.
-  pi: 0,
+  // Pi runs an in-process HTTP adapter (createPiBackend) that the bridge
+  // forwards to. It binds a real localhost port like the other sidecars.
+  pi: 8022,
   hermes: 8020,
   openhuman: 8021,
 };
@@ -37,6 +36,13 @@ function listenPortFor(kind: ExtAgentSidecarKind): number {
   }
   if (kind === "openhuman") {
     const env = process.env.ENVOYMESH_OPENHUMAN_PORT?.trim();
+    if (env) {
+      const n = Number.parseInt(env, 10);
+      if (Number.isFinite(n) && n >= 1024 && n <= 65535) return n;
+    }
+  }
+  if (kind === "pi") {
+    const env = process.env.ENVOYMESH_PI_EXT_PORT?.trim();
     if (env) {
       const n = Number.parseInt(env, 10);
       if (Number.isFinite(n) && n >= 1024 && n <= 65535) return n;

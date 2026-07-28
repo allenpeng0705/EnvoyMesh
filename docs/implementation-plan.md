@@ -6419,51 +6419,24 @@ Closes the production path after 48A–48D protocol/mount work.
 | Reuse `dispatchChatPush` payload shape where possible | The `data` block already carries `threadType`/`messageId`/`senderOwnerId`/`roomId` — enough for deep-link routing without schema changes. |
 | Deep-link routing is a separate workstream | Server already sends routing fields; the client-side subscriber is the gap. Phase 50 covers the server; deep-link wiring is its own slice. |
 
-### 50A — Highest-priority fixes **`[x]` shipped 2026-07-28**
+### 50A — Unified push listener + highest-priority fixes **`[x]` shipped 2026-07-28**
 
-- `[x]` **Direct chat push broken in production.** Root cause: `dispatchChatPush` was wired only on the legacy Path B (`index.ts:1904`), bypassed by the production internal-mesh handler (`usesInternalMeshInboundHandlers()` short-circuit at `index.ts:1682`). EnvoyGo's home node always runs Path A, where the handler at `node-service-handlers-chat-message.ts:146` emits `chat:message` but never pushed. Fix: added `dispatchChatPushIfOffline` to `ChatMessageContext`, wired from `node-service-impl-service-deps.ts` with skip-if-online gate, called after the emit.
-- `[x]` **Bond request dead code.** `dispatchBondPush` was fully implemented but had zero call sites. Wired into the `hello:request` callback at `index.ts:2314` with skip-if-online gate.
+**Design pivot:** instead of 8 per-source slices, ONE unified `chat:message` listener on NodeServiceImpl catches all chat sources (direct, group, EnvoyAI, Ext Agent, Pi). Sources stay decoupled — they just emit messages as they do today.
 
-### 50B — Skip-if-online for remaining dispatch paths `[ ]`
+- `[x]` **Bond request dead code fixed.** `dispatchBondPush` was fully implemented but had zero call sites. Wired into the `hello:request` callback at `index.ts:2314` with skip-if-online gate.
+- `[x]` **Unified `chat:message` listener** added to NodeServiceImpl constructor. Catches direct chat, group chat, EnvoyAI replies, Ext Agent replies — all in one place. Skip-if-online gate prevents double-notification when EnvoyGo has an active WebSocket.
+- `[x]` **`pi:proposal` listener** added for Pi tool-action request pushes.
+- `[x]` **Pi `sendToPi` emits `chat:message` on completion** so the unified listener catches Pi responses too.
+- `[x]` Removed the per-source `dispatchChatPushIfOffline` hook from Slice A (replaced by the unified listener — cleaner, catches more sources).
 
-- `[ ]` Feed push (`index.ts:1339`) — wrap with `if (!isOwnerOnline())` gate.
-- `[ ]` Legacy desktop chat push (`index.ts:1904`) — same gate.
-- `[ ]` Verify EnvoyGo authenticates with a session token (so `hasClientForOwner` tracks it).
+### 50B — Remaining work `[ ]`
 
-### 50C — Group chat push `[ ]`
-
-- `[ ]` Hook: `packages/api/src/chat-room-service.ts:1316` (after persist + emit).
-- `[ ]` Extend `ChatRoomServiceDeps` with a push callback (mirrors Slice A pattern).
-- `[ ]` Recipient: `selfOwnerId` (the home owner, if a room member). No fan-out.
-
-### 50D — EnvoyAI / OpenClaw reply push `[ ]`
-
-- `[ ]` Hook: `node-service-openclaw-runtime.ts:339` (`recordEnvoyAiChatMessageViaRuntime`).
-- `[ ]` Reuse `dispatchChatPush` with `senderName: "EnvoyAI"` + `senderOwnerId: "envoy:assistant"`.
-- `[ ]` Skip-if-online. Useful for long-running turns the user backgrounded during.
-
-### 50E — Ext Agent reply push `[ ]`
-
-- `[ ]` Hook: `index.ts:3586/3590` (bridge `receiveFromAgent`).
-- `[ ]` **Verify first:** the bridge is desktop-only today. If EnvoyGo never hits this path, defer.
-
-### 50F — Pi push coverage `[ ]`
-
-- `[ ]` **F.1 (easy):** Pi tool-action request — hook `node-service-pi.ts:130` (`onProposal`), add `dispatchPiProposalPush` or reuse `dispatchChatPush` with `senderName: "Pi"`.
-- `[ ]` **F.2 (hard):** Pi `sendToPi` response — currently a pure synchronous RPC with no event. Needs `sendToPi`/`askPiViaRuntime` to emit on completion (`pi:response` WS event), then hook the push there. Lower priority — user is usually in the Pi panel when sending.
-
-### 50G — Approval-queue push `[ ]`
-
-- `[ ]` Subscribe `approvalQueue.onChange` at NodeServiceImpl; diff for new pending items.
-- `[ ]` Capture the approver (home owner) at the subscription layer — items carry `contactOwnerId`, not the home owner.
-- `[ ]` New `dispatchApprovalPush({ title: "Approval needed", body, targetOwnerId })`.
-
-### 50H — Token cleanup + UX polish `[ ]`
-
-- `[ ]` `dispatchApnsHttp2` should unregister tokens APNs reports as 410/400 (stale-token cleanup). Mirror the OpenClaw path's `shouldClearStoredApnsRegistration`.
-- `[ ]` Notification channels (Android) / interruption levels (iOS) — distinguish direct message (active) from feed update (passive).
-- `[ ]` Badge count management — server tracks unread per thread; app clears badge on foreground.
-- `[ ]` Per-contact mute / global quiet-hours / DND.
+- `[ ]` **Approval-queue push.** Subscribe to `approvalQueue.onChange`; capture approver (home owner) at subscription layer. New `dispatchApprovalPush`.
+- `[ ]` **Token cleanup.** `dispatchApnsHttp2` should unregister tokens APNs reports as 410/400. Mirror the OpenClaw path's `shouldClearStoredApnsRegistration`.
+- `[ ]` **Feed push skip-if-online.** `index.ts:1339` (feed push) doesn't gate on `isOwnerOnline` — wrap with the gate.
+- `[ ]` **Notification channels** (Android) / interruption levels (iOS) — distinguish direct message (active) from feed update (passive).
+- `[ ]` **Badge count management** — server tracks unread per thread; app clears badge on foreground.
+- `[ ]` **Per-contact mute / global quiet-hours / DND.**
 
 ### Deep-link navigation (separate workstream, client-side) `[ ]`
 
@@ -6476,11 +6449,12 @@ Closes the production path after 48A–48D protocol/mount work.
 
 ### Exit Criteria (Phase 50 overall)
 
-- `[ ]` Direct chat, group chat, bond request, EnvoyAI reply, Ext Agent reply, Pi tool-action, approval item all push when EnvoyGo is backgrounded.
-- `[ ]` No push fires when EnvoyGo has an active WebSocket (skip-if-online for all paths).
-- `[ ]` Stale tokens are cleaned up on APNs 410/400.
-- `[ ]` Tapping a push navigates to the relevant screen (deep link).
-- `[ ]` Per-thread / per-contact mute + global DND available.
+- `[x]` Direct chat, group chat, bond request, EnvoyAI reply, Ext Agent reply, Pi response + tool-action all push when EnvoyGo is backgrounded (unified listener).
+- `[x]` No push fires when EnvoyGo has an active WebSocket (skip-if-online for the unified listener).
+- `[ ]` Stale tokens are cleaned up on APNs 410/400 (Slice B).
+- `[ ]` Approval items push (Slice B).
+- `[ ]` Tapping a push navigates to the relevant screen (deep link — separate workstream).
+- `[ ]` Per-thread / per-contact mute + global DND available (Slice B).
 
 ---
 

@@ -1917,6 +1917,60 @@ class NodeServiceImpl implements NodeService {
       this._nodeStatus = "running";
     }
     this._wireCallManagerRemoteSignals();
+    // Phase 50 — unified push-notification listener.
+    //
+    // ONE subscriber catches chat:message events from EVERY source:
+    // direct peer chat, group chat, EnvoyAI/OpenClaw replies, Ext Agent
+    // (HomeClaw/Hermes/OpenHuman/Pi) replies. The sources stay decoupled —
+    // they just emit messages as they do today; this listener decides
+    // whether to push based on whether paired devices are connected.
+    //
+    // The "skip if online" gate (isOwnerOnline) prevents the
+    // double-notification when EnvoyGo has an active WebSocket.
+    this.on("chat:message", (msg: ChatMessage) => {
+      // Only push messages addressed to this home's owner (skip echo / sent).
+      const targetOwnerId = msg.recipient.ownerId ?? this._profile?.owner?.ownerId
+      if (!targetOwnerId || targetOwnerId !== (this._profile?.owner?.ownerId ?? targetOwnerId)) {
+        return
+      }
+      // Don't push the user's OWN outgoing messages (some flows echo them).
+      if (msg.sender.ownerId && msg.sender.ownerId === targetOwnerId) {
+        return
+      }
+      void this.isOwnerOnline().then((online: boolean) => {
+        if (online) return
+        void pushNotificationService
+          .dispatchChatPush({
+            senderName: msg.sender.displayName ?? msg.sender.ownerId ?? "New message",
+            messagePreview: (msg.content?.text ?? "").slice(0, 120),
+            targetOwnerId,
+            messageId: msg.messageId,
+            senderOwnerId: msg.sender.ownerId ?? "",
+          })
+          .catch(() => {})
+      })
+    })
+    // Phase 50 — Pi tool-action request push (separate event type).
+    // Fires when Pi asks the user to approve a tool call (file edit, bash).
+    // The confirm-dialog is in-app; this wakes backgrounded devices.
+    this.on("pi:proposal", (event: { proposal?: { uiRequestId: string; title: string; message: string } }) => {
+      const proposal = event?.proposal
+      if (!proposal) return
+      const targetOwnerId = this._profile?.owner?.ownerId
+      if (!targetOwnerId) return
+      void this.isOwnerOnline().then((online: boolean) => {
+        if (online) return
+        void pushNotificationService
+          .dispatchChatPush({
+            senderName: "Pi",
+            messagePreview: `${proposal.title}: ${proposal.message}`.slice(0, 120),
+            targetOwnerId,
+            messageId: `pi-proposal-${proposal.uiRequestId}`,
+            senderOwnerId: "envoy:pi",
+          })
+          .catch(() => {})
+      })
+    })
   }
 
   // ============================================
@@ -3754,6 +3808,27 @@ class NodeServiceImpl implements NodeService {
   /** One-shot prompt — used by the sendToPi JSON-RPC method. */
   async sendToPi(text: string): Promise<string> {
     const result = await askPiViaRuntime(this._piState, this._piRuntimeDeps(), text)
+    // Phase 50 — emit Pi's response as a chat:message so the UNIFIED push
+    // listener (constructor) catches it. If the user backgrounded the app
+    // during a long Pi turn, the push wakes their device. Without this emit,
+    // Pi responses would be invisible to the push system (pure RPC return).
+    if (result.text) {
+      this.emit("chat:message", {
+        messageId: `pi-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        sender: {
+          nodeId: "pi",
+          displayName: "Pi",
+          ownerId: "envoy:pi",
+          actorRole: "agent" as const,
+        },
+        recipient: {
+          nodeId: this._mesh?.peerId ?? "",
+          ownerId: this._profile?.owner?.ownerId ?? "",
+        },
+        content: { text: result.text },
+        metadata: { timestamp: new Date().toISOString(), deliveryReceipt: "delivered" as const },
+      } as ChatMessage)
+    }
     return result.text
   }
 

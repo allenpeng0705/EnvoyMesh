@@ -47,19 +47,6 @@ export interface ChatMessageContext {
   sendAgentChat(targetOwnerId: string, text: string): Promise<any>;
   tagBondedContactReachability(remotePeerId: string): Promise<void> | void;
   isOwnerOnline(): Promise<boolean>;
-  /**
-   * Phase 50 — fire-and-forget push dispatch for an inbound direct chat
-   * message. The implementation MUST apply the "skip if owner online" gate
-   * (EnvoyGo with an active WebSocket should not get a system push that
-   * duplicates the in-app event). Best-effort: errors are swallowed.
-   */
-  dispatchChatPushIfOffline(params: {
-    senderName: string
-    messagePreview: string
-    targetOwnerId: string
-    messageId: string
-    senderOwnerId: string
-  }): void
 }
 
 export interface ChatMessageParams {
@@ -157,21 +144,10 @@ export async function handleChatMessageViaRuntime(
       incomingMsg,
     );
     ctx.emit("chat:message", emitMsg);
-    // Phase 50 — push the inbound direct chat to EnvoyGo if the owner has no
-    // active WebSocket (otherwise the in-app event already reached the phone
-    // and a system push would be a duplicate). Best-effort, skip-if-online.
-    // This is the production path (Path A) fix for the chat-push gap: the
-    // legacy Path B dispatch at index.ts:1904 only runs when
-    // usesInternalMeshInboundHandlers() is false, but EnvoyGo's home node
-    // always runs Path A. Without this call, backgrounded EnvoyGo clients
-    // get no notification of inbound direct messages.
-    ctx.dispatchChatPushIfOffline({
-      senderName: emitMsg.sender.displayName ?? payload.senderOwnerId,
-      messagePreview: payload.text.slice(0, 120),
-      targetOwnerId: emitMsg.recipient.ownerId,
-      messageId: envelope.messageId,
-      senderOwnerId: payload.senderOwnerId,
-    });
+    // Phase 50 — push dispatch is handled by the UNIFIED chat:message listener
+    // on NodeServiceImpl (constructor), which catches messages from ALL
+    // sources (direct, group, EnvoyAI, Ext Agent, Pi) in one place. No
+    // per-source push call needed here.
   })();
   if (senderTrust && senderTrust.level !== "blocked") {
     void ctx.tagBondedContactReachability(remotePeerId);
