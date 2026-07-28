@@ -277,6 +277,8 @@ export class PiRuntime extends EventEmitter {
   private readonly pendingCommands = new Map<string, { resolve: (r: PiResponse) => void; reject: (e: Error) => void }>()
   private readonly lineBuffer: string[] = []
   private buf = ""
+  /** Cap the line buffer at 1 MB to defend against a runaway child OOMing the host. */
+  private static readonly MAX_LINE_BYTES = 1024 * 1024
   private ready = false
   private readonly opts: PiRuntimeOptions
   private readonly log: (level: "info" | "warn" | "error", msg: string) => void
@@ -328,24 +330,62 @@ export class PiRuntime extends EventEmitter {
     this.stdin = this.child.stdin
     this.wireStreams()
 
-    // Readiness probe — wait for the first stdout line or timeout.
+    // Readiness probe — two-track:
+    //   1. Ideal: Pi emits a JSON line on stdout → ready immediately.
+    //   2. Fallback: Pi emits non-JSON preamble (e.g. "Warning: Model ...
+    //      not found") and then blocks waiting for input. We treat the
+    //      child being alive + quiet for GRACE_MS as ready, since the RPC
+    //      loop is primed regardless of whether the first line was JSON.
+    // The readiness deadline (readyTimeoutMs) still applies: if neither
+    // track fires, the child is broken and we abort.
     const readyTimeoutMs = this.opts.readyTimeoutMs ?? 15_000
+    const GRACE_MS = 1_000
     await new Promise<void>((resolvePromise, rejectPromise) => {
-      const timer = setTimeout(() => {
-        if (!this.ready) {
+      let settled = false
+      const deadline = setTimeout(() => {
+        if (settled) return
+        settled = true
+        // Deadline hit. If the child is still alive, treat it as ready
+        // (fallback track 2 — the child is primed but quiet). If it died,
+        // surface the failure.
+        if (this.child && !this.child.killed) {
+          this.markReady()
+          resolvePromise()
+        } else {
           rejectPromise(new Error(`Pi readiness probe timed out after ${readyTimeoutMs}ms`))
         }
       }, readyTimeoutMs)
-      const onReady = () => {
-        clearTimeout(timer)
+      const grace = setTimeout(() => {
+        if (settled) return
+        // Grace period elapsed with the child alive but no JSON yet —
+        // accept as ready (Pi emitted a non-JSON warning then went quiet).
+        if (this.child && !this.child.killed) {
+          settled = true
+          clearTimeout(deadline)
+          this.markReady()
+          resolvePromise()
+        }
+      }, GRACE_MS)
+      const onJsonReady = () => {
+        if (settled) return
+        settled = true
+        clearTimeout(deadline)
+        clearTimeout(grace)
         resolvePromise()
       }
-      this.once("__ready", onReady)
+      this.once("__ready", onJsonReady)
     }).catch((err) => {
       // Don't leave a half-spawned child around.
       void this.stop()
       throw err
     })
+  }
+
+  /** Mark the runtime ready (idempotent). */
+  private markReady(): void {
+    if (this.ready) return
+    this.ready = true
+    this.emit("__ready")
   }
 
   /** Wire stdout/stderr handlers + line-framing. */
@@ -356,11 +396,18 @@ export class PiRuntime extends EventEmitter {
     child.stdout.setEncoding("utf8")
     child.stdout.on("data", (chunk: string) => {
       this.buf += chunk
+      // Bounded buffer: if a single line exceeds MAX_LINE_BYTES, the child
+      // is misbehaving (or emitting binary). Drop the buffer and warn,
+      // rather than OOM the host.
+      if (Buffer.byteLength(this.buf, "utf8") > PiRuntime.MAX_LINE_BYTES * 2) {
+        this.log("error", `stdout line exceeded ${PiRuntime.MAX_LINE_BYTES * 2} bytes — dropping buffer (child misbehaving?)`)
+        this.buf = ""
+      }
       let nl: number
       while ((nl = this.buf.indexOf("\n")) >= 0) {
-        const line = this.buf.slice(0, nl).trim()
+        const line = this.buf.slice(0, nl).replace(/\r$/, "")
         this.buf = this.buf.slice(nl + 1)
-        if (line) this.handleLine(line)
+        if (line.trim()) this.handleLine(line)
       }
     })
 
@@ -397,21 +444,23 @@ export class PiRuntime extends EventEmitter {
     })
   }
 
-  /** Parse one JSONL line and dispatch to response/event handlers. */
+  /** Parse one stdout line; tolerate non-JSON preamble (e.g. Pi warnings). */
   private handleLine(line: string): void {
     let msg: unknown
     try {
       msg = JSON.parse(line)
     } catch {
-      this.log("warn", `unparseable stdout line: ${line.slice(0, 200)}`)
+      // Pi sometimes emits non-JSON preamble on stdout (e.g. the
+      // "Warning: Model ... not found for provider ... Using custom model
+      // id." line). Don't fail readiness on these — log and continue.
+      // Strip control chars for log safety.
+      const safe = line.replace(/[\x00-\x1F\x7F]/g, "?").slice(0, 200)
+      this.log("info", `stdout (non-JSON): ${safe}`)
       return
     }
 
-    // First line marks readiness regardless of content.
-    if (!this.ready) {
-      this.ready = true
-      this.emit("__ready")
-    }
+    // First successful JSON line marks readiness (the common case).
+    this.markReady()
 
     const obj = msg as { type?: string; id?: string }
     if (!obj || typeof obj !== "object" || !obj.type) return
@@ -484,21 +533,30 @@ export class PiRuntime extends EventEmitter {
     this.on("event", onEvent)
     this.once("__cancelled", onCancel)
 
+    // Subscribe to turn-completion BEFORE sending the prompt — otherwise a
+    // fast turn could fire agent_end/turn_end between send() returning and
+    // the wait Promise being constructed, and we'd miss it (hang forever).
+    let turnDone: () => void
+    const turnComplete = new Promise<void>((resolve) => {
+      turnDone = resolve
+      this.once("agent_end", turnDone)
+      this.once("turn_end", turnDone)
+    })
+
     try {
       const resp = await this.send({ type: "prompt", message: text })
       if (!resp.success) {
         throw new Error(resp.error ?? "Pi rejected the prompt")
       }
       // Wait for the agent_end / turn_end event that closes this turn.
-      await new Promise<void>((resolveTurn) => {
-        const done = () => resolveTurn()
-        this.once("agent_end", done)
-        this.once("turn_end", done)
-      })
+      await turnComplete
       return { text: collected, model, toolCallCount, cancelled }
     } finally {
       this.off("event", onEvent)
       this.off("__cancelled", onCancel)
+      // Clean up turn-end listeners if still attached (e.g. on early throw).
+      this.off("agent_end", turnDone!)
+      this.off("turn_end", turnDone!)
     }
   }
 
