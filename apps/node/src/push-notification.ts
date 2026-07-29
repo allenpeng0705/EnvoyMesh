@@ -142,6 +142,7 @@ interface PushConfig {
 }
 
 let _pushConfig: PushConfig | null = null
+let _pushConfigProfileDir: string | null = null
 
 /**
  * Load push credentials from `<profileDir>/push-config.json`.
@@ -149,6 +150,7 @@ let _pushConfig: PushConfig | null = null
  * exist or is malformed, _pushConfig stays null (env vars are the only source).
  */
 async function loadPushConfig(profileDir: string): Promise<void> {
+  _pushConfigProfileDir = profileDir
   const configPath = path.join(profileDir, "push-config.json")
   try {
     const raw = await fsPromises.readFile(configPath, "utf-8")
@@ -157,6 +159,23 @@ async function loadPushConfig(profileDir: string): Promise<void> {
   } catch {
     // File doesn't exist — normal; env vars are the only source.
   }
+}
+
+/**
+ * Resolve a file path from push-config.json. Supports both absolute and
+ * relative paths:
+ *   - Absolute (`/secure/AuthKey.p8`): used as-is.
+ *   - Relative (`AuthKey.p8`): resolved against the profile dir, so the
+ *     user can drop the .p8 / service-account JSON next to push-config.json
+ *     and reference it by filename. Works identically in dev (./data/default/),
+ *     Tauri macOS (~/Library/Application Support/EnvoyMesh/profile/), etc.
+ */
+function resolvePushPath(p: string | undefined): string | undefined {
+  if (!p) return undefined
+  if (path.isAbsolute(p)) return p
+  // Relative: resolve against the profile dir.
+  if (!_pushConfigProfileDir) return p
+  return path.resolve(_pushConfigProfileDir, p)
 }
 
 /**
@@ -192,7 +211,7 @@ function pushSandbox(): boolean {
 function signApnsJwt(): string | null {
   const keyId = pushCredential("APNS_KEY_ID", "apns", "keyId")
   const teamId = pushCredential("APNS_TEAM_ID", "apns", "teamId")
-  const keyPath = pushCredential("APNS_KEY_PATH", "apns", "keyPath")
+  const keyPath = resolvePushPath(pushCredential("APNS_KEY_PATH", "apns", "keyPath"))
   if (!keyId || !teamId || !keyPath) return null;
 
   let keyPem: string;
@@ -362,7 +381,7 @@ async function dispatchApnsHttp2(args: {
  *   FCM_SERVICE_ACCOUNT_JSON — path to the service account JSON key file
  */
 async function signFcmAccessToken(): Promise<string | null> {
-  const keyPath = pushCredential("FCM_SERVICE_ACCOUNT_JSON", "fcm", "serviceAccountJsonPath")
+  const keyPath = resolvePushPath(pushCredential("FCM_SERVICE_ACCOUNT_JSON", "fcm", "serviceAccountJsonPath"))
   if (!keyPath) return null;
 
   let key: { client_email: string; private_key: string };

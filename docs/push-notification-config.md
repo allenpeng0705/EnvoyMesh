@@ -233,10 +233,51 @@ cp push-config.example.json ~/Library/Application\ Support/EnvoyMesh/push-config
 [push] Loaded credentials from push-config.json
 ```
 
-**Important:** The `keyPath` and `serviceAccountJsonPath` must be **absolute
-paths** to files outside the app bundle. The `.p8` key and service account
-JSON are secrets — never bundle them in the DMG. Place them in a secure
-location (e.g. `/secure/` or `~/.config/envoymesh/`) with mode `0600`.
+**Important:** The `.p8` key and service account JSON are secrets — never
+bundle them in the DMG. Drop them **next to `push-config.json`** in the
+profile dir and reference them by filename (relative path). Absolute paths
+also work if you prefer a secure location outside the profile dir.
+
+**File path resolution (keyPath, serviceAccountJsonPath):**
+
+| Path style | Example | Resolves to |
+|---|---|---|
+| Relative | `AuthKey_ABC1234567.p8` | `<profileDir>/AuthKey_ABC1234567.p8` |
+| Absolute | `/secure/AuthKey.p8` | `/secure/AuthKey.p8` |
+
+Relative paths are resolved against the profile dir, so the same
+`push-config.json` works in all modes:
+
+| Run mode | Profile dir | `AuthKey.p8` resolves to |
+|---|---|---|
+| Dev (`npm run node:dev`) | `./data/default/` | `./data/default/AuthKey.p8` |
+| Tauri macOS (DMG) | `~/Library/Application Support/EnvoyMesh/profile/` | `~/Library/Application Support/EnvoyMesh/profile/AuthKey.p8` |
+| Tauri Linux (AppImage) | `~/.local/share/EnvoyMesh/profile/` | `~/.local/share/EnvoyMesh/profile/AuthKey.p8` |
+| Tauri Windows (exe) | `%APPDATA%/EnvoyMesh/profile/` | `%APPDATA%/EnvoyMesh/profile/AuthKey.p8` |
+
+**Setup (macOS DMG):**
+
+```bash
+# 1. Navigate to the profile dir
+cd ~/Library/Application\ Support/EnvoyMesh/profile/
+
+# 2. Copy the template
+cp /path/to/repo/push-config.example.json push-config.json
+
+# 3. Drop your .p8 key here (from Apple Developer → Keys)
+cp ~/Downloads/AuthKey_ABC1234567.p8 .
+
+# 4. For Android: drop the FCM service account JSON here
+cp ~/Downloads/firebase-service-account.json .
+
+# 5. Edit push-config.json with your keyId, teamId, topic, projectId
+nano push-config.json
+```
+
+After editing, restart the EnvoyMesh app. The log should show:
+```
+[push] Loaded credentials from push-config.json
+```
 
 **Precedence:** env vars > config file. If both are set, env vars win.
 
