@@ -145,17 +145,18 @@ let _pushConfig: PushConfig | null = null
 let _pushConfigProfileDir: string | null = null
 
 /**
- * Load push credentials. Checks two locations in order:
+ * Load push credentials. Checks locations in priority order:
  *   1. `<profileDir>/push-config.json` — user-managed override (post-install edit)
- *   2. `<bundleDir>/push-config.json` — bundled at build time (staged by
- *      stage-bundle-node-runtime.sh/.ps1 from the repo-root push-config.json)
+ *   2. `<bundleDir>/push-config.json` — bundled at build time (DMG/exe)
+ *   3. `<repoRoot>/push-config.json` — dev mode (just drop at repo root)
  *
- * The profile dir is also stored as _pushConfigProfileDir for relative-path
- * resolution of .p8 / service-account files. When the config comes from the
- * bundle dir, relative paths resolve against the bundle dir instead.
+ * The source dir is stored as _pushConfigProfileDir for relative-path
+ * resolution of .p8 / service-account files. So 'AuthKey.p8' resolves
+ * against whichever dir the config was found in — works in dev, DMG,
+ * and AppImage identically.
  *
- * Called once during PushNotificationService.init(). If neither file exists,
- * _pushConfig stays null (env vars are the only source).
+ * Called once during PushNotificationService.init(). If no file is found
+ * in any location, _pushConfig stays null (env vars are the only source).
  */
 async function loadPushConfig(profileDir: string): Promise<void> {
   // 1. Profile dir (user override — highest priority after env vars)
@@ -182,6 +183,29 @@ async function loadPushConfig(profileDir: string): Promise<void> {
       return
     } catch {
       // Not in bundle dir either.
+    }
+  }
+
+  // 3. Repo root (dev mode — just drop push-config.json + .p8 at repo root)
+  // Walk up from the current working directory to find a push-config.json.
+  // In dev (`npm run node:dev`), the cwd is the repo root (or apps/node —
+  // try both). This means the operator/dev puts ONE set of files at the
+  // repo root and it works for both dev AND build-time staging.
+  const candidates = [
+    process.cwd(),
+    path.resolve(process.cwd(), "..", ".."), // apps/node → repo root
+    path.resolve(process.cwd(), ".."),       // apps/node → apps → may also be repo
+  ]
+  for (const candidate of candidates) {
+    const candidatePath = path.join(candidate, "push-config.json")
+    try {
+      const raw = await fsPromises.readFile(candidatePath, "utf-8")
+      _pushConfig = JSON.parse(raw)
+      _pushConfigProfileDir = candidate
+      console.log(`[push] Loaded credentials from push-config.json (${candidate})`)
+      return
+    } catch {
+      // Not here — try next candidate.
     }
   }
 
