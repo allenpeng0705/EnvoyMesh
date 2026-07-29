@@ -429,7 +429,8 @@ export type IconName =
   | "pending"
   | "refreshCw"
   | "chevronDown"
-  | "plugin";
+  | "plugin"
+  | "swap";
 
 export const ICON_MAP: Record<IconName, React.FC<IconProps>> = {
   chat: ChatIcon,
