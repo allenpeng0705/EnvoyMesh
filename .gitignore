@@ -18,6 +18,8 @@ apps/tauri/src-tauri/resources/pi/*
 .env
 .env.*
 !.env.example
+# Push credentials (contains secrets — never commit real push-config.json)
+push-config.json
 # Local runtime data (profiles, keys, RAG DB). Exception: committed template only.
 data/
 !apps/node/data/

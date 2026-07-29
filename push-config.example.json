@@ -1,0 +1,15 @@
+{
+  "_comment": "Push notification credentials for the home node. Copy this file to <profileDir>/push-config.json and fill in your values. For dev, you can also set env vars (APNS_KEY_ID, FCM_PROJECT_ID, etc.) — env vars take priority over this file. The profile dir is typically ~/Library/Application Support/EnvoyMesh on macOS, ~/.local/share/EnvoyMesh on Linux.",
+  "apns": {
+    "keyId": "ABC1234567",
+    "teamId": "1A2B3C4D5E",
+    "keyPath": "/secure/AuthKey_ABC1234567.p8",
+    "topic": "com.envoymesh.envoygo",
+    "voipTopic": "com.envoymesh.envoygo.voip",
+    "sandbox": false
+  },
+  "fcm": {
+    "projectId": "your-firebase-project-id",
+    "serviceAccountJsonPath": "/secure/firebase-service-account.json"
+  }
+}

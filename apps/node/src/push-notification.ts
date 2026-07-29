@@ -8,8 +8,15 @@
  *   - iOS: Apple Push Notification service (APNs) — native HTTP/2, no Firebase
  *   - Android: Firebase Cloud Messaging (FCM) HTTP v1
  *
- * Both backends are gated behind environment variables. When credentials
- * are absent, dispatch logs a warning and skips silently.
+ * Credentials are loaded from two sources (checked in order):
+ *   1. Environment variables (APNS_KEY_ID, FCM_PROJECT_ID, …) — preferred
+ *      for dev (`npm run node:dev`) and Docker.
+ *   2. `<profileDir>/push-config.json` — a static config file for packaged
+ *      builds (DMG/exe) where env vars aren't available. See
+ *      `push-config.example.json` for the template.
+ *
+ * When credentials are absent from both sources, dispatch logs a warning
+ * and skips silently.
  *
  * Token persistence: push tokens are saved to `<profileDir>/push-tokens.json`
  * so they survive node restarts.
@@ -111,22 +118,81 @@ class PushTokenStore {
 }
 
 // --------------------------------------------------------------------------
-// APNs (Apple Push Notification service) — iOS only
+// Push credential loading — env vars first, then push-config.json fallback
 // --------------------------------------------------------------------------
 
 /**
- * Sign a JWT for APNs using the ES256 private key (.p8 file).
- *
- * Required env vars:
- *   APNS_KEY_ID — the 10-character Key ID from the Apple Developer portal
- *   APNS_TEAM_ID — your Apple Developer Team ID
- *   APNS_KEY_PATH — path to the .p8 private key file
- *   APNS_TOPIC   — the app's bundle ID (e.g. com.envoymesh.EnvoyGo)
+ * Shape of the optional `push-config.json` file in the profile dir.
+ * Used by packaged builds (DMG/exe) where env vars aren't available.
+ * See `push-config.example.json` for a template.
  */
+interface PushConfig {
+  apns?: {
+    keyId?: string
+    teamId?: string
+    keyPath?: string
+    topic?: string
+    voipTopic?: string
+    sandbox?: boolean
+  }
+  fcm?: {
+    projectId?: string
+    serviceAccountJsonPath?: string
+  }
+}
+
+let _pushConfig: PushConfig | null = null
+
+/**
+ * Load push credentials from `<profileDir>/push-config.json`.
+ * Called once during PushNotificationService.init(). If the file doesn't
+ * exist or is malformed, _pushConfig stays null (env vars are the only source).
+ */
+async function loadPushConfig(profileDir: string): Promise<void> {
+  const configPath = path.join(profileDir, "push-config.json")
+  try {
+    const raw = await fsPromises.readFile(configPath, "utf-8")
+    _pushConfig = JSON.parse(raw)
+    console.log("[push] Loaded credentials from push-config.json")
+  } catch {
+    // File doesn't exist — normal; env vars are the only source.
+  }
+}
+
+/**
+ * Read a push credential value. Checks env var first, then push-config.json.
+ * This is the single entry point for all credential reads — callers don't
+ * need to know whether the value came from an env var or the config file.
+ */
+function pushCredential(envVar: string, section: "apns" | "fcm", key: string): string | undefined {
+  // 1. Env var (preferred for dev + Docker)
+  const envVal = process.env[envVar]
+  if (envVal && envVal.trim()) return envVal.trim()
+  // 2. Config file fallback (for packaged builds)
+  const sectionData = _pushConfig?.[section]
+  if (sectionData) {
+    const val = (sectionData as Record<string, unknown>)[key]
+    if (typeof val === "string" && val.trim()) return val.trim()
+  }
+  return undefined
+}
+
+/** Convenience for the APNS_SANDBOX boolean (config file stores a boolean). */
+function pushSandbox(): boolean {
+  const envVal = process.env.APNS_SANDBOX
+  if (envVal !== undefined) return Boolean(envVal.trim())
+  const configVal = _pushConfig?.apns?.sandbox
+  return configVal ?? false
+}
+
+// --------------------------------------------------------------------------
+// APNs (Apple Push Notification service) — iOS only
+// --------------------------------------------------------------------------
+
 function signApnsJwt(): string | null {
-  const keyId = process.env.APNS_KEY_ID;
-  const teamId = process.env.APNS_TEAM_ID;
-  const keyPath = process.env.APNS_KEY_PATH;
+  const keyId = pushCredential("APNS_KEY_ID", "apns", "keyId")
+  const teamId = pushCredential("APNS_TEAM_ID", "apns", "teamId")
+  const keyPath = pushCredential("APNS_KEY_PATH", "apns", "keyPath")
   if (!keyId || !teamId || !keyPath) return null;
 
   let keyPem: string;
@@ -157,7 +223,7 @@ async function sendApns(
   payload: PushNotificationPayload,
 ): Promise<number | undefined> {
   const jwt = signApnsJwt();
-  const topic = process.env.APNS_TOPIC;
+  const topic = pushCredential("APNS_TOPIC", "apns", "topic");
   if (!jwt || !topic) {
     console.warn("[push] APNs credentials not configured — skipping iOS push");
     return;
@@ -204,8 +270,8 @@ async function sendVoipPush(
   // Prefer the explicit VoIP topic; fall back to the alert topic with
   // `.voip` appended (a common convention) so operators don't have to
   // set two env vars for a single bundle.
-  const alertTopic = process.env.APNS_TOPIC;
-  const explicitVoipTopic = process.env.APNS_VOIP_TOPIC;
+  const alertTopic = pushCredential("APNS_TOPIC", "apns", "topic")
+  const explicitVoipTopic = pushCredential("APNS_VOIP_TOPIC", "apns", "voipTopic")
   const topic = explicitVoipTopic ?? (alertTopic ? `${alertTopic}.voip` : undefined);
   if (!jwt || !topic) {
     console.warn("[push] APNs VoIP topic not configured — skipping iOS VoIP push");
@@ -244,7 +310,7 @@ async function dispatchApnsHttp2(args: {
   body: string;
   logTag: string;
 }): Promise<number | undefined> {
-  const isProd = !process.env.APNS_SANDBOX;
+  const isProd = !pushSandbox()
   const host = isProd ? "api.push.apple.com" : "api.sandbox.push.apple.com";
 
   return new Promise((resolve) => {
@@ -296,7 +362,7 @@ async function dispatchApnsHttp2(args: {
  *   FCM_SERVICE_ACCOUNT_JSON — path to the service account JSON key file
  */
 async function signFcmAccessToken(): Promise<string | null> {
-  const keyPath = process.env.FCM_SERVICE_ACCOUNT_JSON;
+  const keyPath = pushCredential("FCM_SERVICE_ACCOUNT_JSON", "fcm", "serviceAccountJsonPath")
   if (!keyPath) return null;
 
   let key: { client_email: string; private_key: string };
@@ -366,7 +432,7 @@ async function sendFcm(
   token: string,
   payload: PushNotificationPayload,
 ): Promise<number | undefined> {
-  const projectId = process.env.FCM_PROJECT_ID;
+  const projectId = pushCredential("FCM_PROJECT_ID", "fcm", "projectId")
   const accessToken = await signFcmAccessToken();
   if (!projectId || !accessToken) {
     console.warn("[push] FCM credentials not configured — skipping Android push");
@@ -424,9 +490,10 @@ export class PushNotificationService {
   private readonly store = new PushTokenStore();
   private initialized = false;
 
-  /** Initialize the token store. Call once on node startup. */
+  /** Initialize the token store + load push-config.json. Call once on startup. */
   async init(profileDir: string): Promise<void> {
     await this.store.init(profileDir);
+    await loadPushConfig(profileDir);
     this.initialized = true;
   }
 

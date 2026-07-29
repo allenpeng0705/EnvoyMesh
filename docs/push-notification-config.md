@@ -185,6 +185,61 @@ export FCM_SERVICE_ACCOUNT_JSON="/secure/firebase-service-account.json"
 npm run node:dev
 ```
 
+### 3.4 Config file — for packaged builds (DMG / exe / AppImage)
+
+In a packaged Tauri app, the Node process is spawned by the Rust shell and
+inherits its environment — which doesn't include custom env vars. For DMG
+users, use a **`push-config.json`** file in the profile directory instead.
+
+The home node checks env vars first; if a credential is absent from env,
+it falls back to the config file. This means you can mix (e.g. APNS via
+config file, FCM via env var) without conflict.
+
+**Profile directory location:**
+
+| Platform | Path |
+|---|---|
+| macOS | `~/Library/Application Support/EnvoyMesh/` |
+| Linux | `~/.local/share/EnvoyMesh/` (or `$XDG_DATA_HOME/EnvoyMesh/`) |
+| Windows | `%APPDATA%/EnvoyMesh/` |
+
+**Setup:**
+
+1. Copy the template:
+```bash
+cp push-config.example.json ~/Library/Application\ Support/EnvoyMesh/push-config.json
+```
+
+2. Edit with your credentials:
+```json
+{
+  "apns": {
+    "keyId": "ABC1234567",
+    "teamId": "1A2B3C4D5E",
+    "keyPath": "/secure/AuthKey_ABC1234567.p8",
+    "topic": "com.envoymesh.envoygo",
+    "voipTopic": "com.envoymesh.envoygo.voip",
+    "sandbox": false
+  },
+  "fcm": {
+    "projectId": "your-firebase-project-id",
+    "serviceAccountJsonPath": "/secure/firebase-service-account.json"
+  }
+}
+```
+
+3. Restart the EnvoyMesh app. The node log should show:
+```
+[push] Loaded credentials from push-config.json
+```
+
+**Important:** The `keyPath` and `serviceAccountJsonPath` must be **absolute
+paths** to files outside the app bundle. The `.p8` key and service account
+JSON are secrets — never bundle them in the DMG. Place them in a secure
+location (e.g. `/secure/` or `~/.config/envoymesh/`) with mode `0600`.
+
+**Precedence:** env vars > config file. If both are set, env vars win.
+
 ---
 
 ## 4. iOS — APNs (alert + VoIP)
