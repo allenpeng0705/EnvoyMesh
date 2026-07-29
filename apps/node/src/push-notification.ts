@@ -497,14 +497,18 @@ export class PushNotificationService {
     const status = record.platform === "ios"
       ? await sendApns(record.token, payload)
       : await sendFcm(record.token, payload);
-    // APNs: 410 = Unregistered (device uninstalled app or switched off);
-    //       400 = BadDeviceToken (corrupted token). 403 = BadCertificate.
-    // FCM:  404 = registration-token-not-found / UNREGISTERED;
-    //       400 = INVALID_ARGUMENT (bad token format).
-    if (
-      status === 410 || status === 400 ||
-      status === 403 || status === 404
-    ) {
+    // APNs: 410 = Unregistered (device uninstalled app or token expired).
+    //       400 is ambiguous — could be BadDeviceToken OR BadJSONPayload
+    //       (our fault, not the token's). Only unregister on 410 to avoid
+    //       dropping a valid token when the payload itself was malformed.
+    //       403 = BadCertificate (cert/key mismatch — not a token problem).
+    // FCM:  404 = registration-token-not-found / UNREGISTERED.
+    //       400 = INVALID_ARGUMENT (bad token format — IS a token problem).
+    //       (FCM 400 is always token-related, unlike APNs 400.)
+    const shouldUnregister =
+      status === 410 ||                    // APNs + FCM: token expired/not found
+      (record.platform === "android" && status === 400);  // FCM: bad token format
+    if (shouldUnregister) {
       console.log(
         `[push] token ${record.deviceId} returned status=${status} — unregistering`,
       );
@@ -549,6 +553,9 @@ export class PushNotificationService {
     };
     if (params.senderOwnerId) data.senderOwnerId = params.senderOwnerId;
     if (params.roomId) data.roomId = params.roomId;
+    // Include senderName so the client can display it in the chat header
+    // when deep-linking from a push tap (before the thread loads).
+    if (params.senderName) data.senderName = params.senderName;
 
     for (const record of tokens) {
       await this.sendAndCleanup(record, { title, body, data });

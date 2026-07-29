@@ -111,8 +111,20 @@ class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
         ref.read(chatProvider.notifier).selectTab(1);
         break;
       case 'pi_proposal':
-        // Pi tool-action request → Chats tab (Pi TUI is under Terminals).
+        // Pi tool-action request → open the Pi Ext Agent chat thread so
+        // the user sees the confirm dialog. Pi is an Ext Agent with
+        // agentType 'pi', so its threadId is "nodeId:pi".
         ref.read(chatProvider.notifier).selectTab(0);
+        final piNodeId = ref.read(nodeProvider).activeNode?.id;
+        if (piNodeId != null) {
+          nav.push(MaterialPageRoute(
+            builder: (_) => ChatDetailScreen(
+              threadId: '$piNodeId:pi',
+              displayName: 'Pi',
+              agentType: 'pi',
+            ),
+          ));
+        }
         break;
       default:
         // Chat thread (direct or room). The payload carries senderOwnerId
@@ -121,6 +133,7 @@ class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
         // the existing ChatDetailScreen navigation pattern.
         final senderOwnerId = hint['senderOwnerId'] as String?;
         final roomId = hint['roomId'] as String?;
+        final senderName = hint['senderName'] as String?;
         if (senderOwnerId == null && roomId == null) return;
         final nodeId = ref.read(nodeProvider).activeNode?.id;
         if (nodeId == null) {
@@ -135,7 +148,7 @@ class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
         nav.push(MaterialPageRoute(
           builder: (_) => ChatDetailScreen(
             threadId: threadId,
-            displayName: senderOwnerId ?? roomId ?? '',
+            displayName: senderName ?? senderOwnerId ?? roomId ?? '',
             contactOwnerId: senderOwnerId,
             chatRoomId: roomId,
           ),

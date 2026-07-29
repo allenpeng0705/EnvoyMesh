@@ -5,12 +5,14 @@ import 'package:shared_preferences/shared_preferences.dart';
 /// When the user turns push OFF in the app settings (not the OS system
 /// settings), EnvoyGo:
 ///   1. Saves `pushEnabled: false` in SharedPreferences.
-///   2. Calls `unregisterPushToken` on the home node (removes the token).
-///   3. On reconnect, skips token re-registration.
+///   2. On reconnect, `registerPushToken()` checks `isEnabled()` and skips
+///      registration entirely. The home node has no token → no push.
+///   3. Any previously-registered token naturally expires via APNs/FCM 410
+///      token cleanup (`sendAndCleanup` on the home node).
 ///
 /// When turned back ON:
 ///   1. Saves `pushEnabled: true`.
-///   2. Re-registers the token (if already obtained).
+///   2. Calls `registerPushToken()` to re-register the token.
 ///
 /// This needs no server-side changes — the home node simply has no token
 /// to push to when push is disabled.

@@ -136,6 +136,7 @@ class PushNotificationService {
       'senderOwnerId': data['senderOwnerId'],
       'roomId': data['roomId'],
       'messageId': data['messageId'],
+      'senderName': data['senderName'],
     };
   }
 
