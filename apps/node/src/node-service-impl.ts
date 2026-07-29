@@ -1971,7 +1971,13 @@ class NodeServiceImpl implements NodeService {
     //
     // The "skip if online" gate (isOwnerOnline) prevents the
     // double-notification when EnvoyGo has an active WebSocket.
-    this.on("chat:message", (msg: ChatMessage) => {
+    //
+    // Two event names feed this listener:
+    //   "chat:message" — real chat messages forwarded to the UI by ws-server
+    //   "push:message" — push-only events (e.g. Pi responses) that should
+    //     trigger a notification but NOT appear in the chat UI. ws-server
+    //     does NOT forward "push:message" to clients.
+    const pushHandler = (msg: ChatMessage) => {
       // Push target is always the home owner — every message on this node
       // is ultimately for the owner (direct chat, group, EnvoyAI assistant
       // reply, Ext Agent reply, Pi response). We DON'T gate on
@@ -1998,7 +2004,9 @@ class NodeServiceImpl implements NodeService {
           })
           .catch(() => {})
       })
-    })
+    }
+    this.on("chat:message", pushHandler)
+    this.on("push:message", pushHandler)
     // Phase 50 — Pi tool-action request push (separate event type).
     // Fires when Pi asks the user to approve a tool call (file edit, bash).
     // The confirm-dialog is in-app; this wakes backgrounded devices.
@@ -3857,12 +3865,14 @@ class NodeServiceImpl implements NodeService {
   /** One-shot prompt — used by the sendToPi JSON-RPC method. */
   async sendToPi(text: string): Promise<string> {
     const result = await askPiViaRuntime(this._piState, this._piRuntimeDeps(), text)
-    // Phase 50 — emit Pi's response as a chat:message so the UNIFIED push
-    // listener (constructor) catches it. If the user backgrounded the app
-    // during a long Pi turn, the push wakes their device. Without this emit,
-    // Pi responses would be invisible to the push system (pure RPC return).
+    // Phase 50 — emit a push-only event so the unified push listener
+    // (constructor) can fire a notification if the user is backgrounded.
+    // We deliberately use "push:message" (NOT "chat:message") so the
+    // ws-server does NOT forward this to the Social UI — Pi responses
+    // are returned via the RPC result, not as chat messages. Without
+    // this separation, Pi responses would land in the Inbox.
     if (result.text) {
-      this.emit("chat:message", {
+      this.emit("push:message", {
         messageId: `pi-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         sender: {
           nodeId: "pi",

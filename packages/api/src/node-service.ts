@@ -1562,6 +1562,10 @@ export interface NodeServiceEvents {
 
   // Chat events
   "chat:message": ChatMessage;
+  /** Phase 50 — push-only event (e.g. Pi responses). Triggers the unified
+   * push listener but is NOT forwarded to WS clients (unlike chat:message).
+   * This prevents Pi responses from landing in the chat UI / Inbox. */
+  "push:message": ChatMessage;
   "chat:room-updated": ChatRoom;
   "chat:room-removed": { roomId: string };
   "chat:room-message": ChatRoomMessageEvent;
