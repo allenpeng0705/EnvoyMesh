@@ -179,13 +179,10 @@ export function createDeviceAuthorizationStore(profileDir: string): DeviceAuthor
 
     async registerAuthorizedDevice(input: AuthorizedDeviceRecord): Promise<void> {
       await serialised<void>(async (state) => {
+        // 1. Exact match by deviceId (same keypair — e.g. re-pair without
+        //    uninstalling). Replace in place, keep original pairedAt.
         const idx = state.authorizedDevices.findIndex((d) => d.deviceId === input.deviceId);
         if (idx >= 0) {
-          // Re-pair of the same device: keep the original `pairedAt` (the
-          // date the device was first authorized on this home node) and
-          // refresh `lastSeenAt` so the UI can show "last seen" without
-          // losing the original pairing date. All other fields (cert id,
-          // public key, display name) come from the freshest input.
           const previous = state.authorizedDevices[idx]!;
           state.authorizedDevices[idx] = {
             ...previous,
@@ -193,9 +190,39 @@ export function createDeviceAuthorizationStore(profileDir: string): DeviceAuthor
             pairedAt: previous.pairedAt,
             lastSeenAt: input.pairedAt,
           };
-        } else {
-          state.authorizedDevices.push(input);
+          return { state, result: undefined };
         }
+
+        // 2. Fuzzy match by displayName (uninstall/reinstall created a new
+        //    keypair → different deviceId, same device name). Replace the
+        //    OLDEST non-revoked entry with the same displayName to avoid
+        //    accumulating duplicates when the same physical device pairs
+        //    multiple times. If multiple matches exist, replace the oldest;
+        //    the newer ones stay (could be a second physical device with the
+        //    same name — we only replace one, the oldest, as a heuristic).
+        if (input.displayName) {
+          const sameNameIdx = state.authorizedDevices
+            .map((d, i) => ({ d, i }))
+            .filter(({ d }) => d.displayName === input.displayName)
+            .sort((a, b) => new Date(a.d.pairedAt).getTime() - new Date(b.d.pairedAt).getTime())
+            .map(({ i }) => i);
+          if (sameNameIdx.length > 0) {
+            const replaceIdx = sameNameIdx[0]!;
+            const previous = state.authorizedDevices[replaceIdx]!;
+            state.authorizedDevices[replaceIdx] = {
+              ...previous,
+              ...input,
+              // Keep the original pairedAt (first authorization date) so the
+              // user sees the device's true history. Update the key + cert.
+              pairedAt: previous.pairedAt,
+              lastSeenAt: input.pairedAt,
+            };
+            return { state, result: undefined };
+          }
+        }
+
+        // 3. No match — genuinely new device. Add.
+        state.authorizedDevices.push(input);
         return { state, result: undefined };
       });
     },

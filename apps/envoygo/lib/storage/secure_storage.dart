@@ -23,6 +23,12 @@ class SecureStorage {
 
   FlutterSecureStorage? _storage;
 
+  /// Separate storage instance for the device identity key. Uses iCloud
+  /// Keychain sync (synchronizable: true) so the device keypair survives
+  /// app uninstall+reinstall — preventing duplicate "Authorized Devices"
+  /// entries when the same phone re-pairs after reinstall.
+  FlutterSecureStorage? _syncedStorage;
+
   FlutterSecureStorage get _ensureStorage {
     if (_storage != null) return _storage!;
     if (kIsWeb) {
@@ -39,6 +45,25 @@ class SecureStorage {
     return _storage!;
   }
 
+  /// Storage that syncs via iCloud Keychain (survives uninstall+reinstall).
+  /// Used for the device identity key only — session tokens stay device-local
+  /// for security (they're short-lived and shouldn't sync across devices).
+  FlutterSecureStorage get _ensureSyncedStorage {
+    if (_syncedStorage != null) return _syncedStorage!;
+    if (kIsWeb) {
+      _syncedStorage = const FlutterSecureStorage();
+    } else {
+      _syncedStorage = const FlutterSecureStorage(
+        aOptions: AndroidOptions(encryptedSharedPreferences: true),
+        iOptions: IOSOptions(
+          accessibility: KeychainAccessibility.first_unlock,
+          synchronizable: true,
+        ),
+      );
+    }
+    return _syncedStorage!;
+  }
+
   /// Save a session token for a node.
   Future<void> saveSessionToken(String nodeId, String token) async {
     try {
@@ -52,7 +77,7 @@ class SecureStorage {
   /// Get a session token for a node.
   Future<String?> getSessionToken(String nodeId) async {
     try {
-      return _ensureStorage.read(key: 'node.$nodeId.sessionToken');
+      return await _ensureStorage.read(key: 'node.$nodeId.sessionToken');
     } catch (_) {
       return null;
     }
@@ -73,7 +98,7 @@ class SecureStorage {
     return _ensureStorage.read(key: 'activeNodeId');
   }
 
-  /// Clear all stored data.
+  /// Clear all stored data (does NOT clear synced identity keys).
   Future<void> clear() async {
     await _ensureStorage.deleteAll();
   }
@@ -90,5 +115,26 @@ class SecureStorage {
   /// Write a raw string value under a key.
   Future<void> write(String key, String value) async {
     await _ensureStorage.write(key: key, value: value);
+  }
+
+  // ---- iCloud-synced storage (survives uninstall+reinstall) ----
+
+  /// Read a synced value (device identity key). Survives uninstall.
+  Future<String?> readSynced(String key) async {
+    try {
+      return await _ensureSyncedStorage.read(key: key);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// Write a synced value (device identity key). Survives uninstall.
+  Future<void> writeSynced(String key, String value) async {
+    try {
+      await _ensureSyncedStorage.write(key: key, value: value);
+    } catch (_) {
+      // Best-effort — falls back to non-synced if iCloud is unavailable.
+      await _ensureStorage.write(key: key, value: value);
+    }
   }
 }
