@@ -151,7 +151,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     if (nodeState.activeNode == null) return;
 
     // Optimistic insert.
-    final now = DateTime.now().toIso8601String();
+    final now = DateTime.now().toUtc().toIso8601String();
     final threadId = '${nodeState.activeNode!.id}:$targetOwnerId';
     final attModels = attachments
         ?.map((a) => ChatAttachment.fromJson(a))
@@ -328,13 +328,14 @@ class ChatNotifier extends StateNotifier<ChatState> {
     );
   }
 
-  /// Sort a thread's message list by createdAt ascending (oldest first).
+  /// Sort a thread's message list by createdAt descending (newest first).
+  /// The ListView uses reverse:true, which expects index 0 = newest.
   /// Call this after any bulk load to guarantee chronological display.
   void _sortThreadMessages(String threadId) {
     final msgs = state.messages[threadId];
     if (msgs == null || msgs.length <= 1) return;
     final sorted = List<ChatMessage>.from(msgs)
-      ..sort((a, b) => (a.createdAt ?? '').compareTo(b.createdAt ?? ''));
+      ..sort((a, b) => (b.createdAt ?? '').compareTo(a.createdAt ?? ''));
     state = state.copyWith(
       messages: {...state.messages, threadId: sorted},
     );
@@ -695,7 +696,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     if (nodeService == null || nodeState.activeNode == null) return;
 
     final threadId = '${nodeState.activeNode!.id}:room:$roomId';
-    final now = DateTime.now().toIso8601String();
+    final now = DateTime.now().toUtc().toIso8601String();
     final tempMsg = ChatMessage(
       id: 'temp_${DateTime.now().microsecondsSinceEpoch}',
       threadId: threadId,
@@ -859,7 +860,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     if (nodeService == null || nodeState.activeNode == null) return;
 
     final threadId = '${nodeState.activeNode!.id}:$agentType';
-    final now = DateTime.now().toIso8601String();
+    final now = DateTime.now().toUtc().toIso8601String();
     final tempMsg = ChatMessage(
       id: 'temp_${DateTime.now().microsecondsSinceEpoch}',
       threadId: threadId,

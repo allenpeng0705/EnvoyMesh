@@ -4946,10 +4946,13 @@ class NodeServiceImpl implements NodeService {
 
   async listChatHistory(peerOwnerId: string, limit?: number): Promise<ChatMessage[]> {
     if (!this._chatLogStore) return [];
-    if (peerOwnerId.trim() === ENVOY_AI_THREAD_KEY) {
+    // Normalize EnvoyAI thread keys — EnvoyGo sends "envoyai", the Social UI
+    // and storage use ENVOY_AI_THREAD_KEY ("__envoy_ai__"). Accept both.
+    const normalizedKey = peerOwnerId.trim();
+    if (normalizedKey === ENVOY_AI_THREAD_KEY || normalizedKey === "envoyai") {
       return this._loadEnvoyAiChatHistory(limit);
     }
-    const rows = await this._chatLogStore.listThread(peerOwnerId.trim(), limit);
+    const rows = await this._chatLogStore.listThread(normalizedKey, limit);
     return rows as ChatMessage[];
   }
 
