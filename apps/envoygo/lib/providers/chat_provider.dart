@@ -1260,14 +1260,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final threads = [
       newThread,
       ...state.threads.where((t) => t.id != threadId),
-    ]..sort((a, b) {
-        final aTime = a.lastMessageAt;
-        final bTime = b.lastMessageAt;
-        if (aTime == null && bTime == null) return 0;
-        if (aTime == null) return 1;
-        if (bTime == null) return -1;
-        return bTime.compareTo(aTime);
-      });
+    ];
 
     state = state.copyWith(threads: threads);
   }

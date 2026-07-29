@@ -223,7 +223,9 @@ class LocalDatabase {
       'chat_threads',
       where: 'node_id = ?',
       whereArgs: [nodeId],
-      orderBy: 'last_message_at DESC',
+      // Stable insertion order — threads don't jump around when a new
+      // message arrives. Users expect their chat list to stay put.
+      orderBy: 'id ASC',
     );
   }
 
