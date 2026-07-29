@@ -20,6 +20,8 @@ apps/tauri/src-tauri/resources/pi/*
 !.env.example
 # Push credentials (contains secrets — never commit real push-config.json)
 push-config.json
+AuthKey_*.p8
+firebase-service-account.json
 # Local runtime data (profiles, keys, RAG DB). Exception: committed template only.
 data/
 !apps/node/data/

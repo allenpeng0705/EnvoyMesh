@@ -274,4 +274,32 @@ if [ -f "$ROOT/node-config.json" ]; then
   cp "$ROOT/node-config.json" "$DEST/node-config.json"
 fi
 
+# Phase 50 — stage push notification credentials into the bundle.
+# These are optional secret files the operator places at the repo root
+# before building. They get bundled into the DMG/exe so the home node
+# can push to EnvoyGo without the user manually copying files after install.
+#
+# Files (all optional — push silently skips if missing):
+#   push-config.json              — credential config (keyId, teamId, topic, projectId)
+#   AuthKey_*.p8                  — APNs private key (one or more)
+#   firebase-service-account.json — FCM service account JSON
+#
+# Security note: these files are SECRETS. Never commit real ones.
+# .gitignore already excludes push-config.json and *.p8. The operator
+# must provide them at build time (not in the repo).
+if [ -f "$ROOT/push-config.json" ]; then
+  echo "  Staging bundled push-config.json..."
+  cp "$ROOT/push-config.json" "$DEST/push-config.json"
+fi
+# Stage any .p8 APNs key files (glob — there may be one per environment).
+for p8 in "$ROOT"/AuthKey_*.p8; do
+  [ -f "$p8" ] || continue
+  echo "  Staging bundled APNs key: $(basename "$p8")"
+  cp "$p8" "$DEST/$(basename "$p8")"
+done
+if [ -f "$ROOT/firebase-service-account.json" ]; then
+  echo "  Staging bundled FCM service account JSON..."
+  cp "$ROOT/firebase-service-account.json" "$DEST/firebase-service-account.json"
+fi
+
 echo "  ✓ Node runtime staged at $DEST"

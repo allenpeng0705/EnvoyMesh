@@ -342,4 +342,29 @@ if (Test-Path $nodeConfigSrc) {
     Copy-Item -Force $nodeConfigSrc (Join-Path $Dest "node-config.json")
 }
 
+# Phase 50 — stage push notification credentials into the bundle.
+# These are optional secret files the operator places at the repo root
+# before building. They get bundled into the exe so the home node can
+# push to EnvoyGo without manual post-install file copying.
+#
+# Files (all optional — push silently skips if missing):
+#   push-config.json              — credential config
+#   AuthKey_*.p8                  — APNs private key
+#   firebase-service-account.json — FCM service account JSON
+$pushConfigSrc = Join-Path $Root "push-config.json"
+if (Test-Path $pushConfigSrc) {
+    Write-Host "  Staging bundled push-config.json..."
+    Copy-Item -Force $pushConfigSrc (Join-Path $Dest "push-config.json")
+}
+$p8Files = Get-ChildItem -Path $Root -Filter "AuthKey_*.p8" -ErrorAction SilentlyContinue
+foreach ($p8File in $p8Files) {
+    Write-Host "  Staging bundled APNs key: $($p8File.Name)"
+    Copy-Item -Force $p8File.FullName (Join-Path $Dest $p8File.Name)
+}
+$fcmKeySrc = Join-Path $Root "firebase-service-account.json"
+if (Test-Path $fcmKeySrc) {
+    Write-Host "  Staging bundled FCM service account JSON..."
+    Copy-Item -Force $fcmKeySrc (Join-Path $Dest "firebase-service-account.json")
+}
+
 Write-Host "  ✓ Node runtime staged at $Dest"

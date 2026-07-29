@@ -145,20 +145,47 @@ let _pushConfig: PushConfig | null = null
 let _pushConfigProfileDir: string | null = null
 
 /**
- * Load push credentials from `<profileDir>/push-config.json`.
- * Called once during PushNotificationService.init(). If the file doesn't
- * exist or is malformed, _pushConfig stays null (env vars are the only source).
+ * Load push credentials. Checks two locations in order:
+ *   1. `<profileDir>/push-config.json` — user-managed override (post-install edit)
+ *   2. `<bundleDir>/push-config.json` — bundled at build time (staged by
+ *      stage-bundle-node-runtime.sh/.ps1 from the repo-root push-config.json)
+ *
+ * The profile dir is also stored as _pushConfigProfileDir for relative-path
+ * resolution of .p8 / service-account files. When the config comes from the
+ * bundle dir, relative paths resolve against the bundle dir instead.
+ *
+ * Called once during PushNotificationService.init(). If neither file exists,
+ * _pushConfig stays null (env vars are the only source).
  */
 async function loadPushConfig(profileDir: string): Promise<void> {
-  _pushConfigProfileDir = profileDir
-  const configPath = path.join(profileDir, "push-config.json")
+  // 1. Profile dir (user override — highest priority after env vars)
+  const profileConfigPath = path.join(profileDir, "push-config.json")
   try {
-    const raw = await fsPromises.readFile(configPath, "utf-8")
+    const raw = await fsPromises.readFile(profileConfigPath, "utf-8")
     _pushConfig = JSON.parse(raw)
-    console.log("[push] Loaded credentials from push-config.json")
+    _pushConfigProfileDir = profileDir
+    console.log("[push] Loaded credentials from push-config.json (profile dir)")
+    return
   } catch {
-    // File doesn't exist — normal; env vars are the only source.
+    // Not in profile dir — check the bundle dir.
   }
+
+  // 2. Bundle dir (staged at build time by the operator)
+  const bundleDir = process.env.ENVOYMESH_NODE_BUNDLE_DIR?.trim()
+  if (bundleDir) {
+    const bundleConfigPath = path.join(bundleDir, "push-config.json")
+    try {
+      const raw = await fsPromises.readFile(bundleConfigPath, "utf-8")
+      _pushConfig = JSON.parse(raw)
+      _pushConfigProfileDir = bundleDir
+      console.log("[push] Loaded credentials from push-config.json (bundle dir)")
+      return
+    } catch {
+      // Not in bundle dir either.
+    }
+  }
+
+  // No config file found — env vars are the only source.
 }
 
 /**
