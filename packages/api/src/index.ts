@@ -93,6 +93,7 @@ export * from "./ws-protocol.js";
 export * from "./terminal.js";
 export * from "./terminal-agent.js";
 export * from "./pi-agent.js";
+export * from "./ai-bot.js";
 export * from "./pi-native-providers.js";
 export * from "./model-provider-presets.js";
 export * from "./terminal-wire.js";

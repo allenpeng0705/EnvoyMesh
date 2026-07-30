@@ -1,4 +1,4 @@
-/// A chat thread (direct message, group chat, AI chat, or terminal).
+/// A chat thread (direct message, group chat, AI chat, bot chat, or terminal).
 class ChatThread {
   /// Composite key: nodeId:contactOwnerId (or nodeId:roomId, etc.)
   final String id;
@@ -12,8 +12,14 @@ class ChatThread {
   /// For group chats: the chat room ID.
   final String? chatRoomId;
 
-  /// For AI chats: 'envoyai', 'external', or 'pi'.
+  /// For AI chats: 'envoyai', 'external', 'pi', or 'bot:<id>'.
   final String? agentType;
+
+  /// For AI bot chats: the bot ID (e.g. "librarian"). Null for non-bot threads.
+  final String? botId;
+
+  /// Avatar color for AI bots (hex, e.g. "#6366f1"). Null for non-bot threads.
+  final String? avatarColor;
 
   /// Thread type discriminator.
   final ChatThreadType type;
@@ -38,10 +44,35 @@ class ChatThread {
     this.contactOwnerId,
     this.chatRoomId,
     this.agentType,
+    this.botId,
+    this.avatarColor,
     this.lastMessageText,
     this.lastMessageAt,
     this.unreadCount = 0,
   });
+
+  ChatThread copyWith({
+    String? displayName,
+    String? lastMessageText,
+    DateTime? lastMessageAt,
+    int? unreadCount,
+    String? avatarColor,
+  }) {
+    return ChatThread(
+      id: id,
+      nodeId: nodeId,
+      type: type,
+      displayName: displayName ?? this.displayName,
+      contactOwnerId: contactOwnerId,
+      chatRoomId: chatRoomId,
+      agentType: agentType,
+      botId: botId,
+      avatarColor: avatarColor ?? this.avatarColor,
+      lastMessageText: lastMessageText ?? this.lastMessageText,
+      lastMessageAt: lastMessageAt ?? this.lastMessageAt,
+      unreadCount: unreadCount ?? this.unreadCount,
+    );
+  }
 
   factory ChatThread.fromJson(Map<String, dynamic> json) {
     DateTime? lastAt;
@@ -60,6 +91,8 @@ class ChatThread {
       contactOwnerId: json['contact_owner_id'] as String?,
       chatRoomId: json['chat_room_id'] as String?,
       agentType: json['agent_type'] as String?,
+      botId: json['bot_id'] as String?,
+      avatarColor: json['avatar_color'] as String?,
       lastMessageText: json['last_message_text'] as String?,
       lastMessageAt: lastAt,
       unreadCount: (json['unread_count'] as int?) ?? 0,
@@ -74,6 +107,8 @@ class ChatThread {
         if (contactOwnerId != null) 'contact_owner_id': contactOwnerId,
         if (chatRoomId != null) 'chat_room_id': chatRoomId,
         if (agentType != null) 'agent_type': agentType,
+        if (botId != null) 'bot_id': botId,
+        if (avatarColor != null) 'avatar_color': avatarColor,
         if (lastMessageText != null) 'last_message_text': lastMessageText,
         if (lastMessageAt != null)
           'last_message_at': lastMessageAt!.toIso8601String(),
@@ -87,6 +122,7 @@ enum ChatThreadType {
   group,
   envoyai,
   externalAgent,
+  aiBot,
   pi,
   terminal,
 }

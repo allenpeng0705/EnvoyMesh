@@ -688,6 +688,17 @@ class NodeNotifier extends StateNotifier<NodeState> {
     });
 
     // Pi coding TUI lives under Terminals (New Pi), not as an AI chat row.
+
+    // Sync dynamic AI character bots from config.
+    client.call('getNodeConfig').then((config) {
+      final aiBots = config['aiBots'];
+      final node = state.activeNode;
+      if (aiBots is List && aiBots.isNotEmpty && node != null) {
+        chatNotifier.syncAiBots(aiBots, node.id);
+      }
+    }).catchError((e) {
+      _log('getNodeConfig for aiBots failed: $e');
+    });
   }
 
   Future<void> _syncBondsDirect(

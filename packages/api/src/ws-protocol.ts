@@ -33,6 +33,7 @@ import type { ExtAgentDefinition } from "./ext-agent.js";
 export type { ExtAgentDefinition, ExtAgentReachability } from "./ext-agent.js";
 export { defaultExtAgentStartHint } from "./ext-agent.js";
 import type { PiSettings } from "./pi-agent.js";
+import type { AiBotDefinition } from "./ai-bot.js";
 // Re-export so ws-protocol consumers (e.g. node-service.ts) can import PiStatus
 // from here, matching how OpenClawStatus is co-located in this file.
 export type {
@@ -264,6 +265,7 @@ export type RpcMethods =
     | "saveWebSearchEnabled"
     | "sendToOpenClaw"
     | "sendToPi"
+    | "sendToAiBot"
     | "piRespondToProposal"
     | "sendToBridge"
     | "getPairedDiagnostics"
@@ -552,6 +554,8 @@ export interface NodeConfig {
   piEnabled?: boolean;
   /** Phase 49 — Pi agent settings (model override, permission policy, allowlist). */
   piSettings?: PiSettings;
+  /** Dynamic AI character bots (user-created, synced to all clients). */
+  aiBots?: AiBotDefinition[];
   /**
    * Phase 33 — max age (in ms) of a cached agent card before the auto-fetcher re-issues a
    * request. Default 24h.
@@ -1500,6 +1504,8 @@ export interface UpdateNodeConfigParams {
   piEnabled?: boolean;
   /** Phase 49 — Pi agent settings (model override, permission policy, allowlist). */
   piSettings?: PiSettings;
+  /** Dynamic AI character bots (user-created, synced to all clients). */
+  aiBots?: AiBotDefinition[];
   /** Phase 33 — max age (in ms) of a cached agent card before the auto-fetcher re-issues a request. Default 24h. */
   agentCardAutoFetchMaxAgeMs?: number;
   /** Enable Trust-mode intros (`social.intro.*` gate). Default false. */

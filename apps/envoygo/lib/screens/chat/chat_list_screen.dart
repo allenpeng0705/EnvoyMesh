@@ -68,7 +68,8 @@ class ChatListScreen extends ConsumerWidget {
     final ai = threads
         .where((t) =>
             t.type == ChatThreadType.envoyai ||
-            t.type == ChatThreadType.externalAgent)
+            t.type == ChatThreadType.externalAgent ||
+            t.type == ChatThreadType.aiBot)
         .toList();
     final contacts = threads
         .where((t) => t.type == ChatThreadType.direct)

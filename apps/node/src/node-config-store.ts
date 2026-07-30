@@ -8,6 +8,7 @@ import {
   ensureDefaultAutonomousPoliciesForModel,
 } from "@envoymesh/api";
 import type {
+  AiBotDefinition,
   AiSettings,
   AnonymousDiscoveryMode,
   AutonomousPolicy,
@@ -176,6 +177,8 @@ export interface PersistedNodeConfig {
   piEnabled?: boolean;
   /** Phase 49 — Pi agent settings (model override, permission policy, allowlist). */
   piSettings?: PiSettings;
+  /** Dynamic AI character bots — user-created, synced to all clients. */
+  aiBots?: AiBotDefinition[];
   /** Phase 33 — max age of a cached agent card before the auto-fetcher re-issues a request. Default 24h. */
   agentCardAutoFetchMaxAgeMs?: number;
   /**

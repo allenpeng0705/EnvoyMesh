@@ -2425,6 +2425,8 @@ export interface NodeService {
   restartPi(): Promise<PiStatus>;
   /** One-shot prompt — used by the sendToPi JSON-RPC method. Returns the text. */
   sendToPi(text: string): Promise<string>;
+  /** Dynamic AI bot — send a message to a character bot, get a reply. */
+  sendToAiBot(botId: string, text: string): Promise<void>;
   /**
    * Start or focus a Pi interactive TUI for an explicitly chosen project folder.
    * Requires `projectPath` to spawn — no boot auto-start. Up to

@@ -866,6 +866,11 @@ export async function routeRpcMethod(
       return ns.sendToOpenClaw(String(params.text ?? ""));
     case "sendToPi":
       return ns.sendToPi(String(params.text ?? ""));
+    case "sendToAiBot":
+      return ns.sendToAiBot(
+        String(params.botId ?? ""),
+        String(params.text ?? ""),
+      );
     case "ensurePiTerminalSession":
       return ns.ensurePiTerminalSession({
         projectPath:

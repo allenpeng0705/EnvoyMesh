@@ -4882,6 +4882,17 @@ You are the owner's personal AI assistant on EnvoyMesh.
     return "";
   }
 
+  /** Dynamic AI bot — proxies to home node. */
+  async sendToAiBot(botId: string, text: string): Promise<void> {
+    if (this._isHomeRemotePaired() && this._homeRemoteOnline) {
+      try {
+        await this._homeRemoteCall<void>("sendToAiBot", { botId, text });
+      } catch {
+        // best-effort
+      }
+    }
+  }
+
   /**
    * Phase 49 (in-flight) — Pi interactive TUI terminal session. Mobile proxies
    * to the home node when paired; otherwise returns the not-yet-implemented

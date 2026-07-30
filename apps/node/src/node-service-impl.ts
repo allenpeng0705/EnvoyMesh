@@ -135,6 +135,7 @@ import type {
   ExtAgentReachability,
   ProbeExtAgentParams,
 } from "@envoymesh/api";
+import { aiBotThreadKey } from "@envoymesh/api";
 import type { DocumentAgentTurnResult, OwnerAgentTurnResult, CapabilityProviderJob, DocumentAcquisitionCandidate, DocumentAcquisitionJob, SocialProxySession } from "@envoymesh/api";
 import {
   DEFAULT_RAG_INDEX_STATUS,
@@ -3930,6 +3931,129 @@ class NodeServiceImpl implements NodeService {
       } as ChatMessage)
     }
     return result.text
+  }
+
+  /**
+   * Dynamic AI bot — send a message to a character bot.
+   * Looks up the bot definition from config.aiBots, prepends the bot's
+   * systemPrompt to the user's text, calls the native LLM router, and
+   * persists + emits the exchange under thread key `bot:<id>`.
+   */
+  async sendToAiBot(botId: string, text: string): Promise<void> {
+    const trimmedBotId = botId.trim()
+    const trimmedText = text.trim()
+    if (!trimmedBotId || !trimmedText) return
+
+    // Find the bot definition.
+    const cfg = await this._configStore.load()
+    const bot = cfg?.aiBots?.find((b) => b.id === trimmedBotId && b.enabled !== false)
+    if (!bot) {
+      throw new Error(`Bot "${trimmedBotId}" not found or disabled`)
+    }
+
+    const threadKey = aiBotThreadKey(trimmedBotId)
+    const now = new Date().toISOString()
+    const homeOwnerId = this._profile?.owner?.ownerId ?? ""
+    const meshPeerId = this._mesh?.peerId ?? ""
+    const messageId = crypto.randomUUID()
+
+    // 1. Persist + emit the user's outbound message.
+    const outboundMsg: ChatMessage = {
+      messageId,
+      sender: {
+        nodeId: meshPeerId,
+        ownerId: homeOwnerId,
+        displayName: homeOwnerId,
+        actorRole: "human",
+      },
+      recipient: {
+        nodeId: meshPeerId,
+        ownerId: threadKey,
+        displayName: bot.name,
+      },
+      content: { text: trimmedText },
+      metadata: {
+        timestamp: now,
+        deliveryReceipt: "delivered",
+        deliveryChannel: "ai",
+      },
+      signature: "",
+    }
+    this._persistChatMessage(threadKey, outboundMsg)
+    this.emit("chat:message", outboundMsg)
+
+    // 2. Build the LLM prompt: system prompt + user text.
+    const prompt = `${bot.systemPrompt}\n\n---\n\nUser: ${trimmedText}`
+
+    try {
+      // 3. Call the native LLM router (in-process, no gateway needed).
+      const providers = buildModelProviders(
+        cfg?.modelProviders ?? { mode: "disabled" },
+        true,
+      )
+      const result = await routeModelRequest(
+        {
+          taskType: bot.taskType ?? "ai_bot.chat",
+          prompt,
+          sensitivity: "public",
+          ownerApproved: true,
+          requesterPeerId: meshPeerId,
+        },
+        providers,
+      )
+
+      const answer = result.response?.text?.trim() ?? "(no response)"
+
+      // 4. Persist + emit the bot's reply.
+      const aiTimestamp = new Date(Date.now() + 1).toISOString()
+      const replyMsg: ChatMessage = {
+        messageId: crypto.randomUUID(),
+        sender: {
+          nodeId: threadKey,
+          ownerId: threadKey,
+          displayName: bot.name,
+          actorRole: "agent",
+        },
+        recipient: {
+          nodeId: meshPeerId,
+          ownerId: homeOwnerId,
+        },
+        content: { text: answer },
+        metadata: {
+          timestamp: aiTimestamp,
+          deliveryReceipt: "delivered",
+          deliveryChannel: "ai",
+        },
+        signature: "",
+      }
+      this._persistChatMessage(threadKey, replyMsg)
+      this.emit("chat:message", replyMsg)
+      // Also emit push:message so backgrounded devices get notified.
+      this.emit("push:message", replyMsg)
+    } catch (err) {
+      const errMsg = err instanceof Error ? err.message : String(err)
+      console.warn(`[ai-bot:${trimmedBotId}] LLM call failed:`, errMsg)
+      // Emit an error reply so the user sees something.
+      const errorMsg: ChatMessage = {
+        messageId: crypto.randomUUID(),
+        sender: {
+          nodeId: threadKey,
+          ownerId: threadKey,
+          displayName: bot.name,
+          actorRole: "agent",
+        },
+        recipient: { nodeId: meshPeerId, ownerId: homeOwnerId },
+        content: { text: `(Error: ${errMsg})` },
+        metadata: {
+          timestamp: new Date(Date.now() + 1).toISOString(),
+          deliveryReceipt: "delivered",
+          deliveryChannel: "ai",
+        },
+        signature: "",
+      }
+      this._persistChatMessage(threadKey, errorMsg)
+      this.emit("chat:message", errorMsg)
+    }
   }
 
   /**

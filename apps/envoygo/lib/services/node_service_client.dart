@@ -324,6 +324,11 @@ class NodeServiceClient {
         as Map<String, dynamic>;
   }
 
+  /// Dynamic AI bot — send a message to a character bot.
+  Future<void> sendToAiBot(String botId, String text) async {
+    await _client.call('sendToAiBot', {'botId': botId, 'text': text});
+  }
+
   Future<Map<String, dynamic>> sendToBridge(String text) async {
     return await _client.call('sendToBridge', {'text': text})
         as Map<String, dynamic>;
