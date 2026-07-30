@@ -85,7 +85,7 @@ Maintenance rule: keep this file as the source of truth for **done / left / next
 - [Phase 47 — Team job multi-round iteration (A ∩ B)](#phase-47--team-job-multi-round-iteration-a--b-shipped)
 - [Phase 48 — A2A + MCP Interop Bridges](#phase-48--a2a--mcp-interop-bridges-shipped--48a48d-48d5-deferred)
 - [Phase 49 — Pi as Built-in Local Coding Agent](#phase-49--pi-as-built-in-local-coding-agent-designed)
-- [Phase 50 — Push Notification Coverage (home node → EnvoyGo)](#phase-50--push-notification-coverage-home-node--envoygo--slice-a-shipped-b-h-planned)
+- [Phase 50 — Push Notification Coverage (home node → EnvoyGo)](#phase-50--push-notification-coverage-home-node--envoygo--shipped-50a--50b--deep-link)
 - [Phase 51 — Family Network (multi-profile private social network)](#phase-51--family-network-multi-profile-private-social-network--designed)
 
 EnvoyMesh is a TypeScript-first, owner-controlled, peer-to-peer agent network.
@@ -6405,7 +6405,7 @@ Closes the production path after 48A–48D protocol/mount work.
 
 ---
 
-## Phase 50 — Push Notification Coverage (home node → EnvoyGo) **`[~]` Slice A shipped; B-H planned**
+## Phase 50 — Push Notification Coverage (home node → EnvoyGo) **`[x]` shipped (50A + 50B + deep-link)**
 
 **Goal:** Every message the user cares about — direct chat, group chat, EnvoyAI replies, Ext Agent replies, Pi responses + tool requests, bond requests, approval items — should trigger a push notification to EnvoyGo when the user is backgrounded. Today only 3 of 10 sources push, and the most important one (direct chat) was broken in production.
 
@@ -6429,33 +6429,48 @@ Closes the production path after 48A–48D protocol/mount work.
 - `[x]` **`pi:proposal` listener** added for Pi tool-action request pushes.
 - `[x]` **Pi `sendToPi` emits `chat:message` on completion** so the unified listener catches Pi responses too.
 - `[x]` Removed the per-source `dispatchChatPushIfOffline` hook from Slice A (replaced by the unified listener — cleaner, catches more sources).
+- `[x]` **`isOwnerOnline()` bug fixed.** The push gate was checking AI status settings (not WS connectivity) → always returned `true` → pushes NEVER fired. Fixed to use `_thinClientOnlineCheck` (hasRecentlyActiveClientForOwner). This was the critical fix that made push actually work.
+- `[x]` **Pi `sendToPi` emits `push:message`** (not `chat:message`) to avoid polluting the chat UI / Inbox.
+- `[x]` **In-app push toggle** (`PushPreferences`) in Me → Preferences — users can turn pushes on/off within the app.
 
-### 50B — Remaining work `[ ]`
+### 50B — Server-side completion `[x]` shipped
 
-- `[ ]` **Approval-queue push.** Subscribe to `approvalQueue.onChange`; capture approver (home owner) at subscription layer. New `dispatchApprovalPush`.
-- `[ ]` **Token cleanup.** `dispatchApnsHttp2` should unregister tokens APNs reports as 410/400. Mirror the OpenClaw path's `shouldClearStoredApnsRegistration`.
-- `[ ]` **Feed push skip-if-online.** `index.ts:1339` (feed push) doesn't gate on `isOwnerOnline` — wrap with the gate.
+- `[x]` **Approval-queue push.** `bindApprovalQueue` now diffs for newly-added pending items on `onChange`; items added in the last 60s trigger `dispatchApprovalPush` when the owner is offline. Seeded on bind (no startup flood); pruned on resolve.
+- `[x]` **Token cleanup.** `sendAndCleanup()` wraps all `sendApns`/`sendFcm` calls. Unregisters on APNs 410 (Unregistered) and FCM 400/404 (bad token format). All dispatch methods use it.
+- `[x]` **Feed push skip-if-online.** `index.ts` feed push handler now gates on `isOwnerOnline()`.
+- `[x]` **Path B chat push skip-if-online.** Legacy desktop path at `index.ts:1904` now also gates on `isOwnerOnline()`.
+- `[x]` **Bond push `senderOwnerId`** added to payload for deep-link routing.
+- `[x]` **`dispatchApprovalPush`** (new method) — payload carries `{ type: "approval", itemId }`.
+- `[x]` **Push credential config file** — `push-config.json` in profile dir for DMG builds (env vars still take priority). Relative path resolution for `.p8` keys. Bundled into DMG via `stage-bundle-node-runtime.sh/.ps1`.
+
+### Deep-link navigation (client-side) `[x]` shipped
+
+- `[x]` EnvoyGo: `GlobalKey<NavigatorState>` on `EnvoyGoApp`; `_routeNotificationTap` in `main.dart` subscribes to `onNotificationTap`.
+- `[x]` Map payload → screen: `{threadType, senderOwnerId}` → `ChatDetailScreen`; `{type: "feed_notify", url}` → `BrowserScreen`; `{type: "bond_request"}` → Inbox tab; `{type: "approval"}` → Inbox tab; `{type: "pi_proposal"}` → Pi chat thread.
+- `[x]` `getInitialMessage()` for Android cold-launch — buffered as `_pendingInitialTap`, replayed via `consumePendingInitialTap()` after the subscriber attaches.
+- `[x]` Cold-start race fixes: `PushNotificationService().initialize()` moved to `main()` before `runApp()` so `getInitialMessage()` resolves before `initState` drains the buffer. `_pendingColdStartTap` buffers taps when `activeNode` is null; replays after `loadPairedNodes()` completes.
+- `[x]` Listener cleanup: `_pushTapSub` stored + cancelled in `dispose()`.
+- `[x]` Server: `senderOwnerId` + `senderName` added to `dispatchBondPush` + `dispatchChatPush` payloads for deep-link routing.
+- `[ ]` Add foreground push handling (`FirebaseMessaging.onMessage` listener → in-app banner) — **deferred** (cosmetic; WS event reaches the app when foregrounded).
+- `[ ]` Optionally register `envoy://` as a system-openable scheme (universal links / app links) — **deferred** (different feature; tap routing works without it).
+
+### Remaining (UX polish, not blocking) `[ ]`
+
 - `[ ]` **Notification channels** (Android) / interruption levels (iOS) — distinguish direct message (active) from feed update (passive).
-- `[ ]` **Badge count management** — server tracks unread per thread; app clears badge on foreground.
+- `[ ]` **Badge count management** — server sends static `badge: 1`; app doesn't clear on foreground.
 - `[ ]` **Per-contact mute / global quiet-hours / DND.**
-
-### Deep-link navigation (separate workstream, client-side) `[ ]`
-
-- `[ ]` EnvoyGo: subscribe to `PushNotificationService.onNotificationTap`; route via `GlobalKey<NavigatorState>`.
-- `[ ]` Map payload → screen: `{threadType, senderOwnerId}` → chat thread; `{type: "feed_notify", url}` → Browser; `{type: "bond_request"}` → Discover.
-- `[ ]` Add `getInitialMessage()` for Android cold-launch.
-- `[ ]` Add foreground push handling (`FirebaseMessaging.onMessage` listener → in-app banner).
-- `[ ]` Optionally register `envoy://` as a system-openable scheme (universal links / app links).
-- `[ ]` Server: add `senderOwnerId` to `dispatchBondPush` payload for routing.
+- `[ ]` **Foreground push banner** (in-app notification when app is open).
 
 ### Exit Criteria (Phase 50 overall)
 
 - `[x]` Direct chat, group chat, bond request, EnvoyAI reply, Ext Agent reply, Pi response + tool-action all push when EnvoyGo is backgrounded (unified listener).
-- `[x]` No push fires when EnvoyGo has an active WebSocket (skip-if-online for the unified listener).
-- `[ ]` Stale tokens are cleaned up on APNs 410/400 (Slice B).
-- `[ ]` Approval items push (Slice B).
-- `[ ]` Tapping a push navigates to the relevant screen (deep link — separate workstream).
-- `[ ]` Per-thread / per-contact mute + global DND available (Slice B).
+- `[x]` No push fires when EnvoyGo has an active WebSocket (skip-if-online for all paths — `isOwnerOnline()` fixed to check WS connectivity, not AI status).
+- `[x]` Stale tokens are cleaned up on APNs 410 / FCM 400+404 (sendAndCleanup).
+- `[x]` Approval items push (`dispatchApprovalPush` + onChange diff).
+- `[x]` Tapping a push navigates to the relevant screen (deep-link routing in `main.dart`; cold-start + activeNode race fixed).
+- `[x]` Push credential config (`push-config.json`) for DMG builds (env vars + config file + bundle staging).
+- `[x]` In-app push toggle (Me → Preferences → Push notifications on/off).
+- `[ ]` Per-thread / per-contact mute + global DND available (deferred — UX polish).
 
 ---
 
@@ -6589,6 +6604,7 @@ Closes the production path after 48A–48D protocol/mount work.
 | Date | Change |
 |------|--------|
 | 2026-07-30 | **Phase 51 — Family Network designed.** New phase: turn one home node into a multi-profile private social network. The home computer becomes a personal server — family members pair their phones, get isolated profiles (AI, bots, chat, push), auto-bonded family contacts, and a focused feature subset (no terminal, Pi, mesh, or node settings). Owner has full features + admin rights. 6 slices (51A–51F): profile model + pairing, thread namespacing + isolation, family contacts + auto-bonding, group chat, EnvoyGo UI, Social UI. ~8 days. Authoritative design: [family_network.md](./family_network.md). |
+| 2026-07-30 | **Phase 50 status updated — all shipped.** Updated Phase 50 checkboxes to reflect what actually shipped across multiple commits: 50A (unified listener + bond push + Pi push + isOwnerOnline fix + in-app toggle), 50B (approval push + token cleanup + feed/Bond skip-if-online + dispatchApprovalPush + push-config.json), deep-link (navigatorKey + getInitialMessage + cold-start race fixes + payload routing for chat/feed/bond/approval/Pi). Status changed from `[~] Slice A shipped; B-H planned` to `[x] shipped`. Remaining: notification channels, badge count, per-contact mute/DND, foreground banner (all UX polish, deferred). |
 | 2026-07-28 | **Phase 50 Slice A shipped (push-notification highest-priority fixes).** Two bugs fixed: (1) Direct chat push was broken in production — `dispatchChatPush` was wired only on the legacy Path B (`index.ts:1904`), bypassed by the production internal-mesh handler (`usesInternalMeshInboundHandlers()` short-circuit). EnvoyGo's home node always runs Path A, where the handler at `node-service-handlers-chat-message.ts:146` emitted `chat:message` but never pushed. Fix: added `dispatchChatPushIfOffline` to `ChatMessageContext`, wired from `node-service-impl-service-deps.ts` with skip-if-online gate, called after the emit. (2) `dispatchBondPush` was fully implemented but had zero call sites (dead code); wired into the `hello:request` callback at `index.ts:2314`. Also unblocked the in-flight Pi-as-Ext-Agent build (added `'pi'` port placeholder in `ext-agent-adapter/manager.ts`, `sendToPiForExtAgent` alias on NodeServiceImpl, `pi-terminal-session.ts` stub, MobileNode `ensurePiTerminalSession` proxy, fixed value-vs-type imports). Full Phase 50 design + slices B-H planned in [push-notification-coverage.md](./push-notification-coverage.md). |
 | 2026-07-28 | **Phase 49 — Pi as Built-in Local Coding Agent designed.** New phase adding [Pi](https://github.com/earendil-works/pi) (earendil-works coding agent harness) as a third agent engine alongside Built-in OpenClaw + Remote Ext Agent. Pi is local-only (filesystem + shell, **no `mesh.*` tools** — OpenClaw stays the sole network boundary per `AGENTS.md:213`), inherits EnvoyMesh's model config by default, reuses the Phase 30 `TerminalCommandProposal` permission flow (default `always-confirm`, trust mode opt-in), and ships as a separate sidecar mirroring the OpenClaw bundle pattern. Slices 49A–49F cover bundle/runtime/chat-panel/permissions/terminal/settings. Authoritative design: [pi-integration-design.md](./pi-integration-design.md). |
 | 2026-07-28 | **Phase 49 Slice 49A shipped (bundle + sidecar staging).** New scripts: `fetch-pi-sidecar.sh` / `.ps1` (npm-install pinned `@earendil-works/pi-coding-agent@0.82.x` + transitive deps into `resources/pi/`), `stage-tauri-pi-bundle.sh` (prune source maps / TS sources / tests / cross-platform native prebuilds, verify CLI + SDK entries). `build-desktop.sh` + `.ps1` updated to stage Pi alongside Node/OpenClaw (new `-ForcePi` / `-SkipPi` switches on Windows; `# 1d. Pi agent` block, verify step renumbered `1e`). `tauri.conf.json` + `tauri.conf.full.json` add `resources/pi/**/*`; `tauri.conf.slim.json` intentionally omits Pi (Windows slim builds). `verify-tauri-resources.sh` adds conditional Pi presence check. **Smoke-tested:** Pi installs (140 packages), stages, prunes, and passes verify. **Measured bundle size: ~170 MB unpacked** (5 cloud SDKs statically imported by `pi-ai` — cannot prune); installer compression (~3:1) brings it to ~55 MB in-DMG. Windows slim builds omit Pi entirely. |
