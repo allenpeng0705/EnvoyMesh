@@ -17,6 +17,7 @@ import { ExtAgentSwitcher } from "../ExtAgentSwitcher.js";
 import { useChatThreadPreviews } from "../../hooks/useChatThreadPreviews.js";
 import { useBondConnectionPreload } from "../../hooks/useBondConnectionPreload.js";
 import { CreateGroupModal } from "./CreateGroupModal.js";
+import { CreateBotModal } from "../CreateBotModal.js";
 import { RemoveContactConfirmModal } from "../RemoveContactConfirmModal.js";
 import { PullToRefresh } from "../PullToRefresh.js";
 import { loadOutboundHellos } from "../../lib/discover-peer-state.js";
@@ -84,6 +85,7 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
   const [removeTarget, setRemoveTarget] = useState<{ ownerId: string; name: string } | null>(null);
   const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [showCreateBot, setShowCreateBot] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [outboundHellos, setOutboundHellos] = useState<Set<string>>(() => loadOutboundHellos());
 
@@ -244,9 +246,20 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
     <aside className="contact-list">
       <PullToRefresh onRefresh={handleRefresh} isRefreshing={isRefreshing}>
         {/* AI — assistant + home agent bridge */}
-      {showAiSection ? (
+        {showAiSection ? (
         <>
-          <div className="contact-list-section-label">{t("chat.aiSection")}</div>
+          <div className="contact-list-section-header">
+            <span className="contact-list-section-label">{t("chat.aiSection")}</span>
+            <button
+              type="button"
+              className="contact-list-section-add-btn"
+              aria-label={t("chat.createBot", "Create AI Bot")}
+              title={t("chat.createBot", "Create AI Bot")}
+              onClick={() => setShowCreateBot(true)}
+            >
+              <AddIcon size={18} />
+            </button>
+          </div>
           {onOpenAssistant ? (
             <button
               type="button"
@@ -607,6 +620,12 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
             onSelectContact(threadKey);
             setShowCreateGroup(false);
           }}
+        />
+      ) : null}
+
+      {showCreateBot ? (
+        <CreateBotModal
+          onClose={() => setShowCreateBot(false)}
         />
       ) : null}
 
