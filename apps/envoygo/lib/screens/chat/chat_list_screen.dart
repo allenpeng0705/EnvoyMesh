@@ -163,7 +163,7 @@ class ChatListScreen extends ConsumerWidget {
             ),
           ],
         ),
-        // Single compose FAB → popup with New Pi / Terminal / Group.
+        // Single compose FAB → popup with Create Bot / New Pi / Terminal / Group.
         Positioned(
           right: 16,
           bottom: 16,
@@ -187,6 +187,15 @@ class ChatListScreen extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
+              ListTile(
+                leading: const Icon(Icons.smart_toy_outlined),
+                title: const Text('Create Bot'),
+                subtitle: const Text('AI character on your home node'),
+                onTap: () {
+                  Navigator.of(sheetContext).pop();
+                  _createBot(context, ref);
+                },
+              ),
               ListTile(
                 leading: const SizedBox(
                   width: 24,
@@ -252,6 +261,7 @@ class ChatListScreen extends ConsumerWidget {
         return;
       case ChatThreadType.envoyai:
       case ChatThreadType.externalAgent:
+      case ChatThreadType.aiBot:
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => ChatDetailScreen(
@@ -260,7 +270,9 @@ class ChatListScreen extends ConsumerWidget {
               agentType: thread.agentType ??
                   (thread.type == ChatThreadType.externalAgent
                       ? 'external'
-                      : 'envoyai'),
+                      : thread.type == ChatThreadType.aiBot
+                          ? 'bot:${thread.botId ?? ''}'
+                          : 'envoyai'),
             ),
           ),
         );
@@ -340,6 +352,223 @@ class ChatListScreen extends ConsumerWidget {
         ],
       ),
     );
+  }
+
+  /// Create an AI character bot on the home node (same fields as Social).
+  void _createBot(BuildContext context, WidgetRef ref) {
+    final nameController = TextEditingController();
+    final promptController = TextEditingController();
+    final descController = TextEditingController();
+    const presets = <String>[
+      '#6366f1',
+      '#07c160',
+      '#0d9488',
+      '#d97706',
+      '#ef4444',
+      '#7c3aed',
+    ];
+    var avatarColor = presets.first;
+    var saving = false;
+    String? error;
+
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setLocal) {
+            final canCreate = nameController.text.trim().isNotEmpty &&
+                promptController.text.trim().isNotEmpty &&
+                !saving;
+            return AlertDialog(
+              title: const Text('Create Bot'),
+              content: SizedBox(
+                width: 360,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          CircleAvatar(
+                            backgroundColor: Color(
+                              int.parse(
+                                'FF${avatarColor.replaceFirst('#', '')}',
+                                radix: 16,
+                              ),
+                            ),
+                            child: Text(
+                              (nameController.text.trim().isEmpty
+                                      ? '?'
+                                      : nameController.text.trim()[0])
+                                  .toUpperCase(),
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Text(
+                              nameController.text.trim().isEmpty
+                                  ? 'Bot name'
+                                  : nameController.text.trim(),
+                              style: Theme.of(ctx).textTheme.titleSmall,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      TextField(
+                        controller: nameController,
+                        autofocus: true,
+                        textInputAction: TextInputAction.next,
+                        decoration: const InputDecoration(
+                          labelText: 'Bot name',
+                          hintText: 'e.g. Luna the Librarian',
+                          border: OutlineInputBorder(),
+                        ),
+                        onChanged: (_) => setLocal(() {}),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: promptController,
+                        minLines: 3,
+                        maxLines: 6,
+                        decoration: const InputDecoration(
+                          labelText: 'Personality / System prompt',
+                          hintText:
+                              'Describe the character: personality, speaking style, expertise…',
+                          border: OutlineInputBorder(),
+                          alignLabelWithHint: true,
+                        ),
+                        onChanged: (_) => setLocal(() {}),
+                      ),
+                      const SizedBox(height: 12),
+                      TextField(
+                        controller: descController,
+                        decoration: const InputDecoration(
+                          labelText: 'Short description (optional)',
+                          hintText: 'A wise guide for knowledge seekers',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        'Avatar color',
+                        style: Theme.of(ctx).textTheme.labelLarge,
+                      ),
+                      const SizedBox(height: 8),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          for (final hex in presets)
+                            GestureDetector(
+                              onTap: () => setLocal(() => avatarColor = hex),
+                              child: Container(
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  color: Color(
+                                    int.parse(
+                                      'FF${hex.replaceFirst('#', '')}',
+                                      radix: 16,
+                                    ),
+                                  ),
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: avatarColor == hex
+                                        ? Theme.of(ctx).colorScheme.onSurface
+                                        : Colors.transparent,
+                                    width: 2,
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ),
+                      if (error != null) ...[
+                        const SizedBox(height: 12),
+                        Text(
+                          error!,
+                          style: TextStyle(
+                            color: Theme.of(ctx).colorScheme.error,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: saving ? null : () => Navigator.of(ctx).pop(),
+                  child: const Text('Cancel'),
+                ),
+                FilledButton(
+                  onPressed: !canCreate
+                      ? null
+                      : () async {
+                          setLocal(() {
+                            saving = true;
+                            error = null;
+                          });
+                          try {
+                            final threadId = await ref
+                                .read(chatProvider.notifier)
+                                .createAiBot(
+                                  name: nameController.text,
+                                  systemPrompt: promptController.text,
+                                  description: descController.text,
+                                  avatarColor: avatarColor,
+                                );
+                            if (!ctx.mounted) return;
+                            Navigator.of(ctx).pop();
+                            if (!context.mounted) return;
+                            final displayName = nameController.text.trim();
+                            final botId = threadId.contains(':bot:')
+                                ? threadId.split(':bot:').last
+                                : '';
+                            await Navigator.of(context).push(
+                              MaterialPageRoute(
+                                builder: (_) => ChatDetailScreen(
+                                  threadId: threadId,
+                                  displayName: displayName,
+                                  agentType: botId.isEmpty
+                                      ? 'envoyai'
+                                      : 'bot:$botId',
+                                ),
+                              ),
+                            );
+                          } catch (e) {
+                            if (!ctx.mounted) return;
+                            setLocal(() {
+                              saving = false;
+                              error = e
+                                  .toString()
+                                  .replaceFirst('Bad state: ', '')
+                                  .replaceFirst('ArgumentError: ', '')
+                                  .replaceFirst('Exception: ', '');
+                            });
+                          }
+                        },
+                  child: Text(saving ? 'Saving…' : 'Create Bot'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    ).whenComplete(() {
+      nameController.dispose();
+      promptController.dispose();
+      descController.dispose();
+    });
   }
 
   /// Start a Pi coding TUI on the home node (project folder required).

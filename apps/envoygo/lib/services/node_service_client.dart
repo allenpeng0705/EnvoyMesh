@@ -126,6 +126,17 @@ class NodeServiceClient {
     return true;
   }
 
+  /// Patch home `node-config.json` (shallow merge on the server).
+  Future<void> updateNodeConfig(Map<String, dynamic> patch) async {
+    if (patch.isEmpty) return;
+    await _client.call('updateNodeConfig', patch);
+  }
+
+  /// Create or replace the full `aiBots` list on the home node.
+  Future<void> updateAiBots(List<Map<String, dynamic>> aiBots) async {
+    await updateNodeConfig({'aiBots': aiBots});
+  }
+
   /// Fetch the full pairing payload from the home node, including
   /// bootstrap peer addresses for multi-relay fallback.
   Future<Map<String, dynamic>> getPairingPayload() async {

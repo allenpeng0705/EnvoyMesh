@@ -42,6 +42,26 @@ describe("envoy-ai-chat", () => {
     ).toBe(true);
   });
 
+  it("excludes character-bot rows from EnvoyAI panel", () => {
+    expect(
+      isEnvoyAiChatMessage(
+        row({
+          sender: {
+            nodeId: "bot:librarian",
+            ownerId: "bot:librarian",
+            displayName: "Luna",
+            actorRole: "agent",
+          },
+          metadata: {
+            timestamp: "2026-06-05T13:00:00.000Z",
+            deliveryChannel: "ai",
+          },
+        }),
+        SELF,
+      ),
+    ).toBe(false);
+  });
+
   it("maps user and assistant rows", () => {
     const user = chatMessageToAiMessage(
       row({

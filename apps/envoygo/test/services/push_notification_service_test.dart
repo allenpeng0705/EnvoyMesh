@@ -75,6 +75,19 @@ void main() {
       expect(result?['type'], 'pi_proposal');
     });
 
+    test('handleNotificationTap parses bot thread', () {
+      final service = PushNotificationService();
+      final result = service.handleNotificationTap({
+        'threadType': 'bot',
+        'senderOwnerId': 'bot:librarian',
+        'messageId': 'm1',
+        'senderName': 'Luna',
+      });
+      expect(result?['threadType'], 'bot');
+      expect(result?['senderOwnerId'], 'bot:librarian');
+      expect(result?['senderName'], 'Luna');
+    });
+
     test('handleNotificationTap returns null for unknown payload', () {
       final service = PushNotificationService();
       expect(service.handleNotificationTap({'foo': 'bar'}), isNull);

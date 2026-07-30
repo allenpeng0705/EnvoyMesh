@@ -131,37 +131,46 @@ class CandidateResolver {
     ];
   }
 
-  /// Build relay WebSocket candidates (user relay + community relay).
+  /// Build relay WebSocket candidates (primary + QR extras + community).
   List<HomeRemoteCandidate> _buildRelayWsCandidates(
       StoredNode node, String? sessionToken) {
     final result = <HomeRemoteCandidate>[];
+    final bases = <String>[];
 
-    // User's relay WebSocket with peer routing.
-    if (node.relayWsUrl != null &&
-        node.relayWsUrl!.isNotEmpty &&
-        node.homePeerId != null &&
-        node.homePeerId!.isNotEmpty) {
-      final relayBase = _stripTokenParam(node.relayWsUrl!);
-      var relayUrl = '$relayBase?target=${node.homePeerId}';
-      if (sessionToken != null) {
-        relayUrl += '&token=$sessionToken';
-      }
-      result.add(HomeRemoteCandidate(
-          name: 'relay',
-          url: relayUrl,
-          homePeerId: node.homePeerId,
-          sessionToken: sessionToken));
+    void addBase(String? raw) {
+      if (raw == null || raw.isEmpty) return;
+      final base = _stripTokenParam(raw);
+      if (base.isEmpty) return;
+      // Skip built-in community here — added last as community-relay.
+      if (base.contains(_communityRelayHost)) return;
+      if (!bases.contains(base)) bases.add(base);
     }
 
-    // User's relay without peer ID (fallback routing).
-    if (node.relayWsUrl != null &&
-        node.relayWsUrl!.isNotEmpty &&
-        (node.homePeerId == null || node.homePeerId!.isEmpty)) {
-      var url = _stripTokenParam(node.relayWsUrl!);
-      if (sessionToken != null) {
-        url += '${url.contains('?') ? '&' : '?'}token=$sessionToken';
+    addBase(node.relayWsUrl);
+    for (final peer in node.bootstrapPeers) {
+      if (peer.startsWith('/')) continue; // libp2p multiaddr → P2P path
+      addBase(peer);
+    }
+
+    final homePeerId = node.homePeerId?.trim();
+    for (var i = 0; i < bases.length; i++) {
+      final relayBase = bases[i];
+      var relayUrl = relayBase;
+      if (homePeerId != null && homePeerId.isNotEmpty) {
+        relayUrl = '$relayBase?target=$homePeerId';
+        if (sessionToken != null) {
+          relayUrl += '&token=$sessionToken';
+        }
+      } else if (sessionToken != null) {
+        relayUrl =
+            '$relayBase${relayBase.contains('?') ? '&' : '?'}token=$sessionToken';
       }
-      result.add(HomeRemoteCandidate(name: 'relay', url: url));
+      result.add(HomeRemoteCandidate(
+        name: i == 0 ? 'relay' : 'relay-$i',
+        url: relayUrl,
+        homePeerId: homePeerId,
+        sessionToken: sessionToken,
+      ));
     }
 
     // Community relay WebSocket (final WebSocket fallback).
@@ -296,8 +305,9 @@ class CandidateResolver {
   }
 
   /// Build candidates from the bootstrap peers list in the stored node.
-  /// These are relay/peer addresses provided by the home node during
-  /// pairing — additional fallback relays beyond the primary one.
+  ///
+  /// WebSocket URLs are handled by [_buildRelayWsCandidates] (with
+  /// `target=` routing). This path only keeps non-WS leftovers.
   List<HomeRemoteCandidate> _buildBootstrapPeerCandidates(
       StoredNode node, String? sessionToken) {
     final result = <HomeRemoteCandidate>[];
@@ -306,23 +316,14 @@ class CandidateResolver {
       // These are handled by _buildLibp2pCandidates() which creates proper
       // circuit relay candidates.
       if (peer.startsWith('/')) continue;
-
-      // Bootstrap peers may be:
-      //   - full URLs:     wss://relay.example.com/ws?peer=...
-      //   - URLs no path:  wss://relay.example.com
-      //   - host:port:     relay.example.com:15432
-      // Normalize all forms to a full WebSocket URL.
-      var url = peer;
-      final hasScheme = url.startsWith('ws://') || url.startsWith('wss://');
-      final hasPath = hasScheme ? url.contains('/', url.indexOf('://') + 3) : url.contains('/');
-      if (!hasScheme) {
-        url = hasPath ? 'wss://$url' : 'wss://$url/ws';
-      } else if (!hasPath) {
-        url = '$url/ws';
+      // WS / host:port entries are tried as relay candidates (with target=).
+      if (peer.startsWith('ws://') ||
+          peer.startsWith('wss://') ||
+          peer.contains(':')) {
+        continue;
       }
-      // Append session token if present and not already in URL.
-      // target= is the routing param (circuit-relay destination peer ID); token= is auth.
-      // They are independent — only skip if token= is already present.
+
+      var url = peer;
       if (sessionToken != null && !url.contains('token=')) {
         url += '${url.contains('?') ? '&' : '?'}token=$sessionToken';
       }

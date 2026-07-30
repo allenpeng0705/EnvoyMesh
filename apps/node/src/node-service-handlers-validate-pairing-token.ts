@@ -3,14 +3,22 @@
  *
  * Extracted from `node-service-impl.ts`. Validates a pairing token
  * against:
+ *   0. optional review / App Store demo token (long TTL, opt-in)
  *   1. in-memory QR pairing token (30-min TTL)
  *   2. persisted session-token store
+ *   3. company invites
  *
  * Returns true if the token is valid.
  */
 import type { SessionTokenStore, LocalTaskStore } from "@envoymesh/local-store";
+import type { ReviewPairingSettings } from "./review-pairing.js";
 
 export interface ValidatePairingTokenContext {
+  /** Opt-in store-review long-lived token (null when disabled). */
+  getReviewPairing():
+    | ReviewPairingSettings
+    | null
+    | Promise<ReviewPairingSettings | null>;
   /** In-memory QR pairing token (if any). */
   getInMemoryToken(): string | undefined;
   /** When the in-memory token was issued (ms epoch). */
@@ -29,6 +37,12 @@ export async function validatePairingTokenViaRuntime(
 ): Promise<boolean> {
   const t = token.trim();
   if (!t) return false;
+
+  // 0. Review / App Store demo token (opt-in, long TTL).
+  const review = await Promise.resolve(ctx.getReviewPairing());
+  if (review && t === review.token && Date.now() < review.expiresAtMs) {
+    return true;
+  }
 
   // 1. Check in-memory QR pairing token.
   const memToken = ctx.getInMemoryToken();

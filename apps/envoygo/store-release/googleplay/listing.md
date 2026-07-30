@@ -181,7 +181,26 @@ If reviewers cannot pair without a home node:
 EnvoyGo requires an EnvoyMesh home node.
 
 Demo credentials / QR for Google review:
-TODO: provide a time-limited pairing QR or demo home endpoint + instructions.
+
+Full guide: **[apple_google_reviewing.md](./apple_google_reviewing.md)**.
+
+Use a **dedicated demo home node** with review pairing enabled (long-lived QR).
+
+Terminal example (do **not** enable on end-user DMG installs):
+
+```bash
+export ENVOY_REVIEW_PAIRING=1
+export ENVOY_REVIEW_PAIRING_TOKEN="$(openssl rand -hex 32)"
+export ENVOY_REVIEW_PAIRING_DAYS=14
+# then start your demo home node as usual
+```
+
+Open Social → Pairing QR once, copy `envoy://pair?pairing=…` into Play Console
+“App access” notes. The same URI stays valid for `ENVOY_REVIEW_PAIRING_DAYS`
+(default 14). Keep the demo node + relays online during review.
+
+Or paste instructions here:
+TODO: live pairing URI for this submission.
 ```
 
 Play Console → App content → App access.

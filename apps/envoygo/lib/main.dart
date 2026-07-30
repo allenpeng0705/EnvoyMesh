@@ -137,6 +137,21 @@ class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
           ));
           break;
         }
+        if (threadType == 'bot' ||
+            (senderOwnerId != null && senderOwnerId.startsWith('bot:'))) {
+          final botKey = (senderOwnerId != null && senderOwnerId.startsWith('bot:'))
+              ? senderOwnerId
+              : null;
+          if (botKey == null || botKey.length <= 4) return;
+          nav.push(MaterialPageRoute(
+            builder: (_) => ChatDetailScreen(
+              threadId: '$nodeId:$botKey',
+              displayName: senderName ?? botKey.substring(4),
+              agentType: botKey,
+            ),
+          ));
+          break;
+        }
         if (threadType == 'envoyai' || agentType == 'envoyai') {
           nav.push(MaterialPageRoute(
             builder: (_) => ChatDetailScreen(

@@ -156,8 +156,18 @@ Suggested: **4+** (no unrestricted web, no mature themes). Confirm with Apple’
 EnvoyGo requires an EnvoyMesh home node. Without pairing it shows onboarding / pair UI only.
 
 Demo path for reviewers:
-1. We can provide a temporary demo QR / TestFlight notes: TODO
-2. Or: reviewer installs with a pre-paired build / TestFlight account: TODO
+See **[apple_google_reviewing.md](./apple_google_reviewing.md)** (long-lived review pairing on a demo home only).
+
+Terminal demo node (never enable on end-user DMG):
+
+```
+ENVOY_REVIEW_PAIRING=1
+ENVOY_REVIEW_PAIRING_TOKEN=<secret>
+ENVOY_REVIEW_PAIRING_DAYS=14
+```
+
+Then open Social → Pairing QR once and attach that URI / PNG to review notes.
+TODO: paste the live URI for this submission.
 
 Permissions:
 • Camera — scan home-node pairing QR

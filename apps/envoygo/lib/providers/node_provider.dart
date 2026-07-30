@@ -144,6 +144,10 @@ class NodeNotifier extends StateNotifier<NodeState> {
   /// Libp2p node for direct P2P connectivity when relay is unavailable.
   Libp2pNode? _libp2pNode;
 
+  /// Avoid stacking push handlers when `_syncAllData` runs on reconnect
+  /// against the same [HomeRemoteClient].
+  HomeRemoteClient? _pushEventsClient;
+
   /// `true` after [dispose] has been called. Used to short-circuit
   /// supervisor callbacks that fire after the notifier is gone.
   bool _disposed = false;
@@ -487,6 +491,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
     _connectivityObserver = null;
     _client?.dispose();
     _client = null;
+    _pushEventsClient = null;
     _nodeService = null;
     _pairingService = null;
     super.dispose();
@@ -510,6 +515,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
       createTransport: (c) => _createTransportForCandidate(c),
     );
     _client = HomeRemoteClient(opts);
+    _pushEventsClient = null;
     PairResult result;
     try {
       await _client!.ensureConnected();
@@ -520,6 +526,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
     } catch (e) {
       _client?.dispose();
       _client = null;
+      _pushEventsClient = null;
       state = state.copyWith(
         connectionState: NodeConnectionState.error,
         errorMessage: 'Pairing failed: $e',
@@ -545,18 +552,25 @@ class NodeNotifier extends StateNotifier<NodeState> {
       );
     }
 
-    // Build the StoredNode with fresh bootstrapPeers from the QR code.
-    // These are needed by connectToNode -> resolve() -> _buildLibp2pCandidates.
+    // Build the StoredNode with relays from the QR code.
+    // Extra `rels` / bootstrapPeers WS URLs enable regional fallback.
     // Save to DB BEFORE connectToNode so that if connection fails, the next
     // retry (which loads from DB) still has the correct bootstrapPeers.
-    final List<String> bootstrapPeers;
+    final List<String> bootstrapPeers = [];
     if (data.bootstrapPeers != null && data.bootstrapPeers!.isNotEmpty) {
-      bootstrapPeers = data.bootstrapPeers!;
-    } else if (data.bootstrapPresetNames != null && data.bootstrapPresetNames!.isNotEmpty) {
-      // Resolve preset names (e.g. "public-libp2p-am6") to full multiaddr strings.
-      bootstrapPeers = CandidateResolver.resolveBootstrapPresets(data.bootstrapPresetNames!);
-    } else {
-      bootstrapPeers = [];
+      bootstrapPeers.addAll(data.bootstrapPeers!);
+    }
+    if (data.relayWsUrls != null) {
+      for (final u in data.relayWsUrls!) {
+        if (!bootstrapPeers.contains(u)) bootstrapPeers.add(u);
+      }
+    }
+    if (data.bootstrapPresetNames != null &&
+        data.bootstrapPresetNames!.isNotEmpty) {
+      for (final p in CandidateResolver.resolveBootstrapPresets(
+          data.bootstrapPresetNames!)) {
+        if (!bootstrapPeers.contains(p)) bootstrapPeers.add(p);
+      }
     }
 
     final node = StoredNode(
@@ -591,6 +605,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
     // Dispose the pairing connection (used QR pairing token, not session token).
     _client?.dispose();
     _client = null;
+    _pushEventsClient = null;
     _nodeService = null;
     _pairingService = null;
 
@@ -693,8 +708,8 @@ class NodeNotifier extends StateNotifier<NodeState> {
     client.call('getNodeConfig').then((config) {
       final aiBots = config['aiBots'];
       final node = state.activeNode;
-      if (aiBots is List && aiBots.isNotEmpty && node != null) {
-        chatNotifier.syncAiBots(aiBots, node.id);
+      if (node != null) {
+        chatNotifier.syncAiBots(aiBots is List ? aiBots : const [], node.id);
       }
     }).catchError((e) {
       _log('getNodeConfig for aiBots failed: $e');
@@ -954,6 +969,11 @@ class NodeNotifier extends StateNotifier<NodeState> {
     ContactNotifier contactNotifier,
     TerminalNotifier terminalNotifier,
   ) {
+    // `_syncAllData` also runs on HomeRemoteClient.onReconnect for the
+    // same client — only wire handlers once per client instance.
+    if (identical(_pushEventsClient, client)) return;
+    _pushEventsClient = client;
+
     // -- WebSocket push events --
     client.on('chat:message', (data) {
       _log('[push] chat:message received: $data');
@@ -1013,6 +1033,15 @@ class NodeNotifier extends StateNotifier<NodeState> {
       if (data is Map<String, dynamic>) {
         _ref.read(contentEngageProvider.notifier).upsertFromEvent(data);
       }
+    });
+    client.on('home:config-updated', (data) {
+      if (data is! Map) return;
+      final config = data['config'];
+      if (config is! Map) return;
+      final aiBots = config['aiBots'];
+      final node = state.activeNode;
+      if (node == null) return;
+      chatNotifier.syncAiBots(aiBots is List ? aiBots : const [], node.id);
     });
   }
 
@@ -1116,6 +1145,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
       },
     );
     _client = HomeRemoteClient(opts);
+    _pushEventsClient = null;
 
     try {
       await _client!.ensureConnected();
@@ -1193,6 +1223,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
   Future<void> disconnect() async {
     _client?.dispose();
     _client = null;
+    _pushEventsClient = null;
     _nodeService = null;
     _pairingService = null;
     _connectingFuture = null;

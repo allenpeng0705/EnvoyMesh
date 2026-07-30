@@ -223,6 +223,19 @@ export interface PersistedNodeConfig {
    */
   pairingKioskExpiresAt?: string;
   /**
+   * Store-review demo pairing (default OFF). When enabled, getPairingPayload
+   * embeds a stable token accepted until reviewPairingExpiresAt / TTL days.
+   * Prefer env ENVOY_REVIEW_PAIRING=* on a terminal demo node — never ship
+   * enabled in end-user DMG/Tauri defaults.
+   */
+  reviewPairingEnabled?: boolean;
+  /** Stable pairing token for review QR (required when enabled). */
+  reviewPairingToken?: string;
+  /** Absolute ISO expiry for the review token. */
+  reviewPairingExpiresAt?: string;
+  /** TTL in days when expiresAt is unset (default 14). */
+  reviewPairingTtlDays?: number;
+  /**
    * Phase 38 — WebRTC ICE servers (STUN/TURN) for voice/video calls.
    * When unset, the default set of public STUN servers is used.
    * Set to an empty array to use no ICE servers (Path 1 / LAN only).

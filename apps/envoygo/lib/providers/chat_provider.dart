@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../ext_agent/ext_agent_presets.dart';
@@ -455,7 +457,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final isSyntheticAgent = senderOwnerId == 'envoy:pi' ||
         senderOwnerId == '__envoy_ai__' ||
         senderOwnerId.startsWith('envoy_agent_') ||
-        senderOwnerId.startsWith('envoy:agent:');
+        senderOwnerId.startsWith('envoy:agent:') ||
+        senderOwnerId.startsWith('bot:');
     final isAgent = !(senderOwnerId == 'terminal') &&
         (isSyntheticAgent || (sentBySelf && actorRole == 'agent'));
     final isTerminal = senderOwnerId == 'terminal';
@@ -503,20 +506,32 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final terminalName = data['terminalName'] as String?;
     final deliveryChannel = metadata?['deliveryChannel'] as String?;
     final deliverySource = metadata?['deliverySource'] as String?;
-    final isBuiltinAi = deliveryChannel == 'ai' ||
-        senderOwnerId == '__envoy_ai__';
+    final botThreadKey = senderOwnerId.startsWith('bot:')
+        ? senderOwnerId
+        : (recipientOwnerId != null && recipientOwnerId.startsWith('bot:')
+            ? recipientOwnerId
+            : null);
+    final isAiBot = botThreadKey != null;
+    // Builtin EnvoyAI only — character bots share deliveryChannel "ai" but
+    // must stay on their own `bot:<id>` thread.
+    final isBuiltinAi = !isAiBot &&
+        (deliveryChannel == 'ai' || senderOwnerId == '__envoy_ai__');
     final isBridgeAgent = !isBuiltinAi &&
+        !isAiBot &&
         ((deliveryChannel == 'agent' && deliverySource == 'bridge') ||
             senderOwnerId == 'envoy:pi');
-    final agentType = isBridgeAgent
-        ? 'external'
-        : 'envoyai';
+    final agentType = isAiBot
+        ? botThreadKey!
+        : isBridgeAgent
+            ? 'external'
+            : 'envoyai';
 
     // Agent messages: if the recipient is a known contact → contact's thread.
     // If the recipient is the owner (chatting with EnvoyAI) → envoyai thread.
     final agentTalkToContact = isAgent &&
         !isBridgeAgent &&
         !isBuiltinAi &&
+        !isAiBot &&
         recipientOwnerId != null &&
         recipientOwnerId.isNotEmpty &&
         recipientOwnerId != selfOwnerId;
@@ -524,6 +539,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final String threadId;
     if (isTerminal) {
       threadId = '${nodeState.activeNode!.id}:term:${terminalId ?? senderOwnerId}';
+    } else if (isAiBot) {
+      threadId = '${nodeState.activeNode!.id}:$botThreadKey';
     } else if (isBuiltinAi) {
       threadId = '${nodeState.activeNode!.id}:envoyai';
     } else if (isBridgeAgent) {
@@ -566,11 +583,13 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final bool showAsMine = (sentBySelf && actorRole == 'human') || agentTalkToContact;
     final msgSenderDisplay = showAsMine
         ? 'You'
-        : (isBridgeAgent
-            ? (senderDisplayName ?? 'Ext Agent')
-            : (isBuiltinAi || (isAgent && !agentTalkToContact)
-                ? (senderDisplayName ?? 'EnvoyAI')
-                : (senderDisplayName ?? senderOwnerId)));
+        : (isAiBot
+            ? (senderDisplayName ?? botThreadKey ?? 'Bot')
+            : (isBridgeAgent
+                ? (senderDisplayName ?? 'Ext Agent')
+                : (isBuiltinAi || (isAgent && !agentTalkToContact)
+                    ? (senderDisplayName ?? 'EnvoyAI')
+                    : (senderDisplayName ?? senderOwnerId))));
 
     List<ChatAttachment>? attachments;
     try {
@@ -596,31 +615,44 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     final isAiThread = isBridgeAgent ||
         isBuiltinAi ||
+        isAiBot ||
         (isAgent && !agentTalkToContact);
+    final ChatThreadType upsertType;
+    if (isTerminal) {
+      upsertType = ChatThreadType.terminal;
+    } else if (isAiBot) {
+      upsertType = ChatThreadType.aiBot;
+    } else if (isAiThread) {
+      upsertType = isBridgeAgent
+          ? ChatThreadType.externalAgent
+          : ChatThreadType.envoyai;
+    } else {
+      upsertType = ChatThreadType.direct;
+    }
+    final botIdFromKey = isAiBot && botThreadKey!.startsWith('bot:')
+        ? botThreadKey.substring(4)
+        : null;
     // Update thread.
     _upsertThread(
       threadId: threadId,
       nodeId: nodeState.activeNode!.id,
-      type: isTerminal
-          ? ChatThreadType.terminal
-          : isAiThread
-              ? (isBridgeAgent
-                  ? ChatThreadType.externalAgent
-                  : ChatThreadType.envoyai)
-              : ChatThreadType.direct,
+      type: upsertType,
       displayName: isTerminal
           ? 'Terminal: ${terminalName ?? terminalId ?? ''}'
           : agentTalkToContact
               ? (threadDisplayName ?? peerId)
-              : isAiThread
-                  ? (isBridgeAgent
-                      ? (senderDisplayName ?? 'Ext Agent')
-                      : 'EnvoyAI')
-                  : threadDisplayName ?? peerId,
+              : isAiBot
+                  ? (senderDisplayName ?? botThreadKey ?? 'Bot')
+                  : isAiThread
+                      ? (isBridgeAgent
+                          ? (senderDisplayName ?? 'Ext Agent')
+                          : 'EnvoyAI')
+                      : threadDisplayName ?? peerId,
       contactOwnerId: (isAiThread || (isAgent && !agentTalkToContact))
           ? null
           : peerId,
       agentType: isAiThread ? agentType : null,
+      botId: botIdFromKey,
       lastMessageText: text ?? '',
       lastMessageAt: createdAt != null
           ? DateTime.tryParse(createdAt)
@@ -675,6 +707,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     // owner-assistant turns.
     if (!isBridgeAgent &&
         !isBuiltinAi &&
+        !isAiBot &&
         isAgent &&
         recipientOwnerId != null &&
         recipientOwnerId.isNotEmpty &&
@@ -990,35 +1023,104 @@ class ChatNotifier extends StateNotifier<ChatState> {
     }
   }
 
+  /// Create an AI character bot on the home node and sync the local thread list.
+  ///
+  /// Same fields as Social Create Bot. Returns the new local thread id
+  /// (`nodeId:bot:<id>`).
+  Future<String> createAiBot({
+    required String name,
+    required String systemPrompt,
+    String? description,
+    String avatarColor = '#6366f1',
+  }) async {
+    final nodeService = _ref.read(nodeServiceProvider);
+    final nodeState = _ref.read(nodeProvider);
+    final node = nodeState.activeNode;
+    if (nodeService == null || node == null) {
+      throw StateError('Not connected to home node');
+    }
+
+    final trimmedName = name.trim();
+    final trimmedPrompt = systemPrompt.trim();
+    if (trimmedName.isEmpty || trimmedPrompt.isEmpty) {
+      throw ArgumentError('Name and system prompt are required');
+    }
+
+    final cfg = await nodeService.getNodeConfig();
+    final existingRaw = cfg['aiBots'];
+    final existing = <Map<String, dynamic>>[];
+    if (existingRaw is List) {
+      for (final raw in existingRaw) {
+        if (raw is Map) {
+          existing.add(Map<String, dynamic>.from(raw));
+        }
+      }
+    }
+
+    var slug = trimmedName
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '-')
+        .replaceAll(RegExp(r'^-|-$'), '');
+    if (slug.isEmpty) {
+      slug = 'bot-${DateTime.now().millisecondsSinceEpoch}';
+    }
+    var uniqueId = slug;
+    var counter = 1;
+    while (existing.any((b) => b['id']?.toString() == uniqueId)) {
+      uniqueId = '$slug-${counter++}';
+    }
+
+    final desc = description?.trim();
+    final newBot = <String, dynamic>{
+      'id': uniqueId,
+      'name': trimmedName,
+      'systemPrompt': trimmedPrompt,
+      if (desc != null && desc.isNotEmpty) 'description': desc,
+      'avatarColor': avatarColor,
+      'enabled': true,
+    };
+    final newBots = [...existing, newBot];
+    await nodeService.updateAiBots(newBots);
+    syncAiBots(newBots, node.id);
+    return '${node.id}:bot:$uniqueId';
+  }
+
   /// Sync AI bot definitions from config — creates/removes bot threads
   /// dynamically. Called on connect + on config-updated events.
   void syncAiBots(List<dynamic> bots, String nodeId) {
-    // Remove bot threads that no longer exist in config.
+    // Keep only enabled bots in the list. Disabled bots are removed locally
+    // (same as deleted) so they disappear from the AI section.
     final botIds = <String>{};
     for (final raw in bots) {
       if (raw is! Map) continue;
+      if (raw['enabled'] == false) continue;
       final id = raw['id']?.toString();
       if (id != null && id.isNotEmpty) botIds.add(id);
     }
 
-    final existingBotThreads = state.threads
-        .where((t) => t.type == ChatThreadType.aiBot)
-        .toList();
-    for (final thread in existingBotThreads) {
-      if (!botIds.contains(thread.botId)) {
-        // Bot was removed — drop the thread from the list.
-        final updated = state.threads.where((t) => t.id != thread.id).toList();
-        state = state.copyWith(threads: updated);
+    final removeIds = state.threads
+        .where((t) =>
+            t.nodeId == nodeId &&
+            t.type == ChatThreadType.aiBot &&
+            !botIds.contains(t.botId))
+        .map((t) => t.id)
+        .toSet();
+    if (removeIds.isNotEmpty) {
+      state = state.copyWith(
+        threads: state.threads.where((t) => !removeIds.contains(t.id)).toList(),
+      );
+      for (final id in removeIds) {
+        unawaited(_localDb.deleteThread(id));
       }
     }
 
-    // Upsert threads for bots in config.
+    // Upsert threads for enabled bots in config.
     for (final raw in bots) {
       if (raw is! Map) continue;
       final bot = raw;
       final id = bot['id']?.toString();
       if (id == null || id.isEmpty) continue;
-      if (bot['enabled'] == false) continue; // skip disabled bots
+      if (bot['enabled'] == false) continue;
       onAiBotDefined(
         nodeId: nodeId,
         botId: id,
@@ -1046,6 +1148,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       agentType: 'bot:$botId',
       botId: botId,
       avatarColor: avatarColor,
+      description: description,
     );
   }
 
@@ -1347,7 +1450,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
       } else if (type == ChatThreadType.envoyai) {
         // Built-in assistant name is stable.
         return existingName;
-      } else if (type == ChatThreadType.externalAgent) {
+      } else if (type == ChatThreadType.externalAgent ||
+          type == ChatThreadType.aiBot) {
         return newName;
       } else {
         return existingName;
@@ -1367,6 +1471,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     String? agentType,
     String? botId,
     String? avatarColor,
+    String? description,
     String? lastMessageText,
     DateTime? lastMessageAt,
     bool unreadIncrement = false,
@@ -1401,6 +1506,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       agentType: agentType ?? existing?.agentType,
       botId: botId ?? existing?.botId,
       avatarColor: avatarColor ?? existing?.avatarColor,
+      description: description ?? existing?.description,
       lastMessageText: lastMessageText ?? existing?.lastMessageText,
       lastMessageAt: lastMessageAt ?? existing?.lastMessageAt,
       unreadCount: (existing?.unreadCount ?? 0) +

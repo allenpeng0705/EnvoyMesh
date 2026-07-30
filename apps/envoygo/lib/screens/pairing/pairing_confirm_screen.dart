@@ -147,18 +147,23 @@ class _PairingConfirmScreenState
 
     try {
       // Build candidates from pairing data.
-      // Resolve bootstrapPeers from QR payload so p2p-am6 etc. are built
-      // immediately (without needing getPairingPayload to succeed first).
-      final List<String> bootstrapPeers;
-      if (widget.data.bootstrapPeers != null &&
-          widget.data.bootstrapPeers!.isNotEmpty) {
-        bootstrapPeers = widget.data.bootstrapPeers!;
-      } else if (widget.data.bootstrapPresetNames != null &&
+      // Extra QR relays (`rels`) are folded into bootstrapPeers as WS URLs
+      // so CandidateResolver tries primary + regionals before community.
+      final List<String> bootstrapPeers = [];
+      if (widget.data.bootstrapPeers != null) {
+        bootstrapPeers.addAll(widget.data.bootstrapPeers!);
+      }
+      if (widget.data.relayWsUrls != null) {
+        for (final u in widget.data.relayWsUrls!) {
+          if (!bootstrapPeers.contains(u)) bootstrapPeers.add(u);
+        }
+      }
+      if (widget.data.bootstrapPresetNames != null &&
           widget.data.bootstrapPresetNames!.isNotEmpty) {
-        bootstrapPeers = CandidateResolver.resolveBootstrapPresets(
-            widget.data.bootstrapPresetNames!);
-      } else {
-        bootstrapPeers = [];
+        for (final p in CandidateResolver.resolveBootstrapPresets(
+            widget.data.bootstrapPresetNames!)) {
+          if (!bootstrapPeers.contains(p)) bootstrapPeers.add(p);
+        }
       }
 
       final tempNode = StoredNode(

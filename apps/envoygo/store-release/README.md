@@ -5,6 +5,7 @@ Ready-to-paste listing copy and icon assets for **Apple App Store** and **Google
 ```
 store-release/
 ├── README.md                 ← this summary
+├── apple_google_reviewing.md ← App Review / Play demo home + long-lived QR
 ├── appstore/
 │   ├── listing.md            ← all App Store Connect text
 │   └── icons/                ← App Store icon assets
@@ -47,4 +48,5 @@ Remote chat, contacts, AI agent, and voice access to your **EnvoyMesh home node*
 2. Capture **screenshots** (phone + optional tablet) per checklists.
 3. Fix App Store icon to a true full-bleed square if Connect warns about rounded corners.
 4. Configure **release signing** for Android (currently debug keys in `build.gradle.kts`).
-5. Upload builds via App Store Connect / Play Console and paste text from the listing files.
+5. Spin up a **demo home** with review pairing — see `apple_google_reviewing.md` — and paste the stable pairing URI into store review notes.
+6. Upload builds via App Store Connect / Play Console and paste text from the listing files.

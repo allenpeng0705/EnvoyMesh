@@ -86,6 +86,7 @@ class PairingService {
     final agentPeerId = obj['apid'] as String?;
     final agentName = obj['aname'] as String?;
     final bpnRaw = obj['bpn'];
+    final relsRaw = obj['rels'];
 
     List<String>? bootstrapPresetNames;
     if (bpnRaw is List) {
@@ -96,6 +97,26 @@ class PairingService {
       bootstrapPresetNames = filtered.isEmpty ? null : filtered;
     }
 
+    // Extra Envoy relay WS bases for regional fallback (US/EU/…).
+    List<String>? relayWsUrls;
+    if (relsRaw is List) {
+      final primaryBase = _stripRelayQuery(relayWsUrl);
+      final seen = <String>{if (primaryBase != null) primaryBase};
+      final extras = <String>[];
+      for (final raw in relsRaw.whereType<String>()) {
+        final base = _stripRelayQuery(raw);
+        if (base == null || base.isEmpty || seen.contains(base)) continue;
+        seen.add(base);
+        extras.add(base);
+        if (extras.length >= 8) break;
+      }
+      relayWsUrls = extras.isEmpty ? null : extras;
+    }
+
+    // Fold extras into bootstrapPeers so CandidateResolver tries them
+    // (WS URLs) before the built-in community relay.
+    final bootstrapPeers = relayWsUrls;
+
     return PairingData(
       token: tok,
       wsUrl: ws,
@@ -105,11 +126,21 @@ class PairingService {
       homeNodePeerId: homeNodePeerId?.isNotEmpty == true ? homeNodePeerId : null,
       agentPeerId: agentPeerId?.isNotEmpty == true ? agentPeerId : null,
       agentName: agentName?.isNotEmpty == true ? agentName : null,
-      // ownerPublicKey and bootstrapPeers are not in the compressed token —
+      // ownerPublicKey is not in the compressed token —
       // the mobile app fetches the device certificate after pairing via RPC.
-      // Bootstrap presets are reconstructed from bootstrapPresetNames locally.
+      bootstrapPeers: bootstrapPeers,
       bootstrapPresetNames: bootstrapPresetNames,
+      relayWsUrls: relayWsUrls,
     );
+  }
+
+  /// Strip ?target=&token= from a relay WS URL.
+  static String? _stripRelayQuery(String? url) {
+    if (url == null) return null;
+    final trimmed = url.trim();
+    if (trimmed.isEmpty) return null;
+    final q = trimmed.indexOf('?');
+    return q >= 0 ? trimmed.substring(0, q) : trimmed;
   }
 
   /// Decompress a base64url-encoded gzip blob. Returns null on failure.
@@ -241,6 +272,10 @@ class PairingData {
   /// preset registry as the home node.
   final List<String>? bootstrapPresetNames;
 
+  /// Extra Envoy relay WebSocket bases from QR (`rels`), tried when the
+  /// primary [relayWsUrl] is unreachable (regional US/EU/… fallback).
+  final List<String>? relayWsUrls;
+
   const PairingData({
     required this.token,
     required this.wsUrl,
@@ -254,6 +289,7 @@ class PairingData {
     this.ownerPublicKey,
     this.bootstrapPeers,
     this.bootstrapPresetNames,
+    this.relayWsUrls,
   });
 }
 

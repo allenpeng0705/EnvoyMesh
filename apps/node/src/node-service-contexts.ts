@@ -351,6 +351,8 @@ export interface GetPairingPayloadContextDeps {
   getWsPath: GetPairingPayloadContext["getWsPath"];
   getRelayPublicWsUrl: GetPairingPayloadContext["getRelayPublicWsUrl"];
   getRelayBootstrapPeers: GetPairingPayloadContext["getRelayBootstrapPeers"];
+  getConfiguredRelays: GetPairingPayloadContext["getConfiguredRelays"];
+  getReviewPairing: GetPairingPayloadContext["getReviewPairing"];
   getProfile: GetPairingPayloadContext["getProfile"];
   deriveRelayWsUrl: GetPairingPayloadContext["deriveRelayWsUrl"];
   autoDiscoverRelayWsUrl: GetPairingPayloadContext["autoDiscoverRelayWsUrl"];
@@ -505,6 +507,7 @@ export interface SmallProfileDelegationsContextDeps {
 }
 
 export interface ValidatePairingTokenContextDeps {
+  getReviewPairing: ValidatePairingTokenContext["getReviewPairing"];
   getInMemoryToken: ValidatePairingTokenContext["getInMemoryToken"];
   getInMemoryTokenIssuedAt: ValidatePairingTokenContext["getInMemoryTokenIssuedAt"];
   pairingTokenTtlMs: ValidatePairingTokenContext["getInMemoryTokenTtlMs"] extends () => infer R ? R : never;
@@ -1015,6 +1018,8 @@ export function buildGetPairingPayloadContext(deps: GetPairingPayloadContextDeps
     getWsPath: () => deps.getWsPath(),
     getRelayPublicWsUrl: () => deps.getRelayPublicWsUrl(),
     getRelayBootstrapPeers: () => deps.getRelayBootstrapPeers(),
+    getConfiguredRelays: () => deps.getConfiguredRelays(),
+    getReviewPairing: () => deps.getReviewPairing(),
     getProfile: () => deps.getProfile(),
     deriveRelayWsUrl: (addr) => deps.deriveRelayWsUrl(addr),
     autoDiscoverRelayWsUrl: () => deps.autoDiscoverRelayWsUrl(),
@@ -1233,6 +1238,7 @@ export function buildSmallProfileDelegationsContext(
 
 export function buildValidatePairingTokenContext(deps: ValidatePairingTokenContextDeps): ValidatePairingTokenContext {
   return {
+    getReviewPairing: () => deps.getReviewPairing(),
     getInMemoryToken: () => deps.getInMemoryToken(),
     getInMemoryTokenIssuedAt: () => deps.getInMemoryTokenIssuedAt(),
     getInMemoryTokenTtlMs: () => deps.pairingTokenTtlMs,

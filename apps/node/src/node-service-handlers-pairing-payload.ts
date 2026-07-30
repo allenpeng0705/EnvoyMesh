@@ -1,22 +1,34 @@
 /**
  * getPairingPayload runtime (Step 25).
  *
- * Extracted from `node-service-impl.ts`. Builds the QR-code pairing
- * payload that mobile apps scan to start pairing with the home node.
+ * Builds the QR-code pairing payload for EnvoyGo / mobile.
  *
- * Determines the best wsUrl (relay proxy or direct LAN), embeds
- * the home node's identity, bridge status, and the full list of
- * bootstrap peers (libp2p multiaddrs + WebSocket fallbacks).
+ * QR embeds:
+ *   - primary `relayWsUrl` (`rel`)
+ *   - extra configured Envoy relay WS bases (`relayWsUrls` / `rels`)
+ *   - LAN / identity / pairing token
+ *
+ * Not embedded (EnvoyGo already has community hardcoded; DHT bootstraps
+ * do not help first-pair):
+ *   - built-in community relay
+ *   - public libp2p DHT presets (am6/am7/…)
  */
 import { randomUUID } from "node:crypto";
 import {
   DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
+  normalizeRelayWsList,
+  stripRelayWsParams,
 } from "@envoymesh/api";
 import type { BridgeStatus, PairingPayload } from "@envoymesh/api";
 
 export interface ReachableMeshLike {
   peerId: string;
   multiaddrs: string[];
+}
+
+export interface ConfiguredRelayLike {
+  addr: string;
+  enabled?: boolean;
 }
 
 export interface GetPairingPayloadContext {
@@ -29,6 +41,8 @@ export interface GetPairingPayloadContext {
   getRelayPublicWsUrl(): string | null | undefined;
   /** All configured relay bootstrap peers (libp2p multiaddrs). */
   getRelayBootstrapPeers(): string[];
+  /** Operator-configured Envoy relays (Settings → Relays). */
+  getConfiguredRelays(): Promise<ConfiguredRelayLike[]> | ConfiguredRelayLike[];
   /** Get the current node profile (or undefined). */
   getProfile(): {
     owner: {
@@ -44,25 +58,39 @@ export interface GetPairingPayloadContext {
   autoDiscoverRelayPeerId(): Promise<string | undefined>;
   /** Set the new pairing token + issued-at timestamp. */
   setPairingToken(token: string, issuedAt: number): void;
+  /**
+   * Opt-in store-review long-lived token. When present, getPairingPayload
+   * embeds this stable token instead of a fresh UUID.
+   */
+  getReviewPairing():
+    | import("./review-pairing.js").ReviewPairingSettings
+    | null
+    | Promise<import("./review-pairing.js").ReviewPairingSettings | null>;
 }
 
-/** Names of every bootstrap preset EnvoyGo can fall back to. */
-const ALL_KNOWN_PRESETS = [
+/** Presets / addrs EnvoyGo already knows or that do not help pairing. */
+const QR_OMIT_PRESETS = new Set([
   "cn-relay",
+  "public-libp2p",
   "public-libp2p-am6",
   "public-libp2p-am7",
-  "public-libp2p",
-];
+]);
 
 const LOOPBACK_RE = /^127\./;
 const IPV4_RE = /\/ip4\/([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)/;
 const DEFAULT_WS_PORT = 3030;
 const DEFAULT_WS_PATH = "/ws";
-const COMMUNITY_BOOTSTRAP_LIBP2P = [
-  "/dnsaddr/am6.bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6LccNBoMmrjUqFq",
-  "/dnsaddr/am7.bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA7W8R4Hk6x4pJ8Yf",
-  "/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN",
-];
+
+/** True if this entry is built-in community or public libp2p DHT bootstrap. */
+export function isBuiltinOrPublicBootstrap(entry: string): boolean {
+  const trimmed = entry.trim();
+  if (!trimmed) return true;
+  if (QR_OMIT_PRESETS.has(trimmed)) return true;
+  if (trimmed === DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR) return true;
+  if (trimmed.includes("47.93.11.212")) return true;
+  if (trimmed.includes("bootstrap.libp2p.io")) return true;
+  return false;
+}
 
 function deriveLanIp(multiaddrs: string[]): string {
   for (const addr of multiaddrs) {
@@ -70,6 +98,49 @@ function deriveLanIp(multiaddrs: string[]): string {
     if (m && !LOOPBACK_RE.test(m[1])) return m[1];
   }
   return "localhost";
+}
+
+/** Resolve an address or URL to a clean relay WebSocket base. */
+function toRelayWsBase(
+  addr: string,
+  deriveRelayWsUrl: (a: string) => string | undefined,
+): string | undefined {
+  const trimmed = addr.trim();
+  if (!trimmed || isBuiltinOrPublicBootstrap(trimmed)) return undefined;
+  if (/^wss?:\/\//i.test(trimmed)) {
+    return stripRelayWsParams(trimmed);
+  }
+  const derived = deriveRelayWsUrl(trimmed);
+  if (!derived || isBuiltinOrPublicBootstrap(derived)) return undefined;
+  return stripRelayWsParams(derived);
+}
+
+/**
+ * Collect Envoy relay WebSocket bases from Settings-configured relays
+ * plus any non-public bootstrap multiaddrs that derive to WS.
+ */
+export async function collectConfiguredRelayWsUrls(ctx: {
+  getConfiguredRelays(): Promise<ConfiguredRelayLike[]> | ConfiguredRelayLike[];
+  getRelayBootstrapPeers(): string[];
+  deriveRelayWsUrl(addr: string): string | undefined;
+}): Promise<string[]> {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  const add = (base: string | undefined) => {
+    if (!base || seen.has(base)) return;
+    seen.add(base);
+    out.push(base);
+  };
+
+  const configured = await Promise.resolve(ctx.getConfiguredRelays());
+  for (const relay of configured) {
+    if (relay.enabled === false) continue;
+    add(toRelayWsBase(relay.addr, ctx.deriveRelayWsUrl));
+  }
+  for (const addr of ctx.getRelayBootstrapPeers()) {
+    add(toRelayWsBase(addr, ctx.deriveRelayWsUrl));
+  }
+  return out;
 }
 
 export async function getPairingPayloadViaRuntime(
@@ -84,15 +155,31 @@ export async function getPairingPayloadViaRuntime(
   const wsPath = ctx.getWsPath() ?? DEFAULT_WS_PATH;
   const lanWsUrl = `ws://${lanIp}:${wsPort}${wsPath}`;
 
-  // Resolve relay WebSocket URL.
-  const configuredRelayWsUrl = ctx.getRelayPublicWsUrl();
-  const relayWsUrl =
-    configuredRelayWsUrl !== undefined
-      ? configuredRelayWsUrl || undefined // "" → undefined (disabled)
-      : await ctx.autoDiscoverRelayWsUrl();
+  // All operator Envoy relay WS bases (US/EU/…), excluding built-in community.
+  const allRelayWs = await collectConfiguredRelayWsUrls(ctx);
 
-  // Generate fresh pairing token.
-  const token = randomUUID();
+  // Primary relay: explicit override → first configured Envoy relay →
+  // auto-discover (may be community; only used when no operator relays).
+  const configuredRelayWsUrl = ctx.getRelayPublicWsUrl();
+  let relayWsUrl: string | undefined;
+  if (configuredRelayWsUrl !== undefined) {
+    relayWsUrl = configuredRelayWsUrl || undefined; // "" → disabled
+  } else if (allRelayWs.length > 0) {
+    // Prefer operator relays in the QR; community is built into EnvoyGo.
+    relayWsUrl = allRelayWs[0];
+  } else {
+    relayWsUrl = await ctx.autoDiscoverRelayWsUrl();
+    // Never pack built-in community into QR when we have nothing else —
+    // EnvoyGo already falls back to it. Leaving rel empty uses LAN wsUrl.
+    if (relayWsUrl && isBuiltinOrPublicBootstrap(relayWsUrl)) {
+      relayWsUrl = undefined;
+    }
+  }
+  relayWsUrl = stripRelayWsParams(relayWsUrl);
+
+  // Pairing token: stable review token when enabled, else fresh 30-min UUID.
+  const review = await Promise.resolve(ctx.getReviewPairing());
+  const token = review?.token ?? randomUUID();
   ctx.setPairingToken(token, Date.now());
 
   // Build wsUrl (relay URL with target+token params, or LAN fallback).
@@ -118,6 +205,15 @@ export async function getPairingPayloadViaRuntime(
   if (relayWsUrl) {
     payload.relayWsUrl = relayWsUrl;
   }
+
+  // Extra relays for QR fallback (everything except primary).
+  const extras = normalizeRelayWsList(allRelayWs, relayWsUrl);
+  if (extras.length > 0) {
+    payload.relayWsUrls = extras;
+    // Also expose as bootstrapPeers WS entries for older clients / post-pair sync.
+    payload.bootstrapPeers = extras;
+  }
+
   if (bridgeStatus.enabled) {
     payload.agentPeerId = bridgeStatus.agentPeerId;
     if (bridgeStatus.agentPublicKeyPem) {
@@ -136,26 +232,6 @@ export async function getPairingPayloadViaRuntime(
     payload.ownerPublicKey = profile.owner.publicKeyPem;
     payload.ownerId = profile.owner.ownerId;
   }
-
-  // Bootstrap peers — both libp2p and WebSocket fallbacks.
-  const allBootstrapPeers: string[] = [];
-  allBootstrapPeers.push(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
-  allBootstrapPeers.push(...COMMUNITY_BOOTSTRAP_LIBP2P);
-  for (const addr of ctx.getRelayBootstrapPeers()) {
-    allBootstrapPeers.push(addr);
-    const wsUrl = ctx.deriveRelayWsUrl(addr);
-    if (wsUrl) allBootstrapPeers.push(wsUrl);
-  }
-  if (allBootstrapPeers.length > 0) {
-    payload.bootstrapPeers = allBootstrapPeers;
-  }
-
-  // Deduplicated preset names.
-  const homeConfiguredPresets = new Set(
-    ctx.getRelayBootstrapPeers().filter((p) => ALL_KNOWN_PRESETS.includes(p)),
-  );
-  const extraPresets = ALL_KNOWN_PRESETS.filter((p) => !homeConfiguredPresets.has(p));
-  payload.bootstrapPresetNames = [...homeConfiguredPresets, ...extraPresets];
 
   return payload;
 }

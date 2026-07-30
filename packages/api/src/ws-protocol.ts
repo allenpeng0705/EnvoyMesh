@@ -793,6 +793,12 @@ export interface PairingPayload {
    * When present, the QR encodes this relay URL instead of the direct LAN wsUrl, so mobile can connect from any network.
    */
   relayWsUrl?: string;
+  /**
+   * Additional Envoy relay WebSocket base URLs (optional).
+   * Compact QR field so EnvoyGo can try US/EU/… relays when the primary
+   * `relayWsUrl` is unreachable. Does not include the built-in community relay.
+   */
+  relayWsUrls?: string[];
   /** Bridge agent peer ID (optional — present when bridge is enabled) */
   agentPeerId?: string;
   /** Bridge agent public key PEM (optional) */

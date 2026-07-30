@@ -701,7 +701,7 @@ export class PushNotificationService {
     messagePreview: string;
     targetOwnerId: string;
     messageId: string;
-    threadType?: "direct" | "room" | "external" | "envoyai";
+    threadType?: "direct" | "room" | "external" | "envoyai" | "bot";
     senderOwnerId?: string;
     roomId?: string;
     /** Optional deep-link type (e.g. `pi_proposal`). */

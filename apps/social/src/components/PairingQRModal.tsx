@@ -15,8 +15,8 @@ interface PairingQRModalProps {
  * The token format is: `envoy://pair?pairing=<base64url-gzip-json>`.
  *
  * EnvoyGo decodes the `pairing` param with its own pure-Dart gzip decoder.
- * Bootstrap preset names are resolved locally by EnvoyGo using the shared preset
- * registry — no need to encode full multiaddr lists in the QR.
+ * Extra regional relays travel as compact `rels` WebSocket bases; the built-in
+ * community relay is not embedded (EnvoyGo already has it).
  */
 export function PairingQRModal({ onClose }: PairingQRModalProps) {
   const t = useT();

@@ -2737,7 +2737,8 @@ textarea::placeholder {
 }
 
 
-/* Contact list section labels */
+/* Contact list section labels — layout owned by styles/chat.css;
+   keep these in sync for non-chat pages that reuse the class names. */
 .contact-list-section-label {
   font-size: var(--text-xs);
   font-weight: var(--font-semibold);
@@ -2749,14 +2750,14 @@ textarea::placeholder {
 
 .contact-list-section-header {
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: var(--space-2);
-  padding-right: var(--space-3);
-  padding-bottom: var(--space-1);
+  min-width: 0;
+  padding: var(--space-3) var(--space-3) var(--space-1);
 }
 
 .contact-list-section-header .contact-list-section-label {
-  padding-bottom: 0;
+  padding: 0;
   flex: 1;
   min-width: 0;
 }
@@ -2770,8 +2771,7 @@ textarea::placeholder {
   min-height: 1.75rem;
   max-width: 1.75rem;
   padding: 0;
-  margin-left: auto;
-  margin-bottom: 1px;
+  margin: 0;
   border: none;
   border-radius: var(--radius-full);
   background: transparent;
@@ -4477,25 +4477,30 @@ textarea::placeholder {
 .settings-save-btn {
   padding: 0.625rem 1.25rem;
   background: var(--color-primary);
-  color: var(--color-on-primary-text);
+  color: var(--color-primary-on, #ffffff);
   border: none;
   border-radius: var(--radius-md);
   cursor: pointer;
   font-size: var(--text-sm);
-  font-weight: var(--font-medium);
+  font-weight: var(--font-semibold);
   transition: background-color var(--transition-fast),
               transform var(--transition-fast),
               box-shadow var(--transition-fast);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-.settings-save-btn:hover {
+.settings-save-btn:hover:not(:disabled) {
   background: var(--color-primary-hover);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.15);
 }
 
-.settings-save-btn:active {
+.settings-save-btn:active:not(:disabled) {
   transform: scale(0.98);
+}
+
+.settings-save-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
 }
 
 .settings-cancel-btn {
@@ -5417,7 +5422,7 @@ textarea::placeholder {
 .btn-primary {
   padding: 0.625rem 1.25rem;
   background: var(--color-primary);
-  color: var(--color-on-primary-text);
+  color: var(--color-primary-on, #ffffff);
   border: none;
   border-radius: var(--radius-md);
   font-weight: 600;

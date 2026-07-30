@@ -39,13 +39,19 @@ class ThreadTile extends StatelessWidget {
             ),
         ],
       ),
-      subtitle: thread.lastMessageText != null
-          ? Text(
-              thread.lastMessageText!,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-            )
-          : null,
+      subtitle: () {
+        final preview = thread.lastMessageText?.trim();
+        final bio = thread.description?.trim();
+        final text = (preview != null && preview.isNotEmpty)
+            ? preview
+            : (bio != null && bio.isNotEmpty ? bio : null);
+        if (text == null) return null;
+        return Text(
+          text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        );
+      }(),
       trailing: (() {
         final hasAction = trailingAction != null;
         final hasUnread = thread.unreadCount > 0;
@@ -101,6 +107,18 @@ class ThreadTile extends StatelessWidget {
           radius: _avatarRadius,
           child: Icon(Icons.smart_toy),
         );
+      case ChatThreadType.aiBot:
+        return CircleAvatar(
+          radius: _avatarRadius,
+          backgroundColor: _parseBotColor(thread.avatarColor),
+          child: Text(
+            _botInitial(thread.displayName),
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        );
       case ChatThreadType.pi:
         return const CircleAvatar(
           radius: _avatarRadius,
@@ -112,6 +130,23 @@ class ThreadTile extends StatelessWidget {
           child: Icon(Icons.terminal),
         );
     }
+  }
+
+  static Color _parseBotColor(String? hex) {
+    if (hex == null || hex.isEmpty) return const Color(0xFF6366F1);
+    final cleaned = hex.replaceFirst('#', '').trim();
+    if (cleaned.length != 6) return const Color(0xFF6366F1);
+    try {
+      return Color(int.parse('FF$cleaned', radix: 16));
+    } catch (_) {
+      return const Color(0xFF6366F1);
+    }
+  }
+
+  static String _botInitial(String name) {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) return '?';
+    return trimmed[0].toUpperCase();
   }
 
   String _formatTime(DateTime time) {

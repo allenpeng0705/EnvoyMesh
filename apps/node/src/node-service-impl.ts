@@ -135,7 +135,7 @@ import type {
   ExtAgentReachability,
   ProbeExtAgentParams,
 } from "@envoymesh/api";
-import { aiBotThreadKey } from "@envoymesh/api";
+import { aiBotThreadKey, isAiBotThread } from "@envoymesh/api";
 import type { DocumentAgentTurnResult, OwnerAgentTurnResult, CapabilityProviderJob, DocumentAcquisitionCandidate, DocumentAcquisitionJob, SocialProxySession } from "@envoymesh/api";
 import {
   DEFAULT_RAG_INDEX_STATUS,
@@ -1983,7 +1983,7 @@ class NodeServiceImpl implements NodeService {
     //   "pi:proposal" — Pi tool-action confirm
     const maybePushChat = (
       msg: ChatMessage,
-      opts?: { threadType?: "direct" | "room" | "external" | "envoyai"; roomId?: string },
+      opts?: { threadType?: "direct" | "room" | "external" | "envoyai" | "bot"; roomId?: string },
     ) => {
       const homeOwnerId = this._profile?.owner?.ownerId
       if (!homeOwnerId) return
@@ -1998,13 +1998,20 @@ class NodeServiceImpl implements NodeService {
       const channel = msg.metadata?.deliveryChannel
       const source = msg.metadata?.deliverySource
       const senderId = msg.sender.ownerId ?? ""
+      const recipientId = msg.recipient?.ownerId ?? ""
+      const botKey =
+        (isAiBotThread(senderId) && senderId) ||
+        (isAiBotThread(recipientId) && recipientId) ||
+        ""
+      const isAiBot = Boolean(botKey)
       const isBridgeAgent =
         (channel === "agent" && source === "bridge") ||
         senderId === "envoy:pi"
-      const isBuiltinAi = channel === "ai" || senderId === "__envoy_ai__"
+      const isBuiltinAi =
+        !isAiBot && (channel === "ai" || senderId === "__envoy_ai__")
       const threadType =
         opts?.threadType ??
-        (isBridgeAgent ? "external" : isBuiltinAi ? "envoyai" : undefined)
+        (isAiBot ? "bot" : isBridgeAgent ? "external" : isBuiltinAi ? "envoyai" : undefined)
 
       void pushNotificationService
         .dispatchChatPush({
@@ -2012,7 +2019,12 @@ class NodeServiceImpl implements NodeService {
           messagePreview: preview.slice(0, 120),
           targetOwnerId: homeOwnerId,
           messageId: msg.messageId,
-          senderOwnerId: isBridgeAgent || isBuiltinAi ? undefined : senderId,
+          // Bots need the `bot:<id>` key so the client can deep-link the right thread.
+          senderOwnerId: isAiBot
+            ? botKey
+            : isBridgeAgent || isBuiltinAi
+              ? undefined
+              : senderId,
           threadType,
           roomId: opts?.roomId,
         })
@@ -4059,8 +4071,7 @@ class NodeServiceImpl implements NodeService {
       }
       this._persistChatMessage(threadKey, replyMsg)
       this.emit("chat:message", replyMsg)
-      // Also emit push:message so backgrounded devices get notified.
-      this.emit("push:message", replyMsg)
+      // Push is handled by the unified chat:message → maybePushChat listener.
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err)
       console.warn(`[ai-bot:${trimmedBotId}] LLM call failed:`, errMsg)

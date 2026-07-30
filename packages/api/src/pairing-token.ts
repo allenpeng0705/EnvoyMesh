@@ -8,13 +8,14 @@
  * dense but scannable.
  *
  * V1 layout (JSON, then gzip, then base64url):
- *   { v:1, ws:"...", rel:"...", lan:"...", tid:"...", oid:"...",
+ *   { v:1, ws:"...", rel:"...", rels:[...], lan:"...", tid:"...", oid:"...",
  *     apid:"...", aname:"...", bpn:[...], tok:"..." }
  *
  * Field abbreviations (keep JSON small):
  *   v    — version (1)
  *   ws   — wsUrl
- *   rel  — relayWsUrl
+ *   rel  — relayWsUrl (primary)
+ *   rels — relayWsUrls (extra Envoy relays for fallback)
  *   lan  — lanWsUrl
  *   tid  — homeNodePeerId
  *   oid  — ownerId
@@ -33,6 +34,7 @@ interface PairingTokenV1Payload {
   v: 1;
   ws: string;        // wsUrl
   rel?: string;      // relayWsUrl
+  rels?: string[];   // relayWsUrls (extra)
   lan?: string;      // lanWsUrl
   tid?: string;     // homeNodePeerId
   oid: string;       // ownerId
@@ -47,12 +49,14 @@ interface PairingTokenV1Payload {
  * Uses the browser's native Compression Streams API (gzip) — no external deps.
  */
 export async function encodePairingToken(payload: PairingPayload): Promise<string> {
+  const rels = normalizeRelayWsList(payload.relayWsUrls, payload.relayWsUrl);
   const obj: PairingTokenV1Payload = {
     v: 1,
     ws: payload.wsUrl,
     tok: payload.token ?? "",
     oid: payload.ownerId ?? "",
     rel: payload.relayWsUrl,
+    ...(rels.length > 0 ? { rels } : {}),
     lan: payload.lanWsUrl,
     tid: payload.homeNodePeerId,
     apid: payload.agentPeerId,
@@ -103,6 +107,8 @@ async function compressGzip(data: Uint8Array): Promise<Uint8Array> {
 export interface DecodedPairingToken {
   wsUrl: string;
   relayWsUrl?: string;
+  /** Extra Envoy relay WebSocket base URLs (fallback when primary fails). */
+  relayWsUrls?: string[];
   lanWsUrl?: string;
   homeNodePeerId?: string;
   ownerId: string;
@@ -120,6 +126,53 @@ export interface DecodedPairingToken {
  * Node.js: uses pako.ungzip (sync).
  */
 export async function decodePairingTokenAsync(token: string): Promise<DecodedPairingToken> {
+  return parseDecodedObject(await decodeToObjectAsync(token));
+}
+
+/** Synchronous decode for Node.js (uses pako). */
+export function decodePairingToken(token: string): DecodedPairingToken {
+  return parseDecodedObject(decodeToObjectSync(token));
+}
+
+function parseDecodedObject(obj: Record<string, unknown>): DecodedPairingToken {
+  if (obj.v !== 1) {
+    throw new Error(`Unsupported pairing token version: ${String(obj.v)}`);
+  }
+
+  const ws = typeof obj.ws === "string" ? obj.ws.trim() : "";
+  const tok = typeof obj.tok === "string" ? obj.tok.trim() : "";
+  const oid = typeof obj.oid === "string" ? obj.oid.trim() : "";
+
+  if (!ws) throw new Error("Pairing token is missing wsUrl");
+  if (!tok) throw new Error("Pairing token is missing token");
+  if (!oid) throw new Error("Pairing token is missing ownerId");
+
+  const relayWsUrl = typeof obj.rel === "string" && obj.rel ? obj.rel.trim() : undefined;
+  const relayWsUrls = normalizeRelayWsList(
+    Array.isArray(obj.rels)
+      ? obj.rels.filter((s): s is string => typeof s === "string" && s.length > 0)
+      : undefined,
+    relayWsUrl,
+  );
+
+  return {
+    wsUrl: ws,
+    relayWsUrl,
+    ...(relayWsUrls.length > 0 ? { relayWsUrls } : {}),
+    lanWsUrl: typeof obj.lan === "string" && obj.lan ? obj.lan.trim() : undefined,
+    homeNodePeerId: typeof obj.tid === "string" && obj.tid ? obj.tid.trim() : undefined,
+    ownerId: oid,
+    agentPeerId: typeof obj.apid === "string" && obj.apid ? obj.apid.trim() : undefined,
+    agentName: typeof obj.aname === "string" && obj.aname ? obj.aname.trim() : undefined,
+    bootstrapPresetNames:
+      Array.isArray(obj.bpn)
+        ? obj.bpn.filter((s): s is string => typeof s === "string" && s.length > 0)
+        : undefined,
+    token: tok,
+  };
+}
+
+async function decodeToObjectAsync(token: string): Promise<Record<string, unknown>> {
   if (!token || !token.trim()) {
     throw new Error("Pairing token is empty");
   }
@@ -134,49 +187,10 @@ export async function decodePairingTokenAsync(token: string): Promise<DecodedPai
     throw new Error("Pairing token is not valid gzip-compressed data");
   }
 
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(json);
-  } catch {
-    throw new Error("Pairing token payload is not valid JSON");
-  }
-
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("Pairing token payload must be a JSON object");
-  }
-
-  const obj = parsed as Record<string, unknown>;
-
-  if (obj.v !== 1) {
-    throw new Error(`Unsupported pairing token version: ${String(obj.v)}`);
-  }
-
-  const ws = typeof obj.ws === "string" ? obj.ws.trim() : "";
-  const tok = typeof obj.tok === "string" ? obj.tok.trim() : "";
-  const oid = typeof obj.oid === "string" ? obj.oid.trim() : "";
-
-  if (!ws) throw new Error("Pairing token is missing wsUrl");
-  if (!tok) throw new Error("Pairing token is missing token");
-  if (!oid) throw new Error("Pairing token is missing ownerId");
-
-  return {
-    wsUrl: ws,
-    relayWsUrl: typeof obj.rel === "string" && obj.rel ? obj.rel.trim() : undefined,
-    lanWsUrl: typeof obj.lan === "string" && obj.lan ? obj.lan.trim() : undefined,
-    homeNodePeerId: typeof obj.tid === "string" && obj.tid ? obj.tid.trim() : undefined,
-    ownerId: oid,
-    agentPeerId: typeof obj.apid === "string" && obj.apid ? obj.apid.trim() : undefined,
-    agentName: typeof obj.aname === "string" && obj.aname ? obj.aname.trim() : undefined,
-    bootstrapPresetNames:
-      Array.isArray(obj.bpn)
-        ? obj.bpn.filter((s): s is string => typeof s === "string" && s.length > 0)
-        : undefined,
-    token: tok,
-  };
+  return parseJsonObject(json);
 }
 
-/** Synchronous decode for Node.js (uses pako). */
-export function decodePairingToken(token: string): DecodedPairingToken {
+function decodeToObjectSync(token: string): Record<string, unknown> {
   if (!token || !token.trim()) {
     throw new Error("Pairing token is empty");
   }
@@ -193,6 +207,10 @@ export function decodePairingToken(token: string): DecodedPairingToken {
     throw new Error("Pairing token is not valid gzip-compressed data");
   }
 
+  return parseJsonObject(json);
+}
+
+function parseJsonObject(json: string): Record<string, unknown> {
   let parsed: unknown;
   try {
     parsed = JSON.parse(json);
@@ -203,35 +221,39 @@ export function decodePairingToken(token: string): DecodedPairingToken {
   if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
     throw new Error("Pairing token payload must be a JSON object");
   }
+  return parsed as Record<string, unknown>;
+}
 
-  const obj = parsed as Record<string, unknown>;
-
-  if (obj.v !== 1) {
-    throw new Error(`Unsupported pairing token version: ${String(obj.v)}`);
+/**
+ * Deduplicate extra relay WS bases, drop empties / duplicates of primary.
+ * Caps list size so the QR stays scannable.
+ */
+export function normalizeRelayWsList(
+  extras: string[] | undefined,
+  primary?: string,
+): string[] {
+  const max = 8;
+  const primaryBase = stripRelayWsParams(primary);
+  const out: string[] = [];
+  const seen = new Set<string>();
+  if (primaryBase) seen.add(primaryBase);
+  for (const raw of extras ?? []) {
+    const base = stripRelayWsParams(raw);
+    if (!base || seen.has(base)) continue;
+    seen.add(base);
+    out.push(base);
+    if (out.length >= max) break;
   }
+  return out;
+}
 
-  const ws = typeof obj.ws === "string" ? obj.ws.trim() : "";
-  const tok = typeof obj.tok === "string" ? obj.tok.trim() : "";
-  const oid = typeof obj.oid === "string" ? obj.oid.trim() : "";
-
-  if (!ws) throw new Error("Pairing token is missing wsUrl");
-  if (!tok) throw new Error("Pairing token is missing token");
-  if (!oid) throw new Error("Pairing token is missing ownerId");
-
-  return {
-    wsUrl: ws,
-    relayWsUrl: typeof obj.rel === "string" && obj.rel ? obj.rel.trim() : undefined,
-    lanWsUrl: typeof obj.lan === "string" && obj.lan ? obj.lan.trim() : undefined,
-    homeNodePeerId: typeof obj.tid === "string" && obj.tid ? obj.tid.trim() : undefined,
-    ownerId: oid,
-    agentPeerId: typeof obj.apid === "string" && obj.apid ? obj.apid.trim() : undefined,
-    agentName: typeof obj.aname === "string" && obj.aname ? obj.aname.trim() : undefined,
-    bootstrapPresetNames:
-      Array.isArray(obj.bpn)
-        ? obj.bpn.filter((s): s is string => typeof s === "string" && s.length > 0)
-        : undefined,
-    token: tok,
-  };
+/** Strip ?target=&token= so QR / storage keep a stable base URL. */
+export function stripRelayWsParams(url: string | undefined): string | undefined {
+  if (!url) return undefined;
+  const trimmed = url.trim();
+  if (!trimmed) return undefined;
+  const q = trimmed.indexOf("?");
+  return q >= 0 ? trimmed.slice(0, q) : trimmed;
 }
 
 /** Decompress gzip using the browser's native DecompressionStream. */

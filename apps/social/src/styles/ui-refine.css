@@ -1093,9 +1093,9 @@ button.primary,
   border: none;
   border-radius: var(--radius-md);
   background: var(--color-primary);
-  color: var(--color-on-primary-text);
+  color: var(--color-primary-on, #ffffff);
   font-size: var(--text-sm);
-  font-weight: var(--font-medium);
+  font-weight: var(--font-semibold);
   cursor: pointer;
   transition: background var(--transition-fast);
 }

@@ -426,6 +426,15 @@ const nodeService = createNodeService(
 void pushNotificationService.init(args.profileDir).catch((err: unknown) => {
   console.warn("[node] push notification service init failed:", err);
 });
+void (async () => {
+  try {
+    const { resolveReviewPairing, logReviewPairingBanner } = await import("./review-pairing.js");
+    const cfg = await nodeConfigStore.load();
+    logReviewPairingBanner(resolveReviewPairing(cfg ?? null));
+  } catch {
+    /* ignore */
+  }
+})();
 const modeController = new ModeController(createDefaultModeConfig(), taskStore);
 const sessionManager = new SessionManager(new FileSessionStore(join(args.profileDir, "sessions")));
 const styleAdapter = new StyleAdapter();

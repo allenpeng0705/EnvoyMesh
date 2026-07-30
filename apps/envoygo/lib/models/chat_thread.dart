@@ -21,6 +21,9 @@ class ChatThread {
   /// Avatar color for AI bots (hex, e.g. "#6366f1"). Null for non-bot threads.
   final String? avatarColor;
 
+  /// Optional one-line bio for AI bots (shown as subtitle until the first message).
+  final String? description;
+
   /// Thread type discriminator.
   final ChatThreadType type;
 
@@ -46,6 +49,7 @@ class ChatThread {
     this.agentType,
     this.botId,
     this.avatarColor,
+    this.description,
     this.lastMessageText,
     this.lastMessageAt,
     this.unreadCount = 0,
@@ -57,6 +61,7 @@ class ChatThread {
     DateTime? lastMessageAt,
     int? unreadCount,
     String? avatarColor,
+    String? description,
   }) {
     return ChatThread(
       id: id,
@@ -68,6 +73,7 @@ class ChatThread {
       agentType: agentType,
       botId: botId,
       avatarColor: avatarColor ?? this.avatarColor,
+      description: description ?? this.description,
       lastMessageText: lastMessageText ?? this.lastMessageText,
       lastMessageAt: lastMessageAt ?? this.lastMessageAt,
       unreadCount: unreadCount ?? this.unreadCount,
@@ -93,6 +99,7 @@ class ChatThread {
       agentType: json['agent_type'] as String?,
       botId: json['bot_id'] as String?,
       avatarColor: json['avatar_color'] as String?,
+      description: json['description'] as String?,
       lastMessageText: json['last_message_text'] as String?,
       lastMessageAt: lastAt,
       unreadCount: (json['unread_count'] as int?) ?? 0,
@@ -109,6 +116,7 @@ class ChatThread {
         if (agentType != null) 'agent_type': agentType,
         if (botId != null) 'bot_id': botId,
         if (avatarColor != null) 'avatar_color': avatarColor,
+        if (description != null) 'description': description,
         if (lastMessageText != null) 'last_message_text': lastMessageText,
         if (lastMessageAt != null)
           'last_message_at': lastMessageAt!.toIso8601String(),

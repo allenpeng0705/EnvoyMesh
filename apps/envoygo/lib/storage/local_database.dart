@@ -31,7 +31,7 @@ class LocalDatabase {
     final dbPath = p.join(await getDatabasesPath(), 'envoygo.db');
     _db = await openDatabase(
       dbPath,
-      version: 3,
+      version: 5,
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await db.execute('ALTER TABLE nodes ADD COLUMN public_host TEXT');
@@ -39,6 +39,13 @@ class LocalDatabase {
         }
         if (oldVersion < 3) {
           await db.execute('ALTER TABLE nodes ADD COLUMN bootstrap_peers TEXT');
+        }
+        if (oldVersion < 4) {
+          await db.execute('ALTER TABLE chat_threads ADD COLUMN bot_id TEXT');
+          await db.execute('ALTER TABLE chat_threads ADD COLUMN avatar_color TEXT');
+        }
+        if (oldVersion < 5) {
+          await db.execute('ALTER TABLE chat_threads ADD COLUMN description TEXT');
         }
       },
       onCreate: (db, version) async {
@@ -78,6 +85,9 @@ class LocalDatabase {
             contact_owner_id TEXT,
             chat_room_id TEXT,
             agent_type TEXT,
+            bot_id TEXT,
+            avatar_color TEXT,
+            description TEXT,
             last_message_text TEXT,
             last_message_at TEXT,
             unread_count INTEGER DEFAULT 0
@@ -210,10 +220,36 @@ class LocalDatabase {
 
   // -- Thread operations --
 
+  /// Columns accepted by the `chat_threads` table. Extra keys must be
+  /// stripped — sqflite throws on unknown columns.
+  static const _threadColumns = {
+    'id',
+    'node_id',
+    'type',
+    'display_name',
+    'contact_owner_id',
+    'chat_room_id',
+    'agent_type',
+    'bot_id',
+    'avatar_color',
+    'description',
+    'last_message_text',
+    'last_message_at',
+    'unread_count',
+  };
+
+  Map<String, dynamic> _threadRow(Map<String, dynamic> thread) {
+    final row = <String, dynamic>{};
+    for (final key in _threadColumns) {
+      if (thread.containsKey(key)) row[key] = thread[key];
+    }
+    return row;
+  }
+
   Future<void> upsertThread(Map<String, dynamic> thread) async {
     await _ensureDb.insert(
       'chat_threads',
-      thread,
+      _threadRow(thread),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }

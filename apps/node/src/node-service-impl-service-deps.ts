@@ -44,9 +44,19 @@ import {
   handlePeerDiscoveredViaRuntime,
 } from "./node-service-wire-mesh-events.js";
 import { sendCallResponseEnvelopeViaRuntime } from "./node-service-calls.js";
+import { resolveReviewPairing } from "./review-pairing.js";
 
 const PROFILE_REQUEST_COOLDOWN_MS = 15_000;
 const PAIRING_TOKEN_TTL_MS = 30 * 60 * 1000;
+
+async function resolveReviewPairingForHost(host: any) {
+  try {
+    const config = await host._configStore.load();
+    return resolveReviewPairing(config ?? null);
+  } catch {
+    return resolveReviewPairing(null);
+  }
+}
 
 export function deriveRelayWsUrl(relayAddr: string): string | undefined {
   const match = relayAddr.match(/\/ip4\/([0-9]+\.[0-9]+\.[0-9]+\.[0-9]+)/);
@@ -488,6 +498,15 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
             getWsPath: () => host._wsPath,
             getRelayPublicWsUrl: () => host._relayPublicWsUrl,
             getRelayBootstrapPeers: () => host._relayBootstrapPeers,
+            getConfiguredRelays: async () => {
+              try {
+                const config = await host._configStore.load();
+                return config?.configuredRelays ?? [];
+              } catch {
+                return [];
+              }
+            },
+            getReviewPairing: () => resolveReviewPairingForHost(host),
             getProfile: () => host._profile,
             deriveRelayWsUrl: (addr) => deriveRelayWsUrl(addr),
             autoDiscoverRelayWsUrl: () => host._autoDiscoverRelayWsUrl(),
@@ -663,6 +682,7 @@ export function buildServiceContextDeps(host: any): ServiceContextDeps {
             assertOnline: () => host._assertOnline(),
           },
       validatePairingToken: {
+            getReviewPairing: () => resolveReviewPairingForHost(host),
             getInMemoryToken: () => host._pairingToken ?? undefined,
             getInMemoryTokenIssuedAt: () => host._pairingTokenIssuedAt ?? undefined,
             pairingTokenTtlMs: PAIRING_TOKEN_TTL_MS,

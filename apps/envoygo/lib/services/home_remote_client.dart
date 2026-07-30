@@ -242,6 +242,7 @@ class HomeRemoteClient {
       if (idx >= 0) {
         final name = _activeCandidate!.name;
         final isFallback = name == 'relay' ||
+            name.startsWith('relay-') ||
             name == 'community-relay' ||
             name == 'bootstrap';
         if (isFallback) {

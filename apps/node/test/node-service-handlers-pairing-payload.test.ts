@@ -18,8 +18,13 @@ function makeCtx(
     getWsPath: vi.fn(() => undefined),
     getRelayPublicWsUrl: vi.fn(() => undefined),
     getRelayBootstrapPeers: vi.fn(() => []),
+    getConfiguredRelays: vi.fn(async () => []),
+    getReviewPairing: vi.fn(() => null),
     getProfile: vi.fn(() => undefined),
-    deriveRelayWsUrl: vi.fn(() => undefined),
+    deriveRelayWsUrl: vi.fn((addr: string) => {
+      const m = addr.match(/\/ip4\/([0-9.]+)/);
+      return m ? `ws://${m[1]}:15432/ws` : undefined;
+    }),
     autoDiscoverRelayWsUrl: vi.fn(async () => undefined),
     autoDiscoverRelayPeerId: vi.fn(async () => undefined),
     setPairingToken: vi.fn(),
@@ -103,17 +108,61 @@ describe("getPairingPayloadViaRuntime", () => {
     expect(out.agentName).toBe("MyAgent");
   });
 
-  it("includes bootstrap peers + preset names", async () => {
+  it("omits built-in community + public libp2p bootstrap from QR payload", async () => {
     const { ctx } = makeCtx({
       getRelayBootstrapPeers: () => ["public-libp2p", "cn-relay"],
+      getConfiguredRelays: async () => [
+        { addr: "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWCommunity", enabled: true },
+      ],
     });
     const out = (await getPairingPayloadViaRuntime(ctx)) as Record<string, unknown>;
-    expect((out.bootstrapPeers as string[]).length).toBeGreaterThan(5);
-    expect((out.bootstrapPeers as string[])).toContain("public-libp2p");
-    expect((out.bootstrapPeers as string[])).toContain("cn-relay");
-    expect((out.bootstrapPresetNames as string[])).toEqual(
-      expect.arrayContaining(["public-libp2p", "cn-relay", "public-libp2p-am6"]),
-    );
+    expect(out.relayWsUrls).toBeUndefined();
+    expect(out.bootstrapPeers).toBeUndefined();
+    expect(out.bootstrapPresetNames).toBeUndefined();
+  });
+
+  it("embeds extra configured Envoy relays as relayWsUrls for QR fallback", async () => {
+    const { ctx } = makeCtx({
+      getRelayPublicWsUrl: () => "wss://primary.relay.example/ws",
+      getConfiguredRelays: async () => [
+        { addr: "/ip4/1.2.3.4/tcp/4001/p2p/12D3KooWUsRelayxxxxxxxxxxxxxxxxxxxxxxx", enabled: true },
+        { addr: "/ip4/5.6.7.8/tcp/4001/p2p/12D3KooWEuRelayxxxxxxxxxxxxxxxxxxxxxxx", enabled: true },
+        { addr: "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWCommunity", enabled: true },
+      ],
+    });
+    const out = (await getPairingPayloadViaRuntime(ctx)) as Record<string, unknown>;
+    expect(out.relayWsUrl).toBe("wss://primary.relay.example/ws");
+    expect(out.relayWsUrls).toEqual([
+      "ws://1.2.3.4:15432/ws",
+      "ws://5.6.7.8:15432/ws",
+    ]);
+    expect(out.bootstrapPeers).toEqual(out.relayWsUrls);
+  });
+
+  it("prefers configured Envoy relays over community for QR primary", async () => {
+    const { ctx, spies } = makeCtx({
+      autoDiscoverRelayWsUrl: async () => "ws://47.93.11.212:15432/ws",
+      getConfiguredRelays: async () => [
+        { addr: "/ip4/1.2.3.4/tcp/4001/p2p/12D3KooWUsRelayxxxxxxxxxxxxxxxxxxxxxxx", enabled: true },
+        { addr: "/ip4/5.6.7.8/tcp/4001/p2p/12D3KooWEuRelayxxxxxxxxxxxxxxxxxxxxxxx", enabled: true },
+      ],
+    });
+    const out = (await getPairingPayloadViaRuntime(ctx)) as Record<string, unknown>;
+    expect(out.relayWsUrl).toBe("ws://1.2.3.4:15432/ws");
+    expect(out.relayWsUrls).toEqual(["ws://5.6.7.8:15432/ws"]);
+    expect(String(out.relayWsUrl)).not.toContain("47.93.11.212");
+    expect(spies.autoDiscoverRelayWsUrl).not.toHaveBeenCalled();
+  });
+
+  it("omits community-only auto-discover from QR (EnvoyGo has it built-in)", async () => {
+    const { ctx } = makeCtx({
+      autoDiscoverRelayWsUrl: async () => "ws://47.93.11.212:15432/ws",
+      getReachableMesh: () => ({ peerId: "home-peer", multiaddrs: [] }) as never,
+    });
+    const out = (await getPairingPayloadViaRuntime(ctx)) as Record<string, unknown>;
+    expect(out.relayWsUrl).toBeUndefined();
+    expect(out.relayWsUrls).toBeUndefined();
+    expect(out.wsUrl).toBe("ws://localhost:3030/ws");
   });
 
   it("includes homeNodePeerId when reachable", async () => {

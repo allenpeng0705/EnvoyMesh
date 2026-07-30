@@ -18,6 +18,10 @@ export interface AiChatMessageView {
 export function isEnvoyAiChatMessage(msg: ChatMessage, selfOwnerId: string): boolean {
   const sndO = msg.sender?.ownerId?.trim();
   const rcvO = msg.recipient?.ownerId?.trim();
+  // Character bots use deliveryChannel "ai" but live under bot:<id> threads.
+  if (sndO?.startsWith("bot:") || rcvO?.startsWith("bot:")) {
+    return false;
+  }
   if (rcvO === ENVOY_AI_THREAD_KEY || sndO === ENVOY_AI_THREAD_KEY) {
     return true;
   }
