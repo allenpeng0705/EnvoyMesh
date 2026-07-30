@@ -52,10 +52,13 @@ The owner manages profiles (create, rename, delete) and configures infrastructur
 │  │ Dad      │  │ Mom      │  │ Alex     │                 │
 │  │ (owner)  │  │          │  │          │                 │
 │  │          │  │          │  │          │                 │
+│  │ FULL:    │  │ LIMITED: │  │ LIMITED: │                 │
 │  │ AI: ✓    │  │ AI: ✓    │  │ AI: ✓    │                 │
 │  │ Bots: ✓  │  │ Bots: ✓  │  │ Bots: ✓  │                 │
-│  │ Pi: ✓    │  │ Pi: ✓    │  │ Pi: ✓    │                 │
-│  │ Term: ✓  │  │ Term: ✓  │  │ Term: ✓  │                 │
+│  │ Pi: ✓    │  │ Pi: ✗    │  │ Pi: ✗    │                 │
+│  │ Term: ✓  │  │ Term: ✗  │  │ Term: ✗  │                 │
+│  │ Ext: ✓   │  │ Ext: ✓   │  │ Ext: ✓   │                 │
+│  │ Mesh: ✓  │  │ Mesh: ✗  │  │ Mesh: ✗  │                 │
 │  │ Chats: ✓ │  │ Chats: ✓ │  │ Chats: ✓ │                 │
 │  │ Push: ✓  │  │ Push: ✓  │  │ Push: ✓  │                 │
 │  │ Vault: ✓ │  │ Vault: ✓ │  │ Vault: ✓ │                 │
@@ -84,15 +87,40 @@ The owner manages profiles (create, rename, delete) and configures infrastructur
    │ iPhone    │ │ iPhone    │ │ iPad      │
    │ (EnvoyGo) │ │ (EnvoyGo) │ │ (EnvoyGo) │
    │           │ │           │ │           │
-   │ Settings: │ │ Settings: │ │ Settings: │
-   │ All tabs  │ │ Bots only │ │ Bots only │
-│   │ + Push   │ │ + Push    │ │ + Push    │
-│   │ + Node   │ │           │ │           │
+   │ All       │ │ Simple    │ │ Simple    │
+   │ features  │ │ features  │ │ features  │
    └───────────┘ └───────────┘ └───────────┘
 
-Dad also uses the Social UI on the desktop (owner profile).
-Mom and Alex use EnvoyGo only (phone/iPad).
+Dad (owner): AI, bots, Pi, terminal, mesh contacts, Ext Agent,
+             node settings, family management — full power.
+             Uses both phone (EnvoyGo) + desktop (Social UI).
+
+Mom / Alex (family): EnvoyAI, bots, Ext Agent, family chat,
+             push. No terminal, no Pi, no external mesh bonding,
+             no node settings. Uses EnvoyGo only.
 ```
+
+### 3.2 Feature tiers
+
+| Feature | Owner | Family member |
+|---|---|---|
+| **EnvoyAI** | ✅ Full — private AI threads | ✅ Full — private AI threads |
+| **AI Character Bots** | ✅ Create + use their own bots | ✅ Create + use their own bots |
+| **Ext Agent (Pi / HomeClaw / etc.)** | ✅ Chat with active Ext Agent | ✅ Chat with active Ext Agent |
+| **Family direct chat** | ✅ Chat with all family members | ✅ Chat with all family members |
+| **Group chat** | ✅ Create + join rooms with family | ✅ Create + join rooms with family |
+| **Push notifications** | ✅ Per-device | ✅ Per-device |
+| **Vault** | ✅ Private | ✅ Private |
+| **Terminal** | ✅ | ❌ |
+| **Pi (coding agent)** | ✅ | ❌ |
+| **External mesh contacts** | ✅ Bond with external peers | ❌ (family-only network) |
+| **Mesh discovery** | ✅ | ❌ |
+| **Node settings** (relay, network) | ✅ | ❌ |
+| **Model provider config** | ✅ | ❌ (uses owner's config) |
+| **Family profile management** | ✅ | ❌ |
+| **Authorized device management** | ✅ | ❌ |
+
+**The owner has everything.** Family members get a focused experience: AI conversations, family chat, and push notifications. No infrastructure complexity, no mesh configuration, no terminal — just talk to AI and each other.
 
 ### 3.2 Profile model
 
@@ -106,7 +134,7 @@ interface FamilyProfile {
   name: string
   /** Avatar color (hex). */
   avatarColor?: string
-  /** Whether this is the owner profile (admin rights). */
+  /** Whether this is the owner profile (admin rights + full features). */
   isOwner: boolean
   /** When this profile was created. */
   createdAt: string
@@ -116,10 +144,10 @@ interface FamilyProfile {
   active: boolean
   /** Per-profile bot definitions (each user creates their own bots). */
   aiBots?: AiBotDefinition[]
-  /** Per-profile Pi settings (auto-run policy, allowed paths). */
-  piSettings?: PiSettings
 }
 ```
+
+**Note:** Pi settings, terminal sessions, mesh contacts, and node settings are **owner-only**. Non-owner profiles don't have these fields because they don't have access to those features.
 
 Stored in `<profileDir>/family-profiles.json` (mode `0600`):
 
@@ -178,61 +206,66 @@ When a device pairs, the pairing flow asks "Who are you?" (select existing profi
 
 ---
 
-## 4. Features — what each profile gets
+## 4. Features — owner vs family member
 
-Every profile gets **the same features** — there's no "family member gets less" tiering. The only difference is the owner has admin rights (infrastructure management).
+The **owner** has all current EnvoyMesh features (full power). **Family members** get a focused subset — AI conversations, family chat, and push. No terminal, no Pi, no external mesh, no infrastructure settings.
 
-### 4.1 Per-profile features (all profiles, fully isolated)
+### 4.1 Shared features (both owner + family, per-profile isolated)
+
+These work identically for every profile, each with their own private data:
 
 | Feature | How it's scoped | Example |
 |---|---|---|
 | **EnvoyAI** | Thread key: `__envoy_ai__:<profileId>` | Dad's AI conversations are invisible to Mom |
-| **Chat bots** | Per-profile `aiBots` in `family-profiles.json` | Dad creates "Luna", Mom creates "Chef Marco" — separate |
-| **Bot conversations** | Thread key: `bot:<botId>:<profileId>` | Dad's Luna thread ≠ Mom's Luna thread (even if same bot) |
-| **Pi** | Thread key: `pi:<profileId>` | Each profile has their own Pi sessions |
-| **Terminal** | Sessions scoped by `profileId` | Dad's terminal ≠ Mom's terminal |
+| **AI Character Bots** | Per-profile `aiBots` in `family-profiles.json` | Dad creates "Luna", Mom creates "Chef Marco" — separate |
+| **Ext Agent chat** | Thread key: `bridge:<agentId>:<profileId>` | Each profile can chat with the active Ext Agent (Pi, HomeClaw, etc.) |
+| **Family direct chat** | Thread key: `family:<sortedProfileA>:<sortedProfileB>` | Dad ↔ Mom, Dad ↔ Alex, Mom ↔ Alex |
+| **Group chat** | Room with `memberProfileIds` | Any subset of family members |
 | **Push** | Token tagged with `profileId` | Mom's phone doesn't buzz for Dad's messages |
 | **Vault** | `<profileDir>/vault/<profileId>/` | Private files per profile |
 
-### 4.2 Owner-only features (admin rights)
+### 4.2 Owner-only features
 
-These are **infrastructure settings** that affect all profiles. Only the owner profile can access them:
+The owner has the **full EnvoyMesh experience** on top of the shared features:
 
-| Setting | Where | Why owner-only |
-|---|---|---|
-| **Model Provider** (API key, endpoint, model) | Settings → AI → Model Provider | One key serves everyone. Only owner should see/change it. |
-| **OpenClaw enable/disable** | Settings → AI → AI Engine | Infrastructure — affects all profiles' AI |
-| **Pi enable/disable** | Settings → AI → Pi | Infrastructure |
-| **AI Engine mode** (which agents active) | Settings → AI | Infrastructure |
-| **Node settings** (relay, discovery, network) | Settings → Node | Infrastructure |
-| **Family profile management** | Settings → Family | Admin-only |
-| **Authorized device management** | Settings → Devices | Admin-only |
-| **Ext Agent configuration** | Settings → AI → Ext Agent | Infrastructure |
+| Feature | Why owner-only |
+|---|---|
+| **Terminal** | Requires shell access — a system-level tool, not for casual family use |
+| **Pi (coding agent)** | Same — developer tool, not for family members |
+| **External mesh contacts** | Mesh bonding is complex; family members only talk within the family |
+| **Mesh discovery** | Same — family members don't need P2P discovery |
+| **Model Provider config** | Infrastructure — one API key serves everyone |
+| **OpenClaw / Pi enable/disable** | Infrastructure |
+| **Node settings** (relay, network) | Infrastructure |
+| **Family profile management** | Admin-only |
+| **Authorized device management** | Admin-only |
 
-### 4.3 Per-profile settings (each person controls their own)
+### 4.3 Per-profile settings (each person controls)
 
-| Setting | Where | Scope |
-|---|---|---|
-| **Create/delete their own bots** | Settings → AI → Bots | Private — only this profile's bots |
-| **Push notification toggle** | Me → Preferences | Private — their phone |
-| **Auto-run policy** (Pi tool approvals) | Settings → AI → Pi | Private — their preferences |
+| Setting | Scope |
+|---|---|
+| **Create/delete their own bots** | Private — each profile creates their own bots |
+| **Push notification toggle** | Private — their phone |
 
-### 4.4 How EnvoyGo enforces the permission model
+### 4.4 How EnvoyGo enforces the feature gate
 
-The home node knows which profile is the owner (`isOwner: true` on the profile). When a non-owner profile tries to access an owner-only RPC:
+The home node knows which profile is the owner (`isOwner: true`). Non-owner profiles get **feature-rejected** on owner-only RPCs:
 
 ```
-Mom's EnvoyGo tries to update model provider config
-  → updateNodeConfig({ modelProviders: {...} })
+Mom's EnvoyGo tries to open a terminal
+  → ensureTerminalSession(...)
   → Home node checks: session.profileId "mom" → isOwner = false
-  → Returns error: "Only the node owner can change this setting"
+  → Returns error: "Terminals are only available to the node owner"
+
+Mom's EnvoyGo tries to bond with an external peer
+  → sendBondRequest(...)
+  → Home node checks: session.profileId "mom" → isOwner = false
+  → Returns error: "External mesh contacts are only available to the node owner"
 ```
 
-EnvoyGo's Settings screen also hides owner-only sections for non-owner profiles:
-- **Owner sees:** Model Provider, AI Engine, Pi, Bots, Node settings, Devices, Family
-- **Non-owner sees:** Bots, Push toggle (their own only)
-
-The owner can use **both phone and desktop** (Social UI / Tauri). Non-owner profiles use EnvoyGo only (phone/iPad). The desktop Social UI always runs as the owner.
+EnvoyGo's UI hides owner-only features for non-owner profiles:
+- **Owner sees:** All tabs (Chat, Inbox, Content, Me with full settings: Model Provider, AI Engine, Pi, Bots, Node, Devices, Family, Terminals)
+- **Non-owner sees:** Chat (family + AI + bots), Inbox, Me (Bots + Push toggle only). No Terminals tab, no Node settings, no mesh Discover.
 
 ---
 
@@ -484,14 +517,16 @@ The home node owner is the **trust root**. All profiles are trusted by the owner
 - Room membership filter by profile
 - "Create group" UI includes family contacts alongside mesh contacts
 
-### Phase 5: EnvoyGo UI (~2 days)
+### Phase 5: EnvoyGo UI (~1.5 days)
 
 - Pairing screen: profile selection / creation (name + avatar color)
-- Settings screen: hide owner-only sections for non-owner profiles
+- Settings screen: hide owner-only features for non-owner profiles
+  (no Terminals tab, no Node settings, no mesh Discover, no Model Provider)
 - Chat list: family contacts section (auto-bonded)
 - Direct chat with family member (new)
 - Group chat: include family members
 - Per-profile bot management (their own bots)
+- Feature gating: non-owner RPCs rejected for terminal, Pi, mesh bonding
 
 ### Phase 6: Social UI (~1 day)
 
@@ -499,7 +534,7 @@ The home node owner is the **trust root**. All profiles are trusted by the owner
 - Family invite QR generation
 - Desktop always runs as owner profile
 
-**Total: ~9 days**
+**Total: ~8 days** (reduced from 9 — family members need less UI work since they skip terminals, Pi, mesh, and node settings)
 
 ---
 
@@ -524,7 +559,8 @@ Existing single-user installations upgrade transparently.
 - **NOT** end-to-end encrypted between family members — messages are in-process (the home node sees everything). Acceptable because the owner trusts all family members.
 - **NOT** a multi-node cluster — one home node serves the family
 - **NOT** a profile switcher — each device is locked to one profile permanently
-- **NOT** a replacement for mesh contacts — external peers still use the full bonding + mesh transport
+- **NOT** a replacement for mesh contacts — external peers still use the full bonding + mesh transport (owner only)
+- **NOT** equal features for everyone — family members get AI + chat; the owner gets the full developer experience (terminal, Pi, mesh, settings)
 
 ---
 
