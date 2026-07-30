@@ -3982,8 +3982,39 @@ class NodeServiceImpl implements NodeService {
     this._persistChatMessage(threadKey, outboundMsg)
     this.emit("chat:message", outboundMsg)
 
-    // 2. Build the LLM prompt: system prompt + user text.
-    const prompt = `${bot.systemPrompt}\n\n---\n\nUser: ${trimmedText}`
+    // 2. Build the LLM prompt: system prompt + conversation history + user text.
+    // Fetch recent history (last 20 turns) so the bot has memory.
+    const MAX_HISTORY_TURNS = 20
+    let conversationHistory = ""
+    if (this._chatLogStore) {
+      try {
+        const history = await this._chatLogStore.listThread(threadKey, MAX_HISTORY_TURNS)
+        // Exclude the message we just persisted (it's the current user turn).
+        const priorHistory = history.filter((h) => h.messageId !== messageId)
+        if (priorHistory.length > 0) {
+          conversationHistory = priorHistory
+            .map((h) => {
+              const isUser = h.sender?.ownerId === homeOwnerId
+              const speaker = isUser ? "User" : (h.sender?.displayName ?? "Assistant")
+              const text = h.content?.text ?? ""
+              return `${speaker}: ${text}`
+            })
+            .join("\n\n")
+          // Cap at 8000 chars to avoid exceeding the model's context window
+          // (48K hard cap in the semantic firewall, but we want room for
+          // the system prompt + current message + response).
+          if (conversationHistory.length > 8000) {
+            conversationHistory = conversationHistory.slice(-8000)
+          }
+        }
+      } catch {
+        // History read failed — proceed without memory.
+      }
+    }
+
+    const prompt = conversationHistory
+      ? `${bot.systemPrompt}\n\n--- Conversation so far ---\n${conversationHistory}\n\n---\n\nUser: ${trimmedText}`
+      : `${bot.systemPrompt}\n\n---\n\nUser: ${trimmedText}`
 
     try {
       // 3. Call the native LLM router (in-process, no gateway needed).
