@@ -420,6 +420,12 @@ const nodeService = createNodeService(
   profile,
   vaultDirForNode,
 );
+// Phase 31I — push must init on every startup (not only first-time initNode).
+// Without this, dispatchChatPush silently no-ops (`initialized === false`)
+// and tokens never persist to push-tokens.json.
+void pushNotificationService.init(args.profileDir).catch((err: unknown) => {
+  console.warn("[node] push notification service init failed:", err);
+});
 const modeController = new ModeController(createDefaultModeConfig(), taskStore);
 const sessionManager = new SessionManager(new FileSessionStore(join(args.profileDir, "sessions")));
 const styleAdapter = new StyleAdapter();
@@ -440,6 +446,12 @@ wsServer.start(nodeService);
 wsServerForEvents = wsServer;
 if (nodeService instanceof NodeServiceImpl) {
   nodeService.setWsListenAddress(SOCIAL_WS_PORT, "/ws");
+  // Push skip-if-online: suppress only when EnvoyGo recently sent an RPC.
+  // A backgrounded phone with a lingering WS must still receive pushes.
+  // Desktop Social (no session token) never matches this check.
+  nodeService.bindThinClientOnlineCheck((ownerId) =>
+    wsServerForEvents?.hasRecentlyActiveClientForOwner(ownerId) ?? false,
+  );
   nodeService.bindCliTaskStore(taskStore);
   nodeService.bindApprovalQueue(approvalQueue);
   const nodeConfig = await nodeService.getNodeConfig();
@@ -648,6 +660,9 @@ const ACTIVITY_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes of inactivity = offline
  * Determine if the owner is currently online based on:
  * - If statusMode is "manual": use the manual isOnlineManual setting
  * - If statusMode is "automatic": return true if activity within timeout
+ *
+ * Used for AI auto-reply / assist policy — NOT for push skip-if-online.
+ * Push uses {@link isThinClientOnline} (EnvoyGo authenticated WS only).
  */
 function isOwnerOnline(): boolean {
   const status = currentAiSettings?.status;
@@ -659,6 +674,13 @@ function isOwnerOnline(): boolean {
 
   // Automatic mode: online if had activity within timeout
   return Date.now() - lastActivityTimestamp < ACTIVITY_TIMEOUT_MS;
+}
+
+/** True when EnvoyGo recently sent an RPC over an authenticated WS. */
+function isThinClientOnline(ownerId?: string): boolean {
+  const id = (ownerId ?? profile.owner.ownerId)?.trim();
+  if (!id) return false;
+  return wsServerForEvents?.hasRecentlyActiveClientForOwner(id) ?? false;
 }
 
 /**
@@ -1336,10 +1358,9 @@ async function handleInboundMeshMessage({
     }
     if (result.ok) {
       const localOwnerId = profile.owner.ownerId;
-      // Phase 50 — skip the system push when EnvoyGo has an active WS
-      // (the in-app feed.notify event already reached it). Matches the
-      // unified chat:message listener's skip-if-online gate.
-      if (typeof isOwnerOnline === "function" && isOwnerOnline()) {
+      // Skip system push only when EnvoyGo already has a live WS.
+      // Desktop Social presence must not suppress phone alerts.
+      if (isThinClientOnline(localOwnerId)) {
         return;
       }
       void pushNotificationService
@@ -1906,18 +1927,23 @@ async function handleInboundMeshMessage({
             messagePreview: payload.text.slice(0, 80),
           });
         }
-        wsServerForEvents.emitEvent("chat:message", emitMsg);
-        // Phase 50 — skip-if-online gate matches the unified chat:message
-        // listener on NodeServiceImpl. Prevents double-notification when a
-        // client has an active WebSocket (the WS event already reached it).
-        if (typeof isOwnerOnline === "function" && !isOwnerOnline()) {
-          void pushNotificationService.dispatchChatPush({
-            senderName: emitMsg.sender.displayName ?? payload.senderOwnerId,
-            messagePreview: payload.text.slice(0, 120),
-            targetOwnerId: emitMsg.recipient.ownerId,
-            messageId: envelope.messageId,
-            senderOwnerId: payload.senderOwnerId,
-          }).catch(() => {});
+        // Route through NodeServiceImpl so the unified push listener
+        // (constructor) + WS fan-out both see the same event. Do NOT
+        // call dispatchChatPush here — that caused a second code path
+        // that bypassed room/AI routing and could diverge from Phase 50.
+        if (nodeService instanceof NodeServiceImpl) {
+          nodeService.emit("chat:message", emitMsg);
+        } else if (wsServerForEvents) {
+          wsServerForEvents.emitEvent("chat:message", emitMsg);
+          if (!isThinClientOnline(profile.owner.ownerId)) {
+            void pushNotificationService.dispatchChatPush({
+              senderName: emitMsg.sender.displayName ?? payload.senderOwnerId,
+              messagePreview: payload.text.slice(0, 120),
+              targetOwnerId: profile.owner.ownerId,
+              messageId: envelope.messageId,
+              senderOwnerId: payload.senderOwnerId,
+            }).catch(() => {});
+          }
         }
       })();
 
@@ -2324,11 +2350,9 @@ async function handleInboundMeshMessage({
         if (wsServerForEvents) {
           wsServerForEvents.emitEvent("hello:request", helloData);
         }
-        // Phase 50 — push the bond request to EnvoyGo if the owner has no
-        // active WebSocket. Best-effort; skip-if-online matches the chat path.
-        // (dispatchBondPush was previously dead code — fully implemented but
-        // never called. This wires it into the production bond-request path.)
-        if (typeof isOwnerOnline === "function" && !isOwnerOnline()) {
+        // Phase 50 — push bond request to EnvoyGo unless the phone already
+        // has an authenticated WS (desktop Social must not suppress this).
+        if (!isThinClientOnline(profile.owner.ownerId)) {
           void pushNotificationService
             .dispatchBondPush({
               senderName: helloData.sender.displayName || helloData.sender.ownerId,

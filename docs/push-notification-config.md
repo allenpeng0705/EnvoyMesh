@@ -75,12 +75,20 @@ PushKit VoIP. Chat / bond / feed stay on the alert path.
 **China note:** iOS alert + VoIP use native APNs only (no Firebase on
 iOS). Android still needs Firebase/FCM.
 
-**Phase 50 — Skip-if-online gate.** All push dispatch paths now check
-`isOwnerOnline()` before sending. If EnvoyGo has an active WebSocket
-session (the user is in the app), the push is skipped — the in-app WS
-event already reached the device. No double-notification. This gate
-covers chat, bond, feed, approval, and Pi proposal pushes. Call pushes
-already had this gate (Phase 42I).
+**Phase 50 — Skip-if-online gate.** All chat/bond/feed push paths check
+whether **EnvoyGo recently sent an RPC** over an authenticated WebSocket
+(`WsServer.hasRecentlyActiveClientForOwner`, ~20s idle window). A
+backgrounded phone with a lingering TCP socket does **not** suppress
+pushes. VoIP still uses `hasClientForOwner` (any connected thin-client
+session) to avoid a double CallKit prompt.
+**Desktop Social does not count** as online for this gate (it connects
+without a thin-client session token); otherwise chatting in Social would
+suppress pushes to a killed phone.
+
+This gate covers chat, bond, feed, approval, and Pi proposal pushes. Call
+pushes already used `hasClientForOwner` (Phase 42I). Owner presence
+(`isOwnerOnline` / AI status activity) is separate and only used for
+auto-reply / assist policy.
 
 ---
 
@@ -105,9 +113,10 @@ the same skip-if-online gate.
 | Inbound call invite | `dispatchCallPush` | `call.invite` → `call-inbound.ts` | iOS `voip`; Android FCM | ✅ Yes (Phase 42I) |
 
 Pushes are best-effort. Missing credentials or tokens → log + skip.
-**Phase 50:** all paths apply the skip-if-online gate via `isOwnerOnline()`
-(checks `wsServerForEvents.hasClientForOwner`). If EnvoyGo has an active
-WebSocket, the push is skipped — the WS event already reached the device.
+**Phase 50:** chat/bond/feed paths apply the skip-if-online gate via
+`isThinClientOnline()` → `hasRecentlyActiveClientForOwner` (authenticated
+EnvoyGo WS **and** an RPC within ~20s). Idle/background sockets do not
+suppress pushes. VoIP still uses `hasClientForOwner`.
 
 **Token cleanup (Phase 50B):** `sendAndCleanup()` wraps every
 `sendApns`/`sendFcm` call. If APNs returns 410 (Unregistered), 400
@@ -844,19 +853,21 @@ call stack has initialized.
 
 | Symptom | Likely cause | Fix |
 |---------|--------------|-----|
-| `[push] APNs credentials not configured` | Missing `APNS_KEY_ID` / `TEAM_ID` / `KEY_PATH` / `TOPIC`, or unreadable `.p8` | Set all four; check file path and permissions |
+| `[push] dispatchChatPush skipped — push service not initialized` | Home node never called `pushNotificationService.init(profileDir)` | Restart home node on a build that inits push at startup (`index.ts` + `NodeServiceImpl`) |
+| `[push] dispatchChatPush: no alert tokens for owner=…` | EnvoyGo never registered, or `ownerId` mismatch | Open EnvoyGo → Me → enable push; reconnect; check `push-tokens.json` |
+| `[push] APNs credentials not configured` | Missing `APNS_KEY_ID` / `TEAM_ID` / `KEY_PATH` / `TOPIC`, or unreadable `.p8` | Set all four; check file path and permissions; ensure `push-config.json` is next to the profile or repo root |
 | `[push] APNs VoIP topic not configured` | No `APNS_TOPIC` and no `APNS_VOIP_TOPIC` | Set `APNS_TOPIC` (fallback `.voip`) or explicit `APNS_VOIP_TOPIC` |
 | `[push] APNs rejected: status=403` | Wrong Key/Team/Topic, or Push not enabled on App ID | Re-check Apple portal + `APNS_TOPIC` = bundle id |
-| `[push] APNs rejected: status=400` | Bad/expired token, or sandbox↔prod mismatch | Toggle `APNS_SANDBOX`; re-install app; re-register token |
+| `[push] APNs rejected: status=400` | Bad/expired token, or sandbox↔prod mismatch | Toggle `APNS_SANDBOX` / `apns.sandbox` in `push-config.json`; debug builds need `sandbox: true`; re-install app; re-register token |
 | `[push] FCM credentials not configured` | Missing `FCM_PROJECT_ID` or `FCM_SERVICE_ACCOUNT_JSON`, or bad JSON | Fix paths; ensure JSON has `client_email` + `private_key` |
 | `[push] FCM rejected: status=403` | SA lacks Messaging permission / wrong project | IAM + matching `FCM_PROJECT_ID` |
 | `[push] APNs error: …` / `FCM request error: …` | Network / DNS / TLS from home host | Can the node reach `api.push.apple.com` / `fcm.googleapis.com`? |
-| No row in `push-tokens.json` | Permission denied on device; FCM init failed; not connected to home | Grant notifications; add `google-services.json`; reconnect EnvoyGo |
-| Token present, no notification | Wrong `ownerId` on token vs dispatch target; only voip token for chat | Ensure `ownerId` matches home owner; need `tokenType: alert` for chat/feed |
+| No row in `push-tokens.json` | Push never initialized (tokens not persisted); permission denied; not connected | Restart home; grant notifications; reconnect EnvoyGo |
+| Token present, no notification | Wrong `ownerId` on token vs dispatch target; only voip token for chat; app actively using WS (<20s) | Ensure `ownerId` matches home owner; need `tokenType: alert` for chat/feed; background app >20s or force-quit |
 | Chat works, calls don’t (iOS) | No voip token / wrong VoIP topic | Check voip row; set `APNS_VOIP_TOPIC`; PushKit + Background Modes |
 | Android never gets token | Missing `google-services.json` or Gradle plugin | §5.2; watch logcat for Firebase init errors |
 | iOS simulator | APNs device tokens often unavailable | Use a physical device |
-| Duplicate notifications (WS + OS) | Expected today for chat/feed while connected | Background the app to validate OS path alone |
+| Duplicate notifications (WS + OS) | Rare: active EnvoyGo + push after idle window | Expected when backgrounded >20s then message arrives |
 
 ---
 

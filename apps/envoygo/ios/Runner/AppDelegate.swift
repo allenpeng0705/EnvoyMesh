@@ -152,8 +152,20 @@ import UserNotifications
   private func requestAlertPushPermissionAndRegister() {
     UNUserNotificationCenter.current().requestAuthorization(
       options: [.alert, .badge, .sound]
-    ) { granted, _ in
-      guard granted else { return }
+    ) { [weak self] granted, error in
+      if let error = error {
+        NSLog("[push] notification permission error: \(error.localizedDescription)")
+        self?.alertChannel?.invokeMethod("onAlertTokenError", arguments: [
+          "error": error.localizedDescription,
+        ])
+      }
+      guard granted else {
+        NSLog("[push] notification permission denied — no APNs token")
+        self?.alertChannel?.invokeMethod("onAlertTokenError", arguments: [
+          "error": "notification permission denied",
+        ])
+        return
+      }
       DispatchQueue.main.async {
         UIApplication.shared.registerForRemoteNotifications()
       }
@@ -175,6 +187,10 @@ import UserNotifications
     didFailToRegisterForRemoteNotificationsWithError error: Error
   ) {
     // Best-effort — simulator / missing Push entitlement.
+    NSLog("[push] APNs registration failed: \(error.localizedDescription)")
+    alertChannel?.invokeMethod("onAlertTokenError", arguments: [
+      "error": error.localizedDescription,
+    ])
     super.application(application, didFailToRegisterForRemoteNotificationsWithError: error)
   }
 

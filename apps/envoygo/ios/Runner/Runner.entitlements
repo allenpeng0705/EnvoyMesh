@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- production = App Store / TestFlight. Use development only for
+	     local flutter install / debug signing (and set push-config
+	     sandbox: true to match). -->
+	<key>aps-environment</key>
+	<string>production</string>
+</dict>
+</plist>

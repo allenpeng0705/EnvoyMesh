@@ -174,8 +174,7 @@ class _PairingConfirmScreenState
       );
       CandidateResolver.setCommunityHomePeerId(widget.data.homeNodePeerId);
       final resolver = CandidateResolver();
-      // Cellular-safe order during pair (relay first). Wi‑Fi still works —
-      // LAN is tried after relay and usually wins when both are reachable.
+      // Always LAN → public → P2P → relay (see CandidateResolver).
       final isOnWifi = ref.read(nodeProvider.notifier).isOnWifi;
       candidates = resolver.resolve(
         tempNode,

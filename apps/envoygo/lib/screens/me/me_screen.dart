@@ -237,13 +237,20 @@ class _MeScreenState extends ConsumerState<MeScreen> {
                   ),
                 ],
               ),
-              trailing: TextButton(
-                onPressed: nodeState.pairedNodes.length > 1
-                    ? () => _showNodeSwitcher(context, ref, notifier)
-                    : null,
-                child: Text(nodeState.pairedNodes.length > 1
-                    ? 'Switch'
-                    : ''),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextButton(
+                    onPressed: () => notifier.forceReconnect(),
+                    child: const Text('Reconnect'),
+                  ),
+                  if (nodeState.pairedNodes.length > 1)
+                    TextButton(
+                      onPressed: () =>
+                          _showNodeSwitcher(context, ref, notifier),
+                      child: const Text('Switch'),
+                    ),
+                ],
               ),
             ),
           ),

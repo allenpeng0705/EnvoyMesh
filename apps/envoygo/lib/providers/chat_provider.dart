@@ -73,6 +73,20 @@ bool isSelfThreadPeer(String? peerId, String? selfOwnerId) {
   return false;
 }
 
+/// Peer / agent key after `nodeId:` in a thread id.
+/// Handles `nodeId:envoyai`, `nodeId:external`, and `nodeId:envoy:owner:…`.
+String? threadPeerSuffix(String threadId, String? nodeId) {
+  if (nodeId != null && nodeId.isNotEmpty) {
+    final prefix = '$nodeId:';
+    if (threadId.startsWith(prefix) && threadId.length > prefix.length) {
+      return threadId.substring(prefix.length);
+    }
+  }
+  final i = threadId.indexOf(':');
+  if (i < 0 || i + 1 >= threadId.length) return null;
+  return threadId.substring(i + 1);
+}
+
 class ChatNotifier extends StateNotifier<ChatState> {
   final Ref _ref;
   final LocalDatabase _localDb = LocalDatabase();
@@ -94,7 +108,10 @@ class ChatNotifier extends StateNotifier<ChatState> {
       final t = _stripLegacyAgentStatusSuffix(ChatThread.fromJson(row));
       if (isSelfThreadPeer(t.contactOwnerId, selfOwnerId)) continue;
       // Pi is a terminal session now — drop legacy AI-section Pi chat rows.
-      if (t.type == ChatThreadType.pi) {
+      // Also drop synthetic "envoy:pi" Contacts leaks from old Ext Agent pushes.
+      if (t.type == ChatThreadType.pi ||
+          t.contactOwnerId == 'envoy:pi' ||
+          t.id.endsWith(':envoy:pi')) {
         await _localDb.deleteThread(t.id);
         continue;
       }
@@ -244,15 +261,18 @@ class ChatNotifier extends StateNotifier<ChatState> {
         .where((m) => !existingIds.contains(m.messageId))
         .toList();
 
-    // Cache new messages in local DB.
+    // Cache new messages in local DB (strip unsupported columns).
     for (final msg in newMessages) {
-      await _localDb.insertMessage(msg.toJson());
+      try {
+        await _localDb.insertMessage(msg.toJson());
+      } catch (_) {
+        // Best-effort local cache — don't fail the open.
+      }
     }
 
     if (newMessages.isEmpty) return;
 
-    // Append new server messages so newer messages appear after cached ones.
-    // Server returns newest-first; appending keeps newest at the end (bottom).
+    // Merge then sort newest-first (ListView reverse:true → newest at bottom).
     state = state.copyWith(
       messages: {
         ...state.messages,
@@ -262,25 +282,26 @@ class ChatNotifier extends StateNotifier<ChatState> {
         ],
       },
     );
-
-    // Sort by createdAt ascending (oldest first) so the display is always chronological.
     _sortThreadMessages(threadId);
   }
 
-  /// Load chat history for the EnvoyAI thread (owner chatting with AI).
-  /// Uses agentType as the contactOwnerId equivalent.
+  /// Load chat history for EnvoyAI / Ext Agent threads.
   Future<void> loadAgentHistory(String threadId) async {
     final nodeService = _ref.read(nodeServiceProvider);
-    if (nodeService == null) return;
+    final nodeState = _ref.read(nodeProvider);
+    if (nodeService == null || nodeState.activeNode == null) return;
 
-    // EnvoyAI thread: extract agentType from threadId (format: nodeId:agentType).
-    final parts = threadId.split(':');
-    final agentType = parts.length >= 3 ? parts[2] : 'envoyai';
+    // threadId is `nodeId:envoyai` or `nodeId:external` — NOT split on every `:`.
+    final agentType =
+        threadPeerSuffix(threadId, nodeState.activeNode!.id) ?? 'envoyai';
+    if (agentType != 'envoyai' && agentType != 'external') return;
 
     final oldestCached = state.messages[threadId]?.lastOrNull;
     final messages = await nodeService.listChatHistory(
       agentType,
       before: oldestCached?.createdAt,
+      threadId: threadId,
+      selfOwnerId: nodeState.ownerId,
     );
 
     if (messages.isEmpty) return;
@@ -292,6 +313,17 @@ class ChatNotifier extends StateNotifier<ChatState> {
         {};
     final newMessages = messages
         .where((m) => !existingIds.contains(m.messageId))
+        // Normalize thread_id to the UI thread key (not "envoyai"/"external").
+        .map((m) => ChatMessage(
+              id: m.id,
+              threadId: threadId,
+              senderOwnerId: m.senderOwnerId,
+              senderDisplayName: m.senderDisplayName,
+              text: m.text,
+              createdAt: m.createdAt,
+              isOutbound: m.isOutbound,
+              attachments: m.attachments,
+            ))
         .toList();
 
     for (final msg in newMessages) {
@@ -309,8 +341,6 @@ class ChatNotifier extends StateNotifier<ChatState> {
         ],
       },
     );
-
-    // Sort by createdAt ascending so display is always chronological.
     _sortThreadMessages(threadId);
   }
 
@@ -319,18 +349,24 @@ class ChatNotifier extends StateNotifier<ChatState> {
   Future<void> loadMessagesFromDb(String threadId) async {
     final rows = await _localDb.getMessages(threadId);
     if (rows.isEmpty) return;
-    // getMessages returns newest-first (DESC).
-    // Display uses reverse:true so newest is at the bottom.
-    // Keep newest-first so reverse:true display shows oldest-first (correct order).
-    final messages = rows.map((r) => ChatMessage.fromJson(r)).toList();
+    // getMessages returns newest-first (DESC). Merge with any in-memory
+    // messages (e.g. history that raced ahead) then re-sort.
+    final fromDb = rows.map((r) => ChatMessage.fromJson(r)).toList();
+    final existing = state.messages[threadId] ?? const <ChatMessage>[];
+    final seen = fromDb.map((m) => m.id).toSet();
+    final merged = [
+      ...fromDb,
+      ...existing.where((m) => !seen.contains(m.id)),
+    ];
     state = state.copyWith(
-      messages: {...state.messages, threadId: messages},
+      messages: {...state.messages, threadId: merged},
     );
+    _sortThreadMessages(threadId);
   }
 
   /// Sort a thread's message list by createdAt descending (newest first).
-  /// The ListView uses reverse:true, which expects index 0 = newest.
-  /// Call this after any bulk load to guarantee chronological display.
+  /// The ListView uses reverse:true, which expects index 0 = newest
+  /// (rendered at the bottom).
   void _sortThreadMessages(String threadId) {
     final msgs = state.messages[threadId];
     if (msgs == null || msgs.length <= 1) return;
@@ -412,10 +448,13 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     // Is this message sent by the owner, by an agent, or by someone else?
     final sentBySelf = selfOwnerId != null && senderOwnerId == selfOwnerId;
+    // Synthetic agent senders must never become Contacts rows.
+    final isSyntheticAgent = senderOwnerId == 'envoy:pi' ||
+        senderOwnerId == '__envoy_ai__' ||
+        senderOwnerId.startsWith('envoy_agent_') ||
+        senderOwnerId.startsWith('envoy:agent:');
     final isAgent = !(senderOwnerId == 'terminal') &&
-        (senderOwnerId == '__envoy_ai__' ||
-            senderOwnerId.startsWith('envoy_agent_') ||
-            (sentBySelf && actorRole == 'agent'));
+        (isSyntheticAgent || (sentBySelf && actorRole == 'agent'));
     final isTerminal = senderOwnerId == 'terminal';
 
     // Figure out the "other party" — which contact's thread this goes to.
@@ -455,23 +494,26 @@ class ChatNotifier extends StateNotifier<ChatState> {
     }
 
     // --- Determine which thread to put the message in ---
+    // Route strictly by deliveryChannel when present — never let bridge
+    // metadata or agentType bleed EnvoyAI into Ext Agent (or the reverse).
     final terminalId = data['terminalId'] as String?;
     final terminalName = data['terminalName'] as String?;
-    final externalAgent = data['agentType'] as String? ?? sender?['agentType'] as String?;
-    // deliveryChannel: "agent" + deliverySource: "bridge" = Ext Agent reply.
-    // Use this to correctly route bridge Ext Agent replies to the "external"
-    // thread even when senderOwnerId starts with "envoy_agent_" (which
-    // would otherwise match the EnvoyAI isAgent branch).
     final deliveryChannel = metadata?['deliveryChannel'] as String?;
     final deliverySource = metadata?['deliverySource'] as String?;
-    final isBridgeAgent = deliveryChannel == 'agent' && deliverySource == 'bridge';
+    final isBuiltinAi = deliveryChannel == 'ai' ||
+        senderOwnerId == '__envoy_ai__';
+    final isBridgeAgent = !isBuiltinAi &&
+        ((deliveryChannel == 'agent' && deliverySource == 'bridge') ||
+            senderOwnerId == 'envoy:pi');
     final agentType = isBridgeAgent
         ? 'external'
-        : (externalAgent == 'external' ? 'external' : 'envoyai');
+        : 'envoyai';
 
     // Agent messages: if the recipient is a known contact → contact's thread.
     // If the recipient is the owner (chatting with EnvoyAI) → envoyai thread.
     final agentTalkToContact = isAgent &&
+        !isBridgeAgent &&
+        !isBuiltinAi &&
         recipientOwnerId != null &&
         recipientOwnerId.isNotEmpty &&
         recipientOwnerId != selfOwnerId;
@@ -479,16 +521,15 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final String threadId;
     if (isTerminal) {
       threadId = '${nodeState.activeNode!.id}:term:${terminalId ?? senderOwnerId}';
-    } else if (deliveryChannel == 'ai') {
-      // Built-in EnvoyAI assistant reply — goes to EnvoyAI thread regardless
-      // of senderOwnerId (which is the owner's own ID for the built-in AI).
+    } else if (isBuiltinAi) {
       threadId = '${nodeState.activeNode!.id}:envoyai';
     } else if (isBridgeAgent) {
-      // Ext Agent reply via bridge — goes to Ext Agent thread.
       threadId = '${nodeState.activeNode!.id}:external';
     } else if (agentTalkToContact) {
-      // AI auto-reply for a contact → contact's thread only.
       threadId = '${nodeState.activeNode!.id}:$recipientOwnerId';
+    } else if (isAgent) {
+      // Agent without channel metadata → EnvoyAI (safer than Ext Agent).
+      threadId = '${nodeState.activeNode!.id}:envoyai';
     } else {
       threadId = '${nodeState.activeNode!.id}:$peerId';
     }
@@ -520,11 +561,22 @@ class ChatNotifier extends StateNotifier<ChatState> {
     // - Sent by agent (EnvoyAI chat) → agent name, left side
     // - Sent by peer → peer's name, left side
     final bool showAsMine = (sentBySelf && actorRole == 'human') || agentTalkToContact;
-    final msgSenderDisplay = showAsMine ? 'You' : (senderDisplayName ?? senderOwnerId);
+    final msgSenderDisplay = showAsMine
+        ? 'You'
+        : (isBridgeAgent
+            ? (senderDisplayName ?? 'Ext Agent')
+            : (isBuiltinAi || (isAgent && !agentTalkToContact)
+                ? (senderDisplayName ?? 'EnvoyAI')
+                : (senderDisplayName ?? senderOwnerId)));
 
-    final attachments = attachmentsRaw
-        ?.map((a) => ChatAttachment.fromJson(a as Map<String, dynamic>))
-        .toList();
+    List<ChatAttachment>? attachments;
+    try {
+      attachments = attachmentsRaw
+          ?.map((a) => ChatAttachment.fromJson(a as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      attachments = null;
+    }
     final msg = ChatMessage(
       id: messageId ?? 'msg_${DateTime.now().microsecondsSinceEpoch}',
       threadId: threadId,
@@ -539,14 +591,17 @@ class ChatNotifier extends StateNotifier<ChatState> {
     // Cache in local DB.
     _localDb.insertMessage(msg.toJson());
 
+    final isAiThread = isBridgeAgent ||
+        isBuiltinAi ||
+        (isAgent && !agentTalkToContact);
     // Update thread.
     _upsertThread(
       threadId: threadId,
       nodeId: nodeState.activeNode!.id,
       type: isTerminal
           ? ChatThreadType.terminal
-          : isAgent
-              ? (agentType == 'external'
+          : isAiThread
+              ? (isBridgeAgent
                   ? ChatThreadType.externalAgent
                   : ChatThreadType.envoyai)
               : ChatThreadType.direct,
@@ -554,11 +609,15 @@ class ChatNotifier extends StateNotifier<ChatState> {
           ? 'Terminal: ${terminalName ?? terminalId ?? ''}'
           : agentTalkToContact
               ? (threadDisplayName ?? peerId)
-              : isAgent
-                  ? (agentType == 'external' ? 'Ext Agent' : 'EnvoyAI')
+              : isAiThread
+                  ? (isBridgeAgent
+                      ? (senderDisplayName ?? 'Ext Agent')
+                      : 'EnvoyAI')
                   : threadDisplayName ?? peerId,
-      contactOwnerId: (isAgent && !agentTalkToContact) ? null : peerId,
-      agentType: isAgent ? agentType : null,
+      contactOwnerId: (isAiThread || (isAgent && !agentTalkToContact))
+          ? null
+          : peerId,
+      agentType: isAiThread ? agentType : null,
       lastMessageText: text ?? '',
       lastMessageAt: createdAt != null
           ? DateTime.tryParse(createdAt)
@@ -596,6 +655,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       state = state.copyWith(
         messages: {...state.messages, threadId: updated},
       );
+      _sortThreadMessages(threadId);
     } else {
       // New message — prepend so newest is at index 0 (bottom with reverse:true).
       state = state.copyWith(
@@ -608,8 +668,13 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
     // Dual-route agent messages: if the AI reply is addressed to a
     // known contact, also show it in that contact's thread (same as
-    // the Social app behaviour).
-    if (isAgent && recipientOwnerId != null && recipientOwnerId.isNotEmpty &&
+    // the Social app behaviour). Never dual-route Ext Agent / EnvoyAI
+    // owner-assistant turns.
+    if (!isBridgeAgent &&
+        !isBuiltinAi &&
+        isAgent &&
+        recipientOwnerId != null &&
+        recipientOwnerId.isNotEmpty &&
         recipientOwnerId != selfOwnerId) {
       final contactThreadId = '${nodeState.activeNode!.id}:$recipientOwnerId';
       final contactMsg = ChatMessage(
@@ -621,11 +686,14 @@ class ChatNotifier extends StateNotifier<ChatState> {
         createdAt: createdAt,
         isOutbound: true,
       );
+      final contactNotifier = _ref.read(contactProvider.notifier);
+      final contactName = contactNotifier.getContact(recipientOwnerId)?.displayName ??
+          recipientOwnerId;
       _upsertThread(
         threadId: contactThreadId,
         nodeId: nodeState.activeNode!.id,
         type: ChatThreadType.direct,
-        displayName: senderDisplayName ?? 'EnvoyAI',
+        displayName: contactName,
         contactOwnerId: recipientOwnerId,
         lastMessageText: text ?? '',
         lastMessageAt: createdAt != null

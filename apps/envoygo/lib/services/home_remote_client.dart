@@ -230,9 +230,8 @@ class HomeRemoteClient {
     if (_disposed) throw Exception('homeRemote.disposed');
     if (candidates.isEmpty) throw Exception('homeRemote.notConfigured');
 
-    // Prefer the same candidate on reconnect — except sticky LAN after a
-    // Wi‑Fi pairing: on cellular the resolver puts relay first, and
-    // re-trying LAN for 0.5–8s (or stuck longer) delays the working path.
+    // Prefer the same candidate on reconnect — except never stick on
+    // relay/bootstrap. Every dial re-tries LAN / public / P2P first.
     var startIndex = 0;
     if (_activeCandidate != null) {
       final idx = candidates.indexWhere(
@@ -241,14 +240,14 @@ class HomeRemoteClient {
             c.url == _activeCandidate!.url,
       );
       if (idx >= 0) {
-        final isLan = _activeCandidate!.name == 'lan';
-        final relayIdx = candidates.indexWhere(
-          (c) => c.name == 'relay' || c.name == 'community-relay',
-        );
-        if (isLan && relayIdx >= 0 && relayIdx < idx) {
+        final name = _activeCandidate!.name;
+        final isFallback = name == 'relay' ||
+            name == 'community-relay' ||
+            name == 'bootstrap';
+        if (isFallback) {
           startIndex = 0;
           debugPrint(
-            '[HomeRemoteClient] ignoring sticky LAN — relay is earlier in candidate list',
+            '[HomeRemoteClient] ignoring sticky $name — re-try LAN/P2P first',
           );
         } else {
           startIndex = idx;

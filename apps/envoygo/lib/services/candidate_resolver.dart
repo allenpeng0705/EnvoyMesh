@@ -4,14 +4,15 @@ import 'home_remote_client.dart';
 
 /// Builds transport candidate URLs from stored pairing data.
 ///
-/// **Wi‑Fi:** relay WS → LAN → public → (optional) libp2p last.
-/// **Cellular / unknown:** relay WS → public → skip LAN → libp2p last (capped).
+/// **Every connect / restart / reconnect** uses the same priority:
+///   1. LAN (Wi‑Fi direct) — when `lanIp` was stored at pair time
+///   2. Public IP direct — when configured
+///   3. P2P (libp2p circuit / DHT) — capped so dials stay bounded
+///   4. Bootstrap WS peers
+///   5. Relay WebSocket (user + community) — **fallback last**
 ///
-/// Relay WebSocket (`/ws?target=<homePeerId>`) is the path that works behind
-/// NAT / on 5G when the home keeps its outbound `/ws/home` tunnel. Libp2p
-/// DHT + circuit dials are slow (10s+ DHT settle, unbounded findPeer) and
-/// must not block the relay path — especially after a LAN pairing when the
-/// user later opens the app on cellular.
+/// Relay must not win just because it was first in the list after a 5G
+/// pairing; sequential dial stops at the first success.
 class CandidateResolver {
   /// Resolve bootstrap preset names to full libp2p multiaddr strings.
   ///
@@ -54,14 +55,14 @@ class CandidateResolver {
 
   /// Resolve transport candidates for a stored node.
   ///
-  /// Called on every (re)connect so the resolver can return up-to-date URLs.
+  /// Called on every (re)connect / app restart. Order is always
+  /// LAN → public → P2P → bootstrap → relay (fallback).
   ///
-  /// [isOnWifi]: `true` = Wi‑Fi; `false` = cellular/other; `null` defaults to
-  /// **cellular-safe** order (relay first) so cold start on 5G does not hang
-  /// on LAN / unbounded libp2p before trying the relay.
+  /// [isOnWifi] only affects how many expensive libp2p candidates we keep
+  /// (more on Wi‑Fi, fewer on cellular). LAN is always tried first when
+  /// known — unreachable private IPs fail fast via HomeRemoteClient.
   List<HomeRemoteCandidate> resolve(StoredNode node,
       {String? sessionToken, bool? isOnWifi}) {
-    // Build each category in separate lists so we can reorder.
     final p2pCandidates = _buildLibp2pCandidates(node, sessionToken);
     final relayWsCandidates = _buildRelayWsCandidates(node, sessionToken);
     final lanCandidates = _buildLanCandidates(node, sessionToken);
@@ -69,28 +70,15 @@ class CandidateResolver {
     final bootstrapCandidates =
         _buildBootstrapPeerCandidates(node, sessionToken);
 
-    // Default false: mobile-first. Unknown connectivity must not prefer LAN.
     final onWifi = isOnWifi ?? false;
-    if (onWifi) {
-      // Wi‑Fi: try relay + LAN quickly (LAN wins when home is local).
-      // Keep libp2p last — DHT settle is expensive and often unnecessary
-      // when LAN or relay already works.
-      return [
-        ...relayWsCandidates,
-        ...lanCandidates,
-        ...publicCandidates,
-        ...bootstrapCandidates,
-        ..._limitLibp2p(p2pCandidates, max: 2),
-      ];
-    }
-    // Cellular: relay first (works when home has /ws/home tunnel).
-    // Skip LAN entirely — private RFC1918 IPs hang 0.5–8s on 5G.
-    // Libp2p last and capped so we do not burn minutes on DHT.
+    final p2pCap = onWifi ? 2 : 1;
+
     return [
-      ...relayWsCandidates,
+      ...lanCandidates,
       ...publicCandidates,
+      ..._limitLibp2p(p2pCandidates, max: p2pCap),
       ...bootstrapCandidates,
-      ..._limitLibp2p(p2pCandidates, max: 1),
+      ...relayWsCandidates,
     ];
   }
 

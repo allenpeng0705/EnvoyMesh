@@ -367,17 +367,10 @@ class NodeNotifier extends StateNotifier<NodeState> {
     });
   }
 
-  /// Drop a (possibly stuck) LAN session and reconnect with relay-first order.
+  /// Drop a (possibly stuck) session and reconnect with fresh candidates
+  /// (always LAN → P2P → relay fallback).
   Future<void> _reconnectForNetworkTypeChange() async {
-    final node = state.activeNode ??
-        state.pairedNodes.where((n) => n.id == _supervisorTargetNodeId).firstOrNull;
-    if (node == null) return;
-    try {
-      await disconnect();
-    } catch (_) {
-      /* best-effort */
-    }
-    kickReconnect();
+    await forceReconnect();
   }
 
   /// Construct a fresh [ReconnectSupervisor] targeting the given
@@ -435,7 +428,8 @@ class NodeNotifier extends StateNotifier<NodeState> {
   ///     supervisor tick);
   ///   - the `connectivity_plus` offline → online listener.
   ///
-  /// No-op when already connected.
+  /// No-op when already connected — use [forceReconnect] to re-dial
+  /// (e.g. switch Relay → LAN after joining home Wi‑Fi).
   void kickReconnect() {
     _log('[kickReconnect] called, connectionState=${state.connectionState}, supervisor=$_supervisor, supervisor.isStopped=${_supervisor?.isStopped}, supervisorTargetNodeId=$_supervisorTargetNodeId');
     if (state.connectionState == NodeConnectionState.connected) return;
@@ -450,6 +444,31 @@ class NodeNotifier extends StateNotifier<NodeState> {
       return;
     }
     supervisor.kick();
+  }
+
+  /// Drop the active session and re-dial with a fresh candidate order.
+  ///
+  /// Unlike [kickReconnect], this works while connected — used when the
+  /// phone moved onto home Wi‑Fi but is still stuck on Relay, or when
+  /// the user taps Reconnect on the Me screen.
+  Future<void> forceReconnect() async {
+    final node = state.activeNode;
+    if (node == null) {
+      kickReconnect();
+      return;
+    }
+    _log('[forceReconnect] re-dialing ${node.id} (was ${state.activeTransport})');
+    await disconnect();
+    _supervisor?.stop();
+    _supervisor = null;
+    _supervisorTargetNodeId = node.id;
+    try {
+      await connectToNode(node);
+      // HomeRemoteClient owns post-connect reconnect; no supervisor needed.
+    } catch (e) {
+      _log('[forceReconnect] failed: $e');
+      _startSupervisorFor(node.id);
+    }
   }
 
   @override
@@ -604,7 +623,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
     _startSupervisorFor(node.id);
 
     // Unpair of the last node cancels Wi‑Fi↔cellular listeners; restore them
-    // so re-pair without app restart still forces relay-first on 5G.
+    // so re-pair without app restart still re-probes LAN/P2P on network change.
     try {
       await _ensureConnectivityObserver();
     } catch (e) {
@@ -1037,7 +1056,8 @@ class NodeNotifier extends StateNotifier<NodeState> {
     // candidate includes it (enables circuit-relay dialing through the
     // community relay even when the user's private relay is down).
     CandidateResolver.setCommunityHomePeerId(node.homePeerId);
-    // Default false: treat unknown as cellular-safe (relay-first).
+    // isOnWifi only caps how many P2P dials we attempt; order is always
+    // LAN → public → P2P → relay.
     final isOnWifi = _connectivityObserver?.isOnWifi ?? false;
     _log('[_connectToNodeImpl] isOnWifi=$isOnWifi');
     List<HomeRemoteCandidate> resolveNow() {
@@ -1067,8 +1087,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
     }
 
     final opts = HomeRemoteClientOptions(
-      // Re-resolve on each reconnect so Wi‑Fi↔5G picks a fresh order
-      // (do not freeze the LAN-first list from a previous Wi‑Fi session).
+      // Re-resolve on each reconnect (LAN/P2P first, then relay).
       resolveCandidates: () async => resolveNow(),
       createTransport: (c) => _createTransportForCandidate(c),
       onHomeOnlineChange: (online) {

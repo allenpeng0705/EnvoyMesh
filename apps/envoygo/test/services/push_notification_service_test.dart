@@ -53,6 +53,28 @@ void main() {
       expect(result?['senderOwnerId'], 'envoy:owner:alice');
     });
 
+    test('handleNotificationTap routes legacy envoy:pi to Ext Agent', () {
+      final service = PushNotificationService();
+      final result = service.handleNotificationTap({
+        'threadType': 'direct',
+        'senderOwnerId': 'envoy:pi',
+        'messageId': 'm1',
+        'senderName': 'Pi',
+      });
+      expect(result?['threadType'], 'external');
+      expect(result?['agentType'], 'external');
+      expect(result?['type'], isNull);
+    });
+
+    test('handleNotificationTap treats type=pi_proposal as proposal', () {
+      final service = PushNotificationService();
+      final result = service.handleNotificationTap({
+        'type': 'pi_proposal',
+        'senderOwnerId': 'envoy:pi',
+      });
+      expect(result?['type'], 'pi_proposal');
+    });
+
     test('handleNotificationTap returns null for unknown payload', () {
       final service = PushNotificationService();
       expect(service.handleNotificationTap({'foo': 'bar'}), isNull);

@@ -69,13 +69,26 @@ class ChatBubble extends StatelessWidget {
             ] else ...[
               const SizedBox(height: 2),
               if (message.text != null && message.text!.startsWith('data:image/'))
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(8),
-                  child: Image.memory(
-                    base64Decode(message.text!.split(',').last),
-                    width: 200,
-                    fit: BoxFit.cover,
-                  ),
+                Builder(
+                  builder: (context) {
+                    try {
+                      final raw = message.text!.split(',').last;
+                      final bytes = base64Decode(raw);
+                      return ClipRRect(
+                        borderRadius: BorderRadius.circular(8),
+                        child: Image.memory(
+                          bytes,
+                          width: 200,
+                          fit: BoxFit.cover,
+                        ),
+                      );
+                    } catch (_) {
+                      return Text(
+                        '[image]',
+                        style: TextStyle(color: colorScheme.onSurface),
+                      );
+                    }
+                  },
                 )
               else
                 Text(

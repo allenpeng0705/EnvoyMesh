@@ -40,8 +40,14 @@ export class WsServer {
   private nodeService!: NodeService;
   private readonly subscriptions = new Map<string, Set<WebSocket>>();
   private readonly clientSubscriptions = new Map<WebSocket, Set<string>>();
-  /** Track authenticated thin-client sessions (token → ws). */
+  /** Track authenticated thin-client sessions (ws → ownerId). */
   private readonly authenticatedClients = new Map<WebSocket, string>();
+  /**
+   * Last RPC timestamp per thin-client owner. Heartbeat pongs do NOT update
+   * this — only real client messages. Used so a backgrounded EnvoyGo with a
+   * half-open WS does not suppress chat pushes forever.
+   */
+  private readonly thinClientLastRpcAt = new Map<string, number>();
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private readonly heartbeatIntervalMs = 30000; // 30 seconds
   /**
@@ -245,6 +251,22 @@ export class WsServer {
     return false;
   }
 
+  /**
+   * True when EnvoyGo is connected AND recently sent an RPC (default 20s).
+   * Used for chat/bond/feed push skip-if-online — a zombie background WS
+   * without recent RPCs must NOT suppress pushes (iOS suspends JS; the
+   * TCP socket can linger while the app cannot show in-app events).
+   */
+  hasRecentlyActiveClientForOwner(
+    ownerId: string,
+    maxIdleMs: number = 20_000,
+  ): boolean {
+    if (!this.hasClientForOwner(ownerId)) return false;
+    const last = this.thinClientLastRpcAt.get(ownerId);
+    if (last == null) return false;
+    return Date.now() - last <= maxIdleMs;
+  }
+
   private async handleConnection(ws: WebSocket, req?: any): Promise<void> {
     const clientId = randomUUID();
 
@@ -265,6 +287,7 @@ export class WsServer {
         if (record) {
           isAuthenticated = true;
           this.authenticatedClients.set(ws, record.ownerId);
+          this.thinClientLastRpcAt.set(record.ownerId, Date.now());
           console.log(`[ws-server] Client ${clientId} authenticated via session token (owner: ${record.ownerId})`);
         }
       }
@@ -285,6 +308,11 @@ export class WsServer {
     ws.on("message", (data: Buffer) => {
       try {
         const message = JSON.parse(data.toString()) as JsonRpcRequest;
+        // Thin-client RPC activity — drives push skip-if-online freshness.
+        const ownerId = this.authenticatedClients.get(ws);
+        if (ownerId && message.method !== "on" && message.method !== "off") {
+          this.thinClientLastRpcAt.set(ownerId, Date.now());
+        }
         // Record owner activity for online/offline detection,
         // but skip subscription on/off RPCs — they're infrastructure, not user actions.
         if (message.method !== "on" && message.method !== "off") {
@@ -300,7 +328,11 @@ export class WsServer {
     ws.on("close", () => {
       console.log(`[ws-server] Client ${clientId} disconnected`);
       // Clean up auth tracking.
+      const ownerId = this.authenticatedClients.get(ws);
       this.authenticatedClients.delete(ws);
+      if (ownerId && !this.hasClientForOwner(ownerId)) {
+        this.thinClientLastRpcAt.delete(ownerId);
+      }
       // Clean up subscriptions
       const subs = this.clientSubscriptions.get(ws);
       if (subs) {

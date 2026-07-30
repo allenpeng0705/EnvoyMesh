@@ -40,15 +40,25 @@ class ChatMessage {
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
     final attList = json['attachments'] as List<dynamic>?;
+    List<ChatAttachment>? attachments;
+    if (attList != null) {
+      try {
+        attachments = attList
+            .map((a) => ChatAttachment.fromJson(a as Map<String, dynamic>))
+            .toList();
+      } catch (_) {
+        attachments = null;
+      }
+    }
     return ChatMessage(
-      id: json['id'] as String,
-      threadId: json['thread_id'] as String,
+      id: (json['id'] ?? json['messageId'] ?? '') as String,
+      threadId: (json['thread_id'] ?? json['threadId'] ?? '') as String,
       senderOwnerId: json['sender_owner_id'] as String?,
       senderDisplayName: json['sender_display_name'] as String?,
       text: json['text'] as String?,
       createdAt: json['created_at'] as String?,
       isOutbound: (json['is_outbound'] as int?) == 1,
-      attachments: attList?.map((a) => ChatAttachment.fromJson(a as Map<String, dynamic>)).toList(),
+      attachments: attachments,
     );
   }
 
@@ -124,11 +134,11 @@ class ChatAttachment {
 
   factory ChatAttachment.fromJson(Map<String, dynamic> json) {
     return ChatAttachment(
-      id: json['id'] as String,
-      filename: json['filename'] as String,
-      mimeType: json['mimeType'] as String,
-      sizeBytes: (json['sizeBytes'] as num).toInt(),
-      sensitivity: json['sensitivity'] as String,
+      id: (json['id'] as String?) ?? '',
+      filename: (json['filename'] as String?) ?? '',
+      mimeType: (json['mimeType'] as String?) ?? 'application/octet-stream',
+      sizeBytes: (json['sizeBytes'] as num?)?.toInt() ?? 0,
+      sensitivity: (json['sensitivity'] as String?) ?? 'friends',
       vaultRelativePath: json['vaultRelativePath'] as String?,
       durationSec: json['durationSec'] as int?,
     );

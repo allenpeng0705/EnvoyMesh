@@ -59,6 +59,16 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   bool get _isAgent => widget.agentType != null;
   bool get _isExtAgent => widget.agentType == 'external';
 
+  /// Prefer explicit contactOwnerId; fall back to thread id suffix.
+  String? get _resolvedContactOwnerId {
+    if (widget.contactOwnerId != null && widget.contactOwnerId!.isNotEmpty) {
+      return widget.contactOwnerId;
+    }
+    if (_isAgent || _isRoom) return null;
+    final nodeId = ref.read(nodeProvider).activeNode?.id;
+    return threadPeerSuffix(widget.threadId, nodeId);
+  }
+
   @override
   void initState() {
     super.initState();
@@ -69,7 +79,6 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
         // Load from local DB first (instant), then from home node.
         notifier.loadMessagesFromDb(widget.threadId);
         if (_isAgent) {
-          // EnvoyAI thread — load history using the agent's owner ID.
           notifier.loadAgentHistory(widget.threadId);
         } else if (_isRoom) {
           notifier.loadHistory(
@@ -79,12 +88,12 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
         } else {
           notifier.loadHistory(
             widget.threadId,
-            contactOwnerId: widget.contactOwnerId,
+            contactOwnerId: _resolvedContactOwnerId,
           );
         }
         notifier.markRead(
           widget.threadId,
-          contactOwnerId: widget.contactOwnerId,
+          contactOwnerId: _resolvedContactOwnerId,
         );
       }
     });
@@ -124,12 +133,12 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
       final mimeType = 'audio/mp4'; // record package outputs MP4/AAC on both platforms
 
       final nodeService = ref.read(nodeServiceProvider);
-      if (nodeService == null || widget.contactOwnerId == null) return;
+      if (nodeService == null || _resolvedContactOwnerId == null) return;
 
       try {
         // 1. Upload to vault
         final uploadResult = await nodeService.sendChatAttachment(
-          targetOwnerId: widget.contactOwnerId!,
+          targetOwnerId: _resolvedContactOwnerId!,
           filename: 'voice-note.m4a',
           contentBase64: base64,
           mimeType: mimeType,
@@ -141,7 +150,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
 
         // 2. Send chat message with attachment metadata
         ref.read(chatProvider.notifier).sendMessage(
-              widget.contactOwnerId!,
+              _resolvedContactOwnerId!,
               '', // mobile has no transcription
                attachments: [
                 {
@@ -244,19 +253,19 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
           // Phase 42F — voice call action for direct-message chats
           // (not rooms / agents). Routes through CallProvider.startCall
           // which generates the SDP and posts sendCallInvite.
-          if (!_isAgent && !_isRoom && widget.contactOwnerId != null)
+          if (!_isAgent && !_isRoom && _resolvedContactOwnerId != null)
             IconButton(
               icon: const Icon(Icons.call),
               tooltip: 'Voice call',
               onPressed: _startCall,
             ),
-          if (!_isAgent && !_isRoom && widget.contactOwnerId != null)
+          if (!_isAgent && !_isRoom && _resolvedContactOwnerId != null)
             IconButton(
               icon: const Icon(Icons.language),
               tooltip: 'Published content',
               onPressed: () => showPublishedContentSheet(
                 context,
-                ownerId: widget.contactOwnerId!,
+                ownerId: _resolvedContactOwnerId!,
                 displayName: widget.displayName,
               ),
             ),
@@ -391,7 +400,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   /// to the home. On success we push the [VoiceCallScreen] so the
   /// user sees the active-call UI right away.
   Future<void> _startCall() async {
-    final contactOwnerId = widget.contactOwnerId;
+    final contactOwnerId = _resolvedContactOwnerId;
     if (contactOwnerId == null) return;
     final callProviderRef = ref.read(callProvider);
     final callId = await callProviderRef.startCall(contactOwnerId);
@@ -421,9 +430,9 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
             widget.chatRoomId!,
             text,
           );
-    } else if (widget.contactOwnerId != null) {
+    } else if (_resolvedContactOwnerId != null) {
       ref.read(chatProvider.notifier).sendMessage(
-            widget.contactOwnerId!,
+            _resolvedContactOwnerId!,
             text,
           );
     }

@@ -74,15 +74,15 @@ this.on("chat:message", (msg: ChatMessage) => {
   if (!homeOwnerId) return
   // Don't push the user's own outgoing echoes.
   if (msg.sender.ownerId && msg.sender.ownerId === homeOwnerId) return
-  // Skip if the owner has an active WebSocket (already got it in-app).
-  void this.isOwnerOnline().then((online) => {
-    if (online) return
-    void pushNotificationService.dispatchChatPush({ ... }).catch(() => {})
-  })
+  // Skip only when EnvoyGo has an authenticated WS (not desktop Social).
+  if (this.isThinClientOnline(homeOwnerId)) return
+  void pushNotificationService.dispatchChatPush({ ... }).catch(() => {})
 })
 ```
 
 **Why the `recipient.ownerId` guard was removed:** EnvoyAI assistant replies use `recipient.ownerId = ENVOY_AI_THREAD_KEY` (a synthetic thread key, NOT the home owner). The original guard rejected them. The fix: push target is always the home owner (every message on this node is for the owner); we only skip the user's own outgoing echoes.
+
+**Why not `isOwnerOnline()`:** That API tracks owner presence for AI auto-reply (Social WS activity / manual status). Using it for push skipped alerts whenever Social was open — including EnvoyAI chats on desktop while EnvoyGo was killed. Push uses `isThinClientOnline` → `WsServer.hasClientForOwner` instead.
 
 **Sources caught automatically** (they all emit `chat:message` via `NodeServiceImpl.emit`):
 | EnvoyAI / OpenClaw reply | `node-service-openclaw-runtime.ts:341` → `ctx.emitChatMessage(msg)` → `host.emit("chat:message")` | ✅ |
@@ -106,7 +106,7 @@ All original Phase 50 slices shipped:
 
 | Original slice | Status |
 |---|---|
-| 50B (skip-if-online for feed/legacy chat) | ✅ All paths now gate on `isOwnerOnline()` |
+| 50B (skip-if-online for feed/legacy chat) | ✅ All paths gate on thin-client WS (`isThinClientOnline` / `hasClientForOwner`), not owner presence |
 | 50C (group chat push) | ✅ Automatic — group chat emits `chat:message` |
 | 50D (EnvoyAI reply push) | ✅ Automatic — EnvoyAI emits `chat:message` |
 | 50E (Ext Agent reply push) | ✅ Automatic — Ext Agent emits `chat:message` |

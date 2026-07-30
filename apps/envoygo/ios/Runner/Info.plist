@@ -26,8 +26,18 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Scan the pairing QR code from your home node to connect.</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Microphone access is used during voice calls so you can talk to your contacts.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>voip</string>
+		<string>audio</string>
+		<string>remote-notification</string>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
@@ -38,26 +48,12 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
-	<key>NSCameraUsageDescription</key>
-	<string>Scan the pairing QR code from your home node to connect.</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Microphone access is used during voice calls so you can talk to your contacts.</string>
 	<key>UISupportedInterfaceOrientations~ipad</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
 		<string>UIInterfaceOrientationPortraitUpsideDown</string>
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
-	</array>
-	<!-- Phase 42I / 31I — background modes:
-	     `voip` — PKPushRegistry wake for CallKit incoming calls
-	     `audio` — WebRTC audio while backgrounded during a call
-	     `remote-notification` — APNs alert delivery for chat / bond / feed -->
-	<key>UIBackgroundModes</key>
-	<array>
-		<string>voip</string>
-		<string>audio</string>
-		<string>remote-notification</string>
 	</array>
 </dict>
 </plist>

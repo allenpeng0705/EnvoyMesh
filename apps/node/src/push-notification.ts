@@ -104,15 +104,28 @@ class PushTokenStore {
     return [...this.tokens.values()].filter((r) => r.ownerId === ownerId);
   }
 
+  /** Diagnostic: how many tokens are loaded (any owner). */
+  size(): number {
+    return this.tokens.size;
+  }
+
   private async _persist(): Promise<void> {
-    if (!this.filePath) return;
+    if (!this.filePath) {
+      console.warn(
+        "[push] token store not initialized — register will not persist until init(profileDir)",
+      );
+      return;
+    }
     try {
       const entries = [...this.tokens.values()];
       await fsPromises.writeFile(this.filePath, JSON.stringify(entries, null, 2), {
         mode: 0o600,
       });
-    } catch {
-      // Best-effort — don't crash the node on write failure
+      console.log(`[push] wrote ${entries.length} token(s) → ${this.filePath}`);
+    } catch (err) {
+      console.warn(
+        `[push] failed to persist tokens: ${err instanceof Error ? err.message : err}`,
+      );
     }
   }
 }
@@ -250,7 +263,10 @@ function pushCredential(envVar: string, section: "apns" | "fcm", key: string): s
 /** Convenience for the APNS_SANDBOX boolean (config file stores a boolean). */
 function pushSandbox(): boolean {
   const envVal = process.env.APNS_SANDBOX
-  if (envVal !== undefined) return Boolean(envVal.trim())
+  if (envVal !== undefined) {
+    const v = envVal.trim().toLowerCase()
+    return v === "1" || v === "true" || v === "yes"
+  }
   const configVal = _pushConfig?.apns?.sandbox
   return configVal ?? false
 }
@@ -559,12 +575,30 @@ async function sendFcm(
 export class PushNotificationService {
   private readonly store = new PushTokenStore();
   private initialized = false;
+  /** Shared so concurrent init() calls and dispatch can await readiness. */
+  private initPromise: Promise<void> | null = null;
 
   /** Initialize the token store + load push-config.json. Call once on startup. */
   async init(profileDir: string): Promise<void> {
-    await this.store.init(profileDir);
-    await loadPushConfig(profileDir);
-    this.initialized = true;
+    if (this.initPromise) return this.initPromise;
+    this.initPromise = (async () => {
+      await this.store.init(profileDir);
+      await loadPushConfig(profileDir);
+      this.initialized = true;
+      console.log("[push] Push notification service ready");
+    })();
+    return this.initPromise;
+  }
+
+  private async ensureReady(): Promise<boolean> {
+    if (this.initPromise) {
+      try {
+        await this.initPromise;
+      } catch {
+        return false;
+      }
+    }
+    return this.initialized;
   }
 
   /** Register a push token for a thin-client device. */
@@ -667,16 +701,28 @@ export class PushNotificationService {
     messagePreview: string;
     targetOwnerId: string;
     messageId: string;
-    threadType?: "direct" | "room";
+    threadType?: "direct" | "room" | "external" | "envoyai";
     senderOwnerId?: string;
     roomId?: string;
+    /** Optional deep-link type (e.g. `pi_proposal`). */
+    type?: string;
   }): Promise<void> {
-    if (!this.initialized) return;
+    if (!(await this.ensureReady())) {
+      console.warn(
+        "[push] dispatchChatPush skipped — push service not initialized (no profileDir init?)",
+      );
+      return;
+    }
 
     const tokens = this.store
       .listForOwner(params.targetOwnerId)
       .filter((r) => r.tokenType === "alert");
-    if (tokens.length === 0) return;
+    if (tokens.length === 0) {
+      console.warn(
+        `[push] dispatchChatPush: no alert tokens for owner=${params.targetOwnerId}`,
+      );
+      return;
+    }
 
     const title = params.senderName || "New message";
     const body =
@@ -690,6 +736,7 @@ export class PushNotificationService {
     };
     if (params.senderOwnerId) data.senderOwnerId = params.senderOwnerId;
     if (params.roomId) data.roomId = params.roomId;
+    if (params.type) data.type = params.type;
     // Include senderName so the client can display it in the chat header
     // when deep-linking from a push tap (before the thread loads).
     if (params.senderName) data.senderName = params.senderName;
@@ -708,7 +755,7 @@ export class PushNotificationService {
     /** Phase 50 — requester ownerId for deep-link routing (optional). */
     senderOwnerId?: string;
   }): Promise<void> {
-    if (!this.initialized) return;
+    if (!(await this.ensureReady())) return;
 
     const tokens = this.store
       .listForOwner(params.targetOwnerId)
@@ -740,7 +787,7 @@ export class PushNotificationService {
     /** Approval item id for deep-link routing. */
     itemId?: string;
   }): Promise<void> {
-    if (!this.initialized) return;
+    if (!(await this.ensureReady())) return;
 
     const tokens = this.store
       .listForOwner(params.targetOwnerId)
@@ -773,7 +820,7 @@ export class PushNotificationService {
     publisherOwnerId?: string;
     kind?: string;
   }): Promise<void> {
-    if (!this.initialized) return;
+    if (!(await this.ensureReady())) return;
 
     const tokens = this.store
       .listForOwner(params.targetOwnerId)
@@ -827,7 +874,7 @@ export class PushNotificationService {
     callId: string;
     callerOwnerId: string;
   }): Promise<void> {
-    if (!this.initialized) return;
+    if (!(await this.ensureReady())) return;
 
     const tokens = this.store.listForOwner(params.targetOwnerId);
     if (tokens.length === 0) return;

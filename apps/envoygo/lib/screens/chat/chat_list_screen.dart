@@ -256,7 +256,10 @@ class ChatListScreen extends ConsumerWidget {
             builder: (_) => ChatDetailScreen(
               threadId: thread.id,
               displayName: thread.displayName,
-              agentType: thread.agentType,
+              agentType: thread.agentType ??
+                  (thread.type == ChatThreadType.externalAgent
+                      ? 'external'
+                      : 'envoyai'),
             ),
           ),
         );
@@ -269,12 +272,16 @@ class ChatListScreen extends ConsumerWidget {
     }
 
     final isRoom = thread.type == ChatThreadType.group;
+    final contactOwnerId = isRoom
+        ? null
+        : (thread.contactOwnerId ??
+            threadPeerSuffix(thread.id, thread.nodeId));
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => ChatDetailScreen(
           threadId: thread.id,
           displayName: thread.displayName,
-          contactOwnerId: isRoom ? null : thread.contactOwnerId,
+          contactOwnerId: contactOwnerId,
           chatRoomId: isRoom ? thread.chatRoomId : null,
         ),
       ),

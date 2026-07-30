@@ -44,18 +44,24 @@ class ChatThread {
   });
 
   factory ChatThread.fromJson(Map<String, dynamic> json) {
+    DateTime? lastAt;
+    final rawLast = json['last_message_at'];
+    if (rawLast is String && rawLast.isNotEmpty) {
+      lastAt = DateTime.tryParse(rawLast);
+    }
+    final typeName = json['type'] as String?;
+    final type = ChatThreadType.values.asNameMap()[typeName ?? ''] ??
+        ChatThreadType.direct;
     return ChatThread(
       id: json['id'] as String,
       nodeId: json['node_id'] as String,
-      type: ChatThreadType.values.byName(json['type'] as String),
-      displayName: json['display_name'] as String,
+      type: type,
+      displayName: (json['display_name'] as String?) ?? '',
       contactOwnerId: json['contact_owner_id'] as String?,
       chatRoomId: json['chat_room_id'] as String?,
       agentType: json['agent_type'] as String?,
       lastMessageText: json['last_message_text'] as String?,
-      lastMessageAt: json['last_message_at'] != null
-          ? DateTime.parse(json['last_message_at'] as String)
-          : null,
+      lastMessageAt: lastAt,
       unreadCount: (json['unread_count'] as int?) ?? 0,
     );
   }

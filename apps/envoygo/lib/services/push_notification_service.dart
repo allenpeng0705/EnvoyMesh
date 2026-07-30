@@ -123,11 +123,21 @@ class PushNotificationService {
         'itemId': data['itemId'],
       };
     }
-    // Phase 50 — Pi tool-action push (senderName: "Pi", no threadType).
-    // Route to the Pi chat panel. EnvoyGo's main.dart handles this by
-    // switching to the Chats tab (the Pi thread appears there).
-    if (type == 'pi_proposal' || data['senderOwnerId'] == 'envoy:pi') {
+    // Phase 50 — Pi tool-action push only (type=pi_proposal).
+    // Do NOT treat senderOwnerId=envoy:pi as a proposal — Ext Agent Pi
+    // chat replies used that id historically and must open Ext Agent.
+    if (type == 'pi_proposal') {
       return {'type': 'pi_proposal'};
+    }
+    // Legacy Ext Agent Pi push → Ext Agent thread (not Contacts).
+    if (data['senderOwnerId'] == 'envoy:pi') {
+      return {
+        'threadType': 'external',
+        'senderOwnerId': null,
+        'agentType': 'external',
+        'senderName': data['senderName'] ?? 'Ext Agent',
+        'messageId': data['messageId'],
+      };
     }
     final threadType = data['threadType'] as String?;
     if (threadType == null) return null;
@@ -201,8 +211,13 @@ class PushNotificationService {
         params['ownerId'] = ownerId;
       }
       await callRpc('registerPushToken', params);
-    } catch (_) {
-      // Best-effort — push is optional.
+      debugPrint(
+        '[push] registerPushToken ok platform=${params['platform']} '
+        'owner=${ownerId ?? '(home default)'} '
+        'token=${token.length > 12 ? '${token.substring(0, 12)}…' : token}',
+      );
+    } catch (e) {
+      debugPrint('[push] registerPushToken failed: $e');
     }
   }
 
@@ -213,8 +228,16 @@ class PushNotificationService {
         final token = args['token'] as String?;
         if (token != null && token.isNotEmpty) {
           _token = token;
+          debugPrint(
+            '[push] got alert token len=${token.length} '
+            'prefix=${token.length > 12 ? '${token.substring(0, 12)}…' : token}',
+          );
           await _registerIfReady();
         }
+        return null;
+      case 'onAlertTokenError':
+        final args = (call.arguments as Map?)?.cast<String, dynamic>() ?? {};
+        debugPrint('[push] APNs registration failed: ${args['error']}');
         return null;
       case 'onNotificationTap':
         final args = (call.arguments as Map?)?.cast<String, dynamic>() ?? {};

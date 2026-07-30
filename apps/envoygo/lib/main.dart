@@ -111,39 +111,43 @@ class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
         ref.read(chatProvider.notifier).selectTab(1);
         break;
       case 'pi_proposal':
-        // Pi tool-action request → open the Pi Ext Agent chat thread so
-        // the user sees the confirm dialog. Pi is an Ext Agent with
-        // agentType 'pi', so its threadId is "nodeId:pi".
+        // Pi tool-action request → Chats tab (Pi TUI is under Terminals).
         ref.read(chatProvider.notifier).selectTab(0);
-        final piNodeId = ref.read(nodeProvider).activeNode?.id;
-        if (piNodeId != null) {
-          nav.push(MaterialPageRoute(
-            builder: (_) => ChatDetailScreen(
-              threadId: '$piNodeId:pi',
-              displayName: 'Pi',
-              agentType: 'pi',
-            ),
-          ));
-        }
         break;
       default:
-        // Chat thread (direct or room). The payload carries senderOwnerId
-        // (for direct chat) or roomId (for group chat). We assemble the
-        // threadId as "<nodeId>:<ownerId>" or "<nodeId>:<roomId>" to match
-        // the existing ChatDetailScreen navigation pattern.
+        // Chat thread (direct, room, or Ext Agent).
+        final threadType = hint['threadType'] as String?;
         final senderOwnerId = hint['senderOwnerId'] as String?;
         final roomId = hint['roomId'] as String?;
         final senderName = hint['senderName'] as String?;
-        if (senderOwnerId == null && roomId == null) return;
+        final agentType = hint['agentType'] as String?;
         final nodeId = ref.read(nodeProvider).activeNode?.id;
         if (nodeId == null) {
-          // Cold-start: active node not loaded yet. Buffer and retry
-          // after loadPairedNodes completes (in initState's microtask).
           _pendingColdStartTap = raw;
           return;
         }
-        // Switch to Chats tab (index 0) so the back stack makes sense.
         ref.read(chatProvider.notifier).selectTab(0);
+        if (threadType == 'external' || agentType == 'external') {
+          nav.push(MaterialPageRoute(
+            builder: (_) => ChatDetailScreen(
+              threadId: '$nodeId:external',
+              displayName: senderName ?? 'Ext Agent',
+              agentType: 'external',
+            ),
+          ));
+          break;
+        }
+        if (threadType == 'envoyai' || agentType == 'envoyai') {
+          nav.push(MaterialPageRoute(
+            builder: (_) => ChatDetailScreen(
+              threadId: '$nodeId:envoyai',
+              displayName: 'EnvoyAI',
+              agentType: 'envoyai',
+            ),
+          ));
+          break;
+        }
+        if (senderOwnerId == null && roomId == null) return;
         final threadId = roomId != null ? '$nodeId:$roomId' : '$nodeId:$senderOwnerId';
         nav.push(MaterialPageRoute(
           builder: (_) => ChatDetailScreen(

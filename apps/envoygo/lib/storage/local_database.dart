@@ -244,16 +244,41 @@ class LocalDatabase {
 
   // -- Message operations --
 
+  /// Columns accepted by the `messages` table. Extra keys (e.g. attachments
+  /// List) must be stripped — sqflite throws on unknown columns / nested types,
+  /// which crashed ChatDetailScreen when opening a contact thread with history.
+  static const _messageColumns = {
+    'id',
+    'thread_id',
+    'sender_owner_id',
+    'sender_display_name',
+    'text',
+    'created_at',
+    'is_outbound',
+  };
+
+  Map<String, dynamic> _messageRow(Map<String, dynamic> message) {
+    final row = <String, dynamic>{};
+    for (final key in _messageColumns) {
+      if (message.containsKey(key)) row[key] = message[key];
+    }
+    return row;
+  }
+
   /// Replace a temp (optimistic) message with the server version.
   Future<void> replaceMessage(String tempId, Map<String, dynamic> msg) async {
-    final db = await _ensureDb;
-    await db.update('messages', msg, where: 'id = ?', whereArgs: [tempId]);
+    await _ensureDb.update(
+      'messages',
+      _messageRow(msg),
+      where: 'id = ?',
+      whereArgs: [tempId],
+    );
   }
 
   Future<void> insertMessage(Map<String, dynamic> message) async {
     await _ensureDb.insert(
       'messages',
-      message,
+      _messageRow(message),
       conflictAlgorithm: ConflictAlgorithm.replace,
     );
   }
