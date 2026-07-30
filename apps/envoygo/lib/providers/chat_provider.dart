@@ -955,11 +955,24 @@ class ChatNotifier extends StateNotifier<ChatState> {
     );
 
     final isEnvoyAi = agentType == 'envoyai';
+    final isBot = agentType.startsWith('bot:');
     _upsertThread(
       threadId: threadId,
       nodeId: nodeState.activeNode!.id,
-      type: isEnvoyAi ? ChatThreadType.envoyai : ChatThreadType.externalAgent,
-      displayName: isEnvoyAi ? 'EnvoyAI' : 'Ext Agent',
+      type: isEnvoyAi
+          ? ChatThreadType.envoyai
+          : isBot
+              ? ChatThreadType.aiBot
+              : ChatThreadType.externalAgent,
+      displayName: isEnvoyAi
+          ? 'EnvoyAI'
+          : isBot
+              ? state.threads
+                  .where((t) => t.id == threadId)
+                  .firstOrNull
+                  ?.displayName ??
+                  agentType
+              : 'Ext Agent',
       agentType: agentType,
       lastMessageText: text,
       lastMessageAt: DateTime.now(),

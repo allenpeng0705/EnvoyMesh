@@ -1850,20 +1850,22 @@ export function SettingsAITab() {
   }, [nodeService, updateNodeConfigPartial, nodeConfig?.piSettings]);
 
   // ---- AI Character Bots ----
-  const [_botDraft, setBotDraft] = useState({ name: "", systemPrompt: "", description: "", avatarColor: "#6366f1" });
-  const [_botSaving, setBotSaving] = useState(false);
-  const [_botError, setBotError] = useState<string | null>(null);
+  const [botDraft, setBotDraft] = useState({ name: "", systemPrompt: "", description: "", avatarColor: "#6366f1" });
+  const [botSaving, setBotSaving] = useState(false);
+  const [botError, setBotError] = useState<string | null>(null);
+  const [botSaved, setBotSaved] = useState(false);
+  const [showBotForm, setShowBotForm] = useState(false);
 
-  const _addBot = useCallback(async () => {
-    const name = _botDraft.name.trim();
-    const systemPrompt = _botDraft.systemPrompt.trim();
+  const handleAddBot = useCallback(async () => {
+    const name = botDraft.name.trim();
+    const systemPrompt = botDraft.systemPrompt.trim();
     if (!name || !systemPrompt) return;
     setBotSaving(true);
     setBotError(null);
+    setBotSaved(false);
     try {
       const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `bot-${Date.now()}`;
       const existing = nodeConfig?.aiBots ?? [];
-      // Ensure unique id.
       let uniqueId = id;
       let counter = 1;
       while (existing.some((b) => b.id === uniqueId)) {
@@ -1875,21 +1877,24 @@ export function SettingsAITab() {
           id: uniqueId,
           name,
           systemPrompt,
-          description: _botDraft.description.trim() || undefined,
-          avatarColor: _botDraft.avatarColor,
+          description: botDraft.description.trim() || undefined,
+          avatarColor: botDraft.avatarColor,
           enabled: true,
         },
       ];
       await updateNodeConfigPartial({ aiBots: newBots });
       setBotDraft({ name: "", systemPrompt: "", description: "", avatarColor: "#6366f1" });
+      setShowBotForm(false);
+      setBotSaved(true);
+      setTimeout(() => setBotSaved(false), 2000);
     } catch (err) {
       setBotError(err instanceof Error ? err.message : String(err));
     } finally {
       setBotSaving(false);
     }
-  }, [_botDraft, nodeConfig?.aiBots, updateNodeConfigPartial]);
+  }, [botDraft, nodeConfig?.aiBots, updateNodeConfigPartial]);
 
-  const _deleteBot = useCallback(async (botId: string) => {
+  const handleDeleteBot = useCallback(async (botId: string) => {
     try {
       const existing = nodeConfig?.aiBots ?? [];
       const newBots = existing.filter((b) => b.id !== botId);
@@ -2373,123 +2378,155 @@ export function SettingsAITab() {
           {t("settings.ai.aiBots.desc", "Create custom AI characters with unique personalities. They appear in your chat list and sync to all your devices automatically.")}
         </p>
 
-        {/* Existing bots list */}
-        {(nodeConfig?.aiBots ?? []).length > 0 ? (
-          <div className="agent-block-fields">
-            {(nodeConfig?.aiBots ?? []).map((bot) => (
-              <div key={bot.id} className="agent-field agent-field--readonly">
-                <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", width: "100%" }}>
-                  <span
-                    className="thread-avatar"
-                    style={{
-                      background: bot.avatarColor ?? "#6366f1",
-                      width: "2rem",
-                      height: "2rem",
-                      borderRadius: "0.5rem",
-                      display: "inline-flex",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      color: "#fff",
-                      fontSize: "0.8rem",
-                      fontWeight: 600,
-                      flexShrink: 0,
-                    }}
-                  >
-                    {(bot.name ?? bot.id).charAt(0).toUpperCase()}
-                  </span>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 500, fontSize: "0.85rem" }}>
-                      {bot.name} {bot.enabled === false ? "(disabled)" : ""}
-                    </div>
-                    {bot.description ? (
-                      <div style={{ fontSize: "0.75rem", color: "var(--color-text-muted, #64748b)" }}>
-                        {bot.description}
+        <div className="agent-block">
+          {/* Existing bots list */}
+          {(nodeConfig?.aiBots ?? []).length > 0 ? (
+            <div className="agent-block-fields">
+              {(nodeConfig?.aiBots ?? []).map((bot) => (
+                <div key={bot.id} className="agent-field agent-field--readonly">
+                  <div style={{ display: "flex", alignItems: "center", gap: "0.5rem", width: "100%" }}>
+                    <span
+                      style={{
+                        background: bot.avatarColor ?? "#6366f1",
+                        width: "2rem",
+                        height: "2rem",
+                        borderRadius: "0.5rem",
+                        display: "inline-flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        color: "#fff",
+                        fontSize: "0.8rem",
+                        fontWeight: 600,
+                        flexShrink: 0,
+                      }}
+                    >
+                      {(bot.name ?? bot.id).charAt(0).toUpperCase()}
+                    </span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 500, fontSize: "0.85rem" }}>
+                        {bot.name} {bot.enabled === false ? "(disabled)" : ""}
                       </div>
-                    ) : null}
+                      {bot.description ? (
+                        <div style={{ fontSize: "0.75rem", color: "var(--color-text-muted, #64748b)" }}>
+                          {bot.description}
+                        </div>
+                      ) : null}
+                    </div>
+                    <button
+                      type="button"
+                      className="settings-action-btn"
+                      onClick={() => { void handleDeleteBot(bot.id) }}
+                      style={{ color: "var(--color-danger, #ef4444)", border: "1px solid var(--color-border, #e2e8f0)" }}
+                    >
+                      {t("settings.ai.aiBots.delete", "Delete")}
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    className="settings-action-btn"
-                    onClick={() => { void _deleteBot(bot.id) }}
-                    style={{ color: "var(--color-danger, #ef4444)", border: "1px solid var(--color-border, #e2e8f0)" }}
-                  >
-                    {t("settings.ai.aiBots.delete", "Delete")}
-                  </button>
                 </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="settings-hint">
-            {t("settings.ai.aiBots.empty", "No bots yet. Create one below.")}
-          </p>
-        )}
+              ))}
+            </div>
+          ) : (
+            <p className="settings-hint">
+              {t("settings.ai.aiBots.empty", "No bots yet. Click \"Add Bot\" to create one.")}
+            </p>
+          )}
 
-        {/* Create new bot form */}
-        <div className="agent-block-fields" style={{ marginTop: "0.75rem" }}>
-          <div className="agent-field">
-            <label className="agent-field-label">
-              {t("settings.ai.aiBots.name", "Bot name")}
-            </label>
-            <input
-              type="text"
-              className="agent-field-input"
-              value={_botDraft.name}
-              onChange={(e) => setBotDraft({ ..._botDraft, name: e.target.value })}
-              placeholder={t("settings.ai.aiBots.namePlaceholder", "e.g. Luna the Librarian")}
-            />
-          </div>
-          <div className="agent-field">
-            <label className="agent-field-label">
-              {t("settings.ai.aiBots.personality", "Personality / System prompt")}
-            </label>
-            <textarea
-              className="agent-field-input"
-              value={_botDraft.systemPrompt}
-              onChange={(e) => setBotDraft({ ..._botDraft, systemPrompt: e.target.value })}
-              placeholder={t("settings.ai.aiBots.personalityPlaceholder", "Describe the character: personality, speaking style, expertise…")}
-              rows={3}
-              style={{ fontFamily: "inherit", fontSize: "0.85rem", resize: "vertical" }}
-            />
-          </div>
-          <div className="agent-field">
-            <label className="agent-field-label">
-              {t("settings.ai.aiBots.description", "Short description (optional)")}
-            </label>
-            <input
-              type="text"
-              className="agent-field-input"
-              value={_botDraft.description}
-              onChange={(e) => setBotDraft({ ..._botDraft, description: e.target.value })}
-              placeholder={t("settings.ai.aiBots.descPlaceholder", "A wise guide for knowledge seekers")}
-            />
-          </div>
-          <div className="agent-field">
-            <label className="agent-field-label">
-              {t("settings.ai.aiBots.avatarColor", "Avatar color")}
-            </label>
-            <input
-              type="color"
-              value={_botDraft.avatarColor ?? "#6366f1"}
-              onChange={(e) => setBotDraft({ ..._botDraft, avatarColor: e.target.value })}
-              style={{ width: "3rem", height: "2rem", border: "1px solid var(--color-border, #e2e8f0)", borderRadius: "0.375rem", cursor: "pointer" }}
-            />
-          </div>
-          <div className="agent-block-actions">
-            <button
-              type="button"
-              className="settings-action-btn"
-              onClick={() => { void _addBot() }}
-              disabled={!_botDraft.name.trim() || !_botDraft.systemPrompt.trim() || _botSaving}
-            >
-              {_botSaving
-                ? t("settings.ai.aiBots.saving", "Saving…")
-                : t("settings.ai.aiBots.add", "Add Bot")}
-            </button>
-          </div>
-          {_botError ? (
-            <p className="pi-error">{_botError}</p>
+          {botSaved ? (
+            <p className="settings-hint" style={{ color: "#10b981" }}>
+              {t("settings.ai.aiBots.saved", "Bot added! It will appear in your chat list.")}
+            </p>
           ) : null}
+
+          {/* Add Bot form — collapsible */}
+          {showBotForm ? (
+            <div className="agent-block-fields" style={{ marginTop: "0.75rem" }}>
+              <div className="agent-field">
+                <label className="agent-field-label">
+                  {t("settings.ai.aiBots.name", "Bot name")}
+                </label>
+                <input
+                  type="text"
+                  className="agent-field-input"
+                  value={botDraft.name}
+                  onChange={(e) => setBotDraft({ ...botDraft, name: e.target.value })}
+                  placeholder={t("settings.ai.aiBots.namePlaceholder", "e.g. Luna the Librarian")}
+                  autoFocus
+                />
+              </div>
+              <div className="agent-field">
+                <label className="agent-field-label">
+                  {t("settings.ai.aiBots.personality", "Personality / System prompt")}
+                </label>
+                <textarea
+                  className="agent-field-input"
+                  value={botDraft.systemPrompt}
+                  onChange={(e) => setBotDraft({ ...botDraft, systemPrompt: e.target.value })}
+                  placeholder={t("settings.ai.aiBots.personalityPlaceholder", "Describe the character: personality, speaking style, expertise…")}
+                  rows={3}
+                  style={{ fontFamily: "inherit", fontSize: "0.85rem", resize: "vertical" }}
+                />
+              </div>
+              <div className="agent-field">
+                <label className="agent-field-label">
+                  {t("settings.ai.aiBots.description", "Short description (optional)")}
+                </label>
+                <input
+                  type="text"
+                  className="agent-field-input"
+                  value={botDraft.description}
+                  onChange={(e) => setBotDraft({ ...botDraft, description: e.target.value })}
+                  placeholder={t("settings.ai.aiBots.descPlaceholder", "A wise guide for knowledge seekers")}
+                />
+              </div>
+              <div className="agent-field">
+                <label className="agent-field-label">
+                  {t("settings.ai.aiBots.avatarColor", "Avatar color")}
+                </label>
+                <input
+                  type="color"
+                  value={botDraft.avatarColor ?? "#6366f1"}
+                  onChange={(e) => setBotDraft({ ...botDraft, avatarColor: e.target.value })}
+                  style={{ width: "3rem", height: "2rem", border: "1px solid var(--color-border, #e2e8f0)", borderRadius: "0.375rem", cursor: "pointer" }}
+                />
+              </div>
+              {botError ? (
+                <p className="pi-error">{botError}</p>
+              ) : null}
+            </div>
+          ) : null}
+
+          {/* Action buttons */}
+          <div className="agent-block-actions">
+            {showBotForm ? (
+              <>
+                <button
+                  type="button"
+                  className="settings-save-btn"
+                  onClick={() => { void handleAddBot() }}
+                  disabled={!botDraft.name.trim() || !botDraft.systemPrompt.trim() || botSaving}
+                >
+                  {botSaving
+                    ? t("settings.ai.aiBots.saving", "Saving…")
+                    : t("settings.ai.aiBots.create", "Create Bot")}
+                </button>
+                <button
+                  type="button"
+                  className="settings-action-btn"
+                  onClick={() => { setShowBotForm(false); setBotError(null); }}
+                  disabled={botSaving}
+                >
+                  {t("settings.ai.aiBots.cancel", "Cancel")}
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                className="settings-action-btn"
+                onClick={() => { setShowBotForm(true); setBotError(null); }}
+              >
+                + {t("settings.ai.aiBots.add", "Add Bot")}
+              </button>
+            )}
+          </div>
         </div>
       </section>
 
