@@ -86,6 +86,7 @@ Maintenance rule: keep this file as the source of truth for **done / left / next
 - [Phase 48 — A2A + MCP Interop Bridges](#phase-48--a2a--mcp-interop-bridges-shipped--48a48d-48d5-deferred)
 - [Phase 49 — Pi as Built-in Local Coding Agent](#phase-49--pi-as-built-in-local-coding-agent-designed)
 - [Phase 50 — Push Notification Coverage (home node → EnvoyGo)](#phase-50--push-notification-coverage-home-node--envoygo--slice-a-shipped-b-h-planned)
+- [Phase 51 — Family Network (multi-profile private social network)](#phase-51--family-network-multi-profile-private-social-network--designed)
 
 EnvoyMesh is a TypeScript-first, owner-controlled, peer-to-peer agent network.
 
@@ -6458,10 +6459,108 @@ Closes the production path after 48A–48D protocol/mount work.
 
 ---
 
+## Phase 51 — Family Network (multi-profile private social network) **`[~]` designed**
+
+**Goal:** Turn one EnvoyMesh home node into a **private family social network**. The home computer becomes a personal server — family members pair their phones via EnvoyGo, get their own profiles, chat with each other, talk to AI, and share nothing with Big Tech. No cloud. No subscription.
+
+**Authoritative design:** [family_network.md](./family_network.md)
+
+**Core idea:** One home node, multiple profiles. The **owner** (the person who sets up the node) has full features. **Family members** get a focused subset: AI conversations (EnvoyAI, bots, Ext Agent), family direct + group chat, push notifications. No terminal, no Pi, no external mesh contacts, no infrastructure settings.
+
+**Design decisions (2026-07-30):**
+
+| Decision | Rationale |
+|---|---|
+| Profiles are lightweight, local-only identities (not mesh DIDs) | Family members don't need P2P identity — the home node is their server |
+| No profile switching | Each device is locked to one profile at pairing time. Simple mental model: your phone = your stuff |
+| All contacts are per-profile (no shared trust store) | One store, one rule — every bond carries `profileId`. Family auto-bonded; external mesh = owner-only |
+| Owner = full features; family = AI + chat + push | Family members don't need terminal, Pi, mesh bonding, or node settings |
+| Family invite QR ≠ normal pairing QR | Normal QR auto-creates owner profile; family invite QR is a single-use token for non-owner profiles |
+| Messages between family members are local-only (no mesh) | Instant, no relay latency. The home node is the "WhatsApp server" |
+| Model config shared (one API key for all profiles) | Owner pays once; everyone uses the same LLM |
+| Bots per-profile (each person creates their own) | Private — Dad's bots ≠ Mom's bots |
+
+### 51A — Profile model + pairing `[ ]`
+
+- `[ ]` `family-profiles.json` store (CRUD with `isOwner` flag) in `packages/local-store`
+- `[ ]` `FamilyProfile` type in `packages/api/src` (id, name, avatarColor, isOwner, active, aiBots)
+- `[ ]` Session token → `profileId` binding in `packages/local-store/src/session-token-store.ts`
+- `[ ]` Pairing flow: "Who are you?" (select/create profile) — normal QR auto-creates owner, family invite QR creates non-owner
+- `[ ]` Family invite QR generation + single-use token in `apps/node/src`
+- `[ ]` Owner profile auto-created on first boot (migration from single-user)
+- `[ ]` Config sync: `familyProfiles` in `home:config-updated` broadcast
+- `[ ]` Owner-only RPC guard (reject `updateNodeConfig` / `ensureTerminalSession` / mesh bonding from non-owner profiles)
+- `[ ]` Backward compatibility: existing session tokens backfilled with `profileId = "owner"`
+
+### 51B — Thread namespacing + data isolation `[ ]`
+
+- `[ ]` Thread key convention: `<threadKey>:<profileId>` for all AI/bot/agent threads
+- `[ ]` Family direct chat thread key: `family:<sortedProfileA>:<sortedProfileB>`
+- `[ ]` `listChatHistory` filter by profile namespace
+- `[ ]` `sendToOpenClaw` / `sendToAiBot` accept `profileId` from session token
+- `[ ]` Chat log store: per-profile query filter
+- `[ ]` Bot definitions: migrate from `node-config.aiBots` to per-profile `family-profiles.json`
+- `[ ]` Push routing: per-profile token matching + `isProfileOnline(profileId)`
+- `[ ]` Vault: per-profile subdirectory `<profileDir>/vault/<profileId>/`
+- `[ ]` Backward compat: auto-append `:owner` profile namespace when missing
+
+### 51C — Family contacts + auto-bonding `[ ]`
+
+- `[ ]` Trust store: add `profileId` to every bond record
+- `[ ]` Auto-bonding: new profile → added to all active profiles' contacts (level: "family")
+- `[ ]` `sendFamilyMessage({ toProfileId, text })` RPC — local-only routing (no mesh)
+- `[ ]` Inbound family message: persist + emit filtered to recipient profile's WS + push if offline
+- `[ ]` Profile presence: `lastSeenAt` tracking + `isProfileOnline(profileId)`
+- `[ ]` Profile deactivation: appears offline to others but stays in their contact list
+- `[ ]` External mesh routing: inbound messages match bond's `profileId` (owner-only for non-owner profiles)
+- `[ ]` Backward compat: existing bonds backfilled with `profileId = "owner"`
+
+### 51D — Group chat integration `[ ]`
+
+- `[ ]` Room creation: `memberProfileIds` field on `ChatRoom`
+- `[ ]` Room membership filter by profile (only members see the room)
+- `[ ]` "Create group" UI includes family contacts alongside mesh contacts (owner-only for mesh)
+- `[ ]` Room messages scoped by profile (emit filtered to members only)
+
+### 51E — EnvoyGo UI `[ ]`
+
+- `[ ]` Pairing screen: profile selection / creation (name + avatar color)
+- `[ ]` Feature gating: hide owner-only features for non-owner profiles (no Terminals tab, no Node settings, no mesh Discover, no Model Provider, no Pi)
+- `[ ]` Chat list: family contacts section (auto-bonded, always present)
+- `[ ]` Direct chat with family member (new chat type)
+- `[ ]` Group chat: include family members in room creation
+- `[ ]` Per-profile bot management (their own bots — Settings → Bots)
+- `[ ]` Push toggle (per-profile, Me → Preferences)
+- `[ ]` Profile display: name + avatar color in Me screen
+- `[ ]` Owner's EnvoyGo: all settings tabs visible (Model Provider, AI Engine, Pi, Bots, Node, Devices, Family)
+- `[ ]` Non-owner's EnvoyGo: simple settings (Bots, Push toggle only)
+
+### 51F — Social UI (owner desktop) `[ ]`
+
+- `[ ]` Settings → Family: profile management (create, rename, avatar, delete, deactivate)
+- `[ ]` Family invite QR generation + display
+- `[ ]` Desktop always runs as owner profile
+- `[ ]` Owner's family contacts visible in chat sidebar (alongside mesh contacts)
+- `[ ]` Direct chat with family member from desktop
+
+### Exit Criteria (Phase 51 overall)
+
+- `[ ]` Owner can create profiles; family members pair via QR + profile selection
+- `[ ]` Each profile has isolated AI threads, bots, vault, and push — no cross-profile visibility
+- `[ ]` Family members auto-appear in each other's contact list
+- `[ ]` Family members can direct-chat + create group chats with each other
+- `[ ]` Push notifications route per-profile (Mom's phone doesn't buzz for Dad's messages)
+- `[ ]` Family members cannot access: terminal, Pi, external mesh bonding, node settings, model provider config
+- `[ ]` Owner can use both phone (EnvoyGo) and desktop (Social UI) with all features
+- `[ ]` Existing single-user installations upgrade transparently (owner profile auto-created, data migrated)
+
+---
+
 ## Changelog (this document)
 
 | Date | Change |
 |------|--------|
+| 2026-07-30 | **Phase 51 — Family Network designed.** New phase: turn one home node into a multi-profile private social network. The home computer becomes a personal server — family members pair their phones, get isolated profiles (AI, bots, chat, push), auto-bonded family contacts, and a focused feature subset (no terminal, Pi, mesh, or node settings). Owner has full features + admin rights. 6 slices (51A–51F): profile model + pairing, thread namespacing + isolation, family contacts + auto-bonding, group chat, EnvoyGo UI, Social UI. ~8 days. Authoritative design: [family_network.md](./family_network.md). |
 | 2026-07-28 | **Phase 50 Slice A shipped (push-notification highest-priority fixes).** Two bugs fixed: (1) Direct chat push was broken in production — `dispatchChatPush` was wired only on the legacy Path B (`index.ts:1904`), bypassed by the production internal-mesh handler (`usesInternalMeshInboundHandlers()` short-circuit). EnvoyGo's home node always runs Path A, where the handler at `node-service-handlers-chat-message.ts:146` emitted `chat:message` but never pushed. Fix: added `dispatchChatPushIfOffline` to `ChatMessageContext`, wired from `node-service-impl-service-deps.ts` with skip-if-online gate, called after the emit. (2) `dispatchBondPush` was fully implemented but had zero call sites (dead code); wired into the `hello:request` callback at `index.ts:2314`. Also unblocked the in-flight Pi-as-Ext-Agent build (added `'pi'` port placeholder in `ext-agent-adapter/manager.ts`, `sendToPiForExtAgent` alias on NodeServiceImpl, `pi-terminal-session.ts` stub, MobileNode `ensurePiTerminalSession` proxy, fixed value-vs-type imports). Full Phase 50 design + slices B-H planned in [push-notification-coverage.md](./push-notification-coverage.md). |
 | 2026-07-28 | **Phase 49 — Pi as Built-in Local Coding Agent designed.** New phase adding [Pi](https://github.com/earendil-works/pi) (earendil-works coding agent harness) as a third agent engine alongside Built-in OpenClaw + Remote Ext Agent. Pi is local-only (filesystem + shell, **no `mesh.*` tools** — OpenClaw stays the sole network boundary per `AGENTS.md:213`), inherits EnvoyMesh's model config by default, reuses the Phase 30 `TerminalCommandProposal` permission flow (default `always-confirm`, trust mode opt-in), and ships as a separate sidecar mirroring the OpenClaw bundle pattern. Slices 49A–49F cover bundle/runtime/chat-panel/permissions/terminal/settings. Authoritative design: [pi-integration-design.md](./pi-integration-design.md). |
 | 2026-07-28 | **Phase 49 Slice 49A shipped (bundle + sidecar staging).** New scripts: `fetch-pi-sidecar.sh` / `.ps1` (npm-install pinned `@earendil-works/pi-coding-agent@0.82.x` + transitive deps into `resources/pi/`), `stage-tauri-pi-bundle.sh` (prune source maps / TS sources / tests / cross-platform native prebuilds, verify CLI + SDK entries). `build-desktop.sh` + `.ps1` updated to stage Pi alongside Node/OpenClaw (new `-ForcePi` / `-SkipPi` switches on Windows; `# 1d. Pi agent` block, verify step renumbered `1e`). `tauri.conf.json` + `tauri.conf.full.json` add `resources/pi/**/*`; `tauri.conf.slim.json` intentionally omits Pi (Windows slim builds). `verify-tauri-resources.sh` adds conditional Pi presence check. **Smoke-tested:** Pi installs (140 packages), stages, prunes, and passes verify. **Measured bundle size: ~170 MB unpacked** (5 cloud SDKs statically imported by `pi-ai` — cannot prune); installer compression (~3:1) brings it to ~55 MB in-DMG. Windows slim builds omit Pi entirely. |
