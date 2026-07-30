@@ -1711,19 +1711,17 @@ class NodeServiceImpl implements NodeService {
         // or replay, not a real-time event the user needs a push for.
         const ageMs = Date.now() - new Date(item.requestedAt).getTime()
         if (ageMs > 60_000) continue
-        // Best-effort push; skip-if-online matches the chat listener pattern.
-        void this.isOwnerOnline().then((online: boolean) => {
-          if (online) return
-          const senderName = item.context?.contactDisplayName ?? "Unknown contact"
-          void pushNotificationService
-            .dispatchApprovalPush({
-              targetOwnerId,
-              title: "Approval needed",
-              body: `${senderName}: ${item.title}`.slice(0, 120),
-              itemId: item.id,
-            })
-            .catch(() => {})
-        })
+        // Best-effort push; skip only when EnvoyGo already has a live WS.
+        if (this.isThinClientOnline(targetOwnerId)) continue
+        const senderName = item.context?.contactDisplayName ?? "Unknown contact"
+        void pushNotificationService
+          .dispatchApprovalPush({
+            targetOwnerId,
+            title: "Approval needed",
+            body: `${senderName}: ${item.title}`.slice(0, 120),
+            itemId: item.id,
+          })
+          .catch(() => {})
       }
       // Prune seen set for items no longer pending (approved/rejected/expired).
       const currentIds = new Set(currentPending.map((i) => i.id))
@@ -1953,6 +1951,11 @@ class NodeServiceImpl implements NodeService {
     if (profileDir && profileDir !== "/tmp/unknown") {
       this._discoverySeedStore = createDiscoverySeedStore(profileDir);
       this._capabilityIndexReady = this._capabilityIndex.init(profileDir);
+      // Also init push here so Tauri/embedded NodeServiceImpl paths work
+      // even when index.ts bootstrap is not used.
+      void pushNotificationService.init(profileDir).catch((err: unknown) => {
+        console.warn("[node-service] push notification service init failed:", err);
+      });
     }
     if (profile !== undefined) {
       this._profile = profile;
@@ -1963,50 +1966,68 @@ class NodeServiceImpl implements NodeService {
     this._wireCallManagerRemoteSignals();
     // Phase 50 — unified push-notification listener.
     //
-    // ONE subscriber catches chat:message events from EVERY source:
+    // ONE subscriber catches chat events from EVERY source:
     // direct peer chat, group chat, EnvoyAI/OpenClaw replies, Ext Agent
-    // (HomeClaw/Hermes/OpenHuman/Pi) replies. The sources stay decoupled —
-    // they just emit messages as they do today; this listener decides
-    // whether to push based on whether paired devices are connected.
+    // (HomeClaw/Hermes/OpenHuman/Pi) replies. Sources just emit; this
+    // listener decides whether to push.
     //
-    // The "skip if online" gate (isOwnerOnline) prevents the
-    // double-notification when EnvoyGo has an active WebSocket.
+    // Skip-if-online = EnvoyGo recently active on authenticated WS
+    // (`isThinClientOnline` → hasRecentlyActiveClientForOwner), NOT
+    // owner presence / Desktop Social.
     //
-    // Two event names feed this listener:
-    //   "chat:message" — real chat messages forwarded to the UI by ws-server
-    //   "push:message" — push-only events (e.g. Pi responses) that should
-    //     trigger a notification but NOT appear in the chat UI. ws-server
-    //     does NOT forward "push:message" to clients.
-    const pushHandler = (msg: ChatMessage) => {
-      // Push target is always the home owner — every message on this node
-      // is ultimately for the owner (direct chat, group, EnvoyAI assistant
-      // reply, Ext Agent reply, Pi response). We DON'T gate on
-      // msg.recipient.ownerId matching the home owner because some message
-      // types use synthetic thread keys (e.g. EnvoyAI uses
-      // recipient.ownerId = ENVOY_AI_THREAD_KEY, not the owner id).
-      // Instead we skip the user's own outgoing echoes and let everything
-      // else through to the skip-if-online + push gate.
+    // Event names:
+    //   "chat:message" — 1:1 / AI / Ext Agent
+    //   "chat:room-message" — group rooms ({ roomId, message })
+    //   "push:message" — push-only (e.g. direct Pi RPC); not forwarded to WS UI
+    //   "pi:proposal" — Pi tool-action confirm
+    const maybePushChat = (
+      msg: ChatMessage,
+      opts?: { threadType?: "direct" | "room" | "external" | "envoyai"; roomId?: string },
+    ) => {
       const homeOwnerId = this._profile?.owner?.ownerId
       if (!homeOwnerId) return
-      // Don't push the user's OWN outgoing messages (some flows echo them).
+      // Don't push the user's OWN outgoing echoes (or system rows keyed as owner).
       if (msg.sender.ownerId && msg.sender.ownerId === homeOwnerId) {
         return
       }
-      void this.isOwnerOnline().then((online: boolean) => {
-        if (online) return
-        void pushNotificationService
-          .dispatchChatPush({
-            senderName: msg.sender.displayName ?? msg.sender.ownerId ?? "New message",
-            messagePreview: (msg.content?.text ?? "").slice(0, 120),
-            targetOwnerId: homeOwnerId,
-            messageId: msg.messageId,
-            senderOwnerId: msg.sender.ownerId ?? "",
-          })
-          .catch(() => {})
-      })
+      const preview = (msg.content?.text ?? "").trim()
+      if (!preview) return
+      if (this.isThinClientOnline(homeOwnerId)) return
+
+      const channel = msg.metadata?.deliveryChannel
+      const source = msg.metadata?.deliverySource
+      const senderId = msg.sender.ownerId ?? ""
+      const isBridgeAgent =
+        (channel === "agent" && source === "bridge") ||
+        senderId === "envoy:pi"
+      const isBuiltinAi = channel === "ai" || senderId === "__envoy_ai__"
+      const threadType =
+        opts?.threadType ??
+        (isBridgeAgent ? "external" : isBuiltinAi ? "envoyai" : undefined)
+
+      void pushNotificationService
+        .dispatchChatPush({
+          senderName: msg.sender.displayName ?? msg.sender.ownerId ?? "New message",
+          messagePreview: preview.slice(0, 120),
+          targetOwnerId: homeOwnerId,
+          messageId: msg.messageId,
+          senderOwnerId: isBridgeAgent || isBuiltinAi ? undefined : senderId,
+          threadType,
+          roomId: opts?.roomId,
+        })
+        .catch(() => {})
     }
-    this.on("chat:message", pushHandler)
-    this.on("push:message", pushHandler)
+
+    this.on("chat:message", (msg: ChatMessage) => maybePushChat(msg))
+    this.on("push:message", (msg: ChatMessage) => maybePushChat(msg))
+    this.on(
+      "chat:room-message",
+      (event: { roomId?: string; message?: ChatMessage }) => {
+        const msg = event?.message
+        if (!msg || !event.roomId) return
+        maybePushChat(msg, { threadType: "room", roomId: event.roomId })
+      },
+    )
     // Phase 50 — Pi tool-action request push (separate event type).
     // Fires when Pi asks the user to approve a tool call (file edit, bash).
     // The confirm-dialog is in-app; this wakes backgrounded devices.
@@ -2015,18 +2036,17 @@ class NodeServiceImpl implements NodeService {
       if (!proposal) return
       const targetOwnerId = this._profile?.owner?.ownerId
       if (!targetOwnerId) return
-      void this.isOwnerOnline().then((online: boolean) => {
-        if (online) return
-        void pushNotificationService
-          .dispatchChatPush({
-            senderName: "Pi",
-            messagePreview: `${proposal.title}: ${proposal.message}`.slice(0, 120),
-            targetOwnerId,
-            messageId: `pi-proposal-${proposal.uiRequestId}`,
-            senderOwnerId: "envoy:pi",
-          })
-          .catch(() => {})
-      })
+      if (this.isThinClientOnline(targetOwnerId)) return
+      void pushNotificationService
+        .dispatchChatPush({
+          senderName: "Pi",
+          messagePreview: `${proposal.title}: ${proposal.message}`.slice(0, 120),
+          targetOwnerId,
+          messageId: `pi-proposal-${proposal.uiRequestId}`,
+          type: "pi_proposal",
+          threadType: "external",
+        })
+        .catch(() => {})
     })
   }
 
@@ -3864,20 +3884,36 @@ class NodeServiceImpl implements NodeService {
 
   /** One-shot prompt — used by the sendToPi JSON-RPC method. */
   async sendToPi(text: string): Promise<string> {
+    return this._sendToPiInternal(text, { emitPushHint: true })
+  }
+
+  /**
+   * Ext Agent adapter path (active Ext Agent = Pi). Bridge already emits
+   * `chat:message` with the bridge agent peer id after the sidecar replies —
+   * do NOT emit a parallel `push:message` with synthetic `envoy:pi` (that
+   * created a fake Contacts thread on EnvoyGo and a wrong push deep-link).
+   */
+  async sendToPiForExtAgent(text: string): Promise<string> {
+    return this._sendToPiInternal(text, { emitPushHint: false })
+  }
+
+  private async _sendToPiInternal(
+    text: string,
+    opts: { emitPushHint: boolean },
+  ): Promise<string> {
     const result = await askPiViaRuntime(this._piState, this._piRuntimeDeps(), text)
-    // Phase 50 — emit a push-only event so the unified push listener
-    // (constructor) can fire a notification if the user is backgrounded.
-    // We deliberately use "push:message" (NOT "chat:message") so the
-    // ws-server does NOT forward this to the Social UI — Pi responses
-    // are returned via the RPC result, not as chat messages. Without
-    // this separation, Pi responses would land in the Inbox.
-    if (result.text) {
+    // Direct sendToPi RPC only: wake backgrounded devices. Ext Agent replies
+    // are notified via the normal bridge `chat:message` → push listener.
+    if (opts.emitPushHint && result.text) {
+      const bridgePeer = this._bridgeStatus?.agentPeerId?.trim()
+      const bridgeName = this._bridgeStatus?.agentName?.trim()
       this.emit("push:message", {
         messageId: `pi-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
         sender: {
-          nodeId: "pi",
-          displayName: "Pi",
-          ownerId: "envoy:pi",
+          nodeId: bridgePeer || "pi",
+          displayName: bridgeName || "Pi",
+          // Prefer bridge agent peer so clients route to Ext Agent, not Contacts.
+          ownerId: bridgePeer || "envoy:pi",
           actorRole: "agent" as const,
         },
         recipient: {
@@ -3885,22 +3921,15 @@ class NodeServiceImpl implements NodeService {
           ownerId: this._profile?.owner?.ownerId ?? "",
         },
         content: { text: result.text },
-        metadata: { timestamp: new Date().toISOString(), deliveryReceipt: "delivered" as const },
+        metadata: {
+          timestamp: new Date().toISOString(),
+          deliveryReceipt: "delivered" as const,
+          deliveryChannel: "agent" as const,
+          deliverySource: "bridge" as const,
+        },
       } as ChatMessage)
     }
     return result.text
-  }
-
-  /**
-   * Phase 49 (in-flight) — alias for sendToPi used by the Ext Agent sidecar
-   * adapter (apps/node/src/ext-agent-adapter). The adapter routes inbound
-   * Ext Agent chat to the built-in Pi runtime when 'pi' is the active Ext
-   * Agent. Delegates to sendToPi; kept as a distinct method name so the
-   * adapter call site reads cleanly and so a future fork can diverge
-   * (e.g. add session scoping) without touching the JSON-RPC path.
-   */
-  async sendToPiForExtAgent(text: string): Promise<string> {
-    return this.sendToPi(text)
   }
 
   /**
@@ -4952,6 +4981,13 @@ class NodeServiceImpl implements NodeService {
     if (normalizedKey === ENVOY_AI_THREAD_KEY || normalizedKey === "envoyai") {
       return this._loadEnvoyAiChatHistory(limit);
     }
+    // Ext Agent thread — EnvoyGo uses "external"; chat log is keyed by bridge agent peer.
+    if (normalizedKey === "external") {
+      const bridgePeer = this._bridgeStatus?.agentPeerId?.trim();
+      if (!bridgePeer) return [];
+      const rows = await this._chatLogStore.listThread(bridgePeer, limit);
+      return rows as ChatMessage[];
+    }
     const rows = await this._chatLogStore.listThread(normalizedKey, limit);
     return rows as ChatMessage[];
   }
@@ -5102,20 +5138,21 @@ class NodeServiceImpl implements NodeService {
       return { deletedCount: 0 };
     }
     let deletedCount = await this._chatLogStore.clearThread(thread);
-    if (thread === ENVOY_AI_THREAD_KEY) {
-      const legacyPeerId = this._bridgeStatus?.agentPeerId?.trim();
-      if (legacyPeerId && legacyPeerId !== ENVOY_AI_THREAD_KEY) {
-        deletedCount += await this._chatLogStore.clearThread(legacyPeerId);
-      }
+    const bridgePeer = this._bridgeStatus?.agentPeerId?.trim();
+    // EnvoyGo aliases → canonical store keys.
+    if (thread === "envoyai") {
+      deletedCount += await this._chatLogStore.clearThread(ENVOY_AI_THREAD_KEY);
+    } else if (thread === "external" && bridgePeer) {
+      deletedCount += await this._chatLogStore.clearThread(bridgePeer);
     }
+    // Do NOT clear bridge peer when clearing EnvoyAI — Ext Agent owns that key.
     if (deletedCount > 0 && (await this._shouldPurgeChatRagOnDelete())) {
       const rag = await this._getRagService();
       await rag?.clearChatThread(thread);
-      if (thread === ENVOY_AI_THREAD_KEY) {
-        const legacyPeerId = this._bridgeStatus?.agentPeerId?.trim();
-        if (legacyPeerId && legacyPeerId !== ENVOY_AI_THREAD_KEY) {
-          await rag?.clearChatThread(legacyPeerId);
-        }
+      if (thread === "envoyai" || thread === ENVOY_AI_THREAD_KEY) {
+        await rag?.clearChatThread(ENVOY_AI_THREAD_KEY);
+      } else if (thread === "external" && bridgePeer) {
+        await rag?.clearChatThread(bridgePeer);
       }
     }
     return { deletedCount };
@@ -8608,6 +8645,41 @@ class NodeServiceImpl implements NodeService {
   private lastActivityTimestamp: number = Date.now();
   private readonly activityTimeoutMs: number = 5 * 60 * 1000; // 5 minutes
 
+  /**
+   * Phase 50 fix — push skip-if-online must mean "EnvoyGo thin-client has an
+   * authenticated WebSocket", NOT "owner presence" (`isOwnerOnline`).
+   *
+   * Desktop Social connects without a session token and records owner
+   * activity on every RPC. Using `isOwnerOnline()` for push therefore
+   * suppressed EnvoyGo alerts whenever Social was open (or when no AI
+   * status was configured — that path defaults to online).
+   *
+   * Bound from `index.ts` to `WsServer.hasRecentlyActiveClientForOwner`
+   * (connected + recent RPC). A zombie background WS alone must not
+   * suppress chat pushes.
+   */
+  private _thinClientOnlineCheck: ((ownerId: string) => boolean) | null = null;
+
+  /** Wire the thin-client WS presence check used by push skip-if-online. */
+  bindThinClientOnlineCheck(check: (ownerId: string) => boolean): void {
+    this._thinClientOnlineCheck = check;
+  }
+
+  /**
+   * True when EnvoyGo is recently active on an authenticated WebSocket
+   * (see `hasRecentlyActiveClientForOwner`). Unbound / unknown → false
+   * so push still fires (phone may be killed or backgrounded).
+   */
+  isThinClientOnline(ownerId?: string): boolean {
+    const id = (ownerId ?? this._profile?.owner?.ownerId ?? "").trim();
+    if (!id || !this._thinClientOnlineCheck) return false;
+    try {
+      return this._thinClientOnlineCheck(id);
+    } catch {
+      return false;
+    }
+  }
+
   recordOwnerActivity(): void {
     this.lastActivityTimestamp = Date.now();
   }
@@ -8630,8 +8702,19 @@ class NodeServiceImpl implements NodeService {
       (params.ownerId && params.ownerId.trim()) ||
       this._profile?.owner.ownerId ||
       "";
-    if (!ownerId || !params.token) return;
-    pushNotificationService.registerPushToken({ ...params, ownerId });
+    if (!params.token?.trim()) {
+      console.warn("[push] registerPushToken ignored — empty token");
+      return;
+    }
+    if (!ownerId) {
+      console.warn("[push] registerPushToken ignored — no ownerId (profile not loaded?)");
+      return;
+    }
+    pushNotificationService.registerPushToken({ ...params, ownerId, token: params.token.trim() });
+    const tokenType = params.tokenType === "voip" ? "voip" : "alert";
+    console.log(
+      `[push] registered ${tokenType} token platform=${params.platform} owner=${ownerId} token=${params.token.trim().slice(0, 12)}…`,
+    );
   }
 
   unregisterPushToken(deviceId: string): boolean {
@@ -9083,19 +9166,27 @@ class NodeServiceImpl implements NodeService {
     }
   }
 
+  /**
+   * Phase 50 — push skip-if-online check.
+   * Uses the existing {@link _thinClientOnlineCheck} (wired from index.ts
+   * via bindThinClientOnlineCheck) to determine if EnvoyGo has a recently
+   * active authenticated WebSocket session. When true, the push is skipped
+   * because the WS event already reached the device.
+   *
+   * Falls back to false (offline → push fires) when the check isn't wired
+   * yet (early startup) or when no thin client is connected.
+   */
   async isOwnerOnline(): Promise<boolean> {
-    const config = await this._configStore.load();
-    const aiSettings = config?.aiSettings;
-    const status = aiSettings?.status;
-
-    if (!status) return true; // Default to online if no status configured
-
-    if (status.statusMode === "manual") {
-      return status.isOnlineManual ?? true;
+    const ownerId = this._profile?.owner?.ownerId ?? "";
+    if (!ownerId) return false;
+    // Use the existing thin-client online check (hasRecentlyActiveClientForOwner).
+    // This returns true only when an authenticated WS client (EnvoyGo) has
+    // had recent activity — a backgrounded phone with a stale WS won't match.
+    if (this._thinClientOnlineCheck) {
+      return this._thinClientOnlineCheck(ownerId);
     }
-
-    // Automatic mode: online if had activity within timeout
-    return Date.now() - this.lastActivityTimestamp < this.activityTimeoutMs;
+    // No check wired yet → assume offline → push fires.
+    return false;
   }
 }
 
