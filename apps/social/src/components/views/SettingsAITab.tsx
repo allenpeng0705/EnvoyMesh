@@ -58,6 +58,7 @@ import {
   normalizeDocumentAutonomyPolicy,
   normalizeEnvoyDisclosureSettings,
   normalizeProfileMediaPolicy,
+  normalizeAiBotDefinition,
   type AgentIdentityDocument,
   type ProfileMediaPolicy,
 } from "@envoymesh/api";
@@ -1864,8 +1865,13 @@ export function SettingsAITab() {
     setBotError(null);
     setBotSaved(false);
     try {
-      const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `bot-${Date.now()}`;
       const existing = nodeConfig?.aiBots ?? [];
+      if (existing.some((b) => b.name.trim().toLowerCase() === name.toLowerCase())) {
+        setBotError(t("settings.ai.aiBots.nameTaken", "A bot named “{name}” already exists.", { name }));
+        setBotSaving(false);
+        return;
+      }
+      const id = name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `bot-${Date.now()}`;
       let uniqueId = id;
       let counter = 1;
       while (existing.some((b) => b.id === uniqueId)) {
@@ -1873,14 +1879,14 @@ export function SettingsAITab() {
       }
       const newBots = [
         ...existing,
-        {
+        normalizeAiBotDefinition({
           id: uniqueId,
           name,
           systemPrompt,
           description: botDraft.description.trim() || undefined,
           avatarColor: botDraft.avatarColor,
           enabled: true,
-        },
+        }),
       ];
       await updateNodeConfigPartial({ aiBots: newBots });
       setBotDraft({ name: "", systemPrompt: "", description: "", avatarColor: "#6366f1" });
@@ -1892,7 +1898,7 @@ export function SettingsAITab() {
     } finally {
       setBotSaving(false);
     }
-  }, [botDraft, nodeConfig?.aiBots, updateNodeConfigPartial]);
+  }, [botDraft, nodeConfig?.aiBots, updateNodeConfigPartial, t]);
 
   const handleDeleteBot = useCallback(async (botId: string) => {
     try {
@@ -2460,10 +2466,19 @@ export function SettingsAITab() {
                   className="agent-field-input"
                   value={botDraft.systemPrompt}
                   onChange={(e) => setBotDraft({ ...botDraft, systemPrompt: e.target.value })}
-                  placeholder={t("settings.ai.aiBots.personalityPlaceholder", "Describe the character: personality, speaking style, expertise…")}
+                  placeholder={t(
+                    "settings.ai.aiBots.personalityPlaceholder",
+                    "You are Luna, my girlfriend. You love music, movies, and travelling. Speak warmly and affectionately.",
+                  )}
                   rows={3}
                   style={{ fontFamily: "inherit", fontSize: "0.85rem", resize: "vertical" }}
                 />
+                <p className="settings-hint">
+                  {t(
+                    "settings.ai.aiBots.personalityHint",
+                    "Write as the character in first person (“You are …”). Avoid third person (“Luna is …”) or assistant wording (“I am an AI that helps…”). We reshape this on save.",
+                  )}
+                </p>
               </div>
               <div className="agent-field">
                 <label className="agent-field-label">
@@ -2474,8 +2489,17 @@ export function SettingsAITab() {
                   className="agent-field-input"
                   value={botDraft.description}
                   onChange={(e) => setBotDraft({ ...botDraft, description: e.target.value })}
-                  placeholder={t("settings.ai.aiBots.descPlaceholder", "A wise guide for knowledge seekers")}
+                  placeholder={t(
+                    "settings.ai.aiBots.descPlaceholder",
+                    "My girlfriend · music & travel",
+                  )}
                 />
+                <p className="settings-hint">
+                  {t(
+                    "settings.ai.aiBots.descHint",
+                    "One short line for the chat list. Leave blank to auto-fill from the personality.",
+                  )}
+                </p>
               </div>
               <div className="agent-field">
                 <label className="agent-field-label">

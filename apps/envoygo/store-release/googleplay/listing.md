@@ -11,7 +11,7 @@ Replace every `TODO:` before submit.
 | Field | Value |
 |-------|--------|
 | App name (30) | EnvoyGo |
-| Package name | `envoymesh.envoygo` |
+| Package name | `com.envoymesh.envoygo` |
 | Default language | English (United States) — or your locale |
 | Application type | App |
 | Category | Productivity |
@@ -259,5 +259,5 @@ Critical before production:
 
 Current IDs:
 
-- `applicationId` / namespace: `envoymesh.envoygo`
+- `applicationId` / namespace: `com.envoymesh.envoygo`
 - versionName / versionCode: from Flutter `1.0.0` / `3`

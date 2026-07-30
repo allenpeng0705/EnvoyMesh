@@ -16,6 +16,7 @@ export function resolveChatThreadKind(
   agentPeerId?: string | null,
 ): ChatThreadKind {
   if (selectedContact === ENVOY_AI_THREAD_KEY) return "ai";
+  if (selectedContact.startsWith("bot:")) return "ai";
   if (agentPeerId && selectedContact === agentPeerId) return "agent";
   return "human";
 }

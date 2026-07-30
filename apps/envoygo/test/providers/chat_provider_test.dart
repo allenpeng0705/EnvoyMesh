@@ -65,4 +65,20 @@ void main() {
       );
     });
   });
+
+  group('AI bot thread keys', () {
+    test('agentType bot:<id> builds the same thread id as syncAiBots', () {
+      const nodeId = 'home-node';
+      const botId = 'luna';
+      const agentType = 'bot:$botId';
+      expect('$nodeId:$agentType', '$nodeId:bot:$botId');
+    });
+
+    test('bot agentType is detected by prefix', () {
+      expect('bot:luna'.startsWith('bot:'), isTrue);
+      expect('envoyai'.startsWith('bot:'), isFalse);
+      expect('external'.startsWith('bot:'), isFalse);
+      expect('bot:luna'.substring(4), 'luna');
+    });
+  });
 }

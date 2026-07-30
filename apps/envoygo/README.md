@@ -37,6 +37,22 @@ flutter build ios --debug --no-codesign
 flutter build web
 ```
 
+## Android FCM (optional)
+
+Dart push code is already wired. To enable Android alert push:
+
+1. In Firebase Console, add an Android app with package
+   **`com.envoymesh.envoygo`**
+2. Download `google-services.json` →
+   `apps/envoygo/android/app/google-services.json`
+3. Rebuild — the Google Services Gradle plugin applies automatically
+   when that file is present
+4. On the home node, set `FCM_PROJECT_ID` + `FCM_SERVICE_ACCOUNT_JSON`
+   (see `docs/push-notification-config.md`)
+
+Without the JSON file, Android builds still succeed and FCM init is a
+silent no-op.
+
 ## Project Structure
 
 ```

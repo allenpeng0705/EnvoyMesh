@@ -169,7 +169,8 @@ textarea::placeholder {
   display: flex;
   align-items: center;
   position: relative;
-  z-index: var(--z-header);
+  /* Above .chat-header (--z-header) so locale/theme menus are not covered. */
+  z-index: var(--z-overlay);
   padding-top: calc(0.75rem + var(--safe-top));
   padding-right: calc(1.5rem + var(--safe-right));
   padding-bottom: 0.75rem;

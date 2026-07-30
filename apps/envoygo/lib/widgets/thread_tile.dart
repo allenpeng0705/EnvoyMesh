@@ -40,7 +40,10 @@ class ThreadTile extends StatelessWidget {
         ],
       ),
       subtitle: () {
-        final preview = thread.lastMessageText?.trim();
+        // AI bots: never show last-message preview (model noise like <think>…).
+        final preview = thread.type == ChatThreadType.aiBot
+            ? null
+            : thread.lastMessageText?.trim();
         final bio = thread.description?.trim();
         final text = (preview != null && preview.isNotEmpty)
             ? preview

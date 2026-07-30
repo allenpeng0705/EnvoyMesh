@@ -96,6 +96,15 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
   ChatNotifier(this._ref) : super(const ChatState());
 
+  /// Live typed RPC client. Prefer this over [nodeServiceProvider], which
+  /// can cache null across reconnect gaps when `_client` is assigned
+  /// without a matching `nodeProvider` state change.
+  NodeServiceClient? _liveNodeService() {
+    final client = _ref.read(nodeProvider.notifier).client;
+    if (client == null) return null;
+    return NodeServiceClient(client);
+  }
+
   /// Load cached threads from local storage. Self-threads (the
   /// owner's own ownerId, or any envoy_device_ key) are filtered
   /// out on load — this cleans up any stale self-thread that was
@@ -287,9 +296,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
     _sortThreadMessages(threadId);
   }
 
-  /// Load chat history for EnvoyAI / Ext Agent threads.
+  /// Load chat history for EnvoyAI / Ext Agent / AI bot threads.
   Future<void> loadAgentHistory(String threadId) async {
-    final nodeService = _ref.read(nodeServiceProvider);
+    final nodeService = _liveNodeService();
     final nodeState = _ref.read(nodeProvider);
     if (nodeService == null || nodeState.activeNode == null) return;
 
@@ -383,16 +392,12 @@ class ChatNotifier extends StateNotifier<ChatState> {
   }
 
   /// Mark a thread as read.
+  ///
+  /// Always clears the local unread badge. When [contactOwnerId] is set
+  /// (direct contacts), also notifies the home node. Agent/bot threads
+  /// have no remote mark-read RPC — local clear is enough.
   Future<void> markRead(String threadId,
       {String? contactOwnerId}) async {
-    if (contactOwnerId == null) return;
-
-    final nodeService = _ref.read(nodeServiceProvider);
-    if (nodeService == null) return;
-
-    await nodeService.markRead(contactOwnerId);
-
-    // Update local unread count.
     final threads = state.threads.map((t) {
       if (t.id == threadId) {
         return ChatThread.fromJson({
@@ -403,6 +408,15 @@ class ChatNotifier extends StateNotifier<ChatState> {
       return t;
     }).toList();
     state = state.copyWith(threads: threads);
+    final cleared = threads.where((t) => t.id == threadId).firstOrNull;
+    if (cleared != null) {
+      unawaited(_localDb.upsertThread(cleared.toJson()));
+    }
+
+    if (contactOwnerId == null || contactOwnerId.isEmpty) return;
+    final nodeService = _liveNodeService();
+    if (nodeService == null) return;
+    await nodeService.markRead(contactOwnerId);
   }
 
   /// Handle a chat:message push event.
@@ -959,9 +973,30 @@ class ChatNotifier extends StateNotifier<ChatState> {
   /// [agentType] is "envoyai" for the built-in OpenClaw assistant,
   /// or "external" for the bridge HTTP agent.
   Future<void> sendAgentMessage(String text, {String agentType = 'envoyai'}) async {
-    final nodeService = _ref.read(nodeServiceProvider);
+    final nodeService = _liveNodeService();
     final nodeState = _ref.read(nodeProvider);
-    if (nodeService == null || nodeState.activeNode == null) return;
+    if (nodeService == null || nodeState.activeNode == null) {
+      throw StateError('Not connected to home node');
+    }
+
+    // Match Social: refuse AI-bot sends when home model providers are disabled
+    // (check before optimistic local insert so we don't leave a stuck bubble).
+    if (agentType.startsWith('bot:')) {
+      try {
+        final cfg = await nodeService.getNodeConfig();
+        final mp = cfg['modelProviders'];
+        final mode = mp is Map ? mp['mode']?.toString() : null;
+        if (mode == 'disabled') {
+          throw StateError(
+            'AI model is disabled. Enable a model provider in Settings → AI.',
+          );
+        }
+      } on StateError {
+        rethrow;
+      } catch (_) {
+        // Config read failed — still attempt send; home will error if needed.
+      }
+    }
 
     final threadId = '${nodeState.activeNode!.id}:$agentType';
     final now = DateTime.now().toUtc().toIso8601String();
@@ -1033,9 +1068,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
     String? description,
     String avatarColor = '#6366f1',
   }) async {
-    final nodeService = _ref.read(nodeServiceProvider);
-    final nodeState = _ref.read(nodeProvider);
-    final node = nodeState.activeNode;
+    final nodeService = _liveNodeService();
+    final node = _ref.read(nodeProvider).activeNode;
     if (nodeService == null || node == null) {
       throw StateError('Not connected to home node');
     }
@@ -1055,6 +1089,12 @@ class ChatNotifier extends StateNotifier<ChatState> {
           existing.add(Map<String, dynamic>.from(raw));
         }
       }
+    }
+
+    final nameKey = trimmedName.toLowerCase();
+    if (existing.any(
+        (b) => (b['name']?.toString().trim().toLowerCase() ?? '') == nameKey)) {
+      throw ArgumentError('A bot named "$trimmedName" already exists');
     }
 
     var slug = trimmedName
@@ -1085,6 +1125,86 @@ class ChatNotifier extends StateNotifier<ChatState> {
     return '${node.id}:bot:$uniqueId';
   }
 
+  /// Load one AI bot definition from home `aiBots` config (for edit form).
+  Future<Map<String, dynamic>?> getAiBot(String botId) async {
+    final nodeService = _liveNodeService();
+    if (nodeService == null) return null;
+    final trimmedId = botId.trim();
+    if (trimmedId.isEmpty) return null;
+    final cfg = await nodeService.getNodeConfig();
+    final existingRaw = cfg['aiBots'];
+    if (existingRaw is! List) return null;
+    for (final raw in existingRaw) {
+      if (raw is! Map) continue;
+      final map = Map<String, dynamic>.from(raw);
+      if (map['id']?.toString() == trimmedId) return map;
+    }
+    return null;
+  }
+
+  /// Update an existing AI character bot on the home node (keeps the same id).
+  Future<void> updateAiBot({
+    required String botId,
+    required String name,
+    required String systemPrompt,
+    String? description,
+    String avatarColor = '#6366f1',
+  }) async {
+    final nodeService = _liveNodeService();
+    final node = _ref.read(nodeProvider).activeNode;
+    if (nodeService == null || node == null) {
+      throw StateError('Not connected to home node');
+    }
+
+    final trimmedId = botId.trim();
+    final trimmedName = name.trim();
+    final trimmedPrompt = systemPrompt.trim();
+    if (trimmedId.isEmpty || trimmedName.isEmpty || trimmedPrompt.isEmpty) {
+      throw ArgumentError('Bot id, name, and system prompt are required');
+    }
+
+    final cfg = await nodeService.getNodeConfig();
+    final existingRaw = cfg['aiBots'];
+    final existing = <Map<String, dynamic>>[];
+    if (existingRaw is List) {
+      for (final raw in existingRaw) {
+        if (raw is Map) {
+          existing.add(Map<String, dynamic>.from(raw));
+        }
+      }
+    }
+
+    final idx = existing.indexWhere((b) => b['id']?.toString() == trimmedId);
+    if (idx < 0) {
+      throw ArgumentError('Bot "$trimmedId" not found');
+    }
+
+    final nameKey = trimmedName.toLowerCase();
+    if (existing.any((b) =>
+        b['id']?.toString() != trimmedId &&
+        (b['name']?.toString().trim().toLowerCase() ?? '') == nameKey)) {
+      throw ArgumentError('A bot named "$trimmedName" already exists');
+    }
+
+    final prev = existing[idx];
+    final desc = description?.trim();
+    existing[idx] = <String, dynamic>{
+      ...prev,
+      'id': trimmedId,
+      'name': trimmedName,
+      'systemPrompt': trimmedPrompt,
+      'avatarColor': avatarColor,
+      'enabled': prev['enabled'] != false,
+      if (desc != null && desc.isNotEmpty) 'description': desc,
+    };
+    if (desc == null || desc.isEmpty) {
+      existing[idx].remove('description');
+    }
+
+    await nodeService.updateAiBots(existing);
+    syncAiBots(existing, node.id);
+  }
+
   /// Sync AI bot definitions from config — creates/removes bot threads
   /// dynamically. Called on connect + on config-updated events.
   void syncAiBots(List<dynamic> bots, String nodeId) {
@@ -1106,12 +1226,15 @@ class ChatNotifier extends StateNotifier<ChatState> {
         .map((t) => t.id)
         .toSet();
     if (removeIds.isNotEmpty) {
-      state = state.copyWith(
-        threads: state.threads.where((t) => !removeIds.contains(t.id)).toList(),
-      );
+      final messages = Map<String, List<ChatMessage>>.from(state.messages);
       for (final id in removeIds) {
+        messages.remove(id);
         unawaited(_localDb.deleteThread(id));
       }
+      state = state.copyWith(
+        threads: state.threads.where((t) => !removeIds.contains(t.id)).toList(),
+        messages: messages,
+      );
     }
 
     // Upsert threads for enabled bots in config.
@@ -1346,7 +1469,40 @@ class ChatNotifier extends StateNotifier<ChatState> {
   }
 
   /// Delete a thread and all its messages.
+  ///
+  /// For AI character bots, also removes the bot from home `aiBots` config
+  /// so it does not reappear on the next `syncAiBots` / config-updated.
   Future<void> deleteThread(String threadId) async {
+    final existing = state.threads.where((t) => t.id == threadId).firstOrNull;
+
+    if (existing?.type == ChatThreadType.aiBot &&
+        existing!.botId != null &&
+        existing.botId!.isNotEmpty) {
+      final nodeService = _liveNodeService();
+      final node = _ref.read(nodeProvider).activeNode;
+      if (nodeService != null && node != null) {
+        try {
+          final cfg = await nodeService.getNodeConfig();
+          final existingRaw = cfg['aiBots'];
+          final remaining = <Map<String, dynamic>>[];
+          if (existingRaw is List) {
+            for (final raw in existingRaw) {
+              if (raw is! Map) continue;
+              final map = Map<String, dynamic>.from(raw);
+              if (map['id']?.toString() == existing.botId) continue;
+              remaining.add(map);
+            }
+          }
+          await nodeService.updateAiBots(remaining);
+          syncAiBots(remaining, node.id);
+          return;
+        } catch (e) {
+          debugPrint('[chat] delete ai bot from config failed: $e');
+          // Fall through to local-only delete.
+        }
+      }
+    }
+
     // Remove from local DB.
     await _localDb.deleteThread(threadId);
     // Remove from in-memory state.

@@ -1888,12 +1888,13 @@
 
 .message-bubble.ai-outgoing {
   background: linear-gradient(145deg, var(--color-secondary) 0%, var(--color-secondary-hover) 100%);
-  color: var(--color-secondary-on);
+  /* Match human outgoing: dark body text on the colored bubble (not white). */
+  color: var(--color-on-primary-text);
 }
 
 .message-bubble.ai-outgoing .message-bubble-badge,
 .message-bubble.ai-outgoing .message-bubble-time {
-  color: var(--message-outgoing-time);
+  color: var(--message-outgoing-meta);
 }
 
 .message-bubble.outgoing.group-single,
@@ -2142,6 +2143,95 @@
   z-index: 2;
   margin: 0;
   max-width: none;
+}
+
+/* AI bots: same row chrome as Ext Agent; ⋯ is an overlay icon only */
+.thread-row-with-actions--ai-bot {
+  position: relative;
+  min-width: 0;
+  border-radius: var(--radius-lg);
+  transition: transform var(--transition-normal);
+}
+
+.thread-row-with-actions--ai-bot:hover {
+  transform: translateX(2px);
+}
+
+.thread-row-with-actions--ai-bot .thread-row {
+  width: 100%;
+}
+
+.thread-row-with-actions--ai-bot .thread-row:hover {
+  transform: none;
+}
+
+.thread-row-with-actions--ai-bot:hover .thread-row:not(.active) {
+  background: var(--color-bg);
+}
+
+.thread-row-with-actions--ai-bot:hover .thread-avatar {
+  box-shadow: var(--shadow-md);
+  transform: scale(1.05);
+}
+
+.thread-row-with-actions--ai-bot .thread-meta {
+  padding-right: calc(var(--contact-list-action-size) + var(--space-2));
+}
+
+.thread-row-with-actions--ai-bot .ai-bot-row-menu {
+  position: absolute;
+  right: var(--contact-list-action-inset);
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 2;
+  margin: 0;
+  max-width: none;
+  display: inline-flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.ai-bot-row-menu-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: var(--contact-list-action-size);
+  height: var(--contact-list-action-size);
+  min-width: var(--contact-list-action-size);
+  min-height: var(--contact-list-action-size);
+  padding: 0;
+  margin: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-full);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+
+.ai-bot-row-menu-btn:hover,
+.ai-bot-row-menu-btn--open {
+  background: color-mix(in srgb, var(--color-text) 8%, transparent);
+  border-color: transparent;
+}
+
+.ai-bot-row-menu-btn:focus-visible {
+  outline: none;
+  border-color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-subtle, rgba(7, 193, 96, 0.25));
+}
+
+.ai-bot-row-menu-btn-icon {
+  display: block;
+  flex-shrink: 0;
+  color: inherit;
+}
+
+.ai-bot-row-menu-popup.context-menu {
+  position: fixed;
+  min-width: 8.5rem;
+  z-index: var(--z-modal, 10000);
 }
 
 .ext-agent-switcher {
@@ -3086,14 +3176,14 @@
     overflow: hidden;
   }
 
-  .contact-list button:not(.thread-row-remove-btn, .contact-list-section-add-btn, .ext-agent-switcher-btn) {
+  .contact-list button:not(.thread-row-remove-btn, .contact-list-section-add-btn, .ext-agent-switcher-btn, .ai-bot-row-menu-btn) {
     border-radius: var(--radius-md);
     min-height: 48px;
     transition: background var(--transition-fast);
   }
 
-  .contact-list button:not(.thread-row-remove-btn, .contact-list-section-add-btn, .ext-agent-switcher-btn).active,
-  .contact-list button:not(.thread-row-remove-btn, .contact-list-section-add-btn, .ext-agent-switcher-btn)[aria-current="true"] {
+  .contact-list button:not(.thread-row-remove-btn, .contact-list-section-add-btn, .ext-agent-switcher-btn, .ai-bot-row-menu-btn).active,
+  .contact-list button:not(.thread-row-remove-btn, .contact-list-section-add-btn, .ext-agent-switcher-btn, .ai-bot-row-menu-btn)[aria-current="true"] {
     background: var(--color-primary-subtle);
     border: 1px solid color-mix(in srgb, var(--color-primary) 25%, transparent);
   }

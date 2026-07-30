@@ -411,12 +411,13 @@ The same `.p8` JWT authenticates both alert and VoIP HTTP/2 calls; only
 
 - Firebase project at [console.firebase.google.com](https://console.firebase.google.com)
 - Android app registered with package name matching EnvoyGo:
-  - Application id in `apps/envoygo/android/app/build.gradle.kts`: **`envoymesh.envoygo`**
+  - Application id in `apps/envoygo/android/app/build.gradle.kts`: **`com.envoymesh.envoygo`**
 - Cloud Messaging API enabled for the project
 
 ### 5.2 Client: `google-services.json`
 
 1. Firebase Console → Project settings → Your apps → Android app
+   (package name **`com.envoymesh.envoygo`**)
 2. Download **`google-services.json`**
 3. Place it at:
 
@@ -424,32 +425,15 @@ The same `.p8` JWT authenticates both alert and VoIP HTTP/2 calls; only
 apps/envoygo/android/app/google-services.json
 ```
 
-4. Wire the Google Services Gradle plugin (required for Firebase to
-   initialize). If not already applied in your local tree:
+4. Google Services Gradle plugin is already wired:
+   - `apps/envoygo/android/settings.gradle.kts` declares
+     `com.google.gms.google-services` `4.4.2` (`apply false`)
+   - `apps/envoygo/android/app/build.gradle.kts` applies it **only when**
+     `google-services.json` exists (so builds still work before Firebase
+     is configured)
 
-**`apps/envoygo/android/settings.gradle.kts`** — add plugin (version
-aligned with your Android Gradle Plugin):
-
-```kotlin
-plugins {
-    // … existing …
-    id("com.google.gms.google-services") version "4.4.2" apply false
-}
-```
-
-**`apps/envoygo/android/app/build.gradle.kts`** — apply at the bottom:
-
-```kotlin
-plugins {
-    id("com.android.application")
-    id("kotlin-android")
-    id("dev.flutter.flutter-gradle-plugin")
-    id("com.google.gms.google-services")
-}
-```
-
-Without `google-services.json` + plugin, `Firebase.initializeApp()` fails
-and EnvoyGo **silently skips** FCM (push remains optional).
+Without `google-services.json`, `Firebase.initializeApp()` fails and
+EnvoyGo **silently skips** FCM (push remains optional).
 
 Do **not** commit production `google-services.json` if your org treats it
 as sensitive; use CI secrets / local-only copy. (Firebase client configs

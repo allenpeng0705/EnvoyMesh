@@ -58,6 +58,8 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   bool get _isRoom => widget.chatRoomId != null;
   bool get _isAgent => widget.agentType != null;
   bool get _isExtAgent => widget.agentType == 'external';
+  bool get _isAiBot =>
+      widget.agentType != null && widget.agentType!.startsWith('bot:');
 
   /// Prefer explicit contactOwnerId; fall back to thread id suffix.
   String? get _resolvedContactOwnerId {
@@ -68,6 +70,8 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     final nodeId = ref.read(nodeProvider).activeNode?.id;
     return threadPeerSuffix(widget.threadId, nodeId);
   }
+
+  bool _modelDisabled = false;
 
   @override
   void initState() {
@@ -95,8 +99,25 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
           widget.threadId,
           contactOwnerId: _resolvedContactOwnerId,
         );
+        if (_isAiBot) {
+          unawaited(_refreshModelDisabled());
+        }
       }
     });
+  }
+
+  Future<void> _refreshModelDisabled() async {
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    try {
+      final cfg = await client.getNodeConfig();
+      final mp = cfg['modelProviders'];
+      final mode = mp is Map ? mp['mode']?.toString() : null;
+      if (!mounted) return;
+      setState(() => _modelDisabled = mode == 'disabled');
+    } catch (_) {
+      // Ignore — send path still checks before dispatch.
+    }
   }
 
   void _cancelRecordTimer() {
@@ -285,6 +306,19 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
       body: Column(
         children: [
           if (_isExtAgent) const ExtAgentOfflineBanner(),
+          if (_isAiBot && _modelDisabled)
+            Container(
+              width: double.infinity,
+              color: Theme.of(context).colorScheme.errorContainer,
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              child: Text(
+                'AI model is disabled. Enable a model provider in Settings → AI.',
+                style: TextStyle(
+                  color: Theme.of(context).colorScheme.onErrorContainer,
+                  fontSize: 13,
+                ),
+              ),
+            ),
           Expanded(
             child: messages.isEmpty
                 ? const Center(
@@ -420,23 +454,52 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     _sendText(_textController.text.trim());
   }
 
-  void _sendText(String text) {
+  void _sendText(String text) async {
     if (text.isEmpty) return;
-
-    if (_isAgent) {
-      ref.read(chatProvider.notifier).sendAgentMessage(text, agentType: widget.agentType ?? 'envoyai');
-    } else if (_isRoom) {
-      ref.read(chatProvider.notifier).sendRoomMessage(
-            widget.chatRoomId!,
-            text,
-          );
-    } else if (_resolvedContactOwnerId != null) {
-      ref.read(chatProvider.notifier).sendMessage(
-            _resolvedContactOwnerId!,
-            text,
-          );
+    if (_isAiBot && _modelDisabled) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'AI model is disabled. Enable a model provider in Settings → AI.',
+          ),
+        ),
+      );
+      return;
     }
-    _textController.clear();
+
+    try {
+      if (_isAgent) {
+        await ref.read(chatProvider.notifier).sendAgentMessage(
+              text,
+              agentType: widget.agentType ?? 'envoyai',
+            );
+      } else if (_isRoom) {
+        await ref.read(chatProvider.notifier).sendRoomMessage(
+              widget.chatRoomId!,
+              text,
+            );
+      } else if (_resolvedContactOwnerId != null) {
+        await ref.read(chatProvider.notifier).sendMessage(
+              _resolvedContactOwnerId!,
+              text,
+            );
+      } else {
+        return;
+      }
+      _textController.clear();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e
+                .toString()
+                .replaceFirst('Bad state: ', '')
+                .replaceFirst('Exception: ', ''),
+          ),
+        ),
+      );
+    }
   }
 
   void _clearThread() {

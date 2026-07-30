@@ -22,7 +22,7 @@ store-release/
 | App name | **EnvoyGo** |
 | Version (current) | `1.0.0+3` (`pubspec.yaml`) |
 | iOS bundle ID | `com.envoymesh.envoygo` |
-| Android application ID | `envoymesh.envoygo` |
+| Android application ID | `com.envoymesh.envoygo` |
 | Category (suggested) | Productivity / Social Networking |
 | Price | Free |
 | Age rating (suggested) | 4+ / Everyone |

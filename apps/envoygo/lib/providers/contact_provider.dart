@@ -114,12 +114,13 @@ class ContactNotifier extends StateNotifier<ContactState> {
 
 /// Typed access to NodeServiceClient via the connected HomeRemoteClient.
 ///
-/// Returns null if not connected.
+/// Returns null if not connected. Always reads the live client from
+/// [NodeNotifier] on each invalidate — do not cache a null from a
+/// reconnect gap (callers that need extra safety can use
+/// `ref.read(nodeProvider.notifier).client` directly).
 final nodeServiceProvider = Provider<NodeServiceClient?>((ref) {
-  final nodeState = ref.watch(nodeProvider);
-  final client = nodeState.activeNode != null
-      ? ref.read(nodeProvider.notifier).client
-      : null;
+  ref.watch(nodeProvider);
+  final client = ref.read(nodeProvider.notifier).client;
   if (client == null) return null;
   return NodeServiceClient(client);
 });

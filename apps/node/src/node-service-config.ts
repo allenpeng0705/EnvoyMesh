@@ -16,19 +16,19 @@ import { createDefaultPersistedNodeConfig } from "./node-config-store.js";
 import {
   ensureDefaultAutonomousPoliciesForModel,
   isConnectivityMode,
+  normalizeAiBotsList,
   resolveConnectivityPreset,
   resolveConnectivityTuning,
   resolveEnableMdns,
   resolveIdleTimerStretch,
   resolveLazyCapabilityDiscovery,
+  type AiBotDefinition,
   type ConnectivityMode,
+  type ExtAgentDefinition,
+  type ModelProviderConfig,
+  type NodeConfig,
 } from "@envoymesh/api";
 import { normalizeIpfsExportEngineSelection } from "./ipfs-export-router.js";
-import type {
-  ModelProviderConfig,
-  NodeConfig,
-  ExtAgentDefinition,
-} from "@envoymesh/api";
 
 export interface NodeConfigContext {
   /** Local profile dir (used as the default when no config is persisted). */
@@ -304,7 +304,16 @@ export async function updateNodeConfigViaRuntime(
   await ctx.saveNodeConfig({
     ...base,
     ...persistedPatch,
-    friendMatchingPreferencesSigned: validatedSigned as never,
+    // Normalize free-form bot personality/description so all clients share
+    // a stable first-person character prompt.
+    ...(Array.isArray(config.aiBots)
+      ? { aiBots: normalizeAiBotsList(config.aiBots as AiBotDefinition[]) }
+      : {}),
+    // Only overwrite signed matching prefs when the patch explicitly set them.
+    // Otherwise every unrelated update (e.g. aiBots) would clear the field.
+    ...(config.friendMatchingPreferencesSigned !== undefined
+      ? { friendMatchingPreferencesSigned: validatedSigned as never }
+      : {}),
   } as never);
   // Best-effort audit event when the task store is wired (caller-side).
   void createAuditEvent;

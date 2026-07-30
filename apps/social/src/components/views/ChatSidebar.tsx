@@ -4,11 +4,12 @@ import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import type {
+  AiBotDefinition,
   ChatRoom,
   ContactAiPreferences,
   HelloProfile,
 } from "@envoymesh/api";
-import { chatRoomThreadKey } from "@envoymesh/api";
+import { aiBotThreadKey, chatRoomThreadKey } from "@envoymesh/api";
 import { resolveContactAiAccessLevel } from "@envoymesh/api";
 import { contactLabel, peerDisplayLabel } from "../../lib/display.js";
 import { PeerProfileAvatar } from "../PeerProfileAvatar.js";
@@ -18,6 +19,8 @@ import { useChatThreadPreviews } from "../../hooks/useChatThreadPreviews.js";
 import { useBondConnectionPreload } from "../../hooks/useBondConnectionPreload.js";
 import { CreateGroupModal } from "./CreateGroupModal.js";
 import { CreateBotModal } from "../CreateBotModal.js";
+import { AiBotRowMenu } from "../AiBotRowMenu.js";
+import { ConfirmDialog } from "../ConfirmDialog.js";
 import { RemoveContactConfirmModal } from "../RemoveContactConfirmModal.js";
 import { PullToRefresh } from "../PullToRefresh.js";
 import { loadOutboundHellos } from "../../lib/discover-peer-state.js";
@@ -86,6 +89,9 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
   const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
   const [showCreateBot, setShowCreateBot] = useState(false);
+  const [editingBot, setEditingBot] = useState<AiBotDefinition | null>(null);
+  const [deleteBotTarget, setDeleteBotTarget] = useState<AiBotDefinition | null>(null);
+  const [deletingBot, setDeletingBot] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [outboundHellos, setOutboundHellos] = useState<Set<string>>(() => loadOutboundHellos());
 
@@ -155,6 +161,25 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
     await refreshNodeConfig();
   };
 
+  const handleDeleteBot = async (bot: AiBotDefinition) => {
+    setDeletingBot(true);
+    try {
+      const existing = nodeConfig?.aiBots ?? [];
+      const newBots = existing.filter((b) => b.id !== bot.id);
+      await nodeService.updateNodeConfig({ aiBots: newBots });
+      await refreshNodeConfig();
+      const threadKey = aiBotThreadKey(bot.id);
+      if (selectedContact === threadKey) {
+        onSelectContact(null);
+      }
+      setDeleteBotTarget(null);
+    } catch (err) {
+      console.error("[ChatSidebar] delete bot failed:", err);
+    } finally {
+      setDeletingBot(false);
+    }
+  };
+
   const handleAcceptHello = async (messageId: string) => {
     try { await acceptHello(messageId); } catch (e) { console.error(e); }
   };
@@ -182,9 +207,17 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
 
   const bondPeerIds = useMemo(() => bonds.map((b) => b.peerOwnerId), [bonds]);
   const roomThreadKeys = useMemo(() => chatRooms.map((r) => chatRoomThreadKey(r.roomId)), [chatRooms]);
+  const enabledAiBots = useMemo(
+    () => (nodeConfig?.aiBots ?? []).filter((b: AiBotDefinition) => b.enabled !== false && Boolean(b.id)),
+    [nodeConfig?.aiBots],
+  );
+  const botThreadKeys = useMemo(
+    () => enabledAiBots.map((b) => aiBotThreadKey(b.id)),
+    [enabledAiBots],
+  );
   const previewThreadKeys = useMemo(
-    () => [...bondPeerIds, ...roomThreadKeys],
-    [bondPeerIds, roomThreadKeys],
+    () => [...bondPeerIds, ...roomThreadKeys, ...botThreadKeys],
+    [bondPeerIds, roomThreadKeys, botThreadKeys],
   );
   const threadPreviews = useChatThreadPreviews(previewThreadKeys);
 
@@ -207,7 +240,15 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
     [bonds, threadPreviews],
   );
 
-  const showAiSection = Boolean(onOpenAssistant || onOpenPi) || bridgeStatus?.enabled;
+  const sortedAiBots = useMemo(
+    () => sortByLatestMessage(enabledAiBots, (bot) => aiBotThreadKey(bot.id), threadPreviews),
+    [enabledAiBots, threadPreviews],
+  );
+
+  const showAiSection =
+    Boolean(onOpenAssistant || onOpenPi) ||
+    Boolean(bridgeStatus?.enabled) ||
+    enabledAiBots.length > 0;
 
   useEffect(() => {
     if (!nodeService.isConnected) return;
@@ -312,6 +353,46 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
               </span>
             </button>
           ) : null}
+
+          {sortedAiBots.map((bot) => {
+            const threadKey = aiBotThreadKey(bot.id);
+            const initial = (bot.name.trim().charAt(0) || "?").toUpperCase();
+            // No last-message preview — model output (e.g. <think>…</think>) is noisy in the list.
+            const subtitle = bot.description?.trim() || "";
+            return (
+              <div
+                key={bot.id}
+                className="thread-row-with-actions thread-row-with-actions--ai-bot"
+              >
+                <button
+                  type="button"
+                  className={`thread-row thread-row--ai ${selectedContact === threadKey ? "active" : ""}`}
+                  onClick={() => onSelectContact(threadKey)}
+                >
+                  <span
+                    className="thread-avatar"
+                    style={{ background: bot.avatarColor || "#6366f1" }}
+                    aria-hidden
+                  >
+                    {initial}
+                  </span>
+                  <span className="thread-meta">
+                    <span className="thread-title-row">
+                      <span className="thread-title">{bot.name}</span>
+                    </span>
+                    {subtitle ? (
+                      <span className="thread-subtitle">{subtitle}</span>
+                    ) : null}
+                  </span>
+                </button>
+                <AiBotRowMenu
+                  bot={bot}
+                  onEdit={(b) => setEditingBot(b)}
+                  onDelete={(b) => setDeleteBotTarget(b)}
+                />
+              </div>
+            );
+          })}
         </>
       ) : null}
 
@@ -626,6 +707,42 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
       {showCreateBot ? (
         <CreateBotModal
           onClose={() => setShowCreateBot(false)}
+          onCreated={(threadKey) => {
+            void refreshNodeConfig();
+            onSelectContact(threadKey);
+          }}
+        />
+      ) : null}
+
+      {editingBot ? (
+        <CreateBotModal
+          initialBot={editingBot}
+          onClose={() => setEditingBot(null)}
+          onCreated={(threadKey) => {
+            void refreshNodeConfig();
+            onSelectContact(threadKey);
+          }}
+        />
+      ) : null}
+
+      {deleteBotTarget ? (
+        <ConfirmDialog
+          title={t("chat.deleteBotTitle", "Delete bot?")}
+          message={t(
+            "chat.deleteBotMessage",
+            "Delete “{name}”? It will be removed from this node and all paired devices.",
+            { name: deleteBotTarget.name },
+          )}
+          variant="destructive"
+          confirmLabel={deletingBot
+            ? t("settings.ai.aiBots.deleting", "Deleting…")
+            : t("settings.ai.aiBots.delete", "Delete")}
+          onCancel={() => {
+            if (!deletingBot) setDeleteBotTarget(null);
+          }}
+          onConfirm={() => {
+            if (!deletingBot) void handleDeleteBot(deleteBotTarget);
+          }}
         />
       ) : null}
 

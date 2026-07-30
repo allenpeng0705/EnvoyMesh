@@ -8,7 +8,7 @@ import { ChatIcon } from "../../icons.js";
 import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import type { ChatPanelMode } from "../../App.js";
-import { isChatRoomThreadKey, parseChatRoomThreadKey } from "@envoymesh/api";
+import { isChatRoomThreadKey, isAiBotThread, parseChatRoomThreadKey } from "@envoymesh/api";
 import type { TerminalSessionSummary } from "@envoymesh/api";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useIsInProcessMobileNode, useNodeService } from "../../hooks/useNodeService.js";
@@ -16,6 +16,7 @@ import type { ChatRoom } from "@envoymesh/api";
 import { loadTerminalSelectedSessionId, saveTerminalSelectedSessionId } from "../../lib/storage.js";
 import { isTauriShell, pickTauriDirectory } from "../../lib/tauri-shell.js";
 import { OpenClawOfflineBanner } from "./OpenClawOfflineBanner.js";
+import { BotChatPanel } from "./BotChatPanel.js";
 
 /**
  * ChatView is a layout shell: sidebar + AI or contact thread, with Inbox as a second panel.
@@ -415,6 +416,8 @@ export function ChatView({
                   room={selectedRoom}
                   onLeaveGroup={() => onSelectedContactChange(null)}
                 />
+              ) : isAiBotThread(selectedContact) ? (
+                <BotChatPanel threadKey={selectedContact} />
               ) : (
                 <ContactChatPanel
                   selectedContact={selectedContact}

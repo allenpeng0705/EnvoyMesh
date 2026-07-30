@@ -1,60 +1,99 @@
 /**
- * Modal dialog for creating a new AI Character Bot.
- * Appears in the ChatSidebar AI section when the "+" button is clicked.
+ * Modal dialog for creating or editing an AI Character Bot.
  * Saves via updateNodeConfig({ aiBots: [...] }) → home:config-updated
- * broadcast → all clients pick up the new bot thread.
+ * broadcast → all clients pick up the bot thread.
  */
 import { useState } from "react";
+import { aiBotThreadKey, normalizeAiBotDefinition, type AiBotDefinition } from "@envoymesh/api";
 import { useT } from "../context/I18nContext.js";
+import { useNodeState } from "../context/NodeStateContext.js";
 import { useNodeService } from "../hooks/useNodeService.js";
-import type { AiBotDefinition } from "@envoymesh/api";
 import { ModalPortal } from "./ModalPortal.js";
 
 export interface CreateBotModalProps {
   onClose: () => void;
+  /** Called with `bot:<id>` after a successful create/save. */
+  onCreated?: (threadKey: string) => void;
+  /** When set, modal edits this bot (keeps the same id). */
+  initialBot?: AiBotDefinition;
 }
 
-export function CreateBotModal({ onClose }: CreateBotModalProps) {
+export function CreateBotModal({ onClose, onCreated, initialBot }: CreateBotModalProps) {
   const t = useT();
   const nodeService = useNodeService();
-  const [name, setName] = useState("");
-  const [systemPrompt, setSystemPrompt] = useState("");
-  const [description, setDescription] = useState("");
-  const [avatarColor, setAvatarColor] = useState("#6366f1");
+  const { refreshNodeConfig } = useNodeState();
+  const isEdit = Boolean(initialBot);
+  const [name, setName] = useState(initialBot?.name ?? "");
+  const [systemPrompt, setSystemPrompt] = useState(initialBot?.systemPrompt ?? "");
+  const [description, setDescription] = useState(initialBot?.description ?? "");
+  const [avatarColor, setAvatarColor] = useState(initialBot?.avatarColor ?? "#6366f1");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const handleCreate = async () => {
+  const handleSave = async () => {
     const trimmedName = name.trim();
     const trimmedPrompt = systemPrompt.trim();
-    if (!trimmedName || !trimmedPrompt) return;
+    if (!trimmedName || !trimmedPrompt) {
+      setError(
+        !trimmedName
+          ? t("settings.ai.aiBots.nameRequired", "Bot name is required")
+          : t("settings.ai.aiBots.promptRequired", "Personality / system prompt is required"),
+      );
+      return;
+    }
 
     setSaving(true);
     setError(null);
     try {
-      // Fetch current bots.
       const config = await nodeService.getNodeConfig();
-      const existing: AiBotDefinition[] = (config as unknown as { aiBots?: AiBotDefinition[] }).aiBots ?? [];
+      const existing: AiBotDefinition[] =
+        (config as unknown as { aiBots?: AiBotDefinition[] }).aiBots ?? [];
 
-      // Generate unique slug from name.
-      const slug = trimmedName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || `bot-${Date.now()}`;
-      let uniqueId = slug;
-      let counter = 1;
-      while (existing.some((b) => b.id === uniqueId)) {
-        uniqueId = `${slug}-${counter++}`;
+      const nameTaken = existing.some(
+        (b) =>
+          b.id !== initialBot?.id &&
+          b.name.trim().toLowerCase() === trimmedName.toLowerCase(),
+      );
+      if (nameTaken) {
+        setError(
+          t("settings.ai.aiBots.nameTaken", "A bot named “{name}” already exists.", {
+            name: trimmedName,
+          }),
+        );
+        setSaving(false);
+        return;
       }
 
-      const newBot: AiBotDefinition = {
+      let uniqueId = initialBot?.id ?? "";
+      if (!isEdit) {
+        const slug =
+          trimmedName.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") ||
+          `bot-${Date.now()}`;
+        uniqueId = slug;
+        let counter = 1;
+        while (existing.some((b) => b.id === uniqueId)) {
+          uniqueId = `${slug}-${counter++}`;
+        }
+      }
+
+      const nextBot = normalizeAiBotDefinition({
         id: uniqueId,
         name: trimmedName,
         systemPrompt: trimmedPrompt,
         description: description.trim() || undefined,
         avatarColor,
-        enabled: true,
-      };
+        enabled: initialBot?.enabled !== false,
+        ...(initialBot?.taskType ? { taskType: initialBot.taskType } : {}),
+        ...(initialBot?.model ? { model: initialBot.model } : {}),
+      });
 
-      // Save via config update — broadcasts to all clients.
-      await nodeService.updateNodeConfig({ aiBots: [...existing, newBot] });
+      const newBots = isEdit
+        ? existing.map((b) => (b.id === uniqueId ? nextBot : b))
+        : [...existing, nextBot];
+
+      await nodeService.updateNodeConfig({ aiBots: newBots });
+      await refreshNodeConfig();
+      onCreated?.(aiBotThreadKey(uniqueId));
       onClose();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -62,8 +101,6 @@ export function CreateBotModal({ onClose }: CreateBotModalProps) {
       setSaving(false);
     }
   };
-
-  const canCreate = name.trim().length > 0 && systemPrompt.trim().length > 0 && !saving;
 
   return (
     <ModalPortal>
@@ -75,7 +112,11 @@ export function CreateBotModal({ onClose }: CreateBotModalProps) {
           onClick={(e) => e.stopPropagation()}
         >
           <div className="modal-header">
-            <h2 id="create-bot-title">{t("chat.createBot", "Create AI Bot")}</h2>
+            <h2 id="create-bot-title">
+              {isEdit
+                ? t("chat.editBot", "Edit AI Bot")
+                : t("chat.createBot", "Create AI Bot")}
+            </h2>
             <button
               type="button"
               className="modal-close"
@@ -124,9 +165,18 @@ export function CreateBotModal({ onClose }: CreateBotModalProps) {
                 className="agent-field-input"
                 value={systemPrompt}
                 onChange={(e) => setSystemPrompt(e.target.value)}
-                placeholder={t("settings.ai.aiBots.personalityPlaceholder", "Describe the character: personality, speaking style, expertise…")}
+                placeholder={t(
+                  "settings.ai.aiBots.personalityPlaceholder",
+                  "You are Luna, my girlfriend. You love music, movies, and travelling. Speak warmly and affectionately.",
+                )}
                 rows={4}
               />
+              <p className="settings-hint">
+                {t(
+                  "settings.ai.aiBots.personalityHint",
+                  "Write as the character in first person (“You are …”). Avoid third person (“Luna is …”) or assistant wording (“I am an AI that helps…”). We reshape this on save.",
+                )}
+              </p>
             </div>
             <div className="agent-field">
               <label className="agent-field-label">
@@ -137,8 +187,17 @@ export function CreateBotModal({ onClose }: CreateBotModalProps) {
                 className="agent-field-input"
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder={t("settings.ai.aiBots.descPlaceholder", "A wise guide for knowledge seekers")}
+                placeholder={t(
+                  "settings.ai.aiBots.descPlaceholder",
+                  "My girlfriend · music & travel",
+                )}
               />
+              <p className="settings-hint">
+                {t(
+                  "settings.ai.aiBots.descHint",
+                  "One short line for the chat list. Leave blank to auto-fill from the personality.",
+                )}
+              </p>
             </div>
             <div className="agent-field">
               <label className="agent-field-label">
@@ -170,12 +229,14 @@ export function CreateBotModal({ onClose }: CreateBotModalProps) {
             <button
               type="button"
               className="primary"
-              onClick={() => { void handleCreate() }}
-              disabled={!canCreate}
+              onClick={() => { void handleSave() }}
+              disabled={saving}
             >
               {saving
                 ? t("settings.ai.aiBots.saving", "Saving…")
-                : t("settings.ai.aiBots.create", "Create Bot")}
+                : isEdit
+                  ? t("settings.ai.aiBots.save", "Save")
+                  : t("settings.ai.aiBots.create", "Create Bot")}
             </button>
           </div>
         </div>

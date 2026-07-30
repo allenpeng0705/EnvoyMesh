@@ -109,7 +109,7 @@ import type {
   ChainDeleteRecipeParams,
   ChainDeleteRecipeResult,
 } from "@envoymesh/api";
-import { isChatRoomThreadKey, ENVOY_AI_THREAD_KEY, TERMINAL_ASSIST_RPC_TIMEOUT_MS } from "@envoymesh/api";
+import { isChatRoomThreadKey, isAiBotThread, ENVOY_AI_THREAD_KEY, TERMINAL_ASSIST_RPC_TIMEOUT_MS } from "@envoymesh/api";
 import { mergeGroupDeliveryAck } from "@envoymesh/api/group-chat-delivery";
 import {
   mergeMessagesIntoThread,
@@ -503,6 +503,7 @@ export interface NodeServiceClient {
   saveSkillApiKeys(keys: Record<string, string>): Promise<{ ok: boolean }>;
   saveWebSearchEnabled?(enabled: boolean): Promise<{ ok: boolean }>;
   sendToOpenClaw?(text: string): Promise<void>;
+  sendToAiBot?(botId: string, text: string): Promise<void>;
   getPairedDiagnostics?(): Promise<Record<string, unknown>>;
 
   // OpenClaw extension/plugin management
@@ -1568,6 +1569,9 @@ function createWsNodeServiceClient(
     async sendToOpenClaw(text: string) {
       return wsClient.rpc("sendToOpenClaw", { text }) as Promise<void>;
     },
+    async sendToAiBot(botId: string, text: string) {
+      return wsClient.rpc("sendToAiBot", { botId, text }) as Promise<void>;
+    },
     async getPairedDiagnostics() {
       return wsClient.rpc("getPairedDiagnostics", {}) as Promise<Record<string, unknown>>;
     },
@@ -2340,6 +2344,9 @@ function partnerOwnerIdForChat(
   if (rcvO === ENVOY_AI_THREAD_KEY || sndO === ENVOY_AI_THREAD_KEY) {
     return ENVOY_AI_THREAD_KEY;
   }
+  // Character bots live under thread key `bot:<id>` (sender or recipient).
+  if (rcvO && isAiBotThread(rcvO)) return rcvO;
+  if (sndO && isAiBotThread(sndO)) return sndO;
 
   // Use ownerId as primary routing key (ownerIds are distinct even when
   // both peers share the same node, e.g. bridge agent running on same node).

@@ -1,4 +1,4 @@
-package envoymesh.envoygo
+package com.envoymesh.envoygo
 
 import io.flutter.embedding.android.FlutterActivity
 

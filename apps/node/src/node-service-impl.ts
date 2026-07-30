@@ -135,7 +135,7 @@ import type {
   ExtAgentReachability,
   ProbeExtAgentParams,
 } from "@envoymesh/api";
-import { aiBotThreadKey, isAiBotThread } from "@envoymesh/api";
+import { aiBotThreadKey, isAiBotThread, buildAiBotPrompt } from "@envoymesh/api";
 import type { DocumentAgentTurnResult, OwnerAgentTurnResult, CapabilityProviderJob, DocumentAcquisitionCandidate, DocumentAcquisitionJob, SocialProxySession } from "@envoymesh/api";
 import {
   DEFAULT_RAG_INDEX_STATUS,
@@ -3994,7 +3994,7 @@ class NodeServiceImpl implements NodeService {
     this._persistChatMessage(threadKey, outboundMsg)
     this.emit("chat:message", outboundMsg)
 
-    // 2. Build the LLM prompt: system prompt + conversation history + user text.
+    // 2. Build the LLM prompt: character framing + history + user text.
     // Fetch recent history (last 20 turns) so the bot has memory.
     const MAX_HISTORY_TURNS = 20
     let conversationHistory = ""
@@ -4007,7 +4007,7 @@ class NodeServiceImpl implements NodeService {
           conversationHistory = priorHistory
             .map((h) => {
               const isUser = h.sender?.ownerId === homeOwnerId
-              const speaker = isUser ? "User" : (h.sender?.displayName ?? "Assistant")
+              const speaker = isUser ? "Human" : bot.name
               const text = h.content?.text ?? ""
               return `${speaker}: ${text}`
             })
@@ -4016,7 +4016,13 @@ class NodeServiceImpl implements NodeService {
           // (48K hard cap in the semantic firewall, but we want room for
           // the system prompt + current message + response).
           if (conversationHistory.length > 8000) {
-            conversationHistory = conversationHistory.slice(-8000)
+            // Prefer cutting on a turn boundary so we don't orphan a half-line.
+            const sliced = conversationHistory.slice(-8000)
+            const boundary = sliced.indexOf("\n\n")
+            conversationHistory =
+              boundary >= 0 && boundary < sliced.length - 1
+                ? sliced.slice(boundary + 2)
+                : sliced
           }
         }
       } catch {
@@ -4024,9 +4030,12 @@ class NodeServiceImpl implements NodeService {
       }
     }
 
-    const prompt = conversationHistory
-      ? `${bot.systemPrompt}\n\n--- Conversation so far ---\n${conversationHistory}\n\n---\n\nUser: ${trimmedText}`
-      : `${bot.systemPrompt}\n\n---\n\nUser: ${trimmedText}`
+    const prompt = buildAiBotPrompt({
+      botName: bot.name,
+      systemPrompt: bot.systemPrompt,
+      conversationHistory: conversationHistory || undefined,
+      userText: trimmedText,
+    })
 
     try {
       // 3. Call the native LLM router (in-process, no gateway needed).
@@ -4045,7 +4054,10 @@ class NodeServiceImpl implements NodeService {
         providers,
       )
 
-      const answer = result.response?.text?.trim() ?? "(no response)"
+      let answer = result.response?.text?.trim() ?? "(no response)"
+      // Strip a leading "Luna:" / speaker label if the model echoed it.
+      const labelPrefix = new RegExp(`^${bot.name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*:\\s*`, "i")
+      answer = answer.replace(labelPrefix, "").trim() || answer
 
       // 4. Persist + emit the bot's reply.
       const aiTimestamp = new Date(Date.now() + 1).toISOString()
