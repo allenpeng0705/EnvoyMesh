@@ -12,16 +12,16 @@ No cloud. No subscription. No data leaving your home (except the LLM API calls y
 
 > **Your home computer is your family's private server.**
 
-One EnvoyMesh home node runs on a desktop or laptop (or a Raspberry Pi). Each family member installs EnvoyGo on their phone, pairs with the home node, and gets:
+One EnvoyMesh home node runs on a desktop or laptop. The **owner** installs it, configures the model, and pairs their phone. Then each family member pairs their phone too — and each gets a completely independent experience:
 
 - **Their own profile** — name, avatar, identity within the family
 - **Their own AI assistant** — private conversations with EnvoyAI, Pi, and custom bots
-- **Their own contacts** — auto-bonded with every other family member
-- **Direct + group chat** — with family members AND external mesh peers
+- **Their own contacts** — auto-bonded with every other family member + their own external mesh contacts
+- **Direct + group chat** — with family members AND external peers
 - **Push notifications** — messages reach their phone when they're away
 - **Complete data isolation** — no family member sees another's private data
 
-The home node owner (the person who set it up) manages profiles — create, rename, delete. Like adding user accounts on a shared family computer.
+The owner manages profiles (create, rename, delete) and configures infrastructure (model API key, node settings). Each profile is locked to one device — no profile switching within an app.
 
 ---
 
@@ -32,8 +32,8 @@ The home node owner (the person who set it up) manages profiles — create, rena
 | **Netflix profiles** on one account | Each family member has a profile on one home node |
 | **macOS user accounts** | Each profile has isolated data, shared infrastructure |
 | **A home WiFi router** | The home node is the gateway — everyone inside is trusted, the mesh is the internet |
-| **A family WhatsApp group** | Auto-bonded contacts + group chat, but private (no Meta server) |
 | **Each person's ChatGPT** | Each profile gets their own AI threads, private from other members |
+| **Your own phone** | Profile is locked at pairing time — no switching, no confusion |
 
 ---
 
@@ -49,14 +49,18 @@ The home node owner (the person who set it up) manages profiles — create, rena
 │  (one identity on the P2P network — the "router")           │
 │                                                             │
 │  ┌──────────┐  ┌──────────┐  ┌──────────┐                 │
-│  │ Dad      │  │ Mom      │  │ Kid      │                 │
-│  │ profile  │  │ profile  │  │ profile  │                 │
+│  │ Dad      │  │ Mom      │  │ Alex     │                 │
+│  │ (owner)  │  │          │  │          │                 │
 │  │          │  │          │  │          │                 │
 │  │ AI: ✓    │  │ AI: ✓    │  │ AI: ✓    │                 │
 │  │ Bots: ✓  │  │ Bots: ✓  │  │ Bots: ✓  │                 │
+│  │ Pi: ✓    │  │ Pi: ✓    │  │ Pi: ✓    │                 │
+│  │ Term: ✓  │  │ Term: ✓  │  │ Term: ✓  │                 │
 │  │ Chats: ✓ │  │ Chats: ✓ │  │ Chats: ✓ │                 │
 │  │ Push: ✓  │  │ Push: ✓  │  │ Push: ✓  │                 │
 │  │ Vault: ✓ │  │ Vault: ✓ │  │ Vault: ✓ │                 │
+│  │          │  │          │  │          │                 │
+│  │ Admin: ✓ │  │ Admin: ✗ │  │ Admin: ✗ │                 │
 │  └────┬─────┘  └────┬─────┘  └────┬─────┘                 │
 │       │             │             │                         │
 │       └──────┬──────┴──────┬──────┘                         │
@@ -64,10 +68,11 @@ The home node owner (the person who set it up) manages profiles — create, rena
 │         Auto-bonded    Auto-bonded                          │
 │         (contacts)    (contacts)                            │
 │                                                             │
-│  Shared infrastructure:                                     │
+│  Shared infrastructure (owner-managed):                     │
 │  ├── Model config (one LLM API key)                        │
 │  ├── OpenClaw / Pi runtime                                  │
-│  └── Mesh connectivity (peers, relays, discovery)           │
+│  ├── Node settings (relay, discovery)                       │
+│  └── Mesh connectivity (peers, relays)                      │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
          │              │              │
@@ -75,10 +80,18 @@ The home node owner (the person who set it up) manages profiles — create, rena
     + Push          + Push         + Push
          │              │              │
    ┌─────┴─────┐ ┌─────┴─────┐ ┌─────┴─────┐
-   │ Dad's     │ │ Mom's     │ │ Kid's     │
+   │ Dad's     │ │ Mom's     │ │ Alex's    │
    │ iPhone    │ │ iPhone    │ │ iPad      │
    │ (EnvoyGo) │ │ (EnvoyGo) │ │ (EnvoyGo) │
+   │           │ │           │ │           │
+   │ Settings: │ │ Settings: │ │ Settings: │
+   │ All tabs  │ │ Bots only │ │ Bots only │
+│   │ + Push   │ │ + Push    │ │ + Push    │
+│   │ + Node   │ │           │ │           │
    └───────────┘ └───────────┘ └───────────┘
+
+Dad also uses the Social UI on the desktop (owner profile).
+Mom and Alex use EnvoyGo only (phone/iPad).
 ```
 
 ### 3.2 Profile model
@@ -87,12 +100,14 @@ A **family profile** is a lightweight identity that lives on the home node. It i
 
 ```typescript
 interface FamilyProfile {
-  /** Unique ID within this node, e.g. "dad", "mom", "kid". */
+  /** Unique ID within this node, e.g. "dad", "mom", "alex". */
   id: string
   /** Display name shown in chat lists + AI threads. */
   name: string
-  /** Avatar URL or initials-based color. */
+  /** Avatar color (hex). */
   avatarColor?: string
+  /** Whether this is the owner profile (admin rights). */
+  isOwner: boolean
   /** When this profile was created. */
   createdAt: string
   /** Last seen (for presence). */
@@ -101,6 +116,8 @@ interface FamilyProfile {
   active: boolean
   /** Per-profile bot definitions (each user creates their own bots). */
   aiBots?: AiBotDefinition[]
+  /** Per-profile Pi settings (auto-run policy, allowed paths). */
+  piSettings?: PiSettings
 }
 ```
 
@@ -110,197 +127,256 @@ Stored in `<profileDir>/family-profiles.json` (mode `0600`):
 {
   "version": "0.1",
   "profiles": [
-    { "id": "dad", "name": "Dad", "avatarColor": "#3b82f6", "active": true, "createdAt": "..." },
-    { "id": "mom", "name": "Mom", "avatarColor": "#ec4899", "active": true, "createdAt": "..." },
-    { "id": "kid", "name": "Alex", "avatarColor": "#10b981", "active": true, "createdAt": "..." }
-  ],
-  "defaultProfileId": "dad"
+    {
+      "id": "dad",
+      "name": "Dad",
+      "avatarColor": "#3b82f6",
+      "isOwner": true,
+      "active": true,
+      "createdAt": "2026-07-30T..."
+    },
+    {
+      "id": "mom",
+      "name": "Mom",
+      "avatarColor": "#ec4899",
+      "isOwner": false,
+      "active": true,
+      "createdAt": "2026-07-30T..."
+    },
+    {
+      "id": "alex",
+      "name": "Alex",
+      "avatarColor": "#10b981",
+      "isOwner": false,
+      "active": true,
+      "createdAt": "2026-07-30T..."
+    }
+  ]
 }
 ```
 
+The first profile created during node setup is automatically `isOwner: true`. Only one owner profile exists per node.
+
 ### 3.3 Session token → profile binding
 
-Today: session token → `ownerId` (the home owner).
-
-Family Network: session token → **`profileId`** → ownerId.
-
-When a device pairs, the pairing flow asks "Who are you?" (select existing profile or create new). The session token is tagged with the `profileId`. From then on, every RPC call from that WebSocket connection is scoped to that profile.
+**No profile switching within an app.** The profile is chosen once during pairing and never changes. If someone wants a different profile, they pair a different device.
 
 ```typescript
 interface SessionTokenRecord {
   token: string
   ownerId: string           // always the home owner (the mesh identity)
-  profileId?: string         // NEW — which family profile this device belongs to
+  profileId: string          // which family profile this device belongs to
   deviceId: string
   platform: string
   createdAt: string
 }
 ```
 
-**Backward compatibility:** tokens without a `profileId` default to the owner's primary profile (the person who set up the node). Existing single-user setups continue working unchanged.
+When a device pairs, the pairing flow asks "Who are you?" (select existing profile or create new). The session token is permanently tagged with that `profileId`. From then on, every RPC call from that WebSocket connection is scoped to that profile.
+
+**Backward compatibility:** tokens without a `profileId` default to the owner's profile. Existing single-user setups continue working unchanged.
 
 ---
 
-## 4. Data isolation
+## 4. Features — what each profile gets
 
-### 4.1 Thread key namespacing
+Every profile gets **the same features** — there's no "family member gets less" tiering. The only difference is the owner has admin rights (infrastructure management).
 
-Every chat/AI thread is scoped by profile:
+### 4.1 Per-profile features (all profiles, fully isolated)
 
-| Thread type | Key format today | Key format with profiles |
+| Feature | How it's scoped | Example |
 |---|---|---|
-| EnvoyAI | `__envoy_ai__` | `__envoy_ai__:<profileId>` |
-| Bot | `bot:librarian` | `bot:librarian:<profileId>` |
-| Pi | `pi` | `pi:<profileId>` |
-| Direct chat (mesh peer) | `envoy:owner:xyz` | `envoy:owner:xyz:<profileId>` |
-| Direct chat (family) | n/a (new) | `family:<profileA>:<profileB>` |
-| Group chat | `room:<roomId>` | `room:<roomId>` (shared, members checked) |
-| Ext Agent | `bridge:<agentId>` | `bridge:<agentId>:<profileId>` |
+| **EnvoyAI** | Thread key: `__envoy_ai__:<profileId>` | Dad's AI conversations are invisible to Mom |
+| **Chat bots** | Per-profile `aiBots` in `family-profiles.json` | Dad creates "Luna", Mom creates "Chef Marco" — separate |
+| **Bot conversations** | Thread key: `bot:<botId>:<profileId>` | Dad's Luna thread ≠ Mom's Luna thread (even if same bot) |
+| **Pi** | Thread key: `pi:<profileId>` | Each profile has their own Pi sessions |
+| **Terminal** | Sessions scoped by `profileId` | Dad's terminal ≠ Mom's terminal |
+| **Push** | Token tagged with `profileId` | Mom's phone doesn't buzz for Dad's messages |
+| **Vault** | `<profileDir>/vault/<profileId>/` | Private files per profile |
 
-**Rule:** when a profile requests `listChatHistory`, the server only returns threads that contain that profile's namespace. Dad can't see Mom's EnvoyAI thread. Mom can't see Dad's bot conversations.
+### 4.2 Owner-only features (admin rights)
 
-### 4.2 Group chat membership
+These are **infrastructure settings** that affect all profiles. Only the owner profile can access them:
 
-Group chats are **per-room**, not per-profile. A room has a `memberProfileIds: string[]` field. Only members see the room. Any member can create a room with any subset of family profiles + external mesh contacts.
+| Setting | Where | Why owner-only |
+|---|---|---|
+| **Model Provider** (API key, endpoint, model) | Settings → AI → Model Provider | One key serves everyone. Only owner should see/change it. |
+| **OpenClaw enable/disable** | Settings → AI → AI Engine | Infrastructure — affects all profiles' AI |
+| **Pi enable/disable** | Settings → AI → Pi | Infrastructure |
+| **AI Engine mode** (which agents active) | Settings → AI | Infrastructure |
+| **Node settings** (relay, discovery, network) | Settings → Node | Infrastructure |
+| **Family profile management** | Settings → Family | Admin-only |
+| **Authorized device management** | Settings → Devices | Admin-only |
+| **Ext Agent configuration** | Settings → AI → Ext Agent | Infrastructure |
 
-The owner can create a "Family" room with all profiles as members — but this is just a normal group chat, not a special "shared" surface.
+### 4.3 Per-profile settings (each person controls their own)
 
-### 4.3 Bot definitions (per-profile)
+| Setting | Where | Scope |
+|---|---|---|
+| **Create/delete their own bots** | Settings → AI → Bots | Private — only this profile's bots |
+| **Push notification toggle** | Me → Preferences | Private — their phone |
+| **Auto-run policy** (Pi tool approvals) | Settings → AI → Pi | Private — their preferences |
 
-Bots are stored per-profile in `family-profiles.json` under `profile.aiBots`. Each user creates their own bots in their own Settings → AI → Bots section. Dad's bots are invisible to Mom.
+### 4.4 How EnvoyGo enforces the permission model
 
-(Infrastructure note: the `aiBots` field in `node-config.json` is migrated to per-profile storage. The owner's existing bots move to the owner's profile.)
+The home node knows which profile is the owner (`isOwner: true` on the profile). When a non-owner profile tries to access an owner-only RPC:
 
-### 4.4 Vault
-
-Each profile gets a vault subdirectory:
 ```
-<profileDir>/vault/
-  ├── dad/          ← Dad's private files
-  ├── mom/          ← Mom's private files
-  └── kid/          ← Kid's private files
+Mom's EnvoyGo tries to update model provider config
+  → updateNodeConfig({ modelProviders: {...} })
+  → Home node checks: session.profileId "mom" → isOwner = false
+  → Returns error: "Only the node owner can change this setting"
 ```
 
-Vault access is scoped by profile — `readFile` / `writeFile` RPCs resolve to `<profileDir>/vault/<profileId>/`.
+EnvoyGo's Settings screen also hides owner-only sections for non-owner profiles:
+- **Owner sees:** Model Provider, AI Engine, Pi, Bots, Node settings, Devices, Family
+- **Non-owner sees:** Bots, Push toggle (their own only)
 
-### 4.5 Push notifications
+The owner can use **both phone and desktop** (Social UI / Tauri). Non-owner profiles use EnvoyGo only (phone/iPad). The desktop Social UI always runs as the owner.
 
-Push tokens are already per-device. With profiles, the `listChatPush` dispatch checks the profileId on the token — Mom's phone only gets pushes for Mom's threads, not Dad's.
+---
+
+## 5. Auto-bonding (family contacts)
+
+### 5.1 The rule — everything is per-profile
+
+There is **no shared trust store**. Every contact — whether family or external mesh — belongs to a specific profile:
+
+```
+Profile: Dad (owner)
+  Contacts:
+    ├── Mom (family, auto-bonded)
+    ├── Alex (family, auto-bonded)
+    └── Bob (mesh, Dad bonded with him)
+
+Profile: Mom
+  Contacts:
+    ├── Dad (family, auto-bonded)
+    ├── Alex (family, auto-bonded)
+    └── Alice (mesh, Mom bonded with her)
+
+Profile: Alex
+  Contacts:
+    ├── Dad (family, auto-bonded)
+    └── Mom (family, auto-bonded)
+```
+
+The trust store carries a `profileId` on every bond:
+
+```json
+[
+  { "peerOwnerId": "family:mom", "profileId": "dad", "level": "family" },
+  { "peerOwnerId": "family:alex", "profileId": "dad", "level": "family" },
+  { "peerOwnerId": "envoy:owner:bob", "profileId": "dad", "level": "direct" },
+
+  { "peerOwnerId": "family:dad", "profileId": "mom", "level": "family" },
+  { "peerOwnerId": "family:alex", "profileId": "mom", "level": "family" },
+  { "peerOwnerId": "envoy:owner:alice", "profileId": "mom", "level": "direct" },
+
+  { "peerOwnerId": "family:dad", "profileId": "alex", "level": "family" },
+  { "peerOwnerId": "family:mom", "profileId": "alex", "level": "family" }
+]
+```
+
+**One store, one rule, one treatment.** No "shared" vs "per-profile" distinction. The mesh identity still does the bonding (the home node is one peer on the mesh), but the bond record is tagged with which profile initiated it.
+
+### 5.2 Auto-bonding on profile creation
+
+When a new profile is created, it is automatically added to every other **active** profile's contact list. When a profile is deactivated, it appears offline to others but stays in their contact list (old chat history is preserved).
+
+### 5.3 Direct messaging (family member ↔ family member)
+
+Messages between family profiles are **local-only** — they never leave the home node. No libp2p, no mesh, no relay.
+
+```
+Dad types "What's for dinner?" → sendFamilyMessage("mom", "What's for dinner?")
+  → Home node writes to thread "family:dad:mom"
+  → Emit chat:message (Mom's WS picks it up if online)
+  → Push to Mom's device if offline
+```
+
+Thread key: `family:<sortedProfileA>:<sortedProfileB>` — bidirectional, both profiles read + write the same key.
+
+### 5.4 External mesh contacts (per-profile bonding)
+
+Each profile can bond with external peers independently. Dad bonds with Bob; Mom bonds with Alice. The bond record carries the `profileId`. When an inbound mesh message arrives:
+
+1. Look up the bond: `{ peerOwnerId: "envoy:owner:bob", profileId: "dad" }`
+2. Route to thread: `envoy:owner:bob:dad`
+3. Emit filtered to Dad's WS sessions only
+4. Push to Dad's devices only
+
+Two profiles **cannot** bond with the same external peer simultaneously (one `profileId` per peer). This is acceptable — in a family, external contacts are typically personal.
+
+### 5.5 Group chats
+
+Group chat rooms are **per-room** (not per-profile). A room has a `memberProfileIds: string[]` field. Only members see the room. Any member can create a room with any subset of family profiles + external mesh contacts.
+
+---
+
+## 6. Data isolation
+
+### 6.1 Thread key namespacing
+
+Every thread is scoped by profile:
+
+| Thread type | Key format |
+|---|---|
+| EnvoyAI | `__envoy_ai__:<profileId>` |
+| Bot | `bot:<botId>:<profileId>` |
+| Pi | `pi:<profileId>` |
+| Direct chat (mesh peer) | `envoy:owner:<peerId>:<profileId>` |
+| Direct chat (family) | `family:<sortedProfileA>:<sortedProfileB>` |
+| Group chat | `room:<roomId>` (membership checked) |
+| Ext Agent | `bridge:<agentId>:<profileId>` |
+
+**Rule:** when a profile requests `listChatHistory`, the server only returns threads that contain that profile's namespace. No cross-profile visibility.
+
+### 6.2 Push notification routing
+
+Push tokens are tagged with `profileId`. When the unified push listener fires:
 
 ```
 Push dispatch:
   1. Event arrives (e.g., chat:message for thread "bot:librarian:mom")
   2. Extract profileId from thread key → "mom"
   3. Find push tokens for "mom" → only Mom's devices
-  4. Push → Mom's phone
+  4. Check isProfileOnline("mom") → skip if Mom's WS is active
+  5. Push → Mom's phone only
 ```
-
----
-
-## 5. Auto-bonding (family contacts)
-
-### 5.1 The rule
-
-When a profile is created, it is automatically added to every other **active** profile's contact list. When a profile is deactivated, it appears offline/disconnected to others (but is not removed from their list — they can still see old chat history).
-
-### 5.2 Contact model
-
-```typescript
-interface FamilyContact {
-  profileId: string           // e.g. "mom"
-  displayName: string         // e.g. "Mom"
-  avatarColor?: string
-  relationship: "family"      // always "family" for auto-bonded
-  bondedAt: string
-}
-```
-
-Stored alongside each profile's data. When Dad's profile is created, Mom's contact list gets `{ profileId: "dad", displayName: "Dad", relationship: "family" }` automatically.
-
-### 5.3 Direct messaging (family member → family member)
-
-Messages between family profiles are **local-only** — they never leave the home node. No libp2p, no mesh, no relay.
-
-```
-Dad types "What's for dinner?" → sendToFamilyMember("mom", "What's for dinner?")
-  → Home node writes to thread "family:dad:mom"
-  → Emit chat:message (Mom's WS picks it up if online)
-  → Push to Mom's device if offline
-```
-
-The message path:
-1. Dad's EnvoyGo sends `sendFamilyMessage({ toProfileId: "mom", text: "..." })` via RPC
-2. Home node persists under thread key `family:<fromProfileId>:<toProfileId>`
-3. Emits `chat:message` — filtered by profileId (only Mom's WS receives it)
-4. If Mom's WS is offline → push to Mom's device
-
-**Bidirectional thread:** `family:dad:mom` and `family:mom:dad` are the same thread (sorted by ID). Both profiles read + write to the same key.
-
-### 5.4 Presence
-
-Each profile tracks `lastSeenAt` — when the device was last connected. Other family members see an online/offline indicator, exactly like mesh contacts today. The `isProfileOnline(profileId)` check mirrors `isOwnerOnline()` but scopes by profile.
-
----
-
-## 6. External mesh contacts (coexistence)
-
-Family profiles and mesh contacts coexist. Dad can chat with his friend Bob (on a different home node) while also chatting with Mom.
-
-```
-Dad's chat list:
-  AI Section:
-    ├── EnvoyAI (Dad's private AI)
-    └── Dad's bots
-
-  Contacts Section:
-    ├── Mom (family, auto-bonded, always online)
-    ├── Alex (family, auto-bonded)
-    └── Bob (mesh, bonded, may be offline)
-
-  Groups:
-    └── Family Trip (Dad + Mom + Alex + Bob)
-```
-
-**External mesh messages** are scoped by profile too. When Bob sends a message to the home node, the home node routes it to Dad's thread (`envoy:owner:bob:dad`), not Mom's. The mesh identity is still the home owner — Bob sees one peer (the home node), not individual family members.
-
-**Future enhancement:** if family members want their own mesh identities (to bond with external peers independently), that's Approach B (full DIDs per member) — a much larger effort that can be layered on later.
 
 ---
 
 ## 7. Pairing flow
 
-### 7.1 First device (owner setup)
+### 7.1 Owner setup (first device)
 
-The owner installs the home node, configures the model, and pairs their phone. During pairing:
+1. Owner installs EnvoyMesh on the home computer (desktop/Tauri app)
+2. Configures the model provider (Settings → AI → Model Provider)
+3. Pairs their phone via EnvoyGo → QR scan → "Who are you?"
+4. Creates the **owner profile**: name "Dad", avatar color
+5. Profile is marked `isOwner: true` — has admin rights
+6. Dad can use both the phone (EnvoyGo) and desktop (Social UI)
 
-1. QR scan → pair
-2. "Welcome! Create your profile:"
-   - Name: `[Dad]`
-   - Avatar color: `[■ #3b82f6]`
-3. Profile created as the **owner profile** (the primary user)
-4. This profile has full admin rights (create/delete profiles, manage bots, configure node)
+### 7.2 Adding family members
 
-### 7.2 Additional family members
-
-1. The owner generates a "family invite" QR code (Settings → Family → Add Member)
-2. Family member scans the QR with EnvoyGo
+1. Owner generates a "family invite" QR code (Settings → Family → Add Member)
+2. Family member scans the QR with EnvoyGo on their phone
 3. "Welcome to the [Node Name] family! Who are you?"
-   - Create new: `[Mom]` name + avatar
-   - Or: select an existing profile (if the owner pre-created it)
+   - Create new: `[Mom]` name + avatar color
+   - Or: select an existing profile (if owner pre-created it)
 4. Profile created → auto-bonded with all existing profiles
-5. Mom sees Dad in her contacts immediately; Dad sees Mom
+5. Mom sees Dad + Alex in her contacts immediately; they see Mom
+6. Mom uses EnvoyGo only — her phone is locked to her profile
 
-### 7.3 Profile switching (optional)
+### 7.3 No profile switching
 
-If one device is shared (e.g., a family iPad), the user can switch profiles from the Me screen:
+Each device is locked to one profile at pairing time. There is **no profile switcher** in EnvoyGo or the Social UI. The profile is permanent for that device's session.
 
-```
-Me → [Profile: Alex ▼]
-       ├── Alex (Kid)
-       └── Switch Profile...
-```
+- Dad gets a new phone → re-pairs → selects his existing "Dad" profile → old phone's session is revoked
+- Family iPad shared between Alex and a guest → Alex's profile only; guest would need their own profile on a separate pairing
 
-This re-pairs with a different profileId. Chat history is scoped to the selected profile.
+This keeps the mental model simple: **your phone shows your stuff, always.** No "am I looking at my messages or someone else's?" confusion.
 
 ---
 
@@ -320,27 +396,30 @@ The home node owner is the **trust root**. All profiles are trusted by the owner
 | **Push tokens** | Tagged with `profileId` — dispatch matches profile |
 | **Vault** | Per-profile subdirectory |
 | **Bot definitions** | Per-profile in `family-profiles.json` |
+| **Trust store** | Every bond carries `profileId` — contacts are per-profile |
+| **Settings RPCs** | Owner-only RPCs rejected for non-owner profiles |
 
-### 8.3 What the owner controls
+### 8.3 Owner controls (infrastructure)
 
 | Setting | Scope |
 |---|---|
 | Model config (API key) | Shared — one key for all profiles |
 | OpenClaw / Pi enable/disable | Shared — affects all profiles' AI |
-| Profile creation / deletion | Owner-only |
 | Node settings (relay, discovery) | Owner-only |
+| Family profile management | Owner-only |
 | Family invite QR generation | Owner-only |
 
-### 8.4 What each profile controls
+### 8.4 Profile controls (personal)
 
 | Setting | Scope |
 |---|---|
 | Their own AI conversations | Private — only this profile sees |
 | Their own bots | Private — each profile creates their own |
-| Their own contacts (mesh) | Private — external bonds are per-profile |
+| Their own contacts (mesh) | Private — bonds are per-profile |
 | Their own vault | Private |
 | Their display name / avatar | Per-profile |
-| Group chat membership | Per-room (any member can create) |
+| Their push toggle | Per-profile |
+| Their auto-run policy | Per-profile |
 
 ---
 
@@ -348,12 +427,13 @@ The home node owner is the **trust root**. All profiles are trusted by the owner
 
 ### Phase 1: Profile model + pairing (~2 days)
 
-- `family-profiles.json` store (CRUD)
+- `family-profiles.json` store (CRUD with `isOwner` flag)
 - `FamilyProfile` type in `@envoymesh/api`
-- Session token → profileId binding
+- Session token → `profileId` binding
 - Pairing flow: "Who are you?" (select/create profile)
 - Config sync: `familyProfiles` in `home:config-updated`
-- `defaultProfileId` for backward compat (owner = first profile)
+- Owner profile auto-created on first boot (migration)
+- Owner-only RPC guard (reject `updateNodeConfig` from non-owner)
 
 ### Phase 2: Thread namespacing + data isolation (~2 days)
 
@@ -362,13 +442,15 @@ The home node owner is the **trust root**. All profiles are trusted by the owner
 - `sendToOpenClaw` / `sendToAiBot` accept `profileId` from session
 - Chat log store: per-profile query filter
 - Bot definitions: migrate from `node-config.aiBots` to per-profile
+- Push routing: per-profile token matching
 
-### Phase 3: Family contacts + direct messaging (~1.5 days)
+### Phase 3: Family contacts + auto-bonding (~1.5 days)
 
+- Trust store: add `profileId` to every bond record
 - Auto-bonding: new profile → added to all active profiles' contacts
 - `sendFamilyMessage({ toProfileId, text })` RPC
 - Thread key: `family:<sortedProfileA>:<sortedProfileB>`
-- Push routing per profile
+- External mesh routing: inbound messages match bond's `profileId`
 - Presence: `isProfileOnline(profileId)`
 
 ### Phase 4: Group chat integration (~0.5 days)
@@ -379,17 +461,18 @@ The home node owner is the **trust root**. All profiles are trusted by the owner
 
 ### Phase 5: EnvoyGo UI (~2 days)
 
-- Pairing screen: profile selection / creation
-- Me screen: current profile display + switcher
+- Pairing screen: profile selection / creation (name + avatar color)
+- Settings screen: hide owner-only sections for non-owner profiles
 - Chat list: family contacts section (auto-bonded)
 - Direct chat with family member (new)
 - Group chat: include family members
+- Per-profile bot management (their own bots)
 
 ### Phase 6: Social UI (~1 day)
 
 - Settings → Family: profile management (create, rename, avatar, delete)
 - Family invite QR generation
-- Profile switcher (for shared devices)
+- Desktop always runs as owner profile
 
 **Total: ~9 days**
 
@@ -399,22 +482,24 @@ The home node owner is the **trust root**. All profiles are trusted by the owner
 
 | Current behavior | Family Network | Migration |
 |---|---|---|
-| One owner, one device | One owner + one "owner profile" | Auto-create owner profile on first boot; existing tokens get `profileId = "owner"` |
-| `aiBots` in node-config | Per-profile `aiBots` | Migrate existing bots to owner's profile |
+| One owner, one device | One owner profile + family profiles | Auto-create owner profile on first boot |
+| `aiBots` in node-config | Per-profile `aiBots` in family-profiles.json | Migrate existing bots to owner's profile |
 | `listChatHistory("__envoy_ai__")` | `listChatHistory("__envoy_ai__:owner")` | Auto-append profile namespace when missing |
-| Single push token for owner | Per-profile push tokens | Existing token gets `profileId = "owner"` |
+| Session tokens without `profileId` | Tagged with `profileId = "owner"` | Backfill on token read |
 | `isOwnerOnline()` | `isProfileOnline(profileId)` | Owner profile = existing behavior |
+| Trust store bonds without `profileId` | Tagged with `profileId = "owner"` | Backfill on read |
 
-Existing single-user installations upgrade transparently — the owner gets a default profile, everything works as before.
+Existing single-user installations upgrade transparently.
 
 ---
 
 ## 11. What this is NOT
 
 - **NOT** a mesh identity system — profiles are local, not bonded on the P2P network
-- **NOT** end-to-end encrypted between family members — messages are in-process (the home node sees everything). This is acceptable because the owner trusts all family members (they're inside the trust boundary).
-- **NOT** a multi-node cluster — one home node serves the family. If the home node is down, the family network is down.
-- **NOT** a replacement for mesh contacts — external peers still use the full bonding + mesh transport. Family Network is an additional local layer.
+- **NOT** end-to-end encrypted between family members — messages are in-process (the home node sees everything). Acceptable because the owner trusts all family members.
+- **NOT** a multi-node cluster — one home node serves the family
+- **NOT** a profile switcher — each device is locked to one profile permanently
+- **NOT** a replacement for mesh contacts — external peers still use the full bonding + mesh transport
 
 ---
 
@@ -424,8 +509,9 @@ Existing single-user installations upgrade transparently — the owner gets a de
 - Session token store: `packages/local-store/src/session-token-store.ts`
 - Chat log store: `packages/local-store/src/chat-log-store.ts` (arbitrary thread keys)
 - Push token store: `apps/node/src/push-notification.ts` → `PushTokenStore`
-- Config sync: `apps/node/src/node-service-config.ts` → `getNodeConfigViaRuntime` + `home:config-updated`
+- Config sync: `apps/node/src/node-service-config.ts` + `home:config-updated`
 - AI thread: `packages/api/src/envoy-ai-thread.ts` → `ENVOY_AI_THREAD_KEY`
 - Bot framework: `packages/api/src/ai-bot.ts` → `AiBotDefinition`
 - Chat rooms: `packages/api/src/chat-room-service.ts`
+- Trust store: `packages/local-store/src/local-trust-store.ts`
 - Ext Agent: `packages/api/src/ext-agent.ts`
