@@ -43,6 +43,11 @@ interface PushTokenRecord {
   platform: "ios" | "android";
   token: string;
   ownerId: string;
+  /**
+   * Phase 51 — family profile this device is bound to. Missing on
+   * pre-51 records → treated as `"owner"` on load.
+   */
+  profileId: string;
   createdAt: string;
   lastUsedAt: string;
   /**
@@ -78,9 +83,14 @@ class PushTokenStore {
         // Phase 42I — backfill `tokenType` for records written by
         // older node builds (pre-42I). All alert tokens are equivalent
         // for dispatch purposes; missing field means "alert".
+        // Phase 51 — backfill `profileId` → owner for pre-family installs.
         const migrated: PushTokenRecord = {
           ...e,
           tokenType: e.tokenType === "voip" ? "voip" : "alert",
+          profileId:
+            typeof e.profileId === "string" && e.profileId.trim()
+              ? e.profileId.trim()
+              : "owner",
         };
         this.tokens.set(migrated.deviceId, migrated);
       }
@@ -102,6 +112,12 @@ class PushTokenStore {
 
   listForOwner(ownerId: string): PushTokenRecord[] {
     return [...this.tokens.values()].filter((r) => r.ownerId === ownerId);
+  }
+
+  /** Phase 51 — tokens for one family profile under an owner. */
+  listForOwnerProfile(ownerId: string, profileId: string): PushTokenRecord[] {
+    const pid = profileId.trim() || "owner";
+    return this.listForOwner(ownerId).filter((r) => r.profileId === pid);
   }
 
   /** Diagnostic: how many tokens are loaded (any owner). */
@@ -616,20 +632,30 @@ export class PushNotificationService {
      * one overwriting the other.
      */
     tokenType?: "alert" | "voip";
+    /** Phase 51 — family profile bound to this device. Defaults to owner. */
+    profileId?: string;
   }): void {
     const platform = params.platform === "ios" ? "ios" : "android";
     const tokenType: "alert" | "voip" = params.tokenType === "voip" ? "voip" : "alert";
+    const profileId =
+      typeof params.profileId === "string" && params.profileId.trim()
+        ? params.profileId.trim()
+        : "owner";
     // Use the full token in the synthetic deviceId so two devices
     // whose tokens share a prefix don't collide on the map key. Real
     // APNs/FCM tokens are 64+ hex chars; the synthetic id is internal
-    // to the node and never leaves it.
+    // to the node and never leaves it. Include profileId so Mom and Dad
+    // on the same physical phone (unlikely but possible after re-pair)
+    // do not overwrite each other's row when deviceId is synthetic.
     const deviceId =
-      params.deviceId ?? `${params.platform}-${tokenType}-${params.token}`;
+      params.deviceId ??
+      `${params.platform}-${tokenType}-${profileId}-${params.token}`;
     this.store.register({
       deviceId,
       platform,
       token: params.token,
       ownerId: params.ownerId,
+      profileId,
       tokenType,
       createdAt: new Date().toISOString(),
       lastUsedAt: new Date().toISOString(),
@@ -649,6 +675,11 @@ export class PushNotificationService {
    */
   listForOwner(ownerId: string): PushTokenRecord[] {
     return this.store.listForOwner(ownerId);
+  }
+
+  /** Phase 51 — list tokens for one family profile. */
+  listForOwnerProfile(ownerId: string, profileId: string): PushTokenRecord[] {
+    return this.store.listForOwnerProfile(ownerId, profileId);
   }
 
   /**
@@ -701,11 +732,20 @@ export class PushNotificationService {
     messagePreview: string;
     targetOwnerId: string;
     messageId: string;
-    threadType?: "direct" | "room" | "external" | "envoyai" | "bot";
+    threadType?: "direct" | "room" | "external" | "envoyai" | "bot" | "family";
     senderOwnerId?: string;
     roomId?: string;
+    /** Phase 51D — `"family"` for local family rooms (vs mesh rooms). */
+    roomKind?: "family";
+    /** Phase 51 — full local thread key (e.g. `family:dad:mom` / `room:<id>`). */
+    threadKey?: string;
     /** Optional deep-link type (e.g. `pi_proposal`). */
     type?: string;
+    /**
+     * Phase 51 — only notify devices bound to this family profile.
+     * Defaults to `"owner"` so mesh DMs / bond pushes keep prior behavior.
+     */
+    targetProfileId?: string;
   }): Promise<void> {
     if (!(await this.ensureReady())) {
       console.warn(
@@ -714,12 +754,16 @@ export class PushNotificationService {
       return;
     }
 
+    const profileId =
+      typeof params.targetProfileId === "string" && params.targetProfileId.trim()
+        ? params.targetProfileId.trim()
+        : "owner";
     const tokens = this.store
-      .listForOwner(params.targetOwnerId)
+      .listForOwnerProfile(params.targetOwnerId, profileId)
       .filter((r) => r.tokenType === "alert");
     if (tokens.length === 0) {
       console.warn(
-        `[push] dispatchChatPush: no alert tokens for owner=${params.targetOwnerId}`,
+        `[push] dispatchChatPush: no alert tokens for owner=${params.targetOwnerId} profile=${profileId}`,
       );
       return;
     }
@@ -736,6 +780,8 @@ export class PushNotificationService {
     };
     if (params.senderOwnerId) data.senderOwnerId = params.senderOwnerId;
     if (params.roomId) data.roomId = params.roomId;
+    if (params.roomKind) data.roomKind = params.roomKind;
+    if (params.threadKey) data.threadKey = params.threadKey;
     if (params.type) data.type = params.type;
     // Include senderName so the client can display it in the chat header
     // when deep-linking from a push tap (before the thread loads).
@@ -757,8 +803,9 @@ export class PushNotificationService {
   }): Promise<void> {
     if (!(await this.ensureReady())) return;
 
+    // Mesh bonds are owner-only — never notify family-member devices.
     const tokens = this.store
-      .listForOwner(params.targetOwnerId)
+      .listForOwnerProfile(params.targetOwnerId, "owner")
       .filter((r) => r.tokenType === "alert");
     if (tokens.length === 0) return;
 
@@ -789,8 +836,9 @@ export class PushNotificationService {
   }): Promise<void> {
     if (!(await this.ensureReady())) return;
 
+    // Approvals are owner-only infrastructure.
     const tokens = this.store
-      .listForOwner(params.targetOwnerId)
+      .listForOwnerProfile(params.targetOwnerId, "owner")
       .filter((r) => r.tokenType === "alert");
     if (tokens.length === 0) return;
 
@@ -822,8 +870,9 @@ export class PushNotificationService {
   }): Promise<void> {
     if (!(await this.ensureReady())) return;
 
+    // Feed notify is mesh-facing → owner profile devices only.
     const tokens = this.store
-      .listForOwner(params.targetOwnerId)
+      .listForOwnerProfile(params.targetOwnerId, "owner")
       .filter((r) => r.tokenType === "alert");
     if (tokens.length === 0) return;
 
@@ -876,7 +925,8 @@ export class PushNotificationService {
   }): Promise<void> {
     if (!(await this.ensureReady())) return;
 
-    const tokens = this.store.listForOwner(params.targetOwnerId);
+    // Mesh calls are owner-only.
+    const tokens = this.store.listForOwnerProfile(params.targetOwnerId, "owner");
     if (tokens.length === 0) return;
 
     const data: Record<string, string> = {

@@ -3,7 +3,7 @@ import { useNodeState } from "../context/NodeStateContext.js";
 import { useI18n, useT } from "../context/I18nContext.js";
 import { useNodeService } from "./useNodeService.js";
 import type { ChatMessage, ChatRoomMessageEvent } from "@envoymesh/api";
-import { isChatRoomThreadKey } from "@envoymesh/api";
+import { isChatRoomThreadKey, isFamilyThreadKey } from "@envoymesh/api";
 
 export interface ThreadPreview {
   text: string;
@@ -39,10 +39,13 @@ function threadPeerOwnerId(msg: ChatMessage, selfOwnerId: string | undefined): s
   return so ?? ro ?? null;
 }
 
-/** Thread key for preview map — bonded owner id or `room:{uuid}`. */
+/** Thread key for preview map — bonded owner id, `room:{uuid}`, or `family:a:b`. */
 function previewThreadKey(msg: ChatMessage, selfOwnerId: string | undefined): string | null {
   const rcvO = msg.recipient.ownerId?.trim();
   if (rcvO && isChatRoomThreadKey(rcvO)) return rcvO;
+  if (rcvO && isFamilyThreadKey(rcvO)) return rcvO;
+  const sndO = msg.sender.ownerId?.trim();
+  if (sndO && isFamilyThreadKey(sndO)) return sndO;
   return threadPeerOwnerId(msg, selfOwnerId);
 }
 

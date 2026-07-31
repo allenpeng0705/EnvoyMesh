@@ -96,6 +96,20 @@ class ChatNotifier extends StateNotifier<ChatState> {
 
   ChatNotifier(this._ref) : super(const ChatState());
 
+  /// Drop threads/messages for [nodeId] (used on unpair).
+  void clearForNode(String nodeId) {
+    final prefix = '$nodeId:';
+    state = ChatState(
+      threads: state.threads.where((t) => t.nodeId != nodeId).toList(),
+      messages: Map.fromEntries(
+        state.messages.entries.where((e) => !e.key.startsWith(prefix)),
+      ),
+      selectedTab: 0,
+    );
+    // Dedup set mixes bare messageIds and `$threadId:$messageId` keys.
+    _seenMessageIds.clear();
+  }
+
   /// Live typed RPC client. Prefer this over [nodeServiceProvider], which
   /// can cache null across reconnect gaps when `_client` is assigned
   /// without a matching `nodeProvider` state change.
@@ -114,9 +128,10 @@ class ChatNotifier extends StateNotifier<ChatState> {
   Future<void> loadThreads(String nodeId) async {
     final rows = await _localDb.getThreads(nodeId);
     final selfOwnerId = _ref.read(nodeProvider).ownerId;
+    final isOwner = _ref.read(nodeProvider).isOwnerProfile;
     final threads = <ChatThread>[];
     for (final row in rows) {
-      final t = _stripLegacyAgentStatusSuffix(ChatThread.fromJson(row));
+      var t = _stripLegacyAgentStatusSuffix(ChatThread.fromJson(row));
       if (isSelfThreadPeer(t.contactOwnerId, selfOwnerId)) continue;
       // Pi is a terminal session now — drop legacy AI-section Pi chat rows.
       // Also drop synthetic "envoy:pi" Contacts leaks from old Ext Agent pushes.
@@ -124,6 +139,21 @@ class ChatNotifier extends StateNotifier<ChatState> {
           t.contactOwnerId == 'envoy:pi' ||
           t.id.endsWith(':envoy:pi')) {
         await _localDb.deleteThread(t.id);
+        continue;
+      }
+      // Repair stale EnvoyAI titles that inherited Ext Agent names (e.g. "Pi")
+      // from bridge:status before agentType/agentName were separated.
+      if (t.type == ChatThreadType.envoyai && t.displayName != 'EnvoyAI') {
+        t = t.copyWith(displayName: 'EnvoyAI');
+        unawaited(_localDb.upsertThread(t.toJson()));
+      }
+      // Phase 51E — non-owners only restore AI + family threads from cache.
+      if (!isOwner &&
+          t.type != ChatThreadType.envoyai &&
+          t.type != ChatThreadType.externalAgent &&
+          t.type != ChatThreadType.aiBot &&
+          t.type != ChatThreadType.family &&
+          t.type != ChatThreadType.familyGroup) {
         continue;
       }
       threads.add(t);
@@ -164,9 +194,98 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final contactNotifier = _ref.read(contactProvider.notifier);
     // Sync contacts first, then build threads.
     state = state.copyWith(isLoading: true);
-    await contactNotifier.syncBonds();
+    // Always restore cached threads (filtered for non-owners inside loadThreads).
     await loadThreads(nodeState.activeNode!.id);
+    // Mesh bonds are owner-only — family members skip.
+    if (nodeState.isOwnerProfile) {
+      await contactNotifier.syncBonds();
+      await syncRooms();
+    }
+    syncFamilyContacts(nodeState.familyProfiles, nodeState.activeNode!.id);
+    await syncFamilyRooms();
     state = state.copyWith(isLoading: false);
+  }
+
+  /// Phase 51C — ensure a chat-list row for every other family profile.
+  /// Inactive profiles stay listed (history / offline) per family_network.md §5.2.
+  void syncFamilyContacts(
+    List<Map<String, dynamic>> profiles,
+    String nodeId,
+  ) {
+    final myProfileId = _ref.read(nodeProvider).familyProfileId ?? 'owner';
+    for (final raw in profiles) {
+      final id = raw['id']?.toString().trim() ?? '';
+      if (id.isEmpty || id == myProfileId) continue;
+      final name = raw['name']?.toString().trim();
+      if (name == null || name.isEmpty) continue;
+      final active = raw['active'] != false;
+      final displayName = active ? name : '$name (offline)';
+      final threadKey = _familyThreadKey(myProfileId, id);
+      final threadId = '$nodeId:$threadKey';
+      _upsertThread(
+        threadId: threadId,
+        nodeId: nodeId,
+        type: ChatThreadType.family,
+        displayName: displayName,
+        contactOwnerId: id,
+        avatarColor: raw['avatarColor']?.toString(),
+      );
+    }
+  }
+
+  static String _familyThreadKey(String a, String b) {
+    return a.compareTo(b) < 0 ? 'family:$a:$b' : 'family:$b:$a';
+  }
+
+  /// Phase 51C — send a local family DM.
+  Future<void> sendFamilyMessage(String toProfileId, String text) async {
+    final nodeService = _liveNodeService();
+    final nodeState = _ref.read(nodeProvider);
+    if (nodeService == null || nodeState.activeNode == null) {
+      throw StateError('Not connected to home node');
+    }
+    final myProfileId = nodeState.familyProfileId ?? 'owner';
+    final threadKey = _familyThreadKey(myProfileId, toProfileId);
+    final threadId = '${nodeState.activeNode!.id}:$threadKey';
+    final now = DateTime.now().toUtc().toIso8601String();
+    final tempMsg = ChatMessage(
+      id: 'temp_${DateTime.now().microsecondsSinceEpoch}',
+      threadId: threadId,
+      text: text,
+      createdAt: now,
+      isOutbound: true,
+      senderDisplayName: 'You',
+      senderOwnerId: myProfileId,
+    );
+    _localDb.insertMessage(tempMsg.toJson());
+    state = state.copyWith(
+      messages: {
+        ...state.messages,
+        threadId: [tempMsg, ...?state.messages[threadId]],
+      },
+    );
+
+    String displayName = toProfileId;
+    for (final p in nodeState.familyProfiles) {
+      if (p['id']?.toString() == toProfileId) {
+        displayName = p['name']?.toString() ?? toProfileId;
+        break;
+      }
+    }
+    _upsertThread(
+      threadId: threadId,
+      nodeId: nodeState.activeNode!.id,
+      type: ChatThreadType.family,
+      displayName: displayName,
+      contactOwnerId: toProfileId,
+      lastMessageText: text,
+      lastMessageAt: DateTime.tryParse(now),
+    );
+
+    await nodeService.sendFamilyMessage(
+      toProfileId: toProfileId,
+      text: text,
+    );
   }
 
   /// Send a direct message. Optional [attachments] for audio/files (Phase 37).
@@ -243,14 +362,21 @@ class ChatNotifier extends StateNotifier<ChatState> {
     String? contactOwnerId,
     String? chatRoomId,
   }) async {
-    final peerKey = chatRoomId != null && chatRoomId.isNotEmpty
+    String? peerKey = chatRoomId != null && chatRoomId.isNotEmpty
         ? 'room:$chatRoomId'
         : contactOwnerId;
+    // Phase 51C — family DM history is stored under `family:<sortedA>:<sortedB>`.
+    final familyMarker = threadId.indexOf(':family:');
+    if (familyMarker >= 0) {
+      peerKey = threadId.substring(familyMarker + 1);
+    }
     if (peerKey == null || peerKey.isEmpty) return;
 
     final nodeService = _ref.read(nodeServiceProvider);
     if (nodeService == null) return;
-    final selfOwnerId = _ref.read(nodeProvider).ownerId;
+    final nodeState = _ref.read(nodeProvider);
+    final selfOwnerId = nodeState.ownerId;
+    final selfFamilyProfileId = nodeState.familyProfileId;
 
     // lastOrNull on a newest-first list = the chronologically oldest message.
     final earliestCached = state.messages[threadId]?.lastOrNull;
@@ -259,38 +385,40 @@ class ChatNotifier extends StateNotifier<ChatState> {
       before: earliestCached?.createdAt,
       threadId: threadId,
       selfOwnerId: selfOwnerId,
+      selfFamilyProfileId: selfFamilyProfileId,
     );
 
     if (messages.isEmpty) return;
 
-    // Deduplicate by messageId before appending.
-    final existingIds = state.messages[threadId]
-            ?.map((m) => m.messageId)
-            .toSet() ??
-        {};
-    final newMessages = messages
-        .where((m) => !existingIds.contains(m.messageId))
-        .toList();
-
-    // Cache new messages in local DB (strip unsupported columns).
-    for (final msg in newMessages) {
-      try {
-        await _localDb.insertMessage(msg.toJson());
-      } catch (_) {
-        // Best-effort local cache — don't fail the open.
+    // Upsert by messageId so corrected isOutbound/sender labels replace a
+    // stale local-DB cache (family DMs were previously flipped vs mesh ownerId).
+    final byId = <String, ChatMessage>{
+      for (final m in state.messages[threadId] ?? const <ChatMessage>[])
+        m.id: m,
+    };
+    var changed = false;
+    for (final msg in messages) {
+      final prev = byId[msg.id];
+      if (prev == null ||
+          prev.isOutbound != msg.isOutbound ||
+          prev.senderDisplayName != msg.senderDisplayName ||
+          prev.text != msg.text) {
+        byId[msg.id] = msg;
+        changed = true;
+        try {
+          await _localDb.insertMessage(msg.toJson());
+        } catch (_) {
+          // Best-effort local cache — don't fail the open.
+        }
       }
     }
 
-    if (newMessages.isEmpty) return;
+    if (!changed) return;
 
-    // Merge then sort newest-first (ListView reverse:true → newest at bottom).
     state = state.copyWith(
       messages: {
         ...state.messages,
-        threadId: [
-          ...?state.messages[threadId],
-          ...newMessages,
-        ],
+        threadId: byId.values.toList(),
       },
     );
     _sortThreadMessages(threadId);
@@ -316,43 +444,45 @@ class ChatNotifier extends StateNotifier<ChatState> {
       before: oldestCached?.createdAt,
       threadId: threadId,
       selfOwnerId: nodeState.ownerId,
+      selfFamilyProfileId: nodeState.familyProfileId,
     );
 
     if (messages.isEmpty) return;
 
-    // Deduplicate by messageId.
-    final existingIds = state.messages[threadId]
-            ?.map((m) => m.messageId)
-            .toSet() ??
-        {};
-    final newMessages = messages
-        .where((m) => !existingIds.contains(m.messageId))
-        // Normalize thread_id to the UI thread key (not "envoyai"/"external").
-        .map((m) => ChatMessage(
-              id: m.id,
-              threadId: threadId,
-              senderOwnerId: m.senderOwnerId,
-              senderDisplayName: m.senderDisplayName,
-              text: m.text,
-              createdAt: m.createdAt,
-              isOutbound: m.isOutbound,
-              attachments: m.attachments,
-            ))
-        .toList();
-
-    for (final msg in newMessages) {
-      await _localDb.insertMessage(msg.toJson());
+    final byId = <String, ChatMessage>{
+      for (final m in state.messages[threadId] ?? const <ChatMessage>[])
+        m.id: m,
+    };
+    var changed = false;
+    for (final m in messages) {
+      // Normalize thread_id to the UI thread key (not "envoyai"/"external").
+      final msg = ChatMessage(
+        id: m.id,
+        threadId: threadId,
+        senderOwnerId: m.senderOwnerId,
+        senderDisplayName: m.senderDisplayName,
+        text: m.text,
+        createdAt: m.createdAt,
+        isOutbound: m.isOutbound,
+        attachments: m.attachments,
+      );
+      final prev = byId[msg.id];
+      if (prev == null ||
+          prev.isOutbound != msg.isOutbound ||
+          prev.senderDisplayName != msg.senderDisplayName ||
+          prev.text != msg.text) {
+        byId[msg.id] = msg;
+        changed = true;
+        await _localDb.insertMessage(msg.toJson());
+      }
     }
 
-    if (newMessages.isEmpty) return;
+    if (!changed) return;
 
     state = state.copyWith(
       messages: {
         ...state.messages,
-        threadId: [
-          ...?state.messages[threadId],
-          ...newMessages,
-        ],
+        threadId: byId.values.toList(),
       },
     );
     _sortThreadMessages(threadId);
@@ -466,10 +596,14 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final actorRole = sender?['actorRole'] as String?;
 
     // Is this message sent by the owner, by an agent, or by someone else?
-    final sentBySelf = selfOwnerId != null && senderOwnerId == selfOwnerId;
+    final myProfileId = nodeState.familyProfileId ?? 'owner';
+    final sentBySelf = (selfOwnerId != null && senderOwnerId == selfOwnerId) ||
+        senderOwnerId == myProfileId;
     // Synthetic agent senders must never become Contacts rows.
     final isSyntheticAgent = senderOwnerId == 'envoy:pi' ||
         senderOwnerId == '__envoy_ai__' ||
+        senderOwnerId.startsWith('__envoy_ai__:') ||
+        senderOwnerId.startsWith('bridge:') ||
         senderOwnerId.startsWith('envoy_agent_') ||
         senderOwnerId.startsWith('envoy:agent:') ||
         senderOwnerId.startsWith('bot:');
@@ -529,11 +663,19 @@ class ChatNotifier extends StateNotifier<ChatState> {
     // Builtin EnvoyAI only — character bots share deliveryChannel "ai" but
     // must stay on their own `bot:<id>` thread.
     final isBuiltinAi = !isAiBot &&
-        (deliveryChannel == 'ai' || senderOwnerId == '__envoy_ai__');
+        (deliveryChannel == 'ai' ||
+            senderOwnerId == '__envoy_ai__' ||
+            senderOwnerId.startsWith('__envoy_ai__:'));
     final isBridgeAgent = !isBuiltinAi &&
         !isAiBot &&
         ((deliveryChannel == 'agent' && deliverySource == 'bridge') ||
-            senderOwnerId == 'envoy:pi');
+            senderOwnerId == 'envoy:pi' ||
+            senderOwnerId.startsWith('bridge:'));
+    final familyThreadKey = recipientOwnerId != null &&
+            recipientOwnerId.startsWith('family:')
+        ? recipientOwnerId
+        : (senderOwnerId.startsWith('family:') ? senderOwnerId : null);
+    final isFamilyDm = familyThreadKey != null;
     final agentType = isAiBot
         ? botThreadKey!
         : isBridgeAgent
@@ -546,6 +688,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
         !isBridgeAgent &&
         !isBuiltinAi &&
         !isAiBot &&
+        !isFamilyDm &&
         recipientOwnerId != null &&
         recipientOwnerId.isNotEmpty &&
         recipientOwnerId != selfOwnerId;
@@ -553,6 +696,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final String threadId;
     if (isTerminal) {
       threadId = '${nodeState.activeNode!.id}:term:${terminalId ?? senderOwnerId}';
+    } else if (isFamilyDm) {
+      threadId = '${nodeState.activeNode!.id}:$familyThreadKey';
     } else if (isAiBot) {
       threadId = '${nodeState.activeNode!.id}:$botThreadKey';
     } else if (isBuiltinAi) {
@@ -594,7 +739,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
     // - AI reply for a contact → "You", right side (agent acts as owner)
     // - Sent by agent (EnvoyAI chat) → agent name, left side
     // - Sent by peer → peer's name, left side
-    final bool showAsMine = (sentBySelf && actorRole == 'human') || agentTalkToContact;
+    final bool showAsMine = (sentBySelf && actorRole == 'human') ||
+        agentTalkToContact ||
+        (isFamilyDm && senderOwnerId == myProfileId);
     final msgSenderDisplay = showAsMine
         ? 'You'
         : (isAiBot
@@ -634,6 +781,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final ChatThreadType upsertType;
     if (isTerminal) {
       upsertType = ChatThreadType.terminal;
+    } else if (isFamilyDm) {
+      upsertType = ChatThreadType.family;
     } else if (isAiBot) {
       upsertType = ChatThreadType.aiBot;
     } else if (isAiThread) {
@@ -646,6 +795,23 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final botIdFromKey = isAiBot && botThreadKey!.startsWith('bot:')
         ? botThreadKey.substring(4)
         : null;
+    String? familyPeerId;
+    String? familyPeerDisplayName;
+    if (isFamilyDm && familyThreadKey != null) {
+      final parts = familyThreadKey.split(':');
+      if (parts.length == 3) {
+        familyPeerId =
+            parts[1] == myProfileId ? parts[2] : parts[1];
+      }
+      if (familyPeerId != null) {
+        for (final p in nodeState.familyProfiles) {
+          if (p['id']?.toString() == familyPeerId) {
+            familyPeerDisplayName = p['name']?.toString();
+            break;
+          }
+        }
+      }
+    }
     // Update thread.
     _upsertThread(
       threadId: threadId,
@@ -653,18 +819,27 @@ class ChatNotifier extends StateNotifier<ChatState> {
       type: upsertType,
       displayName: isTerminal
           ? 'Terminal: ${terminalName ?? terminalId ?? ''}'
-          : agentTalkToContact
-              ? (threadDisplayName ?? peerId)
-              : isAiBot
-                  ? (senderDisplayName ?? botThreadKey ?? 'Bot')
-                  : isAiThread
-                      ? (isBridgeAgent
-                          ? (senderDisplayName ?? 'Ext Agent')
-                          : 'EnvoyAI')
-                      : threadDisplayName ?? peerId,
-      contactOwnerId: (isAiThread || (isAgent && !agentTalkToContact))
-          ? null
-          : peerId,
+          : isFamilyDm
+              ? (familyPeerDisplayName ??
+                  (senderOwnerId == myProfileId
+                      ? null
+                      : senderDisplayName) ??
+                  familyPeerId ??
+                  peerId)
+              : agentTalkToContact
+                  ? (threadDisplayName ?? peerId)
+                  : isAiBot
+                      ? (senderDisplayName ?? botThreadKey ?? 'Bot')
+                      : isAiThread
+                          ? (isBridgeAgent
+                              ? (senderDisplayName ?? 'Ext Agent')
+                              : 'EnvoyAI')
+                          : threadDisplayName ?? peerId,
+      contactOwnerId: isFamilyDm
+          ? familyPeerId
+          : ((isAiThread || (isAgent && !agentTalkToContact))
+              ? null
+              : peerId),
       agentType: isAiThread ? agentType : null,
       botId: botIdFromKey,
       lastMessageText: text ?? '',
@@ -872,6 +1047,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final createdAt = (inner['createdAt'] ?? metadata?['timestamp']) as String?;
     final roomName = (data['roomName'] ?? data['title'] ?? recipient?['displayName']) as String?;
     final senderDisplayName = (inner['senderDisplayName'] ?? sender?['displayName']) as String?;
+    final kind = (data['kind'] as String?)?.trim();
 
     if (roomId == null || roomId.isEmpty) return;
 
@@ -879,14 +1055,26 @@ class ChatNotifier extends StateNotifier<ChatState> {
     if (text == null || text.isEmpty) return;
 
     final threadId = '${nodeState.activeNode!.id}:room:$roomId';
+    final existingThread = state.threads.where((t) => t.id == threadId).firstOrNull;
+    final isFamilyRoom = kind == 'family' ||
+        existingThread?.type == ChatThreadType.familyGroup;
+    final myProfileId = nodeState.familyProfileId ?? 'owner';
+    final showAsMine = isFamilyRoom
+        ? (senderOwnerId != null && senderOwnerId == myProfileId)
+        : messageIsOutgoing(
+            senderOwnerId: senderOwnerId,
+            recipientOwnerId: recipient?['ownerId'] as String?,
+            selfOwnerId: nodeState.ownerId,
+            selfFamilyProfileId: nodeState.familyProfileId,
+          );
     final msg = ChatMessage(
       id: messageId ?? 'msg_${DateTime.now().microsecondsSinceEpoch}',
       threadId: threadId,
       senderOwnerId: senderOwnerId,
-      senderDisplayName: senderDisplayName,
+      senderDisplayName: showAsMine ? 'You' : senderDisplayName,
       text: text,
       createdAt: createdAt,
-      isOutbound: false,
+      isOutbound: showAsMine,
     );
 
     _localDb.insertMessage(msg.toJson());
@@ -894,8 +1082,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
     _upsertThread(
       threadId: threadId,
       nodeId: nodeState.activeNode!.id,
-      type: ChatThreadType.group,
-      displayName: roomName ?? 'Group',
+      type: isFamilyRoom ? ChatThreadType.familyGroup : ChatThreadType.group,
+      displayName: roomName ?? (isFamilyRoom ? 'Family group' : 'Group'),
       chatRoomId: roomId,
       lastMessageText: text ?? '',
       lastMessageAt: createdAt != null
@@ -931,8 +1119,10 @@ class ChatNotifier extends StateNotifier<ChatState> {
     _upsertThread(
       threadId: threadId,
       nodeId: nodeState.activeNode!.id,
-      type: ChatThreadType.group,
-      displayName: room.name.isNotEmpty ? room.name : 'Group',
+      type: room.isFamily ? ChatThreadType.familyGroup : ChatThreadType.group,
+      displayName: room.name.isNotEmpty
+          ? room.name
+          : (room.isFamily ? 'Family group' : 'Group'),
       chatRoomId: room.id,
       lastMessageText: room.lastMessageText,
       lastMessageAt: room.lastMessageAt,
@@ -958,6 +1148,84 @@ class ChatNotifier extends StateNotifier<ChatState> {
     if (nodeService == null) return;
     await nodeService.createChatRoom(name);
     await syncRooms();
+  }
+
+  /// Phase 51D — create a local family group (profile members only).
+  Future<void> createFamilyRoom({
+    required String title,
+    required List<String> memberProfileIds,
+  }) async {
+    final nodeService = _liveNodeService();
+    if (nodeService == null) throw StateError('Not connected to home node');
+    final result = await nodeService.createFamilyRoom(
+      title: title,
+      memberProfileIds: memberProfileIds,
+    );
+    final roomRaw = result['room'];
+    if (roomRaw is Map) {
+      onRoomUpdated(Map<String, dynamic>.from(roomRaw));
+    } else {
+      await syncFamilyRooms();
+    }
+  }
+
+  Future<void> syncFamilyRooms({NodeServiceClient? client}) async {
+    final nodeService = client ?? _liveNodeService();
+    final nodeState = _ref.read(nodeProvider);
+    if (nodeService == null || nodeState.activeNode == null) return;
+    try {
+      final result = await nodeService.listFamilyRooms();
+      final roomsRaw = result['rooms'];
+      if (roomsRaw is! List) return;
+      final nodeId = nodeState.activeNode!.id;
+      for (final raw in roomsRaw) {
+        if (raw is! Map) continue;
+        final room = ChatRoom.fromJson({
+          ...Map<String, dynamic>.from(raw),
+          'nodeId': nodeId,
+          'kind': 'family',
+        });
+        if (room.id.isEmpty) continue;
+        final threadId = '$nodeId:room:${room.id}';
+        _upsertThread(
+          threadId: threadId,
+          nodeId: nodeId,
+          type: ChatThreadType.familyGroup,
+          displayName: room.name.isNotEmpty ? room.name : 'Family group',
+          chatRoomId: room.id,
+        );
+      }
+    } catch (e) {
+      debugPrint('syncFamilyRooms failed: $e');
+    }
+  }
+
+  Future<void> sendFamilyRoomMessage(String roomId, String text) async {
+    final nodeService = _liveNodeService();
+    final nodeState = _ref.read(nodeProvider);
+    if (nodeService == null || nodeState.activeNode == null) {
+      throw StateError('Not connected to home node');
+    }
+    final threadId = '${nodeState.activeNode!.id}:room:$roomId';
+    final now = DateTime.now().toUtc().toIso8601String();
+    final myProfileId = nodeState.familyProfileId ?? 'owner';
+    final tempMsg = ChatMessage(
+      id: 'temp_${DateTime.now().microsecondsSinceEpoch}',
+      threadId: threadId,
+      text: text,
+      createdAt: now,
+      isOutbound: true,
+      senderDisplayName: 'You',
+      senderOwnerId: myProfileId,
+    );
+    _localDb.insertMessage(tempMsg.toJson());
+    state = state.copyWith(
+      messages: {
+        ...state.messages,
+        threadId: [tempMsg, ...?state.messages[threadId]],
+      },
+    );
+    await nodeService.sendFamilyRoomMessage(roomId: roomId, text: text);
   }
 
   /// Invite a contact to a room.
@@ -1006,6 +1274,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
       text: text,
       createdAt: now,
       isOutbound: true,
+      senderDisplayName: 'You',
+      senderOwnerId: nodeState.familyProfileId ?? nodeState.ownerId,
     );
 
     // Persist to local DB immediately so the message survives app restarts
@@ -1120,7 +1390,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       'enabled': true,
     };
     final newBots = [...existing, newBot];
-    await nodeService.updateAiBots(newBots);
+    await _persistAiBots(nodeService, newBots);
     syncAiBots(newBots, node.id);
     return '${node.id}:bot:$uniqueId';
   }
@@ -1201,8 +1471,25 @@ class ChatNotifier extends StateNotifier<ChatState> {
       existing[idx].remove('description');
     }
 
-    await nodeService.updateAiBots(existing);
+    await _persistAiBots(nodeService, existing);
     syncAiBots(existing, node.id);
+  }
+
+  /// Persist bot list: owner → node-config; family → updateFamilyProfile.
+  Future<void> _persistAiBots(
+    NodeServiceClient nodeService,
+    List<Map<String, dynamic>> bots,
+  ) async {
+    final nodeState = _ref.read(nodeProvider);
+    if (nodeState.isOwnerProfile) {
+      await nodeService.updateAiBots(bots);
+      return;
+    }
+    final profileId = nodeState.familyProfileId;
+    if (profileId == null || profileId.isEmpty) {
+      throw StateError('No family profile bound to this session');
+    }
+    await nodeService.updateFamilyProfile(id: profileId, aiBots: bots);
   }
 
   /// Sync AI bot definitions from config — creates/removes bot threads
@@ -1300,34 +1587,32 @@ class ChatNotifier extends StateNotifier<ChatState> {
   }
 
   /// Handle a bridge:status push event.
+  ///
+  /// Bridge status carries both built-in OpenClaw reachability (`agentType`
+  /// may be `envoyai` when the assistant webhook is configured) and the
+  /// active Ext Agent name (`agentName` / `activeExtAgentId`, often "Pi").
+  /// Those must not be conflated — EnvoyAI keeps a fixed title; only the
+  /// Ext Agent row reflects the selected external agent.
   void onBridgeStatus(Map<String, dynamic> data) {
     final nodeState = _ref.read(nodeProvider);
     if (nodeState.activeNode == null) return;
-
-    // Use explicit agentType from BridgeStatus if present.
-    // Fall back to name-based heuristic only when the node hasn't yet
-    // sent agentType (backward compat with older nodes).
-    final explicitType = data['agentType'] as String?;
-    final displayName = resolveExtAgentDisplayName(data);
-    final nameIsExternal = displayName.toLowerCase().contains('claw') ||
-        displayName.toLowerCase().contains('open') ||
-        displayName.toLowerCase().contains('external') ||
-        displayName.toLowerCase() == 'pi' ||
-        displayName.toLowerCase() == 'hermes' ||
-        (data['activeExtAgentId'] as String?)?.isNotEmpty == true;
-    final agentType = explicitType ??
-        (nameIsExternal ? 'external' : 'envoyai');
-    final threadId = '${nodeState.activeNode!.id}:$agentType';
+    final nodeId = nodeState.activeNode!.id;
 
     _upsertThread(
-      threadId: threadId,
-      nodeId: nodeState.activeNode!.id,
-      type: agentType == 'external'
-          ? ChatThreadType.externalAgent
-          : ChatThreadType.envoyai,
-      // Ext Agent row: current agent name only (offline is the chat banner).
-      displayName: agentType == 'external' ? displayName : (displayName.isNotEmpty ? displayName : 'EnvoyAI'),
-      agentType: agentType,
+      threadId: '$nodeId:envoyai',
+      nodeId: nodeId,
+      type: ChatThreadType.envoyai,
+      displayName: 'EnvoyAI',
+      agentType: 'envoyai',
+    );
+
+    final extName = resolveExtAgentDisplayName(data);
+    _upsertThread(
+      threadId: '$nodeId:external',
+      nodeId: nodeId,
+      type: ChatThreadType.externalAgent,
+      displayName: extName.isNotEmpty ? extName : 'Ext Agent',
+      agentType: 'external',
     );
   }
 
@@ -1493,7 +1778,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
               remaining.add(map);
             }
           }
-          await nodeService.updateAiBots(remaining);
+          await _persistAiBots(nodeService, remaining);
           syncAiBots(remaining, node.id);
           return;
         } catch (e) {
@@ -1604,8 +1889,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
           return existingName;
         }
       } else if (type == ChatThreadType.envoyai) {
-        // Built-in assistant name is stable.
-        return existingName;
+        // Built-in assistant title is always EnvoyAI — never inherit Ext
+        // Agent names (e.g. "Pi") from bridge:status payloads.
+        return 'EnvoyAI';
       } else if (type == ChatThreadType.externalAgent ||
           type == ChatThreadType.aiBot) {
         return newName;
@@ -1646,13 +1932,15 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final newThread = ChatThread(
       id: threadId,
       nodeId: nodeId,
-      // For agent threads (envoyai, externalAgent, aiBot), preserve the
-      // existing type once set — it is determined at creation time and must
-      // not be overwritten by a misclassified incoming message.
+      // For agent / family threads, preserve the existing type once set —
+      // it is determined at creation time and must not be overwritten by a
+      // misclassified incoming message.
       type: existing != null &&
              (existing.type == ChatThreadType.envoyai ||
               existing.type == ChatThreadType.externalAgent ||
-              existing.type == ChatThreadType.aiBot)
+              existing.type == ChatThreadType.aiBot ||
+              existing.type == ChatThreadType.family ||
+              existing.type == ChatThreadType.familyGroup)
           ? existing.type
           : type,
       displayName: _resolveThreadName(

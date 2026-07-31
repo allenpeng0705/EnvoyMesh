@@ -6474,128 +6474,116 @@ Closes the production path after 48A–48D protocol/mount work.
 
 ---
 
-## Phase 51 — Family Network (multi-profile private social network) **`[~]` designed**
+## Phase 51 — Family Network (multi-profile private social network) **`[x]` 51A–51F shipped**
 
 **Goal:** Turn one EnvoyMesh home node into a **private family social network**. The home computer becomes a personal server — family members pair their phones via EnvoyGo, get their own profiles, chat with each other, talk to AI, and share nothing with Big Tech. No cloud. No subscription.
 
 **Authoritative design:** [family_network.md](./family_network.md)
 
-**Core idea:** One home node, multiple profiles. The **owner** (the person who sets up the node) has full features. **Family members** get a focused subset: AI conversations (EnvoyAI, bots, Ext Agent), family direct + group chat, push notifications. No terminal, no Pi, no external mesh contacts, no infrastructure settings.
+**Core idea:** One home node, multiple profiles. The **owner** keeps the **full current EnvoyMesh product**. **Family members** get a focused subset: EnvoyAI, character bots, Ext Agent **chat**, family direct + group chat, push. No terminal, Pi coding agent UI, vault, external mesh contacts, or infrastructure settings.
 
-**Design decisions (2026-07-30):**
+**Design decisions (2026-07-30, revised):**
 
 | Decision | Rationale |
 |---|---|
 | Profiles are lightweight, local-only identities (not mesh DIDs) | Family members don't need P2P identity — the home node is their server |
-| No profile switching | Each device is locked to one profile at pairing time. Simple mental model: your phone = your stuff |
-| All contacts are per-profile (no shared trust store) | One store, one rule — every bond carries `profileId`. Family auto-bonded; external mesh = owner-only |
-| Owner = full features; family = AI + chat + push | Family members don't need terminal, Pi, mesh bonding, or node settings |
-| Family invite QR ≠ normal pairing QR | Normal QR auto-creates owner profile; family invite QR is a single-use token for non-owner profiles |
-| Messages between family members are local-only (no mesh) | Instant, no relay latency. The home node is the "WhatsApp server" |
-| Model config shared (one API key for all profiles) | Owner pays once; everyone uses the same LLM |
-| Bots per-profile (each person creates their own) | Private — Dad's bots ≠ Mom's bots |
+| No profile switching | Device locked to one profile at pairing. Your phone = your stuff |
+| Family contacts derived from `family-profiles.json` — **not** the mesh trust store | Avoids synthetic `family:*` peers and `BondLevel: "family"`. Trust store stays owner mesh-only, unchanged |
+| Owner = full features; family = AI + Ext Agent chat + family chat + push | Cuts inbound mesh profile-routing and OS isolation work |
+| Family invite QR ≠ normal pairing QR | Prefer Phase 35A invite lifecycle with `kind: "family"` |
+| Family messages are local-only (no mesh) | Instant; home node is the family server |
+| Family groups are family-only (no mesh members in the same room) | Avoids mixing `memberProfileIds` with wire `memberOwnerIds` |
+| Model config shared; secrets stripped from non-owner config sync | One API key; non-owners must not receive credentials |
+| Bots per-profile | Private — Dad's bots ≠ Mom's bots |
+| EnvoyGo thin-client only | Phase 11 shared-identity mobile stays "owner's other device," not a family profile |
 
-### 51A — Profile model + pairing `[ ]`
+**Estimate:** ~8 days (51A–51F).
 
-**Server side:**
-- `[ ]` `packages/local-store/src/family-profile-store.ts` — new store: CRUD for `FamilyProfile[]`, persisted to `<profileDir>/family-profiles.json` (mode `0600`, atomic rename write). Methods: `list()`, `get(id)`, `create(name, avatarColor, isOwner)`, `rename(id, name)`, `setAvatarColor(id, color)`, `deactivate(id)`, `delete(id)`, `getOwner()`.
-- `[ ]` `packages/api/src/family-profile.ts` — new type file: `FamilyProfile` interface, `FamilyInviteToken` type, helper functions (`isFamilyThreadKey`, `familyThreadKey(a, b)`).
-- `[ ]` `packages/api/src/index.ts` — export `family-profile.js`.
-- `[ ]` `packages/api/src/ws-protocol.ts` — add `familyProfiles?: FamilyProfile[]` to `NodeConfig` + `UpdateNodeConfigParams`; add RPC methods `"createFamilyProfile"`, `"updateFamilyProfile"`, `"deleteFamilyProfile"`, `"generateFamilyInviteToken"` to `NodeServiceRpcMethod`.
-- `[ ]` `packages/api/src/node-service.ts` — add methods to `NodeService` interface: `createFamilyProfile(name, avatarColor)`, `updateFamilyProfile(profile)`, `deleteFamilyProfile(id)`, `generateFamilyInviteToken()`.
-- `[ ]` `apps/node/src/node-service-impl.ts` — implement the 4 RPC methods; wire `familyProfiles` into `getNodeConfigViaRuntime` return.
-- `[ ]` `apps/node/src/node-config-store.ts` — add `familyProfiles?: FamilyProfile[]` to `PersistedNodeConfig`.
-- `[ ]` `apps/node/src/node-service-config.ts` — surface `familyProfiles` in config return (both initialized + uninitialized paths).
-- `[ ]` `apps/node/src/json-rpc-router.ts` — dispatch for the 4 new RPCs.
-- `[ ]` `packages/local-store/src/session-token-store.ts` — add `profileId?: string` to `SessionTokenRecord`; backfill `profileId = "owner"` on load when missing.
-- `[ ]` `apps/node/src/node-service-impl.ts` — `pairThinClient` handler: read `profileId` from pairing params; if `isFamilyInvite=true` → reject if `isOwner` requested; create profile if new; bind to session token.
-- `[ ]` `apps/node/src/ws-server.ts` — extract `profileId` from authenticated session token; pass to RPC context so handlers know which profile is calling.
-- `[ ]` `apps/node/src/node-service-impl.ts` — owner-only RPC guard: helper `requireOwnerProfile(session)` that throws for non-owner profiles. Apply to: `updateNodeConfig`, `ensureTerminalSession`, `sendBondRequest`, `ensurePiTerminalSession`, `restartPi`, node settings RPCs.
-- `[ ]` Migration on first boot: if `family-profiles.json` doesn't exist, auto-create owner profile from current node owner's displayName.
-- `[ ]` Config sync: `familyProfiles` added to `home:config-updated` broadcast automatically (it's in `NodeConfig`).
-- `[ ]` `packages/mobile-node/src/index.ts` — proxy stubs for the 4 new RPCs.
-
-**EnvoyGo:**
-- `[ ]` `apps/envoygo/lib/services/node_service_client.dart` — add `createFamilyProfile`, `updateFamilyProfile`, `deleteFamilyProfile`, `generateFamilyInviteToken` RPC wrappers.
-- `[ ]` `apps/envoygo/lib/screens/pairing/pairing_confirm_screen.dart` — after QR scan, check `isFamilyInvite` flag in pairing payload; if true → show profile creation form (name + avatar color picker); if false → auto-create owner profile (no form).
-
-### 51B — Thread namespacing + data isolation `[ ]`
+### 51A — Profile model + pairing `[x]`
 
 **Server side:**
-- `[ ]` Thread key convention: all AI/bot/agent threads get `:<profileId>` suffix. Update: `sendToOpenClaw(text, profileId)`, `sendToAiBot(botId, text, profileId)`, `sendToBridge(text, profileId)` — read `profileId` from WS session context.
-- `[ ]` `apps/node/src/node-service-impl.ts` — `listChatHistory(peerOwnerId)`: if `peerOwnerId` doesn't contain `:<profileId>`, append `:<callerProfileId>` for backward compat. Filter results to only threads matching the caller's profile.
-- `[ ]` `packages/local-store/src/chat-log-store.ts` — no change to `listThread` itself (it already filters by exact key); the key just gets longer.
-- `[ ]` `apps/node/src/node-service-impl.ts` — `sendToAiBot`: thread key becomes `bot:<botId>:<profileId>`; history fetch uses the same key.
-- `[ ]` `apps/node/src/node-service-openclaw-runtime.ts` — `sendToOpenClawViaRuntime`: thread key becomes `__envoy_ai__:<profileId>`.
-- `[ ]` Bot definitions: migrate from `node-config.aiBots` to per-profile `family-profiles.json → profile.aiBots`. `sendToAiBot` reads from `family-profile-store.get(profileId).aiBots`.
-- `[ ]` `apps/node/src/push-notification.ts` — `PushTokenRecord` add `profileId?: string`; dispatch methods extract profileId from thread key → filter tokens by profile.
-- `[ ]` `apps/node/src/node-service-impl.ts` — `isProfileOnline(profileId)` replaces `isOwnerOnline()` in the unified push listener. Uses `wsServer.hasClientForProfile(profileId)` (new method on WsServer).
-- `[ ]` `apps/node/src/ws-server.ts` — add `hasClientForProfile(profileId)`: iterate `authenticatedClients`, match `session.profileId`.
-- `[ ]` Vault: per-profile subdirectory `<profileDir>/vault/<profileId>/`. Vault RPCs (`readFile`, `writeFile`, `searchVault`) resolve path with `profileId` from session.
-- `[ ]` Ext Agent chat: thread key `bridge:<agentId>:<profileId>`. `sendToBridge` reads profileId from session.
+- `[x]` `packages/local-store/src/family-profile-store.ts` — CRUD for `FamilyProfile[]` → `<profileDir>/family-profiles.json` (mode `0600`, atomic rename). Methods: `list()`, `get(id)`, `create(...)`, `rename`, `setAvatarColor`, `deactivate`, `delete`, `getOwner()`.
+- `[x]` `packages/api/src/family-profile.ts` — `FamilyProfile`, invite helpers, `familyThreadKey(a, b)`, `isFamilyThreadKey`, `threadVisibleTo` stub (filled in 51B/51C).
+- `[x]` Export from `packages/api/src/index.ts`.
+- `[x]` `ws-protocol.ts` / `node-service.ts` — RPCs: `createFamilyProfile`, `updateFamilyProfile`, `deleteFamilyProfile`, `generateFamilyInviteToken`, `listFamilyProfiles`; surface `familyProfiles` on `NodeConfig` (read path). Dedicated RPCs + owner guard (not writable via `updateNodeConfig`).
+- `[x]` Implement RPCs in `node-service-impl.ts` + `json-rpc-router.ts`; wire list into `getNodeConfig`.
+- `[x]` `session-token-store.ts` — add `profileId?: string` (+ prefer client `deviceId` UUID). Backfill missing `profileId` → owner profile id on WS connect.
+- `[x]` `pairThinClient` — bind `profileId`; family-invite path creates/selects non-owner profile; reject creating a second owner.
+- `[x]` `ws-server.ts` — attach `profileId` from session to RPC context (`runWithRpcCaller`).
+- `[x]` `requireOwnerProfile(session)` — apply to: `updateNodeConfig`, company invites, family admin RPCs. (Terminal/Pi/vault/bond guards continue in later slices as those paths are touched.)
+- `[x]` First-boot migration: create owner profile if `family-profiles.json` missing.
+- `[x]` Config sync: broadcast `familyProfiles` metadata; **strip model API keys / secrets** for non-owner sessions (`redactNodeConfigForCaller` + per-client `home:config-updated`).
+- `[x]` `packages/mobile-node` — proxy stubs for new RPCs.
+- `[x]` Company invite `kind?: "company" | "family"` for family invite tokens.
 
 **EnvoyGo:**
-- `[ ]` `apps/envoygo/lib/providers/chat_provider.dart` — `loadAgentHistory`: pass `profileId` as part of the thread key when calling `listChatHistory`. The server handles the filtering.
-- `[ ]` `apps/envoygo/lib/providers/chat_provider.dart` — `sendAgentMessage`: include `profileId` in the RPC call (the server already has it from the session token, so this is a no-op for the wire but the client should be aware).
+- `[x]` Dart RPC wrappers for the 4 family RPCs.
+- `[x]` Pairing confirm: family invite → name + avatar form (or select existing); normal QR → owner profile.
 
-### 51C — Family contacts + auto-bonding `[ ]`
+### 51B — Thread namespacing + data isolation `[x]`
 
 **Server side:**
-- `[ ]` `packages/local-store/src/local-trust-store.ts` — add `profileId?: string` to `BondRecord`. Backfill `profileId = "owner"` on load when missing.
-- `[ ]` `apps/node/src/node-service-impl.ts` — `createFamilyProfile`: after creating the profile, auto-bond with every other active profile. Add a bond record `{ peerOwnerId: "family:<newId>", profileId: "<existingId>", level: "family" }` for each existing active profile, and the reverse.
-- `[ ]` `packages/api/src/ws-protocol.ts` — add `"sendFamilyMessage"` RPC method + `SendFamilyMessageParams { toProfileId, text }`.
-- `[ ]` `apps/node/src/node-service-impl.ts` — `sendFamilyMessage(toProfileId, text)`: read caller's `profileId` from session; compute thread key `family:<sorted(a,b)>`; persist outbound message; emit `chat:message` filtered to `toProfileId`'s WS sessions; push if offline.
-- `[ ]` `apps/node/src/ws-server.ts` — `emitEventToProfile(profileId, event, data)`: new method that only sends to WS clients matching `session.profileId`. Used by family message delivery.
-- `[ ]` `apps/node/src/node-service-impl.ts` — profile presence: update `lastSeenAt` on WS connect/disconnect per profile. `isProfileOnline(profileId)` checks for active WS sessions with that profileId.
-- `[ ]` Profile deactivation: `deactivateProfile(id)` → sets `active = false`; removes from auto-bonding for new profiles; stays in existing contacts' lists; appears offline.
-- `[ ]` External mesh inbound routing: when a `chat.message` arrives from the mesh, look up the bond record `{ peerOwnerId, profileId }` → route to that profile's thread + WS sessions + push. For non-owner profiles, mesh bonding is rejected at the RPC guard (51A).
-- `[ ]` `apps/node/src/json-rpc-router.ts` — dispatch `"sendFamilyMessage"`.
-- `[ ]` `packages/mobile-node/src/index.ts` — proxy stub for `sendFamilyMessage`.
+- `[x]` Namespace EnvoyAI / bots / Ext Agent threads with `:<profileId>` from session (`sendToOpenClaw`, `sendToAiBot`, `sendToBridge`).
+- `[x]` `listChatHistory` / thread listing: resolve keys via profile session; migrate bare `__envoy_ai__` → `__envoy_ai__:owner` on read when missing; enforce `threadVisibleTo` ACL.
+- `[x]` Migrate `node-config.aiBots` → owner profile's `aiBots` in `family-profiles.json`.
+- `[x]` Push: `PushTokenRecord.profileId`; dispatch by profile; `isProfileOnline(profileId)` + `wsServer.hasClientForProfile(profileId)`.
+- `[x]` Profile-scoped live WS: `emitEventToProfile` + `chat:message` routing (AI/bot/bridge/family).
+- `[x]` Owner-only RPC gate expanded for mesh chat / bonds / vault library reads.
+- `[x]` **No** per-profile vault for family (vault remains owner-only via 51A guard).
+- `[x]` Mesh DM / mesh room / Pi coding threads: **unchanged keys**, owner-only access.
 
 **EnvoyGo:**
-- `[ ]` `apps/envoygo/lib/providers/chat_provider.dart` — `sendFamilyMessage(toProfileId, text)`: new method. Optimistic insert + call RPC + update thread.
-- `[ ]` `apps/envoygo/lib/models/chat_thread.dart` — add `ChatThreadType.family` for family member direct chats.
-- `[ ]` `apps/envoygo/lib/providers/chat_provider.dart` — `syncFamilyContacts(profiles, nodeId)`: for each other active profile, create a `family` type thread with `threadId = "nodeId:family:<otherId>"`.
+- `[x]` Chat provider loads AI/bot/bridge history with profile-scoped keys (server is source of truth from session).
 
-### 51D — Group chat integration `[ ]`
+### 51C — Family contacts + direct chat `[x]`
 
 **Server side:**
-- `[ ]` `packages/api/src/chat-room-service.ts` — add `memberProfileIds: string[]` to `ChatRoom`. On `createRoom`, store the member profile IDs. On `listChatRooms`, filter by caller's `profileId` ∈ `memberProfileIds`.
-- `[ ]` Room messages: when a room message arrives, emit to all WS sessions whose `profileId` ∈ `memberProfileIds`.
+- `[x]` **Do not** modify trust store schema. No `family:*` peerOwnerIds, no `level: "family"`.
+- `[x]` Family contact list = other active rows in `family-profiles.json` (clients sync from config).
+- `[x]` `sendFamilyMessage({ toProfileId, text })` — thread `family:<sorted(a,b)>`; persist; `emitEventToProfile`; push if offline.
+- `[x]` `ws-server.ts` — `emitEventToProfile(profileId, event, data)`.
+- `[x]` Presence: `lastSeenAt` + `isProfileOnline(profileId)`.
+- `[x]` Deactivate profile → `active = false`; stays listed for history; appears offline.
+- `[x]` Mesh inbound chat: **no profile routing** — continues to deliver to owner sessions only (existing behavior).
 
 **EnvoyGo:**
-- `[ ]` `apps/envoygo/lib/screens/chat/chat_list_screen.dart` — "Create Group" dialog: include family contacts in the member picker (alongside mesh contacts for owner).
+- `[x]` `ChatThreadType.family`, `sendFamilyMessage`, `syncFamilyContacts(profiles)`.
 
-### 51E — EnvoyGo UI `[ ]`
+### 51D — Family group chat `[x]`
 
-- `[ ]` `apps/envoygo/lib/screens/pairing/pairing_confirm_screen.dart` — profile creation form (name + avatar color) when `isFamilyInvite` is true.
-- `[ ]` `apps/envoygo/lib/providers/node_provider.dart` — `_syncAllData`: sync family profiles from config; call `chatNotifier.syncFamilyContacts()`.
-- `[ ]` `apps/envoygo/lib/screens/chat/chat_list_screen.dart` — new "Family" section in the chat list (auto-bonded family contacts). Sits between AI and Contacts.
-- `[ ]` `apps/envoygo/lib/screens/chat/chat_detail_screen.dart` — support `ChatThreadType.family` (same UI as direct chat, different routing → `sendFamilyMessage`).
-- `[ ]` Feature gating: `node_provider.dart` — expose `isOwnerProfile` state. Non-owner hides: Terminals tab, Node settings tab, mesh Discover, Model Provider, Pi, AI Engine settings.
-- `[ ]` `apps/envoygo/lib/screens/me/me_screen.dart` — show profile name + avatar color; hide owner-only settings sections for non-owners.
-- `[ ]` Per-profile bot management: non-owners see Settings → Bots (their own bots from their profile's `aiBots`).
-- `[ ]` Push toggle: per-profile (already stored in SharedPreferences — no change needed beyond ensuring the toggle persists per profileId).
+**Server side:**
+- `[x]` Family rooms: local store with `memberProfileIds` (separate from mesh `memberOwnerIds` rooms, or a clear `kind: "family"` discriminant). Filter `list` by membership. Emit to member profiles' WS sessions only.
+- `[x]` Do **not** mix family profiles into mesh room sync payloads.
 
-### 51F — Social UI (owner desktop) `[ ]`
+**EnvoyGo:**
+- `[x]` Create Group picker: family contacts only for non-owners; owner may keep existing mesh group UI separate from family groups.
 
-- `[ ]` `apps/social/src/components/views/SettingsView.tsx` — new "Family" tab (visible to owner only).
-- `[ ]` `apps/social/src/components/views/settings/FamilySettings.tsx` — new component: list profiles (name, avatar, active status); create profile (name + avatar color); rename; deactivate; delete.
-- `[ ]` Family invite QR generation: button → calls `generateFamilyInviteToken` RPC → displays QR code (reuse the existing QR rendering from pairing).
-- `[ ]` `apps/social/src/components/views/ChatSidebar.tsx` — owner's chat list shows family contacts (auto-bonded) in a "Family" section.
-- `[ ]` `apps/social/src/components/views/AIChatPanel.tsx` — no change (owner's AI thread already works).
-- `[ ]` Desktop always runs as owner profile (no profile selection in the Social UI).
+### 51E — EnvoyGo UI `[x]`
+
+- `[x]` Pairing profile form (if not fully done in 51A).
+- `[x]` Sync family profiles → Family section in chat list (between AI and Contacts).
+- `[x]` Family DM detail → `sendFamilyMessage`.
+- `[x]` `isOwnerProfile` feature gating: hide Terminals, Node, Discover, Model Provider, Pi coding UI, vault, mesh Contacts for non-owners.
+- `[x]` Me: profile name/avatar; Bots + Push only for non-owners.
+- `[x]` Push toggle keyed by `profileId` in SharedPreferences.
+
+### 51F — Social UI (owner desktop) `[x]`
+
+- `[x]` Settings → Family tab: list / create / rename / deactivate / delete profiles.
+- `[x]` Generate family invite QR (reuse pairing QR renderer).
+- `[x]` Chat sidebar: Family section for owner.
+- `[x]` Desktop always runs as owner profile (no switcher).
 
 ### Exit Criteria (Phase 51 overall)
 
-- `[ ]` Owner can create profiles; family members pair via QR + profile selection
-- `[ ]` Each profile has isolated AI threads, bots, vault, and push — no cross-profile visibility
-- `[ ]` Family members auto-appear in each other's contact list
-- `[ ]` Family members can direct-chat + create group chats with each other
-- `[ ]` Push notifications route per-profile (Mom's phone doesn't buzz for Dad's messages)
-- `[ ]` Family members cannot access: terminal, Pi, external mesh bonding, node settings, model provider config
-- `[ ]` Owner can use both phone (EnvoyGo) and desktop (Social UI) with all features
-- `[ ]` Existing single-user installations upgrade transparently (owner profile auto-created, data migrated)
+- `[x]` Owner creates profiles; family members pair via family invite QR + profile create/select
+- `[x]` Isolated EnvoyAI / bots / Ext Agent threads + push per profile — no cross-profile visibility
+- `[x]` Family contacts appear automatically (from profiles, not trust store)
+- `[x]` Family direct chat + family-only group chat work locally
+- `[x]` Push routes per profile (Dad online ≠ suppress Mom's push)
+- `[x]` Non-owners cannot access: terminal, Pi coding UI, vault, external mesh bonding, node settings, model provider config
+- `[x]` Owner mesh / vault / terminal / Pi unchanged for the owner profile
+- `[x]` Single-user installs upgrade transparently (owner profile auto-created; bots migrated)
 
 ---
 
@@ -6603,7 +6591,16 @@ Closes the production path after 48A–48D protocol/mount work.
 
 | Date | Change |
 |------|--------|
-| 2026-07-30 | **Phase 51 — Family Network designed.** New phase: turn one home node into a multi-profile private social network. The home computer becomes a personal server — family members pair their phones, get isolated profiles (AI, bots, chat, push), auto-bonded family contacts, and a focused feature subset (no terminal, Pi, mesh, or node settings). Owner has full features + admin rights. 6 slices (51A–51F): profile model + pairing, thread namespacing + isolation, family contacts + auto-bonding, group chat, EnvoyGo UI, Social UI. ~8 days. Authoritative design: [family_network.md](./family_network.md). |
+| 2026-07-31 | **Phase 51 follow-ups.** Owner-only RPC gate covers vault/library + all `terminal*` methods; `previewFamilyInvite` pre-auth profile list for EnvoyGo re-pair (I'm new / I'm back); Social family group create/list/send UI; EnvoyGo skips bond/terminal/feed owner RPCs for family sessions; widget-test mock signatures fixed. |
+| 2026-07-31 | **Phase 51F review hardenings.** Social family DMs: route `family:*` in `partnerOwnerIdForChat` / `useChatThreadPreviews`; bubble direction uses `callerFamilyProfileId` (not mesh owner id). |
+| 2026-07-31 | **Phase 51E review hardenings + 51F shipped.** 51E: restore family session from secure storage on connect; hide call/mic/published-content on family DMs; family avatars; deep-link guards; filtered loadThreads. 51F: Social Settings Family tab + invite QR; Chat sidebar Family section; FamilyChatPanel; family RPCs on useNodeService. |
+| 2026-07-31 | **Phase 51D review hardenings + 51E shipped.** 51D: mesh room WS owner-only; family room push bare `roomId` + `roomKind`; `onRoomMessage`/`ChatDetailScreen` classify family groups; reject inactive members. 51E: non-owner nav (Chats+Me), Me profile edit + gated settings, push prefs by `profileId`, self-service `updateFamilyProfile` for name/avatar/bots. |
+| 2026-07-31 | **Phase 51D review hardenings.** Typed `chat:family-room-*` events; WS remaps family room-updated to bare room object (mesh-compatible); EnvoyGo opens `familyGroup` threads with `chatRoomId` so send uses `sendFamilyRoomMessage`. |
+| 2026-07-31 | **Phase 51C review hardenings + 51D shipped.** 51C: inactive profiles stay listed; family push deep-link via `threadKey`; deactivated profiles never skip-push-as-online. 51D: `family-rooms.json` + `create/list/sendFamilyRoom*` RPCs; profile-scoped WS events; EnvoyGo family group picker + `ChatThreadType.familyGroup`. |
+| 2026-07-31 | **Phase 51B review hardenings + 51C shipped.** 51B: `threadVisibleTo` on `listChatHistory`, profile-scoped `chat:message` WS emit, expanded owner-only RPCs (mesh/bonds/library). 51C: `sendFamilyMessage`, `emitEventToProfile`, `lastSeenAt` presence, EnvoyGo `ChatThreadType.family` + `syncFamilyContacts`. |
+| 2026-07-30 | **Phase 51A+51B shipped.** 51A: family profiles, session `profileId`, owner RPC gate, EnvoyGo family RPC wrappers + pairing name/avatar UI. 51B: profile-scoped EnvoyAI/bot/bridge threads, `aiBots` migration to owner profile, push tokens tagged + filtered by `profileId`, `isProfileOnline` / `hasClientForProfile`. |
+| 2026-07-30 | **Phase 51 revised (scope cut).** Family contacts derived from profiles (no trust-store `family:*` bonds). No per-profile vault; no mesh inbound profile routing; family groups are family-only. Non-owner config sync must strip secrets. Authoritative design updated: [family_network.md](./family_network.md). |
+| 2026-07-30 | **Phase 51 — Family Network designed.** New phase: multi-profile private social network on one home node. Owner = full product; family = AI + Ext Agent chat + family chat + push. Slices 51A–51F. Authoritative design: [family_network.md](./family_network.md). |
 | 2026-07-30 | **Phase 50 status updated — all shipped.** Updated Phase 50 checkboxes to reflect what actually shipped across multiple commits: 50A (unified listener + bond push + Pi push + isOwnerOnline fix + in-app toggle), 50B (approval push + token cleanup + feed/Bond skip-if-online + dispatchApprovalPush + push-config.json), deep-link (navigatorKey + getInitialMessage + cold-start race fixes + payload routing for chat/feed/bond/approval/Pi). Status changed from `[~] Slice A shipped; B-H planned` to `[x] shipped`. Remaining: notification channels, badge count, per-contact mute/DND, foreground banner (all UX polish, deferred). |
 | 2026-07-28 | **Phase 50 Slice A shipped (push-notification highest-priority fixes).** Two bugs fixed: (1) Direct chat push was broken in production — `dispatchChatPush` was wired only on the legacy Path B (`index.ts:1904`), bypassed by the production internal-mesh handler (`usesInternalMeshInboundHandlers()` short-circuit). EnvoyGo's home node always runs Path A, where the handler at `node-service-handlers-chat-message.ts:146` emitted `chat:message` but never pushed. Fix: added `dispatchChatPushIfOffline` to `ChatMessageContext`, wired from `node-service-impl-service-deps.ts` with skip-if-online gate, called after the emit. (2) `dispatchBondPush` was fully implemented but had zero call sites (dead code); wired into the `hello:request` callback at `index.ts:2314`. Also unblocked the in-flight Pi-as-Ext-Agent build (added `'pi'` port placeholder in `ext-agent-adapter/manager.ts`, `sendToPiForExtAgent` alias on NodeServiceImpl, `pi-terminal-session.ts` stub, MobileNode `ensurePiTerminalSession` proxy, fixed value-vs-type imports). Full Phase 50 design + slices B-H planned in [push-notification-coverage.md](./push-notification-coverage.md). |
 | 2026-07-28 | **Phase 49 — Pi as Built-in Local Coding Agent designed.** New phase adding [Pi](https://github.com/earendil-works/pi) (earendil-works coding agent harness) as a third agent engine alongside Built-in OpenClaw + Remote Ext Agent. Pi is local-only (filesystem + shell, **no `mesh.*` tools** — OpenClaw stays the sole network boundary per `AGENTS.md:213`), inherits EnvoyMesh's model config by default, reuses the Phase 30 `TerminalCommandProposal` permission flow (default `always-confirm`, trust mode opt-in), and ships as a separate sidecar mirroring the OpenClaw bundle pattern. Slices 49A–49F cover bundle/runtime/chat-panel/permissions/terminal/settings. Authoritative design: [pi-integration-design.md](./pi-integration-design.md). |

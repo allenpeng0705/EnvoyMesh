@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../models/chat_thread.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/contact_provider.dart';
+import '../../providers/node_provider.dart';
 import '../../widgets/ext_agent_switcher.dart';
 import '../../widgets/thread_tile.dart';
 import '../terminals/terminal_detail_screen.dart';
@@ -65,24 +66,42 @@ class ChatListScreen extends ConsumerWidget {
     }
 
     // Group threads by type for sectioned display.
+    final isOwner = ref.watch(nodeProvider).isOwnerProfile;
     final ai = threads
         .where((t) =>
             t.type == ChatThreadType.envoyai ||
             t.type == ChatThreadType.externalAgent ||
             t.type == ChatThreadType.aiBot)
+        .toList()
+      ..sort((a, b) {
+        int rank(ChatThread t) {
+          if (t.type == ChatThreadType.envoyai) return 0;
+          if (t.type == ChatThreadType.externalAgent) return 1;
+          return 2;
+        }
+        final byType = rank(a).compareTo(rank(b));
+        if (byType != 0) return byType;
+        return a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase());
+      });
+    final family = threads
+        .where((t) =>
+            t.type == ChatThreadType.family ||
+            t.type == ChatThreadType.familyGroup)
         .toList();
-    final contacts = threads
-        .where((t) => t.type == ChatThreadType.direct)
-        .toList();
-    final groups = threads
-        .where((t) => t.type == ChatThreadType.group)
-        .toList();
-    final terminals = threads
-        .where((t) => t.type == ChatThreadType.terminal)
-        .toList();
+    // Mesh contacts / mesh groups / terminals are owner-only (Phase 51E).
+    final contacts = isOwner
+        ? threads.where((t) => t.type == ChatThreadType.direct).toList()
+        : <ChatThread>[];
+    final groups = isOwner
+        ? threads.where((t) => t.type == ChatThreadType.group).toList()
+        : <ChatThread>[];
+    final terminals = isOwner
+        ? threads.where((t) => t.type == ChatThreadType.terminal).toList()
+        : <ChatThread>[];
 
     final sections = <_ThreadSection>[];
     if (ai.isNotEmpty) sections.add(_ThreadSection('AI', ai));
+    if (family.isNotEmpty) sections.add(_ThreadSection('Family', family));
     if (contacts.isNotEmpty) sections.add(_ThreadSection('Contacts', contacts));
     if (groups.isNotEmpty) sections.add(_ThreadSection('Groups', groups));
     if (terminals.isNotEmpty) sections.add(_ThreadSection('Terminals', terminals));
@@ -206,6 +225,7 @@ class ChatListScreen extends ConsumerWidget {
   }
 
   void _showNewActions(BuildContext context, WidgetRef ref) {
+    final isOwner = ref.read(nodeProvider).isOwnerProfile;
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
@@ -220,51 +240,62 @@ class ChatListScreen extends ConsumerWidget {
                 subtitle: const Text('AI character on your home node'),
                 onTap: () {
                   Navigator.of(sheetContext).pop();
-                  // Wait for the sheet route to finish dismissing before
-                  // opening the create form — otherwise the new modal can
-                  // be dropped or ignore the first taps on some devices.
                   WidgetsBinding.instance.addPostFrameCallback((_) {
                     if (!context.mounted) return;
                     _showBotEditor(context, ref);
                   });
                 },
               ),
-              ListTile(
-                leading: const SizedBox(
-                  width: 24,
-                  child: Center(
-                    child: Text(
-                      'π',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
+              if (isOwner) ...[
+                ListTile(
+                  leading: const SizedBox(
+                    width: 24,
+                    child: Center(
+                      child: Text(
+                        'π',
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
                   ),
+                  title: const Text('New Pi'),
+                  subtitle: const Text('Start a Pi coding terminal'),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    _createPi(context, ref);
+                  },
                 ),
-                title: const Text('New Pi'),
-                subtitle: const Text('Start a Pi coding terminal'),
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  _createPi(context, ref);
-                },
-              ),
+                ListTile(
+                  leading: const Icon(Icons.terminal),
+                  title: const Text('New Terminal'),
+                  subtitle: const Text('Open a shell on the home node'),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    _createTerminal(context, ref);
+                  },
+                ),
+                ListTile(
+                  leading: const Icon(Icons.group_add),
+                  title: const Text('New Group Chat'),
+                  subtitle: const Text('Mesh group with bonded contacts'),
+                  onTap: () {
+                    Navigator.of(sheetContext).pop();
+                    _showCreateRoomDialog(context, ref);
+                  },
+                ),
+              ],
               ListTile(
-                leading: const Icon(Icons.terminal),
-                title: const Text('New Terminal'),
-                subtitle: const Text('Open a shell on the home node'),
+                leading: const Icon(Icons.family_restroom),
+                title: const Text('New Family Group'),
+                subtitle: const Text('Local group with family members'),
                 onTap: () {
                   Navigator.of(sheetContext).pop();
-                  _createTerminal(context, ref);
-                },
-              ),
-              ListTile(
-                leading: const Icon(Icons.group_add),
-                title: const Text('New Group Chat'),
-                subtitle: const Text('Create a group conversation'),
-                onTap: () {
-                  Navigator.of(sheetContext).pop();
-                  _showCreateRoomDialog(context, ref);
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!context.mounted) return;
+                    _showCreateFamilyRoomDialog(context, ref);
+                  });
                 },
               ),
               const SizedBox(height: 8),
@@ -317,7 +348,8 @@ class ChatListScreen extends ConsumerWidget {
         break;
     }
 
-    final isRoom = thread.type == ChatThreadType.group;
+    final isRoom = thread.type == ChatThreadType.group ||
+        thread.type == ChatThreadType.familyGroup;
     final contactOwnerId = isRoom
         ? null
         : (thread.contactOwnerId ??
@@ -329,6 +361,7 @@ class ChatListScreen extends ConsumerWidget {
           displayName: thread.displayName,
           contactOwnerId: contactOwnerId,
           chatRoomId: isRoom ? thread.chatRoomId : null,
+          isFamilyRoom: thread.type == ChatThreadType.familyGroup,
         ),
       ),
     );
@@ -895,6 +928,102 @@ class ChatListScreen extends ConsumerWidget {
             child: const Text('Create'),
           ),
         ],
+      ),
+    );
+  }
+
+  void _showCreateFamilyRoomDialog(BuildContext context, WidgetRef ref) {
+    final nameController = TextEditingController();
+    final myProfileId = ref.read(nodeProvider).familyProfileId ?? 'owner';
+    final profiles = ref
+        .read(nodeProvider)
+        .familyProfiles
+        .where((p) {
+          final id = p['id']?.toString() ?? '';
+          return id.isNotEmpty && id != myProfileId && p['active'] != false;
+        })
+        .toList();
+    final selected = <String>{};
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          title: const Text('New Family Group'),
+          content: SizedBox(
+            width: 360,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameController,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    hintText: 'Group name',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                if (profiles.isEmpty)
+                  const Text('No other family members yet.')
+                else
+                  Flexible(
+                    child: ListView(
+                      shrinkWrap: true,
+                      children: [
+                        for (final p in profiles)
+                          CheckboxListTile(
+                            dense: true,
+                            value: selected.contains(p['id']?.toString()),
+                            title: Text(p['name']?.toString() ?? p['id']?.toString() ?? ''),
+                            onChanged: (v) {
+                              final id = p['id']?.toString() ?? '';
+                              if (id.isEmpty) return;
+                              setLocal(() {
+                                if (v == true) {
+                                  selected.add(id);
+                                } else {
+                                  selected.remove(id);
+                                }
+                              });
+                            },
+                          ),
+                      ],
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+            FilledButton(
+              onPressed: () async {
+                final title = nameController.text.trim();
+                if (title.isEmpty) return;
+                try {
+                  await ref.read(chatProvider.notifier).createFamilyRoom(
+                        title: title,
+                        memberProfileIds: selected.toList(),
+                      );
+                  if (ctx.mounted) Navigator.of(ctx).pop();
+                } catch (e) {
+                  if (!context.mounted) return;
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text(
+                        e.toString().replaceFirst('Bad state: ', ''),
+                      ),
+                    ),
+                  );
+                }
+              },
+              child: const Text('Create'),
+            ),
+          ],
+        ),
       ),
     );
   }

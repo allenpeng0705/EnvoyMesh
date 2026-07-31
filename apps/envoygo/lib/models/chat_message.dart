@@ -1,3 +1,39 @@
+/// Whether a chat row is outbound for the current session.
+///
+/// Mirrors Social `messageIsOutgoing`: family DM/room threads use profile ids
+/// (`owner` / `mom`), while mesh/AI threads use the mesh `envoy:owner:…` id.
+bool messageIsOutgoing({
+  required String? senderOwnerId,
+  String? recipientOwnerId,
+  String? selfOwnerId,
+  String? selfFamilyProfileId,
+}) {
+  final snd = senderOwnerId?.trim();
+  if (snd == null || snd.isEmpty) return false;
+  final rcv = recipientOwnerId?.trim();
+  final familySelf =
+      (selfFamilyProfileId?.trim().isNotEmpty == true
+          ? selfFamilyProfileId!.trim()
+          : 'owner');
+
+  if (rcv != null && rcv.startsWith('family:')) {
+    return snd == familySelf;
+  }
+  if (rcv != null && rcv.startsWith('room:')) {
+    // Family rooms attribute senders by profile id; mesh rooms by mesh owner.
+    if (familySelf != 'owner') {
+      return snd == familySelf;
+    }
+    final selfO = selfOwnerId?.trim();
+    return selfO != null && snd == selfO;
+  }
+
+  final selfO = selfOwnerId?.trim();
+  if (selfO != null && snd == selfO) return true;
+  if (familySelf != 'owner' && snd == familySelf) return true;
+  return false;
+}
+
 /// A chat message.
 class ChatMessage {
   /// Message ID from the server.
@@ -67,26 +103,34 @@ class ChatMessage {
     Map<String, dynamic> json, {
     required String threadId,
     String? selfOwnerId,
+    String? selfFamilyProfileId,
   }) {
     final sender = json['sender'] as Map<String, dynamic>?;
     final content = json['content'] as Map<String, dynamic>?;
     final metadata = json['metadata'] as Map<String, dynamic>?;
+    final recipient = json['recipient'] as Map<String, dynamic>?;
     final senderOwnerId =
         (json['senderOwnerId'] ?? sender?['ownerId']) as String?;
+    final recipientOwnerId =
+        (json['recipientOwnerId'] ?? recipient?['ownerId']) as String?;
     final text = (json['text'] ?? content?['text']) as String?;
     final createdAt =
         (json['createdAt'] ?? metadata?['timestamp']) as String?;
     final messageId = (json['messageId'] ?? json['id']) as String?;
     final attRaw = content?['attachments'] as List<dynamic>?;
-    final isOutbound = selfOwnerId != null &&
-        senderOwnerId != null &&
-        senderOwnerId == selfOwnerId;
+    final isOutbound = messageIsOutgoing(
+      senderOwnerId: senderOwnerId,
+      recipientOwnerId: recipientOwnerId,
+      selfOwnerId: selfOwnerId,
+      selfFamilyProfileId: selfFamilyProfileId,
+    );
+    final rawName =
+        (json['senderDisplayName'] ?? sender?['displayName']) as String?;
     return ChatMessage(
       id: messageId ?? 'msg_${DateTime.now().microsecondsSinceEpoch}',
       threadId: threadId,
       senderOwnerId: senderOwnerId,
-      senderDisplayName:
-          (json['senderDisplayName'] ?? sender?['displayName']) as String?,
+      senderDisplayName: isOutbound ? 'You' : rawName,
       text: text,
       createdAt: createdAt,
       isOutbound: isOutbound,

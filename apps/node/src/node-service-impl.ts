@@ -308,6 +308,8 @@ import {
   createRelayStateStore,
   createCapabilityManifestStore,
   createSessionTokenStore,
+  createFamilyProfileStore,
+  createFamilyRoomStore,
   createDeviceAuthorizationStore,
   createAgentCardStore,
   createContactOwnerKeyStore,
@@ -336,6 +338,8 @@ import {
   type RelayStateStore,
   type CapabilityManifestStore,
   type SessionTokenStore,
+  type FamilyProfileStore,
+  type FamilyRoomStore,
   type DeviceAuthorizationStore,
   buildMorningReportDigest,
   createPeerProfileCacheStore,
@@ -349,6 +353,33 @@ import {
   type CapabilityProviderJobStore,
   type AuditEvent,
 } from "@envoymesh/local-store";
+import {
+  listFamilyProfilesViaRuntime,
+  createFamilyProfileViaRuntime,
+  updateFamilyProfileViaRuntime,
+  deleteFamilyProfileViaRuntime,
+  generateFamilyInviteTokenViaRuntime,
+  toFamilyProfile,
+} from "./node-service-family.js";
+import {
+  getRpcCaller,
+  requireOwnerProfile,
+  redactNodeConfigForCaller,
+} from "./rpc-caller-context.js";
+import {
+  OWNER_FAMILY_PROFILE_ID,
+  envoyAiThreadKeyForProfile,
+  aiBotThreadKeyForProfile,
+  bridgeThreadKeyForProfile,
+  parseAiBotThreadKey,
+  parseBridgeThreadKey,
+  isEnvoyAiThreadKey,
+  parseEnvoyAiProfileId,
+  familyThreadKey,
+  parseFamilyThreadKey,
+  threadVisibleTo,
+  isFamilyThreadKey,
+} from "@envoymesh/api";
 import { createNodeConfigStore, createStubNodeConfigStore, type PersistedNodeConfig } from "./node-config-store.js";
 import { startPairingKioskServer, type PairingKioskServerHandle } from "./pairing-kiosk-server.js";
 import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key-loader.js";
@@ -1409,6 +1440,14 @@ class NodeServiceImpl implements NodeService {
 
   /** Persistent session token store for long-lived pairings (no QR re-scan). */
   private readonly _sessionTokenStore: SessionTokenStore | null;
+  /** Phase 51 — local family profiles on this home node. */
+  private readonly _familyProfileStore: FamilyProfileStore | null;
+  /** Phase 51D — local family group rooms (never mesh-synced). */
+  private readonly _familyRoomStore: FamilyRoomStore | null;
+  private _familyOwnerMigrated = false;
+  /** Phase 51 — FIFO of profileIds awaiting async Ext Agent replies. */
+  private _pendingBridgeReplyProfiles: string[] = [];
+  private _thinClientProfileOnlineCheck: ((profileId: string) => boolean) | null = null;
   private readonly _deviceAuthorizationStore: DeviceAuthorizationStore | null;
   private readonly _contactOwnerKeyStore: ContactOwnerKeyStore | null;
   private readonly _peerProfileCacheStore: PeerProfileCacheStore | null;
@@ -1926,6 +1965,10 @@ class NodeServiceImpl implements NodeService {
       profileDir && profileDir !== "/tmp/unknown" ? createCapabilityManifestStore(profileDir) : null;
     this._sessionTokenStore =
       profileDir && profileDir !== "/tmp/unknown" ? createSessionTokenStore(profileDir) : null;
+    this._familyProfileStore =
+      profileDir && profileDir !== "/tmp/unknown" ? createFamilyProfileStore(profileDir) : null;
+    this._familyRoomStore =
+      profileDir && profileDir !== "/tmp/unknown" ? createFamilyRoomStore(profileDir) : null;
     this._deviceAuthorizationStore =
       profileDir && profileDir !== "/tmp/unknown" ? createDeviceAuthorizationStore(profileDir) : null;
     bindDeviceAuthorizationStore(this._deviceAuthorizationStore);
@@ -1983,7 +2026,11 @@ class NodeServiceImpl implements NodeService {
     //   "pi:proposal" — Pi tool-action confirm
     const maybePushChat = (
       msg: ChatMessage,
-      opts?: { threadType?: "direct" | "room" | "external" | "envoyai" | "bot"; roomId?: string },
+      opts?: {
+        threadType?: "direct" | "room" | "external" | "envoyai" | "bot" | "family"
+        roomId?: string
+        threadKey?: string
+      },
     ) => {
       const homeOwnerId = this._profile?.owner?.ownerId
       if (!homeOwnerId) return
@@ -1993,7 +2040,6 @@ class NodeServiceImpl implements NodeService {
       }
       const preview = (msg.content?.text ?? "").trim()
       if (!preview) return
-      if (this.isThinClientOnline(homeOwnerId)) return
 
       const channel = msg.metadata?.deliveryChannel
       const source = msg.metadata?.deliverySource
@@ -2003,30 +2049,78 @@ class NodeServiceImpl implements NodeService {
         (isAiBotThread(senderId) && senderId) ||
         (isAiBotThread(recipientId) && recipientId) ||
         ""
+      const botParsed = botKey ? parseAiBotThreadKey(botKey) : null
+      const bridgeParsed =
+        parseBridgeThreadKey(senderId) ?? parseBridgeThreadKey(recipientId)
+      const envoyAiProfile =
+        parseEnvoyAiProfileId(senderId) ?? parseEnvoyAiProfileId(recipientId)
+      const familyParsed =
+        parseFamilyThreadKey(senderId) ?? parseFamilyThreadKey(recipientId)
+
+      let targetProfileId =
+        botParsed?.profileId ||
+        bridgeParsed?.profileId ||
+        envoyAiProfile ||
+        OWNER_FAMILY_PROFILE_ID
+
+      if (familyParsed) {
+        // Push only the other member (not the sender's own profile).
+        const fromProfile =
+          senderId === familyParsed.profileIdA || senderId === familyParsed.profileIdB
+            ? senderId
+            : null
+        targetProfileId = fromProfile
+          ? fromProfile === familyParsed.profileIdA
+            ? familyParsed.profileIdB
+            : familyParsed.profileIdA
+          : familyParsed.profileIdA
+      }
+
+      // Skip push only when THIS profile's thin client is recently active.
+      if (this.isProfileOnline(targetProfileId)) return
+
       const isAiBot = Boolean(botKey)
+      const isFamilyDm = Boolean(familyParsed)
       const isBridgeAgent =
+        Boolean(bridgeParsed) ||
         (channel === "agent" && source === "bridge") ||
         senderId === "envoy:pi"
       const isBuiltinAi =
-        !isAiBot && (channel === "ai" || senderId === "__envoy_ai__")
+        !isAiBot &&
+        !isFamilyDm &&
+        (channel === "ai" || isEnvoyAiThreadKey(senderId) || isEnvoyAiThreadKey(recipientId))
       const threadType =
         opts?.threadType ??
-        (isAiBot ? "bot" : isBridgeAgent ? "external" : isBuiltinAi ? "envoyai" : undefined)
+        (isAiBot
+          ? "bot"
+          : isBridgeAgent
+            ? "external"
+            : isBuiltinAi
+              ? "envoyai"
+              : isFamilyDm
+                ? "family"
+                : undefined)
+      const familyThreadKey = familyParsed
+        ? `family:${familyParsed.profileIdA}:${familyParsed.profileIdB}`
+        : undefined
 
       void pushNotificationService
         .dispatchChatPush({
           senderName: msg.sender.displayName ?? msg.sender.ownerId ?? "New message",
           messagePreview: preview.slice(0, 120),
           targetOwnerId: homeOwnerId,
+          targetProfileId,
           messageId: msg.messageId,
-          // Bots need the `bot:<id>` key so the client can deep-link the right thread.
           senderOwnerId: isAiBot
             ? botKey
-            : isBridgeAgent || isBuiltinAi
-              ? undefined
-              : senderId,
+            : isFamilyDm
+              ? senderId
+              : isBridgeAgent || isBuiltinAi
+                ? undefined
+                : senderId,
           threadType,
           roomId: opts?.roomId,
+          threadKey: opts?.threadKey ?? familyThreadKey,
         })
         .catch(() => {})
     }
@@ -2049,12 +2143,13 @@ class NodeServiceImpl implements NodeService {
       if (!proposal) return
       const targetOwnerId = this._profile?.owner?.ownerId
       if (!targetOwnerId) return
-      if (this.isThinClientOnline(targetOwnerId)) return
+      if (this.isProfileOnline(OWNER_FAMILY_PROFILE_ID)) return
       void pushNotificationService
         .dispatchChatPush({
           senderName: "Pi",
           messagePreview: `${proposal.title}: ${proposal.message}`.slice(0, 120),
           targetOwnerId,
+          targetProfileId: OWNER_FAMILY_PROFILE_ID,
           messageId: `pi-proposal-${proposal.uiRequestId}`,
           type: "pi_proposal",
           threadType: "external",
@@ -3951,19 +4046,134 @@ class NodeServiceImpl implements NodeService {
    * systemPrompt to the user's text, calls the native LLM router, and
    * persists + emits the exchange under thread key `bot:<id>`.
    */
+  /** Resolve the caller's family profile id (defaults to owner). */
+  private _callerFamilyProfileId(): string {
+    const fromSession = getRpcCaller()?.profileId?.trim();
+    return fromSession || OWNER_FAMILY_PROFILE_ID;
+  }
+
+  /** Display name for the current RPC caller (family profile or owner HumanProfile). */
+  private async _callerFamilyDisplayName(): Promise<string> {
+    const profileId = this._callerFamilyProfileId();
+    try {
+      const fp = await this._familyProfileStore?.get(profileId);
+      if (fp?.name?.trim()) return fp.name.trim();
+    } catch {
+      /* fall through */
+    }
+    const caller = getRpcCaller();
+    if (!caller || caller.isOwnerProfile || profileId === OWNER_FAMILY_PROFILE_ID) {
+      try {
+        const human = await this._humanProfileStore.loadHumanProfile();
+        if (human?.displayName?.trim()) return human.displayName.trim();
+      } catch {
+        /* fall through */
+      }
+      return this._profile?.owner?.ownerId ?? profileId;
+    }
+    return profileId;
+  }
+
+  private _notePendingBridgeReply(profileId: string): void {
+    this._pendingBridgeReplyProfiles.push(profileId.trim() || OWNER_FAMILY_PROFILE_ID);
+    if (this._pendingBridgeReplyProfiles.length > 64) {
+      this._pendingBridgeReplyProfiles.shift();
+    }
+  }
+
+  private _consumePendingBridgeReplyProfile(): string {
+    return this._pendingBridgeReplyProfiles.shift() ?? OWNER_FAMILY_PROFILE_ID;
+  }
+
+  private _recordBridgeReplyForProfile(
+    profileId: string,
+    bridgeAgentPeerId: string,
+    text: string,
+  ): void {
+    const threadKey = bridgeThreadKeyForProfile(bridgeAgentPeerId, profileId);
+    const meshPeerId = this._mesh?.peerId ?? "";
+    const homeOwnerId = this._profile?.owner?.ownerId ?? "";
+    const isOwner = profileId === OWNER_FAMILY_PROFILE_ID;
+    const replyMsg: ChatMessage = {
+      messageId: crypto.randomUUID(),
+      sender: {
+        nodeId: bridgeAgentPeerId,
+        ownerId: threadKey,
+        displayName: this._bridgeStatus?.agentName ?? "Ext Agent",
+        actorRole: "agent",
+      },
+      recipient: {
+        nodeId: meshPeerId,
+        ownerId: isOwner ? homeOwnerId : profileId,
+      },
+      content: { text },
+      metadata: {
+        timestamp: new Date().toISOString(),
+        deliveryReceipt: "delivered",
+        deliveryChannel: "agent",
+        deliverySource: "bridge",
+      },
+      signature: "",
+    };
+    this._persistChatMessage(threadKey, replyMsg);
+    this.emit("chat:message", replyMsg);
+  }
+
+  /**
+   * Phase 51 — Ext Agent async self-send reply. Routes into the profile
+   * that most recently called `sendToBridge` (FIFO), defaulting to owner.
+   */
+  handleBridgeSelfReply(chatMsg: ChatMessage): void {
+    const profileId = this._consumePendingBridgeReplyProfile();
+    const agentId =
+      this._bridgeStatus?.agentPeerId?.trim() ||
+      chatMsg.sender?.ownerId?.trim() ||
+      "";
+    if (!agentId) {
+      this.emit("chat:message", chatMsg);
+      return;
+    }
+    const threadKey = bridgeThreadKeyForProfile(agentId, profileId);
+    const scoped: ChatMessage = {
+      ...chatMsg,
+      sender: {
+        ...chatMsg.sender,
+        ownerId: threadKey,
+      },
+    };
+    this._persistChatMessage(threadKey, scoped);
+    this.emit("chat:message", scoped);
+  }
+
   async sendToAiBot(botId: string, text: string): Promise<void> {
     const trimmedBotId = botId.trim()
     const trimmedText = text.trim()
     if (!trimmedBotId || !trimmedText) return
 
-    // Find the bot definition.
-    const cfg = await this._configStore.load()
-    const bot = cfg?.aiBots?.find((b) => b.id === trimmedBotId && b.enabled !== false)
+    const profileId = this._callerFamilyProfileId()
+    await this._ensureFamilyOwnerMigrated()
+
+    // Prefer per-profile bots; fall back to node-config.aiBots (owner migration).
+    let bot: import("@envoymesh/api").AiBotDefinition | undefined
+    if (this._familyProfileStore) {
+      const profile = await this._familyProfileStore.get(profileId)
+      const fromProfile = profile?.aiBots
+      if (Array.isArray(fromProfile)) {
+        bot = (fromProfile as import("@envoymesh/api").AiBotDefinition[]).find(
+          (b) => b.id === trimmedBotId && b.enabled !== false,
+        )
+      }
+    }
+    if (!bot) {
+      const cfg = await this._configStore.load()
+      bot = cfg?.aiBots?.find((b) => b.id === trimmedBotId && b.enabled !== false)
+    }
     if (!bot) {
       throw new Error(`Bot "${trimmedBotId}" not found or disabled`)
     }
 
-    const threadKey = aiBotThreadKey(trimmedBotId)
+    const cfg = await this._configStore.load()
+    const threadKey = aiBotThreadKeyForProfile(trimmedBotId, profileId)
     const now = new Date().toISOString()
     const homeOwnerId = this._profile?.owner?.ownerId ?? ""
     const meshPeerId = this._mesh?.peerId ?? ""
@@ -4007,7 +4217,7 @@ class NodeServiceImpl implements NodeService {
           conversationHistory = priorHistory
             .map((h) => {
               const isUser = h.sender?.ownerId === homeOwnerId
-              const speaker = isUser ? "Human" : bot.name
+              const speaker = isUser ? "Human" : bot!.name
               const text = h.content?.text ?? ""
               return `${speaker}: ${text}`
             })
@@ -4291,7 +4501,13 @@ class NodeServiceImpl implements NodeService {
   }
 
   async sendToOpenClaw(text: string): Promise<void> {
-    return sendToOpenClawViaRuntime(this._openClawState, this._openClawRuntimeDeps(), text);
+    const threadKey = envoyAiThreadKeyForProfile(this._callerFamilyProfileId());
+    return sendToOpenClawViaRuntime(
+      this._openClawState,
+      this._openClawRuntimeDeps(),
+      text,
+      threadKey,
+    );
   }
 
   async sendToBridge(text: string): Promise<void> {
@@ -4308,6 +4524,13 @@ class NodeServiceImpl implements NodeService {
       return;
     }
 
+    const profileId = this._callerFamilyProfileId();
+    const threadKey = bridgeThreadKeyForProfile(bridgeAgentPeerId, profileId);
+    const isOwnerCaller =
+      getRpcCaller()?.isOwnerProfile ?? profileId === OWNER_FAMILY_PROFILE_ID;
+    const displayName = await this._callerFamilyDisplayName();
+    const humanSenderOwnerId = isOwnerCaller ? ownerId : profileId;
+
     // Persist the outbound message so it appears in the Ext Agent thread on the home node.
     const messageId = crypto.randomUUID();
     const now = new Date().toISOString();
@@ -4315,13 +4538,14 @@ class NodeServiceImpl implements NodeService {
       messageId,
       sender: {
         nodeId: meshPeerId,
-        ownerId,
-        displayName: ownerId,
+        ownerId: humanSenderOwnerId,
+        displayName,
         actorRole: "human",
       },
       recipient: {
         nodeId: bridgeAgentPeerId,
-        ownerId: bridgeAgentPeerId,
+        // Profile-scoped thread key so WS routing reaches the caller only.
+        ownerId: threadKey,
         displayName: this._bridgeStatus?.agentName ?? "Ext Agent",
       },
       content: { text },
@@ -4333,8 +4557,8 @@ class NodeServiceImpl implements NodeService {
       },
       signature: "",
     };
-    // Store under agentPeerId thread (Ext Agent thread)
-    this._persistChatMessage(bridgeAgentPeerId, outboundMsg);
+    // Store under profile-scoped bridge thread (Phase 51).
+    this._persistChatMessage(threadKey, outboundMsg);
     // Emit for WebSocket-connected clients (Social desktop/mobile)
     this.emit("chat:message", outboundMsg);
 
@@ -4344,7 +4568,7 @@ class NodeServiceImpl implements NodeService {
     if (!bridgeConfig) return;
 
     try {
-      await forwardToAgent(
+      const replyText = await forwardToAgent(
         {
           enabled: true,
           agentUrl: bridgeConfig.agentUrl,
@@ -4353,11 +4577,17 @@ class NodeServiceImpl implements NodeService {
         } as any,
         {
           senderPeerId: meshPeerId,
-          senderOwnerId: ownerId,
-          senderDisplayName: ownerId,
+          senderOwnerId: humanSenderOwnerId,
+          senderDisplayName: displayName,
           text,
         },
       );
+      if (typeof replyText === "string" && replyText.trim()) {
+        this._recordBridgeReplyForProfile(profileId, bridgeAgentPeerId, replyText.trim());
+      } else {
+        // Async reply will arrive via onSelfSendEnvelope → handleBridgeSelfReply.
+        this._notePendingBridgeReply(profileId);
+      }
     } catch (err) {
       console.error("[bridge] sendToBridge: forwardToAgent failed:", err instanceof Error ? err.message : String(err));
     }
@@ -5153,19 +5383,79 @@ class NodeServiceImpl implements NodeService {
 
   async listChatHistory(peerOwnerId: string, limit?: number): Promise<ChatMessage[]> {
     if (!this._chatLogStore) return [];
+    const caller = getRpcCaller();
+    const profileId = this._callerFamilyProfileId();
+    const isOwner = !caller || caller.isOwnerProfile;
     // Normalize EnvoyAI thread keys — EnvoyGo sends "envoyai", the Social UI
     // and storage use ENVOY_AI_THREAD_KEY ("__envoy_ai__"). Accept both.
+    // Phase 51: namespace by caller profile (`__envoy_ai__:<profileId>`).
     const normalizedKey = peerOwnerId.trim();
-    if (normalizedKey === ENVOY_AI_THREAD_KEY || normalizedKey === "envoyai") {
-      return this._loadEnvoyAiChatHistory(limit);
+    if (
+      normalizedKey === ENVOY_AI_THREAD_KEY ||
+      normalizedKey === "envoyai" ||
+      normalizedKey.startsWith(`${ENVOY_AI_THREAD_KEY}:`)
+    ) {
+      const threadKey = normalizedKey.startsWith(`${ENVOY_AI_THREAD_KEY}:`)
+        ? normalizedKey
+        : envoyAiThreadKeyForProfile(profileId);
+      if (!threadVisibleTo(threadKey, profileId)) return [];
+      return loadEnvoyAiChatHistoryViaRuntime(
+        this._openClawRuntimeDeps(),
+        limit,
+        threadKey,
+      );
     }
     // Ext Agent thread — EnvoyGo uses "external"; chat log is keyed by bridge agent peer.
-    if (normalizedKey === "external") {
+    // Phase 51: prefer profile-scoped `bridge:<agentId>:<profileId>`; merge legacy.
+    if (normalizedKey === "external" || normalizedKey.startsWith("bridge:")) {
       const bridgePeer = this._bridgeStatus?.agentPeerId?.trim();
       if (!bridgePeer) return [];
-      const rows = await this._chatLogStore.listThread(bridgePeer, limit);
-      return rows as ChatMessage[];
+      const scoped = normalizedKey.startsWith("bridge:")
+        ? normalizedKey
+        : bridgeThreadKeyForProfile(bridgePeer, profileId);
+      if (!threadVisibleTo(scoped, profileId)) return [];
+      const rows = await this._chatLogStore.listThread(scoped, limit);
+      if (rows.length > 0 || profileId !== OWNER_FAMILY_PROFILE_ID) {
+        return rows as ChatMessage[];
+      }
+      // Owner: also surface legacy unscoped bridge thread.
+      const legacy = await this._chatLogStore.listThread(bridgePeer, limit);
+      return legacy as ChatMessage[];
     }
+    // Family DM threads.
+    if (isFamilyThreadKey(normalizedKey)) {
+      if (!threadVisibleTo(normalizedKey, profileId)) return [];
+      return (await this._chatLogStore.listThread(normalizedKey, limit)) as ChatMessage[];
+    }
+    // Family group rooms (`room:<id>`) — membership via family-rooms store.
+    if (normalizedKey.startsWith("room:")) {
+      const roomId = normalizedKey.slice("room:".length).trim();
+      if (this._familyRoomStore && roomId) {
+        const familyRoom = await this._familyRoomStore.get(roomId);
+        if (familyRoom) {
+          if (!familyRoom.memberProfileIds.includes(profileId)) return [];
+          return (await this._chatLogStore.listThread(normalizedKey, limit)) as ChatMessage[];
+        }
+      }
+      // Mesh rooms remain owner-only.
+      if (!isOwner) return [];
+      return (await this._chatLogStore.listThread(normalizedKey, limit)) as ChatMessage[];
+    }
+    // Bot threads: if client sends bare `bot:<id>`, append caller profile.
+    if (normalizedKey.startsWith("bot:")) {
+      const scoped =
+        normalizedKey.slice(4).includes(":")
+          ? normalizedKey
+          : aiBotThreadKeyForProfile(normalizedKey.slice(4), profileId);
+      if (!threadVisibleTo(scoped, profileId)) return [];
+      const rows = await this._chatLogStore.listThread(scoped, limit);
+      if (rows.length > 0 || profileId !== OWNER_FAMILY_PROFILE_ID) {
+        return rows as ChatMessage[];
+      }
+      return (await this._chatLogStore.listThread(normalizedKey, limit)) as ChatMessage[];
+    }
+    // Mesh / other keys: owner profile only.
+    if (!isOwner) return [];
     const rows = await this._chatLogStore.listThread(normalizedKey, limit);
     return rows as ChatMessage[];
   }
@@ -6614,7 +6904,31 @@ class NodeServiceImpl implements NodeService {
   // ============================================
 
   async getNodeConfig(): Promise<NodeConfig> {
-    return getNodeConfigViaRuntime(this._nodeConfigContext());
+    await this._ensureFamilyOwnerMigrated();
+    const config = await getNodeConfigViaRuntime(this._nodeConfigContext());
+    const profiles = this._familyProfileStore
+      ? (await this._familyProfileStore.list()).map(toFamilyProfile)
+      : [];
+    const caller = getRpcCaller();
+    const callerProfileId = caller?.profileId ?? OWNER_FAMILY_PROFILE_ID;
+    // Phase 51 — surface the caller's own bots (not the global node-config list).
+    let aiBots = config.aiBots ?? [];
+    if (this._familyProfileStore) {
+      const profile = await this._familyProfileStore.get(callerProfileId);
+      if (Array.isArray(profile?.aiBots)) {
+        aiBots = profile.aiBots as import("@envoymesh/api").AiBotDefinition[];
+      } else if (callerProfileId !== OWNER_FAMILY_PROFILE_ID) {
+        aiBots = [];
+      }
+    }
+    const enriched: NodeConfig = {
+      ...config,
+      aiBots,
+      familyProfiles: profiles,
+      callerFamilyProfileId: caller?.profileId,
+      callerIsOwnerProfile: caller ? caller.isOwnerProfile : true,
+    };
+    return redactNodeConfigForCaller(enriched as unknown as Record<string, unknown>, caller) as unknown as NodeConfig;
   }
 
 
@@ -6649,6 +6963,7 @@ class NodeServiceImpl implements NodeService {
   }
 
   async updateNodeConfig(config: Partial<NodeConfig>): Promise<void> {
+    requireOwnerProfile("change node settings");
     const { nodePatch, extPatch } = extractExtAgentSettingsPatch(
       config as Record<string, unknown>,
     );
@@ -6683,6 +6998,21 @@ class NodeServiceImpl implements NodeService {
     if (hasNodePatch) {
       const joinToggled = Object.prototype.hasOwnProperty.call(nodePatch, "capabilityProviderEnabled");
       await updateNodeConfigViaRuntime(this._nodeConfigContext(), nodePatch as Partial<NodeConfig>);
+      // Phase 51B — keep owner profile aiBots in sync when node-config is updated.
+      if (
+        Array.isArray((nodePatch as Partial<NodeConfig>).aiBots) &&
+        this._familyProfileStore
+      ) {
+        try {
+          await this._ensureFamilyOwnerMigrated();
+          await this._familyProfileStore.update({
+            id: OWNER_FAMILY_PROFILE_ID,
+            aiBots: (nodePatch as Partial<NodeConfig>).aiBots,
+          });
+        } catch (err) {
+          console.warn("[family] sync aiBots to owner profile failed:", err);
+        }
+      }
       // Join Agent Network changes what our card advertises; refresh the local
       // index and re-fetch bonded peers so Team jobs see the soft pool promptly.
       if (joinToggled) {
@@ -7796,15 +8126,397 @@ class NodeServiceImpl implements NodeService {
   async createCompanyInvite(
     params?: CreateCompanyInviteParams,
   ): Promise<CreateCompanyInviteResult> {
+    requireOwnerProfile("create company invites");
     return createCompanyInviteViaPublicRuntime(this._fleetPublicDeps(), params);
   }
 
   async listCompanyInvites(): Promise<ListCompanyInvitesResult> {
+    requireOwnerProfile("list company invites");
     return listCompanyInvitesViaPublicRuntime(this._fleetPublicDeps());
   }
 
   async revokeCompanyInvite(inviteId: string): Promise<RevokeCompanyInviteResult> {
+    requireOwnerProfile("revoke company invites");
     return revokeCompanyInviteViaPublicRuntime(this._fleetPublicDeps(), inviteId);
+  }
+
+  async listFamilyProfiles(): Promise<import("@envoymesh/api").ListFamilyProfilesResult> {
+    await this._ensureFamilyOwnerMigrated();
+    return listFamilyProfilesViaRuntime(this._familyProfileStore);
+  }
+
+  async createFamilyProfile(
+    params: import("@envoymesh/api").CreateFamilyProfileParams,
+  ): Promise<import("@envoymesh/api").CreateFamilyProfileResult> {
+    await this._ensureFamilyOwnerMigrated();
+    const result = await createFamilyProfileViaRuntime(this._familyProfileStore, params);
+    await this._refreshFamilyProfileActiveCache();
+    try {
+      const full = await this.getNodeConfig();
+      this.emit("home:config-updated", { config: full });
+    } catch {
+      /* ignore */
+    }
+    return result;
+  }
+
+  async updateFamilyProfile(
+    params: import("@envoymesh/api").UpdateFamilyProfileParams,
+  ): Promise<import("@envoymesh/api").UpdateFamilyProfileResult> {
+    await this._ensureFamilyOwnerMigrated();
+    const result = await updateFamilyProfileViaRuntime(this._familyProfileStore, params);
+    await this._refreshFamilyProfileActiveCache();
+    try {
+      const full = await this.getNodeConfig();
+      this.emit("home:config-updated", { config: full });
+    } catch {
+      /* ignore */
+    }
+    return result;
+  }
+
+  async deleteFamilyProfile(
+    id: string,
+  ): Promise<import("@envoymesh/api").DeleteFamilyProfileResult> {
+    await this._ensureFamilyOwnerMigrated();
+    const result = await deleteFamilyProfileViaRuntime(this._familyProfileStore, id);
+    await this._refreshFamilyProfileActiveCache();
+    try {
+      const full = await this.getNodeConfig();
+      this.emit("home:config-updated", { config: full });
+    } catch {
+      /* ignore */
+    }
+    return result;
+  }
+
+  async generateFamilyInviteToken(
+    params?: import("@envoymesh/api").GenerateFamilyInviteTokenParams,
+  ): Promise<import("@envoymesh/api").GenerateFamilyInviteTokenResult> {
+    await this._ensureFamilyOwnerMigrated();
+    return generateFamilyInviteTokenViaRuntime(
+      {
+        createInvite: async (inviteParams) =>
+          createCompanyInviteViaPublicRuntime(this._fleetPublicDeps(), inviteParams),
+      },
+      params,
+    );
+  }
+
+  /**
+   * Phase 51 follow-up — pre-auth list of selectable non-owner profiles
+   * for EnvoyGo re-pair (gated by a valid family invite token).
+   */
+  async previewFamilyInvite(
+    params: import("@envoymesh/api").PreviewFamilyInviteParams,
+  ): Promise<import("@envoymesh/api").PreviewFamilyInviteResult> {
+    const pairingToken = params.pairingToken?.trim() ?? "";
+    if (!pairingToken) throw new Error("pairingToken is required");
+
+    const valid = await this.validatePairingToken(pairingToken);
+    if (!valid) throw new Error("Invalid or expired pairing token");
+
+    const invite = this._taskStore
+      ? await this._taskStore.findCompanyInviteByToken(pairingToken)
+      : undefined;
+    if (!invite || invite.kind !== "family") {
+      throw new Error("Not a family invite token");
+    }
+    if (invite.revokedAt) throw new Error("Family invite token has been revoked");
+    if (Date.parse(invite.expiresAt) <= Date.now()) {
+      throw new Error("Family invite token has expired");
+    }
+
+    await this._ensureFamilyOwnerMigrated();
+    if (!this._familyProfileStore) {
+      return { profiles: [] };
+    }
+    const profiles = await this._familyProfileStore.list();
+    return {
+      profiles: profiles
+        .filter((p) => !p.isOwner && p.active !== false)
+        .map((p) => ({
+          id: p.id,
+          name: p.name,
+          avatarColor: p.avatarColor,
+          active: p.active !== false,
+        })),
+    };
+  }
+
+  /**
+   * Phase 51C — local family DM. Never leaves the home node.
+   */
+  async sendFamilyMessage(
+    params: import("@envoymesh/api").SendFamilyMessageParams,
+  ): Promise<import("@envoymesh/api").SendFamilyMessageResult> {
+    await this._ensureFamilyOwnerMigrated();
+    if (!this._familyProfileStore) {
+      throw new Error("Family profile store is not available");
+    }
+    const fromProfileId = this._callerFamilyProfileId();
+    const toProfileId = params.toProfileId?.trim() ?? "";
+    const text = params.text?.trim() ?? "";
+    if (!toProfileId) throw new Error("toProfileId is required");
+    if (!text) throw new Error("text is required");
+    if (toProfileId === fromProfileId) {
+      throw new Error("Cannot send a family message to yourself");
+    }
+
+    const [fromProfile, toProfile] = await Promise.all([
+      this._familyProfileStore.get(fromProfileId),
+      this._familyProfileStore.get(toProfileId),
+    ]);
+    if (!fromProfile || fromProfile.active === false) {
+      throw new Error("Your family profile is not active");
+    }
+    if (!toProfile) {
+      throw new Error(`Family profile not found: ${toProfileId}`);
+    }
+    // Deactivated recipients stay messageable so history remains reachable;
+    // they appear offline and get push if a token is registered.
+
+    const threadKey = familyThreadKey(fromProfileId, toProfileId);
+    const messageId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const meshPeerId = this._mesh?.peerId ?? "";
+    const msg: ChatMessage = {
+      messageId,
+      sender: {
+        nodeId: meshPeerId,
+        ownerId: fromProfileId,
+        displayName: fromProfile.name,
+        actorRole: "human",
+      },
+      recipient: {
+        nodeId: meshPeerId,
+        ownerId: threadKey,
+        displayName: toProfile.name,
+      },
+      content: { text },
+      metadata: {
+        timestamp: now,
+        deliveryReceipt: "delivered",
+        deliveryChannel: "chat",
+      },
+      signature: "",
+    };
+    this._persistChatMessage(threadKey, msg);
+    this.emit("chat:message", msg);
+
+    // Presence hint for the sender.
+    try {
+      await this._familyProfileStore.update({
+        id: fromProfileId,
+        lastSeenAt: now,
+      });
+    } catch {
+      /* best-effort */
+    }
+
+    return { messageId, threadKey };
+  }
+
+  private _toFamilyRoom(
+    record: import("@envoymesh/local-store").FamilyRoomRecord,
+  ): import("@envoymesh/api").FamilyRoom {
+    return {
+      roomId: record.roomId,
+      title: record.title,
+      creatorProfileId: record.creatorProfileId,
+      memberProfileIds: record.memberProfileIds,
+      revision: record.revision,
+      updatedAt: record.updatedAt,
+      active: record.active,
+      kind: "family",
+    };
+  }
+
+  async listFamilyRooms(): Promise<import("@envoymesh/api").ListFamilyRoomsResult> {
+    await this._ensureFamilyOwnerMigrated();
+    if (!this._familyRoomStore) return { rooms: [] };
+    const profileId = this._callerFamilyProfileId();
+    const rooms = await this._familyRoomStore.list();
+    return {
+      rooms: rooms
+        .filter((r) => r.memberProfileIds.includes(profileId))
+        .map((r) => this._toFamilyRoom(r)),
+    };
+  }
+
+  async createFamilyRoom(
+    params: import("@envoymesh/api").CreateFamilyRoomParams,
+  ): Promise<import("@envoymesh/api").CreateFamilyRoomResult> {
+    await this._ensureFamilyOwnerMigrated();
+    if (!this._familyRoomStore || !this._familyProfileStore) {
+      throw new Error("Family room store is not available");
+    }
+    const creatorProfileId = this._callerFamilyProfileId();
+    const creator = await this._familyProfileStore.get(creatorProfileId);
+    if (!creator || creator.active === false) {
+      throw new Error("Your family profile is not active");
+    }
+    const title = params.title?.trim() ?? "";
+    if (!title) throw new Error("title is required");
+    const requested = Array.isArray(params.memberProfileIds)
+      ? params.memberProfileIds.map((m) => m.trim()).filter(Boolean)
+      : [];
+    for (const id of requested) {
+      if (id === creatorProfileId) continue;
+      const p = await this._familyProfileStore.get(id);
+      if (!p) throw new Error(`Family profile not found: ${id}`);
+      if (p.active === false) {
+        throw new Error(`Family profile is inactive: ${id}`);
+      }
+    }
+    const room = await this._familyRoomStore.create({
+      title,
+      creatorProfileId,
+      memberProfileIds: requested,
+    });
+    const wire = this._toFamilyRoom(room);
+    for (const memberId of room.memberProfileIds) {
+      this.emit("chat:family-room-updated", { room: wire, targetProfileId: memberId });
+    }
+    return { room: wire };
+  }
+
+  async sendFamilyRoomMessage(
+    params: import("@envoymesh/api").SendFamilyRoomMessageParams,
+  ): Promise<import("@envoymesh/api").SendFamilyRoomMessageResult> {
+    await this._ensureFamilyOwnerMigrated();
+    if (!this._familyRoomStore || !this._familyProfileStore) {
+      throw new Error("Family room store is not available");
+    }
+    const roomId = params.roomId?.trim() ?? "";
+    const text = params.text?.trim() ?? "";
+    if (!roomId) throw new Error("roomId is required");
+    if (!text) throw new Error("text is required");
+    const profileId = this._callerFamilyProfileId();
+    const profile = await this._familyProfileStore.get(profileId);
+    if (!profile || profile.active === false) {
+      throw new Error("Your family profile is not active");
+    }
+    const room = await this._familyRoomStore.get(roomId);
+    if (!room || room.active === false) {
+      throw new Error(`Family room not found: ${roomId}`);
+    }
+    if (!room.memberProfileIds.includes(profileId)) {
+      throw new Error("You are not a member of this family room");
+    }
+
+    const threadKey = `room:${room.roomId}`;
+    const messageId = crypto.randomUUID();
+    const now = new Date().toISOString();
+    const meshPeerId = this._mesh?.peerId ?? "";
+    const msg: ChatMessage = {
+      messageId,
+      sender: {
+        nodeId: meshPeerId,
+        ownerId: profileId,
+        displayName: profile.name,
+        actorRole: "human",
+      },
+      recipient: {
+        nodeId: meshPeerId,
+        ownerId: threadKey,
+        displayName: room.title,
+      },
+      content: { text },
+      metadata: {
+        timestamp: now,
+        deliveryReceipt: "delivered",
+        deliveryChannel: "chat",
+      },
+      signature: "",
+    };
+    this._persistChatMessage(threadKey, msg);
+    for (const memberId of room.memberProfileIds) {
+      this.emit("chat:family-room-message", {
+        roomId: room.roomId,
+        message: msg,
+        targetProfileId: memberId,
+        memberProfileIds: room.memberProfileIds,
+      });
+    }
+
+    const homeOwnerId = this._profile?.owner?.ownerId;
+    if (homeOwnerId) {
+      for (const memberId of room.memberProfileIds) {
+        if (memberId === profileId) continue;
+        if (this.isProfileOnline(memberId)) continue;
+        void pushNotificationService
+          .dispatchChatPush({
+            senderName: profile.name,
+            messagePreview: text.slice(0, 120),
+            targetOwnerId: homeOwnerId,
+            targetProfileId: memberId,
+            messageId,
+            threadType: "room",
+            // Bare room UUID (matches mesh push + EnvoyGo chatRoomId).
+            roomId: room.roomId,
+            roomKind: "family",
+            threadKey,
+            senderOwnerId: profileId,
+          })
+          .catch(() => {});
+      }
+    }
+
+    try {
+      await this._familyProfileStore.update({ id: profileId, lastSeenAt: now });
+    } catch {
+      /* best-effort */
+    }
+
+    return { messageId, threadKey };
+  }
+
+  /** Phase 51 — best-effort presence stamp for a family profile. */
+  async touchFamilyProfileLastSeen(profileId: string): Promise<void> {
+    if (!this._familyProfileStore) return;
+    const id = profileId.trim() || OWNER_FAMILY_PROFILE_ID;
+    try {
+      await this._familyProfileStore.update({
+        id,
+        lastSeenAt: new Date().toISOString(),
+      });
+    } catch {
+      /* ignore */
+    }
+  }
+
+  private async _ensureFamilyOwnerMigrated(): Promise<void> {
+    if (this._familyOwnerMigrated || !this._familyProfileStore) return;
+    const displayName =
+      (await this._humanProfileStore.loadHumanProfile())?.displayName?.trim() ||
+      this._profile?.owner.ownerId?.replace(/^envoy:owner:/, "").slice(0, 12) ||
+      "Owner";
+    await this._familyProfileStore.ensureOwnerProfile({ name: displayName });
+    // Phase 51B — migrate node-config.aiBots → owner profile when empty.
+    try {
+      const owner = await this._familyProfileStore.getOwner();
+      if (owner && (!Array.isArray(owner.aiBots) || owner.aiBots.length === 0)) {
+        const cfg = await this._configStore.load();
+        const bots = cfg?.aiBots;
+        if (Array.isArray(bots) && bots.length > 0) {
+          await this._familyProfileStore.update({
+            id: owner.id,
+            aiBots: bots,
+          });
+        }
+      }
+    } catch (err) {
+      console.warn("[family] aiBots migration failed:", err);
+    }
+    this._familyOwnerMigrated = true;
+    await this._refreshFamilyProfileActiveCache();
+  }
+
+  /** Resolve session profileId with owner backfill (Phase 51). */
+  resolveSessionProfileId(profileId: string | undefined): string {
+    const trimmed = profileId?.trim();
+    return trimmed || OWNER_FAMILY_PROFILE_ID;
   }
 
   async redeemCompanyInvite(
@@ -8008,33 +8720,92 @@ class NodeServiceImpl implements NodeService {
       throw new Error("pairingToken is required");
     }
 
-    // Validate the QR pairing token.
     const valid = await this.validatePairingToken(pairingToken);
     if (!valid) {
       throw new Error("Invalid or expired pairing token");
     }
 
-    // Phase 35A: atomically consume a company-invite token (replay guard).
-    const thinClientDeviceId = `thin-client:${(params.deviceName ?? "EnvoyGo").toLowerCase().replace(/\s+/g, "-")}:${params.platform ?? "flutter"}`;
-    await this._consumeCompanyInviteOrThrow(
-      pairingToken,
-      "thin-client", // owner id is not part of the thin-client pairing contract
-      thinClientDeviceId,
-    );
+    await this._ensureFamilyOwnerMigrated();
+    if (!this._familyProfileStore) {
+      throw new Error("Family profile store is not available");
+    }
 
-    // Generate a persistent session token.
-    const sessionToken = randomUUID();
-    const now = new Date().toISOString();
     const deviceName = params.deviceName?.trim() || "EnvoyGo";
     const platform = params.platform?.trim() || "flutter";
-    // Stable deviceId so the same device always gets the same id.
-    // SessionTokenStore.setToken deduplicates by deviceId.
-    const deviceId = `thin-client:${deviceName.toLowerCase().replace(/\s+/g, "-")}:${platform}`;
+    const clientDeviceId = params.deviceId?.trim();
+    const deviceId =
+      clientDeviceId && clientDeviceId.length >= 8
+        ? `thin-client:${clientDeviceId}`
+        : `thin-client:${deviceName.toLowerCase().replace(/\s+/g, "-")}:${platform}`;
+
+    const invite = this._taskStore
+      ? await this._taskStore.findCompanyInviteByToken(pairingToken)
+      : undefined;
+    const isFamilyInvite = invite?.kind === "family";
+
+    if (isFamilyInvite && invite) {
+      if (invite.revokedAt) throw new Error("Family invite token has been revoked");
+      if (Date.parse(invite.expiresAt) <= Date.now()) {
+        throw new Error("Family invite token has expired");
+      }
+      if (invite.usedAt && invite.usedByDeviceId && invite.usedByDeviceId !== deviceId) {
+        throw new Error("Family invite token was already used by another device");
+      }
+    }
+
+    let profile = await this._familyProfileStore.getOwner();
+    if (!profile) {
+      profile = await this._familyProfileStore.ensureOwnerProfile({
+        name: params.profileName?.trim() || "Owner",
+        avatarColor: params.profileAvatarColor,
+      });
+    }
+
+    if (isFamilyInvite) {
+      const requestedId = params.profileId?.trim();
+      if (requestedId) {
+        const existing = await this._familyProfileStore.get(requestedId);
+        if (!existing || !existing.active) {
+          throw new Error(`Family profile not found: ${requestedId}`);
+        }
+        if (existing.isOwner) {
+          throw new Error("Family invite cannot bind to the owner profile — use the normal pairing QR");
+        }
+        profile = existing;
+      } else {
+        const name = params.profileName?.trim();
+        if (!name) {
+          throw new Error("profileName is required when creating a family profile");
+        }
+        profile = await this._familyProfileStore.create({
+          name,
+          avatarColor: params.profileAvatarColor,
+          isOwner: false,
+        });
+      }
+      await this._consumeCompanyInviteOrThrow(pairingToken, "family-member", deviceId);
+    } else {
+      // Normal owner pairing — consume company invite if present, then bind owner.
+      await this._consumeCompanyInviteOrThrow(pairingToken, "thin-client", deviceId);
+      const name = params.profileName?.trim();
+      if (name && profile.isOwner && name !== profile.name) {
+        profile = await this._familyProfileStore.update({
+          id: profile.id,
+          name,
+          avatarColor: params.profileAvatarColor ?? profile.avatarColor,
+        });
+      }
+    }
+
+    const sessionToken = randomUUID();
+    const now = new Date().toISOString();
     if (this._sessionTokenStore) {
       await this._sessionTokenStore.setToken({
         token: sessionToken,
         ownerId: this._profile?.owner.ownerId ?? "",
         deviceId,
+        profileId: profile.id,
+        platform,
         displayName: deviceName,
         createdAt: now,
         lastUsedAt: now,
@@ -8042,7 +8813,21 @@ class NodeServiceImpl implements NodeService {
     }
 
     const ownerId = this._profile?.owner.ownerId ?? "";
-    return { sessionToken, ownerId };
+    const familyProfiles = (await this._familyProfileStore.list()).map(toFamilyProfile);
+    try {
+      const full = await this.getNodeConfig();
+      this.emit("home:config-updated", { config: full });
+    } catch {
+      /* ignore */
+    }
+
+    return {
+      sessionToken,
+      ownerId,
+      profileId: profile.id,
+      isOwnerProfile: profile.isOwner === true,
+      familyProfiles,
+    };
   }
 
   async listAuthorizedDevices(): Promise<ListAuthorizedDevicesResult> {
@@ -8843,6 +9628,11 @@ class NodeServiceImpl implements NodeService {
     this._thinClientOnlineCheck = check;
   }
 
+  /** Phase 51 — per-profile thin-client presence (Dad online ≠ Mom online). */
+  bindThinClientProfileOnlineCheck(check: (profileId: string) => boolean): void {
+    this._thinClientProfileOnlineCheck = check;
+  }
+
   /**
    * True when EnvoyGo is recently active on an authenticated WebSocket
    * (see `hasRecentlyActiveClientForOwner`). Unbound / unknown → false
@@ -8855,6 +9645,40 @@ class NodeServiceImpl implements NodeService {
       return this._thinClientOnlineCheck(id);
     } catch {
       return false;
+    }
+  }
+
+  /** Phase 51 — true when a thin client for this family profile is recently active. */
+  isProfileOnline(profileId?: string): boolean {
+    const id = (profileId ?? OWNER_FAMILY_PROFILE_ID).trim() || OWNER_FAMILY_PROFILE_ID;
+    // Deactivated profiles are never "online" for push skip (even if a zombie WS remains).
+    if (this._familyProfileActiveCache.get(id) === false) return false;
+    if (this._thinClientProfileOnlineCheck) {
+      try {
+        return this._thinClientProfileOnlineCheck(id);
+      } catch {
+        return false;
+      }
+    }
+    // Fallback: owner profile uses the legacy owner-scoped check.
+    if (id === OWNER_FAMILY_PROFILE_ID) {
+      return this.isThinClientOnline();
+    }
+    return false;
+  }
+
+  private _familyProfileActiveCache = new Map<string, boolean>();
+
+  private async _refreshFamilyProfileActiveCache(): Promise<void> {
+    if (!this._familyProfileStore) return;
+    try {
+      const profiles = await this._familyProfileStore.list();
+      this._familyProfileActiveCache.clear();
+      for (const p of profiles) {
+        this._familyProfileActiveCache.set(p.id, p.active !== false);
+      }
+    } catch {
+      /* ignore */
     }
   }
 
@@ -8874,7 +9698,14 @@ class NodeServiceImpl implements NodeService {
   // Phase 31I — Push Notifications
   // ------------------------------------------------------------------
 
-  registerPushToken(params: { platform: string; token: string; ownerId: string; deviceId?: string; tokenType?: "alert" | "voip" }): void {
+  registerPushToken(params: {
+    platform: string;
+    token: string;
+    ownerId: string;
+    deviceId?: string;
+    tokenType?: "alert" | "voip";
+    profileId?: string;
+  }): void {
     // Thin clients often omit ownerId; tokens belong to this home node's owner.
     const ownerId =
       (params.ownerId && params.ownerId.trim()) ||
@@ -8888,10 +9719,19 @@ class NodeServiceImpl implements NodeService {
       console.warn("[push] registerPushToken ignored — no ownerId (profile not loaded?)");
       return;
     }
-    pushNotificationService.registerPushToken({ ...params, ownerId, token: params.token.trim() });
+    const profileId =
+      (params.profileId && params.profileId.trim()) ||
+      getRpcCaller()?.profileId?.trim() ||
+      OWNER_FAMILY_PROFILE_ID;
+    pushNotificationService.registerPushToken({
+      ...params,
+      ownerId,
+      profileId,
+      token: params.token.trim(),
+    });
     const tokenType = params.tokenType === "voip" ? "voip" : "alert";
     console.log(
-      `[push] registered ${tokenType} token platform=${params.platform} owner=${ownerId} token=${params.token.trim().slice(0, 12)}…`,
+      `[push] registered ${tokenType} token platform=${params.platform} owner=${ownerId} profile=${profileId} token=${params.token.trim().slice(0, 12)}…`,
     );
   }
 

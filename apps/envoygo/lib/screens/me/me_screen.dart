@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../../models/stored_node.dart';
 import '../../providers/contact_provider.dart' show nodeServiceProvider;
 import '../../providers/node_provider.dart';
@@ -31,19 +33,36 @@ class _MeScreenState extends ConsumerState<MeScreen> {
   String? _displayName;
   String? _username;
   String? _bio;
+  String? _avatarColor;
   int _profileEpoch = 0;
   bool _pushEnabled = true;
   bool _pushToggleBusy = false;
+  bool _familyProfileBusy = false;
+  String? _appVersionLabel;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadProfile());
     WidgetsBinding.instance.addPostFrameCallback((_) => _loadPushPref());
+    unawaited(_loadAppVersion());
+  }
+
+  Future<void> _loadAppVersion() async {
+    try {
+      final info = await PackageInfo.fromPlatform();
+      if (!mounted) return;
+      setState(() {
+        _appVersionLabel = 'EnvoyGo ${info.version} (${info.buildNumber})';
+      });
+    } catch (_) {
+      /* best-effort — leave footer empty */
+    }
   }
 
   Future<void> _loadPushPref() async {
-    final enabled = await PushPreferences.isEnabled();
+    final profileId = ref.read(nodeProvider).familyProfileId;
+    final enabled = await PushPreferences.isEnabled(profileId: profileId);
     if (mounted) setState(() => _pushEnabled = enabled);
   }
 
@@ -53,7 +72,8 @@ class _MeScreenState extends ConsumerState<MeScreen> {
   Future<void> _togglePushNotifications(bool enabled) async {
     setState(() => _pushToggleBusy = true);
     try {
-      await PushPreferences.setEnabled(enabled);
+      final profileId = ref.read(nodeProvider).familyProfileId;
+      await PushPreferences.setEnabled(enabled, profileId: profileId);
       final notifier = ref.read(nodeProvider.notifier);
       if (enabled) {
         // Re-register: obtain token + call registerPushToken on home node.
@@ -71,6 +91,28 @@ class _MeScreenState extends ConsumerState<MeScreen> {
   }
 
   Future<void> _loadProfile() async {
+    final nodeState = ref.read(nodeProvider);
+    // Phase 51E — family members use local family profile, not mesh HumanProfile.
+    if (!nodeState.isOwnerProfile) {
+      final profileId = nodeState.familyProfileId;
+      Map<String, dynamic>? match;
+      for (final p in nodeState.familyProfiles) {
+        if (p['id']?.toString() == profileId) {
+          match = p;
+          break;
+        }
+      }
+      if (!mounted) return;
+      setState(() {
+        _displayName = (match?['name'] as String?)?.trim();
+        _avatarColor = (match?['avatarColor'] as String?)?.trim();
+        _username = null;
+        _bio = null;
+        _profileEpoch++;
+      });
+      return;
+    }
+
     final client = ref.read(nodeServiceProvider);
     if (client == null) return;
     try {
@@ -80,6 +122,7 @@ class _MeScreenState extends ConsumerState<MeScreen> {
         _displayName = (profile['displayName'] as String?)?.trim();
         _username = (profile['username'] as String?)?.trim();
         _bio = (profile['bio'] as String?)?.trim();
+        _avatarColor = null;
         _profileEpoch++;
       });
     } catch (_) {
@@ -88,6 +131,11 @@ class _MeScreenState extends ConsumerState<MeScreen> {
   }
 
   Future<void> _openProfile({bool edit = false}) async {
+    final nodeState = ref.read(nodeProvider);
+    if (!nodeState.isOwnerProfile) {
+      await _editFamilyProfile();
+      return;
+    }
     await Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => ProfileScreen(startInEditMode: edit),
@@ -96,9 +144,91 @@ class _MeScreenState extends ConsumerState<MeScreen> {
     if (mounted) await _loadProfile();
   }
 
+  Future<void> _editFamilyProfile() async {
+    final nodeState = ref.read(nodeProvider);
+    final profileId = nodeState.familyProfileId;
+    if (profileId == null || profileId.isEmpty) return;
+    final nameController = TextEditingController(text: _displayName ?? '');
+    final colorController = TextEditingController(text: _avatarColor ?? '#6366f1');
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Edit profile'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: nameController,
+              autofocus: true,
+              decoration: const InputDecoration(
+                labelText: 'Display name',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: colorController,
+              decoration: const InputDecoration(
+                labelText: 'Avatar color (hex)',
+                border: OutlineInputBorder(),
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (saved != true || !mounted) return;
+    final name = nameController.text.trim();
+    if (name.isEmpty) return;
+    final client = ref.read(nodeServiceProvider);
+    if (client == null) return;
+    setState(() => _familyProfileBusy = true);
+    try {
+      await client.updateFamilyProfile(
+        id: profileId,
+        name: name,
+        avatarColor: colorController.text.trim().isEmpty
+            ? null
+            : colorController.text.trim(),
+      );
+      if (mounted) await _loadProfile();
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Could not update profile: $e')),
+      );
+    } finally {
+      if (mounted) setState(() => _familyProfileBusy = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final nodeState = ref.watch(nodeProvider);
+    // Reload push prefs when family profile binding becomes known after connect.
+    ref.listen<String?>(
+      nodeProvider.select((s) => s.familyProfileId),
+      (prev, next) {
+        if (prev != next) unawaited(_loadPushPref());
+      },
+    );
+    // Refresh family name/avatar when config syncs profiles.
+    ref.listen<List<Map<String, dynamic>>>(
+      nodeProvider.select((s) => s.familyProfiles),
+      (prev, next) {
+        if (!nodeState.isOwnerProfile) unawaited(_loadProfile());
+      },
+    );
     final notifier = ref.read(nodeProvider.notifier);
     final scheme = Theme.of(context).colorScheme;
     final name = (_displayName != null && _displayName!.isNotEmpty)
@@ -139,13 +269,28 @@ class _MeScreenState extends ConsumerState<MeScreen> {
                 padding: const EdgeInsets.fromLTRB(20, 24, 20, 20),
                 child: Column(
                   children: [
-                    ProfileAvatar(
-                      key: ValueKey('me-avatar-$_profileEpoch'),
-                      ownerId: nodeState.ownerId,
-                      displayName: name,
-                      radius: 44,
-                      isSelf: true,
-                    ),
+                    if (!nodeState.isOwnerProfile)
+                      CircleAvatar(
+                        key: ValueKey('me-family-avatar-$_profileEpoch'),
+                        radius: 44,
+                        backgroundColor: _parseHexColor(_avatarColor),
+                        child: Text(
+                          name.isNotEmpty ? name[0].toUpperCase() : '?',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 36,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                      )
+                    else
+                      ProfileAvatar(
+                        key: ValueKey('me-avatar-$_profileEpoch'),
+                        ownerId: nodeState.ownerId,
+                        displayName: name,
+                        radius: 44,
+                        isSelf: true,
+                      ),
                     const SizedBox(height: 14),
                     Text(
                       name,
@@ -170,9 +315,15 @@ class _MeScreenState extends ConsumerState<MeScreen> {
                     if (nodeState.activeNode != null) ...[
                       const SizedBox(height: 14),
                       FilledButton.tonalIcon(
-                        onPressed: () => _openProfile(edit: true),
+                        onPressed: _familyProfileBusy
+                            ? null
+                            : () => _openProfile(edit: true),
                         icon: const Icon(Icons.edit_outlined, size: 18),
-                        label: const Text('View & edit profile'),
+                        label: Text(
+                          nodeState.isOwnerProfile
+                              ? 'View & edit profile'
+                              : 'Edit name & avatar',
+                        ),
                       ),
                     ],
                   ],
@@ -361,8 +512,9 @@ class _MeScreenState extends ConsumerState<MeScreen> {
         ],
         const SizedBox(height: 16),
 
-        // Browser (Phase 45C — also available under Content tab).
-        if (nodeState.activeNode != null) ...[
+        // Browser / AI Engine / Team jobs / Public Access / Pair / Model+Pi
+        // are owner-only (Phase 51E). Family members keep Connected Node + Push.
+        if (nodeState.isOwnerProfile && nodeState.activeNode != null) ...[
           const _SectionHeader(title: 'Browser'),
           Card(
             child: ListTile(
@@ -382,12 +534,6 @@ class _MeScreenState extends ConsumerState<MeScreen> {
             ),
           ),
           const SizedBox(height: 16),
-        ],
-
-        // AI Engine (Phase 32 mirror + Phase EnvoyGo settings slice 2).
-        // Tapping the section navigates to the AI Engine settings screen
-        // (bridgeEnabled + openclawEnabled toggles).
-        if (nodeState.activeNode != null) ...[
           const _SectionHeader(title: 'AI Engine'),
           Card(
             child: ListTile(
@@ -408,13 +554,6 @@ class _MeScreenState extends ConsumerState<MeScreen> {
           ),
           const AiEngineSection(),
           const SizedBox(height: 16),
-        ],
-
-        // Team jobs (Phase 40 — read-only mirror of the home node's
-        // chain-reports store). Tap a row to see the executive summary,
-        // sections, and per-worker cost. Authoring happens on the home
-        // node's Social UI; mobile shows what was published.
-        if (nodeState.activeNode != null) ...[
           const _SectionHeader(title: 'Team jobs'),
           Card(
             child: ListTile(
@@ -451,10 +590,6 @@ class _MeScreenState extends ConsumerState<MeScreen> {
             ),
           ),
           const SizedBox(height: 16),
-        ],
-
-        // Public IP/domain (only show when connected)
-        if (nodeState.activeNode != null) ...[
           const _SectionHeader(title: 'Public Access'),
           Card(
             child: _PublicHostEditor(
@@ -469,10 +604,6 @@ class _MeScreenState extends ConsumerState<MeScreen> {
             ),
           ),
           const SizedBox(height: 16),
-        ],
-
-        // Pair new
-        if (nodeState.activeNode != null) ...[
           Card(
             child: ListTile(
               leading: const Icon(Icons.add_link),
@@ -482,10 +613,6 @@ class _MeScreenState extends ConsumerState<MeScreen> {
             ),
           ),
           const SizedBox(height: 16),
-        ],
-
-        // Phase EnvoyGo settings — slice 1+2 (only when paired).
-        if (nodeState.activeNode != null) ...[
           const _SectionHeader(title: 'Settings'),
           Card(
             child: Column(
@@ -566,12 +693,27 @@ class _MeScreenState extends ConsumerState<MeScreen> {
           ),
         ],
 
-        // Network Debug Test
-        const SizedBox(height: 16),
-        const _SectionHeader(title: 'Network Debug'),
-        Card(
-          child: _NetworkTestCard(),
-        ),
+        // Network Debug Test — owner only
+        if (nodeState.isOwnerProfile) ...[
+          const SizedBox(height: 16),
+          const _SectionHeader(title: 'Network Debug'),
+          Card(
+            child: _NetworkTestCard(),
+          ),
+        ],
+
+        // App version / build (from pubspec version: x.y.z+build)
+        if (_appVersionLabel != null) ...[
+          const SizedBox(height: 28),
+          Text(
+            _appVersionLabel!,
+            textAlign: TextAlign.center,
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant.withValues(alpha: 0.75),
+                ),
+          ),
+          const SizedBox(height: 8),
+        ],
       ],
     );
   }
@@ -613,16 +755,29 @@ class _MeScreenState extends ConsumerState<MeScreen> {
       builder: (ctx) => AlertDialog(
         title: const Text('Unpair?'),
         content: Text(
-            'This will disconnect and remove all data for ${node.name}.'),
+            'This will disconnect and remove all local chats and data for ${node.name}.'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
             child: const Text('Cancel'),
           ),
           FilledButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.of(ctx).pop();
-              notifier.unpairNode(node.id);
+              try {
+                await notifier.unpairNode(node.id);
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Unpaired. Local chats and data removed.'),
+                  ),
+                );
+              } catch (e) {
+                if (!context.mounted) return;
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Unpair failed: $e')),
+                );
+              }
             },
             child: const Text('Unpair'),
           ),
@@ -630,6 +785,16 @@ class _MeScreenState extends ConsumerState<MeScreen> {
       ),
     );
   }
+}
+
+Color _parseHexColor(String? hex) {
+  final raw = (hex ?? '#6366f1').trim();
+  final cleaned = raw.startsWith('#') ? raw.substring(1) : raw;
+  if (cleaned.length == 6) {
+    final value = int.tryParse(cleaned, radix: 16);
+    if (value != null) return Color(0xFF000000 | value);
+  }
+  return const Color(0xFF6366F1);
 }
 
 /// Inline editor for public IP/domain and port.

@@ -34,6 +34,7 @@ class PushNotificationService {
   bool _initialized = false;
   String? _token;
   String? _ownerId;
+  String? _profileId;
   Future<dynamic> Function(String method, [Map<String, dynamic>? params])?
       _homeRpc;
 
@@ -85,11 +86,15 @@ class PushNotificationService {
     Future<dynamic> Function(String method, [Map<String, dynamic>? params])
         callRpc, {
     String? ownerId,
+    String? profileId,
   }) async {
     if (!isSupported) return;
     _homeRpc = callRpc;
     if (ownerId != null && ownerId.isNotEmpty) {
       _ownerId = ownerId;
+    }
+    if (profileId != null && profileId.isNotEmpty) {
+      _profileId = profileId;
     }
     await _registerIfReady();
   }
@@ -147,6 +152,7 @@ class PushNotificationService {
       'roomId': data['roomId'],
       'messageId': data['messageId'],
       'senderName': data['senderName'],
+      'threadKey': data['threadKey'],
     };
   }
 
@@ -210,10 +216,15 @@ class PushNotificationService {
       if (ownerId != null && ownerId.isNotEmpty) {
         params['ownerId'] = ownerId;
       }
+      final profileId = _profileId;
+      if (profileId != null && profileId.isNotEmpty) {
+        params['profileId'] = profileId;
+      }
       await callRpc('registerPushToken', params);
       debugPrint(
         '[push] registerPushToken ok platform=${params['platform']} '
         'owner=${ownerId ?? '(home default)'} '
+        'profile=${profileId ?? '(session)'} '
         'token=${token.length > 12 ? '${token.substring(0, 12)}…' : token}',
       );
     } catch (e) {

@@ -696,6 +696,54 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.redeemCompanyInvite(params);
   }
 
+  async listFamilyProfiles() {
+    return this._ns.listFamilyProfiles();
+  }
+
+  async createFamilyProfile(
+    params: Parameters<NodeService["createFamilyProfile"]>[0],
+  ) {
+    return this._ns.createFamilyProfile(params);
+  }
+
+  async updateFamilyProfile(
+    params: Parameters<NodeService["updateFamilyProfile"]>[0],
+  ) {
+    return this._ns.updateFamilyProfile(params);
+  }
+
+  async deleteFamilyProfile(id: string) {
+    return this._ns.deleteFamilyProfile(id);
+  }
+
+  async generateFamilyInviteToken(
+    params?: Parameters<NodeService["generateFamilyInviteToken"]>[0],
+  ) {
+    return this._ns.generateFamilyInviteToken(params);
+  }
+
+  async sendFamilyMessage(
+    params: Parameters<NodeService["sendFamilyMessage"]>[0],
+  ) {
+    return this._ns.sendFamilyMessage(params);
+  }
+
+  async listFamilyRooms() {
+    return this._ns.listFamilyRooms();
+  }
+
+  async createFamilyRoom(
+    params: Parameters<NodeService["createFamilyRoom"]>[0],
+  ) {
+    return this._ns.createFamilyRoom(params);
+  }
+
+  async sendFamilyRoomMessage(
+    params: Parameters<NodeService["sendFamilyRoomMessage"]>[0],
+  ) {
+    return this._ns.sendFamilyRoomMessage(params);
+  }
+
   async syncPairingKioskFromConfig() {
     return this._ns.syncPairingKioskFromConfig();
   }

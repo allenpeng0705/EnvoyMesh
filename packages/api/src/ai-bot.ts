@@ -42,10 +42,33 @@ export function aiBotThreadKey(botId: string): string {
   return `${AI_BOT_THREAD_PREFIX}${botId}`
 }
 
+/** Phase 51 — profile-scoped bot thread (`bot:<id>:<profileId>`). */
+export function aiBotThreadKeyForProfile(botId: string, profileId: string): string {
+  return `${aiBotThreadKey(botId)}:${profileId.trim() || "owner"}`
+}
+
 /** Extract the bot ID from a thread key (returns null if not a bot key). */
 export function parseBotIdFromThreadKey(threadKey: string): string | null {
   if (!threadKey.startsWith(AI_BOT_THREAD_PREFIX)) return null
-  return threadKey.slice(AI_BOT_THREAD_PREFIX.length)
+  const rest = threadKey.slice(AI_BOT_THREAD_PREFIX.length)
+  // `bot:<id>` or `bot:<id>:<profileId>`
+  const colon = rest.indexOf(":")
+  return colon >= 0 ? rest.slice(0, colon) : rest
+}
+
+/** Parse profile-scoped bot thread. */
+export function parseAiBotThreadKey(
+  threadKey: string,
+): { botId: string; profileId?: string } | null {
+  if (!threadKey.startsWith(AI_BOT_THREAD_PREFIX)) return null
+  const rest = threadKey.slice(AI_BOT_THREAD_PREFIX.length)
+  if (!rest) return null
+  const colon = rest.indexOf(":")
+  if (colon < 0) return { botId: rest }
+  const botId = rest.slice(0, colon)
+  const profileId = rest.slice(colon + 1).trim()
+  if (!botId) return null
+  return profileId ? { botId, profileId } : { botId }
 }
 
 /** Check if a thread key / agentType is a bot thread. */

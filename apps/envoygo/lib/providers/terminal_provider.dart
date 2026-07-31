@@ -51,6 +51,11 @@ class TerminalNotifier extends StateNotifier<TerminalState> {
     state = state.copyWith(sessions: sessions, isLoading: false);
   }
 
+  /// Clear all sessions (used on unpair).
+  void clear() {
+    state = const TerminalState();
+  }
+
   /// Create a new terminal session.
   Future<void> createSession({String? cwd, String? command}) async {
     final nodeService = _ref.read(nodeServiceProvider);

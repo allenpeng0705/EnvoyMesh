@@ -104,6 +104,11 @@ class ContactNotifier extends StateNotifier<ContactState> {
     state = state.copyWith(bonds: bonds, isLoading: false);
   }
 
+  /// Clear all contacts (used on unpair).
+  void clear() {
+    state = const ContactState();
+  }
+
   /// Get a contact by owner ID.
   Contact? getContact(String ownerId) {
     return state.bonds

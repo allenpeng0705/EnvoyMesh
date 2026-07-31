@@ -10,6 +10,20 @@ import type {
 import type { NodeService } from "@envoymesh/api";
 import { NodeServiceImpl } from "./node-service-impl.js";
 import { routeRpcMethod } from "./json-rpc-router.js";
+import {
+  runWithRpcCaller,
+  localOwnerCaller,
+  redactNodeConfigForCaller,
+  type RpcCallerContext,
+} from "./rpc-caller-context.js";
+import { OWNER_FAMILY_PROFILE_ID } from "@envoymesh/api";
+import {
+  parseAiBotThreadKey,
+  parseBridgeThreadKey,
+  parseEnvoyAiProfileId,
+  parseFamilyThreadKey,
+  isEnvoyAiThreadKey,
+} from "@envoymesh/api";
 import { SOCIAL_WS_BIND_HOST, TERMINAL_WS_PORT } from "./service-ports.js";
 import {
   closeHomeClawCoreWsForCompanion,
@@ -42,12 +56,18 @@ export class WsServer {
   private readonly clientSubscriptions = new Map<WebSocket, Set<string>>();
   /** Track authenticated thin-client sessions (ws → ownerId). */
   private readonly authenticatedClients = new Map<WebSocket, string>();
+  /** Phase 51 — thin-client session caller context (ws → profile binding). */
+  private readonly authenticatedSessions = new Map<WebSocket, RpcCallerContext>();
   /**
    * Last RPC timestamp per thin-client owner. Heartbeat pongs do NOT update
    * this — only real client messages. Used so a backgrounded EnvoyGo with a
    * half-open WS does not suppress chat pushes forever.
    */
   private readonly thinClientLastRpcAt = new Map<string, number>();
+  /** Phase 51 — last RPC per family profile (for isProfileOnline later). */
+  private readonly thinClientLastRpcAtByProfile = new Map<string, number>();
+  /** Phase 51 — throttle disk writes for profile lastSeenAt. */
+  private readonly _lastSeenWriteAtByProfile = new Map<string, number>();
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private readonly heartbeatIntervalMs = 30000; // 30 seconds
   /**
@@ -121,16 +141,57 @@ export class WsServer {
       nodeServiceImpl.on("share:agent-proposed", (data: unknown) =>
         this.emitEvent("share:agent-proposed", data),
       );
-      nodeServiceImpl.on("chat:message", (data: unknown) => this.emitEvent("chat:message", data));
+      nodeServiceImpl.on("chat:message", (data: unknown) => {
+        const targets = resolveChatMessageTargetProfiles(data);
+        if (targets.length === 0) {
+          this.emitEventToProfile(OWNER_FAMILY_PROFILE_ID, "chat:message", data);
+        } else {
+          for (const profileId of targets) {
+            this.emitEventToProfile(profileId, "chat:message", data);
+          }
+        }
+      });
       nodeServiceImpl.on("chat:delivered", (data: unknown) => this.emitEvent("chat:delivered", data));
-      nodeServiceImpl.on("chat:room-updated", (data: unknown) => this.emitEvent("chat:room-updated", data));
-      nodeServiceImpl.on("chat:room-removed", (data: unknown) => this.emitEvent("chat:room-removed", data));
-      nodeServiceImpl.on("chat:room-message", (data: unknown) => this.emitEvent("chat:room-message", data));
+      // Mesh rooms are owner-only — never broadcast to family-member WS sessions.
+      nodeServiceImpl.on("chat:room-updated", (data: unknown) =>
+        this.emitEventToProfile(OWNER_FAMILY_PROFILE_ID, "chat:room-updated", data),
+      );
+      nodeServiceImpl.on("chat:room-removed", (data: unknown) =>
+        this.emitEventToProfile(OWNER_FAMILY_PROFILE_ID, "chat:room-removed", data),
+      );
+      nodeServiceImpl.on("chat:room-message", (data: unknown) =>
+        this.emitEventToProfile(OWNER_FAMILY_PROFILE_ID, "chat:room-message", data),
+      );
+      // Phase 51D — family rooms are profile-scoped (never broadcast to all WS clients).
+      // Remap to the same event names/shapes as mesh rooms so EnvoyGo/Social
+      // handlers stay shared (`chat:room-updated` payload = room object).
+      nodeServiceImpl.on("chat:family-room-updated", (data: unknown) => {
+        const row = data as { targetProfileId?: string; room?: unknown };
+        const profileId = row?.targetProfileId?.trim();
+        if (!profileId || row.room == null) return;
+        this.emitEventToProfile(profileId, "chat:room-updated", row.room);
+      });
+      nodeServiceImpl.on("chat:family-room-message", (data: unknown) => {
+        const row = data as {
+          targetProfileId?: string;
+          roomId?: string;
+          message?: unknown;
+        };
+        const profileId = row?.targetProfileId?.trim();
+        if (!profileId) return;
+        this.emitEventToProfile(profileId, "chat:room-message", {
+          roomId: row.roomId,
+          message: row.message,
+          kind: "family",
+        });
+      });
       nodeServiceImpl.on("chat:draft", (data: unknown) => this.emitEvent("chat:draft", data));
       nodeServiceImpl.on("chat:auto-reply-paused", (data: unknown) =>
         this.emitEvent("chat:auto-reply-paused", data),
       );
-      nodeServiceImpl.on("agent:activity", (data: unknown) => this.emitEvent("agent:activity", data));
+      nodeServiceImpl.on("agent:activity", (data: unknown) =>
+        this.emitEventToProfile(OWNER_FAMILY_PROFILE_ID, "agent:activity", data),
+      );
       nodeServiceImpl.on("bond:established", (data: unknown) => this.emitEvent("bond:established", data));
       nodeServiceImpl.on("bond:revoked", (data: unknown) => this.emitEvent("bond:revoked", data));
       nodeServiceImpl.on("profile:updated", (data: unknown) => this.emitEvent("profile:updated", data));
@@ -143,7 +204,7 @@ export class WsServer {
         this.emitEvent("config:updated", data),
       );
       nodeServiceImpl.on("home:config-updated", (data: unknown) =>
-        this.emitEvent("home:config-updated", data),
+        this.emitHomeConfigUpdated(data),
       );
       nodeServiceImpl.on("home:bonds-updated", (data: unknown) =>
         this.emitEvent("home:bonds-updated", data),
@@ -251,6 +312,24 @@ export class WsServer {
     return false;
   }
 
+  /** Phase 51 — true when any authenticated WS is bound to this family profile. */
+  hasClientForProfile(profileId: string): boolean {
+    for (const session of this.authenticatedSessions.values()) {
+      if (session.profileId === profileId) return true;
+    }
+    return false;
+  }
+
+  hasRecentlyActiveClientForProfile(
+    profileId: string,
+    maxIdleMs: number = 20_000,
+  ): boolean {
+    if (!this.hasClientForProfile(profileId)) return false;
+    const last = this.thinClientLastRpcAtByProfile.get(profileId);
+    if (last == null) return false;
+    return Date.now() - last <= maxIdleMs;
+  }
+
   /**
    * True when EnvoyGo is connected AND recently sent an RPC (default 20s).
    * Used for chat/bond/feed push skip-if-online — a zombie background WS
@@ -287,8 +366,31 @@ export class WsServer {
         if (record) {
           isAuthenticated = true;
           this.authenticatedClients.set(ws, record.ownerId);
+          const profileId =
+            typeof record.profileId === "string" && record.profileId.trim()
+              ? record.profileId.trim()
+              : OWNER_FAMILY_PROFILE_ID;
+          let isOwnerProfile = profileId === OWNER_FAMILY_PROFILE_ID;
+          try {
+            const profiles = await (this.nodeService as any).listFamilyProfiles?.();
+            const match = profiles?.profiles?.find((p: { id: string }) => p.id === profileId);
+            if (match) isOwnerProfile = match.isOwner === true;
+          } catch {
+            /* keep heuristic */
+          }
+          const session: RpcCallerContext = {
+            ownerId: record.ownerId,
+            profileId,
+            isOwnerProfile,
+            source: "session",
+            deviceId: record.deviceId,
+          };
+          this.authenticatedSessions.set(ws, session);
           this.thinClientLastRpcAt.set(record.ownerId, Date.now());
-          console.log(`[ws-server] Client ${clientId} authenticated via session token (owner: ${record.ownerId})`);
+          this.thinClientLastRpcAtByProfile.set(profileId, Date.now());
+          console.log(
+            `[ws-server] Client ${clientId} authenticated via session token (owner: ${record.ownerId}, profile: ${profileId})`,
+          );
         }
       }
     } catch {
@@ -310,8 +412,20 @@ export class WsServer {
         const message = JSON.parse(data.toString()) as JsonRpcRequest;
         // Thin-client RPC activity — drives push skip-if-online freshness.
         const ownerId = this.authenticatedClients.get(ws);
+        const session = this.authenticatedSessions.get(ws);
         if (ownerId && message.method !== "on" && message.method !== "off") {
           this.thinClientLastRpcAt.set(ownerId, Date.now());
+        }
+        if (session && message.method !== "on" && message.method !== "off") {
+          this.thinClientLastRpcAtByProfile.set(session.profileId, Date.now());
+          // Throttle lastSeenAt writes (~30s) so presence stays fresh without hammering disk.
+          const lastTouch = this._lastSeenWriteAtByProfile.get(session.profileId) ?? 0;
+          if (Date.now() - lastTouch > 30_000) {
+            this._lastSeenWriteAtByProfile.set(session.profileId, Date.now());
+            void (this.nodeService as NodeServiceImpl).touchFamilyProfileLastSeen?.(
+              session.profileId,
+            );
+          }
         }
         // Record owner activity for online/offline detection,
         // but skip subscription on/off RPCs — they're infrastructure, not user actions.
@@ -330,8 +444,13 @@ export class WsServer {
       // Clean up auth tracking.
       const ownerId = this.authenticatedClients.get(ws);
       this.authenticatedClients.delete(ws);
+      const session = this.authenticatedSessions.get(ws);
+      this.authenticatedSessions.delete(ws);
       if (ownerId && !this.hasClientForOwner(ownerId)) {
         this.thinClientLastRpcAt.delete(ownerId);
+      }
+      if (session && !this.hasClientForProfile(session.profileId)) {
+        this.thinClientLastRpcAtByProfile.delete(session.profileId);
       }
       // Clean up subscriptions
       const subs = this.clientSubscriptions.get(ws);
@@ -496,7 +615,13 @@ export class WsServer {
     // app) connect without a token and are unrestricted.
     const isAuth = (ws as any).isThinClientAuthenticated === true;
     const hadToken = (ws as any).hadThinClientToken === true;
-    if (hadToken && !isAuth && method !== "pairThinClient") {
+    // Pre-auth pairing RPCs: pair + family-invite profile preview.
+    if (
+      hadToken &&
+      !isAuth &&
+      method !== "pairThinClient" &&
+      method !== "previewFamilyInvite"
+    ) {
       // Use the explicit UNAUTHORIZED code so the EnvoyGo mobile client
       // can map this to a typed `UnauthorizedException` and stop
       // treating it as a transient transport failure. The message
@@ -565,7 +690,7 @@ export class WsServer {
 
     // Route RPC to NodeService
     try {
-      const result = await this.routeToNodeService(method as RpcMethods, params ?? {});
+      const result = await this.routeToNodeService(ws, method as RpcMethods, params ?? {});
       this.sendResponse(ws, id, result);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : String(error);
@@ -573,8 +698,34 @@ export class WsServer {
     }
   }
 
-  private async routeToNodeService(method: RpcMethods, params: Record<string, unknown>): Promise<unknown> {
-    return routeRpcMethod(this.nodeService, method, params);
+  private async routeToNodeService(
+    ws: WebSocket,
+    method: RpcMethods,
+    params: Record<string, unknown>,
+  ): Promise<unknown> {
+    const session = this.authenticatedSessions.get(ws);
+    const caller = session ?? localOwnerCaller("");
+    return runWithRpcCaller(caller, () => routeRpcMethod(this.nodeService, method, params));
+  }
+
+  /**
+   * Phase 51 — broadcast config with secrets stripped for non-owner sessions.
+   */
+  private emitHomeConfigUpdated(data: unknown): void {
+    const listeners = this.subscriptions.get("home:config-updated");
+    if (!listeners) return;
+    const payload = data as { config?: Record<string, unknown> };
+    const fullConfig = payload?.config;
+    for (const ws of listeners) {
+      if (ws.readyState !== WebSocket.OPEN) continue;
+      const session = this.authenticatedSessions.get(ws);
+      if (!fullConfig || !session || session.isOwnerProfile) {
+        this.sendEvent(ws, "home:config-updated", data);
+        continue;
+      }
+      const redacted = redactNodeConfigForCaller({ ...fullConfig }, session);
+      this.sendEvent(ws, "home:config-updated", { config: redacted });
+    }
   }
 
   // ============================================
@@ -619,6 +770,30 @@ export class WsServer {
     }
   }
 
+  /**
+   * Phase 51 — emit an event only to WebSocket clients bound to `profileId`.
+   * Local Social clients (no session token) are treated as the owner profile.
+   */
+  emitEventToProfile(profileId: string, event: string, data: unknown): void {
+    const target = profileId.trim() || OWNER_FAMILY_PROFILE_ID;
+    const listeners = this.subscriptions.get(event);
+    if (!listeners) return;
+    for (const ws of listeners) {
+      if (ws.readyState !== WebSocket.OPEN) continue;
+      const session = this.authenticatedSessions.get(ws);
+      if (!session) {
+        // Untokened local clients (desktop Social) → owner only.
+        if (target === OWNER_FAMILY_PROFILE_ID) {
+          this.sendEvent(ws, event, data);
+        }
+        continue;
+      }
+      if (session.profileId === target) {
+        this.sendEvent(ws, event, data);
+      }
+    }
+  }
+
   // ============================================
   // Message Sending Helpers
   // ============================================
@@ -648,4 +823,48 @@ export class WsServer {
  */
 export function createWsServer(port?: number, path?: string): WsServer {
   return new WsServer(port, path);
+}
+
+/**
+ * Phase 51 — which family profile(s) should receive a live `chat:message`.
+ * Empty → treat as owner-only (mesh / unknown).
+ */
+export function resolveChatMessageTargetProfiles(data: unknown): string[] {
+  if (!data || typeof data !== "object") return [];
+  const msg = data as {
+    sender?: { ownerId?: string };
+    recipient?: { ownerId?: string };
+  };
+  const candidates = [msg.sender?.ownerId, msg.recipient?.ownerId]
+    .map((v) => (typeof v === "string" ? v.trim() : ""))
+    .filter(Boolean);
+
+  const profiles = new Set<string>();
+  for (const key of candidates) {
+    const family = parseFamilyThreadKey(key);
+    if (family) {
+      profiles.add(family.profileIdA);
+      profiles.add(family.profileIdB);
+      continue;
+    }
+    const bot = parseAiBotThreadKey(key);
+    if (bot?.profileId) {
+      profiles.add(bot.profileId);
+      continue;
+    }
+    const bridge = parseBridgeThreadKey(key);
+    if (bridge) {
+      profiles.add(bridge.profileId);
+      continue;
+    }
+    const envoyAi = parseEnvoyAiProfileId(key);
+    if (envoyAi) {
+      profiles.add(envoyAi);
+      continue;
+    }
+    if (isEnvoyAiThreadKey(key) && key === "__envoy_ai__") {
+      profiles.add(OWNER_FAMILY_PROFILE_ID);
+    }
+  }
+  return [...profiles];
 }

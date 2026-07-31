@@ -12,10 +12,17 @@ const SESSION_TOKENS_FILE = "session-tokens.json";
 export interface SessionTokenRecord {
   /** The session token value (UUID). */
   token: string;
-  /** The requester's owner identity (e.g. "envoy:owner:abc123"). */
+  /** The home owner identity (e.g. "envoy:owner:abc123"). */
   ownerId: string;
   /** The requester's device identity (e.g. "envoy:device:xyz"). */
   deviceId: string;
+  /**
+   * Family Network (Phase 51) — which local profile this device is locked to.
+   * Missing on legacy tokens; readers should treat as the owner profile id.
+   */
+  profileId?: string;
+  /** Platform hint ("ios" | "android" | "flutter" | …). */
+  platform?: string;
   /** Human label for management UI ("Companion" / "Phone" etc.). */
   displayName?: string;
   /** ISO 8601 — when the token was created. */
@@ -60,7 +67,8 @@ export function createSessionTokenStore(profileDir: string): SessionTokenStore {
         return [];
       }
       const data = JSON.parse(raw) as SessionTokensFile;
-      return Array.isArray(data?.records) ? data.records : [];
+      const records = Array.isArray(data?.records) ? data.records : [];
+      return records.map(normalizeSessionRecord);
     } catch (error) {
       if (isMissingFileError(error)) {
         return [];
@@ -169,6 +177,18 @@ export function createSessionTokenStore(profileDir: string): SessionTokenStore {
         return { records: filtered, result: undefined };
       });
     },
+  };
+}
+
+function normalizeSessionRecord(raw: SessionTokenRecord): SessionTokenRecord {
+  return {
+    ...raw,
+    profileId: typeof raw.profileId === "string" && raw.profileId.trim()
+      ? raw.profileId.trim()
+      : undefined,
+    platform: typeof raw.platform === "string" && raw.platform.trim()
+      ? raw.platform.trim()
+      : undefined,
   };
 }
 

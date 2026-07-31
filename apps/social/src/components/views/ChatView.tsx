@@ -1,5 +1,7 @@
 import { ChatSidebar } from "./ChatSidebar.js";
 import { ContactChatPanel } from "./ContactChatPanel.js";
+import { FamilyChatPanel } from "./FamilyChatPanel.js";
+import { FamilyGroupChatPanel } from "./FamilyGroupChatPanel.js";
 import { GroupChatPanel } from "./GroupChatPanel.js";
 import { InboxView } from "./InboxView.js";
 import { TerminalPanel } from "../terminals/TerminalPanel.js";
@@ -8,11 +10,16 @@ import { ChatIcon } from "../../icons.js";
 import { useT } from "../../context/I18nContext.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import type { ChatPanelMode } from "../../App.js";
-import { isChatRoomThreadKey, isAiBotThread, parseChatRoomThreadKey } from "@envoymesh/api";
+import {
+  isChatRoomThreadKey,
+  isAiBotThread,
+  parseChatRoomThreadKey,
+  isFamilyThreadKey,
+} from "@envoymesh/api";
 import type { TerminalSessionSummary } from "@envoymesh/api";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useIsInProcessMobileNode, useNodeService } from "../../hooks/useNodeService.js";
-import type { ChatRoom } from "@envoymesh/api";
+import type { ChatRoom, FamilyRoom } from "@envoymesh/api";
 import { loadTerminalSelectedSessionId, saveTerminalSelectedSessionId } from "../../lib/storage.js";
 import { isTauriShell, pickTauriDirectory } from "../../lib/tauri-shell.js";
 import { OpenClawOfflineBanner } from "./OpenClawOfflineBanner.js";
@@ -49,6 +56,7 @@ export function ChatView({
   const isMobileNode = useIsInProcessMobileNode();
   const { connectionStatus, nodeConfig, bonds } = useNodeState();
   const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
+  const [familyRooms, setFamilyRooms] = useState<FamilyRoom[]>([]);
   const [terminalSessions, setTerminalSessions] = useState<TerminalSessionSummary[]>([]);
   const [selectedTerminalId, setSelectedTerminalId] = useState<string | null>(() => loadTerminalSelectedSessionId());
   const [piEnsureError, setPiEnsureError] = useState<string | null>(null);
@@ -236,9 +244,35 @@ export function ChatView({
     [selectedTerminalId, terminalSessions],
   );
 
+  const selectedFamilyRoom = isChatRoomThreadKey(selectedContact ?? "")
+    ? familyRooms.find((r) => r.roomId === parseChatRoomThreadKey(selectedContact!))
+    : undefined;
   const selectedRoom = isChatRoomThreadKey(selectedContact ?? "")
     ? chatRooms.find((r) => r.roomId === parseChatRoomThreadKey(selectedContact!))
     : undefined;
+
+  // After creating a family group, the mesh room list won't have it yet — refresh family rooms.
+  useEffect(() => {
+    if (!nodeService.isConnected || !selectedContact) return;
+    if (!isChatRoomThreadKey(selectedContact)) return;
+    const roomId = parseChatRoomThreadKey(selectedContact);
+    if (!roomId) return;
+    if (selectedRoom || selectedFamilyRoom) return;
+    if (!nodeService.listFamilyRooms) return;
+    let cancelled = false;
+    void nodeService.listFamilyRooms().then((result) => {
+      if (!cancelled) setFamilyRooms(result.rooms ?? []);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    nodeService,
+    nodeService.isConnected,
+    selectedContact,
+    selectedRoom,
+    selectedFamilyRoom,
+  ]);
 
   useEffect(() => {
     if (panelMode !== "terminals") {
@@ -288,7 +322,26 @@ export function ChatView({
     void nodeService.listChatRooms().then((rooms) => {
       if (!cancelled) setChatRooms(rooms);
     });
+    if (nodeService.listFamilyRooms) {
+      void nodeService.listFamilyRooms().then((result) => {
+        if (!cancelled) setFamilyRooms(result.rooms ?? []);
+      });
+    }
     const unsub = nodeService.on("chat:room-updated", (room) => {
+      const kind = (room as { kind?: string }).kind;
+      if (kind === "family") {
+        const familyRoom = room as unknown as FamilyRoom;
+        setFamilyRooms((prev) => {
+          const idx = prev.findIndex((r) => r.roomId === familyRoom.roomId);
+          if (idx >= 0) {
+            const next = [...prev];
+            next[idx] = familyRoom;
+            return next;
+          }
+          return [familyRoom, ...prev];
+        });
+        return;
+      }
       setChatRooms((prev) => {
         const idx = prev.findIndex((r) => r.roomId === room.roomId);
         if (idx >= 0) {
@@ -301,6 +354,7 @@ export function ChatView({
     });
     const unsubRemoved = nodeService.on("chat:room-removed", ({ roomId }) => {
       setChatRooms((prev) => prev.filter((r) => r.roomId !== roomId));
+      setFamilyRooms((prev) => prev.filter((r) => r.roomId !== roomId));
       if (selectedContact && parseChatRoomThreadKey(selectedContact) === roomId) {
         onSelectedContactChange(null);
       }
@@ -410,7 +464,12 @@ export function ChatView({
           />
           <section className="chat-area">
             {selectedContact ? (
-              isChatRoomThreadKey(selectedContact) ? (
+              isChatRoomThreadKey(selectedContact) && selectedFamilyRoom ? (
+                <FamilyGroupChatPanel
+                  threadKey={selectedContact}
+                  room={selectedFamilyRoom}
+                />
+              ) : isChatRoomThreadKey(selectedContact) ? (
                 <GroupChatPanel
                   threadKey={selectedContact}
                   room={selectedRoom}
@@ -418,6 +477,8 @@ export function ChatView({
                 />
               ) : isAiBotThread(selectedContact) ? (
                 <BotChatPanel threadKey={selectedContact} />
+              ) : isFamilyThreadKey(selectedContact) ? (
+                <FamilyChatPanel threadKey={selectedContact} />
               ) : (
                 <ContactChatPanel
                   selectedContact={selectedContact}

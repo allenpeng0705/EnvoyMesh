@@ -98,6 +98,44 @@ import type {
   RedeemCompanyInviteResult,
 } from "./company-invite.js";
 import type {
+  CreateFamilyProfileParams,
+  CreateFamilyProfileResult,
+  UpdateFamilyProfileParams,
+  UpdateFamilyProfileResult,
+  DeleteFamilyProfileResult,
+  GenerateFamilyInviteTokenParams,
+  GenerateFamilyInviteTokenResult,
+  ListFamilyProfilesResult,
+  SendFamilyMessageParams,
+  SendFamilyMessageResult,
+  FamilyRoom,
+  CreateFamilyRoomParams,
+  CreateFamilyRoomResult,
+  ListFamilyRoomsResult,
+  SendFamilyRoomMessageParams,
+  SendFamilyRoomMessageResult,
+  FamilyProfile,
+} from "./family-profile.js";
+export type {
+  FamilyProfile,
+  CreateFamilyProfileParams,
+  CreateFamilyProfileResult,
+  UpdateFamilyProfileParams,
+  UpdateFamilyProfileResult,
+  DeleteFamilyProfileResult,
+  GenerateFamilyInviteTokenParams,
+  GenerateFamilyInviteTokenResult,
+  ListFamilyProfilesResult,
+  SendFamilyMessageParams,
+  SendFamilyMessageResult,
+  FamilyRoom,
+  CreateFamilyRoomParams,
+  CreateFamilyRoomResult,
+  ListFamilyRoomsResult,
+  SendFamilyRoomMessageParams,
+  SendFamilyRoomMessageResult,
+} from "./family-profile.js";
+import type {
   BridgeStatus,
   OpenClawStatus,
   PiStatus,
@@ -1569,6 +1607,24 @@ export interface NodeServiceEvents {
   "chat:room-updated": ChatRoom;
   "chat:room-removed": { roomId: string };
   "chat:room-message": ChatRoomMessageEvent;
+  /**
+   * Phase 51D — family room create/rename/membership. WS remaps to
+   * profile-scoped `chat:room-updated` (never broadcast).
+   */
+  "chat:family-room-updated": {
+    room: FamilyRoom;
+    targetProfileId: string;
+  };
+  /**
+   * Phase 51D — family room message. WS remaps to profile-scoped
+   * `chat:room-message` (never broadcast).
+   */
+  "chat:family-room-message": {
+    roomId: string;
+    message: ChatMessage;
+    targetProfileId: string;
+    memberProfileIds: string[];
+  };
   "chat:draft": { threadPeerOwnerId: string; draft: ChatDraft };
   "chat:auto-reply-paused": import("./auto-reply-limits.js").AutoReplyPausedNotification;
   /** Owner Activity feed row (Phase 13D — local, not wire). */
@@ -2523,6 +2579,56 @@ export interface NodeService {
   redeemCompanyInvite(params: RedeemCompanyInviteParams): Promise<RedeemCompanyInviteResult>;
 
   /**
+   * Phase 51 — list family profiles on this home node.
+   */
+  listFamilyProfiles(): Promise<ListFamilyProfilesResult>;
+
+  /**
+   * Phase 51 — create a family profile (owner-only for admin create;
+   * family-invite pairing may also create non-owner profiles).
+   */
+  createFamilyProfile(params: CreateFamilyProfileParams): Promise<CreateFamilyProfileResult>;
+
+  /** Phase 51 — update a family profile (owner can edit any; members edit self later). */
+  updateFamilyProfile(params: UpdateFamilyProfileParams): Promise<UpdateFamilyProfileResult>;
+
+  /** Phase 51 — delete a non-owner family profile (owner-only). */
+  deleteFamilyProfile(id: string): Promise<DeleteFamilyProfileResult>;
+
+  /**
+   * Phase 51 — mint a single-use family invite token for EnvoyGo pairing.
+   * Owner-only. Reuses company-invite store with `kind: "family"`.
+   */
+  generateFamilyInviteToken(
+    params?: GenerateFamilyInviteTokenParams,
+  ): Promise<GenerateFamilyInviteTokenResult>;
+
+  /**
+   * Phase 51 follow-up — list selectable non-owner profiles for a valid
+   * family invite token (no session auth; used by EnvoyGo re-pair UI).
+   */
+  previewFamilyInvite(
+    params: import("./family-profile.js").PreviewFamilyInviteParams,
+  ): Promise<import("./family-profile.js").PreviewFamilyInviteResult>;
+
+  /**
+   * Phase 51C — send a local family DM to another profile on this home node.
+   * Never leaves the node. Thread key: `family:<sortedA>:<sortedB>`.
+   */
+  sendFamilyMessage(params: SendFamilyMessageParams): Promise<SendFamilyMessageResult>;
+
+  /** Phase 51D — list family group rooms visible to the caller profile. */
+  listFamilyRooms(): Promise<ListFamilyRoomsResult>;
+
+  /** Phase 51D — create a family-only group room (no mesh sync). */
+  createFamilyRoom(params: CreateFamilyRoomParams): Promise<CreateFamilyRoomResult>;
+
+  /** Phase 51D — send a message in a family group room. */
+  sendFamilyRoomMessage(
+    params: SendFamilyRoomMessageParams,
+  ): Promise<SendFamilyRoomMessageResult>;
+
+  /**
    * Phase 35D — re-sync the pairing-kiosk HTTP server with the latest
    * persisted config. Idempotent: off when `pairingKioskEnabled === false`,
    * otherwise restarts the server with the current token/bind/port.
@@ -2934,6 +3040,8 @@ export interface NodeService {
     deviceId?: string;
     /** Phase 42I — defaults to "alert" for back-compat with older EnvoyGo builds. */
     tokenType?: "alert" | "voip";
+    /** Phase 51 — family profile this device is bound to (defaults to owner). */
+    profileId?: string;
   }): void;
   unregisterPushToken(deviceId: string): boolean;
 

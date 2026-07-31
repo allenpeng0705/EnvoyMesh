@@ -1172,6 +1172,71 @@ export class MobileNode implements NodeService {
   }
 
   // -----------------------------------------------------------
+  // Phase 51 — Family Network
+  // -----------------------------------------------------------
+  async listFamilyProfiles(): Promise<import("@envoymesh/api").ListFamilyProfilesResult> {
+    return this._homeRemoteCall("listFamilyProfiles", {});
+  }
+
+  async createFamilyProfile(
+    params: import("@envoymesh/api").CreateFamilyProfileParams,
+  ): Promise<import("@envoymesh/api").CreateFamilyProfileResult> {
+    return this._homeRemoteCall("createFamilyProfile", params as unknown as Record<string, unknown>);
+  }
+
+  async updateFamilyProfile(
+    params: import("@envoymesh/api").UpdateFamilyProfileParams,
+  ): Promise<import("@envoymesh/api").UpdateFamilyProfileResult> {
+    return this._homeRemoteCall("updateFamilyProfile", params as unknown as Record<string, unknown>);
+  }
+
+  async deleteFamilyProfile(
+    id: string,
+  ): Promise<import("@envoymesh/api").DeleteFamilyProfileResult> {
+    return this._homeRemoteCall("deleteFamilyProfile", { id });
+  }
+
+  async generateFamilyInviteToken(
+    params?: import("@envoymesh/api").GenerateFamilyInviteTokenParams,
+  ): Promise<import("@envoymesh/api").GenerateFamilyInviteTokenResult> {
+    return this._homeRemoteCall(
+      "generateFamilyInviteToken",
+      (params ?? {}) as Record<string, unknown>,
+    );
+  }
+
+  async sendFamilyMessage(
+    params: import("@envoymesh/api").SendFamilyMessageParams,
+  ): Promise<import("@envoymesh/api").SendFamilyMessageResult> {
+    return this._homeRemoteCall(
+      "sendFamilyMessage",
+      params as unknown as Record<string, unknown>,
+    );
+  }
+
+  async listFamilyRooms(): Promise<import("@envoymesh/api").ListFamilyRoomsResult> {
+    return this._homeRemoteCall("listFamilyRooms", {});
+  }
+
+  async createFamilyRoom(
+    params: import("@envoymesh/api").CreateFamilyRoomParams,
+  ): Promise<import("@envoymesh/api").CreateFamilyRoomResult> {
+    return this._homeRemoteCall(
+      "createFamilyRoom",
+      params as unknown as Record<string, unknown>,
+    );
+  }
+
+  async sendFamilyRoomMessage(
+    params: import("@envoymesh/api").SendFamilyRoomMessageParams,
+  ): Promise<import("@envoymesh/api").SendFamilyRoomMessageResult> {
+    return this._homeRemoteCall(
+      "sendFamilyRoomMessage",
+      params as unknown as Record<string, unknown>,
+    );
+  }
+
+  // -----------------------------------------------------------
   // Phase 35D — Pairing Kiosk
   // -----------------------------------------------------------
   async syncPairingKioskFromConfig(): Promise<void> {
@@ -1409,6 +1474,15 @@ export class MobileNode implements NodeService {
     params: import("@envoymesh/api").PairThinClientParams,
   ): Promise<import("@envoymesh/api").PairThinClientResult> {
     return this._homeRemoteCall("pairThinClient", params as unknown as Record<string, unknown>);
+  }
+
+  previewFamilyInvite(
+    params: import("@envoymesh/api").PreviewFamilyInviteParams,
+  ): Promise<import("@envoymesh/api").PreviewFamilyInviteResult> {
+    return this._homeRemoteCall(
+      "previewFamilyInvite",
+      params as unknown as Record<string, unknown>,
+    );
   }
 
   updateMyListenAddrs(
@@ -9012,7 +9086,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
   async listCapabilityProviders(): Promise<Record<string, string[]>> { return {}; }
   async getPeerReputation(_peerOwnerId?: string): Promise<{ score: number } | null> { return null; }
   async discoverAndCluster(_seedTopics?: string[], _seedCapabilities?: string[]): Promise<string> { throw new Error("Not available on mobile — pair to desktop"); }
-  registerPushToken(_params: { platform: string; token: string; ownerId: string; deviceId?: string; tokenType?: "alert" | "voip" }): void {}
+  registerPushToken(_params: { platform: string; token: string; ownerId: string; deviceId?: string; tokenType?: "alert" | "voip"; profileId?: string }): void {}
   unregisterPushToken(_deviceId: string): boolean { return false; }
   async chainSetBidStrategy(_params: any): Promise<any> { return { accepted: false }; }
   async chainGetBidStrategy(_params: any): Promise<any> { return { weights: { cost: 35, reputation: 30, freshness: 20, precision: 15 } }; }

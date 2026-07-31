@@ -11,7 +11,10 @@ import 'content/content_screen.dart';
 import 'inbox/inbox_screen.dart';
 import 'me/me_screen.dart';
 
-/// Main scaffold with 4-tab bottom navigation: Chats, Inbox, Content, Me.
+/// Main scaffold with bottom navigation.
+///
+/// Owner: Chats / Inbox / Content / Me.
+/// Family member (Phase 51E): Chats / Me only — no mesh Inbox/Content.
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
 
@@ -22,8 +25,10 @@ class HomeScreen extends ConsumerWidget {
     final engage = ref.watch(contentEngageProvider);
     final feedNotify = ref.watch(feedNotifyProvider);
     final contentSurface = ref.watch(contentSurfaceProvider);
-    final tab = chatState.selectedTab.clamp(0, 3);
-    final viewingContent = tab == 2;
+    final isOwner = ref.watch(nodeProvider).isOwnerProfile;
+    final maxTab = isOwner ? 3 : 1;
+    final tab = chatState.selectedTab.clamp(0, maxTab);
+    final viewingContent = isOwner && tab == 2;
     final viewingFeed = viewingContent && contentSurface == 0;
     // While Content → Feed/Blog is open, don't badge Like/Comment for that surface.
     // While on Feed, also hide peer feed.notify (don't auto-mark them read).
@@ -33,6 +38,9 @@ class HomeScreen extends ConsumerWidget {
     );
     final feedNotifyBadge = viewingFeed ? 0 : feedNotify.unread.length;
     final contentBadge = engageBadge + feedNotifyBadge;
+
+    // Family stack: tab 0 = Chats, tab 1 = Me.
+    final bodyIndex = isOwner ? tab : (tab == 0 ? 0 : 1);
 
     return Scaffold(
       appBar: AppBar(
@@ -61,13 +69,18 @@ class HomeScreen extends ConsumerWidget {
       body: Stack(
         children: [
           IndexedStack(
-            index: tab,
-            children: const [
-              ChatListScreen(),
-              InboxScreen(),
-              ContentScreen(),
-              MeScreen(),
-            ],
+            index: bodyIndex,
+            children: isOwner
+                ? const [
+                    ChatListScreen(),
+                    InboxScreen(),
+                    ContentScreen(),
+                    MeScreen(),
+                  ]
+                : const [
+                    ChatListScreen(),
+                    MeScreen(),
+                  ],
           ),
           Positioned.fill(
             child: IncomingCallOverlay(callProvider: callProviderRef),
@@ -79,7 +92,7 @@ class HomeScreen extends ConsumerWidget {
         onDestinationSelected: (index) {
           ref.read(chatProvider.notifier).selectTab(index);
           // Opening Content clears engagement + feed.notify (folder-open).
-          if (index == 2) {
+          if (isOwner && index == 2) {
             ref.read(contentEngageProvider.notifier).dismiss(surface: 'all');
             ref.read(feedNotifyProvider.notifier).dismissAll();
           }
@@ -90,24 +103,26 @@ class HomeScreen extends ConsumerWidget {
             selectedIcon: Icon(Icons.chat_bubble),
             label: 'Chats',
           ),
-          const NavigationDestination(
-            icon: Icon(Icons.inbox_outlined),
-            selectedIcon: Icon(Icons.inbox),
-            label: 'Inbox',
-          ),
-          NavigationDestination(
-            icon: Badge(
-              isLabelVisible: contentBadge > 0,
-              label: Text(contentBadge > 99 ? '99+' : '$contentBadge'),
-              child: const Icon(Icons.language_outlined),
+          if (isOwner) ...[
+            const NavigationDestination(
+              icon: Icon(Icons.inbox_outlined),
+              selectedIcon: Icon(Icons.inbox),
+              label: 'Inbox',
             ),
-            selectedIcon: Badge(
-              isLabelVisible: contentBadge > 0,
-              label: Text(contentBadge > 99 ? '99+' : '$contentBadge'),
-              child: const Icon(Icons.language),
+            NavigationDestination(
+              icon: Badge(
+                isLabelVisible: contentBadge > 0,
+                label: Text(contentBadge > 99 ? '99+' : '$contentBadge'),
+                child: const Icon(Icons.language_outlined),
+              ),
+              selectedIcon: Badge(
+                isLabelVisible: contentBadge > 0,
+                label: Text(contentBadge > 99 ? '99+' : '$contentBadge'),
+                child: const Icon(Icons.language),
+              ),
+              label: 'Content',
             ),
-            label: 'Content',
-          ),
+          ],
           const NavigationDestination(
             icon: Icon(Icons.person_outline),
             selectedIcon: Icon(Icons.person),

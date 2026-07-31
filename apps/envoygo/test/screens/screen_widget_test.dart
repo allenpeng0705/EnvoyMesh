@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:envoygo/screens/chat/chat_list_screen.dart';
 import 'package:envoygo/screens/contacts/contacts_screen.dart';
 import 'package:envoygo/screens/me/me_screen.dart';
@@ -125,6 +126,16 @@ void main() {
   });
 
   group('MeScreen', () {
+    setUp(() {
+      PackageInfo.setMockInitialValues(
+        appName: 'envoygo',
+        packageName: 'com.envoymesh.envoygo',
+        version: '1.0.0',
+        buildNumber: '11',
+        buildSignature: '',
+      );
+    });
+
     testWidgets('shows pair button when disconnected', (tester) async {
       await tester.pumpWidget(
         const ProviderScope(
@@ -132,11 +143,13 @@ void main() {
         ),
       );
       await tester.pump();
+      await tester.pump();
 
       expect(find.text('Not connected'), findsOneWidget);
       expect(find.text('Pair with a home node to get started'),
           findsOneWidget);
       expect(find.text('Pair'), findsOneWidget);
+      expect(find.text('EnvoyGo 1.0.0 (11)'), findsOneWidget);
     });
 
     testWidgets('shows connected node info and Public Access section',
@@ -160,9 +173,11 @@ void main() {
         ),
       );
       await tester.pump();
+      await tester.pump();
 
       expect(find.text('My Mac'), findsOneWidget);
       expect(find.text('Public Access'), findsOneWidget);
+      expect(find.text('EnvoyGo 1.0.0 (11)'), findsOneWidget);
     });
   });
 }
@@ -242,12 +257,12 @@ class _FakeChatNotifier extends ChatNotifier {
   @override
   Future<void> sendRoomMessage(String roomId, String text) async {}
   @override
-  Future<void> syncRooms() async {}
+  Future<void> syncRooms({NodeServiceClient? client}) async {}
   @override
   Future<void> syncTerminals() async {}
   @override
   Future<void> loadHistory(String threadId,
-      {String? contactOwnerId}) async {}
+      {String? contactOwnerId, String? chatRoomId}) async {}
   @override
   Future<void> markRead(String threadId,
       {String? contactOwnerId}) async {}
@@ -303,8 +318,11 @@ class _FakeNodeNotifier extends NodeNotifier {
   Future<PairResult> pairWithNode(
     PairingData data,
     String deviceName,
-    List<HomeRemoteCandidate> candidates,
-  ) async {
+    List<HomeRemoteCandidate> candidates, {
+    String? profileName,
+    String? profileAvatarColor,
+    String? profileId,
+  }) async {
     throw UnimplementedError();
   }
   @override

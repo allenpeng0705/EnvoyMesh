@@ -109,7 +109,7 @@ import type {
   ChainDeleteRecipeParams,
   ChainDeleteRecipeResult,
 } from "@envoymesh/api";
-import { isChatRoomThreadKey, isAiBotThread, ENVOY_AI_THREAD_KEY, TERMINAL_ASSIST_RPC_TIMEOUT_MS } from "@envoymesh/api";
+import { isChatRoomThreadKey, isAiBotThread, isFamilyThreadKey, ENVOY_AI_THREAD_KEY, OWNER_FAMILY_PROFILE_ID, TERMINAL_ASSIST_RPC_TIMEOUT_MS } from "@envoymesh/api";
 import { mergeGroupDeliveryAck } from "@envoymesh/api/group-chat-delivery";
 import {
   mergeMessagesIntoThread,
@@ -357,6 +357,28 @@ export interface NodeServiceClient {
   redeemCompanyInvite(
     params: import("@envoymesh/api").RedeemCompanyInviteParams,
   ): Promise<import("@envoymesh/api").RedeemCompanyInviteResult>;
+  /** Phase 51 — Family Network (owner desktop). */
+  listFamilyProfiles(): Promise<import("@envoymesh/api").ListFamilyProfilesResult>;
+  createFamilyProfile(
+    params: import("@envoymesh/api").CreateFamilyProfileParams,
+  ): Promise<import("@envoymesh/api").CreateFamilyProfileResult>;
+  updateFamilyProfile(
+    params: import("@envoymesh/api").UpdateFamilyProfileParams,
+  ): Promise<import("@envoymesh/api").UpdateFamilyProfileResult>;
+  deleteFamilyProfile(id: string): Promise<import("@envoymesh/api").DeleteFamilyProfileResult>;
+  generateFamilyInviteToken(
+    params?: import("@envoymesh/api").GenerateFamilyInviteTokenParams,
+  ): Promise<import("@envoymesh/api").GenerateFamilyInviteTokenResult>;
+  sendFamilyMessage(
+    params: import("@envoymesh/api").SendFamilyMessageParams,
+  ): Promise<import("@envoymesh/api").SendFamilyMessageResult>;
+  listFamilyRooms(): Promise<import("@envoymesh/api").ListFamilyRoomsResult>;
+  createFamilyRoom(
+    params: import("@envoymesh/api").CreateFamilyRoomParams,
+  ): Promise<import("@envoymesh/api").CreateFamilyRoomResult>;
+  sendFamilyRoomMessage(
+    params: import("@envoymesh/api").SendFamilyRoomMessageParams,
+  ): Promise<import("@envoymesh/api").SendFamilyRoomMessageResult>;
   syncPairingKioskFromConfig(): Promise<void>;
   getPairingKioskStatus(): Promise<import("@envoymesh/api").PairingKioskStatus>;
   importFleetManifest(
@@ -1268,6 +1290,69 @@ function createWsNodeServiceClient(
         "redeemCompanyInvite",
         params as unknown as Record<string, unknown>,
       ) as Promise<import("@envoymesh/api").RedeemCompanyInviteResult>;
+    },
+    async listFamilyProfiles() {
+      return wsClient.rpc("listFamilyProfiles") as Promise<
+        import("@envoymesh/api").ListFamilyProfilesResult
+      >;
+    },
+    async createFamilyProfile(
+      params: import("@envoymesh/api").CreateFamilyProfileParams,
+    ) {
+      return wsClient.rpc(
+        "createFamilyProfile",
+        params as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").CreateFamilyProfileResult>;
+    },
+    async updateFamilyProfile(
+      params: import("@envoymesh/api").UpdateFamilyProfileParams,
+    ) {
+      return wsClient.rpc(
+        "updateFamilyProfile",
+        params as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").UpdateFamilyProfileResult>;
+    },
+    async deleteFamilyProfile(id: string) {
+      return wsClient.rpc("deleteFamilyProfile", { id }) as Promise<
+        import("@envoymesh/api").DeleteFamilyProfileResult
+      >;
+    },
+    async generateFamilyInviteToken(
+      params?: import("@envoymesh/api").GenerateFamilyInviteTokenParams,
+    ) {
+      return wsClient.rpc(
+        "generateFamilyInviteToken",
+        (params ?? {}) as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").GenerateFamilyInviteTokenResult>;
+    },
+    async sendFamilyMessage(
+      params: import("@envoymesh/api").SendFamilyMessageParams,
+    ) {
+      return wsClient.rpc(
+        "sendFamilyMessage",
+        params as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").SendFamilyMessageResult>;
+    },
+    async listFamilyRooms() {
+      return wsClient.rpc("listFamilyRooms") as Promise<
+        import("@envoymesh/api").ListFamilyRoomsResult
+      >;
+    },
+    async createFamilyRoom(
+      params: import("@envoymesh/api").CreateFamilyRoomParams,
+    ) {
+      return wsClient.rpc(
+        "createFamilyRoom",
+        params as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").CreateFamilyRoomResult>;
+    },
+    async sendFamilyRoomMessage(
+      params: import("@envoymesh/api").SendFamilyRoomMessageParams,
+    ) {
+      return wsClient.rpc(
+        "sendFamilyRoomMessage",
+        params as unknown as Record<string, unknown>,
+      ) as Promise<import("@envoymesh/api").SendFamilyRoomMessageResult>;
     },
     async syncPairingKioskFromConfig() {
       return wsClient.rpc("syncPairingKioskFromConfig") as Promise<void>;
@@ -2341,6 +2426,9 @@ function partnerOwnerIdForChat(
   if (rcvO && isChatRoomThreadKey(rcvO)) {
     return rcvO;
   }
+  // Phase 51F — family DMs store the thread key on recipient.ownerId.
+  if (rcvO && isFamilyThreadKey(rcvO)) return rcvO;
+  if (sndO && isFamilyThreadKey(sndO)) return sndO;
   if (rcvO === ENVOY_AI_THREAD_KEY || sndO === ENVOY_AI_THREAD_KEY) {
     return ENVOY_AI_THREAD_KEY;
   }
@@ -2364,18 +2452,29 @@ function partnerOwnerIdForChat(
   return null;
 }
 
-function messageIsOutgoing(msg: ChatMessage, selfOwnerId: string, selfPeerId: string): boolean {
+function messageIsOutgoing(
+  msg: ChatMessage,
+  selfOwnerId: string,
+  selfPeerId: string,
+  selfFamilyProfileId?: string,
+): boolean {
   const selfO = selfOwnerId.trim();
   const selfP = selfPeerId.trim();
   const sndO = msg.sender.ownerId?.trim();
   const sndN = msg.sender.nodeId?.trim();
+  const rcvO = msg.recipient.ownerId?.trim();
+  // Family DMs use profile ids (e.g. "owner" / "mom"), not mesh envoy:owner:….
+  if (rcvO && isFamilyThreadKey(rcvO)) {
+    const familySelf = (selfFamilyProfileId ?? OWNER_FAMILY_PROFILE_ID).trim();
+    return !!sndO && sndO === familySelf;
+  }
   return (sndO !== undefined && sndO === selfO) || (!!selfP && sndN === selfP);
 }
 
 function appendChatToThreads(
   prev: Record<string, ChatMessage[]>,
   msg: ChatMessage,
-  self: { ownerId: string; peerId: string },
+  self: { ownerId: string; peerId: string; familyProfileId?: string },
 ): Record<string, ChatMessage[]> | null {
   const key = partnerOwnerIdForChat(msg, self.ownerId, self.peerId);
   if (!key) {
@@ -2413,7 +2512,11 @@ export function useChatMessages(selectedContactOwnerId: string | null) {
     },
     [],
   );
-  const [selfIds, setSelfIds] = useState<{ ownerId: string; peerId: string } | null>(null);
+  const [selfIds, setSelfIds] = useState<{
+    ownerId: string;
+    peerId: string;
+    familyProfileId: string;
+  } | null>(null);
   const pendingUntilSelfReady = useRef<ChatMessage[]>([]);
   const selfIdsRef = useRef(selfIds);
 
@@ -2432,6 +2535,7 @@ export function useChatMessages(selectedContactOwnerId: string | null) {
         setSelfIds((prev) => ({
           ownerId: ownerId || prev?.ownerId || "",
           peerId: prev?.peerId ?? "",
+          familyProfileId: prev?.familyProfileId ?? OWNER_FAMILY_PROFILE_ID,
         }));
       })
       .catch(console.error);
@@ -2442,6 +2546,21 @@ export function useChatMessages(selectedContactOwnerId: string | null) {
         setSelfIds((prev) => ({
           ownerId: prev?.ownerId ?? "",
           peerId: cs?.peerId ?? "",
+          familyProfileId: prev?.familyProfileId ?? OWNER_FAMILY_PROFILE_ID,
+        }));
+      })
+      .catch(console.error);
+    void client
+      .getNodeConfig()
+      .then((cfg) => {
+        if (cancelled) return;
+        const familyProfileId =
+          (cfg as { callerFamilyProfileId?: string } | null)?.callerFamilyProfileId?.trim() ||
+          OWNER_FAMILY_PROFILE_ID;
+        setSelfIds((prev) => ({
+          ownerId: prev?.ownerId ?? "",
+          peerId: prev?.peerId ?? "",
+          familyProfileId,
         }));
       })
       .catch(console.error);
@@ -2554,7 +2673,15 @@ export function useChatMessages(selectedContactOwnerId: string | null) {
   }, [selfIds]);
 
   const isOutgoing = (msg: ChatMessage) =>
-    !!(selfIds?.ownerId && messageIsOutgoing(msg, selfIds.ownerId, selfIds.peerId));
+    !!(
+      selfIds?.ownerId &&
+      messageIsOutgoing(
+        msg,
+        selfIds.ownerId,
+        selfIds.peerId,
+        selfIds.familyProfileId,
+      )
+    );
 
   const removeMessage = useCallback(
     async (messageId: string) => {

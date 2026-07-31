@@ -7,9 +7,16 @@ import type {
   AiBotDefinition,
   ChatRoom,
   ContactAiPreferences,
+  FamilyProfile,
+  FamilyRoom,
   HelloProfile,
 } from "@envoymesh/api";
-import { aiBotThreadKey, chatRoomThreadKey } from "@envoymesh/api";
+import {
+  aiBotThreadKey,
+  chatRoomThreadKey,
+  familyThreadKey,
+  OWNER_FAMILY_PROFILE_ID,
+} from "@envoymesh/api";
 import { resolveContactAiAccessLevel } from "@envoymesh/api";
 import { contactLabel, peerDisplayLabel } from "../../lib/display.js";
 import { PeerProfileAvatar } from "../PeerProfileAvatar.js";
@@ -18,6 +25,7 @@ import { ExtAgentSwitcher } from "../ExtAgentSwitcher.js";
 import { useChatThreadPreviews } from "../../hooks/useChatThreadPreviews.js";
 import { useBondConnectionPreload } from "../../hooks/useBondConnectionPreload.js";
 import { CreateGroupModal } from "./CreateGroupModal.js";
+import { CreateFamilyGroupModal } from "./CreateFamilyGroupModal.js";
 import { CreateBotModal } from "../CreateBotModal.js";
 import { AiBotRowMenu } from "../AiBotRowMenu.js";
 import { ConfirmDialog } from "../ConfirmDialog.js";
@@ -87,7 +95,9 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
   const contextMenuRef = useRef<HTMLDivElement>(null);
   const [removeTarget, setRemoveTarget] = useState<{ ownerId: string; name: string } | null>(null);
   const [chatRooms, setChatRooms] = useState<ChatRoom[]>([]);
+  const [familyRooms, setFamilyRooms] = useState<FamilyRoom[]>([]);
   const [showCreateGroup, setShowCreateGroup] = useState(false);
+  const [showCreateFamilyGroup, setShowCreateFamilyGroup] = useState(false);
   const [showCreateBot, setShowCreateBot] = useState(false);
   const [editingBot, setEditingBot] = useState<AiBotDefinition | null>(null);
   const [deleteBotTarget, setDeleteBotTarget] = useState<AiBotDefinition | null>(null);
@@ -215,11 +225,52 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
     () => enabledAiBots.map((b) => aiBotThreadKey(b.id)),
     [enabledAiBots],
   );
+  const myFamilyProfileId =
+    nodeConfig?.callerFamilyProfileId?.trim() || OWNER_FAMILY_PROFILE_ID;
+  const familyContacts = useMemo(() => {
+    const list = (nodeConfig?.familyProfiles ?? []) as FamilyProfile[];
+    return list.filter((p) => Boolean(p.id) && p.id !== myFamilyProfileId);
+  }, [nodeConfig?.familyProfiles, myFamilyProfileId]);
+  const familyThreadKeys = useMemo(
+    () =>
+      familyContacts.map((p) => familyThreadKey(myFamilyProfileId, p.id)),
+    [familyContacts, myFamilyProfileId],
+  );
+  const familyRoomThreadKeys = useMemo(
+    () => familyRooms.map((r) => chatRoomThreadKey(r.roomId)),
+    [familyRooms],
+  );
   const previewThreadKeys = useMemo(
-    () => [...bondPeerIds, ...roomThreadKeys, ...botThreadKeys],
-    [bondPeerIds, roomThreadKeys, botThreadKeys],
+    () => [
+      ...bondPeerIds,
+      ...roomThreadKeys,
+      ...botThreadKeys,
+      ...familyThreadKeys,
+      ...familyRoomThreadKeys,
+    ],
+    [bondPeerIds, roomThreadKeys, botThreadKeys, familyThreadKeys, familyRoomThreadKeys],
   );
   const threadPreviews = useChatThreadPreviews(previewThreadKeys);
+
+  const sortedFamilyContacts = useMemo(
+    () =>
+      sortByLatestMessage(
+        familyContacts,
+        (p) => familyThreadKey(myFamilyProfileId, p.id),
+        threadPreviews,
+      ),
+    [familyContacts, myFamilyProfileId, threadPreviews],
+  );
+
+  const sortedFamilyRooms = useMemo(
+    () =>
+      sortByLatestMessage(
+        familyRooms,
+        (room) => chatRoomThreadKey(room.roomId),
+        threadPreviews,
+      ),
+    [familyRooms, threadPreviews],
+  );
 
   const preloadBondIds = useMemo(
     () =>
@@ -259,7 +310,29 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
         if (!cancelled) setChatRooms(rooms);
       })
       .catch(console.error);
+    if (nodeService.listFamilyRooms) {
+      void nodeService
+        .listFamilyRooms()
+        .then((result) => {
+          if (!cancelled) setFamilyRooms(result.rooms ?? []);
+        })
+        .catch(console.error);
+    }
     const unsub = nodeService.on("chat:room-updated", (room) => {
+      const kind = (room as { kind?: string }).kind;
+      if (kind === "family") {
+        const familyRoom = room as unknown as FamilyRoom;
+        setFamilyRooms((prev) => {
+          const idx = prev.findIndex((r) => r.roomId === familyRoom.roomId);
+          if (idx >= 0) {
+            const next = [...prev];
+            next[idx] = familyRoom;
+            return next;
+          }
+          return [familyRoom, ...prev];
+        });
+        return;
+      }
       setChatRooms((prev) => {
         const idx = prev.findIndex((r) => r.roomId === room.roomId);
         if (idx >= 0) {
@@ -272,6 +345,7 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
     });
     const unsubRemoved = nodeService.on("chat:room-removed", ({ roomId }) => {
       setChatRooms((prev) => prev.filter((r) => r.roomId !== roomId));
+      setFamilyRooms((prev) => prev.filter((r) => r.roomId !== roomId));
       if (selectedContact && chatRoomThreadKey(roomId) === selectedContact) {
         onSelectContact(null);
       }
@@ -391,6 +465,91 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
                   onDelete={(b) => setDeleteBotTarget(b)}
                 />
               </div>
+            );
+          })}
+        </>
+      ) : null}
+
+      {/* Phase 51F — Family contacts + local family groups */}
+      {(nodeConfig?.familyProfiles?.length ?? 0) > 0 ||
+      sortedFamilyRooms.length > 0 ? (
+        <>
+          <div className="contact-list-section-header">
+            <span className="contact-list-section-label">
+              {t("chat.familySection", "Family")}
+            </span>
+            <button
+              type="button"
+              className="contact-list-section-add-btn"
+              aria-label={t("chat.familyGroupAddAria", "New family group")}
+              title={t("chat.familyGroupAddAria", "New family group")}
+              onClick={() => setShowCreateFamilyGroup(true)}
+            >
+              <AddIcon size={18} />
+            </button>
+          </div>
+          {sortedFamilyContacts.map((profile) => {
+            const threadKey = familyThreadKey(myFamilyProfileId, profile.id);
+            const preview = threadPreviews[threadKey];
+            const inactive = profile.active === false;
+            return (
+              <button
+                key={profile.id}
+                type="button"
+                className={`thread-row ${selectedContact === threadKey ? "active" : ""}`}
+                onClick={() => onSelectContact(threadKey)}
+                style={inactive ? { opacity: 0.55 } : undefined}
+              >
+                <span
+                  className="thread-avatar"
+                  style={{ background: profile.avatarColor ?? "#6366f1" }}
+                  aria-hidden
+                >
+                  {(profile.name.trim().charAt(0) || "?").toUpperCase()}
+                </span>
+                <span className="thread-meta">
+                  <span className="thread-title-row">
+                    <span className="thread-title">
+                      {inactive
+                        ? `${profile.name} (${t("chat.familyOfflineShort", "offline")})`
+                        : profile.name}
+                    </span>
+                  </span>
+                  <span className="thread-subtitle">
+                    {preview?.text?.trim()
+                      ? preview.text
+                      : t("chat.familySubtitle", "Family")}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+          {sortedFamilyRooms.map((room) => {
+            const threadKey = chatRoomThreadKey(room.roomId);
+            const preview = threadPreviews[threadKey];
+            const inactive = room.active === false;
+            return (
+              <button
+                key={room.roomId}
+                type="button"
+                className={`thread-row ${selectedContact === threadKey ? "active" : ""}`}
+                onClick={() => onSelectContact(threadKey)}
+                style={inactive ? { opacity: 0.55 } : undefined}
+              >
+                <span className="thread-avatar" style={{ background: "#0d9488" }} aria-hidden>
+                  {(room.title.trim().charAt(0) || "G").toUpperCase()}
+                </span>
+                <span className="thread-meta">
+                  <span className="thread-title-row">
+                    <span className="thread-title">{room.title}</span>
+                  </span>
+                  <span className="thread-subtitle">
+                    {preview?.text?.trim()
+                      ? preview.text
+                      : t("chat.familyGroupListSubtitle", "Family group")}
+                  </span>
+                </span>
+              </button>
             );
           })}
         </>
@@ -700,6 +859,16 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
           onCreated={(threadKey) => {
             onSelectContact(threadKey);
             setShowCreateGroup(false);
+          }}
+        />
+      ) : null}
+
+      {showCreateFamilyGroup ? (
+        <CreateFamilyGroupModal
+          onClose={() => setShowCreateFamilyGroup(false)}
+          onCreated={(threadKey) => {
+            onSelectContact(threadKey);
+            setShowCreateFamilyGroup(false);
           }}
         />
       ) : null}

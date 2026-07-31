@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:record/record.dart';
 import '../../models/chat_message.dart';
+import '../../models/chat_thread.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/contact_provider.dart';
 import '../../providers/node_provider.dart';
@@ -28,6 +29,8 @@ class ChatDetailScreen extends ConsumerStatefulWidget {
   final String? contactOwnerId;
   final String? chatRoomId;
   final String? agentType;
+  /// Phase 51D — when true, compose uses sendFamilyRoomMessage.
+  final bool isFamilyRoom;
 
   const ChatDetailScreen({
     super.key,
@@ -36,6 +39,7 @@ class ChatDetailScreen extends ConsumerStatefulWidget {
     this.contactOwnerId,
     this.chatRoomId,
     this.agentType,
+    this.isFamilyRoom = false,
   });
 
   @override
@@ -55,18 +59,29 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   int _recordingSeconds = 0;
   static const _maxRecordSeconds = 120;
 
-  bool get _isRoom => widget.chatRoomId != null;
+  bool get _isRoom =>
+      widget.chatRoomId != null && widget.chatRoomId!.isNotEmpty;
   bool get _isAgent => widget.agentType != null;
   bool get _isExtAgent => widget.agentType == 'external';
   bool get _isAiBot =>
       widget.agentType != null && widget.agentType!.startsWith('bot:');
+  bool get _isFamily => widget.threadId.contains(':family:');
+  bool get _isFamilyRoom {
+    if (widget.isFamilyRoom) return true;
+    final thread = ref
+        .read(chatProvider)
+        .threads
+        .where((t) => t.id == widget.threadId)
+        .firstOrNull;
+    return thread?.type == ChatThreadType.familyGroup;
+  }
 
   /// Prefer explicit contactOwnerId; fall back to thread id suffix.
   String? get _resolvedContactOwnerId {
     if (widget.contactOwnerId != null && widget.contactOwnerId!.isNotEmpty) {
       return widget.contactOwnerId;
     }
-    if (_isAgent || _isRoom) return null;
+    if (_isAgent || _isRoom || _isFamily) return null;
     final nodeId = ref.read(nodeProvider).activeNode?.id;
     return threadPeerSuffix(widget.threadId, nodeId);
   }
@@ -89,6 +104,8 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
             widget.threadId,
             chatRoomId: widget.chatRoomId,
           );
+        } else if (_isFamily) {
+          notifier.loadHistory(widget.threadId);
         } else {
           notifier.loadHistory(
             widget.threadId,
@@ -274,13 +291,13 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
           // Phase 42F — voice call action for direct-message chats
           // (not rooms / agents). Routes through CallProvider.startCall
           // which generates the SDP and posts sendCallInvite.
-          if (!_isAgent && !_isRoom && _resolvedContactOwnerId != null)
+          if (!_isAgent && !_isRoom && !_isFamily && _resolvedContactOwnerId != null)
             IconButton(
               icon: const Icon(Icons.call),
               tooltip: 'Voice call',
               onPressed: _startCall,
             ),
-          if (!_isAgent && !_isRoom && _resolvedContactOwnerId != null)
+          if (!_isAgent && !_isRoom && !_isFamily && _resolvedContactOwnerId != null)
             IconButton(
               icon: const Icon(Icons.language),
               tooltip: 'Published content',
@@ -295,7 +312,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
             tooltip: 'Clear thread',
             onPressed: _clearThread,
           ),
-          if (_isRoom)
+          if (_isRoom && !_isFamilyRoom)
             IconButton(
               icon: const Icon(Icons.person_add),
               tooltip: 'Invite',
@@ -312,7 +329,9 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
               color: Theme.of(context).colorScheme.errorContainer,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               child: Text(
-                'AI model is disabled. Enable a model provider in Settings → AI.',
+                ref.read(nodeProvider).isOwnerProfile
+                    ? 'AI model is disabled. Enable a model provider in Settings → AI.'
+                    : 'AI model is disabled. Ask the home owner to enable a model provider.',
                 style: TextStyle(
                   color: Theme.of(context).colorScheme.onErrorContainer,
                   fontSize: 13,
@@ -375,7 +394,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                     icon: const Icon(Icons.image),
                     onPressed: _pickAndSendImage,
                   ),
-                  if (!_isAgent && !_isRoom)
+                  if (!_isAgent && !_isRoom && !_isFamily)
                     IconButton(
                       icon: Icon(
                         _isRecording ? Icons.stop : Icons.mic,
@@ -473,9 +492,19 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
               text,
               agentType: widget.agentType ?? 'envoyai',
             );
+      } else if (_isFamilyRoom && widget.chatRoomId != null) {
+        await ref.read(chatProvider.notifier).sendFamilyRoomMessage(
+              widget.chatRoomId!,
+              text,
+            );
       } else if (_isRoom) {
         await ref.read(chatProvider.notifier).sendRoomMessage(
               widget.chatRoomId!,
+              text,
+            );
+      } else if (_isFamily && widget.contactOwnerId != null) {
+        await ref.read(chatProvider.notifier).sendFamilyMessage(
+              widget.contactOwnerId!,
               text,
             );
       } else if (_resolvedContactOwnerId != null) {

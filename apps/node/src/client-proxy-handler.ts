@@ -8,6 +8,11 @@ import {
   rpcHomeTerminalWsSend,
 } from "./home-terminal-ws.js";
 import { TERMINAL_WS_PORT } from "./service-ports.js";
+import {
+  localOwnerCaller,
+  runWithRpcCaller,
+  sessionCallerFromToken,
+} from "./rpc-caller-context.js";
 
 /**
  * Creates a libp2p protocol handler for the client-proxy relay bridge.
@@ -49,6 +54,27 @@ export function createClientProxyHandler(
       }
 
       const tokenRecord = await nodeService.lookupSessionToken(token);
+      // Phase 51 — bind family profile for every proxied RPC (same as WS).
+      // Without this, `_callerFamilyProfileId()` defaults to "owner" and
+      // EnvoyAI / Ext Agent history collapses onto the owner thread.
+      let rpcCaller = tokenRecord
+        ? sessionCallerFromToken(tokenRecord)
+        : localOwnerCaller("");
+      if (tokenRecord) {
+        try {
+          const listed = await nodeService.listFamilyProfiles();
+          const match = listed?.profiles?.find((p) => p.id === rpcCaller.profileId);
+          if (match) {
+            rpcCaller = sessionCallerFromToken({
+              ...tokenRecord,
+              isOwnerProfile: match.isOwner === true,
+            });
+          }
+        } catch {
+          /* keep heuristic from profileId === "owner" */
+        }
+      }
+
       const PROXY_AUDIT_METHODS = new Set([
         "runOwnerAgentTurn",
         "listPendingApprovals",
@@ -118,7 +144,9 @@ export function createClientProxyHandler(
             });
           }
 
-          const result = await routeRpcMethod(nodeService, msg.method, msg.params ?? {});
+          const result = await runWithRpcCaller(rpcCaller, () =>
+            routeRpcMethod(nodeService, msg.method!, msg.params ?? {}),
+          );
           await streamIo.write(encoder.encode(JSON.stringify({ id: msg.id, result })));
         } catch (err) {
           const errMsg = err instanceof Error ? err.message : String(err);

@@ -95,6 +95,7 @@ class VoipPushService {
             [Map<String, dynamic>? params])
         callRpc, {
     String? ownerId,
+    String? profileId,
   }) async {
     if (!isSupported) return;
     final token = _voipToken;
@@ -107,6 +108,9 @@ class VoipPushService {
       };
       if (ownerId != null && ownerId.isNotEmpty) {
         params['ownerId'] = ownerId;
+      }
+      if (profileId != null && profileId.isNotEmpty) {
+        params['profileId'] = profileId;
       }
       await callRpc('registerPushToken', params);
     } catch (_) {

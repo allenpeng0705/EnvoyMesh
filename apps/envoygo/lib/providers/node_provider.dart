@@ -77,6 +77,15 @@ class NodeState {
   /// Format: /ip4/X.X.X.X/tcp/PORT
   final String? upnpAdvertisedAddr;
 
+  /// Phase 51 — bound family profile id on the home node.
+  final String? familyProfileId;
+
+  /// Phase 51 — whether this session is the owner profile.
+  final bool isOwnerProfile;
+
+  /// Phase 51 — family profiles snapshot from config / pairing.
+  final List<Map<String, dynamic>> familyProfiles;
+
   const NodeState({
     this.activeNode,
     this.pairedNodes = const [],
@@ -88,36 +97,50 @@ class NodeState {
     this.reconnectAttempt = 0,
     this.homeNodeErrorCode,
     this.upnpAdvertisedAddr,
+    this.familyProfileId,
+    this.isOwnerProfile = true,
+    this.familyProfiles = const [],
   });
 
   NodeState copyWith({
     StoredNode? activeNode,
+    bool clearActiveNode = false,
     List<StoredNode>? pairedNodes,
     NodeConnectionState? connectionState,
     String? activeTransport,
     String? errorMessage,
     bool clearErrorMessage = false,
     String? ownerId,
+    bool clearOwnerId = false,
     DateTime? lastConnectAttemptAt,
     int? reconnectAttempt,
     String? homeNodeErrorCode,
     bool clearHomeNodeErrorCode = false,
     String? upnpAdvertisedAddr,
     bool clearUpnpAddr = false,
+    String? familyProfileId,
+    bool clearFamilyProfileId = false,
+    bool? isOwnerProfile,
+    List<Map<String, dynamic>>? familyProfiles,
   }) {
     return NodeState(
-      activeNode: activeNode ?? this.activeNode,
+      activeNode: clearActiveNode ? null : (activeNode ?? this.activeNode),
       pairedNodes: pairedNodes ?? this.pairedNodes,
       connectionState: connectionState ?? this.connectionState,
       activeTransport: activeTransport ?? this.activeTransport,
       errorMessage: clearErrorMessage ? null : (errorMessage ?? this.errorMessage),
-      ownerId: ownerId ?? this.ownerId,
+      ownerId: clearOwnerId ? null : (ownerId ?? this.ownerId),
       lastConnectAttemptAt: lastConnectAttemptAt ?? this.lastConnectAttemptAt,
       reconnectAttempt: reconnectAttempt ?? this.reconnectAttempt,
       homeNodeErrorCode: clearHomeNodeErrorCode
           ? null
           : (homeNodeErrorCode ?? this.homeNodeErrorCode),
       upnpAdvertisedAddr: clearUpnpAddr ? null : (upnpAdvertisedAddr ?? this.upnpAdvertisedAddr),
+      familyProfileId: clearFamilyProfileId
+          ? null
+          : (familyProfileId ?? this.familyProfileId),
+      isOwnerProfile: isOwnerProfile ?? this.isOwnerProfile,
+      familyProfiles: familyProfiles ?? this.familyProfiles,
     );
   }
 }
@@ -497,12 +520,34 @@ class NodeNotifier extends StateNotifier<NodeState> {
     super.dispose();
   }
 
+  /// Phase 51 — temporary connect to list selectable family profiles for re-pair.
+  Future<List<Map<String, dynamic>>> previewFamilyInviteProfiles(
+    PairingData data,
+    List<HomeRemoteCandidate> candidates,
+  ) async {
+    final opts = HomeRemoteClientOptions(
+      resolveCandidates: () async => candidates,
+      createTransport: (c) => _createTransportForCandidate(c),
+    );
+    final client = HomeRemoteClient(opts);
+    try {
+      await client.ensureConnected();
+      final ns = NodeServiceClient(client);
+      return await ns.previewFamilyInvite(pairingToken: data.token);
+    } finally {
+      client.dispose();
+    }
+  }
+
   /// Pair with a home node using pairing data.
   Future<PairResult> pairWithNode(
     PairingData data,
     String deviceName,
-    List<HomeRemoteCandidate> candidates,
-  ) async {
+    List<HomeRemoteCandidate> candidates, {
+    String? profileName,
+    String? profileAvatarColor,
+    String? profileId,
+  }) async {
     state = state.copyWith(
         connectionState: NodeConnectionState.connecting);
 
@@ -520,9 +565,15 @@ class NodeNotifier extends StateNotifier<NodeState> {
     try {
       await _client!.ensureConnected();
       _nodeService = NodeServiceClient(_client!);
-      _pairingService = PairingService(_nodeService!);
+      _pairingService = PairingService(_nodeService!, secureStorage: _secureStorage);
 
-      result = await _pairingService!.pair(data, deviceName);
+      result = await _pairingService!.pair(
+        data,
+        deviceName,
+        profileId: profileId,
+        profileName: profileName,
+        profileAvatarColor: profileAvatarColor,
+      );
     } catch (e) {
       _client?.dispose();
       _client = null;
@@ -543,6 +594,14 @@ class NodeNotifier extends StateNotifier<NodeState> {
     try {
       await _secureStorage.saveSessionToken(nodeId, result.sessionToken);
       await _secureStorage.saveActiveNodeId(nodeId);
+      await _secureStorage.write(
+        'node.$nodeId.familyProfileId',
+        result.profileId,
+      );
+      await _secureStorage.write(
+        'node.$nodeId.isOwnerProfile',
+        result.isOwnerProfile ? '1' : '0',
+      );
     } catch (e) {
       _log('Failed to save session token: $e');
       state = state.copyWith(
@@ -551,6 +610,13 @@ class NodeNotifier extends StateNotifier<NodeState> {
             'the node may be lost after app restart.',
       );
     }
+
+    state = state.copyWith(
+      familyProfileId: result.profileId,
+      isOwnerProfile: result.isOwnerProfile,
+      familyProfiles: result.familyProfiles,
+      ownerId: result.ownerId,
+    );
 
     // Build the StoredNode with relays from the QR code.
     // Extra `rels` / bootstrapPeers WS URLs enable regional fallback.
@@ -661,26 +727,34 @@ class NodeNotifier extends StateNotifier<NodeState> {
     _subscribeToPushEvents(client, chatNotifier, contactNotifier,
         terminalNotifier);
 
-    // Sync contacts directly using _nodeService.
-    _syncBondsDirect(nodeService, contactNotifier).then((_) {
+    // Sync contacts / mesh rooms / terminals — owner only (Phase 51E).
+    if (state.isOwnerProfile) {
+      _syncBondsDirect(nodeService, contactNotifier).then((_) {
+        final node = state.activeNode;
+        if (node != null) {
+          chatNotifier.loadThreads(node.id);
+        }
+        // Create threads for all bonded contacts, then refresh display names.
+        _ref.read(chatProvider.notifier).createContactThreads();
+        _ref.read(chatProvider.notifier).refreshThreadDisplayNames();
+      });
+
+      // Rooms and terminals sync directly using _nodeService.
+      _syncRoomsDirect(nodeService, chatNotifier);
+      _syncTerminalsDirect(nodeService, chatNotifier, terminalNotifier);
+      // Sync all terminal sessions (running and stopped) as chat threads.
+      chatNotifier.syncTerminals();
+      _syncInboxDirect(nodeService, chatNotifier);
+      // Phase 45E — pull persisted feed.notify Inbox rows from home.
+      _ref.read(feedNotifyProvider.notifier).refresh();
+      _ref.read(contentEngageProvider.notifier).refresh();
+    } else {
+      // Family members: restore cached AI + family threads only.
       final node = state.activeNode;
       if (node != null) {
-        chatNotifier.loadThreads(node.id);
+        unawaited(chatNotifier.loadThreads(node.id));
       }
-      // Create threads for all bonded contacts, then refresh display names.
-      _ref.read(chatProvider.notifier).createContactThreads();
-      _ref.read(chatProvider.notifier).refreshThreadDisplayNames();
-    });
-
-    // Rooms and terminals sync directly using _nodeService.
-    _syncRoomsDirect(nodeService, chatNotifier);
-    _syncTerminalsDirect(nodeService, chatNotifier, terminalNotifier);
-    // Sync all terminal sessions (running and stopped) as chat threads.
-    chatNotifier.syncTerminals();
-    _syncInboxDirect(nodeService, chatNotifier);
-    // Phase 45E — pull persisted feed.notify Inbox rows from home.
-    _ref.read(feedNotifyProvider.notifier).refresh();
-    _ref.read(contentEngageProvider.notifier).refresh();
+    }
 
     // EnvoyAI (OpenClaw) — always create, built-in.
     chatNotifier.onBridgeStatus({
@@ -704,8 +778,9 @@ class NodeNotifier extends StateNotifier<NodeState> {
 
     // Pi coding TUI lives under Terminals (New Pi), not as an AI chat row.
 
-    // Sync dynamic AI character bots from config.
+    // Sync dynamic AI character bots + family profiles from config.
     client.call('getNodeConfig').then((config) {
+      _applyFamilyConfig(Map<String, dynamic>.from(config as Map));
       final aiBots = config['aiBots'];
       final node = state.activeNode;
       if (node != null) {
@@ -714,6 +789,67 @@ class NodeNotifier extends StateNotifier<NodeState> {
     }).catchError((e) {
       _log('getNodeConfig for aiBots failed: $e');
     });
+  }
+
+  void _applyFamilyConfig(Map<String, dynamic> config) {
+    final profilesRaw = config['familyProfiles'];
+    final profiles = profilesRaw is List
+        ? profilesRaw
+            .whereType<Map>()
+            .map((e) => Map<String, dynamic>.from(e))
+            .toList()
+        : const <Map<String, dynamic>>[];
+    final callerProfileId = config['callerFamilyProfileId'] as String?;
+    final callerIsOwner = config['callerIsOwnerProfile'] as bool?;
+    final nextProfileId = callerProfileId ?? state.familyProfileId;
+    final nextIsOwner = callerIsOwner ?? state.isOwnerProfile;
+    state = state.copyWith(
+      familyProfiles: profiles,
+      familyProfileId: nextProfileId,
+      isOwnerProfile: nextIsOwner,
+    );
+    final node = state.activeNode;
+    if (node != null) {
+      unawaited(_persistFamilySessionFlags(
+        node.id,
+        profileId: nextProfileId,
+        isOwner: nextIsOwner,
+      ));
+      if (profiles.isNotEmpty) {
+        _ref.read(chatProvider.notifier).syncFamilyContacts(profiles, node.id);
+        unawaited(_ref.read(chatProvider.notifier).syncFamilyRooms());
+      }
+    }
+  }
+
+  Future<void> _persistFamilySessionFlags(
+    String nodeId, {
+    required String? profileId,
+    required bool isOwner,
+  }) async {
+    try {
+      if (profileId != null && profileId.isNotEmpty) {
+        await _secureStorage.write('node.$nodeId.familyProfileId', profileId);
+      }
+      await _secureStorage.write(
+        'node.$nodeId.isOwnerProfile',
+        isOwner ? '1' : '0',
+      );
+    } catch (e) {
+      _log('persist family session flags failed: $e');
+    }
+  }
+
+  /// Resolve owner vs family from persisted flags.
+  ///
+  /// Prefer an explicit `1`/`0` flag. If missing (legacy sessions), infer from
+  /// a non-owner family profile id so family members never default to owner.
+  static bool _resolveIsOwnerProfile(String? flag, String? profileId) {
+    if (flag == '0') return false;
+    if (flag == '1') return true;
+    final id = profileId?.trim();
+    if (id != null && id.isNotEmpty && id != 'owner') return false;
+    return true;
   }
 
   Future<void> _syncBondsDirect(
@@ -987,6 +1123,8 @@ class NodeNotifier extends StateNotifier<NodeState> {
       }
     });
     client.on('chat:room-updated', (data) {
+      // Mesh room events are owner-only; family rooms also arrive here
+      // remapped — family members still need room-updated for groups.
       if (data is Map<String, dynamic>) {
         chatNotifier.onRoomUpdated(data);
       }
@@ -1000,9 +1138,11 @@ class NodeNotifier extends StateNotifier<NodeState> {
       }
     });
     client.on('bond:established', (_) {
+      if (!state.isOwnerProfile) return;
       contactNotifier.onBondEstablished();
     });
     client.on('bond:revoked', (data) {
+      if (!state.isOwnerProfile) return;
       if (data is Map<String, dynamic>) {
         contactNotifier
             .onBondRevoked(data['peerOwnerId'] as String? ?? '');
@@ -1014,22 +1154,28 @@ class NodeNotifier extends StateNotifier<NodeState> {
       }
     });
     client.on('agent:activity', (data) {
+      // Mesh agent activity is owner-only — family members must not get
+      // these as chat:message (they showed up as Inbox-like threads).
+      if (!state.isOwnerProfile) return;
       _log('[push] agent:activity received: $data');
       if (data is Map<String, dynamic>) {
         chatNotifier.onChatMessage(data);
       }
     });
     client.on('terminal:session-updated', (_) async {
+      if (!state.isOwnerProfile) return;
       // Load sessions first, then sync to ensure state is populated.
       await terminalNotifier.loadSessions();
       chatNotifier.syncTerminals();
     });
     client.on('feed:notify', (data) {
+      if (!state.isOwnerProfile) return;
       if (data is Map<String, dynamic>) {
         _ref.read(feedNotifyProvider.notifier).upsertFromEvent(data);
       }
     });
     client.on('content:engage', (data) {
+      if (!state.isOwnerProfile) return;
       if (data is Map<String, dynamic>) {
         _ref.read(contentEngageProvider.notifier).upsertFromEvent(data);
       }
@@ -1038,7 +1184,9 @@ class NodeNotifier extends StateNotifier<NodeState> {
       if (data is! Map) return;
       final config = data['config'];
       if (config is! Map) return;
-      final aiBots = config['aiBots'];
+      final configMap = Map<String, dynamic>.from(config);
+      _applyFamilyConfig(configMap);
+      final aiBots = configMap['aiBots'];
       final node = state.activeNode;
       if (node == null) return;
       chatNotifier.syncAiBots(aiBots is List ? aiBots : const [], node.id);
@@ -1064,10 +1212,27 @@ class NodeNotifier extends StateNotifier<NodeState> {
   }
 
   Future<void> _connectToNodeImpl(StoredNode node) async {
+    // Phase 51E — restore family session from secure storage immediately so
+    // tab gating / mesh sync / push prefs don't briefly treat a family
+    // member as the owner before getNodeConfig returns.
+    final storedProfileId =
+        await _secureStorage.read('node.${node.id}.familyProfileId');
+    final storedOwnerFlag =
+        await _secureStorage.read('node.${node.id}.isOwnerProfile');
+    final restoredIsOwner = _resolveIsOwnerProfile(
+      storedOwnerFlag,
+      storedProfileId,
+    );
     state = state.copyWith(
       connectionState: NodeConnectionState.connecting,
       reconnectAttempt: 0,
       lastConnectAttemptAt: DateTime.now(),
+      // Restore stored profile id (do NOT clearFamilyProfileId — that wiped
+      // the value and defaulted myProfileId to "owner", flipping family bubbles).
+      familyProfileId: storedProfileId,
+      clearFamilyProfileId: storedProfileId == null || storedProfileId.isEmpty,
+      isOwnerProfile: restoredIsOwner,
+      familyProfiles: const [],
     );
 
     final sessionToken =
@@ -1309,6 +1474,9 @@ class NodeNotifier extends StateNotifier<NodeState> {
 
   /// Remove a paired node. This is the only path that clears the
   /// pairing record from local storage — there is no auto-unpair.
+  ///
+  /// Clears session secrets, SQLite cache (threads/messages/contacts/rooms),
+  /// and in-memory chat/contact/terminal state for [nodeId].
   Future<void> unpairNode(String nodeId) async {
     // If the supervisor was targeting this node, stop it before we
     // tear down state — otherwise it would keep firing with a
@@ -1319,16 +1487,29 @@ class NodeNotifier extends StateNotifier<NodeState> {
       _supervisorTargetNodeId = null;
     }
     await disconnect();
-    await _secureStorage.deleteSessionToken(nodeId);
+    await _secureStorage.clearNodeSession(nodeId);
     if (await _secureStorage.getActiveNodeId() == nodeId) {
       await _secureStorage.saveActiveNodeId('');
     }
     await _localDb.deleteNode(nodeId);
+
+    // Drop in-memory UI state so chats don't linger after unpair.
+    _ref.read(chatProvider.notifier).clearForNode(nodeId);
+    _ref.read(contactProvider.notifier).clear();
+    _ref.read(terminalProvider.notifier).clear();
+
     final remaining = state.pairedNodes.where((n) => n.id != nodeId).toList();
     state = state.copyWith(
-      activeNode: null,
+      clearActiveNode: true,
       pairedNodes: remaining,
-      ownerId: null,
+      clearOwnerId: true,
+      clearFamilyProfileId: true,
+      isOwnerProfile: true,
+      familyProfiles: const [],
+      connectionState: NodeConnectionState.disconnected,
+      clearErrorMessage: true,
+      clearHomeNodeErrorCode: true,
+      clearUpnpAddr: true,
     );
     // Keep disk media cache (vault + library-read + peer thumbs) so re-pairing
     // the same homePeerId does not re-download via relay. Wipe only on
@@ -1357,12 +1538,15 @@ class NodeNotifier extends StateNotifier<NodeState> {
     if (client == null) return;
     // If the user disabled push in the app settings, skip registration
     // entirely. The home node has no token → no push.
-    if (!await PushPreferences.isEnabled()) return;
+    if (!await PushPreferences.isEnabled(profileId: state.familyProfileId)) {
+      return;
+    }
     final push = PushNotificationService();
     await push.initialize();
     await push.registerWithHomeNode(
       (method, [params]) => client.call(method, params),
       ownerId: state.ownerId ?? state.activeNode?.ownerId,
+      profileId: state.familyProfileId,
     );
   }
 }
@@ -1419,9 +1603,11 @@ final callProvider = ChangeNotifierProvider<CallProvider>((ref) {
   // Register the VoIP token with the home (best-effort). The home needs
   // it to dispatch a VoIP push when the phone is offline.
   final ownerId = ref.read(nodeProvider).ownerId;
+  final profileId = ref.read(nodeProvider).familyProfileId;
   voip.registerWithHomeNode(
     (method, [params]) => client.call(method, params),
     ownerId: ownerId,
+    profileId: profileId,
   );
   ref.onDispose(() {
     incomingSub.cancel();

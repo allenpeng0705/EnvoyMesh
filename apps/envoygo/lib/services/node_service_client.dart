@@ -89,12 +89,122 @@ class NodeServiceClient {
 
   // -- Connection & pairing --
 
-  Future<Map<String, dynamic>> pairWithHomeNode(
-      String pairingToken, String deviceName, String platform) async {
+  Future<Map<String, dynamic>> pairWithHomeNode({
+    required String pairingToken,
+    required String deviceName,
+    required String platform,
+    String? deviceId,
+    String? profileId,
+    String? profileName,
+    String? profileAvatarColor,
+  }) async {
     return await _client.call('pairThinClient', {
       'pairingToken': pairingToken,
       'deviceName': deviceName,
       'platform': platform,
+      if (deviceId != null && deviceId.isNotEmpty) 'deviceId': deviceId,
+      if (profileId != null && profileId.isNotEmpty) 'profileId': profileId,
+      if (profileName != null && profileName.isNotEmpty)
+          'profileName': profileName,
+      if (profileAvatarColor != null && profileAvatarColor.isNotEmpty)
+          'profileAvatarColor': profileAvatarColor,
+    }) as Map<String, dynamic>;
+  }
+
+  /// Phase 51 — list selectable profiles for a family invite (pre-auth).
+  Future<List<Map<String, dynamic>>> previewFamilyInvite({
+    required String pairingToken,
+  }) async {
+    final result = await _client.call('previewFamilyInvite', {
+      'pairingToken': pairingToken,
+    }) as Map<String, dynamic>;
+    final raw = result['profiles'];
+    if (raw is! List) return const [];
+    return raw
+        .whereType<Map>()
+        .map((e) => Map<String, dynamic>.from(e))
+        .toList();
+  }
+
+  // -- Phase 51 Family Network --
+
+  Future<Map<String, dynamic>> listFamilyProfiles() async {
+    return await _client.call('listFamilyProfiles') as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> createFamilyProfile({
+    required String name,
+    String? avatarColor,
+  }) async {
+    return await _client.call('createFamilyProfile', {
+      'name': name,
+      if (avatarColor != null) 'avatarColor': avatarColor,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> updateFamilyProfile({
+    required String id,
+    String? name,
+    String? avatarColor,
+    bool? active,
+    List<Map<String, dynamic>>? aiBots,
+  }) async {
+    return await _client.call('updateFamilyProfile', {
+      'id': id,
+      if (name != null) 'name': name,
+      if (avatarColor != null) 'avatarColor': avatarColor,
+      if (active != null) 'active': active,
+      if (aiBots != null) 'aiBots': aiBots,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> deleteFamilyProfile(String id) async {
+    return await _client.call('deleteFamilyProfile', {'id': id})
+        as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> generateFamilyInviteToken({
+    int? expiresInHours,
+    String? note,
+  }) async {
+    return await _client.call('generateFamilyInviteToken', {
+      if (expiresInHours != null) 'expiresInHours': expiresInHours,
+      if (note != null) 'note': note,
+    }) as Map<String, dynamic>;
+  }
+
+  /// Phase 51C — local family DM (never leaves the home node).
+  Future<Map<String, dynamic>> sendFamilyMessage({
+    required String toProfileId,
+    required String text,
+  }) async {
+    return await _client.call('sendFamilyMessage', {
+      'toProfileId': toProfileId,
+      'text': text,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> listFamilyRooms() async {
+    return await _client.call('listFamilyRooms') as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> createFamilyRoom({
+    required String title,
+    required List<String> memberProfileIds,
+  }) async {
+    return await _client.call('createFamilyRoom', {
+      'title': title,
+      'memberProfileIds': memberProfileIds,
+    }) as Map<String, dynamic>;
+  }
+
+  Future<Map<String, dynamic>> sendFamilyRoomMessage({
+    required String roomId,
+    required String text,
+  }) async {
+    return await _client.call('sendFamilyRoomMessage', {
+      'roomId': roomId,
+      'text': text,
     }) as Map<String, dynamic>;
   }
 
@@ -251,6 +361,7 @@ class NodeServiceClient {
     int? limit,
     String? threadId,
     String? selfOwnerId,
+    String? selfFamilyProfileId,
   }) async {
     final params = <String, dynamic>{
       // Router historically used peerOwnerId; thin-client docs use targetOwnerId.
@@ -273,7 +384,12 @@ class NodeServiceClient {
           /* fall through to RPC parse */
         }
       }
-      return ChatMessage.fromRpcJson(map, threadId: tid, selfOwnerId: selfOwnerId);
+      return ChatMessage.fromRpcJson(
+        map,
+        threadId: tid,
+        selfOwnerId: selfOwnerId,
+        selfFamilyProfileId: selfFamilyProfileId,
+      );
     }).toList();
   }
 

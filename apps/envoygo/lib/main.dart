@@ -89,10 +89,15 @@ class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
     final hint = PushNotificationService().handleNotificationTap(raw);
     if (hint == null) return;
 
+    final isOwner = ref.read(nodeProvider).isOwnerProfile;
     final type = hint['type'];
     switch (type) {
       case 'feed_notify':
-        // Feed notification → open Browser at the published URL.
+        // Feed / vault is owner-only (Phase 51E).
+        if (!isOwner) {
+          ref.read(chatProvider.notifier).selectTab(0);
+          break;
+        }
         final url = hint['url'] as String?;
         if (url != null && url.isNotEmpty) {
           nav.push(MaterialPageRoute(
@@ -101,17 +106,16 @@ class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
         }
         break;
       case 'bond_request':
-        // Contact request → switch to the Inbox tab (index 1) so the
-        // user can review and approve. Bond request payloads don't yet
-        // carry a target id for deeper routing.
-        ref.read(chatProvider.notifier).selectTab(1);
-        break;
       case 'approval':
-        // Approval-queue item → switch to the Inbox tab where approvals live.
+        // Inbox is owner-only; family stack has no Inbox tab.
+        if (!isOwner) {
+          ref.read(chatProvider.notifier).selectTab(0);
+          break;
+        }
         ref.read(chatProvider.notifier).selectTab(1);
         break;
       case 'pi_proposal':
-        // Pi tool-action request → Chats tab (Pi TUI is under Terminals).
+        // Pi is owner-only.
         ref.read(chatProvider.notifier).selectTab(0);
         break;
       default:
@@ -162,14 +166,54 @@ class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
           ));
           break;
         }
-        if (senderOwnerId == null && roomId == null) return;
-        final threadId = roomId != null ? '$nodeId:$roomId' : '$nodeId:$senderOwnerId';
+        if (threadType == 'family') {
+          final threadKey = hint['threadKey'] as String?;
+          if (threadKey == null || !threadKey.startsWith('family:')) return;
+          nav.push(MaterialPageRoute(
+            builder: (_) => ChatDetailScreen(
+              threadId: '$nodeId:$threadKey',
+              displayName: senderName ?? senderOwnerId ?? 'Family',
+              contactOwnerId: senderOwnerId,
+            ),
+          ));
+          break;
+        }
+        if (threadType == 'room' || roomId != null) {
+          var bareRoomId = roomId ?? '';
+          if (bareRoomId.startsWith('room:')) {
+            bareRoomId = bareRoomId.substring('room:'.length);
+          }
+          if (bareRoomId.isEmpty) return;
+          final isFamilyRoom = hint['roomKind'] == 'family';
+          final threadId = '$nodeId:room:$bareRoomId';
+          if (isFamilyRoom) {
+            ref.read(chatProvider.notifier).onRoomUpdated({
+              'roomId': bareRoomId,
+              'title': senderName ?? 'Family group',
+              'kind': 'family',
+            });
+          }
+          nav.push(MaterialPageRoute(
+            builder: (_) => ChatDetailScreen(
+              threadId: threadId,
+              displayName: senderName ?? bareRoomId,
+              chatRoomId: bareRoomId,
+              isFamilyRoom: isFamilyRoom,
+            ),
+          ));
+          break;
+        }
+        if (senderOwnerId == null) return;
+        // Mesh DMs are owner-only.
+        if (!isOwner) {
+          ref.read(chatProvider.notifier).selectTab(0);
+          break;
+        }
         nav.push(MaterialPageRoute(
           builder: (_) => ChatDetailScreen(
-            threadId: threadId,
-            displayName: senderName ?? senderOwnerId ?? roomId ?? '',
+            threadId: '$nodeId:$senderOwnerId',
+            displayName: senderName ?? senderOwnerId,
             contactOwnerId: senderOwnerId,
-            chatRoomId: roomId,
           ),
         ));
         break;

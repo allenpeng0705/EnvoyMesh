@@ -133,4 +133,8 @@ enum ChatThreadType {
   aiBot,
   pi,
   terminal,
+  /// Phase 51C — local family DM (`family:<sortedA>:<sortedB>`).
+  family,
+  /// Phase 51D — local family group (`room:<roomId>` with memberProfileIds).
+  familyGroup,
 }

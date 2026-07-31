@@ -13,7 +13,7 @@ import type {
   NodeProfile,
   OwnerAgentTurnResult,
 } from "@envoymesh/api";
-import { ENVOY_AI_THREAD_KEY } from "@envoymesh/api";
+import { ENVOY_AI_THREAD_KEY, OWNER_FAMILY_PROFILE_ID } from "@envoymesh/api";
 import type {
   AgentIdentityStore,
   CapabilityManifestStore,
@@ -42,6 +42,7 @@ import {
 import { reclaimAssistantGatewayPort } from "./openclaw-gateway-port.js";
 import { spawnOpenClawGateway } from "./openclaw-gateway-spawn.js";
 import { ensureOpenClawWorkspace, openClawGatewayStateDir } from "./openclaw-workspace.js";
+import { getRpcCaller } from "./rpc-caller-context.js";
 import type { RagService } from "./rag-service.js";
 import type { PersistedNodeConfig } from "./node-config-store.js";
 
@@ -335,10 +336,20 @@ export interface EnvoyAiChatContext {
   getBridgeStatus(): BridgeStatus | undefined;
   persistChatMessage(threadKey: string, msg: ChatMessage): void;
   emitChatMessage(msg: ChatMessage): void;
+  /** Phase 51 — caller family profile id (defaults to owner). */
+  getCallerFamilyProfileId?(): string;
+  /** Phase 51 — display name for the caller (family name or owner HumanProfile). */
+  getCallerDisplayName?(): Promise<string>;
+  /** Phase 51 — whether the RPC caller is the owner profile. */
+  isCallerOwnerProfile?(): boolean;
 }
 
-export function recordEnvoyAiChatMessageViaRuntime(ctx: EnvoyAiChatContext, msg: ChatMessage): void {
-  ctx.persistChatMessage(ENVOY_AI_THREAD_KEY, msg);
+export function recordEnvoyAiChatMessageViaRuntime(
+  ctx: EnvoyAiChatContext,
+  msg: ChatMessage,
+  threadKey: string = ENVOY_AI_THREAD_KEY,
+): void {
+  ctx.persistChatMessage(threadKey, msg);
   ctx.emitChatMessage(msg);
 }
 
@@ -394,12 +405,26 @@ export async function recordEnvoyAiHumanOutgoingViaRuntime(
 export async function loadEnvoyAiChatHistoryViaRuntime(
   ctx: EnvoyAiChatContext,
   limit?: number,
+  threadKey: string = ENVOY_AI_THREAD_KEY,
 ): Promise<ChatMessage[]> {
   const chatLogStore = ctx.getChatLogStore();
   if (!chatLogStore) return [];
-  const primary = await chatLogStore.listThread(ENVOY_AI_THREAD_KEY, limit);
+  const primary = await chatLogStore.listThread(threadKey, limit);
+  // Owner profile: also merge legacy bare `__envoy_ai__` when reading namespaced key.
+  if (threadKey !== ENVOY_AI_THREAD_KEY && threadKey.startsWith(`${ENVOY_AI_THREAD_KEY}:`)) {
+    const legacy = await chatLogStore.listThread(ENVOY_AI_THREAD_KEY, limit);
+    if (legacy.length > 0 && threadKey.endsWith(":owner")) {
+      const byId = new Map<string, ChatMessage>();
+      for (const row of legacy) byId.set(row.messageId, row as ChatMessage);
+      for (const row of primary) byId.set(row.messageId, row as ChatMessage);
+      return [...byId.values()].sort(
+        (a, b) =>
+          new Date(a.metadata.timestamp).getTime() - new Date(b.metadata.timestamp).getTime(),
+      );
+    }
+  }
   const legacyPeerId = ctx.getBridgeStatus()?.agentPeerId?.trim();
-  if (!legacyPeerId || legacyPeerId === ENVOY_AI_THREAD_KEY) {
+  if (!legacyPeerId || legacyPeerId === ENVOY_AI_THREAD_KEY || threadKey !== ENVOY_AI_THREAD_KEY) {
     return primary as ChatMessage[];
   }
   const legacy = await chatLogStore.listThread(legacyPeerId, limit);
@@ -428,6 +453,7 @@ export async function persistEnvoyAiChatExchangeViaRuntime(
   userText: string,
   turn: OwnerAgentTurnResult,
   humanMessageId?: string,
+  threadKey: string = ENVOY_AI_THREAD_KEY,
 ): Promise<void> {
   const profile = ctx.getProfile();
   const mesh = ctx.getReachableMesh();
@@ -449,7 +475,20 @@ export async function persistEnvoyAiChatExchangeViaRuntime(
   }
 
   const ownerId = profile.owner.ownerId;
-  const displayName = selfHuman?.displayName ?? ownerId;
+  const callerProfileId =
+    ctx.getCallerFamilyProfileId?.()?.trim() || OWNER_FAMILY_PROFILE_ID;
+  const isOwnerCaller =
+    ctx.isCallerOwnerProfile?.() ?? callerProfileId === OWNER_FAMILY_PROFILE_ID;
+  let displayName = selfHuman?.displayName ?? ownerId;
+  try {
+    const callerName = await ctx.getCallerDisplayName?.();
+    if (callerName?.trim()) displayName = callerName.trim();
+  } catch {
+    /* keep fallback */
+  }
+  // Family members are attributed by profile id so history / WS routing stay
+  // profile-scoped; owner keeps the mesh ownerId (legacy Social behaviour).
+  const humanSenderOwnerId = isOwnerCaller ? ownerId : callerProfileId;
   const humanTimestamp = new Date().toISOString();
   const aiTimestamp = new Date(Date.now() + 1).toISOString();
   const bridgeAgentPeerId = ctx.getBridgeStatus()?.agentPeerId?.trim() || ENVOY_AI_THREAD_KEY;
@@ -471,13 +510,13 @@ export async function persistEnvoyAiChatExchangeViaRuntime(
       messageId: randomUUID(),
       sender: {
         nodeId: mesh.peerId,
-        ownerId,
+        ownerId: humanSenderOwnerId,
         displayName,
         actorRole: "human",
       },
       recipient: {
         nodeId: bridgeAgentPeerId,
-        ownerId: ENVOY_AI_THREAD_KEY,
+        ownerId: threadKey,
         displayName: bridgeAgentId ?? "EnvoyAI",
       },
       content: { text: trimmed },
@@ -487,7 +526,7 @@ export async function persistEnvoyAiChatExchangeViaRuntime(
         deliveryChannel: "ai",
       },
       signature: "",
-    });
+    }, threadKey);
   }
 
   if (answer) {
@@ -495,14 +534,14 @@ export async function persistEnvoyAiChatExchangeViaRuntime(
       messageId: randomUUID(),
       sender: {
         nodeId: bridgeAgentPeerId,
-        ownerId: ENVOY_AI_THREAD_KEY,
+        ownerId: threadKey,
         displayName: "EnvoyAI",
         actorRole: "agent",
         agentVerified: true,
       },
       recipient: {
         nodeId: mesh.peerId,
-        ownerId,
+        ownerId: humanSenderOwnerId,
         displayName,
       },
       content: { text: answer },
@@ -513,7 +552,7 @@ export async function persistEnvoyAiChatExchangeViaRuntime(
         assistantTurn,
       },
       signature: "",
-    });
+    }, threadKey);
   }
 }
 
@@ -546,6 +585,13 @@ export function buildOpenClawRuntimeDeps(host: any): OpenClawRuntimeDeps {
     getBridgeStatus: () => host._bridgeStatus ?? undefined,
     persistChatMessage: (threadKey, msg) => host._persistChatMessage(threadKey, msg),
     emitChatMessage: (msg) => host.emit("chat:message", msg),
+    getCallerFamilyProfileId: () => host._callerFamilyProfileId(),
+    getCallerDisplayName: () => host._callerFamilyDisplayName(),
+    isCallerOwnerProfile: () => {
+      const caller = getRpcCaller();
+      if (caller) return caller.isOwnerProfile;
+      return host._callerFamilyProfileId() === OWNER_FAMILY_PROFILE_ID;
+    },
     loadBridgeConfigWebSearchEnabled: () => loadBridgeConfigWebSearchEnabled(),
     loadBridgeConfigSkillApiKeys: () => loadBridgeConfigSkillApiKeys(),
     getProfileDir: () => host._profileDir,
@@ -1010,7 +1056,14 @@ async function buildEnvoyMeshOpenClawPrompts(
 }> {
   const turnContext = await buildOpenClawTurnContextViaRuntime(deps);
   const owner = deps.getProfile()?.owner;
-  const displayName = turnContext.ownerDisplayName ?? owner?.ownerId ?? "unknown";
+  let displayName = turnContext.ownerDisplayName ?? owner?.ownerId ?? "unknown";
+  try {
+    const callerName = await deps.getCallerDisplayName?.();
+    if (callerName?.trim()) displayName = callerName.trim();
+  } catch {
+    /* keep fallback */
+  }
+  const isOwnerCaller = deps.isCallerOwnerProfile?.() ?? true;
   const webSearchEnabled = (await deps.loadBridgeConfigWebSearchEnabled()) ?? true;
   const skillApiKeys = (await deps.loadBridgeConfigSkillApiKeys()) ?? {};
   const webSearch = resolveActiveWebSearchProvider({ webSearchEnabled, skillApiKeys });
@@ -1021,8 +1074,8 @@ async function buildEnvoyMeshOpenClawPrompts(
     owner: {
       ownerId: owner?.ownerId ?? "unknown",
       displayName,
-      interests: turnContext.interests ?? [],
-      capabilities: turnContext.capabilities ?? [],
+      interests: isOwnerCaller ? (turnContext.interests ?? []) : [],
+      capabilities: isOwnerCaller ? (turnContext.capabilities ?? []) : [],
     },
     permissions: turnContext.permissions ?? {
       bondAutonomy: false,
@@ -1030,11 +1083,13 @@ async function buildEnvoyMeshOpenClawPrompts(
       autoCircleContacts: false,
       maxSensitivity: "public",
     },
-    bonds: (turnContext.bonds ?? []).map((b) => ({
-      displayName: b.name,
-      level: b.level,
-      dormantDays: b.dormantDays,
-    })),
+    bonds: isOwnerCaller
+      ? (turnContext.bonds ?? []).map((b) => ({
+          displayName: b.name,
+          level: b.level,
+          dormantDays: b.dormantDays,
+        }))
+      : [],
     model: turnContext.model ?? { provider: "disabled" },
     webSearch,
   });
@@ -1043,7 +1098,8 @@ async function buildEnvoyMeshOpenClawPrompts(
   const nodeConfig = await deps.getNodeConfig();
   const bonds = await deps.getBonds();
   let retrievedContext = "";
-  if (owner?.ownerId) {
+  // Family members must not inherit owner vault / bond chat RAG.
+  if (owner?.ownerId && isOwnerCaller) {
     try {
       retrievedContext = await withOpenClawTimeout(
         buildEnvoyMeshRetrievedContext({
@@ -1097,8 +1153,13 @@ async function askOpenClawViaWebhook(
 
   let fromName = ownerId;
   try {
-    const profile = await deps.humanProfileStore?.loadHumanProfile();
-    if (profile?.displayName?.trim()) fromName = profile.displayName.trim();
+    const callerName = await deps.getCallerDisplayName?.();
+    if (callerName?.trim()) {
+      fromName = callerName.trim();
+    } else {
+      const profile = await deps.humanProfileStore?.loadHumanProfile();
+      if (profile?.displayName?.trim()) fromName = profile.displayName.trim();
+    }
   } catch { /* use ownerId */ }
 
   const body = JSON.stringify({
@@ -1591,8 +1652,21 @@ export async function sendToOpenClawViaRuntime(
   state: OpenClawRuntimeState,
   deps: OpenClawRuntimeDeps,
   text: string,
+  threadKey: string = ENVOY_AI_THREAD_KEY,
 ): Promise<void> {
   const ownerId = deps.getProfileOwnerId() ?? "";
+  const callerProfileId =
+    deps.getCallerFamilyProfileId?.()?.trim() || OWNER_FAMILY_PROFILE_ID;
+  const isOwnerCaller =
+    deps.isCallerOwnerProfile?.() ?? callerProfileId === OWNER_FAMILY_PROFILE_ID;
+  let displayName = ownerId;
+  try {
+    const callerName = await deps.getCallerDisplayName?.();
+    if (callerName?.trim()) displayName = callerName.trim();
+  } catch {
+    /* keep ownerId */
+  }
+  const humanSenderOwnerId = isOwnerCaller ? ownerId : callerProfileId;
   const now = new Date().toISOString();
   const messageId = crypto.randomUUID();
 
@@ -1600,12 +1674,13 @@ export async function sendToOpenClawViaRuntime(
     messageId,
     sender: {
       nodeId: deps.getMeshPeerId(),
-      ownerId,
-      displayName: ownerId,
+      ownerId: humanSenderOwnerId,
+      displayName,
       actorRole: "human",
     },
     recipient: {
       nodeId: ENVOY_AI_THREAD_KEY,
+      ownerId: threadKey,
       displayName: "EnvoyAI",
     },
     content: { text },
@@ -1616,7 +1691,7 @@ export async function sendToOpenClawViaRuntime(
     },
     signature: "",
   };
-  recordEnvoyAiChatMessageViaRuntime(deps, outboundMsg);
+  recordEnvoyAiChatMessageViaRuntime(deps, outboundMsg, threadKey);
 
   let policyPrompt: string | undefined;
   let retrievedContext: string | undefined;
@@ -1631,11 +1706,7 @@ export async function sendToOpenClawViaRuntime(
   const correlationId = `oc-openclaw-${randomUUID()}`;
   const replyPromise = waitForOpenClawReply(state, correlationId);
 
-  let fromName = ownerId;
-  try {
-    const profile = await deps.humanProfileStore?.loadHumanProfile();
-    if (profile?.displayName?.trim()) fromName = profile.displayName.trim();
-  } catch { /* use ownerId */ }
+  const fromName = displayName || ownerId;
 
   const body = JSON.stringify({
     from: deps.getMeshPeerId(),
@@ -1676,5 +1747,5 @@ export async function sendToOpenClawViaRuntime(
     toolsUsed: [],
     approvalItems: [],
     modelUsed: "openclaw",
-  }, messageId);
+  }, messageId, threadKey);
 }

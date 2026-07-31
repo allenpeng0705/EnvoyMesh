@@ -88,6 +88,13 @@ class SecureStorage {
     await _ensureStorage.delete(key: 'node.$nodeId.sessionToken');
   }
 
+  /// Phase 51 — wipe all per-node session secrets on unpair.
+  Future<void> clearNodeSession(String nodeId) async {
+    await _ensureStorage.delete(key: 'node.$nodeId.sessionToken');
+    await _ensureStorage.delete(key: 'node.$nodeId.familyProfileId');
+    await _ensureStorage.delete(key: 'node.$nodeId.isOwnerProfile');
+  }
+
   /// Save the active node ID.
   Future<void> saveActiveNodeId(String nodeId) async {
     await _ensureStorage.write(key: 'activeNodeId', value: nodeId);

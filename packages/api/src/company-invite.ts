@@ -10,6 +10,9 @@
  * The `uri` field is what humans copy/paste: an `envoy://invite?token=…`
  * form the joiner's UI parses back into a token.
  */
+/** Invite purpose — company fleet onboarding vs family profile pairing. */
+export type CompanyInviteKind = "company" | "family";
+
 export interface CompanyInviteRecord {
   /** Server-assigned id. */
   inviteId: string;
@@ -23,6 +26,11 @@ export interface CompanyInviteRecord {
   lanWsUrl?: string;
   relayWsUrl?: string;
   homeNodePeerId?: string;
+  /**
+   * Phase 51 — `"family"` for family-invite QR; omit / `"company"` for fleet.
+   * Missing on legacy records → treat as `"company"`.
+   */
+  kind?: CompanyInviteKind;
   /** ISO 8601. */
   createdAt: string;
   /** ISO 8601. */
@@ -38,6 +46,8 @@ export interface CreateCompanyInviteParams {
   expiresInHours?: number;
   /** Free-text label shown in the table. */
   note?: string;
+  /** Phase 51 — `"family"` for family-member pairing invites. Default `"company"`. */
+  kind?: CompanyInviteKind;
 }
 
 export interface CreateCompanyInviteResult {

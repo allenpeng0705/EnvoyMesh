@@ -1,3 +1,4 @@
+import 'package:envoygo/models/stored_node.dart';
 import 'package:envoygo/providers/node_provider.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -33,6 +34,50 @@ void main() {
       expect(updated.errorMessage, 'first');
       expect(updated.reconnectAttempt, 3);
       expect(updated.homeNodeErrorCode, isNull);
+    });
+
+    test('NodeState.copyWith clears activeNode and ownerId when flagged', () {
+      final node = StoredNode(
+        id: 'n1',
+        name: 'Home',
+        ownerId: 'owner-1',
+        homePeerId: 'peer-1',
+        pairedAt: DateTime.utc(2026, 1, 1),
+      );
+      final initial = NodeState(
+        activeNode: node,
+        pairedNodes: [node],
+        ownerId: 'owner-1',
+        familyProfileId: 'mom',
+        isOwnerProfile: false,
+        connectionState: NodeConnectionState.connected,
+      );
+      final cleared = initial.copyWith(
+        clearActiveNode: true,
+        clearOwnerId: true,
+        clearFamilyProfileId: true,
+        pairedNodes: const [],
+        isOwnerProfile: true,
+        familyProfiles: const [],
+        connectionState: NodeConnectionState.disconnected,
+      );
+      expect(cleared.activeNode, isNull);
+      expect(cleared.ownerId, isNull);
+      expect(cleared.familyProfileId, isNull);
+      expect(cleared.pairedNodes, isEmpty);
+      expect(cleared.isOwnerProfile, isTrue);
+      expect(cleared.connectionState, NodeConnectionState.disconnected);
+    });
+
+    test('NodeState.copyWith restores familyProfileId when clear is false', () {
+      const initial = NodeState(isOwnerProfile: true);
+      final restored = initial.copyWith(
+        familyProfileId: 'mom',
+        clearFamilyProfileId: false,
+        isOwnerProfile: false,
+      );
+      expect(restored.familyProfileId, 'mom');
+      expect(restored.isOwnerProfile, isFalse);
     });
 
     test('NodeState.copyWith sets homeNodeErrorCode when provided', () {

@@ -71,6 +71,7 @@ export async function createCompanyInviteViaRuntime(
     lanWsUrl: deps.lanWsUrl,
     relayWsUrl: deps.relayWsUrl,
     homeNodePeerId: deps.homeNodePeerId,
+    kind: params?.kind === "family" ? "family" : "company",
     createdAt: now.toISOString(),
     expiresAt,
     note: params?.note?.trim() || undefined,

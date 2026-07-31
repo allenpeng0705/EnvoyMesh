@@ -2648,6 +2648,8 @@ export * from "./document-acquisition-store.js";
 export * from "./capability-provider-job-store.js";
 export * from "./task-results-store.js";
 export * from "./company-invite-store.js";
+export * from "./family-profile-store.js";
+export * from "./family-room-store.js";
 export * from "./fleet-manifest-store.js";
 export * from "./chain-reports-store.js";
 export * from "./cost-rollup-store.js";

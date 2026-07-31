@@ -18,6 +18,9 @@ class ChatRoom {
   /// Last message timestamp.
   final DateTime? lastMessageAt;
 
+  /// Phase 51D — `"family"` for local family rooms; null/mesh otherwise.
+  final String? kind;
+
   const ChatRoom({
     required this.id,
     required this.nodeId,
@@ -25,11 +28,16 @@ class ChatRoom {
     this.memberCount = 0,
     this.lastMessageText,
     this.lastMessageAt,
+    this.kind,
   });
+
+  bool get isFamily => kind == 'family';
 
   factory ChatRoom.fromJson(Map<String, dynamic> json) {
     // Home node uses roomId/title/memberOwnerIds. Local DB uses id/name/member_count.
-    final members = json['memberOwnerIds'] as List<dynamic>?;
+    // Family rooms use memberProfileIds.
+    final members =
+        (json['memberOwnerIds'] ?? json['memberProfileIds']) as List<dynamic>?;
     final memberCount = members?.length ??
         (json['memberCount'] as int?) ??
         (json['member_count'] as int?) ??
@@ -39,10 +47,13 @@ class ChatRoom {
       nodeId: (json['nodeId'] ?? json['node_id'] ?? '') as String,
       name: (json['title'] ?? json['name'] ?? '') as String,
       memberCount: memberCount,
-      lastMessageText: (json['lastMessageText'] ?? json['last_message_text']) as String?,
+      lastMessageText:
+          (json['lastMessageText'] ?? json['last_message_text']) as String?,
       lastMessageAt: (json['lastMessageAt'] ?? json['last_message_at']) != null
-          ? DateTime.parse((json['lastMessageAt'] ?? json['last_message_at']) as String)
+          ? DateTime.parse(
+              (json['lastMessageAt'] ?? json['last_message_at']) as String)
           : null,
+      kind: (json['kind'] as String?)?.trim(),
     );
   }
 
@@ -54,5 +65,6 @@ class ChatRoom {
         if (lastMessageText != null) 'last_message_text': lastMessageText,
         if (lastMessageAt != null)
           'last_message_at': lastMessageAt!.toIso8601String(),
+        if (kind != null) 'kind': kind,
       };
 }

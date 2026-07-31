@@ -81,4 +81,32 @@ void main() {
       expect('bot:luna'.substring(4), 'luna');
     });
   });
+
+  group('resolveExtAgentDisplayName', () {
+    test('prefers active Ext Agent name over bridge agentName', () {
+      expect(
+        ChatNotifier.resolveExtAgentDisplayName({
+          'agentName': 'Legacy',
+          'agentType': 'envoyai',
+          'activeExtAgentId': 'pi',
+          'extAgents': [
+            {'id': 'pi', 'name': 'Pi'},
+            {'id': 'homeclaw', 'name': 'HomeClaw'},
+          ],
+        }),
+        'Pi',
+      );
+    });
+
+    test('falls back to agentName then Ext Agent', () {
+      expect(
+        ChatNotifier.resolveExtAgentDisplayName({'agentName': 'Hermes'}),
+        'Hermes',
+      );
+      expect(
+        ChatNotifier.resolveExtAgentDisplayName({}),
+        'Ext Agent',
+      );
+    });
+  });
 }

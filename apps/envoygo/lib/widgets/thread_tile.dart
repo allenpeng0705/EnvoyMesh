@@ -100,7 +100,20 @@ class ThreadTile extends StatelessWidget {
           radius: _avatarRadius,
           fallbackIcon: Icons.person,
         );
+      case ChatThreadType.family:
+        return CircleAvatar(
+          radius: _avatarRadius,
+          backgroundColor: _parseBotColor(thread.avatarColor),
+          child: Text(
+            _botInitial(thread.displayName),
+            style: const TextStyle(
+              color: Colors.white,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        );
       case ChatThreadType.group:
+      case ChatThreadType.familyGroup:
         return const CircleAvatar(
           radius: _avatarRadius,
           child: Icon(Icons.group),

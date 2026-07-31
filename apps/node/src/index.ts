@@ -461,6 +461,9 @@ if (nodeService instanceof NodeServiceImpl) {
   nodeService.bindThinClientOnlineCheck((ownerId) =>
     wsServerForEvents?.hasRecentlyActiveClientForOwner(ownerId) ?? false,
   );
+  nodeService.bindThinClientProfileOnlineCheck((profileId) =>
+    wsServerForEvents?.hasRecentlyActiveClientForProfile(profileId) ?? false,
+  );
   nodeService.bindCliTaskStore(taskStore);
   nodeService.bindApprovalQueue(approvalQueue);
   const nodeConfig = await nodeService.getNodeConfig();
@@ -3640,12 +3643,13 @@ function createAgentBridgeInstance(cfg: BridgeConfig) {
       },
       signature: envelope.signature,
     };
-    void chatLogStore.append(identity.agentPeerId, chatMsg).catch((err) =>
-      console.warn(`[bridge] chat log append failed:`, err),
-    );
+    // Phase 51 — route into the profile-scoped bridge thread (FIFO pending).
     if (nodeService instanceof NodeServiceImpl) {
-      nodeService.emit("chat:message", chatMsg);
+      nodeService.handleBridgeSelfReply(chatMsg);
     } else {
+      void chatLogStore.append(identity.agentPeerId, chatMsg).catch((err) =>
+        console.warn(`[bridge] chat log append failed:`, err),
+      );
       wsServerForEvents.emitEvent("chat:message", chatMsg);
     }
   },

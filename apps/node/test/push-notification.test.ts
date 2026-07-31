@@ -94,6 +94,41 @@ describe("PushNotificationService — Phase 42I VoIP", () => {
       const tokens = service.listForOwner(ownerId);
       expect(tokens).toHaveLength(1);
       expect(tokens[0]?.tokenType).toBe("alert");
+      expect(tokens[0]?.profileId).toBe("owner");
+    });
+
+    it("tags tokens with profileId and filters dispatch by profile", async () => {
+      const ownerId = "envoy:owner:family";
+      service.registerPushToken({
+        platform: "android",
+        token: "fcm-mom-token-aaaaaaaaaaaa",
+        ownerId,
+        profileId: "mom",
+        tokenType: "alert",
+      });
+      service.registerPushToken({
+        platform: "android",
+        token: "fcm-dad-token-bbbbbbbbbbbb",
+        ownerId,
+        profileId: "owner",
+        tokenType: "alert",
+      });
+      expect(service.listForOwner(ownerId)).toHaveLength(2);
+      expect(service.listForOwnerProfile(ownerId, "mom")).toHaveLength(1);
+      expect(service.listForOwnerProfile(ownerId, "mom")[0]?.token).toBe(
+        "fcm-mom-token-aaaaaaaaaaaa",
+      );
+
+      // Soft-check: dispatchChatPush with targetProfileId=mom only sees mom's token
+      // (HTTP transport is mocked / absent — we assert selection via list helper).
+      await service.dispatchChatPush({
+        senderName: "EnvoyAI",
+        messagePreview: "hi mom",
+        targetOwnerId: ownerId,
+        targetProfileId: "mom",
+        messageId: "m1",
+        threadType: "envoyai",
+      });
     });
 
     it("treats unknown tokenType values as alert (defensive default)", () => {

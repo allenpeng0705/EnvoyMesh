@@ -26,13 +26,16 @@ void main() {
     });
 
     test('ChatThreadType enum has all expected values', () {
-      expect(ChatThreadType.values.length, 6);
+      expect(ChatThreadType.values.length, 9);
       expect(ChatThreadType.values, contains(ChatThreadType.direct));
       expect(ChatThreadType.values, contains(ChatThreadType.group));
       expect(ChatThreadType.values, contains(ChatThreadType.envoyai));
       expect(ChatThreadType.values, contains(ChatThreadType.externalAgent));
+      expect(ChatThreadType.values, contains(ChatThreadType.aiBot));
       expect(ChatThreadType.values, contains(ChatThreadType.pi));
       expect(ChatThreadType.values, contains(ChatThreadType.terminal));
+      expect(ChatThreadType.values, contains(ChatThreadType.family));
+      expect(ChatThreadType.values, contains(ChatThreadType.familyGroup));
     });
   });
 
@@ -62,6 +65,67 @@ void main() {
         'thread_id': 't1',
       });
       expect(msg.isOutbound, isFalse);
+    });
+
+    test('fromRpcJson family DM uses profile id for isOutbound', () {
+      final mine = ChatMessage.fromRpcJson(
+        {
+          'messageId': 'm1',
+          'sender': {
+            'ownerId': 'mom',
+            'displayName': 'Mom',
+          },
+          'recipient': {'ownerId': 'family:mom:owner'},
+          'content': {'text': 'hi'},
+          'metadata': {'timestamp': '2026-07-20T00:00:00Z'},
+        },
+        threadId: 'node1:family:mom:owner',
+        selfOwnerId: 'envoy:owner:home',
+        selfFamilyProfileId: 'mom',
+      );
+      expect(mine.isOutbound, isTrue);
+      expect(mine.senderDisplayName, 'You');
+
+      final theirs = ChatMessage.fromRpcJson(
+        {
+          'messageId': 'm2',
+          'sender': {
+            'ownerId': 'owner',
+            'displayName': 'Home',
+          },
+          'recipient': {'ownerId': 'family:mom:owner'},
+          'content': {'text': 'hello'},
+          'metadata': {'timestamp': '2026-07-20T00:00:01Z'},
+        },
+        threadId: 'node1:family:mom:owner',
+        selfOwnerId: 'envoy:owner:home',
+        selfFamilyProfileId: 'mom',
+      );
+      expect(theirs.isOutbound, isFalse);
+      expect(theirs.senderDisplayName, 'Home');
+    });
+  });
+
+  group('messageIsOutgoing', () {
+    test('mesh chat compares sender to mesh ownerId', () {
+      expect(
+        messageIsOutgoing(
+          senderOwnerId: 'envoy:owner:a',
+          recipientOwnerId: 'envoy:owner:b',
+          selfOwnerId: 'envoy:owner:a',
+          selfFamilyProfileId: 'owner',
+        ),
+        isTrue,
+      );
+      expect(
+        messageIsOutgoing(
+          senderOwnerId: 'envoy:owner:b',
+          recipientOwnerId: 'envoy:owner:a',
+          selfOwnerId: 'envoy:owner:a',
+          selfFamilyProfileId: 'owner',
+        ),
+        isFalse,
+      );
     });
   });
 }

@@ -124,6 +124,14 @@ class LocalDatabase {
     return _db!;
   }
 
+  /// Test-only: close the handle so the file can be deleted between tests.
+  @visibleForTesting
+  Future<void> closeForTest() async {
+    await _db?.close();
+    _db = null;
+    _initialized = false;
+  }
+
   // -- Node operations --
 
   Future<void> upsertNode(Map<String, dynamic> node) async {
@@ -154,11 +162,11 @@ class LocalDatabase {
   }
 
   Future<void> deleteNode(String nodeId) async {
-    await _ensureDb.delete('nodes', where: 'id = ?', whereArgs: [nodeId]);
-    // Cascade: remove contacts, threads, messages for this node.
+    // Delete messages first while thread rows still exist (subquery).
+    // Previous order deleted threads first → messages were never removed.
     await _ensureDb.delete(
-      'contacts',
-      where: 'node_id = ?',
+      'messages',
+      where: 'thread_id IN (SELECT id FROM chat_threads WHERE node_id = ?)',
       whereArgs: [nodeId],
     );
     await _ensureDb.delete(
@@ -167,8 +175,8 @@ class LocalDatabase {
       whereArgs: [nodeId],
     );
     await _ensureDb.delete(
-      'messages',
-      where: 'thread_id IN (SELECT id FROM chat_threads WHERE node_id = ?)',
+      'contacts',
+      where: 'node_id = ?',
       whereArgs: [nodeId],
     );
     await _ensureDb.delete(
@@ -176,6 +184,7 @@ class LocalDatabase {
       where: 'node_id = ?',
       whereArgs: [nodeId],
     );
+    await _ensureDb.delete('nodes', where: 'id = ?', whereArgs: [nodeId]);
   }
 
   Future<void> updateNodeLastConnected(String nodeId) async {

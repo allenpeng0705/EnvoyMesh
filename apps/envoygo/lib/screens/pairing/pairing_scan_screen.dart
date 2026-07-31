@@ -38,9 +38,13 @@ class _PairingScanScreenState extends State<PairingScanScreen> {
     if (_hasScanned) return;
     for (final barcode in capture.barcodes) {
       final uri = barcode.rawValue;
-      if (uri != null && uri.startsWith('envoy://pair')) {
+      if (uri == null) continue;
+      final trimmed = uri.trim();
+      if (trimmed.startsWith('envoy://pair') ||
+          trimmed.startsWith('envoy://invite') ||
+          trimmed.startsWith('invite?')) {
         _hasScanned = true;
-        _handleUri(uri);
+        _handleUri(trimmed);
         return;
       }
     }
@@ -96,7 +100,7 @@ class _PairingScanScreenState extends State<PairingScanScreen> {
                   TextField(
                     controller: _manualController,
                     decoration: const InputDecoration(
-                      hintText: 'envoy://pair?token=...',
+                      hintText: 'envoy://pair?... or envoy://invite?...',
                       border: OutlineInputBorder(),
                       prefixIcon: Icon(Icons.link),
                     ),

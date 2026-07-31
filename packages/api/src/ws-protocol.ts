@@ -285,6 +285,15 @@ export type RpcMethods =
   | "listCompanyInvites"
   | "revokeCompanyInvite"
   | "redeemCompanyInvite"
+  | "createFamilyProfile"
+  | "updateFamilyProfile"
+  | "deleteFamilyProfile"
+  | "listFamilyProfiles"
+  | "generateFamilyInviteToken"
+  | "sendFamilyMessage"
+  | "listFamilyRooms"
+  | "createFamilyRoom"
+  | "sendFamilyRoomMessage"
   | "syncPairingKioskFromConfig"
   | "getPairingKioskStatus"
   | "importFleetManifest"
@@ -295,6 +304,7 @@ export type RpcMethods =
   | "pairSharedIdentity"
   | "pairWithHomeNode"
   | "pairThinClient"
+  | "previewFamilyInvite"
   | "updateMyListenAddrs"
   | "listAuthorizedDevices"
   | "revokeAuthorizedDevice"
@@ -556,6 +566,20 @@ export interface NodeConfig {
   piSettings?: PiSettings;
   /** Dynamic AI character bots (user-created, synced to all clients). */
   aiBots?: AiBotDefinition[];
+  /**
+   * Phase 51 — Family Network profiles on this home node.
+   * Metadata only in non-owner config views (secrets stripped separately).
+   */
+  familyProfiles?: import("./family-profile.js").FamilyProfile[];
+  /**
+   * Phase 51 — caller's bound family profile id (session), when known.
+   * Omitted for unrestricted local clients until they pair.
+   */
+  callerFamilyProfileId?: string;
+  /**
+   * Phase 51 — whether the caller session is the owner profile.
+   */
+  callerIsOwnerProfile?: boolean;
   /**
    * Phase 33 — max age (in ms) of a cached agent card before the auto-fetcher re-issues a
    * request. Default 24h.
@@ -861,12 +885,31 @@ export interface PairThinClientParams {
   deviceName: string;
   /** Platform identifier: "ios", "android", "flutter", "web". */
   platform: string;
+  /**
+   * Phase 51 — stable client-generated device UUID. Preferred over
+   * name-derived ids to avoid collisions across phones.
+   */
+  deviceId?: string;
+  /**
+   * Phase 51 — bind to an existing family profile id, or omit to create.
+   */
+  profileId?: string;
+  /** Phase 51 — display name when creating a new family profile. */
+  profileName?: string;
+  /** Phase 51 — avatar color when creating a new family profile. */
+  profileAvatarColor?: string;
 }
 
 /** Result of thin-client pairing. No device certificate needed. */
 export interface PairThinClientResult {
   sessionToken: string;
   ownerId: string;
+  /** Phase 51 — bound family profile. */
+  profileId: string;
+  /** Phase 51 — whether this session is the owner profile. */
+  isOwnerProfile: boolean;
+  /** Phase 51 — snapshot of active family profiles (names/avatars). */
+  familyProfiles?: import("./family-profile.js").FamilyProfile[];
 }
 
 /**

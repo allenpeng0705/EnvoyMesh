@@ -34,6 +34,10 @@ export interface CompanyInviteRecord {
   lanWsUrl?: string;
   relayWsUrl?: string;
   homeNodePeerId?: string;
+  /**
+   * Phase 51 — `"family"` for family-member pairing; omit/`"company"` for fleet.
+   */
+  kind?: "company" | "family";
   /** ISO 8601. */
   createdAt: string;
   /** ISO 8601. After this point, the token is rejected. */

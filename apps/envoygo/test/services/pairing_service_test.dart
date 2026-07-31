@@ -83,6 +83,31 @@ void main() {
 
       expect(data, isNotNull);
       expect(data!.lanWsUrl, isNull);
+      expect(data.isInviteUri, isFalse);
+    });
+
+    test('parses family invite URI', () {
+      final uri = 'envoy://invite?wsUrl=ws%3A%2F%2Frelay.example.com%2Fws'
+          '&token=fam123'
+          '&ownerId=envoy%3Aowner%3Aabc'
+          '&inviteId=inv-1';
+
+      final data = PairingService.parsePairingUri(uri);
+
+      expect(data, isNotNull);
+      expect(data!.token, 'fam123');
+      expect(data.isInviteUri, isTrue);
+      expect(data.inviteId, 'inv-1');
+      expect(data.ownerId, 'envoy:owner:abc');
+    });
+
+    test('parses lenient invite? paste form', () {
+      final data = PairingService.parsePairingUri(
+        'invite?token=t1&wsUrl=ws%3A%2F%2Fhome.local%2Fws&ownerId=envoy%3Aowner%3Ax',
+      );
+      expect(data, isNotNull);
+      expect(data!.isInviteUri, isTrue);
+      expect(data.token, 't1');
     });
   });
 }

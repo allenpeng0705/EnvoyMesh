@@ -30,6 +30,68 @@ import type {
   ChainSaveRecipeParams,
   ChainDeleteRecipeParams,
 } from "@envoymesh/api";
+import { requireOwnerProfile } from "./rpc-caller-context.js";
+
+/**
+ * Phase 51 — RPCs restricted to the owner family profile.
+ * Exact names for mesh / admin surfaces; prefixes cover terminal* / vault leaks.
+ */
+const OWNER_ONLY_RPC_METHODS = new Set<string>([
+  "updateNodeConfig",
+  "sendHello",
+  "acceptHello",
+  "declineHello",
+  "blockPeer",
+  "unblockPeer",
+  "revokeBond",
+  "getBonds",
+  "sendChat",
+  "listChatRooms",
+  "createChatRoom",
+  "inviteToChatRoom",
+  "leaveChatRoom",
+  "sendChatRoomMessage",
+  "dismissChatRoom",
+  "readLibraryItemContent",
+  "listLibraryItems",
+  "libraryRead",
+  "openLibraryItem",
+  "listAllLocalFiles",
+  "readLocalFileContent",
+  "pinLibraryItemExternal",
+  "discoverPublishedLibrary",
+  "publishWebContentEntry",
+  "createTerminalSession",
+  "closeTerminalSession",
+  "renameTerminalSession",
+  "listTerminalSessions",
+  "terminalExec",
+  "restartPi",
+  "ensurePiTerminalSession",
+  "sendToPi",
+  "piRespondToProposal",
+  "restartOpenClaw",
+  "createWanJoinInvite",
+  "createCompanyInvite",
+  "listCompanyInvites",
+  "revokeCompanyInvite",
+  "revokeAuthorizedDevice",
+  "mergeAuthorizedDevices",
+  "pruneRevokedDevices",
+  "createFamilyProfile",
+  "deleteFamilyProfile",
+  "generateFamilyInviteToken",
+  "getPairingPayload",
+  "syncPairingKioskFromConfig",
+]);
+
+/** True when a thin-client family session must not call this RPC. */
+export function isOwnerOnlyRpcMethod(method: string): boolean {
+  if (OWNER_ONLY_RPC_METHODS.has(method)) return true
+  // All terminal* assist / session surfaces (many methods; keep prefix).
+  if (method.startsWith("terminal")) return true
+  return false
+}
 
 /**
  * Route a JSON-RPC method call to the appropriate NodeService method.
@@ -42,6 +104,9 @@ export async function routeRpcMethod(
   method: string,
   params: Record<string, unknown>,
 ): Promise<unknown> {
+  if (isOwnerOnlyRpcMethod(method)) {
+    requireOwnerProfile(`call ${method}`);
+  }
   switch (method as RpcMethods) {
     case "getProfile":
       return ns.getProfile();
@@ -171,6 +236,7 @@ export async function routeRpcMethod(
         ownerId: String(params.ownerId ?? ""),
         deviceId: params.deviceId !== undefined ? String(params.deviceId) : undefined,
         tokenType: params.tokenType === "voip" ? "voip" : "alert",
+        profileId: params.profileId !== undefined ? String(params.profileId) : undefined,
       });
       return undefined;
     case "unregisterPushToken":
@@ -643,6 +709,7 @@ export async function routeRpcMethod(
       return ns.createCompanyInvite({
         expiresInHours: params.expiresInHours as number | undefined,
         note: params.note as string | undefined,
+        kind: params.kind as "company" | "family" | undefined,
       });
     case "listCompanyInvites":
       return ns.listCompanyInvites();
@@ -654,6 +721,48 @@ export async function routeRpcMethod(
         wsUrl: params.wsUrl as string | undefined,
         ownerId: params.ownerId as string | undefined,
         helloMessage: params.helloMessage as string | undefined,
+      });
+    case "listFamilyProfiles":
+      return ns.listFamilyProfiles();
+    case "createFamilyProfile":
+      return ns.createFamilyProfile({
+        name: String(params.name ?? ""),
+        avatarColor: params.avatarColor as string | undefined,
+        isOwner: params.isOwner as boolean | undefined,
+      });
+    case "updateFamilyProfile":
+      return ns.updateFamilyProfile({
+        id: String(params.id ?? ""),
+        name: params.name as string | undefined,
+        avatarColor: params.avatarColor as string | undefined,
+        active: params.active as boolean | undefined,
+        aiBots: params.aiBots as import("@envoymesh/api").AiBotDefinition[] | undefined,
+      });
+    case "deleteFamilyProfile":
+      return ns.deleteFamilyProfile(String(params.id ?? ""));
+    case "generateFamilyInviteToken":
+      return ns.generateFamilyInviteToken({
+        expiresInHours: params.expiresInHours as number | undefined,
+        note: params.note as string | undefined,
+      });
+    case "sendFamilyMessage":
+      return ns.sendFamilyMessage({
+        toProfileId: String(params.toProfileId ?? ""),
+        text: String(params.text ?? ""),
+      });
+    case "listFamilyRooms":
+      return ns.listFamilyRooms();
+    case "createFamilyRoom":
+      return ns.createFamilyRoom({
+        title: String(params.title ?? ""),
+        memberProfileIds: Array.isArray(params.memberProfileIds)
+          ? params.memberProfileIds.map((m) => String(m))
+          : [],
+      });
+    case "sendFamilyRoomMessage":
+      return ns.sendFamilyRoomMessage({
+        roomId: String(params.roomId ?? ""),
+        text: String(params.text ?? ""),
       });
     case "syncPairingKioskFromConfig":
       return ns.syncPairingKioskFromConfig();
@@ -677,6 +786,10 @@ export async function routeRpcMethod(
       return ns.pairWithHomeNode(params as any);
     case "pairThinClient":
       return ns.pairThinClient(params as any);
+    case "previewFamilyInvite":
+      return ns.previewFamilyInvite({
+        pairingToken: String(params.pairingToken ?? ""),
+      });
     case "listAuthorizedDevices":
       return ns.listAuthorizedDevices();
     case "revokeAuthorizedDevice":
