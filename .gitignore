@@ -41,3 +41,5 @@ apps/node/test/.DS_Store
 /apps/tauri/tauri-debug.log
 /apps/tauri/src-tauri/target
 /release
+AuthKey_LKPCR48WHW.p8
+serviceAccountKey.json
