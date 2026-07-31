@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../l10n/app_localizations.dart';
 import '../providers/contact_provider.dart';
 import '../services/envoy_url.dart';
 import '../services/library_read_cache.dart';
@@ -225,7 +226,7 @@ class _FeedPhotoViewerState extends State<_FeedPhotoViewer> {
                   IconButton(
                     onPressed: () => Navigator.of(context).pop(),
                     icon: const Icon(Icons.close, color: Colors.white),
-                    tooltip: 'Close',
+                    tooltip: AppLocalizations.of(context).commonClose,
                   ),
                   const Spacer(),
                   if (widget.urls.length > 1)

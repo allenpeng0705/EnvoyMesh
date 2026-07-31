@@ -11,6 +11,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/chain_report.dart';
 import '../../providers/node_provider.dart';
 import '../../services/node_service_client.dart';
@@ -54,7 +55,7 @@ class _RecentChainDetailScreenState
     if (homeClient == null || !homeClient.isConnected) {
       setState(() {
         _loading = false;
-        _error = 'Not connected to home node';
+        _error = AppLocalizations.of(context).commonNotConnectedHome;
       });
       return;
     }
@@ -87,22 +88,23 @@ class _RecentChainDetailScreenState
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
         title: Text(_shortId(widget.chainId)),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
+            tooltip: l10n.commonRefresh,
             onPressed: _loading ? null : _load,
           ),
         ],
       ),
-      body: _buildBody(),
+      body: _buildBody(l10n),
     );
   }
 
-  Widget _buildBody() {
+  Widget _buildBody(AppLocalizations l10n) {
     if (_loading && _report == null) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -119,13 +121,12 @@ class _RecentChainDetailScreenState
                     color: Theme.of(context).colorScheme.outline),
                 const SizedBox(height: 12),
                 Text(
-                  'This report is no longer available',
+                  l10n.chainsReportGone,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'It may have been removed by the 90-day GC policy\n'
-                  'or it was never published on this home node.',
+                  l10n.chainsReportGoneHint,
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
@@ -134,7 +135,7 @@ class _RecentChainDetailScreenState
                   onPressed: () {
                     Navigator.of(context).pop();
                   },
-                  child: const Text('Back to Recent team jobs'),
+                  child: Text(l10n.chainsBackToRecent),
                 ),
               ],
             ),
@@ -154,7 +155,7 @@ class _RecentChainDetailScreenState
                     size: 48, color: Theme.of(context).colorScheme.error),
                 const SizedBox(height: 12),
                 Text(
-                  'Failed to load report',
+                  l10n.chainsLoadReportFailed,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 4),
@@ -166,7 +167,7 @@ class _RecentChainDetailScreenState
                 const SizedBox(height: 16),
                 FilledButton(
                   onPressed: _load,
-                  child: const Text('Retry'),
+                  child: Text(l10n.commonRetry),
                 ),
               ],
             ),
@@ -184,7 +185,7 @@ class _RecentChainDetailScreenState
 
         // Executive summary
         if (r.executiveSummary.isNotEmpty) ...[
-          const _SectionTitle('Summary'),
+          _SectionTitle(l10n.chainsSummary),
           const SizedBox(height: 8),
           Card(
             child: Padding(
@@ -200,7 +201,7 @@ class _RecentChainDetailScreenState
 
         // Sections
         if (r.sections.isNotEmpty) ...[
-          const _SectionTitle('Sections'),
+          _SectionTitle(l10n.chainsSections),
           const SizedBox(height: 8),
           for (final s in r.sections) ...[
             Card(
@@ -229,7 +230,7 @@ class _RecentChainDetailScreenState
 
         // Worker allocations
         if (r.chainSummary.workerAllocations.isNotEmpty) ...[
-          const _SectionTitle('Worker allocations'),
+          _SectionTitle(l10n.chainsWorkerAllocations),
           const SizedBox(height: 8),
           Card(
             child: Padding(
@@ -264,7 +265,7 @@ class _RecentChainDetailScreenState
           ),
           const SizedBox(height: 8),
           Text(
-            'Manage chains on the home node Social UI.',
+            l10n.chainsManageOnSocial,
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodySmall,
           ),
@@ -281,6 +282,7 @@ class _HeaderCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final s = report.chainSummary;
     return Card(
       child: Padding(
@@ -292,7 +294,7 @@ class _HeaderCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: Text(
-                    'Chain ${_shortId(report.chainId)}',
+                    l10n.chainsChainId(_shortId(report.chainId)),
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
                 ),
@@ -306,7 +308,7 @@ class _HeaderCard extends StatelessWidget {
             ),
             const SizedBox(height: 4),
             Text(
-              'Published ${_formatDate(report.createdAt)}',
+              l10n.chainsPublished(_formatDate(report.createdAt)),
               style: Theme.of(context).textTheme.bodySmall,
             ),
             const SizedBox(height: 8),
@@ -314,13 +316,13 @@ class _HeaderCard extends StatelessWidget {
               spacing: 12,
               runSpacing: 4,
               children: [
-                _Stat(label: 'Workers', value: '${s.workerCount}'),
-                _Stat(label: 'Subtasks', value: '${s.subtaskCount}'),
+                _Stat(label: l10n.chainsWorkers, value: '${s.workerCount}'),
+                _Stat(label: l10n.chainsSubtasks, value: '${s.subtaskCount}'),
                 _Stat(
-                  label: 'Synthesis',
+                  label: l10n.chainsSynthesis,
                   value: '\$${s.synthesisCostUsd.toStringAsFixed(2)}',
                 ),
-                _Stat(label: 'Duration', value: _formatDuration(s.durationMs)),
+                _Stat(label: l10n.chainsDuration, value: _formatDuration(s.durationMs)),
               ],
             ),
           ],

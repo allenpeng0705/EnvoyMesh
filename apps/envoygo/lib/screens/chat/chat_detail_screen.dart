@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:record/record.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/chat_message.dart';
 import '../../models/chat_thread.dart';
 import '../../providers/chat_provider.dart';
@@ -29,6 +30,7 @@ class ChatDetailScreen extends ConsumerStatefulWidget {
   final String? contactOwnerId;
   final String? chatRoomId;
   final String? agentType;
+
   /// Phase 51D — when true, compose uses sendFamilyRoomMessage.
   final bool isFamilyRoom;
 
@@ -43,8 +45,7 @@ class ChatDetailScreen extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<ChatDetailScreen> createState() =>
-      _ChatDetailScreenState();
+  ConsumerState<ChatDetailScreen> createState() => _ChatDetailScreenState();
 }
 
 class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
@@ -100,10 +101,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
         if (_isAgent) {
           notifier.loadAgentHistory(widget.threadId);
         } else if (_isRoom) {
-          notifier.loadHistory(
-            widget.threadId,
-            chatRoomId: widget.chatRoomId,
-          );
+          notifier.loadHistory(widget.threadId, chatRoomId: widget.chatRoomId);
         } else if (_isFamily) {
           notifier.loadHistory(widget.threadId);
         } else {
@@ -168,7 +166,8 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
       final file = File(path);
       final bytes = await file.readAsBytes();
       final base64 = base64Encode(bytes);
-      final mimeType = 'audio/mp4'; // record package outputs MP4/AAC on both platforms
+      final mimeType =
+          'audio/mp4'; // record package outputs MP4/AAC on both platforms
 
       final nodeService = ref.read(nodeServiceProvider);
       if (nodeService == null || _resolvedContactOwnerId == null) return;
@@ -181,16 +180,20 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
           contentBase64: base64,
           mimeType: mimeType,
         );
-        final attachmentId = uploadResult['attachmentId'] as String? ??
+        final attachmentId =
+            uploadResult['attachmentId'] as String? ??
             (uploadResult['id'] as String?) ??
             'att_${DateTime.now().microsecondsSinceEpoch}';
-        final vaultRelativePath = uploadResult['vaultRelativePath'] as String? ?? '';
+        final vaultRelativePath =
+            uploadResult['vaultRelativePath'] as String? ?? '';
 
         // 2. Send chat message with attachment metadata
-        ref.read(chatProvider.notifier).sendMessage(
+        ref
+            .read(chatProvider.notifier)
+            .sendMessage(
               _resolvedContactOwnerId!,
               '', // mobile has no transcription
-               attachments: [
+              attachments: [
                 {
                   'id': attachmentId,
                   'filename': 'voice-note.m4a',
@@ -205,7 +208,9 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
       } catch (e) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Failed to send voice note')),
+            SnackBar(
+              content: Text(AppLocalizations.of(context).chatVoiceSendFailed),
+            ),
           );
         }
       }
@@ -217,7 +222,9 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
         _recordingGuard = false;
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Microphone permission denied')),
+            SnackBar(
+              content: Text(AppLocalizations.of(context).chatMicDenied),
+            ),
           );
         }
         return;
@@ -225,7 +232,8 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
       try {
         await _audioRecorder.start(
           const RecordConfig(encoder: AudioEncoder.aacLc),
-          path: '${Directory.systemTemp.path}/voice_${DateTime.now().microsecondsSinceEpoch}.m4a',
+          path:
+              '${Directory.systemTemp.path}/voice_${DateTime.now().microsecondsSinceEpoch}.m4a',
         );
         _recordingSeconds = 0;
         _recordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
@@ -247,7 +255,9 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
         _recordingGuard = false;
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Failed to start recording')),
+            SnackBar(
+              content: Text(AppLocalizations.of(context).chatRecordFailed),
+            ),
           );
         }
       }
@@ -264,10 +274,10 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
       final fetched = await getOrFetchVaultContent(
         ({required relativePath, int? maxBytes, int? offset}) =>
             nodeService.readLibraryItemContent(
-          relativePath: relativePath,
-          maxBytes: maxBytes,
-          offset: offset,
-        ),
+              relativePath: relativePath,
+              maxBytes: maxBytes,
+              offset: offset,
+            ),
         homePeerId: homePeerId,
         relativePath: vaultRelativePath,
       );
@@ -280,6 +290,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final chatState = ref.watch(chatProvider);
     final messages = chatState.messages[widget.threadId] ?? [];
 
@@ -291,16 +302,22 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
           // Phase 42F — voice call action for direct-message chats
           // (not rooms / agents). Routes through CallProvider.startCall
           // which generates the SDP and posts sendCallInvite.
-          if (!_isAgent && !_isRoom && !_isFamily && _resolvedContactOwnerId != null)
+          if (!_isAgent &&
+              !_isRoom &&
+              !_isFamily &&
+              _resolvedContactOwnerId != null)
             IconButton(
               icon: const Icon(Icons.call),
-              tooltip: 'Voice call',
+              tooltip: l10n.chatVoiceCall,
               onPressed: _startCall,
             ),
-          if (!_isAgent && !_isRoom && !_isFamily && _resolvedContactOwnerId != null)
+          if (!_isAgent &&
+              !_isRoom &&
+              !_isFamily &&
+              _resolvedContactOwnerId != null)
             IconButton(
               icon: const Icon(Icons.language),
-              tooltip: 'Published content',
+              tooltip: l10n.chatPublishedContent,
               onPressed: () => showPublishedContentSheet(
                 context,
                 ownerId: _resolvedContactOwnerId!,
@@ -309,13 +326,13 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
             ),
           IconButton(
             icon: const Icon(Icons.delete_outline),
-            tooltip: 'Clear thread',
+            tooltip: l10n.chatClearThread,
             onPressed: _clearThread,
           ),
           if (_isRoom && !_isFamilyRoom)
             IconButton(
               icon: const Icon(Icons.person_add),
-              tooltip: 'Invite',
+              tooltip: l10n.commonInvite,
               onPressed: () => _showInviteDialog(context),
             ),
         ],
@@ -330,8 +347,8 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               child: Text(
                 ref.read(nodeProvider).isOwnerProfile
-                    ? 'AI model is disabled. Enable a model provider in Settings → AI.'
-                    : 'AI model is disabled. Ask the home owner to enable a model provider.',
+                    ? l10n.chatAiDisabled
+                    : l10n.chatAiDisabledAskOwner,
                 style: TextStyle(
                   color: Theme.of(context).colorScheme.onErrorContainer,
                   fontSize: 13,
@@ -340,10 +357,10 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
             ),
           Expanded(
             child: messages.isEmpty
-                ? const Center(
+                ? Center(
                     child: Text(
-                      'No messages yet',
-                      style: TextStyle(color: Colors.grey),
+                      l10n.chatNoMessages,
+                      style: const TextStyle(color: Colors.grey),
                     ),
                   )
                 : ListView.builder(
@@ -356,23 +373,25 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                         onLongPress: () {
                           showDialog(
                             context: context,
-                            builder: (ctx) => AlertDialog(
-                              title: const Text('Delete message?'),
-                              actions: [
-                                TextButton(
-                                  onPressed: () =>
-                                      Navigator.of(ctx).pop(),
-                                  child: const Text('Cancel'),
-                                ),
-                                FilledButton(
-                                  onPressed: () {
-                                    _deleteMessage(msg);
-                                    Navigator.of(ctx).pop();
-                                  },
-                                  child: const Text('Delete'),
-                                ),
-                              ],
-                            ),
+                            builder: (ctx) {
+                              final dialogL10n = AppLocalizations.of(ctx);
+                              return AlertDialog(
+                                title: Text(dialogL10n.chatDeleteMessageTitle),
+                                actions: [
+                                  TextButton(
+                                    onPressed: () => Navigator.of(ctx).pop(),
+                                    child: Text(dialogL10n.commonCancel),
+                                  ),
+                                  FilledButton(
+                                    onPressed: () {
+                                      _deleteMessage(msg);
+                                      Navigator.of(ctx).pop();
+                                    },
+                                    child: Text(dialogL10n.commonDelete),
+                                  ),
+                                ],
+                              );
+                            },
                           );
                         },
                         child: ChatBubble(
@@ -386,8 +405,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
           ),
           SafeArea(
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                  horizontal: 12, vertical: 8),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               child: Row(
                 children: [
                   IconButton(
@@ -401,19 +419,20 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                         color: _isRecording ? Colors.red : null,
                       ),
                       onPressed: _toggleRecording,
-                      tooltip: _isRecording ? 'Stop recording' : 'Record voice note',
+                      tooltip: _isRecording
+                          ? l10n.chatStopRecording
+                          : l10n.chatRecordVoice,
                     ),
                   Expanded(
                     child: TextField(
                       controller: _textController,
-                      decoration: const InputDecoration(
-                        hintText: 'Type a message...',
-                        border: OutlineInputBorder(
-                          borderRadius:
-                              BorderRadius.all(Radius.circular(24)),
+                      decoration: InputDecoration(
+                        hintText: l10n.chatTypeMessage,
+                        border: const OutlineInputBorder(
+                          borderRadius: BorderRadius.all(Radius.circular(24)),
                         ),
                         contentPadding:
-                            EdgeInsets.symmetric(horizontal: 16),
+                            const EdgeInsets.symmetric(horizontal: 16),
                       ),
                       onSubmitted: (_) => _sendMessage(),
                     ),
@@ -460,13 +479,13 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     if (!mounted) return;
     if (callId == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to start call')),
+        SnackBar(content: Text(AppLocalizations.of(context).chatCallFailed)),
       );
       return;
     }
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => const VoiceCallScreen()),
-    );
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const VoiceCallScreen()));
   }
 
   void _sendMessage() {
@@ -477,10 +496,8 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     if (text.isEmpty) return;
     if (_isAiBot && _modelDisabled) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'AI model is disabled. Enable a model provider in Settings → AI.',
-          ),
+        SnackBar(
+          content: Text(AppLocalizations.of(context).chatAiDisabled),
         ),
       );
       return;
@@ -488,30 +505,25 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
 
     try {
       if (_isAgent) {
-        await ref.read(chatProvider.notifier).sendAgentMessage(
-              text,
-              agentType: widget.agentType ?? 'envoyai',
-            );
+        await ref
+            .read(chatProvider.notifier)
+            .sendAgentMessage(text, agentType: widget.agentType ?? 'envoyai');
       } else if (_isFamilyRoom && widget.chatRoomId != null) {
-        await ref.read(chatProvider.notifier).sendFamilyRoomMessage(
-              widget.chatRoomId!,
-              text,
-            );
+        await ref
+            .read(chatProvider.notifier)
+            .sendFamilyRoomMessage(widget.chatRoomId!, text);
       } else if (_isRoom) {
-        await ref.read(chatProvider.notifier).sendRoomMessage(
-              widget.chatRoomId!,
-              text,
-            );
+        await ref
+            .read(chatProvider.notifier)
+            .sendRoomMessage(widget.chatRoomId!, text);
       } else if (_isFamily && widget.contactOwnerId != null) {
-        await ref.read(chatProvider.notifier).sendFamilyMessage(
-              widget.contactOwnerId!,
-              text,
-            );
+        await ref
+            .read(chatProvider.notifier)
+            .sendFamilyMessage(widget.contactOwnerId!, text);
       } else if (_resolvedContactOwnerId != null) {
-        await ref.read(chatProvider.notifier).sendMessage(
-              _resolvedContactOwnerId!,
-              text,
-            );
+        await ref
+            .read(chatProvider.notifier)
+            .sendMessage(_resolvedContactOwnerId!, text);
       } else {
         return;
       }
@@ -532,24 +544,23 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   }
 
   void _clearThread() {
+    final l10n = AppLocalizations.of(context);
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Clear thread?'),
-        content: const Text('All messages in this thread will be deleted.'),
+        title: Text(l10n.chatClearThreadTitle),
+        content: Text(l10n.chatClearThreadBody),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
+            child: Text(l10n.commonCancel),
           ),
           FilledButton(
             onPressed: () {
-              ref
-                  .read(chatProvider.notifier)
-                  .clearMessages(widget.threadId);
+              ref.read(chatProvider.notifier).clearMessages(widget.threadId);
               Navigator.of(ctx).pop();
             },
-            child: const Text('Clear'),
+            child: Text(l10n.commonClear),
           ),
         ],
       ),
@@ -557,21 +568,20 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   }
 
   void _deleteMessage(ChatMessage msg) {
-    ref
-        .read(chatProvider.notifier)
-        .deleteMessage(widget.threadId, msg);
+    ref.read(chatProvider.notifier).deleteMessage(widget.threadId, msg);
   }
 
   void _showInviteDialog(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final contacts = ref.read(contactProvider).bonds;
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Invite to Group'),
+        title: Text(l10n.chatInviteToGroup),
         content: SizedBox(
           width: 300,
           child: contacts.isEmpty
-              ? const Text('No contacts to invite.')
+              ? Text(l10n.chatNoContactsInvite)
               : ListView.builder(
                   shrinkWrap: true,
                   itemCount: contacts.length,
@@ -579,21 +589,21 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                     final c = contacts[i];
                     return ListTile(
                       leading: CircleAvatar(
-                        child: Text(
-                          (c.displayName ?? '?')[0].toUpperCase(),
-                        ),
+                        child: Text((c.displayName ?? '?')[0].toUpperCase()),
                       ),
                       title: Text(c.displayName ?? c.ownerId),
                       onTap: () {
-                        ref.read(chatProvider.notifier).inviteToRoom(
-                              widget.chatRoomId!,
-                              c.ownerId,
-                            );
+                        ref
+                            .read(chatProvider.notifier)
+                            .inviteToRoom(widget.chatRoomId!, c.ownerId);
                         Navigator.of(ctx).pop();
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
                             content: Text(
-                                '${c.displayName ?? c.ownerId} invited'),
+                              l10n.chatInvitedSnack(
+                                c.displayName ?? c.ownerId,
+                              ),
+                            ),
                           ),
                         );
                       },
@@ -604,7 +614,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Close'),
+            child: Text(l10n.commonClose),
           ),
         ],
       ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../../models/feed_notification.dart';
 import '../../providers/contact_provider.dart';
 import '../../providers/feed_notify_provider.dart';
@@ -12,6 +13,7 @@ class InboxScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
     final feedState = ref.watch(feedNotifyProvider);
     final contacts = ref.watch(contactProvider).bonds;
     final theme = Theme.of(context);
@@ -24,7 +26,7 @@ class InboxScreen extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
             child: Text(
-              'Published updates',
+              l10n.inboxPublishedUpdates,
               style: theme.textTheme.titleMedium,
             ),
           ),
@@ -42,12 +44,11 @@ class InboxScreen extends ConsumerWidget {
               ),
             )
           else if (feedState.unread.isEmpty)
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 8, 16, 24),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
               child: Text(
-                'No publish notifications yet. When a bonded contact publishes '
-                'web content, it will show up here.',
-                style: TextStyle(color: Colors.grey),
+                l10n.inboxPublishedEmpty,
+                style: const TextStyle(color: Colors.grey),
               ),
             )
           else
@@ -70,16 +71,16 @@ class InboxScreen extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
             child: Text(
-              'Pending intros',
+              l10n.inboxPendingIntros,
               style: theme.textTheme.titleMedium,
             ),
           ),
           if (contacts.isEmpty)
-            const Padding(
-              padding: EdgeInsets.fromLTRB(16, 8, 16, 48),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 48),
               child: Text(
-                'No pending introductions',
-                style: TextStyle(color: Colors.grey),
+                l10n.inboxPendingEmpty,
+                style: const TextStyle(color: Colors.grey),
               ),
             )
           else
@@ -89,12 +90,12 @@ class InboxScreen extends ConsumerWidget {
                   child: Text((contact.displayName ?? '?')[0].toUpperCase()),
                 ),
                 title: Text(contact.displayName ?? contact.ownerId),
-                subtitle: const Text('Wants to connect'),
+                subtitle: Text(l10n.inboxWantsToConnect),
                 trailing: TextButton(
                   onPressed: () {
                     // TODO: Accept/reject intro proposal
                   },
-                  child: const Text('Accept'),
+                  child: Text(l10n.commonAccept),
                 ),
               ),
             ),
@@ -117,6 +118,7 @@ class _FeedNotifyTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final subtitle = item.summary?.trim().isNotEmpty == true
         ? item.summary!
         : item.publisherOwnerId;
@@ -141,10 +143,10 @@ class _FeedNotifyTile extends StatelessWidget {
           children: [
             TextButton(
               onPressed: onOpen,
-              child: const Text('Open'),
+              child: Text(l10n.commonOpen),
             ),
             IconButton(
-              tooltip: 'Dismiss',
+              tooltip: l10n.commonDismiss,
               onPressed: onDismiss,
               icon: const Icon(Icons.close),
             ),

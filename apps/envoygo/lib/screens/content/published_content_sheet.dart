@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../../models/web_content.dart';
 import '../../services/envoy_url.dart';
 import '../browser/browser_screen.dart';
@@ -18,6 +19,7 @@ Future<void> showPublishedContentSheet(
     context: context,
     showDragHandle: true,
     builder: (ctx) {
+      final l10n = AppLocalizations.of(ctx);
       return SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -26,13 +28,13 @@ Future<void> showPublishedContentSheet(
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
               child: Text(
-                'Published content — $name',
+                l10n.publishedTitle(name),
                 style: Theme.of(ctx).textTheme.titleMedium,
               ),
             ),
             ListTile(
               leading: const Icon(Icons.person_outline),
-              title: const Text('Profile'),
+              title: Text(l10n.peopleProfile),
               onTap: () {
                 Navigator.pop(ctx);
                 Navigator.of(context).push(
@@ -47,7 +49,7 @@ Future<void> showPublishedContentSheet(
             ),
             ListTile(
               leading: const Icon(Icons.article_outlined),
-              title: const Text('Blog'),
+              title: Text(l10n.peopleBlog),
               onTap: () {
                 Navigator.pop(ctx);
                 Navigator.of(context).push(
@@ -62,7 +64,7 @@ Future<void> showPublishedContentSheet(
             ),
             ListTile(
               leading: const Icon(Icons.photo_library_outlined),
-              title: const Text('PhotoWall'),
+              title: Text(l10n.publishedPhotoWall),
               onTap: () {
                 Navigator.pop(ctx);
                 Navigator.of(context).push(

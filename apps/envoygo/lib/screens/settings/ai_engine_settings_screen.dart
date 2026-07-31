@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../l10n/app_localizations.dart';
 import '../../ext_agent/ext_agent_presets.dart';
 import '../../providers/contact_provider.dart' show nodeServiceProvider;
 import '../../services/node_service_client.dart';
@@ -60,7 +61,7 @@ class _AiEngineSettingsScreenState
     if (client == null) {
       setState(() {
         _loading = false;
-        _error = 'Not connected to a home node';
+        _error = AppLocalizations.of(context).settingsNotConnectedNode;
       });
       return;
     }
@@ -126,13 +127,13 @@ class _AiEngineSettingsScreenState
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('AI Engine saved')),
+        SnackBar(content: Text(AppLocalizations.of(context).settingsAiEngineSaved)),
       );
       await _load();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Save failed: $e')),
+        SnackBar(content: Text(AppLocalizations.of(context).settingsSaveFailed('$e'))),
       );
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -141,14 +142,16 @@ class _AiEngineSettingsScreenState
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final active = _activeAgent;
     final install = getExtAgentInstallInfo(_activeExtAgentId);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('AI Engine'),
+        title: Text(l10n.meAiEngine),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
+            tooltip: l10n.commonRefresh,
             onPressed: _loading ? null : _load,
           ),
         ],
@@ -161,8 +164,7 @@ class _AiEngineSettingsScreenState
                   padding: const EdgeInsets.all(16),
                   children: [
                     Text(
-                      'Choose which external agent the home node forwards '
-                      'assistant turns to. Changes sync with the Social UI.',
+                      l10n.settingsAiEngineIntro,
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                     const SizedBox(height: 16),
@@ -181,9 +183,9 @@ class _AiEngineSettingsScreenState
                             padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
                             child: DropdownButtonFormField<String>(
                               value: _activeExtAgentId,
-                              decoration: const InputDecoration(
-                                labelText: 'External agent',
-                                border: OutlineInputBorder(),
+                              decoration: InputDecoration(
+                                labelText: l10n.settingsExternalAgent,
+                                border: const OutlineInputBorder(),
                               ),
                               items: _extAgents
                                   .map(
@@ -204,7 +206,7 @@ class _AiEngineSettingsScreenState
                           ),
                           if (active != null)
                             ListTile(
-                              title: const Text('Webhook URL'),
+                              title: Text(l10n.settingsWebhookUrl),
                               subtitle: Text(
                                 active['url']?.toString() ?? '',
                                 maxLines: 2,
@@ -212,7 +214,7 @@ class _AiEngineSettingsScreenState
                               ),
                             ),
                           ListTile(
-                            title: const Text('How to start'),
+                            title: Text(l10n.settingsHowToStart),
                             subtitle: Text(install.startHint),
                           ),
                           if (install.homepageUrl != null)
@@ -228,32 +230,26 @@ class _AiEngineSettingsScreenState
                                   openExternalUrl(install.homepageUrl!),
                             ),
                           if (install.builtIn)
-                            const ListTile(
-                              leading: Icon(Icons.check_circle_outline),
-                              title: Text('Built into the home node'),
-                              subtitle: Text(
-                                'No separate Ext Agent process required.',
-                              ),
+                            ListTile(
+                              leading: const Icon(Icons.check_circle_outline),
+                              title: Text(l10n.settingsBuiltIntoHome),
+                              subtitle: Text(l10n.settingsNoExtProcess),
                             ),
                           ListTile(
-                            title: const Text('Bridge listen port'),
+                            title: Text(l10n.settingsBridgePort),
                             subtitle: Text('$_bridgeListenPort'),
                           ),
                           SwitchListTile(
-                            title: const Text('Bridge enabled'),
-                            subtitle: const Text(
-                              'Forward assistant turns to the selected external agent.',
-                            ),
+                            title: Text(l10n.settingsBridgeEnabled),
+                            subtitle: Text(l10n.settingsBridgeHint),
                             value: _bridgeEnabled,
                             onChanged: (v) =>
                                 setState(() => _bridgeEnabled = v),
                           ),
                           const Divider(height: 1),
                           SwitchListTile(
-                            title: const Text('OpenClaw enabled'),
-                            subtitle: const Text(
-                              'Built-in OpenClaw gateway (EnvoyAI) on next node start.',
-                            ),
+                            title: Text(l10n.settingsOpenClawEnabled),
+                            subtitle: Text(l10n.settingsOpenClawHint),
                             value: _openclawEnabled,
                             onChanged: (v) =>
                                 setState(() => _openclawEnabled = v),
@@ -271,7 +267,7 @@ class _AiEngineSettingsScreenState
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Icon(Icons.save),
-                      label: const Text('Save'),
+                      label: Text(l10n.commonSave),
                     ),
                   ],
                 ),
@@ -294,17 +290,22 @@ class _StatusCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     if (status == null) {
-      return const Card(
+      return Card(
         child: ListTile(
-          leading: Icon(Icons.info_outline),
-          title: Text('OpenClaw status unavailable'),
+          leading: const Icon(Icons.info_outline),
+          title: Text(l10n.settingsOpenClawUnavailable),
         ),
       );
     }
     final enabled = status!['enabled'] == true;
     final running = status!['running'] == true;
     final url = status!['url']?.toString() ?? '';
+    final state = enabled ? l10n.settingsEnabled : l10n.settingsDisabled;
+    final runningSuffix = running
+        ? ' · ${l10n.settingsRunning}'
+        : (enabled ? ' · ${l10n.settingsNotRunning}' : '');
     return Card(
       child: ListTile(
         leading: Icon(
@@ -312,8 +313,7 @@ class _StatusCard extends StatelessWidget {
           color: running ? Colors.green : Colors.grey,
         ),
         title: Text(
-          'OpenClaw ${enabled ? "enabled" : "disabled"}'
-          '${running ? " · running" : (enabled ? " · not running" : "")}',
+          l10n.settingsOpenClawStatus('$state$runningSuffix'),
         ),
         subtitle: url.isNotEmpty
             ? Text(url, maxLines: 2, overflow: TextOverflow.ellipsis)
@@ -330,8 +330,11 @@ class _BridgeStatusCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final enabled = status['enabled'] == true;
     final url = status['agentUrl']?.toString() ?? '';
+    final state = enabled ? l10n.settingsEnabled : l10n.settingsDisabled;
+    final nameSuffix = activeName != null ? ' · $activeName' : '';
     return Card(
       child: ListTile(
         leading: Icon(
@@ -339,8 +342,7 @@ class _BridgeStatusCard extends StatelessWidget {
           color: enabled ? Colors.blue : Colors.grey,
         ),
         title: Text(
-          'Ext Agent ${enabled ? "enabled" : "disabled"}'
-          '${activeName != null ? " · $activeName" : ""}',
+          l10n.settingsExtAgentStatus('$state$nameSuffix'),
         ),
         subtitle: url.isNotEmpty
             ? Text(url, maxLines: 2, overflow: TextOverflow.ellipsis)
@@ -366,7 +368,10 @@ class _ErrorView extends StatelessWidget {
           const SizedBox(height: 12),
           Text(message, textAlign: TextAlign.center),
           const SizedBox(height: 16),
-          FilledButton(onPressed: onRetry, child: const Text('Retry')),
+          FilledButton(
+            onPressed: onRetry,
+            child: Text(AppLocalizations.of(context).commonRetry),
+          ),
         ],
       ),
     );

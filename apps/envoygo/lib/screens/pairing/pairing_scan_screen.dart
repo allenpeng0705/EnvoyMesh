@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/stored_node.dart';
 import '../../services/pairing_service.dart';
 import 'pairing_confirm_screen.dart';
@@ -54,7 +55,7 @@ class _PairingScanScreenState extends State<PairingScanScreen> {
     final data = PairingService.parsePairingUri(uri);
     if (data == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Invalid pairing QR code')),
+        SnackBar(content: Text(AppLocalizations.of(context).pairingInvalidQr)),
       );
       _hasScanned = false;
       return;
@@ -71,8 +72,9 @@ class _PairingScanScreenState extends State<PairingScanScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
-      appBar: AppBar(title: const Text('Pair with Node')),
+      appBar: AppBar(title: Text(l10n.pairingScanTitle)),
       body: Column(
         children: [
           // QR scanner view.
@@ -93,16 +95,16 @@ class _PairingScanScreenState extends State<PairingScanScreen> {
                 children: [
                   const SizedBox(height: 8),
                   Text(
-                    'Or paste pairing URI',
+                    l10n.pairingPasteUri,
                     style: Theme.of(context).textTheme.titleSmall,
                   ),
                   const SizedBox(height: 8),
                   TextField(
                     controller: _manualController,
-                    decoration: const InputDecoration(
-                      hintText: 'envoy://pair?... or envoy://invite?...',
-                      border: OutlineInputBorder(),
-                      prefixIcon: Icon(Icons.link),
+                    decoration: InputDecoration(
+                      hintText: l10n.pairingUriHint,
+                      border: const OutlineInputBorder(),
+                      prefixIcon: const Icon(Icons.link),
                     ),
                     onSubmitted: (value) {
                       _handleUri(value.trim());

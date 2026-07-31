@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../l10n/app_localizations.dart';
 import '../providers/contact_provider.dart';
 
 /// Surfaces mirrored from `@envoymesh/api` AUTHOR_CONTENT_SURFACES.
@@ -23,20 +24,33 @@ List<String> defaultTonesForSurface(String surface) {
   }
 }
 
-String _sheetTitle(String surface) {
+String _sheetTitle(AppLocalizations l10n, String surface) {
   switch (surface) {
     case 'bio':
-      return 'Draft bio';
+      return l10n.aiDraftBio;
     case 'blog':
-      return 'Draft blog post';
+      return l10n.aiDraftBlog;
     case 'section':
-      return 'Draft section';
+      return l10n.aiDraftSection;
     case 'caption':
-      return 'Draft caption';
+      return l10n.aiDraftCaption;
     case 'feed':
-      return 'Draft Feed update';
+      return l10n.aiDraftFeed;
     default:
-      return 'Draft with AI';
+      return l10n.aiDraftButton;
+  }
+}
+
+String _modeLabel(AppLocalizations l10n, String mode) {
+  switch (mode) {
+    case 'rewrite':
+      return l10n.aiDraftRewrite;
+    case 'expand':
+      return l10n.aiDraftExpand;
+    case 'shorten':
+      return l10n.aiDraftShorten;
+    default:
+      return mode.isEmpty ? mode : '${mode[0].toUpperCase()}${mode.substring(1)}';
   }
 }
 
@@ -126,6 +140,7 @@ class _AuthorAiDraftButtonState extends ConsumerState<AuthorAiDraftButton> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final l10n = AppLocalizations.of(context);
     final enabled = _aiReady && !widget.disabled && !_loadingConfig;
     return TextButton.icon(
       onPressed: enabled ? _openSheet : null,
@@ -135,7 +150,7 @@ class _AuthorAiDraftButtonState extends ConsumerState<AuthorAiDraftButton> {
         color: enabled ? scheme.primary : scheme.onSurface.withValues(alpha: 0.35),
       ),
       label: Text(
-        'Draft with AI',
+        l10n.aiDraftButton,
         style: TextStyle(
           fontWeight: FontWeight.w600,
           color: enabled ? scheme.primary : scheme.onSurface.withValues(alpha: 0.35),
@@ -187,8 +202,9 @@ class _AuthorAiDraftSheetState extends ConsumerState<_AuthorAiDraftSheet> {
 
   Future<void> _generate() async {
     final client = ref.read(nodeServiceProvider);
+    final l10n = AppLocalizations.of(context);
     if (client == null) {
-      setState(() => _error = 'Not connected to home node');
+      setState(() => _error = l10n.commonNotConnectedHome);
       return;
     }
     setState(() {
@@ -212,14 +228,14 @@ class _AuthorAiDraftSheetState extends ConsumerState<_AuthorAiDraftSheet> {
         final reason = (result['reason'] as String?) ?? 'failed';
         setState(() {
           _error = reason == 'no_model_providers'
-              ? 'No AI model configured. Open Settings → AI on the home node.'
-              : 'Could not draft ($reason)';
+              ? l10n.aiDraftNoModel
+              : l10n.aiDraftFailed(reason);
         });
         return;
       }
       final text = (result['text'] as String?)?.trim() ?? '';
       if (text.isEmpty) {
-        setState(() => _error = 'Empty draft from model');
+        setState(() => _error = l10n.aiDraftEmpty);
         return;
       }
       Navigator.of(context).pop(text);
@@ -234,6 +250,7 @@ class _AuthorAiDraftSheetState extends ConsumerState<_AuthorAiDraftSheet> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final l10n = AppLocalizations.of(context);
     final tones = defaultTonesForSurface(widget.surface);
     final hasExisting = widget.existingText.trim().isNotEmpty;
     final bottom = MediaQuery.viewInsetsOf(context).bottom;
@@ -246,7 +263,7 @@ class _AuthorAiDraftSheetState extends ConsumerState<_AuthorAiDraftSheet> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              _sheetTitle(widget.surface),
+              _sheetTitle(l10n, widget.surface),
               style: Theme.of(context).textTheme.titleLarge?.copyWith(
                     fontWeight: FontWeight.w800,
                   ),
@@ -256,17 +273,17 @@ class _AuthorAiDraftSheetState extends ConsumerState<_AuthorAiDraftSheet> {
               controller: _hintCtrl,
               enabled: !_busy,
               maxLines: 3,
-              decoration: const InputDecoration(
-                labelText: 'What should it emphasize? (optional)',
-                hintText: 'e.g. weekend hike with friends',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                labelText: l10n.aiDraftEmphasize,
+                hintText: l10n.aiDraftEmphasizeHint,
+                border: const OutlineInputBorder(),
                 alignLabelWithHint: true,
               ),
             ),
             if (hasExisting) ...[
               const SizedBox(height: 12),
               Text(
-                'Mode',
+                l10n.aiDraftMode,
                 style: Theme.of(context).textTheme.labelLarge,
               ),
               const SizedBox(height: 6),
@@ -275,7 +292,7 @@ class _AuthorAiDraftSheetState extends ConsumerState<_AuthorAiDraftSheet> {
                 children: [
                   for (final m in const ['rewrite', 'expand', 'shorten'])
                     ChoiceChip(
-                      label: Text(m[0].toUpperCase() + m.substring(1)),
+                      label: Text(_modeLabel(l10n, m)),
                       selected: _mode == m,
                       onSelected: _busy
                           ? null
@@ -286,7 +303,7 @@ class _AuthorAiDraftSheetState extends ConsumerState<_AuthorAiDraftSheet> {
             ],
             const SizedBox(height: 12),
             Text(
-              'Tone',
+              l10n.aiDraftTone,
               style: Theme.of(context).textTheme.labelLarge,
             ),
             const SizedBox(height: 6),
@@ -313,12 +330,14 @@ class _AuthorAiDraftSheetState extends ConsumerState<_AuthorAiDraftSheet> {
               children: [
                 TextButton(
                   onPressed: _busy ? null : () => Navigator.pop(context),
-                  child: const Text('Cancel'),
+                  child: Text(l10n.commonCancel),
                 ),
                 const Spacer(),
                 FilledButton(
                   onPressed: _busy ? null : _generate,
-                  child: Text(_busy ? 'Generating…' : 'Generate'),
+                  child: Text(
+                    _busy ? l10n.commonGenerating : l10n.aiDraftGenerate,
+                  ),
                 ),
               ],
             ),

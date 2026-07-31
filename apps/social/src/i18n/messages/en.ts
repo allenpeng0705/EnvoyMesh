@@ -80,7 +80,7 @@ export const en = {
   },
   pairing: {
     title: "Pair EnvoyGo",
-    subtitle: "Scan with the EnvoyGo mobile app to connect it to this home node.",
+    subtitle: "Scan with the EnvoyGo mobile app to connect it to this home node as a full owner device.",
     modalAria: "Pairing QR code",
     closeAria: "Close pairing dialog",
     generating: "Generating…",
@@ -88,6 +88,10 @@ export const en = {
     scanToPair: "Open the EnvoyGo app and scan this code.",
     copyUri: "Copy URI",
     copied: "Copied",
+    familyHint:
+      "Inviting Mom or Dad? Use a family invite — not this code (this one grants full owner access).",
+    showFamilyInvite: "Show family invite QR",
+    familyInviteBackAria: "Back to owner pairing QR",
   },
   common: {
     back: "← Back",
@@ -198,7 +202,7 @@ export const en = {
       inviteQrHint: "Have Mom or Dad scan this in EnvoyGo. This is not the owner pairing QR — that one grants full access.",
       ownerPairNote: "Tip: the top-bar pairing QR is for your own second phone (full owner). Family members must use this invite QR.",
       profilesTitle: "Profiles",
-      profilesHint: "Each phone locks to one profile at pairing. Rename or deactivate anytime.",
+      profilesHint: "Each phone locks to one profile at pairing. Rename or deactivate anytime. Wipe erases their chats and AI history.",
       loading: "Loading profiles…",
       ownerBadge: "Owner",
       inactiveBadge: "Inactive",
@@ -210,6 +214,15 @@ export const en = {
       cancel: "Cancel",
       deactivate: "Deactivate",
       reactivate: "Reactivate",
+      remove: "Remove…",
+      removeTitle: "Remove {name}?",
+      removeMessage:
+        "Deactivate keeps their chats and AI history (they appear offline). Wipe permanently erases profile-scoped data on this home node.",
+      wipe: "Wipe",
+      wipeTitle: "Wipe {name} permanently?",
+      wipeMessage:
+        "This deletes the profile and erases their EnvoyAI chats, family DMs, bots, sessions, and push tokens. Recreating the same name will not restore that history.",
+      wipeConfirm: "Wipe everything",
       delete: "Delete",
       deleteTitle: "Delete family profile?",
       deleteMessage: "Remove {name}? Their chat history stays on disk but they can no longer connect.",
@@ -227,6 +240,7 @@ export const en = {
       inviteQrAlt: "Family invite QR code",
       inviteScanHint: "Open EnvoyGo → Pair → scan this code (not the owner pairing QR).",
       inviteExpires: "Expires {at}",
+      inviteCloseAria: "Close family invite",
       copyUri: "Copy invite link",
       copied: "Copied",
     },

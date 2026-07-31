@@ -8,6 +8,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../l10n/app_localizations.dart';
+
 import '../../providers/contact_provider.dart'
     show contactProvider, nodeServiceProvider;
 import '../../providers/node_provider.dart' show nodeProvider;
@@ -115,7 +117,7 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
     final client = ref.read(nodeServiceProvider);
     if (client == null) {
       setState(() {
-        _error = 'Not connected to home node — pair and reconnect first.';
+        _error = AppLocalizations.of(context).browserPairFirst;
         _loading = false;
       });
       return;
@@ -181,7 +183,7 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
           if (!ok) {
             setState(() {
               _loading = false;
-              _error = 'Content integrity check failed — refused to render';
+              _error = AppLocalizations.of(context).browserIntegrityFailed;
               _body = null;
             });
             return;
@@ -207,9 +209,11 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
           _isText = result.isText;
           _etag = result.etag;
           _error = null;
+          final l10n = AppLocalizations.of(context);
+          final bytesLabel = l10n.browserBytesCount(result.byteLength ?? 0);
           _statusHint = result.fromCache
-              ? 'Cached — ${result.contentType}, ${result.byteLength ?? 0} bytes'
-              : 'Loaded — ${result.contentType}, ${result.byteLength ?? 0} bytes';
+              ? '${l10n.browserCached} — ${result.contentType}, $bytesLabel'
+              : '${l10n.browserLoaded} — ${result.contentType}, $bytesLabel';
           if (pushHistory) _pushHistory(parsed.raw);
         });
       } else if (result.status == 'not_found') {
@@ -241,7 +245,7 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
             _isText = true;
             _etag = null;
             _statusHint =
-                'Not published yet — showing a local placeholder page';
+                AppLocalizations.of(context).browserNotPublished;
             if (pushHistory) _pushHistory(parsed.raw);
           });
         } else {
@@ -249,9 +253,9 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
             _loading = false;
             _error = remote
                 ? (surface != null
-                    ? 'Not published yet'
-                    : 'Content not found')
-                : 'Not found';
+                    ? AppLocalizations.of(context).browserNotPublished
+                    : AppLocalizations.of(context).browserNotFound)
+                : AppLocalizations.of(context).browserNotFound;
             _body = null;
             _statusHint = null;
           });
@@ -259,7 +263,7 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
       } else if (result.status == 'forbidden') {
         setState(() {
           _loading = false;
-          _error = 'Access denied';
+          _error = AppLocalizations.of(context).browserAccessDenied;
           _body = null;
           _statusHint = null;
         });
@@ -316,9 +320,10 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
         _urlController.text.trim().isNotEmpty &&
         isEnvoyContentUrl(_urlController.text);
 
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Browser'),
+        title: Text(l10n.browserTitle),
       ),
       body: Column(
         children: [
@@ -327,17 +332,17 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
             child: Row(
               children: [
                 IconButton(
-                  tooltip: 'Back',
+                  tooltip: l10n.browserBack,
                   onPressed: _canGoBack ? _goBack : null,
                   icon: const Icon(Icons.arrow_back),
                 ),
                 IconButton(
-                  tooltip: 'Forward',
+                  tooltip: l10n.browserForward,
                   onPressed: _canGoForward ? _goForward : null,
                   icon: const Icon(Icons.arrow_forward),
                 ),
                 IconButton(
-                  tooltip: 'Reload',
+                  tooltip: l10n.browserReload,
                   onPressed:
                       !_loading && (canGo || _body != null) ? _reload : null,
                   icon: const Icon(Icons.refresh),
@@ -360,7 +365,7 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
                 const SizedBox(width: 4),
                 FilledButton(
                   onPressed: canGo ? () => _navigate(_urlController.text) : null,
-                  child: const Text('Go'),
+                  child: Text(l10n.browserGo),
                 ),
               ],
             ),
@@ -404,8 +409,7 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
     if (_body == null || _mimeType == null) {
       return Center(
         child: Text(
-          'Enter an envoy:// URL to browse content served by a bonded contact.\n'
-          'EnvoyGo fetches via your home node.',
+          AppLocalizations.of(context).browserHint,
           textAlign: TextAlign.center,
           style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                 color: Colors.grey,
@@ -463,16 +467,15 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
           child: Center(child: Image.memory(bytes)),
         );
       } catch (e) {
-        return Center(child: Text('Failed to decode image: $e'));
+        return Center(child: Text(AppLocalizations.of(context).browserDecodeImageFailed('$e')));
       }
     }
 
     if (mime == 'application/pdf') {
+      final msg = AppLocalizations.of(context).browserPdfLoaded(_body!.length);
       return Center(
         child: Text(
-          'PDF loaded (${_body!.length} base64 chars'
-          '${_etag != null ? ', etag=$_etag' : ''}).\n'
-          'Open on desktop Social Browser for inline PDF preview.',
+          _etag != null ? '$msg, etag=$_etag' : msg,
           textAlign: TextAlign.center,
         ),
       );
@@ -480,7 +483,7 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
 
     return Center(
       child: Text(
-        'Unsupported type: $mime (${_body!.length} chars)',
+        AppLocalizations.of(context).browserUnsupportedType(mime),
         textAlign: TextAlign.center,
       ),
     );
@@ -515,7 +518,7 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
       final url = match.group(2)!;
       if (!seen.add(url)) continue;
       final alt = (match.group(1) ?? '').trim();
-      final title = alt.isEmpty ? 'Photo' : alt;
+      final title = alt.isEmpty ? AppLocalizations.of(context).browserPhoto : alt;
       final start = match.end;
       final end = i + 1 < matches.length ? matches[i + 1].start : normalized.length;
       final block = normalized.substring(start, end);
@@ -524,7 +527,7 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
     }
     if (photos.isEmpty) return null;
     final heading = RegExp(r'^#\s+(.+)$', multiLine: true).firstMatch(body);
-    return (title: heading?.group(1)?.trim() ?? 'Photos', photos: photos);
+    return (title: heading?.group(1)?.trim() ?? AppLocalizations.of(context).browserPhotos, photos: photos);
   }
 
   String? _captionFromPhotoWallBlock(String block, String title) {
@@ -595,14 +598,14 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
       final url = match.group(1)!;
       if (!seen.add(url)) continue;
       final alt = _decodeHtml(match.group(2)?.trim() ?? '');
-      photos.add((title: alt.isEmpty ? 'Photo' : alt, url: url, caption: null));
+      photos.add((title: alt.isEmpty ? AppLocalizations.of(context).browserPhoto : alt, url: url, caption: null));
     }
     if (photos.isEmpty) {
       for (final match in _envoyImageRe.allMatches(html)) {
         final url = match.group(2)!;
         if (url == avatarUrl || !seen.add(url)) continue;
         final alt = (match.group(1) ?? '').trim();
-        photos.add((title: alt.isEmpty ? 'Photo' : alt, url: url, caption: null));
+        photos.add((title: alt.isEmpty ? AppLocalizations.of(context).browserPhoto : alt, url: url, caption: null));
       }
     }
 
@@ -743,19 +746,32 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
             ),
           ),
         ),
-        SliverToBoxAdapter(child: _chipSection('Interests', portal.interests)),
-        SliverToBoxAdapter(child: _chipSection('Knowledge', portal.knowledge)),
         SliverToBoxAdapter(
-          child: _chipSection('Capabilities', portal.capabilities),
+          child: _chipSection(
+            AppLocalizations.of(context).browserInterests,
+            portal.interests,
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: _chipSection(
+            AppLocalizations.of(context).browserKnowledge,
+            portal.knowledge,
+          ),
+        ),
+        SliverToBoxAdapter(
+          child: _chipSection(
+            AppLocalizations.of(context).browserCapabilities,
+            portal.capabilities,
+          ),
         ),
         if (portal.photos.isNotEmpty)
           ...[
-            const SliverPadding(
-              padding: EdgeInsets.fromLTRB(16, 20, 16, 8),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 20, 16, 8),
               sliver: SliverToBoxAdapter(
                 child: Text(
-                  'Photos',
-                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                  AppLocalizations.of(context).browserPhotos,
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
                 ),
               ),
             ),
@@ -795,12 +811,12 @@ class _BrowserScreenState extends ConsumerState<BrowserScreen> {
             ),
           ]
         else
-          const SliverPadding(
-            padding: EdgeInsets.all(16),
+          SliverPadding(
+            padding: const EdgeInsets.all(16),
             sliver: SliverToBoxAdapter(
               child: Text(
-                'No photos yet.',
-                style: TextStyle(fontStyle: FontStyle.italic, color: Colors.grey),
+                AppLocalizations.of(context).browserNoPhotos,
+                style: const TextStyle(fontStyle: FontStyle.italic, color: Colors.grey),
               ),
             ),
           ),

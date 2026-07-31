@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import '../providers/chat_provider.dart';
-import '../providers/content_engage_provider.dart';
-import '../providers/feed_notify_provider.dart';
-import '../providers/node_provider.dart';
-import '../widgets/connection_indicator.dart';
-import '../widgets/incoming_call_overlay.dart';
+import '../../l10n/app_localizations.dart';
+import '../../providers/chat_provider.dart';
+import '../../providers/content_engage_provider.dart';
+import '../../providers/feed_notify_provider.dart';
+import '../../providers/node_provider.dart';
+import '../../widgets/connection_indicator.dart';
+import '../../widgets/incoming_call_overlay.dart';
 import 'chat/chat_list_screen.dart';
 import 'content/content_screen.dart';
 import 'inbox/inbox_screen.dart';
@@ -20,6 +21,7 @@ class HomeScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
     final chatState = ref.watch(chatProvider);
     final callProviderRef = ref.watch(callProvider);
     final engage = ref.watch(contentEngageProvider);
@@ -30,8 +32,6 @@ class HomeScreen extends ConsumerWidget {
     final tab = chatState.selectedTab.clamp(0, maxTab);
     final viewingContent = isOwner && tab == 2;
     final viewingFeed = viewingContent && contentSurface == 0;
-    // While Content → Feed/Blog is open, don't badge Like/Comment for that surface.
-    // While on Feed, also hide peer feed.notify (don't auto-mark them read).
     final engageBadge = engage.visibleTotalCount(
       viewingContent: viewingContent,
       surfaceIndex: contentSurface,
@@ -39,7 +39,6 @@ class HomeScreen extends ConsumerWidget {
     final feedNotifyBadge = viewingFeed ? 0 : feedNotify.unread.length;
     final contentBadge = engageBadge + feedNotifyBadge;
 
-    // Family stack: tab 0 = Chats, tab 1 = Me.
     final bodyIndex = isOwner ? tab : (tab == 0 ? 0 : 1);
 
     return Scaffold(
@@ -58,13 +57,10 @@ class HomeScreen extends ConsumerWidget {
               ),
             ),
             const SizedBox(width: 10),
-            const Text('EnvoyGo'),
+            Text(l10n.appTitle),
           ],
         ),
-        actions: const [
-          ConnectionIndicator(),
-          SizedBox(width: 12),
-        ],
+        actions: const [ConnectionIndicator(), SizedBox(width: 12)],
       ),
       body: Stack(
         children: [
@@ -77,10 +73,7 @@ class HomeScreen extends ConsumerWidget {
                     ContentScreen(),
                     MeScreen(),
                   ]
-                : const [
-                    ChatListScreen(),
-                    MeScreen(),
-                  ],
+                : const [ChatListScreen(), MeScreen()],
           ),
           Positioned.fill(
             child: IncomingCallOverlay(callProvider: callProviderRef),
@@ -91,23 +84,22 @@ class HomeScreen extends ConsumerWidget {
         selectedIndex: tab,
         onDestinationSelected: (index) {
           ref.read(chatProvider.notifier).selectTab(index);
-          // Opening Content clears engagement + feed.notify (folder-open).
           if (isOwner && index == 2) {
             ref.read(contentEngageProvider.notifier).dismiss(surface: 'all');
             ref.read(feedNotifyProvider.notifier).dismissAll();
           }
         },
         destinations: [
-          const NavigationDestination(
-            icon: Icon(Icons.chat_bubble_outline),
-            selectedIcon: Icon(Icons.chat_bubble),
-            label: 'Chats',
+          NavigationDestination(
+            icon: const Icon(Icons.chat_bubble_outline),
+            selectedIcon: const Icon(Icons.chat_bubble),
+            label: l10n.navChats,
           ),
           if (isOwner) ...[
-            const NavigationDestination(
-              icon: Icon(Icons.inbox_outlined),
-              selectedIcon: Icon(Icons.inbox),
-              label: 'Inbox',
+            NavigationDestination(
+              icon: const Icon(Icons.inbox_outlined),
+              selectedIcon: const Icon(Icons.inbox),
+              label: l10n.navInbox,
             ),
             NavigationDestination(
               icon: Badge(
@@ -120,13 +112,13 @@ class HomeScreen extends ConsumerWidget {
                 label: Text(contentBadge > 99 ? '99+' : '$contentBadge'),
                 child: const Icon(Icons.language),
               ),
-              label: 'Content',
+              label: l10n.navContent,
             ),
           ],
-          const NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person),
-            label: 'Me',
+          NavigationDestination(
+            icon: const Icon(Icons.person_outline),
+            selectedIcon: const Icon(Icons.person),
+            label: l10n.navMe,
           ),
         ],
       ),

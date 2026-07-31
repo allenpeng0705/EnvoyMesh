@@ -19,6 +19,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../l10n/app_localizations.dart';
 import '../providers/node_provider.dart';
 import '../services/node_service_client.dart';
 
@@ -86,21 +87,22 @@ class _AiEngineSectionState extends ConsumerState<AiEngineSection> {
     }
   }
 
-  String _modeLabel(AiEngineMode mode) {
+  String _modeLabel(AiEngineMode mode, AppLocalizations l10n) {
     switch (mode) {
       case AiEngineMode.both:
-        return 'Built-in + Ext';
+        return l10n.aiEngineModeBoth;
       case AiEngineMode.openclawOnly:
-        return 'Built-in only';
+        return l10n.aiEngineModeBuiltIn;
       case AiEngineMode.extOnly:
-        return 'Ext only';
+        return l10n.aiEngineModeExt;
       case AiEngineMode.off:
-        return 'None';
+        return l10n.aiEngineModeNone;
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final bridgeEnabled = _bridge?['enabled'] == true;
     final openclawEnabled = _openClaw?['enabled'] == true;
     final openclawRunning = _openClaw?['running'] == true;
@@ -118,36 +120,36 @@ class _AiEngineSectionState extends ConsumerState<AiEngineSection> {
             Row(
               children: [
                 Expanded(
-                  child: Text('AI Engine',
+                  child: Text(l10n.meAiEngine,
                       style: Theme.of(context).textTheme.titleSmall),
                 ),
                 IconButton(
                   icon: const Icon(Icons.refresh, size: 18),
-                  tooltip: 'Refresh',
+                  tooltip: l10n.commonRefresh,
                   onPressed: _loading ? null : _refresh,
                 ),
               ],
             ),
             const SizedBox(height: 4),
-            Text(_modeLabel(mode),
+            Text(_modeLabel(mode, l10n),
                 style: Theme.of(context).textTheme.bodySmall),
             const SizedBox(height: 8),
             _EngineRow(
-              label: 'Built-in OpenClaw',
+              label: l10n.aiEngineBuiltInOpenClaw,
               enabled: openclawEnabled,
               running: openclawRunning,
               readOnly: true,
             ),
             const SizedBox(height: 4),
             _EngineRow(
-              label: 'External Agent Bridge',
+              label: l10n.aiEngineExtBridge,
               enabled: bridgeEnabled,
               running: _bridge != null && (_bridge!['agentPeerId'] as String? ?? '').isNotEmpty,
               readOnly: true,
             ),
             const SizedBox(height: 8),
             Text(
-              'Both blocks are read-only on mobile. Configure on the home node (Settings → AI → AI Engine). To disable Built-in OpenClaw, edit node-config.json on the home node and restart it.',
+              l10n.aiEngineReadonlyHint,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: Colors.grey,
                     fontSize: 11,
@@ -169,12 +171,13 @@ class _EngineRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final color = !enabled
         ? Colors.grey
         : (running ? Colors.green : Colors.orange);
     final statusText = !enabled
-        ? 'Disabled'
-        : (running ? 'Running' : 'Configured (not running)');
+        ? l10n.aiEngineDisabled
+        : (running ? l10n.aiEngineRunning : l10n.aiEngineConfigured);
     return Row(
       children: [
         Icon(Icons.circle, size: 10, color: color),

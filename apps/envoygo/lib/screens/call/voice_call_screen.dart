@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import '../../providers/call_provider.dart';
+import '../../l10n/app_localizations.dart';
 import '../../providers/node_provider.dart';
 
 /// VoiceCallScreen — Phase 42F native Flutter voice call screen.
@@ -112,6 +113,7 @@ class _VoiceCallScreenState extends ConsumerState<VoiceCallScreen> {
   Widget build(BuildContext context) {
     final callState = ref.watch(callProvider).state;
     final colorScheme = Theme.of(context).colorScheme;
+    final l10n = AppLocalizations.of(context);
 
     // Bind the remote stream onto the renderer when the provider
     // signals a new one (typically after WebRTC negotiation completes).
@@ -119,11 +121,11 @@ class _VoiceCallScreenState extends ConsumerState<VoiceCallScreen> {
       _bindRemoteStreamIfNeeded(callState.remoteStream);
     }
 
-    final peerName = callState.peerDisplayName ?? 'Unknown';
+    final peerName = callState.peerDisplayName ?? l10n.commonUnknown;
     final connectionLabel = switch (callState.connectionState) {
-      'connected' => 'Connected',
-      'connecting' => 'Connecting…',
-      _ => 'Disconnected',
+      'connected' => l10n.callConnected,
+      'connecting' => l10n.callConnecting,
+      _ => l10n.callDisconnected,
     };
     final durationLabel = callState.isActive
         ? _formatDuration(_elapsed)
@@ -135,7 +137,7 @@ class _VoiceCallScreenState extends ConsumerState<VoiceCallScreen> {
         title: Text(peerName),
         leading: IconButton(
           icon: const Icon(Icons.expand_more),
-          tooltip: 'Hide',
+          tooltip: l10n.commonHide,
           onPressed: () => Navigator.of(context).maybePop(),
         ),
         actions: [

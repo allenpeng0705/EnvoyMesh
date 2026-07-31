@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../models/chat_thread.dart';
+import '../utils/localized_labels.dart';
 import 'profile_avatar.dart';
 
 /// Thread tile for the unified chat list.
@@ -19,22 +21,28 @@ class ThreadTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
+    final title = localizeThreadTitle(
+      l10n,
+      displayName: thread.displayName,
+      type: thread.type,
+    );
 
     return ListTile(
-      leading: _threadLeading(thread),
+      leading: _threadLeading(thread, title),
       title: Row(
         children: [
           Expanded(
             child: Text(
-              thread.displayName,
+              title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
           ),
           if (thread.lastMessageAt != null)
             Text(
-              _formatTime(thread.lastMessageAt!),
+              _formatTime(thread.lastMessageAt!, l10n),
               style: Theme.of(context).textTheme.bodySmall,
             ),
         ],
@@ -49,11 +57,7 @@ class ThreadTile extends StatelessWidget {
             ? preview
             : (bio != null && bio.isNotEmpty ? bio : null);
         if (text == null) return null;
-        return Text(
-          text,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-        );
+        return Text(text, maxLines: 1, overflow: TextOverflow.ellipsis);
       }(),
       trailing: (() {
         final hasAction = trailingAction != null;
@@ -81,7 +85,7 @@ class ThreadTile extends StatelessWidget {
     );
   }
 
-  Widget _threadLeading(ChatThread thread) {
+  Widget _threadLeading(ChatThread thread, String localizedTitle) {
     switch (thread.type) {
       case ChatThreadType.envoyai:
         return ClipOval(
@@ -96,7 +100,7 @@ class ThreadTile extends StatelessWidget {
       case ChatThreadType.direct:
         return ProfileAvatar(
           ownerId: thread.contactOwnerId,
-          displayName: thread.displayName,
+          displayName: localizedTitle,
           radius: _avatarRadius,
           fallbackIcon: Icons.person,
         );
@@ -105,7 +109,7 @@ class ThreadTile extends StatelessWidget {
           radius: _avatarRadius,
           backgroundColor: _parseBotColor(thread.avatarColor),
           child: Text(
-            _botInitial(thread.displayName),
+            _botInitial(localizedTitle),
             style: const TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.w700,
@@ -128,7 +132,7 @@ class ThreadTile extends StatelessWidget {
           radius: _avatarRadius,
           backgroundColor: _parseBotColor(thread.avatarColor),
           child: Text(
-            _botInitial(thread.displayName),
+            _botInitial(localizedTitle),
             style: const TextStyle(
               color: Colors.white,
               fontWeight: FontWeight.w700,
@@ -165,12 +169,12 @@ class ThreadTile extends StatelessWidget {
     return trimmed[0].toUpperCase();
   }
 
-  String _formatTime(DateTime time) {
+  String _formatTime(DateTime time, AppLocalizations l10n) {
     final now = DateTime.now();
     final diff = now.difference(time);
-    if (diff.inMinutes < 60) return '${diff.inMinutes}m';
-    if (diff.inHours < 24) return '${diff.inHours}h';
-    if (diff.inDays < 7) return '${diff.inDays}d';
+    if (diff.inMinutes < 60) return l10n.timeMinutesShort(diff.inMinutes);
+    if (diff.inHours < 24) return l10n.timeHoursShort(diff.inHours);
+    if (diff.inDays < 7) return l10n.timeDaysShort(diff.inDays);
     return '${time.month}/${time.day}';
   }
 }

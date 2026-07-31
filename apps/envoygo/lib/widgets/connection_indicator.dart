@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../l10n/app_localizations.dart';
 import '../providers/node_provider.dart';
 
 /// Returns true if the transport avoids a relay server.
@@ -12,37 +13,43 @@ bool isDirectTransport(String? transport) {
 }
 
 /// Returns a human-readable label for the transport type.
-String transportTypeLabel(String? transport) {
-  if (transport == null) return 'Unknown';
-  if (transport == 'lan') return 'LAN (Direct)';
-  if (transport == 'public') return 'Public IP (Direct)';
+String transportTypeLabel(String? transport, AppLocalizations l10n) {
+  if (transport == null) return l10n.commonUnknown;
+  if (transport == 'lan') return l10n.connLanDirect;
+  if (transport == 'public') return l10n.connPublicDirect;
   if (transport.startsWith('p2p-')) {
     // The p2p-* candidate name tells us which relay/base was used.
     // The actual DHT vs circuit path is internal to _createLibp2pTransport.
-    return 'P2P (${transport.substring(4)})';
+    return l10n.connP2pDetail(transport.substring(4));
   }
-  if (transport == 'relay' || transport == 'community-relay') return 'Relay WebSocket';
-  if (transport == 'bootstrap') return 'Bootstrap';
+  if (transport == 'relay' || transport == 'community-relay') {
+    return l10n.connRelayWs;
+  }
+  if (transport == 'bootstrap') return l10n.connBootstrap;
   return transport;
 }
 
 /// Determines the connection status badge for display.
-(String label, Color color) connectionBadge(String? transport, bool hasUpnpAddr) {
-  if (transport == null) return ('Offline', Colors.grey);
+(String label, Color color) connectionBadge(
+  String? transport,
+  bool hasUpnpAddr,
+  AppLocalizations l10n,
+) {
+  if (transport == null) return (l10n.connOffline, Colors.grey);
   if (isDirectTransport(transport)) {
-    return ('Direct', Colors.green);
+    return (l10n.connDirect, Colors.green);
   }
   // p2p-* transport (libp2p DHT or circuit relay): this IS P2P — data flows
   // end-to-end encrypted between mobile and home, relay only relays bytes.
   if (transport.startsWith('p2p-')) {
-    return ('P2P', Colors.green);
+    return (l10n.connP2p, Colors.green);
   }
   // Relay WebSocket: the relay server is in the data path. UPnP means the home
   // CAN dial us back directly in the future, but the current session is relay.
   if (hasUpnpAddr) {
-    return ('Relay', Colors.orange);
+    return (l10n.connRelay, Colors.orange);
   }
-  return ('Relay', Colors.orange);
+  return (l10n.connRelay, Colors.orange);
 }
 
 /// Connection status indicator in the app bar.
@@ -52,6 +59,7 @@ class ConnectionIndicator extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
     final nodeState = ref.watch(nodeProvider);
 
     IconData icon;
@@ -64,29 +72,35 @@ class ConnectionIndicator extends ConsumerWidget {
       case NodeConnectionState.connected:
         icon = Icons.cloud_done;
         final hasUpnp = nodeState.upnpAdvertisedAddr != null;
-        (badgeLabel, badgeColor) = connectionBadge(nodeState.activeTransport, hasUpnp);
+        (badgeLabel, badgeColor) = connectionBadge(
+          nodeState.activeTransport,
+          hasUpnp,
+          l10n,
+        );
         color = Colors.green;
         if (isDirectTransport(nodeState.activeTransport)) {
-          tooltip = 'Direct connection';
+          tooltip = l10n.connTooltipDirect;
         } else if (nodeState.activeTransport?.startsWith('p2p-') ?? false) {
-          tooltip = 'P2P connection via ${transportTypeLabel(nodeState.activeTransport)}';
+          tooltip = l10n.connTooltipP2p;
         } else if (hasUpnp) {
-          tooltip = 'Relay connection — home can dial you directly (${nodeState.upnpAdvertisedAddr})';
+          tooltip = l10n.connTooltipRelay;
         } else {
-          tooltip = 'Connected via ${transportTypeLabel(nodeState.activeTransport)}';
+          tooltip = l10n.connTooltipConnectedVia(
+            transportTypeLabel(nodeState.activeTransport, l10n),
+          );
         }
       case NodeConnectionState.connecting:
         icon = Icons.cloud_sync;
         color = Colors.orange;
-        tooltip = 'Connecting...';
+        tooltip = l10n.connTooltipConnecting;
       case NodeConnectionState.error:
         icon = Icons.cloud_off;
         color = Colors.red;
-        tooltip = nodeState.errorMessage ?? 'Connection error';
+        tooltip = nodeState.errorMessage ?? l10n.connTooltipError;
       case NodeConnectionState.disconnected:
         icon = Icons.cloud_outlined;
         color = Colors.grey;
-        tooltip = 'Not connected';
+        tooltip = l10n.connTooltipOffline;
     }
 
     return Tooltip(

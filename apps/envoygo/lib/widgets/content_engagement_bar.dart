@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../l10n/app_localizations.dart';
 import '../models/contact.dart';
 import '../models/web_content.dart';
 import '../providers/contact_provider.dart' show contactProvider, nodeServiceProvider;
@@ -91,9 +92,11 @@ class _ContentEngagementBarState extends ConsumerState<ContentEngagementBar> {
     return m?.group(1);
   }
 
-  String _nameFor(String ownerId, List<Contact> bonds) {
+  String _nameFor(BuildContext context, String ownerId, List<Contact> bonds) {
     final self = _selfOwnerId;
-    if (self != null && ownerId == self) return 'You';
+    if (self != null && ownerId == self) {
+      return AppLocalizations.of(context).commonYou;
+    }
     for (final c in bonds) {
       if (c.ownerId == ownerId) {
         final name = c.displayName?.trim();
@@ -200,6 +203,7 @@ class _ContentEngagementBarState extends ConsumerState<ContentEngagementBar> {
       Offset.zero & overlay.size,
     );
     final starred = _summary?.starredByMe ?? false;
+    final l10n = AppLocalizations.of(context);
     final choice = await showMenu<String>(
       context: buttonContext,
       position: position,
@@ -214,17 +218,17 @@ class _ContentEngagementBarState extends ConsumerState<ContentEngagementBar> {
                 color: starred ? const Color(0xFFE86A6A) : null,
               ),
               const SizedBox(width: 10),
-              Text(starred ? 'Unlike' : 'Like'),
+              Text(starred ? l10n.engagementUnlike : l10n.engagementLike),
             ],
           ),
         ),
-        const PopupMenuItem(
+        PopupMenuItem(
           value: 'comment',
           child: Row(
             children: [
-              Icon(Icons.chat_bubble_outline_rounded, size: 17),
-              SizedBox(width: 10),
-              Text('Comment'),
+              const Icon(Icons.chat_bubble_outline_rounded, size: 17),
+              const SizedBox(width: 10),
+              Text(l10n.engagementComment),
             ],
           ),
         ),
@@ -269,13 +273,22 @@ class _ContentEngagementBarState extends ConsumerState<ContentEngagementBar> {
     if (client == null || _busy) return;
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Remove comment?'),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Remove')),
-        ],
-      ),
+      builder: (ctx) {
+        final l10n = AppLocalizations.of(ctx);
+        return AlertDialog(
+          title: Text(l10n.engagementRemoveComment),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(l10n.commonCancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(l10n.engagementRemove),
+            ),
+          ],
+        );
+      },
     );
     if (ok != true) return;
     setState(() => _busy = true);
@@ -326,10 +339,10 @@ class _ContentEngagementBarState extends ConsumerState<ContentEngagementBar> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final l10n = AppLocalizations.of(context);
     final isDark = Theme.of(context).brightness == Brightness.dark;
     final accent = isDark ? _momentsBlueDark : _momentsBlue;
     final bonds = ref.watch(contactProvider).bonds;
-    final starred = _summary?.starredByMe ?? false;
     final starOwnerIds = _summary?.starOwnerIds ?? const <String>[];
     final comments = _summary?.comments ?? const <ContentEngagementComment>[];
     final hasEngagement = starOwnerIds.isNotEmpty || comments.isNotEmpty;
@@ -353,18 +366,19 @@ class _ContentEngagementBarState extends ConsumerState<ContentEngagementBar> {
             const Spacer(),
             Builder(
               builder: (btnContext) => Material(
-                color: scheme.onSurface.withValues(alpha: 0.12),
+                color: const Color(0xFFE86A6A).withValues(alpha: 0.14),
                 borderRadius: BorderRadius.circular(3),
                 child: InkWell(
                   borderRadius: BorderRadius.circular(3),
                   onTap: _busy ? null : () => _openActionMenu(btnContext),
-                  child: SizedBox(
+                  child: const SizedBox(
                     width: 44,
                     height: 36,
                     child: Icon(
                       Icons.more_horiz,
                       size: 20,
-                      color: starred ? const Color(0xFFE86A6A) : null,
+                      // Same accent on Feed and Blog (WeChat Moments–style).
+                      color: Color(0xFFE86A6A),
                     ),
                   ),
                 ),
@@ -401,7 +415,11 @@ class _ContentEngagementBarState extends ConsumerState<ContentEngagementBar> {
                               runSpacing: 3,
                               children: [
                                 for (final id in starOwnerIds.take(8))
-                                  _actorAvatar(id, _nameFor(id, bonds), accent),
+                                  _actorAvatar(
+                                    id,
+                                    _nameFor(context, id, bonds),
+                                    accent,
+                                  ),
                               ],
                             ),
                             const SizedBox(height: 4),
@@ -415,7 +433,7 @@ class _ContentEngagementBarState extends ConsumerState<ContentEngagementBar> {
                                         style: TextStyle(color: accent, fontWeight: FontWeight.w400),
                                       ),
                                     TextSpan(
-                                      text: _nameFor(starOwnerIds[i], bonds),
+                                      text: _nameFor(context, starOwnerIds[i], bonds),
                                       style: TextStyle(
                                         color: accent,
                                         fontWeight: starOwnerIds[i] == selfId
@@ -445,14 +463,18 @@ class _ContentEngagementBarState extends ConsumerState<ContentEngagementBar> {
                     child: Row(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _actorAvatar(c.authorOwnerId, _nameFor(c.authorOwnerId, bonds), accent),
+                        _actorAvatar(
+                          c.authorOwnerId,
+                          _nameFor(context, c.authorOwnerId, bonds),
+                          accent,
+                        ),
                         const SizedBox(width: 6),
                         Expanded(
                           child: Text.rich(
                             TextSpan(
                               children: [
                                 TextSpan(
-                                  text: _nameFor(c.authorOwnerId, bonds),
+                                  text: _nameFor(context, c.authorOwnerId, bonds),
                                   style: TextStyle(
                                     color: accent,
                                     fontWeight: c.authorOwnerId == selfId
@@ -485,7 +507,7 @@ class _ContentEngagementBarState extends ConsumerState<ContentEngagementBar> {
                         if (selfId != null &&
                             (c.authorOwnerId == selfId || selfId == postAuthorId))
                           IconButton(
-                            tooltip: 'Remove comment',
+                            tooltip: l10n.engagementRemoveCommentTooltip,
                             visualDensity: VisualDensity.compact,
                             iconSize: 14,
                             padding: EdgeInsets.zero,
@@ -510,17 +532,17 @@ class _ContentEngagementBarState extends ConsumerState<ContentEngagementBar> {
                   focusNode: _composeFocus,
                   enabled: !_busy,
                   maxLength: 280,
-                  decoration: const InputDecoration(
-                    hintText: 'Write a comment…',
+                  decoration: InputDecoration(
+                    hintText: l10n.engagementCommentHint,
                     isDense: true,
                     counterText: '',
-                    border: OutlineInputBorder(),
+                    border: const OutlineInputBorder(),
                   ),
                   onSubmitted: (_) => _sendComment(),
                 ),
               ),
               IconButton(
-                tooltip: 'Send',
+                tooltip: l10n.commonSend,
                 onPressed: _busy || _draft.text.trim().isEmpty ? null : _sendComment,
                 icon: Icon(Icons.send_rounded, size: 20, color: scheme.primary),
               ),

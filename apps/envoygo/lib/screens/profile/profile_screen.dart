@@ -5,6 +5,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../l10n/app_localizations.dart';
+
 import '../../providers/contact_provider.dart'
     show contactProvider, nodeServiceProvider;
 import '../../providers/node_provider.dart';
@@ -77,7 +79,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (client == null) {
       setState(() {
         _loading = false;
-        _error = 'Not connected to home node';
+        _error = AppLocalizations.of(context).commonNotConnectedHome;
       });
       return;
     }
@@ -302,19 +304,22 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     if (client == null) return;
     final ok = await showDialog<bool>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Remove photo?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Remove'),
-          ),
-        ],
-      ),
+      builder: (ctx) {
+        final l10n = AppLocalizations.of(ctx);
+        return AlertDialog(
+          title: Text(l10n.profileRemovePhotoTitle),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: Text(l10n.commonCancel),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: Text(l10n.commonRemove),
+            ),
+          ],
+        );
+      },
     );
     if (ok != true) return;
     setState(() => _saving = true);
@@ -356,7 +361,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
     final username = _usernameCtrl.text.trim();
     if (displayName.isEmpty && username.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Display name or username is required')),
+        SnackBar(content: Text(AppLocalizations.of(context).profileNameRequired)),
       );
       return;
     }
@@ -407,7 +412,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
       _avatarKey.currentState?.reload();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Profile saved')),
+        SnackBar(content: Text(AppLocalizations.of(context).profileSaved)),
       );
     } catch (e) {
       if (!mounted) return;
@@ -419,8 +424,11 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final scheme = Theme.of(context).colorScheme;
-    final title = _isSelf ? 'My profile' : (_displayName.isNotEmpty ? _displayName : 'Profile');
+    final title = _isSelf
+        ? l10n.profileMyTitle
+        : (_displayName.isNotEmpty ? _displayName : l10n.profileTitle);
 
     return Scaffold(
       body: CustomScrollView(
@@ -432,7 +440,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
             actions: [
               if (_isSelf && !_editing)
                 IconButton(
-                  tooltip: 'Edit',
+                  tooltip: l10n.commonEdit,
                   onPressed: _loading
                       ? null
                       : () => setState(() => _editing = true),
@@ -452,7 +460,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           });
                           _load();
                         },
-                  child: const Text('Cancel'),
+                  child: Text(l10n.commonCancel),
                 ),
                 TextButton(
                   onPressed: _saving ? null : _save,
@@ -462,7 +470,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           height: 16,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text('Save'),
+                      : Text(l10n.commonSave),
                 ),
               ],
             ],
@@ -579,26 +587,26 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   if (_editing) ...[
                     TextField(
                       controller: _displayNameCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'Display name',
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        labelText: l10n.meDisplayName,
+                        border: const OutlineInputBorder(),
                       ),
                       textCapitalization: TextCapitalization.words,
                     ),
                     const SizedBox(height: 12),
                     TextField(
                       controller: _usernameCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'Username',
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        labelText: l10n.profileUsername,
+                        border: const OutlineInputBorder(),
                       ),
                     ),
                     const SizedBox(height: 12),
                     TextField(
                       controller: _bioCtrl,
-                      decoration: const InputDecoration(
-                        labelText: 'Bio',
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        labelText: l10n.profileBio,
+                        border: const OutlineInputBorder(),
                         alignLabelWithHint: true,
                       ),
                       maxLines: 4,
@@ -606,7 +614,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     ),
                   ] else ...[
                     Text(
-                      _displayName.isNotEmpty ? _displayName : 'Unnamed',
+                      _displayName.isNotEmpty ? _displayName : l10n.profileUnnamed,
                       style: Theme.of(context).textTheme.headlineSmall?.copyWith(
                             fontWeight: FontWeight.w800,
                             letterSpacing: -0.3,
@@ -632,7 +640,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                     ] else if (_isSelf) ...[
                       const SizedBox(height: 16),
                       Text(
-                        'Add a short bio so contacts recognize you.',
+                        l10n.profileBioHint,
                         style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                               color: scheme.onSurfaceVariant,
                             ),
@@ -643,7 +651,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   Row(
                     children: [
                       Text(
-                        'Photos',
+                        l10n.profilePhotos,
                         style: Theme.of(context).textTheme.titleMedium?.copyWith(
                               fontWeight: FontWeight.w700,
                             ),
@@ -653,7 +661,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                         TextButton.icon(
                           onPressed: _saving ? null : _addGalleryPhoto,
                           icon: const Icon(Icons.add_photo_alternate_outlined, size: 18),
-                          label: const Text('Add'),
+                          label: Text(l10n.commonAdd),
                         ),
                     ],
                   ),
@@ -678,8 +686,8 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                           const SizedBox(height: 8),
                           Text(
                             _isSelf
-                                ? 'No photos yet — add one to your wall'
-                                : 'No photos shared',
+                                ? l10n.profileNoPhotosYet
+                                : l10n.profileNoPhotosShared,
                             style: TextStyle(color: scheme.onSurfaceVariant),
                           ),
                         ],
@@ -711,7 +719,7 @@ class _ProfileScreenState extends ConsumerState<ProfileScreen> {
                   if (_isSelf && _gallery.isNotEmpty) ...[
                     const SizedBox(height: 8),
                     Text(
-                      'Long-press a photo to remove it',
+                      l10n.profileLongPressRemove,
                       style: Theme.of(context).textTheme.labelSmall?.copyWith(
                             color: scheme.onSurfaceVariant,
                           ),

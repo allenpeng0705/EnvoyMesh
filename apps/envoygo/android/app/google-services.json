@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "864645054902",
+    "project_id": "envoymesh",
+    "storage_bucket": "envoymesh.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:864645054902:android:78d736fc7e626c526ac117",
+        "android_client_info": {
+          "package_name": "com.envoymesh.envoygo"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBxqWiWqeUahE772euCLVNlbU6e6pfrW0o"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

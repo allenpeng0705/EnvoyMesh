@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../models/chat_message.dart';
 
 /// Audio player widget for voice notes (Phase 37).
@@ -59,6 +60,7 @@ class _ChatAudioPlayerState extends State<ChatAudioPlayer> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
 
     return Container(
@@ -84,7 +86,7 @@ class _ChatAudioPlayerState extends State<ChatAudioPlayer> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                Text('Loading audio…',
+                Text(l10n.audioLoading,
                     style: TextStyle(color: colorScheme.onSurfaceVariant, fontSize: 13)),
               ],
             )
@@ -93,7 +95,7 @@ class _ChatAudioPlayerState extends State<ChatAudioPlayer> {
               children: [
                 Icon(Icons.error_outline, size: 20, color: colorScheme.error),
                 const SizedBox(width: 8),
-                Text('Audio unavailable',
+                Text(l10n.audioUnavailable,
                     style: TextStyle(color: colorScheme.error, fontSize: 13)),
               ],
             )
@@ -107,7 +109,7 @@ class _ChatAudioPlayerState extends State<ChatAudioPlayer> {
                     size: 32, color: colorScheme.primary),
                 const SizedBox(width: 8),
                 Text(
-                  'Voice note',
+                  l10n.audioVoiceNote,
                   style: TextStyle(
                       color: colorScheme.onSurface, fontSize: 14),
                 ),

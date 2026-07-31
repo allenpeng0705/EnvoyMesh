@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../l10n/app_localizations.dart';
 
 /// Terminal sessions list.
 class TerminalListScreen extends StatelessWidget {
@@ -7,15 +8,16 @@ class TerminalListScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // TODO(31G): Wire to TerminalProvider
-    return const Center(
+    final l10n = AppLocalizations.of(context);
+    return Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(Icons.terminal, size: 64, color: Colors.grey),
-          SizedBox(height: 16),
+          const Icon(Icons.terminal, size: 64, color: Colors.grey),
+          const SizedBox(height: 16),
           Text(
-            'No terminal sessions',
-            style: TextStyle(fontSize: 18, color: Colors.grey),
+            l10n.termNone,
+            style: const TextStyle(fontSize: 18, color: Colors.grey),
           ),
         ],
       ),

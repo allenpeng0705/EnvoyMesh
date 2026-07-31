@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../l10n/app_localizations.dart';
 import '../../ai/pi_native_providers.dart';
 import '../../providers/contact_provider.dart' show nodeServiceProvider;
 import '../../services/node_service_client.dart';
@@ -45,7 +46,7 @@ class _PiSettingsScreenState extends ConsumerState<PiSettingsScreen> {
     if (getPiNativeProvider(_provider) == null && _provider.isNotEmpty) {
       items.insert(
         0,
-        DropdownMenuItem(value: _provider, child: Text('$_provider (custom)')),
+        DropdownMenuItem(value: _provider, child: Text(AppLocalizations.of(context).settingsPiProviderCustom(_provider))),
       );
     }
     return items;
@@ -78,7 +79,7 @@ class _PiSettingsScreenState extends ConsumerState<PiSettingsScreen> {
     if (client == null) {
       setState(() {
         _loading = false;
-        _error = 'Not connected to a home node';
+        _error = AppLocalizations.of(context).settingsNotConnectedNode;
       });
       return;
     }
@@ -143,7 +144,7 @@ class _PiSettingsScreenState extends ConsumerState<PiSettingsScreen> {
       if (mounted) {
         setState(() => _piEnabled = !enabled);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed: $e')),
+          SnackBar(content: Text(AppLocalizations.of(context).settingsPiFailed('$e'))),
         );
       }
     } finally {
@@ -157,7 +158,7 @@ class _PiSettingsScreenState extends ConsumerState<PiSettingsScreen> {
     final model = _modelCtl.text.trim();
     if (model.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Model name is required')),
+        SnackBar(content: Text(AppLocalizations.of(context).settingsPiModelRequired)),
       );
       return;
     }
@@ -194,12 +195,12 @@ class _PiSettingsScreenState extends ConsumerState<PiSettingsScreen> {
         _apiKeyCtl.clear();
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pi model saved')),
+        SnackBar(content: Text(AppLocalizations.of(context).settingsPiModelSaved)),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Save failed: $e')),
+        SnackBar(content: Text(AppLocalizations.of(context).settingsSaveFailed('$e'))),
       );
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -226,12 +227,12 @@ class _PiSettingsScreenState extends ConsumerState<PiSettingsScreen> {
         _provider = 'minimax-cn';
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Pi inherits EnvoyMesh model settings')),
+        SnackBar(content: Text(AppLocalizations.of(context).settingsPiInherits)),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Clear failed: $e')),
+        SnackBar(content: Text(AppLocalizations.of(context).settingsPiClearFailed('$e'))),
       );
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -250,16 +251,18 @@ class _PiSettingsScreenState extends ConsumerState<PiSettingsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final info = _providerInfo;
     final state = _status?['state']?.toString() ?? 'unknown';
     final modelSpec = _status?['modelSpec']?.toString();
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Pi Agent'),
+        title: Text(l10n.mePiAgent),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
+            tooltip: l10n.commonRefresh,
             onPressed: _loading ? null : _load,
           ),
         ],
@@ -277,7 +280,7 @@ class _PiSettingsScreenState extends ConsumerState<PiSettingsScreen> {
                         const SizedBox(height: 12),
                         FilledButton(
                           onPressed: _load,
-                          child: const Text('Retry'),
+                          child: Text(l10n.commonRetry),
                         ),
                       ],
                     ),
@@ -294,32 +297,30 @@ class _PiSettingsScreenState extends ConsumerState<PiSettingsScreen> {
                               : Icons.circle_outlined,
                           color: state == 'ready' ? Colors.green : Colors.grey,
                         ),
-                        title: Text('State: $state'),
+                        title: Text(l10n.settingsPiState(state)),
                         subtitle: modelSpec != null && modelSpec.isNotEmpty
                             ? Text(modelSpec)
-                            : const Text('Built-in local coding agent'),
+                            : Text(l10n.settingsPiBuiltIn),
                       ),
                     ),
                     const SizedBox(height: 12),
                     SwitchListTile(
-                      title: const Text('Pi enabled'),
-                      subtitle: const Text(
-                        'Local-only coding agent (no mesh tools).',
-                      ),
+                      title: Text(l10n.settingsPiEnabled),
+                      subtitle: Text(l10n.settingsPiLocalOnly),
                       value: _piEnabled,
                       onChanged: _restarting ? null : _toggleEnabled,
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      'Model override (optional). Clear to inherit AI Model settings.',
+                      l10n.settingsPiOverrideHint,
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                     const SizedBox(height: 12),
                     DropdownButtonFormField<String>(
                       value: _provider,
-                      decoration: const InputDecoration(
-                        labelText: 'Provider',
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        labelText: l10n.settingsProvider,
+                        border: const OutlineInputBorder(),
                       ),
                       items: _providerItems,
                       onChanged: !_piEnabled
@@ -345,9 +346,9 @@ class _PiSettingsScreenState extends ConsumerState<PiSettingsScreen> {
                         value: info.models.contains(_modelCtl.text.trim())
                             ? _modelCtl.text.trim()
                             : null,
-                        decoration: const InputDecoration(
-                          labelText: 'Model',
-                          border: OutlineInputBorder(),
+                        decoration: InputDecoration(
+                          labelText: l10n.settingsModel,
+                          border: const OutlineInputBorder(),
                         ),
                         items: info.models
                             .map(
@@ -370,9 +371,9 @@ class _PiSettingsScreenState extends ConsumerState<PiSettingsScreen> {
                       TextFormField(
                         controller: _modelCtl,
                         enabled: _piEnabled,
-                        decoration: const InputDecoration(
-                          labelText: 'Model name',
-                          border: OutlineInputBorder(),
+                        decoration: InputDecoration(
+                          labelText: l10n.settingsPiModelName,
+                          border: const OutlineInputBorder(),
                         ),
                       ),
                     ],
@@ -382,7 +383,7 @@ class _PiSettingsScreenState extends ConsumerState<PiSettingsScreen> {
                         controller: _endpointCtl,
                         enabled: _piEnabled,
                         decoration: InputDecoration(
-                          labelText: 'Endpoint',
+                          labelText: l10n.settingsPiEndpoint,
                           hintText: info?.endpointPlaceholder,
                           border: const OutlineInputBorder(),
                         ),
@@ -394,9 +395,9 @@ class _PiSettingsScreenState extends ConsumerState<PiSettingsScreen> {
                       enabled: _piEnabled,
                       obscureText: _obscureApiKey,
                       decoration: InputDecoration(
-                        labelText: 'API key',
+                        labelText: l10n.settingsApiKey,
                         helperText: _hasSavedApiKey
-                            ? 'Leave blank to keep the saved key'
+                            ? l10n.settingsPiLeaveBlankKey
                             : null,
                         border: const OutlineInputBorder(),
                         suffixIcon: IconButton(
@@ -421,13 +422,13 @@ class _PiSettingsScreenState extends ConsumerState<PiSettingsScreen> {
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Icon(Icons.save),
-                      label: const Text('Save model override'),
+                      label: Text(l10n.settingsPiSaveOverride),
                     ),
                     const SizedBox(height: 8),
                     TextButton(
                       onPressed:
                           (!_piEnabled || _saving) ? null : _clearOverride,
-                      child: const Text('Clear override (inherit AI Model)'),
+                      child: Text(l10n.settingsPiClearOverride),
                     ),
                   ],
                 ),

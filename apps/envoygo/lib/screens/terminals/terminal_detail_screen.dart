@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../../providers/node_provider.dart';
 import '../../services/node_service_client.dart';
 import '../../services/terminal_service.dart';
@@ -95,7 +96,11 @@ class _TerminalDetailScreenState
           _tunnelUp = false;
         });
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Terminal attach failed: $e')),
+          SnackBar(
+            content: Text(
+              AppLocalizations.of(context).termAttachFailed('$e'),
+            ),
+          ),
         );
       }
     }
@@ -156,7 +161,7 @@ class _TerminalDetailScreenState
       await Clipboard.setData(ClipboardData(text: text));
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Copied to clipboard')),
+          SnackBar(content: Text(AppLocalizations.of(context).termCopied)),
         );
       }
     }
@@ -175,36 +180,37 @@ class _TerminalDetailScreenState
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       resizeToAvoidBottomInset: true,
       appBar: AppBar(
         title: Text(widget.sessionName),
         actions: [
           if (!_tunnelUp)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 8),
               child: Chip(
-                label: Text('Reconnecting…', style: TextStyle(fontSize: 12)),
+                label: Text(l10n.termReconnecting, style: const TextStyle(fontSize: 12)),
                 backgroundColor: Colors.orange,
               ),
             ),
           if (!_attached)
             TextButton(
               onPressed: _attach,
-              child: const Text('Reconnect'),
+              child: Text(l10n.commonReconnect),
             ),
           IconButton(
-            tooltip: 'Copy all output',
+            tooltip: l10n.termCopyAll,
             icon: const Icon(Icons.copy_all),
             onPressed: _copyAll,
           ),
           IconButton(
-            tooltip: 'Paste',
+            tooltip: l10n.termPaste,
             icon: const Icon(Icons.paste),
             onPressed: _onPaste,
           ),
           IconButton(
-            tooltip: 'Close session',
+            tooltip: l10n.termCloseSession,
             icon: const Icon(Icons.close),
             onPressed: () {
               _terminalService?.closeSession(widget.sessionId);

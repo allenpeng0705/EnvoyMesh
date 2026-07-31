@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../providers/call_provider.dart';
 
 /// Full-screen incoming call overlay for Phase 38 voice calls in EnvoyGo.
@@ -90,8 +91,9 @@ class _IncomingCallOverlayState extends State<IncomingCallOverlay>
       return const SizedBox.shrink();
     }
 
+    final l10n = AppLocalizations.of(context);
     final colorScheme = Theme.of(context).colorScheme;
-    final displayName = state.peerDisplayName ?? 'Unknown';
+    final displayName = state.peerDisplayName ?? l10n.commonUnknown;
 
     return Material(
       color: Colors.black54,
@@ -144,7 +146,7 @@ class _IncomingCallOverlayState extends State<IncomingCallOverlay>
               ),
               const SizedBox(height: 8),
               Text(
-                'Incoming voice call',
+                l10n.callIncoming,
                 style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                       color: colorScheme.onSurfaceVariant,
                     ),
@@ -158,14 +160,14 @@ class _IncomingCallOverlayState extends State<IncomingCallOverlay>
                     icon: Icons.call_end,
                     color: colorScheme.error,
                     onPressed: () => widget.callProvider.declineCall(),
-                    label: 'Decline',
+                    label: l10n.commonDecline,
                   ),
                   // Accept button
                   _CircularButton(
                     icon: Icons.phone,
                     color: const Color(0xFF4CAF50),
                     onPressed: () => widget.callProvider.acceptCall(),
-                    label: 'Accept',
+                    label: l10n.commonAccept,
                   ),
                 ],
               ),

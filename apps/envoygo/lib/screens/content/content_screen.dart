@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/content_engage_provider.dart';
 import '../../providers/feed_notify_provider.dart';
@@ -54,6 +55,7 @@ class _ContentScreenState extends ConsumerState<ContentScreen>
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final engage = ref.watch(contentEngageProvider);
     final feedNotify = ref.watch(feedNotifyProvider);
     final homeTab = ref.watch(chatProvider.select((s) => s.selectedTab));
@@ -76,8 +78,9 @@ class _ContentScreenState extends ConsumerState<ContentScreen>
       viewingContent: viewingContent,
       surfaceIndex: surface,
     );
-    final feedNotifyBadge =
-        viewingContent && surface == 0 ? 0 : feedNotify.unread.length;
+    final feedNotifyBadge = viewingContent && surface == 0
+        ? 0
+        : feedNotify.unread.length;
     final feedBadge = feedEngageBadge + feedNotifyBadge;
     final blogBadge = engage.visibleBlogCount(
       viewingContent: viewingContent,
@@ -92,9 +95,7 @@ class _ContentScreenState extends ConsumerState<ContentScreen>
           children: [
             Text(text),
             const SizedBox(width: 6),
-            Badge(
-              label: Text(count > 99 ? '99+' : '$count'),
-            ),
+            Badge(label: Text(count > 99 ? '99+' : '$count')),
           ],
         ),
       );
@@ -108,10 +109,10 @@ class _ContentScreenState extends ConsumerState<ContentScreen>
             controller: _tabs,
             isScrollable: true,
             tabs: [
-              tabLabel('Feed', feedBadge),
-              tabLabel('Blog', blogBadge),
-              const Tab(text: 'People'),
-              const Tab(text: 'My Files'),
+              tabLabel(l10n.contentFeed, feedBadge),
+              tabLabel(l10n.contentBlog, blogBadge),
+              Tab(text: l10n.contentPeople),
+              Tab(text: l10n.contentMyFiles),
             ],
           ),
         ),

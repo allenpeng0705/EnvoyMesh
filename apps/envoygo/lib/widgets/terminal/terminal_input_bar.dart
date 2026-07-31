@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../l10n/app_localizations.dart';
+
 /// Soft keyboard bar shown above the device keyboard on the
 /// terminal screen. Provides the keys the device keyboard does
 /// not have (arrow keys, Tab, Esc, Ctrl modifier) plus copy /
@@ -113,6 +115,7 @@ class _TerminalInputBarState extends State<TerminalInputBar> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Container(
       color: Colors.grey[900],
       padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
@@ -144,12 +147,12 @@ class _TerminalInputBarState extends State<TerminalInputBar> {
             // TextField in the screen.
             _barButton(
               icon: Icons.keyboard_outlined,
-              tooltip: 'Show keyboard',
+              tooltip: l10n.termShowKeyboard,
               onPressed: widget.onShowKeyboard,
             ),
             _barButton(
               icon: Icons.keyboard_hide_outlined,
-              tooltip: 'Hide keyboard',
+              tooltip: l10n.termHideKeyboard,
               onPressed: widget.onHideKeyboard,
             ),
             const SizedBox(width: 12),
@@ -196,7 +199,7 @@ class _TerminalInputBarState extends State<TerminalInputBar> {
             // Ctrl modifier toggle.
             _barButton(
               label: 'Ctrl',
-              tooltip: 'Ctrl modifier (sticky)',
+              tooltip: l10n.termCtrlSticky,
               highlight: _ctrlActive,
               onPressed: _toggleCtrl,
             ),
@@ -206,7 +209,7 @@ class _TerminalInputBarState extends State<TerminalInputBar> {
             // Copy / Paste.
             _barButton(
               icon: Icons.copy,
-              tooltip: 'Copy selection',
+              tooltip: l10n.termCopySelection,
               onPressed: widget.hasSelection ? widget.onCopy : null,
             ),
             _barButton(
@@ -295,7 +298,7 @@ class _CtrlLetterGrid extends StatelessWidget {
   Widget build(BuildContext context) {
     const letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
     return PopupMenuButton<String>(
-      tooltip: 'Ctrl + letter',
+      tooltip: AppLocalizations.of(context).termCtrlLetter,
       itemBuilder: (context) {
         return letters.split('').map((l) {
           return PopupMenuItem(

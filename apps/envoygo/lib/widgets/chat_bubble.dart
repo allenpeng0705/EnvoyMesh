@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../models/chat_message.dart';
 import 'chat_audio_player.dart';
 
@@ -17,8 +18,7 @@ class ChatBubble extends StatelessWidget {
   });
 
   /// Whether this message has an audio attachment.
-  bool get _hasAudio =>
-      message.attachments?.any((a) => a.isAudio) ?? false;
+  bool get _hasAudio => message.attachments?.any((a) => a.isAudio) ?? false;
 
   @override
   Widget build(BuildContext context) {
@@ -53,7 +53,9 @@ class ChatBubble extends StatelessWidget {
           children: [
             if (message.senderDisplayName != null)
               Text(
-                message.senderDisplayName!,
+                message.senderDisplayName == 'You'
+                    ? AppLocalizations.of(context).commonYouName
+                    : message.senderDisplayName!,
                 style: TextStyle(
                   fontWeight: FontWeight.w600,
                   fontSize: 12,
@@ -68,7 +70,8 @@ class ChatBubble extends StatelessWidget {
               ),
             ] else ...[
               const SizedBox(height: 2),
-              if (message.text != null && message.text!.startsWith('data:image/'))
+              if (message.text != null &&
+                  message.text!.startsWith('data:image/'))
                 Builder(
                   builder: (context) {
                     try {

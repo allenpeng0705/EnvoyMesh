@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../../models/contact.dart';
 import '../../models/web_content.dart';
 import '../../providers/contact_provider.dart';
@@ -37,7 +38,7 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
     if (client == null) {
       setState(() {
         _loading = false;
-        _error = 'Connect to a home node to manage files.';
+        _error = AppLocalizations.of(context).filesConnectHint;
       });
       return;
     }
@@ -91,14 +92,17 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
             .invalidateBlob(vaultCacheKey(homePeerId, path));
       }
       if (!mounted) return;
+      final l10n = AppLocalizations.of(context);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Imported $name')),
+        SnackBar(content: Text(l10n.filesImported(name))),
       );
       await _reload();
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Import failed: $e')),
+        SnackBar(
+          content: Text(AppLocalizations.of(context).filesImportFailed('$e')),
+        ),
       );
     }
   }
@@ -125,6 +129,7 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
         mime = _mimeGuess(item);
       }
       if (!mounted) return;
+      final l10n = AppLocalizations.of(context);
       await showDialog<void>(
         context: context,
         builder: (ctx) {
@@ -142,8 +147,7 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
             body = Padding(
               padding: const EdgeInsets.all(16),
               child: Text(
-                'Preview not available for $mime (${item.byteLength} bytes).\n'
-                'Path: ${item.relativePath}',
+                l10n.filesPreviewUnavailable(mime, item.byteLength),
               ),
             );
           }
@@ -157,7 +161,7 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
-                child: const Text('Close'),
+                child: Text(AppLocalizations.of(ctx).commonClose),
               ),
             ],
           );
@@ -166,7 +170,9 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Preview failed: $e')),
+        SnackBar(
+          content: Text(AppLocalizations.of(context).filesPreviewFailed('$e')),
+        ),
       );
     }
   }
@@ -193,12 +199,13 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
   }
 
   Future<void> _share(LocalFileItem item) async {
+    final l10n = AppLocalizations.of(context);
     final contacts = ref.read(contactProvider).bonds
         .where((c) => c.bondLevel != 'blocked')
         .toList();
     if (contacts.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No bonded contacts to share with')),
+        SnackBar(content: Text(l10n.filesNoContactsShare)),
       );
       return;
     }
@@ -210,7 +217,7 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
           child: ListView(
             shrinkWrap: true,
             children: [
-              const ListTile(title: Text('Share with…')),
+              ListTile(title: Text(AppLocalizations.of(ctx).filesShareWith)),
               for (final c in contacts)
                 ListTile(
                   title: Text(c.displayName?.trim().isNotEmpty == true
@@ -234,25 +241,28 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
       );
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Share sent')),
+        SnackBar(content: Text(AppLocalizations.of(context).filesShareSent)),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Share failed: $e')),
+        SnackBar(
+          content: Text(AppLocalizations.of(context).filesShareFailed('$e')),
+        ),
       );
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final nodeState = ref.watch(nodeProvider);
     if (nodeState.activeNode == null) {
-      return const Center(
+      return Center(
         child: Padding(
-          padding: EdgeInsets.all(24),
+          padding: const EdgeInsets.all(24),
           child: Text(
-            'Pair with a home node to manage My Files.',
+            l10n.filesPairHint,
             textAlign: TextAlign.center,
           ),
         ),
@@ -273,22 +283,22 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
             children: [
               Expanded(
                 child: TextField(
-                  decoration: const InputDecoration(
-                    hintText: 'Search library',
+                  decoration: InputDecoration(
+                    hintText: l10n.filesSearchHint,
                     isDense: true,
-                    prefixIcon: Icon(Icons.search),
+                    prefixIcon: const Icon(Icons.search),
                   ),
                   onChanged: (v) => _query = v,
                   onSubmitted: (_) => _reload(),
                 ),
               ),
               IconButton(
-                tooltip: 'Refresh',
+                tooltip: l10n.commonRefresh,
                 onPressed: _reload,
                 icon: const Icon(Icons.refresh),
               ),
               IconButton(
-                tooltip: 'Import',
+                tooltip: l10n.filesImport,
                 onPressed: _importFile,
                 icon: const Icon(Icons.upload_file),
               ),
@@ -301,7 +311,7 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
             child: Align(
               alignment: Alignment.centerLeft,
               child: Text(
-                'Vault library — chat attachments and profile photos stay in chat / Profile',
+                l10n.filesVaultHint,
                 style: Theme.of(context).textTheme.bodySmall,
               ),
             ),
@@ -320,7 +330,7 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
                             const SizedBox(height: 12),
                             FilledButton(
                               onPressed: _reload,
-                              child: const Text('Retry'),
+                              child: Text(l10n.commonRetry),
                             ),
                           ],
                         ),
@@ -330,9 +340,9 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
                       onRefresh: _reload,
                       child: items.isEmpty
                           ? ListView(
-                              children: const [
-                                SizedBox(height: 80),
-                                Center(child: Text('No library files yet.')),
+                              children: [
+                                const SizedBox(height: 80),
+                                Center(child: Text(l10n.filesEmpty)),
                               ],
                             )
                           : ListView.builder(
@@ -349,7 +359,7 @@ class _ContentFilesTabState extends ConsumerState<ContentFilesTab> {
                                   ),
                                   onTap: () => _preview(item),
                                   trailing: IconButton(
-                                    tooltip: 'Share',
+                                    tooltip: l10n.commonShare,
                                     icon: const Icon(Icons.ios_share),
                                     onPressed: () => _share(item),
                                   ),

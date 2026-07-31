@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { useT } from "../context/I18nContext.js";
 import { useNodeService } from "../hooks/useNodeService.js";
@@ -6,15 +6,24 @@ import { ModalPortal } from "./ModalPortal.js";
 
 interface FamilyInviteQRModalProps {
   onClose: () => void;
+  /**
+   * Accessible label for the close control. Use a “back” phrasing when this
+   * modal was opened from the owner pairing dialog.
+   */
+  closeAriaLabel?: string;
 }
 
 /**
  * Phase 51F — family invite QR (`envoy://invite?…` with kind family).
  * Distinct from the owner pairing QR in the top bar.
  */
-export function FamilyInviteQRModal({ onClose }: FamilyInviteQRModalProps) {
+export function FamilyInviteQRModal({
+  onClose,
+  closeAriaLabel,
+}: FamilyInviteQRModalProps) {
   const t = useT();
   const nodeService = useNodeService();
+  const closeRef = useRef<HTMLButtonElement>(null);
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [uri, setUri] = useState("");
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
@@ -53,6 +62,12 @@ export function FamilyInviteQRModal({ onClose }: FamilyInviteQRModalProps) {
     };
   }, [nodeService]);
 
+  // Move focus into the dialog when mounted (e.g. swapped in from PairingQRModal).
+  useEffect(() => {
+    const timer = requestAnimationFrame(() => closeRef.current?.focus());
+    return () => cancelAnimationFrame(timer);
+  }, []);
+
   const handleCopy = useCallback(async () => {
     if (!uri) return;
     try {
@@ -70,6 +85,7 @@ export function FamilyInviteQRModal({ onClose }: FamilyInviteQRModalProps) {
         <div
           className="pairing-modal family-invite-modal"
           role="dialog"
+          aria-modal="true"
           aria-label={t("settings.family.inviteModalAria", "Family invite QR")}
           onClick={(e) => e.stopPropagation()}
         >
@@ -91,10 +107,14 @@ export function FamilyInviteQRModal({ onClose }: FamilyInviteQRModalProps) {
               ) : null}
             </div>
             <button
+              ref={closeRef}
               type="button"
               className="pairing-modal__close"
               onClick={onClose}
-              aria-label={t("pairing.closeAria", "Close")}
+              aria-label={
+                closeAriaLabel ??
+                t("settings.family.inviteCloseAria", "Close family invite")
+              }
             >
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
                 <line x1="18" y1="6" x2="6" y2="18" />

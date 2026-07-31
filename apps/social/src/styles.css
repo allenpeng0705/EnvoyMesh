@@ -8836,6 +8836,29 @@ button.activity-row:hover,
   justify-content: center;
 }
 
+.pairing-modal__family {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+  width: 100%;
+  margin-top: var(--space-4);
+  padding-top: var(--space-4);
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.pairing-modal__family-hint {
+  margin: 0;
+  font-size: var(--text-sm);
+  line-height: 1.4;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.pairing-modal__family-btn {
+  width: 100%;
+}
+
 /* ------------------------------------------------------------------
  * Phase 40 — Multi-agent chains UI
  * ------------------------------------------------------------------ */
@@ -13129,15 +13152,16 @@ button:disabled {
   padding: 0;
   border: none;
   border-radius: 0.2rem;
-  background: color-mix(in srgb, var(--color-text-muted) 18%, transparent);
-  color: var(--color-text-muted);
+  /* Match EnvoyGo / Blog Moments accent (was muted gray — read as white on Feed). */
+  background: color-mix(in srgb, #e86a6a 16%, transparent);
+  color: #e86a6a;
   cursor: pointer;
 }
 
 .content-engagement__more-btn:hover:not(:disabled),
 .content-engagement__more-btn--open {
-  background: color-mix(in srgb, var(--color-text-muted) 28%, transparent);
-  color: var(--color-text);
+  background: color-mix(in srgb, #e86a6a 26%, transparent);
+  color: #e05a5a;
 }
 
 .content-engagement__more-btn:focus-visible {

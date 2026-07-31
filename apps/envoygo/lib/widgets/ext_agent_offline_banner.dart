@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../ext_agent/ext_agent_presets.dart';
+import '../l10n/app_localizations.dart';
 import '../providers/contact_provider.dart' show nodeServiceProvider;
 import '../services/node_service_client.dart';
 
@@ -141,6 +142,7 @@ class _ExtAgentOfflineBannerState
         ? status['hint'] as String
         : defaultExtAgentStartHint(agentId);
     final scheme = Theme.of(context).colorScheme;
+    final l10n = AppLocalizations.of(context);
 
     return Material(
       color: scheme.errorContainer.withValues(alpha: 0.55),
@@ -156,7 +158,7 @@ class _ExtAgentOfflineBannerState
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '$name is not running',
+                    l10n.extNotRunning(name),
                     style: TextStyle(
                       fontWeight: FontWeight.w600,
                       color: scheme.onErrorContainer,
@@ -175,7 +177,7 @@ class _ExtAgentOfflineBannerState
             ),
             TextButton(
               onPressed: _checking ? null : _probe,
-              child: Text(_checking ? 'Checking…' : 'Check again'),
+              child: Text(_checking ? l10n.extChecking : l10n.extCheckAgain),
             ),
           ],
         ),

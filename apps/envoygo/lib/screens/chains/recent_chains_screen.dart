@@ -11,6 +11,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/chain_report.dart';
 import '../../providers/node_provider.dart';
 import '../../services/node_service_client.dart';
@@ -46,7 +47,7 @@ class _RecentChainsScreenState extends ConsumerState<RecentChainsScreen> {
       setState(() {
         _loading = false;
         _reports = null;
-        _error = 'Not connected to home node';
+        _error = AppLocalizations.of(context).commonNotConnectedHome;
       });
       return;
     }
@@ -69,25 +70,26 @@ class _RecentChainsScreenState extends ConsumerState<RecentChainsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Recent team jobs'),
+        title: Text(l10n.chainsRecentTitle),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
+            tooltip: l10n.commonRefresh,
             onPressed: _loading ? null : _refresh,
           ),
         ],
       ),
       body: RefreshIndicator(
         onRefresh: _refresh,
-        child: _buildBody(),
+        child: _buildBody(l10n),
       ),
     );
   }
 
-  Widget _buildBody() {
+  Widget _buildBody(AppLocalizations l10n) {
     if (_loading && _reports == null) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -103,7 +105,7 @@ class _RecentChainsScreenState extends ConsumerState<RecentChainsScreen> {
                     size: 48, color: Theme.of(context).colorScheme.error),
                 const SizedBox(height: 12),
                 Text(
-                  'Failed to load chains',
+                  l10n.chainsLoadFailed,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 4),
@@ -115,7 +117,7 @@ class _RecentChainsScreenState extends ConsumerState<RecentChainsScreen> {
                 const SizedBox(height: 16),
                 FilledButton(
                   onPressed: _refresh,
-                  child: const Text('Retry'),
+                  child: Text(l10n.commonRetry),
                 ),
               ],
             ),
@@ -137,12 +139,12 @@ class _RecentChainsScreenState extends ConsumerState<RecentChainsScreen> {
                     color: Theme.of(context).colorScheme.outline),
                 const SizedBox(height: 12),
                 Text(
-                  'No reports yet',
+                  l10n.chainsNoReports,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  'Team jobs you run on the home node will appear here.\nAuthor team jobs from the home node Social UI.',
+                  l10n.chainsEmptyHint,
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
@@ -167,13 +169,14 @@ class _ChainRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return ListTile(
       leading: const Icon(Icons.analytics_outlined),
       title: Row(
         children: [
           Expanded(
             child: Text(
-              'Chain ${_shortId(report.chainId)}',
+              l10n.chainsChainId(_shortId(report.chainId)),
               style: Theme.of(context).textTheme.titleSmall,
             ),
           ),
@@ -185,9 +188,9 @@ class _ChainRow extends StatelessWidget {
         ],
       ),
       subtitle: Text(
-        '${report.chainSummary.workerCount} workers · '
-        '${report.chainSummary.subtaskCount} subtasks · '
-        '\$${report.chainSummary.synthesisCostUsd.toStringAsFixed(2)} synthesis',
+        '${report.chainSummary.workerCount} ${l10n.chainsWorkers} · '
+        '${report.chainSummary.subtaskCount} ${l10n.chainsSubtasks} · '
+        '\$${report.chainSummary.synthesisCostUsd.toStringAsFixed(2)} ${l10n.chainsSynthesis}',
         style: Theme.of(context).textTheme.bodySmall,
       ),
       trailing: Text(

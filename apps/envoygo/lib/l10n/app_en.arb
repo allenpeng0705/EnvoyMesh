@@ -1,0 +1,918 @@
+{
+  "@@locale": "en",
+  "appTitle": "EnvoyGo",
+  "navChats": "Chats",
+  "navInbox": "Inbox",
+  "navContent": "Content",
+  "navMe": "Me",
+  "commonCancel": "Cancel",
+  "commonSave": "Save",
+  "commonDelete": "Delete",
+  "commonRetry": "Retry",
+  "commonClose": "Close",
+  "commonLoading": "Loading…",
+  "commonError": "Something went wrong",
+  "commonReconnect": "Reconnect",
+  "commonSwitch": "Switch",
+  "commonPair": "Pair",
+  "commonUnpair": "Unpair",
+  "commonCreate": "Create",
+  "commonRename": "Rename",
+  "languageTitle": "Language",
+  "languageSubtitle": "App language for menus and labels",
+  "languageSystem": "System default",
+  "languageSystemDesc": "Follow the device language",
+  "meConnectedNode": "Connected Node",
+  "meNotConnected": "Not connected",
+  "meNotConnectedHint": "Pair with a home node to get started",
+  "meReconnect": "Reconnect",
+  "meSwitch": "Switch",
+  "meRepair": "Re-pair",
+  "meReconnectNow": "Reconnect now",
+  "meUnpair": "Unpair",
+  "meBrowser": "Browser",
+  "meBrowserHint": "Open envoy:// pages — or use the Content tab for My Site",
+  "meAiEngine": "AI Engine",
+  "meAiEngineHint": "Bridge + OpenClaw toggles. Tap to configure.",
+  "meRecentTeamJobs": "Recent team jobs",
+  "meRecentTeamJobsHint": "Browse finished multi-agent jobs",
+  "meActiveTeamJobs": "Active team jobs",
+  "meActiveTeamJobsHint": "Watch running team jobs",
+  "mePairNewNode": "Pair New Node",
+  "mePairNewNodeHint": "Add another home node",
+  "meSettings": "Settings",
+  "meAiModel": "AI Model",
+  "mePiAgent": "Pi Agent",
+  "mePiAgentHint": "Local coding agent settings",
+  "meDarkMode": "Dark mode",
+  "meDarkModeHint": "Follow system setting",
+  "mePushNotifications": "Push notifications",
+  "mePushNotificationsHint": "Alerts when the app is in the background",
+  "meUnpairDevice": "Unpair This Device",
+  "meUnpairDeviceHint": "Disconnect and remove all data",
+  "meUnpairConfirmTitle": "Unpair?",
+  "meUnpairConfirmBody": "This removes the pairing and local chats for this home node on this device.",
+  "meUnpairedSnack": "Unpaired. Local chats and data removed.",
+  "meUnpairFailed": "Unpair failed: {error}",
+  "@meUnpairFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "meEditProfile": "Edit profile",
+  "meProfileUpdateFailed": "Could not update profile: {error}",
+  "@meProfileUpdateFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "mePublicAccess": "Public Access",
+  "mePort": "Port",
+  "mePublicAccessSaved": "Public access saved",
+  "meFamilyProfile": "Family profile",
+  "meFamilyProfileHint": "You are on this home as a family member",
+  "mePreferences": "Preferences",
+  "meViewEditProfile": "View & edit profile",
+  "meEditNameAvatar": "Edit name & avatar",
+  "meDisplayName": "Display name",
+  "meAvatarColor": "Avatar color (hex)",
+  "meMorePaired": "+{count} more paired",
+  "@meMorePaired": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "meSessionExpired": "Session expired for {name}",
+  "@meSessionExpired": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "meDisconnectedFrom": "Disconnected from {name}",
+  "@meDisconnectedFrom": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "meUnpairConfirmBodyNamed": "This will disconnect and remove all local chats and data for {name}.",
+  "@meUnpairConfirmBodyNamed": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "meTeamJobs": "Team jobs",
+  "meAiModelHint": "Provider used for the assistant on this home node",
+  "mePiAgentHintLong": "Built-in local coding agent on the home node",
+  "mePushNotificationsHintLong": "Get notified about new messages, contact requests, and approvals when the app is in the background.",
+  "meRecentTeamJobsHintLong": "View job reports published on the home node",
+  "meActiveTeamJobsHintLong": "Monitor in-progress team jobs on the home node",
+  "inboxTitle": "Inbox",
+  "inboxEmpty": "No notifications yet",
+  "inboxEmptyHint": "Bond requests and feed updates will show up here",
+  "contentFeed": "Feed",
+  "contentBlog": "Blog",
+  "contentPeople": "People",
+  "contentMyFiles": "My Files",
+  "contentNewPost": "New post",
+  "chatsTitle": "Chats",
+  "chatsEmpty": "No conversations yet",
+  "chatsEmptyHint": "Pair with your home node to get started.",
+  "chatsSearchHint": "Search chats…",
+  "pairingScanTitle": "Scan QR",
+  "pairingConfirmTitle": "Confirm pairing",
+  "pairingFamilyInvite": "Family invite",
+  "pairingOwnerPair": "Owner pairing",
+  "engagementLike": "Like",
+  "engagementUnlike": "Unlike",
+  "engagementComment": "Comment",
+  "engagementRemoveComment": "Remove comment?",
+  "engagementRemove": "Remove",
+  "feedDelete": "Delete",
+  "blogDelete": "Delete",
+  "blogTitle": "Blog",
+  "blogEmpty": "No posts yet. Write your first blog post.",
+  "blogHint": "Longer posts you publish on the mesh.",
+  "feedTitle": "Feed",
+  "feedComposeTitle": "New Feed post",
+  "commonBack": "Back",
+  "commonAccept": "Accept",
+  "commonDecline": "Decline",
+  "commonDismiss": "Dismiss",
+  "commonOpen": "Open",
+  "commonRefresh": "Refresh",
+  "commonEdit": "Edit",
+  "commonPost": "Post",
+  "commonPosting": "Posting…",
+  "commonPublish": "Publish",
+  "commonShare": "Share",
+  "commonSend": "Send",
+  "commonClear": "Clear",
+  "commonInvite": "Invite",
+  "commonJoin": "Join",
+  "commonYou": "You",
+  "commonUnknown": "Unknown",
+  "commonCopied": "Copied to clipboard",
+  "commonNotConnectedHome": "Not connected to home node",
+  "commonSaving": "Saving…",
+  "commonGenerating": "Generating…",
+  "commonHide": "Hide",
+  "commonAdd": "Add",
+  "commonRemove": "Remove",
+  "commonSearch": "Search",
+  "connOffline": "Offline",
+  "connDirect": "Direct",
+  "connP2p": "P2P",
+  "connRelay": "Relay",
+  "connLanDirect": "LAN (Direct)",
+  "connPublicDirect": "Public IP (Direct)",
+  "connRelayWs": "Relay WebSocket",
+  "connTooltipDirect": "Direct connection",
+  "connTooltipConnecting": "Connecting…",
+  "connTooltipOffline": "Not connected",
+  "connTooltipError": "Connection error",
+  "chatsSectionAi": "AI",
+  "chatsSectionFamily": "Family",
+  "chatsSectionContacts": "Contacts",
+  "chatsSectionGroups": "Groups",
+  "chatsSectionTerminals": "Terminals",
+  "chatsFabNew": "New",
+  "chatsCreateBot": "Create Bot",
+  "chatsCreateBotHint": "AI character on your home node",
+  "chatsNewPi": "New Pi",
+  "chatsNewPiHint": "Start a Pi coding terminal",
+  "chatsNewTerminal": "New Terminal",
+  "chatsNewTerminalHint": "Open a shell on the home node",
+  "chatsNewGroup": "New Group Chat",
+  "chatsNewGroupHint": "Mesh group with bonded contacts",
+  "chatsNewFamilyGroup": "New Family Group",
+  "chatsNewFamilyGroupHint": "Local group with family members",
+  "chatsDeleteBotTitle": "Delete bot?",
+  "chatsDeleteBotBody": "Remove “{name}” from your home node? This cannot be undone.",
+  "@chatsDeleteBotBody": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "chatsBotOptions": "Bot options",
+  "chatsEditBot": "Edit Bot",
+  "chatsBotNameRequired": "Bot name is required",
+  "chatsBotPromptRequired": "Personality / System prompt is required",
+  "chatsBotName": "Bot name",
+  "chatsBotNameHint": "e.g. Luna the Librarian",
+  "chatsBotPrompt": "Personality / System prompt",
+  "chatsBotPromptHint": "Write as the character (“You are …”). Avoid “Luna is …” or “I am an AI…”. Reshaped on save.",
+  "chatsBotDesc": "Short description (optional)",
+  "chatsBotDescHint": "One short line for the chat list. Leave blank to auto-fill from the personality.",
+  "chatsAvatarColor": "Avatar color",
+  "chatsShellHint": "Shell (e.g. zsh, bash)",
+  "chatsCwdHint": "Working directory (optional)",
+  "chatsPiTitle": "Start Pi",
+  "chatsPiBody": "Choose a project folder on the home computer to open the Pi coding terminal.",
+  "chatsPiFolder": "Project folder",
+  "chatsPiFolderHint": "/Users/you/project",
+  "chatsPiFolderRequired": "Enter a project folder path.",
+  "chatsGroupName": "Group name",
+  "chatsNoFamilyMembers": "No other family members yet.",
+  "chatVoiceCall": "Voice call",
+  "chatPublishedContent": "Published content",
+  "chatClearThread": "Clear thread",
+  "chatClearThreadTitle": "Clear thread?",
+  "chatClearThreadBody": "All messages in this thread will be deleted.",
+  "chatDeleteMessageTitle": "Delete message?",
+  "chatNoMessages": "No messages yet",
+  "chatTypeMessage": "Type a message…",
+  "chatRecordVoice": "Record voice note",
+  "chatStopRecording": "Stop recording",
+  "chatInviteToGroup": "Invite to Group",
+  "chatNoContactsInvite": "No contacts to invite.",
+  "chatInvitedSnack": "{name} invited",
+  "@chatInvitedSnack": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "chatVoiceSendFailed": "Failed to send voice note",
+  "chatMicDenied": "Microphone permission denied",
+  "chatRecordFailed": "Failed to start recording",
+  "chatCallFailed": "Failed to start call",
+  "chatAiDisabled": "AI model is disabled. Enable a model provider in Settings → AI.",
+  "chatAiDisabledFamily": "AI is unavailable for this family profile.",
+  "inboxPublishedUpdates": "Published updates",
+  "inboxPublishedEmpty": "No publish notifications yet. When a bonded contact publishes web content, it will show up here.",
+  "inboxPendingIntros": "Pending intros",
+  "inboxPendingEmpty": "No pending introductions",
+  "inboxWantsToConnect": "Wants to connect",
+  "pairingInvalidQr": "Invalid pairing QR code",
+  "pairingPasteUri": "Or paste pairing URI",
+  "pairingUriHint": "envoy://pair?… or envoy://invite?…",
+  "pairingJoinFamily": "Join Family",
+  "pairingConnectTo": "Connect to {name}?",
+  "@pairingConnectTo": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "pairingWelcomeFamily": "Welcome to the {name} family!",
+  "@pairingWelcomeFamily": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "pairingImNew": "I'm new",
+  "pairingImBack": "I'm back",
+  "pairingDisplayNameOptional": "Display name (optional)",
+  "pairingYourName": "Your name",
+  "pairingAvatarColor": "Avatar color",
+  "pairingOwnerNameHint": "Shown as your owner profile name on this node",
+  "pairingCopyError": "Copy error",
+  "pairingRetryMembers": "Retry loading members",
+  "pairingWhoAreYou": "Who are you?",
+  "pairingAlreadyOnHome": "Already on this home",
+  "pairingSelectProfile": "Select your profile",
+  "pairingNoMembersFirst": "No family members yet — you will be the first.",
+  "pairingNoExistingProfiles": "No existing family profiles yet. Switch to \"I'm new\" to create one.",
+  "pairingNameRequired": "Please enter your name",
+  "pairingSelectRequired": "Please select your profile",
+  "pairingLanAvailable": "LAN: available",
+  "pairingRelayAvailable": "Relay: available",
+  "pairingPeer": "Peer: {peer}",
+  "@pairingPeer": {
+    "placeholders": {
+      "peer": {
+        "type": "String"
+      }
+    }
+  },
+  "pairingNameHintDad": "e.g. Dad",
+  "pairingNameHintMom": "e.g. Mom, Alex",
+  "pairingChooseUniqueName": "Choose a name that is not already used below.",
+  "pairingSameNameHint": "Use the same name you created on your first phone.",
+  "pairingTapIfSecondPhone": "Tap a name if this is your second phone (I'm back).",
+  "feedEmptyTitle": "Your circle is quiet",
+  "feedEmptyHint": "No posts yet. Share an update with your bonded contacts.",
+  "feedHint": "Updates from you and bonded contacts.",
+  "feedDeleteTitle": "Delete post?",
+  "feedDeleteBody": "This cannot be undone.",
+  "blogPairHint": "Pair with a home node to write and manage Blog posts.",
+  "blogConnectHint": "Connect to a home node to manage Blog.",
+  "blogDeleteTitle": "Delete post?",
+  "blogDeleteBody": "Delete “{title}”? This cannot be undone.",
+  "@blogDeleteBody": {
+    "placeholders": {
+      "title": {
+        "type": "String"
+      }
+    }
+  },
+  "feedWhatsOnMind": "What's on your mind?",
+  "feedShareHint": "Share an update with bonded contacts…",
+  "feedPhotos": "Photos",
+  "feedVisibility": "Visibility",
+  "feedVisBonded": "Bonded contacts",
+  "feedVisSelected": "Selected contacts",
+  "feedVisOnlyMe": "Only me",
+  "feedNeedTextOrPhoto": "Add text or at least one photo",
+  "feedNeedContact": "Select at least one contact",
+  "feedSelectedHint": "Only these contacts can see this post. Pick at least one.",
+  "feedNoContacts": "No bonded contacts yet — add a contact first, or choose Bonded / Only me.",
+  "feedAiDraft": "AI draft",
+  "feedDiscard": "Discard",
+  "feedInsert": "Insert",
+  "feedReplace": "Replace",
+  "peoplePairHint": "Pair with a home node to discover people on the mesh.",
+  "peopleConnectHint": "Connect to a home node to discover people.",
+  "peopleHint": "Find people you haven't bonded with — open their public profile or blog, then say hello.",
+  "peopleTopic": "Topic",
+  "peopleInterest": "Interest",
+  "peopleTopicHint": "music, coding, travel…",
+  "peopleInterestHint": "photography, cooking, travel…",
+  "peopleOnMesh": "People on the mesh",
+  "peopleResults": "Results",
+  "peopleEmpty": "No people to show yet.",
+  "peopleProfile": "Profile",
+  "peopleBlog": "Blog",
+  "peopleSayHello": "Say Hello",
+  "peopleHelloSent": "Hello sent",
+  "peopleEnterSearch": "Enter a topic or interest to search.",
+  "peopleNoMatches": "No matches for that search.",
+  "peopleNoneFound": "No public people found on the mesh yet.",
+  "peopleHelloMessage": "Hi — I'd like to connect on Envoy.",
+  "peopleOpenLink": "Open link",
+  "filesPairHint": "Pair with a home node to manage My Files.",
+  "filesConnectHint": "Connect to a home node to manage files.",
+  "filesSearchHint": "Search library",
+  "filesVaultHint": "Vault library — chat attachments and profile photos stay in chat / Profile",
+  "filesEmpty": "No library files yet.",
+  "filesImported": "Imported {name}",
+  "@filesImported": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "filesImportFailed": "Import failed: {error}",
+  "@filesImportFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "filesPreviewFailed": "Preview failed: {error}",
+  "@filesPreviewFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "filesNoContactsShare": "No bonded contacts to share with",
+  "filesShareWith": "Share with…",
+  "filesShareSent": "Share sent",
+  "filesShareFailed": "Share failed: {error}",
+  "@filesShareFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "filesImport": "Import",
+  "filesPreviewUnavailable": "Preview not available for {mime} ({bytes} bytes).",
+  "@filesPreviewUnavailable": {
+    "placeholders": {
+      "mime": {
+        "type": "String"
+      },
+      "bytes": {
+        "type": "int"
+      }
+    }
+  },
+  "publishedTitle": "Published content — {name}",
+  "@publishedTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "publishedPhotoWall": "PhotoWall",
+  "engagementCommentHint": "Write a comment…",
+  "engagementRemoveCommentTooltip": "Remove comment",
+  "profileTitle": "Profile",
+  "profileMyTitle": "My profile",
+  "profileUnnamed": "Unnamed",
+  "profileRemovePhotoTitle": "Remove photo?",
+  "profileNameRequired": "Display name or username is required",
+  "profileSaved": "Profile saved",
+  "profileUsername": "Username",
+  "profileBio": "Bio",
+  "profileBioHint": "Add a short bio so contacts recognize you.",
+  "profilePhotos": "Photos",
+  "profileNoPhotosYet": "No photos yet — add one to your wall",
+  "profileNoPhotosShared": "No photos shared",
+  "profileLongPressRemove": "Long-press a photo to remove it",
+  "contactsSearchHint": "Search contacts…",
+  "contactsEmpty": "No contacts yet",
+  "contactsEmptyHint": "Your bonded contacts will appear here.",
+  "contactsChat": "Chat",
+  "callIncoming": "Incoming voice call",
+  "callConnected": "Connected",
+  "callConnecting": "Connecting…",
+  "callDisconnected": "Disconnected",
+  "authorPublish": "Publish",
+  "authorType": "Type",
+  "authorTypeProfile": "Profile",
+  "authorTypePhoto": "PhotoWall photo",
+  "authorTypeBlog": "Blog post",
+  "authorVisPublic": "Public",
+  "authorVisBonded": "Bonded",
+  "authorVisPrivate": "Private",
+  "authorCaption": "Caption",
+  "authorCaptionOptional": "Caption (optional)",
+  "authorBody": "Body",
+  "authorBodyMarkdown": "Body (markdown)",
+  "authorTitle": "Title",
+  "authorTitleRequired": "Title is required",
+  "authorPickPhoto": "Pick a photo first",
+  "authorChooseAvatar": "Choose avatar",
+  "authorChoosePhoto": "Choose photo",
+  "aiDraftButton": "Draft with AI",
+  "aiDraftEmphasize": "What should it emphasize? (optional)",
+  "aiDraftEmphasizeHint": "e.g. weekend hike with friends",
+  "aiDraftMode": "Mode",
+  "aiDraftTone": "Tone",
+  "aiDraftRewrite": "Rewrite",
+  "aiDraftExpand": "Expand",
+  "aiDraftShorten": "Shorten",
+  "aiDraftGenerate": "Generate",
+  "aiDraftNoModel": "No AI model configured on the home node.",
+  "aiDraftEmpty": "Empty draft from model",
+  "aiDraftBio": "Draft bio",
+  "aiDraftBlog": "Draft blog post",
+  "aiDraftFeed": "Draft Feed update",
+  "aiDraftCaption": "Draft caption",
+  "settingsAiModelIntro": "Cloud model provider for the home-node assistant. Changes apply on the next assistant turn.",
+  "settingsHomeUses": "Home uses {mode}",
+  "@settingsHomeUses": {
+    "placeholders": {
+      "mode": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsEndpoint": "Endpoint:",
+  "settingsModelLabel": "Model:",
+  "settingsEditOnSocial": "Edit this provider on the home-node Social UI for advanced options.",
+  "settingsProvider": "Provider",
+  "settingsEndpointUrl": "Endpoint URL",
+  "settingsModel": "Model",
+  "settingsCustomModel": "Custom model name",
+  "settingsApiKey": "API key",
+  "settingsApiKeySaved": "A key is already saved on the home node",
+  "settingsAiModelSaved": "AI model saved",
+  "settingsSaveFailed": "Save failed: {error}",
+  "@settingsSaveFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsDefault": "(default)",
+  "settingsAiEngineIntro": "Choose which external agent the home node forwards assistant turns to.",
+  "settingsExternalAgent": "External agent",
+  "settingsWebhookUrl": "Webhook URL",
+  "settingsHowToStart": "How to start",
+  "settingsBuiltIntoHome": "Built into the home node",
+  "settingsNoExtProcess": "No separate Ext Agent process required.",
+  "settingsBridgePort": "Bridge listen port",
+  "settingsBridgeEnabled": "Bridge enabled",
+  "settingsBridgeHint": "Forward assistant turns to the selected external agent.",
+  "settingsOpenClawEnabled": "OpenClaw enabled",
+  "settingsOpenClawHint": "Built-in OpenClaw gateway (EnvoyAI) on next node start.",
+  "settingsOpenClawUnavailable": "OpenClaw status unavailable",
+  "settingsOpenClawStatus": "OpenClaw {state}",
+  "@settingsOpenClawStatus": {
+    "placeholders": {
+      "state": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsExtAgentStatus": "Ext Agent {state}",
+  "@settingsExtAgentStatus": {
+    "placeholders": {
+      "state": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsEnabled": "enabled",
+  "settingsDisabled": "disabled",
+  "settingsAiEngineSaved": "AI Engine saved",
+  "settingsNotConnectedNode": "Not connected to a home node",
+  "settingsPiState": "State: {state}",
+  "@settingsPiState": {
+    "placeholders": {
+      "state": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsPiBuiltIn": "Built-in local coding agent",
+  "settingsPiLocalOnly": "Local-only coding agent (no mesh tools).",
+  "settingsPiEnabled": "Pi enabled",
+  "settingsPiOverrideHint": "Model override (optional). Clear to inherit AI Model settings.",
+  "settingsPiModelName": "Model name",
+  "settingsPiEndpoint": "Endpoint",
+  "settingsPiLeaveBlankKey": "Leave blank to keep the saved key",
+  "settingsPiSaveOverride": "Save model override",
+  "settingsPiClearOverride": "Clear override (inherit AI Model)",
+  "settingsPiModelSaved": "Pi model saved",
+  "settingsPiModelRequired": "Model name is required",
+  "settingsPiInherits": "Pi inherits EnvoyMesh model settings",
+  "settingsPiFailed": "Failed: {error}",
+  "@settingsPiFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsPiClearFailed": "Clear failed: {error}",
+  "@settingsPiClearFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsPiProviderCustom": "{provider} (custom)",
+  "@settingsPiProviderCustom": {
+    "placeholders": {
+      "provider": {
+        "type": "String"
+      }
+    }
+  },
+  "aiEngineReadonlyHint": "Both blocks are read-only on mobile. Configure on the home node (Settings → AI → AI Engine).",
+  "aiEngineBuiltInOpenClaw": "Built-in OpenClaw",
+  "aiEngineExtBridge": "External Agent Bridge",
+  "aiEngineModeBoth": "Built-in + Ext",
+  "aiEngineModeBuiltIn": "Built-in only",
+  "aiEngineModeExt": "Ext only",
+  "aiEngineModeNone": "None",
+  "aiEngineRunning": "Running",
+  "aiEngineConfigured": "Configured (not running)",
+  "aiEngineDisabled": "Disabled",
+  "browserTitle": "Browser",
+  "browserGo": "Go",
+  "browserBack": "Back",
+  "browserForward": "Forward",
+  "browserReload": "Reload",
+  "browserPairFirst": "Not connected to home node — pair and reconnect first.",
+  "browserIntegrityFailed": "Content integrity check failed — refused to render",
+  "browserDecodeImageFailed": "Failed to decode image: {error}",
+  "@browserDecodeImageFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "browserPhoto": "Photo",
+  "browserPhotos": "Photos",
+  "browserNoPhotos": "No photos yet.",
+  "browserHint": "Enter an envoy:// URL to browse content served by a bonded contact.",
+  "extSwitchTitle": "Switch Ext Agent",
+  "extSwitchTooltip": "Switch Ext Agent ({name})",
+  "@extSwitchTooltip": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "extNotRunningChat": "{name} is not running — start it before chatting.",
+  "@extNotRunningChat": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "extSwitchFailed": "Switch failed: {error}",
+  "@extSwitchFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "extNotRunning": "{name} is not running",
+  "@extNotRunning": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "extChecking": "Checking…",
+  "extCheckAgain": "Check again",
+  "audioLoading": "Loading audio…",
+  "audioUnavailable": "Audio unavailable",
+  "audioVoiceNote": "Voice note",
+  "meLastAttempt": "Last attempt: {time}",
+  "@meLastAttempt": {
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "meJustNow": "just now",
+  "mePublicIpLabel": "Public IP or domain",
+  "mePublicIpHint": "e.g. 1.2.3.4 or mynode.example.com",
+  "mePublicIpHelp": "Set this if your home node has a public IP or domain.\nEnables direct connection without the relay on 5G/WAN.",
+  "meNetworkDebug": "Network Debug",
+  "meRunNetworkTests": "Run Network Tests",
+  "meTesting": "Testing…",
+  "meNetworkTestsHint": "Tests all paths EnvoyGo uses for pairing.",
+  "meSwitchNode": "Switch Node",
+  "chainsRecentTitle": "Recent team jobs",
+  "chainsActiveTitle": "Active team jobs",
+  "chainsLoadFailed": "Failed to load chains",
+  "chainsNoReports": "No reports yet",
+  "chainsEmptyHint": "Team jobs you run on the home node will appear here.\nAuthor team jobs from the home node Social UI.",
+  "chainsNoActive": "No active chains on the home node.\nStart one from the Social UI.",
+  "chainsReportGone": "This report is no longer available",
+  "chainsReportGoneHint": "It may have been removed by the 90-day GC policy.",
+  "chainsBackToRecent": "Back to Recent team jobs",
+  "chainsLoadReportFailed": "Failed to load report",
+  "chainsSummary": "Summary",
+  "chainsWorkers": "Workers",
+  "chainsSubtasks": "Subtasks",
+  "chainsSynthesis": "Synthesis",
+  "chainsDuration": "Duration",
+  "chainsManageOnSocial": "Manage chains on the home node Social UI.",
+  "chainsPublished": "Published {date}",
+  "@chainsPublished": {
+    "placeholders": {
+      "date": {
+        "type": "String"
+      }
+    }
+  },
+  "chainsChainId": "Chain {id}",
+  "@chainsChainId": {
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "termNone": "No terminal sessions",
+  "termAttachFailed": "Terminal attach failed: {error}",
+  "@termAttachFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "termCopied": "Copied to clipboard",
+  "termReconnecting": "Reconnecting…",
+  "termCopyAll": "Copy all output",
+  "termPaste": "Paste",
+  "termCloseSession": "Close session",
+  "chatImagePlaceholder": "[image]",
+  "chatsBotSyncing": "Updates sync…",
+  "chatsBotSavedHint": "Saved on your home node. Chat when ready.",
+  "chatsBotNotFound": "Bot not found on home node",
+  "chatAiDisabledAskOwner": "Ask the home owner to enable an AI model for family chat.",
+  "pairingLoadProfilesFailed": "Could not load existing profiles: {error}",
+  "pairingFailed": "Pairing failed: {error}",
+  "@pairingLoadProfilesFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "@pairingFailed": {
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "feedDefaultTitle": "Feed post",
+  "aiDraftSection": "Draft section",
+  "aiDraftFailed": "Could not draft ({reason})",
+  "@aiDraftFailed": {
+    "placeholders": {
+      "reason": {
+        "type": "String"
+      }
+    }
+  },
+  "authorAvatarNamed": "Avatar: {name}",
+  "authorPhotoNamed": "Photo: {name}",
+  "@authorAvatarNamed": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "@authorPhotoNamed": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "peopleEnvoyUser": "Envoy User",
+  "commonEllipsis": "…",
+  "browserCached": "Cached",
+  "browserLoaded": "Loaded",
+  "browserNotPublished": "Not published yet",
+  "browserNotFound": "Content not found",
+  "browserAccessDenied": "Access denied",
+  "browserPdfLoaded": "PDF loaded ({chars} base64 chars)",
+  "@browserPdfLoaded": {
+    "placeholders": {
+      "chars": {
+        "type": "int"
+      }
+    }
+  },
+  "browserUnsupportedType": "Unsupported type: {mime}",
+  "@browserUnsupportedType": {
+    "placeholders": {
+      "mime": {
+        "type": "String"
+      }
+    }
+  },
+  "browserInterests": "Interests",
+  "browserKnowledge": "Knowledge",
+  "browserCapabilities": "Capabilities",
+  "connTooltipP2p": "P2P connection via relay hop",
+  "connTooltipRelay": "Relay connection — home can dial you",
+  "connTooltipConnectedVia": "Connected via {transport}",
+  "@connTooltipConnectedVia": {
+    "placeholders": {
+      "transport": {
+        "type": "String"
+      }
+    }
+  },
+  "connBootstrap": "Bootstrap",
+  "settingsRunning": "running",
+  "settingsNotRunning": "not running",
+  "settingsModelIdHint": "model-id",
+  "chainsSections": "Sections",
+  "chainsWorkerAllocations": "Worker allocations",
+  "chainsAwardedSummary": "{status} · {awarded}/{total} awarded",
+  "@chainsAwardedSummary": {
+    "placeholders": {
+      "status": {
+        "type": "String"
+      },
+      "awarded": {
+        "type": "int"
+      },
+      "total": {
+        "type": "int"
+      }
+    }
+  },
+  "meAttemptN": "attempt {n}",
+  "@meAttemptN": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "meSecondsAgo": "{n}s ago",
+  "meMinutesAgo": "{n}m ago",
+  "meHoursAgo": "{n}h ago",
+  "meDaysAgo": "{n}d ago",
+  "@meSecondsAgo": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "@meMinutesAgo": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "@meHoursAgo": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "@meDaysAgo": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "termShowKeyboard": "Show keyboard",
+  "termHideKeyboard": "Hide keyboard",
+  "termCopySelection": "Copy selection",
+  "pairingImBackHint": "Tap a name if this is your second phone (I'm back).",
+  "connP2pDetail": "P2P ({detail})",
+  "@connP2pDetail": {
+    "placeholders": {
+      "detail": {
+        "type": "String"
+      }
+    }
+  },
+  "meConnRefused": "connection refused / blocked",
+  "meTimeout5s": "timeout (5s)",
+  "timeMinutesShort": "{n}m",
+  "@timeMinutesShort": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "timeHoursShort": "{n}h",
+  "@timeHoursShort": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "timeDaysShort": "{n}d",
+  "@timeDaysShort": {
+    "placeholders": {
+      "n": {
+        "type": "int"
+      }
+    }
+  },
+  "termCtrlSticky": "Ctrl modifier (sticky)",
+  "termCtrlLetter": "Ctrl + letter",
+  "connStateConnected": "Connected",
+  "connStateConnecting": "Connecting…",
+  "connStateDisconnected": "Disconnected",
+  "connStateError": "Error",
+  "chatsDefaultGroup": "Group",
+  "chatsDefaultFamilyGroup": "Family group",
+  "chatsTerminalTitle": "Terminal: {name}",
+  "@chatsTerminalTitle": {
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "chatsExtAgent": "Ext Agent",
+  "browserBytesCount": "{count} bytes",
+  "@browserBytesCount": {
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "commonYouName": "You"
+}

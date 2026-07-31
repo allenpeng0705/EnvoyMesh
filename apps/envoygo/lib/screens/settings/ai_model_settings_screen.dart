@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../l10n/app_localizations.dart';
 import '../../ai/model_provider_presets.dart';
 import '../../providers/contact_provider.dart' show nodeServiceProvider;
 import '../../services/node_service_client.dart';
@@ -188,12 +189,12 @@ class _AiModelSettingsScreenState
       if (!mounted) return;
       setState(() => _existingMp = next);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('AI model saved')),
+        SnackBar(content: Text(AppLocalizations.of(context).settingsAiModelSaved)),
       );
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Save failed: $e')),
+        SnackBar(content: Text(AppLocalizations.of(context).settingsSaveFailed('$e'))),
       );
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -202,6 +203,7 @@ class _AiModelSettingsScreenState
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final preset = _preset;
     final showEndpoint = !_localOnly && preset.endpointEditable;
     final showModel =
@@ -209,7 +211,7 @@ class _AiModelSettingsScreenState
     final showApiKey = showModel;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('AI Model')),
+      appBar: AppBar(title: Text(l10n.meAiModel)),
       body: !_loaded
           ? const Center(child: CircularProgressIndicator())
           : Form(
@@ -218,8 +220,7 @@ class _AiModelSettingsScreenState
                 padding: const EdgeInsets.all(16),
                 children: [
                   Text(
-                    'Cloud model provider for the home-node assistant. '
-                    'Local Ollama/LiteLLM stay on the desktop Social UI.',
+                    l10n.settingsAiModelIntro,
                     style: Theme.of(context).textTheme.bodySmall,
                   ),
                   if (_localOnly) ...[
@@ -228,12 +229,11 @@ class _AiModelSettingsScreenState
                       color: Theme.of(context).colorScheme.secondaryContainer,
                       child: ListTile(
                         leading: const Icon(Icons.computer),
-                        title: Text('Home uses $_localModeLabel'),
+                        title: Text(l10n.settingsHomeUses(_localModeLabel)),
                         subtitle: Text(
-                          'Endpoint: ${_endpointCtl.text.isEmpty ? "(default)" : _endpointCtl.text}\n'
-                          'Model: ${_modelNameCtl.text.isEmpty ? "(unset)" : _modelNameCtl.text}\n'
-                          'Edit this provider on the home-node Social UI so '
-                          'EnvoyGo does not overwrite your local setup.',
+                          '${l10n.settingsEndpoint} ${_endpointCtl.text.isEmpty ? l10n.settingsDefault : _endpointCtl.text}\n'
+                          '${l10n.settingsModelLabel} ${_modelNameCtl.text.isEmpty ? l10n.settingsDefault : _modelNameCtl.text}\n'
+                          '${l10n.settingsEditOnSocial}',
                         ),
                         isThreeLine: true,
                       ),
@@ -242,9 +242,9 @@ class _AiModelSettingsScreenState
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
                       value: _presetId,
-                      decoration: const InputDecoration(
-                        labelText: 'Provider',
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        labelText: l10n.settingsProvider,
+                        border: const OutlineInputBorder(),
                       ),
                       items: cloudModelProviderPresets
                           .map(
@@ -261,7 +261,7 @@ class _AiModelSettingsScreenState
                       TextFormField(
                         controller: _endpointCtl,
                         decoration: InputDecoration(
-                          labelText: 'Endpoint URL',
+                          labelText: l10n.settingsEndpointUrl,
                           hintText: preset.endpointPlaceholder,
                           border: const OutlineInputBorder(),
                         ),
@@ -276,9 +276,9 @@ class _AiModelSettingsScreenState
                               preset.models.contains(_modelNameCtl.text.trim())
                                   ? _modelNameCtl.text.trim()
                                   : null,
-                          decoration: const InputDecoration(
-                            labelText: 'Model',
-                            border: OutlineInputBorder(),
+                          decoration: InputDecoration(
+                            labelText: l10n.settingsModel,
+                            border: const OutlineInputBorder(),
                           ),
                           items: [
                             ...preset.models.map(
@@ -300,11 +300,11 @@ class _AiModelSettingsScreenState
                           controller: _modelNameCtl,
                           decoration: InputDecoration(
                             labelText: preset.models.isEmpty
-                                ? 'Model name'
-                                : 'Custom model name',
+                                ? l10n.settingsPiModelName
+                                : l10n.settingsCustomModel,
                             hintText: preset.models.isNotEmpty
                                 ? preset.models.first
-                                : 'model-id',
+                                : l10n.settingsModelIdHint,
                             border: const OutlineInputBorder(),
                           ),
                         ),
@@ -316,12 +316,12 @@ class _AiModelSettingsScreenState
                         controller: _apiKeyCtl,
                         obscureText: _obscureApiKey,
                         decoration: InputDecoration(
-                          labelText: 'API key',
+                          labelText: l10n.settingsApiKey,
                           helperText: _apiKeyCtl.text.isEmpty &&
                                   (_existingMp['apiKey'] as String?)
                                           ?.isNotEmpty ==
                                       true
-                              ? 'A key is already saved on the home node'
+                              ? l10n.settingsApiKeySaved
                               : null,
                           border: const OutlineInputBorder(),
                           suffixIcon: IconButton(
@@ -347,7 +347,7 @@ class _AiModelSettingsScreenState
                               child: CircularProgressIndicator(strokeWidth: 2),
                             )
                           : const Icon(Icons.save),
-                      label: const Text('Save'),
+                      label: Text(l10n.commonSave),
                     ),
                   ],
                 ],

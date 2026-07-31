@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/stored_node.dart';
 
 /// Bottom sheet for switching between paired home nodes.
@@ -18,6 +19,7 @@ class NodeSwitcherSheet extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return SafeArea(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -34,7 +36,7 @@ class NodeSwitcherSheet extends StatelessWidget {
           ),
           const SizedBox(height: 16),
           Text(
-            'Switch Node',
+            l10n.meSwitchNode,
             style: Theme.of(context).textTheme.titleMedium,
           ),
           const SizedBox(height: 8),
@@ -60,7 +62,7 @@ class NodeSwitcherSheet extends StatelessWidget {
           const Divider(),
           ListTile(
             leading: const Icon(Icons.add),
-            title: const Text('Pair New Node'),
+            title: Text(l10n.mePairNewNode),
             onTap: () {
               Navigator.of(context).pop();
               onPairNew();

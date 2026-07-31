@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/chat_thread.dart';
 import '../../providers/chat_provider.dart';
 import '../../providers/contact_provider.dart';
 import '../../providers/node_provider.dart';
+import '../../utils/localized_labels.dart';
 import '../../widgets/ext_agent_switcher.dart';
 import '../../widgets/thread_tile.dart';
 import '../terminals/terminal_detail_screen.dart';
@@ -15,8 +17,8 @@ class ChatListScreen extends ConsumerWidget {
 
   static String _terminalSessionTitle(String displayName) {
     var name = displayName;
-    if (name.startsWith('Terminal: ')) {
-      name = name.substring('Terminal: '.length);
+    if (name.startsWith(ThreadTitleSentinels.terminalPrefix)) {
+      name = name.substring(ThreadTitleSentinels.terminalPrefix.length);
     }
     if (name.startsWith('π ')) {
       name = name.substring(2);
@@ -24,8 +26,20 @@ class ChatListScreen extends ConsumerWidget {
     return name;
   }
 
+  static String _localizedThreadTitle(
+    BuildContext context,
+    ChatThread thread,
+  ) {
+    return localizeThreadTitle(
+      AppLocalizations.of(context),
+      displayName: thread.displayName,
+      type: thread.type,
+    );
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
     final chatState = ref.watch(chatProvider);
     final threads = chatState.threads;
 
@@ -35,27 +49,26 @@ class ChatListScreen extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.all(12),
             child: SearchBar(
-              hintText: 'Search chats...',
+              hintText: l10n.chatsSearchHint,
               leading: const Icon(Icons.search),
               onChanged: (_) {},
             ),
           ),
-          const Padding(
-            padding: EdgeInsets.only(top: 80),
+          Padding(
+            padding: const EdgeInsets.only(top: 80),
             child: Center(
               child: Column(
                 children: [
-                  Icon(Icons.chat_bubble_outline, size: 64,
-                      color: Colors.grey),
-                  SizedBox(height: 16),
+                  const Icon(Icons.chat_bubble_outline, size: 64, color: Colors.grey),
+                  const SizedBox(height: 16),
                   Text(
-                    'No conversations yet',
-                    style: TextStyle(fontSize: 18, color: Colors.grey),
+                    l10n.chatsEmpty,
+                    style: const TextStyle(fontSize: 18, color: Colors.grey),
                   ),
-                  SizedBox(height: 8),
+                  const SizedBox(height: 8),
                   Text(
-                    'Pair with your home node to get started.',
-                    style: TextStyle(color: Colors.grey),
+                    l10n.chatsEmptyHint,
+                    style: const TextStyle(color: Colors.grey),
                   ),
                 ],
               ),
@@ -67,26 +80,34 @@ class ChatListScreen extends ConsumerWidget {
 
     // Group threads by type for sectioned display.
     final isOwner = ref.watch(nodeProvider).isOwnerProfile;
-    final ai = threads
-        .where((t) =>
-            t.type == ChatThreadType.envoyai ||
-            t.type == ChatThreadType.externalAgent ||
-            t.type == ChatThreadType.aiBot)
-        .toList()
-      ..sort((a, b) {
-        int rank(ChatThread t) {
-          if (t.type == ChatThreadType.envoyai) return 0;
-          if (t.type == ChatThreadType.externalAgent) return 1;
-          return 2;
-        }
-        final byType = rank(a).compareTo(rank(b));
-        if (byType != 0) return byType;
-        return a.displayName.toLowerCase().compareTo(b.displayName.toLowerCase());
-      });
+    final ai =
+        threads
+            .where(
+              (t) =>
+                  t.type == ChatThreadType.envoyai ||
+                  t.type == ChatThreadType.externalAgent ||
+                  t.type == ChatThreadType.aiBot,
+            )
+            .toList()
+          ..sort((a, b) {
+            int rank(ChatThread t) {
+              if (t.type == ChatThreadType.envoyai) return 0;
+              if (t.type == ChatThreadType.externalAgent) return 1;
+              return 2;
+            }
+
+            final byType = rank(a).compareTo(rank(b));
+            if (byType != 0) return byType;
+            return a.displayName.toLowerCase().compareTo(
+              b.displayName.toLowerCase(),
+            );
+          });
     final family = threads
-        .where((t) =>
-            t.type == ChatThreadType.family ||
-            t.type == ChatThreadType.familyGroup)
+        .where(
+          (t) =>
+              t.type == ChatThreadType.family ||
+              t.type == ChatThreadType.familyGroup,
+        )
         .toList();
     // Mesh contacts / mesh groups / terminals are owner-only (Phase 51E).
     final contacts = isOwner
@@ -100,11 +121,19 @@ class ChatListScreen extends ConsumerWidget {
         : <ChatThread>[];
 
     final sections = <_ThreadSection>[];
-    if (ai.isNotEmpty) sections.add(_ThreadSection('AI', ai));
-    if (family.isNotEmpty) sections.add(_ThreadSection('Family', family));
-    if (contacts.isNotEmpty) sections.add(_ThreadSection('Contacts', contacts));
-    if (groups.isNotEmpty) sections.add(_ThreadSection('Groups', groups));
-    if (terminals.isNotEmpty) sections.add(_ThreadSection('Terminals', terminals));
+    if (ai.isNotEmpty) sections.add(_ThreadSection(l10n.chatsSectionAi, ai));
+    if (family.isNotEmpty) {
+      sections.add(_ThreadSection(l10n.chatsSectionFamily, family));
+    }
+    if (contacts.isNotEmpty) {
+      sections.add(_ThreadSection(l10n.chatsSectionContacts, contacts));
+    }
+    if (groups.isNotEmpty) {
+      sections.add(_ThreadSection(l10n.chatsSectionGroups, groups));
+    }
+    if (terminals.isNotEmpty) {
+      sections.add(_ThreadSection(l10n.chatsSectionTerminals, terminals));
+    }
 
     return Stack(
       children: [
@@ -113,7 +142,7 @@ class ChatListScreen extends ConsumerWidget {
             Padding(
               padding: const EdgeInsets.all(12),
               child: SearchBar(
-                hintText: 'Search chats...',
+                hintText: l10n.chatsSearchHint,
                 leading: const Icon(Icons.search),
                 onChanged: (_) {},
               ),
@@ -121,24 +150,20 @@ class ChatListScreen extends ConsumerWidget {
             Expanded(
               child: ListView.builder(
                 itemCount: sections.fold<int>(
-                    0, (sum, s) => sum + 1 + s.threads.length),
+                  0,
+                  (sum, s) => sum + 1 + s.threads.length,
+                ),
                 itemBuilder: (context, index) {
-                  // Find which section and position this index belongs to.
                   var offset = 0;
                   for (final section in sections) {
                     if (index == offset) {
-                      // Section header.
                       return Padding(
                         padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
                         child: Text(
                           section.title,
-                          style: Theme.of(context)
-                              .textTheme
-                              .titleSmall
+                          style: Theme.of(context).textTheme.titleSmall
                               ?.copyWith(
-                                color: Theme.of(context)
-                                    .colorScheme
-                                    .primary,
+                                color: Theme.of(context).colorScheme.primary,
                                 fontWeight: FontWeight.w600,
                               ),
                         ),
@@ -155,8 +180,7 @@ class ChatListScreen extends ConsumerWidget {
                           alignment: Alignment.centerRight,
                           padding: const EdgeInsets.only(right: 20),
                           color: Colors.red,
-                          child: const Icon(Icons.delete,
-                              color: Colors.white),
+                          child: const Icon(Icons.delete, color: Colors.white),
                         ),
                         confirmDismiss: (direction) async {
                           if (thread.type == ChatThreadType.aiBot) {
@@ -173,30 +197,30 @@ class ChatListScreen extends ConsumerWidget {
                         },
                         child: ThreadTile(
                           thread: thread,
-                          trailingAction: thread.type ==
-                                  ChatThreadType.externalAgent
+                          trailingAction:
+                              thread.type == ChatThreadType.externalAgent
                               ? const ExtAgentSwitcher(iconOnly: true)
                               : thread.type == ChatThreadType.aiBot
-                                  ? _AiBotRowMenu(
-                                      onEdit: () => _showBotEditor(
-                                        context,
-                                        ref,
-                                        botId: thread.botId,
-                                      ),
-                                      onDelete: () async {
-                                        final ok = await _confirmDeleteBot(
-                                          context,
-                                          thread.displayName,
-                                        );
-                                        if (ok != true || !context.mounted) {
-                                          return;
-                                        }
-                                        await ref
-                                            .read(chatProvider.notifier)
-                                            .deleteThread(thread.id);
-                                      },
-                                    )
-                                  : null,
+                              ? _AiBotRowMenu(
+                                  onEdit: () => _showBotEditor(
+                                    context,
+                                    ref,
+                                    botId: thread.botId,
+                                  ),
+                                  onDelete: () async {
+                                    final ok = await _confirmDeleteBot(
+                                      context,
+                                      thread.displayName,
+                                    );
+                                    if (ok != true || !context.mounted) {
+                                      return;
+                                    }
+                                    await ref
+                                        .read(chatProvider.notifier)
+                                        .deleteThread(thread.id);
+                                  },
+                                )
+                              : null,
                           onTap: () => _openThread(context, thread),
                         ),
                       );
@@ -215,7 +239,7 @@ class ChatListScreen extends ConsumerWidget {
           bottom: 16,
           child: FloatingActionButton(
             heroTag: 'compose',
-            tooltip: 'New',
+            tooltip: l10n.chatsFabNew,
             onPressed: () => _showNewActions(context, ref),
             child: const Icon(Icons.add),
           ),
@@ -230,14 +254,15 @@ class ChatListScreen extends ConsumerWidget {
       context: context,
       showDragHandle: true,
       builder: (sheetContext) {
+        final l10n = AppLocalizations.of(sheetContext);
         return SafeArea(
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               ListTile(
                 leading: const Icon(Icons.smart_toy_outlined),
-                title: const Text('Create Bot'),
-                subtitle: const Text('AI character on your home node'),
+                title: Text(l10n.chatsCreateBot),
+                subtitle: Text(l10n.chatsCreateBotHint),
                 onTap: () {
                   Navigator.of(sheetContext).pop();
                   WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -260,8 +285,8 @@ class ChatListScreen extends ConsumerWidget {
                       ),
                     ),
                   ),
-                  title: const Text('New Pi'),
-                  subtitle: const Text('Start a Pi coding terminal'),
+                  title: Text(l10n.chatsNewPi),
+                  subtitle: Text(l10n.chatsNewPiHint),
                   onTap: () {
                     Navigator.of(sheetContext).pop();
                     _createPi(context, ref);
@@ -269,8 +294,8 @@ class ChatListScreen extends ConsumerWidget {
                 ),
                 ListTile(
                   leading: const Icon(Icons.terminal),
-                  title: const Text('New Terminal'),
-                  subtitle: const Text('Open a shell on the home node'),
+                  title: Text(l10n.chatsNewTerminal),
+                  subtitle: Text(l10n.chatsNewTerminalHint),
                   onTap: () {
                     Navigator.of(sheetContext).pop();
                     _createTerminal(context, ref);
@@ -278,8 +303,8 @@ class ChatListScreen extends ConsumerWidget {
                 ),
                 ListTile(
                   leading: const Icon(Icons.group_add),
-                  title: const Text('New Group Chat'),
-                  subtitle: const Text('Mesh group with bonded contacts'),
+                  title: Text(l10n.chatsNewGroup),
+                  subtitle: Text(l10n.chatsNewGroupHint),
                   onTap: () {
                     Navigator.of(sheetContext).pop();
                     _showCreateRoomDialog(context, ref);
@@ -288,8 +313,8 @@ class ChatListScreen extends ConsumerWidget {
               ],
               ListTile(
                 leading: const Icon(Icons.family_restroom),
-                title: const Text('New Family Group'),
-                subtitle: const Text('Local group with family members'),
+                title: Text(l10n.chatsNewFamilyGroup),
+                subtitle: Text(l10n.chatsNewFamilyGroupHint),
                 onTap: () {
                   Navigator.of(sheetContext).pop();
                   WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -330,13 +355,14 @@ class ChatListScreen extends ConsumerWidget {
           MaterialPageRoute(
             builder: (_) => ChatDetailScreen(
               threadId: thread.id,
-              displayName: thread.displayName,
-              agentType: thread.agentType ??
+              displayName: _localizedThreadTitle(context, thread),
+              agentType:
+                  thread.agentType ??
                   (thread.type == ChatThreadType.externalAgent
                       ? 'external'
                       : thread.type == ChatThreadType.aiBot
-                          ? 'bot:${thread.botId ?? ''}'
-                          : 'envoyai'),
+                      ? 'bot:${thread.botId ?? ''}'
+                      : 'envoyai'),
             ),
           ),
         );
@@ -348,17 +374,17 @@ class ChatListScreen extends ConsumerWidget {
         break;
     }
 
-    final isRoom = thread.type == ChatThreadType.group ||
+    final isRoom =
+        thread.type == ChatThreadType.group ||
         thread.type == ChatThreadType.familyGroup;
     final contactOwnerId = isRoom
         ? null
-        : (thread.contactOwnerId ??
-            threadPeerSuffix(thread.id, thread.nodeId));
+        : (thread.contactOwnerId ?? threadPeerSuffix(thread.id, thread.nodeId));
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => ChatDetailScreen(
           threadId: thread.id,
-          displayName: thread.displayName,
+          displayName: _localizedThreadTitle(context, thread),
           contactOwnerId: contactOwnerId,
           chatRoomId: isRoom ? thread.chatRoomId : null,
           isFamilyRoom: thread.type == ChatThreadType.familyGroup,
@@ -368,29 +394,30 @@ class ChatListScreen extends ConsumerWidget {
   }
 
   void _createTerminal(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
     final nameController = TextEditingController(text: 'zsh');
     final cwdController = TextEditingController();
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('New Terminal'),
+        title: Text(l10n.chatsNewTerminal),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             TextField(
               controller: nameController,
               autofocus: true,
-              decoration: const InputDecoration(
-                hintText: 'Shell (e.g. zsh, bash)',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                hintText: l10n.chatsShellHint,
+                border: const OutlineInputBorder(),
               ),
             ),
             const SizedBox(height: 12),
             TextField(
               controller: cwdController,
-              decoration: const InputDecoration(
-                hintText: 'Working directory (optional)',
-                border: OutlineInputBorder(),
+              decoration: InputDecoration(
+                hintText: l10n.chatsCwdHint,
+                border: const OutlineInputBorder(),
               ),
             ),
           ],
@@ -398,13 +425,15 @@ class ChatListScreen extends ConsumerWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
+            child: Text(l10n.commonCancel),
           ),
           FilledButton(
             onPressed: () {
               final name = nameController.text.trim();
               if (name.isNotEmpty) {
-                ref.read(chatProvider.notifier).createTerminal(
+                ref
+                    .read(chatProvider.notifier)
+                    .createTerminal(
                       name: name,
                       cwd: cwdController.text.trim().isEmpty
                           ? null
@@ -413,7 +442,7 @@ class ChatListScreen extends ConsumerWidget {
                 Navigator.of(ctx).pop();
               }
             },
-            child: const Text('Create'),
+            child: Text(l10n.commonCreate),
           ),
         ],
       ),
@@ -421,21 +450,20 @@ class ChatListScreen extends ConsumerWidget {
   }
 
   Future<bool?> _confirmDeleteBot(BuildContext context, String name) {
+    final l10n = AppLocalizations.of(context);
     return showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Delete bot?'),
-        content: Text(
-          'Remove “$name” from your home node? This cannot be undone.',
-        ),
+        title: Text(l10n.chatsDeleteBotTitle),
+        content: Text(l10n.chatsDeleteBotBody(name)),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Cancel'),
+            child: Text(l10n.commonCancel),
           ),
           FilledButton(
             onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Delete'),
+            child: Text(l10n.commonDelete),
           ),
         ],
       ),
@@ -443,11 +471,7 @@ class ChatListScreen extends ConsumerWidget {
   }
 
   /// Create or edit an AI character bot on the home node (same fields as Social).
-  void _showBotEditor(
-    BuildContext context,
-    WidgetRef ref, {
-    String? botId,
-  }) {
+  void _showBotEditor(BuildContext context, WidgetRef ref, {String? botId}) {
     final editingId = botId?.trim();
     final isEdit = editingId != null && editingId.isNotEmpty;
     final nameController = TextEditingController();
@@ -484,19 +508,16 @@ class ChatListScreen extends ConsumerWidget {
                   if (!ctx.mounted) return;
                   if (bot == null) {
                     setLocal(() {
-                      error = 'Bot not found on home node';
+                      error = AppLocalizations.of(ctx).chatsBotNotFound;
                     });
                     return;
                   }
                   nameController.text = bot['name']?.toString() ?? '';
-                  promptController.text =
-                      bot['systemPrompt']?.toString() ?? '';
-                  descController.text =
-                      bot['description']?.toString() ?? '';
+                  promptController.text = bot['systemPrompt']?.toString() ?? '';
+                  descController.text = bot['description']?.toString() ?? '';
                   final color = bot['avatarColor']?.toString();
                   if (color != null && color.isNotEmpty) {
-                    avatarColor =
-                        color.startsWith('#') ? color : '#$color';
+                    avatarColor = color.startsWith('#') ? color : '#$color';
                   }
                   setLocal(() {});
                 } catch (e) {
@@ -513,10 +534,11 @@ class ChatListScreen extends ConsumerWidget {
               final name = nameController.text.trim();
               final prompt = promptController.text.trim();
               if (name.isEmpty || prompt.isEmpty) {
+                final formL10n = AppLocalizations.of(ctx);
                 setLocal(() {
                   error = name.isEmpty
-                      ? 'Bot name is required'
-                      : 'Personality / system prompt is required';
+                      ? formL10n.chatsBotNameRequired
+                      : formL10n.chatsBotPromptRequired;
                 });
                 return;
               }
@@ -574,6 +596,7 @@ class ChatListScreen extends ConsumerWidget {
               }
             }
 
+            final l10n = AppLocalizations.of(ctx);
             return Padding(
               padding: EdgeInsets.only(
                 left: 16,
@@ -586,19 +609,15 @@ class ChatListScreen extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
-                      isEdit ? 'Edit Bot' : 'Create Bot',
+                      isEdit ? l10n.chatsEditBot : l10n.chatsCreateBot,
                       style: Theme.of(ctx).textTheme.titleLarge,
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      isEdit
-                          ? 'Updates sync to your home node and all devices.'
-                          : 'Saved on your home node and synced to all devices.',
+                      isEdit ? l10n.chatsBotSyncing : l10n.chatsBotSavedHint,
                       style: Theme.of(ctx).textTheme.bodySmall?.copyWith(
-                            color: Theme.of(ctx)
-                                .colorScheme
-                                .onSurfaceVariant,
-                          ),
+                        color: Theme.of(ctx).colorScheme.onSurfaceVariant,
+                      ),
                     ),
                     const SizedBox(height: 16),
                     Row(
@@ -613,9 +632,7 @@ class ChatListScreen extends ConsumerWidget {
                           child: Text(
                             nameController.text.trim().isEmpty
                                 ? '?'
-                                : nameController.text
-                                    .trim()[0]
-                                    .toUpperCase(),
+                                : nameController.text.trim()[0].toUpperCase(),
                             style: const TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w700,
@@ -626,7 +643,7 @@ class ChatListScreen extends ConsumerWidget {
                         Expanded(
                           child: Text(
                             nameController.text.trim().isEmpty
-                                ? 'Bot name'
+                                ? l10n.chatsBotName
                                 : nameController.text.trim(),
                             style: Theme.of(ctx).textTheme.titleMedium,
                             overflow: TextOverflow.ellipsis,
@@ -638,10 +655,10 @@ class ChatListScreen extends ConsumerWidget {
                     TextField(
                       controller: nameController,
                       textInputAction: TextInputAction.next,
-                      decoration: const InputDecoration(
-                        labelText: 'Bot name',
-                        hintText: 'e.g. Luna the Librarian',
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        labelText: l10n.chatsBotName,
+                        hintText: l10n.chatsBotNameHint,
+                        border: const OutlineInputBorder(),
                       ),
                       onChanged: (_) => setLocal(() {}),
                     ),
@@ -650,13 +667,10 @@ class ChatListScreen extends ConsumerWidget {
                       controller: promptController,
                       minLines: 3,
                       maxLines: 6,
-                      decoration: const InputDecoration(
-                        labelText: 'Personality / System prompt',
-                        hintText:
-                            'You are Luna, my girlfriend. You love music, movies, and travelling. Speak warmly…',
-                        helperText:
-                            'Write as the character (“You are …”). Avoid “Luna is …” or “I am an AI…”. Reshaped on save.',
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        labelText: l10n.chatsBotPrompt,
+                        helperText: l10n.chatsBotPromptHint,
+                        border: const OutlineInputBorder(),
                         alignLabelWithHint: true,
                       ),
                       onChanged: (_) => setLocal(() {}),
@@ -664,17 +678,15 @@ class ChatListScreen extends ConsumerWidget {
                     const SizedBox(height: 12),
                     TextField(
                       controller: descController,
-                      decoration: const InputDecoration(
-                        labelText: 'Short description (optional)',
-                        hintText: 'My girlfriend · music & travel',
-                        helperText:
-                            'One short line for the chat list. Leave blank to auto-fill from the personality.',
-                        border: OutlineInputBorder(),
+                      decoration: InputDecoration(
+                        labelText: l10n.chatsBotDesc,
+                        helperText: l10n.chatsBotDescHint,
+                        border: const OutlineInputBorder(),
                       ),
                     ),
                     const SizedBox(height: 12),
                     Text(
-                      'Avatar color',
+                      l10n.chatsAvatarColor,
                       style: Theme.of(ctx).textTheme.labelLarge,
                     ),
                     const SizedBox(height: 8),
@@ -684,8 +696,7 @@ class ChatListScreen extends ConsumerWidget {
                       children: [
                         for (final hex in presets)
                           GestureDetector(
-                            onTap: () =>
-                                setLocal(() => avatarColor = hex),
+                            onTap: () => setLocal(() => avatarColor = hex),
                             child: Container(
                               width: 32,
                               height: 32,
@@ -699,9 +710,7 @@ class ChatListScreen extends ConsumerWidget {
                                 shape: BoxShape.circle,
                                 border: Border.all(
                                   color: avatarColor == hex
-                                      ? Theme.of(ctx)
-                                          .colorScheme
-                                          .onSurface
+                                      ? Theme.of(ctx).colorScheme.onSurface
                                       : Colors.transparent,
                                   width: 2,
                                 ),
@@ -728,7 +737,7 @@ class ChatListScreen extends ConsumerWidget {
                             onPressed: saving
                                 ? null
                                 : () => Navigator.of(ctx).pop(),
-                            child: const Text('Cancel'),
+                            child: Text(l10n.commonCancel),
                           ),
                         ),
                         const SizedBox(width: 12),
@@ -737,8 +746,10 @@ class ChatListScreen extends ConsumerWidget {
                             onPressed: saving ? null : submit,
                             child: Text(
                               saving
-                                  ? 'Saving…'
-                                  : (isEdit ? 'Save' : 'Create Bot'),
+                                  ? l10n.commonSaving
+                                  : (isEdit
+                                      ? l10n.commonSave
+                                      : l10n.chatsCreateBot),
                             ),
                           ),
                         ),
@@ -784,50 +795,32 @@ class ChatListScreen extends ConsumerWidget {
       context: context,
       barrierDismissible: false,
       builder: (ctx) {
+        final l10n = AppLocalizations.of(ctx);
         return StatefulBuilder(
           builder: (ctx, setLocal) {
             return AlertDialog(
-              title: const Text('New Pi'),
+              title: Text(l10n.chatsNewPi),
               content: Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const Text(
-                    'Choose a project folder on the home computer to open the Pi coding terminal.',
-                    style: TextStyle(fontSize: 13),
+                  Text(
+                    l10n.chatsPiBody,
+                    style: const TextStyle(fontSize: 13),
                   ),
                   const SizedBox(height: 12),
                   TextField(
                     controller: pathController,
                     enabled: !starting,
                     autofocus: true,
-                    decoration: const InputDecoration(
-                      labelText: 'Project folder',
-                      hintText: '/Users/you/project',
-                      border: OutlineInputBorder(),
+                    decoration: InputDecoration(
+                      labelText: l10n.chatsPiFolder,
+                      hintText: l10n.chatsPiFolderHint,
+                      border: const OutlineInputBorder(),
                     ),
                     onSubmitted: starting
                         ? null
                         : (_) => _submitNewPi(
-                              context,
-                              ctx,
-                              ref,
-                              pathController,
-                              starting,
-                              (v) => setLocal(() => starting = v),
-                            ),
-                  ),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: starting ? null : () => Navigator.of(ctx).pop(),
-                  child: const Text('Cancel'),
-                ),
-                FilledButton(
-                  onPressed: starting
-                      ? null
-                      : () => _submitNewPi(
                             context,
                             ctx,
                             ref,
@@ -835,13 +828,32 @@ class ChatListScreen extends ConsumerWidget {
                             starting,
                             (v) => setLocal(() => starting = v),
                           ),
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: starting ? null : () => Navigator.of(ctx).pop(),
+                  child: Text(l10n.commonCancel),
+                ),
+                FilledButton(
+                  onPressed: starting
+                      ? null
+                      : () => _submitNewPi(
+                          context,
+                          ctx,
+                          ref,
+                          pathController,
+                          starting,
+                          (v) => setLocal(() => starting = v),
+                        ),
                   child: starting
                       ? const SizedBox(
                           width: 18,
                           height: 18,
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
-                      : const Text('Start Pi'),
+                      : Text(l10n.chatsPiTitle),
                 ),
               ],
             );
@@ -863,7 +875,11 @@ class ChatListScreen extends ConsumerWidget {
     final path = pathController.text.trim();
     if (path.isEmpty) {
       ScaffoldMessenger.of(listContext).showSnackBar(
-        const SnackBar(content: Text('Enter a project folder path.')),
+        SnackBar(
+          content: Text(
+            AppLocalizations.of(listContext).chatsPiFolderRequired,
+          ),
+        ),
       );
       return;
     }
@@ -874,7 +890,10 @@ class ChatListScreen extends ConsumerWidget {
           .createPiTerminal(projectPath: path);
       if (dialogContext.mounted) Navigator.of(dialogContext).pop();
       if (!listContext.mounted) return;
-      final title = path.split(RegExp(r'[/\\]')).where((s) => s.isNotEmpty).last;
+      final title = path
+          .split(RegExp(r'[/\\]'))
+          .where((s) => s.isNotEmpty)
+          .last;
       await Navigator.of(listContext).push(
         MaterialPageRoute(
           builder: (_) => TerminalDetailScreen(
@@ -893,17 +912,18 @@ class ChatListScreen extends ConsumerWidget {
   }
 
   void _showCreateRoomDialog(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
     final controller = TextEditingController();
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('New Group Chat'),
+        title: Text(l10n.chatsNewGroup),
         content: TextField(
           controller: controller,
           autofocus: true,
-          decoration: const InputDecoration(
-            hintText: 'Group name',
-            border: OutlineInputBorder(),
+          decoration: InputDecoration(
+            hintText: l10n.chatsGroupName,
+            border: const OutlineInputBorder(),
           ),
           onSubmitted: (name) {
             if (name.trim().isNotEmpty) {
@@ -915,7 +935,7 @@ class ChatListScreen extends ConsumerWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(),
-            child: const Text('Cancel'),
+            child: Text(l10n.commonCancel),
           ),
           FilledButton(
             onPressed: () {
@@ -925,7 +945,7 @@ class ChatListScreen extends ConsumerWidget {
                 Navigator.of(ctx).pop();
               }
             },
-            child: const Text('Create'),
+            child: Text(l10n.commonCreate),
           ),
         ],
       ),
@@ -933,23 +953,20 @@ class ChatListScreen extends ConsumerWidget {
   }
 
   void _showCreateFamilyRoomDialog(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
     final nameController = TextEditingController();
     final myProfileId = ref.read(nodeProvider).familyProfileId ?? 'owner';
-    final profiles = ref
-        .read(nodeProvider)
-        .familyProfiles
-        .where((p) {
-          final id = p['id']?.toString() ?? '';
-          return id.isNotEmpty && id != myProfileId && p['active'] != false;
-        })
-        .toList();
+    final profiles = ref.read(nodeProvider).familyProfiles.where((p) {
+      final id = p['id']?.toString() ?? '';
+      return id.isNotEmpty && id != myProfileId && p['active'] != false;
+    }).toList();
     final selected = <String>{};
 
     showDialog(
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocal) => AlertDialog(
-          title: const Text('New Family Group'),
+          title: Text(l10n.chatsNewFamilyGroup),
           content: SizedBox(
             width: 360,
             child: Column(
@@ -958,14 +975,14 @@ class ChatListScreen extends ConsumerWidget {
                 TextField(
                   controller: nameController,
                   autofocus: true,
-                  decoration: const InputDecoration(
-                    hintText: 'Group name',
-                    border: OutlineInputBorder(),
+                  decoration: InputDecoration(
+                    hintText: l10n.chatsGroupName,
+                    border: const OutlineInputBorder(),
                   ),
                 ),
                 const SizedBox(height: 12),
                 if (profiles.isEmpty)
-                  const Text('No other family members yet.')
+                  Text(l10n.chatsNoFamilyMembers)
                 else
                   Flexible(
                     child: ListView(
@@ -975,7 +992,11 @@ class ChatListScreen extends ConsumerWidget {
                           CheckboxListTile(
                             dense: true,
                             value: selected.contains(p['id']?.toString()),
-                            title: Text(p['name']?.toString() ?? p['id']?.toString() ?? ''),
+                            title: Text(
+                              p['name']?.toString() ??
+                                  p['id']?.toString() ??
+                                  '',
+                            ),
                             onChanged: (v) {
                               final id = p['id']?.toString() ?? '';
                               if (id.isEmpty) return;
@@ -997,14 +1018,16 @@ class ChatListScreen extends ConsumerWidget {
           actions: [
             TextButton(
               onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Cancel'),
+              child: Text(l10n.commonCancel),
             ),
             FilledButton(
               onPressed: () async {
                 final title = nameController.text.trim();
                 if (title.isEmpty) return;
                 try {
-                  await ref.read(chatProvider.notifier).createFamilyRoom(
+                  await ref
+                      .read(chatProvider.notifier)
+                      .createFamilyRoom(
                         title: title,
                         memberProfileIds: selected.toList(),
                       );
@@ -1020,7 +1043,7 @@ class ChatListScreen extends ConsumerWidget {
                   );
                 }
               },
-              child: const Text('Create'),
+              child: Text(l10n.commonCreate),
             ),
           ],
         ),
@@ -1034,23 +1057,21 @@ class _AiBotRowMenu extends StatelessWidget {
   final VoidCallback onEdit;
   final VoidCallback onDelete;
 
-  const _AiBotRowMenu({
-    required this.onEdit,
-    required this.onDelete,
-  });
+  const _AiBotRowMenu({required this.onEdit, required this.onDelete});
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return PopupMenuButton<String>(
-      tooltip: 'Bot options',
+      tooltip: l10n.chatsBotOptions,
       icon: const Icon(Icons.more_horiz),
       onSelected: (value) {
         if (value == 'edit') onEdit();
         if (value == 'delete') onDelete();
       },
-      itemBuilder: (context) => const [
-        PopupMenuItem(value: 'edit', child: Text('Edit')),
-        PopupMenuItem(value: 'delete', child: Text('Delete')),
+      itemBuilder: (context) => [
+        PopupMenuItem(value: 'edit', child: Text(l10n.commonEdit)),
+        PopupMenuItem(value: 'delete', child: Text(l10n.commonDelete)),
       ],
     );
   }

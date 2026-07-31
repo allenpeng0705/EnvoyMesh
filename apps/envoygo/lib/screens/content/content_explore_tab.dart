@@ -3,6 +3,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../../models/peer_search_result.dart';
 import '../../providers/contact_provider.dart';
 import '../../providers/node_provider.dart';
@@ -181,7 +182,7 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
     if (client == null) {
       setState(() {
         _loading = false;
-        _error = 'Connect to a home node to discover people.';
+        _error = AppLocalizations.of(context).peopleConnectHint;
       });
       return;
     }
@@ -203,8 +204,7 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
         _loading = false;
         _searching = false;
         if (rows.isEmpty) {
-          _error =
-              'No public people found on the mesh yet. Try a topic search, or check back when more nodes are online.';
+          _error = AppLocalizations.of(context).peopleNoneFound;
         } else if (keepExisting) {
           _error = null;
         }
@@ -240,9 +240,10 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
   Future<void> _runSearch() async {
     final client = ref.read(nodeServiceProvider);
     if (client == null) return;
+    final l10n = AppLocalizations.of(context);
     final q = _queryCtrl.text.trim();
     if (q.isEmpty) {
-      setState(() => _error = 'Enter a topic or interest to search.');
+      setState(() => _error = l10n.peopleEnterSearch);
       return;
     }
     setState(() {
@@ -261,7 +262,7 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
         if (topic.isEmpty) {
           setState(() {
             _searching = false;
-            _error = 'Enter a topic to search (e.g. photography).';
+            _error = l10n.peopleEnterSearch;
           });
           return;
         }
@@ -277,8 +278,8 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
         filtered = await _sampleMesh(client);
         fromSample = true;
         status = filtered.isNotEmpty
-            ? 'No matches for that search — showing other people on the mesh with public pages.'
-            : 'No publishers found for this topic yet.';
+            ? l10n.peopleNoMatches
+            : l10n.peopleNoneFound;
       }
       if (!mounted) return;
       setState(() {
@@ -304,6 +305,7 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
     if (client == null || _helloBusyId != null) return;
     final ownerId = peer.ownerId.trim();
     if (ownerId.isEmpty) return;
+    final l10n = AppLocalizations.of(context);
     setState(() => _helloBusyId = ownerId);
     try {
       final profile = await client.getHumanProfile();
@@ -316,12 +318,12 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
       await client.sendHello(
         targetOwnerId: ownerId,
         profile: {
-          'displayName': (profile['displayName'] as String?) ?? 'Envoy User',
+          'displayName': (profile['displayName'] as String?) ?? l10n.peopleEnvoyUser,
           'bio': (profile['bio'] as String?) ?? '',
           'interests': [...hobbies, ...knowledge],
           'whatShares': <String>[],
         },
-        message: "Hi — I'd like to connect on Envoy.",
+        message: l10n.peopleHelloMessage,
       );
       if (!mounted) return;
       setState(() {
@@ -329,7 +331,7 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
         _helloBusyId = null;
       });
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Hello sent')),
+        SnackBar(content: Text(l10n.peopleHelloSent)),
       );
     } catch (e) {
       if (!mounted) return;
@@ -382,13 +384,14 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
   @override
   Widget build(BuildContext context) {
     super.build(context);
+    final l10n = AppLocalizations.of(context);
     final nodeState = ref.watch(nodeProvider);
     if (nodeState.activeNode == null) {
-      return const Center(
+      return Center(
         child: Padding(
-          padding: EdgeInsets.all(24),
+          padding: const EdgeInsets.all(24),
           child: Text(
-            'Pair with a home node to discover people on the mesh.',
+            l10n.peoplePairHint,
             textAlign: TextAlign.center,
           ),
         ),
@@ -410,12 +413,12 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
             children: [
               Expanded(
                 child: Text(
-                  'People',
+                  l10n.contentPeople,
                   style: Theme.of(context).textTheme.titleMedium,
                 ),
               ),
               IconButton(
-                tooltip: 'Open link',
+                tooltip: l10n.peopleOpenLink,
                 onPressed: () {
                   Navigator.of(context).push(
                     MaterialPageRoute(builder: (_) => const BrowserScreen()),
@@ -424,28 +427,28 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
                 icon: const Icon(Icons.link),
               ),
               IconButton(
-                tooltip: 'Refresh',
+                tooltip: l10n.commonRefresh,
                 onPressed: busy ? null : _refreshSample,
                 icon: const Icon(Icons.refresh),
               ),
             ],
           ),
           Text(
-            'Find people you haven’t bonded with — open their public profile or blog, then say hello.',
+            l10n.peopleHint,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
           ),
           const SizedBox(height: 12),
           SegmentedButton<_PeopleSearchMode>(
-            segments: const [
+            segments: [
               ButtonSegment(
                 value: _PeopleSearchMode.topic,
-                label: Text('Topic'),
+                label: Text(l10n.peopleTopic),
               ),
               ButtonSegment(
                 value: _PeopleSearchMode.interest,
-                label: Text('Interest'),
+                label: Text(l10n.peopleInterest),
               ),
             ],
             selected: {_mode},
@@ -461,8 +464,8 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
                   controller: _queryCtrl,
                   decoration: InputDecoration(
                     hintText: _mode == _PeopleSearchMode.interest
-                        ? 'music, coding, travel…'
-                        : 'photography, cooking, travel…',
+                        ? l10n.peopleInterestHint
+                        : l10n.peopleTopicHint,
                     isDense: true,
                     border: const OutlineInputBorder(),
                   ),
@@ -473,7 +476,7 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
               const SizedBox(width: 8),
               FilledButton(
                 onPressed: busy ? null : _runSearch,
-                child: Text(busy ? '…' : 'Search'),
+                child: Text(busy ? l10n.commonEllipsis : l10n.commonSearch),
               ),
             ],
           ),
@@ -488,14 +491,14 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
           ],
           const SizedBox(height: 16),
           Text(
-            _fromSample ? 'People on the mesh' : 'Results',
+            _fromSample ? l10n.peopleOnMesh : l10n.peopleResults,
             style: Theme.of(context).textTheme.titleSmall,
           ),
           const SizedBox(height: 8),
           if (_results.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 16),
-              child: Text('No people to show yet.'),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 16),
+              child: Text(l10n.peopleEmpty),
             )
           else
             ..._results.map((peer) {
@@ -538,18 +541,18 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
                             webContentUrl(
                                 peer.ownerId, WebContentSurface.profile),
                           ),
-                          child: const Text('Profile'),
+                          child: Text(l10n.peopleProfile),
                         ),
                         TextButton(
                           onPressed: () => _openUrl(
                             webContentUrl(
                                 peer.ownerId, WebContentSurface.blog),
                           ),
-                          child: const Text('Blog'),
+                          child: Text(l10n.peopleBlog),
                         ),
                         if (helloSent)
                           Text(
-                            'Hello sent',
+                            l10n.peopleHelloSent,
                             style: Theme.of(context).textTheme.bodySmall,
                           )
                         else
@@ -557,7 +560,7 @@ class _ContentExploreTabState extends ConsumerState<ContentExploreTab>
                             onPressed: _helloBusyId == peer.ownerId
                                 ? null
                                 : () => _sayHello(peer),
-                            child: const Text('Say Hello'),
+                            child: Text(l10n.peopleSayHello),
                           ),
                       ],
                     ),

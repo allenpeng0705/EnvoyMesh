@@ -6,6 +6,8 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 
+import '../utils/localized_labels.dart';
+
 /// Alert (chat / bond / feed) push notifications for EnvoyGo — Phase 31I.
 ///
 /// - **iOS:** native APNs via `envoygo/alert_push` MethodChannel
@@ -140,7 +142,7 @@ class PushNotificationService {
         'threadType': 'external',
         'senderOwnerId': null,
         'agentType': 'external',
-        'senderName': data['senderName'] ?? 'Ext Agent',
+        'senderName': data['senderName'] ?? ThreadTitleSentinels.extAgent,
         'messageId': data['messageId'],
       };
     }

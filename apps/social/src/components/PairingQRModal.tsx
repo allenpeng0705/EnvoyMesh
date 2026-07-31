@@ -4,6 +4,7 @@ import { encodePairingToken } from "@envoymesh/api";
 import { useT } from "../context/I18nContext.js";
 import { useNodeService } from "../hooks/useNodeService.js";
 import { ModalPortal } from "./ModalPortal.js";
+import { FamilyInviteQRModal } from "./FamilyInviteQRModal.js";
 
 interface PairingQRModalProps {
   onClose: () => void;
@@ -17,6 +18,9 @@ interface PairingQRModalProps {
  * EnvoyGo decodes the `pairing` param with its own pure-Dart gzip decoder.
  * Extra regional relays travel as compact `rels` WebSocket bases; the built-in
  * community relay is not embedded (EnvoyGo already has it).
+ *
+ * Phase 51 — includes a button to open the family invite QR (not shown by
+ * default; owner pairing remains the primary code in this dialog).
  */
 export function PairingQRModal({ onClose }: PairingQRModalProps) {
   const t = useT();
@@ -26,6 +30,7 @@ export function PairingQRModal({ onClose }: PairingQRModalProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [showFamilyInvite, setShowFamilyInvite] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -67,12 +72,47 @@ export function PairingQRModal({ onClose }: PairingQRModalProps) {
     }
   }, [uri]);
 
+  if (showFamilyInvite) {
+    return (
+      <FamilyInviteQRModal
+        closeAriaLabel={t(
+          "pairing.familyInviteBackAria",
+          "Back to owner pairing QR",
+        )}
+        onClose={() => {
+          // Back to owner pairing QR (same top-bar session). Closing the
+          // family modal does not dismiss the whole pairing flow.
+          setShowFamilyInvite(false);
+        }}
+      />
+    );
+  }
+
+  const familyInviteSection = (
+    <div className="pairing-modal__family">
+      <p className="pairing-modal__family-hint">
+        {t(
+          "pairing.familyHint",
+          "Inviting Mom or Dad? Use a family invite — not this code (this one grants full owner access).",
+        )}
+      </p>
+      <button
+        type="button"
+        className="btn btn-secondary pairing-modal__family-btn"
+        onClick={() => setShowFamilyInvite(true)}
+      >
+        {t("pairing.showFamilyInvite", "Show family invite QR")}
+      </button>
+    </div>
+  );
+
   return (
     <ModalPortal>
       <div className="modal-overlay" role="presentation" onClick={onClose}>
         <div
           className="pairing-modal"
           role="dialog"
+          aria-modal="true"
           aria-label={t("pairing.modalAria")}
           onClick={(e) => e.stopPropagation()}
         >
@@ -133,6 +173,8 @@ export function PairingQRModal({ onClose }: PairingQRModalProps) {
                 </div>
               </>
             )}
+            {/* Family invite is independent of owner QR generation — keep reachable on error. */}
+            {!loading ? familyInviteSection : null}
           </div>
         </div>
       </div>

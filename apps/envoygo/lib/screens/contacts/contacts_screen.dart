@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../l10n/app_localizations.dart';
 import '../../providers/contact_provider.dart';
 import '../../providers/node_provider.dart';
 import '../../widgets/contact_tile.dart';
@@ -12,6 +13,7 @@ class ContactsScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = AppLocalizations.of(context);
     final contactState = ref.watch(contactProvider);
     final bonds = contactState.bonds;
 
@@ -21,28 +23,28 @@ class ContactsScreen extends ConsumerWidget {
           Padding(
             padding: const EdgeInsets.all(12),
             child: SearchBar(
-              hintText: 'Search contacts...',
+              hintText: l10n.contactsSearchHint,
               leading: const Icon(Icons.search),
               onChanged: (_) {},
             ),
           ),
-          const Padding(
-            padding: EdgeInsets.only(top: 80),
+          Padding(
+            padding: const EdgeInsets.only(top: 80),
             child: Center(
               child: Column(
                 children: [
-                  Icon(Icons.people_outline, size: 64,
+                  const Icon(Icons.people_outline, size: 64,
                       color: Colors.grey),
-                  SizedBox(height: 16),
+                  const SizedBox(height: 16),
                   Text(
-                    'No contacts yet',
+                    l10n.contactsEmpty,
                     style:
-                        TextStyle(fontSize: 18, color: Colors.grey),
+                        const TextStyle(fontSize: 18, color: Colors.grey),
                   ),
-                  SizedBox(height: 8),
+                  const SizedBox(height: 8),
                   Text(
-                    'Your bonded contacts will appear here.',
-                    style: TextStyle(color: Colors.grey),
+                    l10n.contactsEmptyHint,
+                    style: const TextStyle(color: Colors.grey),
                   ),
                 ],
               ),
@@ -57,7 +59,7 @@ class ContactsScreen extends ConsumerWidget {
         Padding(
           padding: const EdgeInsets.all(12),
           child: SearchBar(
-            hintText: 'Search contacts...',
+            hintText: l10n.contactsSearchHint,
             leading: const Icon(Icons.search),
             onChanged: (_) {},
           ),

@@ -8,6 +8,7 @@ import '../models/chat_room.dart';
 import '../models/chat_thread.dart';
 import '../services/node_service_client.dart';
 import '../storage/local_database.dart';
+import '../utils/localized_labels.dart';
 import 'contact_provider.dart';
 import 'node_provider.dart';
 import 'terminal_provider.dart';
@@ -747,7 +748,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
         : (isAiBot
             ? (senderDisplayName ?? botThreadKey ?? 'Bot')
             : (isBridgeAgent
-                ? (senderDisplayName ?? 'Ext Agent')
+                ? (senderDisplayName ?? ThreadTitleSentinels.extAgent)
                 : (isBuiltinAi || (isAgent && !agentTalkToContact)
                     ? (senderDisplayName ?? 'EnvoyAI')
                     : (senderDisplayName ?? senderOwnerId))));
@@ -818,7 +819,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       nodeId: nodeState.activeNode!.id,
       type: upsertType,
       displayName: isTerminal
-          ? 'Terminal: ${terminalName ?? terminalId ?? ''}'
+          ? '${ThreadTitleSentinels.terminalPrefix}${terminalName ?? terminalId ?? ''}'
           : isFamilyDm
               ? (familyPeerDisplayName ??
                   (senderOwnerId == myProfileId
@@ -832,7 +833,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
                       ? (senderDisplayName ?? botThreadKey ?? 'Bot')
                       : isAiThread
                           ? (isBridgeAgent
-                              ? (senderDisplayName ?? 'Ext Agent')
+                              ? (senderDisplayName ?? ThreadTitleSentinels.extAgent)
                               : 'EnvoyAI')
                           : threadDisplayName ?? peerId,
       contactOwnerId: isFamilyDm
@@ -970,7 +971,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
           threadId: threadId,
           nodeId: nodeId,
           type: ChatThreadType.group,
-          displayName: room.name.isNotEmpty ? room.name : 'Group',
+          displayName: room.name.isNotEmpty
+              ? room.name
+              : ThreadTitleSentinels.group,
           chatRoomId: room.id,
           lastMessageText: room.lastMessageText,
           lastMessageAt: room.lastMessageAt,
@@ -1083,7 +1086,10 @@ class ChatNotifier extends StateNotifier<ChatState> {
       threadId: threadId,
       nodeId: nodeState.activeNode!.id,
       type: isFamilyRoom ? ChatThreadType.familyGroup : ChatThreadType.group,
-      displayName: roomName ?? (isFamilyRoom ? 'Family group' : 'Group'),
+      displayName: roomName ??
+          (isFamilyRoom
+              ? ThreadTitleSentinels.familyGroup
+              : ThreadTitleSentinels.group),
       chatRoomId: roomId,
       lastMessageText: text ?? '',
       lastMessageAt: createdAt != null
@@ -1122,7 +1128,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
       type: room.isFamily ? ChatThreadType.familyGroup : ChatThreadType.group,
       displayName: room.name.isNotEmpty
           ? room.name
-          : (room.isFamily ? 'Family group' : 'Group'),
+          : (room.isFamily
+              ? ThreadTitleSentinels.familyGroup
+              : ThreadTitleSentinels.group),
       chatRoomId: room.id,
       lastMessageText: room.lastMessageText,
       lastMessageAt: room.lastMessageAt,
@@ -1191,7 +1199,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
           threadId: threadId,
           nodeId: nodeId,
           type: ChatThreadType.familyGroup,
-          displayName: room.name.isNotEmpty ? room.name : 'Family group',
+          displayName: room.name.isNotEmpty
+              ? room.name
+              : ThreadTitleSentinels.familyGroup,
           chatRoomId: room.id,
         );
       }
@@ -1310,7 +1320,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
                   .firstOrNull
                   ?.displayName ??
                   agentType
-              : 'Ext Agent',
+              : ThreadTitleSentinels.extAgent,
       agentType: agentType,
       lastMessageText: text,
       lastMessageAt: DateTime.now(),
@@ -1583,7 +1593,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
         if (preset.id == activeId) return preset.name;
       }
     }
-    return 'Ext Agent';
+    return ThreadTitleSentinels.extAgent;
   }
 
   /// Handle a bridge:status push event.
@@ -1611,7 +1621,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       threadId: '$nodeId:external',
       nodeId: nodeId,
       type: ChatThreadType.externalAgent,
-      displayName: extName.isNotEmpty ? extName : 'Ext Agent',
+      displayName: extName.isNotEmpty ? extName : ThreadTitleSentinels.extAgent,
       agentType: 'external',
     );
   }
@@ -1630,7 +1640,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
           '${nodeState.activeNode!.id}:term:${session.id}';
       final displayName = session.isPi
           ? (session.name.startsWith('π') ? session.name : 'π ${session.name}')
-          : 'Terminal: ${session.name}';
+          : '${ThreadTitleSentinels.terminalPrefix}${session.name}';
       _upsertThread(
         threadId: threadId,
         nodeId: nodeState.activeNode!.id,
@@ -1660,7 +1670,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       threadId: threadId,
       nodeId: nodeState.activeNode!.id,
       type: ChatThreadType.terminal,
-      displayName: 'Terminal: $name',
+      displayName: '${ThreadTitleSentinels.terminalPrefix}$name',
       lastMessageAt: DateTime.now(),
     );
   }
@@ -1885,7 +1895,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
     // (e.g. HomeClaw → Hermes) or to clear legacy " (Bridge Offline)".
     if (existingName != null && existingName.isNotEmpty) {
       if (type == ChatThreadType.direct || type == ChatThreadType.group) {
-        if (!existingName.startsWith('envoy:owner:') && existingName != 'Group') {
+        if (!existingName.startsWith('envoy:owner:') &&
+            existingName != ThreadTitleSentinels.group) {
           return existingName;
         }
       } else if (type == ChatThreadType.envoyai) {

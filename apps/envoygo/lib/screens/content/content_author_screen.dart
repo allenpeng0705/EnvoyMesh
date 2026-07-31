@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../../providers/contact_provider.dart';
 import '../../widgets/author_ai_draft_button.dart';
 import '../browser/browser_screen.dart';
@@ -78,21 +79,27 @@ class _ContentAuthorScreenState extends ConsumerState<ContentAuthorScreen> {
     }
     final action = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('AI draft'),
-        content: SingleChildScrollView(child: Text(draft)),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Discard')),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, 'insert'),
-            child: const Text('Insert'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, 'replace'),
-            child: const Text('Replace'),
-          ),
-        ],
-      ),
+      builder: (ctx) {
+        final l10n = AppLocalizations.of(ctx);
+        return AlertDialog(
+          title: Text(l10n.feedAiDraft),
+          content: SingleChildScrollView(child: Text(draft)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(l10n.feedDiscard),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'insert'),
+              child: Text(l10n.feedInsert),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, 'replace'),
+              child: Text(l10n.feedReplace),
+            ),
+          ],
+        );
+      },
     );
     if (!mounted || action == null) return;
     setState(() {
@@ -142,8 +149,9 @@ class _ContentAuthorScreenState extends ConsumerState<ContentAuthorScreen> {
 
   Future<void> _publish() async {
     final client = ref.read(nodeServiceProvider);
+    final l10n = AppLocalizations.of(context);
     if (client == null) {
-      setState(() => _error = 'Not connected to home node');
+      setState(() => _error = l10n.commonNotConnectedHome);
       return;
     }
     setState(() {
@@ -158,7 +166,7 @@ class _ContentAuthorScreenState extends ConsumerState<ContentAuthorScreen> {
         final displayName = _displayNameCtrl.text.trim();
         final username = _titleCtrl.text.trim();
         if (displayName.isEmpty && username.isEmpty) {
-          throw Exception('Display name or username is required');
+          throw Exception(l10n.profileNameRequired);
         }
         if (_avatarFile != null) {
           await client.setPublicProfileThumbnail(
@@ -201,10 +209,10 @@ class _ContentAuthorScreenState extends ConsumerState<ContentAuthorScreen> {
 
       if (_template == 'photo') {
         final file = _photoFile;
-        if (file == null) throw Exception('Pick a photo first');
+        if (file == null) throw Exception(l10n.authorPickPhoto);
         final title = _titleCtrl.text.trim().isNotEmpty
             ? _titleCtrl.text.trim()
-            : (file.name.isNotEmpty ? file.name : 'Photo');
+            : (file.name.isNotEmpty ? file.name : l10n.browserPhoto);
         final mime = _mimeFor(file);
         final ext = mime == 'image/png'
             ? 'png'
@@ -237,7 +245,7 @@ class _ContentAuthorScreenState extends ConsumerState<ContentAuthorScreen> {
 
       // blog-post
       final title = _titleCtrl.text.trim();
-      if (title.isEmpty) throw Exception('Title is required');
+      if (title.isEmpty) throw Exception(l10n.authorTitleRequired);
       final result = await client.publishWebContentEntry(
         template: 'blog-post',
         title: title,
@@ -263,9 +271,10 @@ class _ContentAuthorScreenState extends ConsumerState<ContentAuthorScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Publish'),
+        title: Text(l10n.authorPublish),
         actions: [
           TextButton(
             onPressed: _busy ? null : _publish,
@@ -275,7 +284,7 @@ class _ContentAuthorScreenState extends ConsumerState<ContentAuthorScreen> {
                     height: 18,
                     child: CircularProgressIndicator(strokeWidth: 2),
                   )
-                : const Text('Publish'),
+                : Text(l10n.authorPublish),
           ),
         ],
       ),
@@ -286,27 +295,38 @@ class _ContentAuthorScreenState extends ConsumerState<ContentAuthorScreen> {
           // locked template (not offered as Sites types).
           if (_template == 'profile' || _template == 'photo')
             InputDecorator(
-              decoration: const InputDecoration(labelText: 'Type'),
+              decoration: InputDecoration(labelText: l10n.authorType),
               child: Text(
-                _template == 'profile' ? 'Profile' : 'PhotoWall photo',
+                _template == 'profile'
+                    ? l10n.authorTypeProfile
+                    : l10n.authorTypePhoto,
                 style: Theme.of(context).textTheme.bodyLarge,
               ),
             )
           else
-            const InputDecorator(
-              decoration: InputDecoration(labelText: 'Type'),
-              child: Text('Blog post'),
+            InputDecorator(
+              decoration: InputDecoration(labelText: l10n.authorType),
+              child: Text(l10n.authorTypeBlog),
             ),
           const SizedBox(height: 12),
           if (_template != 'profile')
             DropdownButtonFormField<String>(
               key: ValueKey('vis-$_visibility'),
               initialValue: _visibility,
-              decoration: const InputDecoration(labelText: 'Visibility'),
-              items: const [
-                DropdownMenuItem(value: 'public', child: Text('Public')),
-                DropdownMenuItem(value: 'bonded', child: Text('Bonded')),
-                DropdownMenuItem(value: 'private', child: Text('Private')),
+              decoration: InputDecoration(labelText: l10n.feedVisibility),
+              items: [
+                DropdownMenuItem(
+                  value: 'public',
+                  child: Text(l10n.authorVisPublic),
+                ),
+                DropdownMenuItem(
+                  value: 'bonded',
+                  child: Text(l10n.authorVisBonded),
+                ),
+                DropdownMenuItem(
+                  value: 'private',
+                  child: Text(l10n.authorVisPrivate),
+                ),
               ],
               onChanged: _busy
                   ? null
@@ -318,19 +338,19 @@ class _ContentAuthorScreenState extends ConsumerState<ContentAuthorScreen> {
           if (_template == 'profile') ...[
             TextField(
               controller: _displayNameCtrl,
-              decoration: const InputDecoration(labelText: 'Display name'),
+              decoration: InputDecoration(labelText: l10n.meDisplayName),
               enabled: !_busy,
             ),
             const SizedBox(height: 8),
             TextField(
               controller: _titleCtrl,
-              decoration: const InputDecoration(labelText: 'Username'),
+              decoration: InputDecoration(labelText: l10n.profileUsername),
               enabled: !_busy,
             ),
             const SizedBox(height: 8),
             Row(
               children: [
-                const Expanded(child: Text('Bio')),
+                Expanded(child: Text(l10n.profileBio)),
                 AuthorAiDraftButton(
                   surface: 'bio',
                   existingText: () => _bioCtrl.text,
@@ -341,7 +361,7 @@ class _ContentAuthorScreenState extends ConsumerState<ContentAuthorScreen> {
             ),
             TextField(
               controller: _bioCtrl,
-              decoration: const InputDecoration(labelText: 'Bio'),
+              decoration: InputDecoration(labelText: l10n.profileBio),
               maxLines: 4,
               enabled: !_busy,
             ),
@@ -350,19 +370,19 @@ class _ContentAuthorScreenState extends ConsumerState<ContentAuthorScreen> {
               onPressed: _busy ? null : () => _pickPhoto(avatar: true),
               icon: const Icon(Icons.face),
               label: Text(_avatarFile == null
-                  ? 'Choose avatar'
-                  : 'Avatar: ${_avatarFile!.name}'),
+                  ? l10n.authorChooseAvatar
+                  : l10n.authorAvatarNamed(_avatarFile!.name)),
             ),
           ] else if (_template == 'photo') ...[
             TextField(
               controller: _titleCtrl,
-              decoration: const InputDecoration(labelText: 'Title'),
+              decoration: InputDecoration(labelText: l10n.authorTitle),
               enabled: !_busy,
             ),
             const SizedBox(height: 8),
             Row(
               children: [
-                const Expanded(child: Text('Caption')),
+                Expanded(child: Text(l10n.authorCaption)),
                 AuthorAiDraftButton(
                   surface: 'caption',
                   existingText: () => _bodyCtrl.text,
@@ -374,8 +394,8 @@ class _ContentAuthorScreenState extends ConsumerState<ContentAuthorScreen> {
             ),
             TextField(
               controller: _bodyCtrl,
-              decoration: const InputDecoration(
-                labelText: 'Caption (optional)',
+              decoration: InputDecoration(
+                labelText: l10n.authorCaptionOptional,
               ),
               maxLines: 2,
               enabled: !_busy,
@@ -385,8 +405,8 @@ class _ContentAuthorScreenState extends ConsumerState<ContentAuthorScreen> {
               onPressed: _busy ? null : () => _pickPhoto(avatar: false),
               icon: const Icon(Icons.photo),
               label: Text(_photoFile == null
-                  ? 'Choose photo'
-                  : 'Photo: ${_photoFile!.name}'),
+                  ? l10n.authorChoosePhoto
+                  : l10n.authorPhotoNamed(_photoFile!.name)),
             ),
             if (_photoFile != null) ...[
               const SizedBox(height: 12),
@@ -413,13 +433,13 @@ class _ContentAuthorScreenState extends ConsumerState<ContentAuthorScreen> {
           ] else ...[
             TextField(
               controller: _titleCtrl,
-              decoration: const InputDecoration(labelText: 'Title'),
+              decoration: InputDecoration(labelText: l10n.authorTitle),
               enabled: !_busy,
             ),
             const SizedBox(height: 8),
             Row(
               children: [
-                const Expanded(child: Text('Body')),
+                Expanded(child: Text(l10n.authorBody)),
                 AuthorAiDraftButton(
                   surface: 'blog',
                   existingText: () => _bodyCtrl.text,
@@ -431,7 +451,7 @@ class _ContentAuthorScreenState extends ConsumerState<ContentAuthorScreen> {
             ),
             TextField(
               controller: _bodyCtrl,
-              decoration: const InputDecoration(labelText: 'Body (markdown)'),
+              decoration: InputDecoration(labelText: l10n.authorBodyMarkdown),
               maxLines: 12,
               enabled: !_busy,
             ),

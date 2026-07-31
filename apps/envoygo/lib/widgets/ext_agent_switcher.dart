@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../ext_agent/ext_agent_presets.dart';
+import '../l10n/app_localizations.dart';
 import '../providers/chat_provider.dart';
 import '../providers/contact_provider.dart' show nodeServiceProvider;
 import '../services/node_service_client.dart';
@@ -85,6 +86,7 @@ class _ExtAgentSwitcherState extends ConsumerState<ExtAgentSwitcher> {
 
   Future<void> _openPicker() async {
     if (_busy || _agents.length < 2) return;
+    final l10n = AppLocalizations.of(context);
     final selected = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
@@ -97,7 +99,7 @@ class _ExtAgentSwitcherState extends ConsumerState<ExtAgentSwitcher> {
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
                 child: Text(
-                  'Switch Ext Agent',
+                  l10n.extSwitchTitle,
                   style: Theme.of(ctx).textTheme.titleMedium,
                 ),
               ),
@@ -154,7 +156,9 @@ class _ExtAgentSwitcherState extends ConsumerState<ExtAgentSwitcher> {
                   : trimmed;
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
-              content: Text('$name is not running — start it before chatting.'),
+              content: Text(
+                AppLocalizations.of(context).extNotRunningChat(name),
+              ),
             ),
           );
         }
@@ -164,7 +168,9 @@ class _ExtAgentSwitcherState extends ConsumerState<ExtAgentSwitcher> {
       if (mounted) {
         setState(() => _pendingId = null);
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Switch failed: $e')),
+          SnackBar(
+            content: Text(AppLocalizations.of(context).extSwitchFailed('$e')),
+          ),
         );
       }
     } finally {
@@ -185,10 +191,11 @@ class _ExtAgentSwitcherState extends ConsumerState<ExtAgentSwitcher> {
     if (!_bridgeEnabled || _agents.length < 2) {
       return const SizedBox.shrink();
     }
+    final l10n = AppLocalizations.of(context);
     final name = _current?['name']?.toString() ?? _displayId;
     if (widget.iconOnly) {
       return IconButton(
-        tooltip: 'Switch Ext Agent ($name)',
+        tooltip: l10n.extSwitchTooltip(name),
         onPressed: _busy ? null : _openPicker,
         icon: _busy
             ? const SizedBox(

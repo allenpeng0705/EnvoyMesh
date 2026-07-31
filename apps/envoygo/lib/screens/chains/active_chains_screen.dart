@@ -3,6 +3,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../../models/chain_active.dart';
 import '../../providers/node_provider.dart';
 import '../../services/node_service_client.dart';
@@ -36,7 +37,7 @@ class _ActiveChainsScreenState extends ConsumerState<ActiveChainsScreen> {
       setState(() {
         _loading = false;
         _chains = null;
-        _error = 'Not connected to home node';
+        _error = AppLocalizations.of(context).commonNotConnectedHome;
       });
       return;
     }
@@ -59,22 +60,23 @@ class _ActiveChainsScreenState extends ConsumerState<ActiveChainsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Active team jobs'),
+        title: Text(l10n.chainsActiveTitle),
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh),
-            tooltip: 'Refresh',
+            tooltip: l10n.commonRefresh,
             onPressed: _loading ? null : _refresh,
           ),
         ],
       ),
-      body: _buildBody(),
+      body: _buildBody(l10n),
     );
   }
 
-  Widget _buildBody() {
+  Widget _buildBody(AppLocalizations l10n) {
     if (_loading) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -92,7 +94,7 @@ class _ActiveChainsScreenState extends ConsumerState<ActiveChainsScreen> {
         child: Padding(
           padding: const EdgeInsets.all(24),
           child: Text(
-            'No active chains on the home node.\nStart one from the Social UI.',
+            l10n.chainsNoActive,
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodyLarge,
           ),
@@ -118,7 +120,7 @@ class _ActiveChainsScreenState extends ConsumerState<ActiveChainsScreen> {
                 overflow: TextOverflow.ellipsis,
               ),
               subtitle: Text(
-                '${chain.statusLabel} · ${chain.awardedCount}/${chain.subtaskCount} awarded · '
+                '${l10n.chainsAwardedSummary(chain.statusLabel, chain.awardedCount, chain.subtaskCount)} · '
                 '\$${chain.budgetSpentUsd.toStringAsFixed(2)}/\$${chain.budgetMaxUsd.toStringAsFixed(2)}',
               ),
               trailing: chain.budgetWarningLevel == 'warn'

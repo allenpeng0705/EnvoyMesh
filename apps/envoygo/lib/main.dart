@@ -4,14 +4,22 @@ import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'app.dart';
+import 'l10n/app_localizations.dart';
+import 'models/chat_thread.dart';
 import 'providers/chat_provider.dart';
+import 'providers/locale_provider.dart';
 import 'providers/node_provider.dart';
 import 'screens/browser/browser_screen.dart';
 import 'screens/chat/chat_detail_screen.dart';
+import 'services/locale_preferences.dart';
 import 'services/push_notification_service.dart';
+import 'utils/localized_labels.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Load locale override before the first frame so a saved language
+  // (e.g. zh) does not flash system/English briefly.
+  final initialLocaleCode = await LocalePreferences.getOverride();
   // Phase 50 — initialize push BEFORE runApp so getInitialMessage()
   // (Android cold-start) resolves before _EnvoyGoRootState.initState()
   // drains the pending-tap buffer. initialize() is idempotent + swallows
@@ -22,8 +30,13 @@ void main() {
   // ignore: unawaited_futures
   PushNotificationService().initialize();
   runApp(
-    const ProviderScope(
-      child: _EnvoyGoRoot(),
+    ProviderScope(
+      overrides: [
+        localeOverrideProvider.overrideWith(
+          (ref) => LocaleOverrideNotifier.withInitial(initialLocaleCode),
+        ),
+      ],
+      child: const _EnvoyGoRoot(),
     ),
   );
 }
@@ -86,6 +99,7 @@ class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
   void _routeNotificationTap(Map<String, dynamic> raw) {
     final nav = EnvoyGoApp.navigatorKey.currentState;
     if (nav == null) return; // navigator not ready yet
+    final l10n = AppLocalizations.of(nav.context);
     final hint = PushNotificationService().handleNotificationTap(raw);
     if (hint == null) return;
 
@@ -135,7 +149,11 @@ class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
           nav.push(MaterialPageRoute(
             builder: (_) => ChatDetailScreen(
               threadId: '$nodeId:external',
-              displayName: senderName ?? 'Ext Agent',
+              displayName: localizeThreadTitle(
+                l10n,
+                displayName: senderName ?? ThreadTitleSentinels.extAgent,
+                type: ChatThreadType.externalAgent,
+              ),
               agentType: 'external',
             ),
           ));
@@ -172,7 +190,13 @@ class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
           nav.push(MaterialPageRoute(
             builder: (_) => ChatDetailScreen(
               threadId: '$nodeId:$threadKey',
-              displayName: senderName ?? senderOwnerId ?? 'Family',
+              displayName: localizeThreadTitle(
+                l10n,
+                displayName: senderName ??
+                    senderOwnerId ??
+                    l10n.chatsDefaultFamilyGroup,
+                type: ChatThreadType.family,
+              ),
               contactOwnerId: senderOwnerId,
             ),
           ));
@@ -189,14 +213,23 @@ class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
           if (isFamilyRoom) {
             ref.read(chatProvider.notifier).onRoomUpdated({
               'roomId': bareRoomId,
-              'title': senderName ?? 'Family group',
+              'title': senderName ?? ThreadTitleSentinels.familyGroup,
               'kind': 'family',
             });
           }
           nav.push(MaterialPageRoute(
             builder: (_) => ChatDetailScreen(
               threadId: threadId,
-              displayName: senderName ?? bareRoomId,
+              displayName: localizeThreadTitle(
+                l10n,
+                displayName: senderName ??
+                    (isFamilyRoom
+                        ? ThreadTitleSentinels.familyGroup
+                        : ThreadTitleSentinels.group),
+                type: isFamilyRoom
+                    ? ChatThreadType.familyGroup
+                    : ChatThreadType.group,
+              ),
               chatRoomId: bareRoomId,
               isFamilyRoom: isFamilyRoom,
             ),

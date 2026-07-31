@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import '../l10n/app_localizations.dart';
 import '../models/contact.dart';
 
 /// Contact tile for the contacts list.
@@ -18,6 +19,7 @@ class ContactTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     final isOnline = contact.lastSeen != null &&
         DateTime.now().difference(contact.lastSeen!).inMinutes < 5;
 
@@ -44,7 +46,7 @@ class ContactTile extends StatelessWidget {
       subtitle: contact.displayName != null ? Text(contact.ownerId) : null,
       trailing: TextButton(
         onPressed: onChat,
-        child: const Text('Chat'),
+        child: Text(l10n.contactsChat),
       ),
       onTap: onTap,
     );

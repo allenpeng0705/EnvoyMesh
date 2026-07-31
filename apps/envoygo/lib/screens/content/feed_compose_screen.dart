@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
 
+import '../../l10n/app_localizations.dart';
 import '../../models/contact.dart';
 import '../../providers/contact_provider.dart';
 import '../../widgets/author_ai_draft_button.dart';
@@ -92,21 +93,27 @@ class _FeedComposeScreenState extends ConsumerState<FeedComposeScreen> {
     }
     final action = await showDialog<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('AI draft'),
-        content: SingleChildScrollView(child: Text(draft)),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Discard')),
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, 'insert'),
-            child: const Text('Insert'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(ctx, 'replace'),
-            child: const Text('Replace'),
-          ),
-        ],
-      ),
+      builder: (ctx) {
+        final l10n = AppLocalizations.of(ctx);
+        return AlertDialog(
+          title: Text(l10n.feedAiDraft),
+          content: SingleChildScrollView(child: Text(draft)),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(l10n.feedDiscard),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, 'insert'),
+              child: Text(l10n.feedInsert),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx, 'replace'),
+              child: Text(l10n.feedReplace),
+            ),
+          ],
+        );
+      },
     );
     if (!mounted || action == null) return;
     setState(() {
@@ -119,18 +126,19 @@ class _FeedComposeScreenState extends ConsumerState<FeedComposeScreen> {
   }
 
   Future<void> _publish() async {
+    final l10n = AppLocalizations.of(context);
     final body = _textCtrl.text.trim();
     if (body.isEmpty && _images.isEmpty) {
-      setState(() => _error = 'Add text or at least one photo');
+      setState(() => _error = l10n.feedNeedTextOrPhoto);
       return;
     }
     if (_visibility == 'contacts' && _contactIds.isEmpty) {
-      setState(() => _error = 'Select at least one contact');
+      setState(() => _error = l10n.feedNeedContact);
       return;
     }
     final client = ref.read(nodeServiceProvider);
     if (client == null) {
-      setState(() => _error = 'Not connected to home node');
+      setState(() => _error = l10n.commonNotConnectedHome);
       return;
     }
     setState(() {
@@ -149,7 +157,7 @@ class _FeedComposeScreenState extends ConsumerState<FeedComposeScreen> {
       }
       final title = body.isNotEmpty
           ? (body.length > 48 ? body.substring(0, 48) : body)
-          : 'Feed post';
+          : l10n.feedDefaultTitle;
       final result = await client.publishWebContentEntry(
         template: 'feed-post',
         title: title,
@@ -171,18 +179,19 @@ class _FeedComposeScreenState extends ConsumerState<FeedComposeScreen> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final l10n = AppLocalizations.of(context);
     final contacts = _selectableContacts;
     final canPost = !_busy && (_visibility != 'contacts' || _contactIds.isNotEmpty);
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('New post'),
+        title: Text(l10n.contentNewPost),
         actions: [
           Padding(
             padding: const EdgeInsets.only(right: 8),
             child: FilledButton(
               onPressed: canPost ? _publish : null,
-              child: Text(_busy ? 'Posting…' : 'Post'),
+              child: Text(_busy ? l10n.commonPosting : l10n.commonPost),
             ),
           ),
         ],
@@ -205,7 +214,7 @@ class _FeedComposeScreenState extends ConsumerState<FeedComposeScreen> {
           Row(
             children: [
               Text(
-                "What's on your mind?",
+                l10n.feedWhatsOnMind,
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
@@ -226,7 +235,7 @@ class _FeedComposeScreenState extends ConsumerState<FeedComposeScreen> {
             enabled: !_busy,
             style: const TextStyle(height: 1.45, fontSize: 16),
             decoration: InputDecoration(
-              hintText: 'Share an update with bonded contacts…',
+              hintText: l10n.feedShareHint,
               filled: true,
               fillColor: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
               border: OutlineInputBorder(
@@ -248,7 +257,7 @@ class _FeedComposeScreenState extends ConsumerState<FeedComposeScreen> {
           Row(
             children: [
               Text(
-                'Photos',
+                l10n.feedPhotos,
                 style: Theme.of(context).textTheme.titleSmall?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
@@ -320,7 +329,7 @@ class _FeedComposeScreenState extends ConsumerState<FeedComposeScreen> {
                           Icon(Icons.add_photo_alternate_outlined, color: scheme.primary),
                           const SizedBox(height: 4),
                           Text(
-                            'Add',
+                            l10n.commonAdd,
                             style: TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.w600,
@@ -338,13 +347,13 @@ class _FeedComposeScreenState extends ConsumerState<FeedComposeScreen> {
           DropdownButtonFormField<String>(
             initialValue: _visibility,
             decoration: InputDecoration(
-              labelText: 'Visibility',
+              labelText: l10n.feedVisibility,
               border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
             ),
-            items: const [
-              DropdownMenuItem(value: 'bonded', child: Text('Bonded contacts')),
-              DropdownMenuItem(value: 'contacts', child: Text('Selected contacts')),
-              DropdownMenuItem(value: 'private', child: Text('Only me')),
+            items: [
+              DropdownMenuItem(value: 'bonded', child: Text(l10n.feedVisBonded)),
+              DropdownMenuItem(value: 'contacts', child: Text(l10n.feedVisSelected)),
+              DropdownMenuItem(value: 'private', child: Text(l10n.feedVisOnlyMe)),
             ],
             onChanged: _busy
                 ? null
@@ -359,14 +368,14 @@ class _FeedComposeScreenState extends ConsumerState<FeedComposeScreen> {
           if (_visibility == 'contacts') ...[
             const SizedBox(height: 16),
             Text(
-              'Selected contacts',
+              l10n.feedVisSelected,
               style: Theme.of(context).textTheme.titleSmall?.copyWith(
                     fontWeight: FontWeight.w700,
                   ),
             ),
             const SizedBox(height: 4),
             Text(
-              'Only these contacts can see this post. Pick at least one.',
+              l10n.feedSelectedHint,
               style: Theme.of(context).textTheme.bodySmall?.copyWith(
                     color: scheme.onSurfaceVariant,
                   ),
@@ -374,7 +383,7 @@ class _FeedComposeScreenState extends ConsumerState<FeedComposeScreen> {
             const SizedBox(height: 8),
             if (contacts.isEmpty)
               Text(
-                'No bonded contacts yet — add a contact first, or choose Bonded / Only me.',
+                l10n.feedNoContacts,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       color: scheme.onSurfaceVariant,
                     ),

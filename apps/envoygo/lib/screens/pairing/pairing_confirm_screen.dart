@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../../l10n/app_localizations.dart';
 import '../../models/stored_node.dart';
 import '../../providers/node_provider.dart';
 import '../../services/candidate_resolver.dart';
@@ -147,17 +148,20 @@ class _PairingConfirmScreenState extends ConsumerState<PairingConfirmScreen> {
       if (!mounted) return;
       setState(() {
         _loadingProfiles = false;
-        _profilesError = 'Could not load existing profiles: $e';
+        _profilesError =
+            AppLocalizations.of(context).pairingLoadProfilesFailed('$e');
       });
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    final title = _isFamilyInvite ? 'Join Family' : 'Confirm Pairing';
+    final l10n = AppLocalizations.of(context);
+    final title =
+        _isFamilyInvite ? l10n.pairingJoinFamily : l10n.pairingConfirmTitle;
     final headline = _isFamilyInvite
-        ? 'Welcome to the ${widget.nodeName} family!'
-        : 'Connect to ${widget.nodeName}?';
+        ? l10n.pairingWelcomeFamily(widget.nodeName)
+        : l10n.pairingConnectTo(widget.nodeName);
 
     return Scaffold(
       appBar: AppBar(title: Text(title)),
@@ -181,14 +185,18 @@ class _PairingConfirmScreenState extends ConsumerState<PairingConfirmScreen> {
             const SizedBox(height: 8),
             if (widget.data.homeNodePeerId != null)
               Text(
-                'Peer: ${widget.data.homeNodePeerId!.length > 20 ? widget.data.homeNodePeerId!.substring(0, 10) : widget.data.homeNodePeerId}...',
+                l10n.pairingPeer(
+                  widget.data.homeNodePeerId!.length > 20
+                      ? '${widget.data.homeNodePeerId!.substring(0, 10)}...'
+                      : widget.data.homeNodePeerId!,
+                ),
                 style: Theme.of(context).textTheme.bodySmall,
                 textAlign: TextAlign.center,
               ),
             if (widget.data.lanWsUrl != null) ...[
               const SizedBox(height: 4),
               Text(
-                'LAN: available',
+                l10n.pairingLanAvailable,
                 style: Theme.of(context).textTheme.bodySmall,
                 textAlign: TextAlign.center,
               ),
@@ -196,7 +204,7 @@ class _PairingConfirmScreenState extends ConsumerState<PairingConfirmScreen> {
             if (widget.data.wsUrl.isNotEmpty) ...[
               const SizedBox(height: 4),
               Text(
-                'Relay: available',
+                l10n.pairingRelayAvailable,
                 style: Theme.of(context).textTheme.bodySmall,
                 textAlign: TextAlign.center,
               ),
@@ -204,16 +212,16 @@ class _PairingConfirmScreenState extends ConsumerState<PairingConfirmScreen> {
             if (_isFamilyInvite) ...[
               const SizedBox(height: 24),
               SegmentedButton<bool>(
-                segments: const [
+                segments: [
                   ButtonSegment<bool>(
                     value: false,
-                    label: Text('I\'m new'),
-                    icon: Icon(Icons.person_add_alt_1, size: 18),
+                    label: Text(l10n.pairingImNew),
+                    icon: const Icon(Icons.person_add_alt_1, size: 18),
                   ),
                   ButtonSegment<bool>(
                     value: true,
-                    label: Text('I\'m back'),
-                    icon: Icon(Icons.how_to_reg, size: 18),
+                    label: Text(l10n.pairingImBack),
+                    icon: const Icon(Icons.how_to_reg, size: 18),
                   ),
                 ],
                 selected: {_selectExisting},
@@ -239,11 +247,11 @@ class _PairingConfirmScreenState extends ConsumerState<PairingConfirmScreen> {
               TextField(
                 controller: _nameController,
                 textCapitalization: TextCapitalization.words,
-                decoration: const InputDecoration(
-                  labelText: 'Display name (optional)',
-                  hintText: 'e.g. Dad',
-                  border: OutlineInputBorder(),
-                  helperText: 'Shown as your owner profile name on this node',
+                decoration: InputDecoration(
+                  labelText: l10n.pairingDisplayNameOptional,
+                  hintText: l10n.pairingNameHintDad,
+                  border: const OutlineInputBorder(),
+                  helperText: l10n.pairingOwnerNameHint,
                 ),
               ),
             ],
@@ -270,11 +278,11 @@ class _PairingConfirmScreenState extends ConsumerState<PairingConfirmScreen> {
                       onPressed: () {
                         Clipboard.setData(ClipboardData(text: _error!));
                         ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Copied to clipboard')),
+                          SnackBar(content: Text(l10n.commonCopied)),
                         );
                       },
                       icon: const Icon(Icons.copy, size: 16),
-                      label: const Text('Copy error'),
+                      label: Text(l10n.pairingCopyError),
                     ),
                   ],
                 ),
@@ -287,12 +295,14 @@ class _PairingConfirmScreenState extends ConsumerState<PairingConfirmScreen> {
                 FilledButton.icon(
                   onPressed: _pair,
                   icon: Icon(_isFamilyInvite ? Icons.person_add : Icons.link),
-                  label: Text(_isFamilyInvite ? 'Join' : 'Pair'),
+                  label: Text(
+                    _isFamilyInvite ? l10n.commonJoin : l10n.commonPair,
+                  ),
                 ),
             const SizedBox(height: 8),
             TextButton(
               onPressed: _pairing ? null : () => Navigator.of(context).pop(),
-              child: const Text('Cancel'),
+              child: Text(l10n.commonCancel),
             ),
           ],
         ),
@@ -301,18 +311,18 @@ class _PairingConfirmScreenState extends ConsumerState<PairingConfirmScreen> {
   }
 
   Widget _buildCreateNew(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         _buildExistingMembersHint(context),
         Text(
-          'Who are you?',
+          l10n.pairingWhoAreYou,
           style: Theme.of(context).textTheme.titleMedium,
         ),
         const SizedBox(height: 4),
         Text(
-          'Choose a name that is not already used below. '
-          'If you already joined on another phone, switch to "I\'m back".',
+          l10n.pairingChooseUniqueName,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
@@ -339,16 +349,16 @@ class _PairingConfirmScreenState extends ConsumerState<PairingConfirmScreen> {
         TextField(
           controller: _nameController,
           textCapitalization: TextCapitalization.words,
-          decoration: const InputDecoration(
-            labelText: 'Your name',
-            hintText: 'e.g. Mom, Alex',
-            border: OutlineInputBorder(),
+          decoration: InputDecoration(
+            labelText: l10n.pairingYourName,
+            hintText: l10n.pairingNameHintMom,
+            border: const OutlineInputBorder(),
           ),
           onChanged: (_) => setState(() {}),
         ),
         const SizedBox(height: 16),
         Text(
-          'Avatar color',
+          l10n.pairingAvatarColor,
           style: Theme.of(context).textTheme.titleSmall,
         ),
         const SizedBox(height: 8),
@@ -383,6 +393,7 @@ class _PairingConfirmScreenState extends ConsumerState<PairingConfirmScreen> {
   /// Always visible on family invite — so a second phone can see names
   /// like "Dad" before choosing "I'm back".
   Widget _buildExistingMembersHint(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     if (_loadingProfiles) {
       return const Padding(
         padding: EdgeInsets.only(bottom: 16),
@@ -406,7 +417,7 @@ class _PairingConfirmScreenState extends ConsumerState<PairingConfirmScreen> {
               alignment: Alignment.centerLeft,
               child: TextButton(
                 onPressed: () => unawaited(_loadExistingProfiles()),
-                child: const Text('Retry loading members'),
+                child: Text(l10n.pairingRetryMembers),
               ),
             ),
           ],
@@ -417,7 +428,7 @@ class _PairingConfirmScreenState extends ConsumerState<PairingConfirmScreen> {
       return Padding(
         padding: const EdgeInsets.only(bottom: 16),
         child: Text(
-          'No family members yet — you will be the first.',
+          l10n.pairingNoMembersFirst,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
@@ -430,7 +441,7 @@ class _PairingConfirmScreenState extends ConsumerState<PairingConfirmScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
-            'Already on this home',
+            l10n.pairingAlreadyOnHome,
             style: Theme.of(context).textTheme.titleSmall,
           ),
           const SizedBox(height: 8),
@@ -473,7 +484,7 @@ class _PairingConfirmScreenState extends ConsumerState<PairingConfirmScreen> {
           ),
           const SizedBox(height: 4),
           Text(
-            'Tap a name if this is your second phone (I\'m back).',
+            l10n.pairingImBackHint,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
                   color: Theme.of(context).colorScheme.onSurfaceVariant,
                 ),
@@ -484,6 +495,7 @@ class _PairingConfirmScreenState extends ConsumerState<PairingConfirmScreen> {
   }
 
   Widget _buildSelectExisting(BuildContext context) {
+    final l10n = AppLocalizations.of(context);
     if (_loadingProfiles) {
       return const Padding(
         padding: EdgeInsets.symmetric(vertical: 24),
@@ -501,14 +513,14 @@ class _PairingConfirmScreenState extends ConsumerState<PairingConfirmScreen> {
           const SizedBox(height: 8),
           OutlinedButton(
             onPressed: () => unawaited(_loadExistingProfiles()),
-            child: const Text('Retry'),
+            child: Text(l10n.commonRetry),
           ),
         ],
       );
     }
     if (_existingProfiles.isEmpty) {
       return Text(
-        'No existing family profiles yet. Switch to "I\'m new" to create one.',
+        l10n.pairingNoExistingProfiles,
         style: Theme.of(context).textTheme.bodyMedium,
       );
     }
@@ -516,12 +528,12 @@ class _PairingConfirmScreenState extends ConsumerState<PairingConfirmScreen> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Text(
-          'Select your profile',
+          l10n.pairingSelectProfile,
           style: Theme.of(context).textTheme.titleMedium,
         ),
         const SizedBox(height: 4),
         Text(
-          'Use the same name you created on your first phone.',
+          l10n.pairingSameNameHint,
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
                 color: Theme.of(context).colorScheme.onSurfaceVariant,
               ),
@@ -585,15 +597,16 @@ class _PairingConfirmScreenState extends ConsumerState<PairingConfirmScreen> {
   }
 
   Future<void> _pair() async {
+    final l10n = AppLocalizations.of(context);
     final name = _nameController.text.trim();
     if (_isFamilyInvite && !_selectExisting && name.isEmpty) {
-      setState(() => _error = 'Please enter your name');
+      setState(() => _error = l10n.pairingNameRequired);
       return;
     }
     if (_isFamilyInvite && _selectExisting) {
       final id = _selectedProfileId?.trim() ?? '';
       if (id.isEmpty) {
-        setState(() => _error = 'Please select your profile');
+        setState(() => _error = l10n.pairingSelectRequired);
         return;
       }
     }
@@ -639,10 +652,12 @@ class _PairingConfirmScreenState extends ConsumerState<PairingConfirmScreen> {
       }
       setState(() {
         _pairing = false;
-        _error = 'Pairing failed: $e\n'
-            'bootstrapPeers (from QR): $bpList\n'
-            'homePeerId: ${widget.data.homeNodePeerId}\n'
-            'bootstrapPresetNames (from QR): ${widget.data.bootstrapPresetNames}';
+        _error = AppLocalizations.of(context).pairingFailed(
+          '$e\n'
+          'bootstrapPeers (from QR): $bpList\n'
+          'homePeerId: ${widget.data.homeNodePeerId}\n'
+          'bootstrapPresetNames (from QR): ${widget.data.bootstrapPresetNames}',
+        );
       });
     }
   }
