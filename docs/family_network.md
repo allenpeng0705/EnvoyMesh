@@ -275,7 +275,7 @@ Profile: Mom (family)
 
 ### 5.2 Auto-list on profile creation
 
-When a new profile is created, every other **active** profile sees them in Family contacts immediately (clients sync from `familyProfiles` in config). When a profile is deactivated, it appears offline but stays listed so chat history remains reachable.
+When a new profile is created, every other **active** profile sees them in Family contacts immediately (clients sync from `familyProfiles` in config). When a profile is **deactivated**, it appears offline but stays listed so chat history remains reachable; deactivated profiles are hidden from the family invite preview until reactivated; live thin-client WebSockets for that profile are disconnected. **Wipe** (also what `deleteFamilyProfile` does) removes the profile row and erases profile-scoped local data (EnvoyAI / bot / bridge threads, family DMs involving that id, session tokens, push tokens, chat RAG for those threads). Shared family rooms keep remaining members and reassign creator when needed; solo rooms created only by the wiped profile are removed. Live WS clients for the profile are disconnected. Recreating the same display name may reuse the slug id, but wiped history is gone.
 
 ### 5.3 Direct messaging (local-only)
 

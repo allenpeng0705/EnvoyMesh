@@ -331,6 +331,31 @@ export class WsServer {
   }
 
   /**
+   * Phase 51 — force-close authenticated WebSockets locked to a family
+   * profile (after deactivate / wipe). Returns how many sockets were closed.
+   */
+  disconnectClientsForProfile(profileId: string): number {
+    const target = profileId.trim();
+    if (!target) return 0;
+    const toClose: WebSocket[] = [];
+    for (const [ws, session] of this.authenticatedSessions) {
+      if (session.profileId === target) toClose.push(ws);
+    }
+    for (const ws of toClose) {
+      try {
+        ws.close(4001, "family profile revoked");
+      } catch {
+        try {
+          ws.terminate();
+        } catch {
+          /* ignore */
+        }
+      }
+    }
+    return toClose.length;
+  }
+
+  /**
    * True when EnvoyGo is connected AND recently sent an RPC (default 20s).
    * Used for chat/bond/feed push skip-if-online — a zombie background WS
    * without recent RPCs must NOT suppress pushes (iOS suspends JS; the

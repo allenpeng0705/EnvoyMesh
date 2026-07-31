@@ -120,6 +120,21 @@ class PushTokenStore {
     return this.listForOwner(ownerId).filter((r) => r.profileId === pid);
   }
 
+  /** Phase 51 — drop every push token bound to a family profile. */
+  unregisterForProfile(profileId: string): number {
+    const pid = profileId.trim();
+    if (!pid) return 0;
+    let removed = 0;
+    for (const [deviceId, record] of this.tokens) {
+      if (record.profileId === pid) {
+        this.tokens.delete(deviceId);
+        removed++;
+      }
+    }
+    if (removed > 0) void this._persist();
+    return removed;
+  }
+
   /** Diagnostic: how many tokens are loaded (any owner). */
   size(): number {
     return this.tokens.size;
@@ -680,6 +695,11 @@ export class PushNotificationService {
   /** Phase 51 — list tokens for one family profile. */
   listForOwnerProfile(ownerId: string, profileId: string): PushTokenRecord[] {
     return this.store.listForOwnerProfile(ownerId, profileId);
+  }
+
+  /** Phase 51 — unregister all push tokens for a wiped family profile. */
+  unregisterPushTokensForProfile(profileId: string): number {
+    return this.store.unregisterForProfile(profileId);
   }
 
   /**

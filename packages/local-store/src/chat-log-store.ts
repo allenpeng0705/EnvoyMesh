@@ -74,6 +74,13 @@ export interface LocalChatLogStore {
   deleteMessage(threadPeerOwnerId: string, messageId: string): Promise<boolean>;
   /** Remove all messages in a thread. Returns count removed. */
   clearThread(threadPeerOwnerId: string): Promise<number>;
+  /**
+   * Remove every row whose thread key matches `predicate`.
+   * Returns deleted message count and the distinct thread keys cleared.
+   */
+  clearThreadsMatching(
+    predicate: (threadPeerOwnerId: string) => boolean,
+  ): Promise<{ deletedCount: number; clearedThreadKeys: string[] }>;
   /** Upgrade delivery receipt for an existing outbound message row. */
   updateDeliveryReceipt(
     threadPeerOwnerId: string,
@@ -263,6 +270,29 @@ export function createLocalChatLogStore(profileDir: string): LocalChatLogStore {
         if (deleted === 0) return 0;
         await writeChatLinesAtomic(path, next);
         return deleted;
+      });
+    },
+
+    clearThreadsMatching(predicate) {
+      return enqueue(async () => {
+        const rows = await readAllChatLines(path);
+        const cleared = new Set<string>();
+        const next = rows.filter((row) => {
+          if (predicate(row.threadPeerOwnerId)) {
+            cleared.add(row.threadPeerOwnerId);
+            return false;
+          }
+          return true;
+        });
+        const deletedCount = rows.length - next.length;
+        if (deletedCount === 0) {
+          return { deletedCount: 0, clearedThreadKeys: [] };
+        }
+        await writeChatLinesAtomic(path, next);
+        return {
+          deletedCount,
+          clearedThreadKeys: [...cleared],
+        };
       });
     },
 

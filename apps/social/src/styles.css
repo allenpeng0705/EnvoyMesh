@@ -14070,6 +14070,14 @@ button:disabled {
   border-color: var(--color-danger, #dc2626);
 }
 
+.settings-family-remove-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  justify-content: flex-end;
+  margin-top: 1rem;
+}
+
 .settings-family-rename {
   display: flex;
   flex-wrap: wrap;

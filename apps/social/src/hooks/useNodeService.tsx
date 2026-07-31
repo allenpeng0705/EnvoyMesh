@@ -366,6 +366,7 @@ export interface NodeServiceClient {
     params: import("@envoymesh/api").UpdateFamilyProfileParams,
   ): Promise<import("@envoymesh/api").UpdateFamilyProfileResult>;
   deleteFamilyProfile(id: string): Promise<import("@envoymesh/api").DeleteFamilyProfileResult>;
+  wipeFamilyProfile(id: string): Promise<import("@envoymesh/api").WipeFamilyProfileResult>;
   generateFamilyInviteToken(
     params?: import("@envoymesh/api").GenerateFamilyInviteTokenParams,
   ): Promise<import("@envoymesh/api").GenerateFamilyInviteTokenResult>;
@@ -1315,6 +1316,11 @@ function createWsNodeServiceClient(
     async deleteFamilyProfile(id: string) {
       return wsClient.rpc("deleteFamilyProfile", { id }) as Promise<
         import("@envoymesh/api").DeleteFamilyProfileResult
+      >;
+    },
+    async wipeFamilyProfile(id: string) {
+      return wsClient.rpc("wipeFamilyProfile", { id }) as Promise<
+        import("@envoymesh/api").WipeFamilyProfileResult
       >;
     },
     async generateFamilyInviteToken(

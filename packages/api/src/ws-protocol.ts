@@ -288,6 +288,7 @@ export type RpcMethods =
   | "createFamilyProfile"
   | "updateFamilyProfile"
   | "deleteFamilyProfile"
+  | "wipeFamilyProfile"
   | "listFamilyProfiles"
   | "generateFamilyInviteToken"
   | "sendFamilyMessage"

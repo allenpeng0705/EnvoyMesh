@@ -716,6 +716,10 @@ export class DirectCallClient implements NodeServiceClient {
     return this._ns.deleteFamilyProfile(id);
   }
 
+  async wipeFamilyProfile(id: string) {
+    return this._ns.wipeFamilyProfile(id);
+  }
+
   async generateFamilyInviteToken(
     params?: Parameters<NodeService["generateFamilyInviteToken"]>[0],
   ) {

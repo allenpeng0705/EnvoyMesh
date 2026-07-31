@@ -464,6 +464,9 @@ if (nodeService instanceof NodeServiceImpl) {
   nodeService.bindThinClientProfileOnlineCheck((profileId) =>
     wsServerForEvents?.hasRecentlyActiveClientForProfile(profileId) ?? false,
   );
+  nodeService.bindDisconnectClientsForProfile((profileId) =>
+    wsServerForEvents?.disconnectClientsForProfile(profileId) ?? 0,
+  );
   nodeService.bindCliTaskStore(taskStore);
   nodeService.bindApprovalQueue(approvalQueue);
   const nodeConfig = await nodeService.getNodeConfig();

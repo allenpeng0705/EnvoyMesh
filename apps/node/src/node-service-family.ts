@@ -8,13 +8,21 @@ import type {
   UpdateFamilyProfileParams,
   UpdateFamilyProfileResult,
   DeleteFamilyProfileResult,
+  WipeFamilyProfileResult,
   GenerateFamilyInviteTokenParams,
   GenerateFamilyInviteTokenResult,
   ListFamilyProfilesResult,
   FamilyProfile,
   AiBotDefinition,
 } from "@envoymesh/api"
-import type { FamilyProfileRecord, FamilyProfileStore } from "@envoymesh/local-store"
+import { threadVisibleTo } from "@envoymesh/api"
+import type {
+  FamilyProfileRecord,
+  FamilyProfileStore,
+  FamilyRoomStore,
+  LocalChatLogStore,
+  SessionTokenStore,
+} from "@envoymesh/local-store"
 import { getRpcCaller, requireOwnerProfile } from "./rpc-caller-context.js"
 
 export function toFamilyProfile(record: FamilyProfileRecord): FamilyProfile {
@@ -87,17 +95,109 @@ export async function updateFamilyProfileViaRuntime(
   return { profile: toFamilyProfile(profile) }
 }
 
+/**
+ * @deprecated Prefer {@link wipeFamilyProfileViaRuntime}. Kept as a thin
+ * alias so existing RPC clients that call `deleteFamilyProfile` still erase
+ * profile-scoped data instead of orphaning chat threads.
+ */
 export async function deleteFamilyProfileViaRuntime(
-  store: FamilyProfileStore | null,
+  deps: WipeFamilyProfileDeps,
   id: string,
 ): Promise<DeleteFamilyProfileResult> {
-  if (!store) throw new Error("Family profile store is not available")
-  requireOwnerProfile("delete family profiles")
+  const wiped = await wipeFamilyProfileViaRuntime(deps, id)
+  return { ok: true, id: wiped.id }
+}
+
+export interface WipeFamilyProfileDeps {
+  profileStore: FamilyProfileStore | null
+  chatLogStore: LocalChatLogStore | null
+  sessionTokenStore: SessionTokenStore | null
+  familyRoomStore: FamilyRoomStore | null
+  /** Unregister push tokens for this profile id. */
+  unregisterPushTokens?: (profileId: string) => number
+  /** Force-close live thin-client sockets for this profile. */
+  disconnectClients?: (profileId: string) => number
+  /** Clear chat RAG indexes for wiped thread keys. */
+  clearRagThreads?: (threadKeys: string[]) => Promise<void>
+}
+
+/**
+ * Wipe profile-scoped local data, then delete the profile row.
+ * Family DM threads involving this id are erased for both sides.
+ * Shared family rooms keep remaining members (creator is reassigned).
+ */
+export async function wipeFamilyProfileViaRuntime(
+  deps: WipeFamilyProfileDeps,
+  id: string,
+): Promise<WipeFamilyProfileResult> {
+  requireOwnerProfile("wipe family profiles")
   const trimmed = id?.trim()
   if (!trimmed) throw new Error("id is required")
-  const ok = await store.delete(trimmed)
+  if (!deps.profileStore) throw new Error("Family profile store is not available")
+
+  const existing = await deps.profileStore.get(trimmed)
+  if (!existing) throw new Error(`Family profile not found: ${trimmed}`)
+  if (existing.isOwner) throw new Error("Cannot wipe the owner profile")
+
+  const clearedThreadKeys = new Set<string>()
+  let deletedMessages = 0
+
+  if (deps.chatLogStore) {
+    const cleared = await deps.chatLogStore.clearThreadsMatching((threadKey) =>
+      threadVisibleTo(threadKey, trimmed),
+    )
+    deletedMessages += cleared.deletedCount
+    for (const key of cleared.clearedThreadKeys) clearedThreadKeys.add(key)
+  }
+
+  if (deps.familyRoomStore) {
+    const rooms = await deps.familyRoomStore.list()
+    for (const room of rooms) {
+      if (!room.memberProfileIds.includes(trimmed)) continue
+      const roomThread = `room:${room.roomId}`
+      const nextMembers = room.memberProfileIds.filter((m) => m !== trimmed)
+
+      if (nextMembers.length === 0) {
+        // Solo room owned by the wiped profile — drop room + history.
+        if (deps.chatLogStore) {
+          deletedMessages += await deps.chatLogStore.clearThread(roomThread)
+          clearedThreadKeys.add(roomThread)
+        }
+        await deps.familyRoomStore.remove(room.roomId)
+        continue
+      }
+
+      const nextCreator =
+        room.creatorProfileId === trimmed ? nextMembers[0]! : room.creatorProfileId
+      await deps.familyRoomStore.update({
+        roomId: room.roomId,
+        memberProfileIds: nextMembers,
+        creatorProfileId: nextCreator,
+      })
+    }
+  }
+
+  let revokedSessions = 0
+  if (deps.sessionTokenStore) {
+    revokedSessions = await deps.sessionTokenStore.removeTokensForProfile(trimmed)
+  }
+
+  deps.unregisterPushTokens?.(trimmed)
+  deps.disconnectClients?.(trimmed)
+
+  if (deps.clearRagThreads && clearedThreadKeys.size > 0) {
+    await deps.clearRagThreads([...clearedThreadKeys])
+  }
+
+  const ok = await deps.profileStore.delete(trimmed)
   if (!ok) throw new Error(`Family profile not found: ${trimmed}`)
-  return { ok: true, id: trimmed }
+
+  return {
+    ok: true,
+    id: trimmed,
+    deletedMessages,
+    revokedSessions,
+  }
 }
 
 export interface GenerateFamilyInviteDeps {

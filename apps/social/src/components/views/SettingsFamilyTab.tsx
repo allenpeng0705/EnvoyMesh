@@ -1,6 +1,6 @@
 /**
  * Phase 51F — Family Network settings (owner desktop).
- * List / create / rename / deactivate / delete profiles + family invite QR.
+ * List / create / rename / deactivate / wipe profiles + family invite QR.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { FamilyProfile } from "@envoymesh/api";
@@ -9,6 +9,7 @@ import { useT } from "../../context/I18nContext.js";
 import { useNodeService } from "../../hooks/useNodeService.js";
 import { useNodeState } from "../../context/NodeStateContext.js";
 import { ConfirmDialog } from "../ConfirmDialog.js";
+import { ModalPortal } from "../ModalPortal.js";
 import { FamilyInviteQRModal } from "../FamilyInviteQRModal.js";
 
 const AVATAR_COLORS = [
@@ -37,7 +38,10 @@ export function SettingsFamilyTab() {
   const [creating, setCreating] = useState(false);
   const [renameId, setRenameId] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState("");
-  const [deleteTarget, setDeleteTarget] = useState<FamilyProfile | null>(null);
+  /** First step: choose Deactivate vs Wipe. */
+  const [removeTarget, setRemoveTarget] = useState<FamilyProfile | null>(null);
+  /** Second step: confirm wipe. */
+  const [wipeTarget, setWipeTarget] = useState<FamilyProfile | null>(null);
   const [showInviteQr, setShowInviteQr] = useState(false);
 
   const load = useCallback(async () => {
@@ -129,13 +133,30 @@ export function SettingsFamilyTab() {
     }
   };
 
-  const handleDelete = async () => {
-    if (!deleteTarget || deleteTarget.isOwner) return;
-    setBusyId(deleteTarget.id);
+  const handleDeactivateChoice = async () => {
+    if (!removeTarget || removeTarget.isOwner) return;
+    const target = removeTarget;
+    setRemoveTarget(null);
+    setBusyId(target.id);
     setError(null);
     try {
-      await nodeService.deleteFamilyProfile(deleteTarget.id);
-      setDeleteTarget(null);
+      await nodeService.updateFamilyProfile({ id: target.id, active: false });
+      await afterMutation();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleWipeConfirm = async () => {
+    if (!wipeTarget || wipeTarget.isOwner) return;
+    const target = wipeTarget;
+    setWipeTarget(null);
+    setBusyId(target.id);
+    setError(null);
+    try {
+      await nodeService.wipeFamilyProfile(target.id);
       await afterMutation();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -228,7 +249,7 @@ export function SettingsFamilyTab() {
           <p className="settings-family-section__hint">
             {t(
               "settings.family.profilesHint",
-              "Each phone locks to one profile at pairing. Rename or deactivate anytime.",
+              "Each phone locks to one profile at pairing. Rename or deactivate anytime. Wipe erases their chats and AI history.",
             )}
           </p>
         </div>
@@ -328,23 +349,23 @@ export function SettingsFamilyTab() {
                       >
                         {t("settings.family.rename", "Rename")}
                       </button>
-                      <button
-                        type="button"
-                        className="settings-family-btn"
-                        disabled={busyId === profile.id}
-                        onClick={() => void handleToggleActive(profile)}
-                      >
-                        {inactive
-                          ? t("settings.family.reactivate", "Reactivate")
-                          : t("settings.family.deactivate", "Deactivate")}
-                      </button>
+                      {inactive ? (
+                        <button
+                          type="button"
+                          className="settings-family-btn"
+                          disabled={busyId === profile.id}
+                          onClick={() => void handleToggleActive(profile)}
+                        >
+                          {t("settings.family.reactivate", "Reactivate")}
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         className="settings-family-btn settings-family-btn--danger"
                         disabled={busyId === profile.id}
-                        onClick={() => setDeleteTarget(profile)}
+                        onClick={() => setRemoveTarget(profile)}
                       >
-                        {t("settings.family.delete", "Delete")}
+                        {t("settings.family.remove", "Remove…")}
                       </button>
                     </div>
                   ) : null}
@@ -412,17 +433,78 @@ export function SettingsFamilyTab() {
         <FamilyInviteQRModal onClose={() => setShowInviteQr(false)} />
       ) : null}
 
-      {deleteTarget ? (
+      {removeTarget ? (
+        <ModalPortal>
+          <div
+            className="modal-overlay"
+            role="presentation"
+            onClick={() => setRemoveTarget(null)}
+          >
+            <div
+              className="modal-panel confirm-dialog settings-family-remove-dialog"
+              role="alertdialog"
+              aria-modal="true"
+              aria-labelledby="family-remove-title"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h2 id="family-remove-title" className="confirm-dialog-title">
+                {t("settings.family.removeTitle", "Remove {name}?", {
+                  name: removeTarget.name,
+                })}
+              </h2>
+              <p className="confirm-dialog-message">
+                {t(
+                  "settings.family.removeMessage",
+                  "Deactivate keeps their chats and AI history (they appear offline). Wipe permanently erases profile-scoped data on this home node.",
+                )}
+              </p>
+              <div className="settings-family-remove-actions">
+                {removeTarget.active !== false ? (
+                  <button
+                    type="button"
+                    className="settings-family-btn settings-family-btn--primary"
+                    onClick={() => void handleDeactivateChoice()}
+                  >
+                    {t("settings.family.deactivate", "Deactivate")}
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  className="settings-family-btn settings-family-btn--danger"
+                  onClick={() => {
+                    setWipeTarget(removeTarget);
+                    setRemoveTarget(null);
+                  }}
+                >
+                  {t("settings.family.wipe", "Wipe")}
+                </button>
+                <button
+                  type="button"
+                  className="settings-family-btn"
+                  onClick={() => setRemoveTarget(null)}
+                >
+                  {t("settings.family.cancel", "Cancel")}
+                </button>
+              </div>
+            </div>
+          </div>
+        </ModalPortal>
+      ) : null}
+
+      {wipeTarget ? (
         <ConfirmDialog
-          title={t("settings.family.deleteTitle", "Delete family profile?")}
-          message={t("settings.family.deleteMessage", "Remove {name}? Their chat history stays on disk but they can no longer connect.", {
-            name: deleteTarget.name,
+          title={t("settings.family.wipeTitle", "Wipe {name} permanently?", {
+            name: wipeTarget.name,
           })}
-          confirmLabel={t("settings.family.delete", "Delete")}
+          message={t(
+            "settings.family.wipeMessage",
+            "This deletes the profile and erases their EnvoyAI chats, family DMs, bots, sessions, and push tokens. Recreating the same name will not restore that history.",
+          )}
+          confirmLabel={t("settings.family.wipeConfirm", "Wipe everything")}
           cancelLabel={t("settings.family.cancel", "Cancel")}
           variant="destructive"
-          onConfirm={() => void handleDelete()}
-          onCancel={() => setDeleteTarget(null)}
+          onConfirm={() => void handleWipeConfirm()}
+          onCancel={() => setWipeTarget(null)}
         />
       ) : null}
     </div>

@@ -260,4 +260,210 @@ describe("Family network E2E (multi-profile)", () => {
     const bare = await chatLog.listThread(ENVOY_AI_THREAD_KEY)
     expect(bare.every((m) => m.content?.text !== "dad question")).toBe(true)
   })
+
+  it("deactivate keeps EnvoyAI history; wipe erases it and drops the profile", async () => {
+    const invite = await mintFamilyInvite()
+    const dadPair = await svc.pairThinClient({
+      pairingToken: invite.token,
+      deviceName: "Dad Phone",
+      platform: "flutter",
+      deviceId: "dad-wipe-device-0001",
+      profileName: "Dad",
+    })
+    const dadId = dadPair.profileId
+    const dadKey = envoyAiThreadKeyForProfile(dadId)
+
+    await runWithRpcCaller(
+      {
+        ownerId: ownerProfile.owner.ownerId,
+        profileId: dadId,
+        isOwnerProfile: false,
+        source: "session",
+      },
+      async () => {
+        const deps = (svc as any)._openClawRuntimeDeps()
+        await persistEnvoyAiChatExchangeViaRuntime(
+          deps,
+          "keep me",
+          {
+            answer: "kept answer",
+            domain: "knowledge",
+            intent: "knowledge",
+            toolsUsed: [],
+            approvalItems: [],
+            modelUsed: "openclaw",
+          } as any,
+          undefined,
+          dadKey,
+        )
+      },
+    )
+    await new Promise((r) => setTimeout(r, 100))
+
+    await runWithRpcCaller(localOwnerCaller(ownerProfile.owner.ownerId), () =>
+      svc.updateFamilyProfile({ id: dadId, active: false }),
+    )
+
+    const afterDeactivate = await runWithRpcCaller(
+      {
+        ownerId: ownerProfile.owner.ownerId,
+        profileId: dadId,
+        isOwnerProfile: false,
+        source: "session",
+      },
+      () => svc.listChatHistory("envoyai"),
+    )
+    expect(afterDeactivate.some((m) => m.content?.text === "keep me")).toBe(true)
+
+    const previewInactive = await svc.previewFamilyInvite({
+      pairingToken: (await mintFamilyInvite()).token,
+    })
+    expect(previewInactive.profiles.find((p) => p.id === dadId)).toBeUndefined()
+
+    const wipe = await runWithRpcCaller(localOwnerCaller(ownerProfile.owner.ownerId), () =>
+      svc.wipeFamilyProfile(dadId),
+    )
+    expect(wipe.ok).toBe(true)
+    expect(wipe.deletedMessages).toBeGreaterThan(0)
+
+    const listed = await runWithRpcCaller(localOwnerCaller(ownerProfile.owner.ownerId), () =>
+      svc.listFamilyProfiles(),
+    )
+    expect(listed.profiles.find((p) => p.id === dadId)).toBeUndefined()
+
+    const chatLog = createLocalChatLogStore(profileDir)
+    const wipedThread = await chatLog.listThread(dadKey)
+    expect(wipedThread).toHaveLength(0)
+
+    // Recreate Dad — same slug id, empty history (no accidental restore).
+    const recreated = await runWithRpcCaller(localOwnerCaller(ownerProfile.owner.ownerId), () =>
+      svc.createFamilyProfile({ name: "Dad" }),
+    )
+    expect(recreated.profile.id).toBe(dadId)
+    const freshAi = await runWithRpcCaller(
+      {
+        ownerId: ownerProfile.owner.ownerId,
+        profileId: dadId,
+        isOwnerProfile: false,
+        source: "session",
+      },
+      () => svc.listChatHistory("envoyai"),
+    )
+    expect(freshAi.every((m) => m.content?.text !== "keep me")).toBe(true)
+  })
+
+  it("deactivate and wipe disconnect live thin-client sockets for that profile", async () => {
+    const kicked: string[] = []
+    svc.bindDisconnectClientsForProfile((profileId) => {
+      kicked.push(profileId)
+      return 1
+    })
+
+    const dad = await runWithRpcCaller(localOwnerCaller(ownerProfile.owner.ownerId), () =>
+      svc.createFamilyProfile({ name: "Dad" }),
+    )
+    const mom = await runWithRpcCaller(localOwnerCaller(ownerProfile.owner.ownerId), () =>
+      svc.createFamilyProfile({ name: "Mom" }),
+    )
+
+    await runWithRpcCaller(localOwnerCaller(ownerProfile.owner.ownerId), () =>
+      svc.updateFamilyProfile({ id: dad.profile.id, active: false }),
+    )
+    expect(kicked).toEqual([dad.profile.id])
+
+    await runWithRpcCaller(localOwnerCaller(ownerProfile.owner.ownerId), () =>
+      svc.wipeFamilyProfile(mom.profile.id),
+    )
+    expect(kicked).toEqual([dad.profile.id, mom.profile.id])
+  })
+
+  it("wipe reassigns family room creator instead of deleting shared rooms", async () => {
+    const dad = await runWithRpcCaller(localOwnerCaller(ownerProfile.owner.ownerId), () =>
+      svc.createFamilyProfile({ name: "Dad" }),
+    )
+    const mom = await runWithRpcCaller(localOwnerCaller(ownerProfile.owner.ownerId), () =>
+      svc.createFamilyProfile({ name: "Mom" }),
+    )
+
+    const room = await runWithRpcCaller(
+      {
+        ownerId: ownerProfile.owner.ownerId,
+        profileId: dad.profile.id,
+        isOwnerProfile: false,
+        source: "session",
+      },
+      () =>
+        svc.createFamilyRoom({
+          title: "Dinner",
+          memberProfileIds: [mom.profile.id],
+        }),
+    )
+    expect(room.room.creatorProfileId).toBe(dad.profile.id)
+    expect(room.room.memberProfileIds).toEqual(
+      expect.arrayContaining([dad.profile.id, mom.profile.id]),
+    )
+
+    await runWithRpcCaller(localOwnerCaller(ownerProfile.owner.ownerId), () =>
+      svc.wipeFamilyProfile(dad.profile.id),
+    )
+
+    const listed = await runWithRpcCaller(
+      {
+        ownerId: ownerProfile.owner.ownerId,
+        profileId: mom.profile.id,
+        isOwnerProfile: false,
+        source: "session",
+      },
+      () => svc.listFamilyRooms(),
+    )
+    const kept = listed.rooms.find((r) => r.roomId === room.room.roomId)
+    expect(kept).toBeDefined()
+    expect(kept!.creatorProfileId).toBe(mom.profile.id)
+    expect(kept!.memberProfileIds).toEqual([mom.profile.id])
+    expect(kept!.memberProfileIds).not.toContain(dad.profile.id)
+  })
+
+  it("deleteFamilyProfile aliases wipe (erases EnvoyAI history)", async () => {
+    const dad = await runWithRpcCaller(localOwnerCaller(ownerProfile.owner.ownerId), () =>
+      svc.createFamilyProfile({ name: "Dad" }),
+    )
+    const dadKey = envoyAiThreadKeyForProfile(dad.profile.id)
+    await runWithRpcCaller(
+      {
+        ownerId: ownerProfile.owner.ownerId,
+        profileId: dad.profile.id,
+        isOwnerProfile: false,
+        source: "session",
+      },
+      async () => {
+        const deps = (svc as any)._openClawRuntimeDeps()
+        await persistEnvoyAiChatExchangeViaRuntime(
+          deps,
+          "gone via delete",
+          {
+            answer: "bye",
+            domain: "knowledge",
+            intent: "knowledge",
+            toolsUsed: [],
+            approvalItems: [],
+            modelUsed: "openclaw",
+          } as any,
+          undefined,
+          dadKey,
+        )
+      },
+    )
+    await new Promise((r) => setTimeout(r, 100))
+
+    await runWithRpcCaller(localOwnerCaller(ownerProfile.owner.ownerId), () =>
+      svc.deleteFamilyProfile(dad.profile.id),
+    )
+
+    const chatLog = createLocalChatLogStore(profileDir)
+    expect(await chatLog.listThread(dadKey)).toHaveLength(0)
+    const listed = await runWithRpcCaller(localOwnerCaller(ownerProfile.owner.ownerId), () =>
+      svc.listFamilyProfiles(),
+    )
+    expect(listed.profiles.find((p) => p.id === dad.profile.id)).toBeUndefined()
+  })
 })

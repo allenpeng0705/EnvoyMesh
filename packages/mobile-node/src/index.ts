@@ -1196,6 +1196,12 @@ export class MobileNode implements NodeService {
     return this._homeRemoteCall("deleteFamilyProfile", { id });
   }
 
+  async wipeFamilyProfile(
+    id: string,
+  ): Promise<import("@envoymesh/api").WipeFamilyProfileResult> {
+    return this._homeRemoteCall("wipeFamilyProfile", { id });
+  }
+
   async generateFamilyInviteToken(
     params?: import("@envoymesh/api").GenerateFamilyInviteTokenParams,
   ): Promise<import("@envoymesh/api").GenerateFamilyInviteTokenResult> {

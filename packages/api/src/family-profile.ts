@@ -61,6 +61,20 @@ export interface DeleteFamilyProfileResult {
   id: string
 }
 
+/**
+ * Phase 51 — permanently remove a non-owner profile and erase profile-scoped
+ * local data (AI/bot/bridge threads, family DMs involving this id, room
+ * membership, session + push tokens).
+ */
+export interface WipeFamilyProfileResult {
+  ok: true
+  id: string
+  /** Chat log rows removed across matching thread keys. */
+  deletedMessages: number
+  /** Session tokens revoked for this profile. */
+  revokedSessions: number
+}
+
 export interface GenerateFamilyInviteTokenParams {
   /** Hours until expiry (default 72). */
   expiresInHours?: number

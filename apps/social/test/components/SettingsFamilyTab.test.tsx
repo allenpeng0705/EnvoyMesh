@@ -11,6 +11,7 @@ const listFamilyProfiles = vi.fn();
 const createFamilyProfile = vi.fn();
 const updateFamilyProfile = vi.fn();
 const deleteFamilyProfile = vi.fn();
+const wipeFamilyProfile = vi.fn();
 const generateFamilyInviteToken = vi.fn();
 const refreshNodeConfig = vi.fn();
 
@@ -19,6 +20,7 @@ const mockNodeService = {
   createFamilyProfile,
   updateFamilyProfile,
   deleteFamilyProfile,
+  wipeFamilyProfile,
   generateFamilyInviteToken,
 };
 
@@ -102,6 +104,33 @@ describe("SettingsFamilyTab", () => {
     fireEvent.click(screen.getByRole("button", { name: /Show invite QR/i }));
     await waitFor(() => {
       expect(generateFamilyInviteToken).toHaveBeenCalled();
+    });
+  });
+
+  it("Remove… offers Deactivate and Wipe; Wipe confirms then calls wipeFamilyProfile", async () => {
+    wipeFamilyProfile.mockResolvedValue({
+      ok: true,
+      id: "mom",
+      deletedMessages: 0,
+      revokedSessions: 0,
+    });
+    renderWithI18n(<SettingsFamilyTab />);
+    await waitFor(() => expect(screen.getByText("Mom")).toBeTruthy());
+
+    fireEvent.click(screen.getByRole("button", { name: /Remove/i }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /^Deactivate$/i })).toBeTruthy();
+      expect(screen.getByRole("button", { name: /^Wipe$/i })).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: /^Wipe$/i }));
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: /Wipe everything/i })).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Wipe everything/i }));
+
+    await waitFor(() => {
+      expect(wipeFamilyProfile).toHaveBeenCalledWith("mom");
     });
   });
 });

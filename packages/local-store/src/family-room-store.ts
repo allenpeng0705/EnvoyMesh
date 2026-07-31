@@ -38,6 +38,8 @@ export interface FamilyRoomStore {
     roomId: string
     title?: string
     memberProfileIds?: string[]
+    /** Transfer room ownership when the previous creator leaves / is wiped. */
+    creatorProfileId?: string
     active?: boolean
   }): Promise<FamilyRoomRecord>
   remove(roomId: string): Promise<boolean>
@@ -146,18 +148,33 @@ export function createFamilyRoomStore(profileDir: string): FamilyRoomStore {
       const idx = file.rooms.findIndex((r) => r.roomId === input.roomId.trim())
       if (idx < 0) throw new Error(`Family room not found: ${input.roomId}`)
       const prev = file.rooms[idx]!
+      const memberProfileIds = Array.isArray(input.memberProfileIds)
+        ? [...new Set(input.memberProfileIds.map((m) => m.trim()).filter(Boolean))]
+        : [...prev.memberProfileIds]
+      let creatorProfileId =
+        typeof input.creatorProfileId === "string" && input.creatorProfileId.trim()
+          ? input.creatorProfileId.trim()
+          : prev.creatorProfileId
+      // Keep creator among members when the room still has people; otherwise leave empty
+      // for callers that deactivate/remove next.
+      if (memberProfileIds.length > 0 && !memberProfileIds.includes(creatorProfileId)) {
+        creatorProfileId = memberProfileIds[0]!
+      } else if (memberProfileIds.length === 0 && creatorProfileId) {
+        // no-op: empty membership
+      } else if (
+        !Array.isArray(input.memberProfileIds) &&
+        !memberProfileIds.includes(creatorProfileId)
+      ) {
+        memberProfileIds.unshift(creatorProfileId)
+      }
       const next: FamilyRoomRecord = {
         ...prev,
         title: typeof input.title === "string" ? input.title.trim() || prev.title : prev.title,
-        memberProfileIds: Array.isArray(input.memberProfileIds)
-          ? [...new Set(input.memberProfileIds.map((m) => m.trim()).filter(Boolean))]
-          : prev.memberProfileIds,
+        creatorProfileId,
+        memberProfileIds,
         active: typeof input.active === "boolean" ? input.active : prev.active,
         revision: prev.revision + 1,
         updatedAt: new Date().toISOString(),
-      }
-      if (!next.memberProfileIds.includes(prev.creatorProfileId)) {
-        next.memberProfileIds.unshift(prev.creatorProfileId)
       }
       file.rooms[idx] = next
       await writeFileShape(path, file)

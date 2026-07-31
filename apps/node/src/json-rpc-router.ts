@@ -80,6 +80,7 @@ const OWNER_ONLY_RPC_METHODS = new Set<string>([
   "pruneRevokedDevices",
   "createFamilyProfile",
   "deleteFamilyProfile",
+  "wipeFamilyProfile",
   "generateFamilyInviteToken",
   "getPairingPayload",
   "syncPairingKioskFromConfig",
@@ -740,6 +741,8 @@ export async function routeRpcMethod(
       });
     case "deleteFamilyProfile":
       return ns.deleteFamilyProfile(String(params.id ?? ""));
+    case "wipeFamilyProfile":
+      return ns.wipeFamilyProfile(String(params.id ?? ""));
     case "generateFamilyInviteToken":
       return ns.generateFamilyInviteToken({
         expiresInHours: params.expiresInHours as number | undefined,

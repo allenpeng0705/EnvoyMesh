@@ -50,6 +50,8 @@ export interface SessionTokenStore {
   removeTokenByDeviceId(deviceId: string): Promise<void>;
   /** Remove all tokens for a given ownerId (e.g. when bond is revoked). */
   removeTokensForOwner(ownerId: string): Promise<void>;
+  /** Phase 51 — remove all tokens locked to a family profile id. */
+  removeTokensForProfile(profileId: string): Promise<number>;
 }
 
 export function createSessionTokenStore(profileDir: string): SessionTokenStore {
@@ -175,6 +177,15 @@ export function createSessionTokenStore(profileDir: string): SessionTokenStore {
       await serialised<void>(async (records) => {
         const filtered = records.filter((r) => r.ownerId !== ownerId);
         return { records: filtered, result: undefined };
+      });
+    },
+
+    async removeTokensForProfile(profileId: string): Promise<number> {
+      const pid = profileId.trim();
+      if (!pid) return 0;
+      return serialised<number>(async (records) => {
+        const filtered = records.filter((r) => r.profileId !== pid);
+        return { records: filtered, result: records.length - filtered.length };
       });
     },
   };

@@ -103,6 +103,7 @@ import type {
   UpdateFamilyProfileParams,
   UpdateFamilyProfileResult,
   DeleteFamilyProfileResult,
+  WipeFamilyProfileResult,
   GenerateFamilyInviteTokenParams,
   GenerateFamilyInviteTokenResult,
   ListFamilyProfilesResult,
@@ -123,6 +124,7 @@ export type {
   UpdateFamilyProfileParams,
   UpdateFamilyProfileResult,
   DeleteFamilyProfileResult,
+  WipeFamilyProfileResult,
   GenerateFamilyInviteTokenParams,
   GenerateFamilyInviteTokenResult,
   ListFamilyProfilesResult,
@@ -2592,8 +2594,15 @@ export interface NodeService {
   /** Phase 51 — update a family profile (owner can edit any; members edit self later). */
   updateFamilyProfile(params: UpdateFamilyProfileParams): Promise<UpdateFamilyProfileResult>;
 
-  /** Phase 51 — delete a non-owner family profile (owner-only). */
+  /** Phase 51 — delete a non-owner family profile (owner-only). Alias of wipeFamilyProfile. */
   deleteFamilyProfile(id: string): Promise<DeleteFamilyProfileResult>;
+
+  /**
+   * Phase 51 — wipe a non-owner profile and erase profile-scoped local data
+   * (AI/family threads, rooms membership, sessions, push). Disconnects live
+   * thin clients. Owner-only.
+   */
+  wipeFamilyProfile(id: string): Promise<WipeFamilyProfileResult>;
 
   /**
    * Phase 51 — mint a single-use family invite token for EnvoyGo pairing.

@@ -357,7 +357,7 @@ import {
   listFamilyProfilesViaRuntime,
   createFamilyProfileViaRuntime,
   updateFamilyProfileViaRuntime,
-  deleteFamilyProfileViaRuntime,
+  wipeFamilyProfileViaRuntime,
   generateFamilyInviteTokenViaRuntime,
   toFamilyProfile,
 } from "./node-service-family.js";
@@ -8164,8 +8164,25 @@ class NodeServiceImpl implements NodeService {
     params: import("@envoymesh/api").UpdateFamilyProfileParams,
   ): Promise<import("@envoymesh/api").UpdateFamilyProfileResult> {
     await this._ensureFamilyOwnerMigrated();
+    const before =
+      typeof params.id === "string" && params.id.trim() && this._familyProfileStore
+        ? await this._familyProfileStore.get(params.id.trim())
+        : undefined;
     const result = await updateFamilyProfileViaRuntime(this._familyProfileStore, params);
     await this._refreshFamilyProfileActiveCache();
+    // Kick live thin clients when owner deactivates a profile.
+    if (
+      before &&
+      before.active !== false &&
+      result.profile.active === false &&
+      !result.profile.isOwner
+    ) {
+      try {
+        this._disconnectClientsForProfile?.(result.profile.id);
+      } catch {
+        /* ignore */
+      }
+    }
     try {
       const full = await this.getNodeConfig();
       this.emit("home:config-updated", { config: full });
@@ -8175,11 +8192,47 @@ class NodeServiceImpl implements NodeService {
     return result;
   }
 
+  /**
+   * Alias of {@link wipeFamilyProfile} — hard-delete without wipe orphaned
+   * history; callers must erase profile-scoped data.
+   */
   async deleteFamilyProfile(
     id: string,
   ): Promise<import("@envoymesh/api").DeleteFamilyProfileResult> {
+    const wiped = await this.wipeFamilyProfile(id);
+    return { ok: true, id: wiped.id };
+  }
+
+  async wipeFamilyProfile(
+    id: string,
+  ): Promise<import("@envoymesh/api").WipeFamilyProfileResult> {
     await this._ensureFamilyOwnerMigrated();
-    const result = await deleteFamilyProfileViaRuntime(this._familyProfileStore, id);
+    const result = await wipeFamilyProfileViaRuntime(
+      {
+        profileStore: this._familyProfileStore,
+        chatLogStore: this._chatLogStore,
+        sessionTokenStore: this._sessionTokenStore,
+        familyRoomStore: this._familyRoomStore,
+        unregisterPushTokens: (profileId) =>
+          pushNotificationService.unregisterPushTokensForProfile(profileId),
+        disconnectClients: (profileId) =>
+          this._disconnectClientsForProfile?.(profileId) ?? 0,
+        clearRagThreads: async (threadKeys) => {
+          if (threadKeys.length === 0) return;
+          if (!(await this._shouldPurgeChatRagOnDelete())) return;
+          const rag = await this._getRagService();
+          if (!rag) return;
+          for (const key of threadKeys) {
+            try {
+              await rag.clearChatThread(key);
+            } catch {
+              /* best-effort */
+            }
+          }
+        },
+      },
+      id,
+    );
     await this._refreshFamilyProfileActiveCache();
     try {
       const full = await this.getNodeConfig();
@@ -9622,6 +9675,7 @@ class NodeServiceImpl implements NodeService {
    * suppress chat pushes.
    */
   private _thinClientOnlineCheck: ((ownerId: string) => boolean) | null = null;
+  private _disconnectClientsForProfile: ((profileId: string) => number) | null = null;
 
   /** Wire the thin-client WS presence check used by push skip-if-online. */
   bindThinClientOnlineCheck(check: (ownerId: string) => boolean): void {
@@ -9631,6 +9685,14 @@ class NodeServiceImpl implements NodeService {
   /** Phase 51 — per-profile thin-client presence (Dad online ≠ Mom online). */
   bindThinClientProfileOnlineCheck(check: (profileId: string) => boolean): void {
     this._thinClientProfileOnlineCheck = check;
+  }
+
+  /**
+   * Phase 51 — force-close thin-client WebSockets for a family profile
+   * (deactivate / wipe). Bound from index.ts to WsServer.disconnectClientsForProfile.
+   */
+  bindDisconnectClientsForProfile(fn: (profileId: string) => number): void {
+    this._disconnectClientsForProfile = fn;
   }
 
   /**
