@@ -1,0 +1,19 @@
+{
+  "_comment": "Push notification credentials for the home node. Copy this file to <profileDir>/push-config.json and fill in your values. For dev, you can also set env vars (APNS_KEY_ID, FCM_PROJECT_ID, etc.) — env vars take priority over this file. Profile dir locations: macOS ~/Library/Application Support/EnvoyMesh/profile/, Linux ~/.local/share/EnvoyMesh/profile/, Windows %APPDATA%/EnvoyMesh/profile/, dev ./data/default/.",
+  "_comment_paths": "File paths (keyPath, serviceAccountJsonPath) support BOTH absolute and relative. Relative paths resolve against the profile dir — so you can drop your .p8 key and service-account JSON next to push-config.json and reference them by filename. Absolute paths work too (e.g. /secure/AuthKey.p8).",
+  "apns": {
+    "keyId": "LKPCR48WHW",
+    "teamId": "VW379TB6DM",
+    "keyPath": "AuthKey_LKPCR48WHW.p8",
+    "_comment_topic": "topic = the app's bundle ID (Apple calls it 'APNs topic'). Must match the Bundle Identifier in Xcode.",
+    "topic": "com.envoymesh.envoygo",
+    "_comment_voipTopic": "voipTopic = bundle ID + '.voip'. Optional — auto-derived from topic if omitted.",
+    "voipTopic": "com.envoymesh.envoygo.voip",
+    "_comment_sandbox": "sandbox = true for debug / flutter install (development signing). false for App Store / TestFlight production builds.",
+    "sandbox": false
+  },
+  "fcm": {
+    "projectId": "envoymesh",
+    "serviceAccountJsonPath": "serviceAccountKey.json"
+  }
+}
