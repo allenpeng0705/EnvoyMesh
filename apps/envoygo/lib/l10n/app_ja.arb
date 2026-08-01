@@ -467,6 +467,7 @@
   "chatAiDisabledAskOwner": "ファミリーチャット用の AI モデルをホーム所有者に有効にしてもらってください。",
   "pairingLoadProfilesFailed": "既存のプロフィールを読み込めません: {error}",
   "pairingFailed": "ペアリングに失敗: {error}",
+  "pairingInviteAlreadyUsed": "この招待QRは既に使用済みです。ホーム所有者に「家族 → 招待QRを表示」で新しいコードを出してもらい、スキャン後「戻ってきました」でプロフィール（例: Dad）を選んでください。",
   "feedDefaultTitle": "フィード投稿",
   "aiDraftSection": "下書きセクション",
   "aiDraftFailed": "下書きできません ({reason})",

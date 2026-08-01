@@ -467,6 +467,7 @@
   "chatAiDisabledAskOwner": "请让家庭机主为家庭聊天启用 AI 模型。",
   "pairingLoadProfilesFailed": "无法加载已有档案：{error}",
   "pairingFailed": "配对失败：{error}",
+  "pairingInviteAlreadyUsed": "此邀请二维码已被使用。请让家庭节点所有者重新打开「家庭 → 显示邀请二维码」，扫描新码后选择「我回来了」并选中你的档案（例如 Dad）。",
   "feedDefaultTitle": "动态帖子",
   "aiDraftSection": "草稿段落",
   "aiDraftFailed": "无法生成草稿（{reason}）",

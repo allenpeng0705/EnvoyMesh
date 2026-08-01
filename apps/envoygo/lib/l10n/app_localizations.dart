@@ -2910,6 +2910,12 @@ abstract class AppLocalizations {
   /// **'Pairing failed: {error}'**
   String pairingFailed(String error);
 
+  /// No description provided for @pairingInviteAlreadyUsed.
+  ///
+  /// In en, this message translates to:
+  /// **'This invite QR was already used. Ask the home owner to open Family → Show invite QR again, then scan the new code and choose I\'m back to select your profile (e.g. Dad).'**
+  String get pairingInviteAlreadyUsed;
+
   /// No description provided for @feedDefaultTitle.
   ///
   /// In en, this message translates to:

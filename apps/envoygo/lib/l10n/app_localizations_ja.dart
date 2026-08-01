@@ -1497,6 +1497,10 @@ class AppLocalizationsJa extends AppLocalizations {
   }
 
   @override
+  String get pairingInviteAlreadyUsed =>
+      'この招待QRは既に使用済みです。ホーム所有者に「家族 → 招待QRを表示」で新しいコードを出してもらい、スキャン後「戻ってきました」でプロフィール（例: Dad）を選んでください。';
+
+  @override
   String get feedDefaultTitle => 'フィード投稿';
 
   @override

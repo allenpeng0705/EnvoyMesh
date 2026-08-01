@@ -4,6 +4,7 @@
 // a "chat with yourself" thread. The user reported this thread
 // reappearing even after a clean restart.
 
+import 'package:envoygo/models/chat_message.dart';
 import 'package:envoygo/providers/chat_provider.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -107,6 +108,66 @@ void main() {
         ChatNotifier.resolveExtAgentDisplayName({}),
         'Ext Agent',
       );
+    });
+  });
+
+  group('reconcileChatMessages', () {
+    ChatMessage msg({
+      required String id,
+      required String text,
+      bool outbound = true,
+    }) =>
+        ChatMessage(
+          id: id,
+          threadId: 'node:envoyai',
+          text: text,
+          isOutbound: outbound,
+          createdAt: '2026-07-31T12:00:00.000Z',
+        );
+
+    test('replaces optimistic temp_ with server echo (trimmed)', () {
+      final existing = <ChatMessage>[
+        msg(id: 'temp_1', text: 'hello '),
+        msg(id: 'ai_1', text: 'hi', outbound: false),
+      ];
+      final incoming = msg(id: 'srv_1', text: 'hello');
+      final next = reconcileChatMessages(
+        existing: existing,
+        incoming: incoming,
+        showAsMine: true,
+        collapseMatchingOutbound: true,
+      );
+      expect(next.map((m) => m.id), ['srv_1', 'ai_1']);
+      expect(next.where((m) => m.isOutbound), hasLength(1));
+    });
+
+    test('collapses duplicate outbound echoes on AI threads', () {
+      final existing = <ChatMessage>[
+        msg(id: 'temp_1', text: 'ping'),
+        msg(id: 'old_srv', text: 'ping'),
+      ];
+      final incoming = msg(id: 'new_srv', text: 'ping');
+      final next = reconcileChatMessages(
+        existing: existing,
+        incoming: incoming,
+        showAsMine: true,
+        collapseMatchingOutbound: true,
+      );
+      expect(next.map((m) => m.id), ['new_srv']);
+    });
+
+    test('keeps intentional same-text outbound when not collapsing', () {
+      final existing = <ChatMessage>[
+        msg(id: 'srv_old', text: 'ok'),
+      ];
+      final incoming = msg(id: 'srv_new', text: 'ok');
+      final next = reconcileChatMessages(
+        existing: existing,
+        incoming: incoming,
+        showAsMine: true,
+        collapseMatchingOutbound: false,
+      );
+      expect(next.map((m) => m.id), ['srv_new', 'srv_old']);
     });
   });
 }

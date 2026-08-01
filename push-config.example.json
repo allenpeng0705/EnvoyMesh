@@ -1,0 +1,16 @@
+{
+  "_comment": "Copy to push-config.json at the repo root for desktop packaging. Keep AuthKey_*.p8 and serviceAccountKey.json gitignored beside it. scripts/build-desktop.sh and build-desktop.ps1 stage them into apps/tauri/src-tauri/resources/node/.",
+  "_comment_paths": "keyPath and serviceAccountJsonPath may be absolute or relative. Relative paths resolve against the directory that contains push-config.json (repo root in dev, resources/node in a packaged app).",
+  "apns": {
+    "keyId": "YOUR_APNS_KEY_ID",
+    "teamId": "YOUR_APPLE_TEAM_ID",
+    "keyPath": "AuthKey_YOUR_KEY_ID.p8",
+    "topic": "com.envoymesh.envoygo",
+    "voipTopic": "com.envoymesh.envoygo.voip",
+    "sandbox": false
+  },
+  "fcm": {
+    "projectId": "YOUR_FIREBASE_PROJECT_ID",
+    "serviceAccountJsonPath": "serviceAccountKey.json"
+  }
+}

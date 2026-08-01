@@ -97,6 +97,8 @@ export interface GenerateFamilyInviteTokenResult {
  */
 export interface PreviewFamilyInviteParams {
   pairingToken: string
+  /** Optional EnvoyGo device UUID — used to allow same-device idempotent preview of a consumed invite. */
+  deviceId?: string
 }
 
 export interface PreviewFamilyInviteProfile {

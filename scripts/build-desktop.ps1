@@ -6,6 +6,14 @@
 # installer (NSIS .exe by default; WiX .msi is opt-in) for the Tauri desktop
 # app, with OpenClaw gateway + EnvoyMesh Node.js runtime bundled inside.
 #
+# Feature packaging notes (family network / push / EnvoyGo l10n):
+#   - Family network: ships in compiled apps/node + Social UI — no extra assets.
+#   - Push (iOS APNs + Android FCM for EnvoyGo): stage-tauri-push-credentials.ps1
+#     copies repo-root push-config.json + AuthKey_*.p8 + serviceAccountKey.json
+#     into resources\node\ after node staging. Full verify runs after social:build.
+#   - EnvoyGo localization is Flutter-only (apps/envoygo) — not part of this
+#     desktop bundle; Social i18n locales are included via npm run social:build.
+#
 # Usage (from the repo root, in PowerShell):
 #   .\scripts\build-desktop.ps1 [-Out <dir>] [-Version <ver>] [-ForceOpenClaw]
 #                                [-ForceNodeSidecar] [-SkipTypecheck]
@@ -519,6 +527,22 @@ if ($stageError) {
     Write-Info "  The most common cause is a workspace package without a built dist. From the repo root, run:"
     Write-Info "    npm run node:build"
     exit 1
+}
+
+# 1b2. Push credentials (push-config.json + APNs .p8 + FCM service account).
+# Must run AFTER node staging (which recreates resources\node\). Secrets live
+# only on the packager's machine (gitignored at repo root); relative paths in
+# push-config.json resolve via ENVOYMESH_NODE_BUNDLE_DIR at runtime.
+Write-Info "Staging push credentials (if present at repo root)..."
+$stagePushPs1 = Join-Path $PSScriptRoot "stage-tauri-push-credentials.ps1"
+if (Test-Path $stagePushPs1) {
+    & $stagePushPs1 -RepoRoot $RepoRoot -Dest (Join-Path $TauriResources "node")
+    if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) {
+        Write-Fail "stage-tauri-push-credentials.ps1 failed (exit $LASTEXITCODE)"
+        exit 1
+    }
+} else {
+    Write-Warn "stage-tauri-push-credentials.ps1 missing — skipping push credential staging"
 }
 
 # 1c. OpenClaw gateway.
@@ -1532,77 +1556,42 @@ if (-not $SkipPi) {
     }
 }
 
-# 1e. Verify the staged tree (matches scripts/verify-tauri-resources.sh).
-Write-Info "Verifying Tauri bundle resources..."
-$verifyOk = $true
-$reqFiles = @(
+# 1e. Sidecar smoke check (Social UI is verified after step 2 — Vite dist is
+# not in git, so requiring it here breaks clean checkouts).
+Write-Info "Sidecar smoke check (full verify runs after Social build)..."
+$sidecarOk = $true
+foreach ($r in @(
     @{ Path = $nodeExe; Label = "Node.js sidecar (node.exe)" },
     @{ Path = (Join-Path $TauriResources "node/dist/src/index.js"); Label = "compiled EnvoyMesh node" },
     @{ Path = (Join-Path $TauriResources "openclaw/openclaw.mjs"); Label = "OpenClaw gateway entry" },
-    @{ Path = (Join-Path $TauriResources "openclaw/dist/entry.js"); Label = "OpenClaw compiled entry.js" },
-    @{ Path = $SocialDist; Label = "built Social UI" }
-)
-# Pi is optional on slim builds (-SkipPi). Only require it when it was
-# supposed to be staged; mirrors the resources/pi/**/* entry in the
-# active tauri.conf.json.
-if (-not $SkipPi) {
-    $reqFiles += @(
-        @{ Path = (Join-Path $TauriResources "pi/node_modules/@earendil-works/pi-coding-agent/dist/cli.js"); Label = "Pi CLI entry" },
-        @{ Path = (Join-Path $TauriResources "pi/node_modules/@earendil-works/pi-coding-agent/dist/index.js"); Label = "Pi SDK entry" },
-        @{ Path = (Join-Path $TauriResources "pi/node_modules/@earendil-works/pi-coding-agent/package.json"); Label = "Pi package.json" }
-    )
-}
-foreach ($r in $reqFiles) {
+    @{ Path = (Join-Path $TauriResources "openclaw/dist/entry.js"); Label = "OpenClaw compiled entry.js" }
+)) {
     if (Test-Path $r.Path) {
         Write-Ok $r.Label
     } else {
         Write-Fail "missing $($r.Label) at $($r.Path)"
-        $verifyOk = $false
+        $sidecarOk = $false
     }
 }
-$openclawNm = Join-Path $TauriResources "openclaw/node_modules"
-if (-not (Test-Path $openclawNm) -or -not (Get-ChildItem $openclawNm -ErrorAction SilentlyContinue)) {
-    Write-Fail "OpenClaw node_modules is missing or empty at $openclawNm"
-    $verifyOk = $false
-} else {
-    Write-Ok "OpenClaw node_modules"
-}
-# Required runtime plugin-SDK self-reference. Without this, the gateway
-# refuses to start with "OpenClaw tree is incomplete (missing 1 item(s)).
-# node_modules/openclaw (required for plugin-sdk imports)". Mirrors the
-# check in scripts/validateOpenClawTree() (apps/node/src/openclaw-gateway-spawn.ts).
-$selfRef = Join-Path $TauriResources "openclaw/node_modules/openclaw/package.json"
-if (-not (Test-Path $selfRef)) {
-    Write-Fail "OpenClaw node_modules\openclaw\package.json is missing — gateway will refuse to start"
-    Write-Info "  Re-run with -ForceOpenClaw to regenerate, or check that the heal above ran."
-    $verifyOk = $false
-} else {
-    Write-Ok "OpenClaw node_modules\openclaw\ self-reference"
-}
-# Reject broken stub entry.js that was written by the dev node at runtime
-# or by a failed setup.ps1 build. These won't work in the Tauri bundle
-# where src/ is excluded. The bash twin does the same in
-# verify-tauri-resources.sh.
-$stagedEntryJs = Join-Path $TauriResources "openclaw/dist/entry.js"
-if (Test-Path $stagedEntryJs) {
-    $entryContent = Get-Content $stagedEntryJs -Raw -ErrorAction SilentlyContinue
-    if ($entryContent -and ($entryContent -match "EnvoyMesh bootstrap" -or $entryContent -match "from.*src/cli/run-main")) {
-        Write-Fail "OpenClaw dist/entry.js is a runtime stub — rebuild OpenClaw or use -ForceOpenClaw"
-        $verifyOk = $false
+if (-not $SkipPi) {
+    $piCli = Join-Path $TauriResources "pi/node_modules/@earendil-works/pi-coding-agent/dist/cli.js"
+    if (Test-Path $piCli) {
+        Write-Ok "Pi CLI entry"
+    } else {
+        Write-Fail "missing Pi CLI entry at $piCli"
+        $sidecarOk = $false
     }
-} else {
-    Write-Fail "OpenClaw dist/entry.js missing"
-    $verifyOk = $false
 }
-if (-not $verifyOk) {
-    Write-Fail "Tauri resources incomplete — see failures above."
+if (-not $sidecarOk) {
+    Write-Fail "Tauri sidecars incomplete — see failures above."
     exit 1
 }
-Write-Ok "Tauri resources look complete"
+Write-Ok "Sidecars look complete (full resource verify after Social)"
 Write-Host ""
 
 # -----------------------------------------------------------------------------
 # Step 2: Build Social UI (Tauri frontendDist → apps/social/src/dist)
+# Social includes family-network Settings UI + all i18n locales.
 # -----------------------------------------------------------------------------
 
 Write-Step "2/5  Building Social UI..."
@@ -1628,6 +1617,97 @@ if (-not (Test-Path $SocialDist)) {
     exit 1
 }
 Write-Ok "Social UI built at apps\social\src\dist"
+Write-Host ""
+
+# Full verify after Social (mirrors scripts/verify-tauri-resources.sh).
+Write-Info "Verifying Tauri bundle resources (post-Social)..."
+$verifyOk = $true
+$reqFiles = @(
+    @{ Path = $nodeExe; Label = "Node.js sidecar (node.exe)" },
+    @{ Path = (Join-Path $TauriResources "node/dist/src/index.js"); Label = "compiled EnvoyMesh node" },
+    @{ Path = (Join-Path $TauriResources "openclaw/openclaw.mjs"); Label = "OpenClaw gateway entry" },
+    @{ Path = (Join-Path $TauriResources "openclaw/dist/entry.js"); Label = "OpenClaw compiled entry.js" },
+    @{ Path = $SocialDist; Label = "built Social UI" }
+)
+if (-not $SkipPi) {
+    $reqFiles += @(
+        @{ Path = (Join-Path $TauriResources "pi/node_modules/@earendil-works/pi-coding-agent/dist/cli.js"); Label = "Pi CLI entry" },
+        @{ Path = (Join-Path $TauriResources "pi/node_modules/@earendil-works/pi-coding-agent/dist/index.js"); Label = "Pi SDK entry" },
+        @{ Path = (Join-Path $TauriResources "pi/node_modules/@earendil-works/pi-coding-agent/package.json"); Label = "Pi package.json" }
+    )
+}
+foreach ($r in $reqFiles) {
+    if (Test-Path $r.Path) {
+        Write-Ok $r.Label
+    } else {
+        Write-Fail "missing $($r.Label) at $($r.Path)"
+        $verifyOk = $false
+    }
+}
+$openclawNm = Join-Path $TauriResources "openclaw/node_modules"
+if (-not (Test-Path $openclawNm) -or -not (Get-ChildItem $openclawNm -ErrorAction SilentlyContinue)) {
+    Write-Fail "OpenClaw node_modules is missing or empty at $openclawNm"
+    $verifyOk = $false
+} else {
+    Write-Ok "OpenClaw node_modules"
+}
+$selfRef = Join-Path $TauriResources "openclaw/node_modules/openclaw/package.json"
+if (-not (Test-Path $selfRef)) {
+    Write-Fail "OpenClaw node_modules\openclaw\package.json is missing — gateway will refuse to start"
+    Write-Info "  Re-run with -ForceOpenClaw to regenerate, or check that the heal above ran."
+    $verifyOk = $false
+} else {
+    Write-Ok "OpenClaw node_modules\openclaw\ self-reference"
+}
+$stagedEntryJs = Join-Path $TauriResources "openclaw/dist/entry.js"
+if (Test-Path $stagedEntryJs) {
+    $entryContent = Get-Content $stagedEntryJs -Raw -ErrorAction SilentlyContinue
+    if ($entryContent -and ($entryContent -match "EnvoyMesh bootstrap" -or $entryContent -match "from.*src/cli/run-main")) {
+        Write-Fail "OpenClaw dist/entry.js is a runtime stub — rebuild OpenClaw or use -ForceOpenClaw"
+        $verifyOk = $false
+    }
+} else {
+    Write-Fail "OpenClaw dist/entry.js missing"
+    $verifyOk = $false
+}
+if (-not $verifyOk) {
+    Write-Fail "Tauri resources incomplete — see failures above."
+    exit 1
+}
+Write-Ok "Tauri resources look complete"
+
+# Push credentials — if repo-root push-config.json exists, it must be in the bundle.
+# Enables iOS APNs + Android FCM from this home node to EnvoyGo clients.
+$rootPushCfg = Join-Path $RepoRoot "push-config.json"
+$pushCfg = Join-Path $TauriResources "node\push-config.json"
+if (Test-Path $rootPushCfg) {
+    if (-not (Test-Path $pushCfg)) {
+        Write-Fail "repo-root push-config.json exists but was not staged into resources\node\ — re-run node staging / stage-tauri-push-credentials.ps1"
+        exit 1
+    }
+    Write-Ok "push-config.json bundled in resources\node\"
+    try {
+        $pc = Get-Content -Raw $pushCfg | ConvertFrom-Json
+        $keyBase = if ($pc.apns -and $pc.apns.keyPath) { [System.IO.Path]::GetFileName([string]$pc.apns.keyPath) } else { "AuthKey_LKPCR48WHW.p8" }
+        $saBase = if ($pc.fcm -and $pc.fcm.serviceAccountJsonPath) { [System.IO.Path]::GetFileName([string]$pc.fcm.serviceAccountJsonPath) } else { "serviceAccountKey.json" }
+        if (Test-Path (Join-Path $TauriResources "node\$keyBase")) {
+            Write-Ok "APNs key: $keyBase"
+        } else {
+            Write-Warn "push-config.json bundled but missing $keyBase in resources\node\"
+        }
+        if (Test-Path (Join-Path $TauriResources "node\$saBase")) {
+            Write-Ok "FCM account: $saBase"
+        } else {
+            Write-Warn "push-config.json bundled but missing $saBase in resources\node\"
+        }
+    } catch {
+        Write-Warn "Could not parse staged push-config.json: $($_.Exception.Message)"
+    }
+} elseif (Test-Path $pushCfg) {
+    Write-Ok "push-config.json present in resources\node\"
+} else {
+    Write-Warn "No push-config.json in resources\node\ — desktop push will need env vars or a profile-dir config"
+}
 Write-Host ""
 
 # -----------------------------------------------------------------------------

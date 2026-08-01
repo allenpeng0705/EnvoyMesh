@@ -1551,6 +1551,10 @@ class AppLocalizationsFr extends AppLocalizations {
   }
 
   @override
+  String get pairingInviteAlreadyUsed =>
+      'Ce QR d\'invitation a déjà été utilisé. Demandez au propriétaire d\'ouvrir Famille → Afficher le QR d\'invitation, scannez le nouveau code, puis choisissez Je suis de retour et votre profil (ex. Dad).';
+
+  @override
   String get feedDefaultTitle => 'Publication du fil';
 
   @override

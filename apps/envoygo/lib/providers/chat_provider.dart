@@ -76,6 +76,53 @@ bool isSelfThreadPeer(String? peerId, String? selfOwnerId) {
   return false;
 }
 
+/// Normalize message text for optimistic↔server echo matching.
+@visibleForTesting
+String chatTextKey(String? text) => (text ?? '').trim();
+
+/// Merge an incoming server/push message into a newest-first thread list.
+///
+/// - Drops optimistic `temp_*` rows with the same trimmed text (the usual
+///   EnvoyAI / DM echo path).
+/// - When [collapseMatchingOutbound] is true (AI threads), also drops any
+///   other outbound row with the same trimmed text — mirrors Social's
+///   `withoutDuplicateUser` so family-member EnvoyAI does not show two
+///   "You" bubbles for one send.
+/// - Dedupes by message id.
+@visibleForTesting
+List<ChatMessage> reconcileChatMessages({
+  required List<ChatMessage> existing,
+  required ChatMessage incoming,
+  required bool showAsMine,
+  required bool collapseMatchingOutbound,
+}) {
+  final key = chatTextKey(incoming.text);
+  var list = List<ChatMessage>.from(existing);
+
+  if (key.isNotEmpty) {
+    list = list
+        .where(
+          (m) =>
+              !(m.id.startsWith('temp_') && chatTextKey(m.text) == key),
+        )
+        .toList();
+  }
+
+  if (collapseMatchingOutbound && showAsMine && key.isNotEmpty) {
+    list = list
+        .where(
+          (m) =>
+              !(m.isOutbound &&
+                  m.id != incoming.id &&
+                  chatTextKey(m.text) == key),
+        )
+        .toList();
+  }
+
+  list = list.where((m) => m.id != incoming.id).toList();
+  return [incoming, ...list];
+}
+
 /// Peer / agent key after `nodeId:` in a thread id.
 /// Handles `nodeId:envoyai`, `nodeId:external`, and `nodeId:envoy:owner:…`.
 String? threadPeerSuffix(String threadId, String? nodeId) {
@@ -245,6 +292,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
     if (nodeService == null || nodeState.activeNode == null) {
       throw StateError('Not connected to home node');
     }
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return;
     final myProfileId = nodeState.familyProfileId ?? 'owner';
     final threadKey = _familyThreadKey(myProfileId, toProfileId);
     final threadId = '${nodeState.activeNode!.id}:$threadKey';
@@ -252,7 +301,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final tempMsg = ChatMessage(
       id: 'temp_${DateTime.now().microsecondsSinceEpoch}',
       threadId: threadId,
-      text: text,
+      text: trimmed,
       createdAt: now,
       isOutbound: true,
       senderDisplayName: 'You',
@@ -279,13 +328,13 @@ class ChatNotifier extends StateNotifier<ChatState> {
       type: ChatThreadType.family,
       displayName: displayName,
       contactOwnerId: toProfileId,
-      lastMessageText: text,
+      lastMessageText: trimmed,
       lastMessageAt: DateTime.tryParse(now),
     );
 
     await nodeService.sendFamilyMessage(
       toProfileId: toProfileId,
-      text: text,
+      text: trimmed,
     );
   }
 
@@ -475,6 +524,23 @@ class ChatNotifier extends StateNotifier<ChatState> {
         byId[msg.id] = msg;
         changed = true;
         await _localDb.insertMessage(msg.toJson());
+      }
+      // Drop optimistic duplicates that history has now confirmed.
+      if (msg.isOutbound) {
+        final key = chatTextKey(msg.text);
+        if (key.isEmpty) continue;
+        final tempIds = byId.keys
+            .where(
+              (id) =>
+                  id.startsWith('temp_') &&
+                  chatTextKey(byId[id]?.text) == key,
+            )
+            .toList();
+        for (final tempId in tempIds) {
+          byId.remove(tempId);
+          changed = true;
+          await _localDb.deleteMessage(tempId);
+        }
       }
     }
 
@@ -772,13 +838,19 @@ class ChatNotifier extends StateNotifier<ChatState> {
       attachments: attachments,
     );
 
-    // Cache in local DB.
-    _localDb.insertMessage(msg.toJson());
-
     final isAiThread = isBridgeAgent ||
         isBuiltinAi ||
         isAiBot ||
         (isAgent && !agentTalkToContact);
+
+    // Already have this server id in the thread — skip before upsert/unread.
+    final existingMessages = state.messages[threadId] ?? [];
+    if (messageId != null &&
+        messageId!.isNotEmpty &&
+        existingMessages.any((m) => m.id == messageId)) {
+      return;
+    }
+
     final ChatThreadType upsertType;
     if (isTerminal) {
       upsertType = ChatThreadType.terminal;
@@ -850,46 +922,30 @@ class ChatNotifier extends StateNotifier<ChatState> {
       unreadIncrement: true,
     );
 
-    // Dedup: check by messageId first, then by text content match.
-    // Covers both double-push (chat:message + agent:activity) and
-    // optimistic temp messages. A Set makes duplicate checks O(1).
-    final existingMessages = state.messages[threadId] ?? [];
-    if (messageId != null) {
-      if (_seenMessageIds.add('$threadId:$messageId')) {
-        // New messageId — proceed.
-      } else {
-        return; // Duplicate messageId — skip.
+    // Dedup + optimistic echo reconcile (temp_* → server id).
+    // AI threads also collapse same-text outbound echoes (Social pattern) so
+    // family-member EnvoyAI does not keep both the optimistic bubble and the
+    // home-node chat:message echo.
+    final nextMessages = reconcileChatMessages(
+      existing: existingMessages,
+      incoming: msg,
+      showAsMine: showAsMine,
+      collapseMatchingOutbound: isAiThread,
+    );
+
+    // Persist: drop optimistic rows that were reconciled away, then upsert.
+    final nextIds = nextMessages.map((m) => m.id).toSet();
+    for (final old in existingMessages) {
+      if (old.id.startsWith('temp_') && !nextIds.contains(old.id)) {
+        unawaited(_localDb.deleteMessage(old.id));
       }
-    } else if (existingMessages.any((m) => m.text == text)) {
-      return; // Duplicate content — skip.
     }
-    final optimisticIdx =
-        existingMessages.indexWhere((m) => m.text == text && m.id.startsWith('temp_'));
-    if (optimisticIdx >= 0) {
-      // Replace the optimistic message with the server version.
-      final updated = List<ChatMessage>.from(existingMessages);
-      final oldMsg = updated[optimisticIdx];
-      updated[optimisticIdx] = msg;
-      // Also update the DB so re-loads use the correct (server) timestamp.
-      if (oldMsg.id.startsWith('temp_')) {
-        // Replace with server version (canonical server timestamp).
-        // Fire-and-forget: the method isn't async but the DB write
-        // is serialised on sqflite's queue so the row is safe.
-        _localDb.replaceMessage(oldMsg.id, msg.toJson());
-      }
-      state = state.copyWith(
-        messages: {...state.messages, threadId: updated},
-      );
-      _sortThreadMessages(threadId);
-    } else {
-      // New message — prepend so newest is at index 0 (bottom with reverse:true).
-      state = state.copyWith(
-        messages: {
-          ...state.messages,
-          threadId: [msg, ...existingMessages],
-        },
-      );
-    }
+    unawaited(_localDb.insertMessage(msg.toJson()));
+
+    state = state.copyWith(
+      messages: {...state.messages, threadId: nextMessages},
+    );
+    _sortThreadMessages(threadId);
 
     // Dual-route agent messages: if the AI reply is addressed to a
     // known contact, also show it in that contact's thread (same as
@@ -931,7 +987,12 @@ class ChatNotifier extends StateNotifier<ChatState> {
       state = state.copyWith(
         messages: {
           ...state.messages,
-          contactThreadId: [contactMsg, ...contactExisting],
+          contactThreadId: reconcileChatMessages(
+            existing: contactExisting,
+            incoming: contactMsg,
+            showAsMine: true,
+            collapseMatchingOutbound: false,
+          ),
         },
       );
     }
@@ -991,12 +1052,15 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final nodeState = _ref.read(nodeProvider);
     if (nodeService == null || nodeState.activeNode == null) return;
 
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return;
+
     final threadId = '${nodeState.activeNode!.id}:room:$roomId';
     final now = DateTime.now().toUtc().toIso8601String();
     final tempMsg = ChatMessage(
       id: 'temp_${DateTime.now().microsecondsSinceEpoch}',
       threadId: threadId,
-      text: text,
+      text: trimmed,
       createdAt: now,
       isOutbound: true,
     );
@@ -1017,11 +1081,11 @@ class ChatNotifier extends StateNotifier<ChatState> {
       type: ChatThreadType.group,
       displayName: 'Room', // Fallback; existing thread data overrides.
       chatRoomId: roomId,
-      lastMessageText: text,
+      lastMessageText: trimmed,
       lastMessageAt: DateTime.now(),
     );
 
-    await nodeService.sendChatRoomMessage(roomId, text);
+    await nodeService.sendChatRoomMessage(roomId, trimmed);
   }
 
   /// Handle a chat:room-message push event.
@@ -1080,7 +1144,23 @@ class ChatNotifier extends StateNotifier<ChatState> {
       isOutbound: showAsMine,
     );
 
-    _localDb.insertMessage(msg.toJson());
+    // Dedup room messages by messageId; reconcile optimistic temp_* echoes.
+    final existing = state.messages[threadId] ?? [];
+    if (messageId != null && existing.any((m) => m.id == messageId)) return;
+
+    final next = reconcileChatMessages(
+      existing: existing,
+      incoming: msg,
+      showAsMine: showAsMine,
+      collapseMatchingOutbound: false,
+    );
+    final nextIds = next.map((m) => m.id).toSet();
+    for (final old in existing) {
+      if (old.id.startsWith('temp_') && !nextIds.contains(old.id)) {
+        unawaited(_localDb.deleteMessage(old.id));
+      }
+    }
+    unawaited(_localDb.insertMessage(msg.toJson()));
 
     _upsertThread(
       threadId: threadId,
@@ -1098,16 +1178,10 @@ class ChatNotifier extends StateNotifier<ChatState> {
       unreadIncrement: true,
     );
 
-    // Dedup room messages by messageId OR by temp optimistic match.
-    final existing = state.messages[threadId] ?? [];
-    if (messageId != null && existing.any((m) => m.id == messageId)) return;
-    if (existing.any((m) => m.text == text && m.id.startsWith('temp_'))) return;
-
-    // Prepend so newest is at index 0 (bottom with reverse:true).
     state = state.copyWith(
       messages: {
         ...state.messages,
-        threadId: [msg, ...existing],
+        threadId: next,
       },
     );
   }
@@ -1216,13 +1290,15 @@ class ChatNotifier extends StateNotifier<ChatState> {
     if (nodeService == null || nodeState.activeNode == null) {
       throw StateError('Not connected to home node');
     }
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return;
     final threadId = '${nodeState.activeNode!.id}:room:$roomId';
     final now = DateTime.now().toUtc().toIso8601String();
     final myProfileId = nodeState.familyProfileId ?? 'owner';
     final tempMsg = ChatMessage(
       id: 'temp_${DateTime.now().microsecondsSinceEpoch}',
       threadId: threadId,
-      text: text,
+      text: trimmed,
       createdAt: now,
       isOutbound: true,
       senderDisplayName: 'You',
@@ -1235,7 +1311,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
         threadId: [tempMsg, ...?state.messages[threadId]],
       },
     );
-    await nodeService.sendFamilyRoomMessage(roomId: roomId, text: text);
+    await nodeService.sendFamilyRoomMessage(roomId: roomId, text: trimmed);
   }
 
   /// Invite a contact to a room.
@@ -1256,6 +1332,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
     if (nodeService == null || nodeState.activeNode == null) {
       throw StateError('Not connected to home node');
     }
+
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return;
 
     // Match Social: refuse AI-bot sends when home model providers are disabled
     // (check before optimistic local insert so we don't leave a stuck bubble).
@@ -1281,7 +1360,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final tempMsg = ChatMessage(
       id: 'temp_${DateTime.now().microsecondsSinceEpoch}',
       threadId: threadId,
-      text: text,
+      text: trimmed,
       createdAt: now,
       isOutbound: true,
       senderDisplayName: 'You',
@@ -1322,19 +1401,19 @@ class ChatNotifier extends StateNotifier<ChatState> {
                   agentType
               : ThreadTitleSentinels.extAgent,
       agentType: agentType,
-      lastMessageText: text,
+      lastMessageText: trimmed,
       lastMessageAt: DateTime.now(),
     );
 
     // Branch: built-in EnvoyAI uses sendToOpenClaw; external bridge uses
     // sendToBridge; AI bots use sendToAiBot.
     if (agentType == 'external') {
-      await nodeService.sendToBridge(text);
+      await nodeService.sendToBridge(trimmed);
     } else if (agentType.startsWith('bot:')) {
       final botId = agentType.substring(4); // strip "bot:" prefix
-      await nodeService.sendToAiBot(botId, text);
+      await nodeService.sendToAiBot(botId, trimmed);
     } else {
-      await nodeService.sendToOpenClaw(text);
+      await nodeService.sendToOpenClaw(trimmed);
     }
   }
 

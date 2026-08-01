@@ -1486,6 +1486,10 @@ class AppLocalizationsZh extends AppLocalizations {
   }
 
   @override
+  String get pairingInviteAlreadyUsed =>
+      '此邀请二维码已被使用。请让家庭节点所有者重新打开「家庭 → 显示邀请二维码」，扫描新码后选择「我回来了」并选中你的档案（例如 Dad）。';
+
+  @override
   String get feedDefaultTitle => '动态帖子';
 
   @override

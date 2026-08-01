@@ -792,6 +792,9 @@ export async function routeRpcMethod(
     case "previewFamilyInvite":
       return ns.previewFamilyInvite({
         pairingToken: String(params.pairingToken ?? ""),
+        ...(typeof params.deviceId === "string" && params.deviceId.trim()
+          ? { deviceId: params.deviceId.trim() }
+          : {}),
       });
     case "listAuthorizedDevices":
       return ns.listAuthorizedDevices();

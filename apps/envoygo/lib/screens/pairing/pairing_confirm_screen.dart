@@ -148,10 +148,26 @@ class _PairingConfirmScreenState extends ConsumerState<PairingConfirmScreen> {
       if (!mounted) return;
       setState(() {
         _loadingProfiles = false;
-        _profilesError =
-            AppLocalizations.of(context).pairingLoadProfilesFailed('$e');
+        _profilesError = _friendlyInviteError(e) ??
+            AppLocalizations.of(context).pairingLoadProfilesFailed(
+              e
+                  .toString()
+                  .replaceFirst('Bad state: ', '')
+                  .replaceFirst('Exception: ', ''),
+            );
       });
     }
+  }
+
+  /// Maps known family-invite failures to a short actionable message.
+  /// Returns null when the caller should use the generic formatter.
+  String? _friendlyInviteError(Object e) {
+    final raw = e.toString();
+    if (raw.contains('already used by another device') ||
+        raw.contains('Ask the home owner to show a new family invite QR')) {
+      return AppLocalizations.of(context).pairingInviteAlreadyUsed;
+    }
+    return null;
   }
 
   @override
@@ -641,6 +657,15 @@ class _PairingConfirmScreenState extends ConsumerState<PairingConfirmScreen> {
         Navigator.of(context).popUntil((route) => route.isFirst);
       }
     } catch (e) {
+      if (!mounted) return;
+      final friendly = _friendlyInviteError(e);
+      if (friendly != null) {
+        setState(() {
+          _pairing = false;
+          _error = friendly;
+        });
+        return;
+      }
       final bpList = <String>[];
       if (widget.data.bootstrapPeers != null &&
           widget.data.bootstrapPeers!.isNotEmpty) {
@@ -653,7 +678,7 @@ class _PairingConfirmScreenState extends ConsumerState<PairingConfirmScreen> {
       setState(() {
         _pairing = false;
         _error = AppLocalizations.of(context).pairingFailed(
-          '$e\n'
+          '${e.toString().replaceFirst('Bad state: ', '').replaceFirst('Exception: ', '')}\n'
           'bootstrapPeers (from QR): $bpList\n'
           'homePeerId: ${widget.data.homeNodePeerId}\n'
           'bootstrapPresetNames (from QR): ${widget.data.bootstrapPresetNames}',

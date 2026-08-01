@@ -8279,6 +8279,21 @@ class NodeServiceImpl implements NodeService {
     if (Date.parse(invite.expiresAt) <= Date.now()) {
       throw new Error("Family invite token has expired");
     }
+    // Fail early when this QR was already consumed by a *different* device.
+    // Same-device re-pair (idempotent) is still allowed. Re-pair on a new /
+    // reset phone needs a freshly generated family invite QR from the owner.
+    if (invite.usedAt && invite.usedByDeviceId) {
+      const clientDeviceId = params.deviceId?.trim() ?? "";
+      const deviceId =
+        clientDeviceId.length >= 8
+          ? `thin-client:${clientDeviceId}`
+          : undefined;
+      if (!deviceId || invite.usedByDeviceId !== deviceId) {
+        throw new Error(
+          "Family invite token was already used by another device. Ask the home owner to show a new family invite QR, then choose I'm back and select your profile.",
+        );
+      }
+    }
 
     await this._ensureFamilyOwnerMigrated();
     if (!this._familyProfileStore) {
@@ -8802,7 +8817,9 @@ class NodeServiceImpl implements NodeService {
         throw new Error("Family invite token has expired");
       }
       if (invite.usedAt && invite.usedByDeviceId && invite.usedByDeviceId !== deviceId) {
-        throw new Error("Family invite token was already used by another device");
+        throw new Error(
+          "Family invite token was already used by another device. Ask the home owner to show a new family invite QR, then choose I'm back and select your profile.",
+        );
       }
     }
 

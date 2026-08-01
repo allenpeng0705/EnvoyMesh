@@ -103,4 +103,34 @@ if [ -d "$PI_DIR" ] && [ "${pi_mb:-0}" -lt 5 ]; then
   warn "pi tree looks too small (${pi_mb} MB) — run scripts/stage-tauri-pi-bundle.sh"
 fi
 
+# Push credentials — require push-config.json in the node bundle when present
+# at the repo root (operator packaging with push enabled). Relative key paths
+# resolve via ENVOYMESH_NODE_BUNDLE_DIR (= resources/node) on macOS + Windows.
+PUSH_CFG="$RES/node/push-config.json"
+ROOT_PUSH="$ROOT/push-config.json"
+if [ -f "$ROOT_PUSH" ]; then
+  if [ ! -f "$PUSH_CFG" ]; then
+    fail "repo-root push-config.json exists but was not staged into resources/node/ — re-run stage-tauri-node-bundle.sh / stage-tauri-push-credentials.sh"
+  fi
+  echo "  push-config:   bundled in resources/node/"
+  if command -v node >/dev/null 2>&1; then
+    key_base="$(node -e "const c=require('fs').readFileSync(process.argv[1],'utf8'); const j=JSON.parse(c); const p=(j.apns&&j.apns.keyPath)||''; process.stdout.write(require('path').basename(p||'AuthKey_LKPCR48WHW.p8'))" "$PUSH_CFG")"
+    sa_base="$(node -e "const c=require('fs').readFileSync(process.argv[1],'utf8'); const j=JSON.parse(c); const p=(j.fcm&&j.fcm.serviceAccountJsonPath)||''; process.stdout.write(require('path').basename(p||'serviceAccountKey.json'))" "$PUSH_CFG")"
+    if [ -f "$RES/node/$key_base" ]; then
+      echo "  APNs key:      $key_base"
+    else
+      warn "push-config.json bundled but missing $key_base in resources/node/"
+    fi
+    if [ -f "$RES/node/$sa_base" ]; then
+      echo "  FCM account:   $sa_base"
+    else
+      warn "push-config.json bundled but missing $sa_base in resources/node/"
+    fi
+  fi
+elif [ -f "$PUSH_CFG" ]; then
+  echo "  push-config:   present in resources/node/"
+else
+  warn "No push-config.json in resources/node/ — desktop push will need env vars or a profile-dir config"
+fi
+
 echo "  ✓ Tauri resources look complete"

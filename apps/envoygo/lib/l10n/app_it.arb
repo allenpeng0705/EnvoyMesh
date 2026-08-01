@@ -467,6 +467,7 @@
   "chatAiDisabledAskOwner": "Chiedi al proprietario di casa di abilitare un modello IA per la chat famiglia.",
   "pairingLoadProfilesFailed": "Impossibile caricare i profili esistenti: {error}",
   "pairingFailed": "Associazione non riuscita: {error}",
+  "pairingInviteAlreadyUsed": "Questo QR di invito è già stato usato. Chiedi al proprietario di aprire Famiglia → Mostra QR invito, scansiona il nuovo codice e scegli Sono tornato per selezionare il tuo profilo (es. Dad).",
   "feedDefaultTitle": "Post del feed",
   "aiDraftSection": "Sezione bozza",
   "aiDraftFailed": "Impossibile creare la bozza ({reason})",

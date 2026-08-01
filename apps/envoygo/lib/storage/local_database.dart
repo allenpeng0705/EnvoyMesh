@@ -311,13 +311,12 @@ class LocalDatabase {
   }
 
   /// Replace a temp (optimistic) message with the server version.
+  ///
+  /// Deletes the temp row then upserts the server id — avoids a primary-key
+  /// conflict when the server row was already inserted under its real id.
   Future<void> replaceMessage(String tempId, Map<String, dynamic> msg) async {
-    await _ensureDb.update(
-      'messages',
-      _messageRow(msg),
-      where: 'id = ?',
-      whereArgs: [tempId],
-    );
+    await _ensureDb.delete('messages', where: 'id = ?', whereArgs: [tempId]);
+    await insertMessage(msg);
   }
 
   Future<void> insertMessage(Map<String, dynamic> message) async {

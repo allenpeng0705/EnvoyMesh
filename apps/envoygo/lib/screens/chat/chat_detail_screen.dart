@@ -462,8 +462,9 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     final bytes = await File(picked.path).readAsBytes();
     final base64 = base64Encode(bytes);
     // Send as a data URI so ChatBubble can detect and render it.
+    // Do not touch the text composer — image path is independent of typed draft.
     final text = 'data:image/jpeg;base64,$base64';
-    _sendText(text);
+    await _sendText(text, restoreComposerOnFailure: false);
   }
 
   /// Phase 42F — start an outbound voice call from this chat thread.
@@ -489,12 +490,26 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   }
 
   void _sendMessage() {
-    _sendText(_textController.text.trim());
+    final text = _textController.text.trim();
+    if (text.isEmpty) return;
+    // Clear synchronously before the async send so a double-tap cannot
+    // re-read the same draft, and the composer never sticks after EnvoyAI
+    // (void RPC used to throw on null→Map after the message was already sent).
+    _textController.clear();
+    unawaited(_sendText(text, restoreComposerOnFailure: true));
   }
 
-  void _sendText(String text) async {
+  /// [restoreComposerOnFailure] — for typed sends only. Image sends pass
+  /// false so a failed upload never dumps a data-URI into the composer.
+  Future<void> _sendText(
+    String text, {
+    required bool restoreComposerOnFailure,
+  }) async {
     if (text.isEmpty) return;
     if (_isAiBot && _modelDisabled) {
+      if (restoreComposerOnFailure && mounted) {
+        _textController.text = text;
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(AppLocalizations.of(context).chatAiDisabled),
@@ -525,11 +540,20 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
             .read(chatProvider.notifier)
             .sendMessage(_resolvedContactOwnerId!, text);
       } else {
+        if (restoreComposerOnFailure && mounted) {
+          _textController.text = text;
+        }
         return;
       }
-      _textController.clear();
     } catch (e) {
       if (!mounted) return;
+      // Restore typed draft only when the composer is still empty (user did
+      // not start typing a follow-up). Never restore image data-URIs.
+      if (restoreComposerOnFailure && _textController.text.trim().isEmpty) {
+        _textController.text = text;
+        _textController.selection =
+            TextSelection.collapsed(offset: text.length);
+      }
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(

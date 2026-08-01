@@ -43,3 +43,6 @@ apps/node/test/.DS_Store
 /release
 AuthKey_LKPCR48WHW.p8
 serviceAccountKey.json
+# Push secrets are also staged into resources/node/ by
+# scripts/stage-tauri-push-credentials.* — that whole tree is already
+# ignored above (apps/tauri/src-tauri/resources/node/).

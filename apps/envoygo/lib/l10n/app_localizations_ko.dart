@@ -1493,6 +1493,10 @@ class AppLocalizationsKo extends AppLocalizations {
   }
 
   @override
+  String get pairingInviteAlreadyUsed =>
+      '이 초대 QR은 이미 사용되었습니다. 홈 소유자에게 가족 → 초대 QR 다시 표시를 요청한 뒤, 새 코드를 스캔하고 \'돌아왔어요\'에서 프로필(예: Dad)을 선택하세요.';
+
+  @override
   String get feedDefaultTitle => '피드 게시물';
 
   @override

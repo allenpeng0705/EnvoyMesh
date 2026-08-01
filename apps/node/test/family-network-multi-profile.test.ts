@@ -146,6 +146,36 @@ describe("Family network E2E (multi-profile)", () => {
     expect(preview.profiles.find((p) => p.id === "dad")?.name).toBe("Dad")
   })
 
+  it("previewFamilyInvite rejects a consumed invite for a different deviceId", async () => {
+    const invite = await mintFamilyInvite()
+    await svc.pairThinClient({
+      pairingToken: invite.token,
+      deviceName: "Dad Phone",
+      platform: "flutter",
+      deviceId: "dad-phone-aaaa-bbbb",
+      profileName: "Dad",
+    })
+
+    await expect(
+      svc.previewFamilyInvite({
+        pairingToken: invite.token,
+        deviceId: "other-phone-zzzz-yyyy",
+      }),
+    ).rejects.toThrow(/already used by another device/)
+
+    // Same device can still preview (idempotent re-pair path).
+    const sameDevice = await svc.previewFamilyInvite({
+      pairingToken: invite.token,
+      deviceId: "dad-phone-aaaa-bbbb",
+    })
+    expect(sameDevice.profiles.some((p) => p.name === "Dad")).toBe(true)
+
+    // Without deviceId we cannot prove same-device — reject used invites.
+    await expect(
+      svc.previewFamilyInvite({ pairingToken: invite.token }),
+    ).rejects.toThrow(/already used by another device/)
+  })
+
   it("family DM + EnvoyAI histories stay isolated across owner and Dad", async () => {
     const invite = await mintFamilyInvite()
     const dadPair = await svc.pairThinClient({

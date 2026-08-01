@@ -743,4 +743,36 @@ void main() {
       await callFuture;
     });
   });
+
+  group('NodeServiceClient AI void RPCs', () {
+    test('sendToOpenClaw accepts null result without casting crash', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture = client.sendToOpenClaw('hello');
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'sendToOpenClaw');
+      expect(sent['params'], {'text': 'hello'});
+
+      // Home node returns Promise<void> → JSON-RPC result is null.
+      mock.simulateMessage({'id': sent['id'], 'result': null});
+      await expectLater(callFuture, completes);
+    });
+
+    test('sendToBridge accepts null result without casting crash', () async {
+      final mock = MockWebSocket();
+      final homeClient = await connectWithTrackedMock(mock);
+      final client = NodeServiceClient(homeClient);
+
+      final callFuture = client.sendToBridge('hi');
+      await Future.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      expect(sent['method'], 'sendToBridge');
+
+      mock.simulateMessage({'id': sent['id'], 'result': null});
+      await expectLater(callFuture, completes);
+    });
+  });
 }

@@ -1548,6 +1548,10 @@ class AppLocalizationsDe extends AppLocalizations {
   }
 
   @override
+  String get pairingInviteAlreadyUsed =>
+      'Dieser Einladungs-QR wurde bereits verwendet. Bitte den Home-Besitzer Familie → Einladungs-QR anzeigen erneut öffnen lassen, den neuen Code scannen und unter Ich bin zurück Ihr Profil (z. B. Dad) wählen.';
+
+  @override
   String get feedDefaultTitle => 'Feed-Beitrag';
 
   @override

@@ -467,6 +467,7 @@
   "chatAiDisabledAskOwner": "Demandez au propriétaire d'activer un modèle IA pour le chat familial.",
   "pairingLoadProfilesFailed": "Impossible de charger les profils : {error}",
   "pairingFailed": "Échec de l'association : {error}",
+  "pairingInviteAlreadyUsed": "Ce QR d'invitation a déjà été utilisé. Demandez au propriétaire d'ouvrir Famille → Afficher le QR d'invitation, scannez le nouveau code, puis choisissez Je suis de retour et votre profil (ex. Dad).",
   "feedDefaultTitle": "Publication du fil",
   "aiDraftSection": "Section de brouillon",
   "aiDraftFailed": "Impossible de rédiger ({reason})",

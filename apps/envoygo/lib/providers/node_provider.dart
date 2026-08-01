@@ -533,7 +533,13 @@ class NodeNotifier extends StateNotifier<NodeState> {
     try {
       await client.ensureConnected();
       final ns = NodeServiceClient(client);
-      return await ns.previewFamilyInvite(pairingToken: data.token);
+      final pairing =
+          PairingService(ns, secureStorage: _secureStorage);
+      final deviceId = await pairing.getOrCreateDeviceId();
+      return await ns.previewFamilyInvite(
+        pairingToken: data.token,
+        deviceId: deviceId,
+      );
     } finally {
       client.dispose();
     }

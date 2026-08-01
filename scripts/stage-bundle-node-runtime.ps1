@@ -350,7 +350,8 @@ if (Test-Path $nodeConfigSrc) {
 # Files (all optional — push silently skips if missing):
 #   push-config.json              — credential config
 #   AuthKey_*.p8                  — APNs private key
-#   firebase-service-account.json — FCM service account JSON
+#   serviceAccountKey.json        — FCM service account (also accepts
+#                                   firebase-service-account.json)
 $pushConfigSrc = Join-Path $Root "push-config.json"
 if (Test-Path $pushConfigSrc) {
     Write-Host "  Staging bundled push-config.json..."
@@ -361,10 +362,50 @@ foreach ($p8File in $p8Files) {
     Write-Host "  Staging bundled APNs key: $($p8File.Name)"
     Copy-Item -Force $p8File.FullName (Join-Path $Dest $p8File.Name)
 }
-$fcmKeySrc = Join-Path $Root "firebase-service-account.json"
+$fcmKeySrc = Join-Path $Root "serviceAccountKey.json"
+$fcmKeyLegacy = Join-Path $Root "firebase-service-account.json"
 if (Test-Path $fcmKeySrc) {
-    Write-Host "  Staging bundled FCM service account JSON..."
-    Copy-Item -Force $fcmKeySrc (Join-Path $Dest "firebase-service-account.json")
+    Write-Host "  Staging bundled FCM service account JSON (serviceAccountKey.json)..."
+    Copy-Item -Force $fcmKeySrc (Join-Path $Dest "serviceAccountKey.json")
+} elseif (Test-Path $fcmKeyLegacy) {
+    $destSa = "serviceAccountKey.json"
+    if (Test-Path $pushConfigSrc) {
+        try {
+            $pcFcm = Get-Content -Raw $pushConfigSrc | ConvertFrom-Json
+            if ($pcFcm.fcm -and $pcFcm.fcm.serviceAccountJsonPath) {
+                $named = [System.IO.Path]::GetFileName([string]$pcFcm.fcm.serviceAccountJsonPath)
+                if ($named) { $destSa = $named }
+            }
+        } catch { }
+    }
+    Write-Host "  Staging bundled FCM service account JSON (firebase-service-account.json → $destSa)..."
+    Copy-Item -Force $fcmKeyLegacy (Join-Path $Dest $destSa)
+}
+# If push-config.json names different basenames, stage those too.
+if (Test-Path $pushConfigSrc) {
+    try {
+        $pc = Get-Content -Raw $pushConfigSrc | ConvertFrom-Json
+        if ($pc.apns -and $pc.apns.keyPath) {
+            $keyBase = [System.IO.Path]::GetFileName([string]$pc.apns.keyPath)
+            $keySrc = Join-Path $Root $keyBase
+            $keyDest = Join-Path $Dest $keyBase
+            if ((Test-Path $keySrc) -and -not (Test-Path $keyDest)) {
+                Write-Host "  Staging bundled APNs key ($keyBase from push-config)..."
+                Copy-Item -Force $keySrc $keyDest
+            }
+        }
+        if ($pc.fcm -and $pc.fcm.serviceAccountJsonPath) {
+            $saBase = [System.IO.Path]::GetFileName([string]$pc.fcm.serviceAccountJsonPath)
+            $saSrc = Join-Path $Root $saBase
+            $saDest = Join-Path $Dest $saBase
+            if ((Test-Path $saSrc) -and -not (Test-Path $saDest)) {
+                Write-Host "  Staging bundled FCM service account JSON ($saBase from push-config)..."
+                Copy-Item -Force $saSrc $saDest
+            }
+        }
+    } catch {
+        Write-Host "  ⚠ Could not parse push-config.json for named credential paths: $($_.Exception.Message)"
+    }
 }
 
 Write-Host "  ✓ Node runtime staged at $Dest"

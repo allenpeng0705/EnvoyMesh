@@ -467,6 +467,7 @@
   "chatAiDisabledAskOwner": "Bitten Sie den Heimbesitzer, ein KI-Modell für den Familienchat zu aktivieren.",
   "pairingLoadProfilesFailed": "Vorhandene Profile konnten nicht geladen werden: {error}",
   "pairingFailed": "Kopplung fehlgeschlagen: {error}",
+  "pairingInviteAlreadyUsed": "Dieser Einladungs-QR wurde bereits verwendet. Bitte den Home-Besitzer Familie → Einladungs-QR anzeigen erneut öffnen lassen, den neuen Code scannen und unter Ich bin zurück Ihr Profil (z. B. Dad) wählen.",
   "feedDefaultTitle": "Feed-Beitrag",
   "aiDraftSection": "Entwurfsabschnitt",
   "aiDraftFailed": "Entwurf nicht möglich ({reason})",

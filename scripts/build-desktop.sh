@@ -3,6 +3,14 @@
 # Builds EnvoyMesh.app (.dmg on macOS), .AppImage/.deb (Linux)
 # with OpenClaw + Node.js bundled inside (no separate install for end users).
 #
+# Feature packaging notes (family network / push / EnvoyGo l10n):
+#   - Family network: ships in compiled apps/node + Social UI — no extra assets.
+#   - Push (iOS APNs + Android FCM for EnvoyGo): stage-tauri-push-credentials.sh
+#     copies repo-root push-config.json + AuthKey_*.p8 + serviceAccountKey.json
+#     into resources/node/ after node staging. Verify runs after social:build.
+#   - EnvoyGo localization is Flutter-only (apps/envoygo) — not part of this
+#     desktop bundle; Social i18n locales are included via npm run social:build.
+#
 # Windows builds are NOT supported by this script — use scripts/build-desktop.ps1
 # on a Windows host. Cross-compiling Tauri to x86_64-pc-windows-msvc from macOS
 # or Linux requires xwin + lld + MSVC header splicing, which is fragile and
@@ -231,7 +239,12 @@ else
   fi
 fi
 bash scripts/stage-tauri-node-bundle.sh
-bash scripts/verify-tauri-resources.sh
+# Stage push-config.json + AuthKey_*.p8 + serviceAccountKey.json into
+# resources/node/ (after node staging, which recreates that dir). Relative
+# paths in push-config.json resolve via ENVOYMESH_NODE_BUNDLE_DIR at runtime.
+# Covers iOS APNs + Android FCM for EnvoyGo clients talking to this home node.
+# Family network needs no extra staging — it ships in the compiled node + Social UI.
+bash scripts/stage-tauri-push-credentials.sh
 echo ""
 
 # Step 2: Run discovery E2E tests (fast — ~15ms, catches relay/DHT regressions)
@@ -247,6 +260,7 @@ echo ""
 # Use the workspace script from repo root — never `cd apps/social && npm install`.
 # Nested install re-resolves @envoymesh/* against the public registry and 404s
 # (those packages are private workspace links only).
+# Social includes family-network Settings UI + all i18n locales (en/zh/ko/ja/fr/de/it).
 echo "[3/6] Building Social UI..."
 cd "${PROJECT_DIR}"
 if [ ! -d "node_modules/@envoymesh/api" ]; then
@@ -258,6 +272,12 @@ if [ ! -f "apps/social/src/dist/index.html" ]; then
   echo "error: Social UI build did not produce apps/social/src/dist/index.html" >&2
   exit 1
 fi
+echo ""
+
+# Verify sidecars + Social + push credentials only AFTER Social is built
+# (verify-tauri-resources.sh requires apps/social/src/dist/index.html).
+echo "Verifying Tauri bundle resources (post-Social)..."
+bash scripts/verify-tauri-resources.sh
 echo ""
 
 # Step 4: Build Tauri

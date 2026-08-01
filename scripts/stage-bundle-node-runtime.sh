@@ -282,11 +282,13 @@ fi
 # Files (all optional — push silently skips if missing):
 #   push-config.json              — credential config (keyId, teamId, topic, projectId)
 #   AuthKey_*.p8                  — APNs private key (one or more)
-#   firebase-service-account.json — FCM service account JSON
+#   serviceAccountKey.json        — FCM service account JSON (also accepts
+#                                   firebase-service-account.json for older layouts)
 #
-# Security note: these files are SECRETS. Never commit real ones.
-# .gitignore already excludes push-config.json and *.p8. The operator
-# must provide them at build time (not in the repo).
+# Security note: AuthKey_*.p8 and serviceAccountKey.json are SECRETS — never
+# commit them (.gitignore). push-config.json may live at the repo root for
+# packaging; it is copied into resources/node/ and loaded via
+# ENVOYMESH_NODE_BUNDLE_DIR at runtime.
 if [ -f "$ROOT/push-config.json" ]; then
   echo "  Staging bundled push-config.json..."
   cp "$ROOT/push-config.json" "$DEST/push-config.json"
@@ -297,9 +299,51 @@ for p8 in "$ROOT"/AuthKey_*.p8; do
   echo "  Staging bundled APNs key: $(basename "$p8")"
   cp "$p8" "$DEST/$(basename "$p8")"
 done
-if [ -f "$ROOT/firebase-service-account.json" ]; then
-  echo "  Staging bundled FCM service account JSON..."
-  cp "$ROOT/firebase-service-account.json" "$DEST/firebase-service-account.json"
+# FCM service account — prefer the name used by push-config.json.
+# If only firebase-service-account.json exists, stage it under the basename
+# named in push-config (default serviceAccountKey.json) so relative paths work.
+if [ -f "$ROOT/serviceAccountKey.json" ]; then
+  echo "  Staging bundled FCM service account JSON (serviceAccountKey.json)..."
+  cp "$ROOT/serviceAccountKey.json" "$DEST/serviceAccountKey.json"
+elif [ -f "$ROOT/firebase-service-account.json" ]; then
+  dest_sa="serviceAccountKey.json"
+  if [ -f "$ROOT/push-config.json" ] && command -v node >/dev/null 2>&1; then
+    named="$(node -e "
+      try {
+        const j = JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8'));
+        const p = (j.fcm && j.fcm.serviceAccountJsonPath) || '';
+        process.stdout.write(require('path').basename(p) || 'serviceAccountKey.json');
+      } catch { process.stdout.write('serviceAccountKey.json'); }
+    " "$ROOT/push-config.json" || echo "serviceAccountKey.json")"
+    [ -n "$named" ] && dest_sa="$named"
+  fi
+  echo "  Staging bundled FCM service account JSON (firebase-service-account.json → $dest_sa)..."
+  cp "$ROOT/firebase-service-account.json" "$DEST/$dest_sa"
+fi
+# If push-config.json names a different basename, stage that too.
+if [ -f "$ROOT/push-config.json" ] && command -v node >/dev/null 2>&1; then
+  sa_named="$(node -e "
+    try {
+      const j = JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8'));
+      const p = (j.fcm && j.fcm.serviceAccountJsonPath) || '';
+      process.stdout.write(require('path').basename(p));
+    } catch { /* ignore */ }
+  " "$ROOT/push-config.json" || true)"
+  if [ -n "${sa_named}" ] && [ -f "$ROOT/$sa_named" ] && [ ! -f "$DEST/$sa_named" ]; then
+    echo "  Staging bundled FCM service account JSON ($sa_named from push-config)..."
+    cp "$ROOT/$sa_named" "$DEST/$sa_named"
+  fi
+  key_named="$(node -e "
+    try {
+      const j = JSON.parse(require('fs').readFileSync(process.argv[1], 'utf8'));
+      const p = (j.apns && j.apns.keyPath) || '';
+      process.stdout.write(require('path').basename(p));
+    } catch { /* ignore */ }
+  " "$ROOT/push-config.json" || true)"
+  if [ -n "${key_named}" ] && [ -f "$ROOT/$key_named" ] && [ ! -f "$DEST/$key_named" ]; then
+    echo "  Staging bundled APNs key ($key_named from push-config)..."
+    cp "$ROOT/$key_named" "$DEST/$key_named"
+  fi
 fi
 
 echo "  ✓ Node runtime staged at $DEST"

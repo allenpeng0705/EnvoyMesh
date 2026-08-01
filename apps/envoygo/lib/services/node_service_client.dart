@@ -114,9 +114,11 @@ class NodeServiceClient {
   /// Phase 51 — list selectable profiles for a family invite (pre-auth).
   Future<List<Map<String, dynamic>>> previewFamilyInvite({
     required String pairingToken,
+    String? deviceId,
   }) async {
     final result = await _client.call('previewFamilyInvite', {
       'pairingToken': pairingToken,
+      if (deviceId != null && deviceId.isNotEmpty) 'deviceId': deviceId,
     }) as Map<String, dynamic>;
     final raw = result['profiles'];
     if (raw is! List) return const [];
@@ -446,9 +448,15 @@ class NodeServiceClient {
 
   // -- AI chat --
 
-  Future<Map<String, dynamic>> sendToOpenClaw(String text) async {
-    return await _client.call('sendToOpenClaw', {'text': text})
-        as Map<String, dynamic>;
+  /// Home node `sendToOpenClaw` returns void (`result: null`). Do not cast to Map.
+  /// Timeout: home waits up to 180s for the OpenClaw reply, then persists —
+  /// use 210s so mobile does not time out while the home is still finishing.
+  Future<void> sendToOpenClaw(String text) async {
+    await _client.call(
+      'sendToOpenClaw',
+      {'text': text},
+      const Duration(seconds: 210),
+    );
   }
 
   /// Dynamic AI bot — send a message to a character bot.
@@ -456,9 +464,13 @@ class NodeServiceClient {
     await _client.call('sendToAiBot', {'botId': botId, 'text': text});
   }
 
-  Future<Map<String, dynamic>> sendToBridge(String text) async {
-    return await _client.call('sendToBridge', {'text': text})
-        as Map<String, dynamic>;
+  /// Home node `sendToBridge` returns void (`result: null`). Do not cast to Map.
+  Future<void> sendToBridge(String text) async {
+    await _client.call(
+      'sendToBridge',
+      {'text': text},
+      const Duration(seconds: 210),
+    );
   }
 
   Future<Map<String, dynamic>> getBridgeStatus() async {

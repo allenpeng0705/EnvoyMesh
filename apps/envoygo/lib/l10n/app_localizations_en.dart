@@ -1530,6 +1530,10 @@ class AppLocalizationsEn extends AppLocalizations {
   }
 
   @override
+  String get pairingInviteAlreadyUsed =>
+      'This invite QR was already used. Ask the home owner to open Family → Show invite QR again, then scan the new code and choose I\'m back to select your profile (e.g. Dad).';
+
+  @override
   String get feedDefaultTitle => 'Feed post';
 
   @override

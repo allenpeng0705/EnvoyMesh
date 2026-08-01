@@ -715,6 +715,7 @@
   "chatAiDisabledAskOwner": "Ask the home owner to enable an AI model for family chat.",
   "pairingLoadProfilesFailed": "Could not load existing profiles: {error}",
   "pairingFailed": "Pairing failed: {error}",
+  "pairingInviteAlreadyUsed": "This invite QR was already used. Ask the home owner to open Family → Show invite QR again, then scan the new code and choose I'm back to select your profile (e.g. Dad).",
   "@pairingLoadProfilesFailed": {
     "placeholders": {
       "error": {
