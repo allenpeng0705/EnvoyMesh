@@ -487,8 +487,10 @@ class NodeNotifier extends StateNotifier<NodeState> {
     final supervisor = _supervisor;
     if (supervisor == null || supervisor.isStopped) {
       // Supervisor was stopped after initial connect, or never started.
-      // Restart it to attempt reconnection.
-      final targetNodeId = _supervisorTargetNodeId;
+      // Restart it to attempt reconnection. Fall back to activeNode after
+      // pauseForBackground (supervisor stopped; target must still resolve).
+      final targetNodeId =
+          _supervisorTargetNodeId ?? state.activeNode?.id;
       if (targetNodeId != null) {
         _startSupervisorFor(targetNodeId);
       }
@@ -817,15 +819,26 @@ class NodeNotifier extends StateNotifier<NodeState> {
 
     // Sync dynamic AI character bots + family profiles from config.
     client.call('getNodeConfig').then((config) {
-      _applyFamilyConfig(Map<String, dynamic>.from(config as Map));
-      final aiBots = config['aiBots'];
-      final node = state.activeNode;
-      if (node != null) {
-        chatNotifier.syncAiBots(aiBots is List ? aiBots : const [], node.id);
-      }
+      final configMap = Map<String, dynamic>.from(config as Map);
+      _applyFamilyConfig(configMap);
+      _syncAiBotsFromConfig(configMap, chatNotifier);
     }).catchError((e) {
       _log('getNodeConfig for aiBots failed: $e');
     });
+  }
+
+  /// Sync AI character bots for this session's profile.
+  /// Family members must still call sync (often with []) so a leaked owner
+  /// bot like Luna is removed from local chat threads.
+  void _syncAiBotsFromConfig(
+    Map<String, dynamic> config,
+    ChatNotifier chatNotifier,
+  ) {
+    final node = state.activeNode;
+    if (node == null) return;
+    final raw = config['aiBots'];
+    final bots = raw is List ? raw : const [];
+    chatNotifier.syncAiBots(bots, node.id);
   }
 
   void _applyFamilyConfig(Map<String, dynamic> config) {
@@ -992,7 +1005,9 @@ class NodeNotifier extends StateNotifier<NodeState> {
     try {
       _log('repairSessionProfile → $profileId');
       await ns.repairSessionProfile(profileId: profileId);
-      await connectToNode(node);
+      // Must drop the old owner-bound WS; connectToNode alone can leave a
+      // stale HomeRemoteClient and keep sendFamilyMessage on owner.
+      await forceReconnect();
       return true;
     } catch (e) {
       _log('repairSessionProfile failed: $e');
@@ -1340,12 +1355,9 @@ class NodeNotifier extends StateNotifier<NodeState> {
       if (config is! Map) return;
       final configMap = Map<String, dynamic>.from(config);
       _applyFamilyConfig(configMap);
-      // Family members must not apply the owner's aiBots list from broadcasts.
-      if (!state.isOwnerProfile) return;
-      final aiBots = configMap['aiBots'];
-      final node = state.activeNode;
-      if (node == null) return;
-      chatNotifier.syncAiBots(aiBots is List ? aiBots : const [], node.id);
+      // Always sync — family gets [] (or their own bots); clearing removes
+      // owner bots that previously leaked onto Mom/Dad devices.
+      _syncAiBotsFromConfig(configMap, chatNotifier);
     });
   }
 
@@ -1578,6 +1590,24 @@ class NodeNotifier extends StateNotifier<NodeState> {
       connectionState: NodeConnectionState.disconnected,
       activeTransport: null,
     );
+  }
+
+  /// Pause the home WebSocket while the app is backgrounded/killed so the
+  /// home node's skip-if-online gate can deliver FCM/APNs. Keeps pairing
+  /// + supervisor target; [kickReconnect] on resume re-dials.
+  Future<void> pauseForBackground() async {
+    if (_client == null &&
+        state.connectionState != NodeConnectionState.connected &&
+        state.connectionState != NodeConnectionState.connecting) {
+      return;
+    }
+    final nodeId = state.activeNode?.id;
+    if (nodeId != null) {
+      _supervisorTargetNodeId = nodeId;
+    }
+    _log('[pauseForBackground] dropping thin-client WS for push delivery');
+    _supervisor?.stop();
+    await disconnect();
   }
 
   /// Reset node state and force a fresh reconnect.

@@ -46,6 +46,17 @@ describe("rpc-caller-context", () => {
     expect(legacy.isOwnerProfile).toBe(true)
   })
 
+  it("sessionCallerFromToken prefers boundFamilyProfileId over corrupted owner profileId", () => {
+    const mom = sessionCallerFromToken({
+      ownerId: "envoy:owner:home",
+      profileId: "owner",
+      boundFamilyProfileId: "mom",
+      deviceId: "android-mom",
+    })
+    expect(mom.profileId).toBe("mom")
+    expect(mom.isOwnerProfile).toBe(false)
+  })
+
   it("redacts secrets for non-owner callers", () => {
     const config = {
       modelProviders: { mode: "openai", apiKey: "secret" },
@@ -71,6 +82,11 @@ describe("rpc-caller-context", () => {
       callerFamilyProfileId: "owner",
       callerIsOwnerProfile: true,
       modelProviders: { mode: "openai", apiKey: "secret" },
+      aiBots: [{ id: "luna", name: "Luna" }],
+      familyProfiles: [
+        { id: "owner", name: "Allen", aiBots: [{ id: "luna", name: "Luna" }] },
+        { id: "mom", name: "Mom", aiBots: [] },
+      ],
     }
     const forMom = stampConfigCallerForSession(emittedByOwner, {
       ownerId: "envoy:owner:home",
@@ -84,6 +100,10 @@ describe("rpc-caller-context", () => {
     expect(forMom.modelProviders.apiKey).toBeUndefined()
     expect(forMom.openclawEnabled).toBe(true)
     expect(forMom.aiBots).toEqual([])
+    expect(forMom.familyProfiles).toEqual([
+      { id: "owner", name: "Allen" },
+      { id: "mom", name: "Mom", aiBots: [] },
+    ])
 
     const forOwner = stampConfigCallerForSession(
       {
@@ -101,5 +121,6 @@ describe("rpc-caller-context", () => {
     expect(forOwner.callerIsOwnerProfile).toBe(true)
     expect(forOwner.modelProviders.apiKey).toBe("secret")
     expect(forOwner.aiBots).toEqual([{ id: "luna", name: "Luna" }])
+    expect(forOwner.familyProfiles).toEqual(emittedByOwner.familyProfiles)
   })
 })

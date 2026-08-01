@@ -14,8 +14,9 @@
  *   relay → home:
  *     { type: "open", channelId, token, targetPeerId }
  *       Ask home to open a new local ws-server connection for `channelId`.
- *       The `token` is the pairing token from the QR; the home node validates
- *       it on the first RPC call (pairSharedIdentity).
+ *       The `token` is the thin-client session (or pairing) token; it MUST be
+ *       attached as `?token=` on the local ws-server URL so Mom/Dad sessions
+ *       are not treated as the untokened local Owner.
  *     { type: "data", channelId, data: <text> }
  *       Forward `data` (a JSON-RPC message from the mobile) to the local
  *       ws-server connection for `channelId`.
@@ -360,12 +361,18 @@ export class RelayTunnelClient {
     }
   }
 
-  private async openChannel(channelId: string, _token: string): Promise<void> {
-    // Open a NEW local WebSocket to the home node's own ws-server (port 3030).
-    // From the ws-server's perspective, this is a normal client connection
-    // that it handles as JSON-RPC. The pairing token is validated by the
-    // home node's pairSharedIdentity handler at the RPC level.
-    const localWs = new WebSocket(this.opts.localWsServerUrl, {
+  private async openChannel(channelId: string, token: string): Promise<void> {
+    // Open a NEW local WebSocket to the home node's own ws-server.
+    // From the ws-server's perspective this is a normal client connection.
+    // Attach the mobile session token to the URL — without it, ws-server
+    // falls back to localOwnerCaller and family phones act as Owner
+    // (Luna leak, cannot message Allen Peng, wrong push/profile routing).
+    const base = this.opts.localWsServerUrl;
+    const trimmed = token.trim();
+    const localUrl = trimmed
+      ? `${base}${base.includes("?") ? "&" : "?"}token=${encodeURIComponent(trimmed)}`
+      : base;
+    const localWs = new WebSocket(localUrl, {
       headers: {
         "x-relay-channel": channelId,
       },

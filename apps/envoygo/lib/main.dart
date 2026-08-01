@@ -278,13 +278,24 @@ class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
-      // Delegate to the supervisor via kickReconnect(). It already
-      // short-circuits when connected, so calling it on every
-      // resume (including transient notification-bar peeks) is
-      // safe. The supervisor also picks up the new candidate
-      // list if the user moved networks while backgrounded.
-      ref.read(nodeProvider.notifier).kickReconnect();
+    final notifier = ref.read(nodeProvider.notifier);
+    switch (state) {
+      case AppLifecycleState.resumed:
+        // Re-dial after background pause. kickReconnect short-circuits
+        // when already connected; safe for notification-shade peeks.
+        notifier.kickReconnect();
+      case AppLifecycleState.paused:
+      case AppLifecycleState.hidden:
+      case AppLifecycleState.detached:
+        // Drop the thin-client WS while backgrounded. Android often keeps
+        // the isolate + socket alive after "closing" the app; that makes
+        // the home node treat the profile as online and skip FCM push.
+        // iOS usually suspends sooner; disconnecting both platforms is
+        // safe and matches the push skip-if-online contract.
+        unawaited(notifier.pauseForBackground());
+      case AppLifecycleState.inactive:
+        // Notification shade / app switcher transition — keep the socket.
+        break;
     }
   }
 

@@ -13,6 +13,7 @@ import { routeRpcMethod } from "./json-rpc-router.js";
 import {
   runWithRpcCaller,
   localOwnerCaller,
+  sessionCallerFromToken,
   stampConfigCallerForSession,
   type RpcCallerContext,
 } from "./rpc-caller-context.js";
@@ -391,30 +392,41 @@ export class WsServer {
         if (record) {
           isAuthenticated = true;
           this.authenticatedClients.set(ws, record.ownerId);
-          const profileId =
-            typeof record.profileId === "string" && record.profileId.trim()
-              ? record.profileId.trim()
-              : OWNER_FAMILY_PROFILE_ID;
-          let isOwnerProfile = profileId === OWNER_FAMILY_PROFILE_ID;
+          // Prefer boundFamilyProfileId when profileId was corrupted to owner.
+          let session = sessionCallerFromToken(record);
           try {
             const profiles = await (this.nodeService as any).listFamilyProfiles?.();
-            const match = profiles?.profiles?.find((p: { id: string }) => p.id === profileId);
-            if (match) isOwnerProfile = match.isOwner === true;
+            const match = profiles?.profiles?.find(
+              (p: { id: string }) => p.id === session.profileId,
+            );
+            if (match) {
+              session = sessionCallerFromToken({
+                ...record,
+                profileId: session.profileId,
+                isOwnerProfile: match.isOwner === true,
+              });
+            }
           } catch {
             /* keep heuristic */
           }
-          const session: RpcCallerContext = {
-            ownerId: record.ownerId,
-            profileId,
-            isOwnerProfile,
-            source: "session",
-            deviceId: record.deviceId,
-          };
+          // Persist heal so later reconnects / push keep using Mom/Dad.
+          if (
+            session.profileId !== OWNER_FAMILY_PROFILE_ID &&
+            (record.profileId?.trim() ?? OWNER_FAMILY_PROFILE_ID) ===
+              OWNER_FAMILY_PROFILE_ID
+          ) {
+            void (this.nodeService as NodeServiceImpl)
+              .healSessionProfileFromBinding?.(record, session.profileId)
+              .catch(() => {
+                /* best-effort; this WS already uses the healed profile */
+              });
+          }
           this.authenticatedSessions.set(ws, session);
-          this.thinClientLastRpcAt.set(record.ownerId, Date.now());
-          this.thinClientLastRpcAtByProfile.set(profileId, Date.now());
+          // Do NOT prime thinClientLastRpcAt* here. Auth alone must not
+          // suppress push (Android background reconnects would look "online"
+          // for 20s with zero user RPCs). Freshness updates only on real RPCs.
           console.log(
-            `[ws-server] Client ${clientId} authenticated via session token (owner: ${record.ownerId}, profile: ${profileId})`,
+            `[ws-server] Client ${clientId} authenticated via session token (owner: ${record.ownerId}, profile: ${session.profileId})`,
           );
         }
       }

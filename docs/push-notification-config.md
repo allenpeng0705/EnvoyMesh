@@ -847,9 +847,11 @@ call stack has initialized.
 | `[push] FCM rejected: status=403` | SA lacks Messaging permission / wrong project | IAM + matching `FCM_PROJECT_ID` |
 | `[push] APNs error: …` / `FCM request error: …` | Network / DNS / TLS from home host | Can the node reach `api.push.apple.com` / `fcm.googleapis.com`? |
 | No row in `push-tokens.json` | Push never initialized (tokens not persisted); permission denied; not connected | Restart home; grant notifications; reconnect EnvoyGo |
-| Token present, no notification | Wrong `ownerId` on token vs dispatch target; only voip token for chat; app actively using WS (<20s) | Ensure `ownerId` matches home owner; need `tokenType: alert` for chat/feed; background app >20s or force-quit |
+| Token present, no notification | Wrong `ownerId` / `profileId` on token vs dispatch target; only voip token for chat; app actively using WS (<20s) | Ensure `ownerId` matches home owner and `profileId` matches family member (mom/dad/owner); need `tokenType: alert`; background app (EnvoyGo disconnects WS on pause) |
+| `[push] skip-if-online profile=…` | Thin client still considered recently active | Background/force-quit EnvoyGo; after pause the WS should drop so FCM/APNs can fire |
 | Chat works, calls don’t (iOS) | No voip token / wrong VoIP topic | Check voip row; set `APNS_VOIP_TOPIC`; PushKit + Background Modes |
 | Android never gets token | Missing `google-services.json` or Gradle plugin | §5.2; watch logcat for Firebase init errors |
+| iOS push OK, Android never | FCM credentials missing on home, or no Android row in `push-tokens.json` | Set `FCM_PROJECT_ID` + `FCM_SERVICE_ACCOUNT_JSON` (or `push-config.json` + `serviceAccountKey.json`); open Android EnvoyGo once with push enabled |
 | iOS simulator | APNs device tokens often unavailable | Use a physical device |
 | Duplicate notifications (WS + OS) | Rare: active EnvoyGo + push after idle window | Expected when backgrounded >20s then message arrives |
 

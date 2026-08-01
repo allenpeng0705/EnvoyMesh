@@ -2077,7 +2077,12 @@ class NodeServiceImpl implements NodeService {
       }
 
       // Skip push only when THIS profile's thin client is recently active.
-      if (this.isProfileOnline(targetProfileId)) return
+      if (this.isProfileOnline(targetProfileId)) {
+        console.log(
+          `[push] skip-if-online profile=${targetProfileId} messageId=${msg.messageId}`,
+        );
+        return;
+      }
 
       const isAiBot = Boolean(botKey)
       const isFamilyDm = Boolean(familyParsed)
@@ -6911,20 +6916,33 @@ class NodeServiceImpl implements NodeService {
       : [];
     const caller = getRpcCaller();
     const callerProfileId = caller?.profileId ?? OWNER_FAMILY_PROFILE_ID;
-    // Phase 51 — surface the caller's own bots (not the global node-config list).
-    let aiBots = config.aiBots ?? [];
+    const callerIsOwner =
+      caller != null ? caller.isOwnerProfile : callerProfileId === OWNER_FAMILY_PROFILE_ID;
+    // Phase 51 — each family profile only sees its own bots. Never fall through
+    // to node-config.aiBots for Mom/Dad (that leaked owner bots like "Luna").
+    let aiBots: import("@envoymesh/api").AiBotDefinition[] = [];
     if (this._familyProfileStore) {
       const profile = await this._familyProfileStore.get(callerProfileId);
       if (Array.isArray(profile?.aiBots)) {
         aiBots = profile.aiBots as import("@envoymesh/api").AiBotDefinition[];
-      } else if (callerProfileId !== OWNER_FAMILY_PROFILE_ID) {
-        aiBots = [];
+      } else if (callerIsOwner && callerProfileId === OWNER_FAMILY_PROFILE_ID) {
+        // Owner migration fallback before profile.aiBots is populated.
+        aiBots = config.aiBots ?? [];
       }
+    } else if (callerIsOwner) {
+      aiBots = config.aiBots ?? [];
     }
+    // Never expose other family members' (or the owner's) bot defs on a
+    // non-owner session — EnvoyGo once synced those into Mom/Dad chat lists.
+    const familyProfiles = callerIsOwner
+      ? profiles
+      : profiles.map((p) =>
+          p.id === callerProfileId ? p : { ...p, aiBots: undefined },
+        );
     const enriched: NodeConfig = {
       ...config,
       aiBots,
-      familyProfiles: profiles,
+      familyProfiles,
       callerFamilyProfileId: caller?.profileId,
       callerIsOwnerProfile: caller ? caller.isOwnerProfile : true,
     };
@@ -8908,10 +8926,34 @@ class NodeServiceImpl implements NodeService {
   }
 
   /**
+   * Persist profileId heal from `boundFamilyProfileId` (no RPC caller).
+   * Used at WS connect when the in-memory session was already corrected.
+   */
+  async healSessionProfileFromBinding(
+    record: import("@envoymesh/local-store").SessionTokenRecord,
+    profileId: string,
+  ): Promise<void> {
+    if (!this._sessionTokenStore) return;
+    const requested = profileId.trim();
+    if (!requested || requested === OWNER_FAMILY_PROFILE_ID) return;
+    const binding = record.boundFamilyProfileId?.trim();
+    if (binding && binding !== requested) return;
+    await this._sessionTokenStore.setToken({
+      ...record,
+      profileId: requested,
+      boundFamilyProfileId: binding ?? requested,
+      lastUsedAt: new Date().toISOString(),
+    });
+    console.log(
+      `[node-service] healed session token for device ${record.deviceId}: owner → ${requested}`,
+    );
+  }
+
+  /**
    * Re-bind a thin-client session to a family profile when the token was
-   * missing profileId (legacy) or has an immutable family-pairing binding
-   * that disagrees with a corrupted profileId:"owner". Never escalates
-   * Mom→owner; never rewrites an intentional owner QR pair (no binding).
+   * missing profileId (legacy) or profileId was corrupted to `"owner"`.
+   * Never escalates Mom→owner. Will not switch away from a different
+   * immutable `boundFamilyProfileId`.
    */
   async repairSessionProfile(
     params: import("@envoymesh/api").RepairSessionProfileParams,
@@ -8963,15 +9005,18 @@ class NodeServiceImpl implements NodeService {
     }
     // Allow repair when:
     // 1) legacy token never stored profileId, or
-    // 2) token was family-paired (boundFamilyProfileId) but profileId was
-    //    corrupted to owner. Intentional owner QR pairs have no binding.
+    // 2) profileId is owner and either has no immutable binding (UI says
+    //    Mom/Dad from local pairing intent — only family clients call this)
+    //    or boundFamilyProfileId matches the requested profile.
+    // Reject switching to a *different* family profile than the binding.
     const canRepair =
       !storedProfileId ||
-      (storedProfileId === OWNER_FAMILY_PROFILE_ID && binding === requested);
+      (storedProfileId === OWNER_FAMILY_PROFILE_ID &&
+        (!binding || binding === requested));
     if (!canRepair) {
       throw new Error(
-        storedProfileId === OWNER_FAMILY_PROFILE_ID
-          ? "Owner sessions cannot repair to a family profile — use a family invite QR"
+        binding && binding !== requested
+          ? `Session is bound to family profile "${binding}" — re-pair to switch`
           : `Session already bound to profile "${storedProfileId}" — re-pair to switch`,
       );
     }

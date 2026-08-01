@@ -65,7 +65,9 @@ class _MeScreenState extends ConsumerState<MeScreen> {
   }
 
   Future<void> _loadPushPref() async {
-    final profileId = ref.read(nodeProvider).familyProfileId;
+    // Must match registerPushToken() — effectiveFamilyProfileId prefers the
+    // immutable pairing intent over a possibly-corrupted familyProfileId.
+    final profileId = ref.read(nodeProvider).effectiveFamilyProfileId;
     final enabled = await PushPreferences.isEnabled(profileId: profileId);
     if (mounted) setState(() => _pushEnabled = enabled);
   }
@@ -76,7 +78,7 @@ class _MeScreenState extends ConsumerState<MeScreen> {
   Future<void> _togglePushNotifications(bool enabled) async {
     setState(() => _pushToggleBusy = true);
     try {
-      final profileId = ref.read(nodeProvider).familyProfileId;
+      final profileId = ref.read(nodeProvider).effectiveFamilyProfileId;
       await PushPreferences.setEnabled(enabled, profileId: profileId);
       final notifier = ref.read(nodeProvider.notifier);
       if (enabled) {

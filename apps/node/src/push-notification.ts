@@ -565,6 +565,8 @@ async function sendFcm(
             Object.entries(payload.data).map(([k, v]) => [k, v]),
           )
         : undefined,
+      // Required for timely delivery when Android Doze / app is backgrounded.
+      android: { priority: "HIGH" },
     },
   });
 

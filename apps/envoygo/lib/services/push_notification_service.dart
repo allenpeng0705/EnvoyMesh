@@ -188,8 +188,9 @@ class PushNotificationService {
       if (initial != null && initial.data.isNotEmpty) {
         _pendingInitialTap = Map<String, dynamic>.from(initial.data);
       }
-    } catch (_) {
-      // No google-services.json / Firebase not configured.
+    } catch (e, st) {
+      // No google-services.json / Firebase not configured / Play Services.
+      debugPrint('[push] Android FCM init failed: $e\n$st');
     }
   }
 

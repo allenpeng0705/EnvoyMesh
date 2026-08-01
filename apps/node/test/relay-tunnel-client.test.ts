@@ -15,10 +15,12 @@ describe("RelayTunnelClient", () => {
   let localPort: number;
   let homeTunnelWs: WebSocket | null = null;
   let localReceived: Array<string> = [];
+  let localConnectionUrls: Array<string> = [];
   let relaySentToHome: Array<{ type: string; channelId?: string; data?: string; token?: string }> = [];
 
   beforeEach(async () => {
     localReceived = [];
+    localConnectionUrls = [];
     relaySentToHome = [];
     homeTunnelWs = null;
 
@@ -47,7 +49,8 @@ describe("RelayTunnelClient", () => {
     await new Promise<void>((resolve) => localWss.on("listening", resolve));
     localPort = (localWss.address() as AddressInfo).port;
 
-    localWss.on("connection", (localWs) => {
+    localWss.on("connection", (localWs, req) => {
+      localConnectionUrls.push(req.url ?? "");
       localWs.on("message", (raw) => {
         const text = raw.toString();
         localReceived.push(text);
@@ -91,12 +94,21 @@ describe("RelayTunnelClient", () => {
 
     // Simulate relay asking home to open a channel.
     const channelId = "chan-123";
-    homeTunnelWs!.send(JSON.stringify({ type: "open", channelId, token: "tok" }));
+    const sessionToken = "mom-session-token-abc";
+    homeTunnelWs!.send(
+      JSON.stringify({ type: "open", channelId, token: sessionToken }),
+    );
     await new Promise((resolve) => setTimeout(resolve, 200));
 
     // Verify open-ack was sent back to relay.
     const ack = relaySentToHome.find((m) => m.type === "open-ack" && m.channelId === channelId);
     expect(ack).toBeTruthy();
+
+    // Session token must reach local Social WS — otherwise family phones
+    // are treated as the untokened Owner.
+    expect(localConnectionUrls.some((u) => u.includes(`token=${sessionToken}`))).toBe(
+      true,
+    );
 
     // Simulate relay forwarding data from mobile to home.
     homeTunnelWs!.send(JSON.stringify({ type: "data", channelId, data: "hello-mobile" }));
