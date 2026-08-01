@@ -110,3 +110,28 @@ export function redactNodeConfigForCaller<T extends Record<string, unknown>>(
   }
   return next
 }
+
+/**
+ * Stamp caller identity onto a broadcast `home:config-updated` payload.
+ *
+ * `getNodeConfig()` embeds the *emitter's* `callerFamilyProfileId`. When the
+ * owner updates settings, that field is `"owner"` — broadcasting it unchanged
+ * made every EnvoyGo family member overwrite their local Mom/Dad identity.
+ */
+export function stampConfigCallerForSession<T extends Record<string, unknown>>(
+  config: T,
+  session?: RpcCallerContext,
+): T {
+  if (!session) return config
+  const stamped = {
+    ...config,
+    callerFamilyProfileId: session.profileId,
+    callerIsOwnerProfile: session.isOwnerProfile,
+  } as T & { aiBots?: unknown }
+  // Owner-emitted config carries the owner's aiBots list — never push that
+  // onto family member sessions (they load their own bots via getNodeConfig).
+  if (!session.isOwnerProfile) {
+    stamped.aiBots = []
+  }
+  return redactNodeConfigForCaller(stamped, session)
+}

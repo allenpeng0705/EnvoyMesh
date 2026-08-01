@@ -8875,6 +8875,9 @@ class NodeServiceImpl implements NodeService {
         ownerId: this._profile?.owner.ownerId ?? "",
         deviceId,
         profileId: profile.id,
+        // Family invite only — never set on owner QR so intentional owner
+        // pairs cannot silently repair into Mom/Dad.
+        boundFamilyProfileId: profile.isOwner === true ? undefined : profile.id,
         platform,
         displayName: deviceName,
         createdAt: now,
@@ -8898,6 +8901,86 @@ class NodeServiceImpl implements NodeService {
       isOwnerProfile: profile.isOwner === true,
       familyProfiles,
     };
+  }
+
+  /**
+   * Re-bind a thin-client session to a family profile when the token was
+   * missing profileId (legacy) or has an immutable family-pairing binding
+   * that disagrees with a corrupted profileId:"owner". Never escalates
+   * Mom→owner; never rewrites an intentional owner QR pair (no binding).
+   */
+  async repairSessionProfile(
+    params: import("@envoymesh/api").RepairSessionProfileParams,
+  ): Promise<import("@envoymesh/api").RepairSessionProfileResult> {
+    const caller = getRpcCaller();
+    if (!caller || caller.source !== "session" || !caller.deviceId) {
+      throw new Error("repairSessionProfile requires an authenticated thin-client session");
+    }
+    const requested = params.profileId?.trim() ?? "";
+    if (!requested) throw new Error("profileId is required");
+    await this._ensureFamilyOwnerMigrated();
+    if (!this._familyProfileStore || !this._sessionTokenStore) {
+      throw new Error("Family / session stores are not available");
+    }
+    const profile = await this._familyProfileStore.get(requested);
+    if (!profile || profile.active === false) {
+      throw new Error(`Family profile not found: ${requested}`);
+    }
+    if (profile.isOwner) {
+      throw new Error("Cannot repair session to the owner profile — use the normal pairing QR");
+    }
+    const current = caller.profileId?.trim() || OWNER_FAMILY_PROFILE_ID;
+    if (current === requested) {
+      return { ok: true, profileId: requested, isOwnerProfile: false };
+    }
+    if (current !== OWNER_FAMILY_PROFILE_ID) {
+      throw new Error(
+        `Session already bound to profile "${current}" — re-pair to switch profiles`,
+      );
+    }
+    const tokens = await this._sessionTokenStore.listTokens();
+    const record = tokens.find((t) => t.deviceId === caller.deviceId);
+    if (!record) {
+      throw new Error("No session token found for this device");
+    }
+    const storedProfileId = record.profileId?.trim();
+    const binding = record.boundFamilyProfileId?.trim();
+    if (storedProfileId === requested) {
+      // Backfill binding on older family tokens so future owner-corruption
+      // can still repair without a fresh invite.
+      if (binding !== requested) {
+        await this._sessionTokenStore.setToken({
+          ...record,
+          boundFamilyProfileId: requested,
+          lastUsedAt: new Date().toISOString(),
+        });
+      }
+      return { ok: true, profileId: requested, isOwnerProfile: false };
+    }
+    // Allow repair when:
+    // 1) legacy token never stored profileId, or
+    // 2) token was family-paired (boundFamilyProfileId) but profileId was
+    //    corrupted to owner. Intentional owner QR pairs have no binding.
+    const canRepair =
+      !storedProfileId ||
+      (storedProfileId === OWNER_FAMILY_PROFILE_ID && binding === requested);
+    if (!canRepair) {
+      throw new Error(
+        storedProfileId === OWNER_FAMILY_PROFILE_ID
+          ? "Owner sessions cannot repair to a family profile — use a family invite QR"
+          : `Session already bound to profile "${storedProfileId}" — re-pair to switch`,
+      );
+    }
+    await this._sessionTokenStore.setToken({
+      ...record,
+      profileId: requested,
+      boundFamilyProfileId: requested,
+      lastUsedAt: new Date().toISOString(),
+    });
+    console.log(
+      `[node-service] repaired session for device ${caller.deviceId}: ${storedProfileId ?? "(missing profileId)"} → ${requested}`,
+    );
+    return { ok: true, profileId: requested, isOwnerProfile: false };
   }
 
   async listAuthorizedDevices(): Promise<ListAuthorizedDevicesResult> {

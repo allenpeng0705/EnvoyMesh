@@ -93,6 +93,7 @@ class SecureStorage {
     await _ensureStorage.delete(key: 'node.$nodeId.sessionToken');
     await _ensureStorage.delete(key: 'node.$nodeId.familyProfileId');
     await _ensureStorage.delete(key: 'node.$nodeId.isOwnerProfile');
+    await _ensureStorage.delete(key: 'node.$nodeId.pairedFamilyProfileId');
   }
 
   /// Save the active node ID.

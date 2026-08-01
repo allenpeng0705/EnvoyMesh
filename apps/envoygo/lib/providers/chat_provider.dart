@@ -260,7 +260,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     List<Map<String, dynamic>> profiles,
     String nodeId,
   ) {
-    final myProfileId = _ref.read(nodeProvider).familyProfileId ?? 'owner';
+    final myProfileId = _ref.read(nodeProvider).effectiveFamilyProfileId;
     for (final raw in profiles) {
       final id = raw['id']?.toString().trim() ?? '';
       if (id.isEmpty || id == myProfileId) continue;
@@ -294,7 +294,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     }
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
-    final myProfileId = nodeState.familyProfileId ?? 'owner';
+    final myProfileId = nodeState.effectiveFamilyProfileId;
     final threadKey = _familyThreadKey(myProfileId, toProfileId);
     final threadId = '${nodeState.activeNode!.id}:$threadKey';
     final now = DateTime.now().toUtc().toIso8601String();
@@ -663,7 +663,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final actorRole = sender?['actorRole'] as String?;
 
     // Is this message sent by the owner, by an agent, or by someone else?
-    final myProfileId = nodeState.familyProfileId ?? 'owner';
+    // Prefer immutable pairing intent so a corrupted owner session id does
+    // not keep owner-side copies of family:owner:mom threads.
+    final myProfileId = nodeState.effectiveFamilyProfileId;
     final sentBySelf = (selfOwnerId != null && senderOwnerId == selfOwnerId) ||
         senderOwnerId == myProfileId;
     // Synthetic agent senders must never become Contacts rows.
@@ -743,6 +745,16 @@ class ChatNotifier extends StateNotifier<ChatState> {
         ? recipientOwnerId
         : (senderOwnerId.startsWith('family:') ? senderOwnerId : null);
     final isFamilyDm = familyThreadKey != null;
+    // Drop family DMs that do not involve this device's profile (defense in
+    // depth if a session was wrongly bound to owner and received owner copies).
+    if (isFamilyDm && familyThreadKey != null) {
+      final parts = familyThreadKey.split(':');
+      if (parts.length == 3) {
+        final a = parts[1];
+        final b = parts[2];
+        if (myProfileId != a && myProfileId != b) return;
+      }
+    }
     final agentType = isAiBot
         ? botThreadKey!
         : isBridgeAgent
@@ -1125,7 +1137,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final existingThread = state.threads.where((t) => t.id == threadId).firstOrNull;
     final isFamilyRoom = kind == 'family' ||
         existingThread?.type == ChatThreadType.familyGroup;
-    final myProfileId = nodeState.familyProfileId ?? 'owner';
+    final myProfileId = nodeState.effectiveFamilyProfileId;
     final showAsMine = isFamilyRoom
         ? (senderOwnerId != null && senderOwnerId == myProfileId)
         : messageIsOutgoing(
@@ -1294,7 +1306,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     if (trimmed.isEmpty) return;
     final threadId = '${nodeState.activeNode!.id}:room:$roomId';
     final now = DateTime.now().toUtc().toIso8601String();
-    final myProfileId = nodeState.familyProfileId ?? 'owner';
+    final myProfileId = nodeState.effectiveFamilyProfileId;
     final tempMsg = ChatMessage(
       id: 'temp_${DateTime.now().microsecondsSinceEpoch}',
       threadId: threadId,
@@ -1364,7 +1376,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
       createdAt: now,
       isOutbound: true,
       senderDisplayName: 'You',
-      senderOwnerId: nodeState.familyProfileId ?? nodeState.ownerId,
+      senderOwnerId: nodeState.effectiveFamilyProfileId != 'owner'
+          ? nodeState.effectiveFamilyProfileId
+          : (nodeState.familyProfileId ?? nodeState.ownerId),
     );
 
     // Persist to local DB immediately so the message survives app restarts

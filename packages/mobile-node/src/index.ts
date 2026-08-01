@@ -1482,6 +1482,15 @@ export class MobileNode implements NodeService {
     return this._homeRemoteCall("pairThinClient", params as unknown as Record<string, unknown>);
   }
 
+  repairSessionProfile(
+    params: import("@envoymesh/api").RepairSessionProfileParams,
+  ): Promise<import("@envoymesh/api").RepairSessionProfileResult> {
+    return this._homeRemoteCall(
+      "repairSessionProfile",
+      params as unknown as Record<string, unknown>,
+    );
+  }
+
   previewFamilyInvite(
     params: import("@envoymesh/api").PreviewFamilyInviteParams,
   ): Promise<import("@envoymesh/api").PreviewFamilyInviteResult> {

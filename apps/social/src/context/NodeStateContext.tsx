@@ -39,7 +39,11 @@ import type {
   SendHelloOptions,
   SocialIntroProposal,
 } from "@envoymesh/api";
-import { ENVOY_AI_THREAD_KEY } from "@envoymesh/api";
+import {
+  ENVOY_AI_THREAD_KEY,
+  OWNER_FAMILY_PROFILE_ID,
+  isFamilyThreadKey,
+} from "@envoymesh/api";
 import { parseNodeStatusFromRpc } from "../lib/effective-node-status.js";
 
 interface NodeStateValue {
@@ -512,6 +516,13 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     const unsub = nodeService.on("chat:message", (msg) => {
       // Skip own outbound copies (local emit or mesh echo — nodeId may be the remote peer on echo)
       if (selfOwnerId && msg.sender.ownerId?.trim() === selfOwnerId) return;
+      // Family DMs use profile ids ("owner"/"mom"), not mesh envoy:owner:… ids.
+      // Without this filter, owner→Mom land in Inbox as stranger mail.
+      const snd = msg.sender.ownerId?.trim() ?? "";
+      const rcv = msg.recipient?.ownerId?.trim() ?? "";
+      if (rcv && isFamilyThreadKey(rcv)) return;
+      if (snd && isFamilyThreadKey(snd)) return;
+      if (snd === OWNER_FAMILY_PROFILE_ID) return;
       // Skip local echo (sent receipts)
       if (msg.metadata?.deliveryReceipt === "sent") return;
       // Skip own messages by libp2p id

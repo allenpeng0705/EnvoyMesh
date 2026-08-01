@@ -306,6 +306,7 @@ export type RpcMethods =
   | "pairWithHomeNode"
   | "pairThinClient"
   | "previewFamilyInvite"
+  | "repairSessionProfile"
   | "updateMyListenAddrs"
   | "listAuthorizedDevices"
   | "revokeAuthorizedDevice"
@@ -911,6 +912,22 @@ export interface PairThinClientResult {
   isOwnerProfile: boolean;
   /** Phase 51 — snapshot of active family profiles (names/avatars). */
   familyProfiles?: import("./family-profile.js").FamilyProfile[];
+}
+
+/**
+ * Repair a thin-client session whose token lost `profileId` (legacy) or has
+ * an immutable `boundFamilyProfileId` that disagrees with a corrupted
+ * `profileId:"owner"`. Intentional owner QR pairs (no binding) still require
+ * a fresh family invite — "I'm back" → Mom/Dad.
+ */
+export interface RepairSessionProfileParams {
+  profileId: string;
+}
+
+export interface RepairSessionProfileResult {
+  ok: true;
+  profileId: string;
+  isOwnerProfile: boolean;
 }
 
 /**

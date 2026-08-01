@@ -25,6 +25,7 @@ describe("session token store", () => {
     displayName: overrides.displayName ?? "Companion",
     createdAt: overrides.createdAt ?? new Date().toISOString(),
     lastUsedAt: overrides.lastUsedAt ?? new Date().toISOString(),
+    ...overrides,
   });
 
   it("returns empty list when no tokens saved", async () => {
@@ -42,6 +43,17 @@ describe("session token store", () => {
     expect(found!.token).toBe("tok-001");
     expect(found!.ownerId).toBe("envoy:owner:alice");
     expect(found!.deviceId).toBe("envoy:device:alice-phone");
+  });
+
+  it("persists boundFamilyProfileId for family invite pairs", async () => {
+    const store = createSessionTokenStore(dir);
+    await store.setToken(record({
+      profileId: "mom",
+      boundFamilyProfileId: "mom",
+    }));
+    const found = await store.getTokenByValue("tok-001");
+    expect(found!.profileId).toBe("mom");
+    expect(found!.boundFamilyProfileId).toBe("mom");
   });
 
   it("returns undefined for unknown token", async () => {

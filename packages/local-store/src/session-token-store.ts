@@ -21,6 +21,13 @@ export interface SessionTokenRecord {
    * Missing on legacy tokens; readers should treat as the owner profile id.
    */
   profileId?: string;
+  /**
+   * Immutable family-pairing intent written only at family invite pair time.
+   * Survives accidental `profileId` rewrites to `"owner"` so
+   * `repairSessionProfile` can restore Mom/Dad without a fresh QR.
+   * Absent on intentional owner QR pairs and legacy tokens.
+   */
+  boundFamilyProfileId?: string;
   /** Platform hint ("ios" | "android" | "flutter" | …). */
   platform?: string;
   /** Human label for management UI ("Companion" / "Phone" etc.). */
@@ -192,11 +199,17 @@ export function createSessionTokenStore(profileDir: string): SessionTokenStore {
 }
 
 function normalizeSessionRecord(raw: SessionTokenRecord): SessionTokenRecord {
+  const profileId = typeof raw.profileId === "string" && raw.profileId.trim()
+    ? raw.profileId.trim()
+    : undefined;
+  const boundFamilyProfileId =
+    typeof raw.boundFamilyProfileId === "string" && raw.boundFamilyProfileId.trim()
+      ? raw.boundFamilyProfileId.trim()
+      : undefined;
   return {
     ...raw,
-    profileId: typeof raw.profileId === "string" && raw.profileId.trim()
-      ? raw.profileId.trim()
-      : undefined,
+    profileId,
+    boundFamilyProfileId,
     platform: typeof raw.platform === "string" && raw.platform.trim()
       ? raw.platform.trim()
       : undefined,

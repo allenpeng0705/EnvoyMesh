@@ -13,7 +13,7 @@ import { routeRpcMethod } from "./json-rpc-router.js";
 import {
   runWithRpcCaller,
   localOwnerCaller,
-  redactNodeConfigForCaller,
+  stampConfigCallerForSession,
   type RpcCallerContext,
 } from "./rpc-caller-context.js";
 import { OWNER_FAMILY_PROFILE_ID } from "@envoymesh/api";
@@ -734,7 +734,9 @@ export class WsServer {
   }
 
   /**
-   * Phase 51 — broadcast config with secrets stripped for non-owner sessions.
+   * Phase 51 — broadcast config with per-session caller identity + secret redaction.
+   * Never forward the emitter's `callerFamilyProfileId` (usually owner) to family
+   * member sessions — that flipped EnvoyGo Mom/Dad devices to Owner.
    */
   private emitHomeConfigUpdated(data: unknown): void {
     const listeners = this.subscriptions.get("home:config-updated");
@@ -743,13 +745,13 @@ export class WsServer {
     const fullConfig = payload?.config;
     for (const ws of listeners) {
       if (ws.readyState !== WebSocket.OPEN) continue;
-      const session = this.authenticatedSessions.get(ws);
-      if (!fullConfig || !session || session.isOwnerProfile) {
+      if (!fullConfig) {
         this.sendEvent(ws, "home:config-updated", data);
         continue;
       }
-      const redacted = redactNodeConfigForCaller({ ...fullConfig }, session);
-      this.sendEvent(ws, "home:config-updated", { config: redacted });
+      const session = this.authenticatedSessions.get(ws);
+      const config = stampConfigCallerForSession({ ...fullConfig }, session);
+      this.sendEvent(ws, "home:config-updated", { config });
     }
   }
 

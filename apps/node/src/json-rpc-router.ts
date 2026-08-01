@@ -789,6 +789,10 @@ export async function routeRpcMethod(
       return ns.pairWithHomeNode(params as any);
     case "pairThinClient":
       return ns.pairThinClient(params as any);
+    case "repairSessionProfile":
+      return ns.repairSessionProfile({
+        profileId: String(params.profileId ?? ""),
+      });
     case "previewFamilyInvite":
       return ns.previewFamilyInvite({
         pairingToken: String(params.pairingToken ?? ""),

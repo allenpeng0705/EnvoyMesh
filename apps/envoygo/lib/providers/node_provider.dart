@@ -80,6 +80,11 @@ class NodeState {
   /// Phase 51 — bound family profile id on the home node.
   final String? familyProfileId;
 
+  /// Immutable pairing intent written only at family invite / owner QR pair
+  /// time (and cleared on unpair). Never overwritten by config sync — so a
+  /// corrupted `familyProfileId:"owner"` can still filter DMs and repair as Mom.
+  final String? pairedFamilyProfileId;
+
   /// Phase 51 — whether this session is the owner profile.
   final bool isOwnerProfile;
 
@@ -98,9 +103,20 @@ class NodeState {
     this.homeNodeErrorCode,
     this.upnpAdvertisedAddr,
     this.familyProfileId,
+    this.pairedFamilyProfileId,
     this.isOwnerProfile = true,
     this.familyProfiles = const [],
   });
+
+  /// Profile used for family DM visibility + identity recovery.
+  /// Prefers immutable pairing intent over a possibly corrupted session id.
+  String get effectiveFamilyProfileId {
+    final paired = pairedFamilyProfileId?.trim();
+    if (paired != null && paired.isNotEmpty && paired != 'owner') return paired;
+    final current = familyProfileId?.trim();
+    if (current != null && current.isNotEmpty) return current;
+    return 'owner';
+  }
 
   NodeState copyWith({
     StoredNode? activeNode,
@@ -120,6 +136,8 @@ class NodeState {
     bool clearUpnpAddr = false,
     String? familyProfileId,
     bool clearFamilyProfileId = false,
+    String? pairedFamilyProfileId,
+    bool clearPairedFamilyProfileId = false,
     bool? isOwnerProfile,
     List<Map<String, dynamic>>? familyProfiles,
   }) {
@@ -139,6 +157,9 @@ class NodeState {
       familyProfileId: clearFamilyProfileId
           ? null
           : (familyProfileId ?? this.familyProfileId),
+      pairedFamilyProfileId: clearPairedFamilyProfileId
+          ? null
+          : (pairedFamilyProfileId ?? this.pairedFamilyProfileId),
       isOwnerProfile: isOwnerProfile ?? this.isOwnerProfile,
       familyProfiles: familyProfiles ?? this.familyProfiles,
     );
@@ -170,6 +191,9 @@ class NodeNotifier extends StateNotifier<NodeState> {
   /// Avoid stacking push handlers when `_syncAllData` runs on reconnect
   /// against the same [HomeRemoteClient].
   HomeRemoteClient? _pushEventsClient;
+
+  /// One-shot guard: repair owner→family session binding then reconnect.
+  bool _sessionRepairAttempted = false;
 
   /// `true` after [dispose] has been called. Used to short-circuit
   /// supervisor callbacks that fire after the notifier is gone.
@@ -608,6 +632,11 @@ class NodeNotifier extends StateNotifier<NodeState> {
         'node.$nodeId.isOwnerProfile',
         result.isOwnerProfile ? '1' : '0',
       );
+      // Immutable pairing intent — never rewritten by config sync.
+      await _secureStorage.write(
+        'node.$nodeId.pairedFamilyProfileId',
+        result.profileId,
+      );
     } catch (e) {
       _log('Failed to save session token: $e');
       state = state.copyWith(
@@ -619,10 +648,12 @@ class NodeNotifier extends StateNotifier<NodeState> {
 
     state = state.copyWith(
       familyProfileId: result.profileId,
+      pairedFamilyProfileId: result.profileId,
       isOwnerProfile: result.isOwnerProfile,
       familyProfiles: result.familyProfiles,
       ownerId: result.ownerId,
     );
+    _sessionRepairAttempted = false;
 
     // Build the StoredNode with relays from the QR code.
     // Extra `rels` / bootstrapPeers WS URLs enable regional fallback.
@@ -805,13 +836,68 @@ class NodeNotifier extends StateNotifier<NodeState> {
             .map((e) => Map<String, dynamic>.from(e))
             .toList()
         : const <Map<String, dynamic>>[];
-    final callerProfileId = config['callerFamilyProfileId'] as String?;
+    final callerProfileId =
+        (config['callerFamilyProfileId'] as String?)?.trim();
     final callerIsOwner = config['callerIsOwnerProfile'] as bool?;
-    final nextProfileId = callerProfileId ?? state.familyProfileId;
-    final nextIsOwner = callerIsOwner ?? state.isOwnerProfile;
+
+    // Prefer immutable pairing intent over a possibly corrupted session id
+    // (e.g. local `familyProfileId` flipped to owner by a bad broadcast).
+    final pairedId = state.pairedFamilyProfileId?.trim();
+    final localId = state.familyProfileId?.trim();
+    final intentId = (pairedId != null &&
+            pairedId.isNotEmpty &&
+            pairedId != 'owner')
+        ? pairedId
+        : localId;
+    final localIsFamilyMember =
+        intentId != null && intentId.isNotEmpty && intentId != 'owner';
+
+    late final String? nextProfileId;
+    late final bool nextIsOwner;
+    String? nextPairedId = pairedId;
+    if (localIsFamilyMember) {
+      if (callerProfileId != null &&
+          callerProfileId.isNotEmpty &&
+          callerProfileId != 'owner') {
+        // Server confirms a non-owner profile (possibly after re-pair).
+        nextProfileId = callerProfileId;
+        nextIsOwner = false;
+        nextPairedId = callerProfileId;
+      } else {
+        nextProfileId = intentId;
+        nextIsOwner = false;
+        nextPairedId ??= intentId;
+        if (callerProfileId == 'owner' || callerIsOwner == true) {
+          _log(
+            'Ignoring getNodeConfig owner identity; keeping family profile $intentId',
+          );
+          unawaited(_repairSessionProfileAndReconnect(intentId));
+        }
+      }
+    } else if (callerProfileId != null &&
+        callerProfileId.isNotEmpty &&
+        callerProfileId != 'owner') {
+      // Local looks like owner — still prefer a non-owner server stamp
+      // (common recovery path when only secure-storage was corrupted).
+      nextProfileId = callerProfileId;
+      nextIsOwner = false;
+      nextPairedId = callerProfileId;
+    } else {
+      nextProfileId = (callerProfileId != null && callerProfileId.isNotEmpty)
+          ? callerProfileId
+          : localId;
+      nextIsOwner = callerIsOwner ??
+          _resolveIsOwnerProfile(null, nextProfileId);
+    }
+
+    final profileChanged = nextProfileId != state.familyProfileId ||
+        nextIsOwner != state.isOwnerProfile;
+    final pairedChanged = nextPairedId != state.pairedFamilyProfileId;
+
     state = state.copyWith(
       familyProfiles: profiles,
       familyProfileId: nextProfileId,
+      pairedFamilyProfileId: nextPairedId,
       isOwnerProfile: nextIsOwner,
     );
     final node = state.activeNode;
@@ -821,11 +907,33 @@ class NodeNotifier extends StateNotifier<NodeState> {
         profileId: nextProfileId,
         isOwner: nextIsOwner,
       ));
+      if (pairedChanged &&
+          nextPairedId != null &&
+          nextPairedId.isNotEmpty) {
+        unawaited(_persistPairedFamilyProfileId(node.id, nextPairedId));
+      }
       if (profiles.isNotEmpty) {
         _ref.read(chatProvider.notifier).syncFamilyContacts(profiles, node.id);
         unawaited(_ref.read(chatProvider.notifier).syncFamilyRooms());
       }
     }
+    // Re-register push only when identity actually changed (avoid re-register
+    // on every home:config-updated).
+    if (profileChanged) {
+      unawaited(registerPushToken());
+    }
+  }
+
+  /// Resolve owner vs family from persisted flags.
+  ///
+  /// A non-owner family profile id always wins over a stale `isOwnerProfile=1`
+  /// flag so Mom/Dad never default back to owner after reconnect.
+  static bool _resolveIsOwnerProfile(String? flag, String? profileId) {
+    final id = profileId?.trim();
+    if (id != null && id.isNotEmpty && id != 'owner') return false;
+    if (flag == '0') return false;
+    if (flag == '1') return true;
+    return true;
   }
 
   Future<void> _persistFamilySessionFlags(
@@ -846,16 +954,39 @@ class NodeNotifier extends StateNotifier<NodeState> {
     }
   }
 
-  /// Resolve owner vs family from persisted flags.
-  ///
-  /// Prefer an explicit `1`/`0` flag. If missing (legacy sessions), infer from
-  /// a non-owner family profile id so family members never default to owner.
-  static bool _resolveIsOwnerProfile(String? flag, String? profileId) {
-    if (flag == '0') return false;
-    if (flag == '1') return true;
-    final id = profileId?.trim();
-    if (id != null && id.isNotEmpty && id != 'owner') return false;
-    return true;
+  /// Persist immutable pairing intent (pair time + recovery backfill only).
+  Future<void> _persistPairedFamilyProfileId(
+    String nodeId,
+    String profileId,
+  ) async {
+    try {
+      await _secureStorage.write(
+        'node.$nodeId.pairedFamilyProfileId',
+        profileId,
+      );
+    } catch (e) {
+      _log('persist pairedFamilyProfileId failed: $e');
+    }
+  }
+
+  /// When the home session token is stuck on owner but this device knows it
+  /// is Mom/Dad, repair the token and reconnect so WS routing + push target
+  /// the correct profile. Requires a legacy missing-profileId token or an
+  /// immutable server `boundFamilyProfileId` — intentional owner QR pairs
+  /// must re-pair with a family invite.
+  Future<void> _repairSessionProfileAndReconnect(String profileId) async {
+    if (_sessionRepairAttempted || _disposed) return;
+    _sessionRepairAttempted = true;
+    final ns = _nodeService;
+    final node = state.activeNode;
+    if (ns == null || node == null) return;
+    try {
+      _log('repairSessionProfile → $profileId');
+      await ns.repairSessionProfile(profileId: profileId);
+      await connectToNode(node);
+    } catch (e) {
+      _log('repairSessionProfile failed: $e');
+    }
   }
 
   Future<void> _syncBondsDirect(
@@ -1192,6 +1323,8 @@ class NodeNotifier extends StateNotifier<NodeState> {
       if (config is! Map) return;
       final configMap = Map<String, dynamic>.from(config);
       _applyFamilyConfig(configMap);
+      // Family members must not apply the owner's aiBots list from broadcasts.
+      if (!state.isOwnerProfile) return;
       final aiBots = configMap['aiBots'];
       final node = state.activeNode;
       if (node == null) return;
@@ -1225,9 +1358,25 @@ class NodeNotifier extends StateNotifier<NodeState> {
         await _secureStorage.read('node.${node.id}.familyProfileId');
     final storedOwnerFlag =
         await _secureStorage.read('node.${node.id}.isOwnerProfile');
+    var storedPairedId =
+        await _secureStorage.read('node.${node.id}.pairedFamilyProfileId');
+    // Migrate older installs: if we still have a non-owner session id and
+    // never wrote pairing intent, treat that as the immutable intent.
+    if ((storedPairedId == null || storedPairedId.isEmpty) &&
+        storedProfileId != null &&
+        storedProfileId.isNotEmpty &&
+        storedProfileId != 'owner') {
+      storedPairedId = storedProfileId;
+      unawaited(_persistPairedFamilyProfileId(node.id, storedProfileId));
+    }
+    final intentForRestore = (storedPairedId != null &&
+            storedPairedId.isNotEmpty &&
+            storedPairedId != 'owner')
+        ? storedPairedId
+        : storedProfileId;
     final restoredIsOwner = _resolveIsOwnerProfile(
       storedOwnerFlag,
-      storedProfileId,
+      intentForRestore,
     );
     state = state.copyWith(
       connectionState: NodeConnectionState.connecting,
@@ -1235,8 +1384,13 @@ class NodeNotifier extends StateNotifier<NodeState> {
       lastConnectAttemptAt: DateTime.now(),
       // Restore stored profile id (do NOT clearFamilyProfileId — that wiped
       // the value and defaulted myProfileId to "owner", flipping family bubbles).
-      familyProfileId: storedProfileId,
-      clearFamilyProfileId: storedProfileId == null || storedProfileId.isEmpty,
+      // Prefer pairing intent when session id was corrupted to owner.
+      familyProfileId: intentForRestore,
+      clearFamilyProfileId:
+          intentForRestore == null || intentForRestore.isEmpty,
+      pairedFamilyProfileId: storedPairedId,
+      clearPairedFamilyProfileId:
+          storedPairedId == null || storedPairedId.isEmpty,
       isOwnerProfile: restoredIsOwner,
       familyProfiles: const [],
     );
@@ -1544,7 +1698,8 @@ class NodeNotifier extends StateNotifier<NodeState> {
     if (client == null) return;
     // If the user disabled push in the app settings, skip registration
     // entirely. The home node has no token → no push.
-    if (!await PushPreferences.isEnabled(profileId: state.familyProfileId)) {
+    final profileId = state.effectiveFamilyProfileId;
+    if (!await PushPreferences.isEnabled(profileId: profileId)) {
       return;
     }
     final push = PushNotificationService();
@@ -1552,7 +1707,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
     await push.registerWithHomeNode(
       (method, [params]) => client.call(method, params),
       ownerId: state.ownerId ?? state.activeNode?.ownerId,
-      profileId: state.familyProfileId,
+      profileId: profileId,
     );
   }
 }

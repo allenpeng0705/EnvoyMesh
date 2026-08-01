@@ -5,6 +5,7 @@ import {
   requireOwnerProfile,
   runWithRpcCaller,
   sessionCallerFromToken,
+  stampConfigCallerForSession,
 } from "../src/rpc-caller-context.js"
 
 describe("rpc-caller-context", () => {
@@ -62,5 +63,43 @@ describe("rpc-caller-context", () => {
     expect(redacted.skillApiKeys).toBeUndefined()
     expect(redacted.lanAutoBondFleetToken).toBeUndefined()
     expect(redacted.openclawEnabled).toBe(true)
+  })
+
+  it("stampConfigCallerForSession overwrites emitter owner identity for family sessions", () => {
+    const emittedByOwner = {
+      openclawEnabled: true,
+      callerFamilyProfileId: "owner",
+      callerIsOwnerProfile: true,
+      modelProviders: { mode: "openai", apiKey: "secret" },
+    }
+    const forMom = stampConfigCallerForSession(emittedByOwner, {
+      ownerId: "envoy:owner:home",
+      profileId: "mom",
+      isOwnerProfile: false,
+      source: "session",
+      deviceId: "thin-client:mom-phone",
+    })
+    expect(forMom.callerFamilyProfileId).toBe("mom")
+    expect(forMom.callerIsOwnerProfile).toBe(false)
+    expect(forMom.modelProviders.apiKey).toBeUndefined()
+    expect(forMom.openclawEnabled).toBe(true)
+    expect(forMom.aiBots).toEqual([])
+
+    const forOwner = stampConfigCallerForSession(
+      {
+        ...emittedByOwner,
+        aiBots: [{ id: "luna", name: "Luna" }],
+      },
+      {
+        ownerId: "envoy:owner:home",
+        profileId: "owner",
+        isOwnerProfile: true,
+        source: "session",
+      },
+    )
+    expect(forOwner.callerFamilyProfileId).toBe("owner")
+    expect(forOwner.callerIsOwnerProfile).toBe(true)
+    expect(forOwner.modelProviders.apiKey).toBe("secret")
+    expect(forOwner.aiBots).toEqual([{ id: "luna", name: "Luna" }])
   })
 })

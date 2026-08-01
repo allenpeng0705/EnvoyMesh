@@ -80,6 +80,28 @@ void main() {
       expect(restored.isOwnerProfile, isFalse);
     });
 
+    test('effectiveFamilyProfileId prefers pairing intent over corrupted owner', () {
+      const corrupted = NodeState(
+        familyProfileId: 'owner',
+        pairedFamilyProfileId: 'mom',
+        isOwnerProfile: true,
+      );
+      expect(corrupted.effectiveFamilyProfileId, 'mom');
+
+      const ownerPair = NodeState(
+        familyProfileId: 'owner',
+        pairedFamilyProfileId: 'owner',
+        isOwnerProfile: true,
+      );
+      expect(ownerPair.effectiveFamilyProfileId, 'owner');
+
+      const legacyMom = NodeState(
+        familyProfileId: 'mom',
+        isOwnerProfile: false,
+      );
+      expect(legacyMom.effectiveFamilyProfileId, 'mom');
+    });
+
     test('NodeState.copyWith sets homeNodeErrorCode when provided', () {
       const initial = NodeState(
         homeNodeErrorCode: 'offline',

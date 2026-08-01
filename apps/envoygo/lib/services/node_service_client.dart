@@ -111,6 +111,15 @@ class NodeServiceClient {
     }) as Map<String, dynamic>;
   }
 
+  /// Re-bind session to a family profile when home thought we were owner.
+  Future<Map<String, dynamic>> repairSessionProfile({
+    required String profileId,
+  }) async {
+    return await _client.call('repairSessionProfile', {
+      'profileId': profileId,
+    }) as Map<String, dynamic>;
+  }
+
   /// Phase 51 — list selectable profiles for a family invite (pre-auth).
   Future<List<Map<String, dynamic>>> previewFamilyInvite({
     required String pairingToken,

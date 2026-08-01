@@ -955,7 +955,7 @@ class ChatListScreen extends ConsumerWidget {
   void _showCreateFamilyRoomDialog(BuildContext context, WidgetRef ref) {
     final l10n = AppLocalizations.of(context);
     final nameController = TextEditingController();
-    final myProfileId = ref.read(nodeProvider).familyProfileId ?? 'owner';
+    final myProfileId = ref.read(nodeProvider).effectiveFamilyProfileId;
     final profiles = ref.read(nodeProvider).familyProfiles.where((p) {
       final id = p['id']?.toString() ?? '';
       return id.isNotEmpty && id != myProfileId && p['active'] != false;

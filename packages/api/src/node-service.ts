@@ -166,6 +166,8 @@ import type {
   ProbeExtAgentParams,
   PairThinClientParams,
   PairThinClientResult,
+  RepairSessionProfileParams,
+  RepairSessionProfileResult,
   UpdateMyListenAddrsParams,
   UpdateMyListenAddrsResult,
   ListAuthorizedDevicesResult,
@@ -2729,6 +2731,16 @@ export interface NodeService {
    * Returns a persistent session token for subsequent WS connections.
    */
   pairThinClient(params: PairThinClientParams): Promise<PairThinClientResult>;
+
+  /**
+   * Re-bind this thin-client session to a non-owner family profile when the
+   * session token was missing profileId (legacy) or has boundFamilyProfileId
+   * disagreeing with a corrupted profileId:"owner". Intentional owner QR
+   * pairs still require a fresh family invite.
+   */
+  repairSessionProfile(
+    params: RepairSessionProfileParams,
+  ): Promise<RepairSessionProfileResult>;
 
   /**
    * Mobile → Home: Share the mobile's reachable listen addresses (from UPnP).
