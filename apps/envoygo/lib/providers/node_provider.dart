@@ -985,7 +985,10 @@ class NodeNotifier extends StateNotifier<NodeState> {
     _sessionRepairAttempted = true;
     final ns = _nodeService;
     final node = state.activeNode;
-    if (ns == null || node == null) return false;
+    if (ns == null || node == null) {
+      _sessionRepairAttempted = false;
+      return false;
+    }
     try {
       _log('repairSessionProfile → $profileId');
       await ns.repairSessionProfile(profileId: profileId);
@@ -993,6 +996,8 @@ class NodeNotifier extends StateNotifier<NodeState> {
       return true;
     } catch (e) {
       _log('repairSessionProfile failed: $e');
+      // Allow another attempt on the next config sync / reconnect.
+      _sessionRepairAttempted = false;
       return false;
     }
   }
@@ -1777,7 +1782,7 @@ final callProvider = ChangeNotifierProvider<CallProvider>((ref) {
   // Register the VoIP token with the home (best-effort). The home needs
   // it to dispatch a VoIP push when the phone is offline.
   final ownerId = ref.read(nodeProvider).ownerId;
-  final profileId = ref.read(nodeProvider).familyProfileId;
+  final profileId = ref.read(nodeProvider).effectiveFamilyProfileId;
   voip.registerWithHomeNode(
     (method, [params]) => client.call(method, params),
     ownerId: ownerId,

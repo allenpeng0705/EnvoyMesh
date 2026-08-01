@@ -281,19 +281,21 @@ class ChatNotifier extends StateNotifier<ChatState> {
         avatarColor: raw['avatarColor']?.toString(),
       );
     }
-    // Drop stale self-chats (e.g. Allen Peng / owner row left over after this
-    // device's session flipped to owner) and peers no longer in the roster.
+    // Drop stale self-chats (e.g. Allen Peng row after session flipped to
+    // owner). Only drop "unknown peer" rows when the roster is non-empty —
+    // an empty profiles list must not wipe every family thread.
     final stale = state.threads.where((t) {
       if (t.nodeId != nodeId || t.type != ChatThreadType.family) return false;
       final peer = t.contactOwnerId?.trim() ?? '';
       if (peer.isEmpty || peer == myProfileId) return true;
-      if (!validPeerIds.contains(peer)) return true;
       final marker = t.id.indexOf(':family:');
       if (marker < 0) return true;
       final key = t.id.substring(marker + 1);
       final parts = key.split(':');
       if (parts.length != 3) return true;
-      return parts[1] != myProfileId && parts[2] != myProfileId;
+      if (parts[1] != myProfileId && parts[2] != myProfileId) return true;
+      if (validPeerIds.isNotEmpty && !validPeerIds.contains(peer)) return true;
+      return false;
     }).toList();
     for (final t in stale) {
       unawaited(deleteThread(t.id));
@@ -339,7 +341,9 @@ class ChatNotifier extends StateNotifier<ChatState> {
       // Stale "Allen Peng" row after this device became owner, or a push
       // deep-link that used the sender id instead of the peer id.
       final nodeId = nodeState.activeNode!.id;
-      syncFamilyContacts(nodeState.familyProfiles, nodeId);
+      if (nodeState.familyProfiles.isNotEmpty) {
+        syncFamilyContacts(nodeState.familyProfiles, nodeId);
+      }
       throw StateError(
         'Cannot message yourself. This chat is stale — go back and open '
         'the contact again. If you should be Mom/Dad, unpair and re-pair '
@@ -383,13 +387,21 @@ class ChatNotifier extends StateNotifier<ChatState> {
       lastMessageAt: DateTime.tryParse(now),
     );
 
-    Future<void> dispatch() => nodeService.sendFamilyMessage(
-          toProfileId: toId,
-          text: trimmed,
-        );
+    void rollbackOptimistic() {
+      unawaited(_localDb.deleteMessage(tempMsg.id));
+      state = state.copyWith(
+        messages: {
+          ...state.messages,
+          threadId: [
+            for (final m in state.messages[threadId] ?? const <ChatMessage>[])
+              if (m.id != tempMsg.id) m,
+          ],
+        },
+      );
+    }
 
     try {
-      await dispatch();
+      await nodeService.sendFamilyMessage(toProfileId: toId, text: trimmed);
     } catch (e) {
       final err = e.toString();
       final looksLikeSelf = err.contains('yourself') ||
@@ -404,37 +416,23 @@ class ChatNotifier extends StateNotifier<ChatState> {
         if (repaired) {
           final live = _liveNodeService();
           if (live != null) {
-            await live.sendFamilyMessage(toProfileId: toId, text: trimmed);
-            return;
+            try {
+              await live.sendFamilyMessage(toProfileId: toId, text: trimmed);
+              return;
+            } catch (_) {
+              rollbackOptimistic();
+              rethrow;
+            }
           }
         }
-        // Roll back optimistic bubble on terminal failure.
-        unawaited(_localDb.deleteMessage(tempMsg.id));
-        state = state.copyWith(
-          messages: {
-            ...state.messages,
-            threadId: [
-              for (final m in state.messages[threadId] ?? const <ChatMessage>[])
-                if (m.id != tempMsg.id) m,
-            ],
-          },
-        );
+        rollbackOptimistic();
         throw StateError(
           'This phone is still paired as Owner on the home node, so it '
           'cannot message Allen Peng / Owner. Unpair, then re-pair with a '
           'fresh family invite and choose Mom.',
         );
       }
-      unawaited(_localDb.deleteMessage(tempMsg.id));
-      state = state.copyWith(
-        messages: {
-          ...state.messages,
-          threadId: [
-            for (final m in state.messages[threadId] ?? const <ChatMessage>[])
-              if (m.id != tempMsg.id) m,
-          ],
-        },
-      );
+      rollbackOptimistic();
       rethrow;
     }
   }
@@ -527,7 +525,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     if (nodeService == null) return;
     final nodeState = _ref.read(nodeProvider);
     final selfOwnerId = nodeState.ownerId;
-    final selfFamilyProfileId = nodeState.familyProfileId;
+    final selfFamilyProfileId = nodeState.effectiveFamilyProfileId;
 
     // lastOrNull on a newest-first list = the chronologically oldest message.
     final earliestCached = state.messages[threadId]?.lastOrNull;
@@ -595,7 +593,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
       before: oldestCached?.createdAt,
       threadId: threadId,
       selfOwnerId: nodeState.ownerId,
-      selfFamilyProfileId: nodeState.familyProfileId,
+      selfFamilyProfileId: nodeState.effectiveFamilyProfileId,
     );
 
     if (messages.isEmpty) return;
@@ -1245,7 +1243,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
             senderOwnerId: senderOwnerId,
             recipientOwnerId: recipient?['ownerId'] as String?,
             selfOwnerId: nodeState.ownerId,
-            selfFamilyProfileId: nodeState.familyProfileId,
+            selfFamilyProfileId: myProfileId,
           );
     final msg = ChatMessage(
       id: messageId ?? 'msg_${DateTime.now().microsecondsSinceEpoch}',
@@ -1689,8 +1687,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
       await nodeService.updateAiBots(bots);
       return;
     }
-    final profileId = nodeState.familyProfileId;
-    if (profileId == null || profileId.isEmpty) {
+    final profileId = nodeState.effectiveFamilyProfileId;
+    if (profileId.isEmpty || profileId == 'owner') {
       throw StateError('No family profile bound to this session');
     }
     await nodeService.updateFamilyProfile(id: profileId, aiBots: bots);
