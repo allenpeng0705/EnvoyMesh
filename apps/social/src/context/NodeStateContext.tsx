@@ -39,12 +39,9 @@ import type {
   SendHelloOptions,
   SocialIntroProposal,
 } from "@envoymesh/api";
-import {
-  ENVOY_AI_THREAD_KEY,
-  OWNER_FAMILY_PROFILE_ID,
-  isFamilyThreadKey,
-} from "@envoymesh/api";
+import { OWNER_FAMILY_PROFILE_ID } from "@envoymesh/api";
 import { parseNodeStatusFromRpc } from "../lib/effective-node-status.js";
+import { isStrangerInboxCandidate } from "../lib/inbox-pending-filter.js";
 
 interface NodeStateValue {
   // Connection
@@ -151,6 +148,7 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     wsOpen: wsTransportOpen,
     bonds,
     peerId,
+    selfOwnerId: humanProfile?.ownerId,
     locale: appSettings.locale,
   });
 
@@ -509,50 +507,66 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     return unsub;
   }, [nodeService, wsTransportOpen]);
 
-  // chat:message from unbonded peers → pending messages
+  // chat:message from unbonded *mesh* peers → Inbox only.
+  // Family DMs still arrive on the owner WS for Family chat; they must never
+  // enter pendingMessages (profile ids like mom/dad/owner are not mesh strangers).
   useEffect(() => {
     if (!wsTransportOpen) return;
-    const selfOwnerId = humanProfile?.ownerId?.trim() ?? "";
+    const familyProfileIds = new Set(
+      (nodeConfig?.familyProfiles ?? [])
+        .map((p) => p.id?.trim())
+        .filter((id): id is string => Boolean(id)),
+    );
+    familyProfileIds.add(OWNER_FAMILY_PROFILE_ID);
+    const filterCtx = {
+      selfOwnerId: humanProfile?.ownerId?.trim() ?? "",
+      peerId: peerId ?? undefined,
+      bridgeAgentPeerId: bridgeStatus?.agentPeerId,
+      familyProfileIds,
+    };
     const unsub = nodeService.on("chat:message", (msg) => {
-      // Skip own outbound copies (local emit or mesh echo — nodeId may be the remote peer on echo)
-      if (selfOwnerId && msg.sender.ownerId?.trim() === selfOwnerId) return;
-      // Family DMs use profile ids ("owner"/"mom"), not mesh envoy:owner:… ids.
-      // Without this filter, owner→Mom land in Inbox as stranger mail.
-      const snd = msg.sender.ownerId?.trim() ?? "";
-      const rcv = msg.recipient?.ownerId?.trim() ?? "";
-      if (rcv && isFamilyThreadKey(rcv)) return;
-      if (snd && isFamilyThreadKey(snd)) return;
-      if (snd === OWNER_FAMILY_PROFILE_ID) return;
-      // Skip local echo (sent receipts)
-      if (msg.metadata?.deliveryReceipt === "sent") return;
-      // Skip own messages by libp2p id
-      if (peerId && msg.sender.nodeId === peerId) return;
-      // EnvoyAI chat → persisted under __envoy_ai__, not Inbox
-      if (
-        msg.metadata?.deliveryChannel === "ai" ||
-        msg.sender.ownerId === ENVOY_AI_THREAD_KEY ||
-        msg.recipient?.ownerId === ENVOY_AI_THREAD_KEY ||
-        (bridgeStatus?.agentPeerId &&
-          (msg.sender.nodeId === bridgeStatus.agentPeerId ||
-            msg.sender.ownerId === bridgeStatus.agentPeerId))
-      ) {
-        return;
-      }
-      // Skip if bonded
-      const isBonded = bonds.some(
-        (b) =>
-          b.peerOwnerId === msg.sender.ownerId ||
-          (b.displayName && b.displayName === msg.sender.displayName),
-      );
-      if (isBonded) return;
-
+      if (!isStrangerInboxCandidate(msg, filterCtx, bonds)) return;
       setPendingMessages((prev) => {
         if (prev.some((m) => m.messageId === msg.messageId)) return prev;
         return [...prev, msg];
       });
     });
     return unsub;
-  }, [nodeService, wsTransportOpen, bonds, peerId, humanProfile?.ownerId, bridgeStatus?.agentPeerId]);
+  }, [
+    nodeService,
+    wsTransportOpen,
+    bonds,
+    peerId,
+    humanProfile?.ownerId,
+    bridgeStatus?.agentPeerId,
+    nodeConfig?.familyProfiles,
+  ]);
+
+  // Drop stuck family/self rows that landed before the mesh-only filter.
+  useEffect(() => {
+    const familyProfileIds = new Set(
+      (nodeConfig?.familyProfiles ?? [])
+        .map((p) => p.id?.trim())
+        .filter((id): id is string => Boolean(id)),
+    );
+    familyProfileIds.add(OWNER_FAMILY_PROFILE_ID);
+    const filterCtx = {
+      selfOwnerId: humanProfile?.ownerId?.trim() ?? "",
+      peerId: peerId ?? undefined,
+      bridgeAgentPeerId: bridgeStatus?.agentPeerId,
+      familyProfileIds,
+    };
+    setPendingMessages((prev) => {
+      const next = prev.filter((m) => isStrangerInboxCandidate(m, filterCtx, bonds));
+      return next.length === prev.length ? prev : next;
+    });
+  }, [
+    bonds,
+    peerId,
+    humanProfile?.ownerId,
+    bridgeStatus?.agentPeerId,
+    nodeConfig?.familyProfiles,
+  ]);
 
   // bond:established — remove pending messages from that peer
   useEffect(() => {

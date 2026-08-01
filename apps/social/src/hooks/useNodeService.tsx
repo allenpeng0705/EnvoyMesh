@@ -109,13 +109,19 @@ import type {
   ChainDeleteRecipeParams,
   ChainDeleteRecipeResult,
 } from "@envoymesh/api";
-import { isChatRoomThreadKey, isAiBotThread, isFamilyThreadKey, ENVOY_AI_THREAD_KEY, OWNER_FAMILY_PROFILE_ID, TERMINAL_ASSIST_RPC_TIMEOUT_MS } from "@envoymesh/api";
+import { isFamilyThreadKey, OWNER_FAMILY_PROFILE_ID, TERMINAL_ASSIST_RPC_TIMEOUT_MS } from "@envoymesh/api";
 import { mergeGroupDeliveryAck } from "@envoymesh/api/group-chat-delivery";
 import {
   mergeMessagesIntoThread,
   replaceChatThreadsCache,
   snapshotChatThreadsCache,
 } from "../lib/chat-threads-cache.js";
+import {
+  isChatMessageVisibleToProfile,
+  isThreadVisibleToProfile,
+  pruneThreadsForProfile,
+  resolveChatThreadKey,
+} from "../lib/chat-visibility.js";
 
 type InitNodeOptions = {
   discoveryProfile?: DiscoveryProfile;
@@ -2422,40 +2428,7 @@ function partnerOwnerIdForChat(
   selfOwnerId: string,
   selfPeerId: string,
 ): string | null {
-  const selfO = selfOwnerId.trim();
-  const selfP = selfPeerId.trim();
-  const sndO = msg.sender.ownerId?.trim();
-  const sndN = msg.sender.nodeId?.trim();
-  const rcvO = msg.recipient.ownerId?.trim();
-  const rcvN = msg.recipient.nodeId?.trim();
-
-  if (rcvO && isChatRoomThreadKey(rcvO)) {
-    return rcvO;
-  }
-  // Phase 51F — family DMs store the thread key on recipient.ownerId.
-  if (rcvO && isFamilyThreadKey(rcvO)) return rcvO;
-  if (sndO && isFamilyThreadKey(sndO)) return sndO;
-  if (rcvO === ENVOY_AI_THREAD_KEY || sndO === ENVOY_AI_THREAD_KEY) {
-    return ENVOY_AI_THREAD_KEY;
-  }
-  // Character bots live under thread key `bot:<id>` (sender or recipient).
-  if (rcvO && isAiBotThread(rcvO)) return rcvO;
-  if (sndO && isAiBotThread(sndO)) return sndO;
-
-  // Use ownerId as primary routing key (ownerIds are distinct even when
-  // both peers share the same node, e.g. bridge agent running on same node).
-  if (sndO && sndO === selfO && rcvO && rcvO !== selfO) {
-    return rcvO;
-  }
-  if (rcvO && rcvO === selfO && sndO && sndO !== selfO) {
-    return sndO;
-  }
-  // Fallback: nodeId-based routing when ownerId is unavailable or matches both sides
-  const sndNIsSelf = !!selfP && sndN === selfP;
-  const rcvNIsSelf = !!selfP && rcvN === selfP;
-  if (sndNIsSelf && !rcvNIsSelf) return rcvO ?? rcvN ?? null;
-  if (rcvNIsSelf && !sndNIsSelf) return sndO ?? sndN ?? null;
-  return null;
+  return resolveChatThreadKey(msg, selfOwnerId, selfPeerId);
 }
 
 function messageIsOutgoing(
@@ -2482,6 +2455,16 @@ function appendChatToThreads(
   msg: ChatMessage,
   self: { ownerId: string; peerId: string; familyProfileId?: string },
 ): Record<string, ChatMessage[]> | null {
+  const familyProfileId = self.familyProfileId ?? OWNER_FAMILY_PROFILE_ID;
+  if (
+    !isChatMessageVisibleToProfile(msg, {
+      familyProfileId,
+      selfOwnerId: self.ownerId,
+      selfPeerId: self.peerId,
+    })
+  ) {
+    return null;
+  }
   const key = partnerOwnerIdForChat(msg, self.ownerId, self.peerId);
   if (!key) {
     console.warn("[useChatMessages] could not route chat to a thread (missing owner match)", msg.messageId);
@@ -2638,6 +2621,13 @@ export function useChatMessages(selectedContactOwnerId: string | null) {
 
   useEffect(() => {
     if (!client.isConnected || !selectedContactOwnerId) return;
+    const familyProfileId =
+      selfIdsRef.current?.familyProfileId ?? OWNER_FAMILY_PROFILE_ID;
+    // Never request / merge history for threads this profile cannot see
+    // (e.g. family:dad:mom on owner Social).
+    if (!isThreadVisibleToProfile(selectedContactOwnerId, familyProfileId)) {
+      return;
+    }
     let cancelled = false;
     const threadKey = selectedContactOwnerId;
     const loadHistory = async (attempt: number) => {
@@ -2661,22 +2651,31 @@ export function useChatMessages(selectedContactOwnerId: string | null) {
     return () => {
       cancelled = true;
     };
-  }, [client, client.isConnected, selectedContactOwnerId, setThreads]);
+  }, [
+    client,
+    client.isConnected,
+    selectedContactOwnerId,
+    setThreads,
+    selfIds?.familyProfileId,
+  ]);
 
   useEffect(() => {
     if (!selfIds?.ownerId) return;
     const self = selfIds;
     const flushed = pendingUntilSelfReady.current.splice(0);
-    if (flushed.length === 0) return;
     setThreads((prev) => {
-      let next = prev;
+      // Drop any cached Dad↔Mom / other-profile threads left from older bugs.
+      let next = pruneThreadsForProfile(
+        prev,
+        self.familyProfileId || OWNER_FAMILY_PROFILE_ID,
+      );
       for (const m of flushed) {
         const n = appendChatToThreads(next, m, self);
         if (n) next = n;
       }
       return next;
     });
-  }, [selfIds]);
+  }, [selfIds, setThreads]);
 
   const isOutgoing = (msg: ChatMessage) =>
     !!(

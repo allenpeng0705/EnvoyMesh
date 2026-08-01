@@ -8328,7 +8328,11 @@ class NodeServiceImpl implements NodeService {
     if (!toProfileId) throw new Error("toProfileId is required");
     if (!text) throw new Error("text is required");
     if (toProfileId === fromProfileId) {
-      throw new Error("Cannot send a family message to yourself");
+      throw new Error(
+        fromProfileId === OWNER_FAMILY_PROFILE_ID
+          ? "Cannot send a family message to yourself — this session is bound as Owner. If this device should be Mom/Dad, unpair and re-pair with a family invite."
+          : "Cannot send a family message to yourself",
+      );
     }
 
     const [fromProfile, toProfile] = await Promise.all([

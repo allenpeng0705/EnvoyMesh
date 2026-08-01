@@ -9,6 +9,32 @@ import 'package:envoygo/providers/chat_provider.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  group('familyPeerIdFromThreadKey', () {
+    test('returns the other profile for mom in family:mom:owner', () {
+      expect(
+        ChatNotifier.familyPeerIdFromThreadKey('family:mom:owner', 'mom'),
+        'owner',
+      );
+    });
+
+    test('returns the other profile for dad in node-prefixed thread id', () {
+      expect(
+        ChatNotifier.familyPeerIdFromThreadKey(
+          'home1:family:dad:mom',
+          'dad',
+        ),
+        'mom',
+      );
+    });
+
+    test('returns null when myProfileId is not in the thread', () {
+      expect(
+        ChatNotifier.familyPeerIdFromThreadKey('family:dad:mom', 'owner'),
+        isNull,
+      );
+    });
+  });
+
   group('isSelfThreadPeer', () {
     const selfOwnerId = 'envoy:owner:abc123';
 

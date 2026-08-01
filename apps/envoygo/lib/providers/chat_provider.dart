@@ -261,11 +261,13 @@ class ChatNotifier extends StateNotifier<ChatState> {
     String nodeId,
   ) {
     final myProfileId = _ref.read(nodeProvider).effectiveFamilyProfileId;
+    final validPeerIds = <String>{};
     for (final raw in profiles) {
       final id = raw['id']?.toString().trim() ?? '';
       if (id.isEmpty || id == myProfileId) continue;
       final name = raw['name']?.toString().trim();
       if (name == null || name.isEmpty) continue;
+      validPeerIds.add(id);
       final active = raw['active'] != false;
       final displayName = active ? name : '$name (offline)';
       final threadKey = _familyThreadKey(myProfileId, id);
@@ -279,10 +281,44 @@ class ChatNotifier extends StateNotifier<ChatState> {
         avatarColor: raw['avatarColor']?.toString(),
       );
     }
+    // Drop stale self-chats (e.g. Allen Peng / owner row left over after this
+    // device's session flipped to owner) and peers no longer in the roster.
+    final stale = state.threads.where((t) {
+      if (t.nodeId != nodeId || t.type != ChatThreadType.family) return false;
+      final peer = t.contactOwnerId?.trim() ?? '';
+      if (peer.isEmpty || peer == myProfileId) return true;
+      if (!validPeerIds.contains(peer)) return true;
+      final marker = t.id.indexOf(':family:');
+      if (marker < 0) return true;
+      final key = t.id.substring(marker + 1);
+      final parts = key.split(':');
+      if (parts.length != 3) return true;
+      return parts[1] != myProfileId && parts[2] != myProfileId;
+    }).toList();
+    for (final t in stale) {
+      unawaited(deleteThread(t.id));
+    }
   }
 
   static String _familyThreadKey(String a, String b) {
     return a.compareTo(b) < 0 ? 'family:$a:$b' : 'family:$b:$a';
+  }
+
+  /// Other profile id in `family:<a>:<b>` relative to [myProfileId].
+  static String? familyPeerIdFromThreadKey(String threadKey, String myProfileId) {
+    final key = threadKey.startsWith('family:')
+        ? threadKey
+        : (threadKey.contains(':family:')
+            ? threadKey.substring(threadKey.indexOf(':family:') + 1)
+            : threadKey);
+    final parts = key.split(':');
+    if (parts.length != 3 || parts[0] != 'family') return null;
+    final a = parts[1];
+    final b = parts[2];
+    final me = myProfileId.trim();
+    if (a == me) return b;
+    if (b == me) return a;
+    return null;
   }
 
   /// Phase 51C — send a local family DM.
@@ -295,7 +331,22 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return;
     final myProfileId = nodeState.effectiveFamilyProfileId;
-    final threadKey = _familyThreadKey(myProfileId, toProfileId);
+    final toId = toProfileId.trim();
+    if (toId.isEmpty) {
+      throw StateError('Missing family recipient');
+    }
+    if (toId == myProfileId) {
+      // Stale "Allen Peng" row after this device became owner, or a push
+      // deep-link that used the sender id instead of the peer id.
+      final nodeId = nodeState.activeNode!.id;
+      syncFamilyContacts(nodeState.familyProfiles, nodeId);
+      throw StateError(
+        'Cannot message yourself. This chat is stale — go back and open '
+        'the contact again. If you should be Mom/Dad, unpair and re-pair '
+        'with a family invite.',
+      );
+    }
+    final threadKey = _familyThreadKey(myProfileId, toId);
     final threadId = '${nodeState.activeNode!.id}:$threadKey';
     final now = DateTime.now().toUtc().toIso8601String();
     final tempMsg = ChatMessage(
@@ -315,10 +366,10 @@ class ChatNotifier extends StateNotifier<ChatState> {
       },
     );
 
-    String displayName = toProfileId;
+    String displayName = toId;
     for (final p in nodeState.familyProfiles) {
-      if (p['id']?.toString() == toProfileId) {
-        displayName = p['name']?.toString() ?? toProfileId;
+      if (p['id']?.toString() == toId) {
+        displayName = p['name']?.toString() ?? toId;
         break;
       }
     }
@@ -327,15 +378,65 @@ class ChatNotifier extends StateNotifier<ChatState> {
       nodeId: nodeState.activeNode!.id,
       type: ChatThreadType.family,
       displayName: displayName,
-      contactOwnerId: toProfileId,
+      contactOwnerId: toId,
       lastMessageText: trimmed,
       lastMessageAt: DateTime.tryParse(now),
     );
 
-    await nodeService.sendFamilyMessage(
-      toProfileId: toProfileId,
-      text: trimmed,
-    );
+    Future<void> dispatch() => nodeService.sendFamilyMessage(
+          toProfileId: toId,
+          text: trimmed,
+        );
+
+    try {
+      await dispatch();
+    } catch (e) {
+      final err = e.toString();
+      final looksLikeSelf = err.contains('yourself') ||
+          err.contains('Cannot send a family message to yourself');
+      // UI says Mom/Dad but home session token is still owner → repair once.
+      if (looksLikeSelf && myProfileId != 'owner') {
+        final repaired =
+            await _ref.read(nodeProvider.notifier).repairFamilySession(
+                  myProfileId,
+                  force: true,
+                );
+        if (repaired) {
+          final live = _liveNodeService();
+          if (live != null) {
+            await live.sendFamilyMessage(toProfileId: toId, text: trimmed);
+            return;
+          }
+        }
+        // Roll back optimistic bubble on terminal failure.
+        unawaited(_localDb.deleteMessage(tempMsg.id));
+        state = state.copyWith(
+          messages: {
+            ...state.messages,
+            threadId: [
+              for (final m in state.messages[threadId] ?? const <ChatMessage>[])
+                if (m.id != tempMsg.id) m,
+            ],
+          },
+        );
+        throw StateError(
+          'This phone is still paired as Owner on the home node, so it '
+          'cannot message Allen Peng / Owner. Unpair, then re-pair with a '
+          'fresh family invite and choose Mom.',
+        );
+      }
+      unawaited(_localDb.deleteMessage(tempMsg.id));
+      state = state.copyWith(
+        messages: {
+          ...state.messages,
+          threadId: [
+            for (final m in state.messages[threadId] ?? const <ChatMessage>[])
+              if (m.id != tempMsg.id) m,
+          ],
+        },
+      );
+      rethrow;
+    }
   }
 
   /// Send a direct message. Optional [attachments] for audio/files (Phase 37).

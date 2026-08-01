@@ -1,9 +1,14 @@
 import { useEffect } from "react";
-import type { BondRecord, ChatMessage } from "@envoymesh/api";
+import {
+  OWNER_FAMILY_PROFILE_ID,
+  type BondRecord,
+  type ChatMessage,
+} from "@envoymesh/api";
 import type { NodeServiceClient } from "./useNodeService.js";
 import { MESSAGES } from "../i18n/messages/index.js";
 import { translate, type TranslateParams } from "../i18n/translate.js";
 import { normalizeLocale, type LocaleId } from "../i18n/types.js";
+import { isChatMessageVisibleToProfile } from "../lib/chat-visibility.js";
 
 /**
  * Localized chat message preview for the desktop / browser notification
@@ -41,10 +46,12 @@ export function useChatNotifications(opts: {
   wsOpen: boolean;
   bonds: BondRecord[];
   peerId: string;
+  /** Mesh owner id — improves thread routing for visibility checks. */
+  selfOwnerId?: string;
   /** App locale (from NodeStateProvider appSettings — do not use useNodeState here). */
   locale?: string;
 }) {
-  const { enabled, nodeService, wsOpen, bonds, peerId } = opts;
+  const { enabled, nodeService, wsOpen, bonds, peerId, selfOwnerId } = opts;
   const localeKey: LocaleId = normalizeLocale(opts.locale);
 
   useEffect(() => {
@@ -54,6 +61,16 @@ export function useChatNotifications(opts: {
       const msg = data as ChatMessage;
       if (msg.metadata?.deliveryReceipt === "sent") return;
       if (peerId && msg.sender.nodeId === peerId) return;
+      // Never notify for other family profiles' threads (Dad↔Mom, etc.).
+      if (
+        !isChatMessageVisibleToProfile(msg, {
+          familyProfileId: OWNER_FAMILY_PROFILE_ID,
+          selfOwnerId,
+          selfPeerId: peerId,
+        })
+      ) {
+        return;
+      }
       if (typeof document !== "undefined" && !document.hidden) return;
       if (typeof Notification === "undefined") return;
       if (Notification.permission !== "granted") return;
@@ -77,5 +94,5 @@ export function useChatNotifications(opts: {
     });
 
     return unsub;
-  }, [enabled, wsOpen, nodeService, bonds, peerId, localeKey]);
+  }, [enabled, wsOpen, nodeService, bonds, peerId, selfOwnerId, localeKey]);
 }

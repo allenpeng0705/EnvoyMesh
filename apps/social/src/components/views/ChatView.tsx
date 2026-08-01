@@ -15,6 +15,8 @@ import {
   isAiBotThread,
   parseChatRoomThreadKey,
   isFamilyThreadKey,
+  OWNER_FAMILY_PROFILE_ID,
+  threadVisibleTo,
 } from "@envoymesh/api";
 import type { TerminalSessionSummary } from "@envoymesh/api";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -477,8 +479,23 @@ export function ChatView({
                 />
               ) : isAiBotThread(selectedContact) ? (
                 <BotChatPanel threadKey={selectedContact} />
-              ) : isFamilyThreadKey(selectedContact) ? (
+              ) : isFamilyThreadKey(selectedContact) &&
+                threadVisibleTo(
+                  selectedContact,
+                  nodeConfig?.callerFamilyProfileId?.trim() ||
+                    OWNER_FAMILY_PROFILE_ID,
+                ) ? (
                 <FamilyChatPanel threadKey={selectedContact} />
+              ) : isFamilyThreadKey(selectedContact) ? (
+                <div className="no-chat-selected">
+                  <h3>{t("chat.familyInvalidTitle", "Invalid family chat")}</h3>
+                  <p>
+                    {t(
+                      "chat.familyInvalidDesc",
+                      "This family thread is not available for your profile.",
+                    )}
+                  </p>
+                </div>
               ) : (
                 <ContactChatPanel
                   selectedContact={selectedContact}

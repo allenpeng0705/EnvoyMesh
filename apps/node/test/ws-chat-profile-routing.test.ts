@@ -39,4 +39,22 @@ describe("resolveChatMessageTargetProfiles", () => {
       }),
     ).toEqual([]);
   });
+
+  it("routes owner↔mom family DM to owner and mom (not dad)", () => {
+    const targets = resolveChatMessageTargetProfiles({
+      sender: { ownerId: "mom" },
+      recipient: { ownerId: "family:mom:owner" },
+    });
+    expect(targets.sort()).toEqual(["mom", "owner"]);
+    expect(targets).not.toContain("dad");
+  });
+
+  it("does not include owner in dad↔mom family DM targets", () => {
+    const targets = resolveChatMessageTargetProfiles({
+      sender: { ownerId: "mom" },
+      recipient: { ownerId: "family:dad:mom" },
+    });
+    expect(targets.sort()).toEqual(["dad", "mom"]);
+    expect(targets).not.toContain("owner");
+  });
 });

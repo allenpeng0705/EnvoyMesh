@@ -187,17 +187,35 @@ class _EnvoyGoRootState extends ConsumerState<_EnvoyGoRoot>
         if (threadType == 'family') {
           final threadKey = hint['threadKey'] as String?;
           if (threadKey == null || !threadKey.startsWith('family:')) return;
+          final myProfileId =
+              ref.read(nodeProvider).effectiveFamilyProfileId;
+          // Peer is the other profile in the thread — not always the sender
+          // (own-echo / mis-routed taps would otherwise open a self-chat).
+          final peerId = ChatNotifier.familyPeerIdFromThreadKey(
+                threadKey,
+                myProfileId,
+              ) ??
+              (senderOwnerId != null && senderOwnerId != myProfileId
+                  ? senderOwnerId
+                  : null);
+          String peerName = senderName ?? peerId ?? l10n.chatsDefaultFamilyGroup;
+          if (peerId != null && peerId != senderOwnerId) {
+            for (final p in ref.read(nodeProvider).familyProfiles) {
+              if (p['id']?.toString() == peerId) {
+                peerName = p['name']?.toString() ?? peerName;
+                break;
+              }
+            }
+          }
           nav.push(MaterialPageRoute(
             builder: (_) => ChatDetailScreen(
               threadId: '$nodeId:$threadKey',
               displayName: localizeThreadTitle(
                 l10n,
-                displayName: senderName ??
-                    senderOwnerId ??
-                    l10n.chatsDefaultFamilyGroup,
+                displayName: peerName,
                 type: ChatThreadType.family,
               ),
-              contactOwnerId: senderOwnerId,
+              contactOwnerId: peerId,
             ),
           ));
           break;

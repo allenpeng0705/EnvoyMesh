@@ -7,6 +7,7 @@ import {
   OWNER_FAMILY_PROFILE_ID,
   isFamilyThreadKey,
   parseFamilyThreadKey,
+  threadVisibleTo,
   type ChatMessage,
   type FamilyProfile,
 } from "@envoymesh/api";
@@ -145,11 +146,20 @@ export function FamilyChatPanel({ threadKey }: FamilyChatPanelProps) {
     toProfileId,
   ]);
 
-  if (!isFamilyThreadKey(threadKey) || !toProfileId) {
+  if (
+    !isFamilyThreadKey(threadKey) ||
+    !toProfileId ||
+    !threadVisibleTo(threadKey, myProfileId)
+  ) {
     return (
       <div className="no-chat-selected">
         <h3>{t("chat.familyInvalidTitle", "Invalid family chat")}</h3>
-        <p>{t("chat.familyInvalidDesc", "This family thread key is not valid.")}</p>
+        <p>
+          {t(
+            "chat.familyInvalidDesc",
+            "This family thread is not available for your profile.",
+          )}
+        </p>
       </div>
     );
   }

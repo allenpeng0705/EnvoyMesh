@@ -974,19 +974,31 @@ class NodeNotifier extends StateNotifier<NodeState> {
   /// the correct profile. Requires a legacy missing-profileId token or an
   /// immutable server `boundFamilyProfileId` — intentional owner QR pairs
   /// must re-pair with a family invite.
-  Future<void> _repairSessionProfileAndReconnect(String profileId) async {
-    if (_sessionRepairAttempted || _disposed) return;
+  ///
+  /// Returns `true` when repair + reconnect succeeded.
+  Future<bool> repairFamilySession(
+    String profileId, {
+    bool force = false,
+  }) async {
+    if (_disposed) return false;
+    if (!force && _sessionRepairAttempted) return false;
     _sessionRepairAttempted = true;
     final ns = _nodeService;
     final node = state.activeNode;
-    if (ns == null || node == null) return;
+    if (ns == null || node == null) return false;
     try {
       _log('repairSessionProfile → $profileId');
       await ns.repairSessionProfile(profileId: profileId);
       await connectToNode(node);
+      return true;
     } catch (e) {
       _log('repairSessionProfile failed: $e');
+      return false;
     }
+  }
+
+  Future<void> _repairSessionProfileAndReconnect(String profileId) async {
+    await repairFamilySession(profileId);
   }
 
   Future<void> _syncBondsDirect(
@@ -1664,6 +1676,7 @@ class NodeNotifier extends StateNotifier<NodeState> {
       pairedNodes: remaining,
       clearOwnerId: true,
       clearFamilyProfileId: true,
+      clearPairedFamilyProfileId: true,
       isOwnerProfile: true,
       familyProfiles: const [],
       connectionState: NodeConnectionState.disconnected,
