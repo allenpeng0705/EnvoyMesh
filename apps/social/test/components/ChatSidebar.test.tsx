@@ -4,13 +4,14 @@
 import React from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
-import type { BondRecord } from "@envoymesh/api";
+import type { BondRecord, ChatMessage, FamilyProfile, NodeConfig } from "@envoymesh/api";
 import { ChatSidebar } from "../../src/components/views/ChatSidebar.js";
 import { renderWithI18n } from "../helpers/render-with-i18n.js";
 
 const revokeBond = vi.fn();
 const updateNodeConfig = vi.fn();
 const listChatRooms = vi.fn();
+const listFamilyRooms = vi.fn();
 
 const bonds: BondRecord[] = [
   {
@@ -21,11 +22,15 @@ const bonds: BondRecord[] = [
   },
 ];
 
+let mockNodeConfig: Partial<NodeConfig> = { contactAiPreferences: [] };
+let mockPendingMessages: ChatMessage[] = [];
+
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: () => ({
     revokeBond,
     updateNodeConfig,
     listChatRooms,
+    listFamilyRooms,
     isConnected: true,
     on: vi.fn(() => () => {}),
   }),
@@ -41,9 +46,9 @@ vi.mock("../../src/context/NodeStateContext.js", () => ({
     bridgeStatus: null,
     pendingHellOs: [],
     pendingIntroProposals: [],
-    pendingMessages: [],
+    pendingMessages: mockPendingMessages,
     humanProfile: { displayName: "Me", hobbies: [], knowledge: [] },
-    nodeConfig: { contactAiPreferences: [] },
+    nodeConfig: mockNodeConfig,
     sendHello: vi.fn(),
     acceptHello: vi.fn(),
     declineHello: vi.fn(),
@@ -63,6 +68,9 @@ beforeEach(() => {
   revokeBond.mockResolvedValue(undefined);
   updateNodeConfig.mockResolvedValue(undefined);
   listChatRooms.mockResolvedValue([]);
+  listFamilyRooms.mockResolvedValue({ rooms: [] });
+  mockNodeConfig = { contactAiPreferences: [] };
+  mockPendingMessages = [];
 });
 
 afterEach(() => {
@@ -115,5 +123,67 @@ describe("ChatSidebar — remove bonded contact", () => {
     const headerRow = menu.querySelector(".context-menu-header--row");
     expect(headerRow).not.toBeNull();
     expect(headerRow?.querySelector(".context-menu-links")).not.toBeNull();
+  });
+});
+
+describe("ChatSidebar — Family section", () => {
+  it("lists Mom and Dad under Family when familyProfiles are present", () => {
+    const familyProfiles: FamilyProfile[] = [
+      {
+        id: "owner",
+        name: "Allen",
+        isOwner: true,
+        active: true,
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "mom",
+        name: "Mom",
+        isOwner: false,
+        active: true,
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+      {
+        id: "dad",
+        name: "Dad",
+        isOwner: false,
+        active: true,
+        createdAt: "2026-01-01T00:00:00.000Z",
+      },
+    ];
+    mockNodeConfig = {
+      contactAiPreferences: [],
+      familyProfiles,
+      callerFamilyProfileId: "owner",
+    };
+
+    const onSelectContact = vi.fn();
+    renderWithI18n(
+      <ChatSidebar selectedContact={null} onSelectContact={onSelectContact} />,
+    );
+
+    expect(screen.getAllByText("Family").length).toBeGreaterThan(0);
+    fireEvent.click(screen.getByRole("button", { name: /Mom/i }));
+    expect(onSelectContact).toHaveBeenCalledWith("family:mom:owner");
+    fireEvent.click(screen.getByRole("button", { name: /Dad/i }));
+    expect(onSelectContact).toHaveBeenCalledWith("family:dad:owner");
+  });
+
+  it("hides Family section when only the owner profile exists", () => {
+    mockNodeConfig = {
+      contactAiPreferences: [],
+      familyProfiles: [
+        {
+          id: "owner",
+          name: "Allen",
+          isOwner: true,
+          active: true,
+          createdAt: "2026-01-01T00:00:00.000Z",
+        },
+      ],
+      callerFamilyProfileId: "owner",
+    };
+    renderWithI18n(<ChatSidebar selectedContact={null} onSelectContact={vi.fn()} />);
+    expect(screen.queryByText("Family")).toBeNull();
   });
 });

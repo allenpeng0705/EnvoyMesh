@@ -471,8 +471,7 @@ export function ChatSidebar({ selectedContact, onSelectContact, onOpenAssistant,
       ) : null}
 
       {/* Phase 51F — Family contacts + local family groups */}
-      {(nodeConfig?.familyProfiles?.length ?? 0) > 0 ||
-      sortedFamilyRooms.length > 0 ? (
+      {(familyContacts.length > 0 || sortedFamilyRooms.length > 0) ? (
         <>
           <div className="contact-list-section-header">
             <span className="contact-list-section-label">

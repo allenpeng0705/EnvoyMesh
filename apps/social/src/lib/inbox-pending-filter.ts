@@ -37,6 +37,7 @@ export function isStrangerInboxCandidate(
 
   if (!snd) return false;
   // Hard gate: only unbonded *mesh* owners belong in Inbox.
+  // Family profile short ids (mom/dad/owner) never qualify.
   if (!isMeshOwnerId(snd)) return false;
   if (selfOwnerId && snd === selfOwnerId) return false;
 

@@ -39,7 +39,7 @@ import type {
   SendHelloOptions,
   SocialIntroProposal,
 } from "@envoymesh/api";
-import { OWNER_FAMILY_PROFILE_ID } from "@envoymesh/api";
+import { isFamilyThreadKey, OWNER_FAMILY_PROFILE_ID } from "@envoymesh/api";
 import { parseNodeStatusFromRpc } from "../lib/effective-node-status.js";
 import { isStrangerInboxCandidate } from "../lib/inbox-pending-filter.js";
 
@@ -197,16 +197,37 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     }
   }, [nodeService]);
 
+  // Defined before chat/inbox effects — they refresh the Family roster when
+  // Mom/Dad DMs arrive but ChatSidebar still has a stale/empty profile list.
+  const refreshNodeConfig = useCallback(async () => {
+    try {
+      const config = await nodeService.getNodeConfig();
+      // ChatSidebar Family section used to rely only on config.familyProfiles.
+      // Settings already used listFamilyProfiles — if those diverged (stale
+      // config, missed home:config-updated), Mom/Dad vanished from Chat and
+      // their DMs looked like Inbox strangers. Always merge the store list.
+      let familyProfiles = config.familyProfiles ?? [];
+      try {
+        const listed = await nodeService.listFamilyProfiles?.();
+        if (listed?.profiles && listed.profiles.length > 0) {
+          familyProfiles = listed.profiles;
+        }
+      } catch {
+        /* keep getNodeConfig snapshot */
+      }
+      setNodeConfig({ ...config, familyProfiles });
+    } catch (e) {
+      console.error("[NodeState] refreshNodeConfig failed:", e);
+    }
+  }, [nodeService]);
+
   // -----------------------------------------------------------------------
   // Load node state once transport is up
   // -----------------------------------------------------------------------
   useEffect(() => {
     if (!wsTransportOpen) return;
 
-    // Config + relays
-    nodeService.getNodeConfig().then((config) => {
-      setNodeConfig(config);
-    }).catch(() => {});
+    void refreshNodeConfig();
 
     // Connection status (may be offline until startNode completes; node:online / node:status refresh later)
     void refreshConnectionStatus();
@@ -236,7 +257,7 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     nodeService.getPairedDiagnostics?.().then((diag) => {
       setPairedDiag(diag ?? null);
     }).catch(() => {});
-  }, [nodeService, wsTransportOpen, refreshConnectionStatus]);
+  }, [nodeService, wsTransportOpen, refreshConnectionStatus, refreshNodeConfig]);
 
   // -----------------------------------------------------------------------
   // Subscribe to ongoing events (require transport — handler registration uses RPC `on`)
@@ -525,6 +546,20 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
       familyProfileIds,
     };
     const unsub = nodeService.on("chat:message", (msg) => {
+      const snd = msg.sender?.ownerId?.trim() ?? "";
+      const rcv = msg.recipient?.ownerId?.trim() ?? "";
+      // Family traffic for this owner → keep Family roster fresh (Mom/Dad rows).
+      if (
+        (rcv && isFamilyThreadKey(rcv)) ||
+        (snd && !snd.startsWith("envoy:owner:") && familyProfileIds.has(snd))
+      ) {
+        const needsRoster =
+          (nodeConfig?.familyProfiles?.length ?? 0) <= 1 ||
+          (snd &&
+            snd !== OWNER_FAMILY_PROFILE_ID &&
+            !familyProfileIds.has(snd));
+        if (needsRoster) void refreshNodeConfig();
+      }
       if (!isStrangerInboxCandidate(msg, filterCtx, bonds)) return;
       setPendingMessages((prev) => {
         if (prev.some((m) => m.messageId === msg.messageId)) return prev;
@@ -540,6 +575,7 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
     humanProfile?.ownerId,
     bridgeStatus?.agentPeerId,
     nodeConfig?.familyProfiles,
+    refreshNodeConfig,
   ]);
 
   // Drop stuck family/self rows that landed before the mesh-only filter.
@@ -595,15 +631,6 @@ export function NodeStateProvider({ children }: { children: ReactNode }) {
   // -----------------------------------------------------------------------
   // Helper functions
   // -----------------------------------------------------------------------
-
-  const refreshNodeConfig = useCallback(async () => {
-    try {
-      const config = await nodeService.getNodeConfig();
-      setNodeConfig(config);
-    } catch (e) {
-      console.error("[NodeState] refreshNodeConfig failed:", e);
-    }
-  }, [nodeService]);
 
   // Bidirectional sync — mobile / another client saved via updateNodeConfig.
   useEffect(() => {
