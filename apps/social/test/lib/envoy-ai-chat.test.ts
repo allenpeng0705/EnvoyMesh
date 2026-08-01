@@ -62,6 +62,48 @@ describe("envoy-ai-chat", () => {
     ).toBe(false);
   });
 
+  it("excludes family-member EnvoyAI threads from Owner Social panel", () => {
+    const dadThread = `${ENVOY_AI_THREAD_KEY}:dad`;
+    expect(
+      isEnvoyAiChatMessage(
+        row({
+          sender: { nodeId: "home", ownerId: "dad", displayName: "Dad" },
+          recipient: { nodeId: "agent", ownerId: dadThread },
+          content: { text: "hi from dad phone" },
+        }),
+        SELF,
+      ),
+    ).toBe(false);
+    expect(
+      isEnvoyAiChatMessage(
+        row({
+          sender: {
+            nodeId: "agent",
+            ownerId: dadThread,
+            displayName: "EnvoyAI",
+            actorRole: "agent",
+          },
+          recipient: { nodeId: "home", ownerId: "dad", displayName: "Dad" },
+        }),
+        SELF,
+      ),
+    ).toBe(false);
+  });
+
+  it("still accepts owner-scoped EnvoyAI thread key", () => {
+    const ownerThread = `${ENVOY_AI_THREAD_KEY}:owner`;
+    expect(
+      isEnvoyAiChatMessage(
+        row({
+          sender: { nodeId: "home", ownerId: SELF, displayName: "Alice" },
+          recipient: { nodeId: "agent", ownerId: ownerThread },
+          content: { text: "hello" },
+        }),
+        SELF,
+      ),
+    ).toBe(true);
+  });
+
   it("maps user and assistant rows", () => {
     const user = chatMessageToAiMessage(
       row({

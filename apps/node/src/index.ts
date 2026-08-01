@@ -3424,13 +3424,12 @@ nodeService.on("content:engage", (data) => wsServer.emitEvent("content:engage", 
 nodeService.on("share:offered", (data) => wsServer.emitEvent("share:offered", data));
 nodeService.on("share:accepted", (data) => wsServer.emitEvent("share:accepted", data));
 nodeService.on("share:declined", (data) => wsServer.emitEvent("share:declined", data));
-nodeService.on("chat:message", (data) => wsServer.emitEvent("chat:message", data));
-nodeService.on("chat:room-updated", (data) => wsServer.emitEvent("chat:room-updated", data));
-nodeService.on("chat:room-removed", (data) => wsServer.emitEvent("chat:room-removed", data));
-nodeService.on("chat:room-message", (data) => wsServer.emitEvent("chat:room-message", data));
+// Do NOT re-broadcast chat:message / chat:room-* / agent:activity here.
+// WsServer.start() already wires them with profile-scoped emitEventToProfile.
+// A second unfiltered emitEvent leaked Dad/Mom EnvoyAI into Owner Social
+// (messages appear live, then vanish on history reload from __envoy_ai__:owner).
 nodeService.on("chat:delivered", (data) => wsServer.emitEvent("chat:delivered", data));
 nodeService.on("chat:draft", (data) => wsServer.emitEvent("chat:draft", data));
-nodeService.on("agent:activity", (data) => wsServer.emitEvent("agent:activity", data));
 nodeService.on("chain:state", (data) => wsServer.emitEvent("chain:state", data));
 nodeService.on("chain:report", (data) => wsServer.emitEvent("chain:report", data));
 nodeService.on("chain:iteration", (data) => wsServer.emitEvent("chain:iteration", data));

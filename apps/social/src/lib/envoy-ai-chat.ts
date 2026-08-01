@@ -1,5 +1,11 @@
 import type { ChatMessage } from "@envoymesh/api";
-import { ENVOY_AI_THREAD_KEY, stripModelThinking } from "@envoymesh/api";
+import {
+  ENVOY_AI_THREAD_KEY,
+  OWNER_FAMILY_PROFILE_ID,
+  isEnvoyAiThreadKey,
+  parseEnvoyAiProfileId,
+  stripModelThinking,
+} from "@envoymesh/api";
 import { extractChatMessageText, isBridgeHeartbeatNoise } from "./bridge-chat-message.js";
 
 export interface AiChatMessageView {
@@ -22,10 +28,39 @@ export function isEnvoyAiChatMessage(msg: ChatMessage, selfOwnerId: string): boo
   if (sndO?.startsWith("bot:") || rcvO?.startsWith("bot:")) {
     return false;
   }
-  if (rcvO === ENVOY_AI_THREAD_KEY || sndO === ENVOY_AI_THREAD_KEY) {
+  // Family-scoped EnvoyAI (`__envoy_ai__:dad`) must never paint into Owner Social.
+  for (const key of [sndO, rcvO]) {
+    if (!key || !isEnvoyAiThreadKey(key)) continue;
+    const profileId = parseEnvoyAiProfileId(key);
+    if (profileId && profileId !== OWNER_FAMILY_PROFILE_ID) {
+      return false;
+    }
+  }
+  if (
+    rcvO === ENVOY_AI_THREAD_KEY ||
+    sndO === ENVOY_AI_THREAD_KEY ||
+    parseEnvoyAiProfileId(sndO ?? "") === OWNER_FAMILY_PROFILE_ID ||
+    parseEnvoyAiProfileId(rcvO ?? "") === OWNER_FAMILY_PROFILE_ID
+  ) {
     return true;
   }
   if (msg.metadata?.deliveryChannel === "ai") {
+    // Bare family profile ids (e.g. sender "dad") must not enter Owner EnvoyAI.
+    const self = selfOwnerId.trim();
+    for (const key of [sndO, rcvO]) {
+      if (!key || key === self || key.startsWith("envoy:") || isEnvoyAiThreadKey(key)) {
+        continue;
+      }
+      if (
+        key.startsWith("bot:") ||
+        key.startsWith("bridge:") ||
+        key.startsWith("family:") ||
+        key.startsWith("room:")
+      ) {
+        continue;
+      }
+      return false;
+    }
     return true;
   }
   // Bridge messages with deliveryChannel "agent" belong to the Ext Agent thread,
