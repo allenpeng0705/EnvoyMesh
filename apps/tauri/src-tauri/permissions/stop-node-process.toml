@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "allow-stop-node-process"
+description = "Stop the EnvoyMesh node child process before an OTA install/relaunch."
+commands.allow = ["stop_node_process"]

@@ -817,6 +817,15 @@ fn restart_node_process(state: State<'_, NodeProcessState>) -> Result<(), String
     Ok(())
 }
 
+/// Stop the home-node child without respawning (used before OTA install).
+#[tauri::command]
+fn stop_node_process(state: State<'_, NodeProcessState>) -> Result<(), String> {
+    let mut child_guard = state.child.lock().map_err(|e| e.to_string())?;
+    stop_node_child(&mut child_guard);
+    info!("Node process stopped for update install");
+    Ok(())
+}
+
 /// Native folder picker for Pi project selection (macOS / Linux / Windows).
 ///
 /// Returns `Ok(Some(path))` when the user picks a folder, `Ok(None)` when they
@@ -1021,8 +1030,12 @@ fn main() {
     }
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .invoke_handler(tauri::generate_handler![
             restart_node_process,
+            stop_node_process,
             get_app_log_paths,
             append_social_log,
             reveal_log_dir,

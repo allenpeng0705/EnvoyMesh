@@ -6,7 +6,10 @@
   "permissions": [
     "core:default",
     "shell:allow-open",
+    "updater:default",
+    "process:default",
     "allow-restart-node-process",
+    "allow-stop-node-process",
     "allow-app-logs"
   ]
 }

@@ -30,7 +30,9 @@
   "bundle": {
     "active": true,
     "targets": [
-      "nsis"
+      "dmg",
+      "nsis",
+      "appimage"
     ],
     "icon": [
       "icons/32x32.png",
@@ -73,6 +75,15 @@
   "plugins": {
     "shell": {
       "open": true
+    },
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEI4REEzQkU1MTdGM0NBMjkKUldRcHl2TVg1VHZhdVA0RDFPalFvTE1YRWRtd2wzSGpzcUU0aDZQNlN4Q2xzK0M5REgrYy9ZSk0K",
+      "endpoints": [
+        "https://github.com/allenpeng0705/EnvoyMesh/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
     }
   }
 }

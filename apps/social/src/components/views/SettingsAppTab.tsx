@@ -9,6 +9,12 @@ import {
   revealTauriLogDir,
   type AppLogPaths,
 } from "../../lib/tauri-shell.js";
+import {
+  checkDesktopUpdate,
+  installDesktopUpdate,
+  type DesktopUpdateHandle,
+  type UpdateInstallProgress,
+} from "../../lib/tauri-updater.js";
 import type { ThemeMode } from "../../context/ThemeContext.js";
 import type { LocaleId } from "../../i18n/types.js";
 
@@ -18,11 +24,54 @@ export function SettingsAppTab() {
   const { theme, setTheme } = useTheme();
   const tauriShell = isTauriShell();
   const [logPaths, setLogPaths] = useState<AppLogPaths | null>(null);
+  const [updateBusy, setUpdateBusy] = useState(false);
+  const [pendingUpdate, setPendingUpdate] = useState<DesktopUpdateHandle | null>(null);
+  const [updateMessage, setUpdateMessage] = useState<string | null>(null);
+  const [updateError, setUpdateError] = useState<string | null>(null);
+  const [installProgress, setInstallProgress] = useState<UpdateInstallProgress | null>(null);
 
   useEffect(() => {
     if (!tauriShell) return;
     void getTauriAppLogPaths().then(setLogPaths);
   }, [tauriShell]);
+
+  async function onCheckForUpdates() {
+    setUpdateBusy(true);
+    setUpdateError(null);
+    setUpdateMessage(null);
+    setPendingUpdate(null);
+    setInstallProgress(null);
+    const result = await checkDesktopUpdate();
+    setUpdateBusy(false);
+    if (result.status === "unavailable") {
+      setUpdateMessage(t("settings.app.updateUnavailable"));
+      return;
+    }
+    if (result.status === "up-to-date") {
+      setUpdateMessage(t("settings.app.upToDate"));
+      return;
+    }
+    if (result.status === "error") {
+      setUpdateError(t("settings.app.updateError", { reason: result.reason }));
+      return;
+    }
+    setPendingUpdate(result.update);
+    setUpdateMessage(t("settings.app.updateAvailable", { version: result.update.version }));
+  }
+
+  async function onInstallUpdate() {
+    if (!pendingUpdate) return;
+    setUpdateBusy(true);
+    setUpdateError(null);
+    setInstallProgress({ phase: "stopping-node" });
+    const result = await installDesktopUpdate(pendingUpdate, setInstallProgress);
+    if (!result.ok) {
+      setUpdateBusy(false);
+      setInstallProgress(null);
+      setUpdateError(t("settings.app.updateError", { reason: result.reason }));
+    }
+    // On success the process relaunches; no further UI work.
+  }
   // Connection and Behavior sections were moved to the Network tab —
   // they are network-shape settings (WebSocket URL, auto-connect,
   // notifications, P2P/Relay indicator) and belong alongside the rest
@@ -78,6 +127,55 @@ export function SettingsAppTab() {
           management is housekeeping/audit information and pairs
           naturally with the other App-shaped items in this tab. */}
       <AuthorizedDevicesSection />
+
+      {tauriShell ? (
+        <div className="settings-card">
+          <h4>{t("settings.app.updatesTitle")}</h4>
+          <p className="settings-hint">{t("settings.app.updatesHint")}</p>
+          <div className="settings-actions" style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="secondary"
+              disabled={updateBusy}
+              onClick={() => void onCheckForUpdates()}
+            >
+              {updateBusy && !installProgress
+                ? t("settings.app.checkingUpdates")
+                : t("settings.app.checkForUpdates")}
+            </button>
+            {pendingUpdate ? (
+              <button
+                type="button"
+                disabled={updateBusy}
+                onClick={() => void onInstallUpdate()}
+              >
+                {updateBusy ? t("settings.app.installingUpdate") : t("settings.app.downloadAndInstall")}
+              </button>
+            ) : null}
+          </div>
+          {updateMessage ? <p className="settings-hint">{updateMessage}</p> : null}
+          {pendingUpdate?.body ? (
+            <p className="settings-hint">
+              <strong>{t("settings.app.updateNotes")}: </strong>
+              {pendingUpdate.body}
+            </p>
+          ) : null}
+          {installProgress?.phase === "downloading" ? (
+            <p className="muted">
+              {t("settings.app.updateProgressDownload", {
+                percent:
+                  installProgress.total && installProgress.total > 0
+                    ? String(Math.min(100, Math.round((installProgress.downloaded / installProgress.total) * 100)))
+                    : "…",
+              })}
+            </p>
+          ) : null}
+          {installProgress?.phase === "installing" || installProgress?.phase === "relaunching" ? (
+            <p className="muted">{t("settings.app.updateProgressInstall")}</p>
+          ) : null}
+          {updateError ? <p className="muted" role="alert">{updateError}</p> : null}
+        </div>
+      ) : null}
 
       {tauriShell ? (
         <div className="settings-card">

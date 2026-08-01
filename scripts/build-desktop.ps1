@@ -1404,54 +1404,102 @@ if (-not $SkipPi) {
     # Prune pass — mirrors scripts/stage-tauri-pi-bundle.sh (the bash twin
     # delegates to this from build-desktop.sh). Skipped when -SkipPiPrune
     # is set; safe to leave on for every reuse (idempotent).
+    #
+    # CRITICAL (Windows / NSIS): Get-ChildItem cannot see paths >= ~260 chars
+    # (MAX_PATH). Pi's nested @mistralai ...operations/<very-long-name>.d.ts.map
+    # paths exceed that, so a naive "*.map" prune leaves them in place and
+    # makensis fails with "failed opening file". Use \\?\ + .NET enumeration
+    # for delete, and strip *.d.ts (runtime only needs .js).
     if (-not $SkipPiPrune) {
-        Write-Info "Pruning non-runtime files from Pi bundle..."
+        Write-Info "Pruning non-runtime files from Pi bundle (long-path aware)..."
         $pruned = 0
         $pruneBytes = 0L
-        # Source maps — large, never needed at runtime.
-        $mapFiles = @(Get-ChildItem -Path $piDest -Recurse -Filter "*.map" -File -ErrorAction SilentlyContinue)
-        foreach ($f in $mapFiles) {
-            $pruneBytes += [int]$f.Length
-            Remove-Item -Force $f.FullName -ErrorAction SilentlyContinue
+
+        function ConvertTo-Win32LongPath([string]$Path) {
+            if ([string]::IsNullOrEmpty($Path)) { return $Path }
+            if ($Path.StartsWith("\\?\")) { return $Path }
+            if ($Path.StartsWith("\\")) { return "\\?\UNC\" + $Path.Substring(2) }
+            return "\\?\" + $Path
         }
-        $pruned += $mapFiles.Count
-        # TypeScript sources — runtime only needs the compiled .js in dist/.
-        $tsFiles = @(Get-ChildItem -Path $piDest -Recurse -Include "*.ts" -File -ErrorAction SilentlyContinue |
-                    Where-Object { $_.Name -notlike "*.d.ts" })
-        foreach ($f in $tsFiles) {
-            $pruneBytes += [int]$f.Length
-            Remove-Item -Force $f.FullName -ErrorAction SilentlyContinue
+        function ConvertFrom-Win32LongPath([string]$Path) {
+            if ($Path.StartsWith("\\?\UNC\")) { return "\\" + $Path.Substring(8) }
+            if ($Path.StartsWith("\\?\")) { return $Path.Substring(4) }
+            return $Path
         }
-        $pruned += $tsFiles.Count
-        # Test files — *.test.js / *.spec.js / *.test.d.ts
-        $testFiles = @(Get-ChildItem -Path $piDest -Recurse -File -ErrorAction SilentlyContinue |
-                      Where-Object { $_.Name -match '\.test\.(js|d\.ts|ts)$' -or $_.Name -match '\.spec\.(js|d\.ts|ts)$' })
-        foreach ($f in $testFiles) {
-            $pruneBytes += [int]$f.Length
-            Remove-Item -Force $f.FullName -ErrorAction SilentlyContinue
+        function Remove-PiLongPathFile([string]$Path) {
+            $long = ConvertTo-Win32LongPath $Path
+            try {
+                if ([System.IO.File]::Exists($long)) {
+                    $size = [long](New-Object System.IO.FileInfo $long).Length
+                    [System.IO.File]::Delete($long)
+                    return $size
+                }
+            } catch { }
+            return 0L
         }
-        $pruned += $testFiles.Count
-        # Test scaffolding dirs.
-        foreach ($dirName in @("__tests__", "__mocks__", "test", "tests")) {
+        function Remove-PiLongPathDirectory([string]$Path) {
+            $long = ConvertTo-Win32LongPath $Path
+            try {
+                if ([System.IO.Directory]::Exists($long)) {
+                    [System.IO.Directory]::Delete($long, $true)
+                    return $true
+                }
+            } catch { }
+            Remove-Item -LiteralPath $Path -Recurse -Force -ErrorAction SilentlyContinue
+            return -not (Test-Path -LiteralPath $Path)
+        }
+
+        # Enumerate with \\?\ so paths > MAX_PATH are visible.
+        $piFiles = New-Object System.Collections.Generic.List[string]
+        try {
+            $enumRoot = ConvertTo-Win32LongPath $piDest
+            foreach ($f in [System.IO.Directory]::EnumerateFiles($enumRoot, "*", [System.IO.SearchOption]::AllDirectories)) {
+                [void]$piFiles.Add((ConvertFrom-Win32LongPath $f))
+            }
+        } catch {
+            Write-Warn "Long-path enumerate failed ($($_.Exception.Message)); falling back to Get-ChildItem (may miss deep paths)"
+            Get-ChildItem -LiteralPath $piDest -Recurse -File -Force -ErrorAction SilentlyContinue |
+                ForEach-Object { [void]$piFiles.Add($_.FullName) }
+        }
+
+        foreach ($path in $piFiles) {
+            $name = [System.IO.Path]::GetFileName($path)
+            $drop = $false
+            # Source maps (incl. *.d.ts.map) — never needed at runtime; also the
+            # files that most often exceed Windows MAX_PATH under @mistralai.
+            if ($name -like "*.map") { $drop = $true }
+            # Declarations — runtime only needs compiled .js.
+            elseif ($name -like "*.d.ts" -or $name -like "*.d.mts" -or $name -like "*.d.cts") { $drop = $true }
+            # TypeScript sources (not declarations — already handled above).
+            elseif ($name -like "*.ts") { $drop = $true }
+            elseif ($name -match '\.(test|spec)\.(js|mjs|cjs)$') { $drop = $true }
+
+            if (-not $drop) { continue }
+            $sz = Remove-PiLongPathFile $path
+            if ($sz -gt 0) {
+                $pruned++
+                $pruneBytes += $sz
+            }
+        }
+
+        # Test / CI scaffolding dirs (best-effort; short paths usually).
+        foreach ($dirName in @("__tests__", "__mocks__", "test", "tests", ".github", ".husky", ".vscode", ".pi")) {
             Get-ChildItem -Path $piDest -Recurse -Directory -Filter $dirName -ErrorAction SilentlyContinue |
                 Where-Object { $_.FullName -notmatch '[\\/]\.bin[\\/]' } |
                 ForEach-Object {
-                    $sz = (Get-ChildItem -Path $_.FullName -Recurse -File -ErrorAction SilentlyContinue |
-                           Measure-Object -Property Length -Sum).Sum
-                    $pruneBytes += [int]$sz
-                    Remove-Item -Recurse -Force $_.FullName -ErrorAction SilentlyContinue
+                    $sz = 0L
+                    try {
+                        $long = ConvertTo-Win32LongPath $_.FullName
+                        foreach ($f in [System.IO.Directory]::EnumerateFiles($long, "*", [System.IO.SearchOption]::AllDirectories)) {
+                            try { $sz += [long](New-Object System.IO.FileInfo $f).Length } catch { }
+                        }
+                    } catch { }
+                    if (Remove-PiLongPathDirectory $_.FullName) {
+                        $pruneBytes += $sz
+                    }
                 }
         }
-        # CI / IDE metadata — never imported at runtime.
-        foreach ($dirName in @(".github", ".husky", ".vscode", ".pi")) {
-            Get-ChildItem -Path $piDest -Recurse -Directory -Filter $dirName -ErrorAction SilentlyContinue |
-                ForEach-Object {
-                    $sz = (Get-ChildItem -Path $_.FullName -Recurse -File -ErrorAction SilentlyContinue |
-                           Measure-Object -Property Length -Sum).Sum
-                    $pruneBytes += [int]$sz
-                    Remove-Item -Recurse -Force $_.FullName -ErrorAction SilentlyContinue
-                }
-        }
+
         # Cross-platform native prebuilds — Pi's native deps ship prebuilt
         # bindings for every OS/arch combo. Drop everything except the
         # host's. The Windows binary itself (x86_64-pc-windows-msvc) is
@@ -1468,7 +1516,6 @@ if (-not $SkipPi) {
             $parent = $pbDir.Parent.FullName
             foreach ($sibling in @(Get-ChildItem -Path $parent -Directory -ErrorAction SilentlyContinue)) {
                 $name = $sibling.Name
-                # Keep host platform+arch and a few universal fallbacks.
                 if ($name -eq "${hostOs}-${hostArch}" -or
                     $name -eq $hostOs -or
                     $name -eq $hostArch -or
@@ -1477,22 +1524,30 @@ if (-not $SkipPi) {
                     $name -eq "debug") {
                     continue
                 }
-                # Drop everything that looks like another OS/arch combo.
                 if ($name -match '^(darwin|linux|win32|freebsd|openbsd)-' -or
                     $name -match '^armv7l$|^ia32$|^universal$' -or
                     $name -match '-(x64|arm64|armv7l|ia32|universal)$') {
-                    $sz = (Get-ChildItem -Path $sibling.FullName -Recurse -File -ErrorAction SilentlyContinue |
-                           Measure-Object -Property Length -Sum).Sum
-                    $pruneBytes += [int]$sz
-                    Remove-Item -Recurse -Force $sibling.FullName -ErrorAction SilentlyContinue
-                    $nativePruned++
+                    if (Remove-PiLongPathDirectory $sibling.FullName) {
+                        $nativePruned++
+                    }
                 }
             }
         }
-        # Empty directories left by pruning.
-        Get-ChildItem -Path $piDest -Recurse -Directory -ErrorAction SilentlyContinue |
-            Where-Object { -not (Get-ChildItem -Path $_.FullName -Recurse -ErrorAction SilentlyContinue) } |
-            ForEach-Object { Remove-Item -Recurse -Force $_.FullName -ErrorAction SilentlyContinue }
+
+        # Fail fast if anything still exceeds MAX_PATH — NSIS cannot pack it.
+        $tooLong = New-Object System.Collections.Generic.List[string]
+        try {
+            $enumRoot = ConvertTo-Win32LongPath $piDest
+            foreach ($f in [System.IO.Directory]::EnumerateFiles($enumRoot, "*", [System.IO.SearchOption]::AllDirectories)) {
+                $normal = ConvertFrom-Win32LongPath $f
+                if ($normal.Length -ge 260) { [void]$tooLong.Add($normal) }
+            }
+        } catch { }
+        if ($tooLong.Count -gt 0) {
+            Write-Fail ("Pi bundle still has {0} path(s) >= 260 chars (NSIS will fail). Example:`n  {1}`nRe-run with -ForcePi after pulling this prune fix, or use -SkipPi." -f $tooLong.Count, $tooLong[0])
+            exit 1
+        }
+
         if ($pruned -gt 0 -or $nativePruned -gt 0) {
             $pruneMb = [math]::Round($pruneBytes / 1MB, 1)
             Write-Ok "Pruned $pruned non-runtime files + $nativePruned cross-platform native prebuild dirs (~${pruneMb} MB)"

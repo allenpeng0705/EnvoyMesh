@@ -43,6 +43,14 @@ apps/node/test/.DS_Store
 /release
 AuthKey_LKPCR48WHW.p8
 serviceAccountKey.json
+# Tauri updater signing keys (never commit private key / password)
+.tauri/
+envoymesh.key
+envoymesh.key.pub
+envoymesh.key.password
+**/envoymesh.key
+**/envoymesh.key.pub
+**/envoymesh.key.password
 # Push secrets are also staged into resources/node/ by
 # scripts/stage-tauri-push-credentials.* — that whole tree is already
 # ignored above (apps/tauri/src-tauri/resources/node/).

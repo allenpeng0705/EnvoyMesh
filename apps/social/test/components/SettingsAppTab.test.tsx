@@ -54,6 +54,14 @@ const mockNodeService = {
   refreshNodeConfig,
 };
 
+vi.mock("@tauri-apps/plugin-updater", () => ({
+  check: vi.fn(async () => null),
+}));
+
+vi.mock("@tauri-apps/plugin-process", () => ({
+  relaunch: vi.fn(async () => undefined),
+}));
+
 vi.mock("../../src/hooks/useNodeService.js", () => ({
   useNodeService: () => mockNodeService,
   useIsInProcessMobileNode: () => isMobileNode,

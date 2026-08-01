@@ -402,7 +402,7 @@ This ensures deterministic serialization regardless of property insertion order.
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
 | `ci-smoke-local.yml` | PR + manual | Install → typecheck → unit tests → two-node smoke → generate/upload artifacts |
-| `tauri-release.yml` | Tag `tauri-v*` / `desktop-v*` + manual | Build Tauri bundles from `apps/tauri`; uploads unsigned installers as CI artifacts |
+| `tauri-release.yml` | Tag `v*` (e.g. `v0.2.2`) + manual | Build/sign Tauri desktop bundles + `latest.json` on that Release (attach iOS/Android yourself) |
 
 ---
 

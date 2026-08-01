@@ -65,7 +65,7 @@ The build pipeline runs, in order:
 
 Slim builds omit Pi and use `tauri.conf.slim.json` (same effect as `-SkipPi` on Windows). Override the Pi pin with `ENVOYMESH_PI_VERSION` if needed.
 
-CI release: tag `tauri-v*` or `desktop-v*` (see `.github/workflows/tauri-release.yml`).
+CI release: tag `v0.2.2` (or legacy `desktop-v*` / `tauri-v*`) — see `.github/workflows/tauri-release.yml` and [ota.md](./ota.md).
 
 ---
 
@@ -535,7 +535,7 @@ lsof -ti:3030 | xargs kill -9
 - [x] Bundle Node.js into Tauri app (`resources/node-runtime/`)
 - [x] Bundle OpenClaw gateway + envoymesh extension (`stage-tauri-openclaw-bundle.sh`)
 - [x] Bundle pre-installed skills (`apps/node/skills/` → `resources/node/skills/`)
-- [ ] Auto-update support
+- [x] Auto-update support (wired: [ota.md](./ota.md) — generate keys + GitHub Secrets, then tag `v0.2.2`)
 - [ ] System tray icon
 - [ ] Auto-start on login
 - [ ] Native notifications

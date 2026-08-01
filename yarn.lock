@@ -444,8 +444,8 @@
     "@leichtgewicht/ip-codec" "^2.0.4"
     utf8-codec "^1.0.0"
 
-"@envoymesh/api@0.1.0", "@envoymesh/api@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/api":
-  version "0.1.0"
+"@envoymesh/api@0.2.1", "@envoymesh/api@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/api":
+  version "0.2.1"
   resolved "file:packages/api"
   dependencies:
     "@envoymesh/identity" "0.1.0"
@@ -453,68 +453,68 @@
     "@noble/hashes" "^1.8.0"
     zod "^4.3.6"
 
-"@envoymesh/bonds@0.1.0", "@envoymesh/bonds@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/bonds":
-  version "0.1.0"
+"@envoymesh/bonds@0.2.1", "@envoymesh/bonds@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/bonds":
+  version "0.2.1"
   resolved "file:packages/bonds"
   dependencies:
-    "@envoymesh/protocol" "0.1.0"
+    "@envoymesh/protocol" "0.2.1"
 
 "@envoymesh/cli@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/cli":
-  version "0.1.0"
+  version "0.2.1"
   resolved "file:apps/cli"
 
-"@envoymesh/identity@0.1.0", "@envoymesh/identity@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/identity":
-  version "0.1.0"
+"@envoymesh/identity@0.2.1", "@envoymesh/identity@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/identity":
+  version "0.2.1"
   resolved "file:packages/identity"
   dependencies:
-    "@envoymesh/protocol" "0.1.0"
+    "@envoymesh/protocol" "0.2.1"
 
-"@envoymesh/ipfs-helia@0.1.0", "@envoymesh/ipfs-helia@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/ipfs-helia":
-  version "0.1.0"
+"@envoymesh/ipfs-helia@0.2.1", "@envoymesh/ipfs-helia@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/ipfs-helia":
+  version "0.2.1"
   resolved "file:packages/ipfs-helia"
   dependencies:
     "@helia/unixfs" "^7.2.1"
     blockstore-core "^7.0.1"
     helia "^6.1.4"
 
-"@envoymesh/kb-obsidian@0.1.0", "@envoymesh/kb-obsidian@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/kb-obsidian":
-  version "0.1.0"
+"@envoymesh/kb-obsidian@0.2.1", "@envoymesh/kb-obsidian@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/kb-obsidian":
+  version "0.2.1"
   resolved "file:packages/kb-obsidian"
   dependencies:
-    "@envoymesh/api" "0.1.0"
+    "@envoymesh/api" "0.2.1"
 
-"@envoymesh/local-store@0.1.0", "@envoymesh/local-store@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/local-store":
-  version "0.1.0"
+"@envoymesh/local-store@0.2.1", "@envoymesh/local-store@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/local-store":
+  version "0.2.1"
   resolved "file:packages/local-store"
   dependencies:
-    "@envoymesh/bonds" "0.1.0"
-    "@envoymesh/identity" "0.1.0"
-    "@envoymesh/protocol" "0.1.0"
+    "@envoymesh/bonds" "0.2.1"
+    "@envoymesh/identity" "0.2.1"
+    "@envoymesh/protocol" "0.2.1"
 
-"@envoymesh/mobile-identity@0.1.0", "@envoymesh/mobile-identity@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/mobile-identity":
-  version "0.1.0"
+"@envoymesh/mobile-identity@0.2.1", "@envoymesh/mobile-identity@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/mobile-identity":
+  version "0.2.1"
   resolved "file:packages/mobile-identity"
   dependencies:
-    "@envoymesh/protocol" "0.1.0"
+    "@envoymesh/protocol" "0.2.1"
     "@noble/curves" "^1.9.0"
     "@noble/hashes" "^1.8.0"
 
-"@envoymesh/mobile-node@0.1.0", "@envoymesh/mobile-node@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/mobile-node":
-  version "0.1.0"
+"@envoymesh/mobile-node@0.2.1", "@envoymesh/mobile-node@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/mobile-node":
+  version "0.2.1"
   resolved "file:packages/mobile-node"
   dependencies:
     "@capacitor/filesystem" "^8.0.0"
     "@chainsafe/libp2p-noise" "^17.0.0"
     "@chainsafe/libp2p-yamux" "^8.0.0"
-    "@envoymesh/api" "0.1.0"
-    "@envoymesh/bonds" "0.1.0"
-    "@envoymesh/ipfs-helia" "0.1.0"
-    "@envoymesh/mobile-identity" "0.1.0"
-    "@envoymesh/mobile-storage" "0.1.0"
-    "@envoymesh/mobile-vault" "0.1.0"
-    "@envoymesh/models" "0.1.0"
-    "@envoymesh/network" "0.1.0"
-    "@envoymesh/protocol" "0.1.0"
+    "@envoymesh/api" "0.2.1"
+    "@envoymesh/bonds" "0.2.1"
+    "@envoymesh/ipfs-helia" "0.2.1"
+    "@envoymesh/mobile-identity" "0.2.1"
+    "@envoymesh/mobile-storage" "0.2.1"
+    "@envoymesh/mobile-vault" "0.2.1"
+    "@envoymesh/models" "0.2.1"
+    "@envoymesh/network" "0.2.1"
+    "@envoymesh/protocol" "0.2.1"
     "@libp2p/bootstrap" "^12.0.19"
     "@libp2p/circuit-relay-v2" "^4.2.3"
     "@libp2p/crypto" "^5.1.17"
@@ -527,22 +527,22 @@
     "@libp2p/websockets" "^10.1.13"
     libp2p "^3.0.0"
 
-"@envoymesh/mobile-storage@0.1.0", "@envoymesh/mobile-storage@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/mobile-storage":
-  version "0.1.0"
+"@envoymesh/mobile-storage@0.2.1", "@envoymesh/mobile-storage@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/mobile-storage":
+  version "0.2.1"
   resolved "file:packages/mobile-storage"
   dependencies:
-    "@envoymesh/bonds" "0.1.0"
-    "@envoymesh/mobile-identity" "0.1.0"
-    "@envoymesh/protocol" "0.1.0"
+    "@envoymesh/bonds" "0.2.1"
+    "@envoymesh/mobile-identity" "0.2.1"
+    "@envoymesh/protocol" "0.2.1"
 
-"@envoymesh/mobile-vault@0.1.0", "@envoymesh/mobile-vault@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/mobile-vault":
-  version "0.1.0"
+"@envoymesh/mobile-vault@0.2.1", "@envoymesh/mobile-vault@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/mobile-vault":
+  version "0.2.1"
   resolved "file:packages/mobile-vault"
   dependencies:
-    "@envoymesh/protocol" "0.1.0"
+    "@envoymesh/protocol" "0.2.1"
 
 "@envoymesh/mobile@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/mobile":
-  version "0.1.0"
+  version "0.2.1"
   resolved "file:apps/mobile"
   dependencies:
     "@capacitor-community/barcode-scanner" "^3.0.3"
@@ -552,32 +552,32 @@
     "@capacitor/filesystem" "^8.0.0"
     "@capacitor/geolocation" "^8.0.0"
     "@capacitor/ios" "^8.0.0"
-    "@envoymesh/api" "0.1.0"
-    "@envoymesh/mobile-identity" "0.1.0"
-    "@envoymesh/mobile-node" "0.1.0"
-    "@envoymesh/mobile-storage" "0.1.0"
-    "@envoymesh/mobile-vault" "0.1.0"
-    "@envoymesh/protocol" "0.1.0"
+    "@envoymesh/api" "0.2.1"
+    "@envoymesh/mobile-identity" "0.2.1"
+    "@envoymesh/mobile-node" "0.2.1"
+    "@envoymesh/mobile-storage" "0.2.1"
+    "@envoymesh/mobile-vault" "0.2.1"
+    "@envoymesh/protocol" "0.2.1"
     capacitor-secure-storage-plugin "^0.13.0"
     react "^19.2.3"
     react-dom "^19.2.3"
 
-"@envoymesh/models@0.1.0", "@envoymesh/models@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/models":
-  version "0.1.0"
+"@envoymesh/models@0.2.1", "@envoymesh/models@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/models":
+  version "0.2.1"
   resolved "file:packages/models"
   dependencies:
-    "@envoymesh/api" "0.1.0"
-    "@envoymesh/protocol" "0.1.0"
+    "@envoymesh/api" "0.2.1"
+    "@envoymesh/protocol" "0.2.1"
     zod "^4.3.6"
 
-"@envoymesh/network@0.1.0", "@envoymesh/network@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/network":
-  version "0.1.0"
+"@envoymesh/network@0.2.1", "@envoymesh/network@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/network":
+  version "0.2.1"
   resolved "file:packages/network"
   dependencies:
     "@chainsafe/libp2p-noise" "^17.0.0"
     "@chainsafe/libp2p-quic" "^2.0.1"
     "@chainsafe/libp2p-yamux" "^8.0.0"
-    "@envoymesh/protocol" "0.1.0"
+    "@envoymesh/protocol" "0.2.1"
     "@libp2p/autonat" "^3.0.18"
     "@libp2p/bootstrap" "^12.0.19"
     "@libp2p/circuit-relay-v2" "^4.2.3"
@@ -599,56 +599,57 @@
     uint8arrays "^5.1.0"
 
 "@envoymesh/node@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/node":
-  version "0.1.0"
+  version "0.2.1"
   resolved "file:apps/node"
   dependencies:
-    "@envoymesh/api" "0.1.0"
-    "@envoymesh/bonds" "0.1.0"
-    "@envoymesh/identity" "0.1.0"
-    "@envoymesh/ipfs-helia" "0.1.0"
-    "@envoymesh/kb-obsidian" "0.1.0"
-    "@envoymesh/local-store" "0.1.0"
-    "@envoymesh/models" "0.1.0"
-    "@envoymesh/network" "0.1.0"
-    "@envoymesh/openclaw-runtime" "0.1.0"
-    "@envoymesh/protocol" "0.1.0"
-    "@envoymesh/rag" "0.1.0"
-    "@envoymesh/vault" "0.1.0"
+    "@envoymesh/api" "0.2.1"
+    "@envoymesh/bonds" "0.2.1"
+    "@envoymesh/identity" "0.2.1"
+    "@envoymesh/ipfs-helia" "0.2.1"
+    "@envoymesh/kb-obsidian" "0.2.1"
+    "@envoymesh/local-store" "0.2.1"
+    "@envoymesh/models" "0.2.1"
+    "@envoymesh/network" "0.2.1"
+    "@envoymesh/openclaw-runtime" "0.2.1"
+    "@envoymesh/protocol" "0.2.1"
+    "@envoymesh/rag" "0.2.1"
+    "@envoymesh/vault" "0.2.1"
     "@libp2p/utils" "^7.0.0"
     "@modelcontextprotocol/sdk" "^1.29.0"
     nat-upnp "^1.1.1"
     node-pty "^1.1.0"
+    sharp "^0.35.3"
     ws "^8.20.0"
     yaml "^2.8.1"
 
-"@envoymesh/openclaw-runtime@0.1.0", "@envoymesh/openclaw-runtime@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/openclaw-runtime":
-  version "0.1.0"
+"@envoymesh/openclaw-runtime@0.2.1", "@envoymesh/openclaw-runtime@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/openclaw-runtime":
+  version "0.2.1"
   resolved "file:packages/openclaw-runtime"
 
-"@envoymesh/protocol@0.1.0", "@envoymesh/protocol@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/protocol":
-  version "0.1.0"
+"@envoymesh/protocol@0.2.1", "@envoymesh/protocol@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/protocol":
+  version "0.2.1"
   resolved "file:packages/protocol"
   dependencies:
     zod "^4.3.6"
 
-"@envoymesh/rag@0.1.0", "@envoymesh/rag@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/rag":
-  version "0.1.0"
+"@envoymesh/rag@0.2.1", "@envoymesh/rag@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/rag":
+  version "0.2.1"
   resolved "file:packages/rag"
   dependencies:
-    "@envoymesh/api" "0.1.0"
+    "@envoymesh/api" "0.2.1"
     hnswlib-node "^3.0.0"
 
 "@envoymesh/relay@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/relay":
-  version "0.1.0"
+  version "0.2.1"
   resolved "file:apps/relay"
   dependencies:
-    "@envoymesh/identity" "0.1.0"
-    "@envoymesh/network" "0.1.0"
+    "@envoymesh/identity" "0.2.1"
+    "@envoymesh/network" "0.2.1"
     "@libp2p/utils" "^7.0.0"
     ws "^8.20.0"
 
 "@envoymesh/social@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/social":
-  version "0.1.0"
+  version "0.2.1"
   resolved "file:apps/social"
   dependencies:
     "@envoymesh/api" "0.1.0"
@@ -665,13 +666,13 @@
     yjs "^13.6.30"
 
 "@envoymesh/tauri@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/apps/tauri":
-  version "0.1.0"
+  version "0.2.1"
   resolved "file:apps/tauri"
   dependencies:
     "@tauri-apps/cli" "^2.11.0"
 
-"@envoymesh/vault@0.1.0", "@envoymesh/vault@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/vault":
-  version "0.1.0"
+"@envoymesh/vault@0.2.1", "@envoymesh/vault@file:/Users/shileipeng/Documents/mygithub/EnvoyMesh/packages/vault":
+  version "0.2.1"
   resolved "file:packages/vault"
   dependencies:
     jszip "^3.10.1"
@@ -2001,6 +2002,11 @@
   resolved "https://mirrors.huaweicloud.com/repository/npm/@swc/wasm/-/wasm-1.15.40.tgz"
   integrity sha512-FVS3SEJXBxjpxVUGSzaTaCdJjnXUalRftA/6hILMAJIcYHBoiBfJlxuH6s47iajlAJZP25e5Kf4HNHvvwyOEgw==
 
+"@tauri-apps/api@^2.10.1", "@tauri-apps/api@^2.8.0":
+  version "2.11.1"
+  resolved "https://mirrors.huaweicloud.com/repository/npm/@tauri-apps/api/-/api-2.11.1.tgz"
+  integrity sha512-M2FPuYND2m+wh5hfW9ZpSdxMPdEJovPBWwoHJmwUpysTYNHaOkVFN419m/K0LIgjb/7KU2vBgsUepJWugQCvAA==
+
 "@tauri-apps/cli-darwin-arm64@2.11.0":
   version "2.11.0"
   resolved "https://mirrors.huaweicloud.com/repository/npm/@tauri-apps/cli-darwin-arm64/-/cli-darwin-arm64-2.11.0.tgz"
@@ -2022,6 +2028,20 @@
     "@tauri-apps/cli-win32-arm64-msvc" "2.11.0"
     "@tauri-apps/cli-win32-ia32-msvc" "2.11.0"
     "@tauri-apps/cli-win32-x64-msvc" "2.11.0"
+
+"@tauri-apps/plugin-process@^2.3.1":
+  version "2.3.1"
+  resolved "https://mirrors.huaweicloud.com/repository/npm/@tauri-apps/plugin-process/-/plugin-process-2.3.1.tgz"
+  integrity sha512-nCa4fGVaDL/B9ai03VyPOjfAHRHSBz5v6F/ObsB73r/dA3MHHhZtldaDMIc0V/pnUw9ehzr2iEG+XkSEyC0JJA==
+  dependencies:
+    "@tauri-apps/api" "^2.8.0"
+
+"@tauri-apps/plugin-updater@^2.10.1":
+  version "2.10.1"
+  resolved "https://mirrors.huaweicloud.com/repository/npm/@tauri-apps/plugin-updater/-/plugin-updater-2.10.1.tgz"
+  integrity sha512-NFYMg+tWOZPJdzE/PpFj2qfqwAWwNS3kXrb1tm1gnBJ9mYzZ4WDRrwy8udzWoAnfGCHLuePNLY1WVCNHnh3eRA==
+  dependencies:
+    "@tauri-apps/api" "^2.10.1"
 
 "@testing-library/dom@^10.0.0", "@testing-library/dom@^10.4.1":
   version "10.4.1"

@@ -1,9 +1,13 @@
 name: tauri-release
 
-# Native installers for apps/tauri (Social UI + spawned Node runtime). Electron-era apps/desktop removed.
+# Native installers for apps/tauri (Social UI + spawned Node runtime).
+# Tag push v* (e.g. v0.2.2): signed desktop assets + latest.json on that GitHub Release
+# (same Release you can attach iOS/Android packages to). Legacy desktop-v* / tauri-v* still work.
+# workflow_dispatch: signed builds as Actions artifacts only (no Release).
 on:
   push:
     tags:
+      - "v[0-9]*"
       - "tauri-v*"
       - "desktop-v*"
   workflow_dispatch:
@@ -18,7 +22,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
+        include:
+          - os: macos-latest
+            arch: aarch64
+            args: --config src-tauri/tauri.conf.full.json --config src-tauri/tauri.conf.release.json --target aarch64-apple-darwin
+          - os: macos-latest
+            arch: x86_64
+            args: --config src-tauri/tauri.conf.full.json --config src-tauri/tauri.conf.release.json --target x86_64-apple-darwin
+          - os: windows-latest
+            arch: x86_64
+            args: --config src-tauri/tauri.conf.full.json --config src-tauri/tauri.conf.release.json
+          - os: ubuntu-latest
+            arch: x86_64
+            args: --config src-tauri/tauri.conf.full.json --config src-tauri/tauri.conf.release.json
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
@@ -27,6 +43,8 @@ jobs:
 
       - name: Rust stable
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: Apt dependencies (Linux)
         if: matrix.os == 'ubuntu-latest'
@@ -53,23 +71,68 @@ jobs:
       - name: Stage OpenClaw + bundled skills for Tauri
         run: bash scripts/stage-tauri-openclaw-bundle.sh
 
-      - name: Tauri bundle (Kubo sidecar)
-        run: npm run build:full -w @envoymesh/tauri
+      - name: Fetch Kubo sidecar (full bundles)
+        run: bash scripts/fetch-kubo-sidecar.sh
+
+      - name: Stage Node runtime + push credentials
+        run: |
+          bash scripts/stage-tauri-node-bundle.sh
+          bash scripts/stage-tauri-push-credentials.sh
+        env:
+          # CI may not have AuthKey / SA in the workspace; do not fail the release on that.
+          REQUIRE_PUSH_CREDENTIALS: "0"
+
+      - name: Build + publish signed release (updater artifacts + latest.json)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: apps/tauri
+          tagName: ${{ github.ref_name }}
+          releaseName: EnvoyMesh ${{ github.ref_name }}
+          releaseBody: Desktop home-node installers and OTA updater packages. See docs/ota.md.
+          releaseDraft: false
+          prerelease: false
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: true
+          args: ${{ matrix.args }}
 
-      - name: Upload bundle artifacts (unsigned)
+      - name: Build signed bundles (manual dispatch — no GitHub Release)
+        if: github.event_name == 'workflow_dispatch'
+        working-directory: apps/tauri
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npx tauri build ${{ matrix.args }}
+
+      - name: Upload bundle artifacts (Actions artifacts)
         uses: actions/upload-artifact@v4
         with:
-          name: envoymesh-${{ matrix.os }}-bundle
-          path: apps/tauri/src-tauri/target/release/bundle/
+          name: envoymesh-${{ matrix.os }}-${{ matrix.arch }}-bundle
+          path: apps/tauri/src-tauri/target/**/release/bundle/
+          if-no-files-found: warn
 
   native-slim:
     if: github.event_name == 'workflow_dispatch' && inputs.build_slim == true
     strategy:
       fail-fast: false
       matrix:
-        os: [macos-latest, windows-latest, ubuntu-latest]
+        include:
+          - os: macos-latest
+            arch: aarch64
+            args: --config src-tauri/tauri.conf.slim.json --config src-tauri/tauri.conf.release.json --target aarch64-apple-darwin
+          - os: macos-latest
+            arch: x86_64
+            args: --config src-tauri/tauri.conf.slim.json --config src-tauri/tauri.conf.release.json --target x86_64-apple-darwin
+          - os: windows-latest
+            arch: x86_64
+            args: --config src-tauri/tauri.conf.slim.json --config src-tauri/tauri.conf.release.json
+          - os: ubuntu-latest
+            arch: x86_64
+            args: --config src-tauri/tauri.conf.slim.json --config src-tauri/tauri.conf.release.json
     runs-on: ${{ matrix.os }}
     permissions:
       contents: write
@@ -78,6 +141,8 @@ jobs:
 
       - name: Rust stable
         uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.os == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
 
       - name: Apt dependencies (Linux)
         if: matrix.os == 'ubuntu-latest'
@@ -104,13 +169,24 @@ jobs:
       - name: Stage OpenClaw + bundled skills for Tauri
         run: bash scripts/stage-tauri-openclaw-bundle.sh
 
-      - name: Tauri bundle (Helia-only slim — no Kubo sidecar)
-        run: npm run build:slim -w @envoymesh/tauri
+      - name: Stage Node runtime + push credentials
+        run: |
+          bash scripts/stage-tauri-node-bundle.sh
+          bash scripts/stage-tauri-push-credentials.sh
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REQUIRE_PUSH_CREDENTIALS: "0"
 
-      - name: Upload slim bundle artifacts (unsigned)
+      # Slim is dispatch-only: never publish a GitHub Release from a branch name.
+      - name: Build signed slim bundles (no GitHub Release)
+        working-directory: apps/tauri
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        run: npx tauri build ${{ matrix.args }}
+
+      - name: Upload slim bundle artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: envoymesh-${{ matrix.os }}-bundle-slim
-          path: apps/tauri/src-tauri/target/release/bundle/
+          name: envoymesh-${{ matrix.os }}-${{ matrix.arch }}-bundle-slim
+          path: apps/tauri/src-tauri/target/**/release/bundle/
+          if-no-files-found: warn

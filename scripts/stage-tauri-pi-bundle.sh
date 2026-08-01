@@ -103,9 +103,12 @@ prune_pattern() {
 }
 
 # Source maps — large, never needed at runtime (debugging only).
+# Includes *.d.ts.map — on Windows these often exceed MAX_PATH under nested
+# @mistralai/.../operations/ and break NSIS if left in place.
 prune_pattern '-name "*.map"' "source maps"
-# Original TypeScript sources — the dist/ compiled JS is what runs.
-prune_pattern '-name "*.ts" -not -name "*.d.ts"' "TypeScript sources"
+# TypeScript sources + declarations — runtime only needs compiled .js.
+# (Declarations used to be kept; they add the longest Windows paths.)
+prune_pattern '-name "*.ts" -o -name "*.mts" -o -name "*.cts"' "TypeScript sources/declarations"
 # Test files — *.test.js, *.spec.js, __tests__/, __mocks__/
 prune_pattern '-name "*.test.js" -o -name "*.spec.js" -o -name "*.test.d.ts"' "test files"
 find "${DEST}" -type d \( -name "__tests__" -o -name "__mocks__" -o -name "test" -o -name "tests" \) -not -path "*/node_modules/.bin/*" -exec rm -rf {} + 2>/dev/null || true
