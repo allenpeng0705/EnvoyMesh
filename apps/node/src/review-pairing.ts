@@ -105,12 +105,38 @@ export function resolveReviewPairing(
   return { enabled: true, token, expiresAtMs };
 }
 
+/**
+ * Family-invite bearer derived from the owner review token.
+ * Same TTL / env controls, different string so owner QR (`envoy://pair`) and
+ * family invite (`envoy://invite`) never collide in `pairThinClient`.
+ */
+export function reviewFamilyInviteToken(ownerReviewToken: string): string {
+  return `family.${ownerReviewToken.trim()}`;
+}
+
+/**
+ * True when `token` is the active store-review pairing secret (owner or
+ * family-invite derived form) and not expired. Used so Apple/Google can
+ * re-use one family QR across devices during the review window.
+ */
+export function isActiveReviewPairingToken(
+  settings: ReviewPairingSettings | null | undefined,
+  token: string,
+  nowMs: number = Date.now(),
+): boolean {
+  const t = token.trim();
+  if (!settings?.enabled || !t) return false;
+  if (nowMs >= settings.expiresAtMs) return false;
+  if (t === settings.token) return true;
+  return t === reviewFamilyInviteToken(settings.token);
+}
+
 /** Loud startup banner so demo nodes are obvious in terminal logs. */
 export function logReviewPairingBanner(settings: ReviewPairingSettings | null): void {
   if (!settings) return;
   const until = new Date(settings.expiresAtMs).toISOString();
   console.warn(
-    `[review-pairing] ENABLED until ${until} — long-lived QR token for store review only. ` +
+    `[review-pairing] ENABLED until ${until} — long-lived owner + family invite QR for store review only. ` +
       `Do not enable on end-user DMG/Tauri installs.`,
   );
 }

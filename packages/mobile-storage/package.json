@@ -1,14 +1,14 @@
 {
   "name": "@envoymesh/mobile-storage",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "module",
   "main": "./dist/src/index.js",
   "exports": {
     ".": "./dist/src/index.js"
   },
   "dependencies": {
-    "@envoymesh/bonds": "0.2.1",
-    "@envoymesh/mobile-identity": "0.2.1",
-    "@envoymesh/protocol": "0.2.1"
+    "@envoymesh/bonds": "0.2.2",
+    "@envoymesh/mobile-identity": "0.2.2",
+    "@envoymesh/protocol": "0.2.2"
   }
 }

@@ -1,6 +1,6 @@
 {
   "name": "@envoymesh/mobile",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "module",
   "private": true,
   "scripts": {
@@ -21,12 +21,12 @@
     "@capacitor/filesystem": "^8.0.0",
     "@capacitor/geolocation": "^8.0.0",
     "@capacitor/ios": "^8.0.0",
-    "@envoymesh/api": "0.2.1",
-    "@envoymesh/mobile-identity": "0.2.1",
-    "@envoymesh/mobile-node": "0.2.1",
-    "@envoymesh/mobile-storage": "0.2.1",
-    "@envoymesh/mobile-vault": "0.2.1",
-    "@envoymesh/protocol": "0.2.1",
+    "@envoymesh/api": "0.2.2",
+    "@envoymesh/mobile-identity": "0.2.2",
+    "@envoymesh/mobile-node": "0.2.2",
+    "@envoymesh/mobile-storage": "0.2.2",
+    "@envoymesh/mobile-vault": "0.2.2",
+    "@envoymesh/protocol": "0.2.2",
     "capacitor-secure-storage-plugin": "^0.13.0",
     "react": "^19.2.3",
     "react-dom": "^19.2.3"

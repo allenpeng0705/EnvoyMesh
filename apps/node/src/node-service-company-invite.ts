@@ -52,17 +52,58 @@ export interface CreateCompanyInviteDeps {
   now?: () => Date;
 }
 
+/**
+ * Runtime-only extensions (not part of the public RPC params surface).
+ * `fixedToken` / `clearUsed` are for store-review family invites.
+ */
+export type CreateCompanyInviteRuntimeParams = CreateCompanyInviteParams & {
+  /** Use this bearer token instead of generating one. */
+  fixedToken?: string;
+  /** When upserting by fixedToken, clear usedAt so the invite stays multi-device. */
+  clearUsed?: boolean;
+};
+
 export async function createCompanyInviteViaRuntime(
   deps: CreateCompanyInviteDeps,
-  params?: CreateCompanyInviteParams,
+  params?: CreateCompanyInviteRuntimeParams,
 ): Promise<CreateCompanyInviteResult> {
   const now = deps.now ? deps.now() : new Date();
   const hours = clampExpiryHours(params?.expiresInHours);
   const expiresAt = new Date(now.getTime() + hours * 60 * 60 * 1000).toISOString();
+  const kind: CompanyInviteRecord["kind"] =
+    params?.kind === "family" ? "family" : "company";
+  const note = params?.note?.trim() || undefined;
+  const fixedToken = params?.fixedToken?.trim() || "";
+
+  if (fixedToken) {
+    const existing = await deps.taskStore.findCompanyInviteByToken(fixedToken);
+    if (existing) {
+      const updated: CompanyInviteRecord = {
+        ...existing,
+        ownerId: deps.ownerId,
+        ownerPublicKey: deps.ownerPublicKey ?? existing.ownerPublicKey,
+        agentPeerId: deps.agentPeerId ?? existing.agentPeerId,
+        agentName: deps.agentName ?? existing.agentName,
+        wsUrl: deps.wsUrl,
+        lanWsUrl: deps.lanWsUrl ?? existing.lanWsUrl,
+        relayWsUrl: deps.relayWsUrl ?? existing.relayWsUrl,
+        homeNodePeerId: deps.homeNodePeerId ?? existing.homeNodePeerId,
+        kind,
+        expiresAt,
+        note: note ?? existing.note,
+      };
+      if (params?.clearUsed) {
+        delete updated.usedAt;
+        delete updated.usedByDeviceId;
+      }
+      await deps.taskStore.saveCompanyInvite(updated);
+      return { invite: updated, uri: getPairingUriForInvite(updated) };
+    }
+  }
 
   const record: CompanyInviteRecord = {
     inviteId: randomUUID(),
-    token: generateToken(),
+    token: fixedToken || generateToken(),
     ownerId: deps.ownerId,
     ownerPublicKey: deps.ownerPublicKey,
     agentPeerId: deps.agentPeerId,
@@ -71,10 +112,10 @@ export async function createCompanyInviteViaRuntime(
     lanWsUrl: deps.lanWsUrl,
     relayWsUrl: deps.relayWsUrl,
     homeNodePeerId: deps.homeNodePeerId,
-    kind: params?.kind === "family" ? "family" : "company",
+    kind,
     createdAt: now.toISOString(),
     expiresAt,
-    note: params?.note?.trim() || undefined,
+    note,
   };
 
   await deps.taskStore.saveCompanyInvite(record);

@@ -1,10 +1,10 @@
 # Desktop OTA (Over-the-Air) Updates
 
-**Status:** App + CI wired; Steps 1–3 done (password-protected key, pubkeys in conf, GitHub Secrets uploaded) — cut a tagged release when ready (Step 4)  
+**Status:** App + CI wired; Steps 1–3 done; workspace version bumped to **0.2.2** — commit OTA + version, then tag `v0.2.2` (Step 4)  
 **Scope:** Full EnvoyMesh **desktop** app (Tauri) — Node + Social + OpenClaw + Pi in one update  
-**Out of scope:** EnvoyGo (App Store / Play / sideload), sidecar-only OpenClaw/Pi swaps, `npm run node:dev` installs
+**Out of scope:** EnvoyGo store listing process, sidecar-only OpenClaw/Pi swaps, `npm run node:dev` installs
 
-Related: [packaging.md](./packaging.md), CI [`.github/workflows/tauri-release.yml`](../.github/workflows/tauri-release.yml), helper [`scripts/generate-tauri-updater-keys.sh`](../scripts/generate-tauri-updater-keys.sh).
+Related: [VERSIONING.md](../VERSIONING.md) (bump SemVer / `v*` tags), [packaging.md](./packaging.md), CI [`.github/workflows/tauri-release.yml`](../.github/workflows/tauri-release.yml), helper [`scripts/generate-tauri-updater-keys.sh`](../scripts/generate-tauri-updater-keys.sh).
 
 ---
 
@@ -12,10 +12,11 @@ Related: [packaging.md](./packaging.md), CI [`.github/workflows/tauri-release.ym
 
 | Step | What | Status |
 |------|------|--------|
-| **1** | Generate password-protected updater keypair | **Done** on this machine — `~/.tauri/envoymesh.key` + `.pub` + `.password` |
+| **1** | Generate password-protected updater keypair | **Done** — `~/.tauri/envoymesh.key` + `.pub` + `.password` |
 | **2** | Put **public** key in the app | **Done** — `plugins.updater.pubkey` in all three `tauri.conf*.json` |
-| **3** | Put **private** key + password in GitHub Secrets | Run [Step 3](#step-3--github-secrets) if `gh secret list` does not show both secrets |
-| **4** | First signed release (`v0.2.2`) + dogfood OTA | **You** — see [Step 4](#step-4--first-ota-release) |
+| **3** | Put **private** key + password in GitHub Secrets | **Done** (re-check with `gh secret list` if unsure) |
+| **4a** | Bump package / code version to match the release | **Done for 0.2.2** — see [Before GitHub release](#before-github-release--bump-version-then-tag) |
+| **4b** | Commit, tag `v0.2.2`, push, attach mobile, dogfood OTA | **You** — see [Step 4](#step-4--first-ota-release) |
 
 ### Already in the repo
 
@@ -124,7 +125,7 @@ Use a single SemVer tag **`v0.2.2`** (not `desktop-v…`) for the release that h
 | Asset | Who adds it |
 |--------|-------------|
 | DMG / NSIS EXE (+ updater `.sig` / `.app.tar.gz`) + **`latest.json`** | `tauri-release.yml` on tag push |
-| iOS / Android packages | You (upload to the **same** Release) |
+| iOS / Android / EnvoyGo packages | You (upload to the **same** Release) |
 
 Desktop OTA only reads `latest.json` and the desktop updater files. Mobile packages on the same Release are ignored by Tauri. Keep that Release marked **Latest**.
 
@@ -134,38 +135,56 @@ Legacy tags `desktop-v*` / `tauri-v*` still trigger CI if you ever use them; pre
 
 Only installs that **already contain the current pubkey** can verify signed updates. Plan:
 
-1. Commit OTA work (including pubkey) and ship / install build **N** (manual DMG/NSIS from Release `vN`).  
-2. Bump to **N+1**, tag `vN+1`, let CI publish desktop assets + `latest.json`; attach mobile builds to that Release.  
+1. Commit OTA work + version bump, ship / install build **N** (manual DMG/NSIS from Release `vN`).  
+2. Later bump to **N+1**, tag `vN+1`, let CI publish desktop assets + `latest.json`; attach mobile builds to that Release.  
 3. On the machine with build **N**, use Settings → App → Check for updates → install **N+1**.
 
 Builds from before the pubkey was embedded cannot OTA onto the signed channel — they need a one-time manual install of an OTA-capable build.
 
-Example: after merging OTA at `0.2.1`, tag **`v0.2.2`** for CI. Dogfood in-app update from an install that already has this pubkey; if `0.2.2` is the first pubkey-bearing build, use Settings → update on the next tag (`v0.2.3`).
+---
 
-### Bump SemVer, tag, and push
+### Before GitHub release — bump version, then tag
 
-This repo syncs versions via root `VERSION` / `npm version` and `scripts/sync-version.mjs` (updates package.json files, Tauri confs, Cargo, etc.). App SemVer is `0.2.2`; the git tag is **`v0.2.2`**.
+**Canonical steps:** [VERSIONING.md](../VERSIONING.md) (source of truth = root `VERSION`, sync via `npm version` / `scripts/sync-version.mjs`).
 
-**1. Commit OTA work first** (pubkey + CI + UI must be on the branch you will tag).
+OTA-specific rules:
 
-**2. Bump version** (example: `0.2.1` → `0.2.2`):
+| Rule | Detail |
+|------|--------|
+| SemVer in code | `0.2.2` (from `VERSION`) |
+| Git / GitHub tag | `v0.2.2` — must match; triggers `tauri-release.yml` |
+| When to bump | **After** feature work is ready, **before** pushing the release tag |
+| EnvoyGo | Not in sync-version — bump `apps/envoygo/pubspec.yaml` yourself if this Release includes EnvoyGo |
+| Cargo.lock | Ensure `envoymesh` package version matches `Cargo.toml` after bump |
+
+Short path (sync only, then you commit/tag — typical when other changes are in the same release):
 
 ```bash
 cd ~/Documents/mygithub/EnvoyMesh
-npm version 0.2.2 --no-git-tag-version
-node scripts/sync-version.mjs   # if the npm version hook did not already run
-```
-
-**3. Commit the version bump, then tag and push:**
-
-```bash
-git add -A   # or only the version-touched files
+npm version 0.2.2 --no-git-tag-version   # runs sync-version.mjs
+# verify: cat VERSION  →  0.2.2
+git add VERSION package.json package-lock.json apps packages \
+  apps/tauri/src-tauri/Cargo.toml apps/tauri/src-tauri/Cargo.lock \
+  apps/tauri/src-tauri/tauri.conf*.json \
+  apps/mobile/android/app/build.gradle
 git commit -m "$(cat <<'EOF'
 chore: bump version to 0.2.2
 
 EOF
 )"
+```
 
+Or, on a clean tree, `npm version 0.2.2` alone commits and creates tag `v0.2.2` (see VERSIONING.md).
+
+For the **next** release: `0.2.3` / `v0.2.3`, same process.
+
+---
+
+### Tag, push, attach mobile, verify
+
+If the tag does not exist yet:
+
+```bash
 git tag v0.2.2
 git push origin HEAD
 git push origin v0.2.2
@@ -173,22 +192,23 @@ git push origin v0.2.2
 
 Pushing **`v0.2.2`** starts `.github/workflows/tauri-release.yml`, which creates/updates GitHub Release **`v0.2.2`**, signs desktop installers, and publishes `latest.json`.
 
-**4. Attach iOS / Android** (and any other assets) to that same Release in the GitHub UI or via `gh release upload v0.2.2 …`.
+**Then:**
 
-**5. Watch CI:**
+1. Attach iOS / Android / EnvoyGo packages to that same Release (`gh release upload v0.2.2 …` or GitHub UI).  
+2. Watch CI:
 
 ```bash
 gh run list --repo allenpeng0705/EnvoyMesh --workflow=tauri-release.yml --limit 5
 ```
 
-**6. Confirm the Release** is **Latest** (not draft/prerelease) and includes `latest.json` + desktop updater assets (`darwin-aarch64`, `darwin-x86_64`, `windows-x86_64`, `linux-x86_64`), plus your mobile packages:
+3. Confirm the Release is **Latest** (not draft/prerelease) and includes `latest.json` + desktop updater assets, plus your mobile packages:
 
 ```bash
 gh release view v0.2.2 --repo allenpeng0705/EnvoyMesh
 curl -fsSL https://github.com/allenpeng0705/EnvoyMesh/releases/latest/download/latest.json
 ```
 
-**7. Dogfood:** older OTA-capable install → Settings → App → Check for updates → confirm new version + profile data under identifier `dev.envoymesh.desktop` + EnvoyAI/Pi still start.
+4. Dogfood: older OTA-capable install → Settings → App → Check for updates → confirm new version + profile data under identifier `dev.envoymesh.desktop` + EnvoyAI/Pi still start.
 
 ### Manual CI (`workflow_dispatch`)
 

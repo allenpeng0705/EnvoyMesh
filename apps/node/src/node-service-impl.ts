@@ -543,6 +543,10 @@ import {
   revokeCompanyInviteViaRuntime,
 } from "./node-service-company-invite.js";
 import {
+  isActiveReviewPairingToken,
+  resolveReviewPairing,
+} from "./review-pairing.js";
+import {
   createFleetManifestViaRuntime,
   importFleetManifestViaRuntime,
   listFleetManifestsViaRuntime,
@@ -8269,6 +8273,10 @@ class NodeServiceImpl implements NodeService {
       {
         createInvite: async (inviteParams) =>
           createCompanyInviteViaPublicRuntime(this._fleetPublicDeps(), inviteParams),
+        getReviewPairing: async () => {
+          const config = await this._configStore.load().catch(() => null);
+          return resolveReviewPairing(config ?? null);
+        },
       },
       params,
     );
@@ -8300,7 +8308,12 @@ class NodeServiceImpl implements NodeService {
     // Fail early when this QR was already consumed by a *different* device.
     // Same-device re-pair (idempotent) is still allowed. Re-pair on a new /
     // reset phone needs a freshly generated family invite QR from the owner.
-    if (invite.usedAt && invite.usedByDeviceId) {
+    // Store-review tokens stay multi-device (Apple + Google can share one QR).
+    const review = resolveReviewPairing(
+      await this._configStore.load().catch(() => null),
+    );
+    const reviewReusable = isActiveReviewPairingToken(review, pairingToken);
+    if (!reviewReusable && invite.usedAt && invite.usedByDeviceId) {
       const clientDeviceId = params.deviceId?.trim() ?? "";
       const deviceId =
         clientDeviceId.length >= 8
@@ -8786,6 +8799,12 @@ class NodeServiceImpl implements NodeService {
     if (!this._taskStore) return;
     const invite = await this._taskStore.findCompanyInviteByToken(pairingToken.trim());
     if (!invite) return;
+    // Store-review token: leave the invite unconsumed so multiple reviewers
+    // (and owner QR using the same tok) can pair during the review window.
+    const review = resolveReviewPairing(
+      await this._configStore.load().catch(() => null),
+    );
+    if (isActiveReviewPairingToken(review, pairingToken)) return;
     const consumed = await consumeCompanyInviteViaRuntime(
       this._taskStore,
       pairingToken,
@@ -8831,6 +8850,10 @@ class NodeServiceImpl implements NodeService {
     const invite = this._taskStore
       ? await this._taskStore.findCompanyInviteByToken(pairingToken)
       : undefined;
+    const review = resolveReviewPairing(
+      await this._configStore.load().catch(() => null),
+    );
+    const reviewReusable = isActiveReviewPairingToken(review, pairingToken);
     const isFamilyInvite = invite?.kind === "family";
 
     if (isFamilyInvite && invite) {
@@ -8838,7 +8861,12 @@ class NodeServiceImpl implements NodeService {
       if (Date.parse(invite.expiresAt) <= Date.now()) {
         throw new Error("Family invite token has expired");
       }
-      if (invite.usedAt && invite.usedByDeviceId && invite.usedByDeviceId !== deviceId) {
+      if (
+        !reviewReusable &&
+        invite.usedAt &&
+        invite.usedByDeviceId &&
+        invite.usedByDeviceId !== deviceId
+      ) {
         throw new Error(
           "Family invite token was already used by another device. Ask the home owner to show a new family invite QR, then choose I'm back and select your profile.",
         );

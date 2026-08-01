@@ -80,6 +80,40 @@ describe("createCompanyInviteViaRuntime", () => {
     const result = await createCompanyInviteViaRuntime(deps, { note: "   " });
     expect(result.invite.note).toBeUndefined();
   });
+
+  it("upserts by fixedToken and can clear usedAt for store-review reuse", async () => {
+    const deps = baseDeps();
+    const first = await createCompanyInviteViaRuntime(deps, {
+      kind: "family",
+      fixedToken: "review-shared-tok",
+      expiresInHours: 24,
+      note: "Family invite (store review)",
+    });
+    expect(first.invite.token).toBe("review-shared-tok");
+    expect(first.invite.kind).toBe("family");
+
+    await consumeCompanyInviteViaRuntime(
+      deps.taskStore,
+      "review-shared-tok",
+      "thin-client:apple",
+    );
+    const afterUse = await deps.taskStore.findCompanyInviteByToken("review-shared-tok");
+    expect(afterUse?.usedAt).toBeTruthy();
+
+    const second = await createCompanyInviteViaRuntime(deps, {
+      kind: "family",
+      fixedToken: "review-shared-tok",
+      expiresInHours: 48,
+      clearUsed: true,
+      note: "Family invite (store review)",
+    });
+    expect(second.invite.inviteId).toBe(first.invite.inviteId);
+    expect(second.invite.usedAt).toBeUndefined();
+    expect(second.invite.usedByDeviceId).toBeUndefined();
+    expect(Date.parse(second.invite.expiresAt) - Date.now()).toBeGreaterThan(
+      47 * 60 * 60 * 1000,
+    );
+  });
 });
 
 describe("listCompanyInvitesViaRuntime", () => {

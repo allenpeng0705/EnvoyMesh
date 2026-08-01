@@ -24,6 +24,7 @@ import type {
   SessionTokenStore,
 } from "@envoymesh/local-store"
 import { getRpcCaller, requireOwnerProfile } from "./rpc-caller-context.js"
+import { reviewFamilyInviteToken } from "./review-pairing.js"
 
 export function toFamilyProfile(record: FamilyProfileRecord): FamilyProfile {
   return {
@@ -205,7 +206,19 @@ export interface GenerateFamilyInviteDeps {
     expiresInHours?: number
     note?: string
     kind: "family"
+    /** Store-review: stable token from ENVOY_REVIEW_PAIRING_TOKEN. */
+    fixedToken?: string
+    /** Store-review: keep invite multi-device reusable. */
+    clearUsed?: boolean
   }) => Promise<{ invite: { token: string; expiresAt: string }; uri: string }>
+  /**
+   * When review pairing is enabled, family invite QR uses the same token + TTL
+   * as the owner pairing QR (`ENVOY_REVIEW_PAIRING_*`).
+   */
+  getReviewPairing?: () =>
+    | { enabled: boolean; token: string; expiresAtMs: number }
+    | null
+    | Promise<{ enabled: boolean; token: string; expiresAtMs: number } | null>
 }
 
 export async function generateFamilyInviteTokenViaRuntime(
@@ -213,6 +226,28 @@ export async function generateFamilyInviteTokenViaRuntime(
   params?: GenerateFamilyInviteTokenParams,
 ): Promise<GenerateFamilyInviteTokenResult> {
   requireOwnerProfile("generate family invite tokens")
+  const review = deps.getReviewPairing
+    ? await Promise.resolve(deps.getReviewPairing())
+    : null
+
+  if (review?.enabled && review.token) {
+    const remainingMs = Math.max(0, review.expiresAtMs - Date.now())
+    const expiresInHours = Math.max(1, Math.ceil(remainingMs / (60 * 60 * 1000)))
+    const fixedToken = reviewFamilyInviteToken(review.token)
+    const result = await deps.createInvite({
+      expiresInHours,
+      note: params?.note?.trim() || "Family invite (store review)",
+      kind: "family",
+      fixedToken,
+      clearUsed: true,
+    })
+    return {
+      token: result.invite.token,
+      uri: result.uri,
+      expiresAt: result.invite.expiresAt,
+    }
+  }
+
   const result = await deps.createInvite({
     expiresInHours: params?.expiresInHours ?? 72,
     note: params?.note?.trim() || "Family invite",

@@ -1,12 +1,12 @@
 {
   "name": "@envoymesh/mobile-vault",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "module",
   "main": "./dist/src/index.js",
   "exports": {
     ".": "./dist/src/index.js"
   },
   "dependencies": {
-    "@envoymesh/protocol": "0.2.1"
+    "@envoymesh/protocol": "0.2.2"
   }
 }

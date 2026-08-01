@@ -11,7 +11,10 @@
  * Returns true if the token is valid.
  */
 import type { SessionTokenStore, LocalTaskStore } from "@envoymesh/local-store";
-import type { ReviewPairingSettings } from "./review-pairing.js";
+import {
+  isActiveReviewPairingToken,
+  type ReviewPairingSettings,
+} from "./review-pairing.js";
 
 export interface ValidatePairingTokenContext {
   /** Opt-in store-review long-lived token (null when disabled). */
@@ -39,8 +42,9 @@ export async function validatePairingTokenViaRuntime(
   if (!t) return false;
 
   // 0. Review / App Store demo token (opt-in, long TTL).
+  // Accepts owner tok and derived family.<tok> (same ENVOY_REVIEW_PAIRING_* TTL).
   const review = await Promise.resolve(ctx.getReviewPairing());
-  if (review && t === review.token && Date.now() < review.expiresAtMs) {
+  if (isActiveReviewPairingToken(review, t)) {
     return true;
   }
 

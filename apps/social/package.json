@@ -1,6 +1,6 @@
 {
   "name": "@envoymesh/social",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "module",
   "private": true,
   "scripts": {
@@ -9,8 +9,8 @@
     "preview": "vite preview"
   },
   "dependencies": {
-    "@envoymesh/api": "0.2.1",
-    "@envoymesh/rag": "0.2.1",
+    "@envoymesh/api": "0.2.2",
+    "@envoymesh/rag": "0.2.2",
     "@tauri-apps/plugin-process": "^2.3.1",
     "@tauri-apps/plugin-updater": "^2.10.1",
     "@xterm/addon-fit": "^0.11.0",
