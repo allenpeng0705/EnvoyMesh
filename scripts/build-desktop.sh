@@ -269,7 +269,20 @@ echo ""
 # Social includes family-network Settings UI + all i18n locales (en/zh/ko/ja/fr/de/it).
 echo "[3/6] Building Social UI..."
 cd "${PROJECT_DIR}"
-if [ ! -d "node_modules/@envoymesh/api" ]; then
+# Also require Tauri updater JS plugins — Social's tsc imports them for OTA.
+# An older node_modules can have @envoymesh/api but miss these after a pull.
+need_npm_install=0
+for dep in \
+  node_modules/@envoymesh/api \
+  node_modules/@tauri-apps/plugin-updater \
+  node_modules/@tauri-apps/plugin-process
+do
+  if [ ! -d "$dep" ]; then
+    need_npm_install=1
+    echo "  Missing dependency: $dep"
+  fi
+done
+if [ "$need_npm_install" -eq 1 ]; then
   echo "  Installing workspace dependencies (root)..."
   npm install
 fi

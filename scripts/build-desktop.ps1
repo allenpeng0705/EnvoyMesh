@@ -1661,8 +1661,16 @@ Write-Step "2/5  Building Social UI..."
 # Build via workspace from repo root — never `cd apps/social; npm install`.
 # Nested install re-resolves @envoymesh/* against the public registry and 404s
 # (those packages are private workspace links only).
-if (-not (Test-Path (Join-Path $RepoRoot "node_modules\@envoymesh\api"))) {
-    Write-Info "Installing root dependencies..."
+# Also require Tauri updater JS plugins — Social's tsc imports them for OTA.
+# An older node_modules can have @envoymesh/api but miss these after a pull.
+$socialDepRoots = @(
+    (Join-Path $RepoRoot "node_modules\@envoymesh\api"),
+    (Join-Path $RepoRoot "node_modules\@tauri-apps\plugin-updater"),
+    (Join-Path $RepoRoot "node_modules\@tauri-apps\plugin-process")
+)
+$missingSocialDeps = @($socialDepRoots | Where-Object { -not (Test-Path $_) })
+if ($missingSocialDeps.Count -gt 0) {
+    Write-Info "Installing root dependencies (missing: $($missingSocialDeps -join ', '))..."
     npm install
     if ($LASTEXITCODE -ne 0) {
         Write-Fail "npm install failed"
