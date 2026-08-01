@@ -9,8 +9,11 @@
 # Feature packaging notes (family network / push / EnvoyGo l10n):
 #   - Family network: ships in compiled apps/node + Social UI — no extra assets.
 #   - Push (iOS APNs + Android FCM for EnvoyGo): stage-tauri-push-credentials.ps1
-#     copies repo-root push-config.json + AuthKey_*.p8 + serviceAccountKey.json
-#     into resources\node\ after node staging. Full verify runs after social:build.
+#     copies repo-root push-config.json + AuthKey_LKPCR48WHW.p8 +
+#     serviceAccountKey.json into resources\node\ after node staging.
+#     Default REQUIRE_PUSH_CREDENTIALS=1 — build fails if those secrets are
+#     missing when push-config.json is present. Set
+#     $env:REQUIRE_PUSH_CREDENTIALS="0" to allow packaging without push.
 #   - EnvoyGo localization is Flutter-only (apps/envoygo) — not part of this
 #     desktop bundle; Social i18n locales are included via npm run social:build.
 #
@@ -533,7 +536,11 @@ if ($stageError) {
 # Must run AFTER node staging (which recreates resources\node\). Secrets live
 # only on the packager's machine (gitignored at repo root); relative paths in
 # push-config.json resolve via ENVOYMESH_NODE_BUNDLE_DIR at runtime.
-Write-Info "Staging push credentials (if present at repo root)..."
+# Default: fail if push-config.json exists but AuthKey / serviceAccountKey missing.
+if (-not $env:REQUIRE_PUSH_CREDENTIALS) {
+    $env:REQUIRE_PUSH_CREDENTIALS = "1"
+}
+Write-Info "Staging push credentials (REQUIRE_PUSH_CREDENTIALS=$($env:REQUIRE_PUSH_CREDENTIALS))..."
 $stagePushPs1 = Join-Path $PSScriptRoot "stage-tauri-push-credentials.ps1"
 if (Test-Path $stagePushPs1) {
     & $stagePushPs1 -RepoRoot $RepoRoot -Dest (Join-Path $TauriResources "node")
@@ -542,7 +549,8 @@ if (Test-Path $stagePushPs1) {
         exit 1
     }
 } else {
-    Write-Warn "stage-tauri-push-credentials.ps1 missing — skipping push credential staging"
+    Write-Fail "stage-tauri-push-credentials.ps1 missing — cannot stage APNs/FCM secrets for EnvoyGo push"
+    exit 1
 }
 
 # 1c. OpenClaw gateway.
@@ -1693,12 +1701,14 @@ if (Test-Path $rootPushCfg) {
         if (Test-Path (Join-Path $TauriResources "node\$keyBase")) {
             Write-Ok "APNs key: $keyBase"
         } else {
-            Write-Warn "push-config.json bundled but missing $keyBase in resources\node\"
+            Write-Fail "push-config.json bundled but missing $keyBase in resources\node\ (required for EnvoyGo iOS push)"
+            exit 1
         }
         if (Test-Path (Join-Path $TauriResources "node\$saBase")) {
             Write-Ok "FCM account: $saBase"
         } else {
-            Write-Warn "push-config.json bundled but missing $saBase in resources\node\"
+            Write-Fail "push-config.json bundled but missing $saBase in resources\node\ (required for EnvoyGo Android push)"
+            exit 1
         }
     } catch {
         Write-Warn "Could not parse staged push-config.json: $($_.Exception.Message)"

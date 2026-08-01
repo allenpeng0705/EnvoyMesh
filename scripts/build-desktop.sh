@@ -6,8 +6,12 @@
 # Feature packaging notes (family network / push / EnvoyGo l10n):
 #   - Family network: ships in compiled apps/node + Social UI — no extra assets.
 #   - Push (iOS APNs + Android FCM for EnvoyGo): stage-tauri-push-credentials.sh
-#     copies repo-root push-config.json + AuthKey_*.p8 + serviceAccountKey.json
-#     into resources/node/ after node staging. Verify runs after social:build.
+#     copies repo-root push-config.json + AuthKey_LKPCR48WHW.p8 +
+#     serviceAccountKey.json into resources/node/ after node staging.
+#     Default REQUIRE_PUSH_CREDENTIALS=1 — build fails if those secrets are
+#     missing when push-config.json is present (so installed home nodes can
+#     notify EnvoyGo). Set REQUIRE_PUSH_CREDENTIALS=0 to allow packaging
+#     without push (CI / machines without keys).
 #   - EnvoyGo localization is Flutter-only (apps/envoygo) — not part of this
 #     desktop bundle; Social i18n locales are included via npm run social:build.
 #
@@ -244,6 +248,8 @@ bash scripts/stage-tauri-node-bundle.sh
 # paths in push-config.json resolve via ENVOYMESH_NODE_BUNDLE_DIR at runtime.
 # Covers iOS APNs + Android FCM for EnvoyGo clients talking to this home node.
 # Family network needs no extra staging — it ships in the compiled node + Social UI.
+# Default: fail the build if push-config.json exists but secrets are missing.
+export REQUIRE_PUSH_CREDENTIALS="${REQUIRE_PUSH_CREDENTIALS:-1}"
 bash scripts/stage-tauri-push-credentials.sh
 echo ""
 
@@ -291,9 +297,10 @@ install_tauri_cli() {
 }
 
 run_tauri_build() {
-    local extra_args=("$@")
     # Install from repo root via workspace — never plain `npm install` inside
     # apps/tauri (that re-resolves private @envoymesh/* against the registry).
+    # Pass-through "$@" only — do not copy into empty arrays; macOS /bin/bash
+    # 3.2 + `set -u` treats `"${empty[@]}"` as unbound.
     cd "${PROJECT_DIR}"
     if [ ! -d "node_modules/@tauri-apps/cli" ] && [ ! -d "apps/tauri/node_modules/@tauri-apps/cli" ]; then
       echo "  Installing @envoymesh/tauri dependencies (workspace)..."
@@ -302,7 +309,6 @@ run_tauri_build() {
     cd "${PROJECT_DIR}/apps/tauri"
     # Slim config when Pi was skipped — must match PowerShell -SkipPi so the
     # installer does not reference a missing resources/pi/**/* glob.
-    local config_args=()
     if [ "${SKIP_PI:-0}" = "1" ]; then
       local slim_conf="src-tauri/tauri.conf.slim.json"
       if [ ! -f "${slim_conf}" ]; then
@@ -310,14 +316,18 @@ run_tauri_build() {
         exit 1
       fi
       echo "  Using slim config: ${slim_conf} (Pi omitted)"
-      config_args=(--config "${slim_conf}")
+      if command -v cargo-tauri &> /dev/null; then
+        cargo tauri build --config "${slim_conf}" "$@"
+      else
+        npx tauri build --config "${slim_conf}" "$@"
+      fi
     else
       echo "  Using default config: tauri.conf.json (Pi + OpenClaw + Kubo)"
-    fi
-    if command -v cargo-tauri &> /dev/null; then
-        cargo tauri build "${config_args[@]}" "${extra_args[@]}"
-    else
-        npx tauri build "${config_args[@]}" "${extra_args[@]}"
+      if command -v cargo-tauri &> /dev/null; then
+        cargo tauri build "$@"
+      else
+        npx tauri build "$@"
+      fi
     fi
 }
 

@@ -15,8 +15,11 @@
 #
 # Behaviour:
 #   - Missing push-config.json → warn and skip (CI / builds without push still work)
-#   - push-config present but a referenced secret missing → warn (or fail if
-#     REQUIRE_PUSH_CREDENTIALS=1)
+#   - push-config present but a referenced secret missing → fail if
+#     REQUIRE_PUSH_CREDENTIALS=1 (build-desktop.sh/ps1 default), else warn.
+#     Expected repo-root files (names from push-config.json):
+#       AuthKey_LKPCR48WHW.p8  (apns.keyPath)
+#       serviceAccountKey.json (fcm.serviceAccountJsonPath)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"

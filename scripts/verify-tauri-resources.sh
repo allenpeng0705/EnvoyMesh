@@ -119,12 +119,12 @@ if [ -f "$ROOT_PUSH" ]; then
     if [ -f "$RES/node/$key_base" ]; then
       echo "  APNs key:      $key_base"
     else
-      warn "push-config.json bundled but missing $key_base in resources/node/"
+      fail "push-config.json bundled but missing $key_base in resources/node/ (required for EnvoyGo iOS push) — place it at repo root and re-run stage-tauri-push-credentials.sh"
     fi
     if [ -f "$RES/node/$sa_base" ]; then
       echo "  FCM account:   $sa_base"
     else
-      warn "push-config.json bundled but missing $sa_base in resources/node/"
+      fail "push-config.json bundled but missing $sa_base in resources/node/ (required for EnvoyGo Android push) — place it at repo root and re-run stage-tauri-push-credentials.sh"
     fi
   fi
 elif [ -f "$PUSH_CFG" ]; then

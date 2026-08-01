@@ -1,5 +1,5 @@
 {
-  "_comment": "Copy to push-config.json at the repo root for desktop packaging. Keep AuthKey_*.p8 and serviceAccountKey.json gitignored beside it. scripts/build-desktop.sh and build-desktop.ps1 stage them into apps/tauri/src-tauri/resources/node/.",
+  "_comment": "Copy to push-config.json at the repo root for desktop packaging. Keep AuthKey_LKPCR48WHW.p8 and serviceAccountKey.json gitignored beside it. scripts/build-desktop.sh and build-desktop.ps1 REQUIRE these (REQUIRE_PUSH_CREDENTIALS=1) and stage them into apps/tauri/src-tauri/resources/node/ so the installed home node can push to EnvoyGo (APNs + FCM).",
   "_comment_paths": "keyPath and serviceAccountJsonPath may be absolute or relative. Relative paths resolve against the directory that contains push-config.json (repo root in dev, resources/node in a packaged app).",
   "apns": {
     "keyId": "YOUR_APNS_KEY_ID",

@@ -8,7 +8,9 @@
 # Destination: apps\tauri\src-tauri\resources\node\
 # Must run AFTER stage-bundle-node-runtime.ps1 (which recreates the dest).
 #
-# Set REQUIRE_PUSH_CREDENTIALS=1 to fail the build when secrets are missing.
+# build-desktop.ps1 defaults REQUIRE_PUSH_CREDENTIALS=1 so packaging fails
+# when AuthKey_LKPCR48WHW.p8 / serviceAccountKey.json are missing.
+# Set REQUIRE_PUSH_CREDENTIALS=0 to allow builds without push.
 
 [CmdletBinding()]
 param(
