@@ -205,12 +205,18 @@ if ($safetyNetCopied -gt 0) {
 # only. On win32, libvips is embedded inside @img/sharp-win32-* (no sibling
 # @img/sharp-libvips-win32-* in sharp's optionalDependencies).
 $ridOs = if ($IsWindows -or $env:OS -match "Windows") { "win32" } elseif ($IsLinux) { "linux" } else { "darwin" }
+# Prefer env vars — RuntimeInformation.ProcessArchitecture.ToString() can throw
+# "You cannot call a method on a null-valued expression" on Windows PS 5.1.
 $ridCpu = "x64"
-try {
-    $arch = [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString()
-    if ($arch -eq "Arm64") { $ridCpu = "arm64" }
-} catch {
-    if ($env:PROCESSOR_ARCHITECTURE -match "ARM64") { $ridCpu = "arm64" }
+$procArch = [string]$env:PROCESSOR_ARCHITECTURE
+$procArchWow = [string]$env:PROCESSOR_ARCHITEW6432
+if ($procArch -match "ARM64" -or $procArchWow -match "ARM64") {
+    $ridCpu = "arm64"
+} elseif ($IsLinux -or $IsMacOS) {
+    try {
+        $unameM = (& uname -m 2>$null | Out-String).Trim()
+        if ($unameM -match "arm64|aarch64") { $ridCpu = "arm64" }
+    } catch { }
 }
 $sharpPlatformDeps = [System.Collections.Generic.List[string]]::new()
 $sharpPlatformDeps.Add("@img/sharp-$ridOs-$ridCpu")

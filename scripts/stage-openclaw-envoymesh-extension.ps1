@@ -9,7 +9,16 @@
 param()
 
 $ErrorActionPreference = "Stop"
-$Root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+# Prefer $PSScriptRoot — $MyInvocation.MyCommand.Path can be $null when the
+# script is invoked via `& path.ps1` under some hosts, which then throws
+# "You cannot call a method on a null-valued expression".
+if ($PSScriptRoot) {
+    $Root = Split-Path -Parent $PSScriptRoot
+} else {
+    $scriptPath = $MyInvocation.MyCommand.Path
+    if (-not $scriptPath) { throw "Cannot resolve script path (PSScriptRoot and MyInvocation.MyCommand.Path are both empty)" }
+    $Root = Split-Path -Parent (Split-Path -Parent $scriptPath)
+}
 $ExtSrc = Join-Path $Root "OpenClawExtension"
 $Seed = Join-Path $Root "apps\tauri\src-tauri\resources\openclaw-envoymesh"
 $Oc = Join-Path $Root "apps\tauri\src-tauri\resources\openclaw"

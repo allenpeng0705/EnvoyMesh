@@ -477,6 +477,10 @@ function Invoke-ExternalQuiet {
 # Resolve repo root (works even if cwd is somewhere else when invoking).
 # -----------------------------------------------------------------------------
 
+if (-not $PSScriptRoot) {
+    Write-Host "  ✗ `$PSScriptRoot is empty — run as: .\scripts\build-desktop.ps1" -ForegroundColor Red
+    exit 1
+}
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 Set-Location $RepoRoot
 
@@ -523,14 +527,23 @@ Write-Step "1/5  Staging sidecars..."
 # crashed on first launch ("Could not load the sharp module using win32-x64").
 Write-Info "Ensuring sharp platform natives for this host..."
 $sharpOs = "win32"
-$sharpCpu = if ([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString() -eq "Arm64") { "arm64" } else { "x64" }
+# Prefer PROCESSOR_ARCHITECTURE — RuntimeInformation.ProcessArchitecture.ToString()
+# throws "You cannot call a method on a null-valued expression" on some
+# Windows PowerShell 5.1 / older .NET Framework hosts.
+$sharpCpu = "x64"
+$procArch = [string]$env:PROCESSOR_ARCHITECTURE
+$procArchWow = [string]$env:PROCESSOR_ARCHITEW6432
+if ($procArch -match 'ARM64' -or $procArchWow -match 'ARM64') {
+    $sharpCpu = "arm64"
+}
 $sharpPlat = "@img/sharp-$sharpOs-$sharpCpu"
 $sharpPlatRel = Join-Path "@img" "sharp-$sharpOs-$sharpCpu"
-$sharpPlatPath = Join-Path (Join-Path $RepoRoot "node_modules") $sharpPlatRel
-if (-not (Test-Path $sharpPlatPath)) {
-    $sharpPlatPath = Join-Path (Join-Path $RepoRoot "apps\node\node_modules") $sharpPlatRel
-}
-if (-not (Test-Path $sharpPlatPath)) {
+$sharpCandidates = @(
+    (Join-Path $RepoRoot (Join-Path "node_modules" $sharpPlatRel)),
+    (Join-Path $RepoRoot (Join-Path "apps\node\node_modules" $sharpPlatRel))
+)
+$sharpPlatPath = $sharpCandidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+if (-not $sharpPlatPath) {
     Write-Info "  $sharpPlat missing — running: npm install --os=$sharpOs --cpu=$sharpCpu --include=optional sharp"
     Push-Location $RepoRoot
     try {
@@ -540,12 +553,9 @@ if (-not (Test-Path $sharpPlatPath)) {
             exit 1
         }
     } finally { Pop-Location }
+    $sharpPlatPath = $sharpCandidates | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
 }
-$sharpPlatPath = Join-Path (Join-Path $RepoRoot "node_modules") $sharpPlatRel
-if (-not (Test-Path $sharpPlatPath)) {
-    $sharpPlatPath = Join-Path (Join-Path $RepoRoot "apps\node\node_modules") $sharpPlatRel
-}
-if (-not (Test-Path $sharpPlatPath)) {
+if (-not $sharpPlatPath) {
     Write-Fail "$sharpPlat still missing after npm install. Aborting — a Windows EXE without it crashes at boot."
     exit 1
 }
