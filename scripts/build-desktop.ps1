@@ -1579,6 +1579,25 @@ if (-not $SkipPi) {
         }
     }
 
+    # Bundle fd + ripgrep so GUI/Tauri launches (stripped PATH) do not hang
+    # on Pi's GitHub auto-download. Safe on reuse — script is idempotent.
+    $fetchPiTools = Join-Path $PSScriptRoot "fetch-pi-tools.ps1"
+    if (-not (Test-Path $fetchPiTools)) {
+        Write-Fail "fetch-pi-tools.ps1 not found at $fetchPiTools"
+        exit 1
+    }
+    Write-Info "Staging Pi tools (fd + ripgrep)..."
+    & $fetchPiTools
+    if ($LASTEXITCODE -ne 0) {
+        Write-Fail "fetch-pi-tools.ps1 failed — Pi may hang in the GUI without fd/rg"
+        exit 1
+    }
+    if (-not (Test-Path (Join-Path $piDest "bin\fd.exe"))) {
+        Write-Fail "Pi tools missing after fetch (expected $piDest\bin\fd.exe)"
+        exit 1
+    }
+    Write-Ok "Pi tools (fd.exe + rg.exe)"
+
     # Prune pass — mirrors scripts/stage-tauri-pi-bundle.sh (the bash twin
     # delegates to this from build-desktop.sh). Skipped when -SkipPiPrune
     # is set; safe to leave on for every reuse (idempotent).
@@ -1820,6 +1839,13 @@ if (-not $SkipPi) {
         Write-Ok "Pi CLI entry"
     } else {
         Write-Fail "missing Pi CLI entry at $piCli"
+        $sidecarOk = $false
+    }
+    $piFd = Join-Path $TauriResources "pi\bin\fd.exe"
+    if (Test-Path $piFd) {
+        Write-Ok "Pi tools (fd.exe)"
+    } else {
+        Write-Fail "missing Pi tools at $piFd — run fetch-pi-tools.ps1"
         $sidecarOk = $false
     }
 }

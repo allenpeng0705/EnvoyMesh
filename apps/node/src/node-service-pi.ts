@@ -14,6 +14,7 @@
 
 import { PiRuntime, discoverPiCli, buildPiSpawnConfig } from "./pi-runtime.js"
 import { piRequestToProposal, auditPiTool } from "./pi-tool-bridge.js"
+import { resolve } from "node:path"
 import type { LocalTaskStore } from "@envoymesh/local-store"
 import type {
   ModelProviderConfig,
@@ -129,6 +130,14 @@ export function buildPiRuntimeDeps(host: any): PiRuntimeDeps {
     loadConfig: () => host._configStore.load(),
     onProposal: (proposal, raw) => host.emit("pi:proposal", { proposal } satisfies PiProposalEvent),
     taskStore: host._taskStore ?? null,
+    // Hint for monorepo / bundle layouts only. Do NOT return TAURI_RESOURCE_DIR
+    // here — discoverPiCli already reads that env (and ENVOYMESH_PI_CLI) and
+    // treating Resources/ as a repo root adds dead paths like Resources/resources/pi.
+    getRepoRoot: () => {
+      const bundle = process.env.ENVOYMESH_NODE_BUNDLE_DIR?.trim()
+      if (bundle) return resolve(bundle, "..")
+      return process.cwd()
+    },
   }
 }
 

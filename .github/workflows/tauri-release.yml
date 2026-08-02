@@ -71,9 +71,18 @@ jobs:
       - name: Stage OpenClaw + bundled skills for Tauri
         run: bash scripts/stage-tauri-openclaw-bundle.sh
 
+      - name: Cache Pi tools (fd + ripgrep)
+        # Avoid flaky GitHub release downloads on every CI run. Key includes
+        # pinned tool versions from fetch-pi-tools.sh defaults.
+        uses: actions/cache@v4
+        with:
+          path: apps/tauri/src-tauri/resources/pi/bin
+          key: pi-tools-${{ runner.os }}-${{ runner.arch }}-fd10.2.0-rg14.1.1
+
       - name: Stage Pi coding-agent sidecar for Tauri
         # resources/pi/* is gitignored except .keep — without this step, Ext Agent
         # Pi has no CLI in the DMG/EXE and silently fails while EnvoyAI/OpenClaw works.
+        # Also fetches fd/rg into resources/pi/bin (cached above when possible).
         run: bash scripts/stage-tauri-pi-bundle.sh
 
       - name: Fetch Kubo sidecar (full bundles)

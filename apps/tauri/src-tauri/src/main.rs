@@ -725,6 +725,37 @@ fn spawn_node_process(config: &NodeSpawnConfig) -> Result<Child, String> {
         if openclaw_dir.is_dir() {
             command.env("ENVOYMESH_OPENCLAW_DIR", &openclaw_dir);
         }
+        // Pin Pi CLI + tools dir explicitly — discoverPiCli() also walks
+        // TAURI_RESOURCE_DIR, but GUI PATH is stripped and Pi hangs without
+        // bundled fd/rg. Mirrors the OpenClaw env shortcut above.
+        let pi_cli = dir
+            .join("pi")
+            .join("node_modules")
+            .join("@earendil-works")
+            .join("pi-coding-agent")
+            .join("dist")
+            .join("cli.js");
+        let pi_tools = dir.join("pi").join("bin");
+        #[cfg(windows)]
+        let pi_fd = pi_tools.join("fd.exe");
+        #[cfg(not(windows))]
+        let pi_fd = pi_tools.join("fd");
+        // Fail-closed for GUI: only advertise Pi when fd/rg were staged too.
+        // Otherwise discoverPiCli succeeds and Pi hangs on GitHub download.
+        if pi_cli.is_file() && pi_fd.is_file() {
+            command.env("ENVOYMESH_PI_CLI", &pi_cli);
+            command.env("ENVOYMESH_PI_DIR", dir.join("pi"));
+            command.env("ENVOYMESH_PI_TOOLS_DIR", &pi_tools);
+            info!("Bundled Pi CLI + tools: {:?} (tools {:?})", pi_cli, pi_tools);
+        } else if pi_cli.is_file() {
+            warn!(
+                "Pi CLI present at {:?} but tools missing at {:?} — \
+                 Ext Agent Pi disabled (rebuild with fetch-pi-tools)",
+                pi_cli, pi_fd
+            );
+        } else {
+            info!("No bundled Pi CLI at {:?} — Ext Agent Pi disabled unless staged", pi_cli);
+        }
     }
 
     let bundled_skills = config.node_cwd.join("skills");

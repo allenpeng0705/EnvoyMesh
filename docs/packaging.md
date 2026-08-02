@@ -47,14 +47,22 @@ npm run node:build
 npm run build -w @envoymesh/tauri
 ```
 
-Windows (PowerShell twin):
+Windows (PowerShell twin — preferred):
 ```powershell
-# Full (Pi + OpenClaw)
+# Full (Pi + OpenClaw + fd/rg tools)
 .\scripts\build-desktop.ps1
 
 # Slim (no Pi) — also switches to tauri.conf.slim.json
 .\scripts\build-desktop.ps1 -SkipPi
 ```
+
+Windows via npm (from repo root):
+```bash
+npm run tauri:build:win        # full — includes Pi (same as build:win:full)
+npm run tauri:build:win:slim   # slim — no Pi (NSIS size escape hatch)
+```
+
+Do **not** expect Pi in a slim Windows build. If Ext Agent Pi is required, use `build-desktop.ps1` (no `-SkipPi`) or `tauri:build:win` / `build:win:full`.
 
 The build pipeline runs, in order:
 1. `scripts/fetch-node-sidecar.sh` — bundled Node.js binary

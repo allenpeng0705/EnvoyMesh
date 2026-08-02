@@ -82,6 +82,25 @@ if [ ! -f "${PI_CLI}" ]; then
   exit 1
 fi
 
+# Bundle fd + ripgrep next to Pi so GUI/Tauri launches (stripped PATH) do not
+# hang on Pi's GitHub auto-download. Terminal/dev often already has these.
+bash "${ROOT}/scripts/fetch-pi-tools.sh"
+case "$(uname -s)" in
+  Darwin|Linux)
+    if [ ! -x "${DEST}/bin/fd" ] || [ ! -x "${DEST}/bin/rg" ]; then
+      echo "  ✗ Pi tools missing after fetch-pi-tools.sh (expected ${DEST}/bin/{fd,rg})" >&2
+      exit 1
+    fi
+    ;;
+  *)
+    if [ ! -f "${DEST}/bin/fd.exe" ] || [ ! -f "${DEST}/bin/rg.exe" ]; then
+      echo "  ✗ Pi tools missing after fetch-pi-tools.sh (expected ${DEST}/bin/{fd,rg}.exe)" >&2
+      exit 1
+    fi
+    ;;
+esac
+echo "  ✓ Pi tools present under ${DEST}/bin/"
+
 # ---- Prune non-runtime files from the staged tree ----
 # Pi ships with test fixtures, TypeScript sources, source maps, and
 # GitHub metadata that the runtime never imports. Trimming them keeps

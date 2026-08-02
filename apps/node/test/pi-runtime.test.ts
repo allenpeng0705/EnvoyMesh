@@ -23,7 +23,7 @@ import {
 } from "../src/pi-runtime.js"
 import type { ModelProviderConfig, PiModelOverride } from "@envoymesh/api"
 import { existsSync, readFileSync } from "node:fs"
-import { join } from "node:path"
+import { delimiter, join } from "node:path"
 
 describe("discoverPiCli", () => {
   it("finds the staged Tauri resources Pi even when given a bad root hint", () => {
@@ -403,6 +403,24 @@ describe("withPiToolPath", () => {
     if (existsSync("/opt/homebrew/bin") || existsSync("/usr/local/bin")) {
       expect(out.PATH).toBeTruthy()
       expect(out.PATH).toMatch(/homebrew|\/usr\/local\/bin/)
+    }
+  })
+
+  it("prefers ENVOYMESH_PI_TOOLS_DIR on PATH when set", () => {
+    const prev = process.env.ENVOYMESH_PI_TOOLS_DIR
+    const staged = join(
+      process.cwd(),
+      "apps/tauri/src-tauri/resources/pi/bin",
+    )
+    if (!existsSync(staged)) return
+    process.env.ENVOYMESH_PI_TOOLS_DIR = staged
+    try {
+      const out = withPiToolPath({ FOO: "1" })
+      expect(out.FOO).toBe("1")
+      expect(out.PATH?.split(delimiter)[0]).toBe(staged)
+    } finally {
+      if (prev === undefined) delete process.env.ENVOYMESH_PI_TOOLS_DIR
+      else process.env.ENVOYMESH_PI_TOOLS_DIR = prev
     }
   })
 

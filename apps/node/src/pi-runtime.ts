@@ -70,6 +70,14 @@ export function discoverPiCli(repoRoot?: string): { cliPath: string; version: st
   )
   const candidates: string[] = []
 
+  // 1b. ENVOYMESH_PI_DIR → <dir>/node_modules/.../cli.js or <dir>/dist/cli.js
+  const piDir = process.env.ENVOYMESH_PI_DIR?.trim()
+  if (piDir) {
+    candidates.push(join(piDir, "node_modules", "@earendil-works", "pi-coding-agent", "dist", "cli.js"))
+    candidates.push(join(piDir, "dist", "cli.js"))
+    candidates.push(join(piDir, cliSuffix))
+  }
+
   // 2. Tauri / desktop bundle resources.
   const resourceDir =
     process.env.TAURI_RESOURCE_DIR?.trim() || process.env.TAURI_APP_RESOURCES_DIR?.trim()
@@ -465,6 +473,29 @@ function resolvePiSpawnFromDirectProvider(
  */
 export function withPiToolPath(env: Record<string, string>): Record<string, string> {
   const extras: string[] = []
+
+  // Bundled fd/rg next to the Pi sidecar (resources/pi/bin) — required for
+  // Tauri GUI launches where PATH is stripped and Pi's GitHub auto-download
+  // hangs or 404s. Prefer this over Homebrew / ~/.pi.
+  const toolsDir = process.env.ENVOYMESH_PI_TOOLS_DIR?.trim()
+  if (toolsDir && existsSync(toolsDir)) extras.push(toolsDir)
+
+  const resourceDir =
+    process.env.TAURI_RESOURCE_DIR?.trim() || process.env.TAURI_APP_RESOURCES_DIR?.trim()
+  if (resourceDir) {
+    const bundled = join(resourceDir, "pi", "bin")
+    if (existsSync(bundled)) extras.push(bundled)
+  }
+
+  const cli = process.env.ENVOYMESH_PI_CLI?.trim()
+  if (cli && existsSync(cli)) {
+    // dist/cli.js → …/pi/node_modules/@earendil-works/pi-coding-agent/dist
+    // five parents up lands on resources/pi/
+    const piRoot = resolve(cli, "..", "..", "..", "..", "..")
+    const bundled = join(piRoot, "bin")
+    if (existsSync(bundled)) extras.push(bundled)
+  }
+
   for (const dir of ["/opt/homebrew/bin", "/usr/local/bin"]) {
     if (existsSync(dir)) extras.push(dir)
   }
@@ -475,7 +506,12 @@ export function withPiToolPath(env: Record<string, string>): Record<string, stri
 
   const current = process.env.PATH ?? ""
   const currentParts = new Set(current.split(delimiter).filter(Boolean))
-  const prefix = extras.filter((d) => !currentParts.has(d)).join(delimiter)
+  // De-dupe while preserving order (bundled tools first).
+  const prefixParts: string[] = []
+  for (const d of extras) {
+    if (!currentParts.has(d) && !prefixParts.includes(d)) prefixParts.push(d)
+  }
+  const prefix = prefixParts.join(delimiter)
   if (!prefix) return env
   return { ...env, PATH: prefix + (current ? delimiter + current : "") }
 }

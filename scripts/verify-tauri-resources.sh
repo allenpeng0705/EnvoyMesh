@@ -73,6 +73,17 @@ if [ -d "$PI_DIR" ]; then
   require_file "$PI_DIR/node_modules/@earendil-works/pi-coding-agent/dist/index.js" "Pi SDK entry (node_modules/@earendil-works/pi-coding-agent/dist/index.js)"
   require_file "$PI_DIR/node_modules/@earendil-works/pi-coding-agent/package.json" "Pi package.json"
   require_dir_nonempty "$PI_DIR/node_modules/@earendil-works" "Pi @earendil-works packages (pi-ai, pi-agent-core, pi-tui)"
+  # fd/rg — without these, GUI launches hang on Pi's GitHub auto-download.
+  case "$(uname -s)" in
+    Darwin|Linux)
+      require_file "$PI_DIR/bin/fd" "Pi tool fd (run scripts/fetch-pi-tools.sh)"
+      require_file "$PI_DIR/bin/rg" "Pi tool rg (run scripts/fetch-pi-tools.sh)"
+      ;;
+    *)
+      require_file "$PI_DIR/bin/fd.exe" "Pi tool fd.exe (run scripts/fetch-pi-tools.ps1)"
+      require_file "$PI_DIR/bin/rg.exe" "Pi tool rg.exe (run scripts/fetch-pi-tools.ps1)"
+      ;;
+  esac
   pi_version_file="$PI_DIR/.pi-version"
   if [ -f "$pi_version_file" ]; then
     echo "  Pi version:    $(cat "$pi_version_file")"
