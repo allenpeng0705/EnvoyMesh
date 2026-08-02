@@ -247,7 +247,17 @@ elif [ "${STAGE_OPENCLAW_BUNDLE:-0}" != "1" ] \
     # unused by dist/*.js. Idempotent; safe on every reuse.
     _openclaw_scrub_dev_tooling
 
-    exit 0
+    # Self-heal: cached trees may lack the compiled envoymesh channel.
+    # Without extensions/envoymesh/index.js the home node refuses to start
+    # OpenClaw ("OpenClaw tree is incomplete").
+    if [ ! -f "$DEST/extensions/envoymesh/index.js" ]; then
+      echo "  ⚠ extensions/envoymesh/index.js missing — forcing re-stage"
+      need_restage=true
+    fi
+
+    if [ "$need_restage" = false ]; then
+      exit 0
+    fi
   fi
   # Fall through to stage_from_source below.
 fi

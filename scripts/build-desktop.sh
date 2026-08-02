@@ -231,6 +231,8 @@ fi
 
 bash scripts/fetch-node-sidecar.sh
 bash scripts/stage-tauri-openclaw-bundle.sh
+# Always install envoymesh channel (independent of OpenClaw cache reuse).
+bash scripts/stage-openclaw-envoymesh-extension.sh
 if [ "${SKIP_PI}" = "0" ]; then
   bash scripts/stage-tauri-pi-bundle.sh
 else

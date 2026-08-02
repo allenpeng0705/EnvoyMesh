@@ -44,8 +44,9 @@
     "resources": [
       "resources/node/**/*",
       "resources/node-runtime/**/*",
-      "resources/openclaw/**/*",
-      "resources/pi/**/*"
+      "resources/openclaw/",
+      "resources/openclaw-envoymesh/",
+      "resources/pi/"
     ]
   },
   "plugins": {

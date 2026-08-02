@@ -204,6 +204,95 @@ function Resolve-OpenClawExtAllowlist {
     }
 }
 
+# Compile OpenClawExtension into $OpenClawRoot\extensions\envoymesh and mirror
+# into dist/extensions + dist-runtime/extensions (plugin discovery roots).
+# Returns $true on success. Used by full stage and by reuse-path self-heal.
+function Install-EnvoyMeshOpenClawExtension {
+    param(
+        [Parameter(Mandatory = $true)][string]$OpenClawRoot,
+        [Parameter(Mandatory = $true)][string]$ExtensionSrc
+    )
+    if (-not (Test-Path $ExtensionSrc)) {
+        Write-Warn "OpenClawExtension source missing at $ExtensionSrc"
+        return $false
+    }
+    $extDst = Join-Path $OpenClawRoot "extensions\envoymesh"
+    New-Item -ItemType Directory -Force -Path (Join-Path $OpenClawRoot "extensions") | Out-Null
+    if (Test-Path $extDst) { Remove-Item -Recurse -Force $extDst }
+    Copy-Item -Recurse -Force $ExtensionSrc $extDst
+    if (Test-Path (Join-Path $extDst "node_modules")) {
+        Remove-Item -Recurse -Force (Join-Path $extDst "node_modules")
+    }
+
+    Write-Info "Compiling EnvoyMesh extension (.ts -> .js)..."
+    $compileError = $null
+    Push-Location $extDst
+    try {
+        $topTs = @(Get-ChildItem -Path "." -Filter "*.ts" -File -ErrorAction SilentlyContinue)
+        if ($topTs.Count -gt 0) {
+            & npx esbuild ($topTs.FullName) `
+                --bundle=false --format=esm --platform=node `
+                --outdir=. --out-extension:.js=.js --allow-overwrite
+            if ($LASTEXITCODE -ne 0) { $compileError = "esbuild top-level failed (exit $LASTEXITCODE)" }
+        }
+        $srcDir = Join-Path $extDst "src"
+        if (Test-Path $srcDir) {
+            Get-ChildItem -Path $srcDir -Filter "*.ts" -File -ErrorAction SilentlyContinue | ForEach-Object {
+                if ($_.Name -match '\.test\.ts$') { return }
+                & npx esbuild $_.FullName `
+                    --bundle=false --format=esm --platform=node `
+                    --outdir=src --out-extension:.js=.js --allow-overwrite
+                if ($LASTEXITCODE -ne 0 -and -not $compileError) {
+                    $compileError = "esbuild src/$($_.Name) failed (exit $LASTEXITCODE)"
+                }
+            }
+        }
+    } finally { Pop-Location }
+
+    if ($compileError) {
+        Write-Warn "Extension compilation issue: $compileError"
+    }
+    if (-not (Test-Path (Join-Path $extDst "index.js"))) {
+        Write-Warn "EnvoyMesh extension index.js not produced under $extDst"
+        return $false
+    }
+
+    # Mirror into plugin discovery roots (skip the source extensions/ itself).
+    # Always ensure dist/extensions exists — OpenClaw prefers that discovery root.
+    foreach ($distExtDir in @(
+        (Join-Path $OpenClawRoot "dist\extensions"),
+        (Join-Path $OpenClawRoot "dist-runtime\extensions")
+    )) {
+        # dist-runtime is optional; dist/extensions is required for verify + discovery.
+        if ($distExtDir -match "dist-runtime" -and -not (Test-Path (Split-Path $distExtDir -Parent))) {
+            continue
+        }
+        New-Item -ItemType Directory -Force -Path $distExtDir | Out-Null
+        $envExtDst = Join-Path $distExtDir "envoymesh"
+        if (Test-Path $envExtDst) { Remove-Item -Recurse -Force $envExtDst }
+        Copy-Item -Recurse -Force $extDst $envExtDst
+        Get-ChildItem -Path $envExtDst -Filter "*.ts" -Recurse -ErrorAction SilentlyContinue |
+            Remove-Item -Force -ErrorAction SilentlyContinue
+        $pkgJson = Join-Path $envExtDst "package.json"
+        if (Test-Path $pkgJson) {
+            $content = Get-Content -Path $pkgJson -Raw -Encoding UTF8
+            $content = $content -replace '"\.\/index\.ts"', '"./index.js"'
+            $content = $content -replace '"\.\/setup-entry\.ts"', '"./setup-entry.js"'
+            Set-Content -Path $pkgJson -Value $content -Encoding UTF8 -NoNewline
+        }
+    }
+    # Also rewrite package.json in extensions/envoymesh for runtime (no tsx).
+    $rootPkg = Join-Path $extDst "package.json"
+    if (Test-Path $rootPkg) {
+        $content = Get-Content -Path $rootPkg -Raw -Encoding UTF8
+        $content = $content -replace '"\.\/index\.ts"', '"./index.js"'
+        $content = $content -replace '"\.\/setup-entry\.ts"', '"./setup-entry.js"'
+        Set-Content -Path $rootPkg -Value $content -Encoding UTF8 -NoNewline
+    }
+    Write-Ok "EnvoyMesh extension installed under $OpenClawRoot\extensions\envoymesh"
+    return $true
+}
+
 function Require-Command {
     param([string]$Name)
     $cmd = Get-Command $Name -ErrorAction SilentlyContinue
@@ -428,6 +517,39 @@ Write-Host ""
 # -----------------------------------------------------------------------------
 
 Write-Step "1/5  Staging sidecars..."
+
+# Fail-closed: sharp's Windows native must be present before we stage the
+# node runtime. Missing @img/sharp-win32-x64 used to ship a broken EXE that
+# crashed on first launch ("Could not load the sharp module using win32-x64").
+Write-Info "Ensuring sharp platform natives for this host..."
+$sharpOs = "win32"
+$sharpCpu = if ([System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString() -eq "Arm64") { "arm64" } else { "x64" }
+$sharpPlat = "@img/sharp-$sharpOs-$sharpCpu"
+$sharpPlatRel = Join-Path "@img" "sharp-$sharpOs-$sharpCpu"
+$sharpPlatPath = Join-Path (Join-Path $RepoRoot "node_modules") $sharpPlatRel
+if (-not (Test-Path $sharpPlatPath)) {
+    $sharpPlatPath = Join-Path (Join-Path $RepoRoot "apps\node\node_modules") $sharpPlatRel
+}
+if (-not (Test-Path $sharpPlatPath)) {
+    Write-Info "  $sharpPlat missing — running: npm install --os=$sharpOs --cpu=$sharpCpu --include=optional sharp"
+    Push-Location $RepoRoot
+    try {
+        & npm install --os=$sharpOs --cpu=$sharpCpu --include=optional sharp
+        if ($LASTEXITCODE -ne 0) {
+            Write-Fail "npm install sharp failed — image features need the win32 native"
+            exit 1
+        }
+    } finally { Pop-Location }
+}
+$sharpPlatPath = Join-Path (Join-Path $RepoRoot "node_modules") $sharpPlatRel
+if (-not (Test-Path $sharpPlatPath)) {
+    $sharpPlatPath = Join-Path (Join-Path $RepoRoot "apps\node\node_modules") $sharpPlatRel
+}
+if (-not (Test-Path $sharpPlatPath)) {
+    Write-Fail "$sharpPlat still missing after npm install. Aborting — a Windows EXE without it crashes at boot."
+    exit 1
+}
+Write-Ok "sharp platform native present ($sharpPlat)"
 
 Write-Info "Building workspace packages..."
 
@@ -735,13 +857,30 @@ if ($openclawStaged -and -not $ForceOpenClaw) {
         } else {
             Write-Info "Keeping all OpenClaw extensions (-OpenClawExtensions all)"
         }
+
+        # Self-heal: cached OpenClaw trees often predate the compiled
+        # envoymesh channel (or lost it during a prune/pack). Without
+        # extensions/envoymesh/index.js the home node refuses to start
+        # OpenClaw with "OpenClaw tree is incomplete".
+        $envExtJs = Join-Path $openclawDest "extensions\envoymesh\index.js"
+        if (-not (Test-Path $envExtJs)) {
+            Write-Info "extensions\envoymesh\index.js missing from staged OpenClaw — healing..."
+            $extSrcRoot = Join-Path $RepoRoot "OpenClawExtension"
+            $healed = Install-EnvoyMeshOpenClawExtension -OpenClawRoot $openclawDest -ExtensionSrc $extSrcRoot
+            if (-not $healed -or -not (Test-Path $envExtJs)) {
+                Write-Info "  Could not heal envoymesh extension — forcing full OpenClaw re-stage"
+                $needRestage = $true
+            }
+        }
+
         # NOTE: We do NOT run pnpm prune --prod in the staged tree here.
         # The staged tree lacks pnpm-workspace.yaml and packages/, so
         # pnpm would orphan most production deps (json5, chalk, express,
         # ws, etc.) → ERR_MODULE_NOT_FOUND at runtime. The first prune in
         # the source tree already removed devDeps correctly.
-    } else {
-        # dist/entry.js is missing or a broken stub — fall through to
+    }
+    if ($needRestage) {
+        # dist/entry.js broken and/or envoymesh missing — fall through to
         # the full re-stage logic below by clearing the staged flag.
         $openclawStaged = $false
     }
@@ -1064,6 +1203,18 @@ export * from "../src/cli/run-main.ts";
         (Join-Path $openclawDest "dist-runtime\extensions"),
         (Join-Path $openclawDest "extensions")
     )
+    if (-not (Test-Path (Join-Path $envExtSrc "index.js"))) {
+        # Source copy/compile may have been skipped (missing OpenClawExtension
+        # or packages/openclaw/extensions). Heal into the staged tree directly.
+        Write-Info "Staged extensions\envoymesh\index.js missing — installing from OpenClawExtension..."
+        $ok = Install-EnvoyMeshOpenClawExtension `
+            -OpenClawRoot $openclawDest `
+            -ExtensionSrc (Join-Path $RepoRoot "OpenClawExtension")
+        if (-not $ok -or -not (Test-Path (Join-Path $envExtSrc "index.js"))) {
+            Write-Fail "extensions\envoymesh\index.js missing after OpenClaw stage — OpenClaw will not start. Ensure OpenClawExtension/ exists at repo root."
+            exit 1
+        }
+    }
     if (Test-Path $envExtSrc) {
         foreach ($distExtDir in $bundledExtDirs) {
             if (-not (Test-Path $distExtDir)) { continue }
@@ -1362,6 +1513,23 @@ if (Test-Path $controlUiDir) {
             ForEach-Object { Remove-Item -Force $_.FullName -ErrorAction SilentlyContinue }
     }
 }
+
+# 1c-ter. EnvoyMesh OpenClaw channel — ALWAYS (independent of OpenClaw cache).
+# Reusing a stale openclaw tree used to ship without extensions/envoymesh/index.js
+# and the home node refused to start OpenClaw. This step compiles a seed and
+# installs it into the staged tree every build.
+Write-Info "Staging EnvoyMesh OpenClaw extension (always — not tied to OpenClaw reuse)..."
+$stageEnvoyExt = Join-Path $PSScriptRoot "stage-openclaw-envoymesh-extension.ps1"
+if (-not (Test-Path $stageEnvoyExt)) {
+    Write-Fail "missing $stageEnvoyExt"
+    exit 1
+}
+& $stageEnvoyExt
+if ($LASTEXITCODE -ne 0) {
+    Write-Fail "stage-openclaw-envoymesh-extension.ps1 failed — OpenClaw will not start without extensions\envoymesh\index.js"
+    exit 1
+}
+Write-Ok "EnvoyMesh OpenClaw extension staged"
 
 # 1d. Pi agent (local coding sidecar).
 #     Pi is a Node.js package, not a prebuilt binary, so staging = npm-install
@@ -1698,6 +1866,9 @@ $reqFiles = @(
     @{ Path = (Join-Path $TauriResources "node/dist/src/index.js"); Label = "compiled EnvoyMesh node" },
     @{ Path = (Join-Path $TauriResources "openclaw/openclaw.mjs"); Label = "OpenClaw gateway entry" },
     @{ Path = (Join-Path $TauriResources "openclaw/dist/entry.js"); Label = "OpenClaw compiled entry.js" },
+    @{ Path = (Join-Path $TauriResources "openclaw/extensions/envoymesh/index.js"); Label = "EnvoyMesh channel extension (compiled)" },
+    @{ Path = (Join-Path $TauriResources "openclaw/dist/extensions/envoymesh/index.js"); Label = "EnvoyMesh channel extension (dist/extensions)" },
+    @{ Path = (Join-Path $TauriResources "openclaw-envoymesh/index.js"); Label = "EnvoyMesh extension seed (runtime heal)" },
     @{ Path = $SocialDist; Label = "built Social UI" }
 )
 if (-not $SkipPi) {

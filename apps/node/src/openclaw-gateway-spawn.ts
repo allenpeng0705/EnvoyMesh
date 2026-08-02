@@ -1,7 +1,101 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { dirname, join, resolve } from "node:path";
 import { resolveBundledOpenClawDir, resolveStandaloneOpenClawBinary } from "./bundled-paths.js";
+
+function tauriResourceDir(): string | undefined {
+  const dir = process.env.TAURI_RESOURCE_DIR?.trim() || process.env.TAURI_APP_RESOURCES_DIR?.trim();
+  return dir || undefined;
+}
+
+/**
+ * Restore extensions/envoymesh (and dist/extensions mirror) when missing.
+ *
+ * Sources (first hit wins):
+ *   1. Sibling seed resources/openclaw-envoymesh (staged every desktop build)
+ *   2. dist/extensions/envoymesh or dist-runtime/extensions/envoymesh
+ *
+ * Idempotent. Called before validateOpenClawTree so a stale OpenClaw cache
+ * or install-time strip does not hard-fail the gateway.
+ */
+export function ensureOpenClawEnvoyMeshExtension(ocDir: string): {
+  ok: boolean;
+  source?: string;
+  reason?: string;
+} {
+  const primary = join(ocDir, "extensions", "envoymesh", "index.js");
+  const distPrimary = join(ocDir, "dist", "extensions", "envoymesh", "index.js");
+  if (existsSync(primary) && existsSync(distPrimary)) {
+    return { ok: true, source: "present" };
+  }
+
+  const candidates: string[] = [];
+  const resourceDir = tauriResourceDir();
+  if (resourceDir) {
+    candidates.push(join(resourceDir, "openclaw-envoymesh"));
+    candidates.push(join(resourceDir, "resources", "openclaw-envoymesh"));
+  }
+  // Sibling of the openclaw tree (Tauri resources layout).
+  candidates.push(join(ocDir, "..", "openclaw-envoymesh"));
+  candidates.push(join(ocDir, "dist", "extensions", "envoymesh"));
+  candidates.push(join(ocDir, "dist-runtime", "extensions", "envoymesh"));
+  candidates.push(join(ocDir, "extensions", "envoymesh"));
+
+  let src: string | undefined;
+  for (const c of candidates) {
+    if (existsSync(join(c, "index.js"))) {
+      src = c;
+      break;
+    }
+  }
+  if (!src) {
+    return {
+      ok: false,
+      reason: "no envoymesh seed or mirror with index.js found",
+    };
+  }
+
+  const installInto = (dest: string) => {
+    mkdirSync(dirname(dest), { recursive: true });
+    if (existsSync(dest)) {
+      rmSync(dest, { recursive: true, force: true });
+    }
+    cpSync(src!, dest, { recursive: true });
+  };
+
+  try {
+    if (!existsSync(primary)) {
+      installInto(join(ocDir, "extensions", "envoymesh"));
+    }
+    if (!existsSync(distPrimary)) {
+      installInto(join(ocDir, "dist", "extensions", "envoymesh"));
+    }
+    const runtimeRoot = join(ocDir, "dist-runtime");
+    if (existsSync(runtimeRoot)) {
+      const runtimeExt = join(runtimeRoot, "extensions", "envoymesh", "index.js");
+      if (!existsSync(runtimeExt)) {
+        installInto(join(runtimeRoot, "extensions", "envoymesh"));
+      }
+    }
+  } catch (err) {
+    return {
+      ok: false,
+      reason: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  if (!existsSync(primary)) {
+    return { ok: false, reason: `heal from ${src} did not produce ${primary}` };
+  }
+  return { ok: true, source: src };
+}
 
 /**
  * Pre-flight check: verify the OpenClaw tree has all critical files needed
@@ -151,13 +245,25 @@ export function spawnOpenClawGateway(params: SpawnOpenClawGatewayParams): ChildP
     );
   }
 
+  // Heal envoymesh channel before validation — seed/mirror can restore a
+  // tree that lost extensions/envoymesh during OpenClaw cache reuse or install.
+  const heal = ensureOpenClawEnvoyMeshExtension(ocDir);
+  if (heal.ok && heal.source && heal.source !== "present") {
+    console.info(`[openclaw] restored envoymesh extension from ${heal.source}`);
+  }
+
   // Pre-flight validation: check critical files before spawning.
   const validation = validateOpenClawTree(ocDir);
   if (!validation.ok) {
+    const healHint =
+      heal.ok || !heal.reason
+        ? ""
+        : `\n  (envoymesh heal also failed: ${heal.reason})`;
     throw new Error(
       `OpenClaw tree is incomplete (missing ${validation.missing.length} item(s)). ` +
         `Reinstall the app or rebuild the desktop bundle.\n` +
-        `  Missing:\n    ${validation.missing.join("\n    ")}`,
+        `  Missing:\n    ${validation.missing.join("\n    ")}` +
+        healHint,
     );
   }
 

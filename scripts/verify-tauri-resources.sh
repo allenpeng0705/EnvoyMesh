@@ -45,6 +45,7 @@ require_file "$RES/openclaw/dist/config/config.js" "OpenClaw config module"
 require_file "$RES/openclaw/extensions/envoymesh/index.js" "EnvoyMesh channel extension (compiled)"
 require_file "$RES/openclaw/dist/extensions/envoymesh/index.js" "EnvoyMesh channel extension (in dist/extensions/ — plugin discovery root)"
 require_file "$RES/openclaw/dist/extensions/envoymesh/openclaw.plugin.json" "EnvoyMesh plugin manifest (in dist/extensions/)"
+require_file "$RES/openclaw-envoymesh/index.js" "EnvoyMesh extension seed (runtime heal source)"
 require_file "$RES/openclaw/dist/cli/run-main.js" "OpenClaw CLI runtime entry"
 require_dir_nonempty "$RES/openclaw/node_modules" "OpenClaw node_modules"
 
