@@ -192,10 +192,34 @@ case "$(uname -m)" in
   arm64|aarch64) SHARP_CPU=arm64 ;;
   *) SHARP_CPU=x64 ;;
 esac
-SHARP_PLATFORM_DEPS=(
-  "@img/sharp-${SHARP_OS}-${SHARP_CPU}"
-  "@img/sharp-libvips-${SHARP_OS}-${SHARP_CPU}"
-)
+# sharp@0.35: libvips is a sibling optionalDep on darwin/linux; on win32 it is
+# embedded inside @img/sharp-win32-* (no @img/sharp-libvips-win32-* package).
+SHARP_PLATFORM_DEPS=("@img/sharp-${SHARP_OS}-${SHARP_CPU}")
+LIBVIPS_PKG="@img/sharp-libvips-${SHARP_OS}-${SHARP_CPU}"
+SHARP_PKG_JSON=""
+for cand in "$ROOT/node_modules/sharp/package.json" "$ROOT/apps/node/node_modules/sharp/package.json"; do
+  [ -f "$cand" ] && SHARP_PKG_JSON="$cand" && break
+done
+PLATFORM_PKG_JSON=""
+for cand in \
+  "$ROOT/node_modules/@img/sharp-${SHARP_OS}-${SHARP_CPU}/package.json" \
+  "$ROOT/apps/node/node_modules/@img/sharp-${SHARP_OS}-${SHARP_CPU}/package.json"
+do
+  [ -f "$cand" ] && PLATFORM_PKG_JSON="$cand" && break
+done
+if LIBVIPS_PKG="$LIBVIPS_PKG" node -e "
+  const want = process.env.LIBVIPS_PKG;
+  for (const f of process.argv.slice(1)) {
+    if (!f) continue;
+    try {
+      const j = require(f);
+      if ((j.optionalDependencies || {})[want]) process.exit(0);
+    } catch { /* ignore */ }
+  }
+  process.exit(1);
+" "$SHARP_PKG_JSON" "$PLATFORM_PKG_JSON" 2>/dev/null; then
+  SHARP_PLATFORM_DEPS+=("$LIBVIPS_PKG")
+fi
 
 missing=""
 for dep in zod ws yaml sharp main-event "@libp2p/interface" "@envoymesh/kb-obsidian" "@envoymesh/openclaw-runtime" psl "${SHARP_PLATFORM_DEPS[@]}"; do

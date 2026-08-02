@@ -201,6 +201,9 @@ if ($safetyNetCopied -gt 0) {
 # Each is at a different transitive depth or workspace class — catches
 # fixpoint-loop bugs, dynamic-discovery bugs, and npm ls drops.
 # sharp platform natives for THIS host (must be present before packaging).
+# Note: sharp@0.35 ships a separate @img/sharp-libvips-* package on darwin/linux
+# only. On win32, libvips is embedded inside @img/sharp-win32-* (no sibling
+# @img/sharp-libvips-win32-* in sharp's optionalDependencies).
 $ridOs = if ($IsWindows -or $env:OS -match "Windows") { "win32" } elseif ($IsLinux) { "linux" } else { "darwin" }
 $ridCpu = "x64"
 try {
@@ -209,10 +212,34 @@ try {
 } catch {
     if ($env:PROCESSOR_ARCHITECTURE -match "ARM64") { $ridCpu = "arm64" }
 }
-$sharpPlatformDeps = @(
-    "@img/sharp-$ridOs-$ridCpu",
-    "@img/sharp-libvips-$ridOs-$ridCpu"
-)
+$sharpPlatformDeps = [System.Collections.Generic.List[string]]::new()
+$sharpPlatformDeps.Add("@img/sharp-$ridOs-$ridCpu")
+$sharpPkgJson = Join-Path $Root "node_modules/sharp/package.json"
+if (-not (Test-Path $sharpPkgJson)) {
+    $sharpPkgJson = Join-Path $Root "apps/node/node_modules/sharp/package.json"
+}
+$libvipsPkg = "@img/sharp-libvips-$ridOs-$ridCpu"
+if (Test-Path $sharpPkgJson) {
+    try {
+        $sharpMeta = Get-Content $sharpPkgJson -Raw | ConvertFrom-Json
+        if ($sharpMeta.optionalDependencies -and $sharpMeta.optionalDependencies.PSObject.Properties.Name -contains $libvipsPkg) {
+            $sharpPlatformDeps.Add($libvipsPkg)
+        }
+    } catch { }
+}
+# Also require libvips when the platform package declares it (nested optionalDep).
+$platformPkgJson = Join-Path $Root "node_modules/@img/sharp-$ridOs-$ridCpu/package.json"
+if (-not (Test-Path $platformPkgJson)) {
+    $platformPkgJson = Join-Path $Root "apps/node/node_modules/@img/sharp-$ridOs-$ridCpu/package.json"
+}
+if (Test-Path $platformPkgJson) {
+    try {
+        $platMeta = Get-Content $platformPkgJson -Raw | ConvertFrom-Json
+        if ($platMeta.optionalDependencies -and $platMeta.optionalDependencies.PSObject.Properties.Name -contains $libvipsPkg) {
+            if (-not $sharpPlatformDeps.Contains($libvipsPkg)) { $sharpPlatformDeps.Add($libvipsPkg) }
+        }
+    } catch { }
+}
 
 $criticalDeps = @(
     # Direct npm deps
@@ -224,7 +251,7 @@ $criticalDeps = @(
     # Nested-dep hoist: declared by tough-cookie which lives inside
     # request/node_modules/. Proves the loop scans nested packages.
     "psl"
-) + $sharpPlatformDeps
+) + @($sharpPlatformDeps)
 $missing = @()
 foreach ($dep in $criticalDeps) {
     if (-not (Test-Path (Join-Path $Dest "node_modules/$dep"))) {
