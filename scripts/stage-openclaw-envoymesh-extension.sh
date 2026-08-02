@@ -19,11 +19,16 @@ die() { echo "error: $*" >&2; exit 1; }
 [ -d "$EXT_SRC" ] || die "OpenClawExtension/ missing at repo root"
 [ -f "$EXT_SRC/index.ts" ] || die "OpenClawExtension/index.ts missing"
 
-echo "[stage-openclaw-envoymesh] Compiling seed → $SEED"
+echo "[stage-openclaw-envoymesh] Compiling seed -> $SEED"
 rm -rf "$SEED"
 mkdir -p "$SEED"
 cp -R "$EXT_SRC"/. "$SEED/"
 rm -rf "$SEED/node_modules"
+# Drop OpenClaw package tsconfig — it extends ../tsconfig.package-boundary.base.json
+# which is missing under the seed path and makes esbuild warn on every file.
+rm -f "$SEED"/tsconfig.json "$SEED"/tsconfig.*.json \
+  "$SEED"/.oxlintrc.json "$SEED"/.oxfmtrc.jsonc 2>/dev/null || true
+rm -rf "$SEED/docs" "$SEED/examples" "$SEED/test" "$SEED/tests" "$SEED/.git" 2>/dev/null || true
 
 (
   cd "$SEED"
@@ -33,20 +38,19 @@ rm -rf "$SEED/node_modules"
     ESBUILD="$ROOT/packages/openclaw/node_modules/.bin/esbuild"
   fi
   shopt -s nullglob
-  top_ts=(./*.ts)
-  if [ "${#top_ts[@]}" -gt 0 ]; then
-    $ESBUILD "${top_ts[@]}" \
-      --bundle=false --format=esm --platform=node \
-      --outdir=. --out-extension:.js=.js --allow-overwrite
-  fi
+  inputs=(./*.ts)
   if [ -d src ]; then
     for f in src/*.ts; do
       case "$(basename "$f")" in *.test.ts|*.e2e.test.ts|*.live.test.ts) continue ;; esac
-      $ESBUILD "$f" \
-        --bundle=false --format=esm --platform=node \
-        --outdir=src --out-extension:.js=.js --allow-overwrite
+      inputs+=("$f")
     done
   fi
+  [ "${#inputs[@]}" -gt 0 ] || die "no .ts sources found in seed"
+  # Single invocation — preserves src/ layout via relative entry paths.
+  $ESBUILD "${inputs[@]}" \
+    --bundle=false --format=esm --platform=node \
+    --outdir=. --out-extension:.js=.js --allow-overwrite \
+    --log-level=warning
 )
 
 [ -f "$SEED/index.js" ] || die "seed index.js not produced — is esbuild available?"

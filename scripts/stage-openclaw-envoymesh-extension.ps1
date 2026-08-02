@@ -24,20 +24,33 @@ $Seed = Join-Path $Root "apps\tauri\src-tauri\resources\openclaw-envoymesh"
 $Oc = Join-Path $Root "apps\tauri\src-tauri\resources\openclaw"
 
 function Write-Info([string]$m) { Write-Host "  $m" }
-function Write-Ok([string]$m) { Write-Host "  ✓ $m" -ForegroundColor Green }
-function Write-Fail([string]$m) { Write-Host "  ✗ $m" -ForegroundColor Red }
+function Write-Ok([string]$m) { Write-Host "  OK $m" -ForegroundColor Green }
+function Write-Fail([string]$m) { Write-Host "  FAIL $m" -ForegroundColor Red }
 
 if (-not (Test-Path (Join-Path $ExtSrc "index.ts"))) {
     Write-Fail "OpenClawExtension\index.ts missing at repo root"
     exit 1
 }
 
-Write-Host "[stage-openclaw-envoymesh] Compiling seed → $Seed"
+# ASCII arrows — Windows consoles often mojibake Unicode (→ / —).
+Write-Host "[stage-openclaw-envoymesh] Compiling seed -> $Seed"
 if (Test-Path $Seed) { Remove-Item -Recurse -Force $Seed }
 New-Item -ItemType Directory -Force -Path $Seed | Out-Null
 Copy-Item -Recurse -Force (Join-Path $ExtSrc "*") $Seed
 $seedNm = Join-Path $Seed "node_modules"
 if (Test-Path $seedNm) { Remove-Item -Recurse -Force $seedNm }
+# OpenClawExtension/tsconfig.json extends ../tsconfig.package-boundary.base.json
+# which does not exist under the seed path — esbuild would spam a warning per
+# file. Drop TS project files; we only need a plain transpile.
+Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $Seed "tsconfig.json")
+Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $Seed ".oxlintrc.json")
+Remove-Item -Force -ErrorAction SilentlyContinue (Join-Path $Seed ".oxfmtrc.jsonc")
+Get-ChildItem -Path $Seed -Filter "tsconfig.*.json" -File -ErrorAction SilentlyContinue |
+    Remove-Item -Force -ErrorAction SilentlyContinue
+foreach ($drop in @("docs", "examples", "test", "tests", ".git")) {
+    $p = Join-Path $Seed $drop
+    if (Test-Path $p) { Remove-Item -Recurse -Force $p -ErrorAction SilentlyContinue }
+}
 
 $esbuildCmd = $null
 $esbuildLocal = Join-Path $Root "packages\openclaw\node_modules\.bin\esbuild.cmd"
@@ -45,29 +58,32 @@ $esbuildLocalUnix = Join-Path $Root "packages\openclaw\node_modules\.bin\esbuild
 if (Test-Path $esbuildLocal) { $esbuildCmd = $esbuildLocal }
 elseif (Test-Path $esbuildLocalUnix) { $esbuildCmd = $esbuildLocalUnix }
 
+# One esbuild invocation for top-level + src (skip *.test.ts) — quieter/faster.
+# Relative entry paths preserve src/ layout under --outdir=.
+$esbuildArgs = @(
+    "--bundle=false", "--format=esm", "--platform=node",
+    "--out-extension:.js=.js", "--allow-overwrite", "--log-level=warning"
+)
+
 Push-Location $Seed
 try {
-    $topTs = @(Get-ChildItem -Path "." -Filter "*.ts" -File -ErrorAction SilentlyContinue)
-    if ($topTs.Count -gt 0) {
-        if ($esbuildCmd) {
-            & $esbuildCmd @($topTs.FullName) --bundle=false --format=esm --platform=node --outdir=. --out-extension:.js=.js --allow-overwrite
-        } else {
-            & npx esbuild @($topTs.FullName) --bundle=false --format=esm --platform=node --outdir=. --out-extension:.js=.js --allow-overwrite
-        }
-        if ($LASTEXITCODE -ne 0) { throw "esbuild top-level failed (exit $LASTEXITCODE)" }
-    }
+    # PS 5.1-safe relative paths (no Resolve-Path -Relative).
+    $relInputs = @()
+    $relInputs += @(Get-ChildItem -Path "." -Filter "*.ts" -File -ErrorAction SilentlyContinue |
+        ForEach-Object { ".\$($_.Name)" })
     $srcDir = Join-Path $Seed "src"
     if (Test-Path $srcDir) {
-        Get-ChildItem -Path $srcDir -Filter "*.ts" -File -ErrorAction SilentlyContinue | ForEach-Object {
-            if ($_.Name -match '\.test\.ts$') { return }
-            if ($esbuildCmd) {
-                & $esbuildCmd $_.FullName --bundle=false --format=esm --platform=node --outdir=src --out-extension:.js=.js --allow-overwrite
-            } else {
-                & npx esbuild $_.FullName --bundle=false --format=esm --platform=node --outdir=src --out-extension:.js=.js --allow-overwrite
-            }
-            if ($LASTEXITCODE -ne 0) { throw "esbuild src/$($_.Name) failed (exit $LASTEXITCODE)" }
-        }
+        $relInputs += @(Get-ChildItem -Path $srcDir -Filter "*.ts" -File -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -notmatch '\.test\.ts$' } |
+            ForEach-Object { ".\src\$($_.Name)" })
     }
+    if ($relInputs.Count -eq 0) { throw "no .ts sources found in seed" }
+    if ($esbuildCmd) {
+        & $esbuildCmd @relInputs @esbuildArgs --outdir=.
+    } else {
+        & npx esbuild @relInputs @esbuildArgs --outdir=.
+    }
+    if ($LASTEXITCODE -ne 0) { throw "esbuild failed (exit $LASTEXITCODE)" }
 } finally { Pop-Location }
 
 if (-not (Test-Path (Join-Path $Seed "index.js"))) {
