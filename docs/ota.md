@@ -28,7 +28,7 @@ Related: [VERSIONING.md](../VERSIONING.md) (bump SemVer / `v*` tags), [packaging
 | Settings UI | Settings → App → **Check for updates** (manual; no silent auto-install) |
 | Endpoints | GitHub `…/releases/latest/download/latest.json` |
 | Release overlay | `tauri.conf.release.json` → `createUpdaterArtifacts: true` (CI only) |
-| CI | Tag `v0.2.2` (etc.) → signed desktop assets + `latest.json` on that Release; attach iOS/Android yourself; macOS aarch64+x86_64, Windows, Linux |
+| CI | Tag `v0.2.2` (etc.) → signed desktop assets + `latest.json` on that Release; attach iOS/Android yourself; macOS aarch64+x86_64, Windows, Linux. Full builds must stage **OpenClaw + Pi** (`stage-tauri-*-bundle.sh`) — Pi is gitignored and was previously omitted from CI, which left Ext Agent Pi silent in release DMGs. |
 
 **Feed URL:**
 

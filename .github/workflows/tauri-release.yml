@@ -71,6 +71,11 @@ jobs:
       - name: Stage OpenClaw + bundled skills for Tauri
         run: bash scripts/stage-tauri-openclaw-bundle.sh
 
+      - name: Stage Pi coding-agent sidecar for Tauri
+        # resources/pi/* is gitignored except .keep — without this step, Ext Agent
+        # Pi has no CLI in the DMG/EXE and silently fails while EnvoyAI/OpenClaw works.
+        run: bash scripts/stage-tauri-pi-bundle.sh
+
       - name: Fetch Kubo sidecar (full bundles)
         run: bash scripts/fetch-kubo-sidecar.sh
 
@@ -81,6 +86,9 @@ jobs:
         env:
           # CI may not have AuthKey / SA in the workspace; do not fail the release on that.
           REQUIRE_PUSH_CREDENTIALS: "0"
+
+      - name: Verify Tauri resources (Node + OpenClaw + Pi + Social)
+        run: bash scripts/verify-tauri-resources.sh
 
       - name: Build + publish signed release (updater artifacts + latest.json)
         if: startsWith(github.ref, 'refs/tags/')

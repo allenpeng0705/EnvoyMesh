@@ -101,10 +101,14 @@ export async function syncExtAgentSidecar(params: SyncExtAgentSidecarParams): Pr
         bridgeSecret: params.bridgeSecret,
       });
     } catch (err) {
-      console.error(
-        `[ext-agent] failed to start ${want} on :${port}:`,
-        err instanceof Error ? err.message : err,
-      );
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error(`[ext-agent] failed to start ${want} on :${port}:`, msg);
+      if (msg.includes("EADDRINUSE")) {
+        console.error(
+          `[ext-agent] port ${port} is held by another process (often a previous EnvoyMesh node). ` +
+            `Quit all EnvoyMesh windows, then: lsof -nP -iTCP:${port} -sTCP:LISTEN`,
+        );
+      }
       running = null;
     }
   };

@@ -48,7 +48,7 @@ describe("ExtAgentOfflineBanner", () => {
     expect(screen.getByText(/Start HomeClaw/)).toBeTruthy()
   })
 
-  it("hides for built-in Pi", async () => {
+  it("hides for built-in Pi when reachable", async () => {
     bridgeStatus = { enabled: true, activeExtAgentId: "pi" }
     probeExtAgent.mockResolvedValue({
       agentId: "pi",
@@ -63,6 +63,24 @@ describe("ExtAgentOfflineBanner", () => {
       expect(probeExtAgent).toHaveBeenCalled()
     })
     expect(container.querySelector("[data-testid='ext-agent-offline-banner']")).toBeNull()
+  })
+
+  it("shows guide when built-in Pi sidecar is missing", async () => {
+    bridgeStatus = { enabled: true, activeExtAgentId: "pi" }
+    probeExtAgent.mockResolvedValue({
+      agentId: "pi",
+      agentName: "Pi",
+      builtIn: true,
+      reachable: false,
+      hint: "Pi sidecar missing",
+      checkedAt: new Date().toISOString(),
+    })
+    render(<ExtAgentOfflineBanner />)
+    await waitFor(() => {
+      expect(screen.getByTestId("ext-agent-offline-banner")).toBeTruthy()
+    })
+    expect(screen.getByText(/Pi is not running/)).toBeTruthy()
+    expect(screen.getByText(/Pi sidecar missing/)).toBeTruthy()
   })
 
   it("hides when reachable", async () => {

@@ -1113,6 +1113,7 @@ import {
   restartPiViaRuntime,
   ensurePiReadyViaRuntime,
   askPiViaRuntime,
+  askPiForExtAgentViaRuntime,
   getPiStatusViaRuntime,
   isPiEnabledViaRuntime,
   isPiReadyViaRuntime,
@@ -4009,9 +4010,13 @@ class NodeServiceImpl implements NodeService {
    * `chat:message` with the bridge agent peer id after the sidecar replies —
    * do NOT emit a parallel `push:message` with synthetic `envoy:pi` (that
    * created a fake Contacts thread on EnvoyGo and a wrong push deep-link).
+   *
+   * Uses askPiForExtAgentViaRuntime so tool approvals are auto-denied during
+   * Ext Agent turns (otherwise Pi can hang waiting for a UI confirm that never
+   * appears in the Ext Agent thread).
    */
   async sendToPiForExtAgent(text: string): Promise<string> {
-    return this._sendToPiInternal(text, { emitPushHint: false })
+    return askPiForExtAgentViaRuntime(this._piState, this._piRuntimeDeps(), text)
   }
 
   private async _sendToPiInternal(
@@ -4107,7 +4112,8 @@ class NodeServiceImpl implements NodeService {
       messageId: crypto.randomUUID(),
       sender: {
         nodeId: bridgeAgentPeerId,
-        ownerId: threadKey,
+        // agentPeerId — matches Social Ext Agent row selection (see handleBridgeSelfReply).
+        ownerId: bridgeAgentPeerId,
         displayName: this._bridgeStatus?.agentName ?? "Ext Agent",
         actorRole: "agent",
       },
@@ -4131,6 +4137,12 @@ class NodeServiceImpl implements NodeService {
   /**
    * Phase 51 — Ext Agent async self-send reply. Routes into the profile
    * that most recently called `sendToBridge` (FIFO), defaulting to owner.
+   *
+   * Persist under `bridge:<agentId>:<profileId>` (profile-scoped history).
+   * Emit with `sender.ownerId = agentId` so desktop Social — which selects the
+   * Ext Agent row by `bridgeStatus.agentPeerId` — actually shows the reply.
+   * (Using the bridge: thread key as sender.ownerId parked replies in a
+   * thread the UI never opens.)
    */
   handleBridgeSelfReply(chatMsg: ChatMessage): void {
     const profileId = this._consumePendingBridgeReplyProfile();
@@ -4143,15 +4155,25 @@ class NodeServiceImpl implements NodeService {
       return;
     }
     const threadKey = bridgeThreadKeyForProfile(agentId, profileId);
-    const scoped: ChatMessage = {
+    const homeOwnerId = this._profile?.owner?.ownerId ?? "";
+    const isOwner = profileId === OWNER_FAMILY_PROFILE_ID;
+    const forUi: ChatMessage = {
       ...chatMsg,
       sender: {
         ...chatMsg.sender,
-        ownerId: threadKey,
+        ownerId: agentId,
+        displayName:
+          this._bridgeStatus?.agentName?.trim() ||
+          chatMsg.sender.displayName ||
+          "Ext Agent",
+      },
+      recipient: {
+        ...chatMsg.recipient,
+        ownerId: isOwner ? homeOwnerId || chatMsg.recipient.ownerId : profileId,
       },
     };
-    this._persistChatMessage(threadKey, scoped);
-    this.emit("chat:message", scoped);
+    this._persistChatMessage(threadKey, forUi);
+    this.emit("chat:message", forUi);
   }
 
   async sendToAiBot(botId: string, text: string): Promise<void> {
@@ -5414,22 +5436,35 @@ class NodeServiceImpl implements NodeService {
         threadKey,
       );
     }
-    // Ext Agent thread — EnvoyGo uses "external"; chat log is keyed by bridge agent peer.
-    // Phase 51: prefer profile-scoped `bridge:<agentId>:<profileId>`; merge legacy.
-    if (normalizedKey === "external" || normalizedKey.startsWith("bridge:")) {
-      const bridgePeer = this._bridgeStatus?.agentPeerId?.trim();
+    // Ext Agent thread — EnvoyGo uses "external"; Social selects agentPeerId;
+    // chat log is keyed by profile-scoped `bridge:<agentId>:<profileId>`.
+    const bridgePeer = this._bridgeStatus?.agentPeerId?.trim();
+    if (
+      normalizedKey === "external" ||
+      normalizedKey.startsWith("bridge:") ||
+      (bridgePeer != null && normalizedKey === bridgePeer)
+    ) {
       if (!bridgePeer) return [];
       const scoped = normalizedKey.startsWith("bridge:")
         ? normalizedKey
         : bridgeThreadKeyForProfile(bridgePeer, profileId);
       if (!threadVisibleTo(scoped, profileId)) return [];
-      const rows = await this._chatLogStore.listThread(scoped, limit);
-      if (rows.length > 0 || profileId !== OWNER_FAMILY_PROFILE_ID) {
-        return rows as ChatMessage[];
+      const scopedRows = (await this._chatLogStore.listThread(scoped, limit)) as ChatMessage[];
+      // Also merge legacy unscoped key (agentPeerId) — outbound sendChat still
+      // persists there; replies live under bridge: after Phase 51.
+      const legacyRows = (await this._chatLogStore.listThread(bridgePeer, limit)) as ChatMessage[];
+      if (scopedRows.length === 0) return legacyRows;
+      if (legacyRows.length === 0) return scopedRows;
+      const byId = new Map<string, ChatMessage>();
+      for (const m of [...legacyRows, ...scopedRows]) {
+        if (m.messageId) byId.set(m.messageId, m);
       }
-      // Owner: also surface legacy unscoped bridge thread.
-      const legacy = await this._chatLogStore.listThread(bridgePeer, limit);
-      return legacy as ChatMessage[];
+      const merged = [...byId.values()].sort((a, b) => {
+        const ta = Date.parse(a.metadata?.timestamp ?? "") || 0;
+        const tb = Date.parse(b.metadata?.timestamp ?? "") || 0;
+        return ta - tb;
+      });
+      return typeof limit === "number" && limit > 0 ? merged.slice(-limit) : merged;
     }
     // Family DM threads.
     if (isFamilyThreadKey(normalizedKey)) {

@@ -883,7 +883,16 @@ export function createPiBackend(): ExtAgentBackend {
       return piExtAgentAsk(text, sessionKey);
     },
     async probe() {
-      return piExtAgentAsk != null;
+      if (piExtAgentAsk == null) return false;
+      // Wired ask alone is not enough — slim / CI-incomplete DMGs have no
+      // Pi CLI under resources/pi. Do NOT HTTP-probe :8022/status here:
+      // http-server /status awaits backend.probe(), which would deadlock.
+      try {
+        const { discoverPiCli } = await import("../pi-runtime.js");
+        return discoverPiCli() != null;
+      } catch {
+        return false;
+      }
     },
   };
 }

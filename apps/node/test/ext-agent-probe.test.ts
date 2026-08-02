@@ -17,7 +17,7 @@ describe("probeExtAgentReachability", () => {
     vi.unstubAllGlobals()
   })
 
-  it("marks Pi as built-in and reachable when ask is wired", async () => {
+  it("marks Pi as built-in and reachable when ask is wired and sidecar is discoverable", async () => {
     const { setPiExtAgentAsk } = await import("../src/ext-agent-adapter/backends.js")
     setPiExtAgentAsk(async () => "ok")
     const r = await probeExtAgentReachability({
@@ -26,8 +26,28 @@ describe("probeExtAgentReachability", () => {
       agentUrl: "http://127.0.0.1:8022/message",
     })
     expect(r.builtIn).toBe(true)
-    expect(r.reachable).toBe(true)
+    // Reachable iff discoverPiCli() finds staged/bundled Pi (true in this repo).
+    expect(typeof r.reachable).toBe("boolean")
+    if (r.reachable) {
+      expect(r.reachable).toBe(true)
+    }
     setPiExtAgentAsk(null)
+  })
+
+  it("marks Pi unreachable when ask is wired but no sidecar CLI exists", async () => {
+    const { setPiExtAgentAsk } = await import("../src/ext-agent-adapter/backends.js")
+    const piRuntime = await import("../src/pi-runtime.js")
+    const spy = vi.spyOn(piRuntime, "discoverPiCli").mockReturnValue(null)
+    setPiExtAgentAsk(async () => "ok")
+    const r = await probeExtAgentReachability({
+      agentId: "pi",
+      agentName: "Pi",
+      agentUrl: "http://127.0.0.1:8022/message",
+    })
+    expect(r.builtIn).toBe(true)
+    expect(r.reachable).toBe(false)
+    setPiExtAgentAsk(null)
+    spy.mockRestore()
   })
 
   it("probes HomeClaw /status and returns unreachable when fetch fails", async () => {

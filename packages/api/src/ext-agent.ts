@@ -99,7 +99,7 @@ export function defaultExtAgentStartHint(agentId: string): string {
     case "openhuman":
       return "Start OpenHuman.app or the OpenHuman CLI core (health on :7788).";
     case "pi":
-      return "Pi is built into the home node — no separate process needed.";
+      return "Pi is built into full desktop installs. If chat stays silent, reinstall a full build (Pi sidecar staged) and confirm Settings → AI has a real model (not mock/disabled).";
     default:
       return "Start the external agent process, then confirm its HTTP endpoint is reachable.";
   }

@@ -1,7 +1,8 @@
 /**
- * Banner shown in Ext Agent chat when the selected non-built-in agent
- * (HomeClaw / Hermes / OpenHuman) is not reachable. Switching stays instant;
- * this is the soft guide after switch / when opening the thread.
+ * Banner shown in Ext Agent chat when the selected agent is not reachable
+ * (HomeClaw / Hermes / OpenHuman, or built-in Pi when the sidecar/HTTP adapter
+ * is missing). Switching stays instant; this is the soft guide after switch /
+ * when opening the thread.
  */
 import { useCallback, useEffect, useState } from "react"
 import type { ExtAgentReachability } from "@envoymesh/api"
@@ -31,6 +32,11 @@ function hintForAgent(
       return t(
         "chat.extAgentOfflineHintOpenHuman",
         "Start OpenHuman.app or the OpenHuman CLI core (health on :7788).",
+      )
+    case "pi":
+      return t(
+        "chat.extAgentOfflineHintPi",
+        "Pi sidecar missing from this install, or model not configured. Use a full desktop build and set Settings → AI model (not mock/disabled).",
       )
     default:
       return fallback
@@ -68,14 +74,14 @@ export function ExtAgentOfflineBanner() {
   }, [refresh])
 
   useEffect(() => {
-    if (!status || status.builtIn || status.reachable) return
+    if (!status || status.reachable) return
     const id = window.setInterval(() => {
       void refresh()
     }, POLL_MS)
     return () => window.clearInterval(id)
   }, [status, refresh])
 
-  if (!bridgeEnabled || !status || status.builtIn || status.reachable) {
+  if (!bridgeEnabled || !status || status.reachable) {
     return null
   }
 

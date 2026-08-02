@@ -87,7 +87,7 @@ export function ExtAgentSwitcher({
         // Soft-check — never blocks the switch.
         try {
           const reach = await nodeService.probeExtAgent({ agentId: nextId })
-          if (!reach.builtIn && !reach.reachable) {
+          if (!reach.reachable) {
             setOfflineHint(
               t(
                 "chat.extAgentOfflineSwitcherHint",
