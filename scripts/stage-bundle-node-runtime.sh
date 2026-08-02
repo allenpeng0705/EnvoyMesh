@@ -143,9 +143,16 @@ while [ "$iter" -lt "$max_iterations" ]; do
   for pkg_json in "${scan_list[@]}"; do
     [ -f "$pkg_json" ] || continue
     # Extract non-@envoymesh dep names from package.json.
+    # Include optionalDependencies — sharp's @img/sharp-<platform> natives live there.
     dep_names="$(node -e "
-      try { const p=require(process.argv[1]); const d=p.dependencies||{}; process.stdout.write(Object.keys(d).filter(k=>!k.startsWith('@envoymesh/')).join('\n')); }
-      catch(e) { /* skip */ }
+      try {
+        const p=require(process.argv[1]);
+        const keys=new Set([
+          ...Object.keys(p.dependencies||{}),
+          ...Object.keys(p.optionalDependencies||{}),
+        ]);
+        process.stdout.write([...keys].filter(k=>!k.startsWith('@envoymesh/')).join('\n'));
+      } catch(e) { /* skip */ }
     " "$pkg_json" 2>/dev/null || true)"
     [ -z "$dep_names" ] && continue
     while IFS= read -r dep_name; do
@@ -175,8 +182,23 @@ fi
 
 # Sanity check: verify a handful of known-critical runtime deps are present.
 # If any are missing, fail loudly rather than shipping a broken bundle.
+case "$(uname -s)" in
+  Darwin) SHARP_OS=darwin ;;
+  Linux) SHARP_OS=linux ;;
+  MINGW*|MSYS*|CYGWIN*) SHARP_OS=win32 ;;
+  *) SHARP_OS=linux ;;
+esac
+case "$(uname -m)" in
+  arm64|aarch64) SHARP_CPU=arm64 ;;
+  *) SHARP_CPU=x64 ;;
+esac
+SHARP_PLATFORM_DEPS=(
+  "@img/sharp-${SHARP_OS}-${SHARP_CPU}"
+  "@img/sharp-libvips-${SHARP_OS}-${SHARP_CPU}"
+)
+
 missing=""
-for dep in zod ws yaml main-event "@libp2p/interface" "@envoymesh/kb-obsidian" "@envoymesh/openclaw-runtime" psl; do
+for dep in zod ws yaml sharp main-event "@libp2p/interface" "@envoymesh/kb-obsidian" "@envoymesh/openclaw-runtime" psl "${SHARP_PLATFORM_DEPS[@]}"; do
   if [ ! -d "$DEST/node_modules/$dep" ]; then
     missing="$missing $dep"
   fi
@@ -191,10 +213,12 @@ if [ -n "$missing" ]; then
   echo "    1. 'npm install' did not complete successfully in the repo root" >&2
   echo "    2. The dep is nested deeper than the search roots (rare)" >&2
   echo "    3. The dep was pruned by 'npm prune --production' but is needed at runtime" >&2
+  echo "    4. sharp platform optionalDeps omitted — run: npm install --os=$SHARP_OS --cpu=$SHARP_CPU sharp" >&2
   echo "" >&2
   echo "  Diagnostic: npm ls <dep> to find where it actually lives" >&2
   exit 1
 fi
+echo "  + sharp platform packages present (${SHARP_PLATFORM_DEPS[*]})"
 
 # End-to-end import check: actually run Node's module resolver against
 # every module the runtime entry imports. This catches missing modules
@@ -208,7 +232,7 @@ NODE_BIN="${ENVOYMESH_NODE_EXE:-node}"
 cat > "$DEST/__import_probe.mjs" <<'PROBE'
 const mods = [
   // Direct npm deps
-  "zod", "ws", "yaml", "psl", "nat-upnp",
+  "zod", "ws", "yaml", "psl", "nat-upnp", "sharp",
   // Deep transitive deps
   "main-event", "@libp2p/interface", "@multiformats/multiaddr",
   // Workspace packages
@@ -223,10 +247,10 @@ for (const m of mods) {
   try {
     await import(m);
   } catch (e) {
-    if (e.code === "ERR_MODULE_NOT_FOUND" || e.code === "MODULE_NOT_FOUND") {
-      console.error("FAIL: " + m + " — " + e.message.split("\n")[0]);
-      failed++;
-    }
+    // Fail on ANY import error — sharp throws a plain Error (not
+    // ERR_MODULE_NOT_FOUND) when the platform binary is missing.
+    console.error("FAIL: " + m + " — " + (e && e.message ? e.message.split("\n")[0] : e));
+    failed++;
   }
 }
 if (failed > 0) {

@@ -5,11 +5,31 @@
  * Always applies EXIF orientation (sharp `.rotate()`) before returning when the
  * image will later have metadata stripped — otherwise phone photos that store
  * sideways pixels + Orientation tag appear rotated after EXIF is removed.
+ *
+ * sharp is loaded lazily so a missing platform binary (common when packaging
+ * omits optionalDeps) fails image ops instead of crashing the whole home node.
  */
 import { MAX_IMAGE_INPUT_BYTES } from "@envoymesh/api";
-import sharp from "sharp";
 
 export { MAX_IMAGE_INPUT_BYTES };
+
+type SharpFn = typeof import("sharp").default;
+
+let sharpLoad: Promise<SharpFn | null> | undefined;
+
+async function loadSharp(): Promise<SharpFn | null> {
+  if (sharpLoad) return sharpLoad;
+  sharpLoad = import("sharp")
+    .then((m) => m.default)
+    .catch((err) => {
+      console.warn(
+        "[image-fit] sharp unavailable (platform binary missing?). Image compress/orient disabled:",
+        err instanceof Error ? err.message : err,
+      );
+      return null;
+    });
+  return sharpLoad;
+}
 
 type OutMime = "image/jpeg" | "image/png" | "image/webp";
 
@@ -22,6 +42,7 @@ function normalizeOutMime(mime: string): OutMime | null {
 }
 
 async function encodeAt(
+  sharp: SharpFn,
   input: Buffer,
   width: number,
   height: number,
@@ -44,7 +65,7 @@ async function encodeAt(
 }
 
 /** Bake EXIF orientation into pixels and drop the orientation tag. */
-async function bakeOrientation(input: Buffer, mime: OutMime): Promise<Buffer> {
+async function bakeOrientation(sharp: SharpFn, input: Buffer, mime: OutMime): Promise<Buffer> {
   const pipeline = sharp(input, { failOn: "none" }).rotate();
   if (mime === "image/jpeg") {
     return pipeline.jpeg({ quality: 92, mozjpeg: true }).toBuffer();
@@ -81,6 +102,16 @@ export async function fitImageToMaxBytes(
     throw new Error("Image could not be processed");
   }
 
+  const sharp = await loadSharp();
+  if (!sharp) {
+    // Without sharp we cannot bake EXIF or recompress — pass through only if
+    // already under budget so profile/avatar flows don't hard-fail the node.
+    if (input.byteLength <= maxBytes) {
+      return { bytes: input, mimeType: preferred };
+    }
+    throw new Error("Image could not be processed");
+  }
+
   const meta = await sharp(input, { failOn: "none" }).metadata();
   const needsOrient = Boolean(meta.orientation && meta.orientation !== 1);
 
@@ -89,7 +120,7 @@ export async function fitImageToMaxBytes(
   }
 
   if (input.byteLength <= maxBytes && needsOrient) {
-    const oriented = await bakeOrientation(input, preferred);
+    const oriented = await bakeOrientation(sharp, input, preferred);
     if (oriented.byteLength <= maxBytes) {
       return { bytes: oriented, mimeType: preferred };
     }
@@ -119,7 +150,7 @@ export async function fitImageToMaxBytes(
       const targetW = Math.max(32, Math.round(w * scale));
       const targetH = Math.max(32, Math.round(h * scale));
       const quality = Math.max(38, 90 - attempt * 5);
-      const encoded = await encodeAt(input, targetW, targetH, format, quality);
+      const encoded = await encodeAt(sharp, input, targetW, targetH, format, quality);
       if (encoded.byteLength <= maxBytes) {
         return { bytes: encoded, mimeType: format };
       }

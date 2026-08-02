@@ -161,9 +161,18 @@ for ($iter = 1; $iter -le $maxIterations; $iter++) {
         try {
             $pkgMeta = Get-Content $pkgJsonPath -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
         } catch { continue }
-        $deps = $pkgMeta.dependencies
-        if (-not $deps) { continue }
-        foreach ($depName in $deps.PSObject.Properties.Name) {
+        # Include optionalDependencies — sharp's @img/sharp-<platform> natives
+        # live there. Skipping them ships a bundle that crashes on Windows with
+        # "Could not load the sharp module using the win32-x64 runtime".
+        $depNames = [System.Collections.Generic.HashSet[string]]::new()
+        if ($pkgMeta.dependencies) {
+            foreach ($n in @($pkgMeta.dependencies.PSObject.Properties.Name)) { [void]$depNames.Add($n) }
+        }
+        if ($pkgMeta.optionalDependencies) {
+            foreach ($n in @($pkgMeta.optionalDependencies.PSObject.Properties.Name)) { [void]$depNames.Add($n) }
+        }
+        if ($depNames.Count -eq 0) { continue }
+        foreach ($depName in $depNames) {
             # Skip workspace packages — they're staged separately above.
             if ($depName -like "@envoymesh/*") { continue }
             $destDep = Join-Path $stagedNodeModules $depName
@@ -191,9 +200,23 @@ if ($safetyNetCopied -gt 0) {
 # If any are missing, fail loudly rather than shipping a broken bundle.
 # Each is at a different transitive depth or workspace class — catches
 # fixpoint-loop bugs, dynamic-discovery bugs, and npm ls drops.
+# sharp platform natives for THIS host (must be present before packaging).
+$ridOs = if ($IsWindows -or $env:OS -match "Windows") { "win32" } elseif ($IsLinux) { "linux" } else { "darwin" }
+$ridCpu = "x64"
+try {
+    $arch = [System.Runtime.InteropServices.RuntimeInformation]::ProcessArchitecture.ToString()
+    if ($arch -eq "Arm64") { $ridCpu = "arm64" }
+} catch {
+    if ($env:PROCESSOR_ARCHITECTURE -match "ARM64") { $ridCpu = "arm64" }
+}
+$sharpPlatformDeps = @(
+    "@img/sharp-$ridOs-$ridCpu",
+    "@img/sharp-libvips-$ridOs-$ridCpu"
+)
+
 $criticalDeps = @(
     # Direct npm deps
-    "zod", "ws", "yaml",
+    "zod", "ws", "yaml", "sharp",
     # Deep transitive deps (proves fixpoint loop ran)
     "main-event", "@libp2p/interface",
     # Workspace packages (proves dynamic discovery ran)
@@ -201,7 +224,7 @@ $criticalDeps = @(
     # Nested-dep hoist: declared by tough-cookie which lives inside
     # request/node_modules/. Proves the loop scans nested packages.
     "psl"
-)
+) + $sharpPlatformDeps
 $missing = @()
 foreach ($dep in $criticalDeps) {
     if (-not (Test-Path (Join-Path $Dest "node_modules/$dep"))) {
@@ -218,6 +241,7 @@ if ($missing.Count -gt 0) {
     Write-Host "    1. 'npm install' did not complete successfully in the repo root" -ForegroundColor Yellow
     Write-Host "    2. The dep is nested deeper than the search roots (rare; check with 'npm ls <dep>')" -ForegroundColor Yellow
     Write-Host "    3. The dep was pruned by 'npm prune --production' but is actually needed at runtime" -ForegroundColor Yellow
+    Write-Host "    4. sharp platform optionalDeps were omitted — run: npm install --os=$ridOs --cpu=$ridCpu sharp" -ForegroundColor Yellow
     Write-Host ""
     Write-Host "  Diagnostic commands:" -ForegroundColor Cyan
     foreach ($dep in $missing) {
@@ -227,6 +251,7 @@ if ($missing.Count -gt 0) {
     Write-Error "Critical runtime deps missing from staged tree: $($missing -join ', '). See diagnostic output above."
     exit 1
 }
+Write-Host "  + sharp platform packages present ($($sharpPlatformDeps -join ', '))"
 
 # End-to-end import check: actually run Node's module resolver against
 # every module the runtime entry imports. This catches missing modules
@@ -241,7 +266,7 @@ $nodeExe = if ($env:ENVOYMESH_NODE_EXE) { $env:ENVOYMESH_NODE_EXE } else { "node
 $probeScript = @'
 const mods = [
   // Direct npm deps
-  "zod", "ws", "yaml", "psl", "nat-upnp",
+  "zod", "ws", "yaml", "psl", "nat-upnp", "sharp",
   // Deep transitive deps
   "main-event", "@libp2p/interface", "@multiformats/multiaddr",
   // Workspace packages
@@ -256,10 +281,10 @@ for (const m of mods) {
   try {
     await import(m);
   } catch (e) {
-    if (e.code === "ERR_MODULE_NOT_FOUND" || e.code === "MODULE_NOT_FOUND") {
-      console.error("FAIL: " + m + " — " + e.message.split("\n")[0]);
-      failed++;
-    }
+    // Fail on ANY import error — sharp throws a plain Error (not
+    // ERR_MODULE_NOT_FOUND) when the platform binary is missing.
+    console.error("FAIL: " + m + " — " + (e && e.message ? e.message.split("\n")[0] : e));
+    failed++;
   }
 }
 if (failed > 0) {
