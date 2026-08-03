@@ -119,8 +119,26 @@ List<ChatMessage> reconcileChatMessages({
         .toList();
   }
 
+  // Empty-text voice notes never match chatTextKey — drop optimistic
+  // pending-voice rows when a real outbound audio message arrives.
+  if (showAsMine &&
+      incoming.attachments?.any((a) => a.isAudio) == true) {
+    list = list.where((m) => !m.id.startsWith('pending-voice-')).toList();
+  }
+
   list = list.where((m) => m.id != incoming.id).toList();
   return [incoming, ...list];
+}
+
+/// Default voice-note filename for a MIME type (EnvoyGo records WAV).
+@visibleForTesting
+String filenameForMime(String mimeType) {
+  final m = mimeType.toLowerCase();
+  if (m.contains('wav')) return 'voice-note.wav';
+  if (m.contains('webm')) return 'voice-note.webm';
+  if (m.contains('mpeg') || m.contains('mp3')) return 'voice-note.mp3';
+  if (m.contains('ogg')) return 'voice-note.ogg';
+  return 'voice-note.m4a';
 }
 
 /// Peer / agent key after `nodeId:` in a thread id.
@@ -532,7 +550,7 @@ class ChatNotifier extends StateNotifier<ChatState> {
     final now = DateTime.now().toUtc().toIso8601String();
     final att = ChatAttachment(
       id: attachmentId,
-      filename: 'voice-note.m4a',
+      filename: filenameForMime(mimeType),
       mimeType: mimeType,
       sizeBytes: sizeBytes,
       sensitivity: 'friends',
@@ -540,13 +558,18 @@ class ChatNotifier extends StateNotifier<ChatState> {
       durationSec: durationSec,
     );
     final existing = state.messages[threadId] ?? const <ChatMessage>[];
+    List<ChatMessage> withoutPending(List<ChatMessage> list) => [
+          for (final m in list)
+            if (!m.id.startsWith('pending-voice-')) m,
+        ];
+
     if (existing.any((m) => m.id == messageId)) {
-      // Already have the WS echo — enrich duration if missing.
+      // Already have the WS echo — enrich duration if missing, drop pending.
       state = state.copyWith(
         messages: {
           ...state.messages,
           threadId: [
-            for (final m in existing)
+            for (final m in withoutPending(existing))
               if (m.id == messageId &&
                   (m.attachments == null ||
                       m.attachments!.every((a) => a.durationSec == null)) &&
@@ -580,13 +603,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
       return;
     }
 
-    // Drop any pending-voice optimistic rows for the same filename.
-    final filtered = [
-      for (final m in existing)
-        if (!(m.id.startsWith('pending-voice-') &&
-            m.attachments?.any((a) => a.filename == 'voice-note.m4a') == true))
-          m,
-    ];
+    // Drop optimistic pending-voice rows (any codec).
+    final filtered = withoutPending(existing);
 
     final msg = ChatMessage(
       id: messageId,
@@ -653,8 +671,8 @@ class ChatNotifier extends StateNotifier<ChatState> {
       attachments: [
         ChatAttachment(
           id: tempId,
-          filename: 'voice-note.m4a',
-          mimeType: 'audio/mp4',
+          filename: 'voice-note.wav',
+          mimeType: 'audio/wav',
           sizeBytes: sizeBytes,
           sensitivity: 'friends',
           durationSec: durationSec > 0 ? durationSec : 1,

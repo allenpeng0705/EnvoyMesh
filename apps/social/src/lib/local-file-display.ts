@@ -26,7 +26,7 @@ export function isHiddenFromLibraryList(relativePath: string): boolean {
 
 /** @deprecated Prefer {@link isChatAttachmentFile} — voice notes are a subset of chat attachments. */
 export function isChatVoiceNoteFile(relativePath: string): boolean {
-  return isChatAttachmentFile(relativePath) && /(^|\/)voice-note\.(webm|m4a)$/i.test(relativePath.trim());
+  return isChatAttachmentFile(relativePath) && /(^|\/)voice-note\.(webm|m4a|wav)$/i.test(relativePath.trim());
 }
 
 export function localFileRowKey(item: LocalFileItem): string {

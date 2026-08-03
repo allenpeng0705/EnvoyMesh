@@ -67,19 +67,29 @@ class _ChatAudioPlayerState extends State<ChatAudioPlayer> {
   @override
   void didUpdateWidget(covariant ChatAudioPlayer oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final oldPath = oldWidget.attachment.vaultRelativePath;
-    final newPath = widget.attachment.vaultRelativePath;
-    if (newPath != null &&
-        newPath.isNotEmpty &&
-        newPath != oldPath &&
-        _tempFile == null &&
-        !_loading) {
-      setState(() {
-        _loading = true;
-        _error = false;
-      });
-      unawaited(_load());
+    final oldAtt = oldWidget.attachment;
+    final newAtt = widget.attachment;
+    final identityChanged = oldAtt.id != newAtt.id;
+    final pathChanged =
+        (oldAtt.vaultRelativePath ?? '') != (newAtt.vaultRelativePath ?? '');
+    // ListView without stable keys reuses this State for a new bubble —
+    // especially vault→pending (null path). Always tear down and reload.
+    if (!identityChanged && !pathChanged) return;
+
+    unawaited(_player.stop());
+    final oldFile = _tempFile;
+    _tempFile = null;
+    if (oldFile != null) {
+      unawaited(oldFile.delete().catchError((_) => oldFile));
     }
+    setState(() {
+      _loading = true;
+      _error = false;
+      _playing = false;
+      _position = Duration.zero;
+      _duration = Duration.zero;
+    });
+    unawaited(_load());
   }
 
   @override

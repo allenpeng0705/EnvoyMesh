@@ -46,6 +46,7 @@ describe("isHiddenFromLibraryList", () => {
 describe("isChatVoiceNoteFile", () => {
   it("matches voice-note filenames under chat only", () => {
     expect(isChatVoiceNoteFile("chat/out/a1/voice-note.webm")).toBe(true);
+    expect(isChatVoiceNoteFile("chat/out/a1/voice-note.wav")).toBe(true);
     expect(isChatVoiceNoteFile("chat/out/a1/photo.jpg")).toBe(false);
   });
 });

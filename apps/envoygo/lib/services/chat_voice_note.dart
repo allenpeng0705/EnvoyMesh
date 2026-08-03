@@ -18,7 +18,7 @@ bool isHiddenFromLibraryList(String relativePath) {
 /// @deprecated Prefer [isChatAttachmentPath].
 bool isChatVoiceNotePath(String relativePath) {
   return isChatAttachmentPath(relativePath) &&
-      RegExp(r'(^|/)voice-note\.(webm|m4a)$', caseSensitive: false)
+      RegExp(r'(^|/)voice-note\.(webm|m4a|wav)$', caseSensitive: false)
           .hasMatch(relativePath.trim());
 }
 

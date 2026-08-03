@@ -195,5 +195,58 @@ void main() {
       );
       expect(next.map((m) => m.id), ['srv_new', 'srv_old']);
     });
+
+    test('drops pending-voice when real outbound audio arrives', () {
+      final pending = ChatMessage(
+        id: 'pending-voice-1',
+        threadId: 'node:peer',
+        text: '',
+        isOutbound: true,
+        createdAt: '2026-07-31T12:00:00.000Z',
+        attachments: [
+          ChatAttachment(
+            id: 'pending-voice-1',
+            filename: 'voice-note.wav',
+            mimeType: 'audio/wav',
+            sizeBytes: 100,
+            sensitivity: 'friends',
+            durationSec: 2,
+          ),
+        ],
+      );
+      final real = ChatMessage(
+        id: 'srv_voice',
+        threadId: 'node:peer',
+        text: '',
+        isOutbound: true,
+        createdAt: '2026-07-31T12:00:01.000Z',
+        attachments: [
+          ChatAttachment(
+            id: 'att1',
+            filename: 'voice-note.wav',
+            mimeType: 'audio/wav',
+            sizeBytes: 100,
+            sensitivity: 'friends',
+            vaultRelativePath: 'chat/out/att1/voice-note.wav',
+            durationSec: 2,
+          ),
+        ],
+      );
+      final next = reconcileChatMessages(
+        existing: [pending],
+        incoming: real,
+        showAsMine: true,
+        collapseMatchingOutbound: true,
+      );
+      expect(next.map((m) => m.id), ['srv_voice']);
+    });
+  });
+
+  group('filenameForMime', () {
+    test('maps common voice codecs', () {
+      expect(filenameForMime('audio/wav'), 'voice-note.wav');
+      expect(filenameForMime('audio/webm'), 'voice-note.webm');
+      expect(filenameForMime('audio/mp4'), 'voice-note.m4a');
+    });
   });
 }

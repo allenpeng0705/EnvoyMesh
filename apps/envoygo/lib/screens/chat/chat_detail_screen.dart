@@ -180,9 +180,15 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     }
     try {
       final path =
-          '${Directory.systemTemp.path}/voice_${DateTime.now().microsecondsSinceEpoch}.m4a';
+          '${Directory.systemTemp.path}/voice_${DateTime.now().microsecondsSinceEpoch}.wav';
+      // WAV (pcm16) plays in Safari/Chrome/Firefox and on Windows peers.
+      // AAC/m4a from iOS often shows 0:00 / gray controls in Mac Social.
       await _audioRecorder.start(
-        const RecordConfig(encoder: AudioEncoder.aacLc),
+        const RecordConfig(
+          encoder: AudioEncoder.wav,
+          sampleRate: 16000,
+          numChannels: 1,
+        ),
         path: path,
       );
       _activeRecordingPath = path;
@@ -290,7 +296,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
       }
       final bytes = await file.readAsBytes();
       final base64 = base64Encode(bytes);
-      const mimeType = 'audio/mp4';
+      const mimeType = 'audio/wav';
       final durationSec =
           _recordingSeconds > 0 ? _recordingSeconds : 1;
 
@@ -317,7 +323,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
       try {
         final result = await nodeService.sendChatAttachment(
           targetOwnerId: targetOwnerId,
-          filename: 'voice-note.m4a',
+          filename: 'voice-note.wav',
           contentBase64: base64,
           mimeType: mimeType,
           chatText: '',
@@ -520,6 +526,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                           );
                         },
                         child: ChatBubble(
+                          key: ValueKey(msg.id),
                           message: msg,
                           isOutbound: msg.isOutbound,
                           onLoadAudio: _loadAudioForAttachment,

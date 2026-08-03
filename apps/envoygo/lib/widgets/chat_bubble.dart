@@ -64,6 +64,7 @@ class ChatBubble extends StatelessWidget {
               ),
             if (audioAtt != null && onLoadAudio != null) ...[
               ChatAudioPlayer(
+                key: ValueKey('${message.id}:${audioAtt.id}'),
                 attachment: audioAtt,
                 transcription: message.text,
                 onLoadAudio: onLoadAudio!,

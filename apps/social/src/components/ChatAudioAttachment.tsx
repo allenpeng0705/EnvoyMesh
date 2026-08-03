@@ -1,10 +1,9 @@
 /**
  * ChatAudioAttachment — audio message player (Phase 37).
  *
- * Fetches vault bytes and plays via a Blob object URL. EnvoyGo voice notes
- * are AAC-LC `.m4a` (`audio/mp4`); data: URIs often leave controls at 0:00
- * / grayed out in desktop browsers — Blob URLs + explicit `<source type>`
- * fix that.
+ * Fetches vault bytes and plays via a Blob object URL. Prefer WAV from
+ * EnvoyGo (`audio/wav`) for reliable Mac Safari/Chrome playback; AAC/m4a
+ * still normalized to `audio/mp4`. Blob URLs beat data: URIs for duration.
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
