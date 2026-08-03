@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EnvoyGo — App Store Review Pairing</title>
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="description" content="Family invite QR for Apple App Store and Google Play reviewers to pair EnvoyGo with the demo home node.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink: #0c1222;
+      --ink-soft: #1a2438;
+      --paper: #f4f6f9;
+      --paper-2: #e8edf4;
+      --accent: #0d9488;
+      --accent-deep: #0f766e;
+      --text: #0c1222;
+      --muted: #5a6a82;
+      --line: #c5d0e0;
+      --warn: #b45309;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      font-family: "DM Sans", system-ui, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(ellipse 80% 50% at 50% -10%, rgba(13, 148, 136, 0.12), transparent 55%),
+        linear-gradient(180deg, var(--paper) 0%, var(--paper-2) 100%);
+      line-height: 1.55;
+      padding: 32px 20px 48px;
+    }
+
+    .wrap {
+      max-width: 520px;
+      margin: 0 auto;
+    }
+
+    .brand {
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent-deep);
+      margin-bottom: 10px;
+    }
+
+    h1 {
+      font-size: clamp(1.6rem, 4vw, 2rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+      margin-bottom: 8px;
+    }
+
+    .lede {
+      color: var(--muted);
+      font-size: 1rem;
+      margin-bottom: 28px;
+    }
+
+    .qr-panel {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 28px 24px 24px;
+      text-align: center;
+      box-shadow: 0 12px 40px rgba(12, 18, 34, 0.06);
+    }
+
+    #qr {
+      display: inline-block;
+      padding: 12px;
+      background: #fff;
+      border-radius: 8px;
+    }
+
+    #qr canvas,
+    #qr img {
+      display: block;
+      width: min(280px, 72vw);
+      height: auto;
+      margin: 0 auto;
+    }
+
+    .qr-caption {
+      margin-top: 16px;
+      font-size: 0.875rem;
+      color: var(--muted);
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      justify-content: center;
+      margin-top: 18px;
+    }
+
+    button {
+      font-family: inherit;
+      font-size: 0.9375rem;
+      font-weight: 600;
+      border: none;
+      border-radius: 10px;
+      padding: 12px 18px;
+      min-height: 44px;
+      cursor: pointer;
+      transition: background 0.15s ease, transform 0.1s ease;
+    }
+
+    button:active { transform: scale(0.98); }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .btn-primary:hover { background: var(--accent-deep); }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--ink-soft);
+      border: 1px solid var(--line);
+    }
+
+    .btn-ghost:hover { background: var(--paper-2); }
+
+    .steps {
+      margin-top: 28px;
+      padding: 20px 22px;
+      background: rgba(255, 255, 255, 0.65);
+      border: 1px solid var(--line);
+      border-radius: 14px;
+    }
+
+    .steps h2 {
+      font-size: 0.8rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 12px;
+    }
+
+    .steps ol {
+      padding-left: 1.25rem;
+      color: var(--ink-soft);
+      font-size: 0.95rem;
+    }
+
+    .steps li + li { margin-top: 8px; }
+
+    .note {
+      margin-top: 16px;
+      font-size: 0.8125rem;
+      color: var(--warn);
+    }
+
+    details {
+      margin-top: 20px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: rgba(255, 255, 255, 0.5);
+      overflow: hidden;
+    }
+
+    summary {
+      cursor: pointer;
+      padding: 14px 16px;
+      font-weight: 600;
+      font-size: 0.9rem;
+      list-style: none;
+    }
+
+    summary::-webkit-details-marker { display: none; }
+
+    summary::before {
+      content: "▸ ";
+      color: var(--accent);
+    }
+
+    details[open] summary::before { content: "▾ "; }
+
+    #uri {
+      display: block;
+      margin: 0 16px 16px;
+      padding: 12px;
+      max-height: 160px;
+      overflow: auto;
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 0.7rem;
+      line-height: 1.45;
+      word-break: break-all;
+      background: var(--ink);
+      color: #d8e0ec;
+      border-radius: 8px;
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(12px);
+      background: var(--ink);
+      color: #fff;
+      font-size: 0.875rem;
+      font-weight: 500;
+      padding: 10px 18px;
+      border-radius: 999px;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+      z-index: 20;
+    }
+
+    .toast.show {
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      button, .toast { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <p class="brand">EnvoyGo · Store review</p>
+    <h1>Scan to pair with the demo home</h1>
+    <p class="lede">
+      Apple App Store and Google Play reviewers: open <strong>EnvoyGo</strong>,
+      choose family / invite pairing, then scan this QR (or paste the URI below).
+    </p>
+
+    <section class="qr-panel" aria-label="Review invite QR code">
+      <div id="qr" role="img" aria-label="QR code encoding the EnvoyGo family invite URI"></div>
+      <p class="qr-caption">Family invite · demo home for review only</p>
+      <div class="actions">
+        <button type="button" class="btn-primary" id="copyUri">Copy invite URI</button>
+        <button type="button" class="btn-ghost" id="copyPage">Copy this page link</button>
+      </div>
+    </section>
+    <section class="steps">
+      <h2>Review steps</h2>
+      <ol>
+        <li>Install EnvoyGo from TestFlight / App Store or Play Console.</li>
+        <li>In the app, open pairing / family invite and scan the QR above.</li>
+        <li>When prompted for a profile name, use <strong>Reviewer</strong> (reuse that name on a second device).</li>
+        <li>After pairing, chat with the home agent (<strong>Pi</strong>) and exercise the flows under review.</li>
+      </ol>
+      <p class="note">This invite is for the store-review demo node only. Do not use it for production homes.</p>
+    </section>
+
+    <details>
+      <summary>Invite URI (paste fallback)</summary>
+      <code id="uri"></code>
+    </details>
+  </main>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.4/build/qrcode.min.js"></script>
+  <script>
+    // Paste a fresh family invite URI from the review demo home
+    // (Social → Family invite → Copy). Do not commit live tokens.
+    // See apps/envoygo/store-release/apple_google_reviewing.md
+    const INVITE_URI = "PASTE_ENVOY_INVITE_URI_HERE";
+
+    const uriEl = document.getElementById("uri");
+    const qrHost = document.getElementById("qr");
+
+    if (!INVITE_URI || INVITE_URI.indexOf("envoy://") !== 0) {
+      uriEl.textContent =
+        "No invite configured. Edit sites/qr_review.html and set INVITE_URI to a live envoy://invite?… string from the review home, then republish.";
+      qrHost.textContent = "QR not configured";
+    } else {
+      uriEl.textContent = INVITE_URI;
+      QRCode.toCanvas(
+        document.createElement("canvas"),
+        INVITE_URI,
+        {
+          errorCorrectionLevel: "M",
+          margin: 1,
+          width: 320,
+          color: { dark: "#0c1222", light: "#ffffff" },
+        },
+        function (err, canvas) {
+          if (err) {
+            qrHost.textContent = "Could not render QR. Use the URI below.";
+            console.error(err);
+            return;
+          }
+          qrHost.appendChild(canvas);
+        }
+      );
+    }
+
+    function toast(msg) {
+      const el = document.getElementById("toast");
+      el.textContent = msg;
+      el.classList.add("show");
+      clearTimeout(toast._t);
+      toast._t = setTimeout(function () {
+        el.classList.remove("show");
+      }, 1800);
+    }
+
+    async function copyText(text, okMsg) {
+      if (!text || text.indexOf("envoy://") !== 0) {
+        toast("Configure INVITE_URI first");
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(text);
+        toast(okMsg);
+      } catch (_) {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        ta.remove();
+        toast(okMsg);
+      }
+    }
+
+    document.getElementById("copyUri").addEventListener("click", function () {
+      copyText(INVITE_URI, "Invite URI copied");
+    });
+
+    document.getElementById("copyPage").addEventListener("click", function () {
+      copyText(window.location.href, "Page link copied");
+    });
+  </script>
+</body>
+</html>

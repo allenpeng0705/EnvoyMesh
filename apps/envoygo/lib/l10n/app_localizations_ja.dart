@@ -562,6 +562,9 @@ class AppLocalizationsJa extends AppLocalizations {
   String get chatVoiceCall => '音声通話';
 
   @override
+  String get chatVideoCall => 'ビデオ通話';
+
+  @override
   String get chatPublishedContent => '公開コンテンツ';
 
   @override
@@ -598,6 +601,24 @@ class AppLocalizationsJa extends AppLocalizations {
   String chatInvitedSnack(String name) {
     return '$name を招待しました';
   }
+
+  @override
+  String get chatVoiceSending => '音声メモを送信中…';
+
+  @override
+  String get chatVoiceSent => '音声メモを送信しました';
+
+  @override
+  String get chatVoiceRecording => '録音中';
+
+  @override
+  String get chatVoiceCancel => 'キャンセル';
+
+  @override
+  String get chatVoiceSend => '送信';
+
+  @override
+  String get chatVoiceSendHint => '完了したら送信 · キャンセルで破棄';
 
   @override
   String get chatVoiceSendFailed => '音声メモの送信に失敗';

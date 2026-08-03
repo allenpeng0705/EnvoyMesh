@@ -79,7 +79,7 @@ class CallState {
 /// media path is peer-to-peer once the callee's `setRemoteDescription`
 /// runs.
 class CallProvider extends ChangeNotifier {
-  final NodeServiceClient _nodeService;
+  NodeServiceClient _nodeService;
   final AudioSessionHelper _audioSession;
 
   /// Optional transport factory — production callers leave this null and
@@ -105,6 +105,10 @@ class CallProvider extends ChangeNotifier {
   /// side, because it reflects exactly what the caller used (so both ends
   /// build their `RTCPeerConnection` from the same ICE config).
   List<IceServer> _incomingIceServers = const [];
+  /// `audio` | `video` from the most recent incoming invite.
+  String _incomingCallType = 'audio';
+  /// Media type for the in-flight outbound / active call.
+  String _activeCallType = 'audio';
 
   /// Transport built mid-flight (between `_buildTransport()` and the
   /// `sendCallInvite`/`acceptCallInvite` RPC reply). Held separately so
@@ -129,12 +133,22 @@ class CallProvider extends ChangeNotifier {
     _sub = _nodeService.eventStream.listen(_onEvent);
   }
 
-  /// No-op provider for when the node is disconnected.
+  /// No-op / unbound provider for when the node is unpaired or the home
+  /// client is not ready yet. Use [bind] to attach a live client without
+  /// disposing mid-call across reconnects.
   CallProvider.noop()
       : _nodeService = NodeServiceClient.noop(),
         _audioSession = AudioSessionHelper(),
         transportFactory = null {
     // Don't subscribe — no connection.
+  }
+
+  /// Rebind event stream to a live home client. Does **not** tear down an
+  /// active WebRTC transport — media can continue while signaling reconnects.
+  void bind(NodeServiceClient nodeService) {
+    _sub?.cancel();
+    _nodeService = nodeService;
+    _sub = _nodeService.eventStream.listen(_onEvent);
   }
 
   /// Test hooks.
@@ -154,15 +168,21 @@ class CallProvider extends ChangeNotifier {
   void _forwardIceCandidate(CallIceCandidate candidate) {
     final callId = _iceCallId.isNotEmpty ? _iceCallId : (_state.callId ?? '');
     if (callId.isEmpty) return;
-    _nodeService.sendIceCandidate(callId, candidate.toJson()).catchError((_) {
-      // ignore: avoid_print
-      print('[CallProvider] sendIceCandidate failed');
-    });
+    unawaited(
+      _nodeService.sendIceCandidate(callId, candidate.toJson()).then(
+        (_) {},
+        onError: (Object _, StackTrace __) {
+          // ignore: avoid_print
+          print('[CallProvider] sendIceCandidate failed');
+        },
+      ),
+    );
   }
 
   WebRtcCallTransport _buildTransport({
     required String callId,
     required List<IceServer> iceServers,
+    bool enableVideo = false,
   }) {
     if (transportFactory != null) {
       return transportFactory!(
@@ -182,6 +202,7 @@ class CallProvider extends ChangeNotifier {
     return WebRtcCallTransport(
       callId: callId,
       iceServers: iceServers,
+      enableVideo: enableVideo,
       onRemoteStream: (stream) {
         // Phase 42F — store the remote stream on state so the
         // VoiceCallScreen can bind it to an RTCVideoRenderer.
@@ -213,6 +234,9 @@ class CallProvider extends ChangeNotifier {
       case 'call:incoming':
         _incomingRemoteSdp = event['sdpOffer'] as String?;
         _incomingIceServers = _parseIceServers(event['iceServers']);
+        _incomingCallType =
+            (event['callType'] as String?) == 'video' ? 'video' : 'audio';
+        _activeCallType = _incomingCallType;
         _state = _state.copyWith(
           callId: event['callId'] as String?,
           peerOwnerId: event['peerOwnerId'] as String?,
@@ -372,8 +396,14 @@ class CallProvider extends ChangeNotifier {
 
   /// Start an outbound call. Builds the transport, generates an SDP
   /// offer, and posts it to the home via `sendCallInvite`.
-  Future<String?> startCall(String targetOwnerId) async {
+  /// [callType] is `audio` (default) or `video`.
+  Future<String?> startCall(
+    String targetOwnerId, {
+    String callType = 'audio',
+  }) async {
     final iceServers = await _loadIceServers();
+    final enableVideo = callType == 'video';
+    _activeCallType = enableVideo ? 'video' : 'audio';
 
     // Configure the platform audio session for the voice call (no-op
     // on non-iOS). Wrapped in try/catch — audio session config is a
@@ -393,6 +423,7 @@ class CallProvider extends ChangeNotifier {
     final transport = _buildTransport(
       callId: tempCallId,
       iceServers: iceServers,
+      enableVideo: enableVideo,
     );
     // Stash on `_pendingTransport` so `_closeTransport()` (called from
     // dispose() or a remote `call:ended` event during the RPC window)
@@ -412,6 +443,7 @@ class CallProvider extends ChangeNotifier {
     final callId = await _nodeService.sendCallInvite(
       targetOwnerId,
       sdpOffer,
+      callType: _activeCallType,
       iceServers: iceServers
           .map((s) => {
                 'urls': s.urls,
@@ -474,6 +506,7 @@ class CallProvider extends ChangeNotifier {
     final transport = _buildTransport(
       callId: callId,
       iceServers: iceServers,
+      enableVideo: _incomingCallType == 'video',
     );
     _pendingTransport = transport;
 

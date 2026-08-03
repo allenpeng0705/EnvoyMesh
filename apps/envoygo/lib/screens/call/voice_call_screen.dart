@@ -160,31 +160,55 @@ class _VoiceCallScreenState extends ConsumerState<VoiceCallScreen> {
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
             const SizedBox.shrink(),
-            // Peer avatar + name + connection state
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircleAvatar(
-                  radius: 64,
-                  backgroundColor: colorScheme.primaryContainer,
-                  child: Icon(
-                    Icons.person,
-                    size: 64,
-                    color: colorScheme.onPrimaryContainer,
-                  ),
-                ),
-                const SizedBox(height: 24),
-                Text(
-                  peerName,
-                  style: Theme.of(context).textTheme.headlineMedium,
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  connectionLabel,
+            // Remote video when present; otherwise avatar + name.
+            Expanded(
+              child: Center(
+                child: _hasRemoteVideo(callState.remoteStream) &&
+                        _rendererInitialized
+                    ? ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: RTCVideoView(
+                          _remoteRenderer,
+                          objectFit:
+                              RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                        ),
+                      )
+                    : Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircleAvatar(
+                            radius: 64,
+                            backgroundColor: colorScheme.primaryContainer,
+                            child: Icon(
+                              Icons.person,
+                              size: 64,
+                              color: colorScheme.onPrimaryContainer,
+                            ),
+                          ),
+                          const SizedBox(height: 24),
+                          Text(
+                            peerName,
+                            style: Theme.of(context).textTheme.headlineMedium,
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            connectionLabel,
+                            style: TextStyle(
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                        ],
+                      ),
+              ),
+            ),
+            if (_hasRemoteVideo(callState.remoteStream))
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  '$peerName · $connectionLabel',
                   style: TextStyle(color: colorScheme.onSurfaceVariant),
                 ),
-              ],
-            ),
+              ),
             // Action buttons: mute + end
             Padding(
               padding: const EdgeInsets.only(bottom: 48),
@@ -223,5 +247,14 @@ class _VoiceCallScreenState extends ConsumerState<VoiceCallScreen> {
         ),
       ),
     );
+  }
+
+  bool _hasRemoteVideo(dynamic stream) {
+    if (stream is! MediaStream) return false;
+    try {
+      return stream.getVideoTracks().isNotEmpty;
+    } catch (_) {
+      return false;
+    }
   }
 }

@@ -27,9 +27,9 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Scan the pairing QR code from your home node to connect.</string>
+	<string>Scan pairing QR codes and use the camera during video calls.</string>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>Microphone access is used during voice calls so you can talk to your contacts.</string>
+	<string>Microphone access is used for voice notes and voice/video calls.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
 	<key>UIBackgroundModes</key>

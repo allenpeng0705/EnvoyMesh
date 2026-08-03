@@ -562,6 +562,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get chatVoiceCall => '음성 통화';
 
   @override
+  String get chatVideoCall => '영상 통화';
+
+  @override
   String get chatPublishedContent => '게시된 콘텐츠';
 
   @override
@@ -598,6 +601,24 @@ class AppLocalizationsKo extends AppLocalizations {
   String chatInvitedSnack(String name) {
     return '$name 초대됨';
   }
+
+  @override
+  String get chatVoiceSending => '음성 메모 전송 중…';
+
+  @override
+  String get chatVoiceSent => '음성 메모가 전송됨';
+
+  @override
+  String get chatVoiceRecording => '녹음 중';
+
+  @override
+  String get chatVoiceCancel => '취소';
+
+  @override
+  String get chatVoiceSend => '보내기';
+
+  @override
+  String get chatVoiceSendHint => '끝나면 보내기 · 취소하면 삭제';
 
   @override
   String get chatVoiceSendFailed => '음성 메모 전송 실패';

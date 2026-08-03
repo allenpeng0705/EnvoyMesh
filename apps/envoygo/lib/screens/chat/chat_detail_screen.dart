@@ -17,6 +17,7 @@ import '../../widgets/chat_bubble.dart';
 import '../../widgets/chat_audio_player.dart';
 import '../../widgets/ext_agent_offline_banner.dart';
 import '../../widgets/ext_agent_switcher.dart';
+import '../../widgets/voice_note_recorder_bar.dart';
 import '../call/voice_call_screen.dart';
 import '../content/published_content_sheet.dart';
 
@@ -55,9 +56,11 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   // Phase 37 — audio recording state
   final _audioRecorder = AudioRecorder();
   bool _isRecording = false;
-  bool _recordingGuard = false; // I1: prevents re-entry during async stop
+  bool _recordingGuard = false; // only during start/stop async work
+  bool _isSendingVoice = false;
   Timer? _recordTimer;
   int _recordingSeconds = 0;
+  String? _activeRecordingPath;
   static const _maxRecordSeconds = 120;
 
   bool get _isRoom =>
@@ -148,119 +151,160 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     super.dispose();
   }
 
-  Future<void> _toggleRecording() async {
-    if (_recordingGuard) return; // I1: prevent re-entry
-    if (_isRecording) {
-      // Stop recording — set guard immediately
+  Future<void> _startRecording() async {
+    if (_recordingGuard || _isRecording || _isSendingVoice) return;
+    _recordingGuard = true;
+    if (!await _audioRecorder.hasPermission()) {
       _recordingGuard = false;
-      _cancelRecordTimer();
-      final recordedSec = _recordingSeconds;
-      _recordingSeconds = 0;
-      final path = await _audioRecorder.stop();
-      if (path == null || !mounted) {
-        setState(() => _isRecording = false);
-        return;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context).chatMicDenied)),
+        );
       }
-      setState(() => _isRecording = false);
+      return;
+    }
+    try {
+      final path =
+          '${Directory.systemTemp.path}/voice_${DateTime.now().microsecondsSinceEpoch}.m4a';
+      await _audioRecorder.start(
+        const RecordConfig(encoder: AudioEncoder.aacLc),
+        path: path,
+      );
+      _activeRecordingPath = path;
+      _recordingSeconds = 0;
+      _recordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!mounted) {
+          _cancelRecordTimer();
+          return;
+        }
+        setState(() => _recordingSeconds++);
+        if (_recordingSeconds >= _maxRecordSeconds) {
+          _cancelRecordTimer();
+          unawaited(_sendRecording());
+        }
+      });
+      if (mounted) setState(() => _isRecording = true);
+    } catch (e) {
+      _cancelRecordTimer();
+      _activeRecordingPath = null;
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context).chatRecordFailed)),
+        );
+      }
+    } finally {
+      _recordingGuard = false;
+    }
+  }
+
+  Future<void> _cancelRecording() async {
+    if (_recordingGuard) return;
+    _recordingGuard = true;
+    _cancelRecordTimer();
+    try {
+      final path = await _audioRecorder.stop() ?? _activeRecordingPath;
+      if (path != null) {
+        final file = File(path);
+        if (await file.exists()) {
+          await file.delete();
+        }
+      }
+    } catch (_) {
+      // Best-effort discard.
+    } finally {
+      _activeRecordingPath = null;
+      _recordingGuard = false;
+      if (mounted) {
+        setState(() {
+          _isRecording = false;
+          _recordingSeconds = 0;
+          _isSendingVoice = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _sendRecording() async {
+    if (_recordingGuard || (!_isRecording && _activeRecordingPath == null)) {
+      return;
+    }
+    if (_isSendingVoice) return;
+    _recordingGuard = true;
+    _cancelRecordTimer();
+    final recordedSec = _recordingSeconds;
+    final l10n = AppLocalizations.of(context);
+    try {
+      final path = await _audioRecorder.stop() ?? _activeRecordingPath;
+      if (!mounted) return;
+      setState(() {
+        _isRecording = false;
+        _recordingSeconds = 0;
+        _isSendingVoice = true;
+      });
+      if (path == null) return;
 
       final file = File(path);
       final bytes = await file.readAsBytes();
       final base64 = base64Encode(bytes);
-      final mimeType =
-          'audio/mp4'; // record package outputs MP4/AAC on both platforms
+      const mimeType = 'audio/mp4';
 
       final nodeService = ref.read(nodeServiceProvider);
-      if (nodeService == null || _resolvedContactOwnerId == null) return;
-
-      try {
-        // 1. Upload to vault
-        final uploadResult = await nodeService.sendChatAttachment(
-          targetOwnerId: _resolvedContactOwnerId!,
-          filename: 'voice-note.m4a',
-          contentBase64: base64,
-          mimeType: mimeType,
-        );
-        final attachmentId =
-            uploadResult['attachmentId'] as String? ??
-            (uploadResult['id'] as String?) ??
-            'att_${DateTime.now().microsecondsSinceEpoch}';
-        final vaultRelativePath =
-            uploadResult['vaultRelativePath'] as String? ?? '';
-
-        // 2. Send chat message with attachment metadata
-        ref
-            .read(chatProvider.notifier)
-            .sendMessage(
-              _resolvedContactOwnerId!,
-              '', // mobile has no transcription
-              attachments: [
-                {
-                  'id': attachmentId,
-                  'filename': 'voice-note.m4a',
-                  'mimeType': mimeType,
-                  'sizeBytes': bytes.length,
-                  'sensitivity': 'friends',
-                  'vaultRelativePath': vaultRelativePath,
-                  if (recordedSec > 0) 'durationSec': recordedSec,
-                },
-              ],
-            );
-      } catch (e) {
+      if (nodeService == null || _resolvedContactOwnerId == null) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(AppLocalizations.of(context).chatVoiceSendFailed),
-            ),
-          );
-        }
-      }
-    } else {
-      // Start recording — set guard immediately
-      _recordingGuard = true;
-
-      if (!await _audioRecorder.hasPermission()) {
-        _recordingGuard = false;
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(AppLocalizations.of(context).chatMicDenied),
-            ),
+            SnackBar(content: Text(l10n.chatVoiceSendFailed)),
           );
         }
         return;
       }
-      try {
-        await _audioRecorder.start(
-          const RecordConfig(encoder: AudioEncoder.aacLc),
-          path:
-              '${Directory.systemTemp.path}/voice_${DateTime.now().microsecondsSinceEpoch}.m4a',
-        );
-        _recordingSeconds = 0;
-        _recordTimer = Timer.periodic(const Duration(seconds: 1), (_) {
-          if (!mounted) {
-            _cancelRecordTimer();
-            return;
-          }
-          _recordingSeconds++;
-          if (_recordingSeconds >= _maxRecordSeconds) {
-            // Auto-stop at max duration — delegate to toggle which handles full send
-            _recordingGuard = false; // unblock toggle's re-entry check
-            _cancelRecordTimer();
-            _toggleRecording(); // fire-and-forget: enters stop branch, uploads & sends
-          }
-        });
-        setState(() => _isRecording = true);
-      } catch (e) {
-        _cancelRecordTimer();
-        _recordingGuard = false;
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text(AppLocalizations.of(context).chatRecordFailed),
-            ),
+
+      final uploadResult = await nodeService.sendChatAttachment(
+        targetOwnerId: _resolvedContactOwnerId!,
+        filename: 'voice-note.m4a',
+        contentBase64: base64,
+        mimeType: mimeType,
+      );
+      final attachmentId =
+          uploadResult['attachmentId'] as String? ??
+          (uploadResult['id'] as String?) ??
+          'att_${DateTime.now().microsecondsSinceEpoch}';
+      final vaultRelativePath =
+          uploadResult['vaultRelativePath'] as String? ?? '';
+
+      await ref.read(chatProvider.notifier).sendMessage(
+            _resolvedContactOwnerId!,
+            '',
+            attachments: [
+              {
+                'id': attachmentId,
+                'filename': 'voice-note.m4a',
+                'mimeType': mimeType,
+                'sizeBytes': bytes.length,
+                'sensitivity': 'friends',
+                'vaultRelativePath': vaultRelativePath,
+                if (recordedSec > 0) 'durationSec': recordedSec,
+              },
+            ],
           );
-        }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(l10n.chatVoiceSent)),
+        );
       }
+      try {
+        if (await file.exists()) await file.delete();
+      } catch (_) {}
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isRecording = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context).chatVoiceSendFailed)),
+        );
+      }
+    } finally {
+      _activeRecordingPath = null;
+      _recordingGuard = false;
+      if (mounted) setState(() => _isSendingVoice = false);
     }
   }
 
@@ -305,16 +349,17 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
           if (!_isAgent &&
               !_isRoom &&
               !_isFamily &&
-              _resolvedContactOwnerId != null)
+              _resolvedContactOwnerId != null) ...[
             IconButton(
               icon: const Icon(Icons.call),
               tooltip: l10n.chatVoiceCall,
-              onPressed: _startCall,
+              onPressed: () => _startCall(callType: 'audio'),
             ),
-          if (!_isAgent &&
-              !_isRoom &&
-              !_isFamily &&
-              _resolvedContactOwnerId != null)
+            IconButton(
+              icon: const Icon(Icons.videocam),
+              tooltip: l10n.chatVideoCall,
+              onPressed: () => _startCall(callType: 'video'),
+            ),
             IconButton(
               icon: const Icon(Icons.language),
               tooltip: l10n.chatPublishedContent,
@@ -324,6 +369,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
                 displayName: widget.displayName,
               ),
             ),
+          ],
           IconButton(
             icon: const Icon(Icons.delete_outline),
             tooltip: l10n.chatClearThread,
@@ -405,44 +451,74 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
           ),
           SafeArea(
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              child: Row(
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.image),
-                    onPressed: _pickAndSendImage,
-                  ),
-                  if (!_isAgent && !_isRoom && !_isFamily)
-                    IconButton(
-                      icon: Icon(
-                        _isRecording ? Icons.stop : Icons.mic,
-                        color: _isRecording ? Colors.red : null,
-                      ),
-                      onPressed: _toggleRecording,
-                      tooltip: _isRecording
-                          ? l10n.chatStopRecording
-                          : l10n.chatRecordVoice,
-                    ),
-                  Expanded(
-                    child: TextField(
-                      controller: _textController,
-                      decoration: InputDecoration(
-                        hintText: l10n.chatTypeMessage,
-                        border: const OutlineInputBorder(
-                          borderRadius: BorderRadius.all(Radius.circular(24)),
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
+              child: (_isRecording || _isSendingVoice) &&
+                      !_isAgent &&
+                      !_isRoom &&
+                      !_isFamily
+                  ? VoiceNoteRecorderBar(
+                      isCapturing: _isRecording,
+                      isSending: _isSendingVoice,
+                      recordingSeconds: _recordingSeconds,
+                      maxSeconds: _maxRecordSeconds,
+                      onCancel: () => unawaited(_cancelRecording()),
+                      onSend: () => unawaited(_sendRecording()),
+                    )
+                  : Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.image_outlined),
+                          tooltip: l10n.chatTypeMessage,
+                          onPressed: _pickAndSendImage,
                         ),
-                        contentPadding:
-                            const EdgeInsets.symmetric(horizontal: 16),
-                      ),
-                      onSubmitted: (_) => _sendMessage(),
+                        if (!_isAgent && !_isRoom && !_isFamily)
+                          Padding(
+                            padding: const EdgeInsets.only(bottom: 2, right: 4),
+                            child: Tooltip(
+                              message: l10n.chatRecordVoice,
+                              child: Material(
+                                color: Theme.of(context)
+                                    .colorScheme
+                                    .primaryContainer,
+                                shape: const CircleBorder(),
+                                child: InkWell(
+                                  customBorder: const CircleBorder(),
+                                  onTap: () => unawaited(_startRecording()),
+                                  child: const SizedBox(
+                                    width: 48,
+                                    height: 48,
+                                    child: Icon(Icons.mic, size: 26),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        Expanded(
+                          child: TextField(
+                            controller: _textController,
+                            minLines: 1,
+                            maxLines: 4,
+                            decoration: InputDecoration(
+                              hintText: l10n.chatTypeMessage,
+                              border: const OutlineInputBorder(
+                                borderRadius:
+                                    BorderRadius.all(Radius.circular(24)),
+                              ),
+                              contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16,
+                                vertical: 12,
+                              ),
+                            ),
+                            onSubmitted: (_) => _sendMessage(),
+                          ),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.send),
+                          onPressed: _sendMessage,
+                        ),
+                      ],
                     ),
-                  ),
-                  IconButton(
-                    icon: const Icon(Icons.send),
-                    onPressed: _sendMessage,
-                  ),
-                ],
-              ),
             ),
           ),
         ],
@@ -467,26 +543,38 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     await _sendText(text, restoreComposerOnFailure: false);
   }
 
-  /// Phase 42F — start an outbound voice call from this chat thread.
-  /// Delegates to [CallProvider.startCall] which builds the WebRTC
-  /// transport, generates the SDP offer, and posts sendCallInvite
-  /// to the home. On success we push the [VoiceCallScreen] so the
-  /// user sees the active-call UI right away.
-  Future<void> _startCall() async {
+  /// Phase 42F — start an outbound voice or video call from this chat.
+  Future<void> _startCall({String callType = 'audio'}) async {
     final contactOwnerId = _resolvedContactOwnerId;
-    if (contactOwnerId == null) return;
-    final callProviderRef = ref.read(callProvider);
-    final callId = await callProviderRef.startCall(contactOwnerId);
-    if (!mounted) return;
-    if (callId == null) {
+    if (contactOwnerId == null) {
+      if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(AppLocalizations.of(context).chatCallFailed)),
       );
       return;
     }
-    Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (_) => const VoiceCallScreen()));
+    try {
+      final callProviderRef = ref.read(callProvider);
+      final callId = await callProviderRef.startCall(
+        contactOwnerId,
+        callType: callType,
+      );
+      if (!mounted) return;
+      if (callId == null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context).chatCallFailed)),
+        );
+        return;
+      }
+      Navigator.of(context).push(
+        MaterialPageRoute(builder: (_) => const VoiceCallScreen()),
+      );
+    } catch (_) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppLocalizations.of(context).chatCallFailed)),
+      );
+    }
   }
 
   void _sendMessage() {

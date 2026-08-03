@@ -1182,6 +1182,12 @@ abstract class AppLocalizations {
   /// **'Voice call'**
   String get chatVoiceCall;
 
+  /// No description provided for @chatVideoCall.
+  ///
+  /// In en, this message translates to:
+  /// **'Video call'**
+  String get chatVideoCall;
+
   /// No description provided for @chatPublishedContent.
   ///
   /// In en, this message translates to:
@@ -1253,6 +1259,42 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'{name} invited'**
   String chatInvitedSnack(String name);
+
+  /// No description provided for @chatVoiceSending.
+  ///
+  /// In en, this message translates to:
+  /// **'Sending voice note…'**
+  String get chatVoiceSending;
+
+  /// No description provided for @chatVoiceSent.
+  ///
+  /// In en, this message translates to:
+  /// **'Voice note sent'**
+  String get chatVoiceSent;
+
+  /// No description provided for @chatVoiceRecording.
+  ///
+  /// In en, this message translates to:
+  /// **'Recording'**
+  String get chatVoiceRecording;
+
+  /// No description provided for @chatVoiceCancel.
+  ///
+  /// In en, this message translates to:
+  /// **'Cancel'**
+  String get chatVoiceCancel;
+
+  /// No description provided for @chatVoiceSend.
+  ///
+  /// In en, this message translates to:
+  /// **'Send'**
+  String get chatVoiceSend;
+
+  /// No description provided for @chatVoiceSendHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Tap Send when done · Cancel to discard'**
+  String get chatVoiceSendHint;
 
   /// No description provided for @chatVoiceSendFailed.
   ///

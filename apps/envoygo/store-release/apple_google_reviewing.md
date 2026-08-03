@@ -134,6 +134,7 @@ Confirm `<ISO>` is ~15 days out (or matches `EXPIRES_AT`).
 3. Wait until the QR / URI appears (server upserts a family invite with review TTL).
 4. Click **Copy** (or copy the `envoy://invite?token=…&wsUrl=…` string from the UI).
 5. Paste into:
+   - `sites/qr_review.html` → `INVITE_URI` (replace the placeholder; do **not** commit a live URI to git)
    - App Store Connect → App Review Information → Notes
    - Google Play Console → App access / review notes
    - Or send directly to a human reviewer

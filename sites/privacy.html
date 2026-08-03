@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Privacy Policy — EnvoyMesh &amp; EnvoyGo</title>
+  <meta name="description" content="Privacy Policy for EnvoyMesh (home node / desktop) and EnvoyGo (mobile companion). Local-first mesh: no central EnvoyMesh account.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --ink: #0c1222;
+      --ink-soft: #1a2438;
+      --paper: #f4f6f9;
+      --paper-2: #e8edf4;
+      --accent: #0d9488;
+      --accent-deep: #0f766e;
+      --text: #0c1222;
+      --muted: #5a6a82;
+      --line: #c5d0e0;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      min-height: 100vh;
+      font-family: "DM Sans", system-ui, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(ellipse 80% 50% at 50% -10%, rgba(13, 148, 136, 0.12), transparent 55%),
+        linear-gradient(180deg, var(--paper) 0%, var(--paper-2) 100%);
+      line-height: 1.6;
+      padding: 32px 20px 56px;
+    }
+
+    .wrap {
+      max-width: 720px;
+      margin: 0 auto;
+    }
+
+    .brand {
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--accent-deep);
+      margin-bottom: 10px;
+    }
+
+    h1 {
+      font-size: clamp(1.75rem, 4vw, 2.25rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+      margin-bottom: 8px;
+    }
+
+    .meta {
+      color: var(--muted);
+      font-size: 0.9375rem;
+      margin-bottom: 28px;
+    }
+
+    .panel {
+      background: #fff;
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 28px 26px 32px;
+      box-shadow: 0 12px 40px rgba(12, 18, 34, 0.06);
+    }
+
+    .lede {
+      color: var(--ink-soft);
+      font-size: 1.05rem;
+      margin-bottom: 20px;
+    }
+
+    .toc {
+      margin: 0 0 28px;
+      padding: 14px 16px;
+      background: var(--paper);
+      border-radius: 10px;
+      border: 1px solid var(--line);
+    }
+
+    .toc strong {
+      display: block;
+      font-size: 0.75rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .toc ol {
+      margin: 0;
+      padding-left: 1.25rem;
+      font-size: 0.9rem;
+      color: var(--ink-soft);
+    }
+
+    .toc a {
+      color: var(--accent-deep);
+      text-decoration: none;
+    }
+
+    .toc a:hover { text-decoration: underline; }
+
+    h2 {
+      font-size: 1.2rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      margin: 28px 0 10px;
+      padding-top: 8px;
+      border-top: 1px solid var(--line);
+      color: var(--ink);
+      scroll-margin-top: 24px;
+    }
+
+    h2:first-of-type { border-top: none; padding-top: 0; margin-top: 8px; }
+
+    h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin: 18px 0 8px;
+      color: var(--ink-soft);
+    }
+
+    p, li {
+      color: var(--ink-soft);
+      font-size: 0.975rem;
+      margin-bottom: 10px;
+    }
+
+    ul, ol {
+      margin: 0 0 14px;
+      padding-left: 1.35rem;
+    }
+
+    li + li { margin-top: 4px; }
+
+    strong { color: var(--ink); font-weight: 600; }
+
+    code {
+      font-family: "IBM Plex Mono", ui-monospace, monospace;
+      font-size: 0.82em;
+      background: var(--paper);
+      padding: 1px 6px;
+      border-radius: 4px;
+      border: 1px solid var(--line);
+    }
+
+    a {
+      color: var(--accent-deep);
+      text-underline-offset: 2px;
+    }
+
+    .callout {
+      margin: 16px 0;
+      padding: 14px 16px;
+      background: rgba(13, 148, 136, 0.08);
+      border-left: 3px solid var(--accent);
+      border-radius: 0 10px 10px 0;
+      font-size: 0.925rem;
+      color: var(--ink-soft);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.875rem;
+      margin: 12px 0 18px;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--paper);
+      font-weight: 600;
+      color: var(--ink);
+    }
+
+    td { color: var(--ink-soft); }
+
+    footer {
+      margin-top: 28px;
+      text-align: center;
+      font-size: 0.8125rem;
+      color: var(--muted);
+    }
+
+    footer a { color: var(--accent-deep); }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <p class="brand">EnvoyMesh · EnvoyGo</p>
+    <h1>Privacy Policy</h1>
+    <p class="meta">Last updated: 3 August 2026 · Effective for EnvoyMesh home/desktop software and the EnvoyGo mobile apps</p>
+
+    <article class="panel">
+      <p class="lede">
+        EnvoyMesh and EnvoyGo are built <strong>local-first</strong>. There is
+        <strong>no central EnvoyMesh account server</strong> that stores your chat
+        inbox, contacts, or vault. Identity is cryptographic (Ed25519 keys → DIDs)
+        and lives on devices you control. This policy explains what data is
+        processed, where it stays, and what third parties (if any) may see.
+      </p>
+
+      <nav class="toc" aria-label="Contents">
+        <strong>Contents</strong>
+        <ol>
+          <li><a href="#who">Who we are</a></li>
+          <li><a href="#scope">Scope of products</a></li>
+          <li><a href="#principles">Core principles</a></li>
+          <li><a href="#data">Data we process</a></li>
+          <li><a href="#envoygo">EnvoyGo (mobile)</a></li>
+          <li><a href="#envoymesh">EnvoyMesh (home / desktop)</a></li>
+          <li><a href="#relays">Relays &amp; network</a></li>
+          <li><a href="#third">Third-party services</a></li>
+          <li><a href="#retention">Retention &amp; deletion</a></li>
+          <li><a href="#children">Children</a></li>
+          <li><a href="#rights">Your choices &amp; rights</a></li>
+          <li><a href="#changes">Changes</a></li>
+          <li><a href="#contact">Contact</a></li>
+        </ol>
+      </nav>
+
+      <h2 id="who">1. Who we are</h2>
+      <p>
+        This Privacy Policy covers the EnvoyMesh project software, including the
+        home node / desktop apps (EnvoyMesh) and the mobile companion (EnvoyGo).
+        Product pages and review tools may be hosted at
+        <a href="https://www.homeclaw.cn/envoy/qr_review">homeclaw.cn/envoy</a>.
+      </p>
+
+      <h2 id="scope">2. Scope of products</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Product</th>
+            <th>Role</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><strong>EnvoyMesh</strong></td>
+            <td>Home / desktop node: identity, bonds, chat, vault, AI agent, policy engine, optional relays</td>
+          </tr>
+          <tr>
+            <td><strong>EnvoyGo</strong></td>
+            <td>Mobile thin client: pairs to <em>your</em> home node; chat, contacts, agent, calls, push alerts</td>
+          </tr>
+        </tbody>
+      </table>
+      <p>
+        When you pair EnvoyGo to a home node, that home’s operator (often you)
+        controls what is stored on the home device. We do not operate a shared
+        multi-tenant “Envoy cloud inbox.”
+      </p>
+
+      <h2 id="principles">3. Core principles</h2>
+      <ul>
+        <li><strong>No central EnvoyMesh account</strong> — you are not required to register with us to use the mesh.</li>
+        <li><strong>Self-sovereign identity</strong> — keys and peer IDs are generated and stored on your devices.</li>
+        <li><strong>Policy-gated sharing</strong> — trust tiers, bonds, and mandates limit what peers and agents can access.</li>
+        <li><strong>Signed messages</strong> — mesh envelopes are Ed25519-signed; recipients verify sender identity.</li>
+        <li><strong>Local vault by default</strong> — knowledge and files stay on the home node unless you explicitly share.</li>
+      </ul>
+
+      <div class="callout">
+        EnvoyMesh and EnvoyGo are not advertising platforms. We do not sell personal
+        data and we do not use your messages for cross-app tracking or ad profiling.
+      </div>
+
+      <h2 id="data">4. Data we process</h2>
+      <p>“Process” here means handled by the software on your devices or by services
+        you (or your home operator) configure — not necessarily collected by a
+        central EnvoyMesh company database.</p>
+
+      <h3>Categories</h3>
+      <ul>
+        <li><strong>Identifiers</strong> — owner / device / agent / peer IDs derived from public keys; session and pairing tokens.</li>
+        <li><strong>User content</strong> — chat messages, attachments, voice/video call media, vault files, profile display names you set.</li>
+        <li><strong>Device permissions data</strong> — camera frames for QR pairing; microphone/camera for calls; notification tokens for push.</li>
+        <li><strong>Technical / connection data</strong> — relay or WebSocket endpoints you configure, reachability hints, audit events on the home node.</li>
+        <li><strong>AI prompts &amp; context</strong> — only when you enable a model provider or local agent; subject to that provider’s terms if remote.</li>
+      </ul>
+
+      <h2 id="envoygo">5. EnvoyGo (mobile)</h2>
+      <p>EnvoyGo stores pairing/session material on-device (e.g. platform secure storage / Keychain) and talks to the home node you paired with.</p>
+      <ul>
+        <li><strong>Camera</strong> — used to scan home-node pairing / family invite QR codes. Images are not uploaded to an EnvoyMesh cloud for analytics.</li>
+        <li><strong>Microphone / camera (calls)</strong> — used during voice or video calls with mesh peers; media follows the call path (P2P / home signaling), not a vendor social network.</li>
+        <li><strong>Photos / attachments</strong> — optional; sent via your home / mesh when you choose to send them.</li>
+        <li><strong>Push notifications</strong> — Apple Push Notification service (APNs) or Firebase Cloud Messaging (FCM) device tokens may be registered with <em>your home node</em> so it can wake the app for chat or calls. Those platforms process tokens under their own policies.</li>
+        <li><strong>Local database</strong> — caches such as chat threads / contact lists needed for offline UX remain on the device until you clear app data or uninstall.</li>
+      </ul>
+      <p>
+        EnvoyGo does <strong>not</strong> require access to your phone’s system Contacts
+        database for mesh contacts — peer profiles come from the paired home node.
+      </p>
+
+      <h2 id="envoymesh">6. EnvoyMesh (home / desktop)</h2>
+      <ul>
+        <li><strong>On-disk profile</strong> — keys, trust store, peer directory, chat/journal data, vault index, and audit logs typically live under the node profile directory you choose.</li>
+        <li><strong>AI / models</strong> — local inference stays on your machine; remote providers only receive prompts/context you approve through configured tools and policy.</li>
+        <li><strong>Audit</strong> — JSONL audit events may record allow/deny decisions and summaries for security; they are local unless you export them.</li>
+        <li><strong>Family / pairing invites</strong> — tokens authorize a device to bond; treat invite QR codes like passwords and revoke or rotate when done.</li>
+      </ul>
+
+      <h2 id="relays">7. Relays &amp; network</h2>
+      <p>
+        To connect when peers are behind NAT or on cellular, traffic may pass through
+        <strong>relays or WebSocket bridges you (or your community) configure</strong>.
+        Relay operators can see connection metadata (who connects when, addressing).
+        Message payloads are intended for end peers under the mesh protocol; do not
+        assume a random relay is a confidential vault. Prefer direct / LAN paths when available.
+      </p>
+
+      <h2 id="third">8. Third-party services</h2>
+      <p>Depending on how you configure the products, third parties may include:</p>
+      <ul>
+        <li><strong>Apple / Google</strong> — app distribution, APNs / FCM push delivery.</li>
+        <li><strong>Firebase</strong> (if used in your EnvoyGo build) — messaging / related Google services for push.</li>
+        <li><strong>Model providers</strong> (OpenAI-compatible APIs, local runners, external agents such as HomeClaw) — only if you enable them on the home node.</li>
+        <li><strong>Community or private relays</strong> — connectivity only; operators are independent unless you run them yourself.</li>
+      </ul>
+      <p>We do not control those parties’ independent privacy practices. Review their policies before enabling them.</p>
+
+      <h2 id="retention">9. Retention &amp; deletion</h2>
+      <ul>
+        <li><strong>On EnvoyGo</strong> — unpair and/or uninstall the app to remove local caches and session material from that device.</li>
+        <li><strong>On the home node</strong> — the home operator controls retention of chats, vault files, invites, and peer records. Deleting data for a family member or wiping a profile is done on the home (or by discarding the profile directory).</li>
+        <li><strong>Push tokens</strong> — become inactive when you revoke them on the home or uninstall; platform retention follows Apple/Google rules.</li>
+      </ul>
+      <p>
+        Because there is no central EnvoyMesh account mailbox, there is no
+        “delete my cloud inbox with EnvoyMesh HQ” button — deletion is device- and
+        home-local.
+      </p>
+
+      <h2 id="children">10. Children</h2>
+      <p>
+        The software is not directed at children under 13 (or the minimum age in your
+        jurisdiction). Do not use EnvoyGo / EnvoyMesh to knowingly collect personal
+        information from children without appropriate parental authority and
+        compliance with local law.
+      </p>
+
+      <h2 id="rights">11. Your choices &amp; rights</h2>
+      <ul>
+        <li>Refuse camera / mic / notification permissions (pairing, calls, or push will be limited).</li>
+        <li>Use LAN / direct paths and avoid third-party relays when possible.</li>
+        <li>Disable remote model providers; keep inference local.</li>
+        <li>Rotate or expire pairing / family invite tokens; revoke device certificates where supported.</li>
+        <li>Export or delete local profile data you control on the home machine.</li>
+      </ul>
+      <p>
+        If applicable law (e.g. GDPR / CCPA) grants you rights regarding personal data
+        processed by a home operator or a service you configured, exercise those rights
+        with that operator or provider. Contact us (below) for questions about the
+        software’s design.
+      </p>
+
+      <h2 id="changes">12. Changes</h2>
+      <p>
+        We may update this page when product behavior or store requirements change.
+        The “Last updated” date at the top will change. Continued use after an update
+        means you accept the revised policy for that software version.
+      </p>
+
+      <h2 id="contact">13. Contact</h2>
+      <p>
+        Privacy questions about EnvoyMesh / EnvoyGo:
+      </p>
+      <ul>
+        <li>Web: <a href="https://www.homeclaw.cn/">https://www.homeclaw.cn/</a></li>
+        <li>Source / issues: <a href="https://github.com/allenpeng0705/EnvoyMesh">github.com/allenpeng0705/EnvoyMesh</a></li>
+      </ul>
+      <p>
+        For App Store / Play listings, use this page URL (after you publish it), for example:
+        <code>https://www.homeclaw.cn/envoy/privacy</code>
+      </p>
+    </article>
+
+    <footer>
+      <p>
+        <a href="https://www.homeclaw.cn/envoy/qr_review">Review pairing QR</a>
+        · EnvoyMesh &amp; EnvoyGo Privacy Policy
+      </p>
+    </footer>
+  </main>
+</body>
+</html>

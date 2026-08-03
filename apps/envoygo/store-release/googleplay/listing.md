@@ -244,20 +244,50 @@ Does this app contain ads? **No**
 
 ## Build & submit reminders
 
+### Sign for Google Play (upload key)
+
+Play uses **Play App Signing**: you sign the AAB with an **upload key**; Google re-signs with the **app signing key** for devices.
+
+1. **Create a keystore once** (store passwords in a password manager — losing the upload key is painful):
+
+```bash
+cd apps/envoygo/android
+keytool -genkey -v -keystore upload-keystore.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+```
+
+2. **Configure Gradle** (files are gitignored; template is `android/key.properties.example`):
+
+```bash
+cp key.properties.example key.properties
+# Edit key.properties: storePassword, keyPassword, keyAlias=upload, storeFile=upload-keystore.jks
+```
+
+`android/app/build.gradle.kts` loads `android/key.properties` automatically for release builds.
+
+3. **Build the Play bundle**:
+
 ```bash
 cd apps/envoygo
-# Configure upload keystore first — release currently uses debug signing!
+# Bump pubspec version first: 1.0.0+N  (N = versionCode, must increase every upload)
 flutter build appbundle --release
+# → build/app/outputs/bundle/release/app-release.aab
 ```
+
+4. **Play Console**
+   - Create the app (`com.envoymesh.envoygo`) if needed
+   - First upload: enable **Play App Signing** (default) → upload `app-release.aab`
+   - Export a backup of the upload certificate if Console offers it; keep `upload-keystore.jks` offline
+
+Do **not** commit `key.properties`, `*.jks`, or `*.keystore`.
 
 Critical before production:
 
-1. Replace debug `signingConfig` in `android/app/build.gradle.kts` with a release keystore
+1. Create upload keystore + `android/key.properties` (above)
 2. Bump `version: 1.0.0+N` in `pubspec.yaml` for each Play upload (`versionCode` = N)
-3. Enable Play App Signing
-4. Complete Data safety + Privacy policy URL
+3. Leave Play App Signing enabled
+4. Complete Data safety + Privacy policy URL (e.g. `https://www.homeclaw.cn/envoy/privacy`)
 
 Current IDs:
 
 - `applicationId` / namespace: `com.envoymesh.envoygo`
-- versionName / versionCode: from Flutter `1.0.0` / `3`
+- versionName / versionCode: from Flutter `pubspec.yaml` (`1.0.0+N` → name `1.0.0`, code `N`)

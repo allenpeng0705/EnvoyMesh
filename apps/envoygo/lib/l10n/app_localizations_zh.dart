@@ -561,6 +561,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chatVoiceCall => '语音通话';
 
   @override
+  String get chatVideoCall => '视频通话';
+
+  @override
   String get chatPublishedContent => '已发布内容';
 
   @override
@@ -597,6 +600,24 @@ class AppLocalizationsZh extends AppLocalizations {
   String chatInvitedSnack(String name) {
     return '已邀请 $name';
   }
+
+  @override
+  String get chatVoiceSending => '正在发送语音…';
+
+  @override
+  String get chatVoiceSent => '语音已发送';
+
+  @override
+  String get chatVoiceRecording => '正在录音';
+
+  @override
+  String get chatVoiceCancel => '取消';
+
+  @override
+  String get chatVoiceSend => '发送';
+
+  @override
+  String get chatVoiceSendHint => '完成后点发送 · 取消则丢弃';
 
   @override
   String get chatVoiceSendFailed => '发送语音失败';

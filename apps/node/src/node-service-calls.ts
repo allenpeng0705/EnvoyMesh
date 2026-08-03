@@ -164,6 +164,27 @@ function hasCallTransportDeps(ctx: CallContext): ctx is FullCallContext {
   );
 }
 
+/**
+ * Call signaling only: prefer direct LAN TCP when the peer is already direct
+ * or this node is on `lan-fast` (default home LAN profile). Leave
+ * `wan-default` / other profiles on circuit-first so cross-network calls do
+ * not burn 30s on unreachable RFC1918 hints. Does not change chat delivery.
+ */
+export async function preferCircuitHintsForCallDelivery(
+  ctx: Pick<CallContextCore, "loadConfig">,
+  conn: { connected?: boolean; direct: boolean },
+): Promise<boolean> {
+  if (conn.direct) return false;
+  try {
+    const cfg = (await ctx.loadConfig()) as { discoveryProfile?: string } | null | undefined;
+    const profile = typeof cfg?.discoveryProfile === "string" ? cfg.discoveryProfile.trim() : "";
+    if (profile === "lan-fast" || profile === "") return false;
+  } catch {
+    // Config unavailable — stay conservative for non-direct peers.
+  }
+  return true;
+}
+
 /* ---------- passthroughs ---------- */
 
 export function getActiveCallViaRuntime(ctx: CallContext): CallSession | null {
@@ -299,7 +320,7 @@ export async function sendCallResponseEnvelopeViaRuntime(
         }
       }
     }
-    const preferCircuitHints = !conn.direct;
+    const preferCircuitHints = await preferCircuitHintsForCallDelivery(ctx, conn);
     let dialHints: string[];
     try {
       dialHints = await raceWithTimeout(
@@ -468,7 +489,7 @@ export async function sendCallInviteViaRuntime(
     }
   }
 
-  const preferCircuitHints = connAfterWarm.connected ? !connAfterWarm.direct : !connAfterWarm.direct;
+  const preferCircuitHints = await preferCircuitHintsForCallDelivery(ctx, connAfterWarm);
 
   const { createCallInvitePayload, createUnsignedEnvelope: createUnsignedEnvelopeFn } =
     await import("@envoymesh/protocol");
@@ -640,7 +661,7 @@ export async function sendCallReinviteViaRuntime(
       }
     }
   }
-  const preferCircuitHints = !conn.direct;
+  const preferCircuitHints = await preferCircuitHintsForCallDelivery(ctx, conn);
 
   const dialHints = await raceWithTimeout(
     ctx.dialHintsForChat(transportPeerId, listenAddrs),

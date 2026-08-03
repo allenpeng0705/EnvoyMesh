@@ -575,6 +575,9 @@ class AppLocalizationsIt extends AppLocalizations {
   String get chatVoiceCall => 'Chiamata vocale';
 
   @override
+  String get chatVideoCall => 'Videochiamata';
+
+  @override
   String get chatPublishedContent => 'Contenuti pubblicati';
 
   @override
@@ -612,6 +615,24 @@ class AppLocalizationsIt extends AppLocalizations {
   String chatInvitedSnack(String name) {
     return '$name invitato';
   }
+
+  @override
+  String get chatVoiceSending => 'Invio nota vocale…';
+
+  @override
+  String get chatVoiceSent => 'Nota vocale inviata';
+
+  @override
+  String get chatVoiceRecording => 'Registrazione';
+
+  @override
+  String get chatVoiceCancel => 'Annulla';
+
+  @override
+  String get chatVoiceSend => 'Invia';
+
+  @override
+  String get chatVoiceSendHint => 'Invia per completare · Annulla per scartare';
 
   @override
   String get chatVoiceSendFailed => 'Invio nota vocale non riuscito';

@@ -492,13 +492,26 @@ class ChatNotifier extends StateNotifier<ChatState> {
       lastMessageAt: DateTime.now(),
     );
 
+    void rollbackOptimistic() {
+      state = state.copyWith(
+        messages: {
+          ...state.messages,
+          threadId: [
+            for (final m in state.messages[threadId] ?? const <ChatMessage>[])
+              if (m.id != tempMsg.id) m,
+          ],
+        },
+      );
+    }
+
     try {
       // Send via RPC.
       await nodeService.sendChat(targetOwnerId, text,
           attachments: attachments);
       // TODO(31D): Reconcile temp message with server response.
     } catch (e) {
-      // Mark message as failed?
+      rollbackOptimistic();
+      rethrow;
     }
   }
 

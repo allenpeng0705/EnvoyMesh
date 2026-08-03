@@ -25,6 +25,9 @@ class WebRtcCallTransport {
   final void Function(String sdp, String type) onSdpGenerated;
   final void Function(CallIceCandidate candidate) onIceCandidate;
 
+  /// When true, capture camera + offer to receive video (video calls).
+  final bool enableVideo;
+
   /// Pluggable factory for the underlying [RTCPeerConnection]. Production
   /// callers leave this null and use [createPeerConnection]. Tests inject
   /// a fake to exercise the transport without a real WebRTC stack.
@@ -49,6 +52,7 @@ class WebRtcCallTransport {
     required this.onConnectionStateChange,
     required this.onSdpGenerated,
     required this.onIceCandidate,
+    this.enableVideo = false,
     this.peerConnectionFactory,
     this.getUserMedia,
   });
@@ -97,20 +101,25 @@ class WebRtcCallTransport {
     return pc;
   }
 
-  /// Acquire the local microphone and add the audio track to the peer
-  /// connection. Caller-side (offerer) and callee-side (answerer) both
-  /// need this — the phone sends audio in both directions.
-  Future<void> _attachLocalAudio(RTCPeerConnection pc) async {
+  /// Acquire the local microphone (and camera when [enableVideo]) and
+  /// add tracks to the peer connection.
+  Future<void> _attachLocalMedia(RTCPeerConnection pc) async {
     if (_localStream != null) return;
     try {
       final factory = getUserMedia ??
           ((c) => navigator.mediaDevices.getUserMedia(c));
-      _localStream = await factory({'audio': true});
+      _localStream = await factory({
+        'audio': true,
+        if (enableVideo) 'video': true,
+      });
     } catch (err) {
-      throw Exception('Microphone access denied: $err');
+      throw Exception(
+        enableVideo
+            ? 'Camera/microphone access denied: $err'
+            : 'Microphone access denied: $err',
+      );
     }
-    final tracks = _localStream!.getAudioTracks();
-    for (final track in tracks) {
+    for (final track in _localStream!.getTracks()) {
       await pc.addTrack(track, _localStream!);
     }
   }
@@ -123,11 +132,11 @@ class WebRtcCallTransport {
     final pc = await _buildPeerConnection();
     _pc = pc;
 
-    await _attachLocalAudio(pc);
+    await _attachLocalMedia(pc);
 
     final offer = await pc.createOffer({
       'offerToReceiveAudio': true,
-      'offerToReceiveVideo': false,
+      'offerToReceiveVideo': enableVideo,
     });
     await pc.setLocalDescription(offer);
     onSdpGenerated(offer.sdp ?? '', 'offer');
@@ -142,7 +151,7 @@ class WebRtcCallTransport {
     final pc = await _buildPeerConnection();
     _pc = pc;
 
-    await _attachLocalAudio(pc);
+    await _attachLocalMedia(pc);
 
     await pc.setRemoteDescription(
       RTCSessionDescription(remoteSdp, 'offer'),

@@ -228,6 +228,7 @@
   "chatsGroupName": "Group name",
   "chatsNoFamilyMembers": "No other family members yet.",
   "chatVoiceCall": "Voice call",
+  "chatVideoCall": "Video call",
   "chatPublishedContent": "Published content",
   "chatClearThread": "Clear thread",
   "chatClearThreadTitle": "Clear thread?",
@@ -247,6 +248,12 @@
       }
     }
   },
+  "chatVoiceSending": "Sending voice note…",
+  "chatVoiceSent": "Voice note sent",
+  "chatVoiceRecording": "Recording",
+  "chatVoiceCancel": "Cancel",
+  "chatVoiceSend": "Send",
+  "chatVoiceSendHint": "Tap Send when done · Cancel to discard",
   "chatVoiceSendFailed": "Failed to send voice note",
   "chatMicDenied": "Microphone permission denied",
   "chatRecordFailed": "Failed to start recording",

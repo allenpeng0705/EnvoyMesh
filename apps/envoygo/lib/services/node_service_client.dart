@@ -1082,10 +1082,12 @@ class NodeServiceClient {
     String targetOwnerId,
     String sdpOffer, {
     List<Map<String, dynamic>>? iceServers,
+    String callType = 'audio',
   }) async {
     final result = await _client.call('sendCallInvite', {
       'targetOwnerId': targetOwnerId,
       'sdpOffer': sdpOffer,
+      'callType': callType,
       if (iceServers != null && iceServers.isNotEmpty) 'iceServers': iceServers,
     });
     // The home returns the callId as a JSON string (or null on refusal).

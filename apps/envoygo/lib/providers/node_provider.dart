@@ -1765,18 +1765,27 @@ class NodeNotifier extends StateNotifier<NodeState> {
 // --------------------------------------------------------------------------
 
 final callProvider = ChangeNotifierProvider<CallProvider>((ref) {
-  // `client` lives on the NodeNotifier, not the NodeState. (Pre-existing
-  // bug introduced by commit 1e266c0 — fixed here so the file compiles
-  // and the call provider can subscribe to events from the home client.)
-  final client = ref.read(nodeProvider.notifier).client;
-  if (client == null) {
-    // Return a no-op provider when disconnected
+  // Rebuild only when the paired home identity changes (pair / unpair /
+  // switch node) — NOT on every connectionState flap. Transient disconnects
+  // (background pause, brief offline) must not dispose WebRTC mid-call.
+  final nodeId = ref.watch(nodeProvider.select((s) => s.activeNode?.id));
+  if (nodeId == null) {
     return CallProvider.noop();
   }
-  // The CallProvider subscribes to NodeServiceClient events, so wrap
-  // the HomeRemoteClient first. (Pre-existing bug introduced by
-  // commit 1e266c0 — fixed here so the file compiles.)
-  final provider = CallProvider(NodeServiceClient(client));
+
+  final initialClient = ref.read(nodeProvider.notifier).client;
+  final provider = initialClient != null
+      ? CallProvider(NodeServiceClient(initialClient))
+      : CallProvider.noop();
+
+  void tryBind() {
+    final client = ref.read(nodeProvider.notifier).client;
+    if (client == null) return;
+    provider.bind(NodeServiceClient(client));
+  }
+
+  tryBind();
+
   ref.onDispose(() => provider.dispose());
 
   // Phase 42I — bridge the iOS VoIP push path to this CallProvider.
@@ -1811,13 +1820,30 @@ final callProvider = ChangeNotifierProvider<CallProvider>((ref) {
   });
   // Register the VoIP token with the home (best-effort). The home needs
   // it to dispatch a VoIP push when the phone is offline.
-  final ownerId = ref.read(nodeProvider).ownerId;
-  final profileId = ref.read(nodeProvider).effectiveFamilyProfileId;
-  voip.registerWithHomeNode(
-    (method, [params]) => client.call(method, params),
-    ownerId: ownerId,
-    profileId: profileId,
+  void registerVoip() {
+    final client = ref.read(nodeProvider.notifier).client;
+    if (client == null) return;
+    final ownerId = ref.read(nodeProvider).ownerId;
+    final profileId = ref.read(nodeProvider).effectiveFamilyProfileId;
+    voip.registerWithHomeNode(
+      (method, [params]) => client.call(method, params),
+      ownerId: ownerId,
+      profileId: profileId,
+    );
+  }
+
+  registerVoip();
+  ref.listen(
+    nodeProvider.select((s) => s.connectionState),
+    (_, next) {
+      if (next == NodeConnectionState.connected) {
+        tryBind();
+        registerVoip();
+      }
+      // On disconnect: keep this CallProvider (and any active transport).
+    },
   );
+
   ref.onDispose(() {
     incomingSub.cancel();
     acceptedSub.cancel();
