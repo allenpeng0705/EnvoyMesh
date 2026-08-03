@@ -48,7 +48,7 @@ describe("preferCircuitHintsForCallDelivery", () => {
 });
 
 describe("effectiveCallIceServersViaRuntime", () => {
-  it("returns empty list on lan-fast when unset", async () => {
+  it("returns non-Google STUN defaults when unset", async () => {
     const { effectiveCallIceServersViaRuntime } = await import("../src/node-service-calls.js");
     const servers = await effectiveCallIceServersViaRuntime(
       {
@@ -56,10 +56,11 @@ describe("effectiveCallIceServersViaRuntime", () => {
       } as never,
       undefined,
     );
-    expect(servers).toEqual([]);
+    expect(servers.length).toBeGreaterThan(0);
+    expect(servers.some((s) => String(s.urls).includes("google"))).toBe(false);
   });
 
-  it("returns public STUN on wan-default when unset", async () => {
+  it("returns defaults on wan-default when unset", async () => {
     const { effectiveCallIceServersViaRuntime } = await import("../src/node-service-calls.js");
     const servers = await effectiveCallIceServersViaRuntime(
       {
@@ -67,7 +68,7 @@ describe("effectiveCallIceServersViaRuntime", () => {
       } as never,
       undefined,
     );
-    expect(servers.some((s) => String(s.urls).includes("google"))).toBe(true);
+    expect(servers.length).toBeGreaterThan(0);
   });
 
   it("honors explicit empty caller list", async () => {

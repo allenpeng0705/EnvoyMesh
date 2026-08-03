@@ -51,9 +51,9 @@ export interface IceServerConfig {
 }
 
 const DEFAULT_ICE_SERVERS: IceServerConfig[] = [
-  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:stun.miwifi.com:3478" },
+  { urls: "stun:stun.nextcloud.com:3478" },
   { urls: "stun:stun.cloudflare.com:3478" },
-  { urls: "stun:global.stun.twilio.com:3478" },
 ];
 
 export async function effectiveCallIceServersViaRuntime(
@@ -67,10 +67,9 @@ export async function effectiveCallIceServersViaRuntime(
     discoveryProfile?: string;
   } | null;
   if (config?.iceServers && config.iceServers.length > 0) return config.iceServers;
-  // lan-fast / default home profile: host candidates only. Injecting Google
-  // STUN here makes Social wait on unreachable servers (e.g. CN) before invite.
-  const profile = typeof config?.discoveryProfile === "string" ? config.discoveryProfile.trim() : "";
-  if (profile === "lan-fast" || profile === "") return [];
+  // Always ship lightweight STUN defaults. Social caps ICE gathering (~300ms)
+  // so unreachable servers (e.g. Google from CN) cannot block the invite.
+  // Empty ICE left some LAN calls stuck on "Connecting…" with no media path.
   return DEFAULT_ICE_SERVERS;
 }
 
@@ -458,12 +457,15 @@ export async function sendCallInviteViaRuntime(
   );
   if (!connBeforeWarm.connected && !liveConnected) {
     try {
-      // If the existing connection is relay (not direct), ask warm to upgrade.
-      // warmContactConnectionTransport already checks hasDirectTcpDialHints
-      // internally and keeps relay if no direct path exists.
-      await ctx.warmContactConnection(targetOwnerId, {
-        ...(!connBeforeWarm.direct ? { upgradeRelayToDirect: true } : undefined),
-      });
+      // Cap warm so a hung circuit/LAN dial cannot block the invite for 30s+.
+      // Delivery still dials with LAN-first hints when warm does not connect.
+      await raceWithTimeout(
+        ctx.warmContactConnection(targetOwnerId, {
+          ...(!connBeforeWarm.direct ? { upgradeRelayToDirect: true } : undefined),
+        }),
+        5_000,
+        "warmContactConnection(before call.invite)",
+      );
     } catch (warmErr) {
       console.warn(
         `[sendCallInvite] warm before invite failed for ${targetOwnerId}:`,

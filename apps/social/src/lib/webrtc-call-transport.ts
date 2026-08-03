@@ -164,7 +164,7 @@ export function createWebRtcCallTransport(
       return { iceServers: [] };
     }
     return {
-      iceServers: opts.iceServers ?? [{ urls: "stun:stun.l.google.com:19302" }],
+      iceServers: opts.iceServers ?? [{ urls: "stun:stun.miwifi.com:3478" }],
       iceTransportPolicy: "all",
     };
   }

@@ -634,13 +634,8 @@ export function useCallSession(): UseCallSessionResult {
 
       let callId: string | null;
       try {
-        // Pass resolved list (may be []) so lan-fast homes do not re-inject Google STUN.
-        callId = await nodeService.sendCallInvite(
-          targetOwnerId,
-          sdpOffer,
-          pathIceServers as { urls: string; username?: string; credential?: string }[],
-          callType,
-        );
+        // Omit iceServers so the home ships STUN defaults in the invite payload.
+        callId = await nodeService.sendCallInvite(targetOwnerId, sdpOffer, undefined, callType);
       } catch (err) {
         webrtcCallWarn("ui:send-invite-failed", {
           target: shortCallId(targetOwnerId),
@@ -665,7 +660,9 @@ export function useCallSession(): UseCallSessionResult {
       activePeerRef.current = { ownerId: targetOwnerId, displayName: peerLabel, callType };
       setActivePeerDisplayName(peerLabel);
       setCallingState(callId);
-      setConnectionState("connected");
+      // Stay "connecting" until WebRTC ICE connects (or call:answered path updates).
+      // Do not mark connected merely because the invite was accepted by the home node.
+      setConnectionState("connecting");
       flushPendingOutboundIce(callId);
       webrtcCallTrace("ui:invite-sent", { callId: shortCallId(callId), target: shortCallId(targetOwnerId) });
     },

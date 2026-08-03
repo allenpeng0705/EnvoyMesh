@@ -52,6 +52,7 @@ function connectionDotClass(state: string): string {
   switch (state) {
     case "connected":
       return "active-call-dot--connected";
+    case "ringing":
     case "connecting":
       return "active-call-dot--connecting";
     case "disconnected":
@@ -90,6 +91,7 @@ export function ActiveCallPanel({
   const hasRemoteVideo = Boolean(remoteStream?.getVideoTracks().some((track) => track.readyState === "live"));
 
   const statusLabel = (() => {
+    if (connectionState === "ringing") return t("call:ringing", "Ringing…");
     if (connectionState === "connecting") return t("call:connecting", "Connecting…");
     if (connectionState === "connected") return t("call:connected", "Connected");
     if (connectionState === "disconnected" || connectionState === "failed") {

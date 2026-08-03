@@ -1237,9 +1237,9 @@ const MAX_FRIEND_MATCHING_PREFS_CHARS = 4096;
  * Three public STUN endpoints; TURN is user-configured (Phase 42H).
  */
 const DEFAULT_ICE_SERVERS: { urls: string; username?: string; credential?: string }[] = [
-  { urls: "stun:stun.l.google.com:19302" },
+  { urls: "stun:stun.miwifi.com:3478" },
+  { urls: "stun:stun.nextcloud.com:3478" },
   { urls: "stun:stun.cloudflare.com:3478" },
-  { urls: "stun:global.stun.twilio.com:3478" },
 ];
 
 /** Intents allowed on the native / bridge agent credential for document + mesh tools. */
@@ -10321,8 +10321,7 @@ class NodeServiceImpl implements NodeService {
    * Order:
    * 1. Caller-supplied argument (including explicit `[]` = no STUN).
    * 2. `node-config.iceServers` from disk.
-   * 3. `lan-fast` / empty profile → `[]` (host candidates; no public STUN).
-   * 4. Otherwise hard-coded public STUN (Google / Cloudflare / Twilio).
+   * 3. Hard-coded public STUN defaults (non-Google; gathering is capped in UI).
    */
   private async _effectiveCallIceServers(
     callerSupplied?: { urls: string; username?: string; credential?: string }[],

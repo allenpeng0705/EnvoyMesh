@@ -494,6 +494,7 @@ export const inboxMessages = {
   "call:micUnavailable": "No microphone — listen only",
   "call:cameraUnavailable": "No camera — audio only",
   "call:micOff": "Mic off",
+  "call:ringing": "Ringing…",
   "call:connecting": "Connecting…",
   "call:connected": "Connected",
   "call:connectionLost": "Connection lost",

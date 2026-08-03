@@ -56,7 +56,7 @@ function GlobalCallOverlay({ session }: { session: UseCallSessionResult }) {
             isRemoteMuted={isRemoteMuted}
             micAvailable={micAvailable}
             cameraAvailable={cameraAvailable}
-            connectionState={connectionState}
+            connectionState="ringing"
             remoteStream={null}
             localStream={localStream}
             onToggleMute={toggleMute}

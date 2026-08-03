@@ -628,7 +628,14 @@ export async function deliverCallEnvelopeViaRuntime(
         });
         for (const addr of ordered) {
           try {
-            await mesh.dial(addr);
+            // Per-address cap: stale RFC1918 / unreachable circuits must not
+            // burn a full libp2p dialTimeout (30s) before the next hint.
+            await Promise.race([
+              mesh.dial(addr),
+              new Promise<never>((_, reject) => {
+                setTimeout(() => reject(new Error("dial timeout (8s)")), 8_000);
+              }),
+            ]);
             conn = mesh.getPeerConnectionInfo(transportPeerId);
             if (conn.connected) break;
           } catch (dialErr) {
