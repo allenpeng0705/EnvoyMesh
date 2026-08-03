@@ -87,7 +87,10 @@ export function ChatAudioAttachment({ attachment, transcription }: ChatAudioAtta
       if (bytes.byteLength === 0) {
         throw new Error("empty audio");
       }
-      const blob = new Blob([bytes], { type: mime });
+      // `.slice()` returns a fresh `Uint8Array<ArrayBuffer>` (not
+      // `Uint8Array<ArrayBufferLike>`), which is what `Blob`'s BlobPart
+      // accepts under TS 5.7+ strict lib.dom.d.ts.
+      const blob = new Blob([bytes.slice()], { type: mime });
       const url = URL.createObjectURL(blob);
       objectUrlRef.current = url;
       setAudioUrl(url);
