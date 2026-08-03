@@ -205,6 +205,8 @@
   "pairingInvalidQr": "QR code d'association invalide",
   "pairingPasteUri": "Ou coller l'URI d'association",
   "pairingUriHint": "envoy://pair?… ou envoy://invite?…",
+  "pairingNeedHomeHint": "Créer votre propre foyer ? Installez d'abord EnvoyMesh sur un Mac ou PC Windows, puis scannez son QR. Rejoindre une famille ? Scannez leur invitation — pas d'installation PC nécessaire.",
+  "pairingDownloadEnvoyMesh": "Téléchargements EnvoyMesh (ordinateur)",
   "pairingJoinFamily": "Rejoindre la famille",
   "pairingConnectTo": "Se connecter à {name} ?",
   "pairingWelcomeFamily": "Bienvenue dans la famille {name} !",

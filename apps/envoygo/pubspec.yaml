@@ -1,7 +1,7 @@
 name: envoygo
 description: EnvoyGo — Flutter thin client for EnvoyMesh remote access
 publish_to: 'none'
-version: 1.0.0+23
+version: 1.0.0+24
 
 environment:
   sdk: ^3.9.0
@@ -22,8 +22,9 @@ dependencies:
   shared_preferences: ^2.3.3
   sqflite: ^2.4.2
   path: ^1.9.1
-  # QR scanning (mobile only)
-  mobile_scanner: ^6.0.7
+  # QR scanning (mobile only) — v7+ uses Apple Vision (arm64 simulator OK).
+  # v6 pulls GoogleMLKit which excludes arm64 sims and breaks Apple Silicon.
+  mobile_scanner: ^7.1.0
   image_picker: ^1.1.2
   # Audio recording (voice messages)
   record: ^5.1.2
@@ -86,6 +87,18 @@ dev_dependencies:
 # (See apps/envoygo/pubspec.lock for the locked record_linux 0.7.2.)
 dependency_overrides:
   record_linux: ^1.3.0
+
+# sqflite_common_ffi (dev) pulls package:sqlite3, whose default build hook
+# downloads prebuilt dylibs from GitHub. That often times out (esp. on
+# restricted networks) and blocks iOS simulator builds. Production EnvoyGo
+# uses sqflite_darwin / Android SQLite — not these downloads. Use the OS
+# SQLite instead so the hook skips the network fetch.
+hooks:
+  user_defines:
+    sqlite3:
+      source: system
+      name_windows: winsqlite3
+      name: sqlite3
 
 flutter:
   generate: true

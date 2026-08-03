@@ -261,6 +261,8 @@
   "pairingInvalidQr": "Invalid pairing QR code",
   "pairingPasteUri": "Or paste pairing URI",
   "pairingUriHint": "envoy://pair?… or envoy://invite?…",
+  "pairingNeedHomeHint": "Setting up your own home? Install EnvoyMesh on a Mac or Windows PC first, then scan its QR. Joining family? Scan their invite — no PC install needed.",
+  "pairingDownloadEnvoyMesh": "EnvoyMesh desktop downloads",
   "pairingJoinFamily": "Join Family",
   "pairingConnectTo": "Connect to {name}?",
   "@pairingConnectTo": {

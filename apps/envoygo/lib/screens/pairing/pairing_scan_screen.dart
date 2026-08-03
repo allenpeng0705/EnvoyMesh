@@ -3,7 +3,13 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import '../../l10n/app_localizations.dart';
 import '../../models/stored_node.dart';
 import '../../services/pairing_service.dart';
+import '../../utils/open_external_url.dart';
 import 'pairing_confirm_screen.dart';
+
+/// Desktop EnvoyMesh release page (Mac/Windows installers). Open in browser
+/// so the user can download on a computer — not an in-app mobile install.
+const kEnvoyMeshDesktopReleasesUrl =
+    'https://github.com/allenpeng0705/EnvoyMesh/releases';
 
 /// QR code scanner screen for pairing with a home node.
 ///
@@ -88,12 +94,23 @@ class _PairingScanScreenState extends State<PairingScanScreen> {
           // Manual URI entry fallback.
           Expanded(
             flex: 2,
-            child: Padding(
+            child: SingleChildScrollView(
               padding: const EdgeInsets.all(24),
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  const SizedBox(height: 8),
+                  Text(
+                    l10n.pairingNeedHomeHint,
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                    textAlign: TextAlign.center,
+                  ),
+                  TextButton(
+                    onPressed: () => openExternalUrl(kEnvoyMeshDesktopReleasesUrl),
+                    child: Text(l10n.pairingDownloadEnvoyMesh),
+                  ),
+                  const SizedBox(height: 4),
                   Text(
                     l10n.pairingPasteUri,
                     style: Theme.of(context).textTheme.titleSmall,

@@ -641,6 +641,13 @@ class AppLocalizationsZh extends AppLocalizations {
   String get pairingUriHint => 'envoy://pair?… 或 envoy://invite?…';
 
   @override
+  String get pairingNeedHomeHint =>
+      '要建立自己的家庭节点？请先在 Mac 或 Windows 电脑上下载安装 EnvoyMesh，再扫描其二维码。加入家人？直接扫描他们的邀请码即可，手机无需安装电脑版。';
+
+  @override
+  String get pairingDownloadEnvoyMesh => 'EnvoyMesh 电脑版下载';
+
+  @override
   String get pairingJoinFamily => '加入家庭';
 
   @override

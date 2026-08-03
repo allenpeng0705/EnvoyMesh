@@ -205,6 +205,8 @@
   "pairingInvalidQr": "Ungültiger Kopplungs-QR-Code",
   "pairingPasteUri": "Oder Kopplungs-URI einfügen",
   "pairingUriHint": "envoy://pair?… oder envoy://invite?…",
+  "pairingNeedHomeHint": "Eigenes Zuhause einrichten? Installieren Sie EnvoyMesh zuerst auf einem Mac- oder Windows-PC und scannen Sie dann den QR-Code. Familie beitreten? Einfach deren Einladung scannen — keine PC-Installation nötig.",
+  "pairingDownloadEnvoyMesh": "EnvoyMesh Desktop-Downloads",
   "pairingJoinFamily": "Familie beitreten",
   "pairingConnectTo": "Mit {name} verbinden?",
   "pairingWelcomeFamily": "Willkommen in der Familie {name}!",

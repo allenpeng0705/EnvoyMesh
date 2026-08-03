@@ -53,16 +53,6 @@ PODS:
   - GoogleDataTransport (10.1.0):
     - nanopb (~> 3.30910.0)
     - PromisesObjC (~> 2.4)
-  - GoogleMLKit/BarcodeScanning (7.0.0):
-    - GoogleMLKit/MLKitCore
-    - MLKitBarcodeScanning (~> 6.0.0)
-  - GoogleMLKit/MLKitCore (7.0.0):
-    - MLKitCommon (~> 12.0.0)
-  - GoogleToolboxForMac/Defines (4.2.1)
-  - GoogleToolboxForMac/Logger (4.2.1):
-    - GoogleToolboxForMac/Defines (= 4.2.1)
-  - "GoogleToolboxForMac/NSData+zlib (4.2.1)":
-    - GoogleToolboxForMac/Defines (= 4.2.1)
   - GoogleUtilities/AppDelegateSwizzler (8.1.0):
     - GoogleUtilities/Environment
     - GoogleUtilities/Logger
@@ -87,29 +77,11 @@ PODS:
   - GoogleUtilities/UserDefaults (8.1.0):
     - GoogleUtilities/Logger
     - GoogleUtilities/Privacy
-  - GTMSessionFetcher/Core (3.5.0)
   - image_picker_ios (0.0.1):
     - Flutter
-  - MLImage (1.0.0-beta6)
-  - MLKitBarcodeScanning (6.0.0):
-    - MLKitCommon (~> 12.0)
-    - MLKitVision (~> 8.0)
-  - MLKitCommon (12.0.0):
-    - GoogleDataTransport (~> 10.0)
-    - GoogleToolboxForMac/Logger (< 5.0, >= 4.2.1)
-    - "GoogleToolboxForMac/NSData+zlib (< 5.0, >= 4.2.1)"
-    - GoogleUtilities/Logger (~> 8.0)
-    - GoogleUtilities/UserDefaults (~> 8.0)
-    - GTMSessionFetcher/Core (< 4.0, >= 3.3.2)
-  - MLKitVision (8.0.0):
-    - GoogleToolboxForMac/Logger (< 5.0, >= 4.2.1)
-    - "GoogleToolboxForMac/NSData+zlib (< 5.0, >= 4.2.1)"
-    - GTMSessionFetcher/Core (< 4.0, >= 3.3.2)
-    - MLImage (= 1.0.0-beta6)
-    - MLKitCommon (~> 12.0)
-  - mobile_scanner (6.0.2):
+  - mobile_scanner (7.0.0):
     - Flutter
-    - GoogleMLKit/BarcodeScanning (~> 7.0.0)
+    - FlutterMacOS
   - nanopb (3.30910.0):
     - nanopb/decode (= 3.30910.0)
     - nanopb/encode (= 3.30910.0)
@@ -141,7 +113,7 @@ DEPENDENCIES:
   - flutter_secure_storage (from `.symlinks/plugins/flutter_secure_storage/ios`)
   - flutter_webrtc (from `.symlinks/plugins/flutter_webrtc/ios`)
   - image_picker_ios (from `.symlinks/plugins/image_picker_ios/ios`)
-  - mobile_scanner (from `.symlinks/plugins/mobile_scanner/ios`)
+  - mobile_scanner (from `.symlinks/plugins/mobile_scanner/darwin`)
   - package_info_plus (from `.symlinks/plugins/package_info_plus/ios`)
   - record_darwin (from `.symlinks/plugins/record_darwin/ios`)
   - shared_preferences_foundation (from `.symlinks/plugins/shared_preferences_foundation/darwin`)
@@ -157,14 +129,7 @@ SPEC REPOS:
     - FirebaseInstallations
     - FirebaseMessaging
     - GoogleDataTransport
-    - GoogleMLKit
-    - GoogleToolboxForMac
     - GoogleUtilities
-    - GTMSessionFetcher
-    - MLImage
-    - MLKitBarcodeScanning
-    - MLKitCommon
-    - MLKitVision
     - nanopb
     - OrderedSet
     - PromisesObjC
@@ -190,7 +155,7 @@ EXTERNAL SOURCES:
   image_picker_ios:
     :path: ".symlinks/plugins/image_picker_ios/ios"
   mobile_scanner:
-    :path: ".symlinks/plugins/mobile_scanner/ios"
+    :path: ".symlinks/plugins/mobile_scanner/darwin"
   package_info_plus:
     :path: ".symlinks/plugins/package_info_plus/ios"
   record_darwin:
@@ -218,16 +183,9 @@ SPEC CHECKSUMS:
   flutter_secure_storage: d33dac7ae2ea08509be337e775f6b59f1ff45f12
   flutter_webrtc: 90969010741a30ed57cb82ea3178e03306d87111
   GoogleDataTransport: aae35b7ea0c09004c3797d53c8c41f66f219d6a7
-  GoogleMLKit: eff9e23ec1d90ea4157a1ee2e32a4f610c5b3318
-  GoogleToolboxForMac: d1a2cbf009c453f4d6ded37c105e2f67a32206d8
   GoogleUtilities: 00c88b9a86066ef77f0da2fab05f65d7768ed8e1
-  GTMSessionFetcher: 5aea5ba6bd522a239e236100971f10cb71b96ab6
   image_picker_ios: 4f2f91b01abdb52842a8e277617df877e40f905b
-  MLImage: 0ad1c5f50edd027672d8b26b0fee78a8b4a0fc56
-  MLKitBarcodeScanning: 0a3064da0a7f49ac24ceb3cb46a5bc67496facd2
-  MLKitCommon: 07c2c33ae5640e5380beaaa6e4b9c249a205542d
-  MLKitVision: 45e79d68845a2de77e2dd4d7f07947f0ed157b0e
-  mobile_scanner: fd0054c52ede661e80bf5a4dea477a2467356bee
+  mobile_scanner: 77265f3dc8d580810e91849d4a0811a90467ed5e
   nanopb: fad817b59e0457d11a5dfbde799381cd727c1275
   OrderedSet: e539b66b644ff081c73a262d24ad552a69be3a94
   package_info_plus: c0502532a26c7662a62a356cebe2692ec5fe4ec4
@@ -238,6 +196,6 @@ SPEC CHECKSUMS:
   url_launcher_ios: bb13df5870e8c4234ca12609d04010a21be43dfa
   WebRTC-SDK: dff00a3892bc570b6014e046297782084071657e
 
-PODFILE CHECKSUM: 3c63482e143d1b91d2d2560aee9fb04ecc74ac7e
+PODFILE CHECKSUM: 4afc3e79696d93f257d5d4ecdac9b015dbc58a3a
 
 COCOAPODS: 1.16.2

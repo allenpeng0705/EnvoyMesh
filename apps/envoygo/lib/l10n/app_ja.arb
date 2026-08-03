@@ -205,6 +205,8 @@
   "pairingInvalidQr": "無効なペアリング QR コード",
   "pairingPasteUri": "またはペアリング URI を貼り付け",
   "pairingUriHint": "envoy://pair?… または envoy://invite?…",
+  "pairingNeedHomeHint": "自分のホームを作る場合は、まず Mac / Windows PC に EnvoyMesh をインストールしてから QR をスキャンしてください。家族に参加する場合は招待 QR だけでOKです（PC へのインストール不要）。",
+  "pairingDownloadEnvoyMesh": "EnvoyMesh デスクトップ版ダウンロード",
   "pairingJoinFamily": "ファミリーに参加",
   "pairingConnectTo": "{name} に接続しますか？",
   "pairingWelcomeFamily": "{name} ファミリーへようこそ！",

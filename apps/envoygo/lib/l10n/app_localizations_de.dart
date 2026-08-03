@@ -658,6 +658,13 @@ class AppLocalizationsDe extends AppLocalizations {
   String get pairingUriHint => 'envoy://pair?… oder envoy://invite?…';
 
   @override
+  String get pairingNeedHomeHint =>
+      'Eigenes Zuhause einrichten? Installieren Sie EnvoyMesh zuerst auf einem Mac- oder Windows-PC und scannen Sie dann den QR-Code. Familie beitreten? Einfach deren Einladung scannen — keine PC-Installation nötig.';
+
+  @override
+  String get pairingDownloadEnvoyMesh => 'EnvoyMesh Desktop-Downloads';
+
+  @override
   String get pairingJoinFamily => 'Familie beitreten';
 
   @override

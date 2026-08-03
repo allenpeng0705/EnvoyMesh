@@ -643,6 +643,13 @@ class AppLocalizationsJa extends AppLocalizations {
   String get pairingUriHint => 'envoy://pair?… または envoy://invite?…';
 
   @override
+  String get pairingNeedHomeHint =>
+      '自分のホームを作る場合は、まず Mac / Windows PC に EnvoyMesh をインストールしてから QR をスキャンしてください。家族に参加する場合は招待 QR だけでOKです（PC へのインストール不要）。';
+
+  @override
+  String get pairingDownloadEnvoyMesh => 'EnvoyMesh デスクトップ版ダウンロード';
+
+  @override
   String get pairingJoinFamily => 'ファミリーに参加';
 
   @override

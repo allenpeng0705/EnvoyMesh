@@ -643,6 +643,13 @@ class AppLocalizationsKo extends AppLocalizations {
   String get pairingUriHint => 'envoy://pair?… 또는 envoy://invite?…';
 
   @override
+  String get pairingNeedHomeHint =>
+      '직접 홈을 만드시나요? 먼저 Mac/Windows PC에 EnvoyMesh를 설치한 뒤 QR을 스캔하세요. 가족에 참여하시나요? 초대 QR만 스캔하면 됩니다(PC 설치 불필요).';
+
+  @override
+  String get pairingDownloadEnvoyMesh => 'EnvoyMesh 데스크톱 다운로드';
+
+  @override
   String get pairingJoinFamily => '가족 참여';
 
   @override

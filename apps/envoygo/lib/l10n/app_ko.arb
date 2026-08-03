@@ -205,6 +205,8 @@
   "pairingInvalidQr": "잘못된 페어링 QR 코드",
   "pairingPasteUri": "또는 페어링 URI 붙여넣기",
   "pairingUriHint": "envoy://pair?… 또는 envoy://invite?…",
+  "pairingNeedHomeHint": "직접 홈을 만드시나요? 먼저 Mac/Windows PC에 EnvoyMesh를 설치한 뒤 QR을 스캔하세요. 가족에 참여하시나요? 초대 QR만 스캔하면 됩니다(PC 설치 불필요).",
+  "pairingDownloadEnvoyMesh": "EnvoyMesh 데스크톱 다운로드",
   "pairingJoinFamily": "가족 참여",
   "pairingConnectTo": "{name}에 연결할까요?",
   "pairingWelcomeFamily": "{name} 가족에 오신 것을 환영합니다!",

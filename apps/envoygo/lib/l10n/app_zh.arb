@@ -205,6 +205,8 @@
   "pairingInvalidQr": "无效的配对二维码",
   "pairingPasteUri": "或粘贴配对 URI",
   "pairingUriHint": "envoy://pair?… 或 envoy://invite?…",
+  "pairingNeedHomeHint": "要建立自己的家庭节点？请先在 Mac 或 Windows 电脑上下载安装 EnvoyMesh，再扫描其二维码。加入家人？直接扫描他们的邀请码即可，手机无需安装电脑版。",
+  "pairingDownloadEnvoyMesh": "EnvoyMesh 电脑版下载",
   "pairingJoinFamily": "加入家庭",
   "pairingConnectTo": "连接到 {name}？",
   "pairingWelcomeFamily": "欢迎加入 {name} 家庭！",

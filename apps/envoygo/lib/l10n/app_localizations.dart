@@ -1338,6 +1338,18 @@ abstract class AppLocalizations {
   /// **'envoy://pair?… or envoy://invite?…'**
   String get pairingUriHint;
 
+  /// No description provided for @pairingNeedHomeHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Setting up your own home? Install EnvoyMesh on a Mac or Windows PC first, then scan its QR. Joining family? Scan their invite — no PC install needed.'**
+  String get pairingNeedHomeHint;
+
+  /// No description provided for @pairingDownloadEnvoyMesh.
+  ///
+  /// In en, this message translates to:
+  /// **'EnvoyMesh desktop downloads'**
+  String get pairingDownloadEnvoyMesh;
+
   /// No description provided for @pairingJoinFamily.
   ///
   /// In en, this message translates to:
