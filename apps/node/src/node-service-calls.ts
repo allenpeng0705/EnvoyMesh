@@ -138,7 +138,9 @@ export function buildFullCallContext(host: any): FullCallContext {
     sendCallResponseEnvelope: (peerOwnerId, unsigned, intent) =>
       sendCallResponseEnvelopeViaRuntime(host._callContext(), peerOwnerId, unsigned, intent),
     loadConfig: () => host._configStore.load(),
-    getMesh: () => host._mesh,
+    // CLI `node:dev` binds via bindExternalMesh → `_externalMesh` only.
+    // Tauri/startNode may set `_mesh`. Match `_requireMesh` / chat paths.
+    getMesh: () => host._mesh ?? host._externalMesh,
     requireMesh: () => host._requireMesh(),
     resolvePeerTransportForOwner: (targetOwnerId) => host._resolvePeerTransportForOwner(targetOwnerId),
     warmContactConnection: (peerOwnerId, options) => host.warmContactConnection(peerOwnerId, options),
@@ -390,8 +392,14 @@ export async function sendCallInviteViaRuntime(
 ): Promise<string | null> {
   console.log(`[sendCallInvite] invoked target=${targetOwnerId.slice(0, 24)} sdpLen=${sdpOffer.length}`);
   const profile = ctx.getProfile();
-  if (!profile) return null;
-  if (!ctx.getMesh()) return null;
+  if (!profile) {
+    console.warn(`[sendCallInvite] aborted: no local profile`);
+    return null;
+  }
+  if (!ctx.getMesh()) {
+    console.warn(`[sendCallInvite] aborted: mesh not bound (_mesh/_externalMesh)`);
+    return null;
+  }
 
   // The schema requires a real UUID — the stub used a non-UUID string
   // that would fail `parseCallInvitePayload` on the receiving side.
@@ -413,7 +421,10 @@ export async function sendCallInviteViaRuntime(
     peerDisplayName,
     callType,
   );
-  if (!initiated) return null;
+  if (!initiated) {
+    console.warn(`[sendCallInvite] aborted: call manager busy (active call already exists)`);
+    return null;
+  }
 
   let transport;
   try {

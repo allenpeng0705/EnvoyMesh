@@ -265,3 +265,29 @@ describe("acceptCallInviteViaRuntime", () => {
     expect(sentEnvelopes[0]?.intent).toBe("call.accept");
   });
 });
+describe("buildFullCallContext mesh binding", () => {
+  it("uses _externalMesh when _mesh is unset (CLI node:dev / bindExternalMesh)", async () => {
+    const { buildFullCallContext } = await import("../src/node-service-calls.js");
+    const externalMesh = { peerId: "12D3KooWexternal" };
+    const host = {
+      callManager: makeCallManager(),
+      _profile: makeProfile(),
+      _mesh: undefined as unknown,
+      _externalMesh: externalMesh,
+      _requireMesh: () => host._mesh ?? host._externalMesh,
+      _configStore: { load: async () => null },
+      _callContext: () => ({}),
+      _resolvePeerTransportForOwner: vi.fn(),
+      warmContactConnection: vi.fn(),
+      _dialHintsForChat: vi.fn(),
+      _deliverCallEnvelope: vi.fn(),
+      deliverCallEnvelopeToTransportPeer: vi.fn(),
+      _trustStore: {},
+      _peerDirectoryStore: {},
+      _lastLibp2pTransportByOwner: new Map(),
+      _taskStore: undefined,
+    };
+    const ctx = buildFullCallContext(host);
+    expect(ctx.getMesh()).toBe(externalMesh);
+  });
+});
