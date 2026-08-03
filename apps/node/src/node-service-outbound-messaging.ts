@@ -595,16 +595,14 @@ export async function deliverCallEnvelopeViaRuntime(
       hintCount: dialHints.length,
     });
     const preferCircuits = preferCircuitHints ?? !conn.direct;
-    const hasCircuitHints = dialHints.some((h) => h.includes("/p2p-circuit/"));
     if (!conn.connected) {
       const dialTargets = [...new Set([...(listenAddrs ?? []), ...dialHints])]
         .map((a) => a.trim())
         .filter((a) => {
           if (!a) return false;
-          // When circuits are preferred and circuit hints exist, skip private LAN
-          // addresses — they're unreachable for cross-network peers and waste 30s
-          // per attempt on timeouts.
-          if (preferCircuits && hasCircuitHints && isPrivateLanTcpDialHint(a)) return false;
+          // Keep private LAN even when circuits are preferred — short LAN
+          // timeouts below fail fast; dropping LAN made same-LAN invites miss
+          // when the relay path was down.
           // Drop multiaddrs with invalid base58btc peer IDs — a single bad
           // character (e.g. lowercase-L 'l') causes SyntaxError at dial time.
           if (!isMultiaddrPeerIdsValid(a)) {
@@ -614,26 +612,25 @@ export async function deliverCallEnvelopeViaRuntime(
           return true;
         });
       if (dialTargets.length > 0) {
-        console.warn(`[deliver] dialTargets(${dialTargets.length}) preferCircuits=${preferCircuits} hasCircuit=${hasCircuitHints}: ${dialTargets.map((t) => t.slice(0, 160)).join(" | ")}`);
-        const ordered = [...dialTargets].sort((a, b) => {
-          const aLan = isPrivateLanTcpDialHint(a) ? 1 : 0;
-          const bLan = isPrivateLanTcpDialHint(b) ? 1 : 0;
-          if (aLan !== bLan) return bLan - aLan;
-          const aCircuit = a.includes("/p2p-circuit/") ? 1 : 0;
-          const bCircuit = b.includes("/p2p-circuit/") ? 1 : 0;
-          // When circuit hints are preferred, sort them BEFORE non-circuit (lower sort value = first).
-          // When circuits are NOT preferred, keep circuit last (original behavior).
-          if (aCircuit !== bCircuit) return preferCircuits ? bCircuit - aCircuit : aCircuit - bCircuit;
-          return 0;
-        });
+        console.warn(`[deliver] dialTargets(${dialTargets.length}) preferCircuits=${preferCircuits}: ${dialTargets.map((t) => t.slice(0, 160)).join(" | ")}`);
+        // Keep BOTH LAN and circuit. Prefer order only — never drop RFC1918 for
+        // call.invite (dropping LAN broke same-LAN homes when circuit was down;
+        // circuit-only broke when LAN was the only working path).
+        const lanAddrs = dialTargets.filter((a) => isPrivateLanTcpDialHint(a));
+        const circuitAddrs = dialTargets.filter((a) => a.includes("/p2p-circuit/"));
+        const otherAddrs = dialTargets.filter(
+          (a) => !isPrivateLanTcpDialHint(a) && !a.includes("/p2p-circuit/"),
+        );
+        const ordered = preferCircuits
+          ? [...circuitAddrs, ...otherAddrs, ...lanAddrs]
+          : [...lanAddrs, ...otherAddrs, ...circuitAddrs];
         for (const addr of ordered) {
+          const timeoutMs = isPrivateLanTcpDialHint(addr) ? 2_000 : 8_000;
           try {
-            // Per-address cap: stale RFC1918 / unreachable circuits must not
-            // burn a full libp2p dialTimeout (30s) before the next hint.
             await Promise.race([
               mesh.dial(addr),
               new Promise<never>((_, reject) => {
-                setTimeout(() => reject(new Error("dial timeout (8s)")), 8_000);
+                setTimeout(() => reject(new Error(`dial timeout (${timeoutMs / 1000}s)`)), timeoutMs);
               }),
             ]);
             conn = mesh.getPeerConnectionInfo(transportPeerId);
@@ -687,13 +684,8 @@ export async function deliverCallEnvelopeViaRuntime(
       transportPeerId,
       envelope,
       dialHints: wasConnected ? [] : dialHints,
-      // Filter out private LAN listenAddrs when circuits are preferred —
-      // the retry path's ensurePeerReachable will waste 30s per LAN attempt.
-      peerListenAddrs: wasConnected
-        ? []
-        : preferCircuits && hasCircuitHints
-          ? (listenAddrs ?? []).filter((a) => !isPrivateLanTcpDialHint(a.trim()))
-          : listenAddrs,
+      // Keep LAN listen addrs for call invite retries (short LAN dial timeout).
+      peerListenAddrs: wasConnected ? [] : listenAddrs,
       preferCircuitHints: preferCircuits,
       rebuildDialHints: wasConnected
         ? undefined

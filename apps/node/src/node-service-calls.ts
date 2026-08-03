@@ -171,23 +171,19 @@ function hasCallTransportDeps(ctx: CallContext): ctx is FullCallContext {
 }
 
 /**
- * Call signaling only: prefer direct LAN TCP when the peer is already direct
- * or this node is on `lan-fast` (default home LAN profile). Leave
- * `wan-default` / other profiles on circuit-first so cross-network calls do
- * not burn 30s on unreachable RFC1918 hints. Does not change chat delivery.
+ * Call signaling only: when already on a direct path, keep LAN/direct.
+ * When not connected, prefer relay circuits first so stale RFC1918 listen
+ * addrs cannot burn the ring window (callee never rings). LAN is still
+ * tried as a short fallback inside deliver — not dropped.
  */
 export async function preferCircuitHintsForCallDelivery(
   ctx: Pick<CallContextCore, "loadConfig">,
   conn: { connected?: boolean; direct: boolean },
 ): Promise<boolean> {
   if (conn.direct) return false;
-  try {
-    const cfg = (await ctx.loadConfig()) as { discoveryProfile?: string } | null | undefined;
-    const profile = typeof cfg?.discoveryProfile === "string" ? cfg.discoveryProfile.trim() : "";
-    if (profile === "lan-fast" || profile === "") return false;
-  } catch {
-    // Config unavailable — stay conservative for non-direct peers.
-  }
+  if (conn.connected) return false;
+  // Not connected — circuit-first for invite reliability (restores pre-regression
+  // behavior when LAN dials hang and relay still works).
   return true;
 }
 
@@ -455,50 +451,30 @@ export async function sendCallInviteViaRuntime(
   console.log(
     `[sendCallInvite] target=${targetOwnerId.slice(0, 24)} transport=${targetPeerId.slice(0, 12)} connected=${connBeforeWarm.connected} direct=${connBeforeWarm.direct}`,
   );
-  if (!connBeforeWarm.connected && !liveConnected) {
-    try {
-      // Cap warm so a hung circuit/LAN dial cannot block the invite for 30s+.
-      // Delivery still dials with LAN-first hints when warm does not connect.
-      await raceWithTimeout(
-        ctx.warmContactConnection(targetOwnerId, {
-          ...(!connBeforeWarm.direct ? { upgradeRelayToDirect: true } : undefined),
-        }),
-        5_000,
-        "warmContactConnection(before call.invite)",
-      );
-    } catch (warmErr) {
-      console.warn(
-        `[sendCallInvite] warm before invite failed for ${targetOwnerId}:`,
-        warmErr instanceof Error ? warmErr.message : warmErr,
-      );
-    }
-  }
 
-  // Re-check connectivity after warm — connBeforeWarm is now stale.
-  const connAfterWarm = mesh.getPeerConnectionInfo(targetPeerId);
+  // Do NOT warm before invite. Concurrent warm+deliver dials raced, and a
+  // half-open "connected" path made sendChat report success while the callee
+  // never received call.invite (Win never rings). Delivery dials below.
 
   const effectiveIceServers = await effectiveCallIceServersViaRuntime(ctx, iceServers);
 
   let dialHints: string[];
-  if (connAfterWarm.connected || liveConnected) {
-    dialHints = [];
-  } else {
-    try {
-      dialHints = await raceWithTimeout(
-        ctx.dialHintsForChat(targetPeerId, listenAddrs),
-        10_000,
-        "_dialHintsForChat",
-      );
-    } catch (hintErr) {
-      console.warn(
-        `[sendCallInvite] dial hints failed for ${targetOwnerId}, using listen addrs:`,
-        hintErr instanceof Error ? hintErr.message : hintErr,
-      );
-      dialHints = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs ?? []);
-    }
+  try {
+    dialHints = await raceWithTimeout(
+      ctx.dialHintsForChat(targetPeerId, listenAddrs),
+      5_000,
+      "_dialHintsForChat",
+    );
+  } catch (hintErr) {
+    console.warn(
+      `[sendCallInvite] dial hints failed for ${targetOwnerId}, using listen addrs:`,
+      hintErr instanceof Error ? hintErr.message : hintErr,
+    );
+    dialHints = mergeDialablePeerListenAddrs(transportPeerId, listenAddrs ?? []);
   }
 
-  const preferCircuitHints = await preferCircuitHintsForCallDelivery(ctx, connAfterWarm);
+  const connForPrefer = mesh.getPeerConnectionInfo(targetPeerId);
+  const preferCircuitHints = await preferCircuitHintsForCallDelivery(ctx, connForPrefer);
 
   const { createCallInvitePayload, createUnsignedEnvelope: createUnsignedEnvelopeFn } =
     await import("@envoymesh/protocol");
@@ -529,18 +505,16 @@ export async function sendCallInviteViaRuntime(
 
   let deliverResult: ChatDeliverResult;
   try {
-    if (connAfterWarm.connected || mesh.getConnectedPeerIds().includes(targetPeerId)) {
-      await mesh.sendChat(targetPeerId, envelope, { dialHints: [] });
-      deliverResult = { delivered: true, deliveredAt: new Date().toISOString() };
-    } else {
-      deliverResult = await ctx.deliverCallEnvelope(
-        targetPeerId,
-        envelope,
-        dialHints,
-        listenAddrs,
-        preferCircuitHints,
-      );
-    }
+    // Always go through deliverCallEnvelope — it sendChats when already
+    // connected and falls back to dial+retry. Never mark delivered from a
+    // bare sendChat that can succeed against a stale libp2p session.
+    deliverResult = await ctx.deliverCallEnvelope(
+      targetPeerId,
+      envelope,
+      dialHints,
+      listenAddrs,
+      preferCircuitHints,
+    );
   } catch (deliverErr) {
     const detail = deliverErr instanceof Error ? deliverErr.message : String(deliverErr);
     webrtcCallWarn("sendCallInvite:delivery-failed", {

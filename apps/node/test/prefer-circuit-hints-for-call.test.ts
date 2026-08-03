@@ -10,37 +10,25 @@ describe("preferCircuitHintsForCallDelivery", () => {
     expect(prefer).toBe(false);
   });
 
-  it("returns false on lan-fast even when not direct", async () => {
+  it("returns false when already connected via relay", async () => {
     const prefer = await preferCircuitHintsForCallDelivery(
       { loadConfig: async () => ({ discoveryProfile: "lan-fast" }) },
-      { connected: false, direct: false },
+      { connected: true, direct: false },
     );
     expect(prefer).toBe(false);
   });
 
-  it("returns false when discoveryProfile is empty (defaults to lan-fast)", async () => {
+  it("returns true when not connected (circuit-first for invite reliability)", async () => {
     const prefer = await preferCircuitHintsForCallDelivery(
-      { loadConfig: async () => ({}) },
-      { connected: false, direct: false },
-    );
-    expect(prefer).toBe(false);
-  });
-
-  it("returns true on wan-default when not direct", async () => {
-    const prefer = await preferCircuitHintsForCallDelivery(
-      { loadConfig: async () => ({ discoveryProfile: "wan-default" }) },
+      { loadConfig: async () => ({ discoveryProfile: "lan-fast" }) },
       { connected: false, direct: false },
     );
     expect(prefer).toBe(true);
   });
 
-  it("returns true when config load fails and peer is not direct", async () => {
+  it("returns true on wan-default when not connected", async () => {
     const prefer = await preferCircuitHintsForCallDelivery(
-      {
-        loadConfig: async () => {
-          throw new Error("no config");
-        },
-      },
+      { loadConfig: async () => ({ discoveryProfile: "wan-default" }) },
       { connected: false, direct: false },
     );
     expect(prefer).toBe(true);
@@ -58,17 +46,6 @@ describe("effectiveCallIceServersViaRuntime", () => {
     );
     expect(servers.length).toBeGreaterThan(0);
     expect(servers.some((s) => String(s.urls).includes("google"))).toBe(false);
-  });
-
-  it("returns defaults on wan-default when unset", async () => {
-    const { effectiveCallIceServersViaRuntime } = await import("../src/node-service-calls.js");
-    const servers = await effectiveCallIceServersViaRuntime(
-      {
-        loadConfig: async () => ({ discoveryProfile: "wan-default" }),
-      } as never,
-      undefined,
-    );
-    expect(servers.length).toBeGreaterThan(0);
   });
 
   it("honors explicit empty caller list", async () => {
