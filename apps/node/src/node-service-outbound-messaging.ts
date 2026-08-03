@@ -858,7 +858,19 @@ export async function warmContactConnectionTransportViaRuntime(
     void mesh.scrubPeerStoreDialHints(transportPeerId, dialableListen);
   }
 
-  const preferCircuitHints = shouldPreferCircuitDialHints(listenAddrs, dialHints, transportPeerId);
+  let preferCircuitHints = shouldPreferCircuitDialHints(listenAddrs, dialHints, transportPeerId);
+  try {
+    const cfg = await ctx.loadConfig();
+    const profile =
+      typeof cfg?.discoveryProfile === "string" ? cfg.discoveryProfile.trim() : "";
+    // Same-LAN homes (default / lan-fast): never circuit-first on private listen
+    // addrs — that burns ~30s dialTimeout before the callee can ring.
+    if (profile === "lan-fast" || profile === "") {
+      preferCircuitHints = false;
+    }
+  } catch {
+    /* keep heuristic */
+  }
 
   if (typeof mesh.mergePeerStoreDialHints === "function") {
     void mesh.mergePeerStoreDialHints(transportPeerId, dialHints);

@@ -328,6 +328,19 @@ describe("shouldPreferCircuitDialHints", () => {
     const hints = ["/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWContact"];
     expect(shouldPreferCircuitDialHints([], hints, "12D3KooWContact")).toBe(true);
   });
+});
+
+describe("resolvePreferCircuitDialHints", () => {
+  it("lets explicit false win over private-LAN circuit heuristic", async () => {
+    const { resolvePreferCircuitDialHints } = await import("../src/outbound-dial-hints.js");
+    const listen = ["/ip4/192.168.1.50/tcp/4011/p2p/12D3KooWContact"];
+    const hints = [
+      "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWContact",
+    ];
+    expect(resolvePreferCircuitDialHints(false, listen, hints, "12D3KooWContact")).toBe(false);
+    expect(resolvePreferCircuitDialHints(true, listen, hints, "12D3KooWContact")).toBe(true);
+    expect(resolvePreferCircuitDialHints(undefined, listen, hints, "12D3KooWContact")).toBe(true);
+  });
 
   it("mergeDialablePeerListenAddrs drops ephemeral snapshot ports", async () => {
     const { mergeDialablePeerListenAddrs } = await import("../src/outbound-dial-hints.js");

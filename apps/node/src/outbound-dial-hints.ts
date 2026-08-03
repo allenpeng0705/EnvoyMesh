@@ -379,3 +379,22 @@ export function shouldPreferCircuitDialHints(
   }
   return dialHints.some((h) => h.includes("/p2p-circuit/"));
 }
+
+/**
+ * Resolve circuit-vs-LAN dial preference for outbound send/warm.
+ *
+ * Explicit `true` / `false` from the caller wins — needed for `lan-fast` call
+ * delivery, which must try RFC1918 first even though
+ * {@link shouldPreferCircuitDialHints} would otherwise force circuits (WAN
+ * safeguard for private-only hints).
+ */
+export function resolvePreferCircuitDialHints(
+  explicit: boolean | undefined,
+  listenAddrs: string[] | undefined,
+  dialHints: string[],
+  recipientPeerId?: string,
+): boolean {
+  if (explicit === true) return true;
+  if (explicit === false) return false;
+  return shouldPreferCircuitDialHints(listenAddrs, dialHints, recipientPeerId);
+}

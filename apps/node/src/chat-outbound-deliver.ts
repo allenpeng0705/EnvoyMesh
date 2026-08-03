@@ -10,7 +10,10 @@ import {
 } from "@envoymesh/network";
 import { parseChatDeliveredAck } from "@envoymesh/api/chat-delivered";
 
-import { shouldPreferCircuitDialHints } from "./outbound-dial-hints.js";
+import {
+  resolvePreferCircuitDialHints,
+  shouldPreferCircuitDialHints,
+} from "./outbound-dial-hints.js";
 import {
   clearOutboundPeerFreshness,
   isOutboundPeerRecentlyVerified,
@@ -531,9 +534,15 @@ export async function deliverCallEnvelopeWithRetry(input: {
   });
   let lastErr: unknown;
   let hints = input.dialHints;
-  const preferCircuits =
-    input.preferCircuitHints === true ||
-    shouldPreferCircuitDialHints(input.peerListenAddrs, hints, input.transportPeerId);
+  // Explicit preferCircuitHints:false (lan-fast call path) must win over the
+  // private-LAN→circuit heuristic, or same-LAN invites burn 30s on relay and
+  // never ring the callee.
+  const preferCircuits = resolvePreferCircuitDialHints(
+    input.preferCircuitHints,
+    input.peerListenAddrs,
+    hints,
+    input.transportPeerId,
+  );
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (attempt > 0) {
@@ -593,7 +602,9 @@ export async function deliverCallEnvelopeWithRetry(input: {
           transportPeerId: input.transportPeerId,
           protocol: ENVOY_CHAT_PROTOCOL,
           dialHints: hints,
-          preferCircuitHints: preferCircuits || attempt > 0,
+          // Retries may escalate to circuits unless caller forced LAN-first.
+          preferCircuitHints:
+            input.preferCircuitHints === false ? false : preferCircuits || attempt > 0,
           forceFreshDial: true,
         });
         if (!ready) {
@@ -605,7 +616,11 @@ export async function deliverCallEnvelopeWithRetry(input: {
       const sendConn = input.mesh.getPeerConnectionInfo(input.transportPeerId);
       await input.mesh.sendChat(input.transportPeerId, input.envelope, {
         dialHints: sendConn.connected ? [] : hints,
-        preferCircuitHints: sendConn.connected ? false : preferCircuits || attempt > 0,
+        preferCircuitHints: sendConn.connected
+          ? false
+          : input.preferCircuitHints === false
+            ? false
+            : preferCircuits || attempt > 0,
         forceFreshDial: attempt > 0,
       });
       if (attempt > 0) {
@@ -656,9 +671,12 @@ export async function deliverMessageEnvelopeWithRetry(input: {
   const maxAttempts = input.maxAttempts ?? CHAT_SEND_MAX_ATTEMPTS;
   let lastErr: unknown;
   let hints = input.dialHints;
-  const preferCircuits =
-    input.preferCircuitHints === true ||
-    shouldPreferCircuitDialHints(input.peerListenAddrs, hints, input.transportPeerId);
+  const preferCircuits = resolvePreferCircuitDialHints(
+    input.preferCircuitHints,
+    input.peerListenAddrs,
+    hints,
+    input.transportPeerId,
+  );
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     if (attempt > 0) {
@@ -708,7 +726,8 @@ export async function deliverMessageEnvelopeWithRetry(input: {
           transportPeerId: input.transportPeerId,
           protocol: ENVOY_MESSAGE_PROTOCOL,
           dialHints: hints,
-          preferCircuitHints: preferCircuits || attempt > 0,
+          preferCircuitHints:
+            input.preferCircuitHints === false ? false : preferCircuits || attempt > 0,
           forceFreshDial: true,
         });
         if (!ready) {
@@ -721,7 +740,8 @@ export async function deliverMessageEnvelopeWithRetry(input: {
       const sendConn = input.mesh.getPeerConnectionInfo(input.transportPeerId);
       await input.mesh.send(input.transportPeerId, input.envelope, {
         dialHints: sendConn.connected && sendConn.direct && attempt === 0 ? [] : hints,
-        preferCircuitHints: preferCircuits || attempt > 0,
+        preferCircuitHints:
+          input.preferCircuitHints === false ? false : preferCircuits || attempt > 0,
         forceFreshDial: attempt > 0,
       });
       return { delivered: true, deliveredAt: new Date().toISOString() };
