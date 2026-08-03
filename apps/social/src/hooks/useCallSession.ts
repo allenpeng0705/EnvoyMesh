@@ -191,7 +191,8 @@ export function useCallSession(): UseCallSessionResult {
       setConnectionState("connecting");
 
       const nodeConfig = await nodeService.getNodeConfig();
-      const configIce = resolveCallIceServers(undefined, nodeConfig?.iceServers);
+      const profileOpts = { discoveryProfile: nodeConfig?.discoveryProfile };
+      const configIce = resolveCallIceServers(undefined, nodeConfig?.iceServers, profileOpts);
 
       try {
         iceCallIdRef.current = callId;
@@ -492,7 +493,8 @@ export function useCallSession(): UseCallSessionResult {
     const inviteIce =
       pendingInviteIceServersRef.current ?? incomingCall.iceServers;
     const nodeConfig = await nodeService.getNodeConfig();
-    const pathIceServers = resolveCallIceServers(inviteIce, nodeConfig?.iceServers);
+    const profileOpts = { discoveryProfile: nodeConfig?.discoveryProfile };
+    const pathIceServers = resolveCallIceServers(inviteIce, nodeConfig?.iceServers, profileOpts);
 
     try {
       closeTransport();
@@ -595,7 +597,9 @@ export function useCallSession(): UseCallSessionResult {
       path2FallbackSentRef.current = false;
 
       const nodeConfig = await nodeService.getNodeConfig();
-      const pathIceServers = resolveCallIceServers(undefined, nodeConfig?.iceServers);
+      const profileOpts = { discoveryProfile: nodeConfig?.discoveryProfile };
+      // lan-fast / default: empty ICE — host candidates only (no Google STUN wait).
+      const pathIceServers = resolveCallIceServers(undefined, nodeConfig?.iceServers, profileOpts);
 
       let sdpOffer: string;
       try {
@@ -630,8 +634,13 @@ export function useCallSession(): UseCallSessionResult {
 
       let callId: string | null;
       try {
-        // Omit iceServers so the home ships STUN defaults in the invite payload.
-        callId = await nodeService.sendCallInvite(targetOwnerId, sdpOffer, undefined, callType);
+        // Pass resolved list (may be []) so lan-fast homes do not re-inject Google STUN.
+        callId = await nodeService.sendCallInvite(
+          targetOwnerId,
+          sdpOffer,
+          pathIceServers as { urls: string; username?: string; credential?: string }[],
+          callType,
+        );
       } catch (err) {
         webrtcCallWarn("ui:send-invite-failed", {
           target: shortCallId(targetOwnerId),

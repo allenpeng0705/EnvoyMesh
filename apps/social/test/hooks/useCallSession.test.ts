@@ -7,7 +7,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { useCallSession } from "../../src/hooks/useCallSession.js";
-import { DEFAULT_CALL_ICE_SERVERS } from "../../src/lib/call-ice-servers.js";
 import type { CallEvent, NodeService } from "@envoymesh/api";
 
 function createMockNodeService(): NodeService & {
@@ -129,7 +128,7 @@ describe("useCallSession media plane", () => {
     expect(mockNodeService.sendCallInvite).toHaveBeenCalledWith(
       "envoy:owner:bob",
       "local-offer",
-      undefined,
+      [],
       "audio",
     );
     expect(mockNodeService.sendIceCandidate).toHaveBeenCalledWith(
@@ -140,7 +139,7 @@ describe("useCallSession media plane", () => {
     );
   });
 
-  it("uses STUN defaults for outbound offer when node config has no iceServers", async () => {
+  it("uses empty ICE on lan-fast when node config has no iceServers", async () => {
     mockNodeService.getNodeConfig = vi.fn(async () => ({ iceServers: [] }));
     const { result } = renderHook(() => useCallSession());
 
@@ -151,7 +150,7 @@ describe("useCallSession media plane", () => {
     expect(mockNodeService.sendCallInvite).toHaveBeenCalledWith(
       "envoy:owner:bob",
       "local-offer",
-      undefined,
+      [],
       "audio",
     );
   });
@@ -167,7 +166,7 @@ describe("useCallSession media plane", () => {
     expect(mockNodeService.sendCallInvite).toHaveBeenCalledWith(
       "envoy:owner:bob",
       "local-offer",
-      undefined,
+      [],
       "audio",
     );
     expect(result.current.callingState).toBe("call-123");
@@ -184,7 +183,7 @@ describe("useCallSession media plane", () => {
     expect(mockNodeService.sendCallInvite).toHaveBeenCalledWith(
       "envoy:owner:bob",
       "local-offer",
-      undefined,
+      [],
       "video",
     );
   });
@@ -223,7 +222,7 @@ describe("useCallSession media plane", () => {
     expect(mockNodeService.sendCallReinvite).toHaveBeenCalledWith(
       "call-123",
       "local-offer",
-      DEFAULT_CALL_ICE_SERVERS,
+      [],
       "path1_timeout",
     );
   });

@@ -10319,9 +10319,10 @@ class NodeServiceImpl implements NodeService {
    * Resolve the iceServers that ship in the `call.invite` payload.
    *
    * Order:
-   * 1. Caller-supplied argument (phone-provided list).
+   * 1. Caller-supplied argument (including explicit `[]` = no STUN).
    * 2. `node-config.iceServers` from disk.
-   * 3. Hard-coded 3-server STUN default (Google / Cloudflare / Twilio).
+   * 3. `lan-fast` / empty profile → `[]` (host candidates; no public STUN).
+   * 4. Otherwise hard-coded public STUN (Google / Cloudflare / Twilio).
    */
   private async _effectiveCallIceServers(
     callerSupplied?: { urls: string; username?: string; credential?: string }[],

@@ -11,13 +11,18 @@ describe("call-ice-servers", () => {
     expect(resolveCallIceServers(invite)).toEqual(invite);
   });
 
-  it("falls back to node config then public STUN defaults", () => {
+  it("falls back to node config then profile-aware defaults", () => {
     const node = [{ urls: "stun:node.example.com:3478" }];
     expect(resolveCallIceServers(undefined, node)).toEqual(node);
-    expect(resolveCallIceServers([], [])).toEqual(DEFAULT_CALL_ICE_SERVERS);
+    // lan-fast / empty profile: no public STUN (blocked Google must not delay LAN calls)
+    expect(resolveCallIceServers([], [], { discoveryProfile: "lan-fast" })).toEqual([]);
+    expect(resolveCallIceServers(undefined, undefined, { discoveryProfile: "" })).toEqual([]);
+    expect(resolveCallIceServers(undefined, undefined, { discoveryProfile: "wan-default" })).toEqual(
+      DEFAULT_CALL_ICE_SERVERS,
+    );
   });
 
-  it("treats resolved servers as path2", () => {
+  it("treats wan defaults as path2", () => {
     expect(isPath2Call([])).toBe(true);
     expect(isPath2Call(undefined)).toBe(true);
   });

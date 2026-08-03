@@ -62,8 +62,15 @@ export async function effectiveCallIceServersViaRuntime(
 ): Promise<IceServerConfig[]> {
   // Explicit `[]` means "no STUN/TURN" — do not inject defaults.
   if (callerSupplied !== undefined) return callerSupplied;
-  const config = (await ctx.loadConfig()) as { iceServers?: IceServerConfig[] } | null;
+  const config = (await ctx.loadConfig()) as {
+    iceServers?: IceServerConfig[];
+    discoveryProfile?: string;
+  } | null;
   if (config?.iceServers && config.iceServers.length > 0) return config.iceServers;
+  // lan-fast / default home profile: host candidates only. Injecting Google
+  // STUN here makes Social wait on unreachable servers (e.g. CN) before invite.
+  const profile = typeof config?.discoveryProfile === "string" ? config.discoveryProfile.trim() : "";
+  if (profile === "lan-fast" || profile === "") return [];
   return DEFAULT_ICE_SERVERS;
 }
 

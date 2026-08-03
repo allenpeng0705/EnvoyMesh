@@ -46,3 +46,38 @@ describe("preferCircuitHintsForCallDelivery", () => {
     expect(prefer).toBe(true);
   });
 });
+
+describe("effectiveCallIceServersViaRuntime", () => {
+  it("returns empty list on lan-fast when unset", async () => {
+    const { effectiveCallIceServersViaRuntime } = await import("../src/node-service-calls.js");
+    const servers = await effectiveCallIceServersViaRuntime(
+      {
+        loadConfig: async () => ({ discoveryProfile: "lan-fast" }),
+      } as never,
+      undefined,
+    );
+    expect(servers).toEqual([]);
+  });
+
+  it("returns public STUN on wan-default when unset", async () => {
+    const { effectiveCallIceServersViaRuntime } = await import("../src/node-service-calls.js");
+    const servers = await effectiveCallIceServersViaRuntime(
+      {
+        loadConfig: async () => ({ discoveryProfile: "wan-default" }),
+      } as never,
+      undefined,
+    );
+    expect(servers.some((s) => String(s.urls).includes("google"))).toBe(true);
+  });
+
+  it("honors explicit empty caller list", async () => {
+    const { effectiveCallIceServersViaRuntime } = await import("../src/node-service-calls.js");
+    const servers = await effectiveCallIceServersViaRuntime(
+      {
+        loadConfig: async () => ({ discoveryProfile: "wan-default" }),
+      } as never,
+      [],
+    );
+    expect(servers).toEqual([]);
+  });
+});

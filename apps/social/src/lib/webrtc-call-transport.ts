@@ -76,8 +76,12 @@ export interface WebRtcCallTransport {
 // Implementation
 // ------------------------------------------------------------------
 
-/** Max wait for local ICE gathering before shipping SDP (ms). */
-const ICE_GATHERING_TIMEOUT_MS = 8_000;
+/** Max wait for local ICE gathering before shipping SDP (ms).
+ * Kept short: blocked public STUN (e.g. Google from CN) never completes
+ * gathering, and waiting here delays `call.invite` so the callee never rings.
+ * Remaining candidates trickle via `call.ice-candidate`.
+ */
+const ICE_GATHERING_TIMEOUT_MS = 300;
 
 function countSdpCandidates(sdp: string): number {
   return sdp.split("\n").filter((line) => line.startsWith("a=candidate:")).length;
@@ -123,6 +127,7 @@ async function waitForIceGatheringComplete(
 }
 
 async function readLocalSdp(connection: RTCPeerConnection): Promise<string> {
+  // Brief window for host candidates only — do not block on STUN/TURN.
   await waitForIceGatheringComplete(connection);
   const sdp = connection.localDescription?.sdp;
   if (!sdp) throw new Error("missing local SDP after ICE gathering");
