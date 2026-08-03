@@ -291,6 +291,8 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
       final bytes = await file.readAsBytes();
       final base64 = base64Encode(bytes);
       const mimeType = 'audio/mp4';
+      final durationSec =
+          _recordingSeconds > 0 ? _recordingSeconds : 1;
 
       final nodeService = ref.read(nodeServiceProvider);
       if (nodeService == null || _resolvedContactOwnerId == null) {
@@ -302,29 +304,63 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
         return;
       }
 
-      // One RPC only — sendChatAttachment uploads, sends chat.message with
-      // attachment metadata (chatText: '' like Social), and shareFiles linked
-      // by message id. Omitting chatText used a local-only file-share row and
-      // broke home-node / peer playback linking.
-      await nodeService.sendChatAttachment(
-        targetOwnerId: _resolvedContactOwnerId!,
-        filename: 'voice-note.m4a',
-        contentBase64: base64,
-        mimeType: mimeType,
-        chatText: '',
+      final targetOwnerId = _resolvedContactOwnerId!;
+      final chatNotifier = ref.read(chatProvider.notifier);
+      // Show a bubble immediately (duration known); vault path fills in
+      // when the RPC returns / WS echo arrives.
+      final pendingId = chatNotifier.insertPendingVoiceNote(
+        targetOwnerId: targetOwnerId,
+        durationSec: durationSec,
+        sizeBytes: bytes.length,
       );
-      sent = true;
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(l10n.chatVoiceSent)),
-        );
-      }
+
       try {
-        if (await file.exists()) await file.delete();
-      } catch (_) {}
-      _activeRecordingPath = null;
-      if (mounted) {
-        setState(() => _recordingSeconds = 0);
+        final result = await nodeService.sendChatAttachment(
+          targetOwnerId: targetOwnerId,
+          filename: 'voice-note.m4a',
+          contentBase64: base64,
+          mimeType: mimeType,
+          chatText: '',
+        );
+        final vaultPath = result['vaultRelativePath'] as String?;
+        final messageId = result['messageId'] as String?;
+        final attachmentId =
+            (result['attachmentId'] as String?) ?? pendingId;
+        if (messageId != null &&
+            messageId.isNotEmpty &&
+            vaultPath != null &&
+            vaultPath.isNotEmpty) {
+          chatNotifier.upsertOutboundVoiceNote(
+            targetOwnerId: targetOwnerId,
+            messageId: messageId,
+            vaultRelativePath: vaultPath,
+            attachmentId: attachmentId,
+            sizeBytes: bytes.length,
+            mimeType: mimeType,
+            durationSec: durationSec,
+          );
+        }
+        if (pendingId.isNotEmpty) {
+          chatNotifier.removePendingVoiceNote(targetOwnerId, pendingId);
+        }
+        sent = true;
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(l10n.chatVoiceSent)),
+          );
+        }
+        try {
+          if (await file.exists()) await file.delete();
+        } catch (_) {}
+        _activeRecordingPath = null;
+        if (mounted) {
+          setState(() => _recordingSeconds = 0);
+        }
+      } catch (e) {
+        if (pendingId.isNotEmpty) {
+          chatNotifier.removePendingVoiceNote(targetOwnerId, pendingId);
+        }
+        rethrow;
       }
     } catch (e) {
       // Keep _activeRecordingPath + duration so the bar stays in ready/retry.

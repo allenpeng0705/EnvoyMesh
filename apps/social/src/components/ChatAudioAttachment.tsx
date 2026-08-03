@@ -1,10 +1,10 @@
 /**
  * ChatAudioAttachment — audio message player (Phase 37).
  *
- * Renders an HTML5 <audio> element with playback controls for voice notes
- * sent via chat. Fetches the raw audio bytes from the vault and plays them
- * via a Blob object URL (data: URIs often leave AAC/M4A controls grayed out
- * in Chrome / desktop WebViews — EnvoyGo records AAC-LC `.m4a`).
+ * Fetches vault bytes and plays via a Blob object URL. EnvoyGo voice notes
+ * are AAC-LC `.m4a` (`audio/mp4`); data: URIs often leave controls at 0:00
+ * / grayed out in desktop browsers — Blob URLs + explicit `<source type>`
+ * fix that.
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
@@ -53,10 +53,17 @@ function base64ToUint8Array(base64: string): Uint8Array {
   return bytes;
 }
 
+function readFiniteDurationSec(el: HTMLAudioElement): number | null {
+  const d = el.duration;
+  if (!isFinite(d) || d <= 0) return null;
+  return Math.max(1, Math.round(d));
+}
+
 export function ChatAudioAttachment({ attachment, transcription }: ChatAudioAttachmentProps) {
   const t = useT();
   const nodeService = useNodeService();
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [audioMime, setAudioMime] = useState("audio/mp4");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
   const [durationSec, setDurationSec] = useState<number | null>(null);
@@ -71,12 +78,20 @@ export function ChatAudioAttachment({ attachment, transcription }: ChatAudioAtta
     }
   }, []);
 
+  const applyDuration = useCallback(() => {
+    const el = audioRef.current;
+    if (!el) return;
+    const sec = readFiniteDurationSec(el);
+    if (sec != null) setDurationSec(sec);
+  }, []);
+
   const loadAudio = useCallback(async () => {
     if (!vaultPath) return;
     setLoading(true);
     setError(false);
     revokeObjectUrl();
     setAudioUrl(null);
+    setDurationSec(null);
     try {
       const result = await nodeService.readLibraryItemContent({ relativePath: vaultPath });
       const mime = normalizeChatAudioMime(
@@ -87,12 +102,11 @@ export function ChatAudioAttachment({ attachment, transcription }: ChatAudioAtta
       if (bytes.byteLength === 0) {
         throw new Error("empty audio");
       }
-      // `.slice()` returns a fresh `Uint8Array<ArrayBuffer>` (not
-      // `Uint8Array<ArrayBufferLike>`), which is what `Blob`'s BlobPart
-      // accepts under TS 5.7+ strict lib.dom.d.ts.
+      // Fresh ArrayBuffer-backed view for BlobPart (TS 5.7+ / lib.dom).
       const blob = new Blob([bytes.slice()], { type: mime });
       const url = URL.createObjectURL(blob);
       objectUrlRef.current = url;
+      setAudioMime(mime);
       setAudioUrl(url);
     } catch {
       setError(true);
@@ -114,6 +128,29 @@ export function ChatAudioAttachment({ attachment, transcription }: ChatAudioAtta
     };
   }, [loadAudio, revokeObjectUrl]);
 
+  // AAC/MP4 sometimes reports duration only after `durationchange`, not
+  // `loadedmetadata` (or reports Infinity until more bytes are buffered).
+  useEffect(() => {
+    if (!audioUrl) return;
+    const el = audioRef.current;
+    if (!el) return;
+    const onMeta = () => applyDuration();
+    el.addEventListener("loadedmetadata", onMeta);
+    el.addEventListener("durationchange", onMeta);
+    el.addEventListener("loadeddata", onMeta);
+    // Force metadata probe once the blob URL is attached.
+    try {
+      el.load();
+    } catch {
+      /* ignore */
+    }
+    return () => {
+      el.removeEventListener("loadedmetadata", onMeta);
+      el.removeEventListener("durationchange", onMeta);
+      el.removeEventListener("loadeddata", onMeta);
+    };
+  }, [audioUrl, applyDuration]);
+
   return (
     <div className="chat-audio-attachment">
       {!vaultPath ? (
@@ -127,16 +164,27 @@ export function ChatAudioAttachment({ attachment, transcription }: ChatAudioAtta
           ref={audioRef}
           className="chat-audio-player"
           controls
-          preload="metadata"
-          src={audioUrl}
-          onError={() => setError(true)}
-          onLoadedMetadata={() => {
+          preload="auto"
+          onError={() => {
+            // One soft retry: some WebViews fire a transient error before
+            // the blob is ready; only mark unavailable on a second failure.
             const el = audioRef.current;
-            if (el && isFinite(el.duration) && el.duration > 0) {
-              setDurationSec(Math.round(el.duration));
+            if (el && el.dataset.retry !== "1") {
+              el.dataset.retry = "1";
+              try {
+                el.load();
+              } catch {
+                setError(true);
+              }
+              return;
             }
+            setError(true);
           }}
         >
+          <source src={audioUrl} type={audioMime} />
+          {audioMime === "audio/mp4" ? (
+            <source src={audioUrl} type="audio/aac" />
+          ) : null}
           {t("audioMessage.unsupported", "Your browser does not support audio playback.")}
         </audio>
       )}

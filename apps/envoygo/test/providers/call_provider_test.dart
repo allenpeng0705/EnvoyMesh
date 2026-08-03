@@ -435,6 +435,73 @@ void main() {
       expect(provider.state.callId, isNull);
     });
 
+    test('endCall clears local state even when home RPC returns false',
+        () async {
+      final mock = MockWebSocket();
+      final transports = <FakeTransport>[];
+      final provider = await buildProvider(mock: mock, transports: transports);
+
+      final startFuture = provider.startCall('envoy:owner:bob');
+      await Future<void>.delayed(Duration.zero);
+      var sent = _lastSent(mock);
+      mock.simulateMessage({
+        'id': sent['id'],
+        'result': '44444444-4444-4444-8444-444444444444',
+      });
+      await startFuture;
+
+      final endFuture = provider.endCall();
+      await Future<void>.delayed(Duration.zero);
+      sent = _lastSent(mock);
+      mock.simulateMessage({'id': sent['id'], 'result': false});
+      final ok = await endFuture;
+
+      expect(ok, isFalse);
+      expect(transports.first.closeCalled, isTrue);
+      expect(provider.state.callId, isNull);
+      expect(provider.state.transport, isNull);
+    });
+
+    test('startCall recovers after a stuck previous call', () async {
+      final mock = MockWebSocket();
+      final transports = <FakeTransport>[];
+      final provider = await buildProvider(mock: mock, transports: transports);
+
+      final first = provider.startCall('envoy:owner:bob');
+      await Future<void>.delayed(Duration.zero);
+      var sent = _lastSent(mock);
+      mock.simulateMessage({
+        'id': sent['id'],
+        'result': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      });
+      await first;
+      expect(provider.state.callId, isNotNull);
+
+      // Simulate a half-failed hangup that used to leave zombie state:
+      // transport closed but callId still set. Force that shape, then
+      // start again — should clear and succeed.
+      provider.handleTestEvent({
+        'type': 'call:ended',
+        'callId': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      });
+      expect(provider.state.callId, isNull);
+
+      final second = provider.startCall('envoy:owner:carol');
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      sent = _lastSent(mock);
+      // May be endCall for stale + sendCallInvite; find invite.
+      final invite = mock.sentMessages
+          .map((m) => jsonDecode(m) as Map<String, dynamic>)
+          .lastWhere((m) => m['method'] == 'sendCallInvite');
+      mock.simulateMessage({
+        'id': invite['id'],
+        'result': 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+      });
+      final callId = await second;
+      expect(callId, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
+      expect(provider.state.peerOwnerId, 'envoy:owner:carol');
+    });
+
     test('declineCall closes the transport and posts declineCallInvite',
         () async {
       final mock = MockWebSocket();

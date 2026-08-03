@@ -515,6 +515,175 @@ class ChatNotifier extends StateNotifier<ChatState> {
     }
   }
 
+  /// Insert (or replace) an outbound voice note as soon as
+  /// `sendChatAttachment` returns — don't wait for the WS echo.
+  void upsertOutboundVoiceNote({
+    required String targetOwnerId,
+    required String messageId,
+    required String vaultRelativePath,
+    required String attachmentId,
+    required int sizeBytes,
+    required String mimeType,
+    int? durationSec,
+  }) {
+    final nodeState = _ref.read(nodeProvider);
+    if (nodeState.activeNode == null) return;
+    final threadId = '${nodeState.activeNode!.id}:$targetOwnerId';
+    final now = DateTime.now().toUtc().toIso8601String();
+    final att = ChatAttachment(
+      id: attachmentId,
+      filename: 'voice-note.m4a',
+      mimeType: mimeType,
+      sizeBytes: sizeBytes,
+      sensitivity: 'friends',
+      vaultRelativePath: vaultRelativePath,
+      durationSec: durationSec,
+    );
+    final existing = state.messages[threadId] ?? const <ChatMessage>[];
+    if (existing.any((m) => m.id == messageId)) {
+      // Already have the WS echo — enrich duration if missing.
+      state = state.copyWith(
+        messages: {
+          ...state.messages,
+          threadId: [
+            for (final m in existing)
+              if (m.id == messageId &&
+                  (m.attachments == null ||
+                      m.attachments!.every((a) => a.durationSec == null)) &&
+                  durationSec != null)
+                ChatMessage(
+                  id: m.id,
+                  threadId: m.threadId,
+                  senderOwnerId: m.senderOwnerId,
+                  senderDisplayName: m.senderDisplayName,
+                  text: m.text,
+                  createdAt: m.createdAt,
+                  isOutbound: m.isOutbound,
+                  attachments: [
+                    for (final a in m.attachments ?? const <ChatAttachment>[])
+                      ChatAttachment(
+                        id: a.id,
+                        filename: a.filename,
+                        mimeType: a.mimeType,
+                        sizeBytes: a.sizeBytes,
+                        sensitivity: a.sensitivity,
+                        vaultRelativePath: a.vaultRelativePath ?? vaultRelativePath,
+                        durationSec: a.durationSec ?? durationSec,
+                      ),
+                  ],
+                )
+              else
+                m,
+          ],
+        },
+      );
+      return;
+    }
+
+    // Drop any pending-voice optimistic rows for the same filename.
+    final filtered = [
+      for (final m in existing)
+        if (!(m.id.startsWith('pending-voice-') &&
+            m.attachments?.any((a) => a.filename == 'voice-note.m4a') == true))
+          m,
+    ];
+
+    final msg = ChatMessage(
+      id: messageId,
+      threadId: threadId,
+      senderOwnerId: nodeState.ownerId,
+      senderDisplayName: 'You',
+      text: '',
+      createdAt: now,
+      isOutbound: true,
+      attachments: [att],
+    );
+
+    state = state.copyWith(
+      messages: {
+        ...state.messages,
+        threadId: [msg, ...filtered],
+      },
+    );
+
+    var contactName =
+        _ref.read(contactProvider.notifier).getContact(targetOwnerId)?.displayName;
+    if (contactName == null || contactName.isEmpty) {
+      contactName = _ref
+          .read(contactProvider)
+          .bonds
+          .where((c) => c.ownerId == targetOwnerId)
+          .firstOrNull
+          ?.displayName;
+    }
+    _upsertThread(
+      threadId: threadId,
+      nodeId: nodeState.activeNode!.id,
+      type: ChatThreadType.direct,
+      displayName: (contactName != null && contactName.isNotEmpty)
+          ? contactName
+          : targetOwnerId,
+      contactOwnerId: targetOwnerId,
+      lastMessageText: 'Voice note',
+      lastMessageAt: DateTime.now(),
+    );
+
+    unawaited(_localDb.insertMessage(msg.toJson()));
+  }
+
+  /// Optimistic placeholder while `sendChatAttachment` is in flight.
+  String insertPendingVoiceNote({
+    required String targetOwnerId,
+    required int durationSec,
+    required int sizeBytes,
+  }) {
+    final nodeState = _ref.read(nodeProvider);
+    if (nodeState.activeNode == null) return '';
+    final threadId = '${nodeState.activeNode!.id}:$targetOwnerId';
+    final tempId = 'pending-voice-${DateTime.now().microsecondsSinceEpoch}';
+    final now = DateTime.now().toUtc().toIso8601String();
+    final msg = ChatMessage(
+      id: tempId,
+      threadId: threadId,
+      senderOwnerId: nodeState.ownerId,
+      senderDisplayName: 'You',
+      text: '',
+      createdAt: now,
+      isOutbound: true,
+      attachments: [
+        ChatAttachment(
+          id: tempId,
+          filename: 'voice-note.m4a',
+          mimeType: 'audio/mp4',
+          sizeBytes: sizeBytes,
+          sensitivity: 'friends',
+          durationSec: durationSec > 0 ? durationSec : 1,
+        ),
+      ],
+    );
+    state = state.copyWith(
+      messages: {
+        ...state.messages,
+        threadId: [msg, ...?state.messages[threadId]],
+      },
+    );
+    return tempId;
+  }
+
+  void removePendingVoiceNote(String targetOwnerId, String tempId) {
+    final nodeState = _ref.read(nodeProvider);
+    if (nodeState.activeNode == null || tempId.isEmpty) return;
+    final threadId = '${nodeState.activeNode!.id}:$targetOwnerId';
+    final existing = state.messages[threadId];
+    if (existing == null) return;
+    state = state.copyWith(
+      messages: {
+        ...state.messages,
+        threadId: [for (final m in existing) if (m.id != tempId) m],
+      },
+    );
+  }
+
   /// Load chat history for a thread from the home node (remote).
   ///
   /// Direct chats use [contactOwnerId]. Group chats use [chatRoomId]

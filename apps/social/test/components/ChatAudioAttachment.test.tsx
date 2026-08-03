@@ -67,7 +67,9 @@ describe("ChatAudioAttachment — Phase 37", () => {
     await waitFor(() => {
       const audio = document.querySelector("audio");
       expect(audio).toBeTruthy();
-      expect(audio?.getAttribute("src")?.startsWith("blob:")).toBe(true);
+      const source = audio?.querySelector("source");
+      expect(source?.getAttribute("src")?.startsWith("blob:")).toBe(true);
+      expect(source?.getAttribute("type")).toBe("audio/webm");
     });
   });
 
@@ -92,7 +94,9 @@ describe("ChatAudioAttachment — Phase 37", () => {
         />,
       );
       await waitFor(() => {
-        expect(document.querySelector("audio")?.getAttribute("src")).toBe("blob:mock-m4a");
+        const source = document.querySelector("audio source");
+        expect(source?.getAttribute("src")).toBe("blob:mock-m4a");
+        expect(source?.getAttribute("type")).toBe("audio/mp4");
       });
       expect(createObjectURL).toHaveBeenCalled();
       const blob = createObjectURL.mock.calls[0]?.[0] as Blob;

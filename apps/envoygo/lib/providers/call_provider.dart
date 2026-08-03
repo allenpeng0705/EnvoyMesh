@@ -17,17 +17,11 @@ class CallState {
   final String connectionState; // 'disconnected' | 'connecting' | 'connected'
   /// The active WebRTC transport, if any. The provider closes this on
   /// `endCall`/`declineCall`/`dispose` so audio tracks are released.
-  /// Held as a `Function`-typed field rather than `WebRtcCallTransport?`
-  /// so the state class doesn't depend on the transport type at the
-  /// field level — useful for tests that mock the provider.
   final Object? transport;
   /// The peer's audio/video [MediaStream] from the active transport.
-  /// Phase 42F — the call screen binds this onto an [RTCVideoRenderer]
-  /// so the remote audio plays through the device speaker. Held as a
-  /// `dynamic` field to avoid forcing the state class to depend on
-  /// `flutter_webrtc` at compile time (callbacks that aren't used by
-  /// the call screen still work).
   final dynamic remoteStream;
+  /// Local capture stream (self-view on video calls).
+  final dynamic localStream;
 
   const CallState({
     this.callId,
@@ -39,6 +33,7 @@ class CallState {
     this.connectionState = 'disconnected',
     this.transport,
     this.remoteStream,
+    this.localStream,
   });
 
   CallState copyWith({
@@ -51,7 +46,9 @@ class CallState {
     String? connectionState,
     Object? transport,
     dynamic remoteStream,
+    dynamic localStream,
     bool clearTransport = false,
+    bool clearStreams = false,
   }) {
     return CallState(
       callId: callId ?? this.callId,
@@ -62,7 +59,8 @@ class CallState {
       isMuted: isMuted ?? this.isMuted,
       connectionState: connectionState ?? this.connectionState,
       transport: clearTransport ? null : (transport ?? this.transport),
-      remoteStream: remoteStream ?? this.remoteStream,
+      remoteStream: clearStreams ? null : (remoteStream ?? this.remoteStream),
+      localStream: clearStreams ? null : (localStream ?? this.localStream),
     );
   }
 
@@ -117,6 +115,8 @@ class CallProvider extends ChangeNotifier {
   /// leaking the `RTCPeerConnection` + `MediaStream`.
   WebRtcCallTransport? _pendingTransport;
   String _iceCallId = '';
+  /// Prevents double-tap start / overlapping setup.
+  bool _setupInFlight = false;
 
   CallProvider(this._nodeService, {this.transportFactory})
       : _audioSession = AudioSessionHelper() {
@@ -184,17 +184,40 @@ class CallProvider extends ChangeNotifier {
     required List<IceServer> iceServers,
     bool enableVideo = false,
   }) {
+    void onRemote(dynamic stream) {
+      _state = _state.copyWith(remoteStream: stream);
+      notifyListeners();
+    }
+
+    void onLocal(dynamic stream) {
+      _state = _state.copyWith(localStream: stream);
+      notifyListeners();
+    }
+
+    void onConn(dynamic state) {
+      final s = state.toString();
+      final mapped = s.contains('Connected')
+          ? 'connected'
+          : (s.contains('Connecting') || s.contains('Checking'))
+              ? 'connecting'
+              : 'disconnected';
+      _state = _state.copyWith(connectionState: mapped);
+      notifyListeners();
+      // Hard failure — tear down so the next call can start cleanly.
+      if (s.contains('Failed') || s.contains('Closed')) {
+        final callId = _state.callId;
+        if (callId != null) {
+          unawaited(_hangUpLocalAndNotifyHome(callId));
+        }
+      }
+    }
+
     if (transportFactory != null) {
       return transportFactory!(
         callId: callId,
         iceServers: iceServers,
-        onRemoteStream: (stream) {
-          // Phase 42F — store the remote stream on state so the
-          // VoiceCallScreen can bind it to an RTCVideoRenderer.
-          _state = _state.copyWith(remoteStream: stream);
-          notifyListeners();
-        },
-        onConnectionStateChange: (_) {},
+        onRemoteStream: onRemote,
+        onConnectionStateChange: onConn,
         onSdpGenerated: (_, __) {},
         onIceCandidate: _forwardIceCandidate,
       );
@@ -203,27 +226,34 @@ class CallProvider extends ChangeNotifier {
       callId: callId,
       iceServers: iceServers,
       enableVideo: enableVideo,
-      onRemoteStream: (stream) {
-        // Phase 42F — store the remote stream on state so the
-        // VoiceCallScreen can bind it to an RTCVideoRenderer.
-        _state = _state.copyWith(remoteStream: stream);
-        notifyListeners();
-      },
-      onConnectionStateChange: (state) {
-        // Map the WebRTC connection state onto the provider's coarse
-        // "connecting"/"connected" string for the UI.
-        final s = state.toString();
-        final mapped = s.contains('Connected')
-            ? 'connected'
-            : (s.contains('Connecting') || s.contains('Checking'))
-                ? 'connecting'
-                : 'disconnected';
-        _state = _state.copyWith(connectionState: mapped);
-        notifyListeners();
-      },
+      onRemoteStream: onRemote,
+      onLocalStream: onLocal,
+      onConnectionStateChange: onConn,
       onSdpGenerated: (_, __) {},
       onIceCandidate: _forwardIceCandidate,
     );
+  }
+
+  /// Local teardown + best-effort `endCall` to the home (used on ICE Failed).
+  Future<void> _hangUpLocalAndNotifyHome(String callId) async {
+    if (_state.callId != callId) return;
+    _resetToIdle();
+    try {
+      await _nodeService.endCall(callId);
+    } catch (_) {}
+  }
+
+  /// Always release media + clear UI state. Does not wait on home RPCs.
+  void _resetToIdle() {
+    _iceCallId = '';
+    _incomingRemoteSdp = null;
+    _incomingIceServers = const [];
+    _incomingCallType = 'audio';
+    _activeCallType = 'audio';
+    _closeTransport();
+    _state = CallState.idle();
+    notifyListeners();
+    unawaited(_safeResetAudioSession());
   }
 
   void _onEvent(Map<String, dynamic> event) {
@@ -283,12 +313,11 @@ class CallProvider extends ChangeNotifier {
       case 'call:ended':
       case 'call:rejected':
       case 'call:error':
-        _iceCallId = '';
-        _closeTransport();
-        // ignore: unawaited_futures
-        _safeResetAudioSession();
-        _state = CallState.idle();
-        break;
+        _resetToIdle();
+        // notifyListeners already called inside _resetToIdle; avoid double
+        // notify by returning early from the switch via a flag — fall through
+        // to the shared notify at the bottom is redundant but harmless.
+        return;
       case 'call:remote-mute':
         _state = _state.copyWith(isMuted: event['muted'] as bool? ?? false);
         break;
@@ -409,80 +438,108 @@ class CallProvider extends ChangeNotifier {
     String callType = 'audio',
     String? peerDisplayName,
   }) async {
-    final iceServers = await _loadIceServers();
-    final enableVideo = callType == 'video';
-    _activeCallType = enableVideo ? 'video' : 'audio';
-
-    // Configure the platform audio session for the voice call (no-op
-    // on non-iOS). Wrapped in try/catch — audio session config is a
-    // nice-to-have; a failure shouldn't block the call.
-    try {
-      await _audioSession.configureForVoiceCall();
-    } catch (_) {
-      // ignore: avoid_print
-      print('[CallProvider] audio session configure failed');
+    if (_setupInFlight) return null;
+    // Stuck leftover state (endCall RPC failed, cancelled mid-setup, etc.)
+    // must not block the next invite — release camera/mic first.
+    if (_state.callId != null ||
+        _pendingTransport != null ||
+        _state.transport != null) {
+      final staleId = _state.callId;
+      _resetToIdle();
+      if (staleId != null) {
+        unawaited(_nodeService.endCall(staleId).catchError((_) => false));
+      }
+      // Brief yield so native camera session can release before re-acquire.
+      await Future<void>.delayed(const Duration(milliseconds: 200));
     }
 
-    // Build the transport up front so we can capture the offer SDP.
-    // We use a temporary callId and let the home assign the real one
-    // when we sendCallInvite.
-    final tempCallId = 'pending-${DateTime.now().microsecondsSinceEpoch}';
-    _iceCallId = '';
-    final transport = _buildTransport(
-      callId: tempCallId,
-      iceServers: iceServers,
-      enableVideo: enableVideo,
-    );
-    // Stash on `_pendingTransport` so `_closeTransport()` (called from
-    // dispose() or a remote `call:ended` event during the RPC window)
-    // can close it instead of leaking the RTCPeerConnection + MediaStream.
-    _pendingTransport = transport;
-
-    String sdpOffer;
+    _setupInFlight = true;
     try {
-      sdpOffer = await transport.startOffer();
-    } catch (err) {
-      _pendingTransport = null;
-      await transport.close();
-      await _safeResetAudioSession();
-      return null;
-    }
+      final iceServers = await _loadIceServers();
+      final enableVideo = callType == 'video';
+      _activeCallType = enableVideo ? 'video' : 'audio';
 
-    final callId = await _nodeService.sendCallInvite(
-      targetOwnerId,
-      sdpOffer,
-      callType: _activeCallType,
-      iceServers: iceServers
-          .map((s) => {
-                'urls': s.urls,
-                if (s.username != null) 'username': s.username,
-                if (s.credential != null) 'credential': s.credential,
-              })
-          .toList(),
-    );
-    if (callId == null) {
-      _pendingTransport = null;
+      try {
+        await _audioSession.configureForVoiceCall();
+      } catch (_) {
+        // ignore: avoid_print
+        print('[CallProvider] audio session configure failed');
+      }
+
+      final tempCallId = 'pending-${DateTime.now().microsecondsSinceEpoch}';
       _iceCallId = '';
-      await transport.close();
-      await _safeResetAudioSession();
-      return null;
-    }
+      final transport = _buildTransport(
+        callId: tempCallId,
+        iceServers: iceServers,
+        enableVideo: enableVideo,
+      );
+      _pendingTransport = transport;
 
-    _iceCallId = callId;
-    final label = peerDisplayName?.trim();
-    _state = _state.copyWith(
-      callId: callId,
-      peerOwnerId: targetOwnerId,
-      peerDisplayName: (label != null && label.isNotEmpty) ? label : targetOwnerId,
-      isIncoming: false,
-      isActive: false,
-      connectionState: 'connecting',
-      transport: transport,
-    );
-    // Promoted to `_state.transport` — clear the in-flight handle.
-    _pendingTransport = null;
-    notifyListeners();
-    return callId;
+      String sdpOffer;
+      try {
+        sdpOffer = await transport.startOffer();
+      } catch (err) {
+        _pendingTransport = null;
+        await transport.close();
+        await _safeResetAudioSession();
+        // ignore: avoid_print
+        print('[CallProvider] startOffer failed: $err');
+        return null;
+      }
+
+      // Promote local preview as soon as media is up (before home replies).
+      if (transport.localStream != null) {
+        _state = _state.copyWith(localStream: transport.localStream);
+        notifyListeners();
+      }
+
+      final callId = await _nodeService.sendCallInvite(
+        targetOwnerId,
+        sdpOffer,
+        callType: _activeCallType,
+        iceServers: iceServers
+            .map((s) => {
+                  'urls': s.urls,
+                  if (s.username != null) 'username': s.username,
+                  if (s.credential != null) 'credential': s.credential,
+                })
+            .toList(),
+      );
+      if (callId == null) {
+        _pendingTransport = null;
+        _iceCallId = '';
+        await transport.close();
+        await _safeResetAudioSession();
+        _state = CallState.idle();
+        notifyListeners();
+        return null;
+      }
+
+      // Aborted while waiting for home (remote end / local hangup).
+      if (_pendingTransport != transport) {
+        await transport.close();
+        return null;
+      }
+
+      _iceCallId = callId;
+      final label = peerDisplayName?.trim();
+      _state = _state.copyWith(
+        callId: callId,
+        peerOwnerId: targetOwnerId,
+        peerDisplayName:
+            (label != null && label.isNotEmpty) ? label : targetOwnerId,
+        isIncoming: false,
+        isActive: false,
+        connectionState: 'connecting',
+        transport: transport,
+        localStream: transport.localStream,
+      );
+      _pendingTransport = null;
+      notifyListeners();
+      return callId;
+    } finally {
+      _setupInFlight = false;
+    }
   }
 
   /// Accept an incoming call. Builds the transport, sets the remote SDP,
@@ -491,109 +548,133 @@ class CallProvider extends ChangeNotifier {
     final callId = _state.callId;
     final peerOwnerId = _state.peerOwnerId;
     if (callId == null || peerOwnerId == null) return false;
+    if (_setupInFlight) return false;
 
-    // The remote SDP comes from the `call:incoming` event payload.
-    // (Pushed via the home's WebSocket event bus.)
     final remoteSdp = _incomingRemoteSdp;
     if (remoteSdp == null) return false;
 
+    _setupInFlight = true;
     try {
-      await _audioSession.configureForVoiceCall();
-    } catch (_) {
-      // ignore: avoid_print
-      print('[CallProvider] audio session configure failed');
-    }
+      try {
+        await _audioSession.configureForVoiceCall();
+      } catch (_) {
+        // ignore: avoid_print
+        print('[CallProvider] audio session configure failed');
+      }
 
-    // Prefer the iceServers the home embedded in the `call:incoming` envelope
-    // — they reflect exactly what the caller used, so both ends agree on ICE
-    // config. Fall back to a fresh lookup (which itself falls back to the
-    // 3-STUN default) only if the envelope didn't carry any.
-    final iceServers = _incomingIceServers.isNotEmpty
-        ? _incomingIceServers
-        : await _loadIceServers();
-    _iceCallId = callId;
-    final transport = _buildTransport(
-      callId: callId,
-      iceServers: iceServers,
-      enableVideo: _incomingCallType == 'video',
-    );
-    _pendingTransport = transport;
+      final iceServers = _incomingIceServers.isNotEmpty
+          ? _incomingIceServers
+          : await _loadIceServers();
+      _iceCallId = callId;
+      final transport = _buildTransport(
+        callId: callId,
+        iceServers: iceServers,
+        enableVideo: _incomingCallType == 'video',
+      );
+      _pendingTransport = transport;
 
-    String sdpAnswer;
-    try {
-      sdpAnswer = await transport.startAnswer(remoteSdp);
-    } catch (err) {
+      String sdpAnswer;
+      try {
+        sdpAnswer = await transport.startAnswer(remoteSdp);
+      } catch (err) {
+        _pendingTransport = null;
+        await transport.close();
+        await _safeResetAudioSession();
+        // ignore: avoid_print
+        print('[CallProvider] startAnswer failed: $err');
+        return false;
+      }
+
+      if (transport.localStream != null) {
+        _state = _state.copyWith(localStream: transport.localStream);
+        notifyListeners();
+      }
+
+      final ok = await _nodeService.acceptCallInvite(
+        callId,
+        sdpAnswer,
+        iceServers: iceServers
+            .map((s) => {
+                  'urls': s.urls,
+                  if (s.username != null) 'username': s.username,
+                  if (s.credential != null) 'credential': s.credential,
+                })
+            .toList(),
+      );
+      if (!ok) {
+        _pendingTransport = null;
+        _iceCallId = '';
+        await transport.close();
+        await _safeResetAudioSession();
+        return false;
+      }
+
+      if (_pendingTransport != transport) {
+        await transport.close();
+        return false;
+      }
+
+      _state = _state.copyWith(
+        isIncoming: false,
+        isActive: true,
+        connectionState: 'connected',
+        transport: transport,
+        localStream: transport.localStream,
+      );
       _pendingTransport = null;
-      await transport.close();
-      await _safeResetAudioSession();
-      return false;
+      _incomingRemoteSdp = null;
+      _incomingIceServers = const [];
+      notifyListeners();
+      return true;
+    } finally {
+      _setupInFlight = false;
     }
-
-    final ok = await _nodeService.acceptCallInvite(
-      callId,
-      sdpAnswer,
-      iceServers: iceServers
-          .map((s) => {
-                'urls': s.urls,
-                if (s.username != null) 'username': s.username,
-                if (s.credential != null) 'credential': s.credential,
-              })
-          .toList(),
-    );
-    if (!ok) {
-      _pendingTransport = null;
-      _iceCallId = '';
-      await transport.close();
-      await _safeResetAudioSession();
-      return false;
-    }
-
-    _state = _state.copyWith(
-      isIncoming: false,
-      isActive: true,
-      connectionState: 'connected',
-      transport: transport,
-      clearTransport: false,
-    );
-    _pendingTransport = null;
-    _incomingRemoteSdp = null;
-    _incomingIceServers = const [];
-    notifyListeners();
-    return true;
   }
 
-  /// Decline an incoming call. Closes any pending transport and posts
-  /// `declineCallInvite` to the home.
+  /// Decline an incoming call. Always clears local state so a failed
+  /// home RPC cannot leave the UI stuck ringing.
   Future<bool> declineCall() async {
     final callId = _state.callId;
-    if (callId == null) return false;
-    _closeTransport();
-    await _safeResetAudioSession();
-    final ok = await _nodeService.declineCallInvite(callId, 'declined');
-    if (ok) _state = CallState.idle();
-    notifyListeners();
-    return ok;
+    if (callId == null) {
+      _resetToIdle();
+      return false;
+    }
+    _resetToIdle();
+    try {
+      return await _nodeService.declineCallInvite(callId, 'declined');
+    } catch (_) {
+      return false;
+    }
   }
 
-  /// End an active call. Closes the transport, posts `endCall` to the
-  /// home, and resets state.
+  /// End an active/outbound call. Always clears local media/state first
+  /// so camera/mic are released even when the home RPC fails — otherwise
+  /// the next call cannot acquire the camera ("no camera can work").
   Future<bool> endCall() async {
     final callId = _state.callId;
-    if (callId == null) return false;
-    _closeTransport();
-    await _safeResetAudioSession();
-    final ok = await _nodeService.endCall(callId);
-    if (ok) _state = CallState.idle();
-    notifyListeners();
-    return ok;
+    if (callId == null) {
+      _resetToIdle();
+      return false;
+    }
+    _resetToIdle();
+    try {
+      return await _nodeService.endCall(callId);
+    } catch (_) {
+      return false;
+    }
   }
 
   /// Flip between front and back cameras on a video call (mobile).
   Future<bool> switchCamera() async {
     if (!isVideoCall) return false;
-    final transport = _state.transport;
+    final transport = _state.transport ?? _pendingTransport;
     if (transport is! WebRtcCallTransport) return false;
-    return transport.switchCamera();
+    final ok = await transport.switchCamera();
+    if (ok && transport.localStream != null) {
+      _state = _state.copyWith(localStream: transport.localStream);
+      notifyListeners();
+    }
+    return ok;
   }
 
   /// Toggle mute on the local audio track and notify the peer via
@@ -628,22 +709,14 @@ class CallProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Dismiss incoming call notification (timeout). No transport to close
-  /// at this point because we haven't built one yet.
+  /// Dismiss incoming call notification (timeout).
   void dismissIncoming() {
-    _incomingRemoteSdp = null;
-    _incomingIceServers = const [];
-    _state = CallState.idle();
-    notifyListeners();
+    _resetToIdle();
   }
 
   /// Tear down the active transport (best-effort).
   void _closeTransport() {
     _iceCallId = '';
-    // Close the in-flight transport first (the one that's still being
-    // built during sendCallInvite/acceptCallInvite RPC round-trips);
-    // otherwise dispose() / a remote-end event during that window
-    // would leak the RTCPeerConnection + MediaStream.
     final pending = _pendingTransport;
     if (pending != null) {
       _pendingTransport = null;
@@ -652,7 +725,6 @@ class CallProvider extends ChangeNotifier {
     }
     final transport = _state.transport;
     if (transport is WebRtcCallTransport) {
-      // Fire-and-forget; close() is idempotent.
       // ignore: unawaited_futures
       transport.close();
     }
@@ -673,7 +745,11 @@ class CallProvider extends ChangeNotifier {
   @override
   void dispose() {
     _sub?.cancel();
+    _iceCallId = '';
+    _incomingRemoteSdp = null;
+    _incomingIceServers = const [];
     _closeTransport();
+    _state = CallState.idle();
     // ignore: unawaited_futures
     _safeResetAudioSession();
     super.dispose();

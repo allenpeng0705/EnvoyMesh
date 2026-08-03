@@ -1063,43 +1063,9 @@ export async function sendChatViaRuntime(
     selfProfile.device.privateKeyPem,
   );
 
-  let deliverResult: ChatDeliverResult = { delivered: false };
-  const bridgeHandler = ctx.getBridgeChatHandler();
-  try {
-    if (transportPeerId === mesh.peerId && bridgeHandler) {
-      console.log(`[sendChat] self-send to ${targetOwnerId}, routing via bridge handler`);
-      await bridgeHandler(envelope, mesh.peerId);
-      deliverResult = { delivered: true, deliveredAt: new Date().toISOString() };
-    } else {
-      // Online-Direct can be half-open (common after Windows sleep / asymmetric LAN).
-      // Only skip the delivery ack when this peer was recently path-verified; otherwise
-      // wait for chat.delivered so hung streams fail fast and retry.
-      const skipAck =
-        conn.connected &&
-        conn.direct &&
-        isOutboundPeerRecentlyVerified(transportPeerId);
-      deliverResult = await ctx.deliverChatEnvelope(
-        transportPeerId,
-        envelope,
-        dialHints,
-        listenAddrs,
-        { ...(skipAck ? { expectDeliveryAck: false } : undefined) },
-      );
-    }
-  } catch (err) {
-    ctx.deleteTransportCache(targetOwnerId);
-    throw err;
-  }
-
-  if (deliverResult.delivered) {
-    ctx.setTransportCache(targetOwnerId, {
-      peerId: transportPeerId,
-      listenAddrs: listenAddrs ?? [],
-    });
-  }
-
-  const deliveryReceipt = deliverResult.delivered ? ("delivered" as const) : ("sent" as const);
-  const emittedMsg: ChatMessage = {
+  const buildEmittedMsg = (
+    deliveryReceipt: "pending" | "sent" | "delivered" | "failed",
+  ): ChatMessage => ({
     messageId: envelope.messageId,
     sender: {
       nodeId: mesh.peerId,
@@ -1132,10 +1098,61 @@ export async function sendChatViaRuntime(
       deliveryReceipt,
     },
     signature: envelope.signature,
-  };
-  console.log(`[sendChat] Emitting chat:message locally:`, emittedMsg);
-  ctx.persistChatMessage(targetOwnerId, emittedMsg);
-  ctx.emitChatMessage(emittedMsg);
+  });
+
+  // Emit to local UIs (Social / EnvoyGo) *before* waiting on P2P dial/ack.
+  // Voice notes + attachments were appearing only after delivery finished,
+  // which felt like a multi-second hang on the sender.
+  const bridgeHandler = ctx.getBridgeChatHandler();
+  const isLocalBridge = transportPeerId === mesh.peerId && Boolean(bridgeHandler);
+  if (!isLocalBridge) {
+    const early = buildEmittedMsg("sent");
+    console.log(`[sendChat] Emitting chat:message locally (pre-delivery):`, early);
+    ctx.persistChatMessage(targetOwnerId, early);
+    ctx.emitChatMessage(early);
+  }
+
+  let deliverResult: ChatDeliverResult = { delivered: false };
+  try {
+    if (isLocalBridge && bridgeHandler) {
+      console.log(`[sendChat] self-send to ${targetOwnerId}, routing via bridge handler`);
+      await bridgeHandler(envelope, mesh.peerId);
+      deliverResult = { delivered: true, deliveredAt: new Date().toISOString() };
+    } else {
+      // Online-Direct can be half-open (common after Windows sleep / asymmetric LAN).
+      // Only skip the delivery ack when this peer was recently path-verified; otherwise
+      // wait for chat.delivered so hung streams fail fast and retry.
+      const skipAck =
+        conn.connected &&
+        conn.direct &&
+        isOutboundPeerRecentlyVerified(transportPeerId);
+      deliverResult = await ctx.deliverChatEnvelope(
+        transportPeerId,
+        envelope,
+        dialHints,
+        listenAddrs,
+        { ...(skipAck ? { expectDeliveryAck: false } : undefined) },
+      );
+    }
+  } catch (err) {
+    ctx.deleteTransportCache(targetOwnerId);
+    throw err;
+  }
+
+  if (deliverResult.delivered) {
+    ctx.setTransportCache(targetOwnerId, {
+      peerId: transportPeerId,
+      listenAddrs: listenAddrs ?? [],
+    });
+  }
+
+  const deliveryReceipt = deliverResult.delivered ? ("delivered" as const) : ("sent" as const);
+  if (isLocalBridge) {
+    const emittedMsg = buildEmittedMsg(deliveryReceipt);
+    console.log(`[sendChat] Emitting chat:message locally:`, emittedMsg);
+    ctx.persistChatMessage(targetOwnerId, emittedMsg);
+    ctx.emitChatMessage(emittedMsg);
+  }
   if (deliverResult.delivered) {
     await ctx.markOutboundChatDelivered(
       targetOwnerId,

@@ -65,6 +65,24 @@ class _ChatAudioPlayerState extends State<ChatAudioPlayer> {
   }
 
   @override
+  void didUpdateWidget(covariant ChatAudioPlayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final oldPath = oldWidget.attachment.vaultRelativePath;
+    final newPath = widget.attachment.vaultRelativePath;
+    if (newPath != null &&
+        newPath.isNotEmpty &&
+        newPath != oldPath &&
+        _tempFile == null &&
+        !_loading) {
+      setState(() {
+        _loading = true;
+        _error = false;
+      });
+      unawaited(_load());
+    }
+  }
+
+  @override
   void dispose() {
     for (final s in _subs) {
       s.cancel();
@@ -91,10 +109,17 @@ class _ChatAudioPlayerState extends State<ChatAudioPlayer> {
   Future<void> _load() async {
     final vaultPath = widget.attachment.vaultRelativePath;
     if (vaultPath == null || vaultPath.isEmpty) {
-      setState(() {
-        _loading = false;
-        _error = true;
-      });
+      // Pending upload — show duration, no error chrome.
+      if (mounted) {
+        setState(() {
+          _loading = false;
+          _error = false;
+          if (widget.attachment.durationSec != null &&
+              widget.attachment.durationSec! > 0) {
+            _duration = Duration(seconds: widget.attachment.durationSec!);
+          }
+        });
+      }
       return;
     }
     try {
@@ -235,6 +260,30 @@ class _ChatAudioPlayerState extends State<ChatAudioPlayer> {
                   child: Text(
                     l10n.audioUnavailable,
                     style: TextStyle(color: colorScheme.error, fontSize: 13),
+                  ),
+                ),
+              ],
+            )
+          else if (_tempFile == null)
+            Row(
+              children: [
+                Icon(Icons.mic, size: 28, color: colorScheme.primary),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    l10n.chatVoiceSending,
+                    style: TextStyle(
+                      color: colorScheme.onSurfaceVariant,
+                      fontSize: 13,
+                    ),
+                  ),
+                ),
+                Text(
+                  _fmt(total),
+                  style: TextStyle(
+                    color: colorScheme.onSurfaceVariant,
+                    fontSize: 12,
+                    fontFeatures: const [FontFeature.tabularFigures()],
                   ),
                 ),
               ],

@@ -4,18 +4,10 @@ import 'package:flutter_webrtc/flutter_webrtc.dart';
 
 import 'models/call_event.dart';
 
-/// Phase 42D — native Flutter WebRTC transport for EnvoyGo voice calls.
+/// Phase 42D — native Flutter WebRTC transport for EnvoyGo voice/video calls.
 ///
 /// Mirrors `apps/social/src/lib/webrtc-call-transport.ts` using
-/// `flutter_webrtc` so the phone can build a real `RTCPeerConnection`,
-/// generate an SDP offer/answer, trickle ICE candidates, and stream
-/// audio via SRTP. The home remains in the signaling path — media flows
-/// peer-to-peer once both sides have set their remote descriptions.
-///
-/// Path support: Path 2 only (NG4). `flutter_webrtc` cannot bind to a
-/// libp2p stream, so the libp2p data channel used by desktop↔desktop
-/// Path 1 is not available here. Phone↔phone and phone↔desktop both
-/// use standard ICE with the supplied `iceServers`.
+/// `flutter_webrtc`. Path 2 only (ICE); no libp2p data-channel path.
 class WebRtcCallTransport {
   /// Optional callId used to label this transport in logs.
   final String callId;
@@ -25,18 +17,18 @@ class WebRtcCallTransport {
   final void Function(String sdp, String type) onSdpGenerated;
   final void Function(CallIceCandidate candidate) onIceCandidate;
 
+  /// Fired whenever the local capture stream is created or replaced
+  /// (e.g. after a camera flip). UI binds this for self-view.
+  final void Function(MediaStream stream)? onLocalStream;
+
   /// When true, capture camera + offer to receive video (video calls).
   final bool enableVideo;
 
-  /// Pluggable factory for the underlying [RTCPeerConnection]. Production
-  /// callers leave this null and use [createPeerConnection]. Tests inject
-  /// a fake to exercise the transport without a real WebRTC stack.
+  /// Pluggable factory for the underlying [RTCPeerConnection].
   final Future<RTCPeerConnection> Function(Map<String, dynamic> config)?
       peerConnectionFactory;
 
-  /// Pluggable factory for the local audio [MediaStream]. Production
-  /// callers leave this null and use `navigator.mediaDevices.getUserMedia`.
-  /// Tests inject a fake.
+  /// Pluggable factory for local [MediaStream] (tests inject a fake).
   final Future<MediaStream> Function(Map<String, dynamic> constraints)?
       getUserMedia;
 
@@ -44,6 +36,9 @@ class WebRtcCallTransport {
   MediaStream? _localStream;
   bool _isClosed = false;
   bool _isMuted = false;
+  /// `true` = front (user), `false` = back (environment).
+  bool _facingUser = true;
+  bool _switchingCamera = false;
 
   WebRtcCallTransport({
     required this.callId,
@@ -52,6 +47,7 @@ class WebRtcCallTransport {
     required this.onConnectionStateChange,
     required this.onSdpGenerated,
     required this.onIceCandidate,
+    this.onLocalStream,
     this.enableVideo = false,
     this.peerConnectionFactory,
     this.getUserMedia,
@@ -59,10 +55,12 @@ class WebRtcCallTransport {
 
   bool get isClosed => _isClosed;
   bool get isMuted => _isMuted;
+  bool get facingUser => _facingUser;
+
+  /// Local capture stream (self-view / mute).
+  MediaStream? get localStream => _localStream;
 
   Map<String, dynamic> _rtcConfiguration() {
-    // flutter_webrtc's RTCConfiguration accepts the standard RTCConfiguration
-    // shape. iceServers is required when set; empty list means no STUN/TURN.
     return {
       'iceServers': iceServers
           .map((s) => {
@@ -75,11 +73,29 @@ class WebRtcCallTransport {
     };
   }
 
+  Map<String, dynamic> _mediaConstraints({required bool video}) {
+    return {
+      'audio': true,
+      if (video)
+        'video': {
+          'facingMode': _facingUser ? 'user' : 'environment',
+          'mandatory': {
+            'minWidth': '640',
+            'minHeight': '480',
+            'minFrameRate': '15',
+          },
+          'optional': <Map<String, dynamic>>[],
+        }
+      else
+        'video': false,
+    };
+  }
+
   Future<RTCPeerConnection> _buildPeerConnection() async {
     final factory = peerConnectionFactory ?? createPeerConnection;
     final pc = await factory(_rtcConfiguration());
     pc.onIceCandidate = (RTCIceCandidate? c) {
-      if (c == null) return;
+      if (_isClosed || c == null) return;
       onIceCandidate(CallIceCandidate(
         candidate: c.candidate ?? '',
         sdpMid: c.sdpMid,
@@ -87,13 +103,15 @@ class WebRtcCallTransport {
       ));
     };
     pc.onConnectionState = (RTCPeerConnectionState state) {
+      if (_isClosed) return;
       onConnectionStateChange(state);
     };
     pc.onAddStream = (MediaStream stream) {
+      if (_isClosed) return;
       onRemoteStream(stream);
     };
     pc.onTrack = (RTCTrackEvent event) {
-      // Unified-plan: a single MediaStream with the audio track.
+      if (_isClosed) return;
       if (event.streams.isNotEmpty) {
         onRemoteStream(event.streams.first);
       }
@@ -101,35 +119,47 @@ class WebRtcCallTransport {
     return pc;
   }
 
+  Future<MediaStream> _acquireLocalMedia() async {
+    final factory =
+        getUserMedia ?? ((c) => navigator.mediaDevices.getUserMedia(c));
+    try {
+      return await factory(_mediaConstraints(video: enableVideo));
+    } catch (err) {
+      if (enableVideo) {
+        // Camera failed — still try audio-only so the call can proceed.
+        try {
+          final audioOnly = await factory(_mediaConstraints(video: false));
+          // ignore: avoid_print
+          print(
+            '[WebRtcCallTransport] camera unavailable, continuing audio-only: $err',
+          );
+          return audioOnly;
+        } catch (_) {
+          throw Exception('Camera/microphone access denied: $err');
+        }
+      }
+      throw Exception('Microphone access denied: $err');
+    }
+  }
+
   /// Acquire the local microphone (and camera when [enableVideo]) and
   /// add tracks to the peer connection.
   Future<void> _attachLocalMedia(RTCPeerConnection pc) async {
     if (_localStream != null) return;
-    try {
-      final factory = getUserMedia ??
-          ((c) => navigator.mediaDevices.getUserMedia(c));
-      _localStream = await factory({
-        'audio': true,
-        if (enableVideo)
-          'video': {
-            'facingMode': 'user',
-          },
-      });
-    } catch (err) {
-      throw Exception(
-        enableVideo
-            ? 'Camera/microphone access denied: $err'
-            : 'Microphone access denied: $err',
-      );
-    }
+    _localStream = await _acquireLocalMedia();
     for (final track in _localStream!.getTracks()) {
       await pc.addTrack(track, _localStream!);
     }
+    // Restore mute preference if set before tracks existed.
+    if (_isMuted) {
+      for (final track in _localStream!.getAudioTracks()) {
+        track.enabled = false;
+      }
+    }
+    onLocalStream?.call(_localStream!);
   }
 
-  /// Start as the offerer (caller). Builds an SDP offer, sets it as the
-  /// local description, and returns the SDP string for the caller to
-  /// send via `call.invite`.
+  /// Start as the offerer (caller).
   Future<String> startOffer() async {
     if (_isClosed) throw StateError('Transport closed');
     final pc = await _buildPeerConnection();
@@ -146,9 +176,7 @@ class WebRtcCallTransport {
     return offer.sdp ?? '';
   }
 
-  /// Start as the answerer (callee). Sets the remote SDP, builds a
-  /// matching answer, and returns the answer SDP for the callee to
-  /// send via `call.accept`.
+  /// Start as the answerer (callee).
   Future<String> startAnswer(String remoteSdp) async {
     if (_isClosed) throw StateError('Transport closed');
     final pc = await _buildPeerConnection();
@@ -169,15 +197,15 @@ class WebRtcCallTransport {
   /// Apply the remote SDP answer on the caller side after `call:answered`.
   Future<void> applyRemoteAnswer(String remoteSdp) async {
     final pc = _pc;
-    if (pc == null || _isClosed) throw StateError('Transport not ready for remote answer');
+    if (pc == null || _isClosed) {
+      throw StateError('Transport not ready for remote answer');
+    }
     await pc.setRemoteDescription(
       RTCSessionDescription(remoteSdp, 'answer'),
     );
   }
 
   /// Apply a remote ICE candidate trickled in via `call.ice-candidate`.
-  /// Silently ignores failures — a stale candidate from a peer that
-  /// has already renegotiated is not actionable.
   Future<void> addIceCandidate(CallIceCandidate candidate) async {
     final pc = _pc;
     if (pc == null || _isClosed) return;
@@ -188,7 +216,6 @@ class WebRtcCallTransport {
         candidate.sdpMLineIndex,
       ));
     } catch (err) {
-      // Log and swallow — the home will resync via a fresh SDP if needed.
       // ignore: avoid_print
       print('[WebRtcCallTransport] addIceCandidate failed: $err');
     }
@@ -205,42 +232,172 @@ class WebRtcCallTransport {
   }
 
   /// Flip front/back camera on the local video track (mobile).
+  ///
+  /// Tries `Helper.switchCamera` first; on failure replaces the sender
+  /// track with a fresh `getUserMedia` capture so the call stays usable.
   Future<bool> switchCamera() async {
-    if (!enableVideo || _isClosed) return false;
+    if (!enableVideo || _isClosed || _switchingCamera) return false;
     final stream = _localStream;
-    if (stream == null) return false;
+    final pc = _pc;
+    if (stream == null || pc == null) return false;
     final tracks = stream.getVideoTracks();
     if (tracks.isEmpty) return false;
+
+    _switchingCamera = true;
+    final nextFacingUser = !_facingUser;
     try {
-      await Helper.switchCamera(tracks.first);
+      // Path A — native flip (keeps the same track id / sender).
+      try {
+        await Helper.switchCamera(tracks.first);
+        _facingUser = nextFacingUser;
+        // Re-notify so self-view mirrors update.
+        onLocalStream?.call(stream);
+        return true;
+      } catch (err) {
+        // ignore: avoid_print
+        print('[WebRtcCallTransport] Helper.switchCamera failed: $err');
+      }
+
+      // Path B — replaceTrack with a new facingMode capture.
+      return await _replaceVideoTrack(pc, nextFacingUser);
+    } finally {
+      _switchingCamera = false;
+    }
+  }
+
+  Future<bool> _replaceVideoTrack(
+    RTCPeerConnection pc,
+    bool facingUser,
+  ) async {
+    final factory =
+        getUserMedia ?? ((c) => navigator.mediaDevices.getUserMedia(c));
+    final prevFacing = _facingUser;
+    _facingUser = facingUser;
+    MediaStream? fresh;
+    try {
+      fresh = await factory({
+        'audio': false,
+        'video': {
+          'facingMode': facingUser ? 'user' : 'environment',
+          'mandatory': {
+            'minWidth': '640',
+            'minHeight': '480',
+            'minFrameRate': '15',
+          },
+          'optional': <Map<String, dynamic>>[],
+        },
+      });
+      final newTracks = fresh.getVideoTracks();
+      if (newTracks.isEmpty) {
+        _facingUser = prevFacing;
+        await _stopStream(fresh);
+        return false;
+      }
+      final newVideo = newTracks.first;
+
+      RTCRtpSender? videoSender;
+      try {
+        for (final sender in await pc.getSenders()) {
+          if (sender.track?.kind == 'video') {
+            videoSender = sender;
+            break;
+          }
+        }
+      } catch (_) {}
+
+      if (videoSender != null) {
+        await videoSender.replaceTrack(newVideo);
+      } else {
+        await pc.addTrack(newVideo, fresh);
+      }
+
+      final old = _localStream;
+      if (old != null) {
+        for (final track in List<MediaStreamTrack>.from(old.getVideoTracks())) {
+          try {
+            await old.removeTrack(track);
+          } catch (_) {}
+          try {
+            track.enabled = false;
+            await track.stop();
+          } catch (_) {}
+        }
+        try {
+          await old.addTrack(newVideo);
+          _localStream = old;
+        } catch (_) {
+          // Platform rejected grafting — keep mic on [old], video on [fresh].
+          _localStream = fresh;
+          for (final audio in old.getAudioTracks()) {
+            try {
+              await fresh.addTrack(audio);
+            } catch (_) {}
+          }
+        }
+      } else {
+        _localStream = fresh;
+      }
+
+      if (_isMuted) {
+        for (final track in _localStream!.getAudioTracks()) {
+          track.enabled = false;
+        }
+      }
+      onLocalStream?.call(_localStream!);
       return true;
     } catch (err) {
+      _facingUser = prevFacing;
       // ignore: avoid_print
-      print('[WebRtcCallTransport] switchCamera failed: $err');
+      print('[WebRtcCallTransport] replaceVideoTrack failed: $err');
+      if (fresh != null) await _stopStream(fresh);
       return false;
     }
   }
 
-  /// Local capture stream (for optional self-view).
-  MediaStream? get localStream => _localStream;
+  Future<void> _stopStream(MediaStream stream) async {
+    for (final track in stream.getTracks()) {
+      try {
+        track.enabled = false;
+        await track.stop();
+      } catch (_) {}
+    }
+    try {
+      await stream.dispose();
+    } catch (_) {}
+  }
 
-  /// Tear down: stop local tracks, close peer connection, mark closed.
+  /// Tear down: clear handlers, stop tracks, close peer connection.
+  /// Idempotent — safe to call multiple times / after errors.
   Future<void> close() async {
     if (_isClosed) return;
     _isClosed = true;
 
-    final stream = _localStream;
-    if (stream != null) {
-      for (final track in stream.getTracks()) {
-        await track.stop();
-      }
-      _localStream = null;
+    final pc = _pc;
+    _pc = null;
+    if (pc != null) {
+      try {
+        pc.onIceCandidate = null;
+        pc.onTrack = null;
+        pc.onAddStream = null;
+        pc.onConnectionState = null;
+      } catch (_) {}
+      try {
+        final senders = await pc.getSenders();
+        for (final sender in senders) {
+          try {
+            await pc.removeTrack(sender);
+          } catch (_) {}
+        }
+      } catch (_) {}
+      try {
+        await pc.close();
+      } catch (_) {}
     }
 
-    final pc = _pc;
-    if (pc != null) {
-      await pc.close();
-      _pc = null;
+    final stream = _localStream;
+    _localStream = null;
+    if (stream != null) {
+      await _stopStream(stream);
     }
   }
 }

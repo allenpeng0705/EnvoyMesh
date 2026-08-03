@@ -8,28 +8,7 @@ import '../../providers/call_provider.dart';
 import '../../l10n/app_localizations.dart';
 import '../../providers/node_provider.dart';
 
-/// VoiceCallScreen — Phase 42F native Flutter voice call screen.
-///
-/// Reachable from:
-///   * the [IncomingCallOverlay] Accept button — callProvider flips
-///     state to `isActive`, the overlay auto-hides, and the user is
-///     pushed to this screen.
-///   * a contact tile Call button — the caller side starts the call,
-///     state flips to `connecting`, then `isActive`.
-///
-/// The screen reads the active [CallProvider.state] and exposes:
-///   * Peer display name (or owner ID fallback)
-///   * Live duration timer (00:00 → mm:ss)
-///   * Mute / unmute toggle (calls `callProvider.toggleMute`)
-///   * End call (calls `callProvider.endCall`)
-///
-/// Audio playback uses `RTCVideoRenderer` in audio-only mode — the
-/// remote [MediaStream] attached to the [WebRtcCallTransport] is
-/// bound to the renderer and the OS routes the output.
-///
-/// Audio session configuration (`AVAudioSession` on iOS) is handled
-/// by [CallProvider] when the call starts and ends — this screen is
-/// a passive renderer of state.
+/// VoiceCallScreen — Phase 42F native Flutter voice/video call screen.
 class VoiceCallScreen extends ConsumerStatefulWidget {
   const VoiceCallScreen({super.key});
 
@@ -38,28 +17,29 @@ class VoiceCallScreen extends ConsumerStatefulWidget {
 }
 
 class _VoiceCallScreenState extends ConsumerState<VoiceCallScreen> {
-  /// Renderer for the remote audio track. Lives for the lifetime of
-  /// the screen — disposed in [dispose]. We use `RTCVideoRenderer`
-  /// because `flutter_webrtc` exposes only that surface; setting
-  /// `mediaStream` plays the audio track without showing a video
-  /// element.
   final RTCVideoRenderer _remoteRenderer = RTCVideoRenderer();
+  final RTCVideoRenderer _localRenderer = RTCVideoRenderer();
   bool _rendererInitialized = false;
-  dynamic _boundStream;
+  dynamic _boundRemoteStream;
+  dynamic _boundLocalStream;
 
   Timer? _durationTimer;
   DateTime? _callStartedAt;
   Duration _elapsed = Duration.zero;
+  bool _ending = false;
 
   @override
   void initState() {
     super.initState();
-    _initRenderer();
+    _initRenderers();
     _startDurationTimer();
   }
 
-  Future<void> _initRenderer() async {
-    await _remoteRenderer.initialize();
+  Future<void> _initRenderers() async {
+    await Future.wait([
+      _remoteRenderer.initialize(),
+      _localRenderer.initialize(),
+    ]);
     if (mounted) setState(() => _rendererInitialized = true);
   }
 
@@ -77,13 +57,20 @@ class _VoiceCallScreenState extends ConsumerState<VoiceCallScreen> {
   void dispose() {
     _durationTimer?.cancel();
     _remoteRenderer.srcObject = null;
+    _localRenderer.srcObject = null;
     _remoteRenderer.dispose();
+    _localRenderer.dispose();
     super.dispose();
   }
 
   Future<void> _endCall() async {
-    await ref.read(callProvider).endCall();
-    if (mounted) Navigator.of(context).maybePop();
+    if (_ending) return;
+    _ending = true;
+    try {
+      await ref.read(callProvider).endCall();
+    } finally {
+      if (mounted) Navigator.of(context).maybePop();
+    }
   }
 
   Future<void> _toggleMute() async {
@@ -94,14 +81,32 @@ class _VoiceCallScreenState extends ConsumerState<VoiceCallScreen> {
     await ref.read(callProvider).switchCamera();
   }
 
-  /// Bind the latest remote [MediaStream] from `callProvider.state`
-  /// onto the renderer so the audio plays through the device speaker.
-  /// Rebinding on identical stream is a no-op.
   void _bindRemoteStreamIfNeeded(dynamic stream) {
-    if (stream == null) return;
-    if (identical(_boundStream, stream)) return;
+    if (!_rendererInitialized) return;
+    if (stream == null) {
+      if (_boundRemoteStream != null) {
+        _remoteRenderer.srcObject = null;
+        _boundRemoteStream = null;
+      }
+      return;
+    }
+    if (identical(_boundRemoteStream, stream)) return;
     _remoteRenderer.srcObject = stream;
-    _boundStream = stream;
+    _boundRemoteStream = stream;
+  }
+
+  void _bindLocalStreamIfNeeded(dynamic stream) {
+    if (!_rendererInitialized) return;
+    if (stream == null) {
+      if (_boundLocalStream != null) {
+        _localRenderer.srcObject = null;
+        _boundLocalStream = null;
+      }
+      return;
+    }
+    if (identical(_boundLocalStream, stream)) return;
+    _localRenderer.srcObject = stream;
+    _boundLocalStream = stream;
   }
 
   String _formatDuration(Duration d) {
@@ -115,30 +120,46 @@ class _VoiceCallScreenState extends ConsumerState<VoiceCallScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final callState = ref.watch(callProvider).state;
+    final callNotifier = ref.watch(callProvider);
+    final callState = callNotifier.state;
     final colorScheme = Theme.of(context).colorScheme;
     final l10n = AppLocalizations.of(context);
 
-    // Bind the remote stream onto the renderer when the provider
-    // signals a new one (typically after WebRTC negotiation completes).
-    if (_rendererInitialized) {
-      _bindRemoteStreamIfNeeded(callState.remoteStream);
+    // Remote hangup / reject — leave the screen automatically.
+    if (!_ending &&
+        callState.callId == null &&
+        callState.connectionState == 'disconnected' &&
+        !callState.isIncoming) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && !_ending) {
+          _ending = true;
+          Navigator.of(context).maybePop();
+        }
+      });
     }
 
+    _bindRemoteStreamIfNeeded(callState.remoteStream);
+    _bindLocalStreamIfNeeded(callState.localStream);
+
     final peerName = callState.peerDisplayName ?? l10n.commonUnknown;
-    final isVideoCall = ref.watch(callProvider).isVideoCall;
+    final isVideoCall = callNotifier.isVideoCall;
+    final hasRemoteVideo = _hasVideo(callState.remoteStream);
+    final hasLocalVideo = isVideoCall && _hasVideo(callState.localStream);
     final connectionLabel = switch (callState.connectionState) {
       'connected' => l10n.callConnected,
       'connecting' => l10n.callConnecting,
       _ => l10n.callDisconnected,
     };
-    final durationLabel = callState.isActive
+    final durationLabel = callState.isActive ||
+            callState.connectionState == 'connecting'
         ? _formatDuration(_elapsed)
         : _formatDuration(Duration.zero);
 
     return Scaffold(
-      backgroundColor: colorScheme.surface,
+      backgroundColor: Colors.black,
       appBar: AppBar(
+        backgroundColor: Colors.black87,
+        foregroundColor: Colors.white,
         title: Text(peerName),
         leading: IconButton(
           icon: const Icon(Icons.expand_more),
@@ -151,9 +172,9 @@ class _VoiceCallScreenState extends ConsumerState<VoiceCallScreen> {
             child: Center(
               child: Text(
                 durationLabel,
-                style: TextStyle(
-                  color: colorScheme.onSurfaceVariant,
-                  fontFeatures: const [FontFeature.tabularFigures()],
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontFeatures: [FontFeature.tabularFigures()],
                 ),
               ),
             ),
@@ -161,62 +182,78 @@ class _VoiceCallScreenState extends ConsumerState<VoiceCallScreen> {
         ],
       ),
       body: SafeArea(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+        child: Stack(
           children: [
-            const SizedBox.shrink(),
-            // Remote video when present; otherwise avatar + name.
-            Expanded(
-              child: Center(
-                child: _hasRemoteVideo(callState.remoteStream) &&
-                        _rendererInitialized
-                    ? ClipRRect(
-                        borderRadius: BorderRadius.circular(12),
-                        child: RTCVideoView(
-                          _remoteRenderer,
-                          objectFit:
-                              RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+            // Remote / placeholder
+            Positioned.fill(
+              child: hasRemoteVideo && _rendererInitialized
+                  ? RTCVideoView(
+                      _remoteRenderer,
+                      objectFit:
+                          RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                    )
+                  : Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        CircleAvatar(
+                          radius: 64,
+                          backgroundColor: colorScheme.primaryContainer,
+                          child: Icon(
+                            Icons.person,
+                            size: 64,
+                            color: colorScheme.onPrimaryContainer,
+                          ),
                         ),
-                      )
-                    : Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          CircleAvatar(
-                            radius: 64,
-                            backgroundColor: colorScheme.primaryContainer,
-                            child: Icon(
-                              Icons.person,
-                              size: 64,
-                              color: colorScheme.onPrimaryContainer,
-                            ),
-                          ),
-                          const SizedBox(height: 24),
-                          Text(
-                            peerName,
-                            style: Theme.of(context).textTheme.headlineMedium,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            connectionLabel,
-                            style: TextStyle(
-                              color: colorScheme.onSurfaceVariant,
-                            ),
-                          ),
-                        ],
-                      ),
-              ),
+                        const SizedBox(height: 24),
+                        Text(
+                          peerName,
+                          style: Theme.of(context)
+                              .textTheme
+                              .headlineMedium
+                              ?.copyWith(color: Colors.white),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          connectionLabel,
+                          style: const TextStyle(color: Colors.white70),
+                        ),
+                      ],
+                    ),
             ),
-            if (_hasRemoteVideo(callState.remoteStream))
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(
-                  '$peerName · $connectionLabel',
-                  style: TextStyle(color: colorScheme.onSurfaceVariant),
+            // Local self-view (PiP)
+            if (hasLocalVideo && _rendererInitialized)
+              Positioned(
+                right: 16,
+                top: 16,
+                width: 110,
+                height: 160,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(12),
+                  child: ColoredBox(
+                    color: Colors.black54,
+                    child: RTCVideoView(
+                      _localRenderer,
+                      mirror: true,
+                      objectFit:
+                          RTCVideoViewObjectFit.RTCVideoViewObjectFitCover,
+                    ),
+                  ),
                 ),
               ),
-            // Action buttons: mute + (video) camera flip + end
-            Padding(
-              padding: const EdgeInsets.only(bottom: 48),
+            if (hasRemoteVideo)
+              Positioned(
+                left: 16,
+                bottom: 120,
+                child: Text(
+                  '$peerName · $connectionLabel',
+                  style: const TextStyle(color: Colors.white70),
+                ),
+              ),
+            // Controls
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 36,
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -228,10 +265,8 @@ class _VoiceCallScreenState extends ConsumerState<VoiceCallScreen> {
                     style: IconButton.styleFrom(
                       backgroundColor: callState.isMuted
                           ? colorScheme.errorContainer
-                          : colorScheme.surfaceContainerHighest,
-                      foregroundColor: callState.isMuted
-                          ? colorScheme.onErrorContainer
-                          : colorScheme.onSurface,
+                          : Colors.white24,
+                      foregroundColor: Colors.white,
                       padding: const EdgeInsets.all(20),
                     ),
                   ),
@@ -242,8 +277,8 @@ class _VoiceCallScreenState extends ConsumerState<VoiceCallScreen> {
                       tooltip: l10n.callSwitchCamera,
                       onPressed: _switchCamera,
                       style: IconButton.styleFrom(
-                        backgroundColor: colorScheme.surfaceContainerHighest,
-                        foregroundColor: colorScheme.onSurface,
+                        backgroundColor: Colors.white24,
+                        foregroundColor: Colors.white,
                         padding: const EdgeInsets.all(20),
                       ),
                     ),
@@ -267,10 +302,10 @@ class _VoiceCallScreenState extends ConsumerState<VoiceCallScreen> {
     );
   }
 
-  bool _hasRemoteVideo(dynamic stream) {
+  bool _hasVideo(dynamic stream) {
     if (stream is! MediaStream) return false;
     try {
-      return stream.getVideoTracks().isNotEmpty;
+      return stream.getVideoTracks().any((t) => t.enabled);
     } catch (_) {
       return false;
     }
