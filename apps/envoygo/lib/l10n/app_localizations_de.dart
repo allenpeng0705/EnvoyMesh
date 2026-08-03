@@ -1053,6 +1053,9 @@ class AppLocalizationsDe extends AppLocalizations {
   String get callDisconnected => 'Getrennt';
 
   @override
+  String get callSwitchCamera => 'Kamera wechseln';
+
+  @override
   String get authorPublish => 'Veröffentlichen';
 
   @override

@@ -1013,6 +1013,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get callDisconnected => '已断开';
 
   @override
+  String get callSwitchCamera => '切换摄像头';
+
+  @override
   String get authorPublish => '发布';
 
   @override

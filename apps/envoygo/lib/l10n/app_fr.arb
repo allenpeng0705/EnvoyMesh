@@ -322,6 +322,7 @@
   "callConnected": "Connecté",
   "callConnecting": "Connexion…",
   "callDisconnected": "Déconnecté",
+  "callSwitchCamera": "Changer de caméra",
   "authorPublish": "Publier",
   "authorType": "Type",
   "authorTypeProfile": "Profil",

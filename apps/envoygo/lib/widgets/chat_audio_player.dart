@@ -153,14 +153,20 @@ class _ChatAudioPlayerState extends State<ChatAudioPlayer> {
     try {
       if (_playing) {
         await _player.pause();
-      } else {
-        if (_position > Duration.zero &&
-            _duration > Duration.zero &&
-            _position >= _duration) {
-          await _player.seek(Duration.zero);
-        }
-        await _player.resume();
+        return;
       }
+      final state = _player.state;
+      if (state == PlayerState.paused) {
+        await _player.resume();
+        return;
+      }
+      // stopped / completed / initial — must use play(), not resume().
+      if (_position > Duration.zero &&
+          _duration > Duration.zero &&
+          _position >= _duration) {
+        await _player.seek(Duration.zero);
+      }
+      await _player.play(DeviceFileSource(_tempFile!.path));
     } catch (_) {
       try {
         await _player.play(DeviceFileSource(_tempFile!.path));
@@ -244,7 +250,7 @@ class _ChatAudioPlayerState extends State<ChatAudioPlayer> {
                   ),
                   padding: EdgeInsets.zero,
                   constraints: const BoxConstraints(minWidth: 44, minHeight: 44),
-                  tooltip: _playing ? l10n.chatStopRecording : l10n.audioVoiceNote,
+                  tooltip: l10n.audioVoiceNote,
                   onPressed: _togglePlay,
                 ),
                 const SizedBox(width: 4),

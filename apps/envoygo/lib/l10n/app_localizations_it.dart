@@ -1051,6 +1051,9 @@ class AppLocalizationsIt extends AppLocalizations {
   String get callDisconnected => 'Disconnesso';
 
   @override
+  String get callSwitchCamera => 'Cambia fotocamera';
+
+  @override
   String get authorPublish => 'Pubblica';
 
   @override

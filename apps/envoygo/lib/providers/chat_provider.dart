@@ -561,10 +561,15 @@ class ChatNotifier extends StateNotifier<ChatState> {
     var changed = false;
     for (final msg in messages) {
       final prev = byId[msg.id];
+      final prevAttEmpty =
+          prev?.attachments == null || prev!.attachments!.isEmpty;
+      final msgAttPresent =
+          msg.attachments != null && msg.attachments!.isNotEmpty;
       if (prev == null ||
           prev.isOutbound != msg.isOutbound ||
           prev.senderDisplayName != msg.senderDisplayName ||
-          prev.text != msg.text) {
+          prev.text != msg.text ||
+          (prevAttEmpty && msgAttPresent)) {
         byId[msg.id] = msg;
         changed = true;
         try {

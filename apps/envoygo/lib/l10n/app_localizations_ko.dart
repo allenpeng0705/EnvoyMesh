@@ -1016,6 +1016,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get callDisconnected => '연결 끊김';
 
   @override
+  String get callSwitchCamera => '카메라 전환';
+
+  @override
   String get authorPublish => '발행';
 
   @override

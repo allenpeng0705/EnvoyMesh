@@ -1017,6 +1017,9 @@ class AppLocalizationsJa extends AppLocalizations {
   String get callDisconnected => '切断';
 
   @override
+  String get callSwitchCamera => 'カメラ切替';
+
+  @override
   String get authorPublish => '公開';
 
   @override

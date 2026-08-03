@@ -2040,6 +2040,12 @@ abstract class AppLocalizations {
   /// **'Disconnected'**
   String get callDisconnected;
 
+  /// No description provided for @callSwitchCamera.
+  ///
+  /// In en, this message translates to:
+  /// **'Switch camera'**
+  String get callSwitchCamera;
+
   /// No description provided for @authorPublish.
   ///
   /// In en, this message translates to:

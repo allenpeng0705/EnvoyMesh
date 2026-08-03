@@ -90,6 +90,10 @@ class _VoiceCallScreenState extends ConsumerState<VoiceCallScreen> {
     await ref.read(callProvider).toggleMute();
   }
 
+  Future<void> _switchCamera() async {
+    await ref.read(callProvider).switchCamera();
+  }
+
   /// Bind the latest remote [MediaStream] from `callProvider.state`
   /// onto the renderer so the audio plays through the device speaker.
   /// Rebinding on identical stream is a no-op.
@@ -122,6 +126,7 @@ class _VoiceCallScreenState extends ConsumerState<VoiceCallScreen> {
     }
 
     final peerName = callState.peerDisplayName ?? l10n.commonUnknown;
+    final isVideoCall = ref.watch(callProvider).isVideoCall;
     final connectionLabel = switch (callState.connectionState) {
       'connected' => l10n.callConnected,
       'connecting' => l10n.callConnecting,
@@ -209,7 +214,7 @@ class _VoiceCallScreenState extends ConsumerState<VoiceCallScreen> {
                   style: TextStyle(color: colorScheme.onSurfaceVariant),
                 ),
               ),
-            // Action buttons: mute + end
+            // Action buttons: mute + (video) camera flip + end
             Padding(
               padding: const EdgeInsets.only(bottom: 48),
               child: Row(
@@ -230,6 +235,19 @@ class _VoiceCallScreenState extends ConsumerState<VoiceCallScreen> {
                       padding: const EdgeInsets.all(20),
                     ),
                   ),
+                  if (isVideoCall) ...[
+                    const SizedBox(width: 24),
+                    IconButton.filled(
+                      icon: const Icon(Icons.cameraswitch),
+                      tooltip: l10n.callSwitchCamera,
+                      onPressed: _switchCamera,
+                      style: IconButton.styleFrom(
+                        backgroundColor: colorScheme.surfaceContainerHighest,
+                        foregroundColor: colorScheme.onSurface,
+                        padding: const EdgeInsets.all(20),
+                      ),
+                    ),
+                  ],
                   const SizedBox(width: 32),
                   IconButton.filled(
                     icon: const Icon(Icons.call_end),

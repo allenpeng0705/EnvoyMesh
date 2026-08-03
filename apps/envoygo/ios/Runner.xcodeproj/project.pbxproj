@@ -199,6 +199,7 @@
 				97C146EC1CF9000F007C117D /* Resources */,
 				9705A1C41CF9048500538489 /* Embed Frameworks */,
 				3B06AD1E1E4923F5004D2608 /* Thin Binary */,
+				E7A11C0DE5TRIPADB0C5QLITE3 /* Strip Adhoc sqlite3 */,
 				DCA36DBB60C423A240224439 /* [CP] Embed Pods Frameworks */,
 				584C2ADFD954E453D648A3F3 /* [CP] Copy Pods Resources */,
 			);
@@ -287,6 +288,22 @@
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/sh;
 			shellScript = "/bin/sh \"$FLUTTER_ROOT/packages/flutter_tools/bin/xcode_backend.sh\" embed_and_thin";
+		};
+		E7A11C0DE5TRIPADB0C5QLITE3 /* Strip Adhoc sqlite3 */ = {
+			isa = PBXShellScriptBuildPhase;
+			alwaysOutOfDate = 1;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputPaths = (
+			);
+			name = "Strip Adhoc sqlite3";
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "/bin/sh \"${SRCROOT}/scripts/strip_adhoc_sqlite3.sh\"\n";
+			showEnvVarsInLog = 0;
 		};
 		584C2ADFD954E453D648A3F3 /* [CP] Copy Pods Resources */ = {
 			isa = PBXShellScriptBuildPhase;

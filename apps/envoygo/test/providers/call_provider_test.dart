@@ -269,6 +269,25 @@ void main() {
       expect(provider.state.transport, isNotNull);
     });
 
+    test('startCall uses peerDisplayName when provided', () async {
+      final mock = MockWebSocket();
+      final transports = <FakeTransport>[];
+      final provider = await buildProvider(mock: mock, transports: transports);
+
+      final callFuture = provider.startCall(
+        'envoy:owner:bob',
+        peerDisplayName: 'Bob Smith',
+      );
+      await Future<void>.delayed(Duration.zero);
+      final sent = _lastSent(mock);
+      mock.simulateMessage({
+        'id': sent['id'],
+        'result': '11111111-1111-4111-8111-111111111111',
+      });
+      await callFuture;
+      expect(provider.state.peerDisplayName, 'Bob Smith');
+    });
+
     test('startCall returns null and closes the transport when the home refuses',
         () async {
       final mock = MockWebSocket();

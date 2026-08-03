@@ -1056,6 +1056,9 @@ class AppLocalizationsFr extends AppLocalizations {
   String get callDisconnected => 'Déconnecté';
 
   @override
+  String get callSwitchCamera => 'Changer de caméra';
+
+  @override
   String get authorPublish => 'Publier';
 
   @override

@@ -394,12 +394,20 @@ class CallProvider extends ChangeNotifier {
     }
   }
 
+  /// Active call media type (`audio` or `video`).
+  String get activeCallType => _activeCallType;
+
+  bool get isVideoCall => _activeCallType == 'video';
+
   /// Start an outbound call. Builds the transport, generates an SDP
   /// offer, and posts it to the home via `sendCallInvite`.
   /// [callType] is `audio` (default) or `video`.
+  /// [peerDisplayName] is the callee label for the call UI (chat already
+  /// resolved it); falls back to [targetOwnerId] when omitted/empty.
   Future<String?> startCall(
     String targetOwnerId, {
     String callType = 'audio',
+    String? peerDisplayName,
   }) async {
     final iceServers = await _loadIceServers();
     final enableVideo = callType == 'video';
@@ -461,10 +469,11 @@ class CallProvider extends ChangeNotifier {
     }
 
     _iceCallId = callId;
+    final label = peerDisplayName?.trim();
     _state = _state.copyWith(
       callId: callId,
       peerOwnerId: targetOwnerId,
-      peerDisplayName: targetOwnerId, // Will be resolved from contacts
+      peerDisplayName: (label != null && label.isNotEmpty) ? label : targetOwnerId,
       isIncoming: false,
       isActive: false,
       connectionState: 'connecting',
@@ -577,6 +586,14 @@ class CallProvider extends ChangeNotifier {
     if (ok) _state = CallState.idle();
     notifyListeners();
     return ok;
+  }
+
+  /// Flip between front and back cameras on a video call (mobile).
+  Future<bool> switchCamera() async {
+    if (!isVideoCall) return false;
+    final transport = _state.transport;
+    if (transport is! WebRtcCallTransport) return false;
+    return transport.switchCamera();
   }
 
   /// Toggle mute on the local audio track and notify the peer via

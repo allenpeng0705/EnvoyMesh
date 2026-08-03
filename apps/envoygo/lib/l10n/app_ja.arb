@@ -322,6 +322,7 @@
   "callConnected": "接続済み",
   "callConnecting": "接続中…",
   "callDisconnected": "切断",
+  "callSwitchCamera": "カメラ切替",
   "authorPublish": "公開",
   "authorType": "種類",
   "authorTypeProfile": "プロフィール",

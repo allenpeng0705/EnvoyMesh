@@ -451,6 +451,7 @@
   "callConnected": "Connected",
   "callConnecting": "Connecting…",
   "callDisconnected": "Disconnected",
+  "callSwitchCamera": "Switch camera",
   "authorPublish": "Publish",
   "authorType": "Type",
   "authorTypeProfile": "Profile",

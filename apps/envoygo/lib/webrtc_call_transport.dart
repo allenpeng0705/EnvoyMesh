@@ -110,7 +110,10 @@ class WebRtcCallTransport {
           ((c) => navigator.mediaDevices.getUserMedia(c));
       _localStream = await factory({
         'audio': true,
-        if (enableVideo) 'video': true,
+        if (enableVideo)
+          'video': {
+            'facingMode': 'user',
+          },
       });
     } catch (err) {
       throw Exception(
@@ -200,6 +203,26 @@ class WebRtcCallTransport {
       track.enabled = !muted;
     }
   }
+
+  /// Flip front/back camera on the local video track (mobile).
+  Future<bool> switchCamera() async {
+    if (!enableVideo || _isClosed) return false;
+    final stream = _localStream;
+    if (stream == null) return false;
+    final tracks = stream.getVideoTracks();
+    if (tracks.isEmpty) return false;
+    try {
+      await Helper.switchCamera(tracks.first);
+      return true;
+    } catch (err) {
+      // ignore: avoid_print
+      print('[WebRtcCallTransport] switchCamera failed: $err');
+      return false;
+    }
+  }
+
+  /// Local capture stream (for optional self-view).
+  MediaStream? get localStream => _localStream;
 
   /// Tear down: stop local tracks, close peer connection, mark closed.
   Future<void> close() async {

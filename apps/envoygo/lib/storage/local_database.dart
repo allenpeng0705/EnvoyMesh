@@ -31,7 +31,7 @@ class LocalDatabase {
     final dbPath = p.join(await getDatabasesPath(), 'envoygo.db');
     _db = await openDatabase(
       dbPath,
-      version: 5,
+      version: 6,
       onUpgrade: (db, oldVersion, newVersion) async {
         if (oldVersion < 2) {
           await db.execute('ALTER TABLE nodes ADD COLUMN public_host TEXT');
@@ -46,6 +46,9 @@ class LocalDatabase {
         }
         if (oldVersion < 5) {
           await db.execute('ALTER TABLE chat_threads ADD COLUMN description TEXT');
+        }
+        if (oldVersion < 6) {
+          await db.execute('ALTER TABLE messages ADD COLUMN attachments TEXT');
         }
       },
       onCreate: (db, version) async {
@@ -101,7 +104,8 @@ class LocalDatabase {
             sender_display_name TEXT,
             text TEXT,
             created_at TEXT,
-            is_outbound INTEGER DEFAULT 0
+            is_outbound INTEGER DEFAULT 0,
+            attachments TEXT
           )
         ''');
         await db.execute('''
@@ -289,9 +293,8 @@ class LocalDatabase {
 
   // -- Message operations --
 
-  /// Columns accepted by the `messages` table. Extra keys (e.g. attachments
-  /// List) must be stripped — sqflite throws on unknown columns / nested types,
-  /// which crashed ChatDetailScreen when opening a contact thread with history.
+  /// Columns accepted by the `messages` table. Nested attachment lists are
+  /// stored as a JSON string in [attachments].
   static const _messageColumns = {
     'id',
     'thread_id',
@@ -300,12 +303,18 @@ class LocalDatabase {
     'text',
     'created_at',
     'is_outbound',
+    'attachments',
   };
 
   Map<String, dynamic> _messageRow(Map<String, dynamic> message) {
     final row = <String, dynamic>{};
     for (final key in _messageColumns) {
-      if (message.containsKey(key)) row[key] = message[key];
+      if (!message.containsKey(key)) continue;
+      var value = message[key];
+      if (key == 'attachments' && value is List) {
+        value = jsonEncode(value);
+      }
+      row[key] = value;
     }
     return row;
   }

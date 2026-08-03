@@ -231,7 +231,6 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     if (_isSendingVoice) return;
     _recordingGuard = true;
     _cancelRecordTimer();
-    final recordedSec = _recordingSeconds;
     final l10n = AppLocalizations.of(context);
     try {
       final path = await _audioRecorder.stop() ?? _activeRecordingPath;
@@ -258,34 +257,15 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
         return;
       }
 
-      final uploadResult = await nodeService.sendChatAttachment(
+      // One RPC only — sendChatAttachment uploads, records the chat row,
+      // and shareFiles to the peer. A second sendMessage/sendChat caused
+      // duplicate bubbles and broke callee playback (Social matches this).
+      await nodeService.sendChatAttachment(
         targetOwnerId: _resolvedContactOwnerId!,
         filename: 'voice-note.m4a',
         contentBase64: base64,
         mimeType: mimeType,
       );
-      final attachmentId =
-          uploadResult['attachmentId'] as String? ??
-          (uploadResult['id'] as String?) ??
-          'att_${DateTime.now().microsecondsSinceEpoch}';
-      final vaultRelativePath =
-          uploadResult['vaultRelativePath'] as String? ?? '';
-
-      await ref.read(chatProvider.notifier).sendMessage(
-            _resolvedContactOwnerId!,
-            '',
-            attachments: [
-              {
-                'id': attachmentId,
-                'filename': 'voice-note.m4a',
-                'mimeType': mimeType,
-                'sizeBytes': bytes.length,
-                'sensitivity': 'friends',
-                'vaultRelativePath': vaultRelativePath,
-                if (recordedSec > 0) 'durationSec': recordedSec,
-              },
-            ],
-          );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(l10n.chatVoiceSent)),
@@ -558,6 +538,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
       final callId = await callProviderRef.startCall(
         contactOwnerId,
         callType: callType,
+        peerDisplayName: widget.displayName,
       );
       if (!mounted) return;
       if (callId == null) {

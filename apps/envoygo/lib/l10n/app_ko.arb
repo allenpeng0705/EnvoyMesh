@@ -322,6 +322,7 @@
   "callConnected": "연결됨",
   "callConnecting": "연결 중…",
   "callDisconnected": "연결 끊김",
+  "callSwitchCamera": "카메라 전환",
   "authorPublish": "발행",
   "authorType": "유형",
   "authorTypeProfile": "프로필",

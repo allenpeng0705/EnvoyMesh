@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 /// Whether a chat row is outbound for the current session.
 ///
 /// Mirrors Social `messageIsOutgoing`: family DM/room threads use profile ids
@@ -75,7 +77,15 @@ class ChatMessage {
   });
 
   factory ChatMessage.fromJson(Map<String, dynamic> json) {
-    final attList = json['attachments'] as List<dynamic>?;
+    dynamic attRaw = json['attachments'];
+    if (attRaw is String && attRaw.trim().isNotEmpty) {
+      try {
+        attRaw = jsonDecode(attRaw);
+      } catch (_) {
+        attRaw = null;
+      }
+    }
+    final attList = attRaw as List<dynamic>?;
     List<ChatAttachment>? attachments;
     if (attList != null) {
       try {

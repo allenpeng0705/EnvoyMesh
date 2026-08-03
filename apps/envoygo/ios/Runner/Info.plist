@@ -28,6 +28,12 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Scan pairing QR codes and use the camera during video calls.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Allow EnvoyGo and Flutter tools to discover peers and attach the Dart debugger on your local network.</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_dartVmService._tcp</string>
+	</array>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Microphone access is used for voice notes and voice/video calls.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>

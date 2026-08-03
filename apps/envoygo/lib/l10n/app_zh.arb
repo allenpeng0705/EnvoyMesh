@@ -322,6 +322,7 @@
   "callConnected": "已连接",
   "callConnecting": "连接中…",
   "callDisconnected": "已断开",
+  "callSwitchCamera": "切换摄像头",
   "authorPublish": "发布",
   "authorType": "类型",
   "authorTypeProfile": "资料",
