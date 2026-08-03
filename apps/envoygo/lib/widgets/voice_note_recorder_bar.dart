@@ -4,7 +4,8 @@ import '../l10n/app_localizations.dart';
 
 /// Full-width voice-note recorder bar (mirrors Social `VoiceNoteRecorderBar`).
 ///
-/// Shown instead of the text composer while capturing or uploading.
+/// Shown instead of the text composer while capturing, ready-to-retry after a
+/// failed send, or uploading.
 class VoiceNoteRecorderBar extends StatefulWidget {
   final bool isCapturing;
   final bool isSending;
@@ -72,8 +73,9 @@ class _VoiceNoteRecorderBarState extends State<VoiceNoteRecorderBar>
     final l10n = AppLocalizations.of(context);
     final scheme = Theme.of(context).colorScheme;
     final nearLimit = widget.recordingSeconds >= widget.maxSeconds - 10;
+    final isReady = !widget.isCapturing && !widget.isSending;
     final canSend = !widget.isSending &&
-        (!widget.isCapturing || widget.recordingSeconds > 0);
+        (isReady || widget.recordingSeconds > 0);
 
     if (widget.isSending) {
       return Container(
@@ -107,15 +109,15 @@ class _VoiceNoteRecorderBarState extends State<VoiceNoteRecorderBar>
       );
     }
 
+    final accent = isReady ? const Color(0xFF0D9488) : const Color(0xFFE11D48);
+
     return Container(
       padding: const EdgeInsets.fromLTRB(8, 10, 8, 10),
       decoration: BoxDecoration(
         color: scheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: widget.isCapturing
-              ? const Color(0xFFE11D48).withValues(alpha: 0.45)
-              : scheme.outlineVariant,
+          color: accent.withValues(alpha: 0.45),
         ),
       ),
       child: Row(
@@ -135,25 +137,28 @@ class _VoiceNoteRecorderBarState extends State<VoiceNoteRecorderBar>
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    FadeTransition(
-                      opacity: Tween<double>(begin: 0.35, end: 1).animate(
-                        CurvedAnimation(parent: _pulse, curve: Curves.easeInOut),
-                      ),
-                      child: Container(
-                        width: 10,
-                        height: 10,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFFE11D48),
-                          shape: BoxShape.circle,
+                    if (widget.isCapturing)
+                      FadeTransition(
+                        opacity: Tween<double>(begin: 0.35, end: 1).animate(
+                          CurvedAnimation(parent: _pulse, curve: Curves.easeInOut),
                         ),
-                      ),
-                    ),
+                        child: Container(
+                          width: 10,
+                          height: 10,
+                          decoration: BoxDecoration(
+                            color: accent,
+                            shape: BoxShape.circle,
+                          ),
+                        ),
+                      )
+                    else
+                      Icon(Icons.mic_none_rounded, size: 18, color: accent),
                     const SizedBox(width: 8),
                     Text(
-                      l10n.chatVoiceRecording,
+                      isReady ? l10n.chatVoiceReady : l10n.chatVoiceRecording,
                       style: Theme.of(context).textTheme.labelLarge?.copyWith(
                             fontWeight: FontWeight.w700,
-                            color: const Color(0xFFE11D48),
+                            color: accent,
                           ),
                     ),
                     const SizedBox(width: 10),
@@ -162,18 +167,20 @@ class _VoiceNoteRecorderBarState extends State<VoiceNoteRecorderBar>
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             fontFeatures: const [FontFeature.tabularFigures()],
                             fontWeight: FontWeight.w700,
-                            color: nearLimit
+                            color: nearLimit && widget.isCapturing
                                 ? const Color(0xFFB45309)
                                 : scheme.onSurface,
                           ),
                     ),
                   ],
                 ),
-                const SizedBox(height: 8),
-                const _WaveBars(),
+                if (widget.isCapturing) ...[
+                  const SizedBox(height: 8),
+                  const _WaveBars(),
+                ],
                 const SizedBox(height: 4),
                 Text(
-                  l10n.chatVoiceSendHint,
+                  isReady ? l10n.chatVoiceReadyHint : l10n.chatVoiceSendHint,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
                         color: scheme.onSurfaceVariant,
                       ),

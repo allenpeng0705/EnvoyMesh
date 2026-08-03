@@ -612,6 +612,9 @@ class AppLocalizationsJa extends AppLocalizations {
   String get chatVoiceRecording => '録音中';
 
   @override
+  String get chatVoiceReady => '送信準備完了';
+
+  @override
   String get chatVoiceCancel => 'キャンセル';
 
   @override
@@ -619,6 +622,9 @@ class AppLocalizationsJa extends AppLocalizations {
 
   @override
   String get chatVoiceSendHint => '完了したら送信 · キャンセルで破棄';
+
+  @override
+  String get chatVoiceReadyHint => '送信失敗 · 送信で再試行 · キャンセルで破棄';
 
   @override
   String get chatVoiceSendFailed => '音声メモの送信に失敗';

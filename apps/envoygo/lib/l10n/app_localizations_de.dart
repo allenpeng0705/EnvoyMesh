@@ -625,6 +625,9 @@ class AppLocalizationsDe extends AppLocalizations {
   String get chatVoiceRecording => 'Aufnahme';
 
   @override
+  String get chatVoiceReady => 'Bereit zum Senden';
+
+  @override
   String get chatVoiceCancel => 'Abbrechen';
 
   @override
@@ -632,6 +635,10 @@ class AppLocalizationsDe extends AppLocalizations {
 
   @override
   String get chatVoiceSendHint => 'Senden zum Beenden · Abbrechen verwirft';
+
+  @override
+  String get chatVoiceReadyHint =>
+      'Senden fehlgeschlagen · Erneut senden · Abbrechen verwirft';
 
   @override
   String get chatVoiceSendFailed => 'Sprachnotiz konnte nicht gesendet werden';

@@ -624,6 +624,9 @@ class AppLocalizationsEn extends AppLocalizations {
   String get chatVoiceRecording => 'Recording';
 
   @override
+  String get chatVoiceReady => 'Ready to send';
+
+  @override
   String get chatVoiceCancel => 'Cancel';
 
   @override
@@ -631,6 +634,10 @@ class AppLocalizationsEn extends AppLocalizations {
 
   @override
   String get chatVoiceSendHint => 'Tap Send when done · Cancel to discard';
+
+  @override
+  String get chatVoiceReadyHint =>
+      'Send failed · Tap Send to retry · Cancel to discard';
 
   @override
   String get chatVoiceSendFailed => 'Failed to send voice note';

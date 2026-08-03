@@ -1278,6 +1278,12 @@ abstract class AppLocalizations {
   /// **'Recording'**
   String get chatVoiceRecording;
 
+  /// No description provided for @chatVoiceReady.
+  ///
+  /// In en, this message translates to:
+  /// **'Ready to send'**
+  String get chatVoiceReady;
+
   /// No description provided for @chatVoiceCancel.
   ///
   /// In en, this message translates to:
@@ -1295,6 +1301,12 @@ abstract class AppLocalizations {
   /// In en, this message translates to:
   /// **'Tap Send when done · Cancel to discard'**
   String get chatVoiceSendHint;
+
+  /// No description provided for @chatVoiceReadyHint.
+  ///
+  /// In en, this message translates to:
+  /// **'Send failed · Tap Send to retry · Cancel to discard'**
+  String get chatVoiceReadyHint;
 
   /// No description provided for @chatVoiceSendFailed.
   ///

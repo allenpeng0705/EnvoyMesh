@@ -612,6 +612,9 @@ class AppLocalizationsKo extends AppLocalizations {
   String get chatVoiceRecording => '녹음 중';
 
   @override
+  String get chatVoiceReady => '전송 준비됨';
+
+  @override
   String get chatVoiceCancel => '취소';
 
   @override
@@ -619,6 +622,9 @@ class AppLocalizationsKo extends AppLocalizations {
 
   @override
   String get chatVoiceSendHint => '끝나면 보내기 · 취소하면 삭제';
+
+  @override
+  String get chatVoiceReadyHint => '전송 실패 · 보내기로 재시도 · 취소하면 삭제';
 
   @override
   String get chatVoiceSendFailed => '음성 메모 전송 실패';

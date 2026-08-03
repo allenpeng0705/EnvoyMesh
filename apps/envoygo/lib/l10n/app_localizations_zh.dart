@@ -611,6 +611,9 @@ class AppLocalizationsZh extends AppLocalizations {
   String get chatVoiceRecording => '正在录音';
 
   @override
+  String get chatVoiceReady => '待发送';
+
+  @override
   String get chatVoiceCancel => '取消';
 
   @override
@@ -618,6 +621,9 @@ class AppLocalizationsZh extends AppLocalizations {
 
   @override
   String get chatVoiceSendHint => '完成后点发送 · 取消则丢弃';
+
+  @override
+  String get chatVoiceReadyHint => '发送失败 · 点发送重试 · 取消则丢弃';
 
   @override
   String get chatVoiceSendFailed => '发送语音失败';

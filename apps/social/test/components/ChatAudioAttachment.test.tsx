@@ -67,8 +67,40 @@ describe("ChatAudioAttachment — Phase 37", () => {
     await waitFor(() => {
       const audio = document.querySelector("audio");
       expect(audio).toBeTruthy();
-      expect(audio?.getAttribute("src")).toContain("data:audio/webm;base64,");
+      expect(audio?.getAttribute("src")?.startsWith("blob:")).toBe(true);
     });
+  });
+
+  it("uses audio/mp4 blob for EnvoyGo m4a voice notes", async () => {
+    mockNodeService();
+    mockReadLibraryItemContent.mockResolvedValue({
+      mimeType: "audio/mp4",
+      contentBase64: btoa("fake-m4a-bytes"),
+    });
+    const createObjectURL = vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:mock-m4a");
+    try {
+      renderWithI18n(
+        <ChatAudioAttachment
+          attachment={{
+            id: "test-att-m4a",
+            filename: "voice-note.m4a",
+            mimeType: "audio/mp4",
+            sizeBytes: 12000,
+            sensitivity: "friends",
+            vaultRelativePath: "chat/out/uuid/voice-note.m4a",
+          }}
+        />,
+      );
+      await waitFor(() => {
+        expect(document.querySelector("audio")?.getAttribute("src")).toBe("blob:mock-m4a");
+      });
+      expect(createObjectURL).toHaveBeenCalled();
+      const blob = createObjectURL.mock.calls[0]?.[0] as Blob;
+      expect(blob).toBeInstanceOf(Blob);
+      expect(blob.type).toBe("audio/mp4");
+    } finally {
+      createObjectURL.mockRestore();
+    }
   });
 
   it("shows transcription captions when provided", async () => {

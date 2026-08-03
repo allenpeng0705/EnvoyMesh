@@ -147,12 +147,27 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   void dispose() {
     _textController.dispose();
     _cancelRecordTimer();
+    final pending = _activeRecordingPath;
     _audioRecorder.dispose();
+    if (pending != null) {
+      try {
+        final f = File(pending);
+        if (f.existsSync()) f.deleteSync();
+      } catch (_) {}
+    }
     super.dispose();
   }
 
+  bool get _hasPendingVoice =>
+      _activeRecordingPath != null && !_isRecording && !_isSendingVoice;
+
   Future<void> _startRecording() async {
-    if (_recordingGuard || _isRecording || _isSendingVoice) return;
+    if (_recordingGuard ||
+        _isRecording ||
+        _isSendingVoice ||
+        _activeRecordingPath != null) {
+      return;
+    }
     _recordingGuard = true;
     if (!await _audioRecorder.hasPermission()) {
       _recordingGuard = false;
@@ -198,11 +213,16 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
   }
 
   Future<void> _cancelRecording() async {
-    if (_recordingGuard) return;
+    if (_recordingGuard || _isSendingVoice) return;
     _recordingGuard = true;
     _cancelRecordTimer();
     try {
-      final path = await _audioRecorder.stop() ?? _activeRecordingPath;
+      var path = _activeRecordingPath;
+      try {
+        if (await _audioRecorder.isRecording()) {
+          path = await _audioRecorder.stop() ?? path;
+        }
+      } catch (_) {}
       if (path != null) {
         final file = File(path);
         if (await file.exists()) {
@@ -232,17 +252,42 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
     _recordingGuard = true;
     _cancelRecordTimer();
     final l10n = AppLocalizations.of(context);
+    var sent = false;
     try {
-      final path = await _audioRecorder.stop() ?? _activeRecordingPath;
+      // Keep any already-stopped draft path (retry after a failed send).
+      var path = _activeRecordingPath;
+      try {
+        if (await _audioRecorder.isRecording()) {
+          path = await _audioRecorder.stop() ?? path;
+        }
+      } catch (_) {
+        path ??= _activeRecordingPath;
+      }
       if (!mounted) return;
+      if (path == null) {
+        setState(() {
+          _isRecording = false;
+          _recordingSeconds = 0;
+        });
+        return;
+      }
+      _activeRecordingPath = path;
       setState(() {
         _isRecording = false;
-        _recordingSeconds = 0;
         _isSendingVoice = true;
       });
-      if (path == null) return;
 
       final file = File(path);
+      if (!await file.exists()) {
+        _activeRecordingPath = null;
+        if (mounted) {
+          setState(() => _recordingSeconds = 0);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(l10n.chatVoiceSendFailed)),
+          );
+        }
+        return;
+      }
       final bytes = await file.readAsBytes();
       final base64 = base64Encode(bytes);
       const mimeType = 'audio/mp4';
@@ -268,6 +313,7 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
         mimeType: mimeType,
         chatText: '',
       );
+      sent = true;
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text(l10n.chatVoiceSent)),
@@ -276,7 +322,12 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
       try {
         if (await file.exists()) await file.delete();
       } catch (_) {}
+      _activeRecordingPath = null;
+      if (mounted) {
+        setState(() => _recordingSeconds = 0);
+      }
     } catch (e) {
+      // Keep _activeRecordingPath + duration so the bar stays in ready/retry.
       if (mounted) {
         setState(() => _isRecording = false);
         ScaffoldMessenger.of(context).showSnackBar(
@@ -284,9 +335,16 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
         );
       }
     } finally {
-      _activeRecordingPath = null;
       _recordingGuard = false;
-      if (mounted) setState(() => _isSendingVoice = false);
+      if (mounted) {
+        setState(() {
+          _isSendingVoice = false;
+          if (sent) {
+            _activeRecordingPath = null;
+            _recordingSeconds = 0;
+          }
+        });
+      }
     }
   }
 
@@ -434,7 +492,9 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
           SafeArea(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(12, 8, 12, 10),
-              child: (_isRecording || _isSendingVoice) &&
+              child: (_isRecording ||
+                          _isSendingVoice ||
+                          _hasPendingVoice) &&
                       !_isAgent &&
                       !_isRoom &&
                       !_isFamily

@@ -2,9 +2,9 @@
  * ChatAudioAttachment — audio message player (Phase 37).
  *
  * Renders an HTML5 <audio> element with playback controls for voice notes
- * sent via chat. Fetches the raw audio bytes from the vault and renders
- * them as a data: URI. If a transcription is available (passed via the
- * optional `transcription` prop), it is shown as captions below the player.
+ * sent via chat. Fetches the raw audio bytes from the vault and plays them
+ * via a Blob object URL (data: URIs often leave AAC/M4A controls grayed out
+ * in Chrome / desktop WebViews — EnvoyGo records AAC-LC `.m4a`).
  */
 
 import { useEffect, useRef, useState, useCallback } from "react";
@@ -18,33 +18,98 @@ export interface ChatAudioAttachmentProps {
   transcription?: string;
 }
 
+/** Normalize MIME so browsers can decode iOS/EnvoyGo AAC voice notes. */
+export function normalizeChatAudioMime(
+  mimeType: string | undefined,
+  filename?: string,
+): string {
+  const raw = (mimeType ?? "").trim().toLowerCase();
+  const base = raw.split(";")[0]?.trim() ?? "";
+  const name = (filename ?? "").toLowerCase();
+  if (
+    base === "audio/mp4" ||
+    base === "audio/x-m4a" ||
+    base === "audio/m4a" ||
+    base === "audio/aac" ||
+    name.endsWith(".m4a") ||
+    name.endsWith(".aac")
+  ) {
+    return "audio/mp4";
+  }
+  if (base.startsWith("audio/")) return base;
+  if (name.endsWith(".webm")) return "audio/webm";
+  if (name.endsWith(".ogg") || name.endsWith(".oga")) return "audio/ogg";
+  if (name.endsWith(".mp3")) return "audio/mpeg";
+  if (name.endsWith(".wav")) return "audio/wav";
+  return base || "application/octet-stream";
+}
+
+function base64ToUint8Array(base64: string): Uint8Array {
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
 export function ChatAudioAttachment({ attachment, transcription }: ChatAudioAttachmentProps) {
   const t = useT();
   const nodeService = useNodeService();
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
-  const [durationSec, setDurationSec] = useState<number | null>(null); // I3: actual duration from loadedmetadata
+  const [durationSec, setDurationSec] = useState<number | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const objectUrlRef = useRef<string | null>(null);
   const vaultPath = attachment.vaultRelativePath?.replace(/^[\\/]+/, "");
+
+  const revokeObjectUrl = useCallback(() => {
+    if (objectUrlRef.current) {
+      URL.revokeObjectURL(objectUrlRef.current);
+      objectUrlRef.current = null;
+    }
+  }, []);
 
   const loadAudio = useCallback(async () => {
     if (!vaultPath) return;
     setLoading(true);
     setError(false);
+    revokeObjectUrl();
+    setAudioUrl(null);
     try {
       const result = await nodeService.readLibraryItemContent({ relativePath: vaultPath });
-      setAudioUrl(`data:${result.mimeType};base64,${result.contentBase64}`);
+      const mime = normalizeChatAudioMime(
+        attachment.mimeType || result.mimeType,
+        attachment.filename,
+      );
+      const bytes = base64ToUint8Array(result.contentBase64);
+      if (bytes.byteLength === 0) {
+        throw new Error("empty audio");
+      }
+      const blob = new Blob([bytes], { type: mime });
+      const url = URL.createObjectURL(blob);
+      objectUrlRef.current = url;
+      setAudioUrl(url);
     } catch {
       setError(true);
     } finally {
       setLoading(false);
     }
-  }, [nodeService, vaultPath]);
+  }, [
+    nodeService,
+    vaultPath,
+    attachment.mimeType,
+    attachment.filename,
+    revokeObjectUrl,
+  ]);
 
   useEffect(() => {
     void loadAudio();
-  }, [loadAudio]);
+    return () => {
+      revokeObjectUrl();
+    };
+  }, [loadAudio, revokeObjectUrl]);
 
   return (
     <div className="chat-audio-attachment">
@@ -61,6 +126,7 @@ export function ChatAudioAttachment({ attachment, transcription }: ChatAudioAtta
           controls
           preload="metadata"
           src={audioUrl}
+          onError={() => setError(true)}
           onLoadedMetadata={() => {
             const el = audioRef.current;
             if (el && isFinite(el.duration) && el.duration > 0) {
