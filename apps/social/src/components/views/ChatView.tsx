@@ -165,9 +165,13 @@ export function ChatView({
           title: t("pi.changeProjectTitle", "Change Pi project folder"),
           defaultPath: target.cwd || savedPiProject || undefined,
         });
-        if (!picked) return;
-        setPiProjectDraft(picked);
-        void startPiWithPath(picked, {
+        if (!picked.ok) {
+          setPiEnsureError(picked.error);
+          return;
+        }
+        if (!picked.path) return; // cancelled
+        setPiProjectDraft(picked.path);
+        void startPiWithPath(picked.path, {
           forceRestart: true,
           sessionId: target.sessionId,
         });
@@ -196,9 +200,14 @@ export function ChatView({
         title: t("pi.chooseProjectTitle", "Choose Pi project folder"),
         defaultPath: savedPiProject || undefined,
       });
-      if (!picked) return;
-      setPiProjectDraft(picked);
-      void startPiWithPath(picked, { forceRestart: false, sessionId: null });
+      if (!picked.ok) {
+        setPiEnsureError(picked.error);
+        setPiProjectModalOpen(true);
+        return;
+      }
+      if (!picked.path) return; // cancelled
+      setPiProjectDraft(picked.path);
+      void startPiWithPath(picked.path, { forceRestart: false, sessionId: null });
       return;
     }
     setPiProjectModalOpen(true);
@@ -224,10 +233,14 @@ export function ChatView({
         : t("pi.chooseProjectTitle", "Choose Pi project folder"),
       defaultPath: piProjectDraft.trim() || savedPiProject || undefined,
     });
-    if (!picked) return; // cancelled
-    setPiProjectDraft(picked);
+    if (!picked.ok) {
+      setPiEnsureError(picked.error);
+      return;
+    }
+    if (!picked.path) return; // cancelled
+    setPiProjectDraft(picked.path);
     // OS dialog already confirmed the folder — start immediately.
-    void startPiWithPath(picked, {
+    void startPiWithPath(picked.path, {
       forceRestart: piProjectForceRestart,
       sessionId: piRestartSessionId,
     });

@@ -379,6 +379,7 @@ export type EnsurePiTerminalFailureCode =
   | "no_config"
   | "no_model"
   | "no_sidecar"
+  | "no_tools"
   | "needs_project"
   | "invalid_project"
   | "pi_limit_reached"

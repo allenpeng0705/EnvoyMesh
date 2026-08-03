@@ -55,10 +55,12 @@
 #                 The Pi chat panel will be auto-disabled at runtime by the
 #                 defensive isPiEnabledViaRuntime() check.
 #
-#   The presets map 1:1 onto scripts in apps/tauri/package.json:
-#     build:win        → tauri.conf.slim.json   (mirrors -SkipPi)
-#     build:win:full   → tauri.conf.full.json   (mirrors -Full)
-#     build            → tauri.conf.json        (default)
+#   Prefer full Pi builds (this script without -SkipPi, or package.json):
+#     build:win / build:win:full / npm run tauri:build:win  → full (with Pi)
+#     build:win:slim / npm run tauri:build:win:slim         → slim (no Pi)
+#
+#   Pi terminal (TUI) needs staged pi/ + pi/bin/{fd,rg}.exe and
+#   capabilities/default.json → allow-pick-directory (folder picker ACL).
 #
 # Prerequisites (Windows):
 #   * Node.js 22+ (https://nodejs.org)
@@ -1842,10 +1844,17 @@ if (-not $SkipPi) {
         $sidecarOk = $false
     }
     $piFd = Join-Path $TauriResources "pi\bin\fd.exe"
+    $piRg = Join-Path $TauriResources "pi\bin\rg.exe"
     if (Test-Path $piFd) {
         Write-Ok "Pi tools (fd.exe)"
     } else {
         Write-Fail "missing Pi tools at $piFd — run fetch-pi-tools.ps1"
+        $sidecarOk = $false
+    }
+    if (Test-Path $piRg) {
+        Write-Ok "Pi tools (rg.exe)"
+    } else {
+        Write-Fail "missing Pi tools at $piRg — run fetch-pi-tools.ps1"
         $sidecarOk = $false
     }
 }
@@ -1911,7 +1920,10 @@ if (-not $SkipPi) {
     $reqFiles += @(
         @{ Path = (Join-Path $TauriResources "pi/node_modules/@earendil-works/pi-coding-agent/dist/cli.js"); Label = "Pi CLI entry" },
         @{ Path = (Join-Path $TauriResources "pi/node_modules/@earendil-works/pi-coding-agent/dist/index.js"); Label = "Pi SDK entry" },
-        @{ Path = (Join-Path $TauriResources "pi/node_modules/@earendil-works/pi-coding-agent/package.json"); Label = "Pi package.json" }
+        @{ Path = (Join-Path $TauriResources "pi/node_modules/@earendil-works/pi-coding-agent/package.json"); Label = "Pi package.json" },
+        # fd/rg — without these, GUI Pi TUI hangs on GitHub auto-download (PATH stripped).
+        @{ Path = (Join-Path $TauriResources "pi\bin\fd.exe"); Label = "Pi tool fd.exe" },
+        @{ Path = (Join-Path $TauriResources "pi\bin\rg.exe"); Label = "Pi tool rg.exe" }
     )
 }
 foreach ($r in $reqFiles) {
@@ -1953,6 +1965,22 @@ if (-not $verifyOk) {
     exit 1
 }
 Write-Ok "Tauri resources look complete"
+
+# Pi folder picker is a custom Tauri command — must be in capabilities ACL
+# or Social shows "Command pick_directory not allowed by ACL".
+if (-not $SkipPi) {
+    $capFile = Join-Path $TauriSrcDir "capabilities\default.json"
+    if (-not (Test-Path $capFile)) {
+        Write-Fail "missing Tauri capabilities at $capFile"
+        exit 1
+    }
+    $capRaw = Get-Content -Raw -Path $capFile
+    if ($capRaw -notmatch 'allow-pick-directory') {
+        Write-Fail "capabilities\default.json missing allow-pick-directory — Pi Browse… will fail with ACL error"
+        exit 1
+    }
+    Write-Ok "Pi folder picker ACL (allow-pick-directory)"
+}
 
 # Push credentials — if repo-root push-config.json exists, it must be in the bundle.
 # Enables iOS APNs + Android FCM from this home node to EnvoyGo clients.
@@ -2044,11 +2072,11 @@ if (Get-Command "cargo-tauri" -ErrorAction SilentlyContinue) {
 # bundle, dodging the slow light.exe link step on the 3 GB resource tree.
 # Use -SkipMsi:$false to also produce a WiX .msi (for enterprise deployment).
 #
-# Slim / Full / default config selection (mirrors apps/tauri/package.json's
-# build:win / build:win:full / build scripts):
+# Slim / Full / default config selection (mirrors apps/tauri/package.json):
 #   -SkipPi   → --config src-tauri/tauri.conf.slim.json  (Pi + Kubo omitted)
 #   -Full     → --config src-tauri/tauri.conf.full.json  (explicit full preset)
 #   default   → no --config flag                         (uses tauri.conf.json)
+# Prefer no -SkipPi (or -Full) for Pi terminal. build:win / tauri:build:win are full.
 #
 # Refuse nonsensical combinations rather than silently picking one.
 if ($SkipPi -and $Full) {

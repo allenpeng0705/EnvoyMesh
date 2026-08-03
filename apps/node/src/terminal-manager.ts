@@ -259,11 +259,28 @@ export class TerminalManager {
     const ptyModule = await import("node-pty");
     const command = params.command?.trim() || params.shell;
     const args = params.args ?? [];
-    const childEnv = {
+    // Merge env carefully on Windows: process.env uses `Path` while callers
+    // often set `PATH`. Keep a single path key so node-pty/CreateProcess
+    // does not ignore the prepended fd/rg dir.
+    const childEnv: Record<string, string> = {
       ...(process.env as Record<string, string>),
-      ...(params.env ?? {}),
-      TERM: process.env.TERM || "xterm-256color",
     };
+    if (params.env) {
+      for (const [k, v] of Object.entries(params.env)) {
+        if (v === undefined || v === null) continue;
+        if (k.toLowerCase() === "path") {
+          const existingKey =
+            Object.keys(childEnv).find((ek) => ek.toLowerCase() === "path") ?? k;
+          for (const ek of Object.keys(childEnv)) {
+            if (ek.toLowerCase() === "path" && ek !== existingKey) delete childEnv[ek];
+          }
+          childEnv[existingKey] = v;
+          continue;
+        }
+        childEnv[k] = v;
+      }
+    }
+    childEnv.TERM = process.env.TERM || "xterm-256color";
     let ptyProcess;
     try {
       ptyProcess = ptyModule.spawn(command, args, {

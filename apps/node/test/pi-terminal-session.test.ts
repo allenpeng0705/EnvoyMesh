@@ -172,6 +172,52 @@ describe("ensurePiTerminalSession", () => {
     vi.resetModules();
   });
 
+  it("returns no_tools when GUI bundle lacks fd/rg", async () => {
+    const create = vi.fn();
+    const manager = {
+      findPiSession: () => undefined,
+      listPiSessions: () => [],
+      findPiSessionByCwd: () => undefined,
+      createTerminalSession: create,
+      closeTerminalSession: vi.fn(),
+    } as unknown as TerminalManager;
+
+    vi.resetModules();
+    vi.doMock("../src/pi-runtime.js", async () => {
+      const actual = await vi.importActual<typeof import("../src/pi-runtime.js")>(
+        "../src/pi-runtime.js",
+      );
+      return {
+        ...actual,
+        discoverPiCli: () => ({ cliPath: "/fake/cli.js", version: "0.0.0" }),
+        requirePiToolsForGui: () => "Pi tools (fd/rg) missing from this install.",
+      };
+    });
+    const { ensurePiTerminalSession: ensureIsolated } = await import(
+      "../src/pi-terminal-session.js"
+    );
+
+    const out = await ensureIsolated(
+      manager,
+      {
+        loadConfig: async () => ({
+          piEnabled: true,
+          modelProviders: {
+            mode: "anthropic-compatible",
+            modelName: "claude-test",
+            apiKey: "sk-test",
+          } as never,
+        }),
+      },
+      { projectPath: tmpdir() },
+    );
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.code).toBe("no_tools");
+    expect(create).not.toHaveBeenCalled();
+    vi.doUnmock("../src/pi-runtime.js");
+    vi.resetModules();
+  });
+
   it("forceRestart closes the targeted session before spawn attempt", async () => {
     const existing = {
       sessionId: "pi-old",

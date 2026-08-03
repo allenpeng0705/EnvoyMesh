@@ -177,7 +177,24 @@ fn resolve_resource_dir(app: &tauri::App) -> Option<PathBuf> {
     // Strip the `\\?\` verbatim prefix on Windows — Node.js's module
     // resolver can't handle it (EISDIR on lstat 'C:'). See
     // strip_verbatim_prefix docs for details.
-    Some(strip_verbatim_prefix(dir))
+    Some(normalize_bundle_content_dir(strip_verbatim_prefix(dir)))
+}
+
+/// Tauri's `resource_dir()` is `…/Contents/Resources` on macOS (and the
+/// install `resources/` folder on Windows/Linux). Bundled trees from
+/// `bundle.resources` entries like `resources/pi/` land one level deeper:
+/// `…/Contents/Resources/resources/pi/`. Prefer that nested content root
+/// when it holds node/openclaw/pi so ENVOYMESH_* / TAURI_RESOURCE_DIR and
+/// OpenClaw heal all resolve the same paths.
+fn normalize_bundle_content_dir(resource_dir: PathBuf) -> PathBuf {
+    let nested = resource_dir.join("resources");
+    let nested_has_bundle = nested.join("node").is_dir()
+        || nested.join("openclaw").is_dir()
+        || nested.join("pi").is_dir();
+    if nested_has_bundle {
+        return nested;
+    }
+    resource_dir
 }
 
 fn dev_repo_root_from_manifest() -> Option<PathBuf> {
@@ -919,9 +936,13 @@ fn pick_directory(
 
     #[cfg(target_os = "windows")]
     {
+        // WinForms FolderBrowserDialog requires an STA thread. Do NOT pass
+        // -NonInteractive — that suppresses the dialog and makes ShowDialog
+        // fail/return empty, so Social's "Open Pi" looks like a no-op.
         fn ps_escape(s: &str) -> String {
             s.replace('\'', "''")
         }
+        // -STA on the powershell.exe process (below) is what matters for WinForms.
         let mut script = String::from(
             "Add-Type -AssemblyName System.Windows.Forms; \
              $d = New-Object System.Windows.Forms.FolderBrowserDialog; \
@@ -945,16 +966,29 @@ fn pick_directory(
             ));
         }
         script.push_str(
-            "if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) { \
-               Write-Output $d.SelectedPath \
+            "$r = $d.ShowDialog(); \
+             if ($r -eq [System.Windows.Forms.DialogResult]::OK) { \
+               [Console]::Out.Write($d.SelectedPath) \
+             } elseif ($r -eq [System.Windows.Forms.DialogResult]::Cancel) { \
+               exit 0 \
+             } else { \
+               [Console]::Error.WriteLine(\"FolderBrowserDialog failed: $r\"); \
+               exit 2 \
              }",
         );
         let output = Command::new("powershell")
-            .args(["-NoProfile", "-NonInteractive", "-Command", &script])
+            .args(["-NoProfile", "-STA", "-Command", &script])
             .output()
-            .map_err(|e| e.to_string())?;
+            .map_err(|e| format!("folder picker powershell failed: {e}"))?;
         if !output.status.success() {
-            return Ok(None);
+            let err = String::from_utf8_lossy(&output.stderr).trim().to_string();
+            if err.is_empty() {
+                return Err(format!(
+                    "folder picker failed (exit {:?})",
+                    output.status.code()
+                ));
+            }
+            return Err(err);
         }
         let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
         return Ok(if path.is_empty() { None } else { Some(path) });
@@ -1268,6 +1302,27 @@ mod tests {
         )
         .unwrap();
         fs::write(oc.join("openclaw.mjs"), "#!/usr/bin/env node\n").unwrap();
+    }
+
+    #[test]
+    fn normalize_prefers_nested_resources_content_root() {
+        let r = make_fixture("nested-resources");
+        // Mimic macOS DMG layout: Contents/Resources/resources/{node,pi}/
+        let nested = r.join("resources");
+        fs::create_dir_all(nested.join("pi/bin")).unwrap();
+        fs::create_dir_all(nested.join("node")).unwrap();
+        let out = normalize_bundle_content_dir(r.clone());
+        assert_eq!(out, nested);
+        let _ = fs::remove_dir_all(&r);
+    }
+
+    #[test]
+    fn normalize_keeps_flat_resource_dir() {
+        let r = make_fixture("flat-resources");
+        fs::create_dir_all(r.join("pi/bin")).unwrap();
+        let out = normalize_bundle_content_dir(r.clone());
+        assert_eq!(out, r);
+        let _ = fs::remove_dir_all(&r);
     }
 
     #[test]

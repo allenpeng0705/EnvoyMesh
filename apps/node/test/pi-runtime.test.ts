@@ -397,12 +397,16 @@ describe("materializePiSpawnEnv", () => {
 })
 
 describe("withPiToolPath", () => {
+  function pathFromEnv(env: Record<string, string>): string | undefined {
+    return env.PATH ?? env.Path
+  }
+
   it("preserves provider env and may add PATH for tool discovery", () => {
     const out = withPiToolPath({ OPENAI_API_KEY: "k" })
     expect(out.OPENAI_API_KEY).toBe("k")
     if (existsSync("/opt/homebrew/bin") || existsSync("/usr/local/bin")) {
-      expect(out.PATH).toBeTruthy()
-      expect(out.PATH).toMatch(/homebrew|\/usr\/local\/bin/)
+      expect(pathFromEnv(out)).toBeTruthy()
+      expect(pathFromEnv(out)).toMatch(/homebrew|\/usr\/local\/bin/)
     }
   })
 
@@ -417,7 +421,7 @@ describe("withPiToolPath", () => {
     try {
       const out = withPiToolPath({ FOO: "1" })
       expect(out.FOO).toBe("1")
-      expect(out.PATH?.split(delimiter)[0]).toBe(staged)
+      expect(pathFromEnv(out)?.split(delimiter)[0]).toBe(staged)
     } finally {
       if (prev === undefined) delete process.env.ENVOYMESH_PI_TOOLS_DIR
       else process.env.ENVOYMESH_PI_TOOLS_DIR = prev
@@ -434,7 +438,7 @@ describe("withPiToolPath", () => {
     const result = buildPiSpawnConfig(cfg)!
     expect(result.env.OPENAI_API_KEY).toBe("k")
     if (existsSync("/opt/homebrew/bin")) {
-      expect(result.env.PATH).toContain("/opt/homebrew/bin")
+      expect(pathFromEnv(result.env)).toContain("/opt/homebrew/bin")
     }
   })
 })

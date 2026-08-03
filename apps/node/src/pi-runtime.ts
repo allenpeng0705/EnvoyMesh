@@ -465,6 +465,66 @@ function resolvePiSpawnFromDirectProvider(
 }
 
 /**
+ * Resolve the directory that should contain bundled `fd` / `rg` for Pi.
+ * Returns null when none of the known locations exist.
+ */
+export function resolvePiToolsDir(): string | null {
+  const toolsDir = process.env.ENVOYMESH_PI_TOOLS_DIR?.trim()
+  if (toolsDir && existsSync(toolsDir)) return toolsDir
+
+  const resourceDir =
+    process.env.TAURI_RESOURCE_DIR?.trim() || process.env.TAURI_APP_RESOURCES_DIR?.trim()
+  if (resourceDir) {
+    // Prefer direct layout (after normalize_bundle_content_dir) then the
+    // nested macOS Resources/resources/ layout for older builds.
+    for (const bundled of [
+      join(resourceDir, "pi", "bin"),
+      join(resourceDir, "resources", "pi", "bin"),
+    ]) {
+      if (existsSync(bundled)) return bundled
+    }
+  }
+
+  const cli = process.env.ENVOYMESH_PI_CLI?.trim()
+  if (cli && existsSync(cli)) {
+    // dist/cli.js → …/pi/node_modules/@earendil-works/pi-coding-agent/dist
+    // five parents up lands on resources/pi/
+    const piRoot = resolve(cli, "..", "..", "..", "..", "..")
+    const bundled = join(piRoot, "bin")
+    if (existsSync(bundled)) return bundled
+  }
+  return null
+}
+
+/** True when bundled (or resolved) fd + rg binaries are present. */
+export function hasPiTools(toolsDir?: string | null): boolean {
+  const dir = toolsDir ?? resolvePiToolsDir()
+  if (!dir) return false
+  const fd = process.platform === "win32" ? "fd.exe" : "fd"
+  const rg = process.platform === "win32" ? "rg.exe" : "rg"
+  return existsSync(join(dir, fd)) && existsSync(join(dir, rg))
+}
+
+/**
+ * When running under a Tauri/desktop bundle, Pi must have fd/rg staged —
+ * otherwise it hangs on GitHub auto-download with a stripped GUI PATH.
+ * Dev/terminal installs may rely on Homebrew / ~/.pi instead.
+ */
+export function requirePiToolsForGui(): string | null {
+  const underTauri = Boolean(
+    process.env.TAURI_RESOURCE_DIR?.trim() ||
+      process.env.TAURI_APP_RESOURCES_DIR?.trim() ||
+      process.env.ENVOYMESH_PI_CLI?.trim(),
+  )
+  if (!underTauri) return null
+  if (hasPiTools()) return null
+  return (
+    "Pi tools (fd/rg) missing from this install. Rebuild the desktop app with " +
+    "fetch-pi-tools (full build, not slim / -SkipPi)."
+  )
+}
+
+/**
  * Ensure Pi can find `fd` / `rg` without GitHub auto-download.
  *
  * GUI/Tauri launches often have a stripped PATH (no Homebrew). Pi then prints
@@ -477,24 +537,8 @@ export function withPiToolPath(env: Record<string, string>): Record<string, stri
   // Bundled fd/rg next to the Pi sidecar (resources/pi/bin) — required for
   // Tauri GUI launches where PATH is stripped and Pi's GitHub auto-download
   // hangs or 404s. Prefer this over Homebrew / ~/.pi.
-  const toolsDir = process.env.ENVOYMESH_PI_TOOLS_DIR?.trim()
-  if (toolsDir && existsSync(toolsDir)) extras.push(toolsDir)
-
-  const resourceDir =
-    process.env.TAURI_RESOURCE_DIR?.trim() || process.env.TAURI_APP_RESOURCES_DIR?.trim()
-  if (resourceDir) {
-    const bundled = join(resourceDir, "pi", "bin")
-    if (existsSync(bundled)) extras.push(bundled)
-  }
-
-  const cli = process.env.ENVOYMESH_PI_CLI?.trim()
-  if (cli && existsSync(cli)) {
-    // dist/cli.js → …/pi/node_modules/@earendil-works/pi-coding-agent/dist
-    // five parents up lands on resources/pi/
-    const piRoot = resolve(cli, "..", "..", "..", "..", "..")
-    const bundled = join(piRoot, "bin")
-    if (existsSync(bundled)) extras.push(bundled)
-  }
+  const toolsDir = resolvePiToolsDir()
+  if (toolsDir) extras.push(toolsDir)
 
   for (const dir of ["/opt/homebrew/bin", "/usr/local/bin"]) {
     if (existsSync(dir)) extras.push(dir)
@@ -504,7 +548,13 @@ export function withPiToolPath(env: Record<string, string>): Record<string, stri
   const nodeExe = process.env.ENVOYMESH_NODE_EXE?.trim()
   if (nodeExe) extras.push(dirname(nodeExe))
 
-  const current = process.env.PATH ?? ""
+  // Windows env blocks are case-insensitive but node-pty may keep both
+  // `Path` and `PATH`. Prefer the platform's native key.
+  const pathKey =
+    process.platform === "win32"
+      ? Object.keys(process.env).find((k) => k.toLowerCase() === "path") ?? "Path"
+      : "PATH"
+  const current = process.env[pathKey] ?? process.env.PATH ?? ""
   const currentParts = new Set(current.split(delimiter).filter(Boolean))
   // De-dupe while preserving order (bundled tools first).
   const prefixParts: string[] = []
@@ -513,7 +563,13 @@ export function withPiToolPath(env: Record<string, string>): Record<string, stri
   }
   const prefix = prefixParts.join(delimiter)
   if (!prefix) return env
-  return { ...env, PATH: prefix + (current ? delimiter + current : "") }
+  const nextPath = prefix + (current ? delimiter + current : "")
+  const out = { ...env }
+  // Drop the opposite-case key so the child sees a single PATH entry.
+  if (pathKey !== "PATH") delete out.PATH
+  if (pathKey !== "Path") delete out.Path
+  out[pathKey] = nextPath
+  return out
 }
 
 /**

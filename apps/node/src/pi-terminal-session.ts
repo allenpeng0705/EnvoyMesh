@@ -27,6 +27,7 @@ import {
   buildPiSpawnConfig,
   discoverPiCli,
   materializePiSpawnEnv,
+  requirePiToolsForGui,
   resolvePiNodeRuntime,
 } from "./pi-runtime.js"
 
@@ -122,6 +123,15 @@ export async function ensurePiTerminalSession(
       ok: false,
       code: "no_sidecar",
       reason: "Pi sidecar not found — slim build or fetch-pi-sidecar.sh not run.",
+    }
+  }
+
+  const toolsMissing = requirePiToolsForGui()
+  if (toolsMissing) {
+    return {
+      ok: false,
+      code: "no_tools",
+      reason: toolsMissing,
     }
   }
 

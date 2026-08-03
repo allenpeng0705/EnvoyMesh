@@ -10,6 +10,7 @@
     "process:default",
     "allow-restart-node-process",
     "allow-stop-node-process",
-    "allow-app-logs"
+    "allow-app-logs",
+    "allow-pick-directory"
   ]
 }
