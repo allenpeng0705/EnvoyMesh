@@ -257,14 +257,16 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
         return;
       }
 
-      // One RPC only — sendChatAttachment uploads, records the chat row,
-      // and shareFiles to the peer. A second sendMessage/sendChat caused
-      // duplicate bubbles and broke callee playback (Social matches this).
+      // One RPC only — sendChatAttachment uploads, sends chat.message with
+      // attachment metadata (chatText: '' like Social), and shareFiles linked
+      // by message id. Omitting chatText used a local-only file-share row and
+      // broke home-node / peer playback linking.
       await nodeService.sendChatAttachment(
         targetOwnerId: _resolvedContactOwnerId!,
         filename: 'voice-note.m4a',
         contentBase64: base64,
         mimeType: mimeType,
+        chatText: '',
       );
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

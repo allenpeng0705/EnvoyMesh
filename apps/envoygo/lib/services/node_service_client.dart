@@ -348,12 +348,17 @@ class NodeServiceClient {
   }
 
   /// Upload a file attachment to the vault and return its metadata (Phase 37).
+  ///
+  /// For voice notes, pass [chatText] (use `''` when there is no transcription).
+  /// That matches Social: `sendChat` + attachment + share linked by message id,
+  /// so home-node Social can play the note from the vault path.
   Future<Map<String, dynamic>> sendChatAttachment({
     required String targetOwnerId,
     required String filename,
     required String contentBase64,
     required String mimeType,
     String? caption,
+    String? chatText,
   }) async {
     final params = <String, dynamic>{
       'targetOwnerId': targetOwnerId,
@@ -361,6 +366,7 @@ class NodeServiceClient {
       'contentBase64': contentBase64,
       'mimeType': mimeType,
       if (caption != null) 'caption': caption,
+      if (chatText != null) 'chatText': chatText,
     };
     return await _client.call('sendChatAttachment', params)
         as Map<String, dynamic>;
