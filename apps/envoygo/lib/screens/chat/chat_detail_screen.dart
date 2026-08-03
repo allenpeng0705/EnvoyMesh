@@ -323,26 +323,29 @@ class _ChatDetailScreenState extends ConsumerState<ChatDetailScreen> {
           chatText: '',
         );
         final vaultPath = result['vaultRelativePath'] as String?;
-        final messageId = result['messageId'] as String?;
+        final messageId = (result['messageId'] as String?)?.trim();
         final attachmentId =
             (result['attachmentId'] as String?) ?? pendingId;
-        if (messageId != null &&
-            messageId.isNotEmpty &&
-            vaultPath != null &&
-            vaultPath.isNotEmpty) {
+        if (vaultPath != null && vaultPath.isNotEmpty) {
+          // Prefer server messageId; if the home omitted it (older router),
+          // still keep a playable row keyed by attachment id.
           chatNotifier.upsertOutboundVoiceNote(
             targetOwnerId: targetOwnerId,
-            messageId: messageId,
+            messageId: (messageId != null && messageId.isNotEmpty)
+                ? messageId
+                : 'voice-$attachmentId',
             vaultRelativePath: vaultPath,
             attachmentId: attachmentId,
             sizeBytes: bytes.length,
             mimeType: mimeType,
             durationSec: durationSec,
           );
+          if (pendingId.isNotEmpty) {
+            chatNotifier.removePendingVoiceNote(targetOwnerId, pendingId);
+          }
         }
-        if (pendingId.isNotEmpty) {
-          chatNotifier.removePendingVoiceNote(targetOwnerId, pendingId);
-        }
+        // If we got neither vault path nor messageId, leave the pending
+        // bubble so the user can see something went wrong / retry later.
         sent = true;
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(

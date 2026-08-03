@@ -298,6 +298,11 @@ export async function routeRpcMethod(
         mimeType: params.mimeType as string | undefined,
         caption: params.caption as string | undefined,
         sensitivity: params.sensitivity as "public" | "friends" | "private" | undefined,
+        // Voice notes (and Social) pass chatText — including "" — so the node
+        // uses sendChat + attachment linking. Omitting this forced the
+        // local-only file-share row and left EnvoyGo without a messageId.
+        chatText: params.chatText as string | undefined,
+        recordInChat: params.recordInChat as boolean | undefined,
       });
     case "readLibraryItemContent":
       return ns.readLibraryItemContent({
