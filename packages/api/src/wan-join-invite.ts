@@ -169,6 +169,31 @@ function isValidPeerIdShape(s: string): boolean {
   return /^[1-9A-HJ-NP-Za-km-z]+$/.test(t);
 }
 
+/** True for RFC1918 / loopback listen addrs (not usable as WAN bootstrap). */
+export function isPrivateOrLoopbackMultiaddr(addr: string): boolean {
+  const t = addr.trim();
+  if (/\/ip4\/127\./.test(t) || t.includes("/ip6/::1")) return true;
+  if (/\/ip4\/10\./.test(t) || /\/ip4\/192\.168\./.test(t)) return true;
+  return /\/ip4\/172\.(1[6-9]|2\d|3[01])\./.test(t);
+}
+
+/**
+ * Multiaddrs safe to treat as libp2p bootstrap / rendezvous relay targets.
+ *
+ * Join invites also carry sponsor dial hints (`/p2p-circuit/…`, LAN listen
+ * addrs, bare peer ids). Those belong in discovery seed stores for
+ * `sendHello`, NOT in `bootstrapPeers` used to register rendezvous or to
+ * warm relay reservations — otherwise WAN installs burn dials on
+ * unreachable LAN and try to "register with" the sponsor circuit.
+ */
+export function isBootstrapRelayMultiaddr(addr: string): boolean {
+  const t = addr.trim();
+  if (!t.startsWith("/") || !t.includes("/p2p/")) return false;
+  if (t.includes("/p2p-circuit/")) return false;
+  if (isPrivateOrLoopbackMultiaddr(t)) return false;
+  return true;
+}
+
 /**
  * Filter out bootstrap entries that could crash @libp2p/bootstrap.
  * Multiaddrs with corrupted peer IDs or bare invalid peer IDs are dropped.
@@ -212,10 +237,13 @@ export function mergeWanJoinInviteBootstrap(input: {
     ...(input.invite.targetMultiaddrs ?? []),
     ...(input.invite.targetPeerId ? [input.invite.targetPeerId] : []),
   ]);
+  // Persist only public relay/bootstrap multiaddrs. Circuit + LAN + bare
+  // peer ids remain in seedAddrs for outbound dial hints.
+  const bootstrapFromInvite = inviteEntries.filter(isBootstrapRelayMultiaddr);
   return {
     bootstrapPeers: dedupeBootstrapStrings([
       ...input.bootstrapPeers,
-      ...inviteEntries,
+      ...bootstrapFromInvite,
     ]),
     bootstrapPresets: dedupeBootstrapStrings([
       ...input.bootstrapPresets,

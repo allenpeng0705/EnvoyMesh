@@ -11,6 +11,7 @@ import {
   buildOwnerDidPresentation,
   DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR,
   deriveLocationDiscoveryTopics,
+  isBootstrapRelayMultiaddr,
   profileCapabilityDiscoveryTopics,
   profileCapabilityTags,
   syncProfileTagsToManifestCapabilities,
@@ -1390,7 +1391,9 @@ export async function _registerWithRendezvousServers(
 
   if (config?.bootstrapPeers) {
     for (const peer of config.bootstrapPeers) {
-      if (peer.includes("/p2p/") && !relayAddrs.includes(peer)) {
+      // Only real relay/bootstrap multiaddrs — never sponsor /p2p-circuit/
+      // dial hints or RFC1918 listens that WAN join invites may have merged in.
+      if (isBootstrapRelayMultiaddr(peer) && !relayAddrs.includes(peer)) {
         relayAddrs.push(peer);
       }
     }

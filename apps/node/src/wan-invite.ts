@@ -3,6 +3,7 @@ import {
   assertWanJoinInviteNotExpired,
   decodeWanJoinInviteV1,
   encodeWanJoinInviteV1,
+  isBootstrapRelayMultiaddr,
   type WanJoinInviteV1,
 } from "@envoymesh/api";
 
@@ -13,13 +14,13 @@ export function applyJoinInviteToNodeArgs(args: NodeArgs, token: string): void {
   const invite = decodeWanJoinInviteV1(token);
   assertWanJoinInviteNotExpired(invite);
 
-  args.bootstrapPeers.push(...invite.bootstrapPeers);
+  for (const peer of invite.bootstrapPeers) {
+    if (isBootstrapRelayMultiaddr(peer)) {
+      args.bootstrapPeers.push(peer);
+    }
+  }
   args.bootstrapPresets.push(...invite.bootstrapPresets);
 
-  if (invite.targetPeerId) {
-    args.bootstrapPeers.push(invite.targetPeerId);
-  }
-  if (invite.targetMultiaddrs) {
-    args.bootstrapPeers.push(...invite.targetMultiaddrs);
-  }
+  // Sponsor dial hints (circuit / LAN / bare peer id) are applied at runtime
+  // via discovery seed stores — do not treat them as bootstrap relays.
 }

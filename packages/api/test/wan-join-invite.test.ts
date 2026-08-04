@@ -39,9 +39,39 @@ describe("wan-join-invite", () => {
       bootstrapPresets: ["cn-relay"],
       invite: sample,
     });
+    // Existing private bootstrap is preserved; invite LAN peer-a is NOT
+    // re-added as a new bootstrap entry (RFC1918 filtered from invite).
     expect(merged.bootstrapPeers).toContain("/ip4/10.0.0.1/tcp/4001/p2p/peer-a");
-    expect(merged.bootstrapPeers).toContain("12D3KooWPeer");
+    expect(merged.bootstrapPeers).not.toContain("12D3KooWPeer");
+    expect(merged.seedAddrs).toContain("12D3KooWPeer");
     expect(merged.bootstrapPresets).toEqual(["cn-relay", "public-libp2p-am6"]);
+  });
+
+  it("keeps sponsor circuit and LAN dial hints in seeds, not bootstrapPeers", () => {
+    const community =
+      "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo";
+    const circuit = `${community}/p2p-circuit/p2p/12D3KooWQsD3ougrAJjmKeevSiY2azE5CKqLjcijyYreS6fUFYCR`;
+    const lan = "/ip4/192.168.3.85/tcp/64589/p2p/12D3KooWQsD3ougrAJjmKeevSiY2azE5CKqLjcijyYreS6fUFYCS";
+    const merged = mergeWanJoinInviteBootstrap({
+      bootstrapPeers: [],
+      bootstrapPresets: [],
+      invite: {
+        v: 1,
+        createdAt: "2026-07-13T00:00:00.000Z",
+        expiresAt: "2027-07-13T00:00:00.000Z",
+        targetPeerId: "12D3KooWQsD3ougrAJjmKeevSiY2azE5CKqLjcijyYreS6fUFYCR",
+        targetMultiaddrs: [circuit],
+        bootstrapPeers: [community, lan],
+        bootstrapPresets: ["cn-relay"],
+      },
+    });
+    expect(merged.bootstrapPeers).toEqual([community]);
+    expect(merged.bootstrapPeers).not.toContain(circuit);
+    expect(merged.bootstrapPeers).not.toContain(lan);
+    expect(merged.seedAddrs).toEqual(
+      expect.arrayContaining([community, lan, circuit, "12D3KooWQsD3ougrAJjmKeevSiY2azE5CKqLjcijyYreS6fUFYCR"]),
+    );
+    expect(merged.bootstrapPresets).toEqual(["cn-relay"]);
   });
 
   it("rejects expired invites", () => {
