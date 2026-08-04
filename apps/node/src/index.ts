@@ -585,6 +585,12 @@ if (bridgeListenForOpenClaw && !bridgeConfig.enabled) {
   );
 }
 const discoverySeedStore = createDiscoverySeedStore(args.profileDir);
+if (args.joinInviteSeedAddrs.length > 0) {
+  await discoverySeedStore.upsertMany(args.joinInviteSeedAddrs, "manual-bootstrap");
+  console.log(
+    `[wan-join] persisted ${args.joinInviteSeedAddrs.length} join-invite dial seed(s) (circuit/LAN hints)`,
+  );
+}
 const taskRuntimeStore = createTaskRuntimeStateStore(args.profileDir);
 const resolvedArgs = await resolveNodeArgsTargetsByOwnerId(args, peerDirectoryStore);
 const inboundGuard = createInboundMessageGuard();
@@ -2947,6 +2953,9 @@ async function activateCliMesh(reloadDiscoveryFromConfig: boolean): Promise<void
 
       if (args.bootstrapPeers.length > 0) {
         await discoverySeedStore.upsertMany(args.bootstrapPeers, "manual-bootstrap");
+      }
+      if (args.joinInviteSeedAddrs.length > 0) {
+        await discoverySeedStore.upsertMany(args.joinInviteSeedAddrs, "manual-bootstrap");
       }
 
       console.log("Envoy node started");

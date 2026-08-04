@@ -4,6 +4,7 @@ import {
   decodeWanJoinInviteV1,
   encodeWanJoinInviteV1,
   isBootstrapRelayMultiaddr,
+  wanJoinInviteSeedAddrs,
   type WanJoinInviteV1,
 } from "@envoymesh/api";
 
@@ -21,6 +22,11 @@ export function applyJoinInviteToNodeArgs(args: NodeArgs, token: string): void {
   }
   args.bootstrapPresets.push(...invite.bootstrapPresets);
 
-  // Sponsor dial hints (circuit / LAN / bare peer id) are applied at runtime
-  // via discovery seed stores — do not treat them as bootstrap relays.
+  // Sponsor dial hints (circuit / LAN / bare peer id) go to the discovery
+  // seed store via joinInviteSeedAddrs — not bootstrapPeers (rendezvous).
+  for (const addr of wanJoinInviteSeedAddrs(invite)) {
+    if (!args.joinInviteSeedAddrs.includes(addr)) {
+      args.joinInviteSeedAddrs.push(addr);
+    }
+  }
 }

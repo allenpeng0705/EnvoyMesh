@@ -30,6 +30,12 @@ export interface NodeArgs {
   /** STUN servers for public IP discovery. Each entry is {host, port}. */
   stunServers: StunServer[];
   bootstrapPeers: string[];
+  /**
+   * Dial hints from `--join-invite` (circuit / LAN / bare peer id).
+   * Persisted into the discovery seed store at startup — not used as
+   * libp2p bootstrap / rendezvous relay targets.
+   */
+  joinInviteSeedAddrs: string[];
   enableRelay: boolean;
   enableRelayServer: boolean;
   /**
@@ -115,6 +121,7 @@ export function parseNodeArgs(argv: string[]): NodeArgs {
     enableDht: false,
     stunServers: [...DEFAULT_STUN_SERVERS],
     bootstrapPeers: [DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR],
+    joinInviteSeedAddrs: [],
     enableRelay: false,
     enableRelayServer: false,
     enableRelayReservation: true,
@@ -348,7 +355,7 @@ Options:
                          Repeatable. Env: ENVOYMESH_BOOTSTRAP_PRESETS (comma-separated)
   --bootstrap-presets-file <path> Load custom bootstrap preset definitions from YAML. Repeatable.
                          Env: ENVOYMESH_BOOTSTRAP_PRESETS_FILES (comma-separated)
-  --join-invite <token> Apply a WAN join-invite token (adds bootstrap peers/presets). See: npm run cli -w @envoymesh/node -- invite
+  --join-invite <token> Apply a WAN join-invite token (bootstrap relays + dial seeds). See: npm run cli -w @envoymesh/node -- invite
   --relay               Enable circuit relay transport.
   --relay-server        Enable this node as a circuit relay server.
   --relay-reservation   Force a circuit-relay-v2 reservation on each configured relay at startup so /p2p-circuit/ dials reach this node. Default when --relay is set. Disable with --no-relay-reservation. Env: ENVOYMESH_RELAY_RESERVATION (1/true or 0/false).

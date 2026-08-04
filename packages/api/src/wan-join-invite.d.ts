@@ -18,6 +18,18 @@ export declare function buildEnvoyJoinUri(token: string): string;
 export declare function dedupeBootstrapStrings(items: readonly string[]): string[];
 /** Addresses to persist as discovery seeds when accepting an invite. */
 export declare function wanJoinInviteSeedAddrs(invite: WanJoinInviteV1): string[];
+/** True for RFC1918 / loopback listen addrs (not usable as WAN bootstrap). */
+export declare function isPrivateOrLoopbackMultiaddr(addr: string): boolean;
+/**
+ * Multiaddrs safe to treat as libp2p bootstrap / rendezvous relay targets.
+ *
+ * Join invites also carry sponsor dial hints (`/p2p-circuit/…`, LAN listen
+ * addrs, bare peer ids). Those belong in discovery seed stores for
+ * `sendHello`, NOT in `bootstrapPeers` used to register rendezvous or to
+ * warm relay reservations — otherwise WAN installs burn dials on
+ * unreachable LAN and try to "register with" the sponsor circuit.
+ */
+export declare function isBootstrapRelayMultiaddr(addr: string): boolean;
 export declare function mergeWanJoinInviteBootstrap(input: {
     bootstrapPeers: readonly string[];
     bootstrapPresets: readonly string[];
