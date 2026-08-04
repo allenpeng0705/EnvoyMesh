@@ -218,7 +218,7 @@ async function sendRelayCheckin(deps: RelayClientCycleDeps, targets: string[]): 
     peerId: mesh.peerId,
     ownerId: profile.owner.ownerId,
     displayName: deps.displayName,
-    relayReachableAddrs: mesh.multiaddrs,
+    relayReachableAddrs: mesh.getRelayAdvertisedMultiaddrs(),
     capabilities: relayCheckinCapabilities(profile.deviceCertificate.capabilities),
     advertisements: [
       { capability: "mesh.discovery", visibility: "public", expiresAt },

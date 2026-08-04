@@ -638,8 +638,27 @@ async function runSetupSponsorFriendRetryLoop(
         await deps.applyWanJoinInvite(resolved.joinToken);
       }
 
+      // Refresh sponsor circuits via relay.lookup across configured relays
+      // BEFORE dialing. Multi-relay: whichever relay Allen is actually
+      // RESERVED on returns hasHopSlot + circuit multiaddrs; bundled invite
+      // paths alone may point at a different relay.
+      if (resolved.peerId) {
+        try {
+          bondTrace(2, "WAIT", "relay.lookup sponsor across configured relays", {
+            peer: resolved.peerId.slice(0, 16),
+          });
+          await deps.searchPeers({ peerId: resolved.peerId });
+          bondTrace(2, "PASS", "relay.lookup/searchPeers completed for sponsor");
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          bondTrace(2, "WAIT", "relay.lookup/searchPeers failed — falling back to bundled dial hints", {
+            error: msg.slice(0, 120),
+          });
+        }
+      }
+
       // Smart address-filter: refresh sponsor multiaddrs each attempt so
-      // late mDNS / DHT discoveries can flip LAN+circuit → "all" with
+      // late mDNS / DHT / relay.lookup discoveries can flip LAN+circuit → "all" with
       // circuit-first dials. Prefer getPeerMultiaddrs when wired.
       const peerMultiaddrs = deps.getPeerMultiaddrs
         ? await deps.getPeerMultiaddrs()
@@ -685,9 +704,7 @@ async function runSetupSponsorFriendRetryLoop(
         messageId: hello?.messageId?.slice(0, 12),
       });
 
-      // Cache the sponsor's peer record in the local directory after a
-      // successful sendHello. This is best-effort — failure here does not
-      // block the bond flow.
+      // Best-effort peer-directory cache warm (lookup already ran above).
       if (resolved.peerId) {
         try {
           await deps.searchPeers({ peerId: resolved.peerId });

@@ -27,7 +27,7 @@ import { seedAddrsForDiscoveryProfile } from "./peer-discovery-telemetry.js";
 import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key-loader.js";
 import { runRelayClientCycle, startRelayClientScheduler, type RelayClientCycleDeps } from "./relay-client-cycle.js";
 import { startNodeStatsInterval } from "./node-stats-log.js";
-import { warmAndWatchRelayReservations } from "./relay-reservation-health.js";
+import { warmAndWatchRelayReservations, collectRelayControlTargets } from "./relay-reservation-health.js";
 import type { NodeProfile, NodeStatus, DiscoveryProfile } from "@envoymesh/api";
 import type { AgentSetupContext } from "./node-service-agent-setup.js";
 import type { CapabilityDiscoveryContext } from "./node-service-capability-discovery.js";
@@ -242,6 +242,12 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
       eventDriven: connectivityRuntime.bondWarmEventDriven,
     });
 
+    const configuredRelayAddrs = collectRelayControlTargets({
+      configuredRelays: config.configuredRelays,
+      bootstrapPeers,
+      bootstrapPresets: config.bootstrapPresets,
+    });
+
     const meshOptions: EnvoyMeshOptions = {
       listen: ["/ip4/0.0.0.0/tcp/0"],
       advertiseAddrs: config.advertiseAddrs ?? [],
@@ -253,6 +259,7 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
       bootstrapPeers,
       enableRelay: config.relayEnabled ?? true,
       enableRelayServer: config.relayServerEnabled ?? false,
+      configuredRelayAddrs,
       enableAutoNat: true,
       enableDcutr: true,
       ...(connectivityRuntime.maxConnections != null

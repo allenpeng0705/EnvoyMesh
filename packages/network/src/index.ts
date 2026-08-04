@@ -12,7 +12,7 @@ import { ping } from "@libp2p/ping";
 import { tcp } from "@libp2p/tcp";
 import { webSockets } from "@libp2p/websockets";
 import { byteStream } from "@libp2p/utils";
-import { KEEP_ALIVE, type RoutingOptions } from "@libp2p/interface";
+import { KEEP_ALIVE, type RoutingOptions, type TopologyFilter, type PeerId as Libp2pPeerId } from "@libp2p/interface";
 import { peerIdFromString } from "@libp2p/peer-id";
 import type { EnvoyEnvelope } from "@envoymesh/protocol";
 import { CHAT_DELIVERY_ACK_TIMEOUT_MS } from "@envoymesh/protocol";
@@ -23,12 +23,43 @@ import type { Uint8ArrayList } from "uint8arraylist";
 import net from "node:net";
 import { decodeEnvelope, encodeEnvelope } from "./codec.js";
 import {
+  buildConfiguredRelayCircuitListenAddrs,
+  filterMultiaddrsToPreferredRelays,
+  peerIdFromRelayMultiaddr,
+} from "./relay-listen-addrs.js";
+import {
   encodeDataTransferBody,
   MAX_DATA_INBOUND_BYTES,
   parseInboundDataTransferBody,
   parseVoucherJsonObject,
   readAllFromByteStream,
 } from "./data-framing.js";
+
+/**
+ * Topology filter that blocks AutoRelay discovery for peers outside the
+ * configured EnvoyMesh relay allowlist (when that list is non-empty).
+ */
+function createPreferredRelayDiscoveryFilter(
+  getPreferred: () => readonly string[],
+): TopologyFilter {
+  const seen = new Set<string>();
+  return {
+    has(peerId: Libp2pPeerId): boolean {
+      const id = peerId.toString();
+      const preferred = getPreferred();
+      if (preferred.length > 0 && !preferred.includes(id)) {
+        return true;
+      }
+      return seen.has(id);
+    },
+    add(peerId: Libp2pPeerId): void {
+      seen.add(peerId.toString());
+    },
+    remove(peerId: Libp2pPeerId): void {
+      seen.delete(peerId.toString());
+    },
+  };
+}
 
 /**
  * Defense-in-depth cap on inbound envelope bytes for chat and message protocols.
@@ -317,6 +348,14 @@ export interface EnvoyMeshOptions {
   enableRelay?: boolean;
   enableRelayServer?: boolean;
   /**
+   * EnvoyMesh relay bases (e.g. community cn-relay multiaddrs). When non-empty
+   * and `enableRelay` is true, the mesh listens on `<base>/p2p-circuit` for
+   * each instead of bare `/p2p-circuit`. Bare `/p2p-circuit` starts libp2p
+   * AutoRelay discovery against every HOP peer (including public IPFS
+   * bootstraps), which advertises circuits joiners never dial.
+   */
+  configuredRelayAddrs?: string[];
+  /**
    * Tuning for the `circuitRelayServer` service. Only consulted when
    * `enableRelayServer` is true. Public/community relays should override
    * the libp2p defaults — they target an embedded use case.
@@ -489,13 +528,28 @@ export class EnvoyMesh {
     let listenAddrs =
       this.options.enableQuic === true && !browserMode ? expandListenAddressesWithQuic(baseListen) : [...baseListen];
 
-    // Circuit relay v2 clients must advertise `/p2p-circuit` in listen addrs so libp2p can obtain
-    // reservations on relays we dial (e.g. bootstrap). Without this, other peers cannot complete
-    // inbound dials via `/…/p2p-circuit/p2p/<ourPeerId>` even if EMP relay.checkin/lookup work.
-    // Servers use `circuitRelayServer()` and do not need this when only acting as the hop.
-    // Browser nodes always need this (no listening addresses).
-    if ((this.options.enableRelay || browserMode) && !this.options.enableRelayServer && !listenAddrs.includes("/p2p-circuit")) {
-      listenAddrs = [...listenAddrs, "/p2p-circuit"];
+    // Circuit relay v2: prefer listening on configured EnvoyMesh relays
+    // (`<relay>/p2p-circuit`) so AutoRelay does not hunt public IPFS HOP
+    // peers. Bare `/p2p-circuit` remains the fallback when no configured
+    // relays are known (e.g. browser / unconfigured clients).
+    if ((this.options.enableRelay || browserMode) && !this.options.enableRelayServer) {
+      const configuredListen = buildConfiguredRelayCircuitListenAddrs(
+        this.options.configuredRelayAddrs ?? [],
+      );
+      if (configuredListen.length > 0) {
+        for (const a of configuredListen) {
+          if (!listenAddrs.includes(a)) listenAddrs.push(a);
+        }
+        const preferred = configuredListen
+          .map((a) => peerIdFromRelayMultiaddr(a.replace(/\/p2p-circuit$/, "")))
+          .filter((id): id is string => Boolean(id));
+        this.preferredRelayPeerIds = preferred;
+        console.log(
+          `[p2p] circuit listen on ${configuredListen.length} configured relay(s) — AutoRelay discovery suppressed for other HOP peers`,
+        );
+      } else if (!listenAddrs.includes("/p2p-circuit")) {
+        listenAddrs = [...listenAddrs, "/p2p-circuit"];
+      }
     }
 
     for (const raw of this.options.advertiseAddrs ?? []) {
@@ -554,7 +608,14 @@ export class EnvoyMesh {
         ...(browserMode ? [] : [tcp()]),
         ...(enableWebSocket ? [webSockets()] : []),
         ...(this.options.enableRelay || this.options.enableRelayServer || browserMode
-          ? [circuitRelayTransport({ reservationCompletionTimeout: RELAY_RESERVATION_TIMEOUT_MS })]
+          ? [
+              circuitRelayTransport({
+                reservationCompletionTimeout: RELAY_RESERVATION_TIMEOUT_MS,
+                discoveryFilter: createPreferredRelayDiscoveryFilter(
+                  () => this.preferredRelayPeerIds,
+                ),
+              }),
+            ]
           : []),
         ...(quicTransportFactory && !browserMode ? [quicTransportFactory()] : []),
       ],
@@ -733,6 +794,15 @@ export class EnvoyMesh {
     return this.requireNode()
       .getMultiaddrs()
       .map((addr) => addr.toString());
+  }
+
+  /**
+   * Multiaddrs safe to advertise via relay.checkin / WAN invite / provideSelf.
+   * When configured EnvoyMesh relays are known, strips `/p2p-circuit/` paths
+   * whose hop is not in that allowlist (AutoRelay public IPFS circuits).
+   */
+  getRelayAdvertisedMultiaddrs(): string[] {
+    return filterMultiaddrsToPreferredRelays(this.multiaddrs, this.preferredRelayPeerIds);
   }
 
   /** Dialable multiaddrs from the libp2p peer store (includes mDNS-learned LAN paths). */
@@ -1877,8 +1947,12 @@ export class EnvoyMesh {
       // Add runtime-discovered addresses (STUN / relay observed / autoNAT)
       allPublicAddrs.push(...this._appendAnnounce);
 
-      // Deduplicate
-      const uniqueAddrs = [...new Set(allPublicAddrs)];
+      // Deduplicate + drop AutoRelay circuits outside configured relays
+      const uniqueAddrs = [
+        ...new Set(
+          filterMultiaddrsToPreferredRelays(allPublicAddrs, this.preferredRelayPeerIds),
+        ),
+      ];
 
       if (uniqueAddrs.length === 0) {
         console.warn(`[p2p] provideSelf: no publicly dialable addresses to advertise`);
@@ -3860,6 +3934,11 @@ export {
   prioritizeCircuitDialHints,
   relayCircuitToPeer,
 } from "./relay-circuit-hints.js";
+export {
+  buildConfiguredRelayCircuitListenAddrs,
+  filterMultiaddrsToPreferredRelays,
+  peerIdFromRelayMultiaddr,
+} from "./relay-listen-addrs.js";
 import {
   isPrivateRelayHopCircuitDialHint,
   prioritizeCircuitDialHints,

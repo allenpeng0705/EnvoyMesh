@@ -195,7 +195,7 @@ export async function createWanJoinInviteViaRuntime(
   }
 
   let targetMultiaddrs = filterDialableMultiaddrs(
-    reachable?.multiaddrs ?? [],
+    reachable?.getRelayAdvertisedMultiaddrs?.() ?? reachable?.multiaddrs ?? [],
     addressFilter,
   );
 

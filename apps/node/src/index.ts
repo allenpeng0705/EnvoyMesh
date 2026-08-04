@@ -808,6 +808,11 @@ const mesh = new EnvoyMesh({
   bootstrapPeers: effectiveBootstrapPeers,
   enableRelay: args.enableRelay,
   enableRelayServer: args.enableRelayServer,
+  configuredRelayAddrs: collectRelayControlTargets({
+    bootstrapPeers: effectiveBootstrapPeers,
+    configuredRelays: persistedNodeConfig?.configuredRelays,
+    bootstrapPresets: persistedNodeConfig?.bootstrapPresets,
+  }),
   enableAutoNat: args.enableAutoNat,
   enableDcutr: args.enableDcutr,
   enableQuic: args.enableQuic,
