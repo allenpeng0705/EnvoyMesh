@@ -472,9 +472,6 @@ export async function runSetupSponsorFriendViaRuntime(
           lastErrorKind: "mesh-not-ready",
         };
       }
-      bondTrace(1, "PASS", "mesh ready — spawning auto-bond loop", {
-        ownerId: ownerId.slice(0, 20),
-      });
     }
   }
 
@@ -484,27 +481,39 @@ export async function runSetupSponsorFriendViaRuntime(
   // does up to 12×30s of work, and they'd compete for the dial queue).
   // The caller still gets `running: true` so the UI behaves the same.
   if (activeSponsorLoops.has(ownerId)) {
+    bondTrace(1, "WAIT", "auto-bond loop already in flight — not spawning a duplicate", {
+      ownerId: ownerId.slice(0, 20),
+    });
     console.log(
       `[runSetupSponsorFriend] loop already in flight for ownerId=${ownerId.slice(0, 16)}…; returning running: true without spawning a duplicate`,
     );
     return { ok: true, running: true, ownerId };
   }
-  activeSponsorLoops.add(ownerId);
 
   // Self-check: if the sponsor's peer ID or owner ID matches the local node,
   // skip gracefully. This happens when the sponsor themselves runs the app —
-  // they can't bond with themselves.
+  // they can't bond with themselves. Run before claiming the single-flight
+  // slot / logging "spawning" so sponsor machines don't spam false PASS lines.
   const localProfile = await deps.loadNodeProfile();
   if (localProfile) {
     if (resolved.peerId && localProfile.peerId === resolved.peerId) {
-      activeSponsorLoops.delete(ownerId);
+      bondTrace(1, "PASS", "skip auto-bond — sponsor is this peer", {
+        ownerId: ownerId.slice(0, 20),
+      });
       return { ok: true, skipped: true, reason: "sponsor-is-self-peer" };
     }
     if (localProfile.owner.ownerId === ownerId) {
-      activeSponsorLoops.delete(ownerId);
+      bondTrace(1, "PASS", "skip auto-bond — sponsor is this owner", {
+        ownerId: ownerId.slice(0, 20),
+      });
       return { ok: true, skipped: true, reason: "sponsor-is-self-owner" };
     }
   }
+
+  activeSponsorLoops.add(ownerId);
+  bondTrace(1, "PASS", "mesh ready — spawning auto-bond loop", {
+    ownerId: ownerId.slice(0, 20),
+  });
 
   // assertOnline() + loadHelloProfile() live INSIDE the per-attempt try so
   // their failure modes are persisted the same way as network errors. Without

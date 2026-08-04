@@ -139,9 +139,10 @@ const BONDED_CHAT_STREAM_REUSE_TIMEOUT_MS = 4_000;
  *              Still too tight for the community relay at 47.93.11.212
  *              where the circuit-relay-v2 reservation handshake
  *              competes for the same budget.
- *   30_000ms — current; gives the libp2p transport (and any reservation
- *              handshake that piggybacks on the dial) a real chance to
- *              complete across slow cross-region paths.
+ *   30_000ms — prior; still lost to wan-default dial-queue congestion on
+ *              Windows first-launch sponsor bond.
+ *   45_000ms — current; matches bond.request public-circuit AbortSignal
+ *              and libp2p connectionManager dialTimeout.
  *
  * Multiaddr iteration within a single `sendChat` still falls through to
  * the next hint on this timeout, so a slow hint doesn't block the whole
@@ -152,7 +153,7 @@ const BONDED_CHAT_STREAM_REUSE_TIMEOUT_MS = 4_000;
  * this constant or the libp2p-level dial can still cap at the lower
  * value and override our per-hint race.
  */
-const HINT_DIAL_TIMEOUT_MS = 30_000;
+const HINT_DIAL_TIMEOUT_MS = 45_000;
 
 /**
  * circuit-relay-v2 reservation-protocol timeout.
@@ -168,8 +169,8 @@ const HINT_DIAL_TIMEOUT_MS = 30_000;
  *
  * Set to match `HINT_DIAL_TIMEOUT_MS` so the two budgets agree: the
  * dial gives the connection, the reservation gives the slot. With
- * this at 5_000 and `HINT_DIAL_TIMEOUT_MS` at 30_000, a slow relay
- * would dial successfully then fail reservation 25s before the dial
+ * this at 5_000 and `HINT_DIAL_TIMEOUT_MS` at 45_000, a slow relay
+ * would dial successfully then fail reservation long before the dial
  * timeout ever fires — the user sees `relay=PENDING` and the
  * readiness summary's "no reservation yet" warning without any
  * obvious reason.
@@ -595,13 +596,14 @@ export class EnvoyMesh {
         reconnectRetryInterval: 5000,
         reconnectBackoffFactor: 1.5,
         maxParallelReconnects: 10,
-        // Bumped from 15s/10s to 30s in lockstep with HINT_DIAL_TIMEOUT_MS.
-        // The libp2p-level dialTimeout is the hard ceiling for any single
-        // multiaddr dial (the per-hint race above is the soft ceiling for
-        // multiaddr iteration). Keeping them in lockstep ensures both
-        // bounds agree and the slower of the two wins.
-        dialTimeout: 30_000,
-        addressDialTimeout: 30_000,
+        // Bumped from 15s/10s → 30s → 45s in lockstep with WAN bond.request
+        // public-circuit dials (deliverCallEnvelopeViaRuntime). The libp2p-level
+        // dialTimeout is the hard ceiling for any single multiaddr dial; the
+        // app-level AbortSignal is the soft ceiling. Keeping them aligned
+        // ensures a congested wan-default dial queue can still complete a
+        // circuit CONNECT before we give up.
+        dialTimeout: 45_000,
+        addressDialTimeout: 45_000,
       },
       addresses: {
         listen: listenAddrs,
@@ -3168,9 +3170,9 @@ export class EnvoyMesh {
     return Date.now() - startedAt;
   }
 
-  async dial(target: string): Promise<any> {
+  async dial(target: string, options?: { signal?: AbortSignal }): Promise<any> {
     const dialTarget = this._normalizeDialTarget(target);
-    return this.requireNode().dial(dialTarget as any);
+    return this.requireNode().dial(dialTarget as any, options);
   }
 
   /**

@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { bondTrace, classifyBondDialTarget } from "../src/bond-trace.js";
+import {
+  bondDialTimeoutMs,
+  bondTrace,
+  BOND_DEFAULT_DIAL_TIMEOUT_MS,
+  BOND_LAN_OR_PRIVATE_HOP_DIAL_TIMEOUT_MS,
+  BOND_PUBLIC_CIRCUIT_DIAL_TIMEOUT_MS,
+  classifyBondDialTarget,
+} from "../src/bond-trace.js";
 
 describe("bond-trace", () => {
   it("classifies public vs private circuit dial targets", () => {
@@ -14,6 +21,14 @@ describe("bond-trace", () => {
       ),
     ).toBe("private-circuit");
     expect(classifyBondDialTarget("/ip4/192.168.1.10/tcp/4011/p2p/12D3KooWPeer")).toBe("lan");
+  });
+
+  it("uses a longer timeout for bond.request public-circuit dials", () => {
+    expect(bondDialTimeoutMs("public-circuit", true)).toBe(BOND_PUBLIC_CIRCUIT_DIAL_TIMEOUT_MS);
+    expect(bondDialTimeoutMs("public-circuit", false)).toBe(BOND_DEFAULT_DIAL_TIMEOUT_MS);
+    expect(bondDialTimeoutMs("private-circuit", true)).toBe(BOND_LAN_OR_PRIVATE_HOP_DIAL_TIMEOUT_MS);
+    expect(bondDialTimeoutMs("lan", true)).toBe(BOND_LAN_OR_PRIVATE_HOP_DIAL_TIMEOUT_MS);
+    expect(BOND_PUBLIC_CIRCUIT_DIAL_TIMEOUT_MS).toBeGreaterThanOrEqual(45_000);
   });
 
   it("emits grep-friendly step lines", () => {

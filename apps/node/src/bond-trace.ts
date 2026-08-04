@@ -59,3 +59,23 @@ export function classifyBondDialTarget(addr: string): "public-circuit" | "privat
   }
   return "other";
 }
+
+/** WAN public-circuit bond.request — must stay ≥ libp2p dialTimeout. */
+export const BOND_PUBLIC_CIRCUIT_DIAL_TIMEOUT_MS = 45_000;
+/** Private LAN / private-hop circuits fail fast. */
+export const BOND_LAN_OR_PRIVATE_HOP_DIAL_TIMEOUT_MS = 2_000;
+/** Non-bond dials (calls, etc.) keep the historical 15s soft cap. */
+export const BOND_DEFAULT_DIAL_TIMEOUT_MS = 15_000;
+
+export function bondDialTimeoutMs(
+  kind: ReturnType<typeof classifyBondDialTarget>,
+  isBondRequest: boolean,
+): number {
+  if (kind === "lan" || kind === "private-circuit") {
+    return BOND_LAN_OR_PRIVATE_HOP_DIAL_TIMEOUT_MS;
+  }
+  if (isBondRequest && kind === "public-circuit") {
+    return BOND_PUBLIC_CIRCUIT_DIAL_TIMEOUT_MS;
+  }
+  return BOND_DEFAULT_DIAL_TIMEOUT_MS;
+}

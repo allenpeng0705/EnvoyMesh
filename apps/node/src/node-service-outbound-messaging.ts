@@ -34,7 +34,7 @@ import {
   isPrivateRelayHopCircuitDialHint,
   type EnvoyMesh,
 } from "@envoymesh/network";
-import { bondTrace, classifyBondDialTarget } from "./bond-trace.js";
+import { bondTrace, bondDialTimeoutMs, classifyBondDialTarget } from "./bond-trace.js";
 import {
   deliverCallEnvelopeWithRetry,
   deliverChatEnvelopeWithRetry,
@@ -646,25 +646,59 @@ export async function deliverCallEnvelopeViaRuntime(
           });
         }
         for (const addr of ordered) {
-          const timeoutMs =
-            isPrivateLanTcpDialHint(addr) || isPrivateRelayHopCircuitDialHint(addr)
-              ? 2_000
-              : 15_000;
           const kind = classifyBondDialTarget(addr);
+          // bond.request over WAN public-circuit: historical 15s race lost to
+          // wan-default dial-queue congestion (Win first-launch). Keep LAN /
+          // private-hop short; public circuit bond dials use 45s + abort.
+          const timeoutMs = bondDialTimeoutMs(kind, bondTraceDial);
           if (bondTraceDial) {
+            const stats =
+              typeof mesh.getConnectionStats === "function"
+                ? mesh.getConnectionStats()
+                : undefined;
+            const queued = stats?.dialQueueLength ?? 0;
+            // Bootstrap presets can leave 100+ pending dials; wait briefly so
+            // the sponsor circuit CONNECT is not stuck behind DHT churn.
+            if (kind === "public-circuit" && queued > 16) {
+              bondTrace(3, "WAIT", "dial queue congested — settling before circuit dial", {
+                dialQueue: queued,
+                totalConns: stats?.totalConnections,
+              });
+              const settleDeadline = Date.now() + 8_000;
+              while (Date.now() < settleDeadline) {
+                const q = mesh.getConnectionStats()?.dialQueueLength ?? 0;
+                if (q <= 16) break;
+                await new Promise<void>((r) => setTimeout(r, 250));
+              }
+            }
+            const statsAfter =
+              typeof mesh.getConnectionStats === "function"
+                ? mesh.getConnectionStats()
+                : undefined;
             bondTrace(3, "WAIT", "mesh.dial attempt", {
               kind,
               timeoutMs,
+              dialQueue: statsAfter?.dialQueueLength,
+              totalConns: statsAfter?.totalConnections,
               addr: addr.slice(0, 140),
             });
+            // Ensure the circuit hop is connected before CONNECT — reservation
+            // can look live while the relay TCP session is gone.
+            if (kind === "public-circuit") {
+              const relayBase = addr.split("/p2p-circuit/")[0]?.trim();
+              if (relayBase && typeof mesh.eagerConnectToRelays === "function") {
+                try {
+                  await mesh.eagerConnectToRelays([relayBase], { timeoutMs: 10_000 });
+                } catch {
+                  /* best-effort; dial below still runs */
+                }
+              }
+            }
           }
+          const abort = new AbortController();
+          const timer = setTimeout(() => abort.abort(), timeoutMs);
           try {
-            await Promise.race([
-              mesh.dial(addr),
-              new Promise<never>((_, reject) => {
-                setTimeout(() => reject(new Error(`dial timeout (${timeoutMs / 1000}s)`)), timeoutMs);
-              }),
-            ]);
+            await mesh.dial(addr, { signal: abort.signal });
             conn = mesh.getPeerConnectionInfo(transportPeerId);
             if (conn.connected) {
               if (bondTraceDial) {
@@ -683,7 +717,11 @@ export async function deliverCallEnvelopeViaRuntime(
               });
             }
           } catch (dialErr) {
-            const msg = dialErr instanceof Error ? dialErr.message : String(dialErr);
+            const raw = dialErr instanceof Error ? dialErr.message : String(dialErr);
+            const aborted =
+              abort.signal.aborted ||
+              /aborted|AbortError|operation was aborted/i.test(raw);
+            const msg = aborted ? `dial timeout (${timeoutMs / 1000}s)` : raw;
             if (bondTraceDial) {
               bondTrace(3, "FAIL", "mesh.dial failed", {
                 kind,
@@ -693,8 +731,10 @@ export async function deliverCallEnvelopeViaRuntime(
             }
             console.warn(
               `[deliver] mesh.dial failed for ${addr.slice(0, 160)}…:`,
-              dialErr instanceof Error ? dialErr.message : dialErr,
+              msg,
             );
+          } finally {
+            clearTimeout(timer);
           }
         }
         if (!conn.connected) {

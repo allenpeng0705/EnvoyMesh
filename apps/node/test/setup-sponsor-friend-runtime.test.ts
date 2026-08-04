@@ -71,6 +71,74 @@ describe("runSetupSponsorFriendViaRuntime", () => {
       }),
     );
   });
+
+  it("skips when the local node is the sponsor owner (no retry loop)", async () => {
+    const sendHello = vi.fn(async () => ({ messageId: "msg-1" }));
+    const result = await runSetupSponsorFriendViaRuntime({
+      loadNodeConfig: async () => undefined,
+      saveNodeConfig: vi.fn(async () => {}),
+      getProfileDir: () => "/tmp/profile",
+      nodeBundleDir: "/tmp/bundle",
+      applyWanJoinInvite: vi.fn(async () => ({})),
+      searchPeers: vi.fn(async () => []),
+      sendHello,
+      loadHelloProfile: async () => ({
+        displayName: "Allen",
+        bio: "",
+        interests: [],
+        whatShares: [],
+      }),
+      // Different peerId, same ownerId — owner self-check must win.
+      loadNodeProfile: async () =>
+        ({
+          peerId: "12D3KooWDifferentDevicePeerIdxxxxxxxxxxxxxxxxxxxx",
+          owner: { ownerId: "envoy:owner:diBymBI4fBdIe0V_bhwFXhEijf4FVd0uDvyIh_X1E9I" },
+        }) as never,
+      assertOnline: () => {},
+    });
+    expect(result).toEqual({
+      ok: true,
+      skipped: true,
+      reason: "sponsor-is-self-owner",
+    });
+    await flushSponsorLoop();
+    expect(sendHello).not.toHaveBeenCalled();
+  });
+
+  it("single-flights concurrent setup calls for the same sponsor", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const sendHello = vi.fn(async () => {
+      await gate;
+      return { messageId: "msg-1" };
+    });
+    const deps = {
+      loadNodeConfig: async () => undefined,
+      saveNodeConfig: vi.fn(async () => {}),
+      getProfileDir: () => "/tmp/profile",
+      nodeBundleDir: "/tmp/bundle",
+      applyWanJoinInvite: vi.fn(async () => ({})),
+      searchPeers: vi.fn(async () => []),
+      sendHello,
+      loadHelloProfile: async () => ({
+        displayName: "New User",
+        bio: "",
+        interests: [],
+        whatShares: [],
+      }),
+      loadNodeProfile: async () => undefined,
+      assertOnline: () => {},
+    };
+    const first = await runSetupSponsorFriendViaRuntime(deps);
+    const second = await runSetupSponsorFriendViaRuntime(deps);
+    expect(first).toMatchObject({ ok: true, running: true });
+    expect(second).toMatchObject({ ok: true, running: true });
+    release();
+    await flushSponsorLoop();
+    expect(sendHello).toHaveBeenCalledTimes(1);
+  });
 });
 
 describe("classifySponsorError", () => {
