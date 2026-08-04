@@ -394,4 +394,62 @@ if [ -f "$ROOT/push-config.json" ] && command -v node >/dev/null 2>&1; then
   fi
 fi
 
+# Guard: auto-bond join-invite merge must filter circuit/LAN out of bootstrap.
+# Stale packages/api/dist (pre-filter) would reintroduce the Windows 5G hang.
+echo "  Verifying wan-join-invite bootstrap filter in staged @envoymesh/api..."
+NODE_BIN="${ENVOYMESH_NODE_EXE:-node}"
+FILTER_JS="$DEST/node_modules/@envoymesh/api/dist/wan-join-invite.js"
+if [ ! -f "$FILTER_JS" ]; then
+  echo "  CRITICAL: missing $FILTER_JS — run npx tsc -b before packaging" >&2
+  exit 1
+fi
+if ! grep -q "isBootstrapRelayMultiaddr" "$FILTER_JS"; then
+  echo "  CRITICAL: staged wan-join-invite.js lacks isBootstrapRelayMultiaddr (stale dist)" >&2
+  echo "  Rebuild with: npx tsc -b" >&2
+  exit 1
+fi
+if ! (
+  cd "$DEST" && "$NODE_BIN" --input-type=module -e '
+import {
+  mergeWanJoinInviteBootstrap,
+  isBootstrapRelayMultiaddr,
+} from "./node_modules/@envoymesh/api/dist/wan-join-invite.js";
+const community =
+  "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo";
+const circuit =
+  community + "/p2p-circuit/p2p/12D3KooWQsD3ougrAJjmKeevSiY2azE5CKqLjcijyYreS6fUFYCR";
+const lan =
+  "/ip4/192.168.3.85/tcp/64589/p2p/12D3KooWQsD3ougrAJjmKeevSiY2azE5CKqLjcijyYreS6fUFYCS";
+if (typeof isBootstrapRelayMultiaddr !== "function") {
+  throw new Error("isBootstrapRelayMultiaddr missing from staged wan-join-invite.js");
+}
+const merged = mergeWanJoinInviteBootstrap({
+  bootstrapPeers: [],
+  bootstrapPresets: [],
+  invite: {
+    v: 1,
+    createdAt: "2026-07-13T00:00:00.000Z",
+    targetPeerId: "12D3KooWQsD3ougrAJjmKeevSiY2azE5CKqLjcijyYreS6fUFYCR",
+    targetMultiaddrs: [circuit],
+    bootstrapPeers: [community, lan],
+    bootstrapPresets: ["cn-relay"],
+  },
+});
+if (merged.bootstrapPeers.length !== 1 || merged.bootstrapPeers[0] !== community) {
+  throw new Error("bootstrapPeers must be community relay only, got: " + JSON.stringify(merged.bootstrapPeers));
+}
+if (!merged.seedAddrs.includes(circuit) || !merged.seedAddrs.includes(lan)) {
+  throw new Error("seedAddrs must retain circuit + LAN dial hints");
+}
+if (isBootstrapRelayMultiaddr(circuit) || isBootstrapRelayMultiaddr(lan)) {
+  throw new Error("circuit/LAN must not pass isBootstrapRelayMultiaddr");
+}
+console.log("  ✓ wan-join-invite bootstrap filter OK");
+'
+); then
+  echo "  CRITICAL: staged @envoymesh/api failed wan-join-invite filter check" >&2
+  echo "  Rebuild with: npx tsc -b   (do not package a stale packages/api/dist)" >&2
+  exit 1
+fi
+
 echo "  ✓ Node runtime staged at $DEST"

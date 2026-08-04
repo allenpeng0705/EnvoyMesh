@@ -433,18 +433,30 @@ my-org:
   });
 
   it("applies join-invite token", () => {
+    const community =
+      "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo";
+    const circuit = `${community}/p2p-circuit/p2p/12D3KooWQsD3ougrAJjmKeevSiY2azE5CKqLjcijyYreS6fUFYCR`;
+    const lan = "/ip4/10.0.0.3/tcp/5001/p2p/12D3KooWPeerCxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
     const token = Buffer.from(
       JSON.stringify({
         v: 1,
         createdAt: "2026-04-28T00:00:00.000Z",
-        bootstrapPeers: ["/ip4/10.0.0.3/tcp/5001/p2p/peer-c"],
+        targetPeerId: "12D3KooWQsD3ougrAJjmKeevSiY2azE5CKqLjcijyYreS6fUFYCR",
+        targetMultiaddrs: [circuit],
+        bootstrapPeers: [community, lan],
         bootstrapPresets: ["public-libp2p-am6"],
       }),
       "utf8",
     ).toString("base64url");
 
     const args = parseNodeArgs(["--join-invite", token]);
-    expect(args.bootstrapPeers).toContain("/ip4/10.0.0.3/tcp/5001/p2p/peer-c");
+    // Public relay → bootstrap; LAN/circuit → dial seeds only.
+    expect(args.bootstrapPeers).toContain(community);
+    expect(args.bootstrapPeers).not.toContain(lan);
+    expect(args.bootstrapPeers).not.toContain(circuit);
+    expect(args.joinInviteSeedAddrs).toEqual(
+      expect.arrayContaining([community, lan, circuit, "12D3KooWQsD3ougrAJjmKeevSiY2azE5CKqLjcijyYreS6fUFYCR"]),
+    );
     expect(args.bootstrapPeers.some((peer) => peer.includes("am6.bootstrap.libp2p.io"))).toBe(true);
   });
 

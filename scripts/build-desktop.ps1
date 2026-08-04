@@ -569,21 +569,29 @@ $nodeDistEntry = Join-Path $RepoRoot "apps/node/dist/src/index.js"
 
 if (-not $SkipTypecheck) {
     Write-Info "TypeScript build (tsc -b)..."
-    $tcExit = Invoke-ExternalQuiet npm run node:build
+    # Full workspace project-references build (same as build-desktop.sh).
+    # `npm run node:build` alone can leave packages/api/dist stale when only
+    # apps/node timestamps change — that ships the old join-invite merge.
+    $tcExit = Invoke-ExternalQuiet npx tsc -b
     if ($tcExit -ne 0) {
-        Write-Fail "npm run node:build failed (exit $tcExit). The Tauri bundle requires a compiled EnvoyMesh node at apps\node\dist\."
-        Write-Info "  Try: cd $RepoRoot ; npm ci ; npm run node:build"
+        Write-Fail "npx tsc -b failed (exit $tcExit). The Tauri bundle requires compiled workspace packages + apps\node\dist\."
+        Write-Info "  Try: cd $RepoRoot ; npm ci ; npx tsc -b"
         exit 1
     }
     if (-not (Test-Path $nodeDistEntry)) {
-        Write-Fail "npm run node:build returned 0 but apps\node\dist\src\index.js is still missing — check the build output for errors."
+        Write-Fail "npx tsc -b returned 0 but apps\node\dist\src\index.js is still missing — check the build output for errors."
         exit 1
     }
-    Write-Ok "EnvoyMesh node compiled"
+    Write-Ok "EnvoyMesh workspace + node compiled"
 } else {
-    Write-Info "-SkipTypecheck: skipping npm run node:build"
+    Write-Info "-SkipTypecheck: skipping npx tsc -b"
     if (-not (Test-Path $nodeDistEntry)) {
         Write-Fail "apps\node\dist\src\index.js missing and -SkipTypecheck was passed — cannot continue"
+        exit 1
+    }
+    $apiMergeJs = Join-Path $RepoRoot "packages\api\dist\wan-join-invite.js"
+    if (-not (Test-Path $apiMergeJs) -or -not (Select-String -Path $apiMergeJs -Pattern "isBootstrapRelayMultiaddr" -Quiet)) {
+        Write-Fail "packages\api\dist\wan-join-invite.js lacks isBootstrapRelayMultiaddr — rebuild with npx tsc -b before -SkipTypecheck"
         exit 1
     }
 }
@@ -662,7 +670,7 @@ if ($stageError) {
     Write-Fail "stage-bundle-node-runtime.ps1 failed"
     Write-Info "  Reason: $stageError"
     Write-Info "  The most common cause is a workspace package without a built dist. From the repo root, run:"
-    Write-Info "    npm run node:build"
+    Write-Info "    npx tsc -b"
     exit 1
 }
 
