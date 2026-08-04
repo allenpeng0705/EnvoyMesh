@@ -449,6 +449,13 @@ export class EnvoyMesh {
   private relayEverAdvertised = false;
   /** Peer IDs of relays that have granted us a reservation this process. */
   private lastReservedRelayPeerIds: string[] = [];
+  /**
+   * Configured EnvoyMesh relay peer IDs (from reservation health warmup).
+   * When non-empty, UI / mesh-ready / hasLiveRelayReservation() only count
+   * slots on these peers — AutoRelay may still reserve on public IPFS hops,
+   * but those must not show as RESERVED for WAN invite / auto-bond.
+   */
+  private preferredRelayPeerIds: string[] = [];
   private lastReservedAt: string | undefined;
   private lastReservationError: string | undefined;
   private reservationHealthTimer?: ReturnType<typeof setTimeout>;
@@ -949,14 +956,14 @@ export class EnvoyMesh {
   /**
    * True only when libp2p's reservation store currently reports a slot for
    * a known relay peer. Returns false when the store is unavailable or empty.
+   *
+   * When {@link preferredRelayPeerIds} is set (configured EnvoyMesh relays),
+   * only those peers count — unless `relayPeerIds` is passed explicitly.
    */
   hasLiveRelayReservation(relayPeerIds?: readonly string[]): boolean {
     const hasReservation = this.getClientHasReservationFn();
     if (!hasReservation) return false;
-    const candidates = [
-      ...(relayPeerIds ?? []),
-      ...this.lastReservedRelayPeerIds,
-    ];
+    const candidates = this.resolveReservationCheckPeerIds(relayPeerIds);
     const seen = new Set<string>();
     for (const id of candidates) {
       const trimmed = id.trim();
@@ -972,8 +979,25 @@ export class EnvoyMesh {
   }
 
   /**
+   * Peer IDs to query in the reservation store.
+   * Prefer explicit args → configured/preferred relays → any last-reserved.
+   */
+  private resolveReservationCheckPeerIds(relayPeerIds?: readonly string[]): string[] {
+    if (relayPeerIds && relayPeerIds.length > 0) {
+      return [...relayPeerIds];
+    }
+    if (this.preferredRelayPeerIds.length > 0) {
+      return [...this.preferredRelayPeerIds];
+    }
+    return [...this.lastReservedRelayPeerIds];
+  }
+
+  /**
    * Operator / UI snapshot of circuit-relay reservation health.
    * `state` is the chip value: off | pending | reserved | failed.
+   *
+   * When configured EnvoyMesh relays are known, RESERVED means a live slot
+   * on one of those peers — not an AutoRelay reservation on a random public hop.
    */
   getRelayReservationStatus(): RelayReservationStatus {
     const enableRelay = this.options.enableRelay === true || this.options.browserMode === true;
@@ -998,8 +1022,16 @@ export class EnvoyMesh {
         checkedAt: new Date().toISOString(),
       };
     }
-    const live = this.hasLiveRelayReservation();
-    const relayPeerIds = [...this.lastReservedRelayPeerIds];
+    const checkIds = this.resolveReservationCheckPeerIds();
+    const live = this.hasLiveRelayReservation(checkIds);
+    const relayPeerIds =
+      this.preferredRelayPeerIds.length > 0
+        ? [...this.preferredRelayPeerIds]
+        : [...this.lastReservedRelayPeerIds];
+    const everOnPreferred =
+      this.preferredRelayPeerIds.length > 0
+        ? this.preferredRelayPeerIds.some((id) => this.lastReservedRelayPeerIds.includes(id))
+        : this.relayEverReserved;
     if (live) {
       return {
         state: "reserved",
@@ -1010,7 +1042,7 @@ export class EnvoyMesh {
         checkedAt: new Date().toISOString(),
       };
     }
-    if (this.lastReservationError && !this.relayEverReserved) {
+    if (this.lastReservationError && !everOnPreferred) {
       return {
         state: "failed",
         live: false,
@@ -1020,7 +1052,7 @@ export class EnvoyMesh {
         checkedAt: new Date().toISOString(),
       };
     }
-    if (this.relayEverReserved && !live) {
+    if (everOnPreferred && !live) {
       return {
         state: "failed",
         live: false,
@@ -1028,7 +1060,9 @@ export class EnvoyMesh {
         relayPeerIds,
         lastError:
           this.lastReservationError ??
-          "Reservation was granted earlier but is no longer live in the local store — re-warming.",
+          (this.preferredRelayPeerIds.length > 0
+            ? "No live reservation on configured EnvoyMesh relay(s) — re-warming (AutoRelay public hops do not count)."
+            : "Reservation was granted earlier but is no longer live in the local store — re-warming."),
         lastReservedAt: this.lastReservedAt,
         checkedAt: new Date().toISOString(),
       };
@@ -1036,7 +1070,7 @@ export class EnvoyMesh {
     return {
       state: "pending",
       live: false,
-      everReserved: this.relayEverReserved,
+      everReserved: everOnPreferred,
       relayPeerIds,
       lastError: this.lastReservationError,
       checkedAt: new Date().toISOString(),
@@ -1059,6 +1093,7 @@ export class EnvoyMesh {
     const addrs = [...new Set(relayMultiaddrs.map((a) => a.trim()).filter(Boolean))];
     this.reservationHealthRelayAddrs = addrs;
     if (addrs.length === 0) {
+      this.preferredRelayPeerIds = [];
       return () => undefined;
     }
     const healthyMs = options?.intervalMs ?? 5 * 60_000;
@@ -1071,6 +1106,7 @@ export class EnvoyMesh {
         return m?.[1];
       })
       .filter((id): id is string => Boolean(id));
+    this.preferredRelayPeerIds = [...relayPeerIds];
     let wasLive = this.hasLiveRelayReservation(relayPeerIds);
 
     const tick = async (reason: string): Promise<void> => {
@@ -1146,6 +1182,7 @@ export class EnvoyMesh {
       this.reservationHealthDisconnectUnsub = undefined;
     }
     this.reservationHealthRelayAddrs = [];
+    this.preferredRelayPeerIds = [];
   }
 
   /** Open libp2p remote peer ids from the connection manager (direct + relay). */
@@ -3242,6 +3279,20 @@ export class EnvoyMesh {
         | { relayPeerId?: { toString(): string }; ttl?: number; limit?: { data?: number; duration?: number } }
         | undefined;
       const relayId = detail?.relayPeerId?.toString() ?? "?";
+      const isPreferred =
+        this.preferredRelayPeerIds.length === 0 ||
+        (relayId !== "?" && this.preferredRelayPeerIds.includes(relayId));
+      if (!isPreferred) {
+        // AutoRelay often reserves on public IPFS bootstraps. That does not
+        // make this node reachable via the configured EnvoyMesh community
+        // relay that WAN invites / auto-bond dial.
+        console.log(
+          `[relay] AutoRelay opportunistic slot on relay=${relayId.slice(0, 12)}… ` +
+            `(ttl=${detail?.ttl ?? "?"}s) — ignored for RESERVED status; ` +
+            `configured relays=${this.preferredRelayPeerIds.map((id) => id.slice(0, 12)).join(",") || "(none)"}`,
+        );
+        return;
+      }
       this.relayEverReserved = true;
       this.lastReservationError = undefined;
       this.lastReservedAt = new Date().toISOString();

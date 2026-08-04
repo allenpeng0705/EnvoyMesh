@@ -26,7 +26,12 @@ const DEFAULT_MAX_RELAY_CONTROL_TARGETS = 4;
 
 /**
  * Unified EnvoyMesh relay control targets for checkin, lookup, and reservation.
- * Excludes public libp2p DHT bootstraps and circuit paths; dedupes; caps length.
+ * Excludes public libp2p DHT bootstraps, circuit paths, and private LAN addrs;
+ * dedupes; caps length.
+ *
+ * When `configuredRelays` has at least one usable addr, bootstrapPeers are
+ * not used as extra reservation targets (AutoRelay / DHT noise). Community
+ * cn-relay is still added when the cn-relay preset / community bootstrap is set.
  */
 export function collectRelayControlTargets(config: RelayControlTargetConfig): string[] {
   const maxTargets = config.maxTargets ?? DEFAULT_MAX_RELAY_CONTROL_TARGETS;
@@ -46,10 +51,13 @@ export function collectRelayControlTargets(config: RelayControlTargetConfig): st
     // node's mesh dial path, not the relay control target list.
     if (!t.includes("/p2p/")) return;
     if (t.includes("bootstrap.libp2p.io")) return;
+    // LAN / loopback cannot be a WAN circuit hop for remote joiners.
+    if (isPrivateLanRelayControlAddr(t)) return;
     out.push(t);
   };
 
   for (const a of configured) push(a);
+  const hadConfigured = out.length > 0;
 
   const bootstrap = config.bootstrapPeers ?? [];
   const presets = config.bootstrapPresets ?? [];
@@ -61,9 +69,14 @@ export function collectRelayControlTargets(config: RelayControlTargetConfig): st
     push(DEFAULT_ENVOY_COMMUNITY_RELAY_BOOTSTRAP_ADDR);
   }
 
-  for (const a of bootstrap) {
-    if (out.length >= maxTargets) break;
-    push(a);
+  // Only backfill bootstrap peers when no configured EnvoyMesh relays exist.
+  // Otherwise polluted bootstrap lists (self peer, LAN, random DHT) steal
+  // reservation attempts and confuse AutoRelay.
+  if (!hadConfigured) {
+    for (const a of bootstrap) {
+      if (out.length >= maxTargets) break;
+      push(a);
+    }
   }
 
   for (const a of config.activeRelayAddrs ?? []) {
@@ -72,6 +85,11 @@ export function collectRelayControlTargets(config: RelayControlTargetConfig): st
   }
 
   return out.slice(0, maxTargets);
+}
+
+/** RFC1918 / link-local / loopback — not usable as WAN reservation hops. */
+function isPrivateLanRelayControlAddr(addr: string): boolean {
+  return /\/ip4\/(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|127\.|169\.254\.)/.test(addr);
 }
 
 /** @deprecated Prefer collectRelayControlTargets — alias for reserve warmup. */

@@ -25,12 +25,10 @@ describe("collectRelayControlTargets", () => {
 
   it("caps at 4 and skips DHT bootstraps / circuits", () => {
     const addrs = collectRelayControlTargets({
-      configuredRelays: [
-        { enabled: true, addr: `${RELAY_A}/p2p-circuit/p2p/12D3KooWHome` },
-        { enabled: true, addr: RELAY_A },
-      ],
+      configuredRelays: [],
       bootstrapPeers: [
         "/dnsaddr/bootstrap.libp2p.io/p2p/12D3KooWBootstrap",
+        RELAY_A,
         RELAY_B,
         "/ip4/9.9.9.9/tcp/4001/p2p/12D3KooWCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCCC",
         "/ip4/8.8.8.8/tcp/4001/p2p/12D3KooWDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD",
@@ -41,6 +39,28 @@ describe("collectRelayControlTargets", () => {
     expect(addrs.every((a) => !a.includes("bootstrap.libp2p.io"))).toBe(true);
     expect(addrs).toContain(RELAY_A);
     expect(addrs.length).toBe(4);
+  });
+
+  it("does not backfill polluted bootstrap peers when configuredRelays is set", () => {
+    const addrs = collectRelayControlTargets({
+      configuredRelays: [{ enabled: true, addr: RELAY_A }],
+      bootstrapPeers: [
+        "/ip4/192.168.3.85/tcp/64589/p2p/12D3KooWQsD3ougrAJjmKeevSiY2azE5CKqLjcijyYreS6fUFYCR",
+        RELAY_B,
+      ],
+    });
+    expect(addrs).toEqual([RELAY_A]);
+  });
+
+  it("skips private LAN multiaddrs as reservation targets", () => {
+    const addrs = collectRelayControlTargets({
+      configuredRelays: [],
+      bootstrapPeers: [
+        "/ip4/192.168.3.85/tcp/4001/p2p/12D3KooWLANRELAYXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+        RELAY_A,
+      ],
+    });
+    expect(addrs).toEqual([RELAY_A]);
   });
 
   it("is used by collectKnownRelayAddrs (reserve parity)", () => {
@@ -174,5 +194,32 @@ describe("EnvoyMesh reservation status (unit via prototype stubs)", () => {
     expect(mesh.hasLiveRelayReservation()).toBe(false);
     expect(mesh.hasRelayReservation()).toBe(false);
     expect(mesh.getRelayReservationStatus().state).toBe("failed");
+  });
+
+  it("RESERVED status ignores AutoRelay slots outside preferred/configured relays", async () => {
+    const { EnvoyMesh } = await import("@envoymesh/network");
+    const mesh = new EnvoyMesh({ enableRelay: true });
+    const configured = "12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo";
+    const opportunistic = "12D3KooWMH4hRLwnNMu6JDZCFRFqYBXEyo8bfYYoT4sqi2Nx48NS";
+    (mesh as unknown as { preferredRelayPeerIds: string[] }).preferredRelayPeerIds = [configured];
+    (mesh as unknown as { lastReservedRelayPeerIds: string[] }).lastReservedRelayPeerIds = [
+      opportunistic,
+    ];
+    (mesh as unknown as { relayEverReserved: boolean }).relayEverReserved = true;
+    (mesh as unknown as { getClientHasReservationFn: () => ((id: unknown) => boolean) | undefined })
+      .getClientHasReservationFn = () => (pid: { toString(): string }) =>
+        pid.toString() === opportunistic;
+
+    expect(mesh.hasLiveRelayReservation()).toBe(false);
+    expect(mesh.getRelayReservationStatus().state).toBe("pending");
+
+    (mesh as unknown as { getClientHasReservationFn: () => ((id: unknown) => boolean) | undefined })
+      .getClientHasReservationFn = () => (pid: { toString(): string }) =>
+        pid.toString() === configured;
+    (mesh as unknown as { lastReservedRelayPeerIds: string[] }).lastReservedRelayPeerIds = [
+      configured,
+    ];
+    expect(mesh.hasLiveRelayReservation()).toBe(true);
+    expect(mesh.getRelayReservationStatus().state).toBe("reserved");
   });
 });
