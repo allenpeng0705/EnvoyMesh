@@ -1494,6 +1494,8 @@ export interface CircuitReservationStatus {
   live: boolean;
   everReserved: boolean;
   relayPeerIds: string[];
+  /** Preferred relays that currently hold a live slot (subset of relayPeerIds). */
+  liveRelayPeerIds?: string[];
   lastError?: string;
   lastReservedAt?: string;
   checkedAt: string;

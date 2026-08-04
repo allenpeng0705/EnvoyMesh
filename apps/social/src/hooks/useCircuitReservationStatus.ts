@@ -6,6 +6,8 @@ export type CircuitReservationChipView = {
   state: string;
   live: boolean;
   lastError?: string;
+  /** e.g. "2/3" when multiple configured relays are tracked. */
+  liveFraction?: string;
 };
 
 /**
@@ -38,6 +40,10 @@ export function useCircuitReservationStatus(options: {
             state: status.state,
             live: status.live,
             lastError: status.lastError,
+            liveFraction:
+              status.relayPeerIds.length > 1
+                ? `${(status.liveRelayPeerIds ?? []).length}/${status.relayPeerIds.length}`
+                : undefined,
           });
         })
         .catch(() => {

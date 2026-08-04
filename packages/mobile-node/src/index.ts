@@ -4554,6 +4554,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
         live: false,
         everReserved: false,
         relayPeerIds: [],
+        liveRelayPeerIds: [],
         checkedAt: new Date().toISOString(),
       },
       quicEnabled: false,
@@ -4568,6 +4569,7 @@ You are the owner's personal AI assistant on EnvoyMesh.
       live: false,
       everReserved: false,
       relayPeerIds: [] as string[],
+      liveRelayPeerIds: [] as string[],
       checkedAt: new Date().toISOString(),
     };
   }

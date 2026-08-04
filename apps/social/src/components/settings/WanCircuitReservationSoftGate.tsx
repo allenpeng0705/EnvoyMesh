@@ -32,7 +32,9 @@ export function WanCircuitReservationSoftGate(props: {
         >
           {state}
         </strong>
-        {props.chip?.live ? ` — ${props.liveLabel}` : ""}
+        {props.chip?.live
+          ? ` — ${props.liveLabel}${props.chip.liveFraction ? ` (${props.chip.liveFraction})` : ""}`
+          : ""}
         {props.chip?.lastError ? ` — ${props.chip.lastError}` : ""}
       </p>
       {!props.ready ? (

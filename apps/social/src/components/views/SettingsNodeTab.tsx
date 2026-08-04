@@ -1837,7 +1837,11 @@ export function SettingsNodeTab() {
                   {(connectivityDiagnostics.circuitReservation?.state ?? "off").toUpperCase()}
                 </span>
                 {connectivityDiagnostics.circuitReservation?.live
-                  ? ` — ${t("settings.network.wanDiagnostics.circuitReservationLive")}`
+                  ? ` — ${t("settings.network.wanDiagnostics.circuitReservationLive")}${
+                      (connectivityDiagnostics.circuitReservation.relayPeerIds?.length ?? 0) > 1
+                        ? ` (${(connectivityDiagnostics.circuitReservation.liveRelayPeerIds ?? []).length}/${connectivityDiagnostics.circuitReservation.relayPeerIds.length})`
+                        : ""
+                    }`
                   : ""}
                 {connectivityDiagnostics.circuitReservation?.lastError
                   ? ` — ${connectivityDiagnostics.circuitReservation.lastError}`

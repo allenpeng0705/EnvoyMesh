@@ -315,11 +315,14 @@ export type RelayReservationState = "off" | "pending" | "reserved" | "failed";
 
 export interface RelayReservationStatus {
   state: RelayReservationState;
-  /** True when the local reservation store currently holds a slot. */
+  /** True when at least one preferred/configured relay currently holds a slot. */
   live: boolean;
   /** True if a reservation succeeded at least once this process. */
   everReserved: boolean;
+  /** Configured/preferred relay peer IDs (allowlist). */
   relayPeerIds: string[];
+  /** Subset of {@link relayPeerIds} with a live slot right now. */
+  liveRelayPeerIds: string[];
   lastError?: string;
   lastReservedAt?: string;
   checkedAt: string;
@@ -1049,6 +1052,36 @@ export class EnvoyMesh {
   }
 
   /**
+   * Preferred/configured relay peer IDs that currently hold a live slot.
+   * Empty when the store is unavailable or no preferred relays are set.
+   */
+  listLivePreferredRelayPeerIds(relayPeerIds?: readonly string[]): string[] {
+    const hasReservation = this.getClientHasReservationFn();
+    if (!hasReservation) return [];
+    const candidates = this.resolveReservationCheckPeerIds(relayPeerIds);
+    const live: string[] = [];
+    const seen = new Set<string>();
+    for (const id of candidates) {
+      const trimmed = id.trim();
+      if (!trimmed || seen.has(trimmed)) continue;
+      seen.add(trimmed);
+      try {
+        if (hasReservation(peerIdFromString(trimmed))) live.push(trimmed);
+      } catch {
+        /* ignore invalid peer ids */
+      }
+    }
+    return live;
+  }
+
+  /** True when every preferred/configured relay currently has a live slot. */
+  hasAllPreferredRelayReservations(relayPeerIds?: readonly string[]): boolean {
+    const candidates = this.resolveReservationCheckPeerIds(relayPeerIds);
+    if (candidates.length === 0) return this.hasLiveRelayReservation();
+    return this.listLivePreferredRelayPeerIds(candidates).length === candidates.length;
+  }
+
+  /**
    * Peer IDs to query in the reservation store.
    * Prefer explicit args → configured/preferred relays → any last-reserved.
    */
@@ -1072,28 +1105,27 @@ export class EnvoyMesh {
   getRelayReservationStatus(): RelayReservationStatus {
     const enableRelay = this.options.enableRelay === true || this.options.browserMode === true;
     const enableServer = this.options.enableRelayServer === true;
+    const empty = (): RelayReservationStatus => ({
+      state: "off",
+      live: false,
+      everReserved: false,
+      relayPeerIds: [],
+      liveRelayPeerIds: [],
+      checkedAt: new Date().toISOString(),
+    });
     if (!enableRelay && !enableServer) {
-      return {
-        state: "off",
-        live: false,
-        everReserved: false,
-        relayPeerIds: [],
-        checkedAt: new Date().toISOString(),
-      };
+      return empty();
     }
     // Relay servers hold *other* peers' reservations; this status is for
     // client-side inbound reachability via /p2p-circuit/.
     if (enableServer && !enableRelay) {
-      return {
-        state: "off",
-        live: false,
-        everReserved: false,
-        relayPeerIds: [],
-        checkedAt: new Date().toISOString(),
-      };
+      return empty();
     }
     const checkIds = this.resolveReservationCheckPeerIds();
-    const live = this.hasLiveRelayReservation(checkIds);
+    const liveRelayPeerIds = this.listLivePreferredRelayPeerIds(checkIds);
+    const live = liveRelayPeerIds.length > 0;
+    const allLive =
+      checkIds.length > 0 ? liveRelayPeerIds.length === checkIds.length : live;
     const relayPeerIds =
       this.preferredRelayPeerIds.length > 0
         ? [...this.preferredRelayPeerIds]
@@ -1102,13 +1134,19 @@ export class EnvoyMesh {
       this.preferredRelayPeerIds.length > 0
         ? this.preferredRelayPeerIds.some((id) => this.lastReservedRelayPeerIds.includes(id))
         : this.relayEverReserved;
+    const partialHint =
+      live && !allLive && relayPeerIds.length > 1
+        ? `Partial reservation ${liveRelayPeerIds.length}/${relayPeerIds.length} configured relays — re-warming missing hops.`
+        : undefined;
     if (live) {
       return {
         state: "reserved",
         live: true,
         everReserved: true,
         relayPeerIds,
+        liveRelayPeerIds,
         lastReservedAt: this.lastReservedAt,
+        lastError: partialHint,
         checkedAt: new Date().toISOString(),
       };
     }
@@ -1118,6 +1156,7 @@ export class EnvoyMesh {
         live: false,
         everReserved: false,
         relayPeerIds,
+        liveRelayPeerIds,
         lastError: this.lastReservationError,
         checkedAt: new Date().toISOString(),
       };
@@ -1128,6 +1167,7 @@ export class EnvoyMesh {
         live: false,
         everReserved: true,
         relayPeerIds,
+        liveRelayPeerIds,
         lastError:
           this.lastReservationError ??
           (this.preferredRelayPeerIds.length > 0
@@ -1142,6 +1182,7 @@ export class EnvoyMesh {
       live: false,
       everReserved: everOnPreferred,
       relayPeerIds,
+      liveRelayPeerIds,
       lastError: this.lastReservationError,
       checkedAt: new Date().toISOString(),
     };
@@ -1149,11 +1190,11 @@ export class EnvoyMesh {
 
   /**
    * Periodically re-check live reservation and re-run
-   * eagerConnect + requestRelayReservation when the slot is gone.
+   * eagerConnect + requestRelayReservation when any configured hop is missing.
    * Also re-warms shortly after a configured relay peer disconnects.
    *
-   * Uses an adaptive interval: faster while pending/failed so cold-start
-   * NAT nodes recover quickly; slower once a live reservation is held.
+   * Uses an adaptive interval: faster while pending/partial/failed; slower
+   * only when *all* preferred relays hold a live slot.
    */
   startRelayReservationHealthLoop(
     relayMultiaddrs: readonly string[],
@@ -1179,23 +1220,38 @@ export class EnvoyMesh {
     this.preferredRelayPeerIds = [...relayPeerIds];
     let wasLive = this.hasLiveRelayReservation(relayPeerIds);
 
+    const missingRelayAddrs = (): string[] => {
+      const liveIds = new Set(this.listLivePreferredRelayPeerIds(relayPeerIds));
+      if (liveIds.size === relayPeerIds.length) return [];
+      return addrs.filter((a) => {
+        const m = a.match(/\/p2p\/([^/]+)$/);
+        const id = m?.[1];
+        return Boolean(id) && !liveIds.has(id!);
+      });
+    };
+
     const tick = async (reason: string): Promise<void> => {
       if (this.reservationHealthRunning || !this.node) return;
-      if (this.hasLiveRelayReservation(relayPeerIds)) {
+      const missing = missingRelayAddrs();
+      if (missing.length === 0) {
         wasLive = true;
         return;
       }
       this.reservationHealthRunning = true;
       try {
-        console.log(`[p2p] relay reservation health (${reason}): slot missing — re-warming`);
-        await this.eagerConnectToRelays(addrs, { timeoutMs: 30_000 });
-        const resv = await this.requestRelayReservation(addrs);
+        console.log(
+          `[p2p] relay reservation health (${reason}): missing ${missing.length}/${addrs.length} preferred hop(s) — re-warming`,
+        );
+        await this.eagerConnectToRelays(missing, { timeoutMs: 30_000 });
+        const resv = await this.requestRelayReservation(missing);
         console.log(
           `[p2p] relay reservation health (${reason}): reserved=${resv.reserved} failed=${resv.failed}` +
             (resv.failures.length > 0 ? ` failures=${JSON.stringify(resv.failures)}` : ""),
         );
-        if (resv.failed > 0 && resv.reserved === 0) {
+        if (resv.failed > 0 && resv.reserved === 0 && !this.hasLiveRelayReservation(relayPeerIds)) {
           this.lastReservationError = resv.failures[0] ?? "reservation health re-warm failed";
+        } else if (this.hasAllPreferredRelayReservations(relayPeerIds)) {
+          this.lastReservationError = undefined;
         }
         wasLive = this.hasLiveRelayReservation(relayPeerIds);
       } catch (err) {
@@ -1209,10 +1265,15 @@ export class EnvoyMesh {
 
     const scheduleNext = (): void => {
       if (this.reservationHealthGeneration !== generation) return;
-      const live = this.hasLiveRelayReservation(relayPeerIds);
+      const allLive = this.hasAllPreferredRelayReservations(relayPeerIds);
+      const anyLive = this.hasLiveRelayReservation(relayPeerIds);
       let delay = pendingMs;
-      if (live) {
+      if (allLive) {
         delay = healthyMs;
+        wasLive = true;
+      } else if (anyLive) {
+        // Partial multi-home: keep trying missing hops on the pending cadence.
+        delay = pendingMs;
         wasLive = true;
       } else if (wasLive) {
         delay = lostMs;
@@ -1225,7 +1286,7 @@ export class EnvoyMesh {
     };
 
     // Caller is expected to warm first; this loop only recovers after
-    // expiry / relay restart / disconnect.
+    // expiry / relay restart / disconnect / partial multi-home gaps.
     scheduleNext();
 
     this.reservationHealthDisconnectUnsub = this.onPeerDisconnect((peerId) => {

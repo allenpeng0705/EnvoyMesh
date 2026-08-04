@@ -254,10 +254,17 @@ export async function createWanJoinInviteViaRuntime(
 
   const compact = params?.compact === true;
   // Same address class filter as targetMultiaddrs so joiners do not re-seed
-  // RFC1918 bootstrap peers from a WAN invite.
+  // RFC1918 bootstrap peers from a WAN invite. Always include configured
+  // EnvoyMesh relays so joiners look up / dial the same hop set the sponsor uses.
+  const configuredRelayBases = (config.configuredRelays ?? [])
+    .filter((r) => r.enabled !== false && r.addr?.trim())
+    .map((r) => r.addr!.trim());
   const bootstrapPeers = compact
     ? []
-    : filterDialableMultiaddrs(config.bootstrapPeers ?? [], addressFilter);
+    : filterDialableMultiaddrs(
+        [...(config.bootstrapPeers ?? []), ...configuredRelayBases],
+        addressFilter,
+      );
   const invite = {
     v: 1 as const,
     createdAt: now.toISOString(),
@@ -296,9 +303,25 @@ export async function applyWanJoinInviteViaRuntime(
     bootstrapPresets: config.bootstrapPresets,
     invite,
   });
+  // Promote invite bootstrap relay bases into configuredRelays so the joiner
+  // reserves/looks up the same EnvoyMesh hops the sponsor uses (multi-relay).
+  const existingConfigured = new Map(
+    (config.configuredRelays ?? [])
+      .filter((r) => r.addr?.trim())
+      .map((r) => [r.addr!.trim(), r] as const),
+  );
+  for (const addr of merged.bootstrapPeers) {
+    if (!addr.includes("/p2p/") || addr.includes("/p2p-circuit/")) continue;
+    if (existingConfigured.has(addr)) continue;
+    const peerMatch = addr.match(/\/p2p\/([^/]+)$/);
+    const relayId = peerMatch?.[1] ?? addr;
+    existingConfigured.set(addr, { relayId, addr, enabled: true });
+  }
+  const configuredRelays = [...existingConfigured.values()];
   await deps.updateNodeConfig({
     bootstrapPeers: merged.bootstrapPeers,
     bootstrapPresets: merged.bootstrapPresets,
+    configuredRelays,
   });
   const seedStore = deps.getDiscoverySeedStore();
   if (seedStore && merged.seedAddrs.length > 0) {

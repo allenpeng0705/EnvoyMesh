@@ -212,6 +212,7 @@ describe("EnvoyMesh reservation status (unit via prototype stubs)", () => {
 
     expect(mesh.hasLiveRelayReservation()).toBe(false);
     expect(mesh.getRelayReservationStatus().state).toBe("pending");
+    expect(mesh.getRelayReservationStatus().liveRelayPeerIds).toEqual([]);
 
     (mesh as unknown as { getClientHasReservationFn: () => ((id: unknown) => boolean) | undefined })
       .getClientHasReservationFn = () => (pid: { toString(): string }) =>
@@ -220,6 +221,26 @@ describe("EnvoyMesh reservation status (unit via prototype stubs)", () => {
       configured,
     ];
     expect(mesh.hasLiveRelayReservation()).toBe(true);
+    expect(mesh.hasAllPreferredRelayReservations()).toBe(true);
     expect(mesh.getRelayReservationStatus().state).toBe("reserved");
+    expect(mesh.getRelayReservationStatus().liveRelayPeerIds).toEqual([configured]);
+  });
+
+  it("reports partial multi-relay reservation and missing hops", async () => {
+    const { EnvoyMesh } = await import("@envoymesh/network");
+    const mesh = new EnvoyMesh({ enableRelay: true });
+    const a = "12D3KooWLNR4WYWHBswe8ux5zWsy6cuGywnYPJbdbaAbbpmJMjbo";
+    const b = "12D3KooWBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB";
+    (mesh as unknown as { preferredRelayPeerIds: string[] }).preferredRelayPeerIds = [a, b];
+    (mesh as unknown as { lastReservedRelayPeerIds: string[] }).lastReservedRelayPeerIds = [a];
+    (mesh as unknown as { getClientHasReservationFn: () => ((id: unknown) => boolean) | undefined })
+      .getClientHasReservationFn = () => (pid: { toString(): string }) => pid.toString() === a;
+
+    expect(mesh.listLivePreferredRelayPeerIds()).toEqual([a]);
+    expect(mesh.hasAllPreferredRelayReservations()).toBe(false);
+    const status = mesh.getRelayReservationStatus();
+    expect(status.state).toBe("reserved");
+    expect(status.liveRelayPeerIds).toEqual([a]);
+    expect(status.lastError).toMatch(/Partial reservation 1\/2/);
   });
 });
