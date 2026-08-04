@@ -3805,10 +3805,14 @@ export { expandListenAddressesWithQuic, quicListenFromTcpListen } from "./quic-l
 export {
   buildSyntheticRelayCircuitHints,
   dedupeDialHintStrings,
+  isPrivateRelayHopCircuitDialHint,
   prioritizeCircuitDialHints,
   relayCircuitToPeer,
 } from "./relay-circuit-hints.js";
-import { prioritizeCircuitDialHints } from "./relay-circuit-hints.js";
+import {
+  isPrivateRelayHopCircuitDialHint,
+  prioritizeCircuitDialHints,
+} from "./relay-circuit-hints.js";
 export { CapabilityRegistry, type CapabilityRegistryOptions, type CapabilityRegistryVerbosity } from "./capability-registry.js";
 
 /**
@@ -3877,8 +3881,8 @@ const STABLE_LIBP2P_TCP_PORTS = new Set([4001, 4002, 4011, 41641]);
  * Returns true if the given multiaddr is a private / non-routable address that
  * should NOT be advertised to the DHT. Remote peers can never dial these.
  *
- * Note: addresses that contain `/p2p-circuit/` (circuit relay) are always kept —
- * they are universally dialable regardless of NAT.
+ * Public-hop `/p2p-circuit/` addresses are kept. Private-hop circuits are
+ * classified via {@link isPrivateRelayHopCircuitDialHint}.
  */
 /** True for RFC1918 / link-local direct TCP multiaddrs (same-LAN dial candidates). */
 export function isPrivateLanTcpDialHint(addr: string): boolean {
@@ -3914,8 +3918,10 @@ export function hasDirectTcpDialHints(hints: readonly string[]): boolean {
 }
 
 export function isPrivateOrUnroutableDialHint(addr: string): boolean {
-  // Always keep circuit relay addresses — they work through relays regardless of NAT.
-  if (addr.includes("/p2p-circuit/")) return false;
+  // Public-hop circuits are WAN-dialable. Private-hop circuits are not.
+  if (addr.includes("/p2p-circuit/")) {
+    return isPrivateRelayHopCircuitDialHint(addr);
+  }
   // When running in-process E2E tests, keep loopback addresses so two-node
   // topologies on 127.0.0.1 can reach each other through the hint pipeline.
   if (allowsLoopbackDialHints()) return false;

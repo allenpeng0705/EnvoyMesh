@@ -31,6 +31,7 @@ import type { LocalPeerDirectoryStore } from "@envoymesh/local-store";
 import {
   ENVOY_CHAT_PROTOCOL,
   isPrivateLanTcpDialHint,
+  isPrivateRelayHopCircuitDialHint,
   type EnvoyMesh,
 } from "@envoymesh/network";
 import {
@@ -616,16 +617,27 @@ export async function deliverCallEnvelopeViaRuntime(
         // Keep BOTH LAN and circuit. Prefer order only — never drop RFC1918 for
         // call.invite (dropping LAN broke same-LAN homes when circuit was down;
         // circuit-only broke when LAN was the only working path).
+        // Split private-hop circuits out: installer tokens often ship a
+        // 192.168.x /p2p-circuit/ hop that is NOT WAN-dialable but was treated
+        // as a normal circuit (8s timeout) ahead of the community relay.
         const lanAddrs = dialTargets.filter((a) => isPrivateLanTcpDialHint(a));
-        const circuitAddrs = dialTargets.filter((a) => a.includes("/p2p-circuit/"));
+        const privateCircuits = dialTargets.filter((a) => isPrivateRelayHopCircuitDialHint(a));
+        const publicCircuits = dialTargets.filter(
+          (a) => a.includes("/p2p-circuit/") && !isPrivateRelayHopCircuitDialHint(a),
+        );
         const otherAddrs = dialTargets.filter(
-          (a) => !isPrivateLanTcpDialHint(a) && !a.includes("/p2p-circuit/"),
+          (a) =>
+            !isPrivateLanTcpDialHint(a) &&
+            !a.includes("/p2p-circuit/"),
         );
         const ordered = preferCircuits
-          ? [...circuitAddrs, ...otherAddrs, ...lanAddrs]
-          : [...lanAddrs, ...otherAddrs, ...circuitAddrs];
+          ? [...publicCircuits, ...otherAddrs, ...privateCircuits, ...lanAddrs]
+          : [...lanAddrs, ...otherAddrs, ...publicCircuits, ...privateCircuits];
         for (const addr of ordered) {
-          const timeoutMs = isPrivateLanTcpDialHint(addr) ? 2_000 : 8_000;
+          const timeoutMs =
+            isPrivateLanTcpDialHint(addr) || isPrivateRelayHopCircuitDialHint(addr)
+              ? 2_000
+              : 15_000;
           try {
             await Promise.race([
               mesh.dial(addr),

@@ -66,13 +66,29 @@ describe("dial hint sorting", () => {
       expect(isPrivateLanTcpDialHint("/ip4/10.0.0.5/tcp/4011/p2p/12D3KooW")).toBe(true);
     });
 
-    it("returns false for relay circuits and loopback", () => {
+    it("returns false for public relay circuits and loopback direct", () => {
       expect(
         isPrivateLanTcpDialHint(
           "/ip4/192.168.1.50/tcp/4011/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooW",
         ),
       ).toBe(false);
       expect(isPrivateLanTcpDialHint("/ip4/127.0.0.1/tcp/4011/p2p/12D3KooW")).toBe(false);
+    });
+  });
+
+  describe("isPrivateRelayHopCircuitDialHint", () => {
+    it("detects RFC1918 circuit hops", async () => {
+      const { isPrivateRelayHopCircuitDialHint } = await import("../src/index.js");
+      expect(
+        isPrivateRelayHopCircuitDialHint(
+          "/ip4/192.168.3.85/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWPeer",
+        ),
+      ).toBe(true);
+      expect(
+        isPrivateRelayHopCircuitDialHint(
+          "/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/12D3KooWPeer",
+        ),
+      ).toBe(false);
     });
   });
 

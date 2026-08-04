@@ -627,7 +627,7 @@ async function runSetupSponsorFriendRetryLoop(
       const peerMultiaddrs = deps.getPeerMultiaddrs
         ? await deps.getPeerMultiaddrs()
         : deps.peerMultiaddrs;
-      // Circuit+LAN → "all" (circuit first on wan-default). Circuit-only →
+      // Circuit+LAN → "wan-public". Circuit-only →
       // "wan-public". lan-fast → "all" with LAN-first. See pickAddressFilterForPeer.
       const hello = await deps.sendHello(ownerId, profile, resolved.helloMessage, {
         proofOfContext: resolved.proofOfContext,

@@ -8,7 +8,7 @@ import {
   parseSetupSponsorFriendConfig,
   type SetupSponsorFriendConfig,
 } from "@envoymesh/api";
-import { isPrivateLanTcpDialHint } from "@envoymesh/network";
+import { isPrivateLanTcpDialHint, isPrivateRelayHopCircuitDialHint } from "@envoymesh/network";
 import type { LocalPeerDirectoryStore } from "@envoymesh/local-store";
 
 const BUNDLED_FILENAME = "bundled-sponsor-friend.json";
@@ -172,7 +172,13 @@ export function selectBundledSponsorBackfillAddrs(
     if (!addr || seen.has(addr)) continue;
     // Bare peer ids (no /ip4/…) are not dial hints — skip.
     if (!addr.includes("/")) continue;
-    if (!includePrivateLan && isPrivateLanTcpDialHint(addr)) continue;
+    if (!includePrivateLan) {
+      if (isPrivateLanTcpDialHint(addr)) continue;
+      // Installer tokens often embed a home-LAN /p2p-circuit/ hop; those are
+      // not WAN-dialable and must not poison dialHints ahead of the community
+      // relay circuit.
+      if (isPrivateRelayHopCircuitDialHint(addr)) continue;
+    }
     seen.add(addr);
     out.push(addr);
   }

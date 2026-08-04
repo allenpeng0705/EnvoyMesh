@@ -47,9 +47,24 @@ export function buildSyntheticRelayCircuitHints(
   return out;
 }
 
-/** Put relay circuit hints first — helps cold cross-NAT dials. */
+/** True when a `/p2p-circuit/` hop is RFC1918 / link-local / loopback (not WAN-dialable). */
+export function isPrivateRelayHopCircuitDialHint(addr: string): boolean {
+  const a = addr.trim();
+  if (!a.includes("/p2p-circuit/")) return false;
+  if (/\/ip4\/10\.\d+\.\d+\.\d+\//.test(a)) return true;
+  if (/\/ip4\/172\.(1[6-9]|2\d|3[01])\.\d+\.\d+\//.test(a)) return true;
+  if (/\/ip4\/192\.168\.\d+\.\d+\//.test(a)) return true;
+  if (/\/ip4\/169\.254\.\d+\.\d+\//.test(a)) return true;
+  if (/\/ip4\/127\.\d+\.\d+\.\d+\//.test(a)) return true;
+  return false;
+}
+
+/** Put relay circuit hints first — public hops before private-hop circuits. */
 export function prioritizeCircuitDialHints(hints: string[]): string[] {
-  const circuits = hints.filter((h) => h.includes("/p2p-circuit/"));
+  const publicCircuits = hints.filter(
+    (h) => h.includes("/p2p-circuit/") && !isPrivateRelayHopCircuitDialHint(h),
+  );
+  const privateCircuits = hints.filter((h) => isPrivateRelayHopCircuitDialHint(h));
   const direct = hints.filter((h) => !h.includes("/p2p-circuit/"));
-  return [...circuits, ...direct];
+  return [...publicCircuits, ...direct, ...privateCircuits];
 }

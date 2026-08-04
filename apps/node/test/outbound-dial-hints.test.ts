@@ -388,16 +388,25 @@ describe("pickAddressFilterForPeer", () => {
   // Helper: sponsor peer-id used only to make multiaddrs look real.
   const SPONSOR = "12D3KooWSponsor";
 
-  it("returns \"all\" when peer has circuit + LAN (circuit-first on wan-default)", async () => {
+  it("returns \"wan-public\" when peer has public circuit + LAN (strip home LAN on wan)", async () => {
     const { pickAddressFilterForPeer } = await import("../src/outbound-dial-hints.js");
     const peerAddrs = [
       `/ip4/192.168.3.85/tcp/64589/p2p/${SPONSOR}`,
       `/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${SPONSOR}`,
     ];
-    // Keep both paths: buildOutboundDialHints prefers circuit first on
-    // wan-default so stale LAN does not burn 30s before relay.
-    expect(pickAddressFilterForPeer(peerAddrs, "wan-default")).toBe("all");
-    expect(pickAddressFilterForPeer(peerAddrs, undefined)).toBe("all");
+    // Public circuit exists → strip RFC1918 so WAN installs do not dial
+    // the sponsor's home LAN (or a private-hop circuit) first.
+    expect(pickAddressFilterForPeer(peerAddrs, "wan-default")).toBe("wan-public");
+    expect(pickAddressFilterForPeer(peerAddrs, undefined)).toBe("wan-public");
+  });
+
+  it("returns \"wan-public\" when peer has public + private-hop circuits", async () => {
+    const { pickAddressFilterForPeer } = await import("../src/outbound-dial-hints.js");
+    const peerAddrs = [
+      `/ip4/192.168.3.85/tcp/4001/p2p/12D3KooWLanRelay/p2p-circuit/p2p/${SPONSOR}`,
+      `/ip4/47.93.11.212/tcp/4001/p2p/12D3KooWRelay/p2p-circuit/p2p/${SPONSOR}`,
+    ];
+    expect(pickAddressFilterForPeer(peerAddrs, "wan-default")).toBe("wan-public");
   });
 
   it("returns \"all\" when peer has only private LAN (no circuit yet)", async () => {

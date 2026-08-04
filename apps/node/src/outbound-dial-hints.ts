@@ -8,6 +8,7 @@ import {
   isLoopbackOrUnspecifiedDialHint,
   isPrivateLanTcpDialHint,
   isPrivateOrUnroutableDialHint,
+  isPrivateRelayHopCircuitDialHint,
   isPublicLibp2pBootstrapMultiaddr,
   isUsableOutboundPeerDialHint,
   buildSyntheticRelayCircuitHints,
@@ -73,11 +74,9 @@ function defaultAddressFilterForProfile(
  * Smart address-filter selection for outbound dials to a known peer.
  *
  * - `lan-fast` → `"all"` (LAN first; circuits kept as fallback).
- * - Circuit + LAN → `"all"` so same-LAN can fall back after circuit.
- *   On wan-default, `buildOutboundDialHints` prefers circuits first so
- *   stale RFC1918 from installer tokens does not burn 30s before relay.
- * - Circuit only → `"wan-public"`.
- * - LAN only → `"all"`.
+ * - wan profiles + a *public-hop* circuit → `"wan-public"` so installer
+ *   RFC1918 / private-hop circuits are stripped (they are not WAN-dialable).
+ * - LAN-only (no public circuit) → `"all"` for same-LAN recovery.
  * - Empty / unknown → `"wan-public"`.
  */
 export function pickAddressFilterForPeer(
@@ -87,8 +86,7 @@ export function pickAddressFilterForPeer(
   // Same-LAN home setup wins over any per-peer inspection.
   if (localDiscoveryProfile === "lan-fast") return "all";
 
-  // No peer addresses known — fall back to "wan-public". The
-  // lan-fast branch above already handled that case.
+  // No peer addresses known — fall back to "wan-public".
   if (!peerMultiaddrs || peerMultiaddrs.length === 0) {
     return "wan-public";
   }
@@ -96,13 +94,17 @@ export function pickAddressFilterForPeer(
   const hasLan = peerMultiaddrs.some((addr) =>
     isPrivateLanTcpDialHint(addr),
   );
-  const hasCircuit = peerMultiaddrs.some((addr) =>
-    addr.includes("/p2p-circuit/"),
+  const hasPrivateCircuit = peerMultiaddrs.some((addr) =>
+    isPrivateRelayHopCircuitDialHint(addr),
+  );
+  const hasPublicCircuit = peerMultiaddrs.some(
+    (addr) => addr.includes("/p2p-circuit/") && !isPrivateRelayHopCircuitDialHint(addr),
   );
 
-  if (hasCircuit && hasLan) return "all";
-  if (hasCircuit) return "wan-public";
-  if (hasLan) return "all";
+  // Prefer stripping home-LAN / private-hop circuits when a public circuit
+  // exists — otherwise WAN installs burn 8s+ on 192.168.x hops first.
+  if (hasPublicCircuit) return "wan-public";
+  if (hasLan || hasPrivateCircuit) return "all";
 
   return "wan-public";
 }

@@ -32,14 +32,15 @@ describe("WAN production discovery + auto-bond hygiene", () => {
     setRelayClientAdvertisedTopics([]);
   });
 
-  it("sponsor-friend dial filter: circuit+LAN → all (circuit-first) on wan-default", () => {
-    expect(pickAddressFilterForPeer([LAN, CIRCUIT], "wan-default")).toBe("all");
+  it("sponsor-friend dial filter: public circuit → wan-public (strip home LAN)", () => {
+    expect(pickAddressFilterForPeer([LAN, CIRCUIT], "wan-default")).toBe("wan-public");
     expect(pickAddressFilterForPeer([LAN, CIRCUIT], "lan-fast")).toBe("all");
     expect(pickAddressFilterForPeer([CIRCUIT], "wan-default")).toBe("wan-public");
   });
 
-  it("installer backfill keeps circuit, drops home LAN", () => {
-    const addrs = selectBundledSponsorBackfillAddrs([CIRCUIT], [LAN, RELAY]);
+  it("installer backfill keeps public circuit, drops home LAN and private-hop circuit", () => {
+    const privateCircuit = `/ip4/192.168.3.85/tcp/4001/p2p/12D3KooWSfeSwWRbfVpcNTnxRecEPce2LX5UBGVUBW6LBviWxLdC/p2p-circuit/p2p/${ALLEN}`;
+    const addrs = selectBundledSponsorBackfillAddrs([CIRCUIT], [LAN, RELAY, privateCircuit]);
     expect(addrs).toContain(CIRCUIT);
     expect(addrs).toContain(RELAY);
     expect(addrs.some((a) => a.includes("192.168."))).toBe(false);

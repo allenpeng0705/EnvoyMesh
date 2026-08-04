@@ -2796,12 +2796,13 @@ class NodeServiceImpl implements NodeService {
       process.env.ENVOYMESH_NODE_BUNDLE_DIR,
     );
     if (!parsed) return [];
-    // Picker input: always include LAN when present so circuit+LAN can
-    // select "all" with circuit-first ordering (same-LAN fallback).
+    // Picker input: only include home-LAN / private-hop circuits on lan-fast.
+    // On wan-default, stale RFC1918 circuits (e.g. 192.168.x relay hop from
+    // the installer token) burn dial timeouts before the community circuit.
     const fromBundled = selectBundledSponsorBackfillAddrs(
       parsed.multiaddrs,
       parsed.bootstrapPeers ?? [],
-      { includePrivateLan: true },
+      { includePrivateLan: lanFast },
     );
     if (fromBundled.length === 0) return fromBundled;
     const peerId = parsed.link.peerId;
@@ -2818,7 +2819,7 @@ class NodeServiceImpl implements NodeService {
     const fromDir = selectBundledSponsorBackfillAddrs(
       record.listenAddrs,
       [],
-      { includePrivateLan: true },
+      { includePrivateLan: lanFast },
     );
     const seen = new Set(fromBundled);
     const merged = [...fromBundled];
