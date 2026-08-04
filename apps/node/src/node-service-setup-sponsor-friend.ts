@@ -740,10 +740,10 @@ async function runSetupSponsorFriendRetryLoop(
 
       bondTrace(4, "PASS", "auto-bond COMPLETE — all 4 steps succeeded", {
         attempt,
-        sponsorOwnerId: resolved.ownerId.slice(0, 20),
+        sponsorOwnerId: ownerId.slice(0, 20),
       });
       console.log(
-        `[runSetupSponsorFriend] succeeded on attempt ${attempt} for ownerId=${resolved.ownerId}`,
+        `[runSetupSponsorFriend] succeeded on attempt ${attempt} for ownerId=${ownerId}`,
       );
       return;
     } catch (err) {
