@@ -385,6 +385,7 @@ import { startPairingKioskServer, type PairingKioskServerHandle } from "./pairin
 import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key-loader.js";
 import { createDiscoverySeedStore, type DiscoverySeedStore } from "./discovery-seed-store.js";
 import { isMeshReadyForSponsorBond } from "./mesh-readiness.js";
+import { bondTrace } from "./bond-trace.js";
 import { seedAddrsForDiscoveryProfile, peerDiscoverySourceFromMultiaddrs, shouldPersistPeerDiscoverySeeds } from "./peer-discovery-telemetry.js";
 import { resolveBootstrapAddresses, looksLikeDomain } from "./bootstrap-resolver.js";
 import { createInboundMessageGuard, type InboundMessageGuard } from "./inbound-guard.js";
@@ -7211,24 +7212,42 @@ class NodeServiceImpl implements NodeService {
             relayEnabled: config?.relayEnabled,
           });
           if (!mesh) {
+            bondTrace(1, "FAIL", "no mesh instance");
             console.log(`[probeMeshReady] false — no mesh instance`);
           } else if (mesh.multiaddrs.length === 0) {
+            bondTrace(1, "WAIT", "no listen addrs yet");
             console.log(`[probeMeshReady] false — no listen addrs yet`);
           } else if (!ready) {
             const lanFast = config?.discoveryProfile === "lan-fast";
             const relayEnabled = config?.relayEnabled !== false;
             if (relayEnabled && !lanFast) {
+              bondTrace(1, "WAIT", "waiting for live relay reservation (wan-default)", {
+                addrs: mesh.multiaddrs.length,
+              });
               console.log(
                 `[probeMeshReady] false — waiting for live relay reservation (wan-default)`,
               );
             } else {
               const relayPeers = mesh.getConnectedRelayPeerIds().length;
               const directPeers = mesh.getConnectedPeerIds().length;
+              bondTrace(1, "WAIT", "no reservation and no connected peers yet", {
+                relayPeers,
+                directPeers,
+                addrs: mesh.multiaddrs.length,
+              });
               console.log(
                 `[probeMeshReady] false — no relay reservation, no connected peers (relayPeers=${relayPeers}, directPeers=${directPeers}, addrs=${mesh.multiaddrs.length})`,
               );
             }
           } else {
+            const live =
+              typeof mesh.hasLiveRelayReservation === "function"
+                ? mesh.hasLiveRelayReservation()
+                : undefined;
+            bondTrace(1, "PASS", "mesh ready for sponsor bond", {
+              addrs: mesh.multiaddrs.length,
+              liveReservation: live,
+            });
             console.log(
               `[probeMeshReady] true — mesh ready for sponsor bond, addrs=${mesh.multiaddrs.length}`,
             );

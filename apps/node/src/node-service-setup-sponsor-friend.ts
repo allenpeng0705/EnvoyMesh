@@ -11,6 +11,7 @@ import type { HelloProfile, NodeService, SendHelloOptions } from "@envoymesh/api
 import { createAuditEvent, type AuditEvent } from "@envoymesh/local-store";
 import { loadBundledSponsorFriendConfig } from "./bundled-sponsor-friend-loader.js";
 import { pickAddressFilterForPeer } from "./outbound-dial-hints.js";
+import { bondTrace, classifyBondDialTarget } from "./bond-trace.js";
 import type { PersistedNodeConfig } from "./node-config-store.js";
 
 /**
@@ -456,6 +457,9 @@ export async function runSetupSponsorFriendViaRuntime(
     if (deps.probeMeshReady) {
       const meshReady = await deps.probeMeshReady();
       if (!meshReady) {
+        bondTrace(1, "WAIT", "not spawning auto-bond loop — mesh not ready (relay hop / reservation)", {
+          ownerId: ownerId.slice(0, 20),
+        });
         console.log(
           `[runSetupSponsorFriend] libp2p mesh not ready for ownerId=${ownerId.slice(0, 16)}…; not spawning a loop`,
         );
@@ -468,6 +472,9 @@ export async function runSetupSponsorFriendViaRuntime(
           lastErrorKind: "mesh-not-ready",
         };
       }
+      bondTrace(1, "PASS", "mesh ready — spawning auto-bond loop", {
+        ownerId: ownerId.slice(0, 20),
+      });
     }
   }
 
@@ -596,6 +603,12 @@ async function runSetupSponsorFriendRetryLoop(
 
   for (let attempt = 1; attempt <= resolved.maxAttempts; attempt += 1) {
     try {
+      bondTrace(1, "INFO", "auto-bond attempt starting", {
+        attempt,
+        maxAttempts: resolved.maxAttempts,
+        sponsorPeerId: resolved.peerId?.slice(0, 16),
+        sponsorOwnerId: ownerId.slice(0, 20),
+      });
       deps.assertOnline();
       // Re-probe mesh readiness inside the loop too. The guard at the call
       // site is the first line of defense (skips the spawn entirely), but
@@ -606,11 +619,15 @@ async function runSetupSponsorFriendRetryLoop(
       if (deps.probeMeshReady) {
         const meshReady = await deps.probeMeshReady();
         if (!meshReady) {
+          bondTrace(1, "WAIT", "mesh not ready yet (need relay hop / reservation)", {
+            attempt,
+          });
           console.log(
             `[setupSponsorFriend] attempt ${attempt}/${resolved.maxAttempts}: mesh not ready, deferring`,
           );
           throw new Error("libp2p mesh not ready yet — deferring bond.request");
         }
+        bondTrace(1, "PASS", "local mesh ready for sponsor bond (relay path usable)");
       }
       // Load the hello profile lazily — failure here is also persisted, so
       // a half-initialized profile surfaces as a clear error in the tile
@@ -627,15 +644,45 @@ async function runSetupSponsorFriendRetryLoop(
       const peerMultiaddrs = deps.getPeerMultiaddrs
         ? await deps.getPeerMultiaddrs()
         : deps.peerMultiaddrs;
+      const publicCircuits = (peerMultiaddrs ?? []).filter(
+        (a) => classifyBondDialTarget(a) === "public-circuit",
+      );
+      const privateCircuits = (peerMultiaddrs ?? []).filter(
+        (a) => classifyBondDialTarget(a) === "private-circuit",
+      );
+      if (publicCircuits.length > 0) {
+        bondTrace(2, "PASS", "have public /p2p-circuit/ dial target for sponsor", {
+          publicCircuits: publicCircuits.length,
+          privateCircuits: privateCircuits.length,
+          sample: publicCircuits[0]?.slice(0, 120),
+        });
+      } else if (privateCircuits.length > 0) {
+        bondTrace(2, "FAIL", "only private-hop circuits — WAN dial will fail; need Allen RESERVED on community relay", {
+          privateCircuits: privateCircuits.length,
+          sample: privateCircuits[0]?.slice(0, 120),
+        });
+      } else {
+        bondTrace(2, "FAIL", "no circuit dial targets for sponsor (empty multiaddrs)", {
+          addrCount: peerMultiaddrs?.length ?? 0,
+        });
+      }
       // Circuit+LAN → "wan-public". Circuit-only →
       // "wan-public". lan-fast → "all" with LAN-first. See pickAddressFilterForPeer.
+      const addressFilter = pickAddressFilterForPeer(
+        peerMultiaddrs,
+        deps.localDiscoveryProfile ?? (await deps.loadNodeConfig())?.discoveryProfile,
+      );
+      bondTrace(3, "WAIT", "sending bond.request (sendHello) — watch [bond-trace] dial lines next", {
+        addressFilter,
+        attempt,
+      });
       const hello = await deps.sendHello(ownerId, profile, resolved.helloMessage, {
         proofOfContext: resolved.proofOfContext,
         targetPeerId: resolved.peerId,
-        addressFilter: pickAddressFilterForPeer(
-          peerMultiaddrs,
-          deps.localDiscoveryProfile ?? (await deps.loadNodeConfig())?.discoveryProfile,
-        ),
+        addressFilter,
+      });
+      bondTrace(3, "PASS", "bond.request sendHello returned (local deliver completed)", {
+        messageId: hello?.messageId?.slice(0, 12),
       });
 
       // Cache the sponsor's peer record in the local directory after a
@@ -660,13 +707,18 @@ async function runSetupSponsorFriendRetryLoop(
       // failure kind `sponsor-no-ack` so the loop can retry.
       if (deps.waitForBondEstablished) {
         const ACKNOWLEDGEMENT_TIMEOUT_MS = 30_000;
+        bondTrace(4, "WAIT", "waiting for sponsor bond.established ack", {
+          timeoutMs: ACKNOWLEDGEMENT_TIMEOUT_MS,
+        });
         console.log(
           `[setupSponsorFriend] sendHello OK, waiting up to ${ACKNOWLEDGEMENT_TIMEOUT_MS}ms for sponsor bond.established acknowledgement...`,
         );
         try {
           await deps.waitForBondEstablished(ownerId, ACKNOWLEDGEMENT_TIMEOUT_MS);
+          bondTrace(4, "PASS", "sponsor acknowledged bond (bond.established)");
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
+          bondTrace(4, "FAIL", "sponsor did not acknowledge bond", { error: msg.slice(0, 160) });
           throw new Error(
             `sponsor did not acknowledge bond within ${ACKNOWLEDGEMENT_TIMEOUT_MS}ms: ${msg}`,
           );
@@ -686,6 +738,10 @@ async function runSetupSponsorFriendRetryLoop(
         updatedAt: new Date().toISOString(),
       });
 
+      bondTrace(4, "PASS", "auto-bond COMPLETE — all 4 steps succeeded", {
+        attempt,
+        sponsorOwnerId: resolved.ownerId.slice(0, 20),
+      });
       console.log(
         `[runSetupSponsorFriend] succeeded on attempt ${attempt} for ownerId=${resolved.ownerId}`,
       );
@@ -693,6 +749,19 @@ async function runSetupSponsorFriendRetryLoop(
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err);
       lastErrorKind = classifySponsorError(lastError);
+      const failStep =
+        lastErrorKind === "mesh-not-ready"
+          ? (1 as const)
+          : lastErrorKind === "network-unreachable"
+            ? (3 as const)
+            : lastErrorKind === "sponsor-no-ack"
+              ? (4 as const)
+              : (4 as const);
+      bondTrace(failStep, "FAIL", "auto-bond attempt failed", {
+        attempt,
+        kind: lastErrorKind,
+        error: lastError.slice(0, 200),
+      });
       // Always persist progress — first-run failures must survive a restart
       // so the operator can see "we tried and here's why" on next launch.
       // Use the same default-base pattern as the success path.
@@ -802,6 +871,11 @@ async function runSetupSponsorFriendRetryLoop(
   console.warn(
     `[runSetupSponsorFriend] exhausted ${resolved.maxAttempts} attempts; last error: ${lastError ?? "(none)"}; cooldown until ${cooldownUntil}`,
   );
+  bondTrace(4, "FAIL", "auto-bond exhausted all attempts — copy [bond-trace] lines from this session", {
+    maxAttempts: resolved.maxAttempts,
+    kind: lastErrorKind ?? "other",
+    error: (lastError ?? "(none)").slice(0, 200),
+  });
 }
 
 /** Convenience wrapper using NodeService when available. */

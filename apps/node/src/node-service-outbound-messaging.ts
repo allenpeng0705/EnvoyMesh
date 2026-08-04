@@ -34,6 +34,7 @@ import {
   isPrivateRelayHopCircuitDialHint,
   type EnvoyMesh,
 } from "@envoymesh/network";
+import { bondTrace, classifyBondDialTarget } from "./bond-trace.js";
 import {
   deliverCallEnvelopeWithRetry,
   deliverChatEnvelopeWithRetry,
@@ -633,11 +634,30 @@ export async function deliverCallEnvelopeViaRuntime(
         const ordered = preferCircuits
           ? [...publicCircuits, ...otherAddrs, ...privateCircuits, ...lanAddrs]
           : [...lanAddrs, ...otherAddrs, ...publicCircuits, ...privateCircuits];
+        const bondTraceDial = envelope.intent === "bond.request";
+        if (bondTraceDial) {
+          bondTrace(3, "WAIT", "dialing sponsor for bond.request", {
+            peer: transportPeerId.slice(0, 16),
+            publicCircuits: publicCircuits.length,
+            privateCircuits: privateCircuits.length,
+            lan: lanAddrs.length,
+            other: otherAddrs.length,
+            preferCircuits,
+          });
+        }
         for (const addr of ordered) {
           const timeoutMs =
             isPrivateLanTcpDialHint(addr) || isPrivateRelayHopCircuitDialHint(addr)
               ? 2_000
               : 15_000;
+          const kind = classifyBondDialTarget(addr);
+          if (bondTraceDial) {
+            bondTrace(3, "WAIT", "mesh.dial attempt", {
+              kind,
+              timeoutMs,
+              addr: addr.slice(0, 140),
+            });
+          }
           try {
             await Promise.race([
               mesh.dial(addr),
@@ -646,8 +666,31 @@ export async function deliverCallEnvelopeViaRuntime(
               }),
             ]);
             conn = mesh.getPeerConnectionInfo(transportPeerId);
-            if (conn.connected) break;
+            if (conn.connected) {
+              if (bondTraceDial) {
+                bondTrace(3, "PASS", "circuit/path dial connected", {
+                  kind,
+                  direct: conn.direct,
+                  addr: addr.slice(0, 140),
+                });
+              }
+              break;
+            }
+            if (bondTraceDial) {
+              bondTrace(3, "FAIL", "dial returned but peer not connected", {
+                kind,
+                addr: addr.slice(0, 140),
+              });
+            }
           } catch (dialErr) {
+            const msg = dialErr instanceof Error ? dialErr.message : String(dialErr);
+            if (bondTraceDial) {
+              bondTrace(3, "FAIL", "mesh.dial failed", {
+                kind,
+                error: msg.slice(0, 120),
+                addr: addr.slice(0, 140),
+              });
+            }
             console.warn(
               `[deliver] mesh.dial failed for ${addr.slice(0, 160)}…:`,
               dialErr instanceof Error ? dialErr.message : dialErr,
@@ -655,6 +698,12 @@ export async function deliverCallEnvelopeViaRuntime(
           }
         }
         if (!conn.connected) {
+          if (bondTraceDial) {
+            bondTrace(3, "FAIL", "all dial targets exhausted for bond.request", {
+              peer: transportPeerId.slice(0, 16),
+              tried: ordered.length,
+            });
+          }
           console.warn(
             `[deliver] all ${ordered.length} dial targets exhausted for ${transportPeerId.slice(0, 16)}… — unable to establish connection`,
           );

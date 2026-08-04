@@ -23,6 +23,7 @@ import type { LocalPeerDirectoryStore, LocalTrustStore } from "@envoymesh/local-
 import type { EnvoyMesh } from "@envoymesh/network";
 import { pickBestLibp2pPeerDirectoryRecord } from "./peer-transport-resolve.js";
 import { shouldPreferCircuitDialHints } from "./outbound-dial-hints.js";
+import { bondTrace, classifyBondDialTarget } from "./bond-trace.js";
 
 export interface PendingHelloRequest {
   requesterOwnerId: string;
@@ -154,12 +155,42 @@ export async function sendHelloViaRuntime(
       matchedRecord?.listenAddrs,
       options?.addressFilter,
     );
+    const publicCircuits = dialHints.filter((h) => classifyBondDialTarget(h) === "public-circuit");
+    const privateCircuits = dialHints.filter((h) => classifyBondDialTarget(h) === "private-circuit");
     console.log(`[node-service] sendHello dialHints count=${dialHints.length}: ${dialHints.map((h) => h.slice(0, 100)).join(" | ")}`);
+    if (publicCircuits.length > 0) {
+      bondTrace(2, "PASS", "sendHello dialHints include public circuit", {
+        count: dialHints.length,
+        publicCircuits: publicCircuits.length,
+        privateCircuits: privateCircuits.length,
+        sample: publicCircuits[0]?.slice(0, 120),
+      });
+    } else if (privateCircuits.length > 0) {
+      bondTrace(2, "FAIL", "sendHello dialHints only private-hop circuits", {
+        count: dialHints.length,
+        privateCircuits: privateCircuits.length,
+        sample: privateCircuits[0]?.slice(0, 120),
+      });
+    } else if (dialHints.length === 0) {
+      bondTrace(2, "FAIL", "sendHello has zero dialHints", {
+        peer: targetPeerId.slice(0, 16),
+      });
+    } else {
+      bondTrace(2, "WAIT", "sendHello dialHints have no /p2p-circuit/ (direct/LAN only)", {
+        count: dialHints.length,
+        sample: dialHints[0]?.slice(0, 120),
+      });
+    }
     const preferCircuitHints = shouldPreferCircuitDialHints(
       matchedRecord?.listenAddrs,
       dialHints,
       targetPeerId,
     );
+    bondTrace(3, "WAIT", "deliverCallEnvelope for bond.request", {
+      peer: targetPeerId.slice(0, 16),
+      preferCircuitHints,
+      hintCount: dialHints.length,
+    });
     await ctx.deliverCallEnvelope(
       targetPeerId,
       envelope,
@@ -168,6 +199,9 @@ export async function sendHelloViaRuntime(
       preferCircuitHints,
     );
     console.log(`[node-service] Hello sent successfully to ${targetPeerId}`);
+    bondTrace(3, "PASS", "deliverCallEnvelope completed for bond.request", {
+      peer: targetPeerId.slice(0, 16),
+    });
 
     if (options?.introProposalMessageId) {
       ctx.getPendingSocialIntroProposals().delete(options.introProposalMessageId);
@@ -186,6 +220,10 @@ export async function sendHelloViaRuntime(
   } catch (err) {
     console.error(`[node-service] Failed to send hello to ${targetPeerId}:`, err);
     const errorMsg = err instanceof Error ? err.message : String(err);
+    bondTrace(3, "FAIL", "sendHello deliver failed", {
+      peer: targetPeerId.slice(0, 16),
+      error: errorMsg.slice(0, 160),
+    });
     if (
       errorMsg.includes("getComponents") ||
       errorMsg.includes("connection failed") ||
