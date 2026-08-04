@@ -94,6 +94,99 @@
       border-radius: 8px;
     }
 
+    /* Mobile hamburger */
+    .mobile-menu-btn {
+      display: none;
+      background: none;
+      border: none;
+      color: var(--text-primary);
+      cursor: pointer;
+      padding: 8px;
+      border-radius: 8px;
+      transition: background-color 0.2s ease;
+    }
+
+    .mobile-menu-btn:hover {
+      background-color: var(--bg-card);
+    }
+
+    .mobile-menu-btn span {
+      display: block;
+      width: 22px;
+      height: 2px;
+      background-color: var(--text-primary);
+      margin: 5px 0;
+      border-radius: 2px;
+      transition: transform 0.3s ease, opacity 0.3s ease;
+    }
+
+    .mobile-menu-btn.active span:nth-child(1) {
+      transform: translateY(7px) rotate(45deg);
+    }
+
+    .mobile-menu-btn.active span:nth-child(2) {
+      opacity: 0;
+    }
+
+    .mobile-menu-btn.active span:nth-child(3) {
+      transform: translateY(-7px) rotate(-45deg);
+    }
+
+    .mobile-nav-overlay {
+      position: fixed;
+      top: 64px;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(15, 23, 42, 0.97);
+      backdrop-filter: blur(12px);
+      z-index: 99;
+      display: none;
+      flex-direction: column;
+      padding: 24px;
+      overflow-y: auto;
+    }
+
+    .mobile-nav-overlay.active {
+      display: flex;
+    }
+
+    .mobile-nav-overlay a {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 12px;
+      border-bottom: 1px solid var(--border-color);
+      color: var(--text-primary);
+      text-decoration: none;
+      font-size: 1.05rem;
+      font-weight: 500;
+      transition: color 0.2s ease;
+    }
+
+    .mobile-nav-overlay a::after {
+      content: "›";
+      font-size: 1.5rem;
+      color: var(--text-muted);
+      flex-shrink: 0;
+    }
+
+    .mobile-nav-overlay a:hover {
+      color: var(--primary-light);
+    }
+
+    .mobile-nav-overlay .mobile-nav-actions {
+      margin-top: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .mobile-nav-overlay .mobile-nav-actions .btn {
+      width: 100%;
+      text-align: center;
+    }
+
     .nav-links {
       display: flex;
       gap: 24px;
@@ -325,6 +418,722 @@
       line-height: 1.7;
     }
 
+    /* Screenshot-driven feature cards */
+    .feature-card.with-shot {
+      padding: 0;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      cursor: pointer;
+    }
+
+    .feature-card.with-shot .feature-body {
+      padding: 28px;
+      flex: 1;
+    }
+
+    .shot-frame {
+      position: relative;
+      width: 100%;
+      background-color: #0b1120;
+      overflow: hidden;
+      border-bottom: 1px solid var(--border-color);
+      cursor: zoom-in;
+    }
+
+    .shot-frame.desktop {
+      height: 260px;
+    }
+
+    .shot-frame.mobile {
+      aspect-ratio: 9 / 16;
+      max-height: 480px;
+      margin: 0 auto;
+      max-width: 260px;
+    }
+
+    .shot-frame img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+      transition: transform 0.3s ease, opacity 0.3s ease;
+    }
+
+    .feature-card.with-shot:hover .shot-frame img {
+      transform: scale(1.02);
+    }
+
+    .shot-frame::after {
+      content: "🔍";
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: 32px;
+      height: 32px;
+      border-radius: 8px;
+      background-color: rgba(15, 23, 42, 0.75);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.85rem;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+      pointer-events: none;
+    }
+
+    .shot-frame:hover::after {
+      opacity: 1;
+    }
+
+    .feature-card.with-shot .feature-icon {
+      margin-bottom: 14px;
+    }
+
+    /* EnvoyGo Mobile gallery */
+    .envoygo-gallery {
+      padding: 80px 0;
+      background-color: var(--bg-dark);
+    }
+
+    .envoygo-intro {
+      max-width: 720px;
+      margin: 0 auto 48px;
+      text-align: center;
+    }
+
+    .envoygo-intro p {
+      font-size: 1.05rem;
+      line-height: 1.8;
+      color: var(--text-secondary);
+    }
+
+    .envoygo-highlights {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 20px;
+      margin-bottom: 56px;
+    }
+
+    .envoygo-highlight {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 24px;
+      transition: all 0.3s ease;
+    }
+
+    .envoygo-highlight:hover {
+      border-color: var(--primary-color);
+      transform: translateY(-2px);
+    }
+
+    .envoygo-highlight .highlight-icon {
+      font-size: 1.75rem;
+      margin-bottom: 12px;
+    }
+
+    .envoygo-highlight h4 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 8px;
+      color: var(--text-primary);
+    }
+
+    .envoygo-highlight p {
+      font-size: 0.875rem;
+      line-height: 1.6;
+      color: var(--text-muted);
+    }
+
+    .envoygo-steps {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 24px;
+      margin-bottom: 56px;
+      counter-reset: step;
+    }
+
+    .envoygo-step {
+      position: relative;
+      padding-left: 56px;
+    }
+
+    .envoygo-step::before {
+      counter-increment: step;
+      content: counter(step);
+      position: absolute;
+      left: 0;
+      top: 0;
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      background-color: var(--primary-color);
+      color: white;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 700;
+      font-size: 1.1rem;
+    }
+
+    .envoygo-step h4 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin-bottom: 6px;
+      color: var(--text-primary);
+    }
+
+    .envoygo-step p {
+      font-size: 0.85rem;
+      line-height: 1.6;
+      color: var(--text-muted);
+    }
+
+    .gallery-subheader {
+      text-align: center;
+      margin-bottom: 32px;
+    }
+
+    .gallery-subheader h3 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 8px;
+    }
+
+    .gallery-subheader p {
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+
+    .phone-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 24px;
+    }
+
+    .phone-card {
+      background-color: var(--bg-card);
+      border-radius: 20px;
+      overflow: hidden;
+      border: 1px solid var(--border-color);
+      transition: all 0.3s ease;
+    }
+
+    .phone-card:hover {
+      transform: translateY(-4px);
+      border-color: var(--primary-color);
+      box-shadow: 0 8px 32px rgba(99, 102, 241, 0.15);
+    }
+
+    .phone-card .shot-frame {
+      border-bottom: 1px solid var(--border-color);
+      aspect-ratio: 9 / 16;
+      height: auto;
+      max-height: none;
+      max-width: none;
+      margin: 0;
+    }
+
+    .phone-card .phone-caption {
+      padding: 14px 16px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      text-align: center;
+    }
+
+    /* Lightbox */
+    .lightbox {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background-color: rgba(0, 0, 0, 0.92);
+      z-index: 200;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 20px;
+      flex-direction: column;
+    }
+
+    .lightbox.active {
+      display: flex;
+    }
+
+    .lightbox img {
+      max-width: 92%;
+      max-height: 82vh;
+      object-fit: contain;
+      border-radius: 12px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
+    }
+
+    .lightbox-caption {
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+      margin-top: 16px;
+      text-align: center;
+    }
+
+    .lightbox-close {
+      position: absolute;
+      top: 20px;
+      right: 24px;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background-color: rgba(255, 255, 255, 0.1);
+      border: none;
+      color: white;
+      font-size: 1.5rem;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: background-color 0.2s ease;
+    }
+
+    .lightbox-close:hover {
+      background-color: rgba(255, 255, 255, 0.2);
+    }
+
+    /* Knowledge Base section */
+    .kb-section {
+      padding: 80px 0;
+      background-color: var(--bg-card);
+    }
+
+    .kb-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 48px;
+      align-items: center;
+    }
+
+    .kb-grid h2 {
+      font-size: 2rem;
+      font-weight: 700;
+      margin-bottom: 16px;
+      color: var(--text-primary);
+    }
+
+    .kb-grid > div > p {
+      font-size: 1.05rem;
+      line-height: 1.8;
+      color: var(--text-secondary);
+      margin-bottom: 24px;
+    }
+
+    .kb-features {
+      list-style: none;
+      padding: 0;
+      margin: 0 0 24px;
+    }
+
+    .kb-features li {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 10px 0;
+      font-size: 0.95rem;
+      line-height: 1.6;
+      color: var(--text-secondary);
+    }
+
+    .kb-features li::before {
+      content: "✓";
+      flex-shrink: 0;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background-color: rgba(34, 197, 94, 0.15);
+      color: #22c55e;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      font-weight: 700;
+      margin-top: 2px;
+    }
+
+    .kb-plugin-box {
+      background-color: var(--bg-dark);
+      border: 1px solid var(--border-color);
+      border-radius: 16px;
+      padding: 28px;
+      margin-top: 24px;
+    }
+
+    .kb-plugin-box h4 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 16px;
+    }
+
+    .kb-plugin-arch {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .kb-plugin-core {
+      background-color: rgba(99, 102, 241, 0.12);
+      border: 1px solid rgba(99, 102, 241, 0.3);
+      border-radius: 10px;
+      padding: 16px;
+      text-align: center;
+    }
+
+    .kb-plugin-core strong {
+      color: var(--primary-light);
+      font-size: 0.95rem;
+    }
+
+    .kb-plugin-core span {
+      display: block;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+    }
+
+    .kb-plugin-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 10px;
+    }
+
+    .kb-plugin-item {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 14px 10px;
+      text-align: center;
+      transition: all 0.3s ease;
+    }
+
+    .kb-plugin-item:hover {
+      border-color: var(--primary-color);
+      transform: translateY(-2px);
+    }
+
+    .kb-plugin-item.active {
+      border-color: #a855f7;
+      background-color: rgba(168, 85, 247, 0.08);
+    }
+
+    .kb-plugin-item .plugin-icon {
+      font-size: 1.5rem;
+      margin-bottom: 6px;
+    }
+
+    .kb-plugin-item strong {
+      display: block;
+      font-size: 0.85rem;
+      color: var(--text-primary);
+    }
+
+    .kb-plugin-item span {
+      display: block;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .kb-plugin-item .plugin-badge {
+      display: inline-block;
+      margin-top: 6px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 0.65rem;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .kb-plugin-item .plugin-badge.available {
+      background-color: rgba(34, 197, 94, 0.15);
+      color: #22c55e;
+    }
+
+    .kb-plugin-item .plugin-badge.future {
+      background-color: rgba(148, 163, 184, 0.15);
+      color: var(--text-muted);
+    }
+
+    .kb-sensitivity {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+      margin-top: 20px;
+    }
+
+    .kb-sensitivity-item {
+      background-color: var(--bg-dark);
+      border: 1px solid var(--border-color);
+      border-radius: 10px;
+      padding: 14px;
+      text-align: center;
+    }
+
+    .kb-sensitivity-item .sens-icon {
+      font-size: 1.25rem;
+      margin-bottom: 6px;
+    }
+
+    .kb-sensitivity-item strong {
+      display: block;
+      font-size: 0.85rem;
+      color: var(--text-primary);
+    }
+
+    .kb-sensitivity-item span {
+      display: block;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .kb-sensitivity-item.public {
+      border-color: rgba(34, 197, 94, 0.3);
+    }
+
+    .kb-sensitivity-item.friends {
+      border-color: rgba(99, 102, 241, 0.3);
+    }
+
+    .kb-sensitivity-item.private {
+      border-color: rgba(239, 68, 68, 0.3);
+    }
+
+    /* Family Network highlight section */
+    .family-network {
+      padding: 80px 0;
+      background: linear-gradient(135deg, rgba(99, 102, 241, 0.08) 0%, rgba(236, 72, 153, 0.08) 100%);
+      border-top: 1px solid var(--border-color);
+      border-bottom: 1px solid var(--border-color);
+    }
+
+    .family-grid {
+      display: grid;
+      grid-template-columns: 1.1fr 1fr;
+      gap: 48px;
+      align-items: center;
+    }
+
+    .family-shot {
+      border-radius: 16px;
+      overflow: hidden;
+      border: 1px solid var(--border-color);
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.4);
+    }
+
+    .family-shot img {
+      width: 100%;
+      display: block;
+    }
+
+    .family-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 14px;
+      border-radius: 999px;
+      background-color: rgba(236, 72, 153, 0.15);
+      color: #ec4899;
+      font-size: 0.8rem;
+      font-weight: 600;
+      margin-bottom: 16px;
+    }
+
+    .family-grid h2 {
+      font-size: 2.25rem;
+      font-weight: 700;
+      margin-bottom: 16px;
+    }
+
+    .family-grid > div > p.lead {
+      font-size: 1.1rem;
+      color: var(--text-secondary);
+      margin-bottom: 24px;
+    }
+
+    .family-tiers {
+      display: grid;
+      gap: 12px;
+      margin-bottom: 24px;
+    }
+
+    .family-tier {
+      display: flex;
+      gap: 14px;
+      padding: 16px;
+      background-color: var(--bg-card);
+      border-radius: 12px;
+      border: 1px solid var(--border-color);
+    }
+
+    .tier-icon {
+      width: 36px;
+      height: 36px;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1.1rem;
+      flex-shrink: 0;
+    }
+
+    .tier-icon.owner {
+      background-color: rgba(99, 102, 241, 0.15);
+      color: var(--primary-light);
+    }
+
+    .tier-icon.family {
+      background-color: rgba(236, 72, 153, 0.15);
+      color: #ec4899;
+    }
+
+    .family-tier h4 {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+
+    .family-tier p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    /* Download section */
+    .downloads {
+      padding: 80px 0;
+    }
+
+    .download-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 24px;
+      max-width: 1000px;
+      margin: 0 auto 40px;
+    }
+
+    .download-card {
+      background-color: var(--bg-card);
+      border-radius: 16px;
+      padding: 32px 28px;
+      border: 1px solid var(--border-color);
+      text-align: center;
+      transition: all 0.3s ease;
+    }
+
+    .download-card:hover {
+      transform: translateY(-4px);
+      border-color: var(--primary-color);
+      box-shadow: 0 8px 32px rgba(99, 102, 241, 0.15);
+    }
+
+    .download-icon {
+      width: 64px;
+      height: 64px;
+      border-radius: 16px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 18px;
+      font-size: 2rem;
+    }
+
+    .download-icon.mac {
+      background-color: rgba(99, 102, 241, 0.12);
+      color: var(--primary-light);
+    }
+
+    .download-icon.windows {
+      background-color: rgba(59, 130, 246, 0.12);
+      color: #3b82f6;
+    }
+
+    .download-icon.android {
+      background-color: rgba(34, 197, 94, 0.12);
+      color: #22c55e;
+    }
+
+    .download-card h3 {
+      font-size: 1.2rem;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .download-card .platform-sub {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 20px;
+    }
+
+    .download-links {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+
+    .download-link {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 12px 16px;
+      border-radius: 10px;
+      text-decoration: none;
+      font-size: 0.9rem;
+      font-weight: 500;
+      transition: all 0.2s ease;
+    }
+
+    .download-link.primary {
+      background-color: var(--primary-color);
+      color: white;
+    }
+
+    .download-link.primary:hover {
+      background-color: var(--primary-dark);
+    }
+
+    .download-link.alt {
+      background-color: var(--bg-dark);
+      color: var(--text-secondary);
+      border: 1px solid var(--border-color);
+    }
+
+    .download-link.alt:hover {
+      color: var(--text-primary);
+      border-color: var(--primary-color);
+    }
+
+    .download-link .tag {
+      font-size: 0.7rem;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background-color: rgba(255, 255, 255, 0.15);
+    }
+
+    .download-link.alt .tag {
+      background-color: rgba(99, 102, 241, 0.15);
+      color: var(--primary-light);
+    }
+
+    .download-note {
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.85rem;
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
     /* Architecture Section */
     .architecture {
       padding: 80px 0;
@@ -510,41 +1319,196 @@
 
     /* Responsive */
     @media (max-width: 768px) {
+      .container {
+        padding: 0 16px;
+      }
+
+      nav {
+        height: 56px;
+      }
+
       .nav-links {
         display: none;
       }
 
+      .nav-actions {
+        display: none;
+      }
+
+      .mobile-menu-btn {
+        display: block;
+      }
+
+      .mobile-nav-overlay {
+        top: 56px;
+      }
+
+      .hero {
+        padding: 80px 0 48px;
+      }
+
       .hero h1 {
-        font-size: 2.25rem;
+        font-size: 2rem;
+        line-height: 1.2;
       }
 
       .hero p {
-        font-size: 1.1rem;
+        font-size: 1rem;
+        line-height: 1.6;
       }
 
       .hero-stats {
-        gap: 24px;
+        flex-wrap: wrap;
+        gap: 16px;
+      }
+
+      .stat-item {
+        flex: 1 1 calc(50% - 16px);
+        min-width: 0;
       }
 
       .stat-value {
-        font-size: 1.5rem;
+        font-size: 1.25rem;
+      }
+
+      .stat-label {
+        font-size: 0.8rem;
+      }
+
+      .section-header {
+        margin-bottom: 32px;
       }
 
       .section-header h2 {
-        font-size: 1.75rem;
+        font-size: 1.5rem;
+      }
+
+      .section-header p {
+        font-size: 0.95rem;
+      }
+
+      .features {
+        padding: 48px 0;
+      }
+
+      .features-grid {
+        grid-template-columns: 1fr;
+        gap: 20px;
+      }
+
+      .feature-card.with-shot .feature-body {
+        padding: 20px;
+      }
+
+      .architecture {
+        padding: 48px 0;
       }
 
       .architecture-grid {
         grid-template-columns: 1fr;
       }
 
+      .family-network {
+        padding: 48px 0;
+      }
+
+      .kb-section {
+        padding: 48px 0;
+      }
+
+      .kb-grid {
+        grid-template-columns: 1fr;
+        gap: 32px;
+      }
+
+      .kb-grid h2 {
+        font-size: 1.5rem;
+      }
+
+      .kb-plugin-row {
+        grid-template-columns: 1fr;
+        gap: 8px;
+      }
+
+      .kb-sensitivity {
+        grid-template-columns: 1fr;
+      }
+
+      .family-grid {
+        grid-template-columns: 1fr;
+        gap: 32px;
+      }
+
+      .family-grid h2 {
+        font-size: 1.5rem;
+      }
+
+      .family-tier {
+        flex-direction: row;
+      }
+
+      .getting-started {
+        padding: 48px 0;
+      }
+
       .getting-started h2 {
-        font-size: 1.75rem;
+        font-size: 1.5rem;
+      }
+
+      .downloads {
+        padding: 48px 0;
+      }
+
+      .download-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .download-card {
+        padding: 24px 20px;
       }
 
       .footer-content {
         flex-direction: column;
         text-align: center;
+        gap: 20px;
+      }
+
+      .footer-links {
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+
+      .code-block {
+        font-size: 0.75rem;
+        padding: 16px;
+        overflow-x: auto;
+      }
+
+      .shot-frame.mobile {
+        max-width: 200px;
+      }
+
+      .envoygo-gallery {
+        padding: 48px 0;
+      }
+
+      .phone-grid {
+        grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 16px;
+      }
+
+      .phone-card .phone-caption {
+        padding: 10px 12px;
+        font-size: 0.8rem;
+      }
+
+      .lightbox {
+        padding: 20px 10px;
+      }
+
+      .lightbox img {
+        max-width: 96%;
+        max-height: 75vh;
       }
     }
   </style>
@@ -559,27 +1523,50 @@
       </a>
       <ul class="nav-links">
         <li><a href="#features">Features</a></li>
+        <li><a href="#envoygo">EnvoyGo</a></li>
+        <li><a href="#knowledge">Knowledge</a></li>
+        <li><a href="#family">Family</a></li>
         <li><a href="#architecture">Architecture</a></li>
         <li><a href="#security">Security</a></li>
-        <li><a href="#getting-started">Get Started</a></li>
+        <li><a href="#downloads">Download</a></li>
       </ul>
       <div class="nav-actions">
         <a href="index-zh.html" class="btn btn-secondary">中文</a>
         <a href="https://github.com/allenpeng0705/EnvoyMesh" target="_blank" class="btn btn-secondary">GitHub</a>
-        <a href="#getting-started" class="btn btn-primary">Install Now</a>
+        <a href="#downloads" class="btn btn-primary">Install Now</a>
       </div>
+      <button class="mobile-menu-btn" id="mobileMenuBtn" aria-label="Toggle menu">
+        <span></span>
+        <span></span>
+        <span></span>
+      </button>
     </nav>
   </header>
+
+  <!-- Mobile Navigation Overlay -->
+  <div class="mobile-nav-overlay" id="mobileNavOverlay">
+    <a href="#features">Features</a>
+    <a href="#envoygo">EnvoyGo Mobile</a>
+    <a href="#knowledge">Knowledge Base</a>
+    <a href="#family">Family Network</a>
+    <a href="#architecture">Architecture</a>
+    <a href="#security">Security</a>
+    <a href="#downloads">Download</a>
+    <div class="mobile-nav-actions">
+      <a href="index-zh.html" class="btn btn-secondary">中文</a>
+      <a href="https://github.com/allenpeng0705/EnvoyMesh" target="_blank" class="btn btn-primary">View on GitHub</a>
+    </div>
+  </div>
 
   <!-- Hero Section -->
   <section class="hero">
     <div class="container hero-content">
       <img src="logo-180.png" alt="EnvoyMesh Logo" class="hero-logo">
       <h1>Decentralized P2P Agentic Mesh</h1>
-      <p>A distributed social network, agent network, and knowledge sharing system. Chat peer-to-peer, run AI agents locally with OpenClaw, connect external agents, and access everything from anywhere.</p>
+      <p>A distributed social network, agent network, and knowledge sharing system. Chat peer-to-peer, run AI agents locally with OpenClaw, connect external agents, and turn your home computer into a private family network — accessible from anywhere via EnvoyGo.</p>
       <div class="nav-actions" style="justify-content: center;">
-        <a href="https://github.com/allenpeng0705/EnvoyMesh" target="_blank" class="btn btn-primary">View on GitHub</a>
-        <a href="#getting-started" class="btn btn-secondary">Quick Start</a>
+        <a href="#downloads" class="btn btn-primary">Download</a>
+        <a href="https://github.com/allenpeng0705/EnvoyMesh" target="_blank" class="btn btn-secondary">View on GitHub</a>
       </div>
       <div class="hero-stats">
         <div class="stat-item">
@@ -838,92 +1825,389 @@
     <div class="container">
       <div class="section-header">
         <h2>Core Features</h2>
-        <p>Everything you need for secure, private communication and AI-powered workflows.</p>
+        <p>Everything you need for secure, private communication and AI-powered workflows. Click any screenshot to view full size.</p>
       </div>
       <div class="features-grid">
-        <div class="feature-card">
-          <div class="feature-icon blue">💬</div>
-          <h3>P2P Social Communication</h3>
-          <p>Direct chat, group chat, voice messages, and WebRTC audio/video calls. All communication happens peer-to-peer — no third-party servers.</p>
-          <pre style="background: rgba(59, 130, 246, 0.08); margin-top: 12px; font-size: 0.7rem; padding: 10px;">User A ◄───► User B ◄───► User C
-    │                    │
-    └────────────────────┘ (Group Chat)</pre>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon green">🤖</div>
-          <h3>Built-in OpenClaw Agent</h3>
-          <p>Run OpenClaw, the built-in AI agent, on your local machine. Extend its skills directly through EnvoyMesh and automate your workflows.</p>
-          <pre style="background: rgba(34, 197, 94, 0.08); margin-top: 12px; font-size: 0.7rem; padding: 10px;">┌─────────────────┐
-│ Home Machine    │
-│ ┌─────────────┐ │
-│ │ OpenClaw    │ │
-│ │ AI Agent    │ │
-│ │ (built-in)  │ │
-│ └─────┬───────┘ │
-│       │ Skills   │
-│ ┌─────▼───────┐ │
-│ │ EnvoyMesh   │ │
-│ │ Extensions  │ │
-│ └─────────────┘ │
-└─────────────────┘</pre>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon purple">🔗</div>
-          <h3>Agent Super Channel</h3>
-          <p>Connect with external agents through EnvoyMesh. Access HomeClaw, Hermes, OpenHuman, and other AI agents in one unified interface:</p>
-          <div style="margin-top: 16px; display: flex; flex-wrap: wrap; gap: 8px;">
-            <a href="https://www.homeclaw.cn/" target="_blank" style="padding: 6px 12px; background-color: rgba(168, 85, 247, 0.15); border-radius: 6px; font-size: 0.8rem; text-decoration: none; color: #a855f7;">HomeClaw</a>
-            <a href="https://hermes-agent.nousresearch.com/" target="_blank" style="padding: 6px 12px; background-color: rgba(168, 85, 247, 0.15); border-radius: 6px; font-size: 0.8rem; text-decoration: none; color: #a855f7;">Hermes</a>
-            <a href="https://www.openhuman.dev/" target="_blank" style="padding: 6px 12px; background-color: rgba(168, 85, 247, 0.15); border-radius: 6px; font-size: 0.8rem; text-decoration: none; color: #a855f7;">OpenHuman</a>
+        <div class="feature-card with-shot">
+          <div class="shot-frame desktop" data-caption="P2P chat on EnvoyMesh desktop">
+            <img src="screens/desktop/english/chat.png" alt="P2P chat on EnvoyMesh desktop" loading="lazy">
           </div>
-          <pre style="background: rgba(168, 85, 247, 0.08); margin-top: 12px; font-size: 0.7rem; padding: 10px;">        ┌───────────┐
-        │ EnvoyMesh │
-        │ (Gateway) │
-        └─────┬─────┘
-   ┌──────────┼──────────┐
-   ▼          ▼          ▼
-HomeClaw   Hermes   OpenHuman</pre>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon cyan">📱</div>
-          <h3>EnvoyGo Mobile</h3>
-          <p>Access your EnvoyMesh node from anywhere. Run terminal commands on your home machine, chat with your agents, and control your network remotely.</p>
-          <pre style="background: rgba(6, 182, 212, 0.08); margin-top: 12px; font-size: 0.7rem; padding: 10px;">┌──────────┐     Relay     ┌──────────┐
-│ EnvoyGo  │◄─────────────►│ Home     │
-│ (Phone)  │    Network    │ Terminal │
-│          │               │ Commands │
-└──────────┘               └──────────┘</pre>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon orange">🌐</div>
-          <h3>Agent Network Infrastructure</h3>
-          <p>Set up multi-agent collaboration on LAN or WAN. Let multiple AI agents work together and execute tasks for you across your private network.</p>
-          <pre style="background: rgba(249, 115, 22, 0.08); margin-top: 12px; font-size: 0.7rem; padding: 10px;">LAN/WAN Network
-    │
-    ├──► Agent A (Desktop)
-    │
-    ├──► Agent B (Server)
-    │
-    └──► Agent C (Raspberry Pi)
-            │
-            └──► Task Collaboration</pre>
-        </div>
-        <div class="feature-card">
-          <div class="feature-icon pink">📚</div>
-          <h3>Knowledge Base</h3>
-          <p>Built-in knowledge store with public and private sections. Share public knowledge in the EnvoyMesh network. Use Obsidian as your knowledge source:</p>
-          <div style="margin-top: 16px;">
-            <a href="https://obsidian.md/" target="_blank" style="padding: 6px 12px; background-color: rgba(236, 72, 153, 0.15); border-radius: 6px; font-size: 0.8rem; text-decoration: none; color: #ec4899;">Obsidian Integration</a>
+          <div class="feature-body">
+            <div class="feature-icon blue">💬</div>
+            <h3>P2P Social Communication</h3>
+            <p>Direct chat, group chat, voice messages, and WebRTC audio/video calls. All peer-to-peer — no third-party servers, no cloud middlemen.</p>
           </div>
-          <pre style="background: rgba(236, 72, 153, 0.08); margin-top: 12px; font-size: 0.7rem; padding: 10px;">Vault/
-├── Public/    (Shared in Mesh)
-│   └── docs/
-├── Friends/   (Bonded access)
-│   └── notes/
-└── Private/   (Owner only)
-    └── secrets/
+        </div>
+        <div class="feature-card with-shot">
+          <div class="shot-frame desktop" data-caption="EnvoyAI built-in agent">
+            <img src="screens/desktop/english/envoy_ai.png" alt="EnvoyAI built-in agent" loading="lazy">
+          </div>
+          <div class="feature-body">
+            <div class="feature-icon green">🤖</div>
+            <h3>Built-in EnvoyAI Agent</h3>
+            <p>Run OpenClaw, the built-in AI agent, on your local machine. Extend its skills directly through EnvoyMesh and automate your workflows — no public IP required.</p>
+          </div>
+        </div>
+        <div class="feature-card with-shot">
+          <div class="shot-frame desktop" data-caption="External agent">
+            <img src="screens/desktop/english/ext_agent.png" alt="External agent" loading="lazy">
+          </div>
+          <div class="feature-body">
+            <div class="feature-icon purple">🔗</div>
+            <h3>Ext Agent</h3>
+            <p>Connect with external agents through EnvoyMesh. Access HomeClaw, Hermes, OpenHuman, and other AI agents in one unified interface:</p>
+            <div style="margin-top: 14px; display: flex; flex-wrap: wrap; gap: 8px;">
+              <a href="https://www.homeclaw.cn/" target="_blank" style="padding: 6px 12px; background-color: rgba(168, 85, 247, 0.15); border-radius: 6px; font-size: 0.8rem; text-decoration: none; color: #a855f7;">HomeClaw</a>
+              <a href="https://hermes-agent.nousresearch.com/" target="_blank" style="padding: 6px 12px; background-color: rgba(168, 85, 247, 0.15); border-radius: 6px; font-size: 0.8rem; text-decoration: none; color: #a855f7;">Hermes</a>
+              <a href="https://www.openhuman.dev/" target="_blank" style="padding: 6px 12px; background-color: rgba(168, 85, 247, 0.15); border-radius: 6px; font-size: 0.8rem; text-decoration: none; color: #a855f7;">OpenHuman</a>
+            </div>
+          </div>
+        </div>
+        <div class="feature-card with-shot">
+          <div class="shot-frame desktop" data-caption="Agent network — multi-agent task delegation">
+            <img src="screens/desktop/english/team_jobs.png" alt="Agent network" loading="lazy">
+          </div>
+          <div class="feature-body">
+            <div class="feature-icon orange">🌐</div>
+            <h3>Agent Network</h3>
+            <p>Set up multi-agent collaboration on LAN or WAN. Delegate complex tasks across your agent fleet — create jobs, assign them to agents, and track progress as they work together to complete them across your private network.</p>
+          </div>
+        </div>
+        <div class="feature-card with-shot">
+          <div class="shot-frame desktop" data-caption="Peer discovery">
+            <img src="screens/desktop/english/discover.png" alt="Peer discovery" loading="lazy">
+          </div>
+          <div class="feature-body">
+            <div class="feature-icon blue">🔍</div>
+            <h3>Peer Discovery</h3>
+            <p>Find and bond with peers on your local network or across the internet via relay. Manage trust tiers — from public strangers to direct friends.</p>
+          </div>
+        </div>
+        <div class="feature-card with-shot">
+          <div class="shot-frame desktop" data-caption="Content feed from bonded contacts">
+            <img src="screens/desktop/english/content.png" alt="Content feed" loading="lazy">
+          </div>
+          <div class="feature-body">
+            <div class="feature-icon cyan">📰</div>
+            <h3>Content Feed</h3>
+            <p>A social feed of posts, updates, and shared content from your bonded contacts. Browse, like, and comment — all delivered peer-to-peer.</p>
+          </div>
+        </div>
+        <div class="feature-card with-shot">
+          <div class="shot-frame desktop" data-caption="Blog publishing editor">
+            <img src="screens/desktop/english/content_blog.png" alt="Blog publishing" loading="lazy">
+          </div>
+          <div class="feature-body">
+            <div class="feature-icon pink">✍️</div>
+            <h3>Blog Publishing</h3>
+            <p>Publish long-form blog posts with a rich editor. Your content lives on your node and syncs to bonded peers — no centralized platform required.</p>
+          </div>
+        </div>
+        <div class="feature-card with-shot">
+          <div class="shot-frame desktop" data-caption="Explore the mesh bazaar">
+            <img src="screens/desktop/english/content_explore.png" alt="Explore bazaar" loading="lazy">
+          </div>
+          <div class="feature-body">
+            <div class="feature-icon purple">🛍️</div>
+            <h3>Explore Bazaar</h3>
+            <p>Discover content, services, and offerings from across the mesh. A decentralized marketplace of ideas and resources from bonded peers.</p>
+          </div>
+        </div>
+        <div class="feature-card with-shot">
+          <div class="shot-frame desktop" data-caption="Terminal access to home machine">
+            <img src="screens/desktop/english/terminal.png" alt="Terminal access" loading="lazy">
+          </div>
+          <div class="feature-body">
+            <div class="feature-icon green">⌨️</div>
+            <h3>Terminal Access</h3>
+            <p>Open a full shell to your home machine from the desktop app or remotely from EnvoyGo. Run commands, manage files, and control your node.</p>
+          </div>
+        </div>
+        <div class="feature-card with-shot">
+          <div class="shot-frame desktop" data-caption="Pi coding agent on remote devices">
+            <img src="screens/desktop/english/pi_terminal.png" alt="Pi coding agent" loading="lazy">
+          </div>
+          <div class="feature-body">
+            <div class="feature-icon orange">🥧</div>
+            <h3>Pi Coding Agent</h3>
+            <p>Connect to remote devices like a Raspberry Pi. Run a coding agent that can edit files, execute programs, and develop software on remote hardware.</p>
+          </div>
+        </div>
+        <div class="feature-card with-shot">
+          <div class="shot-frame desktop" data-caption="Node settings and configuration">
+            <img src="screens/desktop/english/settings.png" alt="Settings" loading="lazy">
+          </div>
+          <div class="feature-body">
+            <div class="feature-icon cyan">⚙️</div>
+            <h3>Node Settings</h3>
+            <p>Configure your node, manage model providers, set up relay connections, and control security policies. Full control over your mesh infrastructure.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
 
-◄── Obsidian Plugin ──►</pre>
+  <!-- EnvoyGo Mobile Gallery -->
+  <section class="envoygo-gallery" id="envoygo">
+    <div class="container">
+      <div class="section-header">
+        <h2>EnvoyGo Mobile</h2>
+        <p>Your home node in your pocket — access your agents, files, and terminal from anywhere.</p>
+      </div>
+
+      <div class="envoygo-intro">
+        <p>EnvoyGo is the mobile companion app for EnvoyMesh. It pairs with your home node over a secure WebSocket or libp2p circuit relay — no cloud, no public IP, no middleman. Your data stays on your machine; EnvoyGo is just a thin, encrypted window into it. Run terminal commands on your home computer, chat with your AI agents, browse your vault, and manage your mesh — all from your phone.</p>
+      </div>
+
+      <div class="envoygo-highlights">
+        <div class="envoygo-highlight">
+          <div class="highlight-icon">💬</div>
+          <h4>Chat Anywhere</h4>
+          <p>Direct chat, group chat, and voice messages with bonded contacts — all routed through your home node's P2P mesh.</p>
+        </div>
+        <div class="envoygo-highlight">
+          <div class="highlight-icon">🤖</div>
+          <h4>AI Agents on the Go</h4>
+          <p>Talk to EnvoyAI and external agents (HomeClaw, Hermes, OpenHuman) from your phone. Your local models do the work.</p>
+        </div>
+        <div class="envoygo-highlight">
+          <div class="highlight-icon">⌨️</div>
+          <h4>Remote Terminal</h4>
+          <p>Open a shell to your home machine or remote devices like a Raspberry Pi. Run commands as if you were sitting at the keyboard.</p>
+        </div>
+        <div class="envoygo-highlight">
+          <div class="highlight-icon">📁</div>
+          <h4>Vault Access</h4>
+          <p>Browse and download files from your local vault. Your private data never leaves your machine unencrypted.</p>
+        </div>
+        <div class="envoygo-highlight">
+          <div class="highlight-icon">📰</div>
+          <h4>Social Feed</h4>
+          <p>Read and post to your content feed and blog. Stay connected with your mesh community from anywhere.</p>
+        </div>
+        <div class="envoygo-highlight">
+          <div class="highlight-icon">🔐</div>
+          <h4>End-to-End Secure</h4>
+          <p>All communication is Ed25519-signed and encrypted. EnvoyGo authenticates with your home node via QR pairing.</p>
+        </div>
+      </div>
+
+      <div class="envoygo-steps">
+        <div class="envoygo-step">
+          <h4>Pair Your Device</h4>
+          <p>Scan the QR code displayed on your home node's desktop app to establish a secure connection.</p>
+        </div>
+        <div class="envoygo-step">
+          <h4>Stay Connected</h4>
+          <p>EnvoyGo maintains a persistent connection to your home node over WiFi or cellular, anywhere in the world.</p>
+        </div>
+        <div class="envoygo-step">
+          <h4>Control Everything</h4>
+          <p>Access chat, agents, terminal, files, and settings — all the power of your home node, right from your phone.</p>
+        </div>
+      </div>
+
+      <div class="gallery-subheader">
+        <h3>App Showcase</h3>
+        <p>Tap any screen to view full size</p>
+      </div>
+
+      <div class="phone-grid">
+        <div class="phone-card">
+          <div class="shot-frame" data-caption="EnvoyGo — Chat list">
+            <img src="screens/envoygo/english/chat.jpg" alt="EnvoyGo chat list" loading="lazy">
+          </div>
+          <div class="phone-caption">Chat List</div>
+        </div>
+        <div class="phone-card">
+          <div class="shot-frame" data-caption="EnvoyGo — Chat view">
+            <img src="screens/envoygo/english/chat_view.jpg" alt="EnvoyGo chat view" loading="lazy">
+          </div>
+          <div class="phone-caption">Chat View</div>
+        </div>
+        <div class="phone-card">
+          <div class="shot-frame" data-caption="EnvoyGo — EnvoyAI assistant">
+            <img src="screens/envoygo/english/envoy_ai.jpg" alt="EnvoyGo EnvoyAI" loading="lazy">
+          </div>
+          <div class="phone-caption">EnvoyAI Assistant</div>
+        </div>
+        <div class="phone-card">
+          <div class="shot-frame" data-caption="EnvoyGo — External agent chat">
+            <img src="screens/envoygo/english/ext_agent.jpg" alt="EnvoyGo external agent" loading="lazy">
+          </div>
+          <div class="phone-caption">Ext Agent Chat</div>
+        </div>
+        <div class="phone-card">
+          <div class="shot-frame" data-caption="EnvoyGo — Social feed">
+            <img src="screens/envoygo/english/feed.jpg" alt="EnvoyGo feed" loading="lazy">
+          </div>
+          <div class="phone-caption">Social Feed</div>
+        </div>
+        <div class="phone-card">
+          <div class="shot-frame" data-caption="EnvoyGo — Blog reader">
+            <img src="screens/envoygo/english/blog.jpg" alt="EnvoyGo blog" loading="lazy">
+          </div>
+          <div class="phone-caption">Blog Reader</div>
+        </div>
+        <div class="phone-card">
+          <div class="shot-frame" data-caption="EnvoyGo — My files & vault">
+            <img src="screens/envoygo/english/my_files.jpg" alt="EnvoyGo my files" loading="lazy">
+          </div>
+          <div class="phone-caption">My Files</div>
+        </div>
+        <div class="phone-card">
+          <div class="shot-frame" data-caption="EnvoyGo — Profile">
+            <img src="screens/envoygo/english/profile.jpg" alt="EnvoyGo profile" loading="lazy">
+          </div>
+          <div class="phone-caption">Profile</div>
+        </div>
+        <div class="phone-card">
+          <div class="shot-frame" data-caption="EnvoyGo — Settings">
+            <img src="screens/envoygo/english/settings.jpg" alt="EnvoyGo settings" loading="lazy">
+          </div>
+          <div class="phone-caption">Settings</div>
+        </div>
+        <div class="phone-card">
+          <div class="shot-frame" data-caption="EnvoyGo — Pairing & access">
+            <img src="screens/envoygo/english/access.jpg" alt="EnvoyGo pairing" loading="lazy">
+          </div>
+          <div class="phone-caption">Pair & Connect</div>
+        </div>
+        <div class="phone-card">
+          <div class="shot-frame" data-caption="EnvoyGo — Terminals popup">
+            <img src="screens/envoygo/english/terminals_popup.jpg" alt="EnvoyGo terminals popup" loading="lazy">
+          </div>
+          <div class="phone-caption">Terminals Manager</div>
+        </div>
+        <div class="phone-card">
+          <div class="shot-frame" data-caption="EnvoyGo — Terminal">
+            <img src="screens/envoygo/english/terminal.jpg" alt="EnvoyGo terminal" loading="lazy">
+          </div>
+          <div class="phone-caption">Terminal</div>
+        </div>
+        <div class="phone-card">
+          <div class="shot-frame" data-caption="EnvoyGo — Pi terminal on remote device">
+            <img src="screens/envoygo/english/pi_terminal.jpg" alt="EnvoyGo Pi terminal" loading="lazy">
+          </div>
+          <div class="phone-caption">Pi Terminal</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Knowledge Base Section -->
+  <section class="kb-section" id="knowledge">
+    <div class="container">
+      <div class="kb-grid">
+        <div>
+          <div class="shot-frame desktop" data-caption="Knowledge base and vault — My Files" style="height: 380px; border-radius: 16px; border: 1px solid var(--border-color); cursor: zoom-in;">
+            <img src="screens/desktop/english/my_files.png" alt="Knowledge base and vault" loading="lazy">
+          </div>
+        </div>
+        <div>
+          <h2>Knowledge Base & Vault</h2>
+          <p>EnvoyMesh includes a powerful local-first knowledge base with RAG indexing. Your documents, notes, and files are indexed for semantic search and injected into AI prompts as context. Public knowledge is shared across the mesh — private data never leaves your node.</p>
+          <ul class="kb-features">
+            <li>Import any file type — Markdown, PDF, Word, images, and more</li>
+            <li>RAG indexing with vector + lexical + hybrid search modes</li>
+            <li>Per-item sensitivity labels: public, friends, or private</li>
+            <li>Public items are queryable by all EnvoyMesh peers via <code>knowledge.query</code></li>
+            <li>Agent context: vault snippets automatically injected into LLM prompts</li>
+          </ul>
+
+          <div class="kb-sensitivity">
+            <div class="kb-sensitivity-item public">
+              <div class="sens-icon">🌐</div>
+              <strong>Public</strong>
+              <span>Shared with all mesh peers</span>
+            </div>
+            <div class="kb-sensitivity-item friends">
+              <div class="sens-icon">👥</div>
+              <strong>Friends</strong>
+              <span>Bonded contacts only</span>
+            </div>
+            <div class="kb-sensitivity-item private">
+              <div class="sens-icon">🔒</div>
+              <strong>Private</strong>
+              <span>Owner & agent only</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="kb-plugin-box">
+        <h4>🔌 Plugin Architecture — Bring Your Own Knowledge Base</h4>
+        <p style="font-size: 0.95rem; line-height: 1.7; color: var(--text-secondary); margin-bottom: 20px;">
+          EnvoyMesh designed a knowledge base plugin system. The built-in vault always works standalone, but plugins can enrich it with extra capabilities. The first plugin available is <strong>Obsidian</strong> — open the same vault directory in Obsidian and get wiki-links, backlinks, graph view, tags, templates, frontmatter, and daily notes, all synced with your EnvoyMesh knowledge base.
+        </p>
+
+        <div class="kb-plugin-arch">
+          <div class="kb-plugin-core">
+            <strong>EnvoyMesh Vault Core</strong>
+            <span>Local-first file store · RAG indexing · Sensitivity labels · Mesh sharing · Always runs</span>
+          </div>
+          <div class="kb-plugin-row">
+            <div class="kb-plugin-item active">
+              <div class="plugin-icon">🔮</div>
+              <strong>Obsidian</strong>
+              <span>Wiki-links · Backlinks · Graph · Tags · Frontmatter</span>
+              <span class="plugin-badge available">Available</span>
+            </div>
+            <div class="kb-plugin-item">
+              <div class="plugin-icon">📝</div>
+              <strong>Notion</strong>
+              <span>External KB via API</span>
+              <span class="plugin-badge future">Planned</span>
+            </div>
+            <div class="kb-plugin-item">
+              <div class="plugin-icon">🔌</div>
+              <strong>MCP Server</strong>
+              <span>External KB via MCP protocol</span>
+              <span class="plugin-badge future">Planned</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="margin-top: 20px; display: flex; flex-wrap: wrap; gap: 10px;">
+          <a href="https://obsidian.md/" target="_blank" style="display: inline-flex; align-items: center; gap: 8px; padding: 10px 20px; background-color: rgba(168, 85, 247, 0.15); border: 1px solid rgba(168, 85, 247, 0.3); border-radius: 8px; font-size: 0.9rem; text-decoration: none; color: #a855f7; font-weight: 500; transition: all 0.2s ease;">
+            🔮 Get Obsidian
+          </a>
+          <a href="https://github.com/allenpeng0705/EnvoyMesh/tree/main/docs/knowledge-base-and-rag.md" target="_blank" style="display: inline-flex; align-items: center; gap: 8px; padding: 10px 20px; background-color: var(--bg-card); border: 1px solid var(--border-color); border-radius: 8px; font-size: 0.9rem; text-decoration: none; color: var(--text-secondary); font-weight: 500; transition: all 0.2s ease;">
+            📖 Read the Docs
+          </a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Family Network Section -->
+  <section class="family-network" id="family">
+    <div class="container">
+      <div class="family-grid">
+        <div>
+          <span class="family-badge">★ New · Family Network</span>
+          <h2>Your Home Computer, Your Family's Private Server</h2>
+          <p class="lead">Turn one EnvoyMesh home node into a private family social network. Each family member pairs their phone, gets their own profile, chats with each other, and talks to AI — with no cloud and no subscription.</p>
+          <div class="family-tiers">
+            <div class="family-tier">
+              <div class="tier-icon owner">👑</div>
+              <div>
+                <h4>Owner — Full Power</h4>
+                <p>Everything EnvoyMesh offers: AI, bots, Ext Agent, terminal, Pi, vault, mesh contacts, node settings, and family admin.</p>
+              </div>
+            </div>
+            <div class="family-tier">
+              <div class="tier-icon family">👨‍👩‍👧</div>
+              <div>
+                <h4>Family Members — Focused & Private</h4>
+                <p>Their own profile, their own AI threads, character bots, Ext Agent chat, and family direct + group chat. Push notifications included. No terminal, vault, or mesh settings.</p>
+              </div>
+            </div>
+          </div>
+          <p style="color: var(--text-muted); font-size: 0.9rem;">Like Netflix profiles on one account — each person gets an isolated experience on a shared home node. Complete data isolation between members.</p>
+        </div>
+        <div class="family-shot">
+          <img src="screens/desktop/english/family_network.png" alt="Family Network on EnvoyMesh" loading="lazy">
         </div>
       </div>
     </div>
@@ -1046,16 +2330,74 @@ HomeClaw   Hermes   OpenHuman</pre>
     </div>
   </section>
 
+  <!-- Download Section -->
+  <section class="downloads" id="downloads">
+    <div class="container">
+      <div class="section-header">
+        <h2>Download EnvoyMesh</h2>
+        <p>Install the desktop node to run your private mesh, or the EnvoyGo app to access it from your phone.</p>
+      </div>
+      <div class="download-grid">
+        <div class="download-card">
+          <div class="download-icon mac"><svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor"><path d="M17.05 20.28c-.98.95-2.05.8-3.08.35-1.09-.46-2.09-.48-3.24 0-1.44.62-2.2.44-3.06-.35C2.79 15.25 3.51 7.59 9.05 7.31c1.35.07 2.29.74 3.08.8 1.18-.24 2.31-.93 3.57-.84 1.51.12 2.65.72 3.4 1.8-3.12 1.87-2.38 5.98.48 7.13-.57 1.5-1.31 2.99-2.54 4.09l.01-.01zM12.03 7.25c-.15-2.23 1.66-4.07 3.74-4.25.29 2.58-2.34 4.5-3.74 4.25z"/></svg></div>
+          <h3>EnvoyMesh for macOS</h3>
+          <div class="platform-sub">Desktop node · DMG installer</div>
+          <div class="download-links">
+            <!-- TODO: replace PLACEHOLDER_GITHUB_MAC_DMG with the GitHub release URL -->
+            <a href="PLACEHOLDER_GITHUB_MAC_DMG" class="download-link primary" target="_blank">
+              Download DMG <span class="tag">GitHub</span>
+            </a>
+            <!-- TODO: replace PLACEHOLDER_CF_MAC_DMG with the Cloudflare URL (China users) -->
+            <a href="PLACEHOLDER_CF_MAC_DMG" class="download-link alt" target="_blank">
+              Download DMG <span class="tag">China CDN</span>
+            </a>
+          </div>
+        </div>
+        <div class="download-card">
+          <div class="download-icon windows"><svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor"><path d="M3 5.1L10.4 4v7.3H3V5.1zM10.4 12.7V20L3 18.9v-6.2h7.4zM11.6 3.8L21 2.5v8.8h-9.4V3.8zM21 12.7v8.8l-9.4-1.3v-7.5H21z"/></svg></div>
+          <h3>EnvoyMesh for Windows</h3>
+          <div class="platform-sub">Desktop node · EXE installer</div>
+          <div class="download-links">
+            <!-- TODO: replace PLACEHOLDER_GITHUB_WIN_EXE with the GitHub release URL -->
+            <a href="PLACEHOLDER_GITHUB_WIN_EXE" class="download-link primary" target="_blank">
+              Download EXE <span class="tag">GitHub</span>
+            </a>
+            <!-- TODO: replace PLACEHOLDER_CF_WIN_EXE with the Cloudflare URL (China users) -->
+            <a href="PLACEHOLDER_CF_WIN_EXE" class="download-link alt" target="_blank">
+              Download EXE <span class="tag">China CDN</span>
+            </a>
+          </div>
+        </div>
+        <div class="download-card">
+          <div class="download-icon android"><svg viewBox="0 0 24 24" width="32" height="32" fill="currentColor"><path d="M17.6 9.48l1.84-3.18c.16-.31.04-.69-.26-.85-.29-.15-.65-.06-.83.22l-1.88 3.24a11.43 11.43 0 0 0-8.94 0L5.65 5.67c-.18-.28-.54-.37-.83-.22-.3.16-.42.54-.26.85L6.4 9.48A10.81 10.81 0 0 0 1 18h22a10.81 10.81 0 0 0-5.4-8.52zM7 15.25a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5zm10 0a1.25 1.25 0 1 1 0-2.5 1.25 1.25 0 0 1 0 2.5z"/></svg></div>
+          <h3>EnvoyGo for Android</h3>
+          <div class="platform-sub">Mobile thin client · APK</div>
+          <div class="download-links">
+            <!-- TODO: replace PLACEHOLDER_GITHUB_ANDROID_APK with the GitHub release URL -->
+            <a href="PLACEHOLDER_GITHUB_ANDROID_APK" class="download-link primary" target="_blank">
+              Download APK <span class="tag">GitHub</span>
+            </a>
+            <!-- TODO: replace PLACEHOLDER_CF_ANDROID_APK with the Cloudflare URL (China users) -->
+            <a href="PLACEHOLDER_CF_ANDROID_APK" class="download-link alt" target="_blank">
+              Download APK <span class="tag">China CDN</span>
+            </a>
+          </div>
+        </div>
+      </div>
+      <p class="download-note">EnvoyGo for iOS is available on the App Store soon. Linux users can build from source. China CDN links are optimized for users in mainland China; GitHub links serve everywhere else.</p>
+    </div>
+  </section>
+
   <!-- Getting Started -->
   <section class="getting-started" id="getting-started">
     <div class="container">
-      <h2>Get Started in Minutes</h2>
-      <p>Install EnvoyMesh on your desktop or mobile device and start building your private mesh network.</p>
+      <h2>Build from Source</h2>
+      <p>Prefer to build from source? Clone the repo and run EnvoyMesh in minutes.</p>
       <div class="code-block">
         <code>git clone https://github.com/allenpeng0705/EnvoyMesh.git<br>cd EnvoyMesh<br>./scripts/setup.sh<br><br># Run<br>npm run node:dev      # Start the P2P node<br>npm run social:dev    # Open http://localhost:5173</code>
       </div>
       <div class="nav-actions" style="justify-content: center;">
-        <a href="https://github.com/allenpeng0705/EnvoyMesh" target="_blank" class="btn btn-primary">Download</a>
+        <a href="https://github.com/allenpeng0705/EnvoyMesh" target="_blank" class="btn btn-primary">View on GitHub</a>
         <a href="EnvoyMesh_GuideBook_0.1.0.html" class="btn btn-secondary">Read Guidebook</a>
       </div>
     </div>
@@ -1082,12 +2424,100 @@ HomeClaw   Hermes   OpenHuman</pre>
     </div>
   </footer>
 
+  <!-- Lightbox -->
+  <div class="lightbox" id="lightbox">
+    <button class="lightbox-close" id="lightboxClose" aria-label="Close">&times;</button>
+    <img id="lightboxImg" src="" alt="Screenshot">
+    <p class="lightbox-caption" id="lightboxCaption"></p>
+  </div>
+
   <script>
+    // Header scroll effect
     window.addEventListener('scroll', () => {
       const header = document.querySelector('header');
       if (header) {
         header.classList.toggle('scrolled', window.scrollY > 20);
       }
+    });
+
+    // Mobile menu toggle
+    const mobileMenuBtn = document.getElementById('mobileMenuBtn');
+    const mobileNavOverlay = document.getElementById('mobileNavOverlay');
+
+    function toggleMobileMenu() {
+      mobileMenuBtn.classList.toggle('active');
+      mobileNavOverlay.classList.toggle('active');
+      document.body.style.overflow = mobileNavOverlay.classList.contains('active') ? 'hidden' : '';
+    }
+
+    if (mobileMenuBtn) {
+      mobileMenuBtn.addEventListener('click', toggleMobileMenu);
+    }
+
+    if (mobileNavOverlay) {
+      mobileNavOverlay.querySelectorAll('a').forEach((link) => {
+        link.addEventListener('click', () => {
+          mobileMenuBtn.classList.remove('active');
+          mobileNavOverlay.classList.remove('active');
+          document.body.style.overflow = '';
+        });
+      });
+    }
+
+    window.addEventListener('resize', () => {
+      if (window.innerWidth > 768 && mobileNavOverlay.classList.contains('active')) {
+        mobileMenuBtn.classList.remove('active');
+        mobileNavOverlay.classList.remove('active');
+        document.body.style.overflow = '';
+      }
+    });
+
+    // Lightbox — click any screenshot to view full size
+    const lightbox = document.getElementById('lightbox');
+    const lightboxImg = document.getElementById('lightboxImg');
+    const lightboxCaption = document.getElementById('lightboxCaption');
+    const lightboxClose = document.getElementById('lightboxClose');
+
+    function openLightbox(src, alt, caption) {
+      lightboxImg.src = src;
+      lightboxImg.alt = alt;
+      lightboxCaption.textContent = caption || alt;
+      lightbox.classList.add('active');
+      document.body.style.overflow = 'hidden';
+    }
+
+    // Desktop feature cards — click anywhere on the card opens the lightbox
+    // (but ignore clicks on links inside the card)
+    document.querySelectorAll('.feature-card.with-shot').forEach((card) => {
+      card.addEventListener('click', (e) => {
+        if (e.target.closest('a')) return;
+        const img = card.querySelector('.shot-frame img');
+        if (!img) return;
+        const frame = card.querySelector('.shot-frame');
+        openLightbox(img.src, img.alt, frame.getAttribute('data-caption') || img.alt);
+      });
+    });
+
+    // EnvoyGo phone cards — click the screenshot to open
+    document.querySelectorAll('.phone-card .shot-frame').forEach((frame) => {
+      frame.addEventListener('click', () => {
+        const img = frame.querySelector('img');
+        if (!img) return;
+        openLightbox(img.src, img.alt, frame.getAttribute('data-caption') || img.alt);
+      });
+    });
+
+    function closeLightbox() {
+      lightbox.classList.remove('active');
+      document.body.style.overflow = '';
+    }
+
+    lightboxClose.addEventListener('click', closeLightbox);
+    lightbox.addEventListener('click', (e) => {
+      if (e.target === lightbox) closeLightbox();
+    });
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && lightbox.classList.contains('active')) closeLightbox();
     });
   </script>
 </body>
