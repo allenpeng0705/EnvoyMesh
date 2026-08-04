@@ -22,16 +22,29 @@ import { createTaskDispatcher } from "./task-dispatcher.js";
 import { resolveConnectivityRuntime, type ResolvedConnectivityRuntime } from "./connectivity-runtime.js";
 import { configureBondWarmFromConnectivity } from "./node-service-reachability.js";
 import { resolveBootstrapAddresses } from "./bootstrap-resolver.js";
-import { EnvoyMesh, filterBootstrapMultiaddrs, type EnvoyMeshOptions } from "@envoymesh/network";
+import { EnvoyMesh, filterBootstrapMultiaddrs, isPrivateLanTcpDialHint, type EnvoyMeshOptions } from "@envoymesh/network";
 import { seedAddrsForDiscoveryProfile } from "./peer-discovery-telemetry.js";
 import { loadOrCreateLibp2pPrivateKey } from "./libp2p-key-loader.js";
 import { runRelayClientCycle, startRelayClientScheduler, type RelayClientCycleDeps } from "./relay-client-cycle.js";
 import { startNodeStatsInterval } from "./node-stats-log.js";
 import { warmAndWatchRelayReservations, collectRelayControlTargets } from "./relay-reservation-health.js";
-import type { NodeProfile, NodeStatus, DiscoveryProfile } from "@envoymesh/api";
+import {
+  normalizeBootstrapPresetsForContactsOnly,
+  type NodeProfile,
+  type NodeStatus,
+  type DiscoveryProfile,
+} from "@envoymesh/api";
 import type { AgentSetupContext } from "./node-service-agent-setup.js";
 import type { CapabilityDiscoveryContext } from "./node-service-capability-discovery.js";
 import type { RecordNodeErrorAccess } from "./node-service-connection-status.js";
+
+/** True when first-launch auto-bond still needs a lean dial queue. */
+export function shouldLeanBootstrapForPendingSponsorBond(config: {
+  setupSponsorFriendEnabled?: boolean;
+  setupSponsorFriendCompletedAt?: string;
+}): boolean {
+  return Boolean(config.setupSponsorFriendEnabled) && !config.setupSponsorFriendCompletedAt;
+}
 
 export interface StartNodeContext {
   /** Current node lifecycle status string. */
@@ -75,6 +88,8 @@ export interface StartNodeContext {
     relayEnabled?: boolean;
     relayServerEnabled?: boolean;
     relayReservationEnabled?: boolean;
+    setupSponsorFriendEnabled?: boolean;
+    setupSponsorFriendCompletedAt?: string;
   } | undefined>;
 
   /** Set bootstrap peer IDs so the reachability layer can filter them from discovery UI. */
@@ -150,22 +165,35 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
     // Compute effective bootstrap peers.
     const peerRecords = await ctx.getDiscoverySeedStore();
     const peerDirAddrCount = 0; // peerRecords is the discovery seed list; peer directory is separate
-    const seedAddrs = seedAddrsForDiscoveryProfile(
-      config.discoveryProfile,
-      await ctx.getDiscoverySeedStore()!.listSeedRecords(),
-    );
+    const leanForSponsor = shouldLeanBootstrapForPendingSponsorBond(config);
+    // Pending first-launch auto-bond: ignore DHT/seed swarm addrs so the
+    // dial queue is not flooded before bond.request can circuit-CONNECT.
+    const seedAddrs = leanForSponsor
+      ? []
+      : seedAddrsForDiscoveryProfile(
+          config.discoveryProfile,
+          await ctx.getDiscoverySeedStore()!.listSeedRecords(),
+        );
     void peerRecords;
     void peerDirAddrCount;
 
     const resolvedPresetAddrs: string[] = [];
+    const effectivePresets = leanForSponsor
+      ? normalizeBootstrapPresetsForContactsOnly(config.bootstrapPresets ?? [])
+      : (config.bootstrapPresets ?? []);
+    if (leanForSponsor) {
+      console.log(
+        `[node-service] pending setupSponsorFriend — lean bootstrap (strip public-libp2p swarm) presets=${JSON.stringify(effectivePresets)}`,
+      );
+    }
     console.log(
       `[node-service] config.bootstrapPresets: ${JSON.stringify(config.bootstrapPresets)}`,
     );
-    if (config.bootstrapPresets && config.bootstrapPresets.length > 0) {
+    if (effectivePresets.length > 0) {
       console.log(
-        `[node-service] Resolving ${config.bootstrapPresets.length} bootstrap presets: ${config.bootstrapPresets.join(", ")}`,
+        `[node-service] Resolving ${effectivePresets.length} bootstrap presets: ${effectivePresets.join(", ")}`,
       );
-      const resolvedResults = await resolveBootstrapAddresses(config.bootstrapPresets);
+      const resolvedResults = await resolveBootstrapAddresses(effectivePresets);
       for (const result of resolvedResults) {
         resolvedPresetAddrs.push(...result.resolved);
         if (result.resolved.length === 0) {
@@ -187,8 +215,11 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
       (addr): addr is string =>
         typeof addr === "string" && addr.trim().length > 0 && addr.startsWith("/"),
     );
+    const leanFilteredAddrs = leanForSponsor
+      ? rawBootstrapAddrs.filter((a) => !isPrivateLanTcpDialHint(a) && !a.includes("/p2p-circuit/"))
+      : rawBootstrapAddrs;
     console.log(
-      `[node-service] rawBootstrapAddrs (${rawBootstrapAddrs.length}): ${rawBootstrapAddrs.join(", ")}`,
+      `[node-service] rawBootstrapAddrs (${leanFilteredAddrs.length}${leanForSponsor ? ", lean-filtered" : ""}): ${leanFilteredAddrs.join(", ")}`,
     );
     console.log(
       `[node-service] config.bootstrapPeers: ${config.bootstrapPeers?.join(", ") ?? "undefined/empty"}`,
@@ -196,7 +227,7 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
     console.log(
       `[node-service] resolvedPresetAddrs: ${resolvedPresetAddrs.join(", ")}`,
     );
-    const bootstrapPeers = filterBootstrapMultiaddrs([...new Set(rawBootstrapAddrs)]);
+    const bootstrapPeers = filterBootstrapMultiaddrs([...new Set(leanFilteredAddrs)]);
     console.log(
       `[node-service] bootstrapPeers after filterBootstrapMultiaddrs: ${bootstrapPeers.length} - ${bootstrapPeers.join(", ")}`,
     );
@@ -220,8 +251,9 @@ export async function startNodeViaRuntime(ctx: StartNodeContext): Promise<void> 
     }
 
     // Resolve connectivity runtime for DHT / mdns / intervals.
+    // Lean mode uses relay-only so DHT peer churn cannot starve circuit CONNECT.
     const connectivityRuntime = resolveConnectivityRuntime({
-      profile: config.discoveryProfile,
+      profile: leanForSponsor ? "relay-only" : config.discoveryProfile,
       enableMdns: config.enableMdns ?? true,
       tuning: {
         connectivityMode: config.connectivityMode,
